@@ -260,6 +260,60 @@ describe('CanvasTab — list, switcher, board', () => {
     })
   })
 
+  it('never lets a stray click create the card: the draft saves on ⌘⏎ only', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '碎片' }))
+    const editor = await screen.findByPlaceholderText(/写点什么/)
+    fireEvent.change(editor, { target: { value: '会上没人开口' } })
+    // The card does not exist yet, so nothing is on the board but the old card.
+    expect(screen.queryByText('卡片 c_1')).toBeNull()
+    fireEvent.blur(editor)
+    expect(mocks.putCard).not.toHaveBeenCalled()
+    fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })
+    await waitFor(() => {
+      expect(mocks.putCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, kind: 'fragment', text: '会上没人开口' })
+    })
+    await screen.findByText('卡片 c_1')
+  })
+
+  it('drops an untouched draft without asking, and guards a drafted one exactly once', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+
+    // An empty draft leaves silently (nothing to lose).
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '碎片' }))
+    fireEvent.click(await screen.findByRole('button', { name: /返回卡板/ }))
+    await screen.findByText('卡片 c_1')
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    // A drafted one asks; 继续编辑 keeps every character.
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '问题' }))
+    const editor = await screen.findByPlaceholderText(/写点什么/)
+    // `input` (not `change`) is what reports the keystroke to the owner — the
+    // dirty flag the exit gesture reads rides it.
+    fireEvent.input(editor, { target: { value: '不表达是因为害怕吗？' } })
+    fireEvent.keyDown(editor, { key: 'Escape' })
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('10')
+    fireEvent.click(within(dialog).getByRole('button', { name: '继续编辑' }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(mocks.putCard).not.toHaveBeenCalled()
+    expect(screen.getByPlaceholderText(/写点什么/)).toHaveProperty('value', '不表达是因为害怕吗？')
+
+    // 丢掉 leaves the board with no new card — the count the switcher reports
+    // is unchanged, because nothing was ever written.
+    fireEvent.click(screen.getByRole('button', { name: /返回卡板/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '丢掉' }))
+    await screen.findByText('卡片 c_1')
+    expect(mocks.putCard).not.toHaveBeenCalled()
+  })
+
   it('wires ghost proposals to patchCard status transitions (accept AND reject)', async () => {
     const ghostA = card('c_a', { kind: 'reference', status: 'proposed', createdBy: 'agent', text: '效能假说综述' })
     const ghostB = card('c_b', { kind: 'fragment', status: 'proposed', createdBy: 'agent', text: '反例笔记' })
@@ -340,8 +394,33 @@ describe('CanvasTab — the drill', () => {
     await screen.findByRole('button', { name: /新卡/ })
   })
 
-  it('switches the detail through render/source/split and saves source through patchCard', async () => {
-    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+  it('is a reader on the board: the pencil opens the detail, and no editor sits on the card', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    // The card's text is never a textarea on the board.
+    expect(screen.queryByDisplayValue('卡片 c_1')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '进入详情页编辑' }))
+    await screen.findByRole('button', { name: /返回卡板/ })
+    expect(screen.queryByDisplayValue('卡片 c_1')).toBeNull()
+    // Editing is the detail's own, behind the source mode.
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    expect(await screen.findByDisplayValue('卡片 c_1')).toBeTruthy()
+  })
+
+  it('opens an archived card from the well instead of swallowing the click', async () => {
+    const { props } = makeHarness({
+      boards: [board(CANVAS_ID, [card('c_old', { status: 'archived', text: '归档掉的旧卡' })])],
+    })
+    render(<CanvasTab {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: /已归档的卡/ }))
+    fireEvent.click(screen.getByText('归档掉的旧卡'))
+    await screen.findByRole('button', { name: /返回卡板/ })
+    await screen.findByText('已归档')
+    await screen.findByRole('button', { name: '恢复' })
+  })
+
+  it('switches the detail through render/source/split and saves source through patchCard', async () => {    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
     fireEvent.click(screen.getByText('卡片 c_1'))

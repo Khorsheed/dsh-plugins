@@ -120,6 +120,17 @@ export const zh = {
   'card.editHint': '⌘⏎ 保存 · Esc 取消',
   'card.fromAgent': '来自 Agent',
   'card.htmlDocument': 'HTML 文档',
+  'card.enterDetail': '进入详情页编辑',
+
+  'detail.unsaved': '未保存',
+  'detail.createHint': '⌘⏎ 建卡 · Esc 返回卡板',
+  'detail.nothingToRender': '先写正文，回来才看得到渲染',
+
+  'confirm.discardTitle': '丢掉这张还没保存的新卡？',
+  'confirm.discardBody': '正文已经写了 {count} 个字。丢掉就一个字都不剩，卡板上也不会多这张卡。',
+  'confirm.close': '关闭',
+  'confirm.keepEditing': '继续编辑',
+  'confirm.discard': '丢掉',
 
   'detail.empty': '在画布空间点一张卡，在这里读全文',
   'detail.cardGone': '这张卡已不在板上',
@@ -301,6 +312,17 @@ export const en: Record<keyof typeof zh, string> = {
   'card.editHint': '⌘⏎ save · Esc cancel',
   'card.fromAgent': 'from Agent',
   'card.htmlDocument': 'HTML document',
+  'card.enterDetail': 'Edit in the detail page',
+
+  'detail.unsaved': 'Unsaved',
+  'detail.createHint': '⌘⏎ adds the card · Esc returns to the board',
+  'detail.nothingToRender': 'Write the text first, then the render shows it',
+
+  'confirm.discardTitle': 'Discard this unsaved card?',
+  'confirm.discardBody': 'The text already holds {count} characters. Discarding leaves nothing behind, and the board does not gain the card.',
+  'confirm.close': 'Close',
+  'confirm.keepEditing': 'Keep editing',
+  'confirm.discard': 'Discard',
 
   'detail.empty': 'Click a card in the canvas space to read it here',
   'detail.cardGone': 'This card is no longer on the board',

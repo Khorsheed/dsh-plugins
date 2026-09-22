@@ -757,21 +757,6 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.toast {
-  position: absolute;
-  left: 50%;
-  bottom: 22px;
-  transform: translateX(-50%);
-  z-index: 20;
-  max-width: min(520px, 80%);
-  padding: 8px 14px;
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-3);
-  box-shadow: var(--dsw-elevation-prominent);
-  font-size: 12px;
-  color: var(--dsw-alias-label-primary);
-}
-
 .fatal {
   position: absolute;
   left: 50%;

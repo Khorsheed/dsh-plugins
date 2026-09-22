@@ -16,13 +16,17 @@ import {
 import css from './board.module.css'
 
 /** The shared card textarea. */
-export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, className, onSubmit, onCancel }: {
+export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, className, blurSubmits = true, onTextChange, onSubmit, onCancel }: {
   readonly defaultValue?: string
   readonly placeholder?: string
   readonly submitOn: 'mod-enter' | 'enter'
   readonly autoFocus?: boolean
   /** Overrides the board's editor class (the detail reader's own editor style). */
   readonly className?: string | undefined
+  /** False keeps ⌘⏎ as the only commit gesture (the new-card draft must not be created by a click elsewhere). */
+  readonly blurSubmits?: boolean
+  /** Reports every keystroke: the owner's dirty flag (the discard confirm's condition) rides it. */
+  readonly onTextChange?: (text: string) => void
   readonly onSubmit: (text: string) => void
   readonly onCancel?: () => void
 }): ReactNode {
@@ -75,9 +79,12 @@ export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, c
       spellCheck={false}
       autoFocus={autoFocus}
       rows={1}
-      onInput={autosize}
+      onInput={event => {
+        autosize()
+        onTextChange?.(event.currentTarget.value)
+      }}
       onKeyDown={onKeyDown}
-      onBlur={submitOn === 'mod-enter' ? submit : undefined}
+      onBlur={submitOn === 'mod-enter' && blurSubmits ? submit : undefined}
       onCompositionStart={() => { composingRef.current = true }}
       onCompositionEnd={() => { composingRef.current = false }}
     />

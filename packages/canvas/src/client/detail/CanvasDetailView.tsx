@@ -20,9 +20,9 @@ import {
 } from 'react'
 import {
   IconArchiveOutline20, IconCheckOutline16, IconCloseOutline16, IconCodeOutline16,
-  IconDatabaseOutline16, IconLinkOutline14, IconListPenOutline16,
+  IconDatabaseOutline16, IconLinkOutline14, IconListPenOutline16, IconPlusOutline16,
   IconQuestionOutline14, IconRefreshOutline14, IconRightUpOutline14, IconSparkle16,
-  MarkdownText, type MarkdownLabels,
+  MarkdownText, Toast, type MarkdownLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -37,9 +37,6 @@ import type { CanvasDetailProps } from '../contract.ts'
 import { CardTextarea } from '../space/CardTextarea.tsx'
 import css from './CanvasDetailView.module.css'
 
-/** How long a transient toast stays up. */
-const TOAST_MS = 2200
-
 /** The kind icon set (the board's own vocabulary). */
 const KIND_ICONS = {
   fragment: IconListPenOutline16,
@@ -48,6 +45,31 @@ const KIND_ICONS = {
   reference: IconLinkOutline14,
   document: IconCodeOutline16,
 } as const
+
+/** The detail's reading modes (render / source / split) — §11.6 item 1's second row. */
+const MODES = ['render', 'source', 'split'] as const
+
+/** The mode switch: the same three buttons in the reader and in create mode. */
+function ModeSeg({ mode, onMode, t }: {
+  readonly mode: 'render' | 'source' | 'split'
+  readonly onMode: (mode: 'render' | 'source' | 'split') => void
+  readonly t: CanvasDetailProps['t']
+}): ReactNode {
+  return (
+    <span className={css.seg} role="group" aria-label={t('card.edit')}>
+      {MODES.map(candidate => (
+        <button
+          key={candidate}
+          type="button"
+          aria-pressed={mode === candidate}
+          onClick={() => { onMode(candidate) }}
+        >
+          {candidate === 'render' ? t('detail.render') : candidate === 'source' ? t('detail.source') : t('detail.split')}
+        </button>
+      ))}
+    </span>
+  )
+}
 
 /** The last path segment, separators from either platform (display only). */
 function basenameOf(path: string): string {
@@ -90,7 +112,7 @@ function HtmlFrame({ html }: { html: string }): ReactNode {
 /** The card-detail reader. */
 export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const {
-    t, sessionId, readBoard, patchCard, addComment, openFile, useSelection,
+    t, sessionId, create, readBoard, patchCard, addComment, openFile, useSelection,
     askAgent, chatStatus, openSideChat,
   } = props
   const selection = useSelection(current => current)
@@ -104,20 +126,17 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const [loadError, setLoadError] = useState<string | null>(null)
   /** The detail's three reading modes (render / source / split). */
   const [mode, setMode] = useState<'render' | 'source' | 'split'>('render')
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ text: string; seq: number } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
   /** The chat seam's probe: null while probing, so entries never flash. */
   const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
-  const toastTimerRef = useRef<number | null>(null)
+  const toastSeqRef = useRef(0)
 
+  // The host's Toast owns its timer and reports back (v2.2: the hand-rolled
+  // banner div and its timeout constant are gone — same job, host's tokens).
   const showToast = useCallback((text: string) => {
-    setToast(text)
-    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
-    toastTimerRef.current = window.setTimeout(() => { setToast(null) }, TOAST_MS)
-  }, [])
-
-  useEffect(() => () => {
-    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    toastSeqRef.current += 1
+    setToast({ text, seq: toastSeqRef.current })
   }, [])
 
   /** Localized copy for one shared error code. */
@@ -173,6 +192,11 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
 
   // A selection change always returns the body to the reading state.
   useEffect(() => { setMode('render') }, [selection.canvasId, selection.cardId])
+
+  // A draft opens where the work is: an empty render pane is not a writing
+  // surface, and the ＋新卡 gesture's whole point is the keyboard.
+  const drafting = create !== undefined
+  useEffect(() => { if (drafting) setMode('source') }, [drafting])
 
   /** Run one mutation: the service answers the fresh board; apply it in place. */
   const mutate = useCallback(async (
@@ -233,6 +257,64 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   }), [t])
 
   const card: BoardCard | null = open?.board.cards.find(candidate => candidate.id === selection.cardId) ?? null
+
+  /* ------------------------------------------------------------ create mode */
+
+  // The detail page is the ONLY card editor (v2.2 ②), so ＋新卡 opens THIS
+  // page with the owner's draft instead of the board's in-place textarea: no
+  // card to read, nothing on disk until the first save, and the tab owns the
+  // one exit gesture (its back bar asks once before dropping a draft — §11.6
+  // item 5). The blur commit is off here: a click elsewhere must never
+  // create a card.
+  if (create !== undefined) {
+    return (
+      <div className={css.root}>
+        <div className={css.header}>
+          <div className={css.meta}>
+            <span className={css.kindTag}>
+              <IconPlusOutline16 size={12} />
+              {t(`kind.${create.kind}`)}
+            </span>
+            <span className={css.ghostFlag}>{t('detail.unsaved')}</span>
+            <span className={css.spacer} />
+            <ModeSeg mode={mode} onMode={setMode} t={t} />
+          </div>
+        </div>
+        <div className={css.body} data-mode={mode}>
+          {mode === 'source' || mode === 'split' ? (
+            <div className={css.sourcePane}>
+              <CardTextarea
+                className={css.editor}
+                defaultValue={create.text}
+                placeholder={t('board.newCardPlaceholder')}
+                submitOn="mod-enter"
+                blurSubmits={false}
+                autoFocus={mode === 'source'}
+                onTextChange={create.onTextChange}
+                onSubmit={text => { void create.onSave(create.kind, text) }}
+                onCancel={create.onLeave}
+              />
+              <span className={css.editHint}>{t('detail.createHint')}</span>
+            </div>
+          ) : null}
+          {mode === 'render' || mode === 'split' ? (
+            <div className={css.renderPane}>
+              {create.text.trim().length === 0 ? (
+                <div className={css.notice}>{t('detail.nothingToRender')}</div>
+              ) : detectCardFormat(create.text) === 'html' ? (
+                <HtmlFrame html={create.text} />
+              ) : (
+                <MarkdownText text={create.text} labels={markdownLabels} />
+              )}
+            </div>
+          ) : null}
+        </div>
+        {fatal !== null && (
+          <div className={css.fatal} onClick={() => { setFatal(null) }}>{fatal}</div>
+        )}
+      </div>
+    )
+  }
 
   if (selection.canvasId === null) {
     return <div className={css.root}><div className={css.notice}>{t('detail.empty')}</div></div>
@@ -299,18 +381,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           )}
           <span className={css.spacer} />
           {!proposed && !archived && !readonly && (
-            <span className={css.seg} role="group" aria-label={t('card.edit')}>
-              {(['render', 'source', 'split'] as const).map(candidate => (
-                <button
-                  key={candidate}
-                  type="button"
-                  aria-pressed={mode === candidate}
-                  onClick={() => { setMode(candidate) }}
-                >
-                  {candidate === 'render' ? t('detail.render') : candidate === 'source' ? t('detail.source') : t('detail.split')}
-                </button>
-              ))}
-            </span>
+            <ModeSeg mode={mode} onMode={setMode} t={t} />
           )}
           {archived && !readonly && (
             <button
@@ -467,7 +538,9 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         )}
       </div>
 
-      {toast !== null && <div className={css.toast}>{toast}</div>}
+      {toast !== null && (
+        <Toast key={toast.seq} text={toast.text} onDone={() => { setToast(null) }} />
+      )}
       {fatal !== null && (
         <div className={css.fatal} onClick={() => { setFatal(null) }}>{fatal}</div>
       )}
