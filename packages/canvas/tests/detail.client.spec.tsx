@@ -22,7 +22,7 @@ import { imageSrcOf } from '../src/image-token.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
   BoardAskAgentOutcome, BoardAttachImageOutcome, BoardChatStatusResult, BoardMutationResult,
-  BoardReadOutcome, CanvasBoard, CanvasImageRef,
+  BoardReadOutcome, CanvasBoard, CanvasImageRef, CanvasStroke,
 } from '../src/types.ts'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
@@ -116,11 +116,16 @@ function makeHarness(cards: CanvasBoard['cards'], options: { chatAvailable?: boo
   }))
   const mocks = {
     readBoard: vi.fn(async (): Promise<Result<BoardReadOutcome>> => ok({ ok: true, board: current.board, version: '1' })),
-    patchCard: vi.fn(async (_sessionId: string, request: { cardId: string; text?: string; status?: 'kept' | 'archived' }): Promise<Result<BoardMutationResult>> => {
+    patchCard: vi.fn(async (_sessionId: string, request: { cardId: string; text?: string; status?: 'kept' | 'archived'; draw?: readonly CanvasStroke[] }): Promise<Result<BoardMutationResult>> => {
       const target = current.board.cards.find(candidate => candidate.id === request.cardId)
       if (target !== undefined) {
         if (request.text !== undefined) target.text = request.text
         if (request.status !== undefined) target.status = request.status
+        // The fake mirrors the host: an empty list takes the field away.
+        if (request.draw !== undefined) {
+          if (request.draw.length === 0) delete target.draw
+          else target.draw = [...request.draw]
+        }
       }
       return ok({ ok: true, board: current.board, version: '2' })
     }),
@@ -432,5 +437,144 @@ describe('CanvasDetailView', () => {
     await waitFor(() => {
       expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_x', status: 'kept' })
     })
+  })
+})
+
+/**
+ * The pad's field: the element whose viewBox is the logical box. Found by that
+ * contract rather than by a class name, because the class is a CSS-module hash
+ * and the box is what the coordinate math is actually about.
+ */
+function padField(container: HTMLElement): HTMLElement | undefined {
+  const svg = Array.from(container.querySelectorAll('svg'))
+    .find(candidate => candidate.getAttribute('viewBox') === '0 0 600 400')
+  const box = svg?.parentElement
+  if (box === undefined) return undefined
+  // jsdom ships neither pointer capture nor a measured layout: the pad needs
+  // both, and the rect below is the 300×200 px seat its tests are written for.
+  box.setPointerCapture = () => {}
+  box.releasePointerCapture = () => {}
+  box.getBoundingClientRect = () => ({
+    left: 0, top: 0, width: 300, height: 200, right: 300, bottom: 200, x: 0, y: 0,
+    toJSON: () => ({}),
+  }) as DOMRect
+  return box
+}
+
+function padBox(container: HTMLElement): HTMLElement {
+  const box = padField(container)
+  if (box === undefined) throw new Error('expected the pad to have a field')
+  return box
+}
+
+/** One drag: press, sweep through the given screen points, release. */
+function drag(box: HTMLElement, through: readonly (readonly [number, number])[]): void {
+  const [first, ...rest] = through
+  fireEvent.pointerDown(box, { pointerId: 1, clientX: first![0], clientY: first![1] })
+  for (const [x, y] of rest) {
+    fireEvent.pointerMove(box, { pointerId: 1, clientX: x, clientY: y })
+  }
+  fireEvent.pointerUp(box, { pointerId: 1 })
+}
+
+describe('the card pad (§11.4)', () => {
+  it('sends a stroke to patchCard the moment it ends, in box units', async () => {
+    const { store, mocks, props } = makeHarness([card('c_1')])
+    store.select(CANVAS_ID, 'c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    const box = padBox(container)
+    // 60×40 px of a 300×200 box is 120×80 of the logical 600×400.
+    drag(box, [[60, 40], [120, 80], [180, 60]])
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', draw: expect.any(Array) })
+    })
+    const draw = mocks.patchCard.mock.calls.at(-1)![1].draw as CanvasStroke[]
+    expect(draw).toHaveLength(1)
+    expect(draw[0]!.pts[0]).toEqual({ x: 120, y: 80, w: 5 })
+    expect(draw[0]!.pts.length).toBe(3)
+  })
+
+  it('keeps finished ink on screen with the pen put down, and takes one stroke back per 撤一笔', async () => {
+    const two: CanvasStroke[] = [
+      { pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' },
+      { pts: [{ x: 200, y: 100, w: 5 }, { x: 400, y: 200, w: 4 }], color: 'ink' },
+    ]
+    const { store, mocks, props } = makeHarness([card('c_1', { draw: two })])
+    store.select(CANVAS_ID, 'c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    // The pad never waits for the pen: content that hides when you stop making
+    // it reads as lost work.
+    expect(padField(container)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '撤一笔' }))
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenLastCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', draw: [two[0]] })
+    })
+    expect(padField(container)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '撤一笔' }))
+    await waitFor(() => {
+      expect(padField(container)).toBeUndefined()
+    })
+  })
+
+  it('takes the whole stroke the eraser lights, and only that one', async () => {
+    const two: CanvasStroke[] = [
+      { pts: [{ x: 60, y: 40, w: 5 }, { x: 120, y: 80, w: 5 }], color: 'ink' },
+      { pts: [{ x: 400, y: 300, w: 5 }, { x: 460, y: 320, w: 5 }], color: 'ink' },
+    ]
+    const { store, mocks, props } = makeHarness([card('c_1', { draw: two })])
+    store.select(CANVAS_ID, 'c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '橡皮' }))
+    const box = padBox(container)
+    fireEvent.pointerDown(box, { pointerId: 1, clientX: 30, clientY: 20 })
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', draw: [two[1]] })
+    })
+  })
+
+  it('misses loudly: an eraser click on empty paper says so and changes nothing', async () => {
+    const drawn: CanvasStroke[] = [{ pts: [{ x: 60, y: 40, w: 5 }, { x: 120, y: 80, w: 5 }], color: 'ink' }]
+    const { store, mocks, props } = makeHarness([card('c_1', { draw: drawn })])
+    store.select(CANVAS_ID, 'c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    const before = mocks.patchCard.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: '橡皮' }))
+    fireEvent.pointerDown(padBox(container), { pointerId: 1, clientX: 250, clientY: 180 })
+    await screen.findByText(/这里没有笔画/)
+    expect(mocks.patchCard.mock.calls.length).toBe(before)
+  })
+
+  it('puts the pen away on Esc, from the keyboard rather than the mouse', async () => {
+    const { store, props } = makeHarness([card('c_1')])
+    store.select(CANVAS_ID, 'c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    await screen.findByText('铅笔开着，直接在框里画')
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await screen.findByText('画笔收起了，接着打字')
+  })
+
+  it('never lets a tap become a stored stroke', async () => {
+    const { store, mocks, props } = makeHarness([card('c_1')])
+    store.select(CANVAS_ID, 'c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    drag(padBox(container), [[60, 40]])
+    expect(mocks.patchCard).not.toHaveBeenCalled()
+  })
+
+  it('hides the pen on a card nobody may edit, and on a read-only seat', async () => {
+    const { store, props } = makeHarness([card('c_g', { status: 'proposed', createdBy: 'agent' })])
+    store.select(CANVAS_ID, 'c_g')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('AGENT 提议 · 待你确认')
+    expect(screen.queryByRole('button', { name: '铅笔' })).toBeNull()
   })
 })

@@ -17,6 +17,9 @@
  * text it would produce (§11.6 item 3). A pasted image's bytes go to the host's
  * attachment store and only its pointer enters the text (§10.3); the tab's
  * `pathImages` and `images` resolve that pointer back for both renderers.
+ * The pen field is the third kind of content a card holds (§11.4, demand ③):
+ * it shares this page's exit gestures and its strokes commit through the same
+ * `patchCard` fence as the text does.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -46,6 +49,8 @@ import { base64Of, imageFilesOf, type CanvasImageFile } from '../images.ts'
 import { choosePaste, type PasteArm } from '../paste-table.ts'
 import type { CanvasKey } from '../locales.ts'
 import { CardTextarea } from '../space/CardTextarea.tsx'
+import type { PadTool } from '../draw.ts'
+import { CardPad } from './CardPad.tsx'
 import css from './CanvasDetailView.module.css'
 
 /** What each paste arm reports about itself (the toast's whole copy). */
@@ -153,6 +158,8 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const [loadError, setLoadError] = useState<string | null>(null)
   /** The detail's three reading modes (render / source / split). */
   const [mode, setMode] = useState<'render' | 'source' | 'split'>('render')
+  /** The pen field's tool (§11.4): the pad takes the editor's place while this says so. */
+  const [tool, setTool] = useState<PadTool>('text')
   const [toast, setToast] = useState<{ text: string; seq: number } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
   /** The chat seam's probe: null while probing, so entries never flash. */
@@ -165,6 +172,14 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     toastSeqRef.current += 1
     setToast({ text, seq: toastSeqRef.current })
   }, [])
+
+  /** Put the pen up or down, and say which happened (the pad's only channel). */
+  const chooseTool = useCallback((next: PadTool) => {
+    setTool(next)
+    if (next === 'pen') showToast(t('draw.penOn'))
+    if (next === 'erase') showToast(t('draw.eraseOn'))
+    if (next === 'text') showToast(t('draw.off'))
+  }, [showToast, t])
 
   /** Localized copy for one shared error code. */
   const errorText = useCallback((error: CanvasError): string => {
@@ -217,8 +232,12 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     return () => { cancelled = true }
   }, [selection.canvasId, selection.rev, readBoard, run, errorText])
 
-  // A selection change always returns the body to the reading state.
-  useEffect(() => { setMode('render') }, [selection.canvasId, selection.cardId])
+  // A selection change always returns the body to the reading state — and puts
+  // the pen down: leaving the card is one of its three exits (§11.2 row 8).
+  useEffect(() => {
+    setMode('render')
+    setTool('text')
+  }, [selection.canvasId, selection.cardId])
 
   // A draft opens where the work is: an empty render pane is not a writing
   // surface, and the ＋新卡 gesture's whole point is the keyboard.
@@ -228,7 +247,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   /** Run one mutation: the service answers the fresh board; apply it in place. */
   const mutate = useCallback(async (
     call: (sessionId: SessionId) => Promise<RemoteResult<BoardMutationResult>>,
-    toastKey: Parameters<typeof t>[0],
+    toastKey?: Parameters<typeof t>[0],
   ): Promise<void> => {
     if (sessionId === undefined) return
     const value = await run(() => call(sessionId))
@@ -238,7 +257,9 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       return
     }
     setOpen({ board: value.board, version: value.version })
-    showToast(t(toastKey))
+    // Some writes announce themselves by being visible — a stroke lands on the
+    // pad the moment it saves, so a toast per stroke would only be noise.
+    if (toastKey !== undefined) showToast(t(toastKey))
   }, [sessionId, run, showToast, errorText, t])
 
   // Probe the chat seam once per mount: 问 Agent / 追问 hide when absent
@@ -365,6 +386,9 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   // one exit gesture (its back bar asks once before dropping a draft — §11.6
   // item 5). The blur commit is off here: a click elsewhere must never
   // create a card.
+  /** Whether the pad has the editor's place right now (a read-only seat never does). */
+  const drawing = !readonly && tool !== 'text'
+
   if (create !== undefined) {
     return (
       <div className={css.root}>
@@ -379,36 +403,48 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             <ModeSeg mode={mode} onMode={setMode} t={t} />
           </div>
         </div>
-        <div className={css.body} data-mode={mode}>
-          {mode === 'source' || mode === 'split' ? (
-            <div className={css.sourcePane}>
-              <CardTextarea
-                className={css.editor}
-                defaultValue={create.text}
-                placeholder={t('board.newCardPlaceholder')}
-                submitOn="mod-enter"
-                blurSubmits={false}
-                autoFocus={mode === 'source'}
-                onPaste={onPaste}
-                onTextChange={create.onTextChange}
-                onSubmit={text => { void create.onSave(create.kind, text) }}
-                onCancel={create.onLeave}
-              />
-              <span className={css.editHint}>{t('detail.createHint')}</span>
-            </div>
-          ) : null}
-          {mode === 'render' || mode === 'split' ? (
-            <div className={css.renderPane}>
-              {create.text.trim().length === 0 ? (
-                <div className={css.notice}>{t('detail.nothingToRender')}</div>
-              ) : detectCardFormat(create.text) === 'html' ? (
-                <HtmlFrame html={images.cardHtml(create.text)} />
-              ) : (
-                <MarkdownText text={create.text} labels={markdownLabels} pathImages={pathImages} />
-              )}
-            </div>
-          ) : null}
-        </div>
+        {!drawing && (
+          <div className={css.body} data-mode={mode}>
+            {mode === 'source' || mode === 'split' ? (
+              <div className={css.sourcePane}>
+                <CardTextarea
+                  className={css.editor}
+                  defaultValue={create.text}
+                  placeholder={t('board.newCardPlaceholder')}
+                  submitOn="mod-enter"
+                  blurSubmits={false}
+                  autoFocus={mode === 'source'}
+                  onPaste={onPaste}
+                  onTextChange={create.onTextChange}
+                  onSubmit={text => { void create.onSave(create.kind, text, create.draw) }}
+                  onCancel={create.onLeave}
+                />
+                <span className={css.editHint}>{t('detail.createHint')}</span>
+              </div>
+            ) : null}
+            {mode === 'render' || mode === 'split' ? (
+              <div className={css.renderPane}>
+                {create.text.trim().length === 0 && create.draw.length === 0 ? (
+                  <div className={css.notice}>{t('detail.nothingToRender')}</div>
+                ) : detectCardFormat(create.text) === 'html' ? (
+                  <HtmlFrame html={images.cardHtml(create.text)} />
+                ) : (
+                  <MarkdownText text={create.text} labels={markdownLabels} pathImages={pathImages} />
+                )}
+              </div>
+            ) : null}
+          </div>
+        )}
+        <CardPad
+          t={t}
+          strokes={create.draw}
+          tool={tool}
+          onTool={chooseTool}
+          onStrokes={create.onDrawChange}
+          notify={showToast}
+          editing={!readonly}
+          onSave={() => { void create.onSave(create.kind, create.text, create.draw) }}
+        />
         {fatal !== null && (
           <div className={css.fatal} onClick={() => { setFatal(null) }}>{fatal}</div>
         )}
@@ -522,38 +558,55 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         </div>
       )}
 
-      <div className={css.body} data-mode={mode}>
-        {mode === 'source' || mode === 'split' ? (
-          <div className={css.sourcePane}>
-            <CardTextarea
-              className={css.editor}
-              defaultValue={card.text}
-              submitOn="mod-enter"
-              autoFocus={mode === 'source'}
-              onPaste={onPaste}
-              onSubmit={text => {
-                const trimmed = text.trim()
-                setMode('render')
-                if (trimmed.length === 0 || trimmed === card.text) return
-                void mutate(sid => patchCard(sid, {
-                  canvasId: open.board.id, cardId: card.id, text: trimmed,
-                }), 'toast.cardSaved')
-              }}
-              onCancel={() => { setMode('render') }}
-            />
-            <span className={css.editHint}>{t('card.editHint')}</span>
-          </div>
-        ) : null}
-        {mode === 'render' || mode === 'split' ? (
-          <div className={css.renderPane}>
-            {detectCardFormat(card.text) === 'html' ? (
-              <HtmlFrame key={card.id} html={images.cardHtml(card.text)} />
-            ) : (
-              <MarkdownText text={card.text} labels={markdownLabels} pathImages={pathImages} />
-            )}
-          </div>
-        ) : null}
-      </div>
+      {!drawing && (
+        <div className={css.body} data-mode={mode}>
+          {mode === 'source' || mode === 'split' ? (
+            <div className={css.sourcePane}>
+              <CardTextarea
+                className={css.editor}
+                defaultValue={card.text}
+                submitOn="mod-enter"
+                autoFocus={mode === 'source'}
+                onPaste={onPaste}
+                onSubmit={text => {
+                  const trimmed = text.trim()
+                  setMode('render')
+                  if (trimmed.length === 0 || trimmed === card.text) return
+                  void mutate(sid => patchCard(sid, {
+                    canvasId: open.board.id, cardId: card.id, text: trimmed,
+                  }), 'toast.cardSaved')
+                }}
+                onCancel={() => { setMode('render') }}
+              />
+              <span className={css.editHint}>{t('card.editHint')}</span>
+            </div>
+          ) : null}
+          {mode === 'render' || mode === 'split' ? (
+            <div className={css.renderPane}>
+              {detectCardFormat(card.text) === 'html' ? (
+                <HtmlFrame key={card.id} html={images.cardHtml(card.text)} />
+              ) : (
+                <MarkdownText text={card.text} labels={markdownLabels} pathImages={pathImages} />
+              )}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      <CardPad
+        key={card.id}
+        t={t}
+        strokes={card.draw ?? []}
+        tool={tool}
+        onTool={chooseTool}
+        onStrokes={next => {
+          void mutate(sid => patchCard(sid, {
+            canvasId: open.board.id, cardId: card.id, draw: next,
+          }))
+        }}
+        notify={showToast}
+        editing={!readonly && !proposed && !archived}
+      />
 
       {card.source !== undefined && (
         <div className={css.attachment}>

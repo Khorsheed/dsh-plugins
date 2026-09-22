@@ -27,7 +27,8 @@ import type { CanvasTabProps } from '../contract.ts'
 import {
   BOARD_CARD_KINDS, summarizeBoard,
   type BoardAskAgentRequest, type BoardCardKind, type BoardCardStatus,
-  type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasSummary,
+  type BoardMutationResult, type CanvasBoard, type CanvasError,
+  type CanvasStroke, type CanvasSummary,
 } from '../../types.ts'
 import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { BoardView, type BoardActions } from '../space/BoardView.tsx'
@@ -102,7 +103,11 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
    * archives, never deletes, so a card written early would be a card to
    * clean up).
    */
-  const [newCard, setNewCard] = useState<{ kind: BoardCardKind; text: string } | null>(null)
+  const [newCard, setNewCard] = useState<{
+    readonly kind: BoardCardKind
+    readonly text: string
+    readonly draw: readonly CanvasStroke[]
+  } | null>(null)
   /** The discard confirm: set by the exit gesture while the draft has content. */
   const [discardAsk, setDiscardAsk] = useState(false)
   const [newCardMenu, setNewCardMenu] = useState(false)
@@ -335,14 +340,19 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   /**
    * The draft's first save (v2.2 ②): the ONLY write this flow makes — until
-   * here the card exists in memory alone.
+   * here the card exists in memory alone. Words or ink qualify: a drawing is
+   * the card's content, not a card missing its caption (§11.4).
    */
-  const saveNewCard = useCallback(async (kind: BoardCardKind, text: string): Promise<boolean> => {
+  const saveNewCard = useCallback(async (
+    kind: BoardCardKind, text: string, draw: readonly CanvasStroke[],
+  ): Promise<boolean> => {
     if (sessionId === undefined || openId === null) return false
     const trimmed = text.trim()
-    if (trimmed.length === 0) return false
+    if (trimmed.length === 0 && draw.length === 0) return false
     const saved = await mutate(
-      () => putCard(sessionId, { canvasId: openId, kind, text: trimmed }),
+      () => putCard(sessionId, {
+        canvasId: openId, kind, text: trimmed, ...(draw.length === 0 ? {} : { draw }),
+      }),
       'toast.cardAdded',
     )
     if (saved) setNewCard(null)
@@ -351,13 +361,13 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   /**
    * Leave the draft (§11.6 item 5): the back bar and the tab's × are ONE
-   * exit, and it asks exactly once — only when the draft holds something.
-   * An empty draft leaves silently; a saved card never comes through here
-   * (whether a saved card with unclosed edits should also ask is 11.8 ⑥,
-   * undecided, and that one is a `patchCard` question anyway).
+   * exit, and it asks exactly once — only when the draft holds something,
+   * written or drawn. An empty draft leaves silently; a saved card never comes
+   * through here (whether a saved card with unclosed edits should also ask is
+   * 11.8 ⑥, undecided, and that one is a `patchCard` question anyway).
    */
   const leaveCreate = useCallback(() => {
-    if (newCard !== null && newCard.text.trim().length > 0) {
+    if (newCard !== null && (newCard.text.trim().length > 0 || newCard.draw.length > 0)) {
       setDiscardAsk(true)
       return
     }
@@ -385,6 +395,15 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   /* -------------------------------------------------------------- rendering */
 
   const drilled = detailCardId !== null || newCard !== null
+
+  // The discard question names what is actually in danger: words, ink, or both.
+  const draftWords = newCard?.text.trim().length ?? 0
+  const draftStrokes = String(newCard?.draw.length ?? 0)
+  const discardBody = draftWords === 0
+    ? t('confirm.discardBodyInk', { strokes: draftStrokes })
+    : newCard !== null && newCard.draw.length > 0
+      ? t('confirm.discardBodyBoth', { count: String(draftWords), strokes: draftStrokes })
+      : t('confirm.discardBody', { count: String(draftWords) })
 
   return (
     <div className={css.root}>
@@ -445,7 +464,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                           className={css.backButton}
                           onClick={() => {
                             setNewCardMenu(false)
-                            setNewCard({ kind, text: '' })
+                            setNewCard({ kind, text: '', draw: [] })
                             setPage('board')
                           }}
                         >
@@ -481,7 +500,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             create={newCard === null ? undefined : {
               kind: newCard.kind,
               text: newCard.text,
+              draw: newCard.draw,
               onTextChange: text => { setNewCard(current => current === null ? current : { ...current, text }) },
+              onDrawChange: draw => { setNewCard(current => current === null ? current : { ...current, draw }) },
               onSave: saveNewCard,
               onLeave: leaveCreate,
             }}
@@ -545,9 +566,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         onClose={() => { setDiscardAsk(false) }}
         title={t('confirm.discardTitle')}
         closeLabel={t('confirm.close')}
-        description={t('confirm.discardBody', {
-          count: String(newCard?.text.trim().length ?? 0),
-        })}
+        description={discardBody}
         footer={
           <>
             <Button size="sm" onClick={() => { setDiscardAsk(false) }}>

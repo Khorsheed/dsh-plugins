@@ -35,7 +35,7 @@ import { canvasErrorOf } from './service.ts'
 import {
   CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, DRAFT_FILE_NAME, emptyStats,
   isBoardCardKind, isBoardCardStatus, isCanvasLensId, isQuestionState, makeBoardId,
-  MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId,
+  MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId, normalizeDraw,
   sanitizeCanvasTitle, summarizeBoard,
   type BoardAddCommentRequest, type BoardArchiveRequest, type BoardAskAgentOutcome,
   type BoardAskAgentRequest, type BoardAttachImageOutcome, type BoardAttachImageRequest,
@@ -346,15 +346,18 @@ export class CanvasBoardService {
 
   /**
    * Add one user card: createdBy user, straight to kept (proposed is the
-   * agent's entrance, M3). A question card starts its lifecycle open.
-   * @param request - canvas id, kind, text, and optional source.
+   * agent's entrance, M3). A question card starts its lifecycle open. The text
+   * may be empty only when the card arrives with a drawing — a picture is the
+   * content then, not a card missing its caption.
+   * @param request - canvas id, kind, text, optional drawing and source.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh board and token, or the failure code.
    */
   async putCard(request: BoardPutCardRequest, session: Session): Promise<BoardMutationResult> {
     if (!isBoardCardKind(request.kind)) return { ok: false, error: 'invalid-name' }
     const text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
-    if (text.length === 0) return { ok: false, error: 'invalid-name' }
+    const draw = normalizeDraw(request.draw)
+    if (text.length === 0 && draw.length === 0) return { ok: false, error: 'invalid-name' }
     return this.mutate(request.canvasId, session, (board, now) => {
       const card: BoardCard = {
         id: makeBoardId('c', Date.now(), randomSuffix()),
@@ -366,6 +369,7 @@ export class CanvasBoardService {
         createdAt: now,
         updatedAt: now,
         ...(request.kind === 'question' ? { question: { state: 'open' as const } } : {}),
+        ...(draw.length === 0 ? {} : { draw }),
         ...(request.source === undefined ? {} : { source: request.source }),
       }
       board.cards.push(card)
@@ -374,9 +378,12 @@ export class CanvasBoardService {
   }
 
   /**
-   * Edit one card: text, a status transition, or a question-state transition.
-   * The proposed → kept/archived transitions feed the acceptance counters
-   * (the ghost's ✓/✗); archiving never deletes, exactly the pad's semantics.
+   * Edit one card: text, its drawing, a status transition, or a question-state
+   * transition. The proposed → kept/archived transitions feed the acceptance
+   * counters (the ghost's ✓/✗); archiving never deletes, exactly the pad's
+   * semantics. A drawing arrives whole (the pad owns the stroke list, so the
+   * fence covers a lost write the same way it covers a lost keystroke); `[]`
+   * clears it, `undefined` leaves it alone.
    * @param request - canvas id, card id, and the fields to change.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh board and token, or the failure code.
@@ -390,6 +397,11 @@ export class CanvasBoardService {
       if (card === undefined) return 'missing'
       if (request.text !== undefined) {
         card.text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
+      }
+      if (request.draw !== undefined) {
+        const draw = normalizeDraw(request.draw)
+        if (draw.length === 0) delete card.draw
+        else card.draw = draw
       }
       if (request.status !== undefined && request.status !== card.status) {
         if (card.status === 'proposed') {

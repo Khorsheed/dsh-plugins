@@ -331,6 +331,76 @@ describe('CanvasTab — list, switcher, board', () => {
     expect(mocks.putCard).not.toHaveBeenCalled()
   })
 
+  /** The draft's pad field, with jsdom's missing layout and pointer capture supplied. */
+  function draftField(container: HTMLElement): HTMLElement {
+    const svg = Array.from(container.querySelectorAll('svg'))
+      .find(candidate => candidate.getAttribute('viewBox') === '0 0 600 400')
+    const box = svg?.parentElement
+    if (box === undefined) throw new Error('expected the draft to offer a pad')
+    box.setPointerCapture = () => {}
+    box.releasePointerCapture = () => {}
+    box.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: 300, height: 200, right: 300, bottom: 200, x: 0, y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect
+    return box
+  }
+
+  it('saves a card that is only a drawing, with the ink and an empty body', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    const { container } = render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '碎片' }))
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    const box = draftField(container)
+    fireEvent.pointerDown(box, { pointerId: 1, clientX: 60, clientY: 40 })
+    fireEvent.pointerMove(box, { pointerId: 1, clientX: 120, clientY: 80 })
+    fireEvent.pointerUp(box, { pointerId: 1 })
+    // ⌘⏎ belongs to the pen too: the textarea that carries it is put away
+    // while the field is up, and a shortcut that quits with a tool is a trap.
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true })
+    await waitFor(() => {
+      expect(mocks.putCard).toHaveBeenCalledWith('s1', expect.objectContaining({
+        canvasId: CANVAS_ID, kind: 'fragment', text: '', draw: expect.any(Array),
+      }))
+    })
+  })
+
+  it('names the ink in the discard question, not just the words', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    const { container } = render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '碎片' }))
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    const box = draftField(container)
+    fireEvent.pointerDown(box, { pointerId: 1, clientX: 60, clientY: 40 })
+    fireEvent.pointerMove(box, { pointerId: 1, clientX: 120, clientY: 80 })
+    fireEvent.pointerUp(box, { pointerId: 1 })
+    fireEvent.click(screen.getByRole('button', { name: /返回卡板/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('1 笔')
+    expect(dialog.textContent).not.toContain('个字')
+  })
+
+  /** Whether this seat renders a drawing: the logical box is the give-away. */
+  function hasFigure(container: HTMLElement): boolean {
+    return Array.from(container.querySelectorAll('svg'))
+      .some(candidate => candidate.getAttribute('viewBox') === '0 0 600 400')
+  }
+
+  it('shows a drawn card’s ink on the board, where an empty body would read as blank', async () => {
+    const drawn = card('c_ink', {
+      text: '',
+      draw: [{ pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' }],
+    })
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1'), drawn])] })
+    const { container } = render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    expect(hasFigure(container)).toBe(true)
+  })
+
   it('wires ghost proposals to patchCard status transitions (accept AND reject)', async () => {
     const ghostA = card('c_a', { kind: 'reference', status: 'proposed', createdBy: 'agent', text: '效能假说综述' })
     const ghostB = card('c_b', { kind: 'fragment', status: 'proposed', createdBy: 'agent', text: '反例笔记' })

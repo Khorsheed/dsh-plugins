@@ -7,8 +7,10 @@
  * truncates.
  */
 import { describe, expect, it } from 'vitest'
-import { cardToRef, MAX_PROMPT_CARD_CHARS, promptFormOf, renderCanvasPrompt } from '../src/prompt.ts'
-import { MAX_CARD_TEXT_LENGTH, type BoardCard, type CanvasBoard } from '../src/types.ts'
+import { cardToRef, drawPromptOf, MAX_PROMPT_CARD_CHARS, promptFormOf, renderCanvasPrompt } from '../src/prompt.ts'
+import {
+  MAX_CARD_TEXT_LENGTH, type BoardCard, type CanvasBoard, type CanvasStroke,
+} from '../src/types.ts'
 
 const NOW = '2026-09-16T08:00:00.000Z'
 
@@ -77,8 +79,51 @@ describe('promptFormOf — the model-facing form', () => {
   })
 })
 
-describe('cardToRef', () => {
-  it('labels from the <title> for HTML cards and leaks no body', () => {
+describe('the drawing in the model-facing form (§11.4)', () => {
+  const stroke = (x: number, y: number): CanvasStroke => ({
+    pts: [{ x, y, w: 5 }, { x: x + 40.46, y: y + 10, w: 3 }],
+    color: 'ink',
+  })
+
+  it('hands the points over, in the logical box, one line per stroke', () => {
+    const block = drawPromptOf([stroke(0, 0), stroke(200, 100)])
+    expect(block).toContain('<board width="600" height="400" strokes="2">')
+    expect(block).toContain('0.0,0.0,5.0 40.5,10.0,3.0')
+    expect(block).toContain('200.0,100.0,5.0 240.5,110.0,3.0')
+    // The block opens with a newline (it is appended after the card's words):
+    // header, one line per stroke, close.
+    expect(block.trim().split('\n')).toHaveLength(4)
+  })
+
+  it('says nothing when there is nothing inked', () => {
+    expect(drawPromptOf([])).toBe('')
+  })
+
+  it('rides along with a plain card, after its text', () => {
+    const out = promptFormOf(card('沉默并不总是因为恐惧', { draw: [stroke(10, 10)] }))
+    expect(out.startsWith('沉默并不总是因为恐惧\n<board')).toBe(true)
+  })
+
+  it('is content on its own: a card with no words still reports its ink', () => {
+    const out = promptFormOf(card('', { draw: [stroke(10, 10)] }))
+    expect(out).toContain('<board')
+    expect(out).not.toContain('undefined')
+  })
+
+  it('stays with an HTML pointer, because the ink is not the part being pointed out', () => {
+    const out = promptFormOf(card(HTML_DOC, { draw: [stroke(10, 10)] }))
+    expect(out).toContain('[html]')
+    expect(out).not.toContain('<table>')
+    expect(out).toContain('<board')
+  })
+
+  it('summarizes a drawing-only card by its strokes, not by a blank line', () => {
+    const segment = renderCanvasPrompt(boardOf(card('', { draw: [stroke(1, 1), stroke(2, 2)] })))
+    expect(segment).toContain('2-stroke drawing')
+  })
+})
+
+describe('cardToRef', () => {  it('labels from the <title> for HTML cards and leaks no body', () => {
     const ref = cardToRef(card(HTML_DOC))
     expect(ref.label).toBe('三次排期反馈记录')
     expect(ref.text).toBe(promptFormOf(card(HTML_DOC)).replace(/^/, '[reference] '))

@@ -536,6 +536,17 @@
   align-self: flex-start;
 }
 
+/* A card whose content is a drawing shows the drawing (the figure is the
+   detail page's own, scaled down): an empty body would read as a blank card. */
+.cardDraw {
+  height: 88px;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  overflow: hidden;
+}
+
 .cardText {
   font-size: 12.5px;
   line-height: 1.65;

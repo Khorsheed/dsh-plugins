@@ -32,6 +32,7 @@ import type {
   BoardListResult, BoardMutationResult,
   BoardPatchCardRequest, BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest,
   BoardReadOutcome, BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
+  CanvasStroke,
 } from '../types.ts'
 import type {} from './locales.ts'
 import type { CanvasImageRevSource, CanvasImageSrcs } from './images.ts'
@@ -86,7 +87,7 @@ export interface CanvasTabInjected extends CanvasChatInjected, CanvasImageInject
   readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
   /** Add one user card (createdBy user, straight to kept). */
   putCard: (sessionId: SessionId, request: BoardPutCardRequest) => Promise<RemoteResult<BoardMutationResult>>
-  /** Edit one card: text, a status transition, or a question-state transition. */
+  /** Edit one card: text, its drawing, a status transition, or a question state. */
   patchCard: (sessionId: SessionId, request: BoardPatchCardRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Comment on one card. */
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
@@ -151,7 +152,7 @@ export type CanvasTabProps =
 export interface CanvasDetailInjected extends CanvasChatInjected, CanvasImageInjected {
   /** Read one board with the freshness token a later mutation must present. */
   readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
-  /** Edit one card: text, a status transition, or a question-state transition. */
+  /** Edit one card: text, its drawing, a status transition, or a question state. */
   patchCard: (sessionId: SessionId, request: BoardPatchCardRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Comment on one card. */
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
@@ -167,18 +168,22 @@ export interface CanvasDetailInjected extends CanvasChatInjected, CanvasImageInj
  * The new-card draft the detail page carries (v2.2 ②, §11.6): the detail is
  * the ONLY card editor, so ＋新卡 opens this same page with a `create` face
  * instead of drilling into a card. The content is the OWNER's — the tab holds
- * the text so its single exit gesture can ask about it — and nothing reaches
- * the disk until `onSave`.
+ * the text and the strokes so its single exit gesture can ask about them — and
+ * nothing reaches the disk until `onSave`.
  */
 export interface CanvasDetailCreate {
   /** The kind picked in the ＋新卡 menu. */
   readonly kind: BoardCardKind
   /** The draft's current text (the owner's, reported by `onTextChange`). */
   readonly text: string
+  /** The draft's current drawing (the owner's too, reported by `onDrawChange`). */
+  readonly draw: readonly CanvasStroke[]
   /** Reports every keystroke, so the owner's dirty flag can gate the discard confirm. */
   onTextChange: (text: string) => void
+  /** Reports a committed stroke list; a draft's ink costs nothing until the save. */
+  onDrawChange: (draw: readonly CanvasStroke[]) => void
   /** The first save; resolves true once the card is on the board. */
-  onSave: (kind: BoardCardKind, text: string) => Promise<boolean>
+  onSave: (kind: BoardCardKind, text: string, draw: readonly CanvasStroke[]) => Promise<boolean>
   /**
    * The draft's ONE exit (Esc, the same gesture the back bar fires): the
    * OWNER decides whether to ask first — it holds the draft's content.

@@ -32,6 +32,7 @@ import {
 } from '../../types.ts'
 import type {} from '../locales.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
 import css from './board.module.css'
 
@@ -144,17 +145,26 @@ function CardSummary({ t, card }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
 }): ReactNode {
+  // A drawing is content, so the board shows it (demand ④): a card whose body
+  // is ink would otherwise read as a card with nothing in it.
+  const ink = card.draw ?? []
+  const thumb = ink.length === 0 ? null : (
+    <div className={css.cardDraw}><DrawFigure strokes={ink} /></div>
+  )
   // Format wins over kind: an HTML card renders a compact placeholder on the
   // board (the full sandbox render is the detail page's), never the raw markup.
   if (detectCardFormat(card.text) === 'html') {
     return (
-      <div className={css.cardText}>
-        <div className={css.htmlPlaceholder}>
-          <IconCodeOutline16 size={12} />
-          <span>{htmlTitleOf(card.text) ?? t('card.htmlDocument')}</span>
-          <span className={css.cardWords}>{t('meta.words', { count: String(card.text.length) })}</span>
+      <>
+        {thumb}
+        <div className={css.cardText}>
+          <div className={css.htmlPlaceholder}>
+            <IconCodeOutline16 size={12} />
+            <span>{htmlTitleOf(card.text) ?? t('card.htmlDocument')}</span>
+            <span className={css.cardWords}>{t('meta.words', { count: String(card.text.length) })}</span>
+          </div>
         </div>
-      </div>
+      </>
     )
   }
   const long = isLongCardText(card.text)
@@ -163,6 +173,7 @@ function CardSummary({ t, card }: {
   const heading = card.kind === 'document' ? documentHeadingOf(card.text) : undefined
   return (
     <>
+      {thumb}
       {heading !== undefined && <div className={css.docTitle}>{heading.title}</div>}
       <div className={css.cardTextWrap} data-clamped={long || undefined}>
         <div className={css.cardText}>{heading?.body ?? card.text}</div>
