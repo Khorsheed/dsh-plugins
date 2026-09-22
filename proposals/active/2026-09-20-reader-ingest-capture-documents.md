@@ -121,6 +121,7 @@
 - 已知缺口（验收前须知）：阅读器白名单今天仍 DROP `svg` 且不留 `style` 属性——figure 进正文需要阅读器侧的白名单放行（capture 输出已双写 style + 呈现属性，两种放行都能吃）；这是阅读器后续提交，不在本包边界内。
 - **2026-09-22 部件快照**（`69dcb934` + `ec4e51e4`）：验收显示 JS 驱动部件图（实测 102 图里的 23 张：canvas 或子树监听器）序列化后必然残破——canvas 像素不进 outerHTML，JS 算好的绝对坐标到窄栏叠团。管线在扫描与序列化之间插入快照相：监听器探针（evaluateOnNewDocument）+ canvas 判部件 → 按内容盒（排除图注）截 2x WebP → 原位换 img，图注留文本走翻译/引用，部件文本进 alt。23/23 全部成图。同轮修掉提示复活：scriptFigures=0 此前随正文记录被丢弃，重挂载回退条目加载期计数 84——「数过，没有」与「没数过」现在分存。Agent Note：[capture-widget-snapshots](../../.agents/notes/implemented/feature/2026-09-22-capture-widget-snapshots.md)。
 - **2026-09-22 嵌套 CSS 修复**（同一验收轮）：Figure 1/8 这类图文复合图散成竖排文字+漂浮图标，根因是页面的图网格布局写在 **CSS 嵌套规则**里（`.intro-functional { & .if-row { display:flex } }`，部分还在容器规则内），而收集器把 type-1 样式规则当叶子、从不递归嵌套 `cssRules`。修复：嵌套递归 + 选择器向父级拍平（`&` 代入 / `:is(父)` 后代 / `CSSNestedDeclarations` 回父选择器）。实测该图 78 个 div 从 20 个带样式变为 78/78，3199 复验 Figure 1 五宫格与 Figure 8 三联面板结构完整（窄栏 flex-wrap 竖排为预期响应式）。集成夹具带 `--no-proxy-server`（系统代理会自己回答夹具域名）。
+- **2026-09-22 一个手势跑完整管线**（同轮）：用户验收指出"渲染要点两次"。现在指向单条的显式手势（新增链接/卡片抓取/打开/重新抓取）落到壳自动接续渲染，提示条变进度文案；后台路径（feed 刷新/回填）永不升级。正文记录新增 `rendered` 标记：「重新抓取」对渲染过的条目改走渲染（此前会把渲染产物覆盖回壳）。Agent Note：[reader-one-gesture-render](../../.agents/notes/implemented/feature/2026-09-22-reader-one-gesture-render.md)。
 
 
 ## 验收标准（done 判定，绑定可插拔交付）

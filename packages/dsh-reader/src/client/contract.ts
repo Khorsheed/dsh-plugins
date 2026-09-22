@@ -119,6 +119,8 @@ export interface ReaderPaneInjected {
     html: string
     truncated?: boolean
     scriptFigures?: number
+    /** This body came from the capture rendered fetch; 「重新抓取」 re-renders rather than plain-fetches it. */
+    rendered?: boolean
     /** `translationHash(html)` — the entry's translation map dies with a body it no longer matches. */
     bodyHash?: string
     /** The article's own title, as extracted — a saved link's card upgrade. */
