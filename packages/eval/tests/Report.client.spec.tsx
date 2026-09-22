@@ -235,6 +235,38 @@ function makeHarness(report: EvalRunReportView = REPORT, units: EvalRunUnitsView
         reportRows: 14, reportError: null, noteRecorded: true,
       },
     })),
+    // The 运行记录 stage the report's numbers jump INTO (I5·T69). Two reps of
+    // (P0 × cond-a) and one of (P0 × cond-b), so the two cases the jump has
+    // to tell apart — «one record» and «those records» — are both reachable.
+    // The grid at the top of that stage is not what the jump lands on, and a
+    // stub of it would be a second matrix fixture to keep in step with the
+    // real one. It reports a failure, which the page renders as its own error
+    // row — the record list below it is unaffected, which is the point.
+    fetchMatrix: vi.fn(async () => ({
+      ok: false as const, error: { code: 'unused', message: 'the grid is not under test here' },
+    })),
+    fetchCells: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        runId: 'run-1', state: 'active', filter: {}, total: 3, matched: 3,
+        buckets: { ready: 0, scheduled: 0, blocked: 0, active: 0, done: 3 },
+        rows: [
+          cellRow('p0-cond-a-rep1', 'cond-a', 1),
+          cellRow('p0-cond-a-rep2', 'cond-a', 2),
+          cellRow('p0-cond-b-rep1', 'cond-b', 1),
+        ],
+      },
+    })),
+    fetchCell: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'not under test' } })),
+  }
+}
+
+/** One record row of the run the report describes. */
+function cellRow(missionId: string, condition: string, rep: number) {
+  return {
+    missionId, task: 'P0', condition, rep, state: 'archived', bucket: 'done', attempt: 1,
+    inStateMs: 0, refs: { resource: null, fingerprint: null }, checkpoints: [],
+    annotations: { script: 1 }, childSessionId: null,
   }
 }
 
@@ -275,6 +307,9 @@ function renderView(h: Harness) {
     planExport: h.planExport,
     exportRun: h.exportRun,
     reexportRun: h.reexportRun,
+    fetchMatrix: h.fetchMatrix,
+    fetchCells: h.fetchCells,
+    fetchCell: h.fetchCell,
     openSession: vi.fn(),
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
@@ -629,5 +664,45 @@ describe('how old the bundle is (I5·T39 · G17 / T60)', () => {
     // One action, two products (G15): the receipt says so rather than leaving
     // the reader to run `dsh-eval report` and find out.
     expect(await screen.findByText(/export\.doneWithReport .*summary\.md/)).toBeTruthy()
+  })
+})
+
+/**
+ * I5·T69 — a number in the pair table is the door to the records it was
+ * computed from. The mean is over the run's reps, so the jump names the
+ * (题目 × 对比组) and lets the record list resolve how many that is: one
+ * record opens its detail, several leave the list standing under a chip that
+ * says so and can be cleared.
+ */
+describe('from a report number to the records behind it', () => {
+  it('a side with several reps lands on the record list, narrowed and labelled', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    // The cell is addressed by what it promises on hover, not by the digit
+    // it prints — a mean of 3 is not a unique string on a report page.
+    fireEvent.click(await screen.findByTitle(/report\.openRecords.*"condition":"cond-a"/))
+
+    await waitFor(() => { expect(h.fetchCells).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
+    // The chip says what was narrowed and how much is left; without it the
+    // list would be lying about how many records the run has.
+    expect(await screen.findByText(/runs\.focus.*"task":"P0".*"condition":"cond-a".*"matched":2/)).toBeTruthy()
+    expect(screen.getByText('P0 × cond-a × 1')).toBeTruthy()
+    expect(screen.getByText('P0 × cond-a × 2')).toBeTruthy()
+    expect(screen.queryByText('P0 × cond-b × 1')).toBeNull()
+    // Two records match, so none was opened FOR the reader.
+    expect(h.fetchCell).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'runs.focusClear' }))
+    expect(await screen.findByText('P0 × cond-b × 1')).toBeTruthy()
+  })
+
+  it('a side with exactly one rep opens that record — which is what «跳到那条记录» means when there is one', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    // cond-b's column, and the run holds a single rep of it.
+    fireEvent.click(await screen.findByTitle(/report\.openRecords.*"condition":"cond-b"/))
+    await waitFor(() => {
+      expect(h.fetchCell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'p0-cond-b-rep1' })
+    })
   })
 })

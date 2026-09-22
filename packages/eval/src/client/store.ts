@@ -8,7 +8,7 @@
 import { defineStore } from '@deepseek-ai/dsh-client-store'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
-  EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow,
+  EvalCellArtifactView, EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow,
   EvalConditionsView, EvalExperimentDetail,
   EvalExperimentsResult, EvalFinalizeView, EvalJudgeQueueView, EvalMatrixView, EvalPlanReview,
   EvalRunOutputView, EvalRunReportView, EvalRunUnitsView,
@@ -209,6 +209,33 @@ export interface LabViewState {
   cellError: string | null
 
   /**
+   * The attachment the open record has expanded, and what came back.
+   *
+   * The PATH is the selection and the payload is a cache of one read: a
+   * reader opens `stage1.md`, then `stage2.md`, and the second read replaces
+   * the first rather than accumulating a pane per file. Null path means
+   * nothing is expanded, which is the state every fresh drawer starts in —
+   * the detail should read as a record, not as a file browser.
+   */
+  artifactPath: string | null
+  artifact: EvalCellArtifactView | null
+  artifactLoading: boolean
+  artifactError: string | null
+
+  /**
+   * The (题目 × 对比组) the record list is narrowed to, set by a click on the
+   * 结果对比 page's tables and cleared by the chip it puts on screen.
+   *
+   * A report cell names a task and a comparison group, and that names as many
+   * RECORDS as the run has reps — so «跳到那条记录» can only mean one record
+   * when there is one, and must mean «those records» when there are more.
+   * Carrying the pair rather than resolving it to a mission id at click time
+   * is what lets the page say which it is: one match opens its detail, several
+   * leave the list standing with the chip above it.
+   */
+  recordFocus: { task: string; condition: string } | null
+
+  /**
    * The report page's payload, or null before it loads. A run with no bundle
    * is NOT null: it is a payload whose `bundleDir` is null and which carries
    * the directories that were looked in, so the page shows a state with a
@@ -336,6 +363,11 @@ export type LabViewActions = {
   setCell: (draft: LabViewState, cell: EvalCellDetail) => void
   setCellLoading: (draft: LabViewState, loading: boolean) => void
   setCellError: (draft: LabViewState, error: string | null) => void
+  openArtifact: (draft: LabViewState, path: string | null) => void
+  setArtifact: (draft: LabViewState, artifact: EvalCellArtifactView) => void
+  setArtifactLoading: (draft: LabViewState, loading: boolean) => void
+  setArtifactError: (draft: LabViewState, error: string | null) => void
+  focusRecords: (draft: LabViewState, focus: { task: string; condition: string } | null) => void
   setReport: (draft: LabViewState, report: EvalRunReportView) => void
   setReportLoading: (draft: LabViewState, loading: boolean) => void
   setReportError: (draft: LabViewState, error: string | null) => void
@@ -402,6 +434,11 @@ const INITIAL: LabViewState = {
   cell: null,
   cellLoading: false,
   cellError: null,
+  artifactPath: null,
+  artifact: null,
+  artifactLoading: false,
+  artifactError: null,
+  recordFocus: null,
   report: null,
   reportLoading: false,
   reportError: null,
@@ -433,6 +470,7 @@ const PER_EXPERIMENT: Pick<
   'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal' | 'approveError'
   | 'started' | 'startFollowUps' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
   | 'runFilter' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
+  | 'artifactPath' | 'artifact' | 'artifactError' | 'recordFocus'
   | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'runUnits' | 'runUnitsError' | 'lookIn'
   | 'judge' | 'judgeError' | 'judgeTask' | 'judgeSubmitting'
   | 'exportOpen' | 'reexporting' | 'notice' | 'noticeError'
@@ -458,6 +496,10 @@ const PER_EXPERIMENT: Pick<
   cellSelection: null,
   cell: null,
   cellError: null,
+  artifactPath: null,
+  artifact: null,
+  artifactError: null,
+  recordFocus: null,
   report: null,
   reportError: null,
   finalizing: false,
@@ -638,6 +680,40 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
         d.cell = null
         d.cellError = null
         d.exportOpen = false
+        // A new record is a new set of attachments: an expanded file from the
+        // record just closed must not stay on screen under another record's
+        // header, where it would read as that record's output.
+        d.artifactPath = null
+        d.artifact = null
+        d.artifactError = null
+      },
+      openArtifact: (d, path: string | null) => {
+        d.artifactPath = path
+        d.artifact = null
+        d.artifactError = null
+      },
+      setArtifact: (d, artifact: EvalCellArtifactView) => {
+        d.artifact = artifact
+        d.artifactError = null
+      },
+      setArtifactLoading: (d, loading: boolean) => { d.artifactLoading = loading },
+      setArtifactError: (d, error: string | null) => { d.artifactError = error },
+      /**
+       * Land on 运行记录 narrowed to one (题目 × 对比组) — the 结果对比 page's
+       * click. The detail is NOT opened here: which record it is depends on
+       * how many reps the run holds, and the list is the only place that
+       * knows. See {@link LabViewState.recordFocus}.
+       */
+      focusRecords: (d, focus: { task: string; condition: string } | null) => {
+        d.recordFocus = focus
+        if (focus === null) return
+        d.page = 'runs'
+        d.cellSelection = null
+        d.cell = null
+        d.cellError = null
+        d.artifactPath = null
+        d.artifact = null
+        d.artifactError = null
       },
       setCell: (d, cell: EvalCellDetail) => {
         d.cell = cell

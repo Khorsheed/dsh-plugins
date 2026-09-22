@@ -153,8 +153,18 @@ function factorLine(pair: EvalReportPair, t: LabViewProps['t']): string {
 }
 
 /** One condition pair: the factor, the per-item deltas, the CI and the verdict. */
-function PairBlock(props: { pair: EvalReportPair; t: LabViewProps['t'] }) {
-  const { pair, t } = props
+function PairBlock(props: {
+  pair: EvalReportPair
+  /**
+   * Open the records behind one (题目 × 对比组) on the 运行记录 stage. A
+   * report number is a MEAN over the run's reps, so the honest jump names the
+   * pair and lets the record list resolve how many that is — one rep opens
+   * its detail, several leave the list standing under a chip (I5·T69).
+   */
+  onOpenRecords: (task: string, condition: string) => void
+  t: LabViewProps['t']
+}) {
+  const { pair, onOpenRecords, t } = props
   // The weighted columns appear only when the rubric carried weights for both
   // sides — an empty pair of columns would read as "weight zero".
   const weighted = pair.rows.some(row => row.aWeighted !== null && row.bWeighted !== null)
@@ -181,8 +191,30 @@ function PairBlock(props: { pair: EvalReportPair; t: LabViewProps['t'] }) {
               {pair.rows.map(row => (
                 <tr key={row.task}>
                   <th className={css.reportRowHead}>{row.task}</th>
-                  <td className={css.reportTd}>{fmtNum(row.aMean)}</td>
-                  <td className={css.reportTd}>{fmtNum(row.bMean)}</td>
+                  {/* Each side's number opens the records it was computed
+                      from. A mean nobody can get behind is a number a reader
+                      has to take on faith, and this table is exactly where
+                      「为什么是这个数」 gets asked. */}
+                  <td className={css.reportTd}>
+                    <button
+                      type="button"
+                      className={css.reportJump}
+                      title={t('report.openRecords', { task: row.task, condition: pair.a })}
+                      onClick={() => { onOpenRecords(row.task, pair.a) }}
+                    >
+                      {fmtNum(row.aMean)}
+                    </button>
+                  </td>
+                  <td className={css.reportTd}>
+                    <button
+                      type="button"
+                      className={css.reportJump}
+                      title={t('report.openRecords', { task: row.task, condition: pair.b })}
+                      onClick={() => { onOpenRecords(row.task, pair.b) }}
+                    >
+                      {fmtNum(row.bMean)}
+                    </button>
+                  </td>
                   <td className={css.reportTd}>{fmtNum(row.delta)}</td>
                   {weighted && (
                     <td className={css.reportTd}>
@@ -489,11 +521,13 @@ export function ReportPage(props: {
   onReexport: () => void
   /** Look for the bundle under this export directory instead. */
   onLookIn: (dir: string) => void
+  /** Jump from a number to the records it was computed from (I5·T69). */
+  onOpenRecords: (task: string, condition: string) => void
   t: LabViewProps['t']
 }) {
   const {
     report, loading, error, finalizing, finalizeResult, units, unitsError, reexporting,
-    onFinalize, onExport, onReexport, onLookIn, t,
+    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, t,
   } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
@@ -670,7 +704,9 @@ export function ReportPage(props: {
                 ? <div className={css.dim}>{t('report.singleCondition')}</div>
                 : report.pairs.length === 0
                   ? <div className={css.dim}>{t('report.noPairs')}</div>
-                  : report.pairs.map(pair => <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} t={t} />)}
+                  : report.pairs.map(pair => (
+                    <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} onOpenRecords={onOpenRecords} t={t} />
+                  ))}
 
             <Efficiency report={report} t={t} />
             <JudgeConsistency report={report} t={t} />
