@@ -258,6 +258,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   // Markdown / JSON / CSV source ⇄ rendered; rendered is the default.
   const [sourceMode, setSourceMode] = useState(false)
   const [copiedPath, setCopiedPath] = useState(false)
+  const [copiedContent, setCopiedContent] = useState(false)
   const [contentQuery, setContentQuery] = useState('')
   const [activeMatch, setActiveMatch] = useState(0)
   const activeLineRef = useRef<HTMLSpanElement | null>(null)
@@ -357,6 +358,12 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
     if (total === 0) return
     setActiveMatch(index => (index + delta + total) % total)
   }
+  const doCopyContent = (): void => {
+    if (chrome?.copyContent === undefined) return
+    chrome.copyContent()
+    setCopiedContent(true)
+    window.setTimeout(() => { setCopiedContent(false) }, 1200)
+  }
   const doCopyPath = (): void => {
     if (onCopyPath === undefined) return
     void onCopyPath().then(ok => {
@@ -439,6 +446,17 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                 onClick={doCopyPath}
               >
                 {copiedPath ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
+              </button>
+            )}
+            {chrome?.copyContent !== undefined && (
+              <button
+                type="button"
+                className={css.action}
+                title={copiedContent ? t('action.copied') : t('action.copyContent')}
+                aria-label={copiedContent ? t('action.copied') : t('action.copyContent')}
+                onClick={doCopyContent}
+              >
+                {copiedContent ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
               </button>
             )}
             {chrome?.openFolder !== undefined && (

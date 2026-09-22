@@ -173,6 +173,17 @@ describe('ContentPane chrome and non-text reads', () => {
     expect(openFolder).toHaveBeenCalledTimes(1)
   })
 
+  it('offers the copy-content gesture alongside the copy-path one', () => {
+    const copyContent = vi.fn()
+    mount({ kind: 'text', path: '/work/a.ts', content: 'x\n' }, {
+      onCopyPath: () => Promise.resolve(true),
+      chrome: { copyContent },
+    })
+    expect(screen.getByRole('button', { name: 'action.copyPath' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'action.copyContent' }))
+    expect(copyContent).toHaveBeenCalledTimes(1)
+  })
+
   it('shows designed placeholders for binary, deleted and unreadable reads', () => {
     mount({ kind: 'binary', path: '/work/a.png', size: 12 })
     expect(screen.getByText('local.binary · 12 B')).toBeTruthy()

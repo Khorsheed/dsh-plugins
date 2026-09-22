@@ -115,7 +115,7 @@ local-files 自己的注释就写着 `preparing for a future merge`（`packages/
 
 | # | 能力 | 判定 |
 |---|---|---|
-| F1 | 复制路径 / 打开目录 / 在 IDE 中打开，三手势按 open-in-app 探测结果**逐项**显隐 | 两边都有（worktrees 现状缺后两个） |
+| F1 | 复制路径 / **复制内容** / 打开目录 / 在 IDE 中打开；host 手势按 open-in-app 探测结果**逐项**显隐，复制类手势由调用方给不给决定 | 两边都有：文件列表补「复制内容」，工作树补「打开目录 / 在 IDE 中打开」（并集，不丢任何一边原有的复制语义） |
 | F2 | 「打开目录」作用于 `dirnameOf(path)`（host 路由只收目录）；无可用 app 时不渲染空按钮 | 两边一致 |
 | F3 | IDE / 文件管理器候选表由内核提供（`pickFileManager` / `pickIde`），一次/页探测，失败即静默隐藏 | 探测可注入（便于单测） |
 | F4 | 滚动位置按 (session, path) 记忆 | 两边一致 |

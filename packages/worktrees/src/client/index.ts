@@ -177,7 +177,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       hooks: { openInApp: openInApp.apps },
       openExternal: openOnHost,
       copyBranch: (branch: string) => writeClipboard(branch),
-      copyPath: (path: string) => writeClipboard(path),
+      copyText: (text: string) => writeClipboard(text),
     }),
   }, WorktreesTab)), 'worktrees: tab body')
 

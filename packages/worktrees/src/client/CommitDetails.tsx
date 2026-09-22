@@ -150,7 +150,7 @@ export function CommitDetails({
               loading={false}
               error={null}
               displayPath={absolutePath(repoRoot, selectedPath)}
-              onCopyPath={() => copySha(absolutePath(repoRoot, selectedPath))}
+              onCopyPath={async () => copySha(absolutePath(repoRoot, selectedPath))}
               chrome={paneChrome(selectedPath)}
               labels={labels}
               t={previewTranslator(t)}

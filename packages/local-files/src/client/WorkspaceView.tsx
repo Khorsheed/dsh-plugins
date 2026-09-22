@@ -270,6 +270,7 @@ export function WorkspaceView({
               : {
                 onCopyPath: () => writeClipboard(selectedPath),
                 chrome: {
+                  copyContent: () => { void writeClipboard(preview?.content ?? '') },
                   ...(canOpenFolder ? { openFolder: () => { openFolder(dirnameOf(selectedPath) || selectedPath) } } : {}),
                   ...(canOpenIDE ? { openIDE: () => { openIDE(dirnameOf(selectedPath) || selectedPath) } } : {}),
                 },

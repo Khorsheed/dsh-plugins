@@ -94,8 +94,8 @@ export interface WorktreesTabInjected {
   openExternal: (appId: string, path: string) => void
   /** Copy the branch name to the clipboard; resolves true only on acceptance. */
   copyBranch: (branch: string) => Promise<boolean>
-  /** Copy one file's resolved absolute path (the pane's copy-path gesture). */
-  copyPath: (path: string) => Promise<boolean>
+  /** Write one text value to the clipboard (the pane's copy gestures). */
+  copyText: (text: string) => Promise<boolean>
 }
 
 /** Full props of the right-Sidebar worktrees tab body entry. */

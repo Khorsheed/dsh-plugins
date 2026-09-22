@@ -13,7 +13,7 @@ Status: implemented
 - **包形态。** `dsh.composition.component: "source-plane-library"`——它不注册 slot、service、locale，也没有自己的 loader row 和 client bundle。每个消费方把它声明为 workspace 依赖并直接 import `@khorsheed/dsh-client-ui-content-preview/src/client/index.ts`，因此两个插件都不新增运行时依赖，卸载任一个都不影响另一个。形状沿用已被 sanction 的 `canvas → inline-html-render` 边（编译期 helper、零运行时耦合）。
 - **内核持有契约，消费方持有映射。** `PreviewRead` 是内核的 kind 联合（`text` 带 `truncated`/`htmlScripted`、`image`、`binary`、`missing` 带 `reason`、`too-large`、`error`）。每个插件只保留一个适配模块 `src/client/preview.ts`：把自己的 wire 类型映射进来、用自己的字典构造 `StructuredLabels` 与 `PreviewTranslator`、把仓库相对路径解析成绝对路径。将来退休这个内核，改动就是这一个文件加一行 import。
 - **内核不持有任何 locale 命名空间。** 消费方继续注册自己的字典；面板通过 `(key, params) => string` 打印，键的类型是 `PreviewKey` 联合，并且每个包都有一条测试断言 `PREVIEW_KEYS` 的每一项在本包的 `zh` 与 `en` 字典里都能解析。
-- **统一取并集，不取交集。** 两个表面现在都有 markdown/JSON/CSV 的「源码⇄预览」切换（原属工作树）、HTML 三档切换 + 一次性确认 + 静态「脚本未执行」提示 + 全屏 + 卡顿看门狗（原属文件列表）、保留渲染态并有诚实降级的内容搜索，以及 per-file 的复制路径 / 打开目录 / 在 IDE 中打开。
+- **统一取并集，不取交集。** 两个表面现在都有 markdown/JSON/CSV 的「源码⇄预览」切换（原属工作树）、HTML 三档切换 + 一次性确认 + 静态「脚本未执行」提示 + 全屏 + 卡顿看门狗（原属文件列表）、保留渲染态并有诚实降级的内容搜索，以及 per-file 的复制路径、复制内容、打开目录、在 IDE 中打开（复制这一类保留两个表面各自的语义：文件列表复制路径，工作树复制内容）。
 - **不归内核的事。** 文件树、数据面（Remote、store、根目录选择）、tab 注册与模式可见性留在各插件；diff 与提交对比经 `diffView` render prop 传入（内核始终不知道 git 是什么）；工作树的未跟踪说明走 `notice`；工作树的图片放大器走 `imageView`。
 - **Markdown 口径，写成机械规则。** 内核只覆盖 `--dsw-font-markdown-*` 字号 token，绝不覆盖官方 `.markdown` 上任何元素级 margin/padding；每个渲染形态（markdown、JSON 树、CSV 表）都在同一 token 作用域与同一区块外框内。工作树原先攒下的那批元素级 override 是**删掉**，不是搬过来。
 

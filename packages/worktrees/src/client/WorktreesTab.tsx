@@ -52,7 +52,7 @@ export function WorktreesTab({
   fetchSummary, fetchChanges, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
   fetchWorktrees, switchWorktree, directAgent, bumpVersion,
   fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, useOpenInApp, openExternal,
-  copyBranch, copyPath,
+  copyBranch, copyText,
 }: WorktreesTabProps): ReactNode {
   const { tab } = useTabInfo()
   const mode = useStore(s => s.mode)
@@ -90,6 +90,8 @@ export function WorktreesTab({
     const absolute = absolutePath(worktreePath, path)
     const dir = dirnameOf(absolute) || absolute
     return {
+      // Copy the raw content, as this surface always could.
+      copyContent: () => { void copyText(content?.content ?? '') },
       ...(folderApp === undefined ? {} : { openFolder: () => { openExternal(folderApp, dir) } }),
       ...(ideApp === undefined ? {} : { openIDE: () => { openExternal(ideApp, dir) } }),
     }
@@ -539,7 +541,7 @@ export function WorktreesTab({
               loading={loading}
               error={error}
               displayPath={absolutePath(worktreePath, selectedPath)}
-              onCopyPath={() => copyPath(absolutePath(worktreePath, selectedPath))}
+              onCopyPath={() => copyText(absolutePath(worktreePath, selectedPath))}
               chrome={paneChrome(selectedPath)}
               labels={structuredLabels(t)}
               t={previewTranslator(t)}
