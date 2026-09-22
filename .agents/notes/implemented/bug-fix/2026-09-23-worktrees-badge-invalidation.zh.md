@@ -28,13 +28,13 @@ Status: implemented
 
 ## 够不到的部分
 
-插件无法转发自己的事件：转发集合是官方 `@deepseek-ai/dsh-api-remotes` 的静态数组 `API_REMOTE_FORWARDED_EVENTS`（`packages/api/remotes/src/remote-events.ts`），由宿主装配的转发循环消费（`src/index.ts:50`）。本仓库禁止对官方包做 profile 级补丁，而且在本仓此前没有任何地方用过 `ctx.remote.$on`——原因正在于此。所以"另一个浏览器 tab 切了 worktree、我的头部要立刻知道"和"用 `fs.watch` 盯工作区、每次变化都推送"都要等上游——已登记为 seam **S16**（`docs/upstream-seam-registry.md`），并写明建议改法（让插件能向转发集合贡献，或提供一个通用插件通知通道）。
+插件无法转发自己的事件：转发集合是官方 `@deepseek-ai/dsh-api-remotes` 的静态数组 `API_REMOTE_FORWARDED_EVENTS`（`packages/api/remotes/src/remote-events.ts`），由宿主装配的转发循环消费（`src/index.ts:50`）。本仓库禁止对官方包做 profile 级补丁，而且在本仓此前没有任何地方用过 `ctx.remote.$on`——原因正在于此。所以"另一个浏览器 tab 切了 worktree、我的头部要立刻知道"和"用 `fs.watch` 盯工作区、每次变化都推送"都要等上游——已登记为 seam **S17**（`docs/upstream-seam-registry.md`），并写明建议改法（让插件能向转发集合贡献，或提供一个通用插件通知通道）。
 
 ## Alternatives considered
 
 **轮询徽标（15s，或可见时 60s）。** 作为默认方案否决：每次读要五到六个 git 进程，而上面两条转发事件已经覆盖用户报的两个症状。仅在"宿主没有转发事件"的降级路径里保留一个可见时、tab 关闭时的低频轮询作为记录在案的兜底，而不是默认。
 
-**让徽标订阅插件自有事件（`$on('worktrees/changed')`）。** 暂时否决：需要登记为 S16 的上游改动。会话事件以零上游代价拿到大部分价值，探针则让代码对其余部分保持诚实。
+**让徽标订阅插件自有事件（`$on('worktrees/changed')`）。** 暂时否决：需要登记为 S17 的上游改动。会话事件以零上游代价拿到大部分价值，探针则让代码对其余部分保持诚实。
 
 **顺手把活跃 worktree override 持久化。** 否决：那是另一个缺陷（指针随 host 重启而死，部署后两个表面一起回落到会话 cwd），且需要先定持久化位置（会话记录 vs `$DSH_HOME` 文件）。**记为待办，而不是悄悄修掉。**
 
@@ -53,11 +53,11 @@ Status: implemented
 ## Deferred
 
 - 活跃 worktree override 的持久化（host 重启即丢）。
-- `fs.watch` 驱动的实时 dirty 计数——卡在 S16（推送通道）与 watcher 治理（仓库根目录含 `node_modules`）。
-- 上游 S16 本身；落地后 worktree 变化将变成插件自有转发事件，会话事件订阅退为兜底。
+- `fs.watch` 驱动的实时 dirty 计数——卡在 S17（推送通道）与 watcher 治理（仓库根目录含 `node_modules`）。
+- 上游 S17 本身；落地后 worktree 变化将变成插件自有转发事件，会话事件订阅退为兜底。
 
 ## Related
 
-- `docs/upstream-seam-registry.md` S16——本设计绕过的"插件自有事件"缺口。
+- `docs/upstream-seam-registry.md` S17——本设计绕过的"插件自有事件"缺口。
 - `.agents/notes/implemented/architecture/2026-09-23-preview-kernel.md`——同包同批次的另一处改动（文件列表与工作树共用一个内容面板）。
 - `proposals/active/2026-08-23-worktree-governance.md`——持有 worktrees 插件 git 面能力的提案。

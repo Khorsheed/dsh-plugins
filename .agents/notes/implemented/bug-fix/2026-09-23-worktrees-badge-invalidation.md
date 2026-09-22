@@ -28,7 +28,7 @@ The reported divergence came from a model-side worktree switch, and that always 
 
 ## What stays out of reach
 
-A plugin cannot forward an event of its own: the forwarding set is the official `@deepseek-ai/dsh-api-remotes` package's static array `API_REMOTE_FORWARDED_EVENTS` (`packages/api/remotes/src/remote-events.ts`), consumed by the host assembly's forwarding loop (`src/index.ts:50`). A profile-level patch on an official package is forbidden here, and nothing in-repo used `ctx.remote.$on` before this change for exactly that reason. So "another browser tab switched the worktree and my header should know instantly" and "watch the working tree with `fs.watch` and push every change" both wait on upstream — registered as seam S16 in `docs/upstream-seam-registry.md` with the suggested change (let plugins contribute to the forwarded set, or expose a generic plugin notification channel).
+A plugin cannot forward an event of its own: the forwarding set is the official `@deepseek-ai/dsh-api-remotes` package's static array `API_REMOTE_FORWARDED_EVENTS` (`packages/api/remotes/src/remote-events.ts`), consumed by the host assembly's forwarding loop (`src/index.ts:50`). A profile-level patch on an official package is forbidden here, and nothing in-repo used `ctx.remote.$on` before this change for exactly that reason. So "another browser tab switched the worktree and my header should know instantly" and "watch the working tree with `fs.watch` and push every change" both wait on upstream — registered as seam S17 in `docs/upstream-seam-registry.md` with the suggested change (let plugins contribute to the forwarded set, or expose a generic plugin notification channel).
 
 ## Alternatives considered
 
@@ -53,11 +53,11 @@ Cost: three invalidation channels to reason about instead of one; one extra `sum
 ## Deferred
 
 - The active-worktree override's persistence (host restart drops it).
-- `fs.watch`-driven realtime dirty counts — blocked on S16 (a push channel) and on watcher governance (the repository root contains `node_modules`).
-- Upstream S16 itself; on landing, the worktree change becomes a plugin-owned forwarded event and the session-event subscription becomes a fallback.
+- `fs.watch`-driven realtime dirty counts — blocked on S17 (a push channel) and on watcher governance (the repository root contains `node_modules`).
+- Upstream S17 itself; on landing, the worktree change becomes a plugin-owned forwarded event and the session-event subscription becomes a fallback.
 
 ## Related
 
-- `docs/upstream-seam-registry.md` S16 — the plugin-owned-event gap this design works around.
+- `docs/upstream-seam-registry.md` S17 — the plugin-owned-event gap this design works around.
 - `.agents/notes/implemented/architecture/2026-09-23-preview-kernel.md` — the same package's earlier change in this batch (one shared content pane for the file list and the worktree tab).
 - `proposals/active/2026-08-23-worktree-governance.md` — the proposal that owns the worktrees plugin's git-facing capability.

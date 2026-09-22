@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-worktrees-badge-invalidation.md
-.agents/notes/implemented/bug-fix/2026-09-23-worktrees-badge-invalidation.md: 2d3009fdeb35c5a7e1a0013072c70b16a727e03b
-.agents/notes/implemented/bug-fix/2026-09-23-worktrees-badge-invalidation.zh.md: d572c5c8b459227825f41b31aa9cff7330488f65
+.agents/notes/implemented/bug-fix/2026-09-23-worktrees-badge-invalidation.md: faf3b6d256c521220129c1896a7f01d19da881b1
+.agents/notes/implemented/bug-fix/2026-09-23-worktrees-badge-invalidation.zh.md: 3eac28458462b0246a74fc098c13447fe3b384f6
