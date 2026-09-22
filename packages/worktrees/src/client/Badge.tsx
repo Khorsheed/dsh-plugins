@@ -24,7 +24,7 @@ import css from './Badge.module.css'
 const TOOL_ROW_MODULE = WORKTREES_TOOL_ROW_MODULE
 
 /** The badge. */
-export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, fetchComposition, open, subscribeVersion, getVersion, useSessions, t }: WorktreesBadgeProps): ReactNode {
+export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, fetchComposition, open, subscribeVersion, subscribeSessionEvents, useSessions, t }: WorktreesBadgeProps): ReactNode {
   const [data, setData] = useState<SessionSummary | null>(null)
   // The display gate: null while the config RPC is pending or failed, and
   // whenever the composition leaves `visiblePresets` empty — all meaning "no
@@ -79,9 +79,18 @@ export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, fetchComp
     return () => { cancelled = true }
   }, [summary, sessionId])
 
-  // Re-fetch the summary whenever the active worktree changes (a drawer
-  // switch bumps the version) — the badge then tracks the switched worktree's
-  // branch instead of staying on the main checkout.
+  // The badge's invalidation channels — none of them periodic, because a
+  // summary costs several git invocations:
+  //  - the plugin's own version: a worktree switch, or any refresh the tab
+  //    performed (the header must not lag the pane);
+  //  - the Host's FORWARDED session events: `api-session/status` fires on an
+  //    agent running flip (turn boundary, i.e. the model's tools — including a
+  //    worktree switch — have just run) and `api-session/activity` on a user
+  //    message. A model-side switch lands here, which is what used to leave the
+  //    header on the main checkout while the pane showed the worktree;
+  //  - the window regaining focus/visibility: the only way an out-of-band
+  //    change (another agent, another checkout) gets re-read, and it costs one
+  //    RPC per return instead of a timer.
   useEffect(() => {
     if (sessionId === undefined || sessionId === '') return
     const refetch = (): void => {
@@ -89,11 +98,22 @@ export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, fetchComp
         if (result.ok) setData(result.value)
       })
     }
-    // Immediate read to seed the initial version, then keep it current.
-    void getVersion()
-    const unsubscribe = subscribeVersion(refetch)
-    return unsubscribe
-  }, [sessionId, summary, subscribeVersion, getVersion])
+    const unsubscribeVersion = subscribeVersion(refetch)
+    const unsubscribeSession = subscribeSessionEvents((id) => {
+      if (id === sessionId) refetch()
+    })
+    const onVisibility = (): void => {
+      if (document.visibilityState !== 'hidden') refetch()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', refetch)
+    return () => {
+      unsubscribeVersion()
+      unsubscribeSession()
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', refetch)
+    }
+  }, [sessionId, summary, subscribeVersion, subscribeSessionEvents])
 
   // The visibility decision, in criterion order (sessions with NO preset
   // stay visible on every path — fail-open; the gate hides dev chrome,

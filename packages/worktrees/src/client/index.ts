@@ -127,6 +127,35 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
   })
 
+  // Host→client invalidation, the one push this plugin needs. The official
+  // `api/remotes` allowlist forwards exactly two events that mean "this
+  // session's state moved": `api-session/status` on an agent running flip (a
+  // turn boundary, i.e. the model's tools — including a worktree switch — have
+  // just run) and `api-session/activity` on a user message. A plugin-declared
+  // event is NOT forwardable (the allowlist is the official package's static
+  // array), so these are the signals; see the seam registry entry for the
+  // plugin-owned-event gap.
+  const sessionEventListeners = new Set<(sessionId: string) => void>()
+  const subscribeSessionEvents = (listener: (sessionId: string) => void): (() => void) => {
+    sessionEventListeners.add(listener)
+    return () => { sessionEventListeners.delete(listener) }
+  }
+  const emitSessionEvent = (sessionId: string): void => {
+    for (const listener of sessionEventListeners) listener(sessionId)
+  }
+  // Probed, never assumed: a carrier that predates the Remote Event feature has
+  // no `$on`, and the badge must still work through its other channels
+  // (version bumps and focus/visibility).
+  const carrier = ctx.remote as {
+    $on?: (event: 'api-session/status' | 'api-session/activity', listener: (sessionId: string) => void) => () => void
+  }
+  if (typeof carrier.$on === 'function') {
+    for (const forwarded of ['api-session/status', 'api-session/activity'] as const) {
+      const off = carrier.$on(forwarded, (sessionId: string) => { emitSessionEvent(sessionId) })
+      disposers.push(async () => { off() })
+    }
+  }
+
   const openOnHost = (appId: string, path: string): void => {
     void openInApp.open(appId, path).catch(() => {
       // Host/OS open failures stay silent in the surface; the native app
@@ -197,7 +226,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       ...(pluginInventory === undefined ? {} : { fetchComposition: () => pluginInventory.list() }),
       open: (mode) => { controller.open(mode) },
       subscribeVersion: (listener) => controller.subscribeVersion(listener),
-      getVersion: () => controller.getVersion(),
+      subscribeSessionEvents,
     }),
   }, WorktreesBadge))
 

@@ -133,6 +133,15 @@
 - **状态**：绕行中（@khorsheed/dsh-local-agent 家族）。
 
 
+### S16. 插件自有事件无法进入 Remote 事件转发白名单（客户端收不到插件的宿主侧变化）
+
+- **需求**：插件想把自己 host 侧的状态变化推给已挂载的浏览器表面（worktrees 的活跃 worktree 被模型工具切换、另一 client tab 切换、host 侧文件监听触发），而不是靠客户端周期性重读。Typert 协议本身支持：`ctx.remote.$on(event, listener)`（客户端）+ 宿主侧 `@mode emit` 的 cordis 事件（`dsh-typert-protocol` 的 `TypertRemoteEvent = Extract<TypertForwardableEvent, keyof TypertRemoteEventSelection>`）。
+- **现状**：转发集合由官方 `@deepseek-ai/dsh-api-remotes` 的**静态数组** `API_REMOTE_FORWARDED_EVENTS`（`packages/api/remotes/src/remote-events.ts`）决定，宿主装配循环逐条 `ctx.on(...)` 转发（同包 `src/index.ts:50`）。插件既不能在自己的 manifest 里加条目，也没有 profile 级开关；本仓 0 处使用 `$on`（`grep -rnF '$on(' packages/*/src`），因为没有任何插件能收到自己的事件。
+- **现状绕行**：只用官方已转发的事件——`api-session/status(sessionId, running)`（Agent 起停，即轮次边界，模型工具刚跑完）与 `api-session/activity(sessionId, updatedAt)`（用户消息推进会话活动）。worktrees 的会话头徽标在这两件事上重读 summary，另加"窗口重新获得焦点/可见"与"tab 侧任何刷新推版本号"两条本地通道；**不做周期轮询**。见 `.agents/notes/implemented/bug-fix/2026-09-23-worktrees-badge-invalidation.md`。
+- **建议的官方改动**：让转发集合可被插件贡献（例如 `TypertRemoteEventSelection` 之外再加一个运行时装配入口/插件 manifest 字段），或提供一个通用的"插件自定义通知"通道。最小版本：把 `API_REMOTE_FORWARDED_EVENTS` 的消费点改成"官方默认集 + 插件声明集"。
+- **退役条件**：插件可声明并 emit 自己的事件并被客户端 `$on` 收到后，worktrees 的 worktree 变化改走真推送；`fs.watch` 实时 dirty 也才有可能（当前"盯着看 + 外部进程改文件"无法纯事件覆盖）。
+- **状态**：绕行中（@khorsheed/dsh-worktrees）。
+
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。

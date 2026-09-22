@@ -97,6 +97,15 @@ export function WorktreesTab({
     }
   }
 
+  // Any tab-side refresh invalidates the header badge too, so the capsule never
+  // lags the pane. `rev` ticks on the refresh button, a mode switch, a worktree
+  // switch and every navigation revision; bumpVersion is held in a ref because
+  // the injected face hands out a fresh closure per render and this effect must
+  // not depend on its identity.
+  const bumpVersionRef = useRef(bumpVersion)
+  bumpVersionRef.current = bumpVersion
+  useEffect(() => { bumpVersionRef.current() }, [rev])
+
   const [copied, setCopied] = useState(false)
   const [worktreeOpen, setWorktreeOpen] = useState(false)
   const worktreeRef = useRef<HTMLDivElement | null>(null)
@@ -324,8 +333,9 @@ export function WorktreesTab({
     void switchWorktree(sessionId, path).then(result => {
       if (result.ok) {
         actions.setActiveWorktreePath(result.value.path)
-        bumpVersion()
         setWorktreeOpen(false)
+        // The refresh ticks `rev`, whose effect pushes the version bump to the
+        // badge — no separate bump here (a double bump would double the read).
         actions.refresh()
       }
     })

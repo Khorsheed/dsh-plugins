@@ -53,8 +53,16 @@ export interface WorktreesBadgeInjected {
   open: (mode: DrawerMode) => void
   /** Subscribe to active-worktree changes (a tab switch bumps it). */
   subscribeVersion: (listener: () => void) => () => void
-  /** The current active-worktree version (for re-fetch sequencing). */
-  getVersion: () => number
+  /**
+   * Subscribe to the Host's FORWARDED session events (`api-session/status` and
+   * `api-session/activity`, the two entries of the official `api/remotes`
+   * allowlist that mean "this session's state moved"). The badge re-reads its
+   * summary on them instead of polling: an agent turn boundary and a new user
+   * message both mean worktree state or dirty counts may have changed.
+   * @param listener - receives the session id the event concerns.
+   * @returns the unsubscribe disposer.
+   */
+  subscribeSessionEvents: (listener: (sessionId: string) => void) => () => void
 }
 
 /** Full props of the session-header badge entry. */
