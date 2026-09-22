@@ -553,7 +553,19 @@ export function verifyTarball(tarball: string, staging: string, selfName: string
   }
 
   const manifest = JSON.parse(readFileSync(join(staging, 'package.json'), 'utf8')) as PackageJson
-  const declared = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {})])
+  // A devDependency counts as a declaration: pack-dist itself renames and ranges
+  // family devDependencies into the dist manifest (see the rewrite above), and a
+  // source-plane sibling — a helper inlined into this package's bundle at build
+  // time — is ONLY ever a devDependency (a runtime dependency on it would be a
+  // registry edge nobody installs). Without this, such a package could never
+  // pass its own verifier: its emitted type declarations and its dead tsc
+  // intermediates mention the sibling by name, while every honest field for the
+  // edge is the one this check used to ignore.
+  const declared = new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.peerDependencies ?? {}),
+    ...Object.keys(manifest.devDependencies ?? {}),
+  ])
   // Data mentions are not edges: `dsh.references` names a sibling the artifacts
   // mention as data (a preset-visibility probe's companion row name) without
   // depending on it — declared here, never in a dependency field (a core and

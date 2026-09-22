@@ -444,6 +444,23 @@ describe('verifyTarball', () => {
     }
   })
 
+  it('passes a family sibling declared as a devDependency (the source-plane library shape)', () => {
+    // A sibling inlined at build time has no runtime edge to declare: it is a
+    // devDependency, and pack-dist itself renames and ranges that field on the
+    // family target. The payload still mentions it (emitted .d.ts imports and
+    // dead tsc intermediates), so the verifier must count the field it emits —
+    // otherwise such a package could never pass its own pack.
+    const dir = stage({
+      'package.json': JSON.stringify({ name: '@khorsheed/dsh-x', devDependencies: { '@khorsheed/dsh-ui-kernel': '^0.1.0' } }),
+      'lib/types/client/index.js': "import { helper } from '@khorsheed/dsh-ui-kernel/src/client/index.ts';",
+    })
+    try {
+      expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x')).not.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('passes a family name declared as a data reference (dsh.references)', () => {
     // A core mentions its companion row by name as DATA (a preset-visibility
     // probe) — declared in `dsh.references`, never as a dependency edge.
