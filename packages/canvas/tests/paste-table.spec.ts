@@ -4,11 +4,13 @@
  * functions the writing surface leans on for correctness, so they are tested
  * directly: spreadsheet quoting, ragged rows, the refusal to convert prose,
  * HTML table extraction (including column spans degrading to empty slots),
- * and the explicit space-aligned path.
+ * and the explicit space-aligned path. The paste arm sits on top of those and
+ * is tested the same way: which of the five arms a clipboard reads as, against
+ * the card text the paste would produce.
  */
 import { describe, expect, it } from 'vitest'
 import {
-  convertPaste, htmlTableToMarkdown, looksLikeTsv, parseDelimited,
+  choosePaste, convertPaste, htmlTableToMarkdown, looksLikeTsv, parseDelimited,
   spaceAlignedToMarkdown, toMarkdownTable,
 } from '../src/client/paste-table.ts'
 
@@ -128,5 +130,47 @@ describe('convertPaste', () => {
   it('declines anything that is not unambiguously a table', () => {
     expect(convertPaste('', '雨下了一整夜。')).toBeNull()
     expect(convertPaste('<p>html but no table</p>', 'plain prose')).toBeNull()
+  })
+})
+
+describe('choosePaste', () => {
+  /** The card text a candidate would produce, appended to what the card holds. */
+  const held = (text: string) => (candidate: string): string => `${text}${candidate}`
+  const page = '<!doctype html><html><head><title>雨</title></head><body><p>一整页的正文</p></body></html>'
+  const sheet = '<html><body><table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table></body></html>'
+  const grid = '<table><tr><th>名称</th><th>数量</th></tr><tr><td>伞</td><td>2</td></tr></table>'
+
+  it('takes a page as a page while the card it produces is still one page', () => {
+    expect(choosePaste(page, '雨\n\n一整页的正文', held(''))).toEqual({ arm: 'page', text: page })
+  })
+
+  it('keeps the words of a page that would land in a card holding prose', () => {
+    expect(choosePaste(page, '雨\n\n一整页的正文', held('我已经在写这段话。\n')))
+      .toEqual({ arm: 'words', text: '雨\n\n一整页的正文' })
+  })
+
+  it('converts a spreadsheet even into an empty card: the grid beats the soup', () => {
+    expect(choosePaste(sheet, 'a\tb\n1\t2', held(''))).toEqual({
+      arm: 'table',
+      text: '| a | b |\n| --- | --- |\n| 1 | 2 |',
+    })
+  })
+
+  it('keeps a table inside a real page, because the page is the content', () => {
+    const html = `<!doctype html><html><body><p>产品说明</p>${grid}</body></html>`
+    expect(choosePaste(html, '产品说明\n\n名称\t数量', held('')).arm).toBe('page')
+  })
+
+  it('takes the grid out of markup that the card cannot render as a page', () => {
+    expect(choosePaste(`<!doctype html><html><body>${grid}</body></html>`, '名称 数量\n伞 2', held('正文。\n')))
+      .toEqual({ arm: 'table', text: '| 名称 | 数量 |\n| --- | --- |\n| 伞 | 2 |' })
+  })
+
+  it('says nothing about rich text that was never a page', () => {
+    expect(choosePaste('<b>粗</b>的话', '粗的话', held(''))).toEqual({ arm: 'plain', text: '粗的话' })
+  })
+
+  it('inserts markup as it came when the clipboard carried no text at all', () => {
+    expect(choosePaste('<b>粗</b>', '   ', held(''))).toEqual({ arm: 'markup', text: '<b>粗</b>' })
   })
 })

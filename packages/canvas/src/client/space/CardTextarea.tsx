@@ -1,22 +1,22 @@
 /**
- * The board family's one textarea shape, shared by the board's card editor,
- * the new-card draft, the comment box, and the detail reader's edit toggle:
- * UNCONTROLLED (nothing ever writes its value back), auto-sizing (never its
- * own scroller — the board scroll or the tab body is the one container), and
- * IME-hard-stopped submits (a candidate window is never torn down mid-word).
- * `submitOn` picks the chord: 'mod-enter' for card text (⌘⏎, plus blur),
- * 'enter' for comments (⏎).
+ * The board family's one textarea shape, shared by the detail page's editor
+ * (card text and the new-card draft) and the comment box: UNCONTROLLED
+ * (nothing ever writes its value back), auto-sizing (never its own scroller —
+ * the board scroll or the tab body is the one container), and IME-hard-stopped
+ * submits (a candidate window is never torn down mid-word).
+ * `submitOn` picks the chord: 'mod-enter' for card text (⌘⏎, plus blur unless
+ * `blurSubmits` says otherwise), 'enter' for comments (⏎).
  *
  * @module @khorsheed/dsh-canvas/client
  */
 import {
   useCallback, useEffect, useRef,
-  type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
+  type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
 } from 'react'
 import css from './board.module.css'
 
 /** The shared card textarea. */
-export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, className, blurSubmits = true, onTextChange, onSubmit, onCancel }: {
+export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, className, blurSubmits = true, onTextChange, onPaste, onSubmit, onCancel }: {
   readonly defaultValue?: string
   readonly placeholder?: string
   readonly submitOn: 'mod-enter' | 'enter'
@@ -27,6 +27,8 @@ export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, c
   readonly blurSubmits?: boolean
   /** Reports every keystroke: the owner's dirty flag (the discard confirm's condition) rides it. */
   readonly onTextChange?: (text: string) => void
+  /** The clipboard owner: the paste arm decides what a page or a table becomes. */
+  readonly onPaste?: (event: ReactClipboardEvent<HTMLTextAreaElement>) => void
   readonly onSubmit: (text: string) => void
   readonly onCancel?: () => void
 }): ReactNode {
@@ -84,6 +86,7 @@ export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, c
         onTextChange?.(event.currentTarget.value)
       }}
       onKeyDown={onKeyDown}
+      onPaste={onPaste}
       onBlur={submitOn === 'mod-enter' && blurSubmits ? submit : undefined}
       onCompositionStart={() => { composingRef.current = true }}
       onCompositionEnd={() => { composingRef.current = false }}

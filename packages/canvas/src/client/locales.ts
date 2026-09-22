@@ -126,6 +126,11 @@ export const zh = {
   'detail.createHint': '⌘⏎ 建卡 · Esc 返回卡板',
   'detail.nothingToRender': '先写正文，回来才看得到渲染',
 
+  'paste.page': '这是一整页网页，这张卡按网页渲染',
+  'paste.table': '表格转成了 markdown 表',
+  'paste.words': '这段单独看是一整页网页，可这张卡已有正文——标记贴进去只会留下一堆渲染不出来的字，所以落的是网页里的文字那一份。想让这段单独成网页：按 Esc 回卡板，用「新卡」贴进空卡',
+  'paste.markup': '剪贴板里只有标记、没有纯文本，原样贴进来了',
+
   'confirm.discardTitle': '丢掉这张还没保存的新卡？',
   'confirm.discardBody': '正文已经写了 {count} 个字。丢掉就一个字都不剩，卡板上也不会多这张卡。',
   'confirm.close': '关闭',
@@ -317,6 +322,11 @@ export const en: Record<keyof typeof zh, string> = {
   'detail.unsaved': 'Unsaved',
   'detail.createHint': '⌘⏎ adds the card · Esc returns to the board',
   'detail.nothingToRender': 'Write the text first, then the render shows it',
+
+  'paste.page': 'That was a whole page — this card now renders as one',
+  'paste.table': 'The table became a markdown table',
+  'paste.words': 'That reads as a whole page on its own, but this card already has text — the markup would leave words that render as nothing. What landed is the text of the page. For the page itself: Esc back to the board and paste it into an empty card via "New card"',
+  'paste.markup': 'The clipboard carried markup only, so it went in as it came',
 
   'confirm.discardTitle': 'Discard this unsaved card?',
   'confirm.discardBody': 'The text already holds {count} characters. Discarding leaves nothing behind, and the board does not gain the card.',

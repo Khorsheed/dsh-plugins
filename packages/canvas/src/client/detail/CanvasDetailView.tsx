@@ -8,15 +8,19 @@
  * area (url → link; file → the official document preview via
  * `ctx.sidebarRight.openResource`).
  *
- * The edit toggle swaps the rendered body for the pad's editor invariants
- * (CardTextarea: uncontrolled, IME composition as a hard stop, ⌘⏎ or blur
- * saves through `patchCard`, and this root stays the one scroll container),
- * then returns to reading.
+ * This is the board family's only editor: a card's edit toggle and the
+ * new-card draft (the tab holds the draft's text and passes it in `create`)
+ * both land on the same pad invariants (CardTextarea: uncontrolled, IME
+ * composition as a hard stop, ⌘⏎ saves, and this root stays the one scroll
+ * container). The paste arm lives here too — the one place the clipboard is
+ * read, so a pasted page, table, or markup is decided against the card text it
+ * would produce (§11.6 item 3).
  *
  * @module @khorsheed/dsh-canvas/client
  */
 import {
-  useCallback, useEffect, useMemo, useRef, useState, type ReactNode,
+  useCallback, useEffect, useMemo, useRef, useState,
+  type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
 import {
   IconArchiveOutline20, IconCheckOutline16, IconCloseOutline16, IconCodeOutline16,
@@ -34,8 +38,18 @@ import {
   type BoardAskAgentRequest, type BoardCard, type BoardMutationResult, type CanvasBoard, type CanvasError,
 } from '../../types.ts'
 import type { CanvasDetailProps } from '../contract.ts'
+import { choosePaste, type PasteArm } from '../paste-table.ts'
+import type { CanvasKey } from '../locales.ts'
 import { CardTextarea } from '../space/CardTextarea.tsx'
 import css from './CanvasDetailView.module.css'
+
+/** What each paste arm reports about itself (the toast's whole copy). */
+const PASTE_VERDICT: Record<Exclude<PasteArm, 'plain'>, CanvasKey> = {
+  page: 'paste.page',
+  table: 'paste.table',
+  words: 'paste.words',
+  markup: 'paste.markup',
+}
 
 /** The kind icon set (the board's own vocabulary). */
 const KIND_ICONS = {
@@ -245,6 +259,34 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     openSideChat(value.contextKey)
   }, [sessionId, selection.canvasId, askAgent, openSideChat, run, showToast, errorText, t])
 
+  /**
+   * The paste arm (§11.6 item 3, §11.2 row 12): markup may only land when the
+   * card it would produce still reads as one page, because THAT is what the
+   * renderer sniffs. The decision is `choosePaste`'s — this is the one place
+   * the clipboard is read, and the one place a pasted table turns markdown.
+   */
+  const onPaste = useCallback((event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    const clipboard = event.clipboardData
+    if (clipboard === null) return
+    const markup = clipboard.getData('text/html')
+    if (markup.trim().length === 0) return
+    const words = clipboard.getData('text/plain')
+    const element = event.currentTarget
+    const from = element.selectionStart ?? element.value.length
+    const to = element.selectionEnd ?? from
+    const choice = choosePaste(markup, words, candidate =>
+      `${element.value.slice(0, from)}${candidate}${element.value.slice(to)}`)
+    if (choice.arm !== 'plain') showToast(t(PASTE_VERDICT[choice.arm]))
+    // When the clipboard's text flavor is what lands, the browser does the
+    // inserting: its own undo entry, nothing to take over.
+    if (choice.arm === 'plain' || choice.arm === 'words') return
+    event.preventDefault()
+    element.setRangeText(choice.text, from, to, 'end')
+    // The textarea is uncontrolled, so only an input event moves the owner's
+    // copy of its text (the draft's dirty flag rides that report).
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+  }, [showToast, t])
+
   /* -------------------------------------------------------------- rendering */
 
   /** Localized chrome the shared markdown renderer needs (code-block copy, footnotes). */
@@ -290,6 +332,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
                 submitOn="mod-enter"
                 blurSubmits={false}
                 autoFocus={mode === 'source'}
+                onPaste={onPaste}
                 onTextChange={create.onTextChange}
                 onSubmit={text => { void create.onSave(create.kind, text) }}
                 onCancel={create.onLeave}
@@ -430,6 +473,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               defaultValue={card.text}
               submitOn="mod-enter"
               autoFocus={mode === 'source'}
+              onPaste={onPaste}
               onSubmit={text => {
                 const trimmed = text.trim()
                 setMode('render')

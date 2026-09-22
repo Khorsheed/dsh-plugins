@@ -59,6 +59,18 @@ function card(id: string, overrides: Record<string, unknown> = {}): CanvasBoard[
   } as CanvasBoard['cards'][number]
 }
 
+/**
+ * Fires a paste carrying the given clipboard flavors, and reports whether the
+ * handler took the event over (jsdom ships no DataTransfer, so the flavors are
+ * the object the handler reads).
+ */
+function pasteInto(element: HTMLElement, flavors: Record<string, string>): boolean {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', { value: { getData: (type: string): string => flavors[type] ?? '' } })
+  element.dispatchEvent(event)
+  return event.defaultPrevented
+}
+
 interface Harness {
   readonly store: CanvasSelectionStore
   readonly mocks: {
@@ -199,6 +211,62 @@ describe('CanvasDetailView', () => {
     })
     await screen.findByText('改过的正文')
     expect(screen.queryByDisplayValue('改过的正文')).toBeNull()
+  })
+
+  it('pastes a sheet as a markdown table, into the caret, and reports it', async () => {
+    const { store, props } = makeHarness([card('c_1')])
+    store.select(CANVAS_ID, 'c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const editor = await screen.findByDisplayValue('卡片 c_1 的正文')
+    const taken = pasteInto(editor, {
+      'text/html': '<html><body><table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table></body></html>',
+      'text/plain': 'a\tb\n1\t2',
+    })
+    expect(taken).toBe(true)
+    expect((editor as HTMLTextAreaElement).value).toBe('| a | b |\n| --- | --- |\n| 1 | 2 |卡片 c_1 的正文')
+    await screen.findByText(/表格转成了 markdown 表/)
+  })
+
+  it('leaves a page pasted into prose to the browser, and says why in its place', async () => {
+    const { store, props } = makeHarness([card('c_1')])
+    store.select(CANVAS_ID, 'c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const editor = await screen.findByDisplayValue('卡片 c_1 的正文')
+    // The caret sits where a reader leaves it: after the card's own words, so
+    // the card the paste would produce still holds prose.
+    const area = editor as HTMLTextAreaElement
+    area.setSelectionRange(area.value.length, area.value.length)
+    const taken = pasteInto(area, {
+      'text/html': '<!doctype html><html><head><title>雨</title></head><body><p>一整页</p></body></html>',
+      'text/plain': '雨\n\n一整页',
+    })
+    // Not taken over: the browser pastes its own text flavor, with its undo entry.
+    expect(taken).toBe(false)
+    expect(area.value).toBe('卡片 c_1 的正文')
+    await screen.findByText(/落的是网页里的文字那一份/)
+  })
+
+  it('keeps markup as a page when the card it produces still reads as one', async () => {
+    const { store, props } = makeHarness([card('c_h', {
+      kind: 'document',
+      text: '<!doctype html><html><head><title>报告</title></head><body><p>正文</p></body></html>',
+    })])
+    store.select(CANVAS_ID, 'c_h')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('文档')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const editor = await screen.findByDisplayValue(/<title>报告<\/title>/)
+    const taken = pasteInto(editor, {
+      'text/html': '<div><p>又一段</p><span>还有一句</span></div>',
+      'text/plain': '又段一句',
+    })
+    expect(taken).toBe(true)
+    expect((editor as HTMLTextAreaElement).value.startsWith('<div>')).toBe(true)
+    await screen.findByText(/这张卡按网页渲染/)
   })
 
   it('posts a comment from the thread', async () => {
