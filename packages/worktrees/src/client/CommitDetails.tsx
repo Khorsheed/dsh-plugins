@@ -9,9 +9,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  PreviewChrome, StructuredLabels,
+} from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
+import { ContentPane } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import type { ChangedFile, CommitInfo, FileDiffResult, ReadFileResult } from '../types.ts'
 import type { DetailView } from './store.ts'
-import { DetailPane, isDeleted } from './DetailPane.tsx'
+import { DiffView } from './DiffView.tsx'
+import { absolutePath, isDeleted, previewTranslator, toPreviewRead } from './preview.ts'
 import { relativeTime } from './FileTree.tsx'
 import { formatCount } from './Overview.tsx'
 import css from './CommitDetails.module.css'
@@ -42,6 +47,12 @@ export interface CommitDetailsProps {
   copySha: (sha: string) => Promise<boolean>
   /** Open the repository folder with the host application; undefined when the open-in-app probe found no file manager. */
   openFolder: (() => void) | undefined
+  /** The worktree's absolute root, for the pane's resolved display path. */
+  repoRoot: string
+  /** Builds one file's host-open gestures (the tab owns the probed apps). */
+  paneChrome: (path: string) => PreviewChrome
+  /** The pane's structured-render chrome. */
+  labels: StructuredLabels
   /** Locale-bound translator. */
   t: TranslateNS<'worktrees'>
 }
@@ -49,8 +60,9 @@ export interface CommitDetailsProps {
 /** The commit details. */
 export function CommitDetails({
   commit, files, body, selectedPath, diff, content, detailView, hasDiff,
-  onSelectFile, onViewChange, onBack, copySha, openFolder, t,
+  onSelectFile, onViewChange, onBack, copySha, openFolder, repoRoot, paneChrome, labels, t,
 }: CommitDetailsProps): ReactNode {
+  void hasDiff
   const { added, removed } = useMemo(() => ({
     added: sum(files, 'additions'),
     removed: sum(files, 'deletions'),
@@ -125,20 +137,28 @@ export function CommitDetails({
 
         {selectedPath !== null && (
           <div className={css.diff}>
-            <DetailPane
+            <ContentPane
               path={selectedPath}
-              hasDiff={hasDiff}
-              untracked={false}
-              deleted={isDeleted(selectedFile)}
-              detailView={detailView}
-              diff={diff}
-              content={content}
+              read={toPreviewRead({
+                path: selectedPath,
+                deleted: isDeleted(selectedFile),
+                untracked: false,
+                error: null,
+                content,
+                image: null,
+              })}
               loading={false}
               error={null}
+              displayPath={absolutePath(repoRoot, selectedPath)}
+              onCopyPath={() => copySha(absolutePath(repoRoot, selectedPath))}
+              chrome={paneChrome(selectedPath)}
+              labels={labels}
+              t={previewTranslator(t)}
+              {...(diff === null ? {} : { diffView: <DiffView diff={diff.diff} t={t} /> })}
+              view={detailView}
               onViewChange={onViewChange}
               onBack={onBack}
               embedded
-              t={t}
             />
           </div>
         )}

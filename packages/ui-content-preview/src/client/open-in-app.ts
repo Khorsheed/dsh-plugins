@@ -21,6 +21,13 @@ export const OPEN_IN_APP_APPS_ROUTE = '/open-in-app/apps'
 /** POST route launching one application on one directory (official shared.ts). */
 export const OPEN_IN_APP_OPEN_ROUTE = '/open-in-app/open'
 
+/**
+ * The probed-apps feed a surface binds as a hook: null until the host answered,
+ * then the catalog ids it resolved (an empty list on a host without the routes).
+ * Kept as a named alias because consumers type their injected faces with it.
+ */
+export type OpenInAppSource = SnapshotStore<readonly string[] | null>
+
 /** Apps-route response: catalog ids probed as installed, in menu order. */
 export interface OpenInAppAppsPayload {
   readonly apps: readonly string[]

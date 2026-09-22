@@ -39,29 +39,6 @@ body[data-ds-dark-theme] {
   background: var(--dsw-alias-bg-base);
 }
 
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  /* The layer itself is click-through, like file-preview: no dim mask, the
-     drawer's own content owns pointer events and closes via ✕ / Escape. */
-  pointer-events: none;
-}
-
-.drawer {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  min-width: 320px;
-  border-left: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-  box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
-  pointer-events: auto;
-}
-
 .header {
   display: flex;
   flex: none;
@@ -71,13 +48,6 @@ body[data-ds-dark-theme] {
   min-height: 58px;
   padding: 9px 16px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
-/* The local-files browser top bar is a single line (breadcrumb + icon row), so
-   it is shorter than the two-line drawer header and hugs its 32px icons. */
-.browserHeader {
-  min-height: 44px;
-  padding: 6px 12px;
 }
 
 .summary {
@@ -112,90 +82,27 @@ body[data-ds-dark-theme] {
   color: var(--dsw-alias-label-primary);
 }
 
+/* The branch label inside the branch button: same 12px chip scale as the other
+   tab-header text (the class was referenced but never defined before
+   2026-09-23, so the label rendered on the inherited title type). */
+.branchText {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .branchChevron {
   flex: none;
   color: var(--dsw-alias-label-tertiary);
 }
 
 /* ---- local-files browser top bar ---- */
-/* The workspace switcher icon button is a sibling of the other browser actions;
-   its popover anchors to this relative wrapper. */
-.wsWrap {
-  position: relative;
-  display: inline-flex;
-}
-
-/* Breadcrumb path: default shows the workspace root basename, full path on
-   hover, clickable to jump back. */
-.browserCrumbs {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.crumbWrap {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.crumbSep {
-  color: var(--dsw-alias-label-caption);
-  flex: none;
-}
-
-.crumb {
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  border: 0;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: transparent;
-  font-family: inherit;
-  font-size: inherit;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-}
-
-.crumb:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-secondary);
-}
-
-.crumbCur {
-  color: var(--dsw-alias-label-primary);
-  font-weight: 500;
-}
-
-/* A 32x32 hit-area action button (refresh/open/close) with an 18px icon. */
-.browserAction {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
 .browserAction > svg {
   width: 18px;
   height: 18px;
-}
-
-.browserAction:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
 }
 
 /* The four browser actions (workspace / open / refresh / close) sit evenly in
@@ -266,16 +173,6 @@ body[data-ds-dark-theme] {
 .worktreeRow:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
-}
-
-/* The "new workspace" row at the bottom of the workspace switcher: left-aligned,
-   with a top divider separating it from the workspace list. */
-.worktreeNew {
-  justify-content: flex-start;
-  gap: 6px;
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
 }
 
 .worktreeNew > svg {
@@ -506,14 +403,6 @@ body[data-ds-dark-theme] {
   opacity: 1;
 }
 
-.treeHeader {
-  display: flex;
-  flex: none;
-  align-items: center;
-  padding: 2px 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
 .collapseButton {
   display: inline-flex;
   align-items: center;
@@ -530,19 +419,6 @@ body[data-ds-dark-theme] {
 .collapseButton:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
-}
-
-/* Drag handle on the left edge: adjust the drawer width without fullscreen. */
-.resizeHandle {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -4px;
-  width: 8px;
-  z-index: 5;
-  cursor: ew-resize;
-  touch-action: none;
-  user-select: none;
 }
 
 .resizeHandle::after {
@@ -562,20 +438,6 @@ body[data-ds-dark-theme] {
 .resizeHandle:hover::after,
 .resizeHandle:active::after {
   opacity: 1;
-}
-
-/* The commits-mode header: the mode title on the left, the collapse toggle
-   right — mirrors the file tree's own header so both modes read the same. */
-.commitsHeader {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  height: 28px;
-  padding: 0 12px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
 }
 
 /* The collapsed icon rail: a slim column holding only the expand toggle. */

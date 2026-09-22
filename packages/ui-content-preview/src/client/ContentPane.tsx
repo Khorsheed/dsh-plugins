@@ -165,6 +165,7 @@ function PreviewBody(props: {
   scripted: boolean
   /** Whether markdown/JSON/CSV show their source form instead of the preview. */
   sourceMode: boolean
+  imageView: ReactNode
   onLoaded: () => void
   iframeRef: RefObject<HTMLIFrameElement>
   frameRef: RefObject<HTMLDivElement>
@@ -173,7 +174,7 @@ function PreviewBody(props: {
   fullscreen: boolean
 }) {
   const {
-    read, t, labels, search, rawSearch, htmlMode, scripted, sourceMode,
+    read, t, labels, search, rawSearch, htmlMode, scripted, sourceMode, imageView,
     onLoaded, iframeRef, frameRef, scrollRef, onScroll, fullscreen,
   } = props
   switch (read.kind) {
@@ -216,12 +217,14 @@ function PreviewBody(props: {
       )
     }
     case 'image':
-      return (
-        <div className={css.imageScroll} ref={scrollRef} onScroll={onScroll}>
-          <img className={css.image} src={read.url} alt={read.path} />
-          {read.size !== undefined && <div className={css.notice}>{read.size} B</div>}
-        </div>
-      )
+      return imageView !== undefined
+        ? <div className={css.previewScroll} ref={scrollRef} onScroll={onScroll}>{imageView}</div>
+        : (
+          <div className={css.imageScroll} ref={scrollRef} onScroll={onScroll}>
+            <img className={css.image} src={read.url} alt={read.path} />
+            {read.size !== undefined && <div className={css.notice}>{read.size} B</div>}
+          </div>
+        )
     case 'binary':
       return <div className={css.placeholder}>{t('local.binary')}{read.size !== undefined ? ` · ${read.size} B` : ''}</div>
     case 'missing':
@@ -247,7 +250,7 @@ function PreviewBody(props: {
 export function ContentPane(props: ContentPaneProps): ReactNode {
   const {
     path, read, loading, error, sessionId, displayPath, chrome, labels, t,
-    onCopyPath, onBack, diffView, view, onViewChange, notice, embedded = false,
+    onCopyPath, onBack, diffView, view, onViewChange, imageView, notice, embedded = false,
   } = props
 
   // HTML source ⇄ render ⇄ scripted; the sandboxed static render is default.
@@ -556,6 +559,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                     htmlMode={htmlMode}
                     scripted={htmlScripted}
                     sourceMode={sourceMode}
+                    imageView={imageView}
                     onLoaded={onHtmlLoaded}
                     iframeRef={htmlIframeRef}
                     frameRef={htmlFrameRef}

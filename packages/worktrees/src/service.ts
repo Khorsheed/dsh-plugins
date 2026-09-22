@@ -139,6 +139,28 @@ export interface ReadFileAtCommitRequest {
 /** The file's current working-tree content. */
 export interface ReadFileResult {
   content: string
+  /**
+   * Best-effort hint that an HTML document contains scripts (a `<script` tag,
+   * an inline event handler, or a `javascript:` target). The preview's static
+   * tier reads it to warn instead of showing a silently inert page; it is
+   * never a trust decision (proposal preview-kernel §D2).
+   */
+  htmlScripted?: boolean
+}
+
+/** Whether a path names an HTML document (`.html`/`.htm`/`.xhtml`). */
+export function isHtmlPath(path: string): boolean {
+  const dot = path.lastIndexOf('.')
+  if (dot < 0) return false
+  const ext = path.slice(dot).toLowerCase()
+  return ext === '.html' || ext === '.htm' || ext === '.xhtml'
+}
+
+/** Best-effort script hint for an HTML document; see {@link ReadFileResult.htmlScripted}. */
+export function isScriptedHtml(content: string): boolean {
+  return /<script\b/i.test(content)
+    || /\bon[a-z]+\s*=/i.test(content)
+    || /javascript:/i.test(content)
 }
 
 /** MIME types this plugin previews inline as images. */
@@ -543,7 +565,10 @@ export class WorktreesService {
     if (content.length > MAX_CONTENT_BYTES) {
       throw new Error(`worktrees: file exceeds ${MAX_CONTENT_BYTES} bytes — preview truncated`)
     }
-    return { content }
+    return {
+      content,
+      ...(isHtmlPath(path) && isScriptedHtml(content) ? { htmlScripted: true } : {}),
+    }
   }
 
   /**
@@ -560,7 +585,11 @@ export class WorktreesService {
     if (buffer.byteLength > MAX_CONTENT_BYTES) {
       throw new Error(`worktrees: file exceeds ${MAX_CONTENT_BYTES} bytes — preview truncated`)
     }
-    return { content: buffer.toString('utf8') }
+    const content = buffer.toString('utf8')
+    return {
+      content,
+      ...(isHtmlPath(path) && isScriptedHtml(content) ? { htmlScripted: true } : {}),
+    }
   }
 
   /**

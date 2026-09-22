@@ -22,11 +22,11 @@
  * coexistence, so evicting the official way back into a collapsed sidebar
  * would be the only way in.
  *
- * The badge used to carry a second folder capsule opening the local-files
- * browser from the header; 2026-09-10 the workspace capsule left the header
- * (file browsing converged on the sidebar / conversation-tab entries). The
- * browser surface itself stays mounted — it keeps the workspace switcher and
- * the native directory picker (`pickWorkspace`), so no capability is lost.
+ * The badge used to carry a second folder capsule opening a local-files
+ * browser from the header; 2026-09-10 the workspace capsule left the header.
+ * That browser surface is gone entirely as of 2026-09-23 — it had no opener
+ * left, and file browsing is @khorsheed/dsh-local-files' job (proposal
+ * preview-kernel).
  *
  * The external-open gestures (show in folder) ride the official open-in-app
  * host routes (0.1.5): a once-per-page probe of GET /open-in-app/apps decides
@@ -36,7 +36,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-// Type-only: pulls the ctx.workspaces service merge.
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -55,25 +54,23 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import worktreesRemote from '@khorsheed/dsh-worktrees/remote'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  FileDiffRequest, ListLocalDirectoryRequest, PluginInventorySnapshot,
+  FileDiffRequest, PluginInventorySnapshot,
   ReadFileAtCommitRequest, ReadFileRequest,
-  ReadLocalFileRequest, ReadLocalImageRequest, ReadRepoImageRequest,
+  ReadRepoImageRequest,
 } from '../types.ts'
 import { WorktreesBadge } from './Badge.tsx'
 import { WorktreesTab } from './WorktreesTab.tsx'
-import { LocalFilesDrawer } from './LocalFilesDrawer.tsx'
 import type {
-  LocalFilesDrawerInjected, WorktreesBadgeInjected, WorktreesTabInjected, WorktreesRemote,
+  WorktreesBadgeInjected, WorktreesTabInjected, WorktreesRemote,
 } from './contract.ts'
 import { WORKTREES_KIND, WORKTREES_TAB_ID, worktreesDefinition } from './definition.tsx'
 import { en, NS, zh } from './locales.ts'
-import { OpenInAppProbe } from './open-in-app.ts'
+import { OpenInAppProbe } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import { WorktreesController } from './panel-service.ts'
 import { RegistrationToggle, WorktreesTabVisibility } from './preset-visibility.ts'
-import { createLocalFilesStore } from './store-local.ts'
 import { createWorktreesStore, type DrawerMode } from './store.ts'
 
-export { WorktreesBadge, WorktreesTab, LocalFilesDrawer, WorktreesController }
+export { WorktreesBadge, WorktreesTab, WorktreesController }
 export { WORKTREES_KIND, WORKTREES_TAB_ID }
 
 /** Required services: slots, sessions, the remote channel, the locale, and
@@ -85,22 +82,11 @@ export { WORKTREES_KIND, WORKTREES_TAB_ID }
  * an ancestor fiber — declaring it would deadlock the loader. The mount is
  * awaited and the namespace is then read back from the global store with
  * `ctx.get` (the ui-file-preview precedent). */
-export const inject = ['slots', 'remote', 'locale', 'sessions', 'workspaces', 'sidebarRight', 'sidebarRightTabs']
-
-/**
- * Open the host's native directory picker (0.1.5: the ui-workspace face).
- * Absence resolves null — the picker-cancel value.
- * @param ctx - client root context.
- * @returns the chosen path, or null on cancel/unavailable.
- */
-function pickHostDirectory(ctx: Context): Promise<string | null> {
-  const uiWorkspace = ctx.get('uiWorkspace') as { pickDirectory(): Promise<string | null> } | undefined
-  return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
-}
+export const inject = ['slots', 'remote', 'locale', 'sessions', 'sidebarRight', 'sidebarRightTabs']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, the tab
- * type and its body, the session-header badge, and the local-files browser.
+ * type and its body, plus the session-header badge.
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -148,18 +134,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     })
   }
 
-  /** The registered workspaces, projected for the browser's switcher. */
-  const listWorkspaces = (): { id: string; title: string; path: string }[] => {
-    const snapshot = ctx.workspaces.list.getSnapshot()
-    return snapshot.items.map(workspace => ({
-      id: workspace.workspaceId,
-      title: workspace.title,
-      path: workspace.path,
-    }))
-  }
-
-  /** Open the host's native directory picker (resolves the chosen path). */
-  const pickWorkspace = (): Promise<string | null> => pickHostDirectory(ctx)
 
   // Stage one of the right-Sidebar registration: the page type itself (guide
   // entry, no address claims). The default band is 'extension', correct for a
@@ -203,6 +177,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       hooks: { openInApp: openInApp.apps },
       openExternal: openOnHost,
       copyBranch: (branch: string) => writeClipboard(branch),
+      copyPath: (path: string) => writeClipboard(path),
     }),
   }, WorktreesTab)), 'worktrees: tab body')
 
@@ -225,26 +200,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       getVersion: () => controller.getVersion(),
     }),
   }, WorktreesBadge))
-
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'worktrees-local-files',
-    order: 140,
-    locale: NS,
-    store: createLocalFilesStore,
-    inject: (actions): LocalFilesDrawerInjected => {
-      controller.attachLocalFiles(actions)
-      return {
-        listLocalDirectory: (request: ListLocalDirectoryRequest) => remote.listLocalDirectory(request),
-        readLocalFile: (request: ReadLocalFileRequest) => remote.readLocalFile(request),
-        readLocalImage: (request: ReadLocalImageRequest) => remote.readLocalImage(request),
-        listWorkspaces,
-        pickWorkspace,
-        hooks: { openInApp: openInApp.apps },
-        openExternal: openOnHost,
-      }
-    },
-  }, LocalFilesDrawer))
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

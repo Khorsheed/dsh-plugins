@@ -178,6 +178,12 @@ export interface ContentPaneProps {
   /** Called when the caller should switch view (required to show the toggle). */
   readonly onViewChange?: ((view: PreviewView) => void) | undefined
   /**
+   * Replaces the kernel's plain `<img>` body for `image` reads when supplied —
+   * the worktrees surface uses it for its zoom/lightbox viewer. The kernel's
+   * own rendering stays the default so a caller without one needs nothing.
+   */
+  readonly imageView?: ReactNode
+  /**
    * Extra chrome rendered above the body but OUTSIDE the read's own rendering —
    * the worktrees surface uses it for its untracked-file note, so the kernel
    * never has to learn what a git status is.

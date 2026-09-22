@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-worktrees",
-  "description": "Worktree status visibility: a per-session repo/worktree badge in the session header plus a right-sidebar worktrees tab (the selected worktree's pending changes with diffs, IDE-style repository commit log, full repo browse) and a local-files browser, over a Typert Remote data face",
+  "description": "Worktree status visibility: a per-session repo/worktree badge in the session header plus a right-sidebar worktrees tab (the selected worktree's pending changes with diffs, IDE-style repository commit log, full repo browse) over a Typert Remote data face. File browsing itself belongs to @khorsheed/dsh-local-files; the two share one content pane (@khorsheed/dsh-client-ui-content-preview).",
   "version": "0.2.0",
   "publishConfig": {
     "access": "public"
@@ -55,6 +55,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@khorsheed/dsh-client-ui-content-preview": "workspace:*",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -158,7 +159,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "The badge mounts the session header utilities slot (the 0.1.5 header corner is a single slot the shipped web composition already occupies with ui-sidebar-right's ExpandButton, and single-slot semantics are shadowing — same priority throws at registration, a different priority replaces the occupant — so the badge stays in the list slot). The changes/commits/repository view is a page-type right-Sidebar tab (kind `worktrees`, opened from the badge through `ctx.sidebarRight.openTab`); the local-files browser stays on the frame-wide shell.overlay slot. Both are web surfaces — headless profiles have no browser consumer and the plugin contributes nothing there. The external-open gestures (show in folder) ride the official open-in-app host routes: a once-per-page GET /open-in-app/apps probe decides visibility (a host without the routes reads as no apps and the gestures stay hidden), and the gesture POSTs /open-in-app/open with a directory path. The `visiblePresets` badge+tab gate reads the session's agent preset from the `agentPreset` session projection — sessions the projection cannot read keep the badge (fail-open); the config itself reaches the browser through the worktrees Remote (`badgeConfig`) because the web boot composes client entries without config. The right-sidebar tab TYPE self-hides on the same criterion at the registration level (the guide enumerates registrations; opened tabs are stored per session and an unregistered kind renders the host's tab.unavailable fallback).",
+      "notes": "The badge mounts the session header utilities slot (the 0.1.5 header corner is a single slot the shipped web composition already occupies with ui-sidebar-right's ExpandButton, and single-slot semantics are shadowing \u2014 same priority throws at registration, a different priority replaces the occupant \u2014 so the badge stays in the list slot). The changes/commits/repository view is a page-type right-Sidebar tab (kind `worktrees`, opened from the badge through `ctx.sidebarRight.openTab`); the frame-wide local-files browser this plugin used to mount was removed 2026-09-23 (it had no opener left, and file browsing is @khorsheed/dsh-local-files' job). Both are web surfaces \u2014 headless profiles have no browser consumer and the plugin contributes nothing there. The external-open gestures (open folder / open in IDE, per file) ride the official open-in-app host routes: a once-per-page GET /open-in-app/apps probe decides visibility (a host without the routes reads as no apps and the gestures stay hidden), and the gesture POSTs /open-in-app/open with the file's parent directory. The `visiblePresets` badge+tab gate reads the session's agent preset from the `agentPreset` session projection \u2014 sessions the projection cannot read keep the badge (fail-open); the config itself reaches the browser through the worktrees Remote (`badgeConfig`) because the web boot composes client entries without config. The right-sidebar tab TYPE self-hides on the same criterion at the registration level (the guide enumerates registrations; opened tabs are stored per session and an unregistered kind renders the host's tab.unavailable fallback).",
       "verifiedHost": "0.1.5-rc.1"
     }
   }

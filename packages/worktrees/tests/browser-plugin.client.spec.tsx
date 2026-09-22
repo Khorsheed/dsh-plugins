@@ -128,7 +128,11 @@ describe('worktrees browser plugin', () => {
     // neighbors sit at -10 (open-in-app) and 0 (session-log-export "…").
     const { entry: badge } = badgeApi(b)
     expect(badge?.options).toMatchObject({ id: 'worktrees-badge', order: -20 })
-    expect(b.ctx.slots.entries('shell.overlay').length).toBe(1)
+    // The frame-wide local-files browser surface was removed 2026-09-23: its
+    // only opener (the badge's folder capsule) had already gone in ea531c4b, so
+    // the mounted-but-unreachable drawer is gone and file browsing belongs to
+    // @khorsheed/dsh-local-files alone (proposal preview-kernel).
+    expect(b.ctx.slots.entries('shell.overlay').length).toBe(0)
     await b.fiber.dispose()
   })
 
