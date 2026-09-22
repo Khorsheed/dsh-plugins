@@ -43,7 +43,7 @@ Duplication after this change, repo-wide: the sandbox `srcDoc` builder 4 copies 
 
 Bought: one implementation for both surfaces; three user-visible asymmetries closed in a single change; the untracked-file toggle and iframe-height defects disappeared as a side effect of using one pane; the dead drawer, its two bugs and its private browser state deleted; the shared HTML pipeline now has the tests it never had.
 
-Cost: a new package in the publish graph, so the consumers' npm tarballs declare a dependency that must be published alongside them (their bundles are already self-contained; the edge is metadata); a deliberate edit to a mainline-owned checker file; the kernel's stylesheet travels inside each consumer's client bundle, so a kernel style change requires rebuilding the consumers rather than republishing the kernel; and the two surfaces must keep their dictionaries in sync with `PREVIEW_KEYS`, which the new key-completeness tests make a failure rather than a silent English string.
+Cost: a new package in the workspace (the consumers name it in `devDependencies`, NOT `dependencies` — pack-dist would turn a runtime edge into a registry range the unpublished kernel cannot satisfy, and the deploy flow refuses non-self-mounting packages as targets; a `devDependency` is also the honest field, since tsdown inlines the kernel before anything ships); a deliberate edit to a mainline-owned checker file; the kernel's stylesheet travels inside each consumer's client bundle, so a kernel style change requires rebuilding the consumers rather than republishing the kernel; and the two surfaces must keep their dictionaries in sync with `PREVIEW_KEYS`, which the new key-completeness tests make a failure rather than a silent English string.
 
 ## Testing
 

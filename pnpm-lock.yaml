@@ -1458,9 +1458,6 @@ importers:
 
   packages/local-files:
     dependencies:
-      '@khorsheed/dsh-client-ui-content-preview':
-        specifier: workspace:*
-        version: link:../ui-content-preview
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1498,6 +1495,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
+      '@khorsheed/dsh-client-ui-content-preview':
+        specifier: workspace:*
+        version: link:../ui-content-preview
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.1
@@ -2509,9 +2509,6 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
-      '@khorsheed/dsh-client-ui-content-preview':
-        specifier: workspace:*
-        version: link:../ui-content-preview
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -2573,6 +2570,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.2
+      '@khorsheed/dsh-client-ui-content-preview':
+        specifier: workspace:*
+        version: link:../ui-content-preview
       '@testing-library/react':
         specifier: ^16.1.0
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
