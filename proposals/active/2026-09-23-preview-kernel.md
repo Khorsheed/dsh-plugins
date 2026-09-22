@@ -1,7 +1,7 @@
 # 文件/工作树共享预览内核（preview-kernel）
 
 - **分类**：plugin（仓库内新增共享包 + 一条显式跨包边；非上游改动）
-- **状态**：planned（能力清单已定稿，M1 待开工）
+- **状态**：in-progress（M0–M3 已交付，M4 待定）
 - **最后更新**：2026-09-23
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）+ `docs/`。**同一意图有两处预告，无重复提案**：① `proposals/closed/2026-08-26-local-files-browser.md:99` 在拆分 local-files 时明确写下「内容预览组件（HTML/Markdown/JSON/CSV/图片）从 worktrees 复制进包内（自包含，不跨包依赖；**共享预览层抽提是后续可能的优化，不在本批次**）」——本提案就是那条被推迟的后续，且该提案已 `done` 归档，按 README「done 是关闭不是开始新工作，后续增量走新提案」新建；② `.agents/notes/implemented/feature/2026-09-18-canvas-html-cards.zh.md:65` 已直接写「若要，归**共享渲染包**，不归画布」——第三个消费方已假定这个包存在。相邻但不同意图，不合并：`active/2026-08-21-file-view-html-rendering.md`（Tier0/Tier1 渲染能力本身，本提案把它的产物收进内核，互指见「实现记录」）、`active/2026-08-23-worktree-governance.md`（worktrees 的 git 能力，本提案只统一渲染面，不碰 git 面）、`active/2026-09-16-canvas-space.md`（消费方，本提案为其提供渲染面）。
 - **官方依赖**：纯插件（零官方改动）。新增的是**仓库内**共享包与一条显式跨包边，不是上游契约扩展。若官方日后导出可复用文档渲染面，本提案转入 `closed（官方吸收）`，见「退休路径」。
@@ -169,10 +169,10 @@ local-files 自己的注释就写着 `preparing for a future merge`（`packages/
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| M0 | 本能力清单定稿（提案正文 + README 总表） | 本批次 |
-| M1 | 内核包落地：契约 + 分发 + HTML 两档（含桥）+ 排版口径 + 搜索 + chrome；自带单测 | 待开工 |
-| M2 | local-files 接入：删私有实现，补「渲染 ⇄ 源码」切换；回归其 7 份测试 | 待开工 |
-| M3 | worktrees 接入：删私有 `DetailPane`/`HtmlPreview`/`html-src-doc`/`structured`/`rendered-search` 副本；补 host 侧 `htmlScripted`；补 per-file 三个手势；删除不可达的 `LocalFilesDrawer` 及其两个 bug；修复 untracked 分支无视切换与 iframe 高度 | 待开工 |
+| M0 | 本能力清单定稿（提案正文 + README 总表） | **已完成**（`89e6a358`） |
+| M1 | 内核包落地：契约 + 分发 + HTML 两档（含桥）+ 排版口径 + 搜索 + chrome；自带单测 | **已完成**（`33f6138f` 骨架与纯模块 28 tests；`bbc50444` ContentPane 并集，39 tests；open-in-app 收编后 48 tests） |
+| M2 | local-files 接入：删私有实现，补「渲染 ⇄ 源码」切换；回归其测试 | **已完成**（`e97ff2fb`；26 tests 含键完整性与 kind 映射断言） |
+| M3 | worktrees 接入：删私有 `DetailPane`/`HtmlPreview`/`html-src-doc`/`structured`/`open-in-app` 副本；补 host 侧 `htmlScripted`；补 per-file 三个手势；删除不可达的 `LocalFilesDrawer` 及其两个 bug；修复 untracked 分支无视切换与 iframe 高度 | **已完成**（`0c30dd6a`；77 tests；抽屉删除后 index 的 workspaces 注入与 `pickHostDirectory` 一并移除） |
 | M4（可延后） | ui-file-preview 的 `FilePreviewPane` 并入内核（第三份拷贝），并把其 IDE 分体按钮能力**反向**并入内核（保持并集口径） | 待定 |
 
 ### 退休路径
@@ -207,3 +207,8 @@ local-files 自己的注释就写着 `preparing for a future merge`（`packages/
 ## 实现记录
 
 - 2026-09-23：提案建立（本文件），能力清单 A–H 定稿；查重结论见头部。关联提案：`active/2026-08-21-file-view-html-rendering.md`（Tier0/Tier1 渲染能力，本内核承接其产物）、`closed/2026-08-26-local-files-browser.md`（本提案是其 §形态 里预告的「共享预览层抽提」）、`active/2026-08-23-worktree-governance.md`（worktrees git 面）。
+- 2026-09-23 M1（`33f6138f` + `bbc50444`）：内核包 `packages/ui-content-preview` 与 ContentPane 落地；门禁三处登记（`COMPOSITION_COMPONENTS` 增 `source-plane-library`、`NO_OWN_PATCH` 与 `ALLOWED_EDGES`）；`docs/packages.md` 重新生成。48 tests。
+- 2026-09-23 M2（`e97ff2fb`）：local-files 切换完成，删 8 个私有模块，新增 `src/client/preview.ts` 适配层与键完整性测试。26 tests。
+- 2026-09-23 M3（`0c30dd6a`）：worktrees 切换完成，删 8 个私有模块与不可达抽屉，host 侧新增 `htmlScripted`（`readFile` 与 `readFileAtCommit`），补 20 个字典键。77 tests。
+- 交付物：`@khorsheed/dsh-client-ui-content-preview`（新包）、`local-files` 0.1.0-rc.1 线上改动、`worktrees` 0.2.0 线上改动；Agent Note `.agents/notes/implemented/architecture/2026-09-23-preview-kernel.md`。
+- 尚未做：M4（ui-file-preview 第三份拷贝）；worktrees host 面那三个本地文件浏览器方法已无客户端调用方，等一次 host 面清理一并删除。
