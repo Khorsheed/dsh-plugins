@@ -992,6 +992,12 @@ describe('the translation store', () => {
     expect((await service.getEntryBody({ entryId: 'e1', url: 'https://example.com/1' })).scriptFigures).toBe(0)
     await service.storeEntryBody({ entryId: 'e2', url: 'https://example.com/2', html: '<p>two</p>' })
     expect((await service.getEntryBody({ entryId: 'e2', url: 'https://example.com/2' })).scriptFigures).toBeUndefined()
+    // The rendered flag rides the same record: stored true it reads back true,
+    // absent it stays absent — 「重新抓取」 routes on it.
+    await service.storeEntryBody({ entryId: 'e3', url: 'https://example.com/3', html: '<p>three</p>', scriptFigures: 0, rendered: true })
+    expect(await service.getEntryBody({ entryId: 'e3', url: 'https://example.com/3' }))
+      .toMatchObject({ scriptFigures: 0, rendered: true })
+    expect((await service.getEntryBody({ entryId: 'e2', url: 'https://example.com/2' })).rendered).toBeUndefined()
   })
 
   it('keeps the map while an expired body is still on disk — expiry is a serving decision, not a removal', async () => {

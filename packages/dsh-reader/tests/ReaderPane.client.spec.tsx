@@ -110,6 +110,8 @@ interface BenchOptions {
    * earlier (in another visit, or before the pane was remounted).
    */
   readonly cachedBodies?: Readonly<Record<string, string>>
+  /** Per-entry body metadata riding a cachedBodies answer (count, rendered flag). */
+  readonly cachedBodiesMeta?: Readonly<Record<string, { scriptFigures?: number; rendered?: boolean }>>
   /** What `entryFetchStates` answers per entry id (default: `none`). */
   readonly fetchStates?: Readonly<Record<string, ReaderEntryFetchState>>
   /** Entry ids the host reports as needing their full text. */
@@ -206,9 +208,13 @@ function bench(options: BenchOptions = {}) {
       },
     })),
     getRawBody: vi.fn(async (entryId: string) => ({ ok: true as const, value: { entryId } })),
-    storeEntryBody: vi.fn(async (request: { entryId: string; url: string; html: string }) => ({
+    storeEntryBody: vi.fn(async (request: { entryId: string; url: string; html: string; scriptFigures?: number; rendered?: boolean }) => ({
       ok: true as const,
-      value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: request.html },
+      value: {
+        entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: request.html,
+        ...(request.scriptFigures === undefined ? {} : { scriptFigures: request.scriptFigures }),
+        ...(request.rendered === undefined ? {} : { rendered: request.rendered }),
+      },
     })),
     listBackfillCandidates: vi.fn(async (entries: readonly { entryId: string }[]) => ({
       ok: true as const,
@@ -262,7 +268,12 @@ function bench(options: BenchOptions = {}) {
       }
       const cached = options.cachedBodies?.[request.entryId]
       if (cached !== undefined) {
-        return { ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: cached } }
+        const meta = options.cachedBodiesMeta?.[request.entryId]
+        return { ok: true as const, value: {
+          entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: cached,
+          ...(meta?.scriptFigures === undefined ? {} : { scriptFigures: meta.scriptFigures }),
+          ...(meta?.rendered === undefined ? {} : { rendered: meta.rendered }),
+        } }
       }
       return {
         ok: true as const,
@@ -2017,7 +2028,7 @@ describe('the detail view owns up to figures it cannot fetch', () => {
     expect(screen.queryByText(zh['detail.renderFetch'])).toBeNull()
   })
 
-  it('renders→extracts→stores the body through a mounted capture Remote', async () => {
+  it('auto-renders on open when the fetched body counts script figures (one gesture, the whole pipeline)', async () => {
     const ui = bench({
       capture: true,
       sources: [rssSource('tc')],
@@ -2037,21 +2048,99 @@ describe('the detail view owns up to figures it cannot fetch', () => {
     }))
     const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
     fireEvent.click(cards[cards.length - 1] as HTMLElement)
-    const action = await screen.findByText(zh['detail.renderFetch'])
-    fireEvent.click(action)
+    // No button click: opening the entry IS the gesture, the plain fetch lands
+    // a shell (2 script figures), and the rendered fetch continues on its own.
     await waitFor(() => { expect(ui.mocks.captureRender).toHaveBeenCalledWith({ url: 'https://example.com/paper' }) })
     // The captured HTML went through the whitelist extractor and was stored —
-    // with its script-figure count, zero included: the remount falls back to
-    // the ENTRY's stale load-time count when the body record is silent, and
-    // the notice (plus 「渲染抓取」) rises from the dead.
+    // rendered: true (「重新抓取」 re-renders it) and the count, zero included:
+    // a silent record lets the notice rise from the dead on the next open.
     await waitFor(() => {
       expect(ui.mocks.storeEntryBody).toHaveBeenCalledWith(expect.objectContaining({
         entryId: expect.any(String),
         url: 'https://example.com/paper',
         scriptFigures: 0,
+        rendered: true,
       }))
     })
     expect(await screen.findByText(new RegExp('渲染抓到的正文'))).toBeTruthy()
+  })
+
+  it('a failed auto-render leaves the manual retry, and reopening does not refire it', async () => {
+    const ui = bench({
+      capture: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: true,
+      fresh: true,
+      fromFeed: false,
+      html: '<p>fetched body</p>',
+      scriptFigures: 2,
+    }))
+    ui.mocks.captureRender.mockResolvedValueOnce({ ok: false, error: { message: 'capture/unavailable' } })
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.captureRender).toHaveBeenCalledTimes(1) })
+    // The loop guard held: the failure leaves a manual retry…
+    await screen.findByText(zh['detail.renderFetch'])
+    // …and a leave-and-reopen does not start a second render by itself.
+    fireEvent.click(screen.getByRole('button', { name: zh['action.back'] }))
+    fireEvent.click((await screen.findAllByRole('button', { name: /有插图的条目/ }))[0] as HTMLElement)
+    await screen.findByText(new RegExp(zh['detail.scriptFigures'].replace('{count}', '2').slice(0, 12)))
+    expect(ui.mocks.captureRender).toHaveBeenCalledTimes(1)
+    fireEvent.click(await screen.findByText(zh['detail.renderFetch']))
+    await waitFor(() => { expect(ui.mocks.captureRender).toHaveBeenCalledTimes(2) })
+  })
+
+  it('重新抓取 re-renders an entry whose stored body came from a render', async () => {
+    const ui = bench({
+      capture: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>有插图的条目</title>'
+          + '<link>https://example.com/paper</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    const cards = await screen.findAllByRole('button', { name: /有插图的条目/ })
+    // The stored body is a rendered one: opening reads rendered: true back.
+    ui.mocks.getEntryBody.mockImplementation(async (request: { entryId: string }) => ({
+      ok: true as const,
+      value: {
+        entryId: request.entryId,
+        cached: true,
+        fresh: true,
+        fromFeed: false,
+        html: '<p>渲染过的正文</p>',
+        scriptFigures: 0,
+        rendered: true,
+      },
+    }))
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    await screen.findByText(new RegExp('渲染过的正文'))
+    const before = ui.mocks.captureRender.mock.calls.length
+    // Hold the render open: the button must show the in-flight state, or a
+    // re-render looks dead for minutes.
+    let release: (() => void) | undefined
+    ui.mocks.captureRender.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return { ok: true as const, value: { html: `<article><p>${'渲染抓到的正文。'.repeat(30)}</p></article>` } }
+    })
+    fireEvent.click(await screen.findByText(zh['detail.refetch']))
+    await waitFor(() => { expect(ui.mocks.captureRender.mock.calls.length).toBe(before + 1) })
+    const refetchBtn = screen.getByRole('button', { name: new RegExp(zh['detail.refetching']) })
+    expect(refetchBtn).toHaveProperty('disabled', true)
+    release!()
+    await screen.findByText(new RegExp('渲染抓到的正文'))
+    // …and the plain fetch never fired: that would clobber the rendered body
+    // with the page's pre-JS shell.
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
   })
 
   it('counts script-drawn figures on the saved-link path too (inline extraction)', async () => {

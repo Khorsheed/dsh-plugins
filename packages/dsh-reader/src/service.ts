@@ -638,6 +638,7 @@ export class ReaderService {
         fetchedAt: cached.fetchedAt,
         ...(cached.truncated === true ? { truncated: true } : {}),
         ...(cached.scriptFigures === undefined ? {} : { scriptFigures: cached.scriptFigures }),
+        ...(cached.rendered === true ? { rendered: true } : {}),
         ...(html === undefined || !fresh || cached.url !== request.url ? {} : { html }),
       }
     }
@@ -819,6 +820,8 @@ export class ReaderService {
     html: string
     truncated?: boolean
     scriptFigures?: number
+    /** True when this body came from the capture rendered fetch — 「重新抓取」 re-renders it. */
+    rendered?: boolean
     /** The caller's hash of `html`; the entry's translation map dies with a body it no longer matches. */
     bodyHash?: string
     /** The article's own title, as the extraction read it — a saved link's card upgrade. */
@@ -854,6 +857,7 @@ export class ReaderService {
       ...(request.scriptFigures === undefined
         ? {}
         : { scriptFigures: request.scriptFigures }),
+      ...(request.rendered === true ? { rendered: true } : {}),
     }
     await this.commit(current => {
       const existing = current.annotations?.[request.entryId]
@@ -897,6 +901,7 @@ export class ReaderService {
       fetchedAt: body.fetchedAt,
       ...(body.truncated === true ? { truncated: true } : {}),
       ...(body.scriptFigures === undefined ? {} : { scriptFigures: body.scriptFigures }),
+      ...(body.rendered === true ? { rendered: true } : {}),
     }
   }
 

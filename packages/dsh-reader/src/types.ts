@@ -744,6 +744,13 @@ export interface ReaderEntryBody {
   readonly file?: string
   /** The body's character count, so the document can report its size without it. */
   readonly chars?: number
+  /**
+   * True when this body came from the capture package's rendered fetch rather
+   * than the plain fetch. The detail view's 「重新抓取」 routes on it: a
+   * rendered entry re-renders (a plain fetch would clobber the rendered body
+   * with the page's pre-JS shell).
+   */
+  readonly rendered?: boolean
   /** When it was fetched (ISO-8601), for the "fetched just now" line and pruning. */
   readonly fetchedAt: string
   /**
@@ -794,6 +801,8 @@ export interface ReaderEntryBodyView {
   readonly truncated?: boolean
   /** Figures this page draws with scripts — the detail view says so. */
   readonly scriptFigures?: number
+  /** True when this body came from a rendered fetch (the「重新抓取」route reads it). */
+  readonly rendered?: boolean
   /** Why a fetch could not produce a body, when one was attempted. */
   readonly error?: string
 }

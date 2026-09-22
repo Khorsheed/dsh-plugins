@@ -390,6 +390,7 @@ function normalizeBody(value: unknown): ReaderEntryAnnotation['body'] {
     ...(typeof record.scriptFigures === 'number' && Number.isFinite(record.scriptFigures)
       ? { scriptFigures: record.scriptFigures }
       : {}),
+    ...(record.rendered === true ? { rendered: true } : {}),
   }
 }
 

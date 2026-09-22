@@ -715,6 +715,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [scriptFigures, setScriptFigures] = useState(0)
   /** True while a capture-rendered refetch of the open entry is in flight. */
   const [captureBusy, setCaptureBusy] = useState(false)
+  /** Entries whose stored body came from a rendered fetch (the「重新抓取」route reads it). */
+  const renderedBodiesRef = useRef(new Set<string>())
+  /** Auto-render fires once per entry per pane session; failures leave the manual retry. */
+  const autoRenderTriedRef = useRef(new Set<string>())
   /** What the plugin holds per entry, as the host reports it (the 抓取 pills). */
   const fetchStates = useStore(s => s.fetchStates)
   /** What the reader opened, as the host stores it (the 「最近阅读」 page). */
@@ -1831,7 +1835,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * @param entryId - the entry whose body is wanted.
    * @param url - the article URL to fetch.
    */
-  const fetchBody = useCallback(async (entryId: string, url: string) => {
+  const fetchBody = useCallback(async (entryId: string, url: string): Promise<number | undefined> => {
     actions.setFetching(entryId, true)
     try {
       const result = await props.fetchEntryBody(entryId, url)
@@ -1854,12 +1858,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           actions.setArticle(result.html, result.truncated === true, null)
           setScriptFigures(result.scriptFigures ?? 0)
         }
+        // The caller escalates on a shell: a body that still counts script
+        // figures wants the rendered fetch next.
+        return result.scriptFigures ?? 0
       } else if (result.error !== undefined && onScreen) {
         // Keep whatever is already rendered (a feed summary, say) and add the
         // reason: a failed fetch must not take the little text the reader has.
         // It also leaves the host's copy — and its stale marker — untouched.
         actions.setArticle(articleHtml ?? '', false, result.error)
       }
+      return undefined
     } finally {
       actions.setFetching(entryId, false)
       // The card reads the host's annotation through the mirror: re-read the
@@ -1880,24 +1888,24 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    *
    * @param entry - the entry on screen.
    */
-  const captureBody = useCallback(async (entry: ReaderEntry) => {
+  const captureBody = useCallback(async (entryId: string, link: string) => {
     const capture = props.captureRemote()
-    if (capture === undefined || entry.link === undefined) return
+    if (capture === undefined) return
     setCaptureBusy(true)
     try {
-      const rendered = await capture.render({ url: entry.link })
+      const rendered = await capture.render({ url: link })
       if (!rendered.ok) {
-        if (openRequestRef.current === entry.id) actions.setArticle(articleHtml ?? '', false, rendered.error.message)
+        if (openRequestRef.current === entryId) actions.setArticle(articleHtml ?? '', false, rendered.error.message)
         return
       }
-      const finalUrl = rendered.value.finalUrl ?? entry.link
+      const finalUrl = rendered.value.finalUrl ?? link
       const extracted = extractArticle(rendered.value.html, finalUrl)
       if (!extracted.ok) {
-        if (openRequestRef.current === entry.id) actions.setArticle(articleHtml ?? '', false, extracted.error)
+        if (openRequestRef.current === entryId) actions.setArticle(articleHtml ?? '', false, extracted.error)
         return
       }
       const stored = await props.storeEntryBody({
-        entryId: entry.id,
+        entryId,
         url: finalUrl,
         html: extracted.html,
         bodyHash: translationHash(extracted.html),
@@ -1908,18 +1916,43 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         // is what keeps the notice (and 「渲染抓取」) from rising from the dead
         // on the next open.
         scriptFigures: extracted.scriptFigures ?? 0,
+        // …and the body is marked rendered, so 「重新抓取」 re-renders instead
+        // of clobbering it with the page's pre-JS shell.
+        rendered: true,
       })
-      if (openRequestRef.current !== entry.id) return
+      renderedBodiesRef.current.add(entryId)
+      if (openRequestRef.current !== entryId) return
       if (stored.ok && stored.value.html !== undefined) {
         actions.setArticle(stored.value.html, stored.value.truncated === true, null)
         setScriptFigures(stored.value.scriptFigures ?? 0)
-        actions.setStaleBody(entry.id, false)
-        void syncFetchState(entry.id)
+        actions.setStaleBody(entryId, false)
+        void syncFetchState(entryId)
       }
     } finally {
       setCaptureBusy(false)
     }
   }, [actions, props, articleHtml, syncFetchState])
+
+  /**
+   * One gesture, the whole pipeline: an explicit per-entry ask (add a link,
+   * the card's 「抓取」, opening an entry, the detail's 「重新抓取」) that lands
+   * on a script-figure shell continues into the rendered fetch on its own —
+   * the gesture already authorized capturing that URL. Fires once per entry
+   * per pane session (a failure leaves the manual「渲染抓取」retry); background
+   * paths (scheduled feed refresh, backfill) never reach here.
+   */
+  const maybeAutoRender = useCallback((entryId: string, link: string | undefined, count: number) => {
+    if (link === undefined || count <= 0) return
+    if (props.captureRemote() === undefined) return
+    if (autoRenderTriedRef.current.has(entryId)) return
+    autoRenderTriedRef.current.add(entryId)
+    void captureBody(entryId, link)
+  }, [props, captureBody])
+
+  /** A plain fetch that escalates on a shell — the explicit-gesture fetch path. */
+  const fetchThenMaybeRender = useCallback((entryId: string, link: string): void => {
+    void fetchBody(entryId, link).then(count => maybeAutoRender(entryId, link, count ?? 0))
+  }, [fetchBody, maybeAutoRender])
 
   /** Open one entry: mark it read and make sure a body is available. */
   const open = useCallback(async (row: ReaderRow) => {
@@ -1967,6 +2000,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       // so it is written before the screen guard: whether the host's cached
       // copy is past its deadline (the card's 「已过期」 reads this).
       if (view.ok) actions.setStaleBody(row.entry.id, view.value.cached === true && view.value.fresh === false)
+      // The rendered-body flag rides the same answer: 「重新抓取」 re-renders a
+      // rendered entry instead of clobbering it with the page's pre-JS shell.
+      if (view.ok && view.value.rendered === true) renderedBodiesRef.current.add(row.entry.id)
       // The answer came back to a screen that has moved on: another open (or a
       // close) happened while the host was answering. Writing here would put
       // this entry's body under THAT entry's title.
@@ -1985,7 +2021,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         actions.setArticle(view.value.html, view.value.truncated === true, null)
         // A stored body carries its count; a fresh link's feedHtml echo is the
         // load-time extraction, whose count rides the entry instead.
-        setScriptFigures(view.value.scriptFigures ?? row.entry.scriptFigures ?? 0)
+        const knownCount = view.value.scriptFigures ?? row.entry.scriptFigures ?? 0
+        setScriptFigures(knownCount)
+        maybeAutoRender(row.entry.id, row.entry.link, knownCount)
         actions.setStaleBody(row.entry.id, view.value.fresh === false)
         // `html` here is either the FEED's own payload or a body this plugin
         // already fetched and cached — a cached one is paid for already.
@@ -1997,7 +2035,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         // the same text from the network. The body is paid for once; the
         // detail view's own 「重新抓取」 is how a reader asks again.
         if (view.value.fromFeed === true) {
-          if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
+          if (summaryOwed) fetchThenMaybeRender(row.entry.id, row.entry.link as string)
           // Full text the feed itself published: keep it, or it dies with the
           // feed's window (see persistFeedBody).
           else persistFeedBody(row.entry.id, row.entry.link as string, view.value.html, view.value.truncated === true, linkMetaOf(row))
@@ -2009,7 +2047,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         // it immediately (better than an empty page) and fetch the real text
         // behind it. A feed FULL text in the same situation is kept instead —
         // there is nothing to fetch for it.
-        if (summaryOwed) void fetchBody(row.entry.id, row.entry.link as string)
+        if (summaryOwed) fetchThenMaybeRender(row.entry.id, row.entry.link as string)
         else persistFeedBody(row.entry.id, row.entry.link as string, row.entry.contentHtml, row.entry.truncated === true, linkMetaOf(row))
       } else {
         // Nothing cached, nothing from the feed, and no recorded reason.
@@ -2028,7 +2066,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         const reason = view.value.error ?? (row.sourceKind === 'link' ? t('detail.extractFailed') : null)
         actions.setArticle('', false, reason)
         if (row.sourceKind === 'rss' && view.value.error === undefined) {
-          void fetchBody(row.entry.id, row.entry.link as string)
+          fetchThenMaybeRender(row.entry.id, row.entry.link as string)
         }
       }
       return
@@ -2054,11 +2092,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (extracted.ok) {
       actions.setArticle(extracted.html, truncated, null)
       // The link-entry path extracts inline, so the script-figure count (and
-      // with it the notice + 「渲染抓取」 action) must be set here too — the
+      // with it the notice + auto-render escalation) must be set here too — the
       // fetch paths set it from the host's answer, this one computes it locally.
-      setScriptFigures(extracted.scriptFigures ?? 0)
+      const count = extracted.scriptFigures ?? 0
+      setScriptFigures(count)
+      maybeAutoRender(row.entry.id, row.entry.link, count)
     } else actions.setArticle('', truncated, extracted.error)
-  }, [actions, props, t, fetchBody, persistFeedBody, recent, fetchStates, syncFetchState])
+  }, [actions, props, t, fetchThenMaybeRender, persistFeedBody, recent, fetchStates, syncFetchState, maybeAutoRender])
 
   /* ------------------------------ coming back to where the reader already was */
 
@@ -2616,8 +2656,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     // stores the payload first, so leaving the page does not cancel it. It also
     // re-reads this entry's state from the host when the fetch settles, so the
     // pill flips without a full-wall poll here.
-    await fetchBody(entry.id, entry.link)
-  }, [actions, fetchBody])
+    const count = await fetchBody(entry.id, entry.link)
+    // One gesture, the whole pipeline: a shell answer continues into the
+    // rendered fetch on its own (see maybeAutoRender).
+    maybeAutoRender(entry.id, entry.link, count ?? 0)
+  }, [actions, fetchBody, maybeAutoRender])
 
   /** Reload the tags on one entry. */
   const loadEntryTags = useCallback(async (entryId: string) => {
@@ -2639,8 +2682,16 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (entry.link === undefined) return
     forgetTranslation(entry.id)
     restoredTranslationRef.current = entry.id
+    // A rendered body re-renders: a plain fetch would clobber it with the
+    // page's pre-JS shell. A manual gesture always allowed (the auto-render
+    // loop guard does not apply to it).
+    if (renderedBodiesRef.current.has(entry.id) && props.captureRemote() !== undefined) {
+      autoRenderTriedRef.current.delete(entry.id)
+      await captureBody(entry.id, entry.link)
+      return
+    }
     await startFetch(entry)
-  }, [startFetch])
+  }, [startFetch, captureBody, props])
 
   /**
    * Delete a tag from the vocabulary and from every entry carrying it.
@@ -3364,12 +3415,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 <button
                   type="button"
                   className={css.refetch}
-                  disabled={bodyFetching}
+                  // A rendered entry's「重新抓取」re-renders through capture —
+                  // captureBusy is that in-flight state, or the button looks
+                  // dead for minutes.
+                  disabled={bodyFetching || captureBusy}
                   title={t('detail.refetchTitle')}
                   onClick={() => { void refetchEntry(openEntry) }}
                 >
                   {glyph('fetch', 11)}
-                  <span>{bodyFetching ? t('detail.refetching') : t('detail.refetch')}</span>
+                  <span>{bodyFetching || captureBusy ? t('detail.refetching') : t('detail.refetch')}</span>
                 </button>
               )}
             </div>
@@ -3424,18 +3478,22 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           {scriptFigures > 0 && (
             <p className={css.incomplete}>
               {t('detail.scriptFigures', { count: scriptFigures })}{' '}
-              {/* 「渲染抓取」: the capture package's slot (the ingest proposal's
-                  M1). It renders ONLY while a capture Remote probes present —
-                  a control that cannot work is worse than none. */}
+              {/* The explicit per-entry gesture auto-escalates into the
+                  rendered fetch (maybeAutoRender), so this slot is the PROGRESS
+                  line while it runs and the manual retry when it failed — a
+                  control that cannot work (no capture Remote) never renders. */}
               {captureRemote !== undefined && openEntry.link !== undefined && (
-                <button
-                  type="button"
-                  className={css.incompleteLink}
-                  disabled={captureBusy}
-                  onClick={() => { void captureBody(openEntry) }}
-                >
-                  {captureBusy ? t('detail.refetching') : t('detail.renderFetch')}
-                </button>
+                captureBusy
+                  ? <span>{t('detail.rendering')}</span>
+                  : (
+                    <button
+                      type="button"
+                      className={css.incompleteLink}
+                      onClick={() => { void captureBody(openEntry.id, openEntry.link as string) }}
+                    >
+                      {t('detail.renderFetch')}
+                    </button>
+                  )
               )}{' '}
               {openEntry.link !== undefined && (
                 <button
@@ -4360,7 +4418,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             {entry.contentHtml === undefined && entry.link !== undefined && (
               <button
                 type="button"
-                onClick={() => { setCardMenu(null); void fetchBody(entry.id, entry.link as string) }}
+                onClick={() => { setCardMenu(null); fetchThenMaybeRender(entry.id, entry.link as string) }}
               >
                 {t('action.fetchBody')}
               </button>
