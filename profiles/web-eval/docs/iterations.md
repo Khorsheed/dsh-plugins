@@ -375,7 +375,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T49 ✅ | 代码（脚本） | `install.sh --source` 自 pack-dist 的 family-edge 规则（`3406a471`）起坏了：`--family` 传的是光名字，打到 local-agent-tool-subagent 报 `is a family edge but no version was given`；改成 `name=version`，用临时 DSH_HOME 全量装一遍验证 | 无 | 合入 main `5e4ec1a3`（2026-09-14，`cd3c9ad4`）；27 个 tarball、7 个带家族、零 warn，临时实例起到就绪协议走完；`--dump-config` 24 成员是 profile 根的口径（伴生三包在预设层），判据里的 27 是 tarball 数 |
 | T50 ✅ | 代码（脚本，小） | 三处脚本卫生：`scripts/gen-typert.mts` 全量模式在全新 DSH_HOME 上死锁（取锁用非递归 mkdirSync，scratch/ 不存在就空转 900 秒）；`install.sh` 第 287 行附近「成员不变量 23」的注释落后两轮；评估去掉 `GEN_TYPERT_ONLY` 让全量模式吃缓存（T35b 实测 27 包构建 80 分钟 → 12 分钟）；`scripts/gate.mts` 的 GLOBAL_PATHS 不含 `profiles/*/scripts/`，改脚本不触发整仓 | T49 | 合入 main `05050252`（2026-09-14，三提交）；死锁复现（未修版挂 11 分钟 CPU 0.1 秒）→ 修后 42 秒；gate 把 profiles/<id>/scripts/ 当共享层（探针 worktree 实测 scope 变整仓）；**GEN_TYPERT_ONLY 保留**——全量模式的 typert.host.js 会把本 profile 不装的 room / worktrees / canvas 的类型发进 mission 等成员 tarball（+4 KB、14 条 Room* 声明），注释写明两个耗时的前提；全新 DSH_HOME 全量装一遍 6 分 20 秒 |
 | T51 ✅ | 代码（脚本，小） | gate 的 porcelain 解析错位：gitRunner 对输出 `.trim()`，`git status --porcelain` 未暂存行以空格开头，首行被吃掉一格后 `slice(3)` 少一个字符——改了 `scripts/foo.ts` 未 add 时 scope 成 NONE 假绿；改成按 `/^(..) (.*)$/` 解析或对 status 不 trim，补用例 | T50 | 合入 main `899410e9`（2026-09-16，`53e89adf`）；两处都改：gitRunner 只去尾部换行（抽成 trimTrailingNewlines 可测）、porcelainPaths 逐行正则；修前后 scope 原文对照（NONE → 整仓）；畸形行丢弃是「往窄里错」，唯一来源已堵 |
-| T54 | 代码 + 方法论 | 报告的得分口径：按格取最权威 ns 整体算分（primaryPass），一格第一条 human-final 会让只有 llm-draft 判定的判据全部出局（T37 实测 4 → 1）；改成逐判据合并（human-final 只覆盖它判的那条），历史报告会重算——**用户 2026-09-18 定：逐判据合并**，文案见 §三。**补充（一）同日**：用户看结果页「看不出每个维度的得分对比和评委的评判依据」——results.jsonl 每行本就是一条判据级判定（criterion / pass / ratio / evidence / by / judge），只是投影不下发；结果对比页加「判据 × 对比组」表、每格展开依据与判官名（报告页已揭盲），与主任务一起做，文案见 §三「T54 补充（一）」。**2026-09-22 回报到（`8c47f0a2`，eval 902，gate 绿）**：逐判据合并、格级 sources、判据 × 对比组表、展开依据与判官、两份真实 bundle 无回归——内容都对；但 main 在分支基点后进了别的会话的 `e5106df6`（推理强度冻结：`primaryPass` 顶部加 `configurationMismatch` 守卫、`comparePair` 过滤不一致格），与本分支在 `report.ts` 的 `primaryPass` 冲突，**退回实施者合 main（graft：保留逐判据的整个函数体，把守卫那一行加回函数顶部）**；ui-spec §五 得分口径已回写 | T37 | 一格的分数按判据取最权威层，来源混合要标出；历史 pilot 报告重算 |
+| T54 | 代码 + 方法论 | 报告的得分口径：按格取最权威 ns 整体算分（primaryPass），一格第一条 human-final 会让只有 llm-draft 判定的判据全部出局（T37 实测 4 → 1）；改成逐判据合并（human-final 只覆盖它判的那条），历史报告会重算——**用户 2026-09-18 定：逐判据合并**，文案见 §三。**补充（一）同日**：用户看结果页「看不出每个维度的得分对比和评委的评判依据」——results.jsonl 每行本就是一条判据级判定（criterion / pass / ratio / evidence / by / judge），只是投影不下发；结果对比页加「判据 × 对比组」表、每格展开依据与判官名（报告页已揭盲），与主任务一起做，文案见 §三「T54 补充（一）」。**2026-09-22 回报到（`8c47f0a2`，eval 902，gate 绿）**：逐判据合并、格级 sources、判据 × 对比组表、展开依据与判官、两份真实 bundle 无回归——内容都对；但 main 在分支基点后进了别的会话的 `e5106df6`（推理强度冻结：`primaryPass` 顶部加 `configurationMismatch` 守卫、`comparePair` 过滤不一致格），与本分支在 `report.ts` 的 `primaryPass` 冲突，**退回实施者合 main**，文案见 §三「T54 补充（二）」（2026-09-23，main 此时还含 T69，判据表接 openCell 一并做）；ui-spec §五 得分口径已回写 | T37 | 一格的分数按判据取最权威层，来源混合要标出；历史 pilot 报告重算 |
 | T52 | 代码（脚本，低优先） | gen-typert 的 stamp 按选中集做 key，让 scoped 模式也命中缓存（T50 实测 8 次 scoped × 44 秒占了安装耗时的九成）；这是缓存契约的改动，先方案 | T50 | install.sh 源码模式耗时降到分钟级以内 |
 | T36 ✅ | 代码 | 实验室 › 计划审阅 + 条件页 + 「批准并启动」：validate 投影逐条、条件 list / diff 投影、启动经 Remote 转到既有 runStart | T35a | 合入 main `66dbdede`（2026-09-14，`7cb31f66` + `14753348`）；Remote 加 plan / conditions / conditionDiff / approve 四个带会话的 verb，approve 先 validate 有 error 即拒；临时实例 3199 上计划审阅、批准后的概览（就绪拒绝原文原样）、dsh-exec 与 codex-exec 的 diff 只报 7 个不同项；真机抓到并修了 runOutput 少传 cursor 被网关精确位参拒的 bug；「新建实验」占位指向 T34 |
 | T35b ✅ | 代码 | 实验室 › 矩阵 + 格子 + 格子详情：mission 投影经 eval Remote（`cells / cell`）、因子选列、rep 圆点与卡格告警、三个动作转发（重跑 / 释放检查 / 导出计划与导出）、打开子会话 | T35a | 合入 main `e3fe4904`（2026-09-14，`57776e71` + 并 main 的 `57fec492`）；15 文件 48 处冲突按「两边都留」解净，Remote 18 个 verb、locale 207 键、占位页只剩 report / judging；面绑定 14 处显式传满位参并加守卫用例；合并态 eval 584；矩阵两种列（真账本按 scope、pilot-a bundle 按 harness 与 model）、抽屉、三个动作、导出对话框（mission 的拒绝原文原样转出）都有原文 |
@@ -2576,6 +2576,26 @@ eval 测试全绿，gate 绿；拿 T39 那份 bundle 重跑 dsh-eval report，�
 4. 单对比组的 run 也给这张表（一列）：「判官依据」不依赖比较。
 5. 格式照 §九：数字 31.5k / 4 分 48 秒式；证据原文折叠，默认只露一行。
 6. 判据：拿 xcsp 那份带 report 的 bundle（或 T39 的 24yh）在页面上看到 13 条判据 × 2 组的表，每格能展开到 evidence 与判官名；results.jsonl 不变，summary.md 加同一张表（markdown）。测试：投影快照 + 页面渲染（含一格展开）。
+```
+
+**T54 补充（二）（2026-09-23，可发）**：
+
+```text
+# T54 补充（二）：合 main——两处冲突按 graft 解，判据表接上 T69 的跳转
+
+回报的内容验过没问题（逐判据合并、格级 sources、判据 × 对比组表、两份真实 bundle 无回归都接受；对照用重建的人工判定、判据表用 axis 当维度，两处出入都接受）。合不进去是因为 main 在分支基点 35edb693 之后进了两条 eval 改动，回报里「main 只动了 ankh-guard」是 git log <base>..main -- packages/eval 漏看了：
+- e5106df6（别的会话，推理强度冻结）：report.ts 的 primaryPass 顶部加了 if (configurationMismatch(cell)) return null；comparePair 的 current 过滤成 cells.filter(c => c.isCurrent && !configurationMismatch(c))；checkSubject 多了 reasoning mismatch / unverified 两条。
+- 2be4b3bf（T69）：ReportPage 配对表每格可点，走 store 的 openCell(missionId)（有 missionId 时）/ focusRecords({task, condition})（没有时）；RunsPage 详情带产物内联与判官会话；locales / LabView.module.css / types.ts / 三个 client spec 都动过。
+
+在 ../dsh-plugins-wt-report-merge 里 git merge main，按 graft 法解，不 hunk 拼接：
+
+1. report.ts primaryPass：整个函数体取你的逐判据版本；把 main 那一行 if (configurationMismatch(cell)) return null 加回函数顶部（configurationMismatch 是 main 的函数，保留）。comparePair 的 !configurationMismatch 过滤保留。语义要对上：推理强度回读 mismatch 的格，逐判据合并之后一条判据都不出、sources 为空——加一个用例钉住（tests/report.spec.ts 里 main 已有 mismatch 夹具，接着写）。
+2. README.i18n.yaml：不手解，合并后跑 node_modules/.bin/tsx scripts/verify-translation-pairing.mts --write packages/eval/README.en.md 重生成。
+3. ReportPage.tsx / locales.ts / LabView.module.css / types.ts：自动合并若无冲突也要通读一遍——T69 把配对表格子改成可点，你的判据表格子也接同一条路：每条样本带 missionId，格子点开时有 missionId 走 openCell(missionId)，多样本（n/N）时走 focusRecords({task, condition}) 落到运行记录列表并选中那些行；不另写第三种跳转。
+4. 三个 client spec 与 report.spec.ts：两边的用例都留，冲突的取并集。
+5. 跑 eval 测试、tsc -b --noEmit、gate；回报分支 + 合并 commit，说明 mismatch 用例的原文。ui-spec §五 得分口径协调者已回写（运行记录详情只给来源不给数值），不用动。
+
+通用提醒照旧：合并归协调者，不混 checkpoint。
 ```
 
 ### T69 · 运行记录详情看得见「跑了什么、交了什么」：产物内联与过程回放（可发，2026-09-18）
