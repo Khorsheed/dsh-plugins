@@ -34,9 +34,17 @@ const FIXTURE_PAGE = `<!DOCTYPE html>
   :root { --brand-clay: #bada55; --ink: #112233 }
   .eager-figure rect { fill: var(--ink) }
   .io-figure circle { fill: var(--brand-clay) }
+  /* CSS nesting: the measured failure (transformer-circuits figure grids are
+     laid out by nested rules like .intro-functional > & .if-row). The nested
+     rule must flatten against the parent and inline. */
+  .nest-host {
+    & .nest-row { display: flex; flex-direction: row }
+    & .nest-row > .nest-cell { color: #135713 }
+  }
 </style>
 </head><body>
   <h1>fixture</h1>
+  <div class="nest-host"><div class="nest-row"><span class="nest-cell">nested</span></div></div>
   <figure class="eager-figure"><svg viewBox="0 0 10 10"><rect width="8" height="8"/></svg></figure>
   <div class="spacer"></div>
   <figure class="io-figure" id="lazy"></figure>
@@ -173,6 +181,9 @@ describeWithChrome('render integration (real Chrome)', () => {
     expect(result.html).not.toContain('var(--brand-clay)')
     // The eagerly rendered figure arrived too.
     expect(result.html).toContain('fill="#112233"')
+    // CSS-nested rules flatten and inline (the figure-grid layout class).
+    expect(result.html).toContain('display: flex')
+    expect(result.html).toContain('color: rgb(19, 87, 19)')
     // Scripts never ship.
     expect(result.html).not.toContain('<script')
     // The JS-driven widget became one snapshot img: its pixels replace the

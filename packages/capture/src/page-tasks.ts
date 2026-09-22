@@ -377,6 +377,21 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
     return out.filter((part) => part !== '')
   }
 
+  /**
+   * Flatten one CSS-NESTING level: `&` substitutes the parent selector (a
+   * parent list wraps in `:is()`), and a nested selector without `&` is a
+   * descendant of `:is(parent)` — per spec. `specificityOf` already scores
+   * `:is()` by its max argument, which is exactly the nested rule's cascade
+   * weight.
+   */
+  const flattenNestedSelector = (parent: string, child: string): string => {
+    if (child.includes('&')) {
+      const wrapped = parent.includes(',') ? `:is(${parent})` : parent
+      return child.replace(/&/g, wrapped)
+    }
+    return `:is(${parent}) ${child}`
+  }
+
   /** Read past an identifier (with escapes) starting at `i`; returns the end index. */
   const skipIdent = (s: string, i: number): number => {
     while (i < s.length) {
@@ -517,7 +532,7 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
   }
 
   /** Collect the readable rules of one rule list, honoring conditional groups. */
-  const collectRules = (rules: ArrayLike<CSSRule>, into: CollectedRule[], order: { value: number }): void => {
+  const collectRules = (rules: ArrayLike<CSSRule>, into: CollectedRule[], order: { value: number }, parentSelector?: string): void => {
     for (let i = 0; i < rules.length; i += 1) {
       const rule = rules[i]!
       const kind = rule.constructor?.name ?? ''
@@ -525,38 +540,73 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
         const styleRule = rule as CSSStyleRule
         const declarations: Declaration[] = []
         const style = styleRule.style
-        for (let d = 0; d < style.length; d += 1) {
+        for (let d = 0; d < style.length; d++) {
           const prop = style.item(d)
           const value = style.getPropertyValue(prop)
           if (value === '') continue
           declarations.push({ prop, value, important: style.getPropertyPriority(prop) === 'important' })
         }
-        if (declarations.length === 0) continue
-        const parts = splitSelectorList(styleRule.selectorText).map((selector) => ({
-          selector,
-          specificity: specificityOf(selector),
-          ...prefilterOf(selector),
-        }))
-        into.push({ parts, declarations, order: order.value })
-        order.value += 1
+        // CSS nesting: the selector flattens against the enclosing rule's
+        // (`& .if-row` under `.intro-functional`). Nested declarations keep
+        // document order relative to the parent's own ones by construction.
+        const flattened = parentSelector === undefined
+          ? styleRule.selectorText
+          : flattenNestedSelector(parentSelector, styleRule.selectorText)
+        if (declarations.length > 0) {
+          const parts = splitSelectorList(flattened).map((selector) => ({
+            selector,
+            specificity: specificityOf(selector),
+            ...prefilterOf(selector),
+          }))
+          into.push({ parts, declarations, order: order.value })
+          order.value += 1
+        }
+        // Nested rules ride the style rule's cssRules — a type-1 rule is not a
+        // leaf when nesting is in play (measured: transformer-circuits lays
+        // out its figure grids with `.intro-functional { & .if-row {…} }`).
+        const nested = (styleRule as unknown as { cssRules?: ArrayLike<CSSRule> }).cssRules
+        if (nested !== undefined && nested.length > 0) {
+          collectRules(nested, into, order, flattened)
+        }
+      } else if (kind === 'CSSNestedDeclarations') {
+        // Bare declarations between nested rules apply to the PARENT selector.
+        if (parentSelector !== undefined) {
+          const style = (rule as unknown as { style: CSSStyleDeclaration }).style
+          const declarations: Declaration[] = []
+          for (let d = 0; d < style.length; d += 1) {
+            const prop = style.item(d)
+            const value = style.getPropertyValue(prop)
+            if (value === '') continue
+            declarations.push({ prop, value, important: style.getPropertyPriority(prop) === 'important' })
+          }
+          if (declarations.length > 0) {
+            const parts = splitSelectorList(parentSelector).map((selector) => ({
+              selector,
+              specificity: specificityOf(selector),
+              ...prefilterOf(selector),
+            }))
+            into.push({ parts, declarations, order: order.value })
+            order.value += 1
+          }
+        }
       } else if (kind === 'CSSMediaRule' || (rule.type === 4 && 'media' in rule)) {
         const mediaRule = rule as CSSMediaRule
         const text = mediaRule.media?.mediaText ?? ''
         // jsdom has no matchMedia: include rather than drop (test path only;
         // a real browser always evaluates the condition).
         if (text === '' || typeof window.matchMedia !== 'function' || window.matchMedia(text).matches) {
-          collectRules(mediaRule.cssRules, into, order)
+          collectRules(mediaRule.cssRules, into, order, parentSelector)
         }
       } else if (kind === 'CSSSupportsRule') {
         const supportsRule = rule as CSSSupportsRule
         if (typeof CSS === 'undefined' || typeof CSS.supports !== 'function' || CSS.supports(supportsRule.conditionText)) {
-          collectRules(supportsRule.cssRules, into, order)
+          collectRules(supportsRule.cssRules, into, order, parentSelector)
         }
       } else if (kind === 'CSSImportRule') {
         const styleSheet = (rule as CSSImportRule).styleSheet
         if (styleSheet !== null && styleSheet !== undefined) {
           try {
-            collectRules(styleSheet.cssRules, into, order)
+            collectRules(styleSheet.cssRules, into, order, parentSelector)
           } catch {
             // An imported cross-origin sheet refuses reads; its rules are lost.
           }
@@ -564,7 +614,7 @@ export function inlineStylesAndSerialize(args: CaptureSerializeArgs): CaptureSer
       } else if ('cssRules' in rule && kind !== 'CSSFontFaceRule' && kind !== 'CSSKeyframesRule') {
         // Layers, containers, scopes: include the contents (document order is
         // an adequate layer-order approximation for v1).
-        collectRules((rule as unknown as { cssRules: ArrayLike<CSSRule> }).cssRules, into, order)
+        collectRules((rule as unknown as { cssRules: ArrayLike<CSSRule> }).cssRules, into, order, parentSelector)
       }
     }
   }

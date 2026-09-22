@@ -180,6 +180,36 @@ describe('inlineStylesAndSerialize: CSSOM inlining', () => {
     expect(paths[1]).not.toContain('stroke')
   })
 
+  it('collects CSS-nested rules, flattening & and bare descendant selectors against the parent', () => {
+    setPage(`<html><head><style>
+      .nest-host {
+        & .nest-row { display: flex }
+        .nest-cell { color: #123456 }
+        &.lit { color: #654321 }
+      }
+    </style></head><body>
+      <div class="nest-host lit"><div class="nest-row"><div class="nest-cell">x</div></div></div>
+    </body></html>`)
+    const result = serializeDocument()
+    const host = /<div class="nest-host[^"]*"([^>]*)>/.exec(result.html)
+    const row = /<div class="nest-row"([^>]*)>/.exec(result.html)
+    const cell = /<div class="nest-cell"([^>]*)>/.exec(result.html)
+    expect(row?.[1] ?? '').toContain('display: flex')
+    expect(cell?.[1] ?? '').toContain('color: rgb(18, 52, 86)')
+    expect(host?.[1] ?? '').toContain('color: rgb(101, 67, 33)')
+  })
+
+  it('honors specificity through nesting and document order across nested sibling rules', () => {
+    setPage(`<html><head><style>
+      .a { & .t { color: red } }
+      .b { & .t { color: blue } }   /* same weight: later rule wins */
+    </style></head><body>
+      <div class="a b"><div class="t">x</div></div>
+    </body></html>`)
+    const result = serializeDocument()
+    expect(result.html).toContain('color: blue')
+  })
+
   it('strips scripts, style blocks and stylesheet links from the output', () => {
     setPage(`<html><head>
       <style>.x { color: red }</style>
