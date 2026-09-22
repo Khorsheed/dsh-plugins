@@ -40,6 +40,23 @@ import {
   DEFAULT_IDLE_TIMEOUT_MS,
 } from './types.ts'
 
+/** A page-rectangle screenshot request (element-level widget snapshots). */
+export interface CaptureScreenshotRequest {
+  readonly clip: {
+    readonly x: number
+    readonly y: number
+    readonly width: number
+    readonly height: number
+    /** Raster zoom: 2 keeps widget text crisp on retina displays. */
+    readonly scale?: number
+  }
+  readonly type: 'webp'
+  readonly quality: number
+  /** Clip may sit anywhere in the document, not only in the current viewport. */
+  readonly captureBeyondViewport: boolean
+  readonly encoding: 'base64'
+}
+
 /** The page surface the render pipeline drives (a structural subset of puppeteer's `Page`). */
 export interface CapturePage {
   setViewport(viewport: { width: number; height: number; deviceScaleFactor?: number }): Promise<void>
@@ -51,6 +68,10 @@ export interface CapturePage {
   goto(url: string, options: { waitUntil: 'load'; timeout: number }): Promise<CaptureHttpResponse | null>
   /** Run a self-contained function in the page and return its (serializable) result. */
   evaluate<A, R>(fn: (arg: A) => R | Promise<R>, arg: A): Promise<R>
+  /** Install an init script that runs before any page script on every navigation. */
+  evaluateOnNewDocument(fn: () => void): Promise<void>
+  /** Screenshot a page rectangle; resolves to the base64 payload. */
+  screenshot(request: CaptureScreenshotRequest): Promise<string>
   /** Where the page actually is (after every redirect). */
   url(): string
 }
@@ -329,14 +350,41 @@ async function defaultLaunch(options: {
     args: [...options.args],
     timeout: 30_000,
   }) as {
-    createBrowserContext(): Promise<{ newPage(): Promise<CapturePage>; close(): Promise<void> }>
+    createBrowserContext(): Promise<{ newPage(): Promise<Untyped>; close(): Promise<void> }>
     close(): Promise<void>
     on(event: 'disconnected', listener: () => void): void
   }
   return {
-    createBrowserContext: () => browser.createBrowserContext(),
+    createBrowserContext: async () => {
+      const context = await browser.createBrowserContext()
+      return {
+        newPage: async () => adaptPage(await context.newPage()),
+        close: () => context.close(),
+      }
+    },
     close: () => browser.close(),
     onDisconnected: (listener) => browser.on('disconnected', listener),
+  }
+}
+
+/**
+ * Narrow one puppeteer page to the pipeline's surface. The explicit wrapper is
+ * what lets `screenshot` promise the base64 string (puppeteer's own signature
+ * is a buffer|string union), and keeps every other method's structural typing
+ * honest at one boundary.
+ */
+function adaptPage(page: Untyped): CapturePage {
+  return {
+    setViewport: (viewport) => page.setViewport(viewport),
+    setRequestInterception: (enabled) => page.setRequestInterception(enabled),
+    on: (event: 'request' | 'requestfinished' | 'requestfailed', listener: (request: CaptureHttpRequest) => void) =>
+      page.on(event, listener),
+    mainFrame: () => page.mainFrame(),
+    goto: (url: string, options: { waitUntil: 'load'; timeout: number }) => page.goto(url, options),
+    evaluate: <A, R>(fn: (arg: A) => R | Promise<R>, arg: A) => page.evaluate(fn, arg) as Promise<R>,
+    evaluateOnNewDocument: (fn: () => void) => page.evaluateOnNewDocument(fn),
+    screenshot: async (request: CaptureScreenshotRequest) => (await page.screenshot(request)) as string,
+    url: () => page.url(),
   }
 }
 

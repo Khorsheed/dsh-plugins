@@ -108,6 +108,21 @@ export const SCROLL_STEP_RATIO = 0.8
 export const QUIESCENCE_QUIET_MS = 500
 export const QUIESCENCE_MAX_MS = 5_000
 
+/** Interactive widgets snapshotted per render (document order; the rest keep their DOM). */
+export const DEFAULT_MAX_SNAPSHOTS = 40
+
+/** A widget box larger than this in either dimension stays DOM (screenshot cost and payload explode). */
+export const MAX_SNAPSHOT_DIMENSION = 4096
+
+/** Raster zoom of the widget screenshot — 2 keeps widget text crisp on retina displays. */
+export const SNAPSHOT_CLIP_SCALE = 2
+
+/** WebP quality of the widget screenshot. */
+export const SNAPSHOT_WEBP_QUALITY = 80
+
+/** Characters of a widget's non-caption text kept as the snapshot img's alt (the searchable residue). */
+export const WIDGET_ALT_MAX_CHARS = 400
+
 /** Chrome for Testing build tag installed when no binary is configured. */
 export const DEFAULT_CHROME_BUILD = 'stable'
 

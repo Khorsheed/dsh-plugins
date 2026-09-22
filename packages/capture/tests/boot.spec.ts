@@ -15,12 +15,13 @@ import { Context } from '@deepseek-ai/cordis'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { apply, CaptureService, name } from '../src/index.ts'
 import { CaptureRemoteService } from '../src/remote.ts'
-import { inlineStylesAndSerialize, scrollSweepPage } from '../src/page-tasks.ts'
+import { inlineStylesAndSerialize, markInteractiveWidgets, replaceWidgetsWithSnapshots, scrollSweepPage, widgetPageRect } from '../src/page-tasks.ts'
 import type {
   CaptureBrowserContextHandle,
   CaptureHttpRequest,
   CaptureManagedBrowser,
   CapturePage,
+  CaptureScreenshotRequest,
 } from '../src/browser.ts'
 
 const roots: string[] = []
@@ -64,6 +65,10 @@ interface FakePageScript {
   readonly finalUrl?: string
   /** Extra behavior inside goto (e.g. emitting a redirect request). */
   readonly duringGoto?: (page: CapturePage, emit: (request: CaptureHttpRequest) => void) => Promise<void> | void
+  /** The classify pass's answer when widgets exist (default: none). */
+  readonly widgets?: { candidates: number; qualified: number; marked: Array<{ id: number; alt: string }>; skippedOversize: number; skippedHidden: number }
+  /** The rect pass's answer (default: a 640×480 box). */
+  readonly widgetRect?: { x: number; y: number; width: number; height: number } | undefined
 }
 
 class FakePage implements CapturePage {
@@ -104,6 +109,20 @@ class FakePage implements CapturePage {
     if (fn === (scrollSweepPage as unknown)) {
       return Promise.resolve({ steps: 1, elapsedMs: 500, docHeight: 800 } as R)
     }
+    if (fn === (markInteractiveWidgets as unknown)) {
+      return Promise.resolve((this.script.widgets ?? {
+        candidates: 0, qualified: 0, marked: [], skippedOversize: 0, skippedHidden: 0,
+      }) as R)
+    }
+    if (fn === (widgetPageRect as unknown)) {
+      return Promise.resolve(('widgetRect' in this.script
+        ? this.script.widgetRect
+        : { x: 10, y: 20, width: 640, height: 480 }) as R)
+    }
+    if (fn === (replaceWidgetsWithSnapshots as unknown)) {
+      this.replacements = arg
+      return Promise.resolve((arg as unknown as readonly unknown[]).length as R)
+    }
     if (fn === (inlineStylesAndSerialize as unknown)) {
       void arg
       return Promise.resolve({
@@ -119,6 +138,20 @@ class FakePage implements CapturePage {
       } as R)
     }
     throw new Error('unexpected evaluate')
+  }
+
+  initScripts: unknown[] = []
+  shots: CaptureScreenshotRequest[] = []
+  replacements: unknown
+
+  evaluateOnNewDocument(fn: () => void): Promise<void> {
+    this.initScripts.push(fn)
+    return Promise.resolve()
+  }
+
+  screenshot(request: CaptureScreenshotRequest): Promise<string> {
+    this.shots.push(request)
+    return Promise.resolve('QUJD')
   }
 
   url(): string {
@@ -375,5 +408,44 @@ describe('the render pipeline (fake browser)', () => {
     await service.render({ url: 'https://example.com/' })
     await service.dispose()
     expect(flags.browserClosed.value).toBe(true)
+  })
+
+  it('snapshots marked widgets between the sweep and serialize', async () => {
+    const page = new FakePage({
+      goto: 200,
+      widgets: { candidates: 3, qualified: 1, marked: [{ id: 0, alt: 'widget text' }], skippedOversize: 0, skippedHidden: 0 },
+    })
+    const { service } = serviceWithFake(page)
+    await service.render({ url: 'https://example.com/' })
+    expect(page.initScripts).toHaveLength(1)
+    expect(page.shots).toHaveLength(1)
+    expect(page.shots[0]!.clip).toEqual({ x: 10, y: 20, width: 640, height: 480, scale: 2 })
+    expect(page.shots[0]!.type).toBe('webp')
+    expect(page.replacements).toEqual([
+      { id: 0, dataUri: 'data:image/webp;base64,QUJD', width: 640, height: 480, alt: 'widget text' },
+    ])
+  })
+
+  it('leaves widgets as DOM when the screenshot pass yields nothing, and skips the phase entirely when configured off', async () => {
+    const unshot = new FakePage({
+      goto: 200,
+      widgets: { candidates: 1, qualified: 1, marked: [{ id: 0, alt: '' }], skippedOversize: 0, skippedHidden: 0 },
+      widgetRect: undefined,
+    })
+    const { service: offService } = serviceWithFake(unshot, { snapshotWidgets: false })
+    await offService.render({ url: 'https://example.com/' })
+    expect(unshot.initScripts).toHaveLength(0)
+    expect(unshot.shots).toHaveLength(0)
+
+    const empty = new FakePage({
+      goto: 200,
+      widgets: { candidates: 1, qualified: 1, marked: [{ id: 0, alt: '' }], skippedOversize: 0, skippedHidden: 0 },
+      widgetRect: undefined,
+    })
+    const { service } = serviceWithFake(empty)
+    await service.render({ url: 'https://example.com/' })
+    // The rect pass answered "gone": no shot, no replacement, still a clean render.
+    expect(empty.shots).toHaveLength(0)
+    expect(empty.replacements).toBeUndefined()
   })
 })
