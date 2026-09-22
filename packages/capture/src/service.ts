@@ -36,16 +36,29 @@ import {
   DEFAULT_DWELL_MS,
   DEFAULT_MAX_CHARS,
   DEFAULT_MAX_QUEUE,
+  DEFAULT_MAX_SNAPSHOTS,
   DEFAULT_MAX_SWEEP_MS,
   DEFAULT_TIMEOUT_MS,
+  MAX_SNAPSHOT_DIMENSION,
   QUIESCENCE_MAX_MS,
   QUIESCENCE_QUIET_MS,
   SCROLL_STEP_RATIO,
+  SNAPSHOT_CLIP_SCALE,
+  SNAPSHOT_WEBP_QUALITY,
+  WIDGET_ALT_MAX_CHARS,
   type CaptureRenderRequest,
   type CaptureRenderedPage,
 } from './types.ts'
 import { checkResolvedTarget, checkUrlSyntax, type CaptureHostLookup, type CaptureUrlVerdict } from './url-policy.ts'
-import { inlineStylesAndSerialize, scrollSweepPage } from './page-tasks.ts'
+import {
+  inlineStylesAndSerialize,
+  installListenerProbe,
+  markInteractiveWidgets,
+  replaceWidgetsWithSnapshots,
+  scrollSweepPage,
+  widgetPageRect,
+  type CaptureSnapshotReplacement,
+} from './page-tasks.ts'
 
 /** Plugin configuration (the cordis.yml row's `config`). */
 export interface CaptureConfig {
@@ -69,6 +82,10 @@ export interface CaptureConfig {
   readonly dwellMs?: number
   /** Total scroll-sweep budget. */
   readonly maxSweepMs?: number
+  /** Snapshot JS-driven widget figures to pixels before serializing (default true). */
+  readonly snapshotWidgets?: boolean
+  /** How many widget snapshots one render takes at most (default {@link DEFAULT_MAX_SNAPSHOTS}). */
+  readonly maxSnapshots?: number
   /** Extra Chrome command-line arguments. */
   readonly extraArgs?: readonly string[]
 }
@@ -188,6 +205,11 @@ export class CaptureService {
 
     let response: CaptureHttpResponse | null
     try {
+      if (this.config.snapshotWidgets !== false) {
+        // Before any page script: the listener probe tags the elements the
+        // widget classifier reads after the sweep.
+        await page.evaluateOnNewDocument(installListenerProbe)
+      }
       response = await page.goto(url.href, { waitUntil: 'load', timeout: timeoutMs })
     } catch (error) {
       const refusal = await drainedRefusal()
@@ -223,13 +245,28 @@ export class CaptureService {
       maxMs: this.config.maxSweepMs ?? DEFAULT_MAX_SWEEP_MS,
       stepRatio: SCROLL_STEP_RATIO,
     })
+    let snapshotNote = ''
+    if (this.config.snapshotWidgets !== false) {
+      try {
+        const snapshots = await this.snapshotWidgets(page)
+        if (snapshots.marked > 0) {
+          snapshotNote = `, ${snapshots.captured}/${snapshots.marked} widgets snapshotted`
+        }
+      } catch (error) {
+        // A snapshot-phase failure must not sink the render: the widgets keep
+        // their DOM (the pre-snapshot behavior) and the phase is logged.
+        this.ctx.logger.warn(
+          `dsh-capture: widget snapshot phase failed for ${page.url()}: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
     const serialized = await page.evaluate(inlineStylesAndSerialize, {
       maxChars: this.config.maxChars ?? DEFAULT_MAX_CHARS,
     })
     this.ctx.logger.debug(
       `dsh-capture: rendered ${serialized.finalUrl} — ${serialized.inlinedElements} elements inlined, `
       + `${serialized.removedScripts} scripts removed, ${serialized.skippedSheets} sheets skipped`
-      + `${serialized.truncated ? ', TRUNCATED' : ''}`,
+      + `${snapshotNote}${serialized.truncated ? ', TRUNCATED' : ''}`,
     )
     return {
       html: serialized.html,
@@ -237,6 +274,58 @@ export class CaptureService {
       ...(serialized.title !== '' ? { title: serialized.title } : {}),
       ...(serialized.truncated ? { truncated: true } : {}),
     }
+  }
+
+  /**
+   * The widget snapshot phase: classify (canvas / listener-probed figures),
+   * screenshot each widget's box to a WebP data URI, then swap subtrees for
+   * imgs. A widget that fails its own screenshot keeps its DOM — the swap only
+   * ever receives the ids that actually captured.
+   */
+  private async snapshotWidgets(page: CapturePage): Promise<{ marked: number; captured: number; failed: number }> {
+    const mark = await page.evaluate(markInteractiveWidgets, {
+      maxSnapshots: this.config.maxSnapshots ?? DEFAULT_MAX_SNAPSHOTS,
+      maxDimension: MAX_SNAPSHOT_DIMENSION,
+      altMaxChars: WIDGET_ALT_MAX_CHARS,
+    })
+    const replacements: CaptureSnapshotReplacement[] = []
+    let failed = 0
+    for (const widget of mark.marked) {
+      try {
+        const rect = await page.evaluate(widgetPageRect, widget.id)
+        if (rect === undefined || rect === null) {
+          failed += 1
+          continue
+        }
+        const data = await page.screenshot({
+          clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: SNAPSHOT_CLIP_SCALE },
+          type: 'webp',
+          quality: SNAPSHOT_WEBP_QUALITY,
+          captureBeyondViewport: true,
+          encoding: 'base64',
+        })
+        replacements.push({
+          id: widget.id,
+          dataUri: `data:image/webp;base64,${data}`,
+          width: rect.width,
+          height: rect.height,
+          alt: widget.alt,
+        })
+      } catch {
+        failed += 1
+      }
+    }
+    let captured = 0
+    if (replacements.length > 0) {
+      captured = await page.evaluate(replaceWidgetsWithSnapshots, replacements)
+    }
+    if (mark.qualified > mark.marked.length || mark.skippedOversize > 0 || failed > 0) {
+      this.ctx.logger.debug(
+        `dsh-capture: widget snapshot bookkeeping — qualified ${mark.qualified}, marked ${mark.marked.length}, `
+        + `oversize ${mark.skippedOversize}, hidden ${mark.skippedHidden}, shot-failed ${failed}`,
+      )
+    }
+    return { marked: mark.marked.length, captured, failed }
   }
 
   /**

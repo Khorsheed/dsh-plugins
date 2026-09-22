@@ -2040,11 +2040,15 @@ describe('the detail view owns up to figures it cannot fetch', () => {
     const action = await screen.findByText(zh['detail.renderFetch'])
     fireEvent.click(action)
     await waitFor(() => { expect(ui.mocks.captureRender).toHaveBeenCalledWith({ url: 'https://example.com/paper' }) })
-    // The captured HTML went through the whitelist extractor and was stored.
+    // The captured HTML went through the whitelist extractor and was stored —
+    // with its script-figure count, zero included: the remount falls back to
+    // the ENTRY's stale load-time count when the body record is silent, and
+    // the notice (plus 「渲染抓取」) rises from the dead.
     await waitFor(() => {
       expect(ui.mocks.storeEntryBody).toHaveBeenCalledWith(expect.objectContaining({
         entryId: expect.any(String),
         url: 'https://example.com/paper',
+        scriptFigures: 0,
       }))
     })
     expect(await screen.findByText(new RegExp('渲染抓到的正文'))).toBeTruthy()

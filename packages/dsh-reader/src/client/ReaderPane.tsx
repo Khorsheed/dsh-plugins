@@ -1902,7 +1902,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         html: extracted.html,
         bodyHash: translationHash(extracted.html),
         ...(rendered.value.truncated === true ? { truncated: true } : {}),
-        ...(extracted.scriptFigures === undefined ? {} : { scriptFigures: extracted.scriptFigures }),
+        // A capture render ALWAYS carries its count, zero included: the entry's
+        // own load-time count (84 script figures, say) is what the remount
+        // falls back to when the body record says nothing — storing the zero
+        // is what keeps the notice (and 「渲染抓取」) from rising from the dead
+        // on the next open.
+        scriptFigures: extracted.scriptFigures ?? 0,
       })
       if (openRequestRef.current !== entry.id) return
       if (stored.ok && stored.value.html !== undefined) {

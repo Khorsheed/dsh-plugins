@@ -4,8 +4,9 @@
  * The fixture reproduces the measured target behavior (transformer-circuits.
  * pub, 2026-09-20): a figure that renders only through IntersectionObserver
  * (a fast scroll-by does not trigger it — the sweep dwells), SVG colors that
- * live in stylesheet rules via CSS custom properties, and scripts that must
- * not survive serialization.
+ * live in stylesheet rules via CSS custom properties, scripts that must
+ * not survive serialization, and a JS-driven widget figure (canvas + listener)
+ * that must arrive as one pixel snapshot with its caption kept as text.
  *
  * The URL policy refuses loopback targets by design, so the fixture is served
  * under the hostname `capture.test`, which Chrome maps to 127.0.0.1 through
@@ -39,6 +40,7 @@ const FIXTURE_PAGE = `<!DOCTYPE html>
   <figure class="eager-figure"><svg viewBox="0 0 10 10"><rect width="8" height="8"/></svg></figure>
   <div class="spacer"></div>
   <figure class="io-figure" id="lazy"></figure>
+  <figure class="widget-figure" id="widget"></figure>
   <script>
     document.querySelector('.spacer').style.height = '2400px'
     const io = new IntersectionObserver((entries) => {
@@ -56,6 +58,23 @@ const FIXTURE_PAGE = `<!DOCTYPE html>
       }
     })
     io.observe(document.getElementById('lazy'))
+    // A JS-driven widget: canvas pixels plus a listener-bearing label. The
+    // snapshot pass must replace the whole subtree with one img of its pixels.
+    const widget = document.getElementById('widget')
+    const canvas = document.createElement('canvas')
+    canvas.width = 40
+    canvas.height = 30
+    const pen = canvas.getContext('2d')
+    pen.fillStyle = '#bada55'
+    pen.fillRect(0, 0, 40, 30)
+    widget.appendChild(canvas)
+    const hot = document.createElement('div')
+    hot.textContent = 'widget remnant'
+    hot.addEventListener('click', () => undefined)
+    widget.appendChild(hot)
+    const cap = document.createElement('figcaption')
+    cap.textContent = 'Figure W: kept caption'
+    widget.appendChild(cap)
   </script>
 </body></html>`
 
@@ -123,8 +142,10 @@ describeWithChrome('render integration (real Chrome)', () => {
       // `chrome` is defined here: the whole describe skipped when it was not.
       executablePath: chrome as string,
       // Chrome resolves capture.test to the fixture; the policy seam answers a
-      // public address for it (loopback targets are refused by design).
-      extraArgs: ['--host-resolver-rules=MAP capture.test 127.0.0.1'],
+      // public address for it (loopback targets are refused by design). The
+      // proxy bypass keeps the fixture deterministic on machines whose system
+      // proxy would otherwise answer capture.test itself (HTTP 503).
+      extraArgs: ['--host-resolver-rules=MAP capture.test 127.0.0.1', '--no-proxy-server'],
       idleTimeoutMs: 30_000,
     }, {
       lookup: async (hostname) =>
@@ -154,6 +175,14 @@ describeWithChrome('render integration (real Chrome)', () => {
     expect(result.html).toContain('fill="#112233"')
     // Scripts never ship.
     expect(result.html).not.toContain('<script')
+    // The JS-driven widget became one snapshot img: its pixels replace the
+    // canvas/remnant subtree, its caption survives as text, its text rides alt.
+    expect(result.html).toContain('data:image/webp;base64,')
+    expect(result.html).toContain('data-capture-snapshot="widget"')
+    expect(result.html).not.toContain('<canvas')
+    expect(result.html).not.toContain('<div>widget remnant</div>')
+    expect(result.html).toContain('Figure W: kept caption')
+    expect(result.html).toContain('alt="widget remnant"')
     expect(result.title).toBe('Capture Fixture')
     expect(result.finalUrl).toBe(`http://capture.test:${port}/page`)
     expect(result.truncated).toBeUndefined()

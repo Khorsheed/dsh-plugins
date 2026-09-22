@@ -63,6 +63,215 @@ export async function scrollSweepPage(args: CaptureSweepArgs): Promise<CaptureSw
   return { steps, elapsedMs: Date.now() - started, docHeight: docHeight() }
 }
 
+/**
+ * The init-script half of the interactive-widget probe: tag every Element that
+ * receives a listener, so the classify pass can tell a JS-driven widget apart
+ * from a static figure. Runs via `evaluateOnNewDocument` BEFORE any page
+ * script (the listener may already be attached at parse time). Idempotent: a
+ * same-document re-install keeps the tags already collected.
+ *
+ * Deliberately NOT detected (documented limits): framework root delegation
+ * (the listener sits on an ancestor OUTSIDE the figure — inspecting only the
+ * figure's own subtree is exactly what keeps a React root from condemning the
+ * whole page), and `onclick`-style property handlers. Canvas subtrees cover
+ * the script-rendered case those misses leave behind.
+ */
+export function installListenerProbe(): void {
+  const w = window as unknown as { __captureListeners?: WeakSet<Element> }
+  if (w.__captureListeners instanceof WeakSet) return
+  const tagged = new WeakSet<Element>()
+  w.__captureListeners = tagged
+  const original = EventTarget.prototype.addEventListener
+  EventTarget.prototype.addEventListener = function (this: EventTarget, ...args: unknown[]): void {
+    if (this instanceof Element) tagged.add(this)
+    return original.apply(this, args as [string, EventListenerOrEventListenerObject, boolean | AddEventListenerOptions])
+  } as typeof EventTarget.prototype.addEventListener
+}
+
+/** One qualified widget's identity and the text its snapshot replaces (the img's alt). */
+export interface CaptureWidgetMark {
+  readonly id: number
+  readonly alt: string
+}
+
+/** What the classify pass did. */
+export interface CaptureMarkResult {
+  /** Outermost `figure`/`d-figure` elements inspected. */
+  readonly candidates: number
+  /** Candidates that are JS-driven widgets (canvas or an in-subtree listener). */
+  readonly qualified: number
+  /** Widgets stamped `data-capture-widget`, capped at `maxSnapshots` in document order. */
+  readonly marked: readonly CaptureWidgetMark[]
+  /** Qualified widgets left as DOM because their box exceeded `maxDimension`. */
+  readonly skippedOversize: number
+  /** Qualified widgets left as DOM because they render to an empty box. */
+  readonly skippedHidden: number
+}
+
+/**
+ * Classify the page's figures: a figure whose subtree holds a `<canvas>` or an
+ * element the listener probe tagged is a JS-driven WIDGET — the serialized
+ * copy can only ever show it broken (canvas pixels do not serialize, and its
+ * JS-computed absolute positions assume the capture viewport, so they overlap
+ * at the reader's column width). Widgets are stamped `data-capture-widget` for
+ * the screenshot pass; everything else keeps the DOM route (static composite
+ * figures ride the style inlining, which is the fidelity win there).
+ *
+ * Only the OUTERMOST figure of a nested cluster is considered, and alt text is
+ * the figure's non-caption text (capped): the searchable residue of what the
+ * pixels replace.
+ */
+export function markInteractiveWidgets(args: {
+  readonly maxSnapshots: number
+  readonly maxDimension: number
+  readonly altMaxChars: number
+}): CaptureMarkResult {
+  const tagged = (window as unknown as { __captureListeners?: WeakSet<Element> }).__captureListeners
+  const hasListener = (el: Element): boolean => tagged !== undefined && tagged.has(el)
+  const isFigure = (el: Element): boolean => {
+    const name = el.localName.toLowerCase()
+    return name === 'figure' || name === 'd-figure'
+  }
+  const candidates = Array.from(document.querySelectorAll('figure, d-figure'))
+    .filter((el) => {
+      let parent = el.parentElement
+      while (parent !== null) {
+        if (isFigure(parent)) return false
+        parent = parent.parentElement
+      }
+      return true
+    })
+  const marked: CaptureWidgetMark[] = []
+  let qualified = 0
+  let skippedOversize = 0
+  let skippedHidden = 0
+  for (const el of candidates) {
+    const subtree = [el, ...Array.from(el.querySelectorAll('*'))]
+    if (el.querySelector('canvas') === null && !subtree.some(hasListener)) continue
+    qualified += 1
+    if (marked.length >= args.maxSnapshots) continue
+    const rect = el.getBoundingClientRect()
+    if (rect.width < 2 || rect.height < 2) {
+      skippedHidden += 1
+      continue
+    }
+    if (rect.width > args.maxDimension || rect.height > args.maxDimension) {
+      skippedOversize += 1
+      continue
+    }
+    const id = marked.length
+    el.setAttribute('data-capture-widget', String(id))
+    const caption = el.querySelector('figcaption')?.textContent ?? ''
+    const alt = (el.textContent ?? '')
+      .replace(caption, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, args.altMaxChars)
+    marked.push({ id, alt })
+  }
+  return { candidates: candidates.length, qualified, marked, skippedOversize, skippedHidden }
+}
+
+/** A widget's page-coordinate clip for the screenshot pass. */
+export interface CaptureWidgetRect {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * Re-read one stamped widget's box (fresh: late reflow shifts figures) in PAGE
+ * coordinates, clamped to the document — Chrome refuses an out-of-bounds clip.
+ * The clip is the union of the widget's NON-FIGCAPTION children: the caption
+ * stays in the DOM as text, so its pixels must not ride the image (it would
+ * render twice). A figure with no measurable content child falls back to its
+ * own box. Undefined when the widget vanished or renders to nothing; the
+ * caller leaves its DOM in place.
+ */
+export function widgetPageRect(id: number): CaptureWidgetRect | undefined {
+  const el = document.querySelector(`[data-capture-widget="${id}"]`)
+  if (el === null) return undefined
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  let measured = false
+  for (const child of Array.from(el.children)) {
+    if (child.localName.toLowerCase() === 'figcaption') continue
+    const childRect = child.getBoundingClientRect()
+    if (childRect.width < 1 || childRect.height < 1) continue
+    measured = true
+    left = Math.min(left, childRect.left)
+    top = Math.min(top, childRect.top)
+    right = Math.max(right, childRect.right)
+    bottom = Math.max(bottom, childRect.bottom)
+  }
+  const rect = measured
+    ? { left, top, width: right - left, height: bottom - top }
+    : el.getBoundingClientRect()
+  if (rect.width < 2 || rect.height < 2) return undefined
+  const scrollX = window.scrollX ?? window.pageXOffset ?? 0
+  const scrollY = window.scrollY ?? window.pageYOffset ?? 0
+  const docWidth = Math.max(document.documentElement?.scrollWidth ?? 0, document.body?.scrollWidth ?? 0)
+  const docHeight = Math.max(document.documentElement?.scrollHeight ?? 0, document.body?.scrollHeight ?? 0)
+  const x = Math.max(0, rect.left + scrollX)
+  const y = Math.max(0, rect.top + scrollY)
+  // A few px of slack: axis labels and shadows regularly overflow the
+  // children's boxes by a hair; the caption sits a margin's width away.
+  const pad = 8
+  return {
+    x: Math.max(0, x - pad),
+    y: Math.max(0, y - pad),
+    width: Math.max(1, Math.min(rect.width + pad * 2, docWidth - Math.max(0, x - pad))),
+    height: Math.max(1, Math.min(rect.height + pad * 2, docHeight - Math.max(0, y - pad))),
+  }
+}
+
+/** One screenshot's swap instruction: the widget's id, its pixels, and its CSS-pixel box. */
+export interface CaptureSnapshotReplacement {
+  readonly id: number
+  readonly dataUri: string
+  readonly width: number
+  readonly height: number
+  readonly alt: string
+}
+
+/**
+ * Swap each screenshotted widget's subtree for a single `<img>` of its
+ * rendered pixels. The `figcaption` survives as TEXT (captions ride the
+ * reader's translate/cite pipeline even though the widget's own text became
+ * pixels, with the alt holding its searchable residue); width/height carry
+ * the aspect ratio. Returns the swaps applied — a widget the screenshot pass
+ * could not reach simply never appears in `replacements` and keeps its DOM.
+ */
+export function replaceWidgetsWithSnapshots(replacements: readonly CaptureSnapshotReplacement[]): number {
+  let replaced = 0
+  for (const replacement of replacements) {
+    const el = document.querySelector(`[data-capture-widget="${replacement.id}"]`)
+    if (el === null) continue
+    const img = document.createElement('img')
+    img.setAttribute('src', replacement.dataUri)
+    img.setAttribute('alt', replacement.alt)
+    img.setAttribute('width', String(Math.round(replacement.width)))
+    img.setAttribute('height', String(Math.round(replacement.height)))
+    img.setAttribute('data-capture-snapshot', 'widget')
+    let caption: Element | undefined
+    for (const child of Array.from(el.children)) {
+      if (child.localName.toLowerCase() === 'figcaption') {
+        caption ??= child
+      }
+    }
+    for (const node of Array.from(el.childNodes)) {
+      if (node !== caption) node.remove()
+    }
+    el.insertBefore(img, caption ?? null)
+    el.removeAttribute('data-capture-widget')
+    replaced += 1
+  }
+  return replaced
+}
+
 /** Parameters of the inline-and-serialize pass. */
 export interface CaptureSerializeArgs {
   /** Serialized-output cap in characters; the tail is cut and `truncated` set. */

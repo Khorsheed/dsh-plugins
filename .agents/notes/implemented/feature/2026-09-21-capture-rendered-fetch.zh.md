@@ -22,7 +22,7 @@ Status: implemented
 
 **完全没有客户端半**（提案草稿的「宿主半一个包，无客户端半（或极薄）」）。那没有任何一方挂载 contribution，`ctx.get('remote.capture')` 永远不应答——阅读器 M0 的探针永远是死代码。只做挂载的半边是让 Remote 可达的最小形态；它不携带 UI。
 **已关闭 browser-pane 的完整许可门**（站点 allow/block 表 + 首访批准弹窗，加模型工具）。推迟：v1 唯一调用方已是手势门，点击即批准，弹窗等于批准一个批准。逐站点记录今天就在写，正是为了那道门日后落地不用重推历史；非交互调用方（提案里 openreview 取标题）才是建它的触发点。
-**把 figure 栅格化成 PNG 截图**（提案的保真兜底）。失去 SVG 文字的可引用性——而引用是阅读器的全部意义；内联路线实测足够（102 个 figure 全是 DOM/SVG，零 canvas）。canvas 重的站点出现时留作降级选项。
+**把 figure 栅格化成 PNG 截图**（提案的保真兜底）。失去 SVG 文字的可引用性——而引用是阅读器的全部意义；内联路线实测对静态图足够（其余全是 DOM/SVG）。更新（2026-09-22）：验收随后显示 JS 驱动的子集（canvas/监听器部件——同一目标 102 张里的 23 张）残破到内联无法承载，栅格化落地且严格限定在该子集——见[capture——JS 驱动部件图的像素快照](2026-09-22-capture-widget-snapshots.md)。
 **逐元素 `getComputedStyle` 快照。** 级联最真，但每元素吐出几百条属性——为同样的图颜色付出数 MB 噪音；命中规则内联只写文档真实声明的东西。
 **阅读器自己 import `@khorsheed/dsh-capture/remote` 来挂载。** 纯性闸按构造禁止跨包值 import，而且这会把阅读器的构建耦合到 capture 的在场——结构镜像契约（`ReaderCaptureRemote`）存在的原因就是两边各自独立发版。
 **用完整 `puppeteer` 而不是 `puppeteer-core` + `@puppeteer/browsers`。** 它的 postinstall 在 npm install 时把 Chrome 下载进共享缓存——与懒加载、住状态目录、可覆盖全相反。

@@ -848,7 +848,10 @@ export class ReaderService {
         : new Date(now.getTime() + ttlHours * 60 * 60 * 1000).toISOString(),
       url: request.url,
       ...(request.truncated === true ? { truncated: true } : {}),
-      ...(request.scriptFigures === undefined || request.scriptFigures === 0
+      // An explicit zero is stored (it says "counted, none" — the remount
+      // would otherwise fall back to the entry's stale load-time count and
+      // resurrect the script-figure notice); only an absent count stays absent.
+      ...(request.scriptFigures === undefined
         ? {}
         : { scriptFigures: request.scriptFigures }),
     }

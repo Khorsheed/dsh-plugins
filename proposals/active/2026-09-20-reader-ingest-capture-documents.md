@@ -119,6 +119,7 @@
 - 实弹验证（`064e794a` + `166fe044`，本地系统 Chrome 打真实 transformer-circuits.pub/2026/workspace）：102 个 figure 全数捕获（63 个内联 SVG——带图注的 Figure 1/2 在内；其余是 Google-Docs 图片 figure）、5638 个解析后 fill、**零 `var()` 残留**、零 script/style 标签、5.1 MB 未截断。这轮实弹照出两个 CSSOM 遍历看不见的 `var()` 面（脚本写进呈现属性的、内联 shorthand 被拆成空值长属性的）并当场修掉——只走 CSSOM 的版本残留 87 处。
 - gate 状态：`check:plugins`/`check:hygiene`/build/pack/独立安装冒烟（真 CLI `plugin add` + dump-config 见行）全绿；整仓 `pnpm gate` 的 test 步在本机（8 核）连续红在 ankh-guard `supervise-4-of-4` 的负载敏感计时断言——**main 基线（e71b3d9f，无 capture）同样失败**，该包与本分支零代码交集，安静单独跑其 lane 211/211 绿（flake 类已在 2026-09-05-ankh-guard-watchdog-test-lifecycle 记录在案）。
 - 已知缺口（验收前须知）：阅读器白名单今天仍 DROP `svg` 且不留 `style` 属性——figure 进正文需要阅读器侧的白名单放行（capture 输出已双写 style + 呈现属性，两种放行都能吃）；这是阅读器后续提交，不在本包边界内。
+- **2026-09-22 部件快照**（`69dcb934` + `ec4e51e4`）：验收显示 JS 驱动部件图（实测 102 图里的 23 张：canvas 或子树监听器）序列化后必然残破——canvas 像素不进 outerHTML，JS 算好的绝对坐标到窄栏叠团。管线在扫描与序列化之间插入快照相：监听器探针（evaluateOnNewDocument）+ canvas 判部件 → 按内容盒（排除图注）截 2x WebP → 原位换 img，图注留文本走翻译/引用，部件文本进 alt。23/23 全部成图。同轮修掉提示复活：scriptFigures=0 此前随正文记录被丢弃，重挂载回退条目加载期计数 84——「数过，没有」与「没数过」现在分存。Agent Note：[capture-widget-snapshots](../../.agents/notes/implemented/feature/2026-09-22-capture-widget-snapshots.md)。
 
 
 ## 验收标准（done 判定，绑定可插拔交付）

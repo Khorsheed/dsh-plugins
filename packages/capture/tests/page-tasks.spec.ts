@@ -10,7 +10,14 @@
  * integration spec.
  */
 import { describe, expect, it } from 'vitest'
-import { inlineStylesAndSerialize, scrollSweepPage } from '../src/page-tasks.ts'
+import {
+  inlineStylesAndSerialize,
+  installListenerProbe,
+  markInteractiveWidgets,
+  replaceWidgetsWithSnapshots,
+  scrollSweepPage,
+  widgetPageRect,
+} from '../src/page-tasks.ts'
 
 /** Set the whole document from a full page source. */
 function setPage(source: string): void {
@@ -262,3 +269,174 @@ describe('scrollSweepPage', () => {
     expect(result.steps).toBeGreaterThan(0)
   })
 })
+
+
+const MARK_ARGS = { maxSnapshots: 40, maxDimension: 4096, altMaxChars: 400 }
+
+/** jsdom reports every box as 0×0; stamp a box on one element. */
+function stubRect(el: Element, rect: { left: number; top: number; width: number; height: number }): void {
+  ;(el as unknown as { getBoundingClientRect: () => typeof rect & { right: number; bottom: number } })
+    .getBoundingClientRect = () => ({
+      ...rect,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+    })
+}
+
+/** Stamp one rect on every candidate figure (the common case: all visible, all small). */
+function stubAllFigures(): void {
+  for (const el of document.querySelectorAll('figure, d-figure')) {
+    stubRect(el, { left: 10, top: 20, width: 300, height: 200 })
+  }
+}
+
+describe('markInteractiveWidgets', () => {
+  it('marks a figure whose subtree holds a canvas, with alt from non-caption text', () => {
+    setPage(`<html><body>
+      <figure><div>widget label text</div><canvas></canvas><figcaption>Figure 1: the caption</figcaption></figure>
+      <figure><svg viewBox="0 0 10 10"><rect width="8" height="8"/></svg></figure>
+    </body></html>`)
+    stubAllFigures()
+    const result = markInteractiveWidgets(MARK_ARGS)
+    expect(result.candidates).toBe(2)
+    expect(result.qualified).toBe(1)
+    expect(result.marked).toHaveLength(1)
+    expect(document.querySelector('[data-capture-widget="0"]')).toBe(document.querySelector('figure'))
+    expect(result.marked[0]!.alt).toContain('widget label text')
+    expect(result.marked[0]!.alt).not.toContain('the caption')
+  })
+
+  it('marks a figure an in-subtree listener qualifies, even without a canvas', () => {
+    const restore = withListenerProbe()
+    try {
+      setPage(`<html><body>
+        <figure><div class="hot">hover me</div></figure>
+        <figure><div>cold</div></figure>
+      </body></html>`)
+      document.querySelector('.hot')!.addEventListener('mouseenter', () => undefined)
+      stubAllFigures()
+      const result = markInteractiveWidgets(MARK_ARGS)
+      expect(result.qualified).toBe(1)
+      expect(result.marked).toHaveLength(1)
+      expect(document.querySelector('[data-capture-widget="0"] .hot')).not.toBeNull()
+    } finally {
+      restore()
+    }
+  })
+
+  it('considers only the outermost figure of a nested cluster', () => {
+    setPage(`<html><body>
+      <figure><div><figure><canvas></canvas></figure></div></figure>
+    </body></html>`)
+    stubAllFigures()
+    const result = markInteractiveWidgets(MARK_ARGS)
+    expect(result.candidates).toBe(1)
+    expect(result.marked).toHaveLength(1)
+    expect(document.querySelectorAll('[data-capture-widget]')).toHaveLength(1)
+  })
+
+  it('skips hidden and oversize widget boxes, and caps the marks at maxSnapshots', () => {
+    setPage(`<html><body>
+      <figure class="hidden"><canvas></canvas></figure>
+      <figure class="huge"><canvas></canvas></figure>
+      <figure><canvas></canvas></figure>
+      <figure><canvas></canvas></figure>
+      <figure><canvas></canvas></figure>
+    </body></html>`)
+    stubAllFigures()
+    stubRect(document.querySelector('.hidden')!, { left: 0, top: 0, width: 0, height: 0 })
+    stubRect(document.querySelector('.huge')!, { left: 0, top: 0, width: 9000, height: 200 })
+    const result = markInteractiveWidgets({ ...MARK_ARGS, maxSnapshots: 2 })
+    expect(result.qualified).toBe(5)
+    expect(result.skippedHidden).toBe(1)
+    expect(result.skippedOversize).toBe(1)
+    expect(result.marked).toHaveLength(2)
+    expect(document.querySelectorAll('[data-capture-widget]')).toHaveLength(2)
+  })
+})
+
+describe('widgetPageRect', () => {
+  it('returns page coordinates clamped to the document, undefined for a stale or empty box', () => {
+    setPage(`<html><body>
+      <figure class="a"><canvas></canvas></figure>
+      <figure class="b"><canvas></canvas></figure>
+      <figure class="c"><canvas></canvas></figure>
+    </body></html>`)
+    stubAllFigures()
+    Object.defineProperty(window, 'scrollX', { value: 0, configurable: true })
+    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true })
+    Object.defineProperty(document.documentElement, 'scrollWidth', { value: 2000, configurable: true })
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 5000, configurable: true })
+    markInteractiveWidgets(MARK_ARGS)
+    stubRect(document.querySelector('.a')!, { left: 100, top: 200, width: 300, height: 200 })
+    // The clip carries an 8px slack (axis labels overflow their boxes by a hair).
+    expect(widgetPageRect(0)).toEqual({ x: 92, y: 192, width: 316, height: 216 })
+    // Overflowing the document's right edge clamps the clip, not the snapshot.
+    stubRect(document.querySelector('.b')!, { left: 1900, top: 0, width: 300, height: 100 })
+    expect(widgetPageRect(1)).toEqual({ x: 1892, y: 0, width: 108, height: 116 })
+    stubRect(document.querySelector('.c')!, { left: 0, top: 0, width: 0, height: 0 })
+    expect(widgetPageRect(2)).toBeUndefined()
+    expect(widgetPageRect(99)).toBeUndefined()
+  })
+
+  it('clips the widget content, excluding the figcaption that stays as DOM text', () => {
+    setPage(`<html><body>
+      <figure class="w"><div class="content"><canvas></canvas></div><figcaption>Figure 9: text</figcaption></figure>
+    </body></html>`)
+    Object.defineProperty(window, 'scrollX', { value: 0, configurable: true })
+    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true })
+    Object.defineProperty(document.documentElement, 'scrollWidth', { value: 2000, configurable: true })
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 5000, configurable: true })
+    const figure = document.querySelector('.w')!
+    stubRect(figure, { left: 100, top: 200, width: 300, height: 240 })
+    stubRect(figure.querySelector('.content')!, { left: 100, top: 200, width: 300, height: 200 })
+    stubRect(figure.querySelector('figcaption')!, { left: 100, top: 408, width: 300, height: 32 })
+    markInteractiveWidgets(MARK_ARGS)
+    // 200px of content (plus slack), not the 240px the caption-inclusive figure box reports.
+    expect(widgetPageRect(0)).toEqual({ x: 92, y: 192, width: 316, height: 216 })
+  })
+})
+
+describe('replaceWidgetsWithSnapshots', () => {
+  it('swaps the widget subtree for one img, keeping the figcaption as text', () => {
+    setPage(`<html><body>
+      <figure data-capture-widget="7">
+        stray text
+        <div class="widget-remnant">labels</div>
+        <canvas></canvas>
+        <figcaption>Figure 3: kept as text</figcaption>
+      </figure>
+      <figure data-capture-widget="8"><canvas></canvas></figure>
+    </body></html>`)
+    const replaced = replaceWidgetsWithSnapshots([
+      { id: 7, dataUri: 'data:image/webp;base64,QUJD', width: 640, height: 480, alt: 'labels' },
+      { id: 99, dataUri: 'data:image/webp;base64,REVG', width: 1, height: 1, alt: '' },
+    ])
+    expect(replaced).toBe(1)
+    const figure = document.querySelectorAll('figure')[0]!
+    const img = figure.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img!.getAttribute('src')).toBe('data:image/webp;base64,QUJD')
+    expect(img!.getAttribute('alt')).toBe('labels')
+    expect(img!.getAttribute('width')).toBe('640')
+    expect(img!.getAttribute('height')).toBe('480')
+    expect(img!.getAttribute('data-capture-snapshot')).toBe('widget')
+    expect(figure.querySelector('figcaption')?.textContent).toBe('Figure 3: kept as text')
+    expect(figure.querySelector('.widget-remnant')).toBeNull()
+    expect(figure.querySelector('canvas')).toBeNull()
+    expect(figure.textContent).not.toContain('stray text')
+    expect(figure.hasAttribute('data-capture-widget')).toBe(false)
+    // The untouched widget keeps its DOM (its screenshot never arrived).
+    expect(document.querySelectorAll('figure')[1]!.querySelector('canvas')).not.toBeNull()
+  })
+})
+
+/** Install the probe, returning the restore hook (global prototype hygiene). */
+function withListenerProbe(): () => void {
+  const original = EventTarget.prototype.addEventListener
+  installListenerProbe()
+  return () => {
+    EventTarget.prototype.addEventListener = original
+    delete (window as unknown as { __captureListeners?: WeakSet<Element> }).__captureListeners
+  }
+}

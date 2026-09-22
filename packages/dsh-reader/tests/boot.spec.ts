@@ -982,6 +982,18 @@ describe('the translation store', () => {
     expect(await service.getEntryTranslation({ entryId: 'e1' })).toEqual({})
   })
 
+  it('stores an explicit scriptFigures zero — "counted, none" — and keeps an absent count absent', async () => {
+    const { ctx } = await bootWithRoot()
+    const service = ctx.get('reader') as ReaderService
+    // The capture-rendered body stores its count, zero included: the remount's
+    // `view.value.scriptFigures ?? entry.scriptFigures` chain must see the 0,
+    // not fall through to the entry's stale load-time count.
+    await service.storeEntryBody({ entryId: 'e1', url: 'https://example.com/1', html: '<p>one</p>', scriptFigures: 0 })
+    expect((await service.getEntryBody({ entryId: 'e1', url: 'https://example.com/1' })).scriptFigures).toBe(0)
+    await service.storeEntryBody({ entryId: 'e2', url: 'https://example.com/2', html: '<p>two</p>' })
+    expect((await service.getEntryBody({ entryId: 'e2', url: 'https://example.com/2' })).scriptFigures).toBeUndefined()
+  })
+
   it('keeps the map while an expired body is still on disk — expiry is a serving decision, not a removal', async () => {
     const { ctx, root } = await bootWithRoot()
     const service = ctx.get('reader') as ReaderService
