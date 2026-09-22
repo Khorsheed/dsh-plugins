@@ -349,7 +349,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 ### 11. v2.2 修订（2026-09-22）：四条令的六轮可点评审收敛——**在原包上加，不重写**
 
-评审面这条硬约定先记在案（用户原话）：**"先画到 html 给我体验看看，体验 OK 之后你可以按照对应的交互来考虑如何实现"**。所以本节每一条都在 [`prototypes/canvas-link-compose-draw.html`](../prototypes/canvas-link-compose-draw.html) 上被点过，页内注释栏 ⑥–⑪ 存着实测数字和被推翻的旧形状；**包内源码这一轮一行未动**，四条令的阶段归属见 11.7。
+评审面这条硬约定先记在案（用户原话）：**"先画到 html 给我体验看看，体验 OK 之后你可以按照对应的交互来考虑如何实现"**。所以本节每一条都在 [`prototypes/canvas-link-compose-draw.html`](../prototypes/canvas-link-compose-draw.html) 上被点过，页内注释栏 ⑥–⑪ 存着实测数字和被推翻的旧形状；**写本节时包内源码一行未动**（文档先行那一步的产物），四条令的阶段归属见 11.7；**同日 ②④⑦ 三档已落地**，见「实现记录」的 v2.2 波次行。
 
 #### 11.1 为什么不重写（2026-09-22 用户问："删掉原来的 canvas 重写一个插件，还是在原来的基础上改"）
 
@@ -391,7 +391,7 @@ canvas.json  + categories: [{ id, label, order, enabled }]   ← 11.5，无颜�
              + links:      [{ from, to }]                    ← 阶段 ⑥
              + lanes:      [{ id, label, x, y, w, h }]       ← 阶段 ⑥
 card         + x, y（板逻辑框坐标）                           ← 阶段 ⑥
-             + draw:     [{ pts: [{x,y,w}], color }]         ← 阶段 ⑦，见 11.4 那条待改判
+             + draw:     [{ pts: [{x,y,w}], color }]         ← **已落**（2026-09-22 画笔波次），改判依据见 11.4
 ```
 
 - 兼容面：`normalizeBoard` 逐字段降级，缺 `links`/`lanes`/`categories` = 空数组，旧板照常打开；`categories` 缺席 = 用五个内置 id 起一份默认目录。**不动 `chat.sessionId`、不动 `stats`。**
@@ -408,6 +408,8 @@ card         + x, y（板逻辑框坐标）                           ← 阶段
 3. **字节上限与折叠**：`MAX_CARD_TEXT_LENGTH`（256KB）与板上的 clamp 摘要都是按正文算的。
 
 **我的倾向：改判成 `card.draw`**，"一等卡格式"那半句由 `BoardCard` 上多一个受类型字段承担——它仍被成稿引用、仍进 `promptFormOf`（新增一段 `<board points="…"/>` 摘要，原型已按这个形状发过）。**没点头之前，这条按"待裁决"记着，阶段 ⑦ 不开工**（文档先行）。
+
+**2026-09-22 落地的实际形状（改判按"开动"执行，不是显式裁决）**：用户那句"OK，你开动吧"是放整轮开工的，没有逐条点到本条——**这一条是被当作点头干掉的，判错时的回退点写在实现记录里**。落地形状：`card.draw?: [{ pts: [{x,y,w}], color }]`（`types.ts` 的 `CanvasStroke`，读时逐点归一 `normalizeDraw`，越界夹进 600×400 框），`putCard`/`patchCard` 各带一个可选 `draw`，**`draw: []` = 清空、不带 = 别动**（两者必须可分，否则「清空」永远存不下去）；`promptFormOf` 三分支都追一句 `drawPromptOf` 的 `<board width height strokes>` 点列段，只有画没有字的卡 `summaryOf` 记 `N-stroke drawing`。**没有走 §10.8 原案（点列进 `card.text`）的三条理由照旧成立**，且第 2 条已在真数据上被验证过：`detectCardFormat` 只看正文，正文里长出 JSON 会让格式判定失去依据。
 
 #### 11.5 分类管理形状（阶段 ⑤ 的 UI 半边）
 
@@ -430,14 +432,14 @@ card         + x, y（板逻辑框坐标）                           ← 阶段
 | 阶段 | 内容 | 依赖 / 状态 |
 |---|---|---|
 | **⑥ 连线与分区视图** | `links`/`lanes`/卡坐标落盘 + 卡板/连线两档视图 + 框选 + 单删线 + 「顺线扩一圈」开关。选型实测：tldraw 出局（无生产许可 + 遥测 + 水印）、Excalidraw MIT 但 46.8MB；**定 `@xyflow/react` 12.11.6（MIT / 1.2MB / 3 依赖）**，卡片节点复用现有卡组件，**线只负责线与容器** | 依赖 ②（卡组件先收口）；待做 |
-| **⑦ 画笔** | perfect-freehand 1.2.3（MIT / 112KB）出轮廓、**存点列**；工具条上置、橡皮一笔一笔擦、保存后画板常驻只读态 | **前置是 11.4 那条改判**；待裁决后开工 |
+| **⑦ 画笔** | perfect-freehand 1.2.3（MIT / 112KB）出轮廓、**存点列**；工具条上置、橡皮一笔一笔擦、保存后画板常驻只读态 | **已落**（2026-09-22，`card.draw` + `client/draw.ts` + `detail/CardPad.tsx`）；前置的 11.4 改判按"开动"执行，判据与回退点写在 11.4 与实现记录 |
 | **⑧ 详情开成一张标签** | 注册 `canvasDetail` kind（11.2 行 7），点卡 = 追加一格、同卡不堆叠；顶栏两行、条尾 ＋、空草稿 × 弹确认 | 依赖 ②；可与 ⑥ 并行 |
 
 **验收补三条（各能判真假）**：A6 一组由你选——连线视图点一张连着线的卡，「顺线扩一圈」关着时发出去的**只有它自己**；A7 分类目录是活的——改名不动卡、停用不丢卡（那几张进归档且能启用回来）、模型 enum 含用户自定义 id；A8 贴进去不留死标记——往有正文的卡贴网页，落的是纯文本那份，卡上**不出现任何 `<` 标记**。
 
 #### 11.8 未裁决清单（本节新记的，别当已批）
 
-① **长文 tab 删不删**（证据在 11.2 行 2，删除爆炸半径约 14 源文件 + 3 测试文件）；② **11.4 的 `draw` 改判**；③ 手动改整卡格式的口子（阶段 ④ 之后）；④ 风险 ⑪ 的 enum 形状（全局并集 vs 当前画布集合）；⑤ 「＋ 新卡」双入口——本轮"先保留"，窄栏真挤了再回来判；⑥ **已保存的卡改了字没关标签，要不要也弹一次**（本轮那句"弹一次确认"管的是从没保存过的那张，见 11.6 第 5 条）。
+① **长文 tab 删不删**（证据在 11.2 行 2，删除爆炸半径约 14 源文件 + 3 测试文件）；② **11.4 的 `draw` 改判**——2026-09-22 按"开动"落地了，**这条从"未裁决待开工"变成"已落地、判错就回退"**，回退点与依据写在 11.4 与实现记录，等一次真点头；③ 手动改整卡格式的口子（阶段 ④ 之后）；④ 风险 ⑪ 的 enum 形状（全局并集 vs 当前画布集合）；⑤ 「＋ 新卡」双入口——本轮"先保留"，窄栏真挤了再回来判；⑥ **已保存的卡改了字没关标签，要不要也弹一次**（本轮那句"弹一次确认"管的是从没保存过的那张，见 11.6 第 5 条——**绘画没有这个洞：一笔落定即写盘**）。
 
 
 ## 里程碑
@@ -450,7 +452,7 @@ card         + x, y（板逻辑框坐标）                           ← 阶段
 - **M3.2（v2.1 交互收口，当前波次）**：详情即唯一编辑器（板上摘掉就地 textarea）+ 删透镜与 side-chat 四处发起（prompt 透镜语义段与 `CANVAS_LENS_IDS` 一并撤，`dsh.references` 边随之撤）；宿主原语替换（33 处 `<button>` / `title=` tooltip / 自绘 toast·菜单 → Button/Menu/Tooltip/Toast）；分栏等高封顶 + 比例滚动同步；改名（卡板消失、成稿→长文、碎片→灵感、依据→共识、资料→来源、文档随轴合并删）。**验收：一轮"点卡→编辑 md→看渲染→分栏对照→回板"全程不离开详情页、不出现一次就地闪烁；深色主题下无自绘控件错位。**（**拆分推进**：删的那半 = 阶段 ①；本行余下的编辑器收口 / 原语替换 / 分栏 / 改名 = 阶段 ②，见 §10.9。）
 - **M3.3（v2.1 刷新与图片）**：两条**互不前置**的腿（10.3 前提修正之后）——**阶段 ③**：刷新收口三步（按卡懒取正文 `readBoard` 摘要视图 + `readCard` 全文 → 订阅 selector 收窄 + 卡片 memo → 批量归档单次整板写），其中 `readCard` 顺手充当 `canvas_read_board` 工具的服务端，一次补齐"模型看得见板"；**阶段 ④**：paste 四路分派（图片 / `text/html` / 表格转 md / 纯文本，`paste-table.ts` 死代码由此转活）+ `attachImage` 动词（host 半区 `inject += 'attachments'`，`ctx.attachments.saveImage` → 卡内存 ref 指针）+ `pathImages.resolve` 接上（路径图 → `/api/file`，附件图 → Remote 取回 base64 → blob URL，带 LRU）。**`assets/` 落盘与 `ctx.fs.writeBinary` 与本波次无关，登记为"写进工作区"的上游候选**（若日后要做"卡片导出到工作区"再提）。**验收：贴一张手机截图 → 卡片 `text` 增幅 < 1KB、`readBoard` 每回合字节数不高于阶段 ③ 基线、图在渲染态可见、会话里能让模型描述这张图。**
 - **M3.4（v2.1 分类自定义）**：`categories` 目录进 `canvas.json`、kind 校验改本画布域、**模型 enum 动态生成**、locale 退化为内置 label 表 + 用户数据（自定义名不翻译）。**默认目录 = 现有五个内置 id**（2026-09-22 修正：先前"默认目录只给草稿 / 灵感"的说法作废，因为 label 成了可编辑的用户数据，改名只是改这五行的初始 label，不动任何一张存量卡）；UI 形状与"停用而非删除"见 §11.5。
-- **M3.5（v2.2 交互收口，2026-09-22 六轮评审定形，当前波次）**：详情顶栏两行 + 标签条照宿主 + 进详情用笔 + 画画三条出口 + 粘贴按包内嗅探接上（落 `text/plain` 退回）+ 分类管理面板 + 批量「改分类」+ 空草稿 × 弹一次确认。**这一波全是客户端形状**，唯一的新数据是 §11.3 那四处加法。**新立三档**：⑥ 连线与分区视图（`@xyflow/react`）、⑦ 画笔（perfect-freehand，**前置是 §11.4 的 `draw` 改判**）、⑧ 详情开成一张标签（`canvasDetail` kind）。**包内一行未动**——本节是文档先行那一步的产物。
+- **M3.5（v2.2 交互收口，2026-09-22 六轮评审定形，当前波次）**：详情顶栏两行 + 标签条照宿主 + 进详情用笔 + 画画三条出口 + 粘贴按包内嗅探接上（落 `text/plain` 退回）+ 分类管理面板 + 批量「改分类」+ 空草稿 × 弹一次确认。**这一波全是客户端形状**，唯一的新数据是 §11.3 那四处加法。**新立三档**：⑥ 连线与分区视图（`@xyflow/react`）、⑦ 画笔（perfect-freehand，**前置是 §11.4 的 `draw` 改判**）、⑧ 详情开成一张标签（`canvasDetail` kind）。本节立档时包内一行未动，同日 ② 的编辑面 + ④ 两臂 + ⑦ 画笔落地（见实现记录），⑥⑧ 与 ⑤ 仍在案上待做。
 - **M4（渲染器与索引）**：**首项出账**——document 卡（md/html 粘贴、edit/preview/split）已被 2026-09-18 的 HTML 卡与 M3.2/M3.3 吃掉；余项 = 成稿视图候选 diff、会话侧 `canvas_search`/`canvas_clip`、客户端动作位「插入当前会话」（卡片经 `ctx.sessions.scope(id).get('conversation')` 注入 composer，发指针不发全文——与 `canvas_search` 互补，与 side-chat 引用通道无冲突。**动作位属主会话路径，不受 §10.4 停用 side-chat 耦合影响。**
 - **M5（可并行）**：ui-workspace 分区 seam 上游提案；落地后迁移入口。
 - **M6（可选，探针先行）**：自由草图卡——Excalidraw 档矢量 JSON 落 `card.text`（**零宿主改动**），`detectCardFormat` 加 `<svg` 分支，pointer 采集 + 笔画撤销栈。**前置探针 M0（2026-09-21 换题）**：原探针"`uploadFileBinary` 回执能否被插件读回"随 §10.3 复核作废（写入臂另有正路）；改测**模型侧收图**——当前 profile 的模型有无图像输入能力、归一化后的位图尺寸是否落在 provider 限制内，路径 = 导出位图 → 阶段 ④ `attachImage` → 阶段 ③ 读板工具回 `{type:'image',attachment}`。像素级涂（位图橡皮、压感）不做。
@@ -474,7 +476,17 @@ card         + x, y（板逻辑框坐标）                           ← 阶段
 - **会话工具 ./agent 入口（2026-09-17，0.4.2，已合并并上 3080）**：用户要求把主会话画布工具按 preset 收敛（不影响其他模式系统提示词）且提示词改英文。`canvas_propose_card`/`canvas_comment` + `canvas:tools` 引导段从 profile-root 拆到新 composition 入口 `@khorsheed/dsh-canvas/agent`（官方 `tool-subagent-control/list-agents` 子路径行先例；`ctx.get('canvasBoard')` 沿 scope 父链探测，缺席零注册降级）；自挂载 patch 默认仍插根行（社区默认=全会话），按 preset 收敛 = profile patch 停根行 + 目标 preset 的 `agent.cordis.yml` 加同名行（绝不同时生效，同名双注册）——即 AGENTS.md 新增 Mode visibility 约定里「tools and prompt sections ride the companion-row preset grant」的落地形状。引导段改英文并修正 tab 名引用。3080 operator 配置：profile `cordis.patch.yml` 加 `- id: canvas-agent, disabled: true`，`~/.dsh-official/.agent-presets/dsh-writing/agent.cordis.yml` 加 canvas-agent 行（沿 local-agent 家族 M3'/M4' 的既有先例）。复验修复：exports 初版指向不存在的 `lib/agent.js`（tsdown 只出 index/invariant），改指 tsc 实际产出 `lib/types/agent.js` 并打包验证。167 测试绿（+3）。Agent Note `2026-09-17-canvas-agent-entry.md`。
 - **HTML 渲染 + 截断修复（2026-09-18，0.4.3，已合并并上 3080）**：用户截图实证——粘贴进卡片的完整 HTML 文档在详情不渲染（当 md 纯文本）且**被静默截断在 8000 字**（`MAX_CARD_TEXT_LENGTH` 硬切，数据级丢失）。①新增 `card-format.ts`：`detectCardFormat`（保守启发式，md 内联 html 不误判）+ `htmlTitleOf`（`<title>` 提取）；格式与卡种解耦（HTML 是格式不是角色）。②详情页 html 卡「渲染」= 沙箱 iframe——源码面复用 `@khorsheed/dsh-inline-html-render` 的 `buildCardSrcDoc`（严格断网 CSP）+ `attachBridge`（报高/openLink/copy/download），构建期打包零运行时耦合，跨包边经 check-plugin-independence 的 ALLOWED_EDGES 刻意登记。③卡板摘要：html 卡显示标题+「HTML 文档 · N 字」占位，原文不上板。④上限 8000 → 256KB（当时写的"assets/ 落盘仍留 M4"已作废：图片走宿主附件库，不落工作区——见 §10.3 复核）；同波次收口 §8 安全边界——`prompt.ts` 新增 `promptFormOf` 唯一模型面形态：HTML 卡对模型只给标题+指针（正文零泄漏断言），md 卡 4000 字截断注记，cardToRef/summaryOf/grounding 护栏三条路径全部改走它。197 测试绿（+9）。Agent Note `2026-09-18-canvas-html-cards.md`。流程教训：gate 与子代理同 worktree 竞态会假红——gate 期间不再向该 worktree 派活。
 
+- **v2.2 交互波次（2026-09-22，worktree `.worktrees/canvas-detail-editor`，分支 `feat/canvas-detail-editor`，0.4.4）**：四条令里先做掉三条（② 的编辑面 + ④ 的两臂 + ⑦ 画笔），**评审面在 [`prototypes/canvas-link-compose-draw.html`](../prototypes/canvas-link-compose-draw.html) 上点过六轮才动工**，硬约定「先画到 html 给我体验看看」由此第一次真正走完。四刀：
+  - **② 详情即唯一编辑器**（`0e22fded`）：板上就地 `CardTextarea` 摘掉（卡板只读），「＋新卡」把草稿交给详情页，⌘⏎ 建卡 / Esc 返回，草稿有字才弹一次确认（`Modal`，两个按钮）。染色收口在 `283697d0`（15 处不翻面的静态蓝换成宿主的 business-primary 通道，选中 = 外框走 brand-primary 亮起）。
+  - **④ 粘贴臂**（`fccfa589`）：全插件唯一读剪贴板处 = 详情页；五臂（整页 HTML / 表格 / 只有标记 / 富文本掉成字 / 交回原生），**落法对着"这次粘贴会产出的那张整卡"判**（卡片格式由渲染器从整张卡嗅出来，从不看标志位）；`paste-table.ts` 死代码转活。
+  - **④ 图片臂**（`bf83e920`）：写入走宿主 `ctx.attachments`（`dsh-attachment` optional peer，`ctx.get('attachments')` 探测），像素进内容寻址库，卡里只留一行 `attachment://…`；两条渲染臂（md 经 `pathImages.resolve`、html 经 `rewriteImageSrcs`）把指针换回真图，读回缓存 24 条 LRU、`data:` URL 而非 blob。**没有 `ctx.fs.writeBinary` 那条路**（10.3 复核撤回的判错在此落地）。
+  - **⑦ 画笔**（本次提交）：`card.draw` 点列（`types.ts` `normalizeDraw` 逐点夹进 600×400 框）+ `client/draw.ts` 纯函数半（坐标/采样/笔宽/橡皮命中/轮廓导出）+ `detail/CardPad.tsx` 字段 + `detail/DrawFigure.tsx`（一笔 287 B vs 834 B 的实测选择，轮廓由 `perfect-freehand` 渲染时现算，随 tsdown 打进 `lib/client.js`，**零宿主改动、profile 不多装包**）；一笔落定即 `patchCard` 整列覆盖，所以画没有脏标记也没有保存钮，`draw: []` 与不带 `draw` 分别是「清空」和「别动」；**只有画没有字的卡能建**（绘画是内容），丢弃确认因此算字数**或**笔数；`promptFormOf` 三分支都带 `<board>` 点列段。
+  - 测试 **197 → 295 绿（18 文件）**；`lib/client.js` 421.55 kB / gzip 90.13 kB。Agent Note `.agents/notes/implemented/feature/2026-09-22-canvas-detail-editor.md`。
+  - **判错就回退的那条**：11.4 的 `card.draw` 改判没有逐条点头，被"OK，你开动吧"当作批准执行——回退 `git revert` 画笔那一刀即可，数据面只多读一个字段（旧板读时归一，**回退不动盘**）。
+  - **本波未做**：阶段 ⑧ 的 dock 半边（详情注册成 `canvasDetail` kind）、⑥ 连线与分区视图、⑤ 分类自定义；11.8 ①③④⑤⑥ 五条仍未裁决。
+
 （随实施追加：相关 Agent Note / 包名 / 提交）
+
 
 ## 验收标准（done 判定）
 
@@ -482,7 +494,7 @@ card         + x, y（板逻辑框坐标）                           ← 阶段
 
 1. `@khorsheed/dsh-canvas` 可 `dsh plugin add` / `remove` 一条命令装卸；identity triangle 三处同名；`dsh.bundle.patch` 自挂载；`files` 含 `lib/client.js` 与 `cordis.patch.yml`。
 2. `pnpm run build` + `pnpm run test` 绿；`pnpm check:plugins`、`pnpm check:hygiene` 过。
-3. 3080 实测：右栏 tab 进画布 → 新建画布（主题 + 挂载工作区）→ 贴入碎片 → **在左侧当前会话让 agent 改画布**（M3.2 起画布的唯一对话入口）→ Agent 提议卡幽灵态落板、✓ 转 kept → 会话里打字要一张"依据"卡落板（原透镜「找证据」按钮已停用，同一步改走会话侧）→ answered 问题沉淀 grounding → 粘贴网页 HTML 成 document 卡、渲染与编辑正常 → **贴一张截图：卡文本增幅 < 1KB、渲染态能看见图、板子不卡、且能让会话里的模型描述这张图**（阶段 ③+④，M3.3）→ 成稿视图编辑、候选 diff 接受 → **重启后聊天历史与板状态完整** → 普通会话里 `canvas_search` 能检到该画布 → 深色主题正常。
+3. 3080 实测：右栏 tab 进画布 → 新建画布（主题 + 挂载工作区）→ 贴入碎片 → **在左侧当前会话让 agent 改画布**（M3.2 起画布的唯一对话入口）→ Agent 提议卡幽灵态落板、✓ 转 kept → 会话里打字要一张"依据"卡落板（原透镜「找证据」按钮已停用，同一步改走会话侧）→ answered 问题沉淀 grounding → 粘贴网页 HTML 成 document 卡、渲染与编辑正常 → **贴一张截图：卡文本增幅 < 1KB、渲染态能看见图、板子不卡、且能让会话里的模型描述这张图**（阶段 ③+④，M3.3）→ **详情页点「铅笔」画一笔 → 回板：那张卡上看得见这块墨；橡皮一次擦一整笔；只有画的卡也能建**（阶段 ⑦，M3.5）→ 成稿视图编辑、候选 diff 接受 → **重启后聊天历史与板状态完整** → 普通会话里 `canvas_search` 能检到该画布 → 深色主题正常。
 4. 卸载后 `$DSH_HOME/state/canvas/` 与挂载工作区文件原样保留；v1 `<workspace>/灵感画布/` 不受改动。**卸载不清附件库**：内容寻址对象归宿主所有，画布不主张删除权（`FileSystem` 无 remove，见风险 ⑩）。
 
 ## 风险 / 放弃的东西
@@ -518,3 +530,5 @@ card         + x, y（板逻辑框坐标）                           ← 阶段
 ⑮ **搬原型页丢过两次功能——同一个错。** 第五轮丢 paste 臂与三个「试贴」按钮，第六轮丢分类管理面板，两处都是**上一版页面上有、提案里也定过**（§10.7、§10.3 接线那一行），我按"这一页要展示什么"搬，而不是按"前一页已经有什么 + 包内已经有什么"搬。**修法机械执行**：换页前先列出上一页的函数清单与提案里已裁决的落点，逐条打勾再动工。用户能一眼看出这类缺失（"这个是做丢了吗？"），且它会消耗他们对整轮的信任。
 
 ⑯ **原型是纯内存演示，reload 即回种子数据。** 已两次把他们自己在页上造的东西刷掉（第四轮那张 3 笔「你好」卡）。**评审页顶部的 `<h1>` 下一律写一行"可点的示意，不是截图"**（已写），并且**每次为验证而刷新之前要先说一声**——这不是礼貌问题，是他们的输入会真丢。
+
+⑰ **画笔把又一个第三方库带进包体，而它决定所有旧画长什么样。** `perfect-freehand` 死锁 1.2.3（MIT / 0 依赖 / 打进 `lib/client.js`，profile 不多装一行）。代价不是字节，是**耦合**：盘上只存点列，轮廓每次渲染现算——升级或改 `StrokeOptions` 会**同时重画每一张已有卡**，没有"旧数据保持旧样子"这一档。所以挪 pin 的规矩写在 note 里：先在真数据上量一遍新旧轮廓（`tests/draw.spec.ts` 已钉住外溢不越 `±MAX_DRAW_WIDTH`），再谈抬范围号。附带一条已裁的小账：模型读到的是坐标不是像素，"让模型参考这张画生成多模态内容"还需要一条位图导出路（M6 探针那一行），本轮不做。
