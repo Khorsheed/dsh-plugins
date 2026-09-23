@@ -22,11 +22,12 @@ import {
 } from 'react'
 import {
   IconArchiveOutline20, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconPlusOutline16, IconRefreshOutline14, relativeTime,
+  IconPlusOutline16, IconRefreshOutline14,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { CanvasSummary } from '../../types.ts'
 import type {} from '../locales.ts'
+import { agoOf } from '../text.ts'
 import css from '../space/board.module.css'
 
 /** One workspace option the attach pickers list. */
@@ -54,17 +55,7 @@ function metaOf(row: CanvasSummary, t: TranslateNS<'canvas'>): string {
   const parts = [t('space.metaCards', { count: String(row.cardCount) })]
   if (row.openQuestions > 0) parts.push(t('space.metaQuestions', { count: String(row.openQuestions) }))
   const at = Date.parse(row.lastActiveAt)
-  if (!Number.isNaN(at)) {
-    const bucket = relativeTime(at, Date.now())
-    parts.push(
-      bucket.unit === 'now' ? t('time.now')
-        : bucket.unit === 'minutes' ? t('time.minutes', { n: String(bucket.n) })
-        : bucket.unit === 'hours' ? t('time.hours', { n: String(bucket.n) })
-        : bucket.unit === 'days' ? t('time.days', { n: String(bucket.n) })
-        : bucket.unit === 'months' ? t('time.months', { n: String(bucket.n) })
-        : t('time.years', { n: String(bucket.n) }),
-    )
-  }
+  if (!Number.isNaN(at)) parts.push(agoOf(at, t))
   return parts.join(' · ')
 }
 

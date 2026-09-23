@@ -3,15 +3,14 @@
  * The clipboard → markdown-table converters. These are the only pure
  * functions the writing surface leans on for correctness, so they are tested
  * directly: spreadsheet quoting, ragged rows, the refusal to convert prose,
- * HTML table extraction (including column spans degrading to empty slots),
- * and the explicit space-aligned path. The paste arm sits on top of those and
- * is tested the same way: which of the five arms a clipboard reads as, against
- * the card text the paste would produce.
+ * and HTML table extraction (including column spans degrading to empty slots).
+ * The paste arm sits on top of those and is tested the same way: which of the
+ * five arms a clipboard reads as, against the card text the paste would produce.
  */
 import { describe, expect, it } from 'vitest'
 import {
   choosePaste, convertPaste, htmlTableToMarkdown, looksLikeTsv, parseDelimited,
-  spaceAlignedToMarkdown, toMarkdownTable,
+  toMarkdownTable,
 } from '../src/client/paste-table.ts'
 
 describe('parseDelimited', () => {
@@ -96,18 +95,6 @@ describe('htmlTableToMarkdown', () => {
 
   it('returns null for a table that cannot make a table (one row)', () => {
     expect(htmlTableToMarkdown('<table><tr><td>only</td><td>row</td></tr></table>')).toBeNull()
-  })
-})
-
-describe('spaceAlignedToMarkdown', () => {
-  it('splits columns on runs of two or more spaces', () => {
-    expect(spaceAlignedToMarkdown('角色   年龄\n林岚   29')).toBe(
-      '| 角色 | 年龄 |\n| --- | --- |\n| 林岚 | 29 |',
-    )
-  })
-
-  it('refuses text with no column structure', () => {
-    expect(spaceAlignedToMarkdown('雨下了一整夜。')).toBeNull()
   })
 })
 

@@ -198,6 +198,8 @@ export function LinkView({
     [cards, sizes, overlay.places],
   )
   const byId = useMemo(() => new Map(placed.map(node => [node.id, node])), [placed])
+  /** The render loop's card lookup (a `find` per node would square the list). */
+  const cardById = useMemo(() => new Map(cards.map(card => [card.id, card])), [cards])
   const lanes = useMemo<readonly LaneBox[]>(() => board.lanes.map(lane => {
     const moved = overlay.laneBoxes.get(lane.id)
     return moved === undefined
@@ -533,7 +535,7 @@ export function LinkView({
           ))}
 
           {placed.map(node => {
-            const card = cards.find(candidate => candidate.id === node.id)
+            const card = cardById.get(node.id)
             if (card === undefined) return null
             const ink = card.draw ?? []
             const lane = laneAt(lanes, node)
@@ -628,7 +630,11 @@ export function LinkView({
             onClick={() => {
               const gone = wireSel
               setWireSel(null)
-              commit({ links: board.links.filter(link => link !== gone) }, t('link.wireDropped'))
+              // A wire is its endpoints — matching by identity would silently
+              // no-op the moment the board re-reads and the object is fresh.
+              commit({
+                links: board.links.filter(link => !(link.from === gone.from && link.to === gone.to)),
+              }, t('link.wireDropped'))
             }}
           >
             {t('link.delWire')}

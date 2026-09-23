@@ -10,8 +10,7 @@
  *
  * The deliberate restraint is on the plain-text path: it converts only when the
  * shape is unambiguously a table (two or more rows agreeing on a column count
- * of two or more). Space-aligned tables — PDFs, plain-text dumps — never
- * auto-convert; the view offers an explicit selection-based action for those.
+ * of two or more).
  *
  * The paste arm (`choosePaste`) sits ABOVE the table conversion and answers the
  * question the renderer actually asks: the card's format is sniffed from its
@@ -172,24 +171,6 @@ export function htmlTableToMarkdown(html: string): string | null {
     if (cells.length > 0) rows.push(cells)
   }
   if (rows.length < 2) return null
-  return toMarkdownTable(rows)
-}
-
-/**
- * Convert whitespace-aligned text (columns separated by runs of two or more
- * spaces) to a markdown table. This is the explicit selection action's path —
- * never the automatic one.
- * @param text - the selected text.
- * @returns the markdown table, or null when it does not look like a table.
- */
-export function spaceAlignedToMarkdown(text: string): string | null {
-  const lines = text
-    .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .filter(line => line.trim().length > 0)
-  if (lines.length < 2) return null
-  const rows = lines.map(line => line.trim().split(/ {2,}/))
-  if (rows.some(row => row.length < 2)) return null
   return toMarkdownTable(rows)
 }
 

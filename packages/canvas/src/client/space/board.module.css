@@ -2,42 +2,6 @@
    board topbar, filter chips, card grid, ghost proposals) with every colour
    from a `--dsw-*` token, so light and dark are the theme's business. */
 
-.listHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 14px 10px;
-}
-
-.listTitle {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.newButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: transparent;
-  border-radius: 6px;
-  font-size: 11.5px;
-  font-family: var(--dsw-font-family);
-  padding: 3px 8px;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.newButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.newButton:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 .listBody {
   flex: 1;
   overflow-y: auto;
@@ -309,11 +273,6 @@
   flex: 1;
 }
 
-.readonlyHint {
-  font-size: 11px;
-  color: var(--dsw-alias-label-caption);
-}
-
 /* ------------------------------------------------------------------ board */
 
 /* The ONE scroll container of the board: panes inside it never scroll. */
@@ -544,43 +503,6 @@
   gap: 6px;
   flex-wrap: wrap;
   color: var(--dsw-alias-label-tertiary);
-}
-
-/* The ＋新卡 kind menu (drops from its button, above the grid). */
-.menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 9;
-  min-width: 140px;
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-3);
-  box-shadow: var(--dsw-elevation-prominent);
-}
-
-.menuItem {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  font-size: 12px;
-  font-family: var(--dsw-font-family);
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-  text-align: left;
-}
-
-.menuItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
 }
 
 .selBar {

@@ -34,6 +34,7 @@ import {
 } from '../../types.ts'
 import type {} from '../locales.ts'
 import { categoryLabelMap, kindIconOf } from '../category-label.ts'
+import { basenameOf } from '../text.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
@@ -97,12 +98,6 @@ function newCategoryId(): string {
     ? Math.random().toString(36).slice(2).padEnd(12, '0')
     : [...bytes].map(byte => byte.toString(36).padStart(2, '0')).join('')
   return makeBoardId('cat', Date.now(), random)
-}
-
-/** The last path segment, separators from either platform (display only). */
-function basenameOf(path: string): string {
-  const parts = path.split(/[\\/]/).filter(segment => segment.length > 0)
-  return parts[parts.length - 1] ?? path
 }
 
 /** One comment thread under a card (badge toggle + list + the user's form). */

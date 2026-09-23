@@ -52,25 +52,15 @@ import type { CanvasTabRow } from '../space/selection.ts'
 import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { CanvasSwitcher } from './CanvasSwitcher.tsx'
 import { TabStrip, type StripTab } from './TabStrip.tsx'
+import { basenameOf, messageOf } from '../text.ts'
 import css from './CanvasTab.module.css'
 // The dropdown panel primitive lives with the board styles (the switcher's
 // own module — a copy here was dead CSS and the M3.1 topbar bug's source).
 import boardCss from '../space/board.module.css'
 
-/** The last path segment, separators from either platform (display only). */
-function basenameOf(path: string): string {
-  const parts = path.split(/[\\/]/).filter(segment => segment.length > 0)
-  return parts[parts.length - 1] ?? path
-}
-
 /** Fallback for the workspaces hook a minimal composition may not provide. */
 const useNoWorkspaces = ((selector: (snapshot: { items: readonly [] }) => unknown) =>
   selector({ items: [] })) as unknown as CanvasTabProps['useWorkspaces']
-
-/** True when a promise rejection or remote failure carries a usable message. */
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
 
 /** One open draft's content, held by the row that owns it. */
 interface DraftContent {

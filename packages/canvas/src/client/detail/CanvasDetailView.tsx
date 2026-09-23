@@ -52,6 +52,7 @@ import { base64Of, imageFilesOf, type CanvasImageFile } from '../images.ts'
 import { choosePaste, type PasteArm } from '../paste-table.ts'
 import type { CanvasKey } from '../locales.ts'
 import { CardTextarea } from '../space/CardTextarea.tsx'
+import { agoOf, basenameOf, messageOf } from '../text.ts'
 import type { PadTool } from '../draw.ts'
 import { CardPad } from './CardPad.tsx'
 import css from './CanvasDetailView.module.css'
@@ -82,7 +83,7 @@ function ModeSeg({ mode, onMode, t }: {
   readonly t: CanvasDetailProps['t']
 }): ReactNode {
   return (
-    <span className={css.seg} role="group" aria-label={t('card.edit')}>
+    <span className={css.seg} role="group" aria-label={t('detail.viewMode')}>
       {MODES.map(candidate => (
         <button
           key={candidate}
@@ -95,17 +96,6 @@ function ModeSeg({ mode, onMode, t }: {
       ))}
     </span>
   )
-}
-
-/** The last path segment, separators from either platform (display only). */
-function basenameOf(path: string): string {
-  const parts = path.split(/[\\/]/).filter(segment => segment.length > 0)
-  return parts[parts.length - 1] ?? path
-}
-
-/** True when a promise rejection or remote failure carries a usable message. */
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /** Fallback for a minimal composition without ui-session. */
@@ -702,18 +692,4 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       )}
     </div>
   )
-}
-
-/** A relative instant in the locale's words (the space list's own buckets). */
-function agoOf(at: number, t: CanvasDetailProps['t']): string {
-  const MIN = 60_000
-  const HOUR = 3_600_000
-  const DAY = 86_400_000
-  const diff = Math.max(0, Date.now() - at)
-  if (diff < MIN) return t('time.now')
-  if (diff < HOUR) return t('time.minutes', { n: String(Math.floor(diff / MIN)) })
-  if (diff < DAY) return t('time.hours', { n: String(Math.floor(diff / HOUR)) })
-  if (diff < 30 * DAY) return t('time.days', { n: String(Math.floor(diff / DAY)) })
-  if (diff < 365 * DAY) return t('time.months', { n: String(Math.floor(diff / (30 * DAY))) })
-  return t('time.years', { n: String(Math.floor(diff / (365 * DAY))) })
 }
