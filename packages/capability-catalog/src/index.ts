@@ -194,6 +194,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
           watch(listener: (next: unknown) => void): void
         }
         update?: (ns: string, patch: Record<string, unknown>) => Promise<void>
+        replace?: (ns: string, section: Record<string, unknown>) => Promise<void>
         configure?: (presentation: { auto?: boolean }, owner?: unknown) => () => void
       }
       if (typeof svc.register === 'function') {
@@ -221,7 +222,16 @@ export class CapabilityCatalogService extends TypertRemoteService {
         const persisted = readVolatile()
         if (persisted !== undefined) this.mcp.loadFrom(persisted)
         this.mcp.onPersist = (): void => {
-          void svc.update!(CAPABILITY_CATALOG_NS, { mcp: this.mcp.toPersisted() }).catch((error: unknown) => this.ctx.logger.error(error))
+          // Wholesale write, NOT merge: `update` mergeLayers recurses plain
+          // objects, so a REMOVED server/credential/tool key would survive in
+          // the document and come back through the document-updated
+          // round-trip below. `replace` resets the live fields first; the mcp
+          // block is this entry's only volatile field, so a replace is exactly
+          // the block swap. rc.1's SettingsForms carries both.
+          const write = typeof svc.replace === 'function'
+            ? svc.replace(CAPABILITY_CATALOG_NS, { mcp: this.mcp.toPersisted() })
+            : svc.update!(CAPABILITY_CATALOG_NS, { mcp: this.mcp.toPersisted() })
+          void write.catch((error: unknown) => this.ctx.logger.error(error))
         }
         settingsCtx.on('settings/document-updated', (ns) => {
           if (ns !== CAPABILITY_CATALOG_NS) return
