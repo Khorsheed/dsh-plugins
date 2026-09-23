@@ -66,6 +66,7 @@ function invariantWhy(id: string): EvalKey | null {
   if (id === 'fingerprint') return 'invariant.why.fingerprint'
   if (id === 'subject') return 'invariant.why.subject'
   if (id === 'procedure') return 'invariant.why.procedure'
+  if (id === 'verdict-coverage') return 'invariant.why.verdict-coverage'
   return null
 }
 
@@ -236,7 +237,13 @@ function PairBlock(props: {
             mean: fmtNum(pair.ci.mean), lo: fmtNum(pair.ci.lo), hi: fmtNum(pair.ci.hi),
             samples: pair.ci.samples, seed: pair.ci.seed,
           })}
+          {pair.ciAdvisory && <div>{t('report.ciAdvisory')}</div>}
         </div>
+      )}
+      {/* No interval is a statement too: say how many items had a delta
+          rather than leaving a gap a reader could take for "not computed". */}
+      {pair.ci === null && pair.ciWithheld !== null && (
+        <div className={css.dim}>{t('report.ciWithheld', { k: pair.ciWithheld.tasksWithDelta })}</div>
       )}
       {/* The rank verdict is the report's own sentence — including the one
           that refuses to rank, which is the sentence a reader must not lose. */}
@@ -791,7 +798,9 @@ export function ReportPage(props: {
   if (error !== null) return <ErrorState what={t('report.error')} message={error} t={t} />
   if (report === null) return <div className={css.empty}>{t('report.loading')}</div>
 
-  const failing = report.invariants.filter(check => check.status !== 'ok')
+  // The section gate is the first four checks. Verdict coverage degrades a
+  // pair inside an OPEN section, so it is never named as a reason it closed.
+  const failing = report.invariants.filter(check => check.status !== 'ok' && check.id !== 'verdict-coverage')
 
   return (
     <div className={css.reportPage}>

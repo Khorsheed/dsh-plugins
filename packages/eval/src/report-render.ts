@@ -2,10 +2,11 @@
  * summary.md rendering for the eval report. Pure function of the analyzed
  * {@link EvalReport} — no file access, no clock beyond the generation stamp.
  * Section order follows the task contract: red flags at the very top, the
- * four invariants next, the negative-criteria hit list among the fact tables
+ * five validity checks next, the negative-criteria hit list among the fact tables
  * (a defect list is a fact, so it prints whether or not comparison is
- * allowed), and comparison sections ONLY when the invariants allowed them
- * (facts-only otherwise).
+ * allowed), and comparison sections ONLY when the first four invariants
+ * allowed them (facts-only otherwise); a pair the fifth check degraded keeps
+ * its per-task table and loses its CI and rank.
  * @module @khorsheed/dsh-eval
  */
 import type {
@@ -66,7 +67,10 @@ function renderPair(comparison: PairComparison): string[] {
   lines.push('')
   const ci = comparison.ci
   if (ci !== null) {
-    lines.push(`平均 Δ = ${fmtNum(ci.mean)}，95% 置信区间 [${fmtNum(ci.lo)}, ${fmtNum(ci.hi)}]（bootstrap 重采样 rep × ${ci.samples}，seed ${ci.seed}）。`)
+    lines.push(`平均 Δ = ${fmtNum(ci.mean)}，95% 置信区间 [${fmtNum(ci.lo)}, ${fmtNum(ci.hi)}]（bootstrap 重采样 rep × ${ci.samples}，seed ${ci.seed}）`
+      + `${comparison.ciAdvisory ? '——仅供参考，未达排名条件（每题需跑满 3 次）' : ''}。`)
+  } else if (comparison.ciWithheld !== null) {
+    lines.push(`只有 ${comparison.ciWithheld.tasksWithDelta} 道题有差值，给不出区间。`)
   }
   lines.push(`**名次判定: ${comparison.rankReason}**`)
   lines.push('')
@@ -342,7 +346,7 @@ export function renderSummaryMd(report: EvalReport): string {
     lines.push('')
   }
 
-  lines.push('## 四条不变量')
+  lines.push('## 五条有效性校验')
   lines.push('')
   for (const check of report.invariants) {
     lines.push(`- **${check.title}** — ${STATUS_MARK[check.status]}`)
@@ -350,7 +354,7 @@ export function renderSummaryMd(report: EvalReport): string {
   }
   lines.push('')
   if (!report.comparisonAllowed) {
-    lines.push('> **比较未启用：至少一条不变量不成立或无法核验。本报告只输出事实表，不输出比较与名次**（architecture §5）。')
+    lines.push('> **比较未启用：前四条不变量至少一条不成立或无法核验。本报告只输出事实表，不输出比较与名次**（architecture §5）。')
     lines.push('')
   }
 
@@ -435,7 +439,7 @@ export function renderSummaryMd(report: EvalReport): string {
   for (const note of report.notes) lines.push(`- ${note}`)
   lines.push('- 判官/探针本身有误差（独立复核显示判定不一致率可达三成，见题库 dimensions.md）：1–2 条判据的差距不足以下结论。')
   lines.push('- 效率指标并列呈现，不合成单一分数；短不一定好，轮次反映拆解粒度而非工作量。')
-  lines.push('- 名次只在不变量全部成立且 n ≥ 3 时输出，且以 95% 置信区间是否含 0 为准。')
+  lines.push('- 名次只在前四条不变量成立、这一对判定覆盖一致、每题配对 n ≥ 3 且 95% 置信区间不含 0 时输出；置信区间只在至少 3 道题有差值时给出。')
   lines.push('')
   return `${lines.join('\n')}\n`
 }

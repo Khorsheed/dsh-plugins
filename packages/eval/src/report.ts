@@ -11,13 +11,16 @@ import { parseEffortEvidence, type EffortEvidence } from './frozen-configuration
  *
  * - The four invariants are checked FIRST and printed first. Any one not
  *   established (violated, or absent data) and the report degrades to fact
- *   tables — no comparison, no ranking.
+ *   tables — no comparison, no ranking. A fifth check (判定覆盖一致) is
+ *   per PAIR: a pair whose criteria were judged by a judge / human on one
+ *   side and only by a script on the other is described, never ranked.
  * - Factors are derived, never declared: condition documents recorded in
  *   run.meta are diffed pairwise; exactly one differing field names the
  *   factor, several fields degrade to 多因子 (descriptive only). Documents
  *   not recorded → the pair is marked unknown.
  * - Paired comparison blocks on tasks, resamples reps (never tasks) for the
- *   bootstrap CI, and refuses to rank when n < 3.
+ *   bootstrap CI, gives the CI only when at least 3 tasks have a delta, and
+ *   refuses to rank when n (the smallest per-task rep count) < 3.
  * - Efficiency metrics stay parallel (never summed into one score); tokens
  *   compare only within the same model.
  * - Attempts are infrastructure retries (frozen decision 1): every attempt's
@@ -144,9 +147,13 @@ export interface ReportRow {
   by: string
 }
 
-/** One of the four architecture-§5 invariants, with the facts behind it. */
+/**
+ * One validity check, with the facts behind it: the four architecture-§5
+ * invariants, which gate the whole comparison section, and the fifth
+ * (判定覆盖一致, D7), which degrades a single pair.
+ */
 export interface InvariantCheck {
-  id: 'materialization' | 'fingerprint' | 'subject' | 'procedure'
+  id: 'materialization' | 'fingerprint' | 'subject' | 'procedure' | 'verdict-coverage'
   title: string
   status: 'ok' | 'violated' | 'unverifiable'
   details: string[]
@@ -183,6 +190,34 @@ export interface PairTaskDelta {
   n: number
 }
 
+/**
+ * One rep pair whose criteria were not judged by the same KIND of source on
+ * both sides: a criterion one side has a judge or human verdict for, and the
+ * other side has only a script verdict — or nothing — for.
+ */
+export interface CoverageGap {
+  task: string
+  rep: number
+  /** The side missing the judge / human verdicts. */
+  condition: string
+  criteria: string[]
+  /**
+   * 判官缺席: every judge call on that cell failed. 仅脚本: the criteria rest on
+   * script verdicts. 无判定: nothing judged them at all.
+   */
+  why: '判官缺席' | '仅脚本' | '无判定'
+  /** The judge failures recorded on that cell, when it was 判官缺席. */
+  failures: JudgeFailure[]
+}
+
+/** One judge call that produced no usable verdicts (`kind: 'judge-parse-failed'`). */
+export interface JudgeFailure {
+  judgeCondition: string | null
+  sample: number | null
+  attempt: number | null
+  error: string
+}
+
 /** A condition pair's pooled comparison. */
 export interface PairComparison {
   a: string
@@ -192,6 +227,15 @@ export interface PairComparison {
   /** Smallest per-task rep-pair count — the rank gate. */
   n: number
   ci: BootstrapCi | null
+  /**
+   * Set when the CI was withheld because fewer than 3 tasks have a delta —
+   * the interval's unit is the task, and one or two tasks cannot bound it.
+   */
+  ciWithheld: { tasksWithDelta: number } | null
+  /** A CI was given, but the rank gate (n ≥ 3 per task) was not met. */
+  ciAdvisory: boolean
+  /** Rep pairs whose verdict sources differ in kind; non-empty degrades the pair. */
+  coverageGaps: CoverageGap[]
   /** Set only when the rank gate passes: which side the CI favors. */
   rank: 'a' | 'b' | null
   rankReason: string
@@ -417,7 +461,10 @@ export interface EvalReport {
   expectedNs: string[] | null
   rows: ReportRow[]
   invariants: InvariantCheck[]
-  /** True only when all four invariants are established. */
+  /**
+   * True only when the FIRST FOUR invariants are established. The fifth
+   * (verdict-coverage) degrades single pairs and never closes the section.
+   */
   comparisonAllowed: boolean
   conditions: Array<{ id: string; sha: string | null; model: string | null }>
   factors: FactorPair[]
@@ -608,6 +655,8 @@ interface BundleCell {
   unit: CellUnit | null
   verdicts: CellVerdict[]
   delegations: DelegationRecord[]
+  /** Judge calls that produced no usable verdicts, as the orchestrator recorded them. */
+  judgeFailures: JudgeFailure[]
   retryReason: string | null
   /** ns → writer origins (the `tool:`/`cli`/… prefix of the annotation's by). */
   writers: Map<string, Set<string>>
@@ -737,6 +786,27 @@ function delegationsOf(payload: unknown): DelegationRecord[] {
 }
 
 /**
+ * Extract the judge failures from an orchestrator-ns payload (object or
+ * array). `runJudgeSamples` records every failed judge call — the first try
+ * and its retry alike — as `kind: 'judge-parse-failed'` before moving on, so
+ * a cell whose judge never answered says so in the bundle itself.
+ */
+function judgeFailuresOf(payload: unknown): JudgeFailure[] {
+  const items = Array.isArray(payload) ? payload : [payload]
+  const out: JudgeFailure[] = []
+  for (const item of items) {
+    if (!isPlainObject(item) || item['kind'] !== 'judge-parse-failed') continue
+    out.push({
+      judgeCondition: str(item['judgeCondition']),
+      sample: num(item['sample']),
+      attempt: num(item['attempt']),
+      error: str(item['error']) ?? '（未记录原因）',
+    })
+  }
+  return out
+}
+
+/**
  * The verdict documents carried by one annotation payload. Three shapes are
  * accepted, because three writers produce them: a bare verdict (a person
  * annotating one criterion), an ARRAY of verdicts (a probe's script.json), and
@@ -849,6 +919,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
   const retry = isPlainObject(meta['retry']) ? meta['retry'] : undefined
   const verdicts: CellVerdict[] = []
   const delegations: DelegationRecord[] = []
+  const judgeFailures: JudgeFailure[] = []
   const writers = new Map<string, Set<string>>()
   let anchor: CellAnchor | null = null
   let unit: CellUnit | null = null
@@ -867,6 +938,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
     }
     if (ns === 'orchestrator') {
       delegations.push(...delegationsOf(annotation['payload']))
+      judgeFailures.push(...judgeFailuresOf(annotation['payload']))
       anchor ??= anchorOf(annotation['payload'])
       unit ??= unitOf(annotation['payload'])
       continue
@@ -903,6 +975,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
     unit,
     verdicts,
     delegations,
+    judgeFailures,
     retryReason: retry === undefined ? null : str(retry['reason']),
     writers,
   }
@@ -1701,6 +1774,116 @@ function criteriaTablesOf(cells: readonly BundleCell[], polarity: PolarityMap): 
   return tasks.map(task => criteriaTableOf(task, cells, polarity))
 }
 
+/** The layers that count as 「已判」: a judge's draft and a human's final are the same KIND of source. */
+const JUDGED_NS = new Set(['human-final', 'llm-draft'])
+
+/**
+ * 判定覆盖一致 for one pair: over the SAME rep-matched cells `comparePair`
+ * compares, every criterion must be judged (judge or human) on both sides or
+ * on neither. A criterion one side scored from a judge and the other from a
+ * script alone is two different instruments subtracted from each other — the
+ * pilot-d `Δ = 4, CI [4, 4]` was exactly that, with nothing on the page
+ * saying so.
+ *
+ * A human re-judging one criterion does NOT trip this: human-final and
+ * llm-draft are both 「已判」, so the kinds still match.
+ */
+function coverageGapsOf(a: string, b: string, cells: readonly BundleCell[]): CoverageGap[] {
+  const current = cells.filter(c => c.isCurrent && !configurationMismatch(c))
+  const gaps: CoverageGap[] = []
+  const tasks = [...new Set(current.map(c => c.task).filter((t): t is string => t !== null))].sort()
+  for (const task of tasks) {
+    const side = (condition: string): Map<number, BundleCell> => new Map(current
+      .filter(cell => cell.task === task && cell.condition === condition)
+      .map(cell => [cell.rep ?? -1, cell]))
+    const repsA = side(a)
+    const repsB = side(b)
+    for (const rep of [...repsA.keys()].filter(r => repsB.has(r)).sort((x, y) => x - y)) {
+      const cellA = repsA.get(rep) as BundleCell
+      const cellB = repsB.get(rep) as BundleCell
+      const nsA = primaryPass(cellA)?.ns ?? new Map<string, string>()
+      const nsB = primaryPass(cellB)?.ns ?? new Map<string, string>()
+      const judged = (ns: Map<string, string>, criterion: string): boolean => JUDGED_NS.has(ns.get(criterion) ?? '')
+      const missingOn = new Map<string, string[]>([[a, []], [b, []]])
+      for (const criterion of [...new Set([...nsA.keys(), ...nsB.keys()])].sort()) {
+        const onA = judged(nsA, criterion)
+        const onB = judged(nsB, criterion)
+        if (onA && !onB) missingOn.get(b)?.push(criterion)
+        if (onB && !onA) missingOn.get(a)?.push(criterion)
+      }
+      for (const [condition, criteria] of missingOn) {
+        if (criteria.length === 0) continue
+        const cell = condition === a ? cellA : cellB
+        const ns = condition === a ? nsA : nsB
+        const judgeAbsent = cell.judgeFailures.length > 0 && !cell.verdicts.some(v => v.ns === 'llm-draft')
+        gaps.push({
+          task,
+          rep,
+          condition,
+          criteria,
+          why: judgeAbsent ? '判官缺席' : criteria.every(c => ns.get(c) === 'script') ? '仅脚本' : '无判定',
+          failures: judgeAbsent ? [...cell.judgeFailures] : [],
+        })
+      }
+    }
+  }
+  return gaps
+}
+
+/** 「<题> 的 <判据…> 在 <组> 没有判官 / 人的判定（<why>）」, one clause per task × side. */
+function coverageReasonOf(gaps: readonly CoverageGap[]): string {
+  const grouped = new Map<string, { task: string; condition: string; criteria: Set<string>; why: Set<string> }>()
+  for (const gap of gaps) {
+    const key = `${gap.task}\u0000${gap.condition}`
+    let entry = grouped.get(key)
+    if (entry === undefined) {
+      entry = { task: gap.task, condition: gap.condition, criteria: new Set(), why: new Set() }
+      grouped.set(key, entry)
+    }
+    for (const criterion of gap.criteria) entry.criteria.add(criterion)
+    entry.why.add(gap.why)
+  }
+  return [...grouped.values()]
+    .map(entry => `${entry.task} 的 ${[...entry.criteria].join('、')} 在 ${entry.condition} 没有判官 / 人的判定（${[...entry.why].join(' / ')}）`)
+    .join('；')
+}
+
+/** One judge failure, shortened for a detail line — the full text is in the bundle. */
+function failureText(failure: JudgeFailure): string {
+  return failure.error.length > 160 ? `${failure.error.slice(0, 160)}…` : failure.error
+}
+
+/**
+ * The fifth validity check. Unlike the other four it does not close the
+ * comparison section: coverage is a property of ONE pair, so a gap degrades
+ * that pair to description (no CI, no rank) and leaves every other pair — and
+ * the criteria tables — as they are. Its status is the conjunction over all
+ * pairs, so the check list still shows ⚠ when any one pair was degraded.
+ */
+function checkVerdictCoverage(factors: readonly FactorPair[], cells: readonly BundleCell[]): InvariantCheck {
+  const title = '判定覆盖一致（每条判据在比较的两格里都有判官 / 人的判定，或都没有）'
+  if (factors.length === 0) {
+    return { id: 'verdict-coverage', title, status: 'ok', details: ['单对比组——没有需要核对的配对'] }
+  }
+  const details: string[] = []
+  let violated = false
+  for (const factor of factors) {
+    const gaps = coverageGapsOf(factor.a, factor.b, cells)
+    if (gaps.length === 0) {
+      details.push(`${factor.a} vs ${factor.b}：各配对格逐判据的判定来源同类`)
+      continue
+    }
+    violated = true
+    for (const gap of gaps) {
+      const absent = gap.why === '判官缺席'
+        ? `判官缺席（判官调用 ${gap.failures.length} 次均失败：${[...new Set(gap.failures.map(failureText))].join(' / ')}）`
+        : gap.why
+      details.push(`${factor.a} vs ${factor.b}：${gap.task} 第 ${gap.rep} 次的 ${gap.criteria.join('、')} 在 ${gap.condition} 没有判官 / 人的判定——${absent}；这一对只做描述，不给区间与名次`)
+    }
+  }
+  return { id: 'verdict-coverage', title, status: violated ? 'violated' : 'ok', details }
+}
+
 function comparePair(
   a: string,
   b: string,
@@ -1755,18 +1938,31 @@ function comparePair(
     allDeltas.push(...deltas)
   }
   const n = perTask.length === 0 ? 0 : Math.min(...perTask.map(t => t.n))
+  const coverageGaps = coverageGapsOf(a, b, cells)
+  // The CI's resampling unit is the rep INSIDE a task, but what it bounds is
+  // the mean over tasks: with one or two tasks there is nothing to bound, and
+  // [4, 4] off one task reads as a certainty it is not. So the CI gate counts
+  // TASKS, and the rank gate (n, reps per task) stays where it was — a CI can
+  // be shown without being enough to rank on.
+  const tasksWithDelta = bootstrapBlocks.filter(deltas => deltas.length > 0).length
   const seed = fnv1a(`${runId}:${a}:${b}:eval-report-bootstrap`)
-  const ci = bootstrapBlocks.length > 0 ? bootstrapMeanCi(bootstrapBlocks, { seed }) : null
+  const ci = coverageGaps.length === 0 && tasksWithDelta >= 3 ? bootstrapMeanCi(bootstrapBlocks, { seed }) : null
+  const ciWithheld = coverageGaps.length === 0 && tasksWithDelta > 0 && tasksWithDelta < 3 ? { tasksWithDelta } : null
+  const ciAdvisory = ci !== null && n < 3
   let rank: 'a' | 'b' | null = null
   let rankReason: string
-  if (n < 3) {
+  if (coverageGaps.length > 0) {
+    rankReason = `判定覆盖不一致：${coverageReasonOf(coverageGaps)}`
+  } else if (n < 3) {
     rankReason = `不可排名（n=${n} < 3）`
-  } else if (ci === null) {
-    rankReason = '不可排名（无配对数据）'
   } else if (factor.known && factor.multi !== null) {
     rankReason = `不可排名（多因子: ${factor.multi.join(' / ')}——只做描述统计）`
   } else if (!factor.known) {
     rankReason = '不可排名（因子未知——条件文档未记录，无法证明单因子）'
+  } else if (ciWithheld !== null) {
+    rankReason = `不可排名（只有 ${ciWithheld.tasksWithDelta} 道题有差值，给不出区间）`
+  } else if (ci === null) {
+    rankReason = '不可排名（无配对数据）'
   } else if (ci.lo > 0) {
     rank = 'a'
     rankReason = `${a} 高于 ${b}（95% CI [${ci.lo.toFixed(3)}, ${ci.hi.toFixed(3)}] 不含 0）`
@@ -1776,7 +1972,7 @@ function comparePair(
   } else {
     rankReason = `不可排名（95% CI [${ci.lo.toFixed(3)}, ${ci.hi.toFixed(3)}] 含 0）`
   }
-  return { a, b, factor, perTask, n, ci, rank, rankReason }
+  return { a, b, factor, perTask, n, ci, ciWithheld, ciAdvisory, coverageGaps, rank, rankReason }
 }
 
 // --- judge consistency -------------------------------------------------------
@@ -2232,6 +2428,9 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
     checkSubject(cells, conditionEntries),
     checkProcedure(meta),
   ]
+  // The section gate is the first four only. The fifth check degrades single
+  // pairs inside the section (see `comparePair`) and is appended after the
+  // gate is decided, so it can never close what the four opened.
   const comparisonAllowed = invariants.every(i => i.status === 'ok')
 
   const current = cells.filter(c => c.isCurrent)
@@ -2242,6 +2441,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
   const singleCondition = seenConditions.length <= 1
 
   const factors = factorPairs(conditionEntries)
+  invariants.push(checkVerdictCoverage(factors, cells))
   const comparisons: PairComparison[] = []
   if (comparisonAllowed && !singleCondition) {
     for (const factor of factors) {

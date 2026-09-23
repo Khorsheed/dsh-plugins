@@ -1,11 +1,12 @@
 /**
- * The REPORT page's projection (ui-spec §五): the four invariants, the paired
+ * The REPORT page's projection (ui-spec §五): the five validity checks, the paired
  * difference table, the efficiency table and the judge numbers, for one run.
  *
  * Nothing is computed here that `analyzeBundle` does not already decide. The
  * report's whole point is that its honesty rules live in ONE place — the four
- * invariants gate the comparison, factors are derived from condition diffs and
- * never declared, efficiency stays parallel, ranking needs n ≥ 3 — and a page
+ * invariants gate the comparison, verdict coverage degrades a pair, the CI needs
+ * 3 tasks with a delta, factors are derived from condition diffs and never
+ * declared, efficiency stays parallel, ranking needs n ≥ 3 — and a page
  * that recomputed any of it would be a second opinion the reader could not
  * tell from the first. So this module reads a bundle through that one function
  * and reshapes its answer for the wire; `comparisonAllowed` arrives decided,
@@ -302,6 +303,8 @@ export function projectReport(report: EvalReport, runId: string): EvalRunReportV
         rows: pairRowsOf(report, pair),
         n: pair.n,
         ci: pair.ci === null ? null : { mean: pair.ci.mean, lo: pair.ci.lo, hi: pair.ci.hi, samples: pair.ci.samples, seed: pair.ci.seed },
+        ciWithheld: pair.ciWithheld === null ? null : { ...pair.ciWithheld },
+        ciAdvisory: pair.ciAdvisory,
         rank: pair.rank,
         rankReason: pair.rankReason,
       }))

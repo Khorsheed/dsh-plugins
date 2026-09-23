@@ -323,14 +323,14 @@ describe('report — S1 single condition', () => {
 
 // --- S2 · two conditions, one factor, full stack --------------------------------
 
-function twoConditionBundle(root: string, opts: { reps?: number; multiFactor?: boolean; manifestWriters?: boolean } = {}): string {
+function twoConditionBundle(root: string, opts: { reps?: number; tasks?: string[]; multiFactor?: boolean; manifestWriters?: boolean } = {}): string {
   const reps = opts.reps ?? 3
   const docB = opts.multiFactor === true
     ? baseConditionDoc({ preset: 'eval-pack', model: { declared: 'gpt-y', endpoint: 'proxy' }, skills: { pack: 'web-eval' } })
     : baseConditionDoc({ preset: 'eval-pack' })
   const missions: FixtureMission[] = []
-  for (const task of ['F2', 'F3']) {
-    const matSha = sha(task === 'F2' ? 'm2' : 'm3')
+  for (const task of opts.tasks ?? ['F2', 'F3']) {
+    const matSha = sha(`m${task.slice(1)}`)
     for (const [condition, conditionId] of [['a', 'codex-exec'], ['b', 'claude-exec']] as const) {
       for (let rep = 1; rep <= reps; rep++) {
         // A passes both criteria on F2 reps 1-3 (scores 2,2,3 via D1 failing on rep3) and both on F3;
@@ -402,7 +402,7 @@ function twoConditionBundle(root: string, opts: { reps?: number; multiFactor?: b
 }
 
 describe('report — S2 two conditions, single factor', () => {
-  it('derives the factor from the condition diff and ranks with the bootstrap CI', async () => {
+  it('derives the factor from the condition diff; two tasks withhold the CI (D7)', async () => {
     const report = await analyzeBundle(twoConditionBundle(tmpTree(), { manifestWriters: true }))
     expect(report.comparisonAllowed).toBe(true)
     expect(report.singleCondition).toBe(false)
@@ -412,10 +412,13 @@ describe('report — S2 two conditions, single factor', () => {
     expect(comparison).toBeDefined()
     expect(comparison?.perTask).toHaveLength(2)
     expect(comparison?.n).toBe(3)
-    expect(comparison?.ci).not.toBeNull()
-    // A passes 2 criteria per cell vs B's 1 → Δ=+1 per task, CI cannot contain 0.
-    expect(comparison?.rank).toBe('a')
-    expect(comparison?.rankReason).toContain('不含 0')
+    // n = 3 meets the rank gate, but the CI counts TASKS: two cannot bound a
+    // mean over tasks, so there is no interval and therefore no rank. The
+    // 5-task regression in the D7 block is where this fixture still ranks.
+    expect(comparison?.ci).toBeNull()
+    expect(comparison?.ciWithheld).toEqual({ tasksWithDelta: 2 })
+    expect(comparison?.rank).toBeNull()
+    expect(comparison?.rankReason).toBe('不可排名（只有 2 道题有差值，给不出区间）')
     // weighted scores from the rubric (C4=25, D1=16): A mean 25+16·(2/3), B mean 25 on F2
     const f2 = comparison?.perTask.find(t => t.task === 'F2')
     expect(f2?.aWeighted).toBeCloseTo(25 + 16 * (2 / 3), 6)
@@ -457,10 +460,11 @@ describe('report — S2 two conditions, single factor', () => {
       expect(Object.hasOwn(parsed, key)).toBe(true)
     }
     const summary = readFileSync(first.summaryPath, 'utf8')
-    expect(summary).toContain('## 四条不变量')
+    expect(summary).toContain('## 五条有效性校验')
+    expect(summary).toContain('判定覆盖一致')
     expect(summary).toContain('### codex-exec vs claude-exec')
-    expect(summary).toContain('**名次判定: codex-exec 高于 claude-exec')
-    expect(summary).toContain('95% CI')
+    expect(summary).toContain('只有 2 道题有差值，给不出区间。')
+    expect(summary).toContain('**名次判定: 不可排名（只有 2 道题有差值，给不出区间）**')
   })
 })
 
@@ -529,11 +533,12 @@ describe('report — S4 invariant failure', () => {
 // --- S5 · n < 3 -------------------------------------------------------------------
 
 describe('report — S5 insufficient n refuses ranking', () => {
-  it('keeps deltas and the CI but prints 不可排名', async () => {
+  it('keeps deltas, withholds the CI and prints 不可排名', async () => {
     const report = await analyzeBundle(twoConditionBundle(tmpTree(), { reps: 2 }))
     expect(report.comparisonAllowed).toBe(true)
     const comparison = report.comparisons[0]
     expect(comparison?.n).toBe(2)
+    expect(comparison?.ci).toBeNull()
     expect(comparison?.rank).toBeNull()
     expect(comparison?.rankReason).toContain('不可排名')
     expect(comparison?.perTask.every(t => t.deltas.length === 2)).toBe(true)
@@ -817,7 +822,7 @@ describe('report — S8 tool-written expected ns raises the red flag', () => {
     const summary = readFileSync(summaryPath, 'utf8')
     const flagIndex = summary.indexOf('🔴')
     expect(flagIndex).toBeGreaterThanOrEqual(0)
-    expect(flagIndex).toBeLessThan(summary.indexOf('## 四条不变量'))
+    expect(flagIndex).toBeLessThan(summary.indexOf('## 五条有效性校验'))
     expect(summary).toContain('`script`')
   })
 
@@ -936,7 +941,9 @@ describe('report — S9 negative criteria score as defects (T24)', () => {
     // Weighted sums the weight of every criterion that HOLDS: 3 vs 3 + (-2).
     expect(f2?.aWeighted).toBe(3)
     expect(f2?.bWeighted).toBe(1)
-    expect(report.comparisons[0]?.rank).toBe('a')
+    // One task: the scores are facts, but one task gives no interval (D7).
+    expect(report.comparisons[0]?.rank).toBeNull()
+    expect(report.comparisons[0]?.ciWithheld).toEqual({ tasksWithDelta: 1 })
   })
 
   it('lists every held negative criterion with its evidence — the defect list', async () => {
@@ -1062,7 +1069,8 @@ describe('report — S10 proportional criteria score by ratio (T19b/T24)', () =>
     // Weighted: 18 × 6/9 vs 18 × 3/9 + (-2) × 1.
     expect(f2?.aWeighted).toBeCloseTo(12, 6)
     expect(f2?.bWeighted).toBeCloseTo(4, 6)
-    expect(report.comparisons[0]?.rank).toBe('a')
+    expect(report.comparisons[0]?.rank).toBeNull()
+    expect(report.comparisons[0]?.ciWithheld).toEqual({ tasksWithDelta: 1 })
   })
 
   it('earns the fraction even though `pass` is false — pass means FULLY holds', async () => {
@@ -1833,4 +1841,125 @@ describe('report frozen effort evidence', () => {
     expect(report.efficiencyExcluded).toContainEqual({ condition: 'claude-exec', state: 'configuration-mismatch', count: 1 })
   })
 
+})
+
+// --- D7 · verdict coverage and CI thresholds (T71) ---------------------------
+
+/**
+ * pilot-d's shape, parameterised. Both sides carry the probe's script verdict;
+ * the `a` side is always judged (llm-draft C1, C2). The `b` side is judged the
+ * same way (`judged`), judged plus one human override (`human`), or — as on
+ * pilot-d's dsh-full — has two failed judge calls and nothing but the script
+ * verdict (`judge-failed`).
+ */
+function coverageBundle(root: string, opts: { tasks: string[]; reps: number; b: 'judged' | 'human' | 'judge-failed' }): string {
+  const missions: FixtureMission[] = []
+  for (const task of opts.tasks) {
+    for (const condition of ['dsh-lean', 'dsh-full']) {
+      for (let rep = 1; rep <= opts.reps; rep++) {
+        const annotations: FixtureAnnotation[] = [scriptNote(task, [['X-no-patch', true]], 'cli', 0), orchestratorNote('stage1', 1, 60_000, 900)]
+        if (condition === 'dsh-lean' || opts.b !== 'judge-failed') {
+          annotations.push({
+            ns: 'llm-draft', by: 'judge-runner', createdAt: 1,
+            payload: [verdict(task, 'C1', true, 'judge-a'), verdict(task, 'C2', condition === 'dsh-lean', 'judge-a')],
+          })
+        }
+        if (condition === 'dsh-full' && opts.b === 'human') {
+          annotations.push({ ns: 'human-final', by: 'tab:s1', createdAt: 2, payload: [verdict(task, 'C1', false, 'judge-bench')] })
+        }
+        if (condition === 'dsh-full' && opts.b === 'judge-failed') {
+          for (const attempt of [1, 2]) {
+            annotations.push({
+              ns: 'orchestrator', by: 'orchestrator', createdAt: 1 + attempt,
+              payload: { kind: 'judge-parse-failed', judgeCondition: 't31-judge-other', sample: 1, attempt, cwd: '/tmp/j', error: 'judge output is not JSON' },
+            })
+          }
+        }
+        missions.push({
+          id: `${task}-${condition}-rep${rep}`,
+          attempts: [{ attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha(`m${task.slice(1)}`)), annotations }],
+        })
+      }
+    }
+  }
+  return writeBundle(root, {
+    runId: 'coverage',
+    meta: {
+      expectedNs: ['script', 'llm-draft'],
+      conditions: [
+        conditionEntry('dsh-lean', baseConditionDoc({ preset: 'lean' }), 'aa'),
+        conditionEntry('dsh-full', baseConditionDoc({ preset: 'full' }), 'bb'),
+      ],
+    },
+    missions,
+  })
+}
+
+describe('report — D7 verdict coverage and CI thresholds', () => {
+  it('one side judged, the other script-only degrades the pair, not the section', async () => {
+    const bundle = coverageBundle(tmpTree(), { tasks: ['P0'], reps: 1, b: 'judge-failed' })
+    const report = await analyzeBundle(bundle)
+    // The first four hold, so the section stays open and the tables stay.
+    expect(report.comparisonAllowed).toBe(true)
+    expect(report.criteriaTables).not.toEqual([])
+    const check = report.invariants.find(row => row.id === 'verdict-coverage')
+    expect(check?.status).toBe('violated')
+    expect(check?.details.join('\n')).toContain('P0 第 1 次的 C1、C2 在 dsh-full 没有判官 / 人的判定——判官缺席（判官调用 2 次均失败：judge output is not JSON）')
+    const pair = report.comparisons[0]
+    // Described, not concluded: per-task facts stay, interval and rank go.
+    expect(pair?.perTask).toHaveLength(1)
+    expect(pair?.coverageGaps).toHaveLength(1)
+    expect(pair?.ci).toBeNull()
+    expect(pair?.ciAdvisory).toBe(false)
+    expect(pair?.rank).toBeNull()
+    expect(pair?.rankReason).toBe('判定覆盖不一致：P0 的 C1、C2 在 dsh-full 没有判官 / 人的判定（判官缺席）')
+    const summary = readFileSync((await writeEvalReport(bundle)).summaryPath, 'utf8')
+    expect(summary).toContain('判定覆盖不一致：P0 的 C1、C2 在 dsh-full')
+  })
+
+  it('a human re-judging one criterion does not degrade', async () => {
+    const report = await analyzeBundle(coverageBundle(tmpTree(), { tasks: ['P1', 'P2', 'P3'], reps: 3, b: 'human' }))
+    expect(report.invariants.find(row => row.id === 'verdict-coverage')?.status).toBe('ok')
+    const pair = report.comparisons[0]
+    expect(pair?.coverageGaps).toEqual([])
+    expect(pair?.ci).not.toBeNull()
+    expect(pair?.ciAdvisory).toBe(false)
+  })
+
+  it('1 task × 1 rep withholds the CI', async () => {
+    const report = await analyzeBundle(coverageBundle(tmpTree(), { tasks: ['P0'], reps: 1, b: 'judged' }))
+    expect(report.invariants.find(row => row.id === 'verdict-coverage')?.status).toBe('ok')
+    const pair = report.comparisons[0]
+    expect(pair?.ci).toBeNull()
+    expect(pair?.ciWithheld).toEqual({ tasksWithDelta: 1 })
+    expect(pair?.rank).toBeNull()
+    expect(pair?.rankReason).toContain('n=1 < 3')
+  })
+
+  it('3 tasks × 1 rep gives an advisory CI and no rank', async () => {
+    const bundle = coverageBundle(tmpTree(), { tasks: ['P1', 'P2', 'P3'], reps: 1, b: 'judged' })
+    const report = await analyzeBundle(bundle)
+    const pair = report.comparisons[0]
+    expect(pair?.ci).not.toBeNull()
+    expect(pair?.ciWithheld).toBeNull()
+    expect(pair?.ciAdvisory).toBe(true)
+    expect(pair?.rank).toBeNull()
+    expect(pair?.rankReason).toContain('n=1 < 3')
+    const summary = readFileSync((await writeEvalReport(bundle)).summaryPath, 'utf8')
+    expect(summary).toContain('仅供参考，未达排名条件（每题需跑满 3 次）')
+  })
+
+  it('5 tasks × 3 reps still ranks', async () => {
+    const bundle = twoConditionBundle(tmpTree(), { tasks: ['F2', 'F3', 'F4', 'F5', 'F6'], manifestWriters: true })
+    const report = await analyzeBundle(bundle)
+    const pair = report.comparisons[0]
+    expect(pair?.n).toBe(3)
+    expect(pair?.ci).not.toBeNull()
+    expect(pair?.ciAdvisory).toBe(false)
+    expect(pair?.rank).toBe('a')
+    expect(pair?.rankReason).toContain('不含 0')
+    const summary = readFileSync((await writeEvalReport(bundle)).summaryPath, 'utf8')
+    expect(summary).toContain('**名次判定: codex-exec 高于 claude-exec')
+    expect(summary).toContain('95% CI')
+  })
 })
