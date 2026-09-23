@@ -209,6 +209,9 @@ function makeHarness(options: {
 } = {}): Harness {
   const boards = new Map((options.boards ?? [board()]).map(value => [value.id, value]))
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
+  // A bench starts on an empty strip, every time: the store restores the rows a
+  // previous bench left in sessionStorage, and those name cards its board has not.
+  sessionStorage.clear()
   const store = new CanvasSelectionStore()
   // The REAL image cache over a fake read leg (§10.3): the tab reads its feed
   // as a subscription, so the feed is exercised here rather than faked away.
@@ -290,6 +293,11 @@ function makeHarness(options: {
     // renders — on the link face it takes that pen or a double click.
     openCardDetail: vi.fn(),
     openCardDraft: vi.fn(),
+    // The strip's own two verbs are the store's, exactly as the production face
+    // wires them; the detail openings stay recorders, because these specs assert
+    // what the gesture PASSES, not what the strip then renders.
+    activateTab: (id: string) => { store.activate(id) },
+    closeTab: (id: string) => { store.close(id) },
     openCanvas: (canvasId: string) => { store.openCanvas(canvasId) },
     focusCanvas: vi.fn(async (): Promise<Result<BoardFocusResult>> => ok({ ok: true })),
     askAgent: vi.fn(async (): Promise<Result<BoardAskAgentOutcome>> =>
@@ -331,7 +339,10 @@ function one<T extends Element>(container: HTMLElement, selector: string): T {
 }
 
 const nodeOf = (container: HTMLElement, id: string): HTMLElement => one<HTMLElement>(container, `[data-node="${id}"]`)
-const portOf = (container: HTMLElement, id: string): HTMLElement => one<HTMLElement>(container, `[data-port="${id}"]`)
+/** Which of a card's two handles: a card has one per side, and the tests that
+ *  do not care keep using the right-hand one. */
+const portOf = (container: HTMLElement, id: string, side: 'left' | 'right' = 'right'): HTMLElement =>
+  one<HTMLElement>(container, `[data-port="${id}:${side}"]`)
 const wireOf = (container: HTMLElement, pair: string): Element => one(container, `[data-wire="${pair}"]`)
 const worldOf = (container: HTMLElement): HTMLElement => one<HTMLElement>(container, '[data-world]')
 const nodesOf = (container: HTMLElement): HTMLElement[] => [...container.querySelectorAll<HTMLElement>('[data-node]')]
@@ -461,9 +472,11 @@ describe('LinkView — the stage mounts from the board', () => {
     })
     const container = await face(bench, 2)
     expect(wiresOf(container)).toBe(1)
-    // Centre to centre of the MEASURED boxes: (14,14)+{90,30}, (198,14)+{90,30}.
-    // The fallback boxes would put the tail at 98/46.
-    expect(wireOf(container, 'c_1:c_2').getAttribute('d')).toMatch(/^M 104 44 C .*, 288 44$/)
+    // Edge to facing edge of the MEASURED boxes: a's right edge (14+180, 44)
+    // into b's left edge (198, 44). The centres would read 104/288, and the
+    // unmeasured fallback would put a's edge at 182 — so this also proves the
+    // node-measuring effect ran before the wires were drawn.
+    expect(wireOf(container, 'c_1:c_2').getAttribute('d')).toBe('M 194 44 C 218 44, 174 44, 198 44')
     expect(container.querySelector('[data-wire="c_2:c_old"]')).toBeNull()
   })
 
@@ -646,6 +659,30 @@ describe('LinkView — lines', () => {
     expect(writeAt(bench.mocks, 0).positions).toBeUndefined()
     expect(nodeOf(container, 'c_1').style.left).toBe(`${grid(0).x}px`)
     expect(nodeOf(container, 'c_2').style.left).toBe(`${grid(1).x}px`)
+  })
+
+  it('从左边那个连接点起手，存的还是同一对，画出来也是同一条线', async () => {
+    const bench = makeHarness({ boards: [board(CANVAS_ID, [card('c_1'), card('c_2')])] })
+    const container = await face(bench, 2)
+    drag(portOf(container, 'c_1', 'left'), { x: 14, y: 40 }, { x: 210, y: 40 }, nodeOf(container, 'c_2'))
+    await waitFor(() => {
+      expect(bench.mocks.setLayout).toHaveBeenCalledTimes(1)
+    })
+    // Which handle the hand found is not stored: a pair is a pair, and the side a
+    // finished line leaves from is re-derived from where the two cards sit — so
+    // moving a card afterwards can never strand a tail on the wrong edge.
+    expect(writeAt(bench.mocks, 0)).toEqual({ canvasId: CANVAS_ID, links: [link('c_1', 'c_2')] })
+    await waitFor(() => {
+      expect(wireOf(container, 'c_1:c_2').getAttribute('d'))
+        .toBe('M 194 44 C 218 44, 174 44, 198 44')
+    })
+  })
+
+  it('每侧一个连接点：左边的邻居不用再绕到右边去连线', async () => {
+    const bench = makeHarness({ boards: [board(CANVAS_ID, [card('c_1'), card('c_2')])] })
+    const container = await face(bench, 2)
+    expect([...container.querySelectorAll<HTMLElement>('[data-port]')]
+      .map(handle => handle.dataset.port)).toEqual(['c_1:left', 'c_1:right', 'c_2:left', 'c_2:right'])
   })
 
   it('refuses a pair that is already linked, whichever way round the row is stored', async () => {

@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest'
 import {
   LANE_MIN_Y, MARQUEE_CLICK_THRESHOLD, MIN_LANE,
   clampInside, dragLane, groupOf, isLinked, isMarqueeClick, laneAt, laneHolds, marqueeHits,
-  marqueeRect, rectsOverlap, resizeLane, wirePathOf,
+  marqueeRect, rectsOverlap, resizeLane, wireAnchorsOf, wirePathOf,
   type LaneRect, type LinkPair, type PlacedCard, type Rect, type Size,
 } from '../src/client/space/layout-geometry.ts'
 
@@ -70,32 +70,65 @@ describe('isLinked', () => {
 })
 
 describe('wirePathOf', () => {
-  it('左右一对：两个端点就是两张卡的中心', () => {
-    expect(wirePathOf(card('a', 0, 0), card('b', 200, 0))).toBe('M 76 30 C 176 30, 176 30, 276 30')
+  /** 卡 a：x 0–152、y 0–60，中心 (76,30)；卡 b：x 200–352，中心 (276,30)。 */
+  it('左右一对：端点是两张卡相向的两条边，不是两个中心', () => {
+    expect(wirePathOf(card('a', 0, 0), card('b', 200, 0))).toBe('M 152 30 C 176 30, 176 30, 200 30')
   })
 
   it('反过来的一对：外推换个符号，线型照旧不打结', () => {
-    expect(wirePathOf(card('b', 200, 0), card('a', 0, 0))).toBe('M 276 30 C 176 30, 176 30, 76 30')
+    expect(wirePathOf(card('b', 200, 0), card('a', 0, 0))).toBe('M 200 30 C 176 30, 176 30, 152 30')
   })
 
-  it('贴得太近的一对：外推有 24 的地板，所以线是鼓的而不是压成一条直缝', () => {
-    expect(wirePathOf(card('a', 0, 0), card('d', 40, 0))).toBe('M 76 30 C 100 30, 92 30, 116 30')
-    expect(wirePathOf(card('d', 40, 0), card('a', 0, 0))).toBe('M 116 30 C 92 30, 100 30, 76 30')
+  it('挨得近的一对：外推有 24 的地板，所以线是鼓的而不是压成一条直缝', () => {
+    // 18 的缝按半推只有 9，地板把它顶到 24 —— 两个控制点因此都越过各自的端点。
+    expect(wirePathOf(card('a', 0, 0), card('n', 170, 0))).toBe('M 152 30 C 176 30, 146 30, 170 30')
   })
 
   it('上下一对：走纵轴，横的不推', () => {
-    expect(wirePathOf(card('a', 0, 0), card('f', 10, 200))).toBe('M 76 30 C 76 130, 86 130, 86 230')
+    expect(wirePathOf(card('a', 0, 0), card('f', 10, 200))).toBe('M 76 60 C 76 130, 86 130, 86 200')
   })
 
-  it('正好四十五度的一对按横向读，因为那才是板子的流向', () => {
-    expect(wirePathOf(card('a', 0, 0), card('h', 60, 60))).toBe('M 76 30 C 106 30, 106 90, 136 90')
+  it('换向的一对：把两张卡对调，画出来的是同一条线', () => {
+    expect(wirePathOf(card('f', 10, 200), card('a', 0, 0))).toBe('M 86 200 C 86 130, 76 130, 76 60')
   })
 
-  it('不管朝向哪边，起始终点是两头的中心', () => {
-    const numbers = wirePathOf(card('f', 10, 200), card('a', 0, 0))
-      .match(/-?\d+(\.\d+)?/g)!.map(Number)
-    expect(numbers.slice(0, 2)).toEqual([86, 230])
-    expect(numbers.slice(-2)).toEqual([76, 30])
+  it('四十五度但横向不重叠的一对按横向读，因为那才是板子的流向', () => {
+    // 中心差 dx=dy=276，横向有 124 的干净缝隙，所以横轴说了算。
+    expect(wirePathOf(card('a', 0, 0), card('t', 276, 276))).toBe('M 152 30 C 214 30, 214 306, 276 306')
+  })
+
+  it('横向压在一起的一对改走纵轴：换轴才不用从自己身体里穿出去', () => {
+    // h 在 a 的右下方、横向压进来 92 —— 按中心差该走横轴，可那条线就得从 a 的
+    // 右边出来再倒着爬回 h 的左边。纵向有 0 的干净缝隙，于是改走纵轴。
+    expect(wirePathOf(card('a', 0, 0), card('h', 60, 60))).toBe('M 76 60 C 76 84, 136 36, 136 60')
+  })
+
+  it('两个方向都压住了，才回到主导轴——这时候没有不穿卡的答案', () => {
+    // d 与 a 横竖都叠着（x 40–192 / y 0–60）。线仍然从相向的边出发，只是这段
+    // 没法不经过卡面；这是用户把两张卡摞在一起的后果，不是路由的缺陷。
+    expect(wirePathOf(card('a', 0, 0), card('d', 40, 0))).toBe('M 152 30 C 208 30, -16 30, 40 30')
+    expect(wirePathOf(card('d', 40, 0), card('a', 0, 0))).toBe('M 40 30 C -16 30, 208 30, 152 30')
+  })
+
+  it('端点落在卡里，是这一整块几何最不该发生的错', () => {
+    const boxes: [PlacedCard, PlacedCard][] = [
+      [card('a', 0, 0), card('b', 200, 0)],
+      [card('a', 0, 0), card('f', 10, 200)],
+      [card('a', 0, 0), card('h', 60, 60)],
+      [card('a', 0, 0), card('n', 170, 0)],
+      [card('b', 200, 0), card('f', 10, 200)],
+    ]
+    const offenders: string[] = []
+    for (const [x, y] of boxes) {
+      const { from, to } = wireAnchorsOf(x, y)
+      for (const [point, box, which] of [[from, x, '起点'], [to, y, '终点']] as const) {
+        // 严格内部 = 扎进身体；贴在边上或角上不算。
+        const inside = point.x > box.x && point.x < box.x + box.w
+          && point.y > box.y && point.y < box.y + box.h
+        if (inside) offenders.push(`${box.id} 的${which} ${point.x},${point.y}`)
+      }
+    }
+    expect(offenders).toEqual([])
   })
 })
 

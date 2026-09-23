@@ -33,6 +33,9 @@ import css from './DatasetsView.module.css'
 
 /** What went wrong, as far as the message lets us tell. */
 export type ErrorKind =
+  | 'alreadyRegistered'
+  | 'notRegistered'
+  | 'refMissing'
   | 'notGitRepo'
   | 'notDatasetRepo'
   | 'pathMissing'
@@ -48,10 +51,14 @@ export type ErrorKind =
  * general one.
  */
 const MARKERS: ReadonlyArray<readonly [RegExp, ErrorKind]> = [
+  [/registered already|is taken by another repository/i, 'alreadyRegistered'],
+  [/is not registered in this deployment/i, 'notRegistered'],
+  // Ahead of pathMissing: a missing BRANCH also «does not exist».
+  [/tracked branch .* does not exist/i, 'refMissing'],
   [/not a dataset repository|no datasets\/ directory|holds no datasets\//i, 'notDatasetRepo'],
   [/not a git repository|rev-parse --show-toplevel/i, 'notGitRepo'],
   [/no dataset repository/i, 'unbound'],
-  [/\bENOENT\b|no such file or directory|does not exist|is not a directory/i, 'pathMissing'],
+  [/\bENOENT\b|no such file or directory|does not exist|no longer exists|is not a directory/i, 'pathMissing'],
   [/\bno \w+ service\b|mounts no |mount the dsh-/i, 'serviceMissing'],
   [/\bcancelled\b|\bcanceled\b|\baborted\b/i, 'cancelled'],
 ]
@@ -74,6 +81,9 @@ export function classifyError(message: string): ErrorKind {
  * is to say about a cause nobody recognized.
  */
 const COPY: Readonly<Record<ErrorKind, { head: DatasetsKey | null; fix: DatasetsKey }>> = {
+  alreadyRegistered: { head: 'error.alreadyRegistered', fix: 'error.alreadyRegistered.fix' },
+  notRegistered: { head: 'error.notRegistered', fix: 'error.notRegistered.fix' },
+  refMissing: { head: 'error.refMissing', fix: 'error.refMissing.fix' },
   notGitRepo: { head: 'error.notGitRepo', fix: 'error.notGitRepo.fix' },
   notDatasetRepo: { head: 'error.notDatasetRepo', fix: 'error.notDatasetRepo.fix' },
   pathMissing: { head: 'error.pathMissing', fix: 'error.pathMissing.fix' },

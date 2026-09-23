@@ -213,6 +213,10 @@ dsh-ankh-guard restart \
 - **`restart`/`supervise` 通过 `lsof` 发现监听者**（macOS / 带 lsof 的 Linux）；guard 优先使用系统绝对路径，其他平台需用 `--pid`。
 - **杀进程一律按单 pid identity + 后代回收，从不按进程组**——实例不是 setsid 的，所以 `restart`、`schedule-exit` 的退出代理和 watchdog 清理都针对已记录的 child/listener；cutover 强制路径先 `SIGSTOP`，再用 Linux boot/start-tick 或 macOS `proc_pidinfo` 微秒启动时间复核 identity，不匹配就只 `SIGCONT` 并拒绝，然后才沿 `pgrep -P` 冻结、复核亲缘并回收后代。普通非 cutover 端口恢复仍有受限的 listener 清理兜底；cutover 禁止凭端口选择或杀进程。
 
+## 测试并发
+
+进程集成测试默认并行运行 4 个分片，unit lane 上限为 2。资源紧张时可用 `DSH_TEST_MAX_WORKERS=1 pnpm --filter @khorsheed/dsh-ankh-guard test` 串行调度全部分片；全仓 `pnpm gate` 也可使用这个环境变量。只降低调度并发，不减少测试、延长断言期限或改变生产重启行为；无效值保留默认值。
+
 ## 变更记录
 
 见 [CHANGELOG.md](CHANGELOG.md)。

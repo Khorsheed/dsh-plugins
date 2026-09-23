@@ -1,6 +1,6 @@
 /**
- * Datasets plugin, browser half: the session's dataset binding and browser as
- * the 'datasets' entry in the conversation's `conversation.view` tab ring
+ * Datasets plugin, browser half: the deployment's dataset registry and browser
+ * as the 'datasets' entry in the conversation's `conversation.view` tab ring
  * (beside chat and trajectory). The datasets Remote is mounted here through
  * the official `ctx.remote.$mount` channel, so the plugin distributes as an
  * independent package with no edits to core packages; content previews are
@@ -27,10 +27,9 @@ import type {} from '@khorsheed/dsh-datasets/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import datasetsRemote from '@khorsheed/dsh-datasets/remote'
 import type {
-  DatasetBinding, ImportItemInput, ReadPassthroughRequest, ReadQuery,
-  ScaffoldDatasetInput, ScaffoldItemInput,
+  ImportItemInput, ReadPassthroughRequest, ReadQuery, RegisterInput,
+  ScaffoldDatasetInput, ScaffoldItemInput, UpdateInput,
 } from '../types.ts'
-import { BindingChip, type BindingChipInjected } from './BindingChip.tsx'
 import { DatasetsView } from './DatasetsView.tsx'
 import { en, NS, zh } from './locales.ts'
 import { DatasetsPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
@@ -39,7 +38,7 @@ import type {
   DatasetExperimentRow, DatasetsRemote, DatasetsViewInjected, HostDescriptionSource, ItemRunsView,
 } from './contract.ts'
 
-export { BindingChip, DatasetsView }
+export { DatasetsView }
 
 /** Required services: the slot registry, the remote channel, the copy, the
  * workspace/connection facts the view reads, and the session list (the
@@ -118,35 +117,9 @@ function evalRemoteOf(ctx: Context): EvalProjectionRemote | undefined {
 }
 
 /**
- * Subscribe to ONE session's own activity — the signal the binding chip
- * re-reads on.
- *
- * The session object's snapshot moves when a slash command starts and again
- * when it settles, which is precisely when a `/datasets bind` receipt has to
- * appear. A host that hands out no per-session handle degrades to the session
- * LIST, which also moves on a session's own activity, just more coarsely; a
- * host with neither degrades to no refresh at all rather than to a poll.
- * @param ctx - client root context.
- * @param sessionId - the session to watch.
- * @param listener - called on every change.
- * @returns the unsubscribe function.
- */
-function watchSession(ctx: Context, sessionId: SessionId, listener: () => void): () => void {
-  const sessions = ctx.sessions as unknown as {
-    binding?: (id: SessionId) => { session?: { subscribe?: (fn: () => void) => () => void } } | undefined
-    list?: { subscribe?: (fn: () => void) => () => void }
-  }
-  const own = sessions.binding?.(sessionId)?.session?.subscribe
-  if (own !== undefined) return own.call(sessions.binding?.(sessionId)?.session, listener)
-  const list = sessions.list?.subscribe
-  return list === undefined ? () => {} : list.call(sessions.list, listener)
-}
-
-/**
  * Client plugin body: mount the Remote, register the dictionaries, and inject
- * the datasets view tab and the composer's binding chip (both registered
- * exactly while the current session's preset composition grants the dataset
- * tool row).
+ * the datasets view tab (registered exactly while the current session's preset
+ * composition grants the dataset tool row).
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -183,19 +156,28 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       label: () => t('open'),
       store: createDatasetsViewStore,
       inject: (_sessionId: SessionId): DatasetsViewInjected => ({
-        fetchBinding: (sid: SessionId) => remote.binding(sid),
-        bindSession: (sid: SessionId, binding: DatasetBinding) => remote.bind(sid, binding),
-        unbindSession: (sid: SessionId) => remote.unbind(sid),
-        previewRepo: (sid: SessionId, path: string) => remote.previewRepo(sid, { path }),
-        listDatasets: (sid: SessionId, dataset?: string) => remote.list(sid, dataset === undefined ? {} : { dataset }),
-        readFile: (sid: SessionId, query: ReadQuery) => remote.read(sid, query),
-        readPassthroughFile: (sid: SessionId, query: ReadPassthroughRequest) => remote.readPassthrough(sid, query),
-        overview: (sid: SessionId) => remote.overview(sid),
-        itemBrief: (sid: SessionId, dataset: string, item: string) => remote.itemBrief(sid, { dataset, item }),
-        validateDataset: (sid: SessionId, dataset: string) => remote.validate(sid, { dataset }),
-        scaffoldDataset: (sid: SessionId, input: ScaffoldDatasetInput) => remote.scaffoldDataset(sid, input),
-        scaffoldItem: (sid: SessionId, input: ScaffoldItemInput) => remote.scaffoldItem(sid, input),
-        importItem: (sid: SessionId, input: ImportItemInput) => remote.importItem(sid, input),
+        fetchRegistry: (sid: SessionId) => remote.registry(sid),
+        previewRepo: (sid: SessionId, path: string, trackedRef?: string) =>
+          remote.previewRepo(sid, trackedRef === undefined ? { path } : { path, trackedRef }),
+        register: (sid: SessionId, input: RegisterInput) => remote.register(sid, input),
+        updateRegistration: (sid: SessionId, input: UpdateInput) => remote.updateRegistration(sid, input),
+        unregister: (sid: SessionId, id: string) => remote.unregister(sid, { id }),
+        importBindings: (sid: SessionId) => remote.importBindings(sid),
+        listDatasets: (sid: SessionId, repo: string, dataset?: string) =>
+          remote.list(sid, dataset === undefined ? { repo } : { repo, dataset }),
+        readFile: (sid: SessionId, repo: string, query: ReadQuery) => remote.read(sid, { ...query, repo }),
+        readPassthroughFile: (sid: SessionId, repo: string, query: ReadPassthroughRequest) =>
+          remote.readPassthrough(sid, { ...query, repo }),
+        overview: (sid: SessionId, repo: string) => remote.overview(sid, { repo }),
+        itemBrief: (sid: SessionId, repo: string, dataset: string, item: string) =>
+          remote.itemBrief(sid, { repo, dataset, item }),
+        validateDataset: (sid: SessionId, repo: string, dataset: string) => remote.validate(sid, { repo, dataset }),
+        scaffoldDataset: (sid: SessionId, repo: string, input: ScaffoldDatasetInput) =>
+          remote.scaffoldDataset(sid, { ...input, repo }),
+        scaffoldItem: (sid: SessionId, repo: string, input: ScaffoldItemInput) =>
+          remote.scaffoldItem(sid, { ...input, repo }),
+        importItem: (sid: SessionId, repo: string, input: ImportItemInput) =>
+          remote.importItem(sid, { ...input, repo }),
         itemRuns: async (sid: SessionId, dataset: string, item: string): Promise<ItemRunsView | null> => {
           const face = evalRemoteOf(ctx)?.runsForItem
           if (face === undefined) return null
@@ -234,35 +216,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return () => { datasetsToggle.setReady(false) }
   })
 
-  // The BINDING CHIP, on the composer tool row: the one line that says which
-  // repository this session is bound to, visible from a session's first frame
-  // rather than from its first message. It rides the same composition
-  // criterion as the tab (a session whose preset grants no dataset tools has
-  // no binding to speak of), through the same toggle, so the two can never
-  // disagree about whether this session is a datasets session.
-  const chipToggle = new RegistrationToggle(
-    () => ctx.slots.register({
-      name: 'conversation.input.left',
-      id: 'datasets-binding',
-      // After the host's own compact controls: this is a standing fact, not an
-      // action, and the actions come first.
-      order: 40,
-      locale: NS,
-      inject: (_sessionId: SessionId): BindingChipInjected => ({
-        fetchBinding: (sid: SessionId) => remote.binding(sid),
-        watchSession: (sid: SessionId, listener: () => void) => watchSession(ctx, sid, listener),
-      }),
-    }, BindingChip),
-    () => chrome.show(ctx.sessions.list.getSnapshot().current),
-  )
-  ctx.slots.inject('conversation.input.left', () => {
-    chipToggle.setReady(true)
-    return () => { chipToggle.setReady(false) }
-  })
-
   ctx.effect(() => chrome.subscribe(() => {
     datasetsToggle.sync()
-    chipToggle.sync()
   }), 'datasets: datasets tab visibility')
 
   return async () => {

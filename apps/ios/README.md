@@ -41,6 +41,8 @@ Native navigation has a 30-second load deadline with Reload and Connection Setti
 
 ## QR login and native settings
 
+The Web plugin now provides **Settings → Connect phone → Show login QR code** for an authenticated operator. Configure its public HTTPS origin and matching Host trusted hostname first; see the [Web connection setup](../../packages/mobile/README.md#connect-a-phone-from-web-settings). The App scanner is already native and requires no rebuild for this Web addition. The QR is an official login link, not a one-use pairing grant; a broken tunnel or expired App signature must be repaired separately.
+
 Native grouped settings contain the current host, connection actions and a device-only appearance preference. QR scanning uses VisionKit with camera permission, stops when the view closes or the App backgrounds, validates the same HTTPS root/login URL contract, and previews the clean authority before an explicit Connect. The scanned login URL stays in memory; it is never saved to preferences or printed. Invalid codes, denied/unavailable cameras and unsupported devices retain manual entry. Main-frame HTTP 401 opens a recoverable login error. This consumes an existing official login link; it does not issue pairing credentials or configure a tunnel. Physical camera/permission and scan-to-login acceptance remains pending.
 
 ## Current limits

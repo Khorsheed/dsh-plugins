@@ -99,6 +99,9 @@ describe('deploy 3080 flow', () => {
     const scheduleExit = dflt.calls.find(c => c[1]?.endsWith('cli.js') && c[2] === 'schedule-exit')
     expect(scheduleExit, dflt.calls.map(c => c.join(' ')).join('\n')).toBeDefined()
     expect(scheduleExit).not.toContain('--initiator')
+    // The preflight window is deliberately wider than the guard's 120s idle-machine
+    // default — under multi-agent load a clean dry-run legitimately exceeds it.
+    expect(scheduleExit!.slice(scheduleExit!.indexOf('--preflight-timeout-ms'))).toEqual(['--preflight-timeout-ms', '300000'])
     const named = fixture().run(false, ['--initiator', 'session-abc'])
     expect(named.status, named.output).toBe(0)
     const namedExit = named.calls.find(c => c[1]?.endsWith('cli.js') && c[2] === 'schedule-exit')!

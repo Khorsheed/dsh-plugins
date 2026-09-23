@@ -37,6 +37,26 @@ App 接受配置的 HTTPS 主机地址或官方启动 token 登录链接，只�
 
 跨物理网络需要独立配置的 HTTPS/WSS 入口转发到 loopback Host 端口（生产为 3080）、有效官方认证、保持唤醒和联网的 Mac，以及网络可达的手机。仅启动 3080 不等于远程可用。App 不自动配置网络或凭据。Debug 模拟器构建仅允许 loopback HTTP，Release 要求 HTTPS。清除 App 本地数据与服务端设备撤销是不同操作。
 
+## 从 Web 设置连接手机
+
+已登录的 Web 客户端通过公开 `settings.section` 槽位提供 **设置 → 连接手机**；桌面无需开启移动布局。将手机可达的**无凭据 HTTPS origin** 配置为 mobile 插件的 `publicOrigin` 选项，或在 **Host 进程**上设置 `DSH_MOBILE_PUBLIC_ORIGIN`；插件选项优先。同一域名需加入 Host 的 `--trusted-host`，ingress 的 `PUBLIC_ORIGIN` 也必须一致。这些属于部署设置，不是手机偏好。
+
+```sh
+DSH_MOBILE_PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
+```
+
+示例使用隔离 profile；生产启动配置通过守护进程的受保护切换流程更新。地址缺失或无效、宿主能力不支持、目标域名未受信任时，只显示配置提示，不生成登录链接。
+
+1. 打开 Web「设置 → 连接手机」，核对展示的主机。
+2. 点击**显示登录二维码**。
+3. 在 iOS App 进入**连接设置 → 扫码连接电脑**，扫描后确认主机。
+
+`GET /api/mobile/connect` 仅返回配置状态。已认证、同源的 JSON `POST` 调用官方 `connection.authenticatedUrl()`，为部署者配置的 origin 获取登录链接；浏览器输入不能覆盖目标地址。两个接口都通过官方 Connection 注册，保留 Cookie 和 Host/Origin 校验，响应为 no-store。二维码在浏览器本地编码，不调用第三方二维码服务、不记录凭据日志、不写浏览器存储。离开设置分区、页面隐藏或展示两分钟后会隐藏二维码，并取消未完成的请求。
+
+**隐藏不等于凭据过期。** 这里使用宿主进程的官方登录 token，在该进程重启前有效，并非短时或一次性配对码。已有 Cookie 的有效期仍由宿主控制。隐藏或重新生成二维码不会撤销已复制的链接，也不会登出手机。逐设备凭据、撤销、Keychain 配对和推送仍未实现。
+
+入口不可达时，应先恢复 HTTPS 隧道。隧道进程仍在但活跃连接数为零时，仍无法承载请求。临时域名改变后，同步更新 ingress origin、Host 信任域名和 mobile 公网 origin，再生成新二维码；旧 Cookie 绑定旧 authority。本机 3080 响应正常不等于手机能连通。日常使用建议使用固定 HTTPS 入口；扫码也不会续签过期的 iOS 开发签名。
+
 ## 可选的 Quick Tunnel 预览
 
 网络接入属于部署配置，不是插件依赖。社区用户可以选择临时预览用的 Quick Tunnel、自建 HTTPS 反向隧道/服务器或私网连接。插件不嵌入个人域名、服务器或 Cloudflare 账号。稳定的托管中继属于独立服务，会有自己的运营成本。

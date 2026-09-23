@@ -16,6 +16,8 @@ Status: implemented
 
 ## Decision
 
+> **座位于同一天撤回**，被[画布自己拥有这条标签条](2026-09-23-canvas-inner-tab-strip.md)取代：`canvasDetail`、`src/client/detail/detail-address.ts`、`detail/CanvasDetailTab.tsx`、`detail/CanvasDetailTitle.tsx` 与 `tests/detail-tab.client.spec.tsx` 已从包里删掉——标签那排现在归画布自己画。这一页定的东西照旧成立，且正是那条 note 的底座：`cardTitleOf` 作为唯一的标题规则、`CanvasDetailView` 里每条手势规则（⌘⏎ 独占、IME 守卫、笔握着 `Escape`），以及两条宿主事实（`title` 只在打开那一刻捕获、之后从不刷新；`close` 只认带 brand 的 `TabId`、不提供拦截）——包括下面记着的那个 × 的洞，内层这条排从插件真管得着的那一半把它堵上了。其余部分照它当时的决定读。
+
 **详情是本协议 `canvas` 类型下的一个资源。** tab kind 叫 `canvasDetail`，地址是 `dsh-resource://canvas/<canvasId>/<cardId>`（`src/client/detail/detail-address.ts`），一块画布的未存草稿占 `…/_draft` 这一条。整个阶段要的那个结果于是变成免费的：再点同一张卡只是聚焦已经在的那张标签，点两张卡就在同一 pane 里开两张，插件自己不再记任何标签账。
 
 - **`_draft` 落在卡 id 语法之外是构造出来的，不是约定。** `CARD_SEGMENT` 照着 `makeBoardId('c', …)` 的形状（`c_` + 9 位 base36 时间 + base36 随机），一个不以 `c_` 开头的哨兵永远不可能被铸出来——所以没有哪张卡能拿到草稿的地址；并且这一段只是形状校验、从不查盘，地址因此能在不碰磁盘的情况下解析。
@@ -56,3 +58,7 @@ Status: implemented
 - `tests/tab.client.spec.tsx`：六条草稿测试搬去标签那份（它们过去算板面测试，只因为草稿住在板面里）；钻取那组换成五处阶段 ⑧ 的打开——点正文和点铅笔都调 `openCardDetail(canvasId, cardId, title)`，HTML 卡的标题是它的 `<title>` 而不是标记原文，归档井里的卡也照样开，「＋新卡」菜单调 `openCardDraft(canvasId, category.id, label)`，以及板面自己绝不变成编辑器。
 - `tests/detail.client.spec.tsx`：读取器的 harness 改成地址驱动（一个可变的 target 藏在 getter props 后面），因为 store 不再带卡。
 - 仓库闸门：staged 集合上的 `pnpm run check:hygiene`、`pnpm run verify-agent-note-format` / `verify-agent-note-classification`，以及本条 note 自己那份配对的 `pnpm exec tsx scripts/verify-translation-pairing.mts --write`。
+
+## Related
+
+- [画布自己拥有这条标签条](2026-09-23-canvas-inner-tab-strip.md) — 同一天、同一个对象、换了座位：标签那排如今住在画布内部，而这一页的 `canvasDetail` kind 是被删掉的，不是并排留下的。

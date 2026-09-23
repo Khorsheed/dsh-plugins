@@ -81,7 +81,7 @@ describe.runIf(docker.ok)('datasets → lab → mission integration (first half,
   it('step 3 lab: populate returned the materialization manifest and registered it (kind materialization)', () => {
     const { materialization, artifactsAfterCollect } = ev()
     expect(materialization.sha).toMatch(/^[0-9a-f]{64}$/)
-    expect(materialization.count).toBe(2) // visible/task.md + the worktree's .git pointer file
+    expect(materialization.count).toBe(1) // visible/task.md only — the archive view carries no .git pointer
     const artifact = artifactsAfterCollect.find(a => a.kind === 'materialization')
     expect(artifact?.path).toContain('materialization.json')
   })

@@ -76,6 +76,17 @@ describe('datasets-tool companion row', () => {
     expect(sections[0]?.text).toContain('datasets_put_item')
   })
 
+  it('the guidance addresses registered datasets by reference and sends everything else to the person (T73)', () => {
+    const { sections } = mount({})
+    const text = sections[0]?.text ?? ''
+    expect(text).toContain('datasets_list')
+    expect(text).toContain('`<id>/<set>`')
+    expect(text).toContain('never by a path')
+    expect(text).toContain('register it on the Datasets tab')
+    expect(text).toContain('ask_user_question')
+    expect(text).not.toContain('/datasets bind')
+  })
+
   it('grants the read verbs only under `read`, with matching guidance', () => {
     const { tools, sections } = mount({}, { tools: 'read' })
     expect(tools.map(tool => tool.name).sort()).toEqual([...READ].sort())
@@ -105,10 +116,12 @@ describe('datasets-tool companion row', () => {
     const [command] = commands
     // WITHOUT this descriptor a capable composer has no reason to believe the
     // command takes arguments: picking `/datasets` from the completion strip
-    // submits a bare invocation and leaves `bind <path>` in the MESSAGE body
+    // submits a bare invocation and leaves the arguments in the MESSAGE body
     // (T36's live pass). The hint's content is copy; its PRESENCE is the contract.
     expect(command?.input?.hint).toBeTypeOf('string')
-    expect(command?.input?.hint).toContain('bind <repoPath>')
+    expect(command?.input?.hint).toContain('list [dataset]')
+    // T73: bind is retired — the registry is the Datasets tab's, not a verb's.
+    expect(command?.input?.hint).not.toContain('bind <')
     // The handler is the core's own: a bare invocation answers its usage line
     // (and the grant backstop fails open on this ctx-less invocation).
     const result = await command?.handler({ rawInput: '', agent: { session: { id: 'sess-1' } } })

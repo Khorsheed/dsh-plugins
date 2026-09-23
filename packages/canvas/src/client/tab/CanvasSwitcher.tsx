@@ -1,12 +1,19 @@
 /**
- * The canvas switcher: the tab topbar's dropdown for choosing the open
- * canvas. One hierarchy, no redundant headers: the active rows (open on
- * click, archive on hover), the archived well (collapsed, restore), then a
- * bottom "+ 新画布" row that unfolds the inline create form (topic input +
- * attach multi-select + create/cancel). The dropdown floats above the
- * topbar (absolute — its styles live in `../space/board.module.css`, the
- * module this file imports; a copy elsewhere would be dead CSS) and closes
- * on a choice, on Escape, and on outside pointer down.
+ * The canvas switcher: the dropdown behind the ＋ at the end of the tab strip.
+ * One hierarchy, no redundant headers: the active rows (open on click, archive
+ * on hover), the archived well (collapsed, restore), then a bottom "+ 新画布"
+ * row that unfolds the inline create form (topic input + attach multi-select +
+ * create/cancel).
+ *
+ * It used to hang off the canvas NAME in the topbar, which was the only way to
+ * reach another canvas; the strip now carries one row per open canvas, so this
+ * panel's job is putting rows ON the strip and the archive housekeeping. Its
+ * trigger is a ＋ (the canvas names are on the strip, not here) and the panel
+ * opens leftwards, so it cannot hang past the strip's right edge.
+ *
+ * The dropdown floats above the row (absolute — its styles live in `../space/
+ * board.module.css`, the module this file imports; a copy elsewhere would be
+ * dead CSS) and closes on a choice, on Escape, and on outside pointer down.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -87,7 +94,6 @@ export function CanvasSwitcher({
     return () => { document.removeEventListener('pointerdown', onPointerDown) }
   }, [open])
 
-  const current = canvases?.find(canvas => canvas.id === openId)
   const active = canvases?.filter(canvas => canvas.archivedAt === null) ?? []
   const archivedRows = canvases?.filter(canvas => canvas.archivedAt !== null) ?? []
 
@@ -117,16 +123,17 @@ export function CanvasSwitcher({
     <div className={css.switcher} ref={rootRef}>
       <button
         type="button"
-        className={css.topic}
+        className={css.switchTrigger}
+        title={t('strip.canvases')}
         aria-expanded={open}
         onClick={() => { setOpen(value => !value) }}
       >
-        {current?.title ?? t('switcher.pick')}
-        <IconChevronDownOutline14 size={12} />
+        <IconPlusOutline16 size={12} />
+        {t('strip.canvases')}
       </button>
 
       {open && (
-        <div className={css.switcherMenu}>
+        <div className={css.switcherMenu} style={{ left: 'auto', right: 0 }}>
           <div className={css.listBody}>
             {canvases === null ? (
               <div className={css.empty}>{t('state.loading')}</div>

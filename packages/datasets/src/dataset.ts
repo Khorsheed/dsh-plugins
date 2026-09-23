@@ -55,6 +55,18 @@ export type DatasetsErrorCode =
   | 'SHAPE_INVALID'
   | 'INVALID_NAME'
   | 'GIT_ERROR'
+  /** A `dataset` reference names no registration of this deployment (T73). */
+  | 'NOT_REGISTERED'
+  /** A `dataset` reference matches more than one registration, or is not a full `<id>/<set>`. */
+  | 'AMBIGUOUS_DATASET'
+  /** A model tool passed a filesystem path where a registry reference belongs. */
+  | 'PATH_NOT_REF'
+  /** The repository is registered already (identity = its git common dir). */
+  | 'ALREADY_REGISTERED'
+  /** A registration's tracked branch does not resolve. */
+  | 'REF_NOT_FOUND'
+  /** A write verb reached a registration that names no authoring checkout. */
+  | 'NO_AUTHORING_CHECKOUT'
 
 /** Domain error with a stable, greppable code. */
 export class DatasetsError extends Error {

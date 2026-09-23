@@ -214,6 +214,10 @@ None.
 - **`restart`/`supervise` discover the listener via `lsof`** (macOS/Linux with lsof); the guard prefers absolute system paths, while other platforms need `--pid`.
 - **Kills are per-pid identity with a descendant sweep, never per process group** — the instance is not setsid'd, so `restart`, `schedule-exit`'s exit agent, and watchdog cleanup target recorded child/listener identities. Cutover forced paths `SIGSTOP` first, then revalidate a Linux boot/start-tick token or macOS `proc_pidinfo` microsecond start time; a mismatch is only resumed and refused. Descendants are likewise frozen and their parentage rechecked while walking `pgrep -P`. Ordinary non-cutover port recovery retains a bounded listener-cleanup escape hatch; cutovers never select or kill a process by port.
 
+## Test concurrency
+
+Process integration tests run up to 4 shards concurrently by default; the unit lane caps at 2. On constrained machines, use `DSH_TEST_MAX_WORKERS=1 pnpm --filter @khorsheed/dsh-ankh-guard test` to schedule every shard serially. The same variable applies to the repository-wide `pnpm gate`. This only reduces scheduling concurrency: it does not omit tests, extend assertion deadlines, or change production restart behavior. Invalid values retain the defaults.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).

@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-**灵感画布** —— **右栏里的写作工作台**：右栏一个「画布」tab，普通右栏宽度自调（拖拽把手 + 一次性收会话列表建议），顶栏切换画布；点一张卡就在同一个 dock 里开出一张详情标签。一块画布 = 一个主题 = 部署级实体，上面积累灵感、问题、共识、来源、文档五种卡；模型的提议以幽灵卡落板，你 ✓/✗ 决定它的去留。
+**灵感画布** —— **右栏里的写作工作台**：右栏一个「画布」tab，普通右栏宽度自调（拖拽把手 + 一次性收会话列表建议）；画布自己带一排标签——一块板、一张卡、一份没存的草稿都在这一排里，点卡是在画布内部开一张标签，不借宿主的 dock。一块画布 = 一个主题 = 部署级实体，上面积累灵感、问题、共识、来源、文档五种卡；模型的提议以幽灵卡落板，你 ✓/✗ 决定它的去留。
 
 **对话双入口**（M2–M3）：**当前会话**——两个画布工具（`canvas_propose_card` / `canvas_comment`）注册到主会话 Agent，你直接让 Agent 改当前打开的画布；**side-chat 插件**——透镜「就此提问」/评论「追问」走第二意见（独立上下文，side-chat 未安装时这些入口全部隐藏、板面完整可用）。文本选区交互由引用插件（@khorsheed/dsh-quote）在应用级统一承接（引用到当前会话 / 引用到侧边对话 / 复制）。
 
@@ -13,11 +13,11 @@ v1 的工作区级灵感稿纸**存储原样保留**（编辑器已退役）—�
 ## 功能
 
 - **右栏普通宽 + 收列表建议**（M3.1 修正）：打开画布 tab 时每会话一次性建议收起左侧会话列表（DOM 门控，绝不盲 toggle、绝不反复强制）；右栏保持普通 track 模式——拖拽把手可用、宽度你自调、布局有记忆（曾建议 fullscreen，因宿主 fullscreen 隐藏拖拽把手而撤销）。唯一座位 = 右栏页型 tab（`ctx.sidebarRightTabs` + keyed `sidebar.right.pane.tab`），天然 session 作用域。
-- **顶栏一屏切换**：画布切换器下拉（活跃画布行 → 已归档井 → 底部「+ 新画布」内联创建）+ 挂载工作区 chip + 新卡菜单。不再有独立左列导航。
+- **一排标签，行尾一个 ＋**（0.4.6，round 3 ⑥）：一行 = 一个打开着的东西——一块画布的板、一张卡、一份没存的草稿。行尾的「＋ 画布」开切换器下拉（活跃画布行 → 已归档井 → 底部「＋ 新画布」内联创建）；板标签下面自己一行顶栏 = 画布名 + 卡数 + ＋新卡菜单 + 挂载工作区 chip + 卡板/连线切换。一排最多 16 行，满了先挤掉一张卡（再点一次就回来），板与草稿不被挤。不再有独立左列导航。
 - **部署级存储**：每块画布是 `$DSH_HOME/state/canvas/<canvasId>/` 一个目录——`canvas.json`（元信息 + 全部卡 + 计数），纯文本，任何编辑器都能打开。卸载插件不会删除它。state 目录里遗留的旧 `draft.md` 已成孤儿：既不被读取，也不被删除。
 - **五种内置内容卡**（起点，不是上限）：灵感 / 问题（open → exploring → answered 生命周期）/ 共识（用户确认过的共同认识）/ 来源（带出处）/ 文档。五种卡都在详情标签里编辑：「＋新卡」开出一张草稿标签，⌘⏎ 保存、Esc 关掉这张标签（草稿有字或有笔画才弹一次确认）。
 - **摘要与详情分工**（M1.5）：板上卡片一律摘要——clamp ~6 行、底部渐隐，长文显示字数标；document 卡用启发式标题（首个 markdown 标题或首行），不再把原文从 `#` 糊上去。多选改由卡片右上角的**悬停勾选框**。
-- **详情是一张标签，不是板面上的一屏**（0.4.5）：点卡片正文就在同一个 dock 里开出一张详情标签——两张卡是两张标签，再点同一张卡只聚焦那张已有的（详情是 `canvas` 这个资源类型下的一行地址，宿主按 `(kind, contentId)` 去重）。标签里是 kind 图标 + 状态 + 来源 + 时间、**渲染 / 源码 / 并列**三态（`MarkdownText` 全文渲染、v1 编辑器三件套源码编辑、宽度允许时并列）、评论线程（可读可发）、幽灵卡 ✓/✗、附件区（url 链接；文件附件一键调官方文档预览）。板面本身是只读的：想改字只能进详情标签（「＋新卡」的草稿也一样）。唯一的缺口是标签芯片上那个 ×——宿主只按 tab id 关闭、不给拦截，手工关掉一张有草稿的标签会静默丢掉草稿。
+- **详情是这一排里的一行，不是宿主 dock 的标签**（0.4.5 立，0.4.6 收回画布内部）：点卡片正文在这块画布里开一张标签——两张卡两张标签，再点同一张卡只让已有的那行亮起来。去重不需要宿主帮忙：行 id 由「画布 + 卡」推出来，重复点同一个主体就没有第二行。标签里是 kind 图标 + 状态 + 来源 + 时间、**渲染 / 源码 / 并列**三态（`MarkdownText` 全文渲染、v1 编辑器三件套源码编辑、宽度允许时并列）、评论线程（可读可发）、幽灵卡 ✓/✗、附件区（url 链接；文件附件一键调官方文档预览）。板面本身是只读的：想改字只能进详情标签（「＋新卡」的草稿也一样）。行上的 × 是这个包自己画的，所以关掉一张有草稿的行会**先问一次**——0.4.5 记的那个「唯一的缺口」（宿主只按 tab id 关闭、不给拦截，草稿被静默丢掉）随 dock 路线一起没了。
 - **详情标签里粘贴 md / html / 表格 / 图片**：全插件只有这里读剪贴板，落法对着「这次粘贴会产出的那张整卡」回答（卡片格式是渲染器从整张卡嗅出来的，从不看标志位）。五条臂——整页 HTML / 表格 / 只有标记 / 富文本掉成文字（说明理由）/ 交回浏览器原生粘贴；贴上来的图片像素进宿主附件库，卡里只留一行指针（markdown 卡收 `![](attachment://…)`，HTML 卡收 `<img src="attachment://…">`），两条渲染臂都把指针换回真图。
 - **详情标签自由绘画**：详情标签有一支笔——铅笔在 3:2 的字段上画，橡皮一次擦一整笔（会被擦掉的那一笔在指针下先亮起），同一排还有「撤一笔」和「清空」；Esc 第一下收笔（笔在的时候页面归笔管），再按一下才是关这张标签，⌘⏎ 保存草稿。收笔之后字段留在原地变成只读图形，带「点一下接着画」——画的内容是卡的一部分，不该在停笔时消失。画存的是**点列**（600×400 逻辑框的单位，不是屏幕像素），轮廓每次渲染现算，所以在窄栏里画的位置和宽面板上看到的位置是同一个；一笔落定即写盘（新卡则进草稿），没有「未保存的画」这个状态。板面缩略图显示它，模型的 `<board>` 段带着它的坐标。
 - **HTML 卡渲染**（0.4.3）：内容格式与卡种解耦——`detectCardFormat` 保守启发式判定（宁可漏判不可误判：md 里内联 html 仍是 markdown）；HTML 卡在详情标签里以**严格断网沙箱 iframe** 渲染（复用 inline-html-render 的 srcdoc/bridge，源码面打进 bundle、零运行时耦合），板面上显示紧凑占位（`<title>` 提取的标题或「HTML 文档」+ 字数），绝不再把标记原文当纯文本糊上去。卡正文上限 256KB（整板读写仍毫秒级；更大的落 `assets/` 是 M4 项）。**模型边界**：HTML 卡内容不进模型上下文全文——Agent 只看到标题/指针（需要内容时会请你粘贴节选），长 markdown 卡带 4000 字上限与截断注记。
@@ -117,7 +117,9 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 **Remote**：namespace `canvas` 在 v1 五动词（`list` / `read` / `create` / `write` / `setArchived`）之外的空间动词：`listCanvases` / `createCanvas` / `readBoard` / `putCard` / `patchCard` / `addComment` / `archiveCanvas` / `setCategories` / `setLayout` / `askAgent` / `chatStatus` / `focusCanvas`，加上图片那两条不带会话的 `attachImage` / `imageBytes`。变更类全部 agent 优先（调用会话供电围栏），读取类不带 agent——v1 的线上约定原样延续。`setLayout` 是连线面唯一的写动词：一次拖动可能同时动一张分区和它里面五张卡，逐张 `patchCard` 会各自撞自己的版本守卫，所以位置/分区/线三样合在一个动词里一盘落定。**「没带这个字段」和「带了一个空数组」是两件事**：省略 = 这一盘不动，`[]` = 清空。
 
-**右栏的两个 tab 类型（M3 + 0.4.5）**：`ctx.sidebarRightTabs.register` 注册两次，body 都挂在 keyed `sidebar.right.pane.tab` 上，并且共用同一个注册级开关（一起显、一起隐）。`canvas` 是**页面类型**（不认领地址，按 kind 打开）——`tab/CanvasTab.tsx`：顶栏 = 切换器（`tab/CanvasSwitcher.tsx`）+ 挂载 chip + ＋新卡菜单，板面 = `space/BoardView.tsx`，从此只有板面。`canvasDetail` 是**资源类型**（0.4.5，阶段 ⑧）：一张卡在 `dsh-resource://canvas/<canvasId>/<cardId>` 上开出一张标签，未存的草稿占一条 `…/_draft`（一块画布只有一张空白草稿，分类走 `navigation.params` 传进来）。宿主按 `(kind, contentId)` 去重，而 contentId 就是整条地址，所以点两次同一张卡只是聚焦，点两张卡就是两张标签。地址语法在 `detail/detail-address.ts`（卡 id 段按 `makeBoardId('c', …)` 的形状校验，`_draft` 天生落在语法之外，永远撞不上真卡）；`CanvasDetailView.tsx` 原样复用（渲染/源码/并列三态）。芯片上的活标题走 `sidebar.right.pane.tab.title` 那个 inject 槽，读 `navigation.params.heading`——宿主只在打开时捕获一次 `title`，之后从不刷新，而重开会重发 params 并推 `revision`（revision 一变就重读这张卡）。共享 store（`space/selection.ts`）从 `{ canvasId, cardId, rev }` 瘦回 `{ canvasId, rev }`：**看哪张卡是标签自己的地址，不是板面的选中态**。tab 打开/切换即 `focusCanvas` 上报宿主（主会话工具的目标）；收列表建议（DOM 探测 `data-sidebar-collapsed` 后 `toggleSidebar()`）每会话一次（fullscreen 建议已随 M3.1 撤销：宿主 fullscreen 隐藏右栏拖拽把手）。任一侧的变更动词在 apply 层包装里统一 `touch()` 推 rev，读者重读跟随；板面每次重读也顺手把自己的 `summarizeBoard` 折回切换器那一行，所以别的标签（或 Agent 工具）写进去的卡数不会在切换器里过期。
+**右栏只有一个 tab 类型**（M3 注册一次；0.4.5 一度注册两次，0.4.6 把第二次收回来了）：`ctx.sidebarRightTabs.register` 一次，body 挂在 keyed `sidebar.right.pane.tab` 上，注册级开关一处管显隐。`canvas` 是**页面类型**（不认领地址，按 kind 打开），而 `tab/CanvasTab.tsx` 现在是一台路由器：`tab/TabStrip.tsx` 是那一排标签，下面的正文是「显示中那一行」的页面——板行 = 顶栏 + `space/BoardView.tsx`（或 `space/LinkView.tsx`），卡行 / 草稿行 = `detail/CanvasDetailView.tsx`，并且带 `key`（一个不受控 textarea 的值不能从你刚看的那张卡带进这张卡）。切换器（`tab/CanvasSwitcher.tsx`）挂在标签条行尾，只负责往这排里加行（新建 / 挑一块已有的 / 归档）。
+
+共享 store（`space/selection.ts`）持 `{ tabs, active, rev }`，`canvasId` 从「显示中那一行」推出来（一张卡的标签因此把主会话工具指向它所属的那块画布）。行的 id 由主体推出（`b:<canvas>` / `c:<canvas>:<card>` / `d:<canvas>`），所以去重是 id 的性质而不是代码里的查找；一块画布因此只有一张草稿行——「＋新卡」再点一次换的是它的分类，不是又开一张空白。这一排活过刷新：行写进 `sessionStorage`，读回来时逐行验形状，认不出的整条丢掉（外面塞进来的 payload 一个字都不认）。宿主 dock 上那张芯片的活标题走 `sidebar.right.pane.tab.title` 那个 inject 槽（`tab/CanvasTabTitle.tsx`）——宿主只在打开时捕获一次 `title`、之后从不刷新，所以标题只能自己读 store：板行读注册表给的名字，卡行/草稿行读它自己带的 heading。tab 打开/切换即 `focusCanvas` 上报宿主（主会话工具的目标）；收列表建议（DOM 探测 `data-sidebar-collapsed` 后 `toggleSidebar()`）每会话一次（fullscreen 建议已随 M3.1 撤销：宿主 fullscreen 隐藏右栏拖拽把手）。任一侧的变更动词在 apply 层包装里统一 `touch()` 推 rev，读者重读跟随；板面每次重读也把自己的 `summarizeBoard` 折回列表，所以别的标签（或 Agent 工具）写进去的卡数不会在切换器里过期。
 
 **连线面的两层切分（0.4.5，阶段 ⑥）**：`space/layout-geometry.ts` 是纯函数层——无 DOM、无 store，每个盒子进来都是四个数，所以同一批问题（谁在这个分区里、这条线该怎么弯、框选抓到了谁、分区能被拖到哪）能在 node 测试里回答；`space/LinkView.tsx` 只剩手势与渲染。每个手势各挂各的 `window` 指针监听，落点**从松开那一刻的事件重新算一遍**，不读记忆里的那一刻——所以拖拽中途的旧帧不可能被提交，也不需要一条靠依赖数组撑着的 `useEffect`。三个决定管住所有形状：分区归属看**卡心**不看面积（贴边压线的卡不会被两像素的缩放甩出去）；线的控制点沿**主轴**推、推力带符号（这对卡不管朝哪个方向存，线尾都从邻居那一侧出去，也不会自己打结）；两个维度都不到 8px 的抖动是点击，不是框选。为什么**手写而不是 `@xyflow/react`**：客户端 bundle 只允许内联 `.module.css`（`build/tsdown.client.ts` 用 lightningcss 把类名编译成哈希再注入），一个第三方**全局**样式表没有干净的挂载位；加上解包 1.2 MB、主题要整张重上色、原型本来就是手写的。
 
@@ -142,7 +144,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 **粘贴转换**（`paste-table.ts`，纯函数）：优先读 `text/html` 里的 `<table>`（只抠表格，不转换整篇文档——电子表格的剪贴板 HTML 带着整张表和样式），回退判定制表符分隔；插入用 `document.execCommand('insertText')` 以保留浏览器原生撤销栈。
 
-**图片读回**（`client/images.ts`）：宿主的 `MarkdownPathImages.resolve` 是**同步**的，而字节读取是异步的。所以缓存 `CanvasImageSrcs` 持一张「指针 → data URL」的表（24 条最久未用淘汰；读失败也记住，省得每次重绘重读），外加一个版本号。tab 订阅那个版本号，版本一变就现造一个新的 `pathImages` 对象——`MarkdownText` 是 memo 的，只有对象身份变了才会重绘；订阅属于**每张会画图的标签**（0.4.5 起是详情标签自己订，板面不渲染图片、也就不订）。HTML 卡没有 `pathImages` 可给，走 `rewriteImageSrcs` 改写 `src` 属性。选 `data:` URL 而不是 blob object URL：没有 revoke 生命周期、不会留游离对象，淘汰就是一次 map 删除。
+**图片读回**（`client/images.ts`）：宿主的 `MarkdownPathImages.resolve` 是**同步**的，而字节读取是异步的。所以缓存 `CanvasImageSrcs` 持一张「指针 → data URL」的表（24 条最久未用淘汰；读失败也记住，省得每次重绘重读），外加一个版本号。tab 订阅那个版本号，版本一变就现造一个新的 `pathImages` 对象——`MarkdownText` 是 memo 的，只有对象身份变了才会重绘；订阅属于**这块画布的 tab**（0.4.6 起又是 `CanvasTab` 订一次，把现造的 `pathImages` 递给显示中的那一行；0.4.5 那一版它在详情标签里自己订，标签收回画布内部，订阅跟着回来）。HTML 卡没有 `pathImages` 可给，走 `rewriteImageSrcs` 改写 `src` 属性。选 `data:` URL 而不是 blob object URL：没有 revoke 生命周期、不会留游离对象，淘汰就是一次 map 删除。
 
 **绘画**（`client/draw.ts` 纯函数 + `detail/CardPad.tsx` 字段 + `detail/DrawFigure.tsx` 图形）：坐标换算、采样、笔宽、橡皮命中、轮廓导出全在纯函数那一半——每条规则都是人画过一笔之后会有异议的规则，对着数字争论比对着截图便宜。存点列不存轮廓（实测一笔 24 个点：点列 287 B、轮廓 834 B），轮廓由 `perfect-freehand` 在渲染时现算（MIT、0 依赖，随 tsdown 打进 `lib/client.js`，部署侧不用多装包）。一笔完成就用整份点列 `patchCard` 覆盖，沿用同一条版本围栏，因此画没有单独的脏标记与保存按钮；`draw: []` 表示「清空」，与不带 `draw` 的「别动它」必须可分。绘画是**内容**：只有画、没有字的卡照样能建，丢弃草稿的确认也因此看字数**或**笔数。
 

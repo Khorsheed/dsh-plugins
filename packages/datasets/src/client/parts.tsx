@@ -74,6 +74,11 @@ export function bytes(count: number): string {
   return `${(count / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/** The 7-character short form of a commit id. */
+export function shortCommit(commit: string): string {
+  return commit.slice(0, 7)
+}
+
 /** `repo @ abc1234` — the «快照» cell, with the repository's own last segment. */
 export function snapshotCell(repo: string, commit: string): string {
   const name = repo.replace(/\/+$/, '').split('/').filter(Boolean).pop() ?? repo

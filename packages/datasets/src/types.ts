@@ -10,10 +10,14 @@ export type {
   DatasetOverview, DatasetOverviewRow, ItemBrief, Judgeability, PlayerFile, PlayerView,
 } from './brief.ts'
 export type { DatasetSummary, DescriptorWarning, ItemRecord, JsonObject } from './dataset.ts'
+export type {
+  DanglingBinding, ImportBindingsResult, ImportedBinding, LatestCommit, RegisteredSet, RegisterInput,
+  RegisterPreview, RegistryEntry, RegistryRow, RegistrySet, RepoSelector, UpdateInput,
+} from './registry.ts'
 export type { SkeletonResult } from './scaffold.ts'
 export type {
   ImportItemInput, ItemBriefRequest,
-  ListDatasetsResult, ListItemsResult, ListRequest, PreviewRepoRequest, PreviewRepoResult,
+  ListDatasetsResult, ListItemsResult, ListRequest, PreviewRepoRequest,
   ReadPassthroughRequest, ReadQuery, ReadResult, ScaffoldDatasetInput, ScaffoldItemInput,
   ShowRequest, ShowResult, ValidateDatasetResult, ValidateError, ValidateRequest, ValidateResult,
 } from './service.ts'

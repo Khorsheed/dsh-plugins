@@ -5,8 +5,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import { resolveWorktreeRoot } from './defaults.ts'
-import { checkManagedRootIntegrity } from './worktree.ts'
+import { resolveMaterializedRoot } from './defaults.ts'
+import { checkMaterializedRootIntegrity } from './materialize.ts'
 
 const PACKAGE_NAME = '@khorsheed/dsh-datasets'
 
@@ -16,18 +16,18 @@ export const name = 'datasets-invariant'
 export const inject = ['invariants']
 
 /**
- * Owned-data check: the managed worktree root, when present at the default
- * location, must hold only well-formed managed entries (per-repo hash
- * directories of `<commit>-<layersHash>` worktrees, each with its `.git`
- * file). A corrupt or foreign entry means the dedup cache can no longer be
- * trusted — consumers mount these directories read-only, so fail loud at
- * load instead of serving a poisoned view.
- * @param _ctx - host context (unused; the check reads only the managed root).
+ * Owned-data check: the materialized-layer root, when present at the default
+ * location, must hold only well-formed content-addressed entries
+ * (`<repo key>/<sha>/<set>/<layers-key>/`, plus the staging area). A foreign
+ * entry means the cache can no longer be trusted to hold what its key says —
+ * consumers mount these directories read-only, so fail loud at load instead
+ * of serving a poisoned view.
+ * @param _ctx - host context (unused; the check reads only the materialized root).
  * @param fail - invariant failure reporter.
  */
 export const install: InvariantInstaller = (_ctx, fail) => {
-  const violation = checkManagedRootIntegrity(resolveWorktreeRoot(undefined))
-  if (violation !== undefined) fail(`managed worktree root integrity: ${violation}`)
+  const violation = checkMaterializedRootIntegrity(resolveMaterializedRoot(undefined))
+  if (violation !== undefined) fail(`materialized root integrity: ${violation}`)
 }
 
 /**

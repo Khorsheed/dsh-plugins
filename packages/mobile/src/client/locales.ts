@@ -1,6 +1,23 @@
 /** Copy for controls owned by mobile; all conversation copy stays with its owner. */
 export const NS = 'mobile'
 export const en = {
+  connectPhone: "Connect phone",
+  connectIntro: "Continue your conversations in DSH Mobile.",
+  connectQR: "Scan with DSH Mobile to sign in",
+  connectGenerate: "Show login QR code",
+  connectHide: "Hide QR code",
+  connectConceal: "Hidden automatically after 2 minutes or when you leave this page.",
+  connectStepOpen: "Open DSH Mobile on your iPhone.",
+  connectStepScan: "Go to Connection Settings → Scan to connect.",
+  connectStepConfirm: "Scan this code, check the host address, then confirm the connection.",
+  connectPrivacy: "This QR code grants access to this host. Keep it private. Hiding the code does not revoke the official login link; it remains valid until the host process restarts.",
+  connectNetwork: "Keep the computer and its HTTPS entry online. Scanning reconnects the App; it cannot repair a disconnected tunnel.",
+  connectSetup: "The operator must configure a reachable HTTPS origin using mobile.publicOrigin or DSH_MOBILE_PUBLIC_ORIGIN, and add its hostname to the host trusted hosts.",
+  connectUntrusted: "The configured address is not trusted by this host. Update --trusted-host and restart the host before generating a code.",
+  connectUnsupported: "This host version cannot provide official login links. Update the supported host/plugin combination.",
+  connectError: "Could not load the connection information. Check the connection and retry.",
+  connectLoading: "Loading connection information…",
+
   directoryManual: 'Enter a path', directoryTitle: 'Choose working directory', directoryHint: 'Select a folder on your computer.', directoryComputer: 'Browse computer', directoryNoSaved: 'No saved workspaces yet. Browse your computer to choose one.', directoryGo: 'Go', directoryParent: 'Parent folder', directoryHidden: 'Hidden folders', directoryLoading: 'Loading folders…', directoryError: 'Could not read this folder. Check the path, permissions and connection.', directoryRetry: 'Retry', directorySearch: 'Filter folders', directoryEmpty: 'No subfolders.', directoryTruncated: 'This listing is limited. Enter a full path to open another folder.', directorySelect: 'Use this directory',
   renameSession: 'Rename session', sessionTitle: 'Session title', renameUnavailable: 'Could not rename this conversation. Please try again.',
   roomActionUnavailable: 'Open Members to manage this room; its shortcut is unavailable.', memberFailed: 'Task failed',
@@ -24,6 +41,23 @@ export const en = {
   workspace: 'Open workspace', hostPath: 'Computer directory', hostPathHelp: 'Enter an existing absolute directory on your computer. This does not select a folder on your phone.', openWorkspace: 'Open', cancel: 'Cancel',
 } as const
 export const zh: Record<keyof typeof en, string> = {
+  connectPhone: "连接手机",
+  connectIntro: "在 DSH Mobile 中继续你的会话。",
+  connectQR: "使用 DSH Mobile 扫码登录",
+  connectGenerate: "显示登录二维码",
+  connectHide: "隐藏二维码",
+  connectConceal: "展示 2 分钟后或离开此页面时自动隐藏。",
+  connectStepOpen: "在 iPhone 上打开 DSH Mobile。",
+  connectStepScan: "进入「连接设置 → 扫码连接电脑」。",
+  connectStepConfirm: "扫描二维码，核对主机地址后确认连接。",
+  connectPrivacy: "二维码可授予这台主机的访问权限，请勿分享。隐藏二维码不会撤销官方登录链接；链接在宿主进程重启前仍然有效。",
+  connectNetwork: "请保持电脑和 HTTPS 入口在线。扫码用于重新连接 App，无法修复已经断开的隧道。",
+  connectSetup: "请由部署者通过 mobile.publicOrigin 或 DSH_MOBILE_PUBLIC_ORIGIN 配置手机可达的 HTTPS 地址，并将域名加入宿主信任列表。",
+  connectUntrusted: "宿主尚未信任配置的地址。请更新 --trusted-host 并重启宿主后再生成二维码。",
+  connectUnsupported: "此宿主版本不能提供官方登录链接，请更新到支持的宿主和插件组合。",
+  connectError: "暂时无法读取连接信息，请检查连接后重试。",
+  connectLoading: "正在读取连接信息…",
+
   directoryManual: '输入路径', directoryTitle: '选择工作目录', directoryHint: '选择电脑上的文件夹。', directoryComputer: '浏览电脑', directoryNoSaved: '暂无工作区，可以浏览电脑选择文件夹。', directoryGo: '前往', directoryParent: '上一级', directoryHidden: '隐藏目录', directoryLoading: '正在读取目录…', directoryError: '暂时无法读取此目录，请检查路径、权限和连接。', directoryRetry: '重试', directorySearch: '筛选文件夹', directoryEmpty: '没有子目录。', directoryTruncated: '目录较多，仅显示部分内容；可输入完整路径前往。', directorySelect: '使用此目录',
   renameSession: '重命名会话', sessionTitle: '会话标题', renameUnavailable: '暂时无法修改标题，请重试。',
   roomActionUnavailable: '快捷入口暂不可用，请进入成员页管理。', memberFailed: '任务失败',

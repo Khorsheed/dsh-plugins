@@ -4,9 +4,10 @@
  * rejects machine-specific absolute paths).
  */
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { removeReadOnlyTree } from '../src/materialize.ts'
 
 /** Run git synchronously in the fixture (setup-only; the code under test uses async git). */
 export function git(cwd: string, args: readonly string[]): string {
@@ -64,7 +65,7 @@ export function makeFixtureRepo(): FixtureRepo {
   // unresolved name would make every such assertion compare two spellings of
   // one directory.
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-datasets-test-')))
-  git(dir, ['init', '-q'])
+  git(dir, ['init', '-q', '-b', 'main'])
   git(dir, ['config', 'user.email', 'fixture@example.com'])
   git(dir, ['config', 'user.name', 'fixture'])
   writeFiles(dir, {
@@ -83,9 +84,9 @@ export function makeFixtureRepo(): FixtureRepo {
   return { dir, commit: commitAll(dir, 'fixture') }
 }
 
-/** Remove a fixture directory tree. */
+/** Remove a fixture directory tree (materialized views inside it are read-only). */
 export function cleanup(dir: string): void {
-  rmSync(dir, { recursive: true, force: true })
+  removeReadOnlyTree(dir)
 }
 
 /**
@@ -134,7 +135,7 @@ export const BENCH_RUBRIC = `items:
  */
 export function makeJudgingRepo(): FixtureRepo {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-datasets-bench-'))
-  git(dir, ['init', '-q'])
+  git(dir, ['init', '-q', '-b', 'main'])
   git(dir, ['config', 'user.email', 'fixture@example.com'])
   git(dir, ['config', 'user.name', 'fixture'])
   writeFiles(dir, {
@@ -158,4 +159,13 @@ export function makeJudgingRepo(): FixtureRepo {
     'datasets/bench/items/C1/verify/probes/stage1.mjs': 'process.exit(0)\n',
   })
   return { dir, commit: commitAll(dir, 'bench fixture') }
+}
+
+/**
+ * The service's two state paths under one throwaway root: the materialized
+ * cache and the registry file (T73 — `worktreeRoot` retired with the managed
+ * worktrees).
+ */
+export function stateOptions(root: string): { materializedRoot: string; registryPath: string } {
+  return { materializedRoot: join(root, 'materialized'), registryPath: join(root, 'registry.json') }
 }
