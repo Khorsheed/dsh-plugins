@@ -2387,6 +2387,9 @@ importers:
       '@deepseek-ai/dsh-util-workspace-path':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
+      '@khorsheed/dsh-client-ui-content-preview':
+        specifier: workspace:*
+        version: link:../ui-content-preview
       '@khorsheed/dsh-file-preview':
         specifier: workspace:*
         version: link:../file-preview

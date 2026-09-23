@@ -157,7 +157,7 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'mission-tool': ['@khorsheed/dsh-mission'],
   'datasets-tool': ['@khorsheed/dsh-datasets'],
   'eval-tool': ['@khorsheed/dsh-eval'],
-  'ui-file-preview': ['@khorsheed/dsh-file-preview'],
+  'ui-file-preview': ['@khorsheed/dsh-file-preview', '@khorsheed/dsh-client-ui-content-preview'],
   // canvas → inline-html-render: the card detail renders HTML cards through
   // inline-html-render's SOURCE-plane helpers (buildCardSrcDoc/attachBridge),
   // bundled by tsdown — a compile-time edge with zero runtime coupling (the
