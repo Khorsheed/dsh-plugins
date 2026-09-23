@@ -174,6 +174,9 @@ importers:
       '@khorsheed/dsh-inline-html-render':
         specifier: workspace:*
         version: link:../inline-html-render
+      perfect-freehand:
+        specifier: 1.2.3
+        version: 1.2.3
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -916,6 +919,9 @@ importers:
       '@deepseek-ai/dsh-session-persistence':
         specifier: 0.1.7-rc.1
         version: 0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-brand@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-session@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4))))(@deepseek-ai/dsh-timeout@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4))
+      '@deepseek-ai/dsh-settings':
+        specifier: 0.1.7-rc.1
+        version: 0.1.7-rc.1(21dd23b3ec29a76370d3d6c0e7700a66)
       '@deepseek-ai/dsh-subagent':
         specifier: 0.1.7-rc.1
         version: 0.1.7-rc.1(ab7d9dbdd55eb632b44bd452f20c1850)
@@ -1152,6 +1158,9 @@ importers:
       '@khorsheed/dsh-local-agent-tool-subagent':
         specifier: workspace:*
         version: link:../local-agent-tool-subagent
+      js-yaml:
+        specifier: ^4.3.1
+        version: 4.3.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -1234,6 +1243,9 @@ importers:
       '@testing-library/react':
         specifier: ^16.3.2
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
@@ -1322,6 +1334,9 @@ importers:
       '@khorsheed/dsh-local-agent-tool-subagent':
         specifier: workspace:*
         version: link:../local-agent-tool-subagent
+      smol-toml:
+        specifier: ^1.8.0
+        version: 1.8.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -5270,6 +5285,9 @@ packages:
     resolution: {integrity: sha512-//nshmD55c46FuFw26xV/xFAaB5HF9Xdap7HJBBnrKdAd6/GxDBaNA1870O79+9ueg61cZLSVc+OaFlfmObYVQ==}
     engines: {node: '>= 14.16'}
 
+  perfect-freehand@1.2.3:
+    resolution: {integrity: sha512-bHZSfqDHGNlPpgH2yxXgPHlQSPpEbo+qg7li0M78J9vNAi2yjwLeA4x79BEQhX44lEWpCLSFCeRZwpw0niiXPA==}
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
@@ -5441,6 +5459,10 @@ packages:
   signal-exit@4.1.0:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
+
+  smol-toml@1.8.0:
+    resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
+    engines: {node: '>= 18'}
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -8580,6 +8602,8 @@ snapshots:
 
   pathval@2.0.1: {}
 
+  perfect-freehand@1.2.3: {}
+
   picocolors@1.1.1: {}
 
   picomatch@4.0.5: {}
@@ -8844,6 +8868,8 @@ snapshots:
   siginfo@2.0.0: {}
 
   signal-exit@4.1.0: {}
+
+  smol-toml@1.8.0: {}
 
   source-map-js@1.2.1: {}
 

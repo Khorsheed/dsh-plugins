@@ -104,6 +104,11 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-compaction-image-offload@0.1.7-rc.1'
   - '@deepseek-ai/dsh-remote-mock@0.1.7-rc.1'
   - '@deepseek-ai/dsh-client-ui-workspace@0.1.7-rc.1'
+  - '@deepseek-ai/dsh-app-boot@0.1.7-rc.1'
+  - '@deepseek-ai/dsh-config-editor@0.1.7-rc.1'
+  - '@deepseek-ai/dsh-launch-environment@0.1.7-rc.1'
+  - '@deepseek-ai/dsh-package-manifest@0.1.7-rc.1'
+  - '@deepseek-ai/dsh-session-format-v3-to-v4@0.1.7-rc.1'
 
 overrides:
   # Single cordis instance: the 0.1.7 official line peers ~4.0.4, and a split
