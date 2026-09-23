@@ -1,8 +1,8 @@
 # 宿主 0.1.6 适配（host-016-adaptation）
 
 - **分类**：plugin
-- **状态**：in-progress（2026-09-18 重钉 alpha.2：全量 build/test 绿、实例冒烟过；3080 合线与 npm 波等官方 rc，遗留四项见「遗留与放行条件」）
-- **最后更新**：2026-09-18
+- **状态**：in-progress（2026-09-23 官方发 0.1.7-rc.1（0.1.6 rc 跳过）：三路契约审计完成、结论见「rc.1 复核」节；wave 重钉 rc.1 进行中）
+- **最后更新**：2026-09-23
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`。最近邻：host-015-adaptation（第一~三批已完成，第四批余量见该提案；本提案承接其 readByteRange 与 guard 租约两项欠账）、message-tools-projection-restore（本波子项，独立提案）、local-agent-dsh-sdk-resume（S8 仍堵，不排）、room-composer-parity / context-clearing（波后讨论，不进本波）。无「0.1.6 整体适配」提案，新建。
 - **官方依赖**：纯插件。所有切换走官方 0.1.6-alpha.1 已发布的扩展面，不含新 seam 请求。
 
@@ -85,6 +85,34 @@ alpha.2 修订上文「明确不做」清单：ui-shortcuts / message-timeline /
 - **3080 宿主升 0.1.6 前置验证项**：ankh-guard `runPreflight` 的 boot 路径在 0.1.6 线未挂 `PluginPackages`（runtime 解析代际不进试启动），含裸 specifier 的 profile 条目会被 preflight 误报 FAIL（方向偏严、非放行坏树）；当前 profile 全是 `file:` tgz + 官方 bundle 不触发，但 3080 宿主升 0.1.6 前必须实测 preflight 或补齐挂载（补齐需与上一条的在飞分支协调）。
 - **rc 复核项：形态 C「家族 bundle」按新外部 bundle 模型复审**（2026-09-18 用户要求记录）。我们的 profile 目前 = 官方 bundle + 24 个独立 @khorsheed 行（单成员 bundle 合法但缺套件层）；alpha.2 官方化了 `dsh.profile.bundles` 清单、`OPTIONAL_BUNDLES`（可选 bundle 默认关 + 安装引导）与外部 bundle 隔离——`proposals/active/2026-08-21-package-management.md` 形态 C 薄元包此前卡在 `reconcilePlugins` 只调和直接依赖，rc 发布后按新模型复审可落地性（含「一个插件属于哪些 profile」的跨 profile 展示诉求）。
 - **ui-file-preview 共存对比的用户初判（2026-09-18，rc 波终定）**：改动记录/会话产物维度维持我方机制——官方 workspace-changes 为内存态（宿主重启即失）、git-only（非 git 工作区不覆盖）、不记 read，用户判定草率；内容预览维度官方可覆盖（大文件分页 + office 渲染），届时可退。技术结论：① office 文件无需「拿来」——我们的 `canOpen` 对二进制本就 fallthrough 到官方 document tab，`office-to-pdf` 是公开 client Remote（`convertBytes(bytes, extension)`），要在我们视图内嵌也可行但需自带 PDF 渲染面，价值一般，且 3080 宿主需有 libreoffice-kit；② 大文件「滚动分页」不是公开件（官方 TextPreview 分页为组件内部态），我方自补是小特性——宿主半 M4a 已有 `readByteRange(offset, length)` 有界读，加 offset 窗口 + 客户端加载更多即可，或超大文件 fallthrough 官方 tab。
+
+## rc.1 复核（2026-09-23；重钉目标 0.1.6-alpha.2 → 0.1.7-rc.1）
+
+官方 2026-09-23 发布 0.1.7-rc.1（0.1.6 rc 跳过；两 tag 间 1617 commits / 5142 文件，已上 npm，latest/next 仍 0.1.5-rc.3）。三路契约审计（preset·bundle·兼容 / Remote·agent·session / UI·槽位·预览，证据均为 rc.1 tag 上 file:line 实测）结论：
+
+**alpha.1/alpha.2 全部适配继续沿用（零返工面）**：`ctx.fs.readByteRange`、`agent/created`（serial、负载、监听器约束零 diff）、`registerMessageProjection`/`@messageProjection`、`sessions.scope()/binding()`、inbox 投影形状、turnTail（list+id，官方件仍只 DeliverablesTail/PlanCards）、`plugins.bundle.config`/`settings.plugins.tab` 双臂、mainView 推导（官方仍内联同一推导四处、无公开 selector）、pluginInventory 主体、`conversation.session.header.actions/utilities/corner/lineage`、ptc-runtime 行/包名、headless CLI（stdin/resume/--json）、spawn_teammate 工具集、subagent 容量钳制键名、会话直读 deprecated 存量豁免、Ralph 默认禁用/E2B 移除（均先于 alpha.2）。
+
+**rc.1 新增 breaking（必须改，按面排序）**：
+1. **settings 服务重写（本波最大面）**：宿主半 `ctx.settings.register/scope.get/scope.watch` 移除 → `entries()/configuration()/edit()` + Config 字段 `.volatile()` + `settings/document-updated`；client 半 `ctx.settingsScope.bind({namespace})` 移除 → `ctx.configForms.get(entryId)`（inject 名单同步改）。打中：local-agent 四 provider（register+get/watch）、capability-catalog（mcpStore persist）、context-guard、ui-shortcuts（类型 merge），及四 provider + context-guard 的 client SettingsCard（settingsScope.bind）。volatile 字段读取变 `config.x.get()`，且只有 volatile 字段进官方设置表单。
+2. **peerDependencies 兼容闸门（声明变强制）**：安装拒绝（`incompatible-version`）+ 启动 disabled 行/跳过 bundle；每个 `@deepseek-ai/dsh*` peer range 一律按「对宿主运行时版本的约束」解读（`includePrerelease`；`workspace:*` 视为兼容）。我们通行的 `^0.1.0-rc.6` 对 0.1.7-rc.1 **实测通过**；精确 pin/`file:`/非字符串判负。波内做全仓 peer 审计。豁免：`<profile>/compatibility.json`（exact 双侧），CLI/管理页可授权，per-profile。
+3. **`@deepseek-ai/dsh-agent-presets` 拆名**：→ `agent-preset-registry`（API 重写：`register`/`acquireScope` 取代 `standingKeyFor`，remote copy/delete 移除）+ 新 `agent-preset`。打中：room（type+runtime import）、sidechat（type）、ankh-guard（runtime import）、local-agent-kimi（type-only）。
+4. **Session V4 生产者归属 source**：原生 V4 准入**拒绝** `kind:'plugin'` 包装（写即拒，含 inbox/标题槽位）；读侧须兼容 V3 迁移来的 `plugin:<原名>`；未知 kind+自带元数据原样保留。打中：message-tools（5 写 3 读，marker/withdraw 判定链）、room（dispatch）、sidechat、worktrees（remote）。另：tool/result 一等 tool role（扁平 toolCallId/isError）；附件授权/导出改按内置事件 declared content 字段——自定义事件负载里的附件内置 reader 不再识别；`system/message` source 必须 `system-prompt`。迁移工具 `pnpm run migrate:sessions-to-v4`（3080 升线时跑）。
+5. **jobs 契约重写**：`JobStart→JobSpec`、`JobSnapshot→JobView`、`owner: Agent→SessionId`、`onJobDone/onJobsChanged` 删除、pull 型 `JobOutputSource`。打中：eval（`src/job.ts` 生产者）。
+6. **`conversation.chat.node` 契约形状变化**：hookContext/inject 改 `ChatNodeHookContext`/`ChatNodeInjected`（多 disclosure hook 工厂），`inspectCall` 变可选，owner 增 `groupPart?`。打中：message-tools（6 注册）、room（5 注册）。
+7. **workspaceFiles.readBytes 二进制化**：`readAll`/`readRelated` 合并删除、第三参数改 options、返回 `Uint8Array` 不再 base64、`changes(scope,path)` 定点 watch。仓内**零代码消费**（仅 canvas README 提及）；file-preview 走 `ctx.fs` seam 不受影响——重钉后复核。
+8. **spill `maxInlineBytes`→`maxInlineTokens`**：旧键**静默失效**（schema 不再声明即截断被关）。仓内零配置；3080 profile 升线时查一遍基座行。
+9. 零消费复核项：`conversation.session.header.leading`→`conversation.header.leading`、`tool.call.toolview` 分相、pluginInventory 删 `trust` 字段（我们零读取）、`SHELL_SETTINGS_NAMESPACE` 删除、`ctx.shell run/start→execute`（零调用）。
+
+**行为对齐（应该改）**：`forkSession` 不再自动选中子会话；Config 字段 `.volatile()` 评估（进官方设置表单 + 热更新不重挂 fiber，读法 `config.x.get()`）；`defineTool` 补 `timeoutMs`（基座新增 timeout-policy）；插件管理页展示增益（`icon` 字段 + `locale/en.json` meta.title/description，可选）；transcript 默认 compact→standard（自建 chat 渲染复验）。
+
+**新能力（可搭乘，对应包/提案）**：`ctx.documentPreviews.register`（自定义预览器注册进官方预览面——**ui-file-preview 内容面退役的官方承接点**）+ `useResource<'file'>` 自动刷新同源；`sidebarRightTabs.register` extension 档；`plugins.row.config`（key `<pkg>#<row>`）/`plugins.detail.actions|badge|section`/`plugins.bundle.activation`（配置页可吃官方托管 form，local-agent live 设置卡候选）；`pluginManager` 新 Remote（启停/豁免/源，`managementAvailable` 探测）；`sidebar.workspaces.session.menu.item/row.action`（会话行操作，session-title-edit/worktrees 候选）；`useProjection('agentTeam')`（roster/任务板，taskpilot 候选）；`pinSession/unpinSession/archiveSession({stopActivity})`；`remote.session.workspacePathApplications`（文件关联，local-files/worktrees「打开方式」候选）；Remote 双向流+unary 二进制；`dsh --dump-config-schema`；LibreOffice 随包（office-to-pdf `render` Remote 不变，convertBytes 从来不是公开件）。
+
+**遗留项放行结论（2026-09-23）**：
+- **形态 C 家族 bundle → 可立项**：rc.1 机制齐备（`dsh.bundle.patch` 数组多 patch、patch 格式不变、`OPTIONAL_BUNDLES` 不变、`reconcileProfilePlugins` 零 diff 仍只收编直接依赖）。薄元包 patch 点名 24 行在解析（runtime resolution + hoisted node_modules）与管理页形态（一个套件卡片）上可行；代价：成员不作为独立 bundle 出现/启停、安装时套件点名的每包 peer 都强检。按 `2026-08-21-package-management.md` 复审落地。
+- **preset 迁移（新增必办，3080 升线前置）**：目录式 preset 彻底废弃（`.agent-presets` 无代码路径、**无自动迁移工具**，手工做两文件 bundle + `install_bundle`）。我们 5 个目录 preset（仓内 profiles/web-dev、profiles/web-eval、profiles/web 各 1 + prod `~/.dsh-official/.agent-presets/` 3 个）要迁成 preset bundle；官方四个 preset id（standard/ptc/minimal/cordis）不变；settings.yaml 一次性导入**不映射** agent-presets 段 → 升线后需重选默认 preset（公告提示）。preset 行现带 `meta` 显示数据，pluginInventory 形状保留 → 自隐藏探测链不用改。
+- **ui-file-preview 共存终判**：官方 documentpreview rc.1 大扩（FortuneSheet 表格/缩放/office 经随包 libreoffice-kit/actions 槽），并开放 `documentPreviews.register` 扩展点——内容面退役路径从「自建 pane」变为「注册进官方面」；改动记录维度官方仍**内存态/git-only/重启即失**（两 tag 零 diff），我方 TurnFileRow 维持。终判待用户体验 rc.1 实例后拍板。
+- **ankh-guard preflight PluginPackages**：0.1.7 线挂载面重钉后实测（沿用 09-18 遗留条款）。
+- **npm 波**：0.1.7-rc.1 已上 npm；latest/next 仍 0.1.5-rc.3 → minHost 不动原则维持；peer range `^0.1.0-rc.6` 覆盖 rc.1 实测通过，docs/publishing.md 复核项关闭一半（剩 latest 前滚后的标注）。
 
 ## 里程碑
 
