@@ -13,8 +13,8 @@
  */
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  IconCodeOutline16, IconDatabaseOutline16, IconLinkOutline14, IconListPenOutline16,
-  IconQuestionOutline14,
+  IconCodeOutlineMedium, IconDatabaseOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium,
+  IconQuestionOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   defaultCategories, isBoardCardKind, type BoardCardKind, type BoardCategory, type CardCategoryId,
@@ -24,16 +24,16 @@ import type {} from './locales.ts'
 /** The built-in kind icon set (icon + words; the storyboard's kind vocabulary).
  *  A custom category carries NO icon: an invented row has no shape to borrow,
  *  and a wrong icon reads as a meaning the user never gave it. */
-const KIND_ICONS: Record<BoardCardKind, typeof IconListPenOutline16> = {
-  fragment: IconListPenOutline16,
-  question: IconQuestionOutline14,
-  grounding: IconDatabaseOutline16,
-  reference: IconLinkOutline14,
-  document: IconCodeOutline16,
+const KIND_ICONS: Record<BoardCardKind, typeof IconListPenOutlineMedium> = {
+  fragment: IconListPenOutlineMedium,
+  question: IconQuestionOutlineMedium,
+  grounding: IconDatabaseOutlineMedium,
+  reference: IconLinkOutlineMedium,
+  document: IconCodeOutlineMedium,
 }
 
 /** The icon for a category id, when it is one of the built-ins. */
-export function kindIconOf(kind: CardCategoryId): typeof IconListPenOutline16 | undefined {
+export function kindIconOf(kind: CardCategoryId): typeof IconListPenOutlineMedium | undefined {
   return isBoardCardKind(kind) ? KIND_ICONS[kind] : undefined
 }
 

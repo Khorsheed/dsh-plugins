@@ -32,7 +32,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Button, IconFolderOpenOutline16, IconPlusOutline16, Modal, Toast,
+  Button, IconFolderOpenOutlineMedium, IconPlusOutlineMedium, Modal, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasTabProps } from '../contract.ts'
@@ -583,7 +583,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                   aria-expanded={newCardMenu}
                   onClick={() => { setNewCardMenu(open => !open) }}
                 >
-                  <IconPlusOutline16 size={12} />
+                  <IconPlusOutlineMedium size={12} />
                   {t('board.newCard')}
                 </button>
                 {newCardMenu && (
@@ -617,7 +617,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             )}
             {openBoard?.board.attachedWorkspaces.map(workspace => (
               <span key={workspace} className={css.attachChip} title={workspace}>
-                <IconFolderOpenOutline16 size={12} />
+                <IconFolderOpenOutlineMedium size={12} />
                 <b>{basenameOf(workspace)}</b>
               </span>
             ))}

@@ -22,7 +22,7 @@
  */
 import type { ReactNode } from 'react'
 import {
-  IconCloseFill14, IconLightOutline16, IconListPenOutline16, IconPlusOutline16,
+  IconCloseFillMedium, IconLightOutlineMedium, IconListPenOutlineMedium, IconPlusOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { CanvasTabRow } from '../space/selection.ts'
@@ -52,9 +52,9 @@ export interface TabStripProps {
 
 /** The glyph that tells a board row from a card row from a draft at a glance. */
 function glyphOf(kind: CanvasTabRow['kind']): ReactNode {
-  if (kind === 'board') return <IconLightOutline16 size={12} />
-  if (kind === 'draft') return <IconPlusOutline16 size={12} />
-  return <IconListPenOutline16 size={12} />
+  if (kind === 'board') return <IconLightOutlineMedium size={12} />
+  if (kind === 'draft') return <IconPlusOutlineMedium size={12} />
+  return <IconListPenOutlineMedium size={12} />
 }
 
 /** The canvas surface's tab strip. */
@@ -81,7 +81,7 @@ export function TabStrip({ t, rows, active, onSelect, onClose, tail }: TabStripP
             aria-label={t('strip.close')}
             onClick={() => { onClose(row.id) }}
           >
-            <IconCloseFill14 size={11} />
+            <IconCloseFillMedium size={11} />
           </button>
         </span>
       ))}

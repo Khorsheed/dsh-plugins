@@ -19,11 +19,11 @@
  */
 import { useState, type ReactNode } from 'react'
 import {
-  IconArchiveOutline20, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconCloseOutline16, IconCodeOutline16, IconEditOutline16,
-  IconLightOutline16, IconLinkOutline14,
-  IconNewChatOutline16, IconRefreshOutline14,
-  IconSparkle16, Button, Modal,
+  IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium,
+  IconCloseOutlineMedium, IconCodeOutlineMedium, IconEditOutlineMedium,
+  IconLightOutlineMedium, IconLinkOutlineMedium,
+  IconNewChatOutlineMedium, IconRefreshOutlineMedium,
+  IconSparkleMedium, Button, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
@@ -171,7 +171,7 @@ function CardSummary({ t, card }: {
         {thumb}
         <div className={css.cardText}>
           <div className={css.htmlPlaceholder}>
-            <IconCodeOutline16 size={12} />
+            <IconCodeOutlineMedium size={12} />
             <span>{htmlTitleOf(card.text) ?? t('card.htmlDocument')}</span>
             <span className={css.cardWords}>{t('meta.words', { count: String(card.text.length) })}</span>
           </div>
@@ -234,12 +234,12 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
           aria-label={t('card.select')}
           onClick={event => { event.stopPropagation(); onToggleSelect() }}
         >
-          {selected && <IconCheckOutline16 size={11} />}
+          {selected && <IconCheckOutlineMedium size={11} />}
         </button>
       )}
       {proposed && (
         <span className={css.ghostFlag}>
-          <IconSparkle16 size={12} />
+          <IconSparkleMedium size={12} />
           {t('card.proposed')}
         </span>
       )}
@@ -253,7 +253,7 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
 
       {card.source !== undefined && (
         <div className={css.cardSrc}>
-          <IconLinkOutline14 size={11} />
+          <IconLinkOutlineMedium size={11} />
           {card.source.type === 'url' ? (
             <a
               href={card.source.ref}
@@ -283,18 +283,18 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
       {proposed ? (
         <div className={css.ghostActions}>
           <button type="button" className={css.accept} onClick={event => { event.stopPropagation(); actions.setCardStatus(card.id, 'kept') }}>
-            <IconCheckOutline16 size={12} />
+            <IconCheckOutlineMedium size={12} />
             {t('card.accept')}
           </button>
           <button type="button" onClick={event => { event.stopPropagation(); actions.setCardStatus(card.id, 'archived') }}>
-            <IconCloseOutline16 size={12} />
+            <IconCloseOutlineMedium size={12} />
             {t('card.reject')}
           </button>
         </div>
       ) : archivedWell ? (
         <div className={css.ghostActions}>
           <button type="button" onClick={() => { actions.setCardStatus(card.id, 'kept') }}>
-            <IconRefreshOutline14 size={12} />
+            <IconRefreshOutlineMedium size={12} />
             {t('card.restore')}
           </button>
         </div>
@@ -308,7 +308,7 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
               aria-label={t('card.enterDetail')}
               onClick={event => { event.stopPropagation(); onOpenDetail() }}
             >
-              <IconEditOutline16 size={13} />
+              <IconEditOutlineMedium size={13} />
             </button>
             {card.kind === 'question' && card.question?.state !== 'answered' && (
               <button
@@ -318,7 +318,7 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
                 aria-label={t('card.markAnswered')}
                 onClick={event => { event.stopPropagation(); actions.markAnswered(card.id) }}
               >
-                <IconCheckOutline16 size={13} />
+                <IconCheckOutlineMedium size={13} />
               </button>
             )}
             <button
@@ -328,7 +328,7 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
               aria-label={t('card.archive')}
               onClick={event => { event.stopPropagation(); actions.setCardStatus(card.id, 'archived') }}
             >
-              <IconArchiveOutline20 size={13} />
+              <IconArchiveOutlineMedium size={13} />
             </button>
           </div>
         )
@@ -344,7 +344,7 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
               aria-expanded={threadOpen}
               onClick={event => { event.stopPropagation(); setThreadOpen(open => !open) }}
             >
-              <IconNewChatOutline16 size={11} />
+              <IconNewChatOutlineMedium size={11} />
               {card.comments.length === 0
                 ? t('comment.write')
                 : card.comments.length === 1
@@ -619,7 +619,7 @@ export function BoardView({
             )}
             {!readonly && !refile && (
               <button type="button" className={css.ghostButton} onClick={() => { actions.archiveSelected() }}>
-                <IconArchiveOutline20 size={12} />
+                <IconArchiveOutlineMedium size={12} />
                 {t('board.archiveSelected')}
               </button>
             )}
@@ -657,7 +657,7 @@ export function BoardView({
               aria-label={t('board.clearSelection')}
               onClick={() => { setRefile(false); onClearSelection() }}
             >
-              <IconCloseOutline16 size={13} />
+              <IconCloseOutlineMedium size={13} />
             </button>
           </div>
         )}
@@ -666,7 +666,7 @@ export function BoardView({
           <div className={css.notice}>
             {visible.length === 0 ? (
               <>
-                <IconLightOutline16 size={16} />
+                <IconLightOutlineMedium size={16} />
                 <br />
                 {t('board.empty')}
                 <br />
@@ -699,7 +699,7 @@ export function BoardView({
         {archived.length > 0 && (
           <div>
             <button type="button" className={css.archiveHeader} aria-expanded={showArchived} onClick={() => { onToggleArchived() }}>
-              {showArchived ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+              {showArchived ? <IconChevronDownOutlineMedium size={12} /> : <IconChevronRightOutlineMedium size={12} />}
               {t('board.archivedCards', { count: String(archived.length) })}
             </button>
             {showArchived && (
