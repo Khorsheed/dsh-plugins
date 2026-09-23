@@ -119,6 +119,8 @@ export { LiveFlush, LIVE_FLUSH_INTERVAL_MS } from './live-flush.ts'
 import { LocalAgentStreams } from './live-stream.ts'
 export { LocalAgentStreams, LiveStreamPublisher, LIVE_CHECKPOINT_INTERVAL_MS } from './live-stream.ts'
 export { containerExecSpawn, containerScopedHome } from './container.ts'
+export { settingsFace, vol } from './settings-face.ts'
+export type { SettingsFace } from './settings-face.ts'
 
 export {
   CLI_VERSION_FAILURE_TTL_MS,
