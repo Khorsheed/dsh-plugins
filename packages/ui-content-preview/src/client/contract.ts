@@ -46,7 +46,6 @@ export type PreviewRead =
  */
 export type PreviewKey =
   | 'action.copyPath'
-  | 'action.copyContent'
   | 'action.copied'
   | 'action.openFolder'
   | 'action.openIDE'
@@ -84,7 +83,6 @@ export type PreviewKey =
 /** The key list above, materialized so consumers can test their dictionary. */
 export const PREVIEW_KEYS: readonly PreviewKey[] = [
   'action.copyPath',
-  'action.copyContent',
   'action.copied',
   'action.openFolder',
   'action.openIDE',
@@ -140,12 +138,6 @@ export type PreviewTranslator = (
  * button only when that callback exists).
  */
 export interface PreviewChrome {
-  /**
-   * Copy the file's raw CONTENT (`worktrees` shipped this before the two
-   * surfaces shared a pane; the union keeps it). Distinct from the pane's
-   * copy-path button, which covers the file list's gesture.
-   */
-  readonly copyContent?: (() => void) | undefined
   /** Open the file's PARENT DIRECTORY in the host file manager. */
   readonly openFolder?: (() => void) | undefined
   /** Open the file in the host editor/IDE. */

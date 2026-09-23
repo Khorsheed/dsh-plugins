@@ -90,8 +90,6 @@ export function WorktreesTab({
     const absolute = absolutePath(worktreePath, path)
     const dir = dirnameOf(absolute) || absolute
     return {
-      // Copy the raw content, as this surface always could.
-      copyContent: () => { void copyText(content?.content ?? '') },
       ...(folderApp === undefined ? {} : { openFolder: () => { openExternal(folderApp, dir) } }),
       ...(ideApp === undefined ? {} : { openIDE: () => { openExternal(ideApp, dir) } }),
     }

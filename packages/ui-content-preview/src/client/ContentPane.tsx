@@ -258,7 +258,6 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   // Markdown / JSON / CSV source ⇄ rendered; rendered is the default.
   const [sourceMode, setSourceMode] = useState(false)
   const [copiedPath, setCopiedPath] = useState(false)
-  const [copiedContent, setCopiedContent] = useState(false)
   const [contentQuery, setContentQuery] = useState('')
   const [activeMatch, setActiveMatch] = useState(0)
   const activeLineRef = useRef<HTMLSpanElement | null>(null)
@@ -358,12 +357,6 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
     if (total === 0) return
     setActiveMatch(index => (index + delta + total) % total)
   }
-  const doCopyContent = (): void => {
-    if (chrome?.copyContent === undefined) return
-    chrome.copyContent()
-    setCopiedContent(true)
-    window.setTimeout(() => { setCopiedContent(false) }, 1200)
-  }
   const doCopyPath = (): void => {
     if (onCopyPath === undefined) return
     void onCopyPath().then(ok => {
@@ -401,6 +394,32 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
             {lang !== undefined && <span className={css.langTag}>{isMarkdown(path) ? 'MD' : lang}</span>}
           </span>
           <span className={css.titleActions}>
+            {onCopyPath !== undefined && (
+              <button
+                type="button"
+                className={css.action}
+                title={copiedPath ? t('action.copied') : t('action.copyPath')}
+                aria-label={copiedPath ? t('action.copied') : t('action.copyPath')}
+                onClick={doCopyPath}
+              >
+                {copiedPath ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
+              </button>
+            )}
+            {chrome?.openFolder !== undefined && (
+              <button type="button" className={css.action} title={t('action.openFolder')} onClick={chrome.openFolder}>
+                <IconFolderOpenOutline16 size={14} />
+              </button>
+            )}
+            {chrome?.openIDE !== undefined && (
+              <button type="button" className={css.action} title={t('action.openIDE')} onClick={chrome.openIDE}>
+                <IconCodeOutline16 size={14} />
+              </button>
+            )}
+          </span>
+        </div>
+        <div className={css.pathRow}>
+          <div className={css.pathLine} title={displayPath ?? path}>{displayPath ?? dirname}</div>
+          <span className={css.viewControls}>
             {showDiffToggle && (
               <span className={css.toggle}>
                 <button
@@ -437,41 +456,53 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                 </button>
               </span>
             )}
-            {onCopyPath !== undefined && (
-              <button
-                type="button"
-                className={css.action}
-                title={copiedPath ? t('action.copied') : t('action.copyPath')}
-                aria-label={copiedPath ? t('action.copied') : t('action.copyPath')}
-                onClick={doCopyPath}
-              >
-                {copiedPath ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
-              </button>
-            )}
-            {chrome?.copyContent !== undefined && (
-              <button
-                type="button"
-                className={css.action}
-                title={copiedContent ? t('action.copied') : t('action.copyContent')}
-                aria-label={copiedContent ? t('action.copied') : t('action.copyContent')}
-                onClick={doCopyContent}
-              >
-                {copiedContent ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
-              </button>
-            )}
-            {chrome?.openFolder !== undefined && (
-              <button type="button" className={css.action} title={t('action.openFolder')} onClick={chrome.openFolder}>
-                <IconFolderOpenOutline16 size={14} />
-              </button>
-            )}
-            {chrome?.openIDE !== undefined && (
-              <button type="button" className={css.action} title={t('action.openIDE')} onClick={chrome.openIDE}>
-                <IconCodeOutline16 size={14} />
-              </button>
+            {!diffActive && html && content !== null && (
+              <div className={css.htmlToggle} role="group" aria-label={t('preview.htmlToggle')}>
+                <button
+                  type="button"
+                  className={htmlMode === 'source' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
+                  onClick={() => { setHtmlMode('source') }}
+                >
+                  {t('preview.htmlSource')}
+                </button>
+                <button
+                  type="button"
+                  className={htmlMode === 'render' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
+                  onClick={() => { setHtmlMode('render'); setScriptConfirm(false) }}
+                >
+                  {t('preview.htmlRender')}
+                </button>
+                {htmlScripted && (
+                  <button
+                    type="button"
+                    className={htmlMode === 'script' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
+                    onClick={() => {
+                      if (htmlMode === 'script') { setHtmlMode('render'); setScriptConfirm(false) }
+                      else setScriptConfirm(true)
+                    }}
+                  >
+                    {t(htmlMode === 'script' ? 'preview.htmlScriptStop' : 'preview.htmlScript')}
+                  </button>
+                )}
+                {(htmlMode === 'render' || htmlMode === 'script') && (
+                  <button
+                    type="button"
+                    className={css.htmlToggleBtn}
+                    aria-label={fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen')}
+                    onClick={() => {
+                      const frame = htmlFrameRef.current
+                      if (frame === null) return
+                      if (document.fullscreenElement != null) { void document.exitFullscreen?.() }
+                      else if (typeof frame.requestFullscreen === 'function') { void frame.requestFullscreen() }
+                    }}
+                  >
+                    <IconCodeOutline16 size={14} />
+                  </button>
+                )}
+              </div>
             )}
           </span>
         </div>
-        <div className={css.pathLine} title={displayPath ?? path}>{displayPath ?? dirname}</div>
       </div>
       {!diffActive && content !== null && (
         <div className={css.contentSearch}>
@@ -495,51 +526,6 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
               <button type="button" className={css.stepButton} onClick={() => { stepMatch(-1) }} aria-label={t('search.prev')}>‹</button>
               <button type="button" className={css.stepButton} onClick={() => { stepMatch(1) }} aria-label={t('search.next')}>›</button>
             </>
-          )}
-          {html && (
-            <div className={css.htmlToggle} role="group" aria-label={t('preview.htmlToggle')}>
-              <button
-                type="button"
-                className={htmlMode === 'source' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
-                onClick={() => { setHtmlMode('source') }}
-              >
-                {t('preview.htmlSource')}
-              </button>
-              <button
-                type="button"
-                className={htmlMode === 'render' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
-                onClick={() => { setHtmlMode('render'); setScriptConfirm(false) }}
-              >
-                {t('preview.htmlRender')}
-              </button>
-              {htmlScripted && (
-                <button
-                  type="button"
-                  className={htmlMode === 'script' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
-                  onClick={() => {
-                    if (htmlMode === 'script') { setHtmlMode('render'); setScriptConfirm(false) }
-                    else setScriptConfirm(true)
-                  }}
-                >
-                  {t(htmlMode === 'script' ? 'preview.htmlScriptStop' : 'preview.htmlScript')}
-                </button>
-              )}
-              {(htmlMode === 'render' || htmlMode === 'script') && (
-                <button
-                  type="button"
-                  className={css.htmlToggleBtn}
-                  aria-label={fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen')}
-                  onClick={() => {
-                    const frame = htmlFrameRef.current
-                    if (frame === null) return
-                    if (document.fullscreenElement != null) { void document.exitFullscreen?.() }
-                    else if (typeof frame.requestFullscreen === 'function') { void frame.requestFullscreen() }
-                  }}
-                >
-                  <IconCodeOutline16 size={14} />
-                </button>
-              )}
-            </div>
           )}
         </div>
       )}

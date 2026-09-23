@@ -173,15 +173,24 @@ describe('ContentPane chrome and non-text reads', () => {
     expect(openFolder).toHaveBeenCalledTimes(1)
   })
 
-  it('offers the copy-content gesture alongside the copy-path one', () => {
-    const copyContent = vi.fn()
+  it('offers exactly one copy affordance — the path', () => {
     mount({ kind: 'text', path: '/work/a.ts', content: 'x\n' }, {
       onCopyPath: () => Promise.resolve(true),
-      chrome: { copyContent },
+      chrome: { openFolder: () => {}, openIDE: () => {} },
     })
-    expect(screen.getByRole('button', { name: 'action.copyPath' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'action.copyContent' }))
-    expect(copyContent).toHaveBeenCalledTimes(1)
+    const copies = screen.getAllByRole('button')
+      .map(button => button.getAttribute('aria-label') ?? '')
+      .filter(label => label.startsWith('action.copy'))
+    expect(copies).toEqual(['action.copyPath'])
+  })
+
+  it('keeps the view controls on the path row, not the title row or the search row', () => {
+    // The header is layered: title = identity + host-open gestures; path row =
+    // path + every "what am I looking at" control; search row = search only.
+    mount({ kind: 'text', path: '/work/README.md', content: MARKDOWN })
+    const row = screen.getByTitle('/work/README.md').parentElement
+    expect(row?.contains(screen.getByRole('button', { name: 'detail.source' }))).toBe(true)
+    expect(row?.contains(screen.getByRole('searchbox'))).toBe(false)
   })
 
   it('shows designed placeholders for binary, deleted and unreadable reads', () => {
