@@ -69,7 +69,7 @@
     "compat": {
       "minHost": "0.1.5-rc.1",
       "notes": "External coordinators require the unpublished local-agent family with prepared members, shared model/effort controls and authenticated member tools; without it these operations degrade to unavailable. Scoped cwd and cross-restart mappings are supported. Native DSH session model switching retains host semantics. Room vocabulary is registered through the active loader. DSH/Kimi source-host runtime checks and candidate tarball fresh/upgrade checks on the npm host pass; Codex/Claude auth and full P95 streaming acceptance remain pending.",
-      "verifiedHost": "0.1.5-rc.1"
+      "verifiedHost": "0.1.7-rc.1"
     }
   },
   "scripts": {

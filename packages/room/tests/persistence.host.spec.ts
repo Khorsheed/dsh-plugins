@@ -12,10 +12,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { KNOWN_SESSION_EVENT_TYPES, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import RoomService, { ROOM_EVENT_TYPES } from '../src/index.ts'
+import { ROOM_KIND, ROOM_PLUGIN, roomSource } from '../src/dispatch.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
 
@@ -245,5 +247,50 @@ describe('linked Room event vocabulary', () => {
     const fiber = await ctx.plugin(RoomService)
     try { expect([...catalog]).toEqual([...ROOM_EVENT_TYPES]) }
     finally { await fiber.dispose() }
+  })
+})
+
+describe('V4 durable producer source (real JSONL persistence)', () => {
+  // The rc.1 native admission rejects the retired `{ kind: 'plugin', … }`
+  // wrapper at the durable write (encodeEvent → assertV4SourceRowAdmission),
+  // which the in-memory Session validation never does — only a real backend
+  // pins it. The 0.1.5 host's user/message admission accepts any non-empty
+  // kind string, so the producer kind writes durably on both host lines.
+  it('flushes the producer-owned followup source and reads it back verbatim; refuses the retired wrapper', async () => {
+    const fix = await makeFixture(true)
+    try {
+      const service = fix.ctx.get('room') as RoomService
+      const sessionId = await createRoom(fix.ctx, service)
+      const session = fix.ctx.sessions.get(sessionId)!
+      // The shape runMainAgent's followup carries; the agent runtime appends
+      // it to the session log in production — here the append is direct.
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: '【成员名册】…' }],
+        source: roomSource(),
+      }), { surfaceOp: 'append' })
+      await fix.ctx.sessions.flush(session)
+
+      const reader = await fix.ctx.sessionPersistence.open(sessionId, 'read')
+      try {
+        const sources = (await reader.read(0)).events
+          .filter(event => event.type === 'user/message')
+          .map(event => event.data.source)
+        expect(sources).toContainEqual({ kind: ROOM_KIND })
+      } finally {
+        await reader.close()
+      }
+
+      // The retired wrapper: the append lands in memory (any non-empty kind
+      // passes), the V4 durable write refuses it.
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'legacy' }],
+        source: { kind: 'plugin', plugin: ROOM_PLUGIN } as never,
+      }), { surfaceOp: 'append' })
+      await expect(fix.ctx.sessions.flush(session)).rejects.toThrow('producer-owned source kind')
+    } finally {
+      // The undrainable refusal repeats on the teardown close; swallow it.
+      await fix.ctx.fiber.dispose().catch(() => undefined)
+      await rm(fix.dir, { recursive: true, force: true })
+    }
   })
 })

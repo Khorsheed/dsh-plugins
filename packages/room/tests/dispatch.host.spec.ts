@@ -8,7 +8,7 @@ import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import { PlanService, readPlan } from '../src/plan-service.ts'
 import { changePlan, queuePlanAttempt, admitPlanAttempt } from '../src/plan.ts'
-import { ROOM_PLUGIN } from '../src/dispatch.ts'
+import { ROOM_KIND, ROOM_PLUGIN, isRoomSource } from '../src/dispatch.ts'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 
 /** A manually settled promise. */
@@ -329,14 +329,14 @@ describe('DispatchEngine (real composition)', () => {
     await bench.service.engine.idle()
   })
 
-  it('the main-agent member gets a plugin-sourced followup and no speech projection', async () => {
+  it('the main-agent member gets a producer-sourced followup and no speech projection', async () => {
     const bench = await bootRoom()
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@dsh 总结一下进度' })
     await bench.service.engine.idle()
 
     expect(bench.agent!.followup).toHaveBeenCalledTimes(1)
     const message = bench.agent!.followup.mock.calls[0]![0] as UserMessage
-    expect(message.source).toEqual({ kind: 'plugin', plugin: ROOM_PLUGIN })
+    expect(message.source).toEqual({ kind: ROOM_KIND })
     const text = textOf(message.content)
     expect(text).toContain('总结一下进度')
     expect(text).toContain('【成员名册】')
@@ -1072,5 +1072,35 @@ describe('coordinator routing and durable deliveries', () => {
     expect(bench.facade.resume).toHaveBeenCalledTimes(1)
     expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('next')
     expect(session.snapshotEvents().some(event => event.type === 'room/delivery-state' && event.data.state === 'uncertain')).toBe(true)
+  })
+})
+
+describe('isRoomSource (durable source forms)', () => {
+  // The room producer identity survives in three durable forms: the current
+  // producer-owned kind, the V3→V4 migrated kind (released V3 files rewritten
+  // once by the official migration), and the released V3 wrapper a pre-V4
+  // (0.1.5) host still serves verbatim.
+  const forms = [
+    ['current producer kind', { kind: ROOM_KIND }],
+    ['V3→V4 migrated kind', { kind: `plugin:${ROOM_PLUGIN}` }],
+    ['released V3 wrapper (0.1.5)', { kind: 'plugin', plugin: ROOM_PLUGIN }],
+  ] as const
+
+  it.each(forms)('accepts the %s form', (_label, source) => {
+    expect(isRoomSource(source)).toBe(true)
+  })
+
+  it('rejects foreign producers in every form and malformed values', () => {
+    expect(isRoomSource({ kind: 'user' })).toBe(false)
+    expect(isRoomSource({ kind: 'plugin', plugin: 'other-plugin' })).toBe(false)
+    expect(isRoomSource({ kind: 'plugin:other-plugin' })).toBe(false)
+    // The migrated-form match is exact: a longer kind names another producer.
+    expect(isRoomSource({ kind: `plugin:${ROOM_PLUGIN}-extra` })).toBe(false)
+    expect(isRoomSource({ kind: 'room-extra' })).toBe(false)
+    expect(isRoomSource({ kind: 'plugin' })).toBe(false)
+    expect(isRoomSource({})).toBe(false)
+    expect(isRoomSource(null)).toBe(false)
+    expect(isRoomSource(undefined)).toBe(false)
+    expect(isRoomSource('room')).toBe(false)
   })
 })
