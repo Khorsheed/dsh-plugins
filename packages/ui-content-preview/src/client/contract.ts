@@ -49,6 +49,7 @@ export type PreviewKey =
   | 'action.copied'
   | 'action.openFolder'
   | 'action.openIDE'
+  | 'action.chooseIDE'
   | 'detail.noSelection'
   | 'detail.back'
   | 'detail.diff'
@@ -86,6 +87,7 @@ export const PREVIEW_KEYS: readonly PreviewKey[] = [
   'action.copied',
   'action.openFolder',
   'action.openIDE',
+  'action.chooseIDE',
   'detail.noSelection',
   'detail.back',
   'detail.diff',
@@ -142,6 +144,22 @@ export interface PreviewChrome {
   readonly openFolder?: (() => void) | undefined
   /** Open the file in the host editor/IDE. */
   readonly openIDE?: (() => void) | undefined
+  /**
+   * When more than one IDE resolved, the pane renders a split control: the
+   * button opens the current choice, the caret lists these. One choice (or
+   * none) keeps the plain single button, so a surface that only ever picks one
+   * app renders exactly what it did before.
+   */
+  readonly ideChoices?: readonly IdeChoice[] | undefined
+  /** Open the file with the chosen IDE (the split control's menu). */
+  readonly onIdeChoice?: ((id: string) => void) | undefined
+}
+
+/** One probed IDE the split control can offer. */
+export interface IdeChoice {
+  readonly id: string
+  /** Display name (the host app's own label — data, not a translated string). */
+  readonly label: string
 }
 
 /** The content pane's view selector when a caller supplies a diff body. */

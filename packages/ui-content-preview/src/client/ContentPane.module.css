@@ -186,6 +186,13 @@
   text-align: center;
 }
 
+/* The IDE split control: the open button and its caret share one hover pill. */
+.split {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
 .action {
   display: flex;
   flex: none;

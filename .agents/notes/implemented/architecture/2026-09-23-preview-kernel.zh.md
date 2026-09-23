@@ -21,7 +21,7 @@ Status: implemented
 
 三处登记都在 `scripts/check-plugin-independence.ts`——一个 mainline 维护的共享文件——且**只登记、不新增逻辑**：`COMPOSITION_COMPONENTS` 增加 `'source-plane-library'`（与那些 row 型取值刻意区分，避免「没有 patch」被读成「有别的 patch 会挂载它」），`NO_OWN_PATCH` 交叉校验表增加 `ui-content-preview`，`ALLOWED_EDGES` 增加 `local-files → content-preview` 与 `worktrees → content-preview`。`docs/packages.md` 用 `pnpm map:packages` 重新生成。
 
-本次改动之后全仓的重复度：沙箱 `srcDoc` 构造器 4 份 → 2 份（内核 + `inline-html-render`），能力桥 3 → 2，内容面板 3 → 2（内核 + `ui-file-preview` 的 `FilePreviewPane`），open-in-app 探测及其 IDE/文件管理器候选表 2 → 1。
+本次改动之后全仓的重复度：沙箱 `srcDoc` 构造器 4 份 → 2 份（内核 + `inline-html-render`），能力桥 3 → 2，**内容面板 3 → 1**——`ui-file-preview` 的 `FilePreviewPane` 是最后一份私有拷贝，现在也走内核（它更强的 IDE 分体控件、带 app 菜单与逐 app 标签，在删拷贝之前先并入内核成为 `chrome.ideChoices`/`onIdeChoice`）。open-in-app 探测及其 IDE/文件管理器候选表 2 → 1。
 
 ## Retirement path
 
@@ -51,7 +51,7 @@ Status: implemented
 
 ## Deferred
 
-- `ui-file-preview` 的 `FilePreviewPane` 是剩下的第三份面板拷贝；迁移它是提案的 M4。它的 IDE 分体按钮（带 app 菜单与 app 名）比内核目前的单按钮更强，所以迁移必须把这能力并进内核，而不是丢掉。
+- `worktrees` host 面的本地文件浏览器方法（`listLocalDirectory`/`readLocalFile`/`readLocalImage` 及其 Remote schema）随抽屉一起失去了客户端调用方；它们仍有测试覆盖，但已是死重，应在一次 host 面清理中删除。
 - `worktrees` host 面的本地文件浏览器方法（`listLocalDirectory`/`readLocalFile`/`readLocalImage` 及其 Remote schema）随抽屉一起失去了客户端调用方；它们仍有测试覆盖，但已是死重，应在一次 host 面清理中删除。
 - 与官方 HTML 渲染器之间的相对资源差距依然存在：2026-08-21 的裁决「`srcdoc` 面板不解析相对资源」不变，现在也写进了内核 README。
 

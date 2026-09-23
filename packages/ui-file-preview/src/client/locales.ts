@@ -79,6 +79,30 @@ export type FilePreviewKey =
   | 'row.openIdeMore'
   | 'detail.back'
   | 'mention.open'
+  // Printed by the shared content pane (@khorsheed/dsh-client-ui-content-preview).
+  | 'action.chooseIDE'
+  | 'action.copy'
+  | 'action.copied'
+  | 'action.copyPath'
+  | 'action.openFolder'
+  | 'action.openIDE'
+  | 'detail.content'
+  | 'detail.deleted'
+  | 'detail.diff'
+  | 'detail.noSelection'
+  | 'detail.preview'
+  | 'detail.source'
+  | 'local.binary'
+  | 'local.noSelection'
+  | 'local.tooLarge'
+  | 'local.unreadable'
+  | 'search.hit'
+  | 'search.next'
+  | 'search.noMatch'
+  | 'search.placeholder'
+  | 'search.prev'
+  | 'state.error'
+  | 'state.loading'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -163,6 +187,31 @@ export const zh: Record<FilePreviewKey, string> = {
   'row.openIdeMore': '选择应用打开',
   'detail.back': '返回产物列表',
   'mention.open': '在侧边栏打开 {name}',
+
+  // The shared content pane's keys (see the header note above).
+  'action.chooseIDE': '选择 IDE',
+  'action.copy': '复制',
+  'action.copied': '已复制',
+  'action.copyPath': '复制路径',
+  'action.openFolder': '打开目录',
+  'action.openIDE': '在 IDE 中打开',
+  'detail.content': '内容',
+  'detail.deleted': '文件已删除',
+  'detail.diff': '改动',
+  'detail.noSelection': '选择一个文件查看详情',
+  'detail.preview': '预览',
+  'detail.source': '源码',
+  'local.binary': '二进制文件，无法预览文本',
+  'local.noSelection': '选择一个文件预览内容',
+  'local.tooLarge': '文件过大，未载入预览',
+  'local.unreadable': '无法读取该文件',
+  'search.hit': '匹配 {current}/{total}',
+  'search.next': '下一个匹配',
+  'search.noMatch': '无匹配',
+  'search.placeholder': '在内容中搜索…',
+  'search.prev': '上一个匹配',
+  'state.error': '加载失败：{message}',
+  'state.loading': '加载中…',
 }
 
 /** English dictionary. */
@@ -241,4 +290,29 @@ export const en: Record<FilePreviewKey, string> = {
   'row.openIdeMore': 'Choose an application',
   'detail.back': 'Back to products',
   'mention.open': 'Open {name} in the sidebar',
+
+  // The shared content pane's keys (see the header note above).
+  'action.chooseIDE': 'Choose IDE',
+  'action.copy': 'Copy',
+  'action.copied': 'Copied',
+  'action.copyPath': 'Copy path',
+  'action.openFolder': 'Open folder',
+  'action.openIDE': 'Open in IDE',
+  'detail.content': 'Content',
+  'detail.deleted': 'File deleted',
+  'detail.diff': 'Changes',
+  'detail.noSelection': 'Select a file to view',
+  'detail.preview': 'Preview',
+  'detail.source': 'Source',
+  'local.binary': 'Binary file — text preview unavailable',
+  'local.noSelection': 'Select a file to preview',
+  'local.tooLarge': 'File too large — not loaded into preview',
+  'local.unreadable': 'This file could not be read',
+  'search.hit': 'Match {current}/{total}',
+  'search.next': 'Next match',
+  'search.noMatch': 'No matches',
+  'search.placeholder': 'Search in content…',
+  'search.prev': 'Previous match',
+  'state.error': 'Failed to load: {message}',
+  'state.loading': 'Loading…',
 }

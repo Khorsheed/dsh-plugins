@@ -27,8 +27,8 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
-  CodeBlock, IconCheckOutline16, IconChevronLeftOutline14, IconCodeOutline16,
-  IconCopyOutline16, IconFolderOpenOutline16, MarkdownText,
+  CodeBlock, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14,
+  IconCodeOutline16, IconCopyOutline16, IconFolderOpenOutline16, MarkdownText, Menu,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContentPaneProps, PreviewTranslator, PreviewRead, PreviewView } from './contract.ts'
 import { basenameOf, dirnameOf, isHtmlPath, isMarkdown, languageFor } from './language.ts'
@@ -258,6 +258,8 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   // Markdown / JSON / CSV source ⇄ rendered; rendered is the default.
   const [sourceMode, setSourceMode] = useState(false)
   const [copiedPath, setCopiedPath] = useState(false)
+  // The IDE split control's menu (only rendered when more than one IDE resolved).
+  const [ideOpen, setIdeOpen] = useState(false)
   const [contentQuery, setContentQuery] = useState('')
   const [activeMatch, setActiveMatch] = useState(0)
   const activeLineRef = useRef<HTMLSpanElement | null>(null)
@@ -378,6 +380,10 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const dirname = dirnameOf(path)
   const lang = languageFor(path)
   const showDiffToggle = diffView !== undefined && view !== undefined && onViewChange !== undefined
+  // The IDE control is a split button only when the caller resolved more than
+  // one IDE; otherwise it is the plain single button every surface had.
+  const ideChoices = chrome?.ideChoices ?? []
+  const splitIde = chrome?.openIDE !== undefined && ideChoices.length > 1 && chrome.onIdeChoice !== undefined
   const diffActive = showDiffToggle && view === 'diff'
 
   return (
@@ -385,7 +391,13 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
       <div className={`${css.titleBar} ${embedded ? css.headerEmbedded : ''}`}>
         <div className={css.titleRow}>
           {onBack !== undefined && (
-            <button type="button" className={css.back} title={t('detail.back')} onClick={onBack}>
+            <button
+              type="button"
+              className={css.back}
+              title={t('detail.back')}
+              aria-label={t('detail.back')}
+              onClick={onBack}
+            >
               <IconChevronLeftOutline14 />
             </button>
           )}
@@ -406,15 +418,60 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
               </button>
             )}
             {chrome?.openFolder !== undefined && (
-              <button type="button" className={css.action} title={t('action.openFolder')} onClick={chrome.openFolder}>
+              <button
+                type="button"
+                className={css.action}
+                title={t('action.openFolder')}
+                aria-label={t('action.openFolder')}
+                onClick={chrome.openFolder}
+              >
                 <IconFolderOpenOutline16 size={14} />
               </button>
             )}
-            {chrome?.openIDE !== undefined && (
-              <button type="button" className={css.action} title={t('action.openIDE')} onClick={chrome.openIDE}>
-                <IconCodeOutline16 size={14} />
-              </button>
-            )}
+            {splitIde
+              ? (
+                <span className={css.split}>
+                  <button
+                    type="button"
+                    className={css.action}
+                    title={t('action.openIDE')}
+                    aria-label={t('action.openIDE')}
+                    onClick={chrome.openIDE}
+                  >
+                    <IconCodeOutline16 size={14} />
+                  </button>
+                  <Menu
+                    open={ideOpen}
+                    align="end"
+                    anchor={(
+                      <button
+                        type="button"
+                        className={css.action}
+                        title={t('action.chooseIDE')}
+                        aria-label={t('action.chooseIDE')}
+                        aria-expanded={ideOpen}
+                        onClick={() => { setIdeOpen(value => !value) }}
+                      >
+                        <IconChevronDownOutline14 />
+                      </button>
+                    )}
+                    items={ideChoices.map(choice => ({ id: choice.id, label: choice.label }))}
+                    onSelect={(id) => { setIdeOpen(false); chrome.onIdeChoice?.(id) }}
+                    onClose={() => { setIdeOpen(false) }}
+                  />
+                </span>
+              )
+              : chrome?.openIDE !== undefined && (
+                <button
+                  type="button"
+                  className={css.action}
+                  title={t('action.openIDE')}
+                  aria-label={t('action.openIDE')}
+                  onClick={chrome.openIDE}
+                >
+                  <IconCodeOutline16 size={14} />
+                </button>
+              )}
           </span>
         </div>
         <div className={css.pathRow}>

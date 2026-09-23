@@ -173,6 +173,32 @@ describe('ContentPane chrome and non-text reads', () => {
     expect(openFolder).toHaveBeenCalledTimes(1)
   })
 
+  it('collapses the IDE control to one button when a single IDE resolved', () => {
+    mount({ kind: 'text', path: '/work/a.ts', content: 'x\n' }, {
+      chrome: { openIDE: () => {}, ideChoices: [{ id: 'zed', label: 'Zed' }] },
+    })
+    expect(screen.getByRole('button', { name: 'action.openIDE' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'action.chooseIDE' })).toBeNull()
+  })
+
+  it('offers a split IDE control once several IDEs resolved', () => {
+    const onIdeChoice = vi.fn()
+    mount({ kind: 'text', path: '/work/a.ts', content: 'x\n' }, {
+      chrome: {
+        openIDE: () => {},
+        ideChoices: [{ id: 'zed', label: 'Zed' }, { id: 'vscode', label: 'VS Code' }],
+        onIdeChoice,
+      },
+    })
+    const caret = screen.getByRole('button', { name: 'action.chooseIDE' })
+    expect(caret).toBeTruthy()
+    // The caret opens the app menu; picking a row routes through the caller
+    // (which owns the remembered choice and the host route).
+    fireEvent.click(caret)
+    fireEvent.click(screen.getByText('VS Code'))
+    expect(onIdeChoice).toHaveBeenCalledWith('vscode')
+  })
+
   it('offers exactly one copy affordance — the path', () => {
     mount({ kind: 'text', path: '/work/a.ts', content: 'x\n' }, {
       onCopyPath: () => Promise.resolve(true),

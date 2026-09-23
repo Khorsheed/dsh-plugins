@@ -91,19 +91,20 @@
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-sidebar-documentpreview": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-util-workspace-path": "^0.1.5-rc.1",
+    "@khorsheed/dsh-client-ui-content-preview": "workspace:*",
     "@khorsheed/dsh-file-preview": "workspace:*",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "immer": "^10.1.1",
-    "zustand": "~4.4.7",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "zustand": "~4.4.7"
   },
   "files": [
     "lib",

@@ -21,7 +21,7 @@ One client-only package, `@khorsheed/dsh-client-ui-content-preview`, owns the co
 
 The three registry edits live in `scripts/check-plugin-independence.ts`, a mainline-owned shared file, and are registration only — no new checking logic: `'source-plane-library'` joins `COMPOSITION_COMPONENTS` (distinct from the row components, so "no patch" cannot read as "a row another patch mounts"), `ui-content-preview` joins the `NO_OWN_PATCH` cross-check list, and `ALLOWED_EDGES` gains `local-files → content-preview` and `worktrees → content-preview`. `docs/packages.md` is regenerated (`pnpm map:packages`).
 
-Duplication after this change, repo-wide: the sandbox `srcDoc` builder 4 copies → 2 (kernel + `inline-html-render`), the capability bridge 3 → 2, the content pane 3 → 2 (kernel + `ui-file-preview`'s `FilePreviewPane`), the open-in-app probe and its IDE/file-manager candidate tables 2 → 1.
+Duplication after this change, repo-wide: the sandbox `srcDoc` builder 4 copies → 2 (kernel + `inline-html-render`), the capability bridge 3 → 2, and the content pane 3 → **1** — `ui-file-preview`'s `FilePreviewPane` was the last private copy and now renders through the kernel too (its stronger IDE split control, an app menu with per-app labels, was folded into the kernel as `chrome.ideChoices`/`onIdeChoice` before the copy was deleted). The open-in-app probe and its IDE/file-manager candidate tables went 2 → 1.
 
 ## Retirement path
 
@@ -51,7 +51,7 @@ The kernel carries 48 tests (sandbox `srcDoc` construction and CSP injection, br
 
 ## Deferred
 
-- `ui-file-preview`'s `FilePreviewPane` is the remaining third copy of the pane; migrating it is milestone M4 of the proposal. Its IDE split button (app menu with per-app labels) is stronger than the single-button gesture the kernel ships, so the migration has to fold that capability into the kernel rather than drop it.
+- `worktrees`' host-plane local-file browser methods (`listLocalDirectory`/`readLocalFile`/`readLocalImage` and their Remote schema) lost their client caller with the drawer; they are still covered by tests but are now dead weight and should be removed in a host-plane cleanup.
 - `worktrees`' host-plane local-file browser methods (`listLocalDirectory`/`readLocalFile`/`readLocalImage` and their Remote schema) lost their client caller with the drawer; they are still covered by tests but are now dead weight and should be removed in a host-plane cleanup.
 - The relative-resource gap against the official HTML renderer stands: the 2026-08-21 ruling that a `srcdoc` pane does not resolve relative assets is unchanged and now stated in the kernel's README.
 

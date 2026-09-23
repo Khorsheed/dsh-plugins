@@ -2,15 +2,16 @@
  * The file-preview right-Sidebar tab body: the session's touched files as a
  * full-height list, navigating IN-TAB to a detail view on row click.
  *
- * The detail view carries the old drawer's grammar: a breadcrumb header
- * (directory greyed, final segment in full ink) with the copy-path /
- * show-in-folder / open-in-IDE actions, and a 内容 / 改动记录 toggle over the
- * restored preview stack (FilePreviewPane: markdown/JSON/CSV renderings, the
- * sandboxed HTML view, content search) plus the shared DiffHistory. Being our
- * own view it works for outside-workspace files too (reveal/openExternal take
- * absolute paths, and the host `read` resolves them) — they are no longer
- * list-only rows. Mentions still open in the official document tab (the quick
- * preview path); the 「改动记录」 renderer registration there is unaffected.
+ * The detail view is the SHARED content pane (@khorsheed/dsh-client-ui-content-preview)
+ * with this plugin's adapter (preview.ts): the pane owns the title/path rows,
+ * the copy-path / show-in-folder / open-in-IDE (split, app-listed) gestures,
+ * the content⇄change-history switch, the sandboxed HTML tiers, content search
+ * and the markdown/JSON/CSV renderings; this file supplies the read, the IDE
+ * choices and the 改动记录 body (the shared DiffHistory). Being our own view it
+ * works for outside-workspace files too (reveal/openExternal take absolute
+ * paths, and the host `read` resolves them) — they are no longer list-only
+ * rows. Mentions still open in the official document tab (the quick preview
+ * path); the 「改动记录」 renderer registration there is unaffected.
  *
  * Navigation params (`openTab('file-preview', { params: { path } })`, the
  * turn card's outside-workspace gesture) select the path on arrival — which
@@ -20,74 +21,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
-  FileTypeIcon, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconCodeOutline16,
-  IconCopyOutline16, IconFolderOpenOutline16, IconGlobeOutline14, IconRefreshOutline16, Menu,
+  FileTypeIcon, IconGlobeOutline14, IconRefreshOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  ContentPane, type PreviewView,
+} from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { FilePreviewTabProps, FilePreviewTabInjected } from './contract.ts'
-import { useCopyPathFeedback } from './copy-path.ts'
-import { FilePreviewPane } from './FilePreviewPane.tsx'
-import { listIdes, pickFileManager, type IdeChoice } from './open-in-app.ts'
+import { DiffHistory } from './DiffHistory.tsx'
+import { listIdes, pickFileManager } from './open-in-app.ts'
+import { previewTranslator, structuredLabels, toPreviewRead } from './preview.ts'
 import { basename, highlightMatch, isWithinWorkspace, matchesQuery, parentPath, relativeToCwd, sortByLatest } from './path-utils.ts'
 import css from './FilePreviewTab.module.css'
-
-/**
- * The open-in-IDE split button (the official OpenInAppAction's interaction,
- * redrawn — slot-claim rules keep that component unimportable): the main
- * button launches the current choice, the chevron lists every probed IDE and
- * re-chooses on select. The choice is component state (per mount).
- */
-function IdeSplitButton(props: {
-  readonly path: string
-  readonly ides: readonly IdeChoice[]
-  readonly openInIde: FilePreviewTabInjected['openInIde']
-  readonly t: FilePreviewTabProps['t']
-}): ReactNode {
-  const { path, ides, openInIde, t } = props
-  const [open, setOpen] = useState(false)
-  const [choice, setChoice] = useState(ides[0]?.id)
-  const current = ides.find(entry => entry.id === choice) ?? ides[0]
-  if (current === undefined) return null
-  return (
-    // Quiet icon buttons matching this header's other tools (copy / folder):
-    // icon main + icon chevron, no pill chrome. The menu right-aligns to the
-    // anchor (align="end") so it never overflows the pane's right edge.
-    <span className={css.split}>
-      <button
-        type="button"
-        className={css.tool}
-        title={t('row.openIdeIn', { app: current.label })}
-        aria-label={t('row.openIdeIn', { app: current.label })}
-        onClick={() => { openInIde(path, current.id) }}
-      >
-        <IconCodeOutline16 />
-      </button>
-      {ides.length > 1 && (
-        <Menu
-          open={open}
-          align="end"
-          anchor={(
-            <button
-              type="button"
-              className={css.tool}
-              title={t('row.openIdeMore')}
-              aria-label={t('row.openIdeMore')}
-              aria-expanded={open}
-              onClick={() => { setOpen(value => !value) }}
-            >
-              <IconChevronDownOutline14 />
-            </button>
-          )}
-          items={ides.map(entry => ({ id: entry.id, label: entry.label }))}
-          selectedId={current.id}
-          onSelect={(id) => { setChoice(id); openInIde(path, id) }}
-          onClose={() => { setOpen(false) }}
-        />
-      )}
-    </span>
-  )
-}
 
 /** One detail view: header (back + breadcrumb + actions) over the preview pane. */
 function DetailView(props: {
@@ -105,82 +51,63 @@ function DetailView(props: {
 }): ReactNode {
   const { sessionId, path, entry, cwd, apps, readFile, copyPath, revealFolder, openInIde, onBack, t } = props
   const [read, setRead] = useState<FilePreviewRead | null>(null)
-  const [failed, setFailed] = useState(false)
-  const { copied, onCopy } = useCopyPathFeedback(copyPath, path)
+  const [error, setError] = useState<string | null>(null)
+  // The content⇄change-history view is the caller's state (the kernel only
+  // renders the switch); a new selection starts on the content.
+  const [view, setView] = useState<PreviewView>('content')
   const fileManager = apps === null ? undefined : pickFileManager(apps)
   const ides = apps === null ? [] : listIdes(apps)
+  const [ideChoice, setIdeChoice] = useState<string | undefined>(ides[0]?.id)
+  const currentIde = ides.find(entry => entry.id === ideChoice) ?? ides[0]
+  useEffect(() => { setView('content') }, [path])
   // The header shows the host-resolved absolute spelling (the same one the
   // copy/open gestures act on) as a segmented breadcrumb: directory segments
   // dimmed with ' / ' between them (the official files header's reading), the
   // file name solid. Long segments ellipsize individually; the name never
   // truncates.
   const displayPath = resolveWorkspacePath(cwd, path)
-  const segments = displayPath.replace(/\\/g, '/').split('/').filter(seg => seg.length > 0)
-  const name = segments[segments.length - 1] ?? displayPath
-  const directories = segments.slice(0, -1)
+  const showTabs = entry !== undefined && entry.diffs.length > 0
 
   // Fetch the current content for the content tab; a stale answer (selection
   // moved) is dropped by the effect cleanup.
   useEffect(() => {
     let cancelled = false
     setRead(null)
-    setFailed(false)
+    setError(null)
     void readFile(sessionId, path).then((result) => {
       if (cancelled) return
       if (result.ok) setRead(result.value)
-      else setFailed(true)
+      else setError(result.error.message)
     })
     return () => { cancelled = true }
   }, [sessionId, path, readFile])
 
   return (
     <div className={css.detail}>
-      <div className={css.detailHeader}>
-        <button
-          type="button"
-          className={css.tool}
-          aria-label={t('detail.back')}
-          title={t('detail.back')}
-          onClick={onBack}
-        >
-          <IconChevronLeftOutline14 />
-        </button>
-        <div className={css.detailPath} title={displayPath}>
-          {directories.map((segment, index) => (
-            <span key={index} className={css.detailSegWrap}>
-              <span className={css.detailSeg}>{segment}</span>
-              <span className={css.detailSep}>/</span>
-            </span>
-          ))}
-          <span className={css.detailName}>{name}</span>
-        </div>
-        <div className={css.detailActions}>
-          <button
-            type="button"
-            className={css.tool}
-            title={copied ? t('row.copied') : t('row.copyPath')}
-            aria-label={copied ? t('row.copied') : t('row.copyPath')}
-            onClick={onCopy}
-          >
-            {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
-          </button>
-          {fileManager !== undefined && (
-            <button
-              type="button"
-              className={css.tool}
-              title={t('row.openFolder')}
-              aria-label={t('row.openFolder')}
-              onClick={() => { revealFolder(path) }}
-            >
-              <IconFolderOpenOutline16 />
-            </button>
-          )}
-          <IdeSplitButton path={path} ides={ides} openInIde={openInIde} t={t} />
-        </div>
-      </div>
-      {read === null && !failed && <div className={css.empty}>{t('list.loading')}</div>}
-      {failed && <div className={css.empty}>{t('drawer.kind.error')}</div>}
-      {read !== null && <FilePreviewPane key={path} entry={entry} read={read} t={t} />}
+      <ContentPane
+        key={path}
+        path={path}
+        sessionId={sessionId}
+        read={read === null ? null : toPreviewRead(read)}
+        loading={read === null && error === null}
+        error={error}
+        displayPath={displayPath}
+        onBack={onBack}
+        onCopyPath={() => copyPath(path)}
+        chrome={{
+          ...(fileManager === undefined ? {} : { openFolder: () => { revealFolder(path) } }),
+          ...(currentIde === undefined
+            ? {}
+            : {
+              openIDE: () => { openInIde(path, currentIde.id) },
+              ideChoices: ides.map(ide => ({ id: ide.id, label: ide.label })),
+              onIdeChoice: (id: string) => { setIdeChoice(id); openInIde(path, id) },
+            }),
+        }}
+        {...(showTabs ? { diffView: <DiffHistory entry={entry} t={t} />, view, onViewChange: setView } : {})}
+        labels={structuredLabels(t)}
+        t={previewTranslator(t)}
+      />
     </div>
   )
 }

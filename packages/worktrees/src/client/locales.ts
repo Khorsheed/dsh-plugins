@@ -107,6 +107,7 @@ export const zh = {
 
   // Added 2026-09-23: the shared content pane prints these (preview-kernel).
   'action.copyPath': '复制路径',
+  'action.chooseIDE': '选择 IDE',
   'action.openIDE': '在 IDE 中打开',
   'local.unreadable': '无法读取该文件',
   'preview.exitFullscreen': '退出全屏',
@@ -248,6 +249,7 @@ export const en = {
 
   // Added 2026-09-23: the shared content pane prints these (preview-kernel).
   'action.copyPath': 'Copy path',
+  'action.chooseIDE': 'Choose IDE',
   'action.openIDE': 'Open in IDE',
   'local.unreadable': 'This file could not be read',
   'preview.exitFullscreen': 'Exit fullscreen',
