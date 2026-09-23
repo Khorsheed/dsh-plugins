@@ -1287,21 +1287,28 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   /* --------------------------------------------------- the translation flow */
 
   /**
-   * The source language of the open body, as the browser's detector reports it
-   * (falling back to the reader's script heuristic, which cannot tell German
-   * from English but does recognise "already Chinese"). A wrong source makes
-   * `create()` reject for a pair the device does not have — and that error does
-   * not name either language, which is why it is worth asking properly.
+   * The source language of the open body: the script heuristic first (it cannot
+   * tell German from English, but it measures the WHOLE body, so it recognises
+   * "already Chinese" reliably), refined by the browser's detector. The detector
+   * only sees a 600-character prefix sample, and an arXiv author block is
+   * romanized Chinese names — so an answer of "this is Chinese" that contradicts
+   * the script measurement is the detector misreading a name list, not a Chinese
+   * body, and is distrusted. A wrong source makes `create()` reject for a pair
+   * the device does not have — and that error does not name either language,
+   * which is why it is worth asking properly.
    */
   const guessSource = articleHtml !== null && isCjk(articleHtml) ? TRANSLATION_TARGET : 'en'
   const [translationSource, setTranslationSource] = useState('en')
   useEffect(() => {
     if (view !== 'detail' || articleHtml === null || articleHtml.length === 0) return
     if (guessSource === TRANSLATION_TARGET) { setTranslationSource(guessSource); return }
+    // A new body starts from the script guess, not the previous entry's answer;
+    // the detector then refines it asynchronously.
+    setTranslationSource(guessSource)
     let cancelled = false
     void (async () => {
       const detected = await detectSourceLanguage(articleHtml.replace(/<[^>]*>/g, ' '), guessSource)
-      if (!cancelled) setTranslationSource(detected)
+      if (!cancelled) setTranslationSource(detected.split('-')[0] === TRANSLATION_TARGET ? guessSource : detected)
     })()
     return () => { cancelled = true }
   }, [view, articleHtml, guessSource])
@@ -1321,26 +1328,37 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   // is not `unavailable`.
   useEffect(() => {
     if (view !== 'detail' || translator === null || articleHtml === null || articleHtml.length === 0) return undefined
-    if (translationSource === TRANSLATION_TARGET && isCjk(articleHtml)) { setTranslateAvailability('unavailable'); return undefined }
+    if (translationSource === TRANSLATION_TARGET) { setTranslateAvailability('unavailable'); return undefined }
     let cancelled = false
     void (async () => {
+      // The detector's answer is only the FIRST source candidate; the script
+      // guess is probed behind it, the same chain startTranslation builds
+      // sessions with. A wrong detection (the prefix sample reads a pinyin
+      // author list as another language) would otherwise probe a pair this
+      // device does not have and hide a globe that could have worked.
+      const sources = translationSource === guessSource ? [guessSource] : [translationSource, guessSource]
       let best: TranslationAvailability = 'unavailable'
-      for (const targetLanguage of TARGET_CANDIDATES) {
-        try {
-          const answer = await translator.availability({ sourceLanguage: translationSource, targetLanguage }) as TranslationAvailability
-          if (answer !== 'unavailable') { best = answer; break }
-        } catch {
-          // Try the next spelling; only "every candidate said unavailable" hides
-          // the globe.
+      for (const sourceLanguage of sources) {
+        for (const targetLanguage of TARGET_CANDIDATES) {
+          try {
+            const answer = await translator.availability({ sourceLanguage, targetLanguage }) as TranslationAvailability
+            if (answer !== 'unavailable') { best = answer; break }
+          } catch {
+            // Try the next spelling; only "every candidate said unavailable" hides
+            // the globe.
+          }
         }
+        if (best !== 'unavailable') break
       }
       if (!cancelled) setTranslateAvailability(best)
     })()
     return () => { cancelled = true }
-  }, [view, translator, articleHtml, translationSource])
+  }, [view, translator, articleHtml, translationSource, guessSource])
 
   // A new body means a new DOM: the old segmentation dies with the old element,
-  // so this effect is the only owner of that lifecycle.
+  // so this effect is the only owner of that lifecycle. The pair probe is reset
+  // with it too: the previous entry's answer must neither show nor hide the
+  // globe over a body it was never asked about.
   useEffect(() => {
     if (cancelRef.current !== null) cancelRef.current.cancelled = true
     cancelRef.current = null
@@ -1353,6 +1371,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setPackProgress(null)
     setTranslateError(null)
     setTranslateMenu(false)
+    setTranslateAvailability(null)
   }, [openEntryId, articleHtml])
 
   // Leaving the pane must not leave spans behind in a DOM React will reuse.

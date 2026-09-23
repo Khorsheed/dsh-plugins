@@ -364,6 +364,14 @@ function installTranslator(over: { availability?: string; createThrows?: string;
   return api
 }
 
+/** The page's Language Detector global, scripted to answer one language confidently. */
+function installDetector(language: string, confidence = 0.9) {
+  ;(globalThis as unknown as { LanguageDetector?: unknown }).LanguageDetector = {
+    availability: async () => 'available',
+    create: async () => ({ detect: async () => [{ detectedLanguage: language, confidence }] }),
+  }
+}
+
 // The quoting case installs a `getSelection` spy, and the translation gesture
 // reads the selection (a click that ends a drag must not fold the sentence), so
 // every test starts from a clean slate.
@@ -1446,7 +1454,10 @@ describe('on-device translation', () => {
     return ui
   }
 
-  afterEach(() => { delete (globalThis as unknown as { Translator?: unknown }).Translator })
+  afterEach(() => {
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
+    delete (globalThis as unknown as { LanguageDetector?: unknown }).LanguageDetector
+  })
 
   it('translates in place, reveals one sentence at a time, and switches views', async () => {
     const api = installTranslator()
@@ -1526,6 +1537,33 @@ describe('on-device translation', () => {
     installTranslator()
     await opened('<p>这是一段中文正文。这是第二句。</p>')
     await waitFor(() => { expect(screen.queryByTitle(zh['action.translate'])).toBeNull() })
+  })
+
+  it('keeps the globe when the detector misreads a romanized author list as Chinese', async () => {
+    const api = installTranslator()
+    installDetector('zh')
+    // An arXiv-style opening: a pinyin author block, then English prose. The
+    // prefix sample reads the names as Chinese; the script measurement of the
+    // whole body says otherwise, and it wins.
+    const ui = await opened('<p>Jialiang Huang Hongxuan Tang Jingchang Chen Yuxuan Liu Yuan Cheng.</p><p>First sentence here. Second sentence here.</p>')
+    const globe = await screen.findByTitle(zh['action.translate'])
+    fireEvent.click(globe)
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    // …and the session was built for English, not for the misdetected pair.
+    expect(api.create).toHaveBeenCalledWith(expect.objectContaining({ sourceLanguage: 'en' }))
+  })
+
+  it('falls back to the script guess when the detected source has no pair on this device', async () => {
+    const api = installTranslator()
+    installDetector('vi')
+    api.availability.mockImplementation(async (pair?: { sourceLanguage?: string }) =>
+      pair?.sourceLanguage === 'vi' ? 'unavailable' : 'available')
+    await opened('<p>First sentence here. Second sentence here.</p>')
+    // vi → zh is a pair this device does not have; the script guess en → zh
+    // behind it is, so the globe survives the wrong detection.
+    expect(await screen.findByTitle(zh['action.translate'])).toBeTruthy()
   })
 
   it('says why the pack or the model failed, and leaves the body alone', async () => {
