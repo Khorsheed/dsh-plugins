@@ -19,7 +19,7 @@
 }
 
 .hint {
-  font-size: 10.5px;
+  font: var(--dsw-font-xxxs-11);
   line-height: 1.6;
   color: var(--dsw-alias-label-caption);
 }
@@ -55,13 +55,23 @@
 }
 
 /* The pen and the rubber, drawn where the hand points. A built-in cursor says
-   "text" or "cell"; neither is what the button above the field just said. */
+   "text" or "cell"; neither is what the button above the field just said. The
+   pair is authored twice — the dark theme inverts fill and stroke, because a
+   black-outlined pen disappears on a dark field. */
 .pad[data-tool="pen"] .box {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M3 19 L5 14 L14 4 L18 8 L9 17 Z' fill='%23fff' stroke='%23000' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E") 3 19, crosshair;
 }
 
 .pad[data-tool="erase"] .box {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M4 15 L11 5 L19 9 L14 17 L6 17 Z' fill='%23fff' stroke='%23000' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M6 17 L14 17' stroke='%23000' stroke-width='1.5'/%3E%3C/svg%3E") 6 17, cell;
+}
+
+:global(body[data-ds-dark-theme]) .pad[data-tool="pen"] .box {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M3 19 L5 14 L14 4 L18 8 L9 17 Z' fill='%231f2329' stroke='%23fff' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E") 3 19, crosshair;
+}
+
+:global(body[data-ds-dark-theme]) .pad[data-tool="erase"] .box {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M4 15 L11 5 L19 9 L14 17 L6 17 Z' fill='%231f2329' stroke='%23fff' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M6 17 L14 17' stroke='%23fff' stroke-width='1.5'/%3E%3C/svg%3E") 6 17, cell;
 }
 
 /* The drawing stays where it was made: after the pen is put down the field

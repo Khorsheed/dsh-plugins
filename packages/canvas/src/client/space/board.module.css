@@ -14,7 +14,7 @@
   margin: 1px 8px;
   padding: 8px 10px;
   border-radius: 7px;
-  font-size: 12.5px;
+  font: var(--dsw-font-xs-13);
   line-height: 1.45;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -39,7 +39,7 @@
 
 .canvasRowMeta {
   display: block;
-  font-size: 11px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-caption);
   margin-top: 2px;
 }
@@ -71,7 +71,7 @@
 
 .empty {
   padding: 18px 14px;
-  font-size: 12px;
+  font: var(--dsw-font-xxs-12);
   line-height: 1.7;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -86,8 +86,7 @@
   border: none;
   border-radius: 7px;
   background: transparent;
-  font-size: 11.5px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
   text-align: left;
@@ -111,7 +110,7 @@
 }
 
 .formLabel {
-  font-size: 11px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -121,8 +120,7 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 6px 8px;
-  font-size: 12.5px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xs-13);
   background: transparent;
   color: var(--dsw-alias-label-primary);
   outline: none;
@@ -144,7 +142,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }
@@ -161,8 +159,7 @@
   border: none;
   border-radius: 6px;
   padding: 5px 12px;
-  font-size: 12px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xxs-12);
   background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-foreground);
   cursor: pointer;
@@ -184,8 +181,7 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 4px 10px;
-  font-size: 12px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xxs-12);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -196,7 +192,7 @@
 }
 
 .formNote {
-  font-size: 11.5px;
+  font: var(--dsw-font-xxs-12);
   line-height: 1.6;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -233,8 +229,7 @@
   border-radius: 7px;
   padding: 3px 8px;
   background: transparent;
-  font-family: var(--dsw-font-family);
-  font-size: 11.5px;
+  font: var(--dsw-font-xxs-12);
   line-height: 1.4;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -256,7 +251,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 999px;
@@ -308,8 +303,7 @@
   border: 1px solid var(--dsw-alias-border-l1);
   background: transparent;
   border-radius: 999px;
-  font-size: 12px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xxs-12);
   padding: 4px 11px;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -367,12 +361,12 @@
   align-items: center;
   gap: 7px;
   margin-bottom: 5px;
-  font-size: 11px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
 }
 
 .catHead b {
-  font-size: 12px;
+  font: var(--dsw-font-xxs-12);
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
@@ -385,8 +379,7 @@
 }
 
 .catCode {
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 10.5px;
+  font: var(--dsw-font-markdown-code-block-small);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -403,8 +396,7 @@
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   padding: 3px 6px;
-  font-size: 12px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xxs-12);
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   outline: none;
@@ -424,17 +416,19 @@
   flex: none;
   width: 34px;
   text-align: right;
-  font-size: 10.5px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-caption);
 }
 
 .catToggle {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   border: 1px solid transparent;
   border-radius: 6px;
   padding: 2px 7px;
-  font-size: 11.5px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xxs-12);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -484,13 +478,13 @@
 
 .catEmpty {
   padding: 7px 2px;
-  font-size: 11.5px;
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
 }
 
 .catTip {
   margin: 7px 0 0;
-  font-size: 11px;
+  font: var(--dsw-font-xxxs-11);
   line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -514,7 +508,7 @@
   border-radius: 8px;
   padding: 7px 10px;
   margin-bottom: 12px;
-  font-size: 12px;
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -528,8 +522,7 @@
   border: 1px solid var(--dsw-alias-border-l1);
   background: transparent;
   border-radius: 999px;
-  font-size: 12px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xxs-12);
   padding: 4px 11px;
   color: var(--dsw-alias-label-secondary);
   white-space: nowrap;
@@ -545,9 +538,7 @@
   border: none;
   background: var(--dsw-alias-state-business-primary);
   border-radius: 999px;
-  font-size: 12px;
-  font-family: var(--dsw-font-family);
-  font-weight: 500;
+  font: var(--dsw-font-xxs-strong-12);
   padding: 4px 11px;
   color: var(--dsw-alias-label-primary-inverted);
   white-space: nowrap;
@@ -558,14 +549,16 @@
   filter: brightness(1.08);
 }
 
-/* The per-comment 追问 affordance (agent comments only). */
+/* The per-comment 追问 affordance (agent comments only): words plus the
+   host's open-elsewhere glyph, aligned on the text's own baseline. */
 .followUp {
-  display: inline;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   border: none;
   background: none;
   padding: 0;
-  font-size: 11.5px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-state-business-primary);
   cursor: pointer;
 }
@@ -660,7 +653,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
   align-self: flex-start;
 }
@@ -677,7 +670,7 @@
 }
 
 .cardText {
-  font-size: 12.5px;
+  font: var(--dsw-font-xs-13);
   line-height: 1.65;
   color: var(--dsw-alias-label-primary);
   white-space: pre-wrap;
@@ -691,8 +684,7 @@
 
 /* The document card's derived heading (never the raw `#` opener). */
 .docTitle {
-  font-size: 12.5px;
-  font-weight: 500;
+  font: var(--dsw-font-xs-strong-13);
   line-height: 1.5;
   color: var(--dsw-alias-label-primary);
   word-break: break-word;
@@ -719,7 +711,7 @@
 }
 
 .cardWords {
-  font-size: 10.5px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -734,7 +726,7 @@
 }
 
 .cardSrc {
-  font-size: 11px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-caption);
   display: flex;
   align-items: center;
@@ -746,7 +738,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -791,7 +783,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-state-business-primary);
   letter-spacing: 0.2px;
   align-self: flex-start;
@@ -810,8 +802,7 @@
   justify-content: center;
   gap: 4px;
   border-radius: 6px;
-  font-size: 12px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xxs-12);
   padding: 5px 0;
   border: 1px solid var(--dsw-alias-border-l2);
   background: transparent;
@@ -838,9 +829,8 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 7px 8px;
-  font-size: 12.5px;
+  font: var(--dsw-font-xs-13);
   line-height: 1.65;
-  font-family: var(--dsw-font-family);
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
   outline: none;
@@ -853,7 +843,7 @@
 }
 
 .editHint {
-  font-size: 10.5px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -861,14 +851,13 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
   background: none;
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 999px;
   padding: 3px 9px;
   cursor: pointer;
-  font-family: var(--dsw-font-family);
 }
 
 .commentBadge:hover {
@@ -878,7 +867,7 @@
 .commentThread {
   border-left: 2px solid var(--dsw-alias-border-l2);
   padding: 6px 0 2px 10px;
-  font-size: 12px;
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
   line-height: 1.6;
   display: flex;
@@ -901,7 +890,7 @@
 
 .notice {
   padding: 32px 20px;
-  font-size: 12.5px;
+  font: var(--dsw-font-xs-13);
   line-height: 1.8;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -917,7 +906,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-3);
   box-shadow: var(--dsw-elevation-prominent);
-  font-size: 12px;
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-state-error-primary);
   cursor: pointer;
 }
@@ -963,8 +952,7 @@
   border-top: 1px solid var(--dsw-alias-border-l1);
   border-radius: 0;
   background: transparent;
-  font-size: 12.5px;
-  font-family: var(--dsw-font-family);
+  font: var(--dsw-font-xs-13);
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   text-align: left;
@@ -982,6 +970,6 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  font-size: 12px;
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
 }

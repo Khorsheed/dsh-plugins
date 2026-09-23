@@ -856,7 +856,7 @@ describe('LinkView — lanes', () => {
     const container = await face(bench, 1)
     expect(lanesOf(container)).toHaveLength(1)
     const before = Date.now()
-    fireEvent.click(screen.getByRole('button', { name: '＋ 分区' }))
+    fireEvent.click(screen.getByRole('button', { name: '新分区' }))
     await waitFor(() => {
       expect(bench.mocks.setLayout).toHaveBeenCalledTimes(1)
     })
@@ -1206,7 +1206,7 @@ describe('LinkView — read-only', () => {
     // reads, lane words and all.
     expect(container.querySelectorAll('[data-port]')).toHaveLength(0)
     expect(container.querySelectorAll('[data-lane-size]')).toHaveLength(0)
-    expect(screen.queryByRole('button', { name: '＋ 分区' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '新分区' })).toBeNull()
     expect(kindOf(container, 'c_1')).toBe('灵感 · 论点')
     // A line can still be looked at, but there is no delete button to press, so
     // there is no way to ask for the write.

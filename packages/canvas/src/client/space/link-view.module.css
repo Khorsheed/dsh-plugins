@@ -108,9 +108,7 @@
   padding: 1px 6px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-family);
-  font-size: 11px;
-  font-weight: 500;
+  font: var(--dsw-font-xxxs-strong-11);
   line-height: 1.5;
   cursor: text;
 }
@@ -131,8 +129,7 @@
   padding: 1px 6px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-font-family);
-  font-size: 11px;
+  font: var(--dsw-font-xxxs-11);
   line-height: 1.5;
   /* The title it replaces is a button; this is a real input, and an input left
      to the browser paints a focus ring thick enough to read as a selection box
@@ -171,7 +168,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font: var(--dsw-font-xxs-12);
   line-height: 1.45;
   cursor: grab;
   user-select: none;
@@ -205,7 +202,7 @@
 }
 
 .nodeKind {
-  font-size: 10.5px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
   overflow: hidden;
@@ -313,7 +310,7 @@
 }
 
 .barInfo {
-  font-size: 11.5px;
+  font: var(--dsw-font-xxs-12);
   line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
   min-width: 120px;
@@ -325,13 +322,15 @@
 }
 
 .barButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 3px 8px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-family);
-  font-size: 11.5px;
+  font: var(--dsw-font-xxs-12);
   line-height: 1.5;
   cursor: pointer;
   white-space: nowrap;
@@ -353,8 +352,7 @@
   padding: 3px 8px;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  font-family: var(--dsw-font-family);
-  font-size: 11.5px;
+  font: var(--dsw-font-xxs-12);
   line-height: 1.5;
   cursor: pointer;
   white-space: nowrap;

@@ -449,8 +449,8 @@ describe('CanvasTab — the category catalog (stage ⑤)', () => {
 
   it('mints a cat_ row for a new category, last in the strip', async () => {
     const { mocks } = await mountCatalog([card('c_1')])
-    const input = screen.getByRole('textbox', { name: '＋ 加一个' })
-    expect((screen.getByRole('button', { name: '＋ 加一个' }) as HTMLButtonElement).disabled).toBe(true)
+    const input = screen.getByRole('textbox', { name: '加一个' })
+    expect((screen.getByRole('button', { name: '加一个' }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.change(input, { target: { value: '待办' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => {
@@ -462,7 +462,7 @@ describe('CanvasTab — the category catalog (stage ⑤)', () => {
     expect(added.id.startsWith('cat_')).toBe(true)
     expect(added.order).toBeGreaterThan(Math.max(...request.categories.slice(0, -1).map(row => row.order)))
     // The field clears for the next one.
-    expect((screen.getByRole('textbox', { name: '＋ 加一个' }) as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('textbox', { name: '加一个' }) as HTMLInputElement).value).toBe('')
   })
 
   it('retires an empty row straight through, and asks once for a row that holds cards', async () => {

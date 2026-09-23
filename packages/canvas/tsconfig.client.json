@@ -21,6 +21,8 @@
     "src/client/definition.ts",
     "src/client/draw.ts",
     "src/client/error-text.ts",
+    "src/client/follow-up.tsx",
+    "src/client/icons.tsx",
     "src/client/images.ts",
     "src/client/index.ts",
     "src/client/locales.ts",

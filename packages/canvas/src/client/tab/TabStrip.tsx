@@ -81,7 +81,7 @@ export function TabStrip({ t, rows, active, onSelect, onClose, tail }: TabStripP
             aria-label={t('strip.close')}
             onClick={() => { onClose(row.id) }}
           >
-            <IconCloseFill14 size={11} />
+            <IconCloseFill14 size={12} />
           </button>
         </span>
       ))}

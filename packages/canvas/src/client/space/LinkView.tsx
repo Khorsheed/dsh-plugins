@@ -26,7 +26,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { IconEditOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconEditOutline16, IconPlusOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { COMPOSE_SEND_TEXT, GROUP_ASK_SEND_TEXT } from '../../prompt.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
@@ -647,6 +647,7 @@ export function LinkView({
         </button>
         {!readonly && (
           <button type="button" className={css.barButton} onClick={addLane}>
+            <IconPlusOutline16 size={12} />
             {t('link.addLane')}
           </button>
         )}

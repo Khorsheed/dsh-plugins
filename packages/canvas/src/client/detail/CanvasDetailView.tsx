@@ -53,6 +53,7 @@ import { choosePaste, type PasteArm } from '../paste-table.ts'
 import type { CanvasKey } from '../locales.ts'
 import { CardTextarea } from '../space/CardTextarea.tsx'
 import { agoOf, basenameOf, messageOf } from '../text.ts'
+import { FollowUp } from '../follow-up.tsx'
 import type { PadTool } from '../draw.ts'
 import { CardPad } from './CardPad.tsx'
 import css from './CanvasDetailView.module.css'
@@ -648,19 +649,17 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             {comment.author === 'agent' && chatAvailable === true && (
               <>
                 {' '}
-                <button
-                  type="button"
+                <FollowUp
+                  t={t}
                   className={css.followUp}
-                  onClick={() => {
+                  onFollowUp={() => {
                     void ask({
                       lens: 'ask',
                       cardIds: [card.id],
                       text: t('chat.followupText', { text: comment.text }),
                     })
                   }}
-                >
-                  {t('chat.followup')} →
-                </button>
+                />
               </>
             )}
           </span>

@@ -22,7 +22,7 @@ import {
   IconArchiveOutline20, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
   IconCloseOutline16, IconCodeOutline16, IconEditOutline16,
   IconLightOutline16, IconLinkOutline14,
-  IconNewChatOutline16, IconRefreshOutline14,
+  IconNewChatOutline16, IconPlusOutline16, IconRefreshOutline14,
   IconSparkle16, Button, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
@@ -35,6 +35,7 @@ import {
 import type {} from '../locales.ts'
 import { categoryLabelMap, kindIconOf } from '../category-label.ts'
 import { basenameOf } from '../text.ts'
+import { FollowUp } from '../follow-up.tsx'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
@@ -121,13 +122,7 @@ function CommentThread({ t, card, readonly, chatAvailable, onComment, onFollowUp
           {comment.author === 'agent' && chatAvailable && (
             <>
               {' '}
-              <button
-                type="button"
-                className={css.followUp}
-                onClick={() => { onFollowUp(comment.text) }}
-              >
-                {t('chat.followup')} →
-              </button>
+              <FollowUp t={t} className={css.followUp} onFollowUp={() => { onFollowUp(comment.text) }} />
             </>
           )}
         </span>
@@ -587,6 +582,7 @@ export function BoardView({
                 disabled={sanitizeCategoryLabel(newCat) === undefined}
                 onClick={addCat}
               >
+                <IconPlusOutline16 size={12} />
                 {t('cat.add')}
               </button>
             </div>

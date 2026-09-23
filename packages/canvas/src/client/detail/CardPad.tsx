@@ -27,6 +27,7 @@ import {
   type PadTool,
 } from '../draw.ts'
 import type { CanvasDetailProps } from '../contract.ts'
+import { IconEraserOutline16, IconUndoOutline16 } from '../icons.tsx'
 import { DrawFigure } from './DrawFigure.tsx'
 import css from './CardPad.module.css'
 
@@ -185,12 +186,13 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
             variant={tool === 'erase' ? 'primary' : 'toolbar'}
             aria-pressed={tool === 'erase'}
             disabled={!hasInk}
+            icon={<IconEraserOutline16 size={12} />}
             onClick={() => { onTool(tool === 'erase' ? 'text' : 'erase') }}
           >
             {t('draw.erase')}
           </Button>
           {hasInk && (
-            <Button size="sm" onClick={undo}>
+            <Button size="sm" icon={<IconUndoOutline16 size={12} />} onClick={undo}>
               {t('draw.undo')}
             </Button>
           )}
