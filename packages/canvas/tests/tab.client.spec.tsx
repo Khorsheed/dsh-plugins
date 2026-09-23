@@ -224,6 +224,29 @@ describe('CanvasTab — list, switcher, board', () => {
     await screen.findByText('卡片 c_1')
   })
 
+  // The notice used to test only "is the list known", so the whole
+  // list-landed-but-board-still-out window read to the user as 还没有画布 —
+  // the account does have a canvas, and the auto-open has already named it.
+  it('waits on the board it already opened, instead of claiming an empty account', async () => {
+    const { mocks, props, boards } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    let release!: (value: Result<BoardReadOutcome>) => void
+    mocks.readBoard.mockReturnValue(new Promise(resolve => { release = resolve }))
+    render(<CanvasTab {...props} />)
+    await waitFor(() => { expect(mocks.readBoard).toHaveBeenCalledWith({ canvasId: CANVAS_ID }) })
+    expect(screen.getByText('加载中…')).toBeTruthy()
+    expect(screen.queryByText('还没有画布')).toBeNull()
+    const current = boards.get(CANVAS_ID)
+    release({ ok: true, value: { ok: true, board: current as CanvasBoard, version: '1' } })
+    await screen.findByText('卡片 c_1')
+  })
+
+  it('claims an empty account only once the list is known and empty', async () => {
+    const { props } = makeHarness({ boards: [] })
+    render(<CanvasTab {...props} />)
+    expect(await screen.findByText('还没有画布')).toBeTruthy()
+    expect(screen.queryByText('加载中…')).toBeNull()
+  })
+
   it('opens the first canvas and reports the focus to the host', async () => {
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)

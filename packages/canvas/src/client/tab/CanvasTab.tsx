@@ -550,7 +550,14 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         )
       ) : (
         <div className={css.notice}>
-          {loadError ?? (canvases === null ? t('state.loading') : t('space.empty'))}
+          {/* 还没有画布 is a claim about the account, and until the list is
+              known AND empty, with nothing opened or opening, it is false. The
+              auto-open chain designates a canvas and then awaits its board, so
+              a known-empty test alone would still flash the lie for exactly
+              those two round-trips. */}
+          {loadError ?? (canvases !== null && openId === null && canvases.length === 0
+            ? t('space.empty')
+            : t('state.loading'))}
         </div>
       )}
 
