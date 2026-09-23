@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { IconWarningOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconWarningOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls ui-conversation's SlotMap merge (the input.right seat and
 // its InputZone owner share).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -75,7 +75,7 @@ export function CompactGuardButton({
         onClick={run}
       >
         <span className={css.icon} aria-hidden>
-          <IconWarningOutline16 size={14} />
+          <IconWarningOutlineMedium size={14} />
         </span>
         {t('button.label')}
       </button>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { GuardScopeSnapshot } from './scope.ts'
 import type { ContextGuardConfig } from './config.ts'
 import type { ContextGuardBundleConfigProps, ContextGuardSettingsCardProps } from './slots.ts'
 import css from './SettingsCard.module.css'
@@ -18,7 +18,7 @@ function parseNumber(text: string): number {
 }
 
 /** Whether the user layer carries a field (presence marks an override). */
-function overridden(snapshot: SettingsScopeSnapshot<ContextGuardConfig>, field: keyof ContextGuardConfig): boolean {
+function overridden(snapshot: GuardScopeSnapshot, field: keyof ContextGuardConfig): boolean {
   return snapshot.user !== undefined
     && typeof snapshot.user === 'object'
     && snapshot.user !== null
@@ -30,10 +30,10 @@ type Translate = ContextGuardSettingsCardProps['t']
 
 /**
  * The staged threshold edit both settings surfaces share. Two staged number
- * fields write through the shared settingsScope on save; per-field reset
+ * fields write through the shared settings scope on save; per-field reset
  * reverts a field to the composition layer.
  */
-function useThresholdDraft(scope: Scope, snapshot: SettingsScopeSnapshot<ContextGuardConfig>, value: ContextGuardConfig | undefined) {
+function useThresholdDraft(scope: Scope, snapshot: GuardScopeSnapshot, value: ContextGuardConfig | undefined) {
   const [threshold, setThreshold] = useState<FieldDraft>({ text: '', invalid: false })
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(false)
@@ -101,7 +101,7 @@ function useThresholdDraft(scope: Scope, snapshot: SettingsScopeSnapshot<Context
 
 /** The threshold field row and the save/discard footer both settings surfaces render. */
 function SettingsBody({ snapshot, draft, t }: {
-  readonly snapshot: SettingsScopeSnapshot<ContextGuardConfig>
+  readonly snapshot: GuardScopeSnapshot
   readonly draft: ReturnType<typeof useThresholdDraft>
   readonly t: Translate
 }) {
@@ -185,7 +185,7 @@ export function ContextGuardSettingsCard({ useConfig, scope, t }: ContextGuardSe
           <span className={css.name}>{title}</span>
           <span className={css.description}>{t('settings.description')}</span>
         </span>
-        <IconChevronDownOutline14 className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+        <IconChevronDownOutlineMedium className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </button>
       {open && value !== undefined && <SettingsBody snapshot={snapshot} draft={draft} t={t} />}
     </li>

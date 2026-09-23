@@ -10,7 +10,7 @@
  * intentionally empty — the structural type below is exact).
  */
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { GuardScope } from './scope.ts'
 // Type-only: pulls ui-conversation's SlotMap merge
 // ('conversation.input.right' and its InputZone owner share).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -19,7 +19,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
-import type { ContextGuardConfig } from './config.ts'
 
 /** Injected action face of the composer-tool-row entry. */
 export interface ContextGuardInjected {
@@ -34,7 +33,7 @@ export interface ContextGuardInjected {
   compactNow: () => Promise<string | null>
   hooks: {
     /** The shared `context-guard` settings section; the button binds `useConfig` to it. */
-    config: SettingsScope<ContextGuardConfig>
+    config: GuardScope
   }
 }
 
@@ -47,10 +46,10 @@ export type CompactGuardButtonProps =
 /** Injected face of both settings surfaces: the same shared section, read and written here. */
 export interface ContextGuardSettingsCardInjected {
   /** The live section handle; the card stages edits and writes through it on save. */
-  scope: SettingsScope<ContextGuardConfig>
+  scope: GuardScope
   hooks: {
     /** The shared `context-guard` settings section; the card binds `useConfig` to it. */
-    config: SettingsScope<ContextGuardConfig>
+    config: GuardScope
   }
 }
 

@@ -11,8 +11,10 @@
  * rides the official `/compact` command
  * channel (`remote.commands.execute` → host `ctx.commands` →
  * `ctx.compaction.compactNow`); the config rides the official settings
- * surface (host half registers the namespace, this half binds its
- * `settingsScope`), so neither needs a new RPC or any edit to core packages;
+ * surface (the host half serves the section — its own Config on rc.1, a
+ * `settings.register` namespace on 0.1.5 — and this half binds it through
+ * ./scope.ts, probing rc.1's `configForms` first and 0.1.5's `settingsScope`
+ * second), so neither needs a new RPC or any edit to core packages;
  * composing this plugin out of cordis.yml removes every surface it adds.
  *
  * Why this exists: the official auto-compaction fires at `agent/pre-step`
@@ -37,8 +39,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls ui-conversation's SlotMap merge
 // ('conversation.input.right').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-// Type-only: pulls the ctx.settingsScope service merge.
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls ui-plugin-manager's SlotMap merge
 // ('plugins.bundle.config').
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
@@ -48,6 +48,7 @@ import type {} from '@deepseek-ai/dsh-token-meter/client'
 import { CONTEXT_GUARD_NS } from '../namespace.ts'
 import { resolveConfig, type ContextGuardConfig } from './config.ts'
 import { en, NS, zh } from './locales.ts'
+import { bindGuardScope, GuardScopeChannel } from './scope.ts'
 import type { ContextGuardInjected, ContextGuardSettingsCardInjected } from './slots.ts'
 import { CompactGuardButton } from './CompactGuardButton.tsx'
 import { ContextGuardBundleConfig, ContextGuardSettingsCard } from './SettingsCard.tsx'
@@ -57,6 +58,7 @@ export { resolveConfig } from './config.ts'
 export type { ContextGuardKey } from './locales.ts'
 export { guardReading } from './guard.ts'
 export type { GuardInput, GuardLevel, GuardReading } from './guard.ts'
+export type { GuardScope, GuardScopeSnapshot } from './scope.ts'
 export type {
   CompactGuardButtonProps, ContextGuardBundleConfigProps, ContextGuardInjected, ContextGuardSettingsCardInjected, ContextGuardSettingsCardProps,
 } from './slots.ts'
@@ -71,8 +73,13 @@ export { NS }
  */
 const PACKAGE_NAME = '@khorsheed/dsh-context-guard'
 
-/** Required services: the slot ledger, the command Remote, the settings scope, and the copy. */
-export const inject = ['slots', 'remote', 'remote.commands', 'locale', 'settingsScope']
+/**
+ * Required services: the slot ledger, the command Remote, and the copy. The
+ * settings scope is deliberately NOT injected — rc.1 and 0.1.5 name different
+ * services (`configForms` vs `settingsScope`), and a composition without
+ * either must not pend the bundle (see ./scope.ts).
+ */
+export const inject = ['slots', 'remote', 'remote.commands', 'locale']
 
 /**
  * Client plugin body: register the composer-tool-row compact button and the
@@ -85,9 +92,11 @@ export function apply(ctx: Context, config?: Partial<ContextGuardConfig>): void 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'context-guard: dictionaries')
 
   // One shared live section: the settings card writes it, the button reads
-  // it. While the settings surface is absent, the button falls back to the
-  // composition-time values above.
-  const scope = ctx.settingsScope.bind<ContextGuardConfig>({ namespace: CONTEXT_GUARD_NS })
+  // it. The channel binds whichever settings face the host line serves and
+  // publishes `unavailable` until then — the button falls back to the
+  // composition-time values above, the card renders nothing.
+  const scope = new GuardScopeChannel()
+  bindGuardScope(ctx, scope)
 
   // The slot is declared by ui-conversation, whose apply order relative to
   // this plugin is unconstrained: register through slots.inject so the entry
