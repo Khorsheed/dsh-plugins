@@ -364,10 +364,3 @@
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
 }
-
-.hint {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--dsw-alias-label-tertiary);
-}

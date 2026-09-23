@@ -326,11 +326,9 @@ export function LinkView({
       }
       const x = whole(clamp(node.x + dx, 0, stage.w - node.w))
       const y = whole(clamp(node.y + dy, 0, stage.h - node.h))
-      const lane = laneAt(lanes, { ...node, x, y })
-      commit(
-        { positions: [{ id: node.id, x, y }] },
-        lane === undefined ? t('link.leftLane') : t('link.enteredLane', { lane: laneName(lane, t) }),
-      )
+      // The drop's result is visible where the card landed — a lane badge on
+      // the node — so the gesture commits silently.
+      commit({ positions: [{ id: node.id, x, y }] })
     })
   }
 
@@ -364,13 +362,10 @@ export function LinkView({
       if (!moved) return
       const dragged = dragLane(lane, cardsAtStart, dx, dy, stage)
       const carried = dragged.cards.map(card => ({ id: card.id, x: whole(card.x), y: whole(card.y) }))
-      commit(
-        {
-          lanes: mergeLane(board.lanes, lane.id, rectOf(dragged.lane)),
-          ...(carried.length === 0 ? {} : { positions: carried }),
-        },
-        carried.length === 0 ? undefined : t('link.laneMoved', { count: String(carried.length) }),
-      )
+      commit({
+        lanes: mergeLane(board.lanes, lane.id, rectOf(dragged.lane)),
+        ...(carried.length === 0 ? {} : { positions: carried }),
+      })
     })
   }
 
@@ -392,8 +387,8 @@ export function LinkView({
       }
       const hits = marqueeHits(band, placed)
       if (hits.length === 0) return
+      // The box's catch lights up selected on the spot — no toast repeats it.
       onAddSelection(hits)
-      onToast(t('link.marquee', { count: String(hits.length) }))
     })
   }
 
@@ -423,7 +418,8 @@ export function LinkView({
       const target = release.target instanceof Element ? release.target.closest('[data-node]') : null
       const other = target instanceof HTMLElement ? target.dataset.node : undefined
       if (other === undefined || other === node.id || isLinked(board.links, node.id, other)) return
-      commit({ links: [...board.links, { from: node.id, to: other }] }, t('link.linked'))
+      // The finished wire is the confirmation: it appears between the cards.
+      commit({ links: [...board.links, { from: node.id, to: other }] })
     })
   }
 
@@ -437,7 +433,9 @@ export function LinkView({
       y: (el?.scrollTop ?? 0) + 24,
       ...NEW_LANE,
     }
-    commit({ lanes: [...board.lanes, lane] }, t('link.laneAdded'))
+    // The new lane appears with its name field already open — that focus is
+    // the announcement, so no toast follows it.
+    commit({ lanes: [...board.lanes, lane] })
     setRenaming(lane.id)
     setDraftLabel('')
   }
@@ -609,18 +607,15 @@ export function LinkView({
       <div className={css.bar}>
         <span className={css.barInfo}>
           {send.length === 0
-            ? t('link.none')
-            : `${expand
+            ? t('link.boardTotals', { links: String(visibleLinks.length), lanes: String(lanes.length) })
+            : expand
               ? t('link.infoExpanded', {
                 count: String(send.length),
                 seeds: String(group.seeds.length),
                 lines: String(group.viaLine.length),
                 lanes: String(group.viaLane.length),
               })
-              : t('link.infoPlain', { count: String(send.length) })} ${t('link.boardTotals', {
-              links: String(visibleLinks.length),
-              lanes: String(lanes.length),
-            })}`}
+              : t('link.infoPlain', { count: String(send.length) })}
         </span>
         <span className={css.spacer} />
         {wireSel !== null && !readonly && (
@@ -632,6 +627,7 @@ export function LinkView({
               setWireSel(null)
               // A wire is its endpoints — matching by identity would silently
               // no-op the moment the board re-reads and the object is fresh.
+              // And a deletion reports itself: the line is 1.6px of feedback.
               commit({
                 links: board.links.filter(link => !(link.from === gone.from && link.to === gone.to)),
               }, t('link.wireDropped'))
@@ -645,11 +641,7 @@ export function LinkView({
           className={css.barButton}
           data-on={expand || undefined}
           title={t('link.expandTitle')}
-          onClick={() => {
-            const next = !expand
-            setExpand(next)
-            onToast(next ? t('link.expandOn') : t('link.expandOff'))
-          }}
+          onClick={() => { setExpand(value => !value) }}
         >
           {`${t('link.expand')} ${expand ? t('link.on') : t('link.off')}`}
         </button>
@@ -672,22 +664,20 @@ export function LinkView({
             {t('compose.article')}
           </button>
         )}
-        <button
-          type="button"
-          className={css.barGhost}
-          onClick={() => {
-            const had = selection.size > 0 || wireSel !== null || expand
-            onClearSelection()
-            setWireSel(null)
-            setExpand(false)
-            onToast(had ? t('link.cleared') : t('link.clearedNone'))
-          }}
-        >
-          {t('board.clearSelection')}
-        </button>
+        {(selection.size > 0 || wireSel !== null || expand) && (
+          <button
+            type="button"
+            className={css.barGhost}
+            onClick={() => {
+              onClearSelection()
+              setWireSel(null)
+              setExpand(false)
+            }}
+          >
+            {t('board.clearSelection')}
+          </button>
+        )}
       </div>
-
-      <p className={css.hint}>{t('link.hint')}</p>
     </div>
   )
 }

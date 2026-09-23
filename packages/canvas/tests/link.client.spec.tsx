@@ -358,7 +358,7 @@ const kindOf = (container: HTMLElement, id: string): string => nodeOf(container,
 /** The scroll host: `stageRef` is the stage div that wraps the world div. */
 const stageOf = (container: HTMLElement): HTMLElement => worldOf(container).parentElement as HTMLElement
 /** The info line under the stage — the one element that spells out the send set. */
-const infoOf = async (): Promise<string> => (await screen.findByText(/要发出去|还没选/)).textContent ?? ''
+const infoOf = async (): Promise<string> => (await screen.findByText(/要发出去|板上有/)).textContent ?? ''
 /**
  * The ink inside a node. jsdom's selector engine lowercases attribute NAMES, so
  * an SVG element's `viewBox` can only be read back by hand — and a node always
@@ -564,7 +564,6 @@ describe('LinkView — press, click, drag', () => {
     await waitFor(() => {
       expect(nodeOf(container, 'c_1').style.left).toBe('130px')
     })
-    await screen.findByText(/这张不在任何分区里了/)
   })
 
   it('clamps a drag so the node cannot leave the visible stage box, either way', async () => {
@@ -605,10 +604,9 @@ describe('LinkView — press, click, drag', () => {
       expect(bench.mocks.setLayout).toHaveBeenCalledTimes(1)
     })
     expect(pickedOf(container)).toEqual([])
-    expect(screen.queryByText(/框住了/)).toBeNull()
   })
 
-  it('names the lane a drag entered, and says so again when the next drag leaves it', async () => {
+  it('shows the lane a drag entered in the node’s kind line, and drops it when the next drag leaves', async () => {
     const bench = makeHarness({
       boards: [board(CANVAS_ID, [card('c_1', { x: 10, y: 10 }), card('c_2', { x: 400, y: 300 })], {
         lanes: [lane('lane_a', { x: 300, y: 0, w: 250, h: 120 }, '论点A')],
@@ -622,19 +620,18 @@ describe('LinkView — press, click, drag', () => {
       expect(bench.mocks.setLayout).toHaveBeenCalledTimes(1)
     })
     expect(writeAt(bench.mocks, 0)).toEqual({ canvasId: CANVAS_ID, positions: [{ id: 'c_1', x: 360, y: 30 }] })
-    await screen.findByText(/这张进到了「论点A」/)
+    // The landing is announced by the node's own badge, not a toast.
     await waitFor(() => {
       expect(kindOf(container, 'c_1')).toBe('灵感 · 论点A')
     })
-    // Back out: the containment is re-read on the COMMITTED position, so the note
-    // flips with it — and the lane row itself is never rewritten.
+    // Back out: the containment is re-read on the COMMITTED position, so the
+    // badge flips with it — and the lane row itself is never rewritten.
     drag(nodeOf(container, 'c_1'), { x: 10, y: 10 }, { x: -340, y: 10 })
     await waitFor(() => {
       expect(bench.mocks.setLayout).toHaveBeenCalledTimes(2)
     })
     expect(writeAt(bench.mocks, 1).positions).toEqual([{ id: 'c_1', x: 10, y: 30 }])
     expect(writeAt(bench.mocks, 1).lanes).toBeUndefined()
-    await screen.findByText(/这张不在任何分区里了/)
     expect(kindOf(container, 'c_1')).toBe('灵感')
   })
 })
@@ -650,7 +647,7 @@ describe('LinkView — lines', () => {
     // The new row is appended to what the board already held, in the direction it
     // was drawn: an unordered pair, deduplicated on read.
     expect(writeAt(bench.mocks, 0)).toEqual({ canvasId: CANVAS_ID, links: [link('c_1', 'c_2')] })
-    await screen.findByText('连上了')
+    // The finished wire IS the confirmation — it appears, and no toast repeats it.
     await waitFor(() => {
       expect(wiresOf(container)).toBe(1)
     })
@@ -694,7 +691,6 @@ describe('LinkView — lines', () => {
     drag(portOf(container, 'c_1'), { x: 180, y: 40 }, { x: 210, y: 40 }, nodeOf(container, 'c_2'))
     await settled()
     expect(bench.mocks.setLayout).not.toHaveBeenCalled()
-    expect(screen.queryByText('连上了')).toBeNull()
     expect(wiresOf(container)).toBe(1)
   })
 
@@ -713,7 +709,6 @@ describe('LinkView — lines', () => {
     drag(portOf(container, 'c_1'), { x: 180, y: 40 }, { x: 500, y: 300 })
     await settled()
     expect(bench.mocks.setLayout).not.toHaveBeenCalled()
-    expect(screen.queryByText('连上了')).toBeNull()
     expect(wiresOf(container)).toBe(0)
   })
 
@@ -808,9 +803,8 @@ describe('LinkView — box select', () => {
     const container = await face(bench, 3)
     // The two auto-parked nodes are NODE.w wide from x 14 and x 198, so a band
     // 0..210 × 0..210 covers both — just barely the second one — and lets the
-    // placed one alone.
+    // placed one alone. The catch lights up on the spot, with no toast to repeat it.
     drag(worldOf(container), { x: 0, y: 0 }, { x: 210, y: 210 })
-    await screen.findByText('框住了 2 张')
     expect(pickedOf(container)).toEqual(['c_1', 'c_2'])
     expect(bench.mocks.setLayout).not.toHaveBeenCalled()
     expect(nodeOf(container, 'c_far').style.left).toBe('900px')
@@ -822,7 +816,6 @@ describe('LinkView — box select', () => {
     tap(nodeOf(container, 'c_far'))
     expect(pickedOf(container)).toEqual(['c_far'])
     drag(worldOf(container), { x: 0, y: 0 }, { x: 210, y: 210 })
-    await screen.findByText('框住了 2 张')
     expect(pickedOf(container)).toEqual(['c_1', 'c_2', 'c_far'])
   })
 
@@ -836,7 +829,6 @@ describe('LinkView — box select', () => {
     // pointer as screen units would answer the exact opposite — c_2 only.
     scrollStage(container, 200)
     drag(worldOf(container), { x: 0, y: 0 }, { x: 210, y: 210 })
-    await screen.findByText('框住了 1 张')
     expect(pickedOf(container)).toEqual(['c_1'])
   })
 
@@ -891,9 +883,9 @@ describe('LinkView — lanes', () => {
       expect(lanesOf(container)).toHaveLength(2)
     })
     expect(one(container, `[data-lane="${added.id}"]`)).toBeTruthy()
-    // A brand-new lane is named right away: its rename field is already open.
+    // A brand-new lane is named right away: its rename field is already open —
+    // that focus is the announcement, so no toast follows the gesture.
     expect((screen.getByRole('textbox', { name: '点标题改名' }) as HTMLInputElement).value).toBe('')
-    await screen.findByText(/分区就是一个容器/)
   })
 
   it('renames a lane through its title, as a lanes patch that moves no box and no card', async () => {
@@ -949,7 +941,6 @@ describe('LinkView — lanes', () => {
     expect(request.lanes).toEqual([lane('lane_a', { x: 50, y: 60, w: 220, h: 200 }, '论点A')])
     expect(request.positions).toEqual([{ id: 'c_1', x: 100, y: 90 }])
     expect(request.links).toBeUndefined()
-    await screen.findByText(/框走了 1 张/)
     await waitFor(() => {
       expect(nodeOf(container, 'c_out').style.left).toBe('400px')
     })
@@ -1044,9 +1035,7 @@ describe('LinkView — the send set', () => {
   it('sends what was clicked while 顺线扩一圈 is off, and marks nobody as an addition', async () => {
     const { container } = await pickedPair()
     // The whole info line, so a count landing in the wrong slot fails it.
-    expect(await infoOf()).toBe(
-      `${t('link.infoPlain', { count: '1' })} ${t('link.boardTotals', { links: '1', lanes: '0' })}`,
-    )
+    expect(await infoOf()).toBe(t('link.infoPlain', { count: '1' }))
     // Off means OFF: the graph adds nothing to the send set, and the cluster
     // marker — which exists to make an addition the user did not click visible —
     // is on nothing at all, least of all the card that was clicked.
@@ -1073,9 +1062,7 @@ describe('LinkView — the send set', () => {
     const { container } = await openLinkFace(bench, 5)
     tap(nodeOf(container, 'c_1'))
     expect(clusteredOf(container)).toEqual([])
-    expect(await infoOf()).toBe(
-      `${t('link.infoPlain', { count: '1' })} ${t('link.boardTotals', { links: '2', lanes: '2' })}`,
-    )
+    expect(await infoOf()).toBe(t('link.infoPlain', { count: '1' }))
     fireEvent.click(screen.getByRole('button', { name: '顺线扩一圈 关' }))
     // c_2 and c_5 join along the chain (c_5 only transitively) and c_3 joins as
     // the SEED's lane mate. c_4 — a lane mate of c_2, i.e. reachable only THROUGH
@@ -1088,11 +1075,10 @@ describe('LinkView — the send set', () => {
     expect(nodeOf(container, 'c_4').hasAttribute('data-cluster')).toBe(false)
     expect(nodeOf(container, 'c_4').hasAttribute('data-picked')).toBe(false)
     expect(await infoOf()).toBe(
-      `${t('link.infoExpanded', { count: '4', seeds: '1', lines: '2', lanes: '1' })} ${t('link.boardTotals', { links: '2', lanes: '2' })}`,
+      t('link.infoExpanded', { count: '4', seeds: '1', lines: '2', lanes: '1' }),
     )
     expect(screen.getByRole('button', { name: '顺线扩一圈 开' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '就这一组提问 · 4 张' })).toBeTruthy()
-    await screen.findByText(/开了：这一组会顺线/)
   })
 
   it('sends the whole cluster as one group ask, over the cards the line joined', async () => {
@@ -1145,7 +1131,8 @@ describe('LinkView — the send set', () => {
   it('offers no send button with nothing picked, and none at all without the chat seam', async () => {
     const bench = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])], chatAvailable: false })
     const container = await face(bench, 1)
-    expect(await infoOf()).toContain('还没选')
+    // Nothing picked: the info line falls back to what the board itself holds.
+    expect(await infoOf()).toContain('板上有')
     expect(screen.queryByRole('button', { name: /生成文章/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /就这一组提问/ })).toBeNull()
     // The cards still pick on a board with no chat to send them to.
@@ -1154,21 +1141,21 @@ describe('LinkView — the send set', () => {
     expect(screen.queryByRole('button', { name: /生成文章/ })).toBeNull()
   })
 
-  it('forgets the expansion with the selection, and says what a clear did not delete', async () => {
+  it('forgets the expansion with the selection, and retires the clear button with nothing left to clear', async () => {
     const { container } = await pickedPair()
     fireEvent.click(screen.getByRole('button', { name: '顺线扩一圈 关' }))
     await waitFor(() => {
       expect(clusteredOf(container)).toEqual(['c_2'])
     })
     fireEvent.click(screen.getByRole('button', { name: '取消选择' }))
-    await screen.findByText(/还没选/)
-    await screen.findByText(/只是取消高亮/)
+    // The highlight went, nothing else: the line is still on the board, the
+    // info line falls back to the board's own totals, and with nothing left to
+    // clear the button itself is gone.
+    expect(await infoOf()).toContain('板上有')
     expect(screen.getByRole('button', { name: '顺线扩一圈 关' })).toBeTruthy()
     expect(clusteredOf(container)).toEqual([])
-    // The highlight went, nothing else: the line is still on the board.
     expect(wiresOf(container)).toBe(1)
-    fireEvent.click(screen.getByRole('button', { name: '取消选择' }))
-    await screen.findByText(/本来就没选/)
+    expect(screen.queryByRole('button', { name: '取消选择' })).toBeNull()
   })
 })
 
@@ -1241,7 +1228,6 @@ describe('LinkView — read-only', () => {
     drag(one(container, '[data-lane="lane_a"]'), { x: 20, y: 40 }, { x: 80, y: 120 })
     drag(one(container, '[data-lane-title="lane_a"]'), { x: 20, y: 40 }, { x: 80, y: 120 })
     drag(worldOf(container), { x: 0, y: 0 }, { x: 210, y: 210 })
-    await screen.findByText('框住了 2 张')
     expect(pickedOf(container)).toEqual(['c_1', 'c_2'])
     expect(nodeOf(container, 'c_1').style.left).toBe(`${grid(0).x}px`)
     expect(one(container, '[data-lane="lane_a"]').style.left).toBe('10px')
@@ -1250,7 +1236,9 @@ describe('LinkView — read-only', () => {
     expect(bench.mocks.patchCard).not.toHaveBeenCalled()
     // Nothing was moved and nothing was deleted: 取消选择 is still only a highlight.
     fireEvent.click(screen.getByRole('button', { name: '取消选择' }))
-    await screen.findByText(/只是取消高亮/)
+    await waitFor(() => {
+      expect(pickedOf(container)).toEqual([])
+    })
     expect(wiresOf(container)).toBe(1)
     // The read side is untouched: the pen still hands the host an address.
     fireEvent.doubleClick(nodeOf(container, 'c_1'))
