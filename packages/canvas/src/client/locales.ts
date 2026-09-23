@@ -157,6 +157,7 @@ export const zh = {
 
   'paste.page': '这是一整页网页，这张卡按网页渲染',
   'paste.table': '表格转成了 markdown 表',
+  'paste.formatted': '带格式粘贴：已转成 markdown',
   'paste.words': '这段单独看是一整页网页，可这张卡已有正文——标记贴进去只会留下一堆渲染不出来的字，所以落的是网页里的文字那一份。想让这段单独成网页：按 Esc 回画布，用「新卡」贴进空卡',
   'paste.markup': '剪贴板里只有标记、没有纯文本，原样贴进来了',
   'paste.image': '图片贴上来了；卡片正文里存的不是图，而是它的位置',
@@ -385,6 +386,7 @@ export const en: Record<keyof typeof zh, string> = {
 
   'paste.page': 'That was a whole page — this card now renders as one',
   'paste.table': 'The table became a markdown table',
+  'paste.formatted': 'Formatted paste: converted to markdown',
   'paste.words': 'That reads as a whole page on its own, but this card already has text — the markup would leave words that render as nothing. What landed is the text of the page. For the page itself: Esc back to the board and paste it into an empty card via "New card"',
   'paste.markup': 'The clipboard carried markup only, so it went in as it came',
   'paste.image': 'Image added — the card text holds where it lives, not the picture',

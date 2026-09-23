@@ -283,6 +283,24 @@ describe('CanvasDetailView', () => {
     expect(screen.queryByDisplayValue('改过的正文')).toBeNull()
   })
 
+  it('pastes a copied rich-text answer as markdown — the formatting survives', async () => {
+    const { view, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const editor = await screen.findByDisplayValue('卡片 c_1 的正文')
+    const taken = pasteInto(editor, {
+      'text/html': '<p>要点<strong>加粗</strong></p><ul><li>一条</li></ul>',
+      'text/plain': '要点加粗\n一条',
+    })
+    expect(taken).toBe(true)
+    expect((editor as HTMLTextAreaElement).value).toBe(
+      '要点**加粗**\n\n- 一条卡片 c_1 的正文',
+    )
+    await screen.findByText(/带格式粘贴：已转成 markdown/)
+  })
+
   it('pastes a sheet as a markdown table, into the caret, and reports it', async () => {
     const { view, props } = makeHarness([card('c_1')])
     view.select('c_1')

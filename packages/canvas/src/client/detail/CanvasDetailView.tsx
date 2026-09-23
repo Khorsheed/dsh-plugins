@@ -61,6 +61,7 @@ import css from './CanvasDetailView.module.css'
 const PASTE_VERDICT: Record<Exclude<PasteArm, 'plain'>, CanvasKey> = {
   page: 'paste.page',
   table: 'paste.table',
+  formatted: 'paste.formatted',
   words: 'paste.words',
   markup: 'paste.markup',
 }

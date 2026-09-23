@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  choosePaste, convertPaste, htmlTableToMarkdown, looksLikeTsv, parseDelimited,
+  choosePaste, convertPaste, htmlTableToMarkdown, htmlToMarkdown, looksLikeTsv, parseDelimited,
   toMarkdownTable,
 } from '../src/client/paste-table.ts'
 
@@ -98,6 +98,42 @@ describe('htmlTableToMarkdown', () => {
   })
 })
 
+describe('htmlToMarkdown', () => {
+  it('converts the everyday inline set: bold, italic, strike, code, links', () => {
+    expect(htmlToMarkdown('<p><b>粗</b> <em>斜</em> <s>删</s> <code>x=1</code> <a href="https://a.dev">链</a></p>')!.markdown)
+      .toBe('**粗** *斜* ~~删~~ `x=1` [链](https://a.dev)')
+  })
+
+  it('blocks headings, lists (ordered and nested), quotes, fences and rules', () => {
+    const html = '<h1>题</h1><p>段</p><ul><li>甲</li><li>乙<ul><li>乙一</li></ul></li></ul>'
+      + '<ol start="3"><li>三</li></ol><blockquote><p>引</p></blockquote><pre>码\n二行</pre><hr>'
+    expect(htmlToMarkdown(html)!.markdown).toBe(
+      '# 题\n\n段\n\n- 甲\n- 乙\n  - 乙一\n\n3. 三\n\n> 引\n\n```\n码\n二行\n```\n\n---',
+    )
+  })
+
+  it('converts a table sitting inside prose along with the prose', () => {
+    const html = '<p>前文</p><table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table><p>后文</p>'
+    expect(htmlToMarkdown(html)!.markdown).toBe(
+      '前文\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n后文',
+    )
+  })
+
+  it('never lets scripts or styles through, and keeps an alt text', () => {
+    const html = '<p>图<img alt="示意图" src="x.png"></p><script>bad()</script><style>.x{}</style>'
+    expect(htmlToMarkdown(html)!.markdown).toBe('图示意图')
+  })
+
+  it('collapses a non-fetchable link to its words', () => {
+    expect(htmlToMarkdown('<a href="#anchor">锚</a>')!.markdown).toBe('锚')
+  })
+
+  it('returns null for markup that holds no words at all', () => {
+    expect(htmlToMarkdown('<script>only()</script>')).toBeNull()
+    expect(htmlToMarkdown('')).toBeNull()
+  })
+})
+
 describe('convertPaste', () => {
   it('prefers the HTML table over the plain-text flavour', () => {
     const html = '<table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>'
@@ -153,11 +189,37 @@ describe('choosePaste', () => {
       .toEqual({ arm: 'table', text: '| 名称 | 数量 |\n| --- | --- |\n| 伞 | 2 |' })
   })
 
-  it('says nothing about rich text that was never a page', () => {
-    expect(choosePaste('<b>粗</b>的话', '粗的话', held(''))).toEqual({ arm: 'plain', text: '粗的话' })
+  it('converts rich text that was never a page: the formatting survives', () => {
+    expect(choosePaste('<b>粗</b>的话', '粗的话', held('')))
+      .toEqual({ arm: 'formatted', text: '**粗**的话' })
   })
 
-  it('inserts markup as it came when the clipboard carried no text at all', () => {
-    expect(choosePaste('<b>粗</b>', '   ', held(''))).toEqual({ arm: 'markup', text: '<b>粗</b>' })
+  it('converts a copied chat answer — headings, lists and links included', () => {
+    const html = '<h2>结论</h2><p>要点<strong>如下</strong>：</p><ul><li>一条</li><li>又一条</li></ul>'
+      + '<p>见<a href="https://example.com/a">原文</a>。</p>'
+    expect(choosePaste(html, '结论\n要点如下：\n一条\n又一条\n见原文。', held(''))).toEqual({
+      arm: 'formatted',
+      text: '## 结论\n\n要点**如下**：\n\n- 一条\n- 又一条\n\n见[原文](https://example.com/a)。',
+    })
+  })
+
+  it('declines a conversion that drops words the plain flavor kept', () => {
+    const rich = '<span>只有<strong>一半</strong></span>'
+    expect(choosePaste(rich, '只有一半，还有另一半', held('')))
+      .toEqual({ arm: 'plain', text: '只有一半，还有另一半' })
+  })
+
+  it('lets the browser paste when the conversion adds nothing over the text', () => {
+    const html = '<div>第一段</div><div>第二段</div>'
+    const plain = '第一段\n\n第二段'
+    expect(choosePaste(html, plain, held(''))).toEqual({ arm: 'plain', text: plain })
+  })
+
+  it('converts markup the clipboard carried no text for', () => {
+    expect(choosePaste('<b>粗</b>', '   ', held(''))).toEqual({ arm: 'formatted', text: '**粗**' })
+  })
+
+  it('keeps dead markup as it came when it converts to nothing', () => {
+    expect(choosePaste('<script>x()</script>', '   ', held(''))).toEqual({ arm: 'markup', text: '<script>x()</script>' })
   })
 })
