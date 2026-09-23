@@ -38,10 +38,12 @@
       "types": "./lib/typert.remote-client.d.ts",
       "default": "./lib/typert.remote-client.js"
     },
+    "./locale/*.json": "./locale/*.json",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
+    "locale/*.json",
     "lib",
     "lib/typert.host.d.ts",
     "lib/typert.host.js",

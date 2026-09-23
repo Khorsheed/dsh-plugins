@@ -33,6 +33,7 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./locale/*.json": "./locale/*.json",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -89,6 +90,7 @@
     "react-dom": "^18.2.0"
   },
   "files": [
+    "locale/*.json",
     "lib",
     "cordis.patch.yml",
     "LICENSE"

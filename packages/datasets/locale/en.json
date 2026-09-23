@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Datasets",
+    "description": "Manage versioned datasets in git repositories with layered access control."
+  }
+}

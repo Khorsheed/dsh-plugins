@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Capture",
+    "description": "Render JS-heavy pages in headless Chrome and return the static DOM."
+  }
+}

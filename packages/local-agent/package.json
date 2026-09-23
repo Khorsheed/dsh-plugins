@@ -47,6 +47,7 @@
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
   "dsh": {
@@ -73,7 +74,8 @@
     "lib/typert.host.js",
     "lib/typert.remote-client.d.ts",
     "lib/typert.remote-client.js",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "locale/*.json"
   ],
   "license": "MIT",
   "dependencies": {
