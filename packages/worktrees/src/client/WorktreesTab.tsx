@@ -21,8 +21,8 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  IconBranchOutline16, IconChevronDownOutline14, IconCopyOutline16, IconFolderOpenOutline16,
-  IconPanelLeftOutline16, IconRefreshOutline16,
+  IconBranchOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium,
+  IconPanelLeftOutlineMedium, IconRefreshOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChangedFile, FileDiffRequest, WorktreeInfo } from '../types.ts'
 import type { WorktreesTabProps } from './contract.ts'
@@ -349,7 +349,7 @@ export function WorktreesTab({
             title={t('tree.expand')}
             onClick={() => { actions.toggleTree() }}
           >
-            <IconPanelLeftOutline16 />
+            <IconPanelLeftOutlineMedium />
           </button>
         </div>
       )
@@ -396,10 +396,10 @@ export function WorktreesTab({
               title={t('wt.pickWorktree')}
               onClick={onToggleWorktrees}
             >
-              <IconBranchOutline16 />
+              <IconBranchOutlineMedium />
               <span className={css.branchText}>{summary?.branch ?? t('summary.detached')}</span>
               {summary !== null && summary.isMain && summary.branch !== 'main' && <span className={css.mainTag}>main</span>}
-              <IconChevronDownOutline14 className={css.branchChevron} />
+              <IconChevronDownOutlineMedium className={css.branchChevron} />
             </button>
             {activeWorktreePath !== null && directTarget !== null && (
               <button
@@ -410,7 +410,7 @@ export function WorktreesTab({
                   void directAgent(sessionId, directTarget.path, directTarget.branch).catch(() => { /* degrade */ })
                 }}
               >
-                <IconBranchOutline16 />
+                <IconBranchOutlineMedium />
                 {t('wt.direct')}
               </button>
             )}
@@ -450,7 +450,7 @@ export function WorktreesTab({
         </div>
         <div className={css.actions}>
           <button type="button" className={css.action} title={t('action.refresh')} onClick={() => { actions.refresh() }}>
-            <IconRefreshOutline16 />
+            <IconRefreshOutlineMedium />
           </button>
           <button
             type="button"
@@ -467,12 +467,12 @@ export function WorktreesTab({
               })
             }}
           >
-            <IconCopyOutline16 />
+            <IconCopyOutlineMedium />
             {copied && <span className={css.copied}>{t('action.copyBranch')}</span>}
           </button>
           {folderApp !== undefined && worktreePath !== '' && (
             <button type="button" className={css.action} title={t('action.openFolder')} onClick={() => { openExternal(folderApp, worktreePath) }}>
-              <IconFolderOpenOutline16 />
+              <IconFolderOpenOutlineMedium />
             </button>
           )}
         </div>
