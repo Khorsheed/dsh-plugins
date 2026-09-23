@@ -98,3 +98,14 @@ Supporting rules that fell out of the same migration:
   dual-path host arm; the deleted official types (`SettingsScope`,
   `SettingsProvider`) can no longer anchor fixtures, so fakes restate the legacy
   face by hand.
+- **cordis 4.0.4 service-access guard (rc.1 wave, verified live on the 3093
+  boot): an undeclared `ctx.<service>` property read on a plugin fiber throws
+  `cannot get property "<name>" without inject`** (vendor/cordis reflect.ts
+  proxy; `ctx.get(name)` stays guard-free). The local-agent client family's
+  original `bindSettingsScope` probed `ctx.configForms`/`ctx.settingsScope` as
+  property reads and hard-failed all four provider client entries at boot
+  (fiber LOADING at the boot audit, FAILED right after); the fix moved the line
+  probe to deferred `ctx.inject([...])` + `ctx.get` (the context-guard channel
+  pattern) in `local-agent/src/client/settings-scope.ts`. Rule for every future
+  capability probe: never touch an undeclared service as a property — probe via
+  `ctx.get` (point-in-time) or deferred `ctx.inject` (ordering-safe).

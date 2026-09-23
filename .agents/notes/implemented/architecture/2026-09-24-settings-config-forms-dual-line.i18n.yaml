@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-24-settings-config-forms-dual-line.md
-.agents/notes/implemented/architecture/2026-09-24-settings-config-forms-dual-line.md: caa33134586dc4d8d5536d6bb279d8dce3084eab
+.agents/notes/implemented/architecture/2026-09-24-settings-config-forms-dual-line.md: f924a83d7abbe0ff71c248f0b74a7a9b32da31f5
 .agents/notes/implemented/architecture/2026-09-24-settings-config-forms-dual-line.zh.md: 57611382cd01b18201cbbaa4625f1bbaa472e1f5

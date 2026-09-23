@@ -64,6 +64,43 @@ interface LegacySettingsScopeBinder {
 }
 
 /**
+ * Observable channel behind the card's settings face: delegates to the armed
+ * line scope and republishes on arming, reporting the degraded face until
+ * either host line's deferred probe arms it. The channel exists because the
+ * line probe cannot run as a direct property read — cordis 4.0.4's
+ * service-access guard throws `cannot get property "<name>" without inject`
+ * on any undeclared `ctx.<service>` touch, and neither service name exists on
+ * the other host line, so a static inject would pend there; `ctx.inject` +
+ * `ctx.get` is the only probe that is safe on both.
+ */
+class SettingsScopeChannel<T> implements SettingsScope<T> {
+  private inner: SettingsScope<T> = unavailableSettingsScope<T>()
+  private readonly listeners = new Set<() => void>()
+
+  readonly getSnapshot = (): SettingsScopeSnapshot<T> => this.inner.getSnapshot()
+
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  readonly set = (field: string, value: unknown): Promise<unknown> => this.inner.set(field, value)
+
+  readonly unset = (field: string): Promise<unknown> => this.inner.unset(field)
+
+  /** Bind the line-served scope; the first arm wins (the two lines never coexist). */
+  arm(scope: SettingsScope<T>): void {
+    this.inner = scope
+    scope.subscribe(() => { this.emit() })
+    this.emit()
+  }
+
+  private emit(): void {
+    for (const listener of [...this.listeners]) listener()
+  }
+}
+
+/**
  * An inert scope for a composition whose settings client never came up:
  * reads report `unavailable` (the cards disable their controls, exactly like
  * an unregistered namespace) and writes never settle a value change.
@@ -89,21 +126,27 @@ export function unavailableSettingsScope<T>(): SettingsScope<T> {
 
 /**
  * Bind the provider row's settings scope on the host line actually serving.
- * Synchronous: the settings client package is a declared client inject of
- * every family provider, so its service (whichever generation) is already
- * provided when the provider's client apply runs. Absent both — a broken
- * composition — the degraded scope keeps the card alive and disabled.
+ * Returns the channel synchronously; both line probes ride deferred injects,
+ * so the serving line's arm fires as soon as its settings service is up (the
+ * settings client package is a declared client inject of every family
+ * provider, so in a normal composition arming lands immediately) and a
+ * provider mounting first still gets armed later. Absent both — a broken
+ * composition — the channel keeps the card on the degraded face, alive and
+ * disabled.
  * @param ctx - the provider's client context.
  * @param entryId - the plugin row id (`local-agent-dsh` and friends), the
  *   same string the 0.1.5 namespace used.
- * @returns the bound scope.
+ * @returns the bound scope channel.
  */
 export function bindSettingsScope<T>(ctx: Context, entryId: string): SettingsScope<T> {
-  const probe = ctx as unknown as {
-    configForms?: ConfigFormsFace
-    settingsScope?: LegacySettingsScopeBinder
-  }
-  if (typeof probe.configForms?.get === 'function') return probe.configForms.get<T>(entryId)
-  if (typeof probe.settingsScope?.bind === 'function') return probe.settingsScope.bind<T>({ namespace: entryId })
-  return unavailableSettingsScope<T>()
+  const channel = new SettingsScopeChannel<T>()
+  ctx.inject(['configForms'], (formsCtx) => {
+    const forms = formsCtx.get('configForms') as ConfigFormsFace | undefined
+    if (typeof forms?.get === 'function') channel.arm(forms.get<T>(entryId))
+  })
+  ctx.inject(['settingsScope'], (legacyCtx) => {
+    const legacy = legacyCtx.get('settingsScope') as LegacySettingsScopeBinder | undefined
+    if (typeof legacy?.bind === 'function') channel.arm(legacy.bind<T>({ namespace: entryId }))
+  })
+  return channel
 }
