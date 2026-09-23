@@ -12,7 +12,7 @@
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { IconNewChatOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconNewChatOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from './locales.ts'
 
 /** The tab kind this package owns. */
@@ -49,7 +49,7 @@ export function sidechatDefinition(t: TranslateNS<'sidechat'>): SidebarRightTabD
       order: 50,
       title: () => t('tab.label'),
       description: () => t('guide.description'),
-      icon: IconNewChatOutline16,
+      icon: IconNewChatOutlineMedium,
     }],
   }
 }

@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
+  IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RoomModelDirectory, RoomModelSelection } from './slots.ts'
 import css from './RoomModelPicker.module.css'
@@ -155,7 +155,7 @@ export function RoomModelPicker({ directory, onError, t }: RoomModelPickerProps)
       >
         <span className={css.triggerLabel}>{modelLabel}</span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
-        <IconChevronDownOutline14 className={open ? css.chevronOpen : css.chevron} />
+        <IconChevronDownOutlineMedium className={open ? css.chevronOpen : css.chevron} />
       </button>
       {open && (
         <div className={css.menu} role="menu" aria-label={t('composer.model.picker')} aria-busy={state.status === 'loading' || busy}>
@@ -164,13 +164,13 @@ export function RoomModelPicker({ directory, onError, t }: RoomModelPickerProps)
               <button type="button" role="menuitem" className={css.cell} onClick={() => { setPane('model') }}>
                 <span className={css.cellLabel}>{t('composer.model.menu.model')}</span>
                 <span className={css.cellValue}>{modelLabel}</span>
-                <IconChevronRightOutline14 className={css.cellChevron} />
+                <IconChevronRightOutlineMedium className={css.cellChevron} />
               </button>
               {reasoning !== undefined && (
                 <button type="button" role="menuitem" className={css.cell} onClick={() => { setPane('effort') }}>
                   <span className={css.cellLabel}>{t('composer.model.menu.effort')}</span>
                   <span className={css.cellValue}>{effortLabel}</span>
-                  <IconChevronRightOutline14 className={css.cellChevron} />
+                  <IconChevronRightOutlineMedium className={css.cellChevron} />
                 </button>
               )}
             </>
@@ -199,7 +199,7 @@ export function RoomModelPicker({ directory, onError, t }: RoomModelPickerProps)
                         >
                           <span className={css.modelName}>{model.name}</span>
                           <span className={css.check}>
-                            {selected ? <IconCheckOutline16 /> : null}
+                            {selected ? <IconCheckOutlineMedium /> : null}
                           </span>
                         </button>
                       )
@@ -232,7 +232,7 @@ export function RoomModelPicker({ directory, onError, t }: RoomModelPickerProps)
                 >
                   <span className={css.modelName}>{level.label}</span>
                   <span className={css.check}>
-                    {effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}
+                    {effectiveEffort === level.effort ? <IconCheckOutlineMedium /> : null}
                   </span>
                 </button>
               ))

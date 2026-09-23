@@ -16,7 +16,7 @@
  * @module @khorsheed/dsh-sidechat/client
  */
 import { useEffect, useState, type ReactNode } from 'react'
-import { IconBrowseOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBrowseOutlineMedium, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SideChatTabParams } from './definition.ts'
 import type { SideChatViewProps } from './contract.ts'
 import { SideChatPanel } from './SideChatPanel.tsx'
@@ -73,7 +73,7 @@ export function SideChatView({
               aria-label={t('dock.open')}
               onClick={() => { openDock(contextKey) }}
             >
-              <IconBrowseOutline16 />
+              <IconBrowseOutlineMedium />
             </button>
           </Tooltip>
         )

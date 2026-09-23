@@ -15,7 +15,7 @@
  * @module @khorsheed/dsh-sidechat/client
  */
 import { useCallback, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { IconCloseOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutlineMedium, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SideChatDockProps } from './contract.ts'
 import { SideChatPanel } from './SideChatPanel.tsx'
@@ -110,7 +110,7 @@ export function SideChatDock({
             onPointerDown={event => { event.stopPropagation() }}
             onClick={() => { closeToTab(contextKey) }}
           >
-            <IconCloseOutline16 />
+            <IconCloseOutlineMedium />
           </button>
         </Tooltip>
       </div>

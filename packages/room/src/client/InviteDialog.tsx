@@ -33,7 +33,7 @@ import type {
 } from './slots.ts'
 import type { RoomMember, RoomProviderInfo } from '../types.ts'
 import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { MemberCard } from './MemberCard.tsx'
 import { rollName } from './name-pool.ts'
 import css from './InviteDialog.module.css'
@@ -230,7 +230,7 @@ export function InviteDialog({
             aria-expanded={modelMenuOpen}
             onClick={() => { setModelMenuOpen(open => !open) }}
           >
-            <IconChevronDownOutline14 className={modelMenuOpen ? `${css.modelMenuChevron} ${css.modelMenuChevronOpen}` : css.modelMenuChevron} />
+            <IconChevronDownOutlineMedium className={modelMenuOpen ? `${css.modelMenuChevron} ${css.modelMenuChevronOpen}` : css.modelMenuChevron} />
           </button>
           {modelMenuOpen && (
             <div className={css.modelMenu} role="menu" aria-label={t('invite.modelMenu')}>

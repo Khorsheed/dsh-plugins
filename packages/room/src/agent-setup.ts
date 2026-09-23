@@ -14,13 +14,13 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentSetup } from '@deepseek-ai/dsh-agent'
-import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
+import type AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 // Namespace handle for runtime feature detection: the 0.1.2 host replaced
 // the `resolveSessionPreset` free function with the
 // `agentPresetProjectionDefinition` unit, and a STATIC named import of a
 // removed export is a SyntaxError at module load — the derivation below
 // reads both surfaces through one structural cast (the ankh-guard pattern).
-import * as agentPresetsHost from '@deepseek-ai/dsh-agent-presets'
+import * as agentPresetsHost from '@deepseek-ai/dsh-agent-preset-registry'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 
