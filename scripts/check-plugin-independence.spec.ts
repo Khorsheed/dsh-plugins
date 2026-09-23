@@ -9,6 +9,7 @@ import {
   isAllowedEdge,
   parsePatchInjects,
   parsePatchNames,
+  parseTopLevelPatchRows,
   scanPackage,
   scanTree,
   stripCodeComments,
@@ -32,6 +33,211 @@ describe('parsePatchInjects', () => {
     const patch = `    - id: runner\n      name: '@khorsheed/dsh-x'\n      inject: [localAgentDshHeadlessStartup]\n`
     expect(parsePatchInjects(patch)).toEqual(['localAgentDshHeadlessStartup'])
     expect(parsePatchInjects('- id: a\n  name: \'@khorsheed/dsh-a\'\n')).toEqual([])
+  })
+})
+
+describe('parseTopLevelPatchRows', () => {
+  it('reads insert rows and bare overrides, skipping nested composition content', () => {
+    // The preset-bundle shape: three top-level rows, each with a scoped
+    // composition under config.plugins whose ids/names must NOT surface —
+    // they compose in the preset's scope, never at the profile root.
+    const patch = [
+      '- id: tool-subagent-claude-code',
+      '  disabled: true',
+      '',
+      '- insert:',
+      '    - id: preset-dev',
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '      config:',
+      '        id: dev',
+      '        plugins:',
+      '          - id: persona',
+      "            name: '@deepseek-ai/dsh-persona'",
+      '          - id: planning',
+      "            name: 'cordis:group'",
+      '            group: true',
+      '            config:',
+      '              - id: plan-mode',
+      "                name: '@deepseek-ai/dsh-plan-mode'",
+      '',
+      '    # a comment between rows',
+      '    - id: preset-dsh-eval',
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '      config:',
+      '        id: dsh-eval',
+      '        plugins:',
+      '          - id: persona',
+      "            name: '@deepseek-ai/dsh-persona'",
+      '',
+      '    - id: tool-x',
+      "      name: '@khorsheed/dsh-x'",
+      '      config:',
+      '        provider: kimi-cli',
+      '        args:',
+      '          - !!js process.execPath',
+    ].join('\n')
+    expect(parseTopLevelPatchRows(patch)).toEqual([
+      { id: 'tool-subagent-claude-code', name: undefined },
+      { id: 'preset-dev', name: '@deepseek-ai/dsh-agent-preset' },
+      { id: 'preset-dsh-eval', name: '@deepseek-ai/dsh-agent-preset' },
+      { id: 'tool-x', name: '@khorsheed/dsh-x' },
+    ])
+  })
+
+  it('reads rows whose name sits on the item line and ignores entries with neither id nor name', () => {
+    const patch = `- insert:\n    - name: '@khorsheed/dsh-a'\n      id: a\n- remove: ghost\n`
+    expect(parseTopLevelPatchRows(patch)).toEqual([{ id: 'a', name: '@khorsheed/dsh-a' }])
+  })
+})
+
+describe('preset-declarations bundles', () => {
+  function fixture(pkg: Record<string, unknown>, files: Record<string, string>) {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-independence-preset-'))
+    const dir = join(root, 'presets')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg))
+    for (const [rel, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true })
+      writeFileSync(join(dir, rel), text)
+    }
+    return {
+      pkg: { dir: 'presets', path: dir, json: pkg as never },
+      cleanup: () => rmSync(root, { recursive: true, force: true }),
+    }
+  }
+
+  const PATCH = [
+    '- insert:',
+    '    - id: preset-dev',
+    "      name: '@deepseek-ai/dsh-agent-preset'",
+    '      config:',
+    '        id: dev',
+    '        plugins:',
+    '          - id: persona',
+    "            name: '@deepseek-ai/dsh-persona'",
+  ].join('\n')
+
+  it('passes a well-formed preset-declarations bundle (no own runtime row)', () => {
+    const { pkg, cleanup } = fixture(
+      {
+        name: '@khorsheed/dsh-presets',
+        files: ['lib', 'cordis.patch.yml'],
+        keywords: ['dsh', 'dsh-plugin'],
+        repository: { url: 'git+https://github.com/Khorsheed/dsh-plugins.git', directory: 'packages/presets' },
+        dsh: { bundle: { patch: './cordis.patch.yml', kind: 'preset-declarations' } },
+      },
+      { 'cordis.patch.yml': PATCH },
+    )
+    try {
+      expect(scanPackage(pkg, ['@khorsheed/dsh-presets'])).toEqual([])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags a preset-declarations row named anything but the official preset plugin, or with a non-preset id', () => {
+    const { pkg, cleanup } = fixture(
+      {
+        name: '@khorsheed/dsh-presets',
+        private: true,
+        files: ['lib', 'cordis.patch.yml'],
+        dsh: { bundle: { patch: './cordis.patch.yml', kind: 'preset-declarations' } },
+      },
+      {
+        'cordis.patch.yml': `- insert:\n    - id: preset-dev\n      name: '@deepseek-ai/dsh-agent-preset'\n    - id: presets\n      name: '@khorsheed/dsh-presets'\n    - id: eval\n      name: '@deepseek-ai/dsh-agent-preset'\n`,
+      },
+    )
+    try {
+      const findings = scanPackage(pkg, ['@khorsheed/dsh-presets']).filter((f) => f.kind === 'identity')
+      expect(findings.some((f) => f.detail.includes('presets is named @khorsheed/dsh-presets'))).toBe(true)
+      expect(findings.some((f) => f.detail.includes('row id eval does not match preset-<id>'))).toBe(true)
+      expect(findings).toHaveLength(2)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags a self-mounting package without the kind whose rows are all preset declarations', () => {
+    // The regression the kind exists for: without the declaration the identity
+    // rule reports the missing own row instead of silently accepting a bundle
+    // that mounts no runtime row of its own.
+    const { pkg, cleanup } = fixture(
+      {
+        name: '@khorsheed/dsh-presets',
+        private: true,
+        files: ['lib', 'cordis.patch.yml'],
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      },
+      { 'cordis.patch.yml': PATCH },
+    )
+    try {
+      const findings = scanPackage(pkg, ['@khorsheed/dsh-presets'])
+      expect(findings.some((f) => f.kind === 'identity' && f.detail.includes('no row named @khorsheed/dsh-presets'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags an unknown bundle kind', () => {
+    const { pkg, cleanup } = fixture(
+      {
+        name: '@khorsheed/dsh-presets',
+        private: true,
+        files: ['lib', 'cordis.patch.yml'],
+        dsh: { bundle: { patch: './cordis.patch.yml', kind: 'whatever' } },
+      },
+      { 'cordis.patch.yml': PATCH },
+    )
+    try {
+      const findings = scanPackage(pkg, ['@khorsheed/dsh-presets'])
+      expect(findings.some((f) => f.kind === 'bundle kind' && f.detail.includes('is not one of'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('lets nested preset rows reuse profile-root ids of other packages (scoped composition, no collision)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-independence-tree-'))
+    const write = (dir: string, json: Record<string, unknown>, patch: string) => {
+      const path = join(root, dir)
+      mkdirSync(path, { recursive: true })
+      writeFileSync(join(path, 'package.json'), JSON.stringify(json))
+      writeFileSync(join(path, 'cordis.patch.yml'), patch)
+    }
+    write('kimi', {
+      name: '@khorsheed/dsh-local-agent-kimi',
+      private: true,
+      files: ['lib', 'cordis.patch.yml'],
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    }, `- insert:\n    - id: tool-subagent-kimi\n      name: '@khorsheed/dsh-local-agent-tool-subagent'\n`)
+    write('presets', {
+      name: '@khorsheed/dsh-presets',
+      private: true,
+      files: ['lib', 'cordis.patch.yml'],
+      dsh: { bundle: { patch: './cordis.patch.yml', kind: 'preset-declarations' } },
+    }, [
+      '- insert:',
+      '    - id: preset-dev',
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '      config:',
+      '        id: dev',
+      '        plugins:',
+      '          - id: tool-subagent-kimi',
+      "            name: '@khorsheed/dsh-local-agent-tool-subagent'",
+      '    - id: preset-dsh-eval',
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '      config:',
+      '        id: dsh-eval',
+      '        plugins:',
+      '          - id: tool-subagent-kimi',
+      "            name: '@khorsheed/dsh-local-agent-tool-subagent'",
+    ].join('\n'))
+    try {
+      const findings = scanTree(root).findings.filter((f) => f.kind === 'loader row id')
+      expect(findings).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 
