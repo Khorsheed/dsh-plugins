@@ -16,6 +16,8 @@ The question this note actually records is narrower than "use tabs": **is a card
 
 ## Decision
 
+> **Seat retired the same day**, by [the canvas owns its tab strip](2026-09-23-canvas-inner-tab-strip.md): `canvasDetail`, `src/client/detail/detail-address.ts`, `detail/CanvasDetailTab.tsx`, `detail/CanvasDetailTitle.tsx` and `tests/detail-tab.client.spec.tsx` are gone from the package — the row of tabs the canvas draws inside itself took the seat. What this page decided still stands and is what that note builds on: `cardTitleOf` as the one title rule, every gesture rule in `CanvasDetailView` (⌘⏎-only, the IME guard, the pen owning `Escape`), and the two host facts (`title` is captured once at open and never refreshed; `close` takes a branded `TabId` with no interception) — including the × gap recorded below, which the inner strip closed from the half the plugin does own. Read the rest as the decision it was.
+
 **The detail is a resource of this package's `canvas` type.** `canvasDetail` is the tab kind, `dsh-resource://canvas/<canvasId>/<cardId>` the address (`src/client/detail/detail-address.ts`), and `…/_draft` the one address a canvas's unsaved draft gets. The consequence the whole stage exists for is free: clicking a card twice focuses the tab already showing it, clicking two cards opens two tabs in the same pane, and the plugin keeps no tab bookkeeping of its own.
 
 - **`_draft` is outside the card-id grammar by construction, not by convention.** `CARD_SEGMENT` mirrors what `makeBoardId('c', …)` mints (`c_` + 9 base36 time chars + base36 random), and a sentinel that does not open with `c_` can never be spelled by the mint — so no card can be handed the draft's address, and the segment stays a shape check rather than a lookup, which is what lets an address resolve without asking the disk.
@@ -56,3 +58,7 @@ The question this note actually records is narrower than "use tabs": **is a card
 - `tests/tab.client.spec.tsx`: the six draft tests moved to the tab spec (they were board-page tests only because the page owned the draft), the drill describe replaced by five stage-⑧ openings — a body click and the pencil both call `openCardDetail(canvasId, cardId, title)`, an HTML card's title is its `<title>` and not its markup, the archive well's card opens too, the `＋新卡` menu calls `openCardDraft(canvasId, category.id, label)`, and the board never turns into an editor.
 - `tests/detail.client.spec.tsx`: the reader harness is now address-driven (a mutable target behind getter props), because the store no longer carries a card.
 - Repo gates: `pnpm run check:hygiene` on the staged set, `pnpm run verify-agent-note-format` / `verify-agent-note-classification`, and `pnpm exec tsx scripts/verify-translation-pairing.mts --write` for this note's own pair.
+
+## Related
+
+- [the canvas owns its tab strip](2026-09-23-canvas-inner-tab-strip.md) — same day, same subject, different seat: the row of tabs now lives inside the canvas, and this page's `canvasDetail` kind was deleted rather than kept beside it.

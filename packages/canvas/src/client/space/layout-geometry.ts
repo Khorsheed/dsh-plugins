@@ -5,16 +5,14 @@
  * honest source of a card's size is the rendered element and this layer must be
  * able to answer the same questions in a node test.
  *
- * Three decisions decide all the shapes here. Containment is tested on the
- * card's CENTER, not on area: a card that overhangs a lane's border still reads
- * as sitting in it, and an area rule would let a two-pixel lane resize orphan a
- * card nobody touched. The wire's control points push along the DOMINANT axis
- * with a signed floor, so the tails always leave the card on the side the
- * neighbour is on and the curve cannot knot itself whichever way round the pair
- * is stored; the 24-unit floor makes near neighbours bulge instead of collapsing
- * onto a straight line that looks like a rendering error. And a flick under 8px
- * in BOTH dimensions is a click, not a box: clearing the selected wire must not
- * quietly pick up whatever card corner the pointer happened to graze.
+ * Three rules decide all the shapes here. Containment is tested on the card's
+ * CENTER, not on area: a card that overhangs a lane's border still reads as
+ * sitting in it, and an area rule would let a two-pixel lane resize orphan a card
+ * nobody touched. A wire is ANCHORED ON EDGES, never on centres: a line that
+ * starts at a card's middle runs through its own body on the way out, which is
+ * the first thing a user points at and calls a bug. And a flick under 8px in BOTH
+ * dimensions is a click, not a box: clearing the selected wire must not quietly
+ * pick up whatever card corner the pointer happened to graze.
  *
  * Geometry ported from the link-view prototype,
  * `proposals/prototypes/canvas-link-compose-draw.html`.
@@ -56,6 +54,24 @@ export interface Size {
   readonly h: number
 }
 
+/** A point in layout units. */
+export interface Point {
+  readonly x: number
+  readonly y: number
+}
+
+/**
+ * Where one wire's two ends actually land, and the axis its tails run along.
+ * `dir` is the outward sign on that axis: +1 leaves through a right or bottom
+ * edge, -1 through a left or top one.
+ */
+export interface WireAnchors {
+  readonly axis: 'x' | 'y'
+  readonly dir: 1 | -1
+  readonly from: Point
+  readonly to: Point
+}
+
 /** How far below the stage top a lane's title band must stay readable. */
 export const LANE_MIN_Y = 24
 
@@ -91,22 +107,56 @@ export function isLinked(links: readonly LinkPair[], a: string, b: string): bool
 }
 
 /**
- * The wire's `d` attribute, centre to centre. The dominant axis is the one that
- * carries the tails, and the push is signed so a right-to-left or bottom-to-top
- * pair mirrors the other way instead of crossing itself; a tie reads horizontal,
- * because that is the direction the board flows.
+ * The wire's two anchor points and the axis it leaves on.
+ *
+ * A line that joins two cards has no business running through either of them, so
+ * every anchor sits on an EDGE, on the side the neighbour is actually on: the
+ * pair's centres pick the axis and the direction, the boxes pick the points.
+ *
+ * The one exception is the interesting one. When the two boxes overlap along the
+ * axis their centres pick, a facing-edge line has to double back across the
+ * cards to reach the far edge — which is the piercing the rule exists to stop.
+ * So the other axis gets the pair whenever IT can leave a clean gap, and the
+ * dominant axis only wins back when the boxes truly intersect and no clean answer
+ * exists. A card dragged over its neighbour therefore never sees its line stab
+ * through the card it came from.
+ */
+export function wireAnchorsOf(a: PlacedCard, b: PlacedCard): WireAnchors {
+  const ac = center(a)
+  const bc = center(b)
+  const dx = bc.x - ac.x
+  const dy = bc.y - ac.y
+  // The gap each axis would have to cross: negative means the boxes overlap on it.
+  const xGap = dx >= 0 ? b.x - (a.x + a.w) : a.x - (b.x + b.w)
+  const yGap = dy >= 0 ? b.y - (a.y + a.h) : a.y - (b.y + b.h)
+  const horizontal = Math.abs(dx) >= Math.abs(dy)
+  // An axis can carry the line when it has a non-negative gap; when the dominant
+  // one is overlapped and the other is not, the other one takes it.
+  const onX = horizontal ? xGap >= 0 || yGap < 0 : xGap >= 0 && yGap < 0
+  if (onX) {
+    return dx >= 0
+      ? { axis: 'x', dir: 1, from: { x: a.x + a.w, y: ac.y }, to: { x: b.x, y: bc.y } }
+      : { axis: 'x', dir: -1, from: { x: a.x, y: ac.y }, to: { x: b.x + b.w, y: bc.y } }
+  }
+  return dy >= 0
+    ? { axis: 'y', dir: 1, from: { x: ac.x, y: a.y + a.h }, to: { x: bc.x, y: b.y } }
+    : { axis: 'y', dir: -1, from: { x: ac.x, y: a.y }, to: { x: bc.x, y: b.y + b.h } }
+}
+
+/**
+ * The wire's `d` attribute. The tails leave both cards perpendicular to the edge
+ * each one anchors on (the sign of {@link WireAnchors#dir}), so the curve reads
+ * as coming out of a card and going into another one rather than as a knot; the
+ * 24-unit floor makes near neighbours bulge instead of collapsing onto a straight
+ * line that looks like a rendering error.
  */
 export function wirePathOf(a: PlacedCard, b: PlacedCard): string {
-  const from = center(a)
-  const to = center(b)
-  const dx = to.x - from.x
-  const dy = to.y - from.y
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    const push = Math.max(WIRE_MIN_PUSH, Math.abs(dx) / 2) * (dx < 0 ? -1 : 1)
-    return `M ${from.x} ${from.y} C ${from.x + push} ${from.y}, ${to.x - push} ${to.y}, ${to.x} ${to.y}`
-  }
-  const push = Math.max(WIRE_MIN_PUSH, Math.abs(dy) / 2) * (dy < 0 ? -1 : 1)
-  return `M ${from.x} ${from.y} C ${from.x} ${from.y + push}, ${to.x} ${to.y - push}, ${to.x} ${to.y}`
+  const { axis, dir, from, to } = wireAnchorsOf(a, b)
+  const along = axis === 'x' ? to.x - from.x : to.y - from.y
+  const push = Math.max(WIRE_MIN_PUSH, Math.abs(along) / 2) * dir
+  return axis === 'x'
+    ? `M ${from.x} ${from.y} C ${from.x + push} ${from.y}, ${to.x - push} ${to.y}, ${to.x} ${to.y}`
+    : `M ${from.x} ${from.y} C ${from.x} ${from.y + push}, ${to.x} ${to.y - push}, ${to.x} ${to.y}`
 }
 
 /**

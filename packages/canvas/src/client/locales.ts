@@ -3,7 +3,7 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'tab.label': '画布',
-  'guide.description': '灵感画布——一块卡板；点卡片在旁边的标签里展开全文',
+  'guide.description': '灵感画布——一块卡板；点卡片在这块画布里开一张标签，展开全文',
 
   'meta.article': '文章',
   'meta.card': '灵感卡片',
@@ -159,8 +159,7 @@ export const zh = {
   'link.nodeEmpty': '（空卡）',
   'link.portTitle': '拖到另一张卡 = 连一条线',
   'link.openDetail': '进详情 · 开一张标签',
-  'link.hint': '卡板 = 改卡（单击开一张详情标签）；连线 = 选卡（单击选中，悬停点右上角那支笔、或双击，才开详情标签）。拖卡片挪位置 · 拖右侧小圆点到另一张卡 = 连一条线 · 空白处按住拖 = 框选一批 · 点一条线 = 选中它，再点「删掉这条线」 · 拖分区框 = 框里的卡跟着走 · 点分区标题 = 改名。',
-  'link.hintData': '连线和分区是新数据：canvas.json 多了 links 与 lanes 两个数组，卡上多了 x/y 坐标。线不替你选卡——连着谁不代表要发给谁，一次想发一串就点「顺线扩一圈」。',
+  'link.hint': '单击 = 选中，双击才开卡 · 拖卡片 = 挪位置 · 拖圆点到另一张卡 = 连一条线 · 空白处按住拖 = 框选一批',
 
   'card.edit': '编辑',
   'card.archive': '归档',
@@ -177,8 +176,6 @@ export const zh = {
 
   'detail.unsaved': '未保存',
   'detail.createHint': '⌘⏎ 建卡 · Esc 关掉这张标签',
-  'detail.tabCard': '卡片',
-  'detail.tabDraft': '新卡',
   'detail.nothingToRender': '先写正文，回来才看得到渲染',
 
   'draw.tools': '绘画工具',
@@ -243,7 +240,9 @@ export const zh = {
   'detail.render': '渲染',
   'detail.source': '源码',
   'detail.split': '并列',
-  'switcher.pick': '选择画布',
+  'strip.canvases': '画布',
+  'strip.close': '关闭这张标签',
+  'strip.none': '没有打开的标签了，点上面的「＋ 画布」挑一块或新建一块',
 
   'q.open': '待探索',
   'q.exploring': '探索中',
@@ -273,7 +272,7 @@ export const zh = {
 /** English dictionary (same key set). */
 export const en: Record<keyof typeof zh, string> = {
   'tab.label': 'Canvas',
-  'guide.description': 'The idea canvas — one board of cards; click a card to open its full text in a tab',
+  'guide.description': 'The idea canvas — one board of cards; click a card to open it as a tab inside the canvas',
 
   'meta.article': 'Article',
   'meta.card': 'Card',
@@ -429,8 +428,7 @@ export const en: Record<keyof typeof zh, string> = {
   'link.nodeEmpty': '(empty card)',
   'link.portTitle': 'Drag onto another card = link them',
   'link.openDetail': 'Open detail · as a tab',
-  'link.hint': 'Board = edit a card (one click opens a detail tab); Links = pick cards (one click selects — hover the pen at its top-right, or double-click, to open the detail tab). Drag a card to move it · drag the little dot on its right onto another card to link them · drag on empty ground to box-select · click a line to select it, then “Delete this line” · drag a lane and the cards inside travel with it · click a lane title to rename it.',
-  'link.hintData': 'Lines and lanes are new data: canvas.json gains a links array and a lanes array, and a card gains x/y coordinates. A line never picks for you — being connected is not being sent; to send a whole chain, click “Follow the lines”.',
+  'link.hint': 'Click = select, double-click opens the card · drag a card = move it · drag a dot onto another card = link them · drag on empty ground = box-select',
 
   'card.edit': 'Edit',
   'card.archive': 'Archive',
@@ -447,8 +445,6 @@ export const en: Record<keyof typeof zh, string> = {
 
   'detail.unsaved': 'Unsaved',
   'detail.createHint': '⌘⏎ adds the card · Esc closes this tab',
-  'detail.tabCard': 'Card',
-  'detail.tabDraft': 'New card',
   'detail.nothingToRender': 'Write the text first, then the render shows it',
 
   'draw.tools': 'Drawing tools',
@@ -513,7 +509,9 @@ export const en: Record<keyof typeof zh, string> = {
   'detail.render': 'Render',
   'detail.source': 'Source',
   'detail.split': 'Split',
-  'switcher.pick': 'Pick a canvas',
+  'strip.canvases': 'Canvas',
+  'strip.close': 'Close this tab',
+  'strip.none': 'No tab is open — use “＋ Canvas” above',
 
   'q.open': 'Open',
   'q.exploring': 'Exploring',

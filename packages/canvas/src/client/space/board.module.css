@@ -257,13 +257,35 @@
   flex-shrink: 0;
 }
 
-.topic {
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--dsw-alias-label-primary);
+/* The strip's ＋ tail: the door to this panel. Quieter than a tab on purpose —
+   the rows to its left are the content, and this only adds one. The canvas
+   NAMES used to be here (a pill showing the open one, doubling as the panel's
+   trigger); the strip carries them now, so the trigger says what it does. */
+.switchTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 7px;
+  padding: 3px 8px;
+  background: transparent;
+  font-family: var(--dsw-font-family);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.switchTrigger:hover {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.switchTrigger[aria-expanded="true"] {
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary);
 }
 
 .attachChip {

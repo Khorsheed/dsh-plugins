@@ -123,15 +123,26 @@
 .laneInput {
   position: absolute;
   left: 2px;
-  top: -18px;
+  top: -19px;
+  box-sizing: border-box;
   width: min(180px, calc(100% - 4px));
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 4px;
-  padding: 1px 5px;
-  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  padding: 1px 6px;
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   font-family: var(--dsw-font-family);
-  font-size: 11.5px;
+  font-size: 11px;
+  line-height: 1.5;
+  /* The title it replaces is a button; this is a real input, and an input left
+     to the browser paints a focus ring thick enough to read as a selection box
+     around the whole lane. The border carries the focus instead, as it does in
+     the category panel's rows. */
+  outline: none;
+}
+
+.laneInput:focus {
+  border-color: var(--dsw-alias-state-business-primary);
 }
 
 .laneSize {
@@ -238,6 +249,14 @@
   background: var(--dsw-alias-bg-layer-1);
   cursor: crosshair;
   opacity: 0;
+}
+
+/* One handle per side. A card whose neighbour sits to its LEFT has no right-hand
+   edge to leave from without the line doubling back over itself, and a single
+   dot taught users to walk across the board to find the side that draws well. */
+.port[data-port$=":left"] {
+  right: auto;
+  left: -6px;
 }
 
 .node:hover .port,

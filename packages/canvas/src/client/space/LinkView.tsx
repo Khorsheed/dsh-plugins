@@ -395,10 +395,21 @@ export function LinkView({
     })
   }
 
-  const startWire = (event: ReactPointerEvent<HTMLSpanElement>, node: PlacedCard): void => {
+  /**
+   * Start a wire from one of a card's two ports. Which port the hand found
+   * decides where the LIVE line starts — a drag should leave the card the way it
+   * was grabbed — but the stored pair is still just `{from,to}`: which edge a
+   * finished line uses is geometry, re-derived from where the two cards sit, so
+   * dragging a card afterwards can never strand a tail on the wrong side.
+   */
+  const startWire = (
+    event: ReactPointerEvent<HTMLSpanElement>,
+    node: PlacedCard,
+    side: 'left' | 'right',
+  ): void => {
     if (readonly || event.button !== 0) return
     event.stopPropagation()
-    const anchor = { x1: node.x + node.w, y1: node.y + node.h / 2 }
+    const anchor = { x1: side === 'right' ? node.x + node.w : node.x, y1: node.y + node.h / 2 }
     setTemp({ ...anchor, x2: anchor.x1, y2: anchor.y1 })
     runGesture(event, (_dx, _dy, move) => {
       const now = worldPoint(move.clientX, move.clientY)
@@ -549,12 +560,20 @@ export function LinkView({
                 {ink.length > 0 && <span className={css.nodeInk}><DrawFigure strokes={ink} /></span>}
                 <span className={css.nodeText}>{text === '' ? t('link.nodeEmpty') : text}</span>
                 {!readonly && (
-                  <span
-                    className={css.port}
-                    data-port={node.id}
-                    title={t('link.portTitle')}
-                    onPointerDown={event => { startWire(event, node) }}
-                  />
+                  <>
+                    <span
+                      className={css.port}
+                      data-port={`${node.id}:left`}
+                      title={t('link.portTitle')}
+                      onPointerDown={event => { startWire(event, node, 'left') }}
+                    />
+                    <span
+                      className={css.port}
+                      data-port={`${node.id}:right`}
+                      title={t('link.portTitle')}
+                      onPointerDown={event => { startWire(event, node, 'right') }}
+                    />
+                  </>
                 )}
                 <button
                   type="button"
@@ -663,7 +682,6 @@ export function LinkView({
       </div>
 
       <p className={css.hint}>{t('link.hint')}</p>
-      <p className={css.hint}>{t('link.hintData')}</p>
     </div>
   )
 }

@@ -161,6 +161,14 @@
   font-size: 13px;
   line-height: 1.75;
   color: var(--dsw-alias-label-primary);
+  /* `.root` is a column flex container with a definite height, so a flex item
+     may be SHRUNK — and an explicit `min-height` here replaces the `auto` floor
+     a flex item gets by default, which is what lets a 7000-word card be squashed
+     to 60px while its text keeps painting at full height, straight through the
+     drawing pad below. The pad then reads as an overlay on the prose. Take the
+     content's height and let `.root` scroll; the floor below is only for an
+     empty body. */
+  flex: none;
   min-height: 60px;
 }
 

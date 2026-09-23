@@ -118,6 +118,9 @@ function makeHarness(options: {
 } = {}): Harness {
   const boards = new Map((options.boards ?? [board()]).map(value => [value.id, value]))
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
+  // A bench starts on an empty strip, every time: the store restores the rows a
+  // previous bench left in sessionStorage, and those name cards its board has not.
+  sessionStorage.clear()
   const store = new CanvasSelectionStore()
   // The REAL image cache over a fake read leg (§10.3): the tab reads its feed
   // as a subscription, so the feed is exercised here rather than faked away.
@@ -184,6 +187,11 @@ function makeHarness(options: {
     // this tab renders. The mocks record the call; the board stays on screen.
     openCardDetail: vi.fn(),
     openCardDraft: vi.fn(),
+    // The strip's own two verbs are the store's, exactly as the production face
+    // wires them; the detail openings stay recorders, because these specs assert
+    // what the gesture PASSES, not what the strip then renders.
+    activateTab: (id: string) => { store.activate(id) },
+    closeTab: (id: string) => { store.close(id) },
     openCanvas: (canvasId: string) => { store.openCanvas(canvasId) },
     focusCanvas: vi.fn(async (): Promise<Result<BoardFocusResult>> => ok({ ok: true })),
     askAgent: vi.fn(async (): Promise<Result<BoardAskAgentOutcome>> =>
@@ -261,7 +269,7 @@ describe('CanvasTab — list, switcher, board', () => {
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')]), other] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: /为什么人们不愿表达异议/ }))
+    fireEvent.click(screen.getByRole('button', { name: '画布' }))
     fireEvent.click(await screen.findByText('第二块画布'))
     await screen.findByText('卡片 c_x')
     await waitFor(() => {
@@ -274,8 +282,8 @@ describe('CanvasTab — list, switcher, board', () => {
       workspaces: [{ workspaceId: 'w1', path: '/ws/report', title: 'report' }],
     })
     render(<CanvasTab {...props} />)
-    await screen.findByRole('button', { name: /为什么人们不愿表达异议/ })
-    fireEvent.click(screen.getByRole('button', { name: /为什么人们不愿表达异议/ }))
+    await screen.findByRole('button', { name: '画布' })
+    fireEvent.click(screen.getByRole('button', { name: '画布' }))
     fireEvent.click(screen.getByRole('button', { name: /新画布/ }))
     fireEvent.change(screen.getByPlaceholderText('这块画布思考什么主题？'), { target: { value: '远程团队的书面沟通礼仪' } })
     fireEvent.click(screen.getByRole('checkbox', { name: 'report' }))
@@ -283,13 +291,16 @@ describe('CanvasTab — list, switcher, board', () => {
     await waitFor(() => {
       expect(mocks.createCanvas).toHaveBeenCalledWith('s1', { title: '远程团队的书面沟通礼仪', attachedWorkspaces: ['/ws/report'] })
     })
-    await screen.findByText('远程团队的书面沟通礼仪')
+    // A created canvas is a NEW ROW and the showing one: the strip is where a
+    // canvas appears now (its name is on the row and on the board header, so
+    // the row is the only thing that identifies the event).
+    await screen.findByRole('tab', { name: '远程团队的书面沟通礼仪', selected: true })
   })
 
   it('archives a canvas row from the switcher and restores it from the well', async () => {
     const { mocks, props, boards } = makeHarness()
     render(<CanvasTab {...props} />)
-    fireEvent.click(await screen.findByRole('button', { name: /为什么人们不愿表达异议/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '画布' }))
     fireEvent.click(screen.getByRole('button', { name: '归档' }))
     await waitFor(() => {
       expect(mocks.archiveCanvas).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, archived: true })
@@ -606,7 +617,7 @@ describe('CanvasTab — wide mode and read-only', () => {
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
     expect(screen.queryByRole('button', { name: /新卡/ })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /为什么人们不愿表达异议/ }))
+    fireEvent.click(screen.getByRole('button', { name: '画布' }))
     // Read-only: the 新画布 row is not even offered.
     expect(screen.queryByRole('button', { name: /新画布/ })).toBeNull()
   })

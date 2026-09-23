@@ -6,6 +6,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* A direct child of the detail page's scrolling column: shrinkable here means
+     the 3:2 field gets squashed by a long card instead of the page scrolling. */
+  flex: none;
 }
 
 .bar {
