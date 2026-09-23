@@ -36,8 +36,10 @@ const CONTEXT_FORMS: ReadonlySet<string> = new Set(['instructions', 'catalog', '
 
 /**
  * Whether one `user/message` event is a context injection rather than the
- * user's own speech. Our own sends (`kind: 'plugin'`, no form) and ordinary
- * human messages answer false and stay visible.
+ * user's own speech. Our own sends (producer kind `sidechat`, no form — and
+ * the legacy `plugin` wrapper / `plugin:@khorsheed/dsh-sidechat` migrated
+ * forms, likewise formless) and ordinary human messages answer false and
+ * stay visible.
  */
 function isContextInjection(source: unknown): boolean {
   if (typeof source !== 'object' || source === null) return false
@@ -87,10 +89,18 @@ export function projectTranscript(events: readonly SessionEvent[]): SideChatTran
         break
       }
       case 'tool/result': {
-        const block = event.data.message.content[0]
-        const pending = calls.get(block.toolCallId)
+        // Tool-result correlation reads two durable shapes: V4 tool-role
+        // messages carry toolCallId/isError on the message (native V4 and the
+        // V3→V4 migration alike), while released V3 logs (0.1.5) wrap them in
+        // the single tool-result content block.
+        const message = event.data.message
+        const block = message.content[0] as { toolCallId?: unknown; isError?: unknown } | undefined
+        const callId = (message as { toolCallId?: unknown }).toolCallId ?? block?.toolCallId
+        const pending = typeof callId === 'string' ? calls.get(callId) : undefined
         if (pending === undefined) break
-        const failed = event.data.error !== undefined || block.isError === true
+        const failed = event.data.error !== undefined
+          || (message as { isError?: unknown }).isError === true
+          || block?.isError === true
         const state: SideChatToolState = failed ? 'error' : 'done'
         pending.state = state
         const row = rows[pending.index]
