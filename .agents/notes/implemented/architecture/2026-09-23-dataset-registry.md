@@ -35,12 +35,13 @@ A registration is also a deployment fact, not a session fact: the same repositor
 
 ### Cleanup of the legacy managed worktrees
 
-The managed views are the entries whose path ends in `worktrees/<16-hex repo key>/<key>`, all locked. Human worktrees in the same list do not have that shape and are not matched. With `REPO` set to the shared dataset checkout:
+The managed views are the entries whose path ends in `worktrees/<16-hex repo key>/<key>`, all locked. Human worktrees in the same list do not have that shape and are not matched. The shape does not say whose state root a view lives under, though: a view under the state root of an instance that still runs the pre-registry code (a person's everyday instance, say) is still in use by it. Run this only after every instance that consumes these views has moved to the registry build, and exclude any state root that has not. With `REPO` set to the shared dataset checkout and `KEEP` to a state root to leave alone:
 
 ```sh
 git -C "$REPO" worktree list --porcelain \
   | awk '/^worktree /{print $2}' \
-  | grep -E '/worktrees/[0-9a-f]{16}/[^/]+$' > /tmp/managed-worktrees.txt
+  | grep -E '/worktrees/[0-9a-f]{16}/[^/]+$' \
+  | grep -vF "$KEEP/" > /tmp/managed-worktrees.txt
 wc -l /tmp/managed-worktrees.txt          # review the list before going on
 while read -r p; do
   git -C "$REPO" worktree unlock "$p" || true
@@ -65,7 +66,7 @@ The directories that used to hold them (`$DSH_HOME/state/datasets/worktrees/`, `
 
 **Delete binding files once imported.** Eval still reads them until branch 2 lands, and a binding file is the only record of which session used which repository. Import is read-only on bindings, so it can be re-run and undone by removing the registration.
 
-**Clean the 25 managed worktrees in this branch.** That writes the shared `.git` of a checkout other agents are using right now, which the brief rules out. The commands are recorded here for a human to run at a quiet moment.
+**Clean the 25 managed worktrees in this branch.** That writes the shared `.git` of a checkout other agents are using right now, which the brief rules out, and some of the views still serve instances on the old code. The commands are recorded here; the coordinator schedules the run once the lab instance carries branch 2.
 
 ## Consequences
 

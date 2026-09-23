@@ -35,12 +35,13 @@ T73 之前，题库仓库经会话绑定到达 agent（`bindings/<session>.json`
 
 ### 旧托管 worktree 的清理
 
-托管视图是路径以 `worktrees/<16 位 hex 仓库键>/<键>` 结尾的那些记录，全部带锁。同一列表里人的 worktree 没有这个形状，不会被匹配。把 `REPO` 设为共享题库检出：
+托管视图是路径以 `worktrees/<16 位 hex 仓库键>/<键>` 结尾的那些记录，全部带锁。同一列表里人的 worktree 没有这个形状，不会被匹配。但形状说不出视图落在谁的状态根下：还跑着登记之前代码的实例（比如人日常用的实例）状态根下的视图，那个实例还在用。所有消费这些视图的实例都换成登记版之后再跑，没换的状态根要排除。把 `REPO` 设为共享题库检出、`KEEP` 设为要留下的状态根：
 
 ```sh
 git -C "$REPO" worktree list --porcelain \
   | awk '/^worktree /{print $2}' \
-  | grep -E '/worktrees/[0-9a-f]{16}/[^/]+$' > /tmp/managed-worktrees.txt
+  | grep -E '/worktrees/[0-9a-f]{16}/[^/]+$' \
+  | grep -vF "$KEEP/" > /tmp/managed-worktrees.txt
 wc -l /tmp/managed-worktrees.txt          # 先看一遍名单再往下
 while read -r p; do
   git -C "$REPO" worktree unlock "$p" || true
@@ -65,7 +66,7 @@ git -C "$REPO" worktree prune
 
 **导入后删除绑定文件。** 分支 2 落地前 eval 还在读它们，而且绑定文件是「哪个会话用过哪个仓库」的唯一记录。导入对绑定只读，所以可以重跑，删掉登记就能撤回。
 
-**在本分支清理那 25 条托管 worktree。** 那要写其他 agent 此刻正在用的检出的共享 `.git`，文案明确排除了。命令记在这里，由人找个空档执行。
+**在本分支清理那 25 条托管 worktree。** 那要写其他 agent 此刻正在用的检出的共享 `.git`，文案明确排除了；其中一些视图还在给跑旧代码的实例用。命令记在这里，等实验室实例装上分支 2 后由协调者安排执行。
 
 ## Consequences
 
