@@ -1,8 +1,11 @@
 /**
  * TaskPilot browser half: the dock pills and the job detail right-sidebar tab.
  *
- * Data flows entirely through product channels — the `useSessions` mirrors for
- * live jobs/subagents, a capability-probed history loader for the trail
+ * Data flows entirely through product channels — the job roster rides rc.1's
+ * job-controller client service (probed through ./jobs-channel.ts; on 0.1.5
+ * the components' duck-typed `jobsBySession` session-list read carries it
+ * instead), the subagent lineage rides the `useSessions` mirrors, a
+ * capability-probed history loader feeds the trail
  * (./history-loader.ts: the generated `remote.session.follow`/`page` when
  * mounted — read via `ctx.get('remote.session')` since the namespace may be
  * absent and must not sit in the inject list — `connection.api.sessions.history`
@@ -40,6 +43,7 @@ import { JobTabTitle } from './JobTabTitle.tsx'
 import { TASKPILOT_KIND, TASKPILOT_TAB_ID, taskpilotDefinition } from './definition.ts'
 import { createHistoryLoader } from './history-loader.ts'
 import { pollActiveDelegations } from './active-delegations.ts'
+import { JobsChannel, type JobsServiceLike } from './jobs-channel.ts'
 import { renderTaskPilotCommand } from '../types.ts'
 
 /** Required services: slots, the session runtime, the command remote, the wire, copy, and the right-sidebar faces. */
@@ -63,12 +67,29 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'taskpilot: dictionaries')
   ctx.effect(() => ctx.sidebarRightTabs.register(taskpilotDefinition(t)), 'taskpilot: tab type')
 
+  // rc.1's job-controller client service, probed through a DEFERRED inject:
+  // declaring 'jobs' in the inject list would pend the bundle on 0.1.5, where
+  // the service never exists (the components' legacy session-list read
+  // carries the roster there), and an apply-time ctx.get would race the
+  // provider's own mount order.
+  const jobsChannel = new JobsChannel()
+  ctx.inject(['jobs'], (jobsCtx) => {
+    const service = jobsCtx.get('jobs') as JobsServiceLike | undefined
+    if (service !== undefined && typeof service.watchRows === 'function') jobsChannel.arm(service)
+  })
+
   // Capability-probed at apply time: the session remote namespace when
   // mounted, the connection api otherwise (see ./history-loader.ts). The
   // namespace comes through ctx.get, not the ctx.remote proxy: declaring
   // 'remote.session' in inject would pend the plugin on a host without it,
   // and the proxy throws on undeclared sub-service access.
   const loadHistory = createHistoryLoader(ctx.get('remote.session'), ctx.get('connection'))
+
+  // rc.1 loads a session's projections (the subagent catalog among them) on
+  // demand; 0.1.5 has no such verb (its catalog mirror needs no trigger).
+  const refreshCatalog = (sessionId: SessionId): void => {
+    void (ctx.sessions as unknown as { refreshProjections?(id: SessionId): Promise<void> }).refreshProjections?.(sessionId)
+  }
 
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock',
@@ -100,11 +121,23 @@ export function apply(ctx: Context): void {
       // absent channel or call error, so the dock's second running source is
       // a no-op when the family is not installed (independent, but compatible).
       pollActiveDelegations: () => pollActiveDelegations(ctx),
+      watchRows: jobsChannel.watchRows,
+      refreshCatalog,
+      hooks: { jobs: jobsChannel },
     }),
   }, TaskPilotDock))
 
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
-    { name: 'sidebar.right.pane.tab', key: TASKPILOT_TAB_ID, locale: NS, inject: (): JobTabInjected => ({ loadHistory }) },
+    {
+      name: 'sidebar.right.pane.tab',
+      key: TASKPILOT_TAB_ID,
+      locale: NS,
+      inject: (): JobTabInjected => ({
+        loadHistory,
+        watchRows: jobsChannel.watchRows,
+        hooks: { jobs: jobsChannel },
+      }),
+    },
     JobTab,
   ))
   ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
