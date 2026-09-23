@@ -57,7 +57,7 @@ export interface DatasetsToolConfig {
   tools?: DatasetsToolGroup
 }
 
-export const Config: z<DatasetsToolConfig> = z.object({
+export const Config: z = z.object({
   tools: z.union([z.const('all'), z.const('read'), z.const('authoring'), z.const('none')]).default('all'),
 })
 
