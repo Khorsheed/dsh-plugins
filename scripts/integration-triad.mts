@@ -35,7 +35,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createDatasetsService, type DatasetScope, type DatasetSnapshot } from '../packages/datasets/src/service.ts'
-import type { ManagedWorktree } from '../packages/datasets/src/worktree.ts'
+import { removeReadOnlyTree, type ManagedWorktree } from '../packages/datasets/src/materialize.ts'
 import { MissionService } from '../packages/mission/src/service.ts'
 import type { AnnotationRecord, AttemptRecord } from '../packages/mission/src/types.ts'
 import { DockerProvider } from '../packages/lab/src/docker.ts'
@@ -230,7 +230,8 @@ export async function runTriad(image: string): Promise<TriadResult> {
         execFileSync('docker', ['rm', '-f', containerName], { stdio: ['ignore', 'pipe', 'pipe'] })
       } catch { /* already gone */ }
     }
-    rmSync(tempRoot, { recursive: true, force: true })
+    // The materialized view is read-only by design; lift that before removing.
+    removeReadOnlyTree(tempRoot)
   }
 
   try {
@@ -261,13 +262,14 @@ export async function runTriad(image: string): Promise<TriadResult> {
     const repoCommit = git(repoDir, ['rev-parse', 'HEAD'])
 
     const datasets = createDatasetsService({
-      worktreeRoot: join(tempRoot, 'worktrees'),
+      materializedRoot: join(tempRoot, 'materialized'),
+      registryPath: join(tempRoot, 'registry.json'),
       bindingsRoot: join(tempRoot, 'bindings'),
     })
     const scope: DatasetScope = { repo: repoDir }
     const snapshot = await datasets.snapshot(scope, 'qa')
     const worktree = await datasets.worktreePath(scope, 'qa', { commit: snapshot.commit, layers: ['visible'] })
-    const worktreeTree = listTree(worktree.path).filter(path => path !== '.git')
+    const worktreeTree = listTree(worktree.path)
     log(`worktree at ${worktree.path} (reused=${worktree.reused}), tree: ${worktreeTree.join(', ')}`)
 
     // ── Step 2: mission ─────────────────────────────────────────────────

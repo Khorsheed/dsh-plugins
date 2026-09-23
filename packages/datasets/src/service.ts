@@ -8,7 +8,7 @@
  * reads come straight from git objects; whole-layer consumption goes through
  * deduplicated sparse-checkout worktrees. No path produces a second copy.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
@@ -26,12 +26,13 @@ import {
 import {
   itemBrief as computeItemBrief, overviewRow, type DatasetOverview, type ItemBrief,
 } from './brief.ts'
-import { listFiles, repoToplevel, resolveCommit, showFile } from './git.ts'
+import { gitCommonDir, listFiles, repoToplevel, resolveCommit, showFile } from './git.ts'
 import { judgeabilityIssues } from './rubric.ts'
 import {
   planDatasetSkeleton, planItemSkeleton, type SkeletonResult,
 } from './scaffold.ts'
-import { ensureWorktree, type ManagedWorktree } from './worktree.ts'
+import { layerPaths, materializePaths, type ManagedWorktree } from './materialize.ts'
+import { openRegistry, type RepoRegistry } from './registry.ts'
 import { normalizeRepoPath, sameRepoPath } from './repo-path.ts'
 
 /**
@@ -40,8 +41,14 @@ import { normalizeRepoPath, sameRepoPath } from './repo-path.ts'
  * session binding; the CLI from flags; slash from the session binding.
  */
 export interface DatasetScope {
-  /** Repository path (as given; resolved per call). */
+  /** Repository path (as given; resolved per call) — a checkout, or a git common dir for read verbs. */
   repo: string
+  /**
+   * The commit-ish a read resolves when the call names none (default HEAD).
+   * A registry scope pins it to the registration's tracked-branch tip, so an
+   * agent reads «latest» and never whatever branch a shared checkout has out.
+   */
+  ref?: string
   /** Dataset-id whitelist from the binding; absent = all. */
   datasets?: readonly string[]
   /** Layer whitelist from the binding; absent = the modelFacing floor (see effectiveLayers). */
@@ -240,23 +247,14 @@ export interface ListRequest {
   commit?: string
 }
 
-/** `datasets/previewRepo` request: one candidate repository path (normalized host-side). */
+/**
+ * `datasets/previewRepo` request: one candidate repository path (normalized
+ * host-side) and, optionally, the branch the register form has selected.
+ * The answer is the registry's {@link RegisterPreview}.
+ */
 export interface PreviewRepoRequest {
   path: string
-}
-
-/**
- * `datasets/previewRepo` result: the canonical repository path plus its
- * dataset summaries (with declared layers, visibility classes, and warnings).
- * A non-repository path fails loud (NOT_A_REPO); a valid repository with no
- * `datasets/` content answers an empty list — the bind form tells those apart.
- * The preview ignores any session binding: the binder is choosing the
- * whitelist, so it must see everything.
- */
-export interface PreviewRepoResult {
-  /** The resolved repository toplevel (what a bind should record). */
-  repo: string
-  datasets: DatasetSummary[]
+  trackedRef?: string
 }
 
 /** One structural error found by `datasets_validate` (the DatasetsError code is preserved). */
@@ -357,6 +355,8 @@ export interface DatasetsService {
    * plugin config.
    */
   readonly defaultRepo: string
+  /** The legacy per-session binding store (read by the registry's one-click import). */
+  readonly bindingsRoot: string
   list(scope: DatasetScope, datasetId?: string, commit?: string): Promise<ListDatasetsResult | ListItemsResult>
   show(scope: DatasetScope, datasetId: string, itemId?: string, commit?: string): Promise<ShowResult>
   describe(scope: DatasetScope, datasetId: string, commit?: string): Promise<JsonObject>
@@ -405,6 +405,8 @@ export interface DatasetsService {
    * Operator-only.
    */
   importItem(scope: DatasetScope, input: ImportItemInput): Promise<SkeletonResult>
+  /** The deployment's dataset registry (human-written; agents resolve `<id>/<set>` through it). */
+  readonly registry: RepoRegistry
   /** Fail loud unless `repo` is inside a git work tree; resolves to the canonical toplevel. */
   assertRepository(repo: string): Promise<string>
   /**
@@ -425,8 +427,10 @@ export interface DatasetsService {
 
 /** Service construction options (roots already resolved by the caller). */
 export interface DatasetsServiceOptions {
-  /** Managed worktree root. */
-  worktreeRoot: string
+  /** Materialized-layer root (`<stateRoot>/materialized`). */
+  materializedRoot: string
+  /** The registry file (`<stateRoot>/registry.json`). */
+  registryPath: string
   /** Binding store root (`<stateRoot>/bindings`). */
   bindingsRoot: string
   /** Plugin config's default repo (absent / `''` = none); surfaced as {@link DatasetsService.defaultRepo}. */
@@ -450,6 +454,28 @@ async function toplevelOf(repo: string): Promise<string> {
     return await repoToplevel(repo)
   } catch (error) {
     throw new DatasetsError(`${repo} is not a git repository: ${String(error)}`, 'NOT_A_REPO')
+  }
+}
+
+/**
+ * The repository a READ resolves against: a work tree's toplevel, or — for a
+ * registry scope, which names the git common dir so no checkout's HEAD is in
+ * play — the git dir itself. Reads only touch git objects, so a git dir is
+ * enough; write verbs keep {@link toplevelOf}.
+ */
+async function readRepoOf(repo: string): Promise<string> {
+  try {
+    return await toplevelOf(repo)
+  } catch (error) {
+    if (!(error instanceof DatasetsError && error.code === 'NOT_A_REPO')) throw error
+    let common: string
+    try {
+      common = await gitCommonDir(repo)
+    } catch {
+      throw error
+    }
+    if (common !== realpathSync(repo)) throw error
+    return common
   }
 }
 
@@ -573,12 +599,13 @@ function filterSummaryLayers(ceiling: readonly string[] | undefined, summary: Da
  */
 export function createDatasetsService(options: DatasetsServiceOptions): DatasetsService {
   const resolveCommitAt = async (scope: DatasetScope, commit?: string): Promise<{ repo: string; sha: string }> => {
-    const repo = await toplevelOf(scope.repo)
+    const repo = await readRepoOf(scope.repo)
+    const ref = commit ?? scope.ref ?? 'HEAD'
     let sha: string
     try {
-      sha = await resolveCommit(repo, commit ?? 'HEAD')
+      sha = await resolveCommit(repo, ref)
     } catch (error) {
-      throw new DatasetsError(`cannot resolve ${commit ?? 'HEAD'} in ${repo}: ${String(error)}`, 'GIT_ERROR')
+      throw new DatasetsError(`cannot resolve ${ref} in ${repo}: ${String(error)}`, 'GIT_ERROR')
     }
     return { repo, sha }
   }
@@ -625,6 +652,8 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
 
   const service: DatasetsService = {
     defaultRepo: options.defaultRepo ?? '',
+    bindingsRoot: options.bindingsRoot,
+    registry: openRegistry(options.registryPath),
     async list(scope, datasetId, commit) {
       const { repo, sha } = await resolveCommitAt(scope, commit)
       if (datasetId !== undefined) {
@@ -757,15 +786,18 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
           'LAYER_NOT_ALLOWED',
         )
       }
-      // Registered paths of the effective layers join the sparse pattern set.
+      // Registered paths of the effective layers join the archived paths.
       const registry = await buildRegistry(repo, sha, datasetId, descriptor)
       const registerPatterns = descriptor.register
         .filter(entry => effective.includes(entry.layer))
         .flatMap(entry => {
           const bucket = registeredFiles(registry, entry.item, entry.layer) ?? []
-          return bucket.map(file => `/${file.object}`)
+          return bucket.map(file => file.object)
         })
-      return await ensureWorktree(repo, sha, datasetId, effective, options.worktreeRoot, registerPatterns)
+      const files = await listFiles(repo, sha, datasetDir(datasetId))
+      return await materializePaths(
+        repo, sha, datasetId, effective, layerPaths(datasetId, effective, files, registerPatterns), options.materializedRoot,
+      )
     },
 
     async putItem(scope, input) {

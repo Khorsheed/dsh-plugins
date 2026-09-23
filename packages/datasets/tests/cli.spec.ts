@@ -1,10 +1,12 @@
-/** CLI: parse, exit-code semantics, the read verbs, bind, and worktree prune. */
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+/** CLI: parse, exit-code semantics, the read verbs, materialization, and the registry verbs. */
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { writeBinding } from '../src/binding.ts'
 import { parse, runCli, type CliIo } from '../src/cli.ts'
-import { cleanup, makeFixtureRepo, type FixtureRepo } from './helpers.ts'
+import { removeReadOnlyTree } from '../src/materialize.ts'
+import { cleanup, git, makeFixtureRepo, type FixtureRepo } from './helpers.ts'
 
 let repo: FixtureRepo | undefined
 let scratch: string | undefined
@@ -79,41 +81,54 @@ describe('read verbs', () => {
   })
 })
 
-describe('worktree verbs', () => {
-  it('worktree path prints the managed path; prune removes it', async () => {
+describe('worktree path (git archive materialization)', () => {
+  it('prints a read-only, content-addressed directory; a repeat hits the cache', async () => {
     repo = makeFixtureRepo()
-    const wtRoot = join(scratchDir(), 'wt')
+    const root = join(scratchDir(), 'materialized')
     const env = { DSH_DATASETS_REPO: repo.dir }
-    const pathResult = await run(['worktree', 'path', '--dataset', 'alpha', '--layers', 'visible', '--worktree-root', wtRoot], env)
-    expect(pathResult.code).toBe(0)
-    const wtPath = pathResult.out.trim()
-    // The managed path is realpath-canonicalized (macOS /var → /private/var).
-    expect(wtPath.startsWith(realpathSync(wtRoot))).toBe(true)
-
-    const prune = await run(['worktree', 'prune', '--worktree-root', wtRoot], env)
-    expect(prune.code).toBe(0)
-    expect(prune.out).toContain('removed 1 managed worktree')
-    const again = await run(['worktree', 'prune', '--worktree-root', wtRoot], env)
-    expect(again.out).toContain('no managed worktrees')
-
-    expect((await run(['worktree', 'prune'], {})).code).toBe(2)
+    const first = await run(['worktree', 'path', '--dataset', 'alpha', '--layers', 'visible', '--materialized-root', root], env)
+    expect(first.code).toBe(0)
+    const path = first.out.trim()
+    expect(path.endsWith(join(repo.commit, 'alpha', 'visible'))).toBe(true)
+    expect(existsSync(join(path, 'datasets/alpha/items/i1/visible/task.md'))).toBe(true)
+    expect(existsSync(join(path, 'datasets/alpha/items/i1/hidden'))).toBe(false)
+    const again = await run(['worktree', 'path', '--dataset', 'alpha', '--layers', 'visible', '--materialized-root', root], env)
+    expect(again.out.trim()).toBe(path)
+    // Nothing was registered in the repository's shared .git.
+    expect(git(repo.dir, ['worktree', 'list']).trim().split('\n')).toHaveLength(1)
+    removeReadOnlyTree(root)
   })
 })
 
-describe('bind verbs (plugin-owned binding store)', () => {
-  it('bind then binding then unbind round-trips through the store', async () => {
+describe('registry verbs (human-only writes)', () => {
+  it('register → registry → update → unregister round-trips through the file', async () => {
+    repo = makeFixtureRepo()
     const root = join(scratchDir(), 'state')
+    const registered = await run(['register', '--repo', repo.dir, '--id', 'lib', '--set-layers', 'alpha=visible+hidden', '--state-root', root])
+    expect(registered).toMatchObject({ code: 0, out: 'registered lib (tracking main)\n' })
+    const listed = JSON.parse((await run(['registry', '--state-root', root])).out) as Array<Record<string, unknown>>
+    expect(listed).toHaveLength(1)
+    expect(listed[0]).toMatchObject({ id: 'lib', trackedRef: 'main', sets: { alpha: { layers: ['hidden', 'visible'] } } })
+    // A second registration of the same repository is refused.
+    expect((await run(['register', '--repo', join(repo.dir, 'datasets'), '--state-root', root])).code).toBe(1)
+    // A branch that does not exist is refused, not guessed.
+    const missing = await run(['update', '--id', 'lib', '--tracked-ref', 'nope', '--state-root', root])
+    expect(missing.code).toBe(1)
+    expect(missing.err).toContain('does not exist')
+    expect((await run(['unregister', '--id', 'lib', '--state-root', root])).code).toBe(0)
+    expect((await run(['unregister', '--id', 'lib', '--state-root', root])).code).toBe(1)
+    expect((await run(['register', '--state-root', root])).code).toBe(2)
+  })
 
-    const bind = await run(['bind', '--session', 's1', '--repo', '/repo', '--layers', 'visible', '--state-root', root])
-    expect(bind.code).toBe(0)
+  it('bind is retired and points at register; binding/unbind still read and clear a legacy record', async () => {
+    const root = join(scratchDir(), 'state')
+    const bind = await run(['bind', '--session', 's1', '--repo', '/repo', '--state-root', root])
+    expect(bind.code).toBe(2)
+    expect(bind.err).toContain('dsh-datasets register')
+    writeBinding(join(root, 'bindings'), 's1', { repoPath: '/repo', layers: ['visible'] })
     const binding = await run(['binding', '--session', 's1', '--state-root', root])
     expect(JSON.parse(binding.out)).toEqual({ repoPath: '/repo', layers: ['visible'] })
-    const unbind = await run(['unbind', '--session', 's1', '--state-root', root])
-    expect(unbind.code).toBe(0)
+    expect((await run(['unbind', '--session', 's1', '--state-root', root])).code).toBe(0)
     expect((await run(['binding', '--session', 's1', '--state-root', root])).out.trim()).toBe('null')
-    expect((await run(['bind', '--session', 's1', '--state-root', root])).code).toBe(2)
-    // Binding a session id the CLI cannot verify just files the record (the
-    // store keys on the id alone); an invalid binding still fails loud.
-    expect((await run(['bind', '--session', 'ghost', '--repo', '/r', '--state-root', root])).code).toBe(0)
   })
 })

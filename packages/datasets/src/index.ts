@@ -1,8 +1,8 @@
 /**
  * Generic versioned dataset storage over git repositories: layered items,
- * commit-pinned reads straight from git objects, deduplicated sparse-checkout
- * worktree views for whole-layer consumption, and per-session bindings whose
- * layer whitelist is enforced on every read path. Three faces share one
+ * commit-pinned reads straight from git objects, content-addressed read-only
+ * whole-layer views extracted by `git archive`, and a human-written registry of
+ * dataset repositories whose per-set layers are enforced on every agent read. Three faces share one
  * service core: the `dsh-datasets` CLI, the `/datasets` slash command, and the
  * Typert Remote data face behind the web session tab (wire namespace
  * `datasets`) — of which only the CLI and the Remote face mount HERE: the
@@ -19,7 +19,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
-import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
+import { resolveMaterializedRoot, resolveStateRoot } from './defaults.ts'
+import { registryPathOf } from './registry.ts'
 import { createDatasetsService, type DatasetsService } from './service.ts'
 import { DatasetsRemoteService } from './remote.ts'
 
@@ -30,13 +31,13 @@ export interface DatasetsPluginConfig {
    * session has no binding ('' = none).
    */
   repo?: string
-  /** Managed worktree root override ('' = the three-stage default). */
-  worktreeRoot?: string
+  /** Materialized-layer root override ('' = the three-stage default). */
+  materializedRoot?: string
 }
 
 export const Config: z<DatasetsPluginConfig> = z.object({
   repo: z.string().default(''),
-  worktreeRoot: z.string().default(''),
+  materializedRoot: z.string().default(''),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -70,8 +71,9 @@ export const inject = []
 export function apply(ctx: Context, config: DatasetsPluginConfig): void {
   const defaultRepo = config.repo ?? ''
   const service = createDatasetsService({
-    worktreeRoot: resolveWorktreeRoot(config.worktreeRoot),
+    materializedRoot: resolveMaterializedRoot(config.materializedRoot),
     bindingsRoot: join(resolveStateRoot(undefined), 'bindings'),
+    registryPath: registryPathOf(resolveStateRoot(undefined)),
     defaultRepo,
   })
   ctx.provide('datasets', service)

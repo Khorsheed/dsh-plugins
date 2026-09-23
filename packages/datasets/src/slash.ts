@@ -1,8 +1,9 @@
 /**
  * The `/datasets` slash face — the human interface over {@link DatasetsService},
  * a thin adapter exactly like the CLI: the handler parses `invocation.rawInput`
- * itself and takes the session from `invocation.agent` (bind/unbind write the
- * invoking session's binding record).
+ * itself and takes the session from `invocation.agent` (unbind clears the
+ * invoking session's legacy binding record; bind is retired and says where
+ * registration lives).
  *
  * The REGISTRATION no longer happens in this core: it moved to the companion
  * `@khorsheed/dsh-datasets-tool` row (preset-visibility rollout A3), which an
@@ -15,12 +16,16 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
-import type { DatasetBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
-import { formatBindReceipt, formatList, formatShow, formatWarnings } from './format.ts'
+import { formatList, formatShow, formatWarnings } from './format.ts'
 import { resolveScope, type DatasetsService } from './service.ts'
 
-const USAGE = 'usage: /datasets list [dataset] | show <dataset> [item] | bind <repoPath> [--datasets a,b] [--layers x,y] | unbind'
+const USAGE = 'usage: /datasets list [dataset] | show <dataset> [item] | unbind'
+
+/** What `/datasets bind` answers now that binding is retired. */
+export const BIND_RETIRED = '/datasets bind is retired: dataset repositories are registered once per deployment now. '
+  + 'Open the Datasets tab and use Register repository (or run `dsh-datasets register --repo <path>`); agents then '
+  + 'address each set as <id>/<set>.'
 
 /** The companion row whose preset grant admits this command. */
 const TOOL_ROW_MODULE = '@khorsheed/dsh-datasets-tool'
@@ -101,17 +106,9 @@ export async function handleDatasetsCommand(service: DatasetsService, invocation
         return { kind: 'success', text: `${formatShow(result)}${suffix}` }
       }
       case 'bind': {
-        const repoPath = flags.positionals[0]
-        if (repoPath === undefined) {
-          return { kind: 'error', text: 'usage: /datasets bind <repoPath> [--datasets a,b] [--layers x,y]' }
-        }
-        const binding: DatasetBinding = {
-          repoPath,
-          ...(flags.datasets !== undefined ? { datasets: flags.datasets } : {}),
-          ...(flags.layers !== undefined ? { layers: flags.layers } : {}),
-        }
-        const recorded = service.bind(session, binding)
-        return { kind: 'success', text: formatBindReceipt(recorded) }
+        // Per-session binding is retired (T73): what agents may use is the
+        // deployment's registry, written by a person on the Datasets tab.
+        return { kind: 'error', text: BIND_RETIRED }
       }
       case 'unbind': {
         service.unbind(session)
@@ -137,9 +134,8 @@ export function registerDatasetsSlash(ctx: Context, service: DatasetsService): v
   ctx.commands.register({
     name: 'datasets',
     description:
-      'Session dataset binding and browsing: /datasets list [dataset] | show <dataset> [item] | '
-      + 'bind <repoPath> [--datasets a,b] [--layers x,y] | unbind. '
-      + 'bind without --layers keeps the agent to each dataset\'s model-facing layers; naming layers opens exactly those.',
+      'Dataset browsing: /datasets list [dataset] | show <dataset> [item] | unbind (clears a legacy session '
+      + 'binding). Repositories are registered on the Datasets tab.',
     // WITHOUT this descriptor a capable composer has no reason to believe the
     // command takes anything: picking `/datasets` from the completion strip
     // submits a bare invocation and leaves everything the human typed after it
@@ -148,7 +144,7 @@ export function registerDatasetsSlash(ctx: Context, service: DatasetsService): v
     // Declaring the free-form input is what makes the composer forward the
     // rest of the line; `rawInput` below is unchanged either way.
     input: {
-      hint: 'list [dataset] | show <dataset> [item] | bind <repoPath> [--datasets a,b] [--layers x,y] | unbind',
+      hint: 'list [dataset] | show <dataset> [item] | unbind',
     },
     handler: invocation => handleDatasetsCommand(service, invocation),
   })

@@ -19,7 +19,7 @@ import { cleanup as unmount, render, screen } from '@testing-library/react'
 import { createDatasetsService, resolveScope } from '../src/service.ts'
 import { DatasetsError } from '../src/dataset.ts'
 import { classifyError, ErrorState } from '../src/client/ErrorState.tsx'
-import { cleanup } from './helpers.ts'
+import { cleanup, stateOptions } from './helpers.ts'
 
 const roots: string[] = []
 
@@ -33,7 +33,7 @@ function service() {
   const worktreeRoot = mkdtempSync(join(tmpdir(), 'dsh-datasets-wt-'))
   const bindingsRoot = mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-'))
   roots.push(worktreeRoot, bindingsRoot)
-  return createDatasetsService({ worktreeRoot, bindingsRoot })
+  return createDatasetsService({ ...stateOptions(worktreeRoot), bindingsRoot })
 }
 
 /** The message of a call that must fail. */

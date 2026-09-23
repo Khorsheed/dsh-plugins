@@ -25,8 +25,10 @@
 |---|---|
 | `read` | 六个读类动词：`datasets_list` / `datasets_show` / `datasets_describe` / `datasets_read` / `datasets_snapshot` / `datasets_validate` |
 | `authoring` | read + `datasets_put_item`（起草进工作树；`git commit` 仍是人的） |
-| `all`（缺省） | authoring + `datasets_worktree_path`（整层物化的托管 worktree） |
+| `all`（缺省） | authoring + `datasets_worktree_path`（整层物化，写只读物化缓存） |
 | `none` | 无——连 `datasets:tools` 提示词段也不贡献 |
+
+提示词段（T73）告诉模型：题集只按登记引用 `<id>/<set>` 取，先调 `datasets_list`；从不传路径；名字对不上唯一题集就用 `ask_user_question` 让人选；没登记的仓库请人去题集 tab 登记，不自己去读。它不再提 `/datasets bind`（已退役）。
 
 四档是一条包含链；**评测域建议 `authoring`**：规划期 agent 要读题、要出题，整层物化是编排器的动作。
 
