@@ -227,10 +227,16 @@ try {
     // 5. gated restart + canary watch. schedule-exit owns the single
     // composition preflight; running it separately here doubled the slowest
     // part of an ordinary 3080 restart without strengthening the gate.
+    // --preflight-timeout-ms 300000: the guard's 120s default was calibrated
+    // on an idle machine; under multi-agent load (several builds/tests sharing
+    // 8 cores + swap pressure) a clean full-profile dry-run can legitimately
+    // exceed it. The timeout exists to catch a HUNG preflight, not a slow one.
     const logPath = join(DSH_HOME, 'state', 'watchdog.log')
     const logOffset = existsSync(logPath) ? readFileSync(logPath, 'utf8').length : 0
-    runGuard(['schedule-exit', '--port', PORT, '--delay-ms', '5000', '--profile', 'web', '--repo', HARNESS, ...(initiator === undefined ? [] : ['--initiator', initiator])])
-    const deadline = Date.now() + 180_000
+    runGuard(['schedule-exit', '--port', PORT, '--delay-ms', '5000', '--profile', 'web', '--repo', HARNESS, '--preflight-timeout-ms', '300000', ...(initiator === undefined ? [] : ['--initiator', initiator])])
+    // Same load reasoning as above: restart + readiness + browser handoff
+    // normally land in 20-40s; the window is a hang bound, not a speed gate.
+    const deadline = Date.now() + 300_000
     let ok = false
     while (Date.now() < deadline) {
       execFileSync('sleep', ['5'])
@@ -245,7 +251,7 @@ try {
       }
     }
     if (!ok) {
-      process.stderr.write('\ndeploy-3080: instance did not come back clean within 180s — check the watchdog log before touching anything else\n')
+      process.stderr.write('\ndeploy-3080: instance did not come back clean within 300s — check the watchdog log before touching anything else\n')
       throw new Error('restart/canary verification failed')
     }
   }
