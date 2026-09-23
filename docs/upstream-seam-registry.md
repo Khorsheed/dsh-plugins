@@ -146,6 +146,15 @@
 - **退役条件**：插件可声明并 emit 自己的事件并被客户端 `$on` 收到后，worktrees 的 worktree 变化改走真推送；`fs.watch` 实时 dirty 也才有可能（当前"盯着看 + 外部进程改文件"无法纯事件覆盖）。
 - **状态**：绕行中（@khorsheed/dsh-worktrees）。
 
+### S18. 插件无法往会话里投「只通知、不触发执行」的系统事件（实验生命周期回流到发起它的会话）
+
+- **需求**：评测实验由会话里的 agent 起草、人在实验室 tab 批准启动，之后运行完成、判官判完、人工评估完成三个节点要回到发起它的会话里各留一条通知（「lean-vs-full-p0 跑完了，去人工评估」），只给人和 agent 看，**不触发 agent 执行**。一个会话可以同时有两个以上实验，所以不能靠会话头或 composer 上的单个「当前实验」常驻位来代替。
+- **现状**：宿主没有让插件往会话追加事件的 API。eval 对会话只用得到 `sessions.open` / `openSubagent`；插件事件写进会话日志还会撞 S2 记过的那堵墙（`Session.append` 写不了 `ignorable: true`，读回拒绝未知的非 ignorable 事件类型）。run 记录上有 `originSession`（`packages/eval/src/faces.ts`），只在传了 `parentSessionId` 时才写，命令行发起的 run 没有。
+- **现状绕行**：「实验」tab 标签上显示本会话发起、需要人处理的实验个数（`conversation.view` 的 `label` 是函数，宿主是否随状态重绘待证；不重绘就不显示这个数，不用 DOM 锚点硬改）+ 实验室列表的「需要你处理」分组 + agent 用 `eval_run_status` 读。要求退路本身就够用，不是临时凑合。见 `proposals/active/2026-09-23-eval-journey-redesign.md` D3 与 `profiles/web-eval/docs/ui-spec.md` §五「跨面旅程」。
+- **建议的官方改动**：给插件一个往指定会话追加「系统通知」事件的入口——渲染成对话里的一行、持久化可读回、不进模型上下文也不唤醒 agent（或由调用方显式选择是否进上下文）。最小版本：一个官方的 `ignorable` 通知事件类型 + 插件可调用的 append。
+- **退役条件**：官方提供该入口后，eval 在三个节点往 `originSession` 投通知；tab 计数降为辅助（可留可拆），`eval_run_status` 不变。
+- **状态**：待实施（@khorsheed/dsh-eval；绕行随 I5 收口批 T72 / T76 落地）。
+
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。
