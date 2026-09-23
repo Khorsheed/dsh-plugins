@@ -4,7 +4,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconCheckOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { NS } from './locales.ts'
 import { publishAuthStatus } from './auth-status.ts'
 import type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
@@ -296,7 +296,7 @@ export function ProviderAuthBlock({ harness, useSessions, status, runCommand, ac
         <Toast
           key={loginToast.seq}
           text={t('settings.loginSuccess', { harness: harnessLabel(harness.id) })}
-          icon={<IconCheckOutline16 />}
+          icon={<IconCheckOutlineMedium />}
           onDone={() => { setLoginToast(null) }}
         />
       )}

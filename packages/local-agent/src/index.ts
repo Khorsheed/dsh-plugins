@@ -776,7 +776,11 @@ export function assertResumeCwdUnchanged(
   }
 }
 
-export const Config: z<Config> = z.object({
+// Bare `z` annotation: `z<Config>`/`z<any, Config>` both fail schemastery
+// 3.18.4's variance under exactOptionalPropertyTypes (TS2375), and dropping
+// the annotation trips TS2742 on the inferred type's private names. The
+// interface stays the apply signature's contract.
+export const Config: z = z.object({
   homesRoot: z.string().required(),
   loginPromptTimeoutMs: z.number().default(10_000),
 })
