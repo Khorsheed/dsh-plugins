@@ -12,7 +12,7 @@
  * two files build the same props by the same rule.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { EvalExperimentDetail, EvalExperimentsResult } from '../src/types.ts'
@@ -45,12 +45,14 @@ interface Harness {
   fetchDraftOptions: ReturnType<typeof vi.fn>
   draftExperiment: ReturnType<typeof vi.fn>
   fetchJudgeQueue: ReturnType<typeof vi.fn>
+  archiveRun: ReturnType<typeof vi.fn>
 }
 
 const LIST: EvalExperimentsResult = {
   repo: '/repo',
   datasets: ['ds'],
   notes: [],
+  session: 's1',
   rows: [
     {
       id: 'run-20260913-aa',
@@ -68,6 +70,11 @@ const LIST: EvalExperimentsResult = {
       progress: { done: 10, total: 12 },
       startedAt: Date.UTC(2026, 8, 11, 3, 0),
       validation: null,
+      originSession: 's1',
+      archived: false,
+      closure: null,
+      lastProgressAt: null,
+      stalledMinutes: null,
       unit: { image: 'dataseek/bench:1', network: 'sealed', user: '1000' },
     },
     {
@@ -86,6 +93,11 @@ const LIST: EvalExperimentsResult = {
       progress: null,
       startedAt: null,
       validation: { ok: true, errors: 0, warnings: 2 },
+      originSession: 's1',
+      archived: false,
+      closure: null,
+      lastProgressAt: null,
+      stalledMinutes: null,
       unit: null,
     },
   ],
@@ -156,6 +168,7 @@ function makeHarness(overrides: { list?: EvalExperimentsResult } = {}): Harness 
     // The stage bar walks a reader to the stage their status asks for, so the
     // reads of the stages it lands on have to exist here too.
     fetchJudgeQueue: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
+    archiveRun: vi.fn(async () => ({ ok: true, value: { recorded: true, detail: null, archive: null } })),
   }
 }
 
@@ -180,6 +193,7 @@ function renderView(h: Harness) {
     approvePlan: h.approvePlan,
     fetchRunOutput: h.fetchRunOutput,
     fetchJudgeQueue: h.fetchJudgeQueue,
+    archiveRun: h.archiveRun,
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
@@ -187,7 +201,7 @@ function renderView(h: Harness) {
   return render(<LabView {...props} />)
 }
 
-afterEach(() => { cleanup() })
+afterEach(() => { cleanup(); localStorage.clear() })
 
 describe('LabView list', () => {
   it('renders drafts and runs in one table with status, factors, and progress', async () => {
@@ -363,5 +377,105 @@ describe('LabView detail', () => {
     expect(screen.getByText('error.serviceMissing.fix')).toBeTruthy()
     expect(screen.getByText('detail.error')).toBeTruthy()
     expect(screen.getByText('no mission service')).toBeTruthy()
+  })
+})
+
+describe('the grouped list (T72 §1)', () => {
+  const RUN = LIST.rows[0]!
+  const row = (over: Partial<typeof RUN>): typeof RUN => ({ ...RUN, ...over })
+  const GROUPED: EvalExperimentsResult = {
+    ...LIST,
+    rows: [
+      LIST.rows[1]!,
+      row({ id: 'r-judging', runId: 'r-judging', name: 'judging-mine', status: 'judging' }),
+      row({ id: 'r-running', runId: 'r-running', name: 'running-mine', status: 'running' }),
+      row({ id: 'r-stalled', runId: 'r-stalled', name: 'stalled-mine', status: 'stalled', stalledMinutes: 42 }),
+      row({ id: 'r-done', runId: 'r-done', name: 'done-mine', status: 'done' }),
+      row({ id: 'r-void', runId: 'r-void', name: 'void-mine', status: 'void' }),
+      row({ id: 'r-arch', runId: 'r-arch', name: 'archived-mine', status: 'done', archived: true }),
+      row({ id: 'r-other', runId: 'r-other', name: 'other-session', status: 'running', originSession: 's2' }),
+      row({ id: 'r-cli', runId: 'r-cli', name: 'from-cli', status: 'done', originSession: null }),
+    ],
+  }
+  const groupOf = (name: string) => screen.getByText(name).closest('[data-group]')?.getAttribute('data-group')
+
+  it('groups by what the row asks of the reader, and the archive is its own fold', async () => {
+    const h = makeHarness({ list: GROUPED })
+    renderView(h)
+    await screen.findByText('judging-mine')
+    expect(groupOf('effort-sweep')).toBe('attention')
+    expect(groupOf('judging-mine')).toBe('attention')
+    expect(groupOf('stalled-mine')).toBe('attention')
+    expect(groupOf('running-mine')).toBe('running')
+    expect(groupOf('done-mine')).toBe('finished')
+    expect(groupOf('void-mine')).toBe('finished')
+    expect(groupOf('archived-mine')).toBe('archived')
+    // Archiving changes the group, never the status word.
+    expect(screen.getByText('list.group.archivedCount {"count":1}')).toBeTruthy()
+    expect(screen.getAllByText('status.done').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('shows this session by default, counts the rest, and the count switches to 全部', async () => {
+    const h = makeHarness({ list: GROUPED })
+    renderView(h)
+    await screen.findByText('judging-mine')
+    // Another session's run AND a CLI run with no session are counted, not dropped.
+    expect(screen.queryByText('other-session')).toBeNull()
+    expect(screen.queryByText('from-cli')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'list.others {"count":2}' }))
+    expect(screen.getByText('other-session')).toBeTruthy()
+    expect(screen.getByText('from-cli')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'list.scopeAll' }).getAttribute('aria-pressed')).toBe('true')
+    // Remembered per viewer.
+    expect(localStorage.getItem('dsh-eval.listScope')).toBe('all')
+  })
+
+  it('a stalled row says how long, and 重跑 approves its plan again without opening it', async () => {
+    const h = makeHarness({ list: GROUPED })
+    h.approvePlan.mockResolvedValue({
+      ok: true,
+      value: { started: true, checks: [], refusal: null, jobId: 'j', runId: 'r-new', parentSessionId: 's1' },
+    })
+    renderView(h)
+    await screen.findByText('stalled-mine')
+    expect(screen.getByText('list.stalledMeta {"minutes":42}')).toBeTruthy()
+    const rerun = screen.getAllByRole('button', { name: 'cta.stalled' })
+    expect(rerun).toHaveLength(1)
+    fireEvent.click(rerun[0]!)
+    await waitFor(() => {
+      expect(h.approvePlan).toHaveBeenCalledWith('s1', { planPath: RUN.planPath })
+    })
+    expect(await screen.findByText('notice.rerun {"name":"stalled-mine","runId":"r-new"}')).toBeTruthy()
+    // Still on the list: the row's button is not a click on the row.
+    expect(h.fetchExperiment).not.toHaveBeenCalled()
+  })
+
+  it('归档 / 取消归档 write the mark and re-read the list', async () => {
+    const h = makeHarness({ list: GROUPED })
+    renderView(h)
+    await screen.findByText('done-mine')
+    const calls = h.fetchExperiments.mock.calls.length
+    const doneRow = screen.getByText('done-mine').closest('[role="button"]') as HTMLElement
+    fireEvent.click(within(doneRow).getByRole('button', { name: 'list.archive' }))
+    await waitFor(() => {
+      expect(h.archiveRun).toHaveBeenCalledWith('s1', { runId: 'r-done', archived: true })
+    })
+    await waitFor(() => { expect(h.fetchExperiments.mock.calls.length).toBeGreaterThan(calls) })
+    const archivedRow = screen.getByText('archived-mine').closest('[role="button"]') as HTMLElement
+    fireEvent.click(within(archivedRow).getByRole('button', { name: 'list.unarchive' }))
+    await waitFor(() => {
+      expect(h.archiveRun).toHaveBeenCalledWith('s1', { runId: 'r-arch', archived: false })
+    })
+    // A draft has no run to mark.
+    const draftRow = screen.getByText('effort-sweep').closest('[role="button"]') as HTMLElement
+    expect(within(draftRow).queryByRole('button', { name: 'list.archive' })).toBeNull()
+  })
+
+  it('an empty session view says what to do next', async () => {
+    const h = makeHarness({ list: { ...GROUPED, rows: [GROUPED.rows[7]!] } })
+    renderView(h)
+    expect(await screen.findByText('list.scopeEmpty')).toBeTruthy()
+    expect(screen.getByText('list.scopeEmptyHint')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'list.others {"count":1}' })).toBeTruthy()
   })
 })

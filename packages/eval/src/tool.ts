@@ -407,7 +407,11 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
     description:
       'Where one evaluation run stands: the run.meta digest (plan sha, pinned commit, conditions, seeded '
       + 'execution order, start time) and one row per cell — task, condition, rep, attempt, state, projection '
-      + 'bucket, what the orchestrator last did to it, and how often a submission was rejected. Read-only: '
+      + 'bucket, what the orchestrator last did to it, and how often a submission was rejected. `status` is the '
+      + 'same word the lab list shows (draft / pending-approval / running / stalled / judging / done / void / '
+      + 'refused / cancelled — derived, never stored; `stalled` means nothing is driving unfinished cells and the '
+      + 'ledger has not moved for over 10 minutes, with `stalledMinutes` saying how long), plus the human\'s '
+      + '`closure` exit if one was taken and whether the run is `archived`. Read-only: '
       + 'nothing here advances, retries, or annotates a cell.',
     parameters: {
       run_id: { type: 'string', required: true, description: 'The run id — the /eval run reply names it, and so does the run bundle\'s run.json.' },

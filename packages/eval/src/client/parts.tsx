@@ -50,6 +50,8 @@ const STATUS_TONE: Readonly<Record<EvalExperimentStatus, Tone>> = {
   'done': 'ok',
   'refused': 'danger',
   'cancelled': 'neutral',
+  'stalled': 'warn',
+  'void': 'neutral',
 }
 
 /**
@@ -297,9 +299,22 @@ export function listOrDash(values: readonly string[]): string {
  * English sentence, an absolute path, a raw payload (ui-spec §九).
  * @param props - the summary line and whatever is folded under it.
  */
-export function Detail(props: { summary: string; children: ReactNode }) {
+export function Detail(props: {
+  summary: string
+  children: ReactNode
+  /** Controlled mode: the caller holds the open state (the report's audit fold). */
+  open?: boolean
+  onToggle?: (open: boolean) => void
+  id?: string
+}) {
+  const controlled = props.open === undefined
+    ? {}
+    : {
+      open: props.open,
+      onToggle: (event: { currentTarget: HTMLDetailsElement }) => { props.onToggle?.(event.currentTarget.open) },
+    }
   return (
-    <details className={css.errorDetails}>
+    <details className={css.errorDetails} id={props.id} {...controlled}>
       <summary className={css.errorSummary}>{props.summary}</summary>
       {props.children}
     </details>
@@ -367,7 +382,7 @@ export function invariantTone(status: string): Tone {
  * three of the six move the reader to another stage, one re-reads, and two are
  * the human acts (ui-spec R1) the page already owned.
  */
-export type StageVerb = 'design' | 'runs' | 'compare' | 'review' | 'refresh' | 'approve'
+export type StageVerb = 'design' | 'runs' | 'compare' | 'review' | 'refresh' | 'approve' | 'rerun'
 
 /** One experiment status, said as a sentence and a button. */
 export interface StageAction {
@@ -397,6 +412,8 @@ const STAGE_ACTIONS: Readonly<Record<EvalExperimentStatus, StageAction>> = {
   'done': { hint: 'cta.doneHint', cta: 'cta.done', verb: 'compare' },
   'refused': { hint: 'cta.refusedHint', cta: 'cta.refused', verb: 'refresh' },
   'cancelled': { hint: 'cta.cancelledHint', cta: 'cta.cancelled', verb: 'runs' },
+  'stalled': { hint: 'cta.stalledHint', cta: 'cta.stalled', verb: 'rerun' },
+  'void': { hint: 'cta.voidHint', cta: 'cta.void', verb: 'runs' },
 }
 
 /**

@@ -19,6 +19,7 @@ import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
 import { canonicalJson, hashConditionDocument } from './hash.ts'
 import { CONDITION_ID_RE, jsonEquals } from './schema.ts'
+import type { EvalClosure, EvalExperimentStatus } from './types.ts'
 import {
   conditionDiagnostics,
   expandHome,
@@ -427,8 +428,8 @@ export interface RunCellStatus {
   submissionRejected: number
 }
 
-/** The `eval_run_status` answer: run.meta digest + one row per cell. */
-export interface RunStatusReport {
+/** What the mission ledger alone says about one run: run.meta digest + one row per cell. */
+export interface RunLedgerStatus {
   runId: string
   state: string
   templateName: string | null
@@ -452,6 +453,19 @@ export interface RunStatusReport {
   /** Cells holding a resource they have not released — mission's leak warning. */
   unreleased: string[]
   cells: RunCellStatus[]
+}
+
+/**
+ * The `eval_run_status` answer: the ledger's say plus the experiment STATUS
+ * WORD the lab list shows for the same run (T72 §2) — derived by the one rule
+ * in `experiments.ts`, never stored. `stalledMinutes` is set only when the
+ * word is `stalled`; `closure` is the human's standing exit, if any.
+ */
+export interface RunStatusReport extends RunLedgerStatus {
+  status: EvalExperimentStatus
+  stalledMinutes: number | null
+  closure: EvalClosure | null
+  archived: boolean
 }
 
 /** Digest `run.meta.conditions`, which carries the whole declaration since T8b. */
@@ -482,7 +496,7 @@ function numberOrNull(value: unknown): number | null {
  * @param mission - the mission read face (`ctx.mission`).
  * @param runId - the run to project.
  */
-export function runStatus(mission: MissionReadFace, runId: string): RunStatusReport {
+export function runStatus(mission: MissionReadFace, runId: string): RunLedgerStatus {
   const status = mission.runStatus(runId)
   const meta = status.run.meta
   const order = isPlainObject(meta['order']) ? meta['order'] : undefined

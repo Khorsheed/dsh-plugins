@@ -97,7 +97,7 @@ export type {
 export { conditionDiagnostics, resolveConditionReadiness, unresolvedFields, validatePlan } from './validate.ts'
 export { conditionFactors, conditionLeaves, listConditions, runCells, runStatus } from './read.ts'
 export type {
-  ConditionsReport, ConditionSummary, RunCellDetail, RunCellRefs, RunCellsQuery, RunCellsReport, RunCellStatus, RunStatusReport,
+  ConditionsReport, ConditionSummary, RunCellDetail, RunCellRefs, RunCellsQuery, RunCellsReport, RunCellStatus, RunLedgerStatus, RunStatusReport,
 } from './read.ts'
 export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './experiments.ts'
 export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'

@@ -35,6 +35,7 @@ import {
   invariantTone, stageTone, stamp,
 } from './parts.tsx'
 import { compactCount, durationParts, sourceOf, sourceShares, stagePhrase, verdictKey } from './vocab.ts'
+import { conclusionSourceKey, validityCount } from './journey.ts'
 import type { EvalKey } from './locales.ts'
 import css from './LabView.module.css'
 
@@ -231,24 +232,95 @@ function PairBlock(props: {
             </tbody>
           </table>
         )}
-      {pair.ci !== null && (
-        <div className={css.dim}>
-          {t('report.ci', {
-            mean: fmtNum(pair.ci.mean), lo: fmtNum(pair.ci.lo), hi: fmtNum(pair.ci.hi),
-            samples: pair.ci.samples, seed: pair.ci.seed,
-          })}
-          {pair.ciAdvisory && <div>{t('report.ciAdvisory')}</div>}
-        </div>
-      )}
-      {/* No interval is a statement too: say how many items had a delta
-          rather than leaving a gap a reader could take for "not computed". */}
-      {pair.ci === null && pair.ciWithheld !== null && (
-        <div className={css.dim}>{t('report.ciWithheld', { k: pair.ciWithheld.tasksWithDelta })}</div>
-      )}
-      {/* The rank verdict is the report's own sentence — including the one
-          that refuses to rank, which is the sentence a reader must not lose. */}
-      <div className={css.rankReason}>{t('report.rank')}: {pair.rankReason}</div>
     </Section>
+  )
+}
+
+/**
+ * One pair's verdict line on the conclusion card: the report's own rank
+ * sentence VERBATIM, then exactly one of the interval, the reason there is no
+ * interval, or the reason the interval is only advisory (T72 §6).
+ */
+export function pairVerdictLine(pair: EvalReportPair, t: LabViewProps['t']): string {
+  if (pair.ci === null) {
+    return pair.ciWithheld === null ? '' : t('report.ciWithheld', { k: pair.ciWithheld.tasksWithDelta })
+  }
+  const ci = t('report.ci', {
+    mean: fmtNum(pair.ci.mean), lo: fmtNum(pair.ci.lo), hi: fmtNum(pair.ci.hi),
+    samples: pair.ci.samples, seed: pair.ci.seed,
+  })
+  return pair.ciAdvisory ? `${t('report.ciAdvisoryShort')}：${ci}` : ci
+}
+
+/**
+ * The CONCLUSION CARD (T72 §6) — the first thing on the page, because the
+ * question a reader opens this stage with is «so which one is better, and can
+ * I believe it», and v1 answered it at the bottom of four sections of
+ * evidence. Evidence stays, collapsed, under 审计.
+ *
+ * The source line is decided by the closure, not by the bundle: a human's
+ * final verdicts exist or not whatever was exported, and 「判官初判，未经人工
+ * 确认」 is the honest default when nobody took an exit.
+ */
+function ConclusionCard(props: {
+  report: EvalRunReportView
+  onOpenAudit: () => void
+  t: LabViewProps['t']
+}) {
+  const { report, onOpenAudit, t } = props
+  const sourceKey = conclusionSourceKey(report.closure)
+  const validity = validityCount(report.invariants)
+  const allPass = validity.total > 0 && validity.passed === validity.total
+  const flagged = report.closure?.exit === 'flagged' ? report.closure.reason : null
+  const failing = report.invariants.filter(check => check.status !== 'ok' && check.id !== 'verdict-coverage')
+  return (
+    <section className={css.conclusionCard} aria-label={t('report.conclusion')}>
+      {flagged !== null && <div className={css.conclusionFlag}>{t('report.flagged', { reason: flagged })}</div>}
+      <div className={css.conclusionTitle}>{t('report.conclusion')}</div>
+      {!report.comparisonAllowed
+        ? (
+          <div>
+            <div>{t('report.comparisonClosed', { count: failing.length })}</div>
+            <div className={css.chipRow}>
+              {failing.map(check => (
+                <span key={check.id} className={css.summaryItem}>
+                  <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
+                  <span>{check.title}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )
+        : report.singleCondition
+          ? <div>{t('report.singleCondition')}</div>
+          : report.pairs.length === 0
+            ? <div className={css.dim}>{t('report.noPairs')}</div>
+            : report.pairs.map((pair) => {
+              const line = pairVerdictLine(pair, t)
+              return (
+                <div key={`${pair.a}|${pair.b}`} className={css.conclusionPair}>
+                  <div className={css.conclusionPairName}>{t('report.pairTitle', { a: pair.a, b: pair.b })}</div>
+                  <div className={css.rankReason}>{pair.rankReason}</div>
+                  {line !== '' && <div className={css.dim}>{line}</div>}
+                </div>
+              )
+            })}
+      <div className={css.conclusionMeta}>
+        {sourceKey !== null && <span>{t(sourceKey)}</span>}
+        {validity.total > 0 && (
+          <button
+            type="button"
+            className={css.reportJump}
+            title={t('report.validityOpen')}
+            onClick={onOpenAudit}
+          >
+            <Chip tone={allPass ? 'ok' : 'warn'}>
+              {t(allPass ? 'report.validityAll' : 'report.validitySome', validity)}
+            </Chip>
+          </button>
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -782,11 +854,13 @@ export function ReportPage(props: {
   onOpenRecords: (task: string, condition: string) => void
   /** Land on 运行记录 AND open ONE record — the criteria table's jump. */
   onOpenRecord: (task: string, condition: string, missionId: string) => void
+  /** Go to 运行记录 — the one link a voided experiment's page keeps. */
+  onOpenRuns: () => void
   t: LabViewProps['t']
 }) {
   const {
     report, loading, error, finalizing, finalizeResult, units, unitsError, reexporting,
-    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, onOpenRecord, t,
+    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, onOpenRecord, onOpenRuns, t,
   } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
@@ -794,205 +868,223 @@ export function ReportPage(props: {
   // still have meant it.
   const [confirming, setConfirming] = useState(false)
   const [dir, setDir] = useState('')
+  // The audit fold is controlled so the card's validity line can open it.
+  const [auditOpen, setAuditOpen] = useState(false)
 
   if (error !== null) return <ErrorState what={t('report.error')} message={error} t={t} />
   if (report === null) return <div className={css.empty}>{t('report.loading')}</div>
 
-  // The section gate is the first four checks. Verdict coverage degrades a
-  // pair inside an OPEN section, so it is never named as a reason it closed.
-  const failing = report.invariants.filter(check => check.status !== 'ok' && check.id !== 'verdict-coverage')
-
-  return (
-    <div className={css.reportPage}>
-      <div className={css.reportBar}>
-        {confirming
-          ? (
-            <>
-              <span className={css.warning}>{t('report.finalizeConfirmAsk')}</span>
-              <Button size="sm" variant="primary" disabled={finalizing}
-                onClick={() => { setConfirming(false); onFinalize() }}>
-                {t('report.finalizeConfirm')}
-              </Button>
-              <Button size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
-            </>
-          )
-          : (
-            <Button size="sm" disabled={finalizing || report.bundleDir === null} onClick={() => { setConfirming(true) }}>
-              {t('report.finalize')}
-            </Button>
-          )}
-        <Button size="sm" onClick={onExport}>{t('action.export')}</Button>
-        {/* The repeat, beside the dialog that made the first one. It is
-            disabled with a reason rather than hidden: a reader who has just
-            written a final verdict looks here for it. */}
-        <Button
-          size="sm"
-          disabled={reexporting || report.reexportable !== true}
-          title={report.reexportable === true ? '' : t('report.reexportNeedsDialog')}
-          onClick={onReexport}
+  // 评估不成立 (closure exit ④): the page says that and nothing else. Any
+  // number printed under it would be read as a result the person who voided
+  // the evaluation has just said does not stand (T72 §6).
+  if (report.closure?.exit === 'void') {
+    return (
+      <div className={css.reportPage}>
+        <EmptyState
+          title={t('report.void', { reason: report.closure.reason ?? DASH })}
+          hint={t('report.voidHint')}
         >
-          {reexporting ? t('report.reexporting') : t('report.reexport')}
-        </Button>
-        {/* 回收 is the SAME walk as finalize — reclaiming a container IS its
-            cell passing the gate — so it shares the in-flight flag and the
-            action behind it, and differs only in what the reader came for. */}
-        <UnitsStrip units={units} error={unitsError} reclaiming={finalizing} onReclaim={onFinalize} t={t} />
-        <span className={css.barSpacer} />
-        {loading && <span className={css.dim}>{t('report.loading')}</span>}
+          <Button size="sm" onClick={onOpenRuns}>{t('cta.void')}</Button>
+        </EmptyState>
       </div>
+    )
+  }
 
-      {report.bundleDir === null
+  const openAudit = (): void => {
+    setAuditOpen(true)
+    // After the fold has rendered open; a missing element is not an error.
+    setTimeout(() => {
+      try {
+        globalThis.document?.getElementById('eval-report-audit')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      } catch {
+        // scrolling is a convenience
+      }
+    }, 0)
+  }
+
+  const bar = (
+    <div className={css.reportBar}>
+      {confirming
         ? (
-          // Never blank: a run nobody exported is a state with a button, not
-          // an empty page — and the directories that were looked in are what
-          // tell a reader which of the two situations they are in.
-          <div className={css.reportSection}>
-            <EmptyState title={t('report.noBundle')} hint={t('report.noBundleHint')}>
-              <Button size="sm" variant="primary" onClick={onExport}>{t('report.exportNow')}</Button>
-            </EmptyState>
-            {/* Where it looked, and what the host said about not finding it.
-                Absolute paths and a host sentence — both kept, both folded
-                (ui-spec §九); they are what tells a reader WHICH of the two
-                situations they are in. */}
-            <Detail summary={t('report.searched')}>
-              {report.refusal !== null && <div className={css.errorDetailLine}>{report.refusal}</div>}
-              {report.searched.map(dir => (
-                <div key={dir} className={css.errorDetailLine}>{dir}/{report.runId}-bundle</div>
-              ))}
-            </Detail>
-            {/* A run started with `--out <dir>` records nothing about where
-                its bundle went: run.meta names the plan and the repository,
-                and the bundle is under neither. Without this box the page
-                would keep calling an exported bundle 未导出, and the only way
-                out would be to export it a second time. */}
-            <div className={css.actions}>
-              <Input
-                value={dir}
-                onChange={(event) => { setDir(event.target.value) }}
-                placeholder={t('report.lookInDir')}
-                aria-label={t('report.lookInDir')}
-              />
-              <Button size="sm" disabled={dir.trim() === ''} onClick={() => { onLookIn(dir.trim()) }}>
-                {t('report.lookInGo')}
-              </Button>
-            </div>
-          </div>
+          <>
+            <span className={css.warning}>{t('report.finalizeConfirmAsk')}</span>
+            <Button size="sm" variant="primary" disabled={finalizing}
+              onClick={() => { setConfirming(false); onFinalize() }}>
+              {t('report.finalizeConfirm')}
+            </Button>
+            <Button size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
+          </>
         )
         : (
-          <>
-            <div className={css.dim}>
-              {/* The bundle's own name, not the path it happens to sit at. */}
-              <span className={css.mono} title={report.bundleDir}>
-                {(report.bundleDir ?? '').split('/').filter(Boolean).pop() ?? ''}
-              </span>
-              {' · '}
-              {t('report.counts', {
-                rows: report.counts.rows, missions: report.counts.missions,
-                attempts: report.counts.attempts, retries: report.counts.retries,
-              })}
-            </div>
-            {/* WHEN this bundle was written, and whether its report is inside
-                it. One quiet line, no path: the path is under «详情» below
-                (§九), and this is the fact a reader needs to judge the numbers
-                above it. */}
-            <div className={css.dim}>
-              {report.exportedAt === null
-                ? t('report.exportedAtUnknown')
-                : t('report.exportedAt', { at: stamp(report.exportedAt) })}
-              {report.summaryWritten && <> · {t('report.summaryIn')}</>}
-            </div>
-            {/* The whole of G17, said once: the export happens when the run
-                ends, the final verdicts are written afterwards from the judge
-                bench, and nothing carried them back — a reader found that out
-                by opening manifest.json. A sentence and the button that fixes
-                it, in the same seat. */}
-            {report.staleAfterFinal && (
-              <div className={css.blocked}>
-                <div>{t('report.staleAfterFinal', { final: stamp(report.lastHumanFinalAt) })}</div>
-                <div className={css.actions}>
-                  <Button size="sm" variant="primary" disabled={reexporting} onClick={onReexport}>
-                    {reexporting ? t('report.reexporting') : t('report.reexport')}
-                  </Button>
-                </div>
-              </div>
-            )}
-            {!report.summaryWritten && !report.staleAfterFinal && (
-              <div className={css.dim}>{t('report.summaryMissing')}</div>
-            )}
-            {/* The path and the shell line that reproduces this page belong to
-                whoever is at a terminal; §九 keeps both out of the page body. */}
-            <Detail summary={t('report.whereFold')}>
-              <div className={css.errorDetailLine}>{report.bundleDir}</div>
-              {report.cliHint !== null && (
-                <div className={css.errorDetailLine}>{t('report.cliHint')}: {report.cliHint}</div>
-              )}
-            </Detail>
-            {report.toolOnlyNs.map(ns => (
-              <div key={ns} className={css.warning}>{t('report.toolOnlyNs', { ns })}</div>
-            ))}
-
-            <Section title={t('report.invariants')}>
-              {report.invariants.map((check) => {
-                // The hover says why this check affects the COMPARISON — the
-                // one thing the title and the facts under it never said, and
-                // the reason a reader can act on a ⚠ instead of shrugging.
-                const why = invariantWhy(check.id)
-                return (
-                  <div key={check.id} className={css.invariantRow} title={why === null ? check.id : t(why)}>
-                    <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
-                    <span className={css.invariantTitle}>{check.title}</span>
-                    {check.details.map(detail => <div key={detail} className={css.invariantDetail}>{detail}</div>)}
-                  </div>
-                )
-              })}
-            </Section>
-
-            {!report.comparisonAllowed
-              ? (
-                <div className={css.notice}>
-                  <div>{t('report.comparisonClosed', { count: failing.length })}</div>
-                  <div className={css.chipRow}>
-                    {failing.map(check => (
-                      <span key={check.id} className={css.summaryItem}>
-                        <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
-                        <span>{check.title}</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )
-              : report.singleCondition
-                ? <div className={css.dim}>{t('report.singleCondition')}</div>
-                : report.pairs.length === 0
-                  ? <div className={css.dim}>{t('report.noPairs')}</div>
-                  : report.pairs.map(pair => (
-                    <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} onOpenRecords={onOpenRecords} t={t} />
-                  ))}
-
-            {/* Under the comparison, where a reader who has just seen a
-                delta asks WHICH dimension moved and on what grounds. Behind
-                the same gate: `criteria` is empty when the invariants closed
-                the comparison, and a single-group run still gets the table. */}
-            {report.criteria.map(table => (
-              <CriteriaTable
-                key={table.task}
-                table={table}
-                onOpenRecords={onOpenRecords}
-                onOpenRecord={onOpenRecord}
-                t={t}
-              />
-            ))}
-
-            <Efficiency report={report} t={t} />
-            <JudgeConsistency report={report} t={t} />
-
-            {report.notes.length > 0 && (
-              <Section title={t('report.notes')}>
-                {report.notes.map(note => <div key={note} className={css.dim}>{note}</div>)}
-              </Section>
-            )}
-          </>
+          <Button size="sm" disabled={finalizing || report.bundleDir === null} onClick={() => { setConfirming(true) }}>
+            {t('report.finalize')}
+          </Button>
         )}
+      <Button size="sm" onClick={onExport}>{t('action.export')}</Button>
+      {/* The repeat, beside the dialog that made the first one. It is
+          disabled with a reason rather than hidden: a reader who has just
+          written a final verdict looks here for it. */}
+      <Button
+        size="sm"
+        disabled={reexporting || report.reexportable !== true}
+        title={report.reexportable === true ? '' : t('report.reexportNeedsDialog')}
+        onClick={onReexport}
+      >
+        {reexporting ? t('report.reexporting') : t('report.reexport')}
+      </Button>
+      {/* 回收 is the SAME walk as finalize — reclaiming a container IS its
+          cell passing the gate — so it shares the in-flight flag and the
+          action behind it, and differs only in what the reader came for. */}
+      <UnitsStrip units={units} error={unitsError} reclaiming={finalizing} onReclaim={onFinalize} t={t} />
+      <span className={css.barSpacer} />
+      {loading && <span className={css.dim}>{t('report.loading')}</span>}
+    </div>
+  )
+
+  if (report.bundleDir === null) {
+    return (
+      <div className={css.reportPage}>
+        {bar}
+        {/* Never blank: a run nobody exported is a state with a button, not
+            an empty page — and the directories that were looked in are what
+            tell a reader which of the two situations they are in. */}
+        <div className={css.reportSection}>
+          <EmptyState title={t('report.noBundle')} hint={t('report.noBundleHint')}>
+            <Button size="sm" variant="primary" onClick={onExport}>{t('report.exportNow')}</Button>
+          </EmptyState>
+          {/* Where it looked, and what the host said about not finding it.
+              Absolute paths and a host sentence — both kept, both folded
+              (ui-spec §九). */}
+          <Detail summary={t('report.searched')}>
+            {report.refusal !== null && <div className={css.errorDetailLine}>{report.refusal}</div>}
+            {report.searched.map(dir => (
+              <div key={dir} className={css.errorDetailLine}>{dir}/{report.runId}-bundle</div>
+            ))}
+          </Detail>
+          {/* A run started with `--out <dir>` records nothing about where
+              its bundle went: run.meta names the plan and the repository,
+              and the bundle is under neither. Without this box the page
+              would keep calling an exported bundle 未导出, and the only way
+              out would be to export it a second time. */}
+          <div className={css.actions}>
+            <Input
+              value={dir}
+              onChange={(event) => { setDir(event.target.value) }}
+              placeholder={t('report.lookInDir')}
+              aria-label={t('report.lookInDir')}
+            />
+            <Button size="sm" disabled={dir.trim() === ''} onClick={() => { onLookIn(dir.trim()) }}>
+              {t('report.lookInGo')}
+            </Button>
+          </div>
+        </div>
+        {units !== null && units.available && units.units.length > 0 && <UnitsSection units={units} t={t} />}
+        {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}
+      </div>
+    )
+  }
+
+  // T72 §6 order: 结论卡 → (收尾 / 导出 / 重新导出) → 判据表 → 效率 → 审计（折叠）.
+  return (
+    <div className={css.reportPage}>
+      <ConclusionCard report={report} onOpenAudit={openAudit} t={t} />
+      {bar}
+      {/* The whole of G17, said once, right under the buttons that fix it:
+          the bundle was exported before the last final verdict, so the card
+          above was computed without it. */}
+      {report.staleAfterFinal && (
+        <div className={css.blocked}>
+          <div>{t('report.staleAfterFinal', { final: stamp(report.lastHumanFinalAt) })}</div>
+          <div className={css.actions}>
+            <Button size="sm" variant="primary" disabled={reexporting} onClick={onReexport}>
+              {reexporting ? t('report.reexporting') : t('report.reexport')}
+            </Button>
+          </div>
+        </div>
+      )}
+      {report.toolOnlyNs.map(ns => (
+        <div key={ns} className={css.warning}>{t('report.toolOnlyNs', { ns })}</div>
+      ))}
+
+      {/* Where a reader who has just read the verdict asks WHICH dimension
+          moved and on what grounds. `criteria` is empty when the invariants
+          closed the comparison, and a single-group run still gets the table. */}
+      {report.criteria.map(table => (
+        <CriteriaTable
+          key={table.task}
+          table={table}
+          onOpenRecords={onOpenRecords}
+          onOpenRecord={onOpenRecord}
+          t={t}
+        />
+      ))}
+
+      <Efficiency report={report} t={t} />
+
+      {/* 审计: everything the card was computed from, folded. The paired
+          tables, the five checks with the reason each matters on hover, the
+          judges' agreement, and which bundle this is and when it was written
+          against the latest final verdict. */}
+      <Detail summary={t('report.audit')} open={auditOpen} onToggle={setAuditOpen} id="eval-report-audit">
+        <div className={css.dim}>
+          {/* The bundle's own name, not the path it happens to sit at. */}
+          <span className={css.mono} title={report.bundleDir}>
+            {report.bundleDir.split('/').filter(Boolean).pop() ?? ''}
+          </span>
+          {' · '}
+          {t('report.counts', {
+            rows: report.counts.rows, missions: report.counts.missions,
+            attempts: report.counts.attempts, retries: report.counts.retries,
+          })}
+        </div>
+        <div className={css.dim}>
+          {report.exportedAt === null
+            ? t('report.exportedAtUnknown')
+            : t('report.exportedAt', { at: stamp(report.exportedAt) })}
+          {report.lastHumanFinalAt !== null && <> · {t('report.lastFinalAt', { at: stamp(report.lastHumanFinalAt) })}</>}
+          {report.summaryWritten && <> · {t('report.summaryIn')}</>}
+        </div>
+        {!report.summaryWritten && !report.staleAfterFinal && (
+          <div className={css.dim}>{t('report.summaryMissing')}</div>
+        )}
+
+        <Section title={t('report.invariants')}>
+          {report.invariants.map((check) => {
+            // The hover says why this check affects the COMPARISON — the
+            // one thing the title and the facts under it never said, and
+            // the reason a reader can act on a ⚠ instead of shrugging.
+            const why = invariantWhy(check.id)
+            return (
+              <div key={check.id} className={css.invariantRow} title={why === null ? check.id : t(why)}>
+                <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
+                <span className={css.invariantTitle}>{check.title}</span>
+                {check.details.map(detail => <div key={detail} className={css.invariantDetail}>{detail}</div>)}
+              </div>
+            )
+          })}
+        </Section>
+
+        {report.comparisonAllowed && !report.singleCondition && report.pairs.map(pair => (
+          <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} onOpenRecords={onOpenRecords} t={t} />
+        ))}
+
+        <JudgeConsistency report={report} t={t} />
+
+        {report.notes.length > 0 && (
+          <Section title={t('report.notes')}>
+            {report.notes.map(note => <div key={note} className={css.dim}>{note}</div>)}
+          </Section>
+        )}
+
+        {/* The path and the shell line that reproduces this page belong to
+            whoever is at a terminal; §九 keeps both out of the page body. */}
+        <Detail summary={t('report.whereFold')}>
+          <div className={css.errorDetailLine}>{report.bundleDir}</div>
+          {report.cliHint !== null && (
+            <div className={css.errorDetailLine}>{t('report.cliHint')}: {report.cliHint}</div>
+          )}
+        </Detail>
+      </Detail>
 
       {units !== null && units.available && units.units.length > 0 && <UnitsSection units={units} t={t} />}
       {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}

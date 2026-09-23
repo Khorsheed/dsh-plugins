@@ -24,7 +24,6 @@
  * document would make the reviewer the author.
  */
 
-import { useState } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
@@ -41,6 +40,7 @@ import {
   listOrDash, repoName, severityKey, severityTone, snapshotCell,
 } from './parts.tsx'
 import { factorPhrase, preferredColumn } from './vocab.ts'
+import { fixLabel, readinessFix, readinessKey, splitReadiness, type ReadinessFix } from './journey.ts'
 import type { ConditionActionNote, LabStartedRun } from './store.ts'
 import css from './LabView.module.css'
 
@@ -151,6 +151,63 @@ function CheckLine(props: { check: EvalPlanCheck; t: LabViewProps['t'] }) {
     <div className={css.checkLine} title={check.code}>
       <Chip tone={severityTone(check.severity)}>{t(severityKey(check.severity))}</Chip>
       <span className={css.checkMessage}>{check.message}</span>
+    </div>
+  )
+}
+
+/**
+ * The READINESS CHECKLIST (T72 §4): validate's lines in two groups, each with
+ * a human sentence and the one button that fixes it.
+ *
+ * 阻塞项 are what the start would refuse; 提醒 are what to have read. The
+ * sentence is the dictionary's for the code (`readiness.<CODE>`), with
+ * validate's own message kept on hover beside the code, because the message
+ * names the file and the field and the sentence does not. A code the
+ * dictionary does not know shows the message itself.
+ *
+ * Numbered across both groups in display order, so 「第 k 条」 in the
+ * sentence handed to the agent names the line the reader is looking at.
+ */
+function ReadinessChecklist(props: {
+  blockers: readonly EvalPlanCheck[]
+  reminders: readonly EvalPlanCheck[]
+  onFix: (fix: ReadinessFix, check: EvalPlanCheck, k: number) => void
+  t: LabViewProps['t']
+}) {
+  const { blockers, reminders, onFix, t } = props
+  const line = (check: EvalPlanCheck, k: number) => {
+    const fix = readinessFix(check)
+    const label = fixLabel(fix)
+    const key = readinessKey(check.code, check.condition ?? null)
+    const sentence = key === null ? check.message : t(key, { condition: check.condition ?? '' })
+    return (
+      <div key={`${check.code}:${String(k)}`} className={css.readinessLine}>
+        <span className={css.readinessNo}>{k}</span>
+        <span className={css.checkMessage} title={`${check.code} · ${check.message}`}>{sentence}</span>
+        <Button size="sm" onClick={() => { onFix(fix, check, k) }}>
+          {label.params === undefined ? t(label.key) : t(label.key, label.params)}
+        </Button>
+      </div>
+    )
+  }
+  return (
+    <div className={css.readiness}>
+      {blockers.length > 0 && (
+        <div className={css.readinessGroup}>
+          <div className={css.readinessHead}>
+            <Chip tone="danger">{t('readiness.blockers', { count: blockers.length })}</Chip>
+          </div>
+          {blockers.map((check, index) => line(check, index + 1))}
+        </div>
+      )}
+      {reminders.length > 0 && (
+        <div className={css.readinessGroup}>
+          <div className={css.readinessHead}>
+            <Chip tone="warn">{t('readiness.reminders', { count: reminders.length })}</Chip>
+          </div>
+          {reminders.map((check, index) => line(check, blockers.length + index + 1))}
+        </div>
+      )}
     </div>
   )
 }
@@ -360,6 +417,11 @@ export function DesignPage(props: {
   onEditEndpoint: (id: string | null) => void
   onSetEndpoint: (row: EvalConditionRow, endpoint: string) => void
   onAddGroup: () => void
+  /** The bind dialog is the stage bar's too (登记仓库), so its state lives above. */
+  binding: boolean
+  onBinding: (open: boolean) => void
+  /** Run one checklist line's fix; `k` is its number on screen. */
+  onFix: (fix: ReadinessFix, check: EvalPlanCheck, k: number) => void
   t: LabViewProps['t']
 }) {
   const {
@@ -367,9 +429,8 @@ export function DesignPage(props: {
     conditions, conditionsLoading, conditionsError, conditionBusy, provision, conditionAction, endpointEditing,
     pair, diff, diffError, sentBack, started, output, outputError, refusal, approveError,
     keepUnits, onKeepUnits, onSendBack, onRecheck, onPick, onProvision, onEditEndpoint, onSetEndpoint,
-    onAddGroup, t,
+    onAddGroup, binding, onBinding: setBinding, onFix, t,
   } = props
-  const [binding, setBinding] = useState(false)
   const digest = review?.digest ?? null
   // The grid's columns are the PLAYERS; the table and the badge also carry the
   // judges, because a judge that cannot run stops the experiment just as a
@@ -386,8 +447,7 @@ export function DesignPage(props: {
   // about the plan, it is the plan not being there, and rendering it as one
   // put `cannot read plan file: /Users/…` on the page (I5·T67 · W11).
   const unreadable = (review?.checks ?? []).find(check => check.code === 'PLAN_UNREADABLE') ?? null
-  const failing = (review?.checks ?? [])
-    .filter(check => check.severity !== 'ok' && check.code !== 'PLAN_UNREADABLE')
+  const { blockers, reminders } = splitReadiness(review?.checks ?? [], review?.conditions ?? [])
   const passing = (review?.checks ?? []).filter(check => check.severity === 'ok')
   const single = groups.length < 2
   const repoMissing = conditions !== null && conditions.rows.length === 0 && (conditions.repo === '' || conditions.repo === null)
@@ -443,12 +503,8 @@ export function DesignPage(props: {
               : t('overview.validationFailed', { errors: row.validation.errors, warnings: row.validation.warnings })}
           </Field>
         )}
-        {failing.length > 0 && (
-          <div className={css.checks}>
-            {failing.map((check, index) => (
-              <CheckLine key={`${check.severity}:${check.code}:${String(index)}`} check={check} t={t} />
-            ))}
-          </div>
+        {(blockers.length > 0 || reminders.length > 0) && (
+          <ReadinessChecklist blockers={blockers} reminders={reminders} onFix={onFix} t={t} />
         )}
         {passing.length > 0 && (
           <Detail summary={t('review.checks')}>

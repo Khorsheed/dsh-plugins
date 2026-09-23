@@ -638,6 +638,146 @@ export type EvalKey =
   | 'why.lock'
   | 'why.file'
   | 'why.other'
+  | 'status.stalled'
+  | 'status.void'
+  | 'cta.stalled'
+  | 'cta.stalledHint'
+  | 'cta.void'
+  | 'cta.voidHint'
+  | 'cta.pendingBlocked'
+  | 'report.conclusion'
+  | 'report.ciAdvisoryShort'
+  | 'report.flagged'
+  | 'report.sourceFinal'
+  | 'report.sourceDraft'
+  | 'report.validityAll'
+  | 'report.validitySome'
+  | 'report.validityOpen'
+  | 'report.void'
+  | 'report.voidHint'
+  | 'report.audit'
+  | 'report.lastFinalAt'
+  | 'readiness.blockers'
+  | 'readiness.reminders'
+  | 'readiness.agentAsk'
+  | 'fix.provision'
+  | 'fix.endpoint'
+  | 'fix.bind'
+  | 'fix.agent'
+  | 'notice.rerun'
+  | 'notice.rerunRefused'
+  | 'notice.rerunFailed'
+  | 'notice.archiveFailed'
+  | 'closure.title'
+  | 'closure.hint'
+  | 'closure.standing'
+  | 'closure.voided'
+  | 'closure.exit.final'
+  | 'closure.exit.flagged'
+  | 'closure.exit.unreviewed'
+  | 'closure.exit.void'
+  | 'closure.exitHint.final'
+  | 'closure.exitHint.flagged'
+  | 'closure.exitHint.unreviewed'
+  | 'closure.exitHint.void'
+  | 'closure.finalNeedsGrade'
+  | 'closure.reasonAsk.flagged'
+  | 'closure.reasonAsk.void'
+  | 'closure.reasonPlaceholder'
+  | 'closure.confirm.flagged'
+  | 'closure.confirm.void'
+  | 'closure.cancel'
+  | 'closure.refused.unknown-exit'
+  | 'closure.refused.already-void'
+  | 'closure.refused.reason-required'
+  | 'closure.refused.no-cell'
+  | 'closure.refused.ledger'
+  | 'closure.done.final'
+  | 'closure.done.flagged'
+  | 'closure.done.unreviewed'
+  | 'closure.done.void'
+  | 'agent.inserted'
+  | 'agent.copied'
+  | 'agent.copyFailed'
+  | 'judge.absent'
+  | 'judge.rejudge'
+  | 'judge.rejudgeAsk'
+  | 'runs.stalled'
+  | 'list.scope'
+  | 'list.scopeSession'
+  | 'list.scopeAll'
+  | 'list.others'
+  | 'list.scopeEmpty'
+  | 'list.scopeEmptyHint'
+  | 'list.group.attention'
+  | 'list.group.running'
+  | 'list.group.finished'
+  | 'list.group.archived'
+  | 'list.group.archivedCount'
+  | 'list.stalledMeta'
+  | 'list.archive'
+  | 'list.unarchive'
+  | 'col.actions'
+  | 'readiness.CAPABILITIES_NOT_PROVISIONED'
+  | 'readiness.CAPABILITIES_PRESET_MISMATCH'
+  | 'readiness.CAPABILITIES_SNAPSHOT_STALE'
+  | 'readiness.CAPABILITIES_UNMEASURED'
+  | 'readiness.CLAUDE_CONTAINER_SCOPE_MISSING'
+  | 'readiness.CLAUDE_CONTAINER_SCOPE_SHARED'
+  | 'readiness.COMMIT_UNRESOLVED'
+  | 'readiness.CONDITION_FILE_MISSING'
+  | 'readiness.CONDITION_ID_INVALID'
+  | 'readiness.CONDITION_MALFORMED'
+  | 'readiness.CONDITION_SCHEMA'
+  | 'readiness.CONDITIONS_DUPLICATED'
+  | 'readiness.CONDITIONS_EMPTY'
+  | 'readiness.CREDENTIALS_UNUSABLE'
+  | 'readiness.DATASET_ROOT_UNRESOLVABLE'
+  | 'readiness.EFFECTIVE_MISMATCH'
+  | 'readiness.EGRESS_CHECK_MALFORMED'
+  | 'readiness.EXPECTED_NS_EMPTY'
+  | 'readiness.EXPECTED_NS_NO_LLM_DRAFT_CRITERIA'
+  | 'readiness.EXPECTED_NS_NO_PROBE'
+  | 'readiness.EXPECTED_NS_NO_RUBRIC'
+  | 'readiness.EXPECTED_NS_RUBRIC_UNPARSEABLE'
+  | 'readiness.EXPORTS_INVALID'
+  | 'readiness.HOME_MISMATCH'
+  | 'readiness.HOME_NOT_PROVISIONED'
+  | 'readiness.HOME_SHA_DECLARED_STALE'
+  | 'readiness.HOME_SHA_UNDECLARED'
+  | 'readiness.HOME_SHA_WRITTEN'
+  | 'readiness.ITEMS_EMPTY'
+  | 'readiness.JUDGE_DUPLICATED'
+  | 'readiness.JUDGE_INCOMPLETE'
+  | 'readiness.JUDGE_IS_SAME_CONDITION'
+  | 'readiness.JUDGE_MISSING'
+  | 'readiness.JUDGE_MODEL_UNDECLARED'
+  | 'readiness.JUDGE_REQUIRED_FOR_LLM_DRAFT'
+  | 'readiness.LOCK_MALFORMED'
+  | 'readiness.LOCK_MISSING'
+  | 'readiness.LOCK_STALE'
+  | 'readiness.ONLY_UNKNOWN_CELL'
+  | 'readiness.PERMISSION_NOT_FOR_HARNESS'
+  | 'readiness.PLAN_MALFORMED'
+  | 'readiness.PLAN_SCHEMA'
+  | 'readiness.PLAN_UNREADABLE'
+  | 'readiness.PRESET_NOT_FOR_HARNESS'
+  | 'readiness.PROVISION_MISMATCH'
+  | 'readiness.PROVISION_RECORD_MISSING'
+  | 'readiness.REPS_INVALID'
+  | 'readiness.RETRY_INVALID'
+  | 'readiness.SCOPE_NAME'
+  | 'readiness.SCOPE_NOT_PROVISIONED'
+  | 'readiness.SHA_FORMAT'
+  | 'readiness.STAGE_SCHEMA_MALFORMED'
+  | 'readiness.STAGE_SCHEMA_MISSING'
+  | 'readiness.STAGE_SCHEMA_UNSUPPORTED'
+  | 'readiness.STAGES_EMPTY'
+  | 'readiness.UNIT_SCOPED_HOME_MISSING'
+  | 'readiness.UNIT_SCOPED_HOME_RELATIVE'
+  | 'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED'
+  | 'readiness.UNRESOLVED_FIELD'
+  | 'readiness.BUDGET_INVALID'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -1293,6 +1433,146 @@ export const en: Record<EvalKey, string> = {
   'why.lock': 'no lock beside the declaration',
   'why.file': 'the declaration file is not there',
   'why.other': 'validate refused it — the reason is under Details',
+  'status.stalled': 'Stalled',
+  'status.void': 'Evaluation void',
+  'cta.stalled': 'Rerun',
+  'cta.stalledHint': 'Nothing has moved for a while and no job is running. Rerun starts a fresh run from the same plan.',
+  'cta.void': 'See run records',
+  'cta.voidHint': 'This evaluation was declared void. The run records still hold everything that ran.',
+  'cta.pendingBlocked': '{count} blocker(s) stand between this plan and a run. Start with the first.',
+  'report.conclusion': 'Conclusion',
+  'report.ciAdvisoryShort': 'For reference only — the ranking conditions are not met',
+  'report.flagged': 'Flagged by a person: “{reason}”',
+  'report.sourceFinal': 'Source: judge\'s first pass + human final review',
+  'report.sourceDraft': 'Source: judge\'s first pass, not confirmed by a person',
+  'report.validityAll': 'Validity checks {passed}/{total} ✓',
+  'report.validitySome': 'Validity checks {passed}/{total} ⚠',
+  'report.validityOpen': 'Open the audit to see each check',
+  'report.void': 'Evaluation void: {reason}',
+  'report.voidHint': 'No conclusion is drawn from this run. The run records are still there.',
+  'report.audit': 'Audit',
+  'report.lastFinalAt': 'latest final review {at}',
+  'readiness.blockers': 'Blockers ({count})',
+  'readiness.reminders': 'Reminders ({count})',
+  'readiness.agentAsk': 'Experiment {name}, readiness checklist item {k}: {text}',
+  'fix.provision': 'Provision {condition}',
+  'fix.endpoint': 'Change endpoint',
+  'fix.bind': 'Register repository',
+  'fix.agent': 'Let the agent handle it',
+  'notice.rerun': '{name} started again as run {runId}. The stalled row stays; archive it when you no longer need it.',
+  'notice.rerunRefused': 'Rerun refused: {reason}. Fix it on the design page, then try again.',
+  'notice.rerunFailed': 'Rerun failed: {message}. Nothing was started; try again, or hand it to the agent.',
+  'notice.archiveFailed': 'Archiving failed: {message}. The row is unchanged; try again.',
+  'closure.title': 'Wrap up',
+  'closure.hint': 'Pick how this evaluation ends. Until you do, the experiment stays in \'judging\'.',
+  'closure.standing': 'Current: {exit} · {at}',
+  'closure.voided': 'This evaluation is void: {reason}. No further wrap-up can be recorded.',
+  'closure.exit.final': 'Submit final review',
+  'closure.exit.flagged': 'Submit with a flag',
+  'closure.exit.unreviewed': 'Close without final review',
+  'closure.exit.void': 'Abandon final review',
+  'closure.exitHint.final': 'The report says: judge\'s first pass + human final review.',
+  'closure.exitHint.flagged': 'Same as submitting, with your reason shown at the top of the conclusion.',
+  'closure.exitHint.unreviewed': 'The report says: judge\'s first pass, not confirmed by a person.',
+  'closure.exitHint.void': 'The result page shows only \'evaluation void\' and your reason. This cannot be undone.',
+  'closure.finalNeedsGrade': 'Grade at least one answer before submitting a final review.',
+  'closure.reasonAsk.flagged': 'What should readers of the result know?',
+  'closure.reasonAsk.void': 'Why can this evaluation not stand?',
+  'closure.reasonPlaceholder': 'One sentence is enough',
+  'closure.confirm.flagged': 'Submit with this flag',
+  'closure.confirm.void': 'Declare void',
+  'closure.cancel': 'Cancel',
+  'closure.refused.unknown-exit': 'That wrap-up is not one of the four. Reload the page and pick again.',
+  'closure.refused.already-void': 'This evaluation was already declared void, so nothing more can be recorded.',
+  'closure.refused.reason-required': 'This wrap-up needs a reason. Write one sentence and submit again.',
+  'closure.refused.no-cell': 'This run holds no answers yet, so there is nothing to wrap up. Check the run records.',
+  'closure.refused.ledger': 'The ledger refused the write. Try again, or hand it to the agent.',
+  'closure.done.final': 'Final review submitted. The experiment is done.',
+  'closure.done.flagged': 'Submitted with a flag. The experiment is done.',
+  'closure.done.unreviewed': 'Closed without a final review. The experiment is done.',
+  'closure.done.void': 'Declared void. The result page now shows only the reason.',
+  'agent.inserted': 'Put in the chat box — edit it and send when ready.',
+  'agent.copied': 'Copied — paste it into the chat box.',
+  'agent.copyFailed': 'Could not reach the chat box or clipboard. Copy this yourself: {text}',
+  'judge.absent': 'Note: the judge is absent for answer(s) {cells} ({count}).',
+  'judge.rejudge': 'Re-judge (optional)',
+  'judge.rejudgeAsk': 'Experiment {name}: re-run the judge on answer(s) {cells}.',
+  'runs.stalled': 'Stalled: no progress for {minutes} min, and no job is running.',
+  'list.scope': 'Which experiments',
+  'list.scopeSession': 'Started here',
+  'list.scopeAll': 'All',
+  'list.others': '{count} more not from this session',
+  'list.scopeEmpty': 'Nothing started from this session yet',
+  'list.scopeEmptyHint': 'Start one with \'New experiment\', or switch to All.',
+  'list.group.attention': 'Needs you',
+  'list.group.running': 'Running',
+  'list.group.finished': 'Finished',
+  'list.group.archived': 'Archived',
+  'list.group.archivedCount': 'Archived ({count})',
+  'list.stalledMeta': 'no progress for {minutes} min',
+  'list.archive': 'Archive',
+  'list.unarchive': 'Unarchive',
+  'col.actions': 'Actions',
+  'readiness.CAPABILITIES_NOT_PROVISIONED': 'Condition {condition} has no capability snapshot yet — provision it.',
+  'readiness.CAPABILITIES_PRESET_MISMATCH': 'Condition {condition}\'s capabilities do not match its preset.',
+  'readiness.CAPABILITIES_SNAPSHOT_STALE': 'Condition {condition}\'s capability snapshot is out of date — provision again.',
+  'readiness.CAPABILITIES_UNMEASURED': 'Condition {condition}\'s capabilities have not been measured.',
+  'readiness.CLAUDE_CONTAINER_SCOPE_MISSING': 'Condition {condition} runs claude in a container but names no scope.',
+  'readiness.CLAUDE_CONTAINER_SCOPE_SHARED': 'Condition {condition} shares its container scope with another condition.',
+  'readiness.COMMIT_UNRESOLVED': 'The dataset commit is not pinned yet; it will be pinned when the run starts.',
+  'readiness.CONDITION_FILE_MISSING': 'Condition {condition} has no file under conditions/.',
+  'readiness.CONDITION_ID_INVALID': 'A condition id is not valid.',
+  'readiness.CONDITION_MALFORMED': 'Condition {condition}\'s file cannot be parsed.',
+  'readiness.CONDITION_SCHEMA': 'Condition {condition}\'s file does not match the schema.',
+  'readiness.CONDITIONS_DUPLICATED': 'A condition is listed twice.',
+  'readiness.CONDITIONS_EMPTY': 'The plan lists no condition.',
+  'readiness.CREDENTIALS_UNUSABLE': 'Condition {condition}\'s credentials cannot be used.',
+  'readiness.DATASET_ROOT_UNRESOLVABLE': 'The dataset repository cannot be found on this machine — register it.',
+  'readiness.EFFECTIVE_MISMATCH': 'Condition {condition}\'s effective settings differ from what the plan declares.',
+  'readiness.EGRESS_CHECK_MALFORMED': 'Condition {condition}\'s network check is malformed.',
+  'readiness.EXPECTED_NS_EMPTY': 'The plan names no verdict source.',
+  'readiness.EXPECTED_NS_NO_LLM_DRAFT_CRITERIA': 'The judge is expected but the items carry no criteria for it.',
+  'readiness.EXPECTED_NS_NO_PROBE': 'A probe verdict is expected but the items carry no probe.',
+  'readiness.EXPECTED_NS_NO_RUBRIC': 'A rubric verdict is expected but the items carry no rubric.',
+  'readiness.EXPECTED_NS_RUBRIC_UNPARSEABLE': 'An item\'s rubric cannot be parsed.',
+  'readiness.EXPORTS_INVALID': 'The exports directory is not a valid path.',
+  'readiness.HOME_MISMATCH': 'Condition {condition}\'s home differs from its lock — provision again.',
+  'readiness.HOME_NOT_PROVISIONED': 'Condition {condition}\'s home is not provisioned.',
+  'readiness.HOME_SHA_DECLARED_STALE': 'Condition {condition}\'s declared home fingerprint is out of date.',
+  'readiness.HOME_SHA_UNDECLARED': 'Condition {condition} declares no home fingerprint; it will be recorded at start.',
+  'readiness.HOME_SHA_WRITTEN': 'Condition {condition}\'s home fingerprint was filled in.',
+  'readiness.ITEMS_EMPTY': 'The plan lists no item.',
+  'readiness.JUDGE_DUPLICATED': 'A judge condition is listed twice.',
+  'readiness.JUDGE_INCOMPLETE': 'Judging is asked for but no judge condition is named.',
+  'readiness.JUDGE_IS_SAME_CONDITION': 'A judge is also one of the conditions being compared.',
+  'readiness.JUDGE_MISSING': 'The judge\'s condition file is missing.',
+  'readiness.JUDGE_MODEL_UNDECLARED': 'The judge\'s model is not declared.',
+  'readiness.JUDGE_REQUIRED_FOR_LLM_DRAFT': 'A judge first pass is expected but no judge is configured.',
+  'readiness.LOCK_MALFORMED': 'Condition {condition}\'s lock file cannot be parsed — provision again.',
+  'readiness.LOCK_MISSING': 'Condition {condition} has no lock file — provision it.',
+  'readiness.LOCK_STALE': 'Condition {condition}\'s lock file is out of date — provision again.',
+  'readiness.ONLY_UNKNOWN_CELL': 'Some answers could only be scored as unknown.',
+  'readiness.PERMISSION_NOT_FOR_HARNESS': 'Condition {condition}\'s permission mode does not apply to its harness.',
+  'readiness.PLAN_MALFORMED': 'The plan file is not valid JSON.',
+  'readiness.PLAN_SCHEMA': 'The plan file does not match the schema.',
+  'readiness.PLAN_UNREADABLE': 'The plan file cannot be read.',
+  'readiness.PRESET_NOT_FOR_HARNESS': 'Condition {condition}\'s preset does not apply to its harness.',
+  'readiness.PROVISION_MISMATCH': 'Condition {condition} was provisioned differently from what the plan declares.',
+  'readiness.PROVISION_RECORD_MISSING': 'Condition {condition} has no provision record — provision it.',
+  'readiness.REPS_INVALID': 'The number of repetitions must be a positive integer.',
+  'readiness.RETRY_INVALID': 'The retry count must be a whole number, 0 or more.',
+  'readiness.SCOPE_NAME': 'Condition {condition}\'s scope name is not valid.',
+  'readiness.SCOPE_NOT_PROVISIONED': 'Condition {condition}\'s scope is not provisioned.',
+  'readiness.SHA_FORMAT': 'A home fingerprint is not a valid sha256.',
+  'readiness.STAGE_SCHEMA_MALFORMED': 'A stage\'s answer schema cannot be parsed.',
+  'readiness.STAGE_SCHEMA_MISSING': 'A stage\'s answer schema is missing.',
+  'readiness.STAGE_SCHEMA_UNSUPPORTED': 'A stage\'s answer schema uses something not supported.',
+  'readiness.STAGES_EMPTY': 'The plan lists no stage.',
+  'readiness.UNIT_SCOPED_HOME_MISSING': 'Condition {condition}\'s per-item home is missing.',
+  'readiness.UNIT_SCOPED_HOME_RELATIVE': 'Condition {condition}\'s per-item home must be an absolute path.',
+  'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED': 'Condition {condition}\'s per-item home uses an undeclared variable.',
+  'readiness.UNRESOLVED_FIELD': 'Condition {condition} has a field still to fill in.',
+  'readiness.BUDGET_INVALID': 'The budget must be positive.',
 }
 
 /** 中文词典。 */
@@ -1938,4 +2218,144 @@ export const zh: Record<EvalKey, string> = {
   'why.lock': '声明旁边没有锁',
   'why.file': '声明文件不在',
   'why.other': '校验没过——原因在「详情」里',
+  'status.stalled': '停滞',
+  'status.void': '评估不成立',
+  'cta.stalled': '重跑',
+  'cta.stalledHint': '有一阵没有进展，也没有在跑的任务。重跑会按同一份计划新开一次运行。',
+  'cta.void': '看运行记录',
+  'cta.voidHint': '这次评估已宣告不成立；跑过的东西仍在运行记录里。',
+  'cta.pendingBlocked': '还有 {count} 条阻塞项，先处理第一条。',
+  'report.conclusion': '结论',
+  'report.ciAdvisoryShort': '仅供参考，未达排名条件',
+  'report.flagged': '人工标记：「{reason}」',
+  'report.sourceFinal': '来源：判官初判 + 人终评',
+  'report.sourceDraft': '来源：判官初判，未经人工确认',
+  'report.validityAll': '有效性校验 {passed}/{total} ✓',
+  'report.validitySome': '有效性校验 {passed}/{total} ⚠',
+  'report.validityOpen': '展开审计，逐条看校验',
+  'report.void': '评估不成立：{reason}',
+  'report.voidHint': '这次运行不出结论；运行记录仍在。',
+  'report.audit': '审计',
+  'report.lastFinalAt': '最近一次终评 {at}',
+  'readiness.blockers': '阻塞项（{count}）',
+  'readiness.reminders': '提醒（{count}）',
+  'readiness.agentAsk': '实验 {name} 的就绪清单第 {k} 条：{text}',
+  'fix.provision': 'provision {condition}',
+  'fix.endpoint': '改端点',
+  'fix.bind': '登记仓库',
+  'fix.agent': '让 agent 处理',
+  'notice.rerun': '{name} 已重新启动（运行 {runId}）。停滞的那行还在，不需要时可以归档。',
+  'notice.rerunRefused': '重跑被拒：{reason}。到设计页处理后再试。',
+  'notice.rerunFailed': '重跑失败：{message}。什么都没启动；可以再试，或交给 agent。',
+  'notice.archiveFailed': '归档失败：{message}。这一行没变，可以再试。',
+  'closure.title': '收尾',
+  'closure.hint': '选一种收尾方式。选之前，实验一直停在「评估中」。',
+  'closure.standing': '当前：{exit} · {at}',
+  'closure.voided': '这次评估已宣告不成立：{reason}。不能再收尾。',
+  'closure.exit.final': '提交终评',
+  'closure.exit.flagged': '带标记提交',
+  'closure.exit.unreviewed': '不做终评，直接收尾',
+  'closure.exit.void': '放弃终评',
+  'closure.exitHint.final': '报告会写：判官初判 + 人终评。',
+  'closure.exitHint.flagged': '同提交终评，结论卡顶部会显示你的理由。',
+  'closure.exitHint.unreviewed': '报告会写：判官初判，未经人工确认。',
+  'closure.exitHint.void': '结果页只显示「评估不成立」和理由，之后不能再收尾。',
+  'closure.finalNeedsGrade': '先至少评一道，才能提交终评。',
+  'closure.reasonAsk.flagged': '看结果的人需要知道什么？',
+  'closure.reasonAsk.void': '为什么这次评估不成立？',
+  'closure.reasonPlaceholder': '一句话就够',
+  'closure.confirm.flagged': '带这条标记提交',
+  'closure.confirm.void': '宣告不成立',
+  'closure.cancel': '取消',
+  'closure.refused.unknown-exit': '这不是四种收尾之一。刷新页面后重新选。',
+  'closure.refused.already-void': '这次评估已宣告不成立，不能再收尾。',
+  'closure.refused.reason-required': '这种收尾要写理由。写一句再提交。',
+  'closure.refused.no-cell': '这次运行还没有作答，无从收尾。去运行记录看看。',
+  'closure.refused.ledger': '账本没有写进去。可以再试，或交给 agent。',
+  'closure.done.final': '终评已提交，实验已完成。',
+  'closure.done.flagged': '已带标记提交，实验已完成。',
+  'closure.done.unreviewed': '已直接收尾，实验已完成。',
+  'closure.done.void': '已宣告不成立，结果页只显示理由。',
+  'agent.inserted': '已放进输入框，改好再发。',
+  'agent.copied': '已复制，粘到输入框',
+  'agent.copyFailed': '输入框和剪贴板都不可用，请手动复制：{text}',
+  'judge.absent': '提示：作答 {cells} 判官缺席（{count} 格）。',
+  'judge.rejudge': '补判（可选）',
+  'judge.rejudgeAsk': '实验 {name}：给作答 {cells} 补判。',
+  'runs.stalled': '停滞：已有 {minutes} 分钟没有进展，也没有在跑的任务',
+  'list.scope': '看哪些实验',
+  'list.scopeSession': '本会话发起',
+  'list.scopeAll': '全部',
+  'list.others': '另有 {count} 个不属于本会话',
+  'list.scopeEmpty': '本会话还没有发起实验',
+  'list.scopeEmptyHint': '用「新建实验」开一个，或切到「全部」。',
+  'list.group.attention': '需要你处理',
+  'list.group.running': '运行中',
+  'list.group.finished': '已完成',
+  'list.group.archived': '已归档',
+  'list.group.archivedCount': '已归档（{count}）',
+  'list.stalledMeta': '{minutes} 分钟没有进展',
+  'list.archive': '归档',
+  'list.unarchive': '取消归档',
+  'col.actions': '操作',
+  'readiness.CAPABILITIES_NOT_PROVISIONED': '对比组 {condition} 还没有能力快照，需要 provision。',
+  'readiness.CAPABILITIES_PRESET_MISMATCH': '对比组 {condition} 的能力与预设不一致。',
+  'readiness.CAPABILITIES_SNAPSHOT_STALE': '对比组 {condition} 的能力快照过期了，需要重新 provision。',
+  'readiness.CAPABILITIES_UNMEASURED': '对比组 {condition} 的能力还没测过。',
+  'readiness.CLAUDE_CONTAINER_SCOPE_MISSING': '对比组 {condition} 在容器里跑 claude，却没有指定 scope。',
+  'readiness.CLAUDE_CONTAINER_SCOPE_SHARED': '对比组 {condition} 的容器 scope 与别的对比组共用。',
+  'readiness.COMMIT_UNRESOLVED': '题库版本还没钉住，启动时才会钉。',
+  'readiness.CONDITION_FILE_MISSING': '对比组 {condition} 在 conditions/ 下没有文件。',
+  'readiness.CONDITION_ID_INVALID': '有一个对比组的 id 不合法。',
+  'readiness.CONDITION_MALFORMED': '对比组 {condition} 的文件解析不了。',
+  'readiness.CONDITION_SCHEMA': '对比组 {condition} 的文件不符合格式。',
+  'readiness.CONDITIONS_DUPLICATED': '有对比组重复列出。',
+  'readiness.CONDITIONS_EMPTY': '计划里一个对比组都没有。',
+  'readiness.CREDENTIALS_UNUSABLE': '对比组 {condition} 的凭据不可用。',
+  'readiness.DATASET_ROOT_UNRESOLVABLE': '在本机找不到题库仓库，需要登记。',
+  'readiness.EFFECTIVE_MISMATCH': '对比组 {condition} 的实际设置与计划声明不一致。',
+  'readiness.EGRESS_CHECK_MALFORMED': '对比组 {condition} 的网络检查写错了。',
+  'readiness.EXPECTED_NS_EMPTY': '计划没有指定判分来源。',
+  'readiness.EXPECTED_NS_NO_LLM_DRAFT_CRITERIA': '指定了判官初判，但题目里没有给判官的评分标准。',
+  'readiness.EXPECTED_NS_NO_PROBE': '指定了探针判分，但题目里没有探针。',
+  'readiness.EXPECTED_NS_NO_RUBRIC': '指定了量表判分，但题目里没有量表。',
+  'readiness.EXPECTED_NS_RUBRIC_UNPARSEABLE': '有题目的量表解析不了。',
+  'readiness.EXPORTS_INVALID': '导出目录不是有效路径。',
+  'readiness.HOME_MISMATCH': '对比组 {condition} 的 home 与锁文件不一致，需要重新 provision。',
+  'readiness.HOME_NOT_PROVISIONED': '对比组 {condition} 的 home 还没 provision。',
+  'readiness.HOME_SHA_DECLARED_STALE': '对比组 {condition} 声明的 home 指纹过期了。',
+  'readiness.HOME_SHA_UNDECLARED': '对比组 {condition} 没有声明 home 指纹，启动时记录。',
+  'readiness.HOME_SHA_WRITTEN': '对比组 {condition} 的 home 指纹已补上。',
+  'readiness.ITEMS_EMPTY': '计划里一道题都没有。',
+  'readiness.JUDGE_DUPLICATED': '有判官重复列出。',
+  'readiness.JUDGE_INCOMPLETE': '要求判官初判，但没有指定判官。',
+  'readiness.JUDGE_IS_SAME_CONDITION': '判官同时也是被比较的对比组。',
+  'readiness.JUDGE_MISSING': '判官的对比组文件不存在。',
+  'readiness.JUDGE_MODEL_UNDECLARED': '判官的模型没有声明。',
+  'readiness.JUDGE_REQUIRED_FOR_LLM_DRAFT': '指定了判官初判，但没有配判官。',
+  'readiness.LOCK_MALFORMED': '对比组 {condition} 的锁文件解析不了，需要重新 provision。',
+  'readiness.LOCK_MISSING': '对比组 {condition} 没有锁文件，需要 provision。',
+  'readiness.LOCK_STALE': '对比组 {condition} 的锁文件过期了，需要重新 provision。',
+  'readiness.ONLY_UNKNOWN_CELL': '有的作答只能判为未知。',
+  'readiness.PERMISSION_NOT_FOR_HARNESS': '对比组 {condition} 的权限模式不适用于它的宿主。',
+  'readiness.PLAN_MALFORMED': '计划文件不是合法 JSON。',
+  'readiness.PLAN_SCHEMA': '计划文件不符合格式。',
+  'readiness.PLAN_UNREADABLE': '计划文件读不了。',
+  'readiness.PRESET_NOT_FOR_HARNESS': '对比组 {condition} 的预设不适用于它的宿主。',
+  'readiness.PROVISION_MISMATCH': '对比组 {condition} provision 的结果与计划声明不一致。',
+  'readiness.PROVISION_RECORD_MISSING': '对比组 {condition} 没有 provision 记录，需要 provision。',
+  'readiness.REPS_INVALID': '次数必须是正整数。',
+  'readiness.RETRY_INVALID': '重试次数必须是不小于 0 的整数。',
+  'readiness.SCOPE_NAME': '对比组 {condition} 的 scope 名不合法。',
+  'readiness.SCOPE_NOT_PROVISIONED': '对比组 {condition} 的 scope 还没 provision。',
+  'readiness.SHA_FORMAT': 'home 指纹不是合法的 sha256。',
+  'readiness.STAGE_SCHEMA_MALFORMED': '有一个阶段的作答格式解析不了。',
+  'readiness.STAGE_SCHEMA_MISSING': '有一个阶段缺作答格式。',
+  'readiness.STAGE_SCHEMA_UNSUPPORTED': '有一个阶段的作答格式用了不支持的写法。',
+  'readiness.STAGES_EMPTY': '计划里一个阶段都没有。',
+  'readiness.UNIT_SCOPED_HOME_MISSING': '对比组 {condition} 的逐题 home 不存在。',
+  'readiness.UNIT_SCOPED_HOME_RELATIVE': '对比组 {condition} 的逐题 home 必须是绝对路径。',
+  'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED': '对比组 {condition} 的逐题 home 用了未声明的变量。',
+  'readiness.UNRESOLVED_FIELD': '对比组 {condition} 还有字段没填。',
+  'readiness.BUDGET_INVALID': '预算必须是正数。',
 }

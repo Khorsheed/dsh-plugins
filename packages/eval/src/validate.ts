@@ -34,6 +34,8 @@ export interface EvalDiagnostic {
   /** Stable machine-readable code (LOCK_MISSING, UNRESOLVED_FIELD, …). */
   code: string
   message: string
+  /** The condition the diagnostic is about, when validatePlan knows it (the checklist's fix button). */
+  condition?: string
 }
 
 /** The capability fingerprint a lock records for a provisioned condition. */
@@ -849,12 +851,13 @@ export async function validatePlan(planPath: string, options: ConditionReadiness
   })
   for (const id of semantics.conditionIds) {
     const readiness = await resolveConditionReadiness(id, root, options)
-    errors.push(...readiness.errors)
-    warnings.push(...readiness.warnings)
+    const about = (diagnostic: EvalDiagnostic): EvalDiagnostic => ({ ...diagnostic, condition: id })
+    errors.push(...readiness.errors.map(about))
+    warnings.push(...readiness.warnings.map(about))
     conditions.push(readiness.entry)
     if (readiness.document === null) continue
     if (planUnit !== null) {
-      errors.push(...conditionUnitDiagnostics(id, readiness.document))
+      errors.push(...conditionUnitDiagnostics(id, readiness.document).map(about))
       inUnits.push(scopeRef(id, readiness.document))
     } else {
       // No unit segment: every condition runs on the host, so a player is a
@@ -869,10 +872,10 @@ export async function validatePlan(planPath: string, options: ConditionReadiness
   // even in a container run.
   for (const id of semantics.judgeIds) {
     const readiness = await resolveConditionReadiness(id, root, options)
-    errors.push(...readiness.errors.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}` })))
-    warnings.push(...readiness.warnings.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}` })))
+    errors.push(...readiness.errors.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}`, condition: id })))
+    warnings.push(...readiness.warnings.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}`, condition: id })))
     judges.push(readiness.entry)
-    errors.push(...judgeModelDiagnostics(id, readiness.document))
+    errors.push(...judgeModelDiagnostics(id, readiness.document).map(diagnostic => ({ ...diagnostic, condition: id })))
     if (readiness.document !== null) onHost.push(scopeRef(id, readiness.document))
   }
   // Checked here, offline, for the same reason the scoped-home contract is:

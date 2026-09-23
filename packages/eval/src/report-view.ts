@@ -31,6 +31,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import type { MissionReadFace } from './faces.ts'
+import { readRunMarks } from './closure.ts'
 import { readExportState, type EvalExportNote } from './export-note.ts'
 import { EvalReadRefused } from './read.ts'
 import {
@@ -287,6 +288,7 @@ export function projectReport(report: EvalReport, runId: string): EvalRunReportV
     staleAfterFinal: false,
     summaryWritten: false,
     reexportable: false,
+    closure: null,
     invariants: report.invariants.map(check => ({
       id: check.id,
       title: check.title,
@@ -354,6 +356,7 @@ function notExported(runId: string, searched: string[]): EvalRunReportView {
     staleAfterFinal: false,
     summaryWritten: false,
     reexportable: false,
+    closure: null,
     invariants: [],
     comparisonAllowed: false,
     singleCondition: false,
@@ -398,6 +401,7 @@ export async function runReportView(
     throw new EvalReadRefused(`cannot read run ${runId}: ${error instanceof Error ? error.message : String(error)}`)
   }
   const state = readExportState(mission, runId)
+  const closure = readRunMarks(mission, runId).closure
   const candidates = await exportDirCandidates(meta, options.outDir, state.note?.outDir)
   const searched: string[] = []
   for (const candidate of candidates) {
@@ -405,11 +409,12 @@ export async function runReportView(
     searched.push(candidate)
     if (!await isBundle(bundle)) continue
     const view = projectReport(await analyzeBundle(bundle), runId)
-    return { ...view, ...await exportFreshness(bundle, state) }
+    return { ...view, ...await exportFreshness(bundle, state), closure }
   }
   return {
     ...notExported(runId, searched),
     lastHumanFinalAt: state.lastHumanFinalAt,
+    closure,
   }
 }
 

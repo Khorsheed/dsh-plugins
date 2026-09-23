@@ -34,13 +34,13 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { EvalDraftResult } from '../types.ts'
+import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { DesignPage } from './DesignPage.tsx'
 import {
-  Chip, EmptyState, FactorCell, snapshotCell, stageAction, stamp, statusKey, statusTone,
+  Chip, Detail, EmptyState, FactorCell, snapshotCell, stageAction, stamp, statusKey, statusTone,
 } from './parts.tsx'
 import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS, type LabPage, type RunFilter } from './store.ts'
 import { RunsPage } from './RunsPage.tsx'
@@ -50,6 +50,10 @@ import { JudgingPage } from './JudgingPage.tsx'
 import { NewExperimentDialog } from './NewExperimentDialog.tsx'
 import { ReportPage } from './ReportPage.tsx'
 import { preferredColumn } from './vocab.ts'
+import {
+  LIST_GROUPS, fixLabel, groupRows, readinessFix as readinessFixOf, readListScope, scopeRows, splitReadiness, writeListScope,
+  type ListScope, type ReadinessFix,
+} from './journey.ts'
 import css from './LabView.module.css'
 
 /**
@@ -64,6 +68,7 @@ export function LabView(props: LabViewProps) {
     fetchDraftOptions, draftExperiment,
     fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, submitHumanFinal,
+    closeRun, archiveRun, insertDraft,
   } = props
   const list = useStore(s => s.list)
   const loading = useStore(s => s.loading)
@@ -141,6 +146,20 @@ export function LabView(props: LabViewProps) {
   // The 保留单元 debugging switch. Visit-local like the two above: it is a
   // property of THIS approval, not of the plan on disk.
   const [keepUnits, setKeepUnits] = useState(false)
+  // 本会话发起 / 全部 (T72 §1). A per-viewer convenience, so browser storage
+  // is the right home — read once, and every access is guarded (journey.ts).
+  const [scope, setScopeState] = useState<ListScope>(() => readListScope())
+  const setScope = (next: ListScope): void => {
+    setScopeState(next)
+    writeListScope(next)
+  }
+  // The list's own one-line notice (a re-run started, an archive failed): the
+  // store's notice belongs to the open experiment and is cleared by `open`.
+  const [listNotice, setListNotice] = useState<string | null>(null)
+  const [closing, setClosing] = useState(false)
+  // The bind dialog: opened from the design page's empty seat, from a
+  // checklist line, and from the stage bar (登记仓库).
+  const [binding, setBinding] = useState(false)
 
   // Fetch the list on mount and whenever refreshRev moves.
   useEffect(() => {
@@ -372,6 +391,7 @@ export function LabView(props: LabViewProps) {
    */
   function approve(keepUnits: boolean): void {
     if (planPath === null) return
+    const approvedPlan = planPath
     actions.setApproving(true)
     void approvePlan(sessionId, { planPath, ...(keepUnits ? { keepUnits: true } : {}) }).then((result) => {
       actions.setApproving(false)
@@ -388,7 +408,7 @@ export function LabView(props: LabViewProps) {
         return
       }
       actions.setStarted({
-        planPath,
+        planPath: approvedPlan,
         jobId: value.jobId,
         runId: value.runId,
         parentSessionId: value.parentSessionId ?? '',
@@ -402,6 +422,94 @@ export function LabView(props: LabViewProps) {
       // the reader's own.
       actions.refresh()
     })
+  }
+
+  /**
+   * 重跑 a STALLED experiment (T72 §1/§7). There is no resume verb: mission
+   * holds no way to pick a dead orchestrator's run back up, so the fallback
+   * is the plan approved again, which starts a NEW run beside the stalled one.
+   * The old row is left exactly where it is — the notice suggests archiving
+   * it rather than doing so, because what to keep is the reader's call.
+   * @param row - the stalled row (its plan path is what is approved).
+   */
+  function rerun(row: EvalExperimentRow): void {
+    if (row.planPath === null) return
+    const plan = row.planPath
+    setListNotice(null)
+    void approvePlan(sessionId, { planPath: plan }).then((result) => {
+      const said = !result.ok
+        ? t('notice.rerunFailed', { message: result.error.message })
+        : (!result.value.started || result.value.runId === null)
+            ? t('notice.rerunRefused', { reason: result.value.refusal ?? '' })
+            : t('notice.rerun', { name: row.name, runId: result.value.runId })
+      setListNotice(said)
+      actions.setNotice(said)
+      actions.refresh()
+    }, (error: unknown) => {
+      setListNotice(t('notice.rerunFailed', { message: error instanceof Error ? error.message : String(error) }))
+    })
+  }
+
+  /**
+   * 归档 / 取消归档 (T72 §8). Grouping only — the status on the row does not
+   * change, and nothing about the run is touched.
+   */
+  function setArchived(row: EvalExperimentRow, archived: boolean): void {
+    if (row.runId === null) return
+    void archiveRun(sessionId, { runId: row.runId, archived }).then((result) => {
+      if (!result.ok || !result.value.recorded) {
+        setListNotice(t('notice.archiveFailed', {
+          message: result.ok ? (result.value.detail ?? '') : result.error.message,
+        }))
+        return
+      }
+      setListNotice(null)
+      actions.refresh()
+    })
+  }
+
+  /**
+   * Take one of the four exits (T72 §5). The server enforces every rule — a
+   * reason for ② and ④, nothing after ④ — and answers with a structured
+   * refusal the page turns into a sentence.
+   */
+  function closeWith(exit: EvalClosureExit, reason: string): void {
+    if (openRunId === null) return
+    setClosing(true)
+    void closeRun(sessionId, { runId: openRunId, exit, reason: reason.trim() === '' ? null : reason.trim() }).then((result) => {
+      setClosing(false)
+      if (!result.ok) {
+        actions.setNoticeError(result.error.message)
+        return
+      }
+      if (!result.value.recorded) {
+        actions.setNoticeError(result.value.detail ?? t(`closure.refused.${result.value.refusal ?? 'ledger'}`))
+        return
+      }
+      actions.setNotice(t(`closure.done.${exit}`))
+      actions.refresh()
+    })
+  }
+
+  /**
+   * Hand a sentence to the agent: pre-filled in the composer, NEVER sent
+   * (T72 §4). The host's conversation input when this session has one; the
+   * clipboard otherwise, and the notice says which happened.
+   * @param text - the sentence.
+   */
+  function handToAgent(text: string): void {
+    if (insertDraft(sessionId, text)) {
+      actions.setNotice(t('agent.inserted'))
+      return
+    }
+    void writeClipboard(text).then((ok) => {
+      actions.setNotice(t(ok ? 'agent.copied' : 'agent.copyFailed', { text }))
+    })
+  }
+
+  const fixText = (fix: ReadinessFix): string => {
+    const label = fixLabel(fix)
+    return label.params === undefined ? t(label.key) : t(label.key, label.params)
   }
 
   // 退回修改 shows the experiment as a draft. The plan file is untouched: the
@@ -605,11 +713,27 @@ export function LabView(props: LabViewProps) {
   const validation = review === null
     ? (openRow?.validation ?? null)
     : { ok: review.ok, errors: review.errors }
-  const blockedBy = action.verb === 'approve' && validation !== null && !validation.ok ? validation.errors : null
+  // 待批准 (T72 §3): the stage bar offers the FIRST blocker's fix, and
+  // 批准并启动 only once the checklist has none. Before the review lands the
+  // row's own counts decide, as they always did.
+  const blockers = review === null ? [] : splitReadiness(review.checks, review.conditions).blockers
+  const firstBlocker = action.verb === 'approve' && blockers.length > 0 ? blockers[0] ?? null : null
+  const firstFix = firstBlocker === null ? null : readinessFixOf(firstBlocker)
+  const blockedBy = action.verb === 'approve' && firstFix === null && validation !== null && !validation.ok
+    ? validation.errors
+    : null
 
   const runAction = (): void => {
+    if (firstBlocker !== null && firstFix !== null) {
+      applyFix(firstFix, firstBlocker, 1)
+      return
+    }
     if (action.verb === 'approve') {
       approve(keepUnits)
+      return
+    }
+    if (action.verb === 'rerun') {
+      if (openRow !== undefined) rerun(openRow)
       return
     }
     if (action.verb === 'refresh') {
@@ -617,6 +741,39 @@ export function LabView(props: LabViewProps) {
       return
     }
     actions.setPage(action.verb satisfies LabPage)
+  }
+
+  /**
+   * Run one readiness line's fix (T72 §4). Provision and the endpoint edit
+   * are the design page's own gestures; 登记仓库 opens the bind dialog (the
+   * 题集 tab is where binding happens, and the dialog says how — the host
+   * gives a plugin no way to switch tabs); everything else goes to the agent
+   * as a sentence in the composer, never sent.
+   * @param fix - what the line's button does.
+   * @param check - the line.
+   * @param k - its number on screen.
+   */
+  function applyFix(fix: ReadinessFix, check: EvalPlanCheck, k: number): void {
+    if (page !== 'design') actions.setPage('design')
+    switch (fix.kind) {
+      case 'provision': {
+        const target = conditions?.rows.find(entry => entry.id === fix.condition)
+        if (target !== undefined) {
+          provisionRow(target)
+          return
+        }
+        break
+      }
+      case 'endpoint':
+        actions.editEndpoint(fix.condition)
+        return
+      case 'bind':
+        setBinding(true)
+        return
+      case 'agent':
+        break
+    }
+    handToAgent(t('readiness.agentAsk', { name: openRow?.name ?? '', k, text: check.message }))
   }
 
   // ── the drawer's three human gestures ──────────────────────────────────
@@ -759,6 +916,7 @@ export function LabView(props: LabViewProps) {
         )}
       </div>
       {draftNotice !== null && openRow === undefined && <div className={css.notice}>{draftNotice}</div>}
+      {listNotice !== null && openRow === undefined && <div className={css.notice}>{listNotice}</div>}
       {notice !== null && openRow !== undefined && <div className={css.notice}>{notice}</div>}
       {noticeError !== null && openRow !== undefined && (
         <ErrorState what={t('notice.failed')} message={noticeError} compact t={t} />
@@ -782,45 +940,16 @@ export function LabView(props: LabViewProps) {
               </EmptyState>
             )}
             {rows.length > 0 && (
-              <>
-                <div className={css.tableHead}>
-                  <span className={css.colName}>{t('col.name')}</span>
-                  <span className={css.colSnapshot}>{t('col.snapshot')}</span>
-                  <span className={css.colNum}>{t('col.conditions')}</span>
-                  <span className={css.colNum}>{t('col.items')}</span>
-                  <span className={css.colNum}>{t('col.reps')}</span>
-                  <span className={css.colFactors}>{t('col.factors')}</span>
-                  <span className={css.colStatus}>{t('col.status')}</span>
-                  <span className={css.colProgress}>{t('col.progress')}</span>
-                  <span className={css.colStarted}>{t('col.startedAt')}</span>
-                </div>
-                {rows.map(row => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    className={css.row}
-                    onClick={() => { actions.open(row.id) }}
-                  >
-                    <span className={css.colName} title={row.planPath ?? row.name}>{row.name}</span>
-                    <span className={css.colSnapshot}>{snapshotCell(row)}</span>
-                    <span className={css.colNum}>
-                      {row.judges.length === 0
-                        ? t('conditions.count', { count: row.conditions.length })
-                        : t('conditions.withJudges', { count: row.conditions.length, judges: row.judges.length })}
-                    </span>
-                    <span className={css.colNum}>{row.items}</span>
-                    <span className={css.colNum}>{row.reps}</span>
-                    <span className={css.colFactors}><FactorCell row={row} t={t} /></span>
-                    <span className={css.colStatus}>
-                      <Chip tone={statusTone(row.status)}>{t(statusKey(row.status))}</Chip>
-                    </span>
-                    <span className={css.colProgress}>
-                      {row.progress === null ? '—' : `${row.progress.done}/${row.progress.total}`}
-                    </span>
-                    <span className={css.colStarted}>{stamp(row.startedAt)}</span>
-                  </button>
-                ))}
-              </>
+              <ExperimentList
+                rows={rows}
+                session={list?.session ?? null}
+                scope={scope}
+                onScope={setScope}
+                onOpen={(id) => { setListNotice(null); actions.open(id) }}
+                onRerun={rerun}
+                onArchive={setArchived}
+                t={t}
+              />
             )}
           </div>
         )
@@ -844,7 +973,9 @@ export function LabView(props: LabViewProps) {
                 who lands anywhere in this shell can answer «下一步做什么»
                 without reading the page. */}
             <div className={css.stageBar}>
-              <span className={css.stageHint}>{t(action.hint)}</span>
+              <span className={css.stageHint}>
+                {firstBlocker !== null ? t('cta.pendingBlocked', { count: blockers.length }) : t(action.hint)}
+              </span>
               <span className={css.barSpacer} />
               {blockedBy !== null && <span className={css.warning}>{t('cta.blocked', { errors: blockedBy })}</span>}
               <Button
@@ -853,7 +984,11 @@ export function LabView(props: LabViewProps) {
                 disabled={approving || blockedBy !== null}
                 onClick={runAction}
               >
-                {approving && action.verb === 'approve' ? t('cta.waiting') : t(action.cta)}
+                {approving && action.verb === 'approve'
+                  ? t('cta.waiting')
+                  : firstFix !== null
+                    ? fixText(firstFix)
+                    : t(action.cta)}
               </Button>
             </div>
             <div className={css.body}>
@@ -893,6 +1028,9 @@ export function LabView(props: LabViewProps) {
                     onEditEndpoint={(id: string | null) => { actions.editEndpoint(id) }}
                     onSetEndpoint={setEndpoint}
                     onAddGroup={() => { setNewOpen(true) }}
+                    binding={binding}
+                    onBinding={setBinding}
+                    onFix={applyFix}
                     t={t}
                   />
                 </>
@@ -930,6 +1068,8 @@ export function LabView(props: LabViewProps) {
                       focus={recordFocus}
                       onClearFocus={() => { actions.focusRecords(null) }}
                       onAddGroup={() => { setNewOpen(true) }}
+                      stalledMinutes={openRow.status === 'stalled' ? openRow.stalledMinutes : null}
+                      onRerun={() => { rerun(openRow) }}
                       t={t}
                     />
                   )
@@ -961,6 +1101,7 @@ export function LabView(props: LabViewProps) {
                         actions.focusRecords({ task, condition })
                         actions.openCell(missionId)
                       }}
+                      onOpenRuns={() => { actions.setPage('runs') }}
                       t={t}
                     />
                   )
@@ -981,6 +1122,12 @@ export function LabView(props: LabViewProps) {
                       onPick={(task) => { actions.openJudgeTask(task) }}
                       onAnswer={(ticket, criterion, value) => { actions.setJudgeDraft(ticket, criterion, value) }}
                       onSubmit={onHumanFinal}
+                      closure={openRow.closure}
+                      closing={closing}
+                      onClose={closeWith}
+                      onRejudge={(cellNos) => {
+                        handToAgent(t('judge.rejudgeAsk', { name: openRow.name, cells: cellNos.join('、') }))
+                      }}
                       t={t}
                     />
                   )
@@ -1019,5 +1166,150 @@ export function LabView(props: LabViewProps) {
         t={t}
       />
     </div>
+  )
+}
+
+/** One list row: the columns, and the row's own actions after them. */
+function ExperimentRowLine(props: {
+  row: EvalExperimentRow
+  onOpen: (id: string) => void
+  onRerun: (row: EvalExperimentRow) => void
+  onArchive: (row: EvalExperimentRow, archived: boolean) => void
+  t: LabViewProps['t']
+}) {
+  const { row, onOpen, onRerun, onArchive, t } = props
+  // A div with the button role rather than a <button>: the row carries its
+  // own buttons (重跑, 归档), and a button may not contain buttons.
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={css.row}
+      data-status={row.status}
+      onClick={() => { onOpen(row.id) }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen(row.id)
+        }
+      }}
+    >
+      <span className={css.colName} title={row.planPath ?? row.name}>{row.name}</span>
+      <span className={css.colSnapshot}>{snapshotCell(row)}</span>
+      <span className={css.colNum}>
+        {row.judges.length === 0
+          ? t('conditions.count', { count: row.conditions.length })
+          : t('conditions.withJudges', { count: row.conditions.length, judges: row.judges.length })}
+      </span>
+      <span className={css.colNum}>{row.items}</span>
+      <span className={css.colNum}>{row.reps}</span>
+      <span className={css.colFactors}><FactorCell row={row} t={t} /></span>
+      <span className={css.colStatus}>
+        <Chip tone={statusTone(row.status)}>{t(statusKey(row.status))}</Chip>
+      </span>
+      <span className={css.colProgress}>
+        {row.progress === null ? '—' : `${row.progress.done}/${row.progress.total}`}
+      </span>
+      <span className={css.colStarted}>{stamp(row.startedAt)}</span>
+      <span className={css.colActions}>
+        {row.status === 'stalled' && row.planPath !== null && !row.archived && (
+          <Button size="sm" variant="primary" onClick={(event) => { event.stopPropagation(); onRerun(row) }}>
+            {t('cta.stalled')}
+          </Button>
+        )}
+        {row.runId !== null && (
+          <Button size="sm" onClick={(event) => { event.stopPropagation(); onArchive(row, !row.archived) }}>
+            {t(row.archived ? 'list.unarchive' : 'list.archive')}
+          </Button>
+        )}
+      </span>
+      {row.status === 'stalled' && row.stalledMinutes !== null && (
+        <span className={css.rowMeta}>{t('list.stalledMeta', { minutes: row.stalledMinutes })}</span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The experiment list (T72 §1): the session filter, then four groups —
+ * 需要你处理 / 运行中 / 已完成 / 已归档 — with the archive folded.
+ *
+ * The filter never HIDES silently: rows it leaves out are counted in the
+ * header, and the count is the switch to 全部. A run the CLI started has no
+ * session at all, and a list that dropped it without a word is how a person
+ * decides an experiment they started from a terminal never happened.
+ */
+function ExperimentList(props: {
+  rows: readonly EvalExperimentRow[]
+  session: string | null
+  scope: ListScope
+  onScope: (scope: ListScope) => void
+  onOpen: (id: string) => void
+  onRerun: (row: EvalExperimentRow) => void
+  onArchive: (row: EvalExperimentRow, archived: boolean) => void
+  t: LabViewProps['t']
+}) {
+  const { rows, session, scope, onScope, onOpen, onRerun, onArchive, t } = props
+  const { shown, others } = scopeRows(rows, session, scope)
+  const groups = groupRows(shown)
+  const line = (row: EvalExperimentRow) => (
+    <ExperimentRowLine key={row.id} row={row} onOpen={onOpen} onRerun={onRerun} onArchive={onArchive} t={t} />
+  )
+  return (
+    <>
+      <div className={css.listScope}>
+        <div className={css.segmented} role="group" aria-label={t('list.scope')}>
+          {(['session', 'all'] as const).map(value => (
+            <button
+              key={value}
+              type="button"
+              className={css.chip}
+              aria-pressed={scope === value}
+              onClick={() => { onScope(value) }}
+            >
+              {t(value === 'session' ? 'list.scopeSession' : 'list.scopeAll')}
+            </button>
+          ))}
+        </div>
+        {scope === 'session' && others > 0 && (
+          <button type="button" className={css.reportJump} onClick={() => { onScope('all') }}>
+            {t('list.others', { count: others })}
+          </button>
+        )}
+      </div>
+      {shown.length === 0
+        ? <EmptyState title={t('list.scopeEmpty')} hint={t('list.scopeEmptyHint')} />
+        : (
+          <div className={css.listTable}>
+            <div className={css.tableHead}>
+              <span className={css.colName}>{t('col.name')}</span>
+              <span className={css.colSnapshot}>{t('col.snapshot')}</span>
+              <span className={css.colNum}>{t('col.conditions')}</span>
+              <span className={css.colNum}>{t('col.items')}</span>
+              <span className={css.colNum}>{t('col.reps')}</span>
+              <span className={css.colFactors}>{t('col.factors')}</span>
+              <span className={css.colStatus}>{t('col.status')}</span>
+              <span className={css.colProgress}>{t('col.progress')}</span>
+              <span className={css.colStarted}>{t('col.startedAt')}</span>
+              <span className={css.colActions} />
+            </div>
+            {LIST_GROUPS.filter(group => group !== 'archived' && groups[group].length > 0).map(group => (
+              <div key={group} className={css.listGroup} data-group={group}>
+                <div className={css.listGroupHead}>
+                  {t(`list.group.${group}`)}
+                  <span className={css.dim}> {groups[group].length}</span>
+                </div>
+                {groups[group].map(line)}
+              </div>
+            ))}
+            {groups.archived.length > 0 && (
+              <Detail summary={t('list.group.archivedCount', { count: groups.archived.length })}>
+                <div className={css.listGroup} data-group="archived">{groups.archived.map(line)}</div>
+              </Detail>
+            )}
+          </div>
+        )}
+    </>
   )
 }

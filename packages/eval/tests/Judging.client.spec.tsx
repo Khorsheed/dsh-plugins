@@ -48,10 +48,15 @@ const ROW: EvalExperimentsResult['rows'][number] = {
   progress: { done: 2, total: 2 },
   startedAt: 1,
   validation: null,
+  originSession: 's1',
+  archived: false,
+  closure: null,
+  lastProgressAt: null,
+  stalledMinutes: null,
   unit: null,
 }
 
-const LIST: EvalExperimentsResult = { repo: '/repo', datasets: ['harness-comparison'], notes: [], rows: [ROW] }
+const LIST: EvalExperimentsResult = { repo: '/repo', datasets: ['harness-comparison'], notes: [], rows: [ROW], session: 's1' }
 
 const DETAIL: EvalExperimentDetail = {
   row: ROW, meta: null, readiness: [], buckets: { done: 2 }, states: { archived: 2 }, unreleased: [], job: null,
@@ -141,12 +146,23 @@ const WRITTEN: EvalHumanFinalResult = {
   duplicate: false,
 }
 
-function makeHarness(queue: EvalJudgeQueueView = QUEUE, written: EvalHumanFinalResult = WRITTEN) {
+function makeHarness(
+  queue: EvalJudgeQueueView = QUEUE,
+  written: EvalHumanFinalResult = WRITTEN,
+  row: Partial<EvalExperimentsResult['rows'][number]> = {},
+) {
   const instance = createLabViewStore().create()
   return {
     instance,
     actions: instance.actions,
-    fetchExperiments: vi.fn(async (): Promise<Result<EvalExperimentsResult>> => ({ ok: true, value: LIST })),
+    fetchExperiments: vi.fn(async (): Promise<Result<EvalExperimentsResult>> => ({
+      ok: true, value: { ...LIST, rows: [{ ...ROW, ...row }] },
+    })),
+    closeRun: vi.fn(async () => ({
+      ok: true as const,
+      value: { recorded: true, refusal: null, detail: null, closure: null },
+    })),
+    insertDraft: vi.fn(() => true),
     fetchExperiment: vi.fn(async (): Promise<Result<EvalExperimentDetail>> => ({ ok: true, value: DETAIL })),
     fetchJudgeQueue: vi.fn(async (): Promise<Result<EvalJudgeQueueView>> => ({ ok: true, value: queue })),
     submitHumanFinal: vi.fn(async (): Promise<Result<EvalHumanFinalResult>> => ({ ok: true, value: written })),
@@ -179,7 +195,7 @@ const DESIGN_STUBS = {
   }),
   fetchConditions: async () => ({
     ok: true as const,
-    value: { repo: '/repo', datasets: ['ds'], rows: [], notes: [] },
+    value: { repo: '/repo', datasets: ['ds'], rows: [], notes: [], session: 's1' },
   }),
   fetchConditionDiff: async () => ({ ok: false as const, error: { code: 'unused', message: 'not under test' } }),
 }
@@ -195,6 +211,8 @@ function renderView(h: Harness) {
     fetchJudgeQueue: h.fetchJudgeQueue,
     submitHumanFinal: h.submitHumanFinal,
     reexportRun: h.reexportRun,
+    closeRun: h.closeRun,
+    insertDraft: h.insertDraft,
     openSession: vi.fn(),
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
@@ -470,5 +488,69 @@ describe('the bundle does not follow the verdicts written here (I5·T39 · G17)'
     expect(await screen.findByText('judge.bundleStale')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'judge.reexport' }))
     await waitFor(() => { expect(h.reexportRun).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
+  })
+})
+
+describe('the four exits (T72 §5)', () => {
+  it('① needs something graded; ③ closes at once; each lands through closeRun', async () => {
+    const ungraded = { ...QUEUE, cells: QUEUE.cells.map(cell => ({ ...cell, graded: false })) }
+    const h = makeHarness(ungraded)
+    await openBench(h)
+    const final = await screen.findByRole('button', { name: 'closure.exit.final' })
+    expect(final.hasAttribute('disabled')).toBe(true)
+    expect(final.getAttribute('title')).toBe('closure.finalNeedsGrade')
+
+    fireEvent.click(screen.getByRole('button', { name: 'closure.exit.unreviewed' }))
+    await waitFor(() => {
+      expect(h.closeRun).toHaveBeenCalledWith('s1', { runId: 'run-1', exit: 'unreviewed', reason: null })
+    })
+    expect(await screen.findByText('closure.done.unreviewed')).toBeTruthy()
+  })
+
+  it('② and ④ ask for a reason first and refuse a blank one', async () => {
+    const h = makeHarness()
+    await openBench(h)
+    fireEvent.click(await screen.findByRole('button', { name: 'closure.exit.flagged…' }))
+    const confirm = screen.getByRole('button', { name: 'closure.confirm.flagged' })
+    expect(confirm.hasAttribute('disabled')).toBe(true)
+    fireEvent.change(screen.getByLabelText('closure.reasonAsk.flagged'), { target: { value: '判官与受试同源' } })
+    fireEvent.click(confirm)
+    await waitFor(() => {
+      expect(h.closeRun).toHaveBeenCalledWith('s1', { runId: 'run-1', exit: 'flagged', reason: '判官与受试同源' })
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'closure.exit.void…' }))
+    expect(screen.getByRole('button', { name: 'closure.confirm.void' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'closure.cancel' }))
+    expect(h.closeRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('a refusal is said in the browser\'s words, from the structured code', async () => {
+    const h = makeHarness()
+    h.closeRun.mockResolvedValue({
+      ok: true, value: { recorded: false, refusal: 'already-void', detail: null, closure: null },
+    })
+    await openBench(h)
+    fireEvent.click(await screen.findByRole('button', { name: 'closure.exit.unreviewed' }))
+    expect(await screen.findByText('closure.refused.already-void')).toBeTruthy()
+  })
+
+  it('once ④ is in force the exits are gone and the reason stands', async () => {
+    const h = makeHarness(QUEUE, WRITTEN, {
+      status: 'void',
+      closure: { exit: 'void', reason: '题面中途被改', at: '2026-09-23T08:00:00.000Z', by: null },
+    })
+    await openBench(h)
+    expect(await screen.findByText('closure.voided {"reason":"题面中途被改"}')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'closure.exit.final' })).toBeNull()
+  })
+
+  it('names the cells the judge never reached, and 补判 hands them to the agent', async () => {
+    const absent = { ...QUEUE, cells: QUEUE.cells.map(cell => ({ ...cell, judgeAbsent: cell.cellNo === 2 })) }
+    const h = makeHarness(absent)
+    await openBench(h)
+    expect(await screen.findByText('judge.absent {"cells":"2","count":1}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'judge.rejudge' }))
+    expect(h.insertDraft).toHaveBeenCalledWith('s1', expect.stringMatching(/^judge\.rejudgeAsk .*"name":"t31-judge-panel"/))
   })
 })

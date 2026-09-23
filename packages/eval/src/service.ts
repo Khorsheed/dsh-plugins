@@ -40,6 +40,7 @@ import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from '
 import { conditionPathIn, setConditionEndpoint as writeConditionEndpoint } from './condition-edit.ts'
 import { draftExperiment as writeDraft, draftOptions as readDraftOptions } from './draft.ts'
 import { resolveRepoWrite, writeResolved, EvalWriteRefused, type RepoWriteResult } from './repo-write.ts'
+import { recordArchive, recordClosure } from './closure.ts'
 import { experimentDetail, listExperiments, runsForItem } from './experiments.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
 import { readCellArtifact } from './cell-artifact.ts'
@@ -58,7 +59,7 @@ import type {
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
 } from './faces.ts'
 import type {
-  EvalApproveResult, EvalCellArtifactRequest, EvalCellArtifactView, EvalCellDetail, EvalCellsResult, EvalConditionDiffView,
+  EvalApproveResult, EvalArchiveWrite, EvalCellArtifactRequest, EvalClosureWrite, EvalCellArtifactView, EvalCellDetail, EvalCellsResult, EvalConditionDiffView,
   EvalConditionEndpointRequest, EvalConditionEndpointView,
   EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
   EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult,
@@ -435,7 +436,16 @@ export class EvalService {
         + 'status — mount the dsh-mission plugin',
       )
     }
-    return runStatus(mission, runId)
+    const ledger = runStatus(mission, runId)
+    // The same row the lab list derives, so the tool and the page say one word.
+    const { row } = experimentDetail(mission, runId, this.jobs.list())
+    return {
+      ...ledger,
+      status: row.status,
+      stalledMinutes: row.stalledMinutes,
+      closure: row.closure,
+      archived: row.archived,
+    }
   }
 
   /**
@@ -494,6 +504,7 @@ export class EvalService {
       ...(mission === undefined ? {} : { mission }),
       ...(resolved === undefined ? {} : { repo: resolved.repo }),
       ...(resolved?.datasets === undefined ? {} : { datasets: resolved.datasets }),
+      ...(options.session === undefined ? {} : { session: options.session.id }),
       jobs: this.jobs.list(),
     })
   }
@@ -1229,6 +1240,48 @@ export class EvalService {
   }
 
   /**
+   * Take one of the four closure exits (T72): ① `final` 提交终评, ② `flagged`
+   * 带标记提交 (reason required), ③ `unreviewed` 不做终评直接收尾, ④ `void`
+   * 放弃终评 (reason required). A run-level `eval-closure` annotation; the
+   * newest wins and nothing is accepted after a `void`. A refusal comes back
+   * as a structured field, not a throw — it is an answer the page shows.
+   * @param runId - the run.
+   * @param request - exit and reason.
+   * @param by - caller tag (`tab:<sessionId>`).
+   * @throws {@link EvalReadRefused} when mission's read or annotate face is absent.
+   */
+  async closeRun(runId: string, request: { exit: unknown; reason?: string | null }, by: string): Promise<EvalClosureWrite> {
+    const mission = this.requireMissionRead('close an evaluation')
+    const annotate = this.missionAnnotate()
+    if (annotate === undefined) {
+      throw new EvalReadRefused(
+        'no mission annotate face: the closure lives in the mission ledger, so this composition cannot record one '
+        + '— mount the dsh-mission plugin',
+      )
+    }
+    return await recordClosure(annotate, mission, runId, { exit: request.exit, reason: request.reason ?? null, by })
+  }
+
+  /**
+   * Archive or un-archive a run (`eval-archive`, newest wins). Grouping only.
+   * @param runId - the run.
+   * @param archived - the flag.
+   * @param by - caller tag (`tab:<sessionId>`).
+   * @throws {@link EvalReadRefused} when mission's read or annotate face is absent.
+   */
+  async archiveRun(runId: string, archived: boolean, by: string): Promise<EvalArchiveWrite> {
+    const mission = this.requireMissionRead('archive an experiment')
+    const annotate = this.missionAnnotate()
+    if (annotate === undefined) {
+      throw new EvalReadRefused(
+        'no mission annotate face: the archive mark lives in the mission ledger, so this composition cannot record one '
+        + '— mount the dsh-mission plugin',
+      )
+    }
+    return await recordArchive(annotate, mission, runId, { archived: archived === true, by })
+  }
+
+  /**
    * The 作答记录 of one dataset item: every evaluation run that answered it,
    * with its cells and their verdict counts. Consumed by the 题集 tab (T47);
    * degrades to an empty list plus a sentence when no ledger is mounted.
@@ -1537,7 +1590,7 @@ export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkip
 export { EvalReadRefused } from './read.ts'
 export { EvalWriteRefused } from './repo-write.ts'
 export type { RepoWriteResult } from './repo-write.ts'
-export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
+export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunLedgerStatus, RunStatusReport } from './read.ts'
 export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './experiments.ts'
 export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
 export { judgeSessionsOf, materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
