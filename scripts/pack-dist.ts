@@ -272,10 +272,22 @@ function familyEdgeRange(member: FamilyMember, dep: string, section: string): st
 }
 
 /**
- * Rescope the manifest: new scoped name and dist version; `workspace:^`
- * dependency ranges become caret ranges on the SOURCE version (the workspace
- * releases in lockstep); repo-only fields (publishConfig, repository) are
- * dropped. `dependencies` is dropped too — runtime deps are bundled into lib
+ * A non-family `workspace:` range as a caret on the SOURCE version (the
+ * workspace releases in lockstep). `workspace:*` and `workspace:^` are treated
+ * alike — either left verbatim makes `pnpm pack` refuse the manifest.
+ * @param range - the source range.
+ * @param sourceVersion - the packed package's source version.
+ * @returns the publishable range.
+ */
+function workspaceRange(range: string, sourceVersion: string): string {
+  return range === 'workspace:^' || range === 'workspace:*' ? `^${sourceVersion}` : range
+}
+
+/**
+ * Rescope the manifest: new scoped name and dist version; `workspace:^` /
+ * `workspace:*` dependency ranges become caret ranges on the SOURCE version
+ * (the workspace releases in lockstep); repo-only fields (publishConfig,
+ * repository) and devDependencies are dropped. `dependencies` is dropped too — runtime deps are bundled into lib
  * or provided by the host composition — EXCEPT family edges, which carry the
  * family's runtime/module-resolution contract (keeping a provider's import of
  * its core resolvable): they survive, renamed to their dist names and ranged
@@ -328,19 +340,23 @@ export function rescopePackageJson(
     Object.entries(out.dependencies ?? {}).flatMap(([dep, range]) => {
       const member = family?.get(dep)
       if (member !== undefined) return [[member.distName, familyEdgeRange(member, dep, 'dependencies')]]
-      return keepRuntime.has(dep) ? [[dep, range]] : []
+      return keepRuntime.has(dep) ? [[dep, workspaceRange(range, pkg.version)]] : []
     }),
   )
   if (Object.keys(deps).length > 0) out.dependencies = deps
   else delete out.dependencies
-  for (const section of ['peerDependencies', 'devDependencies'] as const) {
-    const sectionDeps = out[section]
-    if (sectionDeps === undefined) continue
-    out[section] = Object.fromEntries(
-      Object.entries(sectionDeps).map(([dep, range]) => {
+  // devDependencies never reach a consumer — a published tarball is installed,
+  // not built — so the section goes whole. Rewriting it instead is how a
+  // source-plane sibling's `workspace:*` (not passed as a family member) once
+  // reached `pnpm pack` verbatim and failed ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL.
+  delete out.devDependencies
+  const peers = out.peerDependencies
+  if (peers !== undefined) {
+    out.peerDependencies = Object.fromEntries(
+      Object.entries(peers).map(([dep, range]) => {
         const member = family?.get(dep)
-        if (member !== undefined) return [member.distName, familyEdgeRange(member, dep, section)]
-        return [dep, range === 'workspace:^' ? `^${pkg.version}` : range]
+        if (member !== undefined) return [member.distName, familyEdgeRange(member, dep, 'peerDependencies')]
+        return [dep, workspaceRange(range, pkg.version)]
       }),
     )
   }
@@ -504,7 +520,8 @@ export function packDist(options: PackDistOptions): string {
     // pnpm pack prints a "Tarball Details" block; the path is the .tgz line.
     const tarball = packOut.split('\n').map(line => line.trim()).find(line => line.endsWith('.tgz'))
     if (tarball === undefined) throw new Error(`pack-dist: pnpm pack output carried no .tgz path: ${packOut}`)
-    verifyTarball(tarball, staging, distName)
+    const devDeclared = Object.keys(pkg.devDependencies ?? {}).map(dep => family.get(dep)?.distName ?? dep)
+    verifyTarball(tarball, staging, distName, devDeclared)
     return tarball
   } finally {
     rmSync(staging, { recursive: true, force: true })
@@ -532,7 +549,7 @@ export function packDist(options: PackDistOptions): string {
  *      declared in both directions forms a cycle that pnpm's build sequencer
  *      schedules into one concurrent chunk, which raced cold builds to death.
  */
-export function verifyTarball(tarball: string, staging: string, selfName: string): void {
+export function verifyTarball(tarball: string, staging: string, selfName: string, devDeclared: Iterable<string> = []): void {
   const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
   const packed = new Set(listing.split('\n').map(line => line.replace(/^package\//, '').trim()).filter(Boolean))
   // 1. payload hygiene — sourcemaps and incremental build state are never
@@ -553,18 +570,20 @@ export function verifyTarball(tarball: string, staging: string, selfName: string
   }
 
   const manifest = JSON.parse(readFileSync(join(staging, 'package.json'), 'utf8')) as PackageJson
-  // A devDependency counts as a declaration: pack-dist itself renames and ranges
-  // family devDependencies into the dist manifest (see the rewrite above), and a
-  // source-plane sibling — a helper inlined into this package's bundle at build
-  // time — is ONLY ever a devDependency (a runtime dependency on it would be a
-  // registry edge nobody installs). Without this, such a package could never
-  // pass its own verifier: its emitted type declarations and its dead tsc
-  // intermediates mention the sibling by name, while every honest field for the
-  // edge is the one this check used to ignore.
+  // A devDependency counts as a declaration: a source-plane sibling — a helper
+  // inlined into this package's bundle at build time — is ONLY ever a
+  // devDependency (a runtime dependency on it would be a registry edge nobody
+  // installs). Without this, such a package could never pass its own verifier:
+  // its emitted type declarations and its dead tsc intermediates mention the
+  // sibling by name, while every honest field for the edge is the one this
+  // check used to ignore. pack-dist drops devDependencies from the dist
+  // manifest, so its caller passes the SOURCE manifest's devDependencies (dist
+  // names) as `devDeclared`; a manifest that still carries the field counts too.
   const declared = new Set([
     ...Object.keys(manifest.dependencies ?? {}),
     ...Object.keys(manifest.peerDependencies ?? {}),
     ...Object.keys(manifest.devDependencies ?? {}),
+    ...devDeclared,
   ])
   // Data mentions are not edges: `dsh.references` names a sibling the artifacts
   // mention as data (a preset-visibility probe's companion row name) without

@@ -92,7 +92,7 @@ describe('rescopePackageJson', () => {
     expect(out.name).toBe('@khorsheed/dsh-client-message-tools')
     expect(out.version).toBe('0.4.4')
     expect(out.peerDependencies).toEqual({ '@deepseek-ai/cordis': '^0.1.0-rc.5', react: '^18.2.0' })
-    expect(out.devDependencies).toEqual({ '@deepseek-ai/dsh-llm': '^0.1.0-rc.5' })
+    expect(out.devDependencies).toBeUndefined()
     expect(out.dependencies).toBeUndefined()
     expect(out['publishConfig']).toBeUndefined()
     expect(out['repository']).toBeUndefined()
@@ -131,8 +131,40 @@ describe('rescopePackageJson', () => {
       '@khorsheed/dsh-file-preview': '^0.3.0',
       '@deepseek-ai/dsh-client-runtime': '^0.1.0-rc.5',
     })
-    // A devDependency edge is ranged on the target too — the same section rule.
-    expect(out.devDependencies).toEqual({ '@khorsheed/dsh-file-preview': '^0.3.0' })
+    // devDependencies never ship, family member or not.
+    expect(out.devDependencies).toBeUndefined()
+  })
+
+  it('drops devDependencies whole and carets workspace:* like workspace:^ (T77)', () => {
+    // The e9110d52 shape: a source-plane sibling as a `workspace:*`
+    // devDependency, NOT passed as a family member — left in the manifest it
+    // made `pnpm pack` fail ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL.
+    const family = new Map([
+      ['@khorsheed/dsh-local-agent', {
+        sourceName: '@khorsheed/dsh-local-agent',
+        distName: '@khorsheed/dsh-local-agent',
+        targetVersion: '0.4.0',
+      }],
+    ])
+    const out = rescopePackageJson({
+      name: '@khorsheed/dsh-local-files',
+      version: '0.2.0',
+      dependencies: {
+        '@khorsheed/dsh-local-agent': 'workspace:*',
+        '@khorsheed/dsh-runtime-helper': 'workspace:*',
+        zod: '^4.4.3',
+      },
+      peerDependencies: { '@khorsheed/dsh-ui-kernel': 'workspace:*', react: '^18.2.0' },
+      devDependencies: { '@khorsheed/dsh-client-ui-content-preview': 'workspace:*' },
+      dsh: { runtimeDependencies: ['@khorsheed/dsh-runtime-helper'] },
+    }, '@khorsheed/dsh-local-files', '0.2.0', family)
+    expect(out.devDependencies).toBeUndefined()
+    expect(out.dependencies).toEqual({
+      '@khorsheed/dsh-local-agent': '^0.4.0',
+      '@khorsheed/dsh-runtime-helper': '^0.2.0',
+    })
+    expect(out.peerDependencies).toEqual({ '@khorsheed/dsh-ui-kernel': '^0.2.0', react: '^18.2.0' })
+    expect(JSON.stringify(out)).not.toContain('workspace:')
   })
 
   it('rescopes peerDependenciesMeta keys alongside their peers', () => {
@@ -546,6 +578,40 @@ describe('packDist end-to-end (independent of the self-checks)', () => {
       const tarball = packDist({ packageDir: dir, scope: '@khorsheed', version: '0.1.0-rc.1', outDir: dir })
       const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
       expect(listing).toContain('package/skills/demo/SKILL.md')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('a real pack survives workspace:* devDependencies and ships no devDependencies (T77)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pack-dist-devdeps-'))
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true })
+      mkdirSync(join(dir, 'lib/types'), { recursive: true })
+      writeFileSync(join(dir, 'src/index.ts'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/index.js'), 'export {}\n')
+      // The emitted declarations mention the inlined dev sibling by name; the
+      // verifier must still accept it although the dist manifest drops the field.
+      writeFileSync(join(dir, 'lib/types/index.d.ts'), "export type { X } from '@khorsheed/dsh-client-ui-content-preview'\n")
+      writeFileSync(join(dir, 'lib/types/index.js'), 'export {}\n')
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({
+        name: '@khorsheed/dsh-e2e-devdeps',
+        version: '0.1.0',
+        files: ['lib'],
+        dependencies: { '@khorsheed/dsh-e2e-core': 'workspace:*' },
+        devDependencies: { '@khorsheed/dsh-client-ui-content-preview': 'workspace:*', typescript: '^5.0.0' },
+      }))
+      const tarball = packDist({
+        packageDir: dir,
+        scope: '@khorsheed',
+        version: '0.1.0',
+        outDir: dir,
+        family: [{ sourceName: '@khorsheed/dsh-e2e-core', targetVersion: '0.3.0' }],
+      })
+      const manifest = JSON.parse(execFileSync('tar', ['-xzOf', tarball, 'package/package.json'], { encoding: 'utf8' })) as Record<string, unknown>
+      expect(manifest['devDependencies']).toBeUndefined()
+      expect(manifest['dependencies']).toEqual({ '@khorsheed/dsh-e2e-core': '^0.3.0' })
+      expect(JSON.stringify(manifest)).not.toContain('workspace:')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

@@ -324,7 +324,11 @@ NODE
     for d in $UNPUBLISHED_DIRS; do
       name=$(node -p "require('$SOURCE/packages/$d/package.json').name")
       version=$(node -p "require('$SOURCE/packages/$d/package.json').version")
-      members=$(node -p "const p=require('$SOURCE/packages/$d/package.json'); [...new Set([...Object.keys(p.dependencies??{}),...Object.keys(p.peerDependencies??{})])].filter(n=>n.startsWith('@khorsheed/')).join(' ')")
+      # devDependencies count too: pack-dist drops that section from the dist
+      # manifest, but a member it knows of gets its name rewritten and its
+      # version on hand (T77 — a workspace:* devDependency left unrewritten made
+      # pnpm pack fail ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL).
+      members=$(node -p "const p=require('$SOURCE/packages/$d/package.json'); [...new Set([...Object.keys(p.dependencies??{}),...Object.keys(p.peerDependencies??{}),...Object.keys(p.devDependencies??{})])].filter(n=>n.startsWith('@khorsheed/')).join(' ')")
       # Each member as name=version, looked up in the index built above. A name
       # the checkout holds no version for goes in bare — correct for a member
       # that only needs rewriting, and pack-dist still fails loudly if that
