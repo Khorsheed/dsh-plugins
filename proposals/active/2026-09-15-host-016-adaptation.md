@@ -111,7 +111,7 @@ alpha.2 修订上文「明确不做」清单：ui-shortcuts / message-timeline /
 - **形态 C 家族 bundle → 可立项**：rc.1 机制齐备（`dsh.bundle.patch` 数组多 patch、patch 格式不变、`OPTIONAL_BUNDLES` 不变、`reconcileProfilePlugins` 零 diff 仍只收编直接依赖）。薄元包 patch 点名 24 行在解析（runtime resolution + hoisted node_modules）与管理页形态（一个套件卡片）上可行；代价：成员不作为独立 bundle 出现/启停、安装时套件点名的每包 peer 都强检。按 `2026-08-21-package-management.md` 复审落地。
 - **preset 迁移（新增必办，3080 升线前置）**：目录式 preset 彻底废弃（`.agent-presets` 无代码路径、**无自动迁移工具**，手工做两文件 bundle + `install_bundle`）。我们 5 个目录 preset（仓内 profiles/web-dev、profiles/web-eval、profiles/web 各 1 + prod `~/.dsh-official/.agent-presets/` 3 个）要迁成 preset bundle；官方四个 preset id（standard/ptc/minimal/cordis）不变；settings.yaml 一次性导入**不映射** agent-presets 段 → 升线后需重选默认 preset（公告提示）。preset 行现带 `meta` 显示数据，pluginInventory 形状保留 → 自隐藏探测链不用改。
 - **ui-file-preview 共存终判**：官方 documentpreview rc.1 大扩（FortuneSheet 表格/缩放/office 经随包 libreoffice-kit/actions 槽），并开放 `documentPreviews.register` 扩展点——内容面退役路径从「自建 pane」变为「注册进官方面」；改动记录维度官方仍**内存态/git-only/重启即失**（两 tag 零 diff），我方 TurnFileRow 维持。终判待用户体验 rc.1 实例后拍板。
-- **ankh-guard preflight PluginPackages**：0.1.7 线挂载面重钉后实测（沿用 09-18 遗留条款）。
+- **ankh-guard preflight PluginPackages**：0.1.7 线挂载面重钉后实测（沿用 09-18 遗留条款）。**2026-09-23 实测关闭**：rc.1 harness 对 prod web profile 跑 `dsh-ankh-guard preflight`——试启动把 26 行判「可选失败/pending」（22 个官方行 failed to import，主因是 prod profile 的 node_modules 仍是 rc.3 代、rc.1 新行的模块不存在；4 个 provider pending 于 settings），**不再误报 FAIL，preflight PASS**（rc.1 起区分可选/必需插件失败）。结论：升线闸门方向安全；**但同一实测证明 3080 升 rc.1 前必须完成 preset 迁移**（prod `.agent-presets` 目录预设在 rc.1 无代码路径，四个 preset 行全靠 deploy 时的新 preset 元包承接，否则升线即丢全部预设）。
 - **npm 波**：0.1.7-rc.1 已上 npm；latest/next 仍 0.1.5-rc.3 → minHost 不动原则维持；peer range `^0.1.0-rc.6` 覆盖 rc.1 实测通过，docs/publishing.md 复核项关闭一半（剩 latest 前滚后的标注）。
 
 ## 里程碑
