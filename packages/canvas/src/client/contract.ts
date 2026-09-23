@@ -1,10 +1,10 @@
 /**
- * Composed props contract for the canvas tab (M3's single seat): the
- * right-Sidebar tab body in wide mode, drilling between the board, the card
- * detail, and the draft view. The tab is session scope — its mutations fence
- * through the tab's own session — and the open canvas/card/freshness state
- * crosses gestures through the shared store exposed as `hooks.selection`
- * (the slot runtime binds it into the `useSelection` prop).
+ * Composed props contract for the canvas tabs: the `canvas` page (the board and
+ * its switcher) and, since stage ⑧, the `canvasDetail` resource (one card per
+ * tab). Both seats are session scope — their mutations fence through the tab's
+ * own session — and board freshness crosses tabs through the shared store
+ * exposed as `hooks.selection` (the slot runtime binds it into the
+ * `useSelection` prop).
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -27,11 +27,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
-  BoardAttachImageOutcome, BoardAttachImageRequest, BoardCardKind, BoardChatStatusResult, BoardCreateRequest,
+  BoardAttachImageOutcome, BoardAttachImageRequest, BoardChatStatusResult, BoardCreateRequest,
   BoardFocusRequest, BoardFocusResult,
   BoardListResult, BoardMutationResult,
-  BoardPatchCardRequest, BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest,
-  BoardReadOutcome, BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
+  BoardPatchCardRequest, BoardPutCardRequest,
+  BoardReadOutcome, BoardReadRequest, BoardSetCategoriesRequest, BoardSetLayoutRequest,
+  CardCategoryId,
   CanvasStroke,
 } from '../types.ts'
 import type {} from './locales.ts'
@@ -94,29 +95,42 @@ export interface CanvasTabInjected extends CanvasChatInjected, CanvasImageInject
   /** Archive a canvas from the switcher, or restore it (never a delete). */
   archiveCanvas: (sessionId: SessionId, request: BoardArchiveRequest) => Promise<RemoteResult<BoardMutationResult>>
   /**
+   * Write this canvas's category catalog (stage ⑤): the whole desired list, in
+   * strip order. `archiveCardIds` rides the same write so retiring a category
+   * that still holds cards cannot leave a retired chip over live cards.
+   */
+  setCategories: (sessionId: SessionId, request: BoardSetCategoriesRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /**
+   * Write this canvas's layout (stage ⑥): the places, lanes and lines a gesture
+   * changed. One verb because dragging a lane moves the cards parked in it, and
+   * a follow-up write that lost the version race would leave them behind.
+   */
+  setLayout: (sessionId: SessionId, request: BoardSetLayoutRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /**
    * Open a file attachment in the official document preview
    * (`ctx.sidebarRight.openResource` over a `dsh-resource://file` address);
    * a host without the right Sidebar degrades to a no-op.
    */
   openFile: (sessionId: SessionId, cwd: string | undefined, path: string) => void
   /**
-   * Open one card in the detail page (a board body click): the shared store
-   * is written and the tab drills in.
+   * Open one card in its own detail tab (a board body click, stage ⑧): the
+   * address is the card's, so clicking it twice focuses that tab and two cards
+   * are two tabs of the same dock. `heading` is the chip's live text.
    */
-  selectCard: (canvasId: string, cardId: string) => void
-  /** Switch the open canvas (the switcher's gesture; the drilled card clears). */
+  openCardDetail: (canvasId: string, cardId: string, heading: string) => void
+  /**
+   * Open one canvas's draft tab (the ＋新卡 menu): one draft address per
+   * canvas, so the menu re-categorizes the draft that is already open instead
+   * of producing a second blank one.
+   */
+  openCardDraft: (canvasId: string, kind: CardCategoryId, heading: string) => void
+  /** Switch the open canvas (the switcher's gesture). */
   openCanvas: (canvasId: string) => void
-  /** Leave the detail page (the drill's back): keeps the open canvas. */
-  clearCard: () => void
   /**
    * Report the canvas this session's tab has open (the main-session tools'
    * target); called on mount and on every switch.
    */
   focusCanvas: (sessionId: SessionId, request: BoardFocusRequest) => Promise<RemoteResult<BoardFocusResult>>
-  /** Read the canvas's draft (an absent draft reads as empty with a null token). */
-  readDraft: (request: BoardReadDraftRequest) => Promise<RemoteResult<BoardReadDraftOutcome>>
-  /** Write the canvas's draft (null token creates; else version-guarded). */
-  writeDraft: (sessionId: SessionId, request: BoardWriteDraftRequest) => Promise<RemoteResult<BoardWriteDraftResult>>
   /**
    * The one-shot layout suggestion, fired once per session when the tab
    * first shows: collapse the session list (M3.1 — the fullscreen suggestion
@@ -126,12 +140,12 @@ export interface CanvasTabInjected extends CanvasChatInjected, CanvasImageInject
    */
   suggestWideMode: (sessionId: SessionId) => void
   hooks: {
-    /** The selection/freshness feed (open canvas, open card, board rev), bound by the slot renderer. */
+    /** The freshness feed (open canvas, board rev), bound by the slot renderer. */
     selection: CanvasSelectionSource
     /**
-     * The image cache's read-landed feed, bound as `useImageRev`. The TAB reads
-     * it once and hands the fresh `pathImages` down to whichever body shows —
-     * one subscription per tab, and every renderer in it repaints together.
+     * The image cache's read-landed feed, bound as `useImageRev`. Each seat
+     * that RENDERS images subscribes for itself (§10.3): the board page shows
+     * no images, so only the detail tabs read it, one subscription per tab.
      */
     imageRev: CanvasImageRevSource
   }
@@ -145,9 +159,9 @@ export type CanvasTabProps =
   & PropsLocale<'canvas'>
 
 /**
- * The detail page's injected subset (the drill-in reader): everything the
- * card-detail component consumes. A structural subset of the tab face, so
- * the tab passes its own members down.
+ * The injected subset the detail reader consumes: everything the card-detail
+ * component touches. A structural subset of the tab face — both seats are
+ * handed that one face, and this is what says which members the reader may use.
  */
 export interface CanvasDetailInjected extends CanvasChatInjected, CanvasImageInjected {
   /** Read one board with the freshness token a later mutation must present. */
@@ -166,14 +180,14 @@ export interface CanvasDetailInjected extends CanvasChatInjected, CanvasImageInj
 
 /**
  * The new-card draft the detail page carries (v2.2 ②, §11.6): the detail is
- * the ONLY card editor, so ＋新卡 opens this same page with a `create` face
- * instead of drilling into a card. The content is the OWNER's — the tab holds
- * the text and the strokes so its single exit gesture can ask about them — and
- * nothing reaches the disk until `onSave`.
+ * the ONLY card editor, so ＋新卡 opens that same page in draft form. The
+ * content belongs to the DETAIL TAB since stage ⑧ — it holds the text and the
+ * strokes so its own exit gesture can ask about them — and nothing reaches the
+ * disk until `onSave`.
  */
 export interface CanvasDetailCreate {
-  /** The kind picked in the ＋新卡 menu. */
-  readonly kind: BoardCardKind
+  /** The category picked in the ＋新卡 menu (a catalog id, stage ⑤). */
+  readonly kind: CardCategoryId
   /** The draft's current text (the owner's, reported by `onTextChange`). */
   readonly text: string
   /** The draft's current drawing (the owner's too, reported by `onDrawChange`). */
@@ -183,7 +197,7 @@ export interface CanvasDetailCreate {
   /** Reports a committed stroke list; a draft's ink costs nothing until the save. */
   onDrawChange: (draw: readonly CanvasStroke[]) => void
   /** The first save; resolves true once the card is on the board. */
-  onSave: (kind: BoardCardKind, text: string, draw: readonly CanvasStroke[]) => Promise<boolean>
+  onSave: (kind: CardCategoryId, text: string, draw: readonly CanvasStroke[]) => Promise<boolean>
   /**
    * The draft's ONE exit (Esc, the same gesture the back bar fires): the
    * OWNER decides whether to ask first — it holds the draft's content.
@@ -192,13 +206,20 @@ export interface CanvasDetailCreate {
 }
 
 /**
- * Full props of the card-detail reader. `sessionId` is optional: with none
- * the reader renders read-only (no edits, no comments, no asks). `create`
- * switches the page from reading a card to drafting a new one.
+ * Full props of the card-detail reader. Since stage ⑧ the reader is told
+ * which card to show (`canvasId`/`cardId` come from the tab's own address) and
+ * only subscribes to the shared store for freshness — the board's selection is
+ * no longer its subject. `sessionId` is optional: with none the reader renders
+ * read-only (no edits, no comments, no asks). `create` switches the page from
+ * reading a card to drafting a new one.
  */
 export type CanvasDetailProps =
   & {
     sessionId: SessionId | undefined
+    /** The canvas whose board to read; `null` says nothing was ever opened. */
+    readonly canvasId: string | null
+    /** The card to show; `null` is the draft (`create`) or the empty notice. */
+    readonly cardId: string | null
     readonly create?: CanvasDetailCreate | undefined
     /**
      * The tab's bound image vocabulary (fresh identity whenever a read has

@@ -20,17 +20,20 @@
 import { useState, type ReactNode } from 'react'
 import {
   IconArchiveOutline20, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconCloseOutline16, IconCodeOutline16, IconDatabaseOutline16, IconEditOutline16,
-  IconLightOutline16, IconLinkOutline14, IconListPenOutline16,
-  IconNewChatOutline16, IconQuestionOutline14, IconRefreshOutline14,
-  IconSparkle16,
+  IconCloseOutline16, IconCodeOutline16, IconEditOutline16,
+  IconLightOutline16, IconLinkOutline14,
+  IconNewChatOutline16, IconRefreshOutline14,
+  IconSparkle16, Button, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  BOARD_CARD_KINDS, CANVAS_LENS_IDS, documentHeadingOf, isLongCardText,
-  type BoardCard, type BoardCardKind, type BoardCardStatus, type CanvasBoard, type CanvasLensId,
+  CANVAS_LENS_IDS, documentHeadingOf, enabledCategories, isBoardCardKind, isLongCardText,
+  makeBoardId, sanitizeCategoryLabel,
+  type BoardCard, type BoardCardStatus, type BoardCategory,
+  type CanvasBoard, type CanvasLensId, type CardCategoryId,
 } from '../../types.ts'
 import type {} from '../locales.ts'
+import { categoryLabelMap, kindIconOf } from '../category-label.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
@@ -46,6 +49,13 @@ export interface BoardActions {
   comment: (cardId: string, text: string) => void
   /** Archive every selected card. */
   archiveSelected: () => void
+  /** Refile every selected card under another category (the batch bar's 「改分类」). */
+  refileSelected: (kind: CardCategoryId) => void
+  /**
+   * Write this canvas's category catalog (stage ⑤). `archiveCardIds` is what
+   * retiring a category costs: its cards go to the archive in the same write.
+   */
+  setCategories: (categories: readonly BoardCategory[], archiveCardIds: readonly string[]) => void
 }
 
 /** The board view's props: the loaded board plus the page-held UI state. */
@@ -54,8 +64,8 @@ export interface BoardViewProps {
   /** True when no session can fence writes (the board then shows, never mutates). */
   readonly readonly: boolean
   readonly board: CanvasBoard
-  readonly filter: 'all' | BoardCardKind
-  readonly onFilter: (next: 'all' | BoardCardKind) => void
+  readonly filter: 'all' | CardCategoryId
+  readonly onFilter: (next: 'all' | CardCategoryId) => void
   readonly selection: ReadonlySet<string>
   readonly onToggleSelect: (cardId: string) => void
   readonly onClearSelection: () => void
@@ -68,6 +78,11 @@ export interface BoardViewProps {
   readonly chatAvailable: boolean
   /** Ask the canvas's agent through one lens over the current selection. */
   readonly onAsk: (lens: CanvasLensId) => void
+  /**
+   * 「生成文章」 over the current selection (stage ⑥c): the same ask seam with a
+   * fixed instruction, so the page owns the send and this view only asks.
+   */
+  readonly onCompose: () => void
   /** Follow up on one comment (card id + the comment's text). */
   readonly onFollowUp: (cardId: string, commentText: string) => void
   readonly actions: BoardActions
@@ -75,14 +90,14 @@ export interface BoardViewProps {
   readonly onToggleArchived: () => void
 }
 
-/** The kind icon set (icon + words; the storyboard's kind vocabulary). */
-const KIND_ICONS = {
-  fragment: IconListPenOutline16,
-  question: IconQuestionOutline14,
-  grounding: IconDatabaseOutline16,
-  reference: IconLinkOutline14,
-  document: IconCodeOutline16,
-} as const
+/** A fresh custom category id, minted where the panel adds one. */
+function newCategoryId(): string {
+  const bytes = globalThis.crypto?.getRandomValues?.(new Uint8Array(8))
+  const random = bytes === undefined
+    ? Math.random().toString(36).slice(2).padEnd(12, '0')
+    : [...bytes].map(byte => byte.toString(36).padStart(2, '0')).join('')
+  return makeBoardId('cat', Date.now(), random)
+}
 
 /** The last path segment, separators from either platform (display only). */
 function basenameOf(path: string): string {
@@ -140,7 +155,9 @@ function CommentThread({ t, card, readonly, chatAvailable, onComment, onFollowUp
   )
 }
 
-/** A card's summary: the clamped text, the fade for long texts, the word count. */
+/** A card's summary: the drawing, the derived heading, the clamped text.
+ *  The word count is NOT here — it belongs to the pinned footer, which is
+ *  `CardItem`'s (an html card keeps its count inside the placeholder instead). */
 function CardSummary({ t, card }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
@@ -167,7 +184,6 @@ function CardSummary({ t, card }: {
       </>
     )
   }
-  const long = isLongCardText(card.text)
   // Document cards lead with their derived heading (never the raw `#` opener)
   // and summarize the body that remains after it.
   const heading = card.kind === 'document' ? documentHeadingOf(card.text) : undefined
@@ -175,18 +191,19 @@ function CardSummary({ t, card }: {
     <>
       {thumb}
       {heading !== undefined && <div className={css.docTitle}>{heading.title}</div>}
-      <div className={css.cardTextWrap} data-clamped={long || undefined}>
+      <div className={css.cardTextWrap} data-clamped={isLongCardText(card.text) || undefined}>
         <div className={css.cardText}>{heading?.body ?? card.text}</div>
       </div>
-      {long && <div className={css.cardWords}>{t('meta.words', { count: String(card.text.length) })}</div>}
     </>
   )
 }
 
 /** One board card: kept, ghost (proposed), or archived-in-the-well. */
-function CardItem({ t, card, readonly, selected, archivedWell, chatAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
+function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
+  /** The category's display text (the user's name for it, stage ⑤). */
+  readonly kindLabel: string
   readonly readonly: boolean
   readonly selected: boolean
   /** Rendered inside the archived well (open + restore are the only gestures). */
@@ -198,8 +215,13 @@ function CardItem({ t, card, readonly, selected, archivedWell, chatAvailable, on
   readonly actions: BoardActions
 }): ReactNode {
   const [threadOpen, setThreadOpen] = useState(false)
-  const KindIcon = KIND_ICONS[card.kind]
+  const KindIcon = kindIconOf(card.kind)
   const proposed = card.status === 'proposed'
+  // The pinned footer's word count: the html placeholder already carries its
+  // own, so showing it here too would count the same card twice.
+  const words = detectCardFormat(card.text) !== 'html' && isLongCardText(card.text)
+    ? t('meta.words', { count: String(card.text.length) })
+    : null
 
   return (
     <div
@@ -227,8 +249,8 @@ function CardItem({ t, card, readonly, selected, archivedWell, chatAvailable, on
         </span>
       )}
       <span className={css.kindTag}>
-        <KindIcon size={12} />
-        {t(`kind.${card.kind}`)}
+        {KindIcon !== undefined && <KindIcon size={12} />}
+        {kindLabel}
         {card.createdBy === 'agent' && !proposed ? ` · ${t('card.fromAgent')}` : ''}
       </span>
 
@@ -317,33 +339,86 @@ function CardItem({ t, card, readonly, selected, archivedWell, chatAvailable, on
         )
       )}
 
-      {!archivedWell && (
-        <>
-          <button
-            type="button"
-            className={css.commentBadge}
-            aria-expanded={threadOpen}
-            onClick={event => { event.stopPropagation(); setThreadOpen(open => !open) }}
-          >
-            <IconNewChatOutline16 size={11} />
-            {card.comments.length === 0
-              ? t('comment.write')
-              : card.comments.length === 1
-                ? t('comment.one')
-                : t('comment.many', { count: String(card.comments.length) })}
-          </button>
-          {threadOpen && (
-            <CommentThread
-              t={t}
-              card={card}
-              readonly={readonly}
-              chatAvailable={chatAvailable}
-              onComment={text => { actions.comment(card.id, text) }}
-              onFollowUp={onFollowUp}
-            />
+      {(words !== null || !archivedWell) && (
+        <div className={css.cardFoot}>
+          {words !== null && <span className={css.cardWords}>{words}</span>}
+          {!archivedWell && (
+            <button
+              type="button"
+              className={css.commentBadge}
+              aria-expanded={threadOpen}
+              onClick={event => { event.stopPropagation(); setThreadOpen(open => !open) }}
+            >
+              <IconNewChatOutline16 size={11} />
+              {card.comments.length === 0
+                ? t('comment.write')
+                : card.comments.length === 1
+                  ? t('comment.one')
+                  : t('comment.many', { count: String(card.comments.length) })}
+            </button>
           )}
-        </>
+        </div>
       )}
+      {!archivedWell && threadOpen && (
+        <CommentThread
+          t={t}
+          card={card}
+          readonly={readonly}
+          chatAvailable={chatAvailable}
+          onComment={text => { actions.comment(card.id, text) }}
+          onFollowUp={onFollowUp}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * One row of the category panel: rename in place, retire or bring back. The
+ * parent keys this by id AND label, so a committed rename remounts the input
+ * with the stored text and no local state ever disagrees with the board.
+ */
+function CategoryRow({ t, category, count, onRename, onToggle }: {
+  readonly t: TranslateNS<'canvas'>
+  readonly category: BoardCategory
+  readonly count: number
+  readonly onRename: (label: string) => void
+  readonly onToggle: () => void
+}): ReactNode {
+  const [text, setText] = useState(category.label)
+  const commit = (): void => {
+    const label = sanitizeCategoryLabel(text) ?? ''
+    setText(label)
+    if (label !== category.label) onRename(label)
+  }
+  return (
+    <div className={css.catRow} data-off={category.enabled ? undefined : true}>
+      <input
+        className={css.catInput}
+        type="text"
+        value={text}
+        placeholder={isBoardCardKind(category.id) ? t(`kind.${category.id}`) : category.id}
+        aria-label={t('cat.rename')}
+        onChange={event => { setText(event.target.value) }}
+        onBlur={commit}
+        onKeyDown={event => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            ;(event.target as HTMLInputElement).blur()
+          }
+        }}
+      />
+      <span className={css.catCount}>
+        {isBoardCardKind(category.id) ? `${t('cat.builtin')} · ` : ''}
+        {t('cat.count', { count: String(count) })}
+      </span>
+      <button
+        type="button"
+        className={category.enabled ? css.catToggle : `${css.catToggle} ${css.catToggleOn}`}
+        onClick={onToggle}
+      >
+        {category.enabled ? t('cat.disable') : t('cat.enable')}
+      </button>
     </div>
   )
 }
@@ -351,14 +426,71 @@ function CardItem({ t, card, readonly, selected, archivedWell, chatAvailable, on
 /** The board view. */
 export function BoardView({
   t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
-  chatAvailable, onAsk, onFollowUp, actions, showArchived, onToggleArchived,
+  chatAvailable, onAsk, onCompose, onFollowUp, actions, showArchived, onToggleArchived,
 }: BoardViewProps): ReactNode {
+  const [catPanel, setCatPanel] = useState(false)
+  /** The batch bar's 「改分类」 row is open (it replaces the action row). */
+  const [refile, setRefile] = useState(false)
+  const [newCat, setNewCat] = useState('')
+  /** The retire question: the category awaiting confirmation, or none. */
+  const [retireAsk, setRetireAsk] = useState<BoardCategory | null>(null)
 
   const visible = board.cards.filter(card => card.status !== 'archived')
   const archived = board.cards.filter(card => card.status === 'archived')
-  const counts = new Map<BoardCardKind, number>()
+  const labels = categoryLabelMap(board.categories, t)
+  const counts = new Map<CardCategoryId, number>()
   for (const card of visible) counts.set(card.kind, (counts.get(card.kind) ?? 0) + 1)
+  const chips = enabledCategories(board.categories)
+  const retired = board.categories.filter(category => !category.enabled)
   const shown = filter === 'all' ? visible : visible.filter(card => card.kind === filter)
+  // A move only means "somewhere else": when the whole selection already shares
+  // one category, that one is the single target worth hiding. A mixed selection
+  // hides nothing, because every chip is somewhere for at least one card.
+  const selectionKinds = new Set(
+    visible.filter(card => selection.has(card.id)).map(card => card.kind),
+  )
+  const refileTargets = selectionKinds.size === 1
+    ? chips.filter(category => category.id !== [...selectionKinds][0])
+    : chips
+
+  /** Write a catalog derived from the board's, one row changed. */
+  const writeCats = (categories: readonly BoardCategory[], archiveCardIds: readonly string[] = []): void => {
+    actions.setCategories(categories, archiveCardIds)
+  }
+
+  const renameCat = (id: CardCategoryId, label: string): void => {
+    writeCats(board.categories.map(category => (category.id === id ? { ...category, label } : category)))
+  }
+
+  const addCat = (): void => {
+    const label = sanitizeCategoryLabel(newCat)
+    if (label === undefined) return
+    const lastOrder = board.categories.reduce((max, category) => Math.max(max, category.order), 0)
+    writeCats([...board.categories, { id: newCategoryId(), label, order: lastOrder + 10, enabled: true }])
+    setNewCat('')
+  }
+
+  /** The cards a retired category would take with it (its visible ones). */
+  const cardsOf = (id: CardCategoryId): BoardCard[] => visible.filter(card => card.kind === id)
+
+  const toggleCat = (category: BoardCategory): void => {
+    if (category.enabled && cardsOf(category.id).length > 0) {
+      setRetireAsk(category)
+      return
+    }
+    writeCats(board.categories.map(row => (row.id === category.id ? { ...row, enabled: !row.enabled } : row)))
+  }
+
+  const confirmRetire = (): void => {
+    if (retireAsk === null) return
+    const id = retireAsk.id
+    writeCats(
+      board.categories.map(row => (row.id === id ? { ...row, enabled: false } : row)),
+      cardsOf(id).map(card => card.id),
+    )
+    setRetireAsk(null)
+    if (filter === id) onFilter('all')
+  }
 
   return (
     <section className={css.main}>
@@ -372,27 +504,108 @@ export function BoardView({
           >
             {t('board.filter.all')} <span className={css.chipCount}>{visible.length}</span>
           </button>
-          {BOARD_CARD_KINDS.map(kind => {
-            const KindIcon = KIND_ICONS[kind]
+          {chips.map(category => {
+            const KindIcon = kindIconOf(category.id)
             return (
               <button
-                key={kind}
+                key={category.id}
                 type="button"
                 className={css.chip}
-                data-active={filter === kind || undefined}
-                onClick={() => { onFilter(kind) }}
+                data-active={filter === category.id || undefined}
+                onClick={() => { onFilter(category.id) }}
               >
-                <KindIcon size={12} />
-                {t(`kind.${kind}`)} <span className={css.chipCount}>{counts.get(kind) ?? 0}</span>
+                {KindIcon !== undefined && <KindIcon size={12} />}
+                {labels.get(category.id) ?? category.id}{' '}
+                <span className={css.chipCount}>{counts.get(category.id) ?? 0}</span>
               </button>
             )
           })}
+          {!readonly && (
+            <button
+              type="button"
+              className={`${css.chip} ${css.chipMgr}`}
+              title={t('cat.mgrTitle')}
+              aria-expanded={catPanel}
+              onClick={() => { setCatPanel(open => !open) }}
+            >
+              {catPanel ? t('cat.collapse') : t('board.manageCats')}
+            </button>
+          )}
         </div>
+
+        {catPanel && !readonly && (
+          <div className={css.catPanel}>
+            <div className={css.catHead}>
+              <b>{t('cat.title')}</b>
+              <span>
+                {t('cat.scope')}
+                {' · '}
+                <code className={css.catCode}>{t('cat.stored')}</code>
+              </span>
+            </div>
+            {chips.length === 0 && <div className={css.catEmpty}>{t('cat.allRetired')}</div>}
+            {chips.map(category => (
+              <CategoryRow
+                // id AND label: a landed rename remounts the input with the
+                // stored text, so nothing here ever disagrees with the board.
+                key={`${category.id}:${category.label}`}
+                t={t}
+                category={category}
+                count={counts.get(category.id) ?? 0}
+                onRename={label => { renameCat(category.id, label) }}
+                onToggle={() => { toggleCat(category) }}
+              />
+            ))}
+            {retired.length > 0 && (
+              <div className={css.catEmpty}>
+                {t('cat.retiredSection', { count: String(retired.length) })}
+              </div>
+            )}
+            {retired.map(category => (
+              <CategoryRow
+                key={`${category.id}:${category.label}`}
+                t={t}
+                category={category}
+                count={counts.get(category.id) ?? 0}
+                onRename={label => { renameCat(category.id, label) }}
+                onToggle={() => { toggleCat(category) }}
+              />
+            ))}
+            <div className={css.catAdd}>
+              <input
+                className={css.catInput}
+                type="text"
+                value={newCat}
+                placeholder={t('cat.addPlaceholder')}
+                aria-label={t('cat.add')}
+                onChange={event => { setNewCat(event.target.value) }}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    addCat()
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className={css.catToggle}
+                disabled={sanitizeCategoryLabel(newCat) === undefined}
+                onClick={addCat}
+              >
+                {t('cat.add')}
+              </button>
+            </div>
+            {/* The three rules the panel acts on, spelled where they apply:
+                a rename touches no card, retiring files the cards away, and
+                there is deliberately no "move them somewhere" picker. */}
+            <p className={css.catTip}>{t('cat.tip')}</p>
+          </div>
+        )}
 
         {selection.size > 0 && (
           <div className={css.selBar}>
             <span className={css.selCount}>{t('board.selected', { count: String(selection.size) })}</span>
-            {chatAvailable && CANVAS_LENS_IDS.map(lens => (
+            {chatAvailable && !refile && CANVAS_LENS_IDS.map(lens => (
               <button
                 key={lens}
                 type="button"
@@ -402,11 +615,44 @@ export function BoardView({
                 {t(`lens.${lens}`)}
               </button>
             ))}
-            {!readonly && (
+            {/* 成稿 is a batch gesture too, and it rides the same ask seam: the
+                selection is the material, so it appears wherever a selection does. */}
+            {chatAvailable && !refile && (
+              <button type="button" className={css.lens} onClick={onCompose}>
+                {t('compose.article')}
+              </button>
+            )}
+            {!readonly && !refile && (
               <button type="button" className={css.ghostButton} onClick={() => { actions.archiveSelected() }}>
                 <IconArchiveOutline20 size={12} />
                 {t('board.archiveSelected')}
               </button>
+            )}
+            {!readonly && !refile && (
+              <button type="button" className={css.lens} onClick={() => { setRefile(true) }}>
+                {t('board.refile')}
+              </button>
+            )}
+            {!readonly && refile && (
+              <span className={css.refileTo}>
+                {t('board.refileTo', { count: String(selection.size) })}
+                {refileTargets.map(category => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    className={css.chip}
+                    onClick={() => {
+                      setRefile(false)
+                      actions.refileSelected(category.id)
+                    }}
+                  >
+                    {labels.get(category.id) ?? category.id}
+                  </button>
+                ))}
+                <button type="button" className={css.chip} onClick={() => { setRefile(false) }}>
+                  {t('confirm.cancel')}
+                </button>
+              </span>
             )}
             <span className={css.spacer} />
             <button
@@ -414,7 +660,7 @@ export function BoardView({
               className={css.iconButton}
               title={t('board.clearSelection')}
               aria-label={t('board.clearSelection')}
-              onClick={() => { onClearSelection() }}
+              onClick={() => { setRefile(false); onClearSelection() }}
             >
               <IconCloseOutline16 size={13} />
             </button>
@@ -432,7 +678,7 @@ export function BoardView({
                 {t('board.emptyHint')}
               </>
             ) : (
-              t('board.emptyFilter', { kind: filter === 'all' ? '' : t(`kind.${filter}`) })
+              t('board.emptyFilter', { kind: filter === 'all' ? '' : labels.get(filter) ?? filter })
             )}
           </div>
         ) : (
@@ -442,6 +688,7 @@ export function BoardView({
                 key={card.id}
                 t={t}
                 card={card}
+                kindLabel={labels.get(card.kind) ?? card.kind}
                 readonly={readonly}
                 selected={selection.has(card.id)}
                 chatAvailable={chatAvailable}
@@ -467,6 +714,7 @@ export function BoardView({
                     key={card.id}
                     t={t}
                     card={card}
+                    kindLabel={labels.get(card.kind) ?? card.kind}
                     readonly={readonly}
                     selected={false}
                     archivedWell
@@ -482,6 +730,27 @@ export function BoardView({
           </div>
         )}
       </div>
+
+      {/* Retiring a category that still holds cards is the one board gesture
+          that moves content out of sight, so it asks — with §10.7's exact
+          words: kept, restorable, never deleted. */}
+      <Modal
+        open={retireAsk !== null}
+        onClose={() => { setRetireAsk(null) }}
+        title={t('confirm.retireTitle')}
+        closeLabel={t('confirm.close')}
+        description={t('confirm.retireBody', { count: String(retireAsk === null ? 0 : cardsOf(retireAsk.id).length) })}
+        footer={
+          <>
+            <Button size="sm" onClick={() => { setRetireAsk(null) }}>
+              {t('confirm.cancel')}
+            </Button>
+            <Button size="sm" variant="primary" onClick={confirmRetire}>
+              {t('confirm.retire')}
+            </Button>
+          </>
+        }
+      />
     </section>
   )
 }

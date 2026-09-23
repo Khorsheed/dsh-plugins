@@ -29,13 +29,15 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { cardToRef, lensSendText, renderCanvasPrompt } from './prompt.ts'
+import { cardToRef, categoryMapOf, categoryTagOf, lensSendText, renderCanvasPrompt } from './prompt.ts'
 import { canvasToolDefinitions } from './tools.ts'
 import { canvasErrorOf } from './service.ts'
 import {
-  CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, DRAFT_FILE_NAME, emptyStats,
-  isBoardCardKind, isBoardCardStatus, isCanvasLensId, isQuestionState, makeBoardId,
-  MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId, normalizeDraw,
+  CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, defaultCategories,
+  emptyStats, isBoardCardStatus, isCardCategoryId, isCanvasLensId, isQuestionState, makeBoardId,
+  MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId,
+  normalizeCategories, normalizeDraw, normalizeLanes, normalizeLinks, normalizePositions,
+  reconcileCategories,
   sanitizeCanvasTitle, summarizeBoard,
   type BoardAddCommentRequest, type BoardArchiveRequest, type BoardAskAgentOutcome,
   type BoardAskAgentRequest, type BoardAttachImageOutcome, type BoardAttachImageRequest,
@@ -44,8 +46,8 @@ import {
   type BoardImageBytesOutcome, type BoardImageBytesRequest,
   type BoardListResult, type BoardMutationResult,
   type BoardPatchCardRequest, type BoardProposeCardRequest, type BoardPutCardRequest,
-  type BoardReadDraftOutcome, type BoardReadDraftRequest, type BoardReadOutcome, type BoardReadRequest,
-  type BoardRef, type BoardWriteDraftRequest, type BoardWriteDraftResult,
+  type BoardReadOutcome, type BoardReadRequest, type BoardRef, type BoardSetCategoriesRequest,
+  type BoardSetLayoutRequest,
   type CanvasBoard, type CanvasError, type CanvasImageError, type CanvasSummary,
 } from './types.ts'
 
@@ -193,11 +195,6 @@ export class CanvasBoardService {
     return this.fs.resolve(CANVAS_FILE_NAME, { cwd: this.canvasDir(canvasId) })
   }
 
-  /** The `draft.md` target of one canvas. */
-  private async draftTarget(canvasId: string) {
-    return this.fs.resolve(DRAFT_FILE_NAME, { cwd: this.canvasDir(canvasId) })
-  }
-
   /** The per-session focus map (which canvas each session's tab has open). */
   private readonly focused = new Map<string, string>()
 
@@ -321,7 +318,10 @@ export class CanvasBoardService {
       title,
       attachedWorkspaces: (request.attachedWorkspaces ?? []).filter(w => typeof w === 'string' && w.length > 0),
       chat: { sessionId: null },
+      categories: defaultCategories(),
       cards: [],
+      links: [],
+      lanes: [],
       stats: emptyStats(now),
       archivedAt: null,
       createdAt: now,
@@ -354,11 +354,16 @@ export class CanvasBoardService {
    * @returns the fresh board and token, or the failure code.
    */
   async putCard(request: BoardPutCardRequest, session: Session): Promise<BoardMutationResult> {
-    if (!isBoardCardKind(request.kind)) return { ok: false, error: 'invalid-name' }
+    if (!isCardCategoryId(request.kind)) return { ok: false, error: 'invalid-name' }
     const text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
     const draw = normalizeDraw(request.draw)
     if (text.length === 0 && draw.length === 0) return { ok: false, error: 'invalid-name' }
     return this.mutate(request.canvasId, session, (board, now) => {
+      // The catalog is per canvas, so "is this a category" can only be asked of
+      // the board the card is landing on — and a retired row refuses writes
+      // while still showing the cards filed under it.
+      const category = board.categories.find(candidate => candidate.id === request.kind)
+      if (category === undefined || !category.enabled) return 'invalid-name'
       const card: BoardCard = {
         id: makeBoardId('c', Date.now(), randomSuffix()),
         kind: request.kind,
@@ -395,6 +400,16 @@ export class CanvasBoardService {
     return this.mutate(request.canvasId, session, (board, now) => {
       const card = board.cards.find(candidate => candidate.id === request.cardId)
       if (card === undefined) return 'missing'
+      if (request.kind !== undefined) {
+        const category = board.categories.find(candidate => candidate.id === request.kind)
+        if (category === undefined || !category.enabled) return 'invalid-name'
+        if (category.id !== card.kind) {
+          card.kind = category.id
+          // The question lifecycle rides the built-in, so it moves with the card.
+          if (category.id === 'question') card.question = card.question ?? { state: 'open' }
+          else delete card.question
+        }
+      }
       if (request.text !== undefined) {
         card.text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
       }
@@ -456,6 +471,67 @@ export class CanvasBoardService {
   }
 
   /**
+   * Write this canvas's category catalog (stage ⑤). The whole list arrives
+   * because rename / add / retire are all "here is the new catalog" — and
+   * because the store, not the caller, owns the guarantees: the five built-ins
+   * come back if a hand-made list dropped them, and a card never outlives its
+   * own row (`reconcileCategories` files an orphan back into the strip).
+   * `archiveCardIds` rides along so retiring a category and filing away its
+   * cards is ONE rewrite: as two calls, the second could lose the version race
+   * and leave a retired chip with live cards under it.
+   * @param request - canvas id, the desired catalog, the cards to file away.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async setCategories(request: BoardSetCategoriesRequest, session: Session): Promise<BoardMutationResult> {
+    const wanted = normalizeCategories(request.categories)
+    return this.mutate(request.canvasId, session, (board, now) => {
+      board.categories = reconcileCategories(wanted, board.cards.map(card => card.kind))
+      const retiring = new Set(request.archiveCardIds ?? [])
+      for (const card of board.cards) {
+        if (!retiring.has(card.id) || card.status === 'archived') continue
+        if (card.status === 'proposed') board.stats.proposed.rejected += 1
+        card.status = 'archived'
+        card.updatedAt = now
+      }
+      return board
+    })
+  }
+
+  /**
+   * Write this canvas's layout (stage ⑥): card places, lanes, lines. Each field
+   * is optional and `[]` means *clear it* while an absent one means *leave it
+   * alone* — the pair that lets 「清空」 be saved at all, learned from the
+   * drawing field (§11.4). Everything arrives through the tolerant reads, so a
+   * line to a card the board does not have simply is not stored, and one drag
+   * of a lane (which moves the cards parked in it) is ONE version-guarded
+   * rewrite rather than a race against itself.
+   * @param request - canvas id and whichever parts of the layout changed.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async setLayout(request: BoardSetLayoutRequest, session: Session): Promise<BoardMutationResult> {
+    const positions = request.positions === undefined ? undefined : normalizePositions(request.positions)
+    const lanes = request.lanes === undefined ? undefined : normalizeLanes(request.lanes)
+    return this.mutate(request.canvasId, session, (board, now) => {
+      if (request.links !== undefined) {
+        board.links = normalizeLinks(request.links, board.cards.map(card => card.id))
+      }
+      if (lanes !== undefined) board.lanes = lanes
+      if (positions !== undefined) {
+        for (const position of positions) {
+          const card = board.cards.find(candidate => candidate.id === position.id)
+          if (card === undefined) continue
+          card.x = position.x
+          card.y = position.y
+          card.updatedAt = now
+        }
+      }
+      return board
+    })
+  }
+
+  /**
    * The agent's card entrance (`canvas_propose_card`): proposed and awaiting
    * the user's ✓/✗, createdBy agent. A question card starts OPEN even when
    * the proposal carries a rationale comment — exploring means work the user
@@ -466,11 +542,13 @@ export class CanvasBoardService {
    * @returns the fresh board and token, or the failure code.
    */
   async proposeCard(request: BoardProposeCardRequest, session: Session): Promise<BoardMutationResult> {
-    if (!isBoardCardKind(request.kind)) return { ok: false, error: 'invalid-name' }
+    if (!isCardCategoryId(request.kind)) return { ok: false, error: 'invalid-name' }
     const text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
     if (text.length === 0) return { ok: false, error: 'invalid-name' }
     const comment = request.comment?.trim().slice(0, MAX_COMMENT_TEXT_LENGTH)
     return this.mutate(request.canvasId, session, (board, now) => {
+      const category = board.categories.find(candidate => candidate.id === request.kind)
+      if (category === undefined || !category.enabled) return 'invalid-name'
       const card: BoardCard = {
         id: makeBoardId('c', Date.now(), randomSuffix()),
         kind: request.kind,
@@ -518,9 +596,12 @@ export class CanvasBoardService {
     if (raw === 'corrupt') return { ok: false, error: 'io' }
     const { board } = raw
     const refs: BoardRef[] = []
+    const categories = categoryMapOf(board)
     for (const cardId of request.cardIds ?? []) {
       const card = board.cards.find(candidate => candidate.id === cardId)
-      if (card !== undefined) refs.push(cardToRef(card))
+      if (card !== undefined) {
+        refs.push(cardToRef(card, categoryTagOf(categories.get(card.kind), card.kind)))
+      }
     }
     refs.push(...(request.refs ?? []))
     const contextKey = `canvas:${id}`
@@ -529,7 +610,7 @@ export class CanvasBoardService {
         contextKey,
         label: board.title,
         systemPrompt: renderCanvasPrompt(board, request.lens),
-        tools: canvasToolDefinitions(this, id, session),
+        tools: canvasToolDefinitions(this, id, session, board.categories),
         refs,
       })
       const text = request.text?.trim()
@@ -571,57 +652,6 @@ export class CanvasBoardService {
    */
   focusedCanvasId(session: Session): string | undefined {
     return this.focused.get(String(session.id))
-  }
-
-  /**
-   * Read one canvas's draft (`draft.md` beside `canvas.json`). An absent
-   * draft reads as EMPTY with a null token — the first write creates it;
-   * a canvas that does not exist is an error, not an empty draft.
-   * @param request - the canvas id.
-   * @returns the draft and its freshness token (null for absent), or the code.
-   */
-  async readDraft(request: BoardReadDraftRequest): Promise<BoardReadDraftOutcome> {
-    const id = normalizeCanvasId(request.canvasId)
-    if (id === undefined) return { ok: false, error: 'invalid-name' }
-    const raw = await this.readRaw(id)
-    if (raw === 'missing') return { ok: false, error: 'missing' }
-    if (raw === 'corrupt') return { ok: false, error: 'io' }
-    try {
-      const target = await this.draftTarget(id)
-      const info = await this.fs.stat(target)
-      if (info === undefined) return { ok: true, content: '', version: null }
-      return { ok: true, content: await this.fs.readText(target), version: info.version }
-    } catch (error) {
-      if (error instanceof FsError && error.code === 'FS_NOT_FOUND') return { ok: true, content: '', version: null }
-      return { ok: false, error: canvasErrorOf(error) }
-    }
-  }
-
-  /**
-   * Write one canvas's draft: a null token creates it (`createIfAbsent`),
-   * anything else must match the last read's token — the draft is the user's
-   * own manuscript, so a stale write is refused, never silently overwritten.
-   * @param request - canvas id, content, and the token the caller holds (null for create).
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the new freshness token, or the failure code.
-   */
-  async writeDraft(request: BoardWriteDraftRequest, session: Session): Promise<BoardWriteDraftResult> {
-    const id = normalizeCanvasId(request.canvasId)
-    if (id === undefined) return { ok: false, error: 'invalid-name' }
-    const raw = await this.readRaw(id)
-    if (raw === 'missing') return { ok: false, error: 'missing' }
-    if (raw === 'corrupt') return { ok: false, error: 'io' }
-    const policy = this.policyOf(session)
-    try {
-      const target = await this.draftTarget(id)
-      const expected = request.version === null
-        ? { kind: 'createIfAbsent' as const }
-        : { kind: 'replaceIfVersion' as const, version: FsVersion(request.version) }
-      const outcome = await this.fs.writeText(target, request.content, expected, undefined, policy)
-      return { ok: true, version: outcome.version }
-    } catch (error) {
-      return { ok: false, error: canvasErrorOf(error) }
-    }
   }
 
   /* ---------------------------------------------------------------- images (§10.3) */

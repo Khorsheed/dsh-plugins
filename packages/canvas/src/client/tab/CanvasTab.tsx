@@ -1,55 +1,41 @@
 /**
- * The canvas tab: M3's single seat — the right-Sidebar tab in wide mode,
- * drilling between three pages. The topbar owns the canvas switcher
- * (create/switch/archive/import), the attach chips, the [卡板|成稿] view
- * switch, and the new-card menu; the board page is the existing BoardView;
- * the detail page drills in on a body click (back bar returns); the draft
- * page is the user's own `draft.md` with the v1 editor's invariants.
+ * The canvas tab: the board page of the right-Sidebar dock. The topbar owns the
+ * canvas switcher (create/switch/archive/import), the attach chips, and the
+ * new-card menu; the page below it is the board.
  *
- * State model: the open canvas, the drilled card, and board freshness all
- * ride the shared selection store (`useSelection`) — gestures write it, the
- * turn watch touches its rev, and the tab re-reads. The tab reports the open
- * canvas to the host (`focusCanvas`) so the MAIN session's canvas tools
- * target it; the wide-mode suggestion fires once per session.
+ * Since stage ⑧ this page has exactly one subject: clicking a card body opens
+ * that card in its OWN detail tab (`openCardDetail`), and ＋新卡 opens the
+ * canvas's draft tab. There is no drill-down state here — which also means the
+ * board's own scroll position and filters survive an edit.
+ *
+ * State model: the open canvas and board freshness ride the shared selection
+ * store (`useSelection`) — gestures write it, the turn watch touches its rev,
+ * and the tab re-reads. The tab reports the open canvas to the host
+ * (`focusCanvas`) so the MAIN session's canvas tools target it; the wide-mode
+ * suggestion fires once per session.
  *
  * @module @khorsheed/dsh-canvas/client
  */
-import {
-  useCallback, useEffect, useMemo, useRef, useState, type ReactNode,
-} from 'react'
-import {
-  IconChevronLeftOutline14, IconFolderOpenOutline16, IconPlusOutline16,
-  IconCodeOutline16, IconDatabaseOutline16, IconLinkOutline14, IconListPenOutline16,
-  IconQuestionOutline14, Button, Modal, Toast,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { IconFolderOpenOutline16, IconPlusOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasTabProps } from '../contract.ts'
 import {
-  BOARD_CARD_KINDS, summarizeBoard,
-  type BoardAskAgentRequest, type BoardCardKind, type BoardCardStatus,
-  type BoardMutationResult, type CanvasBoard, type CanvasError,
-  type CanvasStroke, type CanvasSummary,
+  enabledCategories, summarizeBoard,
+  type BoardAskAgentRequest, type BoardCardStatus,
+  type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasSummary, type CardCategoryId,
 } from '../../types.ts'
-import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
+import { cardTitleOf } from '../../card-format.ts'
+import { COMPOSE_SEND_TEXT } from '../../prompt.ts'
+import { categoryLabelMap, categoryLabelOf, kindIconOf } from '../category-label.ts'
+import { canvasErrorText } from '../error-text.ts'
 import { BoardView, type BoardActions } from '../space/BoardView.tsx'
+import { LinkView, type LayoutPatch } from '../space/LinkView.tsx'
 import { CanvasSwitcher } from './CanvasSwitcher.tsx'
-import { DraftView } from './DraftView.tsx'
 import css from './CanvasTab.module.css'
 // The dropdown panel primitive lives with the board styles (the switcher's
 // own module — a copy here was dead CSS and the M3.1 topbar bug's source).
 import boardCss from '../space/board.module.css'
-
-/** The tab's two top-level pages (the detail is a drill inside board). */
-type TabPage = 'board' | 'draft'
-
-/** The kind icon set for the new-card menu (the board's own vocabulary). */
-const KIND_ICONS = {
-  fragment: IconListPenOutline16,
-  question: IconQuestionOutline14,
-  grounding: IconDatabaseOutline16,
-  reference: IconLinkOutline14,
-  document: IconCodeOutline16,
-} as const
 
 /** The last path segment, separators from either platform (display only). */
 function basenameOf(path: string): string {
@@ -69,49 +55,29 @@ function messageOf(error: unknown): string {
 /** The canvas tab. */
 export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
-    t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
-    archiveCanvas, selectCard, openCanvas: showCanvas, clearCard, focusCanvas,
-    readDraft, writeDraft, askAgent, chatStatus, openSideChat, suggestWideMode,
-    images, useImageRev, useSelection,
+    t, listCanvases, createCanvas, readBoard, patchCard, addComment,
+    archiveCanvas, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
+    openCardDetail, openCardDraft, focusCanvas,
+    askAgent, chatStatus, openSideChat, suggestWideMode,
+    useSelection,
   } = props
   const sessionId = props.sessionId
   const useWorkspaces = props.useWorkspaces ?? useNoWorkspaces
   const selection = useSelection(current => current)
-  // One image subscription for the whole tab (§10.3): a read landing gives the
-  // renderer a FRESH vocabulary object, which is what re-runs its memoized
-  // pass — and the HTML body rebuilds on the same repaint. Every markdown
-  // surface in the tab therefore shows a pasted image at once.
-  const imageRev = useImageRev(current => current)
-  const pathImages = useMemo(() => images.vocabulary(), [images, imageRev])
   const openId = selection.canvasId
-  const detailCardId = selection.cardId
   const selectionRev = selection.rev
   const workspaces = useWorkspaces(snapshot => snapshot.items)
   const readonly = sessionId === undefined
 
-  const [page, setPage] = useState<TabPage>('board')
   const [canvases, setCanvases] = useState<readonly CanvasSummary[] | null>(null)
   const [openBoard, setOpenBoard] = useState<{ board: CanvasBoard; version: string } | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | BoardCardKind>('all')
+  const [filter, setFilter] = useState<'all' | CardCategoryId>('all')
   const [selection_, setCardSelection] = useState<ReadonlySet<string>>(new Set())
-  /**
-   * The new-card draft (v2.2 ②, §11.6 item 5): the topbar's ＋新卡 picks a
-   * kind and the DETAIL page carries the draft — the content lives HERE so
-   * the exit gesture can ask about it. Nothing touches the disk until the
-   * first save, so leaving mid-way is invisible on the board (`ctx.fs`
-   * archives, never deletes, so a card written early would be a card to
-   * clean up).
-   */
-  const [newCard, setNewCard] = useState<{
-    readonly kind: BoardCardKind
-    readonly text: string
-    readonly draw: readonly CanvasStroke[]
-  } | null>(null)
-  /** The discard confirm: set by the exit gesture while the draft has content. */
-  const [discardAsk, setDiscardAsk] = useState(false)
   const [newCardMenu, setNewCardMenu] = useState(false)
   const [showArchivedCards, setShowArchivedCards] = useState(false)
+  /** Which face of the board this page shows (stage ⑥): edit, or group. */
+  const [view, setView] = useState<'board' | 'link'>('board')
   const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
   const [toast, setToast] = useState<{ text: string; seq: number } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
@@ -130,16 +96,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   }, [])
 
   /** Localized copy for one shared error code. */
-  const errorText = useCallback((error: CanvasError): string => {
-    switch (error) {
-      case 'exists': return t('error.exists')
-      case 'stale': return t('error.stale')
-      case 'missing': return t('error.missing')
-      case 'invalid-name': return t('error.invalidName')
-      case 'denied': return t('error.denied')
-      default: return t('error.io')
-    }
-  }, [t])
+  const errorText = useCallback((error: CanvasError): string => canvasErrorText(t, error), [t])
 
   /** Unwrap the transport envelope, reporting a failure instead of throwing. */
   const run = useCallback(async <T,>(call: () => Promise<RemoteResult<T>>): Promise<T | null> => {
@@ -201,7 +158,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   }, [sessionId, openId, focusCanvas])
 
   // Load the open canvas's board: on a switch, and again whenever the shared
-  // rev says a board changed (either seat's mutation, the turn watch).
+  // rev says a board changed (this tab, a DETAIL tab, or the agent through the
+  // turn watch). The read row is folded back into the list, because a write
+  // from another seat moves this canvas's card count without this tab knowing.
   useEffect(() => {
     if (openId === null) {
       setOpenBoard(null)
@@ -219,6 +178,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       }
       setLoadError(null)
       setOpenBoard({ board: value.board, version: value.version })
+      const row = summarizeBoard(value.board)
+      setCanvases(current => current === null
+        ? current
+        : current.map(canvas => canvas.id === row.id ? row : canvas))
     })()
     return () => { cancelled = true }
   }, [openId, selectionRev, readBoard, run, errorText])
@@ -228,10 +191,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     showCanvas(id)
     setFilter('all')
     setCardSelection(new Set())
-    setNewCard(null)
-    setDiscardAsk(false)
     setShowArchivedCards(false)
-    setPage('board')
+    // The view is not board state: a new canvas starts on the face you edit.
+    setView('board')
   }, [showCanvas])
 
   /* ------------------------------------------------------------- mutations */
@@ -308,6 +270,55 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         }
       })()
     },
+    // The batch 「改分类」: one patchCard per card, in sequence — each write
+    // presents the token the last one returned, so a parallel fan-out would
+    // fail its own version guard on every call after the first.
+    refileSelected: kind => {
+      if (sessionId === undefined || openId === null || selection_.size === 0) return
+      const ids = [...selection_]
+      setCardSelection(new Set())
+      void (async () => {
+        let moved = 0
+        for (const cardId of ids) {
+          const value = await run(() => patchCard(sessionId, { canvasId: openId, cardId, kind }))
+          if (value === null) return
+          if (!value.ok) {
+            showToast(errorText(value.error))
+            break
+          }
+          setOpenBoard({ board: value.board, version: value.version })
+          moved += 1
+        }
+        if (moved > 0) {
+          const target = boardRef.current?.board.categories.find(row => row.id === kind)
+          showToast(t('toast.cardsMoved', {
+            count: String(moved),
+            kind: target === undefined ? kind : categoryLabelOf(target, t),
+          }))
+          void reloadList()
+        }
+      })()
+    },
+    // The catalog write (stage ⑤): rename, add and retire are all one verb, and
+    // the cards a retirement costs ride the SAME rewrite.
+    setCategories: (categories, archiveCardIds) => {
+      if (sessionId === undefined || openId === null) return
+      if (archiveCardIds.length > 0) {
+        const gone = new Set(archiveCardIds)
+        setCardSelection(current => {
+          const next = new Set([...current].filter(id => !gone.has(id)))
+          return next.size === current.size ? current : next
+        })
+      }
+      void mutate(
+        () => writeCategories(sessionId, {
+          canvasId: openId,
+          categories,
+          ...(archiveCardIds.length === 0 ? {} : { archiveCardIds }),
+        }),
+        'toast.catsSaved',
+      )
+    },
   }
 
   /* --------------------------------------------------------- canvas gestures */
@@ -336,43 +347,24 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     )
   }, [sessionId, archiveCanvas, mutate])
 
-  /* --------------------------------------------------------- card creation */
-
   /**
-   * The draft's first save (v2.2 ②): the ONLY write this flow makes — until
-   * here the card exists in memory alone. Words or ink qualify: a drawing is
-   * the card's content, not a card missing its caption (§11.4).
+   * One layout write (stage ⑥): the link view commits a gesture as ONE call,
+   * because a lane drag moves a dozen cards and a fan-out of per-card patches
+   * would both fail its own version guard and show a dozen rewrites. The note
+   * is the view's own words, so this path takes text, not a dictionary key.
    */
-  const saveNewCard = useCallback(async (
-    kind: BoardCardKind, text: string, draw: readonly CanvasStroke[],
-  ): Promise<boolean> => {
-    if (sessionId === undefined || openId === null) return false
-    const trimmed = text.trim()
-    if (trimmed.length === 0 && draw.length === 0) return false
-    const saved = await mutate(
-      () => putCard(sessionId, {
-        canvasId: openId, kind, text: trimmed, ...(draw.length === 0 ? {} : { draw }),
-      }),
-      'toast.cardAdded',
-    )
-    if (saved) setNewCard(null)
-    return saved
-  }, [sessionId, openId, putCard, mutate])
-
-  /**
-   * Leave the draft (§11.6 item 5): the back bar and the tab's × are ONE
-   * exit, and it asks exactly once — only when the draft holds something,
-   * written or drawn. An empty draft leaves silently; a saved card never comes
-   * through here (whether a saved card with unclosed edits should also ask is
-   * 11.8 ⑥, undecided, and that one is a `patchCard` question anyway).
-   */
-  const leaveCreate = useCallback(() => {
-    if (newCard !== null && (newCard.text.trim().length > 0 || newCard.draw.length > 0)) {
-      setDiscardAsk(true)
-      return
-    }
-    setNewCard(null)
-  }, [newCard])
+  const layout = useCallback((patch: LayoutPatch): void => {
+    if (sessionId === undefined || openId === null) return
+    void (async () => {
+      const value = await run(() => writeLayout(sessionId, { canvasId: openId, ...patch }))
+      if (value === null) return
+      if (!value.ok) {
+        showToast(errorText(value.error))
+        return
+      }
+      setOpenBoard({ board: value.board, version: value.version })
+    })()
+  }, [sessionId, openId, writeLayout, run, showToast, errorText])
 
   /* -------------------------------------------------------------- ask flow */
 
@@ -394,17 +386,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   /* -------------------------------------------------------------- rendering */
 
-  const drilled = detailCardId !== null || newCard !== null
-
-  // The discard question names what is actually in danger: words, ink, or both.
-  const draftWords = newCard?.text.trim().length ?? 0
-  const draftStrokes = String(newCard?.draw.length ?? 0)
-  const discardBody = draftWords === 0
-    ? t('confirm.discardBodyInk', { strokes: draftStrokes })
-    : newCard !== null && newCard.draw.length > 0
-      ? t('confirm.discardBodyBoth', { count: String(draftWords), strokes: draftStrokes })
-      : t('confirm.discardBody', { count: String(draftWords) })
-
   return (
     <div className={css.root}>
       <header className={css.topbar}>
@@ -425,133 +406,148 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           </span>
         ))}
         <span className={css.spacer} />
-        {readonly && <span className={css.readonlyHint}>{t('space.readonly')}</span>}
-        {!drilled && (
-          <>
-            <span className={css.seg} role="group">
-              {(['board', 'draft'] as const).map(candidate => (
-                <button
-                  key={candidate}
-                  type="button"
-                  aria-pressed={page === candidate}
-                  onClick={() => { setPage(candidate) }}
-                >
-                  {candidate === 'board' ? t('view.board') : t('view.draft')}
-                </button>
-              ))}
-            </span>
-            {/* Gated on an OPEN canvas: the draft has nowhere to be saved with
-                none, and a silent dead button is worse than an absent one. */}
-            {page === 'board' && !readonly && openId !== null && (
-              <span className={css.newCardWrap}>
-                <button
-                  type="button"
-                  className={css.backButton}
-                  aria-expanded={newCardMenu}
-                  onClick={() => { setNewCardMenu(open => !open) }}
-                >
-                  <IconPlusOutline16 size={12} />
-                  {t('board.newCard')}
-                </button>
-                {newCardMenu && (
-                  <div className={boardCss.switcherMenu} style={{ width: 160, left: 'auto', right: 0 }}>
-                    {BOARD_CARD_KINDS.map(kind => {
-                      const KindIcon = KIND_ICONS[kind]
-                      return (
-                        <button
-                          key={kind}
-                          type="button"
-                          className={css.backButton}
-                          onClick={() => {
-                            setNewCardMenu(false)
-                            setNewCard({ kind, text: '', draw: [] })
-                            setPage('board')
-                          }}
-                        >
-                          <KindIcon size={12} />
-                          {t(`kind.${kind}`)}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </span>
-            )}
-          </>
+        {/* The board's two faces (stage ⑥): 卡板 is where a card gets edited,
+            连线 is where cards get grouped. Both are the same board, so the
+            switch sits beside it and not inside either view. */}
+        {openBoard !== null && loadError === null && (
+          <span className={css.viewSwitch}>
+            <button
+              type="button"
+              className={css.viewButton}
+              data-on={view === 'board' || undefined}
+              aria-pressed={view === 'board'}
+              onClick={() => { setView('board') }}
+            >
+              {t('view.board')}
+            </button>
+            <button
+              type="button"
+              className={css.viewButton}
+              data-on={view === 'link' || undefined}
+              aria-pressed={view === 'link'}
+              onClick={() => { setView('link') }}
+            >
+              {t('view.link')}
+            </button>
+          </span>
         )}
-      </header>
-
-      {drilled ? (
-        <>
-          <div className={css.backBar}>
+        {readonly && <span className={css.readonlyHint}>{t('space.readonly')}</span>}
+        {/* Gated on an OPEN canvas: a new card has nowhere to be saved with
+            none, and a silent dead button is worse than an absent one. */}
+        {!readonly && openId !== null && (
+          <span className={css.newCardWrap}>
             <button
               type="button"
               className={css.backButton}
-              onClick={() => { if (newCard !== null) leaveCreate(); else clearCard() }}
+              aria-expanded={newCardMenu}
+              onClick={() => { setNewCardMenu(open => !open) }}
             >
-              <IconChevronLeftOutline14 size={13} />
-              {t('detail.back')}
+              <IconPlusOutline16 size={12} />
+              {t('board.newCard')}
             </button>
-          </div>
-          <CanvasDetailView
-            {...props}
-            sessionId={sessionId}
-            pathImages={pathImages}
-            create={newCard === null ? undefined : {
-              kind: newCard.kind,
-              text: newCard.text,
-              draw: newCard.draw,
-              onTextChange: text => { setNewCard(current => current === null ? current : { ...current, text }) },
-              onDrawChange: draw => { setNewCard(current => current === null ? current : { ...current, draw }) },
-              onSave: saveNewCard,
-              onLeave: leaveCreate,
-            }}
-          />
-        </>
-      ) : page === 'draft' ? (
-        openId === null ? (
-          <div className={css.notice}>{t('space.empty')}</div>
-        ) : (
-          <DraftView
+            {newCardMenu && (
+              <div className={boardCss.switcherMenu} style={{ width: 160, left: 'auto', right: 0 }}>
+                {(openBoard === null ? [] : enabledCategories(openBoard.board.categories)).map(category => {
+                  const KindIcon = kindIconOf(category.id)
+                  const label = categoryLabelOf(category, t)
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      className={css.backButton}
+                      onClick={() => {
+                        setNewCardMenu(false)
+                        // The draft is a TAB of its own (stage ⑧): one draft
+                        // address per canvas, so picking another kind
+                        // re-categorizes the open draft instead of seating a
+                        // second blank tab.
+                        openCardDraft(openId, category.id, label)
+                      }}
+                    >
+                      {KindIcon === undefined
+                        ? <span className={css.menuIconSlot} aria-hidden="true" />
+                        : <KindIcon size={12} />}
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </span>
+        )}
+      </header>
+
+      {openBoard !== null && loadError === null ? (
+        view === 'link' ? (
+          <LinkView
             t={t}
-            sessionId={sessionId}
-            canvasId={openId}
-            rev={selectionRev}
-            readDraft={readDraft}
-            writeDraft={writeDraft}
-            pathImages={pathImages}
-            onFatal={setFatal}
+            readonly={readonly}
+            board={openBoard.board}
+            labels={categoryLabelMap(openBoard.board.categories, t)}
+            selection={selection_}
+            onToggleSelect={cardId => {
+              setCardSelection(current => {
+                const next = new Set(current)
+                if (next.has(cardId)) next.delete(cardId)
+                else next.add(cardId)
+                return next
+              })
+            }}
+            onAddSelection={cardIds => {
+              setCardSelection(current => {
+                const next = new Set(current)
+                for (const cardId of cardIds) next.add(cardId)
+                return next.size === current.size ? current : next
+              })
+            }}
+            onClearSelection={() => { setCardSelection(new Set()) }}
+            onOpenDetail={cardId => {
+              if (openId === null) return
+              const card = openBoard?.board.cards.find(candidate => candidate.id === cardId)
+              openCardDetail(openId, cardId, card === undefined ? cardId : cardTitleOf(card.text))
+            }}
+            chatAvailable={chatAvailable === true}
+            onAsk={(cardIds, text) => { void ask({ lens: 'ask', cardIds: [...cardIds], text }) }}
+            onLayout={layout}
+            onToast={showToast}
+          />
+        ) : (
+          <BoardView
+            t={t}
+            readonly={readonly}
+            board={openBoard.board}
+            filter={filter}
+            onFilter={setFilter}
+            selection={selection_}
+            onToggleSelect={cardId => {
+              setCardSelection(current => {
+                const next = new Set(current)
+                if (next.has(cardId)) next.delete(cardId)
+                else next.add(cardId)
+                return next
+              })
+            }}
+            onClearSelection={() => { setCardSelection(new Set()) }}
+            onOpenDetail={cardId => {
+              if (openId === null) return
+              // The chip's live text travels as params (the host freezes
+              // `title` at open time), and it is the SAME rule the prompt
+              // shows the agent — the tab and the model never disagree on what
+              // a card is called.
+              const card = openBoard?.board.cards.find(candidate => candidate.id === cardId)
+              openCardDetail(openId, cardId, card === undefined ? cardId : cardTitleOf(card.text))
+            }}
+            chatAvailable={chatAvailable === true}
+            onAsk={lens => { void ask({ lens, cardIds: [...selection_] }) }}
+            onCompose={() => { void ask({ lens: 'ask', cardIds: [...selection_], text: COMPOSE_SEND_TEXT }) }}
+            onFollowUp={(cardId, commentText) => {
+              void ask({ lens: 'ask', cardIds: [cardId], text: t('chat.followupText', { text: commentText }) })
+            }}
+            actions={actions}
+            showArchived={showArchivedCards}
+            onToggleArchived={() => { setShowArchivedCards(value => !value) }}
           />
         )
-      ) : openBoard !== null && loadError === null ? (
-        <BoardView
-          t={t}
-          readonly={readonly}
-          board={openBoard.board}
-          filter={filter}
-          onFilter={setFilter}
-          selection={selection_}
-          onToggleSelect={cardId => {
-            setCardSelection(current => {
-              const next = new Set(current)
-              if (next.has(cardId)) next.delete(cardId)
-              else next.add(cardId)
-              return next
-            })
-          }}
-          onClearSelection={() => { setCardSelection(new Set()) }}
-          onOpenDetail={cardId => {
-            if (openId !== null) selectCard(openId, cardId)
-          }}
-          chatAvailable={chatAvailable === true}
-          onAsk={lens => { void ask({ lens, cardIds: [...selection_] }) }}
-          onFollowUp={(cardId, commentText) => {
-            void ask({ lens: 'ask', cardIds: [cardId], text: t('chat.followupText', { text: commentText }) })
-          }}
-          actions={actions}
-          showArchived={showArchivedCards}
-          onToggleArchived={() => { setShowArchivedCards(value => !value) }}
-        />
       ) : (
         <div className={css.notice}>
           {loadError ?? (canvases === null ? t('state.loading') : t('space.empty'))}
@@ -561,27 +557,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       {toast !== null && (
         <Toast key={toast.seq} text={toast.text} onDone={() => { setToast(null) }} />
       )}
-      <Modal
-        open={discardAsk}
-        onClose={() => { setDiscardAsk(false) }}
-        title={t('confirm.discardTitle')}
-        closeLabel={t('confirm.close')}
-        description={discardBody}
-        footer={
-          <>
-            <Button size="sm" onClick={() => { setDiscardAsk(false) }}>
-              {t('confirm.keepEditing')}
-            </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() => { setDiscardAsk(false); setNewCard(null) }}
-            >
-              {t('confirm.discard')}
-            </Button>
-          </>
-        }
-      />
       {fatal !== null && (
         <div className={css.fatal} onClick={() => { setFatal(null) }}>{fatal}</div>
       )}

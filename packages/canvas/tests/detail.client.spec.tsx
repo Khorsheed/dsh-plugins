@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 /**
  * The card-detail reader under the composed-props form: a REAL
- * CanvasSelectionStore (the board↔detail contract is the store itself, so it
- * is exercised here, not mocked), injected Remote mocks over a mutable fake
- * host, and plain selector-hook fakes. Asserts the empty state, the
- * full-text render (no summary clamp in the reader), the selection and rev
- * following, the ghost ✓/✗ wiring, the edit toggle's ⌘⏎ save through
- * patchCard, the comment form, the attachment gestures (url link, file →
- * openFile), the archived card's restore, and every paste arm — sheet to
- * table, page to its words, and an image FILE to a pointer line whose pixels
- * stayed in the store (§10.3).
+ * CanvasSelectionStore for the freshness channel, injected Remote mocks over a
+ * mutable fake host, and plain selector-hook fakes. Since stage ⑧ the reader is
+ * TOLD which card to show (`canvasId`/`cardId` props, what a tab's address
+ * carries), so a test retargets those props rather than the store. Asserts the
+ * empty state, the full-text render (no summary clamp in the reader), the
+ * address change and the rev re-read, the ghost ✓/✗ wiring, the edit toggle's
+ * ⌘⏎ save through patchCard, the comment form, the attachment gestures (url
+ * link, file → openFile), the archived card's restore, and every paste arm —
+ * sheet to table, page to its words, and an image FILE to a pointer line whose
+ * pixels stayed in the store (§10.3).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -47,6 +48,8 @@ function board(cards: CanvasBoard['cards'] = []): CanvasBoard {
     attachedWorkspaces: [],
     chat: { sessionId: null },
     cards,
+    links: [],
+    lanes: [],
     stats: { proposed: { accepted: 0, rejected: 0 }, kindCounts: {}, lastActiveAt: NOW },
     archivedAt: null,
     createdAt: NOW,
@@ -101,13 +104,31 @@ interface Harness {
   }
   readonly props: CanvasDetailProps
   readonly current: { board: CanvasBoard }
+  /**
+   * The stand-in for stage ⑧'s tab address: which card the reader is TOLD to
+   * show. Since the card left the shared store, a test moves it here — before
+   * `render` (or with a `rerender` after), which is what a new address does to
+   * a tab.
+   */
+  readonly view: {
+    select: (cardId: string | null) => void
+    touch: () => void
+  }
 }
 
 /** Mount the reader over a fake host whose mutations apply to its board. */
-function makeHarness(cards: CanvasBoard['cards'], options: { chatAvailable?: boolean } = {}): Harness {
+function makeHarness(
+  cards: CanvasBoard['cards'],
+  options: { chatAvailable?: boolean; canvasId?: string | null; cardId?: string | null } = {},
+): Harness {
   const current = { board: board(cards) }
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
   const store = new CanvasSelectionStore()
+  /** The tab's own subject: the canvas and card the props point the reader at. */
+  const target = {
+    canvasId: options.canvasId === undefined ? CANVAS_ID : options.canvasId,
+    cardId: options.cardId === undefined ? null : options.cardId,
+  }
   // The REAL pointer cache (§10.3): the read leg is a fake store that hands
   // back three bytes, so a resolve is asynchronous exactly as in the browser.
   const images = new CanvasImageSrcs(async () => ({
@@ -147,42 +168,56 @@ function makeHarness(cards: CanvasBoard['cards'], options: { chatAvailable?: boo
     sessionId: 's1',
     images,
     ...mocks,
+    // The address, read at spread time: retargeting it and re-rendering is the
+    // tab's own lifecycle.
+    get canvasId() { return target.canvasId },
+    get cardId() { return target.cardId },
     useSelection: function useSelection<S>(selector: (snapshot: ReturnType<typeof store.source.getSnapshot>) => S): S {
       return selector(useSyncExternalStore(store.source.subscribe, store.source.getSnapshot))
     },
     useSessions: ((selector: (snapshot: { byId: Record<string, { cwd: string }> }) => unknown) =>
       selector({ byId: { s1: { cwd: '/ws' } } })) as CanvasDetailProps['useSessions'],
   } as CanvasDetailProps
-  return { store, images, mocks, props, current }
+  return {
+    store,
+    images,
+    mocks,
+    props,
+    current,
+    view: {
+      select: cardId => { target.cardId = cardId },
+      touch: () => { store.touch() },
+    },
+  }
 }
 
 afterEach(() => { cleanup() })
 
 describe('CanvasDetailView', () => {
-  it('shows the empty state until the board selects a card', async () => {
-    const { props } = makeHarness([card('c_1')])
+  it('shows the empty state when its address points at no canvas', async () => {
+    const { props } = makeHarness([card('c_1')], { canvasId: null })
     render(<CanvasDetailView {...props} />)
-    await screen.findByText('在画布空间点一张卡，在这里读全文')
+    await screen.findByText('这张标签没有指向任何卡：回画布点一张')
   })
 
   it('renders the selected card in full — no summary clamp in the reader', async () => {
     const longText = `长文全文。\n${'这是一段很长的正文，用来证明详情里不做摘要折叠。\n'.repeat(10)}结尾。`
-    const { store, props } = makeHarness([card('c_1', { text: longText })])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, props } = makeHarness([card('c_1', { text: longText })])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText(/结尾。/)
     expect(screen.queryByText(/字$/)).toBeNull()
   })
 
   it('shows the document card\'s derived heading, and the kind/state/source meta', async () => {
-    const { store, props } = makeHarness([
+    const { view, props } = makeHarness([
       card('c_doc', {
         kind: 'document',
         text: '# 大模型心理学：综述\n\n正文。',
         source: { type: 'url', ref: 'https://example.org/paper', title: 'paper' },
       }),
     ])
-    store.select(CANVAS_ID, 'c_doc')
+    view.select('c_doc')
     render(<CanvasDetailView {...props} />)
     // The header's derived heading AND the full text's own h1 both carry it.
     expect((await screen.findAllByText('大模型心理学：综述')).length).toBeGreaterThanOrEqual(1)
@@ -192,23 +227,25 @@ describe('CanvasDetailView', () => {
     await screen.findByText(/创建于/)
   })
 
-  it('follows the selection to another card (same canvas: no refetch, the board already holds it)', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1'), card('c_2')])
-    store.select(CANVAS_ID, 'c_1')
-    render(<CanvasDetailView {...props} />)
+  it('follows its address to another card (same canvas: no refetch, the board already holds it)', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1'), card('c_2')])
+    view.select('c_1')
+    const { rerender } = render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
-    act(() => { store.select(CANVAS_ID, 'c_2') })
+    // A tab re-pointed at another card (a replaceTab navigation): the props
+    // carry the new id, and the board read behind it does not repeat.
+    act(() => { view.select('c_2'); rerender(<CanvasDetailView {...props} />) })
     await screen.findByText('卡片 c_2 的正文')
     expect(mocks.readBoard).toHaveBeenCalledTimes(1)
   })
 
   it('re-reads when the shared rev is touched (the other seat mutated the board)', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     const before = mocks.readBoard.mock.calls.length
-    act(() => { store.touch() })
+    act(() => { view.touch() })
     await waitFor(() => {
       expect(mocks.readBoard.mock.calls.length).toBeGreaterThan(before)
     })
@@ -216,8 +253,8 @@ describe('CanvasDetailView', () => {
 
   it('wires the ghost proposal to patchCard, from the detail too', async () => {
     const ghost = card('c_g', { status: 'proposed', createdBy: 'agent', text: '效能假说综述' })
-    const { store, props } = makeHarness([ghost])
-    store.select(CANVAS_ID, 'c_g')
+    const { view, props } = makeHarness([ghost])
+    view.select('c_g')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('AGENT 提议 · 待你确认')
     fireEvent.click(screen.getByRole('button', { name: /收下/ }))
@@ -228,8 +265,8 @@ describe('CanvasDetailView', () => {
   })
 
   it('saves the source mode through patchCard and returns to reading', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: '源码' }))
@@ -244,8 +281,8 @@ describe('CanvasDetailView', () => {
   })
 
   it('pastes a sheet as a markdown table, into the caret, and reports it', async () => {
-    const { store, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: '源码' }))
@@ -260,8 +297,8 @@ describe('CanvasDetailView', () => {
   })
 
   it('leaves a page pasted into prose to the browser, and says why in its place', async () => {
-    const { store, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: '源码' }))
@@ -281,11 +318,11 @@ describe('CanvasDetailView', () => {
   })
 
   it('keeps markup as a page when the card it produces still reads as one', async () => {
-    const { store, props } = makeHarness([card('c_h', {
+    const { view, props } = makeHarness([card('c_h', {
       kind: 'document',
       text: '<!doctype html><html><head><title>报告</title></head><body><p>正文</p></body></html>',
     })])
-    store.select(CANVAS_ID, 'c_h')
+    view.select('c_h')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('文档')
     fireEvent.click(screen.getByRole('button', { name: '源码' }))
@@ -300,8 +337,8 @@ describe('CanvasDetailView', () => {
   })
 
   it('pastes an image file as a pointer line — the pixels never enter the card', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: '源码' }))
@@ -320,11 +357,11 @@ describe('CanvasDetailView', () => {
   })
 
   it('pastes the tag form when the card it lands in is a page', async () => {
-    const { store, props } = makeHarness([card('c_page', {
+    const { view, props } = makeHarness([card('c_page', {
       kind: 'document',
       text: '<!doctype html><html><head><title>报告</title></head><body><p>正文</p></body></html>',
     })])
-    store.select(CANVAS_ID, 'c_page')
+    view.select('c_page')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('文档')
     fireEvent.click(screen.getByRole('button', { name: '源码' }))
@@ -339,8 +376,8 @@ describe('CanvasDetailView', () => {
   })
 
   it('says which refusal stopped an image, and pastes nothing for it', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: '源码' }))
@@ -352,8 +389,8 @@ describe('CanvasDetailView', () => {
   })
 
   it('posts a comment from the thread', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     const box = screen.getByPlaceholderText('写条评论…（⏎ 发送）')
@@ -366,10 +403,10 @@ describe('CanvasDetailView', () => {
   })
 
   it('opens a file attachment through openFile with the tab\'s session and cwd', async () => {
-    const { store, mocks, props } = makeHarness([
+    const { view, mocks, props } = makeHarness([
       card('c_1', { source: { type: 'file', ref: '/ws/灵感画布/文章/第一章.md', title: '第一章 雨夜' } }),
     ])
-    store.select(CANVAS_ID, 'c_1')
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: /预览 第一章 雨夜/ }))
@@ -380,8 +417,8 @@ describe('CanvasDetailView', () => {
     const commented = card('c_1', {
       comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
     })
-    const { store, mocks, props } = makeHarness([commented])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([commented])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     fireEvent.click(await screen.findByRole('button', { name: /追问/ }))
     await waitFor(() => {
@@ -398,8 +435,8 @@ describe('CanvasDetailView', () => {
     const commented = card('c_1', {
       comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
     })
-    const { store, props } = makeHarness([commented], { chatAvailable: false })
-    store.select(CANVAS_ID, 'c_1')
+    const { view, props } = makeHarness([commented], { chatAvailable: false })
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText(/这里隐含一个假设/)
     expect(screen.queryByRole('button', { name: /追问/ })).toBeNull()
@@ -411,8 +448,8 @@ describe('CanvasDetailView', () => {
       kind: 'document',
       text: '<!DOCTYPE html><html><head><title>报告</title></head><body><p>正文</p></body></html>',
     })
-    const { store, props } = makeHarness([htmlCard])
-    store.select(CANVAS_ID, 'c_h')
+    const { view, props } = makeHarness([htmlCard])
+    view.select('c_h')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('文档')
     await screen.findByText('HTML')
@@ -429,8 +466,8 @@ describe('CanvasDetailView', () => {
 
   it('shows an archived card with its tag and restores it', async () => {
     const gone = card('c_x', { status: 'archived', text: '归档的旧卡' })
-    const { store, mocks, props } = makeHarness([gone])
-    store.select(CANVAS_ID, 'c_x')
+    const { view, mocks, props } = makeHarness([gone])
+    view.select('c_x')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('已归档')
     fireEvent.click(screen.getByRole('button', { name: /恢复/ }))
@@ -479,8 +516,8 @@ function drag(box: HTMLElement, through: readonly (readonly [number, number])[])
 
 describe('the card pad (§11.4)', () => {
   it('sends a stroke to patchCard the moment it ends, in box units', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     const { container } = render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
@@ -501,8 +538,8 @@ describe('the card pad (§11.4)', () => {
       { pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' },
       { pts: [{ x: 200, y: 100, w: 5 }, { x: 400, y: 200, w: 4 }], color: 'ink' },
     ]
-    const { store, mocks, props } = makeHarness([card('c_1', { draw: two })])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1', { draw: two })])
+    view.select('c_1')
     const { container } = render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     // The pad never waits for the pen: content that hides when you stop making
@@ -524,8 +561,8 @@ describe('the card pad (§11.4)', () => {
       { pts: [{ x: 60, y: 40, w: 5 }, { x: 120, y: 80, w: 5 }], color: 'ink' },
       { pts: [{ x: 400, y: 300, w: 5 }, { x: 460, y: 320, w: 5 }], color: 'ink' },
     ]
-    const { store, mocks, props } = makeHarness([card('c_1', { draw: two })])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1', { draw: two })])
+    view.select('c_1')
     const { container } = render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: '橡皮' }))
@@ -538,8 +575,8 @@ describe('the card pad (§11.4)', () => {
 
   it('misses loudly: an eraser click on empty paper says so and changes nothing', async () => {
     const drawn: CanvasStroke[] = [{ pts: [{ x: 60, y: 40, w: 5 }, { x: 120, y: 80, w: 5 }], color: 'ink' }]
-    const { store, mocks, props } = makeHarness([card('c_1', { draw: drawn })])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1', { draw: drawn })])
+    view.select('c_1')
     const { container } = render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     const before = mocks.patchCard.mock.calls.length
@@ -550,8 +587,8 @@ describe('the card pad (§11.4)', () => {
   })
 
   it('puts the pen away on Esc, from the keyboard rather than the mouse', async () => {
-    const { store, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
@@ -561,8 +598,8 @@ describe('the card pad (§11.4)', () => {
   })
 
   it('never lets a tap become a stored stroke', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     const { container } = render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
@@ -571,8 +608,8 @@ describe('the card pad (§11.4)', () => {
   })
 
   it('hides the pen on a card nobody may edit, and on a read-only seat', async () => {
-    const { store, props } = makeHarness([card('c_g', { status: 'proposed', createdBy: 'agent' })])
-    store.select(CANVAS_ID, 'c_g')
+    const { view, props } = makeHarness([card('c_g', { status: 'proposed', createdBy: 'agent' })])
+    view.select('c_g')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('AGENT 提议 · 待你确认')
     expect(screen.queryByRole('button', { name: '铅笔' })).toBeNull()
