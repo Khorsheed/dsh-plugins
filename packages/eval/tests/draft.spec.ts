@@ -352,7 +352,7 @@ describe('draftExperiment — the container completion (I5·T58 · G4)', () => {
     // pair by name (UNIT_SCOPED_HOME_MISSING), which is a better answer than a
     // credential directory nobody chose.
     expect(read(unknown.conditionPaths[0] as string)['unit']).toBeUndefined()
-    expect(unknown.review.checks.some(check => check.code === 'UNIT_SCOPED_HOME_MISSING')).toBe(true)
+    expect(unknown.review.checks.find(check => check.code === 'UNIT_SCOPED_HOME_MISSING')?.condition).toBe('mystery')
   })
 
   it('a copy whose only change is the completion is still refused as changing nothing', async () => {

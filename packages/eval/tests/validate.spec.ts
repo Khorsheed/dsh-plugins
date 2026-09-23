@@ -129,6 +129,15 @@ describe('validatePlan — lock states', () => {
     expect(report.conditions[0]?.status).toBe('unready')
   })
 
+  it('names the condition a readiness diagnostic is about — the checklist\'s fix button provisions THAT one (T72)', async () => {
+    const { root, repoPath } = writeRepo()
+    const dataset = join(repoPath, 'datasets', 'ds')
+    writeJson(dataset, 'conditions/c1.lock.json', { schema: 'dataseek.condition-lock/1', condition: 'c1', sha: 'b'.repeat(64) })
+    const planPath = writeJson(root, 'plan.json', planBody({ dataset: { repo: repoPath, commit: null, id: 'ds', items: ['I1'] } }))
+    const report = await validatePlan(planPath)
+    expect(report.warnings.find(w => w.code === 'LOCK_STALE')?.condition).toBe('c1')
+  })
+
   it('warns HOME_MISMATCH when the locked home differs from the declaration', async () => {
     const { root, repoPath } = writeRepo()
     const dataset = join(repoPath, 'datasets', 'ds')

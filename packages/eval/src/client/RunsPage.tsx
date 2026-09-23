@@ -50,7 +50,7 @@ import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { LiveGrid } from './Grid.tsx'
 import type { EvalKey } from './locales.ts'
-import { Chip, Detail, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, stageTone } from './parts.tsx'
+import { Chip, Detail, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, stageTone, stalledFor } from './parts.tsx'
 import {
   RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase, verdictKey, verdictSourceOf, verdictSourcesOf,
 } from './vocab.ts'
@@ -582,11 +582,19 @@ export function RunsPage(props: {
   onClearFocus: () => void
   /** Single-group runs say so once, above the grid, with the way out. */
   onAddGroup: () => void
+  /**
+   * Minutes since the run last moved, when it is STALLED (T72 §7): no live
+   * job and no progress for longer than the threshold. Null otherwise.
+   */
+  stalledMinutes?: number | null
+  /** Start the plan again as a new run — the stall line's one action. */
+  onRerun?: () => void
   t: LabViewProps['t']
 }) {
   const {
     matrix, matrixLoading, matrixError, onColumn, onToggleGroup, onFilter,
-    cells, loading, error, filter, onSetFilter, selection, focus, onClearFocus, onAddGroup, t,
+    cells, loading, error, filter, onSetFilter, selection, focus, onClearFocus, onAddGroup,
+    stalledMinutes = null, onRerun, t,
   } = props
   const rows = cells?.rows ?? []
   // The verdict source per record, looked up by the grid. Both halves of this
@@ -613,6 +621,18 @@ export function RunsPage(props: {
 
   return (
     <div className={css.cellsPage}>
+      {/* Above the grid, because a stalled grid looks exactly like a running
+          one: the cells sit in the state they were left in. */}
+      {stalledMinutes !== null && (
+        <div className={css.blocked}>
+          <div>{t('runs.stalled', { duration: stalledFor(stalledMinutes, t) })}</div>
+          {onRerun !== undefined && (
+            <div className={css.actions}>
+              <Button size="sm" variant="primary" onClick={onRerun}>{t('cta.stalled')}</Button>
+            </div>
+          )}
+        </div>
+      )}
       {groups.size === 1 && (
         <div className={css.notice}>
           <div>{t('design.single')}</div>

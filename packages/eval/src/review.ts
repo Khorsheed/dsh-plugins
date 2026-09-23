@@ -111,12 +111,18 @@ function readyCheck(entry: ConditionResolution, role: 'player' | 'judge'): EvalP
   return [{
     severity: 'ok',
     code: 'CONDITION_READY',
+    condition: entry.id,
     message: `${prefix} ${entry.id} is ready — the lock matches its declaration${entry.lock?.homeSha === undefined ? '' : ' and its scoped home is hashed'}`,
   }]
 }
 
 function checkOf(severity: 'warn' | 'error') {
-  return (diagnostic: EvalDiagnostic): EvalPlanCheck => ({ severity, code: diagnostic.code, message: diagnostic.message })
+  return (diagnostic: EvalDiagnostic): EvalPlanCheck => ({
+    severity,
+    code: diagnostic.code,
+    message: diagnostic.message,
+    condition: diagnostic.condition ?? null,
+  })
 }
 
 /**
@@ -174,20 +180,22 @@ export async function reviewPlan(planPath: string): Promise<EvalPlanReview> {
  * @param row - one field's verdict from provision.
  * @returns the line.
  */
-function provisionCheckLine(row: ProvisionCheck): EvalPlanCheck {
-  if (row.severity === 'error') return { severity: 'error', code: 'EFFECTIVE_MISMATCH', message: `${row.field}: ${row.detail}` }
+function provisionCheckLine(row: ProvisionCheck, condition: string): EvalPlanCheck {
+  if (row.severity === 'error') return { severity: 'error', code: 'EFFECTIVE_MISMATCH', message: `${row.field}: ${row.detail}`, condition }
   if (row.severity === 'warning') {
     return {
       severity: 'warn',
       code: row.status === 'unknown' ? 'EFFECTIVE_UNCOMPARABLE' : 'EFFECTIVE_MISMATCH',
       message: `${row.field}: ${row.detail}`,
+      condition,
     }
   }
-  if (row.status === 'unknown') return { severity: 'warn', code: 'UNRESOLVED_FIELD', message: `${row.field}: ${row.detail}` }
+  if (row.status === 'unknown') return { severity: 'warn', code: 'UNRESOLVED_FIELD', message: `${row.field}: ${row.detail}`, condition }
   return {
     severity: 'ok',
     code: row.status === 'backfilled' ? 'EFFECTIVE_BACKFILLED' : 'EFFECTIVE_MATCH',
     message: `${row.field}: ${row.detail}`,
+    condition,
   }
 }
 
@@ -204,9 +212,9 @@ function provisionCheckLine(row: ProvisionCheck): EvalPlanCheck {
  */
 export function provisionChecks(report: ProvisionReport): EvalPlanCheck[] {
   return [
-    ...report.errors.map(checkOf('error')),
-    ...report.checks.map(provisionCheckLine),
-    ...report.warnings.map(checkOf('warn')),
+    ...report.errors.map(checkOf('error')).map(line => ({ ...line, condition: line.condition ?? report.condition })),
+    ...report.checks.map(row => provisionCheckLine(row, report.condition)),
+    ...report.warnings.map(checkOf('warn')).map(line => ({ ...line, condition: line.condition ?? report.condition })),
   ]
 }
 

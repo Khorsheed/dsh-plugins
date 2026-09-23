@@ -78,7 +78,7 @@ const DRAFTED: EvalDraftResult = {
 }
 
 /** The list BEFORE the draft, and the list after — the row appears on refresh. */
-const EMPTY_LIST: EvalExperimentsResult = { repo: '/repo', datasets: ['ds'], rows: [], notes: [] }
+const EMPTY_LIST: EvalExperimentsResult = { repo: '/repo', datasets: ['ds'], rows: [], notes: [], session: 's1' }
 const WITH_DRAFT: EvalExperimentsResult = {
   ...EMPTY_LIST,
   rows: [{
@@ -97,6 +97,11 @@ const WITH_DRAFT: EvalExperimentsResult = {
     progress: null,
     startedAt: null,
     validation: { ok: true, errors: 0, warnings: 1 },
+    originSession: 's1',
+    archived: false,
+    closure: null,
+    lastProgressAt: null,
+    stalledMinutes: null,
     unit: null,
   }],
 }

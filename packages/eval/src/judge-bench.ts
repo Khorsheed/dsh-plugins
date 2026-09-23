@@ -316,9 +316,15 @@ export async function judgeQueueView(input: JudgeQueueInput): Promise<EvalJudgeQ
     const humanFinal: EvalJudgeQueueCell['humanFinal'] = []
     const verdictsForStats: Array<JudgeConsistencyCell['verdicts'][number]> = []
     let seq = 0
+    let judgeFailures = 0
     for (const annotation of annotations) {
-      if (annotation.ns !== 'llm-draft' && annotation.ns !== 'human-final') continue
       if (annotation.attempt !== attempt) continue
+      if (annotation.ns === 'orchestrator') {
+        const entries = Array.isArray(annotation.payload) ? annotation.payload : [annotation.payload]
+        judgeFailures += entries.filter(entry => isPlainObject(entry) && entry['kind'] === 'judge-parse-failed').length
+        continue
+      }
+      if (annotation.ns !== 'llm-draft' && annotation.ns !== 'human-final') continue
       const envelope = isPlainObject(annotation.payload) ? annotation.payload : {}
       const judgeCondition = stringOrNull(envelope['judgeCondition'])
       const sample = typeof envelope['sample'] === 'number' ? envelope['sample'] : null
@@ -385,6 +391,10 @@ export async function judgeQueueView(input: JudgeQueueInput): Promise<EvalJudgeQ
       drafts,
       humanFinal,
       graded: humanFinal.length > 0,
+      // The report's 判官缺席 predicate (`coverageGapsOf`), read off the
+      // ledger: every judge call failed and no llm-draft landed. Said here
+      // by the blind name, never by the condition.
+      judgeAbsent: judgeFailures > 0 && !annotations.some(entry => entry.ns === 'llm-draft' && entry.attempt === attempt),
       // The criteria that will KEEP scoring on the judge's word after a
       // human verdict lands here. See the field's own note: the report merges
       // per criterion, so this list is what stays the judge's, not what a

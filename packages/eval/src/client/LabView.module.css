@@ -3,12 +3,17 @@
    shell. Compact rows, hairline separators, tokenized colors — the missions
    and datasets tabs' language. */
 
+/* The view sets the page's body size once. Without it, any note that sets no
+   size of its own (单元：无占用, 另有 n 个, the efficiency footnotes, 判官面板)
+   took the host's root size and read louder than the table it annotates. */
 .view {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
   --dsh-eval-bottom-clearance: calc(var(--dsh-composer-height, 152px) + 16px);
 }
 
@@ -231,7 +236,7 @@
   display: grid;
   grid-template-columns:
     minmax(120px, 1.4fr) minmax(120px, 1fr) 96px 48px 44px
-    minmax(150px, 1.2fr) 84px 64px 116px;
+    minmax(150px, 1.2fr) 84px 64px 116px 104px;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -260,6 +265,88 @@
 
 .row:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.row:focus-visible {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -1px;
+}
+
+/* The row's own buttons sit after the columns; they never wrap under them.
+   The track is FIXED (重跑 + 归档 fit): an auto track sized per row would let
+   one stalled row's extra button shift every column of that row alone. */
+.colActions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+/* A second line under a row — only the stalled minutes use it today. */
+.rowMeta {
+  grid-column: 1 / -1;
+  padding-bottom: 2px;
+  color: var(--dsw-alias-state-warn-label);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.listScope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 5px;
+}
+
+.listTable {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.listGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.listGroupHead {
+  padding: 4px 0 2px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+/* 400px: the table collapses to name, status and the actions; the other
+   columns are one click away in the experiment itself. */
+@media (width <= 560px) {
+  .tableHead,
+  .row {
+    grid-template-columns: minmax(0, 1fr) 76px 88px;
+  }
+
+  .row .colSnapshot,
+  .row .colNum,
+  .row .colFactors,
+  .row .colProgress,
+  .row .colStarted,
+  .tableHead .colSnapshot,
+  .tableHead .colNum,
+  .tableHead .colFactors,
+  .tableHead .colProgress,
+  .tableHead .colStarted {
+    display: none;
+  }
 }
 
 .colName,
@@ -343,6 +430,83 @@
   flex-wrap: wrap;
   gap: 6px;
   align-items: baseline;
+}
+
+.readinessGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.readinessHead {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.readinessNo {
+  min-width: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+/* The conclusion card leads the result page: one line per pair, then where
+   the verdicts came from and whether the checks held. */
+.conclusionCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-l2);
+}
+
+.conclusionFlag {
+  color: var(--dsw-alias-state-warn-label);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.conclusionTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.conclusionPair {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.conclusionPairName {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.conclusionMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.closureReason {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
 }
 
 .pre {

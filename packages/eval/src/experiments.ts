@@ -22,6 +22,7 @@
 import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
+import { readRunMarks } from './closure.ts'
 import type { EvalRunStatus } from './job.ts'
 import type { MissionRunListFace } from './faces.ts'
 import { canonicalJson } from './hash.ts'
@@ -31,7 +32,7 @@ import { expandHome, validatePlan } from './validate.ts'
 import type {
   EvalExperimentDetail, EvalExperimentJob, EvalExperimentMeta, EvalExperimentRow, EvalExperimentsResult,
   EvalExperimentSnapshot, EvalExperimentStatus, EvalExperimentUnit, EvalItemRunRow, EvalItemRunsResult,
-  EvalReadinessLine,
+  EvalClosure, EvalReadinessLine,
 } from './types.ts'
 
 /** The template state a finalized cell rests in (the generated template's last one). */
@@ -62,6 +63,14 @@ export function isReleased(state: string): boolean {
   return state === RELEASED_STATE
 }
 
+/**
+ * How long a non-terminal run may sit with no live job and no ledger movement
+ * before the list calls it 停滞 (T72). Ten minutes: longer than any gap
+ * between two state entries of a healthy cell that the pilots recorded, short
+ * enough that a run whose process died is noticed the same sitting.
+ */
+export const STALL_THRESHOLD_MS = 10 * 60_000
+
 /** Job statuses that mean the job stopped; anything else is still live. */
 const SETTLED_JOB: ReadonlySet<string> = new Set(['completed', 'killed', 'failed'])
 
@@ -86,35 +95,53 @@ export interface ExperimentStatusInput {
    * and the status then rests on the ledger alone.
    */
   job: { status: string } | null
+  /** The closure in force (T72); absent or null while nobody took an exit. */
+  closure?: { exit: EvalClosure['exit'] } | null
+  /** Epoch ms of the newest ledger movement; absent or null disables the stall rule. */
+  lastProgressAt?: number | null
+  /** The clock the stall rule compares against; absent disables it. */
+  now?: number
 }
 
 /**
- * Decide one experiment's status. Pure — the same three inputs always give
- * the same word.
+ * Decide one experiment's status. Pure — the same inputs always give the same
+ * word.
  *
- * Precedence, and why: a killed or failed JOB is the loudest fact there is
- * (the human pulled the lever, or the run never got off the ground), so those
- * two come first; a fully released run is `done` next, because finalize is
- * the definition; a live job or a moving cell is `running`; a run whose every
- * cell reached `judged` with nothing live is `judging`.
+ * Precedence, and why:
+ * 1. A CLOSURE is a human's explicit last word on the run, so it wins over
+ *    everything: exit ④ is `void`, exits ①②③ are `done`. Nothing else makes
+ *    a run `done` — a released run that nobody closed is still `judging`
+ *    (T72: an experiment never becomes 已完成 on its own).
+ * 2. A killed or failed JOB is the loudest remaining fact (the human pulled
+ *    the lever, or the run never got off the ground).
+ * 3. A live job is `running`.
+ * 4. A run whose every cell reached `judged` or beyond is `judging` — what is
+ *    left is the judge's and the human's, and waiting on a human is not
+ *    stalling, so this state is never `stalled`.
+ * 5. Otherwise the run has unfinished cells and nothing of THIS instance is
+ *    driving them. When the ledger has not moved for longer than
+ *    {@link STALL_THRESHOLD_MS} it is `stalled`; before that it is `running`
+ *    (a CLI run in another process looks exactly like this while healthy).
  *
  * Known coarse edges, deliberately NOT smoothed over:
  * - The job layer records a readiness refusal and a mid-run throw the same
  *   way (`failed`, plus a `run … refused:` line), so `refused` here means
  *   "the job settled as failed", not specifically the readiness gate — the
  *   status detail carries which.
- * - A settled job that left cells mid-stage (an interrupt, a skipped
- *   condition) reads as `running`, because the ledger genuinely still has
- *   unfinished cells and no eighth word exists for "stopped unfinished".
- * - A run with no cells at all reads as `running` for the same reason: an
- *   empty ledger is not evidence of completion.
+ * - A run with no cells at all reads as `running` (or `stalled` once old):
+ *   an empty ledger is not evidence of completion.
  * - Without a job record (any instance restart) `cancelled` and `refused` are
- *   unreachable, and such a run reads by its cells alone.
- * @param input - the three ledgers' say.
- * @returns the status word ui-spec §五 fixed.
+ *   unreachable, and such a run reads by its cells and its clock alone.
+ * - A healthy CLI run whose one cell spends more than the threshold inside a
+ *   single stage reads `stalled` until the cell moves: the ledger records
+ *   state entries, not heartbeats, and the rule does not guess.
+ * @param input - the ledgers' say, plus the clock.
+ * @returns the status word.
  */
 export function deriveExperimentStatus(input: ExperimentStatusInput): EvalExperimentStatus {
   const { job, run, validation } = input
+  const closure = input.closure ?? null
+  if (run !== null && closure !== null) return closure.exit === 'void' ? 'void' : 'done'
   if (job !== null && job.status === 'killed') return 'cancelled'
   if (job !== null && job.status === 'failed') return 'refused'
   const jobLive = job !== null && !SETTLED_JOB.has(job.status)
@@ -122,12 +149,17 @@ export function deriveExperimentStatus(input: ExperimentStatusInput): EvalExperi
     if (jobLive) return 'running'
     return validation !== null && validation.ok ? 'pending-approval' : 'draft'
   }
-  const cells = run.cellStates
-  if (cells.length > 0 && cells.every(state => state === RELEASED_STATE)) return 'done'
   if (jobLive) return 'running'
-  if ((run.buckets['active'] ?? 0) > 0) return 'running'
+  const cells = run.cellStates
   if (cells.length > 0 && cells.every(state => JUDGED_OR_BEYOND.has(state))) return 'judging'
+  if (isStale(input.lastProgressAt, input.now)) return 'stalled'
   return 'running'
+}
+
+/** Whether the ledger has been still for longer than {@link STALL_THRESHOLD_MS}. */
+function isStale(lastProgressAt: number | null | undefined, now: number | undefined): boolean {
+  if (lastProgressAt === null || lastProgressAt === undefined || now === undefined) return false
+  return now - lastProgressAt > STALL_THRESHOLD_MS
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -283,6 +315,11 @@ async function draftRow(
     startedAt: null,
     validation: { ok: validation.ok, errors: validation.errors.length, warnings: validation.warnings.length },
     unit: unitOf(plan.document['unit']),
+    originSession: null,
+    archived: false,
+    closure: null,
+    lastProgressAt: null,
+    stalledMinutes: null,
   }
 }
 
@@ -291,9 +328,42 @@ interface RunProjection {
   runId: string
   meta: Record<string, unknown>
   createdAt: number
-  rows: ReadonlyArray<{ labels: Record<string, string>; state: string; bucket: string; id: string }>
+  originSession: string | null
+  rows: ReadonlyArray<{ labels: Record<string, string>; state: string; bucket: string; id: string; enteredCurrentAt?: number }>
   buckets: Record<string, string[]>
   unreleased: string[]
+  /** The run-level marks (closure, archive) and the newest annotation, one ledger pass. */
+  marks: ReturnType<typeof readRunMarks>
+}
+
+/**
+ * The newest ledger movement of a run: a cell entering its current state, any
+ * annotation, the run's own start. The floor is the run's creation, so a run
+ * whose cells never moved still has an age.
+ */
+function lastProgressOf(run: RunProjection): number {
+  let latest = Math.max(run.createdAt, numberOrNull(run.meta['startedAt']) ?? 0)
+  for (const row of run.rows) {
+    if (typeof row.enteredCurrentAt === 'number' && row.enteredCurrentAt > latest) latest = row.enteredCurrentAt
+  }
+  if (run.marks.lastAnnotationAt !== null && run.marks.lastAnnotationAt > latest) latest = run.marks.lastAnnotationAt
+  return latest
+}
+
+/** Build a run's projection from one `runStatus` answer. */
+function projectRun(mission: MissionRunListFace, status: ReturnType<MissionRunListFace['runStatus']>): RunProjection {
+  return {
+    runId: status.run.id,
+    meta: status.run.meta,
+    createdAt: status.run.createdAt,
+    originSession: typeof status.run.originSession === 'string' && status.run.originSession !== ''
+      ? status.run.originSession
+      : null,
+    rows: status.rows,
+    buckets: status.buckets,
+    unreleased: status.unreleased,
+    marks: readRunMarks(mission, status.run.id, status.rows),
+  }
 }
 
 /** The run.meta condition entries, each carrying the full declaration since T8b. */
@@ -306,7 +376,7 @@ function metaConditionEntries(value: unknown): Array<{ id: string; sha: string |
 }
 
 /** The row of one started experiment: the run's own meta and cells decide every column. */
-function runRow(run: RunProjection, job: EvalRunStatus | undefined): EvalExperimentRow {
+function runRow(run: RunProjection, job: EvalRunStatus | undefined, now: number): EvalExperimentRow {
   const meta = run.meta
   const snapshotMeta = isPlainObject(meta['snapshot']) ? meta['snapshot'] : undefined
   const judgeMeta = isPlainObject(meta['judge']) ? meta['judge'] : undefined
@@ -323,16 +393,21 @@ function runRow(run: RunProjection, job: EvalRunStatus | undefined): EvalExperim
   const cellStates = run.rows.map(row => row.state)
   const buckets: Record<string, number> = {}
   for (const [bucket, ids] of Object.entries(run.buckets)) buckets[bucket] = ids.length
+  const lastProgressAt = lastProgressOf(run)
+  const status = deriveExperimentStatus({
+    validation: null,
+    run: { cellStates, buckets },
+    job: job === undefined ? null : { status: job.status },
+    closure: run.marks.closure,
+    lastProgressAt,
+    now,
+  })
   return {
     id: run.runId,
     name: planPath === null ? run.runId : basename(planPath).replace(/\.json$/, ''),
     planPath,
     runId: run.runId,
-    status: deriveExperimentStatus({
-      validation: null,
-      run: { cellStates, buckets },
-      job: job === undefined ? null : { status: job.status },
-    }),
+    status,
     statusDetail: job?.detail ?? null,
     snapshot: {
       repo: stringOrNull(snapshotMeta?.['repo']),
@@ -348,6 +423,11 @@ function runRow(run: RunProjection, job: EvalRunStatus | undefined): EvalExperim
     startedAt: numberOrNull(meta['startedAt']) ?? run.createdAt,
     validation: null,
     unit: unitOf(meta['unit']),
+    originSession: run.originSession,
+    archived: run.marks.archive?.archived === true,
+    closure: run.marks.closure,
+    lastProgressAt,
+    stalledMinutes: status === 'stalled' ? Math.floor((now - lastProgressAt) / 60_000) : null,
   }
 }
 
@@ -378,14 +458,7 @@ function evalRuns(mission: MissionRunListFace, notes: string[]): RunProjection[]
     // The criterion: eval wrote this run's meta. Every other run in the
     // ledger belongs to somebody else and has no business in this list.
     if (typeof status.run.meta['evalVersion'] !== 'string') continue
-    runs.push({
-      runId: status.run.id,
-      meta: status.run.meta,
-      createdAt: status.run.createdAt,
-      rows: status.rows,
-      buckets: status.buckets,
-      unreleased: status.unreleased,
-    })
+    runs.push(projectRun(mission, status))
   }
   return runs
 }
@@ -400,6 +473,10 @@ export interface ExperimentsInput {
   datasets?: readonly string[]
   /** Background run jobs this instance still holds (newest wins per run / per plan). */
   jobs?: readonly EvalRunStatus[]
+  /** The calling session, echoed back so the browser can filter by `originSession`. */
+  session?: string
+  /** The clock the stall rule reads; defaults to `Date.now()`. */
+  now?: number
 }
 
 /** Index the job records by run id and by the plan they were started from. */
@@ -442,7 +519,8 @@ export async function listExperiments(input: ExperimentsInput): Promise<EvalExpe
     plans = await readPlans(repo, datasets, notes)
   }
 
-  const runRows = runs.map(run => runRow(run, jobs.byRun.get(run.runId)))
+  const now = input.now ?? Date.now()
+  const runRows = runs.map(run => runRow(run, jobs.byRun.get(run.runId), now))
   // A plan is "started" when some run points back at it, by path or by sha.
   const startedPaths = new Set<string>()
   const startedShas = new Set<string>()
@@ -460,7 +538,7 @@ export async function listExperiments(input: ExperimentsInput): Promise<EvalExpe
 
   runRows.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
   draftRows.sort((a, b) => a.name.localeCompare(b.name))
-  return { repo, datasets, rows: [...runRows, ...draftRows], notes }
+  return { repo, datasets, rows: [...runRows, ...draftRows], notes, session: input.session ?? null }
 }
 
 /** Project one readiness record structurally — the run wrote it, this only reads. */
@@ -561,17 +639,11 @@ export function experimentDetail(
   mission: MissionRunListFace,
   runId: string,
   jobs: readonly EvalRunStatus[] = [],
+  now: number = Date.now(),
 ): EvalExperimentDetail {
   const status = mission.runStatus(runId)
   const job = indexJobs(jobs).byRun.get(runId)
-  const projection: RunProjection = {
-    runId: status.run.id,
-    meta: status.run.meta,
-    createdAt: status.run.createdAt,
-    rows: status.rows,
-    buckets: status.buckets,
-    unreleased: status.unreleased,
-  }
+  const projection = projectRun(mission, status)
   const buckets: Record<string, number> = {}
   for (const [bucket, ids] of Object.entries(status.buckets)) buckets[bucket] = ids.length
   const states: Record<string, number> = {}
@@ -583,7 +655,7 @@ export function experimentDetail(
     })
     : []
   return {
-    row: runRow(projection, job),
+    row: runRow(projection, job, now),
     meta: metaDigest(status.run.meta),
     readiness,
     buckets,

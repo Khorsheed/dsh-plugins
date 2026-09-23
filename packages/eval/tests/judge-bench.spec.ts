@@ -222,6 +222,22 @@ describe('the blind queue', () => {
     expect(wire).not.toContain(CELL_B)
   })
 
+  it('flags 判官缺席 on a cell whose every judge call failed, by blind number and without naming the judge', async () => {
+    const failure = (sample: number) => ({
+      ns: 'orchestrator', attempt: 1, createdAt: 40 + sample, by: 'eval-orchestrator',
+      payload: { kind: 'judge-parse-failed', judgeCondition: 'judge-alpha', sample, attempt: 1, cwd: '/tmp/j', error: 'judge output is not JSON' },
+    })
+    const view = await judgeQueueView({
+      mission: missionFace({ annotations: { [CELL_B]: [failure(1), failure(2)] } }) as never,
+      datasets: datasetsFace() as never,
+      runId: RUN,
+    })
+    // Cell A has drafts; cell B only has failures — that is the report's
+    // 判官缺席 predicate, carried here so the bench can say it blind.
+    expect(view.cells.map(cell => [cell.cellNo, cell.judgeAbsent])).toEqual([[1, false], [2, true]])
+    expect(JSON.stringify(view)).not.toContain('judge-alpha')
+  })
+
   it('numbers cells in the run\'s own order and hands each an opaque ticket', async () => {
     const dataDir = tmpTree()
     writeArchive(dataDir, CELL_A)

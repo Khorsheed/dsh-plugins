@@ -35,7 +35,7 @@ import type {} from '@khorsheed/dsh-eval/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import evalRemote from '@khorsheed/dsh-eval/remote'
 import type {
-  EvalApproveRequest, EvalCellArtifactRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
+  EvalApproveRequest, EvalArchiveRunRequest, EvalCellArtifactRequest, EvalCloseRunRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
   EvalConditionEndpointRequest, EvalConditionProvisionRequest,
   EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
@@ -170,6 +170,22 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
             // match for the host to accept the address.
             ctx.sessions.openSubagent({ parentSessionId, childSessionId, mode: 'one-shot' })
           }).catch(byId)
+        },
+        // T72's four exits and the archive flag: run-level annotations a
+        // person writes, through eval's own verbs.
+        closeRun: (sid: SessionId, request: EvalCloseRunRequest) => remote.closeRun(sid, request),
+        archiveRun: (sid: SessionId, request: EvalArchiveRunRequest) => remote.archiveRun(sid, request),
+        // 「让 agent 处理」: the quote plugin's backfill path — the session's
+        // conversation input, draft merged, NEVER sent. Every absence answers
+        // false so the button can fall back to the clipboard.
+        insertDraft: (sid: SessionId, text: string): boolean => {
+          const scope = ctx.sessions.scope(sid)
+          if (scope === undefined) return false
+          const input = scope.get('conversation')?.input.for(scope)
+          if (input === undefined) return false
+          const current = input.state.getSnapshot().draft
+          input.setDraft(current.trim() === '' ? text : `${current}\n\n${text}`)
+          return true
         },
       }),
     }, LabView),

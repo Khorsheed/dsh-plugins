@@ -37,6 +37,7 @@ const LIST: EvalExperimentsResult = {
   repo: '/repo',
   datasets: ['ds'],
   notes: [],
+  session: 's1',
   rows: [{
     id: `plan:${PLAN_PATH}`,
     name: 'effort-sweep',
@@ -53,6 +54,11 @@ const LIST: EvalExperimentsResult = {
     progress: null,
     startedAt: null,
     validation: { ok: true, errors: 0, warnings: 1 },
+    originSession: 's1',
+    archived: false,
+    closure: null,
+    lastProgressAt: null,
+    stalledMinutes: null,
     unit: null,
   }],
 }
@@ -228,9 +234,10 @@ interface Harness {
   fetchRunOutput: ReturnType<typeof vi.fn>
   fetchDraftOptions: ReturnType<typeof vi.fn>
   draftExperiment: ReturnType<typeof vi.fn>
+  insertDraft: ReturnType<typeof vi.fn>
 }
 
-function makeHarness(overrides: Partial<{ review: EvalPlanReview }> = {}): Harness {
+function makeHarness(overrides: Partial<{ review: EvalPlanReview; composer: boolean }> = {}): Harness {
   return {
     instance: createLabViewStore().create(),
     fetchExperiments: vi.fn(async (): Promise<Result<EvalExperimentsResult>> => ({ ok: true, value: LIST })),
@@ -247,6 +254,8 @@ function makeHarness(overrides: Partial<{ review: EvalPlanReview }> = {}): Harne
     draftExperiment: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     approvePlan: vi.fn(async (): Promise<Result<EvalApproveResult>> => ({ ok: true, value: STARTED })),
     fetchRunOutput: vi.fn(async (): Promise<Result<EvalRunOutputView>> => ({ ok: true, value: OUTPUT })),
+    // 让 agent 处理 fills the composer and never sends; false = no composer here.
+    insertDraft: vi.fn(() => overrides.composer ?? true),
   }
 }
 
@@ -266,6 +275,7 @@ function renderView(h: Harness) {
     draftExperiment: h.draftExperiment,
     approvePlan: h.approvePlan,
     fetchRunOutput: h.fetchRunOutput,
+    insertDraft: h.insertDraft,
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
@@ -323,12 +333,16 @@ describe('the plan-review page', () => {
     // validate, one line per diagnostic, each carrying its severity and code.
     // Only the lines that need READING are on the page; a clean check is not
     // news, so the passing ones sit under the fold.
-    expect(screen.getByText('severity.warn')).toBeTruthy()
+    // T72 §4: the lines that need reading form the readiness checklist —
+    // blockers and reminders — each in a human sentence; the passing ones sit
+    // under the fold.
+    expect(screen.getByText('readiness.reminders {"count":1}')).toBeTruthy()
+    expect(screen.getByText('readiness.COMMIT_UNRESOLVED {"condition":""}')).toBeTruthy()
     expect(screen.getAllByText('severity.ok')).toHaveLength(2)
     expect(screen.getByText('review.checks')).toBeTruthy()
     // The diagnostic code is the host's handle on the check, not a word:
     // ui-spec §九 keeps it on the row's title and the sentence on the page.
-    expect(screen.getByTitle('COMMIT_UNRESOLVED')).toBeTruthy()
+    expect(screen.getByTitle(/^COMMIT_UNRESOLVED · /)).toBeTruthy()
     // The readiness BADGE replaces the old per-row word: one chip when every
     // group passed, a cross and a count when they did not (ui-spec §五 v2).
     expect(screen.getByText(/ready\.failedCount/)).toBeTruthy()
@@ -429,10 +443,15 @@ describe('the plan-review page', () => {
     renderView(h)
     await openPage(h, 'page.design')
 
-    const approve = await screen.findByRole('button', { name: 'cta.pending' })
-    expect(approve.hasAttribute('disabled')).toBe(true)
-    expect(screen.getByText('cta.blocked {"errors":2}')).toBeTruthy()
-    fireEvent.click(approve)
+    // T72 §3: the stage bar offers the FIRST blocker's fix, never 批准并启动.
+    expect(await screen.findByText('cta.pendingBlocked {"count":1}')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'cta.pending' })).toBeNull()
+    const [barFix] = screen.getAllByRole('button', { name: 'fix.agent' })
+    fireEvent.click(barFix!)
+    expect(h.insertDraft).toHaveBeenCalledWith(
+      's1',
+      'readiness.agentAsk {"name":"effort-sweep","k":1,"text":"conditions must be an array"}',
+    )
     expect(h.approvePlan).not.toHaveBeenCalled()
   })
 
@@ -839,5 +858,91 @@ describe('after 批准并启动, the detail waits for the run itself (I5·T39 ·
     const stopped = h.fetchExperiments.mock.calls.length
     await vi.advanceTimersByTimeAsync(START_FOLLOWUP_MS * 5)
     expect(h.fetchExperiments.mock.calls.length).toBe(stopped)
+  })
+})
+
+describe('the readiness checklist (T72 §4)', () => {
+  const CHECKLIST: EvalPlanReview = {
+    ...REVIEW,
+    ok: false,
+    errors: 1,
+    checks: [
+      { severity: 'error', code: 'LOCK_MISSING', message: 'condition codex-exec has no lock', condition: 'codex-exec' },
+      { severity: 'warn', code: 'DATASET_ROOT_UNRESOLVABLE', message: 'dataset root not found' },
+      // A warning on a condition that is NOT ready is a blocker: the
+      // readiness gate refuses the start over it.
+      { severity: 'warn', code: 'HOME_SHA_DECLARED_STALE', message: 'declared sha is stale', condition: 'codex-exec' },
+      { severity: 'warn', code: 'SOMETHING_NEW', message: 'a code this build has no sentence for' },
+      { severity: 'ok', code: 'CONDITION_READY', message: 'condition dsh-exec is ready' },
+    ],
+  }
+
+  it('splits the lines into blockers and reminders, numbered across both, one fix each', async () => {
+    const h = makeHarness({ review: CHECKLIST })
+    renderView(h)
+    await openPage(h, 'page.design')
+
+    expect(await screen.findByText('readiness.blockers {"count":2}')).toBeTruthy()
+    expect(screen.getByText('readiness.reminders {"count":2}')).toBeTruthy()
+    expect(screen.getByText('readiness.LOCK_MISSING {"condition":"codex-exec"}')).toBeTruthy()
+    // An unknown code falls back to validate's own words, never a blank line.
+    expect(screen.getByText('a code this build has no sentence for')).toBeTruthy()
+    // The code → button table: provision / 登记仓库 / 让 agent 处理.
+    expect(screen.getAllByRole('button', { name: 'fix.provision {"condition":"codex-exec"}' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByRole('button', { name: 'fix.bind' })).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: 'fix.agent' }).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('shows only while the plan is still to start: a stalled row says it is for the re-run, a judging row has none', async () => {
+    const withStatus = (status: EvalExperimentsResult['rows'][number]['status']) => async (): Promise<Result<EvalExperimentsResult>> => (
+      { ok: true, value: { ...LIST, rows: [{ ...LIST.rows[0]!, status }] } }
+    )
+    const stalled = makeHarness({ review: CHECKLIST })
+    stalled.fetchExperiments = vi.fn(withStatus('stalled'))
+    const view = renderView(stalled)
+    await openPage(stalled, 'page.design')
+    expect(await screen.findByText('readiness.forRerun')).toBeTruthy()
+    expect(screen.getByText('readiness.blockers {"count":2}')).toBeTruthy()
+    view.unmount()
+
+    const judging = makeHarness({ review: CHECKLIST })
+    judging.fetchExperiments = vi.fn(withStatus('judging'))
+    renderView(judging)
+    await openPage(judging, 'page.design')
+    // The review did render (its passing lines are there); only the checklist is not.
+    expect(await screen.findByText('review.checks')).toBeTruthy()
+    expect(screen.queryByText('readiness.blockers {"count":2}')).toBeNull()
+    expect(screen.queryByText('readiness.forRerun')).toBeNull()
+  })
+
+  it('provision runs the condition verb; 登记仓库 opens the bind dialog', async () => {
+    const h = makeHarness({ review: CHECKLIST })
+    renderView(h)
+    await openPage(h, 'page.design')
+
+    const [provision] = await screen.findAllByRole('button', { name: 'fix.provision {"condition":"codex-exec"}' })
+    fireEvent.click(provision!)
+    await waitFor(() => {
+      expect(h.provisionCondition).toHaveBeenCalledWith('s1', { dataset: 'ds', condition: 'codex-exec' })
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'fix.bind' }))
+    expect(await screen.findByText('design.bindWhere')).toBeTruthy()
+  })
+
+  it('让 agent 处理 pre-fills the composer and never sends; without one it copies and says so', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const h = makeHarness({ review: CHECKLIST, composer: false })
+    renderView(h)
+    await openPage(h, 'page.design')
+
+    const buttons = await screen.findAllByRole('button', { name: 'fix.agent' })
+    fireEvent.click(buttons[buttons.length - 1]!)
+    const sentence = 'readiness.agentAsk {"name":"effort-sweep","k":4,"text":"a code this build has no sentence for"}'
+    expect(h.insertDraft).toHaveBeenCalledWith('s1', sentence)
+    await waitFor(() => { expect(writeText).toHaveBeenCalledWith(sentence) })
+    expect(await screen.findByText(/^agent\.copied/)).toBeTruthy()
+    expect(h.approvePlan).not.toHaveBeenCalled()
   })
 })

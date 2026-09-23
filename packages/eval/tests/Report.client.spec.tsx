@@ -11,7 +11,7 @@
  * button, never a blank page.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -45,10 +45,15 @@ const ROW: EvalExperimentsResult['rows'][number] = {
   progress: { done: 4, total: 4 },
   startedAt: 1,
   validation: null,
+  originSession: 's1',
+  archived: false,
+  closure: null,
+  lastProgressAt: null,
+  stalledMinutes: null,
   unit: null,
 }
 
-const LIST: EvalExperimentsResult = { repo: '/repo', datasets: ['harness-comparison'], notes: [], rows: [ROW] }
+const LIST: EvalExperimentsResult = { repo: '/repo', datasets: ['harness-comparison'], notes: [], rows: [ROW], session: 's1' }
 
 const DETAIL: EvalExperimentDetail = {
   row: ROW, meta: null, readiness: [], buckets: { done: 4 }, states: { released: 4 }, unreleased: [], job: null,
@@ -383,7 +388,7 @@ const DESIGN_STUBS = {
   }),
   fetchConditions: async () => ({
     ok: true as const,
-    value: { repo: '/repo', datasets: ['ds'], rows: [], notes: [] },
+    value: { repo: '/repo', datasets: ['ds'], rows: [], notes: [], session: 's1' },
   }),
   fetchConditionDiff: async () => ({ ok: false as const, error: { code: 'unused', message: 'not under test' } }),
 }
@@ -454,7 +459,8 @@ describe('the four invariants', () => {
   it('all four ok opens the comparison section', async () => {
     const h = makeHarness()
     await openReport(h)
-    expect(await screen.findByText('report.pairTitle {"a":"cond-a","b":"cond-b"}')).toBeTruthy()
+    // Once in the conclusion card, once in the audit's pair table.
+    expect(await screen.findAllByText('report.pairTitle {"a":"cond-a","b":"cond-b"}')).toHaveLength(2)
     expect(screen.queryByText(/report\.comparisonClosed/)).toBeNull()
   })
 })
@@ -894,5 +900,67 @@ describe('from a report number to the records behind it', () => {
 
     expect(await screen.findByText(/runs\.focus.*"task":"P0".*"condition":"cond-a".*"matched":2/)).toBeTruthy()
     expect(h.fetchCell).not.toHaveBeenCalled()
+  })
+})
+
+describe('the conclusion card (T72 §6)', () => {
+  const closed = (exit: 'final' | 'flagged' | 'unreviewed' | 'void', reason: string | null = null): EvalRunReportView => ({
+    ...REPORT,
+    closure: { exit, reason, at: '2026-09-23T08:00:00.000Z', by: null },
+  })
+
+  it('leads the page: each pair\'s reason verbatim, its CI line, and the source line nobody closed', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    const card = await screen.findByRole('region', { name: 'report.conclusion' })
+    expect(within(card).getByText('n = 2 < 3，不排名')).toBeTruthy()
+    expect(within(card).getByText('report.sourceDraft')).toBeTruthy()
+    // The card comes before the criteria table and the efficiency section.
+    const criteria = screen.getAllByText('report.col.criterion')[0]!
+    expect(card.compareDocumentPosition(criteria) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('says 人终评 for exits ① and ②, and ② carries its reason at the top', async () => {
+    const h = makeHarness(closed('flagged', 'judge-x 与 cond-a 同源'))
+    await openReport(h)
+    const card = await screen.findByRole('region', { name: 'report.conclusion' })
+    expect(within(card).getByText('report.flagged {"reason":"judge-x 与 cond-a 同源"}')).toBeTruthy()
+    expect(within(card).getByText('report.sourceFinal')).toBeTruthy()
+  })
+
+  it('exit ③ keeps the judge-only source line', async () => {
+    const h = makeHarness(closed('unreviewed'))
+    await openReport(h)
+    const card = await screen.findByRole('region', { name: 'report.conclusion' })
+    expect(within(card).getByText('report.sourceDraft')).toBeTruthy()
+  })
+
+  it('exit ④ replaces the whole page with the reason and a way to the run records', async () => {
+    const h = makeHarness(closed('void', '题面在运行中途被改过'))
+    await openReport(h)
+    expect(await screen.findByText('report.void {"reason":"题面在运行中途被改过"}')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'report.conclusion' })).toBeNull()
+    expect(screen.queryByText('report.col.criterion')).toBeNull()
+    expect(screen.queryByText('report.pairTitle {"a":"cond-a","b":"cond-b"}')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'cta.void' }))
+    expect(screen.getByRole('button', { name: 'page.runs' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('the validity line counts the checks, and clicking it opens the collapsed audit', async () => {
+    const h = makeHarness(BLOCKED)
+    await openReport(h)
+    const card = await screen.findByRole('region', { name: 'report.conclusion' })
+    const validity = within(card).getByRole('button', { name: /report\.validitySome/ })
+    const audit = document.getElementById('eval-report-audit') as HTMLDetailsElement
+    expect(audit.open).toBe(false)
+    fireEvent.click(validity)
+    expect(audit.open).toBe(true)
+  })
+
+  it('all checks passing reads ✓', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    const card = await screen.findByRole('region', { name: 'report.conclusion' })
+    expect(within(card).getByText('report.validityAll {"passed":4,"total":4}')).toBeTruthy()
   })
 })

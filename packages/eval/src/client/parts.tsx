@@ -50,6 +50,8 @@ const STATUS_TONE: Readonly<Record<EvalExperimentStatus, Tone>> = {
   'done': 'ok',
   'refused': 'danger',
   'cancelled': 'neutral',
+  'stalled': 'warn',
+  'void': 'neutral',
 }
 
 /**
@@ -251,6 +253,17 @@ export function Duration(props: { ms: number | null; t: LabViewProps['t'] }) {
 }
 
 /**
+ * How long a stalled run has sat, in the units the runs table already uses
+ * (「7 天 2 小时」), not a raw minute count nobody can read at a glance.
+ * @param minutes - minutes since the last progress.
+ * @param t - the locale seat.
+ */
+export function stalledFor(minutes: number, t: LabViewProps['t']): string {
+  const parts = durationParts(minutes * 60_000)
+  return parts === null ? String(minutes) : t(parts.key, parts.params)
+}
+
+/**
  * A count, compacted (ui-spec §九: `31.5k`). A dash is not a zero — a harness
  * that never reported tool calls prints «—», not 0.
  * @param props - the count, or null when nobody counted.
@@ -297,9 +310,22 @@ export function listOrDash(values: readonly string[]): string {
  * English sentence, an absolute path, a raw payload (ui-spec §九).
  * @param props - the summary line and whatever is folded under it.
  */
-export function Detail(props: { summary: string; children: ReactNode }) {
+export function Detail(props: {
+  summary: string
+  children: ReactNode
+  /** Controlled mode: the caller holds the open state (the report's audit fold). */
+  open?: boolean
+  onToggle?: (open: boolean) => void
+  id?: string
+}) {
+  const controlled = props.open === undefined
+    ? {}
+    : {
+      open: props.open,
+      onToggle: (event: { currentTarget: HTMLDetailsElement }) => { props.onToggle?.(event.currentTarget.open) },
+    }
   return (
-    <details className={css.errorDetails}>
+    <details className={css.errorDetails} id={props.id} {...controlled}>
       <summary className={css.errorSummary}>{props.summary}</summary>
       {props.children}
     </details>
@@ -367,7 +393,7 @@ export function invariantTone(status: string): Tone {
  * three of the six move the reader to another stage, one re-reads, and two are
  * the human acts (ui-spec R1) the page already owned.
  */
-export type StageVerb = 'design' | 'runs' | 'compare' | 'review' | 'refresh' | 'approve'
+export type StageVerb = 'design' | 'runs' | 'compare' | 'review' | 'refresh' | 'approve' | 'rerun'
 
 /** One experiment status, said as a sentence and a button. */
 export interface StageAction {
@@ -397,6 +423,8 @@ const STAGE_ACTIONS: Readonly<Record<EvalExperimentStatus, StageAction>> = {
   'done': { hint: 'cta.doneHint', cta: 'cta.done', verb: 'compare' },
   'refused': { hint: 'cta.refusedHint', cta: 'cta.refused', verb: 'refresh' },
   'cancelled': { hint: 'cta.cancelledHint', cta: 'cta.cancelled', verb: 'runs' },
+  'stalled': { hint: 'cta.stalledHint', cta: 'cta.stalled', verb: 'rerun' },
+  'void': { hint: 'cta.voidHint', cta: 'cta.void', verb: 'runs' },
 }
 
 /**
@@ -421,12 +449,16 @@ export function stageAction(status: EvalExperimentStatus): StageAction {
 export function ReadyBadge(props: {
   rows: ReadonlyArray<{ id: string; ok: boolean; note?: string | undefined }>
   onRecheck: () => void
+  /** The rows are the probe the run took when it started, shown on a run that has since stopped moving. */
+  atStart?: boolean
   t: LabViewProps['t']
 }) {
-  const { rows, onRecheck, t } = props
+  const { rows, onRecheck, atStart = false, t } = props
   if (rows.length === 0) return <span className={css.dim}>{t('ready.pending')}</span>
   const failed = rows.filter(row => !row.ok)
-  if (failed.length === 0) return <Chip tone="ok">✓ {t('ready.badge')}</Chip>
+  // A stalled run's badge is its start-time probe; said plainly, so it does not
+  // read as a verdict on the plan beside a checklist that re-checked it now.
+  if (failed.length === 0) return <Chip tone="ok">✓ {t(atStart ? 'ready.badgeAtStart' : 'ready.badge')}</Chip>
   return (
     <div className={css.readiness}>
       <div className={css.readinessLine}>

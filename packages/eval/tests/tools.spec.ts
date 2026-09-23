@@ -442,6 +442,17 @@ describe('eval_run_status', () => {
     ])
   })
 
+  it('answers the lab list\'s status word for the same run (T72 §2)', async () => {
+    const mission = missionFace()
+    const tool = toolsOver(new EvalService({ get: (name) => (name === 'mission' ? mission : undefined) })).get('eval_run_status') as RegisteredTool
+    const report = await tool.execute({ run_id: 'run-1' }, {}) as { status: string; stalledMinutes: number | null; closure: unknown; archived: boolean }
+    // No live job and a ledger that last moved at t=40ms: long past the threshold.
+    expect(report.status).toBe('stalled')
+    expect(report.stalledMinutes).toBeGreaterThan(10)
+    expect(report.closure).toBeNull()
+    expect(report.archived).toBe(false)
+  })
+
   it('says so in words when the composition mounts no mission service', async () => {
     const tool = toolsOver(new EvalService({ get: () => undefined })).get('eval_run_status') as RegisteredTool
     await expect(tool.execute({ run_id: 'run-1' }, {})).rejects.toThrow(/no mission service/)
@@ -595,7 +606,9 @@ describe('eval_cells', () => {
       id: 'run-1',
       runId: 'run-1',
       name: 'p',
-      status: 'running',
+      // The fake run started at t=5 and no job of this instance is running
+      // it, so by T72's stall rule the listing calls it 停滞, not 运行中.
+      status: 'stalled',
       conditions: ['dsh-exec'],
       items: 1,
       reps: 2,

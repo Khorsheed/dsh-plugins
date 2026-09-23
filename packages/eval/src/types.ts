@@ -103,15 +103,89 @@ export interface EvalRunOutputView {
  * - `refused` — the job settled as failed (the readiness gate is the usual
  *   reason, and the usual one leaves no run in the ledger at all).
  * - `cancelled` — the job was killed.
+ * - `void` — a human took closure exit ④ (放弃终评): the evaluation does not
+ *   stand. Terminal.
+ * - `stalled` — DERIVED, never written: the run is not terminal, no job of
+ *   this instance is live for it, and nothing in the ledger moved for longer
+ *   than the stall threshold (`STALL_THRESHOLD_MS`).
+ *
+ * T72 changed two meanings: `judging` now also covers a fully released run
+ * nobody closed, and `done` needs a closure with exit ①②③. An experiment
+ * never becomes `done` on its own.
  */
 export type EvalExperimentStatus =
   | 'draft'
   | 'pending-approval'
   | 'running'
+  | 'stalled'
   | 'judging'
   | 'done'
+  | 'void'
   | 'refused'
   | 'cancelled'
+
+/** The four exits of human review (T72): ① final ② flagged ③ unreviewed ④ void. */
+export type EvalClosureExit = 'final' | 'flagged' | 'unreviewed' | 'void'
+
+/** One closure, as read back. */
+export interface EvalClosure {
+  exit: EvalClosureExit
+  /** Verbatim; null for the exits that take none. */
+  reason: string | null
+  /** ISO time the human took the exit. */
+  at: string
+  by: string | null
+}
+
+/** One archive mark, as read back. */
+export interface EvalArchiveMark {
+  archived: boolean
+  at: string
+  by: string | null
+}
+
+/** Everything the list needs from a run's annotations, in one pass. */
+export interface EvalRunMarks {
+  closure: EvalClosure | null
+  archive: EvalArchiveMark | null
+  /** Epoch ms of the newest annotation of any kind — one input to "latest progress". */
+  lastAnnotationAt: number | null
+}
+
+/** What an archive write answers. */
+export interface EvalArchiveWrite {
+  recorded: boolean
+  /** The ledger's own words when it refused; null otherwise. */
+  detail: string | null
+  /** The mark now in force. */
+  archive: EvalArchiveMark | null
+}
+
+/** `closeRun`'s request: which exit, and the reason (required for `flagged` / `void`). */
+export interface EvalCloseRunRequest {
+  runId: string
+  exit: EvalClosureExit
+  reason?: string | null
+}
+
+/** `archiveRun`'s request. */
+export interface EvalArchiveRunRequest {
+  runId: string
+  archived: boolean
+}
+
+/** Why a closure write did not land — structured, so the browser composes the sentence. */
+export type EvalClosureRefusal = 'reason-required' | 'already-void' | 'unknown-exit' | 'no-cell' | 'ledger'
+
+export interface EvalClosureWrite {
+  recorded: boolean
+  refusal: EvalClosureRefusal | null
+  /** The ledger's own words when `refusal` is `ledger` / `no-cell`; null otherwise. */
+  detail: string | null
+  /** The closure now in force (the new one when recorded, the standing one when refused). */
+  closure: EvalClosure | null
+}
+
 
 /** The dataset snapshot an experiment is pinned to. */
 export interface EvalExperimentSnapshot {
@@ -166,6 +240,22 @@ export interface EvalExperimentRow {
   validation: { ok: boolean; errors: number; warnings: number } | null
   /** The container segment, when the plan or the run declares one. */
   unit: EvalExperimentUnit | null
+  /**
+   * The session that started the run; null for a draft and for a run started
+   * outside any session (the CLI). The list's 「本会话发起」 filter reads it.
+   */
+  originSession: string | null
+  /** The newest archive mark says archived. Grouping only — never the status. */
+  archived: boolean
+  /** The closure in force; null while nobody took an exit. */
+  closure: EvalClosure | null
+  /**
+   * Epoch ms of the newest ledger movement (a cell entering a state, an
+   * annotation, the run's creation); null for a draft.
+   */
+  lastProgressAt: number | null
+  /** Whole minutes since {@link lastProgressAt} when `status` is `stalled`; null otherwise. */
+  stalledMinutes: number | null
 }
 
 /** The lab list answer. */
@@ -180,6 +270,12 @@ export interface EvalExperimentsResult {
    * plan, a mission service that cannot list runs. The list still answers.
    */
   notes: string[]
+  /**
+   * The calling session's id, so the browser can split rows into 本会话发起
+   * (`row.originSession === session`) and the rest. Null when the call came
+   * from no session.
+   */
+  session: string | null
 }
 
 /** What narrows the lab list; every field optional (the session decides by default). */
@@ -280,6 +376,11 @@ export interface EvalPlanCheck {
   /** validate's own diagnostic code, or `CONDITION_READY` for a resolved condition. */
   code: string
   message: string
+  /**
+   * The condition the line is about, when it is about one — the checklist's
+   * fix button names it («provision dsh-full»). Null for plan-level lines.
+   */
+  condition: string | null
 }
 
 /** One condition a plan names, as the review page reports it. */
@@ -1356,6 +1457,12 @@ export interface EvalRunReportView {
   summaryWritten: boolean
   /** Whether a recorded export can be repeated in one click (a note exists). */
   reexportable: boolean
+  /**
+   * The closure in force (T72) — decides the conclusion card's source line,
+   * and a `void` one replaces the whole page with its reason. Read from the
+   * ledger, so it is current even when the bundle is not.
+   */
+  closure: EvalClosure | null
   invariants: EvalReportInvariant[]
   /** True only when the first four invariants are established (verdict coverage degrades pairs, never the section). */
   comparisonAllowed: boolean
@@ -1561,6 +1668,13 @@ export interface EvalJudgeQueueCell {
   humanFinal: EvalJudgeHumanVerdict[]
   /** Whether this cell already carries a human-final verdict — the queue's split. */
   graded: boolean
+  /**
+   * 判官缺席: judge calls on this cell's current attempt all failed and no
+   * `llm-draft` landed — the same predicate the report's coverage check uses.
+   * The bench names such cells at the top (T72) so a grader knows before
+   * the report downgrades the pair.
+   */
+  judgeAbsent: boolean
   /**
    * Criteria this cell has an `llm-draft` value for and NO human-final.
    *

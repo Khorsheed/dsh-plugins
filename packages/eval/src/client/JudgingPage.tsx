@@ -34,7 +34,7 @@
 import { useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  EvalJudgeCriterionRow, EvalJudgeDraftSample, EvalJudgeQueueCell, EvalJudgeQueueView,
+  EvalClosure, EvalClosureExit, EvalJudgeCriterionRow, EvalJudgeDraftSample, EvalJudgeQueueCell, EvalJudgeQueueView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
@@ -314,6 +314,97 @@ function AnswerColumn(props: {
   )
 }
 
+/** The four exits in the order the page lists them (T72 §5). */
+const EXITS: readonly EvalClosureExit[] = ['final', 'flagged', 'unreviewed', 'void']
+/** The two exits whose whole point is the sentence that explains them. */
+const NEEDS_REASON: ReadonlySet<EvalClosureExit> = new Set(['flagged', 'void'])
+
+/**
+ * The FOUR EXITS at the foot of the bench (T72 §5). Human review ends one of
+ * four ways, and until one is taken the experiment stays 评估中 — «the judge
+ * is done» is not «a person has said what the result is».
+ *
+ * ① 提交终评 needs at least one final verdict on record: an exit that says
+ * «a human reviewed this» over zero human verdicts would be the one false
+ * sentence this page could write. ② and ④ open a reason box, and the server
+ * refuses them without one as well. Once ④ is in force the exits are gone:
+ * the server refuses anything after it, and the page says why instead of
+ * offering buttons that can only fail.
+ */
+function ClosureExits(props: {
+  closure: EvalClosure | null
+  anyGraded: boolean
+  closing: boolean
+  onClose: (exit: EvalClosureExit, reason: string) => void
+  t: LabViewProps['t']
+}) {
+  const { closure, anyGraded, closing, onClose, t } = props
+  const [asking, setAsking] = useState<'flagged' | 'void' | null>(null)
+  const [reason, setReason] = useState('')
+  if (closure?.exit === 'void') {
+    return (
+      <Section title={t('closure.title')}>
+        <div className={css.blocked}>{t('closure.voided', { reason: closure.reason ?? DASH })}</div>
+      </Section>
+    )
+  }
+  const take = (exit: EvalClosureExit): void => {
+    if (exit === 'flagged' || exit === 'void') {
+      setAsking(exit)
+      setReason('')
+      return
+    }
+    onClose(exit, '')
+  }
+  return (
+    <Section title={t('closure.title')} meta={t('closure.hint')}>
+      {closure !== null && (
+        <div className={css.dim}>
+          {t('closure.standing', { exit: t(`closure.exit.${closure.exit}`), at: closure.at.slice(0, 16).replace('T', ' ') })}
+          {closure.reason !== null && <> · 「{closure.reason}」</>}
+        </div>
+      )}
+      <div className={css.actions}>
+        {EXITS.map(exit => (
+          <Button
+            key={exit}
+            size="sm"
+            {...(exit === 'final' ? { variant: 'primary' as const } : {})}
+            disabled={closing || (exit === 'final' && !anyGraded)}
+            title={exit === 'final' && !anyGraded ? t('closure.finalNeedsGrade') : t(`closure.exitHint.${exit}`)}
+            onClick={() => { take(exit) }}
+          >
+            {t(`closure.exit.${exit}`)}{NEEDS_REASON.has(exit) ? '…' : ''}
+          </Button>
+        ))}
+      </div>
+      {asking !== null && (
+        <div className={css.closureReason}>
+          <label className={css.dim} htmlFor="eval-closure-reason">{t(`closure.reasonAsk.${asking}`)}</label>
+          <Input
+            id="eval-closure-reason"
+            value={reason}
+            onChange={(event) => { setReason(event.target.value) }}
+            placeholder={t('closure.reasonPlaceholder')}
+            aria-label={t(`closure.reasonAsk.${asking}`)}
+          />
+          <div className={css.actions}>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={closing || reason.trim() === ''}
+              onClick={() => { onClose(asking, reason); setAsking(null) }}
+            >
+              {t(`closure.confirm.${asking}`)}
+            </Button>
+            <Button size="sm" onClick={() => { setAsking(null) }}>{t('closure.cancel')}</Button>
+          </div>
+        </div>
+      )}
+    </Section>
+  )
+}
+
 /**
  * The human-review body.
  * @param props - the blind queue, the open item's draft answers, and the write.
@@ -334,11 +425,21 @@ export function JudgingPage(props: {
   onSubmit: (ticket: string) => void
   /** Repeat the run's recorded export so the bundle carries these verdicts. */
   onReexport: () => void
+  /** The closure in force (from the list row); null while none was taken. */
+  closure: EvalClosure | null
+  closing: boolean
+  onClose: (exit: EvalClosureExit, reason: string) => void
+  /**
+   * Ask for a re-judge of the answers whose judge is absent. There is no
+   * re-judge verb; the page hands the agent a sentence naming the answers by
+   * their blind numbers, so nothing here learns what they are.
+   */
+  onRejudge: (cellNos: readonly number[]) => void
   t: LabViewProps['t']
 }) {
   const {
     view, loading, error, selection, draft, submitting, reexporting,
-    onPick, onAnswer, onSubmit, onReexport, t,
+    onPick, onAnswer, onSubmit, onReexport, closure, closing, onClose, onRejudge, t,
   } = props
   // The queue's own filter — view-local, because it narrows what THIS grader
   // is looking at and nothing else on the page (or in the ledger) depends on
@@ -353,10 +454,23 @@ export function JudgingPage(props: {
     mode === 'all' || (mode === 'ungraded' ? item.graded < item.cells.length : item.graded === item.cells.length)
   ))
   const open = items.find(item => item.task === selection) ?? null
+  const absent = view.cells.filter(cell => cell.judgeAbsent).map(cell => cell.cellNo)
+  const anyGraded = view.cells.some(cell => cell.graded)
 
   return (
     <div className={css.judgePage}>
       <div className={css.notice}>{t('judge.blindNotice')}</div>
+      {/* 判官缺席: the judge ran on these answers and left no parseable
+          verdict. Named by blind number only; 补判 is optional because the
+          human's own verdict stands without it. */}
+      {absent.length > 0 && (
+        <div className={css.notice}>
+          <div>{t('judge.absent', { cells: absent.join('、'), count: absent.length })}</div>
+          <div className={css.actions}>
+            <Button size="sm" onClick={() => { onRejudge(absent) }}>{t('judge.rejudge')}</Button>
+          </div>
+        </div>
+      )}
       {/* A re-read over an already-rendered queue: say so rather than blanking
           the page, so a grader watching their own submission land can see it
           is in flight. */}
@@ -436,6 +550,7 @@ export function JudgingPage(props: {
               )}
           </div>
         )}
+      <ClosureExits closure={closure} anyGraded={anyGraded} closing={closing} onClose={onClose} t={t} />
     </div>
   )
 }

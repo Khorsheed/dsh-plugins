@@ -44,10 +44,15 @@ const ROW: EvalExperimentsResult['rows'][number] = {
   progress: { done: 2, total: 2 },
   startedAt: 1,
   validation: null,
+  originSession: 's1',
+  archived: false,
+  closure: null,
+  lastProgressAt: null,
+  stalledMinutes: null,
   unit: null,
 }
 
-const LIST: EvalExperimentsResult = { repo: '/repo', datasets: ['harness-comparison'], notes: [], rows: [ROW] }
+const LIST: EvalExperimentsResult = { repo: '/repo', datasets: ['harness-comparison'], notes: [], rows: [ROW], session: 's1' }
 
 const DETAIL: EvalExperimentDetail = {
   row: ROW, meta: null, readiness: [], buckets: { done: 2 }, states: { archived: 2 }, unreleased: [], job: null,
@@ -220,7 +225,7 @@ const DESIGN_STUBS = {
   }),
   fetchConditions: async () => ({
     ok: true as const,
-    value: { repo: '/repo', datasets: ['ds'], rows: [], notes: [] },
+    value: { repo: '/repo', datasets: ['ds'], rows: [], notes: [], session: 's1' },
   }),
   fetchConditionDiff: async () => ({ ok: false as const, error: { code: 'unused', message: 'not under test' } }),
 }

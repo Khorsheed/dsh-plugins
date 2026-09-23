@@ -10,9 +10,9 @@ import type {} from '@khorsheed/dsh-eval/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  EvalApproveRequest, EvalApproveResult, EvalCellArtifactRequest, EvalCellArtifactView,
+  EvalApproveRequest, EvalApproveResult, EvalArchiveRunRequest, EvalArchiveWrite, EvalCellArtifactRequest, EvalCellArtifactView,
   EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
-  EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCellsResult, EvalConditionDiffRequest,
+  EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCloseRunRequest, EvalClosureWrite, EvalCellsResult, EvalConditionDiffRequest,
   EvalConditionDiffView, EvalConditionEndpointRequest, EvalConditionEndpointView,
   EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionsRequest, EvalConditionsView,
   EvalDraftOptionsRequest, EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult, EvalExperimentDetail,
@@ -164,6 +164,22 @@ export interface LabViewInjected {
    * run recorded without an originSession allows.
    */
   openSession: (sessionId: SessionId, parentSessionId: SessionId | null) => void
+  /**
+   * CLOSE human review by one of the four exits (T72): 提交终评, 带标记提交,
+   * 不做终评直接收尾, 放弃终评. A human's click and nothing else's — the
+   * closure is what moves an experiment out of 评估中, and no model-facing
+   * tool reaches the verb.
+   */
+  closeRun: (sessionId: SessionId, request: EvalCloseRunRequest) => Promise<RemoteResult<EvalClosureWrite>>
+  /** Archive or restore a run. Grouping only; the status never reads it. */
+  archiveRun: (sessionId: SessionId, request: EvalArchiveRunRequest) => Promise<RemoteResult<EvalArchiveWrite>>
+  /**
+   * PRE-FILL the session's composer with a sentence for the agent — never
+   * send it. The host's conversation input is the door (the quote plugin's
+   * precedent); false means no composer was reachable, and the caller falls
+   * back to the clipboard.
+   */
+  insertDraft: (sessionId: SessionId, text: string) => boolean
 }
 
 /** Full props of the lab view entry (runtime + store + injected + locale shares). */

@@ -62,6 +62,8 @@ import type { EvalService } from './service.ts'
 import type {
   EvalApproveRequest,
   EvalApproveResult,
+  EvalArchiveRunRequest,
+  EvalArchiveWrite,
   EvalCellArtifactRequest,
   EvalCellArtifactView,
   EvalCellDetail,
@@ -71,6 +73,8 @@ import type {
   EvalCellRetryResult,
   EvalCellsRequest,
   EvalCellsResult,
+  EvalCloseRunRequest,
+  EvalClosureWrite,
   EvalConditionDiffRequest,
   EvalConditionDiffView,
   EvalConditionEndpointRequest,
@@ -611,6 +615,27 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   @Remote('humanFinal')
   humanFinal(agent: Agent, request: EvalHumanFinalRequest): Promise<EvalHumanFinalResult> {
     return this.service.humanFinal(request.runId, request.ticket, request.verdicts, String(agent.session.id))
+  }
+
+  /**
+   * Take one of the four closure exits at the bottom of the judge bench
+   * (T72). A HUMAN gesture from the tab — the eval tools have no path here.
+   * @param agent - the closing session; recorded as `tab:<sessionId>`.
+   * @param request - the run, the exit, and its reason.
+   */
+  @Remote('closeRun')
+  closeRun(agent: Agent, request: EvalCloseRunRequest): Promise<EvalClosureWrite> {
+    return this.service.closeRun(request.runId, { exit: request.exit, reason: request.reason ?? null }, `tab:${String(agent.session.id)}`)
+  }
+
+  /**
+   * Archive or un-archive an experiment. Changes the list's grouping only.
+   * @param agent - the session; recorded as `tab:<sessionId>`.
+   * @param request - the run and the flag.
+   */
+  @Remote('archiveRun')
+  archiveRun(agent: Agent, request: EvalArchiveRunRequest): Promise<EvalArchiveWrite> {
+    return this.service.archiveRun(request.runId, request.archived, `tab:${String(agent.session.id)}`)
   }
 
   /**

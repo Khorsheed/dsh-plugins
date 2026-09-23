@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { deriveExperimentStatus, experimentDetail, listExperiments } from '../src/experiments.ts'
+import { deriveExperimentStatus, experimentDetail, listExperiments, STALL_THRESHOLD_MS } from '../src/experiments.ts'
 import { conditionFactors } from '../src/read.ts'
 import type { MissionRunListFace } from '../src/faces.ts'
 import type { EvalRunStatus } from '../src/job.ts'
@@ -76,13 +76,23 @@ function repoWithPlan(
 }
 
 /** One cell of the fake ledger. */
-interface Cell { id: string; task: string; condition: string; rep: number; state: string; bucket: string }
+interface Cell {
+  id: string
+  task: string
+  condition: string
+  rep: number
+  state: string
+  bucket: string
+  enteredCurrentAt?: number
+  annotations?: Array<{ ns: string; attempt: number; payload: unknown; createdAt: number }>
+}
 
 /** A mission face over in-memory runs — the structural face, nothing imported. */
 function ledger(runs: Array<{
   id: string
   meta: Record<string, unknown>
   createdAt?: number
+  originSession?: string
   cells: Cell[]
   unreleased?: string[]
 }>): MissionRunListFace {
@@ -94,19 +104,29 @@ function ledger(runs: Array<{
       const buckets: Record<string, string[]> = {}
       for (const cell of run.cells) (buckets[cell.bucket] ??= []).push(cell.id)
       return {
-        run: { id: run.id, state: 'active', createdAt: run.createdAt ?? 1_700_000_000_000, meta: run.meta },
+        run: {
+          id: run.id,
+          state: 'active',
+          createdAt: run.createdAt ?? 1_700_000_000_000,
+          meta: run.meta,
+          ...(run.originSession === undefined ? {} : { originSession: run.originSession }),
+        },
         rows: run.cells.map(cell => ({
           id: cell.id,
           labels: { task: cell.task, condition: cell.condition, rep: String(cell.rep) },
           state: cell.state,
           bucket: cell.bucket,
           currentAttempt: 1,
+          ...(cell.enteredCurrentAt === undefined ? {} : { enteredCurrentAt: cell.enteredCurrentAt }),
         })),
         buckets,
         unreleased: run.unreleased ?? [],
       }
     },
-    get: () => ({ mission: { annotations: [] } }),
+    get: (missionId: string, runId?: string) => {
+      const cell = runs.find(entry => entry.id === runId)?.cells.find(entry => entry.id === missionId)
+      return { mission: { annotations: cell?.annotations ?? [] } }
+    },
   }
 }
 
@@ -166,12 +186,44 @@ describe('deriveExperimentStatus', () => {
     })).toBe('running')
   })
 
-  it('a moving cell means running even after the job settled', () => {
+  it('a moving cell means running even after the job settled, until the stall threshold passes', () => {
+    const now = 1_757_700_000_000
     expect(deriveExperimentStatus({
       validation: null,
       run: { cellStates: ['stage-1', 'archived'], buckets: { active: 1, done: 1 } },
       job: { status: 'completed' },
+      lastProgressAt: now - STALL_THRESHOLD_MS,
+      now,
     })).toBe('running')
+    expect(deriveExperimentStatus({
+      validation: null,
+      run: { cellStates: ['stage-1', 'archived'], buckets: { active: 1, done: 1 } },
+      job: { status: 'completed' },
+      lastProgressAt: now - STALL_THRESHOLD_MS - 1,
+      now,
+    })).toBe('stalled')
+  })
+
+  it('a live job is never stalled, however old the last ledger movement', () => {
+    const now = 1_757_700_000_000
+    expect(deriveExperimentStatus({
+      validation: null,
+      run: { cellStates: ['stage-1'], buckets: { active: 1 } },
+      job: { status: 'running' },
+      lastProgressAt: now - 60 * 60_000,
+      now,
+    })).toBe('running')
+  })
+
+  it('judging waits on a human, which is not stalling', () => {
+    const now = 1_757_700_000_000
+    expect(deriveExperimentStatus({
+      validation: null,
+      run: { cellStates: ['judged', 'released'], buckets: { done: 2 } },
+      job: null,
+      lastProgressAt: now - 60 * 60_000,
+      now,
+    })).toBe('judging')
   })
 
   it('every cell at judged or beyond, with nothing live, is judging', () => {
@@ -184,12 +236,21 @@ describe('deriveExperimentStatus', () => {
     }
   })
 
-  it('every cell released is done — finalize is the definition', () => {
+  it('every cell released but nobody closed is still judging — it never becomes done on its own', () => {
     expect(deriveExperimentStatus({
       validation: null,
       run: { cellStates: ['released', 'released'], buckets: { done: 2 } },
       job: { status: 'completed' },
-    })).toBe('done')
+    })).toBe('judging')
+  })
+
+  it('a closure decides: exits ①②③ are done, exit ④ is void — and it outranks the job', () => {
+    const run = { cellStates: ['judged', 'judged'], buckets: { done: 2 } }
+    for (const exit of ['final', 'flagged', 'unreviewed'] as const) {
+      expect(deriveExperimentStatus({ validation: null, run, job: null, closure: { exit } })).toBe('done')
+    }
+    expect(deriveExperimentStatus({ validation: null, run, job: null, closure: { exit: 'void' } })).toBe('void')
+    expect(deriveExperimentStatus({ validation: null, run, job: { status: 'failed' }, closure: { exit: 'void' } })).toBe('void')
   })
 
   it('a failed job is refused, and a killed one is cancelled — both outrank the ledger', () => {
@@ -199,6 +260,14 @@ describe('deriveExperimentStatus', () => {
       run: { cellStates: ['released'], buckets: { done: 1 } },
       job: { status: 'failed' },
     })).toBe('refused')
+    // A stale ledger does not turn a killed job into a stall.
+    expect(deriveExperimentStatus({
+      validation: null,
+      run: { cellStates: ['stage-1'], buckets: { active: 1 } },
+      job: { status: 'killed' },
+      lastProgressAt: 0,
+      now: 1_757_700_000_000,
+    })).toBe('cancelled')
     expect(deriveExperimentStatus({
       validation: null,
       run: { cellStates: ['stage-1'], buckets: { active: 1 } },
@@ -306,7 +375,7 @@ describe('listExperiments', () => {
       id: 'run-20260913-aa',
       name: 'harness-comparison',
       runId: 'run-20260913-aa',
-      status: 'done',
+      status: 'judging',
       items: 2,
       reps: 1,
       conditions: ['cond-a', 'cond-b'],
@@ -370,7 +439,9 @@ describe('listExperiments', () => {
       meta: runMeta('/gone/plan.json'),
       cells: [{ id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'stage-1', bucket: 'active' }],
     }])
-    const result = await listExperiments({ mission })
+    // The fixture's ledger last moved in 2025; the clock is pinned to that
+    // run's start so the stall rule does not fire on an old fixture.
+    const result = await listExperiments({ mission, now: 1_757_600_000_000 })
     expect(result.repo).toBeNull()
     expect(result.rows.map(row => row.status)).toEqual(['running'])
     expect(result.notes.some(note => note.includes('no dataset repository'))).toBe(true)
@@ -383,6 +454,106 @@ describe('listExperiments', () => {
     expect(result.rows).toHaveLength(1)
     expect(result.rows[0]!.runId).toBeNull()
     expect(result.notes.some(note => note.includes('cannot list runs'))).toBe(true)
+  })
+})
+
+describe('listExperiments — T72 journey fields', () => {
+  const NOW = 1_757_700_000_000
+  const closure = (exit: string, createdAt: number, reason: string | null = null) => ({
+    ns: 'eval-closure', attempt: 1, createdAt,
+    payload: { kind: 'closure', exit, reason, at: new Date(createdAt).toISOString(), by: 'tab:s1' },
+  })
+  const archive = (archived: boolean, createdAt: number) => ({
+    ns: 'eval-archive', attempt: 1, createdAt,
+    payload: { kind: 'archive', archived, at: new Date(createdAt).toISOString(), by: 'tab:s1' },
+  })
+
+  it('a run with no live job and no movement for over ten minutes is stalled, with its age in minutes', async () => {
+    const mission = ledger([{
+      id: 'run-stuck',
+      meta: runMeta('/gone/plan.json', { startedAt: NOW - 40 * 60_000 }),
+      createdAt: NOW - 40 * 60_000,
+      cells: [
+        { id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'stage-1', bucket: 'active', enteredCurrentAt: NOW - 25 * 60_000 },
+        { id: '2', task: 'P0', condition: 'cond-b', rep: 1, state: 'pending', bucket: 'ready' },
+      ],
+    }])
+    const result = await listExperiments({ mission, now: NOW })
+    expect(result.rows[0]).toMatchObject({ status: 'stalled', stalledMinutes: 25, lastProgressAt: NOW - 25 * 60_000 })
+  })
+
+  it('progress within ten minutes is not stalled — an annotation counts as movement', async () => {
+    const mission = ledger([{
+      id: 'run-moving',
+      meta: runMeta('/gone/plan.json', { startedAt: NOW - 40 * 60_000 }),
+      createdAt: NOW - 40 * 60_000,
+      cells: [{
+        id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'stage-1', bucket: 'active',
+        enteredCurrentAt: NOW - 30 * 60_000,
+        annotations: [{ ns: 'orchestrator', attempt: 1, payload: { kind: 'delegation' }, createdAt: NOW - 3 * 60_000 }],
+      }],
+    }])
+    const result = await listExperiments({ mission, now: NOW })
+    expect(result.rows[0]).toMatchObject({ status: 'running', stalledMinutes: null })
+  })
+
+  it('a live job of this instance keeps an old run out of 停滞', async () => {
+    const mission = ledger([{
+      id: 'run-live',
+      meta: runMeta('/gone/plan.json', { startedAt: NOW - 40 * 60_000 }),
+      createdAt: NOW - 40 * 60_000,
+      cells: [{ id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'stage-1', bucket: 'active' }],
+    }])
+    const jobs: EvalRunStatus[] = [{
+      jobId: 'eval-run-1', runId: 'run-live', status: 'running', startedAt: NOW - 40 * 60_000, lines: 3,
+    }]
+    const result = await listExperiments({ mission, jobs, now: NOW })
+    expect(result.rows[0]!.status).toBe('running')
+  })
+
+  it('a CLI run with no originSession is still listed, with originSession null; the caller session is echoed', async () => {
+    const mission = ledger([
+      { id: 'run-mine', meta: runMeta('/a/plan-a.json'), originSession: 's1', cells: [] },
+      { id: 'run-cli', meta: runMeta('/a/plan-b.json'), cells: [] },
+    ])
+    const result = await listExperiments({ mission, session: 's1', now: 1_700_000_000_000 })
+    expect(result.session).toBe('s1')
+    expect(result.rows.map(row => [row.runId, row.originSession])).toEqual(
+      expect.arrayContaining([['run-mine', 's1'], ['run-cli', null]]),
+    )
+  })
+
+  it('the newest closure decides the status and rides on the row', async () => {
+    const mission = ledger([{
+      id: 'run-closed',
+      meta: runMeta('/gone/plan.json'),
+      cells: [
+        { id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'judged', bucket: 'done', annotations: [closure('unreviewed', 100)] },
+        { id: '2', task: 'P0', condition: 'cond-b', rep: 1, state: 'judged', bucket: 'done', annotations: [closure('flagged', 200, '判官缺席，只看方向')] },
+      ],
+    }])
+    const result = await listExperiments({ mission, now: NOW })
+    expect(result.rows[0]).toMatchObject({ status: 'done', closure: { exit: 'flagged', reason: '判官缺席，只看方向' } })
+  })
+
+  it('archive changes grouping only: the status is untouched, and the newest mark wins', async () => {
+    const cells = (annotations: Cell['annotations']): Cell[] => [
+      { id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'judged', bucket: 'done', annotations },
+    ]
+    const mission = ledger([
+      { id: 'run-archived', meta: runMeta('/a/one.json'), cells: cells([archive(true, 100)]) },
+      { id: 'run-restored', meta: runMeta('/a/two.json'), cells: cells([archive(true, 100), archive(false, 200)]) },
+    ])
+    const result = await listExperiments({ mission, now: NOW })
+    const byRun = new Map(result.rows.map(row => [row.runId, row]))
+    expect(byRun.get('run-archived')).toMatchObject({ archived: true, status: 'judging' })
+    expect(byRun.get('run-restored')).toMatchObject({ archived: false, status: 'judging' })
+  })
+
+  it('drafts carry the journey fields as empty', async () => {
+    const { repo } = repoWithPlan()
+    const result = await listExperiments({ repo, datasets: ['ds'] })
+    expect(result.rows[0]).toMatchObject({ originSession: null, archived: false, closure: null, lastProgressAt: null, stalledMinutes: null })
   })
 })
 
