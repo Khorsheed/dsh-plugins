@@ -353,7 +353,10 @@ export function DatasetsView(props: DatasetsViewProps) {
             <div>
               {imported.imported.length === 0 && imported.dangling.length === 0
                 ? t('import.nothing')
-                : t('import.done', { count: imported.imported.length })}
+                : t('import.done', {
+                    created: imported.imported.filter(entry => entry.created).length,
+                    merged: imported.imported.filter(entry => !entry.created).length,
+                  })}
             </div>
             {imported.imported.map(entry => (
               <div key={entry.id} className={css.importLine}>

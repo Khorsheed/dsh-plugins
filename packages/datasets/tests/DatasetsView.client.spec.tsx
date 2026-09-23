@@ -475,7 +475,7 @@ describe('the one-click import', () => {
     const h = makeHarness()
     renderView(h)
     fireEvent.click(await screen.findByText('registry.import'))
-    expect(await screen.findByText(/import\.done .*"count":1/)).toBeTruthy()
+    expect(await screen.findByText(/import\.done .*"created":1,"merged":0/)).toBeTruthy()
     expect(screen.getByText(/import\.created .*"id":"dataseek-eval".*"sessions":3.*"paths":2/)).toBeTruthy()
     const dangling = screen.getByText(/import\.dangling .*"name":"old-scratch"/)
     expect(dangling.textContent).toContain('import.why.missing')
