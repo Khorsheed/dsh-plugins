@@ -40,7 +40,7 @@ import {
   listOrDash, repoName, severityKey, severityTone, snapshotCell,
 } from './parts.tsx'
 import { factorPhrase, preferredColumn } from './vocab.ts'
-import { fixLabel, readinessFix, readinessKey, splitReadiness, type ReadinessFix } from './journey.ts'
+import { fixLabel, readinessFix, readinessSentence, splitReadiness, type ReadinessFix } from './journey.ts'
 import type { ConditionActionNote, LabStartedRun } from './store.ts'
 import css from './LabView.module.css'
 
@@ -155,6 +155,9 @@ function CheckLine(props: { check: EvalPlanCheck; t: LabViewProps['t'] }) {
   )
 }
 
+/** The stages whose next step is starting this plan (again). */
+const CHECKLIST_STAGES: ReadonlySet<EvalExperimentRow['status']> = new Set(['draft', 'pending-approval', 'refused', 'stalled'])
+
 /**
  * The READINESS CHECKLIST (T72 §4): validate's lines in two groups, each with
  * a human sentence and the one button that fixes it.
@@ -171,15 +174,17 @@ function CheckLine(props: { check: EvalPlanCheck; t: LabViewProps['t'] }) {
 function ReadinessChecklist(props: {
   blockers: readonly EvalPlanCheck[]
   reminders: readonly EvalPlanCheck[]
+  /** A stalled run's checklist is about the NEXT run; the lead line says so. */
+  forRerun: boolean
   onFix: (fix: ReadinessFix, check: EvalPlanCheck, k: number) => void
   t: LabViewProps['t']
 }) {
-  const { blockers, reminders, onFix, t } = props
+  const { blockers, reminders, forRerun, onFix, t } = props
   const line = (check: EvalPlanCheck, k: number) => {
     const fix = readinessFix(check)
     const label = fixLabel(fix)
-    const key = readinessKey(check.code, check.condition ?? null)
-    const sentence = key === null ? check.message : t(key, { condition: check.condition ?? '' })
+    const said = readinessSentence(check)
+    const sentence = said === null ? check.message : t(said.key, said.params)
     return (
       <div key={`${check.code}:${String(k)}`} className={css.readinessLine}>
         <span className={css.readinessNo}>{k}</span>
@@ -192,6 +197,7 @@ function ReadinessChecklist(props: {
   }
   return (
     <div className={css.readiness}>
+      {forRerun && <div className={css.dim}>{t('readiness.forRerun')}</div>}
       {blockers.length > 0 && (
         <div className={css.readinessGroup}>
           <div className={css.readinessHead}>
@@ -448,6 +454,10 @@ export function DesignPage(props: {
   // put `cannot read plan file: /Users/…` on the page (I5·T67 · W11).
   const unreadable = (review?.checks ?? []).find(check => check.code === 'PLAN_UNREADABLE') ?? null
   const { blockers, reminders } = splitReadiness(review?.checks ?? [], review?.conditions ?? [])
+  // The checklist is for a plan someone is about to start — or start again.
+  // Past that, the plan as it stands NOW says nothing about the run that
+  // already went, and beside the run's own ✓ it read as a contradiction.
+  const checklistShown = CHECKLIST_STAGES.has(row.status)
   const passing = (review?.checks ?? []).filter(check => check.severity === 'ok')
   const single = groups.length < 2
   const repoMissing = conditions !== null && conditions.rows.length === 0 && (conditions.repo === '' || conditions.repo === null)
@@ -491,7 +501,7 @@ export function DesignPage(props: {
       <ScaleSection row={row} judgeSamples={detail?.meta?.judge.samples ?? digest?.judge.samples ?? null} t={t} />
 
       <Section title={t('design.groups')}>
-        <ReadyBadge rows={readyRows} onRecheck={onRecheck} t={t} />
+        <ReadyBadge rows={readyRows} onRecheck={onRecheck} atStart={row.status === 'stalled'} t={t} />
         {/* The list row already carries validate's COUNTS, so the page can
             answer «can this be approved» before the review walk lands. Once it
             has landed the lines below say it better, and saying it twice would
@@ -503,8 +513,14 @@ export function DesignPage(props: {
               : t('overview.validationFailed', { errors: row.validation.errors, warnings: row.validation.warnings })}
           </Field>
         )}
-        {(blockers.length > 0 || reminders.length > 0) && (
-          <ReadinessChecklist blockers={blockers} reminders={reminders} onFix={onFix} t={t} />
+        {checklistShown && (blockers.length > 0 || reminders.length > 0) && (
+          <ReadinessChecklist
+            blockers={blockers}
+            reminders={reminders}
+            forRerun={row.status === 'stalled'}
+            onFix={onFix}
+            t={t}
+          />
         )}
         {passing.length > 0 && (
           <Detail summary={t('review.checks')}>

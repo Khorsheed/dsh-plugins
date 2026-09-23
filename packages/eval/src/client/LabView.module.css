@@ -3,12 +3,17 @@
    shell. Compact rows, hairline separators, tokenized colors — the missions
    and datasets tabs' language. */
 
+/* The view sets the page's body size once. Without it, any note that sets no
+   size of its own (单元：无占用, 另有 n 个, the efficiency footnotes, 判官面板)
+   took the host's root size and read louder than the table it annotates. */
 .view {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
   --dsh-eval-bottom-clearance: calc(var(--dsh-composer-height, 152px) + 16px);
 }
 
@@ -231,7 +236,7 @@
   display: grid;
   grid-template-columns:
     minmax(120px, 1.4fr) minmax(120px, 1fr) 96px 48px 44px
-    minmax(150px, 1.2fr) 84px 64px 116px minmax(72px, auto);
+    minmax(150px, 1.2fr) 84px 64px 116px 104px;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -267,7 +272,9 @@
   outline-offset: -1px;
 }
 
-/* The row's own buttons sit after the columns; they never wrap under them. */
+/* The row's own buttons sit after the columns; they never wrap under them.
+   The track is FIXED (重跑 + 归档 fit): an auto track sized per row would let
+   one stalled row's extra button shift every column of that row alone. */
 .colActions {
   display: flex;
   gap: 4px;
@@ -288,6 +295,9 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .segmented {
@@ -322,7 +332,7 @@
 @media (width <= 560px) {
   .tableHead,
   .row {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) 76px 88px;
   }
 
   .row .colSnapshot,

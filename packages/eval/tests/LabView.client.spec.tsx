@@ -438,7 +438,7 @@ describe('the grouped list (T72 §1)', () => {
     })
     renderView(h)
     await screen.findByText('stalled-mine')
-    expect(screen.getByText('list.stalledMeta {"minutes":42}')).toBeTruthy()
+    expect(screen.getByText('list.stalledMeta {"duration":"dur.ms {\\"m\\":42,\\"s\\":0}"}')).toBeTruthy()
     const rerun = screen.getAllByRole('button', { name: 'cta.stalled' })
     expect(rerun).toHaveLength(1)
     fireEvent.click(rerun[0]!)

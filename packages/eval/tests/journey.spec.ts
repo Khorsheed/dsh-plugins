@@ -6,8 +6,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  conclusionSourceKey, fixLabel, groupRows, listGroupOf, READINESS_CODES, readinessFix, readinessKey,
-  readListScope, scopeRows, splitReadiness, validityCount, writeListScope,
+  conclusionSourceKey, fixLabel, groupRows, listGroupOf, READINESS_CODES, readinessField, readinessFix, readinessKey,
+  readinessSentence, readListScope, scopeRows, splitReadiness, validityCount, writeListScope,
 } from '../src/client/journey.ts'
 import { en, zh } from '../src/client/locales.ts'
 import type { EvalExperimentRow } from '../src/types.ts'
@@ -124,6 +124,22 @@ describe('the readiness checklist', () => {
     expect(readinessKey('LOCK_MISSING', 'a')).toBe('readiness.LOCK_MISSING')
     expect(readinessKey('LOCK_MISSING', null)).toBeNull()
     expect(readinessKey('COMMIT_UNRESOLVED', null)).toBe('readiness.COMMIT_UNRESOLVED')
+  })
+
+  it('names the field, so two unfilled fields on one condition read as two lines', () => {
+    expect(readinessField('endpoint.baseUrl is null — unresolved; the pre-run readiness gate refuses this condition'))
+      .toBe('endpoint.baseUrl')
+    expect(readinessField('model: not reported by the harness')).toBe('model')
+    expect(readinessField('something went wrong')).toBeNull()
+    expect(readinessField('condition codex-exec: home.sha is null — unresolved')).toBe('home.sha')
+    expect(readinessField('judge condition j: model.endpoint is null — unresolved')).toBe('model.endpoint')
+    const endpoint = readinessSentence({ code: 'UNRESOLVED_FIELD', condition: 'a', message: 'endpoint.baseUrl is null — unresolved' })
+    const home = readinessSentence({ code: 'UNRESOLVED_FIELD', condition: 'a', message: 'home.sha is null — unresolved' })
+    expect(endpoint).toEqual({ key: 'readiness.UNRESOLVED_FIELD', params: { condition: 'a', field: 'endpoint.baseUrl' } })
+    expect(home?.params.field).toBe('home.sha')
+    // No field to name: validate's own message, not a sentence with a hole.
+    expect(readinessSentence({ code: 'UNRESOLVED_FIELD', condition: 'a', message: 'unresolved' })).toBeNull()
+    expect(zh['readiness.UNRESOLVED_FIELD']).toContain('{field}')
   })
 })
 

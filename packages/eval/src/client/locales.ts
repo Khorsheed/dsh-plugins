@@ -556,6 +556,7 @@ export type EvalKey =
   | 'design.bindWhere'
   | 'design.bindShape'
   | 'ready.badge'
+  | 'ready.badgeAtStart'
   | 'ready.recheck'
   | 'ready.pending'
   | 'ready.failedCount'
@@ -659,6 +660,7 @@ export type EvalKey =
   | 'report.lastFinalAt'
   | 'readiness.blockers'
   | 'readiness.reminders'
+  | 'readiness.forRerun'
   | 'readiness.agentAsk'
   | 'fix.provision'
   | 'fix.endpoint'
@@ -1346,6 +1348,7 @@ export const en: Record<EvalKey, string> = {
   'design.bindWhere': 'Binding is a person’s act and it is made in the datasets tab: open it and use its import action, which takes a directory or a repository and a commit, validates it, and binds it to this session.',
   'design.bindShape': 'What it takes: a git repository organized by the dataset protocol — a dataset.json naming its layers, items under items/, and the conditions/ and plans/ directories this tab writes into.',
   'ready.badge': 'Environment ready',
+  'ready.badgeAtStart': 'Environment ready when it started',
   'ready.recheck': 'Check again',
   'ready.pending': 'Not checked yet — readiness is probed when the run starts.',
   'ready.failedCount': '{count} of {total} comparison groups are not ready',
@@ -1454,6 +1457,7 @@ export const en: Record<EvalKey, string> = {
   'report.lastFinalAt': 'latest final review {at}',
   'readiness.blockers': 'Blockers ({count})',
   'readiness.reminders': 'Reminders ({count})',
+  'readiness.forRerun': 'Before a re-run: this is the plan checked as it stands now, not as it was when this run started.',
   'readiness.agentAsk': 'Experiment {name}, readiness checklist item {k}: {text}',
   'fix.provision': 'Provision {condition}',
   'fix.endpoint': 'Change endpoint',
@@ -1497,7 +1501,7 @@ export const en: Record<EvalKey, string> = {
   'judge.absent': 'Note: the judge is absent for answer(s) {cells} ({count}).',
   'judge.rejudge': 'Re-judge (optional)',
   'judge.rejudgeAsk': 'Experiment {name}: re-run the judge on answer(s) {cells}.',
-  'runs.stalled': 'Stalled: no progress for {minutes} min, and no job is running.',
+  'runs.stalled': 'Stalled: no progress for {duration}, and no job is running.',
   'list.scope': 'Which experiments',
   'list.scopeSession': 'Started here',
   'list.scopeAll': 'All',
@@ -1509,7 +1513,7 @@ export const en: Record<EvalKey, string> = {
   'list.group.finished': 'Finished',
   'list.group.archived': 'Archived',
   'list.group.archivedCount': 'Archived ({count})',
-  'list.stalledMeta': 'no progress for {minutes} min',
+  'list.stalledMeta': 'no progress for {duration}',
   'list.archive': 'Archive',
   'list.unarchive': 'Unarchive',
   'col.actions': 'Actions',
@@ -1571,7 +1575,7 @@ export const en: Record<EvalKey, string> = {
   'readiness.UNIT_SCOPED_HOME_MISSING': 'Condition {condition}\'s per-item home is missing.',
   'readiness.UNIT_SCOPED_HOME_RELATIVE': 'Condition {condition}\'s per-item home must be an absolute path.',
   'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED': 'Condition {condition}\'s per-item home uses an undeclared variable.',
-  'readiness.UNRESOLVED_FIELD': 'Condition {condition} has a field still to fill in.',
+  'readiness.UNRESOLVED_FIELD': 'Condition {condition}: {field} is still to fill in.',
   'readiness.BUDGET_INVALID': 'The budget must be positive.',
 }
 
@@ -1842,7 +1846,7 @@ export const zh: Record<EvalKey, string> = {
   'report.col.deltas': '逐次 Δ',
   'report.col.n': 'n',
   'report.criteria': '判据 × 对比组（每条判据的得分与判官依据）',
-  'report.criteriaHint': '格内是该判据在该组的结论：✓ / ✗ 成立与否（负向判据成立即缺陷），按比例给分的写比例，多次运行写成立次数。小字是这格**得分的来源**——逐判据取最权威的那一层（人 > 判官 > 脚本），所以同一格可以混合。点格子看证据原文与是谁写的。',
+  'report.criteriaHint': '格内是该判据在该组的结论：✓ / ✗ 成立与否（负向判据成立即缺陷），按比例给分的写比例，多次运行写成立次数。小字是这格得分的来源——逐判据取最权威的那一层（人 > 判官 > 脚本），所以同一格可以混合。点格子看证据原文与是谁写的。',
   'report.criteriaTotal': '本题总分',
   'report.criteriaUndeclared': '不在 rubric 权重表里——只有判定记录提到它，按未声明权重与极性处理。',
   'report.criteriaEvidence': '判官依据',
@@ -2131,6 +2135,7 @@ export const zh: Record<EvalKey, string> = {
   'design.bindWhere': '绑定是人的动作，在题集 tab 里做：打开它，用导入题集指一个目录或一个仓库加 commit，校验通过即绑定到本会话。',
   'design.bindShape': '它要的东西：一个按题库协议组织的 git 仓库——dataset.json 声明层，题目在 items/ 下，还有本 tab 要写入的 conditions/ 与 plans/ 两个目录。',
   'ready.badge': '环境就绪',
+  'ready.badgeAtStart': '启动时环境就绪',
   'ready.recheck': '重新检查',
   'ready.pending': '还没做就绪检查——启动时才探。',
   'ready.failedCount': '{total} 个对比组里有 {count} 个未就绪',
@@ -2239,6 +2244,7 @@ export const zh: Record<EvalKey, string> = {
   'report.lastFinalAt': '最近一次终评 {at}',
   'readiness.blockers': '阻塞项（{count}）',
   'readiness.reminders': '提醒（{count}）',
+  'readiness.forRerun': '重跑前要处理：这是按计划现在的样子重新校验的结果，不是这次运行启动时的状态。',
   'readiness.agentAsk': '实验 {name} 的就绪清单第 {k} 条：{text}',
   'fix.provision': 'provision {condition}',
   'fix.endpoint': '改端点',
@@ -2282,7 +2288,7 @@ export const zh: Record<EvalKey, string> = {
   'judge.absent': '提示：作答 {cells} 判官缺席（{count} 格）。',
   'judge.rejudge': '补判（可选）',
   'judge.rejudgeAsk': '实验 {name}：给作答 {cells} 补判。',
-  'runs.stalled': '停滞：已有 {minutes} 分钟没有进展，也没有在跑的任务',
+  'runs.stalled': '停滞：已有 {duration} 没有进展，也没有在跑的任务',
   'list.scope': '看哪些实验',
   'list.scopeSession': '本会话发起',
   'list.scopeAll': '全部',
@@ -2294,7 +2300,7 @@ export const zh: Record<EvalKey, string> = {
   'list.group.finished': '已完成',
   'list.group.archived': '已归档',
   'list.group.archivedCount': '已归档（{count}）',
-  'list.stalledMeta': '{minutes} 分钟没有进展',
+  'list.stalledMeta': '{duration} 没有进展',
   'list.archive': '归档',
   'list.unarchive': '取消归档',
   'col.actions': '操作',
@@ -2356,6 +2362,6 @@ export const zh: Record<EvalKey, string> = {
   'readiness.UNIT_SCOPED_HOME_MISSING': '对比组 {condition} 的逐题 home 不存在。',
   'readiness.UNIT_SCOPED_HOME_RELATIVE': '对比组 {condition} 的逐题 home 必须是绝对路径。',
   'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED': '对比组 {condition} 的逐题 home 用了未声明的变量。',
-  'readiness.UNRESOLVED_FIELD': '对比组 {condition} 还有字段没填。',
+  'readiness.UNRESOLVED_FIELD': '对比组 {condition} 的 {field} 还没填。',
   'readiness.BUDGET_INVALID': '预算必须是正数。',
 }

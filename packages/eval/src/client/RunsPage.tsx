@@ -50,7 +50,7 @@ import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { LiveGrid } from './Grid.tsx'
 import type { EvalKey } from './locales.ts'
-import { Chip, Detail, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, stageTone } from './parts.tsx'
+import { Chip, Detail, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, stageTone, stalledFor } from './parts.tsx'
 import {
   RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase, verdictKey, verdictSourceOf, verdictSourcesOf,
 } from './vocab.ts'
@@ -625,7 +625,7 @@ export function RunsPage(props: {
           one: the cells sit in the state they were left in. */}
       {stalledMinutes !== null && (
         <div className={css.blocked}>
-          <div>{t('runs.stalled', { minutes: stalledMinutes })}</div>
+          <div>{t('runs.stalled', { duration: stalledFor(stalledMinutes, t) })}</div>
           {onRerun !== undefined && (
             <div className={css.actions}>
               <Button size="sm" variant="primary" onClick={onRerun}>{t('cta.stalled')}</Button>

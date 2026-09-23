@@ -893,6 +893,28 @@ describe('the readiness checklist (T72 §4)', () => {
     expect(screen.getAllByRole('button', { name: 'fix.agent' }).length).toBeGreaterThanOrEqual(1)
   })
 
+  it('shows only while the plan is still to start: a stalled row says it is for the re-run, a judging row has none', async () => {
+    const withStatus = (status: EvalExperimentsResult['rows'][number]['status']) => async (): Promise<Result<EvalExperimentsResult>> => (
+      { ok: true, value: { ...LIST, rows: [{ ...LIST.rows[0]!, status }] } }
+    )
+    const stalled = makeHarness({ review: CHECKLIST })
+    stalled.fetchExperiments = vi.fn(withStatus('stalled'))
+    const view = renderView(stalled)
+    await openPage(stalled, 'page.design')
+    expect(await screen.findByText('readiness.forRerun')).toBeTruthy()
+    expect(screen.getByText('readiness.blockers {"count":2}')).toBeTruthy()
+    view.unmount()
+
+    const judging = makeHarness({ review: CHECKLIST })
+    judging.fetchExperiments = vi.fn(withStatus('judging'))
+    renderView(judging)
+    await openPage(judging, 'page.design')
+    // The review did render (its passing lines are there); only the checklist is not.
+    expect(await screen.findByText('review.checks')).toBeTruthy()
+    expect(screen.queryByText('readiness.blockers {"count":2}')).toBeNull()
+    expect(screen.queryByText('readiness.forRerun')).toBeNull()
+  })
+
   it('provision runs the condition verb; 登记仓库 opens the bind dialog', async () => {
     const h = makeHarness({ review: CHECKLIST })
     renderView(h)

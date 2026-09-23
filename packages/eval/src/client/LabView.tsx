@@ -40,7 +40,7 @@ import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck
 import type { LabViewProps } from './contract.ts'
 import { DesignPage } from './DesignPage.tsx'
 import {
-  Chip, Detail, EmptyState, FactorCell, snapshotCell, stageAction, stamp, statusKey, statusTone,
+  Chip, Detail, EmptyState, FactorCell, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
 } from './parts.tsx'
 import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS, type LabPage, type RunFilter } from './store.ts'
 import { RunsPage } from './RunsPage.tsx'
@@ -1225,7 +1225,7 @@ function ExperimentRowLine(props: {
         )}
       </span>
       {row.status === 'stalled' && row.stalledMinutes !== null && (
-        <span className={css.rowMeta}>{t('list.stalledMeta', { minutes: row.stalledMinutes })}</span>
+        <span className={css.rowMeta}>{t('list.stalledMeta', { duration: stalledFor(row.stalledMinutes, t) })}</span>
       )}
     </div>
   )

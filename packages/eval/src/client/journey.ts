@@ -219,13 +219,44 @@ const KNOWN_CODES: ReadonlySet<string> = new Set(READINESS_CODES)
  * @param condition - the condition the line is about, when validate named one.
  * @returns the key, or null.
  */
-export function readinessKey(code: string, condition: string | null = null): EvalKey | null {
+export function readinessKey(code: string, condition: string | null = null, field: string | null = null): EvalKey | null {
   if (!KNOWN_CODES.has(code)) return null
   const key = `readiness.${code}` as EvalKey
   // A sentence that names the condition is no sentence without one: validate
   // raised the code at plan level this time, and its own message says more.
   if (condition === null && en[key].includes('{condition}')) return null
+  // Same for the field: two 「还有字段没填」 lines on one condition read as a
+  // duplicate unless each says which field.
+  if (field === null && en[key].includes('{field}')) return null
   return key
+}
+
+/**
+ * The field a line is about, read off the head of validate's message —
+ * `endpoint.baseUrl is null — …` (validate) or `model: …` (review). Only the
+ * lines whose sentence names a field need it.
+ * @param message - validate's own message.
+ * @returns the dotted field path, or null when the message does not open with one.
+ */
+export function readinessField(message: string): string | null {
+  // the plan check prefixes the condition (`condition a: `, `judge condition j: `); the field comes after it
+  const match = /^(?:(?:judge )?condition \S+: )?([A-Za-z_][\w.[\]-]*)(?: is null|:)/.exec(message)
+  return match?.[1] ?? null
+}
+
+/**
+ * One check's sentence: its key and the params that key takes.
+ * @param check - one checklist line.
+ * @returns the key and params, or null to show validate's own message.
+ */
+export function readinessSentence(
+  check: Pick<EvalPlanCheck, 'code' | 'condition' | 'message'>,
+): { key: EvalKey; params: { condition: string; field?: string } } | null {
+  const field = readinessField(check.message)
+  const key = readinessKey(check.code, check.condition ?? null, field)
+  if (key === null) return null
+  const condition = check.condition ?? ''
+  return { key, params: en[key].includes('{field}') && field !== null ? { condition, field } : { condition } }
 }
 
 // ── the conclusion card ──────────────────────────────────────────────────
