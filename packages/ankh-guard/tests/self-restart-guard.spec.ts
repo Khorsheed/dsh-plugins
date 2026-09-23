@@ -2968,13 +2968,19 @@ process.exit(1)
     const previousProgram = `const fs=require('fs');const server=require('http').createServer((q,s)=>s.end('previous-after-eaddr'));server.on('error',error=>{fs.writeFileSync(${JSON.stringify(releaseStale)},'release');throw error});server.listen(${port},'127.0.0.1')`
     const previousStart = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(previousProgram)}`
     const staleServer = join(env.home, 'stale-listener.cjs')
-    writeFileSync(staleServer, `const fs=require('fs');const server=require('http').createServer((q,s)=>s.end('stale-old-listener-200'));server.listen(${port},'127.0.0.1');const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(releaseStale)})){clearInterval(timer);server.close(()=>process.exit(0))}},25);setTimeout(()=>server.close(()=>process.exit(0)),10000)\n`)
+    writeFileSync(staleServer, `const fs=require('fs');const server=require('http').createServer((q,s)=>s.end('stale-old-listener-200'));server.listen(${port},'127.0.0.1',()=>process.send?.('ready'));const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(releaseStale)})){clearInterval(timer);server.close(()=>process.exit(0))}},25);setTimeout(()=>server.close(()=>process.exit(0)),90000)\n`)
     const orphanLauncher = join(env.home, 'orphan-listener.cjs')
-    writeFileSync(orphanLauncher, `const {spawn}=require('child_process');const child=spawn(process.execPath,[${JSON.stringify(staleServer)}],{detached:true,stdio:'ignore'});child.unref()\n`)
+    // Wait for the actual listener, not a scheduling guess under CI load.
+    writeFileSync(orphanLauncher, `
+const {spawn}=require('child_process')
+const child=spawn(process.execPath,[${JSON.stringify(staleServer)}],{detached:true,stdio:['ignore','ignore','ignore','ipc']})
+const timeout=setTimeout(()=>{child.kill();process.exit(1)},10000)
+child.once('message',()=>{clearTimeout(timeout);child.disconnect();child.unref()})
+child.once('exit',code=>{clearTimeout(timeout);process.exit(code || 0)})
+`)
     const targetScript = join(env.home, 'target-eaddr.sh')
     writeFileSync(targetScript, `#!/bin/bash
 "${process.execPath}" "${orphanLauncher}"
-sleep 0.2
 "${process.execPath}" -e "require('http').createServer().listen(${port},'127.0.0.1')" || true
 printf 'EADDRINUSE :${port}\\n' >&2
 sleep 0.6
@@ -2997,10 +3003,10 @@ exit 1
         ...boundPreflightArgs(),
       ], io().io)).toBe(0)
 
-      const deadline = Date.now() + 35_000
-      while (readCutoverReceipt(stateDir)?.phase !== 'restored' && Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, 200))
-      }
+      // The contract is recovery after exactly two rejected target attempts,
+      // not a wall-clock benchmark of several identity-checked Node launches.
+      await waitForCondition('stale-listener cutover restores previous',
+        () => readCutoverReceipt(stateDir)?.phase === 'restored', 60_000, 200)
       expect(await fetchBody(port)).toBe('previous-after-eaddr')
       const receipt = readCutoverReceipt(stateDir)
       const targetAttempts = receipt?.attempts.filter(attempt => attempt.role === 'target') ?? []
@@ -3015,7 +3021,7 @@ exit 1
       await killListener(port)
       env.restore()
     }
-  }, 45_000)
+  }, 90_000)
 
   it('rejects a target that exits after authenticated 200 without handing its URL to the browser, then restores previous', async () => {
     const env = supervisedEnv()
@@ -4037,16 +4043,9 @@ http.createServer((req, res) => {
         ['supervise', '--port', String(port), '--start', startCmd, '--state-dir', stateDir, '--repo', repo],
         sup.io,
       )).toBe(0)
-      const deadline = Date.now() + 20_000
-      let body = ''
-      while (Date.now() < deadline) {
-        try {
-          body = await fetchBody(port)
-          if (body === 'new') break
-        } catch { /* not up yet */ }
-        await new Promise((resolve) => { setTimeout(resolve, 300) })
-      }
-      expect(body).toBe('new')
+      await waitForCondition('six EADDRINUSE attempts reach the healthy server',
+        async () => await fetchBody(port) === 'new', 60_000, 300)
+      expect(Number(readFileSync(counter, 'utf8'))).toBe(6)
       const log = readFileSync(join(env.home, 'state', 'watchdog.log'), 'utf8')
       expect(log).toContain('boot hit EADDRINUSE')
       expect(log).not.toContain('rolling repo back')
@@ -4058,9 +4057,9 @@ http.createServer((req, res) => {
       await killListener(port)
       env.restore()
     }
-    // Six spawn-and-fail cycles do not fit in vitest's 5 s default, which the
-    // 20 s deadline above already assumed.
-  }, 30_000)
+    // Bound the full lifecycle while allowing six real process launches on a
+    // busy machine; exact attempts and no rollback/give-up remain asserted.
+  }, 90_000)
 
   it('counts an EADDRINUSE on a foreign port as a boot failure instead of retrying forever', async () => {
     const env = supervisedEnv()
