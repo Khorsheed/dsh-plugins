@@ -58,6 +58,9 @@ export type FilePreviewKey =
   | 'diff.expand'
   | 'diff.expandAria'
   | 'diff.files'
+  | 'diff.code'
+  | 'diff.wrap'
+  | 'diff.unwrap'
   | 'guide.title'
   | 'guide.description'
   | 'list.empty'
@@ -166,6 +169,9 @@ export const zh: Record<FilePreviewKey, string> = {
   'diff.expand': '展开其余 {count} 行',
   'diff.expandAria': '展开其余 {count} 行',
   'diff.files': '{count} 个文件',
+  'diff.code': '代码块',
+  'diff.wrap': '自动换行',
+  'diff.unwrap': '取消自动换行',
   'guide.title': '会话产物',
   'guide.description': '会话写过的每个文件：看内容，也看每一次改动',
   'list.empty': '这个会话还没有写过文件',
@@ -269,6 +275,9 @@ export const en: Record<FilePreviewKey, string> = {
   'diff.expand': 'Show {count} more lines',
   'diff.expandAria': 'Show {count} more lines',
   'diff.files': '{count} files',
+  'diff.code': 'Code block',
+  'diff.wrap': 'Wrap lines',
+  'diff.unwrap': 'Do not wrap lines',
   'guide.title': 'Session products',
   'guide.description': 'Every file the session wrote — its content and each change',
   'list.empty': 'This session has not written any files yet',

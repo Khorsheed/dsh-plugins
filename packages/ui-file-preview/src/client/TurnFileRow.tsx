@@ -21,7 +21,7 @@ import { useEffect, useState } from 'react'
 import type { FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
 import type { FilePreviewTurnRowProps } from './contract.ts'
 import {
-  FileTypeIcon, IconChevronDownOutline14, IconChevronUpOutline14,
+  FileTypeIcon, IconChevronDownOutlineMedium, IconChevronUpOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { basename } from './turn-files.ts'
 import { parentPath } from './path-utils.ts'
@@ -70,7 +70,7 @@ export function TurnFileRow(props: FilePreviewTurnRowProps) {
           <span className={css.chevron} aria-hidden>
             {/* Accordion convention: collapsed → down (click unfolds downward),
                 open → up (click folds the body back up). */}
-            {expanded ? <IconChevronUpOutline14 /> : <IconChevronDownOutline14 />}
+            {expanded ? <IconChevronUpOutlineMedium /> : <IconChevronDownOutlineMedium />}
           </span>
         </button>
       )}

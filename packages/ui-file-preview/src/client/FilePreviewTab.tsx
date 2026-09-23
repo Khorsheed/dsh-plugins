@@ -21,7 +21,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
-  FileTypeIcon, IconGlobeOutline14, IconRefreshOutline16,
+  FileTypeIcon, IconGlobeOutlineMedium, IconRefreshOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   ContentPane, type PreviewView,
@@ -229,7 +229,7 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
           title={t('list.refresh')}
           onClick={() => { actions.refreshList() }}
         >
-          <IconRefreshOutline16 />
+          <IconRefreshOutlineMedium />
         </button>
       </div>
       <nav className={css.list} aria-label={t('open')}>
@@ -263,7 +263,7 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
                       {parts[2]}
                     </>
                   )}
-                {!within && <IconGlobeOutline14 className={css.rowOutside} size={12} />}
+                {!within && <IconGlobeOutlineMedium className={css.rowOutside} size={12} />}
               </span>
               <span className={css.rowDir}>{relativeToCwd(parentPath(entry.path), cwd)}</span>
               <span className={css.rowStep}>{t('history.step', { turn: entry.turn, step: entry.step })}</span>
