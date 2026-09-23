@@ -1,8 +1,8 @@
 # 宿主 0.1.6 适配（host-016-adaptation）
 
 - **分类**：plugin
-- **状态**：in-progress（2026-09-23 官方发 0.1.7-rc.1（0.1.6 rc 跳过）：三路契约审计完成、结论见「rc.1 复核」节；wave 重钉 rc.1 进行中）
-- **最后更新**：2026-09-23
+- **状态**：in-progress（2026-09-24 wave 全量适配落地：合 main（28 冲突）、重钉 0.1.7-rc.1、全部 breaking 修完——settings 重写/V4 生产者 source/schemastery 3.18.4/图标换代/jobs/chat.node/agent-presets 拆名，全量 build+test 双绿、汇总 note 已归档；3093 体验实例已起（rc.1 + 适配后插件，用户验收中）；**3080 升线硬前置：preset 迁移**（目录预设已死）；npm 波等 3080 验收 + 账号解封）
+- **最后更新**：2026-09-24
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`。最近邻：host-015-adaptation（第一~三批已完成，第四批余量见该提案；本提案承接其 readByteRange 与 guard 租约两项欠账）、message-tools-projection-restore（本波子项，独立提案）、local-agent-dsh-sdk-resume（S8 仍堵，不排）、room-composer-parity / context-clearing（波后讨论，不进本波）。无「0.1.6 整体适配」提案，新建。
 - **官方依赖**：纯插件。所有切换走官方 0.1.6-alpha.1 已发布的扩展面，不含新 seam 请求。
 
