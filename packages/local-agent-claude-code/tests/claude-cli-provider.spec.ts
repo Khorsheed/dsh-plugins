@@ -274,8 +274,11 @@ describe('claude-cli-provider run settlement', () => {
     expect(calls[0]!.data).toMatchObject({ callId: 'tu1', name: 'Bash', arguments: 'echo hi' })
     const toolResults = child.snapshotEvents().filter(event => event.type === 'tool/result')
     expect(toolResults).toHaveLength(1)
-    expect(toolResults[0]!.data.message.content[0]).toMatchObject({
-      type: 'tool-result',
+    // rc.1's tool-result message is the native tool role: the call id and the
+    // error flag sit at the message top level, the content holds the raw
+    // result blocks (the pre-V4 shape wrapped everything in one content block).
+    expect(toolResults[0]!.data.message).toMatchObject({
+      role: 'tool',
       toolCallId: 'tu1',
       content: [{ type: 'text', text: 'hi' }],
       isError: false,

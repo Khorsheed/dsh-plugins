@@ -1,4 +1,5 @@
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
+import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 /**
  * Local-agent-claude-code plugin, browser half: the claude-code settings
  * surface, one face per host line — on alpha.2 the bundle's own configuration
@@ -57,7 +58,7 @@ export type { LocalAgentClaudeCodeKey }
 const PACKAGE_NAME = '@khorsheed/dsh-local-agent-claude-code'
 
 /** Required services: slot registry, settings scope, command Remote, and locale registry. */
-export const inject = ['slots', 'settingsScope', 'remote', 'remote.commands', 'locale']
+export const inject = ['slots', 'remote', 'remote.commands', 'locale']
 
 /**
  * Client plugin body: register the dictionaries and the claude-code settings
@@ -66,7 +67,7 @@ export const inject = ['slots', 'settingsScope', 'remote', 'remote.commands', 'l
  */
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-agent-claude-code: dictionaries')
-  const scope = ctx.settingsScope.bind<ClaudeLiveSettings>({ namespace: 'local-agent-claude-code' })
+  const scope = bindSettingsScope<ClaudeLiveSettings>(ctx, 'local-agent-claude-code')
   // The auth block's copy lives in the family core's dictionary; binding is
   // stable per namespace and late dictionary registration still resolves.
   const authT = ctx.locale.bind('local-agent')
