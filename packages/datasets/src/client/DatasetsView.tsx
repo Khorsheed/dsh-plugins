@@ -1,19 +1,27 @@
 /**
  * The 题集 conversation view (the 'datasets' tab beside chat and trajectory).
- * Two pages, one shell (ui-spec §四): a LIST of datasets — one row each, with
- * the snapshot, the item count, the slot ← layer mapping, the canary, the
- * `validate` outcome and the experiments that used it — and a DETAIL page for
- * one dataset: the file tree with a slot marker on every leaf, «选手将看到»,
+ * Two pages, one shell (ui-spec §四): the LIST is the deployment's dataset
+ * registry — grouped by repository, one row per set with its tracked branch's
+ * tip, the tip's date and the layers agents may read — and a DETAIL page for
+ * one set: the file tree with a slot marker on every leaf, «选手将看到»,
  * «可判性», «作答记录», and the selected file's preview.
  *
- * This module owns the fetches and the page switch; the two pages own their
- * layout, and `parts.tsx` owns the vocabulary they share. Every write here is
- * a HUMAN gesture with a form in front of it (binding, dataset skeleton, item
- * skeleton, item import) and every one of them lands in the working tree only
- * — the commit stays the human's, and the tab says so on each form.
+ * T73: the tab no longer shows a session binding. What an agent may use is
+ * what a human registered here (the register form, «从旧绑定登记», edit,
+ * remove), and every read below names one registration by its id — the host
+ * resolves that to the repository's common dir at its tracked branch's tip, so
+ * the page never reads a checkout's HEAD or working tree.
  *
- * The tab shows what the OPERATOR may see: the binding's whitelist constrains
- * the session's agent, never the human reading their own repository (protocol
+ * This module owns the fetches and the page switch; the pages own their
+ * layout, and `parts.tsx` owns the vocabulary they share. Every write here is
+ * a HUMAN gesture with a form in front of it (registration, dataset skeleton,
+ * item skeleton, item import); skeleton writes land in the registration's
+ * authoring checkout only — the commit stays the human's, and the tab says so
+ * on each form. Reads show the tracked branch, so a fresh skeleton appears
+ * here once it is committed there.
+ *
+ * The tab shows what the OPERATOR may see: the registration's layers
+ * constrain agents, never the human reading their own repository (protocol
  * §3), so a sensitive layer lists here with a quiet marker rather than being
  * hidden. What is genuinely unprotected — the passthrough zone and item.json —
  * is marked loudly, because that is the thing an author can get wrong.
@@ -21,19 +29,19 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import { BindForm } from './BindForm.tsx'
-import type { DatasetBinding, DatasetOverviewRow, ListItemsResult } from '../types.ts'
+import type { DatasetOverviewRow, ListItemsResult, RegisterInput, UpdateInput } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetDetail } from './DatasetDetail.tsx'
-import { DatasetList } from './DatasetList.tsx'
-import { ErrorState } from './ErrorState.tsx'
-import { Chip, EmptyState, snapshotCell } from './parts.tsx'
+import { classifyError, ErrorState } from './ErrorState.tsx'
+import { Chip, EmptyState, shortCommit } from './parts.tsx'
+import { RegisterForm } from './RegisterForm.tsx'
+import { RegistryList } from './RegistryList.tsx'
 import { SkeletonForm } from './SkeletonForm.tsx'
 import { itemKey, type DatasetsForm } from './store.ts'
 import css from './DatasetsView.module.css'
 
-/** A repository's own name — its last path segment (ui-spec §九 keeps the rest on a title). */
-function repoName(path: string): string {
+/** A path's own name — its last segment (ui-spec §九 keeps the rest on a title). */
+function lastSegment(path: string): string {
   return path.replace(/\/+$/, '').split('/').filter(Boolean).pop() ?? path
 }
 
@@ -43,22 +51,27 @@ function rowOf(rows: readonly DatasetOverviewRow[] | undefined, id: string): Dat
     ?? { id, itemCount: 0, layers: [], nonModelFacingLayers: [], slotLayers: {}, canary: false, warnings: [], validate: null }
 }
 
+/** Which registration form is open: none, a new registration, or one registration's edit. */
+type RegisterOpen = null | { mode: 'new' } | { mode: 'edit'; id: string }
+
 /**
  * The 题集 tab body.
  * @param props - composed props (runtime + store + injected + locale shares).
  */
 export function DatasetsView(props: DatasetsViewProps) {
   const {
-    sessionId, useSessions, useStore, actions, t,
-    fetchBinding, bindSession, unbindSession, listDatasets, readFile, readPassthroughFile,
+    sessionId, useStore, actions, t,
+    fetchRegistry, previewRepo, register, updateRegistration, unregister, importBindings,
+    listDatasets, readFile, readPassthroughFile,
     overview, itemBrief, validateDataset, scaffoldDataset, scaffoldItem, importItem,
     itemRuns, datasetExperiments,
-    isLoopback, pickDirectory, previewRepo,
+    isLoopback, pickDirectory,
   } = props
   const { useHostDescription } = props
-  const binding = useStore(s => s.binding)
-  const bindingLoaded = useStore(s => s.bindingLoaded)
+  const registry = useStore(s => s.registry)
   const notice = useStore(s => s.notice)
+  const imported = useStore(s => s.imported)
+  const openRepo = useStore(s => s.openRepo)
   const overviewValue = useStore(s => s.overview)
   const listLoading = useStore(s => s.listLoading)
   const listError = useStore(s => s.listError)
@@ -83,79 +96,75 @@ export function DatasetsView(props: DatasetsViewProps) {
   const preview = useStore(s => s.preview)
   const previewLoading = useStore(s => s.previewLoading)
   const previewError = useStore(s => s.previewError)
-  // Component-private view state: whether the bind/edit form is open.
-  const [bindOpen, setBindOpen] = useState(false)
+  // Component-private view state: which registration form is open, which
+  // registration a «新建题集» form writes into, and the import in flight.
+  const [registerOpen, setRegisterOpen] = useState<RegisterOpen>(null)
+  const [formRepo, setFormRepo] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
   // Which item briefs have been asked for. A REF, not store state: the request
   // sets a loading flag, the flag re-renders, and a re-render that re-ran the
   // effect would cancel the very request it just started (the effect's cleanup
   // drops the answer). The ref keeps the guard out of the dependency list.
   const requestedBriefs = useRef(new Set<string>())
-  const currentCwd = useSessions(s => s.byId[sessionId]?.cwd)
   const canPick = isLoopback && useHostDescription(description => description?.canOpenPath === true)
 
-  // The binding on mount and after every refresh, then the list page's rows.
+  // The registry on mount and after every refresh.
   useEffect(() => {
     let cancelled = false
     actions.setListLoading(true)
     actions.setListError(null)
-    void fetchBinding(sessionId).then((result) => {
+    void fetchRegistry(sessionId).then((result) => {
       if (cancelled) return
-      if (!result.ok) {
-        actions.setListLoading(false)
-        // Settle the bar too: an unanswerable binding read must not leave the
-        // tab on "loading" forever (a dead session errors on every fetch).
-        // setBinding resets the list error as part of its cascade, so the
-        // error goes on after it.
-        actions.setBinding(null)
-        actions.setListError(result.error.message)
-        return
-      }
-      actions.setBinding(result.value)
-      if (result.value === null) {
-        actions.setListLoading(false)
-        return
-      }
-      void overview(sessionId).then((answer) => {
-        if (cancelled) return
-        actions.setListLoading(false)
-        if (answer.ok) actions.setOverview(answer.value)
-        else actions.setListError(answer.error.message)
-      })
+      actions.setListLoading(false)
+      if (result.ok) actions.setRegistry(result.value)
+      else actions.setListError(result.error.message)
     })
     return () => { cancelled = true }
-  }, [sessionId, refreshRev, actions, fetchBinding, overview])
+  }, [sessionId, refreshRev, actions, fetchRegistry])
 
-  // The «用于的实验» column, once per binding. A null answer means this
-  // instance carries no eval plugin, and the column never renders.
+  // The open registration's rows (item counts, slot mapping, validate) for the detail page.
   useEffect(() => {
-    if (binding === null || experiments !== null) return
+    if (openRepo === null) return
+    let cancelled = false
+    void overview(sessionId, openRepo).then((answer) => {
+      if (cancelled) return
+      if (answer.ok) actions.setOverview(answer.value)
+      else actions.setListError(answer.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, openRepo, refreshRev, actions, overview])
+
+  // The «用于» cells, once. A null answer means this instance carries no eval
+  // plugin, and the cells never render.
+  useEffect(() => {
+    if (registry === null || experiments !== null) return
     let cancelled = false
     void datasetExperiments(sessionId).then((rows) => {
       if (!cancelled && rows !== null) actions.setExperiments(rows)
     })
     return () => { cancelled = true }
-  }, [sessionId, binding, experiments, actions, datasetExperiments])
+  }, [sessionId, registry, experiments, actions, datasetExperiments])
 
   // One dataset's items when its detail page opens (cached afterwards).
   useEffect(() => {
-    if (openDataset === null || items[openDataset] !== undefined) return
+    if (openRepo === null || openDataset === null || items[openDataset] !== undefined) return
     let cancelled = false
     const dataset = openDataset
-    void listDatasets(sessionId, dataset).then((result) => {
+    void listDatasets(sessionId, openRepo, dataset).then((result) => {
       if (cancelled || !result.ok) return
       if (result.value.kind === 'items') actions.setDetails(dataset, result.value as ListItemsResult)
     })
     return () => { cancelled = true }
-  }, [sessionId, openDataset, items, actions, listDatasets])
+  }, [sessionId, openRepo, openDataset, items, actions, listDatasets])
 
   // The open item's brief and its answer record, once per item per refresh.
   useEffect(() => {
-    if (openDataset === null || openItem === null) return
+    if (openRepo === null || openDataset === null || openItem === null) return
     const key = itemKey(openDataset, openItem)
-    if (requestedBriefs.current.has(`${refreshRev}:${key}`)) return
-    requestedBriefs.current.add(`${refreshRev}:${key}`)
+    if (requestedBriefs.current.has(`${refreshRev}:${openRepo}:${key}`)) return
+    requestedBriefs.current.add(`${refreshRev}:${openRepo}:${key}`)
     actions.setBriefLoading(key, true)
-    void itemBrief(sessionId, openDataset, openItem).then((result) => {
+    void itemBrief(sessionId, openRepo, openDataset, openItem).then((result) => {
       actions.setBriefLoading(key, false)
       if (result.ok) actions.setBrief(key, result.value)
       else actions.setBriefError(key, result.error.message)
@@ -163,18 +172,18 @@ export function DatasetsView(props: DatasetsViewProps) {
     void itemRuns(sessionId, openDataset, openItem).then((answer) => {
       actions.setRuns(key, answer)
     })
-  }, [sessionId, refreshRev, openDataset, openItem, actions, itemBrief, itemRuns])
+  }, [sessionId, refreshRev, openRepo, openDataset, openItem, actions, itemBrief, itemRuns])
 
   // The selected file's content; a stale request is dropped when the selection moves.
   useEffect(() => {
-    if (selection === null) return
+    if (selection === null || openRepo === null) return
     let cancelled = false
     const target = selection
     actions.setPreviewLoading(true)
     actions.setPreviewError(null)
     const request = target.kind === 'passthrough'
-      ? readPassthroughFile(sessionId, { dataset: target.dataset, path: target.path })
-      : readFile(sessionId, {
+      ? readPassthroughFile(sessionId, openRepo, { dataset: target.dataset, path: target.path })
+      : readFile(sessionId, openRepo, {
         dataset: target.dataset,
         ...(target.item !== null ? { item: target.item } : {}),
         layer: target.layer, path: target.path,
@@ -186,42 +195,59 @@ export function DatasetsView(props: DatasetsViewProps) {
       else actions.setPreviewError(result.error.message)
     })
     return () => { cancelled = true }
-  }, [sessionId, selection, actions, readFile, readPassthroughFile])
+  }, [sessionId, openRepo, selection, actions, readFile, readPassthroughFile])
 
-  const submitBinding = (next: DatasetBinding): void => {
-    void bindSession(sessionId, next).then((result) => {
-      if (result.ok) {
-        actions.setNotice(null)
-        setBindOpen(false)
-        actions.refresh()
-      } else {
+  /** Settle one registry gesture: close the form and re-read on success, keep the reason on failure. */
+  const settle = (result: { ok: true } | { ok: false; error: { message: string } }): void => {
+    if (result.ok) {
+      actions.setNotice(null)
+      setRegisterOpen(null)
+      actions.refresh()
+    } else {
+      actions.setNotice(result.error.message)
+    }
+  }
+  const submitRegister = (input: RegisterInput): void => {
+    void register(sessionId, input).then(settle)
+  }
+  const submitUpdate = (input: UpdateInput): void => {
+    void updateRegistration(sessionId, input).then(settle)
+  }
+  const removeRegistration = (id: string): void => {
+    void unregister(sessionId, id).then(settle)
+  }
+  const runImport = (): void => {
+    setImporting(true)
+    void importBindings(sessionId).then((result) => {
+      setImporting(false)
+      if (!result.ok) {
         actions.setNotice(result.error.message)
+        return
       }
+      actions.setNotice(null)
+      actions.setImported(result.value)
+      actions.refresh()
     })
   }
-  const clearBinding = (): void => {
-    void unbindSession(sessionId).then((result) => {
-      if (result.ok) {
-        actions.setNotice(null)
-        actions.refresh()
-      } else {
-        actions.setNotice(result.error.message)
-      }
-    })
-  }
+
+  // The registration a write form targets: the open one on the detail page,
+  // the heading's own on the list page.
+  const writeRepo = page === 'detail' ? openRepo : formRepo
 
   /** Run one write gesture, then refresh what it could have changed. */
   const submitForm = (values: Record<string, string>): void => {
     const dataset = openDataset
+    const repo = writeRepo
+    if (repo === null) return
     const call = form === 'newDataset'
-      ? scaffoldDataset(sessionId, {
+      ? scaffoldDataset(sessionId, repo, {
         id: values['id'] ?? '',
         ...(values['name'] !== undefined && values['name'] !== '' ? { name: values['name'] } : {}),
       })
       : form === 'newItem' && dataset !== null
-        ? scaffoldItem(sessionId, { dataset, item: values['item'] ?? '' })
+        ? scaffoldItem(sessionId, repo, { dataset, item: values['item'] ?? '' })
         : form === 'importItem' && dataset !== null
-          ? importItem(sessionId, {
+          ? importItem(sessionId, repo, {
             dataset, item: values['item'] ?? '', sourceDir: values['sourceDir'] ?? '',
           })
           : null
@@ -233,18 +259,15 @@ export function DatasetsView(props: DatasetsViewProps) {
       }
       actions.setNotice(null)
       actions.setSkeleton(result.value)
-      // The write landed in the working tree; every read here is at HEAD, so
-      // the list is refreshed for the commit the human is about to make (and
-      // the skeleton panel says as much).
       actions.refresh()
     })
   }
 
   const runValidate = (): void => {
-    if (openDataset === null) return
+    if (openRepo === null || openDataset === null) return
     const dataset = openDataset
     actions.setValidating(true)
-    void validateDataset(sessionId, dataset).then((result) => {
+    void validateDataset(sessionId, openRepo, dataset).then((result) => {
       actions.setValidating(false)
       if (!result.ok) {
         actions.setNotice(result.error.message)
@@ -255,22 +278,21 @@ export function DatasetsView(props: DatasetsViewProps) {
     })
   }
 
-  const rows = overviewValue?.datasets ?? []
-  const detailRow = openDataset === null ? null : rowOf(rows, openDataset)
-  // The session's agent-readable layer set: the binding's explicit whitelist
-  // when written, else the modelFacing floor (sensitive layers are blocked by
-  // default; a dataset declaring none reads fully).
-  const agentLayers = detailRow === null
-    ? new Set<string>()
-    : binding?.layers !== undefined
-      ? new Set(binding.layers)
-      : detailRow.nonModelFacingLayers.length === 0
-        ? new Set(detailRow.layers)
-        : new Set(detailRow.layers.filter(layer => !detailRow.nonModelFacingLayers.includes(layer)))
+  const openRow = registry?.find(row => row.entry.id === openRepo)
+  const openSet = openRow?.sets.find(set => set.set === openDataset)
+  const detailRow = openDataset === null ? null : rowOf(overviewValue?.datasets, openDataset)
+  // The agent-readable layer set comes from the registration (the registry's
+  // layers for this set, else the host's modelFacing floor — `sets` already
+  // carries whichever applies).
+  const agentLayers = new Set(openSet?.layers ?? [])
   const validatedRow = openDataset === null ? undefined : validated[openDataset]
+  const editing = registerOpen?.mode === 'edit'
+    ? registry?.find(row => row.entry.id === registerOpen.id)?.entry
+    : undefined
 
-  const openForm = (next: Exclude<DatasetsForm, null>): void => {
+  const openForm = (next: Exclude<DatasetsForm, null>, repo?: string): void => {
     actions.setNotice(null)
+    if (repo !== undefined) setFormRepo(repo)
     actions.setForm(next)
   }
 
@@ -283,62 +305,79 @@ export function DatasetsView(props: DatasetsViewProps) {
               {t('detail.back')}
             </Button>
           )}
-          {binding !== null
+          {page === 'detail' && openRow !== undefined && openSet !== undefined
             ? (
               <>
-                {/* ui-spec §九: an absolute path is not page text. The bar
-                    shows the repository's own name and keeps the path on its
-                    title, where the person who needs it will look. */}
-                <span className={css.bindingRepo} title={binding.repoPath}>
-                  {page === 'detail' && detailRow !== null
-                    ? `${detailRow.id} · ${overviewValue === null ? repoName(binding.repoPath) : snapshotCell(overviewValue.repo, overviewValue.commit)}`
-                    : t('binding.repo', { repo: repoName(binding.repoPath) })}
+                <span className={css.bindingRepo} title={openRow.entry.commonDir}>
+                  {openRow.latest === undefined
+                    ? openSet.ref
+                    : `${openSet.ref} · ${openRow.entry.trackedRef}@${shortCommit(openRow.latest.commit)}`}
                 </span>
                 <span className={css.bindingScope}>
-                  {binding.datasets !== undefined ? binding.datasets.join(', ') : t('binding.allDatasets')}
-                  {' · '}
-                  {binding.layers !== undefined
-                    ? t('binding.agentVisible', { layers: binding.layers.join(', ') })
-                    : t('binding.agentVisibleFloor')}
+                  {t('registry.rowLayers', { layers: openSet.layers.join(', ') })}
                 </span>
               </>
             )
             : (
               <span className={css.bindingNone}>
-                {bindingLoaded ? t('binding.none') : t('list.loading')}
+                {registry === null ? t('list.loading') : t('registry.title', { count: registry.length })}
               </span>
             )}
           {page === 'list' && (
             <>
-              <Button size="sm" onClick={() => { openForm('newDataset') }} disabled={binding === null}>
-                {t('list.newDataset')}
+              <Button size="sm" variant="primary" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
+                {t('registry.register')}
               </Button>
-              {binding === null
-                ? (
-                  <Button size="sm" variant="outline" onClick={() => { setBindOpen(true) }}>
-                    {t('binding.bind')}
-                  </Button>
-                )
-                : (
-                  <Button size="sm" onClick={() => { setBindOpen(true) }}>
-                    {t('binding.edit')}
-                  </Button>
-                )}
-              {binding !== null && <Button size="sm" onClick={clearBinding}>{t('binding.unbind')}</Button>}
+              <Button size="sm" onClick={runImport} disabled={importing}>
+                {importing ? t('registry.importing') : t('registry.import')}
+              </Button>
             </>
           )}
-          {page === 'detail' && (
+          {page === 'detail' && openRow?.entry.authoringCheckout != null && (
             <>
               <Button size="sm" onClick={() => { openForm('newItem') }}>{t('detail.newItem')}</Button>
               <Button size="sm" onClick={() => { openForm('importItem') }}>{t('detail.importItem')}</Button>
-              <Button size="sm" onClick={runValidate} disabled={validating}>
-                {validating ? t('detail.validating') : t('detail.validate')}
-              </Button>
             </>
           )}
+          {page === 'detail' && (
+            <Button size="sm" onClick={runValidate} disabled={validating}>
+              {validating ? t('detail.validating') : t('detail.validate')}
+            </Button>
+          )}
         </div>
-        {notice !== null && !bindOpen && form === null && (
-          <ErrorState what={t('notice.failed')} message={notice} path={binding?.repoPath} compact t={t} />
+        {notice !== null && registerOpen === null && form === null && (
+          <ErrorState what={t('notice.failed')} message={notice} compact t={t} />
+        )}
+        {imported !== null && (
+          <div className={css.notice}>
+            <div>
+              {imported.imported.length === 0 && imported.dangling.length === 0
+                ? t('import.nothing')
+                : t('import.done', { count: imported.imported.length })}
+            </div>
+            {imported.imported.map(entry => (
+              <div key={entry.id} className={css.importLine}>
+                {entry.created
+                  ? t('import.created', { id: entry.id, sessions: entry.sessions, paths: entry.paths.length })
+                  : t('import.existing', { id: entry.id, sessions: entry.sessions, paths: entry.paths.length })}
+              </div>
+            ))}
+            {imported.dangling.map((entry) => {
+              const kind = classifyError(entry.reason)
+              return (
+                <div key={entry.repoPath} className={css.importDangling} title={`${entry.repoPath}\n${entry.reason}`}>
+                  {t('import.dangling', {
+                    name: lastSegment(entry.repoPath),
+                    sessions: entry.sessions,
+                    why: kind === 'pathMissing'
+                      ? t('import.why.missing')
+                      : kind === 'notGitRepo' ? t('import.why.notRepo') : t('import.why.other'),
+                  })}
+                </div>
+              )
+            })}
+            <Button size="sm" onClick={() => { actions.setImported(null) }}>{t('import.dismiss')}</Button>
+          </div>
         )}
         {validatedRow !== undefined && (
           <div className={css.notice}>
@@ -380,15 +419,19 @@ export function DatasetsView(props: DatasetsViewProps) {
             t={t}
           />
         )}
-        {bindOpen && (
-          <BindForm
-            initial={binding}
-            onSubmit={submitBinding}
-            onCancel={() => { setBindOpen(false) }}
-            currentCwd={currentCwd}
+        {registerOpen !== null && (
+          <RegisterForm
+            key={registerOpen.mode === 'edit' ? registerOpen.id : '(new)'}
+            initial={editing}
             canPick={canPick}
             pickDirectory={pickDirectory}
-            previewRepo={path => previewRepo(sessionId, path)}
+            previewRepo={(path, trackedRef) => previewRepo(sessionId, path, trackedRef)}
+            onRegister={submitRegister}
+            onUpdate={submitUpdate}
+            onCancel={() => {
+              actions.setNotice(null)
+              setRegisterOpen(null)
+            }}
             notice={notice}
             t={t}
           />
@@ -396,35 +439,30 @@ export function DatasetsView(props: DatasetsViewProps) {
       </div>
       {page === 'list' && (
         <>
-          {/* Unbound is the tab's FIRST screen for a new session: ui-spec §九
-              wants the next step on it, and the button that takes it. */}
-          {bindingLoaded && binding === null && (
-            <EmptyState title={t('list.unbound')} hint={t('list.unboundHint')}>
-              <Button size="sm" variant="primary" onClick={() => { setBindOpen(true) }}>
-                {t('list.unboundAction')}
+          {/* No registration is the tab's FIRST screen on a new deployment:
+              ui-spec §九 wants the next step on it, and the button that takes it. */}
+          {registry !== null && registry.length === 0 && (
+            <EmptyState title={t('registry.empty')} hint={t('registry.emptyHint')}>
+              <Button size="sm" variant="primary" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
+                {t('registry.emptyAction')}
               </Button>
             </EmptyState>
           )}
-          {listLoading && overviewValue === null && binding !== null && (
-            <div className={css.empty}>{t('list.loading')}</div>
+          {listLoading && registry === null && <div className={css.empty}>{t('list.loading')}</div>}
+          {!listLoading && listError !== null && registry === null && (
+            <ErrorState what={t('list.error')} message={listError} t={t} />
           )}
-          {!listLoading && listError !== null && overviewValue === null && (
-            <ErrorState what={t('list.error')} message={listError} path={binding?.repoPath} t={t} />
-          )}
-          {overviewValue !== null && overviewValue.datasets.length === 0 && (
-            <EmptyState title={t('list.empty')} hint={t('list.emptyHint')}>
-              <Button size="sm" variant="primary" onClick={() => { openForm('newDataset') }}>
-                {t('list.emptyAction')}
-              </Button>
-            </EmptyState>
-          )}
-          {overviewValue !== null && overviewValue.datasets.length > 0 && (
-            <DatasetList
-              repo={overviewValue.repo}
-              commit={overviewValue.commit}
-              rows={overviewValue.datasets}
+          {registry !== null && registry.length > 0 && (
+            <RegistryList
+              rows={registry}
               experiments={experiments}
-              onOpen={(dataset) => { actions.openDataset(dataset) }}
+              onOpen={(repo, dataset) => { actions.openDataset({ repo, dataset }) }}
+              onNewDataset={(repo) => { openForm('newDataset', repo) }}
+              onEdit={(repo) => {
+                actions.setNotice(null)
+                setRegisterOpen({ mode: 'edit', id: repo })
+              }}
+              onRemove={removeRegistration}
               t={t}
             />
           )}

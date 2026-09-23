@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDatasetsService } from '../src/service.ts'
 import { runCli, type CliIo } from '../src/cli.ts'
-import { cleanup, commitAll, git, makeFixtureRepo, writeFiles, type FixtureRepo } from './helpers.ts'
+import { cleanup, commitAll, git, makeFixtureRepo, writeFiles, type FixtureRepo, stateOptions } from './helpers.ts'
 
 let repo: FixtureRepo | undefined
 let dir: string | undefined
@@ -18,7 +18,7 @@ afterEach(() => {
 })
 
 const service = () => createDatasetsService({
-  worktreeRoot: mkdtempSync(join(tmpdir(), 'dsh-datasets-wt-')),
+  ...stateOptions(mkdtempSync(join(tmpdir(), 'dsh-datasets-state-'))),
   bindingsRoot: mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-')),
 })
 

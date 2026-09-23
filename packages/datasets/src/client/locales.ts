@@ -6,37 +6,57 @@ export const NS = 'datasets'
 /** The 题集 tab dictionary key set (the source of truth for both locales). */
 export type DatasetsKey =
   | 'open'
-  | 'chip.label'
-  | 'chip.unbound'
-  | 'chip.unboundHint'
-  | 'chip.boundHint'
-  | 'chip.layersFloor'
-  | 'chip.layersNamed'
-  | 'binding.none'
-  | 'binding.repo'
-  | 'binding.allDatasets'
-  | 'binding.agentVisible'
-  | 'binding.agentVisibleFloor'
-  | 'binding.bind'
-  | 'binding.edit'
-  | 'binding.unbind'
-  | 'binding.form.title'
-  | 'binding.form.titleEdit'
-  | 'binding.form.repo'
-  | 'binding.form.useWorkspace'
-  | 'binding.form.browse'
-  | 'binding.form.restrict'
-  | 'binding.form.restrictDatasets'
-  | 'binding.form.restrictLayers'
-  | 'binding.form.sensitive'
-  | 'binding.form.taskFacingOnly'
-  | 'binding.form.preview.loading'
-  | 'binding.form.preview.ok'
-  | 'binding.form.preview.empty'
-  | 'binding.form.preview.failed'
-  | 'binding.form.keepOne'
-  | 'binding.form.submit'
-  | 'binding.form.cancel'
+  | 'registry.title'
+  | 'registry.register'
+  | 'registry.import'
+  | 'registry.importing'
+  | 'registry.edit'
+  | 'registry.remove'
+  | 'registry.removeConfirm'
+  | 'registry.tracking'
+  | 'registry.authoring'
+  | 'registry.noAuthoring'
+  | 'registry.rowLayers'
+  | 'registry.usedBy'
+  | 'registry.problem'
+  | 'registry.problemFix'
+  | 'registry.noSets'
+  | 'registry.empty'
+  | 'registry.emptyHint'
+  | 'registry.emptyAction'
+  | 'import.done'
+  | 'import.nothing'
+  | 'import.created'
+  | 'import.existing'
+  | 'import.dangling'
+  | 'import.why.missing'
+  | 'import.why.notRepo'
+  | 'import.why.other'
+  | 'import.dismiss'
+  | 'register.title'
+  | 'register.titleEdit'
+  | 'register.path'
+  | 'register.browse'
+  | 'register.id'
+  | 'register.branch'
+  | 'register.layers'
+  | 'register.sensitive'
+  | 'register.authoring'
+  | 'register.preview.loading'
+  | 'register.preview.ok'
+  | 'register.preview.empty'
+  | 'register.preview.noRef'
+  | 'register.preview.failed'
+  | 'register.keepOne'
+  | 'register.submit'
+  | 'register.save'
+  | 'register.cancel'
+  | 'error.alreadyRegistered'
+  | 'error.alreadyRegistered.fix'
+  | 'error.notRegistered'
+  | 'error.notRegistered.fix'
+  | 'error.refMissing'
+  | 'error.refMissing.fix'
   | 'slot.prompt'
   | 'slot.standards'
   | 'slot.oracle'
@@ -51,26 +71,8 @@ export type DatasetsKey =
   | 'list.loading'
   | 'list.error'
   | 'notice.failed'
-  | 'list.empty'
-  | 'list.itemCount'
-  | 'list.unbound'
-  | 'list.colDataset'
-  | 'list.colSnapshot'
-  | 'list.colItems'
-  | 'list.colSlots'
-  | 'list.colCanary'
-  | 'list.colValidate'
-  | 'list.colExperiments'
-  | 'list.canaryOn'
-  | 'list.canaryOff'
-  | 'list.validateOk'
-  | 'list.validateErrors'
-  | 'list.validateWarnings'
-  | 'list.validateUnknown'
   | 'list.experimentsNone'
   | 'list.newDataset'
-  | 'list.slotLayer'
-  | 'list.passthroughLayer'
   | 'detail.back'
   | 'detail.filterAll'
   | 'detail.filterEmpty'
@@ -95,10 +97,6 @@ export type DatasetsKey =
   | 'detail.judgeSchemas'
   | 'detail.runs'
   | 'detail.runsEmpty'
-  | 'list.unboundHint'
-  | 'list.unboundAction'
-  | 'list.emptyAction'
-  | 'list.emptyHint'
   | 'detail.itemEmptyHint'
   | 'detail.filterEmptyHint'
   | 'detail.runsEmptyHint'
@@ -191,14 +189,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh: Record<DatasetsKey, string> = {
   // 错误态三段式（ui-spec §九）：一句人话 + 一句修法，异常原文与路径折在「详情」里。
-  'error.notGitRepo': '绑定的题库路径不是 git 仓库',
-  'error.notGitRepo.fix': '改绑到仓库根目录：/datasets bind <路径> --layers visible',
+  'error.notGitRepo': '这个路径不是 git 仓库',
+  'error.notGitRepo.fix': '选仓库里的任一目录（或它的 .git）再登记',
   'error.notDatasetRepo': '这个仓库里没有题集（缺 datasets/ 目录）',
-  'error.notDatasetRepo.fix': '改绑到题库仓库的根目录，或先在仓库里建出 datasets/',
-  'error.pathMissing': '绑定的题库路径在磁盘上找不到',
-  'error.pathMissing.fix': '确认目录还在，再重新绑定：/datasets bind <路径> --layers visible',
-  'error.unbound': '本会话还没绑定题库',
-  'error.unbound.fix': '先绑定题库：/datasets bind <路径> --layers visible',
+  'error.notDatasetRepo.fix': '换题库仓库的路径登记，或先在仓库里建出 datasets/',
+  'error.pathMissing': '这个路径在磁盘上找不到',
+  'error.pathMissing.fix': '确认目录还在，或换一个路径',
+  'error.unbound': '本会话还没有可用的题库',
+  'error.unbound.fix': '先在题集页点「登记仓库」登记题库',
   'error.serviceMissing': '这台实例缺少本页要用的服务',
   'error.serviceMissing.fix': '预设里少装了成员；补齐后重开这个 tab',
   'error.cancelled': '这次请求被取消了',
@@ -207,37 +205,6 @@ export const zh: Record<DatasetsKey, string> = {
   'error.details': '详情',
   'error.detailsPath': '路径',
   'open': '题集',
-  'chip.label': '题集',
-  'chip.unbound': '未绑定',
-  'chip.unboundHint': '本会话还没绑题库。用 /datasets bind <题库路径> 绑一个，或在题集 tab 里导入。',
-  'chip.boundHint': '本会话绑定：{repo}（{layers}）。改绑用 /datasets bind <题库路径>。',
-  'chip.layersFloor': '仅模型可见层',
-  'chip.layersNamed': '层：{layers}',
-  'binding.none': '本会话未绑定题库仓库',
-  'binding.repo': '题库: {repo}',
-  'binding.allDatasets': '全部题集',
-  'binding.agentVisible': 'agent 可见：{layers}',
-  'binding.agentVisibleFloor': 'agent 可见：可见层（敏感层默认拦截）',
-  'binding.bind': '导入题集',
-  'binding.edit': '改白名单',
-  'binding.unbind': '解绑',
-  'binding.form.title': '导入题集（指一个已按协议组织的仓库）',
-  'binding.form.titleEdit': '修改题库与白名单',
-  'binding.form.repo': '仓库路径（git 仓库）',
-  'binding.form.useWorkspace': '使用当前工作区',
-  'binding.form.browse': '浏览…',
-  'binding.form.restrict': 'agent 可见范围',
-  'binding.form.restrictDatasets': 'agent 可见的题集',
-  'binding.form.restrictLayers': 'agent 可见的层',
-  'binding.form.sensitive': '敏感',
-  'binding.form.taskFacingOnly': '仅题面',
-  'binding.form.preview.loading': '检查仓库…',
-  'binding.form.preview.ok': '✓ 有效仓库 · {count} 个题集',
-  'binding.form.preview.failed': '这个路径没预览出来',
-  'binding.form.preview.empty': 'git 仓库有效，但没有题集（datasets/ 为空）',
-  'binding.form.keepOne': '每组至少保留一项；要全部可见请折叠此区',
-  'binding.form.submit': '确认',
-  'binding.form.cancel': '取消',
   'slot.prompt': '题干',
   'slot.standards': '验收标准',
   'slot.oracle': '参考答案',
@@ -252,26 +219,8 @@ export const zh: Record<DatasetsKey, string> = {
   'list.loading': '加载中…',
   'list.error': '题集列表加载失败',
   'notice.failed': '这次操作没做成',
-  'list.empty': '这个仓库里没有题集（datasets/ 为空）',
-  'list.itemCount': '{count} 道题',
-  'list.unbound': '先导入一个题库仓库，或新建一个题集',
-  'list.colDataset': '题集',
-  'list.colSnapshot': '题库版本',
-  'list.colItems': '题目数',
-  'list.colSlots': '槽位 ← 层',
-  'list.colCanary': '防泄标记',
-  'list.colValidate': '校验',
-  'list.colExperiments': '用于的实验',
-  'list.canaryOn': '已设置',
-  'list.canaryOff': '未设置',
-  'list.validateOk': '通过',
-  'list.validateErrors': '{count} 个错误',
-  'list.validateWarnings': '{count} 个提示',
-  'list.validateUnknown': '未校验',
   'list.experimentsNone': '尚未用于任何实验',
   'list.newDataset': '新建题集',
-  'list.slotLayer': '{slot} ← {layers}',
-  'list.passthroughLayer': '透传区',
   'detail.back': '← 题集列表',
   'detail.filterAll': '全部',
   'detail.filterEmpty': '这个筛选下没有文件',
@@ -339,10 +288,6 @@ export const zh: Record<DatasetsKey, string> = {
   'json.expandNode': '展开 JSON 节点',
   'json.copyButtonTitle': '{action}；右键查看更多复制选项',
 
-  'list.unboundAction': '绑定一个题库仓库',
-  'list.emptyAction': '新建第一个题集',
-  'list.unboundHint': '绑定之后，这里按题集列出题库版本、题目数、槽位与层的对应、防泄标记与校验结果。',
-  'list.emptyHint': '题集是 datasets/<id>/ 下的一个目录，带一份 dataset.json。新建一个会生成骨架，提交仍是你的。',
   'detail.itemEmptyHint': '右边会列出「选手将看到」的每个文件与字节数（防泄题自查），以及这道题能不能判。',
   'detail.filterEmptyHint': '这个题集在这些槽位下没有文件。点上面的「全部」看整棵树。',
   'detail.runsEmptyHint': '实验跑过这道题之后，每条运行记录会按对比组与次数列在这里。',
@@ -368,20 +313,71 @@ export const zh: Record<DatasetsKey, string> = {
   'bucket.active': '进行中',
   'bucket.done': '完成',
   'bucket.other': '其它（{token}）',
+  'registry.title': '已登记 {count} 个题库仓库',
+  'registry.register': '登记仓库',
+  'registry.import': '从旧绑定登记',
+  'registry.importing': '正在登记旧绑定…',
+  'registry.edit': '编辑登记',
+  'registry.remove': '移除登记',
+  'registry.removeConfirm': '确认移除（只删登记，仓库不动）',
+  'registry.tracking': '跟踪 {ref}',
+  'registry.authoring': '新建题集、题目写进登记的检出',
+  'registry.noAuthoring': '只读登记（没有写入检出）',
+  'registry.rowLayers': 'agent 可见：{layers}',
+  'registry.usedBy': '用于：{names}',
+  'registry.problem': '这条登记现在读不出来',
+  'registry.problemFix': '点「编辑登记」换一个存在的跟踪分支，或移除这条登记',
+  'registry.noSets': '{ref} 上没有题集（datasets/ 为空）',
+  'registry.empty': '还没有登记题库仓库',
+  'registry.emptyHint': '登记之后，这里按仓库列出每个题集：跟踪分支的最新提交、日期、agent 可见的层。agent 只能用「登记名/题集」引用它们，不读目录。',
+  'registry.emptyAction': '登记第一个仓库',
+  'import.done': '已从旧绑定登记 {count} 个仓库',
+  'import.nothing': '没有找到旧绑定',
+  'import.created': '{id}：合并了 {sessions} 个会话的绑定（{paths} 个路径），新登记',
+  'import.existing': '{id}：已登记过，{sessions} 个会话的绑定并入这一条',
+  'import.dangling': '{name} · {sessions} 个会话 · 已跳过：{why}',
+  'import.why.missing': '路径已不存在',
+  'import.why.notRepo': '不是 git 仓库',
+  'import.why.other': '没法自动登记，请手动登记',
+  'import.dismiss': '收起',
+  'register.title': '登记题库仓库',
+  'register.titleEdit': '编辑登记：{id}',
+  'register.path': '仓库路径（任一检出、worktree 或 .git 目录）',
+  'register.browse': '浏览…',
+  'register.id': '登记名（agent 用「登记名/题集」引用）',
+  'register.branch': '跟踪分支（「最新」= 这个分支的末端提交）',
+  'register.layers': '每个题集 agent 可见的层',
+  'register.sensitive': '敏感',
+  'register.authoring': '新建题集、题目写进这个检出',
+  'register.preview.loading': '检查仓库…',
+  'register.preview.ok': '✓ {count} 个题集 · {ref}@{short} · {date}',
+  'register.preview.empty': 'git 仓库有效，但 {ref} 上没有题集',
+  'register.preview.noRef': '这个仓库没有分支 {ref}，换一个跟踪分支',
+  'register.preview.failed': '这个路径没法登记',
+  'register.keepOne': '每个题集至少保留一层',
+  'register.submit': '登记',
+  'register.save': '保存',
+  'register.cancel': '取消',
+  'error.alreadyRegistered': '这个仓库已经登记过',
+  'error.alreadyRegistered.fix': '在列表里点那条登记的「编辑登记」，不用再登记一次',
+  'error.notRegistered': '这个题库不在本部署的登记表里',
+  'error.notRegistered.fix': '先在题集页点「登记仓库」登记它',
+  'error.refMissing': '登记跟踪的分支不存在',
+  'error.refMissing.fix': '点「编辑登记」换一个存在的分支',
 }
 
 /** English dictionary. */
 export const en: Record<DatasetsKey, string> = {
   // The three-part error seat (ui-spec §九): one sentence on what happened,
   // one on the fix; the raw text and the path stay folded under Details.
-  'error.notGitRepo': 'The bound dataset path is not a git repository',
-  'error.notGitRepo.fix': 'Bind the repository root instead: /datasets bind <path> --layers visible',
+  'error.notGitRepo': 'That path is not a git repository',
+  'error.notGitRepo.fix': 'Pick any directory inside the repository (or its .git) and register again',
   'error.notDatasetRepo': 'That repository holds no datasets (no datasets/ directory)',
-  'error.notDatasetRepo.fix': 'Bind the dataset repository’s root, or create datasets/ in it first',
-  'error.pathMissing': 'The bound dataset path is not on disk',
-  'error.pathMissing.fix': 'Check the directory is still there, then bind again: /datasets bind <path> --layers visible',
-  'error.unbound': 'This session has no dataset repository bound',
-  'error.unbound.fix': 'Bind one first: /datasets bind <path> --layers visible',
+  'error.notDatasetRepo.fix': 'Register the dataset repository’s path, or create datasets/ in it first',
+  'error.pathMissing': 'That path is not on disk',
+  'error.pathMissing.fix': 'Check the directory is still there, or pick another path',
+  'error.unbound': 'This session has no dataset repository to use',
+  'error.unbound.fix': 'Register one first: Datasets tab → Register repository',
   'error.serviceMissing': 'This instance is missing a service this page needs',
   'error.serviceMissing.fix': 'A member is absent from the preset; install it and reopen this tab',
   'error.cancelled': 'The request was cancelled',
@@ -390,37 +386,6 @@ export const en: Record<DatasetsKey, string> = {
   'error.details': 'Details',
   'error.detailsPath': 'Path',
   'open': 'Datasets',
-  'chip.label': 'Datasets',
-  'chip.unbound': 'not bound',
-  'chip.unboundHint': 'This session has no dataset repository. Bind one with /datasets bind <repoPath>, or import one in the Datasets tab.',
-  'chip.boundHint': 'Bound to {repo} ({layers}). Rebind with /datasets bind <repoPath>.',
-  'chip.layersFloor': 'model-facing layers',
-  'chip.layersNamed': 'layers: {layers}',
-  'binding.none': 'No dataset repository bound to this session',
-  'binding.repo': 'Repository: {repo}',
-  'binding.allDatasets': 'all datasets',
-  'binding.agentVisible': 'agent-visible: {layers}',
-  'binding.agentVisibleFloor': 'agent-visible: model-facing layers (sensitive blocked by default)',
-  'binding.bind': 'Import a dataset',
-  'binding.edit': 'Edit whitelist',
-  'binding.unbind': 'Unbind',
-  'binding.form.title': 'Import a dataset (point at a repository laid out by the protocol)',
-  'binding.form.titleEdit': 'Edit repository & whitelist',
-  'binding.form.repo': 'Repository path (a git repository)',
-  'binding.form.useWorkspace': 'Use current workspace',
-  'binding.form.browse': 'Browse…',
-  'binding.form.restrict': 'Agent-visible scope',
-  'binding.form.restrictDatasets': 'Agent-visible datasets',
-  'binding.form.restrictLayers': 'Agent-visible layers',
-  'binding.form.sensitive': 'sensitive',
-  'binding.form.taskFacingOnly': 'Model-facing only',
-  'binding.form.preview.loading': 'Checking the repository…',
-  'binding.form.preview.ok': '✓ valid repository · {count} datasets',
-  'binding.form.preview.failed': 'Could not preview that path',
-  'binding.form.preview.empty': 'Valid git repository, but no datasets (empty datasets/)',
-  'binding.form.keepOne': 'Keep at least one per group; collapse the section to keep everything visible',
-  'binding.form.submit': 'Confirm',
-  'binding.form.cancel': 'Cancel',
   'slot.prompt': 'Task statement',
   'slot.standards': 'Acceptance standards',
   'slot.oracle': 'Reference answer',
@@ -435,26 +400,8 @@ export const en: Record<DatasetsKey, string> = {
   'list.loading': 'Loading…',
   'list.error': 'Failed to load the dataset list',
   'notice.failed': 'That action did not go through',
-  'list.empty': 'This repository holds no dataset (empty datasets/)',
-  'list.itemCount': '{count} items',
-  'list.unbound': 'Import a dataset repository first, or create a new dataset',
-  'list.colDataset': 'Dataset',
-  'list.colSnapshot': 'Dataset version',
-  'list.colItems': 'Items',
-  'list.colSlots': 'Slot ← layer',
-  'list.colCanary': 'Canary',
-  'list.colValidate': 'Validate',
-  'list.colExperiments': 'Used by',
-  'list.canaryOn': 'declared',
-  'list.canaryOff': 'not declared',
-  'list.validateOk': 'passes',
-  'list.validateErrors': '{count} errors',
-  'list.validateWarnings': '{count} warnings',
-  'list.validateUnknown': 'not validated',
   'list.experimentsNone': 'no experiment yet',
   'list.newDataset': 'New dataset',
-  'list.slotLayer': '{slot} ← {layers}',
-  'list.passthroughLayer': 'passthrough',
   'detail.back': '← All datasets',
   'detail.filterAll': 'All',
   'detail.filterEmpty': 'No file under this filter',
@@ -522,10 +469,6 @@ export const en: Record<DatasetsKey, string> = {
   'json.expandNode': 'Expand JSON node',
   'json.copyButtonTitle': '{action}; right-click for copy options',
 
-  'list.unboundAction': 'Bind a dataset repository',
-  'list.emptyAction': 'Create the first dataset',
-  'list.unboundHint': 'Once bound, this page lists each dataset with its snapshot, item count, slot \u2190 layer mapping, canary and validate result.',
-  'list.emptyHint': 'A dataset is a directory under datasets/<id>/ with a dataset.json. Creating one writes the skeleton; the commit is still yours.',
   'detail.itemEmptyHint': 'The right pane lists every file the player will receive, with byte counts (the anti-leak self-check), and whether the item can be scored at all.',
   'detail.filterEmptyHint': 'This dataset has no file in those slots. Press All above to see the whole tree.',
   'detail.runsEmptyHint': 'Once an experiment has run this item, each of its run records is listed here by arm and take.',
@@ -551,4 +494,55 @@ export const en: Record<DatasetsKey, string> = {
   'bucket.active': 'In progress',
   'bucket.done': 'Done',
   'bucket.other': 'Other ({token})',
+  'registry.title': '{count} registered dataset repositories',
+  'registry.register': 'Register repository',
+  'registry.import': 'Register from old bindings',
+  'registry.importing': 'Registering old bindings…',
+  'registry.edit': 'Edit registration',
+  'registry.remove': 'Remove registration',
+  'registry.removeConfirm': 'Confirm removal (the repository is untouched)',
+  'registry.tracking': 'tracking {ref}',
+  'registry.authoring': 'new datasets and items are written to the registered checkout',
+  'registry.noAuthoring': 'read-only registration (no authoring checkout)',
+  'registry.rowLayers': 'agent-visible: {layers}',
+  'registry.usedBy': 'used by: {names}',
+  'registry.problem': 'This registration cannot be read right now',
+  'registry.problemFix': 'Edit the registration to pick an existing tracked branch, or remove it',
+  'registry.noSets': 'No datasets on {ref} (empty datasets/)',
+  'registry.empty': 'No dataset repository is registered yet',
+  'registry.emptyHint': 'Once registered, this page lists each set by repository: the tracked branch’s latest commit, its date and the agent-visible layers. Agents reference them as <id>/<set> only and never read directories.',
+  'registry.emptyAction': 'Register the first repository',
+  'import.done': 'Registered {count} repositories from old bindings',
+  'import.nothing': 'No old bindings found',
+  'import.created': '{id}: merged {sessions} session bindings ({paths} paths) into a new registration',
+  'import.existing': '{id}: registered already; {sessions} session bindings folded into it',
+  'import.dangling': '{name} · {sessions} sessions · skipped: {why}',
+  'import.why.missing': 'the path no longer exists',
+  'import.why.notRepo': 'not a git repository',
+  'import.why.other': 'cannot be registered automatically; register it by hand',
+  'import.dismiss': 'Dismiss',
+  'register.title': 'Register a dataset repository',
+  'register.titleEdit': 'Edit registration: {id}',
+  'register.path': 'Repository path (any checkout, worktree or .git directory)',
+  'register.browse': 'Browse…',
+  'register.id': 'Registry id (agents reference <id>/<set>)',
+  'register.branch': 'Tracked branch (“latest” = this branch’s tip)',
+  'register.layers': 'Agent-visible layers per set',
+  'register.sensitive': 'sensitive',
+  'register.authoring': 'Write new datasets and items into this checkout',
+  'register.preview.loading': 'Checking the repository…',
+  'register.preview.ok': '✓ {count} sets · {ref}@{short} · {date}',
+  'register.preview.empty': 'Valid git repository, but no datasets on {ref}',
+  'register.preview.noRef': 'This repository has no branch {ref}; pick another tracked branch',
+  'register.preview.failed': 'That path cannot be registered',
+  'register.keepOne': 'Keep at least one layer per set',
+  'register.submit': 'Register',
+  'register.save': 'Save',
+  'register.cancel': 'Cancel',
+  'error.alreadyRegistered': 'This repository is registered already',
+  'error.alreadyRegistered.fix': 'Use Edit registration on its row instead of registering it again',
+  'error.notRegistered': 'That dataset repository is not in this deployment’s registry',
+  'error.notRegistered.fix': 'Register it first: Datasets tab → Register repository',
+  'error.refMissing': 'The registration’s tracked branch does not exist',
+  'error.refMissing.fix': 'Edit the registration and pick an existing branch',
 }

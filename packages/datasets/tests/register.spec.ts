@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { validateDescriptor } from '../src/dataset.ts'
 import { createDatasetsService, type DatasetScope } from '../src/service.ts'
-import { cleanup, commitAll, git, writeFiles } from './helpers.ts'
+import { cleanup, commitAll, git, writeFiles, stateOptions } from './helpers.ts'
 
 let dir: string | undefined
 let worktreeRoot: string | undefined
@@ -14,7 +14,7 @@ let bindingsRoot: string | undefined
 afterEach(() => {
   if (dir !== undefined) cleanup(dir)
   for (const root of [worktreeRoot, bindingsRoot]) {
-    if (root !== undefined) rmSync(root, { recursive: true, force: true })
+    if (root !== undefined) cleanup(root)
   }
   dir = undefined
   worktreeRoot = undefined
@@ -22,7 +22,7 @@ afterEach(() => {
 })
 
 const service = () => createDatasetsService({
-  worktreeRoot: worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-wt-')),
+  ...stateOptions(worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-state-'))),
   bindingsRoot: bindingsRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-')),
 })
 

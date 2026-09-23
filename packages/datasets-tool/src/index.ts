@@ -115,7 +115,6 @@ export function apply(ctx: Context, config: DatasetsToolConfig = {}): void {
   // appears and never fires in a composition without one.
   ctx.inject(['tools'], (toolsCtx) => {
     for (const definition of datasetToolDefinitions(service, {
-      defaultRepo: '',
       group: config.tools ?? 'all',
     })) {
       toolsCtx.effect(
@@ -133,11 +132,12 @@ export function apply(ctx: Context, config: DatasetsToolConfig = {}): void {
       name: 'datasets:tools',
       order: 150,
       text:
-        'Dataset access goes through the datasets_* tools. They resolve against this session\'s bound dataset '
-        + 'repository; when no binding exists and a call has no explicit `repo`, the tool says so — ask the '
-        + 'human to bind one (/datasets bind). Layers outside the binding\'s whitelist are invisible to you; '
-        + 'never try to reach them through other means. Pin a commit with datasets_snapshot before a read '
-        + 'series'
+        'Dataset access goes through the datasets_* tools, and only to the datasets this deployment registered: '
+        + 'find them with datasets_list and address each as `<id>/<set>` — never by a path. When the person '
+        + 'names a dataset that is not listed, ask them to register it on the Datasets tab; do not read the '
+        + 'directory yourself. When a name matches several registered datasets, let the person choose with '
+        + 'ask_user_question. Layers the registration does not grant are invisible to you; never try to reach '
+        + 'them through other means. Pin a commit with datasets_snapshot before a read series'
         + (admitted.has('datasets_worktree_path')
           ? '; consume whole layers through datasets_worktree_path (read-only, never modify or delete the '
             + 'returned directory)'
