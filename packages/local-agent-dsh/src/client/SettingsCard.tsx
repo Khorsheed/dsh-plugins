@@ -1,11 +1,11 @@
 import type { HarnessModelPickerInput } from '@khorsheed/dsh-local-agent/client'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the plugins.bundle.config keyed-slot SlotMap merge (alpha.2).
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
-import { IconChevronDownOutline14, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 // The shared auth block is bundled from the family core's source — the
 // sanctioned core/companion edge (the host half already depends on the core);
 // the block carries no runtime identity to share.
@@ -307,7 +307,7 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
                 disabled={!ready}
                 onClick={() => { toggleModelMenu() }}
               >
-                <IconChevronDownOutline14 className={modelMenuOpen ? `${css.modelMenuChevron} ${css.modelMenuChevronOpen}` : css.modelMenuChevron} />
+                <IconChevronDownOutlineMedium className={modelMenuOpen ? `${css.modelMenuChevron} ${css.modelMenuChevronOpen}` : css.modelMenuChevron} />
               </button>
               {modelMenuOpen && (
                 <div
@@ -428,7 +428,7 @@ export function DshSettingsCard(props: DshSettingsCardProps) {
           </span>
           <span className={css.description}>{t('card.description')}</span>
         </span>
-        <IconChevronDownOutline14 className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+        <IconChevronDownOutlineMedium className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </button>
       {open && <CardBody state={state} auth={auth} authT={authT} renderModelPicker={renderModelPicker} useSessions={useSessions} t={t} />}
     </li>

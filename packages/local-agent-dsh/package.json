@@ -75,7 +75,8 @@
     "@deepseek-ai/schemastery": "^3.18.1",
     "@khorsheed/dsh-local-agent": "workspace:*",
     "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
-    "@khorsheed/dsh-local-agent-tool-subagent": "workspace:*"
+    "@khorsheed/dsh-local-agent-tool-subagent": "workspace:*",
+    "js-yaml": "^4.3.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -133,6 +134,7 @@
     "@deepseek-ai/dsh-tools": "^0.1.7-rc.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^26.2.0",
     "@types/react": "~18.3.1",
     "jsdom": "^26.0.0",

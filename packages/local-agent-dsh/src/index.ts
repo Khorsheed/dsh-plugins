@@ -30,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-settings'
+import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
@@ -100,35 +101,33 @@ export interface LocalAgentDshConfig {
    * reload.
    */
   model?: string
+  /**
+   * The DeepSeek delegation toggle (settings field since the settings rewrite:
+   * the profile row can preset it — a semantic superset of the old
+   * settings-only key). OFF — the default — mounts nothing model-visible.
+   */
+  enabled?: boolean
+  /** Model identifiers the settings card saved before (settings field). */
+  recentModels?: readonly string[]
 }
 
-/** Runtime schema so the Loader always passes an object, never undefined. */
-export const Config: z<LocalAgentDshConfig> = z.object({
-  profileName: z.string().default(DEFAULT_SUB_PROFILE_NAME),
-  apiKeyRef: z.string().default('DEEPSEEK_API_KEY'),
-  cliLaunch: z.array(z.string()),
-  headlessBundleDir: z.string(),
-  permissions: z.union([z.const('read-only'), z.const('workspace-write'), z.const('danger-full-access')]),
-  model: z.string(),
-  live: z.boolean().default(false),
-  liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
-})
-
 /**
- * Settings namespace owning the DeepSeek toggle and the live preferences. The
- * Cordis config feeds the composition `base` layer, so a field absent from
- * the user layer inherits the YAML value — the settings card only ever stores
- * deliberate overrides.
+ * Runtime schema so the Loader always passes an object, never undefined.
+ * The settings fields (`enabled`, `live`, `liveMirrorGranularity`, `model`,
+ * `recentModels`) ride the same schema, marked `.volatile()` where the host's
+ * schemastery has it (3.18.4+, the rc.1 line — probed, never sniffed): there
+ * the SettingsForms writes hot-track the running fiber's Volatile references
+ * without a remount, and the official one-shot import moves an old
+ * settings.yaml section into this row's config. On 0.1.5 the call is absent,
+ * the fields stay plain config keys (a semantic superset — the profile row
+ * can now preset them too), and the legacy settings namespace below carries
+ * the user layer exactly as before.
+ *
+ * Bare `z` annotation: `z<LocalAgentDshConfig>` fails schemastery 3.18.4's
+ * variance under exactOptionalPropertyTypes (TS2375) and dropping the
+ * annotation trips TS2742; the interface stays the apply signature's contract.
  */
-export const DSH_SETTINGS_NAMESPACE = 'local-agent-dsh'
-
-/**
- * The card's schema: `enabled` OFF (default) means the official in-process
- * subagent stays the only delegation path; the live fields mirror the YAML
- * config's deployment defaults through the composition base.
- */
-const DSH_SETTINGS_SCHEMA = z.object({
+const SETTINGS_FIELDS = {
   enabled: z.boolean().default(false),
   live: z.boolean().default(false),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
@@ -136,7 +135,57 @@ const DSH_SETTINGS_SCHEMA = z.object({
   // undefined, which is what keeps the pre-key behavior byte-identical.
   model: z.string(),
   recentModels: z.array(z.string()).default([]),
+}
+
+/** Mark one schema field volatile when the host's schemastery has the method (rc.1), pass it through plain when not (0.1.5). */
+function volatilize<S extends { volatile?: unknown }>(field: S): S {
+  return typeof field.volatile === 'function' ? (field.volatile as () => S)() : field
+}
+
+export const Config: z = z.object({
+  profileName: z.string().default(DEFAULT_SUB_PROFILE_NAME),
+  apiKeyRef: z.string().default('DEEPSEEK_API_KEY'),
+  cliLaunch: z.array(z.string()),
+  headlessBundleDir: z.string(),
+  permissions: z.union([z.const('read-only'), z.const('workspace-write'), z.const('danger-full-access')]),
+  model: volatilize(SETTINGS_FIELDS.model),
+  live: volatilize(SETTINGS_FIELDS.live),
+  liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
+  liveMirrorGranularity: volatilize(SETTINGS_FIELDS.liveMirrorGranularity),
+  enabled: volatilize(SETTINGS_FIELDS.enabled),
+  recentModels: volatilize(SETTINGS_FIELDS.recentModels),
 })
+
+/**
+ * Settings namespace owning the DeepSeek toggle and the live preferences. On
+ * 0.1.5 the Cordis config feeds the namespace's composition `base` layer, so
+ * a field absent from the user layer inherits the YAML value — the settings
+ * card only ever stores deliberate overrides. On rc.1 the namespace is the
+ * plugin row id itself: the row config IS the document, and the settings
+ * form's user layer rides the profile patch.
+ */
+export const DSH_SETTINGS_NAMESPACE = 'local-agent-dsh'
+
+/**
+ * The card's 0.1.5 schema: `enabled` OFF (default) means the official
+ * in-process subagent stays the only delegation path; the live fields mirror
+ * the YAML config's deployment defaults through the composition base.
+ */
+const DSH_SETTINGS_SCHEMA = z.object(SETTINGS_FIELDS)
+
+/** The resolved settings the controller and the live switch consume. */
+export interface DshSettings {
+  /** The DeepSeek delegation toggle. */
+  enabled: boolean
+  /** Resident (live) mode. */
+  live: boolean
+  /** @deprecated Legacy granularity; live output is always incremental. */
+  liveMirrorGranularity: 'event' | 'token'
+  /** The delegation-start model, undefined when unset (pass no `--model`). */
+  model: string | undefined
+  /** Model identifiers saved before; the input's suggestions. */
+  recentModels: readonly string[]
+}
 
 /** The delegation tool the toggle mounts while ON. */
 const DSH_TOOL_NAME = 'subagent_dsh'
@@ -155,18 +204,33 @@ async function resolveApiKey(ctx: Context, config: LocalAgentDshConfig): Promise
  */
 export function apply(ctx: Context, config: LocalAgentDshConfig): void {
   ctx.effect(() => {
-    const scope = ctx.settings.register(DSH_SETTINGS_NAMESPACE, DSH_SETTINGS_SCHEMA, {
-      base: {
-        ...config.live === undefined ? {} : { live: config.live },
-        ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
-        ...config.model === undefined ? {} : { model: config.model },
-      },
+    // The settings face hides the two host lines: 0.1.5 serves the legacy
+    // namespace scope (register + base); rc.1 reads the row config's volatile
+    // fields and re-reads on `settings/document-updated`. Both hot-apply the
+    // card's writes without a reload.
+    const readSettings = (): DshSettings => ({
+      enabled: vol(config.enabled) ?? false,
+      live: vol(config.live) ?? false,
+      liveMirrorGranularity: vol(config.liveMirrorGranularity) ?? 'token',
+      model: vol(config.model),
+      recentModels: vol(config.recentModels) ?? [],
+    })
+    const legacyBase: Record<string, unknown> = {}
+    for (const field of ['enabled', 'live', 'liveMirrorGranularity', 'model'] as const) {
+      const value = vol(config[field])
+      if (value !== undefined) legacyBase[field] = value
+    }
+    const face = settingsFace<DshSettings>(ctx, {
+      namespace: DSH_SETTINGS_NAMESPACE,
+      legacySchema: DSH_SETTINGS_SCHEMA,
+      legacyBase,
+      read: readSettings,
     })
     // Read PER ROUND, not captured at apply: the settings card writes the same
-    // namespace field, so a change has to reach the next delegation without a
+    // field, so a change has to reach the next delegation without a
     // plugin reload. Blank is not a model — a whitespace-only value is unset.
     const resolveModel = (): string | undefined => {
-      const model = scope.get().model?.trim()
+      const model = face.get().model?.trim()
       return model === undefined || model === '' ? undefined : model
     }
     // The host instance's default model selection spelled `provider/model` —
@@ -211,8 +275,8 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       defaultEffort: () => ctx.get('agentDefaultModel')?.currentSelection().reasoningEffort,
       discovered: () => modelCatalog.read().entries.filter(entry => !entry.hidden).map(entry => entry.value),
       catalog: modelCatalog,
-      recentModels: () => scope.get().recentModels ?? [],
-      live: () => scope.get().live,
+      recentModels: () => face.get().recentModels ?? [],
+      live: () => face.get().live,
       overrides: memberModelOverrides,
       liveBoundModel: childSessionId => currentLiveSwitch?.boundModel(childSessionId) ?? null,
       retireRuntime: childSessionId => currentLiveSwitch?.retireRuntime(childSessionId) ?? Promise.resolve(),
@@ -290,7 +354,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
         // otherwise inherit.
         const model = resolveModel() ?? hostDefaultModel()
         return {
-          drive: scope.get().live ? 'live' : 'exec',
+          drive: face.get().live ? 'live' : 'exec',
           baseUrlSet: false,
           // dsh is the only harness that needs an extra node flag to run
           // inside a container (undici does not read the proxy variables on
@@ -334,7 +398,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // finish on their runtime, idle runtimes are reclaimed at once. A
       // legacy granularity setting no longer changes live behavior. Toggling ENABLED off keeps the historical hard semantics:
       // provider unregisters and the switch disposes (disposeAll).
-      const liveSwitch = new LiveDriverSwitch(ctx, scope, config, {
+      const liveSwitch = new LiveDriverSwitch(ctx, face, config, {
         modelFor: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),
       })
       currentLiveSwitch = liveSwitch
@@ -362,8 +426,8 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
         },
       )
     }
-    sync(scope.get().enabled)
-    const unwatch = scope.watch((next) => { sync(next.enabled) })
+    sync(face.get().enabled)
+    const unwatch = face.watch((next) => { sync(next.enabled) })
     return () => {
       modelCatalog.dispose()
       unwatch()

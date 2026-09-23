@@ -1,4 +1,5 @@
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
+import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 /**
  * Local-agent-dsh plugin, browser half: the dsh settings surface, one face
  * per host line — on alpha.2 the bundle's own configuration on its
@@ -58,8 +59,15 @@ export type { LocalAgentDshKey }
  */
 const PACKAGE_NAME = '@khorsheed/dsh-local-agent-dsh'
 
-/** Required services: slot registry, settings scope, command Remote, and locale registry. */
-export const inject = ['slots', 'settingsScope', 'remote', 'remote.commands', 'locale']
+/**
+ * Required services: slot registry, command Remote, and locale registry. The
+ * settings scope is NOT a static inject — its service name differs per host
+ * line (`settingsScope` on 0.1.5, `configForms` on rc.1), so a static entry
+ * would pend the whole client plugin on the other line; bindSettingsScope
+ * probes the serving one instead (the settings client package is a declared
+ * client inject, so one of them is always already up).
+ */
+export const inject = ['slots', 'remote', 'remote.commands', 'locale']
 
 /**
  * Client plugin body: register the dictionaries and the dsh settings surfaces
@@ -68,7 +76,7 @@ export const inject = ['slots', 'settingsScope', 'remote', 'remote.commands', 'l
  */
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-agent-dsh: dictionaries')
-  const scope = ctx.settingsScope.bind<DshCardSettings>({ namespace: 'local-agent-dsh' })
+  const scope = bindSettingsScope<DshCardSettings>(ctx, 'local-agent-dsh')
   // The auth block's copy lives in the family core's dictionary; binding is
   // stable per namespace and late dictionary registration still resolves.
   const authT = ctx.locale.bind('local-agent')
