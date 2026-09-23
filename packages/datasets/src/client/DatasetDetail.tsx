@@ -18,7 +18,7 @@
  */
 
 import { useState } from 'react'
-import { IconFolderClose16, IconFolderOpen16, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconFolderCloseMedium, IconFolderOpenMedium, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import { classifyFile, DATASET_SLOTS, type DatasetSlot } from '../slots.ts'
 import type { DatasetOverviewRow, ItemBrief, ItemRecord, JsonObject } from '../types.ts'
 import type { DatasetsViewProps, ItemRunsView } from './contract.ts'
@@ -113,7 +113,7 @@ function LayerNode(props: {
     <div className={css.layer}>
       <button type="button" className={css.row} onClick={() => { setOpen(!open) }} aria-expanded={open}>
         <Chevron open={open} />
-        {open ? <IconFolderOpen16 className={css.folderIcon} /> : <IconFolderClose16 className={css.folderIcon} />}
+        {open ? <IconFolderOpenMedium className={css.folderIcon} /> : <IconFolderCloseMedium className={css.folderIcon} />}
         <span className={css.rowTitle}>{layer}</span>
         <span className={css.rowCount}>· {t('tree.fileCount', { count: visible.length })}</span>
         {sensitiveLayers.has(layer) && <span className={css.sensitiveMark}>· {t('tree.sensitive')}</span>}
