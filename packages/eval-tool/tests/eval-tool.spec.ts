@@ -98,6 +98,16 @@ describe('eval-tool companion row', () => {
     expect(text).toContain('must not ask for a sandbox escalation')
   })
 
+  it('teaches eval_run_status\'s status words — the same ones the lab list shows (T72 §2)', () => {
+    const { sections } = mount({})
+    const text = sections[0]?.text ?? ''
+    for (const word of ['pending-approval 待批准', 'stalled 停滞', 'judging 评估中', 'done 已完成', 'void 评估不成立']) {
+      expect(text).toContain(word)
+    }
+    expect(text).toContain('over 10 minutes')
+    expect(text).toContain('do not try to restart it')
+  })
+
   it('grants neither tools nor a section under `none` — but the slash command still registers', () => {
     const { tools, sections, commands } = mount({}, { tools: 'none' })
     expect(tools).toEqual([])
