@@ -2,6 +2,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import { ConnectPhone } from './ConnectPhone.tsx'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { BRIDGE_VERSION, MOBILE_VERSION } from '../protocol.ts'
 import { MobilePresentation } from './presentation.ts'
@@ -31,6 +33,9 @@ export const inject = ['slots', 'locale', 'layout', 'connection']
 /** One browser-owned presentation; no Host preference or sibling plugin is changed. */
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'mobile: dictionaries')
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'mobile-connect', order: 25, label: () => ctx.locale.bind(NS)('connectPhone'), locale: NS,
+  }, ConnectPhone))
   const connection = ctx.get('connection') as ConnectionHandle
   const rooms = new MobileRooms(() => ctx.get('remote.room' as never) as unknown as RoomRemoteFace | undefined)
   ctx.effect(() => () => rooms.dispose(), 'mobile: room presentation')
