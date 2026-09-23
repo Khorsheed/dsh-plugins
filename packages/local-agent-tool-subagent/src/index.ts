@@ -79,7 +79,10 @@ export interface Config {
   tools?: 'all' | 'none'
 }
 
-export const Config: z<Config> = z.object({
+// Bare `z` annotation: `z<Config>` fails schemastery 3.18.4's variance under
+// exactOptionalPropertyTypes (TS2375) and dropping the annotation trips
+// TS2742; the interface stays the apply signature's contract.
+export const Config: z = z.object({
   provider: z.string().required(),
   toolName: z.string().default('subagent'),
   tools: z.union([z.const('all'), z.const('none')]).default('all'),
@@ -135,7 +138,7 @@ function fusedSignal(controller: AbortController, caller: AbortSignal | undefine
  * @param output - the child's selected output (`SubagentResult.output`).
  * @returns the headline, extended with the partial text when any exists.
  */
-function withPartialText(error: string, output: ContentBlock[]): string {
+function withPartialText(error: string, output: readonly ContentBlock[]): string {
   const text = output
     .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
     .map(block => block.text)
