@@ -2778,7 +2778,7 @@ ui-spec §四、§六、§七（T70 版）；提案 §「4. D1 + D2」全文与�
 # 任务 T73 第二步 · 分支 1：数据集登记表（datasets + datasets-tool）
 
 ## 背景
-T73 第一步计划已评审通过（profiles/web-eval/docs/t73-registry-and-write-model.md，main c1b70a4d）：写入模型定 (b)，不设过渡期；条件与 lock 同搬部署级；协议 rev13 归 T73（dataset 块 {registry, set, commit}），T74 的 D5 字段顺延 rev14。计划有六处修订，随本分支第一个提交改进计划正文（只改文档），然后按计划 §二、§三、§四、§五 做 datasets + datasets-tool 这条分支。分支 2（eval + eval-tool）等 T72 合入后开，分支 3（SKILL / preset）随分支 2。
+T73 第一步计划已评审通过（profiles/web-eval/docs/t73-registry-and-write-model.md，main c1b70a4d）：写入模型定 (b)，不设过渡期；条件与 lock 同搬部署级；协议 rev13 归 T73（dataset 块 {registry, set, commit}），T74 的 D5 字段顺延 rev14。计划有七处修订，随本分支第一个提交改进计划正文（只改文档），然后按计划 §二、§三、§四、§五 做 datasets + datasets-tool 这条分支。分支 2（eval + eval-tool）等 T72 合入后开，分支 3（SKILL / preset）随分支 2。
 
 ## 先读
 计划全文；packages/datasets/src/binding.ts、service.ts（resolveScope / effectiveLayers / snapshot 与 service.ts:768 的 ensureWorktree）、worktree.ts（ManagedWorktree：路径即接口）、cli.ts 的 bind 与 worktree 子命令；datasets client 的 BindForm / BindingChip；packages/datasets-tool/src/index.ts（读工具的 repo 参数与拒绝文本）；packages/eval/src/faces.ts 的 DatasetsBindingFace（458 行）与 datasets 面的 worktreePath（40 行）、eval/src/service.ts:361（eval 今天怎么读绑定）、eval/src/run.ts:849（eval 只拿 worktreePath 返回的路径算 materialization.json）；ui-spec §四（T73 定案后的措辞）、§六 datasets-tool 行、§九。
@@ -2790,6 +2790,7 @@ T73 第一步计划已评审通过（profiles/web-eval/docs/t73-registry-and-wri
 4. 语言：工具拒绝文本与 SKILL / preset 规则沿用现有的英文（eval-tool、datasets-tool 的报错今天都是英文，SKILL.md 与 preset 前缀是英文）；计划里的中文原文作为语义规格保留，逐字英文在各分支落地时给出；试点判据 3、4、6 的检查串改成英文串（或中英各一，任一命中即过）。agent 停下时的固定回复句按人的语言说，判据 4 改为「该轮无工具调用、回复只有一句、语义是等人选定版本再起草」。
 5. CLI / slash 的 run 入口在 (b) 下怎么指实验（eval run --experiment <id>；plan 路径只作导入与旧计划兼容）——补进计划 §一 或 §七 分支 2 的内容清单。分支 1 不做，计划要写。
 6. 试点判据 7 写明 bundle 在哪：题库 wt-t65 工作树 exports 下的 run-20260918054718-8o0o-bundle（T71 也用它）；用相对说法，不写字面绝对路径。
+7. 分支 2 的内容清单加「分析初稿的 GUI 查看」（用户 2026-09-23 问的，ui-spec §五 结果对比第 ⑤ 块已写）：Remote 加只读动词 experimentArtifact({experimentId, path})，规则同 cellArtifact（只读本实验目录、只读文本、超 256 KB 截断）；结果对比页折叠块渲染 analysis/ 下的 markdown；eval_analysis_write 写完的回读确认里给一句「在结果对比页可看」。分支 1 不做，计划要写。
 
 ## 分支 1 做什么（按计划 §二 / §三 / §四 / §五）
 - 登记表 $DSH_HOME/state/datasets/registry.json：以 git common dir 的 realpath 为身份；字段按计划 §二；「最新」= git rev-parse <trackedRef>，不读 HEAD；Remote 动词 registry.list / register / update（可见层、跟踪分支、著作检出）/ remove；只有人（表单 / CLI）能写。registeredCommit 只作审计。
