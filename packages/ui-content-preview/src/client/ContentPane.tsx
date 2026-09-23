@@ -27,8 +27,8 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
-  CodeBlock, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14,
-  IconCodeOutline16, IconCopyOutline16, IconFolderOpenOutline16, MarkdownText, Menu,
+  CodeBlock, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium,
+  IconCodeOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium, MarkdownText, Menu,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContentPaneProps, PreviewTranslator, PreviewRead, PreviewView } from './contract.ts'
 import { basenameOf, dirnameOf, isHtmlPath, isMarkdown, languageFor } from './language.ts'
@@ -146,7 +146,7 @@ function HtmlRenderView(props: {
           title={t('preview.exitFullscreen')}
           onClick={() => { void document.exitFullscreen?.() }}
         >
-          <IconCheckOutline16 size={12} />
+          <IconCheckOutlineMedium size={12} />
         </button>
       )}
     </div>
@@ -398,7 +398,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
               aria-label={t('detail.back')}
               onClick={onBack}
             >
-              <IconChevronLeftOutline14 />
+              <IconChevronLeftOutlineMedium />
             </button>
           )}
           <span className={css.title} title={basename}>
@@ -414,7 +414,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                 aria-label={copiedPath ? t('action.copied') : t('action.copyPath')}
                 onClick={doCopyPath}
               >
-                {copiedPath ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
+                {copiedPath ? <IconCheckOutlineMedium size={14} /> : <IconCopyOutlineMedium size={14} />}
               </button>
             )}
             {chrome?.openFolder !== undefined && (
@@ -425,7 +425,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                 aria-label={t('action.openFolder')}
                 onClick={chrome.openFolder}
               >
-                <IconFolderOpenOutline16 size={14} />
+                <IconFolderOpenOutlineMedium size={14} />
               </button>
             )}
             {splitIde
@@ -438,7 +438,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                     aria-label={t('action.openIDE')}
                     onClick={chrome.openIDE}
                   >
-                    <IconCodeOutline16 size={14} />
+                    <IconCodeOutlineMedium size={14} />
                   </button>
                   <Menu
                     open={ideOpen}
@@ -452,7 +452,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                         aria-expanded={ideOpen}
                         onClick={() => { setIdeOpen(value => !value) }}
                       >
-                        <IconChevronDownOutline14 />
+                        <IconChevronDownOutlineMedium />
                       </button>
                     )}
                     items={ideChoices.map(choice => ({ id: choice.id, label: choice.label }))}
@@ -469,7 +469,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                   aria-label={t('action.openIDE')}
                   onClick={chrome.openIDE}
                 >
-                  <IconCodeOutline16 size={14} />
+                  <IconCodeOutlineMedium size={14} />
                 </button>
               )}
           </span>
@@ -553,7 +553,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                       else if (typeof frame.requestFullscreen === 'function') { void frame.requestFullscreen() }
                     }}
                   >
-                    <IconCodeOutline16 size={14} />
+                    <IconCodeOutlineMedium size={14} />
                   </button>
                 )}
               </div>
