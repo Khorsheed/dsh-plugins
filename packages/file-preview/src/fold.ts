@@ -202,10 +202,15 @@ function contentFromWriteCall(argumentsJson: string): string | undefined {
   return undefined
 }
 
-/** Read the tool-result block's call identity and failure flag off a result message. */
+/** Read the result message's call identity and failure flag. V4's first-class
+ *  tool role puts both on the message itself; V3 wrapped them in the leading
+ *  `tool-result` content block — read the message level first, then the block. */
 function resultCallFacts(
-  message: { readonly content: readonly unknown[] },
+  message: { readonly content: readonly unknown[]; readonly toolCallId?: unknown; readonly isError?: unknown },
 ): { callId: string; isError: boolean } | undefined {
+  if (typeof message.toolCallId === 'string') {
+    return { callId: message.toolCallId, isError: message.isError === true }
+  }
   const block = message.content[0] as { type?: unknown; toolCallId?: unknown; isError?: unknown } | undefined
   if (block?.type !== 'tool-result' || typeof block.toolCallId !== 'string') return undefined
   return { callId: block.toolCallId, isError: block.isError === true }
