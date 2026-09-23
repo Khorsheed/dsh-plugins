@@ -35,7 +35,7 @@ function applyCore(): { provided: string[]; commands: RecordedCommand[]; plugins
     plugin: () => { plugins += 1 },
     commands: { register: (command: RecordedCommand) => { commands.push(command); return () => {} } },
   }
-  apply(ctx as never, { repo: '', materializedRoot: '' })
+  apply(ctx as never, { materializedRoot: '' })
   return { provided, commands, plugins }
 }
 
@@ -74,19 +74,19 @@ describe('the datasets core faces', () => {
     // The command registry was the slash face's hard inject; with the
     // registration in the companion row the core mounts unconditionally.
     expect(inject).toEqual([])
-    expect(new Config({} as never)).toEqual({ repo: '', materializedRoot: '' })
+    expect(new Config({} as never)).toEqual({ materializedRoot: '' })
   })
 })
 
 describe('the tool groups the companion grants', () => {
   it('defaults to all eight tools — the dev-domain behavior is unchanged', () => {
-    const all = datasetToolDefinitions({} as never, { defaultRepo: '', group: 'all' }).map(definition => definition.name)
+    const all = datasetToolDefinitions({} as never, { group: 'all' }).map(definition => definition.name)
     expect(all.sort()).toEqual([...READ, 'datasets_put_item', 'datasets_worktree_path'].sort())
-    expect(datasetToolDefinitions({} as never, { defaultRepo: '', group: 'read' }).map(d => d.name).sort())
+    expect(datasetToolDefinitions({} as never, { group: 'read' }).map(d => d.name).sort())
       .toEqual([...READ].sort())
-    expect(datasetToolDefinitions({} as never, { defaultRepo: '', group: 'authoring' }).map(d => d.name).sort())
+    expect(datasetToolDefinitions({} as never, { group: 'authoring' }).map(d => d.name).sort())
       .toEqual([...READ, 'datasets_put_item'].sort())
-    expect(datasetToolDefinitions({} as never, { defaultRepo: '', group: 'none' })).toEqual([])
+    expect(datasetToolDefinitions({} as never, { group: 'none' })).toEqual([])
   })
 
   it('every group is a subset chain: none ⊂ read ⊂ authoring ⊂ all', () => {

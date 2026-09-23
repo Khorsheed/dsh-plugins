@@ -660,7 +660,7 @@ export function openRegistry(path: string): RepoRegistry {
 }
 
 /** The unregistered-repository refusal (the tool face's third sentence). */
-function notRegistered(raw: string): DatasetsError {
+export function notRegistered(raw: string): DatasetsError {
   return new DatasetsError(
     `${JSON.stringify(raw)} is not registered in this deployment's dataset registry; eval uses registered `
     + 'repositories only. Ask the person to register it on the Datasets tab (Register repository), then try '

@@ -12,10 +12,6 @@ import { existsSync, realpathSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  readBinding, validateBinding, writeBinding,
-  type BindingSession, type DatasetBinding,
-} from './binding.ts'
-import {
   assertSafeRelativePath, assertValidName, buildRegistry, canaryWarnings, computePassthrough, datasetDir,
   DATASET_DESCRIPTOR, DatasetsError,
   descriptorWarnings, fieldNameWarnings, itemDir, ITEM_METADATA,
@@ -26,19 +22,19 @@ import {
 import {
   itemBrief as computeItemBrief, overviewRow, type DatasetOverview, type ItemBrief,
 } from './brief.ts'
-import { gitCommonDir, listFiles, repoToplevel, resolveCommit, showFile } from './git.ts'
+import { git, GitError, gitCommonDir, listFiles, repoToplevel, resolveCommit, showFile } from './git.ts'
 import { judgeabilityIssues } from './rubric.ts'
 import {
   planDatasetSkeleton, planItemSkeleton, type SkeletonResult,
 } from './scaffold.ts'
 import { layerPaths, materializePaths, type ManagedWorktree } from './materialize.ts'
-import { openRegistry, type RepoRegistry } from './registry.ts'
-import { normalizeRepoPath, sameRepoPath } from './repo-path.ts'
+import { notRegistered, openRegistry, type LatestCommit, type RegistryEntry, type RepoRegistry } from './registry.ts'
+import { normalizeRepoPath } from './repo-path.ts'
 
 /**
  * The effective visibility scope of one call: the resolved repository plus
- * the binding's whitelists. Tools build it from explicit arguments or the
- * session binding; the CLI from flags; slash from the session binding.
+ * the whitelists. Tools and slash build it from a registry reference
+ * (`registryScope`), the CLI from the registry or an explicit `--repo`.
  */
 export interface DatasetScope {
   /** Repository path (as given; resolved per call) — a checkout, or a git common dir for read verbs. */
@@ -49,13 +45,13 @@ export interface DatasetScope {
    * agent reads «latest» and never whatever branch a shared checkout has out.
    */
   ref?: string
-  /** Dataset-id whitelist from the binding; absent = all. */
+  /** Dataset-id whitelist (a registry reference's one set); absent = all. */
   datasets?: readonly string[]
-  /** Layer whitelist from the binding; absent = the modelFacing floor (see effectiveLayers). */
+  /** Layer whitelist (the registration's layers); absent = the modelFacing floor (see effectiveLayers). */
   layers?: readonly string[]
   /**
    * The human/operator view (the web tab, CLI read verbs): bypasses BOTH the
-   * binding whitelists and the modelFacing default floor. The whitelist
+   * whitelists and the modelFacing default floor. The whitelist
    * constrains the agent (tools + worktree materialization), never the human
    * looking at their own machine.
    */
@@ -66,7 +62,7 @@ export interface DatasetScope {
  * The effective layer ceiling of one call against one dataset:
  * - operator scope: unfiltered (undefined) — the human looking at their own
  *   machine is never the party this constrains;
- * - an explicit binding whitelist: exactly it (sensitive layers listed on
+ * - an explicit whitelist: exactly it (sensitive layers listed on
  *   purpose are deliberately included);
  * - no whitelist: the modelFacing floor, the dataset's `modelFacing: true`
  *   layers and nothing else.
@@ -88,81 +84,46 @@ export function effectiveLayers(scope: DatasetScope, descriptor: DatasetDescript
   return descriptor.layers.filter(layer => layer.modelFacing).map(layer => layer.name)
 }
 
-/** Explicit-selector input shared by the tool/CLI/slash adapters. */
-export interface ScopeSelectors {
-  repo?: string
-}
-
 /**
- * Resolve the effective scope: an explicit `repo` wins for a HUMAN caller,
- * then the session binding, then the plugin config's default repo. The
- * binding's whitelists apply whenever a binding exists — including alongside
- * an explicit repo, because the binding human owns what the session's agent
- * may see. No repo source at all fails loud instead of guessing.
+ * Resolve the HUMAN faces' scope (the CLI's read verbs) from the deployment's
+ * registry — there is no session binding and no configured default any more
+ * (T73): which repository a call reads is the registry's answer or the
+ * operator's explicit `--repo`.
  *
- * `agent: true` marks a call from a MODEL TOOL, and there `repo` stops being
- * an override: it may only restate the repository this session already has —
- * its binding, or the repository the instance was configured with — and
- * anything else is refused with the bind command.
- *
- * The narrowing is the point. The parameter was a way around the very refusal
- * that told the agent to ask a person, and an agent took it: told there was no
- * binding, it searched the disk, found a checkout several agents share, and
- * wrote three files onto somebody else's branch (I5·T39 · G1). Which
- * repository an evaluation reads and writes is a human's decision about a
- * shared machine, not an argument.
- *
- * Whichever source wins is normalized (`normalizeRepoPath`): a `~` typed into
- * a tool argument or a config file reaches git as a literal directory name
- * otherwise, and the three sources must not disagree about what one path
- * means.
- * @param selectors - explicit per-call selectors.
- * @param binding - the session binding, when one exists.
- * @param defaultRepo - the plugin config's default repo ('' / undefined = none).
- * @param options - `agent: true` for the model-tool face.
- * @returns the effective scope.
+ * - `repo` naming a registration id: that registration, read at its
+ *   tracked-branch tip through the common dir (no checkout's HEAD in play);
+ * - any other `repo`: a path the operator typed at their own machine,
+ *   normalized (`~` expanded) and read as given;
+ * - no `repo`: the only registration when there is exactly one; otherwise one
+ *   of the two refusals — nothing registered, or several candidates.
+ * @param registry - the deployment's dataset registry.
+ * @param repo - the explicit `--repo` (a registry id or a path), if any.
+ * @returns the scope (the caller adds `operator` where it applies).
  */
-export function resolveScope(
-  selectors: ScopeSelectors,
-  binding: DatasetBinding | undefined,
-  defaultRepo: string | undefined,
-  options: { agent?: boolean } = {},
-): DatasetScope {
-  const explicit = selectors.repo?.trim()
-  const asked = explicit !== undefined && explicit !== '' ? explicit : undefined
-  const session = binding?.repoPath ?? (defaultRepo !== undefined && defaultRepo !== '' ? defaultRepo : undefined)
-  const whitelists = {
-    ...(binding?.datasets !== undefined ? { datasets: binding.datasets } : {}),
-    ...(binding?.layers !== undefined ? { layers: binding.layers } : {}),
+export async function resolveOperatorScope(registry: RepoRegistry, repo: string | undefined): Promise<DatasetScope> {
+  const asked = repo?.trim()
+  if (asked !== undefined && asked !== '') {
+    const entry = registry.get(asked)
+    if (entry === undefined) return { repo: normalizeRepoPath(asked) }
+    return { repo: entry.commonDir, ref: (await registry.latest(entry)).commit }
   }
-  if (options.agent === true) {
-    if (session === undefined) {
-      throw new DatasetsError(
-        'no dataset repository bound to this session'
-        + (asked === undefined ? '' : `, so ${JSON.stringify(asked)} is not this session's to read`)
-        + ' — ask the person to bind one (/datasets bind <repoPath>), and use no repo argument afterwards.'
-        + ' An unbound session has no repository an agent may pick for it, however many are on the disk.',
-        'NO_REPO',
-      )
-    }
-    if (asked !== undefined && !sameRepoPath(asked, session)) {
-      throw new DatasetsError(
-        `repo ${JSON.stringify(asked)} is not this session's dataset repository (${session})`
-        + ' — the repo argument may only restate it. Drop it, or ask the person to rebind'
-        + ' (/datasets bind <repoPath>).',
-        'REPO_NOT_BOUND',
-      )
-    }
-    return { repo: normalizeRepoPath(session), ...whitelists }
+  const entries = registry.entries()
+  const only = entries[0]
+  if (entries.length === 1 && only !== undefined) {
+    return { repo: only.commonDir, ref: (await registry.latest(only)).commit }
   }
-  const repo = asked ?? session
-  if (repo === undefined) {
+  if (entries.length === 0) {
     throw new DatasetsError(
-      'no dataset repository: pass `repo` explicitly, or bind one first (/datasets bind or `dsh-datasets bind`)',
-      'NO_REPO',
+      'no dataset repository is registered in this deployment; register one (Datasets tab → Register repository, '
+      + 'or `dsh-datasets register --repo <path>`), or pass --repo <path>',
+      'NOT_REGISTERED',
     )
   }
-  return { repo: normalizeRepoPath(repo), ...whitelists }
+  throw new DatasetsError(
+    `several dataset repositories are registered (${entries.map(entry => entry.id).join(', ')}); `
+    + 'pass --repo <id> to pick one',
+    'NOT_UNIQUE',
+  )
 }
 
 /** `datasets_list` result with a dataset selector: one dataset's items. */
@@ -347,14 +308,6 @@ export interface WorktreeOptions {
 
 /** The public service face (`ctx.datasets`). */
 export interface DatasetsService {
-  /**
-   * The plugin config's default repo (`''` = none) — the scope fallback the
-   * human faces (slash, Remote tab) resolve against when a call carries no
-   * explicit `repo` and the session has no binding. It rides the service so
-   * the companion row's slash face can reach it without seeing the core's
-   * plugin config.
-   */
-  readonly defaultRepo: string
   /** The legacy per-session binding store (read by the registry's one-click import). */
   readonly bindingsRoot: string
   list(scope: DatasetScope, datasetId?: string, commit?: string): Promise<ListDatasetsResult | ListItemsResult>
@@ -417,13 +370,42 @@ export interface DatasetsService {
    * judgeability rules over an item's rubric).
    */
   validate(scope: DatasetScope, datasetId?: string): Promise<ValidateResult>
-  /** Record a binding for a live session (slash/tab path). */
-  bind(session: BindingSession, binding: DatasetBinding): DatasetBinding
-  /** Clear a live session's binding. */
-  unbind(session: BindingSession): void
-  /** Fold a session's current binding. */
-  binding(session: BindingSession): DatasetBinding | undefined
+  /*
+   * Operator-level registry reads. In-process only — not model tools, not
+   * Remote verbs: eval's experiment layer calls them structurally (it pins a
+   * dataset as {registry, set, commit} and reads contract files from it).
+   * Every one addresses a registration by id and only runs git
+   * show / ls-tree / rev-parse / archive against its common dir — never a
+   * worktree, never a checkout, never a HEAD move.
+   */
+  /** A registration as eval's experiment layer reads it. Throws DatasetsError NOT_REGISTERED for an unknown id. */
+  registration(id: string): Promise<{ id: string; commonDir: string; trackedRef: string; latest: LatestCommit }>
+  /** Resolve a commit-ish (branch, tag, full or short sha) inside the registered repository to a full sha; GIT_ERROR when unknown. */
+  resolveRegistryCommit(id: string, ref: string): Promise<string>
+  /** The git tree/blob oid at `<commit>:<repo-relative path>`, or null when the path is absent at that commit. */
+  registryObjectId(id: string, commit: string, path: string): Promise<string | null>
+  /** Repo-relative file paths under a repo-relative prefix at a commit (empty when absent). */
+  registryListFiles(id: string, commit: string, prefix: string): Promise<string[]>
+  /** A file's exact bytes at a commit, or undefined when absent. */
+  registryShowFile(id: string, commit: string, path: string): Promise<Buffer | undefined>
+  /**
+   * The operator's full read-only view of `datasets/<set>/` at one full commit
+   * sha (descriptor, schemas, every item layer, plans, conditions …),
+   * materialized content-addressed under the materialized root with the
+   * reserved view key {@link FULL_VIEW_KEY}. Host-side only — validation
+   * and the run loop read contract files from it; it is never handed to an
+   * agent. `path` is the materialized `datasets/<set>` directory.
+   */
+  datasetView(id: string, set: string, commit: string): Promise<{ path: string; commit: string }>
 }
+
+/**
+ * The layers-key segment of an operator full view ({@link DatasetsService.datasetView}).
+ * The leading underscore keeps it apart from every declared layer name in
+ * practice; a set that declares a layer literally named `_full` would share
+ * the key, which is why descriptors should not.
+ */
+export const FULL_VIEW_KEY = '_full'
 
 /** Service construction options (roots already resolved by the caller). */
 export interface DatasetsServiceOptions {
@@ -431,10 +413,8 @@ export interface DatasetsServiceOptions {
   materializedRoot: string
   /** The registry file (`<stateRoot>/registry.json`). */
   registryPath: string
-  /** Binding store root (`<stateRoot>/bindings`). */
+  /** The legacy binding store root (`<stateRoot>/bindings`), read only by the registry's import. */
   bindingsRoot: string
-  /** Plugin config's default repo (absent / `''` = none); surfaced as {@link DatasetsService.defaultRepo}. */
-  defaultRepo?: string
 }
 
 /**
@@ -644,14 +624,20 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     if (scope.operator !== true) {
       throw new DatasetsError(
         `${gesture} is a human gesture from the datasets tab, not an agent verb — `
-        + 'an agent drafts items through datasets_put_item, inside the session binding',
+        + 'an agent drafts items through datasets_put_item, inside its registered set',
         'LAYER_NOT_ALLOWED',
       )
     }
   }
 
+  /** A registration by id, or the unregistered refusal. */
+  const registered = (id: string): RegistryEntry => {
+    const entry = service.registry.get(id)
+    if (entry === undefined) throw notRegistered(id)
+    return entry
+  }
+
   const service: DatasetsService = {
-    defaultRepo: options.defaultRepo ?? '',
     bindingsRoot: options.bindingsRoot,
     registry: openRegistry(options.registryPath),
     async list(scope, datasetId, commit) {
@@ -1017,18 +1003,65 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       return await toplevelOf(repo)
     },
 
-    bind(session, binding) {
-      const validated = validateBinding(binding)
-      writeBinding(options.bindingsRoot, session.id, validated)
-      return validated
+    async registration(id) {
+      const entry = registered(id)
+      return {
+        id: entry.id, commonDir: entry.commonDir, trackedRef: entry.trackedRef,
+        latest: await service.registry.latest(entry),
+      }
     },
 
-    unbind(session) {
-      writeBinding(options.bindingsRoot, session.id, null)
+    async resolveRegistryCommit(id, ref) {
+      const entry = registered(id)
+      try {
+        return await resolveCommit(entry.commonDir, ref)
+      } catch {
+        throw new DatasetsError(`${JSON.stringify(ref)} is not a commit of ${JSON.stringify(id)}`, 'GIT_ERROR')
+      }
     },
 
-    binding(session) {
-      return readBinding(options.bindingsRoot, session.id)
+    async registryObjectId(id, commit, path) {
+      const entry = registered(id)
+      const rel = path === '' ? '' : assertSafeRelativePath(path)
+      try {
+        return (await git(entry.commonDir, ['rev-parse', '--verify', '--quiet', `${commit}:${rel}`])).trim() || null
+      } catch (error) {
+        if (error instanceof GitError) return null
+        throw error
+      }
+    },
+
+    async registryListFiles(id, commit, prefix) {
+      const entry = registered(id)
+      return await listFiles(entry.commonDir, commit, prefix === '' ? '' : assertSafeRelativePath(prefix))
+    },
+
+    async registryShowFile(id, commit, path) {
+      const entry = registered(id)
+      const rel = assertSafeRelativePath(path)
+      try {
+        return await git(entry.commonDir, ['show', `${commit}:${rel}`], true)
+      } catch (error) {
+        if (error instanceof GitError && /does not exist|exists on disk, but not in|bad revision|Not a valid object name/i.test(error.stderr)) {
+          return undefined
+        }
+        throw error
+      }
+    },
+
+    async datasetView(id, set, commit) {
+      const entry = registered(id)
+      assertValidName('dataset id', set)
+      const base = datasetDir(set)
+      const files = await listFiles(entry.commonDir, commit, base)
+      if (files.length === 0) {
+        throw new DatasetsError(`${JSON.stringify(id)} has no set ${JSON.stringify(set)} at ${commit.slice(0, 7)}`, 'DATASET_NOT_FOUND')
+      }
+      // One pathspec per first-level child keeps the archive argument list
+      // short whatever the set's size; together they are the whole set.
+      const children = [...new Set(files.map(file => `${base}/${file.slice(base.length + 1).split('/')[0]}`))]
+      const view = await materializePaths(entry.commonDir, commit, set, [], children, options.materializedRoot, FULL_VIEW_KEY)
+      return { path: join(view.path, base), commit: view.commit }
     },
   }
   return service

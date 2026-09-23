@@ -16,8 +16,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { cleanup as unmount, render, screen } from '@testing-library/react'
-import { createDatasetsService, resolveScope } from '../src/service.ts'
-import { DatasetsError } from '../src/dataset.ts'
+import { createDatasetsService, resolveOperatorScope } from '../src/service.ts'
 import { classifyError, ErrorState } from '../src/client/ErrorState.tsx'
 import { cleanup, stateOptions } from './helpers.ts'
 
@@ -60,14 +59,9 @@ describe('the classifier answers to the host, not to a fixture string', () => {
     expect(classifyError(message)).toBe('pathMissing')
   })
 
-  it('recognizes a session with nothing bound', () => {
-    let message = ''
-    try {
-      resolveScope({}, undefined, undefined)
-    } catch (error) {
-      message = error instanceof DatasetsError ? error.message : String(error)
-    }
-    expect(classifyError(message)).toBe('unbound')
+  it('recognizes a deployment with nothing registered', async () => {
+    const message = await failureOf(async () => await resolveOperatorScope(service().registry, undefined))
+    expect(classifyError(message)).toBe('noneRegistered')
   })
 })
 
@@ -77,8 +71,8 @@ describe('classifyError', () => {
     expect(classifyError('not a dataset repository (no datasets/ directory): /x')).toBe('notDatasetRepo')
   })
 
-  it('separates "no repository bound" from "not a repository"', () => {
-    expect(classifyError('no dataset repository: pass `repo` explicitly, or bind one first')).toBe('unbound')
+  it('separates "nothing registered" from "not a repository"', () => {
+    expect(classifyError('no dataset repository is registered in this deployment; register one')).toBe('noneRegistered')
     expect(classifyError('/x is not a git repository: GitError: …')).toBe('notGitRepo')
   })
 

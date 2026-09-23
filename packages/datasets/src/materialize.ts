@@ -150,9 +150,16 @@ export async function materializePaths(
   layers: readonly string[],
   paths: readonly string[],
   root: string,
+  viewKey?: string,
 ): Promise<ManagedWorktree> {
   assertValidName('dataset id', datasetId)
   for (const layer of layers) assertValidName('layer name', layer)
+  // A reserved view key (leading `_`) can never equal a layers key — layer
+  // names may not start with `_` — so a whole-set view never shares a cache
+  // directory with a layer view.
+  if (viewKey !== undefined && !/^_[a-z]+$/.test(viewKey)) {
+    throw new DatasetsError(`invalid view key ${JSON.stringify(viewKey)}`, 'INVALID_NAME')
+  }
   if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(sha)) {
     throw new DatasetsError(`materialization needs a full commit sha, got ${JSON.stringify(sha)}`, 'GIT_ERROR')
   }
@@ -176,7 +183,7 @@ export async function materializePaths(
   })
   const sortedLayers = [...new Set(layers)].sort()
   const commonDir = await gitCommonDir(repo)
-  const target = join(root, repoKeyOf(commonDir), sha, datasetId, layersKeyOf(sortedLayers))
+  const target = join(root, repoKeyOf(commonDir), sha, datasetId, viewKey ?? layersKeyOf(sortedLayers))
   if (existsSync(target)) return { path: target, commit: sha, layers: sortedLayers, reused: true }
 
   const stagingRoot = join(root, STAGING_DIR)

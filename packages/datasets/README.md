@@ -67,7 +67,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（裸 `datasets` 挂载）调和进 profile 的 bundles 层——不需要手改 cordis.yml。一个 composition 只能挂载 `datasets` 行 id 一次；`dsh --profile web --dump-config | grep datasets` 无输出即说明可以安全 add。
 
-配置（均可选）：`repo`（旧绑定读路径的兜底仓库，只剩 eval 在读，见[旧会话绑定](#旧会话绑定)；缺省无）与 `materializedRoot`（物化根覆盖；缺省 `$DSH_HOME/state/datasets/materialized`，否则 `<cwd>/.dsh-datasets/materialized`）。登记文件固定在状态根下：`$DSH_HOME/state/datasets/registry.json`。`tools` 不再是本行的键：模型工具的分组配置搬到了伴生行 `@khorsheed/dsh-datasets-tool`，见[模型工具](#模型工具)。
+配置（可选）：`materializedRoot`（物化根覆盖；缺省 `$DSH_HOME/state/datasets/materialized`，否则 `<cwd>/.dsh-datasets/materialized`）。登记文件固定在状态根下：`$DSH_HOME/state/datasets/registry.json`。`tools` 不再是本行的键：模型工具的分组配置搬到了伴生行 `@khorsheed/dsh-datasets-tool`，见[模型工具](#模型工具)。
 
 插件提供 `ctx.datasets` 服务供其他插件可选消费，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查物化根的结构完整性。`/datasets` slash 命令的**注册**自 preset 可见性收口（A3）起归伴生行——落进 preset 的 scope 层，只有授予会话可见；handler 与定义仍在本包，由伴生行调 `registerDatasetsSlash` 接入。`datasets_*` 模型工具与 `datasets:tools` 提示词段归伴生行 `@khorsheed/dsh-datasets-tool`，由 agent preset 按会话授予——见[模型工具](#模型工具)。
 
@@ -100,7 +100,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 ### 旧会话绑定
 
-T73 之前每个会话绑一个仓库（`$DSH_HOME/state/datasets/bindings/<session>.json`）。这条路**只剩读**：eval 的实验编排还经 `DatasetsBindingFace.binding()` 读它（改到登记引用是 eval 那一侧的事），所以绑定文件**从不自动删除**，`dsh-datasets binding` / `unbind` 保留。写绑定的入口（`/datasets bind`、CLI `bind`、tab 绑定条、composer 绑定 chip）都已退役，`/datasets bind` 回答的是去登记的指引。
+T73 之前每个会话绑一个仓库（`$DSH_HOME/state/datasets/bindings/<session>.json`）。T73 第二步起这条路**整个退役**：没有任何代码再读绑定（eval 的实验改为钉住自己的 `{登记 id, set, commit}`），`repo` 兜底配置、CLI `binding` / `unbind`、`/datasets unbind` 都已删除，写绑定的入口（`/datasets bind`、CLI `bind`、tab 绑定条、composer 绑定 chip）早已退役，`/datasets bind` 回答的是去登记的指引。唯一还碰这些文件的是下面的一键迁移，它只读。绑定文件**从不自动删除**：迁移确认无误后，可以手动删掉 `$DSH_HOME/state/datasets/bindings/` 目录。
 
 从旧绑定迁移是一键的：tab 的「从旧绑定登记」（CLI `import-bindings`）把指向同一仓库的多条绑定合成一条登记，指向已不存在路径的绑定标红跳过；绑定文件本身逐字节不动，重复执行不会重复登记。
 
@@ -125,7 +125,7 @@ T73 之前每个会话绑一个仓库（`$DSH_HOME/state/datasets/bindings/<sess
 
 ## CLI
 
-`dsh-datasets` bin 镜像工具的读取动词（同语义同名参数），另有登记动词。CLI 是人的面：读取动词按路径取仓库（`--repo`，否则 `$DSH_DATASETS_REPO`），不经登记。退出码：0 成功，1 操作失败，2 用法错误。从 PATH 或 pnpm 的 `.bin` 软链调用与直连 `lib/cli.js` 等价：入口守卫先把 `argv[1]` 解析成真实路径再比对，软链路径不会让它静默空跑。
+`dsh-datasets` bin 镜像工具的读取动词（同语义同名参数），另有登记动词。CLI 是人的面：读取动词的 `--repo` 收登记 id 或仓库路径；省略时用部署里唯一的那条登记（零条或多条都拒绝，并说明要传 `--repo`）。按登记 id 取时，`--commit` 缺省是该登记跟踪分支的最新提交；按路径取时缺省是 HEAD。退出码：0 成功，1 操作失败，2 用法错误。从 PATH 或 pnpm 的 `.bin` 软链调用与直连 `lib/cli.js` 等价：入口守卫先把 `argv[1]` 解析成真实路径再比对，软链路径不会让它静默空跑。
 
 ```sh
 dsh-datasets list [--repo R] [--dataset D] [--commit C]
@@ -140,21 +140,18 @@ dsh-datasets register --repo R [--id ID] [--tracked-ref B] [--set-layers set=a+b
 dsh-datasets update --id ID [--tracked-ref B] [--set-layers set=a+b,…] [--authoring-checkout P|none]
 dsh-datasets unregister --id ID
 dsh-datasets import-bindings [--state-root DIR]
-dsh-datasets unbind --session ID [--state-root DIR]
-dsh-datasets binding --session ID [--state-root DIR]
 ```
 
-登记动词写 `--state-root`（缺省 `$DSH_HOME/state/datasets`）下的 `registry.json`，每次调用现读，所以登记后运行中实例的下一次工具调用即可看到。`bind` 已退役，回答的是 `register` 的用法；`unbind` / `binding` 只为旧绑定文件保留。
+登记动词写 `--state-root`（缺省 `$DSH_HOME/state/datasets`）下的 `registry.json`，每次调用现读，所以登记后运行中实例的下一次工具调用即可看到。`bind` 已退役，回答的是 `register` 的用法；`unbind` / `binding` 已删除。
 
 ## Slash 命令
 
 ```
-/datasets list [dataset]
-/datasets show <dataset> [item]
-/datasets unbind
+/datasets list [<id>/<set>]
+/datasets show <id>/<set> [item]
 ```
 
-`/datasets bind` 已退役：它现在回答一句去题集 tab「登记题库」（或 `dsh-datasets register`）的指引，不写任何东西。题库按部署登记一次，不再是会话级的动作。
+`/datasets bind` 已退役：它现在回答一句去题集 tab「登记题库」（或 `dsh-datasets register`）的指引，不写任何东西。题库按部署登记一次，不再是会话级的动作。不带参数的 `list` 列出所有登记下的 `<id>/<set>`。
 
 命令声明了 free-form input（`input.hint`）。这不是装饰：不声明的话，能力较强的 composer 没有理由认为 `/datasets` 收参数——从补全条选中命令会提交一个空参调用，人敲的 `show <dataset>` 留在消息体里，命令以 usage 行作答（T36 真机撞到的）。
 

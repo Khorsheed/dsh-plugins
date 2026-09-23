@@ -43,9 +43,6 @@ export const ITEM_METADATA = 'item.json'
 
 /** Stable error codes for dataset domain failures. */
 export type DatasetsErrorCode =
-  | 'NO_REPO'
-  /** A model tool named a repository that is not this session's (I5·T58 · G1). */
-  | 'REPO_NOT_BOUND'
   | 'NOT_A_REPO'
   | 'DATASET_NOT_FOUND'
   | 'ITEM_NOT_FOUND'
@@ -59,6 +56,8 @@ export type DatasetsErrorCode =
   | 'NOT_REGISTERED'
   /** A `dataset` reference matches more than one registration, or is not a full `<id>/<set>`. */
   | 'AMBIGUOUS_DATASET'
+  /** A human face named no repository and several are registered. */
+  | 'NOT_UNIQUE'
   /** A model tool passed a filesystem path where a registry reference belongs. */
   | 'PATH_NOT_REF'
   /** The repository is registered already (identity = its git common dir). */

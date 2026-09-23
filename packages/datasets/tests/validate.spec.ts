@@ -19,7 +19,7 @@ afterEach(() => {
 
 const service = () => createDatasetsService({
   ...stateOptions(mkdtempSync(join(tmpdir(), 'dsh-datasets-state-'))),
-  bindingsRoot: mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-')),
+  bindingsRoot: join(tmpdir(), 'dsh-datasets-no-bindings'),
 })
 
 /** A scratch git repo with arbitrary dataset content. */
@@ -158,17 +158,21 @@ describe('service.validate: the canary', () => {
 })
 
 describe('CLI validate', () => {
-  const run = async (argv: readonly string[], env: Record<string, string | undefined>) => {
+  // Every run names its own empty state root: without one the CLI would read
+  // the machine's real registry (no registration = the NOT_REGISTERED refusal).
+  const run = async (argv: readonly string[], repoFlag: readonly string[]) => {
     let out = ''
     let err = ''
     const io: CliIo = { stdout: line => { out += line }, stderr: line => { err += line } }
-    const code = await runCli([...argv], io, env)
+    const state = mkdtempSync(join(tmpdir(), 'dsh-datasets-cli-state-'))
+    const code = await runCli([...argv, ...repoFlag, '--state-root', state], io)
+    rmSync(state, { recursive: true, force: true })
     return { code, out, err }
   }
 
   it('exit 0 with warnings printed; exit 1 on shape errors; exit 2 on usage', async () => {
     repo = makeFixtureRepo()
-    const env = { DSH_DATASETS_REPO: repo.dir }
+    const env = ['--repo', repo.dir]
     const ok = await run(['validate'], env)
     expect(ok.code).toBe(0)
     expect(ok.out).toContain('alpha: 3 warning(s)')
@@ -184,6 +188,6 @@ describe('CLI validate', () => {
     expect(broken.out).toContain('error [SHAPE_INVALID]')
 
     expect((await run(['validate', '--dataset', 'alpha'], env)).code).toBe(0)
-    expect((await run(['validate'], {})).code).toBe(1) // no repo source: operational failure
+    expect((await run(['validate'], [])).code).toBe(1) // nothing registered, no --repo: operational failure
   })
 })

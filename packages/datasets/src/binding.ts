@@ -1,58 +1,28 @@
 /**
- * Per-session dataset binding, stored as a plugin-owned durable state file:
- * one JSON file per session under the plugin state root
- * (`<stateRoot>/bindings/<encoded-session-id>.json`). Binding WRITES are
- * human operations (slash `/datasets bind`, the web tab, the CLI); agent
- * tools only resolve the binding — which datasets an agent may use is decided
- * by the human, not the agent.
+ * The LEGACY per-session dataset binding record — read-only history since T73.
  *
- * WHY NOT a log-only session event (the M1 design): the persistence read
- * path refuses to rebuild a session whose log holds an event type outside
- * the harness's generated KNOWN_SESSION_EVENT_TYPES unless the envelope
- * carries `ignorable: true` — and a downstream (out-of-repo) plugin's event
- * types are outside that set BY CONSTRUCTION (the registration surface is
- * deferred upstream), while `Session.append()` builds the envelope with no
- * way to set the marker. A custom-typed event a community plugin appends is
- * therefore guaranteed to make the session unresumable. The `goal/change`
- * precedent M1 followed is an in-harness plugin whose type sits in the known
- * set; the precedent never transferred downstream. A binding needs
- * per-session durability, not a seat in the model-facing log, so it lives in
- * the plugin's own state. The store is read per call, so a CLI write to a
- * LIVE session's binding is race-free (the M1 offline-append race is gone).
+ * Before the deployment registry each session bound one repository, stored as
+ * `<stateRoot>/bindings/<encoded-session-id>.json` ({version: 1, binding}).
+ * Nothing reads a binding to decide what a session may use any more: the
+ * registry is the only source, and the one consumer left is the registry's
+ * one-click import ({@link RepoRegistry.importBindings}), which folds these
+ * files into registrations and leaves every file byte-identical. The files are
+ * never deleted automatically; an operator removes them by hand once imported.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { DatasetsError } from './dataset.ts'
 import { normalizeRepoPath } from './repo-path.ts'
 
-/** A session's dataset binding. Absent fields mean "everything in the repo". */
+/** A legacy session binding. Absent fields meant "everything in the repo". */
 export interface DatasetBinding {
   /**
    * Absolute, `~`-free, symlink-resolved path of the git repository holding
-   * the datasets — see {@link normalizeRepoPath}. Every write goes through
-   * {@link validateBinding}, so a binding that reached the store is already
-   * in this form.
+   * the datasets — see {@link normalizeRepoPath}.
    */
   repoPath: string
   /** Dataset-id whitelist; absent = every dataset in the repository. */
   datasets?: string[]
-  /** Layer whitelist; absent = every layer. Enforced on ALL read paths. */
+  /** Layer whitelist; absent = every layer. */
   layers?: string[]
-}
-
-/** The durable store record (versioned for future migrations). */
-interface BindingRecord {
-  readonly version: 1
-  readonly binding: DatasetBinding
-}
-
-/**
- * The narrow slice of `Session` the binding store needs. Structural, so tests
- * and the CLI path can supply minimal fakes — just the identity the binding
- * is filed under.
- */
-export interface BindingSession {
-  readonly id: string
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -60,13 +30,9 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 /**
- * Validate a binding object (from a store record, CLI flags, or a tool
- * caller) and put its `repoPath` in canonical form.
- *
- * Normalizing HERE rather than at each call site is what makes the guarantee
- * hold: every write goes through this function, and so does every read (see
- * {@link readBinding}), so no consumer has to remember to expand `~` and none
- * of them can disagree about what the bound path means.
+ * Validate a legacy binding object (as the registry's import reads it from a
+ * store record) and put its `repoPath` in canonical form — records written
+ * before normalization carry a literal `~` or a trailing slash.
  * @param value - the candidate binding.
  * @returns the validated binding, `repoPath` normalized.
  */
@@ -110,72 +76,4 @@ export function encodeSegment(raw: string): string {
     }
   }
   return out
-}
-
-/** The store file of one session's binding. */
-function bindingPath(root: string, sessionId: string): string {
-  return join(root, `${encodeSegment(sessionId)}.json`)
-}
-
-/**
- * Read a session's current binding from the store. A missing file means
- * unbound; a corrupt or shape-invalid file fails loud (a hand-edited store
- * must not silently drop the session's access governance).
- *
- * A record written before `repoPath` was normalized (a literal `~`, a
- * trailing slash, a relative path) is migrated IN PLACE on this read: the
- * caller gets the canonical path and the file stops being a trap for the next
- * reader. The write-back is best effort — a store we may not write to still
- * answers the read correctly.
- * @param root - the bindings root (`<stateRoot>/bindings`).
- * @param sessionId - the session.
- * @returns the binding, or undefined when none is in effect.
- */
-export function readBinding(root: string, sessionId: string): DatasetBinding | undefined {
-  const path = bindingPath(root, sessionId)
-  if (!existsSync(path)) return undefined
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'))
-  } catch (error) {
-    throw new DatasetsError(`${path}: invalid JSON — ${String(error)}`, 'SHAPE_INVALID')
-  }
-  const record = parsed as Partial<BindingRecord> | null
-  if (typeof record !== 'object' || record === null || record.version !== 1) {
-    throw new DatasetsError(`${path}: unknown binding record shape`, 'SHAPE_INVALID')
-  }
-  const stored = (record.binding as { repoPath?: unknown } | undefined)?.repoPath
-  const binding = validateBinding(record.binding)
-  if (stored !== binding.repoPath) {
-    try {
-      writeBinding(root, sessionId, binding)
-    } catch {
-      // Migration is a courtesy to the next reader, never this read's problem.
-    }
-  }
-  return binding
-}
-
-/**
- * Write a session's binding (null unbinds by removing the record). The write
- * is atomic (tmp file + rename) and validated, so a crashed write never
- * leaves a torn record and an invalid binding never enters the store.
- * @param root - the bindings root (`<stateRoot>/bindings`).
- * @param sessionId - the session to bind.
- * @param binding - the new binding, or null to unbind.
- * @returns the validated binding that was recorded, or null on unbind.
- */
-export function writeBinding(root: string, sessionId: string, binding: DatasetBinding | null): DatasetBinding | null {
-  const path = bindingPath(root, sessionId)
-  if (binding === null) {
-    rmSync(path, { force: true })
-    return null
-  }
-  const validated = validateBinding(binding)
-  const record: BindingRecord = { version: 1, binding: validated }
-  mkdirSync(root, { recursive: true })
-  const tmp = `${path}.${process.pid}.tmp`
-  writeFileSync(tmp, `${JSON.stringify(record, null, 2)}\n`, 'utf8')
-  renameSync(tmp, path)
-  return validated
 }

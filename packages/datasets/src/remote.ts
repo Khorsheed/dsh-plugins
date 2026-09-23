@@ -32,11 +32,11 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Remote construction options (mirrors the plugin config's resolution inputs). */
-export interface DatasetsRemoteConfig {
-  /** The plugin config's default repo — the last resort of scope resolution. */
-  defaultRepo?: string
-}
+/**
+ * Remote construction options. Empty since T73 retired the configured default
+ * repository — every browse names a registration.
+ */
+export type DatasetsRemoteConfig = Record<string, never>
 
 /**
  * The web tab's dataset face: the deployment's registry (list, preview,
@@ -52,11 +52,9 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   /**
    * @param ctx - owning Cordis Context carrying `datasets` (provided by the
    *   plugin's apply before this service mounts).
-   * @param config - the plugin config's default repo, when one is set.
    */
-  constructor(ctx: Context, config: DatasetsRemoteConfig = {}) {
+  constructor(ctx: Context) {
     super(ctx, 'datasetsRemote', { namespace: 'datasets' })
-    void config
   }
 
   private get datasets(): DatasetsService {

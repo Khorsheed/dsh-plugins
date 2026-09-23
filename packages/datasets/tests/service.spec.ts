@@ -1,12 +1,11 @@
 /** Service core: whitelist enforcement on every read path, put_item discipline, fail-loud scoping. */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { BindingSession } from '../src/binding.ts'
 import { DatasetsError } from '../src/dataset.ts'
-import { createDatasetsService, resolveScope, type DatasetScope } from '../src/service.ts'
-import { cleanup, commitAll, git, makeFixtureRepo, writeFiles, type FixtureRepo, stateOptions } from './helpers.ts'
+import { createDatasetsService, FULL_VIEW_KEY, resolveOperatorScope, type DatasetScope } from '../src/service.ts'
+import { cleanup, commitAll, git, makeFixtureRepo, writeFiles, type FixtureRepo } from './helpers.ts'
 
 let repo: FixtureRepo | undefined
 let worktreeRoot: string | undefined
@@ -30,61 +29,28 @@ const service = () => createDatasetsService({
 /** Scope over the fixture repo with a `visible`-only layer whitelist. */
 const boundScope = (): DatasetScope => ({ repo: repo?.dir ?? '', layers: ['visible'] })
 
-describe('resolveScope', () => {
-  it('prefers the explicit repo, then the binding, then the default; fails loud with none', () => {
-    expect(resolveScope({ repo: '/explicit' }, { repoPath: '/bound' }, '/default').repo).toBe('/explicit')
-    expect(resolveScope({}, { repoPath: '/bound' }, '/default').repo).toBe('/bound')
-    expect(resolveScope({}, undefined, '/default').repo).toBe('/default')
-    expect(() => resolveScope({}, undefined, undefined)).toThrowError(/bind one first/)
-    expect(() => resolveScope({}, undefined, '')).toThrowError(/bind one first/)
-  })
-
-  it('carries the binding whitelists even alongside an explicit repo', () => {
-    const scope = resolveScope({ repo: '/explicit' }, { repoPath: '/bound', layers: ['visible'], datasets: ['alpha'] }, undefined)
-    expect(scope.layers).toEqual(['visible'])
-    expect(scope.datasets).toEqual(['alpha'])
-  })
-
-  // I5·T58 · G1: the parameter was a way around the refusal that tells the
-  // agent to ask a person, and an agent used it to write into a checkout
-  // several agents share.
-  it('for an AGENT caller the repo argument may only restate the session\'s own repository', () => {
-    const bound = { repoPath: '/bound' }
-    expect(resolveScope({ repo: '/bound' }, bound, undefined, { agent: true }).repo).toBe('/bound')
-    expect(resolveScope({}, bound, undefined, { agent: true }).repo).toBe('/bound')
-    // A trailing separator is the same directory, not a second one.
-    expect(resolveScope({ repo: '/bound/' }, bound, undefined, { agent: true }).repo).toBe('/bound')
-    expect(() => resolveScope({ repo: '/somewhere-else' }, bound, undefined, { agent: true }))
-      .toThrowError(/is not this session's dataset repository/)
-  })
-
-  it('an unbound session gives an agent no repository at all, however the argument is spelled', () => {
-    expect(() => resolveScope({ repo: '/anywhere' }, undefined, undefined, { agent: true }))
-      .toThrowError(/not this session's to read/)
-    expect(() => resolveScope({}, undefined, undefined, { agent: true }))
-      .toThrowError(/\/datasets bind/)
-    // The instance-wide configured repository IS a human's decision, so it
-    // still answers for a session nobody bound — and the argument may restate
-    // that one too.
-    expect(resolveScope({}, undefined, '/default', { agent: true }).repo).toBe('/default')
-    expect(resolveScope({ repo: '/default' }, undefined, '/default', { agent: true }).repo).toBe('/default')
-    expect(() => resolveScope({ repo: '/other' }, undefined, '/default', { agent: true }))
-      .toThrowError(/REPO_NOT_BOUND|is not this session's dataset repository/)
-  })
-
-  it('a bound repository spelled through a symlink is still the same repository', () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-datasets-alias-'))
-    const real = join(root, 'real')
-    mkdirSync(real, { recursive: true })
-    const alias = join(root, 'alias')
-    symlinkSync(real, alias)
-    // The shape a binding recorded one way and an argument typed another way
-    // arrive in — comparing the text alone would read them as two. What comes
-    // back is the canonical form of both (I5·T62), not either spelling: the
-    // scope's repo is handed to `git -C` and to `readdir`.
-    expect(resolveScope({ repo: alias }, { repoPath: real }, undefined, { agent: true }).repo)
-      .toBe(realpathSync(real))
-    rmSync(root, { recursive: true, force: true })
+describe('resolveOperatorScope (the CLI\'s read verbs; T73 branch 2)', () => {
+  it('takes a registry id or a path; with none, the only registration — else one of two refusals', async () => {
+    repo = makeFixtureRepo()
+    const s = service()
+    // Nothing registered: no fallback of any kind (no binding, no config default).
+    await expect(resolveOperatorScope(s.registry, undefined)).rejects.toMatchObject({ code: 'NOT_REGISTERED' })
+    await expect(resolveOperatorScope(s.registry, undefined)).rejects.toThrowError(/no dataset repository is registered/)
+    // An explicit path is the operator's own pick at their own machine.
+    expect((await resolveOperatorScope(s.registry, `${repo.dir}/`)).repo).toBe(repo.dir)
+    const entry = await s.registry.register({ path: repo.dir, id: 'lib' })
+    // One registration: used without naming it, read at the tracked tip through the common dir.
+    expect(await resolveOperatorScope(s.registry, undefined)).toEqual({ repo: entry.commonDir, ref: repo.commit })
+    expect(await resolveOperatorScope(s.registry, 'lib')).toEqual({ repo: entry.commonDir, ref: repo.commit })
+    const second = makeFixtureRepo()
+    try {
+      await s.registry.register({ path: second.dir, id: 'other' })
+      await expect(resolveOperatorScope(s.registry, undefined)).rejects.toMatchObject({ code: 'NOT_UNIQUE' })
+      await expect(resolveOperatorScope(s.registry, undefined)).rejects.toThrowError(/lib, other/)
+      expect((await resolveOperatorScope(s.registry, 'other')).ref).toBe(second.commit)
+    } finally {
+      cleanup(second.dir)
+    }
   })
 })
 
@@ -284,34 +250,56 @@ describe('put_item', () => {
   })
 })
 
-describe('live-session binding through the service', () => {
-  it('bind/read/unbind against a structural session — and NEVER touches the session log', () => {
-    // Regression guard for the resume-poisoning bug: the persistence read
-    // path refuses to rebuild a session whose log holds an event type outside
-    // the harness's generated known-types set unless the envelope carries
-    // `ignorable: true`, and `Session.append()` offers no way to set that
-    // marker (the downstream registration surface is deferred upstream) — so
-    // this package must persist NO session events at all. A fake session
-    // whose append throws proves the binding paths never call it.
-    const session: BindingSession & { append: () => never } = {
-      id: 's1',
-      append: () => { throw new Error('session.append must never be called') },
-    }
+describe('operator registry reads (eval\'s experiment layer; T73 branch 2)', () => {
+  it('registration / resolveRegistryCommit / registryObjectId / registryListFiles / registryShowFile', async () => {
+    repo = makeFixtureRepo()
     const s = service()
-    s.bind(session, { repoPath: '/repo', layers: ['visible'] })
-    expect(s.binding(session)).toEqual({ repoPath: '/repo', layers: ['visible'] })
-    s.unbind(session)
-    expect(s.binding(session)).toBeUndefined()
+    await expect(s.registration('lib')).rejects.toMatchObject({ code: 'NOT_REGISTERED' })
+    const entry = await s.registry.register({ path: repo.dir, id: 'lib' })
+    const reg = await s.registration('lib')
+    expect(reg).toMatchObject({ id: 'lib', commonDir: entry.commonDir, trackedRef: 'main', latest: { commit: repo.commit } })
+
+    expect(await s.resolveRegistryCommit('lib', 'main')).toBe(repo.commit)
+    expect(await s.resolveRegistryCommit('lib', repo.commit.slice(0, 7))).toBe(repo.commit)
+    await expect(s.resolveRegistryCommit('lib', 'no-such-ref')).rejects.toMatchObject({ code: 'GIT_ERROR' })
+
+    const items = await s.registryObjectId('lib', repo.commit, 'datasets/alpha/items')
+    expect(items).toMatch(/^[0-9a-f]{40}$/)
+    expect(await s.registryObjectId('lib', repo.commit, 'datasets/alpha/schemas')).toBeNull()
+    // A commit that changes something else keeps the tree oid; one that touches it changes it.
+    writeFiles(repo.dir, { 'datasets/beta/items/b1/visible/data.txt': 'beta data v2\n' })
+    const beta = commitAll(repo.dir, 'beta only')
+    expect(await s.registryObjectId('lib', beta, 'datasets/alpha/items')).toBe(items)
+    writeFiles(repo.dir, { 'datasets/alpha/items/i2/visible/task.md': 'task two v2\n' })
+    const alpha = commitAll(repo.dir, 'alpha item')
+    expect(await s.registryObjectId('lib', alpha, 'datasets/alpha/items')).not.toBe(items)
+
+    expect(await s.registryListFiles('lib', repo.commit, 'datasets/beta'))
+      .toEqual(['datasets/beta/dataset.json', 'datasets/beta/items/b1/visible/data.txt'])
+    expect(await s.registryListFiles('lib', repo.commit, 'datasets/none')).toEqual([])
+    const bytes = await s.registryShowFile('lib', repo.commit, 'datasets/beta/items/b1/visible/data.txt')
+    expect(Buffer.isBuffer(bytes)).toBe(true)
+    expect(bytes?.toString('utf8')).toBe('beta data\n')
+    expect(await s.registryShowFile('lib', repo.commit, 'datasets/beta/nope.txt')).toBeUndefined()
+    await expect(s.registryShowFile('lib', repo.commit, '../escape')).rejects.toBeInstanceOf(DatasetsError)
   })
 
-  it('the binding survives a service re-create (a restart)', () => {
-    const root = bindingsRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-'))
-    const session: BindingSession = { id: 's1' }
-    service().bind(session, { repoPath: '/repo', datasets: ['alpha'] })
-    const restarted = createDatasetsService({
-      ...stateOptions(worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-state-'))),
-      bindingsRoot: root,
-    })
-    expect(restarted.binding(session)).toEqual({ repoPath: '/repo', datasets: ['alpha'] })
+  it('datasetView materializes the whole set at one commit, read-only, under the reserved key', async () => {
+    repo = makeFixtureRepo()
+    const s = service()
+    await s.registry.register({ path: repo.dir, id: 'lib' })
+    const view = await s.datasetView('lib', 'alpha', repo.commit)
+    expect(view.commit).toBe(repo.commit)
+    expect(view.path.endsWith(join(repo.commit, 'alpha', FULL_VIEW_KEY, 'datasets', 'alpha'))).toBe(true)
+    // Everything under datasets/alpha — every layer, the passthrough zone too.
+    expect(readFileSync(join(view.path, 'dataset.json'), 'utf8')).toContain('"alpha"')
+    expect(readFileSync(join(view.path, 'items/i1/hidden/notes.md'), 'utf8')).toBe('hidden notes v1\n')
+    expect(readFileSync(join(view.path, 'drafts/notes.md'), 'utf8')).toBe('drafts passthrough\n')
+    expect(existsSync(join(view.path, '..', 'beta'))).toBe(false)
+    expect(statSync(join(view.path, 'dataset.json')).mode & 0o222).toBe(0)
+    // Content-addressed: the same commit answers with the same directory.
+    expect((await s.datasetView('lib', 'alpha', repo.commit)).path).toBe(view.path)
+    await expect(s.datasetView('lib', 'nope', repo.commit)).rejects.toMatchObject({ code: 'DATASET_NOT_FOUND' })
+    await expect(s.datasetView('lib', 'alpha', 'main')).rejects.toMatchObject({ code: 'GIT_ERROR' })
   })
 })
