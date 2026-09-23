@@ -1,23 +1,27 @@
 /**
- * Inspiration canvas, browser half (M3): the right-Sidebar seats in wide mode
- * — one canvas board tab, plus one detail tab per open card (stage ⑧). The
- * main-panel space route is retired: the host's RightbarRoot renders the right
- * Sidebar for the conversation panel only, so a custom main panel makes every
- * right-Sidebar surface fail by construction; the tab is the answer
- * isomorphic with the host's layout.
+ * Inspiration canvas, browser half (M3): the right-Sidebar seat in wide mode —
+ * ONE tab type holding the whole surface. The main-panel space route is retired:
+ * the host's RightbarRoot renders the right Sidebar for the conversation panel
+ * only, so a custom main panel makes every right-Sidebar surface fail by
+ * construction; the tab is the answer isomorphic with the host's layout.
+ *
+ * Stage ⑧ had registered a SECOND tab type (`canvasDetail`) so a card could open
+ * beside the board. Round 3 item ⑥ took it back: the dock is one chrome layer
+ * above the board those cards came from, its chip said 画布 for all of them and
+ * its × could not be intercepted. The strip now lives INSIDE the page (see
+ * `tab/CanvasTab.tsx`) and the store below is its state, so every verb that used
+ * to travel through `ctx.sidebarRight.openResource` is a store write instead.
  *
  * It mounts the canvas Remote through the official `ctx.remote.$mount`
- * channel, registers TWO tab types on the keyed `sidebar.right.pane.tab`
- * seat — `canvas` for the board page and `canvasDetail` for one card's detail
- * (stage ⑧: a detail is a resource of the `canvas` type, so two cards are two
- * tabs and a re-click focuses the tab already showing it) — reports the open
- * canvas to the host (`focusCanvas`, so the MAIN session's canvas tools target
- * it), and fires the wide-mode suggestion once per session (fullscreen right
- * panel + collapsed session list, through the probed layout face — the user's
- * own controls own it from then on). Every seat is probed, never assumed:
- * registrations ride `ctx.slots.inject`, and with no `remote.canvas` mounted
- * the tab still registers and reports the missing half instead of throwing
- * through boot.
+ * channel, registers the page type on the keyed `sidebar.right.pane.tab` seat,
+ * mirrors the active inner tab onto that tab's dock chip
+ * (`sidebar.right.pane.tab.title`), reports the open canvas to the host
+ * (`focusCanvas`, so the MAIN session's canvas tools target it), and fires the
+ * wide-mode suggestion once per session (collapse the session list, through the
+ * probed layout face — the user's own controls own it from then on). Every seat
+ * is probed, never assumed: registrations ride `ctx.slots.inject`, and with no
+ * `remote.canvas` mounted the tab still registers and reports the missing half
+ * instead of throwing through boot.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -38,23 +42,18 @@ import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import canvasRemote from '@khorsheed/dsh-canvas/remote'
 import type { CanvasChatInjected, CanvasRemote, CanvasTabInjected } from './contract.ts'
-import {
-  CANVAS_DETAIL_KIND, CANVAS_DETAIL_TAB_ID, CANVAS_TAB_ID,
-  canvasDefinition, canvasDetailDefinition,
-} from './definition.ts'
-import { cardDetailAddress, draftDetailAddress } from './detail/detail-address.ts'
+import { CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
 import { en, NS, zh } from './locales.ts'
 import { CanvasImageSrcs } from './images.ts'
 import {
   CanvasTabVisibility, RegistrationToggle, type CanvasPluginInventorySnapshot,
 } from './preset-visibility.ts'
 import { CanvasSelectionStore } from './space/selection.ts'
-import { CanvasDetailTab } from './detail/CanvasDetailTab.tsx'
-import { CanvasDetailTitle } from './detail/CanvasDetailTitle.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
+import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
 
 export { CanvasDetailView } from './detail/CanvasDetailView.tsx'
-export { CANVAS_KIND, CANVAS_DETAIL_KIND, CANVAS_DETAIL_TAB_ID, CANVAS_TAB_ID } from './definition.ts'
+export { CANVAS_KIND, CANVAS_TAB_ID } from './definition.ts'
 export { CanvasSelectionStore } from './space/selection.ts'
 export { BoardView } from './space/BoardView.tsx'
 export { CardTextarea } from './space/CardTextarea.tsx'
@@ -223,31 +222,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     // (fenced) patch verb afterwards.
     attachImage: request => requireRemote().attachImage(request),
     images,
-    // The detail is a RESOURCE tab of the same dock (stage ⑧): naming the kind
-    // is the decision, so the host skips its glob ranking and only `canOpen`
-    // applies — and `openResource` still throws on an address outside
-    // `dsh-resource://`, which is a wiring mistake, hence the same degrade as
-    // `openFile` (no mounted session, no right Sidebar).
-    openCardDetail: (canvasId, cardId, heading) => {
-      try {
-        ctx.sidebarRight.openResource(cardDetailAddress(canvasId, cardId), {
-          kind: CANVAS_DETAIL_KIND,
-          params: { heading },
-        })
-      } catch (error) {
-        ctx.logger.warn('canvas: openResource(card detail) failed (no mounted session?)', error)
-      }
-    },
-    openCardDraft: (canvasId, kind, heading) => {
-      try {
-        ctx.sidebarRight.openResource(draftDetailAddress(canvasId), {
-          kind: CANVAS_DETAIL_KIND,
-          params: { heading, kind },
-        })
-      } catch (error) {
-        ctx.logger.warn('canvas: openResource(card draft) failed (no mounted session?)', error)
-      }
-    },
+    // The strip is the surface's own state (round 3 item ⑥): a card open is a
+    // store write, not a dock navigation. The ids are derived from the subject
+    // (`selection.ts`), which is why "open it twice, you get one row" needs no
+    // cooperation from the caller — the same property the host's resource
+    // dedupe used to give stage ⑧, kept without the host's chrome.
+    openCardDetail: (canvasId, cardId, heading) => { selection.openCardTab(canvasId, cardId, heading) },
+    openCardDraft: (canvasId, kind, heading) => { selection.openDraftTab(canvasId, kind, heading) },
+    activateTab: id => { selection.activate(id) },
+    closeTab: id => { selection.close(id) },
     openCanvas: canvasId => { selection.openCanvas(canvasId) },
     focusCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().focusCanvas(sessionId, request)),
     // The one-shot layout suggestion (M3.1): ONLY the session-list collapse
@@ -284,14 +267,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   } | undefined
   const tabVisibility = new CanvasTabVisibility(ctx, pluginInventory)
   ctx.effect(() => {
-    // BOTH types ride the one decision: a detail tab with no board to come
-    // from is a stranded tab, and an ungranted session must show neither.
     const toggle = new RegistrationToggle(
-      () => {
-        const disposePage = ctx.sidebarRightTabs.register(canvasDefinition(t))
-        const disposeDetail = ctx.sidebarRightTabs.register(canvasDetailDefinition(t))
-        return () => { disposePage(); disposeDetail() }
-      },
+      () => ctx.sidebarRightTabs.register(canvasDefinition(t)),
       () => tabVisibility.show(ctx.sessions.list.getSnapshot().current),
     )
     toggle.setReady(true)
@@ -299,9 +276,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return () => { unsubscribe(); toggle.setReady(false) }
   }, 'canvas: tab type visibility')
 
-  // Stage two: the tab bodies under each type's id in the keyed pane seat (the
-  // board page, and since stage ⑧ one detail per card — both from the one face,
-  // because a detail is the same package's own reader).
+  // Stage two: the tab body and its chip, both under this package's id in the
+  // keyed seats. The chip registers because the surface now holds more than the
+  // board: with a card showing, a chip that still says 画布 leaves the reader
+  // without a clue which of the dock's tabs they are in.
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: CANVAS_TAB_ID,
@@ -309,19 +287,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: tabFace,
   }, CanvasTab)), 'canvas: tab body')
 
-  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
-    name: 'sidebar.right.pane.tab',
-    key: CANVAS_DETAIL_TAB_ID,
-    locale: NS,
-    inject: tabFace,
-  }, CanvasDetailTab)), 'canvas: detail tab body')
-
-  // The chip's live text (the host freezes `title` at open time, so the card's
-  // heading travels as navigation params and this registrant reads it back).
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab.title',
-    key: CANVAS_DETAIL_TAB_ID,
-  }, CanvasDetailTitle)), 'canvas: detail tab title')
+    key: CANVAS_TAB_ID,
+    inject: () => ({ hooks: { selection: selection.source } }),
+  }, CanvasTabTitle)), 'canvas: tab chip title')
 
   return async () => {
     for (const timer of timers) clearTimeout(timer)

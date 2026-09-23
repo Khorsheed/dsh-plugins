@@ -123,6 +123,9 @@ function makeHarness(
 ): Harness {
   const current = { board: board(cards) }
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
+  // A bench starts on an empty strip, every time: the store restores the rows a
+  // previous bench left in sessionStorage, and those name cards its board has not.
+  sessionStorage.clear()
   const store = new CanvasSelectionStore()
   /** The tab's own subject: the canvas and card the props point the reader at. */
   const target = {

@@ -1,22 +1,21 @@
 /**
- * The card-detail reader: the body of one detail tab (and, before stage ⑧, the
- * canvas tab's drill-down page). It is TOLD which card to show — `canvasId` and
- * `cardId` arrive as props, from `CanvasDetailTab`'s address — and subscribes to
- * the shared store only for its rev, so a board mutation anywhere makes it
- * re-read. Kind + status + source + times in the header, the FULL text through
- * `MarkdownText` (the board shows only the summary), the comment thread
- * (readable and postable), the ghost proposal's ✓/✗, and the attachment
- * area (url → link; file → the official document preview via
+ * The card-detail reader: the body of one non-board strip row. It is TOLD which
+ * card to show — `canvasId` and `cardId` arrive as props from the active row —
+ * and subscribes to the shared store only for its rev, so a board mutation
+ * anywhere makes it re-read. Kind + status + source + times in the header, the
+ * FULL text through `MarkdownText` (the board shows only the summary), the
+ * comment thread (readable and postable), the ghost proposal's ✓/✗, and the
+ * attachment area (url → link; file → the official document preview via
  * `ctx.sidebarRight.openResource`).
  *
  * This is the board family's only editor: a card's edit toggle and the
- * new-card draft (the detail tab holds the draft's text and passes it in
+ * new-card draft (the surface holds the draft's text and passes it in
  * `create`) both land on the same pad invariants (CardTextarea: uncontrolled,
  * IME composition as a hard stop, ⌘⏎ saves, and this root stays the one scroll
  * container). The paste arm lives here too — the one place the clipboard is
  * read, so a pasted page, table, image, or markup is decided against the card
  * text it would produce (§11.6 item 3). A pasted image's bytes go to the host's
- * attachment store and only its pointer enters the text (§10.3); the tab's
+ * attachment store and only its pointer enters the text (§10.3); the row's
  * `pathImages` and `images` resolve that pointer back for both renderers.
  * The pen field is the third kind of content a card holds (§11.4, demand ③):
  * it shares this page's exit gestures and its strokes commit through the same

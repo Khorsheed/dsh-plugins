@@ -433,13 +433,13 @@ card         + x, y（板逻辑框坐标，成对出现或都没有）          
 |---|---|---|
 | **⑥ 连线与分区视图** | `links`/`lanes`/卡坐标落盘 + 卡板/连线两档视图 + 框选 + 单删线 + 「顺线扩一圈」开关。选型实测：tldraw 出局（无生产许可 + 遥测 + 水印）、Excalidraw MIT 但 46.8MB；本档一度定 `@xyflow/react` 12.11.6 | 依赖 ②（卡组件先收口）；**已落地**（2026-09-23，0.4.5，已上 3080）——**`@xyflow/react` 在实施中被推翻**：它只出两张全局样式表（`dist/base.css`/`style.css`），而本包客户端只允许内联 `.module.css`；1.2MB / 516 文件 ≈ 整个 `lib/client.js` 的 2.4 倍。改手写 stage（`space/layout-geometry.ts` 纯函数半 + `LinkView.tsx` 手势半，零新依赖），理由与实测数字见实现记录与 Agent Note `2026-09-23-canvas-link-view.md`；**这一条等一次点头** |
 | **⑦ 画笔** | perfect-freehand 1.2.3（MIT / 112KB）出轮廓、**存点列**；工具条上置、橡皮一笔一笔擦、保存后画板常驻只读态 | **已落**（2026-09-22，`card.draw` + `client/draw.ts` + `detail/CardPad.tsx`）；前置的 11.4 改判按"开动"执行，判据与回退点写在 11.4 与实现记录 |
-| **⑧ 详情开成一张标签** | 注册 `canvasDetail` kind（11.2 行 7），点卡 = 追加一格、同卡不堆叠；顶栏两行、条尾 ＋、空草稿 × 弹确认 | 依赖 ②；**dock 半边已落**（2026-09-23，0.4.5，已上 3080；见实现记录——「条尾 ＋」是宿主标签条的面，包不拥有，「手工 × 拦不住」记成开口）|
+| **⑧ 详情开成一张标签** | ~~注册 `canvasDetail` kind（11.2 行 7）~~ **形状已收回**：标签条归包自己（见 §11.8 行 ⑩）；顶栏两行、条尾 ＋、空草稿 × 弹确认三条照旧 | 依赖 ②；dock 半边曾落（2026-09-23，0.4.5，已上 3080）并**于同日撤回归包内**——「条尾 ＋」因此从"宿主的面、包不拥有"变成包自己的行尾，"手工 × 拦不住"那个开口随之封掉 |
 
 **验收补三条（各能判真假）**：A6 一组由你选——连线视图点一张连着线的卡，「顺线扩一圈」关着时发出去的**只有它自己**；A7 分类目录是活的——改名不动卡、停用不丢卡（那几张进归档且能启用回来）、模型 enum 含用户自定义 id；A8 贴进去不留死标记——往有正文的卡贴网页，落的是纯文本那份，卡上**不出现任何 `<` 标记**。
 
 #### 11.8 未裁决清单（本节新记的，别当已批）
 
-① ~~**长文 tab 删不删**~~ **已裁、已删**（2026-09-22，见 11.2 行 2：原型第 313 行划掉它就是共识，我把它记成悬案是漏读自己画的那页）；② **11.4 的 `draw` 改判**——2026-09-22 按"开动"落地了，**这条从"未裁决待开工"变成"已落地、判错就回退"**，回退点与依据写在 11.4 与实现记录，等一次真点头；③ 手动改整卡格式的口子（阶段 ④ 之后）；④ ~~enum 形状待判~~ **§10.7 第 304 行早已判**：工具 enum 动态生成 内置 ∪ 本画布自定义——挂在这里是我记错账，**已随阶段 ⑤ 落地**（2026-09-23），不是悬案；⑤ 「＋ 新卡」双入口——本轮"先保留"，窄栏真挤了再回来判；⑥ **已保存的卡改了字没关标签，要不要也弹一次**（本轮那句"弹一次确认"管的是从没保存过的那张，见 11.6 第 5 条——**绘画没有这个洞：一笔落定即写盘**）；⑦ **连线视图手写还是上库**——⑥ 落地时按"只出两张全局样式表、挂不进本包的 `.module.css` 通道 + 1.2MB ≈ 整个 `lib/client.js` 的 2.4 倍"改判为手写（11.7 行 ⑥ 与 Agent Note `2026-09-23-canvas-link-view.md` 记着实测），**这条推翻的是本轮先前的一次共识，等一次点头**；⑧ 线要不要方向或标签（⑥ 刻意不给：`{from,to}` 是无序对，板面双向读）；⑨ 分区跨画布与否（现在是每块板自己的 `lanes`，与 ⑤ 的目录同构）。
+① ~~**长文 tab 删不删**~~ **已裁、已删**（2026-09-22，见 11.2 行 2：原型第 313 行划掉它就是共识，我把它记成悬案是漏读自己画的那页）；② **11.4 的 `draw` 改判**——2026-09-22 按"开动"落地了，**这条从"未裁决待开工"变成"已落地、判错就回退"**，回退点与依据写在 11.4 与实现记录，等一次真点头；③ 手动改整卡格式的口子（阶段 ④ 之后）；④ ~~enum 形状待判~~ **§10.7 第 304 行早已判**：工具 enum 动态生成 内置 ∪ 本画布自定义——挂在这里是我记错账，**已随阶段 ⑤ 落地**（2026-09-23），不是悬案；⑤ 「＋ 新卡」双入口——本轮"先保留"，窄栏真挤了再回来判；⑥ **已保存的卡改了字没关标签，要不要也弹一次**（本轮那句"弹一次确认"管的是从没保存过的那张，见 11.6 第 5 条——**绘画没有这个洞：一笔落定即写盘**）；⑦ **连线视图手写还是上库**——⑥ 落地时按"只出两张全局样式表、挂不进本包的 `.module.css` 通道 + 1.2MB ≈ 整个 `lib/client.js` 的 2.4 倍"改判为手写（11.7 行 ⑥ 与 Agent Note `2026-09-23-canvas-link-view.md` 记着实测），**这条推翻的是本轮先前的一次共识，等一次点头**；⑧ 线要不要方向或标签（⑥ 刻意不给：`{from,to}` 是无序对，板面双向读）；⑨ 分区跨画布与否（现在是每块板自己的 `lanes`，与 ⑤ 的目录同构）；⑩ ~~**画布表面内部的标签**~~ **已裁、已落**（2026-09-23，见 Agent Note [画布自己的标签条](../../.agents/notes/implemented/feature/2026-09-23-canvas-inner-tab-strip.md)）——2026-09-23 验收第 7 条原话「打开卡片怎么变成新增 sidebar 标签，我们讨论的不是在画布内部有多个标签吗？这些标签有的是新画布有的是新卡片」。⑧ 的形状（宿主 dock 一格）被收回重议：要的是**一张画布面内的标签条，标签可以是另一块画布、也可以是某张卡**。落法：包自己画这条排（`tab/TabStrip.tsx`），行 id 从主体推（`b:<canvas>` / `c:<canvas>:<card>` / `d:<canvas>`），⑧ 那个 `canvasDetail` kind 与 `detail/` 那套地址一并删——卡片只有一个家。宿主 dock 剩下的事实（`title` 开时冻结、无拦截的 ×）由此不再挡路：× 在包内，草稿的字在 `CanvasTab`  state 里按行 id 存，问不问由包决定。
 
 
 ## 里程碑
@@ -502,7 +502,7 @@ card         + x, y（板逻辑框坐标，成对出现或都没有）          
   - **A5 三条判据各自可判**（§10.9）：新建默认目录＝现有五个 / 改 label 后模型 enum 含自定义 id / 停用一个还有卡在用的分类，一张都不丢（确认框 → 一起进归档 → 能启用回来，之前进归档的不跟着回来，提示里明说）。
   - **降级后果记在案**：0.4.5 写的板若被 0.4.4 的宿主读到，自定义 id 的卡会被那边的 `normalizeCard` 判非法而**整张不显示**（盘上字节仍在，升回来即可见）。包不主张双向兼容，只主张**升级不动盘**。
 
-- **阶段 ⑧ 详情开成一张标签（2026-09-23，0.4.5，已上 3080）**：钻取那一屏没了——详情注册成 `canvas` 资源类型下的一行地址，点卡就在同一个 dock 里追加一格。
+- **阶段 ⑧ 详情开成一张标签（2026-09-23，0.4.5，已上 3080；**同日撤回座位**——`canvasDetail` kind 与下面这套地址已删，标签条归包自己，见本节末"画布自己的标签条"。这一档留下的"没做的与拦不住的"两条正是被那一档做掉与拦住的；`CanvasDetailView.tsx` 复用照旧）**：钻取那一屏没了——详情注册成 `canvas` 资源类型下的一行地址，点卡就在同一个 dock 里追加一格。
   - **形状**：kind `canvasDetail`，地址 `dsh-resource://canvas/<canvasId>/<cardId>`，未存草稿占 `…/_draft`（一块画布恒一条，分类随 `navigation.params` 进来）。宿主按 `(kind, contentId)` 去重、contentId 就是整条地址，所以**「同卡不堆叠」是白拿的**，包内不再记任何标签账；`CanvasDetailView.tsx` 一行没改地被两个座位复用。
   - **板面从此只有板面**：`drilled` 状态、返回条、丢弃 `Modal`、草稿态全部从 `CanvasTab` 搬进 `CanvasDetailTab`；`selectCard`/`clearCard` 从 face 里删掉，`space/selection.ts` 从 `{canvasId, cardId, rev}` 瘦回 `{canvasId, rev}`——**看哪张卡是标签的地址，不是板面的选中态**（旧形状下两张卡永远只能开一张，这正是 11.2 行 7 要治的）。
   - **两条宿主事实决定了两个写法**：① `ISidebarRight.close(tabId)` 的 `TabId` 是带 brand 的类型，face 上写 `closeDetail(tabId: string)` 永远满足不了它——关闭走座位自带的 `tab.actions.close()`；② 宿主只在打开那一刻捕获一次 `title`、之后从不刷新，而重开会重发 params 并推 `revision`——所以芯片活标题走 `sidebar.right.pane.tab.title` 那个 inject 槽读 `params.heading`，`revision` 一变即重读。`openResource` 在 `dsh-resource://` 之外会抛，两个 face 成员各包一层 try/catch + `logger.warn`，没有挂载会话时板面照常。
@@ -524,8 +524,23 @@ card         + x, y（板逻辑框坐标，成对出现或都没有）          
   - **出货（2026-09-23 16:22）**：merge `be5d4da4` 进 main，`pnpm deploy:3080 --package packages/canvas` 装到 `khorsheed-dsh-canvas-0.4.5+2609230821.tgz`，composition preflight PASS → 按闸重启 → watchdog 记 `instance ready on :3080` 与 `canary PASS`、部署凭据 `1bb6196558aaf53f`。
   - **两条共享资源的账，都记成规则**：① **造负载的那只手必须在同一条命令里收尾**——我给 flake 复现撒的 24 个 `yes > /dev/null`（4 批 × 6，最早一批活了 2h56m）漂到了 launchd 名下，把机器推到 load 45；`kill $(jobs -p)` 只在同一个 shell 里有效，跨一次调用就只剩 `pkill -x yes`。它们把这次部署的 composition preflight 从实测 98s 拖过 120s 预算，守卫按规矩拒绝停健康实例（prod 全程没被动过，仍跑 0.4.4），清掉之后同一流程 125s 走完。② **删掉的源模块会留下没人回收的产物**——`client/tab/DraftView.tsx` 本轮删除，但主工作区 `lib/types/client/tab/` 里 9/22 的三个产物还在，`tsc -b` 不回收孤儿，`pack-dist` 的 stale 守卫因此拒绝出货；这三个文件手工清掉才过（守卫的"rebuild the package"这句话在这条路径上不足以自清）。
 
-（随实施追加：相关 Agent Note / 包名 / 提交）
+- **0.4.5 之后的第一次真实使用：七条反馈，六条当场修（2026-09-23，round 3）**：这一档不是新需求，是"能跑"与"读得顺"之间的那次结账。七条全部关于表面，没有一条动数据模型。
+  - **＋新卡看不见**：按钮一直在渲染，是顶栏那个 `flex: 1` 撑开元素在宽面板上把它推到 ~1500 px 外，1512 px 视口里直接屏幕外。它挪到紧跟画布名切换器之后——**入口挨着它作用的东西，不排在阅读行的末尾**。切换器 `.topic` 同时做成有边框的 pill（新增 `.topicName` 那个 span：省略号需要一个 min-width-0 的盒子，flex 子项里的裸文本节点不是），而下拉的行反方向改扁平，因为**触发器和它的菜单共用一条规则就是一份塞满小方框的菜单**。
+  - **脚下那堵文字**：`link.hintData`（讲 `canvas.json` 多了 `links`/`lanes` 的变更日志）从两份字典一起删，`link.hint` 压成一行手势说明。迁移事实没丢，搬进 Agent Note——那才是它该待的地方。
+  - **线穿透卡片**：`wirePathOf` 改经 `wireAnchorsOf`——先按主导增量选轴，再取那对**相向的边**，所以线从 A 离开的一侧就是 B 所在的一侧。存的仍然是裸 `{from,to}`：**存下边方向，用户第一次把卡拖过邻居就会把线尾留在错的那边，且无从察觉**。每卡补两个端口（`:left`/`:right`），一个圆点会教人横穿板面去找那条画得好看的边；手碰到哪个端口只决定实时那条线从哪起手，成线之后与它无关。24 单位外推地板留着，但它现在沿选中的轴、从选中的边施加，所以两份 spec 里钉住的每个 `d` 全部重写，另加一条属性测试：**一片摆放网格上，端点永不落进任何一张卡内部**。
+  - **分区改名框比原型丑**：它是真 `<input>` 而原型那是 `<button>`，Chromium 默认焦点环粗到会被读成给整个分区套了个选择框。`outline: none` + 边框承载焦点，照 `.catInput` 已有的写法。
+  - **画板盖正文 / 渲染视角里那行悬浮铅笔**：**同一个根因造成两条反馈**。`.root` 是有确定高度的纵向 flex 容器带 `overflow-y: auto`，而 `.body` 那句 `min-height: 60px` **替换**了 flex 子项默认拿到的 `min-height: auto`——于是一张 7000 字的卡被压成 239 px 的盒子，正文却按 1365 px 一路画过去穿过下方的画板。`.body`/`.pad` 各取 `flex: none`，页面改为滚动。**这个包的布局 bug 没有任何组件测试抓得到**：jsdom 从不排版，会失败的那条断言是 `scrollHeight > clientHeight`，而那里根本没有 `scrollHeight` 可读。机制在套件之外量的：复刻详情页 CSS 的一次性 HTML，无头 Chromium `--dump-dom`（结果写进 `document.title`）修复前 `rectH 239 / contentH 1365 / overflows 1126`，修复后 `1365 / 1365 / 0`。
+  - 测试 **449 → 454 绿（23 文件不变）**：几何 +4（相向边缘、45° 轴翻转、盒子真重叠时端点仍在两卡之外、端点不入卡的属性钉），连线面 +1（左端口存的是同一对、画出来是同一个 `d`；两张卡四个 `data-port`）。`portOf` 多一个默认 `right` 的 `side` 参数，所以每条既有拖动测试仍然走右边那条边。六处表面修好靠 3091 实例逐条用眼验，不是靠测试。Agent Note `.agents/notes/implemented/bug-fix/2026-09-23-canvas-acceptance-round3-fixes.md`。
+  - **第七条落在下一档**：见本节末"画布自己的标签条"，与本档同一天出码。
 
+- **画布自己的标签条（2026-09-23，0.4.6，round 3 第 7 条）**：⑧ 那个宿主 dock 的形状被收回——**卡片只有一个家**。包内新画一条排（`tab/TabStrip.tsx`，`role="tablist"`），行可以是**另一块画布**（板行 `b:<canvas>`）也可以是**某张卡**（卡行 `c:<canvas>:<card>`、未存草稿行 `d:<canvas>`），id 全从主体推，去重因此是 id 的性质而不是记账的职责。
+  - **删掉的比加的多**：`detail/CanvasDetailTab.tsx`、`CanvasDetailTitle.tsx`、`detail-address.ts`、`CanvasDetailTab.module.css` 与 `tests/detail-tab.client.spec.tsx`（11 条）全部移除——`canvasDetail` kind、`dsh-resource://` 那套地址、`_draft` 哨兵、`SidebarRightResourceParamsMap` 的类型增补一并撤销。`CanvasDetailView.tsx` 不换实现，只换个座位；它现在带 `create` prop，因为新建画布的手势从切换器菜单搬进行尾的 ＋。
+  - **标签账进了 store**：`space/selection.ts` 的快照从 `{canvasId, rev}` 变成 `{tabs, active, rev}`，`openCardTab`/`activateTab`/`closeTab`/`withinCap` 都在里面，落 `sessionStorage['dsh-canvas.tabs']`（`isTabRow` 逐行验形状，`MAX_TABS = 16`，超限先请走一张**卡**——板行、草稿行、刚加的那行都不在候选里）。
+  - **两个宿主拦不住的事，因为出口在包内而拦得住了**：草稿的字存在 `CanvasTab` 的 React state、按行 id  keyed，于是 × 关标签前问得出那句话（⑧ 那档记成"开口"的静默丢草稿，在这一档是断言）；芯片活标题不再需要 `sidebar.right.pane.tab.title` 那个 inject 槽，`tab/CanvasTabTitle.tsx` 直接读包自己的行。**⌘⏎-only 与那条丢弃问题从此管不到宿主的 ×**——dock 里那张 `canvas` 标签只剩一个座位，它没有草稿可丢。
+  - **一个仓库事实值一条字**：`ComposedProps` 与注册者自己的 `InjectFace<I>` 求交，所以 inject 槽既能 `hooks: { selection }` 发布、又能收 `useTabInfo`——这是从 `packages/hud` 那儿的既有用法验出来的，不是推的。
+  - 测试 **454 → 461 绿（23 文件不变）**：`tests/strip.client.spec.tsx` 18 条新面（一行一块画布、点卡追加一行、同卡不堆叠、16 行封顶先请卡、切画布只留它的行、刷新不丢标签丢草稿字、动过的只问一次、⌘⏎-only、板行与卡行的顶栏各自成立）；搬掉 ⑧ 那 11 条、另加 2 条重述。三处 bench 各补 `sessionStorage.clear()`——store 会把上一个 bench 的行继承过来，那些行点名的卡这块板没有。**`fireEvent.change` 不触发原生 `input`**，而无控制的 `CardTextarea` 靠 `onInput` 报字：把草稿弄脏必须用 `fireEvent.input`，⑧ 那份被删的 spec 正是这么写的。**标签条的横向滚动与粘性 ＋ 是浏览器_pass 的断言，不是 jsdom 的**——jsdom 从不排版（同上一轮那条 `.body` 教训）。Agent Note `.agents/notes/implemented/feature/2026-09-23-canvas-inner-tab-strip.md`。
+
+（随实施追加：相关 Agent Note / 包名 / 提交）
 
 ## 验收标准（done 判定）
 

@@ -30,27 +30,24 @@
   flex-shrink: 0;
 }
 
-.topic {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  border: none;
-  background: transparent;
-  padding: 4px 6px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: var(--dsw-font-family);
-  color: var(--dsw-alias-label-primary);
-  cursor: pointer;
-  white-space: nowrap;
+/* The board row's own header says which canvas it is and how full it is. The
+   name is text now, not a pill: the strip above is where you move between
+   canvases, so nothing here needs to advertise that it opens a menu. */
+.boardTitle {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-primary);
 }
 
-.topic:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+.boardCount {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-caption);
 }
 
 .attachChip {
@@ -129,35 +126,59 @@
   width: 12px;
 }
 
-/* ----------------------------------------------------------------- back bar */
+/* --------------------------------------------------------- the new-card action */
 
-.backBar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
-  flex-shrink: 0;
-}
-
-.backButton {
+/* ＋新卡 carries a border because it is the page's one primary action and the
+   pill to its left is its subject. The rows under it are a menu, so they are
+   `.menuRow` and not this class — sharing one rule across a trigger and its
+   dropdown is how a menu ends up full of little boxes. */
+.actionButton {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: none;
-  background: transparent;
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 12px;
+  flex-shrink: 0;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  padding: 4px 9px;
+  background: var(--dsw-alias-bg-layer-2);
   font-family: var(--dsw-font-family);
-  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.actionButton:hover {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.actionButton[aria-expanded="true"] {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.menuRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: transparent;
+  font-family: var(--dsw-font-family);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
   cursor: pointer;
 }
 
-.backButton:hover {
+.menuRow:hover {
   background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
 }
 
 /* ------------------------------------------------------------------ states */

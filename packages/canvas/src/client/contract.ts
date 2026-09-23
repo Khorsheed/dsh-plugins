@@ -1,8 +1,10 @@
 /**
- * Composed props contract for the canvas tabs: the `canvas` page (the board and
- * its switcher) and, since stage ⑧, the `canvasDetail` resource (one card per
- * tab). Both seats are session scope — their mutations fence through the tab's
- * own session — and board freshness crosses tabs through the shared store
+ * Composed props contract for the canvas surface's seats. The `canvas` page owns
+ * the tab strip (round 3, item ⑥): a row is a canvas's board, one of its cards,
+ * or one card's unsaved draft, and the card body is `CanvasDetailView` mounted
+ * in that same page rather than in a tab of the HOST dock (stage ⑧'s shape,
+ * retired). The seat is session scope — its mutations fence through the tab's
+ * own session — and the strip plus board freshness ride the shared store
  * exposed as `hooks.selection` (the slot runtime binds it into the
  * `useSelection` prop).
  *
@@ -113,17 +115,25 @@ export interface CanvasTabInjected extends CanvasChatInjected, CanvasImageInject
    */
   openFile: (sessionId: SessionId, cwd: string | undefined, path: string) => void
   /**
-   * Open one card in its own detail tab (a board body click, stage ⑧): the
-   * address is the card's, so clicking it twice focuses that tab and two cards
-   * are two tabs of the same dock. `heading` is the chip's live text.
+   * Open one card in its own strip row (a board body click): the row id is the
+   * card's, so clicking it twice focuses the row already showing it and two
+   * cards are two rows of one strip. `heading` is the row's live label.
    */
   openCardDetail: (canvasId: string, cardId: string, heading: string) => void
   /**
-   * Open one canvas's draft tab (the ＋新卡 menu): one draft address per
-   * canvas, so the menu re-categorizes the draft that is already open instead
-   * of producing a second blank one.
+   * Open one canvas's draft row (the ＋新卡 menu): one draft row per canvas, so
+   * the menu re-categorizes the draft that is already open instead of producing
+   * a second blank one.
    */
   openCardDraft: (canvasId: string, kind: CardCategoryId, heading: string) => void
+  /** Show a strip row that is already open (the strip's own gesture). */
+  activateTab: (id: string) => void
+  /**
+   * Take a strip row off (the × gesture). The caller gates this: a draft with
+   * words in it asks before it is dropped, which is why the verb itself is
+   * unconditional.
+   */
+  closeTab: (id: string) => void
   /** Switch the open canvas (the switcher's gesture). */
   openCanvas: (canvasId: string) => void
   /**
@@ -143,9 +153,9 @@ export interface CanvasTabInjected extends CanvasChatInjected, CanvasImageInject
     /** The freshness feed (open canvas, board rev), bound by the slot renderer. */
     selection: CanvasSelectionSource
     /**
-     * The image cache's read-landed feed, bound as `useImageRev`. Each seat
-     * that RENDERS images subscribes for itself (§10.3): the board page shows
-     * no images, so only the detail tabs read it, one subscription per tab.
+     * The image cache's read-landed feed, bound as `useImageRev`. The board
+     * page subscribes and hands the same feed down to the card body it renders
+     * in the active row — one subscription for the surface, not one per view.
      */
     imageRev: CanvasImageRevSource
   }
@@ -157,6 +167,16 @@ export type CanvasTabProps =
   & GlobalStandardProps
   & InjectFace<CanvasTabInjected>
   & PropsLocale<'canvas'>
+
+/**
+ * The canvas tab's chip. It gets the strip's own store and nothing else: a
+ * dock title is a label, and giving a label the mutating face is how a chip
+ * ends up with business logic.
+ */
+export type CanvasTabTitleProps =
+  PropsRuntime<'sidebar.right.pane.tab.title'>
+  & GlobalStandardProps
+  & InjectFace<{ hooks: { selection: CanvasSelectionSource } }>
 
 /**
  * The injected subset the detail reader consumes: everything the card-detail
@@ -181,9 +201,10 @@ export interface CanvasDetailInjected extends CanvasChatInjected, CanvasImageInj
 /**
  * The new-card draft the detail page carries (v2.2 ②, §11.6): the detail is
  * the ONLY card editor, so ＋新卡 opens that same page in draft form. The
- * content belongs to the DETAIL TAB since stage ⑧ — it holds the text and the
- * strokes so its own exit gesture can ask about them — and nothing reaches the
- * disk until `onSave`.
+ * content belongs to the STRIP (the page owns it, keyed by the draft row's id)
+ * — not to the store, whose stash survives a reload while unsaved words do not
+ * — so the page can ask about them when its own × closes the row, and nothing
+ * reaches the disk until `onSave`.
  */
 export interface CanvasDetailCreate {
   /** The category picked in the ＋新卡 menu (a catalog id, stage ⑤). */
@@ -206,12 +227,12 @@ export interface CanvasDetailCreate {
 }
 
 /**
- * Full props of the card-detail reader. Since stage ⑧ the reader is told
- * which card to show (`canvasId`/`cardId` come from the tab's own address) and
- * only subscribes to the shared store for freshness — the board's selection is
- * no longer its subject. `sessionId` is optional: with none the reader renders
- * read-only (no edits, no comments, no asks). `create` switches the page from
- * reading a card to drafting a new one.
+ * Full props of the card-detail reader. The reader is told which card to show
+ * (`canvasId`/`cardId` come from the active strip row) and only subscribes to
+ * the shared store for freshness — the board's selection is not its subject.
+ * `sessionId` is optional: with none the reader renders read-only (no edits, no
+ * comments, no asks). `create` switches the page from reading a card to
+ * drafting a new one.
  */
 export type CanvasDetailProps =
   & {

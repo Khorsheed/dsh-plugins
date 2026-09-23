@@ -27,11 +27,8 @@
     "src/client/paste-table.ts",
     "src/client/preset-visibility.ts",
     "src/client/detail/CardPad.tsx",
-    "src/client/detail/CanvasDetailTab.tsx",
-    "src/client/detail/CanvasDetailTitle.tsx",
     "src/client/detail/CanvasDetailView.tsx",
     "src/client/detail/DrawFigure.tsx",
-    "src/client/detail/detail-address.ts",
     "src/client/space/BoardView.tsx",
     "src/client/space/CardTextarea.tsx",
     "src/client/space/LinkView.tsx",
@@ -39,6 +36,8 @@
     "src/client/space/selection.ts",
     "src/client/tab/CanvasSwitcher.tsx",
     "src/client/tab/CanvasTab.tsx",
+    "src/client/tab/CanvasTabTitle.tsx",
+    "src/client/tab/TabStrip.tsx",
     "src/prompt.ts"
   ]
 }
