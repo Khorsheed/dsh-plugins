@@ -18,8 +18,8 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
-  EDIT_TRIGGER_NOTICE, MESSAGE_TOOLS_PLUGIN, WITHDRAWN_NOTICE,
-  editReplacementSource, editTriggerSource, restoreAssistantSource,
+  EDIT_TRIGGER_NOTICE, WITHDRAWN_NOTICE,
+  editReplacementSource, editTriggerSource, messageToolsSource, restoreAssistantSource,
 } from './marker.ts'
 import { registerRestoreProjection } from './restore-projection.ts'
 import { planEdit, planRestore, planWithdrawal } from './withdraw.ts'
@@ -41,7 +41,7 @@ declare module '@deepseek-ai/cordis' {
 /**
  * messageTools Remote service: appends the withdrawal replacement to the
  * owning Session and flushes it durable. The replacement event's
- * plugin-tagged source is the audit trail; no new session event type is
+ * producer-owned source is the audit trail; no new session event type is
  * introduced, so session reload stays safe for harnesses without this plugin.
  */
 export class MessageToolsService extends TypertRemoteService {
@@ -60,7 +60,7 @@ export class MessageToolsService extends TypertRemoteService {
 
   /**
    * Withdraw a user message: replace it and every surface node after it with
-   * a minimal plugin-sourced placeholder, hiding the span from the model.
+   * a minimal producer-sourced placeholder, hiding the span from the model.
    * @param request - session identity and target message seq.
    * @returns the replacement receipt, or a rejection from the closed failure union.
    */
@@ -72,7 +72,7 @@ export class MessageToolsService extends TypertRemoteService {
     if (!planned.ok) return { ok: false, error: { code: planned.code } }
     const replacement = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: WITHDRAWN_NOTICE }],
-      source: { kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN },
+      source: messageToolsSource(),
     }), {
       surfaceOp: { op: 'replace', startSeq: SessionSeq(planned.plan.start), endSeq: SessionSeq(planned.plan.end) },
       sourceEventSeqs: planned.plan.sourceEventSeqs.map(seq => SessionSeq(seq)),
@@ -87,14 +87,14 @@ export class MessageToolsService extends TypertRemoteService {
   /**
    * Restore a withdrawn span: replay every replayable entry of it (user
    * messages verbatim — including the last edit's new text — and framed
-   * assistant text; tool calls/results never replay) as fresh plugin-tagged
-   * `user/message` appends at the conversation tail, in original order, each
-   * citing its original event in `sourceEventSeqs`. The surface replace model
-   * is positional — a replaced span folds into one node — so the span cannot
-   * be restored in place; the replayed entries are simply the newest messages
-   * the model sees. Assistant text replays as framed user-role messages:
-   * `assistant/message` cannot carry a plugin source and the turn/step trace
-   * forbids assistant appends outside a step.
+   * assistant text; tool calls/results never replay) as fresh
+   * producer-sourced `user/message` appends at the conversation tail, in
+   * original order, each citing its original event in `sourceEventSeqs`. The
+   * surface replace model is positional — a replaced span folds into one
+   * node — so the span cannot be restored in place; the replayed entries are
+   * simply the newest messages the model sees. Assistant text replays as
+   * framed user-role messages: `assistant/message` requires the model source
+   * and the turn/step trace forbids assistant appends outside a step.
    * @param request - session identity and withdrawn message seq.
    * @returns the restore receipt, or a rejection from the closed failure union.
    */
@@ -109,7 +109,7 @@ export class MessageToolsService extends TypertRemoteService {
       const message = entry.role === 'user'
         ? createUserMessage({
           content: [...entry.content],
-          source: { kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN },
+          source: messageToolsSource(),
         })
         : createUserMessage({
           content: [{ type: 'text', text: entry.text }],
@@ -130,7 +130,7 @@ export class MessageToolsService extends TypertRemoteService {
    * with the edited text itself (no placeholder, no tail duplicate — the
    * edited text appears exactly once, in the replacement event), then start a
    * regeneration turn. The harness has no wake-without-append path, so the
-   * turn is started by `agent.followup` carrying a minimal plugin-sourced
+   * turn is started by `agent.followup` carrying a minimal producer-sourced
    * trigger message (the ankh-guard/schedule pattern); the trigger is not the
    * edited text and lands once, as itself.
    * @param request - session identity, target seq, edited text.

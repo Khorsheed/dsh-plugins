@@ -6,7 +6,7 @@ import SessionStore, { SessionId, SessionLogOffset, SessionSeq } from '@deepseek
 import type { SessionMessageProjection, SessionMessageProjectionContext } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import MessageToolsService from '../src/index.ts'
-import { MESSAGE_TOOLS_PLUGIN, RESTORED_ASSISTANT_NOTICE, restoreAssistantSource } from '../src/marker.ts'
+import { RESTORED_ASSISTANT_NOTICE, editReplacementSource, restoreAssistantSource } from '../src/marker.ts'
 import {
   registerRestoreProjection, restoreAssistantProjection, restoreProjectionFoldSupported,
 } from '../src/restore-projection.ts'
@@ -81,11 +81,11 @@ describe('restoreAssistantProjection.project', () => {
     expect(projected?.content).toEqual([{ type: 'text', text: '先前投影' }])
   })
 
-  it('passes plain user messages and other plugin ops through untouched', () => {
+  it('passes plain user messages and other producer ops through untouched', () => {
     const plain = userMessageEvent({ kind: 'user' }, [{ type: 'text', text: '你好' }])
     expect(restoreAssistantProjection.project(plain, projectionContext()).size).toBe(0)
     const edit = userMessageEvent(
-      { kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN, op: 'edit' },
+      editReplacementSource(),
       [{ type: 'text', text: '编辑后' }],
     )
     expect(restoreAssistantProjection.project(edit, projectionContext()).size).toBe(0)

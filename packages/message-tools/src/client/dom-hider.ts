@@ -24,7 +24,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { chatSourceOf, type ChatSlice } from './chat-hook.ts'
-import { MESSAGE_TOOLS_PLUGIN, messageToolsOp } from '../marker.ts'
+import { isMessageToolsSource, messageToolsOp } from '../marker.ts'
 import { foldHiddenRanges, isSeqHidden, type RestoredMessageData } from './withdrawn-node.ts'
 
 /** Pre-0.1.6 SessionListState carried the main-view selection as `current`. */
@@ -66,12 +66,11 @@ export function hiddenFlowKeys(nodes: readonly ChatConversationViewNode[], range
     if (node.kind === 'message-tools-withdrawn') continue
     if (node.kind === 'context') {
       const data = node.data as { seq?: number; source?: unknown }
-      const source = data.source as { kind?: string; plugin?: string; op?: unknown } | undefined
       // Every message-tools context row is a presentation duplicate or a
       // wake-only trigger: restore replays are rendered by the plugin's own
       // rows, edit triggers are never transcript content, and withdrawal /
       // edit replacements are not append-surface context rows at all.
-      if (source?.kind === 'plugin' && source.plugin === MESSAGE_TOOLS_PLUGIN
+      if (isMessageToolsSource(data.source)
         || restoredSeqs.has(data.seq ?? -1)
         || messageToolsOp(data.source) === 'edit-trigger') {
         keys.push(node.key)

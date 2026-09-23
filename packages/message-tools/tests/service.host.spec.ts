@@ -55,7 +55,7 @@ describe('MessageToolsService (real composition)', () => {
     expect(replacement.type).toBe('user/message')
     if (replacement.type !== 'user/message') throw new Error('narrowing')
     expect(replacement.data.content).toEqual([{ type: 'text', text: WITHDRAWN_NOTICE }])
-    expect(replacement.data.source).toMatchObject({ kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN })
+    expect(replacement.data.source).toEqual({ kind: MESSAGE_TOOLS_PLUGIN })
     expect(replacement.sourceEventSeqs).toEqual([first, first + 1, second])
   })
 
@@ -87,7 +87,7 @@ describe('MessageToolsService (real composition)', () => {
     expect(user.data.content).toEqual([{ type: 'text', text: '问' }])
     expect(user.sourceEventSeqs).toEqual([first])
     expect(assistant.data.content).toEqual([{ type: 'text', text: `${RESTORED_ASSISTANT_NOTICE}\n答` }])
-    expect(assistant.data.source).toMatchObject({ kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN, op: 'restore-assistant' })
+    expect(assistant.data.source).toEqual({ kind: MESSAGE_TOOLS_PLUGIN, op: 'restore-assistant' })
     expect(assistant.sourceEventSeqs).toEqual([first + 1])
   })
 
@@ -115,7 +115,7 @@ describe('MessageToolsService (real composition)', () => {
     const replacement = session.snapshotEvents()[session.surface.nodes[0]!]!
     if (replacement.type !== 'user/message') throw new Error('narrowing')
     expect(replacement.data.content).toEqual([{ type: 'text', text: '编辑后' }])
-    expect(replacement.data.source).toMatchObject({ kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN, op: 'edit' })
+    expect(replacement.data.source).toEqual({ kind: MESSAGE_TOOLS_PLUGIN, op: 'edit' })
   })
 
   it('edit reports triggered:false without a live agent and rejects blank text', async () => {
