@@ -5,9 +5,19 @@
  * preferences and toggles capture through it.
  */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ShortcutPreference, ShortcutSettings } from '../settings.ts'
 import type { ShortcutActionContribution, ShortcutRegistry } from './contract.ts'
+
+/**
+ * The slice of the durable settings scope the registry consumes. Both host
+ * lines carry the same shape (0.1.5's `SettingsScope`, rc.1's `ConfigForm`),
+ * so one structural face covers the deferred dual probe (see client/index.ts).
+ */
+export interface ShortcutScope {
+  getSnapshot(): { readonly value: ShortcutSettings | undefined }
+  subscribe(listener: () => void): () => void
+  set(field: string, value: unknown): Promise<unknown>
+}
 
 /**
  * The live registry. Direct preference reads stay process-local when no Host
@@ -20,20 +30,29 @@ export class ShortcutRegistryRuntime implements ShortcutRegistry {
   readonly preferences: SnapshotStore<Record<string, ShortcutPreference>> = createSnapshotStore({})
   /** Action currently recording a new binding, or null; the global wiring stands down while set. */
   readonly capturing: SnapshotStore<string | null> = createSnapshotStore<string | null>(null)
-  private readonly host: SettingsScope<ShortcutSettings> | undefined
+  private host: ShortcutScope | undefined
 
   /**
    * @param host - durable preference scope owned by the providing plugin;
-   * absent compositions stay process-local. The adoption subscription shares
-   * the scope's plugin lifetime — a disposed scope never publishes again, so
-   * the registry needs no release hook.
+   * absent compositions stay process-local (a later {@link bindHost} arms the
+   * same scope — the provider can mount after this plugin on either line).
    */
-  constructor(host?: SettingsScope<ShortcutSettings>) {
+  constructor(host?: ShortcutScope) {
+    if (host !== undefined) this.bindHost(host)
+  }
+
+  /**
+   * Bind the durable scope; the first bind wins (the two host lines never
+   * coexist). The adoption subscription shares the scope's plugin lifetime —
+   * a disposed scope never publishes again, so the registry needs no release
+   * hook.
+   * @param host - the line-served scope driving preference adoption.
+   */
+  bindHost(host: ShortcutScope): void {
+    if (this.host !== undefined) return
     this.host = host
-    if (host !== undefined) {
-      host.subscribe(() => { this.adopt(host) })
-      this.adopt(host)
-    }
+    host.subscribe(() => { this.adopt(host) })
+    this.adopt(host)
   }
 
   /**
@@ -103,7 +122,7 @@ export class ShortcutRegistryRuntime implements ShortcutRegistry {
    * Ids the Host section does not carry fall back to the registered default.
    * @param host - the constructor-narrowed scope driving this adoption.
    */
-  private adopt(host: SettingsScope<ShortcutSettings>): void {
+  private adopt(host: ShortcutScope): void {
     const section = host.getSnapshot().value
     if (section === undefined) return
     const preferences = { ...this.preferences.getSnapshot() }

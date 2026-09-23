@@ -44,11 +44,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-// Type-only: pulls the locale Context merge (ctx.locale), the settings-scope
-// merge (ctx.settingsScope), and the conversation service merge
-// (ctx.conversation) into this program.
+// Type-only: pulls the locale Context merge (ctx.locale) and the conversation
+// service merge (ctx.conversation) into this program.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -56,9 +54,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // registration below type-checks against the official contract.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { matches, matchesMouse } from './bindings.ts'
-import { ShortcutRegistryRuntime } from './registry.ts'
+import { ShortcutRegistryRuntime, type ShortcutScope } from './registry.ts'
 import { DEFAULT_PREFERENCES, UI_SHORTCUTS_NAMESPACE } from '../settings.ts'
-import type { ShortcutPreference, ShortcutSettings } from '../settings.ts'
+import type { ShortcutPreference } from '../settings.ts'
 import { ShortcutsCard } from './settings/ShortcutsCard.tsx'
 import type { ShortcutsRowInjected } from './settings/ShortcutsRow.tsx'
 import type { ShortcutActionContribution, ShortcutLayering } from './contract.ts'
@@ -74,8 +72,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Services required by the shortcuts plugin. */
-export const inject = ['slots', 'sessions', 'conversation', 'settingsScope', 'locale']
+/** Services required by the shortcuts plugin. The settings scope is deliberately
+ * NOT injected: rc.1 and 0.1.5 name different services (`configForms` vs
+ * `settingsScope`), and a composition without either must not pend the bundle
+ * (the registry stays process-local then — see the dual probe in apply). */
+export const inject = ['slots', 'sessions', 'conversation', 'locale']
 
 /** IME guard: a composition in flight never triggers a shortcut. */
 function isComposing(event: KeyboardEvent): boolean {
@@ -387,13 +388,22 @@ function suppressAuxiliaryDefault(event: MouseEvent, registry: ShortcutRegistryR
  * Browser plugin body: provide the registry, bind the built-in actions
  * through it, and register the shortcut settings card. The binding snapshots
  * are read in the handlers (event-handler code may read live snapshots); the
- * wiring stands down entirely while the card records a new binding.
+ * wiring stands down entirely while the card records a new binding. The
+ * durable scope arrives through the deferred dual probe — rc.1's
+ * `configForms` first, 0.1.5's `settingsScope` second; a composition with
+ * neither keeps preferences process-local.
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
-  const registry = new ShortcutRegistryRuntime(
-    ctx.settingsScope.bind<ShortcutSettings>({ namespace: UI_SHORTCUTS_NAMESPACE }),
-  )
+  const registry = new ShortcutRegistryRuntime()
+  ctx.inject(['configForms'], (formsCtx) => {
+    const forms = formsCtx.get('configForms') as { get?(entryId: string): ShortcutScope } | undefined
+    if (typeof forms?.get === 'function') registry.bindHost(forms.get(UI_SHORTCUTS_NAMESPACE))
+  })
+  ctx.inject(['settingsScope'], (legacyCtx) => {
+    const legacy = legacyCtx.get('settingsScope') as { bind?(spec: { namespace: string }): ShortcutScope } | undefined
+    if (typeof legacy?.bind === 'function') registry.bindHost(legacy.bind({ namespace: UI_SHORTCUTS_NAMESPACE }))
+  })
   ctx.provide('shortcuts', registry)
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-shortcuts: dictionaries')
