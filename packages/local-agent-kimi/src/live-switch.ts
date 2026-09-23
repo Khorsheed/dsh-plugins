@@ -13,11 +13,11 @@
 
 import type { KimiNativeConfiguration } from './model-catalog.ts'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
+import type { SettingsFace } from '@khorsheed/dsh-local-agent'
 import { KimiAcpLiveDriver } from './live-driver.ts'
 import type { KimiLiveMirrorGranularity } from './live-driver.ts'
 
-/** The resolved live settings (schema defaults ← YAML base ← user layer). */
+/** The resolved live settings (rc.1: volatile row config; 0.1.5: schema defaults ← YAML base ← user layer). */
 export interface KimiLiveSettings {
   live: boolean
   liveMirrorGranularity: KimiLiveMirrorGranularity
@@ -36,7 +36,7 @@ export class LiveDriverSwitch {
 
   constructor(
     private readonly ctx: Context,
-    scope: SettingsScope<KimiLiveSettings>,
+    face: SettingsFace<KimiLiveSettings>,
     private readonly liveIdleMs: number | undefined,
     /**
      * Per-spawn model resolver, handed to every driver generation. Member-aware:
@@ -44,8 +44,8 @@ export class LiveDriverSwitch {
      */
     private readonly model?: (childSessionId: string) => string | undefined,
   ) {
-    this.apply(scope.get())
-    this.unwatch = scope.watch((next) => { this.apply(next) })
+    this.apply(face.get())
+    this.unwatch = face.watch((next) => { this.apply(next) })
   }
 
   /**
