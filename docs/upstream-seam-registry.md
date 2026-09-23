@@ -135,9 +135,9 @@
 
 ### S17. 插件自有事件无法进入 Remote 事件转发白名单（客户端收不到插件的宿主侧变化）
 
-> 编号说明:`S16` 这个槽位已被 context-observability 一线标记为「随需求撤回」（见
-> `proposals/active/2026-09-20-context-observability.md` 的总表行),从未落库;此处
-> 跳过它取 `S17`,避免把两个不同缺口读成同一个。
+> 编号说明:`S16` 这个槽位已被 context-observability 一线标记为「随需求撤回」,那条需求撤回后
+> 从未落库,槽位空置;此处跳过它取 `S17`,避免把两个不同缺口读成同一个。(提案文档本身已于
+> 2026-09-23 撤回入库,不在仓库;撤回前那版的编号总表可从 git 历史 `fa890442` 取回。)
 
 - **需求**：插件想把自己 host 侧的状态变化推给已挂载的浏览器表面（worktrees 的活跃 worktree 被模型工具切换、另一 client tab 切换、host 侧文件监听触发），而不是靠客户端周期性重读。Typert 协议本身支持：`ctx.remote.$on(event, listener)`（客户端）+ 宿主侧 `@mode emit` 的 cordis 事件（`dsh-typert-protocol` 的 `TypertRemoteEvent = Extract<TypertForwardableEvent, keyof TypertRemoteEventSelection>`）。
 - **现状**：转发集合由官方 `@deepseek-ai/dsh-api-remotes` 的**静态数组** `API_REMOTE_FORWARDED_EVENTS`（`packages/api/remotes/src/remote-events.ts`）决定，宿主装配循环逐条 `ctx.on(...)` 转发（同包 `src/index.ts:50`）。插件既不能在自己的 manifest 里加条目，也没有 profile 级开关；本仓 0 处使用 `$on`（`grep -rnF '$on(' packages/*/src`），因为没有任何插件能收到自己的事件。
