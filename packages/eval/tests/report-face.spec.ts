@@ -122,9 +122,9 @@ describe('the report verb finds the run\'s bundle', () => {
 
     expect(view.bundleDir).toBe(join(exports, `${RUN}-bundle`))
     expect(view.runId).toBe(RUN)
-    // The four invariants are the report's, verbatim — four rows, always.
+    // The five checks are the report's, verbatim — five rows, always.
     expect(view.invariants.map(check => check.id))
-      .toEqual(['materialization', 'fingerprint', 'subject', 'procedure'])
+      .toEqual(['materialization', 'fingerprint', 'subject', 'procedure', 'verdict-coverage'])
     expect(view.counts.rows).toBe(1)
     expect(view.cliHint).toContain(`${RUN}-bundle`)
     await fiber.dispose()

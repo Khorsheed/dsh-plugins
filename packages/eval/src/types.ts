@@ -1159,7 +1159,11 @@ export interface EvalReportRequest {
   outDir?: string
 }
 
-/** One of the four architecture-§5 invariants, as the report page shows it. */
+/**
+ * One validity check as the report page shows it: the four architecture-§5
+ * invariants that gate the comparison section, then `verdict-coverage`
+ * (判定覆盖一致), which degrades single pairs.
+ */
 export interface EvalReportInvariant {
   id: string
   title: string
@@ -1209,6 +1213,10 @@ export interface EvalReportPair {
   /** Smallest per-task rep-pair count — the rank gate (n < 3 refuses to rank). */
   n: number
   ci: { mean: number; lo: number; hi: number; samples: number; seed: number } | null
+  /** Set when fewer than 3 tasks have a delta: the page says so instead of drawing a CI. */
+  ciWithheld: { tasksWithDelta: number } | null
+  /** A CI is shown but the rank gate (n ≥ 3 per task) is not met — 仅供参考. */
+  ciAdvisory: boolean
   rank: 'a' | 'b' | null
   /** Why it ranked, or why it would not — verbatim from the report. */
   rankReason: string
@@ -1314,8 +1322,8 @@ export interface EvalReportJudgeConsistency {
 }
 
 /**
- * The report page's payload: the four invariants, the comparison (only when
- * all four are established), the efficiency table and the judge numbers.
+ * The report page's payload: the five validity checks, the comparison (only
+ * when the first four are established), the efficiency table and the judge numbers.
  *
  * Every number here is {@link EvalReport}'s — this is a PROJECTION, not a
  * second analysis. The page cannot open a comparison the bundle's invariants
@@ -1349,7 +1357,7 @@ export interface EvalRunReportView {
   /** Whether a recorded export can be repeated in one click (a note exists). */
   reexportable: boolean
   invariants: EvalReportInvariant[]
-  /** True only when all four invariants are established. */
+  /** True only when the first four invariants are established (verdict coverage degrades pairs, never the section). */
   comparisonAllowed: boolean
   /** A single-condition run: nothing to pair, which is not a failure. */
   singleCondition: boolean

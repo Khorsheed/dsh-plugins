@@ -90,6 +90,8 @@ export type EvalKey =
   | 'report.factorMulti'
   | 'report.factorUnknown'
   | 'report.ci'
+  | 'report.ciAdvisory'
+  | 'report.ciWithheld'
   | 'report.rank'
   | 'report.selfJudged'
   | 'report.col.task'
@@ -609,6 +611,7 @@ export type EvalKey =
   | 'invariant.why.fingerprint'
   | 'invariant.why.subject'
   | 'invariant.why.procedure'
+  | 'invariant.why.verdict-coverage'
   | 'report.chart'
   | 'report.chart.activeMs'
   | 'report.chart.outputTokens'
@@ -901,6 +904,8 @@ export const en: Record<EvalKey, string> = {
   'report.factorMulti': 'differs in several fields: {fields} ({detail})',
   'report.factorUnknown': 'factor unknown — {detail}',
   'report.ci': 'mean Δ = {mean}, 95% CI [{lo}, {hi}] (bootstrap over reps × {samples}, seed {seed})',
+  'report.ciAdvisory': 'For reference only: the ranking condition is not met (every item needs 3 runs)',
+  'report.ciWithheld': 'Only {k} item(s) have a difference, so no interval can be given',
   'report.rank': 'Ranking',
   'report.selfJudged': 'self-judged',
   'report.col.task': 'Item',
@@ -1259,6 +1264,7 @@ export const en: Record<EvalKey, string> = {
   'invariant.why.fingerprint': 'Why it matters: the cells have to have run in the same class of environment. If they did not, the difference carries the machine as well as the subject.',
   'invariant.why.subject': 'Why it matters: the model each cell actually ran has to be the one it declared. If it is not, this comparison is between something other than what it says it is.',
   'invariant.why.procedure': 'Why it matters: the run has to record which orchestrator version and which plan produced it. Without that nobody can reproduce it or check it.',
+  'invariant.why.verdict-coverage': 'Why it matters: each criterion has to have been judged the same way on both sides — by a judge or a person on both, or on neither. If one side has a judge’s verdict and the other only a script’s, the difference is between two instruments, not two arms; that pair is described, not ranked.',
   'report.chart': 'Efficiency at a glance',
   'report.chart.activeMs': 'Active time',
   'report.chart.outputTokens': 'Output tokens',
@@ -1546,6 +1552,8 @@ export const zh: Record<EvalKey, string> = {
   'report.factorMulti': '差在多项：{fields}（{detail}）',
   'report.factorUnknown': '对比变量未知——{detail}',
   'report.ci': '平均 Δ = {mean}，95% 置信区间 [{lo}, {hi}]（bootstrap 重采样 rep × {samples}，seed {seed}）',
+  'report.ciAdvisory': '仅供参考，未达排名条件（每题需跑满 3 次）',
+  'report.ciWithheld': '只有 {k} 道题有差值，给不出区间',
   'report.rank': '名次判定',
   'report.selfJudged': '自评',
   'report.col.task': '题',
@@ -1901,6 +1909,7 @@ export const zh: Record<EvalKey, string> = {
   'invariant.why.fingerprint': '为什么影响比较：各格必须跑在同一类环境里。不是，差值里混进来的就是机器，而不只是被试。',
   'invariant.why.subject': '为什么影响比较：每一格实际跑的模型必须就是它声明的那个。不是，这份对比比的就不是它说的那两个东西。',
   'invariant.why.procedure': '为什么影响比较：这次 run 得记下是哪版编排器、按哪份计划跑的。记不下，谁都复现不了，也核对不了。',
+  'invariant.why.verdict-coverage': '为什么影响比较：每条判据在两边得是同一类判定——都有判官或人判过，或者都没有。一边是判官的判定、另一边只剩脚本，差值比的就是两种量具而不是两个组；这一对只做描述，不给区间和名次。',
   'report.chart': '效率一眼看',
   'report.chart.activeMs': '活跃时长',
   'report.chart.outputTokens': '输出 token',
