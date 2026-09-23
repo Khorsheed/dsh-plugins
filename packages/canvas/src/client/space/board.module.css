@@ -302,15 +302,25 @@
   padding: 14px 18px 40px;
 }
 
+/* One row, scrolled sideways rather than wrapped: stage ⑤ lets a canvas add
+   categories, so the strip's width is no longer bounded by the five defaults.
+   Horizontal only — `.boardScroll` stays the board's single vertical scroller. */
 .chips {
   display: flex;
   gap: 6px;
   margin-bottom: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   align-items: center;
+  scrollbar-width: none;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
 }
 
 .chip {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -334,10 +344,184 @@
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
   color: var(--dsw-alias-label-primary);
   border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
+  font-weight: 600;
 }
 
 .chipCount {
   color: var(--dsw-alias-label-caption);
+}
+
+/* The 管理分类 chip: dashed, so it reads as a tool and never as a sixth filter.
+   Sticky because the strip scrolls sideways now — a manage entry that can be
+   scrolled away is not an entry. It carries the board's own fill because
+   `.chip` is transparent and the row would otherwise slide out from under it. */
+.chipMgr {
+  border-style: dashed;
+  color: var(--dsw-alias-label-caption);
+  background: var(--dsw-alias-bg-base);
+  position: sticky;
+  right: 0;
+  z-index: 1;
+}
+
+.chipMgr:hover {
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* The category panel opens UNDER the strip instead of as a modal (the
+   prototype's ruling): a modal inside a 378px column is more crowded than the
+   board it covers. */
+.catPanel {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.catHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.catHead b {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.catHead span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catCode {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.catRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.catInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-family: var(--dsw-font-family);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  outline: none;
+}
+
+.catInput:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+/* A retired row keeps its input readable but says "not on the strip" (the
+   prototype's `.catrow.off`). */
+.catRow[data-off="true"] .catInput {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.catCount {
+  flex: none;
+  width: 34px;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.catToggle {
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 11.5px;
+  font-family: var(--dsw-font-family);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.catToggle:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.catToggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Bringing a category back is the row's only affirmative act, so it carries the
+   fill the prototype gave it; retiring one stays a quiet ghost action. */
+.catToggleOn {
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+  font-weight: 600;
+}
+
+.catToggleOn:hover:not(:disabled) {
+  background: var(--dsw-alias-state-business-primary);
+  filter: brightness(1.08);
+}
+
+.catAdd {
+  display: flex;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.catAdd .catInput {
+  border-style: dashed;
+  border-color: var(--dsw-alias-border-l2);
+}
+
+/* The add row's button is an affirmative act (the prototype's plain `.btn`),
+   so it carries a border and a fill the retire/enable ghosts do not. */
+.catAdd .catToggle {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.catEmpty {
+  padding: 7px 2px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.catTip {
+  margin: 7px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The batch bar's 「改分类」 row: the targets ride the filter chips' own shape,
+   because they ARE the categories. */
+.refileTo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* The ＋新卡 kind menu (drops from its button, above the grid). */
@@ -481,6 +665,7 @@
   border-radius: 8px;
   padding: 11px 12px;
   cursor: pointer;
+  min-height: 84px;
   transition: border-color 0.15s, background 0.15s;
 }
 
@@ -592,6 +777,16 @@
 .cardWords {
   font-size: 10.5px;
   color: var(--dsw-alias-label-caption);
+}
+
+/* The card's last row is pinned to the bottom (the prototype's `.foot`): a grid
+   row's cards all end at the same line, so the word count and the comment
+   badge sit on one baseline instead of floating under each card's own text. */
+.cardFoot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: auto;
 }
 
 .cardSrc {
@@ -728,7 +923,6 @@
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 999px;
   padding: 3px 9px;
-  align-self: flex-start;
   cursor: pointer;
   font-family: var(--dsw-font-family);
 }

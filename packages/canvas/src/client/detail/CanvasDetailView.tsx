@@ -1,17 +1,18 @@
 /**
- * The card-detail reader: the right-Sidebar canvas tab after M1.5. It
- * follows the board's selection through the shared store (`useSelection`,
- * fed by `hooks.selection`) and renders the one card the board last opened:
- * kind + status + source + times in the header, the FULL text through
+ * The card-detail reader: the body of one detail tab (and, before stage ⑧, the
+ * canvas tab's drill-down page). It is TOLD which card to show — `canvasId` and
+ * `cardId` arrive as props, from `CanvasDetailTab`'s address — and subscribes to
+ * the shared store only for its rev, so a board mutation anywhere makes it
+ * re-read. Kind + status + source + times in the header, the FULL text through
  * `MarkdownText` (the board shows only the summary), the comment thread
  * (readable and postable), the ghost proposal's ✓/✗, and the attachment
  * area (url → link; file → the official document preview via
  * `ctx.sidebarRight.openResource`).
  *
  * This is the board family's only editor: a card's edit toggle and the
- * new-card draft (the tab holds the draft's text and passes it in `create`)
- * both land on the same pad invariants (CardTextarea: uncontrolled, IME
- * composition as a hard stop, ⌘⏎ saves, and this root stays the one scroll
+ * new-card draft (the detail tab holds the draft's text and passes it in
+ * `create`) both land on the same pad invariants (CardTextarea: uncontrolled,
+ * IME composition as a hard stop, ⌘⏎ saves, and this root stays the one scroll
  * container). The paste arm lives here too — the one place the clipboard is
  * read, so a pasted page, table, image, or markup is decided against the card
  * text it would produce (§11.6 item 3). A pasted image's bytes go to the host's
@@ -28,9 +29,9 @@ import {
   type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
 import {
-  IconArchiveOutline20, IconCheckOutline16, IconCloseOutline16, IconCodeOutline16,
-  IconDatabaseOutline16, IconLinkOutline14, IconListPenOutline16, IconPlusOutline16,
-  IconQuestionOutline14, IconRefreshOutline14, IconRightUpOutline14, IconSparkle16,
+  IconArchiveOutline20, IconCheckOutline16, IconCloseOutline16,
+  IconLinkOutline14, IconPlusOutline16,
+  IconRefreshOutline14, IconRightUpOutline14, IconSparkle16,
   MarkdownText, Toast, type MarkdownLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
@@ -38,6 +39,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { attachBridge } from '@khorsheed/dsh-inline-html-render/src/client/bridge.ts'
 import { buildCardSrcDoc } from '@khorsheed/dsh-inline-html-render/src/client/srcdoc.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { COMPOSE_SEND_TEXT } from '../../prompt.ts'
 import { imageHtmlOf, imageMarkdownOf } from '../../image-token.ts'
 import {
   documentHeadingOf,
@@ -45,6 +47,8 @@ import {
   type CanvasError, type CanvasImageError,
 } from '../../types.ts'
 import type { CanvasDetailProps } from '../contract.ts'
+import { categoryLabelMap, kindIconOf } from '../category-label.ts'
+import { canvasErrorText } from '../error-text.ts'
 import { base64Of, imageFilesOf, type CanvasImageFile } from '../images.ts'
 import { choosePaste, type PasteArm } from '../paste-table.ts'
 import type { CanvasKey } from '../locales.ts'
@@ -68,15 +72,6 @@ const IMAGE_FAILURE: Record<CanvasImageError, CanvasKey> = {
   'too-large': 'paste.imageSize',
   unreadable: 'paste.imageUnavailable',
 }
-
-/** The kind icon set (the board's own vocabulary). */
-const KIND_ICONS = {
-  fragment: IconListPenOutline16,
-  question: IconQuestionOutline14,
-  grounding: IconDatabaseOutline16,
-  reference: IconLinkOutline14,
-  document: IconCodeOutline16,
-} as const
 
 /** The detail's reading modes (render / source / split) — §11.6 item 1's second row. */
 const MODES = ['render', 'source', 'split'] as const
@@ -144,10 +139,12 @@ function HtmlFrame({ html }: { html: string }): ReactNode {
 /** The card-detail reader. */
 export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const {
-    t, sessionId, create, readBoard, patchCard, addComment, openFile, useSelection,
+    t, sessionId, canvasId, cardId, create, readBoard, patchCard, addComment, openFile, useSelection,
     askAgent, chatStatus, openSideChat, attachImage, images, pathImages,
   } = props
-  const selection = useSelection(current => current)
+  // Only the rev is read from the shared store: which card this page shows came
+  // in as a prop the moment the detail became its own tab (stage ⑧).
+  const boardRev = useSelection(current => current.rev)
   const useSessions = props.useSessions ?? useNoSessions
   const workspaceRoot = useSessions(sessions =>
     sessionId === undefined ? undefined : sessions.byId[sessionId]?.cwd)
@@ -182,16 +179,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   }, [showToast, t])
 
   /** Localized copy for one shared error code. */
-  const errorText = useCallback((error: CanvasError): string => {
-    switch (error) {
-      case 'exists': return t('error.exists')
-      case 'stale': return t('error.stale')
-      case 'missing': return t('error.missing')
-      case 'invalid-name': return t('error.invalidName')
-      case 'denied': return t('error.denied')
-      default: return t('error.io')
-    }
-  }, [t])
+  const errorText = useCallback((error: CanvasError): string => canvasErrorText(t, error), [t])
 
   /** Unwrap the transport envelope, reporting a failure instead of throwing. */
   const run = useCallback(async <T,>(call: () => Promise<RemoteResult<T>>): Promise<T | null> => {
@@ -208,15 +196,14 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
 
   /* ------------------------------------------------------------ following */
 
-  // Read the selected canvas's board: on a new selection, and again whenever
-  // either seat mutates a board (the store's rev is the freshness channel).
+  // Read this tab's canvas: on a new one, and again whenever any tab mutates a
+  // board (the store's rev is the freshness channel).
   useEffect(() => {
-    if (selection.canvasId === null) {
+    if (canvasId === null) {
       setOpen(null)
       setLoadError(null)
       return
     }
-    const canvasId = selection.canvasId
     let cancelled = false
     void (async () => {
       const value = await run(() => readBoard({ canvasId }))
@@ -230,14 +217,14 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       setOpen({ board: value.board, version: value.version })
     })()
     return () => { cancelled = true }
-  }, [selection.canvasId, selection.rev, readBoard, run, errorText])
+  }, [canvasId, boardRev, readBoard, run, errorText])
 
-  // A selection change always returns the body to the reading state — and puts
-  // the pen down: leaving the card is one of its three exits (§11.2 row 8).
+  // Turning to another card always returns the body to the reading state — and
+  // puts the pen down: leaving the card is one of its three exits (§11.2 row 8).
   useEffect(() => {
     setMode('render')
     setTool('text')
-  }, [selection.canvasId, selection.cardId])
+  }, [canvasId, cardId])
 
   // A draft opens where the work is: an empty render pane is not a writing
   // surface, and the ＋新卡 gesture's whole point is the keyboard.
@@ -277,7 +264,6 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
 
   /** Ask through the seam and activate the side-chat tab (the ask flow's tail). */
   const ask = useCallback(async (request: Omit<BoardAskAgentRequest, 'canvasId'>) => {
-    const canvasId = selection.canvasId
     if (sessionId === undefined || canvasId === null) return
     const value = await run(() => askAgent(sessionId, { canvasId, ...request }))
     if (value === null) return
@@ -291,7 +277,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       return
     }
     openSideChat(value.contextKey)
-  }, [sessionId, selection.canvasId, askAgent, openSideChat, run, showToast, errorText, t])
+  }, [sessionId, canvasId, askAgent, openSideChat, run, showToast, errorText, t])
 
   /**
    * The image arm of a paste (§10.3): the clipboard's files go to the host's
@@ -376,7 +362,14 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     footnotes: t('markdown.footnotes'),
   }), [t])
 
-  const card: BoardCard | null = open?.board.cards.find(candidate => candidate.id === selection.cardId) ?? null
+  const card: BoardCard | null = open?.board.cards.find(candidate => candidate.id === cardId) ?? null
+
+  // The category words come from the board's own catalog (stage ⑤): the map
+  // carries the built-ins' dictionary names and whatever the user renamed.
+  const categoryLabels = useMemo(
+    () => categoryLabelMap(open?.board.categories ?? [], t),
+    [open?.board.categories, t],
+  )
 
   /* ------------------------------------------------------------ create mode */
 
@@ -396,7 +389,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           <div className={css.meta}>
             <span className={css.kindTag}>
               <IconPlusOutline16 size={12} />
-              {t(`kind.${create.kind}`)}
+              {categoryLabels.get(create.kind) ?? create.kind}
             </span>
             <span className={css.ghostFlag}>{t('detail.unsaved')}</span>
             <span className={css.spacer} />
@@ -452,7 +445,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     )
   }
 
-  if (selection.canvasId === null) {
+  if (canvasId === null) {
     return <div className={css.root}><div className={css.notice}>{t('detail.empty')}</div></div>
   }
   if (loadError !== null) {
@@ -465,7 +458,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     return <div className={css.root}><div className={css.notice}>{t('detail.cardGone')}</div></div>
   }
 
-  const KindIcon = KIND_ICONS[card.kind]
+  const KindIcon = kindIconOf(card.kind)
   const proposed = card.status === 'proposed'
   const archived = card.status === 'archived'
   const format = detectCardFormat(card.text)
@@ -480,8 +473,8 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     <div className={css.root}>
       <div className={css.header}>
         <span className={css.kindTag}>
-          <KindIcon size={12} />
-          {t(`kind.${card.kind}`)}
+          {KindIcon !== undefined && <KindIcon size={12} />}
+          {categoryLabels.get(card.kind) ?? card.kind}
           {card.createdBy === 'agent' && !proposed ? ` · ${t('card.fromAgent')}` : ''}
         </span>
         {proposed && (
@@ -518,6 +511,16 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           <span className={css.spacer} />
           {!proposed && !archived && !readonly && (
             <ModeSeg mode={mode} onMode={setMode} t={t} />
+          )}
+          {chatAvailable === true && !archived && (
+            // The detail page IS one card, so the compose gesture sends just it.
+            <button
+              type="button"
+              className={css.iconButton}
+              onClick={() => { void ask({ lens: 'ask', cardIds: [card.id], text: COMPOSE_SEND_TEXT }) }}
+            >
+              {t('detail.compose')}
+            </button>
           )}
           {archived && !readonly && (
             <button

@@ -1,0 +1,10 @@
+/* The detail tab's shell: one positioned box the reader fills, so the tab's own
+   toast has something to sit against (the host's pane content box is not
+   positioned). Every colour below stays with the reader — none is needed here. */
+
+.shell {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}

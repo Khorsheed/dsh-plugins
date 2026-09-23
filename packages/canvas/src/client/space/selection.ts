@@ -1,65 +1,49 @@
 /**
- * The selection shared by the canvas space's two seats: the board panel
- * (`main`) writes it, the card-detail reader (`sidebar.right.pane.tab`)
- * follows it. One instance lives in this client bundle's apply closure and
- * reaches both through their inject faces (`hooks.selection`, which the slot
- * runtime materializes into the `useSelection` prop).
+ * The board state the canvas tabs share: which canvas the board tab shows, and
+ * a rev that says "a board changed somewhere". One instance lives in this client
+ * bundle's apply closure and reaches every seat through their inject faces
+ * (`hooks.selection`, which the slot runtime materializes into the
+ * `useSelection` prop).
  *
- * The `rev` field is the cross-seat freshness channel: whichever seat mutates
- * a board touches the store (the apply-level face wrappers do it centrally),
- * and the other seat re-reads. Selection changes never bump it — opening a
- * detail is not a board change.
+ * The `rev` field is the cross-tab freshness channel: whichever tab mutates a
+ * board touches the store (the apply-level face wrappers do it centrally), and
+ * the others re-read. Selection changes never bump it — opening a detail is not
+ * a board change. Which card a detail shows is NOT in here since stage ⑧: that
+ * is the tab's own address, so two cards can be open at once.
  *
  * @module @khorsheed/dsh-canvas/client
  */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
-/** What the detail reader follows: which card of which canvas, plus freshness. */
-export interface CanvasCardSelection {
+/** What the tabs share: the open canvas plus freshness. */
+export interface CanvasBoardState {
   /** The selected canvas, or null when nothing was ever picked. */
   readonly canvasId: string | null
-  /** The selected card, or null with the canvas. */
-  readonly cardId: string | null
   /** Bumped on every board mutation from either seat (a re-read trigger). */
   readonly rev: number
 }
 
-/** The selection feed's published shape (the store's read face). */
-export type CanvasSelectionSource = SnapshotStore<CanvasCardSelection>
+/** The shared feed's published shape (the store's read face). */
+export type CanvasSelectionSource = SnapshotStore<CanvasBoardState>
 
 /**
- * The board↔detail selection store. `select` opens a card in the detail
- * reader; `touch` notes a board mutation from either seat so the other
- * re-reads.
+ * The board/freshness store. `touch` notes a board mutation from any seat so
+ * the others re-read.
  */
 export class CanvasSelectionStore {
   /** The published feed (what the inject faces hand to `hooks.selection`). */
-  readonly source: CanvasSelectionSource = createSnapshotStore<CanvasCardSelection>({
-    canvasId: null, cardId: null, rev: 0,
+  readonly source: CanvasSelectionSource = createSnapshotStore<CanvasBoardState>({
+    canvasId: null, rev: 0,
   })
 
-  /** Open one card in the detail reader (a board click; `rev` untouched). */
-  select(canvasId: string, cardId: string): void {
-    const current = this.source.getSnapshot()
-    if (current.canvasId === canvasId && current.cardId === cardId) return
-    this.source.set({ canvasId, cardId, rev: current.rev })
-  }
-
-  /** Switch the open canvas (the drill's card clears with it; `rev` untouched). */
+  /** Switch the open canvas. */
   openCanvas(canvasId: string): void {
     const current = this.source.getSnapshot()
-    if (current.canvasId === canvasId && current.cardId === null) return
-    this.source.set({ canvasId, cardId: null, rev: current.rev })
+    if (current.canvasId === canvasId) return
+    this.source.set({ canvasId, rev: current.rev })
   }
 
-  /** Leave the detail page (the drill's back): keeps the open canvas. */
-  clearCard(): void {
-    const current = this.source.getSnapshot()
-    if (current.cardId === null) return
-    this.source.set({ ...current, cardId: null })
-  }
-
-  /** Note that a board changed under the open detail (either seat's mutation). */
+  /** Note that a board changed under the open tabs (any seat's mutation). */
   touch(): void {
     const current = this.source.getSnapshot()
     this.source.set({ ...current, rev: current.rev + 1 })

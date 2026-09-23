@@ -1,5 +1,5 @@
-/* The canvas tab's own chrome: the topbar, the switcher dropdown, the drill
-   back bar, and the draft view. Board/card styles live in board.module.css. */
+/* The canvas tab's own chrome: the topbar, the switcher dropdown, and the
+   drill back bar. Board/card styles live in board.module.css. */
 
 .root {
   position: relative;
@@ -74,40 +74,59 @@
   flex: 1;
 }
 
+/* The board's two faces. A segmented control, not two tabs: it switches what
+   the SAME board is for, and the selection crosses the switch. */
+.viewSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.viewButton {
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 9px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsw-font-family);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.viewButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.viewButton[data-on] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-brand-primary);
+  font-weight: 500;
+}
+
 .readonlyHint {
   font-size: 11px;
   color: var(--dsw-alias-label-caption);
   white-space: nowrap;
 }
 
-.seg {
-  display: flex;
-  background: var(--dsw-alias-bg-layer-1);
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 7px;
-  padding: 2px;
-  flex-shrink: 0;
-}
-
-.seg button {
-  border: none;
-  background: transparent;
-  font-size: 11.5px;
-  font-family: var(--dsw-font-family);
-  padding: 3px 10px;
-  border-radius: 5px;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-}
-
-.seg button[aria-pressed="true"] {
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-primary);
-}
-
 .newCardWrap {
   position: relative;
   flex-shrink: 0;
+}
+
+/* A custom category carries no icon (an invented row has no shape to borrow —
+   the same rule the board's kind tag follows), but the menu's labels still
+   line up, so the row keeps an icon-width gap. */
+.menuIconSlot {
+  flex: none;
+  width: 12px;
 }
 
 /* ----------------------------------------------------------------- back bar */
@@ -139,94 +158,6 @@
 .backButton:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
-}
-
-/* -------------------------------------------------------------- draft view */
-
-.draftRoot {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.draftBar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  flex-shrink: 0;
-}
-
-.draftBody {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  padding: 0 12px 12px;
-  gap: 10px;
-}
-
-.editorPane {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* The one scroller of the edit pane (never the wrapper). box-sizing is
-   border-box because Chromium's UA sheet leaves a textarea at content-box. */
-.draftEditor {
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 8px;
-  padding: 14px 16px;
-  font-size: 13px;
-  line-height: 1.8;
-  font-family: var(--dsw-font-family);
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-  outline: none;
-  resize: none;
-}
-
-.draftEditor:focus {
-  border-color: var(--dsw-alias-label-caption);
-}
-
-.previewPane {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.markdown {
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
-  padding: 14px 16px;
-  font-size: 13px;
-  line-height: 1.8;
-}
-
-.saveState {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--dsw-alias-label-caption);
-}
-
-.saveState[data-state="conflict"],
-.saveState[data-state="error"] {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.saveState[data-state="saved"] {
-  color: var(--dsw-alias-state-success-primary);
 }
 
 /* ------------------------------------------------------------------ states */
