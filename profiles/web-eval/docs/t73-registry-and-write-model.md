@@ -1,6 +1,7 @@
 # T73 实施计划：数据集按仓库登记 + 实验写入模型（提案 D1 / D2）
 
 > 状态：第一步交付，待协调者与用户评审。本页只定方案，不改代码、不改协议、不动题库仓库、不碰 3171。
+> 评审（2026-09-23）：通过，定 (b)，rev13 归 T73、D5 字段顺延 rev14。随分支 1 第一个提交按评审意见修订六处，各处以「修订 N」标出。
 > 依据：提案 `proposals/active/2026-09-23-eval-journey-redesign.md` §4 D1+D2、`ui-spec.md` §四–§六、协议 v1-rev12 §6.1，以及对共享检出 `~/.dsh/scratch/dataseek-eval` 的只读勘查（下文「现场」）。
 
 ## 〇、现场：模型 (a) 其实已经在跑，而且跑坏了
@@ -36,6 +37,7 @@
 | G16 白名单 | 不变 | `eval_repo_write` 改名 `eval_analysis_write`，白名单只剩 `analysis/<path>`（根是实验目录）。docs/、plans、conditions 移出白名单：plan 只由起草和原地改数（T74）写，condition 只由起草、provision、改端点写 |
 | `datasets_put_item` 写哪 | 共享检出（现状，会碰 HEAD 所在工作区） | 只写登记里人**明确指定的著作检出**（必须和登记是同一个仓库，比对 git common dir）。没指定就拒绝。eval preset 本来就不需要写题 |
 | exports 默认位置 | `<仓库>/exports`（run.ts:2294） | `<实验目录>/exports`；plan.exports 和 options.exportsDir 的覆盖照旧 |
+| run 入口（CLI / slash） | 不变（传 plan 路径） | `eval run --experiment <id>`（slash 同名参数）；plan 路径只用于导入与旧计划兼容读（修订 5，落在分支 2） |
 | bundle | 不变 | 不变。run.meta 本来就自足（快照的 repo/commit、条件全文、order、judge），planSha 意义不变 |
 | 最大代价 | 共享 `.git` 继续膨胀，靠人合并，但现场证明没人合并；「最新」永远有歧义 | 条件库搬迁 + 导入工具 + 配对改键，代码面最大；实验不再能经 git 在部署之间共享，只能经 bundle |
 
@@ -60,7 +62,8 @@
   - 确认。
   - BindingChip 删除，eval DesignPage 上的「未绑定」字样随之删除。
 - **一仓多集怎么列**：按仓库分组，每个集合一行，显示 `set · trackedRef@短哈希 · 日期 · 可见层`。
-- **「最新」怎么算**：取**登记时选定的跟踪分支**在当下的提交（`git rev-parse <trackedRef>`）。不读 HEAD，因为共享检出的 HEAD 现在停在 i3-probes；也不冻结在登记那一刻的提交，否则仓库更新了用户也看不到。`registeredCommit` 只作审计用。
+- **「最新」怎么算**：取**登记时选定的跟踪分支**在当下的提交（`git rev-parse <trackedRef>`）。不读 HEAD，因为共享检出的 HEAD 现在停在 i3-probes；也不冻结在登记那一刻的提交，否则仓库更新了用户也看不到。`registeredCommit` 只作审计用。跟踪分支不存在时拒绝登记 / 取数，不回落到 HEAD。
+- **3171 的正式登记跟踪 `i1-walk`**（修订 3）：它是协调者合并的集成分支；main 停在 09-03、0 份 plan、items 树与 i1-walk 不同，跟踪 main 等于让实验对着一份过期题库。上面示例里的 `"trackedRef": "main"` 只是字段形状；§六 试点为制造版本歧义而登记 main，**仅试点**。
 - **只读取数**：单文件读取仍走 `git show <sha>:<path>`（现状）。整层读取改为 `git archive <sha> -- <paths>` 解到 `$DSH_HOME/state/datasets/materialized/<repoId>/<sha>/<set>/<layers-key>/`，按内容寻址，只读，替代 `ensureWorktree`。从此不向共享 `.git` 登记任何 worktree。已有的 38 条托管 worktree 登记，清理（unlock + remove + prune）会写共享 `.git`，属于共享资源，**第二步不自动做**，由协调者安排。
 
 ## 三、可见性
@@ -75,6 +78,8 @@
 
 ## 四、agent 选择规则
 
+> **语言（修订 4）**：本节的中文拒绝文本与 SKILL / preset 规则是**语义规格**。落地沿用现有语言：eval-tool、datasets-tool 的报错今天都是英文，SKILL.md 与 preset 前缀也是英文，逐字英文在各分支落地时给出（分支 1 的三类 datasets 拒绝文本见其 Agent Note 与 datasets-tool README）。唯一例外是 agent 停下时的回复句：按人的语言说，不规定逐字。
+
 - **`datasets_list({ query? })` 返回形状**（**不含任何文件系统路径**，agent 没有路径可拿去 read / grep）：
 
   ```json
@@ -82,12 +87,11 @@
       "ref": "dataseek-eval/harness-comparison",
       "title": "…", "trackedRef": "main",
       "latest": { "commit": "d69f043…", "date": "2026-09-03" },
-      "layers": ["visible"],
-      "experiments": [ { "id": "pilot-d-preset", "commit": "fd04079…", "conditions": ["dsh-lean", "dsh-full"] } ]
+      "layers": ["visible"]
   } ] }
   ```
 
-  `query` 对 ref 和 title 做大小写不敏感的子串匹配。
+  `query` 对 ref 和 title 做大小写不敏感的子串匹配。**不返回 `experiments`**（修订 1）：datasets-tool 只依赖 datasets，实验目录归 eval，不能反向依赖；版本候选本来就由 `eval_plan_draft` 判定（下面 SKILL 规则 2），「版本不唯一」的报错里列出相关实验即可。datasets_list 只回登记表的事实：ref、title、trackedRef、latest{commit, date}、layers。
 - **参数形态**：`eval_plan_draft`、`eval_plan_validate`、`eval_conditions` 以及 datasets 读工具，原来的 `repo` 参数改为 `dataset: "<登记 id>/<set>"`，**只收登记 id，不收路径**。传了路径时，即使这个路径已登记也拒绝，并在拒绝文本里给出对应的 id，让 agent 学会用 id。
 - **非唯一候选**（`dataset` 只给了集合名，或者子串命中多条）：
 
@@ -135,7 +139,7 @@
 
 - **「跳过 = 不起草、停下等人」怎么落实**：分两层。
   - 机械层：起草在歧义未消解时拒绝，没有静默默认值，agent 无法「先按最新版起草再说」。
-  - 规则层：上面第 3 条规定跳过时的固定回复句和不调工具，试点逐字检查。
+  - 规则层：上面第 3 条规定跳过时不调工具、只回一句等人选定版本的话，试点检查（修订 4：回复句按人的语言，判据查语义不查逐字）。
 
   工具端无法核实 commit 是不是人选的，这一点只能靠规则 + 试点，本页明确承认这个边界。
 - **可选收紧**：eval preset 去掉 `tool-fs-search`（glob / grep）。代价是 agent 失去读 profile 文档的能力。建议先不去，看试点第 5 条的结果再定。
@@ -165,19 +169,19 @@
 - **判据（对会话工具日志和回复逐条核对）**：
   1. 起草前，datasets 家族的工具调用恰好是一次 `datasets_list`。
   2. `datasets_list` 的返回中没有以 `/` 或 `~/` 开头的字符串。
-  3. `eval_plan_draft` 的返回包含「版本不唯一」和「请用 ask_user_question 让人选择」，并且紧接着的下一次工具调用是 `ask_user_question`，选项里出现 `d69f043` 和 `fd04079`。
-  4. 跳过之后，该轮不再有任何工具调用，回复包含「等你选定版本后再起草。」；`experiments/` 目录下没有新增实验。
+  3. `eval_plan_draft` 的返回包含版本不唯一的英文串（分支 2 落地时定逐字，如 `version is ambiguous`）和 `ask_user_question`（中英各一，任一命中即过），并且紧接着的下一次工具调用是 `ask_user_question`，选项里出现 `d69f043` 和 `fd04079`。
+  4. 跳过之后，该轮不再有任何工具调用；回复只有一句，语义是「等人选定版本再起草」（按人的语言，不查逐字）；`experiments/` 目录下没有新增实验。
   5. 整个会话里，read / glob / grep / bash 调用的参数都不包含 `dataseek-eval`。
-  6. 第二个会话的回复包含「不在本部署的数据集登记里」，并且没有对 `~/code/dsh-plugins` 做任何 read / glob / grep。
-  7. 临时实例能打开 pilot-d bundle 的报告页，数字与 3171 上一致。
+  6. 第二个会话里，工具拒绝文本包含 `is not registered in this deployment`（或中文「不在本部署的数据集登记里」，任一命中即过），并且没有对 `~/code/dsh-plugins` 做任何 read / glob / grep。
+  7. 临时实例能打开 pilot-d bundle 的报告页，数字与 3171 上一致。bundle 取题库 `wt-t65` 工作树 `exports/` 下的 `run-20260918054718-8o0o-bundle`（T71 也用它；修订 6）。
   8. 跑完后，共享检出的 HEAD 与 worktree 数都和准备时记下的一致。
 
 ## 七、切片：第二步三条分支
 
 | 顺序 | 分支 | 内容 | 与 T72 / T74 的交叠 |
 |---|---|---|---|
-| 1 | `feat/t73-datasets-registry`（datasets + datasets-tool） | 登记表 + Remote；登记表单（BindForm 改造，删 BindingChip）；`git archive` 物化替代 ensureWorktree；`datasets_list` 新形状；`dataset` 参数与三类报错文本；读工具白名单改读登记表；put_item 改写著作检出；旧绑定一键登记 | 不碰 eval 客户端，和 T72 / T74 无文件交叠，可以马上开 |
-| 2 | `feat/t73-eval-experiments`（eval + eval-tool） | 实验目录 + 条件库；起草改写部署级并判定版本；配对改为 experimentId 优先；`eval_analysis_write`；exports 默认位置；validate 改读物化目录；导入命令；rev13 协议文档；DesignPage 的「未绑定」改为登记下拉 | 碰 DesignPage / LabView，**等 T72 合入后在其上开分支**；**T74 在它之后开**，因为 T74 的原地改数要写回 plan，写入目标就是这里定的 |
+| 1 | `feat/t73-datasets-registry`（datasets + datasets-tool） | 登记表 + Remote；登记表单（BindForm 改造，删 BindingChip）；`git archive` 物化替代 ensureWorktree；`datasets_list` 新形状；`dataset` 参数与三类报错文本；读工具白名单改读登记表；put_item 改写著作检出；旧绑定一键登记。**删**：会话绑定的写入口（`/datasets bind` 改为提示去登记、BindForm 的会话段、BindingChip）。**留给分支 2**（修订 2）：eval 还在用的两个面——`DatasetsBindingFace.binding()`（eval service 读绑定）与 `worktreePath` 的返回形状 `{path, commit, layers, reused}`（run 拿路径算 materialization）；分支 1 新增登记面与绑定面并存，物化换实现不换形状；绑定读路径与三句 "no dataset repository" 随分支 2 退场 | 不碰 eval 客户端，和 T72 / T74 无文件交叠，可以马上开 |
+| 2 | `feat/t73-eval-experiments`（eval + eval-tool） | 实验目录 + 条件库；起草改写部署级并判定版本；配对改为 experimentId 优先；`eval_analysis_write`；exports 默认位置；validate 改读物化目录；导入命令；run 入口改 `eval run --experiment <id>`（slash 同名，plan 路径只作导入与旧计划兼容，修订 5）；退掉绑定读面与 "no dataset repository" 三句；rev13 协议文档；DesignPage 的「未绑定」改为登记下拉 | 碰 DesignPage / LabView，**等 T72 合入后在其上开分支**；**T74 在它之后开**，因为 T74 的原地改数要写回 plan，写入目标就是这里定的 |
 | 3 | `feat/t73-skill-prompt`（SKILL + preset 提示词） | §四 的逐字规则；删掉「让人 `/datasets bind`」一节 | 只动 profile 文本；和分支 2 同批合入，或紧随其后（规则引用了分支 2 的报错文本） |
 
 三条分支合完、按 §六 试点通过，才算 T73 验收。之后是 T74。
