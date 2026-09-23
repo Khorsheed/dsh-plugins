@@ -130,6 +130,15 @@
   overflow: auto;
 }
 
+/* The content renderer's seat inside the official document tab: a full-height
+   flex child of the owner's scroller (the pane scrolls internally). */
+.documentPane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 /* The changes-tab step control: one pill grouping ◀ position ▶ (the arrows
    never separate — a lone trailing arrow reads as decoration, not a button),
    clamped at both ends of the change chain. */

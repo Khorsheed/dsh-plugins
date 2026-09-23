@@ -1,5 +1,7 @@
 /**
- * The file-preview right-Sidebar tab body: the session's touched files as a
+ * The file-preview right-Sidebar tab body — **0.1.5 line only** (rc.1 mounts
+ * the same content pane as the official document tab's default renderer; see
+ * FileContentBody.tsx): the session's touched files as a
  * full-height list, navigating IN-TAB to a detail view on row click.
  *
  * The detail view is the SHARED content pane (@khorsheed/dsh-client-ui-content-preview)
@@ -159,7 +161,9 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
   // openResource route — the official card, the file tree, mentions). The
   // revision bumps on every navigation, so a repeat open re-applies it.
   const revision = navigation.revision
-  const navPath = navigation.params?.path
+  // The params union also carries the official file resource params ({ line }),
+  // so narrow on the key the way the official TextPreview does.
+  const navPath = navigation.params !== undefined && 'path' in navigation.params ? navigation.params.path : undefined
   const navAddress = navigation.address
   // Applied once per navigation revision: the list arriving later must NOT
   // re-apply (a refresh would yank the user out of the list they backed into).

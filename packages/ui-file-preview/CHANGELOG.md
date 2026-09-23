@@ -2,6 +2,13 @@
 
 ## 未发布
 
+- **方案 B（用户拍板 2026-09-24）：内容预览面双线切换。** 0.1.7-rc.1 起内容渲染注册进官方 `documentPreviews` 面——共享内容面板成为官方 document tab 的默认渲染器（extension 档，`loading: 'renderer'` 自持加载走本插件 Remote，工作区外产物照常；官方渲染器收进工具栏下拉），自建 FilePreviewTab tab 类型不再注册，文件点击/mentions/会话产物入口全部路由官方 document tab；0.1.5 保留自建产物页 tab（npm 最新发布线仍是 0.1.5，minHost 不动）。切换走能力探测：`ctx.get('documentPreviews')` 点探测 + pend 在 `inject: ['documentPreviews']` 的嵌套插件（晚到时注册渲染器并退役自建 tab），永不读版本。
+- rc.1 手势对账：复制路径/内容搜索/结构化渲染（JSON 树/CSV 表/Markdown）/HTML 沙箱分级随内容面板并入注册定义；在文件夹打开/在 IDE 打开让位官方 ui-open-in-app 的 document actions 贡献；图片预览让位官方缩放查看器（avif 官方未认领，仍走我们的面板并声明二进制后缀）；超大文件改走官方文本渲染器的滚动分页。改动记录维度（TurnFileRow 回合卡 + FileHistoryBody）官方仍无对应物（内存态/git-only/重启即失），维持自留并跟踪上游。
+- locales 清理双线都已死的退役抽屉/行文案（drawer.* 8 键、row.* 5 键、turn.summary/summaryOne/expand/collapse 4 键），新增 `content.title`（渲染器下拉标签「预览」）。
+- 顺带修复（rc.1 类型面预存错误）：FilePreviewTab 读 `navigation.params.path` 前按官方 TextPreview 同款 `'path' in` 收窄（`WorkspaceFileParams` 只有 `line`）。
+
+## 未发布
+
 - 内容搜索不再劫持视图：命中经 CSS Custom Highlight API 画在渲染后的正文上（`::highlight()` 外包 `:global()`，否则 lightningcss 会像类名一样改写标识符导致静默不上色）；只有渲染态确实看不见的查询才回落到原始命中行视图，代码视图搜索时因此保留语法配色；HTML 沙箱预览与不支持该 API 的宿主行为不变。
 - 注册任何 UI 前探测宿主的零会话 `capabilities()` Remote；client-only 组合不再留下错误卡、renderer、locale 或空 tab。
 - 导出 `installFilePreviewSurfaces(ctx, remote)`，让握手、安装与卸载边界可直接测试。

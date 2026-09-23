@@ -42,6 +42,18 @@ export interface FilePreviewTabInjected {
   }
 }
 
+/**
+ * Business face injected into the rc.1 content document body: the same Remote
+ * read the self-drawn tab's detail view uses, plus a verbatim-absolute
+ * copy-path (the body resolves the workspace spelling from its own address).
+ */
+export interface FileContentBodyInjected {
+  /** Fetch one file's current content (one RPC, host-capped; resolves outside-workspace paths). */
+  readFile: FilePreviewTabInjected['readFile']
+  /** Copy one already-resolved absolute path to the clipboard. */
+  copyPath: (absolutePath: string) => Promise<boolean>
+}
+
 /** Full props of the tab body entry (runtime + store + injected + locale shares). */
 export type FilePreviewTabProps =
   & PropsRuntime<'sidebar.right.pane.tab'>

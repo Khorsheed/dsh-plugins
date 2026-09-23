@@ -40,7 +40,9 @@
       "inject": [
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-workspace-files",
         "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-resources",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-deliverables",
         "@deepseek-ai/dsh-client-ui-session",
@@ -54,7 +56,8 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.1.5-rc.1"
+      "verifiedHost": "0.1.5-rc.1",
+      "notes": "双线内容面：0.1.7-rc.1 起内容预览注册进官方 documentPreviews 面（extension 档，官方 document tab 的默认渲染器，官方渲染器收进工具栏下拉；不再注册自建 FilePreviewTab tab 类型，文件点击/mentions/会话产物入口全部路由官方 document tab），0.1.5 保留自建产物页 tab（npm 最新发布线仍是 0.1.5，不断线）。改动记录维度（TurnFileRow 回合卡 + FileHistoryBody 改动记录渲染器）官方无对应物——workspace-changes 为内存态、git-only、宿主重启即失——维持我方机制并跟踪上游。rc.1 线的手势对账：复制路径/内容搜索/结构化渲染/HTML 沙箱分级随内容面板并入注册定义；在文件夹打开/在 IDE 打开让位官方 ui-open-in-app 的 document actions 贡献；图片预览让位官方缩放查看器（avif 除外，官方未认领）；超大文件改走官方渲染器的滚动分页（下拉里选官方文本渲染器）。"
     }
   },
   "scripts": {
@@ -84,7 +87,9 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-api-remotes": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-api-session-controller": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-api-workspace-files": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-resources": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-client-store": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-client-test-runtime": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-client-ui-chat": "^0.1.7-rc.1",

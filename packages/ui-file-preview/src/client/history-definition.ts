@@ -28,8 +28,9 @@ export const HISTORY_EXTENSIONS: readonly string[] = [
 /**
  * Suffixes the detail view's preview stack renders: the change-history text
  * set plus the image formats the pane's image arm serves. Everything else
- * (pdf, archives, binaries) stays with the official document tab — the tab
- * type's `canOpen` filters on this set before claiming an address.
+ * (pdf, archives, binaries) stays with the official document tab — the 0.1.5
+ * tab type's `canOpen` filters on this set before claiming an address. (rc.1
+ * claims differently: see content-definition.ts.)
  */
 export const RENDERABLE_EXTENSIONS: readonly string[] = [
   ...HISTORY_EXTENSIONS,

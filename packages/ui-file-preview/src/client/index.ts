@@ -1,14 +1,32 @@
 /**
  * File-preview plugin, browser half: a pure additive surface over official
- * extension points only. It registers a page-type right-Sidebar tab (the
- * session's touched files as one full-height list, entered from the guide
- * page; in-workspace file clicks hand content preview to the official
- * document tab through the tab's `actions.openResource`), a switchable
- * change-history renderer in that document tab (the toolbar dropdown's
- * 「改动记录」 entry — the per-write diff stepping the official renderers
- * have no counterpart for), and a per-turn mutation card in the
- * `conversation.chat.turnTail` slot (the bash captures the host half
- * collects, S2). The filePreview Remote is mounted here through the official
+ * extension points only. Two content faces, one per host line:
+ *
+ * - 0.1.7-rc.1 (the official `documentPreviews` pane exists): the content
+ *   preview registers INTO the official document tab as its default renderer
+ *   (the shared content pane, extension band — FileContentBody), alongside the
+ *   change-history renderer (builtin band, one dropdown away). File clicks
+ *   (deliverables card, file tree, wrapped mentions, the turn card) route to
+ *   the official document tab through its fallback-band claim; the self-drawn
+ *   tab type is NOT registered.
+ * - 0.1.5 (no such pane): the self-drawn page-type right-Sidebar tab (the
+ *   session's touched files as one full-height list, entered from the guide
+ *   page) claims `dsh-resource://file/**` addresses the preview stack renders
+ *   and hosts the same content pane in its detail view.
+ *
+ * The switch is a capability probe, never a version read: a point-in-time
+ * `ctx.get('documentPreviews')` skips the legacy registration when the pane
+ * already provides the service, and a nested plugin pended on
+ * `inject: ['documentPreviews']` registers the rc.1 renderers and retires the
+ * legacy tab when the pane arrives later (cordis 4.0.4's service-access guard
+ * forbids an undeclared `ctx.documentPreviews` property read, and a static
+ * inject would pend the whole plugin on 0.1.5 — the deferred-inject pattern of
+ * local-agent's settings-scope). Both lines keep: the per-turn mutation card
+ * in the `conversation.chat.turnTail` slot (the bash captures the host half
+ * collects, S2) and the change-history dimension — the official
+ * workspace-changes is memory-resident, git-only, and loses everything on a
+ * host restart, so TurnFileRow/FileHistoryBody stay ours (tracked upstream).
+ * The filePreview Remote is mounted here through the official
  * `ctx.remote.$mount` channel, so the plugin distributes as an independent
  * package with no edits to core packages. Composing this plugin out of
  * cordis.yml removes every surface it adds.
@@ -46,10 +64,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import filePreviewRemote from '@khorsheed/dsh-file-preview/remote'
 import { FilePreviewTab } from './FilePreviewTab.tsx'
+import { FileContentBody } from './FileContentBody.tsx'
 import { FileHistoryBody } from './FileHistoryBody.tsx'
 import { TurnFileRow } from './TurnFileRow.tsx'
 import { createFilePreviewStore } from './file-preview-store.ts'
 import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, filePreviewDefinition } from './definition.tsx'
+import { FILE_CONTENT_ID, CONTENT_BINARY_EXTENSIONS, CONTENT_EXTENSIONS } from './content-definition.ts'
 import { FILE_HISTORY_ID, HISTORY_EXTENSIONS } from './history-definition.ts'
 import { basename } from './path-utils.ts'
 import { en, NS, zh } from './locales.ts'
@@ -58,11 +78,11 @@ import { OpenInAppProbe, pickFileManager, pickIde } from './open-in-app.ts'
 import { parentPath } from './path-utils.ts'
 import { createTurnFilesLoader } from './turn-files-cache.ts'
 import { selectTurnFiles } from './turn-files.ts'
-import type { FilePreviewRemote, FilePreviewTabInjected, FilePreviewTurnRowInjected } from './contract.ts'
+import type { FileContentBodyInjected, FilePreviewRemote, FilePreviewTabInjected, FilePreviewTurnRowInjected } from './contract.ts'
 
 export { DiffHistory } from './DiffHistory.tsx'
-export { FilePreviewTab, FileHistoryBody, TurnFileRow }
-export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, FILE_HISTORY_ID }
+export { FilePreviewTab, FileContentBody, FileHistoryBody, TurnFileRow }
+export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, FILE_CONTENT_ID, FILE_HISTORY_ID }
 
 /** Required services: slots, sessions (cwd for the row gestures), the remote
  * channel, the locale, and the right-Sidebar faces (tab-type registry + the
@@ -80,8 +100,8 @@ export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, FILE_HISTORY_ID }
 export const inject = ['slots', 'sessions', 'remote', 'locale', 'sidebarRight', 'sidebarRightTabs']
 
 /**
- * Client plugin body: mount the Remote, register the dictionaries, the tab
- * type, its body, and the per-turn file row.
+ * Client plugin body: mount the Remote, register the dictionaries, then the
+ * surfaces of the host line actually serving (see the module header).
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -122,7 +142,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 /**
  * Install every visible file-preview client surface after a successful host
  * handshake. Tests can drive this boundary directly; disposal removes the
- * dictionaries, tab type/body, turn row, mention wrapper, and history face.
+ * dictionaries, the line's content faces (legacy tab or document renderers),
+ * the turn row, and the mention wrapper.
  */
 export function installFilePreviewSurfaces(
   ctx: Context,
@@ -153,9 +174,11 @@ export function installFilePreviewSurfaces(
         // `dsh-resource://file/session/<id>/<path>` content id the
         // deliverables card's open resolves to, so one file is one tab (the
         // page address `sidebar://file-preview` would mint a second tab for
-        // the same file). Our type claims the renderable ones; the rest fall
-        // through to the official document tab. A throw (no mounted sidebar
-        // surface) falls back to the owner's openFile inside the wrap.
+        // the same file). On rc.1 the official document tab claims them all
+        // (our content renderer is its default body); on 0.1.5 our tab type
+        // claims the renderable ones and the rest fall through. A throw (no
+        // mounted sidebar surface) falls back to the owner's openFile inside
+        // the wrap.
         open: (sessionId, path) => {
           ctx.sidebarRight.openResource(fileAddressFor(sessionId, sessionCwd(sessionId as SessionId), path))
         },
@@ -197,28 +220,43 @@ export function installFilePreviewSurfaces(
     })
   }
 
-  // Stage one of the right-Sidebar registration: the tab type (guide entry
-  // PLUS address claims — `dsh-resource://file/**` for every session-scoped
-  // path the preview stack renders; see definition.tsx). The default band is
-  // 'extension', outranking the official document tab's 'fallback'.
-  disposers.push(ctx.effect(() => ctx.sidebarRightTabs.register(filePreviewDefinition(t)), 'ui-file-preview: tab type'))
+  // ── 0.1.5 line: the self-drawn tab type + body. Registered only while the
+  // official document-preview pane is absent: the point-in-time `ctx.get`
+  // probe below skips them when the pane already provides `documentPreviews`,
+  // and the rc.1 arm further down retires them when the pane arrives after us
+  // (a one-shot get races the documentpreview fiber's provide, and cordis
+  // re-wakes only fibers that declare the service in `inject`). An rc.1
+  // composition with documentpreview mounted out degrades to exactly these
+  // surfaces, which is the 0.1.5 behavior by construction.
+  const legacyDisposers: Array<() => void | Promise<void>> = []
+  const retireLegacySurfaces = (): void => {
+    for (const dispose of legacyDisposers.splice(0).reverse()) void dispose()
+  }
+  if (ctx.get('documentPreviews') === undefined) {
+    // Stage one of the right-Sidebar registration: the tab type (guide entry
+    // PLUS address claims — `dsh-resource://file/**` for every session-scoped
+    // path the preview stack renders; see definition.tsx). The default band is
+    // 'extension', outranking the official document tab's 'fallback'.
+    legacyDisposers.push(ctx.effect(() => ctx.sidebarRightTabs.register(filePreviewDefinition(t)), 'ui-file-preview: tab type'))
 
-  // Stage two: the body under the type's id in the keyed pane seat.
-  disposers.push(ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
-    name: 'sidebar.right.pane.tab',
-    key: FILE_PREVIEW_ID,
-    locale: NS,
-    store: createFilePreviewStore,
-    inject: (sessionId: SessionId): FilePreviewTabInjected => ({
-      listFiles: (sid: SessionId) => remote.list(sid),
-      readFile: (sid: SessionId, path: string) => remote.read(sid, path),
-      copyPath: (path: string) => writeClipboard(resolveWorkspacePath(sessionCwd(sessionId), path)),
-      revealFolder: (path: string) => { revealFolder(sessionId, path) },
-      openInIde: (path: string, app?: string) => { openInIde(sessionId, path, app) },
-      loadOpenInApps: () => { void openInApps.load() },
-      hooks: { openInApps: openInApps.apps },
-    }),
-  }, FilePreviewTab)), 'ui-file-preview: tab body'))
+    // Stage two: the body under the type's id in the keyed pane seat.
+    legacyDisposers.push(ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+      name: 'sidebar.right.pane.tab',
+      key: FILE_PREVIEW_ID,
+      locale: NS,
+      store: createFilePreviewStore,
+      inject: (sessionId: SessionId): FilePreviewTabInjected => ({
+        listFiles: (sid: SessionId) => remote.list(sid),
+        readFile: (sid: SessionId, path: string) => remote.read(sid, path),
+        copyPath: (path: string) => writeClipboard(resolveWorkspacePath(sessionCwd(sessionId), path)),
+        revealFolder: (path: string) => { revealFolder(sessionId, path) },
+        openInIde: (path: string, app?: string) => { openInIde(sessionId, path, app) },
+        loadOpenInApps: () => { void openInApps.load() },
+        hooks: { openInApps: openInApps.apps },
+      }),
+    }, FilePreviewTab)), 'ui-file-preview: tab body'))
+  }
+  disposers.push(async () => { retireLegacySurfaces() })
 
   // The turn card. Probe the declared slot kind inside inject (the callback
   // only runs once the slot exists): a 0.1.6-alpha.2+ host declares a LIST —
@@ -253,19 +291,48 @@ export function installFilePreviewSurfaces(
     }, TurnFileRow)
   }))
 
-  // The change-history document renderer: metadata into the registry, the
-  // body into the keyed document seat. `priority: 'builtin'` keeps the
-  // official renderer the default (an extension band would take it over);
-  // the toolbar dropdown lists every match regardless.
-  // A one-shot `ctx.get` here races the documentpreview fiber's provide —
-  // cordis only re-wakes fibers that declare a service in `inject` — so the
-  // registrations live in a nested plugin pended on the service; in a
-  // composition without document previews it simply never activates.
-  const historyFiber = ctx.plugin({
-    name: '@khorsheed/dsh-client-ui-file-preview/history-renderer',
+  // ── rc.1 line: the official document tab's renderer pair. The CONTENT
+  // renderer (the shared content pane) registers at the default `extension`
+  // band — an external implementation outranks the official renderers, so a
+  // file click lands in the official document tab with our body as the
+  // default view; `loading: 'renderer'` keeps the read on our own Remote so
+  // outside-workspace products keep rendering (the owner's workspace-scoped
+  // paged read cannot serve them). The HISTORY renderer keeps the `builtin`
+  // band — never the default, always in the toolbar dropdown. A one-shot
+  // `ctx.get` here races the documentpreview fiber's provide — cordis only
+  // re-wakes fibers that declare a service in `inject` — so the registrations
+  // live in a nested plugin pended on the service; on the 0.1.5 line (or a
+  // composition without document previews) it simply never activates and the
+  // legacy tab above stays. Its activation retires the legacy tab: the two
+  // content faces never coexist.
+  const documentPaneFiber = ctx.plugin({
+    name: '@khorsheed/dsh-client-ui-file-preview/document-pane',
     inject: ['documentPreviews'],
     apply: (sub: Context) => {
+      retireLegacySurfaces()
       const previews = sub.documentPreviews
+      sub.effect(() => previews.register({
+        id: FILE_CONTENT_ID,
+        extensions: CONTENT_EXTENSIONS,
+        binaryExtensions: CONTENT_BINARY_EXTENSIONS,
+        priority: 'extension',
+        title: () => t('content.title'),
+        // Renderer-owned loading: the body reads through the filePreview
+        // Remote (outside-workspace capable) and settles each revision itself.
+        loading: 'renderer',
+      }), 'ui-file-preview: content renderer metadata')
+      sub.effect(() => sub.slots.inject('sidebar.right.tab.document', () => sub.slots.register(
+        {
+          name: 'sidebar.right.tab.document',
+          key: FILE_CONTENT_ID,
+          locale: NS,
+          inject: (): FileContentBodyInjected => ({
+            readFile: (sid: SessionId, path: string) => remote.read(sid, path),
+            copyPath: (absolutePath: string) => writeClipboard(absolutePath),
+          }),
+        },
+        FileContentBody,
+      )), 'ui-file-preview: content renderer body')
       sub.effect(() => previews.register({
         id: FILE_HISTORY_ID,
         extensions: HISTORY_EXTENSIONS,
@@ -288,7 +355,7 @@ export function installFilePreviewSurfaces(
       )), 'ui-file-preview: history renderer body')
     },
   })
-  disposers.push(() => historyFiber.dispose())
+  disposers.push(() => documentPaneFiber.dispose())
 
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()

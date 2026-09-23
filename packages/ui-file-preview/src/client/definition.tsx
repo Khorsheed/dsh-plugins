@@ -1,6 +1,8 @@
 /**
  * Stage one of this package's right-Sidebar registration: what the
- * `file-preview` tab type IS.
+ * `file-preview` tab type IS. **0.1.5 line only** — on 0.1.7-rc.1 the content
+ * preview registers into the official document tab instead (see
+ * content-definition.ts) and this type is never registered.
  *
  * Both a page and a claimant: the guide page offers it as an entry box, and
  * it claims `dsh-resource://file/**` addresses whose suffix the detail view's

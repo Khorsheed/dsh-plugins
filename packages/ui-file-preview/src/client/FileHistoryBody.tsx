@@ -4,11 +4,11 @@
  *
  * Registration is the official two-step: the implementation metadata into
  * `ctx.documentPreviews` (suffix-matched, `priority: 'builtin'` so the
- * official renderer keeps the default and this one appears in the toolbar
+ * content renderer keeps the default and this one appears in the toolbar
  * dropdown) and this component into the keyed `sidebar.right.tab.document`
  * seat under the same id. The owner's prepared `content` is ignored — the
- * diffs come from the host `filePreview.list` fold (the same source the tab
- * body reads), matched by workspace-resolved path.
+ * diffs come from the host `filePreview.list` fold (the same source the 0.1.5
+ * tab body reads), matched by workspace-resolved path.
  */
 
 import { useEffect, useState, type ReactNode } from 'react'

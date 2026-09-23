@@ -25,10 +25,6 @@ export type FilePreviewKey =
   | 'preview.exitFullscreen'
   | 'preview.staticHint'
   | 'turn.count'
-  | 'turn.summary'
-  | 'turn.summaryOne'
-  | 'turn.expand'
-  | 'turn.collapse'
   | 'json.copyValue'
   | 'json.copyJson'
   | 'json.copyPath'
@@ -43,14 +39,6 @@ export type FilePreviewKey =
   | 'markdown.copy'
   | 'markdown.copied'
   | 'markdown.footnotes'
-  | 'drawer.kind.binary'
-  | 'drawer.kind.missing'
-  | 'drawer.kind.tooLarge'
-  | 'drawer.kind.error'
-  | 'drawer.truncated'
-  | 'drawer.tab.diff'
-  | 'drawer.tab.content'
-  | 'drawer.missingPath'
   | 'diff.copy'
   | 'diff.copied'
   | 'diff.collapse'
@@ -75,11 +63,7 @@ export type FilePreviewKey =
   | 'history.step.latest'
   | 'history.step.older'
   | 'history.step.newer'
-  | 'row.copyPath'
-  | 'row.copied'
-  | 'row.openFolder'
-  | 'row.openIdeIn'
-  | 'row.openIdeMore'
+  | 'content.title'
   | 'detail.back'
   | 'mention.open'
   // Printed by the shared content pane (@khorsheed/dsh-client-ui-content-preview).
@@ -136,10 +120,6 @@ export const zh: Record<FilePreviewKey, string> = {
   'preview.exitFullscreen': '退出全屏',
   'preview.staticHint': '静态预览：此页面含脚本，脚本不会运行——点右上角「运行脚本」可交互',
   'turn.count': '{count} 个产物',
-  'turn.summary': '{count} 个文件已修改',
-  'turn.summaryOne': '1 个文件已修改',
-  'turn.expand': '展开其余 {count} 个',
-  'turn.collapse': '收起',
   'json.copyValue': '复制值',
   'json.copyJson': '复制 JSON',
   'json.copyPath': '复制属性路径',
@@ -154,14 +134,6 @@ export const zh: Record<FilePreviewKey, string> = {
   'markdown.copy': '复制',
   'markdown.copied': '已复制',
   'markdown.footnotes': '脚注',
-  'drawer.kind.binary': '二进制文件，无法预览',
-  'drawer.kind.missing': '文件不存在',
-  'drawer.kind.tooLarge': '文件过大，仅显示大小',
-  'drawer.kind.error': '读取失败',
-  'drawer.truncated': '内容已截断',
-  'drawer.tab.diff': '改动记录',
-  'drawer.tab.content': '当前内容',
-  'drawer.missingPath': '记录路径：{path}',
   'diff.copy': '复制差异',
   'diff.copied': '已复制',
   'diff.collapse': '收起',
@@ -186,11 +158,7 @@ export const zh: Record<FilePreviewKey, string> = {
   'history.step.latest': '最新',
   'history.step.older': '查看更早的修改',
   'history.step.newer': '查看更新的修改',
-  'row.copyPath': '复制路径',
-  'row.copied': '已复制',
-  'row.openFolder': '在文件夹中打开',
-  'row.openIdeIn': '在 {app} 打开',
-  'row.openIdeMore': '选择应用打开',
+  'content.title': '预览',
   'detail.back': '返回产物列表',
   'mention.open': '在侧边栏打开 {name}',
 
@@ -242,10 +210,6 @@ export const en: Record<FilePreviewKey, string> = {
   'preview.exitFullscreen': 'Exit fullscreen',
   'preview.staticHint': 'Static preview: this page contains scripts, which do not run here — use "Run scripts" above for interactivity',
   'turn.count': '{count} products',
-  'turn.summary': '{count} files changed',
-  'turn.summaryOne': '1 file changed',
-  'turn.expand': 'Show {count} more',
-  'turn.collapse': 'Collapse',
   'json.copyValue': 'Copy value',
   'json.copyJson': 'Copy JSON',
   'json.copyPath': 'Copy property path',
@@ -260,14 +224,6 @@ export const en: Record<FilePreviewKey, string> = {
   'markdown.copy': 'Copy',
   'markdown.copied': 'Copied',
   'markdown.footnotes': 'Footnotes',
-  'drawer.kind.binary': 'Binary file; preview unavailable',
-  'drawer.kind.missing': 'File not found',
-  'drawer.kind.tooLarge': 'File too large; size only',
-  'drawer.kind.error': 'Failed to read',
-  'drawer.truncated': 'Content truncated',
-  'drawer.tab.diff': 'Change history',
-  'drawer.tab.content': 'Current content',
-  'drawer.missingPath': 'Recorded path: {path}',
   'diff.copy': 'Copy diff',
   'diff.copied': 'Copied',
   'diff.collapse': 'Collapse',
@@ -292,11 +248,7 @@ export const en: Record<FilePreviewKey, string> = {
   'history.step.latest': 'latest',
   'history.step.older': 'View an earlier change',
   'history.step.newer': 'View a newer change',
-  'row.copyPath': 'Copy path',
-  'row.copied': 'Copied',
-  'row.openFolder': 'Show in folder',
-  'row.openIdeIn': 'Open in {app}',
-  'row.openIdeMore': 'Choose an application',
+  'content.title': 'Preview',
   'detail.back': 'Back to products',
   'mention.open': 'Open {name} in the sidebar',
 
