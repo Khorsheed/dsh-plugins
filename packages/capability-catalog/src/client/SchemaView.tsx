@@ -1,5 +1,5 @@
   import { useEffect, useMemo, useState, type ReactNode } from 'react'
-  import { IconChevronDownOutline14, IconChevronRightOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
   import type { CatalogJsonValue, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
   import type { CapabilityCatalogKey } from './locales.ts'
   import css from './CapabilityCatalogCard.module.css'
@@ -107,7 +107,7 @@ function SchemaNode({ name, schema, required, path, gutter, collapsed, onToggle,
       {kids !== null ? (
         <button type="button" className={css.schemaHeadBtn} onClick={() => onToggle(path)} aria-expanded={open}>
           <span className={css.schemaChevron}>
-            {open ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+            {open ? <IconChevronDownOutlineMedium size={12} /> : <IconChevronRightOutlineMedium size={12} />}
           </span>
           {head}
         </button>

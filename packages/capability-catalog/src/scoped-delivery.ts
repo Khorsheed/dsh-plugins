@@ -31,14 +31,14 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createScope, type ScopeKey } from '@deepseek-ai/dsh-scope'
-import { livePresetMounts } from '@deepseek-ai/dsh-agent-presets'
+import { livePresetMounts } from '@deepseek-ai/dsh-agent-preset-registry'
 // Type-only: the ctx.skills service merge and the provider contract this module
 // implements. The skill registry is an optional peer; a runtime import would
 // make the catalog fail to boot without it.
 import type { SkillCandidate, SkillDefinition, SkillProvider, SkillProviderControl } from '@deepseek-ai/dsh-skill'
 // Type-only: the ctx.agentPresets service merge and the `agent-preset/selected`
 // event declaration (the roster itself is a real dependency).
-import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type { PresetRosterSlice } from './preset-scope.ts'
 
 /** Provider label for managed entries; also the candidate's `provider` field. */

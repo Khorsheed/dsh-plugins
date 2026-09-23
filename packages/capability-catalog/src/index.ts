@@ -157,6 +157,7 @@ function resolveServicesHelper(ctx: Context): { registry: RegistrySlice | undefi
  */
 export class CapabilityCatalogService extends TypertRemoteService {
   static inject = []
+  static Config = CapabilityCatalogSettingsSchema
 
   private baseline: Set<string>
   private readonly appearedAfterApply: Set<string>
@@ -170,29 +171,64 @@ export class CapabilityCatalogService extends TypertRemoteService {
   /** The workspace the catalog was last asked about, for project-root conflict checks. */
   private observedWorkdir: string | undefined
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, public config: { mcp?: unknown }) {
     super(ctx, 'capabilityCatalog')
     this.mcp = new McpStore()
     this.baseline = new Set()
     this.appearedAfterApply = new Set()
-    // Register the settings namespace so the ConfigurablePluginsTab serves
-    // our settings.plugin.item card (it dispatches cards only for Host-served
-    // namespaces). The card reads its data through the Remote; the namespace
-    // ALSO carries the plugin's persisted MCP state (`mcp`) so servers survive a
-    // restart: seed the in-process store at boot, persist every mutation, and
-    // reload when the config document changes externally. Degrades silently when
+    // Persist the MCP state so servers survive a restart: seed the in-process
+    // store at boot, persist every mutation, and reload when the config
+    // document changes externally. Two host lines, one outcome: 0.1.5 serves a
+    // free-form `settings.register` namespace (whose scope.watch round-trips
+    // both our own and external writes); 0.1.7 persists the plugin Config's
+    // volatile `mcp` field through SettingsForms (writes ride the profile
+    // patch, the running fiber's Volatile reference tracks them, and
+    // `settings/document-updated` is the round-trip channel). The card reads
+    // its data through the Remote on both lines. Degrades silently when
     // settings is absent (in-process store only, resets on restart).
     ctx.inject(['settings'], (settingsCtx) => {
-      const scope = settingsCtx.settings.register(CAPABILITY_CATALOG_NS, CapabilityCatalogSettingsSchema)
-      const persisted = (scope.get() as { mcp?: PersistedMcpState } | undefined)?.mcp
-      if (persisted !== undefined) this.mcp.loadFrom(persisted)
-      this.mcp.onPersist = (): void => {
-        void scope.update({ mcp: this.mcp.toPersisted() }).catch((error: unknown) => this.ctx.logger.error(error))
+      const svc = settingsCtx.settings as unknown as {
+        register?: (ns: string, schema: unknown) => {
+          get(): unknown
+          update(patch: Record<string, unknown>): Promise<void>
+          watch(listener: (next: unknown) => void): void
+        }
+        update?: (ns: string, patch: Record<string, unknown>) => Promise<void>
+        configure?: (presentation: { auto?: boolean }, owner?: unknown) => () => void
       }
-      scope.watch((next) => {
-        this.mcp.loadFrom((next as { mcp?: PersistedMcpState } | undefined)?.mcp)
-        this.afterMcpMutation()
-      })
+      if (typeof svc.register === 'function') {
+        const scope = svc.register(CAPABILITY_CATALOG_NS, CapabilityCatalogSettingsSchema)
+        const persisted = (scope.get() as { mcp?: PersistedMcpState } | undefined)?.mcp
+        if (persisted !== undefined) this.mcp.loadFrom(persisted)
+        this.mcp.onPersist = (): void => {
+          void scope.update({ mcp: this.mcp.toPersisted() }).catch((error: unknown) => this.ctx.logger.error(error))
+        }
+        scope.watch((next) => {
+          this.mcp.loadFrom((next as { mcp?: PersistedMcpState } | undefined)?.mcp)
+          this.afterMcpMutation()
+        })
+      } else if (typeof svc.update === 'function') {
+        // The catalog ships its own card; keep the machine-state block out of
+        // any auto-generated form.
+        svc.configure?.({ auto: false }, ctx.fiber)
+        const readVolatile = (): PersistedMcpState | undefined => {
+          const field = this.config.mcp as { get?: () => PersistedMcpState | undefined } | PersistedMcpState | undefined
+          if (field !== null && typeof field === 'object' && typeof (field as { get?: unknown }).get === 'function') {
+            return (field as { get: () => PersistedMcpState | undefined }).get()
+          }
+          return field as PersistedMcpState | undefined
+        }
+        const persisted = readVolatile()
+        if (persisted !== undefined) this.mcp.loadFrom(persisted)
+        this.mcp.onPersist = (): void => {
+          void svc.update!(CAPABILITY_CATALOG_NS, { mcp: this.mcp.toPersisted() }).catch((error: unknown) => this.ctx.logger.error(error))
+        }
+        settingsCtx.on('settings/document-updated', (ns) => {
+          if (ns !== CAPABILITY_CATALOG_NS) return
+          this.mcp.loadFrom(readVolatile())
+          this.afterMcpMutation()
+        })
+      }
       // Re-sync after loading persisted state (the tools inject may have fired
       // before the store was seeded).
       this.syncRegisteredMcpTools()
