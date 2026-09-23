@@ -17,7 +17,7 @@
  * expected number below is arithmetic on those boxes, never a magic pixel.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { CanvasTabProps } from '../src/client/contract.ts'
 import { CanvasImageSrcs } from '../src/client/images.ts'
@@ -31,6 +31,18 @@ import type {
   BoardLane, BoardLink, BoardListResult, BoardMutationResult, BoardReadOutcome,
   CanvasBoard, CanvasSummary,
 } from '../src/types.ts'
+
+/**
+ * Reaching the 连线 switch costs two awaited remote reads (list, then board)
+ * plus the renders they cause, and `findByRole` budgets 1000 ms for that by
+ * default. The repo raised vitest's own budget for the same reason
+ * (build/vitest.ts: the root run starts every package at once, and CI's runner
+ * is fast enough to stay under) — the async-util default is the same wall
+ * crossed from the other side: under a starved event loop its 50 ms polls
+ * arrive late, and the switch is genuinely absent when the last one fires.
+ * A larger budget costs a passing test nothing; every assertion stays.
+ */
+configure({ asyncUtilTimeout: 5_000 })
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 

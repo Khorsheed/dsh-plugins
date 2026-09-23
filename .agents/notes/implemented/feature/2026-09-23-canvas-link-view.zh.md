@@ -53,11 +53,13 @@ Status: implemented
 
 ## Testing
 
-- `pnpm --filter @khorsheed/dsh-canvas build`（gen-typert → 宿主 tsc → 客户端 tsc → tsdown），然后 `pnpm --filter @khorsheed/dsh-canvas test` —— **23 文件 / 447 绿**（阶段 ⑥ 之前是 319）。
+- `pnpm --filter @khorsheed/dsh-canvas build`（gen-typert → 宿主 tsc → 客户端 tsc → tsdown），然后 `pnpm --filter @khorsheed/dsh-canvas test` —— **23 文件 / 449 绿**（阶段 ⑥ 之前是 319）。
 - `tests/layout.spec.ts`（新增，27 条）：宽容读（`[undefined, null, 'nope', {}, []]` → 空、坏行在好行旁边被丢掉、各个上限生效）、`x`/`y` 成对、无序对去重、指向归档卡的线活着而指向不存在的卡的线死去、`setLayout` 的省略 ≠ 清空，以及版本守卫。
 - `tests/layout-geometry.spec.ts`（新增，47 条）：每一个纯回答——卡心归属（含边界）、重叠取先到、四个来向的带符号推力与平局、交叉边界时 `fit` 钉在低值、`dragLane` 带着卡收紧极限直到标题带、`resizeLane` 从不带卡、`groupOf` 的一跳规则，以及框选阈值要求两轴同时不达标。
 - `tests/link.client.spec.tsx`（新增，37 条）：挂载（已存坐标被照收、没摆过的卡走自动网格、一条线一条 wire 且归档端不画）、手势（未达阈值的按下只选中不写；3px/4px 一对把阈值本身钉住；真实拖拽写出取整夹取的 `positions` 且不选中；从卡上按下的那一趟永远不会起框；框选追加并提示；端口落下写入这一对，反向重复对被拒；松手在空处、松手回到起点卡自己身上，两种都不写），线（只删被选中的那一条，且选中的那一行扛得住卡列表变化——它攥的是这一行不是它的位置，一条扁框留着选中的线，只有两轴都不到 8px 的轻点才把它交出去）、分区（＋分区铸出 `lane_…` id、回车改名且标签没变时不写、拖分区同时写分区**和**被带的卡、拉角缩放不写任何位置）、发送集（「就这一组提问」/「生成文章」带着 `lens:'ask'` 和被钉住的文本到达 `askAgent`，`data-cluster` 只落在被扩圈加进来的卡上，取消选择连扩圈一起忘掉）、滚动了的舞台按世界单位量框，以及只读那一半——包括本 note 记为"已修缺陷"的那处不对称。
 - 其中一条只读的用例值回了两倍票价：一张宽 0–210、高只有 0–3 的扁框，抓到了起点在 y 14 的卡。根因是 `rectsOverlap` 最后一个子句的笔误（`b.y < a.y + b.h`，把*卡*的高度当成*框*的高度），这条式子因此是不对称的——纯测试那边一个都看不见，因为那里每张夹具卡都躺在 y 0、高度和框一样。`rectsOverlap` 现在有了自己的两条钉法：交换参数必须同答，以及扁框压在错位的卡之上必须不抓；找到它的那个组件测试留作第二证人。
+- 同一个文件接着在变绿之前先 flake 了一场，而这场 flake 是真的。「连线」开关挡在两次 awaited 读取之后（先列表，再自动打开的那块板），`findByRole` 给这条链的预算是 testing-library 默认的 1000 ms——单跑从不失手，几个包的 vitest 实例一起跑就 3/3 稳定倒下，正是 `build/vitest.ts` 为 `testTimeout` 记过的那堵墙，这次从 async-util 那一侧撞上来。`tests/link.client.spec.tsx` 把 `asyncUtilTimeout` 设成 5_000：只是把预算放大，一条断言都没松。
+- 读那次失败的 DOM 快照，从它背后翻出一个真缺陷：明明有画布的账号，面板在说**还没有画布**。`CanvasTab` 那条提示只问了*列表知不知道*，于是"列表已落地、板还在路上"的整段窗口都在宣称账号是空的——平时一闪而过（一次渲染），机器负载重时是好几秒。条件现在改成只声明它真的能声明的事（列表已知、没有已开或在开的画布、且列表为空），`tests/tab.client.spec.tsx`（+2 条）把两种文案都钉住：在途的那段读 加载中…，真空账号才读 还没有画布。
 - `tests/prompt.spec.ts`（+2 条）：两条发送文本逐字钉住。
 - 不止跑在测试里，也跑在真宿主上：`~/.dsh-lab/profiles/canvas-v2-test` 用 prod 3080 的同一套 bundle 启动打了包的 0.4.5 tarball（端口 3091），并确认出货的 `lib/client.js` 里确实带着连线视图。
 
