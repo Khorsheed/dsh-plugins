@@ -21,7 +21,7 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 // Type-only: pulls the SessionReferenceSourceMap 'mainView' merge (retainedBy.mainView).
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import {
-  IconCopyOutline16, IconListPenOutline16, IconRightUpOutline16, IconSparkle16,
+  IconCopyOutlineMedium, IconListPenOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatQuoteBlock } from '../types.ts'
 import type { QuoteMenuProps } from './contract.ts'
@@ -123,7 +123,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
     const sessionId = current
     actions.push({
       id: 'conversation',
-      icon: <IconListPenOutline16 />,
+      icon: <IconListPenOutlineMedium />,
       label: t('menu.quoteToConversation'),
       run: () => {
         insertQuote(sessionId, formatQuoteBlock(snapshot.text, t('quote.attribution', { label })))
@@ -133,7 +133,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
     if (sideChatAvailable()) {
       actions.push({
         id: 'sidechat',
-        icon: <IconRightUpOutline16 />,
+        icon: <IconRightUpOutlineMedium />,
         label: t('menu.quoteToSideChat'),
         run: () => {
           close()
@@ -146,7 +146,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
   }
   actions.push({
     id: 'copy',
-    icon: <IconCopyOutline16 />,
+    icon: <IconCopyOutlineMedium />,
     label: t('menu.copy'),
     run: () => {
       close()
@@ -160,7 +160,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
     if (action.available !== undefined && !action.available(target)) continue
     actions.push({
       id: action.id,
-      icon: action.icon ?? <IconSparkle16 />,
+      icon: action.icon ?? <IconSparkleMedium />,
       label: action.label(),
       run: () => {
         close()
