@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-invite-dialog-character-creation.md
-.agents/notes/implemented/feature/2026-08-30-invite-dialog-character-creation.md: b25594314b60808564e05c6256f25689b5267092
-.agents/notes/implemented/feature/2026-08-30-invite-dialog-character-creation.zh.md: 1ad7e6b353d4721ca12b101068a2958970dea3ae
+.agents/notes/implemented/feature/2026-08-30-invite-dialog-character-creation.md: 40da6c1464e2f87d5c5a01fb64d8d481ca5c7177
+.agents/notes/implemented/feature/2026-08-30-invite-dialog-character-creation.zh.md: cc54e334a292eaceda8493aee872764f6cb5b6ce

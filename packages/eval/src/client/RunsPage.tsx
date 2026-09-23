@@ -14,6 +14,23 @@
  * child session through the host's own session controller, which is how a
  * person reads what the player actually did — a read, not an intervention.
  *
+ * Since I5·T69 it answers 「跑了什么、交了什么」 without leaving the page.
+ * WHAT IT SUBMITTED: an attachment row expands in place through
+ * `cellArtifact`, so `stage1.md` is read where it is listed instead of being
+ * a path with a note saying a file service is missing. WHAT IT DID: the
+ * player's transcript was already a host session and always had a button;
+ * the JUDGE's rounds are sessions in exactly the same sense and had none, so
+ * «为什么判成这样» could only be answered from a verdict's one-line evidence.
+ * Both are the host's own child-session view — this page renders no
+ * transcript of its own, because a second renderer of a conversation is a
+ * second place for it to be wrong.
+ *
+ * The expanded attachment is NOT de-identified, deliberately. This panel
+ * names the comparison group in its own header, so scrubbing the material
+ * here would hide the harness's words from the person debugging it while
+ * protecting nothing. The blind read is the judge bench's, over the same
+ * files, through the run's own scrub table.
+ *
  * Every ledger token on this page goes through the word table (ui-spec §九):
  * the bucket chips, the stage column, the attempt list and the retry category
  * picker all showed mission's own English tokens before, which is the half of
@@ -26,13 +43,17 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { EvalCellDetail, EvalCellRow, EvalCellsResult, EvalMatrixView } from '../types.ts'
+import type {
+  EvalCellArtifactView, EvalCellDetail, EvalCellRow, EvalCellsResult, EvalMatrixView,
+} from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { LiveGrid } from './Grid.tsx'
 import type { EvalKey } from './locales.ts'
 import { Chip, Detail, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, stageTone } from './parts.tsx'
-import { RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase, verdictKey, verdictSourceOf } from './vocab.ts'
+import {
+  RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase, verdictKey, verdictSourceOf, verdictSourcesOf,
+} from './vocab.ts'
 import { RUN_FILTERS, type RunFilter } from './store.ts'
 import css from './LabView.module.css'
 
@@ -47,6 +68,16 @@ import css from './LabView.module.css'
  * @param filter - the chip that is pressed.
  * @returns whether the row is kept.
  */
+/**
+ * The ledger states in which nothing more will happen to a cell.
+ *
+ * `inStateMs` is measured from the last transition to NOW, which is a useful
+ * number while a cell is moving and a misleading one once it has stopped: a
+ * released cell reads 「已释放 · 2 天 1 小时」, and the 2 days are how long ago
+ * the run ended rather than anything the cell spent (I5·T67 · W4).
+ */
+const TERMINAL_STATES: ReadonlySet<string> = new Set(['archived', 'releasable', 'released', 'halted'])
+
 export function passesFilter(row: Pick<EvalCellRow, 'state' | 'bucket'>, filter: RunFilter): boolean {
   if (filter === 'all') return true
   if (filter === 'failed') return row.state === 'halted'
@@ -116,6 +147,62 @@ function artifactPhrase(kind: string): { key: EvalKey; params?: Record<string, s
   return { key: 'artifact.other', params: { kind } }
 }
 
+/**
+ * ONE expanded attachment. Three shapes, because the read has three honest
+ * answers and collapsing them would mean inventing a fourth.
+ *
+ * TEXT is shown verbatim in a `<pre>`, the same treatment the verify output
+ * gets and for the same reason: a stage submission is the thing the reader
+ * came for, and re-flowing it would change what it says. It is NOT rendered
+ * as markdown — `stage1.md` is evidence here, not a document, and a renderer
+ * would silently hide a malformed heading or an unclosed fence, which on this
+ * page is a finding rather than a blemish.
+ *
+ * A DIRECTORY (`archive`, `probe-verdicts` — both recorded as artifacts) lists
+ * its entries, each one clickable into the same pane. Without this a reader
+ * clicking 归档 would get nothing at all and no sentence saying why.
+ *
+ * A REFUSED BINARY says what it is and how big. The host says no by NAME
+ * rather than by sniffing bytes, so the reason is always printable.
+ */
+function ArtifactPane(props: {
+  view: EvalCellArtifactView | null
+  loading: boolean
+  error: string | null
+  onOpenArtifact: (path: string) => void
+  t: LabViewProps['t']
+}) {
+  const { view, loading, error, onOpenArtifact, t } = props
+  if (error !== null) return <ErrorState what={t('record.artifactError')} message={error} compact t={t} />
+  // Null with no error is the read in flight — the request is issued the
+  // moment the row is clicked, so there is no third state to name.
+  void loading
+  if (view === null) return <div className={css.dim}>{t('record.artifactLoading')}</div>
+  return (
+    <div className={css.artifactPane}>
+      {view.note !== null && <div className={css.dim}>{view.note}</div>}
+      {view.kind === 'text' && <pre className={css.pre}>{view.text ?? ''}</pre>}
+      {view.kind === 'directory' && (
+        view.entries.length === 0
+          ? <div className={css.dim}>{t('record.artifactDirEmpty')}</div>
+          : view.entries.map(entry => (
+            <button
+              key={entry}
+              type="button"
+              className={css.artifactRow}
+              onClick={() => { onOpenArtifact(`${view.path}/${entry}`) }}
+            >
+              <span className={css.mono}>{entry}</span>
+            </button>
+          ))
+      )}
+      {view.kind === 'binary' && view.bytes !== null && (
+        <div className={css.dim}>{t('record.artifactBytes', { bytes: view.bytes })}</div>
+      )}
+    </div>
+  )
+}
+
 /** One labelled block of the record detail. */
 function Field(props: { label: string; children: ReactNode }) {
   return (
@@ -157,20 +244,37 @@ function RecordDetail(props: {
   onRetry: (reason: string, category: string) => void
   onRelease: () => void
   onExport: () => void
-  onOpenSession: (sessionId: string) => void
+  onOpenSession: (sessionId: string, parentSessionId: string | null) => void
+  /** Which attachment is expanded, and what the read answered with. */
+  artifactPath: string | null
+  artifact: EvalCellArtifactView | null
+  artifactLoading: boolean
+  artifactError: string | null
+  onOpenArtifact: (path: string | null) => void
   t: LabViewProps['t']
 }) {
-  const { cell, loading, error, onClose, onRetry, onRelease, onExport, onOpenSession, t } = props
+  const {
+    cell, loading, error, onClose, onRetry, onRelease, onExport, onOpenSession,
+    artifactPath, artifact, artifactLoading, artifactError, onOpenArtifact, t,
+  } = props
   const [reason, setReason] = useState('')
   const [category, setCategory] = useState<string>(RETRY_CATEGORIES[0] as string)
   const attempt = cell === null
     ? undefined
     : cell.attempts.find(entry => entry.attempt === cell.attempt)
   const verdict = cell === null ? null : verdictSourceOf(annotationCounts(cell))
+  // Every layer this record carries, not just the most authoritative one: the
+  // report merges per criterion, so a record with both is scored from both.
+  const verdictSources = cell === null ? [] : verdictSourcesOf(annotationCounts(cell))
   // 成功 / 异常 is the ledger's, not a judgement: `halted` is the one state
   // that says this cell stopped rather than finished.
   const halted = cell?.state === 'halted'
   const segments = timelineOf(attempt?.history ?? [])
+  // The scale the timeline bars are drawn against: this record's own longest
+  // segment. Across records the units are the same but the runs are not, so a
+  // shared scale would say something about other cells that this panel is not
+  // showing.
+  const longest = Math.max(0, ...segments.map(segment => segment.ms ?? 0))
 
   return (
     <div className={css.drawer}>
@@ -201,6 +305,15 @@ function RecordDetail(props: {
                 </Chip>
               )}
             </div>
+            {/* Which layers this record carries, and the one sentence that
+                says the number is not here. Both, because since the merge the
+                top layer alone is not the record's scoring source — it is
+                only the most authoritative of the ones scoring it. */}
+            {verdictSources.length > 1 && (
+              <div className={css.dim}>
+                {t('record.scoreMixed', { sources: verdictSources.map(source => t(verdictKey(source))).join(' + ') })}
+              </div>
+            )}
             {verdict !== null && <div className={css.dim}>{t('record.scoreWhere')}</div>}
 
             <Field label={t('record.timeline')}>
@@ -210,9 +323,21 @@ function RecordDetail(props: {
                   <div className={css.timeline}>
                     {segments.map((segment, index) => (
                       <div key={`${segment.state}:${String(index)}`} className={css.timelineRow}>
-                        <Chip tone={stageTone(segment.state)} title={segment.state}>
+                        <Chip tone={stageTone(segment.state)} title={segment.state} className={css.timelineChip}>
                           <Word phrase={stagePhrase(segment.state)} t={t} />
                         </Chip>
+                        {/* As long as the state lasted, against the longest
+                            state of THIS record. A segment the ledger did not
+                            time draws no bar at all — an unmeasured state and
+                            an instant one must not look the same. */}
+                        <span className={css.timelineTrack}>
+                          {segment.ms !== null && longest > 0 && (
+                            <span
+                              className={css.timelineBar}
+                              style={{ width: `${String(Math.round((segment.ms / longest) * 100))}%` }}
+                            />
+                          )}
+                        </span>
                         <span className={css.dim}>
                           {segment.ms === null ? '—' : <Duration ms={segment.ms} t={t} />}
                         </span>
@@ -248,22 +373,66 @@ function RecordDetail(props: {
             <Field label={t('record.attachments')}>
               {(attempt?.artifacts ?? []).length === 0
                 ? <span className={css.dim}>{t('record.attachmentsNone')}</span>
-                : (
-                  <>
-                    {(attempt?.artifacts ?? []).map((artifact) => {
-                      const phrase = artifactPhrase(artifact.kind)
-                      return (
-                        // The PATH is the hover, the name is the row (§九).
-                        <div key={artifact.path} className={css.annotationLine} title={artifact.path}>
-                          <span>{phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)}</span>
-                          <span className={css.dim}>{artifact.path.split('/').pop() ?? artifact.path}</span>
-                        </div>
-                      )
-                    })}
-                    <div className={css.dim}>{t('record.filePending')}</div>
-                  </>
-                )}
+                : (attempt?.artifacts ?? []).map((entry) => {
+                  const phrase = artifactPhrase(entry.kind)
+                  const open = artifactPath === entry.path
+                  return (
+                    <div key={entry.path}>
+                      {/* The PATH is the hover, the name is the row (§九) —
+                          and the row is now the thing that opens it. A second
+                          click closes: the panel shows ONE attachment, so
+                          「点开」 and 「收起」 are the same gesture. */}
+                      <button
+                        type="button"
+                        className={css.artifactRow}
+                        aria-expanded={open}
+                        title={entry.path}
+                        onClick={() => { onOpenArtifact(open ? null : entry.path) }}
+                      >
+                        <span>{phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)}</span>
+                        <span className={css.dim}>{entry.path.split('/').pop() ?? entry.path}</span>
+                      </button>
+                      {open && (
+                        <ArtifactPane
+                          view={artifact}
+                          loading={artifactLoading}
+                          error={artifactError}
+                          onOpenArtifact={onOpenArtifact}
+                          t={t}
+                        />
+                      )}
+                    </div>
+                  )
+                })}
             </Field>
+
+            {/* The JUDGE's own rounds. A judge is a delegation like the
+                player's, so its transcript is a host session in exactly the
+                same sense — it simply had no door here, which left «为什么判成
+                这样» answerable only from the verdict's evidence line. */}
+            {cell.judgeSessions.length > 0 && (
+              <Field label={t('record.judgeRounds')}>
+                {cell.judgeSessions.map(round => (
+                  <div key={`${round.judgeCondition ?? ''}:${String(round.sample ?? 0)}:${String(round.at)}`} className={css.annotationLine}>
+                    <span className={css.mono}>{round.judgeCondition ?? '—'}</span>
+                    <span className={css.dim}>
+                      {round.sample === null ? '' : t('record.judgeSample', { sample: round.sample })}
+                      {round.judgeModel === null ? '' : ` · ${round.judgeModel}`}
+                      {round.selfJudged ? ` · ${t('record.judgeSelf')}` : ''}
+                    </span>
+                    {round.error !== null && <span className={css.dim}>{round.error}</span>}
+                    <Button
+                      size="sm"
+                      disabled={round.childSessionId === null}
+                      title={round.childSessionId === null ? t('record.judgeNoSession') : undefined}
+                      onClick={() => { if (round.childSessionId !== null) onOpenSession(round.childSessionId, cell.parentSessionId) }}
+                    >
+                      {t('record.openJudgeSession')}
+                    </Button>
+                  </div>
+                ))}
+              </Field>
+            )}
 
             <Detail summary={t('drawer.attempts')}>
               {cell.attempts.map(entry => (
@@ -332,7 +501,7 @@ function RecordDetail(props: {
                 size="sm"
                 disabled={cell.childSessionId === null}
                 title={cell.childSessionId === null ? t('drawer.noSession') : undefined}
-                onClick={() => { if (cell.childSessionId !== null) onOpenSession(cell.childSessionId) }}
+                onClick={() => { if (cell.childSessionId !== null) onOpenSession(cell.childSessionId, cell.parentSessionId) }}
               >
                 {t('drawer.openSession')}
               </Button>
@@ -401,23 +570,42 @@ export function RunsPage(props: {
   onRetry: (reason: string, category: string) => void
   onRelease: () => void
   onExport: () => void
-  onOpenSession: (sessionId: string) => void
+  onOpenSession: (sessionId: string, parentSessionId: string | null) => void
+  /** The open record's expanded attachment (see {@link ArtifactPane}). */
+  artifactPath: string | null
+  artifact: EvalCellArtifactView | null
+  artifactLoading: boolean
+  artifactError: string | null
+  onOpenArtifact: (path: string | null) => void
+  /** The (题目 × 对比组) a 结果对比 click narrowed the list to, or null. */
+  focus: { task: string; condition: string } | null
+  onClearFocus: () => void
   /** Single-group runs say so once, above the grid, with the way out. */
   onAddGroup: () => void
   t: LabViewProps['t']
 }) {
   const {
     matrix, matrixLoading, matrixError, onColumn, onToggleGroup, onFilter,
-    cells, loading, error, filter, onSetFilter, selection, onAddGroup, t,
+    cells, loading, error, filter, onSetFilter, selection, focus, onClearFocus, onAddGroup, t,
   } = props
   const rows = cells?.rows ?? []
   // The verdict source per record, looked up by the grid. Both halves of this
   // page are already in hand, so the grid gets 「有判定即显示」 from the list's
   // own payload rather than from a projection that would have to carry it.
   const verdicts = new Map(rows.map(row => [row.missionId, verdictSourceOf(row.annotations)]))
-  const shown = rows.filter(row => passesFilter(row, filter))
+  // The report's click narrows the list to one (题目 × 对比组), and the chip
+  // above it is the only way back out — a filter a reader cannot see is a
+  // list that is lying about how many records the run has.
+  //
+  // The five bucket chips count within that narrowing, not across the run:
+  // the counts and the rows have to describe ONE population, or a chip reads
+  // 「失败 3」 over an empty list.
+  const population = focus === null
+    ? rows
+    : rows.filter(row => row.task === focus.task && row.condition === focus.condition)
+  const shown = population.filter(row => passesFilter(row, filter))
   const counts = Object.fromEntries(
-    RUN_FILTERS.map(entry => [entry, rows.filter(row => passesFilter(row, entry)).length]),
+    RUN_FILTERS.map(entry => [entry, population.filter(row => passesFilter(row, entry)).length]),
   ) as Record<RunFilter, number>
   // The comparison groups the ledger actually ran — the honest source for
   // 「只有一个对比组」, which a plan can claim and a `--only` run can contradict.
@@ -448,6 +636,14 @@ export function RunsPage(props: {
         />
       )}
 
+      {focus !== null && (
+        <div className={css.notice}>
+          <div>{t('runs.focus', { task: focus.task, condition: focus.condition, matched: shown.length })}</div>
+          <div className={css.actions}>
+            <Button size="sm" onClick={onClearFocus}>{t('runs.focusClear')}</Button>
+          </div>
+        </div>
+      )}
       <div className={css.matrixBar}>
         {RUN_FILTERS.map(entry => (
           <button
@@ -463,7 +659,7 @@ export function RunsPage(props: {
         ))}
         <span className={css.barSpacer} />
         {cells !== null && (
-          <span className={css.dim}>{t('runs.filtered', { matched: shown.length, total: rows.length })}</span>
+          <span className={css.dim}>{t('runs.filtered', { matched: shown.length, total: population.length })}</span>
         )}
       </div>
       <div className={css.cellsSplit}>
@@ -513,7 +709,17 @@ export function RunsPage(props: {
                     )}
                   </span>
                   <span className={css.colVerdict}><VerdictChip annotations={row.annotations} t={t} /></span>
-                  <span className={css.colDuration}><Duration ms={row.inStateMs} t={t} /></span>
+                  {/* A cell that is FINISHED has not been «in this state» for
+                      two days in any sense a reader cares about — the ledger
+                      measures from the last transition to now, and for a
+                      terminal state that is just how long ago the run ended.
+                      An em dash says «nothing is elapsing here» (W4); the time
+                      a finished record actually took is on its timeline. */}
+                  <span className={css.colDuration}>
+                    {TERMINAL_STATES.has(row.state)
+                      ? <span className={css.dim} title={t('runs.settled')}>—</span>
+                      : <Duration ms={row.inStateMs} t={t} />}
+                  </span>
                   <span className={css.colAttempt}>{row.attempt}</span>
                 </button>
               ))}
@@ -531,6 +737,11 @@ export function RunsPage(props: {
             onRelease={props.onRelease}
             onExport={props.onExport}
             onOpenSession={props.onOpenSession}
+            artifactPath={props.artifactPath}
+            artifact={props.artifact}
+            artifactLoading={props.artifactLoading}
+            artifactError={props.artifactError}
+            onOpenArtifact={props.onOpenArtifact}
             t={t}
           />
         )}

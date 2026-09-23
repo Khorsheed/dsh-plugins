@@ -30,7 +30,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import roomRemote from '@khorsheed/dsh-room/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
+import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import { RoomRequestIds } from './request-ids.ts'
 import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
@@ -97,10 +99,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // RoomStore's cached verdict as the actual-room escape.
   const roomChrome = new RoomPresetVisibility(ctx, sessionId => roomStore.isRoomCached(sessionId) === true)
 
+  const requestIds = new RoomRequestIds()
   const submit = async (sessionId: SessionId, text: string, targets?: readonly string[]): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
+    const requestId = requestIds.forInput(sessionId, text, targets)
     const carried = await remote.postMessage({
-      sessionId, text, ...targets === undefined || targets.length === 0 ? {} : { targets },
+      sessionId, text, requestId, ...targets === undefined || targets.length === 0 ? {} : { targets },
     })
     if (!carried.ok) return { ok: false, message: t('composer.error.generic') }
     const result = carried.value
@@ -109,6 +113,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         ? { ok: false, message: t('composer.error.unknownTargets', { names: result.error.names.join(' ') }) }
         : { ok: false, message: t('composer.error.generic') }
     }
+    requestIds.complete(sessionId, requestId)
     void roomStore.refresh(sessionId)
     return { ok: true }
   }
@@ -202,6 +207,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   /** Map a structured RoomFailure to the dialog's localized copy. */
   const failureText = (error: RoomFailure): string => {
     switch (error.code) {
+      case 'coordinator-busy': return t('coordinator.busy')
+      case 'coordinator-not-ready': return error.message
+      case 'coordinator-conflict': return t('coordinator.conflict')
+      case 'active-coordinator': return t('coordinator.active')
+      case 'member-cwd-bound': return t('coordinator.cwdBound')
+      case 'main-member': return t('coordinator.nativeRequired')
+      case 'configuration-owned-by-core': return t('coordinator.configuration')
       case 'duplicate-name': return t('invite.error.duplicate')
       case 'invalid-name': return t('invite.error.invalid')
       case 'local-agent-unavailable': return t('invite.error.unavailable')
@@ -222,6 +234,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
    * serve a pure path pick, so the dialog consumes the primitive directly.
    */
   const inviteFace = (sessionId: SessionId): RoomInviteInjected => ({
+    renderHarnessModelPicker: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker,
     // The room session's own cwd: the invite dialog's cwd field placeholder
     // (empty = inherit). Read at inject time; a later cwd change refreshes
     // with the next view mount.
@@ -266,6 +279,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   })
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
+    setCoordinator: async (memberId, expectedRevision) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.setCoordinator({ sessionId, memberId, expectedRevision })
+      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+      await roomStore.refresh(sessionId)
+      return { ok: true }
+    },
+    renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
     ...inviteFace(sessionId),
     // The localAgentGateway member model surface (the family client half's
     // namespace, probed lazily like the invite dialog's harnessModel read):
@@ -369,7 +391,21 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (sessionId: SessionId): RoomComposerInjected => ({
       ...tasksFace(sessionId),
       ...inviteFace(sessionId),
+      reconcileDelivery: async (deliveryId, outcome, evidence) => {
+        const result = await remote?.reconcileDelivery({ sessionId, deliveryId, outcome, evidence })
+        await roomStore.refresh(sessionId)
+        return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: result?.ok && !result.value.ok ? result.value.error.code : t('composer.error.generic') }
+      },
+      planCommand: async command => {
+        const result = await remote?.planCommand({ sessionId, command })
+        await roomStore.refresh(sessionId)
+        return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: result?.ok && !result.value.ok ? result.value.message : t('composer.error.generic') }
+      },
+      openPlanSession: id => openSession(id as SessionId),
       submit,
+      renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
+      renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
+      stopMember: name => { void remote?.cancel({ sessionId, name }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
       // The hidden official bar's Stop: the runtime session face's cancel
       // (the same verb ui-conversation's own Stop injects). A torn-down
@@ -438,6 +474,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       key: 'room-run',
       locale: NS,
       inject: (sessionId: SessionId): RoomRunInjected => ({
+        renderMemberOutput: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberOutput,
         roomStore,
         openSession,
         cancelMember: member => cancelMember(sessionId, member),

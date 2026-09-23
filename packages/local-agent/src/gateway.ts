@@ -8,6 +8,7 @@
  * @module @khorsheed/dsh-local-agent/gateway
  */
 
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session'
@@ -15,10 +16,21 @@ import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   LocalAgentDelegationView,
   LocalAgentModelInfo,
+  LocalAgentModelBroker,
+  LocalAgentModelDirectory,
   LocalAgentPromptResult,
   LocalAgentSessionRecord,
+  LocalAgentStreamFrame,
+  LocalAgentMemberControlState,
+  LocalAgentMemberInbox,
+  LocalAgentMemberConfiguration,
+  LocalAgentControlReceipt,
+  LocalAgentMemberFeedRequest,
+  LocalAgentMemberFeedEvent,
 } from './types.ts'
 import type { LocalAgentRosterRow, LocalAgentStatus } from './types.ts'
+import { extendModelDirectory } from './model-directory.ts'
+import { mergeMemberFeeds } from './member-feed.ts'
 
 /**
  * Remote-only projection of the local-agent registry, exposed to the browser
@@ -34,8 +46,12 @@ import type { LocalAgentRosterRow, LocalAgentStatus } from './types.ts'
  */
 function withObservedChoice(info: LocalAgentModelInfo): LocalAgentModelInfo {
   const observed = info.lastObserved
-  if (observed === undefined || info.choices.includes(observed)) return info
-  return { ...info, choices: [...info.choices, observed] }
+  if (observed === undefined) return info
+  return {
+    ...info,
+    choices: info.choices.includes(observed) ? info.choices : [...info.choices, observed],
+    ...info.directory === undefined ? {} : { directory: extendModelDirectory(info.directory, [], [observed]) },
+  }
 }
 
 export default class LocalAgentGateway extends TypertRemoteService {
@@ -43,6 +59,96 @@ export default class LocalAgentGateway extends TypertRemoteService {
 
   constructor(ctx: Context) {
     super(ctx, 'localAgentGateway')
+  }
+
+  /**
+   * Follow one member's transient output with a complete reconnect baseline.
+   * @param childSessionId - mirrored session identity.
+   * @param signal - Remote-owned cancellation, including browser disconnects.
+   * @returns bounded incremental updates; final content remains in session history.
+   */
+  @Remote({ mode: 'stream' })
+  followMemberOutput(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentStreamFrame> {
+    return this.ctx.localAgent.liveStreams.follow(childSessionId, signal)
+  }
+
+  /** Shared browser stream: adding visible members does not consume more HTTP connections. */
+  @Remote({ mode: 'stream' })
+  followMembers(requests: readonly LocalAgentMemberFeedRequest[], signal: AbortSignal): AsyncIterable<LocalAgentMemberFeedEvent> {
+    return mergeMemberFeeds(requests, (request, signal) => this.memberFeed(request, signal), signal)
+  }
+
+  private async *memberFeed(request: LocalAgentMemberFeedRequest, signal: AbortSignal): AsyncIterable<LocalAgentMemberFeedEvent> {
+    const memberId = request.memberId
+    switch (request.channel) {
+      case 'output':
+        for await (const value of this.followMemberOutput(memberId, signal)) yield { memberId, channel: 'output', value }
+        break
+      case 'configuration':
+        for await (const value of this.followMemberConfiguration(memberId, signal)) yield { memberId, channel: 'configuration', value }
+        break
+      case 'directory':
+        for await (const value of this.followMemberDirectory(memberId, signal)) yield { memberId, channel: 'directory', value }
+        break
+    }
+  }
+
+  private directoryBroker(name: string, childSessionId: string | undefined): LocalAgentModelBroker | undefined {
+    const harness = this.ctx.localAgent.get(name)
+    if (childSessionId !== undefined) {
+      const record = this.ctx.localAgent.getDelegation(childSessionId)
+      if (record === undefined || record.provider !== harness?.delegationProvider) return undefined
+    }
+    return harness?.modelBroker
+  }
+
+  /**
+   * Read or explicitly refresh native model discovery, without changing a member.
+   * @param name - owning harness.
+   * @param childSessionId - member context, or undefined for the harness default.
+   * @param refresh - bypass the discovery TTL.
+   * @returns source-labelled discovery state, or null for an unavailable broker.
+   */
+  @Remote('modelDirectory')
+  async modelDirectory(name: string, childSessionId: string | undefined, refresh: boolean): Promise<LocalAgentModelDirectory | null> {
+    const broker = this.directoryBroker(name, childSessionId)
+    return await broker?.modelDirectory?.(childSessionId, refresh) ?? null
+  }
+
+  /**
+   * Keep a currently open model picker synchronized with discovery completion.
+   * @param name - owning harness.
+   * @param childSessionId - member context, or undefined for the harness default.
+   * @param signal - Remote-owned cancellation.
+   * @returns directory baselines and subsequent snapshots.
+   */
+  @Remote({ mode: 'stream' })
+  async *followModelDirectory(name: string, childSessionId: string | undefined, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {
+    const broker = this.directoryBroker(name, childSessionId)
+    if (broker?.followModelDirectory !== undefined) yield* broker.followModelDirectory(childSessionId, signal)
+    else {
+      const directory = await broker?.modelDirectory?.(childSessionId)
+      if (directory !== undefined && !signal.aborted) yield directory
+    }
+  }
+
+  /** Resolve directory ownership from the recorded member, never a UI provider guess. */
+  @Remote('memberDirectory')
+  async memberDirectory(childSessionId: string, refresh: boolean): Promise<LocalAgentModelDirectory | null> {
+    const record = this.ctx.localAgent.getDelegation(childSessionId) ?? this.ctx.localAgent.memberBinding?.(childSessionId)
+    const broker = record === undefined ? undefined : this.ctx.localAgent.harnessForProvider(record.provider)?.modelBroker
+    return await broker?.modelDirectory?.(childSessionId, refresh) ?? null
+  }
+
+  @Remote({ mode: 'stream' })
+  async *followMemberDirectory(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {
+    const record = this.ctx.localAgent.getDelegation(childSessionId) ?? this.ctx.localAgent.memberBinding?.(childSessionId)
+    const broker = record === undefined ? undefined : this.ctx.localAgent.harnessForProvider(record.provider)?.modelBroker
+    if (broker?.followModelDirectory !== undefined) yield* broker.followModelDirectory(childSessionId, signal)
+    else {
+      const directory = await broker?.modelDirectory?.(childSessionId)
+      if (directory !== undefined && !signal.aborted) yield directory
+    }
   }
 
   /**
@@ -166,14 +272,22 @@ export default class LocalAgentGateway extends TypertRemoteService {
   @Remote('memberModel')
   async memberModel(childSessionId: string): Promise<LocalAgentModelInfo | null> {
     const registry = this.ctx.localAgent
-    const record = registry.getDelegation(childSessionId)
+    const observed = registry.getDelegation(childSessionId)
+    const record = observed ?? registry.memberBinding?.(childSessionId)
     if (record === undefined) return null
     const broker = registry.harnessForProvider(record.provider)?.modelBroker
     if (broker === undefined) return null
-    const info = await broker.modelInfo(childSessionId, record.model)
-    return withObservedChoice(info.lastObserved !== undefined || record.observedModel === undefined
+    let info = await broker.modelInfo(childSessionId, record.model)
+    if (broker.configurationAdapter !== undefined) {
+      const configuration = registry.memberConfiguration(childSessionId)
+      info = { ...info, configuration, switchable: configuration.lockedReason === undefined }
+      delete info.reason
+      if (configuration.lockedReason !== undefined) info.reason = configuration.lockedReason
+      if (configuration.current.resolved.model !== undefined) info.effective = configuration.current.resolved.model
+    }
+    return withObservedChoice(info.lastObserved !== undefined || observed?.observedModel === undefined
       ? info
-      : { ...info, lastObserved: record.observedModel })
+      : { ...info, lastObserved: observed?.observedModel })
   }
 
   /**
@@ -199,11 +313,37 @@ export default class LocalAgentGateway extends TypertRemoteService {
       return { ok: false, error: `localAgent: ${record.provider} exposes no model broker` }
     }
     try {
-      await broker.setMemberModel(childSessionId, model)
+      if (broker.configurationAdapter === undefined) await broker.setMemberModel(childSessionId, model)
+      else await registry.setMemberModel(childSessionId, model)
     } catch (error: unknown) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
     return { ok: true }
+  }
+
+  @Remote('memberConfiguration')
+  async memberConfiguration(childSessionId: string): Promise<LocalAgentMemberControlState> {
+    return this.ctx.localAgent.memberConfiguration(childSessionId)
+  }
+
+  @Remote('selectMemberConfiguration')
+  async selectMemberConfiguration(childSessionId: string, requestId: string, expectedRevision: number, selection: LocalAgentMemberConfiguration): Promise<LocalAgentControlReceipt> {
+    return this.ctx.localAgent.selectMemberConfiguration(childSessionId, requestId, expectedRevision, selection)
+  }
+
+  @Remote('cancelMemberConfiguration')
+  async cancelMemberConfiguration(childSessionId: string, requestId: string, expectedRevision: number): Promise<LocalAgentControlReceipt> {
+    return this.ctx.localAgent.cancelMemberConfiguration(childSessionId, requestId, expectedRevision)
+  }
+
+  @Remote('retryMemberConfiguration')
+  async retryMemberConfiguration(childSessionId: string, expectedRevision: number): Promise<void> {
+    await this.ctx.localAgent.retryMemberConfiguration(childSessionId, expectedRevision)
+  }
+
+  @Remote({ mode: 'stream' })
+  followMemberConfiguration(childSessionId: string, signal: AbortSignal): AsyncIterable<LocalAgentMemberControlState> {
+    return this.ctx.localAgent.followMemberConfiguration(childSessionId, signal)
   }
 
   /**
@@ -222,26 +362,26 @@ export default class LocalAgentGateway extends TypertRemoteService {
    *   render inline — raw exceptions never cross the wire.
    */
   @Remote('promptMember')
-  async promptMember(childSessionId: string, text: string): Promise<LocalAgentPromptResult> {
-    const record = this.ctx.localAgent.getDelegation(childSessionId)
-    if (record === undefined) {
-      return { ok: false, error: `localAgent: no delegation recorded for child session ${childSessionId}` }
-    }
+  async promptMember(childSessionId: string, text: string, requestId?: string): Promise<LocalAgentPromptResult> {
+    try { return { ok: true, requestId: this.ctx.localAgent.enqueueMemberInput(childSessionId, text, requestId ?? randomUUID()) } }
+    catch (error) { return { ok: false, error: String(error) } }
+  }
+
+  @Remote('memberInbox')
+  memberInbox(childSessionId: string): LocalAgentMemberInbox { return this.ctx.localAgent.readMemberInbox(childSessionId) }
+
+  @Remote('controlMemberInbox')
+  controlMemberInbox(childSessionId: string, action: 'pause' | 'resume' | 'cancel' | 'reconcile', requestId?: string, outcome?: 'done' | 'cancelled', evidence?: string): LocalAgentPromptResult {
     try {
-      await this.ctx.localAgent.resume(
-        record.parentSessionId,
-        record.provider,
-        childSessionId,
-        [{ type: 'text', text }],
-        // The recorded scope is the member's own: a follow-up continues the
-        // CLI session in the scoped home its earlier rounds ran in, and the
-        // record is where that fact lives (the resume refuses any other).
-        record.scope === undefined ? undefined : { scope: record.scope },
-      )
-    } catch (error: unknown) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-    return { ok: true }
+      this.ctx.localAgent.readMemberInbox(childSessionId)
+      const inbox = this.ctx.localAgent.memberInbox
+      if (action === 'pause') inbox.pause(childSessionId)
+      else if (action === 'resume') this.ctx.localAgent.resumeMemberInbox(childSessionId)
+      else if (action === 'cancel' && requestId !== undefined) inbox.cancel(childSessionId, requestId)
+      else if (action === 'reconcile' && requestId !== undefined && outcome !== undefined && evidence !== undefined) inbox.reconcile(childSessionId, requestId, outcome, evidence)
+      else throw new Error('Invalid member inbox control')
+      return { ok: true }
+    } catch (error) { return { ok: false, error: String(error) } }
   }
 
   /**

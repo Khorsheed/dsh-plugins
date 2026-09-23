@@ -6,27 +6,33 @@
  * Asserts the list → auto-open → board chain, the switcher (create / archive
  * / import), the board gestures (new card, ghost ✓/✗, checkbox multi-select,
  * lens bar, follow-up, their full-hide degrade), the drill (body click →
- * detail page → back, the tri-state source save), the draft view (load,
- * debounced guarded save, conflict), focus reporting, the once-per-session
- * wide-mode suggestion, and the read-only degrade.
+ * detail page → back, the tri-state source save), the new-card draft (the
+ * ⌘⏎-only save, the one discard question), focus reporting, the
+ * once-per-session wide-mode suggestion, and the read-only degrade.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { CanvasTabProps } from '../src/client/contract.ts'
+import { CanvasImageSrcs } from '../src/client/images.ts'
 import { CanvasSelectionStore } from '../src/client/space/selection.ts'
 import { CanvasTab } from '../src/client/tab/CanvasTab.tsx'
 import { zh } from '../src/client/locales.ts'
+import { defaultCategories } from '../src/types.ts'
 import type {
-  BoardAskAgentOutcome, BoardChatStatusResult, BoardFocusResult,
-  BoardListResult, BoardMutationResult, BoardReadDraftOutcome, BoardReadOutcome,
-  BoardWriteDraftResult, CanvasBoard, CanvasSummary,
+  BoardAskAgentOutcome, BoardAttachImageOutcome, BoardChatStatusResult, BoardFocusResult,
+  BoardListResult, BoardMutationResult, BoardReadOutcome,
+  BoardCategory, CanvasBoard, CanvasSummary,
 } from '../src/types.ts'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
 const NOW = '2026-09-16T08:00:00.000Z'
 const CANVAS_ID = 'canvas_01234567abcdefgh'
+/** One stored image's id: the digest shape a card-held pointer insists on. */
+const IMG_ID = `sha256:${'0123456789abcdef'.repeat(4)}`
+/** The same image's pointer, as a card holds it (§10.3). */
+const IMG_SRC = `attachment://${IMG_ID}?mediaType=image/png&bytes=3&width=2&height=1`
 
 /** A plain translate over the zh dictionary (the key-set source of truth). */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -40,6 +46,9 @@ function board(id = CANVAS_ID, cards: CanvasBoard['cards'] = [], overrides: Part
     attachedWorkspaces: [],
     chat: { sessionId: null },
     cards,
+    categories: defaultCategories(),
+    links: [],
+    lanes: [],
     stats: { proposed: { accepted: 0, rejected: 0 }, kindCounts: {}, lastActiveAt: NOW },
     archivedAt: null,
     createdAt: NOW,
@@ -83,13 +92,13 @@ interface Harness {
     readBoard: ReturnType<typeof vi.fn>
     putCard: ReturnType<typeof vi.fn>
     patchCard: ReturnType<typeof vi.fn>
+    setCategories: ReturnType<typeof vi.fn>
     addComment: ReturnType<typeof vi.fn>
     archiveCanvas: ReturnType<typeof vi.fn>
     openFile: ReturnType<typeof vi.fn>
-    selectCard: ReturnType<typeof vi.fn>
+    openCardDetail: ReturnType<typeof vi.fn>
+    openCardDraft: ReturnType<typeof vi.fn>
     focusCanvas: ReturnType<typeof vi.fn>
-    readDraft: ReturnType<typeof vi.fn>
-    writeDraft: ReturnType<typeof vi.fn>
     askAgent: ReturnType<typeof vi.fn>
     chatStatus: ReturnType<typeof vi.fn>
     openSideChat: ReturnType<typeof vi.fn>
@@ -109,7 +118,16 @@ function makeHarness(options: {
 } = {}): Harness {
   const boards = new Map((options.boards ?? [board()]).map(value => [value.id, value]))
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
+  // A bench starts on an empty strip, every time: the store restores the rows a
+  // previous bench left in sessionStorage, and those name cards its board has not.
+  sessionStorage.clear()
   const store = new CanvasSelectionStore()
+  // The REAL image cache over a fake read leg (§10.3): the tab reads its feed
+  // as a subscription, so the feed is exercised here rather than faked away.
+  const images = new CanvasImageSrcs(async () => ({
+    ok: true as const,
+    value: { ok: true as const, data: 'AAEC', mediaType: 'image/png' as const },
+  }))
   const mutationFor = (canvasId: string): Result<BoardMutationResult> => {
     const current = boards.get(canvasId)
     if (current === undefined) return { ok: true, value: { ok: false, error: 'missing' } }
@@ -132,13 +150,25 @@ function makeHarness(options: {
       return ok({ ok: true, board: current, version: '1' })
     }),
     putCard: vi.fn(async (sid: string, request: { canvasId: string }): Promise<Result<BoardMutationResult>> => mutationFor(request.canvasId)),
-    patchCard: vi.fn(async (sid: string, request: { canvasId: string; cardId: string; text?: string; status?: 'proposed' | 'kept' | 'archived'; question?: { state: 'open' | 'exploring' | 'answered' } }): Promise<Result<BoardMutationResult>> => {
+    patchCard: vi.fn(async (sid: string, request: { canvasId: string; cardId: string; kind?: string; text?: string; status?: 'proposed' | 'kept' | 'archived'; question?: { state: 'open' | 'exploring' | 'answered' } }): Promise<Result<BoardMutationResult>> => {
       const current = boards.get(request.canvasId)
       const target = current?.cards.find(candidate => candidate.id === request.cardId)
       if (target !== undefined) {
+        if (request.kind !== undefined) target.kind = request.kind as typeof target.kind
         if (request.text !== undefined) target.text = request.text
         if (request.status !== undefined) target.status = request.status
         if (request.question !== undefined && target.question !== undefined) target.question.state = request.question.state
+      }
+      return mutationFor(request.canvasId)
+    }),
+    setCategories: vi.fn(async (sid: string, request: { canvasId: string; categories: BoardCategory[]; archiveCardIds?: string[] }): Promise<Result<BoardMutationResult>> => {
+      const current = boards.get(request.canvasId)
+      if (current !== undefined) {
+        current.categories = request.categories.map(row => ({ ...row }))
+        const gone = new Set(request.archiveCardIds ?? [])
+        for (const candidate of current.cards) {
+          if (gone.has(candidate.id)) candidate.status = 'archived'
+        }
       }
       return mutationFor(request.canvasId)
     }),
@@ -153,18 +183,26 @@ function makeHarness(options: {
       return mutationFor(request.canvasId)
     }),
     openFile: vi.fn(),
-    selectCard: vi.fn((canvasId: string, cardId: string) => { store.select(canvasId, cardId) }),
+    // Stage ⑧: a card click hands the HOST an address, it does not change what
+    // this tab renders. The mocks record the call; the board stays on screen.
+    openCardDetail: vi.fn(),
+    openCardDraft: vi.fn(),
+    // The strip's own two verbs are the store's, exactly as the production face
+    // wires them; the detail openings stay recorders, because these specs assert
+    // what the gesture PASSES, not what the strip then renders.
+    activateTab: (id: string) => { store.activate(id) },
+    closeTab: (id: string) => { store.close(id) },
     openCanvas: (canvasId: string) => { store.openCanvas(canvasId) },
-    clearCard: () => { store.clearCard() },
     focusCanvas: vi.fn(async (): Promise<Result<BoardFocusResult>> => ok({ ok: true })),
-    readDraft: vi.fn(async (): Promise<Result<BoardReadDraftOutcome>> => ok({ ok: true, content: '# 初稿\n\n正文。', version: '1' })),
-    writeDraft: vi.fn(async (): Promise<Result<BoardWriteDraftResult>> => ok({ ok: true, version: '2' })),
     askAgent: vi.fn(async (): Promise<Result<BoardAskAgentOutcome>> =>
       ok({ ok: true, contextKey: `canvas:${CANVAS_ID}`, sent: true })),
     chatStatus: vi.fn(async (): Promise<Result<BoardChatStatusResult>> =>
       ok({ available: options.chatAvailable ?? true })),
     openSideChat: vi.fn(),
     suggestWideMode: vi.fn(),
+    attachImage: vi.fn(async (): Promise<Result<BoardAttachImageOutcome>> =>
+      ok({ ok: true, ref: { attachmentId: IMG_ID, mediaType: 'image/png', bytes: 3, width: 2, height: 1 } })),
+    images,
   }
   const sessionId = options.sessionId === 'none' ? undefined : (options.sessionId ?? 's1')
   const props = {
@@ -178,6 +216,9 @@ function makeHarness(options: {
     useSelection: function useSelection<S>(selector: (snapshot: ReturnType<typeof store.source.getSnapshot>) => S): S {
       return selector(useSyncExternalStore(store.source.subscribe, store.source.getSnapshot))
     } as CanvasTabProps['useSelection'],
+    useImageRev: function useImageRev<S>(selector: (snapshot: number) => S): S {
+      return selector(useSyncExternalStore(images.source.subscribe, images.source.getSnapshot))
+    } as CanvasTabProps['useImageRev'],
   } as unknown as CanvasTabProps
   return { store, mocks, props, boards }
 }
@@ -189,6 +230,29 @@ describe('CanvasTab — list, switcher, board', () => {
     const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
+  })
+
+  // The notice used to test only "is the list known", so the whole
+  // list-landed-but-board-still-out window read to the user as 还没有画布 —
+  // the account does have a canvas, and the auto-open has already named it.
+  it('waits on the board it already opened, instead of claiming an empty account', async () => {
+    const { mocks, props, boards } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    let release!: (value: Result<BoardReadOutcome>) => void
+    mocks.readBoard.mockReturnValue(new Promise(resolve => { release = resolve }))
+    render(<CanvasTab {...props} />)
+    await waitFor(() => { expect(mocks.readBoard).toHaveBeenCalledWith({ canvasId: CANVAS_ID }) })
+    expect(screen.getByText('加载中…')).toBeTruthy()
+    expect(screen.queryByText('还没有画布')).toBeNull()
+    const current = boards.get(CANVAS_ID)
+    release({ ok: true, value: { ok: true, board: current as CanvasBoard, version: '1' } })
+    await screen.findByText('卡片 c_1')
+  })
+
+  it('claims an empty account only once the list is known and empty', async () => {
+    const { props } = makeHarness({ boards: [] })
+    render(<CanvasTab {...props} />)
+    expect(await screen.findByText('还没有画布')).toBeTruthy()
+    expect(screen.queryByText('加载中…')).toBeNull()
   })
 
   it('opens the first canvas and reports the focus to the host', async () => {
@@ -205,7 +269,7 @@ describe('CanvasTab — list, switcher, board', () => {
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')]), other] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: /为什么人们不愿表达异议/ }))
+    fireEvent.click(screen.getByRole('button', { name: '画布' }))
     fireEvent.click(await screen.findByText('第二块画布'))
     await screen.findByText('卡片 c_x')
     await waitFor(() => {
@@ -218,8 +282,8 @@ describe('CanvasTab — list, switcher, board', () => {
       workspaces: [{ workspaceId: 'w1', path: '/ws/report', title: 'report' }],
     })
     render(<CanvasTab {...props} />)
-    await screen.findByRole('button', { name: /为什么人们不愿表达异议/ })
-    fireEvent.click(screen.getByRole('button', { name: /为什么人们不愿表达异议/ }))
+    await screen.findByRole('button', { name: '画布' })
+    fireEvent.click(screen.getByRole('button', { name: '画布' }))
     fireEvent.click(screen.getByRole('button', { name: /新画布/ }))
     fireEvent.change(screen.getByPlaceholderText('这块画布思考什么主题？'), { target: { value: '远程团队的书面沟通礼仪' } })
     fireEvent.click(screen.getByRole('checkbox', { name: 'report' }))
@@ -227,13 +291,16 @@ describe('CanvasTab — list, switcher, board', () => {
     await waitFor(() => {
       expect(mocks.createCanvas).toHaveBeenCalledWith('s1', { title: '远程团队的书面沟通礼仪', attachedWorkspaces: ['/ws/report'] })
     })
-    await screen.findByText('远程团队的书面沟通礼仪')
+    // A created canvas is a NEW ROW and the showing one: the strip is where a
+    // canvas appears now (its name is on the row and on the board header, so
+    // the row is the only thing that identifies the event).
+    await screen.findByRole('tab', { name: '远程团队的书面沟通礼仪', selected: true })
   })
 
   it('archives a canvas row from the switcher and restores it from the well', async () => {
     const { mocks, props, boards } = makeHarness()
     render(<CanvasTab {...props} />)
-    fireEvent.click(await screen.findByRole('button', { name: /为什么人们不愿表达异议/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '画布' }))
     fireEvent.click(screen.getByRole('button', { name: '归档' }))
     await waitFor(() => {
       expect(mocks.archiveCanvas).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, archived: true })
@@ -242,22 +309,21 @@ describe('CanvasTab — list, switcher, board', () => {
   })
 
 
-  it('adds a card through the topbar new-card menu (⌘⏎), stopping the submit mid-IME', async () => {
-    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
-    render(<CanvasTab {...props} />)
-    await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
-    fireEvent.click(await screen.findByRole('button', { name: '问题' }))
-    const editor = await screen.findByPlaceholderText(/写点什么/)
-    fireEvent.compositionStart(editor)
-    fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })
-    expect(mocks.putCard).not.toHaveBeenCalled()
-    fireEvent.compositionEnd(editor)
-    fireEvent.change(editor, { target: { value: '不表达是因为害怕吗？' } })
-    fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })
-    await waitFor(() => {
-      expect(mocks.putCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, kind: 'question', text: '不表达是因为害怕吗？' })
+  /** Whether this seat renders a drawing: the logical box is the give-away. */
+  function hasFigure(container: HTMLElement): boolean {
+    return Array.from(container.querySelectorAll('svg'))
+      .some(candidate => candidate.getAttribute('viewBox') === '0 0 600 400')
+  }
+
+  it('shows a drawn card’s ink on the board, where an empty body would read as blank', async () => {
+    const drawn = card('c_ink', {
+      text: '',
+      draw: [{ pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' }],
     })
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1'), drawn])] })
+    const { container } = render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    expect(hasFigure(container)).toBe(true)
   })
 
   it('wires ghost proposals to patchCard status transitions (accept AND reject)', async () => {
@@ -325,60 +391,217 @@ describe('CanvasTab — list, switcher, board', () => {
   })
 })
 
-describe('CanvasTab — the drill', () => {
-  it('drills into the detail on a body click and returns to the board on back', async () => {
-    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+describe('CanvasTab — the category catalog (stage ⑤)', () => {
+  /** One custom row, in the shape the panel mints. */
+  const custom: BoardCategory = { id: 'cat_01234567abc', label: '反方观点', order: 60, enabled: true }
+
+  /** The default five with `document` retired and `custom` appended. */
+  function catalog(): BoardCategory[] {
+    return [...defaultCategories().map(row => (row.id === 'document' ? { ...row, enabled: false } : { ...row })), custom]
+  }
+
+  /** Mount a board over that catalog and open the management panel. */
+  async function mountCatalog(cards: CanvasBoard['cards'] = []): Promise<ReturnType<typeof makeHarness>> {
+    const bench = makeHarness({ boards: [board(CANVAS_ID, cards, { categories: catalog() })] })
+    render(<CanvasTab {...bench.props} />)
+    await screen.findByRole('button', { name: /管理分类/ })
+    fireEvent.click(screen.getByRole('button', { name: /管理分类/ }))
+    await screen.findByText('canvas.json → categories')
+    return bench
+  }
+
+  it('strips the enabled rows onto the filter bar, and a chip filters its own cards', async () => {
+    const { props } = makeHarness({
+      boards: [board(CANVAS_ID, [card('c_1'), card('c_2', { kind: custom.id }), card('c_3', { kind: 'document' })], { categories: catalog() })],
+    })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByText('卡片 c_1'))
-    // The detail page: the back bar plus the reader (kind tag).
-    await screen.findByRole('button', { name: /返回卡板/ })
-    await screen.findByText('碎片')
-    // The board is gone (a drill, not a split).
-    expect(screen.queryByRole('button', { name: /新卡/ })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /返回卡板/ }))
-    await screen.findByRole('button', { name: /新卡/ })
+    // The custom row is a chip like any other, the retired one is gone, and so
+    // is the 「文档」 label — the card it files still shows its own chip.
+    fireEvent.click(screen.getByRole('button', { name: /^反方观点/ }))
+    await screen.findByText('卡片 c_2')
+    expect(screen.queryByText('卡片 c_1')).toBeNull()
+    expect(screen.queryByText('卡片 c_3')).toBeNull()
   })
 
-  it('switches the detail through render/source/split and saves source through patchCard', async () => {
-    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+  it('renames a row with one catalog write that touches no card', async () => {
+    const { mocks } = await mountCatalog([card('c_1')])
+    const rows = screen.getAllByRole('textbox', { name: '改这个名字' })
+    // Five enabled rows first (the retired 「文档」 sits below them, in its own section).
+    expect(rows).toHaveLength(6)
+    // Enter blurs the field, and the blur is what commits it — focus first, so
+    // jsdom has an activeElement to blur.
+    rows[0]!.focus()
+    fireEvent.change(rows[0]!, { target: { value: '  闪念  ' } })
+    fireEvent.keyDown(rows[0]!, { key: 'Enter' })
+    await waitFor(() => {
+      expect(mocks.setCategories).toHaveBeenCalledWith('s1', expect.anything())
+    })
+    const request = mocks.setCategories.mock.calls[0]![1] as { canvasId: string; categories: BoardCategory[]; archiveCardIds?: string[] }
+    expect(request.canvasId).toBe(CANVAS_ID)
+    expect(request.categories.find(row => row.id === 'fragment')).toMatchObject({ label: '闪念' })
+    // The id, the order and the enabled flag all ride through unchanged: a
+    // rename is display-only, and cards store the id.
+    expect(request.categories.find(row => row.id === 'fragment')).toMatchObject({ order: 10, enabled: true })
+    expect(request.archiveCardIds).toBeUndefined()
+    expect(mocks.patchCard).not.toHaveBeenCalled()
+  })
+
+  it('mints a cat_ row for a new category, last in the strip', async () => {
+    const { mocks } = await mountCatalog([card('c_1')])
+    const input = screen.getByRole('textbox', { name: '＋ 加一个' })
+    expect((screen.getByRole('button', { name: '＋ 加一个' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(input, { target: { value: '待办' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => {
+      expect(mocks.setCategories).toHaveBeenCalledWith('s1', expect.anything())
+    })
+    const request = mocks.setCategories.mock.calls[0]![1] as { categories: BoardCategory[] }
+    const added = request.categories[request.categories.length - 1]!
+    expect(added).toMatchObject({ label: '待办', enabled: true })
+    expect(added.id.startsWith('cat_')).toBe(true)
+    expect(added.order).toBeGreaterThan(Math.max(...request.categories.slice(0, -1).map(row => row.order)))
+    // The field clears for the next one.
+    expect((screen.getByRole('textbox', { name: '＋ 加一个' }) as HTMLInputElement).value).toBe('')
+  })
+
+  it('retires an empty row straight through, and asks once for a row that holds cards', async () => {
+    const { mocks } = await mountCatalog([card('c_1'), card('c_2')])
+    const off = screen.getAllByRole('button', { name: '停用' })
+    // Row order: 灵感 问题 共识 来源 ＋custom. 问题 holds nothing → no question.
+    fireEvent.click(off[1]!)
+    await waitFor(() => {
+      expect(mocks.setCategories).toHaveBeenCalledWith('s1', expect.anything())
+    })
+    expect(screen.queryByText('停用这个分类？')).toBeNull()
+    let request = mocks.setCategories.mock.calls[0]![1] as { categories: BoardCategory[]; archiveCardIds?: string[] }
+    expect(request.categories.find(row => row.id === 'question')).toMatchObject({ enabled: false })
+    expect(request.archiveCardIds).toBeUndefined()
+
+    // 灵感 holds both cards: the write waits for the answer.
+    fireEvent.click(screen.getAllByRole('button', { name: '停用' })[0]!)
+    await screen.findByText('停用这个分类？')
+    expect(screen.getByText(/这个分类下还有 2 张卡/)).toBeTruthy()
+    expect(mocks.setCategories).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    await waitFor(() => { expect(screen.queryByText('停用这个分类？')).toBeNull() })
+    expect(mocks.setCategories).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getAllByRole('button', { name: '停用' })[0]!)
+    await screen.findByText('停用这个分类？')
+    fireEvent.click(screen.getAllByRole('button', { name: '停用' }).at(-1)!)
+    await waitFor(() => { expect(mocks.setCategories).toHaveBeenCalledTimes(2) })
+    request = mocks.setCategories.mock.calls[1]![1] as { categories: BoardCategory[]; archiveCardIds?: string[] }
+    expect(request.categories.find(row => row.id === 'fragment')).toMatchObject({ enabled: false })
+    // One rewrite carries both halves, so the chip can never retire while its
+    // cards are still on the board.
+    expect(request.archiveCardIds).toEqual(['c_1', 'c_2'])
+  })
+
+  it('brings a retired row back without touching its archived cards', async () => {
+    const { mocks } = await mountCatalog([card('c_1', { kind: 'document', status: 'archived' })])
+    expect(screen.getByText(/已停用 1 个/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '重新启用' }))
+    await waitFor(() => {
+      expect(mocks.setCategories).toHaveBeenCalledWith('s1', expect.anything())
+    })
+    const request = mocks.setCategories.mock.calls[0]![1] as { categories: BoardCategory[]; archiveCardIds?: string[] }
+    expect(request.categories.find(row => row.id === 'document')).toMatchObject({ enabled: true })
+    expect(request.archiveCardIds).toBeUndefined()
+  })
+
+  it('moves a selection to another category, hiding the one it already has', async () => {
+    const { mocks, props } = makeHarness({
+      boards: [board(CANVAS_ID, [card('c_1'), card('c_2')], { categories: catalog() })],
+    })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByText('卡片 c_1'))
-    await screen.findByRole('button', { name: '渲染' })
-    fireEvent.click(screen.getByRole('button', { name: '源码' }))
-    const editor = await screen.findByDisplayValue('卡片 c_1')
-    fireEvent.change(editor, { target: { value: '改过的正文' } })
-    fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })
+    fireEvent.click(screen.getAllByRole('checkbox', { name: '选择' })[0]!)
+    await screen.findByText('已选 1 张')
+    fireEvent.click(screen.getByRole('button', { name: '改分类' }))
+    await screen.findByText('把这 1 张移到')
+    // The selection's own category is not a destination.
+    expect(screen.queryByRole('button', { name: '灵感' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '来源' }))
     await waitFor(() => {
-      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', text: '改过的正文' })
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', kind: 'reference' })
     })
-    // Split shows both panes (the source textarea AND the rendered markdown).
-    fireEvent.click(await screen.findByRole('button', { name: '并列' }))
-    await screen.findByDisplayValue('改过的正文')
-    expect((await screen.findAllByText('改过的正文')).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('offers this board\'s own categories in the ＋新卡 menu', async () => {
+    const { mocks, props } = makeHarness({
+      boards: [board(CANVAS_ID, [card('c_1')], { categories: catalog() })],
+    })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '反方观点' }))
+    expect(mocks.openCardDraft).toHaveBeenCalledWith(CANVAS_ID, custom.id, '反方观点')
+    // The retired row never appears in the new-card menu.
+    expect(screen.queryByRole('button', { name: '文档' })).toBeNull()
   })
 })
 
-describe('CanvasTab — the draft view and wide mode', () => {
-  it('switches to the draft view, loads the draft, and auto-saves a guarded write', async () => {
+describe('CanvasTab — the detail openings (stage ⑧)', () => {
+  it('hands a card body click to the host as that card\'s address, and keeps showing the board', async () => {
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: '成稿' }))
-    // DisplayValue matchers normalize the element's value (whitespace
-    // collapses), so a multi-line draft matches by regex, not by string.
-    const editor = await screen.findByDisplayValue(/正文。/)
-    expect(mocks.readDraft).toHaveBeenCalledWith({ canvasId: CANVAS_ID })
-    fireEvent.input(editor, { target: { value: '# 初稿\n\n改过的。' } })
-    await waitFor(() => {
-      expect(mocks.writeDraft).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, content: '# 初稿\n\n改过的。', version: '1' })
-    }, { timeout: 3000 })
-    // The preview mode renders the manuscript.
-    fireEvent.click(screen.getByRole('button', { name: '预览' }))
-    await screen.findByText('改过的。')
+    fireEvent.click(screen.getByText('卡片 c_1'))
+    // The heading travels with it: the host freezes a chip's title at open time.
+    expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_1', '卡片 c_1')
+    // Opening a tab is not a drill — the board is still here, ＋新卡 included.
+    await screen.findByRole('button', { name: /新卡/ })
+    expect(screen.queryByRole('button', { name: /返回画布/ })).toBeNull()
   })
 
+  it('is a reader on the board: the pencil opens the same address, and no editor sits on the card', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    // The card's text is never a textarea on the board.
+    expect(screen.queryByDisplayValue('卡片 c_1')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '在标签里编辑' }))
+    expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_1', '卡片 c_1')
+    expect(screen.queryByDisplayValue('卡片 c_1')).toBeNull()
+  })
+
+  it('titles the address with the card\'s display title, never its markup', async () => {
+    const { mocks, props } = makeHarness({
+      boards: [board(CANVAS_ID, [card('c_page', {
+        kind: 'document',
+        text: '<!doctype html><html><head><title>大模型心理学</title></head><body><p>正文</p></body></html>',
+      })])],
+    })
+    render(<CanvasTab {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: '在标签里编辑' }))
+    expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_page', '大模型心理学')
+  })
+
+  it('opens an archived card from the well too, instead of swallowing the click', async () => {
+    const { mocks, props } = makeHarness({
+      boards: [board(CANVAS_ID, [card('c_old', { status: 'archived', text: '归档掉的旧卡' })])],
+    })
+    render(<CanvasTab {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: /已归档的卡/ }))
+    fireEvent.click(screen.getByText('归档掉的旧卡'))
+    expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_old', '归档掉的旧卡')
+  })
+
+  it('opens the canvas\'s draft tab from the ＋新卡 menu, carrying the picked category', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '问题' }))
+    expect(mocks.openCardDraft).toHaveBeenCalledWith(CANVAS_ID, 'question', '问题')
+    // The draft is a TAB of the dock: this seat never turns into an editor.
+    expect(screen.queryByPlaceholderText(/写点什么/)).toBeNull()
+    await screen.findByText('卡片 c_1')
+  })
+})
+
+describe('CanvasTab — wide mode and read-only', () => {
   it('fires the wide-mode suggestion exactly once per mount', async () => {
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
@@ -394,7 +617,7 @@ describe('CanvasTab — the draft view and wide mode', () => {
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
     expect(screen.queryByRole('button', { name: /新卡/ })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /为什么人们不愿表达异议/ }))
+    fireEvent.click(screen.getByRole('button', { name: '画布' }))
     // Read-only: the 新画布 row is not even offered.
     expect(screen.queryByRole('button', { name: /新画布/ })).toBeNull()
   })

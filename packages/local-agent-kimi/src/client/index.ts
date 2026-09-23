@@ -1,3 +1,4 @@
+import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 /**
  * Local-agent-kimi plugin, browser half: the kimi settings surface, one face
  * per host line — on alpha.2 the bundle's own configuration on its
@@ -79,6 +80,7 @@ export function apply(ctx: Context): void {
     scope,
     hooks: { settings: scope },
     authT,
+    renderModelPicker: props => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker('kimi', props),
     // The broker's memberless surface (effective model + pickable
     // vocabulary). Null — a core without a model broker — degrades to the
     // pre-broker card: the free-text field alone, no effective-model line.

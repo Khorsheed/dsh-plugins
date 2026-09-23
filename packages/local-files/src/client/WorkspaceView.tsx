@@ -12,12 +12,13 @@ import {
   type IconProps,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ListLocalDirectoryResult } from '../types.ts'
+import {
+  ContentPane, basenameOf, dirnameOf, pickFileManager, pickIde,
+} from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import type { WorkspaceViewProps } from './contract.ts'
-import { DetailPane } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
 import { localRootOf, rememberLocalRoot } from './local-root.ts'
-import { basenameOf, dirnameOf } from './language.ts'
-import { pickFileManager, pickIde } from './open-in-app.ts'
+import { previewTranslator, structuredLabels, toPreviewRead } from './preview.ts'
 import css from './WorkspaceView.module.css'
 
 /** Map a directory listing to FileTree leaves. Hidden (dot-prefixed) entries are
@@ -255,20 +256,26 @@ export function WorkspaceView({
           }}
         />
         <div className={css.detailColumn}>
-          <DetailPane
+          <ContentPane
             path={selectedPath ?? ''}
             sessionId={currentSession}
-            read={preview}
+            read={toPreviewRead(preview)}
             loading={false}
             error={error}
             displayPath={selectedPath ?? undefined}
-            onCopyPath={(p) => writeClipboard(p)}
-            canOpenHost={canOpenFolder || canOpenIDE}
-            // The open route accepts directories only, so both file gestures
-            // open the selected file's parent directory.
-            onOpenFolder={canOpenFolder ? (p) => openFolder(dirnameOf(p) || p) : undefined}
-            onOpenIDE={canOpenIDE ? (p) => openIDE(dirnameOf(p) || p) : undefined}
-            t={t}
+            // The open route accepts directories only, so both gestures receive
+            // the selected file's parent directory.
+            {...(selectedPath === null
+              ? {}
+              : {
+                onCopyPath: () => writeClipboard(selectedPath),
+                chrome: {
+                  ...(canOpenFolder ? { openFolder: () => { openFolder(dirnameOf(selectedPath) || selectedPath) } } : {}),
+                  ...(canOpenIDE ? { openIDE: () => { openIDE(dirnameOf(selectedPath) || selectedPath) } } : {}),
+                },
+              })}
+            labels={structuredLabels(t)}
+            t={previewTranslator(t)}
           />
         </div>
       </div>

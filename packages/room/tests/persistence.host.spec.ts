@@ -122,6 +122,9 @@ describe('room journal persistence', () => {
       session.append('room/run-state', { member: 'ada', state: 'done', startedAt: 1, elapsedMs: 2 })
       session.append('room/member-removed', { name: 'ada' })
       session.append('room/goal', { text: '插件 API v2 上线' })
+      expect(await service.planCommand({ sessionId, command: JSON.stringify({ action: 'create', requestId: 'persist-goal', expectedRevision: 0, id: 'goal', objective: 'Verify persistence', mode: 'draft', budget: { maxParallel: 1, maxAttempts: 3, maxAttemptsPerTask: 2, maxActiveMs: 60000 } }) })).toEqual({ ok: true })
+      session.append('room/coordinator', { version: 1, memberId: 'legacy:1', previousMemberId: 'legacy:1', revision: 1, handoff: 'Continue' })
+      session.append('room/delivery-state', { id: 'delivery', dispatchSeq: 3, memberId: 'ada', state: 'done' })
       await fix.ctx.sessions.flush(session)
 
       const reader = await fix.ctx.sessionPersistence.open(sessionId, 'read')
@@ -150,7 +153,7 @@ describe('room journal persistence', () => {
       const serviceA = ctxA.get('room') as RoomService
       const sessionId = await createRoom(ctxA, serviceA)
       const roomA = ctxA.sessions.get(sessionId)!
-      roomA.append('room/task-added', { id: 't1', member: 'main', title: '积压', status: 'pending' })
+      roomA.append('room/task-added', { id: 't1', member: 'dsh', title: '积压', status: 'pending' })
       await ctxA.sessions.flush(roomA)
       await fiberA.dispose()
 
@@ -187,8 +190,8 @@ describe('room journal persistence', () => {
         expect(await serviceB.getState({ sessionId })).toMatchObject({
           ok: true,
           value: {
-            members: [{ name: 'main', kind: 'main-agent' }],
-            tasks: [{ id: 't1', member: 'main', title: '积压', status: 'pending' }],
+            members: [{ name: 'dsh', kind: 'main-agent' }],
+            tasks: [{ id: 't1', member: 'dsh', title: '积压', status: 'pending' }],
           },
         })
         expect(ctxB.sessions.get(sessionId)).toBeUndefined()
@@ -200,7 +203,7 @@ describe('room journal persistence', () => {
         expect(agents.resume).not.toHaveBeenCalled()
 
         // The first mutation cold-resumes the agent, republishing the session.
-        const added = await serviceB.addTask({ sessionId, member: 'main', title: '重启后的第一条' })
+        const added = await serviceB.addTask({ sessionId, member: 'dsh', title: '重启后的第一条' })
         expect(added.ok).toBe(true)
         expect(agents.resume).toHaveBeenCalledTimes(1)
         expect(agents.resume).toHaveBeenCalledWith(
@@ -217,7 +220,7 @@ describe('room journal persistence', () => {
           },
         })
         // A second mutation reuses the live session (no second resume).
-        await serviceB.addTask({ sessionId, member: 'main', title: '又一条' })
+        await serviceB.addTask({ sessionId, member: 'dsh', title: '又一条' })
         expect(agents.resume).toHaveBeenCalledTimes(1)
       } finally {
         await fiberB.dispose()
@@ -225,5 +228,22 @@ describe('room journal persistence', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+})
+
+
+describe('linked Room event vocabulary', () => {
+  it('registers the running loader catalog before plugin readiness', async () => {
+    const ctx = new Context()
+    stubAgents(ctx)
+    await ctx.plugin(SessionStore)
+    const catalog = new Set<string>()
+    ctx.provide('loader', { import: async (name: string) => {
+      if (name !== '@deepseek-ai/dsh-session') throw new Error('no source export')
+      return { KNOWN_SESSION_EVENT_TYPES: catalog }
+    } } as never)
+    const fiber = await ctx.plugin(RoomService)
+    try { expect([...catalog]).toEqual([...ROOM_EVENT_TYPES]) }
+    finally { await fiber.dispose() }
   })
 })

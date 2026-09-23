@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-room-quest-bar-redesign.md
-.agents/notes/implemented/feature/2026-08-22-room-quest-bar-redesign.md: d727260345a8c2bec036c88da0f9b7a45507e9a8
-.agents/notes/implemented/feature/2026-08-22-room-quest-bar-redesign.zh.md: 70b571c99c1fb78eb73f00ca98205cbdda537527
+.agents/notes/implemented/feature/2026-08-22-room-quest-bar-redesign.md: 34940a82c854292da813bf1ae8f2f008cfa898a7
+.agents/notes/implemented/feature/2026-08-22-room-quest-bar-redesign.zh.md: 61933493a100dec509236e140aef94222f8e17ce

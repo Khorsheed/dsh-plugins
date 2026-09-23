@@ -396,6 +396,149 @@
   white-space: nowrap;
 }
 
+/* Mode chips (comparison view only): which modes load this capability. They sit
+   BELOW the card's main button — a button inside a button is invalid and would
+   fire both actions — and each chip is a jump into that mode.
+   The row is card BODY content, so it carries the body's own 20px inset (the
+   button above cannot pad it) and the same 20px below it that the body has; a row
+   without that inset runs into the card border and clips its label. */
+.pvModes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  /* 12px above = the body's own block rhythm (the button gives up its bottom
+     padding below); 20px below = the card's edge inset. */
+  padding: 12px 20px 20px;
+}
+
+/* A card whose chip row follows hands the bottom padding over to that row, so
+   the provider line and the row sit 12px apart like every other block. */
+.pvCard[data-modes='true'] .pvMain {
+  padding-bottom: 0;
+}
+
+.pvModesLabel {
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The same row inside the detail modal's scope box, which already pads: no card
+   inset here, just the block rhythm of the box. */
+.scopeModes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.modeChip {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  line-height: 17px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.modeChip:hover {
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The deployment default's chip carries the same tint the active pill does. */
+.modeChip[data-default='true'] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2));
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/* The one-pill answer for a capability every readable mode loads: a fact, not a
+   link — naming seven modes adds nothing when the answer is "all of them". */
+.modeChipAll {
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 17px;
+  font-weight: 500;
+  color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* `+N` (expands the row in place) and its collapse counterpart. */
+.modeChipMore {
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 11px;
+  line-height: 17px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.modeChipMore:hover {
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Managed skills no mode loads: a diagnostic surface below the grid, visually
+   outside every mode's face. */
+.orphanGroup {
+  margin-top: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.orphanSummary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.orphanSummary:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* One-line note under the filter bar: the comparison's summary, the mode read's
+   busy state, or the fallback warning. */
+.modeNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.modeWarn {
+  color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
+  font-weight: 500;
+  cursor: help;
+}
+
+.modeHint {
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .pvFoot {
   display: flex;
   align-items: center;
@@ -1806,4 +1949,100 @@
 .mcpToolToggle {
   margin-left: auto;
   flex: none;
+}
+
+/* ── preset-scoped delivery ──────────────────────────────────────────────── */
+
+.scopeBox {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.scopeTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.scopeHint {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.scopeGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.scopeItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.scopeItem:has(input:checked) {
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.scopeBadge {
+  font-size: 11px;
+  color: var(--dsw-alias-state-warn-primary, var(--dsw-alias-label-caption));
+}
+
+.scopeActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.scopeConflict {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-primary));
+}
+
+.scopeHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scopeInfo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+}
+
+.scopeInfo:hover,
+.scopeInfo:focus-visible {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-tertiary);
 }

@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
-import { mirrorKimiSession } from '../src/session-mirror.ts'
+import { mirrorKimiSession, mirrorKimiSessionDelta } from '../src/session-mirror.ts'
 import { fakeSessionPersistence } from './fake-persistence.ts'
 
 function tempHome(prefix: string): string {
@@ -65,6 +65,26 @@ const fullWire = [
 ]
 
 describe('session-mirror', () => {
+  it('attributes each replayed answer to its own native model and never carries a previous turn into unknown output', async () => {
+    const wire = ['kimi-code/k3', 'kimi-code/kimi-for-coding', undefined].flatMap((model, index) => [
+      { type: 'turn.prompt', input: [{ type: 'text', text: `prompt ${index}` }] },
+      ...model === undefined ? [] : [{ type: 'usage.record', model }],
+      { type: 'context.append_loop_event', event: { type: 'content.part', part: { type: 'text', text: `answer ${index}` } } },
+    ])
+    const { home } = wireHome('model-switch', wire)
+    const child = Session.create(SessionId('model-switch'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    await mirrorKimiSession(ctx, child, home)
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message').map(event => event.data.message.source)).toEqual([
+      { kind: 'model', provider: 'kimi-cli', model: 'kimi-code/k3' },
+      { kind: 'model', provider: 'kimi-cli', model: 'kimi-code/kimi-for-coding' },
+      { kind: 'model', provider: 'kimi-cli', model: 'unobserved' },
+    ])
+    const latest = await mirrorKimiSessionDelta(ctx, child, home, 'model-switch', 6, { turn: 3 })
+    expect(latest.model).toBeUndefined()
+  })
+
   it('mirrors user prompts and folds assistant activity into messages', async () => {
     const { home } = wireHome('s1', fullWire)
     const child = Session.create(SessionId('child-1'))
@@ -100,7 +120,7 @@ describe('session-mirror', () => {
     })
     expect(results[0]!.sourceEventSeqs).toEqual([calls[0]!.seq])
     // assistant events attribute the kimi route
-    expect(assistant[0]!.data.message.source).toEqual({ kind: 'model', provider: 'kimi-cli', model: 'k3' })
+    expect(assistant[0]!.data.message.source).toEqual({ kind: 'model', provider: 'kimi-cli', model: 'unobserved' })
     // every folded step carries its step/start–step/end boundary pair
     expectStepBoundaries(child)
     // the mirrored batch reaches persistence

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-room-capsule-chrome-variants.md
-.agents/notes/implemented/feature/2026-08-20-room-capsule-chrome-variants.md: cb6e5bbba811574ac03e18a3522d822efc2bd52a
-.agents/notes/implemented/feature/2026-08-20-room-capsule-chrome-variants.zh.md: 18f4f6894388252f679503a92c11b9883c1b7c26
+.agents/notes/implemented/feature/2026-08-20-room-capsule-chrome-variants.md: f1f6ae0ed2ff1840139f6c0921b04e235b26351b
+.agents/notes/implemented/feature/2026-08-20-room-capsule-chrome-variants.zh.md: 748b49b1ea2ba9e1ccca1ec76193cfa71ba3084b

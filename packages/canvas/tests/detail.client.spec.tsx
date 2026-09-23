@@ -1,29 +1,40 @@
 // @vitest-environment jsdom
 /**
  * The card-detail reader under the composed-props form: a REAL
- * CanvasSelectionStore (the board↔detail contract is the store itself, so it
- * is exercised here, not mocked), injected Remote mocks over a mutable fake
- * host, and plain selector-hook fakes. Asserts the empty state, the
- * full-text render (no summary clamp in the reader), the selection and rev
- * following, the ghost ✓/✗ wiring, the edit toggle's ⌘⏎ save through
- * patchCard, the comment form, the attachment gestures (url link, file →
- * openFile), and the archived card's restore.
+ * CanvasSelectionStore for the freshness channel, injected Remote mocks over a
+ * mutable fake host, and plain selector-hook fakes. Since stage ⑧ the reader is
+ * TOLD which card to show (`canvasId`/`cardId` props, what a tab's address
+ * carries), so a test retargets those props rather than the store. Asserts the
+ * empty state, the full-text render (no summary clamp in the reader), the
+ * address change and the rev re-read, the ghost ✓/✗ wiring, the edit toggle's
+ * ⌘⏎ save through patchCard, the comment form, the attachment gestures (url
+ * link, file → openFile), the archived card's restore, and every paste arm —
+ * sheet to table, page to its words, and an image FILE to a pointer line whose
+ * pixels stayed in the store (§10.3).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { CanvasDetailProps } from '../src/client/contract.ts'
 import { CanvasDetailView } from '../src/client/detail/CanvasDetailView.tsx'
+import { CanvasImageSrcs } from '../src/client/images.ts'
 import { CanvasSelectionStore } from '../src/client/space/selection.ts'
+import { imageSrcOf } from '../src/image-token.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
-  BoardAskAgentOutcome, BoardChatStatusResult, BoardMutationResult, BoardReadOutcome, CanvasBoard,
+  BoardAskAgentOutcome, BoardAttachImageOutcome, BoardChatStatusResult, BoardMutationResult,
+  BoardReadOutcome, CanvasBoard, CanvasImageRef, CanvasStroke,
 } from '../src/types.ts'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
 const NOW = '2026-09-16T08:00:00.000Z'
 const CANVAS_ID = 'canvas_01234567abcdefgh'
+/** One stored image's pointer parts: the digest the read leg re-derives. */
+const IMG_ID = `sha256:${'0123456789abcdef'.repeat(4)}`
+const IMG_REF: CanvasImageRef = {
+  attachmentId: IMG_ID, mediaType: 'image/png', bytes: 3, width: 2, height: 1,
+}
 
 /** A plain translate over the zh dictionary (the key-set source of truth). */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -37,6 +48,8 @@ function board(cards: CanvasBoard['cards'] = []): CanvasBoard {
     attachedWorkspaces: [],
     chat: { sessionId: null },
     cards,
+    links: [],
+    lanes: [],
     stats: { proposed: { accepted: 0, rejected: 0 }, kindCounts: {}, lastActiveAt: NOW },
     archivedAt: null,
     createdAt: NOW,
@@ -59,8 +72,26 @@ function card(id: string, overrides: Record<string, unknown> = {}): CanvasBoard[
   } as CanvasBoard['cards'][number]
 }
 
+/**
+ * Fires a paste carrying the given clipboard flavors (and files), and reports
+ * whether the handler took the event over (jsdom ships no DataTransfer, so the
+ * flavors are the object the handler reads).
+ */
+function pasteInto(element: HTMLElement, flavors: Record<string, string>, files: readonly File[] = []): boolean {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      getData: (type: string): string => flavors[type] ?? '',
+      files: [...files],
+    },
+  })
+  element.dispatchEvent(event)
+  return event.defaultPrevented
+}
+
 interface Harness {
   readonly store: CanvasSelectionStore
+  readonly images: CanvasImageSrcs
   readonly mocks: {
     readBoard: ReturnType<typeof vi.fn>
     patchCard: ReturnType<typeof vi.fn>
@@ -69,23 +100,56 @@ interface Harness {
     askAgent: ReturnType<typeof vi.fn>
     chatStatus: ReturnType<typeof vi.fn>
     openSideChat: ReturnType<typeof vi.fn>
+    attachImage: ReturnType<typeof vi.fn>
   }
   readonly props: CanvasDetailProps
   readonly current: { board: CanvasBoard }
+  /**
+   * The stand-in for stage ⑧'s tab address: which card the reader is TOLD to
+   * show. Since the card left the shared store, a test moves it here — before
+   * `render` (or with a `rerender` after), which is what a new address does to
+   * a tab.
+   */
+  readonly view: {
+    select: (cardId: string | null) => void
+    touch: () => void
+  }
 }
 
 /** Mount the reader over a fake host whose mutations apply to its board. */
-function makeHarness(cards: CanvasBoard['cards'], options: { chatAvailable?: boolean } = {}): Harness {
+function makeHarness(
+  cards: CanvasBoard['cards'],
+  options: { chatAvailable?: boolean; canvasId?: string | null; cardId?: string | null } = {},
+): Harness {
   const current = { board: board(cards) }
   const ok = <T,>(value: T): Result<T> => ({ ok: true, value })
+  // A bench starts on an empty strip, every time: the store restores the rows a
+  // previous bench left in sessionStorage, and those name cards its board has not.
+  sessionStorage.clear()
   const store = new CanvasSelectionStore()
+  /** The tab's own subject: the canvas and card the props point the reader at. */
+  const target = {
+    canvasId: options.canvasId === undefined ? CANVAS_ID : options.canvasId,
+    cardId: options.cardId === undefined ? null : options.cardId,
+  }
+  // The REAL pointer cache (§10.3): the read leg is a fake store that hands
+  // back three bytes, so a resolve is asynchronous exactly as in the browser.
+  const images = new CanvasImageSrcs(async () => ({
+    ok: true as const,
+    value: { ok: true as const, data: 'AAEC', mediaType: 'image/png' as const },
+  }))
   const mocks = {
     readBoard: vi.fn(async (): Promise<Result<BoardReadOutcome>> => ok({ ok: true, board: current.board, version: '1' })),
-    patchCard: vi.fn(async (_sessionId: string, request: { cardId: string; text?: string; status?: 'kept' | 'archived' }): Promise<Result<BoardMutationResult>> => {
+    patchCard: vi.fn(async (_sessionId: string, request: { cardId: string; text?: string; status?: 'kept' | 'archived'; draw?: readonly CanvasStroke[] }): Promise<Result<BoardMutationResult>> => {
       const target = current.board.cards.find(candidate => candidate.id === request.cardId)
       if (target !== undefined) {
         if (request.text !== undefined) target.text = request.text
         if (request.status !== undefined) target.status = request.status
+        // The fake mirrors the host: an empty list takes the field away.
+        if (request.draw !== undefined) {
+          if (request.draw.length === 0) delete target.draw
+          else target.draw = [...request.draw]
+        }
       }
       return ok({ ok: true, board: current.board, version: '2' })
     }),
@@ -100,47 +164,63 @@ function makeHarness(cards: CanvasBoard['cards'], options: { chatAvailable?: boo
     chatStatus: vi.fn(async (): Promise<Result<BoardChatStatusResult>> =>
       ok({ available: options.chatAvailable ?? true })),
     openSideChat: vi.fn(),
+    attachImage: vi.fn(async (): Promise<Result<BoardAttachImageOutcome>> => ok({ ok: true, ref: IMG_REF })),
   }
   const props = {
     t,
     sessionId: 's1',
+    images,
     ...mocks,
+    // The address, read at spread time: retargeting it and re-rendering is the
+    // tab's own lifecycle.
+    get canvasId() { return target.canvasId },
+    get cardId() { return target.cardId },
     useSelection: function useSelection<S>(selector: (snapshot: ReturnType<typeof store.source.getSnapshot>) => S): S {
       return selector(useSyncExternalStore(store.source.subscribe, store.source.getSnapshot))
     },
     useSessions: ((selector: (snapshot: { byId: Record<string, { cwd: string }> }) => unknown) =>
       selector({ byId: { s1: { cwd: '/ws' } } })) as CanvasDetailProps['useSessions'],
   } as CanvasDetailProps
-  return { store, mocks, props, current }
+  return {
+    store,
+    images,
+    mocks,
+    props,
+    current,
+    view: {
+      select: cardId => { target.cardId = cardId },
+      touch: () => { store.touch() },
+    },
+  }
 }
 
 afterEach(() => { cleanup() })
 
 describe('CanvasDetailView', () => {
-  it('shows the empty state until the board selects a card', async () => {
-    const { props } = makeHarness([card('c_1')])
+  it('shows the empty state when its address points at no canvas', async () => {
+    const { props } = makeHarness([card('c_1')], { canvasId: null })
     render(<CanvasDetailView {...props} />)
-    await screen.findByText('在画布空间点一张卡，在这里读全文')
+    await screen.findByText('这张标签没有指向任何卡：回画布点一张')
   })
 
   it('renders the selected card in full — no summary clamp in the reader', async () => {
     const longText = `长文全文。\n${'这是一段很长的正文，用来证明详情里不做摘要折叠。\n'.repeat(10)}结尾。`
-    const { store, props } = makeHarness([card('c_1', { text: longText })])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, props } = makeHarness([card('c_1', { text: longText })])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText(/结尾。/)
     expect(screen.queryByText(/字$/)).toBeNull()
   })
 
   it('shows the document card\'s derived heading, and the kind/state/source meta', async () => {
-    const { store, props } = makeHarness([
+    const { view, props } = makeHarness([
       card('c_doc', {
         kind: 'document',
         text: '# 大模型心理学：综述\n\n正文。',
         source: { type: 'url', ref: 'https://example.org/paper', title: 'paper' },
       }),
     ])
-    store.select(CANVAS_ID, 'c_doc')
+    view.select('c_doc')
     render(<CanvasDetailView {...props} />)
     // The header's derived heading AND the full text's own h1 both carry it.
     expect((await screen.findAllByText('大模型心理学：综述')).length).toBeGreaterThanOrEqual(1)
@@ -150,23 +230,25 @@ describe('CanvasDetailView', () => {
     await screen.findByText(/创建于/)
   })
 
-  it('follows the selection to another card (same canvas: no refetch, the board already holds it)', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1'), card('c_2')])
-    store.select(CANVAS_ID, 'c_1')
-    render(<CanvasDetailView {...props} />)
+  it('follows its address to another card (same canvas: no refetch, the board already holds it)', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1'), card('c_2')])
+    view.select('c_1')
+    const { rerender } = render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
-    act(() => { store.select(CANVAS_ID, 'c_2') })
+    // A tab re-pointed at another card (a replaceTab navigation): the props
+    // carry the new id, and the board read behind it does not repeat.
+    act(() => { view.select('c_2'); rerender(<CanvasDetailView {...props} />) })
     await screen.findByText('卡片 c_2 的正文')
     expect(mocks.readBoard).toHaveBeenCalledTimes(1)
   })
 
   it('re-reads when the shared rev is touched (the other seat mutated the board)', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     const before = mocks.readBoard.mock.calls.length
-    act(() => { store.touch() })
+    act(() => { view.touch() })
     await waitFor(() => {
       expect(mocks.readBoard.mock.calls.length).toBeGreaterThan(before)
     })
@@ -174,8 +256,8 @@ describe('CanvasDetailView', () => {
 
   it('wires the ghost proposal to patchCard, from the detail too', async () => {
     const ghost = card('c_g', { status: 'proposed', createdBy: 'agent', text: '效能假说综述' })
-    const { store, props } = makeHarness([ghost])
-    store.select(CANVAS_ID, 'c_g')
+    const { view, props } = makeHarness([ghost])
+    view.select('c_g')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('AGENT 提议 · 待你确认')
     fireEvent.click(screen.getByRole('button', { name: /收下/ }))
@@ -186,8 +268,8 @@ describe('CanvasDetailView', () => {
   })
 
   it('saves the source mode through patchCard and returns to reading', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: '源码' }))
@@ -201,9 +283,135 @@ describe('CanvasDetailView', () => {
     expect(screen.queryByDisplayValue('改过的正文')).toBeNull()
   })
 
+  it('pastes a copied rich-text answer as markdown — the formatting survives', async () => {
+    const { view, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const editor = await screen.findByDisplayValue('卡片 c_1 的正文')
+    const taken = pasteInto(editor, {
+      'text/html': '<p>要点<strong>加粗</strong></p><ul><li>一条</li></ul>',
+      'text/plain': '要点加粗\n一条',
+    })
+    expect(taken).toBe(true)
+    expect((editor as HTMLTextAreaElement).value).toBe(
+      '要点**加粗**\n\n- 一条卡片 c_1 的正文',
+    )
+    await screen.findByText(/带格式粘贴：已转成 markdown/)
+  })
+
+  it('pastes a sheet as a markdown table, into the caret, and reports it', async () => {
+    const { view, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const editor = await screen.findByDisplayValue('卡片 c_1 的正文')
+    const taken = pasteInto(editor, {
+      'text/html': '<html><body><table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table></body></html>',
+      'text/plain': 'a\tb\n1\t2',
+    })
+    expect(taken).toBe(true)
+    expect((editor as HTMLTextAreaElement).value).toBe('| a | b |\n| --- | --- |\n| 1 | 2 |卡片 c_1 的正文')
+    await screen.findByText(/表格转成了 markdown 表/)
+  })
+
+  it('leaves a page pasted into prose to the browser, and says why in its place', async () => {
+    const { view, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const editor = await screen.findByDisplayValue('卡片 c_1 的正文')
+    // The caret sits where a reader leaves it: after the card's own words, so
+    // the card the paste would produce still holds prose.
+    const area = editor as HTMLTextAreaElement
+    area.setSelectionRange(area.value.length, area.value.length)
+    const taken = pasteInto(area, {
+      'text/html': '<!doctype html><html><head><title>雨</title></head><body><p>一整页</p></body></html>',
+      'text/plain': '雨\n\n一整页',
+    })
+    // Not taken over: the browser pastes its own text flavor, with its undo entry.
+    expect(taken).toBe(false)
+    expect(area.value).toBe('卡片 c_1 的正文')
+    await screen.findByText(/落的是网页里的文字那一份/)
+  })
+
+  it('keeps markup as a page when the card it produces still reads as one', async () => {
+    const { view, props } = makeHarness([card('c_h', {
+      kind: 'document',
+      text: '<!doctype html><html><head><title>报告</title></head><body><p>正文</p></body></html>',
+    })])
+    view.select('c_h')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('文档')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const editor = await screen.findByDisplayValue(/<title>报告<\/title>/)
+    const taken = pasteInto(editor, {
+      'text/html': '<div><p>又一段</p><span>还有一句</span></div>',
+      'text/plain': '又段一句',
+    })
+    expect(taken).toBe(true)
+    expect((editor as HTMLTextAreaElement).value.startsWith('<div>')).toBe(true)
+    await screen.findByText(/这张卡按网页渲染/)
+  })
+
+  it('pastes an image file as a pointer line — the pixels never enter the card', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const area = (await screen.findByDisplayValue('卡片 c_1 的正文')) as HTMLTextAreaElement
+    area.setSelectionRange(0, 0)
+    const taken = pasteInto(area, {}, [new File([new Uint8Array([0, 1, 2])], '截图.png', { type: 'image/png' })])
+    // Taken over at once (before the store call), so the browser adds nothing.
+    expect(taken).toBe(true)
+    await waitFor(() => {
+      expect(area.value).toBe(`![截图.png](${imageSrcOf(IMG_REF)})卡片 c_1 的正文`)
+    })
+    expect(mocks.attachImage).toHaveBeenCalledWith({ data: 'AAEC', mediaType: 'image/png', name: '截图.png' })
+    await screen.findByText(/卡片正文里存的不是图/)
+    // The pointer is the whole of what the card carries.
+    expect(area.value).not.toContain('AAEC')
+  })
+
+  it('pastes the tag form when the card it lands in is a page', async () => {
+    const { view, props } = makeHarness([card('c_page', {
+      kind: 'document',
+      text: '<!doctype html><html><head><title>报告</title></head><body><p>正文</p></body></html>',
+    })])
+    view.select('c_page')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('文档')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const area = (await screen.findByDisplayValue(/<title>报告<\/title>/)) as HTMLTextAreaElement
+    area.setSelectionRange(area.value.length, area.value.length)
+    pasteInto(area, {}, [new File([new Uint8Array([0, 1, 2])], '图 1.png', { type: 'image/png' })])
+    await waitFor(() => {
+      expect(area.value).toBe(
+        `<!doctype html><html><head><title>报告</title></head><body><p>正文</p></body></html><img src="${imageSrcOf(IMG_REF)}" alt="图 1.png">`,
+      )
+    })
+  })
+
+  it('says which refusal stopped an image, and pastes nothing for it', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '源码' }))
+    const area = (await screen.findByDisplayValue('卡片 c_1 的正文')) as HTMLTextAreaElement
+    mocks.attachImage.mockResolvedValue({ ok: true, value: { ok: false, error: 'too-large' } })
+    pasteInto(area, {}, [new File([new Uint8Array([0, 1, 2])], '大图.png', { type: 'image/png' })])
+    await screen.findByText(/这张图太大/)
+    expect(area.value).toBe('卡片 c_1 的正文')
+  })
+
   it('posts a comment from the thread', async () => {
-    const { store, mocks, props } = makeHarness([card('c_1')])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     const box = screen.getByPlaceholderText('写条评论…（⏎ 发送）')
@@ -216,10 +424,10 @@ describe('CanvasDetailView', () => {
   })
 
   it('opens a file attachment through openFile with the tab\'s session and cwd', async () => {
-    const { store, mocks, props } = makeHarness([
+    const { view, mocks, props } = makeHarness([
       card('c_1', { source: { type: 'file', ref: '/ws/灵感画布/文章/第一章.md', title: '第一章 雨夜' } }),
     ])
-    store.select(CANVAS_ID, 'c_1')
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
     fireEvent.click(screen.getByRole('button', { name: /预览 第一章 雨夜/ }))
@@ -230,8 +438,8 @@ describe('CanvasDetailView', () => {
     const commented = card('c_1', {
       comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
     })
-    const { store, mocks, props } = makeHarness([commented])
-    store.select(CANVAS_ID, 'c_1')
+    const { view, mocks, props } = makeHarness([commented])
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     fireEvent.click(await screen.findByRole('button', { name: /追问/ }))
     await waitFor(() => {
@@ -248,8 +456,8 @@ describe('CanvasDetailView', () => {
     const commented = card('c_1', {
       comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
     })
-    const { store, props } = makeHarness([commented], { chatAvailable: false })
-    store.select(CANVAS_ID, 'c_1')
+    const { view, props } = makeHarness([commented], { chatAvailable: false })
+    view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText(/这里隐含一个假设/)
     expect(screen.queryByRole('button', { name: /追问/ })).toBeNull()
@@ -261,8 +469,8 @@ describe('CanvasDetailView', () => {
       kind: 'document',
       text: '<!DOCTYPE html><html><head><title>报告</title></head><body><p>正文</p></body></html>',
     })
-    const { store, props } = makeHarness([htmlCard])
-    store.select(CANVAS_ID, 'c_h')
+    const { view, props } = makeHarness([htmlCard])
+    view.select('c_h')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('文档')
     await screen.findByText('HTML')
@@ -279,13 +487,152 @@ describe('CanvasDetailView', () => {
 
   it('shows an archived card with its tag and restores it', async () => {
     const gone = card('c_x', { status: 'archived', text: '归档的旧卡' })
-    const { store, mocks, props } = makeHarness([gone])
-    store.select(CANVAS_ID, 'c_x')
+    const { view, mocks, props } = makeHarness([gone])
+    view.select('c_x')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('已归档')
     fireEvent.click(screen.getByRole('button', { name: /恢复/ }))
     await waitFor(() => {
       expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_x', status: 'kept' })
     })
+  })
+})
+
+/**
+ * The pad's field: the element whose viewBox is the logical box. Found by that
+ * contract rather than by a class name, because the class is a CSS-module hash
+ * and the box is what the coordinate math is actually about.
+ */
+function padField(container: HTMLElement): HTMLElement | undefined {
+  const svg = Array.from(container.querySelectorAll('svg'))
+    .find(candidate => candidate.getAttribute('viewBox') === '0 0 600 400')
+  const box = svg?.parentElement
+  if (box === undefined) return undefined
+  // jsdom ships neither pointer capture nor a measured layout: the pad needs
+  // both, and the rect below is the 300×200 px seat its tests are written for.
+  box.setPointerCapture = () => {}
+  box.releasePointerCapture = () => {}
+  box.getBoundingClientRect = () => ({
+    left: 0, top: 0, width: 300, height: 200, right: 300, bottom: 200, x: 0, y: 0,
+    toJSON: () => ({}),
+  }) as DOMRect
+  return box
+}
+
+function padBox(container: HTMLElement): HTMLElement {
+  const box = padField(container)
+  if (box === undefined) throw new Error('expected the pad to have a field')
+  return box
+}
+
+/** One drag: press, sweep through the given screen points, release. */
+function drag(box: HTMLElement, through: readonly (readonly [number, number])[]): void {
+  const [first, ...rest] = through
+  fireEvent.pointerDown(box, { pointerId: 1, clientX: first![0], clientY: first![1] })
+  for (const [x, y] of rest) {
+    fireEvent.pointerMove(box, { pointerId: 1, clientX: x, clientY: y })
+  }
+  fireEvent.pointerUp(box, { pointerId: 1 })
+}
+
+describe('the card pad (§11.4)', () => {
+  it('sends a stroke to patchCard the moment it ends, in box units', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    const box = padBox(container)
+    // 60×40 px of a 300×200 box is 120×80 of the logical 600×400.
+    drag(box, [[60, 40], [120, 80], [180, 60]])
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', draw: expect.any(Array) })
+    })
+    const draw = mocks.patchCard.mock.calls.at(-1)![1].draw as CanvasStroke[]
+    expect(draw).toHaveLength(1)
+    expect(draw[0]!.pts[0]).toEqual({ x: 120, y: 80, w: 5 })
+    expect(draw[0]!.pts.length).toBe(3)
+  })
+
+  it('keeps finished ink on screen with the pen put down, and takes one stroke back per 撤一笔', async () => {
+    const two: CanvasStroke[] = [
+      { pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' },
+      { pts: [{ x: 200, y: 100, w: 5 }, { x: 400, y: 200, w: 4 }], color: 'ink' },
+    ]
+    const { view, mocks, props } = makeHarness([card('c_1', { draw: two })])
+    view.select('c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    // The pad never waits for the pen: content that hides when you stop making
+    // it reads as lost work.
+    expect(padField(container)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '撤一笔' }))
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenLastCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', draw: [two[0]] })
+    })
+    expect(padField(container)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '撤一笔' }))
+    await waitFor(() => {
+      expect(padField(container)).toBeUndefined()
+    })
+  })
+
+  it('takes the whole stroke the eraser lights, and only that one', async () => {
+    const two: CanvasStroke[] = [
+      { pts: [{ x: 60, y: 40, w: 5 }, { x: 120, y: 80, w: 5 }], color: 'ink' },
+      { pts: [{ x: 400, y: 300, w: 5 }, { x: 460, y: 320, w: 5 }], color: 'ink' },
+    ]
+    const { view, mocks, props } = makeHarness([card('c_1', { draw: two })])
+    view.select('c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '橡皮' }))
+    const box = padBox(container)
+    fireEvent.pointerDown(box, { pointerId: 1, clientX: 30, clientY: 20 })
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', draw: [two[1]] })
+    })
+  })
+
+  it('misses loudly: an eraser click on empty paper says so and changes nothing', async () => {
+    const drawn: CanvasStroke[] = [{ pts: [{ x: 60, y: 40, w: 5 }, { x: 120, y: 80, w: 5 }], color: 'ink' }]
+    const { view, mocks, props } = makeHarness([card('c_1', { draw: drawn })])
+    view.select('c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    const before = mocks.patchCard.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: '橡皮' }))
+    fireEvent.pointerDown(padBox(container), { pointerId: 1, clientX: 250, clientY: 180 })
+    await screen.findByText(/这里没有笔画/)
+    expect(mocks.patchCard.mock.calls.length).toBe(before)
+  })
+
+  it('puts the pen away on Esc, from the keyboard rather than the mouse', async () => {
+    const { view, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    await screen.findByText('铅笔开着，直接在框里画')
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await screen.findByText('画笔收起了，接着打字')
+  })
+
+  it('never lets a tap become a stored stroke', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('卡片 c_1 的正文')
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    drag(padBox(container), [[60, 40]])
+    expect(mocks.patchCard).not.toHaveBeenCalled()
+  })
+
+  it('hides the pen on a card nobody may edit, and on a read-only seat', async () => {
+    const { view, props } = makeHarness([card('c_g', { status: 'proposed', createdBy: 'agent' })])
+    view.select('c_g')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByText('AGENT 提议 · 待你确认')
+    expect(screen.queryByRole('button', { name: '铅笔' })).toBeNull()
   })
 })

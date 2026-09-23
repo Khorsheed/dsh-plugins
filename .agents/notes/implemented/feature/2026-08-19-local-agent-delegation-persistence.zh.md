@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-`LocalAgentRegistry` 的委派映射（`childSessionId → { provider, parentSessionId, cliSessionId, kimiMirroredLines? }`）与 kimi 镜像 offset 此前只存在内存 Map 里，宿主重启即丢——上一轮留下的 resume 句柄在 `resolveDelegation` 处即以「no delegation recorded」失败，跨重启续跑链路由此断裂。本 note 是[委派 API 提案](../../../proposals/active/2026-08-18-local-agent-delegation-api.md)的 M4 里程碑；存储设计逐字吸收自已废弃的 [codex 持久化 note](../../rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md) 第 1 条（该 note 废弃时并入提案 M4）。
+`LocalAgentRegistry` 的委派映射（`childSessionId → { provider, parentSessionId, cliSessionId, kimiMirroredLines? }`）与 kimi 镜像 offset 此前只存在内存 Map 里，宿主重启即丢——上一轮留下的 resume 句柄在 `resolveDelegation` 处即以「no delegation recorded」失败，跨重启续跑链路由此断裂。本 note 是[委派 API 提案](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md)的 M4 里程碑；存储设计逐字吸收自已废弃的 [codex 持久化 note](../../rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md) 第 1 条（该 note 废弃时并入提案 M4）。
 
 ## Decision
 
@@ -40,7 +40,7 @@ Status: implemented
 
 ## Cross-references
 
-- [委派 API 提案](../../../proposals/active/2026-08-18-local-agent-delegation-api.md)——本 note 完成的里程碑计划（M4，设计见 §2）。
+- [委派 API 提案](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md)——本 note 完成的里程碑计划（M4，设计见 §2）。
 - [已废弃的 codex 持久化 note](../../rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md)——所吸收存储设计的出处（第 1 条）。
 - [委派门面](2026-08-18-local-agent-delegation-facade.md)——本 note 补齐其 reattach 配方的 M1 门面。
 - [实时 transcript 镜像](2026-08-19-local-agent-live-mirror.md)——本 note 持久化其 offset 的 M3 镜像。

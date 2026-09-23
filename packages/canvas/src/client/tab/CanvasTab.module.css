@@ -1,5 +1,5 @@
-/* The canvas tab's own chrome: the topbar, the switcher dropdown, the drill
-   back bar, and the draft view. Board/card styles live in board.module.css. */
+/* The canvas tab's own chrome: the topbar, the switcher dropdown, and the
+   drill back bar. Board/card styles live in board.module.css. */
 
 .root {
   position: relative;
@@ -30,27 +30,24 @@
   flex-shrink: 0;
 }
 
-.topic {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  border: none;
-  background: transparent;
-  padding: 4px 6px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: var(--dsw-font-family);
-  color: var(--dsw-alias-label-primary);
-  cursor: pointer;
-  white-space: nowrap;
+/* The board row's own header says which canvas it is and how full it is. The
+   name is text now, not a pill: the strip above is where you move between
+   canvases, so nothing here needs to advertise that it opens a menu. */
+.boardTitle {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-primary);
 }
 
-.topic:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+.boardCount {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-caption);
 }
 
 .attachChip {
@@ -74,35 +71,46 @@
   flex: 1;
 }
 
+/* The board's two faces. A segmented control, not two tabs: it switches what
+   the SAME board is for, and the selection crosses the switch. */
+.viewSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.viewButton {
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 9px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsw-font-family);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.viewButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.viewButton[data-on] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-brand-primary);
+  font-weight: 500;
+}
+
 .readonlyHint {
   font-size: 11px;
   color: var(--dsw-alias-label-caption);
   white-space: nowrap;
-}
-
-.seg {
-  display: flex;
-  background: var(--dsw-alias-bg-layer-1);
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 7px;
-  padding: 2px;
-  flex-shrink: 0;
-}
-
-.seg button {
-  border: none;
-  background: transparent;
-  font-size: 11.5px;
-  font-family: var(--dsw-font-family);
-  padding: 3px 10px;
-  border-radius: 5px;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-}
-
-.seg button[aria-pressed="true"] {
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-primary);
 }
 
 .newCardWrap {
@@ -110,141 +118,70 @@
   flex-shrink: 0;
 }
 
-/* ----------------------------------------------------------------- back bar */
-
-.backBar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
-  flex-shrink: 0;
+/* A custom category carries no icon (an invented row has no shape to borrow —
+   the same rule the board's kind tag follows), but the menu's labels still
+   line up, so the row keeps an icon-width gap. */
+.menuIconSlot {
+  flex: none;
+  width: 12px;
 }
 
-.backButton {
+/* --------------------------------------------------------- the new-card action */
+
+/* ＋新卡 carries a border because it is the page's one primary action and the
+   pill to its left is its subject. The rows under it are a menu, so they are
+   `.menuRow` and not this class — sharing one rule across a trigger and its
+   dropdown is how a menu ends up full of little boxes. */
+.actionButton {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: none;
-  background: transparent;
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 12px;
+  flex-shrink: 0;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  padding: 4px 9px;
+  background: var(--dsw-alias-bg-layer-2);
   font-family: var(--dsw-font-family);
-  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.actionButton:hover {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.actionButton[aria-expanded="true"] {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.menuRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: transparent;
+  font-family: var(--dsw-font-family);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
   cursor: pointer;
 }
 
-.backButton:hover {
+.menuRow:hover {
   background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-/* -------------------------------------------------------------- draft view */
-
-.draftRoot {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.draftBar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  flex-shrink: 0;
-}
-
-.draftBody {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  padding: 0 12px 12px;
-  gap: 10px;
-}
-
-.editorPane {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* The one scroller of the edit pane (never the wrapper). box-sizing is
-   border-box because Chromium's UA sheet leaves a textarea at content-box. */
-.draftEditor {
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 8px;
-  padding: 14px 16px;
-  font-size: 13px;
-  line-height: 1.8;
-  font-family: var(--dsw-font-family);
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-  outline: none;
-  resize: none;
-}
-
-.draftEditor:focus {
-  border-color: var(--dsw-alias-label-caption);
-}
-
-.previewPane {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.markdown {
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
-  padding: 14px 16px;
-  font-size: 13px;
-  line-height: 1.8;
-}
-
-.saveState {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--dsw-alias-label-caption);
-}
-
-.saveState[data-state="conflict"],
-.saveState[data-state="error"] {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.saveState[data-state="saved"] {
-  color: var(--dsw-alias-state-success-primary);
 }
 
 /* ------------------------------------------------------------------ states */
-
-.toast {
-  position: absolute;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  z-index: 20;
-  max-width: 88%;
-  padding: 8px 14px;
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-3);
-  box-shadow: var(--dsw-elevation-prominent);
-  font-size: 12px;
-  color: var(--dsw-alias-label-primary);
-}
 
 .fatal {
   position: absolute;

@@ -140,7 +140,7 @@ function resolveExecutable(command: string): string | undefined {
  * that resolves to nothing keys on the raw argv instead, so a CLI that is not
  * installed is not probed once per status call either.
  */
-function cacheKey(argv: readonly string[]): string {
+export function cliExecutableIdentity(argv: readonly string[]): string {
   const parts = [resolveExecutable(argv[0] ?? '') ?? `argv:${argv[0] ?? ''}`]
   for (const entry of argv.slice(1)) {
     if (!looksLikePath(entry)) continue
@@ -188,7 +188,7 @@ async function runProbe(probe: CliVersionProbe): Promise<string | undefined> {
  * @returns the version, or undefined when the CLI cannot be asked.
  */
 export async function probeCliVersion(probe: CliVersionProbe): Promise<string | undefined> {
-  const key = cacheKey(probe.argv)
+  const key = cliExecutableIdentity(probe.argv)
   const cached = cache.get(key)
   if (cached !== undefined && (cached.failedAt === undefined || Date.now() - cached.failedAt < CLI_VERSION_FAILURE_TTL_MS)) {
     return cached.promise

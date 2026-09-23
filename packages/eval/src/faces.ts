@@ -186,6 +186,7 @@ export interface DelegationResult {
   usage?: unknown
   /** The model that actually served, when the facade reads it back. */
   observedModel?: string | null
+  observedEffort?: string | null
 }
 
 /** One started delegation run (structural SubagentRun). */
@@ -224,6 +225,7 @@ export interface DelegationToolCalls {
  */
 export interface DelegationProgress {
   kind: string
+  observedEffort?: string
   /** `settled` only: the model the provider observed for this round (T11). */
   observedModel?: string
   /** `settled` only: the CLI build the round actually ran, when read back. */
@@ -246,7 +248,16 @@ export interface DelegationSettled extends DelegationProgress {
  * Delegation call options, including T11's `cwd` (the per-cell directory)
  * and `onProgress` (the settled read-back channel).
  */
+/** Configuration admission evidence; never a substitute for native generation observation. */
+export interface DelegationConfiguration {
+  revision: number
+  selection: { model: { mode: 'inherit' | 'default' } | { mode: 'value'; value: string }; effort: { mode: 'inherit' | 'default' } | { mode: 'value'; value: string } }
+  resolved: { model?: string; effort?: string }
+}
+
 export interface EvalDelegationOptions {
+  effort?: string
+  configurationLock?: string
   label?: string
   signal?: AbortSignal
   cwd?: string
@@ -352,6 +363,8 @@ export interface LocalAgentScopeStatus {
 
 /** The localAgent verbs the run loop uses. */
 export interface LocalAgentFace {
+  supportsMemberConfiguration?(provider: string): boolean
+  runConfiguration?(run: object): DelegationConfiguration | undefined
   start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: EvalDelegationOptions): Promise<DelegationRun>
   resume(parentSessionId: string, provider: string, childSessionId: string, prompt: Array<{ type: 'text'; text: string }>, options?: EvalDelegationOptions): Promise<DelegationRun>
   cancel(childSessionId: string): boolean
@@ -399,6 +412,41 @@ export interface LocalAgentFace {
    * it could compare nothing.
    */
   effectiveSettings?(harness: string, scope?: string): Promise<LocalAgentEffectiveSettingsFace | undefined>
+  /**
+   * Provision one scope deliberately, with the per-condition inputs the
+   * condition document carries, and report what the scope now holds.
+   *
+   * The registry materializes a scope once per host process with no options
+   * and swallows failures — right for "somebody named a scope", wrong for
+   * "this condition's subject must compose preset X". This verb is the
+   * deliberate one: it waits, it propagates the failure, and what it returns
+   * is a read-back.
+   *
+   * OPTIONAL on the face for the same reason as the three above: a facade
+   * that predates it leaves provision reading back whatever is already in
+   * the scope, which is exactly the behaviour every preset condition had
+   * before the verb existed.
+   */
+  provisionScope?(
+    harness: string,
+    scope?: string,
+    options?: { preset?: string },
+  ): Promise<LocalAgentScopeProvisionedFace>
+}
+
+/** What {@link LocalAgentFace.provisionScope} reports back. */
+export interface LocalAgentScopeProvisionedFace {
+  /** The scoped home that was provisioned. */
+  homeDir: string
+  /** The preset the scope's composition now rosters, when it rosters one. */
+  preset?: string
+  /**
+   * The scope's own copy of that preset, when the harness keeps one.
+   * `matchesSource` is the whole claim: the copy is byte-for-byte the
+   * deployment's own preset directory — which is what lets a fingerprint
+   * taken against the deployment's copy describe the scope's.
+   */
+  presetSnapshot?: { matchesSource: boolean }
 }
 
 /**
@@ -463,7 +511,21 @@ export interface MissionAttemptFace {
  */
 export interface MissionReadFace {
   runStatus(runId: string): {
-    run: { id: string; state: string; createdAt: number; templateName?: string; meta: Record<string, unknown> }
+    run: {
+      id: string
+      state: string
+      createdAt: number
+      templateName?: string
+      meta: Record<string, unknown>
+      /**
+       * The session that started the run — and, by decision 1, the PARENT of
+       * every delegation it made. The drawer needs it to open a child
+       * session at all: the host refuses a subagent session addressed on its
+       * own («subagent Sessions require their durable parent address»), so a
+       * child id without its parent is a navigation that lands on an error.
+       */
+      originSession?: string
+    }
     rows: MissionStatusRow[]
     buckets: Record<string, string[]>
     unreleased: string[]

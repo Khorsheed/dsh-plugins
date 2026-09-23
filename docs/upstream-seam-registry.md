@@ -134,6 +134,28 @@
 - **状态**：绕行中（@khorsheed/dsh-local-agent 家族）。
 
 
+### S17. 插件自有事件无法进入 Remote 事件转发白名单（客户端收不到插件的宿主侧变化）
+
+> 编号说明:`S16` 这个槽位已被 context-observability 一线标记为「随需求撤回」,那条需求撤回后
+> 从未落库,槽位空置;此处跳过它取 `S17`,避免把两个不同缺口读成同一个。(提案文档本身已于
+> 2026-09-23 撤回入库,不在仓库;撤回前那版的编号总表可从 git 历史 `fa890442` 取回。)
+
+- **需求**：插件想把自己 host 侧的状态变化推给已挂载的浏览器表面（worktrees 的活跃 worktree 被模型工具切换、另一 client tab 切换、host 侧文件监听触发），而不是靠客户端周期性重读。Typert 协议本身支持：`ctx.remote.$on(event, listener)`（客户端）+ 宿主侧 `@mode emit` 的 cordis 事件（`dsh-typert-protocol` 的 `TypertRemoteEvent = Extract<TypertForwardableEvent, keyof TypertRemoteEventSelection>`）。
+- **现状**：转发集合由官方 `@deepseek-ai/dsh-api-remotes` 的**静态数组** `API_REMOTE_FORWARDED_EVENTS`（`packages/api/remotes/src/remote-events.ts`）决定，宿主装配循环逐条 `ctx.on(...)` 转发（同包 `src/index.ts:50`）。插件既不能在自己的 manifest 里加条目，也没有 profile 级开关；本仓 0 处使用 `$on`（`grep -rnF '$on(' packages/*/src`），因为没有任何插件能收到自己的事件。
+- **现状绕行**：只用官方已转发的事件——`api-session/status(sessionId, running)`（Agent 起停，即轮次边界，模型工具刚跑完）与 `api-session/activity(sessionId, updatedAt)`（用户消息推进会话活动）。worktrees 的会话头徽标在这两件事上重读 summary，另加"窗口重新获得焦点/可见"与"tab 侧任何刷新推版本号"两条本地通道；**不做周期轮询**。见 `.agents/notes/implemented/bug-fix/2026-09-23-worktrees-badge-invalidation.md`。
+- **建议的官方改动**：让转发集合可被插件贡献（例如 `TypertRemoteEventSelection` 之外再加一个运行时装配入口/插件 manifest 字段），或提供一个通用的"插件自定义通知"通道。最小版本：把 `API_REMOTE_FORWARDED_EVENTS` 的消费点改成"官方默认集 + 插件声明集"。
+- **退役条件**：插件可声明并 emit 自己的事件并被客户端 `$on` 收到后，worktrees 的 worktree 变化改走真推送；`fs.watch` 实时 dirty 也才有可能（当前"盯着看 + 外部进程改文件"无法纯事件覆盖）。
+- **状态**：绕行中（@khorsheed/dsh-worktrees）。
+
+### S18. 插件无法往会话里投「只通知、不触发执行」的系统事件（实验生命周期回流到发起它的会话）
+
+- **需求**：评测实验由会话里的 agent 起草、人在实验室 tab 批准启动，之后运行完成、判官判完、人工评估完成三个节点要回到发起它的会话里各留一条通知（「lean-vs-full-p0 跑完了，去人工评估」），只给人和 agent 看，**不触发 agent 执行**。一个会话可以同时有两个以上实验，所以不能靠会话头或 composer 上的单个「当前实验」常驻位来代替。
+- **现状**：宿主没有让插件往会话追加事件的 API。eval 对会话只用得到 `sessions.open` / `openSubagent`；插件事件写进会话日志还会撞 S2 记过的那堵墙（`Session.append` 写不了 `ignorable: true`，读回拒绝未知的非 ignorable 事件类型）。run 记录上有 `originSession`（`packages/eval/src/faces.ts`），只在传了 `parentSessionId` 时才写，命令行发起的 run 没有。
+- **现状绕行**：「实验」tab 标签上显示本会话发起、需要人处理的实验个数（`conversation.view` 的 `label` 是函数，宿主是否随状态重绘待证；不重绘就不显示这个数，不用 DOM 锚点硬改）+ 实验室列表的「需要你处理」分组 + agent 用 `eval_run_status` 读。要求退路本身就够用，不是临时凑合。见 `proposals/active/2026-09-23-eval-journey-redesign.md` D3 与 `profiles/web-eval/docs/ui-spec.md` §五「跨面旅程」。
+- **建议的官方改动**：给插件一个往指定会话追加「系统通知」事件的入口——渲染成对话里的一行、持久化可读回、不进模型上下文也不唤醒 agent（或由调用方显式选择是否进上下文）。最小版本：一个官方的 `ignorable` 通知事件类型 + 插件可调用的 append。
+- **退役条件**：官方提供该入口后，eval 在三个节点往 `originSession` 投通知；tab 计数降为辅助（可留可拆），`eval_run_status` 不变。
+- **状态**：待实施（@khorsheed/dsh-eval；绕行随 I5 收口批 T72 / T76 落地）。
+
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。

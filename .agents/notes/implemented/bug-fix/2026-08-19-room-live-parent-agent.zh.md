@@ -23,7 +23,7 @@ room 插件的端到端验收（scratch profile、真实 kimi CLI 派发）暴�
 ## 否决的替代方案
 
 - **只在 DispatchEngine 内保证存活**（`createRoom` 保持裸建）——否决：往 store 仍持有的会话上冷恢复 agent 会与工厂的发布路径冲突（`session already exists`）；经工厂创建让 live-agent 不变量从出生即成立，resume 路径因而只面对真正冷的会话。
-- **冷 room 用 enter-only 重挂（`sessions.enter`，local-agent 子会话配方）**——对 room 自己的会话否决：后续 `agents.resume` 必须自己发布会话，enter-only 挂载会挡住它。enter-only 对 CLI 子会话仍然正确（它们上面永远没有 agent）；room 会话拥有一个真 agent。
+- **冷 room 用 enter-only 重挂（`sessions.enter`，local-agent 子会话配方）**——对 room 自己的会话否决：后续 `agents.resume` 必须自己发布会话，enter-only 挂载会挡住它。[历史连续性修复](2026-09-19-member-stream-replay.md)后，CLI 子会话由 core enter 并 announce；room 会话拥有真 agent，仍由 agent 恢复。
 - **静态 `inject = ['tools']`**——否决：无 tools 的组合会让 room 挂载直接失败；延迟注入保住了「降级而非爆炸」的性质。
 
 ## 后果

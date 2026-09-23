@@ -73,6 +73,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
         <span className={css.dot} style={{ background: memberColor(data.member) }} aria-hidden />
         <span className={css.chip}>{data.member}</span>
         {provider !== undefined && provider !== '' && <span className={css.provider}>{provider}</span>}
+        {data.interrupted !== undefined && <span className={css.meta}>{t(data.interrupted === 'cancelled' ? 'speech.stopped' : 'speech.failed')}</span>}
       </div>
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
         <MarkdownText text={data.text} labels={labels} />

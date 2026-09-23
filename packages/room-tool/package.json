@@ -60,7 +60,7 @@
     "compat": {
       "minHost": "0.1.5-rc.1",
       "verifiedHost": "0.1.5-rc.1",
-      "notes": "Host-plane companion row: provides no service, registers the three room model tools into the host tools registry, so agent presets may compose it bare (the official tool-row shape). Probes the global `ctx.room` service at apply time and silently skips registration when the core plugin is absent — a preset naming this row still mounts cleanly. No browser half: the room UI lives in the core package."
+      "notes": "Host-plane companion row: provides no service, registers room model tools into the host tools registry, so agent presets may compose it bare (the official tool-row shape). Probes the global `ctx.room` service at apply time and silently skips registration when the core plugin is absent — a preset naming this row still mounts cleanly. No browser half: the room UI lives in the core package."
     }
   }
 }

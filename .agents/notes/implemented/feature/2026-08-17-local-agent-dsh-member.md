@@ -82,4 +82,4 @@ The dsh member reuses the parent's resolved `DEEPSEEK_API_KEY`; a login flow wou
 
 ## Deferred
 
-- Delegation-mapping persistence (resume after a parent restart) — same limitation as kimi/codex (delegations live in memory); owned by milestone M4 of the [local-agent delegation API proposal](../../../proposals/active/2026-08-18-local-agent-delegation-api.md).
+- Delegation-mapping persistence (resume after a parent restart) — same limitation as kimi/codex (delegations live in memory); owned by milestone M4 of the [local-agent delegation API proposal](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md).

@@ -1,3 +1,4 @@
+import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission, type EffortEvidence } from './frozen-configuration.ts'
 /**
  * The pre-run readiness check (pilot A · G4).
  *
@@ -23,6 +24,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DelegationProgress, DelegationResult, LocalAgentFace } from './faces.ts'
+import { hashPresetTree, scopePresetDir } from './preset-snapshot.ts'
 import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 import { EGRESS_UNAVAILABLE } from './egress.ts'
 
@@ -53,6 +55,7 @@ export type ReadinessRole = 'player' | 'judge'
 
 /** One condition's readiness verdict — the payload of the `readiness` annotation. */
 export interface ReadinessRecord {
+  reasoning?: EffortEvidence
   /** `readiness` — the annotation kind, carried in the record itself. */
   kind: 'readiness'
   condition: string
@@ -115,6 +118,8 @@ export interface ReadinessRecord {
 
 /** One condition as the readiness check needs it (the run loop's resolved shape). */
 export interface ReadinessSubject {
+  declaredEffort?: string | null
+  sha?: string
   id: string
   harnessName: string
   declaredModel: string | null
@@ -135,7 +140,7 @@ export interface ReadinessSubject {
    * measured one. A condition that declares a preset and has none of these
    * is refused before its delegation: see {@link capabilityRefusal}.
    */
-  capabilities?: { sha: string; preset?: string | null }
+  capabilities?: { sha: string; preset?: string | null; snapshot?: { sha: string } }
 }
 
 /**
@@ -155,7 +160,7 @@ export interface ReadinessSubject {
  * @param condition - the probed condition.
  * @returns the refusal reason, or undefined when nothing is claimed or all agrees.
  */
-export function capabilityRefusal(condition: ReadinessSubject, fresh?: string): string | undefined {
+export function capabilityRefusal(condition: ReadinessSubject, fresh?: string, freshSnapshot?: string): string | undefined {
   const preset = condition.preset ?? null
   if (preset === null) return undefined
   if (condition.capabilities === undefined) {
@@ -178,7 +183,47 @@ export function capabilityRefusal(condition: ReadinessSubject, fresh?: string): 
       + ` but it now measures caps:${fresh.slice(0, 12)}… — the preset changed after provision`
       + ' (re-run `conditions provision` for this condition)'
   }
+  // The SUBJECT itself, when the scope keeps its own copy of the preset. The
+  // capability face above is measured through the instance's catalog and
+  // needs one; this needs nothing but the directory, so it also runs where
+  // there is no catalog at all — and it sees every byte, including the skill
+  // bodies `home.sha` leaves out.
+  const locked = condition.capabilities.snapshot?.sha
+  if (locked !== undefined && freshSnapshot !== undefined && freshSnapshot !== locked) {
+    return `the lock records the scope's ${JSON.stringify(preset)} copy at ${locked.slice(0, 12)}…`
+      + ` but it now hashes to ${freshSnapshot.slice(0, 12)}… — the preset this scope runs changed after provision`
+      + ' (re-run `conditions provision` for this condition)'
+  }
   return undefined
+}
+
+/**
+ * Re-hash one condition's own copy of its preset, or undefined when there is
+ * nothing to re-hash.
+ *
+ * Undefined covers every honest reason — the condition declares no preset,
+ * the lock recorded no copy (the scope defers to the deployment's root), the
+ * facade cannot resolve a scoped home, the directory is gone or is not a
+ * plain tree. Each leaves the locked record standing, because the absence of
+ * a measurement is evidence about this reader, not about the subject.
+ * @param localAgent - the facade that resolves scoped homes.
+ * @param condition - the probed condition.
+ * @returns the digest of the scope's copy, or undefined.
+ */
+export async function snapshotNow(
+  localAgent: LocalAgentFace,
+  condition: ReadinessSubject,
+): Promise<string | undefined> {
+  const preset = condition.preset ?? null
+  if (preset === null || condition.capabilities?.snapshot === undefined) return undefined
+  if (typeof localAgent.homeDir !== 'function') return undefined
+  let homeDir: string
+  try {
+    homeDir = localAgent.homeDir(condition.harnessName, condition.scope)
+  } catch {
+    return undefined
+  }
+  return (await hashPresetTree(scopePresetDir(homeDir, preset)))?.sha
 }
 
 /**
@@ -405,7 +450,16 @@ async function probeIn(
         + ` (${error instanceof Error ? error.message : String(error)}) — the locked record stands`)
     }
   }
-  const capabilityProblem = capabilityRefusal(condition, freshCapabilities)
+  let freshSnapshot: string | undefined
+  if ((condition.preset ?? null) !== null && condition.capabilities?.snapshot !== undefined) {
+    try {
+      freshSnapshot = await snapshotNow(localAgent, condition)
+    } catch (error) {
+      env.log(`readiness ${condition.id}: the scope's preset copy could not be re-hashed`
+        + ` (${error instanceof Error ? error.message : String(error)}) — the locked record stands`)
+    }
+  }
+  const capabilityProblem = capabilityRefusal(condition, freshCapabilities, freshSnapshot)
   if (capabilityProblem !== undefined) {
     env.log(`readiness ${condition.role === 'judge' ? 'judge ' : ''}${condition.id}: NOT READY — ${capabilityProblem}`)
     return {
@@ -431,6 +485,7 @@ async function probeIn(
     if (childSessionId !== undefined) localAgent.cancel(childSessionId)
   }, env.timeoutMs)
   let settledModel: string | undefined
+  let settledEffort: string | undefined
 
   const fail = (reason: string): ReadinessRecord => ({
     ...base,
@@ -444,8 +499,10 @@ async function probeIn(
 
   let run: Awaited<ReturnType<LocalAgentFace['start']>>
   try {
+    requireEffortAdmission(localAgent, condition.provider, condition.declaredEffort)
     run = await localAgent.start(env.parentSessionId, condition.provider, [{ type: 'text', text: READINESS_PROMPT }], {
       label: `readiness ${condition.id}`,
+      ...frozenConfigurationOptions(condition.sha ?? condition.id, condition.declaredEffort),
       signal: controller.signal,
       ...(unit === undefined ? { cwd: env.cwd } : { exec: unit.exec }),
       // The scope is orthogonal to where the round runs: it names WHICH
@@ -459,6 +516,7 @@ async function probeIn(
       // failed the run (T22 step 5).
       ...(condition.declaredModel === null ? {} : { model: condition.declaredModel }),
       onProgress: (event: DelegationProgress) => {
+        if (event.kind === 'settled' && event.observedEffort !== undefined) settledEffort = event.observedEffort
         if (event.kind === 'settled' && event.observedModel !== undefined) settledModel = event.observedModel
       },
     })
@@ -481,6 +539,7 @@ async function probeIn(
   }
   clearTimeout(timer)
   const observedModel = settledModel ?? await awaitObservedModel(localAgent, run.id, undefined, env.readbackWaitMs)
+  const reasoning = effortEvidence(condition.declaredEffort, localAgent.runConfiguration?.(run), settledEffort ?? result.observedEffort)
   const durationMs = env.now() - startedAt
   const record: ReadinessRecord = {
     ...base,
@@ -489,6 +548,7 @@ async function probeIn(
     durationMs,
     childSessionId: run.id,
     observedModel,
+    reasoning,
   }
 
   if (timedOut) {
@@ -504,6 +564,7 @@ async function probeIn(
     env.log(`readiness ${condition.id}: NOT READY — ${reason}`)
     return { ...record, ok: false, reason }
   }
+  if (reasoning.status === 'mismatch') return { ...record, ok: false, reason: 'Frozen reasoning effort does not match the admitted or observed configuration' }
   if (observedModel !== null && condition.declaredModel !== null && observedModel !== condition.declaredModel) {
     // Frozen decision 5, caught before the run instead of at its first stage
     // round: the whole run would be misattributed.

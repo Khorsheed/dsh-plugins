@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. The DSH headless process forwards native assistant frames into the shared plugin transient channel.
+
 Delegate a task to dsh itself as a separate local CLI process, sibling to the kimi / codex / claude-code harnesses. It runs under its own scoped home, authenticates through the parent's API key, and resumes across rounds; a settings toggle (default off) turns the delegation tool on.
 
 ## Features
@@ -53,7 +55,9 @@ When T30a gave the three CLI harnesses a `model` plugin-config key, dsh did not 
 
 **Set = every delegation round starts the sub-dsh with it.** Fresh and resume rounds alike, with `--model` after `--session-id` / `--resume`. The value is spelled `provider/model` (the shape `effectiveSettings.model` reports); a bare id names the model and keeps the instance's provider. It splits at the FIRST slash, so a model id that contains one survives.
 
-The settings card's "Default model" writes the same key: a free-text input (no model catalog is built in). Saving applies to the **next** round with no reload; clearing the field and saving unsets the key. While unset, the input itself **displays the default it currently follows** as a dimmed placeholder (inherited, never a pinned value: the current `agentDefaultModel` selection, else the host instance default, else the last observed model). The chevron menu is the single choice list (the native datalist is gone): its leading item is "Default (follow the host …)" — checked while unset, picking it clears the draft back to follow-default — and the rest are the model broker's deduped union (this key + the host default selection + **the host adapter enumeration** + recently used): the broker reads the public `ctx.llm` surface (`listProviders` × `listModels` — the same trio the host's own model picker is built on) and offers every model the host instance can run, spelled `provider/model`, refreshing on the `llm/adapters-updated` event. No catalog is ever hardcoded; when the enumeration is unreadable that layer is simply empty and the other layers answer as usual; typing by hand always works. When the core or the broker is absent the card degrades to the old bare input (recent-models suggestions only).
+The settings card’s "Default model" writes the provider setting for subsequent rounds. Its shared picker displays the scoped model directory, discovery source and completeness, plus an explicit model-ID input when needed. Clearing the selection follows the effective configuration/default chain. Saving does not interrupt an active round and requires no reload. If the shared picker is unavailable, the card retains its text-input fallback. Per-member model and effort changes use the durable controls described below.
+
+The rich directory additionally retains public adapter labels, resolved route names and native reasoning options through `resolveModelInfo` when available. It uses the shared core cache and refresh subscription, distinguishes partial enumeration, and retains successful data on a failed full refresh. This host catalog does not prove that a separately changed scoped runtime has identical configuration. The shared model picker and member effort controls are connected. Busy selections apply at the next complete turn boundary, including tool continuations; core owns current/pending state, cancellation and retry, while frozen evaluation members reject changes.
 
 **A delegation's own model outranks this key.** An orchestrator may name the model for ONE delegation through the facade's `DelegationCallOptions.model` (the fixed order: session override > delegation record > this key > host default selection > CLI built-in). The first round's request is recorded and every resume round re-requests it — `resume` takes no model of its own. In live mode such a round is no longer refused: the model becomes the member's **start model**, bound at the `--serve` spawn through `--model`; a resident runtime bound to a different model is retired first (the sub-dsh session resumes from disk) so the round respawns onto the asked-for model.
 
@@ -65,7 +69,7 @@ The settings card's "Default model" writes the same key: a free-text input (no m
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ⚠️ one degradation — `liveMirrorGranularity: token` no longer writes per-token deltas into the child session log (the host retired the per-chunk event); deltas ride the run-progress channel and the round settles as one combined message (identical final text). Everything else is full (adapted to format v2/v3 and handle-based sessionPersistence; build+test green); minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; suffix checkpoints provide recovery, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked separately in the room coordinator proposal. Older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations
@@ -95,6 +99,24 @@ readSubProfilePreset(scopedHome)   // 'eval-lean' — the generated layer is a p
 ```
 
 Where the preset directories come from: the sub-dsh launches with `DSH_HOME=<scoped home>`, so the roster's own user root is `<scoped home>/.agent-presets` — drop a preset directory there and that scope has a preset of its own (`roots` / `includeShippedRoot` / `includeUserRoot` override the derived roots). The roster module is deliberately **not** symlinked: it is an official package, already in the dsh installation anchor's closure beside `@deepseek-ai/dsh-base`. A linked second copy would give it a second `@deepseek-ai/cordis`, and cordis does service lookup and type checks by instance identity — the symptom is silently missing services, not an error (the same trap the dual-filesystem contract above describes for the bundle). A deployment whose anchor genuinely lacks it gets the loader's own "cannot resolve" message, which names the module better than this step could. A preset id must match `[a-z0-9][a-z0-9-]*` (it is a directory name). Re-provision without `preset` and the layer disappears again.
+
+**The scope's own copy of the preset (the only arrangement a container round can use).** `provisionDshScope` turns "drop a preset directory in `<scoped home>/.agent-presets`" into a checkable procedure — and it is the **only** arrangement a container round can use: an evaluation unit bind-mounts the scoped home and nothing else, so a roster whose `roots` name the deployment's preset root names a path the unit does not have and the sub-dsh will not start (`preset "eval-lean" not found`). A copy in the scope's own user root is `<scope>/.agent-presets/<id>` on the host and `/creds/dsh/.agent-presets/<id>` inside the unit — one directory, because the unit binds the scope.
+
+```ts
+import { provisionDshScope, readScopeSubProfile } from '@khorsheed/dsh-local-agent-dsh/provision'
+
+// Explicit request: re-sync the copy from the deployment's preset root and persist the decision
+provisionDshScope(scopedHome, config, { preset: 'eval-lean', presetRoot })
+readScopeSubProfile(scopedHome)   // { preset: 'eval-lean' }
+// Every later provisioning (a restart's materialization, a host round's self-heal) needs no telling
+provisionDshScope(scopedHome, config, { presetRoot })
+```
+
+Three things worth stating on their own:
+
+- **Where the preset resolves from**: *explicit argument → `<scoped home>/sub-profile.json` → plugin config*. The middle one is not a convenience. This module regenerates `cordis.patch.yml` WHOLE, and the registry re-provisions a scope the first time anything names it in a fresh host process — so a roster layer hand-appended to the patch silently disappears there, and the next read-back reports a scope that rosters nothing. The scope's own declaration is how it survives, and it is also the only way "two scopes rostering two presets" is expressible at all on a config that is **instance-global**.
+- **When the copy is refreshed**: only by the call that carries an explicit `preset` (the evaluation's `conditions provision`). Every other provisioning copies only when the directory is ABSENT, and otherwise leaves it alone and REPORTS whether it still matches the source byte for byte. Nothing may move the subject under a run.
+- **A preset used as a factor may not name an absolute path**: the same preset is read from three directories (the deployment's preset root, the scope's copy, the unit's mount point), so an absolute path is wrong in at least two of them — and wrong silently, since `skill-filesystem` treats a root it cannot read as an empty one. The form that travels is the loader's own expression, as the shipped `cordis` preset writes it: `!!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"`, where `baseUrl` is the composition's own directory. A preset naming one is refused at the snapshot, with that idiom in the message.
 
 **Permission boundary (`permissions`).** The file-effect boundary a sub-dsh's bash calls run under, and the approval policy a denied call escalates through, written by provisioning as one more patch layer: two **override** rows pinning `sandbox-policy`'s `mode` and `user-approval`'s `policy` (paired by dsh-base's own `permission-presets` table — `danger-full-access` with `never`, the other two with `ask`; pinning two plugins separately and letting them drift apart builds a boundary nobody can run inside and nobody can be asked about). Leave the key unset and no layer is written at all: the sub-dsh runs dsh-base's `workspace-write` + `ask`, byte for byte the behavior before this field existed.
 

@@ -1,3 +1,4 @@
+import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 /**
  * Local-agent-claude-code plugin, browser half: the claude-code settings
  * surface, one face per host line — on alpha.2 the bundle's own configuration
@@ -80,6 +81,7 @@ export function apply(ctx: Context): void {
     scope,
     hooks: { settings: scope },
     authT,
+    renderModelPicker: props => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker('claude-code', props),
     // The model surface read behind the default-model block's effective
     // line and suggestions. 'claude-code' is the harness name the host
     // half registers; a core predating the model broker (or an absent

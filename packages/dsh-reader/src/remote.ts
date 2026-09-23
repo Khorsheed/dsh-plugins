@@ -19,11 +19,16 @@ import type {
   ReaderAnnotationOutcome,
   ReaderBackfillCandidate,
   ReaderEntryBodyView,
+  ReaderEntryFetchState,
   ReaderBody,
   ReaderCapabilities,
+  ReaderEntryTranslationView,
   ReaderMutationOutcome,
+  ReaderRecentEntry,
   ReaderRefreshResult,
+  ReaderSentenceLearn,
   ReaderSourceSummary,
+  ReaderStorageStats,
   ReaderTag,
 } from './types.ts'
 
@@ -79,9 +84,9 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     return this.core.updateSource(request)
   }
 
-  /** Drop a source. */
+  /** Drop a source; its entries' translations go with it (their bodies stay for the budget). */
   @Remote('removeSource')
-  removeSource(request: { id: string }): Promise<ReaderMutationOutcome> {
+  removeSource(request: { id: string; entryIds?: readonly string[] }): Promise<ReaderMutationOutcome> {
     return this.core.removeSource(request)
   }
 
@@ -107,14 +112,44 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
 
   /** Fetch one entry's article (the network half; the browser extracts). */
   @Remote('fetchEntryBody')
-  fetchEntryBody(request: { entryId: string; url: string }): Promise<{ entryId: string; url?: string; raw?: string; truncated?: boolean; error?: string }> {
+  fetchEntryBody(request: { entryId: string; url: string }): Promise<{
+    entryId: string
+    url?: string
+    raw?: string
+    rawFile?: string
+    truncated?: boolean
+    error?: string
+  }> {
     return this.core.fetchEntryBody(request)
   }
 
   /** Cache the markup the browser extracted for one entry. */
   @Remote('storeEntryBody')
-  storeEntryBody(request: { entryId: string; url: string; html: string; truncated?: boolean }): Promise<ReaderEntryBodyView> {
+  storeEntryBody(request: {
+    entryId: string
+    url: string
+    html: string
+    truncated?: boolean
+    scriptFigures?: number
+    bodyHash?: string
+    /** The article's own title, as extracted — the saved link's card upgrade. */
+    title?: string
+    /** A short excerpt (abstract / first paragraph), with the title. */
+    excerpt?: string
+  }): Promise<ReaderEntryBodyView> {
     return this.core.storeEntryBody(request)
+  }
+
+  /** What the plugin holds per entry: a body, a stored raw payload, or a failure. */
+  @Remote('entryFetchStates')
+  entryFetchStates(request: { entryIds: readonly string[] }): Promise<{ states: Record<string, ReaderEntryFetchState> }> {
+    return this.core.entryFetchStates(request)
+  }
+
+  /** A stored raw payload, so the browser can extract it later. */
+  @Remote('getRawBody')
+  getRawBody(request: { entryId: string }): Promise<{ entryId: string; raw?: string; url?: string; truncated?: boolean; error?: string }> {
+    return this.core.getRawBody(request)
   }
 
   /** Which entries still need their full text (the automatic backfill's work list). */
@@ -124,6 +159,44 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     limit?: number
   }): Promise<{ candidates: ReaderBackfillCandidate[] }> {
     return this.core.listBackfillCandidates(request)
+  }
+
+  /* -------------------------------------------------- translation memory */
+
+  /** One entry's exact-fit translation record (segment map resolved), when usable. */
+  @Remote('getEntryTranslation')
+  getEntryTranslation(request: { entryId: string }): Promise<{ translation?: ReaderEntryTranslationView }> {
+    return this.core.getEntryTranslation(request)
+  }
+
+  /** Translations for exactly the asked sentence hashes of one pair — never the whole table. */
+  @Remote('getSentenceTranslations')
+  getSentenceTranslations(request: { pair: string; hashes: readonly string[] }): Promise<{ translations: Record<string, string> }> {
+    return this.core.getSentenceTranslations(request)
+  }
+
+  /** Persist what one translation run learned (and refresh what it reused), in one batch. */
+  @Remote('rememberSentences')
+  rememberSentences(request: {
+    pair: string
+    entries: readonly ReaderSentenceLearn[]
+    recalled?: readonly ReaderSentenceLearn[]
+    entryId?: string
+    bodyHash?: string
+  }): Promise<{ stored: number }> {
+    return this.core.rememberSentences(request)
+  }
+
+  /** Per-tier cache usage, aggregated on the host (the tables never cross). */
+  @Remote('getStorageStats')
+  getStorageStats(): Promise<ReaderStorageStats> {
+    return this.core.getStorageStats()
+  }
+
+  /** Forget every translation: the global memory and every entry map. */
+  @Remote('clearTranslations')
+  clearTranslations(): Promise<{ clearedEntries: number; clearedMemory: boolean }> {
+    return this.core.clearTranslations()
   }
 
   /** The tag vocabulary, with how many entries carry each tag. */
@@ -162,14 +235,14 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     return this.core.entryTags(request)
   }
 
-  /** Read or set how long a fetched body is served. */
+  /** Read or set how long a fetched body is served (and the translation budget). */
   @Remote('getCachePolicy')
-  getCachePolicy(): Promise<{ ttlHours: number; maxEntries: number }> {
+  getCachePolicy(): Promise<{ ttlHours: number; maxEntries: number; translationBudgetChars: number }> {
     return this.core.getCachePolicy()
   }
 
   @Remote('setCachePolicy')
-  setCachePolicy(request: { ttlHours: number; maxEntries?: number }): Promise<ReaderAnnotationOutcome> {
+  setCachePolicy(request: { ttlHours: number; maxEntries?: number; translationBudgetChars?: number }): Promise<ReaderAnnotationOutcome> {
     return this.core.setCachePolicy(request)
   }
 
@@ -177,6 +250,29 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
   @Remote('pruneTags')
   pruneTags(): Promise<{ removed: number }> {
     return this.core.pruneTags()
+  }
+
+  /** Record that the reader opened one entry (the recent page's write half). */
+  @Remote('recordRead')
+  recordRead(request: {
+    entryId: string
+    sourceId: string
+    title: string
+    url?: string
+  }): Promise<{ entries: number }> {
+    return this.core.recordRead(request)
+  }
+
+  /** The entries the reader opened, newest first. */
+  @Remote('listRecent')
+  listRecent(): Promise<{ entries: ReaderRecentEntry[] }> {
+    return this.core.listRecent()
+  }
+
+  /** Forget every recent entry. */
+  @Remote('clearRecent')
+  clearRecent(): Promise<{ removed: number }> {
+    return this.core.clearRecent()
   }
 
   /** Forward a ref block to the side-chat service when one is composed. */

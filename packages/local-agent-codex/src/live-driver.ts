@@ -37,8 +37,9 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
+import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import {
   appendCodexTranscriptLine,
   codexAssistantEvent,
@@ -69,10 +70,10 @@ export const DEFAULT_LIVE_CHANNEL_RETRY_MS = 5 * 60_000
 const RECLAIM_EOF_GRACE_MS = 1_000
 
 /** Default minimum interval between one streaming item's snapshot messages. */
-export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = 300
+export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = LIVE_FLUSH_INTERVAL_MS
 
 /** Default minimum text growth between one streaming item's snapshot messages. */
-export const DEFAULT_SNAPSHOT_MIN_CHARS = 200
+export const DEFAULT_SNAPSHOT_MIN_CHARS = 0
 
 /**
  * The app-server channel could not come up (spawn failure or handshake
@@ -130,6 +131,7 @@ export interface CodexLiveRoundSpec {
    * decides (override → recorded → settings).
    */
   readonly startModel?: string | undefined
+  readonly configuration?: LocalAgentResolvedConfiguration
 }
 
 type JsonObject = Record<string, unknown>
@@ -396,6 +398,7 @@ class CodexLiveRuntime {
    * undefined when it spawned with no model flag at all. A round whose start
    * model differs retires the runtime instead of silently running the old one.
    */
+  configurationKey: string | undefined
   boundModel: string | undefined
   /** Turn ids of settled/interrupted rounds — their late notifications are tagged out. */
   readonly retiredTurnIds = new Set<string>()
@@ -497,8 +500,9 @@ export class CodexLiveDriver {
     private readonly config: Pick<Config, 'sandbox'> & {
       liveIdleMs?: number
       liveMirrorGranularity?: CodexLiveMirrorGranularity
-      /** Snapshot throttle for the token granularity's streaming messages. */
+      /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
+      /** @deprecated Character growth no longer gates live publication. */
       snapshotMinChars?: number
       /**
        * Resolver for the member's configured model, read at each RUNTIME SPAWN
@@ -564,13 +568,8 @@ export class CodexLiveDriver {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
 
-  /**
-   * Live-update the mirror granularity for subsequent rounds. Granularity is
-   * read per round, so a settings change needs no runtime recycle.
-   */
-  setLiveMirrorGranularity(granularity: CodexLiveMirrorGranularity): void {
-    this.config.liveMirrorGranularity = granularity
-  }
+  /** @deprecated Compatibility no-op: live output is always incremental. */
+  setLiveMirrorGranularity(_granularity: CodexLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -621,7 +620,9 @@ export class CodexLiveDriver {
       // A round that names its own start model never runs on a runtime bound
       // to a different one: retire so the respawn binds the asked-for model
       // (the codex thread resumes — only the process is replaced).
-      if (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel) {
+      if ((spec.configuration !== undefined && existing.configurationKey !== JSON.stringify(spec.configuration))
+        || (spec.configuration === undefined && existing.configurationKey !== undefined)
+        || (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel)) {
         await this.reclaim(key)
       } else {
         this.clearIdleTimer(key)
@@ -663,14 +664,14 @@ export class CodexLiveDriver {
     // first (idle reclaim, crash, a live toggle, or the composer's model
     // picker).
     const startModel = spec.startModel?.trim()
-    const model = startModel !== undefined && startModel !== ''
-      ? startModel
-      : this.config.model?.(key)?.trim()
+    const model = spec.configuration !== undefined ? spec.configuration.model
+      : startModel !== undefined && startModel !== '' ? startModel : this.config.model?.(key)?.trim()
     const spawnSpec: SubprocessSpawnSpec = {
       argv: [
         'codex', 'app-server',
         ...member === undefined ? [] : ['-c', member.configOverride],
         ...model === undefined || model === '' ? [] : ['-c', `model=${JSON.stringify(model)}`],
+        ...spec.configuration?.effort === undefined ? [] : ['-c', `model_reasoning_effort=${JSON.stringify(spec.configuration.effort)}`],
         '--stdio',
       ],
       cwd: spec.cwd,
@@ -695,6 +696,7 @@ export class CodexLiveDriver {
     // A blank resolution binds no model at all — record exactly what the argv
     // carries so a later start-model comparison never retires needlessly.
     runtime.boundModel = model === undefined || model === '' ? undefined : model
+    runtime.configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     runtime.onDead = () => {
       // Delete only OUR registration (crash-then-respawn interleave safety).
       if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
@@ -794,6 +796,52 @@ export class CodexLiveDriver {
    * any await, the spawn/handshake races it, and a pre-accept cancel reclaims
    * the fresh runtime instead of letting the turn run unwatched.
    */
+  /** Create/resume the native thread without starting a model turn. */
+  async prepare(spec: CodexLiveRoundSpec, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
+    if (this.draining || this.disabled) throw new LiveChannelUnavailableError('the live driver is unavailable for preparation')
+    try {
+      const runtime = await this.ensureRuntime(spec, signal)
+      await this.ensureThread(runtime, spec)
+      signal.throwIfAborted()
+      this.armIdleTimer(String(spec.childSession.id))
+    } catch (error) {
+      await this.reclaim(String(spec.childSession.id))
+      throw error
+    }
+  }
+
+  private async ensureThread(rt: CodexLiveRuntime, spec: CodexLiveRoundSpec): Promise<void> {
+    if (rt.threadId === undefined) {
+      const permissionParams = {
+        approvalPolicy: 'never',
+        sandbox: this.config.sandbox ?? 'workspace-write',
+      }
+      if (spec.resume === undefined) {
+        const response = await rt.peer.request<{ thread: { id: string } }>('thread/start', {
+          cwd: spec.cwd,
+          ephemeral: false,
+          ...permissionParams,
+        })
+        if (typeof response?.thread?.id !== 'string') {
+          throw new Error('subagent-codex live: thread/start returned no thread id')
+        }
+        rt.threadId = response.thread.id
+      } else {
+        const response = await rt.peer.request<{ thread: { id: string } }>('thread/resume', {
+          threadId: spec.resume.cliSessionId,
+          cwd: spec.cwd,
+          ...permissionParams,
+        })
+        if (typeof response?.thread?.id !== 'string') {
+          throw new Error('subagent-codex live: thread/resume returned no thread')
+        }
+        rt.threadId = response.thread.id
+      }
+    }
+    if (spec.resume === undefined && rt.threadId !== undefined) spec.onThreadId?.(rt.threadId)
+  }
+
   async startRound(request: SubagentStartRequest, spec: CodexLiveRoundSpec): Promise<SubagentRun> {
     // A draining generation refuses new rounds BEFORE chaining so the
     // provider's exec fallback does not queue behind an in-flight round.
@@ -828,7 +876,6 @@ export class CodexLiveDriver {
 
     const turn = spec.resume?.turn ?? 1
     const childSession = spec.childSession
-    const granularity: CodexLiveMirrorGranularity = this.config.liveMirrorGranularity ?? 'event'
     const localAgent = this.ctx.get('localAgent')
     /** The round's start moment, anchoring the settle read-back's rollout time window. */
     const startedAtMs = Date.now()
@@ -861,7 +908,7 @@ export class CodexLiveDriver {
      */
     const reservedSteps: number[] = []
     /**
-     * The streaming items seen this round (token granularity), by item id:
+     * The streaming items seen this round by item id:
      * deltas accumulate into throttled snapshot assistant/messages appended
      * at the item's reserved (turn, step) — the host folds repeated settles
      * at one coordinate into one live-updating chat node, which is the only
@@ -885,7 +932,9 @@ export class CodexLiveDriver {
     const earlyNotifications: { method: string; params: JsonObject }[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession)).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-codex: live persistence failed: ${thrown(error).message}`)
+      })
     }
 
     const requestCancel = (): void => {
@@ -924,18 +973,42 @@ export class CodexLiveDriver {
      * legitimately) and, when `withUsage` and no folded line carried it, the
      * round's usage.
      */
+    const streamPublisher = localAgent?.liveStreams === undefined ? undefined
+      : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
+        error => this.ctx.logger.warn(`live checkpoint failed: ${String(error)}`))
+    const liveFlush = new LiveFlush(
+      error => this.ctx.logger.warn(`live mirror flush failed: ${String(error)}`),
+      this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS,
+    )
+
+    const pendingStreamArrival = new Map<number, number>()
     const appendStreamSnapshot = (
       stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
       force: boolean,
       interrupted: boolean,
       withUsage = false,
+      final = false,
     ): void => {
       if (stream.text.trim() === '') return
       const now = Date.now()
-      const minInterval = this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS
-      const minChars = this.config.snapshotMinChars ?? DEFAULT_SNAPSHOT_MIN_CHARS
-      if (!force && now - stream.lastSnapshotAt < minInterval) return
-      if (!force && stream.text.length - stream.lastSnapshotLen < minChars) return
+      if (!force) {
+        if (!pendingStreamArrival.has(stream.step)) pendingStreamArrival.set(stream.step, now)
+        liveFlush.schedule(stream.step, () => appendStreamSnapshot(stream, true, interrupted, withUsage))
+        return
+      }
+      liveFlush.cancel(stream.step)
+      const receivedAt = pendingStreamArrival.get(stream.step) ?? now
+      pendingStreamArrival.delete(stream.step)
+      if (streamPublisher !== undefined && !final) {
+        if (!stream.opened) {
+          childSession.append('step/start', { turn, step: stream.step })
+          stream.opened = true
+        }
+        streamPublisher.update(stream.step, stream.kind, stream.text, { receivedAt })
+        stream.lastSnapshotAt = now
+        stream.lastSnapshotLen = stream.text.length
+        return
+      }
       if (!stream.opened) {
         childSession.append('step/start', { turn, step: stream.step })
         stream.opened = true
@@ -1018,6 +1091,7 @@ export class CodexLiveDriver {
           // A streamed item folds at its reserved step, finalizing the
           // snapshots: the step opens only if no snapshot ever landed (a
           // fast item that stayed under the throttle), and closes here.
+          liveFlush.cancel(stream.step)
           streams.delete(itemId)
           if (activeStream === itemId) activeStream = undefined
           if (!stream.opened) childSession.append('step/start', { turn, step: stream.step })
@@ -1031,6 +1105,7 @@ export class CodexLiveDriver {
             stream: [],
             ...lineUsage === undefined ? {} : { usage: lineUsage },
           }, { surfaceOp: 'append' })
+          streamPublisher?.finish(stream.step)
           childSession.append('step/end', { turn, step: stream.step })
         } else {
           appendCodexTranscriptLine(childSession, turn, foldStep(index), line, lineUsage)
@@ -1079,7 +1154,7 @@ export class CodexLiveDriver {
         return
       }
       if (method === 'item/agentMessage/delta' || method === 'item/reasoning/textDelta') {
-        if (granularity !== 'token' || typeof params['delta'] !== 'string') return
+        if (typeof params['delta'] !== 'string') return
         const text = params['delta']
         if (text === '') return
         const reasoning = method === 'item/reasoning/textDelta'
@@ -1154,37 +1229,12 @@ export class CodexLiveDriver {
       }
       rt.onWireNotification = dispatchNotification
       try {
-        if (rt.threadId === undefined) {
-          const permissionParams = {
-            approvalPolicy: 'never',
-            sandbox: this.config.sandbox ?? 'workspace-write',
-          }
-          if (spec.resume === undefined) {
-            const response = await rt.peer.request<{ thread: { id: string } }>('thread/start', {
-              cwd: spec.cwd,
-              ephemeral: false,
-              ...permissionParams,
-            })
-            if (typeof response?.thread?.id !== 'string') {
-              throw new Error('subagent-codex live: thread/start returned no thread id')
-            }
-            rt.threadId = response.thread.id
-            spec.onThreadId?.(rt.threadId)
-          } else {
-            const response = await rt.peer.request<{ thread: { id: string } }>('thread/resume', {
-              threadId: spec.resume.cliSessionId,
-              cwd: spec.cwd,
-              ...permissionParams,
-            })
-            if (typeof response?.thread?.id !== 'string') {
-              throw new Error('subagent-codex live: thread/resume returned no thread')
-            }
-            rt.threadId = response.thread.id
-          }
-        }
+        await this.ensureThread(rt, spec)
         const response = await rt.peer.request<{ turn: { id: string } }>('turn/start', {
           threadId: rt.threadId,
           input: [{ type: 'text', text: task, text_elements: [] }],
+          ...spec.configuration?.model === undefined ? {} : { model: spec.configuration.model },
+          ...spec.configuration?.effort === undefined ? {} : { effort: spec.configuration.effort },
         })
         if (typeof response?.turn?.id !== 'string') {
           throw new Error('subagent-codex live: turn/start returned no turn id')
@@ -1253,8 +1303,9 @@ export class CodexLiveDriver {
       },
       signal: request.signal,
       onAbort,
-    }).then((settled) => {
+    }).then(async (settled) => {
       roundSettled = true
+      liveFlush.dispose()
       if (turnOpened) {
         // An aborted or failed turn never sees turn/completed, so its
         // hold-back line (and the usage already observed) would be lost —
@@ -1268,7 +1319,8 @@ export class CodexLiveDriver {
         if (streams.size > 0) {
           const remaining = [...streams.values()]
           for (const [position, stream] of remaining.entries()) {
-            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1)
+            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1, true)
+            streamPublisher?.finish(stream.step)
             if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
           }
           streams.clear()
@@ -1290,6 +1342,13 @@ export class CodexLiveDriver {
       if (runtime !== undefined) {
         if (activeTurnId !== undefined) runtime.retiredTurnIds.add(activeTurnId)
         runtime.onWireNotification = undefined
+      }
+      streamPublisher?.dispose()
+      // A completed answer is not a durable turn until its final boundary
+      // and any closing stream checkpoints have reached the child store.
+      if (turnOpened) {
+        persist()
+        await persistQueue
       }
       return settled
     })

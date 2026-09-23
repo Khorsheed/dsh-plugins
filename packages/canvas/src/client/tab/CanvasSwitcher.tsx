@@ -1,12 +1,19 @@
 /**
- * The canvas switcher: the tab topbar's dropdown for choosing the open
- * canvas. One hierarchy, no redundant headers: the active rows (open on
- * click, archive on hover), the archived well (collapsed, restore), then a
- * bottom "+ 新画布" row that unfolds the inline create form (topic input +
- * attach multi-select + create/cancel). The dropdown floats above the
- * topbar (absolute — its styles live in `../space/board.module.css`, the
- * module this file imports; a copy elsewhere would be dead CSS) and closes
- * on a choice, on Escape, and on outside pointer down.
+ * The canvas switcher: the dropdown behind the ＋ at the end of the tab strip.
+ * One hierarchy, no redundant headers: the active rows (open on click, archive
+ * on hover), the archived well (collapsed, restore), then a bottom "+ 新画布"
+ * row that unfolds the inline create form (topic input + attach multi-select +
+ * create/cancel).
+ *
+ * It used to hang off the canvas NAME in the topbar, which was the only way to
+ * reach another canvas; the strip now carries one row per open canvas, so this
+ * panel's job is putting rows ON the strip and the archive housekeeping. Its
+ * trigger is a ＋ (the canvas names are on the strip, not here) and the panel
+ * opens leftwards, so it cannot hang past the strip's right edge.
+ *
+ * The dropdown floats above the row (absolute — its styles live in `../space/
+ * board.module.css`, the module this file imports; a copy elsewhere would be
+ * dead CSS) and closes on a choice, on Escape, and on outside pointer down.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -15,11 +22,12 @@ import {
 } from 'react'
 import {
   IconArchiveOutline20, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconPlusOutline16, IconRefreshOutline14, relativeTime,
+  IconPlusOutline16, IconRefreshOutline14,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { CanvasSummary } from '../../types.ts'
 import type {} from '../locales.ts'
+import { agoOf } from '../text.ts'
 import css from '../space/board.module.css'
 
 /** One workspace option the attach pickers list. */
@@ -47,17 +55,7 @@ function metaOf(row: CanvasSummary, t: TranslateNS<'canvas'>): string {
   const parts = [t('space.metaCards', { count: String(row.cardCount) })]
   if (row.openQuestions > 0) parts.push(t('space.metaQuestions', { count: String(row.openQuestions) }))
   const at = Date.parse(row.lastActiveAt)
-  if (!Number.isNaN(at)) {
-    const bucket = relativeTime(at, Date.now())
-    parts.push(
-      bucket.unit === 'now' ? t('time.now')
-        : bucket.unit === 'minutes' ? t('time.minutes', { n: String(bucket.n) })
-        : bucket.unit === 'hours' ? t('time.hours', { n: String(bucket.n) })
-        : bucket.unit === 'days' ? t('time.days', { n: String(bucket.n) })
-        : bucket.unit === 'months' ? t('time.months', { n: String(bucket.n) })
-        : t('time.years', { n: String(bucket.n) }),
-    )
-  }
+  if (!Number.isNaN(at)) parts.push(agoOf(at, t))
   return parts.join(' · ')
 }
 
@@ -87,7 +85,6 @@ export function CanvasSwitcher({
     return () => { document.removeEventListener('pointerdown', onPointerDown) }
   }, [open])
 
-  const current = canvases?.find(canvas => canvas.id === openId)
   const active = canvases?.filter(canvas => canvas.archivedAt === null) ?? []
   const archivedRows = canvases?.filter(canvas => canvas.archivedAt !== null) ?? []
 
@@ -117,16 +114,17 @@ export function CanvasSwitcher({
     <div className={css.switcher} ref={rootRef}>
       <button
         type="button"
-        className={css.topic}
+        className={css.switchTrigger}
+        title={t('strip.canvases')}
         aria-expanded={open}
         onClick={() => { setOpen(value => !value) }}
       >
-        {current?.title ?? t('switcher.pick')}
-        <IconChevronDownOutline14 size={12} />
+        <IconPlusOutline16 size={12} />
+        {t('strip.canvases')}
       </button>
 
       {open && (
-        <div className={css.switcherMenu}>
+        <div className={css.switcherMenu} style={{ left: 'auto', right: 0 }}>
           <div className={css.listBody}>
             {canvases === null ? (
               <div className={css.empty}>{t('state.loading')}</div>

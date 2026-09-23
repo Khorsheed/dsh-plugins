@@ -20,10 +20,12 @@ import type { CanvasService } from './service.ts'
 import type { CanvasBoardService } from './store.ts'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
+  BoardAttachImageOutcome, BoardAttachImageRequest,
   BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
+  BoardImageBytesOutcome, BoardImageBytesRequest,
   BoardListResult, BoardMutationResult, BoardPatchCardRequest,
-  BoardPutCardRequest, BoardReadDraftOutcome, BoardReadDraftRequest, BoardReadOutcome,
-  BoardReadRequest, BoardWriteDraftRequest, BoardWriteDraftResult,
+  BoardPutCardRequest, BoardReadOutcome,
+  BoardReadRequest, BoardSetCategoriesRequest, BoardSetLayoutRequest,
   CanvasArchiveRequest, CanvasArchiveResult, CanvasCreateRequest,
   CanvasListRequest, CanvasListResult, CanvasReadOutcome, CanvasReadRequest,
   CanvasWriteRequest, CanvasWriteResult,
@@ -176,6 +178,30 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   }
 
   /**
+   * Write one canvas's category catalog (rename / add / retire), archiving the
+   * cards the caller filed away in the same rewrite.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, the desired catalog, the cards to archive.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('setCategories')
+  setCategories(agent: Agent, request: BoardSetCategoriesRequest): Promise<BoardMutationResult> {
+    return this.board.setCategories(request, agent.session)
+  }
+
+  /**
+   * Write one canvas's layout — the places, the lanes and the lines, each part
+   * optional (`[]` clears, absent leaves alone).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id and the layout parts that changed.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('setLayout')
+  setLayout(agent: Agent, request: BoardSetLayoutRequest): Promise<BoardMutationResult> {
+    return this.board.setLayout(request, agent.session)
+  }
+
+  /**
    * Ask the canvas's agent through the side-chat seam (prime the context, and
    * send when there is a text to send).
    * @param agent - the calling session's agent; its session primes the context.
@@ -204,21 +230,25 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
     return this.board.focusCanvas(request, agent.session)
   }
 
-  /** Read the canvas's draft (an absent draft reads as empty with a null token). */
-  @Remote('readDraft')
-  readDraft(request: BoardReadDraftRequest): Promise<BoardReadDraftOutcome> {
-    return this.board.readDraft(request)
-  }
+  /* ---------------------------------------------------------------- images (§10.3) */
 
   /**
-   * Write the canvas's draft (null token creates; else version-guarded).
-   * @param agent - the calling session's agent; its session fences the write.
-   * @param request - canvas id, content, and the token the caller holds.
-   * @returns the new freshness token, or the failure code.
+   * Commit one pasted image to the host's attachment store. This is the ONLY
+   * call that carries image bytes, and it takes no agent: there is no board
+   * file to fence — the store is content-addressed outside every workspace and
+   * admits (or refuses) the bytes on its own gates.
+   * @param request - canonical base64, the declared media type, and a display name.
+   * @returns the pointer to write into the card, or one image code.
    */
-  @Remote('writeDraft')
-  writeDraft(agent: Agent, request: BoardWriteDraftRequest): Promise<BoardWriteDraftResult> {
-    return this.board.writeDraft(request, agent.session)
+  @Remote('attachImage')
+  attachImage(request: BoardAttachImageRequest): Promise<BoardAttachImageOutcome> {
+    return this.board.attachImage(request)
+  }
+
+  /** The stored image behind one card pointer, as base64 for the browser's object URL. */
+  @Remote('imageBytes')
+  imageBytes(request: BoardImageBytesRequest): Promise<BoardImageBytesOutcome> {
+    return this.board.imageBytes(request)
   }
 }
 

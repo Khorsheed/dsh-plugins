@@ -2,7 +2,7 @@
 
 - **分类**：plugin
 - **状态**：in-progress
-- **最后更新**：2026-09-11
+- **最后更新**：2026-09-23
 - **查重结果**：已搜 `proposals/active/`、`proposals/closed/` 与 `.agents/notes/`（含 archived）。本文件已承载移动接入意图，按总账规则原位更新；member-channel-auth-hardening 处理成员 CLI 回调，不承担手机登录；room-composer-parity 处理 room 输入框，不作为本插件前置。
 - **官方依赖**：纯插件（交付约束；rc1 公开契约已作源码审计，布局、认证接合与热卸载仍待 M0 探针验收）。不得修改、替换或 monkey-patch 官方包；公开契约不足时缩减具体功能并登记，不以宿主补丁完成本提案。
 
@@ -114,8 +114,10 @@ APNs、PWA/Web Push、IM bot、多用户权限、手机本地模型/CLI、手机
 
 ## 实现记录
 
+- 2026-09-23：补齐 Web「设置 → 连接手机」，由已登录用户主动显示官方登录二维码；原生扫码确认主机后复用 token → Cookie 认证。部署者配置 HTTPS origin，并与 ingress、Host trusted-host 保持一致。二维码本地生成、仅保留在内存，两分钟或离页隐藏；隐藏不代表 token 撤销或过期。不是一次性配对，不新增私有签名、逐设备凭据或绕过认证的接口。旧 Quick Tunnel 活跃连接归零导致的不可达须先恢复入口，扫码只简化后续重新登录。相关配置和排障已写入 mobile/iOS 双语 README；M4 增强配对和全量真机验收继续保留未完成状态。
+
 - 2026-09-11 开始实施：`packages/mobile/` 与 `apps/ios/` 已在独立 `feat/mobile-rc1` worktree 落地基础版，不改宿主、兄弟插件或生产 3080。M0/M1 本地闭环、10 项插件测试、20 项原生 URL 检查、模拟器编译/安装/启动通过。保留官方 root，以公开目录流程槽替代手机上的 Mac chooser；工作区第一版输入电脑完整路径。标准移除需要受控 Host 重启与页面刷新，不能声明无感热卸载。证据见 [mobile rc1 验收](../../docs/acceptance/mobile-rc1-2026-09-11.md)。
-- M2 真机蜂窝、键盘/附件/后台恢复、M3 社区组合、M4 认证增强、M5 生产发布仍未完成；当前不是 proposal done。桥接仅提供状态报告，未实现扫码、设备 Keychain 凭据或系统分享。
+- M2 真机蜂窝、键盘/附件/后台恢复、M3 社区组合、M4 认证增强、M5 生产发布仍未完成；当前不是 proposal done。桥接现已支持原生设置和扫码官方登录链接；物理相机权限及扫码闭环仍待真机验收，设备 Keychain 凭据与系统分享未交付。
 
 - 2026-09-11：根据用户确认原位重写提案，以 rc1 为基线，新增独立装卸载、零侵入、跨网边界，同步总表。仅文档与源码审计，无实现包、宿主修改或网络部署。
 - 架构提议：[独立 mobile 插件与 iOS 薄壳](../../.agents/notes/proposed/architecture/2026-09-11-mobile-plugin-ios-shell.md)。实施后登记代码、包、验收证据与未通过项。

@@ -2,6 +2,8 @@
 
 [English](README.en.md) | 中文
 
+**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。DSH headless 进程把原生 assistant 帧转入共用的插件瞬时通道。
+
 把任务委派给 dsh 自己——作为独立的本地 CLI 进程运行，与 kimi / codex / claude-code harness 平级。子 dsh 在自己的 scoped home 下运行，通过父级的 API key 认证，可跨轮续接；设置开关（默认关）打开后才启用委派工具。
 
 ## 特性
@@ -52,7 +54,9 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 **写了 = 每轮委派以它起子 dsh。**新起一轮与续接（resume）同等对待，`--model` 排在 `--session-id` / `--resume` 之后。值写成 `provider/model`（与 `effectiveSettings.model` 报的形状相同）；只写模型名则沿用宿主实例的 provider。按第一个 `/` 切分，所以模型 id 里再带斜杠也不会被切坏。
 
-设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录），保存即生效于**下一轮**委派，不需要重载；清空后保存即取消该键。字段未设置时，输入框内直接以暗色占位**显示当前跟随的默认模型**（继承展示，不是钉死的值：`agentDefaultModel` 当前选择、否则宿主实例默认、否则最近观测到的模型）；旁边的 ∨ 菜单是唯一的候选列表（不再用原生 datalist），首行是「默认（跟随宿主…）」项——未设置时它处于选中态，点它把草稿清回跟随默认——其余项是模型 broker 给出的去重并集（本键 + 宿主默认选择 + **宿主适配器枚举** + 最近使用）：broker 通过公开的 `ctx.llm` 面（`listProviders` × `listModels`，宿主自己的模型选择器也建在它上面）把宿主实例能跑的模型全部拼作 `provider/model` 供选择，并随 `llm/adapters-updated` 事件刷新；绝不内置目录，枚举不可读时该层为空、其余层照常回答；手动输入始终可用。核心或 broker 缺席时退回旧的裸输入框（仅最近使用候选）。
+设置卡「默认模型」修改后续轮次使用的 provider 配置。共享选择器展示当前作用域的模型目录、发现来源和完整性，并保留按需填写模型 ID 的入口。清空选择后跟随有效配置及默认值链。保存不会打断当前轮次，也无需重载；共享选择器不可用时，卡片保留文本输入兜底。成员级模型和推理强度修改使用下文的持久控制面。
+
+丰富目录还通过可用的公开 `resolveModelInfo` 保留适配器显示名、解析路由和原生推理选项。目录共用 core 缓存与刷新订阅，区分部分枚举，整体刷新失败保留成功数据。宿主目录不证明被单独修改的 scoped 运行时配置相同。共用模型菜单和成员 effort 控制已接入。运行中选择排到下一完整轮次（含工具续跑）；core 统一持有当前/待生效配置、撤销与重试，冻结评测成员禁止变更。
 
 **委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型，它排在这个键之前（固定顺序：会话覆盖 > 委派记录 > 本键 > 宿主默认选择 > CLI 内置）。首轮请求的值记进委派记录，resume 轮照它重发——resume 不接受 model 参数。常驻模式下带模型的轮次不再被拒绝：它成为该成员的**起始模型**，在 `--serve` 子 dsh 起进程时以 `--model` 绑定；若该成员的常驻 runtime 绑定的是另一个模型，先回收重生（子 dsh 会话从盘上 resume 续上），再以所点模型起新一轮。
 
@@ -64,7 +68,7 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 降级一处——`liveMirrorGranularity: token` 不再逐字写入子会话日志（宿主移除逐 chunk 事件），增量改走运行进度通道、轮次以一条合并消息落定（最终文本不变）；其余完整（适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。浏览器 P95 另在 room 协调者提案中验收。更旧宿主留在前一发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制
@@ -96,6 +100,24 @@ readSubProfilePreset(scopedHome)   // 'eval-lean'——生成的层也是可解�
 ```
 
 preset 目录从哪来：子 dsh 以 `DSH_HOME=<作用域目录>` 启动，所以 roster 自带的用户根就是 `<作用域目录>/.agent-presets`——把一份 preset 目录放在那里，这个 scope 就有了自己的 preset（`roots` / `includeShippedRoot` / `includeUserRoot` 可另行指定）。roster 模块**不软链**：它是官方包，本来就在 dsh 安装锚点的闭包里、与 `@deepseek-ai/dsh-base` 并列。链第二份会给它第二份 `@deepseek-ai/cordis`，而 cordis 按实例身份做服务查找与类型判断，症状是静默的服务缺失而不是报错（与上文「双文件系统契约」里 bundle 那一节同一个坑）。锚点里真没有它的部署会拿到 loader 自己那句「模块解析不了」，比这一步能说的更准。preset id 只接受 `[a-z0-9][a-z0-9-]*`（它是目录名）。撤掉 `preset` 再 provision 一次，这一层原样消失。
+
+**scope 自带 preset 副本（容器轮唯一可行的形态）。** 上面那条把 preset 目录放进 `<作用域目录>/.agent-presets` 的做法，`provisionDshScope` 把它变成一条可核对的流程——而且它是**容器轮唯一跑得通的形态**：一个评测单元 bind 挂进去的只有 scoped home，roster 若把 `roots` 指向部署的 preset 根，那条路径在单元里根本不存在，子 dsh 起不来（`preset "eval-lean" not found`）。副本放在 scope 自己的用户根上，宿主是 `<scope>/.agent-presets/<id>`、单元里是 `/creds/dsh/.agent-presets/<id>`——同一个目录，因为单元挂的就是 scope。
+
+```ts
+import { provisionDshScope, readScopeSubProfile } from '@khorsheed/dsh-local-agent-dsh/provision'
+
+// 显式请求：从部署的 preset 根重新同步副本，并把决定持久化进 scope
+provisionDshScope(scopedHome, config, { preset: 'eval-lean', presetRoot })
+readScopeSubProfile(scopedHome)   // { preset: 'eval-lean' }
+// 之后任何一次 provisioning（重启后的 materialize、宿主轮的自愈）都不必再被告知
+provisionDshScope(scopedHome, config, { presetRoot })
+```
+
+三件事值得单独说：
+
+- **preset 从哪儿解析出来**：*显式参数 → `<作用域目录>/sub-profile.json` → 插件 config*。中间那一档不是可选的便利：本模块**整份重写** `cordis.patch.yml`，而注册表在每个新宿主进程里第一次有人点名该 scope 时会重新 provision 它——手写进 patch 的 roster 层会就这样静默消失，下一次回读报「这个 scope 没有可读的 roster」。scope 自己那份声明是它活下来的方式，也是「两个 scope 各 roster 一个 preset」在一个**实例级** config 上唯一表达得出来的方式。
+- **副本什么时候刷新**：只有带显式 `preset` 参数的那一次（评测的 `conditions provision`）会从部署的 preset 根重新同步。其余任何一次 provisioning 只在副本**不存在**时才复制，存在就原样留着并**报告**它是否仍与源逐字节相同——run 底下的受试对象不许被任何东西挪动。
+- **作因子的 preset 不得写绝对路径**：同一份 preset 会被从三个目录读到（部署的 preset 根、scope 的副本、单元里的挂载点），绝对路径至少在其中两处是错的，而且 `skill-filesystem` 把读不到的根当空根，所以错得静音。要相对就用 loader 自己的表达式，官方 `cordis` preset 的写法：`!!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"`——`baseUrl` 是该组合文件自己的目录。带绝对路径的 preset 在快照这一步就被拒，消息里带这句写法。
 
 **权限边界（`permissions`）。** 子 dsh 跑 bash 时的文件效应边界与审批策略，由 provisioning 多写一层 patch：两条**覆盖**行钉住 `sandbox-policy` 的 `mode` 与 `user-approval` 的 `policy`（两者按 dsh-base 自己的 `permission-presets` 表配对——`danger-full-access` 配 `never`，另两档配 `ask`；分开钉两个插件而让它们漂开，等于造一个跑不进去也问不到人的边界）。不写这一项就一层都不写，子 dsh 跑 dsh-base 组成的 `workspace-write` + `ask`——与本字段出现之前逐字节相同。
 

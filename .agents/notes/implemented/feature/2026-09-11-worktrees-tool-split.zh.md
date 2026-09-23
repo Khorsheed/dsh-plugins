@@ -36,11 +36,11 @@ Status: implemented
 - **breaking，已公告**：升级后未引用伴生行的 preset 会话失去 `worktrees` 模型工具；徽标/右栏/服务/Remote 不变。两行迁移在 core README 与 CHANGELOG。
 - **0.1.5 上无伴生行的部署默认显隐变了**：preset 没有 `worktrees-tool` 行的组合，徽标默认隐藏（组合判据）；`visiblePresets` override 可显式控制。0.1.5 之前的宿主不受影响（无 namespace → fail-open → 旧的永远显示默认）。
 - **sanctioned 面扩大**：`check-plugin-independence` 新增 `worktrees-tool → @khorsheed/dsh-worktrees` 边与一条 `NO_OWN_PATCH`；checker 的 spec 持续约束全树。
-- 0.1.5-rc.1 活体验证通过（3299，一次性 HOME）：dev preset 的「会话插件」组见该行（连委派行计数 28→32），活挂载读数 `fiberPhase: active`；dev/standard 会话间徽标干净翻转、console 零错误；组合 profile 根无 `worktrees-tool` 行；卸载伴生包后 dev preset 标 `broken`（「row … cannot be resolved」）而实例 boot 正常、其他 preset 照常挂载。证据：`scratch-screenshots/m4-*.png`。工具的真实模型调用留到 3080 终验（试点实例无 API key），已记录在验收汇报。
+- 0.1.5-rc.1 活体验证通过（3299，一次性 HOME）：dev preset 的「会话插件」组见该行（连委派行计数 28→32），活挂载读数 `fiberPhase: active`；dev/standard 会话间徽标干净翻转、console 零错误；组合 profile 根无 `worktrees-tool` 行；卸载伴生包后 dev preset 标 `broken`（「row … cannot be resolved」）而实例 boot 正常、其他 preset 照常挂载。证据：`docs/screenshots/m4-*.png`。工具的真实模型调用留到 3080 终验（试点实例无 API key），已记录在验收汇报。
 
 ## 附记（同日）：room 对（M4'②）——模式零改动复用
 
-`@khorsheed/dsh-room` 在 worktrees 对落地几小时后按同一形态完成拆分，**零形状变化**——这正说明该模式是模板而非一次性特例：room core 的三个工具工厂（`roomInviteTool` / `roomTaskTool` / `roomMessageTool`）把 origin tag 挪给注册方、经 core 的 `./tool` 导出；伴生包 `@khorsheed/dsh-room-tool` 以 `inject = []` 挂载、`ctx.get('room')` 探测、core 缺席静默不注册；`RoomService` 构造器里的 profile 根注册删除（BREAKING，同样两行迁移）；dev preset 加裸 `- id: room-tool` 行（无配置——可邀请 provider 名单由工具调用时从全局 room 服务读取）。checker 增加 `room-tool → @khorsheed/dsh-room` 边与一条 `NO_OWN_PATCH`。重建后的 3299 体验实例实测：dev preset「会话插件」组 33 行含 `room-tool` 且 `fiberPhase: active`，standard 组无此行；dev 会话头出现「邀请 agent」chip 与「成员」tab；console 零错误（证据：`scratch-screenshots/m4-room-dev-session.png`）。一条 room 特有的记录：既有 `tool.host.spec.ts` 本就在真实组合上测工厂行为，core 侧改为直接由工厂构建并钉住「不再注册」不变量，注册/origin 覆盖移到伴生包 spec——两对里最顺滑的一次测试迁移。
+`@khorsheed/dsh-room` 在 worktrees 对落地几小时后按同一形态完成拆分，**零形状变化**——这正说明该模式是模板而非一次性特例：room core 的三个工具工厂（`roomInviteTool` / `roomTaskTool` / `roomMessageTool`）把 origin tag 挪给注册方、经 core 的 `./tool` 导出；伴生包 `@khorsheed/dsh-room-tool` 以 `inject = []` 挂载、`ctx.get('room')` 探测、core 缺席静默不注册；`RoomService` 构造器里的 profile 根注册删除（BREAKING，同样两行迁移）；dev preset 加裸 `- id: room-tool` 行（无配置——可邀请 provider 名单由工具调用时从全局 room 服务读取）。checker 增加 `room-tool → @khorsheed/dsh-room` 边与一条 `NO_OWN_PATCH`。重建后的 3299 体验实例实测：dev preset「会话插件」组 33 行含 `room-tool` 且 `fiberPhase: active`，standard 组无此行；dev 会话头出现「邀请 agent」chip 与「成员」tab；console 零错误（证据：`docs/screenshots/m4-room-dev-session.png`）。一条 room 特有的记录：既有 `tool.host.spec.ts` 本就在真实组合上测工厂行为，core 侧改为直接由工厂构建并钉住「不再注册」不变量，注册/origin 覆盖移到伴生包 spec——两对里最顺滑的一次测试迁移。
 
 ## 附记（同日）：room 会话 chrome 自隐（M3'②）
 

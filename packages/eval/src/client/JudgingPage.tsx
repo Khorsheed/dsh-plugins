@@ -246,36 +246,42 @@ function AnswerColumn(props: {
         <span className={css.sectionMeta}>rep {cell.rep ?? DASH}</span>
       </div>
       {cell.graded && <div className={css.notice}>{t('judge.regrade')}</div>}
-      {/* The cost of the first verdict on this answer. The report scores a
-          cell from ONE namespace — the most authoritative that has any
-          verdict — so a single human answer here drops every llm-draft-only
-          criterion from this cell's score. The bench cannot change that rule
-          without moving every report ever produced; what it can do is refuse
-          to let a person spend it unknowingly. */}
+      {/* What a verdict here DOES, said before the button. Until T54 it was a
+          warning with a real cost behind it: the report scored a cell from one
+          namespace, so a single human answer dropped every llm-draft-only
+          criterion from the score. Since the per-criterion merge it is the
+          opposite fact — those criteria keep counting on the judge's word —
+          and a grader still has to know, because the record's score stops
+          having a single author the moment this is sent. */}
       {cell.draftOnlyCriteria.length > 0 && (
-        <div className={css.blocked}>
-          {t('judge.scoringWarning', {
+        <div className={css.notice}>
+          {t('judge.scoringMix', {
             count: cell.draftOnlyCriteria.length,
             criteria: cell.draftOnlyCriteria.join(', '),
           })}
         </div>
       )}
 
-      <div className={css.judgeMaterial}>
-        {cell.materials.length === 0
-          ? <div className={css.dim}>{t('judge.materialNone')}</div>
-          : cell.materials.map(material => (
-            <div key={material.path}>
-              <div className={css.materialHead}>
-                <span className={css.mono}>{material.path}</span>
-                <span className={css.dim}>{t('judge.scrubbed', { count: material.replacements })}</span>
-              </div>
-              {/* The stage file VERBATIM, after scrubbing: a summary would
-                  hide exactly what a verdict has to rest on. */}
-              <pre className={css.pre}>{material.text}</pre>
-            </div>
-          ))}
-      </div>
+      {/* The material is what a verdict RESTS on, and it is thousands of lines
+          of stage json and markdown. Above the criteria it pushed the scoring
+          boxes so far down that two columns never showed their forms at the
+          same scroll position — which is the one thing side by side exists to
+          give (I5·T67 · W9). Folded, the header still carries the file and how
+          many fingerprints were scrubbed, so a grader can see the redaction
+          ran without opening anything. */}
+      {cell.materials.length === 0
+        ? <div className={css.dim}>{t('judge.materialNone')}</div>
+        : cell.materials.map(material => (
+          <details key={material.path} className={css.errorDetails}>
+            <summary className={css.errorSummary}>
+              <span className={css.mono}>{material.path}</span>
+              <span className={css.dim}> {t('judge.scrubbed', { count: material.replacements })}</span>
+            </summary>
+            {/* The stage file VERBATIM, after scrubbing: a summary would
+                hide exactly what a verdict has to rest on. */}
+            <pre className={css.pre}>{material.text}</pre>
+          </details>
+        ))}
 
       {cell.criteria.length === 0
         ? <div className={css.dim}>{t('judge.criteriaNone', { reason: cell.criteriaNote ?? DASH })}</div>

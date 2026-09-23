@@ -536,6 +536,19 @@ export const LOCK_SCHEMA: SchemaObject = {
             preset: { type: ['string', 'null'], description: 'The preset the snapshot was taken under.' },
             skills: { type: 'integer', description: 'How many skills the face carries (a reader aid; the sha is the identity).' },
             tools: { type: 'integer', description: 'How many tools the face carries (a reader aid; the sha is the identity).' },
+            source: {
+              enum: ['scope-snapshot', 'instance-root'],
+              description: "Where the measured preset directory lives relative to the scope. `scope-snapshot`: the scoped home keeps its own byte-identical copy, which is the arrangement a container round needs (a unit bind-mounts the scoped home and nothing else). `instance-root`: the scope defers to the deployment's preset root — measurable, and resolvable only on the host path.",
+            },
+            snapshot: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['sha'],
+              description: "The digest of the scope's own copy of the preset — EVERY file of it, SKILL.md included. Present only with source `scope-snapshot`. It is not a second opinion about the capability face: it is what lets the readiness gate and validate see, offline, that the subject is still the one that was measured. `home.sha` cannot — it hashes config-suffixed files by design, and a skill body is not one.",
+              properties: {
+                sha: { type: 'string', description: "64-hex sha256 over the copy's `<relPath>\\0<content>\\0` stream, sorted by relPath." },
+              },
+            },
           },
         },
       },

@@ -1,6 +1,6 @@
 /**
  * The room's ONLY coupling point to the local-agent family's delegation
- * facade (`proposals/active/2026-08-18-local-agent-delegation-api.md`, M1
+ * facade (`proposals/closed/2026-08-18-local-agent-delegation-api.md`, M1
  * landed as `LocalAgentRegistry.start/resume/cancel`). The TYPES come from a
  * type-only import of the family core (drift-checked at compile time); the
  * RUNTIME stays a probe — `ctx.get('localAgent')` plus method-existence
@@ -14,7 +14,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
 
 /** The delegation-facade slice room consumes (the family's public M1 API). */
-export type LocalAgentFacade = Pick<LocalAgentRegistry, 'start' | 'resume' | 'cancel'>
+export type LocalAgentFacade = Pick<LocalAgentRegistry, 'start' | 'resume' | 'cancel'> & Partial<Pick<LocalAgentRegistry, 'prepareMember' | 'isPreparedMember' | 'supportsMemberConfiguration'>>
 
 /** The roster slice of the registry (older than the M1 facade). */
 export type LocalAgentRosterSlice = Pick<LocalAgentRegistry, 'roster' | 'statusOf'>

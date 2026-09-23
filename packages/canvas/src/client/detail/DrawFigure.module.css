@@ -1,0 +1,23 @@
+/* The drawing itself, with no field around it: the pad supplies the box and
+   the cursors, the board supplies a small frame. Colours are theme tokens
+   only, so a stroke follows light and dark like the rest of the page. */
+
+.figure {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ink {
+  fill: var(--dsw-alias-label-primary);
+}
+
+.inkFaint {
+  fill: var(--dsw-alias-label-tertiary);
+}
+
+/* Which single stroke the eraser would take — the whole line lights, never a
+   partial one, because a stroke is the unit the drawer thinks in. */
+.inkHit {
+  fill: var(--dsw-alias-brand-primary);
+}

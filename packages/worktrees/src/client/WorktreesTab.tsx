@@ -27,15 +27,21 @@ import {
 import type { ChangedFile, FileDiffRequest, WorktreeInfo } from '../types.ts'
 import type { WorktreesTabProps } from './contract.ts'
 import type { WorktreesTabParams } from './definition.tsx'
+import {
+  ContentPane, dirnameOf, pickFileManager, pickIde,
+} from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
+import type { PreviewChrome } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import { CommitDetails } from './CommitDetails.tsx'
 import { CommitList } from './CommitList.tsx'
-import { DetailPane, isDeleted } from './DetailPane.tsx'
+import { DiffView } from './DiffView.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
-import { isImageFile } from './ImagePreview.tsx'
-import { pickFileManager } from './open-in-app.ts'
+import { ImagePreview, isImageFile } from './ImagePreview.tsx'
 import { Overview, formatCount } from './Overview.tsx'
+import {
+  absolutePath, isDeleted, previewTranslator, structuredLabels, toPreviewRead,
+} from './preview.ts'
 import { useTreeWidth } from './sizing.ts'
-import css from './Drawer.module.css'
+import css from './WorktreesTab.module.css'
 
 /** localStorage key for the tab's tree-column width preference. */
 const TREE_WIDTH_KEY = 'dsh-worktrees-tree-w'
@@ -45,7 +51,8 @@ export function WorktreesTab({
   sessionId, useTabInfo, useStore, actions, t,
   fetchSummary, fetchChanges, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
   fetchWorktrees, switchWorktree, directAgent, bumpVersion,
-  fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, useOpenInApp, openExternal, copyBranch,
+  fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, useOpenInApp, openExternal,
+  copyBranch, copyText,
 }: WorktreesTabProps): ReactNode {
   const { tab } = useTabInfo()
   const mode = useStore(s => s.mode)
@@ -72,6 +79,30 @@ export function WorktreesTab({
   // stays hidden until the probe confirms a file manager (hidden = degrade).
   const openInAppApps = useOpenInApp(apps => apps)
   const folderApp = openInAppApps === null ? undefined : pickFileManager(openInAppApps)
+  const ideApp = openInAppApps === null ? undefined : pickIde(openInAppApps)
+
+  /**
+   * One file's host-open gestures. The host route takes directories, so both
+   * gestures target the file's parent directory; each is present only when the
+   * probe resolved a backing app, so the pane never renders a dead button.
+   */
+  const paneChrome = (path: string): PreviewChrome => {
+    const absolute = absolutePath(worktreePath, path)
+    const dir = dirnameOf(absolute) || absolute
+    return {
+      ...(folderApp === undefined ? {} : { openFolder: () => { openExternal(folderApp, dir) } }),
+      ...(ideApp === undefined ? {} : { openIDE: () => { openExternal(ideApp, dir) } }),
+    }
+  }
+
+  // Any tab-side refresh invalidates the header badge too, so the capsule never
+  // lags the pane. `rev` ticks on the refresh button, a mode switch, a worktree
+  // switch and every navigation revision; bumpVersion is held in a ref because
+  // the injected face hands out a fresh closure per render and this effect must
+  // not depend on its identity.
+  const bumpVersionRef = useRef(bumpVersion)
+  bumpVersionRef.current = bumpVersion
+  useEffect(() => { bumpVersionRef.current() }, [rev])
 
   const [copied, setCopied] = useState(false)
   const [worktreeOpen, setWorktreeOpen] = useState(false)
@@ -115,7 +146,6 @@ export function WorktreesTab({
     return undefined
   }, [mode, selectedPath, pending, commitFiles])
 
-  const hasDiff = selectedSegment !== null && !(selectedFile?.status === '??')
   const untracked = selectedFile?.status === '??'
 
   const groups = useMemo<FileTreeGroup[]>(() => {
@@ -301,8 +331,9 @@ export function WorktreesTab({
     void switchWorktree(sessionId, path).then(result => {
       if (result.ok) {
         actions.setActiveWorktreePath(result.value.path)
-        bumpVersion()
         setWorktreeOpen(false)
+        // The refresh ticks `rev`, whose effect pushes the version bump to the
+        // badge — no separate bump here (a double bump would double the read).
         actions.refresh()
       }
     })
@@ -497,25 +528,38 @@ export function WorktreesTab({
                   openFolder={folderApp === undefined || worktreePath === ''
                     ? undefined
                     : () => { openExternal(folderApp, worktreePath) }}
+                  repoRoot={worktreePath}
+                  paneChrome={paneChrome}
+                  labels={structuredLabels(t)}
                   t={t}
                 />
               )
             })()
           ) : selectedPath !== null ? (
-            <DetailPane
+            <ContentPane
               path={selectedPath}
-              hasDiff={hasDiff}
-              untracked={untracked}
-              deleted={isDeleted(selectedFile)}
-              detailView={detailView}
-              diff={diff}
-              content={content}
-              image={repoImage}
+              read={toPreviewRead({
+                path: selectedPath,
+                deleted: isDeleted(selectedFile),
+                untracked,
+                error,
+                content,
+                image: repoImage,
+              })}
               loading={loading}
               error={error}
+              displayPath={absolutePath(worktreePath, selectedPath)}
+              onCopyPath={() => copyText(absolutePath(worktreePath, selectedPath))}
+              chrome={paneChrome(selectedPath)}
+              labels={structuredLabels(t)}
+              t={previewTranslator(t)}
+              {...(diff === null ? {} : { diffView: <DiffView diff={diff.diff} t={t} /> })}
+              view={detailView}
               onViewChange={actions.setDetailView}
-              onCopy={(text) => copyBranch(text)}
-              t={t}
+              {...(repoImage === null || repoImage === undefined
+                ? {}
+                : { imageView: <ImagePreview path={selectedPath} src={repoImage.dataUrl} /> })}
+              {...(untracked ? { notice: t('detail.untrackedNote') } : {})}
             />
           ) : (
             <Overview summary={summary} changes={changes === null ? null : { uncommitted: pending, committed: [] }} repoMode={mode === 'repo'} repoCount={repoFiles?.length ?? 0} t={t} />

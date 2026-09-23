@@ -37,6 +37,8 @@
 
 ## 归档与删除
 
+> **本仓现状（2026-09-21）**：下文描述的归档机制**在本仓尚未落地**。`scripts/agent-note-tree.ts` 已认得 `archived/{class}/` 目录，但 `archived/` 树并不存在，本节所指向的东西——`scripts/verify-archived-agent-notes.ts`、`dsh-archive-agent-notes` skill，以及本文件链接的四份 2026-08 之前的 Agent Note（`2026-06-20`、`2026-07-05`、`2026-07-19`、`2026-07-26`）——全都不在本仓（本仓 note 树最早的文件名日期是 2026-08-14）。`implemented/AGENTS.md` 与 `docs/AGENTS.md` 同样不是本仓文件：它们承载的约束由 `pnpm run verify-agent-note-format` 与 `pnpm run verify-agent-note-classification` 机械执行。归档机制落地之前，请把那些链接当作**意图**而不是可打开的路径——没有任何 note 处于归档状态，也不存在一份 clone 拿不到的隐藏目录。
+
 当一份 implemented Agent Note 记录的交付决策已经完整落地，且其决策依据不太可能再指导未来工作时，将其归档。如果其中的备选方案、归属边界、否定性保证、持久化语义或协议语义、安全规则，或者重新引入条件仍有价值，则继续作为活跃记录保留。绝不归档 proposed Agent Note：过时的提案应转为 rejected。仅当 rejected Agent Note 仍能避免一种可能发生的错误时保留；否则一并删除其英文、中文和伴随记录文件。请使用经过校准的 [`dsh-archive-agent-notes`](../skills/dsh-archive-agent-notes/SKILL.md) 工作流，不要根据字数、存续时间或目标配额来判断。
 
 归档路径编码为 `archived/{class}/yyyy-mm-dd-topic-title.md`；其中有意省略 `implemented`，因为只有 implemented Agent Note 可以进入归档。归档变更会移动完整的英文、中文和伴随记录三个文件，保留 `Status: implemented`，在两种语言的文件中紧接该状态行插入相同的 `Archived: YYYY-MM-DD` 行，重新记录伴随记录，并修复或删除入站链接。归档时只允许对内容做这些更改。

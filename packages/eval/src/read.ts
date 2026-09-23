@@ -24,6 +24,7 @@ import {
   expandHome,
   resolveConditionReadiness,
   unresolvedFields,
+  type ConditionReadinessOptions,
   type ConditionResolution,
   type EvalDiagnostic,
   type LockProvisionRecord,
@@ -143,15 +144,21 @@ async function conditionIds(datasetRoot: string): Promise<string[]> {
  * @param repo - the dataset repository root (already `~`-expanded).
  * @param only - restrict to these dataset sets; omit to scan every set that
  *   has a `conditions/` directory.
+ * @param options - the optional scoped-home resolver: with one, a condition
+ *   whose preset copy was edited after provision reads stale here too.
  * @throws {@link EvalReadRefused} when `repo` is not a dataset repository.
  */
-export async function listConditions(repo: string, only?: readonly string[]): Promise<ConditionsReport> {
+export async function listConditions(
+  repo: string,
+  only?: readonly string[],
+  options: ConditionReadinessOptions = {},
+): Promise<ConditionsReport> {
   const datasets = only !== undefined && only.length > 0 ? [...only] : await datasetsWithConditions(repo)
   const conditions: ConditionSummary[] = []
   for (const dataset of datasets) {
     const datasetRoot = join(repo, 'datasets', dataset)
     for (const id of await conditionIds(datasetRoot)) {
-      const { entry, document, errors, warnings } = await resolveConditionReadiness(id, datasetRoot)
+      const { entry, document, errors, warnings } = await resolveConditionReadiness(id, datasetRoot, options)
       const harness = isPlainObject(document?.['harness']) ? document['harness'] : undefined
       const model = isPlainObject(document?.['model']) ? document['model'] : undefined
       conditions.push({
@@ -679,10 +686,18 @@ export function runCells(mission: MissionReadFace, runId: string, query: RunCell
     const annotations: Record<string, number> = {}
     // The delegation's session is refs' to report; the annotations are only
     // the fallback, walked newest-first so a resumed cell names its latest.
+    // The PLAYER's rounds only: `readiness` and `judge` annotations carry a
+    // `childSessionId` too, and taking the last of any kind pointed this
+    // field at the judge's session on every judged cell whose refs were
+    // empty — a real session answering a different question (see
+    // `cell-detail.ts`, which reports the judge's rounds under their own name).
     let annotatedSession: string | null = null
     for (const annotation of record?.annotations ?? []) {
       annotations[annotation.ns] = (annotations[annotation.ns] ?? 0) + 1
-      const child = isPlainObject(annotation.payload) ? annotation.payload['childSessionId'] : undefined
+      if (!isPlainObject(annotation.payload)) continue
+      const kind = annotation.payload['kind']
+      if (kind !== 'delegation' && kind !== 'delegation-failed') continue
+      const child = annotation.payload['childSessionId']
       if (typeof child === 'string') annotatedSession = child
     }
     const sessions = attempt?.refs?.sessions

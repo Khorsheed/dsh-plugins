@@ -171,6 +171,9 @@ describe('WorktreesTab', () => {
     // The switch repoints the active worktree and refreshes the data planes.
     await waitFor(() => expect(fetchChanges).toHaveBeenCalledTimes(2))
     expect(instance.getSnapshot().activeWorktreePath).toBe('/repo-wt2')
+    // The refresh ticks `rev`, whose effect pushes the invalidation to the
+    // session-header badge — the capsule must not lag the pane.
+    await waitFor(() => expect(props.bumpVersion).toHaveBeenCalled())
   })
 
   it('applies the navigation params mode on arrival', async () => {

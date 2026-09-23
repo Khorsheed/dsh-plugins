@@ -16,6 +16,7 @@ import { realpathSync, statSync } from 'node:fs'
 import { checkAgainstEffective, type EffectiveSnapshot } from './effective.ts'
 import { hashConditionDocument } from './hash.ts'
 import { llmDraftCriteria, pickRubricPath, probePaths } from './judge.ts'
+import { hashPresetTree, scopePresetDir } from './preset-snapshot.ts'
 import { claudeScopeDiagnostics, conditionUnitDiagnostics, planUnitOf, type ScopedConditionRef } from './unit.ts'
 import {
   CONDITION_ID_RE,
@@ -41,6 +42,14 @@ export interface LockedCapabilities {
   sha: string
   /** The preset the face was taken under, as provision read it back. */
   preset?: string | null
+  /** Where the measured preset directory lives relative to the scope. */
+  source?: 'scope-snapshot' | 'instance-root'
+  /**
+   * The digest of the scope's own copy of the preset — every file of it,
+   * `SKILL.md` included. Present only in `scope-snapshot` mode, and the only
+   * part of the capability record a reader with no live instance can check.
+   */
+  snapshot?: { sha: string }
 }
 
 /**
@@ -417,6 +426,23 @@ export interface ConditionReadiness {
   warnings: EvalDiagnostic[]
 }
 
+/** What {@link resolveConditionReadiness} may additionally reach. */
+export interface ConditionReadinessOptions {
+  /**
+   * Resolve a condition's scoped home, when the caller runs somewhere that
+   * has a local-agent facade.
+   *
+   * Everything else this function does is offline by design — it reads the
+   * dataset repository and nothing else — and that is exactly why a lock
+   * whose preset was edited afterwards used to read `ready` here while the
+   * run refused it. The capability face needs a live catalog and still does;
+   * the scope's own copy of the preset needs only the directory, so a caller
+   * that can point at it gets the freshness check too. Absent, this function
+   * behaves exactly as it always has.
+   */
+  scopeHomeDir?: (harness: string, scope?: string) => string | undefined
+}
+
 /**
  * Resolve one condition (declaration + lock) against a dataset root: hash the
  * declaration, read the lock, and decide ready / unready / missing. Shared by
@@ -425,8 +451,13 @@ export interface ConditionReadiness {
  * "ready" means is decided in exactly one place.
  * @param id - condition id (the file stem under `conditions/`).
  * @param root - the dataset-set directory holding `conditions/`.
+ * @param options - the optional scoped-home resolver (see {@link ConditionReadinessOptions}).
  */
-export async function resolveConditionReadiness(id: string, root: string): Promise<ConditionReadiness> {
+export async function resolveConditionReadiness(
+  id: string,
+  root: string,
+  options: ConditionReadinessOptions = {},
+): Promise<ConditionReadiness> {
   const errors: EvalDiagnostic[] = []
   const warnings: EvalDiagnostic[] = []
   const entry: ConditionResolution = { id, sha: null, lock: null, status: 'missing' }
@@ -518,6 +549,31 @@ export async function resolveConditionReadiness(id: string, root: string): Promi
         + ` under ${JSON.stringify(capabilities.preset)} — the provisioned environment is another subject`,
     })
   }
+  // The scope's own copy of the preset, re-hashed. This is the one part of
+  // the capability record a reader with no live instance can check, and it is
+  // the part that moves when a skill BODY is edited — which `home.sha` never
+  // sees (it hashes config-suffixed files) and the capability face sees only
+  // through a catalog. Without a resolver this is skipped entirely.
+  if (declaredPreset !== null && capabilities?.snapshot !== undefined && options.scopeHomeDir !== undefined) {
+    const harness = typeof (loaded.value['harness'] as { name?: unknown } | undefined)?.name === 'string'
+      ? ((loaded.value['harness'] as { name: string }).name)
+      : ''
+    const scope = typeof loaded.value['scope'] === 'string' ? loaded.value['scope'] : undefined
+    let homeDir: string | undefined
+    try {
+      homeDir = options.scopeHomeDir(harness, scope)
+    } catch {
+      homeDir = undefined
+    }
+    const fresh = homeDir === undefined ? undefined : await hashPresetTree(scopePresetDir(homeDir, declaredPreset))
+    if (fresh !== undefined && fresh.sha !== capabilities.snapshot.sha) {
+      warnings.push({
+        code: 'CAPABILITIES_SNAPSHOT_STALE',
+        message: `condition ${id} locked the scope's ${JSON.stringify(declaredPreset)} copy at ${capabilities.snapshot.sha.slice(0, 12)}…`
+          + ` but it now hashes to ${fresh.sha.slice(0, 12)}… — the preset this scope runs changed after provision (run \`conditions provision\` again)`,
+      })
+    }
+  }
 
   const homeVerified = declaredSha !== undefined && declaredSha === lockHomeSha
 
@@ -560,7 +616,15 @@ function lockedCapabilitiesOf(lock: Record<string, unknown>): LockedCapabilities
   const sha = capabilities?.['sha']
   if (typeof sha !== 'string' || !SHA256_HEX_RE.test(sha)) return undefined
   const preset = capabilities?.['preset']
-  return { sha, ...(typeof preset === 'string' || preset === null ? { preset } : {}) }
+  const source = capabilities?.['source']
+  const snapshot = isPlainObject(capabilities?.['snapshot']) ? capabilities['snapshot'] : undefined
+  const snapshotSha = snapshot?.['sha']
+  return {
+    sha,
+    ...(typeof preset === 'string' || preset === null ? { preset } : {}),
+    ...(source === 'scope-snapshot' || source === 'instance-root' ? { source } : {}),
+    ...(typeof snapshotSha === 'string' && SHA256_HEX_RE.test(snapshotSha) ? { snapshot: { sha: snapshotSha } } : {}),
+  }
 }
 
 /**
@@ -708,8 +772,9 @@ async function checkStageSchemas(stages: readonly string[], root: string, errors
  * Validate a plan document and everything it references. Data problems come
  * back as diagnostics, never as throws.
  * @param planPath - path to a `dataseek.plan/1` document (plans/<plan>.json).
+ * @param options - the optional scoped-home resolver, forwarded to every condition.
  */
-export async function validatePlan(planPath: string): Promise<PlanValidation> {
+export async function validatePlan(planPath: string, options: ConditionReadinessOptions = {}): Promise<PlanValidation> {
   const planAbs = resolve(planPath)
   const errors: EvalDiagnostic[] = []
   const warnings: EvalDiagnostic[] = []
@@ -783,7 +848,7 @@ export async function validatePlan(planPath: string): Promise<PlanValidation> {
     ...(typeof document['scope'] === 'string' ? { scope: document['scope'] } : {}),
   })
   for (const id of semantics.conditionIds) {
-    const readiness = await resolveConditionReadiness(id, root)
+    const readiness = await resolveConditionReadiness(id, root, options)
     errors.push(...readiness.errors)
     warnings.push(...readiness.warnings)
     conditions.push(readiness.entry)
@@ -803,7 +868,7 @@ export async function validatePlan(planPath: string): Promise<PlanValidation> {
   // delegates from the orchestrator, not from a cell, and runs on the host
   // even in a container run.
   for (const id of semantics.judgeIds) {
-    const readiness = await resolveConditionReadiness(id, root)
+    const readiness = await resolveConditionReadiness(id, root, options)
     errors.push(...readiness.errors.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}` })))
     warnings.push(...readiness.warnings.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}` })))
     judges.push(readiness.entry)

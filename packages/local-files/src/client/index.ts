@@ -30,7 +30,7 @@ import type {
 } from './contract.ts'
 import { LOCAL_FILES_TAB_ID, localFilesDefinition } from './definition.tsx'
 import { en, NS, zh } from './locales.ts'
-import { OpenInAppProbe, pickFileManager, pickIde } from './open-in-app.ts'
+import { OpenInAppProbe, pickFileManager, pickIde } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import { createLocalFilesStore } from './store-local.ts'
 
 export { WorkspaceView }

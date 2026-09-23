@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { BindingSession } from '../src/binding.ts'
 import { DatasetsError } from '../src/dataset.ts'
 import { createDatasetsService, resolveScope, type DatasetScope } from '../src/service.ts'
-import { cleanup, commitAll, git, makeFixtureRepo, writeFiles, type FixtureRepo } from './helpers.ts'
+import { cleanup, commitAll, git, makeFixtureRepo, writeFiles, type FixtureRepo, stateOptions } from './helpers.ts'
 
 let repo: FixtureRepo | undefined
 let worktreeRoot: string | undefined
@@ -14,7 +14,7 @@ let bindingsRoot: string | undefined
 
 afterEach(() => {
   if (repo !== undefined) cleanup(repo.dir)
-  if (worktreeRoot !== undefined) rmSync(worktreeRoot, { recursive: true, force: true })
+  if (worktreeRoot !== undefined) cleanup(worktreeRoot)
   if (bindingsRoot !== undefined) rmSync(bindingsRoot, { recursive: true, force: true })
   repo = undefined
   worktreeRoot = undefined
@@ -22,7 +22,8 @@ afterEach(() => {
 })
 
 const service = () => createDatasetsService({
-  worktreeRoot: worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-wt-')),
+  materializedRoot: join(worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-state-')), 'materialized'),
+  registryPath: join(worktreeRoot, 'registry.json'),
   bindingsRoot: bindingsRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-')),
 })
 
@@ -308,7 +309,7 @@ describe('live-session binding through the service', () => {
     const session: BindingSession = { id: 's1' }
     service().bind(session, { repoPath: '/repo', datasets: ['alpha'] })
     const restarted = createDatasetsService({
-      worktreeRoot: worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-wt-')),
+      ...stateOptions(worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-state-'))),
       bindingsRoot: root,
     })
     expect(restarted.binding(session)).toEqual({ repoPath: '/repo', datasets: ['alpha'] })

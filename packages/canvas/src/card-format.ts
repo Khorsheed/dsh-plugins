@@ -88,3 +88,33 @@ export function htmlTitleOf(text: string): string | undefined {
   if (title === '') return undefined
   return title.slice(0, MAX_HTML_TITLE_LENGTH)
 }
+
+/** Longest plain-text fallback title (the chip's and the prompt's agree on it). */
+export const MAX_PLAIN_TITLE_LENGTH = 36
+
+/**
+ * A card's first line with any tags stripped — the fallback title before the
+ * length cap. A one-line HTML document's first line IS the markup, and
+ * truncating markup would still leak markup, so this strips rather than trusts.
+ * @param text - the card's full text.
+ * @returns one line of plain text ('' when the card holds none).
+ */
+export function plainTitleOf(text: string): string {
+  const firstLine = text.split('\n').find(line => line.trim().length > 0) ?? ''
+  const stripped = firstLine.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+  return stripped === '' ? firstLine : stripped
+}
+
+/**
+ * A card's display title, from its text alone: the HTML `<title>` when it has
+ * one, else the first plain line, capped.
+ *
+ * Lives here rather than in the prompt renderer because BOTH sides name a card
+ * this way: the model-facing summary, and the detail tab's chip (stage ⑧),
+ * which must not drift from what the agent is told the card is.
+ * @param text - the card's full text.
+ * @returns a single-line title ('' for an empty card).
+ */
+export function cardTitleOf(text: string): string {
+  return htmlTitleOf(text) ?? plainTitleOf(text).slice(0, MAX_PLAIN_TITLE_LENGTH)
+}

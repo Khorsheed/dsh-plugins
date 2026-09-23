@@ -14,8 +14,10 @@ import css from './MembersView.module.css'
 
 /** One roster card: identity, avatar block, role, status chip, actions. */
 export function MemberCard({
-  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, preview = false,
+  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, coordinator = false, onPromote, preview = false,
 }: {
+  readonly coordinator?: boolean
+  readonly onPromote?: (() => void) | undefined
   readonly member: RoomMember
   readonly run: RoomMemberRun | undefined
   /** Tick-driven elapsed for a running member (undefined otherwise). */
@@ -60,7 +62,7 @@ export function MemberCard({
           {member.name.slice(0, 1).toUpperCase()}
         </span>
         <span className={css.identity}>
-          <span className={css.name}>{member.name}</span>
+          <span className={css.name}>{member.name}</span>{coordinator && <span className={css.hint}>{t('coordinator.label')}</span>}
           <span className={css.hint}>
             {member.kind === 'main-agent' ? t('member.kind.main') : member.provider ?? ''}
             {modelHint !== undefined && modelHint !== '' && <>{' · '}{modelHint}</>}
@@ -108,6 +110,7 @@ export function MemberCard({
       )}
       {!preview && (
         <div className={css.foot}>
+          {!coordinator && onPromote !== undefined && <button type="button" className={css.action} disabled={running} onClick={onPromote}>{t('coordinator.promote')}</button>}
           {member.kind === 'cli' && (
             <span className={css.actions}>
               <button
@@ -121,7 +124,7 @@ export function MemberCard({
               <button type="button" className={css.action} onClick={onEdit}>
                 {t('members.edit')}
               </button>
-              <button type="button" className={css.action} onClick={onRemove}>
+              <button type="button" className={css.action} disabled={coordinator} onClick={onRemove}>
                 {t('members.remove')}
               </button>
             </span>

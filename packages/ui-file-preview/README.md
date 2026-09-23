@@ -4,7 +4,7 @@
 
 agent 写过、改过的文件，收进右栏一个「产物」页：文件清单 + 每一次改动的 diff 步进。
 
-agent 干了半天活，到底动了哪些文件、改成了什么样？装了这个插件，右栏向导页会多出「会话产物」入口：这个会话碰过的文件按最近活动倒序列出；点一个进入详情页——面包屑路径 + 复制路径 / 在文件夹打开 / 在 IDE 打开，下方「内容 / 改动记录」切换：内容是文档形态预览（Markdown 渲染成文档、JSON 检查树、CSV 表格、HTML 沙箱渲染、代码高亮、内容搜索），改动记录逐次步进回看每一次 write/edit 的 diff。官方文档预览页的工具栏下拉里也有同一个「改动记录」实现可切。所有打开入口——正文 mention、官方产物卡片、文件树——对可渲染的会话文件都落到我们的详情页（tab 类型以 `dsh-resource://file/**` + 可渲染后缀认领，纯静态判定无冷启动窗口；pdf 等我们渲染不了的类型自动回落官方 document tab）。每个回合结束，对话里也会出现一张小卡片，汇总这一轮改了哪几个文件、各增删了多少行。数据由配套的宿主半 `@khorsheed/dsh-file-preview` 提供（含官方数据覆盖不到的 bash 写入捕获），两边一起装才有界面可看；宿主半不在时全部 UI 面缺席——不留错误卡或空 tab。
+agent 干了半天活，到底动了哪些文件、改成了什么样？装了这个插件，右栏向导页会多出「会话产物」入口：这个会话碰过的文件按最近活动倒序列出；点一个进入详情页——头部与预览栈由**共享内容面板** `@khorsheed/dsh-client-ui-content-preview` 渲染（标题行：文件名 + 语言标签 + 复制路径 / 在文件夹打开 / 在 IDE 打开，多 IDE 时是带 app 菜单的分体控件；路径行：路径 + 内容/改动记录与渲染/源码等视图控件；搜索行：内容搜索），内容侧是文档形态（Markdown 渲染成文档、JSON 检查树、CSV 表格、HTML 沙箱分级渲染、代码高亮），改动记录逐次步进回看每一次 write/edit 的 diff。官方文档预览页的工具栏下拉里也有同一个「改动记录」实现可切。所有打开入口——正文 mention、官方产物卡片、文件树——对可渲染的会话文件都落到我们的详情页（tab 类型以 `dsh-resource://file/**` + 可渲染后缀认领，纯静态判定无冷启动窗口；pdf 等我们渲染不了的类型自动回落官方 document tab）。每个回合结束，对话里也会出现一张小卡片，汇总这一轮改了哪几个文件、各增删了多少行。数据由配套的宿主半 `@khorsheed/dsh-file-preview` 提供（含官方数据覆盖不到的 bash 写入捕获），两边一起装才有界面可看；宿主半不在时全部 UI 面缺席——不留错误卡或空 tab。
 
 ## 特性
 
@@ -53,8 +53,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 - `src/client/definition.tsx` —— page-type tab 的注册表定义（guide 入口，不认领地址）
 - `src/client/history-definition.ts` —— 改动记录渲染器的 id 与后缀清单
 - `src/client/FilePreviewTab.tsx` —— 右栏「产物」页（列表 + 详情视图）
-- `src/client/FilePreviewPane.tsx` —— 详情页预览栈（内容搜索 / Markdown / JSON / CSV / HTML 沙箱 + 改动记录切换）
-- `src/client/structured.tsx` / `html-bridge.ts` / `html-src-doc.ts` —— 文档形态渲染器与 HTML 沙箱
+- `src/client/preview.ts` —— 适配层：`filePreview` wire kind → 内核 `PreviewRead`、字典适配、IDE 候选（详情页的头部与预览栈来自 `@khorsheed/dsh-client-ui-content-preview`，本插件的私有渲染副本已删除）
 - `src/client/FileHistoryBody.tsx` —— 官方 document tab 的可切换「改动记录」渲染器
 - `src/client/DiffHistory.tsx` —— 逐次 write/edit diff 步进（本插件独有）
 - `src/client/mentions-wrap.ts` —— mention 打开方向统一进右栏的就地包装（缝 S1 尾巴）

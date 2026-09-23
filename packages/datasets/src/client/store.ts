@@ -1,5 +1,5 @@
 /**
- * The 题集 tab's transient store: the session binding, the list page's rows,
+ * The 题集 tab's transient store: the deployment's registry, the open repository's rows,
  * the opened dataset's items and files, one item's brief and answer record,
  * the slot filter, and the selected file's preview. Module level exports the
  * factory only — a module-level handle would pin the store's identity in the
@@ -9,14 +9,15 @@
  *
  * Two pages, one store: `page` says which is showing. The detail page's
  * per-item values are keyed by `<dataset>/<item>` so switching items keeps
- * what was already fetched, and a binding change clears everything resolved
- * against the old binding in one action.
+ * what was already fetched, and opening a set of ANOTHER registration clears
+ * everything resolved against the previous one in one action (the keys carry
+ * no repository, so two registrations' `default/i1` would otherwise collide).
  */
 import { defineStore } from '@deepseek-ai/dsh-client-store'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
-  DatasetBinding, DatasetOverview, DatasetSlot, ItemBrief, ItemRecord, ListItemsResult,
-  ReadResult, SkeletonResult, ValidateDatasetResult,
+  DatasetOverview, DatasetSlot, ImportBindingsResult, ItemBrief, ItemRecord, ListItemsResult,
+  ReadResult, RegistryRow, SkeletonResult, ValidateDatasetResult,
 } from '../types.ts'
 import type { DatasetExperimentRow, ItemRunsView } from './contract.ts'
 
@@ -53,19 +54,21 @@ export function itemKey(dataset: string, item: string): string {
 
 /** The view's state; fetched results are whole values, null until loaded. */
 export interface DatasetsViewState {
-  /** The session's current binding (null = unbound), loaded on mount. */
-  binding: DatasetBinding | null
-  /** Whether the binding fetch has answered at least once. */
-  bindingLoaded: boolean
-  /** Human-readable notice from a bind/unbind/write failure, or null. */
+  /** The deployment's registrations, or null before the first answer. */
+  registry: readonly RegistryRow[] | null
+  /** Human-readable notice from a register/remove/write failure, or null. */
   notice: string | null
-  /** The list page's rows with their repo and commit, or null before the first load. */
+  /** The last «从旧绑定登记» report, shown until dismissed. */
+  imported: ImportBindingsResult | null
+  /** The registration the detail page reads (its id), or null on the list page. */
+  openRepo: string | null
+  /** The open registration's rows at its tracked branch, or null before they load. */
   overview: DatasetOverview | null
   /** Whether the list fetch is in flight. */
   listLoading: boolean
   /** Human-readable list-fetch failure, or null when idle. */
   listError: string | null
-  /** Bumped by the refresh action to re-trigger the binding + list fetches. */
+  /** Bumped by the refresh action to re-trigger the registry + list fetches. */
   refreshRev: number
   /** Which page is showing. */
   page: DatasetsPage
@@ -114,13 +117,14 @@ export interface DatasetsViewState {
 
 /** Annotation twin of the actions literal below (drift fails assignability at defineStore). */
 export type DatasetsViewActions = {
-  setBinding: (draft: DatasetsViewState, binding: DatasetBinding | null) => void
+  setRegistry: (draft: DatasetsViewState, rows: readonly RegistryRow[]) => void
+  setImported: (draft: DatasetsViewState, result: ImportBindingsResult | null) => void
   setNotice: (draft: DatasetsViewState, notice: string | null) => void
   refresh: (draft: DatasetsViewState) => void
   setOverview: (draft: DatasetsViewState, overview: DatasetOverview) => void
   setListLoading: (draft: DatasetsViewState, loading: boolean) => void
   setListError: (draft: DatasetsViewState, error: string | null) => void
-  openDataset: (draft: DatasetsViewState, dataset: string | null) => void
+  openDataset: (draft: DatasetsViewState, target: { repo: string; dataset: string } | null) => void
   openItem: (draft: DatasetsViewState, item: string | null) => void
   setDetails: (draft: DatasetsViewState, dataset: string, detail: ListItemsResult) => void
   setSlotFilter: (draft: DatasetsViewState, slots: readonly DatasetSlot[] | null) => void
@@ -140,9 +144,10 @@ export type DatasetsViewActions = {
 }
 
 const INITIAL: DatasetsViewState = {
-  binding: null,
-  bindingLoaded: false,
+  registry: null,
   notice: null,
+  imported: null,
+  openRepo: null,
   overview: null,
   listLoading: false,
   listError: null,
@@ -177,30 +182,16 @@ export function createDatasetsViewStore(): EngineStoreHandle<DatasetsViewState, 
   return defineStore({
     init: (): DatasetsViewState => ({ ...INITIAL }),
     actions: {
-      setBinding: (d, binding: DatasetBinding | null) => {
-        d.binding = binding
-        d.bindingLoaded = true
-        // A binding change invalidates everything resolved against the old one
-        // — including which pages make sense, so the tab returns to the list.
-        d.overview = null
-        d.listError = null
-        d.page = 'list'
-        d.openDataset = null
-        d.openItem = null
-        d.items = {}
-        d.sharedLayers = {}
-        d.passthrough = {}
-        d.briefs = {}
-        d.briefLoading = {}
-        d.briefError = {}
-        d.runs = {}
-        d.experiments = null
-        d.validated = {}
-        d.slotFilter = null
-        d.selection = null
-        d.preview = null
-        d.previewError = null
+      setRegistry: (d, rows: readonly RegistryRow[]) => {
+        d.registry = rows
+        // A registration removed under the open page takes the page with it.
+        if (d.openRepo !== null && !rows.some(row => row.entry.id === d.openRepo)) {
+          d.openRepo = null
+          d.openDataset = null
+          d.page = 'list'
+        }
       },
+      setImported: (d, result: ImportBindingsResult | null) => { d.imported = result },
       setNotice: (d, notice: string | null) => { d.notice = notice },
       refresh: (d) => { d.refreshRev += 1 },
       setOverview: (d, overview: DatasetOverview) => {
@@ -209,9 +200,23 @@ export function createDatasetsViewStore(): EngineStoreHandle<DatasetsViewState, 
       },
       setListLoading: (d, loading: boolean) => { d.listLoading = loading },
       setListError: (d, error: string | null) => { d.listError = error },
-      openDataset: (d, dataset: string | null) => {
-        d.openDataset = dataset
-        d.page = dataset === null ? 'list' : 'detail'
+      openDataset: (d, target: { repo: string; dataset: string } | null) => {
+        if (target !== null && target.repo !== d.openRepo) {
+          // Another registration: nothing fetched for the previous one applies.
+          d.overview = null
+          d.listError = null
+          d.items = {}
+          d.sharedLayers = {}
+          d.passthrough = {}
+          d.briefs = {}
+          d.briefLoading = {}
+          d.briefError = {}
+          d.runs = {}
+          d.validated = {}
+          d.openRepo = target.repo
+        }
+        d.openDataset = target === null ? null : target.dataset
+        d.page = target === null ? 'list' : 'detail'
         d.openItem = null
         d.selection = null
         d.preview = null

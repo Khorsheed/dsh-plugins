@@ -13,7 +13,7 @@
  */
 
 const MODELS = [
-  { id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', description: 'fixture', hidden: false, supportedReasoningEfforts: [], isDefault: true },
+  { id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', description: 'fixture', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'high', description: 'More reasoning' }], defaultReasoningEffort: 'high', isDefault: true },
   { id: 'gpt-5.5', model: 'gpt-5.5', displayName: 'GPT-5.5', hidden: false },
   { id: 'gpt-5-legacy', model: 'gpt-5-legacy', displayName: 'legacy', hidden: true, isDefault: true },
   { id: 'gpt-5.5', model: 'gpt-5.5', displayName: 'GPT-5.5 dup', hidden: false },
@@ -35,6 +35,14 @@ function answer(request) {
   }
   if (request.method === 'model/list') {
     if (MODE === 'silent') return
+    if (MODE === 'paged' || MODE === 'cursor-loop') {
+      const later = request.params?.cursor === 'page-2'
+      write({ jsonrpc: '2.0', id: request.id, result: {
+        data: later ? MODELS.slice(1) : MODELS.slice(0, 1),
+        nextCursor: later && MODE !== 'cursor-loop' ? null : 'page-2',
+      } })
+      return
+    }
     if (MODE === 'garbage') {
       process.stdout.write('this is not json\n')
       write({ jsonrpc: '2.0', id: request.id, result: { data: 'not-an-array' } })

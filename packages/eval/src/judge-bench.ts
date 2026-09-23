@@ -24,14 +24,15 @@
  * second place for the redaction to be wrong, and the two would drift the
  * first time a harness alias was added to one of them.
  *
- * ONE NAMESPACE SCORES A CELL. The report picks a cell's scoring source as
- * the most authoritative namespace holding ANY verdict for it, so the FIRST
- * human-final verdict — even one answering a single `kind: human` criterion —
- * makes human-final that cell's only scoring source and drops its
- * llm-draft-only criteria from the score. That rule is the report's and
- * predates this module; changing it would move every report ever produced.
- * What the bench owes a grader is the consequence, up front, which is what
- * `draftOnlyCriteria` carries.
+ * ONE LAYER SCORES A CRITERION — not a cell. The report takes, for EACH
+ * criterion independently, the most authoritative layer that judged it
+ * (`human-final` > `llm-draft` > `script`), so a human verdict here settles
+ * the criteria it answers and leaves the rest on the judge's word. A record
+ * can therefore score from both at once, which is the thing the bench owes a
+ * grader up front: not a cost any more (until I5·T54 a single human answer
+ * dropped every llm-draft-only criterion from the score), but the fact that
+ * the record's score stops having one author. `draftOnlyCriteria` is what
+ * that sentence is built from.
  *
  * APPEND-ONLY, AND A PERSON'S. `humanFinal` forwards to mission's `annotate`
  * in the `human-final` namespace and does nothing else: no overwrite, no
@@ -384,9 +385,10 @@ export async function judgeQueueView(input: JudgeQueueInput): Promise<EvalJudgeQ
       drafts,
       humanFinal,
       graded: humanFinal.length > 0,
-      // What a first human-final verdict on this cell would cost it. See the
-      // field's own note: the report scores a cell from ONE namespace, the
-      // most authoritative that has any verdict at all.
+      // The criteria that will KEEP scoring on the judge's word after a
+      // human verdict lands here. See the field's own note: the report merges
+      // per criterion, so this list is what stays the judge's, not what a
+      // human answer would cost.
       draftOnlyCriteria: [...new Set(drafts.map(draft => draft.criterion))]
         .filter(criterion => !humanFinal.some(verdict => verdict.criterion === criterion))
         .sort((a, b) => (a < b ? -1 : 1)),

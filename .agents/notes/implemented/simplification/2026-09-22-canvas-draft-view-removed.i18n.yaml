@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm exec tsx scripts/verify-translation-pairing.mts --write .agents/notes/implemented/simplification/2026-09-22-canvas-draft-view-removed.md
+.agents/notes/implemented/simplification/2026-09-22-canvas-draft-view-removed.md: 5f1e8b90a6cd944c4f444536f549779774370d9f
+.agents/notes/implemented/simplification/2026-09-22-canvas-draft-view-removed.zh.md: 043abf27f460add03ff501f6d1beb75a56c5032a

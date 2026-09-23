@@ -7,6 +7,7 @@ import { cpus, loadavg, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { acquireTestResource } from './test-resource.mjs'
 import { assessTestResult } from './test-result.mjs'
+import { testConcurrency } from './test-concurrency.mjs'
 import { driftBuiltCliAvailable, driftTripwireRunnable } from '../tests/preflight-environment.mjs'
 
 const lane = process.argv[2]
@@ -57,7 +58,7 @@ const tasks = lane === 'unit' ? unitTasks : lane === 'integration' ? integration
 // the expected count follows the same shared probes instead of hardcoding a
 // deployment-machine count.
 const lifecycleDriftExpected = 9 + (driftTripwireRunnable() ? 1 : 0) + (driftBuiltCliAvailable() ? 1 : 0)
-const inventory = { pure: 57, 'self-unit': 21, 'supervise-1-of-4': 15, 'supervise-2-of-4': 10,
+const inventory = { pure: 60, 'self-unit': 21, 'supervise-1-of-4': 15, 'supervise-2-of-4': 10,
   'supervise-3-of-4': 15, 'supervise-4-of-4': 12, 'self-process': 68, 'lifecycle-drift': lifecycleDriftExpected }
 for (const task of tasks) task.expected = inventory[task.name]
 const artifacts = mkdtempSync(join(tmpdir(), 'ankh-test-results-'))
@@ -100,7 +101,7 @@ function captureBaseline() {
 const baseline = captureBaseline()
 process.stdout.write(`${JSON.stringify(baseline)}\n`)
 
-const maxParallel = lane === 'unit' ? 2 : 4
+const maxParallel = testConcurrency(lane)
 // Match the repository preset for spawn-heavy tests without adding a package
 // vitest.config.ts: the public ankh-guard mirror owns its standalone config.
 // Individual lifecycle cases keep their larger explicit budgets.

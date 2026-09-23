@@ -8,7 +8,6 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
 import type { DatasetsViewInjected } from '../src/client/contract.ts'
-import type { BindingChipInjected } from '../src/client/BindingChip.tsx'
 import { DATASETS_TOOL_ROW_MODULE, type DatasetsPluginInventorySnapshot } from '../src/client/preset-visibility.ts'
 
 /** The composition answer used by the gate tests. */
@@ -27,12 +26,17 @@ async function settled(): Promise<void> {
 /** Stub Remote namespace: carried result envelopes like production. */
 function remoteStub() {
   return {
-    binding: vi.fn(async () => ({ ok: true as const, value: null })),
-    bind: vi.fn(async (_sid: string, binding: unknown) => ({ ok: true as const, value: binding })),
-    unbind: vi.fn(async () => ({ ok: true as const, value: null })),
+    registry: vi.fn(async () => ({ ok: true as const, value: [] })),
+    previewRepo: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    register: vi.fn(async (_sid: string, input: unknown) => ({ ok: true as const, value: input })),
+    updateRegistration: vi.fn(async (_sid: string, input: unknown) => ({ ok: true as const, value: input })),
+    unregister: vi.fn(async () => ({ ok: true as const, value: true })),
+    importBindings: vi.fn(async () => ({ ok: true as const, value: { imported: [], dangling: [] } })),
     list: vi.fn(async () => ({ ok: true as const, value: { kind: 'datasets' as const, datasets: [] } })),
     show: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
     read: vi.fn(async () => ({ ok: true as const, value: { content: 'x', commit: 'abc' } })),
+    overview: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    scaffoldItem: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
   }
 }
 
@@ -124,46 +128,12 @@ describe('datasets client apply', () => {
     expect(typeof entries[0]!.options.label).toBe('function')
   })
 
-  it('registers the composer binding chip beside the tab (I5·T58 · G2)', async () => {
+  it('registers no composer chip: the binding it showed is retired (T73)', async () => {
     const { ctx, slots } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
-
-    // The receipt of `/datasets bind` had nowhere to appear in an empty
-    // session: the tab strip waits for the session to have content, and
-    // binding is the first thing done in a session that has none.
-    const entries = slots.entries('conversation.input.left')
-    expect(entries).toHaveLength(1)
-    expect(entries[0]!.options).toMatchObject({ id: 'datasets-binding' })
-  })
-
-  it('the chip follows the tab\'s composition criterion, both ways', async () => {
-    const granted = await bench({ preset: 'dev', composition: DEV })
-    await granted.ctx.plugin({ inject: [...inject], apply }).await()
-    await settled()
-    expect(granted.slots.entries('conversation.input.left')).toHaveLength(1)
-
-    const withheld = await bench({ preset: 'standard', composition: DEV })
-    await withheld.ctx.plugin({ inject: [...inject], apply }).await()
-    await settled()
-    // A session whose preset grants no dataset tools has no binding to speak
-    // of, so the chip goes with the tab rather than standing alone.
-    expect(withheld.slots.entries('conversation.input.left')).toHaveLength(0)
-  })
-
-  it('the chip\'s face reads the binding and subscribes to the session', async () => {
-    const { ctx, slots, remote } = await bench()
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    const entry = slots.entries('conversation.input.left')[0]!
-    const face = (entry.inject as unknown as (sessionId: string) => BindingChipInjected)('s1')
-
-    await face.fetchBinding('s1' as SessionId)
-    expect(remote.binding).toHaveBeenCalledWith('s1')
-
-    // This host hands out no per-session handle, so the watch degrades to the
-    // session list rather than to a poll.
-    const stop = face.watchSession('s1' as SessionId, () => {})
-    expect(typeof stop).toBe('function')
-    stop()
+    // Datasets belong to the deployment's registry, not to a session, so the
+    // composer has nothing per-session to show.
+    expect(slots.entries('conversation.input.left')).toHaveLength(0)
   })
 
   it('still registers the view when the Remote mount fails (already mounted elsewhere)', async () => {
@@ -223,30 +193,44 @@ describe('datasets client apply', () => {
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })
 
-  it('the injected face binds every verb to the Remote namespace with the session id', async () => {
+  it('the injected face binds every verb to the Remote namespace with the session id and the registration id', async () => {
     const { ctx, slots, remote } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     const entry = slots.entries('conversation.view')[0]!
     const face = (entry.inject as unknown as (sessionId: string) => DatasetsViewInjected)('s1')
 
-    await face.fetchBinding('s1')
-    expect(remote.binding).toHaveBeenCalledWith('s1')
+    await face.fetchRegistry('s1')
+    expect(remote.registry).toHaveBeenCalledWith('s1')
 
-    const binding = { repoPath: '/repo', layers: ['visible'] }
-    await face.bindSession('s1', binding)
-    expect(remote.bind).toHaveBeenCalledWith('s1', binding)
+    await face.previewRepo('s1', '/repo')
+    expect(remote.previewRepo).toHaveBeenCalledWith('s1', { path: '/repo' })
+    await face.previewRepo('s1', '/repo', 'i1-walk')
+    expect(remote.previewRepo).toHaveBeenCalledWith('s1', { path: '/repo', trackedRef: 'i1-walk' })
 
-    await face.unbindSession('s1')
-    expect(remote.unbind).toHaveBeenCalledWith('s1')
+    const input = { path: '/repo', sets: { alpha: { layers: ['visible'] } }, authoringCheckout: null }
+    await face.register('s1', input)
+    expect(remote.register).toHaveBeenCalledWith('s1', input)
+    const update = { id: 'lib', trackedRef: 'main' }
+    await face.updateRegistration('s1', update)
+    expect(remote.updateRegistration).toHaveBeenCalledWith('s1', update)
+    await face.unregister('s1', 'lib')
+    expect(remote.unregister).toHaveBeenCalledWith('s1', { id: 'lib' })
+    await face.importBindings('s1')
+    expect(remote.importBindings).toHaveBeenCalledWith('s1')
 
-    await face.listDatasets('s1')
-    expect(remote.list).toHaveBeenCalledWith('s1', {})
-    await face.listDatasets('s1', 'alpha')
-    expect(remote.list).toHaveBeenCalledWith('s1', { dataset: 'alpha' })
+    // Every read after the registry names ONE registration by its id.
+    await face.listDatasets('s1', 'lib')
+    expect(remote.list).toHaveBeenCalledWith('s1', { repo: 'lib' })
+    await face.listDatasets('s1', 'lib', 'alpha')
+    expect(remote.list).toHaveBeenCalledWith('s1', { repo: 'lib', dataset: 'alpha' })
+    await face.overview('s1', 'lib')
+    expect(remote.overview).toHaveBeenCalledWith('s1', { repo: 'lib' })
+    await face.scaffoldItem('s1', 'lib', { dataset: 'alpha', item: 'i9' } as never)
+    expect(remote.scaffoldItem).toHaveBeenCalledWith('s1', { dataset: 'alpha', item: 'i9', repo: 'lib' })
 
     const query = { dataset: 'alpha', item: 'i1', layer: 'visible', path: 'task.md' }
-    await face.readFile('s1', query)
-    expect(remote.read).toHaveBeenCalledWith('s1', query)
+    await face.readFile('s1', 'lib', query)
+    expect(remote.read).toHaveBeenCalledWith('s1', { ...query, repo: 'lib' })
   })
 
   it('the face routes the native directory pick through the workspaces service', async () => {

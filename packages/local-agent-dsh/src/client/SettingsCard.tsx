@@ -1,3 +1,5 @@
+import type { HarnessModelPickerInput } from '@khorsheed/dsh-local-agent/client'
+import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -37,6 +39,7 @@ export interface DshCardSettings {
 
 /** Injected face of the dsh settings card. */
 export interface DshSettingsCardInjected {
+  renderModelPicker?: ((props: HarnessModelPickerInput) => ReactNode) | undefined
   /** Bound settings scope for the local-agent-dsh namespace. */
   scope: SettingsScope<DshCardSettings>
   /** The auth block's query/command faces, backed by the family core Remote. */
@@ -224,10 +227,11 @@ function useCardState(
 }
 
 /** The card body both settings surfaces share: the auth block, the delegation switch, the default-model block, and the resident-mode block. */
-function CardBody({ state, auth, authT, useSessions, t }: {
+function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
   readonly state: ReturnType<typeof useCardState>
   readonly auth: DshSettingsCardInjected['auth']
   readonly authT: DshSettingsCardInjected['authT']
+  readonly renderModelPicker: DshSettingsCardInjected['renderModelPicker']
   readonly useSessions: DshSettingsCardProps['useSessions']
   readonly t: DshSettingsCardProps['t']
 }) {
@@ -291,7 +295,7 @@ function CardBody({ state, auth, authT, useSessions, t }: {
           </Tooltip>
         </h3>
         <div className={css.row}>
-          {choices.length > 0 ? (
+          {renderModelPicker?.({ value: modelValue, onChange: setModelDraft, disabled: !ready, defaultLabel: modelDefaultItem }) ?? (choices.length > 0 ? (
             <div className={css.modelField} ref={modelFieldRef}>
               {modelInputElement}
               <button
@@ -340,7 +344,7 @@ function CardBody({ state, auth, authT, useSessions, t }: {
                 </div>
               )}
             </div>
-          ) : modelInputElement}
+          ) : modelInputElement)}
           <button
             type="button"
             className={css.modelSave}
@@ -394,7 +398,7 @@ function CardBody({ state, auth, authT, useSessions, t }: {
  * @returns the card.
  */
 export function DshSettingsCard(props: DshSettingsCardProps) {
-  const { useSettings, scope, auth, authT, harnessModel, useSessions, t } = props
+  const { useSettings, scope, auth, authT, renderModelPicker, harnessModel, useSessions, t } = props
   const [open, setOpen] = useState(false)
   const state = useCardState(open, useSettings, scope, harnessModel, t)
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -426,7 +430,7 @@ export function DshSettingsCard(props: DshSettingsCardProps) {
         </span>
         <IconChevronDownOutline14 className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </button>
-      {open && <CardBody state={state} auth={auth} authT={authT} useSessions={useSessions} t={t} />}
+      {open && <CardBody state={state} auth={auth} authT={authT} renderModelPicker={renderModelPicker} useSessions={useSessions} t={t} />}
     </li>
   )
 }
@@ -439,8 +443,8 @@ export function DshSettingsCard(props: DshSettingsCardProps) {
  * @param props - the owner view, the injected scope/auth faces, and copy.
  * @returns the entry.
  */
-export function DshBundleConfig({ view, useSettings, scope, auth, authT, harnessModel, useSessions, t }: DshBundleConfigProps) {
+export function DshBundleConfig({ view, useSettings, scope, auth, authT, renderModelPicker, harnessModel, useSessions, t }: DshBundleConfigProps) {
   const state = useCardState(view === 'page', useSettings, scope, harnessModel, t)
   if (view === 'summary') return <span className={css.description}>{t('card.description')}</span>
-  return <CardBody state={state} auth={auth} authT={authT} useSessions={useSessions} t={t} />
+  return <CardBody state={state} auth={auth} authT={authT} renderModelPicker={renderModelPicker} useSessions={useSessions} t={t} />
 }

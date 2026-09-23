@@ -1,6 +1,6 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev11** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev12** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器与绑定表单预填从本协议派生；`dataset-authoring` skill 也计划从本协议派生，但目前仍处于 planned，尚未随 `@khorsheed/dsh-datasets` 包分发。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
@@ -300,6 +300,9 @@ datasets/<id>/
 - `scope` 可缺省，缺省即「跑该家的缺省作用域目录」——本字段出现之前每条条件的含义。写了名字（只允许 `[a-z0-9-]`，是名字不是路径）就改成跑 `<homesRoot>/<家名>@<scope>`：与缺省目录**同级**的另一份目录，各自登录、各自的会话记录、各自的 `delegations.jsonl`，凭证**不复制**。它进条件哈希：两条只差 `scope` 的条件是**两个受试对象**——登录的是两个账号。同一家两条条件因此可以在模型、推理强度之外再差一次登录（I4 的 T30b/T31/T33 要的正是这个）。就绪检查按各自的 scope 探各自的目录；容器轮挂的也是各自的目录。带 scope 的委派只走 exec（live 驱动绑的是缺省目录），kimi 的成员桥同理只绑缺省目录。
 - `preset` 只对**由本家族组出来的**受试对象有意义。今天只有 `dsh` 一家：它的作用域目录里那份子 profile 是评测实例自己写的，preset roster 也写在那份 patch 里。三家外部 CLI 跑的是各自厂商的编排，本家族组不了——给它们写 `preset` 是一句没有对应物的声明，validate 报 error（`PRESET_NOT_FOR_HARNESS`），只能写 `null`。它们那一侧的等价物是 `skills.pack`（技能包物化进作用域目录），本家族同样尚未落地，留 I6。
 - `preset` 非 null 时，lock 的 `provisioned` 里必须有 `capabilities`：capability-catalog 对那份已配好的环境算出的**能力哈希**（规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters——描述措辞不进，改一次文案不该换一个受试对象）。没有它，就绪检查在花掉任何一次委派之前就拒（`CAPABILITIES_NOT_PROVISIONED`）：preset 进条件哈希，两条只差 preset 的条件是两个受试对象，没人量过就只是纸面上的两个。记录里的 `preset` 与声明不一致同样拒——配出来的是另一个受试对象。
+- `capabilities.source` 说这次是在**哪一份** preset 目录上量的。`scope-snapshot`：scope 自己持有一份逐字节相同的副本（`<scoped home>/.agent-presets/<id>`），这是容器轮唯一可行的形态——一个单元 bind 挂进去的只有 scoped home，roster 指向部署 preset 根的路径在单元里不存在。`instance-root`：scope 沿用部署的 preset 根，量得到，但只有宿主轮解析得到。
+- `scope-snapshot` 还带 `capabilities.snapshot.sha`：那份副本**全部文件**的哈希，`SKILL.md` 也算。它不是对能力面的第二种说法，而是**离线**判断「受试对象还是被量过的那一个」的唯一凭据——`home.sha` 按设计只哈希配置后缀的文件，技能正文改了它不动；能力面要有活的 catalog 才量得到。就绪检查与 `validate` 都核这一条，不一致即拒并叫人重跑 provision。
+- 作因子的 preset，其 `agent.cordis.yml` 里**不得出现绝对路径**。同一份 preset 会被从三个目录读到（部署的 preset 根、scope 的副本、单元里的挂载点），绝对路径至少在其中两处是错的，而且是静音的错（`skill-filesystem` 把读不到的根当空根）。要相对，用 loader 自己的表达式——官方 `cordis` preset 的写法：`!!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"`，`baseUrl` 是该组合文件自己的目录。快照端与测量端都会拒绝带绝对路径的 preset。
 - `unit` 可缺省，缺省即「本条件只在宿主上跑」。plan 声明了 `unit` 时它**必须在场**：`unit.scopedHome` 说这条件的凭证目录挂到容器内的哪里、由哪个变量指向它（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`），`var` 必须同时出现在 `env.keys` 里——注入的名字要跟声明的名字一致，validate 报 error。宿主一侧的目录**不写在这里**：编排器挂的是评测实例自己的该家作用域目录——`/<家> login` 写进去的那个，也是委派回读读的那个。挂副本会静默坏掉：容器轮把 rollout 写进挂进去的那个目录，回读却按 `homeDir(家名)` 去找，两者不是一处时不报错，只是永远读不到。
 - `unit` 进条件哈希（只有 `notes` 不进）：受试对象从哪里读凭证是一项因子，不是注释。给既有条件补 `unit` 会改哈希，lock 随之过期，要重新 provision。
 - 例（已全部解析；I1 手写格的「进行中」形态见题库 `conditions/dsh-exec.json`，四个 null 字段以 warning 列出）：
@@ -349,7 +352,7 @@ datasets/<id>/
 
 **本文件只由 provision 写。** 手写一份 lock 等于声称「作用域目录核对过」而其实没有，所以 provision 是唯一的写入者：它按条件的 `(harness, scope)` 取作用域目录（读即物化），凭证不是 present 就停下并打印该跑的登录命令（`/<家> login --scope <名>`，provision 从不代登录、从不复制凭证），再把声明与该作用域的 effectiveSettings 逐项核对，最后算 `home.sha` 并落盘。
 
-`provisioned` 是那次核对的记录，`/1` 的**增补字段**：没有它的 lock 是 provision 之前写的，validate 读作「没人核对过」而不是违约。`preset` 与 `capabilities` 又是 `provisioned` 里的增补字段：没有它们的 lock 是一份完整的「当时核对过什么」，不是一份残缺记录。字段含义——`at` 是 provision 的时刻；`cliVersion` 是当时 CLI 自报的版本（条件声明 `harness.version: null` 时就地回填进 lock，**不改条件文档**）；`effective` 是该作用域当时对四个字段的回答，`null` 表示这家 harness 根本没有这个旋钮（如 dsh 无权限旋钮，其权限词因此是 `unrestricted`）。
+`provisioned` 是那次核对的记录，`/1` 的**增补字段**：没有它的 lock 是 provision 之前写的，validate 读作「没人核对过」而不是违约。`preset` 与 `capabilities` 又是 `provisioned` 里的增补字段，`capabilities.source` 与 `capabilities.snapshot` 再是 `capabilities` 里的增补字段（v1-rev12）：没有它们的 lock 是一份完整的「当时核对过什么」，不是一份残缺记录。字段含义——`at` 是 provision 的时刻；`cliVersion` 是当时 CLI 自报的版本（条件声明 `harness.version: null` 时就地回填进 lock，**不改条件文档**）；`effective` 是该作用域当时对四个字段的回答，`null` 表示这家 harness 根本没有这个旋钮（如 dsh 无权限旋钮，其权限词因此是 `unrestricted`）。
 
 逐项核对的分级不是随手定的：`permissions` 是审批边界（冻结决策 3）、`model.endpoint` 是上游路由（冻结决策 5），这两项**就是**受试对象，不一致即 error 且**不写 lock**；`harness.version`、`model.declared`、`reasoning.effort` 不一致只记 warning——声明模型与 harness 缺省不同是 T30b 之后的常态（声明是**按次请求**的值），推理旋钮缺席是诚实的「没有」，CLI 版本是该记录而非该强制的事实。`model.endpoint` 的可比写法是 `"default"`（没有 base URL 生效）或端点的 URL / 主机名（URL 会取其 host 再比——路径可能带租户信息，家族只报主机名）；像 `"proxy"` 这样的标签指不出任何可核对的端点，会被判为不一致。
 
@@ -481,6 +484,27 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
             "tools": {
               "type": "integer",
               "description": "How many tools the face carries (a reader aid; the sha is the identity)."
+            },
+            "source": {
+              "enum": [
+                "scope-snapshot",
+                "instance-root"
+              ],
+              "description": "Where the measured preset directory lives relative to the scope. `scope-snapshot`: the scoped home keeps its own byte-identical copy, which is the arrangement a container round needs (a unit bind-mounts the scoped home and nothing else). `instance-root`: the scope defers to the deployment's preset root — measurable, and resolvable only on the host path."
+            },
+            "snapshot": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sha"
+              ],
+              "description": "The digest of the scope's own copy of the preset — EVERY file of it, SKILL.md included. Present only with source `scope-snapshot`. It is not a second opinion about the capability face: it is what lets the readiness gate and validate see, offline, that the subject is still the one that was measured. `home.sha` cannot — it hashes config-suffixed files by design, and a skill body is not one.",
+              "properties": {
+                "sha": {
+                  "type": "string",
+                  "description": "64-hex sha256 over the copy's `<relPath>\\0<content>\\0` stream, sorted by relPath."
+                }
+              }
             }
           }
         }
@@ -511,7 +535,7 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
 }
 ```
 
-子 dsh 的条件多两行——`provisioned.preset` 是写出去的子 profile 回读出来的，`capabilities.sha` 即 `caps:` 标签去掉前缀：
+子 dsh 的条件多几行——`provisioned.preset` 是写出去的子 profile 回读出来的，`capabilities.sha` 即 `caps:` 标签去掉前缀，`source` 与 `snapshot` 说这次量的是 scope 自己那份副本、以及那份副本当时的内容哈希：
 
 ```json
 {
@@ -535,7 +559,11 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
       "sha": "2f8b6d40c1a9573e08b2d4f6a8c0e2941b3d5f7092a4c6e80b1d3f5709a2c4e6",
       "preset": "eval-lean",
       "skills": 3,
-      "tools": 11
+      "tools": 11,
+      "source": "scope-snapshot",
+      "snapshot": {
+        "sha": "4c6e80b1d3f5709a2c4e62f8b6d40c1a9573e08b2d4f6a8c0e2941b3d5f7092a"
+      }
     }
   }
 }

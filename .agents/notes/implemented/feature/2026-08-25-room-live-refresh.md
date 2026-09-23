@@ -23,6 +23,6 @@ The task capsule always carries its label: `当前进度 1/3` — done over tota
 
 ## Consequences
 
-- A main agent adding a task with `room_task` lands on the dock within ~300ms of the journal append, without a page reload; verified live on the scratch instance (port 3199) with before/after dock screenshots (`scratch-screenshots/`).
+- A main agent adding a task with `room_task` lands on the dock within ~300ms of the journal append, without a page reload; verified live on the scratch instance (port 3199) with before/after dock screenshots (under `scratch-screenshots/` — gitignored, never committed).
 - Client specs pin the three behaviors: a live-feed nudge on the current room refreshes exactly once per burst, a non-room's feed is ignored, and dispose unsubscribes and drops a pending nudge (166 package tests green, 3 new).
 - The store's test doubles now stub `ctx.sessions.binding`; the production code guards the call with an optional chain so a binding-less double degrades to the pre-live-feed behavior instead of throwing.

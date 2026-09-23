@@ -52,6 +52,7 @@
 
 - **M1（2026-09-17，worktree `.worktrees/quote`，已合并并上 3080，0.1.0）**：选区浮层（`shell.overlay` 根组件 + `selectionchange` 监听，分类排除输入框/空选区/自家浮层，读取异常静默消失兜底）、投递两路——当前会话（`conversation.input.for(scope).setDraft` 追加引用块，message-tools 回填先例，官方契约核实）与侧边对话（自有 typert Remote `quote.addRef` → host 探测 `ctx.get('sideChat')` → `openWith`，缺席全隐）。32 测试绿。上游选区动作 seam 提案草稿已写（`docs/upstream-proposals/2026-09-16-selection-actions.md`）。细节见 Agent Note（feat/quote-anything 分支）。
   - 合并说明：gate 仅红于 ankh-guard supervise/EADDRINUSE 用例（并发 gate + 真机 3080 争用，第 4 次复现；清租约后仍现，与本包无关）——按既有证据模式合并，mainline 馈项持续跟踪。
+- **M1.5（2026-09-23，worktree `.worktrees/quote-action-registry`，44 测试绿）**：菜单动作从闭合联合改为**贡献注册表**——client apply 最顶部 `ctx.provide('quoteActions', …)`（ui-shortcuts 的 `ctx.shortcuts` 先例），其他插件经 `ctx.get` 探测 + `registerAction({ id, label, icon?, available?, run })` 往选区菜单加行；target 是不透明 `{ text, label, sessionId }`，内置三行恒在前（不 dogfood：它们绑定组件级状态），贡献行按注册顺序追加，label/available 每次打开重估，贡献回调全部包裹降级。消费纪律（探测 + 结构镜像 + `dsh.references`，永不 import/inject）写进双语 README「向菜单贡献动作」。决策与拒绝项（不拆桥接包、不空注册表、不 dogfood、不 inject）见 [Agent Note](../../.agents/notes/implemented/feature/2026-09-23-quote-action-registry.md)。第一个仓内消费方候选：画布「存为画布卡片」。
 
 （随实施追加：相关 Agent Note / 包名 / 提交）
 

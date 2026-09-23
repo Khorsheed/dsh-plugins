@@ -23,4 +23,4 @@ Status: implemented
 
 - `room/task-updated` 线上事件的 status 联合变宽；任何第三方对该事件的 fold 都必须容忍 `failed`（journal fold 本就透传状态）。
 - host 规格双向钉住：失败 settle 把自动开起的任务关为 `failed`（主 agent 无 live agent 与门面中途消失两条路径），且 `failed` 任务可经 `closeTask` 关为 `cancelled`、再次关闭按 `task-closed` 拒绝。`taskProgress` 把 `failed` 移出分母。客户端规格钉住 failed 行的图标/标签/[关闭]，以及胶囊对 failed 任务的无感。
-- 已在 scratch 实例（3199 端口）真机验证：向一个 provider 未注册的成员新派一次任务，run 失败，新任务落 `failed`、红 × 图标加 [关闭]，胶囊无扫光无计数，点 [关闭] 后该行变 `cancelled`（截图在 `scratch-screenshots/`）。
+- 已在 scratch 实例（3199 端口）真机验证：向一个 provider 未注册的成员新派一次任务，run 失败，新任务落 `failed`、红 × 图标加 [关闭]，胶囊无扫光无计数，点 [关闭] 后该行变 `cancelled`（截图在那台本机实例的 `scratch-screenshots/` 里，git 忽略、未入库）。

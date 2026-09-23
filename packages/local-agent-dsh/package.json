@@ -117,6 +117,7 @@
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.6-alpha.2",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.6-alpha.2",
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.6-alpha.2",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.6-alpha.2",
     "@deepseek-ai/dsh-commands": "^0.1.6-alpha.2",
     "@deepseek-ai/dsh-credentials": "^0.1.6-alpha.2",

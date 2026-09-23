@@ -27,6 +27,7 @@ import {
   detectTranslator,
   isTargetLanguage,
   isUnsupported,
+  primeMemory,
   remembered,
   restoreArticle,
   runTranslation,
@@ -36,6 +37,7 @@ import {
   splitSentences,
   toggleSegment,
   translateTexts,
+  translationHash,
   type BuiltArticle,
   type TranslateClasses,
   type TranslatorLike,
@@ -43,6 +45,9 @@ import {
 } from '../src/client/translate.ts'
 
 const CLASSES: TranslateClasses = { unit: 'u', reveal: 'r', line: 'l' }
+
+/** The pair every memory-keyed call here is made under. */
+const PAIR = 'en→zh'
 
 /** A host-like article: prose with an inline link, a list, and a code block. */
 function article(): HTMLDivElement {
@@ -124,7 +129,7 @@ describe('article segmentation', () => {
     expect(built).not.toBeNull()
     expect(root.querySelectorAll('[data-reader-unit]').length).toBe(2)
     const seg = built!.blocks[0]!.segments[0]!
-    applyTranslation(built!, seg, '译：第一句')
+    applyTranslation(built!, seg, '译：第一句', PAIR)
     setView(built!, 'trans', CLASSES)
     toggleSegment(built!, seg, CLASSES)
     // The reveal follows the run it belongs to, still inside the article.
@@ -146,7 +151,7 @@ describe('article segmentation', () => {
     const root = article()
     const built = buildArticle(root, CLASSES) as BuiltArticle
     for (const block of built.blocks) {
-      for (const segment of block.segments) applyTranslation(built, segment, `译:${segment.original}`)
+      for (const segment of block.segments) applyTranslation(built, segment, `译:${segment.original}`, PAIR)
     }
     setView(built, 'trans', CLASSES)
     expect(root.textContent).toContain('译:The team built new evaluations.')
@@ -239,7 +244,7 @@ describe('article segmentation', () => {
     const root = article()
     const built = buildArticle(root, CLASSES) as BuiltArticle
     const segment = built.blocks[0]!.segments[0]!
-    applyTranslation(built, segment, '译:第一句')
+    applyTranslation(built, segment, '译:第一句', PAIR)
     setView(built, 'trans', CLASSES)
     expect(root.textContent).toContain('译:第一句')
     setView(built, 'orig', CLASSES)
@@ -265,6 +270,7 @@ describe('the translation driver', () => {
     const seen: string[] = []
     const result = await runTranslation({
       built,
+      pair: PAIR,
       session: session(payload => {
         seen.push(payload)
         return payload.split(UNIT_SEPARATOR).map(part => `译:${part}`).join(UNIT_SEPARATOR)
@@ -277,7 +283,7 @@ describe('the translation driver', () => {
     expect(seen).toHaveLength(1)
     expect(seen[0]).toContain(UNIT_SEPARATOR)
     expect(root.textContent).toContain('译:The team built new evaluations.')
-    expect(remembered('The team built new evaluations.')).toBe('译:The team built new evaluations.')
+    expect(remembered(PAIR, 'The team built new evaluations.')).toBe('译:The team built new evaluations.')
   })
 
   it('falls back to one unit per request when the separator comes back altered', async () => {
@@ -286,6 +292,7 @@ describe('the translation driver', () => {
     const calls: string[] = []
     const result = await runTranslation({
       built,
+      pair: PAIR,
       session: session(payload => {
         calls.push(payload)
         // A model that ate the separator: the batch cannot be split back, so the
@@ -307,6 +314,7 @@ describe('the translation driver', () => {
     let call = 0
     const result = await runTranslation({
       built,
+      pair: PAIR,
       session: session(payload => {
         call += 1
         if (call === 1) return payload.split(UNIT_SEPARATOR).map(part => `译:${part}`).join(' ')
@@ -326,6 +334,7 @@ describe('the translation driver', () => {
     const builtFirst = buildArticle(first, CLASSES) as BuiltArticle
     await runTranslation({
       built: builtFirst,
+      pair: PAIR,
       session: session(payload => payload.split(UNIT_SEPARATOR).map(part => `译:${part}`).join(UNIT_SEPARATOR)),
       cancelled: () => false,
     })
@@ -334,12 +343,96 @@ describe('the translation driver', () => {
     const translate = vi.fn(async (payload: string) => payload)
     const result = await runTranslation({
       built: builtSecond,
+      pair: PAIR,
       session: { inputQuota: 10_000, measureInputUsage: async (text: string) => text.length, translate },
       cancelled: () => false,
     })
     expect(translate).not.toHaveBeenCalled()
     expect(result.done).toBe(7)
     expect(second.textContent).toContain('译:The team built new evaluations.')
+  })
+
+  it('reports what a run learned and what it was served — for the persistent tiers', async () => {
+    const root = article()
+    const built = buildArticle(root, CLASSES) as BuiltArticle
+    const fresh = await runTranslation({
+      built,
+      pair: PAIR,
+      session: session(payload => payload.split(UNIT_SEPARATOR).map(part => `译:${part}`).join(UNIT_SEPARATOR)),
+      cancelled: () => false,
+    })
+    // A cold run: seven new learnings, nothing recalled, each carrying its hash.
+    expect(fresh.learned).toHaveLength(7)
+    expect(fresh.recalled).toEqual([])
+    expect(fresh.learned[0]).toEqual({
+      hash: translationHash('The team built new evaluations.'),
+      source: 'The team built new evaluations.',
+      target: '译:The team built new evaluations.',
+    })
+
+    const second = article()
+    const warm = await runTranslation({
+      built: buildArticle(second, CLASSES) as BuiltArticle,
+      pair: PAIR,
+      session: session(payload => payload),
+      cancelled: () => false,
+    })
+    // The repeat run: everything recalled, nothing learned — the caller's
+    // batched write moves the LRU stamps without pretending new content.
+    expect(warm.learned).toEqual([])
+    expect(warm.recalled).toHaveLength(7)
+    expect(warm.recalled[0]?.hash).toBe(translationHash('The team built new evaluations.'))
+  })
+
+  it('keys the memory by language pair: another pair misses, and its own run re-pays', async () => {
+    const root = article()
+    const built = buildArticle(root, CLASSES) as BuiltArticle
+    await runTranslation({
+      built,
+      pair: PAIR,
+      session: session(payload => payload.split(UNIT_SEPARATOR).map(part => `译:${part}`).join(UNIT_SEPARATOR)),
+      cancelled: () => false,
+    })
+    // The old smell was a bare-sentence key: a German reading of the same words
+    // would have been served the en→zh translation.
+    expect(remembered('de→zh', 'The team built new evaluations.')).toBeUndefined()
+    expect(remembered(PAIR, 'The team built new evaluations.')).toBe('译:The team built new evaluations.')
+    const second = article()
+    const translate = vi.fn(async (payload: string) => payload.split(UNIT_SEPARATOR).map(part => `德:${part}`).join(UNIT_SEPARATOR))
+    const german = await runTranslation({
+      built: buildArticle(second, CLASSES) as BuiltArticle,
+      pair: 'de→zh',
+      session: { inputQuota: 10_000, measureInputUsage: async (text: string) => text.length, translate },
+      cancelled: () => false,
+    })
+    expect(translate).toHaveBeenCalled()
+    expect(german.done).toBe(7)
+    expect(second.textContent).toContain('德:The team built new evaluations.')
+  })
+
+  it('warms the memory from a persisted slice, without disturbing fresher in-page writes', async () => {
+    // primeMemory is the warm path the pane runs before spending the model: the
+    // host's record pours in, and a sentence written since (a newer in-page
+    // translation) is left alone.
+    const primed = primeMemory(PAIR, [
+      { text: 'First stored sentence.', translation: '译:First stored sentence.' },
+      { text: 'Second stored sentence.', translation: '译:Second stored sentence.' },
+    ])
+    expect(primed).toBe(2)
+    expect(remembered(PAIR, 'First stored sentence.')).toBe('译:First stored sentence.')
+    const again = primeMemory(PAIR, [
+      { text: 'First stored sentence.', translation: '译:a stale copy' },
+      { text: 'Third stored sentence.', translation: '译:Third stored sentence.' },
+    ])
+    expect(again).toBe(1)
+    expect(remembered(PAIR, 'First stored sentence.')).toBe('译:First stored sentence.')
+  })
+
+  it('hashes deterministically, and differently per sentence', () => {
+    // The host stores these digests opaquely; the only contract is stability.
+    expect(translationHash('The team built new evaluations.')).toBe(translationHash('The team built new evaluations.'))
+    expect(translationHash('The team built new evaluations.')).not.toBe(translationHash('The team built new evaluations!'))
+    expect(translationHash('')).toMatch(/^[0-9a-f]{16}$/)
   })
 
   it('stops between batches when the reader cancels', async () => {
@@ -352,6 +445,7 @@ describe('the translation driver', () => {
     let cancelled = false
     const result = await runTranslation({
       built,
+      pair: PAIR,
       session: session(payload => {
         cancelled = true
         return payload.split(UNIT_SEPARATOR).map(part => `译:${part}`).join(UNIT_SEPARATOR)
@@ -391,7 +485,7 @@ describe('whole-string translation (the wall)', () => {
   it('translates the list in one batch, skips Chinese, and remembers the result', async () => {
     clearMemory()
     const session = marker()
-    const outcome = await translateTexts(['First title', 'Second title', '这是一条中文'], session, () => false)
+    const outcome = await translateTexts(['First title', 'Second title', '这是一条中文'], PAIR, session, () => false)
     expect([...outcome.translated.entries()]).toEqual([['First title', '译：First title'], ['Second title', '译：Second title']])
     expect(outcome.remembered).toBe(0)
     expect(outcome.failed).toBe(0)
@@ -399,7 +493,7 @@ describe('whole-string translation (the wall)', () => {
     expect(session.calls).toHaveLength(1)
     // A second pass over the same fields costs no request at all — this is what
     // makes scrolling up and down a translated wall free.
-    const again = await translateTexts(['First title'], session, () => false)
+    const again = await translateTexts(['First title'], PAIR, session, () => false)
     expect(again.remembered).toBe(1)
     expect(session.calls).toHaveLength(1)
   })
@@ -417,7 +511,7 @@ describe('whole-string translation (the wall)', () => {
         return `译：${payload}`
       },
     }
-    const outcome = await translateTexts(['First title', 'Second title'], session, () => false)
+    const outcome = await translateTexts(['First title', 'Second title'], PAIR, session, () => false)
     expect(outcome.translated.get('First title')).toBe('译：First title')
     expect(outcome.translated.has('Second title')).toBe(false)
     expect(outcome.failed).toBe(1)

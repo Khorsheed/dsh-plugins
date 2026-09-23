@@ -51,7 +51,7 @@ Coordination knowledge travels inside messages, not injections: in "@ada 设计 
 
 ### Notifications: member-to-member relay (phase 1: human-confirmed)
 
-- **Primary channel (bridge)**: the local-agent family's member-channel proposal (`proposals/active/2026-08-19-local-agent-member-channel.md`) injects a bridge MCP tool `member_message(to, text)` into member CLIs (per-run one-time token auth, host-side same-parent check) — a structured tool call, deliverable mid-run, with unforgeable identity.
+- **Primary channel (bridge)**: the local-agent family's member-channel proposal (`proposals/closed/2026-08-19-local-agent-member-channel.md`) injects a bridge MCP tool `member_message(to, text)` into member CLIs (per-run one-time token auth, host-side same-parent check) — a structured tool call, deliverable mid-run, with unforgeable identity.
 - **Gate handoff**: before delivering, the family bridge probes `ctx.get('room')`; when the parent session is a room it does NOT deliver directly but calls the room's receiver `room.receiveMemberMessage({ from, to, content, parentSessionId, provenance })`, and the room decides per its gate config — **pending-confirm card** or **auto-dispatch**. With no room (or a non-room parent), the family delivers directly. The gate has exactly one owner: the room.
 - **Receipt pass-through**: the gate outcome (`sent` / `pending-confirm` / `busy`) travels back through the bridge to the sending member, keeping its conclusion honest ("notified, awaiting the room owner's confirm" ≠ "delivered").
 - **Fallback channel (text parsing)**: without the bridge (older family builds, non-family members), the room detects an own-line `@name <content>` at the end of a member's reply as a pending relay (the format is stated in the roster injection, so "mentioning" in prose is mechanically distinguishable from "notifying").
@@ -81,7 +81,7 @@ The official chat design language (verified against `ui-conversation` in the har
 
 ### Requirement for local-agent
 
-The delegation facade (`start` / `resume` / `cancel`, reattach recipe, progress events, `delegations.jsonl` persistence — proposal `proposals/active/2026-08-18-local-agent-delegation-api.md`, M1–M4) is **delivered and verified**. Three further asks, filed with the family:
+The delegation facade (`start` / `resume` / `cancel`, reattach recipe, progress events, `delegations.jsonl` persistence — proposal `proposals/closed/2026-08-18-local-agent-delegation-api.md`, M1–M4) is **delivered and verified**. Three further asks, filed with the family:
 
 > **R1 — Two-way member channel**: ~~implement the official continuable interface~~ — rejected by the family's review (`prepareContinuable` only returns seed data; the continuation manager creates and drives an in-process dsh Agent unrelated to the CLI; the official README leaves host-user continuation open), **superseded by the member-channel proposal**: a writable composer (chain-priority shadow of the read-only takeover) + `promptMember`/`stopMember` remotes + bridge-MCP member messaging. Room's cooperation point: expose the `receiveMemberMessage` gate entry (see Notifications). R1 no longer asks for continuable.
 >

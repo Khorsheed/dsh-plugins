@@ -1,3 +1,4 @@
+import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 /**
  * Local-agent-dsh plugin, browser half: the dsh settings surface, one face
  * per host line — on alpha.2 the bundle's own configuration on its
@@ -82,6 +83,7 @@ export function apply(ctx: Context): void {
     scope,
     hooks: { settings: scope },
     authT,
+    renderModelPicker: props => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker('dsh', props),
     // The harness's memberless model surface; absent gateway/broker
     // degrades to the bare input with its recent-models suggestions.
     harnessModel: () =>

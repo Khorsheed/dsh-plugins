@@ -1,3 +1,4 @@
+import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 /**
  * The dsh provider's live driver: one resident sub-dsh serve process per
  * member (child session), driven over the family-internal wire
@@ -21,6 +22,7 @@
 
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
+import { BlockAssembler, createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -32,10 +34,11 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush } from '@khorsheed/dsh-local-agent'
 import {
   LIVE_SERVER_NAME,
   LIVE_WIRE_PROTOCOL_VERSION,
+  type LiveAssistantStreamParams,
   type LiveInitializeResult,
   type LiveTurnReason,
   type LiveTurnStartResult,
@@ -48,8 +51,10 @@ import {
   registerMemberRun,
   resolveApiKey,
 } from './dsh-cli-provider.ts'
-import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
+import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope } from './provision.ts'
 import { mirrorDshLiveEvent, mirrorDshSession, type DshLiveMirrorGranularity } from './session-mirror.ts'
+
+type AssistantStreamFrame = LiveAssistantStreamParams['frame']
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -120,6 +125,7 @@ export interface DshLiveRoundSpec {
    * spawn resolver decides (override → settings).
    */
   readonly startModel?: string | undefined
+  readonly configuration?: LocalAgentResolvedConfiguration
 }
 
 function delay(ms: number): Promise<void> {
@@ -143,6 +149,7 @@ class LiveRuntime {
    * spawned with no model flag at all. A round whose start model differs
    * retires the runtime instead of silently running the old one.
    */
+  configurationKey: string | undefined
   boundModel: string | undefined
   private reclaimed = false
   private readonly pending = new Map<number, {
@@ -162,6 +169,7 @@ class LiveRuntime {
    * round is dropped, never delivered into a stale closure.
    */
   onEvent: ((sessionId: string, turn: number | null, event: SessionEvent) => void) | undefined
+  onStream: ((sessionId: string, turn: number, frame: AssistantStreamFrame) => void) | undefined
   onIdle: ((sessionId: string, turn: number, reason: LiveTurnReason | null) => void) | undefined
   /** Fires once when the process dies or is reclaimed (driver bookkeeping). */
   onDead: (() => void) | undefined
@@ -223,12 +231,15 @@ class LiveRuntime {
         }
         return
       }
-      const params = (message.params ?? {}) as { sessionId?: unknown; turn?: unknown; event?: unknown; reason?: unknown }
+      const params = (message.params ?? {}) as { sessionId?: unknown; turn?: unknown; event?: unknown; reason?: unknown; frame?: unknown }
       if (typeof params.sessionId !== 'string') return
       if (message.method === 'session/event') {
         const event = params.event as SessionEvent | undefined
         if (event === null || typeof event !== 'object' || typeof event.type !== 'string') return
         this.onEvent?.(params.sessionId, typeof params.turn === 'number' ? params.turn : null, event)
+      } else if (message.method === 'session/assistant-stream') {
+        if (typeof params.turn !== 'number' || params.frame === null || typeof params.frame !== 'object') return
+        this.onStream?.(params.sessionId, params.turn, params.frame as AssistantStreamFrame)
       } else if (message.method === 'session/idle') {
         if (typeof params.turn !== 'number') return
         this.onIdle?.(params.sessionId, params.turn, (params.reason ?? null) as LiveTurnReason | null)
@@ -396,13 +407,8 @@ export class DshLiveDriver {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
 
-  /**
-   * Live-update the mirror granularity for subsequent rounds. Granularity is
-   * read per round, so a settings change needs no runtime recycle.
-   */
-  setLiveMirrorGranularity(granularity: DshLiveMirrorGranularity): void {
-    this.config.liveMirrorGranularity = granularity
-  }
+  /** @deprecated Compatibility no-op: live output is always incremental. */
+  setLiveMirrorGranularity(_granularity: DshLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -457,7 +463,9 @@ export class DshLiveDriver {
       // to a different one: retire so the respawn binds the asked-for model
       // (the sub-dsh session resumes from disk — only the process is
       // replaced).
-      if (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel) {
+      if ((spec.configuration !== undefined && existing.configurationKey !== JSON.stringify(spec.configuration))
+        || (spec.configuration === undefined && existing.configurationKey !== undefined)
+        || (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel)) {
         await this.reclaim(key)
       } else {
         this.clearIdleTimer(key)
@@ -500,15 +508,15 @@ export class DshLiveDriver {
     // reads the member's configured model (override → settings). A later
     // switch reaches the runtime by retiring it first.
     const startModel = spec.startModel?.trim()
-    const model = startModel !== undefined && startModel !== ''
-      ? startModel
-      : this.config.modelFor?.(key)?.trim()
+    const model = spec.configuration !== undefined ? spec.configuration.model
+      : startModel !== undefined && startModel !== '' ? startModel : this.config.modelFor?.(key)?.trim()
     const spawnSpec: SubprocessSpawnSpec = {
       argv: [
         ...dshLaunchArgv(this.config),
         '--profile', profileName,
         '--serve',
         ...model === undefined || model === '' ? [] : ['--model', model],
+        ...spec.configuration?.effort === undefined ? [] : ['--effort', spec.configuration.effort],
       ],
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
@@ -537,6 +545,7 @@ export class DshLiveDriver {
     // A blank resolution binds no model at all — record exactly what the argv
     // carries so a later start-model comparison never retires needlessly.
     runtime.boundModel = model === undefined || model === '' ? undefined : model
+    runtime.configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     runtime.onDead = () => {
       // Delete only OUR registration: a crash-then-respawn can interleave so
       // the dead runtime's late onDead would otherwise evict the NEW
@@ -597,6 +606,23 @@ export class DshLiveDriver {
    * otherwise overwrite the runtime's single notification sink and strand
    * the earlier round forever.
    */
+  /** Prepare the owned headless agent and validate its adapter without a model turn. */
+  async prepare(spec: DshLiveRoundSpec, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
+    if (this.draining || this.disabled) throw new LiveChannelUnavailableError('the live driver is unavailable for preparation')
+    try {
+      provisionDshScope(spec.homeDir, this.config)
+      const apiKey = await resolveApiKey(this.ctx, this.config)
+      const runtime = await this.ensureRuntime(spec, apiKey, signal)
+      await runtime.request('session/prepare', { sessionId: spec.sessionId, resume: spec.resume !== undefined })
+      signal.throwIfAborted()
+      this.armIdleTimer(spec.sessionId)
+    } catch (error) {
+      await this.reclaim(spec.sessionId)
+      throw error
+    }
+  }
+
   async startRound(request: SubagentStartRequest, spec: DshLiveRoundSpec): Promise<SubagentRun> {
     // A draining generation refuses new rounds BEFORE chaining so the
     // provider's exec fallback does not queue behind an in-flight round.
@@ -641,7 +667,6 @@ export class DshLiveDriver {
 
     const turn = spec.resume?.turn ?? 1
     const childSession = spec.childSession
-    const granularity: DshLiveMirrorGranularity = this.config.liveMirrorGranularity ?? 'event'
     const localAgent = this.ctx.get('localAgent')
 
     const runAbort = new AbortController()
@@ -654,10 +679,41 @@ export class DshLiveDriver {
     let lastText = ''
     let mirroredMessages = 0
     /** Events of this round that arrived before the boundary opened (same-chunk batching). */
-    const bufferedEvents: SessionEvent[] = []
+    const bufferedEvents: ({ kind: 'event'; event: SessionEvent } | { kind: 'stream'; frame: AssistantStreamFrame })[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession))
+      persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession)).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-dsh: live persistence failed: ${thrown(error).message}`)
+      })
+    }
+
+    const streamPublisher = localAgent?.liveStreams === undefined ? undefined
+      : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
+        error => this.ctx.logger.warn(`live checkpoint failed: ${String(error)}`))
+    const liveFlush = new LiveFlush(error => this.ctx.logger.warn(`subagent-dsh: live flush failed: ${String(error)}`))
+    let streaming: { id: string; step: number; assembler: BlockAssembler; next: number; receivedAt?: number } | undefined
+    const publishStream = (): void => {
+      if (streaming === undefined || streamPublisher === undefined) return
+      const blocks = streaming.assembler.interruptedBlocks()
+      const receivedAt = streaming.receivedAt ?? Date.now()
+      for (const [index, block] of blocks.entries()) {
+        if ((block.type === 'reasoning' || block.type === 'text') && block.text !== '') streamPublisher.update(streaming.step, block.type === 'reasoning' ? 'think' : 'text', block.text, { itemId: `${streaming.id}:${index}`, receivedAt })
+      }
+      delete streaming.receivedAt
+    }
+    const acceptStream = (frame: AssistantStreamFrame): void => {
+      if (streamPublisher === undefined) return
+      if (frame.type === 'start') {
+        if (streaming !== undefined) liveFlush.cancel(streaming.step)
+        streaming = { id: String(frame.attemptId), step: frame.step, assembler: new BlockAssembler(), next: 0 }
+      } else if (frame.type === 'chunk' && streaming?.id === frame.attemptId) {
+        if (frame.index < streaming.next) return
+        if (frame.index !== streaming.next) throw new Error('non-contiguous DSH assistant stream')
+        streaming.next++
+        streaming.receivedAt ??= Date.now()
+        streaming.assembler.push(frame.chunk)
+        liveFlush.schedule(streaming.step, publishStream)
+      }
     }
 
     const requestCancel = (): void => {
@@ -679,7 +735,12 @@ export class DshLiveDriver {
     })
 
     const mirrorOne = (event: SessionEvent): void => {
-      const text = mirrorDshLiveEvent(childSession, event, { granularity })
+      const text = mirrorDshLiveEvent(childSession, event)
+      if (event.type === 'assistant/message') {
+        liveFlush.cancel(event.data.step)
+        streamPublisher?.finish(event.data.step)
+        if (streaming?.step === event.data.step) streaming = undefined
+      }
       if (event.type === 'user/message' || event.type === 'assistant/message') {
         mirroredMessages += 1
         persist()
@@ -696,7 +757,10 @@ export class DshLiveDriver {
       // buffered and flush now, in wire order, inside the boundary.
       childSession.append('turn/start', { turn })
       turnOpened = true
-      for (const event of bufferedEvents.splice(0)) mirrorOne(event)
+      for (const entry of bufferedEvents.splice(0)) {
+        if (entry.kind === 'event') mirrorOne(entry.event)
+        else acceptStream(entry.frame)
+      }
     }
 
     let resolveIdle!: (outcome: { reason: LiveTurnReason | null }) => void
@@ -708,10 +772,15 @@ export class DshLiveDriver {
         // with ITS turn) and out-of-round events (null) never cross.
         if (sessionId !== spec.sessionId || eventTurn !== turn) return
         if (!turnOpened) {
-          bufferedEvents.push(event)
+          bufferedEvents.push({ kind: 'event', event })
           return
         }
         mirrorOne(event)
+      }
+      rt.onStream = (sessionId, eventTurn, frame) => {
+        if (sessionId !== spec.sessionId || eventTurn !== turn || roundSettled) return
+        if (!turnOpened) bufferedEvents.push({ kind: 'stream', frame })
+        else acceptStream(frame)
       }
       rt.onIdle = (sessionId, idleTurn, reason) => {
         // Only this round's idle settles it — a cancelled round's unwind idle
@@ -722,7 +791,7 @@ export class DshLiveDriver {
     }
 
     // Provisioning is idempotent; re-running heals a drifted sub-profile.
-    provisionDshSubProfile(spec.homeDir, this.config)
+    provisionDshScope(spec.homeDir, this.config)
     const apiKey = await resolveApiKey(this.ctx, this.config)
 
     const accepted: Promise<void> = (async () => {
@@ -798,8 +867,22 @@ export class DshLiveDriver {
       },
       signal: request.signal,
       onAbort,
-    }).then((settled) => {
+    }).then(async (settled) => {
       roundSettled = true
+      liveFlush.dispose()
+      if (turnOpened && streaming !== undefined && streamPublisher !== undefined) {
+        const blocks = streaming.assembler.interruptedBlocks()
+        if (blocks.length > 0) {
+          childSession.append('assistant/message', {
+            turn, step: streaming.step,
+            message: createAssistantMessage({ content: blocks, source: { provider: 'dsh-local', model: 'unobserved' } }), stream: [],
+            interrupted: true,
+          }, { surfaceOp: 'append' })
+          streamPublisher.finish(streaming.step)
+          persist()
+        }
+      }
+      streamPublisher?.dispose()
       // Identical turn/end bookkeeping to the exec path — but only for a turn
       // that actually opened (a pre-accept cancel records no turn at all).
       if (turnOpened) {
@@ -817,8 +900,15 @@ export class DshLiveDriver {
       // Settlement clears the round's handlers: a late notification drops at
       // the runtime frame instead of landing in a dead closure.
       if (runtime !== undefined) {
+        runtime.onStream = undefined
         runtime.onEvent = undefined
         runtime.onIdle = undefined
+      }
+      // A completed answer is not a durable turn until its final boundary
+      // and any closing stream checkpoints have reached the child store.
+      if (turnOpened) {
+        persist()
+        await persistQueue
       }
       return settled
     })

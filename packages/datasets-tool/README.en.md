@@ -25,8 +25,10 @@ The companion tool row of `@khorsheed/dsh-datasets`: the eight model-facing `dat
 |---|---|
 | `read` | the six read verbs: `datasets_list` / `datasets_show` / `datasets_describe` / `datasets_read` / `datasets_snapshot` / `datasets_validate` |
 | `authoring` | read plus `datasets_put_item` (drafting into the working tree; `git commit` stays the human's) |
-| `all` (default) | authoring plus `datasets_worktree_path` (whole-layer materialization, which writes a managed worktree) |
+| `all` (default) | authoring plus `datasets_worktree_path` (whole-layer materialization, which writes the read-only materialization cache) |
 | `none` | nothing — not even the `datasets:tools` prompt section |
+
+The prompt section (T73) tells the model: address a dataset only by its registry reference `<id>/<set>`, calling `datasets_list` first; never pass a path; when a name matches no single set, use `ask_user_question` to let the person choose; for an unregistered repository, ask the person to register it on the Datasets tab rather than reading it. It no longer mentions `/datasets bind` (retired).
 
 The four tiers are one containment chain; **an eval domain wants `authoring`**: a planning agent reads and authors items, while whole-layer materialization is the orchestrator's action.
 

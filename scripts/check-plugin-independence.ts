@@ -60,6 +60,14 @@ export const COMPOSITION_COMPONENTS: ReadonlyArray<string> = [
   'preset-composed-row',
   'provider-mounted-row',
   'sub-profile-patch',
+  // Not a row at all: a SOURCE-PLANE library. It registers no slot, service,
+  // locale or loader row and owns no bundle; consumers declare it as a
+  // workspace dependency and import its `./src/*` directly, so each plugin's
+  // tsdown client bundle inlines it (zero runtime coupling, nothing to
+  // install alongside). Kept distinct from the row components above so
+  // "no patch" cannot read as "a row some other patch mounts". Added
+  // 2026-09-23 with `ui-content-preview` (proposal preview-kernel).
+  'source-plane-library',
 ]
 
 /**
@@ -98,6 +106,18 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
   'mission-tool',
   'datasets-tool',
   'eval-tool',
+  // typesafe-tool is the same shape for the typesafe core: the core publishes
+  // the `ctx.typesafe` service at the profile root and stays surface-free; this
+  // row only makes the tool module resolvable, and an agent preset names the
+  // row — a dsh.bundle declaration would auto-mount typesafe_judge at the
+  // profile root, exactly what the split removes.
+  'typesafe-tool',
+  // ui-content-preview is NOT a row and NOT a companion: it is the
+  // source-plane library whose `dsh.composition.component` is
+  // 'source-plane-library'. Listed here because the checker pairs the
+  // manifest metadata with this historical list; there is nothing for any
+  // patch to mount on its behalf.
+  'ui-content-preview',
 ]
 
 /**
@@ -137,12 +157,20 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'mission-tool': ['@khorsheed/dsh-mission'],
   'datasets-tool': ['@khorsheed/dsh-datasets'],
   'eval-tool': ['@khorsheed/dsh-eval'],
-  'ui-file-preview': ['@khorsheed/dsh-file-preview'],
+  'ui-file-preview': ['@khorsheed/dsh-file-preview', '@khorsheed/dsh-client-ui-content-preview'],
   // canvas → inline-html-render: the card detail renders HTML cards through
   // inline-html-render's SOURCE-plane helpers (buildCardSrcDoc/attachBridge),
   // bundled by tsdown — a compile-time edge with zero runtime coupling (the
   // renderer package need not be installed for canvas to work).
   'canvas': ['@khorsheed/dsh-inline-html-render'],
+  // local-files / worktrees → ui-content-preview: the two file surfaces render
+  // through ONE shared content pane (proposal preview-kernel). Same shape as
+  // the canvas edge above — a compile-time SOURCE-plane import
+  // (`.../src/client/*`) that tsdown inlines into each plugin's own client
+  // bundle, so the kernel needs no runtime install and the two plugins stay
+  // independently installable and uninstallable.
+  'local-files': ['@khorsheed/dsh-client-ui-content-preview'],
+  'worktrees': ['@khorsheed/dsh-client-ui-content-preview'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent

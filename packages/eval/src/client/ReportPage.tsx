@@ -22,10 +22,11 @@
  * judge be a player and discloses it per cell instead of dropping it.
  */
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  EvalFinalizeView, EvalReportJudgeTag, EvalReportPair, EvalRunReportView, EvalRunUnitsView,
+  EvalFinalizeView, EvalReportCriterionCell, EvalReportCriterionSample, EvalReportJudgeTag,
+  EvalReportPair, EvalReportTaskCriteria, EvalRunReportView, EvalRunUnitsView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
@@ -33,7 +34,7 @@ import {
   Agreement, Chip, Count, Detail, Duration, EmptyState, Section, Word,
   invariantTone, stageTone, stamp,
 } from './parts.tsx'
-import { compactCount, durationParts, stagePhrase } from './vocab.ts'
+import { compactCount, durationParts, sourceOf, sourceShares, stagePhrase, verdictKey } from './vocab.ts'
 import type { EvalKey } from './locales.ts'
 import css from './LabView.module.css'
 
@@ -65,6 +66,7 @@ function invariantWhy(id: string): EvalKey | null {
   if (id === 'fingerprint') return 'invariant.why.fingerprint'
   if (id === 'subject') return 'invariant.why.subject'
   if (id === 'procedure') return 'invariant.why.procedure'
+  if (id === 'verdict-coverage') return 'invariant.why.verdict-coverage'
   return null
 }
 
@@ -153,8 +155,18 @@ function factorLine(pair: EvalReportPair, t: LabViewProps['t']): string {
 }
 
 /** One condition pair: the factor, the per-item deltas, the CI and the verdict. */
-function PairBlock(props: { pair: EvalReportPair; t: LabViewProps['t'] }) {
-  const { pair, t } = props
+function PairBlock(props: {
+  pair: EvalReportPair
+  /**
+   * Open the records behind one (题目 × 对比组) on the 运行记录 stage. A
+   * report number is a MEAN over the run's reps, so the honest jump names the
+   * pair and lets the record list resolve how many that is — one rep opens
+   * its detail, several leave the list standing under a chip (I5·T69).
+   */
+  onOpenRecords: (task: string, condition: string) => void
+  t: LabViewProps['t']
+}) {
+  const { pair, onOpenRecords, t } = props
   // The weighted columns appear only when the rubric carried weights for both
   // sides — an empty pair of columns would read as "weight zero".
   const weighted = pair.rows.some(row => row.aWeighted !== null && row.bWeighted !== null)
@@ -181,8 +193,30 @@ function PairBlock(props: { pair: EvalReportPair; t: LabViewProps['t'] }) {
               {pair.rows.map(row => (
                 <tr key={row.task}>
                   <th className={css.reportRowHead}>{row.task}</th>
-                  <td className={css.reportTd}>{fmtNum(row.aMean)}</td>
-                  <td className={css.reportTd}>{fmtNum(row.bMean)}</td>
+                  {/* Each side's number opens the records it was computed
+                      from. A mean nobody can get behind is a number a reader
+                      has to take on faith, and this table is exactly where
+                      「为什么是这个数」 gets asked. */}
+                  <td className={css.reportTd}>
+                    <button
+                      type="button"
+                      className={css.reportJump}
+                      title={t('report.openRecords', { task: row.task, condition: pair.a })}
+                      onClick={() => { onOpenRecords(row.task, pair.a) }}
+                    >
+                      {fmtNum(row.aMean)}
+                    </button>
+                  </td>
+                  <td className={css.reportTd}>
+                    <button
+                      type="button"
+                      className={css.reportJump}
+                      title={t('report.openRecords', { task: row.task, condition: pair.b })}
+                      onClick={() => { onOpenRecords(row.task, pair.b) }}
+                    >
+                      {fmtNum(row.bMean)}
+                    </button>
+                  </td>
                   <td className={css.reportTd}>{fmtNum(row.delta)}</td>
                   {weighted && (
                     <td className={css.reportTd}>
@@ -203,11 +237,266 @@ function PairBlock(props: { pair: EvalReportPair; t: LabViewProps['t'] }) {
             mean: fmtNum(pair.ci.mean), lo: fmtNum(pair.ci.lo), hi: fmtNum(pair.ci.hi),
             samples: pair.ci.samples, seed: pair.ci.seed,
           })}
+          {pair.ciAdvisory && <div>{t('report.ciAdvisory')}</div>}
         </div>
+      )}
+      {/* No interval is a statement too: say how many items had a delta
+          rather than leaving a gap a reader could take for "not computed". */}
+      {pair.ci === null && pair.ciWithheld !== null && (
+        <div className={css.dim}>{t('report.ciWithheld', { k: pair.ciWithheld.tasksWithDelta })}</div>
       )}
       {/* The rank verdict is the report's own sentence — including the one
           that refuses to rank, which is the sentence a reader must not lose. */}
       <div className={css.rankReason}>{t('report.rank')}: {pair.rankReason}</div>
+    </Section>
+  )
+}
+
+/**
+ * Where one criteria-table cell's score came from: 「人」 alone when one layer
+ * scored the whole cell, 「人 1 / 判官 3」 when the merge mixed them.
+ */
+function SourceMix(props: { sources: Readonly<Record<string, number>>; t: LabViewProps['t'] }) {
+  const shares = sourceShares(props.sources)
+  if (shares.length === 0) return null
+  return (
+    <span className={css.criteriaSource}>
+      {shares.map(share => (shares.length === 1
+        ? props.t(share.key)
+        : `${props.t(share.key)} ${String(share.count)}`)).join(' / ')}
+    </span>
+  )
+}
+
+/**
+ * The records behind one criteria cell, de-duplicated.
+ *
+ * A cell aggregates every rep of one (题目 × 对比组), and every sample under
+ * it carries the `missionId` it was written on — including the superseded
+ * ones, because the judge draft a person replaced was written on that same
+ * record. One id means the cell has exactly one record behind it.
+ * @param cell - the projected cell.
+ * @returns the distinct mission ids, in the order the samples list them.
+ */
+function recordsOf(cell: EvalReportCriterionCell): string[] {
+  return [...new Set([...cell.samples, ...cell.superseded].map(sample => sample.missionId))]
+}
+
+/** The conclusion in one cell: ✓ / ✗, a proportion, or how many reps it held in. */
+function criterionMark(cell: EvalReportCriterionCell): string {
+  if (cell.reps === 0) return DASH
+  if (cell.proportional) return cell.credit === null ? DASH : `${String(Math.round(cell.credit * 100))}%`
+  const mark = cell.holds === true ? '✓' : '✗'
+  return cell.reps > 1 ? `${mark} ${String(cell.heldReps)}/${String(cell.reps)}` : mark
+}
+
+/** One recorded verdict, with the judge un-blinded and its evidence folded. */
+function CriterionSampleLine(props: {
+  sample: EvalReportCriterionSample
+  superseded: boolean
+  t: LabViewProps['t']
+}) {
+  const { sample, superseded, t } = props
+  const [open, setOpen] = useState(false)
+  const judge = sample.judge
+  return (
+    <div className={css.criteriaSample}>
+      <span className={css.dim}>
+        {t('report.sampleLine', { rep: sample.rep ?? DASH, source: t(verdictKey(sourceOf(sample.ns))) })}
+      </span>
+      <Chip tone={sample.pass ? 'ok' : 'neutral'}>{t(sample.pass ? 'report.holds' : 'report.holdsNot')}</Chip>
+      {sample.ratio !== null && (
+        <span className={css.mono}>{sample.ratio.passed}/{sample.ratio.total}</span>
+      )}
+      {/* Un-blinded on purpose: the bench hides the judge so a grader cannot
+          be swayed, and the REPORT is where a reader must be able to weigh
+          whose opinion a number rests on (decision 9). */}
+      {judge === null
+        ? <span className={css.dim}>{sample.by === '' ? DASH : sample.by}</span>
+        : (
+          <span className={css.judgeTag}>
+            <span className={css.mono}>{judge.condition}</span>
+            {judge.model !== null && <span className={css.dim}> · {judge.model}</span>}
+            {judge.selfJudged && <Chip tone="warn">{t('report.selfJudged')}</Chip>}
+          </span>
+        )}
+      {superseded && <Chip tone="warn">{t('report.supersededBy')}</Chip>}
+      {sample.evidence === ''
+        ? <span className={css.dim}>{t('report.criteriaNoEvidence')}</span>
+        : (
+          <span
+            className={css.criteriaEvidence}
+            data-open={open ? '' : undefined}
+            role="button"
+            tabIndex={0}
+            onClick={() => { setOpen(!open) }}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setOpen(!open) }}
+          >
+            {sample.evidence}
+          </span>
+        )}
+    </div>
+  )
+}
+
+/**
+ * One task's 判据 × 对比组 table: rows are criteria, columns are comparison
+ * groups, the bottom row is the task's own score, and every cell opens onto
+ * the verdicts it was computed from.
+ *
+ * The page adds no arithmetic. The conclusion, the source mix and the total
+ * all arrive decided by `analyzeBundle` — including the bottom row, which is
+ * the SAME number the pair table prints rather than this table's column sum,
+ * so the two can never disagree about one item.
+ */
+function CriteriaTable(props: {
+  table: EvalReportTaskCriteria
+  /** The pair table's jump: land on 运行记录 narrowed to one (题目 × 对比组). */
+  onOpenRecords: (task: string, condition: string) => void
+  /**
+   * The same jump, but straight to ONE record — available here and not on the
+   * pair table because a criteria cell carries the `missionId` of every
+   * verdict behind it. With one record behind the cell there is nothing to
+   * pick, so picking it is not picking FOR the reader (I5·T69).
+   */
+  onOpenRecord: (task: string, condition: string, missionId: string) => void
+  t: LabViewProps['t']
+}) {
+  const { table, onOpenRecords, onOpenRecord, t } = props
+  const [open, setOpen] = useState<string | null>(null)
+  const columns = 4 + table.conditions.length
+  // Same rule as the pair table: the weighted figure shows only when every
+  // column carries one, because a blank beside a number reads as zero.
+  const weighted = table.totals.length > 0 && table.totals.every(total => total.weighted !== null)
+  return (
+    <Section title={table.task} meta={t('report.criteriaHint')}>
+      <table className={css.reportTable}>
+        <thead>
+          <tr>
+            <th className={css.reportHead}>{t('report.col.criterion')}</th>
+            <th className={css.reportHead}>{t('report.col.axis')}</th>
+            <th className={css.reportHead}>{t('report.col.weight')}</th>
+            <th className={css.reportHead}>{t('report.col.polarity')}</th>
+            {table.conditions.map(condition => (
+              <th key={condition} className={css.reportHead}>{condition}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map(row => (
+            <Fragment key={row.id}>
+              <tr>
+                <th className={css.reportRowHead}>
+                  <span className={css.mono}>{row.id}</span>
+                  {row.undeclared && <Chip tone="warn" title={t('report.criteriaUndeclared')}>⚠</Chip>}
+                </th>
+                <td className={css.reportTd}>{row.axis ?? DASH}</td>
+                <td className={css.reportTd}>{row.weight ?? DASH}</td>
+                <td className={css.reportTd}>
+                  {t(row.negative ? 'report.polarityNegative' : 'report.polarityPositive')}
+                </td>
+                {row.cells.map((cell) => {
+                  const key = `${row.id}|${cell.condition}`
+                  // A negative criterion that HELD is a defect, and a positive
+                  // one that did not is a miss: both cost the same point, so
+                  // both wear the same colour.
+                  const bad = cell.reps > 0 && (row.negative ? cell.holds === true : cell.holds !== true)
+                  const empty = cell.samples.length === 0 && cell.superseded.length === 0
+                  return (
+                    <td key={cell.condition} className={css.reportTd}>
+                      <button
+                        type="button"
+                        className={css.criteriaCell}
+                        disabled={empty}
+                        aria-expanded={open === key}
+                        title={empty ? t('report.criteriaNotJudged') : t('report.criteriaExpand', { criterion: row.id, condition: cell.condition })}
+                        onClick={() => { setOpen(open === key ? null : key) }}
+                      >
+                        <span className={css.criteriaMark} data-bad={bad ? '' : undefined}>
+                          {criterionMark(cell)}
+                        </span>
+                        <SourceMix sources={cell.sources} t={t} />
+                      </button>
+                    </td>
+                  )
+                })}
+              </tr>
+              {row.cells.filter(cell => open === `${row.id}|${cell.condition}`).map(cell => (
+                <tr key={`${row.id}|${cell.condition}|open`}>
+                  <td className={css.criteriaDetail} colSpan={columns}>
+                    <div className={css.sectionTitle}>
+                      <span>{t('report.criteriaEvidence')}</span>
+                      <span className={css.sectionMeta}>
+                        {row.id} · {cell.condition} · {t('report.criteriaReps', { count: cell.reps })}
+                      </span>
+                      {/* The mark a person who re-judged this cell earned: the
+                          criterion now scores on their word, and the judge's
+                          original verdict stays right beside it. */}
+                      {cell.superseded.length > 0 && (cell.sources['human-final'] ?? 0) > 0 && (
+                        <Chip tone="warn">{t('report.humanOverride')}</Chip>
+                      )}
+                      {/* The same road the pair table's numbers take, keyed
+                          off what this cell actually knows: one record behind
+                          it opens that record, several leave the list standing
+                          under its chip for the reader to choose. */}
+                      {recordsOf(cell).length > 0 && (() => {
+                        const records = recordsOf(cell)
+                        const only = records.length === 1 ? records[0] as string : null
+                        return (
+                          <button
+                            type="button"
+                            className={css.reportJump}
+                            title={only === null
+                              ? t('report.openRecords', { task: table.task, condition: cell.condition })
+                              : t('report.openRecord', { record: only })}
+                            onClick={() => {
+                              if (only === null) onOpenRecords(table.task, cell.condition)
+                              else onOpenRecord(table.task, cell.condition, only)
+                            }}
+                          >
+                            {t(only === null ? 'report.criteriaOpenRecords' : 'report.criteriaOpenRecord')}
+                          </button>
+                        )
+                      })()}
+                    </div>
+                    {cell.samples.map(sample => (
+                      <CriterionSampleLine
+                        key={`${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
+                        sample={sample}
+                        superseded={false}
+                        t={t}
+                      />
+                    ))}
+                    {cell.superseded.map(sample => (
+                      <CriterionSampleLine
+                        key={`old|${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
+                        sample={sample}
+                        superseded
+                        t={t}
+                      />
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </Fragment>
+          ))}
+          <tr className={css.criteriaTotalRow}>
+            <th className={css.reportRowHead}>{t('report.criteriaTotal')}</th>
+            <td className={css.reportTd} />
+            <td className={css.reportTd} />
+            <td className={css.reportTd} />
+            {table.totals.map(total => (
+              <td key={total.condition} className={css.reportTd}>
+                {total.scored === null ? DASH : fmtNum(total.scored)}
+                {weighted && total.weighted !== null && (
+                  <span className={css.dim}> ({t('report.criteriaWeighted', { value: fmtNum(total.weighted) })})</span>
+                )}
+                <span className={css.criteriaSource}> {t('report.criteriaReps', { count: total.reps })}</span>
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
     </Section>
   )
 }
@@ -489,11 +778,15 @@ export function ReportPage(props: {
   onReexport: () => void
   /** Look for the bundle under this export directory instead. */
   onLookIn: (dir: string) => void
+  /** Jump from a number to the records it was computed from (I5·T69). */
+  onOpenRecords: (task: string, condition: string) => void
+  /** Land on 运行记录 AND open ONE record — the criteria table's jump. */
+  onOpenRecord: (task: string, condition: string, missionId: string) => void
   t: LabViewProps['t']
 }) {
   const {
     report, loading, error, finalizing, finalizeResult, units, unitsError, reexporting,
-    onFinalize, onExport, onReexport, onLookIn, t,
+    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, onOpenRecord, t,
   } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
@@ -505,7 +798,9 @@ export function ReportPage(props: {
   if (error !== null) return <ErrorState what={t('report.error')} message={error} t={t} />
   if (report === null) return <div className={css.empty}>{t('report.loading')}</div>
 
-  const failing = report.invariants.filter(check => check.status !== 'ok')
+  // The section gate is the first four checks. Verdict coverage degrades a
+  // pair inside an OPEN section, so it is never named as a reason it closed.
+  const failing = report.invariants.filter(check => check.status !== 'ok' && check.id !== 'verdict-coverage')
 
   return (
     <div className={css.reportPage}>
@@ -670,7 +965,23 @@ export function ReportPage(props: {
                 ? <div className={css.dim}>{t('report.singleCondition')}</div>
                 : report.pairs.length === 0
                   ? <div className={css.dim}>{t('report.noPairs')}</div>
-                  : report.pairs.map(pair => <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} t={t} />)}
+                  : report.pairs.map(pair => (
+                    <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} onOpenRecords={onOpenRecords} t={t} />
+                  ))}
+
+            {/* Under the comparison, where a reader who has just seen a
+                delta asks WHICH dimension moved and on what grounds. Behind
+                the same gate: `criteria` is empty when the invariants closed
+                the comparison, and a single-group run still gets the table. */}
+            {report.criteria.map(table => (
+              <CriteriaTable
+                key={table.task}
+                table={table}
+                onOpenRecords={onOpenRecords}
+                onOpenRecord={onOpenRecord}
+                t={t}
+              />
+            ))}
 
             <Efficiency report={report} t={t} />
             <JudgeConsistency report={report} t={t} />

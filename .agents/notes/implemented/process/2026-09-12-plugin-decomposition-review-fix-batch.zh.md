@@ -70,6 +70,6 @@ Status: implemented
 - `pnpm test:scripts` 覆盖新规则:注入兄弟包行的反例、删掉声明的反例、元数据与名单的交叉校验、
   包地图渲染与 `--check`、以及 prerelease 数字比较(`rc.10` > `rc.6`)。
 - 审查者 A、C 的裁定(冻结区间 `cf8f663..a0fa7c6`)见
-  `scratch-ds-design-review/05-review-{A,C}-round2.md`;他们提出的阻塞项对应提交
+  [审查者 A](../../../../docs/acceptance/plugin-decomposition-review-A-round2-2026-09-12.md) 与 [审查者 C](../../../../docs/acceptance/plugin-decomposition-review-C-round2-2026-09-12.md);他们提出的阻塞项对应提交
   `test(local-agent): freeze the provider patch contract`、
   `fix(scripts): make the family data-reference loop self-closing` 与三个 WP8 提交。

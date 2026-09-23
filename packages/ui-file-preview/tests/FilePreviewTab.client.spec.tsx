@@ -142,11 +142,11 @@ describe('FilePreviewTab', () => {
     fireEvent.click(screen.getByText('agent.ts'))
     // No openResource: the detail view opens inside our tab.
     expect(tabActions.openResource).not.toHaveBeenCalled()
-    // Breadcrumb header: segmented ' / ' path, final segment solid; back.
+    // The shared pane's header: back control, the file name as the title, and
+    // the host-resolved absolute spelling on the path row.
     expect(screen.getByLabelText('detail.back')).toBeTruthy()
     expect(screen.getByText('agent.ts')).toBeTruthy()
-    expect(screen.getByText('src')).toBeTruthy()
-    expect(screen.getAllByText('/').length).toBeGreaterThan(0)
+    expect(screen.getByTitle('/work/src/agent.ts')).toBeTruthy()
     await act(async () => {})
     // The content tab fetched the current content through the Remote
     // (CodeBlock splits tokens, so match the rendered text as a whole).
@@ -159,9 +159,9 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     await act(async () => {})
-    fireEvent.click(screen.getByRole('button', { name: 'drawer.tab.diff' }))
+    fireEvent.click(screen.getByRole('button', { name: 'detail.diff' }))
     expect(screen.getByText(/history\.step\.count/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'drawer.tab.content' }))
+    fireEvent.click(screen.getByRole('button', { name: 'detail.content' }))
     expect(document.body.textContent).toContain('const a = 1')
   })
 
@@ -171,7 +171,7 @@ describe('FilePreviewTab', () => {
     // guide.md has no diffs: the toggle is absent, content shows directly.
     fireEvent.click(screen.getByText('guide.md'))
     await act(async () => {})
-    expect(screen.queryByRole('button', { name: 'drawer.tab.diff' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'detail.diff' })).toBeNull()
     expect(screen.getByLabelText('detail.back')).toBeTruthy()
   })
 
@@ -193,11 +193,11 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     await act(async () => {})
-    fireEvent.click(screen.getByLabelText('row.copyPath'))
+    fireEvent.click(screen.getByLabelText('action.copyPath'))
     expect(copyPath).toHaveBeenCalledWith('src/agent.ts')
-    fireEvent.click(screen.getByLabelText('row.openFolder'))
+    fireEvent.click(screen.getByLabelText('action.openFolder'))
     expect(revealFolder).toHaveBeenCalledWith('src/agent.ts')
-    fireEvent.click(screen.getByLabelText('row.openIdeIn'))
+    fireEvent.click(screen.getByLabelText('action.openIDE'))
     expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'cursor')
   })
 
@@ -206,9 +206,9 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     await act(async () => {})
-    expect(screen.getByLabelText('row.copyPath')).toBeTruthy()
-    expect(screen.queryByLabelText('row.openFolder')).toBeNull()
-    expect(screen.queryByLabelText('row.openIdeIn')).toBeNull()
+    expect(screen.getByLabelText('action.copyPath')).toBeTruthy()
+    expect(screen.queryByLabelText('action.openFolder')).toBeNull()
+    expect(screen.queryByLabelText('action.openIDE')).toBeNull()
   })
 
   it('the IDE split button lists every probed IDE and re-chooses on select', async () => {
@@ -217,11 +217,11 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     await act(async () => {})
-    fireEvent.click(screen.getByLabelText('row.openIdeMore'))
+    fireEvent.click(screen.getByLabelText('action.chooseIDE'))
     fireEvent.click(screen.getByText('Visual Studio Code'))
     expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'vscode')
     // The choice sticks: the main button now launches vscode.
-    fireEvent.click(screen.getByLabelText('row.openIdeIn'))
+    fireEvent.click(screen.getByLabelText('action.openIDE'))
     expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'vscode')
   })
 

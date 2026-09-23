@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-门面发起的委派 run 在 settle 之前完全不可见：调用方（room）无法渲染「进行中」，唯一沾边的进度数据（kimi 的镜像行数）躺在 registry 自己的簿记里。提案的 M2 草案让门面心跳去读 registry 上的 `kimiMirroredLines`——评审否决了这个跨包坏味道：门面将伸手进 provider 专属簿记，且进度被限制在门面恰好知道的范围内。进度必须**由 provider 上报**，门面只负责转发。本 note 是[委派 API 提案](../../../proposals/active/2026-08-18-local-agent-delegation-api.md)的 M2 里程碑。
+门面发起的委派 run 在 settle 之前完全不可见：调用方（room）无法渲染「进行中」，唯一沾边的进度数据（kimi 的镜像行数）躺在 registry 自己的簿记里。提案的 M2 草案让门面心跳去读 registry 上的 `kimiMirroredLines`——评审否决了这个跨包坏味道：门面将伸手进 provider 专属簿记，且进度被限制在门面恰好知道的范围内。进度必须**由 provider 上报**，门面只负责转发。本 note 是[委派 API 提案](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md)的 M2 里程碑。
 
 ## Decision
 
@@ -41,6 +41,6 @@ kimi provider 在 `mirrorKimiAfterExit`（provider 侧——它持有 registry �
 
 ## Cross-references
 
-- [委派 API 提案](../../../proposals/active/2026-08-18-local-agent-delegation-api.md)——本 note 实现的里程碑计划（M2）。
+- [委派 API 提案](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md)——本 note 实现的里程碑计划（M2）。
 - [委派门面](2026-08-18-local-agent-delegation-facade.md)——本 note 扩展的 M1 门面。
 - [dsh 子代理会话镜像](2026-08-18-local-agent-dsh-session-mirror.md)——kimi 上报跟随的 settle 后镜像。

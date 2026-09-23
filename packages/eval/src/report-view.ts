@@ -1,11 +1,12 @@
 /**
- * The REPORT page's projection (ui-spec §五): the four invariants, the paired
+ * The REPORT page's projection (ui-spec §五): the five validity checks, the paired
  * difference table, the efficiency table and the judge numbers, for one run.
  *
  * Nothing is computed here that `analyzeBundle` does not already decide. The
  * report's whole point is that its honesty rules live in ONE place — the four
- * invariants gate the comparison, factors are derived from condition diffs and
- * never declared, efficiency stays parallel, ranking needs n ≥ 3 — and a page
+ * invariants gate the comparison, verdict coverage degrades a pair, the CI needs
+ * 3 tasks with a delta, factors are derived from condition diffs and never
+ * declared, efficiency stays parallel, ranking needs n ≥ 3 — and a page
  * that recomputed any of it would be a second opinion the reader could not
  * tell from the first. So this module reads a bundle through that one function
  * and reshapes its answer for the wire; `comparisonAllowed` arrives decided,
@@ -32,10 +33,13 @@ import { isAbsolute, join, resolve } from 'node:path'
 import type { MissionReadFace } from './faces.ts'
 import { readExportState, type EvalExportNote } from './export-note.ts'
 import { EvalReadRefused } from './read.ts'
-import { analyzeBundle, type EvalReport, type JudgeAssignment } from './report.ts'
+import {
+  analyzeBundle,
+  type CriterionGroupResult, type CriterionSample, type EvalReport, type JudgeAssignment,
+} from './report.ts'
 import type {
-  EvalFinalizeView, EvalReportEfficiencyRow, EvalReportJudgeTag, EvalReportPair,
-  EvalReportPairRow, EvalRunReportView,
+  EvalFinalizeView, EvalReportCriterionCell, EvalReportCriterionSample, EvalReportEfficiencyRow,
+  EvalReportJudgeTag, EvalReportPair, EvalReportPairRow, EvalReportTaskCriteria, EvalRunReportView,
 } from './types.ts'
 import { expandHome } from './validate.ts'
 import type { FinalizeReport } from './finalize.ts'
@@ -192,6 +196,71 @@ function efficiencyOf(report: EvalReport): EvalReportEfficiencyRow[] {
   }))
 }
 
+/** One verdict, column for column — the drawer behind a criteria-table cell. */
+function criterionSampleOf(sample: CriterionSample): EvalReportCriterionSample {
+  return {
+    missionId: sample.missionId,
+    rep: sample.rep,
+    ns: sample.ns,
+    pass: sample.pass,
+    ratio: sample.ratio === null ? null : { passed: sample.ratio.passed, total: sample.ratio.total },
+    evidence: sample.evidence,
+    by: sample.by,
+    judge: sample.judge === null
+      ? null
+      : {
+        condition: sample.judge.condition,
+        model: sample.judge.model,
+        selfJudged: sample.judge.selfJudged,
+        sample: sample.judge.sample,
+      },
+  }
+}
+
+/** One (criterion × group) cell, with both its scoring samples and the ones it replaced. */
+function criterionCellOf(cell: CriterionGroupResult): EvalReportCriterionCell {
+  return {
+    condition: cell.condition,
+    reps: cell.reps,
+    heldReps: cell.heldReps,
+    credit: cell.credit,
+    holds: cell.holds,
+    proportional: cell.proportional,
+    sources: { ...cell.sources },
+    samples: cell.samples.map(criterionSampleOf),
+    superseded: cell.superseded.map(criterionSampleOf),
+  }
+}
+
+/**
+ * The 判据 × 对比组 tables for the wire.
+ *
+ * Projection only, as everywhere on this seam: the per-criterion merge, the
+ * majority over reps and the per-task total are all decided in `analyzeBundle`
+ * and reshaped here. `criteriaTables` arrives EMPTY when the four invariants
+ * did not hold, so this function cannot open a section the bundle closed —
+ * exactly the rule `pairs` follows.
+ */
+function criteriaOf(report: EvalReport): EvalReportTaskCriteria[] {
+  return report.criteriaTables.map((table): EvalReportTaskCriteria => ({
+    task: table.task,
+    conditions: [...table.conditions],
+    rows: table.criteria.map((facts) => {
+      const row = table.rows.find(candidate => candidate.criterion === facts.id)
+      return {
+        id: facts.id,
+        axis: facts.axis,
+        kind: facts.kind,
+        weight: facts.weight,
+        negative: facts.negative,
+        undeclared: facts.undeclared,
+        cells: (row?.cells ?? []).map(criterionCellOf),
+      }
+    }),
+    totals: table.totals.map(total => ({ ...total })),
+  }))
+}
+
 /**
  * Reshape one analyzed bundle for the report page.
  *
@@ -234,10 +303,15 @@ export function projectReport(report: EvalReport, runId: string): EvalRunReportV
         rows: pairRowsOf(report, pair),
         n: pair.n,
         ci: pair.ci === null ? null : { mean: pair.ci.mean, lo: pair.ci.lo, hi: pair.ci.hi, samples: pair.ci.samples, seed: pair.ci.seed },
+        ciWithheld: pair.ciWithheld === null ? null : { ...pair.ciWithheld },
+        ciAdvisory: pair.ciAdvisory,
         rank: pair.rank,
         rankReason: pair.rankReason,
       }))
       : [],
+    // Same gate, decided in `analyzeBundle`: a closed comparison ships no
+    // per-criterion table either.
+    criteria: criteriaOf(report),
     efficiency: efficiencyOf(report),
     efficiencyExcluded: report.efficiencyExcluded.map(entry => ({ ...entry })),
     judge: {
@@ -284,6 +358,7 @@ function notExported(runId: string, searched: string[]): EvalRunReportView {
     comparisonAllowed: false,
     singleCondition: false,
     pairs: [],
+    criteria: [],
     efficiency: [],
     efficiencyExcluded: [],
     judge: {

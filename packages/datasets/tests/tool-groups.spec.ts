@@ -35,7 +35,7 @@ function applyCore(): { provided: string[]; commands: RecordedCommand[]; plugins
     plugin: () => { plugins += 1 },
     commands: { register: (command: RecordedCommand) => { commands.push(command); return () => {} } },
   }
-  apply(ctx as never, { repo: '', worktreeRoot: '' })
+  apply(ctx as never, { repo: '', materializedRoot: '' })
   return { provided, commands, plugins }
 }
 
@@ -74,7 +74,7 @@ describe('the datasets core faces', () => {
     // The command registry was the slash face's hard inject; with the
     // registration in the companion row the core mounts unconditionally.
     expect(inject).toEqual([])
-    expect(new Config({} as never)).toEqual({ repo: '', worktreeRoot: '' })
+    expect(new Config({} as never)).toEqual({ repo: '', materializedRoot: '' })
   })
 })
 

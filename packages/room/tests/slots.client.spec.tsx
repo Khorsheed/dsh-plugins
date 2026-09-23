@@ -174,6 +174,21 @@ describe('room client apply', () => {
     expect(() => { face.openSession('child-1' as never) }).not.toThrow()
   })
 
+  it('sends a stable retry ID through the Remote and retires it after acknowledgement', async () => {
+    const { ctx, slots, remote } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.composer')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => RoomComposerInjected)('room-1')
+    remote.postMessage.mockRejectedValueOnce(new Error('reply lost'))
+    await expect(face.submit('room-1' as never, 'original')).rejects.toThrow('reply lost')
+    await face.submit('room-1' as never, 'original')
+    const calls = remote.postMessage.mock.calls as unknown as [{ requestId: string }][]
+    expect(calls[0]![0].requestId).toBeTypeOf('string')
+    expect(calls[1]![0].requestId).toBe(calls[0]![0].requestId)
+    await face.submit('room-1' as never, 'original')
+    expect(calls[2]![0].requestId).not.toBe(calls[0]![0].requestId)
+  })
+
   it('collapses every contribution on teardown', async () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })

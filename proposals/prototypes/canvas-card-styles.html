@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>画布卡片 · 选中态用外框，不用染色</title>
+<style>
+  /* 宿主 design-platform.css 的实测取值（浅色 body / 深色 body[data-ds-dark-theme]），
+     两个主题各写一份，切换时整块换掉。名字用宿主原 token 名，方便直接抄进 CSS。 */
+  :root {
+    --dsw-alias-bg-layer-1: rgb(255, 255, 255);
+    --dsw-alias-bg-layer-2: rgb(255, 255, 255);
+    --dsw-alias-bg-module-platform: rgb(245, 246, 247);
+    --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+    --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+    --dsw-alias-brand-primary: rgb(15, 17, 21);
+    --dsw-alias-label-primary: rgb(15, 17, 21);
+    --dsw-alias-label-secondary: rgb(97, 102, 107);
+    --dsw-alias-label-tertiary: rgb(129, 133, 140);
+    --dsw-alias-label-caption: rgb(129, 133, 140);
+    --dsw-alias-label-primary-inverted: rgb(255, 255, 255);
+    --dsw-alias-state-business-primary: rgb(65, 118, 230);
+    --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+    --dsw-static-deepseek-400: rgb(103, 158, 254);
+    --dsw-static-deepseek-50: rgb(237, 243, 254);
+  }
+  body[data-theme="dark"] {
+    --dsw-alias-bg-layer-1: rgb(35, 35, 36);
+    --dsw-alias-bg-layer-2: rgb(44, 44, 46);
+    --dsw-alias-bg-module-platform: rgb(249, 250, 251);
+    --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+    --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+    --dsw-alias-brand-primary: rgb(249, 250, 251);
+    --dsw-alias-label-primary: rgb(249, 250, 251);
+    --dsw-alias-label-secondary: rgb(207, 211, 214);
+    --dsw-alias-label-tertiary: rgb(173, 178, 184);
+    --dsw-alias-label-caption: rgb(173, 178, 184);
+    --dsw-alias-label-primary-inverted: rgb(15, 17, 21);
+    --dsw-alias-state-business-primary: rgb(103, 158, 254);
+    --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+  }
+  /* 深色下画布区不是浅灰模块底，这里给一个贴近宿主页面的深色底 */
+  body[data-theme="dark"] .board { background: rgb(24, 24, 25); }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--dsw-alias-bg-module-platform);
+    color: var(--dsw-alias-label-primary);
+    transition: background 0.18s, color 0.18s;
+  }
+  header {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 20px;
+    background: var(--dsw-alias-bg-layer-1);
+    border-bottom: 1px solid var(--dsw-alias-border-l2);
+  }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  header .toggle { margin-left: auto; display: flex; gap: 6px; }
+  .themeBtn {
+    font: inherit; font-size: 12px; cursor: pointer;
+    padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: transparent; color: var(--dsw-alias-label-secondary);
+  }
+  .themeBtn[data-on="true"] {
+    background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
+    border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
+    color: var(--dsw-alias-label-primary);
+  }
+  main { padding: 20px; display: flex; flex-direction: column; gap: 26px; max-width: 1080px; }
+  h2 { font-size: 13px; margin: 0 0 2px; font-weight: 600; }
+  .sub { font-size: 12px; color: var(--dsw-alias-label-tertiary); margin: 0 0 10px; }
+
+  .board {
+    background: var(--dsw-alias-bg-layer-2);
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: 10px;
+    padding: 14px 16px 18px;
+  }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px;
+    background: transparent; color: var(--dsw-alias-label-secondary);
+    font-size: 12px; padding: 4px 11px; cursor: pointer;
+  }
+  .chip:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+  .chip .cnt { font-size: 11px; color: var(--dsw-alias-label-caption); }
+  /* 选中 chip：蓝色只花在底和框上，文字保持主文字色 */
+  [data-v="official"] .chip[data-on="true"] {
+    background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
+    border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
+    color: var(--dsw-alias-label-primary);
+  }
+  /* 现状：灰底灰字，看不出选中 */
+  [data-v="now"] .chip[data-on="true"] {
+    background: var(--dsw-alias-interactive-bg-hover);
+    border-color: var(--dsw-alias-border-l2);
+    color: var(--dsw-alias-label-primary);
+  }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 10px; }
+  .card {
+    position: relative; display: flex; flex-direction: column; gap: 7px;
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: 8px; padding: 11px 12px; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: var(--dsw-alias-border-l2); }
+  /* 现状：选中 = 一根浅蓝框 */
+  [data-v="now"] .card[data-sel="true"] { border-color: var(--dsw-static-deepseek-400); }
+  /* 官方式：选中 = 外框亮起（宿主唯一随主题翻面的中性色） */
+  [data-v="official"] .card[data-sel="true"] { border-color: var(--dsw-alias-brand-primary); }
+  .card[data-ghost="true"] { border-style: dashed; border-color: var(--dsw-alias-border-l2); }
+
+  .kind { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+  .kind svg { width: 12px; height: 12px; flex: none; }
+  .txt { font-size: 12px; line-height: 1.55; color: var(--dsw-alias-label-secondary); }
+  .src { font-size: 11px; color: var(--dsw-alias-label-caption); }
+  .box {
+    position: absolute; top: 7px; right: 7px;
+    width: 18px; height: 18px; border-radius: 5px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-1);
+    display: grid; place-items: center;
+    color: var(--dsw-alias-label-primary-inverted); font-size: 11px; line-height: 1;
+  }
+  .card:hover .box, .card[data-sel="true"] .box { display: grid; }
+  .card:not(:hover):not([data-sel="true"]) .box { display: none; }
+  .card[data-check="true"] .box {
+    display: grid;
+    background: var(--dsw-static-deepseek-400);
+    border-color: var(--dsw-static-deepseek-400);
+  }
+  .flag {
+    position: absolute; top: 8px; right: 10px;
+    font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-tertiary);
+  }
+
+  .notes { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; line-height: 1.7; }
+  .notes p { margin: 0; }
+  .notes .muted { color: var(--dsw-alias-label-secondary); }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; }
+  table { border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid var(--dsw-alias-border-l2); padding: 4px 8px; text-align: left; }
+  th { font-weight: 600; color: var(--dsw-alias-label-secondary); }
+  .bad { color: rgb(196, 43, 43); }
+  body[data-theme="dark"] .bad { color: rgb(255, 138, 138); }
+</style>
+</head>
+<body data-theme="light">
+<header>
+  <h1>画布卡片 · 选中态用外框，不用染色</h1>
+  <div class="toggle">
+    <button class="themeBtn" data-on="true" onclick="setTheme('light')">浅色</button>
+    <button class="themeBtn" data-on="false" onclick="setTheme('dark')">深色</button>
+  </div>
+</header>
+<main>
+  <section data-v="now">
+    <h2>一 · 现在库里跑着的</h2>
+    <p class="sub">卡片是中性底，选中靠一根浅蓝框；筛选 chip 选中是灰底灰字</p>
+    <div class="board" id="b-now"></div>
+  </section>
+
+  <section data-v="official">
+    <h2>二 · 照官方那种简约法</h2>
+    <p class="sub">卡片完全不变，只把"选中"交给外框亮起；蓝色全场只出现一次，在 chip 上</p>
+    <div class="board" id="b-official"></div>
+  </section>
+
+  <section class="notes">
+    <h2>为什么这版比染色好</h2>
+    <p>染色把"外框"这个通道占用了。画布上最高频的动作就是点一张卡进详情，选中态必须比分类色更显眼；卡片自己已经带颜色的时候，框再画成同色就看不见，画成蓝色就成了五种颜色撞一种蓝。</p>
+    <p>而且你们库里已经跑着的那根选中框是坏的：<code>--dsw-static-deepseek-400</code> 是 <code>rgb(103,158,254)</code>，在浅色主题白卡上只有 <b class="bad">2.66:1</b>（图形元素底线 3:1），深色主题里 5.91:1 才正常——同一个状态两套主题一个看得见一个看不见。</p>
+    <p>换成 <code>--dsw-alias-brand-primary</code>：浅色 <code>rgb(15,17,21)</code> 对白卡 <b>18.9:1</b>，深色 <code>rgb(249,250,251)</code> 对 <code>rgb(35,35,36)</code> 卡底 <b>15.0:1</b>。它是宿主里唯一随主题翻到另一极的中性色，"亮起"这个感觉两套主题都成立，而且不花任何颜色预算。<span class="muted">（这条不是我发明的：<code>capability-catalog</code> 的卡片框已经在用它，<code>CapabilityCatalogCard.module.css:325</code>。）</span></p>
+
+    <h2>顺带解决的：自定义分类不用配色了</h2>
+    <p>上一版我卡在"每个画板的分类可以随便加，但安全色相只有三四个"。卡片不染色，这个矛盾直接消失——<b>分类记录里不需要颜色字段</b>，只有名字和顺序。分类靠图标加文字区分，这也正是库里那条注释写的老规矩（<code>board.module.css:471</code> "kind is told by icon + words only, never by colour"）。</p>
+    <p>还剩一个坑得一起定：删掉一个还在用的分类，现在会丢卡。<code>types.ts:511</code> 读 <code>canvas.json</code> 时，认不出的 kind 直接跳过那张卡。所以"删分类"必须回答"那几张卡去哪"，要么先给它们挑个去处，要么连卡一起进归档——不能只删定义。</p>
+
+    <h2>不管选哪版，这两条建议一起做</h2>
+    <p>一、单选看框，多选看勾。勾选框继续留蓝色实心（它是"批量操作"另一个通道，不跟选中抢），两套主题下都建议换成 <code>--dsw-alias-state-business-primary</code>，别再吃那个不翻面的静态蓝。</p>
+    <p>二、chip 的选中文字别用蓝色。<code>capability-catalog</code> 那版是蓝字压在 8% 蓝底上，浅色主题实测 <b class="bad">3.84:1</b>（12px 文字要 4.5:1）。蓝色花在底和框上就够显眼了，文字用主文字色。</p>
+    <p class="muted">取值来源：<code>design-platform.css</code> 浅色 <code>body{}</code> / 深色 <code>body[data-ds-dark-theme]{}</code> 两块，对比度按 WCAG 2.x 公式对精确 RGB 算的。这页是静态原型，不是插件真界面。</p>
+  </section>
+</main>
+<script>
+const CARDS = [
+  { kind: '碎片', icon: 'M3 3h6v6H3z M9 9h6v6H9z', text: '雨夜，她把船票塞进字典第 217 页，那页讲的是"归乡"。', src: '手动记的' },
+  { kind: '问题', icon: 'M8 3a4 4 0 0 0-4 4v1h2V7a2 2 0 1 1 4 0c0 2-3 2.5-3 5', text: '她为什么非要在这一页留票根？前面有没有更自然的载体？', src: '问模型，还没答完' },
+  { kind: '依据', icon: 'M4 2v14l4-2 4 2V2z', text: '1937 年宁波到台山的客轮夜航班次表，第二条航线在台风季停航。', src: '资料卡摘录' },
+  { kind: '来源', icon: 'M4 6h8M4 10h8M4 14h5', text: '《台山侨乡口述史》第三章，关于票根与信物的说法只有一个人提过。', src: 'file:///home/user/…' },
+  { kind: '文档', icon: 'M5 2h6l3 3v11H5z', text: '第一章·雨夜登船（4,120 字）', src: '草稿 v3' },
+]
+
+function board(id, selectedIdx) {
+  const host = document.getElementById(id)
+  host.innerHTML = `
+    <div class="chips">
+      ${['全部', '碎片', '问题', '依据', '来源', '文档'].map((label, i) =>
+        `<button class="chip" data-on="${i === 0}">${label}${i === 0 ? '<span class="cnt">6</span>' : ''}</button>`).join('')}
+    </div>
+    <div class="grid">
+      ${CARDS.map((c, i) => `
+        <div class="card" data-sel="${i === selectedIdx}">
+          <span class="box">${i === selectedIdx ? '✓' : ''}</span>
+          <span class="kind"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="${c.icon}"/></svg>${c.kind}</span>
+          <div class="txt">${c.text}</div>
+          <div class="src">${c.src}</div>
+        </div>`).join('')}
+      <div class="card" data-ghost="true">
+        <span class="flag">模型提议</span>
+        <span class="kind"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2v12M2 8h12"/></svg>碎片</span>
+        <div class="txt">要不要让船长认得那张票？他口袋里也有一张同样的。</div>
+        <div class="src">收下 / 不要</div>
+      </div>
+    </div>`
+}
+
+function setTheme(mode) {
+  document.body.dataset.theme = mode
+  document.querySelectorAll('.themeBtn').forEach(b => b.dataset.on = 'false')
+  document.querySelector(`.themeBtn[onclick="setTheme('${mode}')"]`).dataset.on = 'true'
+}
+
+board('b-now', 1)
+board('b-official', 1)
+document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
+  c.closest('.chips').querySelectorAll('.chip').forEach(x => x.dataset.on = 'false')
+  c.dataset.on = 'true'
+}))
+document.querySelectorAll('.card').forEach(c => c.addEventListener('click', () => {
+  const grid = c.closest('.grid')
+  grid.querySelectorAll('.card').forEach(x => { if (!x.hasAttribute('data-ghost')) x.dataset.sel = 'false' })
+  if (!c.hasAttribute('data-ghost')) c.dataset.sel = 'true'
+}))
+</script>
+</body>
+</html>

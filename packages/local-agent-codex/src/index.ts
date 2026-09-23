@@ -63,12 +63,7 @@ export interface Config {
   live?: boolean
   /** Idle lifetime of an unused resident runtime before reclaim. */
   liveIdleMs?: number
-  /**
-   * Live mirror granularity: both fold every completed item into the child
-   * session. `token` additionally lands streaming deltas as throttled
-   * incremental snapshots at the item's reserved (turn, step) — the host's
-   * repeated-settle merge renders them as one continuously growing message.
-   */
+  /** @deprecated Accepted for old profiles; live output is always incremental. */
   liveMirrorGranularity?: 'event' | 'token'
 }
 
@@ -82,7 +77,7 @@ export const Config: z<Config> = z.object({
   model: z.string(),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
 })
 
 /** The sandbox policy a fresh delegation defaults to. */
@@ -102,7 +97,7 @@ export const CODEX_SETTINGS_NAMESPACE = 'local-agent-codex'
  */
 const CODEX_SETTINGS_SCHEMA = z.object({
   live: z.boolean().default(false),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
   model: z.string(),
   recentModels: z.array(z.string()).default([]),
 })
@@ -125,8 +120,7 @@ export function apply(ctx: Context, config: Config): void {
     // layer over the YAML composition base) swaps driver generations without
     // a reload. Toggling OFF drains the retiring generation — new rounds fall
     // back to exec, in-flight rounds finish on their runtime, idle runtimes
-    // are reclaimed at once. A granularity change needs no new generation:
-    // the driver reads it per round.
+    // are reclaimed at once. Legacy granularity settings are accepted but ignored.
     const scope = ctx.settings.register(CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA, {
       base: {
         ...config.live === undefined ? {} : { live: config.live },
@@ -176,7 +170,11 @@ export function apply(ctx: Context, config: Config): void {
       ctx,
       settingsModel: resolveModel,
       recentModels: () => scope.get().recentModels ?? [],
-      homeDir: () => ctx.localAgent.homeDir('codex'),
+      homeDir: childSessionId => ctx.localAgent.homeDir('codex', childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.scope),
+      cwd: childSessionId => childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.cwd,
+      directory: (home, cwd) => modelCatalog.directory(home, cwd),
+      refreshDirectory: (home, cwd) => modelCatalog.refresh(home, cwd),
+      followDirectory: (home, cwd, signal) => modelCatalog.follow(home, signal, cwd),
       live: () => scope.get().live,
       overrides: memberModelOverrides,
       liveBoundModel: childSessionId => liveSwitch.boundModel(childSessionId),
@@ -184,16 +182,22 @@ export function apply(ctx: Context, config: Config): void {
       // The account catalog probe is LAZY per read: read() serves the cache
       // and kicks a background probe when stale; the apply above warms the
       // default scope's cache so the first card open usually hits it.
-      catalog: scopedHome => modelCatalog.read(scopedHome),
+      catalog: (scopedHome, cwd) => modelCatalog.read(scopedHome, cwd),
       // The account's built-in default slug (the probe's isDefault entry) —
       // the layer that names the CLI's compiled default, read off the same
       // cache.
-      catalogDefault: scopedHome => modelCatalog.readDefault(scopedHome),
+      catalogDefault: (scopedHome, cwd) => modelCatalog.readDefault(scopedHome, cwd),
     })
     const disposeProvider = ctx.subagents.registerProvider(
       new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId)),
     )
     const disposeHarness = ctx.localAgent.register({
+      prepareMember: async ({ binding, childSession, configuration, signal }) => {
+        const driver = liveSwitch.resolve(binding.childSessionId)
+        if (driver === undefined || driver.disabled) throw new Error('Enable the native live harness before preparing a coordinator')
+        await driver.prepare({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('codex', binding.scope), childSession,
+          parentSessionId: binding.parentSessionId, configuration: configuration.resolved,  }, signal)
+      },
       name: 'codex',
       displayName: 'Codex',
       homeEnvVar: 'CODEX_HOME',
@@ -259,6 +263,7 @@ export function apply(ctx: Context, config: Config): void {
     })
     return () => {
       clearTimeout(warmup)
+      modelCatalog.dispose()
       disposeProvider()
       disposeHarness()
       liveSwitch.dispose()

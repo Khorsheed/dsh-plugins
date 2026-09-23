@@ -37,6 +37,26 @@ The App accepts a configured HTTPS origin or official launch-token login URL. It
 
 Different physical networks need an independently configured HTTPS/WSS ingress to the loopback Host port (3080 in production), valid official authentication, an awake/online Mac and reachable phone. Starting 3080 alone does not establish remote access. The App does not configure networking or credentials on your behalf. Debug simulator builds allow HTTP on loopback only; Release requires HTTPS. Clear local App data and server-side device revocation are different operations.
 
+## Connect a phone from Web settings
+
+The authenticated Web client exposes **Settings → Connect phone** through the public `settings.section` slot. This is available on desktop without enabling mobile layout. Configure the phone-reachable **clean HTTPS origin** in the mobile plugin's `publicOrigin` option, or set `DSH_MOBILE_PUBLIC_ORIGIN` on the **Host process**. The plugin option takes precedence. Add the same hostname to the Host's `--trusted-host` list; the ingress `PUBLIC_ORIGIN` must also match. These are deployment settings, not phone preferences.
+
+```sh
+DSH_MOBILE_PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
+```
+
+Use an isolated profile for the example; change production launch configuration through its supervised cutover flow. Missing/invalid origin, unsupported Host capability and an untrusted destination show setup guidance without generating a login link.
+
+1. Open Web Settings → Connect phone and check the displayed host.
+2. Click **Show login QR code**.
+3. In the iOS App, open **Connection Settings → Scan to connect**, scan and confirm the host.
+
+`GET /api/mobile/connect` returns configuration status only. An authenticated, same-origin JSON `POST` obtains the official `connection.authenticatedUrl()` for the deployment-owned origin; browser input cannot override the destination. Both routes use the official Connection registry, preserving its cookie and Host/Origin checks. Responses are no-store. QR encoding happens locally in the browser; no third-party QR service, secret logging or browser persistence is used. Leaving the section, hiding the page or waiting two minutes conceals the code and aborts pending requests.
+
+**Concealment is not credential expiry.** This is the official process login token, valid until that Host process restarts, not a short-lived/one-use pairing token. Existing cookies have their own Host-owned lifetime. Hiding or regenerating the QR does not revoke a copied link or a logged-in phone. Per-device credentials, revocation, Keychain pairing and push remain unimplemented.
+
+If the entry is unreachable, restore the HTTPS tunnel first. A running tunnel process with zero active connections cannot carry requests. When a temporary domain changes, update ingress origin, Host trusted hostname and mobile public origin together, then generate a new login QR; old cookies are bound to their old authority. A successful local 3080 response alone does not prove the phone can connect. Prefer a stable HTTPS entry for regular use. Scanning does not renew an expired iOS development signature.
+
 ## Optional Quick Tunnel preview
 
 Networking is deployment configuration, not a plugin dependency. Community users can choose Quick Tunnel for temporary previews, their own HTTPS reverse tunnel/server, or private networking. No personal domain, server or Cloudflare account is embedded in the plugin. A stable managed relay would be a separate service with its own operating costs.

@@ -16,7 +16,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { loadSubDshAgent, summarizeTurn } from './agent-loader.ts'
+import { resolveSubDshSelection, loadSubDshAgent, summarizeTurn } from './agent-loader.ts'
 import {
   LIVE_SERVER_NAME,
   LIVE_WIRE_ERROR_INTERNAL,
@@ -51,7 +51,7 @@ function messageOf(error: unknown): string {
  *   the session/event feed.
  * @param io - process-facing effects.
  */
-export async function runServe(ctx: Context, io: ServeIo, model?: string): Promise<void> {
+export async function runServe(ctx: Context, io: ServeIo, model?: string, effort?: string): Promise<void> {
   // Loader siblings mount concurrently; await the complete application before
   // driving Agents so scoped tools and adapters are not half-composed.
   await ctx.get('loader')?.await()
@@ -103,6 +103,15 @@ export async function runServe(ctx: Context, io: ServeIo, model?: string): Promi
       event: event as unknown as Record<string, unknown>,
     })
   })
+
+  // This process owns real Agents, so the public scoped stream bus is valid
+  // here. The parent presents these frames through the plugin's own channel.
+  ctx.on('agent/assistant-stream', ({ agent, frame }) => {
+    const sessionId = String(agent.session.id)
+    const turn = activeTurns.get(sessionId)
+    if (shuttingDown || !managed.has(sessionId) || turn === undefined) return
+    notify('session/assistant-stream', { sessionId, turn, frame })
+  }, { global: true })
 
   const debug = process.env['DSH_SERVE_DEBUG'] === '1'
     ? (message: string): void => { io.stderr.write(`dsh-serve: ${message}\n`) }
@@ -168,6 +177,13 @@ export async function runServe(ctx: Context, io: ServeIo, model?: string): Promi
       case 'initialize':
         respond(id, { serverInfo: { name: LIVE_SERVER_NAME }, protocolVersion: LIVE_WIRE_PROTOCOL_VERSION })
         return
+      case 'session/prepare': {
+        try {
+          await resolveSubDshSelection(ctx, model, effort, true)
+          respond(id, { prepared: true })
+        } catch (error) { respondError(id, messageOf(error)) }
+        return
+      }
       case 'turn/start': {
         const sessionId = params['sessionId']
         const text = params['text']
@@ -188,6 +204,7 @@ export async function runServe(ctx: Context, io: ServeIo, model?: string): Promi
             handle = await loadSubDshAgent(ctx, {
               ...resume ? { resumeSessionId: sessionId } : { sessionId },
               ...model === undefined ? {} : { model },
+              ...effort === undefined ? {} : { effort },
             })
           } catch (error) {
             respondError(id, messageOf(error))

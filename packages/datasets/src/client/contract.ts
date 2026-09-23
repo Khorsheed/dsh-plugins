@@ -10,9 +10,9 @@ import type {} from '@khorsheed/dsh-datasets/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  DatasetBinding, DatasetOverview, ImportItemInput, ItemBrief, ListDatasetsResult, ListItemsResult,
-  PreviewRepoResult, ReadPassthroughRequest, ReadQuery, ReadResult, ScaffoldDatasetInput,
-  ScaffoldItemInput, SkeletonResult, ValidateResult,
+  DatasetOverview, ImportBindingsResult, ImportItemInput, ItemBrief, ListDatasetsResult, ListItemsResult,
+  ReadPassthroughRequest, ReadQuery, ReadResult, RegisterInput, RegisterPreview, RegistryEntry, RegistryRow,
+  ScaffoldDatasetInput, ScaffoldItemInput, SkeletonResult, UpdateInput, ValidateResult,
 } from '../types.ts'
 import type { createDatasetsViewStore } from './store.ts'
 
@@ -33,7 +33,7 @@ export interface HostDescriptionSource {
   subscribe(listener: () => void): () => void
 }
 
-/** The datasets Remote namespace (binding/bind/unbind/list/show/read), as mounted by this plugin. */
+/** The datasets Remote namespace (registry verbs + per-registration reads), as mounted by this plugin. */
 export type DatasetsRemote = TypertRemoteNamespaceMap['datasets']
 
 /**
@@ -78,34 +78,44 @@ export interface DatasetExperimentRow {
   datasetId: string | null
 }
 
-/** Business face injected into the conversation.view datasets entry. */
+/**
+ * Business face injected into the conversation.view datasets entry.
+ *
+ * Registry verbs are the human's (register / edit / remove / import); every
+ * read and write after them names ONE registration by its id (`repo`) — the
+ * tab is a view of the deployment's registry, not of a session binding.
+ */
 export interface DatasetsViewInjected {
-  /** Fetch the session's current binding (one RPC; null = unbound). */
-  fetchBinding: (sessionId: SessionId) => Promise<RemoteResult<DatasetBinding | null>>
-  /** Record a binding for the session (the bind form's submit). */
-  bindSession: (sessionId: SessionId, binding: DatasetBinding) => Promise<RemoteResult<DatasetBinding>>
-  /** Clear the session's binding. */
-  unbindSession: (sessionId: SessionId) => Promise<RemoteResult<DatasetBinding | null>>
-  /** Preview a candidate repository before binding (one RPC; NOT whitelist-filtered). */
-  previewRepo: (sessionId: SessionId, path: string) => Promise<RemoteResult<PreviewRepoResult>>
-  /** List the bound scope's datasets, or one dataset's items (one RPC). */
-  listDatasets: (sessionId: SessionId, dataset?: string) => Promise<RemoteResult<ListDatasetsResult | ListItemsResult>>
+  /** Every registration with its tracked branch's tip and sets (one RPC). */
+  fetchRegistry: (sessionId: SessionId) => Promise<RemoteResult<RegistryRow[]>>
+  /** The register form's live verdict for one candidate path (one RPC). */
+  previewRepo: (sessionId: SessionId, path: string, trackedRef?: string) => Promise<RemoteResult<RegisterPreview>>
+  /** Register a repository (the form's confirm). */
+  register: (sessionId: SessionId, input: RegisterInput) => Promise<RemoteResult<RegistryEntry>>
+  /** Edit a registration (tracked branch, per-set layers, authoring checkout). */
+  updateRegistration: (sessionId: SessionId, input: UpdateInput) => Promise<RemoteResult<RegistryEntry>>
+  /** Remove a registration (the repository itself is untouched). */
+  unregister: (sessionId: SessionId, id: string) => Promise<RemoteResult<boolean>>
+  /** «从旧绑定登记»: fold the legacy session bindings into registrations. */
+  importBindings: (sessionId: SessionId) => Promise<RemoteResult<ImportBindingsResult>>
+  /** List one registration's datasets, or one dataset's items (one RPC). */
+  listDatasets: (sessionId: SessionId, repo: string, dataset?: string) => Promise<RemoteResult<ListDatasetsResult | ListItemsResult>>
   /** Read one file of one item layer, from the git object (one RPC). */
-  readFile: (sessionId: SessionId, query: ReadQuery) => Promise<RemoteResult<ReadResult>>
+  readFile: (sessionId: SessionId, repo: string, query: ReadQuery) => Promise<RemoteResult<ReadResult>>
   /** Read one dataset-relative passthrough-zone file (operator channel, one RPC). */
-  readPassthroughFile: (sessionId: SessionId, query: ReadPassthroughRequest) => Promise<RemoteResult<ReadResult>>
-  /** The list page in one RPC: repo, commit, and one row per dataset. */
-  overview: (sessionId: SessionId) => Promise<RemoteResult<DatasetOverview>>
+  readPassthroughFile: (sessionId: SessionId, repo: string, query: ReadPassthroughRequest) => Promise<RemoteResult<ReadResult>>
+  /** One registration's rows at its tracked branch, in one RPC. */
+  overview: (sessionId: SessionId, repo: string) => Promise<RemoteResult<DatasetOverview>>
   /** One item's «选手将看到» and «可判性» (one RPC). */
-  itemBrief: (sessionId: SessionId, dataset: string, item: string) => Promise<RemoteResult<ItemBrief>>
+  itemBrief: (sessionId: SessionId, repo: string, dataset: string, item: string) => Promise<RemoteResult<ItemBrief>>
   /** Validate one dataset (the detail page's button). */
-  validateDataset: (sessionId: SessionId, dataset: string) => Promise<RemoteResult<ValidateResult>>
-  /** «新建题集»: write a dataset skeleton into the working tree. */
-  scaffoldDataset: (sessionId: SessionId, input: ScaffoldDatasetInput) => Promise<RemoteResult<SkeletonResult>>
-  /** «题目骨架»: write one item's placeholders into the working tree. */
-  scaffoldItem: (sessionId: SessionId, input: ScaffoldItemInput) => Promise<RemoteResult<SkeletonResult>>
+  validateDataset: (sessionId: SessionId, repo: string, dataset: string) => Promise<RemoteResult<ValidateResult>>
+  /** «新建题集»: write a dataset skeleton into the registration's authoring checkout. */
+  scaffoldDataset: (sessionId: SessionId, repo: string, input: ScaffoldDatasetInput) => Promise<RemoteResult<SkeletonResult>>
+  /** «题目骨架»: write one item's placeholders into the authoring checkout. */
+  scaffoldItem: (sessionId: SessionId, repo: string, input: ScaffoldItemInput) => Promise<RemoteResult<SkeletonResult>>
   /** «导入题目»: copy an existing item directory in verbatim. */
-  importItem: (sessionId: SessionId, input: ImportItemInput) => Promise<RemoteResult<SkeletonResult>>
+  importItem: (sessionId: SessionId, repo: string, input: ImportItemInput) => Promise<RemoteResult<SkeletonResult>>
   /**
    * The «作答记录» projection, or null when this instance carries no eval
    * plugin — the section hides rather than showing an empty promise. Probed at

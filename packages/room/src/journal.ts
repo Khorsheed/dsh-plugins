@@ -10,17 +10,18 @@
  * journaled for UI projection and replay only.
  * @module @khorsheed/dsh-room/journal
  */
+import { replayDeliveries } from './deliveries.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
   RoomMember, RoomMemberRun, RoomRelay, RoomState, RoomTask, RoomTaskProgress,
 } from './types.ts'
 
 /**
- * The addressing name of the room's own main agent, added to the roster at
- * room creation: an equal member with no privilege. Bare human messages go
- * to it through the official submit path; @-dispatch works like any member.
+ * The native DSH member's addressing name in new rooms. It starts as the
+ * coordinator; bare messages follow the selected coordinator thereafter.
+ * Existing journals retain their recorded names, including legacy main.
  */
-export const MAIN_AGENT_MEMBER = 'main'
+export const MAIN_AGENT_MEMBER = 'dsh'
 
 /**
  * Every `room/*` session-event type this package introduces. Room registers
@@ -36,6 +37,9 @@ export const MAIN_AGENT_MEMBER = 'main'
  */
 export const ROOM_EVENT_TYPES = [
   'room/created',
+  'room/plan-state',
+  'room/coordinator',
+  'room/delivery-state',
   'room/member-added',
   'room/member-updated',
   'room/member-removed',
@@ -60,8 +64,7 @@ export function isRoomLog(events: readonly SessionEvent[]): boolean {
  * @param raw - the raw text.
  * @returns the addressed names (deduped, order-preserving) and the body with
  * the mention prefix stripped. Only LEADING tokens address: an `@name`
- * inside prose is plain text (a bare message goes to the main agent through
- * the official submit path).
+ * inside prose is plain text (a bare message goes to the selected coordinator).
  */
 export function parseMentions(raw: string): { readonly targets: readonly string[]; readonly text: string } {
   const targets: string[] = []
@@ -118,11 +121,17 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const taskById = new Map<string, RoomTask>()
   const runs = new Map<string, RoomMemberRun>()
   let goal: string | undefined
+  let coordinator: RoomState['coordinator']
   for (const event of events) {
     switch (event.type) {
+      case 'room/coordinator': {
+        if (event.data.revision > (coordinator?.revision ?? 0)) coordinator = event.data
+        break
+      }
       case 'room/member-added': {
         if (byName.has(event.data.name)) break
         const added: RoomMember = {
+          id: event.data.id ?? `legacy:${event.seq}`,
           name: event.data.name,
           kind: event.data.kind,
           invitedBy: event.data.invitedBy,
@@ -234,6 +243,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           id: event.data.id,
           member: event.data.member,
           title: event.data.title,
+          ...event.data.deliveryId === undefined ? {} : { deliveryId: event.data.deliveryId },
           status: event.data.status,
           ...event.data.blockedBy === undefined ? {} : { blockedBy: event.data.blockedBy },
           updatedAt: event.time,
@@ -274,10 +284,15 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         break
       }
       case 'room/run-state': {
+        const current = runs.get(event.data.member)
+        // An older turn may finish journaling after core admits its successor.
+        // Its delivery outcome remains durable, but it cannot replace that successor.
+        if (event.data.state !== 'running' && event.data.runId !== undefined && current?.runId !== undefined && current.runId !== event.data.runId) break
         runs.set(event.data.member, {
           member: event.data.member,
           state: event.data.state,
           startedAt: event.data.startedAt,
+          ...event.data.runId === undefined ? {} : { runId: event.data.runId },
           ...event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs },
           ...event.data.error === undefined ? {} : { error: event.data.error },
         })
@@ -287,7 +302,10 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         break
     }
   }
-  return { members, relays, tasks, runs: [...runs.values()], ...goal === undefined ? {} : { goal } }
+  const planEvent = events.filter(event => event.type === 'room/plan-state').at(-1)
+  const plan = planEvent?.type === 'room/plan-state' ? (({ requests: _requests, ...view }) => view)(planEvent.data) : undefined
+  const deliveries = replayDeliveries(events)
+  return { members, relays, tasks, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal } }
 }
 
 /**
@@ -392,4 +410,21 @@ export function pendingInstructions(
   if (cursor === undefined) return { kind: 'initial', instructions: lastInstructions }
   if (lastSeq > cursor) return { kind: 'update', instructions: lastInstructions }
   return undefined
+}
+
+/** Resolve legacy join identity through renames; never key a new dispatch by display name. */
+export function memberId(events: readonly SessionEvent[], member: RoomMember): string {
+  if (member.id !== undefined) return member.id
+  let name = member.name
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index]!
+    if (event.type === 'room/member-updated' && event.data.rename === name) name = event.data.name
+    if (event.type === 'room/member-added' && event.data.name === name) return event.data.id ?? `legacy:${event.seq}`
+  }
+  throw new Error('Room member has no join identity')
+}
+
+export function coordinatorMember(state: RoomState, events?: readonly SessionEvent[]): RoomMember | undefined {
+  if (state.coordinator === undefined) return state.members.find(member => member.kind === 'main-agent')
+  return state.members.find(member => (member.id ?? (events === undefined ? undefined : memberId(events, member))) === state.coordinator!.memberId)
 }

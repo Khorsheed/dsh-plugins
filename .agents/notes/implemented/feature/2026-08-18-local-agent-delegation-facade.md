@@ -6,7 +6,7 @@ English | [中文](2026-08-18-local-agent-delegation-facade.zh.md)
 
 ## Problem
 
-Plugins acting on the user's behalf (the proposed room plugin, future orchestrators) had no supported way to delegate to a local coding-agent CLI: the family's delegation protocol — per-(parent, provider) intent FIFO, resume locks, ownership-checked delegation records — was only reachable by re-implementing the model tool's internals, and a naive re-implementation re-opens the orphan-intent window (a staged intent left in the FIFO when `ctx.subagents.start()` throws before the provider consumes it gets misconsumed by the next same-(parent, provider) start). Cross-restart resume had a second gap: the dsh child session is not live after an in-process unload, and the family providers fail loud on that. This is milestone M1 of the [delegation-API proposal](../../../proposals/active/2026-08-18-local-agent-delegation-api.md).
+Plugins acting on the user's behalf (the proposed room plugin, future orchestrators) had no supported way to delegate to a local coding-agent CLI: the family's delegation protocol — per-(parent, provider) intent FIFO, resume locks, ownership-checked delegation records — was only reachable by re-implementing the model tool's internals, and a naive re-implementation re-opens the orphan-intent window (a staged intent left in the FIFO when `ctx.subagents.start()` throws before the provider consumes it gets misconsumed by the next same-(parent, provider) start). Cross-restart resume had a second gap: the dsh child session is not live after an in-process unload, and the family providers fail loud on that. This is milestone M1 of the [delegation-API proposal](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md).
 
 ## Decision
 
@@ -17,7 +17,7 @@ Plugins acting on the user's behalf (the proposed room plugin, future orchestrat
 - `DelegationCallOptions` (`{ label?, signal? }`) is deliberately additive — `onProgress`/`reattach` arrive with later milestones.
 - The registry hard-injects nothing new: `subagents` / `agents` / `sessions` / `sessionPersistence` are read lazily via `ctx.get` and a facade call that needs an absent service throws an error naming it (degrade-don't-explode for the core, fail-loud for the call).
 
-**The reattach recipe** (pinned in the `resume` doc comment for room to copy): when `ctx.sessions.get(childSessionId)` is undefined, `using prep = await ctx.sessionPersistence.prepare(SessionId(childSessionId))` then `ctx.sessions.enter(prep.session)`, holding the detach disposer in the registry until plugin dispose. The publication is **enter-only, without `sessions.announce()`**: `enter` installs the append-publication hooks and the store entry — everything the provider's liveness probe and the transcript mirror's `session/event` broadcast need — while `announce` only emits `session/created`, whose semantics are new-session creation. A persisted child already fired `session/created` in its original lifetime (fresh delegations publish through `sessions.create()`), and re-firing would re-trigger creation listeners (apiproxy projections, per-session setup invariants) for a session being restored, not created. The official `agentLoop.resume` publish path announces because it publishes a brand-new live agent+session pair; a CLI provider's child is a pure transcript container with no agent on it.
+**The reattach recipe** uses a cached write handle to read stored events, prepares the child, appends the constructor suffix, and enters then announces the restored live session. The detach disposer and write handle stay owned until plugin disposal; a failed announcement rolls both back. The former enter-only decision is superseded by the [member history continuity fix](../bug-fix/2026-09-19-member-stream-replay.md): creation observers must see the new process lifecycle and constructor suffix even though no host agent runs on the CLI child.
 
 ## Alternatives considered
 
@@ -39,6 +39,6 @@ Plugins acting on the user's behalf (the proposed room plugin, future orchestrat
 
 ## Cross-references
 
-- [Delegation-API proposal](../../../proposals/active/2026-08-18-local-agent-delegation-api.md) — the milestone plan this implements (M1).
+- [Delegation-API proposal](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md) — the milestone plan this implements (M1).
 - [CLI sub-agent resume](2026-08-16-local-agent-resume.md) — the tool-side resume mechanism the facade wraps.
 - [dsh sub-agent session mirror](2026-08-18-local-agent-dsh-session-mirror.md) — the transcript mirroring the reattached child session receives.

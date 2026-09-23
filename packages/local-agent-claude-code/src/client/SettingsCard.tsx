@@ -1,3 +1,5 @@
+import type { HarnessModelPickerInput } from '@khorsheed/dsh-local-agent/client'
+import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -37,6 +39,7 @@ export interface ClaudeLiveSettings {
 
 /** Injected face of the claude-code settings card. */
 export interface ClaudeCodeSettingsCardInjected {
+  renderModelPicker?: ((props: HarnessModelPickerInput) => ReactNode) | undefined
   /** Bound settings scope for the local-agent-claude-code namespace. */
   scope: SettingsScope<ClaudeLiveSettings>
   /** The auth block's query/command faces, backed by the family core Remote. */
@@ -224,10 +227,11 @@ function useCardState(
 }
 
 /** The card body both settings surfaces share: the auth block, the default-model block, and the resident-mode block. */
-function CardBody({ state, auth, authT, useSessions, t }: {
+function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
   readonly state: ReturnType<typeof useCardState>
   readonly auth: ClaudeCodeSettingsCardInjected['auth']
   readonly authT: ClaudeCodeSettingsCardInjected['authT']
+  readonly renderModelPicker: ClaudeCodeSettingsCardInjected['renderModelPicker']
   readonly useSessions: ClaudeCodeSettingsCardProps['useSessions']
   readonly t: ClaudeCodeSettingsCardProps['t']
 }) {
@@ -272,7 +276,7 @@ function CardBody({ state, auth, authT, useSessions, t }: {
           </Tooltip>
         </h3>
         <div className={css.row}>
-          {choices.length > 0 ? (
+          {renderModelPicker?.({ value: modelValue, onChange: setModelDraft, disabled: !ready, defaultLabel: modelDefaultItem }) ?? (choices.length > 0 ? (
             <div className={css.modelField} ref={modelFieldRef}>
               {modelInputElement}
               <button
@@ -321,7 +325,7 @@ function CardBody({ state, auth, authT, useSessions, t }: {
                 </div>
               )}
             </div>
-          ) : modelInputElement}
+          ) : modelInputElement)}
           <button
             type="button"
             className={css.modelSave}
@@ -375,7 +379,7 @@ function CardBody({ state, auth, authT, useSessions, t }: {
  * @returns the card.
  */
 export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
-  const { useSettings, scope, auth, authT, modelInfo, useSessions, t } = props
+  const { useSettings, scope, auth, authT, renderModelPicker, modelInfo, useSessions, t } = props
   const [open, setOpen] = useState(false)
   const state = useCardState(open, useSettings, scope, modelInfo, t)
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -407,7 +411,7 @@ export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
         </span>
         <IconChevronDownOutline14 className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </button>
-      {open && <CardBody state={state} auth={auth} authT={authT} useSessions={useSessions} t={t} />}
+      {open && <CardBody state={state} auth={auth} authT={authT} renderModelPicker={renderModelPicker} useSessions={useSessions} t={t} />}
     </li>
   )
 }
@@ -420,8 +424,8 @@ export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
  * @param props - the owner view, the injected scope/auth faces, and copy.
  * @returns the entry.
  */
-export function ClaudeCodeBundleConfig({ view, useSettings, scope, auth, authT, modelInfo, useSessions, t }: ClaudeCodeBundleConfigProps) {
+export function ClaudeCodeBundleConfig({ view, useSettings, scope, auth, authT, renderModelPicker, modelInfo, useSessions, t }: ClaudeCodeBundleConfigProps) {
   const state = useCardState(view === 'page', useSettings, scope, modelInfo, t)
   if (view === 'summary') return <span className={css.description}>{t('card.description')}</span>
-  return <CardBody state={state} auth={auth} authT={authT} useSessions={useSessions} t={t} />
+  return <CardBody state={state} auth={auth} authT={authT} renderModelPicker={renderModelPicker} useSessions={useSessions} t={t} />
 }

@@ -4,7 +4,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import RoomService from '../src/index.ts'
-import { roomInviteTool, roomMessageTool, roomTaskTool } from '../src/tool.ts'
+import { roomInviteTool, roomMessageTool, roomTaskTool, roomReadTool } from '../src/tool.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
 
@@ -85,7 +85,7 @@ describe('room_invite tool (real composition)', () => {
     const state = await service.getState({ sessionId })
     expect(state).toMatchObject({
       ok: true,
-      value: { members: [{ name: 'main' }, { name: 'ada', kind: 'cli', provider: 'kimi-cli', invitedBy: 'agent', instructions: '负责 API' }] },
+      value: { members: [{ name: 'dsh' }, { name: 'ada', kind: 'cli', provider: 'kimi-cli', invitedBy: 'agent', instructions: '负责 API' }] },
     })
   })
 
@@ -103,7 +103,7 @@ describe('room_invite tool (real composition)', () => {
     expect(text).toContain('Retry')
     // Nothing was journaled.
     const state = await service.getState({ sessionId })
-    expect(state).toMatchObject({ ok: true, value: { members: [{ name: 'main' }] } })
+    expect(state).toMatchObject({ ok: true, value: { members: [{ name: 'dsh' }] } })
     // The self-correction the text enables: rename and retry succeeds.
     const retried = await call(tool, { provider: 'kimi-cli', name: 'ada', instructions: '后端' }, execFor(room))
     expect(retried).toContain('joined')
@@ -149,37 +149,37 @@ describe('room_task tool (real composition)', () => {
 
   it('rejects a non-agent caller and a non-room session with readable text', async () => {
     const { ctx, taskTool } = await boot()
-    expect(await call(taskTool, { action: 'add', title: 'x', member: 'main' }, execFor(undefined)))
+    expect(await call(taskTool, { action: 'add', title: 'x', member: 'dsh' }, execFor(undefined)))
       .toContain('requires a calling agent')
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
-    expect(await call(taskTool, { action: 'add', title: 'x', member: 'main' }, execFor(plain)))
+    expect(await call(taskTool, { action: 'add', title: 'x', member: 'dsh' }, execFor(plain)))
       .toContain('not a room')
   })
 
   it('add lands a pending task through the same host function as the UI, and returns the id', async () => {
     const { service, taskTool, sessionId, room } = await bootRoom()
-    const text = await call(taskTool, { action: 'add', title: '写发布稿', member: 'main', blockedBy: 'ada' }, execFor(room))
+    const text = await call(taskTool, { action: 'add', title: '写发布稿', member: 'dsh', blockedBy: 'ada' }, execFor(room))
     expect(text).toContain('写发布稿')
-    expect(text).toContain('main')
+    expect(text).toContain('dsh')
     const id = /id: ([0-9a-f-]{36})/.exec(text)?.[1]
     expect(id).toBeDefined()
     const state = await service.getState({ sessionId })
     expect(state).toMatchObject({
       ok: true,
-      value: { tasks: [{ id, member: 'main', title: '写发布稿', status: 'pending', blockedBy: 'ada' }] },
+      value: { tasks: [{ id, member: 'dsh', title: '写发布稿', status: 'pending', blockedBy: 'ada' }] },
     })
   })
 
   it('add requires title+member and rejects off-roster names with the roster to retry with', async () => {
     const { taskTool, room } = await bootRoom()
-    expect(await call(taskTool, { action: 'add', member: 'main' }, execFor(room)))
+    expect(await call(taskTool, { action: 'add', member: 'dsh' }, execFor(room)))
       .toContain('requires both title and member')
     const unknown = await call(taskTool, { action: 'add', title: 'x', member: 'cathy' }, execFor(room))
     expect(unknown).toContain('member-not-found')
-    expect(unknown).toContain('main')
+    expect(unknown).toContain('dsh')
     expect(unknown).toContain('ada')
     expect(unknown).toContain('Retry')
-    const blockedBy = await call(taskTool, { action: 'add', title: 'x', member: 'main', blockedBy: 'cathy' }, execFor(room))
+    const blockedBy = await call(taskTool, { action: 'add', title: 'x', member: 'dsh', blockedBy: 'cathy' }, execFor(room))
     expect(blockedBy).toContain('member-not-found')
     expect(blockedBy).toContain('ada')
   })
@@ -197,7 +197,7 @@ describe('room_task tool (real composition)', () => {
     expect(again).toContain('task-closed')
     expect(again).toContain('already closed')
 
-    const open = await service.addTask({ sessionId, member: 'main', title: '出方案' })
+    const open = await service.addTask({ sessionId, member: 'dsh', title: '出方案' })
     if (!open.ok) throw new Error('addTask failed')
     const missing = await call(taskTool, { action: 'close', taskId: 'no-such-id' }, execFor(room))
     expect(missing).toContain('task-not-found')
@@ -213,13 +213,13 @@ describe('room_task tool (real composition)', () => {
     if (!added.ok) throw new Error('addTask failed')
 
     const renamed = await call(taskTool, {
-      action: 'update', taskId: added.value.id, title: '新标题', blockedBy: 'main',
+      action: 'update', taskId: added.value.id, title: '新标题', blockedBy: 'dsh',
     }, execFor(room))
     expect(renamed).toContain('updated')
     let state = await service.getState({ sessionId })
     expect(state).toMatchObject({
       ok: true,
-      value: { tasks: [{ id: added.value.id, title: '新标题', blockedBy: 'main', status: 'pending' }] },
+      value: { tasks: [{ id: added.value.id, title: '新标题', blockedBy: 'dsh', status: 'pending' }] },
     })
 
     // null clears the wait.
@@ -255,7 +255,7 @@ describe('room_message tool (real composition)', () => {
     // The dispatch record and the auto-opened task journal as usual; the
     // caller is the main agent, so NO human user/message bubble is appended.
     expect(events.filter(event => event.type === 'room/dispatch').map(event => event.data))
-      .toEqual([{ targets: ['ada'], text: '看看接口定义' }])
+      .toMatchObject([{ targets: ['ada'], text: '看看接口定义', origin: 'coordinator', replyTo: 'legacy:1' }])
     expect(events.some(event => event.type === 'user/message')).toBe(false)
     const state = await service.getState({ sessionId })
     expect(state).toMatchObject({
@@ -272,18 +272,37 @@ describe('room_message tool (real composition)', () => {
     const unknown = await call(messageTool, { member: 'ghost', text: '在吗' }, execFor(room))
     expect(unknown).toContain('unknown member')
     // The live roster lets the model self-correct (main is always seated).
-    expect(unknown).toContain('main')
+    expect(unknown).toContain('dsh')
     expect(unknown).toContain('Retry')
 
-    expect(await call(messageTool, { member: 'main', text: '  ' }, execFor(room))).toContain('non-blank')
-    expect(await call(messageTool, { member: 'main', text: 'x' }, execFor(undefined)))
+    expect(await call(messageTool, { member: 'dsh', text: '  ' }, execFor(room))).toContain('non-blank')
+    expect(await call(messageTool, { member: 'dsh', text: 'x' }, execFor(undefined)))
       .toContain('requires a calling agent')
 
     // The promotion gate: messaging from a plain session turns it into a room
     // (main is seated by the promotion, so addressing main lands).
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
-    const text = await call(messageTool, { member: 'main', text: '给自己记一笔' }, execFor(plain))
-    expect(text).toContain('Dispatched to main')
+    const text = await call(messageTool, { member: 'dsh', text: '给自己记一笔' }, execFor(plain))
+    expect(text).toContain('Dispatched to dsh')
     expect(plain.snapshotEvents().some(event => event.type === 'room/created')).toBe(true)
+  })
+})
+
+
+describe('room coordinator tool ownership', () => {
+  it('shares the context reader and denies former native coordinator mutations after handoff', async () => {
+    const { ctx, service, tool, taskTool, messageTool } = await boot()
+    const sessionId = await createRoom(ctx, service)
+    const room = ctx.sessions.get(sessionId)!
+    await service.invite({ sessionId, provider: 'kimi-cli', name: 'planner' })
+    const state = await service.getState({ sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    const planner = state.value.members.find(member => member.name === 'planner')!
+    room.append('room/coordinator', { version: 1, memberId: planner.id!, revision: 1, previousMemberId: 'legacy:1', handoff: 'handoff' })
+    expect(JSON.parse(await call(roomReadTool(service), {}, execFor(room)))).toMatchObject({ coordinator: 'planner', state: { members: [{ name: 'dsh' }, { name: 'planner' }] } })
+    expect(await call(tool, { provider: 'kimi-cli', name: 'forbidden', instructions: 'work' }, execFor(room))).toContain('not-coordinator')
+    expect(await call(messageTool, { member: 'planner', text: 'work' }, execFor(room))).toContain('not-coordinator')
+    expect(await call(taskTool, { action: 'add', member: 'planner', title: 'work' }, execFor(room))).toContain('Only the current coordinator')
+    expect((await service.getState({ sessionId }))).toMatchObject({ ok: true, value: { tasks: [] } })
   })
 })

@@ -25,6 +25,64 @@ export type ReaderSourceKind = 'rss' | 'link'
 export type ReaderFetchStatus = 'ok' | 'fetching' | 'error'
 
 /**
+ * Why a source has no previewable body.
+ *
+ * A saved link is a link the reader OWNS even when its body cannot be read
+ * here, so these are not add failures: they are the reason the card says
+ * "link only" and the detail view offers the original instead of a blank
+ * page. The set is deliberately small and each member has its own sentence —
+ * "collected but not previewable" with no cause is a worse answer than a
+ * wrong one, and the three real causes (a bot wall, a login wall, a
+ * non-web file) send the reader to different actions.
+ */
+export type ReaderPreviewFailureCode =
+  /** The site refuses non-browser requests, or answered with a bot challenge. */
+  | 'blocked'
+  /** The target sits behind an authentication wall (institutional proxy, SSO). */
+  | 'login'
+  /** The response is not a web page at all (a PDF or another file type). */
+  | 'unsupported-type'
+  /** The address hops to a different site, which the host seam refuses to follow. */
+  | 'redirected'
+  /** The page yielded nothing to read (an interstitial, an empty shell). */
+  | 'empty'
+  /** The request never completed: network, timeout, or a 5xx. The retryable one. */
+  | 'unreachable'
+  /** The address answered with an HTTP error status (404 and friends). */
+  | 'http'
+  /**
+   * The host is KNOWN to be unreadable server-side without a request (a
+   * script-rendered app behind an anti-bot wall — OpenReview, measured). The
+   * sentence for it carries the way out (paste the arXiv version / open in a
+   * browser), so it is not folded into `blocked`, which means "we tried and
+   * the site answered a wall".
+   */
+  | 'unreadable'
+
+/**
+ * Whether an automatic retry is worth the request.
+ *
+ * Only a transport failure is: a bot wall, a login wall, a PDF and a 404 all
+ * answer the same way forever, so retrying them on a timer would be a crawler
+ * with a grudge rather than a reader. The manual refresh stays available.
+ *
+ * @param code - the recorded failure.
+ * @returns true when the entry may be retried automatically.
+ */
+export function isRetryablePreviewFailure(code: ReaderPreviewFailureCode): boolean {
+  return code === 'unreachable'
+}
+
+/** A recorded reason that a source has no previewable body. */
+export interface ReaderPreviewFailure {
+  readonly code: ReaderPreviewFailureCode
+  /** The seam's or the classifier's own words, kept for diagnosis. */
+  readonly message: string
+  /** When the failure was recorded (ISO-8601). */
+  readonly at: string
+}
+
+/**
  * One source of entries.
  *
  * A `link` source always holds exactly one entry (the article itself) and is
@@ -53,6 +111,22 @@ export interface ReaderSource {
    * consumer treats this as "incomplete" and says so rather than guessing.
    */
   readonly truncated?: boolean
+  /**
+   * Why this source has no previewable body, when it has none.
+   *
+   * A saved link keeps its identity and its URL even when the body cannot be
+   * read, so this is recorded instead of the source being dropped: losing a
+   * link the reader deliberately saved is a worse outcome than a card that
+   * says it can only be opened in a browser.
+   */
+  readonly failure?: ReaderPreviewFailure
+  /**
+   * The URL the reader pasted, when this source was resolved to a canonical
+   * version of the same work (a DOI that gated into its arXiv version). The
+   * source's own `url` is the resolved one — it is what refreshes fetch — and
+   * this keeps the provenance visible.
+   */
+  readonly resolvedFrom?: string
   /** The last raw payload: feed XML for `rss`, article HTML for `link`. */
   readonly raw?: string
 }
@@ -77,6 +151,74 @@ export interface ReaderStateDoc {
    * body can live — the sources hold raw payloads, not per-entry markup.
    */
   readonly annotations?: Readonly<Record<string, ReaderEntryAnnotation>>
+  /**
+   * The global sentence memory's manifest; the TABLE lives in its own
+   * `bodies/` file.
+   *
+   * Kept out of the document body on purpose: the table is bounded at 50 000
+   * sentences (several MB of JSON), and this document is read and rewritten
+   * whole on every commit — including one per article opened (`recordRead`).
+   * The manifest is all the commit path needs.
+   */
+  readonly translationMemory?: ReaderTranslationMemoryManifest
+  /**
+   * What the reader opened, newest first (the 「最近阅读」 page).
+   *
+   * Persisted, unlike the pane's session memory: "what was I reading" is a fact
+   * about the reader's own behaviour that has to outlive a reload and a restart,
+   * and it holds no third-party text — a title and a URL the reader already
+   * asked for. It is NOT the read cursor (that stays per session, in the pane).
+   */
+  readonly recent?: readonly ReaderRecentEntry[]
+}
+
+/**
+ * One entry the reader opened, as the 「最近阅读」 page lists it.
+ *
+ * The title and URL are stored rather than looked up because the feed that
+ * published the entry may have rolled it out of its window: a recent list that
+ * silently drops yesterday's article is not a record of what was read.
+ */
+export interface ReaderRecentEntry {
+  readonly entryId: string
+  readonly sourceId: string
+  readonly title: string
+  /** The article URL, for reopening an entry the feed no longer publishes. */
+  readonly url?: string
+  /** When it was opened (ISO-8601). */
+  readonly readAt: string
+}
+
+/**
+ * What the plugin holds for one entry: a body, a stored raw payload, or why not.
+ *
+ * `raw` is the state that makes a fetch resumable: the payload is on disk and the
+ * browser half has not extracted it yet, so closing the page costs nothing.
+ */
+export type ReaderEntryFetchState =
+  | { readonly state: 'none' }
+  | { readonly state: 'fetching'; readonly at: string }
+  | { readonly state: 'raw'; readonly at: string }
+  | { readonly state: 'ready'; readonly at?: string }
+  | {
+    readonly state: 'failed'
+    readonly at: string
+    readonly message: string
+    readonly code?: ReaderPreviewFailureCode
+  }
+
+/** The persisted twin of the in-flight/raw half of {@link ReaderEntryFetchState}. */
+export interface ReaderEntryFetchRecord {
+  readonly state: 'fetching' | 'raw'
+  readonly at: string
+  /** The `bodies/` file holding the raw payload, once it has been written. */
+  readonly rawFile?: string
+  /** The payload's character count (the document itself stays out of `state.json`). */
+  readonly chars?: number
+  /** Where the payload came from, so an edited URL is detectable. */
+  readonly url?: string
+  /** True when the seam capped the payload. */
+  readonly truncated?: boolean
 }
 
 /** One entry's reader-authored state (see the annotations section below). */
@@ -85,10 +227,32 @@ export interface ReaderEntryAnnotation {
   readonly body?: ReaderEntryBody
   /** Tag ids on this entry, in the order they were applied. */
   readonly tagIds?: readonly string[]
+  /** A fetch in flight, or a payload fetched and still waiting to be extracted. */
+  readonly fetch?: ReaderEntryFetchRecord
   /** Why the last fetch failed, so a retry is a decision and not a loop. */
   readonly error?: string
+  /** The classified reason, so the wall can show the same sentence as the detail. */
+  readonly failureCode?: ReaderPreviewFailureCode
   /** When that failure was recorded (ISO-8601). */
   readonly failedAt?: string
+  /**
+   * The article's own title, captured at extraction.
+   *
+   * A saved link's entry is synthesized from the source's URL-derived label;
+   * once the body has been extracted the paper's real name lives here, and the
+   * wall card prefers it. Deliberately survives the body: past eviction it is
+   * the card's memory of what the paper was. Only ever written for a link
+   * source's single entry — a feed entry's title is already the publisher's.
+   */
+  readonly title?: string
+  /** A short excerpt (the abstract / first paragraph), captured with the title. */
+  readonly excerpt?: string
+  /**
+   * This entry's translated segment map (a hash→translation table, never
+   * markup). No TTL: a translation costs a gesture plus per-sentence model work
+   * to rebuild, so only the shared translation budget evicts it.
+   */
+  readonly translation?: ReaderEntryTranslation
 }
 
 /** How long a fetched article body is served before the reader is offered a refetch. */
@@ -97,10 +261,132 @@ export interface ReaderCachePolicy {
   readonly ttlHours: number
   /** How many entry bodies may be retained at once (oldest evicted first). */
   readonly maxEntries: number
+  /**
+   * How large the two translation tiers may grow together, in characters.
+   *
+   * Absent means {@link DEFAULT_TRANSLATION_BUDGET_CHARS}. Translations carry no
+   * TTL (rebuilding one costs a user gesture plus per-sentence model work, so
+   * they must not inherit the body TTL) — this budget, LRU by last use across
+   * both tiers, is the only eviction.
+   */
+  readonly translationBudgetChars?: number
 }
 
 /** The default cache policy: a day, and a few hundred articles. */
 export const DEFAULT_CACHE_POLICY: ReaderCachePolicy = { ttlHours: 24, maxEntries: 500 }
+
+/* ---------------------------------------------------- translation memory */
+
+/**
+ * The schema version of the persisted translation tiers (the global sentence
+ * memory's table, and each entry's segment map). A browser Translator model
+ * upgrade quietly changes what the same sentence translates to, and a
+ * segmentation change here changes what a "sentence" is — bumping this turns
+ * every old record into a MISS. Records are evicted LAZILY (the next write or
+ * budget pass drops them), never wiped eagerly.
+ */
+export const TRANSLATION_STORAGE_VERSION = 1
+
+/**
+ * The default total budget for both translation tiers, in characters — 64 MB
+ * worth of text. Counted in characters, like every other budget in this
+ * document (a CJK sentence costs more bytes than that reads; the approximation
+ * is the store's existing convention).
+ */
+export const DEFAULT_TRANSLATION_BUDGET_CHARS = 64 * 1024 * 1024
+
+/** How many sentences the global memory keeps before its own LRU end is evicted. */
+export const MAX_TRANSLATION_MEMORY_ENTRIES = 50_000
+
+/** One remembered sentence translation — the global tier's value. */
+export interface ReaderTranslationMemoryEntry {
+  /** The source sentence, verbatim (the hash in the entry's key is over this). */
+  readonly source: string
+  /** What the translator answered. */
+  readonly target: string
+  /** The LRU clock: when the entry last served a translation (or was written). */
+  readonly lastUsedAt: string
+}
+
+/** The global memory file's content; the table lives in `bodies/`, not inline. */
+export interface ReaderTranslationMemoryTable {
+  readonly version: number
+  readonly entries: Readonly<Record<string, ReaderTranslationMemoryEntry>>
+}
+
+/** The document's pointer at the global memory file. */
+export interface ReaderTranslationMemoryManifest {
+  readonly version: number
+  /** The `bodies/` file holding the table (a fixed, safe name). */
+  readonly file: string
+  readonly entries: number
+  readonly chars: number
+  readonly updatedAt: string
+}
+
+/**
+ * One entry's translation of its body: a map of sentence hash to translation —
+ * never translated markup, so a body re-fetched with minor edits still reuses
+ * every unchanged sentence through the global tier, while a `bodyHash`
+ * mismatch invalidates only this exact-fit record.
+ */
+export interface ReaderEntryTranslation {
+  readonly version: number
+  /** The `<src>→<tgt>` label the map was built under. */
+  readonly pair: string
+  /** Hash of the normalized body the segments were cut from. */
+  readonly bodyHash: string
+  /** sentenceHash → translation, inline while the map is small. */
+  readonly segments?: Readonly<Record<string, string>>
+  /** The `bodies/` file holding the segment map once it is large. */
+  readonly file?: string
+  /** The map's serialized size, for the shared budget. */
+  readonly chars?: number
+  readonly translatedAt: string
+  /** The shared-budget LRU clock. */
+  readonly lastUsedAt: string
+}
+
+/** One sentence the browser half learned (or was served), as it reports it. */
+export interface ReaderSentenceLearn {
+  /** The client's `translationHash(source)`, stored opaquely. */
+  readonly hash: string
+  readonly source: string
+  readonly target: string
+}
+
+/** An entry translation as the wire serves it: the segment map resolved. */
+export interface ReaderEntryTranslationView {
+  readonly pair: string
+  readonly bodyHash: string
+  readonly segments: Record<string, string>
+}
+
+/**
+ * How much the two caches currently hold, aggregated on the host.
+ *
+ * Counts and characters only — the tables themselves never cross the wire for
+ * a settings readout. `chars` is the store's accounting unit (characters, the
+ * same unit the budgets are written in).
+ */
+export interface ReaderStorageStats {
+  /** The cached article bodies (what TTL + maxEntries govern). */
+  readonly bodies: {
+    readonly entries: number
+    readonly chars: number
+  }
+  /** The two translation tiers: per-entry maps, and the global sentence memory. */
+  readonly translations: {
+    /** How many entries carry a segment map. */
+    readonly entries: number
+    /** The maps' combined size. */
+    readonly chars: number
+    /** The global memory's sentence count (0 when no table exists). */
+    readonly memoryEntries: number
+    /** The global memory's size (0 when no table exists). */
+    readonly memoryChars: number
+  }
+}
 
 export interface ReaderRefreshConfig {
   readonly enabled: boolean
@@ -132,8 +418,25 @@ export interface ReaderEntry {
   readonly summary?: string
   /** Normalized article body for the detail view. */
   readonly contentHtml?: string
+  /**
+   * True when {@link contentHtml} is only the FEED's own summary.
+   *
+   * A feed that publishes no `content:encoded` / `<content>` still gets its
+   * description rendered in the detail view (an empty page would be worse), so
+   * the browser half has to be able to tell "the feed gave me its summary" from
+   * "this is the article" — otherwise the entry looks complete and nothing ever
+   * fetches the page behind it. The automatic backfill and opening an entry
+   * both treat this as a body still owed.
+   */
+  readonly summaryOnly?: boolean
   /** True when the body is known to be incomplete (see {@link ReaderSource.truncated}). */
   readonly truncated?: boolean
+  /**
+   * Figures the page draws with its own scripts, counted at extraction. Saved
+   * links extract at load time, so the count rides the entry; the detail view
+   * shows the notice and the 「渲染抓取」 action from it.
+   */
+  readonly scriptFigures?: number
   /**
    * True when the ENTRY itself is a salvage of a payload the host capped: its
    * text is real but stops where the cap landed. The detail view says so.
@@ -150,11 +453,24 @@ export interface ReaderSourceSummary {
   readonly url: string
   readonly label: string
   readonly enabled: boolean
+  /**
+   * When the reader added it (ISO-8601).
+   *
+   * The browser needs this to order the wall and the management list by
+   * "when did this arrive": a saved link carries no publication date at all,
+   * so without this field it sorts as the oldest thing on the wall — which is
+   * exactly where a reader who just added it will not look.
+   */
+  readonly addedAt: string
   readonly fetchedAt?: string
   readonly status?: ReaderFetchStatus
   readonly error?: string
   readonly truncated?: boolean
   readonly hasBody: boolean
+  /** Present when this source has no previewable body (see {@link ReaderPreviewFailure}). */
+  readonly failure?: { readonly code: ReaderPreviewFailureCode; readonly message: string }
+  /** The URL the reader pasted, when the source was resolved to a canonical version (see {@link ReaderSource.resolvedFrom}). */
+  readonly resolvedFrom?: string
 }
 
 /** Capability handshake: what the browser may rely on in this composition. */
@@ -189,6 +505,14 @@ export interface ReaderAddOutcome {
   readonly kind: ReaderSourceKind
   readonly id: string
   readonly label: string
+  /**
+   * Present when the source was saved but its body cannot be previewed.
+   *
+   * The add still succeeded: the URL is a link the reader now owns. This is
+   * the verdict's reason, not a failure — which is why it rides the outcome
+   * instead of becoming one more refusal that loses the link.
+   */
+  readonly failure?: { readonly code: ReaderPreviewFailureCode; readonly message: string }
 }
 
 /**
@@ -246,6 +570,14 @@ export interface ReaderBody {
   readonly truncated?: boolean
   /** Present when the payload could not be produced (fetch failed, no fs, …). */
   readonly error?: string
+  /**
+   * The captured article title for a link source's single entry, when a past
+   * extraction stored it (see {@link ReaderEntryAnnotation.title}). The wall
+   * prefers it over the URL-derived label.
+   */
+  readonly title?: string
+  /** The captured excerpt, with the title. */
+  readonly excerpt?: string
 }
 
 /* ------------------------------------------------------------------ helpers */
@@ -270,6 +602,19 @@ export const MAX_BODY_CHARS_PER_SOURCE = 2 * 1024 * 1024
 
 /** Total raw-payload budget in characters across all sources (newest kept). */
 export const MAX_TOTAL_BODY_CHARS = 12 * 1024 * 1024
+
+/**
+ * How large an extracted body may be before it lives in its own file.
+ *
+ * `state.json` is read and rewritten as a whole on every mutation, so a research
+ * paper whose figures are inlined as base64 (transformer-circuits.pub's emotions
+ * paper is a 41.8 MB HTML document and extracts to tens of megabytes) would make
+ * every reader operation pay a multi-megabyte JSON round trip. Above this
+ * threshold the body is written to one file under `bodies/` and the document
+ * keeps only its metadata — so the cache policy (`ttlHours`, `maxEntries`) still
+ * governs it exactly like an inline body, and eviction deletes the file.
+ */
+export const INLINE_BODY_MAX_CHARS = 256 * 1024
 
 /**
  * Build a display label for a source from its URL: the registrable-ish host
@@ -310,6 +655,38 @@ export function stableEntryId(entry: { title: string; link?: string; guid?: stri
   if (link !== undefined && link.length > 0) return `l:${link}`
   return `h:${hash32(`${entry.title}\u0000${entry.link ?? ''}`).toString(36)}`
 }
+
+/**
+ * The entry id a saved link's single entry carries.
+ *
+ * A `link` source is exactly one entry, so the host must be able to name that
+ * entry when it records a per-entry annotation (the fetch failure the detail
+ * view reads). Both halves use this one function: a magic string duplicated
+ * across the process boundary is a bug waiting for a rename.
+ *
+ * @param sourceId - the link source's id.
+ * @returns the entry id the browser will build for it.
+ */
+export function linkEntryId(sourceId: string): string {
+  return `link:${sourceId}`
+}
+
+/**
+ * The query that selects every entry of one source KIND.
+ *
+ * The same local-predicate mechanism as a source or tag filter, so a kind
+ * narrowing is visible in the search box and can be cleared there. The prefix
+ * cannot collide with a real source id: ids are always `<kind>-<hash>`.
+ *
+ * @param kind - the source kind to select.
+ * @returns the query string.
+ */
+export function kindQuery(kind: ReaderSourceKind): string {
+  return `#${kind}`
+}
+
+/** The source kinds a kind query can name, for the predicate that reads one. */
+export const READER_SOURCE_KINDS: readonly ReaderSourceKind[] = ['rss', 'link']
 
 /**
  * Shorten a summary for a card, collapsing whitespace so multi-line feed
@@ -356,8 +733,24 @@ function hash32(input: string): number {
  * fetch.
  */
 export interface ReaderEntryBody {
-  /** Whitelist-normalized article markup, ready for the detail view. */
-  readonly html: string
+  /** Whitelist-normalized article markup, when it is small enough to inline. */
+  readonly html?: string
+  /**
+   * The `bodies/` file holding this body, when it is too large to inline.
+   *
+   * A bare file name, never a path: the store owns the directory, and a document
+   * that carried an absolute path would break the moment the state root moves.
+   */
+  readonly file?: string
+  /** The body's character count, so the document can report its size without it. */
+  readonly chars?: number
+  /**
+   * True when this body came from the capture package's rendered fetch rather
+   * than the plain fetch. The detail view's 「重新抓取」 routes on it: a
+   * rendered entry re-renders (a plain fetch would clobber the rendered body
+   * with the page's pre-JS shell).
+   */
+  readonly rendered?: boolean
   /** When it was fetched (ISO-8601), for the "fetched just now" line and pruning. */
   readonly fetchedAt: string
   /**
@@ -373,6 +766,8 @@ export interface ReaderEntryBody {
   readonly url: string
   /** True when the fetch hit the seam's cap (the note then says so honestly). */
   readonly truncated?: boolean
+  /** Figures the page draws with its own scripts (dropped; the note counts them). */
+  readonly scriptFigures?: number
 }
 
 /** One user-defined tag. */
@@ -404,6 +799,10 @@ export interface ReaderEntryBodyView {
   readonly html?: string
   readonly fetchedAt?: string
   readonly truncated?: boolean
+  /** Figures this page draws with scripts — the detail view says so. */
+  readonly scriptFigures?: number
+  /** True when this body came from a rendered fetch (the「重新抓取」route reads it). */
+  readonly rendered?: boolean
   /** Why a fetch could not produce a body, when one was attempted. */
   readonly error?: string
 }

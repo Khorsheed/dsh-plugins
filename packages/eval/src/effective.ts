@@ -248,9 +248,9 @@ export function checkAgainstEffective(condition: Record<string, unknown>, snapsh
     check('reasoning.effort', stringOrNull(reasoning['effort']), snapshot.reasoningEffort, {
       severity: 'warning',
       noKnob: snapshot.available
-        ? 'the harness exposes no reasoning-effort knob — the declaration describes a setting this scope cannot hold'
+        ? 'the scope reports no default reasoning effort; explicit native effort must be validated and pinned by per-round admission before generation'
         : noSnapshot,
-      mismatch: (d, e) => `the condition pins effort ${JSON.stringify(d)} but the scope reads ${JSON.stringify(e)} (frozen decision 4 wants it pinned explicitly)`,
+      mismatch: (d, e) => `the condition pins effort ${JSON.stringify(d)} while the scope default is ${JSON.stringify(e)}; the explicit value must be requested and verified at round admission`,
     }),
     check('permissions', permissions, snapshot.permissions, {
       severity: 'error',

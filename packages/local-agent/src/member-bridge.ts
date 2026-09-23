@@ -1,6 +1,6 @@
 /**
  * Member bridge: a minimal standalone MCP server (stdio, newline-delimited
- * JSON-RPC) exposing exactly one tool, `member_message(to, text)`, to the CLI
+ * JSON-RPC) exposing member messaging and room coordination tools to the CLI
  * member that spawned it. Each call is forwarded to the host's member-channel
  * listener over the loopback socket named by `DSH_MEMBER_SOCKET`,
  * authenticated by the per-run token in `DSH_MEMBER_TOKEN`; the host's
@@ -19,6 +19,7 @@ import { connect } from 'node:net'
 import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Readable, Writable } from 'node:stream'
+import type { MemberRoomCommandName } from './types.ts'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from './types.ts'
 
 /** The one tool this server exposes. */
@@ -39,6 +40,29 @@ const TOOL_SCHEMA = {
   required: ['to', 'text'],
   additionalProperties: false,
 } as const
+
+const ROOM_TOOLS = [
+  { name: 'room_plan', description: 'Manage a formal goal with stages, dependent tasks and evidence review. Read room_read for plan state and the command contract. Ordinary small work uses room_message. Workers may submit only their own current attempt.',
+    inputSchema: { type: 'object', properties: { command: { type: 'string', description: 'JSON command with action, requestId and expectedRevision; see room_read planCommands.' } }, required: ['command'], additionalProperties: false } },
+  { name: 'room_read', description: 'Read your room roster, coordinator, deliveries, recent outcomes and available harness providers. Identity comes from the host.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'room_invite', description: 'Coordinator only: invite a member. An optional firstTask starts in the background and returns its result to you automatically.',
+    inputSchema: { type: 'object', properties: {
+      provider: { type: 'string' }, name: { type: 'string' }, instructions: { type: 'string' },
+      cwd: { type: 'string' }, model: { type: 'string' }, firstTask: { type: 'string' },
+    }, required: ['provider', 'name'], additionalProperties: false } },
+  { name: 'room_message', description: 'Coordinator only: dispatch background work to a room member by name. Returns acceptance immediately; completion arrives as a correlated report. Do not poll.',
+    inputSchema: { type: 'object', properties: { member: { type: 'string' }, text: { type: 'string' } }, required: ['member', 'text'], additionalProperties: false } },
+] as const
+
+export async function callRoomCommand(env: MemberBridgeEnv, name: MemberRoomCommandName, args: unknown): Promise<Record<string, unknown>> {
+  if (env.socket === undefined || env.token === undefined) return toolText('member channel is not configured for this run', true)
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) return toolText('Room tool arguments must be an object', true)
+  try {
+    const outcome = await callHost(env.socket, { token: env.token, command: { name, arguments: args } })
+    return toolText(outcome.ok ? outcome.receipt ?? 'accepted' : outcome.error ?? 'Room command rejected', !outcome.ok)
+  } catch (error) { return toolText(`Room command unavailable: ${String(error)}`, true) }
+}
 
 /** What the bridge needs from its environment (injectable for tests). */
 export interface MemberBridgeEnv {
@@ -164,12 +188,16 @@ export function serveMemberBridge(env: MemberBridgeEnv, input: Readable, output:
               name: MEMBER_MESSAGE_TOOL,
               description: TOOL_DESCRIPTION,
               inputSchema: TOOL_SCHEMA,
-            }],
+            }, ...ROOM_TOOLS],
           },
         })
         return
       case 'tools/call': {
         const params = request.params as { name?: string; arguments?: { to?: unknown; text?: unknown } } | undefined
+        if (ROOM_TOOLS.some(tool => tool.name === params?.name)) {
+          void callRoomCommand(env, params!.name as MemberRoomCommandName, params!.arguments ?? {}).then(result => write({ jsonrpc: '2.0', id: id ?? null, result }))
+          return
+        }
         if (params?.name !== MEMBER_MESSAGE_TOOL) {
           write({ jsonrpc: '2.0', id: id ?? null, error: { code: -32602, message: `unknown tool ${String(params?.name)}` } })
           return

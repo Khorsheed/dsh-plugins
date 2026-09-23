@@ -24,6 +24,7 @@
     "src/slots.ts",
     "src/tool.ts",
     "src/types.ts",
-    "src/worktree.ts"
+    "src/materialize.ts",
+    "src/registry.ts"
   ]
 }

@@ -168,7 +168,11 @@ function readEntry(element: Element, sourceId: string): ReaderEntry | undefined 
   if (displayTitle === undefined) return undefined
 
   const guid = elementText(child(element, 'id')) ?? elementText(child(element, 'guid'))
-  const body = bestBody(element)
+  const content = bestContent(element)
+  const body = content ?? bestBody(element)
+  // The body IS only the feed's summary when no content element supplied one:
+  // the browser half needs that distinction to know a fetch is still owed.
+  const summaryOnly = content === undefined && body !== undefined
   const summary = bestSummary(element) ?? body
 
   const id = stableEntryId({
@@ -189,6 +193,7 @@ function readEntry(element: Element, sourceId: string): ReaderEntry | undefined 
     ...(tags.length > 0 ? { tags } : {}),
     ...present('summary', summarize(summary, 320)),
     ...present('contentHtml', body),
+    ...(summaryOnly ? { summaryOnly: true } : {}),
   }
 }
 
@@ -200,6 +205,30 @@ function readEntry(element: Element, sourceId: string): ReaderEntry | undefined 
  * body-only would leave the detail view empty for every feed that does not
  * publish full text, which is most of them.
  */
+/**
+ * The feed's own FULL-TEXT element, when it publishes one.
+ *
+ * Distinct from {@link bestBody} on purpose. `bestBody` falls back to the
+ * `<description>`/`<summary>` field so the detail view is never empty for a
+ * feed that publishes nothing else — but that fallback is a SUMMARY, and a
+ * caller that cannot tell the two apart concludes the entry already has its
+ * text. That is exactly how a 167-character summary was rendered as the whole
+ * article and why neither the backfill nor opening it ever fetched the page.
+ *
+ * @param element - the `<item>` / `<entry>`.
+ * @returns the rich body, or `undefined` when the feed ships only a summary.
+ */
+function bestContent(element: Element): string | undefined {
+  for (const name of CONTENT_TAGS) {
+    const raw = firstDescendantText(element, name)
+    if (raw === undefined) continue
+    const normalized = normalizeRichText(decodeEntities(raw))
+    if (normalized.length > 0) return normalized
+  }
+  return undefined
+}
+
+/** The fallback body (the feed's own summary), used when no content element exists. */
 function bestBody(element: Element): string | undefined {
   for (const name of [...CONTENT_TAGS, ...SUMMARY_TAGS]) {
     const raw = firstDescendantText(element, name)

@@ -19,6 +19,8 @@ import type {
 
 /** Chat node data of one member speech row. */
 export interface RoomSpeechData {
+  /** Partial output from a stopped or failed run; never a completed answer. */
+  readonly interrupted?: 'cancelled' | 'failed'
   /** Seq of the room/speech event. */
   readonly seq: number
   /** Unix epoch ms from the event. */
@@ -139,6 +141,7 @@ export const roomSpeechDefinition: ConversationNodeDefinition<RoomSpeechData> = 
       time: event.time,
       member: event.data.member,
       text: event.data.text,
+      ...event.data.interrupted === undefined ? {} : { interrupted: event.data.interrupted },
       ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
       ...event.data.durationMs === undefined ? {} : { durationMs: event.data.durationMs },
     }
@@ -180,8 +183,9 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
   update: (context, match) => {
     const event = match.event
     if (event.type !== 'room/run-state') return context.state
+    const { error: _error, elapsedMs: _elapsed, ...previous } = context.state
     return {
-      ...context.state,
+      ...previous,
       state: event.data.state,
       ...event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs },
       ...event.data.error === undefined ? {} : { error: event.data.error },

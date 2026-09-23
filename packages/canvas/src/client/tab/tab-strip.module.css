@@ -1,0 +1,126 @@
+/* The canvas surface's own tab strip: browser-tab chrome, one step quieter
+   than the topbar under it. Colours are all `--dsw-*` tokens, so light and
+   dark stay the theme's business. */
+
+.strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  flex-shrink: 0;
+  /* Rows keep their reading width and the strip gives up ground sideways: a
+     tab squeezed to four characters identifies nothing. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 190px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-radius: 8px 8px 0 0;
+  transition: background 0.12s;
+}
+
+.tab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The active row is the page continuing into the strip: same fill as the body
+   below, and its own bottom border paints over the strip's rule so the two
+   read as one surface. */
+.tab[data-active="true"] {
+  border-color: var(--dsw-alias-border-l1);
+  border-bottom-color: var(--dsw-alias-bg-base);
+  background: var(--dsw-alias-bg-base);
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  border: none;
+  border-radius: 8px 0 0 0;
+  background: transparent;
+  padding: 6px 2px 5px 9px;
+  font-family: var(--dsw-font-family);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.label svg {
+  flex: none;
+}
+
+.labelText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab[data-active="true"] .label {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+/* The × is the row's own, revealed with the row — a strip of ten visible
+   close boxes reads as a toolbar. On the active row it stays put because that
+   is the one the user is about to act on, and a hover-only affordance there
+   would be a coin flip on a touchpad. */
+.close {
+  display: none;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 5px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.tab:hover .close,
+.tab[data-active="true"] .close {
+  display: inline-flex;
+}
+
+.close:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The ＋ tail: sticky so scrolling the strip sideways cannot hide the one
+   gesture that adds a row (the board's 管理分类 chip is sticky for the same
+   reason and carries the strip's own fill for the same reason too). The
+   trigger itself is the switcher's — its styles live with it in
+   `board.module.css`, and nothing here reaches into a foreign component: the
+   dropdown panel is mounted INSIDE this slot, so a `button` selector here
+   would style every row of the menu too. */
+.tail {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  display: inline-flex;
+  align-items: flex-end;
+  align-self: stretch;
+  flex: none;
+  margin-left: auto;
+  padding-left: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+}

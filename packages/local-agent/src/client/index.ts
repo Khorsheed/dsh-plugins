@@ -1,3 +1,4 @@
+import { MemberFeeds } from './member-feed.ts'
 /**
  * Local-agent records plugin, browser half: the member composer for delegated
  * CLI sessions, plus the shared settings-card building blocks the provider
@@ -14,6 +15,10 @@
  * under the standard 子代理 list like every other subagent. The plugin holds
  * no host data — every open pulls fresh.
  */
+import { createElement, type ReactNode } from 'react'
+import { HarnessModelPicker, type HarnessModelPickerProps, type ModelDirectoryFace } from './HarnessModelPicker.tsx'
+import { MemberConfiguration } from './MemberConfiguration.tsx'
+import { MemberConfigurationStores } from './member-configuration.ts'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the generated Remote API, the ctx.remote merge, and the
 // locale Context merge.
@@ -28,6 +33,9 @@ import localAgentRemote from '@khorsheed/dsh-local-agent/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import { MemberComposer, selectCliMember, type MemberComposerInjected } from './MemberComposer.tsx'
 import { en, NS, zh, type LocalAgentKey } from './locales.ts'
+import { memberLiveDefinition } from './live-node.ts'
+import { MemberLiveNode, MemberLiveOutputView } from './MemberLiveNode.tsx'
+import { MemberLiveOutputs } from './live-output.ts'
 
 export type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
 export { ProviderAuthBlock } from './ProviderAuthBlock.tsx'
@@ -41,6 +49,22 @@ export { selectCliMember } from './MemberComposer.tsx'
 
 /** The mounted local-agent gateway namespace, read back from the global store. */
 export type LocalAgentGatewayRemote = TypertRemoteNamespaceMap['localAgentGateway']
+
+/** Optional companion-facing renderer; consumers probe the service at gesture time. */
+export type HarnessModelPickerInput = Omit<HarnessModelPickerProps, 'face' | 't'>
+import { MemberInboxView, type MemberInboxFace } from './MemberInboxView.tsx'
+
+export interface LocalAgentUi {
+  renderMemberOutput(childSessionId: string, startedAt: number): ReactNode
+  renderMemberInbox(childSessionId: string): ReactNode
+  renderHarnessModelPicker(name: string, props: HarnessModelPickerInput): ReactNode
+  renderMemberConfiguration(childSessionId: string): ReactNode
+}
+declare module '@deepseek-ai/cordis' {
+  interface Context { localAgentUi: LocalAgentUi }
+}
+export { ModelConfigurationFields } from './ModelConfigurationFields.tsx'
+export type { ConfigurationTranslate } from './ModelConfigurationFields.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -73,6 +97,52 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ctx.logger.error(error)
   }
   const gateway = ctx.get('remote.localAgentGateway') as LocalAgentGatewayRemote
+  const unwrap = <T,>(result: { ok: true; value: T } | { ok: false }): T => {
+    if (!result.ok) throw new Error('Configuration request failed')
+    return result.value
+  }
+  const feeds = new MemberFeeds((requests, signal) => gateway.followMembers(requests, signal))
+  ctx.effect(() => () => feeds.dispose(), 'local-agent: shared member feed')
+  const configurations = new MemberConfigurationStores({
+    read: async id => unwrap(await gateway.memberConfiguration(id)),
+    follow: (id, signal) => feeds.follow(id, 'configuration', signal),
+    directory: async (id, refresh) => unwrap(await gateway.memberDirectory(id, refresh)),
+    followDirectory: (id, signal) => feeds.follow(id, 'directory', signal),
+    select: async (id, request, revision, selection) => unwrap(await gateway.selectMemberConfiguration(id, request, revision, selection)),
+    cancel: async (id, request, revision) => unwrap(await gateway.cancelMemberConfiguration(id, request, revision)),
+    retry: async (id, revision) => { unwrap(await gateway.retryMemberConfiguration(id, revision)) },
+  })
+  const directoryFaces = new Map<string, ModelDirectoryFace>()
+  const directoryFace = (name: string): ModelDirectoryFace => {
+    let face = directoryFaces.get(name)
+    if (face === undefined) directoryFaces.set(name, face = {
+      read: async refresh => unwrap(await gateway.modelDirectory(name, undefined, refresh)),
+      follow: signal => gateway.followModelDirectory(name, undefined, signal),
+    })
+    return face
+  }
+  const inboxFaces = new Map<string, MemberInboxFace>()
+  const inboxFace = (id: string): MemberInboxFace => {
+    let face = inboxFaces.get(id)
+    if (face === undefined) inboxFaces.set(id, face = {
+      read: async () => unwrap(await gateway.memberInbox(id)),
+      control: async (action, requestId, outcome, evidence) => unwrap(await gateway.controlMemberInbox(id, action, requestId, outcome, evidence)),
+    })
+    return face
+  }
+  const outputs = new MemberLiveOutputs((id, signal) => feeds.follow(id, 'output', signal))
+  const configurationUi: LocalAgentUi = {
+    renderMemberOutput: (id, startedAt) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, t: ctx.locale.bind(NS) }),
+    renderMemberInbox: id => createElement(MemberInboxView, { key: id, face: inboxFace(id), t: ctx.locale.bind(NS) }),
+    renderHarnessModelPicker: (name, props) => createElement(HarnessModelPicker, { ...props, key: name, face: directoryFace(name), t: ctx.locale.bind(NS) }),
+    renderMemberConfiguration: id => createElement(MemberConfiguration, { key: id, store: configurations.get(id), diagnostics: outputs.diagnostics, t: ctx.locale.bind(NS) }),
+  }
+  ctx.provide('localAgentUi', configurationUi)
+  ctx.inject(['uiConversation'], lctx => { lctx.uiConversation.events.register(memberLiveDefinition) })
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node', key: 'local-agent-stream', locale: NS,
+    inject: () => ({ outputs }),
+  }, MemberLiveNode))
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-local-agent: dictionaries')
   // The member composer: a one-shot subagent session that the family delegated
   // gets a writable box (send = facade resume via the promptMember Remote);
@@ -89,8 +159,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       locale: NS,
       select: selectCliMember,
       inject: (): MemberComposerInjected => ({
+        renderMemberConfiguration: configurationUi.renderMemberConfiguration,
+        renderMemberInbox: configurationUi.renderMemberInbox,
         memberOf: childSessionId => gateway.memberOf(childSessionId).then(result => (result.ok ? result.value : undefined)),
-        promptMember: (childSessionId, text) => gateway.promptMember(childSessionId, text).then(result => (result.ok ? result.value : undefined)),
+        promptMember: (childSessionId, text, requestId) => gateway.promptMember(childSessionId, text, requestId).then(result => (result.ok ? result.value : undefined)),
         stopMember: childSessionId => gateway.stopMember(childSessionId).then(result => (result.ok ? result.value : undefined)),
         activeDelegations: () => gateway.activeDelegations().then(result => (result.ok ? result.value : undefined)),
         memberModel: childSessionId => gateway.memberModel(childSessionId).then(result => (result.ok ? result.value : undefined)),

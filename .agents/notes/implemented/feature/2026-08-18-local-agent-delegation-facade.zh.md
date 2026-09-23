@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-代表用户行事的插件（提案中的 room、未来的编排器）此前没有受支持的途径委派给本地 coding-agent CLI：家族的委派协议——按 (parent, provider) 的 intent FIFO、resume 锁、经归属校验的委派记录——只能通过重新实现模型工具的内部逻辑来触达，而朴素的重新实现会重新打开孤儿 intent 窗口（`ctx.subagents.start()` 在 provider 消费前抛错时残留在 FIFO 里的 intent 会被下一次同名 (parent, provider) 的 start 误消费）。跨重启续跑还有第二个缺口：进程内卸载后 dsh 子会话不在场，家族 provider 对此 fail loud。本 note 是[委派 API 提案](../../../proposals/active/2026-08-18-local-agent-delegation-api.md)的 M1 里程碑。
+代表用户行事的插件（提案中的 room、未来的编排器）此前没有受支持的途径委派给本地 coding-agent CLI：家族的委派协议——按 (parent, provider) 的 intent FIFO、resume 锁、经归属校验的委派记录——只能通过重新实现模型工具的内部逻辑来触达，而朴素的重新实现会重新打开孤儿 intent 窗口（`ctx.subagents.start()` 在 provider 消费前抛错时残留在 FIFO 里的 intent 会被下一次同名 (parent, provider) 的 start 误消费）。跨重启续跑还有第二个缺口：进程内卸载后 dsh 子会话不在场，家族 provider 对此 fail loud。本 note 是[委派 API 提案](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md)的 M1 里程碑。
 
 ## Decision
 
@@ -17,7 +17,7 @@ Status: implemented
 - `DelegationCallOptions`（`{ label?, signal? }`）刻意保持可加性——`onProgress`/`reattach` 随后续里程碑落地。
 - registry 不新增硬 inject：`subagents` / `agents` / `sessions` / `sessionPersistence` 均在调用时经 `ctx.get` 惰性读取，门面调用需要的服务缺席时抛出指明服务名的错误（核心 degrade-don't-explode，调用 fail-loud）。
 
-**Reattach 配方**（固化在 `resume` 的 doc comment 中供 room 直接引用）：`ctx.sessions.get(childSessionId)` 为 undefined 时，`using prep = await ctx.sessionPersistence.prepare(SessionId(childSessionId))`，随后 `ctx.sessions.enter(prep.session)`，detach disposer 由 registry 持有至插件卸载。发布**只 enter、不 `sessions.announce()`**：`enter` 安装 append 发布钩子并加入 store——provider 的 liveness 探针与 transcript 镜像的 `session/event` 广播所需的全部——而 `announce` 只发 `session/created`，其语义是新会话创建。持久化的子会话在其原始生命周期已发过 `session/created`（fresh 委派经 `sessions.create()` 发布），重发会让创建类监听器（apiproxy 投影、按会话的 setup 不变量）把一个正在恢复的会话当成新建。官方 `agentLoop.resume` 的 publish 路径之所以 announce，是因为它为本进程生命周期发布的是全新的 live agent+session 对；CLI provider 的子会话是没有 agent 在其上运行的纯 transcript 容器。
+**Reattach 配方**使用缓存写句柄读取持久化事件，准备子会话、追加构造器后缀，再 enter 并 announce 恢复的实时会话。detach disposer 和写句柄由插件持有至卸载；announce 失败则回滚两者。原先只 enter 的决策已由[成员历史连续性修复](../bug-fix/2026-09-19-member-stream-replay.md)取代：即使 CLI 子会话上没有宿主 agent，创建监听器仍须收到本进程的新生命周期及构造器后缀。
 
 ## Alternatives considered
 
@@ -39,6 +39,6 @@ Status: implemented
 
 ## Cross-references
 
-- [委派 API 提案](../../../proposals/active/2026-08-18-local-agent-delegation-api.md)——本 note 实现的里程碑计划（M1）。
+- [委派 API 提案](../../../proposals/closed/2026-08-18-local-agent-delegation-api.md)——本 note 实现的里程碑计划（M1）。
 - [CLI 子代理 resume](2026-08-16-local-agent-resume.md)——门面封装的工具侧 resume 机制。
 - [dsh 子代理会话镜像](2026-08-18-local-agent-dsh-session-mirror.md)——reattach 后的子会话接收的 transcript 镜像。

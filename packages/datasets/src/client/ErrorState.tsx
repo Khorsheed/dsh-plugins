@@ -33,6 +33,9 @@ import css from './DatasetsView.module.css'
 
 /** What went wrong, as far as the message lets us tell. */
 export type ErrorKind =
+  | 'alreadyRegistered'
+  | 'notRegistered'
+  | 'refMissing'
   | 'notGitRepo'
   | 'notDatasetRepo'
   | 'pathMissing'
@@ -48,10 +51,14 @@ export type ErrorKind =
  * general one.
  */
 const MARKERS: ReadonlyArray<readonly [RegExp, ErrorKind]> = [
+  [/registered already|is taken by another repository/i, 'alreadyRegistered'],
+  [/is not registered in this deployment/i, 'notRegistered'],
+  // Ahead of pathMissing: a missing BRANCH also «does not exist».
+  [/tracked branch .* does not exist/i, 'refMissing'],
   [/not a dataset repository|no datasets\/ directory|holds no datasets\//i, 'notDatasetRepo'],
   [/not a git repository|rev-parse --show-toplevel/i, 'notGitRepo'],
   [/no dataset repository/i, 'unbound'],
-  [/\bENOENT\b|no such file or directory|does not exist|is not a directory/i, 'pathMissing'],
+  [/\bENOENT\b|no such file or directory|does not exist|no longer exists|is not a directory/i, 'pathMissing'],
   [/\bno \w+ service\b|mounts no |mount the dsh-/i, 'serviceMissing'],
   [/\bcancelled\b|\bcanceled\b|\baborted\b/i, 'cancelled'],
 ]
@@ -74,6 +81,9 @@ export function classifyError(message: string): ErrorKind {
  * is to say about a cause nobody recognized.
  */
 const COPY: Readonly<Record<ErrorKind, { head: DatasetsKey | null; fix: DatasetsKey }>> = {
+  alreadyRegistered: { head: 'error.alreadyRegistered', fix: 'error.alreadyRegistered.fix' },
+  notRegistered: { head: 'error.notRegistered', fix: 'error.notRegistered.fix' },
+  refMissing: { head: 'error.refMissing', fix: 'error.refMissing.fix' },
   notGitRepo: { head: 'error.notGitRepo', fix: 'error.notGitRepo.fix' },
   notDatasetRepo: { head: 'error.notDatasetRepo', fix: 'error.notDatasetRepo.fix' },
   pathMissing: { head: 'error.pathMissing', fix: 'error.pathMissing.fix' },
@@ -98,6 +108,17 @@ export interface ErrorStateProps {
    * the raw text: §九 keeps absolute paths off the page itself.
    */
   path?: string | undefined
+  /**
+   * The fix line to use when the classifier does NOT recognize the cause.
+   *
+   * The markers below read messages the HOSTS emit, and some failures are
+   * specific to one caller rather than to a host — a plan document whose
+   * dataset working tree was deleted is the lab tab's own, and the generic
+   * 「再试一次或看详情」 is a worse answer than the caller's own sentence
+   * (I5·T67 · W11). A recognized cause still wins: the classifier knows more
+   * about `ENOENT` than any caller does.
+   */
+  fix?: DatasetsKey | undefined
   /** Compact form for an error inside a field or a strip, rather than a page's body. */
   compact?: boolean
   t: DatasetsViewProps['t']
@@ -110,7 +131,8 @@ export interface ErrorStateProps {
 export function ErrorState(props: ErrorStateProps) {
   const { what, message, path, compact = false, t } = props
   const kind = classifyError(message)
-  const { head, fix } = COPY[kind]
+  const { head, fix: known } = COPY[kind]
+  const fix = kind === 'unknown' && props.fix !== undefined ? props.fix : known
   return (
     <div className={compact ? `${css.errorSeat} ${css.errorSeatCompact}` : css.errorSeat}>
       <div className={css.errorHead}>{head === null ? what : t(head)}</div>

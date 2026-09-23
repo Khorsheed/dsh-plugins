@@ -18,7 +18,8 @@ export type ReaderKey =
   | 'tab.label' | 'tab.subtitle' | 'guide.description'
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
   | 'filter.readState' | 'filter.bySource' | 'filter.byTag' | 'action.filter'
-  | 'filter.searchSource' | 'filter.noSourceMatch'
+  | 'filter.searchSource' | 'filter.noSourceMatch' | 'filter.byKind' | 'filter.deleteTag'
+  | 'filter.hideDupes' | 'dedupe.badge' | 'dedupe.title'
   | 'action.translate' | 'translate.view' | 'translate.onlyTranslation' | 'translate.bilingual'
   | 'translate.onlyOriginal' | 'translate.retry' | 'translate.tip' | 'translate.preparing'
   | 'translate.working' | 'translate.local' | 'translate.failed' | 'translate.dismiss'
@@ -29,25 +30,40 @@ export type ReaderKey =
   | 'sort.title' | 'sort.newest' | 'sort.oldest' | 'sort.source'
   | 'action.refresh' | 'action.refreshOne' | 'action.add' | 'action.back'
   | 'action.copyLink' | 'action.openExternal' | 'action.quote' | 'action.manage'
-  | 'action.remove' | 'action.submit' | 'action.done' | 'action.cancel'
+  | 'action.recent' | 'recent.title' | 'recent.help' | 'recent.empty'
+  | 'recent.clearTitle' | 'recent.sourceGone'
+  | 'action.remove' | 'action.submit' | 'action.done' | 'action.cancel' | 'action.clearSearch'
   | 'add.title' | 'add.help' | 'add.placeholder'
-  | 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.duplicate'
+  | 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.savedLinkNoPreview' | 'verdict.duplicate'
   | 'verdict.invalidUrl' | 'verdict.unsupportedContent' | 'verdict.fetchFailed'
+  | 'preview.blocked' | 'preview.login' | 'preview.unsupportedType' | 'preview.redirected'
+  | 'preview.empty' | 'preview.unreachable' | 'preview.http' | 'preview.unreadable'
+  | 'detail.linkOnlyBadge' | 'detail.removeLink' | 'detail.fetchingBody'
+  | 'detail.refetch' | 'detail.refetching' | 'detail.refetchTitle'
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
-  | 'state.emptyWall' | 'state.incompleteReason'
+  | 'state.emptyWall' | 'state.incompleteReason' | 'state.matches' | 'detail.scriptFigures'
+  | 'fetch.none' | 'fetch.fetching' | 'fetch.raw' | 'fetch.ready' | 'fetch.failed'
+  | 'fetch.noneTitle' | 'fetch.readyTitle' | 'fetch.failedTitle'
+  | 'fetch.failedOpenTitle' | 'fetch.failedFinalTitle' | 'detail.renderFetch' | 'detail.rendering'
   | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
   | 'sources.name' | 'sources.url' | 'sources.cache' | 'sources.cacheHelp'
   | 'sources.cacheHours' | 'sources.cacheForever' | 'sources.blocked'
+  | 'sources.storageBodies' | 'sources.storageBodiesUsage' | 'sources.storageBodiesHelp'
+  | 'sources.storageTranslations' | 'sources.storageTranslationsUsage' | 'sources.storageTranslationsHelp'
+  | 'sources.translationBudget' | 'sources.translationBudgetHelp'
+  | 'sources.clearTranslations' | 'sources.clearTranslationsConfirm'
   | 'sources.unreachable' | 'sources.httpError' | 'detail.fetchFailed'
+  | 'sources.kindRss' | 'sources.kindLink' | 'sources.kindFilter' | 'sources.noMatch'
+  | 'sources.sortAdded' | 'sources.sortName' | 'sources.sortFetched'
   | 'state.backfilling' | 'detail.filledIn' | 'detail.filledInBadge' | 'action.pause' | 'action.resume'
   | 'detail.incomplete' | 'detail.readOriginal' | 'detail.extractFailed'
-  | 'detail.summaryOnly'
+  | 'detail.summaryOnly' | 'detail.resolvedFrom'
   | 'detail.alsoFrom' | 'detail.composerLabel' | 'detail.composerEmpty'
   | 'foot.refreshedAt' | 'foot.scheduled' | 'foot.never' | 'foot.unread'
-  | 'foot.refreshing'
+  | 'foot.refreshing' | 'foot.deduped'
   | 'quote.copied' | 'quote.copyFailed' | 'quote.quoted'
   | 'quote.toSideChat' | 'quote.sideChatUnavailable'
   | 'when.justNow' | 'when.minutes' | 'when.hours' | 'when.yesterday' | 'when.days'
@@ -89,6 +105,11 @@ export const en = {
   'tag.create': 'Create “{name}”',
   'tag.empty': 'No tags yet — type a name to make the first one',
   'filter.byTag': 'By tag',
+  'filter.byKind': 'By type',
+  'filter.deleteTag': 'Delete this tag',
+  'filter.hideDupes': 'Hide duplicates',
+  'dedupe.badge': '{count} duplicate sources',
+  'dedupe.title': 'The same article also came from: {sources}',
   'filter.searchSource': 'Search sources…',
   'filter.noSourceMatch': 'No source matches',
   'search.placeholder': 'Search titles, authors, sources…',
@@ -105,22 +126,44 @@ export const en = {
   'action.openExternal': 'Open in browser',
   'action.quote': 'Quote',
   'action.manage': 'Manage subscriptions',
+  'action.recent': 'Recently read',
+  'recent.title': 'Recently read',
+  'recent.help': 'What you opened, newest first. Click one to read it again.',
+  'recent.empty': 'Nothing read yet — open an article and it lands here.',
+  'recent.clearTitle': 'Clear this list',
+  'recent.sourceGone': 'Its source is gone, so this one can only be opened at its original address',
   'action.remove': 'Remove',
   'action.pause': 'Pause',
   'action.resume': 'Resume',
   'action.submit': 'Fetch',
   'action.done': 'Done',
   'action.cancel': 'Cancel',
+  'action.clearSearch': 'Clear',
 
   'add.title': 'Add inspiration',
   'add.help': 'Paste a feed address or any article link. What comes back decides how it is stored: a feed is subscribed and refreshed on schedule, a web page is kept as a single item.',
   'add.placeholder': 'https://',
   'verdict.subscribed': 'Subscribed to {label} — it will refresh on schedule.',
   'verdict.savedLink': 'Saved this article — one item, no subscription.',
+  'verdict.savedLinkNoPreview': 'Saved the link to {label} — no preview here: {reason}',
   'verdict.duplicate': 'That source is already in the list.',
   'verdict.invalidUrl': 'That is not an http(s) address.',
   'verdict.unsupportedContent': 'That address did not return a feed or an article.',
   'verdict.fetchFailed': 'Could not fetch that address.',
+  'preview.blocked': 'this site refuses automatic fetches (it answers with a bot challenge)',
+  'preview.login': 'this address is behind a login (an institutional proxy or single sign-on)',
+  'preview.unsupportedType': 'this address is not a web page (a PDF or another file)',
+  'preview.redirected': 'this address moves to another site, and the redirect cannot be followed here',
+  'preview.empty': 'this page has no readable text',
+  'preview.unreachable': 'the site could not be reached just now',
+  'preview.http': 'the site answered with an HTTP error',
+  'preview.unreadable': 'this page is a script-rendered app behind an anti-bot wall, so there is nothing to read server-side — if it has an arXiv version, paste that link instead',
+  'detail.linkOnlyBadge': 'Link only',
+  'detail.fetchingBody': 'Fetching the full text…',
+  'detail.refetch': 'Fetch again',
+  'detail.refetching': 'Fetching…',
+  'detail.refetchTitle': 'Fetch this article again — what is on screen is the copy fetched earlier',
+  'detail.removeLink': 'Delete this link',
 
   'state.loading': 'Loading…',
   'state.emptyTitle': 'Nothing here yet',
@@ -132,6 +175,7 @@ export const en = {
   'state.stale': 'Refresh failed: {message}',
   'state.emptyWall': 'No entries yet. Add a source, or press refresh.',
   'state.incompleteReason': 'the payload hit the host’s 100,000-character fetch cap, so only the part that arrived is shown',
+  'state.matches': '{count} matching “{query}”',
 
   'sources.title': 'Subscriptions',
   'sources.count': '{count} sources',
@@ -147,19 +191,37 @@ export const en = {
   'sources.cardHint': 'Subscription',
   'sources.name': 'Name',
   'sources.cache': 'Keep fetched articles',
-  'sources.cacheHelp': 'A fetched article is served from the cache until this deadline; after that, opening it offers the fetch again. 0 means keep it until the storage budget evicts it.',
+  'sources.cacheHelp': 'A fetched article is served from the cache until this deadline; after that, opening the entry fetches it once more. 0 means keep it until the storage budget evicts it.',
   'sources.cacheHours': '{count} hours',
   'sources.cacheForever': 'Until evicted',
+  'sources.storageBodies': 'Article cache',
+  'sources.storageBodiesUsage': '{entries} cached · {size}',
+  'sources.storageBodiesHelp': 'What the fetched full texts currently occupy. Their eviction follows the retention setting above and the entries cap.',
+  'sources.storageTranslations': 'Translation cache',
+  'sources.storageTranslationsUsage': '{maps} maps + {sentences} sentences · {size}',
+  'sources.storageTranslationsHelp': 'What the translations currently occupy: a global sentence memory plus one exact-fit map per entry. No expiry — only the budget below evicts, least-recently-used first.',
+  'sources.translationBudget': 'Budget',
+  'sources.translationBudgetHelp': 'How large the translation cache may grow (MB of text). Translations never expire by the clock — rebuilding one costs a gesture plus per-sentence model work — so this budget, least-recently-used, is the only eviction.',
+  'sources.clearTranslations': 'Clear translation cache',
+  'sources.clearTranslationsConfirm': 'Click again to clear both tiers',
   'sources.blocked': 'This publisher refuses automatic fetches (its page answers with a bot challenge), so only the feed’s own text can be shown.',
   'sources.unreachable': 'The publisher’s page could not be reached at all (the request failed before any content arrived), so only the feed’s own text can be shown.',
   'sources.httpError': 'The publisher answered with an error, so only the feed’s own text can be shown.',
+  'sources.kindRss': 'Feed',
+  'sources.kindLink': 'Saved link',
+  'sources.kindFilter': 'Filter by type',
+  'sources.noMatch': 'Nothing of that type.',
+  'sources.sortAdded': 'Added',
+  'sources.sortName': 'Name',
+  'sources.sortFetched': 'Fetched',
   'detail.fetchFailed': 'Could not fetch the full text — {reason}',
   'sources.url': 'Feed address',
 
   'detail.incomplete': 'Limited length, content shown in part',
   'detail.readOriginal': 'Read the original',
-  'detail.extractFailed': 'Could not extract the body locally — the page is larger than the host fetch cap.',
+  'detail.extractFailed': 'Could not extract a body from this page — open the original instead.',
   'detail.summaryOnly': 'This feed publishes only a summary for this entry — the full text lives on the original page.',
+  'detail.resolvedFrom': 'Resolved from the link you pasted ({url}) — click to open it',
   'detail.alsoFrom': 'Also from this source',
   'detail.composerLabel': 'Current conversation draft',
   'detail.composerEmpty': '(empty)',
@@ -169,9 +231,23 @@ export const en = {
   'foot.never': 'Not refreshed yet',
   'foot.unread': 'unread',
   'foot.refreshing': 'Refreshing…',
+  'foot.deduped': '{count} duplicates hidden',
   'state.backfilling': 'Filling in {done}/{total} full articles…',
-  'detail.filledIn': 'The full text was fetched automatically and is cached.',
-  'detail.filledInBadge': 'full text',
+  'detail.filledIn': 'The full text was fetched automatically and cached. The card still shows the feed’s own summary — open it to read.',
+  'detail.filledInBadge': 'Full text',
+  'detail.scriptFigures': 'This page draws {count} of its figures with its own scripts, so their pictures cannot be fetched — the captions are kept below —',
+  'fetch.none': 'Fetch',
+  'fetch.fetching': 'Fetching',
+  'fetch.raw': 'Storing',
+  'fetch.ready': 'Fetched',
+  'fetch.failed': 'Fetch failed',
+  'fetch.noneTitle': 'Fetch the article now — it keeps going when you leave this page',
+  'fetch.readyTitle': 'The full text is cached — open it to read',
+  'fetch.failedTitle': 'Fetch failed: {reason} — click for details and retry',
+  'fetch.failedOpenTitle': 'Fetch failed: {reason} — click for details',
+  'fetch.failedFinalTitle': 'Fetch failed: {reason}',
+  'detail.renderFetch': 'Fetch rendered',
+  'detail.rendering': 'Rendering this page in the browser — script-drawn figures appear when it lands (the first render is slower)…',
 
   'quote.copied': 'Copied',
   'quote.copyFailed': 'Could not reach the clipboard',
@@ -223,6 +299,11 @@ export const zh = {
   'tag.create': '新建「{name}」',
   'tag.empty': '还没有标签 —— 输入名字回车就能建第一个',
   'filter.byTag': '按标签',
+  'filter.byKind': '按类型',
+  'filter.deleteTag': '删除这个标签',
+  'filter.hideDupes': '隐藏重复',
+  'dedupe.badge': '{count} 个重复来源',
+  'dedupe.title': '同一篇还来自：{sources}',
   'filter.searchSource': '搜索来源…',
   'filter.noSourceMatch': '没有匹配的来源',
   'search.placeholder': '搜索标题、作者、来源…',
@@ -239,22 +320,44 @@ export const zh = {
   'action.openExternal': '在浏览器打开原文',
   'action.quote': '引用',
   'action.manage': '订阅管理',
+  'action.recent': '最近阅读',
+  'recent.title': '最近阅读',
+  'recent.help': '按打开时间倒序。点一条就能接着读。',
+  'recent.empty': '还没有读过任何一篇 —— 打开一篇文章，它就会出现在这里。',
+  'recent.clearTitle': '清空这份列表',
+  'recent.sourceGone': '它所属的源已经删掉了，这一条只能去原文地址打开',
   'action.remove': '删除',
   'action.pause': '暂停',
   'action.resume': '恢复',
   'action.submit': '抓取',
   'action.done': '完成',
   'action.cancel': '取消',
+  'action.clearSearch': '清空',
 
   'add.title': '新增灵感',
   'add.help': '粘贴订阅源地址或任意文章链接。抓回来是什么，就按什么处理：是 feed 就订阅、按计划刷新，是网页就只存这一篇。',
   'add.placeholder': 'https://',
   'verdict.subscribed': '已订阅《{label}》—— 会按计划自动刷新。',
   'verdict.savedLink': '已保存这篇 —— 只存这一条，不建订阅源。',
+  'verdict.savedLinkNoPreview': '已保存《{label}》的链接 —— 这里看不到内容：{reason}',
   'verdict.duplicate': '这个源已经在列表里了。',
   'verdict.invalidUrl': '这不是 http(s) 地址。',
   'verdict.unsupportedContent': '这个地址返回的既不是订阅源也不是网页。',
   'verdict.fetchFailed': '抓取失败。',
+  'preview.blocked': '这个站点拒绝自动抓取（返回的是验证页）',
+  'preview.login': '这个地址需要登录（机构代理或单点登录），本插件取不到正文',
+  'preview.unsupportedType': '这个地址不是网页（是 PDF 或其它文件）',
+  'preview.redirected': '这个地址会跳到另一个站点，跨站跳转在本地无法跟随',
+  'preview.empty': '这一页没有可读的正文',
+  'preview.unreachable': '刚才连不上这个站点',
+  'preview.http': '这个站点返回了 HTTP 错误',
+  'preview.unreadable': '这个页面是 JS 应用且有反爬，服务器端读不到内容 —— 如果它有 arxiv 版，直接粘贴 arxiv 链接',
+  'detail.linkOnlyBadge': '仅链接',
+  'detail.fetchingBody': '正在抓取正文…',
+  'detail.refetch': '重新抓取',
+  'detail.refetching': '抓取中',
+  'detail.refetchTitle': '重新抓取这篇正文 —— 现在看到的是之前抓下来的版本',
+  'detail.removeLink': '删除这条链接',
 
   'state.loading': '加载中…',
   'state.emptyTitle': '还没有内容',
@@ -266,6 +369,7 @@ export const zh = {
   'state.stale': '刷新失败：{message}',
   'state.emptyWall': '还没有条目。新增一个订阅源，或按一下刷新。',
   'state.incompleteReason': '内容超过宿主 100,000 字符的抓取上限，只展示已经拿到的那部分',
+  'state.matches': '匹配「{query}」{count} 条',
 
   'sources.title': '订阅管理',
   'sources.count': '{count} 个源',
@@ -281,19 +385,37 @@ export const zh = {
   'sources.cardHint': '订阅源',
   'sources.name': '名称',
   'sources.cache': '正文保留',
-  'sources.cacheHelp': '抓到的正文在这个期限前直接读缓存；过期后再打开会问你（这里问一次即可，页面上的按钮同样会提示）。0 = 一直留到存储预算淘汰它。',
+  'sources.cacheHelp': '抓到的正文在这个期限前直接读缓存；过期后下次打开这一条会重新抓一次。0 = 一直留到存储预算淘汰它。',
   'sources.cacheHours': '{count} 小时',
   'sources.cacheForever': '留到被淘汰',
+  'sources.storageBodies': '原文缓存',
+  'sources.storageBodiesUsage': '{entries} 篇 · {size}',
+  'sources.storageBodiesHelp': '抓下的全文正文当前的占用。淘汰由上方的「正文保留」期限与保留条数决定。',
+  'sources.storageTranslations': '译文缓存',
+  'sources.storageTranslationsUsage': '{maps} 篇映射 + {sentences} 句 · {size}',
+  'sources.storageTranslationsHelp': '译文当前的占用：一份全局句子记忆，外加每个条目的精确映射。不按时间过期——只有下方的预算按最近使用淘汰。',
+  'sources.translationBudget': '译文预算',
+  'sources.translationBudgetHelp': '译文缓存可以涨到多大（MB 文本量）。译文不按钟点过期——重建一份要一次手势加逐句模型——所以这个预算是唯一的淘汰，按最近使用。',
+  'sources.clearTranslations': '清空译文缓存',
+  'sources.clearTranslationsConfirm': '再点一次，清空两层',
   'sources.blocked': '这个站点拒绝自动抓取（原文地址对人以外的请求返回验证页），所以只能展示订阅源自己发布的内容。',
   'sources.unreachable': '原文页面完全连不上（请求在拿到任何内容之前就失败了），所以只能展示订阅源自己发布的内容。',
   'sources.httpError': '原文页面返回了错误状态，所以只能展示订阅源自己发布的内容。',
+  'sources.kindRss': '订阅源',
+  'sources.kindLink': '保存的链接',
+  'sources.kindFilter': '按类型筛选',
+  'sources.noMatch': '这一类里还没有内容。',
+  'sources.sortAdded': '按添加时间',
+  'sources.sortName': '按名称',
+  'sources.sortFetched': '按抓取时间',
   'detail.fetchFailed': '抓取全文失败 —— {reason}',
   'sources.url': '订阅地址',
 
   'detail.incomplete': '受限篇幅，内容未完整呈现',
   'detail.readOriginal': '阅读原文',
-  'detail.extractFailed': '无法在本地提取正文 —— 页面超过宿主单次抓取的上限。',
+  'detail.extractFailed': '这一页抽不出正文 —— 点「阅读原文」打开它。',
   'detail.summaryOnly': '这条订阅源只发布了摘要 —— 全文在原文页面上。',
+  'detail.resolvedFrom': '这条由粘贴的链接（{url}）解析而来 —— 点击打开原链接',
   'detail.alsoFrom': '同一来源',
   'detail.composerLabel': '当前会话草稿',
   'detail.composerEmpty': '（空）',
@@ -303,9 +425,23 @@ export const zh = {
   'foot.never': '尚未刷新',
   'foot.unread': '未读',
   'foot.refreshing': '正在刷新…',
+  'foot.deduped': '已隐藏 {count} 条重复',
   'state.backfilling': '正在补齐全文 {done}/{total}…',
-  'detail.filledIn': '全文是自动抓取并缓存的。',
-  'detail.filledInBadge': '已补全',
+  'detail.filledIn': '全文是自动抓取并缓存的。卡片上仍是 feed 自己的摘要 —— 点开看全文。',
+  'detail.filledInBadge': '已抓全文',
+  'detail.scriptFigures': '这一页有 {count} 张插图由页面自己的脚本绘制，抓取时拿不到画面（图注保留在正文里）——',
+  'fetch.none': '抓取',
+  'fetch.fetching': '抓取中',
+  'fetch.raw': '待解析',
+  'fetch.ready': '已抓取',
+  'fetch.failed': '抓取失败',
+  'fetch.noneTitle': '现在就把这篇抓下来 —— 离开这个页面也不会停',
+  'fetch.readyTitle': '已有全文，点开就能读',
+  'fetch.failedTitle': '抓取失败：{reason} —— 点一下看详情、可重试',
+  'fetch.failedOpenTitle': '抓取失败：{reason} —— 点一下看详情',
+  'fetch.failedFinalTitle': '抓取失败：{reason}',
+  'detail.renderFetch': '渲染抓取',
+  'detail.rendering': '正在用浏览器渲染这一页——脚本绘制的插图会在渲染后出现（首次较慢）…',
 
   'quote.copied': '已复制',
   'quote.copyFailed': '剪贴板不可用',

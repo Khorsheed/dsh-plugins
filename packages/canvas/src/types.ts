@@ -345,6 +345,141 @@ export function isBoardCardKind(value: unknown): value is BoardCardKind {
   return typeof value === 'string' && (BOARD_CARD_KINDS as readonly string[]).includes(value)
 }
 
+/* --------------------------------------------------------------- categories */
+
+/**
+ * One card's category. Since stage ⑤ a canvas owns its catalog, so this is a
+ * category id rather than the closed five: `fragment`…`document` are always in
+ * it, a custom id is `cat_…`. Behavior that only the built-ins get (the
+ * question lifecycle, the document heading) still switches on `BoardCardKind`,
+ * never on this.
+ */
+export type CardCategoryId = string
+
+/** Longest accepted category label, in code units (a chip's worth of words). */
+export const MAX_CATEGORY_LABEL_LENGTH = 24
+
+/** The prefix every custom category id carries, so none can shadow a built-in. */
+export const CUSTOM_CATEGORY_ID_PREFIX = 'cat_'
+
+/** Whether a value is a usable category id: one of the built-ins, or a custom one. */
+export function isCardCategoryId(value: unknown): value is CardCategoryId {
+  if (typeof value !== 'string') return false
+  return isBoardCardKind(value)
+    || new RegExp(`^${CUSTOM_CATEGORY_ID_PREFIX}[a-z0-9]{9,32}$`).test(value)
+}
+
+/** One row of a canvas's category catalog. */
+export interface BoardCategory {
+  readonly id: CardCategoryId
+  /**
+   * The label as the operator typed it. Empty means "show the built-in's
+   * localized name" — only built-ins can be empty, so switching the host
+   * language still renames 「灵感」→"Fragment" until the user overwrites it.
+   */
+  label: string
+  /** Sort key for the chip strip; gaps are fine, the read re-sorts by it. */
+  order: number
+  /**
+   * False hides the chip and refuses new cards, but never hides the cards
+   * already filed under it — that is what makes retiring a category a
+   * reversible act (the alternative was dropping a card's whole row).
+   */
+  enabled: boolean
+}
+
+/** The catalog a canvas starts with: the five built-ins, unrenamed, all on. */
+export function defaultCategories(): BoardCategory[] {
+  return BOARD_CARD_KINDS.map((kind, index) => ({
+    id: kind,
+    label: '',
+    order: (index + 1) * 10,
+    enabled: true,
+  }))
+}
+
+/**
+ * Turn operator input into a usable category label, or undefined when nothing
+ * usable is left. A label is display text on a chip, not a file name.
+ * @param raw - whatever the operator typed.
+ * @returns the sanitized label, or undefined when it is empty.
+ */
+export function sanitizeCategoryLabel(raw: string): string | undefined {
+  const cleaned = raw.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (cleaned.length === 0) return undefined
+  return cleaned.slice(0, MAX_CATEGORY_LABEL_LENGTH)
+}
+
+/**
+ * Read an untrusted `categories[]` into a catalog. Tolerant like every other
+ * board read, with two guarantees: the five built-ins are always present (a
+ * card whose kind was hand-deleted must still load), and every row is unique
+ * by id and sorted by `order`.
+ * @param raw - the parsed `categories` field.
+ * @returns the catalog, built-ins first when the file carried none of them.
+ */
+export function normalizeCategories(raw: unknown): BoardCategory[] {
+  const rows = Array.isArray(raw) ? raw : []
+  const byId = new Map<CardCategoryId, BoardCategory>()
+  let slot = 0
+  for (const entry of rows) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as Record<string, unknown>
+    if (!isCardCategoryId(record['id'])) continue
+    if (byId.has(record['id'])) continue
+    const label = typeof record['label'] === 'string' ? record['label'] : ''
+    byId.set(record['id'], {
+      id: record['id'],
+      // A custom row with no label is unusable on screen; fall back to its id.
+      label: label === '' && !isBoardCardKind(record['id']) ? record['id'] : label.slice(0, MAX_CATEGORY_LABEL_LENGTH),
+      order: typeof record['order'] === 'number' && Number.isFinite(record['order'])
+        ? Math.floor(record['order'])
+        : (slot += 1) * 10,
+      enabled: record['enabled'] !== false,
+    })
+  }
+  for (const kind of BOARD_CARD_KINDS) {
+    if (byId.has(kind)) continue
+    // The built-in's own default slot, not 0: a legacy file with no
+    // `categories` at all must come back in the chip order the board was
+    // designed with (灵感 问题 共识 来源 文档), not alphabetically.
+    byId.set(kind, { id: kind, label: '', order: (BOARD_CARD_KINDS.indexOf(kind) + 1) * 10, enabled: true })
+  }
+  const merged = [...byId.values()]
+  merged.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+  return merged
+}
+
+/**
+ * File the cards that outlived their catalog. A custom category row can go
+ * missing from a hand-edited file while cards still carry its id — dropping
+ * those cards is data loss, so the row comes back instead, last in the strip,
+ * named after its own id and free to rename or retire from there.
+ * @param categories - the catalog as read.
+ * @param kinds - every kind the cards on this board carry.
+ * @returns the same array when nothing was missing, otherwise a new one.
+ */
+export function reconcileCategories(
+  categories: readonly BoardCategory[],
+  kinds: Iterable<CardCategoryId>,
+): BoardCategory[] {
+  const known = new Set(categories.map(category => category.id))
+  let last = categories.reduce((max, category) => Math.max(max, category.order), 0)
+  const extra: BoardCategory[] = []
+  for (const kind of kinds) {
+    if (known.has(kind) || !isCardCategoryId(kind)) continue
+    known.add(kind)
+    last += 10
+    extra.push({ id: kind, label: isBoardCardKind(kind) ? '' : kind, order: last, enabled: true })
+  }
+  return extra.length === 0 ? [...categories] : [...categories, ...extra]
+}
+
+/** The catalog's enabled rows, in strip order. */
+export function enabledCategories(categories: readonly BoardCategory[]): BoardCategory[] {
+  return categories.filter(category => category.enabled)
+}
+
 /** Whether a value is one of the three card statuses. */
 export function isBoardCardStatus(value: unknown): value is BoardCardStatus {
   return typeof value === 'string' && (BOARD_CARD_STATUSES as readonly string[]).includes(value)
@@ -384,12 +519,14 @@ export function sanitizeCanvasTitle(raw: string): string | undefined {
  * Build one id. Ids are time-ordered base36 (a ULID-flavoured shape:
  * `canvas_01J…`), which keeps the state dir's lexical order chronological;
  * the caller supplies the time and the randomness so this module stays pure.
- * @param prefix - `canvas`, `c` (card) or `m` (comment).
+ * @param prefix - `canvas`, `c` (card), `m` (comment), `cat` (category row) or
+ * `lane` (a link-view container — only the client ever creates one, so it mints
+ * the id the rename gesture later refers back to).
  * @param timeMs - milliseconds since the epoch.
  * @param random - lowercase base36 randomness (host supplies `node:crypto`).
  * @returns the id.
  */
-export function makeBoardId(prefix: 'canvas' | 'c' | 'm', timeMs: number, random: string): string {
+export function makeBoardId(prefix: 'canvas' | 'c' | 'm' | 'cat' | 'lane', timeMs: number, random: string): string {
   return `${prefix}_${timeMs.toString(36).padStart(9, '0')}${random.toLowerCase().replace(/[^a-z0-9]/g, '')}`
 }
 
@@ -410,16 +547,281 @@ export interface BoardComment {
   readonly createdAt: string
 }
 
+/* --------------------------------------------------- freehand drawing (§11.3) */
+
+/**
+ * The drawing's LOGICAL box: every stored point lives inside it, whatever the
+ * pad's on-screen width. Device-independent units are the whole point — a
+ * stroke drawn in a 378px sidebar must still land in the same place when the
+ * panel is wide, so the pad maps pointer pixels into this box on the way in and
+ * the renderer scales the box back out with one `viewBox` (§11.3's "存归一化
+ * 坐标这条不变").
+ */
+export const DRAW_BOX = { width: 600, height: 400 } as const
+
+/** Most strokes one card holds. A drawing is a note, not a sketchbook. */
+export const MAX_DRAW_STROKES = 60
+
+/** Most sampled points in one stroke (the pad samples by distance, not count). */
+export const MAX_DRAW_POINTS = 120
+
+/** Widest a pen half-width may be, in the logical box's units. */
+export const MAX_DRAW_WIDTH = 14
+
+/** One sampled point: box units, plus the pen's half-width at that instant. */
+export interface CanvasDrawPoint {
+  readonly x: number
+  readonly y: number
+  readonly w: number
+}
+
+/**
+ * Which token a stroke inks with. Deliberately NOT a colour: a drawing must
+ * follow the theme the way every other surface here does, so the renderer owns
+ * the mapping and the card stores the intent.
+ */
+export type CanvasStrokeColor = 'ink' | 'faint'
+
+/** One unbroken stroke: the sampled points, in the order they were drawn. */
+export interface CanvasStroke {
+  readonly pts: readonly CanvasDrawPoint[]
+  readonly color: CanvasStrokeColor
+}
+
+/** Whether a value is a stroke colour the renderer knows how to ink. */
+export function isCanvasStrokeColor(value: unknown): value is CanvasStrokeColor {
+  return value === 'ink' || value === 'faint'
+}
+
+/** One finite number inside `[min, max]`, or undefined (never a rounded guess). */
+function boxNumber(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  return Math.min(max, Math.max(min, value))
+}
+
+/**
+ * Read an untrusted drawing into the strokes this package can actually draw.
+ * Per-entry problems drop that entry; the rest survive, because a hand-edited
+ * `canvas.json` must never make a card unreadable (§11.3's per-field rule).
+ * A stroke needs two points to be a line, and a point is kept only with a
+ * finite coordinate pair and a positive width.
+ * @param raw - a `draw` value from a file or a wire request.
+ * @returns at most {@link MAX_DRAW_STROKES} well-formed strokes.
+ */
+export function normalizeDraw(raw: unknown): CanvasStroke[] {
+  if (!Array.isArray(raw)) return []
+  const strokes: CanvasStroke[] = []
+  for (const entry of raw as unknown[]) {
+    if (strokes.length >= MAX_DRAW_STROKES) break
+    if (typeof entry !== 'object' || entry === null) continue
+    const points = (entry as Record<string, unknown>)['pts']
+    const color = (entry as Record<string, unknown>)['color']
+    if (!Array.isArray(points)) continue
+    const pts: CanvasDrawPoint[] = []
+    for (const item of points as unknown[]) {
+      if (pts.length >= MAX_DRAW_POINTS) break
+      if (typeof item !== 'object' || item === null) continue
+      const point = item as Record<string, unknown>
+      const x = boxNumber(point['x'], 0, DRAW_BOX.width)
+      const y = boxNumber(point['y'], 0, DRAW_BOX.height)
+      const w = boxNumber(point['w'], 0.5, MAX_DRAW_WIDTH)
+      if (x === undefined || y === undefined || w === undefined) continue
+      pts.push({ x, y, w })
+    }
+    if (pts.length < 2) continue
+    strokes.push({ pts, color: isCanvasStrokeColor(color) ? color : 'ink' })
+  }
+  return strokes
+}
+
+/* ------------------------------------------------------------- board layout (§11.3) */
+
+/**
+ * The unit a board lays itself out in — {@link DRAW_BOX} under its other name,
+ * because the link view and the pen share one frame (§11.3). It is a UNIT and
+ * not a viewport: the link view pans, so a card parked at `x: 900` is legal
+ * even though it is past the frame's right edge. What must never happen is a
+ * stored screen pixel, which would put every card in the wrong place the next
+ * time the panel is a different width.
+ */
+export const LAYOUT_BOX = DRAW_BOX
+
+/** Longest accepted lane title, in code units (a lane header's worth of words). */
+export const MAX_LANE_LABEL_LENGTH = 24
+
+/** Most lines one board holds. */
+export const MAX_BOARD_LINKS = 400
+
+/** Most lanes one board holds. */
+export const MAX_BOARD_LANES = 40
+
+/** Smallest lane a resize may leave, in layout units — below it the title stops fitting. */
+export const MIN_LANE_SIZE = { width: 150, height: 80 } as const
+
+/**
+ * One line between two cards. There is no direction to store: the line reads
+ * both ways on screen, and giving it one is a later stage's question, not this
+ * field's.
+ */
+export interface BoardLink {
+  readonly from: string
+  readonly to: string
+}
+
+/** One lane: a titled box, and the cards parked inside it belong to it. */
+export interface BoardLane {
+  readonly id: string
+  /** May be empty — the client then shows its own placeholder; words are not this layer's job. */
+  readonly label: string
+  readonly x: number
+  readonly y: number
+  readonly w: number
+  readonly h: number
+}
+
+/** One card's place on the board, as a layout write carries it. */
+export interface BoardCardPosition {
+  readonly id: string
+  readonly x: number
+  readonly y: number
+}
+
+/**
+ * One finite layout number as a whole unit (a drag's sub-pixel jitter is not
+ * worth a decimal place, and the state file is meant to read like text), or
+ * undefined. Deliberately NOT clamped into the frame — see {@link LAYOUT_BOX}.
+ */
+function layoutNumber(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  return Math.round(Math.min(1_000_000, Math.max(-1_000_000, value)))
+}
+
+/** A lane title as display text: control codes and runs of space folded, then capped. */
+function laneLabelOf(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  return value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_LANE_LABEL_LENGTH)
+}
+
+/** The key a line is deduplicated by: `{a,b}` and `{b,a}` are the same line. */
+function linkKey(from: string, to: string): string {
+  return from < to ? `${from} ${to}` : `${to} ${from}`
+}
+
+/**
+ * Read an untrusted `lanes[]`. A row needs a usable id and finite geometry; the
+ * rectangle's floor is {@link MIN_LANE_SIZE} because a lane whose title no
+ * longer fits is not a lane. Junk rows drop out and the rest survive — the
+ * board's per-field tolerance, so a hand-edited file never makes a canvas
+ * unopenable.
+ * @param raw - the parsed `lanes` field, or a request's desired lanes.
+ * @returns at most {@link MAX_BOARD_LANES} well-formed, id-unique lanes.
+ */
+export function normalizeLanes(raw: unknown): BoardLane[] {
+  if (!Array.isArray(raw)) return []
+  const lanes: BoardLane[] = []
+  const seen = new Set<string>()
+  for (const entry of raw as unknown[]) {
+    if (lanes.length >= MAX_BOARD_LANES) break
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as Record<string, unknown>
+    const id = record['id']
+    if (typeof id !== 'string' || id.length === 0 || seen.has(id)) continue
+    const x = layoutNumber(record['x'])
+    const y = layoutNumber(record['y'])
+    const w = layoutNumber(record['w'])
+    const h = layoutNumber(record['h'])
+    if (x === undefined || y === undefined || w === undefined || h === undefined) continue
+    seen.add(id)
+    lanes.push({
+      id,
+      label: laneLabelOf(record['label']),
+      x,
+      y,
+      w: Math.max(MIN_LANE_SIZE.width, w),
+      h: Math.max(MIN_LANE_SIZE.height, h),
+    })
+  }
+  return lanes
+}
+
+/**
+ * Read an untrusted `links[]`. Both ends must name a card this board holds: a
+ * line to a card that is not there would be drawn to nowhere, and dropping it
+ * loses nothing but the line. One unordered pair is kept once — dragging the
+ * same two cards together twice is one line, not two.
+ * @param raw - the parsed `links` field, or a request's desired links.
+ * @param cardIds - every card id the board has (archived ones count: hiding a
+ * card is not deleting it, and its lines should come back when it is restored).
+ * @returns at most {@link MAX_BOARD_LINKS} well-formed lines.
+ */
+export function normalizeLinks(raw: unknown, cardIds: Iterable<string>): BoardLink[] {
+  if (!Array.isArray(raw)) return []
+  const known = new Set(cardIds)
+  const links: BoardLink[] = []
+  const seen = new Set<string>()
+  for (const entry of raw as unknown[]) {
+    if (links.length >= MAX_BOARD_LINKS) break
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as Record<string, unknown>
+    const from = record['from']
+    const to = record['to']
+    if (typeof from !== 'string' || typeof to !== 'string') continue
+    if (from === to || !known.has(from) || !known.has(to)) continue
+    const key = linkKey(from, to)
+    if (seen.has(key)) continue
+    seen.add(key)
+    links.push({ from, to })
+  }
+  return links
+}
+
+/**
+ * Read an untrusted `positions[]` — the drag payload of a layout write. A row
+ * needs a card id and a complete, finite pair; one card is written once (first
+ * row wins) so a caller cannot fight itself over the same card. Which ids the
+ * board actually has is the store's question, not this read's.
+ * @param raw - the request's `positions` field.
+ * @returns the well-formed placements, deduplicated by card id.
+ */
+export function normalizePositions(raw: unknown): BoardCardPosition[] {
+  if (!Array.isArray(raw)) return []
+  const positions: BoardCardPosition[] = []
+  const seen = new Set<string>()
+  for (const entry of raw as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as Record<string, unknown>
+    const id = record['id']
+    if (typeof id !== 'string' || id.length === 0 || seen.has(id)) continue
+    const x = layoutNumber(record['x'])
+    const y = layoutNumber(record['y'])
+    if (x === undefined || y === undefined) continue
+    seen.add(id)
+    positions.push({ id, x, y })
+  }
+  return positions
+}
+
 /** One board card. */
 export interface BoardCard {
   readonly id: string
-  readonly kind: BoardCardKind
+  /** The category this card is filed under (a catalog id, stage ⑤). */
+  kind: CardCategoryId
   text: string
   source?: BoardCardSource
   status: BoardCardStatus
   /** Present only on question cards. */
   question?: { state: QuestionState }
   comments: BoardComment[]
+  /** The card's drawing, absent when nothing was ever inked (§11.4's field). */
+  draw?: CanvasStroke[]
+  /**
+   * Where the card sits in the link view ({@link LAYOUT_BOX} units). Absent
+   * until it is placed: the 卡板 flows cards by document order, so a board
+   * nobody has arranged yet carries no numbers here at all. Stored as a PAIR —
+   * half a position is not a place, so the read drops one without the other.
+   */
+  x?: number
+  y?: number
   readonly createdBy: 'user' | 'agent'
   readonly createdAt: string
   updatedAt: string
@@ -428,8 +830,8 @@ export interface BoardCard {
 /** The board's self-tuning counters (the rules that read them stay visible). */
 export interface CanvasStats {
   proposed: { accepted: number; rejected: number }
-  /** Non-archived card counts by kind (kept + proposed — what the board shows). */
-  kindCounts: Partial<Record<BoardCardKind, number>>
+  /** Non-archived card counts by category id (kept + proposed — what the board shows). */
+  kindCounts: Record<CardCategoryId, number>
   lastActiveAt: string
 }
 
@@ -440,7 +842,21 @@ export interface CanvasBoard {
   attachedWorkspaces: string[]
   /** The single agent session this canvas owns; null until M2 creates it. */
   chat: { sessionId: string | null }
+  /**
+   * This canvas's category catalog (stage ⑤): the five built-ins plus whatever
+   * the user added, in strip order. Read with defaults — a `canvas.json`
+   * written before this field existed gets exactly the five.
+   */
+  categories: BoardCategory[]
   cards: BoardCard[]
+  /**
+   * The lines of the link view (stage ⑥). Read with defaults — a board written
+   * before this field existed has no lines, which is exactly what the link view
+   * shows: the cards, unconnected.
+   */
+  links: BoardLink[]
+  /** This canvas's lanes (stage ⑥), same rule: absent in the file, empty here. */
+  lanes: BoardLane[]
   stats: CanvasStats
   /** Set when the canvas is archived from the list; the directory is never deleted. */
   archivedAt: string | null
@@ -449,8 +865,8 @@ export interface CanvasBoard {
 }
 
 /** Recompute the visible kind counts from the card set (status !== archived). */
-export function computeKindCounts(cards: readonly BoardCard[]): Partial<Record<BoardCardKind, number>> {
-  const counts: Partial<Record<BoardCardKind, number>> = {}
+export function computeKindCounts(cards: readonly BoardCard[]): Record<CardCategoryId, number> {
+  const counts: Record<CardCategoryId, number> = {}
   for (const card of cards) {
     if (card.status === 'archived') continue
     counts[card.kind] = (counts[card.kind] ?? 0) + 1
@@ -508,7 +924,7 @@ function normalizeCard(raw: unknown, now: string): BoardCard | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const record = raw as Record<string, unknown>
   if (typeof record['id'] !== 'string' || record['id'].length === 0) return undefined
-  if (!isBoardCardKind(record['kind'])) return undefined
+  if (!isCardCategoryId(record['kind'])) return undefined
   if (typeof record['text'] !== 'string') return undefined
   const status = isBoardCardStatus(record['status']) ? record['status'] : 'kept'
   const card: BoardCard = {
@@ -520,6 +936,14 @@ function normalizeCard(raw: unknown, now: string): BoardCard | undefined {
     createdBy: record['createdBy'] === 'agent' ? 'agent' : 'user',
     createdAt: typeof record['createdAt'] === 'string' ? record['createdAt'] : now,
     updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : now,
+  }
+  const draw = normalizeDraw(record['draw'])
+  if (draw.length > 0) card.draw = draw
+  const x = layoutNumber(record['x'])
+  const y = layoutNumber(record['y'])
+  if (x !== undefined && y !== undefined) {
+    card.x = x
+    card.y = y
   }
   if (typeof record['source'] === 'object' && record['source'] !== null) {
     const source = record['source'] as Record<string, unknown>
@@ -585,6 +1009,10 @@ export function normalizeBoard(raw: unknown, expectedId: string, now: string): C
     ? statsRaw['proposed'] as Record<string, unknown>
     : undefined
   const count = (value: unknown): number => typeof value === 'number' && value >= 0 ? Math.floor(value) : 0
+  const categories = reconcileCategories(
+    normalizeCategories(record['categories']),
+    cards.map(card => card.kind),
+  )
   return {
     id: expectedId,
     title: record['title'].slice(0, MAX_CANVAS_TITLE_LENGTH),
@@ -597,6 +1025,9 @@ export function normalizeBoard(raw: unknown, expectedId: string, now: string): C
         : null,
     },
     cards,
+    categories,
+    links: normalizeLinks(record['links'], cards.map(card => card.id)),
+    lanes: normalizeLanes(record['lanes']),
     stats: {
       proposed: {
         accepted: count(proposedRaw?.['accepted']),
@@ -640,21 +1071,34 @@ export type BoardReadOutcome =
   | ({ readonly ok: true } & BoardReadResult)
   | { readonly ok: false; readonly error: CanvasError }
 
-/** Add one user card (createdBy user, straight to kept — the board's CRUD). */
+/**
+ * Add one user card (createdBy user, straight to kept — the board's CRUD).
+ * `text` may be empty only when the card carries a drawing: a picture is
+ * content, not a missing caption (§11.4).
+ */
 export interface BoardPutCardRequest {
   readonly canvasId: string
-  readonly kind: BoardCardKind
+  /** A category id from this canvas's catalog, enabled or the write is refused. */
+  readonly kind: CardCategoryId
   readonly text: string
   readonly source?: BoardCardSource
+  readonly draw?: readonly CanvasStroke[]
 }
 
-/** Edit one card: text, a status transition, or a question-state transition. */
+/**
+ * Edit one card: text, its drawing, a status transition, or a question-state
+ * transition. A `draw` of `[]` clears the drawing (absent leaves it alone) —
+ * the two must stay distinguishable, or 「清空」 could never be saved.
+ */
 export interface BoardPatchCardRequest {
   readonly canvasId: string
   readonly cardId: string
+  /** Refiles the card under another category (the batch bar's 「改分类」). */
+  readonly kind?: CardCategoryId
   readonly text?: string
   readonly status?: BoardCardStatus
   readonly question?: { state: QuestionState }
+  readonly draw?: readonly CanvasStroke[]
 }
 
 /** Comment on one card. */
@@ -672,10 +1116,105 @@ export interface BoardArchiveRequest {
   readonly archived: boolean
 }
 
+/**
+ * Write this canvas's category catalog (stage ⑤): the whole desired list, in
+ * strip order — rename, add and retire are all "here is the new catalog",
+ * which keeps the verb as version-guarded as every other board write.
+ * `archiveCardIds` rides along so retiring a category and filing away the
+ * cards under it land in ONE rewrite; as two calls they could leave a retired
+ * chip with live cards under it when the second one lost the version race.
+ */
+export interface BoardSetCategoriesRequest {
+  readonly canvasId: string
+  readonly categories: readonly BoardCategory[]
+  readonly archiveCardIds?: readonly string[]
+}
+
+/**
+ * Write the board's layout (stage ⑥): the places the caller dragged, the lanes
+ * as they should read, the lines as they should be. Every field is optional and
+ * **absent ≠ empty** — an omitted list is left alone, an empty one clears it —
+ * the same discipline that makes a drawing's 「清空」 savable at all (§11.4).
+ * One verb for the whole gesture because moving a lane moves the cards inside
+ * it: as separate writes, a later one could lose the version race and leave a
+ * lane with cards still parked at its old place.
+ */
+export interface BoardSetLayoutRequest {
+  readonly canvasId: string
+  readonly positions?: readonly BoardCardPosition[]
+  readonly lanes?: readonly BoardLane[]
+  readonly links?: readonly BoardLink[]
+}
+
 /** A mutation either lands (with the fresh board and its new token) or reports a code. */
 export type BoardMutationResult =
   | ({ readonly ok: true } & BoardReadResult)
   | { readonly ok: false; readonly error: CanvasError }
+
+/* ------------------------------------------------------------------ images (§10.3) */
+
+/** The raster media types the host's attachment store admits. */
+export const CANVAS_IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
+
+/** One admitted media type. */
+export type CanvasImageMediaType = (typeof CANVAS_IMAGE_MEDIA_TYPES)[number]
+
+/** Whether a value is one of the four. */
+export function isCanvasImageMediaType(value: unknown): value is CanvasImageMediaType {
+  return typeof value === 'string' && (CANVAS_IMAGE_MEDIA_TYPES as readonly string[]).includes(value)
+}
+
+/**
+ * The durable pointer to one stored image: exactly the five fields the host
+ * re-derives and compares when it reads the object back, which is why a card
+ * carries all five (§10.3's display arm) and never just an id.
+ */
+export interface CanvasImageRef {
+  readonly attachmentId: string
+  readonly mediaType: CanvasImageMediaType
+  readonly bytes: number
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * What the image arm can report, in the four shapes the user can act on. The
+ * host's longer admission vocabulary folds into these at the store's boundary
+ * — the client never sees a raw `AttachmentError` code.
+ */
+export type CanvasImageError =
+  /** No attachment store is mounted (the whole arm degrades; text pastes still work). */
+  | 'unavailable'
+  /** The bytes are not one of the four raster types, or do not decode at all. */
+  | 'not-image'
+  /** Over the host's byte or pixel gates. */
+  | 'too-large'
+  /** The stored object is gone, or fails the digest check on read. */
+  | 'unreadable'
+
+/** Commit one pasted image to the host's attachment store. */
+export interface BoardAttachImageRequest {
+  /** Canonical base64 of the image bytes — they ride THIS request, never card text. */
+  readonly data: string
+  readonly mediaType: CanvasImageMediaType
+  /** Browser display name; the host strips any path out of it. */
+  readonly name?: string
+}
+
+/** An attach either returns the pointer to store in the card, or one image code. */
+export type BoardAttachImageOutcome =
+  | { readonly ok: true; readonly ref: CanvasImageRef }
+  | { readonly ok: false; readonly error: CanvasImageError }
+
+/** Fetch one stored image's bytes back for display (the resolver's read leg). */
+export interface BoardImageBytesRequest {
+  readonly ref: CanvasImageRef
+}
+
+/** A read either returns canonical base64, or one image code. */
+export type BoardImageBytesOutcome =
+  | { readonly ok: true; readonly data: string; readonly mediaType: CanvasImageMediaType }
+  | { readonly ok: false; readonly error: CanvasImageError }
 
 
 /* ------------------------------------------------------- summary heuristics */
@@ -797,17 +1336,15 @@ export type BoardAskAgentOutcome =
 /** The agent's card entrance (`canvas_propose_card`): proposed, awaiting the user's ✓/✗. */
 export interface BoardProposeCardRequest {
   readonly canvasId: string
-  readonly kind: BoardCardKind
+  /** A category id from this canvas's catalog (the tool's dynamic enum). */
+  readonly kind: CardCategoryId
   readonly text: string
   readonly source?: BoardCardSource
   /** The proposal's rationale, hung on the card as an agent comment. */
   readonly comment?: string
 }
 
-/* ---------------------------------------------------------- draft + focus */
-
-/** The draft file beside `canvas.json` (the user's own manuscript). */
-export const DRAFT_FILE_NAME = 'draft.md'
+/* --------------------------------------------------------------- focus */
 
 /** Mark the canvas the session's tab has open (the main-session tools' target). */
 export interface BoardFocusRequest {
@@ -817,26 +1354,4 @@ export interface BoardFocusRequest {
 /** The focus gesture's receipt. */
 export type BoardFocusResult =
   | { readonly ok: true }
-  | { readonly ok: false; readonly error: CanvasError }
-
-/** Read the canvas's draft. */
-export interface BoardReadDraftRequest {
-  readonly canvasId: string
-}
-
-/** An absent draft reads as EMPTY with a null token — the first write creates it. */
-export type BoardReadDraftOutcome =
-  | { readonly ok: true; readonly content: string; readonly version: string | null }
-  | { readonly ok: false; readonly error: CanvasError }
-
-/** Write the draft; a null token means create (the first write), else version-guarded. */
-export interface BoardWriteDraftRequest {
-  readonly canvasId: string
-  readonly content: string
-  readonly version: string | null
-}
-
-/** The draft write's receipt: the new freshness token, or the failure code. */
-export type BoardWriteDraftResult =
-  | { readonly ok: true; readonly version: string }
   | { readonly ok: false; readonly error: CanvasError }

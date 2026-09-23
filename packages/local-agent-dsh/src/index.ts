@@ -23,6 +23,7 @@
  * @module @khorsheed/dsh-local-agent-dsh
  */
 
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -35,9 +36,10 @@ import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
 import { CONTAINER_NODE_OPTIONS, DshCliProvider, dshCliVersion } from './dsh-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import { DshModelCatalog, type DshModelDirectoryFace } from './model-catalog.ts'
 import { DshModelBroker } from './model-broker.ts'
 import { listDshSessions } from './records.ts'
-import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
+import { defaultPresetRoot, DEFAULT_SUB_PROFILE_NAME, provisionDshScope, USER_PRESET_DIR } from './provision.ts'
 import type { DshSubProfilePermissions } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
@@ -84,13 +86,7 @@ export interface LocalAgentDshConfig {
   live?: boolean
   /** Idle lifetime of an unused resident runtime before reclaim. */
   liveIdleMs?: number
-  /**
-   * Live mirror granularity: `event` mirrors finalized messages. `token`
-   * still reports per-token deltas over the run-progress channel, but host
-   * 0.1.5 removed the per-chunk session event, so deltas no longer land in
-   * the child session log (the round settles as one combined final message).
-   * Deployment default; the settings card can override it live.
-   */
+  /** @deprecated Accepted for old profiles; live output is always incremental. */
   liveMirrorGranularity?: 'event' | 'token'
   /**
    * The model every delegation round starts the sub-dsh with, spelled
@@ -116,7 +112,7 @@ export const Config: z<LocalAgentDshConfig> = z.object({
   model: z.string(),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
 })
 
 /**
@@ -135,7 +131,7 @@ export const DSH_SETTINGS_NAMESPACE = 'local-agent-dsh'
 const DSH_SETTINGS_SCHEMA = z.object({
   enabled: z.boolean().default(false),
   live: z.boolean().default(false),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
   // `model` deliberately carries NO default: an unset key must resolve to
   // undefined, which is what keeps the pre-key behavior byte-identical.
   model: z.string(),
@@ -193,37 +189,12 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       }
       return undefined
     }
-    // The host's own adapter enumeration — the pickable vocabulary for the
-    // sub-dsh, which routes through the same host adapters spelled
-    // `provider/model`. `ctx.llm` is the public LlmRuntime surface the host's
-    // model picker itself is built on (listProviders × listModels, refreshed
-    // on llm/adapters-updated); probed, never assumed, and a failed provider
-    // costs only its own group — the picker's other layers still answer.
-    const discoveredModels: string[] = []
-    const refreshDiscoveredModels = async (): Promise<void> => {
-      try {
-        const llm = ctx.get('llm') as
-          | {
-              listProviders?: () => readonly { id: string }[]
-              listModels?: (provider: string) => Promise<readonly { id: string }[]>
-            }
-          | undefined
-        if (typeof llm?.listProviders !== 'function' || typeof llm.listModels !== 'function') return
-        const listModels = llm.listModels.bind(llm)
-        const groups = await Promise.all(llm.listProviders().map(async (provider) => {
-          try {
-            return (await listModels(provider.id)).map(model => `${provider.id}/${model.id}`)
-          } catch {
-            return []
-          }
-        }))
-        discoveredModels.splice(0, discoveredModels.length, ...groups.flat())
-      } catch {
-        // Degrade: an unreadable enumeration leaves discovery empty.
-      }
-    }
-    void refreshDiscoveredModels()
-    ctx.on('llm/adapters-updated', () => { void refreshDiscoveredModels() })
+    const modelCatalog = new DshModelCatalog({
+      llm: () => ctx.get('llm') as DshModelDirectoryFace | undefined,
+      defaultModel: hostDefaultModel,
+    })
+    void modelCatalog.read()
+    ctx.on('llm/adapters-updated', () => { modelCatalog.invalidate() })
     // The member-level model surface: the composer picker's session-level
     // overrides (in-memory, deliberately lost on a host restart), shared by
     // reference with the broker (which writes them), the exec provider (which
@@ -237,14 +208,32 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       ctx,
       settingsModel: resolveModel,
       cliDefault: hostDefaultModel,
-      discovered: () => discoveredModels,
+      defaultEffort: () => ctx.get('agentDefaultModel')?.currentSelection().reasoningEffort,
+      discovered: () => modelCatalog.read().entries.filter(entry => !entry.hidden).map(entry => entry.value),
+      catalog: modelCatalog,
       recentModels: () => scope.get().recentModels ?? [],
       live: () => scope.get().live,
       overrides: memberModelOverrides,
       liveBoundModel: childSessionId => currentLiveSwitch?.boundModel(childSessionId) ?? null,
       retireRuntime: childSessionId => currentLiveSwitch?.retireRuntime(childSessionId) ?? Promise.resolve(),
     })
+    /**
+     * This deployment's preset root — where a person or a pack installed the
+     * presets this instance offers, and the SOURCE every scope's own copy is
+     * taken from. Derived the way the roster derives it, from the settings
+     * service's harness home when there is one.
+     */
+    const instancePresetRoot = (): string => {
+      const home = (ctx.get?.('settings') as { home?: string } | undefined)?.home
+      return home === undefined ? defaultPresetRoot() : join(home, USER_PRESET_DIR)
+    }
     const harness: LocalAgentHarness = {
+      prepareMember: async ({ binding, childSession, configuration, signal }) => {
+        const driver = currentLiveSwitch?.resolve(binding.childSessionId)
+        if (driver === undefined || driver.disabled) throw new Error('Enable the native live harness before preparing a coordinator')
+        await driver.prepare({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('dsh', binding.scope), childSession,
+          parentSessionId: binding.parentSessionId, configuration: configuration.resolved, sessionId: binding.childSessionId }, signal)
+      },
       name: 'dsh',
       displayName: 'dsh',
       homeEnvVar: 'DSH_HOME',
@@ -256,7 +245,20 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // lives inside the scoped home, so a scope needs its own. (The
       // credential does not: dsh authenticates through the host instance,
       // which is why `isAuthenticated` below reads no directory at all.)
-      provision: scopedHome => { provisionDshSubProfile(scopedHome, config) },
+      // `options.preset` is the per-condition input an evaluation's
+      // `conditions provision` hands in; the scope's own declaration answers
+      // for every other call, which is what makes a rostered preset survive
+      // a restart of this instance.
+      provision: (scopedHome, options) => {
+        const provisioned = provisionDshScope(scopedHome, config, {
+          ...(options?.preset === undefined ? {} : { preset: options.preset }),
+          presetRoot: instancePresetRoot(),
+        })
+        return {
+          ...(provisioned.preset === undefined ? {} : { preset: provisioned.preset }),
+          ...(provisioned.presetSnapshot === undefined ? {} : { presetSnapshot: provisioned.presetSnapshot }),
+        }
+      },
       isAuthenticated: async () => {
         try {
           return (await resolveApiKey(ctx, config)) !== undefined
@@ -323,15 +325,14 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       for (const dispose of disposers.splice(0)) dispose()
       if (!enabled) return
       // Idempotent: heals a deleted or drifted sub-profile before each round.
-      provisionDshSubProfile(homeDir, config)
+      provisionDshScope(homeDir, config, { presetRoot: instancePresetRoot() })
       disposers.push(ctx.localAgent.register(harness))
       // The live driver is settings-driven WITHIN this enabled generation:
       // the card's toggle (user layer over the YAML composition base) swaps
       // driver generations without a reload. Toggling live OFF drains the
       // retiring generation — new rounds fall back to exec, in-flight rounds
       // finish on their runtime, idle runtimes are reclaimed at once. A
-      // granularity change needs no new generation: the driver reads it per
-      // round. Toggling ENABLED off keeps the historical hard semantics:
+      // legacy granularity setting no longer changes live behavior. Toggling ENABLED off keeps the historical hard semantics:
       // provider unregisters and the switch disposes (disposeAll).
       const liveSwitch = new LiveDriverSwitch(ctx, scope, config, {
         modelFor: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),
@@ -364,6 +365,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
     sync(scope.get().enabled)
     const unwatch = scope.watch((next) => { sync(next.enabled) })
     return () => {
+      modelCatalog.dispose()
       unwatch()
       // Bump the generation so a tool mount still in flight disposes itself
       // instead of being pushed onto a dead disposer list.

@@ -193,6 +193,102 @@ export interface CatalogDirSkillInfo {
   readonly kind?: 'self' | 'child'
 }
 
+/** One managed skill's preset-scoped delivery state. */
+export interface CatalogScopedSkillRow {
+  readonly name: string
+  readonly description: string
+  readonly modelInvocable: boolean
+  readonly userInvocable: boolean
+  /** The managed `SKILL.md` path. */
+  readonly path: string
+  /** The preset ids its frontmatter declares; empty means "every preset". */
+  readonly presets: readonly string[]
+  /** Whether a delivery provider currently serves it in at least one preset. */
+  readonly delivered: boolean
+  /** The default-root path already supplying this name, when delivery is refused. */
+  readonly conflict?: string
+}
+
+/** One preset's scoped-delivery state. */
+export interface CatalogScopedPresetRow {
+  readonly presetId: string
+  readonly skills: readonly string[]
+  /** Why this preset's standing scope could not be used. */
+  readonly error?: string
+}
+
+/** Preset-scoped skill delivery status, as the settings surface reads it.
+ * This is a discovery policy for one instance, not an authorization boundary. */
+export interface CatalogPresetScopeStatus {
+  /** Whether any preset is currently served. */
+  readonly enabled: boolean
+  /** Why delivery is off, or reduced — absent when fully operational. */
+  readonly reason?: string
+  /** The plugin-owned root the delivered skills live in. */
+  readonly root: string
+  /** Whether the managed root is currently watched for changes. */
+  readonly watching: boolean
+  readonly skills: readonly CatalogScopedSkillRow[]
+  readonly presets: readonly CatalogScopedPresetRow[]
+  /** True because custom skill roots are configured in host compositions this
+   * plugin cannot read: a duplicate there would not be detected. */
+  readonly customRootsUnverifiable: boolean
+}
+
+/** One preset a scope picker may choose. */
+export interface CatalogPresetOption {
+  readonly id: string
+  readonly name?: string
+  readonly description?: string
+  /** Why this preset cannot compose a session, when it cannot. */
+  readonly broken?: string
+  /** Whether a session naming no preset composes this one (the deployment default). */
+  readonly isDefault?: boolean
+}
+
+/**
+ * One mode's capability face: what the model sees when a session runs this
+ * agent preset. The rows are the same shape the default read returns, so a
+ * viewer renders a mode card with the grid it already has.
+ */
+export interface CatalogModeFace {
+  /** The preset id this face was read at. */
+  readonly preset: string
+  /** The preset's published display name, when it has one. */
+  readonly name?: string
+  /** One sentence on what the preset is for, when it publishes one. */
+  readonly description?: string
+  /** Whether this is the deployment's default mode. */
+  readonly isDefault: boolean
+  readonly skills: readonly CatalogSkillRow[]
+  readonly tools: readonly CatalogToolRow[]
+  /**
+   * Why this mode has no face; when set, both lists are empty. Present for a
+   * preset discovery already refused and for one whose standing scope would
+   * not resolve — neither is evidence that the mode loads nothing.
+   */
+  readonly unavailable?: string
+}
+
+/** Request to declare which presets one skill is delivered to. */
+export interface CatalogPresetScopeSetRequest {
+  readonly name: string
+  readonly presets: readonly string[]
+}
+
+/** Request to adopt an installed skill into the managed, preset-scoped root. */
+export interface CatalogPresetScopeAdoptRequest {
+  readonly name: string
+  readonly presets: readonly string[]
+  readonly workdir?: string
+}
+
+/** Outcome of one preset-scope write; `error` is present exactly when it failed. */
+export interface CatalogPresetScopeEditResult {
+  readonly ok: boolean
+  readonly error?: string
+}
+
 /** Add-skill channel. */
 export type AddSkillChannel = 'zip' | 'github' | 'command'
 
@@ -201,7 +297,7 @@ export interface CatalogAddSkillRequest {
   readonly channel: AddSkillChannel
   /** Base64-encoded zip/tgz bytes for `zip`; opaque for `github`. */
   readonly payload: string
-  /** owner/repo[/path] or local dir path for `command`. */
+  /** owner/repo, a git URL (a host-prefixed or pasted link and an in-repo subpath resolve to the same clone), or a local dir path for `command`. */
   readonly repo?: string
   /** Selected skill sub-directory names when `repo` is a multi-skill container dir. */
   readonly skills?: readonly string[]
@@ -239,11 +335,16 @@ export interface CapabilityCatalogRemote {
   readonly snapshot: (workdir?: string) => Promise<CapabilityCatalogSnapshot>
   /** The capability face of one preset, with its `sha` (see the host half). */
   readonly snapshotFor: (presetId?: string, workdir?: string) => Promise<CapabilityCatalogSnapshot>
-  readonly detail: (name: string, workdir?: string) => Promise<CatalogSkillDetail | undefined>
-  readonly readSkillFile: (name: string, filePath: string, workdir?: string) => Promise<CatalogSkillFileRead | undefined>
+  /** The capability face of one mode as a LISTING (no fingerprint work). */
+  readonly snapshotAt: (presetId?: string, workdir?: string) => Promise<CapabilityCatalogSnapshot>
+  /** Every mode's face in one call, for the cross-mode comparison view. */
+  readonly modeFaces: (workdir?: string) => Promise<readonly CatalogModeFace[]>
+  /** Read one capability at a mode's scope, or the default mode when omitted. */
+  readonly detail: (name: string, workdir?: string, presetId?: string) => Promise<CatalogSkillDetail | undefined>
+  readonly readSkillFile: (name: string, filePath: string, workdir?: string, presetId?: string) => Promise<CatalogSkillFileRead | undefined>
   readonly listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
   readonly setCredential: (request: CatalogCredentialSetRequest) => Promise<boolean>
   readonly addSkill: (request: CatalogAddSkillRequest) => Promise<CatalogAddSkillResult>
-  readonly deleteSkill: (name: string, workdir?: string) => Promise<CatalogDeleteSkillResult>
+  readonly deleteSkill: (name: string, workdir?: string, presetId?: string) => Promise<CatalogDeleteSkillResult>
   readonly pickDirectory: () => Promise<string | null>
 }

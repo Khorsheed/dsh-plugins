@@ -83,8 +83,6 @@ async function bench(): Promise<{ seen: Seen[]; remote: CanvasRemoteService; dis
     askAgent: async (_request: BoardAskAgentRequest, session: Session) => { seen.push({ method: 'askAgent', session }); return { ok: true as const, contextKey: `canvas:${CANVAS_ID}`, sent: true } },
     chatAvailable: () => ({ available: true }),
     focusCanvas: async (_request: { canvasId: string }, session: Session) => { seen.push({ method: 'focusCanvas', session }); return { ok: true as const } },
-    readDraft: async () => ({ ok: true as const, content: '', version: null }),
-    writeDraft: async (_request: { canvasId: string; content: string; version: string | null }, session: Session) => { seen.push({ method: 'writeDraft', session }); return { ok: true as const, version: '3' } },
   }
   const ctx = new Context()
   ctx.provide('canvasStore', store as unknown as CanvasService)
@@ -132,7 +130,6 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
     expect(await remote.archiveCanvas(agent, { canvasId: CANVAS_ID, archived: true })).toMatchObject({ ok: true })
     expect(await remote.askAgent(agent, { canvasId: CANVAS_ID, lens: 'challenge' })).toMatchObject({ ok: true, sent: true })
     expect(await remote.focusCanvas(agent, { canvasId: CANVAS_ID })).toEqual({ ok: true })
-    expect(await remote.writeDraft(agent, { canvasId: CANVAS_ID, content: 'x', version: null })).toEqual({ ok: true, version: '3' })
     expect(seen).toEqual([
       { method: 'createCanvas', session: SESSION },
       { method: 'putCard', session: SESSION },
@@ -141,7 +138,6 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
       { method: 'archiveCanvas', session: SESSION },
       { method: 'askAgent', session: SESSION },
       { method: 'focusCanvas', session: SESSION },
-      { method: 'writeDraft', session: SESSION },
     ])
     await dispose()
   })
@@ -151,7 +147,6 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
     expect(await remote.listCanvases()).toEqual({ items: [] })
     expect(await remote.readBoard({ canvasId: CANVAS_ID })).toEqual({ ok: false, error: 'missing' })
     expect(await remote.chatStatus()).toEqual({ available: true })
-    expect(await remote.readDraft({ canvasId: CANVAS_ID })).toEqual({ ok: true, content: '', version: null })
     await dispose()
   })
 })

@@ -19,6 +19,11 @@
  * 3. read that scope's effective settings and check the declaration field by
  *    field ({@link checkAgainstEffective}). `permissions` and `model.endpoint`
  *    disagreeing is an ERROR and no lock is written;
+ * 3b. compose the condition's `preset` into that scope
+ *    (`localAgent.provisionScope`), which is what makes two scopes rostering
+ *    two presets a property of the condition rather than of the deployment's
+ *    plugin settings. It runs BEFORE the hash below, because the scope's own
+ *    copy of the preset lives inside the scoped home;
  * 4. hash the scoped home's config content (`home.sha`) and WRITE IT BACK into
  *    the declaration when it disagrees ({@link ProvisionOptions.writeBack});
  * 5. measure the provisioned environment's CAPABILITY FACE, when the
@@ -98,6 +103,12 @@ export interface ProvisionReport {
   shaBeforeWriteBack: string | null
   /** The field-by-field verdicts, in contract order. */
   checks: ProvisionCheck[]
+  /**
+   * What composing this condition's preset into its scope reported back, or
+   * null when this condition declares none (or the facade cannot compose
+   * one). `preset` is the read-back, not the request.
+   */
+  scopeProvisioned: { preset: string | null; snapshotMatchesSource: boolean | null } | null
   /** Whether the lock was written. */
   written: boolean
   /** The lock document — present once it was built, whether or not it was written. */
@@ -144,6 +155,25 @@ export interface ProvisionedCapabilities {
   /** Reader aids — how many rows the face carried. The sha is the identity. */
   skills?: number
   tools?: number
+  /**
+   * Where the measured preset directory lives relative to the scope:
+   * `scope-snapshot` when the scope keeps its own byte-identical copy (the
+   * arrangement a container round needs, since a unit mounts only the scoped
+   * home), `instance-root` when it defers to the deployment's preset root
+   * (measurable, and host-only).
+   */
+  source?: 'scope-snapshot' | 'instance-root'
+  /**
+   * The digest of the scope's own copy of the preset — EVERY file of it,
+   * `SKILL.md` included. Present only in `scope-snapshot` mode, because it is
+   * the only mode with a copy to hash.
+   *
+   * It is not a second opinion about the capability face: it is what lets the
+   * readiness gate and `validate` see, with no catalog and no instance, that
+   * the subject is still the one that was measured. `home.sha` cannot — it
+   * hashes config-suffixed files by design, and a skill body is not one.
+   */
+  snapshot?: { sha: string }
 }
 
 /** What a capability probe is asked about. */
@@ -157,6 +187,13 @@ export interface CapabilityProbeInput {
   homeDir: string
   /** The preset the condition declares — never null when the probe is called. */
   preset: string
+  /**
+   * What the scope's provisioning reported about the scope's own copy of that
+   * preset, when this provision composed the scope through
+   * `localAgent.provisionScope`. Absent means nothing vouched for a copy —
+   * and a scope holding one anyway is then refused rather than measured.
+   */
+  snapshot?: { matchesSource: boolean }
 }
 
 /**
@@ -275,6 +312,7 @@ export async function provisionCondition(conditionPath: string, options: Provisi
     home: null,
     homeShaWritten: false,
     shaBeforeWriteBack: null,
+    scopeProvisioned: null,
     checks: [],
     written: false,
     lock: null,
@@ -339,6 +377,39 @@ export async function provisionCondition(conditionPath: string, options: Provisi
     return report
   }
 
+  // ── 3.5 the scope's own composition ───────────────────────────────────
+  // Only for a condition that declares a preset, and only through a facade
+  // that has the verb. This is what makes "two scopes rostering two presets"
+  // a property of the CONDITION rather than of the deployment's plugin
+  // settings — and it must run before the hash below, because the scope's own
+  // copy of the preset is inside the scoped home and enters `home.sha`.
+  const declaredPreset = stringOrNull(document['preset'])
+  let scopeSnapshot: { matchesSource: boolean } | undefined
+  if (declaredPreset !== null && typeof options.localAgent.provisionScope === 'function') {
+    try {
+      const provisioned = await options.localAgent.provisionScope(harness, scope ?? undefined, { preset: declaredPreset })
+      scopeSnapshot = provisioned.presetSnapshot
+      report.scopeProvisioned = {
+        preset: provisioned.preset ?? null,
+        snapshotMatchesSource: provisioned.presetSnapshot?.matchesSource ?? null,
+      }
+      log(`provision ${id}: scope composed preset ${String(provisioned.preset ?? 'none')}`
+        + `${provisioned.presetSnapshot === undefined ? '' : ` (own copy, matches source: ${String(provisioned.presetSnapshot.matchesSource)})`}`)
+    } catch (error) {
+      // Reported, not resolved. The read-back below is what decides whether
+      // this condition has a subject, and it reads the scope rather than this
+      // call's outcome — so a failure here that somehow left a usable scope
+      // still provisions, and one that did not is refused with both reasons.
+      warnings.push({
+        code: 'SCOPE_NOT_PROVISIONED',
+        message: `composing preset ${JSON.stringify(declaredPreset)} into ${named}'s scope failed:`
+          + ` ${error instanceof Error ? error.message : String(error)}`
+          + ' — the capability face is measured from what the scope actually holds, so this provision continues and reports what it finds',
+      })
+      log(`provision ${id}: composing the scope's preset failed — ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   // ── 4. the scoped home's content hash ─────────────────────────────────
   try {
     report.home = await hashHome(homeDir)
@@ -398,7 +469,6 @@ export async function provisionCondition(conditionPath: string, options: Provisi
   // nobody measured leaves them two on paper and one in fact. Measuring is
   // the caller's hook (see the module doc), and its absence is said out
   // loud rather than papered over.
-  const declaredPreset = stringOrNull(document['preset'])
   let capabilities: ProvisionedCapabilities | undefined
   if (declaredPreset !== null) {
     if (options.capabilities === undefined) {
@@ -409,7 +479,14 @@ export async function provisionCondition(conditionPath: string, options: Provisi
       })
     } else {
       try {
-        capabilities = await options.capabilities({ condition: id, harness, scope, homeDir, preset: declaredPreset })
+        capabilities = await options.capabilities({
+          condition: id,
+          harness,
+          scope,
+          homeDir,
+          preset: declaredPreset,
+          ...(scopeSnapshot === undefined ? {} : { snapshot: scopeSnapshot }),
+        })
       } catch (error) {
         capabilities = undefined
         warnings.push({

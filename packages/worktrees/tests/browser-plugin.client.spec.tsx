@@ -41,7 +41,13 @@ async function bench(options: {
   // real service (the apply reads it back from the global store via
   // `ctx.get('remote.worktrees')` after the mount settles).
   const mount = vi.fn(async () => () => {})
-  Object.assign(ctx.remote, { $mount: mount })
+  // The forwarded-event carrier: records live subscriptions by event name.
+  const forwarded = new Map<string, (sessionId: string) => void>()
+  const on = vi.fn((event: string, listener: (sessionId: string) => void) => {
+    forwarded.set(event, listener)
+    return () => { forwarded.delete(event) }
+  })
+  Object.assign(ctx.remote, { $mount: mount, $on: on })
   ctx.provide('remote.worktrees', {
     summary: record('summary'),
     badgeConfig: record('badgeConfig'),
@@ -97,7 +103,7 @@ async function bench(options: {
   } as never, (() => null) as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, calls, mount, registered, openTab }
+  return { ctx, fiber, calls, mount, registered, openTab, forwarded, on }
 }
 
 /** The tab body entry's inject factory, called the way the outlet would. */
@@ -136,7 +142,11 @@ describe('worktrees browser plugin', () => {
     // neighbors sit at -10 (open-in-app) and 0 (session-log-export "…").
     const { entry: badge } = badgeApi(b)
     expect(badge?.options).toMatchObject({ id: 'worktrees-badge', order: -20 })
-    expect(b.ctx.slots.entries('shell.overlay').length).toBe(1)
+    // The frame-wide local-files browser surface was removed 2026-09-23: its
+    // only opener (the badge's folder capsule) had already gone in ea531c4b, so
+    // the mounted-but-unreachable drawer is gone and file browsing belongs to
+    // @khorsheed/dsh-local-files alone (proposal preview-kernel).
+    expect(b.ctx.slots.entries('shell.overlay').length).toBe(0)
     await b.fiber.dispose()
   })
 
@@ -144,6 +154,16 @@ describe('worktrees browser plugin', () => {
     const b = await bench({ legacyCurrent: true })
     expect(b.registered.some(d => d.kind === WORKTREES_KIND)).toBe(true)
     await b.fiber.dispose()
+  })
+  it('subscribes to the two forwarded session events and releases them on disposal', async () => {
+    const b = await bench()
+    // The official api/remotes allowlist forwards exactly these two events that
+    // mean "this session's state moved" (an agent running flip, a new user
+    // message); the badge re-reads on them instead of polling. A plugin-declared
+    // event is NOT forwardable — see the upstream seam registry.
+    expect([...b.forwarded.keys()].sort()).toEqual(['api-session/activity', 'api-session/status'])
+    await b.fiber.dispose()
+    expect(b.forwarded.size).toBe(0)
   })
 
   it('routes the badge branch capsule through sidebarRight.openTab with the mode', async () => {

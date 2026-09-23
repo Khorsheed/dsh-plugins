@@ -25,6 +25,8 @@
 }
 
 .headTitle {
+  /* The pane's ONE title metric (12.5px/600), shared with the secondary pages'
+     `.barLabel`: 订阅管理 and 灵感空间 are pages of one pane, so one size. */
   display: flex;
   flex: 1;
   min-width: 0;
@@ -63,6 +65,13 @@
 .toolOn {
   background: var(--dsw-alias-interactive-bg-active);
   color: var(--dsw-alias-label-primary);
+}
+
+/* The destructive tool in a toolbar: same box as its neighbours, ink-only
+   difference, so it is legible without turning the bar into alarm. */
+.toolDanger:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger, var(--dsw-alias-interactive-bg-hover));
+  color: var(--dsw-static-red-600, #d54941);
 }
 
 .tools {
@@ -106,16 +115,51 @@
 }
 
 .search input {
+  /* `border-box`, or `width: 100%` means 100% PLUS the padding and border: the
+     field then hangs ~56px past the pane's right edge, which is exactly what a
+     reader sees as "the search box is not sized to the sidebar". */
+  box-sizing: border-box;
   min-width: 0;
   width: 100%;
   height: 26px;
-  padding: 0 8px 0 26px;
+  /* Right padding reserves the clear button's box, so the × never sits over
+     the text the reader is looking at and the field never changes width when
+     it appears. */
+  padding: 0 28px 0 26px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
   outline: none;
   background: var(--dsw-alias-bg-base);
   font-family: inherit;
   font-size: 11.5px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Clears the field it sits in (the wall's search, the source page's search).
+   A `×` glyph rather than an icon: it is one character in the flow, and the
+   host's own toolbars use the same mark. */
+.searchClear {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Same 22px box and 15px glyph as the toolbar's other icons: the field's
+     affordance is a control, not a punctuation mark. */
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.searchClear:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -368,6 +412,22 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* "Link only": a saved link whose body cannot be read here. Same pill metric as
+   the tags beside it (so the row never jitters), but dashed and quiet — it is a
+   statement about the card, not one of the reader's own labels. */
+.tagLinkOnly {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px dashed var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10.5px;
+  line-height: 1;
+}
+
 .author {
   overflow: hidden;
   font-size: 10px;
@@ -532,10 +592,11 @@
 }
 
 .barLabel {
-  /* A secondary page's name IS its title: same size as the tab label the host
-     renders for the pane, so opening "订阅管理" reads as a page and not as a
-     caption under the icons. It truncates rather than wrapping, because the
-     bar also carries the actions.
+  /* A secondary page's name IS its title: the pane's ONE title metric
+     (12.5px/600), the same as the wall's own `.headTitle` — user-picked
+     reference (2026-09-21): 灵感空间's size is the standard, the secondary
+     pages come DOWN to it. It truncates rather than wrapping, because the bar
+     also carries the actions.
      (An earlier revision declared `font-size` twice here — 13px then 10.5px —
      so the title stayed caption-sized no matter what the first one said.) */
   flex: 1;
@@ -544,7 +605,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
@@ -590,8 +651,40 @@
 .tagRow {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
   margin-bottom: 14px;
+}
+
+/* 「重新抓取」: the entry-level gesture that sits in the tag row.
+   Deliberately the tag row's own metric (18px pill, 10.5px type) so it reads as
+   part of that line rather than as a second toolbar, but outlined and inked —
+   it is a button, and it must not be mistaken for one of the feed's labels. */
+.refetch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.refetch:hover:not(:disabled) {
+  border-color: var(--dsw-static-deepseek-500);
+  color: var(--dsw-alias-label-primary);
+}
+
+.refetch:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .rule {
@@ -719,6 +812,23 @@
   padding: 5px 8px;
   border: 1px solid var(--dsw-alias-border-l2);
   text-align: left;
+}
+
+/* MathML survives the whitelist for arXiv-style bodies (the render target,
+   Chromium ≥ 153, paints it natively). Display math is a block of its own that
+   scrolls sideways rather than breaking the body's right edge — the same
+   contract `pre` already keeps. */
+.article math {
+  font-size: 1.02em;
+}
+
+.article math[display="block"] {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 12px;
+  padding: 6px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* The completeness note: one line at the end of the body, not a card. */
@@ -1095,38 +1205,170 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.field {
+/* Two settings controls in one row rather than one full-width block each: the
+   page is a list, and the two numbers above it are not the reason it exists.
+   Each control keeps its long explanation as its `title`. */
+.settingsRow {
   display: flex;
-  align-items: center;
-  gap: 10px;
   flex-wrap: wrap;
-  margin: 4px 0 14px;
-  padding: 10px 12px;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0 0 10px;
+  padding: 6px 10px;
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
 }
 
-.fieldLabel {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
+.setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
 }
 
-.timeInput {
-  padding: 5px 8px;
+.settingLabel {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.settingControl {
+  padding: 3px 6px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
+}
+
+/* A usage readout inside a settings row: the control's typography without the
+   box — it is a fact, not an input. */
+.settingReadout {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The management page's own narrowing row: two labelled chip groups (kind,
+   order) above the list. It wraps, because the pane is narrow and a chip row
+   that overflows sideways hides the very control the reader came for. */
+.manageTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-bottom: 8px;
+}
+
+.chipGroupLabel {
+  flex: none;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipOn {
+  border-color: transparent;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chipCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
 }
 
 .sourceList {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* ------------------------------------------------------------ 最近阅读 page */
+
+.recentList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A row is a BUTTON, not a card: the reader is choosing something to reopen, and
+   a list of equal-weight rows is scanned faster than a grid of cards. It keeps
+   the source row's metric (same border, radius, padding) so the two pages feel
+   like one plugin. */
+.recentRow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recentRow:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.recentRow:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.recentTitle {
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-primary);
+  /* One line: this list exists to FIND something in, and a wall of wrapped
+     titles is what makes "recently read" useless at a hundred items. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recentMeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.recentSource {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sourceRow {
@@ -1283,9 +1525,15 @@
 }
 
 /* The source page's own search box: the list it narrows is the only unbounded
-   one in the panel. */
+   one in the panel.
+   
+   `flex: 1 1 auto` with `min-width: 0` is the whole fix for the field that used
+   to run past the panel's right edge: `flex: none` let the row size itself from
+   the input's intrinsic width, so a 100%-wide input inside a shrink-to-fit
+   parent was wider than the panel it lived in. */
 .filterSearch {
-  flex: none;
+  flex: 1 1 auto;
+  min-width: 0;
   position: relative;
   margin: 0 2px 4px;
 }
@@ -1300,9 +1548,11 @@
 }
 
 .filterSearch input {
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   height: 24px;
-  padding: 0 7px 0 21px;
+  padding: 0 28px 0 21px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
   outline: none;
@@ -1377,6 +1627,40 @@
   flex: none;
   color: var(--dsw-alias-label-tertiary);
   font-size: 10.5px;
+}
+
+/* A tag row plus its own delete control. The row takes the width (it is the
+   button that narrows the wall); the × is a fixed, quiet box beside it, always
+   visible so touch and keyboard can reach it too. */
+.filterTagRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.filterTagRow .filterRow {
+  flex: 1;
+  min-width: 0;
+}
+
+.filterTagDelete {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.filterTagDelete:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger, var(--dsw-alias-interactive-bg-hover));
+  color: var(--dsw-static-red-600, #d54941);
 }
 
 .chipBroken {
@@ -1578,10 +1862,77 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* The one destructive row in the card menu. */
+.cardMenu .cardMenuDanger {
+  color: var(--dsw-static-red-600, #d54941);
+}
+
 /* The affordance the menu hangs off: quiet until the card is hovered. */
 
 /* The tag button lives in the tags row (where the entry's own tags are), and
    only surfaces on hover or focus so a wall of cards stays quiet. */
+/* 抓取 state, in the card's tag row: a pill whose colour IS the state — grey
+   (not fetched; click to fetch), blue (in flight, or fetched and waiting to be
+   stored), green (the full text is cached), red (failed; the tooltip says why). */
+.fetchPill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.fetchPill:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+
+.fetchPill_fetching {
+  border-color: var(--dsw-alias-state-business-primary, #4a7cf6);
+  color: var(--dsw-alias-state-business-primary, #4a7cf6);
+}
+
+.fetchPill_ready {
+  border-color: var(--dsw-static-green-600, #2f9e44);
+  color: var(--dsw-static-green-600, #2f9e44);
+}
+
+.fetchPill_failed {
+  border-color: var(--dsw-static-red-600, #d54941);
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+/* The failed pill's popover: the reason and the cause's actions float over the
+   wall, so a failed card stays exactly one line tall (an inline reason line
+   made failed cards taller than their neighbours and broke the grid). */
+.pillPop {
+  position: fixed;
+  z-index: 40;
+  max-width: 248px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.pillPopReason {
+  margin: 0;
+}
+
+.pillPopActions {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+}
+
 .tagOnCard {
   display: inline-flex;
   align-items: center;

@@ -25,7 +25,7 @@
  * @module @khorsheed/dsh-room/tool
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { isRoomLog } from './journal.ts'
+import { coordinatorMember, isRoomLog } from './journal.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCloseTaskRequest, RoomCloseTaskResult,
@@ -170,7 +170,7 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
       + 'board is public — every room member and the human sees these tasks, so writing here is '
       + 'a public commitment the room coordinates around; for your private work plan use your own '
       + 'todo tool instead. Actions: "add" (title + member — the roster name owning the task, '
-      + 'yourself "main" or any CLI member; optional blockedBy names the member the task waits '
+      + 'use room_read to find your own or another member\'s name; optional blockedBy names the member the task waits '
       + 'on, display only) opens a pending task and returns its id; "close" (taskId) marks an '
       + 'open task done; "update" (taskId + a new title and/or blockedBy — null clears the wait) '
       + 'edits an open task. Errors answer with the roster or the open-task list so you can retry '
@@ -188,7 +188,7 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
       },
       member: {
         type: 'string',
-        description: 'The roster name owning the task (required for add; e.g. "main" for yourself).',
+        description: 'The roster name owning the task (required for add; read room_read for current names).',
       },
       taskId: {
         type: 'string',
@@ -221,6 +221,8 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
         return { text: 'The current session is not a room; room_task is only usable inside a room session.' }
       }
       const sessionId = agent.session.id
+      const ownership = await backend.getState({ sessionId })
+      if (ownership.ok && coordinatorMember(ownership.value)?.kind !== 'main-agent') return { text: 'Only the current coordinator may manage the shared room task board.' }
       /** The self-correcting roster suffix: the legal member names, for member-not-found. */
       const rosterHint = async (): Promise<string> => {
         const state = await backend.getState({ sessionId })
@@ -255,7 +257,7 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
       switch (args.action) {
         case 'add': {
           if (args.title === undefined || args.member === undefined) {
-            return { text: 'room_task add requires both title and member (the roster name owning the task, e.g. "main" for yourself).' }
+            return { text: 'room_task add requires both title and member (the roster name owning the task; read room_read for current names).' }
           }
           if (args.blockedBy === null) {
             return { text: 'add takes no null blockedBy — simply omit blockedBy for an unblocked task.' }
@@ -325,13 +327,13 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
       + 'reply appears in the room as member speech (the human sees it; you read it through the '
       + 'room\'s flow). Use this to ask a member something or hand it work — the equivalent of the '
       + 'human typing "@member <text>" in the room composer. The member argument is a roster name '
-      + '(yourself is "main"); an unknown name is rejected with the live roster, so retry with one '
+      + '(read room_read for current names); an unknown name is rejected with the live roster, so retry with one '
       + 'of those.',
     parameters: {
       member: {
         type: 'string',
         required: true,
-        description: 'The addressee\'s roster name (e.g. "main" for yourself, or a CLI member like "ada").',
+        description: 'The addressee\'s roster name (read room_read for current names; new rooms name the native member "dsh").',
       },
       text: {
         type: 'string',
@@ -374,6 +376,40 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
         text: `Dispatched to ${result.value.member} — the member runs it asynchronously and its reply `
           + 'appears in the room as member speech. Do not wait on it; the human watches the room.',
       }
+    },
+  })
+}
+
+/** Native room tools use the same bounded context reader as the external MCP bridge. */
+export function roomReadTool(backend: { readRoomContext(sessionId: string): Promise<string> }) {
+  return defineTool({
+    name: 'room_read',
+    description: 'Read the current room roster, coordinator, deliveries, recent outcomes and available harness providers. Reading does not wake any member.',
+    parameters: {},
+    output: { schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: value.text }] },
+    isConcurrencySafe: () => true,
+    async execute(_args, exec) {
+      if (exec.agent === undefined) return { text: 'room_read requires a calling agent.' }
+      try { return { text: await backend.readRoomContext(exec.agent.session.id) } }
+      catch (error) { return { text: String(error) } }
+    },
+  })
+}
+
+/** Formal planning uses the same strict command grammar exposed by room_read. */
+export function roomPlanTool(backend: { commandPlan(sessionId: string, command: string): Promise<string> }) {
+  return defineTool({
+    name: 'room_plan',
+    description: 'Organize a requested goal into stages and dependent tasks, submit evidence, review/rework results, and pause/resume. Read room_read for current plan and planCommands JSON schema. Ordinary small tasks use room_message without a formal goal. A native run finishing only submits a result; acceptance requires evidence review.',
+    parameters: { command: { type: 'string', required: true, description: 'JSON command matching room_read planCommands: action, requestId, expectedRevision and action fields. Create mode execute is for authorized execution; draft saves a proposal without dispatch.' } },
+    output: { schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: value.text }] },
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      if (exec.agent === undefined) return { text: 'room_plan requires a calling agent.' }
+      try { return { text: await backend.commandPlan(exec.agent.session.id, args.command) } }
+      catch (error) { return { text: String(error) } }
     },
   })
 }

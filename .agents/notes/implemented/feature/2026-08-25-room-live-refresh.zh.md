@@ -23,6 +23,6 @@ RoomStore 订阅当前会话的实时会话流（`ctx.sessions.binding(sessionId
 
 ## Consequences
 
-- 主 agent 用 `room_task` 加任务，journal 追加后约 300ms 内落到 dock，无需刷新页面；已在 scratch 实例（3199 端口）用前后 dock 截图真机验证（`scratch-screenshots/`）。
+- 主 agent 用 `room_task` 加任务，journal 追加后约 300ms 内落到 dock，无需刷新页面；已在 scratch 实例（3199 端口）用前后 dock 截图真机验证（`scratch-screenshots/`，git 忽略、未入库）。
 - client 规格钉住三条行为：当前 room 的实时流触发每簇恰好一次刷新、非 room 的流被忽略、dispose 退订并丢弃挂起触发（包内 166 测试全绿，新增 3 条）。
 - store 的测试 double 现在 stub `ctx.sessions.binding`；生产代码用可选链守护该调用，无 binding 的 double 退化为实时流之前的行为而不是抛错。

@@ -17,10 +17,13 @@
  * confirmRelay/dismissRelay Remotes.
  * @module @khorsheed/dsh-room
  */
-import { randomUUID } from 'node:crypto'
+import { planCommandContract } from './plan.ts'
+import { PlanService } from './plan-service.ts'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
+import type { LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome } from '@khorsheed/dsh-local-agent/types'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context (create/resume
 // are consumed through the registry, not the agent-loop package).
@@ -50,13 +53,14 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { DispatchEngine } from './dispatch.ts'
-import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
+import { DispatchEngine, ROOM_PLUGIN } from './dispatch.ts'
+import { coordinatorMember, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
   RoomCloseTaskRequest, RoomCloseTaskResult,
-  RoomFailure,
+  RoomPrepareMemberRequest, RoomPrepareMemberResult,
+  RoomFailure, RoomSetCoordinatorRequest, RoomSetCoordinatorResult, RoomReconcileDeliveryRequest, RoomReconcileDeliveryResult,
   RoomGetStateRequest, RoomGetStateResult,
   RoomInviteRequest, RoomInviteResult,
   RoomIsRoomRequest,
@@ -119,7 +123,9 @@ export class RoomService extends TypertRemoteService {
   static inject = ['sessions', 'agents']
 
   /** The dispatch engine executing this service's dispatch records. */
+  readonly plans: PlanService
   readonly engine: DispatchEngine
+  private readonly handoffs = new Set<string>()
 
   /** sessionId → in-flight cold resume (mutations on a cold room dedupe). */
   private readonly resumes = new Map<SessionId, Promise<RoomLoad>>()
@@ -129,7 +135,46 @@ export class RoomService extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, 'room')
-    this.engine = new DispatchEngine(ctx)
+    ctx.effect(async () => {
+      const loader = ctx.get('loader') as { import?: (name: string) => Promise<{ KNOWN_SESSION_EVENT_TYPES?: ReadonlySet<string> }> } | undefined
+      if (loader?.import === undefined) return () => {}
+      for (const specifier of ['@deepseek-ai/dsh-session', catalogSpecifier]) {
+        try {
+          const catalog = await loader.import(specifier)
+          for (const type of ROOM_EVENT_TYPES) (catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add(type)
+        } catch { /* Optional source resolution; static catalog registration remains. */ }
+      }
+      return () => {}
+    }, 'room: runtime event vocabulary')
+    this.plans = new PlanService(ctx, () => this.engine)
+    this.engine = new DispatchEngine(ctx, {
+      allows: (room, seq) => this.plans.allows(room, seq),
+      admitted: (room, seq) => this.plans.admitted(room, seq),
+      settled: (room, seq, outcome) => this.plans.settled(room, seq, outcome),
+    })
+    ctx.effect(() => () => this.plans.dispose())
+    // A stale client or another official input surface must not wake a DSH
+    // model behind an external coordinator. Public pre-step admits an empty
+    // initial step without a model call after room has durably accepted it.
+    const nativeTurns = new WeakMap<object, number>()
+    ctx.on('agent/pre-step', async ({ agent, messages, turn, step }, next) => {
+      const events = agent.session.snapshotEvents()
+      if (!isRoomLog(events) || coordinatorMember(replay(events), events)?.kind !== 'cli') return next()
+      if (nativeTurns.get(agent) === turn) return next()
+      if (step !== 1) throw new Error('Room native turn has no explicit member dispatch')
+      if (messages.some(message => message.source.kind === 'plugin' && message.source.plugin === ROOM_PLUGIN)) {
+        nativeTurns.set(agent, turn)
+        return next()
+      }
+      for (const message of messages) {
+        if (message.source.kind !== 'user' || message.content.some(block => block.type !== 'text')) {
+          throw new Error('Use the room input route for this coordinator; this input cannot be forwarded losslessly')
+        }
+        const result = await this.postMessage({ sessionId: agent.session.id, requestId: String(message.id), text: message.content.map(block => block.type === 'text' ? block.text : '').join('\n') })
+        if (!result.ok) throw new Error(`Room input routing failed: ${result.error.code}`)
+      }
+      return { kind: 'enter', messages: [] }
+    })
     // The model-facing room tools are deliberately NOT registered here: they
     // moved to the companion `@khorsheed/dsh-room-tool`, which mounts the
     // tool row inside agent-preset compositions (session-granted). The
@@ -175,7 +220,12 @@ export class RoomService extends TypertRemoteService {
    */
   private ensureLive(sessionId: SessionId): Promise<RoomLoad> {
     const hit = this.load(sessionId)
-    if (hit.ok || hit.error.code !== 'session-not-found') return Promise.resolve(hit)
+    if (hit.ok) return (async () => {
+      await this.plans.recover(hit.session)
+      await this.engine.recover(hit.session)
+      return this.load(sessionId)
+    })()
+    if (hit.error.code !== 'session-not-found') return Promise.resolve(hit)
     let pending = this.resumes.get(sessionId)
     if (pending === undefined) {
       pending = this.resumeRoom(sessionId).finally(() => this.resumes.delete(sessionId))
@@ -197,7 +247,9 @@ export class RoomService extends TypertRemoteService {
     } catch (error: unknown) {
       return { ok: false, error: { code: 'resume-failed', message: String(error) } }
     }
-    return this.load(sessionId)
+    const loaded = this.load(sessionId)
+    if (loaded.ok) { await this.plans.recover(loaded.session); await this.engine.recover(loaded.session) }
+    return loaded
   }
 
   /**
@@ -289,7 +341,7 @@ export class RoomService extends TypertRemoteService {
     // Side-effect-free: a cold room answers from its durable log (see loadCold).
     const loaded = await this.loadCold(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
-    return { ok: true, value: loaded.state }
+    return { ok: true, value: { ...this.engine.view(request.sessionId, loaded.state), ...loaded.state.plan === undefined ? {} : { plan: this.plans.view(request.sessionId, loaded.state.plan) } } }
   }
 
   /**
@@ -310,10 +362,12 @@ export class RoomService extends TypertRemoteService {
    * @param invitedBy - the invitation's origin.
    * @returns the invitation receipt, or a rejection.
    */
-  async inviteMember(request: RoomInviteRequest, invitedBy: 'human' | 'agent'): Promise<RoomInviteResult> {
+  async inviteMember(request: RoomInviteRequest, invitedBy: 'human' | 'agent', actorChildSessionId?: string): Promise<RoomInviteResult> {
     // Invite PROMOTES: inviting an agent into a plain session makes it a room.
     const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
+    if (invitedBy === 'agent' && !this.isCurrentCoordinator(loaded.session, actorChildSessionId)) return { ok: false, error: { code: 'not-coordinator' } }
     if (!validName(request.name)) return { ok: false, error: { code: 'invalid-name' } }
     if (loaded.state.members.some(member => member.name === request.name)) {
       return { ok: false, error: { code: 'duplicate-name' } }
@@ -345,7 +399,11 @@ export class RoomService extends TypertRemoteService {
         return { ok: false, error: { code: 'unknown-provider', provider: request.provider, available } }
       }
     }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
+    if (invitedBy === 'agent' && !this.isCurrentCoordinator(loaded.session, actorChildSessionId)) return { ok: false, error: { code: 'not-coordinator' } }
+    if (replay(loaded.session.snapshotEvents()).members.some(member => member.name === request.name)) return { ok: false, error: { code: 'duplicate-name' } }
     loaded.session.append('room/member-added', {
+      id: randomUUID(),
       name: request.name,
       kind: 'cli',
       provider: request.provider,
@@ -357,10 +415,14 @@ export class RoomService extends TypertRemoteService {
     let firstTaskSeq: number | undefined
     if (request.firstTask !== undefined) {
       firstTaskSeq = loaded.session.append('room/dispatch', {
+        id: randomUUID(), origin: invitedBy === 'human' ? 'human' : 'coordinator',
+        ...invitedBy === 'human' ? {} : { replyTo: memberId(loaded.session.snapshotEvents(), coordinatorMember(replay(loaded.session.snapshotEvents()), loaded.session.snapshotEvents())!) },
+        targetIds: [memberId(loaded.session.snapshotEvents(), replay(loaded.session.snapshotEvents()).members.find(member => member.name === request.name)!)],
         targets: [request.name], text: request.firstTask,
       }).seq
       loaded.session.append('room/task-added', {
         id: randomUUID(), member: request.name, title: taskTitle(request.firstTask), status: 'in_progress',
+        deliveryId: `${firstTaskSeq}:${memberId(loaded.session.snapshotEvents(), replay(loaded.session.snapshotEvents()).members.find(member => member.name === request.name)!)}`,
       })
     }
     await this.ctx.sessions.flush(loaded.session)
@@ -402,10 +464,13 @@ export class RoomService extends TypertRemoteService {
   async updateMember(request: RoomUpdateMemberRequest): Promise<RoomUpdateMemberResult> {
     const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
     const member = loaded.state.members.find(entry => entry.name === request.name)
     if (member === undefined) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
+    if (request.cwd !== undefined && (member.childSessionId !== undefined || this.engine.hasPending(loaded.session, member.name))) return { ok: false, error: { code: 'member-cwd-bound' } }
+    if (request.model !== undefined && member.childSessionId !== undefined) return { ok: false, error: { code: 'configuration-owned-by-core' } }
     if (request.rename === undefined && request.instructions === undefined
       && request.cwd === undefined && request.model === undefined) {
       return { ok: false, error: { code: 'nothing-to-update' } }
@@ -439,6 +504,114 @@ export class RoomService extends TypertRemoteService {
     return { ok: true, value: { name: request.name } }
   }
 
+  /** Native preparation creates no unrelated conversation turn and leaves the role unchanged. */
+  @Remote('prepareMember')
+  async prepareMember(request: RoomPrepareMemberRequest): Promise<RoomPrepareMemberResult> {
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
+    this.handoffs.add(request.sessionId)
+    try { return await this.prepareMemberInRoom(request) }
+    finally { this.handoffs.delete(request.sessionId) }
+  }
+
+  private async prepareMemberInRoom(request: RoomPrepareMemberRequest): Promise<RoomPrepareMemberResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const member = loaded.state.members.find(member => member.name === request.name)
+    if (member?.kind !== 'cli' || member.provider === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    const family = probeLocalAgent(this.ctx)
+    if (family?.prepareMember === undefined) return { ok: false, error: { code: 'coordinator-not-ready', message: 'Native preparation is unavailable in this family core' } }
+    try {
+      const childSessionId = await family.prepareMember(request.sessionId, member.provider, member.childSessionId ?? memberId(loaded.session.snapshotEvents(), member), {
+        ...member.cwd === undefined ? {} : { cwd: member.cwd }, ...member.model === undefined ? {} : { model: member.model },
+      })
+      loaded.session.append('room/member-updated', { name: member.name, childSessionId: SessionId(childSessionId) })
+      await this.ctx.sessions.flush(loaded.session)
+      return { ok: true, value: { childSessionId } }
+    } catch (error) { return { ok: false, error: { code: 'coordinator-not-ready', message: String(error) } } }
+  }
+
+  /** A human records the known result before releasing a crashed member's queued work. */
+  @Remote('reconcileDelivery')
+  async reconcileDelivery(request: RoomReconcileDeliveryRequest): Promise<RoomReconcileDeliveryResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const delivery = loaded.state.deliveries?.find(row => row.id === request.deliveryId)
+    if (delivery?.status !== 'uncertain') return { ok: false, error: { code: 'delivery-not-uncertain' } }
+    if (delivery.plan?.taskId !== undefined) return { ok: false, error: { code: 'plan-reconciliation-required' } }
+    if (request.evidence.trim() === '') return { ok: false, error: { code: 'empty-text' } }
+    loaded.session.append('room/delivery-state', { id: delivery.id, dispatchSeq: delivery.dispatchSeq, memberId: delivery.memberId, state: request.outcome, text: request.evidence.trim() })
+    const run = loaded.state.runs.find(run => run.runId === delivery.id)
+    if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: delivery.id, startedAt: run.startedAt, state: request.outcome })
+    await this.ctx.sessions.flush(loaded.session)
+    await this.engine.recover(loaded.session)
+    return { ok: true }
+  }
+
+  /** Explicit human role change; state is committed only after readiness and idle checks. */
+  @Remote('setCoordinator')
+  async setCoordinator(request: RoomSetCoordinatorRequest): Promise<RoomSetCoordinatorResult> {
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
+    this.handoffs.add(request.sessionId)
+    try {
+      const loaded = await this.ensureLive(request.sessionId)
+      if (!loaded.ok) return { ok: false, error: loaded.error }
+      const events = loaded.session.snapshotEvents()
+      let candidate = loaded.state.members.find(member => memberId(events, member) === request.memberId)
+      const previous = coordinatorMember(loaded.state, events)
+      if (candidate === undefined || previous === undefined) return { ok: false, error: { code: 'member-not-found' } }
+      if ((loaded.state.coordinator?.revision ?? 0) !== request.expectedRevision) return { ok: false, error: { code: 'coordinator-conflict' } }
+      const agent = this.ctx.agents.get(request.sessionId)
+      if (agent?.status === 'running' || (agent?.inbox?.nextTurn.length ?? 0) > 0 || (agent?.inbox?.nextStep.length ?? 0) > 0 || this.engine.hasPending(loaded.session, previous.name) || this.engine.hasPending(loaded.session, candidate.name)) {
+        return { ok: false, error: { code: 'coordinator-busy' } }
+      }
+      if (candidate.kind === 'cli' && candidate.childSessionId === undefined) {
+        const prepared = await this.prepareMemberInRoom({ sessionId: request.sessionId, name: candidate.name })
+        if (!prepared.ok) return { ok: false, error: prepared.error }
+        candidate = { ...candidate, childSessionId: SessionId(prepared.value.childSessionId) }
+      }
+      const refreshedEvents = loaded.session.snapshotEvents()
+      const refreshed = replay(refreshedEvents)
+      candidate = refreshed.members.find(member => memberId(refreshedEvents, member) === request.memberId)
+      if (candidate === undefined) return { ok: false, error: { code: 'member-not-found' } }
+      if ((refreshed.coordinator?.revision ?? 0) !== request.expectedRevision) return { ok: false, error: { code: 'coordinator-conflict' } }
+      const refreshedAgent = this.ctx.agents.get(request.sessionId)
+      if (refreshedAgent?.status === 'running' || (refreshedAgent?.inbox?.nextTurn.length ?? 0) > 0 || (refreshedAgent?.inbox?.nextStep.length ?? 0) > 0 || this.engine.hasPending(loaded.session, previous.name) || this.engine.hasPending(loaded.session, candidate.name)) return { ok: false, error: { code: 'coordinator-busy' } }
+      if (candidate.kind === 'cli') {
+        const family = this.ctx.get('localAgent') as { canCoordinateRoom?: (id: string) => boolean } | undefined
+        if (candidate.childSessionId === undefined || family?.canCoordinateRoom?.(candidate.childSessionId) !== true) return { ok: false, error: { code: 'coordinator-not-ready', message: 'The member coordination tool channel is unavailable' } }
+      }
+      for (const participant of [previous, candidate]) {
+        if (participant.kind !== 'cli') continue
+        const family = this.ctx.get('localAgent') as { isPreparedMember?: (id: string) => boolean; queuedMemberRounds?: (id: string) => number; readMemberInbox?: (id: string) => { paused: boolean; messages: readonly { status: string }[] }; memberConfiguration?: (id: string) => { status: string; round?: unknown; pending?: unknown; lockedReason?: string } } | undefined
+        if (participant.childSessionId === undefined || family?.memberConfiguration === undefined) {
+          return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member native session preparation is required before promotion' } }
+        }
+        const inbox = family.isPreparedMember?.(participant.childSessionId) === true ? undefined : family.readMemberInbox?.(participant.childSessionId)
+        if ((family.queuedMemberRounds?.(participant.childSessionId) ?? 0) > 0 || inbox?.messages.some(row => ['queued', 'running', 'uncertain'].includes(row.status))) return { ok: false, error: { code: 'coordinator-busy' } }
+        const control = family.memberConfiguration(participant.childSessionId)
+        if (control.status !== 'idle' || control.round !== undefined || control.pending !== undefined || control.lockedReason !== undefined) {
+          return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member configuration has not converged or is locked' } }
+        }
+      }
+      const handoff = [
+        `Coordinator handoff from ${previous.name} to ${candidate.name}.`,
+        `Room session: ${request.sessionId}. Earlier native conversations remain available by their session IDs.`,
+        loaded.state.goal === undefined ? '' : `Goal: ${loaded.state.goal}`,
+        loaded.state.plan === undefined ? '' : `Formal goal ${loaded.state.plan.id}, revision ${loaded.state.plan.revision}: ${loaded.state.plan.objective} (${loaded.state.plan.status}). Read room_read for attempts, evidence, dependencies and budget; preserve the current pause state.`,
+        ...loaded.state.tasks.filter(task => !['done', 'cancelled'].includes(task.status)).map(task => `Open task ${task.id}: ${task.member}: ${task.title} (${task.status})`),
+        ...events.filter(event => event.type === 'room/speech' || event.type === 'room/dispatch').slice(-12).map(event =>
+          event.type === 'room/speech' ? `${event.data.member}: ${event.data.text.slice(0, 1500)}`
+          : event.type === 'room/dispatch' ? `To ${event.data.targets.join(', ')}: ${event.data.text.slice(0, 1500)}` : ''),
+      ].filter(Boolean).join('\n').slice(0, 16000)
+      const value = { version: 1 as const, memberId: request.memberId, previousMemberId: memberId(events, previous), revision: request.expectedRevision + 1, handoff }
+      loaded.session.append('room/coordinator', value)
+      await this.ctx.sessions.flush(loaded.session)
+      return { ok: true, value }
+    } catch (error) {
+      return { ok: false, error: { code: 'coordinator-not-ready', message: String(error) } }
+    } finally { this.handoffs.delete(request.sessionId) }
+  }
+
   /**
    * Remove a member from the roster. An in-flight run is NOT interrupted
    * here — cancel() first when the member is running.
@@ -449,9 +622,12 @@ export class RoomService extends TypertRemoteService {
   async removeMember(request: RoomRemoveMemberRequest): Promise<RoomRemoveMemberResult> {
     const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
     if (!loaded.state.members.some(member => member.name === request.name)) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
+    if (coordinatorMember(loaded.state, loaded.session.snapshotEvents())?.name === request.name) return { ok: false, error: { code: 'active-coordinator' } }
+    if (loaded.state.members.find(member => member.name === request.name)?.kind === 'main-agent') return { ok: false, error: { code: 'main-member' } }
     loaded.session.append('room/member-removed', { name: request.name })
     await this.ctx.sessions.flush(loaded.session)
     return { ok: true, value: { name: request.name } }
@@ -484,11 +660,37 @@ export class RoomService extends TypertRemoteService {
     const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (request.text.trim() === '') return { ok: false, error: { code: 'empty-text' } }
+    const requestSignature = createHash('sha256').update(JSON.stringify({ text: request.text.trim(), targets: [...new Set(request.targets ?? [])].sort() })).digest('hex')
+    if (request.requestId !== undefined) {
+      if (request.requestId.trim() === '' || request.requestId.length > 128) return { ok: false, error: { code: 'request-conflict' } }
+      const previous = loaded.session.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.id === request.requestId)
+      if (previous?.type === 'room/dispatch') {
+        const original = previous.data
+        const parsedRetry = parseMentions(request.text)
+        const retryTargets = [...new Set([...parsedRetry.targets, ...request.targets ?? []])].sort()
+        const legacyMatch = original.origin === 'human' && original.text === (parsedRetry.targets.length > 0 ? parsedRetry.text : request.text.trim())
+          && (retryTargets.length === 0 || JSON.stringify(retryTargets) === JSON.stringify([...original.targets].sort()))
+        if (original.requestSignature === undefined ? !legacyMatch : original.requestSignature !== requestSignature) return { ok: false, error: { code: 'request-conflict' } }
+        // An earlier flush may have failed after append; acceptance retries storage before acknowledging.
+        await this.ctx.sessions.flush(loaded.session)
+        for (const target of original.targetIds ?? []) {
+          const member = replay(loaded.session.snapshotEvents()).members.find(member => memberId(loaded.session.snapshotEvents(), member) === target)
+          if (member !== undefined) this.engine.dispatch(loaded.session, member.name, original.text, { dispatchSeq: previous.seq, targetId: target })
+        }
+        return { ok: true, value: { parsed: { targets: original.targets, text: original.text }, seq: previous.seq } }
+      }
+    }
+
     const parsed = parseMentions(request.text)
     // Menu-picked addressees union with the parsed leading tokens: a menu
     // pick is explicit addressing wherever the `@name` sits in the sentence.
     const targets = [...new Set([...parsed.targets, ...request.targets ?? []])]
-    if (targets.length === 0) return { ok: false, error: { code: 'no-targets' } }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
+    if (targets.length === 0) {
+      const selected = coordinatorMember(loaded.state, loaded.session.snapshotEvents())
+      if (selected === undefined) return { ok: false, error: { code: 'member-not-found' } }
+      targets.push(selected.name)
+    }
     // Leading tokens are stripped from the dispatched text; a picked mid-
     // sentence mention stays — the sentence is dispatched verbatim.
     const text = parsed.targets.length > 0 ? parsed.text : request.text.trim()
@@ -500,10 +702,14 @@ export class RoomService extends TypertRemoteService {
       content: [{ type: 'text', text: request.text.trim() }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    const dispatch = loaded.session.append('room/dispatch', { targets, text })
+    const dispatch = loaded.session.append('room/dispatch', {
+      id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human',
+      targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
+    })
     for (const target of targets) {
       loaded.session.append('room/task-added', {
         id: randomUUID(), member: target, title: taskTitle(text), status: 'in_progress',
+        deliveryId: `${dispatch.seq}:${memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === target)!)}`,
       })
     }
     await this.ctx.sessions.flush(loaded.session)
@@ -523,24 +729,112 @@ export class RoomService extends TypertRemoteService {
    * @param request - room session, addressee, text.
    * @returns the dispatch receipt, or a rejection.
    */
-  async messageMember(request: RoomMessageRequest): Promise<RoomMessageResult> {
+  async messageMember(request: RoomMessageRequest, actorChildSessionId?: string): Promise<RoomMessageResult> {
     // Messaging PROMOTES too (the room_message tool's gate): the main agent
     // answering "把 kimi 拉进来问一下…" promotes its own session, then the
     // roster check runs against the promoted state.
     const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (!this.isCurrentCoordinator(loaded.session, actorChildSessionId)) return { ok: false, error: { code: 'not-coordinator' } }
+    if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
     if (!loaded.state.members.some(member => member.name === request.member)) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
     const text = request.text.trim()
     if (text === '') return { ok: false, error: { code: 'empty-text' } }
-    const dispatch = loaded.session.append('room/dispatch', { targets: [request.member], text })
+    const coordinator = coordinatorMember(loaded.state, loaded.session.snapshotEvents())
+    const target = loaded.state.members.find(member => member.name === request.member)!
+    const dispatch = loaded.session.append('room/dispatch', {
+      id: randomUUID(), targets: [request.member], targetIds: [memberId(loaded.session.snapshotEvents(), target)], text, origin: 'coordinator',
+      ...coordinator === undefined || coordinator.name === request.member ? {} : { replyTo: memberId(loaded.session.snapshotEvents(), coordinator) },
+    })
     loaded.session.append('room/task-added', {
       id: randomUUID(), member: request.member, title: taskTitle(text), status: 'in_progress',
+      deliveryId: `${dispatch.seq}:${memberId(loaded.session.snapshotEvents(), target)}`,
     })
     await this.ctx.sessions.flush(loaded.session)
     this.engine.dispatch(loaded.session, request.member, text, { dispatchSeq: dispatch.seq })
     return { ok: true, value: { member: request.member } }
+  }
+
+  /** Host-authenticated actor; model tool arguments never provide the room or sender. */
+  private isCurrentCoordinator(session: Session, actorChildSessionId?: string): boolean {
+    const events = session.snapshotEvents()
+    const coordinator = coordinatorMember(replay(events), events)
+    return actorChildSessionId === undefined ? coordinator?.kind === 'main-agent' : coordinator?.childSessionId === actorChildSessionId
+  }
+
+  /** Bounded shared room context for native and external model tools; reading never wakes an agent. */
+  async readRoomContext(sessionId: string): Promise<string> {
+    const state = await this.getState({ sessionId: SessionId(sessionId) })
+    if (!state.ok) throw new Error(`Room unavailable: ${state.error.code}`)
+    const events = this.ctx.sessions.get(SessionId(sessionId))?.snapshotEvents() ?? []
+    const recent = events.filter(event => event.type === 'room/speech').slice(-12).map(event => event.type === 'room/speech' ? { member: event.data.member, text: event.data.text.slice(0, 2000) } : null)
+    return JSON.stringify({ planCommands: planCommandContract(), coordinator: coordinatorMember(state.value)?.name,
+      state: { ...state.value, deliveries: state.value.deliveries?.slice(-30), tasks: state.value.tasks.slice(-100), relays: state.value.relays.slice(-30) },
+      providers: await this.listProviders({}), recent })
+  }
+
+  /** Human UI and native/external tools share the same durable transition service. */
+  @Remote('planCommand')
+  async planCommand(request: { sessionId: SessionId; command: string }): Promise<{ ok: true } | { ok: false; message: string }> {
+    try {
+      const loaded = await this.ensureLive(request.sessionId)
+      if (!loaded.ok) return { ok: false, message: loaded.error.code }
+      if (this.handoffs.has(request.sessionId)) return { ok: false, message: 'Coordinator handoff is in progress' }
+      await this.plans.command(loaded.session, request.command, { kind: 'human', memberId: 'human' })
+      return { ok: true }
+    } catch (error) { return { ok: false, message: String(error) } }
+  }
+
+  /** The actor is derived from the calling native agent or authenticated bridge. */
+  async commandPlan(sessionId: string, command: string, actorChildSessionId?: string): Promise<string> {
+    const loaded = await this.ensureLive(SessionId(sessionId))
+    if (!loaded.ok) throw new Error(loaded.error.code)
+    if (this.handoffs.has(sessionId)) throw new Error('Coordinator handoff is in progress')
+    const events = loaded.session.snapshotEvents()
+    const state = replay(events)
+    const member = state.members.find(member => actorChildSessionId === undefined ? member.kind === 'main-agent' : member.childSessionId === actorChildSessionId)
+    if (member === undefined) throw new Error('Calling member is not in this room')
+    const id = memberId(events, member)
+    const plan = await this.plans.command(loaded.session, command, { kind: coordinatorMember(state, events)?.name === member.name ? 'coordinator' : 'worker', memberId: id })
+    const { requests: _requests, ...view } = plan
+    return JSON.stringify(view)
+  }
+
+  /** Shared backend for external MCP room tools. Not exposed as a browser Remote. */
+  async receiveMemberCommand(actor: LocalAgentMemberRun, command: MemberRoomCommand): Promise<MemberMessageOutcome> {
+    try {
+      const loaded = await this.ensureLive(SessionId(actor.parentSessionId))
+      if (!loaded.ok) return { ok: false, error: `Room unavailable: ${loaded.error.code}` }
+      const sender = loaded.state.members.find(member => member.childSessionId === actor.childSessionId && member.provider === actor.provider)
+      if (sender === undefined) return { ok: false, error: 'The authenticated member is not in this room roster' }
+      if (command === null || typeof command !== 'object' || command.arguments === null || typeof command.arguments !== 'object' || Array.isArray(command.arguments)) return { ok: false, error: 'Malformed room command' }
+      const args = command.arguments
+      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'instructions', 'cwd', 'model', 'firstTask'], room_message: ['member', 'text'] }
+      const keys = allowed[command.name]
+      if (keys === undefined || Object.keys(args).some(key => !keys.includes(key))) return { ok: false, error: 'Unknown room command or argument; room and actor identity are host-owned' }
+      const required = (key: string): string => {
+        const value = args[key]
+        if (typeof value !== 'string' || value.trim() === '') throw new Error(`A non-empty ${key} is required`)
+        return value
+      }
+      const optional = (key: string): string | undefined => args[key] === undefined ? undefined : required(key)
+      if (command.name === 'room_read') {
+        return { ok: true, receipt: JSON.stringify({ self: sender.name, ...JSON.parse(await this.readRoomContext(loaded.session.id)) }) }
+      }
+      if (command.name === 'room_plan') return { ok: true, receipt: await this.commandPlan(loaded.session.id, required('command'), actor.childSessionId) }
+      if (!this.isCurrentCoordinator(loaded.session, actor.childSessionId)) return { ok: false, error: 'Only the current coordinator may invite members or dispatch work' }
+      const result = command.name === 'room_invite'
+        ? await this.inviteMember({ sessionId: loaded.session.id, provider: required('provider'), name: required('name'),
+          ...optional('instructions') === undefined ? {} : { instructions: optional('instructions')! },
+          ...optional('cwd') === undefined ? {} : { cwd: optional('cwd')! },
+          ...optional('model') === undefined ? {} : { model: optional('model')! },
+          ...optional('firstTask') === undefined ? {} : { firstTask: optional('firstTask')! },
+        }, 'agent', actor.childSessionId)
+        : await this.messageMember({ sessionId: loaded.session.id, member: required('member'), text: required('text') }, actor.childSessionId)
+      return result.ok ? { ok: true, receipt: JSON.stringify(result.value) } : { ok: false, error: result.error.code }
+    } catch (error) { return { ok: false, error: String(error) } }
   }
 
   /**
@@ -566,6 +860,14 @@ export class RoomService extends TypertRemoteService {
     }
     const loaded = await this.ensureLive(request.parentSessionId)
     if (!loaded.ok) throw new Error(`room: not a room session (${loaded.error.code})`)
+    const sender = loaded.state.members.find(member => member.childSessionId === request.from && member.provider === request.provenance?.provider)
+    if (sender !== undefined && this.isCurrentCoordinator(loaded.session, request.from)) {
+      const target = loaded.state.members.find(member => member.name === request.to || member.childSessionId === request.to)
+      if (target === undefined) throw new Error('Unknown room member')
+      const result = await this.messageMember({ sessionId: loaded.session.id, member: target.name, text: request.content }, request.from)
+      if (!result.ok) throw new Error(result.error.code)
+      return 'sent'
+    }
     const resolveName = (endpoint: string): string => {
       const byName = loaded.state.members.find(member => member.name === endpoint)
       if (byName !== undefined) return byName.name
@@ -750,14 +1052,16 @@ export class RoomService extends TypertRemoteService {
       : false
     if (hit) {
       const running = loaded.state.runs.find(entry => entry.member === request.name && entry.state === 'running')
+      if (running === undefined) return { ok: true, value: { cancelled: true } }
       loaded.session.append('room/run-state', {
-        member: request.name, state: 'cancelled', startedAt: running?.startedAt ?? Date.now(),
+        member: request.name, state: 'cancelled', startedAt: running.startedAt,
+        ...running.runId === undefined ? {} : { runId: running.runId },
       })
       // The engine's settle no-ops behind this edge, so the task closing the
       // settle would have done happens here: the dispatch-opened in_progress
       // task cancels with its run.
       for (const task of loaded.state.tasks) {
-        if (task.member === request.name && task.status === 'in_progress') {
+        if (task.member === request.name && task.status === 'in_progress' && (running.runId === undefined || task.deliveryId === running.runId)) {
           loaded.session.append('room/task-updated', { id: task.id, status: 'cancelled' })
         }
       }

@@ -57,7 +57,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "liveMirrorGranularity token: streaming deltas land in the child session log as throttled snapshots at the item's reserved (turn, step) — the host ui-chat replaces a repeated assistant/message at one coordinate wholesale (shipped since 0.1.5-rc.1), so snapshots merge into one growing message; both granularities fold every item in full; a late-arriving usage whose carrier line already mirrored rides the settle's final snapshot instead (no usage-backfill event exists)",
+      "notes": "Live output uses the local-agent transient Remote and public Conversation nodes, with incremental durable recovery checkpoints; native final messages retain their existing transcript and usage semantics. End-to-end latency acceptance is tracked by the room coordinator proposal.",
       "verifiedHost": "0.1.5-rc.1"
     }
   },

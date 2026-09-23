@@ -16,7 +16,11 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { CanvasBoardService } from './store.ts'
-import { BOARD_CARD_KINDS, type BoardCardKind, type BoardCardSource } from './types.ts'
+import { categoryMenuOf, menuCategoriesOf } from './prompt.ts'
+import {
+  BOARD_CARD_KINDS,
+  type BoardCardSource, type BoardCategory, type CardCategoryId,
+} from './types.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
 function tagOrigin<T extends object>(definition: T): T {
@@ -38,32 +42,44 @@ function renderOutcome(outcome: { ok: boolean; error?: string | undefined; cardI
   return outcome.cardId === undefined ? '完成' : `完成：${outcome.cardId}`
 }
 
+/** The `kind` enum's ids: the board's enabled catalog, on the same floor the
+ *  description's menu is spelled from (`menuCategoriesOf`), so a canvas whose
+ *  user retired every category still gets a wire-legal enum — and it is the
+ *  store's per-board check that refuses the writes it would make. */
+function kindEnum(categories: readonly BoardCategory[]): string[] {
+  return menuCategoriesOf(categories).map(category => category.id)
+}
+
 /**
  * Build the two canvas tools for one `openWith` call.
  * @param board - the board service the tools delegate to (same fence path as every write).
  * @param canvasId - the canvas these tools act on (the context they are attached to).
  * @param fallbackSession - the session whose ask primed the context (the
  *   execution prefers `exec.agent.session` — the canvas agent's own fence).
+ * @param categories - THIS canvas's catalog: stage ⑤ made the category set
+ *   per-canvas, so the enum is read off the board the ask came from.
  * @returns the tagged definitions, ready for side-chat's `tools` input.
  */
 export function canvasToolDefinitions(
   board: CanvasBoardService,
   canvasId: string,
   fallbackSession: Session,
+  categories: readonly BoardCategory[],
 ): ToolDefinition[] {
   const propose = defineTool({
     name: 'canvas_propose_card',
     description:
       '提议一张新卡落到这块画布上：它以 proposed（待确认）状态出现在板上，用户 ✓ 收下才转为正式卡、✗ 归档。'
-      + '找资料、提问题、归纳共同认识、给反例或例子都走这里——绝不在回复正文里贴卡片全文冒充落卡。'
-      + 'kind 取值：fragment（灵感碎片）、question（问题）、grounding（共同认识，只能提议，用户复述确认才算数）、'
-      + 'reference（资料，务必带 source 出处）、document（文档）。comment 写一句提议理由，会作为你的评论挂在卡上。',
+      + '找来源、提问题、归纳共识、给反例或例子都走这里——绝不在回复正文里贴卡片全文冒充落卡。'
+      + `kind 取值（这块画布的分类）：${categoryMenuOf(categories)}。`
+      + 'grounding 只能提议，用户复述确认才算数；reference 务必带 source 出处。'
+      + 'comment 写一句提议理由，会作为你的评论挂在卡上。',
     parameters: {
       kind: {
         type: 'string',
-        enum: [...BOARD_CARD_KINDS],
+        enum: kindEnum(categories),
         required: true,
-        description: '卡片种类。',
+        description: '卡片种类（这块画布分类目录里的一个 id）。',
       },
       text: { type: 'string', required: true, description: '卡片正文（保持小而具体）。' },
       source: {
@@ -74,7 +90,7 @@ export function canvasToolDefinitions(
           title: { type: 'string', description: '出处标题（页面标题、文件名）。' },
         },
         additionalProperties: false,
-        description: '资料卡的出处；reference 卡必填。',
+        description: '来源卡的出处；reference 卡必填。',
       },
       comment: { type: 'string', description: '提议理由（作为你的评论挂在卡上）。' },
     },
@@ -85,7 +101,7 @@ export function canvasToolDefinitions(
     execute: async (args: { kind: string; text: string; source?: BoardCardSource; comment?: string }, exec: { agent?: Agent }): Promise<string> => {
       const outcome = await board.proposeCard({
         canvasId,
-        kind: args.kind as BoardCardKind,
+        kind: args.kind as CardCategoryId,
         text: args.text,
         ...(args.source === undefined ? {} : { source: args.source }),
         ...(args.comment === undefined ? {} : { comment: args.comment }),
@@ -146,13 +162,20 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     name: 'canvas_propose_card',
     description:
       '提议一张新卡落到当前打开的画布上：它以 proposed（待确认）状态出现在板上，用户 ✓ 收下才转为正式卡、✗ 归档。'
-      + '找资料、提问题、归纳共同认识、给反例或例子都走这里——绝不在回复正文里贴卡片全文冒充落卡。'
-      + 'kind 取值：fragment（灵感碎片）、question（问题）、grounding（共同认识，只能提议，用户复述确认才算数）、'
-      + 'reference（资料，务必带 source 出处）、document（文档）。comment 写一句提议理由，会作为你的评论挂在卡上。'
+      + '找来源、提问题、归纳共识、给反例或例子都走这里——绝不在回复正文里贴卡片全文冒充落卡。'
+      + 'kind 取值：fragment（灵感）、question（问题）、grounding（共识，只能提议，用户复述确认才算数）、'
+      + 'reference（来源，务必带 source 出处）、document（文档）。'
+      + '一块画布可能自建了更多分类：只在你能看见它的 id 时才用它，否则用上面五个之一。'
+      + 'comment 写一句提议理由，会作为你的评论挂在卡上。'
       + '作用于右栏「画布详情」tab 当前打开的画布；没打开任何画布时会告诉你，不要自己猜一块。',
     parameters: {
       kind: {
         type: 'string',
+        // Closed here and only here: this definition is registered once at boot
+        // for the main session, before any canvas is open, so there is no board
+        // to read a catalog off. The execution still accepts a custom id (the
+        // store checks it against the focused board), the enum just cannot
+        // advertise one the model has not been shown.
         enum: [...BOARD_CARD_KINDS],
         required: true,
         description: '卡片种类。',
@@ -166,7 +189,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
           title: { type: 'string', description: '出处标题（页面标题、文件名）。' },
         },
         additionalProperties: false,
-        description: '资料卡的出处；reference 卡必填。',
+        description: '来源卡的出处；reference 卡必填。',
       },
       comment: { type: 'string', description: '提议理由（作为你的评论挂在卡上）。' },
     },
@@ -179,7 +202,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       if ('message' in resolved) return resolved.message
       const outcome = await board.proposeCard({
         canvasId: resolved.canvasId,
-        kind: args.kind as BoardCardKind,
+        kind: args.kind as CardCategoryId,
         text: args.text,
         ...(args.source === undefined ? {} : { source: args.source }),
         ...(args.comment === undefined ? {} : { comment: args.comment }),

@@ -13,7 +13,7 @@
  * web boot hands client entries no config.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { WorktreesBadgeProps } from '../src/client/contract.ts'
 import { WorktreesBadge } from '../src/client/Badge.tsx'
 import type { BadgeConfig, PluginInventorySnapshot, SessionSummary } from '../src/types.ts'
@@ -73,6 +73,8 @@ function makeHarness(over: HarnessOptions = {}) {
       value: over.composition ?? { agentPresets: [] },
     })
   }
+  // The Host's forwarded session events reach the badge through this face.
+  const sessionListeners = new Set<(id: string) => void>()
   const sessionRow = {
     ...(over.projectionValues === undefined ? {} : { projectionValues: over.projectionValues }),
     ...(over.legacyAgentPreset === undefined ? {} : { agentPreset: over.legacyAgentPreset }),
@@ -88,7 +90,10 @@ function makeHarness(over: HarnessOptions = {}) {
       : { fetchComposition }),
     open: vi.fn(),
     subscribeVersion: vi.fn(() => () => {}),
-    getVersion: vi.fn(() => Promise.resolve(0)),
+    subscribeSessionEvents: (listener: (id: string) => void) => {
+      sessionListeners.add(listener)
+      return () => { sessionListeners.delete(listener) }
+    },
     useSessions: ((sel: (s: { byId: Record<string, unknown> }) => unknown) => sel({
       byId: { [SESSION]: sessionRow },
     })) as never,
@@ -96,7 +101,8 @@ function makeHarness(over: HarnessOptions = {}) {
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
   } as unknown as WorktreesBadgeProps
-  return { props, summary, fetchBadgeConfig, fetchComposition }
+  const emitSession = (id: string): void => { for (const listener of sessionListeners) listener(id) }
+  return { props, summary, fetchBadgeConfig, fetchComposition, emitSession }
 }
 
 afterEach(() => { cleanup() })
@@ -208,5 +214,33 @@ describe('WorktreesBadge composition criterion (the default, no visiblePresets)'
     })
     render(<WorktreesBadge {...props} />)
     expect(await screen.findByRole('status')).toBeTruthy()
+  })
+})
+
+describe('WorktreesBadge invalidation channels', () => {
+  it('re-reads the summary when a forwarded session event names this session', async () => {
+    const { props, summary, emitSession } = makeHarness({ projectionValues: { agentPreset: 'dev' } })
+    render(<WorktreesBadge {...props} />)
+    await waitFor(() => expect(summary).toHaveBeenCalledTimes(1))
+    emitSession(SESSION)
+    await waitFor(() => expect(summary).toHaveBeenCalledTimes(2))
+  })
+
+  it('ignores a forwarded event for another session', async () => {
+    const { props, summary, emitSession } = makeHarness({ projectionValues: { agentPreset: 'dev' } })
+    render(<WorktreesBadge {...props} />)
+    await waitFor(() => expect(summary).toHaveBeenCalledTimes(1))
+    emitSession('some-other-session')
+    // Give the (absent) refetch a chance to land before asserting it did not.
+    await new Promise(resolve => { setTimeout(resolve, 10) })
+    expect(summary).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-reads when the window regains focus (out-of-band changes)', async () => {
+    const { props, summary } = makeHarness({ projectionValues: { agentPreset: 'dev' } })
+    render(<WorktreesBadge {...props} />)
+    await waitFor(() => expect(summary).toHaveBeenCalledTimes(1))
+    fireEvent.focus(window)
+    await waitFor(() => expect(summary).toHaveBeenCalledTimes(2))
   })
 })

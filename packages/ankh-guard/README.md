@@ -183,7 +183,7 @@ dsh-ankh-guard restart \
 
 以 cordis 插件挂载（base bundle）后，同一套能力以 `selfRestartGuard` 服务的形式供应用内闸门使用。配置：`maxAgeMinutes`（默认 10）、`stateDir`、`repoDir`、`reportRestartContext`（默认 `followup`）、`fallbackGraceMs`（默认 300000）。
 
-除 verify/record/canary 等闸门外，服务还暴露 `requestRestart({ start, profile, initiator })`——UI 级调用方（如 mode-switcher）的进程内重启触发缝：`initiator` 必填（发起会话的真实 id），端口从 launch 记录自知；无活 watchdog 走 `restart`，受监督走 `reconfigure` 事务 cutover（受监督下唯一安全的换命令通道），凭证/preflight/marker/lock 全套闸门与 CLI 同源，拒绝返回结构化 `{ accepted, stage, reason }` 且绝不停机。浏览器侧，除 cutover receipt 通道外还有 boot 代际通道：普通重启或崩溃救回后，打开的标签页经 handoff 长轮询发现进程 boot id 已变，自动全页刷新一次拿到新 bundle；仅前台持续失败约 5 秒后显示带重试按钮的轻量连接提示；只有确认的 cutover 使用重启遮罩。后台或离线时间不计入失败时长；回前台或恢复联网立即清除退避并重新轮询；挂起的请求在 35 秒后超时，过期响应不能触发刷新。
+除 verify/record/canary 等闸门外，服务还暴露 `requestRestart({ start, profile, initiator })`——UI 级调用方（如 mode-switcher）的进程内重启触发缝：`initiator` 必填（发起会话的真实 id），端口从 launch 记录自知；无活 watchdog 走 `restart`，受监督走 `reconfigure` 事务 cutover（受监督下唯一安全的换命令通道），凭证/preflight/marker/lock 全套闸门与 CLI 同源，拒绝返回结构化 `{ accepted, stage, reason }` 且绝不停机。浏览器侧，除 cutover receipt 通道外还有 boot 代际通道：普通重启或崩溃救回后，打开的标签页经 handoff 长轮询发现进程 boot id 已变，自动全页刷新一次拿到新 bundle；刷新前会等新进程的组合挂载完成（Web-server 座位与兄弟行共用，端口刚应答时 `/api` 路由 owner 可能还没挂上；Loader 结算前一律回 `waiting` 且不下发 boot id，标签页保持陈旧 id 继续问，就绪即刷）；仅前台持续失败约 5 秒后显示带重试按钮的轻量连接提示；只有确认的 cutover 使用重启遮罩。后台或离线时间不计入失败时长；回前台或恢复联网立即清除退避并重新轮询；挂起的请求在 35 秒后超时，过期响应不能触发刷新。
 
 ## Model Experience
 
@@ -212,6 +212,10 @@ dsh-ankh-guard restart \
 - **脏树 checkpoint 默认拒绝**——`--include-dirty` 会提交整个 staged/unstaged/untracked 路径集，只能在逐项复核、用户明确批准且仓库策略允许时使用；纯重启直接跳过 checkpoint。
 - **`restart`/`supervise` 通过 `lsof` 发现监听者**（macOS / 带 lsof 的 Linux）；guard 优先使用系统绝对路径，其他平台需用 `--pid`。
 - **杀进程一律按单 pid identity + 后代回收，从不按进程组**——实例不是 setsid 的，所以 `restart`、`schedule-exit` 的退出代理和 watchdog 清理都针对已记录的 child/listener；cutover 强制路径先 `SIGSTOP`，再用 Linux boot/start-tick 或 macOS `proc_pidinfo` 微秒启动时间复核 identity，不匹配就只 `SIGCONT` 并拒绝，然后才沿 `pgrep -P` 冻结、复核亲缘并回收后代。普通非 cutover 端口恢复仍有受限的 listener 清理兜底；cutover 禁止凭端口选择或杀进程。
+
+## 测试并发
+
+进程集成测试默认并行运行 4 个分片，unit lane 上限为 2。资源紧张时可用 `DSH_TEST_MAX_WORKERS=1 pnpm --filter @khorsheed/dsh-ankh-guard test` 串行调度全部分片；全仓 `pnpm gate` 也可使用这个环境变量。只降低调度并发，不减少测试、延长断言期限或改变生产重启行为；无效值保留默认值。
 
 ## 变更记录
 

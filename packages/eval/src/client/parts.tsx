@@ -106,9 +106,28 @@ export function Word(props: { phrase: Phrase; t: LabViewProps['t']; title?: stri
  * be identical across the list, the matrix, the cells page and the report.
  * @param props - the tone, an optional hover title, and the word itself.
  */
-export function Chip(props: { tone?: Tone; title?: string | undefined; children: ReactNode }) {
-  const { tone = 'neutral', title, children } = props
-  return <span className={css.chipTag} data-tone={tone} title={title}>{children}</span>
+export function Chip(props: {
+  tone?: Tone
+  title?: string | undefined
+  /**
+   * One extra class for POSITIONING only — a chip is a grid item wherever the
+   * timeline puts it, and grid items stretch by default, which is how every
+   * timeline row grew an equal-length coloured bar that meant nothing
+   * (I5·T67 · W7). The tone and the shape stay the chip's own.
+   */
+  className?: string | undefined
+  children: ReactNode
+}) {
+  const { tone = 'neutral', title, className, children } = props
+  return (
+    <span
+      className={className === undefined ? css.chipTag : `${css.chipTag} ${className}`}
+      data-tone={tone}
+      title={title}
+    >
+      {children}
+    </span>
+  )
 }
 
 /**

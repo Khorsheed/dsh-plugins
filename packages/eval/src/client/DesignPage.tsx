@@ -28,9 +28,11 @@ import { useState } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
-  EvalExperimentDetail, EvalExperimentRow, EvalPlanCheck, EvalPlanReview, EvalRunOutputView,
+  EvalExperimentDetail, EvalExperimentRow, EvalPlanCheck, EvalPlanCondition, EvalPlanReview,
+  EvalRunOutputView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
+import type { EvalKey } from './locales.ts'
 import { ConditionsTable } from './ConditionsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import { RunGrid, plannedRows, type GridColumn } from './Grid.tsx'
@@ -41,6 +43,77 @@ import {
 import { factorPhrase, preferredColumn } from './vocab.ts'
 import type { ConditionActionNote, LabStartedRun } from './store.ts'
 import css from './LabView.module.css'
+
+/**
+ * Why ONE comparison group is not ready, in words, for the badge's cross row.
+ *
+ * The cross used to carry a name and nothing else, and the reasons sat below
+ * it inside validate's English warnings — so the page said 「5 个对比组里有 5
+ * 个未就绪」 and made a reader go hunting for five separate explanations
+ * (I5·T67 · W15).
+ *
+ * Read from the review's STRUCTURE wherever it can be: `status`, whether a
+ * lock is beside the declaration, whether it still matches, whether a scoped
+ * home was ever hashed. Only the unresolved endpoint has no structural field
+ * to read, so that one is recovered from the check list — by the `condition
+ * <id>: ` prefix validate itself writes. Nothing here parses a sentence for
+ * its MEANING: the code decides the word, the message only decides which
+ * group the check belongs to.
+ * @param entry - the review's row for this group.
+ * @param checks - validate's flat list, for the one field structure omits.
+ * @returns the reasons, most specific first; empty when it IS ready.
+ */
+function whyNotReady(entry: EvalPlanCondition, checks: readonly EvalPlanCheck[]): EvalKey[] {
+  if (entry.status === 'ready') return []
+  // No file is the whole answer — the other three cannot even be asked.
+  if (entry.status === 'missing') return ['why.file']
+  const why: EvalKey[] = []
+  const mine = checks.filter(check => check.message.includes(`condition ${entry.id}: `))
+  if (mine.some(check => check.code === 'UNRESOLVED_FIELD' && check.message.includes('model.endpoint'))) {
+    why.push('why.endpoint')
+  }
+  if (entry.lock.homeSha === null) why.push('why.homeSha')
+  if (!entry.lock.present) why.push('why.lock')
+  else if (!entry.lock.matches) why.push('conditions.lockStale')
+  return why.length > 0 ? why : ['why.other']
+}
+
+/**
+ * Every subject this experiment names, with whether it is ready and why not.
+ *
+ * The UNION is the fix for a badge that read 「✓ 环境就绪」 over an experiment
+ * whose two players were not in the repository at all (I5·T67 · W12): the
+ * readiness records only cover what the run actually PROBED, so a group that
+ * never got that far was not a red cross — it was absent, and absent counted
+ * as nothing rather than as a problem. Walking the plan's own subject list
+ * means a group can no longer disappear out of the count.
+ * @param subjects - the group ids the plan names, players then judges.
+ * @param detail - the started run's readiness records, when there are any.
+ * @param review - the plan review, when it has loaded.
+ * @param t - the locale seat.
+ * @returns one row per subject, in plan order.
+ */
+function readinessRows(
+  subjects: readonly string[],
+  detail: EvalExperimentDetail | null,
+  review: EvalPlanReview | null,
+  t: LabViewProps['t'],
+): Array<{ id: string; ok: boolean; note?: string | undefined }> {
+  const probed = new Map((detail?.readiness ?? []).map(line => [line.condition, line]))
+  const reviewed = new Map((review?.conditions ?? []).map(entry => [entry.id, entry]))
+  return subjects.map((id) => {
+    const line = probed.get(id)
+    if (line !== undefined) return { id, ok: line.ok, note: line.reason ?? undefined }
+    const entry = reviewed.get(id)
+    if (entry !== undefined) {
+      const why = whyNotReady(entry, review?.checks ?? [])
+      return { id, ok: why.length === 0, note: why.length === 0 ? undefined : why.map(key => t(key)).join(' · ') }
+    }
+    // Named by the plan, and neither probed nor resolved: nothing knows about
+    // this group, which is a state the badge must show rather than skip.
+    return { id, ok: false, note: t('conditions.missing') }
+  })
+}
 
 /**
  * The value of the experiment's primary comparison variable for one group —
@@ -306,19 +379,15 @@ export function DesignPage(props: {
   // The readiness verdict, from whichever half of the payload has one: a
   // started run recorded probes, an unstarted plan only has what validate
   // resolved. Same badge either way (ui-spec §九: one component).
-  const readyRows = detail !== null && detail.readiness.length > 0
-    ? detail.readiness.map(line => ({ id: line.condition, ok: line.ok, note: line.reason ?? undefined }))
-    : (review?.conditions ?? []).map(entry => ({
-      id: entry.id,
-      ok: entry.status === 'ready',
-      // The cross already says «not ready»; only a MISSING declaration adds
-      // something the badge cannot — the group is not merely unprovisioned,
-      // there is no file.
-      note: entry.status === 'missing' ? t('conditions.missing') : undefined,
-    }))
+  const readyRows = readinessRows(subjects, detail, review, t)
   // Only the lines that need reading: a clean plan renders as no list at all
   // rather than as a wall of green, and the passing ones stay under the fold.
-  const failing = (review?.checks ?? []).filter(check => check.severity !== 'ok')
+  // PLAN_UNREADABLE is pulled out of the list entirely — it is not a line
+  // about the plan, it is the plan not being there, and rendering it as one
+  // put `cannot read plan file: /Users/…` on the page (I5·T67 · W11).
+  const unreadable = (review?.checks ?? []).find(check => check.code === 'PLAN_UNREADABLE') ?? null
+  const failing = (review?.checks ?? [])
+    .filter(check => check.severity !== 'ok' && check.code !== 'PLAN_UNREADABLE')
   const passing = (review?.checks ?? []).filter(check => check.severity === 'ok')
   const single = groups.length < 2
   const repoMissing = conditions !== null && conditions.rows.length === 0 && (conditions.repo === '' || conditions.repo === null)
@@ -344,6 +413,18 @@ export function DesignPage(props: {
     <div className={css.overview}>
       {reviewLoading && review === null && <div className={css.empty}>{t('review.loading')}</div>}
       {reviewError !== null && <ErrorState what={t('review.error')} message={reviewError} t={t} />}
+      {/* The plan document is gone — usually with the dataset working tree it
+          lived in. Three-part seat, so the English sentence and the absolute
+          path are evidence under the fold rather than the page (§九). */}
+      {unreadable !== null && (
+        <ErrorState
+          what={t('error.planUnreadable')}
+          message={unreadable.message}
+          fix="error.planUnreadable.fix"
+          path={review?.planPath}
+          t={t}
+        />
+      )}
       {sentBack && <div className={css.notice}>{t('review.sentBack')}</div>}
       {row.planPath === null && <div className={css.notice}>{t('review.noPlan')}</div>}
 

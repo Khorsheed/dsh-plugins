@@ -1,8 +1,8 @@
 /**
  * T29 — a kimi round against a NAMED scoped home. The scope selects which
  * `KIMI_CODE_HOME` the round reads and writes; a resume may not change it, a
- * scoped round never goes to the resident `kimi acp` process, and it carries
- * no member channel (the bridge is declared in the DEFAULT scope's mcp.json).
+ * live round receives the same scoped home. Named exec scopes retain their
+ * existing isolation from the member channel.
  */
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
@@ -121,11 +121,12 @@ describe('kimi scoped home', () => {
     expect(wrong.specs).toHaveLength(0)
   })
 
-  it('refuses a scoped round that the live driver would serve', async () => {
-    const live = { disabled: false, startRound: vi.fn() }
+  it('passes the recorded scoped home to the live driver without an exec fallback', async () => {
+    const liveRun = { result: Promise.resolve({ status: 'done' }), dispose: vi.fn() }
+    const live = { disabled: false, startRound: vi.fn(async () => liveRun) }
     const { provider, specs } = mount({ kind: 'fresh', scope: 'eval-b' }, { live })
-    await expect(provider.start(request())).rejects.toThrow(/exec-only/)
-    expect(live.startRound).not.toHaveBeenCalled()
+    expect(await provider.start(request())).toBe(liveRun)
+    expect(live.startRound).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ homeDir: `${HOMES}/kimi@eval-b` }))
     expect(specs).toHaveLength(0)
   })
 })

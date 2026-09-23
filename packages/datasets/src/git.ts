@@ -5,6 +5,8 @@
  * worktrees.
  */
 import { execFile } from 'node:child_process'
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 /** One failed git invocation, stderr preserved for diagnostics. */
 export class GitError extends Error {
@@ -103,50 +105,61 @@ export async function listFiles(repo: string, commit: string, prefix: string): P
   return out.split('\0').filter(entry => entry !== '')
 }
 
-/** One parsed `git worktree list --porcelain` entry. */
-export interface WorktreeEntry {
-  path: string
-  head: string
-  detached: boolean
-  locked: boolean
-  /** Absent administrative entries (prunable, directory gone). */
-  prunable: boolean
+/**
+ * The realpath of a repository's git COMMON dir — the identity every worktree
+ * of one repository shares (`<main>/.git` for a checkout and each of its
+ * linked worktrees; the repository itself when bare). Answered from any path
+ * inside a work tree or a git dir.
+ * @param path - a checkout, a linked worktree, a `.git` dir, or a bare repository.
+ * @returns the canonical common dir.
+ */
+export async function gitCommonDir(path: string): Promise<string> {
+  const out = (await git(path, ['rev-parse', '--git-common-dir'])).trim()
+  return realpathSync(resolve(path, out))
 }
 
 /**
- * Parse `git worktree list --porcelain` output.
- * @param repo - repository path.
- * @returns the registered worktrees (including the main one).
+ * The committer date of one commit, ISO 8601 (`%cI`).
+ * @param repo - repository (or git dir) path.
+ * @param commit - a resolved commit sha.
+ * @returns the strict ISO date.
  */
-export async function listWorktrees(repo: string): Promise<WorktreeEntry[]> {
-  const out = await git(repo, ['worktree', 'list', '--porcelain'])
-  const entries: WorktreeEntry[] = []
-  let current: Partial<WorktreeEntry> | undefined
-  const flush = (): void => {
-    if (current?.path !== undefined) {
-      entries.push({
-        path: current.path,
-        head: current.head ?? '',
-        detached: current.detached ?? false,
-        locked: current.locked ?? false,
-        prunable: current.prunable ?? false,
-      })
-    }
-    current = undefined
+export async function commitDate(repo: string, commit: string): Promise<string> {
+  return (await git(repo, ['log', '-1', '--format=%cI', commit])).trim()
+}
+
+/**
+ * The repository's local branch names (`refs/heads/*`), sorted.
+ * @param repo - repository (or git dir) path.
+ * @returns the short branch names.
+ */
+export async function localBranches(repo: string): Promise<string[]> {
+  const out = await git(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'])
+  return out.split('\n').map(line => line.trim()).filter(line => line !== '').sort()
+}
+
+/**
+ * The branch a checkout has checked out, or undefined when detached.
+ * @param checkout - a work tree path.
+ * @returns the short branch name.
+ */
+export async function currentBranch(checkout: string): Promise<string | undefined> {
+  try {
+    return (await git(checkout, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).trim() || undefined
+  } catch {
+    return undefined
   }
-  for (const line of out.split('\n')) {
-    if (line === '') {
-      flush()
-    } else if (line.startsWith('worktree ')) {
-      flush()
-      current = { path: line.slice('worktree '.length) }
-    } else if (current !== undefined) {
-      if (line.startsWith('HEAD ')) current.head = line.slice('HEAD '.length)
-      else if (line === 'detached') current.detached = true
-      else if (line.startsWith('locked')) current.locked = true
-      else if (line.startsWith('prunable')) current.prunable = true
-    }
-  }
-  flush()
-  return entries
+}
+
+/**
+ * Write `git archive --format=tar <commit> -- <paths>` to a file. Reads only
+ * objects: no index, no HEAD, no worktree registration — safe against a
+ * checkout other agents share.
+ * @param repo - repository (or git dir) path.
+ * @param commit - a resolved commit sha.
+ * @param paths - repo-relative paths (validated by the caller); at least one.
+ * @param output - the tar file to write.
+ */
+export async function archiveTo(repo: string, commit: string, paths: readonly string[], output: string): Promise<void> {
+  await git(repo, ['archive', '--format=tar', `--output=${output}`, commit, '--', ...paths])
 }

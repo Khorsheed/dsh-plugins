@@ -80,12 +80,18 @@ export type EvalKey =
   | 'report.comparisonClosed'
   | 'report.singleCondition'
   | 'report.noPairs'
+  | 'report.openRecords'
+  | 'report.openRecord'
+  | 'report.criteriaOpenRecords'
+  | 'report.criteriaOpenRecord'
   | 'report.pairTitle'
   | 'report.pairNoTasks'
   | 'report.factorSingle'
   | 'report.factorMulti'
   | 'report.factorUnknown'
   | 'report.ci'
+  | 'report.ciAdvisory'
+  | 'report.ciWithheld'
   | 'report.rank'
   | 'report.selfJudged'
   | 'report.col.task'
@@ -93,6 +99,30 @@ export type EvalKey =
   | 'report.col.weightedDelta'
   | 'report.col.deltas'
   | 'report.col.n'
+  | 'report.criteria'
+  | 'report.criteriaHint'
+  | 'report.criteriaTotal'
+  | 'report.criteriaUndeclared'
+  | 'report.criteriaEvidence'
+  | 'report.criteriaNoEvidence'
+  | 'report.criteriaExpand'
+  | 'report.criteriaReps'
+  | 'report.criteriaWeighted'
+  | 'report.criteriaNotJudged'
+  | 'report.humanOverride'
+  | 'report.supersededBy'
+  | 'report.sampleLine'
+  | 'report.holds'
+  | 'report.holdsNot'
+  | 'report.polarityNegative'
+  | 'report.polarityPositive'
+  | 'report.col.criterion'
+  | 'report.col.axis'
+  | 'report.col.weight'
+  | 'report.col.polarity'
+  | 'source.human'
+  | 'source.llm'
+  | 'source.script'
   | 'report.col.judges'
   | 'report.col.condition'
   | 'report.col.model'
@@ -169,7 +199,7 @@ export type EvalKey =
   | 'judge.reexport'
   | 'judge.reexporting'
   | 'judge.regrade'
-  | 'judge.scoringWarning'
+  | 'judge.scoringMix'
   | 'judge.stats'
   | 'judge.statsSame'
   | 'judge.statsCross'
@@ -537,6 +567,8 @@ export type EvalKey =
   | 'runs.filter.blocked'
   | 'runs.col.verdict'
   | 'runs.filtered'
+  | 'runs.focus'
+  | 'runs.focusClear'
   | 'verdict.none'
   | 'verdict.human'
   | 'verdict.llm'
@@ -546,12 +578,21 @@ export type EvalKey =
   | 'record.ok'
   | 'record.failed'
   | 'record.scoreWhere'
+  | 'record.scoreMixed'
   | 'record.timeline'
   | 'record.timelineNone'
   | 'record.params'
   | 'record.attachments'
   | 'record.attachmentsNone'
-  | 'record.filePending'
+  | 'record.artifactLoading'
+  | 'record.artifactError'
+  | 'record.artifactDirEmpty'
+  | 'record.artifactBytes'
+  | 'record.judgeRounds'
+  | 'record.judgeSample'
+  | 'record.judgeSelf'
+  | 'record.judgeNoSession'
+  | 'record.openJudgeSession'
   | 'record.param.task'
   | 'record.param.condition'
   | 'record.param.rep'
@@ -570,6 +611,7 @@ export type EvalKey =
   | 'invariant.why.fingerprint'
   | 'invariant.why.subject'
   | 'invariant.why.procedure'
+  | 'invariant.why.verdict-coverage'
   | 'report.chart'
   | 'report.chart.activeMs'
   | 'report.chart.outputTokens'
@@ -588,6 +630,14 @@ export type EvalKey =
   | 'new.back'
   | 'new.next'
   | 'new.stepBlocked'
+  | 'runs.settled'
+  | 'error.planUnreadable'
+  | 'error.planUnreadable.fix'
+  | 'why.endpoint'
+  | 'why.homeSha'
+  | 'why.lock'
+  | 'why.file'
+  | 'why.other'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -688,7 +738,7 @@ export const en: Record<EvalKey, string> = {
   'judge.bundleStale': 'The exported bundle was written before these final verdicts, so it does not carry them. Export again to put them in it — the report goes with it, and the old directory is left alone.',
   'judge.reexport': 'Export again',
   'judge.reexporting': 'Exporting…',
-  'judge.scoringWarning': 'Recording here makes human-final this record\u2019s ONLY scoring source. The report scores each record from the most authoritative namespace that has any verdict at all, so these {count} criteria — judged only by llm-draft ({criteria}) — would stop counting toward this record\u2019s score. Answer them here too, or accept that the record scores on the human criteria alone.',
+  'judge.scoringMix': 'Your verdict covers only the criteria you answer here. The report scores each criterion from the most authoritative layer that judged IT, so these {count} criteria the judge answered and you do not ({criteria}) keep counting, on the judge\u2019s word. This record\u2019s score then comes from both, and the report says so beside it.',
   'judge.regrade': 'This record already carries a human-final verdict. Recording again APPENDS: the report reads the latest value per criterion, and the earlier one stays in the ledger.',
   'judge.stats': 'Grader agreement (live, from the ledger)',
   'judge.statsSame': 'One judge, resampled',
@@ -742,7 +792,7 @@ export const en: Record<EvalKey, string> = {
   'new.egress': 'egress check argv, space separated',
   'new.notes': 'Notes',
   'new.notesPlaceholder': 'What this comparison is for, and what it cannot settle',
-  'new.notStarting': 'Saving drafts and validates. Starting is 批准并启动 on the plan-review page; logging the harnesses in and provisioning their conditions come first, and both are yours.',
+  'new.notStarting': 'Saving drafts and validates. Starting is 批准并启动 on the Design stage; logging the harnesses in and provisioning their comparison groups come first, and both are yours.',
   'new.save': 'Save draft and validate',
   'new.saving': 'Saving…',
   'new.cancel': 'Cancel',
@@ -844,12 +894,18 @@ export const en: Record<EvalKey, string> = {
   'report.comparisonClosed': '{count} validity check(s) did not pass, so this experiment\u2019s records are not comparable yet. What follows is each arm on its own.',
   'report.singleCondition': 'One arm only: there is nothing to compare against, so what follows is the baseline.',
   'report.noPairs': 'No pair of arms produced comparable data.',
+  'report.openRecords': 'Open the run records behind this number ({task} × {condition}).',
+  'report.openRecord': 'Open the run record this verdict was written on ({record}).',
+  'report.criteriaOpenRecords': 'Open the records',
+  'report.criteriaOpenRecord': 'Open the record',
   'report.pairTitle': '{a} vs {b}',
   'report.pairNoTasks': 'No paired item (the two conditions ran disjoint item sets).',
   'report.factorSingle': 'differs in {factor}: {detail}',
   'report.factorMulti': 'differs in several fields: {fields} ({detail})',
   'report.factorUnknown': 'factor unknown — {detail}',
   'report.ci': 'mean Δ = {mean}, 95% CI [{lo}, {hi}] (bootstrap over reps × {samples}, seed {seed})',
+  'report.ciAdvisory': 'For reference only: the ranking condition is not met (every item needs 3 runs)',
+  'report.ciWithheld': 'Only {k} item(s) have a difference, so no interval can be given',
   'report.rank': 'Ranking',
   'report.selfJudged': 'self-judged',
   'report.col.task': 'Item',
@@ -857,6 +913,30 @@ export const en: Record<EvalKey, string> = {
   'report.col.weightedDelta': 'Δ weighted',
   'report.col.deltas': 'Δ per rep',
   'report.col.n': 'n',
+  'report.criteria': 'Per-criterion scores and the grounds behind them',
+  'report.criteriaHint': 'Each cell is what this criterion concluded in that arm: ✓ / ✗, or the proportion for a proportionally scored one; over several reps, how many it held in. The small print is where the SCORE came from — each criterion independently takes the most authoritative layer that judged it (human > judge > script), so one cell may mix them. Click a cell for the evidence and who wrote it.',
+  'report.criteriaTotal': 'Item total',
+  'report.criteriaUndeclared': 'Not in the rubric weight table — only the verdicts name it, so it is treated as declaring no weight and no polarity.',
+  'report.criteriaEvidence': 'Grounds',
+  'report.criteriaNoEvidence': 'This verdict recorded no evidence text.',
+  'report.criteriaExpand': 'Evidence for {criterion} in {condition}',
+  'report.criteriaReps': '{count} rep',
+  'report.criteriaWeighted': 'weighted {value}',
+  'report.criteriaNotJudged': 'Not judged in this arm',
+  'report.humanOverride': 're-judged by a person',
+  'report.supersededBy': 'superseded — the judge\u2019s original verdict, kept',
+  'report.sampleLine': 'rep {rep} · {source}',
+  'report.holds': 'holds',
+  'report.holdsNot': 'does not hold',
+  'report.polarityNegative': 'defect',
+  'report.polarityPositive': 'positive',
+  'report.col.criterion': 'Criterion',
+  'report.col.axis': 'Dimension',
+  'report.col.weight': 'Weight',
+  'report.col.polarity': 'Polarity',
+  'source.human': 'Human',
+  'source.llm': 'Judge',
+  'source.script': 'Script',
   'report.col.judges': 'Judges',
   'report.col.condition': 'Arm',
   'report.col.model': 'Model',
@@ -881,7 +961,7 @@ export const en: Record<EvalKey, string> = {
   'report.judgeHuman': 'llm-draft vs human-final',
   'report.judgeSelf': 'Self-judged criteria',
   'report.notes': 'Notes and reservations',
-  'report.finalize': 'finalize',
+  'report.finalize': 'Close out',
   'report.finalizeConfirm': 'Yes, walk the gate',
   'report.finalizeConfirmAsk': 'finalize walks EVERY archived cell of this run through the release gate (archived → releasable → released). A refused gate is recorded, never forced.',
   'report.finalizeCancel': 'Cancel',
@@ -904,7 +984,7 @@ export const en: Record<EvalKey, string> = {
   'notice.finalized': 'finalize: {released} released, {refused} gate-refused, {skipped} skipped; containers: {unitsReleased} reclaimed, {unitsHeld} still up',
   'notice.reexported': 'exported again into {dir} ({count} files) — report written, and the previous bundle is untouched',
   'review.loading': 'Validating the plan…',
-  'review.error': 'Failed to review the plan',
+  'review.error': 'Failed to read the plan',
   'review.noPlan': 'This run records no plan document, so there is nothing to review — its run.meta is on the overview.',
   'review.planPath': 'Plan document',
   'review.order': 'Order',
@@ -1032,9 +1112,9 @@ export const en: Record<EvalKey, string> = {
   'factor.other': 'Other field',
   'factors.plusIncidental': '+{count} more',
   'list.emptyAction': 'Create the first experiment',
-  'list.emptyHint': 'Draft one here, or ask the agent in chat for one — either way it lands in this list as a draft, and starting it is still a click on the plan-review page.',
+  'list.emptyHint': 'Draft one here, or ask the agent in chat for one — either way it lands in this list as a draft, and starting it is still a click on the Design stage.',
   'draft.notStarted': 'Not started yet',
-  'draft.notStartedHint': 'This page fills in once a human approves the plan and starts the run — go to Plan review.',
+  'draft.notStartedHint': 'This page fills in once a human approves the plan and starts the run — go to Design.',
   // The same seat, for a run that HAS been started: the approval receipt named
   // it, so 还没启动 would be false here — it is the ledger that has not caught
   // up yet, and this page catches up by itself (I5·T39 · G11).
@@ -1051,7 +1131,7 @@ export const en: Record<EvalKey, string> = {
   'matrix.stuckChip': 'stuck {minutes} min',
   'matrix.incidental': '{count} more field(s) vary with the arms',
   'matrix.incidentalHint': 'These follow from the variables above — the credential variable a harness dictates, the digest of a provisioned home — so they are reported rather than offered as a column.',
-  'matrix.emptyHint': 'No record survives the current pins. Clear them under «Column, bands and pins», or check the plan review.',
+  'matrix.emptyHint': 'No record survives the current pins. Clear them under «Column, bands and pins», or check the Design stage.',
   'cells.emptyHint': 'No record of this experiment is in that state right now.',
   'cells.emptyClear': 'Show every state',
   'drawer.attemptNo': 'attempt {attempt}',
@@ -1135,13 +1215,15 @@ export const en: Record<EvalKey, string> = {
   'runs.filter.done': 'Done',
   'runs.filter.failed': 'Failed',
   'runs.filter.blocked': 'Blocked',
-  'runs.col.verdict': 'Score',
+  'runs.col.verdict': 'Verdict',
   'runs.filtered': '{matched} of {total}',
+  'runs.focus': 'Narrowed to {task} × {condition} — {matched} record(s) from the comparison page.',
+  'runs.focusClear': 'Show every record',
   'verdict.none': 'Not judged',
   'verdict.human': 'Final verdict',
   'verdict.llm': 'Judge draft',
   'verdict.script': 'Script',
-  'verdict.hint': 'Which verdict source this cell carries. The scores themselves are computed from the exported bundle — they are on the results page.',
+  'verdict.hint': 'The most authoritative verdict layer this cell carries. The scores themselves are computed from the exported bundle, per criterion from the best layer that judged it — they are on the results page.',
 
   // ── the record detail, the validity hovers, the side-by-side
   //    bench and the four-step wizard (ui-spec §五 v2, I5·T67) ────────────
@@ -1149,12 +1231,21 @@ export const en: Record<EvalKey, string> = {
   'record.ok': 'Finished',
   'record.failed': 'Stopped',
   'record.scoreWhere': 'The scores are computed from the exported bundle — they are on the results page.',
+  'record.scoreMixed': 'This record carries verdicts in several layers ({sources}). The report scores EACH criterion from the most authoritative layer that judged it, so this record\u2019s score comes from more than one — the results page names which, criterion by criterion.',
   'record.timeline': 'Stage timeline',
   'record.timelineNone': 'The ledger recorded no transition times for this attempt.',
   'record.params': 'Parameters',
   'record.attachments': 'Attachments',
   'record.attachmentsNone': 'This attempt recorded no artifacts.',
-  'record.filePending': 'Preview and download need a host file service this tab does not have yet; the path is here so it can be opened from a terminal.',
+  'record.artifactLoading': 'Reading…',
+  'record.artifactError': 'this attachment',
+  'record.artifactDirEmpty': 'Nothing in this directory.',
+  'record.artifactBytes': '{bytes} bytes on disk.',
+  'record.judgeRounds': 'Judge rounds',
+  'record.judgeSample': 'sample {sample}',
+  'record.judgeSelf': 'judged its own group',
+  'record.judgeNoSession': 'This round never started a session — its error is beside it.',
+  'record.openJudgeSession': 'Open the judge session',
   'record.param.task': 'Item',
   'record.param.condition': 'Comparison group',
   'record.param.rep': 'Rep',
@@ -1173,6 +1264,7 @@ export const en: Record<EvalKey, string> = {
   'invariant.why.fingerprint': 'Why it matters: the cells have to have run in the same class of environment. If they did not, the difference carries the machine as well as the subject.',
   'invariant.why.subject': 'Why it matters: the model each cell actually ran has to be the one it declared. If it is not, this comparison is between something other than what it says it is.',
   'invariant.why.procedure': 'Why it matters: the run has to record which orchestrator version and which plan produced it. Without that nobody can reproduce it or check it.',
+  'invariant.why.verdict-coverage': 'Why it matters: each criterion has to have been judged the same way on both sides — by a judge or a person on both, or on neither. If one side has a judge’s verdict and the other only a script’s, the difference is between two instruments, not two arms; that pair is described, not ranked.',
   'report.chart': 'Efficiency at a glance',
   'report.chart.activeMs': 'Active time',
   'report.chart.outputTokens': 'Output tokens',
@@ -1191,6 +1283,16 @@ export const en: Record<EvalKey, string> = {
   'new.back': 'Back',
   'new.next': 'Next',
   'new.stepBlocked': 'Fill this step in before going on.',
+
+  // ── the walkthrough fixups (I5·T67 補, W4–W15) ─────────────────────────
+  'runs.settled': 'This record is finished — nothing is elapsing here. How long it took is on its timeline.',
+  'error.planUnreadable': 'The plan document is not there any more',
+  'error.planUnreadable.fix': 'Its dataset working tree was probably deleted. Re-create the working tree, or read the run from its run records and results — a finished run keeps its own copy of what the plan said.',
+  'why.endpoint': 'the endpoint is not resolved',
+  'why.homeSha': 'the home digest was never written back',
+  'why.lock': 'no lock beside the declaration',
+  'why.file': 'the declaration file is not there',
+  'why.other': 'validate refused it — the reason is under Details',
 }
 
 /** 中文词典。 */
@@ -1284,7 +1386,7 @@ export const zh: Record<EvalKey, string> = {
   'judge.bundleStale': '已导出的 bundle 写在这些终评之前，里面没有它们。重新导出一次就带上了——报告一起写，旧目录不动。',
   'judge.reexport': '重新导出',
   'judge.reexporting': '正在导出…',
-  'judge.scoringWarning': '在这里记分会让人工终评成为这条记录**唯一**的计分来源。报告按最权威的那个有判定的命名空间给每条记录计分，所以这 {count} 条只有判官初评的判据（{criteria}）将不再计入本条记录的得分。要么在这里也把它们答了，要么接受这条记录只按人工判据计分。',
+  'judge.scoringMix': '你在这里打的分**只覆盖你答的那几条判据**。报告逐条判据取最权威的那一层，所以这 {count} 条你不答、判官答过的判据（{criteria}）仍按判官的计入得分。这条记录的得分来源随之变成「人 + 判官」的混合，报告页会在得分旁标出来。',
   'judge.regrade': '这条记录已经有人工终评了。再记一次是**追加**：报告读每条判据的最新值，早先那次留在账本里。',
   'judge.stats': '评分者一致性（实时，来自账本）',
   'judge.statsSame': '同一判官重复采样',
@@ -1326,7 +1428,7 @@ export const zh: Record<EvalKey, string> = {
   'new.judgeSamples': '每格采样数',
   'new.stages': '阶段',
   'new.stagesEmpty': '这个题集没有阶段 schema',
-  'new.reps': 'rep',
+  'new.reps': '次数',
   'new.seed': '顺序 seed',
   'new.interleave': '交错（同一对比组的运行记录不连着排）',
   'new.budget': '预算',
@@ -1338,8 +1440,8 @@ export const zh: Record<EvalKey, string> = {
   'new.egress': '出网自检 argv，空格分隔',
   'new.notes': '备注',
   'new.notesPlaceholder': '这次比较是为了回答什么，又答不了什么',
-  'new.notStarting': '保存＝起草并校验。启动是计划审阅页的「批准并启动」；在那之前还要人去登录各家、给对比组准备环境。',
-  'new.save': '保存草稿并 validate',
+  'new.notStarting': '保存＝起草并校验。启动是实验设计页的「批准并启动」；在那之前还要人去登录各家、给对比组准备环境。',
+  'new.save': '保存草稿并校验',
   'new.saving': '保存中…',
   'new.cancel': '取消',
   'new.error': '草稿没写成',
@@ -1440,19 +1542,49 @@ export const zh: Record<EvalKey, string> = {
   'report.comparisonClosed': '实验有效性校验有 {count} 条没通过，这次实验的各条记录之间还不可比。下面是各组各自的表现。',
   'report.singleCondition': '当前为单对比组实验，无对比数据，下方是基线表现。',
   'report.noPairs': '没有任何一对对比组给出了可比的数据。',
+  'report.openRecords': '打开这个数背后的运行记录（{task} × {condition}）。',
+  'report.openRecord': '打开这条判定写在哪条运行记录上（{record}）。',
+  'report.criteriaOpenRecords': '打开运行记录',
+  'report.criteriaOpenRecord': '打开这条运行记录',
   'report.pairTitle': '{a} 对 {b}',
   'report.pairNoTasks': '没有共同的题（两个对比组的题集不相交）。',
   'report.factorSingle': '差在「{factor}」：{detail}',
   'report.factorMulti': '差在多项：{fields}（{detail}）',
   'report.factorUnknown': '对比变量未知——{detail}',
   'report.ci': '平均 Δ = {mean}，95% 置信区间 [{lo}, {hi}]（bootstrap 重采样 rep × {samples}，seed {seed}）',
+  'report.ciAdvisory': '仅供参考，未达排名条件（每题需跑满 3 次）',
+  'report.ciWithheld': '只有 {k} 道题有差值，给不出区间',
   'report.rank': '名次判定',
   'report.selfJudged': '自评',
   'report.col.task': '题',
   'report.col.delta': 'Δ 得分',
   'report.col.weightedDelta': 'Δ 加权',
-  'report.col.deltas': '逐 rep Δ',
+  'report.col.deltas': '逐次 Δ',
   'report.col.n': 'n',
+  'report.criteria': '判据 × 对比组（每条判据的得分与判官依据）',
+  'report.criteriaHint': '格内是该判据在该组的结论：✓ / ✗ 成立与否（负向判据成立即缺陷），按比例给分的写比例，多次运行写成立次数。小字是这格**得分的来源**——逐判据取最权威的那一层（人 > 判官 > 脚本），所以同一格可以混合。点格子看证据原文与是谁写的。',
+  'report.criteriaTotal': '本题总分',
+  'report.criteriaUndeclared': '不在 rubric 权重表里——只有判定记录提到它，按未声明权重与极性处理。',
+  'report.criteriaEvidence': '判官依据',
+  'report.criteriaNoEvidence': '这条判定没写证据原文。',
+  'report.criteriaExpand': '{condition} 上 {criterion} 的证据',
+  'report.criteriaReps': '{count} 次',
+  'report.criteriaWeighted': '加权 {value}',
+  'report.criteriaNotJudged': '这个对比组没判这条',
+  'report.humanOverride': '人已改判',
+  'report.supersededBy': '已被改判——判官原判，保留',
+  'report.sampleLine': '第 {rep} 次 · {source}',
+  'report.holds': '成立',
+  'report.holdsNot': '不成立',
+  'report.polarityNegative': '负向',
+  'report.polarityPositive': '正向',
+  'report.col.criterion': '判据',
+  'report.col.axis': '维度',
+  'report.col.weight': '权重',
+  'report.col.polarity': '极性',
+  'source.human': '人',
+  'source.llm': '判官',
+  'source.script': '脚本',
   'report.col.judges': '判官',
   'report.col.condition': '对比组',
   'report.col.model': '模型',
@@ -1477,7 +1609,7 @@ export const zh: Record<EvalKey, string> = {
   'report.judgeHuman': '判官初评与人工终评',
   'report.judgeSelf': '自评判据数',
   'report.notes': '附注与保留条款',
-  'report.finalize': 'finalize',
+  'report.finalize': '终评收口',
   'report.finalizeConfirm': '确认走闸',
   'report.finalizeConfirmAsk': 'finalize 会把这次实验每一条已归档的运行记录走一遍释放闸（已归档 → 可释放 → 已释放），过闸的销毁其容器。要继续吗？',
   'report.finalizeCancel': '取消',
@@ -1500,7 +1632,7 @@ export const zh: Record<EvalKey, string> = {
   'notice.finalized': 'finalize：{released} 释放、{refused} 被闸拒、{skipped} 跳过；容器：{unitsReleased} 已回收、{unitsHeld} 仍在',
   'notice.reexported': '已重新导出到 {dir}（{count} 个文件）——报告一并写了，上一份 bundle 原样保留',
   'review.loading': '正在校验计划…',
-  'review.error': '计划审阅加载失败',
+  'review.error': '计划读取失败',
   'review.noPlan': '这个 run 没有记录计划文件，无从审阅——它的 run.meta 在概览页。',
   'review.planPath': '计划文件',
   'review.order': '顺序',
@@ -1628,9 +1760,9 @@ export const zh: Record<EvalKey, string> = {
   'factor.other': '其它字段',
   'factors.plusIncidental': '另 {count} 项',
   'list.emptyAction': '新建第一个实验',
-  'list.emptyHint': '在这里起一个草稿，或者在会话里让 agent 起——两条路都落在这张列表里，都是草稿；启动仍是计划审阅页上的一次点击。',
+  'list.emptyHint': '在这里起一个草稿，或者在会话里让 agent 起——两条路都落在这张列表里，都是草稿；启动仍是实验设计页上的一次点击。',
   'draft.notStarted': '还没启动',
-  'draft.notStartedHint': '人在计划审阅页批准并启动之后，这一页才有内容——去「计划审阅」。',
+  'draft.notStartedHint': '人在实验设计页批准并启动之后，这一页才有内容——去「实验设计」。',
   'draft.starting': '正在启动',
   'draft.startingHint': 'run 已经建了，这一页稍后自己会拉到，不用点刷新。',
   'overview.metaRaw': 'run.meta 原文',
@@ -1644,7 +1776,7 @@ export const zh: Record<EvalKey, string> = {
   'matrix.stuckChip': '卡住 {minutes} 分钟',
   'matrix.incidental': '另有 {count} 项字段随对比组而变',
   'matrix.incidentalHint': '它们是上面那些对比变量带出来的——harness 决定凭据变量名，家目录落地才有指纹——所以只报告，不做成列或筛选。',
-  'matrix.emptyHint': '当前筛选下没有记录。到「换列 · 分组 · 筛选」里清掉筛选，或去计划审阅页看这次实验展开了什么。',
+  'matrix.emptyHint': '当前筛选下没有记录。到「换列 · 分组 · 筛选」里清掉筛选，或回实验设计页看这次实验展开了什么。',
   'cells.emptyHint': '这次实验现在没有记录落在这个状态里。',
   'cells.emptyClear': '看全部状态',
   'drawer.attemptNo': '第 {attempt} 次尝试',
@@ -1728,13 +1860,15 @@ export const zh: Record<EvalKey, string> = {
   'runs.filter.done': '完成',
   'runs.filter.failed': '失败',
   'runs.filter.blocked': '阻塞',
-  'runs.col.verdict': '得分',
+  'runs.col.verdict': '判定',
   'runs.filtered': '{matched} / {total}',
+  'runs.focus': '只看 {task} × {condition}——从结果对比页过来的 {matched} 条记录。',
+  'runs.focusClear': '看全部记录',
   'verdict.none': '未判',
   'verdict.human': '终评',
   'verdict.llm': '判官初判',
   'verdict.script': '脚本判定',
-  'verdict.hint': '这格带的是哪一种判定。分数本身是从导出的 bundle 里算的，在结果对比页。',
+  'verdict.hint': '这格带的判定里最权威的那一层。分数本身是从导出的 bundle 里算的，逐条判据取判过它的最权威那一层，在结果对比页。',
 
   // ── the record detail, the validity hovers, the side-by-side
   //    bench and the four-step wizard (ui-spec §五 v2, I5·T67) ────────────
@@ -1742,12 +1876,21 @@ export const zh: Record<EvalKey, string> = {
   'record.ok': '成功',
   'record.failed': '异常',
   'record.scoreWhere': '分数是从导出的 bundle 里算的，在结果对比页。',
+  'record.scoreMixed': '这条记录在多个层上都有判定（{sources}）。报告**逐条判据**取判过它的最权威那一层，所以这条记录的得分来自不止一个来源——具体哪条判据取了哪一层，在结果对比页上逐条标着。',
   'record.timeline': '阶段时间轴',
   'record.timelineNone': '账本没记这次尝试的转移时间。',
   'record.params': '参数配置',
   'record.attachments': '附件',
   'record.attachmentsNone': '这次尝试没记下产物。',
-  'record.filePending': '预览和下载要宿主的文件服务，这个 tab 还没有；路径放在这里，可以从终端打开。',
+  'record.artifactLoading': '读取中……',
+  'record.artifactError': '这个附件',
+  'record.artifactDirEmpty': '这个目录是空的。',
+  'record.artifactBytes': '磁盘上 {bytes} 字节。',
+  'record.judgeRounds': '判官轮次',
+  'record.judgeSample': '第 {sample} 次采样',
+  'record.judgeSelf': '判了自己那组',
+  'record.judgeNoSession': '这一轮没起会话——错误写在旁边。',
+  'record.openJudgeSession': '打开判官会话',
   'record.param.task': '题',
   'record.param.condition': '对比组',
   'record.param.rep': '次',
@@ -1766,6 +1909,7 @@ export const zh: Record<EvalKey, string> = {
   'invariant.why.fingerprint': '为什么影响比较：各格必须跑在同一类环境里。不是，差值里混进来的就是机器，而不只是被试。',
   'invariant.why.subject': '为什么影响比较：每一格实际跑的模型必须就是它声明的那个。不是，这份对比比的就不是它说的那两个东西。',
   'invariant.why.procedure': '为什么影响比较：这次 run 得记下是哪版编排器、按哪份计划跑的。记不下，谁都复现不了，也核对不了。',
+  'invariant.why.verdict-coverage': '为什么影响比较：每条判据在两边得是同一类判定——都有判官或人判过，或者都没有。一边是判官的判定、另一边只剩脚本，差值比的就是两种量具而不是两个组；这一对只做描述，不给区间和名次。',
   'report.chart': '效率一眼看',
   'report.chart.activeMs': '活跃时长',
   'report.chart.outputTokens': '输出 token',
@@ -1784,4 +1928,14 @@ export const zh: Record<EvalKey, string> = {
   'new.back': '上一步',
   'new.next': '下一步',
   'new.stepBlocked': '这一步填完才能往下走。',
+
+  // ── the walkthrough fixups (I5·T67 補, W4–W15) ─────────────────────────
+  'runs.settled': '这条记录已经结束了，没有在走的时长。它花了多久看时间轴。',
+  'error.planUnreadable': '计划文件不在了',
+  'error.planUnreadable.fix': '多半是它那个题库工作树被删了。重建工作树，或者直接从运行记录与结果对比读这次 run——跑完的 run 自己留了一份计划说了什么。',
+  'why.endpoint': '端点未解析',
+  'why.homeSha': '家目录指纹未写回',
+  'why.lock': '声明旁边没有锁',
+  'why.file': '声明文件不在',
+  'why.other': '校验没过——原因在「详情」里',
 }

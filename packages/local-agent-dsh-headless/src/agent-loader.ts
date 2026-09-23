@@ -127,16 +127,11 @@ export async function joinSubDshPreset(ctx: Context, agentCtx: Context): Promise
  */
 export async function loadSubDshAgent(
   ctx: Context,
-  identity: { sessionId?: string; resumeSessionId?: string; model?: string },
+  identity: { sessionId?: string; resumeSessionId?: string; model?: string; effort?: string },
 ): Promise<AgentHandle> {
   const agents = ctx.get('agents')
-  const defaultModel = ctx.get('agentDefaultModel')
-  if (agents === undefined || defaultModel === undefined) {
-    throw new Error('local-agent-dsh-headless: the agents/agentDefaultModel services are not mounted')
-  }
-  // The instance default is the base; `--model` overrides it for this launch
-  // (one-shot: this round; `--serve`: every session the process hosts).
-  const selection = applyModelRequest(defaultModel.currentSelection(), identity.model)
+  if (agents === undefined) throw new Error('local-agent-dsh-headless: the agents service is not mounted')
+  const selection = await resolveSubDshSelection(ctx, identity.model, identity.effort)
   // This bundle composes no preset roster, so the model-facing rows sit in the
   // host plane and the agent reads them from the global layer. A deployment
   // that DOES configure one has to join it here first
@@ -167,4 +162,24 @@ export async function loadSubDshAgent(
     agentOptions,
     setup,
   })
+}
+
+/** Validate the actual sub-instance's configuration without creating a session or generating. */
+export async function resolveSubDshSelection(ctx: Context, model?: string, effort?: string, validateModel = false): Promise<ModelSelection> {
+  const defaults = ctx.get('agentDefaultModel')
+  if (defaults === undefined) throw new Error('local-agent-dsh-headless: agentDefaultModel is not mounted')
+  const selection = applyModelRequest(defaults.currentSelection(), model)
+  if (effort === undefined && !validateModel) return selection
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const info = await Promise.race([
+      ctx.get('llm')?.resolveModelInfo(selection.provider, selection.model, AbortSignal.timeout(5_000)),
+      new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('Sub-DSH model validation timed out')), 5_000); timer.unref() }),
+    ])
+    if (info === undefined) throw new Error('The sub-DSH adapter cannot resolve the requested model')
+    if (effort === undefined) return selection
+    const native = info.reasoning?.efforts.find(option => String(option.id) === effort)
+    if (native === undefined) throw new Error('The sub-DSH model does not advertise the requested reasoning effort')
+    return { ...selection, reasoningEffort: native.id }
+  } finally { if (timer !== undefined) clearTimeout(timer) }
 }

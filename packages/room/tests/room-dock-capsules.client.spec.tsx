@@ -51,7 +51,7 @@ interface Bench {
 }
 
 /** Render the capsules against a store primed with the fixture. */
-async function bench(options: { room?: boolean; state?: RoomState } = {}): Promise<Bench> {
+async function bench(options: { room?: boolean; state?: RoomState; formalPlans?: boolean } = {}): Promise<Bench> {
   const isRoom = options.room !== false
   const state = options.state ?? STATE
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
@@ -73,7 +73,7 @@ async function bench(options: { room?: boolean; state?: RoomState } = {}): Promi
   }))
   const browseDirectory = vi.fn(async () => '/home/user/picked')
   const props = {
-    sessionId: SESSION, roomStore, addTask, closeTask, setGoal,
+    sessionId: SESSION, roomStore, addTask, closeTask, setGoal, formalPlans: options.formalPlans,
     roomCwd: '/home/user/room', invite, listProviders, browseDirectory, t,
   } as unknown as RoomDockCapsulesProps
   render(<RoomDockCapsules {...props} />)
@@ -84,6 +84,13 @@ describe('RoomDockCapsules', () => {
   it('renders nothing for a non-room session', async () => {
     await bench({ room: false })
     expect(screen.queryByRole('button', { name: '目标' })).toBeNull()
+  })
+
+  it('keeps chat task history without a second goal editor when formal plans are available', async () => {
+    await bench({ formalPlans: true })
+    expect(screen.queryByRole('button', { name: '目标' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '聊天任务' }))
+    expect(screen.getByText('出方案')).toBeDefined()
   })
 
   it('collapsed row: the goal capsule carries ring percent + text, the task capsule done/total and runners', async () => {

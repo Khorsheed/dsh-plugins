@@ -1,0 +1,152 @@
+/* Register form styles: the path row with the live verdict line, the
+   registration's shape (id, tracked branch, per-set layer chips), and the
+   action row. */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 560px;
+}
+
+.title {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Path input + native chooser on one line. */
+.pathRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pathRow > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The live preview verdict under the path input. */
+.preview {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 18px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.previewLoading {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.previewOk {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.previewError {
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.previewEmpty {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The registration's shape: id, branch, per-set layers. */
+.shape {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fieldLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.select {
+  width: fit-content;
+  min-width: 160px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+
+/* One set per line: its id, then its layer chips. */
+.setRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.setName {
+  min-width: 120px;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.chipGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chipGroupLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notice {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}

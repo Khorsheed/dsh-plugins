@@ -136,7 +136,7 @@ export type PackageJson = Record<string, unknown> & {
   peerDependencies?: Record<string, string>
   peerDependenciesMeta?: Record<string, unknown>
   devDependencies?: Record<string, string>
-  dsh?: { references?: string[] }
+  dsh?: { references?: string[], runtimeDependencies?: readonly string[] }
 }
 
 /**
@@ -311,10 +311,24 @@ export function rescopePackageJson(
   // They do NOT mount anything: `dsh plugin add` reconciles only the profile's
   // *direct* dependencies into its bundles layer, so a transitive family edge
   // keeps the module resolvable and leaves the row unmounted.
+  //
+  // Second exception: `dsh.runtimeDependencies` (an explicit opt-in list).
+  // A dependency the package deliberately does NOT bundle (capture's
+  // puppeteer-core / @puppeteer/browsers, consumed via runtime dynamic import)
+  // must still be installed alongside the dist package — name it there and the
+  // entry survives verbatim. Naming something absent from `dependencies` fails
+  // loud: a kept entry that points nowhere is worse than a dropped one.
+  const keepRuntime = new Set(pkg.dsh?.runtimeDependencies ?? [])
+  for (const dep of keepRuntime) {
+    if (out.dependencies?.[dep] === undefined) {
+      throw new Error(`dsh.runtimeDependencies names ${dep}, which is not in dependencies`)
+    }
+  }
   const deps = Object.fromEntries(
-    Object.entries(out.dependencies ?? {}).flatMap(([dep]) => {
+    Object.entries(out.dependencies ?? {}).flatMap(([dep, range]) => {
       const member = family?.get(dep)
-      return member === undefined ? [] : [[member.distName, familyEdgeRange(member, dep, 'dependencies')]]
+      if (member !== undefined) return [[member.distName, familyEdgeRange(member, dep, 'dependencies')]]
+      return keepRuntime.has(dep) ? [[dep, range]] : []
     }),
   )
   if (Object.keys(deps).length > 0) out.dependencies = deps
@@ -539,7 +553,19 @@ export function verifyTarball(tarball: string, staging: string, selfName: string
   }
 
   const manifest = JSON.parse(readFileSync(join(staging, 'package.json'), 'utf8')) as PackageJson
-  const declared = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {})])
+  // A devDependency counts as a declaration: pack-dist itself renames and ranges
+  // family devDependencies into the dist manifest (see the rewrite above), and a
+  // source-plane sibling — a helper inlined into this package's bundle at build
+  // time — is ONLY ever a devDependency (a runtime dependency on it would be a
+  // registry edge nobody installs). Without this, such a package could never
+  // pass its own verifier: its emitted type declarations and its dead tsc
+  // intermediates mention the sibling by name, while every honest field for the
+  // edge is the one this check used to ignore.
+  const declared = new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.peerDependencies ?? {}),
+    ...Object.keys(manifest.devDependencies ?? {}),
+  ])
   // Data mentions are not edges: `dsh.references` names a sibling the artifacts
   // mention as data (a preset-visibility probe's companion row name) without
   // depending on it — declared here, never in a dependency field (a core and

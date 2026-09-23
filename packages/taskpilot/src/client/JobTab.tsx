@@ -6,7 +6,10 @@
  * as navigation params (`openTab('taskpilot', { params: { jobId } })` from
  * the dock pill); pages deduplicate, so picking another job re-navigates this
  * tab and the body follows `navigation.params` / `navigation.revision`.
- * Reads only product-provided data — no new RPC surface, no product change.
+ * A live job's duration ticks once per second on the same clock discipline as
+ * the dock pill; a duration that cannot be computed renders `—` rather than a
+ * misleading `0s`. Reads only product-provided data — no new RPC surface, no
+ * product change.
  *
  * @module dsh-taskpilot/client/job-tab
  */
@@ -64,6 +67,11 @@ function formatDuration(elapsedMs: number, t: T): string {
   if (hours > 0) return t('duration.hours', { hours, minutes })
   if (minutes > 0) return t('duration.minutes', { minutes, seconds })
   return t('duration.seconds', { seconds })
+}
+
+/** A job the registry still holds open, and whose duration therefore ticks. */
+function isLive(job: JobView): boolean {
+  return job.status === 'running' || job.status === 'stopping'
 }
 
 function statusText(status: JobView['status'], t: T): string {
@@ -167,10 +175,26 @@ export function JobTab(props: JobTabProps): React.ReactElement {
     setBeforeSeq(minSeq(rows))
   }
 
+  // The duration clock: a live job's elapsed time is `now - startedAt`, so the
+  // tab needs the same once-per-second tick as the dock pill — without it a
+  // running job froze at 0s (`finishedAt` is absent until settlement).
+  const live = job !== undefined && isLive(job)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!live) return
+    setNow(Date.now())
+    const timer = setInterval(() => { setNow(Date.now()) }, 1_000)
+    return () => { clearInterval(timer) }
+  }, [live])
+
   const durationMs = useMemo(() => {
-    if (job === undefined) return 0
-    return (job.finishedAt ?? job.startedAt) - job.startedAt
-  }, [job])
+    if (job === undefined) return undefined
+    // Settled jobs report their exact span; live ones follow the clock; a
+    // terminal row that never carried `finishedAt` has no computable duration
+    // and renders `—` (never a fabricated 0s).
+    const end = job.finishedAt ?? (isLive(job) ? now : undefined)
+    return end === undefined ? undefined : end - job.startedAt
+  }, [job, now])
 
   return (
     <div className={css.body}>
@@ -184,7 +208,7 @@ export function JobTab(props: JobTabProps): React.ReactElement {
           )}
           <div className={css.metaRow}><span className={css.metaKey}>{t('drawer.meta.started')}</span><span className={css.metaValue}>{formatDateTime(job.startedAt)}</span></div>
           <div className={css.metaRow}><span className={css.metaKey}>{t('drawer.meta.finished')}</span><span className={css.metaValue}>{job.finishedAt === undefined ? '—' : formatDateTime(job.finishedAt)}</span></div>
-          <div className={css.metaRow}><span className={css.metaKey}>{t('drawer.meta.duration')}</span><span className={css.metaValue}>{formatDuration(durationMs, t)}</span></div>
+          <div className={css.metaRow}><span className={css.metaKey}>{t('drawer.meta.duration')}</span><span className={css.metaValue}>{durationMs === undefined ? '—' : formatDuration(durationMs, t)}</span></div>
         </section>
       )}
 

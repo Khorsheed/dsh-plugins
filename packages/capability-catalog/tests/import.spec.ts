@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateRawSync } from 'node:zlib'
@@ -12,6 +12,7 @@ import {
   isZipPayload,
   listDirSkills,
   managedRoot,
+  parseRepoSpec,
   resolveSkillNameFromContent,
 } from '../src/import.ts'
 import { extractZip } from '../src/zip.ts'
@@ -312,5 +313,329 @@ describe('listDirSkills self vs child', () => {
     const res = await commandInstall(req, home)
     expect(res).toEqual({ ok: true, name: 'wechat-reading' })
     expect(await readFile(join(home, 'skills', 'wechat-reading', 'SKILL.md'), 'utf8')).toContain('# body')
+  })
+})
+
+describe('parseRepoSpec', () => {
+  it('takes the repo and the --skill selection out of a README install command', () => {
+    expect(parseRepoSpec('npx skills add typesafe-ai/skills --skill typesafe-ai'))
+      .toEqual({ ref: 'typesafe-ai/skills', skills: ['typesafe-ai'] })
+  })
+
+  it('never leaves a flag glued onto the reference', () => {
+    const parsed = parseRepoSpec('npx skills add owner/repo --skill a')
+    expect(parsed?.ref).toBe('owner/repo')
+    expect(parsed?.ref).not.toContain('--skill')
+  })
+
+  it('keeps every greedy --skill value', () => {
+    expect(parseRepoSpec('npx skills add owner/repo --skill a b'))
+      .toEqual({ ref: 'owner/repo', skills: ['a', 'b'] })
+  })
+
+  it('accepts -s as --skill and consumes the --agent value with it', () => {
+    expect(parseRepoSpec('npx skills add owner/repo -s a --agent claude-code'))
+      .toEqual({ ref: 'owner/repo', skills: ['a'] })
+  })
+
+  it('drops boolean flags, including the trailing -g it always handled', () => {
+    expect(parseRepoSpec('npx skills add owner/repo -g')).toEqual({ ref: 'owner/repo', skills: [] })
+    expect(parseRepoSpec('npx skills add owner/repo --all -y')).toEqual({ ref: 'owner/repo', skills: [] })
+  })
+
+  it('drops an unknown flag rather than making it part of the repo', () => {
+    expect(parseRepoSpec('npx skills add owner/repo --future-flag')).toEqual({ ref: 'owner/repo', skills: [] })
+  })
+
+  it('passes a git URL through untouched', () => {
+    expect(parseRepoSpec('https://github.com/owner/repo.git')).toEqual({ ref: 'https://github.com/owner/repo.git', skills: [] })
+    expect(parseRepoSpec('https://github.com/owner/repo --skill a')?.ref).toBe('https://github.com/owner/repo')
+  })
+
+  it('returns undefined when no reference is left', () => {
+    expect(parseRepoSpec('')).toBeUndefined()
+    expect(parseRepoSpec('npx skills add --skill a')).toBeUndefined()
+  })
+})
+
+/** Stub `git`: log argv to $GIT_LOG and "clone" the fixture at $STUB_REPO. */
+const GIT_STUB = `#!/bin/sh
+echo "$*" >> "$GIT_LOG"
+for dest in "$@"; do :; done
+mkdir -p "$dest"
+cp -R "$STUB_REPO"/. "$dest"/
+`
+
+/** Stub `git` for the failure path: log argv, then answer like GitHub on a bad repo. */
+const GIT_STUB_REMOTE_404 = `#!/bin/sh
+echo "$*" >> "$GIT_LOG"
+echo "remote: Repository not found." >&2
+echo "fatal: repository 'https://github.com/owner/repo/' not found" >&2
+exit 1
+`
+
+const TYPESAFE = `---
+name: typesafe-ai
+description: Design TypeSafe workflows
+---
+
+# body
+`
+
+/**
+ * Run `fn` with a stub `git` first on PATH, so `commandInstall`'s clone path can
+ * be exercised without the network. Returns the call's result plus the argv each
+ * `git` invocation actually received.
+ */
+async function withGitStub<T>(fixture: string, fn: () => Promise<T>, stub = GIT_STUB): Promise<{ result: T; argv: readonly string[] }> {
+  const bin = await mkdtemp(join(tmpdir(), 'cap-gitbin-'))
+  const log = join(bin, 'git.log')
+  await writeFile(join(bin, 'git'), stub, 'utf8')
+  await chmod(join(bin, 'git'), 0o755)
+  const prev = { path: process.env['PATH'], repo: process.env['STUB_REPO'], log: process.env['GIT_LOG'] }
+  process.env['PATH'] = `${bin}:${prev.path ?? ''}`
+  process.env['STUB_REPO'] = fixture
+  process.env['GIT_LOG'] = log
+  try {
+    const result = await fn()
+    const logged = await readFile(log, 'utf8').catch(() => '')
+    return { result, argv: logged.split('\n').filter(line => line !== '') }
+  } finally {
+    if (prev.path === undefined) delete process.env['PATH']
+    else process.env['PATH'] = prev.path
+    if (prev.repo === undefined) delete process.env['STUB_REPO']
+    else process.env['STUB_REPO'] = prev.repo
+    if (prev.log === undefined) delete process.env['GIT_LOG']
+    else process.env['GIT_LOG'] = prev.log
+  }
+}
+
+/** A fixture "repo" carrying `<name>/SKILL.md` per entry. */
+async function fixtureRepo(skills: Record<string, string>): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'cap-repo-'))
+  for (const [name, content] of Object.entries(skills)) {
+    await mkdir(join(dir, name), { recursive: true })
+    await writeFile(join(dir, name, 'SKILL.md'), content, 'utf8')
+  }
+  return dir
+}
+
+describe('commandInstall from a source repo', () => {
+  const request = (repo: string, extra: { skills?: readonly string[]; modelInvocable?: boolean } = {}): CatalogAddSkillRequest => ({
+    channel: 'command',
+    payload: '',
+    repo,
+    root: 'user',
+    modelInvocable: extra.modelInvocable ?? true,
+    ...(extra.skills === undefined ? {} : { skills: extra.skills }),
+  })
+
+  it('installs the skill named by a pasted npx command, with no flag in the clone URL', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'skills/typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('npx skills add typesafe-ai/skills --skill typesafe-ai'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    // The regression: git used to be handed `https://github.com/typesafe-ai/skills --skill typesafe-ai`.
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/typesafe-ai\/skills /)
+    expect(argv[0]).not.toContain('--skill')
+    expect(await readFile(join(home, 'skills', 'typesafe-ai', 'SKILL.md'), 'utf8')).toContain('# body')
+  })
+
+  it('leaves no clone behind in the managed root', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'skills/typesafe-ai': TYPESAFE })
+    await withGitStub(fixture, () => commandInstall(request('typesafe-ai/skills --skill typesafe-ai'), home))
+    expect(await readdir(join(home, 'skills'))).toEqual(['typesafe-ai'])
+  })
+
+  it('installs only the skill a --skill flag selects', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ a: SKILL, b: TYPESAFE })
+    const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo --skill b'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    expect(await readdir(join(home, 'skills'))).toEqual(['typesafe-ai'])
+  })
+
+  it('installs every skill for --skill *', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ a: SKILL, b: TYPESAFE })
+    const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo --skill *'), home))
+    expect(result).toEqual({ ok: true, name: 'wechat-reading, typesafe-ai' })
+    expect((await readdir(join(home, 'skills'))).sort()).toEqual(['typesafe-ai', 'wechat-reading'])
+  })
+
+  it('refuses a multi-skill repo with no selection instead of picking one', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ a: SKILL, b: TYPESAFE })
+    const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo'), home))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('directory has 2 skills — pick one: a, b')
+    await expect(stat(join(home, 'skills'))).rejects.toBeTruthy()
+  })
+
+  it('reports a selection that matches nothing, listing what the repo has', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ a: SKILL, b: TYPESAFE })
+    const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo --skill nonexistent'), home))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('no matching skill for: nonexistent — available: a, b')
+  })
+
+  it('honours the chooser\'s skills field over the pasted command', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ a: SKILL, b: TYPESAFE })
+    const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo --skill a', { skills: ['b'] }), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+  })
+
+  it('installs a single-skill repo with no selection at all', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+  })
+
+  it('applies modelInvocable=false to the installed clone', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'skills/typesafe-ai': TYPESAFE })
+    await withGitStub(fixture, () => commandInstall(request('owner/repo --skill typesafe-ai', { modelInvocable: false }), home))
+    expect(inferModelInvocable(await readFile(join(home, 'skills', 'typesafe-ai', 'SKILL.md'), 'utf8'))).toBe(false)
+  })
+
+  it('reports exists instead of overwriting an installed same-name skill', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    await withGitStub(fixture, () => commandInstall(request('owner/repo'), home))
+    const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo'), home))
+    expect(result).toEqual({ ok: false, exists: true, name: 'typesafe-ai' })
+  })
+
+  it('fails cleanly when the repo carries no SKILL.md', async () => {
+    const home = await tmpHome()
+    const fixture = await mkdtemp(join(tmpdir(), 'cap-repo-'))
+    await writeFile(join(fixture, 'README.md'), 'no skill here', 'utf8')
+    const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo'), home))
+    expect(result).toEqual({ ok: false, error: 'cloned repo has no SKILL.md' })
+  })
+})
+
+/**
+ * The spec forms a user actually pastes. A host (and an in-repo path) used to be
+ * read as the `owner/repo` pair and then truncated to two segments, so
+ * `github.com/<user>/<repo>` cloned `https://github.com/github.com/<user>` and
+ * failed with GitHub's "Repository not found" — which reads like the skill is
+ * unsupported rather than like the URL was misread.
+ */
+describe('commandInstall source specs', () => {
+  const request = (repo: string): CatalogAddSkillRequest => ({
+    channel: 'command',
+    payload: '',
+    repo,
+    root: 'user',
+    modelInvocable: true,
+  })
+
+  it('strips a pasted host instead of taking it for the owner', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'lieflat-charts': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('github.com/larashero3-dotcom/lieflat-charts'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    // The regression: this used to clone https://github.com/github.com/larashero3-dotcom,
+    // dropping the real repo name, and answered "Repository not found".
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/larashero3-dotcom\/lieflat-charts /)
+  })
+
+  it('searches only the in-repo path the spec named', async () => {
+    const home = await tmpHome()
+    // Two skills sit at the fixture's root, so the multi-skill refusal would fire
+    // on a whole-repo scan: installing one proves the search really narrowed.
+    const fixture = await fixtureRepo({ 'skills/typesafe-ai': TYPESAFE, unrelated: SKILL })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('github.com/owner/repo/skills/typesafe-ai'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/owner\/repo /)
+  })
+
+  it('reads a copied browser tree URL as repo + path', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'skills/typesafe-ai': TYPESAFE, unrelated: SKILL })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('https://github.com/owner/repo/tree/main/skills/typesafe-ai'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/owner\/repo /)
+    expect(argv[0]).not.toContain('tree/main')
+  })
+
+  it('reads a copied blob URL for the SKILL.md as its directory', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'skills/typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('https://github.com/owner/repo/blob/main/skills/typesafe-ai/SKILL.md'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/owner\/repo /)
+  })
+
+  it('drops a `.git` suffix and a copied query suffix', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { argv } = await withGitStub(fixture, () => commandInstall(request('github.com/owner/repo.git?tab=readme-ov-file'), home))
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/github\.com\/owner\/repo /)
+  })
+
+  it('keeps a non-GitHub host\'s whole path (its paths are not owner/repo)', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    // GitLab subgroups make the repo itself a deeper path; only github.com is split.
+    const { argv } = await withGitStub(fixture, () => commandInstall(request('gitlab.com/group/sub/repo'), home))
+    expect(argv[0]).toMatch(/^clone --depth 1 https:\/\/gitlab\.com\/group\/sub\/repo /)
+  })
+
+  it('refuses a host or a user page with no repository, without cloning', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('github.com/larashero3-dotcom'), home))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('github.com/larashero3-dotcom is not a repository')
+    expect(argv).toEqual([])
+  })
+
+  it('reports an in-repo path that the repo does not have', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result } = await withGitStub(fixture, () => commandInstall(request('github.com/owner/repo/nope'), home))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('no such path in the repo: nope')
+  })
+
+  it('reports a missing local directory instead of cloning it as owner/repo', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('/nonexistent/skills/dir'), home))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('local directory not found: /nonexistent/skills/dir')
+    expect(argv).toEqual([])
+  })
+
+  it('adds an actionable hint to a failed clone, keeping git\'s own message', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result } = await withGitStub(fixture, () => commandInstall(request('owner/repo'), home), GIT_STUB_REMOTE_404)
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('Repository not found')
+    expect(result.error).toContain('check the owner and repo name')
+  })
+
+  it('passes an SCP-style remote through whole', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('git@github.com:owner/repo.git'), home))
+    expect(result).toEqual({ ok: true, name: 'typesafe-ai' })
+    expect(argv[0]).toMatch(/^clone --depth 1 git@github\.com:owner\/repo /)
+  })
+
+  it('refuses a URL with no repository path', async () => {
+    const home = await tmpHome()
+    const fixture = await fixtureRepo({ 'typesafe-ai': TYPESAFE })
+    const { result, argv } = await withGitStub(fixture, () => commandInstall(request('https://github.com'), home))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('https://github.com has no repository path')
+    expect(argv).toEqual([])
   })
 })

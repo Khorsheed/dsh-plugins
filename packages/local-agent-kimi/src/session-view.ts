@@ -21,7 +21,7 @@ import { join } from 'node:path'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 
 /** One rendered transcript line. */
-export type KimiTranscriptLine =
+export type KimiTranscriptLine = (
   | { kind: 'user'; text: string; turn: number }
   | { kind: 'assistant'; text: string; turn: number }
   | { kind: 'think'; text: string; turn: number }
@@ -32,6 +32,7 @@ export type KimiTranscriptLine =
    * child session's `tool/call`/`tool/result` events pair by it.
    */
   | { kind: 'tool'; id: string; name: string; args?: string; result?: string; turn: number }
+) & { model?: string }
 
 /** A parsed transcript of one kimi session. */
 export interface KimiSessionTranscript {
@@ -53,6 +54,8 @@ export interface KimiSessionTranscript {
    * when the wire named none — older kimi releases omit it.
    */
   model?: string
+  /** Turn containing the latest native model observation. */
+  modelTurn?: number
 }
 
 /** The wire event log path for a session directory. */
@@ -181,6 +184,11 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
   const lines: KimiTranscriptLine[] = []
   const usageRecords: { line: number; usage: TokenUsage }[] = []
   let model: string | undefined
+  let modelTurn: number | undefined
+  let lineModel: string | undefined
+  const push = (line: KimiTranscriptLine): void => {
+    lines.push({ ...line, ...lineModel === undefined ? {} : { model: lineModel } })
+  }
   // Wire turns are 0-based on loop events; a `turn.prompt` also opens a new
   // round. The transcript uses 1-based turns matching the dsh child session's
   // turn/start numbering.
@@ -213,23 +221,25 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       // (verified against kimi 0.39.x wires); the `llm.request` fallback
       // below covers wires whose usage records omit it. Last one seen wins:
       // a resumed session's later rounds append later records.
-      if (typeof event.model === 'string' && event.model !== '') model = event.model
+      if (typeof event.model === 'string' && event.model !== '') { model = lineModel = event.model; modelTurn = turn || 1 }
       const usage = usageFromWire(event.usage)
       if (usage !== undefined) usageRecords.push({ line: lines.length, usage })
       continue
     }
     if (event.type === 'llm.request') {
-      if (typeof event.model === 'string' && event.model !== '') model = event.model
+      lineModel = typeof event.model === 'string' && event.model !== '' ? event.model : undefined
+      if (typeof event.model === 'string' && event.model !== '') { model = event.model; modelTurn = turn || 1 }
       continue
     }
     if (event.type === 'turn.prompt') {
+      lineModel = undefined
       // Each round's user prompt opens the next turn; the matching
       // context.append_message below is deduped against this text.
       turnSeen = true
       turn += 1
       const prompt = textOf((event.input as unknown[] | undefined) ?? [])
       if (prompt.trim() !== '' && !isSystemReminder(prompt)) {
-        lines.push({ kind: 'user', text: prompt, turn: turn === 0 ? 1 : turn })
+        push({ kind: 'user', text: prompt, turn: turn === 0 ? 1 : turn })
       }
       continue
     }
@@ -250,9 +260,10 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
         }
         turnSeen = true
         turn += 1
-        lines.push({ kind: 'user', text: textContent, turn: turn === 0 ? 1 : turn })
+        lineModel = undefined
+        push({ kind: 'user', text: textContent, turn: turn === 0 ? 1 : turn })
       } else if (role === 'assistant' && textContent.trim() !== '') {
-        lines.push({ kind: 'assistant', text: textContent, turn: turn === 0 ? 1 : turn })
+        push({ kind: 'assistant', text: textContent, turn: turn === 0 ? 1 : turn })
       }
       continue
     }
@@ -267,9 +278,9 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       const part = loop.part as { type?: string; text?: string; think?: string } | undefined
       const lineTurn = turn === 0 ? 1 : turn
       if (part?.type === 'text' && part.text !== undefined && part.text.trim() !== '') {
-        lines.push({ kind: 'assistant', text: part.text, turn: lineTurn })
+        push({ kind: 'assistant', text: part.text, turn: lineTurn })
       } else if (part?.type === 'think' && part.think !== undefined && part.think.trim() !== '') {
-        lines.push({ kind: 'think', text: part.think, turn: lineTurn })
+        push({ kind: 'think', text: part.think, turn: lineTurn })
       } else if (loop.type === 'tool.call') {
         const call = loop as {
           toolCall?: { name?: string; args?: unknown }
@@ -281,7 +292,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
         const name = call.toolCall?.name ?? call.name ?? 'tool'
         const args = argsOf(name, call.toolCall?.args ?? call.args)
         const lineIndex = lines.length
-        lines.push({
+        push({
           kind: 'tool',
           id: typeof call.toolCallId === 'string'
             ? call.toolCallId
@@ -330,11 +341,11 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
         // A content part type this fold does not know (image, audio, a future
         // plan part, …): keep a visible marker instead of the content
         // vanishing from the transcript.
-        lines.push({ kind: 'assistant', text: `[未支持的内容类型 ${part.type}]`, turn: lineTurn })
+        push({ kind: 'assistant', text: `[未支持的内容类型 ${part.type}]`, turn: lineTurn })
       }
     }
   }
-  return { sessionId, lines, usageRecords, ...model === undefined ? {} : { model } }
+  return { sessionId, lines, usageRecords, ...model === undefined ? {} : { model }, ...modelTurn === undefined ? {} : { modelTurn } }
 }
 
 /**

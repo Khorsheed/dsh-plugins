@@ -264,8 +264,13 @@ describe('the blind queue', () => {
     await screen.findByText('judge.queue')
     pickItem('P0', 2)
     // Both answers' material is on screen, each under its own column, so the
-    // same file name appears once per answer.
-    expect(screen.getAllByText('stage1.md')).toHaveLength(2)
+    // same file name appears once per answer — FOLDED, with the redaction
+    // count still on the summary. Thousands of lines of stage json above the
+    // criteria pushed the scoring boxes off the screen, which is the one thing
+    // side by side exists to prevent (I5·T67 · W9).
+    const heads = screen.getAllByText('stage1.md')
+    expect(heads).toHaveLength(2)
+    for (const head of heads) expect(head.closest('details')).not.toBeNull()
     // The tokens judge.ts leaves behind — the grader sees the redaction, not
     // a silently rewritten document.
     expect(screen.getByText(/我是 <harness>，用 <model> 跑的/)).toBeTruthy()
@@ -318,7 +323,7 @@ describe('the criteria table', () => {
     // bench cannot change that rule; it can refuse to let it happen quietly.
     // It is per COLUMN: answer 1 has something to lose and answer 2 does not,
     // and side by side that difference has to stay visible.
-    expect(screen.getAllByText('judge.scoringWarning {"count":1,"criteria":"H1"}')).toHaveLength(1)
+    expect(screen.getAllByText('judge.scoringMix {"count":1,"criteria":"H1"}')).toHaveLength(1)
   })
 
   it('shows what a graded cell already carries, and warns that recording appends', async () => {

@@ -3,7 +3,7 @@
  * credentials (and writing its rollout) in `<homesRoot>/codex@<scope>` instead
  * of the default directory. What is pinned here is that the scope reaches the
  * spawn env and the delegation record, that a resume may not change it, and
- * that a scoped round never goes to the resident app-server.
+ * that live rounds receive the same scoped home.
  */
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
@@ -145,13 +145,12 @@ describe('codex scoped home', () => {
     expect(none.specs).toHaveLength(0)
   })
 
-  it('refuses a scoped round that the live driver would serve', async () => {
-    // The resident app-server binds the DEFAULT scoped home, so a scoped round
-    // is refused rather than silently answered by the wrong account.
-    const live = { disabled: false, startRound: vi.fn() }
+  it('passes the recorded scoped home to the live driver without an exec fallback', async () => {
+    const liveRun = { result: Promise.resolve({ status: 'done' }), dispose: vi.fn() }
+    const live = { disabled: false, startRound: vi.fn(async () => liveRun) }
     const { provider, specs } = mount({ kind: 'fresh', scope: 'eval-b' }, { live })
-    await expect(provider.start(request())).rejects.toThrow(/exec-only/)
-    expect(live.startRound).not.toHaveBeenCalled()
+    expect(await provider.start(request())).toBe(liveRun)
+    expect(live.startRound).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ homeDir: `${HOMES}/codex@eval-b` }))
     expect(specs).toHaveLength(0)
   })
 })

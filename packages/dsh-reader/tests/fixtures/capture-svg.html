@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head><title>Rendered Page With Inline Charts</title></head>
+<body>
+<article>
+  <p>The capture package renders the page in a managed browser, so the figures
+  that the plain fetch could never see arrive as inline SVG with their styles
+  inlined onto the elements — exactly the shape this fixture models.</p>
+  <p>Every chart here was drawn by the page's own scripts at render time; what
+  the reader receives is the serialized result, colors resolved and scripts
+  gone, and the prose around the charts carries the article's argument.</p>
+  <figure data-fignum="1">
+    <svg viewBox="0 0 100 60" onload="alert(1)">
+      <defs>
+        <linearGradient id="g0" gradientUnits="userSpaceOnUse" gradientTransform="rotate(90)">
+          <stop offset="0" stop-color="#d54941" stop-opacity="0.9"/>
+          <stop offset="1" stop-color="#417cf6"/>
+        </linearGradient>
+        <clipPath id="clip0"><rect x="0" y="0" width="100" height="60"/></clipPath>
+        <symbol id="sym"><circle cx="0" cy="0" r="3" fill="#222"/></symbol>
+      </defs>
+      <g clip-path="url(#clip0)" style="opacity: 0.95">
+        <rect x="0" y="0" width="100" height="60" fill="url(#g0)"/>
+        <path d="M0 60 L50 10 L100 60" stroke="#222" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <polyline points="0,50 25,30 50,35" stroke="#888"/>
+        <circle cx="50" cy="10" r="4" style="fill: rgb(65, 118, 230)"/>
+        <use href="#sym" x="25" y="30"/>
+        <use href="https://evil.example.com/x.svg#x" x="75" y="30"/>
+        <text x="50" y="55" text-anchor="middle" font-size="8" font-family="sans-serif"><tspan dx="1" dy="1">峰值</tspan></text>
+        <rect x="90" y="5" width="8" height="8" style="fill: url(https://tracker.example.com/pixel.png)" stroke="#000"/>
+        <animate attributeName="x" values="0;100"/>
+        <foreignObject><div>html junk</div></foreignObject>
+        <script>alert(3)</script>
+      </g>
+      <desc>A line chart of the measured values.</desc>
+    </svg>
+    <figcaption>Figure 1: a rendered chart, inlined by capture.</figcaption>
+  </figure>
+  <figure data-fignum="2">
+    <div class="chart-host"></div>
+    <figcaption>Figure 2: a runtime-only shell, still genuinely missing.</figcaption>
+  </figure>
+  <p>The residuals concentrate where the two series cross, and the remaining
+  prose exists so the article body stands on its own paragraph mass rather than
+  on the figures it happens to carry.</p>
+</article>
+</body>
+</html>

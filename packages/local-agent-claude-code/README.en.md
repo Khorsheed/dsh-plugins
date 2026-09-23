@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
+
 Delegate coding tasks to a locally installed Claude Code from any dsh agent preset — answers stream back live, and your personal `~/.claude` is never touched. The Claude Code harness of the [local-agent family](../local-agent/README.md).
 
 ## Features
@@ -46,7 +48,9 @@ Optional fields on the bundle row:
 
 One-shot (exec) rounds never rewrite the scoped `settings.json`: `--model` overrules it per round and the file stays exactly as you edited it. A resident (live) spawn scratches the member's effective model into that file (a `--resume` reattach honors the file's model over the `--model` flag) and restores the previous value before a spawn that binds none; the "CLI config" layer that status and the settings card report is always the value you configured, never a member's scratch.
 
-The settings card's "Default model" writes the same key: a free-text input (no model catalog is built in); saving applies to the **next** round, leaves rounds in flight alone, and needs no reload. Clearing the field and saving unsets the key, which falls back to the YAML composition base and from there to "absent" above. While unset, the input itself **displays the default it currently follows** as a dimmed placeholder (inherited, never a pinned value: the scoped settings.json `model`, else the CLI's built-in default, else the last observed model). The chevron menu is the single choice list (the native datalist is gone): its leading item is "Default (follow …)" — checked while unset, picking it clears the draft back to follow-default — and the rest come from the family gateway's model surface (the settings value, the scoped-file default, and recently saved values, deduped); typing by hand always works. With the gateway absent (an older core) the card falls back to the previously saved values and the bare input.
+The settings card’s "Default model" writes the provider setting for subsequent rounds. Its shared picker displays the scoped model directory, discovery source and completeness, plus an explicit model-ID input when needed. Clearing the selection follows the effective configuration/default chain. Saving does not interrupt an active round and requires no reload. If the shared picker is unavailable, the card retains its text-input fallback. Per-member model and effort changes use the durable controls described below.
+
+The model surface now also reads Claude's native `initialize` directory, preserving selection aliases, display labels, resolved names and supported effort levels. It shares the core cache and refresh subscription, retains successful data after a failed refresh, and labels historical suggestions separately. This scoped control probe sends no user task and writes no model settings. An older CLI without this directory reports unsupported; native candidates do not establish account entitlement. The shared model picker and member effort controls are connected. Busy selections apply at the next complete turn boundary, including tool continuations; core owns current/pending state, cancellation and retry, while frozen evaluation members reject changes.
 
 **A delegation's own model outranks this key.** An orchestrator may name the model for ONE delegation through the facade's `DelegationCallOptions.model`, which sits above this key (the layer order is in the family core README). The first round's request is recorded and every resume round re-requests it — `resume` takes no model of its own. In resident mode a fresh delegation's model binds as the member's start model at the runtime's spawn: a runtime bound to a different model retires first, and the same CLI session resumes on the new process.
 
@@ -60,7 +64,7 @@ The settings card's "Default model" writes the same key: a free-text input (no m
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the live mirror folds every output item 1:1 into the child session log, and the host ui-chat's wholesale replace of a repeated assistant/message at one coordinate (shipped since 0.1.5-rc.1) provides the incremental live rendering. Adapted to format v2/v3 and handle-based sessionPersistence; build+test green; minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; suffix checkpoints provide recovery, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked separately in the room coordinator proposal. Older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations

@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest'
 import { CanvasService } from '../src/service.ts'
 import { CanvasBoardService } from '../src/store.ts'
 import { canvasMainSessionToolDefinitions, canvasToolDefinitions } from '../src/tools.ts'
-import type { CanvasBoard } from '../src/types.ts'
+import { defaultCategories, type CanvasBoard } from '../src/types.ts'
 
 type Entry = { kind: 'dir' } | { kind: 'file'; content: string; version: number }
 
@@ -122,7 +122,7 @@ async function harness(): Promise<Bench> {
   const created = await board.createCanvas({ title: '主题' }, FALLBACK)
   if (!created.ok) throw new Error('expected a created canvas')
   const canvasId = created.board.id
-  const tools = canvasToolDefinitions(board, canvasId, FALLBACK)
+  const tools = canvasToolDefinitions(board, canvasId, FALLBACK, created.board.categories)
   const execute = async (name: 'canvas_propose_card' | 'canvas_comment', args: Record<string, unknown>, agent?: Agent): Promise<unknown> => {
     const tool = tools.find(def => def.name === name)
     if (tool === undefined) throw new Error(`no tool ${name}`)
@@ -143,7 +143,7 @@ describe('the canvas tools', () => {
     const pad = new CanvasService(ctx)
     ;(ctx as { canvasStore?: CanvasService }).canvasStore = pad
     const board = new CanvasBoardService(ctx, { stateRoot: STATE })
-    const tools = canvasToolDefinitions(board, 'canvas_01234567abcdefgh', FALLBACK)
+    const tools = canvasToolDefinitions(board, 'canvas_01234567abcdefgh', FALLBACK, defaultCategories())
     expect(tools.map(def => def.name)).toEqual(['canvas_propose_card', 'canvas_comment'])
     for (const def of tools) {
       expect(def.description.length).toBeGreaterThan(0)
@@ -205,7 +205,7 @@ describe('the canvas tools', () => {
     })
     const created = await board.createCanvas({ title: '主题' }, FALLBACK)
     if (!created.ok) throw new Error('expected a created canvas')
-    const tools = canvasToolDefinitions(spy, created.board.id, FALLBACK)
+    const tools = canvasToolDefinitions(spy, created.board.id, FALLBACK, created.board.categories)
     const propose = tools.find(def => def.name === 'canvas_propose_card')!
     // No agent in the run context: the ask's session fences.
     await propose.execute({ kind: 'fragment', text: 'a' }, {} as never)

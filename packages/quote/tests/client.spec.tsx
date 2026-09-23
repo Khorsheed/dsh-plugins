@@ -4,14 +4,17 @@
  * (no selection, no current session, no side-chat — each hides its item or
  * the whole card), the three routes (composer insert with the formatted
  * block, side-chat ref + tab surface, clipboard copy), the consumed echo
- * that keeps an acted selection from re-arming the menu, and the source-label
- * fallback. The selection source is a manual fake — these tests never touch
- * the real `window.getSelection()`.
+ * that keeps an acted selection from re-arming the menu, the source-label
+ * fallback, and contributed rows from the `ctx.quoteActions` registry
+ * (rendered after the built-ins, gated per open, hot-add/dispose live). The
+ * selection source is a manual fake — these tests never touch the real
+ * `window.getSelection()`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { QuoteMenuProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
+import { QuoteActionRegistryRuntime, type QuoteActionContribution } from '../src/client/registry.ts'
 import type { SelectionListener, SelectionSnapshot } from '../src/client/selection.ts'
 import { SelectionQuoteMenu } from '../src/client/SelectionMenu.tsx'
 
@@ -23,6 +26,8 @@ const SNAPSHOT: SelectionSnapshot = { text: '两行\n文本', rect: { left: 100,
 
 interface MenuHarness {
   readonly emit: (snapshot: SelectionSnapshot | null) => void
+  /** The real registry runtime feeding the menu's contributed rows. */
+  readonly registry: QuoteActionRegistryRuntime
   readonly mocks: {
     sideChatAvailable: ReturnType<typeof vi.fn>
     insertQuote: ReturnType<typeof vi.fn>
@@ -42,6 +47,8 @@ function menuBench(opts: {
   mainView?: boolean
   sideChat?: boolean
   addRefResult?: boolean
+  /** Contributions registered before render. */
+  contribute?: readonly QuoteActionContribution[]
 } = {}): MenuHarness {
   let listener: SelectionListener | undefined
   const mocks = {
@@ -51,6 +58,8 @@ function menuBench(opts: {
     openSideChat: vi.fn(),
     copyText: vi.fn(async () => true),
   }
+  const registry = new QuoteActionRegistryRuntime(vi.fn())
+  for (const contribution of opts.contribute ?? []) registry.registerAction(contribution)
   const current = opts.current
   const row = current === undefined
     ? undefined
@@ -71,10 +80,12 @@ function menuBench(opts: {
     addSideChatRef: mocks.addSideChatRef as QuoteMenuProps['addSideChatRef'],
     openSideChat: mocks.openSideChat,
     copyText: mocks.copyText,
+    actions: registry,
   } as QuoteMenuProps
   render(<SelectionQuoteMenu {...props} />)
   return {
     emit: (snapshot) => { act(() => { listener?.(snapshot) }) },
+    registry,
     mocks,
   }
 }
@@ -182,5 +193,58 @@ describe('the consumed echo', () => {
     // A different selection re-arms the menu.
     emit({ text: '别的话', rect: { left: 40, top: 200, width: 30, height: 20 } })
     expect(screen.getByRole('toolbar')).toBeTruthy()
+  })
+})
+
+describe('contributed actions (the ctx.quoteActions registry)', () => {
+  const saveCard = (run = vi.fn()): QuoteActionContribution => ({
+    id: 'canvas.save',
+    label: () => '存为画布卡片',
+    run,
+  })
+
+  it('renders contributed rows after the built-ins, in registration order', () => {
+    const { emit } = menuBench({
+      current: 's-1',
+      sideChat: true,
+      contribute: [saveCard(), { id: 'reader.excerpt', label: () => '摘录到灵感空间', run: vi.fn() }],
+    })
+    emit(SNAPSHOT)
+    const ids = screen.getAllByRole('button').map(button => button.getAttribute('data-action'))
+    expect(ids).toEqual(['conversation', 'sidechat', 'copy', 'canvas.save', 'reader.excerpt'])
+  })
+
+  it('a contributed row runs with the opaque target and closes the menu', () => {
+    const run = vi.fn()
+    const { emit } = menuBench({ current: 's-1', title: '主会话', contribute: [saveCard(run)] })
+    emit(SNAPSHOT)
+    fireEvent.click(screen.getByRole('button', { name: '存为画布卡片' }))
+    expect(screen.queryByRole('toolbar')).toBeNull()
+    expect(run).toHaveBeenCalledWith({ text: '两行\n文本', label: '主会话', sessionId: 's-1' })
+  })
+
+  it('gates contributed rows per menu open (sessionId-aware)', () => {
+    const gate = vi.fn((target: { sessionId?: string }) => target.sessionId !== undefined)
+    const contribution: QuoteActionContribution = { ...saveCard(), available: gate }
+    const withSession = menuBench({ current: 's-1', contribute: [contribution] })
+    withSession.emit(SNAPSHOT)
+    expect(screen.getByRole('button', { name: '存为画布卡片' })).toBeTruthy()
+    cleanup()
+    const noSession = menuBench({ current: undefined, contribute: [contribution] })
+    noSession.emit(SNAPSHOT)
+    expect(screen.queryByRole('button', { name: '存为画布卡片' })).toBeNull()
+    expect(screen.getByRole('button', { name: zh['menu.copy'] })).toBeTruthy()
+    expect(gate).toHaveBeenCalled()
+  })
+
+  it('a hot-added row appears on the open menu, and its disposal removes it', () => {
+    const { emit, registry } = menuBench({ current: 's-1' })
+    emit(SNAPSHOT)
+    expect(screen.queryByRole('button', { name: '存为画布卡片' })).toBeNull()
+    let dispose: () => void = () => {}
+    act(() => { dispose = registry.registerAction(saveCard()) })
+    expect(screen.getByRole('button', { name: '存为画布卡片' })).toBeTruthy()
+    act(() => { dispose() })
+    expect(screen.queryByRole('button', { name: '存为画布卡片' })).toBeNull()
   })
 })

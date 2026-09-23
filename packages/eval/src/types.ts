@@ -909,12 +909,81 @@ export interface EvalCellDetail {
    * player's transcript, never steering it mid-run.
    */
   childSessionId: string | null
+  /**
+   * The run's originSession — the PARENT of every delegation it made
+   * (decision 1), and the address without which no child session on this
+   * page can be opened at all: the host refuses a subagent session addressed
+   * on its own («subagent Sessions require their durable parent address»).
+   * Null on a run the ledger recorded without one, which makes the buttons
+   * fall back to selecting by id.
+   */
+  parentSessionId: string | null
+  /**
+   * The JUDGE's rounds on this cell, each with its own child session. A judge
+   * is a delegation like any other and its transcript is a host session the
+   * same way the player's is — it simply never had a door on this page, so
+   * «为什么判成这样» could only be answered from the verdict's `evidence`.
+   * One entry per recorded judge round, oldest first; a round that failed
+   * before it started carries a null session and its error.
+   */
+  judgeSessions: EvalCellJudgeSession[]
   attempts: EvalCellAttempt[]
   annotations: EvalCellAnnotationNs[]
   /** The verify runs, verbatim. */
   probes: EvalCellProbeRun[]
   /** Whether this cell's resources may be destroyed right now. */
   releasable: boolean
+}
+
+/** One judge round on a cell, as the drawer offers it. */
+export interface EvalCellJudgeSession {
+  /** The judge condition id. Un-blinded: this page names the player too. */
+  judgeCondition: string | null
+  judgeModel: string | null
+  /** Which sample of that judge this round was; null when the round recorded none. */
+  sample: number | null
+  /** The attempt this round judged. */
+  attempt: number | null
+  /** The round's child session — null when the delegation never started one. */
+  childSessionId: string | null
+  at: number
+  /** Whether the judge judged its own condition's work. */
+  selfJudged: boolean
+  /** The round's recorded failure, verbatim; null when it settled. */
+  error: string | null
+}
+
+/** Which artifact of which cell `cellArtifact` is asked for. */
+export interface EvalCellArtifactRequest {
+  runId: string
+  missionId: string
+  /** The attempt whose run-data directory the path is resolved against. */
+  attempt: number
+  /** The artifact path exactly as the ledger recorded it. */
+  path: string
+}
+
+/**
+ * One artifact, read in place. `kind` says which of the three answers this
+ * is: the text, a directory's entries, or the refusal to inline bytes nobody
+ * can read as text.
+ */
+export interface EvalCellArtifactView {
+  runId: string
+  missionId: string
+  attempt: number
+  path: string
+  kind: 'text' | 'directory' | 'binary'
+  /** A directory's entry names, sorted; empty for the other two kinds. */
+  entries: string[]
+  /** Whether the text was cut at the byte cap, or the listing at the entry cap. */
+  truncated: boolean
+  /** The file's size on disk; null for a directory. */
+  bytes: number | null
+  /** The text, up to the byte cap; null for a directory or a refused binary. */
+  text: string | null
+  /** Why it was cut, listed or refused — shown beside the content, never instead of it. */
+  note: string | null
 }
 
 /** Which cell a per-cell verb is about. */
@@ -1090,7 +1159,11 @@ export interface EvalReportRequest {
   outDir?: string
 }
 
-/** One of the four architecture-§5 invariants, as the report page shows it. */
+/**
+ * One validity check as the report page shows it: the four architecture-§5
+ * invariants that gate the comparison section, then `verdict-coverage`
+ * (判定覆盖一致), which degrades single pairs.
+ */
 export interface EvalReportInvariant {
   id: string
   title: string
@@ -1140,9 +1213,72 @@ export interface EvalReportPair {
   /** Smallest per-task rep-pair count — the rank gate (n < 3 refuses to rank). */
   n: number
   ci: { mean: number; lo: number; hi: number; samples: number; seed: number } | null
+  /** Set when fewer than 3 tasks have a delta: the page says so instead of drawing a CI. */
+  ciWithheld: { tasksWithDelta: number } | null
+  /** A CI is shown but the rank gate (n ≥ 3 per task) is not met — 仅供参考. */
+  ciAdvisory: boolean
   rank: 'a' | 'b' | null
   /** Why it ranked, or why it would not — verbatim from the report. */
   rankReason: string
+}
+
+/** One verdict behind a criteria-table cell, as the report page shows it. */
+export interface EvalReportCriterionSample {
+  missionId: string
+  rep: number | null
+  /** `human-final` / `llm-draft` / `script` — the layer this sample was written in. */
+  ns: string
+  /** The criterion HOLDS; on a negative criterion that is the defect. */
+  pass: boolean
+  ratio: { passed: number; total: number } | null
+  /** The verdict's own checkable fact, verbatim — folded to one line on screen. */
+  evidence: string
+  by: string
+  /** The judge, un-blinded (the report page is where the blind comes off). */
+  judge: { condition: string; model: string | null; selfJudged: boolean; sample: number | null } | null
+}
+
+/** One (criterion × comparison group) cell of a task's criteria table. */
+export interface EvalReportCriterionCell {
+  condition: string
+  /** Reps of this group that judged the criterion; 0 renders as a dash, not a ✗. */
+  reps: number
+  heldReps: number
+  /** Mean credit over those reps, polarity NOT applied. */
+  credit: number | null
+  holds: boolean | null
+  /** True when a sample declared a `ratio` — the cell prints a proportion, not a tick. */
+  proportional: boolean
+  /** Layer → reps that scored from it; more than one key is a mixed cell. */
+  sources: Record<string, number>
+  samples: EvalReportCriterionSample[]
+  /** Judge drafts a human-final replaced — kept beside the new verdict. */
+  superseded: EvalReportCriterionSample[]
+}
+
+/** One rubric row of the criteria table. */
+export interface EvalReportCriterionRow {
+  id: string
+  /** The rubric's sub-axis — the DIMENSION, and the closest thing to a title a bundle carries. */
+  axis: string | null
+  kind: string | null
+  weight: number | null
+  negative: boolean
+  /** True when only the verdicts name this criterion, not the rubric. */
+  undeclared: boolean
+  cells: EvalReportCriterionCell[]
+}
+
+/**
+ * One task's 判据 × 对比组 table: rows are criteria, columns are comparison
+ * groups, and the bottom row is the task's own score — the SAME number the
+ * pair table prints, from the same computation.
+ */
+export interface EvalReportTaskCriteria {
+  task: string
+  conditions: string[]
+  rows: EvalReportCriterionRow[]
+  totals: Array<{ condition: string; scored: number | null; weighted: number | null; reps: number }>
 }
 
 /** One condition's efficiency row. Parallel columns, never summed into a score. */
@@ -1186,8 +1322,8 @@ export interface EvalReportJudgeConsistency {
 }
 
 /**
- * The report page's payload: the four invariants, the comparison (only when
- * all four are established), the efficiency table and the judge numbers.
+ * The report page's payload: the five validity checks, the comparison (only
+ * when the first four are established), the efficiency table and the judge numbers.
  *
  * Every number here is {@link EvalReport}'s — this is a PROJECTION, not a
  * second analysis. The page cannot open a comparison the bundle's invariants
@@ -1221,12 +1357,19 @@ export interface EvalRunReportView {
   /** Whether a recorded export can be repeated in one click (a note exists). */
   reexportable: boolean
   invariants: EvalReportInvariant[]
-  /** True only when all four invariants are established. */
+  /** True only when the first four invariants are established (verdict coverage degrades pairs, never the section). */
   comparisonAllowed: boolean
   /** A single-condition run: nothing to pair, which is not a failure. */
   singleCondition: boolean
   /** Empty when comparison is not allowed — the page never renders a closed section. */
   pairs: EvalReportPair[]
+  /**
+   * Per task, every criterion's conclusion in every comparison group, with
+   * the evidence and the judge behind it. Behind the SAME gate as `pairs` —
+   * a closed comparison stays closed one criterion at a time — but present
+   * for a single-group run, where 判官依据 still answers a question.
+   */
+  criteria: EvalReportTaskCriteria[]
   efficiency: EvalReportEfficiencyRow[]
   efficiencyExcluded: EvalReportExcluded[]
   judge: EvalReportJudgeConsistency
@@ -1421,16 +1564,18 @@ export interface EvalJudgeQueueCell {
   /**
    * Criteria this cell has an `llm-draft` value for and NO human-final.
    *
-   * It is here because of how the report picks a cell's scoring source: it
-   * takes the most authoritative namespace that has ANY verdict for the cell
-   * and scores from that one alone (`human-final` > `llm-draft` > `script`).
-   * So the first human-final verdict on a cell — even one answering a single
-   * `kind: human` criterion — makes human-final the cell's ONLY scoring
-   * source, and every criterion in this list stops counting toward its score.
+   * It is here because of how the report merges verdict layers: EACH
+   * criterion independently takes the most authoritative layer that judged it
+   * (`human-final` > `llm-draft` > `script`). So a human verdict settles the
+   * criteria it answers, and every criterion in this list goes on counting —
+   * on the judge's word — leaving the record's score with two authors at
+   * once. The page says that beside the button, because a grader who thinks
+   * they are scoring the whole record is scoring part of it.
    *
-   * The bench cannot fix that from here (changing the rule would move every
-   * report ever produced), but it must not let a person do it without
-   * knowing. The page prints the consequence beside the button.
+   * Until I5·T54 the rule was per CELL and this list was a COST: the first
+   * human verdict dropped every criterion in it from the score. The field
+   * survived the change because the sentence it feeds is still owed; only
+   * what the sentence says changed.
    */
   draftOnlyCriteria: string[]
 }

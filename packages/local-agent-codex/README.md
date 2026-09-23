@@ -2,6 +2,8 @@
 
 [English](README.en.md) | 中文
 
+**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。最终内容仍以 provider 完成项为准，包括工具记录和用量。
+
 把编码任务从任意 dsh agent preset 委派给你本地安装的 Codex CLI。委派在插件隔离的作用域目录下运行，你个人的 `~/.codex`——config、凭据、会话——完全不被触碰。
 
 ## 特性
@@ -58,7 +60,9 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 
 作用域 `config.toml` 不会被改写——`-m` 每轮覆盖它，文件仍是你编辑的样子。
 
-设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录），保存即生效于**下一轮**委派，进行中的轮次不受影响，不需要重载。清空后保存即取消该键，回到 YAML 组合基线、进而回到上面的「不写」。字段未设置时，输入框内直接以暗色占位**显示当前跟随的默认模型**（继承展示，不是钉死的值；显示链：config 默认 → 目录默认 → 委派记录里最近观测的模型 → 通用文案）——其中「目录默认」这一层现在多半有名字：`model/list` 应答里带 `isDefault` 标记的那一项就是账号的内置默认（实测 gpt-5.6-sol），broker 会以 `cli-builtin` 来源报出这个 effective 模型。旁边的 ∨ 菜单是唯一的候选列表（不再用原生 datalist）：首行是「默认（跟随 …）」项——未设置时它处于选中态，点它把草稿清回跟随默认——其余项是模型 broker 给出的去重并集（本键 + config 顶层 model + config 里 `[profiles.*]` 表出现的 model + app-server `model/list` 探测到的账号可运行目录（进程内缓存、尽力而为、隐藏项过滤）+ 最近使用）——全部来自实例自己知道的东西，绝不内置目录；手动输入始终可用。核心或 broker 缺席时退回旧的裸输入框（仅最近使用候选）。
+设置卡「默认模型」修改后续轮次使用的 provider 配置。共享选择器展示当前作用域的模型目录、发现来源和完整性，并保留按需填写模型 ID 的入口。清空选择后跟随有效配置及默认值链。保存不会打断当前轮次，也无需重载；共享选择器不可用时，卡片保留文本输入兜底。成员级模型和推理强度修改使用下文的持久控制面。
+
+丰富目录读面现已保留原生显示名、隐藏候选和推理选项，遍历分页，并接入 core 缓存与刷新订阅。查询上下文跟随成员的 scope 和 cwd。刷新失败保留最后成功快照并标为过期；配置项和历史建议保留来源标识。共用模型菜单和成员 effort 控制已接入。运行中选择排到下一完整轮次（含工具续跑）；core 统一持有当前/待生效配置、撤销与重试，冻结评测成员禁止变更。原生目录候选不等于账号权限证明。
 
 **委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型，它排在这个键之前（固定顺序：会话覆盖 > 委派记录 > 本键 > 作用域 config > CLI 内置）。首轮请求的值记进委派记录，resume 轮照它重发——resume 不接受 model 参数。常驻模式下带模型的轮次不再被拒绝：它成为该成员的**起始模型**，在 app-server 起进程时绑定；若该成员的常驻 runtime 绑定的是另一个模型，先回收重生（同一 codex 线程经 thread/resume 续上），再以所点模型起新一轮。
 
@@ -85,7 +89,7 @@ model_provider = "dsh-router"
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整（`liveMirrorGranularity: token` 的流式以增量快照落在同一 (turn,step)，npm 线 ui-chat 的 `settleMessage` 本就是整体替换语义；适配 format v2/v3 与 handle 制 sessionPersistence，全量构建测试通过）；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。浏览器 P95 另在 room 协调者提案中验收。更旧宿主留在前一发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制

@@ -15,6 +15,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { describe, expect, it, vi } from 'vitest'
+import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { CodexCliProvider } from '../src/codex-cli-provider.ts'
 import { CodexLiveDriver, codexAppServerItemToLine } from '../src/live-driver.ts'
 
@@ -354,6 +355,26 @@ describe('codex app-server item fold (transport → shared line shape)', () => {
 })
 
 describe('codex live driver rounds', () => {
+  it('flushes the final turn boundary before reporting a settled result', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-final-durability'))
+    let durable: ReturnType<Session['snapshotEvents']> = []
+    Object.assign(m.ctx.sessions, { get: () => child })
+    Object.assign(m.ctx.localAgent, {
+      syncChildSession: async () => {
+        const captured = structuredClone(child.snapshotEvents())
+        await new Promise(resolve => setTimeout(resolve, 5))
+        durable = captured
+      },
+    })
+    m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('durable answer') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    expect(durable.at(-1)?.type).toBe('turn/end')
+    expect(durable).toEqual(child.snapshotEvents())
+    await m.driver.disposeAll()
+  })
+
   it('spawns the resident app-server, creates a persisted thread, drives a turn, and mirrors items live', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-1'))
@@ -568,6 +589,33 @@ describe('codex live driver rounds', () => {
     expect(fake.serverAnswers).toContainEqual({ decision: 'cancel' })
     expect(fake.serverAnswers).toContainEqual({ permissions: {}, scope: 'turn' })
     await m.driver.disposeAll()
+  })
+
+  it('flushes a sparse delta before completion and never overwrites the final with a late timer', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-sparse-live'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await vi.waitFor(() => { expect(fake.requests.some(r => r.method === 'turn/start')).toBe(true) })
+    fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'sparse', delta: 'hi' })
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().filter(e => e.type === 'local-agent/stream')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(0)
+    }, { timeout: 1_000, interval: 10 })
+    expect(child.snapshotEvents().some(e => e.type === 'turn/end')).toBe(false)
+    fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'sparse', delta: '!' })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { type: 'agentMessage', id: 'sparse', text: 'hi!', phase: 'final_answer' } })
+    fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
+    expect((await run.result).stopReason).toBe('completed')
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    const count = child.snapshotEvents().length
+    await new Promise(resolve => setTimeout(resolve, 80))
+    expect(child.snapshotEvents()).toHaveLength(count)
+    await m.driver.disposeAll()
+    liveStreams.dispose()
   })
 
   it('token granularity streams throttled snapshots into the session log at the stream\'s step', async () => {
@@ -923,7 +971,7 @@ describe('codex live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-drain4'))
     child.append('turn/start', { turn: 1 })
@@ -933,7 +981,7 @@ describe('codex live driver drain (settings handoff)', () => {
     await first.result
     // Event granularity folds the completed items into messages.
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThan(0)
-    m.driver.setLiveMirrorGranularity('token')
+    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'thread-1', turn: 2 } }))
     await second.result
     // Token granularity additionally streams the in-flight item: the round
@@ -976,6 +1024,34 @@ describe('codex provider live resolver', () => {
 })
 
 describe('codex live driver model key', () => {
+  it('retires a process when effort defaults change or an explicit selection is cleared', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('changed-effort-default'))
+    for (let i = 0; i < 3; i++) m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('ok') }) }))
+    for (const configuration of [{ model: 'same', effort: 'high' }, { model: 'same', effort: 'low' }, {}]) {
+      const run = await m.driver.startRound(request() as never, { ...roundSpec(m, child), configuration })
+      await run.result
+    }
+    expect(m.spawns).toHaveLength(3)
+    expect(m.spawns[2]!.spec.argv).toEqual(['codex', 'app-server', '--stdio'])
+    await m.driver.disposeAll()
+  })
+
+  it('sends the admitted model and effort to native turn/start even when resuming a thread', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', model: () => 'different-setting' } })
+    const child = Session.create(SessionId('child-admitted-config'))
+    m.queueChild(new FakeAppServer({ turn: () => ({ items: [{ type: 'agentMessage', text: 'ok', phase: 'final_answer' }] }) }))
+    const run = await m.driver.startRound(request() as never, {
+      ...roundSpec(m, child, { resume: { cliSessionId: 'persisted-thread', turn: 2 } }),
+      configuration: { model: 'admitted-model', effort: 'high' },
+    })
+    await run.result
+    expect(m.spawns[0]!.spec.argv).toEqual(['codex', 'app-server', '-c', 'model="admitted-model"', '-c', 'model_reasoning_effort="high"', '--stdio'])
+    expect(m.spawns[0]!.fake!.requests.find(r => r.method === 'turn/start')?.params).toMatchObject({ model: 'admitted-model', effort: 'high' })
+    expect(m.spawns[0]!.fake!.requests.find(r => r.method === 'thread/resume')?.params).toMatchObject({ threadId: 'persisted-thread' })
+    await m.driver.disposeAll()
+  })
+
   it('unset: the app-server argv is exactly the pre-key shape', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-model-off'))
@@ -1066,4 +1142,21 @@ describe('codex live driver member-aware model', () => {
     expect(m.spawns).toHaveLength(2)
     expect(m.spawns[1]!.spec.argv).toEqual(['codex', 'app-server', '-c', 'model="model-b"', '--stdio'])
   })
+})
+
+
+it('prepares native protocol without a prompt, then reuses it for the first real turn', async () => {
+  const m = mount()
+  const child = Session.create(SessionId('prepared-member'))
+  const fake = new FakeAppServer()
+  m.queueChild(fake)
+  const spec = roundSpec(m, child)
+  await m.driver.prepare(spec, new AbortController().signal)
+  expect(fake.requests.some(request => request.method === 'turn/start')).toBe(false)
+  expect(child.snapshotEvents().some(event => event.type === 'turn/start' || event.type === 'user/message')).toBe(false)
+  const run = await m.driver.startRound(request() as never, spec)
+  await run.result
+  expect(fake.requests.filter(request => request.method === 'turn/start')).toHaveLength(1)
+  expect(m.spawns).toHaveLength(1)
+  await m.driver.disposeAll()
 })

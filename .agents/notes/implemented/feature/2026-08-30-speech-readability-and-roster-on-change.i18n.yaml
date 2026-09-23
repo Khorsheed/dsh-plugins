@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-speech-readability-and-roster-on-change.md
-.agents/notes/implemented/feature/2026-08-30-speech-readability-and-roster-on-change.md: 35c84f0da6f73eca13ebd64e14c0a80069a13446
-.agents/notes/implemented/feature/2026-08-30-speech-readability-and-roster-on-change.zh.md: c29217b440809742b372b821bef3f3eea99980c6
+.agents/notes/implemented/feature/2026-08-30-speech-readability-and-roster-on-change.md: 55a209b005b899592772fbab357bebce204435fb
+.agents/notes/implemented/feature/2026-08-30-speech-readability-and-roster-on-change.zh.md: 73b45ca7738fa72e5f8916c77677dc963244a43d

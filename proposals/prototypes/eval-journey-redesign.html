@@ -1,0 +1,906 @@
+<title>评测旅程走查稿</title>
+<style>
+/* 取值与 3171 宿主 --dsw-alias-* 一致（09-23 实测），名字也沿用，实施时直接换成 var(--dsw-alias-…) */
+:root{
+  --bg-base:#fff; --bg-side:#f8f9fa; --bg-l2:#f6f7f9; --overlay:#e9ecf2;
+  --b1:#0000000a; --b2:#0000001a; --b3:#0000001f; --b4:#00000029;
+  --l1:#0f1115; --l2:#61666b; --l3:#81858c; --cap:#adb2b8;
+  --pri:#0f1115; --pri-ink:#fff; --pri-hover:#43454a; --dim:#ebeef2;
+  --link:#4176e6; --biz:#4176e6; --biz-3:#e4edfd;
+  --hover:#2631480f; --active:#2631481a;
+  --ok:#22c55e; --ok-ink:#16a34a; --ok-3:#e6faed;
+  --warn:#f59e0b; --warn-ink:#dd8629; --warn-3:#fef5e7;
+  --err:#ec1313; --err-3:#ec13130d; --diffbg:#fef5e7;
+  --add:#e6faed; --del:#ec13130d;
+  --note-ink:#0f1115;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --bg-base:#151517; --bg-side:#1b1b1d; --bg-l2:#232324; --overlay:#61666b;
+  --b1:#ffffff0f; --b2:#ffffff1f; --b3:#ffffff29; --b4:#fff3;
+  --l1:#f9fafb; --l2:#cfd3d6; --l3:#adb2b8; --cap:#81858c;
+  --pri:#f9fafb; --pri-ink:#0f1115; --pri-hover:#ebeef2; --dim:#43454a;
+  --link:#679efe; --biz:#679efe; --biz-3:#34415b;
+  --hover:#ffffff14; --active:#ffffff24;
+  --ok:#22c55e; --ok-ink:#4ed17e; --ok-3:#233c2c;
+  --warn:#f59e0b; --warn-ink:#f7ad31; --warn-3:#27241f;
+  --err:#f25a5a; --err-3:#f25a5a26; --diffbg:#27241f;
+  --add:#233c2c; --del:#f25a5a26; --note-ink:#f9fafb;
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg-base:#151517; --bg-side:#1b1b1d; --bg-l2:#232324; --overlay:#61666b;
+  --b1:#ffffff0f; --b2:#ffffff1f; --b3:#ffffff29; --b4:#fff3;
+  --l1:#f9fafb; --l2:#cfd3d6; --l3:#adb2b8; --cap:#81858c;
+  --pri:#f9fafb; --pri-ink:#0f1115; --pri-hover:#ebeef2; --dim:#43454a;
+  --link:#679efe; --biz:#679efe; --biz-3:#34415b;
+  --hover:#ffffff14; --active:#ffffff24;
+  --ok:#22c55e; --ok-ink:#4ed17e; --ok-3:#233c2c;
+  --warn:#f59e0b; --warn-ink:#f7ad31; --warn-3:#27241f;
+  --err:#f25a5a; --err-3:#f25a5a26; --diffbg:#27241f;
+  --add:#233c2c; --del:#f25a5a26; --note-ink:#f9fafb;
+}
+*{box-sizing:border-box}
+body{background:var(--bg-side);color:var(--l1);font-family:var(--sans);font-size:14px;line-height:1.55;padding-inline:16px;padding-block:0 48px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1440px;margin:0 auto}
+.mono{font-family:var(--mono);font-size:12px}
+.c2{color:var(--l2)} .c3{color:var(--l3)} .sm{font-size:12px}
+header.top{padding-block:24px 16px;display:flex;flex-wrap:wrap;gap:10px 32px;align-items:flex-end;justify-content:space-between}
+header.top h1{font-size:20px;margin:0;font-weight:600;text-wrap:balance}
+header.top p{margin:4px 0 0;color:var(--l2);max-width:72ch}
+.legend{display:flex;gap:10px;flex-wrap:wrap;color:var(--l2);font-size:12px;align-items:center}
+.layout{display:grid;grid-template-columns:188px minmax(0,1fr);gap:20px;align-items:start}
+
+/* storyboard nav：学宿主侧栏的会话列表 */
+nav.scenes{position:sticky;top:env(safe-area-inset-top,0px);padding-top:4px;display:flex;flex-direction:column;gap:1px}
+nav.scenes .grp{font-size:12px;color:var(--l3);margin:14px 10px 4px}
+nav.scenes button{all:unset;cursor:pointer;padding:6px 10px;border-radius:8px;color:var(--l1);display:flex;gap:8px;align-items:baseline;font-size:14px}
+nav.scenes button b{font-weight:400;color:var(--cap);font-variant-numeric:tabular-nums;min-width:1.3em;font-size:12px}
+nav.scenes button .new{font-size:11px;color:var(--biz);margin-left:auto}
+nav.scenes button:hover{background:var(--hover)}
+nav.scenes button[aria-current="true"]{background:var(--active)}
+nav.scenes button:focus-visible{outline:2px solid var(--biz)}
+
+.scene{display:grid;grid-template-columns:minmax(0,1fr) 316px;gap:20px;align-items:start}
+.scene-title{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
+.scene-title h2{margin:0;font-size:16px;font-weight:600}
+.scene-title .who{font-size:12px;color:var(--l3)}
+.scene-title p{flex-basis:100%;margin:0;color:var(--l2);max-width:84ch}
+.pager{grid-column:1/-1;display:flex;justify-content:space-between;gap:12px}
+.pager button{all:unset;cursor:pointer;color:var(--link);font-size:13px}
+.full{grid-column:1/-1}
+
+/* ---------- 宿主外壳 ---------- */
+.app{background:var(--bg-base);border:1px solid var(--b2);border-radius:12px;overflow:hidden;display:grid;grid-template-columns:200px minmax(0,1fr);min-height:560px}
+.side{background:var(--bg-side);border-right:1px solid var(--b2);padding:12px 8px;display:flex;flex-direction:column;gap:2px;font-size:13px}
+.side .logo{font-weight:700;letter-spacing:-.01em;padding:2px 6px 10px;display:flex;align-items:center;gap:6px}
+.side .logo small{font-size:9px;background:var(--pri);color:var(--pri-ink);padding:0 4px;border-radius:2px;letter-spacing:.06em}
+.side .newbtn{border:1px solid var(--b2);border-radius:10px;background:var(--bg-base);text-align:center;padding:5px;margin-bottom:10px}
+.side .h{color:var(--l3);padding:4px 6px}
+.side .ws{padding:4px 6px}
+.side .ss{padding:4px 6px 4px 22px;border-radius:8px;display:flex;justify-content:space-between;color:var(--l1);white-space:nowrap;overflow:hidden}
+.side .ss span:last-child{color:var(--l3);font-size:12px}
+.side .ss.on{background:var(--active)}
+.main{display:flex;flex-direction:column;min-width:0}
+.hd{display:flex;align-items:center;gap:10px;padding:10px 20px 0;flex-wrap:wrap}
+.hd .ttl{font-weight:500;font-size:14px}
+.hd .mode{font-size:12px;color:var(--l2)}
+.xchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;border:1px solid var(--b2);border-radius:999px;padding:1px 8px;color:var(--l1);background:var(--bg-base)}
+.xchip i{width:6px;height:6px;border-radius:50%;background:var(--l3);display:inline-block}
+.xchip.run i{background:var(--biz)} .xchip.ok i{background:var(--ok)} .xchip.warn i{background:var(--warn)}
+.xchip .cv{color:var(--l3)}
+.tabs{display:flex;gap:28px;padding:6px 20px 0;border-bottom:1px solid var(--b2);overflow-x:auto;font-size:13px}
+.tabs span{padding:6px 0 8px;color:var(--l2);white-space:nowrap}
+.tabs span.on{color:var(--biz);box-shadow:inset 0 -2px 0 var(--biz)}
+.tabs .tn{display:inline-block;min-width:16px;height:16px;margin-left:4px;padding:0 4px;border-radius:8px;background:var(--warn-3);color:var(--warn-ink);font-size:11px;line-height:16px;text-align:center;font-style:normal}
+.hmark{margin:0 0 10px;padding:8px 12px;border-left:3px solid var(--warn);background:var(--warn-3);border-radius:0 6px 6px 0;font-size:13px;color:var(--l1)}
+.hmark .w2{display:block;color:var(--l3);font-size:12px;margin-top:2px}
+.body{padding:14px 20px 18px;flex:1}
+.body.chat{padding:20px clamp(12px,6%,64px) 8px}
+
+/* 输入框 & 提问卡（宿主 QuestionComposer 替代输入框） */
+.composer{margin:8px clamp(12px,6%,64px) 16px;border:1px solid var(--b2);border-radius:16px;padding:10px 12px 8px;background:var(--bg-base);box-shadow:0 1px 2px var(--b1)}
+.composer .txt{color:var(--cap);min-height:22px}
+.composer .txt.filled{color:var(--l1)}
+.composer .row{display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap;font-size:12px;color:var(--l2)}
+.composer .send{margin-left:auto;width:28px;height:28px;border-radius:50%;background:var(--biz);opacity:.45}
+.composer .send.on{opacity:1}
+.composer .ic{width:24px;height:24px;border-radius:50%;border:1px solid var(--b2);display:inline-grid;place-items:center;color:var(--l2)}
+.refchip{display:inline-flex;gap:5px;align-items:center;font-size:12px;background:var(--bg-l2);border:1px solid var(--b2);border-radius:6px;padding:0 6px;color:var(--l1)}
+.qcard{margin:8px clamp(12px,6%,64px) 16px;border:1px solid var(--b3);border-radius:16px;background:var(--bg-base);box-shadow:0 4px 18px -8px rgba(0,0,0,.18);overflow:hidden}
+.qcard .qh{display:flex;align-items:center;gap:8px;padding:12px 14px 4px}
+.qcard .eyebrow{font-size:12px;color:var(--l3)}
+.qcard .badge{font-size:11px;border-radius:4px;padding:0 5px;background:var(--bg-l2);color:var(--l2);border:1px solid var(--b2)}
+.qcard .qt{font-weight:500;padding:0 14px 8px}
+.qopt{display:flex;gap:10px;padding:8px 14px;align-items:flex-start;border-top:1px solid var(--b1)}
+.qopt .n{width:20px;height:20px;border-radius:6px;border:1px solid var(--b3);display:grid;place-items:center;font-size:11px;color:var(--l2);flex:none;margin-top:1px}
+.qopt.sel{background:var(--hover)} .qopt.sel .n{background:var(--pri);color:var(--pri-ink);border-color:var(--pri)}
+.qopt .lb{font-weight:500}
+.qopt .ds{font-size:12px;color:var(--l2)}
+.rec{font-size:11px;color:var(--biz);background:var(--biz-3);border-radius:4px;padding:0 5px;margin-left:6px;font-weight:400}
+.qcard .custom{border-top:1px solid var(--b1);padding:8px 14px;color:var(--cap);display:flex;gap:10px}
+.qcard .qf{border-top:1px solid var(--b2);display:flex;gap:10px;align-items:center;padding:8px 14px;font-size:12px;color:var(--l2)}
+
+/* 对话 */
+.u{margin-left:auto;max-width:76%;background:var(--bg-l2);padding:9px 14px;border-radius:16px;margin-bottom:16px;width:fit-content}
+.a{margin-bottom:12px;max-width:94%}
+.a p{margin:0 0 8px}
+.trow{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--l2);padding:4px 0;margin-bottom:4px}
+.trow .tk{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--ok);display:inline-grid;place-items:center;font-size:9px;color:var(--ok)}
+.trow code{font-family:var(--mono);font-size:12px;color:var(--l1)}
+.evt{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--l2);border:1px dashed var(--b3);border-radius:10px;padding:6px 10px;margin:4px 0 12px}
+
+/* 通用件 */
+.btn{display:inline-flex;align-items:center;gap:6px;border-radius:10px;padding:5px 12px;font-size:13px;border:1px solid var(--b2);background:var(--bg-base);color:var(--l1);white-space:nowrap}
+.btn.pri{background:var(--pri);color:var(--pri-ink);border-color:var(--pri)}
+.btn.ghost{border-color:transparent;color:var(--link);padding-inline:2px;background:none}
+.btn.dis{opacity:.4}
+.btn.sm{padding:2px 9px;font-size:12px;border-radius:8px}
+.btn.ai::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--biz);transform:rotate(45deg)}
+.btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:0 7px;border-radius:6px;line-height:20px;white-space:nowrap;background:var(--bg-l2);color:var(--l2)}
+.pill.ok{background:var(--ok-3);color:var(--ok-ink)} .pill.run{background:var(--biz-3);color:var(--biz)}
+.pill.warn{background:var(--warn-3);color:var(--warn-ink)} .pill.bad{background:var(--err-3);color:var(--err)}
+.pill.dot::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.box{border:1px solid var(--b2);border-radius:12px;background:var(--bg-base)}
+.box > .bh{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--b2);flex-wrap:wrap}
+.box > .bh h4{margin:0;font-size:13px;font-weight:600}
+.box > .bb{padding:12px 14px}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;font-size:13px;margin:0}
+.kv dt{color:var(--l3)} .kv dd{margin:0}
+
+/* 实验页 */
+.xhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.xhead .back{color:var(--l3);font-size:12px}
+.xhead h3{margin:0;font-size:15px;font-weight:600}
+.xhead .q{flex-basis:100%;color:var(--l2);font-size:13px}
+.stepper{display:flex;margin:2px 0 14px;overflow-x:auto;padding-bottom:2px}
+.step{flex:1 1 0;min-width:80px;position:relative;padding-top:15px;font-size:12px;color:var(--l3)}
+.step::before{content:"";position:absolute;top:4px;left:0;right:0;height:2px;background:var(--b2)}
+.step::after{content:"";position:absolute;top:0;left:0;width:10px;height:10px;border-radius:50%;background:var(--bg-base);border:2px solid var(--b4)}
+.step.done{color:var(--l2)} .step.done::before{background:var(--l1)} .step.done::after{background:var(--l1);border-color:var(--l1)}
+.step.now{color:var(--l1);font-weight:600} .step.now::after{border-color:var(--biz);background:var(--biz);box-shadow:0 0 0 4px var(--biz-3)}
+.step.flag{color:var(--warn-ink);font-weight:600} .step.flag::after{border-color:var(--warn);background:var(--warn)}
+.step small{display:block;font-weight:400;color:var(--l3)}
+.stages{display:flex;gap:4px;margin:0 0 12px;overflow-x:auto;border:1px solid var(--b2);border-radius:10px;padding:3px;width:fit-content;max-width:100%}
+.stages span{padding:4px 12px;border-radius:7px;font-size:13px;color:var(--l2);white-space:nowrap}
+.stages span.on{background:var(--active);color:var(--l1);font-weight:500}
+.stages span .d{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle;background:var(--b4)}
+.stages span .d.ok{background:var(--ok)} .stages span .d.run{background:var(--biz)} .stages span .d.warn{background:var(--warn)}
+.next{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:11px 14px;border-radius:12px;background:var(--bg-l2);margin-bottom:16px}
+.next .say{flex:1 1 260px}
+.next .say b{display:block;font-weight:600}
+.next .say span{font-size:12px;color:var(--l2)}
+.next.warnish{background:var(--warn-3)}
+.sec{margin-bottom:16px}
+.sec > h5{font-size:13px;color:var(--l1);margin:0 0 8px;font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sec > h5 .h5s{font-weight:400;color:var(--l3);font-size:12px}
+.fold{border-top:1px solid var(--b2);padding:9px 0;color:var(--l2);font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fold::before{content:"›";color:var(--l3)}
+.fold .n{margin-left:auto;font-size:12px;color:var(--l3)}
+.tw{overflow-x:auto}
+table.t{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+table.t th{font-weight:400;color:var(--l3);text-align:left;font-size:12px;padding:6px 10px;border-bottom:1px solid var(--b2);white-space:nowrap}
+table.t td{padding:8px 10px;border-bottom:1px solid var(--b1);vertical-align:top}
+table.t td.diff{background:var(--diffbg)}
+table.t tr:last-child td{border-bottom:0}
+.sub{font-size:11px;color:var(--l3);display:block}
+.editable{border-bottom:1px dashed var(--b4)}
+.cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.cell{border:1px solid var(--b2);border-radius:10px;padding:9px 12px;display:flex;flex-direction:column;gap:4px}
+.cell.sel{border-color:var(--l1);box-shadow:0 0 0 1px var(--l1)}
+.cell .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.tl{list-style:none;margin:0;padding:0;font-size:12px}
+.tl li{display:flex;gap:10px;padding:3px 0;color:var(--l2)}
+.tl li i{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none;background:var(--l1)}
+.tl li.cur i{background:var(--biz);box-shadow:0 0 0 3px var(--biz-3)}
+.tl li.todo i{background:var(--b4)}
+.tl li span:last-child{margin-left:auto;color:var(--l3)}
+.bars{display:grid;grid-template-columns:max-content 1fr max-content;gap:6px 12px;align-items:center;font-size:12px}
+.bars .b{height:6px;background:var(--bg-l2);border-radius:3px;overflow:hidden}
+.bars .b i{display:block;height:100%;background:var(--l2);border-radius:3px}
+.bars .lbl{grid-column:1/-1;color:var(--l3);margin-top:6px}
+.verdict{border-radius:12px;padding:14px 16px;border:1px solid var(--b2);border-left:3px solid var(--warn);background:var(--bg-base);margin-bottom:16px}
+.verdict h4{margin:0 0 6px;font-size:15px}
+.verdict ul{margin:0 0 12px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.verdict li{display:flex;gap:8px}
+.verdict li .m{flex:none;width:16px;text-align:center;font-weight:700}
+.verdict li .m.x{color:var(--err)} .verdict li .m.w{color:var(--warn-ink)}
+.score{display:flex;gap:22px;flex-wrap:wrap;margin:6px 0 12px;align-items:flex-end}
+.score div{display:flex;flex-direction:column}
+.score b{font-size:24px;font-variant-numeric:tabular-nums;line-height:1.1;font-weight:600}
+.score span{font-size:12px;color:var(--l2)}
+.score .na b{color:var(--cap)}
+.crit{display:grid;grid-template-columns:1fr auto auto;gap:6px 10px;font-size:12px;align-items:center}
+.crit .h{color:var(--l3)}
+.seg{display:inline-flex;border:1px solid var(--b2);border-radius:6px;overflow:hidden}
+.seg span{padding:0 7px;line-height:20px;font-size:12px;color:var(--l2)}
+.seg span.on{background:var(--pri);color:var(--pri-ink)}
+.seg2{display:inline-flex;gap:2px;background:var(--bg-l2);padding:2px;border-radius:8px;font-size:12px}
+.seg2 span{padding:2px 10px;border-radius:6px;color:var(--l2)}
+.seg2 span.on{background:var(--bg-base);color:var(--l1);box-shadow:0 0 0 1px var(--b2)}
+.listgrp{margin-bottom:14px}
+.listgrp h5{display:flex;gap:8px;align-items:center;margin:0 0 6px;font-size:13px;font-weight:600}
+.listgrp h5 .n{color:var(--l3);font-weight:400}
+.xrow{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1.3fr) max-content max-content;gap:12px;align-items:center;padding:8px 10px;border-radius:10px}
+.xrow:hover,.xrow.h{background:var(--hover)}
+.xrow .nm b{display:block;font-weight:500}
+.xrow .nm span{font-size:12px;color:var(--l2)}
+.xrow .meta{font-size:12px;color:var(--l2)}
+.toast{position:absolute;right:16px;bottom:16px;max-width:300px;background:var(--pri);color:var(--pri-ink);border-radius:12px;padding:10px 12px;font-size:12px}
+.toast b{display:block;font-size:13px}
+
+/* 作答查看 */
+.cmp{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.pane{border:1px solid var(--b2);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.pane .ph{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--b2);background:var(--bg-l2);flex-wrap:wrap}
+.pane .ph b{font-weight:600}
+.pane .pb{padding:10px 12px;font-size:13px}
+.doc h6{font-size:13px;margin:0 0 4px}
+.doc p{margin:0 0 6px;color:var(--l1)}
+.doc ul{margin:0 0 6px;padding-left:18px}
+.files{list-style:none;margin:0;padding:0;font-family:var(--mono);font-size:12px}
+.files li{display:flex;gap:8px;padding:3px 0;align-items:center}
+.files .st{width:14px;text-align:center;font-weight:700}
+.files .st.a{color:var(--ok-ink)} .files .st.m{color:var(--warn-ink)} .files .st.d{color:var(--err)}
+.files .nn{margin-left:auto;color:var(--l3)}
+.hunk{font-family:var(--mono);font-size:12px;border:1px solid var(--b2);border-radius:8px;overflow:auto;margin-top:8px}
+.hunk div{padding:0 8px;white-space:pre}
+.hunk .hh{color:var(--l3);background:var(--bg-l2)}
+.hunk .ad{background:var(--add)} .hunk .de{background:var(--del)}
+.ev{display:flex;gap:8px;align-items:flex-start;font-size:12px;padding:6px 8px;border-radius:8px;background:var(--bg-l2);margin-top:8px}
+.subtabs{display:flex;gap:18px;border-bottom:1px solid var(--b2);margin-bottom:12px;font-size:13px;overflow-x:auto}
+.subtabs span{padding:4px 0 7px;color:var(--l2);white-space:nowrap}
+.subtabs span.on{color:var(--l1);box-shadow:inset 0 -2px 0 var(--l1);font-weight:500}
+
+/* 标注 */
+.pin{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--pri);color:var(--pri-ink);font-size:11px;font-weight:600;font-style:normal;vertical-align:middle;flex:none;font-variant-numeric:tabular-nums}
+.notes{display:flex;flex-direction:column;gap:10px;position:sticky;top:8px}
+.note{background:var(--bg-base);border:1px solid var(--b2);border-radius:12px;padding:10px 12px}
+.note .h{display:flex;gap:8px;align-items:center;font-weight:600;margin-bottom:4px}
+.note p{margin:0 0 6px;font-size:13px}
+.note .was,.note .agent,.note .impl{font-size:12px;color:var(--l2);padding-left:8px;margin:6px 0 0}
+.note .was{border-left:2px solid var(--err)} .note .was::before{content:"现在　";color:var(--err);font-weight:600}
+.note .agent{border-left:2px solid var(--biz)} .note .agent::before{content:"agent　";color:var(--biz);font-weight:600}
+.note .impl{border-left:2px solid var(--l3)} .note .impl::before{content:"实现　";color:var(--l1);font-weight:600}
+
+/* 地图、agent、决策 */
+.thesis{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:14px}
+.thesis div{background:var(--bg-base);border:1px solid var(--b2);border-radius:12px;padding:12px 14px}
+.thesis h4{margin:0 0 4px;font-size:14px}
+.thesis p{margin:0;color:var(--l2);font-size:13px}
+.jm{overflow-x:auto;background:var(--bg-base);border:1px solid var(--b2);border-radius:12px}
+.jm table{border-collapse:collapse;min-width:900px;width:100%;font-size:12.5px}
+.jm th,.jm td{padding:9px 12px;border-bottom:1px solid var(--b1);border-right:1px solid var(--b1);vertical-align:top;text-align:left}
+.jm th{background:var(--bg-l2);font-weight:600}
+.jm td.lane{font-weight:600;color:var(--l2);white-space:nowrap;background:var(--bg-l2)}
+.jm .pain{display:block;margin-top:6px;color:var(--err);font-size:12px} .jm .pain::before{content:"✕ "}
+.jm .gain{display:block;margin-top:6px;color:var(--ok-ink);font-size:12px} .jm .gain::before{content:"→ "}
+.jm .surf{display:inline-block;font-size:11px;border:1px solid var(--b2);border-radius:4px;padding:0 5px;margin:0 4px 4px 0;color:var(--l2)}
+.jm code,.aj code,.dec code{font-family:var(--mono);font-size:12px;background:var(--bg-l2);padding:0 4px;border-radius:4px}
+.ajs{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:14px}
+.aj{background:var(--bg-base);border:1px solid var(--b2);border-radius:12px;padding:12px 16px}
+.aj h4{margin:0 0 10px;font-size:14px;display:flex;gap:8px;align-items:center}
+.aj ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:7px;font-size:13px}
+.aj .bad{color:var(--err)} .aj .good{color:var(--ok-ink)}
+.dec{background:var(--bg-base);border:1px solid var(--b2);border-radius:12px;padding:12px 16px;margin-bottom:10px}
+.dec h4{margin:0 0 8px;font-size:14px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.dec h4 .id{font-family:var(--mono);color:var(--l3);font-size:12px}
+.dec h4 .st{font-size:11px;border-radius:4px;padding:0 5px;font-weight:400}
+.dec h4 .st.agreed{background:var(--ok-3);color:var(--ok-ink)} .dec h4 .st.open{background:var(--warn-3);color:var(--warn-ink)}
+.dec p{margin:0 0 4px;font-size:13px}
+.dec .why{font-size:12px;color:var(--l2);margin-top:6px}
+
+@media (max-width:1240px){.scene{grid-template-columns:minmax(0,1fr)} .notes{position:static;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}}
+@media (max-width:1000px){.app{grid-template-columns:minmax(0,1fr)} .side{display:none}}
+@media (max-width:760px){
+  .layout{grid-template-columns:minmax(0,1fr)}
+  nav.scenes{position:static;flex-direction:row;overflow-x:auto;padding-bottom:6px}
+  nav.scenes .grp{display:none}
+  nav.scenes button{white-space:nowrap}
+  .xrow{grid-template-columns:minmax(0,1fr) max-content} .xrow .meta{display:none}
+  .cmp{grid-template-columns:minmax(0,1fr)}
+  .u,.a{max-width:100%}
+}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div>
+    <h1>评测旅程走查稿 · v5</h1>
+    <p>题集与实验室按「一个实验从提问走到结论」看一遍。<b>会话不绑定题库</b>，题库按仓库登记、版本由实验钉 commit；「请人选择」一律用宿主的 <span class="mono">ask_user_question</span>；实验详情沿用 T67 的四阶段，只在里面加增量。配套提案：<span class="mono">proposals/active/2026-09-23-eval-journey-redesign.md</span>（决策以提案正文为准，本稿只是示意）。例子用 3171 上 <span class="mono">pilot-d-preset</span> 的真实数据，配色取自宿主 token。</p>
+  </div>
+  <div class="legend"><span><i class="pin">1</i> 标注</span><span class="pill ok">完成</span><span class="pill run">进行中</span><span class="pill">未开始</span><span class="pill warn">提醒</span><span class="pill bad">阻塞</span></div>
+</header>
+<div class="layout">
+  <nav class="scenes" id="nav" aria-label="场景"></nav>
+  <main id="stage"></main>
+</div>
+</div>
+
+<!-- 共用：宿主侧栏 -->
+<template id="side">
+  <aside class="side">
+    <div class="logo">deepseek <small>HARNESS</small></div>
+    <div class="newbtn">＋ New Session</div>
+    <div class="h">Workspaces</div>
+    <div class="ws">▾ i1-p0-dsh-1</div>
+    <div class="ss on"><span>精简 vs 完整预设</span><span>now</span></div>
+    <div class="ss"><span>dsh 两模型 P0 容器对比</span><span>6d</span></div>
+    <div class="ss"><span>测试 dsh 两模型在 P0…</span><span>6d</span></div>
+    <div class="ws">▸ lab-workspace</div>
+  </aside>
+</template>
+
+<!-- ============ 旅程地图 ============ -->
+<template data-id="map" data-group="全局" data-label="旅程地图">
+<section class="scene">
+  <div class="scene-title"><h2>旅程地图</h2><p>三条主张。后面每一屏都是其中一条的展开。</p></div>
+  <div class="full">
+    <div class="thesis">
+      <div><h4>① 实验是主对象，会话不绑定题库</h4><p>题库按<b>仓库</b>登记一次；题库版本、对比组、判官都钉在实验上（plan 里记 repo@commit），运行时 eval 按 commit 取题。会话只是人和 agent 的沟通窗口，本身不记任何东西。</p></div>
+      <div><h4>② 用宿主的现成机制，不另做 UI</h4><p>要人选择、拍板：<span class="mono">ask_user_question</span>。<br>对话里的实验入口：eval client 注册在 <span class="mono">tool.call.toolview</span> 上的一个工具行视图。<br>要 agent 帮忙：往输入框预填引用。</p></div>
+      <div><h4>③ 外壳不动，只加增量</h4><p>沿用 T67 的四阶段（实验设计 / 运行记录 / 结果对比 / 人工评估）。新增的是：就绪清单里阻塞项和提醒分开、作答视图从各阶段都能进、结论先行、判定来源不齐时不给 Δ、人工评估可做可不做（人的态度写成标记跟着结果走）。批准、登录、终评仍然只能由人做（R1）。</p></div>
+    </div>
+    <div class="jm"><table>
+      <thead><tr><th></th><th>提问</th><th>方案</th><th>就绪</th><th>运行</th><th>人工评估</th><th>结果</th></tr></thead>
+      <tbody>
+      <tr><td class="lane">人</td><td>说想法；必要时在提问卡上选仓库或版本</td><td>看方案页，改数字，或让 agent 改</td><td>准备环境、批准并启动</td><td>通常不用操作；看作答</td><td>并排盲评、终评</td><td>读结论和可信度；导出</td></tr>
+      <tr><td class="lane">agent</td><td><code>datasets_list</code> 候选多于 1 个 → <code>ask_user_question</code><span class="pain">现在：自己翻磁盘找到共享检出</span></td><td><code>eval_plan_draft(repo)</code> → 工具行视图显示实验卡<span class="pain">现在：只在文字里报文件路径</span></td><td>处理人交过来的提醒</td><td>用 <code>eval_run_status</code> 读进度<span class="pain">「事件回流到会话」宿主暂无 API，待证</span></td><td>同左</td><td>用 <code>eval_experiment_get</code> 读数据，写分析初稿<span class="pain">现在：要人手报路径</span></td></tr>
+      <tr><td class="lane">编排器</td><td>—</td><td>validate</td><td>provision、就绪检查</td><td>逐格执行、归档作答</td><td>判官委派</td><td>finalize、导出</td></tr>
+      <tr><td class="lane">面</td><td><span class="surf">对话</span><span class="surf">提问卡</span></td><td><span class="surf">工具行</span><span class="surf">实验设计</span></td><td><span class="surf">实验设计 · 就绪段</span></td><td><span class="surf">运行记录</span><span class="surf">作答</span></td><td><span class="surf">人工评估</span></td><td><span class="surf">结果对比</span></td></tr>
+      <tr><td class="lane">现在的断点</td><td><span class="pain">题集 tab 显示「未绑定」，实验室却列出 22 个全局实验</span></td><td><span class="pain">设计页只读，改一个数字要回对话</span></td><td><span class="pain">「✓ 环境就绪」和 3 条 warn、红框同屏</span></td><td><span class="pain">作答只能在抽屉里按路径逐个打开</span></td><td><span class="pain">一致性统计全是「—」，却占着页首</span></td><td><span class="pain">来源不一的 0 分对 4 分，还给出 CI [4, 4]</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 1 提问 ============ -->
+<template data-id="ask" data-group="用户旅程" data-label="提问 · 选题库版本">
+<section class="scene">
+  <div class="scene-title"><h2>提问：只在真有歧义时，agent 用提问卡让人选</h2><span class="who">面：对话 + 宿主提问卡 · 动作者：agent 提问，人选择</span></div>
+  <div class="app"><!--side-->
+    <div class="main">
+      <div class="hd"><span class="ttl">精简 vs 完整预设</span><span class="mode">评测模式</span></div>
+      <div class="tabs"><span class="on">对话</span><span>轨迹</span><span>实验</span><span>题库</span></div>
+      <div class="body chat">
+        <div class="u">我想比一比 dsh 的精简预设和完整预设在 P0 上差多少，容器里跑一次就行。</div>
+        <div class="a">
+          <div class="trow"><span class="tk">✓</span><code>datasets_list</code><span>· 1 个已登记的仓库含 P0：harness-comparison</span></div>
+          <p>题库只有 harness-comparison 一个，不用选。但它的最新版本和上次同类实验 pilot-d-preset 钉的版本不同，用哪个会影响能不能跟那次直接对比，需要你定。<i class="pin">1</i></p>
+          <div class="trow"><span class="tk" style="border-color:var(--biz);color:var(--biz)">?</span><span>向你提问 · 等待回答</span></div>
+        </div>
+      </div>
+      <div class="qcard"><i class="pin" style="float:right;margin:12px 14px 0 0">2</i>
+        <div class="qh"><span class="eyebrow">问题 1 / 1</span><span class="badge">题库版本</span></div>
+        <div class="qt">harness-comparison 用哪个版本？</div>
+        <div class="qopt sel"><span class="n">1</span><div><div class="lb">最新版本 @ 07fde76<span class="rec">推荐</span></div><div class="ds">校验通过；P0 的题面与 pilot-d-preset 那次不同，两次结果不能直接放在一起比</div></div></div>
+        <div class="qopt"><span class="n">2</span><div><div class="lb">和 pilot-d-preset 同一个版本</div><div class="ds">题面一致，可以和那次的结果对照；拿不到之后的题目修订</div></div></div>
+        <div class="custom"><span class="n" style="border:1px dashed var(--b3);width:20px;height:20px;border-radius:6px"></span>输入你的答案</div>
+        <div class="qf"><span>跳过本题</span><span style="margin-left:auto" class="btn pri sm">提交</span></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    <div class="note"><div class="h"><i class="pin">1</i>会话不绑定，agent 也不猜</div><p>先定仓库：①人在话里点名了 ②正在处理的实验已经钉了仓库 ③登记的仓库里只有一个含这些题。再定版本：缺省是最新；只有和相关实验钉的版本不一致、会影响对比时才追问。都定不下来，就用提问卡问人。</p><p class="impl">一个仓库只登记一次，worktree 不再是「题库」。示例里三个 worktree（wt-t65 / i5 / pilot-d）在新口径下都是同一个仓库的不同 commit。</p><p class="was">工具只回一句 "no dataset repository"。agent 自己在磁盘上找到共享检出，read 28 次、grep 20 次，最后被人叫停（会话 615b）。</p></div>
+    <div class="note"><div class="h"><i class="pin">2</i>宿主现成的提问卡</div><p>在输入框的位置出现：编号选项、「推荐」标记、自定义答案、跳过。答完后，对话里的那一行折叠成「已回答 1/1」，留作回执。</p><p class="impl">不改 UI。datasets-tool 在候选不唯一时返回错误，错误文本里带上候选列表和一句「请用 ask_user_question 让人选择」，preset 的提示词再补一条对应规则；这条规则靠模型照做，要在 pilot 里实测一次。「跳过本题」= 不起草，agent 停下等人。</p></div>
+    <div class="note"><div class="h">输入框上的题库 chip 去掉</div><p>会话不绑定题库，就没有「当前题库」可显示。某一句话想指定题库或实验，就用 <span class="mono">@</span> 引用，只对这条消息有效。</p><p class="was">chip 常驻显示 "Datasets not bound"，另外还有三处写法不同的「未绑定」提示。</p></div>
+  </aside>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 2 实验卡 ============ -->
+<template data-id="draft" data-group="用户旅程" data-label="方案 · 实验卡">
+<section class="scene">
+  <div class="scene-title"><h2>方案：agent 的草稿在对话里是一行可点的实验卡</h2><span class="who">面：对话 · 动作者：agent 起草，人决定</span></div>
+  <div class="app"><!--side-->
+    <div class="main">
+      <div class="hd"><span class="ttl">精简 vs 完整预设</span><span class="mode">评测模式</span></div>
+      <div class="tabs"><span class="on">对话</span><span>轨迹</span><span>实验<i class="tn">1</i><i class="pin">1</i></span><span>题库</span></div>
+      <div class="body chat">
+        <div class="a">
+          <div class="trow"><span class="tk">✓</span><span>向你提问 · 已回答 1/1 · harness-comparison 最新版本 @ 07fde76</span></div>
+          <div class="trow"><span class="tk">✓</span><code>datasets_show</code><span>P0-placeholder</span></div>
+          <div class="trow"><span class="tk">✓</span><code>eval_conditions</code><span>2 个 dsh 对比组</span></div>
+          <div class="box" style="margin:6px 0 10px"><i class="pin" style="float:right;margin:9px 12px 0 0">2</i>
+            <div class="bh"><span class="tk" style="width:14px;height:14px;border-radius:50%;border:1.5px solid var(--ok);display:inline-grid;place-items:center;font-size:9px;color:var(--ok)">✓</span><span class="mono c2">eval_plan_draft</span><h4>lean-vs-full-p0</h4><span class="pill">待批准</span></div>
+            <div class="bb">
+              <dl class="kv"><dt>问题</dt><dd>精简预设和完整预设在 P0 上差多少</dd><dt>规模</dt><dd>1 题 × 2 组 × 1 次</dd><dt>对比</dt><dd>dsh-lean ↔ dsh-full · 差在预设、作用域</dd><dt>题库</dt><dd class="mono">harness-comparison @ 07fde76</dd><dt>校验</dt><dd><span class="pill ok">通过</span> <span class="pill warn">2 条提醒</span></dd></dl>
+              <div class="btns" style="margin-top:10px"><span class="btn sm">打开方案</span><span class="hint c3 sm">批准在实验页完成</span></div>
+            </div>
+          </div>
+          <p>草稿建好了。有一件事需要你定：只跑 1 次没法估计波动，只看方向够用，要下结论建议跑 3 次。</p>
+          <div class="trow"><span class="tk" style="border-color:var(--biz);color:var(--biz)">?</span><span>向你提问 · 等待回答</span></div>
+        </div>
+      </div>
+      <div class="qcard"><i class="pin" style="float:right;margin:12px 14px 0 0">3</i>
+        <div class="qh"><span class="eyebrow">问题 1 / 1</span><span class="badge">重复次数</span></div>
+        <div class="qt">每组跑几次？</div>
+        <div class="qopt sel"><span class="n">1</span><div><div class="lb">1 次（只看方向）<span class="rec">推荐</span></div><div class="ds">约 10 分钟，约 60k 输出 token；结论不会给置信区间</div></div></div>
+        <div class="qopt"><span class="n">2</span><div><div class="lb">3 次</div><div class="ds">约 30 分钟，约 180k 输出 token；可以做配对比较</div></div></div>
+        <div class="custom"><span class="n" style="border:1px dashed var(--b3);width:20px;height:20px;border-radius:6px"></span>输入你的答案</div>
+        <div class="qf"><span>跳过本题</span><span style="margin-left:auto" class="btn pri sm">提交</span></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    <div class="note"><div class="h"><i class="pin">1</i>会话头不放「当前实验」</div><p>一个会话可以有 0 个、1 个或好几个实验，会话头放不下，也不该替人选一个「当前的」。「实验」tab 的标签上只显示一个数：本会话发起的实验里有几个需要你处理。详情看列表，对话里每个实验各有一张工具行卡片。</p><p class="impl">待证：<span class="mono">conversation.view</span> 的 <span class="mono">label</span> 是函数，要确认宿主会在状态变化时重绘标签。不会的话就不显示这个数，不用 DOM 锚点去硬改。</p></div>
+    <div class="note"><div class="h"><i class="pin">2</i>工具行视图（eval 自带）</div><p>取代通用的工具行：显示实验名、规模、对比、题库版本、校验结果，外加「打开方案」。卡片上没有批准按钮（R1）。</p><p class="impl">eval client 注册 <span class="mono">tool.call.toolview</span>，key 是 <span class="mono">eval_plan_draft</span>；在 <span class="mono">dsh.client.inject</span> 里加上 <span class="mono">dsh-client-ui-tool</span>。读不到期望的字段时，退回显示一行文字。</p><p class="was">agent 只写一句「新建了 plans/xxx.json」。走查中见过一次报成功、文件却没落盘——这是 T60 写路径的疑似缺陷，先单独复现、修掉，不等这张卡。</p></div>
+    <div class="note"><div class="h"><i class="pin">3</i>要拍板的也用提问卡</div><p>次数、要不要补判、要不要加一组，这类选择都走 <span class="mono">ask_user_question</span>，选项里写明代价。</p></div>
+  </aside>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 3 方案页（新） ============ -->
+<template data-id="plan" data-group="用户旅程" data-label="实验设计 · 方案段" data-new="1">
+<section class="scene">
+  <div class="scene-title"><h2>实验设计：实验要回答什么、怎么比、花多少</h2><span class="who">面：实验 › 实验设计（上半段，T67 增量）· 动作者：agent 起草，人审阅和修改</span></div>
+  <div class="app"><!--side-->
+    <div class="main">
+      <div class="hd"><span class="ttl">精简 vs 完整预设</span><span class="mode">评测模式</span></div>
+      <div class="tabs"><span>对话</span><span>轨迹</span><span class="on">实验</span><span>题库</span></div>
+      <div class="body">
+        <div class="xhead"><span class="back">← 全部实验</span><h3>lean-vs-full-p0</h3><span class="pill">待批准</span><span class="c3 sm" style="margin-left:auto">agent 起草于 14:02 · 来自本会话</span></div>
+        <div class="stages"><span class="on"><i class="d run"></i>实验设计</span><span class=""><i class="d "></i>运行记录</span><span class=""><i class="d "></i>结果对比</span><span class=""><i class="d "></i>人工评估</span></div>
+        <div class="next"><div class="say"><b>草稿 · 下一步是校验</b><span>启动之前方案都能改；启动后冻结。</span></div><span class="btn">让 agent 改…</span><span class="btn pri">去校验</span></div>
+
+        <div class="sec"><h5>要回答的问题 <span class="pill run">plan rev13 新字段</span><i class="pin">1</i></h5>
+          <div class="box"><div class="bb">
+            <div style="font-size:15px;font-weight:500" class="editable">精简预设和完整预设在 P0 上差多少？</div>
+            <dl class="kv" style="margin-top:8px"><dt>预期</dt><dd class="editable">精简预设少注入上下文，预计更省 token，得分不低于完整预设</dd><dt>怎么算回答了</dt><dd>两组的加权得分和效率都有可比的数据</dd></dl>
+          </div></div>
+        </div>
+
+        <div class="sec"><h5>比什么 <span class="h5s">两组不同的地方标黄；只有一处不同时，结论才能归因</span><i class="pin">2</i></h5>
+          <div class="tw"><table class="t">
+            <thead><tr><th>对比组</th><th>harness</th><th>模型</th><th>预设</th><th>作用域</th><th>home</th><th></th></tr></thead>
+            <tbody>
+              <tr><td><b>dsh-lean</b></td><td>dsh 0.1.1</td><td>deepseek-v4-flash</td><td class="diff">精简</td><td class="diff">d-lean</td><td>~/.dsh</td><td><span class="btn ghost sm">换</span></td></tr>
+              <tr><td><b>dsh-full</b></td><td>dsh 0.1.1</td><td>deepseek-v4-flash</td><td class="diff">完整</td><td class="diff">d-full</td><td>~/.dsh</td><td><span class="btn ghost sm">换</span></td></tr>
+            </tbody>
+          </table></div>
+          <div class="btns" style="margin-top:6px"><span class="btn ghost sm">＋ 加一组</span><span class="c3 sm">不同处：2 个（预设、作用域）· 结论只能描述，不能归因到预设</span><span class="btn ghost sm">把作用域对齐</span></div>
+        </div>
+
+        <div class="sec"><h5>用哪些题 <span class="h5s">harness-comparison @ 07fde76 · 已钉住</span><i class="pin">3</i></h5>
+          <div class="tw"><table class="t">
+            <thead><tr><th>题</th><th>考什么</th><th>怎么判</th><th>满分</th><th></th></tr></thead>
+            <tbody>
+              <tr><td><b>P0-placeholder</b><span class="sub">两阶段 · 容器</span></td><td>最小占位任务：读懂说明、改一处、提交</td><td>判官 13 条判据 · <span style="color:var(--warn-ink)">没有检查脚本</span></td><td>10</td><td><span class="btn ghost sm">看题面</span></td></tr>
+            </tbody>
+          </table></div>
+          <div class="btns" style="margin-top:6px"><span class="btn ghost sm">＋ 从题库加题</span></div>
+        </div>
+
+        <div class="sec"><h5>怎么判</h5>
+          <dl class="kv"><dt>判官</dt><dd>t31-judge-other · claude-code / claude-haiku-4.5 · 采样 1 次 <span class="btn ghost sm">换</span></dd><dt>人工终评</dt><dd>全部作答 · 盲评（不显示组名）</dd><dt>检查脚本</dt><dd>题库里有就跑；P0 没有</dd></dl>
+        </div>
+
+        <div class="sec"><h5>规模与花费 <i class="pin">4</i></h5>
+          <div style="display:flex;gap:28px;flex-wrap:wrap;font-variant-numeric:tabular-nums">
+            <div><div class="c3 sm">每组次数</div><div><span class="seg"><span class="on">1</span><span>3</span><span>5</span></span></div></div>
+            <div><div class="c3 sm">作答份数</div><div style="font-size:18px;font-weight:600">2</div></div>
+            <div><div class="c3 sm">预计时长</div><div style="font-size:18px;font-weight:600">≈ 10 分钟</div></div>
+            <div><div class="c3 sm">预计输出 token</div><div style="font-size:18px;font-weight:600">≈ 60k</div></div>
+          </div>
+          <div class="c3 sm" style="margin-top:4px">估算来自这两个对比组过去在 P0 上的 2 次作答（4 分 14 秒 / 4 分 34 秒，25.1k / 31.0k）</div>
+        </div>
+
+        <div class="fold">高级设置<span class="n">顺序 seed · 阶段 · 每格预算 · 镜像与网络</span></div>
+        <div class="fold">原始计划 JSON<span class="n">plans/lean-vs-full-p0.json · 只读</span></div>
+      </div>
+      <div class="composer"><div class="txt filled"><span class="refchip">@ lean-vs-full-p0 · 方案</span>&nbsp; 把两组的作用域对齐成同一个，只保留预设这一个差异</div><div class="row"><span>Workspace Write</span><i class="pin">5</i><span style="margin-left:auto">DeepSeek-V41-Flash</span><span class="send on"></span></div></div>
+    </div>
+  </div>
+  <aside class="notes">
+    <div class="note"><div class="h"><i class="pin">1</i>先写清楚问题</div><p>「实验设计」的第一块是「这个实验要回答什么」，结果对比页会原样回答这个问题。点击就能改。</p><p class="impl">plan schema 现在没有「问题 / 预期 / 怎么算回答了」，要走一次协议修订（rev12 → rev13）；旧 plan 缺这三项时这一块不显示。</p><p class="was">设计页从对比组表格开始，全篇没有写这个实验要回答什么。实验名 <span class="mono">pilot-d-preset</span> 是唯一线索。</p></div>
+    <div class="note"><div class="h"><i class="pin">2</i>差异看得见，才谈得上归因</div><p>只列两组不同的字段；超过一处时直接说明「只能描述」，并给出「对齐」的快捷操作。</p><p class="was">"Columns separate the arms by Scope"、"1 more field(s) vary with the arms" 这类说明被折叠起来；3 个对比组的 Harness 和 Model 全是「—」。</p></div>
+    <div class="note"><div class="h"><i class="pin">3</i>题的可判性提前暴露</div><p>每道题写明考什么、由什么来判、满分多少。没有检查脚本、判据太少，在这里就能看到，不用等到结论页才发现。</p></div>
+    <div class="note"><div class="h"><i class="pin">4</i>花费写在批准之前</div><p>次数一改，份数、时长、token 立刻跟着变。估算基于同组的历史作答；没有历史时显示「无估算」。</p></div>
+    <div class="note"><div class="h"><i class="pin">5</i>人改和 agent 改是同一份草稿</div><p>次数、预算、判官采样这类数字人直接在页面上改（向导已经收集这些字段）；结构性的改动交给 agent，输入框预填引用。两边都写回同一个 plan。</p><p class="impl">页面上的改动走现有的 <span class="mono">condition-edit</span> / draft 写路径；启动后冻结（frozen-configuration）。</p></div>
+  </aside>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 4 就绪 ============ -->
+<template data-id="ready" data-group="用户旅程" data-label="实验设计 · 就绪段">
+<section class="scene">
+  <div class="scene-title"><h2>就绪：一张清单，阻塞项和提醒分开</h2><span class="who">面：实验 › 实验设计（下半段，T67 增量）· 动作者：人</span></div>
+  <div class="app"><!--side-->
+    <div class="main">
+      <div class="hd"><span class="ttl">精简 vs 完整预设</span><span class="mode">评测模式</span></div>
+      <div class="tabs"><span>对话</span><span>轨迹</span><span class="on">实验</span><span>题库</span></div>
+      <div class="body">
+        <div class="xhead"><span class="back">← 全部实验</span><h3>lean-vs-full-p0</h3><span class="pill">待批准</span></div>
+        <div class="stages"><span class="on"><i class="d warn"></i>实验设计</span><span class=""><i class="d "></i>运行记录</span><span class=""><i class="d "></i>结果对比</span><span class=""><i class="d "></i>人工评估</span></div>
+        <div class="next"><i class="pin">1</i><div class="say"><b>还差 1 项才能启动</b><span>dsh-full 的运行环境还没准备好。</span></div><span class="btn pri">准备 dsh-full 的环境</span><span class="btn dis">批准并启动</span></div>
+        <div class="sec"><h5>检查项</h5>
+          <div class="tw"><table class="t">
+            <thead><tr><th>项</th><th>状态</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>题库 harness-comparison @ 07fde76 可读</td><td><span class="pill ok dot">就绪</span></td><td></td></tr>
+              <tr><td>dsh-lean 环境（容器 · d-lean）</td><td><span class="pill ok dot">就绪</span></td><td></td></tr>
+              <tr><td>dsh-full 环境（容器 · d-full）</td><td><span class="pill bad dot">未准备</span></td><td><span class="btn sm">准备</span></td></tr>
+              <tr><td>判官 t31-judge-other 登录</td><td><span class="pill ok dot">就绪</span></td><td></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <div class="sec"><h5>提醒 <span class="h5s">不影响启动</span><i class="pin">2</i></h5>
+          <div class="box"><div class="bb" style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap"><span class="pill warn">提醒</span><div style="flex:1 1 240px">P0 没有检查脚本，这道题拿不到脚本判定。<span class="sub">只有判官会给分</span></div><span class="btn sm ai">让 agent 处理</span></div>
+            <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap"><span class="pill warn">提醒</span><div style="flex:1 1 240px">两组之间有 2 处不同，结论只能描述，不能归因。</div><span class="btn sm">回方案页</span></div>
+          </div></div>
+        </div>
+        <div class="fold">校验原文<span class="n">3 条 · 给想看原文的人</span></div>
+      </div>
+      <div class="composer"><div class="txt filled"><span class="refchip">@ lean-vs-full-p0 · 提醒 1</span>&nbsp; P0 没有检查脚本，帮我起草一个探针，写进题库之前先给我看。</div><div class="row"><span>Workspace Write</span><i class="pin">3</i><span style="margin-left:auto">DeepSeek-V41-Flash</span><span class="send on"></span></div></div>
+    </div>
+  </div>
+  <aside class="notes">
+    <div class="note"><div class="h"><i class="pin">1</i>页首一句话 + 一个主按钮</div><p>有阻塞项时，主按钮就是解决这个阻塞项；全部就绪后，主按钮变成「批准并启动」，而且只有人能点。</p><p class="was">已完成的实验，设计页上同时出现「✓ Environment ready」、3 条 warn 和一个「未绑定」红框，原因是它读的是会话当前的绑定。</p><p class="impl">这不是新页面：T67 的四阶段不动，就绪清单是「实验设计」阶段下半段的增量，把现有的 validate / environment 结果重排成「阻塞项 / 提醒」两组。已完成的实验这一段只读，读实验钉住的快照，不读会话。</p></div>
+    <div class="note"><div class="h"><i class="pin">2</i>提醒用人话写，附带动作</div><p class="was"><span class="mono">expectedNs declares "script" but item P0-placeholder ships no executable probe…</span>，而且 warn 的字号比正文还大。</p></div>
+    <div class="note"><div class="h"><i class="pin">3</i>「让 agent 处理」只是预填</div><p>输入框里带上实验和提醒的引用，人可以改完再发，不会自动发送。</p><p class="agent">agent 收到的是 id，读的是和页面同源的 <span class="mono">eval_experiment_get</span>。</p></div>
+  </aside>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 5 运行 ============ -->
+<template data-id="run" data-group="用户旅程" data-label="运行">
+<section class="scene">
+  <div class="scene-title"><h2>运行：一个网格，点格子看详情</h2><span class="who">面：实验 › 运行 · 动作者：编排器</span></div>
+  <div class="app" style="position:relative"><!--side-->
+    <div class="main">
+      <div class="hd"><span class="ttl">精简 vs 完整预设</span><span class="mode">评测模式</span></div>
+      <div class="tabs"><span>对话</span><span>轨迹</span><span class="on">实验</span><span>题库</span></div>
+      <div class="body">
+        <div class="xhead"><span class="back">← 全部实验</span><h3>lean-vs-full-p0</h3><span class="pill run">运行中</span></div>
+        <div class="stages"><span class=""><i class="d ok"></i>实验设计</span><span class="on"><i class="d run"></i>运行记录</span><span class=""><i class="d "></i>结果对比</span><span class=""><i class="d "></i>人工评估</span></div>
+        <div class="next"><div class="say"><b>运行中，1 / 2 完成</b><span>不需要你操作。有需要你处理的事时，「实验」tab 上会出现数字。已完成的作答现在就能看。</span></div><span class="btn">看已完成的作答</span></div>
+        <div class="sec"><h5>题 × 对比组</h5>
+          <div class="cells" style="max-width:620px">
+            <div class="cell"><div class="top"><b>dsh-lean</b><span class="pill ok">完成</span></div><div class="c3 sm">P0-placeholder · 第 1 次 · 4 分 14 秒</div></div>
+            <div class="cell sel"><div class="top"><b>dsh-full</b><span class="pill run">阶段二</span></div><div class="c3 sm">P0-placeholder · 第 1 次 · 已用 3 分 10 秒</div></div>
+          </div>
+        </div>
+        <div class="sec"><h5>dsh-full · P0-placeholder · 第 1 次</h5>
+          <div class="box"><div class="bb" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
+            <ul class="tl"><li><i></i><span>工作区就绪</span><span>6 秒</span></li><li><i></i><span>阶段一 · 已提交 stage1.md</span><span>1 分 52 秒</span></li><li class="cur"><i></i><span>阶段二</span><span>进行中</span></li><li class="todo"><i></i><span>归档作答</span><span></span></li><li class="todo"><i></i><span>判定</span><span></span></li></ul>
+            <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start"><span class="btn sm">看作答（阶段一）</span><span class="btn sm">看选手会话</span><span class="btn sm">带原因重跑…</span></div>
+          </div></div>
+        </div>
+        <div class="fold">实验卫生<span class="n">题面一致 ✓ · 环境一致 ✓ · 未释放单元 0 · 停滞 0</span></div>
+      </div>
+    </div>
+    <div class="toast"><b>待证：事件回流到会话</b>宿主目前没有往会话投系统事件的 API。先退回：「实验」tab 上的计数 + 列表，agent 用 eval_run_status 读。登记为上游缝 S18。</div>
+  </div>
+  <aside class="notes">
+    <div class="note"><div class="h">格子就是记录</div><p>格子少时（≤ 12 格）只显示网格；格子多时，网格下面再加筛选列表。</p><p class="was">同样 2 条记录用网格、「Experiment summary」和全宽列表各显示了一遍。</p></div>
+    <div class="note"><div class="h">事件回流到会话 <span class="pill warn">待证</span></div><p>想要的是：运行完成、判官判完、人终评完成三个节点各往会话里发一条通知，不触发 agent 执行。宿主 d.ts 里没有这样的 API，eval 现在只用 sessions.open / openSubagent，所以这条登记为上游缝 S18，走上游变更流程，不进本提案的实施批次。</p><p class="was">批准、导出、打分之后会话都不知道；要写分析时，还得人把 bundle 路径贴给 agent（会话 752e）。</p></div>
+  </aside>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 6 作答（新） ============ -->
+<template data-id="answer" data-group="用户旅程" data-label="作答查看" data-new="1">
+<section class="scene">
+  <div class="scene-title"><h2>作答：同一道题，两组并排看</h2><span class="who">面：实验 › 作答（从运行记录、人工评估、结果对比任意一处进入）· 动作者：人读，agent 同源可读 · 正文是示意</span></div>
+  <div class="app"><!--side-->
+    <div class="main">
+      <div class="hd"><span class="ttl">精简 vs 完整预设</span><span class="mode">评测模式</span></div>
+      <div class="tabs"><span>对话</span><span>轨迹</span><span class="on">实验</span><span>题库</span></div>
+      <div class="body">
+        <div class="xhead"><span class="back">← 运行</span><h3>P0-placeholder 的作答</h3><span class="c3 sm">第 1 次</span><div class="btns" style="margin-left:auto"><span class="seg2"><span class="on">并排</span><span>单份</span></span><span class="seg2"><span class="on">显示组名</span><span>盲评</span></span></div><i class="pin">1</i></div>
+        <div class="subtabs"><span class="on">提交的报告</span><span>代码改动</span><span>过程</span><span>判定证据</span><i class="pin">2</i></div>
+        <div class="cmp">
+          <div class="pane"><div class="ph"><b>dsh-lean</b><span class="pill ok">判官已判 4/10</span><span class="c3 sm" style="margin-left:auto">stage1.md · stage2.md</span></div>
+            <div class="pb doc">
+              <h6>阶段一 · 方案</h6>
+              <p>读完 task.md，目标是在 <span class="mono">src/placeholder.ts</span> 里补全 <span class="mono">greet()</span> 的空实现，并保持现有导出不变。</p>
+              <ul><li>先跑现有测试确认基线</li><li>只改一个函数，不动公共接口</li></ul>
+              <h6>阶段二 · 交付</h6>
+              <p>已实现 <span class="mono">greet(name)</span>，空字符串返回默认问候；补了 2 个测试。<span style="background:var(--warn-3)">未处理 name 为 undefined 的情况。</span></p>
+              <div class="ev"><span class="pill bad">B2 ✕</span><span>判官：「对 undefined 输入直接抛错，健壮性不满足」· 引用 stage2.md 第 3 段</span></div>
+            </div></div>
+          <div class="pane"><div class="ph"><b>dsh-full</b><span class="pill warn">仅脚本判定</span><span class="c3 sm" style="margin-left:auto">stage1.md · stage2.md</span></div>
+            <div class="pb doc">
+              <h6>阶段一 · 方案</h6>
+              <p>任务要求补全占位函数。计划：先读 standards.yml 里的约定，再实现，最后补测试。</p>
+              <ul><li>对照 standards.yml 的命名约定</li><li>考虑空值输入</li></ul>
+              <h6>阶段二 · 交付</h6>
+              <p>实现了 <span class="mono">greet</span>，对空串与 undefined 都返回默认问候；新增 3 个测试。</p>
+              <div class="ev"><span class="pill">判据未判</span><span>这份作答没有判官初判。<span class="btn ghost sm">补一次判官</span></span></div>
+            </div></div>
+        </div>
+        <div class="sec" style="margin-top:14px"><h5>代码改动 · 预览 <span class="h5s">相对题目初始工作区</span><i class="pin">3</i></h5>
+          <div class="cmp">
+            <div class="pane"><div class="pb"><ul class="files"><li><span class="st m">M</span>src/placeholder.ts<span class="nn">+6 −1</span></li><li><span class="st a">A</span>test/greet.spec.ts<span class="nn">+14</span></li></ul>
+              <div class="hunk"><div class="hh">@@ src/placeholder.ts</div><div class="de">-export function greet(name: string) { throw new Error('todo') }</div><div class="ad">+export function greet(name: string) {</div><div class="ad">+  return name === '' ? 'Hello!' : `Hello, ${name}!`</div><div class="ad">+}</div></div></div></div>
+            <div class="pane"><div class="pb"><ul class="files"><li><span class="st m">M</span>src/placeholder.ts<span class="nn">+7 −1</span></li><li><span class="st a">A</span>test/greet.spec.ts<span class="nn">+21</span></li></ul>
+              <div class="hunk"><div class="hh">@@ src/placeholder.ts</div><div class="de">-export function greet(name: string) { throw new Error('todo') }</div><div class="ad">+export function greet(name?: string) {</div><div class="ad">+  if (!name) return 'Hello!'</div><div class="ad">+  return `Hello, ${name}!`</div><div class="ad">+}</div></div></div></div>
+          </div>
+        </div>
+        <div class="fold">原始文件<i class="pin" style="margin-left:6px">4</i><span class="n">archive/workspace · 11 个文件 · 在文件预览中打开</span></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    <div class="note"><div class="h"><i class="pin">1</i>默认并排，一个开关切到盲评</div><p>对比实验里最常问的就是「同一道题两边各交了什么」。所以默认按题并排，两边的同一部分对齐排列。判定一步复用同一个视图，打开「盲评」开关后组名换成 A / B。</p><p class="was">作答只能在运行记录的抽屉里按路径逐个打开（<span class="mono">stage1.md</span>、<span class="mono">materialization.json</span>……），一次看一份、看一格，没法对照。</p></div>
+    <div class="note"><div class="h"><i class="pin">2</i>四个视角</div><p><b>提交的报告</b>：stage*.md 按 markdown 渲染，判官引用过的段落就地挂上判定证据。<br><b>代码改动</b>：相对初始工作区的 diff。<br><b>过程</b>：选手的子会话，以及耗时和 token。<br><b>判定证据</b>：逐条判据的判定和理由，以及脚本输出。</p></div>
+    <div class="note"><div class="h"><i class="pin">3</i>「代码改动」放第二期 <span class="pill warn">后置</span></div><p>第一期只做「提交的报告」和「判定证据」两个视角，数据都已经在 cell-artifact 能读的范围里；「过程」链到 T69 已有的子会话视图。</p><p class="impl">作答已经归档在 attempt 目录的 <span class="mono">archive/workspace/</span>，初始文件的哈希记在 <span class="mono">populate-manifest</span> 里。diff 可以在 eval 服务端算出来，经 Remote 下发，沿用 cell-artifact 的「只读本格、只读文本、超长就截断并说明」三条规则。</p></div>
+    <div class="note"><div class="h"><i class="pin">4</i>文件存哪里不变，人不用知道路径</div><p>作答仍然存放在实验的运行数据里（归档后只读），导出 bundle 时一并带走。界面只按「题 × 组 × 次」定位作答，不向人展示路径；要看原始文件时交给宿主的文件预览。</p><p class="agent">agent 用 <span class="mono">eval_experiment_get</span> 拿到同一份作答的索引，写分析时引用的是题 × 组 × 次，而不是路径。</p></div>
+  </aside>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 7 判定 ============ -->
+<template data-id="judge" data-group="用户旅程" data-label="人工评估 · 盲评">
+<section class="scene">
+  <div class="scene-title"><h2>人工评估：可做可不做，人的态度跟着结果走</h2><span class="who">面：实验 › 人工评估（T67 阶段）· 动作者：判官初判，人终评</span></div>
+  <div class="app"><!--side-->
+    <div class="main">
+      <div class="hd"><span class="ttl">精简 vs 完整预设</span><span class="mode">评测模式</span></div>
+      <div class="tabs"><span>对话</span><span>轨迹</span><span class="on">实验</span><span>题库</span></div>
+      <div class="body">
+        <div class="xhead"><span class="back">← 全部实验</span><h3>lean-vs-full-p0</h3><span class="pill run">评估中</span></div>
+        <div class="stages"><span class=""><i class="d ok"></i>实验设计</span><span class=""><i class="d ok"></i>运行记录</span><span class=""><i class="d "></i>结果对比</span><span class="on"><i class="d warn"></i>人工评估</span></div>
+        <div class="next warnish"><i class="pin">1</i><div class="say"><b>提示：作答 B 判官缺席</b><span>判官采样全部报错，只剩脚本判定。不补判也能往下走，结果对比会把这一对降级为描述。</span></div><span class="btn">补判（可选）</span></div>
+        <div class="sec"><h5>P0-placeholder · 盲评 <span class="h5s">组名已隐藏，打开作答视图时同样是盲评</span></h5>
+          <div class="cmp">
+            <div class="box"><div class="bh"><h4>作答 A</h4><span class="pill ok">判官已判</span><span class="btn ghost sm" style="margin-left:auto">看作答</span></div><div class="bb"><div class="crit"><span class="h">判据</span><span class="h">判官</span><span class="h">你的终评</span>
+              <span>B2 健壮性 · 权重 10</span><span>✕</span><span class="seg"><span>成立</span><span class="on">不成立</span></span>
+              <span>D1 完整度</span><span>✓</span><span class="seg"><span class="on">成立</span><span>不成立</span></span>
+              <span>D2 完整度</span><span>✓</span><span class="seg"><span>成立</span><span>不成立</span></span></div></div></div>
+            <div class="box"><div class="bh"><h4>作答 B</h4><span class="pill warn">仅脚本判定</span><span class="btn ghost sm" style="margin-left:auto">看作答</span></div><div class="bb"><div class="crit"><span class="h">判据</span><span class="h">判官</span><span class="h">你的终评</span>
+              <span>B2 健壮性 · 权重 10</span><span class="c3">未判</span><span class="seg"><span>成立</span><span>不成立</span></span>
+              <span>D1 完整度</span><span class="c3">未判</span><span class="seg"><span>成立</span><span>不成立</span></span>
+              <span>D2 完整度</span><span class="c3">未判</span><span class="seg"><span>成立</span><span>不成立</span></span></div></div></div>
+          </div>
+          <div class="btns" style="margin-top:12px"><i class="pin">2</i><span class="btn pri">提交终评</span><span class="btn">带标记提交…</span><span class="btn">不做终评，直接收尾</span><span class="btn ghost" style="color:var(--err)">放弃终评…</span><span class="c3 sm">每份作答各自打分，不是二选一</span></div>
+        </div>
+        <div class="fold">评分者一致性<span class="n">数据不足：只有 1 位判官、采样 1 次、还没有终评</span></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    <div class="note"><div class="h"><i class="pin">1</i>数据问题只提示，不拦路</div><p>判官缺席在这里就指出来，并给一个可选的补判。人不补也能往下走：结果对比的「判定覆盖一致」校验会自动把这一对降级为描述，不会冒出一个来源说不清的分数。</p><p class="was">pilot-d-preset 的 dsh-full 只有脚本判定，dsh-lean 有判官初判；人工评估页和运行记录页都没有指出这一点。</p></div>
+    <div class="note"><div class="h"><i class="pin">2</i>人工评估的四个出口</div><p><b>提交终评</b>：结论标「来源：人终评」。<br><b>带标记提交</b>：人觉得评得有问题，但让结果照常往下走；写一句理由，结论卡顶部原样显示。<br><b>不做终评，直接收尾</b>：结论标「来源：判官初判，未经人工确认」。<br><b>放弃终评</b>：人认为本轮评估不成立。实验收成「评估不成立」，只保留原始数据和理由，不给结论；它和归档、删除是两回事，也会写进导出。</p><p class="impl">「已完成」只在人点了前三个出口之一后出现，实验不会自己变成已完成；结果对比在评估中也随时能看。</p></div>
+    <div class="note"><div class="h">打开页面就能打分</div><p class="was">左侧只有一个小队列，右侧是空面板「Pick an item to grade」；页首还有一块全是「—」的一致性统计。</p></div>
+  </aside>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 8 结论 ============ -->
+<template data-id="result" data-group="用户旅程" data-label="结果对比">
+<section class="scene">
+  <div class="scene-title"><h2>结论：先回答问题，再说能信几分</h2><span class="who">面：实验 › 结果对比（T67 阶段，内容重排）</span></div>
+  <div class="app"><!--side-->
+    <div class="main">
+      <div class="hd"><span class="ttl">精简 vs 完整预设</span><span class="mode">评测模式</span></div>
+      <div class="tabs"><span>对话</span><span>轨迹</span><span class="on">实验</span><span>题库</span></div>
+      <div class="body">
+        <div class="xhead"><span class="back">← 全部实验</span><h3>lean-vs-full-p0</h3><span class="pill ok">已完成</span><span class="q">精简预设和完整预设在 P0 上差多少？</span></div>
+        <div class="stages"><span class=""><i class="d ok"></i>实验设计</span><span class=""><i class="d ok"></i>运行记录</span><span class="on"><i class="d warn"></i>结果对比</span><span class=""><i class="d ok"></i>人工评估</span></div>
+        <div class="verdict"><i class="pin" style="float:right">1</i>
+          <div class="hmark">人工标记：「dsh-full 判官缺席，两组分数不可比，只看方向。」<span class="w2">你在人工评估里带标记提交 · 09-18</span></div>
+          <h4>暂时不能下结论 <span class="c3 sm" style="font-weight:400">来源：判官初判 + 人终评（部分）</span></h4>
+          <div class="score"><div><b>4</b><span>dsh-lean · 精简</span></div><div class="na"><b>0</b><span>dsh-full · 完整</span></div><div><span>满分 10 · P0-placeholder · 各 1 次</span></div></div>
+          <p style="margin:0 0 8px">精简比完整高 4 分，但这个差距不可信：</p>
+          <ul>
+            <li><span class="m x">✕</span><span><b>两组分数的来源不同。</b>精简的分数来自判官，完整只有脚本判定。</span></li>
+            <li><span class="m w">!</span><span><b>只有 1 道题有差值</b>，给不出区间。</span></li>
+            <li><span class="m w">!</span><span><b>两组不止差在预设上</b>（作用域也不同），只能描述，不能归因。</span></li>
+          </ul>
+          <div class="btns"><span class="btn">给 dsh-full 补判</span><span class="btn">复制成 3 次的新实验</span><span class="btn">并排看作答</span><span class="btn ai">让 agent 写分析初稿</span></div>
+        </div>
+        <div class="sec"><h5>逐条判据 <span class="h5s">点单元格可跳到对应作答的判定证据</span></h5>
+          <div class="tw"><table class="t">
+            <thead><tr><th>判据</th><th>维度</th><th>权重</th><th>dsh-lean</th><th>dsh-full</th></tr></thead>
+            <tbody>
+              <tr><td><b>B2</b></td><td>健壮性</td><td>10</td><td>✕<span class="sub">判官</span></td><td><span class="pill">未判</span></td></tr>
+              <tr><td><b>D1–D4</b></td><td>完整度 · 健壮性</td><td>0</td><td>✓ ✓ ✓ ✓<span class="sub">判官</span></td><td><span class="pill">未判</span></td></tr>
+              <tr><td><b>没有补丁</b><span class="sub">X-no-patch · 负向</span></td><td>—</td><td>—</td><td>✕<span class="sub">脚本</span></td><td>✕<span class="sub">脚本</span></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <div class="sec"><h5>效率 <span class="h5s">同一模型，可以直接比</span></h5>
+          <div class="bars" style="max-width:540px">
+            <span class="lbl">活跃时长</span><span>dsh-full</span><span class="b"><i style="width:100%"></i></span><span>4 分 34 秒</span><span>dsh-lean</span><span class="b"><i style="width:92.7%"></i></span><span>4 分 14 秒</span>
+            <span class="lbl">输出 token</span><span>dsh-full</span><span class="b"><i style="width:100%"></i></span><span>31.0k</span><span>dsh-lean</span><span class="b"><i style="width:81%"></i></span><span>25.1k</span>
+          </div>
+        </div>
+        <div class="fold">实验有效性校验<i class="pin" style="margin-left:6px">2</i><span class="n">题面 ✓ · 环境 ✓ · 对比组 ✓ · 程序 ✓ · <b style="color:var(--err)">判定覆盖 ✕</b></span></div>
+        <div class="fold">导出与来源<span class="n">bundle 导出于 09-18 14:02 · 重新导出 · 收尾</span></div>
+        <div class="fold">分析初稿<span class="n">还没有 · agent 会写到本实验的 analysis/</span></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    <div class="note"><div class="h"><i class="pin">1</i>结论卡回答方案页上写的那个问题</div><p>页面顺序：结论 → 判据 → 效率 → 审计（折叠）。</p><p class="was">页首是 Close out / Export 和 bundle id，接着是全部展开的四条 ok，结论藏在页面中部：<span class="mono">mean Δ = 4, 95% CI [4, 4]</span>。</p></div>
+    <div class="note"><div class="h"><i class="pin">2</i>第五条校验：判定覆盖一致</div><p>不通过时降级为「描述」，不显示 Δ 和置信区间。这一条要改 report 的计算口径，不只是改界面。</p><p class="impl">任务 1（最先做），report.ts 两处：① 来源按类别比：每条判据在两组各格里要么都有「判过」（判官或人终评，同属一类），要么都只有脚本；不齐就降级。② 置信区间按题数算：有差值的题不足 3 道就不算（现在 1 题也照算，于是出现 [4, 4]）；14 题 × 1 次会给区间，标「仅供参考，未达排名条件（每题需跑满 3 次）」。排名门槛不变。ReportPage 在区间为空时不渲染。</p><p class="was">中文硬编码的校验文案里夹着 <span class="mono">materialization</span>、<span class="mono">refs.fingerprint</span>、<span class="mono">planSha</span>。</p></div>
+  </aside>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 9 实验列表 ============ -->
+<template data-id="list" data-group="用户旅程" data-label="实验列表">
+<section class="scene">
+  <div class="scene-title"><h2>实验列表：先给「需要你处理的」</h2><span class="who">面：实验 tab 首页</span></div>
+  <div class="app"><!--side-->
+    <div class="main">
+      <div class="hd"><span class="ttl">精简 vs 完整预设</span><span class="mode">评测模式</span></div>
+      <div class="tabs"><span>对话</span><span>轨迹</span><span class="on">实验</span><span>题库</span></div>
+      <div class="body">
+        <div class="xhead"><span class="seg2"><span class="on">本会话发起</span><span>全部</span></span><span class="c3 sm">另有 20 个不属于本会话（含命令行发起的）</span><div class="btns" style="margin-left:auto"><span class="c3 sm">也可以直接在对话里跟 agent 说</span><span class="btn pri">新建实验</span></div></div>
+        <div class="listgrp"><h5>需要你处理 <span class="n">2</span></h5>
+          <div class="xrow h"><div class="nm"><b>lean-vs-full-p0</b><span>精简预设和完整预设在 P0 上差多少？</span></div><div class="meta">1 题 × 2 组 × 1 次</div><span class="pill warn">待终评</span><span class="btn sm">去处理</span></div>
+          <div class="xrow"><div class="nm"><b>dsh-v4-flash-vs-pro</b><span>flash 和 pro 在 P0 上差多少？</span></div><div class="meta">1 题 × 2 组 × 1 次</div><span class="pill">待批准</span><span class="btn sm">去批准</span></div>
+        </div>
+        <div class="listgrp"><h5>运行中 <span class="n">1</span></h5>
+          <div class="xrow"><div class="nm"><b>pilot-b-container-dsh</b><span>容器里三种 dsh 配置</span></div><div class="meta">0 / 3 · 36 小时没有进展，没有在跑的任务</div><span class="pill bad">停滞</span><span class="btn sm">重跑</span></div>
+        </div>
+        <div class="listgrp"><h5>已完成 <span class="n">6</span></h5>
+          <div class="xrow"><div class="nm"><b>pilot-d-preset</b><span>预设对比</span></div><div class="meta">09-18 · 2 / 2</div><span class="pill ok">已完成</span><span class="btn ghost sm">看结论</span></div>
+        </div>
+        <div class="fold">已归档 · 测试和冒烟运行<span class="n">14 个</span></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    <div class="note"><div class="h">范围由实验推导</div><p>「本会话发起」读的是实验上记录的发起会话，会话本身不存任何东西。</p><p class="was">题集 tab 说「未绑定」，实验室却列出 22 个全局实验，页首还有一句写给 agent 看的 "ask the human to bind one"。</p></div>
+    <div class="note"><div class="h">按「要做什么」分组</div><p class="was">22 行平铺，有重名，还有 7 个永远停在 <span class="mono">Running 0/1</span> 的僵尸行。</p><p class="impl">僵尸行的根因：job 记录只在内存里，实例重启就丢了，账本停在 running。修法不写账本（账本归 mission，eval 状态一直是推导的，T35a 的边界）：「本进程没有活 job」且「格子一段时间没有任何进展」就推导为「停滞」，可以重跑。只看前一条不够，命令行或别的进程发起的 run 在本进程里本来就没有 job。</p><p class="impl">命令行发起的 run 没有 originSession，默认视图看不到它们，所以页首给一句「另有 n 个不属于本会话」。</p></div>
+  </aside>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 10 题库 ============ -->
+<template data-id="lib" data-group="用户旅程" data-label="题库 tab">
+<section class="scene">
+  <div class="scene-title"><h2>题库：按仓库登记一次，版本由实验钉</h2><span class="who">面：题库 tab · 动作者：人（登记、出题、设可见层）</span></div>
+  <div class="app"><!--side-->
+    <div class="main">
+      <div class="hd"><span class="ttl">精简 vs 完整预设</span><span class="mode">评测模式</span></div>
+      <div class="tabs"><span>对话</span><span>轨迹</span><span>实验</span><span class="on">题库</span></div>
+      <div class="body">
+        <div class="xhead"><h3>已登记的仓库</h3><div class="btns" style="margin-left:auto"><span class="btn">登记一个仓库…</span></div></div>
+        <div class="tw"><table class="t">
+          <thead><tr><th>仓库 · 题集</th><th>最新版本</th><th>题数</th><th>规划 agent 可见 <i class="pin">1</i></th><th>钉在这个仓库上的实验</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><b>dataseek-eval</b><span class="sub">~/.dsh/scratch/dataseek-eval · 1 个题集</span></td><td class="mono">main @ 07fde76</td><td></td><td></td><td>10 个 · 分布在 4 个版本</td><td><span class="btn ghost sm">打开</span></td></tr>
+            <tr><td style="padding-left:24px">harness-comparison</td><td class="c3 sm">随仓库</td><td>14</td><td><span class="seg"><span class="on">只看题面</span><span>含答案</span></span></td><td>10 个</td><td><span class="btn ghost sm">打开</span></td></tr>
+          </tbody>
+        </table></div>
+        <div class="c3 sm" style="margin:6px 0 16px">一个仓库只登记一次；worktree 不单独登记。实验钉的是 commit，运行时 eval 自己按 commit 取题。没登记过的目录，agent 用不了。<i class="pin">2</i></div>
+        <div class="sec"><h5>dataseek-eval › harness-comparison › P0-placeholder <span class="h5s">看的是 main @ 07fde76；可切到任一实验钉的版本</span></h5>
+          <div class="cmp">
+            <div class="box"><div class="bh"><h4>选手将看到</h4></div><div class="bb sm">task.md · standards.yml</div></div>
+            <div class="box"><div class="bh"><h4>只有判官和探针看得到</h4></div><div class="bb sm">answers/rubric.yml（13 条判据）· <span style="color:var(--warn-ink)">checks/ 为空</span></div></div>
+          </div>
+          <div class="c3 sm" style="margin-top:8px">用过这道题的实验：lean-vs-full-p0 · pilot-d-preset · dsh-v4-flash-vs-pro</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    <div class="note"><div class="h"><i class="pin">1</i>权限跟着题库走，不跟会话走</div><p>「规划 agent 能读到哪几层」是题集的一项设置，默认只看题面，由人在这里切换，从哪个会话来都一样。</p><p class="impl">它只管规划 / 分析 agent 看不看得到答案。选手那边的隔离是容器挂载与 scope 在管（R3），两件事不混。默认只勾 modelFacing 层，沿用数据集协议提案的「绑定确认流」。</p><p class="was"><span class="mono">/datasets bind</span> 不带参数时绑成全部层，规划 agent 因此也能看到参考答案。</p></div>
+    <div class="note"><div class="h"><i class="pin">2</i>登记处堵住绕行</div><p><span class="mono">datasets_list</span> 只返回登记过的题库；<span class="mono">eval_plan_draft</span> 收到未登记的仓库直接拒绝，并提示用 <span class="mono">ask_user_question</span> 问人。</p></div>
+  </aside>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ Agent 旅程 ============ -->
+<template data-id="agent" data-group="Agent 旅程" data-label="Agent 旅程">
+<section class="scene">
+  <div class="scene-title"><h2>Agent 旅程：同一件事，前后对照</h2><p>改动都在工具的返回内容和提示词上，不给 agent 新的写权限，也不新增 UI 通道。</p></div>
+  <div class="full ajs">
+    <div class="aj"><h4><span class="pill bad">现在</span>会话 615b + 752e</h4><ol>
+      <li><code>datasets_list</code> → "no dataset repository"</li>
+      <li class="bad">read × 28、grep × 20、glob × 13，自己找到共享检出</li>
+      <li class="bad">显式传 repo 绕过去，<code>eval_plan_draft</code> × 3（其中一次疑似报成功却没落盘，待复现）</li>
+      <li class="bad">人叫停，换题库后另开一轮</li>
+      <li class="bad">写分析时，要人手报 bundle 路径和输出路径；agent 再用 read × 38 读 bundle</li>
+    </ol></div>
+    <div class="aj"><h4><span class="pill ok">设计后</span>同一件事</h4><ol>
+      <li><code>datasets_list</code> → 1 个登记的仓库 → <code>ask_user_question</code> 问钉哪个版本，然后停下等人</li>
+      <li class="good">人选定之后，<code>datasets_show</code> 按这个题集的可见层裁剪返回</li>
+      <li><code>eval_plan_draft(repo@commit)</code> 写完回读一次，确认落盘，返回 experimentId，对话里渲染成工具行视图</li>
+      <li class="good">要拍板的问题（次数、补判）→ <code>ask_user_question</code></li>
+      <li>跑完、判完：「实验」tab 计数和列表跟着变，agent 用 <code>eval_run_status</code> 读（事件回流<span class="pill warn">待证</span>，等宿主）</li>
+      <li class="good"><code>eval_experiment_get(id)</code>（= <code>eval_cells</code> + <code>eval_run_status</code> 合并成页面同源投影，加作答索引），分析初稿写到实验的 <code>analysis/</code></li>
+    </ol></div>
+  </div>
+  <div class="full jm"><table style="min-width:720px">
+    <thead><tr><th>改动</th><th>包</th><th>作用</th><th>边界</th></tr></thead>
+    <tbody>
+      <tr><td>会话不绑定题库；按仓库登记 + 每个题集一项可见层设置</td><td>datasets · datasets-tool · eval-tool · eval</td><td>权限跟题集走；未登记的仓库不可用</td><td>可见层只有人能改；只管规划 agent，选手隔离归容器挂载</td></tr>
+      <tr><td>候选不唯一时返回错误，要求用 <code>ask_user_question</code></td><td>datasets-tool · eval-tool · preset 提示词</td><td>agent 不再硬绕</td><td>零 UI 改动</td></tr>
+      <tr><td><code>eval_plan_draft</code> 的工具行视图</td><td>eval（client）</td><td>对话里有实验入口</td><td>不带批准按钮</td></tr>
+      <tr><td><code>eval_experiment_get(id)</code>（含作答索引）</td><td>eval-tool</td><td>agent 读到的数据和页面一致</td><td>只读</td></tr>
+      <tr><td><code>eval_plan_draft</code> 报成功未落盘</td><td>eval-tool（T60 写路径）</td><td>先复现，单独修</td><td>不等本提案的批次</td></tr>
+      <tr><td>生命周期事件进入会话 <span class="pill warn">待证</span></td><td>宿主（上游候选）</td><td>跑完、判完双方都能看到</td><td>宿主没有 API 前不做</td></tr>
+      <tr><td>作答报告与判定证据读取（二期加 diff）</td><td>eval 服务端 Remote</td><td>作答并排视图</td><td>只读本格、只读文本、超长截断</td></tr>
+    </tbody>
+  </table></div>
+  <div class="pager"></div>
+</section>
+</template>
+
+<!-- ============ 决策 ============ -->
+<template data-id="decide" data-group="讨论" data-label="决策清单">
+<section class="scene">
+  <div class="scene-title"><h2>决策清单与落地顺序</h2><p>按价值拆成独立任务，每个任务单独可交付；正本是 <span class="mono">proposals/active/2026-09-23-eval-journey-redesign.md</span>。</p></div>
+  <div class="full">
+    <div class="dec"><h4><span class="id">D1</span>会话不绑定题库，题库按仓库登记，版本由实验钉<span class="st agreed">已定</span></h4><p><b>前置：先定写入模型。</b>plan / conditions / analysis 今天写在会话绑定的 worktree 里（G16），去绑定后要么 (a) eval 按实验开分支和 worktree，人合并；要么 (b) 实验存在 eval 自己的状态目录，只引用 repo@commit，题库仓库只读（倾向 b）。登记单位是仓库，worktree 不单独登记；plan 记录 repo@commit，已有实验读自己的快照。可见层是题集的属性，只管规划 agent。改动跨 datasets / datasets-tool / eval-tool / eval 和提示词，先出实施计划再动手。</p></div>
+    <div class="dec"><h4><span class="id">D2</span>「请人选择」用 ask_user_question<span class="st agreed">已定</span></h4><p>不做专用卡片。工具在候选不唯一时返回错误，preset 提示词补一条规则；上线前用一轮 pilot 验证 agent 真的会停下来问。</p></div>
+    <div class="dec"><h4><span class="id">D3</span>实验卡 = eval client 的 tool.call.toolview 视图<span class="st agreed">已定</span></h4><p>放在 eval 包内，最后做。事件回流宿主暂无 API，登记为上游缝 S18；退路是「实验」tab 计数 + 列表 + <code>eval_run_status</code>。会话头不放实验 chip。</p></div>
+    <div class="dec"><h4><span class="id">D4</span>沿用 T67 四阶段，只加增量<span class="st agreed">已定</span></h4><p>实验设计 / 运行记录 / 结果对比 / 人工评估不动。增量：实验设计里加「问题」块和就绪清单（阻塞项 / 提醒分开），结果对比结论先行，作答并排作为跨阶段的视图。</p></div>
+    <div class="dec"><h4><span class="id">D5</span>方案字段 rev13 + 数字就地可改<span class="st agreed">已定</span></h4><p>plan 加「问题 / 预期 / 怎么算回答了」（v1-rev12 → rev13）；次数、预算等数字在页面上改，启动后冻结；结构改动交给 agent。</p></div>
+    <div class="dec"><h4><span class="id">D6</span>作答并排，一期 = 报告 + 判定证据<span class="st agreed">已定</span></h4><p>盲评开关与人工评估共用一个视图。「代码改动」diff 需要钉住的 commit + populate-manifest，放二期。</p></div>
+    <div class="dec"><h4><span class="id">D7</span>结论校准：判定来源按类别比，区间按题数算<span class="st agreed">已定</span></h4><p>report.ts 的两处口径修正，价值最高、改动最小，第一个做。不齐只降级，不拦路；有差值的题不足 3 道不给区间。</p></div>
+    <div class="dec"><h4><span class="id">D8</span>实验列表分组 + 推导「停滞」<span class="st agreed">已定</span></h4><p>默认「本会话发起」（读 originSession），页首提示「另有 n 个不属于本会话」；按「需要你处理 / 运行中 / 已完成 / 已归档」分组；没有活 job 且长时间无进展推导为「停滞」，不写账本。</p></div>
+    <div class="dec"><h4><span class="id">D9</span>人工评估可选，不拦路<span class="st agreed">已定</span></h4><p>四个出口：提交终评 / 带标记提交 / 不做终评直接收尾 / 放弃终评（实验收成「评估不成立」）。人的标记和来源写在结论卡上，也写进导出。</p></div>
+    <div class="dec"><h4><span class="id">附</span>落地顺序（每项独立可交付）</h4>
+      <p>0. 先改 ui-spec（§四 题库登记、§五 阶段增量、§六 工具、§七 流程），再派任务</p>
+      <p>1. D7 结论校准（report.ts）</p>
+      <p>2. D8 列表分组、推导「停滞」</p>
+      <p>3. 结论先行 + 就绪清单 + 人工评估四个出口（四阶段内的增量）</p>
+      <p>4. D1 + D2 会话去绑定、按仓库登记、提示词规则（先出计划，第一题是写入模型）</p>
+      <p>5. D5 plan rev13 + 数字就地编辑</p>
+      <p>6. D6 作答并排一期</p>
+      <p>7. D3 工具行视图；<code>eval_experiment_get</code> 可随 4 或 6 一起做</p>
+      <p>另：<code>eval_plan_draft</code> 未落盘先复现，单独修，不排队。</p></div>
+  </div>
+  <div class="pager"></div>
+</section>
+</template>
+
+<script>
+(function(){
+  var side=document.getElementById('side').innerHTML;
+  var tpls=[].slice.call(document.querySelectorAll('template[data-id]'));
+  var nav=document.getElementById('nav'), stage=document.getElementById('stage');
+  var ids=tpls.map(function(t){return t.dataset.id});
+  var lastGroup=null, n=0;
+  tpls.forEach(function(t){
+    if(t.dataset.group!==lastGroup){lastGroup=t.dataset.group;var g=document.createElement('div');g.className='grp';g.textContent=lastGroup;nav.appendChild(g);}
+    var b=document.createElement('button');b.type='button';b.dataset.id=t.dataset.id;
+    var num=document.createElement('b');num.textContent=(t.dataset.group==='用户旅程')?String(++n):'·';
+    var s=document.createElement('span');s.textContent=t.dataset.label;
+    b.appendChild(num);b.appendChild(s);
+    if(t.dataset.new){var nw=document.createElement('span');nw.className='new';nw.textContent='新';b.appendChild(nw);}
+    b.addEventListener('click',function(){go(t.dataset.id)});
+    nav.appendChild(b);
+  });
+  function go(id){ if(location.hash==='#'+id) show(id); else location.hash=id; window.scrollTo({top:0}); }
+  function show(id){
+    var i=ids.indexOf(id); if(i<0){i=0;id=ids[0];}
+    stage.innerHTML=tpls[i].innerHTML.split('<!--side-->').join(side);
+    [].forEach.call(nav.querySelectorAll('button'),function(b){b.setAttribute('aria-current',b.dataset.id===id?'true':'false')});
+    var p=stage.querySelector('.pager');
+    if(p){
+      if(i>0){var a=document.createElement('button');a.type='button';a.textContent='← '+tpls[i-1].dataset.label;a.onclick=function(){go(ids[i-1])};p.appendChild(a);}else p.appendChild(document.createElement('span'));
+      if(i<ids.length-1){var c=document.createElement('button');c.type='button';c.textContent=tpls[i+1].dataset.label+' →';c.onclick=function(){go(ids[i+1])};p.appendChild(c);}
+    }
+  }
+  window.addEventListener('hashchange',function(){show(location.hash.slice(1))});
+  document.addEventListener('keydown',function(e){
+    var cur=ids.indexOf(location.hash.slice(1)); if(cur<0)cur=0;
+    if(e.key==='ArrowRight'&&cur<ids.length-1)go(ids[cur+1]);
+    if(e.key==='ArrowLeft'&&cur>0)go(ids[cur-1]);
+  });
+  show(location.hash.slice(1)||ids[0]);
+})();
+</script>

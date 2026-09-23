@@ -2,7 +2,7 @@
 /**
  * `dsh-datasets` CLI — the script/ops face of the datasets service: every
  * read verb the model tools have (same semantics, same parameters), plus the
- * human-only maintenance verbs (binding writes, `worktree prune`). Run from
+ * human-only maintenance verbs (the dataset registry, legacy bindings). Run from
  * source: `node --import tsx/esm src/cli.ts <command>`; as a published
  * package: the `dsh-datasets` bin or `node lib/cli.js <command>`.
  *
@@ -11,8 +11,8 @@
  * Commands:
  *   list / show / describe / read / snapshot — the read verbs (JSON on stdout;
  *     `read` prints the raw file content, `worktree path` prints the path)
- *   worktree path    — acquire the managed whole-layer view (sparse-checkout-limited)
- *   worktree prune   — unlock + remove every managed worktree of a repository
+ *   worktree path    — materialize the whole-layer view (`git archive`, read-only,
+ *     content-addressed; the verb keeps its historical name)
  *   validate         — shape + judgeability + author-hygiene report (errors
  *     exit 1: descriptor shape, and an item's rubric with no leaves, a leaf
  *     missing a required field, an unknown kind, or a polarity that disagrees
@@ -20,18 +20,21 @@
  *     modelFacing, sensitive-looking item.json field names, files uncovered by
  *     any layer or register entry, a missing canary, objective leaves with no
  *     probe source, a dangling rubric.md leaf reference)
- *   bind / unbind    — write a session's binding (the plugin-owned store is
- *     read per call, so binding a LIVE session is race-free)
+ *   registry / register / update / unregister / import-bindings — the
+ *     deployment's dataset registry (human-only writes; agents resolve
+ *     `<id>/<set>` through it)
+ *   bind             — retired: prints how to register instead
+ *   unbind / binding — clear / read a legacy session binding
  */
 import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { readBinding, validateBinding, writeBinding } from './binding.ts'
+import { readBinding, writeBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
-import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
-import { formatBindReceipt, formatList, formatShow, formatValidate, formatWarnings } from './format.ts'
+import { resolveMaterializedRoot, resolveStateRoot } from './defaults.ts'
+import { formatList, formatShow, formatValidate, formatWarnings } from './format.ts'
 import { createDatasetsService, resolveScope, type DatasetScope } from './service.ts'
-import { pruneManagedWorktrees } from './worktree.ts'
+import { registryPathOf, type RegistrySet } from './registry.ts'
 
 /** stdout/stderr sink (injected so tests capture output). */
 export interface CliIo {
@@ -46,10 +49,13 @@ commands:
   describe --dataset D [--repo R] [--commit C]
   read --dataset D --item I --layer L --path P [--repo R] [--commit C]
   snapshot --dataset D [--repo R] [--commit C]
-  worktree path --dataset D [--repo R] [--commit C] [--layers a,b] [--worktree-root DIR]
+  worktree path --dataset D [--repo R] [--commit C] [--layers a,b] [--materialized-root DIR]
   validate [--repo R] [--dataset D] [--commit C]
-  worktree prune --repo R [--worktree-root DIR]
-  bind --session ID --repo R [--datasets a,b] [--layers x,y] [--state-root DIR]
+  registry [--state-root DIR]
+  register --repo R [--id ID] [--tracked-ref B] [--set-layers set=a+b,…] [--authoring-checkout P] [--state-root DIR]
+  update --id ID [--tracked-ref B] [--set-layers set=a+b,…] [--authoring-checkout P|none] [--state-root DIR]
+  unregister --id ID [--state-root DIR]
+  import-bindings [--state-root DIR]
   unbind --session ID [--state-root DIR]
   binding --session ID [--state-root DIR]
 flags:
@@ -59,13 +65,15 @@ flags:
   --item I           item id
   --layer L          layer name (read)
   --path P           layer-relative file path (read)
-  --layers a,b       layer selection (worktree path) / binding whitelist (bind).
-                     Omitted on bind = the agent sees each dataset's
-                     model-facing layers and nothing else; naming layers opens
-                     exactly those, sensitive ones included.
-  --datasets a,b     binding dataset whitelist (bind)
-  --session ID       session id (bind/unbind/binding)
-  --worktree-root DIR  managed worktree root (default: $DSH_HOME/state/datasets/worktrees)
+  --layers a,b       layer selection (worktree path)
+  --id ID            registry id (the <id> of an agent's <id>/<set> reference)
+  --tracked-ref B    the branch whose tip is «latest» (register default: main)
+  --set-layers s=a+b,t=c   per-set agent-visible layers; a set left out sees
+                     its model-facing layers and nothing else
+  --authoring-checkout P   the working tree datasets_put_item writes to
+                     (update: none clears it)
+  --session ID       session id (unbind/binding)
+  --materialized-root DIR  materialized-layer root (default: $DSH_HOME/state/datasets/materialized)
   --state-root DIR     plugin state root (default: $DSH_HOME/state/datasets)
 `
 
@@ -100,6 +108,18 @@ export function parse(argv: readonly string[]): { error: string } | Parsed {
   return { command, flags }
 }
 
+/** Parse `set=a+b,other=c` into per-set layers. */
+function setLayers(value: string | undefined): Record<string, RegistrySet> | undefined {
+  if (value === undefined) return undefined
+  const out: Record<string, RegistrySet> = {}
+  for (const part of value.split(',').map(entry => entry.trim()).filter(entry => entry !== '')) {
+    const eq = part.indexOf('=')
+    if (eq <= 0) throw new DatasetsError(`--set-layers expects set=a+b, got ${JSON.stringify(part)}`, 'SHAPE_INVALID')
+    out[part.slice(0, eq)] = { layers: part.slice(eq + 1).split('+').map(layer => layer.trim()).filter(layer => layer !== '') }
+  }
+  return out
+}
+
 function csv(value: string | undefined): string[] | undefined {
   if (value === undefined) return undefined
   const list = value.split(',').map(entry => entry.trim()).filter(entry => entry !== '')
@@ -124,9 +144,13 @@ export async function runCli(
     return 2
   }
   const { command, flags } = parsed
-  const worktreeRoot = resolveWorktreeRoot(flags['worktree-root'])
-  const bindingsRoot = join(resolveStateRoot(flags['state-root']), 'bindings')
-  const service = createDatasetsService({ worktreeRoot, bindingsRoot })
+  const stateRoot = resolveStateRoot(flags['state-root'])
+  const bindingsRoot = join(stateRoot, 'bindings')
+  const service = createDatasetsService({
+    materializedRoot: resolveMaterializedRoot(flags['materialized-root']),
+    bindingsRoot,
+    registryPath: registryPathOf(stateRoot),
+  })
   // Read verbs run as the operator (a human at their own machine — the
   // whitelist constrains agent tools and worktree materialization, not this
   // CLI). worktree path keeps the non-operator scope: it is a boundary.
@@ -205,25 +229,57 @@ export async function runCli(
         io.stdout(`${formatValidate(result)}\n`)
         return result.datasets.some(dataset => dataset.errors.length > 0) ? 1 : 0
       }
-      case 'worktree prune': {
-        const repo = flags['repo'] ?? env['DSH_DATASETS_REPO']
-        if (repo === undefined || repo === '') return usageError(io, 'worktree prune requires --repo R')
-        const removed = await pruneManagedWorktrees(repo, worktreeRoot)
-        io.stdout(removed.length === 0 ? 'no managed worktrees\n' : `removed ${removed.length} managed worktree(s):\n${removed.map(path => `  ${path}`).join('\n')}\n`)
+      case 'registry': {
+        io.stdout(`${JSON.stringify(service.registry.entries(), null, 2)}\n`)
+        return 0
+      }
+      case 'register': {
+        const repo = flags['repo']
+        if (repo === undefined) return usageError(io, 'register requires --repo R')
+        const sets = setLayers(flags['set-layers'])
+        const entry = await service.registry.register({
+          path: repo,
+          ...(flags['id'] !== undefined ? { id: flags['id'] } : {}),
+          ...(flags['tracked-ref'] !== undefined ? { trackedRef: flags['tracked-ref'] } : {}),
+          ...(sets !== undefined ? { sets } : {}),
+          ...(flags['authoring-checkout'] !== undefined ? { authoringCheckout: flags['authoring-checkout'] } : {}),
+        })
+        io.stdout(`registered ${entry.id} (tracking ${entry.trackedRef})\n`)
+        return 0
+      }
+      case 'update': {
+        const id = flags['id']
+        if (id === undefined) return usageError(io, 'update requires --id ID')
+        const sets = setLayers(flags['set-layers'])
+        const checkout = flags['authoring-checkout']
+        const entry = await service.registry.update({
+          id,
+          ...(flags['tracked-ref'] !== undefined ? { trackedRef: flags['tracked-ref'] } : {}),
+          ...(sets !== undefined ? { sets } : {}),
+          ...(checkout !== undefined ? { authoringCheckout: checkout === 'none' ? null : checkout } : {}),
+        })
+        io.stdout(`updated ${entry.id} (tracking ${entry.trackedRef})\n`)
+        return 0
+      }
+      case 'unregister': {
+        const id = flags['id']
+        if (id === undefined) return usageError(io, 'unregister requires --id ID')
+        if (!service.registry.remove(id)) {
+          io.stderr(`no registration ${JSON.stringify(id)}\n`)
+          return 1
+        }
+        io.stdout(`unregistered ${id}\n`)
+        return 0
+      }
+      case 'import-bindings': {
+        const result = await service.registry.importBindings(bindingsRoot)
+        io.stdout(`${JSON.stringify(result, null, 2)}\n`)
         return 0
       }
       case 'bind': {
-        const session = flags['session']
-        const repo = flags['repo']
-        if (session === undefined || repo === undefined) return usageError(io, 'bind requires --session ID --repo R')
-        const binding = validateBinding({
-          repoPath: repo,
-          ...(csv(flags['datasets']) !== undefined ? { datasets: csv(flags['datasets']) } : {}),
-          ...(csv(flags['layers']) !== undefined ? { layers: csv(flags['layers']) } : {}),
-        })
-        writeBinding(bindingsRoot, session, binding)
-        io.stdout(`${formatBindReceipt(binding)} (session ${session})\n`)
-        return 0
+        io.stderr('bind is retired: datasets are registered per deployment now — '
+          + 'dsh-datasets register --repo R [--tracked-ref B] (or the Datasets tab → Register repository)\n')
+        return 2
       }
       case 'unbind': {
         const session = flags['session']

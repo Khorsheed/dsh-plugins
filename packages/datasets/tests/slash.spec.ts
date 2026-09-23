@@ -5,24 +5,25 @@
  * readable and names no `@khorsheed/dsh-datasets-tool` row; every unreadable
  * path fails open.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { createDatasetsService, type DatasetsService } from '../src/service.ts'
-import { handleDatasetsCommand } from '../src/slash.ts'
+import { BIND_RETIRED, handleDatasetsCommand } from '../src/slash.ts'
+import { cleanup, stateOptions } from './helpers.ts'
 
 const roots: string[] = []
 afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  for (const root of roots.splice(0)) cleanup(root)
 })
 
 function service(defaultRepo = ''): DatasetsService {
   const worktreeRoot = mkdtempSync(join(tmpdir(), 'dsh-datasets-slash-wt-'))
   const bindingsRoot = mkdtempSync(join(tmpdir(), 'dsh-datasets-slash-bind-'))
   roots.push(worktreeRoot, bindingsRoot)
-  return createDatasetsService({ worktreeRoot, bindingsRoot, defaultRepo })
+  return createDatasetsService({ ...stateOptions(worktreeRoot), bindingsRoot, defaultRepo })
 }
 
 /** Invoke the handler as `sess-1`, optionally with an agent-scope ctx probe. */
@@ -55,12 +56,14 @@ describe('/datasets handler', () => {
     expect(result.text).toContain('usage: /datasets list')
   })
 
-  it('bind and unbind roundtrip the invoking session\'s record', async () => {
+  it('bind is retired: it points the person at the registry and records nothing (T73)', async () => {
     const svc = service()
     const bound = await run(svc, 'bind /repo/library --datasets alpha,beta --layers visible')
-    expect(bound.kind).toBe('success')
-    expect(bound.text).toContain('datasets: alpha, beta')
-    expect(svc.binding({ id: 'sess-1' as never })).toMatchObject({ repoPath: '/repo/library', datasets: ['alpha', 'beta'] })
+    expect(bound).toEqual({ kind: 'error', text: BIND_RETIRED })
+    expect(bound.text).toContain('Register repository')
+    expect(svc.binding({ id: 'sess-1' as never })).toBeUndefined()
+    // unbind still clears a legacy record, so a session can drop what it had.
+    svc.bind({ id: 'sess-1' as never }, { repoPath: '/repo/library' })
     const cleared = await run(svc, 'unbind')
     expect(cleared).toMatchObject({ kind: 'success', text: 'dataset binding cleared' })
     expect(svc.binding({ id: 'sess-1' as never })).toBeUndefined()

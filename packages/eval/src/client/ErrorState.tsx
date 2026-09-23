@@ -98,6 +98,17 @@ export interface ErrorStateProps {
    * the raw text: §九 keeps absolute paths off the page itself.
    */
   path?: string | undefined
+  /**
+   * The fix line to use when the classifier does NOT recognize the cause.
+   *
+   * The markers below read messages the HOSTS emit, and some failures are
+   * specific to one caller rather than to a host — a plan document whose
+   * dataset working tree was deleted is the lab tab's own, and the generic
+   * 「再试一次或看详情」 is a worse answer than the caller's own sentence
+   * (I5·T67 · W11). A recognized cause still wins: the classifier knows more
+   * about `ENOENT` than any caller does.
+   */
+  fix?: EvalKey | undefined
   /** Compact form for an error inside a field or a strip, rather than a page's body. */
   compact?: boolean
   t: LabViewProps['t']
@@ -110,7 +121,8 @@ export interface ErrorStateProps {
 export function ErrorState(props: ErrorStateProps) {
   const { what, message, path, compact = false, t } = props
   const kind = classifyError(message)
-  const { head, fix } = COPY[kind]
+  const { head, fix: known } = COPY[kind]
+  const fix = kind === 'unknown' && props.fix !== undefined ? props.fix : known
   return (
     <div className={compact ? `${css.errorSeat} ${css.errorSeatCompact}` : css.errorSeat}>
       <div className={css.errorHead}>{head === null ? what : t(head)}</div>

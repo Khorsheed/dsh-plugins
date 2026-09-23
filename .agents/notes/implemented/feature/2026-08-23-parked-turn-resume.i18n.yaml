@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-23-parked-turn-resume.md
-.agents/notes/implemented/feature/2026-08-23-parked-turn-resume.md: e221cd82e8296c5167baea04fd2ce671005f4a21
-.agents/notes/implemented/feature/2026-08-23-parked-turn-resume.zh.md: 27bbc05a9499c38780fd38755af4d843905b522a
+.agents/notes/implemented/feature/2026-08-23-parked-turn-resume.md: 7e6d508cb3da77c3518961a1b2a80caa17dff24c
+.agents/notes/implemented/feature/2026-08-23-parked-turn-resume.zh.md: c0ab6003ab1a50b8f5dfdcfa04665d602bb0ad0e

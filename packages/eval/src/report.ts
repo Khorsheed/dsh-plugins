@@ -1,3 +1,4 @@
+import { parseEffortEvidence, type EffortEvidence } from './frozen-configuration.ts'
 /**
  * The `report` verb: turn a self-contained mission export bundle into
  * `results.jsonl` (one line per verdict) and `summary.md` (the paired
@@ -10,13 +11,16 @@
  *
  * - The four invariants are checked FIRST and printed first. Any one not
  *   established (violated, or absent data) and the report degrades to fact
- *   tables — no comparison, no ranking.
+ *   tables — no comparison, no ranking. A fifth check (判定覆盖一致) is
+ *   per PAIR: a pair whose criteria were judged by a judge / human on one
+ *   side and only by a script on the other is described, never ranked.
  * - Factors are derived, never declared: condition documents recorded in
  *   run.meta are diffed pairwise; exactly one differing field names the
  *   factor, several fields degrade to 多因子 (descriptive only). Documents
  *   not recorded → the pair is marked unknown.
  * - Paired comparison blocks on tasks, resamples reps (never tasks) for the
- *   bootstrap CI, and refuses to rank when n < 3.
+ *   bootstrap CI, gives the CI only when at least 3 tasks have a delta, and
+ *   refuses to rank when n (the smallest per-task rep count) < 3.
  * - Efficiency metrics stay parallel (never summed into one score); tokens
  *   compare only within the same model.
  * - Attempts are infrastructure retries (frozen decision 1): every attempt's
@@ -127,13 +131,29 @@ export interface ReportRow {
   toolCalls?: ToolCallCounts
   /** llm-draft only, and only on bundles that recorded it — see {@link VerdictJudge}. */
   judge?: VerdictJudge
+  /**
+   * The CELL's source mix: layer → how many of its criteria SCORED from that
+   * layer after the per-criterion merge. `{"human-final": 1, "llm-draft": 3}`
+   * is the cell a person re-judged one criterion of — the other three still
+   * count, on the judge's word.
+   *
+   * Repeated on every one of the cell's rows, exactly as `toolCalls` is: it
+   * is a fact about the cell, and a row has no mix of its own. This row's own
+   * layer is `ns`; whether THIS row scored is `ns === ` the layer that won the
+   * criterion, which the criteria table states outright.
+   */
+  sources?: Record<string, number>
   evidence: string
   by: string
 }
 
-/** One of the four architecture-§5 invariants, with the facts behind it. */
+/**
+ * One validity check, with the facts behind it: the four architecture-§5
+ * invariants, which gate the whole comparison section, and the fifth
+ * (判定覆盖一致, D7), which degrades a single pair.
+ */
 export interface InvariantCheck {
-  id: 'materialization' | 'fingerprint' | 'subject' | 'procedure'
+  id: 'materialization' | 'fingerprint' | 'subject' | 'procedure' | 'verdict-coverage'
   title: string
   status: 'ok' | 'violated' | 'unverifiable'
   details: string[]
@@ -170,6 +190,34 @@ export interface PairTaskDelta {
   n: number
 }
 
+/**
+ * One rep pair whose criteria were not judged by the same KIND of source on
+ * both sides: a criterion one side has a judge or human verdict for, and the
+ * other side has only a script verdict — or nothing — for.
+ */
+export interface CoverageGap {
+  task: string
+  rep: number
+  /** The side missing the judge / human verdicts. */
+  condition: string
+  criteria: string[]
+  /**
+   * 判官缺席: every judge call on that cell failed. 仅脚本: the criteria rest on
+   * script verdicts. 无判定: nothing judged them at all.
+   */
+  why: '判官缺席' | '仅脚本' | '无判定'
+  /** The judge failures recorded on that cell, when it was 判官缺席. */
+  failures: JudgeFailure[]
+}
+
+/** One judge call that produced no usable verdicts (`kind: 'judge-parse-failed'`). */
+export interface JudgeFailure {
+  judgeCondition: string | null
+  sample: number | null
+  attempt: number | null
+  error: string
+}
+
 /** A condition pair's pooled comparison. */
 export interface PairComparison {
   a: string
@@ -179,6 +227,15 @@ export interface PairComparison {
   /** Smallest per-task rep-pair count — the rank gate. */
   n: number
   ci: BootstrapCi | null
+  /**
+   * Set when the CI was withheld because fewer than 3 tasks have a delta —
+   * the interval's unit is the task, and one or two tasks cannot bound it.
+   */
+  ciWithheld: { tasksWithDelta: number } | null
+  /** A CI was given, but the rank gate (n ≥ 3 per task) was not met. */
+  ciAdvisory: boolean
+  /** Rep pairs whose verdict sources differ in kind; non-empty degrades the pair. */
+  coverageGaps: CoverageGap[]
   /** Set only when the rank gate passes: which side the CI favors. */
   rank: 'a' | 'b' | null
   rankReason: string
@@ -305,6 +362,98 @@ export interface NegativeHit {
   by: string
 }
 
+/**
+ * One rubric criterion as the derived table declares it — the ROW of the
+ * criteria table.
+ *
+ * There is no title, and deliberately: the derived table (`weights.ts`) is
+ * built from the grading layer and carries ids, weights, polarity, kind and
+ * axis — never the criterion's text, which is the layer's own content and the
+ * reason an automatic export leaves that layer behind. `axis` is the nearest
+ * honest label a bundle can hand a reader, and it is the DIMENSION the
+ * question was asked along.
+ */
+export interface CriterionFactsRow {
+  id: string
+  /** The rubric's sub-axis — the dimension this criterion scores under. */
+  axis: string | null
+  /** `objective` / `llm-draft` / `human`; null when the rubric declares none. */
+  kind: string | null
+  weight: number | null
+  negative: boolean
+  /** True when no rubric row declares this criterion — the verdicts alone do. */
+  undeclared: boolean
+}
+
+/** One sample behind a criteria-table cell: a single verdict, whole. */
+export interface CriterionSample {
+  missionId: string
+  rep: number | null
+  /** The layer this sample was written in. */
+  ns: string
+  /** The criterion HOLDS (protocol §6.5) — on a negative criterion, the defect. */
+  pass: boolean
+  ratio: VerdictRatio | null
+  /** The verdict's own checkable fact, verbatim. */
+  evidence: string
+  by: string
+  /** The judge that wrote it, when the bundle recorded one (the report un-blinds). */
+  judge: VerdictJudge | null
+}
+
+/** One (criterion × comparison group) cell of a task's criteria table. */
+export interface CriterionGroupResult {
+  condition: string
+  /** Reps of this group that judged the criterion at all. */
+  reps: number
+  /** Reps where it HELD (the numerator of the `n/N` a multi-rep cell prints). */
+  heldReps: number
+  /** Mean credit over those reps, polarity NOT applied; null when none judged it. */
+  credit: number | null
+  /** The criterion holds for the group (majority of reps); null when none judged it. */
+  holds: boolean | null
+  /** True when any sample declared a `ratio` — the cell prints a proportion. */
+  proportional: boolean
+  /** Layer → reps that SCORED from it. Mixed keys is the whole point of T54. */
+  sources: Record<string, number>
+  /** The samples the score was taken from, rep by rep. */
+  samples: CriterionSample[]
+  /**
+   * Samples of LOWER layers the merge passed over — a judge draft a person
+   * re-judged. Non-empty with `human-final` among `sources` is 「人已改判」,
+   * and the original judgement stays readable beside the new one.
+   */
+  superseded: CriterionSample[]
+}
+
+/**
+ * One task's 判据 × 对比组 table: what every criterion concluded in every
+ * group, with the evidence and the judge behind each conclusion.
+ *
+ * The table exists because a per-task total answers «which side won» and
+ * nothing else — a reader looking at two scores cannot see WHICH dimension
+ * moved, nor on what grounds. Every number here is the same merge the pair
+ * table's is built from; `totals` is literally `scoreOf`'s, not a second sum.
+ */
+export interface TaskCriteriaTable {
+  task: string
+  /** Rubric order, undeclared criteria appended. */
+  criteria: CriterionFactsRow[]
+  /** The comparison groups that ran this task, sorted. */
+  conditions: string[]
+  /** One entry per criterion, in `criteria` order. */
+  rows: Array<{ criterion: string; cells: CriterionGroupResult[] }>
+  /** The bottom row: the task's own score per group — {@link EvalReport}'s only score. */
+  totals: Array<{
+    condition: string
+    /** Mean scored-criterion count over the group's current cells. */
+    scored: number | null
+    weighted: number | null
+    /** Cells the mean is over — the pair table's `n` when the reps are matched. */
+    reps: number
+  }>
+}
+
 /** The analyzed bundle — everything summary rendering and tests consume. */
 export interface EvalReport {
   bundleDir: string
@@ -312,7 +461,10 @@ export interface EvalReport {
   expectedNs: string[] | null
   rows: ReportRow[]
   invariants: InvariantCheck[]
-  /** True only when all four invariants are established. */
+  /**
+   * True only when the FIRST FOUR invariants are established. The fifth
+   * (verdict-coverage) degrades single pairs and never closes the section.
+   */
   comparisonAllowed: boolean
   conditions: Array<{ id: string; sha: string | null; model: string | null }>
   factors: FactorPair[]
@@ -340,6 +492,14 @@ export interface EvalReport {
   polarity: RubricPolarity
   /** Negative criteria that held, over current attempts — the defect list. */
   negativeHits: NegativeHit[]
+  /**
+   * Per task, the 判据 × 对比组 table: every criterion's conclusion in every
+   * group, the layer it scored from, and the evidence behind it. Gated by the
+   * same four invariants as {@link EvalReport.comparisons} — a run that may
+   * not be compared ships no table — and populated for a SINGLE-group run
+   * too, because «判官依据» does not depend on there being a second column.
+   */
+  criteriaTables: TaskCriteriaTable[]
   notes: string[]
 }
 
@@ -355,6 +515,7 @@ export interface EvalReport {
  * nothing" are different facts and only absence can say the first one.
  */
 export interface UsageRow {
+  reasoning?: EffortEvidence
   /** The run this bundle belongs to; null when its meta names none. */
   run: string | null
   /** The cell's mission id. */
@@ -403,6 +564,7 @@ const NS_PRIORITY = ['human-final', 'llm-draft', 'script'] as const
 const COMPLETED_STATES = new Set(['judged', 'archived', 'releasable', 'released'])
 
 interface DelegationRecord {
+  reasoning?: EffortEvidence
   stage: string | null
   round: number | null
   durationMs: number | null
@@ -493,6 +655,8 @@ interface BundleCell {
   unit: CellUnit | null
   verdicts: CellVerdict[]
   delegations: DelegationRecord[]
+  /** Judge calls that produced no usable verdicts, as the orchestrator recorded them. */
+  judgeFailures: JudgeFailure[]
   retryReason: string | null
   /** ns → writer origins (the `tool:`/`cli`/… prefix of the annotation's by). */
   writers: Map<string, Set<string>>
@@ -601,7 +765,9 @@ function delegationsOf(payload: unknown): DelegationRecord[] {
     if (!isPlainObject(item) || item['kind'] !== 'delegation') continue
     const model = isPlainObject(item['model']) ? item['model'] : undefined
     const usage = isPlainObject(item['usage']) ? item['usage'] : undefined
+    const reasoning = parseEffortEvidence(item['reasoning'])
     out.push({
+      ...reasoning === undefined ? {} : { reasoning },
       stage: str(item['stage']),
       round: num(item['round']),
       durationMs: num(item['durationMs']),
@@ -614,6 +780,27 @@ function delegationsOf(payload: unknown): DelegationRecord[] {
       modelObserved: model === undefined ? null : str(model['observed']),
       cliVersion: str(item['cliVersion']),
       toolCalls: toolCallsOf(item['toolCalls']),
+    })
+  }
+  return out
+}
+
+/**
+ * Extract the judge failures from an orchestrator-ns payload (object or
+ * array). `runJudgeSamples` records every failed judge call — the first try
+ * and its retry alike — as `kind: 'judge-parse-failed'` before moving on, so
+ * a cell whose judge never answered says so in the bundle itself.
+ */
+function judgeFailuresOf(payload: unknown): JudgeFailure[] {
+  const items = Array.isArray(payload) ? payload : [payload]
+  const out: JudgeFailure[] = []
+  for (const item of items) {
+    if (!isPlainObject(item) || item['kind'] !== 'judge-parse-failed') continue
+    out.push({
+      judgeCondition: str(item['judgeCondition']),
+      sample: num(item['sample']),
+      attempt: num(item['attempt']),
+      error: str(item['error']) ?? '（未记录原因）',
     })
   }
   return out
@@ -732,6 +919,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
   const retry = isPlainObject(meta['retry']) ? meta['retry'] : undefined
   const verdicts: CellVerdict[] = []
   const delegations: DelegationRecord[] = []
+  const judgeFailures: JudgeFailure[] = []
   const writers = new Map<string, Set<string>>()
   let anchor: CellAnchor | null = null
   let unit: CellUnit | null = null
@@ -750,6 +938,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
     }
     if (ns === 'orchestrator') {
       delegations.push(...delegationsOf(annotation['payload']))
+      judgeFailures.push(...judgeFailuresOf(annotation['payload']))
       anchor ??= anchorOf(annotation['payload'])
       unit ??= unitOf(annotation['payload'])
       continue
@@ -786,6 +975,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
     unit,
     verdicts,
     delegations,
+    judgeFailures,
     retryReason: retry === undefined ? null : str(retry['reason']),
     writers,
   }
@@ -854,15 +1044,24 @@ async function readCells(bundleDir: string, conditionIds: readonly string[]): Pr
 interface CriterionFacts {
   weight: number | null
   negative: boolean
+  /** The rubric's sub-axis — the dimension the criteria table names a row by. */
+  axis: string | null
+  /** `objective` / `llm-draft` / `human`, when the rubric declares one. */
+  kind: string | null
+  /** Rubric document order, so the criteria table can print the rubric's own. */
+  order: number
 }
 
 /** task → criterion → the rubric's scoring facts. */
 type PolarityMap = Map<string, Map<string, CriterionFacts>>
 
 function indexRows(rows: readonly RubricWeightRow[], sink: PolarityMap): void {
+  let order = 0
   for (const row of rows) {
     if (!sink.has(row.task)) sink.set(row.task, new Map())
-    sink.get(row.task)?.set(row.id, { weight: row.weight, negative: row.negative })
+    sink.get(row.task)?.set(row.id, {
+      weight: row.weight, negative: row.negative, axis: row.axis, kind: row.kind, order: order++,
+    })
   }
 }
 
@@ -1130,8 +1329,16 @@ function checkSubject(cells: BundleCell[], conditionEntries: Array<{ id: string;
   }
 
   let observedSeen = false
+  let effortUnverified = false
   for (const cell of current) {
     for (const delegation of cell.delegations) {
+      if (delegation.reasoning?.status === 'mismatch') {
+        violated = true
+        details.push(`${cell.missionId}: 推理强度声明、准入配置或回读不一致，该格不参与比较`)
+      } else if (delegation.reasoning?.status === 'unverified') {
+        effortUnverified = true
+        details.push(`${cell.missionId}: 本轮推理强度缺少原生回读证据，未验证`)
+      }
       if (delegation.modelObserved === null) continue
       observedSeen = true
       if (delegation.modelDeclared !== null && delegation.modelObserved !== delegation.modelDeclared) {
@@ -1143,7 +1350,7 @@ function checkSubject(cells: BundleCell[], conditionEntries: Array<{ id: string;
   if (!observedSeen) details.push('无模型回读记录（delegation 的 model.observed 缺失或为 null）——回读一致性未核验')
 
   if (violated) return { id: 'subject', title, status: 'violated', details }
-  if (!conditionVerified || !observedSeen) return { id: 'subject', title, status: 'unverifiable', details }
+  if (!conditionVerified || !observedSeen || effortUnverified) return { id: 'subject', title, status: 'unverifiable', details }
   return { id: 'subject', title, status: 'ok', details: [`${current.length} 格锚点条件均落在 run.meta.conditions 内且哈希一致；模型回读与声明一致`] }
 }
 
@@ -1241,10 +1448,27 @@ function factorPairs(conditionEntries: Array<{ id: string; sha: string | null; d
 
 // --- comparison --------------------------------------------------------------
 
-/** The cell's authoritative verdicts: best available ns, majority per criterion. */
+/**
+ * The cell's authoritative verdicts, merged PER CRITERION.
+ *
+ * The rule the report scores by: each criterion independently takes the most
+ * authoritative layer that judged IT (`human-final` > `llm-draft` >
+ * `script`). One cell may therefore score from several layers at once — a
+ * human who re-judged one criterion of four leaves the other three on the
+ * judge's word, and all four still count.
+ *
+ * The rule it replaces (until 2026-09-18) took the best layer for the CELL
+ * and scored from that one alone. One human verdict then silently dropped
+ * every criterion the human had not answered: I5·T37 recorded a judge's four
+ * criteria, a person re-judged one, and the cell scored 1 instead of 4 with
+ * nothing on any page saying where the other three went. A rule whose cost is
+ * invisible at the moment it is paid is the wrong rule; a mixed cell is
+ * legible as long as the mixture is REPORTED, which is what `sources` is for.
+ */
 interface PrimaryVerdicts {
-  ns: string
-  /** criterion → the criterion HOLDS (majority across samples). */
+  /** criterion → the layer its value was taken from. */
+  ns: Map<string, string>
+  /** criterion → the criterion HOLDS (majority across that layer's samples). */
   holds: Map<string, boolean>
   /**
    * criterion → credit in [0, 1] BEFORE polarity is applied. A boolean
@@ -1256,35 +1480,72 @@ interface PrimaryVerdicts {
   credit: Map<string, number>
   /** criterion → the first verdict document behind it (evidence and `by`). */
   source: Map<string, CellVerdict>
+  /** criterion → every verdict of the layer it scored from, in record order. */
+  samples: Map<string, CellVerdict[]>
+  /**
+   * criterion → the verdicts of LOWER layers the merge passed over. Kept, not
+   * dropped: «人已改判» is only readable beside the judgement it replaced.
+   */
+  superseded: Map<string, CellVerdict[]>
+  /** layer → how many criteria scored from it — the cell's source mix. */
+  sources: Record<string, number>
+}
+
+function configurationMismatch(cell: BundleCell): boolean {
+  return cell.delegations.some(delegation => delegation.reasoning?.status === 'mismatch')
 }
 
 function primaryPass(cell: BundleCell): PrimaryVerdicts | null {
-  for (const ns of NS_PRIORITY) {
-    const verdicts = cell.verdicts.filter(v => v.ns === ns)
-    if (verdicts.length === 0) continue
-    const byCriterion = new Map<string, boolean[]>()
-    const ratios = new Map<string, number[]>()
-    const source = new Map<string, CellVerdict>()
-    for (const verdict of verdicts) {
-      if (!byCriterion.has(verdict.criterion)) byCriterion.set(verdict.criterion, [])
-      byCriterion.get(verdict.criterion)?.push(verdict.pass)
-      if (verdict.ratio !== null) {
-        if (!ratios.has(verdict.criterion)) ratios.set(verdict.criterion, [])
-        ratios.get(verdict.criterion)?.push(verdict.ratio.passed / verdict.ratio.total)
-      }
-      if (!source.has(verdict.criterion)) source.set(verdict.criterion, verdict)
+  // The configuration guard comes FIRST, and it is whole-cell on purpose: a
+  // round whose reasoning effort was read back as something other than what
+  // the condition declared was not run under the condition it is filed as, so
+  // none of its verdicts say anything about that condition. Per-criterion
+  // merging is about which LAYER answers for a criterion; it never converts a
+  // cell the run cannot attribute into a partially usable one.
+  if (configurationMismatch(cell)) return null
+  const byCriterion = new Map<string, Map<string, CellVerdict[]>>()
+  for (const verdict of cell.verdicts) {
+    let perNs = byCriterion.get(verdict.criterion)
+    if (perNs === undefined) {
+      perNs = new Map()
+      byCriterion.set(verdict.criterion, perNs)
     }
-    const holds = new Map<string, boolean>()
-    const credit = new Map<string, number>()
-    for (const [criterion, values] of byCriterion) {
-      const majority = values.filter(Boolean).length > values.length / 2
-      holds.set(criterion, majority)
-      const fractions = ratios.get(criterion)
-      credit.set(criterion, fractions !== undefined && fractions.length > 0 ? mean(fractions) : (majority ? 1 : 0))
-    }
-    return { ns, holds, credit, source }
+    const bucket = perNs.get(verdict.ns)
+    if (bucket === undefined) perNs.set(verdict.ns, [verdict])
+    else bucket.push(verdict)
   }
-  return null
+  const ns = new Map<string, string>()
+  const holds = new Map<string, boolean>()
+  const credit = new Map<string, number>()
+  const source = new Map<string, CellVerdict>()
+  const samples = new Map<string, CellVerdict[]>()
+  const superseded = new Map<string, CellVerdict[]>()
+  const sources: Record<string, number> = {}
+  for (const [criterion, perNs] of byCriterion) {
+    const layer = NS_PRIORITY.find(candidate => (perNs.get(candidate)?.length ?? 0) > 0)
+    if (layer === undefined) continue
+    const verdicts = perNs.get(layer) as CellVerdict[]
+    const majority = verdicts.filter(v => v.pass).length > verdicts.length / 2
+    const fractions = verdicts
+      .filter((v): v is CellVerdict & { ratio: VerdictRatio } => v.ratio !== null)
+      .map(v => v.ratio.passed / v.ratio.total)
+    ns.set(criterion, layer)
+    holds.set(criterion, majority)
+    credit.set(criterion, fractions.length > 0 ? mean(fractions) : (majority ? 1 : 0))
+    source.set(criterion, verdicts[0] as CellVerdict)
+    samples.set(criterion, verdicts)
+    superseded.set(criterion, NS_PRIORITY
+      .slice(NS_PRIORITY.indexOf(layer) + 1)
+      .flatMap(lower => perNs.get(lower) ?? []))
+    sources[layer] = (sources[layer] ?? 0) + 1
+  }
+  if (ns.size === 0) return null
+  // Authority order, not the order the criteria happened to arrive in: the mix
+  // rides every result row, and a file whose key order depends on which
+  // criterion came first is a file two runs of the same bundle can disagree on.
+  const ordered: Record<string, number> = {}
+  for (const layer of NS_PRIORITY) if (sources[layer] !== undefined) ordered[layer] = sources[layer]
+  return { ns, holds, credit, source, samples, superseded, sources: ordered }
 }
 
 /**
@@ -1342,7 +1603,9 @@ function negativeHitsOf(cells: readonly BundleCell[], polarity: PolarityMap): Ne
         rep: cell.rep,
         attempt: cell.attempt,
         criterion,
-        ns: primary.ns,
+        // The layer THIS criterion scored from — after the per-criterion
+        // merge a cell no longer has one namespace to name.
+        ns: primary.ns.get(criterion) ?? '',
         weight: facts.weight,
         ratio: verdict?.ratio ?? null,
         evidence: typeof doc['evidence'] === 'string' ? doc['evidence'] : '',
@@ -1355,6 +1618,272 @@ function negativeHitsOf(cells: readonly BundleCell[], polarity: PolarityMap): Ne
     || (a.rep ?? 0) - (b.rep ?? 0) || a.criterion.localeCompare(b.criterion))
 }
 
+// --- the 判据 × 对比组 table --------------------------------------------------
+
+/** One verdict, projected for the criteria table's expansion. */
+function sampleOf(cell: BundleCell, verdict: CellVerdict): CriterionSample {
+  return {
+    missionId: cell.missionId,
+    rep: cell.rep,
+    ns: verdict.ns,
+    pass: verdict.pass,
+    ratio: verdict.ratio,
+    evidence: typeof verdict.doc['evidence'] === 'string' ? verdict.doc['evidence'] : '',
+    by: typeof verdict.doc['by'] === 'string' ? verdict.doc['by'] : '',
+    judge: verdict.judge,
+  }
+}
+
+/**
+ * Build one task's criteria table over the run's CURRENT attempts.
+ *
+ * Reads through {@link primaryPass} and {@link scoreOf} and computes nothing
+ * of its own: the per-criterion conclusion is the merge's, and the bottom row
+ * is `scoreOf`'s mean over the same cells. A table that re-derived either
+ * would be a second opinion a reader could not tell from the first — the same
+ * rule that keeps `report-view` a projection.
+ *
+ * The rep scope is every current cell the group ran for the task, not the
+ * rep-matched subset a PAIR is computed over. With the usual full matrix the
+ * two are the same set and the bottom row equals the pair table's mean; with a
+ * ragged one they are not, and the per-group `reps` count is printed so the
+ * difference is visible rather than silent.
+ */
+function criteriaTableOf(task: string, cells: readonly BundleCell[], polarity: PolarityMap): TaskCriteriaTable {
+  // The SAME cell set `comparePair` compares over, including its
+  // configuration filter: a round whose reasoning effort was read back as
+  // something else did not run under the condition it is filed as, so it is
+  // absent here rather than present as a column of blanks with a 0 under it.
+  // A zero is a score; «not attributable» is not.
+  //
+  // Today that filter is belt and braces on both functions — `checkSubject`
+  // flags any mismatch, so the gate shuts before either table is built. It is
+  // kept in step with `comparePair` on purpose: if the subject check is ever
+  // softened, the two tables must not start disagreeing about whether an
+  // unattributable cell scores.
+  const taskCells = cells.filter(cell => cell.isCurrent && cell.task === task && !configurationMismatch(cell))
+  const conditions = [...new Set(taskCells.map(c => c.condition).filter((c): c is string => c !== null))].sort()
+  const taskFacts = polarity.get(task)
+
+  // criterion → condition → the reps that judged it, with the layer each
+  // scored from. One pass over the cells; `primaryPass` is the only judge of
+  // which layer won.
+  const seen = new Map<string, Map<string, CriterionGroupResult>>()
+  const declaredOrder = new Map<string, number>()
+  for (const cell of taskCells) {
+    if (cell.condition === null) continue
+    const primary = primaryPass(cell)
+    if (primary === null) continue
+    for (const [criterion, credit] of primary.credit) {
+      let perCondition = seen.get(criterion)
+      if (perCondition === undefined) {
+        perCondition = new Map()
+        seen.set(criterion, perCondition)
+      }
+      let group = perCondition.get(cell.condition)
+      if (group === undefined) {
+        group = {
+          condition: cell.condition,
+          reps: 0, heldReps: 0, credit: null, holds: null, proportional: false,
+          sources: {}, samples: [], superseded: [],
+        }
+        perCondition.set(cell.condition, group)
+      }
+      const layer = primary.ns.get(criterion) as string
+      const samples = primary.samples.get(criterion) ?? []
+      group.reps += 1
+      if (primary.holds.get(criterion) === true) group.heldReps += 1
+      group.credit = (group.credit ?? 0) + credit
+      group.sources[layer] = (group.sources[layer] ?? 0) + 1
+      if (samples.some(sample => sample.ratio !== null)) group.proportional = true
+      group.samples.push(...samples.map(sample => sampleOf(cell, sample)))
+      group.superseded.push(...(primary.superseded.get(criterion) ?? []).map(sample => sampleOf(cell, sample)))
+    }
+  }
+  // The running sum becomes the mean, and the group's own verdict its majority.
+  for (const perCondition of seen.values()) {
+    for (const group of perCondition.values()) {
+      if (group.reps === 0) continue
+      group.credit = (group.credit ?? 0) / group.reps
+      group.holds = group.heldReps > group.reps / 2
+    }
+  }
+
+  for (const [criterion, facts] of taskFacts ?? []) declaredOrder.set(criterion, facts.order)
+  const criteria: CriterionFactsRow[] = [...seen.keys()]
+    .sort((a, b) => {
+      const oa = declaredOrder.get(a)
+      const ob = declaredOrder.get(b)
+      // Declared criteria in RUBRIC order; ones only the verdicts know about
+      // are appended, alphabetically, and marked — inventing a position for
+      // them among the rubric's own would misreport the rubric.
+      if (oa !== undefined && ob !== undefined) return oa - ob
+      if (oa !== undefined) return -1
+      if (ob !== undefined) return 1
+      return a.localeCompare(b)
+    })
+    .map((id) => {
+      const facts = taskFacts?.get(id)
+      return {
+        id,
+        axis: facts?.axis ?? null,
+        kind: facts?.kind ?? null,
+        weight: facts?.weight ?? null,
+        negative: facts?.negative ?? false,
+        undeclared: facts === undefined,
+      }
+    })
+
+  const totals = conditions.map((condition) => {
+    const groupCells = taskCells.filter(cell => cell.condition === condition)
+    const scores = groupCells.map(cell => scoreOf(cell, polarity))
+    const weights = scores.map(score => score.weighted)
+    return {
+      condition,
+      scored: scores.length === 0 ? null : mean(scores.map(score => score.scored)),
+      // A group whose cells do not ALL carry a weighted score has no mean
+      // worth printing: averaging over the cells that happen to have one
+      // would silently change the denominator.
+      weighted: weights.length > 0 && weights.every((w): w is number => w !== null) ? mean(weights) : null,
+      reps: groupCells.length,
+    }
+  })
+
+  return {
+    task,
+    criteria,
+    conditions,
+    rows: criteria.map(row => ({
+      criterion: row.id,
+      cells: conditions.map(condition => seen.get(row.id)?.get(condition) ?? {
+        condition,
+        reps: 0, heldReps: 0, credit: null, holds: null, proportional: false,
+        sources: {}, samples: [], superseded: [],
+      }),
+    })),
+    totals,
+  }
+}
+
+/** Every task's criteria table, task-sorted. A task with nothing attributable ships none. */
+function criteriaTablesOf(cells: readonly BundleCell[], polarity: PolarityMap): TaskCriteriaTable[] {
+  const tasks = [...new Set(cells
+    .filter(c => c.isCurrent && !configurationMismatch(c))
+    .map(c => c.task)
+    .filter((t): t is string => t !== null))].sort()
+  return tasks.map(task => criteriaTableOf(task, cells, polarity))
+}
+
+/** The layers that count as 「已判」: a judge's draft and a human's final are the same KIND of source. */
+const JUDGED_NS = new Set(['human-final', 'llm-draft'])
+
+/**
+ * 判定覆盖一致 for one pair: over the SAME rep-matched cells `comparePair`
+ * compares, every criterion must be judged (judge or human) on both sides or
+ * on neither. A criterion one side scored from a judge and the other from a
+ * script alone is two different instruments subtracted from each other — the
+ * pilot-d `Δ = 4, CI [4, 4]` was exactly that, with nothing on the page
+ * saying so.
+ *
+ * A human re-judging one criterion does NOT trip this: human-final and
+ * llm-draft are both 「已判」, so the kinds still match.
+ */
+function coverageGapsOf(a: string, b: string, cells: readonly BundleCell[]): CoverageGap[] {
+  const current = cells.filter(c => c.isCurrent && !configurationMismatch(c))
+  const gaps: CoverageGap[] = []
+  const tasks = [...new Set(current.map(c => c.task).filter((t): t is string => t !== null))].sort()
+  for (const task of tasks) {
+    const side = (condition: string): Map<number, BundleCell> => new Map(current
+      .filter(cell => cell.task === task && cell.condition === condition)
+      .map(cell => [cell.rep ?? -1, cell]))
+    const repsA = side(a)
+    const repsB = side(b)
+    for (const rep of [...repsA.keys()].filter(r => repsB.has(r)).sort((x, y) => x - y)) {
+      const cellA = repsA.get(rep) as BundleCell
+      const cellB = repsB.get(rep) as BundleCell
+      const nsA = primaryPass(cellA)?.ns ?? new Map<string, string>()
+      const nsB = primaryPass(cellB)?.ns ?? new Map<string, string>()
+      const judged = (ns: Map<string, string>, criterion: string): boolean => JUDGED_NS.has(ns.get(criterion) ?? '')
+      const missingOn = new Map<string, string[]>([[a, []], [b, []]])
+      for (const criterion of [...new Set([...nsA.keys(), ...nsB.keys()])].sort()) {
+        const onA = judged(nsA, criterion)
+        const onB = judged(nsB, criterion)
+        if (onA && !onB) missingOn.get(b)?.push(criterion)
+        if (onB && !onA) missingOn.get(a)?.push(criterion)
+      }
+      for (const [condition, criteria] of missingOn) {
+        if (criteria.length === 0) continue
+        const cell = condition === a ? cellA : cellB
+        const ns = condition === a ? nsA : nsB
+        const judgeAbsent = cell.judgeFailures.length > 0 && !cell.verdicts.some(v => v.ns === 'llm-draft')
+        gaps.push({
+          task,
+          rep,
+          condition,
+          criteria,
+          why: judgeAbsent ? '判官缺席' : criteria.every(c => ns.get(c) === 'script') ? '仅脚本' : '无判定',
+          failures: judgeAbsent ? [...cell.judgeFailures] : [],
+        })
+      }
+    }
+  }
+  return gaps
+}
+
+/** 「<题> 的 <判据…> 在 <组> 没有判官 / 人的判定（<why>）」, one clause per task × side. */
+function coverageReasonOf(gaps: readonly CoverageGap[]): string {
+  const grouped = new Map<string, { task: string; condition: string; criteria: Set<string>; why: Set<string> }>()
+  for (const gap of gaps) {
+    const key = `${gap.task}\u0000${gap.condition}`
+    let entry = grouped.get(key)
+    if (entry === undefined) {
+      entry = { task: gap.task, condition: gap.condition, criteria: new Set(), why: new Set() }
+      grouped.set(key, entry)
+    }
+    for (const criterion of gap.criteria) entry.criteria.add(criterion)
+    entry.why.add(gap.why)
+  }
+  return [...grouped.values()]
+    .map(entry => `${entry.task} 的 ${[...entry.criteria].join('、')} 在 ${entry.condition} 没有判官 / 人的判定（${[...entry.why].join(' / ')}）`)
+    .join('；')
+}
+
+/** One judge failure, shortened for a detail line — the full text is in the bundle. */
+function failureText(failure: JudgeFailure): string {
+  return failure.error.length > 160 ? `${failure.error.slice(0, 160)}…` : failure.error
+}
+
+/**
+ * The fifth validity check. Unlike the other four it does not close the
+ * comparison section: coverage is a property of ONE pair, so a gap degrades
+ * that pair to description (no CI, no rank) and leaves every other pair — and
+ * the criteria tables — as they are. Its status is the conjunction over all
+ * pairs, so the check list still shows ⚠ when any one pair was degraded.
+ */
+function checkVerdictCoverage(factors: readonly FactorPair[], cells: readonly BundleCell[]): InvariantCheck {
+  const title = '判定覆盖一致（每条判据在比较的两格里都有判官 / 人的判定，或都没有）'
+  if (factors.length === 0) {
+    return { id: 'verdict-coverage', title, status: 'ok', details: ['单对比组——没有需要核对的配对'] }
+  }
+  const details: string[] = []
+  let violated = false
+  for (const factor of factors) {
+    const gaps = coverageGapsOf(factor.a, factor.b, cells)
+    if (gaps.length === 0) {
+      details.push(`${factor.a} vs ${factor.b}：各配对格逐判据的判定来源同类`)
+      continue
+    }
+    violated = true
+    for (const gap of gaps) {
+      const absent = gap.why === '判官缺席'
+        ? `判官缺席（判官调用 ${gap.failures.length} 次均失败：${[...new Set(gap.failures.map(failureText))].join(' / ')}）`
+        : gap.why
+      details.push(`${factor.a} vs ${factor.b}：${gap.task} 第 ${gap.rep} 次的 ${gap.criteria.join('、')} 在 ${gap.condition} 没有判官 / 人的判定——${absent}；这一对只做描述，不给区间与名次`)
+    }
+  }
+  return { id: 'verdict-coverage', title, status: violated ? 'violated' : 'ok', details }
+}
+
 function comparePair(
   a: string,
   b: string,
@@ -1363,7 +1892,7 @@ function comparePair(
   polarity: PolarityMap,
   runId: string,
 ): PairComparison {
-  const current = cells.filter(c => c.isCurrent)
+  const current = cells.filter(c => c.isCurrent && !configurationMismatch(c))
   const tasks = [...new Set(current.map(c => c.task).filter((t): t is string => t !== null))].sort()
   const perTask: PairTaskDelta[] = []
   const allDeltas: number[] = []
@@ -1409,18 +1938,31 @@ function comparePair(
     allDeltas.push(...deltas)
   }
   const n = perTask.length === 0 ? 0 : Math.min(...perTask.map(t => t.n))
+  const coverageGaps = coverageGapsOf(a, b, cells)
+  // The CI's resampling unit is the rep INSIDE a task, but what it bounds is
+  // the mean over tasks: with one or two tasks there is nothing to bound, and
+  // [4, 4] off one task reads as a certainty it is not. So the CI gate counts
+  // TASKS, and the rank gate (n, reps per task) stays where it was — a CI can
+  // be shown without being enough to rank on.
+  const tasksWithDelta = bootstrapBlocks.filter(deltas => deltas.length > 0).length
   const seed = fnv1a(`${runId}:${a}:${b}:eval-report-bootstrap`)
-  const ci = bootstrapBlocks.length > 0 ? bootstrapMeanCi(bootstrapBlocks, { seed }) : null
+  const ci = coverageGaps.length === 0 && tasksWithDelta >= 3 ? bootstrapMeanCi(bootstrapBlocks, { seed }) : null
+  const ciWithheld = coverageGaps.length === 0 && tasksWithDelta > 0 && tasksWithDelta < 3 ? { tasksWithDelta } : null
+  const ciAdvisory = ci !== null && n < 3
   let rank: 'a' | 'b' | null = null
   let rankReason: string
-  if (n < 3) {
+  if (coverageGaps.length > 0) {
+    rankReason = `判定覆盖不一致：${coverageReasonOf(coverageGaps)}`
+  } else if (n < 3) {
     rankReason = `不可排名（n=${n} < 3）`
-  } else if (ci === null) {
-    rankReason = '不可排名（无配对数据）'
   } else if (factor.known && factor.multi !== null) {
     rankReason = `不可排名（多因子: ${factor.multi.join(' / ')}——只做描述统计）`
   } else if (!factor.known) {
     rankReason = '不可排名（因子未知——条件文档未记录，无法证明单因子）'
+  } else if (ciWithheld !== null) {
+    rankReason = `不可排名（只有 ${ciWithheld.tasksWithDelta} 道题有差值，给不出区间）`
+  } else if (ci === null) {
+    rankReason = '不可排名（无配对数据）'
   } else if (ci.lo > 0) {
     rank = 'a'
     rankReason = `${a} 高于 ${b}（95% CI [${ci.lo.toFixed(3)}, ${ci.hi.toFixed(3)}] 不含 0）`
@@ -1430,7 +1972,7 @@ function comparePair(
   } else {
     rankReason = `不可排名（95% CI [${ci.lo.toFixed(3)}, ${ci.hi.toFixed(3)}] 含 0）`
   }
-  return { a, b, factor, perTask, n, ci, rank, rankReason }
+  return { a, b, factor, perTask, n, ci, ciWithheld, ciAdvisory, coverageGaps, rank, rankReason }
 }
 
 // --- judge consistency -------------------------------------------------------
@@ -1522,8 +2064,12 @@ export function judgeConsistencyOf(cells: readonly JudgeConsistencyCell[]): Judg
   } else {
     details.push('llm-draft 无多采样判据——一致性不可计算')
   }
-  // The human comparison is about the criterion, not about one rater: every
-  // llm-draft value for it, whoever wrote it.
+  // The human comparison is about the CRITERION, not about the cell: the
+  // denominator is the criteria BOTH sides judged, and a criterion only one
+  // of them touched is not a disagreement. Since the per-criterion merge
+  // (T54) this is also the exact set where the two layers actually compete
+  // for the score, so the number says what it looks like it says. Every
+  // llm-draft value for the criterion counts, whoever wrote it.
   const llmByCriterion = new Map<string, boolean[]>()
   for (const [key, values] of samples) {
     const cellCriterion = key.split('|').slice(0, 2).join('|')
@@ -1541,7 +2087,10 @@ export function judgeConsistencyOf(cells: readonly JudgeConsistencyCell[]): Judg
     }
     if (total > 0) {
       humanAgreement = { agreed, total }
-      details.push(`llm-draft 对 human-final: ${agreed}/${total} 条判据一致（${pct(agreed, total)}）`)
+      const humanOnly = human.size - total
+      details.push(`llm-draft 对 human-final: ${agreed}/${total} 条判据一致（${pct(agreed, total)}）`
+        + '——分母只含两者都判过的判据'
+        + (humanOnly > 0 ? `；另有 ${humanOnly} 条人评判据判官没判过，不进这个分母（它们按人评计分）` : ''))
     } else {
       details.push('human-final 存在，但没有任何判据同时有 llm-draft——一致率不可计算')
     }
@@ -1655,7 +2204,7 @@ function efficiencyOf(
   // condition ids still come from ALL current cells, so a condition whose
   // every cell is unfinished appears in the table with blanks rather than
   // vanishing from it.
-  const completed = current.filter(c => c.state !== null && COMPLETED_STATES.has(c.state))
+  const completed = current.filter(c => c.state !== null && COMPLETED_STATES.has(c.state) && !configurationMismatch(c))
   const conditionIds = [...new Set(current.map(c => c.condition).filter((c): c is string => c !== null))].sort()
   const out: ConditionEfficiency[] = []
   for (const condition of conditionIds) {
@@ -1722,7 +2271,7 @@ function efficiencyOf(
 function usageRowsOf(cells: readonly BundleCell[], runId: string | null): UsageRow[] {
   const out: UsageRow[] = []
   for (const cell of cells) {
-    const counted = cell.isCurrent && cell.state !== null && COMPLETED_STATES.has(cell.state)
+    const counted = cell.isCurrent && cell.state !== null && COMPLETED_STATES.has(cell.state) && !configurationMismatch(cell)
     for (const delegation of cell.delegations) {
       const usage: { outputTokens?: number; inputTokens?: number; cacheReadTokens?: number } = {
         ...delegation.usage.outputTokens === null ? {} : { outputTokens: delegation.usage.outputTokens },
@@ -1738,7 +2287,7 @@ function usageRowsOf(cells: readonly BundleCell[], runId: string | null): UsageR
         stage: delegation.stage,
         round: delegation.round,
         counted,
-        ...delegation.modelObserved === null ? {} : { observedModel: delegation.modelObserved },
+        ...delegation.reasoning === undefined ? {} : { reasoning: delegation.reasoning },        ...delegation.modelObserved === null ? {} : { observedModel: delegation.modelObserved },
         ...delegation.cliVersion === null ? {} : { cliVersion: delegation.cliVersion },
         ...delegation.durationMs === null ? {} : { durationMs: delegation.durationMs },
         ...Object.keys(usage).length === 0 ? {} : { usage },
@@ -1753,9 +2302,9 @@ function excludedCellsOf(cells: BundleCell[]): ExcludedCells[] {
   const counts = new Map<string, ExcludedCells>()
   for (const cell of cells) {
     if (!cell.isCurrent) continue
-    if (cell.state !== null && COMPLETED_STATES.has(cell.state)) continue
+    if (cell.state !== null && COMPLETED_STATES.has(cell.state) && !configurationMismatch(cell)) continue
     const condition = cell.condition ?? '(未知条件)'
-    const state = cell.state ?? '(未知状态)'
+    const state = configurationMismatch(cell) ? 'configuration-mismatch' : cell.state ?? '(未知状态)'
     const key = `${condition}\u0000${state}`
     const existing = counts.get(key)
     if (existing === undefined) counts.set(key, { condition, state, count: 1 })
@@ -1843,6 +2392,8 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
     // One accounting per CELL, repeated on its verdict rows: the rounds are
     // the cell's, and a verdict has no round of its own to attribute to.
     const cellToolCalls = sumToolCalls(cell.delegations.map(d => d.toolCalls))
+    // The same merge the score is computed from, read once per cell.
+    const cellSources = primaryPass(cell)?.sources ?? null
     for (const verdict of cell.verdicts) {
       const facts = cell.task === null ? undefined : polarityMap.get(cell.task)?.get(verdict.criterion)
       const weight = facts?.weight ?? undefined
@@ -1861,6 +2412,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
         ...(facts !== undefined ? { negative: facts.negative } : {}),
         ...(cellToolCalls !== null ? { toolCalls: cellToolCalls } : {}),
         ...(verdict.judge !== null ? { judge: verdict.judge } : {}),
+        ...(cellSources !== null ? { sources: cellSources } : {}),
         evidence: typeof verdict.doc['evidence'] === 'string' ? verdict.doc['evidence'] : '',
         by: typeof verdict.doc['by'] === 'string' ? verdict.doc['by'] : '',
       })
@@ -1876,6 +2428,9 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
     checkSubject(cells, conditionEntries),
     checkProcedure(meta),
   ]
+  // The section gate is the first four only. The fifth check degrades single
+  // pairs inside the section (see `comparePair`) and is appended after the
+  // gate is decided, so it can never close what the four opened.
   const comparisonAllowed = invariants.every(i => i.status === 'ok')
 
   const current = cells.filter(c => c.isCurrent)
@@ -1886,6 +2441,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
   const singleCondition = seenConditions.length <= 1
 
   const factors = factorPairs(conditionEntries)
+  invariants.push(checkVerdictCoverage(factors, cells))
   const comparisons: PairComparison[] = []
   if (comparisonAllowed && !singleCondition) {
     for (const factor of factors) {
@@ -1917,6 +2473,11 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
   const writtenBy = writtenByOf(manifest, cells)
 
   const negativeHits = negativeHitsOf(cells, polarityMap)
+  // Behind the SAME gate as `comparisons`: a bundle whose invariants did not
+  // all hold ships no per-criterion table either, so a closed comparison
+  // cannot be reopened one criterion at a time. A single-group run DOES get
+  // one — 判官依据 is not a comparison.
+  const criteriaTables = comparisonAllowed ? criteriaTablesOf(cells, polarityMap) : []
 
   const notes: string[] = []
   if (manifest === null) notes.push('bundle 缺 manifest.json——nsReport/writtenBy 由注解回算')
@@ -1967,6 +2528,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
     weightsAvailable,
     polarity,
     negativeHits,
+    criteriaTables,
     notes,
   }
 }

@@ -31,10 +31,10 @@ function userEvent(text: string) {
 }
 
 /** One assistant-role message event, attributed to the kimi route. */
-export function assistantEvent(blocks: readonly ContentBlock[]) {
+export function assistantEvent(blocks: readonly ContentBlock[], model?: string) {
   return createAssistantMessage({
     content: blocks as ContentBlock[],
-    source: { provider: 'kimi-cli', model: 'k3' },
+    source: { provider: 'kimi-cli', model: model ?? 'unobserved' },
   })
 }
 
@@ -119,9 +119,8 @@ export interface KimiMirrorDelta {
 }
 
 /**
- * The live token-granularity stream ledger a fold pass coordinates with.
- * Absent on the exec path (no streams exist there) and in the event
- * granularity (deltas never reserve steps).
+ * The live stream ledger a fold pass coordinates with.
+ * Absent on the exec path, where no streams reserve steps.
  */
 export interface KimiMirrorStreams {
   /**
@@ -131,6 +130,8 @@ export interface KimiMirrorStreams {
    * round's chronological order.
    */
   reservedSteps(turn: number): readonly number[]
+  /** Reserve chronological placement from the ACP tool notification before its file fold. */
+  completeTool?(line: KimiTranscriptLine & { kind: 'tool' }): { readonly step: number; readonly opened: boolean } | undefined
   /**
    * Pair one completed think/assistant transcript line with its in-flight
    * stream. Returns the reservation — consuming it — when this line finalizes
@@ -265,7 +266,7 @@ export async function mirrorKimiSessionDelta(
 
   const newTotal = transcript.lines.length
   const delta = transcript.lines.slice(fromLines)
-  const observedModel = transcript.model
+  const observedModel = options?.turn === undefined || transcript.modelTurn === options.turn ? transcript.model : undefined
   // The ROUND's tool calls, counted over the transcript lines carrying this
   // round's turn — deliberately NOT over the mirror window: a settle pass
   // whose delta a live poll already drained still owes the round its real
@@ -396,8 +397,10 @@ export async function mirrorKimiSessionDelta(
     } else if (line.kind === 'tool') {
       // Native tool card: the call event now, the result event when the wire
       // already carries it (else the backfill above pairs it in a later pass).
-      const step = nextFoldStep(turn)
-      childSession.append('step/start', { turn, step })
+      const reserved = options?.streams?.completeTool?.(line)
+      const step = reserved?.step ?? nextFoldStep(turn)
+      steps.set(turn, Math.max(steps.get(turn) ?? 1, step + 1))
+      if (reserved?.opened !== true) childSession.append('step/start', { turn, step })
       const call = childSession.append('tool/call', {
         turn,
         step,
@@ -433,7 +436,7 @@ export async function mirrorKimiSessionDelta(
         childSession.append('assistant/message', {
           turn,
           step: completion.step,
-          message: assistantEvent(lineBlocks(line)),
+          message: assistantEvent(lineBlocks(line), line.model),
           stream: [],
           ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
         }, { surfaceOp: 'append' })
@@ -447,7 +450,7 @@ export async function mirrorKimiSessionDelta(
       childSession.append('assistant/message', {
         turn,
         step,
-        message: assistantEvent(lineBlocks(line)),
+        message: assistantEvent(lineBlocks(line), line.model),
         stream: [],
         ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
       }, { surfaceOp: 'append' })

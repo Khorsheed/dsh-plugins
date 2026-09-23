@@ -6,8 +6,7 @@
  * new rounds are refused (the provider's catch falls back to exec), in-flight
  * rounds finish on their runtime, idle runtimes are reclaimed at once.
  * Toggling ON builds the next generation lazily (no process until the first
- * round). A granularity change needs no generation swap: the driver reads it
- * per round (`setLiveMirrorGranularity`).
+ * round). Legacy granularity settings are ignored.
  *
  * @module @khorsheed/dsh-local-agent-codex — internal, unit-tested directly.
  */
@@ -89,7 +88,6 @@ export class LiveDriverSwitch {
   /** Mirror the resolved settings into the driver generation. */
   private apply(next: CodexLiveSettings): void {
     if (next.live === this.liveOn) {
-      this.active?.setLiveMirrorGranularity(next.liveMirrorGranularity)
       return
     }
     this.liveOn = next.live
@@ -99,7 +97,6 @@ export class LiveDriverSwitch {
         ...this.options.sandbox === undefined ? {} : { sandbox: this.options.sandbox },
         ...this.options.liveIdleMs === undefined ? {} : { liveIdleMs: this.options.liveIdleMs },
         ...this.options.model === undefined ? {} : { model: this.options.model },
-        liveMirrorGranularity: next.liveMirrorGranularity,
       })
       : undefined
     if (retiring !== undefined) {

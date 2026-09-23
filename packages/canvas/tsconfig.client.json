@@ -14,19 +14,31 @@
   "files": [
     "src/css-modules.d.ts",
     "src/card-format.ts",
+    "src/image-token.ts",
     "src/types.ts",
+    "src/client/category-label.ts",
     "src/client/contract.ts",
     "src/client/definition.ts",
+    "src/client/draw.ts",
+    "src/client/error-text.ts",
+    "src/client/images.ts",
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/paste-table.ts",
     "src/client/preset-visibility.ts",
+    "src/client/text.ts",
+    "src/client/detail/CardPad.tsx",
     "src/client/detail/CanvasDetailView.tsx",
+    "src/client/detail/DrawFigure.tsx",
     "src/client/space/BoardView.tsx",
     "src/client/space/CardTextarea.tsx",
+    "src/client/space/LinkView.tsx",
+    "src/client/space/layout-geometry.ts",
     "src/client/space/selection.ts",
     "src/client/tab/CanvasSwitcher.tsx",
     "src/client/tab/CanvasTab.tsx",
-    "src/client/tab/DraftView.tsx"
+    "src/client/tab/CanvasTabTitle.tsx",
+    "src/client/tab/TabStrip.tsx",
+    "src/prompt.ts"
   ]
 }

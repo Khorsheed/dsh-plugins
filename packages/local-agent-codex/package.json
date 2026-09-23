@@ -54,7 +54,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "liveMirrorGranularity token streams deltas as throttled incremental snapshots at the item's reserved (turn, step) — the host ui-chat repeated-settle merge renders them as one growing message; a late-arriving usage whose carrier message already mirrored is dropped with a warn (no usage-backfill event exists)",
+      "notes": "Live output uses the local-agent transient Remote and public Conversation nodes, with incremental durable recovery checkpoints; native final messages retain their existing transcript and usage semantics. End-to-end latency acceptance is tracked by the room coordinator proposal.",
       "verifiedHost": "0.1.5-rc.1"
     }
   },

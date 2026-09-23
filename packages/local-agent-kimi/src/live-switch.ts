@@ -6,12 +6,12 @@
  * new rounds are refused (the provider's catch falls back to exec), in-flight
  * rounds finish on their runtime, idle runtimes are reclaimed at once.
  * Toggling ON builds the next generation lazily (no process until the first
- * round). A granularity change needs no generation swap: the driver reads it
- * per round (`setLiveMirrorGranularity`).
+ * round). Legacy granularity settings are ignored.
  *
  * @module @khorsheed/dsh-local-agent-kimi — internal, unit-tested directly.
  */
 
+import type { KimiNativeConfiguration } from './model-catalog.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { KimiAcpLiveDriver } from './live-driver.ts'
@@ -65,7 +65,6 @@ export class LiveDriverSwitch {
   /** Mirror the resolved settings into the driver generation. */
   private apply(next: KimiLiveSettings): void {
     if (next.live === this.liveOn) {
-      this.active?.setLiveMirrorGranularity(next.liveMirrorGranularity)
       return
     }
     this.liveOn = next.live
@@ -74,7 +73,6 @@ export class LiveDriverSwitch {
       ? new KimiAcpLiveDriver(this.ctx, {
         ...this.liveIdleMs === undefined ? {} : { liveIdleMs: this.liveIdleMs },
         ...this.model === undefined ? {} : { model: this.model },
-        liveMirrorGranularity: next.liveMirrorGranularity,
       })
       : undefined
     if (retiring !== undefined) {
@@ -115,6 +113,14 @@ export class LiveDriverSwitch {
    */
   memberHasRuntime(childSessionId: string): boolean {
     return this.active?.hasRuntime(childSessionId) ?? false
+  }
+
+  memberRuntimeConfiguration(childSessionId: string): KimiNativeConfiguration | undefined {
+    for (const driver of [this.active, ...this.draining]) {
+      const configuration = driver?.runtimeConfiguration(childSessionId)
+      if (configuration !== undefined) return configuration
+    }
+    return undefined
   }
 
   /** Plugin unload: interrupt whatever survives (disposeAll, not drain). */

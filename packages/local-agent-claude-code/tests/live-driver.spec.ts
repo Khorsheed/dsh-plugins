@@ -16,6 +16,7 @@ import { PassThrough, Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
 import { ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 import { ClaudeLiveDriver } from '../src/live-driver.ts'
@@ -35,6 +36,8 @@ interface FakeTurn {
 }
 
 interface FakeClaudeScript {
+  nativeModels?: unknown[]
+  rejectControl?: string
   turn?: (params: { text: string }) => FakeTurn
   /** Exit immediately on spawn (channel-broken simulation). */
   silentInit?: boolean
@@ -109,7 +112,10 @@ class FakeClaude {
     if (message['type'] === 'control_request') {
       this.controlRequests.push(message)
       const requestId = message['request_id']
-      this.emit({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response: { still_queued: [] } } })
+      const subtype = (message['request'] as { subtype: string }).subtype
+      this.emit({ type: 'control_response', response: subtype === this.script.rejectControl
+        ? { subtype: 'error', request_id: requestId, error: 'native control rejected' }
+        : { subtype: 'success', request_id: requestId, response: { still_queued: [], ...subtype === 'initialize' ? { models: this.script.nativeModels } : {} } } })
       return
     }
     if (message['type'] === 'control_response') {
@@ -291,6 +297,75 @@ function expectStepBoundaries(child: Session): void {
 }
 
 describe('claude live driver rounds', () => {
+  it('flushes the final turn boundary before reporting a settled result', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-final-durability'))
+    let durable: ReturnType<Session['snapshotEvents']> = []
+    Object.assign(m.ctx.sessions, { get: () => child })
+    Object.assign(m.ctx.localAgent, {
+      syncChildSession: async () => {
+        const captured = structuredClone(child.snapshotEvents())
+        await new Promise(resolve => setTimeout(resolve, 5))
+        durable = captured
+      },
+    })
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('durable answer') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    expect(durable.at(-1)?.type).toBe('turn/end')
+    expect(durable).toEqual(child.snapshotEvents())
+    await m.driver.disposeAll()
+  })
+
+  it('keeps multiple text blocks and successive assistant messages at distinct stream coordinates', async () => {
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-claude-block-identities'))
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const partial = (event: Record<string, unknown>) => fake.emit({ type: 'stream_event', event })
+    partial({ type: 'message_start', message: { id: 'message-one' } })
+    partial({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'first' } })
+    partial({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'second' } })
+    fake.emit({ type: 'assistant', message: { id: 'message-one', role: 'assistant', content: [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }] } })
+    partial({ type: 'message_start', message: { id: 'message-two' } })
+    partial({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'third' } })
+    fake.emit({ type: 'assistant', message: { id: 'message-two', role: 'assistant', content: [{ type: 'text', text: 'third' }] } })
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 10, output_tokens: 4 } })
+    expect((await run.result).stopReason).toBe('completed')
+    const checkpoints = child.snapshotEvents().filter(event => event.type === 'local-agent/stream')
+    expect(checkpoints.map(event => event.data.text)).toEqual(['first', 'second', 'third'])
+    const messages = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(messages.map(event => event.data.message.content)).toEqual([
+      [{ type: 'text', text: 'first' }], [{ type: 'text', text: 'second' }], [{ type: 'text', text: 'third' }],
+    ])
+    expect(new Set(messages.map(event => event.data.step)).size).toBe(3)
+    expect(messages.at(-1)!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
+    expectStepBoundaries(child)
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  })
+
+  it('publishes transient output while keeping only authoritative assistant messages in history', async () => {
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-transient-claude-code'))
+    m.queueChild(new FakeClaude({ turn: () => ({ deltas: ['hello'], events: answerEvents('hello'), usage: { input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 4 } }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    const events = child.snapshotEvents()
+    expect(events.filter(event => event.type === 'local-agent/stream')).toHaveLength(1)
+    const answers = events.filter(event => event.type === 'assistant/message' && JSON.stringify(event.data.message.content).includes('hello'))
+    expect(answers).toHaveLength(1)
+    expect(answers[0]!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
+    expectStepBoundaries(child)
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  })
+
   it('spawns the resident stream-json process, drives a turn, and folds the shared stream live', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-1'))
@@ -308,6 +383,7 @@ describe('claude live driver rounds', () => {
       'claude', '-p', '--verbose',
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
+      '--include-partial-messages',
       '--dangerously-skip-permissions',
     ])
     // The auth discipline: exactly the scoped config dir, nothing else.
@@ -458,6 +534,26 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('keeps partial-message flags before the variadic member tool terminator for legacy profiles', async () => {
+    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'event' } })
+    Object.assign(m.ctx.localAgent, {
+      registerMemberRun: () => 'test-member',
+      unregisterMemberRun: () => {},
+      memberBridgeSocketPath: () => '/home/user/member.sock',
+      memberBridgeCommand: () => ({ command: 'node', args: ['member-bridge.js'] }),
+    })
+    const child = Session.create(SessionId('child-claude-legacy-stream'))
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('done') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    const argv = m.spawns[0]!.spec.argv
+    expect(argv).toContain('--')
+    expect(argv.indexOf('--include-partial-messages')).toBeGreaterThan(0)
+    expect(argv.indexOf('--include-partial-messages')).toBeLessThan(argv.indexOf('--allowedTools'))
+    expect(argv.at(-1)).toBe('--')
+    await m.driver.disposeAll()
+  })
+
   it('token granularity streams throttled snapshots into the session log at the stream\'s step', async () => {
     const deltas = ['hel', 'lo']
     const off = mount()
@@ -465,7 +561,7 @@ describe('claude live driver rounds', () => {
     off.queueChild(new FakeClaude({ turn: () => ({ deltas, events: answerEvents('hello') }) }))
     const offRun = await off.driver.startRound(request() as never, roundSpec(off, offChild))
     await offRun.result
-    expect(off.spawns[0]!.spec.argv).not.toContain('--include-partial-messages')
+    expect(off.spawns[0]!.spec.argv).toContain('--include-partial-messages')
     await off.driver.disposeAll()
 
     // Zero thresholds: every delta lands a snapshot immediately. Token
@@ -752,7 +848,7 @@ describe('claude live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-drain4'))
     child.append('turn/start', { turn: 1 })
@@ -762,7 +858,7 @@ describe('claude live driver drain (settings handoff)', () => {
     // Event granularity folds the stream lines into per-line messages.
     const eventModeMessages = child.snapshotEvents().filter(e => e.type === 'assistant/message').length
     expect(eventModeMessages).toBeGreaterThan(0)
-    m.driver.setLiveMirrorGranularity('token')
+    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
     await second.result
     // Token granularity folds every line too; the streamed answer finalizes
@@ -804,6 +900,37 @@ describe('claude provider live resolver', () => {
 })
 
 describe('claude live driver model key', () => {
+  it('binds native controls before a resumed prompt, without a shared model scratch write', async () => {
+    const provisionModel = vi.fn(async () => {})
+    const m = mount({ config: { permissionMode: 'skip', model: () => 'legacy-model', provisionModel } })
+    const child = Session.create(SessionId('native-config'))
+    const fake = new FakeClaude({ nativeModels: [{ value: 'sonnet', displayName: 'Sonnet', supportedEffortLevels: ['low', 'high'] }] })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, {
+      ...roundSpec(m, child, { resume: { cliSessionId: 'prior-session', turn: 2 } }),
+      configuration: { model: 'sonnet', effort: 'low' },
+    })
+    await run.result
+    expect(fake.controlRequests.map(request => request['request'])).toEqual([{ subtype: 'initialize', hooks: {} }, { subtype: 'set_model', model: 'sonnet' }])
+    expect(m.spawns[0]!.spec.argv).toContain('prior-session')
+    expect(m.spawns[0]!.spec.env).toMatchObject({ CLAUDE_CODE_EFFORT_LEVEL: 'low' })
+    expect(provisionModel).not.toHaveBeenCalled()
+    expect(fake.userMessages).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
+  it('does not send a user prompt after native model control rejection', async () => {
+    const m = mount()
+    const fake = new FakeClaude({ rejectControl: 'set_model', nativeModels: [] })
+    m.queueChild(fake)
+    await expect(m.driver.startRound(request() as never, {
+      ...roundSpec(m, Session.create(SessionId('native-reject'))), configuration: { model: 'custom-model' },
+    })).rejects.toThrow('native control rejected')
+    expect(fake.userMessages).toEqual([])
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
   it('set: the resident process starts with --model, before the stream-format flags', async () => {
     const m = mount({ config: { model: () => 'claude-opus-5' } })
     const child = Session.create(SessionId('child-claude-model'))
@@ -815,6 +942,7 @@ describe('claude live driver model key', () => {
       '--model', 'claude-opus-5',
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
+      '--include-partial-messages',
       '--dangerously-skip-permissions',
     ])
   })
@@ -959,4 +1087,22 @@ describe('claude live driver control requests', () => {
     expect((await run.result).stopReason).toBe('completed')
     await m.driver.disposeAll()
   })
+})
+
+
+it('prepares native controls without a user prompt and reuses that process for real input', async () => {
+  const m = mount()
+  const child = Session.create(SessionId('prepared-member'))
+  const fake = new FakeClaude({ nativeModels: [{ value: 'sonnet', displayName: 'Sonnet', supportedEffortLevels: ['low'] }] })
+  m.queueChild(fake)
+  const spec = { ...roundSpec(m, child), configuration: { model: 'sonnet', effort: 'low' } }
+  await m.driver.prepare(spec, new AbortController().signal)
+  expect(fake.controlRequests.map(request => request['request'])).toEqual([{ subtype: 'initialize', hooks: {} }, { subtype: 'set_model', model: 'sonnet' }])
+  expect(fake.userMessages).toHaveLength(0)
+  expect(child.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
+  const run = await m.driver.startRound(request() as never, spec)
+  await run.result
+  expect(fake.userMessages).toHaveLength(1)
+  expect(m.spawns).toHaveLength(1)
+  await m.driver.disposeAll()
 })
