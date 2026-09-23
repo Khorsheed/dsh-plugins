@@ -436,6 +436,7 @@ eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eva
 - 不碰 ~/.dsh-official 与 3080；凭据不复制，不进日志、回报、提交；共享资源（docker 容器、边车、实例进程）要动之前先在回报里提出，由协调者放行。
 - Agent Note 双语并写 Alternatives considered；README 双语 + sidecar；`pnpm gate` 绿，ankh-guard 的 lane 抖动按既有规则单跑复核并点名。worktree 里跑 gate 用 `pnpm --config.verify-deps-before-run=false gate`（绕过 pnpm 对软链 node_modules 的依赖状态检查），不改 pnpm-workspace.yaml。
 - UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。UI 切片按 ui-spec §九 自查，回报里逐条说明落在哪一页；不要求每个切片各自截图（每次截图都得登录 + 发一条消息才进得到聊天界面，成本高），截图由界面收口任务（T63）统一交每页明暗两套，协调者与用户看图验收。
+- **工具链固定在 `~/.dsh-toolchains/rc-0.1.5-rc.1`（2026-09-23 明写）**：宿主检出 `~/code/deepseek-harness` 已到 dsh-v0.1.5-rc.3（prod 3080 从它起），评测线不跟——题库 7 条 dsh 条件与 lock 钉的是 0.1.5-rc.1，换工具链等于换受试对象（provision 核对会把全部条件判成未就绪，第四条不变量会把新旧 run 隔开）。3171 与所有临时实例只用 rc.1 工具链的 PATH，不从 harness 检出起实例；切 rc.3 是单独的任务（建工具链目录、依赖与 minHost 对齐、条件重声明与重 provision、镜像重打），I5 收口后再排。
 - 重装 3171 的配方（T63 踩过的坑）：先 `export PATH=~/.dsh-toolchains/rc-0.1.5-rc.1/node_modules/.bin:$PATH` 与 `export DSH_HOME=~/.dsh-lab`（install.sh 的 preflight 与 guard 的 record deployment 都要）；停法先 TERM 启动器那层，或放 stop marker 后等看门狗自己收——直接 TERM 看门狗会把启动器与实例进程孤儿化、端口 60 秒不放。
 - 分支开出去之后 main 若又合了同一个包的别的切片，回报前先把 main 并进分支、解掉冲突、重跑 gate；协调者不代解代码冲突。解追加型冲突用 graft：从 base / ours / theirs 取原文，按稳定锚点把自己追加的整块插进 main 版本，不逐 hunk 拼 ours+theirs。
 - 并行任务写题库时各用各的 worktree，不碰别人分支上的 plan / condition；会话里的 agent 起草只认本会话绑定的题库（T58 之前尤其要盯：未绑定时它会拿 repo 参数自己挑一个）。
