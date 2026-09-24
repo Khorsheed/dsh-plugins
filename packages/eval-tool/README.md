@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-`@khorsheed/dsh-eval` 的伴生工具行：模型可见的六个工具——四个只读（`eval_conditions` / `eval_plan_validate` / `eval_run_status` / `eval_cells`）加两个写（起草 `eval_plan_draft`、分析初稿 `eval_analysis_write`）——与 `tool:eval` 提示词段，**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。`/eval` slash 的注册自 preset 可见性收口（A3）起也归本行（落进 preset scope 层，handler 与定义留在 core）；服务面（`ctx.dshEval`）与 CLI 留在 core；这一行只进 preset，不进 profile 根。单实例多模式（提案 2026-08-26）工具行解耦的第三对（M4'③）。
+`@khorsheed/dsh-eval` 的伴生工具行：模型可见的七个工具——五个只读（`eval_conditions` / `eval_plan_validate` / `eval_run_status` / `eval_cells` / `eval_experiment_get`）加两个写（起草 `eval_plan_draft`、分析初稿 `eval_analysis_write`）——与 `tool:eval` 提示词段，**按会话授予**——只出现在引用了它的 agent preset 组合的会话里。`/eval` slash 的注册自 preset 可见性收口（A3）起也归本行（落进 preset scope 层，handler 与定义留在 core）；服务面（`ctx.dshEval`）与 CLI 留在 core；这一行只进 preset，不进 profile 根。单实例多模式（提案 2026-08-26）工具行解耦的第三对（M4'③）。
 
 ## 形态：不自挂载的伴生包
 
@@ -16,14 +16,14 @@
       tools: all           # 可选；缺省 all
   ```
 
-- **运行依赖 core 的全局服务**：apply 时探测的是 **`ctx.dshEval`，不是 `ctx.eval`**——ctx 上叫 `eval` 的属性会遮蔽 loader `with (ctx) { return eval(expr) }` 里的全局 `eval`，凡挂载的组合一遇 `!!js` 即炸（真实 3171 实例踩出）。core（`@khorsheed/dsh-eval`）未挂载则**静默跳过注册**并留一行日志（degrade：不炸 preset 挂载，该 preset 组合照常挂上，只是模型看不到这六个工具）；工具注册走 `ctx.inject(['tools'])` 延迟注入（挂载序竞态的历史教训），无 tools 注册表的组合同样安全。
-- 工具定义工厂由 core 的 `./tool` 子路径导出（`@khorsheed/dsh-eval/tool` 的 `evalToolDefinitions(service)`），业务实现零复制；origin tag 的 owner 是本包（挂在哪个包名下就归因到哪个包）。六个里四个是读；`eval_plan_draft` 建一个实验——plan 进部署的实验目录、新条件进部署的条件库（`$DSH_HOME/state/eval/`），题库仓库一个字节都不写；`eval_analysis_write`（I5·T60，T73 改名收窄）只往一个实验的 `analysis/` 写一个文本文件。**起草不是启动**：run 仍由人在会话里用 `/eval run` 或在计划审阅页按「批准并启动」发起，其余写类动词（materialize / submit / transition / annotate / archive / export）归编排器服务面与人的 CLI。
+- **运行依赖 core 的全局服务**：apply 时探测的是 **`ctx.dshEval`，不是 `ctx.eval`**——ctx 上叫 `eval` 的属性会遮蔽 loader `with (ctx) { return eval(expr) }` 里的全局 `eval`，凡挂载的组合一遇 `!!js` 即炸（真实 3171 实例踩出）。core（`@khorsheed/dsh-eval`）未挂载则**静默跳过注册**并留一行日志（degrade：不炸 preset 挂载，该 preset 组合照常挂上，只是模型看不到这七个工具）；工具注册走 `ctx.inject(['tools'])` 延迟注入（挂载序竞态的历史教训），无 tools 注册表的组合同样安全。
+- 工具定义工厂由 core 的 `./tool` 子路径导出（`@khorsheed/dsh-eval/tool` 的 `evalToolDefinitions(service)`），业务实现零复制；origin tag 的 owner 是本包（挂在哪个包名下就归因到哪个包）。七个里五个是读；`eval_plan_draft` 建一个实验——plan 进部署的实验目录、新条件进部署的条件库（`$DSH_HOME/state/eval/`），题库仓库一个字节都不写；`eval_analysis_write`（I5·T60，T73 改名收窄）只往一个实验的 `analysis/` 写一个文本文件。**起草不是启动**：run 仍由人在会话里用 `/eval run` 或在计划审阅页按「批准并启动」发起，其余写类动词（materialize / submit / transition / annotate / archive / export）归编排器服务面与人的 CLI。
 
 **配置**（可选）：`tools` 决定这一行授予哪一组工具。分组是从 core 搬来的：core 不再注册任何模型工具，也不再贡献提示词段。
 
 | `tools` | 注册的工具 |
 |---|---|
-| `all`（缺省） | 六个工具（四个只读 + `eval_plan_draft` + `eval_analysis_write`）|
+| `all`（缺省） | 七个工具（五个只读 + `eval_plan_draft` + `eval_analysis_write`）|
 | `none` | 无——连 `tool:eval` 提示词段也不贡献 |
 
 没有更细的分组，因为没有可分的：这一行没有任何能启动、推进或终评的工具。
@@ -31,6 +31,8 @@
 **第六个工具 `eval_analysis_write` 是第二个写**（I5·T60 加时叫 `eval_repo_write`，写进会话绑定题库的透传区；T73 改名并收窄）：参数 `experiment`（实验 id）、`path`、`content`、`overwrite`，把**一个文本文件**写进这个实验目录的 `analysis/<path>`，任意深度；实验目录里别的路径（plan、meta、exports/）一律拒绝并把白名单原样回给调用方。题库仓库它根本够不着。缺省不覆盖已有文件（要改得显式传 `overwrite`），空内容拒绝。回执说「在结果对比页可看」：报告页第 ⑤ 块「分析初稿」列出这些文件（缺省折叠、最新一份展开，只列文件名）。
 
 加它的理由不是「agent 需要能写」，而是**授予的尺寸要配得上动作的尺寸**：第八步 agent 读完 bundle 写分析初稿，而会话工作区不是存放初稿的地方，于是 `write` 撞沙箱、要人批一次升级到 `danger-full-access`——为写一份 markdown 放开整台机器（走查里真实发生过一次）。窄口把这次批准变成零次。
+
+**第七个工具 `eval_experiment_get` 是 I5·T76 加的只读**：参数 `experiment`（实验 id，或它的某个 run id），一次读回一个实验，读法与实验室 tab 相同——列表那一行（名称、状态词、题库版本、对比组、判官、规模、进度、校验）、最新一次 run 的摘要（状态、各桶格数、未释放单元、就绪告警）、它的全部 run id、已写进实验的分析文件名，以及**作答索引**：每个「题 × 组 × 次」一条（`P0 × high × #1`），带阶段、到过的检查点、这一格 attempt 交上来的**文件名**。数字取自页面用的同一组读（`experiments` / `runStatus` / `cells`），所以两边不会对不上。索引里不含路径：分析按「题 × 组 × 次」和文件名引用作答，之前 agent 引用一份作答只能问人要路径。它什么也不启动、不终评、不 provision、不重试、不打分，人工评估的出口也不在这里。
 
 ## 安装
 

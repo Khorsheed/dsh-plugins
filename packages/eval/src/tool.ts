@@ -56,11 +56,14 @@ import { expandHome } from './validate.ts'
 
 /** The names this module registers, in registration order. */
 export const EVAL_TOOL_NAMES: readonly string[] =
-  ['eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_analysis_write', 'eval_run_status', 'eval_cells']
+  [
+    'eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_analysis_write', 'eval_run_status', 'eval_cells',
+    'eval_experiment_get',
+  ]
 
 /**
  * JSON pass-through output. The rendering is the whole document, pretty —
- * what the render emits IS what the model reads, and every field these five
+ * what the render emits IS what the model reads, and every field these
  * tools return is one the caller asked for: a condition's sha and unresolved
  * list, a plan's diagnostics, a draft's paths and verdict, a run's meta
  * digest, a cell's stage and refs.
@@ -458,6 +461,32 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
         ...(args.task !== undefined ? { task: args.task } : {}),
         ...(args.condition !== undefined ? { condition: args.condition } : {}),
       }) as unknown as JsonValue
+    },
+  }))
+
+  definitions.push(defineTool({
+    name: 'eval_experiment_get',
+    description:
+      'ONE experiment the way the 实验室 tab shows it, in one read: its list row (name, status word, dataset pin, '
+      + 'conditions, judges, matrix size, progress, validation), the newest run\'s digest (state, bucket counts, '
+      + 'unreleased units, readiness warnings), every run id it has, the analysis files already written into it, '
+      + 'and the ANSWER INDEX — one entry per task × condition × rep ("P0 × high × #1") with the stage, the '
+      + 'checkpoints it reached, and the NAMES of the files its attempt handed in. Cite answers in an analysis by '
+      + 'that handle and those names; the index carries no paths, and none are needed. Read-only: nothing here '
+      + 'starts, finalizes, provisions, retries, or scores anything — approving a plan and the human evaluation '
+      + 'stay on the 实验室 pages.',
+    parameters: {
+      experiment: {
+        type: 'string',
+        required: true,
+        description: 'The experiment id (eval_cells without run_id lists them), or one of its run ids.',
+      },
+    },
+    output: jsonOutput(),
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      const session = sessionOf(exec)
+      return (await service.experimentGet(args.experiment, session === undefined ? {} : { session })) as unknown as JsonValue
     },
   }))
 

@@ -100,6 +100,8 @@ export type { DatasetVersionCandidate, DatasetVersionDecision, DatasetVersionFac
 export { EvalImportRefused, importExperiments, parseImportSource } from './import.ts'
 export type { ImportedExperiment, ImportRegistryFace, ImportReport } from './import.ts'
 export { listAnalysisFiles, readExperimentArtifact } from './experiment-artifact.ts'
+export { answerFileName, answerHandle, composeExperimentGet, isLocalPath } from './experiment-get.ts'
+export type { EvalAnswerEntry, EvalAnswerFile, EvalExperimentGetView, ExperimentGetInput } from './experiment-get.ts'
 /** The run-level export note: where a run's bundle went, and when (I5·T53 / G17). */
 export { EXPORT_NOTE_KIND, readExportState, recordExportNote, recordExportNoteOn, reexportDirOf } from './export-note.ts'
 export type { ConditionHash, RunOptions, RunReport, RunCellReport, RunSubset } from './service.ts'
