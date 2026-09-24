@@ -15,9 +15,9 @@
  * Density: up to three products render as plain rows; beyond that the card
  * collapses to a "N 个产物" summary row that expands in place. Every file
  * click goes through the owner's `openFile` — the official openResource
- * route: on rc.1 the official document tab claims the address (our content
- * renderer is its default body), on 0.1.5 our tab type claims the renderable
- * ones — so one file is one tab for every origin.
+ * route, where this package's tab type claims the renderable addresses on
+ * both host lines (extension band over the official document tab's
+ * fallback) — so one file is one tab for every origin.
  * Until the fetch settles — or when the turn has no files, or the fetch fails
  * — the card renders nothing. */
 
@@ -90,12 +90,11 @@ export function TurnFileRow(props: FilePreviewTurnRowProps) {
                 className={css.file}
                 title={file.path}
                 // Every path goes through the owner's openFile — the official
-                // openResource route. On rc.1 the official document tab claims
-                // every session-scoped address (our content renderer is its
-                // default body); on 0.1.5 our tab type claims the renderable
-                // ones (fileAddressFor keeps outside-workspace absolutes inside
-                // the session address, and our detail view renders them via
-                // the Remote read), so one file is one tab for every origin.
+                // openResource route, where our tab type claims the renderable
+                // addresses on both host lines (fileAddressFor keeps
+                // outside-workspace absolutes inside the session address, and
+                // our detail view renders them via the Remote read), so one
+                // file is one tab for every origin.
                 onClick={() => { void openFile(file.path) }}
               >
                 <FileTypeIcon path={file.path} size={14} className={css.fileIcon} />

@@ -1,6 +1,6 @@
 /* Right-Sidebar file-preview tab: the filter row over a full-height file
-   list; the change-history document renderer (FileHistoryBody) reuses the
-   stepper/diff/scroll classes below. */
+   list; the change-history view (DiffHistory) reuses the stepper/diff/scroll
+   classes below. */
 
 .root {
   display: flex;
@@ -128,15 +128,6 @@
   min-height: 0;
   padding: 10px 12px;
   overflow: auto;
-}
-
-/* The content renderer's seat inside the official document tab: a full-height
-   flex child of the owner's scroller (the pane scrolls internally). */
-.documentPane {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
 }
 
 /* The changes-tab step control: one pill grouping ◀ position ▶ (the arrows

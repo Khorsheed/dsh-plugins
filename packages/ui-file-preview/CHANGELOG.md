@@ -2,14 +2,7 @@
 
 ## 未发布
 
-- **产物面二期（用户拍板 2026-09-24）：三层收敛。** ① 内容面板在官方 document tab 内改走共享内核的 **headless 模式**——不再渲染自己的标题行/路径行与视图切换（消除与官方 chrome 的三重叠加）；**内容搜索行保留**（rc.1 官方 document tab 没有内容搜索，保留是独有贡献而非去重对象）；复制路径无官方等价物（官方 document actions 只有原生打开），保留为内容区右上角浮动小按钮。② 回合产物卡收敛：list 臂额外注册一条同官方 deliverables cell id、`priority: -1` 的空体——slot 系统一等遮蔽（同 cell 异优先级共存、最低者渲染），官方 present 卡与内存态 changes 卡不再渲染而注册仍在册（其声明的 `deliverables.file.actions` 子槽不塌），回合区只留我们的持久全量卡。③「会话产物」入口回归为新 tab 类型 `file-artifacts` 薄列表壳（rc.1 臂注册；fold 数据源、名称过滤、刷新，点行经官方 resource 地址打开官方 document tab，壳不画内容）；0.1.5 臂的 FilePreviewTab 全功能照旧。
-
-## 未发布
-
-- **方案 B（用户拍板 2026-09-24）：内容预览面双线切换。** 0.1.7-rc.1 起内容渲染注册进官方 `documentPreviews` 面——共享内容面板成为官方 document tab 的默认渲染器（extension 档，`loading: 'renderer'` 自持加载走本插件 Remote，工作区外产物照常；官方渲染器收进工具栏下拉），自建 FilePreviewTab tab 类型不再注册，文件点击/mentions/会话产物入口全部路由官方 document tab；0.1.5 保留自建产物页 tab（npm 最新发布线仍是 0.1.5，minHost 不动）。切换走能力探测：`ctx.get('documentPreviews')` 点探测 + pend 在 `inject: ['documentPreviews']` 的嵌套插件（晚到时注册渲染器并退役自建 tab），永不读版本。
-- rc.1 手势对账：复制路径/内容搜索/结构化渲染（JSON 树/CSV 表/Markdown）/HTML 沙箱分级随内容面板并入注册定义；在文件夹打开/在 IDE 打开让位官方 ui-open-in-app 的 document actions 贡献；图片预览让位官方缩放查看器（avif 官方未认领，仍走我们的面板并声明二进制后缀）；超大文件改走官方文本渲染器的滚动分页。改动记录维度（TurnFileRow 回合卡 + FileHistoryBody）官方仍无对应物（内存态/git-only/重启即失），维持自留并跟踪上游。
-- locales 清理双线都已死的退役抽屉/行文案（drawer.* 8 键、row.* 5 键、turn.summary/summaryOne/expand/collapse 4 键），新增 `content.title`（渲染器下拉标签「预览」）。
-- 顺带修复（rc.1 类型面预存错误）：FilePreviewTab 读 `navigation.params.path` 前按官方 TextPreview 同款 `'path' in` 收窄（`WorkspaceFileParams` 只有 `line`）。
+- **方案 B 与产物面二期整体回退（仓主拍板 2026-09-24，同日落地同日否决）。** 恢复 0.1.5 的自绘产物页形态，双线同一份：page 型右栏 tab 以 extension 档认领 `dsh-resource://file/**` 可渲染后缀（压过官方 document tab 的 fallback 档——rc.1 的 tab-registry 保留 band 机制），文件树/mention/回合卡/产物行点击全部落自绘详情页（共享内容面板全 chrome + 内容/改动记录切换）；pdf/压缩包/二进制等 decline 后缀落回官方 document tab。撤回物：内容/改动记录两个 `documentPreviews` 渲染器注册与 `documentPreviews` 探测/延迟退役机制、FileContentBody/FileHistoryBody/file-artifacts 薄壳、共享内核的 headless 模式（prop/分支/CSS/spec 整体退役）。否决依据：嵌入方案的接缝成本（renderer loading 协议、extension 档接管语义、headless 布局耦合）与 UX 妥协（改动记录塞进渲染器下拉、复制钮浮动压搜索行）。**不在否决范围、予以保留**：turnTail 回合卡的 deliverables 遮蔽（list 槽臂同官方 cell id 注册 priority -1 空体）与 FilePreviewTab 读 `navigation.params.path` 的 `'path' in` 收窄修复。minHost 不动（`0.1.5-rc.1`）：包内不再有 rc.1 专有 API。
 
 ## 未发布
 

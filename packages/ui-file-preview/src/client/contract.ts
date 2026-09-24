@@ -42,37 +42,6 @@ export interface FilePreviewTabInjected {
   }
 }
 
-/**
- * Business face injected into the rc.1 content document body: the same Remote
- * read the self-drawn tab's detail view uses, plus a verbatim-absolute
- * copy-path (the body resolves the workspace spelling from its own address).
- */
-export interface FileContentBodyInjected {
-  /** Fetch one file's current content (one RPC, host-capped; resolves outside-workspace paths). */
-  readFile: FilePreviewTabInjected['readFile']
-  /** Copy one already-resolved absolute path to the clipboard. */
-  copyPath: (absolutePath: string) => Promise<boolean>
-}
-
-/**
- * Business face injected into the rc.1 artifacts list shell: the fold read
- * plus the official-route opener (the shell owns no content view — a row
- * click lands in the official document tab).
- */
-export interface FileArtifactsInjected {
-  /** Fetch one session's touched-file list (one RPC). */
-  listFiles: (sessionId: SessionId) => Promise<RemoteResult<FilePreviewList>>
-  /** Open one product's canonical file address through the official resource route. */
-  openArtifact: (path: string) => void
-}
-
-/** Full props of the artifacts shell body (runtime + store + injected + locale shares). */
-export type FileArtifactsTabProps =
-  & PropsRuntime<'sidebar.right.pane.tab'>
-  & PropsStore<ReturnType<typeof createFilePreviewStore>>
-  & InjectFace<FileArtifactsInjected>
-  & PropsLocale<'filePreview'>
-
 /** Full props of the tab body entry (runtime + store + injected + locale shares). */
 export type FilePreviewTabProps =
   & PropsRuntime<'sidebar.right.pane.tab'>

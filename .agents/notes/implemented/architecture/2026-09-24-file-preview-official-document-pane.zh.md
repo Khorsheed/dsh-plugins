@@ -2,6 +2,10 @@
 
 Status: implemented
 
+> **同日已回退(2026-09-24):** 仓主实测后否决了这次迁移——两条宿主线重新发
+> 自绘产物页。本 note 保留作历史记录;其中对官方面的能力调查依然准确。当前真
+> 相见[方案 B 回退](2026-09-24-file-preview-plan-b-reverted.md)。
+
 ## Problem
 
 宿主 0.1.7-rc.1 把官方 document tab 长成了真正的扩展点:

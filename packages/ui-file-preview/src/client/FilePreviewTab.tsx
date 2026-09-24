@@ -1,8 +1,13 @@
 /**
- * The file-preview right-Sidebar tab body — **0.1.5 line only** (rc.1 mounts
- * the same content pane as the official document tab's default renderer; see
- * FileContentBody.tsx): the session's touched files as a
- * full-height list, navigating IN-TAB to a detail view on row click.
+ * The file-preview right-Sidebar tab body — **both host lines** (the plan-B
+ * embedding into the official document tab landed and was vetoed the same
+ * day, 2026-09-24): the session's touched files as a
+ * full-height list, navigating IN-TAB to a detail view on row click. The
+ * tab type claims `dsh-resource://file/**` at the extension band, which the
+ * rc.1 tab registry kept outranking the official document tab's fallback
+ * band — so file clicks (file tree, mentions, deliverables row, turn card)
+ * land here with this package's full chrome, and only the declined suffixes
+ * (pdf, archives, binaries) fall through to the official tab.
  *
  * The detail view is the SHARED content pane (@khorsheed/dsh-client-ui-content-preview)
  * with this plugin's adapter (preview.ts): the pane owns the title/path rows,
@@ -12,8 +17,8 @@
  * choices and the 改动记录 body (the shared DiffHistory). Being our own view it
  * works for outside-workspace files too (reveal/openExternal take absolute
  * paths, and the host `read` resolves them) — they are no longer list-only
- * rows. Mentions still open in the official document tab (the quick preview
- * path); the 「改动记录」 renderer registration there is unaffected.
+ * rows. The mention wrap routes prose opens through the same claim, so a
+ * mentioned file lands in this page too.
  *
  * Navigation params (`openTab('file-preview', { params: { path } })`, the
  * turn card's outside-workspace gesture) select the path on arrival — which

@@ -209,20 +209,4 @@ export interface ContentPaneProps {
   readonly notice?: ReactNode
   /** When true the pane sits inside an already-padded container. */
   readonly embedded?: boolean
-  /**
-   * Headless embedding: the pane drops ONLY the chrome its host frame already
-   * carries — the title/path bar and the view controls (preview/source, HTML
-   * tiers, diff) — for embeddings like the official document tab. The
-   * content-search row and the floating copy-path button (when `onCopyPath`
-   * is supplied) STAY: the rc.1 official document tab has neither a content
-   * search nor a copy-path gesture, so both are this pane's unique
-   * contribution, not duplication. Content-level bars (truncation notice,
-   * slow-render hint) render as before. Explicit opt-in per call site, never
-   * probed; the surfaces without a host frame (local-files, worktrees) keep
-   * the full chrome. A `diffView` supply is incompatible with headless (its
-   * toggle lives in the suppressed bar), so the body pins the content view;
-   * the HTML scripted tier is likewise unreachable (its arming toggle is
-   * chrome), which the host frame's renderer picker already covers.
-   */
-  readonly headless?: boolean
 }

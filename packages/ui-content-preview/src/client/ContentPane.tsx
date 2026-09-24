@@ -22,15 +22,6 @@
  *   heading/paragraph/list rhythm cannot drift from the document renderer.
  * - Every rendered form is wrapped in the same block chrome (format banner +
  *   padded body), so JSON/CSV no longer render at chat-sized type.
- * - `headless` (explicit per call site) drops the pane's own chrome — the
- *   title bar and the view controls — for embeddings whose host frame already
- *   carries them (ui-file-preview's official-document-tab renderer). The
- *   content-search row STAYS: the rc.1 official document tab has no content
- *   search of its own, so the row is no duplication — dropping it would be a
- *   net loss, not a de-overlap (repo-owner call, 2026-09-24). The floating
- *   copy-path button likewise stays (the one gesture the host frame's actions
- *   have no equivalent for). Surfaces without a host frame keep the full
- *   chrome.
  *
  * @module @khorsheed/dsh-client-ui-content-preview
  */
@@ -260,7 +251,6 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const {
     path, read, loading, error, sessionId, displayPath, chrome, labels, t,
     onCopyPath, onBack, diffView, view, onViewChange, imageView, notice, embedded = false,
-    headless = false,
   } = props
 
   // HTML source ⇄ render ⇄ scripted; the sandboxed static render is default.
@@ -394,27 +384,10 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   // one IDE; otherwise it is the plain single button every surface had.
   const ideChoices = chrome?.ideChoices ?? []
   const splitIde = chrome?.openIDE !== undefined && ideChoices.length > 1 && chrome.onIdeChoice !== undefined
-  // Headless suppresses the chrome the toggle lives in, so the body pins the
-  // content view regardless of the caller's view state.
-  const diffActive = !headless && showDiffToggle && view === 'diff'
+  const diffActive = showDiffToggle && view === 'diff'
 
   return (
-    <div className={headless ? `${css.root} ${css.rootHeadless}` : css.root}>
-      {headless && onCopyPath !== undefined && (
-        // The one gesture the host frame has no equivalent for (its document
-        // actions carry native opens only): a minimal floating entry over the
-        // content's top-right corner.
-        <button
-          type="button"
-          className={css.copyFloat}
-          title={copiedPath ? t('action.copied') : t('action.copyPath')}
-          aria-label={copiedPath ? t('action.copied') : t('action.copyPath')}
-          onClick={doCopyPath}
-        >
-          {copiedPath ? <IconCheckOutlineMedium size={14} /> : <IconCopyOutlineMedium size={14} />}
-        </button>
-      )}
-      {!headless && (
+    <div className={css.root}>
       <div className={`${css.titleBar} ${embedded ? css.headerEmbedded : ''}`}>
         <div className={css.titleRow}>
           {onBack !== undefined && (
@@ -588,11 +561,6 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
           </span>
         </div>
       </div>
-      )}
-      {/* The content-search row rides both modes: headless drops the chrome
-          the host frame already carries (title bar, view controls); the
-          official document tab has no content search, so this row is kept —
-          no duplication, and dropping it would be a net loss. */}
       {!diffActive && content !== null && (
         <div className={css.contentSearch}>
           <input

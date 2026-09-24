@@ -2,6 +2,11 @@
 
 Status: implemented
 
+> **同日已回退(2026-09-24):** 方案 B 与本次二期被仓主否决——两条宿主线重新发
+> 自绘产物页(地址认领形态);只有 turnTail 的 deliverables 遮蔽不在否决范围。
+> 本 note 保留作历史记录;其中的机制证据(slot 遮蔽语义、Config 开关不存在)依
+> 然为真。当前真相见[方案 B 回退](../architecture/2026-09-24-file-preview-plan-b-reverted.md)。
+
 ## Problem
 
 方案 B（2026-09-24，提交 `2fdc81ad`）把 ui-file-preview 的内容面板注册进官方

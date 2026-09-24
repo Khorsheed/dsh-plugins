@@ -2,6 +2,11 @@
 
 Status: implemented
 
+> **REVERTED the same day (2026-09-24):** the repo owner vetoed this move after
+> dogfooding — the self-drawn products page ships on both host lines again. This
+> note is kept as history; its capability survey of the official pane stays
+> accurate. Current truth: [Plan B reverted](2026-09-24-file-preview-plan-b-reverted.md).
+
 ## Problem
 
 Host 0.1.7-rc.1 grew the official document tab into a real extension point:

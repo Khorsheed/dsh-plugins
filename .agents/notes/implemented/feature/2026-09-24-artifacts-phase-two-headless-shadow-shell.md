@@ -2,6 +2,13 @@
 
 Status: implemented
 
+> **REVERTED the same day (2026-09-24):** plan B and this phase-two cut were
+> vetoed by the repo owner — the self-drawn products page (address-claim form)
+> ships on both host lines again. Only the turnTail deliverables shadow
+> survived the veto. This note is kept as history; the mechanism evidence
+> (slot-shadowing semantics, the absent config switch) is still accurate.
+> Current truth: [Plan B reverted](../architecture/2026-09-24-file-preview-plan-b-reverted.md).
+
 ## Problem
 
 Plan B (2026-09-24, commit `2fdc81ad`) registered ui-file-preview's content pane

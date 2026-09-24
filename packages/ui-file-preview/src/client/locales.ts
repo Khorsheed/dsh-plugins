@@ -51,20 +51,17 @@ export type FilePreviewKey =
   | 'diff.unwrap'
   | 'guide.title'
   | 'guide.description'
-  | 'artifacts.guide.description'
   | 'list.empty'
   | 'list.error'
   | 'list.loading'
   | 'list.outsideWorkspace'
   | 'list.refresh'
-  | 'history.title'
   | 'history.empty'
   | 'history.step'
   | 'history.step.count'
   | 'history.step.latest'
   | 'history.step.older'
   | 'history.step.newer'
-  | 'content.title'
   | 'detail.back'
   | 'mention.open'
   // Printed by the shared content pane (@khorsheed/dsh-client-ui-content-preview).
@@ -147,20 +144,17 @@ export const zh: Record<FilePreviewKey, string> = {
   'diff.unwrap': '取消自动换行',
   'guide.title': '会话产物',
   'guide.description': '会话写过的每个文件：看内容，也看每一次改动',
-  'artifacts.guide.description': '本会话写过/改过的文件；点开在文档页看内容与改动记录',
   'list.empty': '这个会话还没有写过文件',
   'list.error': '文件列表加载失败',
   'list.loading': '加载中…',
   'list.outsideWorkspace': '位于工作区外，无内容预览',
   'list.refresh': '刷新',
-  'history.title': '改动记录',
   'history.empty': '该文件没有记录到改动内容',
   'history.step': '第 {turn} 轮 · 第 {step} 步',
   'history.step.count': '修改 {current}/{total}',
   'history.step.latest': '最新',
   'history.step.older': '查看更早的修改',
   'history.step.newer': '查看更新的修改',
-  'content.title': '预览',
   'detail.back': '返回产物列表',
   'mention.open': '在侧边栏打开 {name}',
 
@@ -238,20 +232,17 @@ export const en: Record<FilePreviewKey, string> = {
   'diff.unwrap': 'Do not wrap lines',
   'guide.title': 'Session products',
   'guide.description': 'Every file the session wrote — its content and each change',
-  'artifacts.guide.description': 'Files this session wrote or edited; open one in the document tab for its content and change history',
   'list.empty': 'This session has not written any files yet',
   'list.error': 'Failed to load the file list',
   'list.loading': 'Loading…',
   'list.outsideWorkspace': 'Outside the workspace — no content preview',
   'list.refresh': 'Refresh',
-  'history.title': 'Change history',
   'history.empty': 'No change content recorded for this file',
   'history.step': 'Turn {turn} · Step {step}',
   'history.step.count': 'Change {current}/{total}',
   'history.step.latest': 'latest',
   'history.step.older': 'View an earlier change',
   'history.step.newer': 'View a newer change',
-  'content.title': 'Preview',
   'detail.back': 'Back to products',
   'mention.open': 'Open {name} in the sidebar',
 

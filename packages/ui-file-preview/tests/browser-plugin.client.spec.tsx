@@ -1,30 +1,24 @@
 // @vitest-environment jsdom
 /**
  * ui-file-preview browser half on a real cordis Context with fake slots /
- * remote / sidebarRight faces and recording registries: the plugin mounts its
- * Remote and then registers the surfaces of the host line actually serving.
+ * remote / sidebarRight faces and a recording tab-type registry: the plugin
+ * mounts its Remote and registers the ONE surface form both host lines share
+ * (plan B — embedding into the official document tab — landed and was vetoed
+ * the same day, 2026-09-24):
  *
- * - rc.1 line (`documentPreviews` provided): the content renderer (extension
- *   band — the official document tab's default body, renderer-owned loading)
- *   and the change-history renderer (builtin band — listed in the toolbar
- *   dropdown, never the default) go into `ctx.documentPreviews`, their bodies
- *   into the keyed `sidebar.right.tab.document` seat; the self-drawn content
- *   tab type is NOT registered — the `file-artifacts` list shell (page type +
- *   keyed pane body) is the line's session-products entry instead.
- * - 0.1.5 line (no `documentPreviews`): the `file-preview` page type goes
- *   into `ctx.sidebarRightTabs`, its body into the keyed
- *   `sidebar.right.pane.tab` seat, and no renderer registrations exist.
- * - Late arrival: a `documentPreviews` provided after apply retires the
- *   legacy tab and installs the renderers (deferred inject, never a version
- *   read).
+ * - the `file-preview` page type goes into `ctx.sidebarRightTabs` (guide entry
+ *   PLUS `dsh-resource://file/**` renderable-suffix claims — extension band,
+ *   outranking the official document tab's fallback band on both lines), its
+ *   body into the keyed `sidebar.right.pane.tab` seat;
+ * - the turn row registers into `conversation.chat.turnTail`: list-kind slots
+ *   (0.1.6-alpha.2+) get a plain `id` entry PLUS a lower-priority empty body
+ *   under the official deliverables entry's cell id (first-class list
+ *   shadowing — the cell's lowest-priority entry renders, so the official
+ *   present/changes cards stop while their registration, and the child slot
+ *   it declares, stay live); a chain-declared slot (0.1.5) drives the old
+ *   select + priority -1 preemption instead.
  *
- * turnTail re-kinded chain → list at 0.1.6-alpha.2 on both lines: the default
- * bench declares the list — the row registers a plain `id` entry AND a
- * lower-priority empty body under the official deliverables entry's cell id
- * (list shadowing: the cell's lowest-priority entry renders, so the official
- * present/changes cards stop); a chain-declared bench drives the 0.1.5
- * fallback (select + priority -1 preemption). Registration disposal rides the
- * plugin fiber (HMR safety).
+ * Registration disposal rides the plugin fiber (HMR safety).
  */
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
@@ -32,20 +26,16 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-import type { DocumentPreviewDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { FilePreviewService } from '@khorsheed/dsh-file-preview'
 import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND } from '../src/client/definition.tsx'
-import { FILE_ARTIFACTS_ID, FILE_ARTIFACTS_KIND } from '../src/client/artifacts-definition.ts'
-import { FILE_CONTENT_ID } from '../src/client/content-definition.ts'
-import { FILE_HISTORY_ID } from '../src/client/history-definition.ts'
 import { apply, inject } from '../src/client/index.ts'
-import type { FileArtifactsInjected, FileContentBodyInjected, FilePreviewTabInjected, FilePreviewTurnRowInjected } from '../src/client/contract.ts'
+import type { FilePreviewTabInjected, FilePreviewTurnRowInjected } from '../src/client/contract.ts'
 
 const sid = (k: string): SessionId => k as SessionId
 
 /** Boot the plugin over fake faces; the filePreview Remote records calls. */
-async function bench(opts: { documentPreviews?: boolean; host?: boolean; turnTailKind?: 'list' | 'chain'; officialTail?: boolean } = {}) {
+async function bench(opts: { host?: boolean; turnTailKind?: 'list' | 'chain'; officialTail?: boolean } = {}) {
   const ctx = new Context()
   const calls: { method: string; args: unknown[] }[] = []
   const list = vi.fn(async (...args: unknown[]) => {
@@ -105,28 +95,14 @@ async function bench(opts: { documentPreviews?: boolean; host?: boolean; turnTai
   const openTab = vi.fn()
   const openResource = vi.fn()
   ctx.provide('sidebarRight', { openTab, openResource })
-  // A fake document-renderer registry recording registrations; the real
-  // registry's suffix ranking is the host's own test coverage. Provided by
-  // default (the rc.1 line); `documentPreviews: false` reproduces 0.1.5.
-  const previews: DocumentPreviewDefinition[] = []
-  const providePreviews = (): void => {
-    ctx.provide('documentPreviews', {
-      register: (definition: DocumentPreviewDefinition) => {
-        previews.push(definition)
-        return () => { previews.splice(previews.indexOf(definition), 1) }
-      },
-    })
-  }
-  if (opts.documentPreviews !== false) providePreviews()
   await ctx.plugin(SlotRegistry).await()
   // Declare the target slots (normally declared by ui-sidebar-right /
-  // ui-sidebar-documentpreview / ui-chat). turnTail is list-kind since
-  // 0.1.6-alpha.2; `turnTailKind: 'chain'` reproduces the 0.1.5 declaration.
+  // ui-chat). turnTail is list-kind since 0.1.6-alpha.2; `turnTailKind:
+  // 'chain'` reproduces the 0.1.5 declaration.
   ctx.slots.register({
     name: 'root',
     children: {
       'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
-      'sidebar.right.tab.document': { kind: 'keyed', scope: 'session' },
       'conversation.chat.turnTail': { kind: opts.turnTailKind ?? 'list', scope: 'session', owner: {} },
     },
   } as never, (() => null) as never)
@@ -141,25 +117,13 @@ async function bench(opts: { documentPreviews?: boolean; host?: boolean; turnTai
   }
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, host, calls, list, read, turnFiles, reveal, openExternal, mount, registered, previews, openTab, openResource, providePreviews }
+  return { ctx, fiber, host, calls, list, read, turnFiles, reveal, openExternal, mount, registered, openTab, openResource }
 }
 
-/** Flush pending nested-fiber activations (a late-provided documentPreviews wakes the rc.1 arm). */
-async function flush(times = 10): Promise<void> {
-  for (let i = 0; i < times; i++) await new Promise(resolve => setTimeout(resolve, 0))
-}
-
-/** The legacy tab body entry's inject factory, called the way the outlet would (0.1.5 line). */
+/** The tab body entry's inject factory, called the way the outlet would. */
 function tabApi(b: Awaited<ReturnType<typeof bench>>) {
   const entry = b.ctx.slots.entries('sidebar.right.pane.tab')[0]
   const injected = (entry?.inject as unknown as ((sessionId: SessionId) => FilePreviewTabInjected) | undefined)?.(sid('s1'))
-  return { entry, injected }
-}
-
-/** One document renderer entry by its registration key, with its inject factory. */
-function documentApi<K>(b: Awaited<ReturnType<typeof bench>>, key: string) {
-  const entry = b.ctx.slots.entries('sidebar.right.tab.document').find(e => (e.options as { key?: string }).key === key)
-  const injected = (entry?.inject as unknown as (() => K) | undefined)?.()
   return { entry, injected }
 }
 
@@ -174,22 +138,12 @@ function turnApi(b: Awaited<ReturnType<typeof bench>>) {
   return { entry, injected }
 }
 
-/** The artifacts shell body entry (rc.1 line), with its inject factory. */
-function artifactsApi(b: Awaited<ReturnType<typeof bench>>) {
-  const entry = b.ctx.slots.entries('sidebar.right.pane.tab')
-    .find(e => (e.options as { key?: string }).key === FILE_ARTIFACTS_ID)
-  const injected = (entry?.inject as unknown as ((sessionId: SessionId) => FileArtifactsInjected) | undefined)?.(sid('s1'))
-  return { entry, injected }
-}
-
 describe('ui-file-preview browser plugin', () => {
   it('client only: a missing host handshake leaves every UI surface absent', async () => {
     const b = await bench({ host: false })
     expect(b.mount).toHaveBeenCalledTimes(1)
     expect(b.registered).toHaveLength(0)
-    expect(b.previews).toHaveLength(0)
     expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(0)
-    expect(b.ctx.slots.entries('sidebar.right.tab.document')).toHaveLength(0)
     expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     await b.fiber.dispose()
   })
@@ -202,109 +156,20 @@ describe('ui-file-preview browser plugin', () => {
     expect(ctx.get('sidebarRightTabs')).toBeUndefined()
   })
 
-  it('paired: the client probes the real host handler before installing the rc.1 surfaces', async () => {
+  it('paired: the client probes the real host handler before installing the surfaces', async () => {
     const b = await bench()
     expect(b.host).toBeInstanceOf(FilePreviewService)
-    // The artifacts page type + body and the turn row pair (row + deliverables
-    // shadow) are the rc.1 arm's registrations; the legacy content tab stays off.
-    expect(b.registered.map(d => d.kind)).toEqual([FILE_ARTIFACTS_KIND])
+    // One form on both lines: the page type + its body + the turn row pair
+    // (row + deliverables shadow on the list-kind slot).
+    expect(b.registered.map(d => d.kind)).toEqual([FILE_PREVIEW_KIND])
     expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(1)
-    expect(b.ctx.slots.entries('sidebar.right.tab.document')).toHaveLength(2)
     expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(2)
     await b.fiber.dispose()
   })
 
-  it('rc.1: registers the content and history renderers into the official document tab, never the legacy tab', async () => {
+  it('registers the self-drawn tab type and its body, claiming the renderable file addresses', async () => {
     const b = await bench()
     expect(b.mount).toHaveBeenCalledTimes(1)
-    // The self-drawn content tab type stays unregistered on this line; the
-    // session-products entry returns as the file-artifacts list shell (a page
-    // type with no address claims).
-    expect(b.registered.some(d => d.kind === FILE_PREVIEW_KIND)).toBe(false)
-    const artifacts = b.registered.find(d => d.kind === FILE_ARTIFACTS_KIND)
-    expect(artifacts?.id).toBe(FILE_ARTIFACTS_ID)
-    expect(artifacts?.patterns).toBeUndefined()
-    // The shell keeps the retired page's 「会话产物」 label on both the chip
-    // and the guide capsule (the bench's locale runtime serves English).
-    expect(artifacts?.title('')).toBe(artifacts?.guide?.[0]?.title())
-    expect(artifacts?.title('')).toBeTruthy()
-    expect(artifacts?.guide?.[0]?.description()).toBeTruthy()
-    // The pane's keyed seat carries the shell body only (the legacy detail
-    // view's seat is empty on this line).
-    const { entry: artifactsEntry, injected: artifactsInjected } = artifactsApi(b)
-    expect(artifactsEntry?.locale).toBe('filePreview')
-    expect(artifactsEntry?.store).toBeTruthy()
-    expect(artifactsInjected?.listFiles).toBeTypeOf('function')
-    expect(artifactsInjected?.openArtifact).toBeTypeOf('function')
-    expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(1)
-    // The content renderer: extension band (the document tab's default body —
-    // external implementations outrank the official ones), renderer-owned
-    // loading (the read stays on our outside-workspace-capable Remote), avif
-    // declared binary (the one image suffix the official viewer does not claim).
-    const content = b.previews.find(d => d.id === FILE_CONTENT_ID)
-    expect(content?.priority).toBe('extension')
-    expect(content?.loading).toBe('renderer')
-    expect(content?.title()).toBeTruthy()
-    expect(content?.extensions).toContain('md')
-    expect(content?.extensions).toContain('avif')
-    expect(content?.extensions).not.toContain('png')
-    expect(content?.binaryExtensions).toEqual(['avif'])
-    // The change-history renderer: builtin band (never the default), cheapest
-    // loading mode, body in the keyed document seat.
-    const renderer = b.previews.find(d => d.id === FILE_HISTORY_ID)
-    expect(renderer?.priority).toBe('builtin')
-    expect(renderer?.loading).toBe('text-pages')
-    expect(renderer?.title()).toBeTruthy()
-    expect(renderer?.extensions).toContain('md')
-    // Both bodies sit in the keyed document seat under their ids.
-    const { entry: contentEntry, injected: contentInjected } = documentApi<FileContentBodyInjected>(b, FILE_CONTENT_ID)
-    expect(contentEntry?.locale).toBe('filePreview')
-    expect(contentInjected?.readFile).toBeTypeOf('function')
-    expect(contentInjected?.copyPath).toBeTypeOf('function')
-    const { entry: historyEntry, injected: historyInjected } = documentApi<Pick<FilePreviewTabInjected, 'listFiles'>>(b, FILE_HISTORY_ID)
-    expect(historyEntry?.locale).toBe('filePreview')
-    expect(historyInjected?.listFiles).toBeTypeOf('function')
-    // The turn row on the list-kind slot: a plain entry under the package id
-    // — no select, no priority; the row self-hides without data, and the
-    // deliverables shadow (below) keeps the official cards off.
-    const { entry: turnEntry } = turnApi(b)
-    expect(turnEntry).toBeTruthy()
-    expect(turnEntry?.options).toMatchObject({ id: FILE_PREVIEW_ID })
-    expect(turnEntry?.options.priority).toBeUndefined()
-    expect(turnEntry?.select).toBeUndefined()
-    expect(turnEntry?.locale).toBe('filePreview')
-    await b.fiber.dispose()
-  })
-
-  it('rc.1: the content renderer body reads through the filePreview Remote', async () => {
-    const b = await bench()
-    const { injected } = documentApi<FileContentBodyInjected>(b, FILE_CONTENT_ID)
-    if (injected === undefined) throw new Error('content inject missing')
-    const result = await injected.readFile(sid('s1'), 'docs/a.md')
-    expect(result).toMatchObject({ ok: true, value: { kind: 'text' } })
-    expect(b.read).toHaveBeenCalledWith('s1', 'docs/a.md')
-    await b.fiber.dispose()
-  })
-
-  it('rc.1: the artifacts shell lists through the Remote and opens through the official resource route', async () => {
-    const b = await bench()
-    const { injected } = artifactsApi(b)
-    if (injected === undefined) throw new Error('artifacts inject missing')
-    const listResult = await injected.listFiles(sid('s1'))
-    expect(listResult).toMatchObject({ ok: true })
-    // A row click opens the canonical file address — the same content id the
-    // turn row's openFile resolves to, so one file is one tab.
-    injected.openArtifact('src/agent.ts')
-    expect(b.openResource).toHaveBeenCalledWith('dsh-resource://file/session/s1/src/agent.ts')
-    // Outside-workspace absolutes keep their spelling inside the session
-    // address (the content renderer reads them through the plugin's Remote).
-    injected.openArtifact('/tmp/out.png')
-    expect(b.openResource).toHaveBeenCalledWith('dsh-resource://file/session/s1//tmp/out.png')
-    await b.fiber.dispose()
-  })
-
-  it('0.1.5: registers the self-drawn tab type, its body, and the turn row when no documentPreviews exists', async () => {
-    const b = await bench({ documentPreviews: false })
     // Stage one: the type — page (guide entry) AND claimant of
     // `dsh-resource://file/**` for fold-recorded renderable products.
     const definition = b.registered.find(d => d.kind === FILE_PREVIEW_KIND)
@@ -325,31 +190,25 @@ describe('ui-file-preview browser plugin', () => {
     expect(entry?.options).toMatchObject({ key: FILE_PREVIEW_ID })
     expect(entry?.locale).toBe('filePreview')
     expect(entry?.store).toBeTruthy()
-    // No renderer registrations exist on this line — and no artifacts shell
-    // either (the 0.1.5 page is already the full surface).
-    expect(b.previews).toHaveLength(0)
-    expect(b.ctx.slots.entries('sidebar.right.tab.document')).toHaveLength(0)
-    expect(b.registered.some(d => d.kind === FILE_ARTIFACTS_KIND)).toBe(false)
-    // The turn row plus its deliverables shadow (list-kind bench slot).
-    expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(2)
     await b.fiber.dispose()
   })
 
-  it('retires the legacy tab and installs the renderers when documentPreviews arrives after apply', async () => {
-    const b = await bench({ documentPreviews: false })
-    expect(b.registered.some(d => d.kind === FILE_PREVIEW_KIND)).toBe(true)
-    expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(1)
-    b.providePreviews()
-    await flush()
-    expect(b.registered.some(d => d.kind === FILE_PREVIEW_KIND)).toBe(false)
-    // The artifacts shell takes over the pane seat (legacy body retired).
-    expect(b.registered.some(d => d.kind === FILE_ARTIFACTS_KIND)).toBe(true)
-    expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(1)
-    expect(artifactsApi(b).entry).toBeTruthy()
-    expect(b.previews.map(d => d.id).sort()).toEqual([FILE_CONTENT_ID, FILE_HISTORY_ID].sort())
-    expect(b.ctx.slots.entries('sidebar.right.tab.document')).toHaveLength(2)
-    // The turn row + shadow ride both lines, untouched by the switch.
-    expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(2)
+  it('registers the turn row as a plain list entry plus the deliverables shadow', async () => {
+    const b = await bench()
+    // The row: a plain entry under the package id — no select, no priority;
+    // it self-hides without data.
+    const { entry: turnEntry } = turnApi(b)
+    expect(turnEntry).toBeTruthy()
+    expect(turnEntry?.options).toMatchObject({ id: FILE_PREVIEW_ID })
+    expect(turnEntry?.options.priority).toBeUndefined()
+    expect(turnEntry?.select).toBeUndefined()
+    expect(turnEntry?.locale).toBe('filePreview')
+    // The shadow: same cell id as the official card, priority -1, empty body.
+    const shadow = b.ctx.slots.entries('conversation.chat.turnTail')
+      .find(e => (e.options as { id?: string }).id === '@deepseek-ai/dsh-client-ui-deliverables')
+    expect(shadow).toBeTruthy()
+    expect(shadow?.options.priority).toBe(-1)
+    expect((shadow?.component as () => unknown)()).toBeNull()
     await b.fiber.dispose()
   })
 
@@ -377,16 +236,6 @@ describe('ui-file-preview browser plugin', () => {
     await b.fiber.dispose()
   })
 
-  it('the deliverables shadow renders nothing', async () => {
-    const b = await bench()
-    const shadow = b.ctx.slots.entries('conversation.chat.turnTail')
-      .find(e => (e.options as { id?: string }).id === '@deepseek-ai/dsh-client-ui-deliverables')
-    expect(shadow).toBeTruthy()
-    expect(shadow?.options.priority).toBe(-1)
-    expect((shadow?.component as () => unknown)()).toBeNull()
-    await b.fiber.dispose()
-  })
-
   it('falls back to the preemptive chain registration on a 0.1.5 (chain-kind) host', async () => {
     const b = await bench({ turnTailKind: 'chain' })
     const { entry } = turnApi(b)
@@ -397,11 +246,13 @@ describe('ui-file-preview browser plugin', () => {
     expect(entry?.select).toBeTypeOf('function')
     expect(entry?.options.id).toBeUndefined()
     expect(entry?.locale).toBe('filePreview')
+    // The chain arm has no shadowing concept — no deliverables shadow entry.
+    expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(1)
     await b.fiber.dispose()
   })
 
-  it('routes the legacy tab body and turn card callbacks through the filePreview Remote', async () => {
-    const b = await bench({ documentPreviews: false })
+  it('routes the tab body and turn card callbacks through the filePreview Remote', async () => {
+    const b = await bench()
     const { injected } = tabApi(b)
     if (injected === undefined) throw new Error('tab inject missing')
     const listResult = await injected.listFiles(sid('s1'))
@@ -453,7 +304,7 @@ describe('ui-file-preview browser plugin', () => {
     await ctx2.plugin(SlotRegistry).await()
     ctx2.slots.register({
       name: 'root',
-      children: { 'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' }, 'sidebar.right.tab.document': { kind: 'keyed', scope: 'session' }, 'conversation.chat.turnTail': { kind: 'list', scope: 'session', owner: {} } },
+      children: { 'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' }, 'conversation.chat.turnTail': { kind: 'list', scope: 'session', owner: {} } },
     } as never, (() => null) as never)
     const fiber = ctx2.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -471,8 +322,8 @@ describe('ui-file-preview browser plugin', () => {
     await fiber.dispose()
   })
 
-  it('routes legacy row gestures: reveal through the Remote, IDE through openExternal', async () => {
-    const b = await bench({ documentPreviews: false })
+  it('routes row gestures: reveal through the Remote, IDE through openExternal', async () => {
+    const b = await bench()
     const { injected } = tabApi(b)
     if (injected === undefined) throw new Error('tab inject missing')
     injected.revealFolder('docs/a.md')
@@ -494,18 +345,8 @@ describe('ui-file-preview browser plugin', () => {
     await b.fiber.dispose()
   })
 
-  it('unregisters every rc.1 surface on fiber disposal', async () => {
+  it('unregisters every surface on fiber disposal', async () => {
     const b = await bench()
-    await b.fiber.dispose()
-    expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(0)
-    expect(b.ctx.slots.entries('sidebar.right.tab.document')).toHaveLength(0)
-    expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
-    expect(b.registered.some(d => d.kind === FILE_PREVIEW_KIND || d.kind === FILE_ARTIFACTS_KIND)).toBe(false)
-    expect(b.previews.some(d => d.id === FILE_HISTORY_ID || d.id === FILE_CONTENT_ID)).toBe(false)
-  })
-
-  it('unregisters every 0.1.5 surface on fiber disposal', async () => {
-    const b = await bench({ documentPreviews: false })
     await b.fiber.dispose()
     expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(0)
     expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
