@@ -23,6 +23,7 @@
     "src/client/LabView.tsx",
     "src/client/NewExperimentDialog.tsx",
     "src/client/ReportPage.tsx",
+    "src/client/MarkdownDoc.tsx",
     "src/client/RunsPage.tsx",
     "src/client/contract.ts",
     "src/client/index.ts",

@@ -143,6 +143,12 @@ export interface DraftExperimentInput {
   exports?: string
   /** Review commentary written into the plan verbatim. */
   notes?: string
+  /** The question the experiment answers, the person's own sentence (v1-rev14). */
+  question?: string
+  /** What the person expects the answer to be (v1-rev14). */
+  expectation?: string
+  /** What result would count as answered (v1-rev14). */
+  answeredWhen?: string
   /** Epoch ms, for the id and `createdAt`; tests pin it. */
   now?: number
 }
@@ -401,6 +407,12 @@ export async function planConditionIds(planPath: string): Promise<string[]> {
   }
 }
 
+/** One optional text field of the plan: present only when it says something. */
+function textField(key: string, value: string | undefined): Record<string, string> {
+  const text = value?.trim() ?? ''
+  return text === '' ? {} : { [key]: text }
+}
+
 /**
  * Draft one experiment: decide the dataset version, mint the new conditions
  * into the deployment's condition library, and create the experiment
@@ -513,6 +525,11 @@ export async function draftExperiment(input: DraftExperimentInput): Promise<Draf
   const plan: Record<string, unknown> = {
     schema: PLAN_SCHEMA_ID,
     name,
+    // v1-rev14: written verbatim (trimmed), and only when said — an empty
+    // string would be a block the page draws with nothing in it.
+    ...textField('question', input.question),
+    ...textField('expectation', input.expectation),
+    ...textField('answeredWhen', input.answeredWhen),
     dataset: { registry, set, commit: decision.commit, items },
     conditions,
     reps: input.reps,

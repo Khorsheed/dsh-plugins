@@ -27,6 +27,7 @@ import { conditionLibraryDir, type ExperimentRecord, listExperimentRecords } fro
 import type { EvalRunStatus } from './job.ts'
 import type { MissionRunListFace } from './faces.ts'
 import { canonicalJson } from './hash.ts'
+import { planQuestionOf } from './plan-question.ts'
 import { conditionFactors } from './read.ts'
 import { expandHome, type PlanValidation } from './validate.ts'
 import type {
@@ -259,6 +260,7 @@ async function draftRow(
     experimentId: plan.record.id,
     legacy: false,
     name: plan.record.meta.name,
+    question: planQuestionOf(plan.document)?.question ?? null,
     planPath: plan.record.planPath,
     runId: null,
     status: deriveExperimentStatus({
@@ -345,6 +347,7 @@ function runRow(
   job: EvalRunStatus | undefined,
   now: number,
   experiment: ExperimentRecord | null = null,
+  planDocument: unknown = null,
 ): EvalExperimentRow {
   const meta = run.meta
   const snapshotMeta = isPlainObject(meta['snapshot']) ? meta['snapshot'] : undefined
@@ -376,6 +379,7 @@ function runRow(
     experimentId: experiment?.id ?? null,
     legacy: experiment === null,
     name: experiment?.meta.name ?? (planPath === null ? run.runId : basename(planPath).replace(/\.json$/, '')),
+    question: planQuestionOf(planDocument)?.question ?? null,
     planPath,
     runId: run.runId,
     status,
@@ -432,6 +436,19 @@ function evalRuns(mission: MissionRunListFace, notes: string[]): RunProjection[]
     runs.push(projectRun(mission, status))
   }
   return runs
+}
+
+/**
+ * The runs of the ledger that belong to one experiment, by the same pairing
+ * the list uses — the question "has this experiment started" asked of the
+ * ledger, which is where a start is recorded (the plan is not written by it).
+ * @param mission - the mission ledger.
+ * @param plans - the deployment's experiments, for the plan-hash and path fallbacks.
+ * @param experimentId - the experiment.
+ * @returns the paired run ids; empty for an experiment nobody started.
+ */
+export function experimentRunIds(mission: MissionRunListFace, plans: readonly PlanFile[], experimentId: string): string[] {
+  return evalRuns(mission, []).filter(run => pairRun(run.meta, plans)?.id === experimentId).map(run => run.runId)
 }
 
 /** What {@link listExperiments} needs; each source optional and degrading to a note. */
@@ -521,7 +538,8 @@ export async function listExperiments(input: ExperimentsInput): Promise<EvalExpe
   const runRows = runs.map((run) => {
     const experiment = pairRun(run.meta, plans)
     if (experiment !== null) started.add(experiment.id)
-    return runRow(run, jobs.byRun.get(run.runId), now, experiment)
+    const document = experiment === null ? null : plans.find(plan => plan.record.id === experiment.id)?.document ?? null
+    return runRow(run, jobs.byRun.get(run.runId), now, experiment, document)
   })
   const draftRows: EvalExperimentRow[] = []
   for (const plan of plans) {

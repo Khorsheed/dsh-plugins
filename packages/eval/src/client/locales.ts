@@ -549,6 +549,33 @@ export type EvalKey =
   | 'design.notes'
   | 'design.verdictSources'
   | 'design.gridHint'
+  | 'design.question'
+  | 'design.questionAsked'
+  | 'design.expectation'
+  | 'design.answeredWhen'
+  | 'design.numbers'
+  | 'design.numbers.reps'
+  | 'design.numbers.activeMinutes'
+  | 'design.numbers.turns'
+  | 'design.numbers.judgeSamples'
+  | 'design.numbers.save'
+  | 'design.numbers.cancel'
+  | 'design.numbers.hint'
+  | 'design.numbers.frozen'
+  | 'design.numbers.written'
+  | 'design.numbers.unchanged'
+  | 'design.numbers.invalid'
+  | 'design.numbers.noPlan'
+  | 'report.answerLine'
+  | 'report.answeredWhen'
+  | 'report.expectation'
+  | 'report.answerClosed'
+  | 'report.answerSingle'
+  | 'report.directionAhead'
+  | 'report.directionNone'
+  | 'markdown.copy'
+  | 'markdown.copied'
+  | 'markdown.footnotes'
   | 'ready.badge'
   | 'ready.badgeAtStart'
   | 'ready.recheck'
@@ -1338,6 +1365,33 @@ export const en: Record<EvalKey, string> = {
   'design.addGroupHint': 'Copy an existing group and change one field; the wizard writes both it and the plan.',
   'design.notes': 'Author’s note',
   'design.verdictSources': 'Verdict sources',
+  'design.question': 'The question',
+  'design.questionAsked': 'Question',
+  'design.expectation': 'Expectation',
+  'design.answeredWhen': 'Answered when',
+  'design.numbers': 'Numbers',
+  'design.numbers.reps': 'Takes',
+  'design.numbers.activeMinutes': 'Minutes per record',
+  'design.numbers.turns': 'Turns per record',
+  'design.numbers.judgeSamples': 'Judge samples',
+  'design.numbers.save': 'Save',
+  'design.numbers.cancel': 'Cancel',
+  'design.numbers.hint': 'Editable until the experiment starts; saved into the same plan, nothing else in it changes. Anything structural — items, groups, the judge — ask the agent.',
+  'design.numbers.frozen': 'The experiment has started, so its plan is frozen: these numbers are the record of that run. To change them, draft a new experiment.',
+  'design.numbers.written': 'Saved and read back: {changes}.',
+  'design.numbers.unchanged': 'Nothing changed — the plan already holds these numbers.',
+  'design.numbers.invalid': '{field} is not a number.',
+  'design.numbers.noPlan': 'This experiment has no plan to write into.',
+  'report.answerLine': 'Question: {question} — Conclusion: {answer}',
+  'report.answeredWhen': 'Answered when: {text}',
+  'report.expectation': 'Expected: {text} · Actual: {actual}',
+  'report.answerClosed': 'no conclusion yet',
+  'report.answerSingle': 'a single comparison group — nothing to compare',
+  'report.directionAhead': '{ahead} ahead of {behind}',
+  'report.directionNone': '{a} and {b} not separated',
+  'markdown.copy': 'Copy',
+  'markdown.copied': 'Copied',
+  'markdown.footnotes': 'Footnotes',
   'ready.badge': 'Environment ready',
   'ready.badgeAtStart': 'Environment ready when it started',
   'ready.recheck': 'Check again',
@@ -2122,6 +2176,33 @@ export const zh: Record<EvalKey, string> = {
   'design.addGroupHint': '从一个已有对比组复制，改一个字段；向导会把它和计划一起写出来。',
   'design.notes': '作者备注',
   'design.verdictSources': '判定来源',
+  'design.question': '要回答的问题',
+  'design.questionAsked': '问题',
+  'design.expectation': '预期',
+  'design.answeredWhen': '怎么算回答了',
+  'design.numbers': '数字',
+  'design.numbers.reps': '次数',
+  'design.numbers.activeMinutes': '每格预算（分钟）',
+  'design.numbers.turns': '每格预算（轮）',
+  'design.numbers.judgeSamples': '判官采样',
+  'design.numbers.save': '保存',
+  'design.numbers.cancel': '取消',
+  'design.numbers.hint': '启动前可改，写回同一个 plan，其他内容不动。题、对比组、判官这类结构性改动交给 agent。',
+  'design.numbers.frozen': '实验已启动，方案已冻结：这些数字是那次运行的记录。要改请起草一个新实验。',
+  'design.numbers.written': '已写回并读回核对：{changes}。',
+  'design.numbers.unchanged': '没有变化——plan 里已经是这些数字。',
+  'design.numbers.invalid': '{field} 不是数字。',
+  'design.numbers.noPlan': '这个实验没有可写的 plan。',
+  'report.answerLine': '问题：{question} — 结论：{answer}',
+  'report.answeredWhen': '怎么算回答了：{text}',
+  'report.expectation': '预期：{text} · 实际：{actual}',
+  'report.answerClosed': '暂时不能下结论',
+  'report.answerSingle': '单对比组，无对比数据',
+  'report.directionAhead': '{ahead} 优于 {behind}',
+  'report.directionNone': '{a} 与 {b} 未分高下',
+  'markdown.copy': '复制',
+  'markdown.copied': '已复制',
+  'markdown.footnotes': '脚注',
   'ready.badge': '环境就绪',
   'ready.badgeAtStart': '启动时环境就绪',
   'ready.recheck': '重新检查',

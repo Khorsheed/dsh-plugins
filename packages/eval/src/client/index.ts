@@ -40,7 +40,7 @@ import type {
   EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
   EvalExperimentArtifactRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
   EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest,
-  EvalMatrixRequest, EvalPlanRequest, EvalReexportRequest, EvalReportRequest, EvalRunUnitsRequest,
+  EvalMatrixRequest, EvalPlanNumbersRequest, EvalPlanRequest, EvalReexportRequest, EvalReportRequest, EvalRunUnitsRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { LabView } from './LabView.tsx'
@@ -107,6 +107,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
         provisionCondition: (sid: SessionId, request: EvalConditionProvisionRequest) => remote.provisionCondition(sid, request),
         setConditionEndpoint: (sid: SessionId, request: EvalConditionEndpointRequest) => remote.setConditionEndpoint(sid, request),
+        setPlanNumbers: (sid: SessionId, request: EvalPlanNumbersRequest) => remote.setPlanNumbers(sid, request),
         // ui-spec step 2. The same service verb `eval_plan_draft` reaches —
         // a draft a person fills in and a draft an agent makes in one
         // sentence are the same file in the same list.

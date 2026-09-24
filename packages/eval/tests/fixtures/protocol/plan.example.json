@@ -1,6 +1,9 @@
 {
   "schema": "dataseek.plan/1",
   "name": "harness-comparison-effort",
+  "question": "codex-exec 和 claude-exec 在这两道题上谁做得更完整？",
+  "expectation": "claude-exec 更完整",
+  "answeredWhen": "两组各跑满 3 次、判定覆盖一致，配对差值给出方向与区间",
   "dataset": {
     "registry": "dataseek-eval",
     "set": "harness-comparison",

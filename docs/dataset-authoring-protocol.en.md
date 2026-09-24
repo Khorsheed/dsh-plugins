@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev13** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev14** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator and the bind form's prefill derive from it. The `dataset-authoring` skill is also planned to derive from this protocol, but remains planned and is not yet distributed with `@khorsheed/dsh-datasets`. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -607,6 +607,18 @@ A sub-dsh condition carries a few more lines — `provisioned.preset` is read ba
       "type": "string",
       "description": "Optional. The experiment's display name; the experiment id is minted from it. An imported plan without one takes its file stem."
     },
+    "question": {
+      "type": "string",
+      "description": "Optional (v1-rev14). The question this experiment is run to answer, one sentence in the person's own words; the conclusion card answers it verbatim. Absent on older plans, and absence is not a warning."
+    },
+    "expectation": {
+      "type": "string",
+      "description": "Optional (v1-rev14). What the person expects the answer to be, before anything ran; may be omitted when there is no expectation."
+    },
+    "answeredWhen": {
+      "type": "string",
+      "description": "Optional (v1-rev14). One sentence: what result would count as having answered the question."
+    },
     "dataset": {
       "type": "object",
       "additionalProperties": false,
@@ -825,6 +837,7 @@ A sub-dsh condition carries a few more lines — `provisioned.preset` is read ba
 - A plan carries **no template field**: the run template is a deterministic function of the dataset manifest, generated and linted at validate time and reviewed alongside the plan (I2).
 - `dataset` is `{registry, set, commit}` (v1-rev13): `registry` is the dataset registration id, `set` the dataset set in that repository, and `commit` is **required** and a full hash — every contract file the plan uses is read at that commit. Drafting without a commit, `eval_plan_draft` takes the tracked branch's latest, and refuses with the candidates listed when that disagrees in content (the `items/` and `schemas/` tree hashes) with the version pinned by existing experiments on the same set and conditions. The legacy `{repo, id, commit}` form (`commit` may be `null`, meaning pinned at run start) is **read-only**: old plans still validate and import, and no tool writes it any more.
 - `name` is optional: the experiment's display name, from which the experiment id `<slug>-<yyyymmdd>-<4hex>` is minted; an imported legacy plan without one takes its file stem.
+- `question` / `expectation` / `answeredWhen` are optional (v1-rev14): the **question** this experiment is run to answer (one sentence, in the person's own words), the **expectation** (what the person thinks the answer is before anything runs; omitted when there is none), and **what counts as answered** (one sentence: which result would answer the question). They are the plan as a person reads it and drive no orchestration: the experiment-design page shows the three as the first block of its upper half, and the comparison page's conclusion card opens with `question` verbatim and carries `answeredWhen` as one small line. Plans from rev13 and earlier have none of the three; the page shows no block and validate does not warn about the absence. Like every other field they enter planSha — changing the question changes the plan, and a started experiment no longer changes it.
 - `unit` may be omitted. Omitted, the run takes the **host path**: per-cell directories under `$DSH_HOME/state/eval`, no containers, byte for byte what it was before this field existed. Present, it takes the **container path**: every cell of the run goes acquire → populate → one delegation round and one checkpoint per stage → probes (inside the unit, through `lab.verify`) → archive → release, in one lab unit built from `image`. An undeclared `network` is docker's default bridge, which HAS egress — a sealed run must name its internal network; an undeclared `user` is the image's own `USER`; `resources` is both applied to the container and hashed into the environment fingerprint.
 - `unit.egressCheck` may be omitted, and omitted it is byte for byte what the run was before this field existed. Present, it is the **egress self-check**: every freshly acquired unit runs this command first — the readiness probe's unit before it delegates, each cell's between acquire and populate. Exit 0 passes; anything else, a timeout included, refuses the whole run as `EGRESS_UNAVAILABLE` without spending one delegation. **A run on an internal network should declare it**: a unit that cannot reach its proxy does not fail, it answers NOTHING, which reads exactly like a subject with nothing to say (measured: codex ran 230 seconds in a unit with no egress and returned `task_complete` with `last_agent_message: null`, and not one word about the network). The command and its target live here, beside the network they belong to — the orchestrator holds no address of its own. A declaration whose `command` is empty or carries an empty word is refused as `EGRESS_CHECK_MALFORMED` (the contract subset has no `minItems`, so the run loop is the only place that can catch it).
 - validate does NOT check that the image exists: reviewing a plan must not require a reachable docker daemon. The first `acquire` is that check.
@@ -834,6 +847,9 @@ A sub-dsh condition carries a few more lines — `provisioned.preset` is read ba
 {
   "schema": "dataseek.plan/1",
   "name": "harness-comparison-effort",
+  "question": "codex-exec 和 claude-exec 在这两道题上谁做得更完整？",
+  "expectation": "claude-exec 更完整",
+  "answeredWhen": "两组各跑满 3 次、判定覆盖一致，配对差值给出方向与区间",
   "dataset": {
     "registry": "dataseek-eval",
     "set": "harness-comparison",
