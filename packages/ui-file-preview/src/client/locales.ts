@@ -51,6 +51,7 @@ export type FilePreviewKey =
   | 'diff.unwrap'
   | 'guide.title'
   | 'guide.description'
+  | 'artifacts.guide.description'
   | 'list.empty'
   | 'list.error'
   | 'list.loading'
@@ -146,6 +147,7 @@ export const zh: Record<FilePreviewKey, string> = {
   'diff.unwrap': '取消自动换行',
   'guide.title': '会话产物',
   'guide.description': '会话写过的每个文件：看内容，也看每一次改动',
+  'artifacts.guide.description': '本会话写过/改过的文件；点开在文档页看内容与改动记录',
   'list.empty': '这个会话还没有写过文件',
   'list.error': '文件列表加载失败',
   'list.loading': '加载中…',
@@ -236,6 +238,7 @@ export const en: Record<FilePreviewKey, string> = {
   'diff.unwrap': 'Do not wrap lines',
   'guide.title': 'Session products',
   'guide.description': 'Every file the session wrote — its content and each change',
+  'artifacts.guide.description': 'Files this session wrote or edited; open one in the document tab for its content and change history',
   'list.empty': 'This session has not written any files yet',
   'list.error': 'Failed to load the file list',
   'list.loading': 'Loading…',

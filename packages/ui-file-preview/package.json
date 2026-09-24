@@ -58,7 +58,7 @@
     "compat": {
       "minHost": "0.1.5-rc.1",
       "verifiedHost": "0.1.5-rc.1",
-      "notes": "双线内容面：0.1.7-rc.1 起内容预览注册进官方 documentPreviews 面（extension 档，官方 document tab 的默认渲染器，官方渲染器收进工具栏下拉；不再注册自建 FilePreviewTab tab 类型，文件点击/mentions/会话产物入口全部路由官方 document tab），0.1.5 保留自建产物页 tab（npm 最新发布线仍是 0.1.5，不断线）。改动记录维度（TurnFileRow 回合卡 + FileHistoryBody 改动记录渲染器）官方无对应物——workspace-changes 为内存态、git-only、宿主重启即失——维持我方机制并跟踪上游。rc.1 线的手势对账：复制路径/内容搜索/结构化渲染/HTML 沙箱分级随内容面板并入注册定义；在文件夹打开/在 IDE 打开让位官方 ui-open-in-app 的 document actions 贡献；图片预览让位官方缩放查看器（avif 除外，官方未认领）；超大文件改走官方渲染器的滚动分页（下拉里选官方文本渲染器）。"
+      "notes": "双线内容面：0.1.7-rc.1 起内容预览注册进官方 documentPreviews 面（extension 档，官方 document tab 的默认渲染器，以共享内核的 headless 模式并入——不重复官方框架的路径行/「打开方式」下拉/重新读取；官方渲染器收进工具栏下拉；不再注册自建 FilePreviewTab 内容页），0.1.5 保留自建产物页 tab（npm 最新发布线仍是 0.1.5，不断线）。「会话产物」入口以 file-artifacts 薄列表壳回归（fold 数据源，点行走官方 resource 路由，壳不画内容）。改动记录维度（TurnFileRow 回合卡 + FileHistoryBody 改动记录渲染器）官方仍无对应物——workspace-changes 为内存态、git-only、宿主重启即失——维持自留并跟踪上游；回合区收敛：官方 deliverables 条目（present 卡 + 内存态 changes 卡）被 list 槽一等遮蔽压下（同 cell id、priority -1 空体胜出，官方条目仍在册——其声明的 deliverables.file.actions 子槽不塌），只留我们的持久全量卡。rc.1 线的手势对账：结构化渲染/HTML 沙箱分级随内容面板并入注册定义，复制路径保留为内容区右上角小按钮（官方 actions 无等价物）；在文件夹打开/在 IDE 打开让位官方 ui-open-in-app 的 document actions 贡献；内容搜索不随无头模式并入（rc.1 官方 document tab 无内容搜索框，此项为净减，官方补上即齐；0.1.5 自建页不受影响）；图片预览让位官方缩放查看器（avif 除外，官方未认领）；超大文件改走官方渲染器的滚动分页（下拉里选官方文本渲染器）。"
     }
   },
   "scripts": {

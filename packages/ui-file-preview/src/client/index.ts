@@ -4,11 +4,14 @@
  *
  * - 0.1.7-rc.1 (the official `documentPreviews` pane exists): the content
  *   preview registers INTO the official document tab as its default renderer
- *   (the shared content pane, extension band — FileContentBody), alongside the
- *   change-history renderer (builtin band, one dropdown away). File clicks
- *   (deliverables card, file tree, wrapped mentions, the turn card) route to
- *   the official document tab through its fallback-band claim; the self-drawn
- *   tab type is NOT registered.
+ *   (the shared content pane in headless mode — the frame owns the chrome —
+ *   extension band, FileContentBody), alongside the change-history renderer
+ *   (builtin band, one dropdown away). File clicks (file tree, wrapped
+ *   mentions, the turn card, the artifacts shell) route to the official
+ *   document tab through its fallback-band claim; the self-drawn
+ *   `file-preview` content tab type is NOT registered — the session-products
+ *   entry it carried returns as the `file-artifacts` LIST SHELL (rows open
+ *   through the official resource route; the shell draws no content itself).
  * - 0.1.5 (no such pane): the self-drawn page-type right-Sidebar tab (the
  *   session's touched files as one full-height list, entered from the guide
  *   page) claims `dsh-resource://file/**` addresses the preview stack renders
@@ -31,12 +34,20 @@
  * package with no edits to core packages. Composing this plugin out of
  * cordis.yml removes every surface it adds.
  *
- * turnTail re-kinded at 0.1.6-alpha.2 (chain election → list rendering): the
- * card now renders alongside the official deliverables and plan cards (user
- * decision 2026-09-18, superseding the 2026-09-11 replacement) and self-hides
- * on turns without files. On a 0.1.5 host the slot is still the election
- * chain; the registration probes the declaration kind and keeps the old
- * preemptive shape (select + priority -1) there.
+ * turnTail re-kinded at 0.1.6-alpha.2 (chain election → list rendering):
+ * the card registers a plain entry under the package id and self-hides on
+ * turns without files. The list arm ALSO shadows the official deliverables
+ * entry (user decision 2026-09-24: only this plugin's turn row survives —
+ * the official present card duplicates it with a model-curated subset and
+ * the official changes card is memory-resident, lost on a host restart): a
+ * second entry under the official card's cell id at a lower priority, whose
+ * empty body wins the cell (list shadowing is the slot system's first-class
+ * mechanism — same cell id, distinct priority, lowest renders). The official
+ * registration stays on the ledger, so the `deliverables.file.actions` child
+ * slot it declares never collapses and the mention-open wrap keeps working;
+ * only its card body stops rendering. On a 0.1.5 host the slot is still the
+ * election chain; the registration probes the declaration kind and keeps the
+ * old preemptive shape (select + priority -1) there.
  *
  * Retired at the 0.1.5-rc.1 move (seam registry S1): the conversation.view
  * tab, the shell.overlay drawer, and the mention capture-phase DOM
@@ -66,9 +77,11 @@ import filePreviewRemote from '@khorsheed/dsh-file-preview/remote'
 import { FilePreviewTab } from './FilePreviewTab.tsx'
 import { FileContentBody } from './FileContentBody.tsx'
 import { FileHistoryBody } from './FileHistoryBody.tsx'
+import { FileArtifactsTab } from './FileArtifactsTab.tsx'
 import { TurnFileRow } from './TurnFileRow.tsx'
 import { createFilePreviewStore } from './file-preview-store.ts'
 import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, filePreviewDefinition } from './definition.tsx'
+import { FILE_ARTIFACTS_ID, FILE_ARTIFACTS_KIND, fileArtifactsDefinition } from './artifacts-definition.ts'
 import { FILE_CONTENT_ID, CONTENT_BINARY_EXTENSIONS, CONTENT_EXTENSIONS } from './content-definition.ts'
 import { FILE_HISTORY_ID, HISTORY_EXTENSIONS } from './history-definition.ts'
 import { basename } from './path-utils.ts'
@@ -78,11 +91,23 @@ import { OpenInAppProbe, pickFileManager, pickIde } from './open-in-app.ts'
 import { parentPath } from './path-utils.ts'
 import { createTurnFilesLoader } from './turn-files-cache.ts'
 import { selectTurnFiles } from './turn-files.ts'
-import type { FileContentBodyInjected, FilePreviewRemote, FilePreviewTabInjected, FilePreviewTurnRowInjected } from './contract.ts'
+import type { FileArtifactsInjected, FileContentBodyInjected, FilePreviewRemote, FilePreviewTabInjected, FilePreviewTurnRowInjected } from './contract.ts'
 
 export { DiffHistory } from './DiffHistory.tsx'
-export { FilePreviewTab, FileContentBody, FileHistoryBody, TurnFileRow }
-export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, FILE_CONTENT_ID, FILE_HISTORY_ID }
+export { FilePreviewTab, FileContentBody, FileHistoryBody, FileArtifactsTab, TurnFileRow }
+export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, FILE_CONTENT_ID, FILE_HISTORY_ID, FILE_ARTIFACTS_ID, FILE_ARTIFACTS_KIND }
+
+/** The official deliverables card's turnTail cell id — the shadow target. */
+const DELIVERABLES_TURN_ENTRY = '@deepseek-ai/dsh-client-ui-deliverables'
+
+/**
+ * The deliverables shadow: the empty body that wins the official card's list
+ * cell at a lower priority, so the present/changes cards stop rendering while
+ * the official registration (and the child slot it declares) stays live.
+ */
+function DeliverablesShadow(): null {
+  return null
+}
 
 /** Required services: slots, sessions (cwd for the row gestures), the remote
  * channel, the locale, and the right-Sidebar faces (tab-type registry + the
@@ -260,15 +285,25 @@ export function installFilePreviewSurfaces(
 
   // The turn card. Probe the declared slot kind inside inject (the callback
   // only runs once the slot exists): a 0.1.6-alpha.2+ host declares a LIST —
-  // register a plain entry under the package id and coexist with the official
-  // deliverables/plan cards, the row returning null until its fetch settles
-  // (user decision 2026-09-18: coexist, compare, then decide retirement); a
-  // 0.1.5 host declares the election CHAIN — keep the old preemptive shape
-  // (select claims every turn; priority -1 elects ascending, ahead of the
-  // official entry's default 0). The alpha.2 KindOptions for this key carry no
-  // chain fields, so the chain-branch call is duck-typed through `never` (the
-  // escape the spec bench already uses); the list branch stays fully typed and
-  // is what checks TurnFileRow's props contract.
+  // register a plain entry under the package id, plus the deliverables shadow
+  // (the list arm's convergence, user decision 2026-09-24: the official
+  // present card duplicates this row with a model-curated subset and the
+  // official changes card is memory-resident, so only this row survives). The
+  // shadow is the slot system's first-class mechanism, not a DOM hack: one
+  // cell (the official entry's id), two entries at distinct priorities, the
+  // lowest renders (ui-slots SlotCore.register pins the rule — a same-id
+  // same-priority registration throws with "register at a different priority
+  // to shadow it", and entriesOfSlot projects each cell to its lowest live
+  // entry). The official entry stays registered — its declared
+  // `deliverables.file.actions` child slot survives for ui-open-in-app's
+  // contributions — it just never renders. The row itself returns null until
+  // its fetch settles. A 0.1.5 host declares the election CHAIN — keep the
+  // old preemptive shape (select claims every turn; priority -1 elects
+  // ascending, ahead of the official entry's default 0). The alpha.2
+  // KindOptions for this key carry no chain fields, so the chain-branch call
+  // is duck-typed through `never` (the escape the spec bench already uses);
+  // the list branch stays fully typed and is what checks TurnFileRow's props
+  // contract.
   disposers.push(ctx.slots.inject('conversation.chat.turnTail', () => {
     const injectRow = (): FilePreviewTurnRowInjected => ({
       turnFiles: (sessionId: SessionId, turn: number) => turnFilesLoader(sessionId, turn),
@@ -283,22 +318,36 @@ export function installFilePreviewSurfaces(
         inject: injectRow,
       } as never, TurnFileRow as never)
     }
-    return ctx.slots.register({
+    const row = ctx.slots.register({
       name: 'conversation.chat.turnTail',
       id: FILE_PREVIEW_ID,
       locale: NS,
       inject: injectRow,
     }, TurnFileRow)
+    // Lower than the official entry's default 0, so the empty body wins the
+    // cell; a same-priority second registration would throw instead.
+    const shadow = ctx.slots.register({
+      name: 'conversation.chat.turnTail',
+      id: DELIVERABLES_TURN_ENTRY,
+      priority: -1,
+    }, DeliverablesShadow)
+    return () => {
+      row()
+      shadow()
+    }
   }))
 
   // ── rc.1 line: the official document tab's renderer pair. The CONTENT
-  // renderer (the shared content pane) registers at the default `extension`
-  // band — an external implementation outranks the official renderers, so a
-  // file click lands in the official document tab with our body as the
-  // default view; `loading: 'renderer'` keeps the read on our own Remote so
-  // outside-workspace products keep rendering (the owner's workspace-scoped
-  // paged read cannot serve them). The HISTORY renderer keeps the `builtin`
-  // band — never the default, always in the toolbar dropdown. A one-shot
+  // renderer (the shared content pane, headless — the frame owns the chrome)
+  // registers at the default `extension` band — an external implementation
+  // outranks the official renderers, so a file click lands in the official
+  // document tab with our body as the default view; `loading: 'renderer'`
+  // keeps the read on our own Remote so outside-workspace products keep
+  // rendering (the owner's workspace-scoped paged read cannot serve them).
+  // The HISTORY renderer keeps the `builtin` band — never the default, always
+  // in the toolbar dropdown. The ARTIFACTS shell restores the session-products
+  // entry the 0.1.5 page carried: a thin list whose rows open through the
+  // official resource route (it draws no content itself). A one-shot
   // `ctx.get` here races the documentpreview fiber's provide — cordis only
   // re-wakes fibers that declare a service in `inject` — so the registrations
   // live in a nested plugin pended on the service; on the 0.1.5 line (or a
@@ -353,6 +402,25 @@ export function installFilePreviewSurfaces(
         },
         FileHistoryBody,
       )), 'ui-file-preview: history renderer body')
+      // The session-products list shell: the page type (guide entry 「会话产物」)
+      // plus its body under the same id. Rows route through the official
+      // resource address — the shell owns no content view.
+      sub.effect(() => sub.sidebarRightTabs.register(fileArtifactsDefinition(t)), 'ui-file-preview: artifacts tab type')
+      sub.effect(() => sub.slots.inject('sidebar.right.pane.tab', () => sub.slots.register(
+        {
+          name: 'sidebar.right.pane.tab',
+          key: FILE_ARTIFACTS_ID,
+          locale: NS,
+          store: createFilePreviewStore,
+          inject: (sessionId: SessionId): FileArtifactsInjected => ({
+            listFiles: (sid: SessionId) => remote.list(sid),
+            openArtifact: (path: string) => {
+              ctx.sidebarRight.openResource(fileAddressFor(sessionId, sessionCwd(sessionId), path))
+            },
+          }),
+        },
+        FileArtifactsTab,
+      )), 'ui-file-preview: artifacts body')
     },
   })
   disposers.push(() => documentPaneFiber.dispose())

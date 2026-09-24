@@ -4,11 +4,13 @@
  * The paths come from the host `filePreview.turnFiles` RPC — the single
  * source of truth (write/edit calls, Code Mode dispatches, render-intent
  * paths, and bash captures all land here), fetched once per session through
- * the turn-files cache. 0.1.6-alpha.2 re-kinded the slot chain → list, so
- * the table renders alongside the official deliverables and plan cards (user
- * decision 2026-09-18, superseding the 2026-09-11 replacement); on a 0.1.5
- * host the registration keeps the old chain preemption instead. Either way
- * the row itself decides visibility from its data.
+ * the turn-files cache. 0.1.6-alpha.2 re-kinded the slot chain → list; the
+ * 2026-09-24 convergence decision keeps ONLY this row in the slot: the
+ * official deliverables entry (present card + memory-resident changes card)
+ * is shadowed by an empty lower-priority registration under its cell id (see
+ * index.ts), superseding the 2026-09-18 coexistence. On a 0.1.5 host the
+ * registration keeps the old chain preemption instead. Either way the row
+ * itself decides visibility from its data.
  *
  * Density: up to three products render as plain rows; beyond that the card
  * collapses to a "N 个产物" summary row that expands in place. Every file

@@ -41,9 +41,11 @@ declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
 /**
  * The type's glyph at the guide capsule's size: a document sheet with the
  * change-history accent (the official files capsule's two-tone flat style,
- * re-cut for "products with history").
+ * re-cut for "products with history"). Shared with the rc.1 line's
+ * file-artifacts list shell (artifacts-definition.ts) — same surface family,
+ * same glyph.
  */
-function ProductsGlyph({ size, className }: IconProps) {
+export function ProductsGlyph({ size, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 26 26" className={className} aria-hidden="true">
       {/* Sheet: folder-blue family, matching the official files capsule's palette. */}
