@@ -205,3 +205,7 @@ The datasets side went in 1cdea3f4. Eval now reaches a dataset only through the 
   - the dataset-version row;
   - the 旧运行 row;
   - block ⑤.
+- **Temp-instance acceptance (rc.1 toolchain, no provider).** Two defects the specs missed, both fixed:
+  - Import listed `datasets/` with a trailing slash, and the real registry face refuses empty path segments. The fake face in `tests/helpers.ts` now applies the same path rule, so `import.spec.ts` would have caught it.
+  - The name column's single-line ellipsis swallowed the 旧运行 chip on longer names, and on every row at 400px. The name now takes the ellipsis and the chip does not shrink.
+- **Pairing on real data.** The imported pilot-d run paired through `planPath`, not `planSha`. It had been started from a later edit of the plan (07fde763), so its recorded `planSha` differs from the imported bytes at fd04079. `planSha` recovers only runs started from the exact imported bytes; the `planPath` fallback is what catches runs from edited plan versions.
