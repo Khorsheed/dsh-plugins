@@ -53,6 +53,7 @@ import { experimentDetail, listExperiments, pairRun, readPlans, runsForItem } fr
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
 import { readCellArtifact } from './cell-artifact.ts'
 import { judgeQueueView, writeHumanFinal } from './judge-bench.ts'
+import { cellAnswersView } from './answers.ts'
 import { pivotMatrix, type MatrixInputCell } from './matrix-view.ts'
 import { conditionDiffView, conditionsView, provisionChecks, reviewPlan } from './review.ts'
 import { projectFinalize, runReportView } from './report-view.ts'
@@ -73,7 +74,7 @@ import type {
   EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
   EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult, EvalExperimentArtifactRequest, EvalExperimentArtifactView, EvalImportRequest,
   EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
-  EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView,
+  EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView, EvalAnswerSheet, EvalCellAnswersRequest,
   EvalJudgeVerdictInput, EvalMatrixView, EvalPlanRequest, EvalPlanReview, EvalReexportRequest, EvalRunReportView, EvalRunUnitsView,
 } from './types.ts'
 
@@ -1160,6 +1161,25 @@ export class EvalService {
       reportError,
       noteRecorded: recorded.recorded,
     }
+  }
+
+  /**
+   * One 题's answers, every group and rep (I5·T75, the answer view): the
+   * judged stage files by name, every verdict layer, the script output and
+   * the player's session. NOT blind — the blind face is {@link judgeQueue}.
+   * @param request - the run and the 题.
+   * @throws {@link EvalReadRefused} when no mission service is mounted, or
+   *   the run holds no cell of that 题.
+   */
+  async cellAnswers(request: EvalCellAnswersRequest): Promise<EvalAnswerSheet> {
+    const mission = this.requireMissionRead('read the answers')
+    const datasets = this.hosts?.get('datasets') as DatasetsFace | undefined
+    return await cellAnswersView({
+      mission,
+      runId: request.runId,
+      task: request.task,
+      ...(datasets === undefined ? {} : { datasets }),
+    })
   }
 
   /**

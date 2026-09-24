@@ -1766,6 +1766,74 @@ export interface EvalJudgeQueueView {
   notes: string[]
 }
 
+/* ─────────────── the answer view (ui-spec §五 作答视图, I5·T75) ─────────────── */
+
+/**
+ * Which answers to read: one 题 of one run, every 组 and every 次 of it — the
+ * view lays a 题's groups side by side, so the read is the 题, and the entry
+ * that opened the view marks its own cell on the client.
+ */
+export interface EvalCellAnswersRequest {
+  runId: string
+  task: string
+}
+
+/** One submitted file of one cell, by name. */
+export interface EvalAnswerReport {
+  /** The file's name (`stage1.md`) — never a path. */
+  name: string
+  /** The text, up to the cell-artifact byte cap. */
+  text: string
+  truncated: boolean
+  bytes: number
+  /** Why it was cut; null when it was not. */
+  note: string | null
+}
+
+/** One verdict on record for one criterion of one cell. */
+export interface EvalAnswerVerdict {
+  criterion: string
+  /** `script` / `llm-draft` / `human-final`. */
+  ns: string
+  pass: boolean
+  evidence: string | null
+  /** The blind panel label (判官 A) for an llm-draft; null for the other layers. */
+  judge: string | null
+  sample: number | null
+  at: number
+}
+
+/** One cell of the sheet: a 组 × 次 of the requested 题. */
+export interface EvalAnswerCell {
+  missionId: string
+  condition: string | null
+  rep: number | null
+  /** The cell's position in the run's seeded order — what the blind A/B follows. */
+  cellNo: number
+  attempt: number
+  state: string
+  bucket: string
+  /** The submitted stage files, in prompt order; absent ones are omitted. */
+  reports: EvalAnswerReport[]
+  verdicts: EvalAnswerVerdict[]
+  /** The script's output, verbatim (the drawer's own read). */
+  scripts: EvalCellProbeRun[]
+  /** The player's child session (T69's 打开子会话 target) and its parent. */
+  childSessionId: string | null
+  parentSessionId: string | null
+}
+
+/** The `cellAnswers` payload: one 题's answers, every group and rep. */
+export interface EvalAnswerSheet {
+  runId: string
+  task: string
+  cells: EvalAnswerCell[]
+  /** The item's `kind: human` rubric rows (the bench's own read). */
+  criteria: EvalJudgeCriterionRow[]
+  criteriaNote: string | null
+  notes: string[]
+}
+
 /** One verdict a person is submitting from the bench. */
 export interface EvalJudgeVerdictInput {
   criterion: string

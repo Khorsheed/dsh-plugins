@@ -219,7 +219,7 @@ function attemptView(attempt: MissionAttemptFace): EvalCellAttempt {
 }
 
 /** The current attempt of a record, structurally (the same rule `runCells` applies). */
-function currentAttemptOf(
+export function currentAttemptOf(
   attempts: readonly MissionAttemptFace[],
   currentAttempt: number | undefined,
   fallback: number,
@@ -227,6 +227,39 @@ function currentAttemptOf(
   if (attempts.length === 0) return undefined
   const wanted = currentAttempt ?? fallback
   return attempts.find(attempt => attempt.attempt === wanted) ?? attempts[attempts.length - 1]
+}
+
+/**
+ * The player's child session of one cell — the 打开子会话 target.
+ *
+ * refs' session trail is the delegation's own record; the orchestrator's
+ * annotations are the fallback for a round that failed before refs existed.
+ *
+ * Only the PLAYER's rounds count here. Three annotation kinds carry a
+ * `childSessionId` — `delegation`, `readiness` and `judge` — and the loop
+ * used to take the last one of ANY kind, so a cell whose refs were empty
+ * offered 打开子会话 on whatever ran last, which on a judged cell is the
+ * JUDGE's session and on a refused one is the readiness probe. Both are
+ * real sessions, so nothing failed; it just silently answered a different
+ * question. The judge's rounds have their own door (`judgeSessions`).
+ * @param current - the attempt whose refs are read first.
+ * @param annotations - the cell's annotations, for the fallback.
+ */
+export function playerSessionOf(
+  current: MissionAttemptFace | undefined,
+  annotations: readonly LedgerAnnotation[],
+): string | null {
+  const sessions = current?.refs?.sessions
+  if (sessions !== undefined && sessions.length > 0) return sessions[sessions.length - 1] as string
+  let annotatedSession: string | null = null
+  for (const annotation of annotations) {
+    if (!isPlainObject(annotation.payload)) continue
+    const kind = stringOrNull(annotation.payload['kind'])
+    if (kind !== 'delegation' && kind !== 'delegation-failed') continue
+    const child = annotation.payload['childSessionId']
+    if (typeof child === 'string') annotatedSession = child
+  }
+  return annotatedSession
 }
 
 /**
@@ -272,25 +305,6 @@ export async function runCellDetail(
   const current = currentAttemptOf(attempts, record?.currentAttempt, row.currentAttempt)
   const annotations = record?.annotations ?? []
 
-  // refs' session trail is the delegation's own record; the orchestrator's
-  // annotations are the fallback for a round that failed before refs existed.
-  //
-  // Only the PLAYER's rounds count here. Three annotation kinds carry a
-  // `childSessionId` — `delegation`, `readiness` and `judge` — and the loop
-  // used to take the last one of ANY kind, so a cell whose refs were empty
-  // offered 打开子会话 on whatever ran last, which on a judged cell is the
-  // JUDGE's session and on a refused one is the readiness probe. Both are
-  // real sessions, so nothing failed; it just silently answered a different
-  // question. The judge's rounds have their own door now (`judgeSessions`).
-  let annotatedSession: string | null = null
-  for (const annotation of annotations) {
-    if (!isPlainObject(annotation.payload)) continue
-    const kind = stringOrNull(annotation.payload['kind'])
-    if (kind !== 'delegation' && kind !== 'delegation-failed') continue
-    const child = annotation.payload['childSessionId']
-    if (typeof child === 'string') annotatedSession = child
-  }
-  const sessions = current?.refs?.sessions
   const enteredCurrentAt = typeof row.enteredCurrentAt === 'number'
     ? row.enteredCurrentAt
     : numberOrNull(current?.enteredAt?.[row.state])
@@ -324,9 +338,7 @@ export async function runCellDetail(
       fingerprint: current?.refs?.fingerprint ?? null,
     },
     materializationSha: await materializationShaOf(mission.dataDir, runId, missionId, row.currentAttempt),
-    childSessionId: sessions !== undefined && sessions.length > 0
-      ? (sessions[sessions.length - 1] as string)
-      : annotatedSession,
+    childSessionId: playerSessionOf(current, annotations),
     // Every session on this page — the player's and each judge round's — is a
     // SUBAGENT of this one, and the host's reader refuses a subagent session
     // addressed without it.
