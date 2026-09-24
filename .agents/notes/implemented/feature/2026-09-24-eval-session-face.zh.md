@@ -15,7 +15,7 @@ agent 在会话里起草了一个实验，会话里留下的只是一行通用�
   - 状态分四种：running（未返回）、failed（`isError`）、unreadable（结果里没有 experimentId）、ready。
 - **一个动作「打开实验」，没有批准按钮**（R1）。
   - 宿主没有切会话标签的接口：`dsh.conversation` 的 `openView` 只注入给会话框架与标签头，工具行拿不到。所以按 T72 的结论回退：插件级的 `LabFocus` 通道（`createLabFocus`）按会话记下请求，实验室视图挂载或收到请求时把它取走。
-  - 取走后的行为：回到列表并重读，把那一行标出来（`data-marked`，左侧主色竖线，并 `scrollIntoView`）。如果行不在「本会话」范围内，就切到「全部」，但不写范围偏好——那是人的选择，一次标记不该覆盖它。
+  - 取走后的行为：回到列表并重读，把那一行标出来（`data-marked`，一圈主色细框——不用左侧竖线：行没有内边距，竖线会压在名字的第一个字上，第一次截图就是这样，并 `scrollIntoView`）。如果行不在「本会话」范围内，就切到「全部」，但不写范围偏好——那是人的选择，一次标记不该覆盖它。
   - 卡片下方提示「已在「实验室」标签的列表里标出这一行——切到那个标签就能看到」。
 - **结构注册，不加依赖**：slot 由 `@deepseek-ai/dsh-client-ui-tool` 声明，但本包没有依赖它，pnpm store 里也没有它。
   - 注册写法是按结构 cast `ctx.slots`，再调 `slots.inject('tool.call.toolview', () => slots.register(...))`，遵守跨包 slot 注册约定。
@@ -41,7 +41,7 @@ agent 在会话里起草了一个实验，会话里留下的只是一行通用�
   - `Session.append` 没有「模型忽略」的选项，写进去的每一条模型都会读到；
   - `agent.inject` 本身就是面向模型的，用它回流进度等于替人给 agent 发消息；
   - `shell.overlay` 是 root 作用域的，不属于某个会话，放会话进度会串到别的会话上。
-- **验收用夹具**：真实的卡片需要一次真实的 `eval_plan_draft` 调用，而那需要配 provider，按规矩不配、不拷凭据。所以卡片由客户端测试（`tests/DraftCard.client.spec.tsx`、`tests/apply.client.spec.ts`）覆盖；截图在临时实例上把同一个组件喂一个夹具块渲染，块的形状与真实结果一致，路径是 `/home/user/...`。
+- **验收用夹具**：真实的卡片需要一次真实的 `eval_plan_draft` 调用，而那需要配 provider，按规矩不配、不拷凭据。所以卡片由客户端测试（`tests/DraftCard.client.spec.tsx`、`tests/apply.client.spec.ts`）覆盖；截图用的是写进临时实例存储的一段夹具会话：真实宿主经由真实的 `tool.call.toolview` 键控槽渲染卡片，结果块的形状与真实结果一致，路径是 `/home/user/...`。手写 v3 会话日志要过四道校验，一道不满足整段历史都加载失败：每行一个 zstd 帧（头单独一帧）；`user/message` 要带 `source: {kind: 'user'}`；`assistant/message` 要带 `stream: []` 与 model 来源；会话要登记在 `storages/workspace.json` 对应工作区的 `sessionIds` 里才会出现在侧栏。宿主自带的 `packages/test-support/llm-mock-server` 能产生真实调用，这次没用，因为那也是在配 provider。
 
 ## Alternatives considered
 

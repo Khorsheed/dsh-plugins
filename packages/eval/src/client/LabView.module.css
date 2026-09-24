@@ -1978,8 +1978,11 @@
 }
 
 /* The row 打开实验 asked for from the tool-row card (T76): the business
-   accent as an inset rule, so the row keeps its own hover and status tones. */
+   accent as a hairline frame, so the row keeps its own hover and status
+   tones. Not a left rule: the row has no padding, so an inset rule would sit
+   on the name's first letter. */
 .row[data-marked='true'] {
-  box-shadow: inset 3px 0 0 var(--dsw-alias-state-business-primary);
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -1px;
   background: var(--dsw-alias-interactive-bg-hover);
 }
