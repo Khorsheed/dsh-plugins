@@ -8,7 +8,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import type { ReactNode } from 'react'
-import { IconRightUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconRightUpOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 
 /** 追问 on one agent comment: the words plus the go-there glyph. */
@@ -21,7 +21,7 @@ export function FollowUp({ t, className, onFollowUp }: {
   return (
     <button type="button" className={className} onClick={onFollowUp}>
       {t('chat.followup')}
-      <IconRightUpOutline14 size={10} />
+      <IconRightUpOutlineMedium size={10} />
     </button>
   )
 }

@@ -23,7 +23,7 @@ import {
   IconCloseOutlineMedium, IconCodeOutlineMedium, IconEditOutlineMedium,
   IconLightOutlineMedium, IconLinkOutlineMedium,
   IconNewChatOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium,
-  IconSparkle16, Button, Modal,
+  IconSparkleMedium, Button, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
@@ -234,7 +234,7 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
       )}
       {proposed && (
         <span className={css.ghostFlag}>
-          <IconSparkle16 size={12} />
+          <IconSparkleMedium size={12} />
           {t('card.proposed')}
         </span>
       )}

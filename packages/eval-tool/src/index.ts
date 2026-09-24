@@ -65,7 +65,7 @@ export interface EvalToolConfig {
   tools?: 'all' | 'none'
 }
 
-export const Config: z<EvalToolConfig> = z.object({
+export const Config: z = z.object({
   tools: z.union([z.const('all'), z.const('none')]).default('all'),
 })
 
