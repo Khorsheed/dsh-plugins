@@ -341,16 +341,22 @@ export const PLAN_SCHEMA: SchemaObject = {
   required: ['schema', 'dataset', 'conditions', 'reps', 'stages', 'order', 'budget', 'expectedNs'],
   properties: {
     schema: { const: PLAN_SCHEMA_ID },
+    name: {
+      type: 'string',
+      description: 'Optional. The experiment\'s display name; the experiment id is minted from it. An imported plan without one takes its file stem.',
+    },
     dataset: {
       type: 'object',
       additionalProperties: false,
-      required: ['repo', 'commit', 'id', 'items'],
-      description: 'What is being tested against. commit: null means the snapshot pins it at run start.',
+      required: ['commit', 'items'],
+      description: 'What is being tested against: {registry, set, commit} — a registry id, a set inside that repository, and the full commit every contract file is read at (required). The legacy {repo, id} form (commit may be null) is read-only: old plans still validate and import, nothing writes it.',
       properties: {
-        repo: { type: 'string' },
-        commit: { type: ['string', 'null'] },
-        id: { type: 'string' },
+        registry: { type: 'string', description: 'The dataset registration id (/datasets registry).' },
+        set: { type: 'string', description: 'The dataset set inside the registered repository.' },
+        commit: { type: ['string', 'null'], description: 'The pinned commit; required and non-null in the registry form.' },
         items: { type: 'array', items: { type: 'string' } },
+        repo: { type: 'string', description: 'Legacy, read-only: a repository path.' },
+        id: { type: 'string', description: 'Legacy, read-only: the set, beside repo.' },
       },
     },
     conditions: {
@@ -413,7 +419,7 @@ export const PLAN_SCHEMA: SchemaObject = {
     },
     exports: {
       type: 'string',
-      description: 'Optional. Bundle export directory (~/… allowed); default <dataset repo>/exports. Run-call options may override.',
+      description: 'Optional. Bundle export directory (~/… allowed); default the experiment directory\'s exports/. Run-call options may override.',
     },
     unit: {
       type: 'object',

@@ -19,6 +19,7 @@
  * transition, archive, export) are the orchestrator's service face, not
  * model surface.
  */
+import { EXPERIMENT_ID_RE } from './experiment-store.ts'
 import { EvalProvisionRefused } from './provision.ts'
 import { EvalRunRefused } from './run.ts'
 import type { Context } from '@deepseek-ai/cordis'
@@ -26,12 +27,21 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type { EvalService } from './service.ts'
 
 const USAGE = `usage:
-  /eval run <plan.json> [--wait] [--concurrency N] [--dry-run] [--keep-units] [--out DIR]
+  /eval run <experimentId> [--wait] [--concurrency N] [--dry-run] [--keep-units] [--out DIR]
            [--retries N] [--only id,id] [--max-cells N] [--ignore-readiness]
   /eval finalize <runId>
-  /eval conditions list [--repo DIR] [--dataset ID]
-  /eval conditions diff <a> <b> [--repo DIR] [--dataset ID]
-  /eval conditions provision <condition.json> --repo <working copy> [--no-write-back]
+  /eval conditions list
+  /eval conditions diff <a> <b>
+  /eval conditions provision <condition id> [--no-write-back]
+
+  An experiment is a deployment-level object ($DSH_HOME/state/eval/experiments/
+  <experimentId>): its plan, its dataset pin {registry, set, commit}, its
+  analysis/ and its exports/. eval_plan_draft creates one, \`dsh-eval import\`
+  brings old plans over from a registered dataset repository. run also still
+  accepts a plan path, for an old plan that was never imported — its results
+  then pair to no experiment. Conditions live in the deployment's condition
+  library ($DSH_HOME/state/eval/conditions), shared by every experiment; a
+  dataset repository is read-only input and is never written.
 
   conditions provision is the ONE writer of conditions/<id>.lock.json. It
   resolves the condition's (harness, scope) to a real scoped home, refuses
@@ -39,8 +49,8 @@ const USAGE = `usage:
   provision never logs in and never copies a credential), checks the
   declaration against that scope's effective settings field by field, hashes
   the home, and writes the lock. permissions or model.endpoint disagreeing is
-  an error and no lock is written. --repo names the WORKING COPY it may write
-  into; nothing is committed.
+  an error and no lock is written. It writes into the condition library and
+  nowhere else.
   It also CORRECTS the declaration's home.sha from what it measured and
   re-hashes the condition, so one provision is what makes a condition ready.
   --no-write-back leaves the declaration untouched instead and reports the
@@ -129,7 +139,7 @@ function parseArgs(tokens: readonly string[]): SlashArgs {
   const positionals: string[] = []
   const flags = new Map<string, string[]>()
   const switches = new Set<string>()
-  const VALUE_FLAGS = new Set(['--concurrency', '--out', '--retries', '--only', '--max-cells', '--repo', '--dataset'])
+  const VALUE_FLAGS = new Set(['--concurrency', '--out', '--retries', '--only', '--max-cells'])
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] as string
     if (!token.startsWith('--')) {
@@ -249,11 +259,8 @@ const SKIP_CATEGORY_LABEL: Record<string, string> = {
  * is a slash command (decision 1) — the acts that touch a real instance start
  * from a live session.
  */
-async function handleConditions(service: EvalService, args: SlashArgs, invocation: CommandInvocation): Promise<CommandResult> {
+async function handleConditions(service: EvalService, args: SlashArgs): Promise<CommandResult> {
   const [sub, ...rest] = args.positionals
-  const session = { id: String(invocation.agent.session.id) }
-  const repo = flagOf(args, '--repo')
-  const dataset = flagOf(args, '--dataset')
   const writeBack = !args.switches.has('--no-write-back')
   const unknown = [...args.switches].filter(flag => flag !== '--no-write-back')
   if (unknown.length > 0) return { kind: 'error', text: `unknown option(s): ${unknown.join(' ')}\n\n${USAGE}` }
@@ -264,11 +271,7 @@ async function handleConditions(service: EvalService, args: SlashArgs, invocatio
   if (sub === 'list') {
     if (rest.length > 0) return { kind: 'error', text: `conditions list takes no positional arguments\n\n${USAGE}` }
     try {
-      const report = await service.conditions({
-        session,
-        ...(repo !== undefined ? { repo } : {}),
-        ...(dataset !== undefined ? { dataset } : {}),
-      })
+      const report = await service.conditions()
       return { kind: 'success', text: renderConditionList(report) }
     } catch (error) {
       return { kind: 'error', text: `eval conditions list refused: ${error instanceof Error ? error.message : String(error)}` }
@@ -281,13 +284,7 @@ async function handleConditions(service: EvalService, args: SlashArgs, invocatio
       return { kind: 'error', text: `conditions diff wants exactly two conditions (id or path)\n\n${USAGE}` }
     }
     try {
-      const diff = await service.conditionDiff({
-        a,
-        b,
-        session,
-        ...(repo !== undefined ? { repo } : {}),
-        ...(dataset !== undefined ? { dataset } : {}),
-      })
+      const diff = await service.conditionDiff({ a, b })
       return { kind: 'success', text: renderConditionDiff(diff) }
     } catch (error) {
       return { kind: 'error', text: `eval conditions diff refused: ${error instanceof Error ? error.message : String(error)}` }
@@ -297,14 +294,7 @@ async function handleConditions(service: EvalService, args: SlashArgs, invocatio
   if (sub === 'provision') {
     const [target, ...extra] = rest
     if (target === undefined || extra.length > 0) {
-      return { kind: 'error', text: `conditions provision wants exactly one condition file\n\n${USAGE}` }
-    }
-    if (repo === undefined) {
-      return {
-        kind: 'error',
-        text: 'conditions provision wants --repo <working copy>: it writes the lock into that copy and nowhere else'
-          + ' (the shared checkout stays read-only — point it at your own worktree)',
-      }
+      return { kind: 'error', text: `conditions provision wants exactly one library condition id\n\n${USAGE}` }
     }
     // The capability probe's diagnostics arrive on the log, not on the
     // report: every one of its stops is "measured nothing, and here is
@@ -314,8 +304,7 @@ async function handleConditions(service: EvalService, args: SlashArgs, invocatio
     const probeLines: string[] = []
     let report: Awaited<ReturnType<EvalService['provision']>>
     try {
-      report = await service.provision(target, {
-        repo,
+      report = await service.provisionLibraryCondition(target, {
         ...(writeBack ? {} : { writeBack: false }),
         log: (message) => { if (message.startsWith('capability probe ')) probeLines.push(message) },
       })
@@ -337,16 +326,15 @@ async function handleConditions(service: EvalService, args: SlashArgs, invocatio
 }
 
 /** One line per condition: hash, lock state, and what provision recorded. */
-function renderConditionList(report: { repo: string; datasets: string[]; conditions: Array<{
+function renderConditionList(report: { repo: string; conditions: Array<{
   id: string
-  dataset: string
   harness: { name: string | null }
   model: { declared: string | null }
   sha: string | null
   status: string
   lock: { present: boolean; matches: boolean; homeSha: string | null; provisioned: { at: number; cliVersion: string | null } | null }
 }> }): string {
-  const body: string[] = [`conditions in ${report.repo} (${report.datasets.join(', ') || 'no dataset set declares any'}):`]
+  const body: string[] = [`condition library (${report.repo}):`]
   for (const condition of report.conditions) {
     const lock = !condition.lock.present
       ? 'no lock'
@@ -354,7 +342,7 @@ function renderConditionList(report: { repo: string; datasets: string[]; conditi
     const provisioned = condition.lock.provisioned === null
       ? 'no provisioned record'
       : `provisioned ${new Date(condition.lock.provisioned.at).toISOString()}${condition.lock.provisioned.cliVersion === null ? '' : ` · cli ${condition.lock.provisioned.cliVersion}`}`
-    body.push(`  ${condition.id} (${condition.dataset}) — ${condition.status} · ${condition.harness.name ?? '—'}`
+    body.push(`  ${condition.id} — ${condition.status} · ${condition.harness.name ?? '—'}`
       + ` · model ${condition.model.declared ?? '—'} · sha ${condition.sha === null ? '—' : `${condition.sha.slice(0, 12)}…`}`
       + ` · ${lock} · ${provisioned}`)
   }
@@ -532,14 +520,17 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
     return { kind: 'error', text: `${String(error)}\n\n${USAGE}` }
   }
   if (sub === 'finalize') return await handleFinalize(service, args)
-  if (sub === 'conditions') return await handleConditions(service, args, invocation)
+  if (sub === 'conditions') return await handleConditions(service, args)
   if (sub !== 'run') {
     return { kind: 'error', text: `unknown /eval verb ${JSON.stringify(sub)}\n\n${USAGE}` }
   }
-  const planPath = args.positionals[0]
-  if (planPath === undefined || args.positionals.length > 1) {
-    return { kind: 'error', text: 'run wants exactly one plan path\n\n' + USAGE }
+  const target = args.positionals[0]
+  if (target === undefined || args.positionals.length > 1) {
+    return { kind: 'error', text: 'run wants exactly one experiment id (or, for an old plan, one plan path)\n\n' + USAGE }
   }
+  // An experiment id can hold no separator and no dot, so it never reads as
+  // a path; anything else is an old plan file, run as before.
+  const experimentId = EXPERIMENT_ID_RE.test(target) ? target : undefined
   let concurrency: number | undefined
   const concurrencyRaw = flagOf(args, '--concurrency')
   if (concurrencyRaw !== undefined) {
@@ -590,11 +581,14 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
   const wait = args.switches.has('--wait') || runOptions.dryRun
   if (!wait && service.runJobsAvailable()) {
     try {
-      const handle = await service.runStart(planPath, {
+      const startOptions = {
         ...runOptions,
         ...(invocation.agent.session.header?.cwd === undefined ? {} : { cwd: invocation.agent.session.header.cwd }),
-        label: `eval run ${planPath}`,
-      })
+        label: `eval run ${target}`,
+      }
+      const handle = experimentId !== undefined
+        ? await service.runExperimentStart(experimentId, startOptions)
+        : await service.runStart(target, startOptions)
       return { kind: 'success', text: renderStarted(handle) }
     } catch (error) {
       // Starting is a cheap, synchronous-ish act (validation happens inside
@@ -609,10 +603,10 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
       + ' — the reply comes when it finishes, and closing this surface stops it')
   }
   try {
-    const report = await service.run(planPath, {
-      ...runOptions,
-      log: (message) => { lines.push(message) },
-    })
+    const waitOptions = { ...runOptions, log: (message: string) => { lines.push(message) } }
+    const report = experimentId !== undefined
+      ? await service.runExperiment(experimentId, waitOptions)
+      : await service.run(target, waitOptions)
     return renderReport(lines, report)
   } catch (error) {
     const text = error instanceof Error ? error.message : String(error)
@@ -641,8 +635,8 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
 export function registerEvalSlash(ctx: Context, service: EvalService): void {
   ctx.commands.register({
     name: 'eval',
-    description: 'Evaluation runs: /eval run <plan.json> starts a run from this session and walks every cell through the release gate as it finishes (dry-run validates and prints the order without executing; --keep-units stops at archived and keeps the containers); /eval finalize <runId> walks an already-archived run through that gate and reclaims its units; /eval conditions list|diff|provision reads the condition registry and writes the one lock that anchors it.',
-    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--keep-units] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] | finalize <runId> | conditions list|diff|provision' },
+    description: 'Evaluation runs: /eval run <experimentId> starts a run from this session and walks every cell through the release gate as it finishes (dry-run validates and prints the order without executing; --keep-units stops at archived and keeps the containers); /eval finalize <runId> walks an already-archived run through that gate and reclaims its units; /eval conditions list|diff|provision reads the deployment\'s condition library and writes the one lock that anchors a condition.',
+    input: { hint: 'run <experimentId> [--concurrency N] [--dry-run] [--keep-units] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] | finalize <runId> | conditions list|diff|provision' },
     handler: (invocation: CommandInvocation) => handleEvalCommand(service, invocation),
   })
 }

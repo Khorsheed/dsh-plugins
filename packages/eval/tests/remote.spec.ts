@@ -11,7 +11,7 @@
  * reached, and the refusal comes back as data beside the same check list the
  * page was already showing.
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -19,7 +19,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashConditionDocument } from '../src/hash.ts'
 import { EvalRemoteService } from '../src/remote.ts'
 import { EvalService } from '../src/service.ts'
-import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
+import { createExperiment } from '../src/experiment-store.ts'
+import { cleanupTmp, fakeRegistry, tmpTree, useDshHome, writeJson } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -58,16 +59,22 @@ const STAGE_SCHEMA = {
   properties: { done: { type: 'boolean' } },
 }
 
-/** A dataset repository with two conditions, one locked, and a plan over them. */
-function fixtureRepo(options: { planConditions?: string[]; broken?: boolean } = {}): { repo: string; plan: string } {
-  const repo = join(tmpTree(), 'repo')
-  const dataset = join(repo, 'datasets', 'ds')
+const COMMIT = 'c'.repeat(40)
+
+/**
+ * A deployment: a condition library with two conditions (one locked), a
+ * registered dataset set `reg/ds` and one experiment over it.
+ */
+async function fixture(options: { planConditions?: string[]; broken?: boolean } = {}): Promise<{ stateRoot: string; library: string; dataset: string; experimentId: string }> {
+  const { stateRoot } = useDshHome()
+  const library = join(stateRoot, 'conditions')
+  const dataset = join(tmpTree(), 'view', 'ds')
   // A declaration that violates dataseek.condition/1 — the drive enum is
   // `exec` and nothing else (frozen decision 2). This is an ERROR, which is
   // what makes it the approval gate's test case.
-  if (options.broken === true) writeJson(dataset, 'conditions/broken.json', { ...CONDITION, harness: { ...CONDITION.harness, drive: 'live' } })
-  writeJson(dataset, 'conditions/dsh-exec.json', CONDITION)
-  writeJson(dataset, 'conditions/dsh-exec.lock.json', {
+  if (options.broken === true) writeJson(library, 'broken.json', { ...CONDITION, harness: { ...CONDITION.harness, drive: 'live' } })
+  writeJson(library, 'dsh-exec.json', CONDITION)
+  writeJson(library, 'dsh-exec.lock.json', {
     schema: 'dataseek.condition-lock/1',
     condition: 'dsh-exec',
     sha: hashConditionDocument(CONDITION),
@@ -78,21 +85,31 @@ function fixtureRepo(options: { planConditions?: string[]; broken?: boolean } = 
       effective: { model: 'deepseek-v4', reasoningEffort: 'default', permissions: 'unrestricted', endpoint: 'default' },
     },
   })
-  writeJson(dataset, 'conditions/codex-exec.json', OTHER)
+  writeJson(library, 'codex-exec.json', OTHER)
   writeJson(dataset, 'schemas/stage-1.json', STAGE_SCHEMA)
-  const plan = writeJson(dataset, 'plans/p.json', {
-    schema: 'dataseek.plan/1',
-    dataset: { repo, commit: null, id: 'ds', items: ['p0-001'] },
-    conditions: options.planConditions ?? ['dsh-exec'],
-    reps: 2,
-    stages: ['stage-1'],
-    order: { seed: 7, interleave: true },
-    budget: { activeMinutes: 30, turns: 40 },
-    judge: { conditions: [], samples: 0 },
-    expectedNs: ['script'],
+  writeJson(dataset, 'items/p0-001/item.json', { id: 'p0-001' })
+  const record = await createExperiment(stateRoot, {
+    name: 'p',
+    dataset: { registry: 'reg', set: 'ds', commit: COMMIT },
+    plan: JSON.stringify({
+      schema: 'dataseek.plan/1',
+      name: 'p',
+      dataset: { registry: 'reg', set: 'ds', commit: COMMIT, items: ['p0-001'] },
+      conditions: options.planConditions ?? ['dsh-exec'],
+      reps: 2,
+      stages: ['stage-1'],
+      order: { seed: 7, interleave: true },
+      budget: { activeMinutes: 30, turns: 40 },
+      judge: { conditions: [], samples: 0 },
+      expectedNs: ['script'],
+    }, null, 2),
   })
-  return { repo, plan }
+  registry = fakeRegistry({ sets: { ds: dataset }, latest: COMMIT })
+  return { stateRoot, library, dataset, experimentId: record.id }
 }
+
+/** The registry the next {@link bench} mounts — set by {@link fixture}. */
+let registry: unknown
 
 /** A live agent as far as these verbs care: a session id and a workspace. */
 function agentOf(cwd?: string): Agent {
@@ -102,7 +119,7 @@ function agentOf(cwd?: string): Agent {
 /** Mount the Remote over a real service core in a bare context. */
 async function bench() {
   const ctx = new Context()
-  const service = new EvalService()
+  const service = new EvalService({ get: (name: string) => (name === 'datasets' ? registry : undefined) })
   ctx.provide('dshEval', service as never)
   const fiber = ctx.plugin(EvalRemoteService)
   await fiber.await()
@@ -112,9 +129,9 @@ async function bench() {
 describe('the plan-review verb', () => {
   it('answers the plan digest and validate line by line, ok lines included', async () => {
     const { fiber, remote } = await bench()
-    const { plan } = fixtureRepo()
+    const { experimentId } = await fixture()
 
-    const review = await remote.plan(agentOf(), { planPath: plan })
+    const review = await remote.plan(agentOf(), { experimentId })
 
     expect(review.ok).toBe(true)
     expect(review.errors).toBe(0)
@@ -132,9 +149,9 @@ describe('the plan-review verb', () => {
 
   it('a condition whose declaration violates the contract is an error, and the plan is not ok', async () => {
     const { fiber, remote } = await bench()
-    const { plan } = fixtureRepo({ planConditions: ['dsh-exec', 'broken'], broken: true })
+    const { experimentId } = await fixture({ planConditions: ['dsh-exec', 'broken'], broken: true })
 
-    const review = await remote.plan(agentOf(), { planPath: plan })
+    const review = await remote.plan(agentOf(), { experimentId })
 
     expect(review.ok).toBe(false)
     expect(review.errors).toBeGreaterThan(0)
@@ -143,11 +160,11 @@ describe('the plan-review verb', () => {
     await fiber.dispose()
   })
 
-  it('a condition the repository simply does not hold is a WARNING — the page reports validate\'s calibration, not its own', async () => {
+  it('a condition the library simply does not hold is a WARNING — the page reports validate\'s calibration, not its own', async () => {
     const { fiber, remote } = await bench()
-    const { plan } = fixtureRepo({ planConditions: ['dsh-exec', 'nobody'] })
+    const { experimentId } = await fixture({ planConditions: ['dsh-exec', 'nobody'] })
 
-    const review = await remote.plan(agentOf(), { planPath: plan })
+    const review = await remote.plan(agentOf(), { experimentId })
 
     // Deliberately pinned: the review page must never be stricter than
     // `dsh-eval validate`, because then a plan the CLI approves would be
@@ -163,10 +180,10 @@ describe('the plan-review verb', () => {
 describe('approve — the human act of ui-spec step 5', () => {
   it('refuses a plan validate rejects and never reaches runStart', async () => {
     const { fiber, service, remote } = await bench()
-    const { plan } = fixtureRepo({ planConditions: ['broken'], broken: true })
+    const { experimentId } = await fixture({ planConditions: ['broken'], broken: true })
     const runStart = vi.spyOn(service, 'runStart')
 
-    const result = await remote.approve(agentOf('/workspace'), { planPath: plan })
+    const result = await remote.approve(agentOf('/workspace'), { experimentId })
 
     expect(result.started).toBe(false)
     expect(runStart).not.toHaveBeenCalled()
@@ -180,14 +197,14 @@ describe('approve — the human act of ui-spec step 5', () => {
 
   it('starts an approvable plan with the approving session as the parent and its workspace as the cwd', async () => {
     const { fiber, service, remote } = await bench()
-    const { plan } = fixtureRepo()
+    const { experimentId } = await fixture()
     const runStart = vi.spyOn(service, 'runStart').mockResolvedValue({
       jobId: 'eval-run-1',
       runId: 'run-20260914-aa',
       parentSessionId: 's1',
     })
 
-    const result = await remote.approve(agentOf('/workspace'), { planPath: plan })
+    const result = await remote.approve(agentOf('/workspace'), { experimentId })
 
     expect(result).toMatchObject({
       started: true,
@@ -206,12 +223,12 @@ describe('approve — the human act of ui-spec step 5', () => {
 
   it('carries the 保留单元 box through to the run when the approver ticked it', async () => {
     const { fiber, service, remote } = await bench()
-    const { plan } = fixtureRepo()
+    const { experimentId } = await fixture()
     const runStart = vi.spyOn(service, 'runStart').mockResolvedValue({
       jobId: 'eval-run-1', runId: 'run-1', parentSessionId: 's1',
     })
 
-    await remote.approve(agentOf('/workspace'), { planPath: plan, keepUnits: true })
+    await remote.approve(agentOf('/workspace'), { experimentId, keepUnits: true })
 
     expect(runStart.mock.calls[0]?.[1]).toMatchObject({ keepUnits: true })
     await fiber.dispose()
@@ -219,12 +236,12 @@ describe('approve — the human act of ui-spec step 5', () => {
 
   it('a session with no workspace passes no cwd rather than inventing one', async () => {
     const { fiber, service, remote } = await bench()
-    const { plan } = fixtureRepo()
+    const { experimentId } = await fixture()
     const runStart = vi.spyOn(service, 'runStart').mockResolvedValue({
       jobId: 'eval-run-1', runId: 'run-1', parentSessionId: 's1',
     })
 
-    await remote.approve(agentOf(), { planPath: plan })
+    await remote.approve(agentOf(), { experimentId })
 
     expect(runStart.mock.calls[0]?.[1]).not.toHaveProperty('cwd')
     await fiber.dispose()
@@ -232,10 +249,10 @@ describe('approve — the human act of ui-spec step 5', () => {
 
   it('a wiring failure comes back verbatim as a refusal, not as a thrown RPC error', async () => {
     const { fiber, service, remote } = await bench()
-    const { plan } = fixtureRepo()
+    const { experimentId } = await fixture()
     vi.spyOn(service, 'runStart').mockRejectedValue(new Error('no jobs service in this composition'))
 
-    const result = await remote.approve(agentOf(), { planPath: plan })
+    const result = await remote.approve(agentOf(), { experimentId })
 
     expect(result.started).toBe(false)
     expect(result.refusal).toBe('the run could not start: no jobs service in this composition')
@@ -246,16 +263,9 @@ describe('approve — the human act of ui-spec step 5', () => {
 })
 
 describe('newExperiment — the 新建实验 form\'s write (ui-spec step 2)', () => {
-  /** The T36 fixture plus the item tree a draft needs to land in. */
-  function draftable(): string {
-    const { repo } = fixtureRepo()
-    writeJson(join(repo, 'datasets', 'ds'), 'items/p0-001/item.json', { id: 'p0-001' })
-    return repo
-  }
-
   const FORM = {
     name: 'i5-walk',
-    dataset: 'ds',
+    dataset: 'reg/ds',
     items: ['p0-001'],
     conditions: ['dsh-exec'],
     reps: 1,
@@ -265,27 +275,27 @@ describe('newExperiment — the 新建实验 form\'s write (ui-spec step 2)', ()
     turns: 10,
   }
 
-  it('drafts the plan into the session\'s repository and answers with the review page\'s own payload', async () => {
+  it('creates the experiment under the state root and answers with the review page\'s own payload', async () => {
     const { fiber, remote } = await bench()
-    const repo = draftable()
+    const { stateRoot } = await fixture()
 
-    const result = await remote.newExperiment(agentOf(), { ...FORM, repo })
+    const result = await remote.newExperiment(agentOf(), { ...FORM })
 
-    expect(result.planPath).toBe(join(repo, 'datasets', 'ds', 'plans', 'i5-walk.json'))
+    expect(result.planPath).toBe(join(stateRoot, 'experiments', result.experimentId, 'plan.json'))
     expect(result.review.ok).toBe(true)
     expect(result.review.digest?.items).toEqual(['p0-001'])
     // The file is really there — the form's next stop is the plan-review page,
-    // which re-reads it by path.
+    // which re-reads it by experiment id.
     expect(JSON.parse(readFileSync(result.planPath, 'utf8'))['schema']).toBe('dataseek.plan/1')
     await fiber.dispose()
   })
 
   it('is a write, not a start: nothing reaches runStart', async () => {
     const { fiber, service, remote } = await bench()
-    const repo = draftable()
+    const { stateRoot } = await fixture()
     const runStart = vi.spyOn(service, 'runStart')
 
-    await remote.newExperiment(agentOf('/workspace'), { ...FORM, repo })
+    await remote.newExperiment(agentOf('/workspace'), { ...FORM })
 
     // 启动不在这张表单上 (ui-spec §五). The starting verb is `approve`, one page
     // further on, and this one has no path to it.
@@ -295,41 +305,39 @@ describe('newExperiment — the 新建实验 form\'s write (ui-spec step 2)', ()
 
   it('reaches the SAME service verb the eval_plan_draft tool reaches, with the calling session', async () => {
     const { fiber, service, remote } = await bench()
-    const repo = draftable()
+    const { stateRoot } = await fixture()
     const draft = vi.spyOn(service, 'draftExperiment')
 
-    await remote.newExperiment(agentOf(), { ...FORM, repo })
+    await remote.newExperiment(agentOf(), { ...FORM })
 
     expect(draft).toHaveBeenCalledTimes(1)
     expect(draft.mock.calls[0]?.[1]).toEqual({ session: { id: 's1' } })
     await fiber.dispose()
   })
 
-  it('mints a new condition beside the plan, copying one that exists', async () => {
+  it('mints a new condition into the library, copying one that exists', async () => {
     const { fiber, remote } = await bench()
-    const repo = draftable()
+    const { stateRoot } = await fixture()
 
     const result = await remote.newExperiment(agentOf(), {
       ...FORM,
-      repo,
       newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro' }],
     })
 
-    expect(result.conditionPaths).toEqual([join(repo, 'datasets', 'ds', 'conditions', 'dsh-exec-pro.json')])
+    expect(result.conditionPaths).toEqual([join(stateRoot, 'conditions', 'dsh-exec-pro.json')])
     expect(result.conditions).toEqual(['dsh-exec', 'dsh-exec-pro'])
     await fiber.dispose()
   })
 })
 
 describe('draftOptions — what the form\'s pickers may offer', () => {
-  it('answers the sets with their items and stage schemas', async () => {
+  it('answers the registered sets with their commit, items and stage schemas', async () => {
     const { fiber, remote } = await bench()
-    const { repo } = fixtureRepo()
-    writeJson(join(repo, 'datasets', 'ds'), 'items/p0-001/item.json', { id: 'p0-001' })
+    await fixture()
 
-    const view = await remote.draftOptions(agentOf(), { repo })
+    const view = await remote.draftOptions(agentOf(), {})
 
-    expect(view.datasets).toEqual([{ id: 'ds', items: ['p0-001'], stages: ['stage-1'] }])
+    expect(view.datasets).toEqual([{ id: 'reg/ds', commit: COMMIT, items: ['p0-001'], stages: ['stage-1'] }])
     await fiber.dispose()
   })
 })
@@ -337,9 +345,9 @@ describe('draftOptions — what the form\'s pickers may offer', () => {
 describe('the conditions verbs', () => {
   it('lists every condition with its scope, preset and lock', async () => {
     const { fiber, remote } = await bench()
-    const { repo } = fixtureRepo()
+    await fixture()
 
-    const view = await remote.conditions(agentOf(), { repo })
+    const view = await remote.conditions(agentOf(), {})
 
     expect(view.rows.map(row => row.id)).toEqual(['codex-exec', 'dsh-exec'])
     expect(view.rows.find(row => row.id === 'codex-exec')).toMatchObject({
@@ -356,9 +364,9 @@ describe('the conditions verbs', () => {
 
   it('the diff reports ONLY the differing keys, each side as canonical JSON text', async () => {
     const { fiber, remote } = await bench()
-    const { repo } = fixtureRepo()
+    await fixture()
 
-    const diff = await remote.conditionDiff(agentOf(), { repo, a: 'dsh-exec', b: 'codex-exec' })
+    const diff = await remote.conditionDiff(agentOf(), { a: 'dsh-exec', b: 'codex-exec' })
 
     expect(diff.identical).toBe(false)
     const paths = diff.differences.map(difference => difference.path)
@@ -381,15 +389,74 @@ describe('the conditions verbs', () => {
 
   it('two conditions that differ only in notes are identical, and the diff says which comment moved', async () => {
     const { fiber, remote } = await bench()
-    const repo = join(tmpTree(), 'repo')
-    writeJson(join(repo, 'datasets', 'ds'), 'conditions/a.json', { ...CONDITION, notes: 'first' })
-    writeJson(join(repo, 'datasets', 'ds'), 'conditions/b.json', { ...CONDITION, notes: 'second' })
+    const { library } = await fixture()
+    writeJson(library, 'a.json', { ...CONDITION, notes: 'first' })
+    writeJson(library, 'b.json', { ...CONDITION, notes: 'second' })
 
-    const diff = await remote.conditionDiff(agentOf(), { repo, a: 'a', b: 'b' })
+    const diff = await remote.conditionDiff(agentOf(), { a: 'a', b: 'b' })
 
     expect(diff.identical).toBe(true)
     expect(diff.notesOnly).toBe(true)
     expect(diff.differences).toEqual([{ path: 'notes', a: '"first"', b: '"second"' }])
+    await fiber.dispose()
+  })
+})
+
+describe('experimentArtifact — one experiment\'s files, read in place (T73)', () => {
+  it('reads an analysis draft as text', async () => {
+    const { fiber, remote } = await bench()
+    const { stateRoot, experimentId } = await fixture()
+    writeFileSync(join(stateRoot, 'experiments', experimentId, 'analysis', 'draft.md'), '# findings\n')
+
+    const view = await remote.experimentArtifact(agentOf(), { experimentId, path: 'analysis/draft.md' })
+
+    expect(view).toMatchObject({ experimentId, path: 'analysis/draft.md', kind: 'text', truncated: false, text: '# findings\n', note: null })
+    await fiber.dispose()
+  })
+
+  it('refuses a path that leaves the experiment — by .., by an absolute path, and by a symlink', async () => {
+    const { fiber, remote } = await bench()
+    const { stateRoot, experimentId } = await fixture()
+    const dir = join(stateRoot, 'experiments', experimentId)
+    const outside = join(tmpTree(), 'secret.md')
+    writeFileSync(outside, 'not yours')
+    symlinkSync(outside, join(dir, 'analysis', 'link.md'))
+
+    await expect(remote.experimentArtifact(agentOf(), { experimentId, path: '../../conditions/dsh-exec.json' }))
+      .rejects.toThrow(/越出了这个实验的目录/)
+    await expect(remote.experimentArtifact(agentOf(), { experimentId, path: outside }))
+      .rejects.toThrow(/相对路径/)
+    await expect(remote.experimentArtifact(agentOf(), { experimentId, path: 'analysis/link.md' }))
+      .rejects.toThrow(/越出了这个实验的目录/)
+    // Another experiment's id cannot be smuggled in as a path either.
+    await expect(remote.experimentArtifact(agentOf(), { experimentId: '../x', path: 'plan.json' }))
+      .rejects.toThrow(/not an experiment id/)
+    await fiber.dispose()
+  })
+
+  it('cuts a file above 256 KB and says so', async () => {
+    const { fiber, remote } = await bench()
+    const { stateRoot, experimentId } = await fixture()
+    writeFileSync(join(stateRoot, 'experiments', experimentId, 'analysis', 'big.md'), 'x'.repeat(256 * 1024 + 10))
+
+    const view = await remote.experimentArtifact(agentOf(), { experimentId, path: 'analysis/big.md' })
+
+    expect(view.truncated).toBe(true)
+    expect(view.bytes).toBe(256 * 1024 + 10)
+    expect(view.text).toHaveLength(256 * 1024)
+    expect(view.note).toContain('只返回开头部分')
+    await fiber.dispose()
+  })
+
+  it('names a binary file rather than inlining it', async () => {
+    const { fiber, remote } = await bench()
+    const { stateRoot, experimentId } = await fixture()
+    writeFileSync(join(stateRoot, 'experiments', experimentId, 'analysis', 'chart.png'), Buffer.from([0x89, 0x50]))
+
+    const view = await remote.experimentArtifact(agentOf(), { experimentId, path: 'analysis/chart.png' })
+
+    expect(view).toMatchObject({ kind: 'binary', text: null })
+    expect(view.note).toContain('png')
     await fiber.dispose()
   })
 })

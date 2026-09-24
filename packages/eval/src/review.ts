@@ -22,7 +22,9 @@ import { canonicalJson } from './hash.ts'
 import type { ConditionDiff, ConditionsReport } from './read.ts'
 import type { ProvisionCheck } from './effective.ts'
 import type { ProvisionReport } from './provision.ts'
-import { expandHome, validatePlan, type ConditionResolution, type EvalDiagnostic } from './validate.ts'
+import {
+  expandHome, validatePlan, type ConditionResolution, type EvalDiagnostic, type PlanValidation,
+} from './validate.ts'
 import type {
   EvalConditionDiffView, EvalConditionRow, EvalConditionsView, EvalExperimentUnit,
   EvalPlanCheck, EvalPlanCondition, EvalPlanDigest, EvalPlanReview,
@@ -56,8 +58,15 @@ function unitOf(value: unknown): EvalExperimentUnit | null {
   return { image, network: stringOrNull(value['network']), user: stringOrNull(value['user']) }
 }
 
+/** An experiment's dataset pin, which wins over what the plan file says. */
+export interface ReviewPin {
+  registry: string
+  set: string
+  commit: string
+}
+
 /** The plan's own fields, read structurally — an invalid plan still shows what it says. */
-function digestOf(plan: Record<string, unknown>): EvalPlanDigest {
+function digestOf(plan: Record<string, unknown>, pin?: ReviewPin): EvalPlanDigest {
   const dataset = isPlainObject(plan['dataset']) ? plan['dataset'] : undefined
   const judge = isPlainObject(plan['judge']) ? plan['judge'] : undefined
   const order = isPlainObject(plan['order']) ? plan['order'] : undefined
@@ -65,9 +74,9 @@ function digestOf(plan: Record<string, unknown>): EvalPlanDigest {
   const retry = isPlainObject(plan['retry']) ? plan['retry'] : undefined
   return {
     dataset: {
-      repo: stringOrNull(dataset?.['repo']),
-      id: stringOrNull(dataset?.['id']),
-      commit: stringOrNull(dataset?.['commit']),
+      registry: pin?.registry ?? stringOrNull(dataset?.['registry']),
+      id: pin?.set ?? stringOrNull(dataset?.['set']) ?? stringOrNull(dataset?.['id']),
+      commit: pin?.commit ?? stringOrNull(dataset?.['commit']),
     },
     items: stringArray(dataset?.['items']),
     conditions: stringArray(plan['conditions']),
@@ -133,11 +142,16 @@ function checkOf(severity: 'warn' | 'error') {
  * "no problems found": a reviewer approving a comparison is deciding about
  * SUBJECTS, and "cond-a is ready, cond-b is ready" is the fact worth reading.
  * @param planPath - path to a `dataseek.plan/1` document (`~` expanded).
+ * @param options - the experiment's pin (it wins over an imported plan's
+ *   legacy block) and the validation to show; absent validates offline.
  * @returns the digest, the flat check list, and every condition the plan names.
  */
-export async function reviewPlan(planPath: string): Promise<EvalPlanReview> {
+export async function reviewPlan(
+  planPath: string,
+  options: { pin?: ReviewPin; validation?: PlanValidation } = {},
+): Promise<EvalPlanReview> {
   const planAbs = resolve(expandHome(planPath))
-  const validation = await validatePlan(planAbs)
+  const validation = options.validation ?? await validatePlan(planAbs)
   let document: unknown
   try {
     document = JSON.parse(await readFile(planAbs, 'utf8')) as unknown
@@ -158,7 +172,7 @@ export async function reviewPlan(planPath: string): Promise<EvalPlanReview> {
     ok: validation.ok,
     errors: validation.errors.length,
     warnings: validation.warnings.length,
-    digest: isPlainObject(document) ? digestOf(document) : null,
+    digest: isPlainObject(document) ? digestOf(document, options.pin) : null,
     checks,
     conditions: [
       ...validation.conditions.map(entry => conditionRow(entry, 'player')),
@@ -222,7 +236,6 @@ export function provisionChecks(report: ProvisionReport): EvalPlanCheck[] {
 export function conditionsView(report: ConditionsReport): EvalConditionsView {
   const rows: EvalConditionRow[] = report.conditions.map(condition => ({
     id: condition.id,
-    dataset: condition.dataset,
     harness: condition.harness.name,
     drive: condition.harness.drive,
     model: condition.model.declared,
@@ -242,7 +255,7 @@ export function conditionsView(report: ConditionsReport): EvalConditionsView {
     errors: condition.errors.map(diagnostic => diagnostic.message),
     warnings: condition.warnings.map(diagnostic => diagnostic.message),
   }))
-  return { repo: report.repo, datasets: report.datasets, rows }
+  return { rows }
 }
 
 /** Canonical JSON text of one side of a field diff; null means the field is absent there. */

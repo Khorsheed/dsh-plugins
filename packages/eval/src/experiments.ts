@@ -1,14 +1,14 @@
 /**
  * The LAB tab's projection: one row per experiment, and one run's overview.
  *
- * An experiment is a plan — `plans/<name>.json` in the bound dataset
- * repository — and, once a human has started it, the mission run that plan
- * expanded into. The list shows both in one table (ui-spec §五): a draft that
+ * An experiment is a directory under the deployment's state root
+ * (`experiments/<id>/`, experiment-store.ts) and, once a human has started
+ * it, the mission run(s) its plan expanded into. The list shows both in one table (ui-spec §五): a draft that
  * nobody has approved sits beside a run that finished last week, because to
  * the person planning the next comparison they are the same kind of thing.
  *
  * Everything here is a PROJECTION of data other packages own — mission's run
- * ledger, the dataset repository's `plans/` directory, this service's own job
+ * ledger, the deployment's experiment directories, this service's own job
  * registry — assembled behind eval's face so the browser half never names
  * mission or datasets (ui-spec R2). Nothing here writes anything.
  *
@@ -20,15 +20,15 @@
  * @module @khorsheed/dsh-eval
  */
 import { createHash } from 'node:crypto'
-import { readdir, readFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { readRunMarks } from './closure.ts'
+import { conditionLibraryDir, type ExperimentRecord, listExperimentRecords } from './experiment-store.ts'
 import type { EvalRunStatus } from './job.ts'
 import type { MissionRunListFace } from './faces.ts'
 import { canonicalJson } from './hash.ts'
 import { conditionFactors } from './read.ts'
-import { PLAN_SCHEMA_ID } from './schema.ts'
-import { expandHome, validatePlan } from './validate.ts'
+import { expandHome, type PlanValidation } from './validate.ts'
 import type {
   EvalExperimentDetail, EvalExperimentJob, EvalExperimentMeta, EvalExperimentRow, EvalExperimentsResult,
   EvalExperimentSnapshot, EvalExperimentStatus, EvalExperimentUnit, EvalItemRunRow, EvalItemRunsResult,
@@ -183,91 +183,55 @@ function planSha(document: unknown): string {
   return createHash('sha256').update(canonicalJson(document)).digest('hex')
 }
 
-/** One plan file found in the repository's `plans/` trees. */
-interface PlanFile {
-  /** Absolute path. */
-  path: string
-  /** The file stem — the experiment's name. */
-  name: string
-  /** The dataset set whose `plans/` directory holds it. */
-  dataset: string
+/** One experiment of the deployment, with its plan read. */
+export interface PlanFile {
+  record: ExperimentRecord
+  /** The plan document; empty when plan.json is unreadable (validate then says why). */
   document: Record<string, unknown>
-  sha: string
+  /** planSha of the document as it reads now; null when unreadable. */
+  sha: string | null
 }
 
 /**
- * Every `dataseek.plan/1` document under `<repo>/datasets/<set>/plans/`.
- * Generated templates (`<plan>.template.json`) are not plans and are skipped;
- * so is any file that does not declare the plan schema — the passthrough zone
- * holds whatever the authors put there, and a listing that tried to interpret
- * all of it would report noise as experiments.
+ * Every experiment under the state root, plan read. An unreadable plan still
+ * yields a row — it is the experiment's own problem to show, not a reason to
+ * drop it from the list.
  */
-async function readPlans(repo: string, datasets: readonly string[], notes: string[]): Promise<PlanFile[]> {
+export async function readPlans(stateRoot: string, notes: string[] = []): Promise<PlanFile[]> {
+  const { records, problems } = await listExperimentRecords(stateRoot)
+  notes.push(...problems)
   const plans: PlanFile[] = []
-  for (const dataset of datasets) {
-    const dir = join(repo, 'datasets', dataset, 'plans')
-    let entries: string[]
+  for (const record of records) {
+    let document: unknown
     try {
-      entries = await readdir(dir)
-    } catch {
+      document = JSON.parse(await readFile(record.planPath, 'utf8')) as unknown
+    } catch (error) {
+      notes.push(`experiment ${record.id}: plan.json is unreadable (${error instanceof Error ? error.message : String(error)})`)
+      plans.push({ record, document: {}, sha: null })
       continue
     }
-    for (const entry of entries.sort()) {
-      if (!entry.endsWith('.json') || entry.endsWith('.template.json')) continue
-      const path = join(dir, entry)
-      let document: unknown
-      try {
-        document = JSON.parse(await readFile(path, 'utf8')) as unknown
-      } catch (error) {
-        notes.push(`plan ${path} is unreadable (${error instanceof Error ? error.message : String(error)})`)
-        continue
-      }
-      if (!isPlainObject(document) || document['schema'] !== PLAN_SCHEMA_ID) continue
-      plans.push({
-        path,
-        name: entry.slice(0, -'.json'.length),
-        dataset,
-        document,
-        sha: planSha(document),
-      })
-    }
+    plans.push({ record, document: isPlainObject(document) ? document : {}, sha: planSha(document) })
   }
   return plans
 }
 
-/** Dataset sets under `<repo>/datasets/` that declare a `plans/` directory. */
-async function datasetsWithPlans(repo: string): Promise<string[]> {
-  let entries: Array<{ name: string; isDirectory(): boolean }>
-  try {
-    entries = await readdir(join(repo, 'datasets'), { withFileTypes: true })
-  } catch {
-    return []
-  }
-  const found: string[] = []
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    try {
-      await readdir(join(repo, 'datasets', entry.name, 'plans'))
-      found.push(entry.name)
-    } catch {
-      // A dataset set without a plans/ directory declares no experiments.
-    }
-  }
-  return found.sort()
-}
-
-/** The condition ids and documents a plan names, read from its dataset set. */
-async function planConditionDocuments(plan: PlanFile, repo: string, ids: readonly string[]): Promise<unknown[]> {
+/** The condition documents a plan names, read from the deployment's condition library. */
+async function planConditionDocuments(stateRoot: string, ids: readonly string[]): Promise<unknown[]> {
   const documents: unknown[] = []
   for (const id of ids) {
     try {
-      documents.push(JSON.parse(await readFile(join(repo, 'datasets', plan.dataset, 'conditions', `${id}.json`), 'utf8')) as unknown)
+      documents.push(JSON.parse(await readFile(join(conditionLibraryDir(stateRoot), `${id}.json`), 'utf8')) as unknown)
     } catch {
-      // A condition the plan names but the repository does not hold: validate
+      // A condition the plan names but the library does not hold: validate
       // reports it as an error; the factor column simply has less to compare.
     }
   }
   return documents
+}
+
+/** The experiment's pin as the list shows it. */
+function snapshotOf(record: ExperimentRecord): EvalExperimentSnapshot {
+  return { registry: record.meta.dataset.registry, datasetId: record.meta.dataset.set, commit: record.meta.dataset.commit }
 }
 
 /** The container segment of a plan document or of run.meta, structurally. */
@@ -278,34 +242,32 @@ function unitOf(value: unknown): EvalExperimentUnit | null {
   return { image, network: stringOrNull(value['network']), user: stringOrNull(value['user']) }
 }
 
-/** The row of one draft plan (no run, so everything comes from the document). */
+/** The row of one experiment nobody has started (no run, so everything comes from the plan). */
 async function draftRow(
   plan: PlanFile,
-  repo: string,
+  stateRoot: string,
   job: EvalRunStatus | undefined,
+  validate: ExperimentsInput['validate'],
 ): Promise<EvalExperimentRow> {
   const dataset = isPlainObject(plan.document['dataset']) ? plan.document['dataset'] : undefined
   const conditions = stringArray(plan.document['conditions'])
   const judgeSegment = isPlainObject(plan.document['judge']) ? plan.document['judge'] : undefined
-  const validation = await validatePlan(plan.path)
-  const documents = await planConditionDocuments(plan, repo, conditions)
-  const snapshot: EvalExperimentSnapshot = {
-    repo: stringOrNull(dataset?.['repo']) ?? repo,
-    datasetId: stringOrNull(dataset?.['id']),
-    commit: stringOrNull(dataset?.['commit']),
-  }
+  const validation = validate === undefined ? null : await validate(plan.record)
+  const documents = await planConditionDocuments(stateRoot, conditions)
   return {
-    id: `plan:${plan.path}`,
-    name: plan.name,
-    planPath: plan.path,
+    id: `experiment:${plan.record.id}`,
+    experimentId: plan.record.id,
+    legacy: false,
+    name: plan.record.meta.name,
+    planPath: plan.record.planPath,
     runId: null,
     status: deriveExperimentStatus({
-      validation: { ok: validation.ok },
+      validation: validation === null ? null : { ok: validation.ok },
       run: null,
       job: job === undefined ? null : { status: job.status },
     }),
     statusDetail: job?.detail ?? null,
-    snapshot,
+    snapshot: snapshotOf(plan.record),
     conditions,
     judges: stringArray(judgeSegment?.['conditions']),
     items: stringArray(dataset?.['items']).length,
@@ -313,9 +275,11 @@ async function draftRow(
     factors: conditionFactors(documents),
     progress: null,
     startedAt: null,
-    validation: { ok: validation.ok, errors: validation.errors.length, warnings: validation.warnings.length },
+    validation: validation === null
+      ? null
+      : { ok: validation.ok, errors: validation.errors.length, warnings: validation.warnings.length },
     unit: unitOf(plan.document['unit']),
-    originSession: null,
+    originSession: plan.record.meta.originSession,
     archived: false,
     closure: null,
     lastProgressAt: null,
@@ -376,7 +340,12 @@ function metaConditionEntries(value: unknown): Array<{ id: string; sha: string |
 }
 
 /** The row of one started experiment: the run's own meta and cells decide every column. */
-function runRow(run: RunProjection, job: EvalRunStatus | undefined, now: number): EvalExperimentRow {
+function runRow(
+  run: RunProjection,
+  job: EvalRunStatus | undefined,
+  now: number,
+  experiment: ExperimentRecord | null = null,
+): EvalExperimentRow {
   const meta = run.meta
   const snapshotMeta = isPlainObject(meta['snapshot']) ? meta['snapshot'] : undefined
   const judgeMeta = isPlainObject(meta['judge']) ? meta['judge'] : undefined
@@ -404,13 +373,15 @@ function runRow(run: RunProjection, job: EvalRunStatus | undefined, now: number)
   })
   return {
     id: run.runId,
-    name: planPath === null ? run.runId : basename(planPath).replace(/\.json$/, ''),
+    experimentId: experiment?.id ?? null,
+    legacy: experiment === null,
+    name: experiment?.meta.name ?? (planPath === null ? run.runId : basename(planPath).replace(/\.json$/, '')),
     planPath,
     runId: run.runId,
     status,
     statusDetail: job?.detail ?? null,
     snapshot: {
-      repo: stringOrNull(snapshotMeta?.['repo']),
+      registry: experiment?.meta.dataset.registry ?? stringOrNull(meta['registry']),
       datasetId: stringOrNull(meta['datasetId']) ?? stringOrNull(snapshotMeta?.['datasetId']),
       commit: stringOrNull(meta['commit']) ?? stringOrNull(snapshotMeta?.['commit']),
     },
@@ -465,12 +436,12 @@ function evalRuns(mission: MissionRunListFace, notes: string[]): RunProjection[]
 
 /** What {@link listExperiments} needs; each source optional and degrading to a note. */
 export interface ExperimentsInput {
-  /** The mission ledger; absent lists drafts only. */
+  /** The mission ledger; absent lists experiments without their runs. */
   mission?: MissionRunListFace
-  /** The dataset repository holding the plans; absent lists runs only. */
-  repo?: string
-  /** The dataset sets to scan; absent scans every set of the repository that has plans. */
-  datasets?: readonly string[]
+  /** The eval state root holding `experiments/`; absent lists runs only. */
+  stateRoot?: string
+  /** Validate one unstarted experiment's plan; absent leaves drafts unvalidated. */
+  validate?: (record: ExperimentRecord) => Promise<PlanValidation>
   /** Background run jobs this instance still holds (newest wins per run / per plan). */
   jobs?: readonly EvalRunStatus[]
   /** The calling session, echoed back so the browser can filter by `originSession`. */
@@ -492,53 +463,74 @@ function indexJobs(jobs: readonly EvalRunStatus[]): { byRun: Map<string, EvalRun
 }
 
 /**
- * The lab list: one row per experiment, drafts and runs in one table.
+ * Which experiment a run belongs to, or null for a run no experiment claims.
  *
- * A plan is matched to its run by the run's `meta.planPath` (resolved) OR by
- * `meta.planSha` — the second catches a run started from another checkout of
- * the same file, and the first catches a plan edited since (an edited plan is
- * a new draft, which is the honest reading: its sha no longer describes what
- * ran).
- * @param input - the ledger, the repository, and this instance's jobs.
- * @returns rows newest-run-first, then drafts by name.
+ * Three keys, strongest first:
+ * 1. `meta.experimentId` — every run started since T73 records it.
+ * 2. `meta.planSha` — an older run whose plan was later imported verbatim
+ *    hashes the same, which is exactly why import keeps the bytes.
+ * 3. `meta.planPath` ending in an imported experiment's `source.path` — the
+ *    last resort for a run whose plan was edited after it ran.
+ * @param meta - the run's meta.
+ * @param plans - the deployment's experiments.
+ */
+export function pairRun(meta: Record<string, unknown>, plans: readonly PlanFile[]): ExperimentRecord | null {
+  const id = stringOrNull(meta['experimentId'])
+  if (id !== null) {
+    const hit = plans.find(plan => plan.record.id === id)
+    if (hit !== undefined) return hit.record
+  }
+  const sha = stringOrNull(meta['planSha'])
+  if (sha !== null) {
+    const hit = plans.find(plan => plan.sha === sha)
+    if (hit !== undefined) return hit.record
+  }
+  const planPath = stringOrNull(meta['planPath'])
+  if (planPath !== null) {
+    const normalized = planPath.split('\\').join('/')
+    const hit = plans.find(plan => {
+      const source = plan.record.meta.source?.path
+      return source !== undefined && (normalized === source || normalized.endsWith(`/${source}`))
+    })
+    if (hit !== undefined) return hit.record
+  }
+  return null
+}
+
+/**
+ * The lab list: one row per experiment nobody has started, one row per run.
+ *
+ * Each run is paired with its experiment by {@link pairRun}. A run no
+ * experiment claims is still listed — it happened, and its report still opens
+ * from its own run.meta — flagged `legacy` so the page can say 旧运行（未关联实验）.
+ * @param input - the ledger, the state root, and this instance's jobs.
+ * @returns rows newest-run-first, then unstarted experiments newest first.
  */
 export async function listExperiments(input: ExperimentsInput): Promise<EvalExperimentsResult> {
   const notes: string[] = []
   const jobs = indexJobs(input.jobs ?? [])
   const runs = input.mission === undefined ? [] : evalRuns(input.mission, notes)
   if (input.mission === undefined) {
-    notes.push('no mission service: run records live in the mission ledger, so only drafts are listed — mount the dsh-mission plugin')
+    notes.push('no mission service: run records live in the mission ledger, so only unstarted experiments are listed — mount the dsh-mission plugin')
   }
-  const repo = input.repo === undefined || input.repo === '' ? null : expandHome(input.repo)
-  let datasets: string[] = []
-  let plans: PlanFile[] = []
-  if (repo === null) {
-    notes.push('no dataset repository for this session: drafts are not listed — ask the human to bind one (/datasets bind <repoPath>)')
-  } else {
-    datasets = input.datasets !== undefined && input.datasets.length > 0 ? [...input.datasets] : await datasetsWithPlans(repo)
-    plans = await readPlans(repo, datasets, notes)
-  }
+  const plans = input.stateRoot === undefined ? [] : await readPlans(input.stateRoot, notes)
+  if (input.stateRoot === undefined) notes.push('no eval state root (DSH_HOME is unset): experiments are not listed, runs are')
 
   const now = input.now ?? Date.now()
-  const runRows = runs.map(run => runRow(run, jobs.byRun.get(run.runId), now))
-  // A plan is "started" when some run points back at it, by path or by sha.
-  const startedPaths = new Set<string>()
-  const startedShas = new Set<string>()
-  for (const run of runs) {
-    const planPath = stringOrNull(run.meta['planPath'])
-    if (planPath !== null) startedPaths.add(resolve(planPath))
-    const sha = stringOrNull(run.meta['planSha'])
-    if (sha !== null) startedShas.add(sha)
-  }
+  const started = new Set<string>()
+  const runRows = runs.map((run) => {
+    const experiment = pairRun(run.meta, plans)
+    if (experiment !== null) started.add(experiment.id)
+    return runRow(run, jobs.byRun.get(run.runId), now, experiment)
+  })
   const draftRows: EvalExperimentRow[] = []
   for (const plan of plans) {
-    if (startedPaths.has(resolve(plan.path)) || startedShas.has(plan.sha)) continue
-    draftRows.push(await draftRow(plan, repo as string, jobs.byPlan.get(resolve(plan.path))))
+    if (started.has(plan.record.id)) continue
+    draftRows.push(await draftRow(plan, input.stateRoot as string, jobs.byPlan.get(resolve(plan.record.planPath)), input.validate))
   }
 
   runRows.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
-  draftRows.sort((a, b) => a.name.localeCompare(b.name))
-  return { repo, datasets, rows: [...runRows, ...draftRows], notes, session: input.session ?? null }
+  return { rows: [...runRows, ...draftRows], notes, session: input.session ?? null }
 }
 
 /** Project one readiness record structurally — the run wrote it, this only reads. */

@@ -22,10 +22,10 @@
  * judge be a player and discloses it per cell instead of dropping it.
  */
 
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  EvalFinalizeView, EvalReportCriterionCell, EvalReportCriterionSample, EvalReportJudgeTag,
+  EvalAnalysisFile, EvalExperimentArtifactView, EvalFinalizeView, EvalReportCriterionCell, EvalReportCriterionSample, EvalReportJudgeTag,
   EvalReportPair, EvalReportTaskCriteria, EvalRunReportView, EvalRunUnitsView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
@@ -833,6 +833,88 @@ function FinalizeResult(props: { result: EvalFinalizeView; t: LabViewProps['t'] 
  * The report page body.
  * @param props - the payload, the two actions, and the finalize outcome.
  */
+/** One analysis file's content as the block holds it. */
+type AnalysisBody =
+  | { state: 'loading' }
+  | { state: 'ok'; view: EvalExperimentArtifactView }
+  | { state: 'error'; message: string }
+
+/** Read one experiment file — the report page's only door into the experiment directory. */
+export type ReadAnalysis = (path: string) => Promise<
+  | { readonly ok: true; readonly value: EvalExperimentArtifactView }
+  | { readonly ok: false; readonly error: { readonly message: string } }
+>
+
+/**
+ * ⑤ 分析初稿 (T73): what an agent wrote into this experiment's `analysis/`
+ * with `eval_analysis_write`. Folded by default — it is a draft, and the
+ * numbers above are the result — and absent altogether when there is none.
+ * Files are listed by name only (§九 keeps paths off the page body); the
+ * newest is open once the block is, and each file is read the first time it
+ * is opened, never before.
+ */
+export function AnalysisBlock(props: {
+  files: readonly EvalAnalysisFile[]
+  read: ReadAnalysis
+  t: LabViewProps['t']
+}) {
+  const { files, read, t } = props
+  const newest = files[0]?.path ?? null
+  const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(newest === null ? [] : [newest]))
+  const [bodies, setBodies] = useState<Readonly<Record<string, AnalysisBody>>>({})
+
+  useEffect(() => {
+    if (!open) return
+    for (const path of expanded) {
+      if (bodies[path] !== undefined) continue
+      setBodies(prev => ({ ...prev, [path]: { state: 'loading' } }))
+      void read(path).then((result) => {
+        setBodies(prev => ({
+          ...prev,
+          [path]: result.ok ? { state: 'ok', view: result.value } : { state: 'error', message: result.error.message },
+        }))
+      })
+    }
+  }, [open, expanded, bodies, read])
+
+  if (files.length === 0) return null
+  const toggle = (path: string, next: boolean): void => {
+    setExpanded((prev) => {
+      const copy = new Set(prev)
+      if (next) copy.add(path)
+      else copy.delete(path)
+      return copy
+    })
+  }
+  return (
+    <Detail summary={t('report.analysis', { n: files.length })} open={open} onToggle={setOpen} id="eval-report-analysis">
+      {files.map((file) => {
+        const body = bodies[file.path]
+        return (
+          <Detail
+            key={file.path}
+            summary={`${file.name} · ${stamp(file.modifiedAt)}`}
+            open={expanded.has(file.path)}
+            onToggle={(next: boolean) => { toggle(file.path, next) }}
+          >
+            {body === undefined || body.state === 'loading'
+              ? <div className={css.dim}>{t('report.analysisLoading')}</div>
+              : body.state === 'error'
+                ? <div className={css.errorDetailLine}>{body.message}</div>
+                : (
+                  <>
+                    {body.view.note !== null && <div className={css.warning}>{body.view.note}</div>}
+                    {body.view.text !== null && <pre className={css.pre}>{body.view.text}</pre>}
+                  </>
+                )}
+          </Detail>
+        )
+      })}
+    </Detail>
+  )
+}
+
 export function ReportPage(props: {
   report: EvalRunReportView | null
   loading: boolean
@@ -856,11 +938,13 @@ export function ReportPage(props: {
   onOpenRecord: (task: string, condition: string, missionId: string) => void
   /** Go to 运行记录 — the one link a voided experiment's page keeps. */
   onOpenRuns: () => void
+  /** Read one of the experiment's analysis files (block ⑤). */
+  readAnalysis: ReadAnalysis
   t: LabViewProps['t']
 }) {
   const {
     report, loading, error, finalizing, finalizeResult, units, unitsError, reexporting,
-    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, onOpenRecord, onOpenRuns, t,
+    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, onOpenRecord, onOpenRuns, readAnalysis, t,
   } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
@@ -978,13 +1062,14 @@ export function ReportPage(props: {
             </Button>
           </div>
         </div>
+        <AnalysisBlock key={report.runId} files={report.analysis} read={readAnalysis} t={t} />
         {units !== null && units.available && units.units.length > 0 && <UnitsSection units={units} t={t} />}
         {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}
       </div>
     )
   }
 
-  // T72 §6 order: 结论卡 → (收尾 / 导出 / 重新导出) → 判据表 → 效率 → 审计（折叠）.
+  // T72 §6 order: 结论卡 → (收尾 / 导出 / 重新导出) → 判据表 → 效率 → 审计（折叠）→ 分析初稿（折叠，T73）.
   return (
     <div className={css.reportPage}>
       <ConclusionCard report={report} onOpenAudit={openAudit} t={t} />
@@ -1085,6 +1170,9 @@ export function ReportPage(props: {
           )}
         </Detail>
       </Detail>
+
+      {/* ⑤ 分析初稿: a draft about the numbers above, so it reads after them. */}
+      <AnalysisBlock key={report.runId} files={report.analysis} read={readAnalysis} t={t} />
 
       {units !== null && units.available && units.units.length > 0 && <UnitsSection units={units} t={t} />}
       {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}

@@ -610,7 +610,7 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
        */
       applyConditionRow: (d, row: EvalConditionRow) => {
         if (d.conditions === null) return
-        d.conditions.rows = d.conditions.rows.map(entry => (entry.id === row.id && entry.dataset === row.dataset ? row : entry))
+        d.conditions.rows = d.conditions.rows.map(entry => (entry.id === row.id ? row : entry))
         // The pair's diff was computed against the pre-write declarations.
         if (d.diffPair.includes(row.id)) {
           d.diff = null

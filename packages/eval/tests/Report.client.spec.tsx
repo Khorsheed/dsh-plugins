@@ -212,6 +212,8 @@ const REPORT: EvalRunReportView = {
   toolOnlyNs: [],
   counts: { rows: 12, missions: 4, attempts: 5, retries: 1 },
   notes: ['判官本身有误差：1–2 条判据的差距不足以下结论'],
+  experimentId: null,
+  analysis: [],
 }
 
 /** The same run with two invariants unestablished — the comparison is closed. */
@@ -358,6 +360,13 @@ function makeHarness(report: EvalRunReportView = REPORT, units: EvalRunUnitsView
       },
     })),
     fetchCell: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'not under test' } })),
+    fetchExperimentArtifact: vi.fn(async (_sid: string, request: { experimentId: string; path: string }) => ({
+      ok: true as const,
+      value: {
+        experimentId: request.experimentId, path: request.path, kind: 'text' as const,
+        truncated: false, bytes: 12, text: `# body of ${request.path}`, note: null,
+      },
+    })),
   }
 }
 
@@ -410,6 +419,7 @@ function renderView(h: Harness) {
     fetchMatrix: h.fetchMatrix,
     fetchCells: h.fetchCells,
     fetchCell: h.fetchCell,
+    fetchExperimentArtifact: h.fetchExperimentArtifact,
     openSession: vi.fn(),
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
@@ -462,6 +472,50 @@ describe('the four invariants', () => {
     // Once in the conclusion card, once in the audit's pair table.
     expect(await screen.findAllByText('report.pairTitle {"a":"cond-a","b":"cond-b"}')).toHaveLength(2)
     expect(screen.queryByText(/report\.comparisonClosed/)).toBeNull()
+  })
+})
+
+describe('⑤ 分析初稿 (T73)', () => {
+  const WITH_ANALYSIS: EvalRunReportView = {
+    ...REPORT,
+    experimentId: 'pilot-d-20260924-ab12',
+    analysis: [
+      { path: 'analysis/round-2.md', name: 'round-2.md', modifiedAt: 1_700_000_900_000, bytes: 30 },
+      { path: 'analysis/round-1.md', name: 'round-1.md', modifiedAt: 1_700_000_100_000, bytes: 20 },
+    ],
+  }
+
+  it('is absent when the experiment holds no analysis', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    await screen.findByText('report.audit')
+    expect(screen.queryByText(/report\.analysis/)).toBeNull()
+    expect(h.fetchExperimentArtifact).not.toHaveBeenCalled()
+  })
+
+  it('is folded by default, lists files by name only, and opens the newest once unfolded', async () => {
+    const h = makeHarness(WITH_ANALYSIS)
+    await openReport(h)
+    const summary = await screen.findByText('report.analysis {"n":2}')
+    // Folded: nothing is read until the reader asks for it.
+    expect(h.fetchExperimentArtifact).not.toHaveBeenCalled()
+    const block = summary.closest('details') as HTMLDetailsElement
+    expect(block.open).toBe(false)
+    // Names, never paths.
+    expect(screen.getByText(/^round-2\.md · /)).toBeTruthy()
+    expect(screen.getByText(/^round-1\.md · /)).toBeTruthy()
+    expect(screen.queryByText(/analysis\/round/)).toBeNull()
+
+    block.open = true
+    fireEvent(block, new Event('toggle'))
+    await waitFor(() => {
+      expect(h.fetchExperimentArtifact).toHaveBeenCalledWith('s1', {
+        experimentId: 'pilot-d-20260924-ab12', path: 'analysis/round-2.md',
+      })
+    })
+    expect(await screen.findByText('# body of analysis/round-2.md')).toBeTruthy()
+    // Only the newest is expanded — the older one is read when opened.
+    expect(h.fetchExperimentArtifact).toHaveBeenCalledTimes(1)
   })
 })
 

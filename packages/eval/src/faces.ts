@@ -450,12 +450,43 @@ export interface LocalAgentScopeProvisionedFace {
 }
 
 /**
- * The datasets verb the READ tools use: which repository this session is
- * bound to, and which dataset sets its human allowed. Binding WRITES are a
- * human act (`/datasets bind`); the tools only resolve one.
+ * The datasets service's REGISTRY reads, as eval's experiment layer calls them
+ * (T73). An experiment pins its dataset as `{registry, set, commit}` and every
+ * contract file is read from that pin — through git objects or the
+ * content-addressed full view, never through a working copy, so the shared
+ * checkout's HEAD and worktree list are never touched from here.
+ *
+ * Structural and in-process: none of these are model tools or Remote verbs on
+ * the datasets side. A composition without them simply has no experiments to
+ * draft or import, and says so.
  */
-export interface DatasetsBindingFace {
-  binding(session: { id: string }): { repoPath: string; datasets?: string[]; layers?: string[] } | undefined
+export interface DatasetsRegistryFace {
+  registration(id: string): Promise<{ id: string; commonDir: string; trackedRef: string; latest: { commit: string; date: string } }>
+  resolveRegistryCommit(id: string, ref: string): Promise<string>
+  registryObjectId(id: string, commit: string, path: string): Promise<string | null>
+  registryListFiles(id: string, commit: string, prefix: string): Promise<string[]>
+  registryShowFile(id: string, commit: string, path: string): Promise<Buffer | undefined>
+  datasetView(id: string, set: string, commit: string): Promise<{ path: string; commit: string }>
+  registry: {
+    /** Resolve `<id>/<set>` — or refuse with the datasets side's own agent-facing sentences. */
+    resolveRef(ref: string): Promise<{ entry: { id: string; commonDir: string; trackedRef: string }; set: string; latest: { commit: string; date: string } }>
+    rows(): Promise<Array<{
+      entry: { id: string; commonDir: string; trackedRef: string }
+      latest?: { commit: string; date: string }
+      sets: Array<{ ref: string; set: string }>
+      problem?: string
+    }>>
+  }
+}
+
+/** Whether a host's `datasets` service carries the registry reads (a pre-T73 build does not). */
+export function isDatasetsRegistryFace(value: unknown): value is DatasetsRegistryFace {
+  if (typeof value !== 'object' || value === null) return false
+  const face = value as Partial<DatasetsRegistryFace>
+  return typeof face.registration === 'function'
+    && typeof face.datasetView === 'function'
+    && typeof face.registryShowFile === 'function'
+    && typeof face.registry?.resolveRef === 'function'
 }
 
 /** One mission row of a run's projection (mission's `MissionView`, structurally). */

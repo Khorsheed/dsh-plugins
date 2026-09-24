@@ -22,6 +22,8 @@ Status: implemented
 
 **旧记录在读到时就地迁移**。`readBinding` 比对存储里的写法与规范写法，不同就把记录写回去。修复之前绑过的人不必重绑，那个文件也不再是下一个读取方的坑——CLI、`git`、`readdir` 看到的是同一个路径。写回是尽力而为：一个我们无权写的存储，读依然给出正确答案。
 
+> T73 分支 2 部分取代了本节（[实验成为部署级对象](../architecture/2026-09-23-eval-experiments-deployment-level.zh.md)）：eval 不再读绑定，`normalizeRepoPath` 与 `resolveRepoScope` 的绑定分支都已删除。下面一段记的是 T62 时的形态。
+
 **eval 侧读到的也归一**。`resolveRepoScope` 把绑定的 `repoPath` 也送进 eval 自己的 `normalizeRepoPath`，不只是它本来就展开的那个显式 `repo` 参数。datasets 现在已经规范化了它存的东西，所以这是第二道；但旧绑定不该由读它的人来踩，而 eval 读的绑定恰恰出自一个它刻意不 import 的插件。
 
 **失败渲染成三段**（ui-spec §九）：一句人话说发生了什么，一句说怎么修（能给命令就给命令），异常原文与路径折在「详情」里。页面不渲染 `error.message`，也不裸露绝对路径。原文仍然有它的读者——调宿主的人——所以是折起来，不是丢掉。

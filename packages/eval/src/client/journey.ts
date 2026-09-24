@@ -134,14 +134,11 @@ export function writeListScope(scope: ListScope, storage?: Pick<Storage, 'setIte
 export type ReadinessFix =
   | { kind: 'provision'; condition: string }
   | { kind: 'endpoint'; condition: string }
-  | { kind: 'bind' }
   | { kind: 'agent' }
 
 /** Codes a provision of the named condition resolves. */
 const PROVISION_PREFIXES = ['HOME_', 'LOCK_', 'PROVISION_', 'CAPABILITIES_'] as const
 const PROVISION_CODES: ReadonlySet<string> = new Set(['SCOPE_NOT_PROVISIONED', 'EFFECTIVE_MISMATCH'])
-/** Codes that mean the dataset repository is not bound (or not where it was). */
-const BIND_CODES: ReadonlySet<string> = new Set(['DATASET_ROOT_UNRESOLVABLE', 'COMMIT_UNRESOLVED'])
 
 /**
  * The button one checklist line offers (T72 §4).
@@ -162,7 +159,6 @@ export function readinessFix(check: Pick<EvalPlanCheck, 'code' | 'message' | 'co
   if (code === 'UNRESOLVED_FIELD' && /endpoint/i.test(message)) {
     return condition === null ? { kind: 'agent' } : { kind: 'endpoint', condition }
   }
-  if (BIND_CODES.has(code)) return { kind: 'bind' }
   return { kind: 'agent' }
 }
 
@@ -300,7 +296,6 @@ export function fixLabel(fix: ReadinessFix): { key: EvalKey; params?: Record<str
   switch (fix.kind) {
     case 'provision': return { key: 'fix.provision', params: { condition: fix.condition } }
     case 'endpoint': return { key: 'fix.endpoint', params: { condition: fix.condition } }
-    case 'bind': return { key: 'fix.bind' }
     case 'agent': return { key: 'fix.agent' }
   }
 }

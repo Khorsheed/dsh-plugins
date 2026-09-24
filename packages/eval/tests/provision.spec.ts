@@ -112,12 +112,12 @@ describe('conditions provision — step 1: the scoped home', () => {
     expect(localAgent.asked).toEqual(['status:codex@eval-b', 'effective:codex@eval-b'])
   })
 
-  it('refuses a declaration outside the --repo working copy', async () => {
+  it('refuses a declaration outside the condition library it was given', async () => {
     const { homesRoot, conditionPath } = tree()
     const elsewhere = join(tmpTree(), 'other-repo')
     mkdirSync(elsewhere, { recursive: true })
     await expect(provisionCondition(conditionPath, { repo: elsewhere, localAgent: fakeLocalAgent(homesRoot) }))
-      .rejects.toThrow(/not inside the dataset repository working copy/)
+      .rejects.toThrow(/is not inside .* only into the condition library it was given/)
   })
 
   it('refuses a declaration that violates the contract — a lock on it would mean nothing', async () => {

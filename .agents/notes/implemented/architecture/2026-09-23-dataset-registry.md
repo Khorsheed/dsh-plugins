@@ -26,7 +26,7 @@ A registration is also a deployment fact, not a session fact: the same repositor
 
 **Materialization** (`src/materialize.ts`) replaces the managed worktree: `git archive <sha> -- <layer paths>` untarred into a private staging dir, made read-only, renamed atomically into `$DSH_HOME/state/datasets/materialized/<repoKey>/<sha>/<set>/<layers-key>/`. `repoKey` hashes the common dir, the sha must be a full id the repository knows, and every pathspec must stay inside `datasets/<set>/`. The key fully determines the content, so a present directory is a cache hit. The return shape `{path, commit, layers, reused}` is unchanged, which is what eval's `run.ts` consumes.
 
-**The legacy binding stays readable.** Eval still reads a session's binding through `DatasetsBindingFace.binding()` and resolves the repository through the binding read path; the three "no dataset repository" sentences in `resolveScope` are unchanged. Moving eval to references is branch 2 of T73. So binding files are never deleted automatically, `binding` / `unbind` stay on the CLI, and every door that WROTE a binding is retired: `/datasets bind` and CLI `bind` answer with directions to register, and the tab's binding bar and the composer's `BindingChip` are gone. `importBindings` folds bindings of one repository into one registration, marks dangling ones and skips them, and leaves the binding files byte-identical.
+**The legacy binding is a record, not a read path.** Every door that WROTE a binding is retired: `/datasets bind` and CLI `bind` answer with directions to register, and the tab's binding bar and the composer's `BindingChip` are gone. Since 1cdea3f4 the datasets side no longer reads bindings either (`resolveScope`, the `repo` fallback config, CLI `binding` / `unbind` and `/datasets unbind` are deleted), and T73 branch 2 moved eval to registry references ([experiments as deployment-level objects](2026-09-23-eval-experiments-deployment-level.md)). Binding files are still never deleted automatically: `importBindings` folds bindings of one repository into one registration, marks dangling ones and skips them, and leaves the binding files byte-identical.
 
 ### What this change does not touch
 
@@ -73,6 +73,6 @@ The directories that used to hold them (`$DSH_HOME/state/datasets/worktrees/`, `
 - An agent can no longer reach a dataset the deployment did not register, and the refusal says what to do instead: ask the person, via `ask_user_question` when the name is ambiguous.
 - «Latest» is stable against other agents' checkouts; moving it is a deliberate merge to the tracked branch.
 - Whole-layer views no longer add entries to the shared worktree list. The materialization cache is never collected: each move of a tracked branch may add a directory, and reclaiming space means deleting the `materialized/` subtree (after `chmod -R u+w`).
-- There are two sources of repository identity until branch 2: eval's binding read path and the registry. `importBindings` bridges them one way.
-- The CLI's read verbs still take `--repo` by path: it is the human's face, and the registry governs agents.
-- Branch 2 of T73 also carries a read-only `experimentArtifact({experimentId, path})` Remote verb for viewing analysis drafts. It is planned there and not built here.
+- The registry is the only source of repository identity; old binding files remain on disk at `$DSH_HOME/state/datasets/bindings/<session>.json` as records `importBindings` can read.
+- The CLI's `--repo` takes a registry id or a path: it is the human's face, and the registry governs agents. Omitted, the deployment's only registration answers.
+- The read-only `experimentArtifact({experimentId, path})` Remote verb for viewing analysis drafts shipped with T73 branch 2, in eval.

@@ -31,21 +31,22 @@ function hookOf(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: 
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
-const PLAN_PATH = '/repo/datasets/ds/plans/effort-sweep.json'
+const EXPERIMENT_ID = 'effort-sweep-20260914-ab12'
+const PLAN_PATH = `/state/eval/experiments/${EXPERIMENT_ID}/plan.json`
 
 const LIST: EvalExperimentsResult = {
-  repo: '/repo',
-  datasets: ['ds'],
   notes: [],
   session: 's1',
   rows: [{
-    id: `plan:${PLAN_PATH}`,
+    id: `experiment:${EXPERIMENT_ID}`,
+    experimentId: EXPERIMENT_ID,
+    legacy: false,
     name: 'effort-sweep',
     planPath: PLAN_PATH,
     runId: null,
     status: 'pending-approval',
     statusDetail: null,
-    snapshot: { repo: '/repo', datasetId: 'ds', commit: null },
+    snapshot: { registry: 'reg', datasetId: 'ds', commit: 'c0ffee'.padEnd(40, '0') },
     conditions: ['dsh-exec', 'codex-exec'],
     judges: ['judge-a'],
     items: 4,
@@ -70,7 +71,7 @@ const REVIEW: EvalPlanReview = {
   errors: 0,
   warnings: 1,
   digest: {
-    dataset: { repo: '/repo', id: 'ds', commit: null },
+    dataset: { registry: 'reg', id: 'ds', commit: 'c0ffee'.padEnd(40, '0') },
     items: ['p0-001', 'p0-002', 'f2-001', 'f3-001'],
     conditions: ['dsh-exec', 'codex-exec'],
     judge: { conditions: ['judge-a'], samples: 2 },
@@ -97,12 +98,9 @@ const REVIEW: EvalPlanReview = {
 }
 
 const CONDITIONS: EvalConditionsView = {
-  repo: '/repo',
-  datasets: ['ds'],
   rows: [
     {
       id: 'dsh-exec',
-      dataset: 'ds',
       harness: 'dsh',
       drive: 'exec',
       model: 'deepseek-v4',
@@ -118,7 +116,6 @@ const CONDITIONS: EvalConditionsView = {
     },
     {
       id: 'codex-exec',
-      dataset: 'ds',
       harness: 'codex',
       drive: 'exec',
       model: 'gpt-5.6-sol',
@@ -134,7 +131,6 @@ const CONDITIONS: EvalConditionsView = {
     },
     {
       id: 'kimi-exec',
-      dataset: 'ds',
       harness: 'kimi',
       drive: 'exec',
       model: 'kimi-k3',
@@ -152,8 +148,8 @@ const CONDITIONS: EvalConditionsView = {
 }
 
 const DIFF: EvalConditionDiffView = {
-  a: { id: 'dsh-exec', path: '/repo/datasets/ds/conditions/dsh-exec.json', sha: 'a'.repeat(64) },
-  b: { id: 'codex-exec', path: '/repo/datasets/ds/conditions/codex-exec.json', sha: 'b'.repeat(64) },
+  a: { id: 'dsh-exec', path: '/state/eval/conditions/dsh-exec.json', sha: 'a'.repeat(64) },
+  b: { id: 'codex-exec', path: '/state/eval/conditions/codex-exec.json', sha: 'b'.repeat(64) },
   identical: false,
   notesOnly: false,
   differences: [
@@ -174,8 +170,7 @@ const CODEX_READY: EvalConditionRow = {
 
 const PROVISIONED: EvalConditionProvisionView = {
   condition: 'codex-exec',
-  dataset: 'ds',
-  conditionPath: '/repo/datasets/ds/conditions/codex-exec.json',
+  conditionPath: '/state/eval/conditions/codex-exec.json',
   homeDir: '/homes/codex@eval-b',
   credentialState: 'present-unverified',
   written: true,
@@ -191,8 +186,7 @@ const PROVISIONED: EvalConditionProvisionView = {
 
 const ENDPOINT_SET: EvalConditionEndpointView = {
   condition: 'codex-exec',
-  dataset: 'ds',
-  conditionPath: '/repo/datasets/ds/conditions/codex-exec.json',
+  conditionPath: '/state/eval/conditions/codex-exec.json',
   before: null,
   after: 'default',
   sha: 'f'.repeat(64),
@@ -312,7 +306,7 @@ describe('the plan-review page', () => {
     // (ui-spec §五 v2): the shape, the checks and the readiness are what it
     // shows, and the stage bar cannot offer 批准并启动 before validate speaks.
     fireEvent.click(screen.getByText('effort-sweep'))
-    await waitFor(() => { expect(h.fetchPlanReview).toHaveBeenCalledWith('s1', { planPath: PLAN_PATH }) })
+    await waitFor(() => { expect(h.fetchPlanReview).toHaveBeenCalledWith('s1', { experimentId: EXPERIMENT_ID }) })
 
     // The kv block: snapshot, shape, factors, judge and samples, order, stages.
     expect(await screen.findByText('overview.shapeValue {"items":4,"conditions":2,"reps":2,"cells":16}')).toBeTruthy()
@@ -355,7 +349,7 @@ describe('the plan-review page', () => {
     await openPage(h, 'page.design')
     fireEvent.click(await screen.findByRole('button', { name: 'cta.pending' }))
 
-    await waitFor(() => { expect(h.approvePlan).toHaveBeenCalledWith('s1', { planPath: PLAN_PATH }) })
+    await waitFor(() => { expect(h.approvePlan).toHaveBeenCalledWith('s1', { experimentId: EXPERIMENT_ID }) })
     // STAYS on 实验设计: a readiness refusal is written only in the job log
     // below, and walking the reader to an empty grid would leave the reason
     // behind. The stage bar turns to 看运行记录 instead, one click away.
@@ -385,7 +379,7 @@ describe('the plan-review page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'cta.pending' }))
 
     await waitFor(() => {
-      expect(h.approvePlan).toHaveBeenCalledWith('s1', { planPath: PLAN_PATH, keepUnits: true })
+      expect(h.approvePlan).toHaveBeenCalledWith('s1', { experimentId: EXPERIMENT_ID, keepUnits: true })
     })
   })
 
@@ -687,7 +681,7 @@ describe('the conditions page', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[1] as HTMLElement)
 
     await waitFor(() => {
-      expect(h.provisionCondition).toHaveBeenCalledWith('s1', { dataset: 'ds', condition: 'codex-exec' })
+      expect(h.provisionCondition).toHaveBeenCalledWith('s1', { condition: 'codex-exec' })
     })
     // One call, and the row is ready: the page never asks for a second
     // provision and never asks the person to copy a hash anywhere.
@@ -737,7 +731,7 @@ describe('the conditions page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'conditions.endpointSave' }))
 
     await waitFor(() => {
-      expect(h.setConditionEndpoint).toHaveBeenCalledWith('s1', { dataset: 'ds', condition: 'codex-exec', endpoint: 'default' })
+      expect(h.setConditionEndpoint).toHaveBeenCalledWith('s1', { condition: 'codex-exec', endpoint: 'default' })
     })
     expect(await screen.findByText(/conditions.endpointWritten/)).toBeTruthy()
     // Editing a row does not also pick it for the diff: the cell's own click
@@ -789,15 +783,15 @@ describe('the conditions page', () => {
 
   it('a refused listing names the cause and the fix, with the raw text folded away', async () => {
     const h = makeHarness()
-    h.fetchConditions.mockResolvedValue({ ok: false, error: { code: 'REFUSED', message: 'no dataset repository for this session' } })
+    h.fetchConditions.mockResolvedValue({ ok: false, error: { code: 'REFUSED', message: 'no eval state root: set DSH_HOME — experiments and the condition library live under $DSH_HOME/state/eval' } })
     renderView(h)
     await openPage(h, 'page.design')
     // Three parts, not the exception: what happened, how to fix it, and the
     // host's own sentence under «详情».
-    expect(await screen.findByText('error.unbound')).toBeTruthy()
-    expect(screen.getByText('error.unbound.fix')).toBeTruthy()
+    expect(await screen.findByText('error.noStateRoot')).toBeTruthy()
+    expect(screen.getByText('error.noStateRoot.fix')).toBeTruthy()
     expect(screen.getByText('conditions.error')).toBeTruthy()
-    expect(screen.getByText('no dataset repository for this session')).toBeTruthy()
+    expect(screen.getByText('no eval state root: set DSH_HOME — experiments and the condition library live under $DSH_HOME/state/eval')).toBeTruthy()
   })
 })
 
@@ -887,9 +881,8 @@ describe('the readiness checklist (T72 §4)', () => {
     expect(screen.getByText('readiness.LOCK_MISSING {"condition":"codex-exec"}')).toBeTruthy()
     // An unknown code falls back to validate's own words, never a blank line.
     expect(screen.getByText('a code this build has no sentence for')).toBeTruthy()
-    // The code → button table: provision / 登记仓库 / 让 agent 处理.
+    // The code → button table: provision / 让 agent 处理 (no binding since T73).
     expect(screen.getAllByRole('button', { name: 'fix.provision {"condition":"codex-exec"}' }).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByRole('button', { name: 'fix.bind' })).toBeTruthy()
     expect(screen.getAllByRole('button', { name: 'fix.agent' }).length).toBeGreaterThanOrEqual(1)
   })
 
@@ -915,7 +908,7 @@ describe('the readiness checklist (T72 §4)', () => {
     expect(screen.queryByText('readiness.forRerun')).toBeNull()
   })
 
-  it('provision runs the condition verb; 登记仓库 opens the bind dialog', async () => {
+  it('provision runs the condition verb, and nothing offers a binding', async () => {
     const h = makeHarness({ review: CHECKLIST })
     renderView(h)
     await openPage(h, 'page.design')
@@ -923,11 +916,9 @@ describe('the readiness checklist (T72 §4)', () => {
     const [provision] = await screen.findAllByRole('button', { name: 'fix.provision {"condition":"codex-exec"}' })
     fireEvent.click(provision!)
     await waitFor(() => {
-      expect(h.provisionCondition).toHaveBeenCalledWith('s1', { dataset: 'ds', condition: 'codex-exec' })
+      expect(h.provisionCondition).toHaveBeenCalledWith('s1', { condition: 'codex-exec' })
     })
-
-    fireEvent.click(screen.getByRole('button', { name: 'fix.bind' }))
-    expect(await screen.findByText('design.bindWhere')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'fix.bind' })).toBeNull()
   })
 
   it('让 agent 处理 pre-fills the composer and never sends; without one it copies and says so', async () => {

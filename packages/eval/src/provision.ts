@@ -80,7 +80,7 @@ export interface ProvisionReport {
   conditionPath: string
   /** Where the lock goes (absolute), written or not. */
   lockPath: string
-  /** The dataset-repository working copy writes are confined to. */
+  /** The directory writes are confined to — the condition library (T73). */
   repo: string
   harness: string
   /** The named scope, or null for the harness's default scoped home. */
@@ -208,7 +208,7 @@ export type CapabilityProbe = (input: CapabilityProbeInput) => Promise<Provision
 
 /** Options of {@link provisionCondition}. */
 export interface ProvisionOptions {
-  /** The dataset-repository WORKING COPY writes are confined to (`~` expanded). */
+  /** The directory writes are confined to — the condition library, `<stateRoot>/conditions` (`~` expanded). */
   repo: string
   localAgent: LocalAgentFace
   /**
@@ -223,7 +223,7 @@ export interface ProvisionOptions {
    * the lock. DEFAULT TRUE: leaving it stale is what made a condition take two
    * provisions to become ready (see the module doc). Only the declaration's
    * `home.sha` is ever touched, only when it disagrees with what was measured,
-   * and only inside the `repo` working copy — nothing is committed.
+   * and only inside `repo` (the condition library).
    *
    * `false` restores the pre-T58 behavior: the disagreement is reported as a
    * warning and the document is left exactly as it was.
@@ -254,9 +254,8 @@ export async function provisionCondition(conditionPath: string, options: Provisi
   const repo = resolve(expandHome(options.repo))
   if (!isInside(repo, conditionAbs)) {
     throw new EvalProvisionRefused(
-      `condition ${conditionAbs} is not inside the dataset repository working copy ${repo}`
-      + ' — provision writes the lock beside the declaration, and it writes only into the copy --repo names'
-      + ' (the shared checkout is read-only: point --repo at your own worktree)',
+      `condition ${conditionAbs} is not inside ${repo}`
+      + ' — provision writes the lock beside the declaration, and only into the condition library it was given',
     )
   }
   if (conditionAbs.endsWith('.lock.json')) {

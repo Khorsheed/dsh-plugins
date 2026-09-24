@@ -12,7 +12,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { realpathSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { checkAgainstEffective, type EffectiveSnapshot } from './effective.ts'
 import { hashConditionDocument } from './hash.ts'
 import { llmDraftCriteria, pickRubricPath, probePaths } from './judge.ts'
@@ -99,6 +99,12 @@ export interface PlanValidation {
   judges: ConditionResolution[]
   /** The dataset-set directory the plan's contract files resolved against; null when unresolved. */
   datasetRoot: string | null
+  /**
+   * The directory whose `conditions/` the plan's conditions resolved against:
+   * the deployment's condition library for an experiment, the dataset root
+   * itself for a legacy plan validated in place; null when unresolved.
+   */
+  conditionsRoot: string | null
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -110,47 +116,6 @@ export function expandHome(path: string): string {
   if (path === '~') return homedir()
   if (path.startsWith('~/')) return join(homedir(), path.slice(2))
   return path
-}
-
-/**
- * One dataset repository root reduced to its canonical form: `~` expanded,
- * made absolute, trailing separator dropped, and resolved through symlinks
- * when the directory is there.
- *
- * Two jobs, one answer. Comparison is one: the agent-facing `repo` parameter
- * is only ever a restatement of the session's binding, and a binding recorded
- * as a literal `~/…` and an argument an agent typed as an absolute path are
- * the same repository and must not read as two. Consumption is the other:
- * `readdir(<repo>/datasets)` does not expand `~`, so a session bound to `~/x`
- * made the conditions page report "not a dataset repository" about a
- * repository that exists (I5 walkthrough gap G5). A path that does not exist
- * normalizes as far as it can rather than throwing — refusing to compare is
- * not an improvement on comparing the text.
- *
- * Mirrors `normalizeRepoPath` in the datasets plugin on purpose; the two are
- * copies rather than an import because a client-facing plugin never imports a
- * sibling plugin.
- * @param path - the repository path as configured, passed, or bound.
- * @returns the canonical path; '' stays '' for the caller's own shape check.
- */
-export function normalizeRepoPath(path: string): string {
-  const trimmed = path.trim()
-  if (trimmed === '') return trimmed
-  const absolute = resolve(expandHome(trimmed))
-  try {
-    return realpathSync(absolute)
-  } catch {
-    return absolute
-  }
-}
-
-/**
- * Whether two repository paths name the same repository.
- * @param a - one path, as written.
- * @param b - the other.
- */
-export function sameRepoPath(a: string, b: string): boolean {
-  return normalizeRepoPath(a) === normalizeRepoPath(b)
 }
 
 function isDirectory(path: string): boolean {
@@ -302,6 +267,8 @@ interface PlanSemantics {
   items: string[]
   expectedNs: string[] | null
   commit: unknown
+  /** `registry` for the `{registry, set, commit}` block, `legacy` for `{repo, id}`. */
+  form: 'registry' | 'legacy' | null
 }
 
 /**
@@ -325,6 +292,26 @@ function planSemantics(plan: unknown): { diagnostics: EvalDiagnostic[]; semantic
     if (!CONDITION_ID_RE.test(id)) diagnostics.push({ code: 'CONDITION_ID_INVALID', message: `condition id ${JSON.stringify(id)} is not a usable file name` })
     if (seen.has(id)) diagnostics.push({ code: 'CONDITIONS_DUPLICATED', message: `condition ${JSON.stringify(id)} appears more than once` })
     seen.add(id)
+  }
+  let form: PlanSemantics['form'] = null
+  if (dataset !== undefined) {
+    const has = (key: string): boolean => dataset[key] !== undefined
+    const text = (key: string): boolean => typeof dataset[key] === 'string' && (dataset[key] as string).trim() !== ''
+    if (has('registry') || has('set')) {
+      if (!text('registry') || !text('set')) {
+        diagnostics.push({ code: 'DATASET_FORM', message: 'dataset names a registry pin but not both of registry and set' })
+      } else if (has('repo') || has('id')) {
+        diagnostics.push({ code: 'DATASET_FORM', message: 'dataset mixes the registry form (registry, set) with the legacy one (repo, id) — use registry, set, commit only' })
+      } else if (!text('commit')) {
+        diagnostics.push({ code: 'DATASET_COMMIT_REQUIRED', message: 'dataset.commit is required in the registry form — an experiment pins the commit it was drafted against' })
+      } else {
+        form = 'registry'
+      }
+    } else if (text('repo') && text('id')) {
+      form = 'legacy'
+    } else {
+      diagnostics.push({ code: 'DATASET_FORM', message: 'dataset must be {registry, set, commit, items} (or the legacy read-only {repo, id, commit, items})' })
+    }
   }
   const items = dataset !== undefined && Array.isArray(dataset['items']) ? dataset['items'] : []
   if (items.length === 0) diagnostics.push({ code: 'ITEMS_EMPTY', message: 'dataset.items must list at least one item' })
@@ -401,6 +388,7 @@ function planSemantics(plan: unknown): { diagnostics: EvalDiagnostic[]; semantic
       items: items.filter((item): item is string => typeof item === 'string'),
       expectedNs: expectedNs === undefined ? null : expectedNs.filter((ns): ns is string => typeof ns === 'string'),
       commit: dataset?.['commit'],
+      form,
     },
   }
 }
@@ -445,6 +433,20 @@ export interface ConditionReadinessOptions {
   scopeHomeDir?: (harness: string, scope?: string) => string | undefined
 }
 
+/** What {@link validatePlan} may additionally be told. */
+export interface ValidatePlanOptions extends ConditionReadinessOptions {
+  /**
+   * Where the contract files and the conditions live, resolved by the caller.
+   * An experiment passes the materialized dataset view at its pinned commit
+   * and the deployment's condition library; the plan's own dataset block is
+   * then not used to locate anything (an imported plan keeps its legacy
+   * `repo` verbatim, and that path must not decide what is read). Absent, the
+   * legacy resolution applies: `dataset.repo/datasets/<id>`, else the plan's
+   * `plans/` sibling, with conditions beside it.
+   */
+  roots?: { datasetRoot: string; conditionsRoot: string }
+}
+
 /**
  * Resolve one condition (declaration + lock) against a dataset root: hash the
  * declaration, read the lock, and decide ready / unready / missing. Shared by
@@ -467,7 +469,7 @@ export async function resolveConditionReadiness(
   const loaded = await readJson(join(root, 'conditions', `${id}.json`))
   if (!loaded.ok) {
     if (loaded.reason === 'missing') {
-      warnings.push({ code: 'CONDITION_FILE_MISSING', message: `conditions/${id}.json does not exist in the dataset root` })
+      warnings.push({ code: 'CONDITION_FILE_MISSING', message: `conditions/${id}.json does not exist in the condition library` })
     } else {
       errors.push({ code: 'CONDITION_MALFORMED', message: `conditions/${id}.json is not valid JSON` })
     }
@@ -776,7 +778,7 @@ async function checkStageSchemas(stages: readonly string[], root: string, errors
  * @param planPath - path to a `dataseek.plan/1` document (plans/<plan>.json).
  * @param options - the optional scoped-home resolver, forwarded to every condition.
  */
-export async function validatePlan(planPath: string, options: ConditionReadinessOptions = {}): Promise<PlanValidation> {
+export async function validatePlan(planPath: string, options: ValidatePlanOptions = {}): Promise<PlanValidation> {
   const planAbs = resolve(planPath)
   const errors: EvalDiagnostic[] = []
   const warnings: EvalDiagnostic[] = []
@@ -791,6 +793,7 @@ export async function validatePlan(planPath: string, options: ConditionReadiness
     conditions,
     judges,
     datasetRoot: null,
+    conditionsRoot: null,
   }
 
   const loaded = await readJson(planAbs)
@@ -815,16 +818,24 @@ export async function validatePlan(planPath: string, options: ConditionReadiness
   const dataset = isPlainObject(plan) && isPlainObject((plan as Record<string, unknown>)['dataset'])
     ? (plan as Record<string, unknown>)['dataset']
     : undefined
-  if (semantics.commit === null) {
+  if (semantics.commit === null && options.roots === undefined) {
     warnings.push({ code: 'COMMIT_UNRESOLVED', message: 'dataset.commit is null — the snapshot pins it at run start; run.meta records the actual commit' })
   }
 
-  const root = resolveDatasetRoot(dataset, planAbs)
+  // The plan-sibling fallback is the import / legacy path only: an experiment
+  // hands its roots in, and a registry-form plan outside an experiment has no
+  // repository path to guess from.
+  const root = options.roots?.datasetRoot
+    ?? (semantics.form === 'registry' ? null : resolveDatasetRoot(dataset, planAbs))
+  const conditionsRoot = options.roots?.conditionsRoot ?? root
   report.datasetRoot = root
-  if (root === null) {
+  report.conditionsRoot = conditionsRoot
+  if (root === null || conditionsRoot === null) {
     warnings.push({
       code: 'DATASET_ROOT_UNRESOLVABLE',
-      message: 'cannot locate the dataset root (dataset.repo/datasets/<id> does not exist and the plan is not inside a plans/ tree) — conditions and stage schemas go unchecked',
+      message: semantics.form === 'registry'
+        ? 'this plan pins a registry dataset but was not validated as an experiment — its contract files are read at the pinned commit through the datasets registry (validate it by experiment id) — conditions and stage schemas go unchecked'
+        : 'cannot locate the dataset root (dataset.repo/datasets/<id> does not exist and the plan is not inside a plans/ tree) — conditions and stage schemas go unchecked',
     })
     conditions.push(...semantics.conditionIds.map(id => ({ id, sha: null, lock: null, status: 'unready' as const })))
     judges.push(...semantics.judgeIds.map(id => ({ id, sha: null, lock: null, status: 'unready' as const })))
@@ -850,7 +861,7 @@ export async function validatePlan(planPath: string, options: ConditionReadiness
     ...(typeof document['scope'] === 'string' ? { scope: document['scope'] } : {}),
   })
   for (const id of semantics.conditionIds) {
-    const readiness = await resolveConditionReadiness(id, root, options)
+    const readiness = await resolveConditionReadiness(id, conditionsRoot, options)
     const about = (diagnostic: EvalDiagnostic): EvalDiagnostic => ({ ...diagnostic, condition: id })
     errors.push(...readiness.errors.map(about))
     warnings.push(...readiness.warnings.map(about))
@@ -871,7 +882,7 @@ export async function validatePlan(planPath: string, options: ConditionReadiness
   // delegates from the orchestrator, not from a cell, and runs on the host
   // even in a container run.
   for (const id of semantics.judgeIds) {
-    const readiness = await resolveConditionReadiness(id, root, options)
+    const readiness = await resolveConditionReadiness(id, conditionsRoot, options)
     errors.push(...readiness.errors.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}`, condition: id })))
     warnings.push(...readiness.warnings.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}`, condition: id })))
     judges.push(readiness.entry)

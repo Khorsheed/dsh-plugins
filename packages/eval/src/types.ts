@@ -24,8 +24,10 @@ export interface EvalRunStarted {
 
 /** The knobs a Remote caller may set on a run. The mirror of the slash flags. */
 export interface EvalRunRequest {
-  /** Path to a `dataseek.plan/1` document ON THE INSTANCE (`~` expanded there). */
-  plan: string
+  /** The experiment to run — how every run is named since T73. */
+  experimentId?: string
+  /** Legacy: path to a `dataseek.plan/1` document ON THE INSTANCE (`~` expanded there). */
+  plan?: string
   /** Validate, generate the template, expand the matrix — execute nothing. */
   dryRun?: boolean
   /** Concurrent cells (host path only; a unit plan is serial). */
@@ -189,10 +191,11 @@ export interface EvalClosureWrite {
 
 /** The dataset snapshot an experiment is pinned to. */
 export interface EvalExperimentSnapshot {
-  /** The dataset repository; null when neither the plan nor the run says. */
-  repo: string | null
+  /** The registration id; null on an old run that recorded only a repository path. */
+  registry: string | null
+  /** The dataset set. */
   datasetId: string | null
-  /** The pinned commit; null on a draft whose plan leaves it to the run. */
+  /** The pinned commit; null only on an old run that never recorded one. */
   commit: string | null
 }
 
@@ -205,9 +208,16 @@ export interface EvalExperimentUnit {
 
 /** One row of the lab list: a draft plan, or the run of one. */
 export interface EvalExperimentRow {
-  /** Stable row key: the run id when there is one, else `plan:<absolute path>`. */
+  /** Stable row key: the run id when there is one, else `experiment:<experimentId>`. */
   id: string
-  /** Display name: the plan file's stem, falling back to the run id. */
+  /** The experiment this row belongs to; null on a legacy run no experiment claims. */
+  experimentId: string | null
+  /**
+   * A run no experiment claims (started before T73 and never imported) —
+   * shown as 旧运行（未关联实验）; its report still opens from its run.meta.
+   */
+  legacy: boolean
+  /** Display name: the experiment's name; a legacy run falls back to its plan file's stem, then its run id. */
   name: string
   /** The plan document (absolute); null when a run's meta does not record one. */
   planPath: string | null
@@ -260,14 +270,10 @@ export interface EvalExperimentRow {
 
 /** The lab list answer. */
 export interface EvalExperimentsResult {
-  /** The dataset repository the drafts were scanned in; null when none resolved. */
-  repo: string | null
-  /** The dataset sets scanned for drafts, in order. */
-  datasets: string[]
   rows: EvalExperimentRow[]
   /**
-   * Honest degrades, one sentence each: no session binding, an unreadable
-   * plan, a mission service that cannot list runs. The list still answers.
+   * Honest degrades, one sentence each: an unreadable experiment, a mission
+   * service that cannot list runs. The list still answers.
    */
   notes: string[]
   /**
@@ -278,13 +284,8 @@ export interface EvalExperimentsResult {
   session: string | null
 }
 
-/** What narrows the lab list; every field optional (the session decides by default). */
-export interface EvalExperimentsRequest {
-  /** Dataset repository override; omit to use the calling session's binding. */
-  repo?: string
-  /** One dataset set; omit to scan every set of the repository that has plans. */
-  dataset?: string
-}
+/** The lab list takes no arguments: it lists every experiment of the deployment. */
+export type EvalExperimentsRequest = Record<string, never>
 
 /** Which experiment the detail verb answers about. */
 export interface EvalExperimentRequest {
@@ -397,8 +398,13 @@ export interface EvalPlanCondition {
 
 /** The plan document's own digest — the review page's kv block. */
 export interface EvalPlanDigest {
-  /** What the plan pins: repository, dataset set, commit (null = pinned at run start). */
-  dataset: { repo: string | null; id: string | null; commit: string | null }
+  /**
+   * What the plan pins: registration id, dataset set, commit. An imported
+   * plan's own block is legacy (`repo`/`id`); its pin comes from the
+   * experiment's meta.json, so `registry` is filled either way when there is
+   * an experiment. `commit` is null only on a legacy plan outside one.
+   */
+  dataset: { registry: string | null; id: string | null; commit: string | null }
   /** The item ids the matrix runs over, in plan order. */
   items: string[]
   /** Player condition ids, in plan order. */
@@ -439,15 +445,15 @@ export interface EvalPlanReview {
 
 /** Which plan the review verb answers about. */
 export interface EvalPlanRequest {
-  /** Path to a `dataseek.plan/1` document ON THE INSTANCE (`~` expanded there). */
-  planPath: string
+  /** The experiment id — how every plan since T73 is named. */
+  experimentId?: string
+  /** Legacy: a path to a `dataseek.plan/1` document ON THE INSTANCE (`~` expanded there). */
+  planPath?: string
 }
 
 /** One row of the conditions page's table. */
 export interface EvalConditionRow {
   id: string
-  /** The dataset set whose `conditions/` directory declares it. */
-  dataset: string
   harness: string | null
   /** `exec` — the only drive a condition may declare (frozen decision 2). */
   drive: string | null
@@ -485,18 +491,11 @@ export interface EvalConditionRow {
 
 /** The conditions page's answer. */
 export interface EvalConditionsView {
-  /** The dataset repository the listing resolved against. */
-  repo: string
-  /** The dataset sets scanned, in order. */
-  datasets: string[]
   rows: EvalConditionRow[]
 }
 
-/** What narrows the conditions listing; the session's binding decides by default. */
-export interface EvalConditionsRequest {
-  repo?: string
-  dataset?: string
-}
+/** The conditions listing takes no arguments: it lists the deployment's condition library. */
+export type EvalConditionsRequest = Record<string, never>
 
 /**
  * One field two conditions disagree on. Values travel as CANONICAL JSON TEXT,
@@ -537,21 +536,15 @@ export interface EvalConditionDiffView {
 export interface EvalConditionDiffRequest {
   a: string
   b: string
-  repo?: string
-  dataset?: string
 }
 
 /**
- * Which condition the conditions page is provisioning. Named by set and id
- * rather than by path: the page resolves against the session's binding like
- * every other verb on it, and a browser that could name a PATH to write a lock
- * into would be choosing the working copy — which is the human's binding
- * decision, not the page's.
+ * Which condition the conditions page is provisioning. Named by id rather
+ * than by path: the lock is written into the deployment's condition library
+ * and nowhere else, so a browser never names a place to write.
  */
 export interface EvalConditionProvisionRequest {
-  /** The dataset set whose `conditions/` directory declares it. */
-  dataset: string
-  /** The condition id (its file stem). */
+  /** The condition id (its library file stem). */
   condition: string
   /**
    * Leave the declaration's `home.sha` alone instead of correcting it from
@@ -564,7 +557,6 @@ export interface EvalConditionProvisionRequest {
 /** What one provision from the conditions page did. */
 export interface EvalConditionProvisionView {
   condition: string
-  dataset: string
   /** The declaration it ran against (absolute). */
   conditionPath: string
   /** The scoped home the condition resolved to; reading it materializes it. */
@@ -587,7 +579,6 @@ export interface EvalConditionProvisionView {
 
 /** Which condition's `model.endpoint` a human is setting, and to what. */
 export interface EvalConditionEndpointRequest {
-  dataset: string
   condition: string
   /**
    * The upstream route. `"default"` is the harness's own endpoint with no base
@@ -600,7 +591,6 @@ export interface EvalConditionEndpointRequest {
 /** What one endpoint edit changed. */
 export interface EvalConditionEndpointView {
   condition: string
-  dataset: string
   /** The declaration that was written (absolute). */
   conditionPath: string
   before: string | null
@@ -621,8 +611,8 @@ export interface EvalConditionEndpointView {
 
 /** Which plan a human is approving, and on what terms. */
 export interface EvalApproveRequest {
-  /** Path to a `dataseek.plan/1` document ON THE INSTANCE (`~` expanded there). */
-  planPath: string
+  /** The experiment to start. */
+  experimentId: string
   /**
    * The dialog's 保留单元 box: stop every cell at `archived` and keep its
    * container for someone to open. Absent or false is the default — the run
@@ -708,13 +698,14 @@ export interface EvalDraftUnitRequest {
  * same request because they reach the same service verb.
  */
 export interface EvalDraftRequest {
-  /** The experiment name — the plan's file stem (`plans/<name>.json`). */
+  /** The experiment name — the plan's `name` and the experiment id's slug. */
   name: string
-  /** The dataset set to draft into. */
+  /** `<registration id>/<set>` — the registered dataset set to draft against. */
   dataset: string
-  /** Dataset repository override; omit to use the calling session's binding. */
-  repo?: string
-  /** The commit to pin, or omit to let the run's snapshot pin it. */
+  /**
+   * The commit to pin. Omit it and the version decision picks the tracked
+   * branch's latest when that is unambiguous, or refuses with the candidates.
+   */
   commit?: string | null
   /** The dataset items the matrix runs over. */
   items: string[]
@@ -744,7 +735,7 @@ export interface EvalDraftRequest {
   retryInfrastructure?: number
   /** The container segment; omit for the host path. */
   unit?: EvalDraftUnitRequest
-  /** Bundle export directory; omit for the repository's own `exports/`. */
+  /** Bundle export directory; omit for the experiment's own `exports/`. */
   exports?: string
   /** Review commentary, written into the plan verbatim. */
   notes?: string
@@ -762,12 +753,13 @@ export interface EvalDraftRequest {
  * no draft to look at.
  */
 export interface EvalDraftResult {
-  /** The dataset repository written into (absolute). */
-  repo: string
-  dataset: string
+  /** The experiment id — what `eval run --experiment` and `/eval run` take. */
+  experimentId: string
+  /** The pinned dataset. */
+  dataset: { registry: string; set: string; commit: string }
   /** The plan document (absolute). */
   planPath: string
-  /** The condition declarations minted, in mint order (absolute); empty when none were. */
+  /** The condition declarations minted into the library, in mint order (absolute); empty when none were. */
   conditionPaths: string[]
   /** The plan's player condition ids as written, minted ones included. */
   conditions: string[]
@@ -778,14 +770,14 @@ export interface EvalDraftResult {
 }
 
 /** What the 新建实验 form's pickers are filled from. */
-export interface EvalDraftOptionsRequest {
-  /** Dataset repository override; omit to use the calling session's binding. */
-  repo?: string
-}
+export type EvalDraftOptionsRequest = Record<string, never>
 
-/** One dataset set the form may draft into. */
+/** One registered dataset set the form may draft against. */
 export interface EvalDraftDatasetOption {
+  /** `<registration id>/<set>`. */
   id: string
+  /** The commit the lists were read at (the tracked branch's latest). */
+  commit: string
   /** Item ids the set declares, sorted — the 题目多选 list. */
   items: string[]
   /** Stage names it ships a schema for, sorted. */
@@ -794,8 +786,6 @@ export interface EvalDraftDatasetOption {
 
 /** The form's vocabulary: which sets exist, and what each holds. */
 export interface EvalDraftOptionsView {
-  /** The dataset repository the options were read from (absolute); null when none resolved. */
-  repo: string | null
   datasets: EvalDraftDatasetOption[]
   /** Honest degrades, one sentence each — the list still answers. */
   notes: string[]
@@ -1052,6 +1042,24 @@ export interface EvalCellJudgeSession {
   selfJudged: boolean
   /** The round's recorded failure, verbatim; null when it settled. */
   error: string | null
+}
+
+/** `import`: plans from a registered dataset repository at a ref. */
+export interface EvalImportRequest {
+  /** `<registration id>@<ref>`. */
+  from: string
+  /** Only the plan whose file stem (or repo-relative path) is this. */
+  plan?: string
+}
+
+/** What `import` did — the same shape the CLI prints. */
+export interface EvalImportResult {
+  from: string
+  refCommit: string
+  experiments: Array<{ experimentId: string; name: string; path: string; commit: string; conditions: string[]; created: boolean }>
+  skipped: Array<{ path: string; reason: string }>
+  conditionsAdded: string[]
+  conditionsSame: string[]
 }
 
 /** Which artifact of which cell `cellArtifact` is asked for. */
@@ -1486,6 +1494,45 @@ export interface EvalRunReportView {
   counts: { rows: number; missions: number; attempts: number; retries: number }
   /** The report's own reservations, verbatim. */
   notes: string[]
+  /** The experiment this run belongs to; null for a legacy run no experiment claims. */
+  experimentId: string | null
+  /**
+   * The experiment's `analysis/` files, newest first — the 分析初稿 block.
+   * Empty when there are none or the run belongs to no experiment; the page
+   * hides the block then.
+   */
+  analysis: EvalAnalysisFile[]
+}
+
+/** One file under an experiment's `analysis/`. */
+export interface EvalAnalysisFile {
+  /** Experiment-relative path (`analysis/…`) — what `experimentArtifact` takes. */
+  path: string
+  /** The path under `analysis/` — what the page shows. */
+  name: string
+  /** Epoch ms. */
+  modifiedAt: number
+  bytes: number
+}
+
+/** Which experiment file to read. */
+export interface EvalExperimentArtifactRequest {
+  experimentId: string
+  /** Experiment-relative path. */
+  path: string
+}
+
+/** One experiment file, read in place: text up to the cap, or the refusal to inline bytes. */
+export interface EvalExperimentArtifactView {
+  experimentId: string
+  path: string
+  kind: 'text' | 'binary'
+  /** Whether the text was cut at the byte cap. */
+  truncated: boolean
+  bytes: number | null
+  text: string | null
+  /** Why it was cut or refused — shown beside the content, never instead of it. */
+  note: string | null
 }
 
 /** Which run to walk through the release gate. */

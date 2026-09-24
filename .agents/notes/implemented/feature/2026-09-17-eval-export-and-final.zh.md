@@ -43,6 +43,8 @@ I5 走查（T39）把八步流程完整地在界面上走了一遍，并数了�
 
 ### `eval_repo_write`：分析初稿自己的那道窄口
 
+> T73 分支 2 部分取代了本节（[实验成为部署级对象](../architecture/2026-09-23-eval-experiments-deployment-level.zh.md)）：工具现名 `eval_analysis_write`，门是部署状态根下某个实验的 `analysis/<path>`；不再有任何东西写进题库。下文是 I5 · T60 时的形态。
+
 这一行的第二个写，而且是**新工具**而不是给 `eval_plan_draft` 加参数。它往会话绑定的题库里写**一个**文本文件，路径白名单硬编码在 `src/repo-write.ts`：
 
 - `docs/<path>` —— 仓库自己的文档，完全在 `datasets/` 之外。

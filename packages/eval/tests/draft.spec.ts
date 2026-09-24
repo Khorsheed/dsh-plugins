@@ -5,8 +5,9 @@
  * Four things are pinned here, and each is a promise one of the three faces
  * makes to a person:
  *
- * 1. WHERE the files land — `plans/<name>.json` and `conditions/<id>.json` in
- *    the bound repository's working copy, and nowhere else.
+ * 1. WHERE the files land — `experiments/<expId>/{plan,meta}.json` and
+ *    `conditions/<id>.json` under the deployment's eval state root, and
+ *    nowhere else; the dataset repository is read-only input (T73).
  * 2. That a minted condition is a COPY that changes ONLY the named fields.
  *    That discipline is what makes a comparison answerable; a drafting verb
  *    that quietly rewrote a seventh field would break the experiment without
@@ -18,13 +19,15 @@
  *    `runStart`, and the refusals are only the cases where there would be no
  *    draft to look at.
  */
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashConditionDocument } from '../src/hash.ts'
 import { EvalDraftRefused } from '../src/draft.ts'
+import { DatasetVersionRefused } from '../src/dataset-version.ts'
+import { createExperiment } from '../src/experiment-store.ts'
 import { EvalService } from '../src/service.ts'
-import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
+import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -53,12 +56,18 @@ const STAGE_SCHEMA = {
   properties: { done: { type: 'boolean' } },
 }
 
-/** A dataset repository with one set, two items, one condition and one stage. */
-function fixtureRepo(): { repo: string; dataset: string } {
-  const repo = join(tmpTree(), 'repo')
-  const dataset = join(repo, 'datasets', 'ds')
-  writeJson(dataset, 'conditions/dsh-exec.json', DSH_EXEC)
-  writeJson(dataset, 'conditions/dsh-exec.lock.json', {
+const LATEST = 'c'.repeat(40)
+
+/**
+ * A deployment with one registered dataset set (two items, one stage) and a
+ * condition library holding one condition, drafting through a fake registry.
+ */
+function fixture(registry: Partial<Parameters<typeof fakeRegistry>[0]> = {}) {
+  const { stateRoot } = useDshHome()
+  const dataset = join(tmpTree(), 'view', 'ds')
+  const library = join(stateRoot, 'conditions')
+  writeJson(library, 'dsh-exec.json', DSH_EXEC)
+  writeJson(library, 'dsh-exec.lock.json', {
     schema: 'dataseek.condition-lock/1',
     condition: 'dsh-exec',
     sha: hashConditionDocument(DSH_EXEC),
@@ -67,14 +76,15 @@ function fixtureRepo(): { repo: string; dataset: string } {
   writeJson(dataset, 'schemas/stage1.json', STAGE_SCHEMA)
   writeJson(dataset, 'items/P0/item.json', { id: 'P0' })
   writeJson(dataset, 'items/P1/item.json', { id: 'P1' })
-  return { repo, dataset }
+  const face = fakeRegistry({ latest: LATEST, ...registry, sets: { ds: dataset, ...registry.sets } })
+  return { stateRoot, dataset, library, face, service: new EvalService(hostsWith(face)) }
 }
 
 /** The request every test starts from; each overrides what it is about. */
 function request(overrides: Record<string, unknown> = {}) {
   return {
     name: 'i5-walk',
-    dataset: 'ds',
+    dataset: 'reg/ds',
     items: ['P0'],
     conditions: ['dsh-exec'],
     reps: 1,
@@ -92,18 +102,19 @@ function read(path: string): Record<string, unknown> {
 }
 
 describe('draftExperiment — where the files land', () => {
-  it('writes the plan into the set\'s plans/ directory and answers with the path', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+  it('writes the experiment directory under the state root and answers with its id and paths', async () => {
+    const { service, stateRoot } = fixture()
 
-    const result = await service.draftExperiment(request({ repo }))
+    const result = await service.draftExperiment(request())
 
-    expect(result.planPath).toBe(join(repo, 'datasets', 'ds', 'plans', 'i5-walk.json'))
+    expect(result.experimentId).toMatch(/^i5-walk-\d{8}-[0-9a-f]{4}$/)
+    expect(result.planPath).toBe(join(stateRoot, 'experiments', result.experimentId, 'plan.json'))
+    expect(result.dataset).toEqual({ registry: 'reg', set: 'ds', commit: LATEST })
     expect(result.conditionPaths).toEqual([])
     expect(result.conditions).toEqual(['dsh-exec'])
     const plan = read(result.planPath)
     expect(plan['schema']).toBe('dataseek.plan/1')
-    expect(plan['dataset']).toEqual({ repo: expect.any(String), commit: null, id: 'ds', items: ['P0'] })
+    expect(plan['dataset']).toEqual({ registry: 'reg', set: 'ds', commit: LATEST, items: ['P0'] })
     expect(plan['order']).toEqual({ seed: 20260916, interleave: true })
     expect(plan['budget']).toEqual({ activeMinutes: 60, turns: 10 })
     // NOT all three: this plan has no judge, so it cannot produce llm-draft
@@ -113,10 +124,9 @@ describe('draftExperiment — where the files land', () => {
   })
 
   it('writes no judge block when no judge is named, and does not claim a source nothing can produce', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
-    const result = await service.draftExperiment(request({ repo }))
+    const result = await service.draftExperiment(request())
 
     // Both halves of the same honesty. An EMPTY judge block — which every
     // hand-written plan in the repository carries — would count as a judge to
@@ -129,20 +139,17 @@ describe('draftExperiment — where the files land', () => {
   })
 
   it('declares llm-draft once a judge is named', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
-    const result = await service.draftExperiment(request({ repo, judgeConditions: ['judge-x'] }))
+    const result = await service.draftExperiment(request({ judgeConditions: ['judge-x'] }))
 
     expect(read(result.planPath)['expectedNs']).toEqual(['script', 'llm-draft', 'human-final'])
   })
 
   it('writes the judge block, the unit and the retry budget when they are asked for', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     const result = await service.draftExperiment(request({
-      repo,
       judgeConditions: ['judge-x'],
       judgeSamples: 2,
       retryInfrastructure: 0,
@@ -158,28 +165,45 @@ describe('draftExperiment — where the files land', () => {
     expect(result.judges).toEqual(['judge-x'])
   })
 
-  it('nothing is committed — the repository is a working copy and the draft only writes files', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
-    await service.draftExperiment(request({ repo }))
-    // There is no git in this fixture at all: a draft that needed one would
-    // have thrown rather than landed.
-    expect(read(join(repo, 'datasets', 'ds', 'plans', 'i5-walk.json'))['schema']).toBe('dataseek.plan/1')
+  it('writes meta.json with the pin and the origin session, plus empty analysis/ and exports/', async () => {
+    const { service, stateRoot } = fixture()
+
+    const result = await service.draftExperiment(request(), { session: { id: 's1' } })
+
+    const dir = join(stateRoot, 'experiments', result.experimentId)
+    expect(read(join(dir, 'meta.json'))).toMatchObject({
+      experimentId: result.experimentId,
+      name: 'i5-walk',
+      originSession: 's1',
+      dataset: { registry: 'reg', set: 'ds', commit: LATEST },
+    })
+    expect(readdirSync(join(dir, 'analysis'))).toEqual([])
+    expect(readdirSync(join(dir, 'exports'))).toEqual([])
+  })
+
+  it('writes nothing into the dataset view — it is read-only input', async () => {
+    const { service, dataset } = fixture()
+    const before = readdirSync(dataset).sort()
+
+    await service.draftExperiment(request({
+      conditions: ['dsh-exec', 'dsh-exec-pro'],
+      newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro' }],
+    }))
+
+    expect(readdirSync(dataset).sort()).toEqual(before)
   })
 })
 
 describe('draftExperiment — a new condition is a copy', () => {
   it('changes ONLY the named field, carrying everything else over byte for byte', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service, library } = fixture()
 
     const result = await service.draftExperiment(request({
-      repo,
       conditions: ['dsh-exec', 'dsh-exec-pro'],
       newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro' }],
     }))
 
-    expect(result.conditionPaths).toEqual([join(repo, 'datasets', 'ds', 'conditions', 'dsh-exec-pro.json')])
+    expect(result.conditionPaths).toEqual([join(library, 'dsh-exec-pro.json')])
     const minted = read(result.conditionPaths[0] as string)
     expect(minted['model']).toEqual({ declared: 'deepseek-v4-pro', endpoint: null })
     // Everything the edit did not name is the original's, unchanged.
@@ -200,11 +224,9 @@ describe('draftExperiment — a new condition is a copy', () => {
   })
 
   it('nulls harness.version when the harness changes — that version was the other CLI\'s', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     const result = await service.draftExperiment(request({
-      repo,
       conditions: ['codex-exec'],
       newConditions: [{ id: 'codex-exec', from: 'dsh-exec', harness: 'codex', permissions: 'workspace-write' }],
     }))
@@ -215,12 +237,10 @@ describe('draftExperiment — a new condition is a copy', () => {
   })
 
   it('clearing scope REMOVES the key rather than writing a null the contract has no slot for', async () => {
-    const { repo } = fixtureRepo()
-    writeJson(join(repo, 'datasets', 'ds'), 'conditions/scoped.json', { ...DSH_EXEC, scope: 'eval-b' })
-    const service = new EvalService()
+    const { service, library } = fixture()
+    writeJson(library, 'scoped.json', { ...DSH_EXEC, scope: 'eval-b' })
 
     const result = await service.draftExperiment(request({
-      repo,
       conditions: ['unscoped'],
       newConditions: [{ id: 'unscoped', from: 'scoped', scope: null }],
     }))
@@ -229,11 +249,9 @@ describe('draftExperiment — a new condition is a copy', () => {
   })
 
   it('appends a minted condition the caller forgot to name in `conditions`', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     const result = await service.draftExperiment(request({
-      repo,
       conditions: ['dsh-exec'],
       newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro' }],
     }))
@@ -243,24 +261,20 @@ describe('draftExperiment — a new condition is a copy', () => {
   })
 
   it('refuses a copy that changes nothing — the same subject under a second name', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     await expect(service.draftExperiment(request({
-      repo,
       conditions: ['twin'],
       newConditions: [{ id: 'twin', from: 'dsh-exec' }],
     }))).rejects.toThrow(EvalDraftRefused)
     // And nothing landed: the plan is not written before its conditions are.
-    await expect(service.draftExperiment(request({ repo }))).resolves.toBeDefined()
+    await expect(service.draftExperiment(request())).resolves.toBeDefined()
   })
 
   it('refuses a copy of a condition that does not exist, naming the file it looked for', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     await expect(service.draftExperiment(request({
-      repo,
       conditions: ['x'],
       newConditions: [{ id: 'x', from: 'nobody', model: 'm' }],
     }))).rejects.toThrow(/nobody\.json cannot be read/)
@@ -271,11 +285,9 @@ describe('draftExperiment — the container completion (I5·T58 · G4)', () => {
   const UNIT = { image: 'eval-env:pinned', network: 'eval-net', user: '1000' }
 
   it('fills unit.scopedHome and env.keys from the harness default when the plan runs in a container', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     const result = await service.draftExperiment(request({
-      repo,
       unit: UNIT,
       conditions: ['dsh-exec-pro'],
       newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro' }],
@@ -294,11 +306,9 @@ describe('draftExperiment — the container completion (I5·T58 · G4)', () => {
   })
 
   it('completes each harness from its own line of the table', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     const result = await service.draftExperiment(request({
-      repo,
       unit: UNIT,
       conditions: ['codex-unit'],
       newConditions: [{ id: 'codex-unit', from: 'dsh-exec', harness: 'codex', permissions: 'workspace-write' }],
@@ -309,16 +319,14 @@ describe('draftExperiment — the container completion (I5·T58 · G4)', () => {
   })
 
   it('leaves a source that already declares one alone', async () => {
-    const { repo, dataset } = fixtureRepo()
-    writeJson(dataset, 'conditions/dsh-unit.json', {
+    const { service, library } = fixture()
+    writeJson(library, 'dsh-unit.json', {
       ...DSH_EXEC,
       env: { keys: ['DEEPSEEK_API_KEY', 'DSH_HOME'] },
       unit: { scopedHome: { container: '/mnt/creds', var: 'DSH_HOME' } },
     })
-    const service = new EvalService()
 
     const result = await service.draftExperiment(request({
-      repo,
       unit: UNIT,
       conditions: ['dsh-unit-pro'],
       newConditions: [{ id: 'dsh-unit-pro', from: 'dsh-unit', model: 'deepseek-v4-pro' }],
@@ -331,18 +339,15 @@ describe('draftExperiment — the container completion (I5·T58 · G4)', () => {
   })
 
   it('fills nothing on the host path, and nothing for a harness the table has no line for', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     const host = await service.draftExperiment(request({
-      repo,
       conditions: ['dsh-exec-pro'],
       newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro' }],
     }))
     expect(read(host.conditionPaths[0] as string)['unit']).toBeUndefined()
 
     const unknown = await service.draftExperiment(request({
-      repo,
       name: 'other',
       unit: UNIT,
       conditions: ['mystery'],
@@ -356,14 +361,12 @@ describe('draftExperiment — the container completion (I5·T58 · G4)', () => {
   })
 
   it('a copy whose only change is the completion is still refused as changing nothing', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     // The completion is the copy being made runnable where the plan puts it,
     // not a factor its author chose — so it must not satisfy the discipline
     // that a new condition differs from its source.
     await expect(service.draftExperiment(request({
-      repo,
       unit: UNIT,
       conditions: ['twin'],
       newConditions: [{ id: 'twin', from: 'dsh-exec' }],
@@ -373,11 +376,9 @@ describe('draftExperiment — the container completion (I5·T58 · G4)', () => {
 
 describe('draftExperiment — model.endpoint, the seventh field (I5·T58 · G6)', () => {
   it('sets the endpoint the readiness gate refuses a condition for leaving null', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     const result = await service.draftExperiment(request({
-      repo,
       conditions: ['dsh-exec-pro'],
       newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro', endpoint: 'default' }],
     }))
@@ -388,11 +389,9 @@ describe('draftExperiment — model.endpoint, the seventh field (I5·T58 · G6)'
   })
 
   it('counts as the one changed field on its own', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     const result = await service.draftExperiment(request({
-      repo,
       conditions: ['dsh-exec-routed'],
       newConditions: [{ id: 'dsh-exec-routed', from: 'dsh-exec', endpoint: 'https://proxy.internal/v1' }],
     }))
@@ -406,27 +405,25 @@ describe('draftExperiment — model.endpoint, the seventh field (I5·T58 · G6)'
 
 describe('draftExperiment — validate comes back verbatim', () => {
   it('answers with exactly the plan-review page\'s own projection', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
-    const result = await service.draftExperiment(request({ repo }))
+    const result = await service.draftExperiment(request())
 
     // Not a summary of validate, and not a second validate with different
     // calibration: the same function, so the sentence an agent reports and the
     // list the person then reads on the page cannot disagree.
-    expect(result.review).toEqual(await service.planReview(result.planPath))
+    expect(result.review).toEqual(await service.planReview({ experimentId: result.experimentId }))
   })
 
   it('a plan validate REJECTS still lands on disk, as a draft with its errors named', async () => {
-    const { repo } = fixtureRepo()
+    const { service, library } = fixture()
     // A declaration that violates the contract: `drive` is `exec` and nothing
     // else (frozen decision 2).
-    writeJson(join(repo, 'datasets', 'ds'), 'conditions/broken.json', {
+    writeJson(library, 'broken.json', {
       ...DSH_EXEC, harness: { ...DSH_EXEC.harness, drive: 'live' },
     })
-    const service = new EvalService()
 
-    const result = await service.draftExperiment(request({ repo, conditions: ['broken'] }))
+    const result = await service.draftExperiment(request({ conditions: ['broken'] }))
 
     expect(result.review.ok).toBe(false)
     expect(result.review.errors).toBeGreaterThan(0)
@@ -438,106 +435,171 @@ describe('draftExperiment — validate comes back verbatim', () => {
 
 describe('draftExperiment — the refusals, and the one thing it never does', () => {
   it('never reaches runStart', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
     const runStart = vi.spyOn(service, 'runStart')
 
-    await service.draftExperiment(request({ repo }))
+    await service.draftExperiment(request())
 
     expect(runStart).not.toHaveBeenCalled()
   })
 
-  it('refuses to overwrite a plan that already exists', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
-    await service.draftExperiment(request({ repo }))
+  it('two drafts of one name are two experiments — neither overwrites the other', async () => {
+    const { service } = fixture()
+    const first = await service.draftExperiment(request())
+    const second = await service.draftExperiment(request())
 
-    await expect(service.draftExperiment(request({ repo }))).rejects.toThrow(/already exists/)
+    expect(second.experimentId).not.toBe(first.experimentId)
+    expect(read(first.planPath)['name']).toBe('i5-walk')
   })
 
   it('refuses to overwrite a condition that already exists — it may be locked', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
     await expect(service.draftExperiment(request({
-      repo,
       name: 'other',
       conditions: ['dsh-exec'],
       newConditions: [{ id: 'dsh-exec', from: 'dsh-exec', model: 'something-else' }],
     }))).rejects.toThrow(/already exists/)
   })
 
-  it('refuses a name that would land as a generated template and never appear in the list', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
-
-    await expect(service.draftExperiment(request({ repo, name: 'i5-walk.template' })))
-      .rejects.toThrow(/\.template/)
-  })
-
   it('refuses an item the set does not declare, and says what it does hold', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+    const { service } = fixture()
 
-    await expect(service.draftExperiment(request({ repo, items: ['P0', 'P9'] })))
+    await expect(service.draftExperiment(request({ items: ['P0', 'P9'] })))
       .rejects.toThrow(/"P9".*P0, P1/s)
   })
 
-  it('refuses a dataset set the repository does not hold', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService()
+  it('refuses a dataset set the registration does not hold', async () => {
+    const { service } = fixture()
 
-    await expect(service.draftExperiment(request({ repo, dataset: 'nope' })))
+    await expect(service.draftExperiment(request({ dataset: 'reg/nope' })))
       .rejects.toThrow(/no dataset set "nope"/)
   })
 
-  it('refuses when no repository can be resolved — no repo argument and no session binding', async () => {
+  it('refuses a registration that is not there', async () => {
+    const { service } = fixture()
+
+    await expect(service.draftExperiment(request({ dataset: 'other/ds' })))
+      .rejects.toThrow(/no registration "other"/)
+  })
+
+  it('refuses a dataset that is not "<registration>/<set>"', async () => {
+    const { service } = fixture()
+
+    await expect(service.draftExperiment(request({ dataset: 'ds' })))
+      .rejects.toThrow(/<registration id>\/<set>/)
+  })
+
+  it('refuses when the composition mounts no registry', async () => {
+    useDshHome()
     const service = new EvalService()
-    await expect(service.draftExperiment(request())).rejects.toThrow(/no dataset repository/)
+    await expect(service.draftExperiment(request())).rejects.toThrow(/no datasets registry/)
   })
 
-  it('honours the session binding\'s dataset whitelist', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService({
-      get: (name: string) => (name === 'datasets'
-        ? { binding: () => ({ repoPath: repo, datasets: ['other-set'] }) }
-        : undefined),
-    })
-
-    await expect(service.draftExperiment(request(), { session: { id: 's1' } }))
-      .rejects.toThrow(/outside this session's binding/)
-  })
-
-  it('drafts into the session\'s bound repository when no repo is passed', async () => {
-    const { repo } = fixtureRepo()
-    const service = new EvalService({
-      get: (name: string) => (name === 'datasets' ? { binding: () => ({ repoPath: repo }) } : undefined),
-    })
-
-    const result = await service.draftExperiment(request(), { session: { id: 's1' } })
-
-    expect(result.planPath).toBe(join(repo, 'datasets', 'ds', 'plans', 'i5-walk.json'))
+  it('refuses when DSH_HOME is unset — there is no state root to write into', async () => {
+    const { face } = fixture()
+    delete process.env['DSH_HOME']
+    await expect(new EvalService(hostsWith(face)).draftExperiment(request())).rejects.toThrow(/set DSH_HOME/)
   })
 })
 
 describe('draftOptions — what the form may offer', () => {
-  it('lists each set with its items and its stage schemas, and never calls run-meta a stage', async () => {
-    const { repo } = fixtureRepo()
-    writeJson(join(repo, 'datasets', 'ds'), 'schemas/run-meta.json', STAGE_SCHEMA)
-    writeJson(join(repo, 'datasets', 'ds'), 'schemas/stage2.json', STAGE_SCHEMA)
-    const service = new EvalService()
+  it('lists each registered set at the latest commit with its items and stage schemas, and never calls run-meta a stage', async () => {
+    const { service, dataset } = fixture()
+    writeJson(dataset, 'schemas/run-meta.json', STAGE_SCHEMA)
+    writeJson(dataset, 'schemas/stage2.json', STAGE_SCHEMA)
 
-    const view = await service.draftOptions({ repo })
+    const view = await service.draftOptions()
 
-    expect(view.datasets).toEqual([{ id: 'ds', items: ['P0', 'P1'], stages: ['stage1', 'stage2'] }])
+    expect(view.datasets).toEqual([{ id: 'reg/ds', commit: LATEST, items: ['P0', 'P1'], stages: ['stage1', 'stage2'] }])
   })
 
-  it('degrades with a sentence rather than refusing when the path is not a dataset repository', async () => {
-    const service = new EvalService()
+  it('degrades with a sentence rather than refusing when a set cannot be read', async () => {
+    const { face } = fixture()
+    const service = new EvalService(hostsWith({
+      ...face,
+      datasetView: async () => { throw new Error('the object store is gone') },
+    }))
 
-    const view = await service.draftOptions({ repo: tmpTree() })
+    const view = await service.draftOptions()
 
     expect(view.datasets).toEqual([])
-    expect(view.notes.join(' ')).toContain('holds no datasets/ directory')
+    expect(view.notes.join(' ')).toContain('reg/ds: the object store is gone')
+  })
+})
+
+describe('draftExperiment — which commit it pins (T73)', () => {
+  const OLD = 'f'.repeat(40)
+
+  /** An experiment already pinning `commit` and running `conditions`. */
+  async function pinned(stateRoot: string, commit: string, conditions: string[], set = 'ds') {
+    return createExperiment(stateRoot, {
+      name: 'earlier',
+      dataset: { registry: 'reg', set, commit },
+      plan: JSON.stringify({ schema: 'dataseek.plan/1', name: 'earlier', conditions }),
+    })
+  }
+
+  it('pins the latest commit when it is the only candidate', async () => {
+    const { service } = fixture()
+    const result = await service.draftExperiment(request())
+    expect(result.dataset.commit).toBe(LATEST)
+  })
+
+  it('pins the latest silently when every candidate holds identical items/ and schemas/', async () => {
+    const { service, stateRoot } = fixture({ sets: {}, commits: [OLD] })
+    await pinned(stateRoot, OLD, ['dsh-exec'])
+
+    const result = await service.draftExperiment(request())
+
+    expect(result.dataset.commit).toBe(LATEST)
+  })
+
+  it('refuses an ambiguous version, lists the candidates, and tells the agent to ask and to stop on a skip', async () => {
+    const trees = { [OLD]: { 'datasets/ds/items': 'tree-old' } }
+    const { service, stateRoot } = fixture({ sets: {}, commits: [OLD], trees })
+    const earlier = await pinned(stateRoot, OLD, ['dsh-exec'])
+
+    const refusal = await service.draftExperiment(request()).then(() => undefined, (error: unknown) => error)
+
+    expect(refusal).toBeInstanceOf(DatasetVersionRefused)
+    const message = (refusal as Error).message
+    expect(message).toMatch(/^version is ambiguous for reg\/ds: /)
+    expect(message).toContain(`  - ${LATEST.slice(0, 7)} (latest on the tracked branch, 2026-09-20)`)
+    expect(message).toContain(`  - ${OLD.slice(0, 7)} (pinned by ${earlier.id})`)
+    expect(message).toContain('ask_user_question')
+    expect(message).toContain('If they skip the question, stop — do not pick one yourself.')
+    // Nothing landed but the earlier experiment.
+    expect(readdirSync(join(stateRoot, 'experiments'))).toEqual([earlier.id])
+  })
+
+  it('ignores experiments on another set or sharing no condition', async () => {
+    const trees = { [OLD]: { 'datasets/ds/items': 'tree-old' } }
+    const { service, stateRoot } = fixture({ sets: {}, commits: [OLD], trees })
+    await pinned(stateRoot, OLD, ['someone-else'])
+    await pinned(stateRoot, OLD, ['dsh-exec'], 'other-set')
+
+    const result = await service.draftExperiment(request())
+
+    expect(result.dataset.commit).toBe(LATEST)
+  })
+
+  it('accepts an explicit commit that is a candidate, short or full', async () => {
+    const trees = { [OLD]: { 'datasets/ds/items': 'tree-old' } }
+    const { service, stateRoot } = fixture({ sets: {}, commits: [OLD], trees })
+    await pinned(stateRoot, OLD, ['dsh-exec'])
+
+    const result = await service.draftExperiment(request({ commit: OLD.slice(0, 7) }))
+
+    expect(result.dataset.commit).toBe(OLD)
+    expect(read(result.planPath)['dataset']).toMatchObject({ commit: OLD })
+  })
+
+  it('refuses an explicit commit that is no candidate, with the list', async () => {
+    const stray = 'e'.repeat(40)
+    const { service } = fixture({ sets: {}, commits: [stray] })
+
+    await expect(service.draftExperiment(request({ commit: stray })))
+      .rejects.toThrow(new RegExp(`commit "${stray}" is not a candidate version for reg/ds[\\s\\S]*${LATEST.slice(0, 7)}`))
   })
 })

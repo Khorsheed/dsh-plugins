@@ -13,7 +13,7 @@
  * what "ready" means.
  * @module @khorsheed/dsh-eval
  */
-import { existsSync, statSync, type Dirent } from 'node:fs'
+import { statSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
@@ -47,7 +47,7 @@ function stringOrNull(value: unknown): string | null {
 /** One condition of the registry, as the agent's planning view needs it. */
 export interface ConditionSummary {
   id: string
-  /** The dataset set whose `conditions/` directory declares it. */
+  /** Empty since T73 — the deployment's library holds every condition; kept so old readers still parse. */
   dataset: string
   harness: { name: string | null; version: string | null; drive: string | null }
   /**
@@ -91,40 +91,15 @@ export interface ConditionSummary {
 
 /** The `eval_conditions` answer. */
 export interface ConditionsReport {
-  /** The dataset repository the listing resolved against. */
+  /** The condition library directory the listing read (`<stateRoot>/conditions`, T73). */
   repo: string
-  /** The dataset sets scanned, in order. */
+  /** Always empty since T73: conditions belong to the deployment, not to a dataset set. Kept for old readers. */
   datasets: string[]
-  /** Every condition found, dataset by dataset, id-sorted within each. */
+  /** Every condition in the library, id-sorted. */
   conditions: ConditionSummary[]
 }
 
-/** Dataset sets under `<repo>/datasets/` that declare a `conditions/` directory. */
-async function datasetsWithConditions(repo: string): Promise<string[]> {
-  let entries: Dirent[]
-  try {
-    entries = await readdir(join(repo, 'datasets'), { withFileTypes: true })
-  } catch {
-    // Which of the two it is decides which fix the page offers: create
-    // datasets/, or find the repository again (I5·T62).
-    throw new EvalReadRefused(existsSync(repo)
-      ? `not a dataset repository (no datasets/ directory): ${repo}`
-      : `dataset repository does not exist — no such file or directory: ${repo}`)
-  }
-  const found: string[] = []
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    try {
-      await readdir(join(repo, 'datasets', entry.name, 'conditions'))
-      found.push(entry.name)
-    } catch {
-      // A dataset set without a conditions/ directory declares no conditions.
-    }
-  }
-  return found.sort()
-}
-
-/** The condition ids declared under one dataset set (`<id>.lock.json` is not one). */
+/** The condition ids declared under `<root>/conditions` (`<id>.lock.json` is not one). */
 async function conditionIds(datasetRoot: string): Promise<string[]> {
   let entries: string[]
   try {
@@ -139,56 +114,49 @@ async function conditionIds(datasetRoot: string): Promise<string[]> {
 }
 
 /**
- * List the conditions a dataset repository declares, each with its hash and
- * readiness. Reads only; provisioning a condition into a real scoped home is
- * `dsh-eval conditions provision` (I4), a human/CLI act.
- * @param repo - the dataset repository root (already `~`-expanded).
- * @param only - restrict to these dataset sets; omit to scan every set that
- *   has a `conditions/` directory.
+ * List the deployment's condition library, each with its hash and readiness.
+ * Reads only; provisioning a condition into a real scoped home is
+ * `conditions provision` (I4), a human act.
+ * @param root - the library root: the directory whose `conditions/` holds the
+ *   declarations (the eval state root, T73).
  * @param options - the optional scoped-home resolver: with one, a condition
  *   whose preset copy was edited after provision reads stale here too.
- * @throws {@link EvalReadRefused} when `repo` is not a dataset repository.
  */
 export async function listConditions(
-  repo: string,
-  only?: readonly string[],
+  root: string,
   options: ConditionReadinessOptions = {},
 ): Promise<ConditionsReport> {
-  const datasets = only !== undefined && only.length > 0 ? [...only] : await datasetsWithConditions(repo)
   const conditions: ConditionSummary[] = []
-  for (const dataset of datasets) {
-    const datasetRoot = join(repo, 'datasets', dataset)
-    for (const id of await conditionIds(datasetRoot)) {
-      const { entry, document, errors, warnings } = await resolveConditionReadiness(id, datasetRoot, options)
-      const harness = isPlainObject(document?.['harness']) ? document['harness'] : undefined
-      const model = isPlainObject(document?.['model']) ? document['model'] : undefined
-      conditions.push({
-        id,
-        dataset,
-        harness: {
-          name: stringOrNull(harness?.['name']),
-          version: stringOrNull(harness?.['version']),
-          drive: stringOrNull(harness?.['drive']),
-        },
-        model: { declared: stringOrNull(model?.['declared']), endpoint: stringOrNull(model?.['endpoint']) },
-        scope: stringOrNull(document?.['scope']),
-        preset: stringOrNull(document?.['preset']),
-        sha: entry.sha,
-        lock: {
-          present: entry.lock !== null,
-          sha: entry.lock?.sha ?? null,
-          homeSha: entry.lock?.homeSha ?? null,
-          matches: entry.lock !== null && entry.sha !== null && entry.lock.sha === entry.sha,
-          provisioned: entry.lock?.provisioned ?? null,
-        },
-        status: entry.status,
-        unresolved: unresolvedFields(document),
-        errors,
-        warnings,
-      })
-    }
+  for (const id of await conditionIds(root)) {
+    const { entry, document, errors, warnings } = await resolveConditionReadiness(id, root, options)
+    const harness = isPlainObject(document?.['harness']) ? document['harness'] : undefined
+    const model = isPlainObject(document?.['model']) ? document['model'] : undefined
+    conditions.push({
+      id,
+      dataset: '',
+      harness: {
+        name: stringOrNull(harness?.['name']),
+        version: stringOrNull(harness?.['version']),
+        drive: stringOrNull(harness?.['drive']),
+      },
+      model: { declared: stringOrNull(model?.['declared']), endpoint: stringOrNull(model?.['endpoint']) },
+      scope: stringOrNull(document?.['scope']),
+      preset: stringOrNull(document?.['preset']),
+      sha: entry.sha,
+      lock: {
+        present: entry.lock !== null,
+        sha: entry.lock?.sha ?? null,
+        homeSha: entry.lock?.homeSha ?? null,
+        matches: entry.lock !== null && entry.sha !== null && entry.lock.sha === entry.sha,
+        provisioned: entry.lock?.provisioned ?? null,
+      },
+      status: entry.status,
+      unresolved: unresolvedFields(document),
+      errors,
+      warnings,
+    })
   }
-  return { repo, datasets, conditions }
+  return { repo: join(root, 'conditions'), datasets: [], conditions }
 }
 
 // ── condition diff ──────────────────────────────────────────────────────────
@@ -337,8 +305,8 @@ function looksLikePath(ref: string): boolean {
   return ref.includes('/') || ref.includes(sep) || ref.startsWith('~') || ref.endsWith('.json')
 }
 
-/** Load one side of a diff: a path, or a condition id resolved against the repo. */
-async function loadSide(repo: string, ref: string, datasets: readonly string[]): Promise<{ side: ConditionDiffSide; document: unknown }> {
+/** Load one side of a diff: a path, or a condition id resolved against the library. */
+async function loadSide(root: string, ref: string): Promise<{ side: ConditionDiffSide; document: unknown }> {
   let path: string
   let id: string
   if (looksLikePath(ref)) {
@@ -347,22 +315,10 @@ async function loadSide(repo: string, ref: string, datasets: readonly string[]):
     id = (path.split(sep).pop() ?? ref).replace(/\.json$/, '')
   } else {
     if (!CONDITION_ID_RE.test(ref)) throw new EvalReadRefused(`${JSON.stringify(ref)} is neither a usable condition id nor a path`)
-    const found = datasets
-      .map(dataset => ({ dataset, path: join(repo, 'datasets', dataset, 'conditions', `${ref}.json`) }))
-      .filter(candidate => existsSyncSafe(candidate.path))
-    if (found.length === 0) {
-      throw new EvalReadRefused(
-        `no condition ${JSON.stringify(ref)} in ${datasets.length === 0 ? 'this repository' : datasets.join(', ')}`
-        + ' — pass a path, or name the dataset set',
-      )
+    path = join(root, 'conditions', `${ref}.json`)
+    if (!existsSyncSafe(path)) {
+      throw new EvalReadRefused(`no condition ${JSON.stringify(ref)} in this deployment's condition library`)
     }
-    if (found.length > 1) {
-      throw new EvalReadRefused(
-        `condition ${JSON.stringify(ref)} is declared by ${found.length} dataset sets (${found.map(candidate => candidate.dataset).join(', ')})`
-        + ' — name the dataset set, or pass a path',
-      )
-    }
-    path = (found[0] as { path: string }).path
     id = ref
   }
   let document: unknown
@@ -394,17 +350,14 @@ function existsSyncSafe(path: string): boolean {
  * says. Two conditions differing in exactly one field are a single-factor
  * pair, and that is worth seeing — but whether the pair is worth RUNNING
  * depends on things no file knows, so the verb stops at the facts.
- * @param repo - the dataset repository root (already `~`-expanded).
+ * @param root - the condition library root (the directory holding `conditions/`).
  * @param a - a condition id or a path to a declaration.
  * @param b - the other one.
- * @param only - dataset sets an id may resolve against; omit to scan every set
- *   that declares conditions.
  * @throws {@link EvalReadRefused} when a side cannot be resolved or read.
  */
-export async function diffConditions(repo: string, a: string, b: string, only?: readonly string[]): Promise<ConditionDiff> {
-  const datasets = only !== undefined && only.length > 0 ? [...only] : await datasetsWithConditions(repo)
-  const left = await loadSide(repo, a, datasets)
-  const right = await loadSide(repo, b, datasets)
+export async function diffConditions(root: string, a: string, b: string): Promise<ConditionDiff> {
+  const left = await loadSide(root, a)
+  const right = await loadSide(root, b)
   const { differences, identical, notesOnly } = diffConditionDocuments(left.document, right.document)
   return { a: left.side, b: right.side, identical, notesOnly, differences }
 }

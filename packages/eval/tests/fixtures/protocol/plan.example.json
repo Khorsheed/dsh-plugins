@@ -1,9 +1,10 @@
 {
   "schema": "dataseek.plan/1",
+  "name": "harness-comparison-effort",
   "dataset": {
-    "repo": "~/dataseek",
-    "commit": null,
-    "id": "harness-comparison",
+    "registry": "dataseek-eval",
+    "set": "harness-comparison",
+    "commit": "3f2a9c0e1b7d4a6f8e2c5b1d9a0f7e3c6b8d2a41",
     "items": [
       "F2-multi-agent-room",
       "F3-self-restart-report"
@@ -49,6 +50,5 @@
   "retry": {
     "infrastructure": 1
   },
-  "exports": "~/dataseek/exports",
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，挂的是评测实例自己的该家作用域目录，不写进本文件。"
+  "notes": "dataset 钉 {registry, set, commit}，commit 必填，contract 文件全在这个 commit 上读；conditions 与 judge.conditions 都写条件 id，sha 由部署条件库里的 conditions/<id>.lock.json 解析。retry 是 run 的默认值，run 调用选项可覆盖；exports 缺省即实验目录的 exports/。unit 在场即容器路径：每格一个单元，挂的是评测实例自己的该家作用域目录，不写进本文件。"
 }

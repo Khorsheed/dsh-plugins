@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashConditionDocument } from '../src/hash.ts'
 import { EvalService } from '../src/service.ts'
 import { evalToolDefinitions } from '../src/tool.ts'
-import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
+import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -41,26 +41,35 @@ function condition(overrides: Record<string, unknown> = {}): Record<string, unkn
 }
 
 /**
- * A dataset repository with two conditions: `locked` is ready (lock present,
- * matching, home verified), `drafting` is not (no lock, two null fields).
+ * A deployment whose condition library holds two conditions: `locked` is
+ * ready (lock present, matching, home verified), `drafting` is not (no lock,
+ * two null fields). Returns the library directory.
  */
-function writeRepo(): string {
-  const repo = join(tmpTree(), 'dataseek')
-  const dataset = join(repo, 'datasets', 'harness-comparison')
+function writeLibrary(): string {
+  const { stateRoot } = useDshHome()
+  const library = join(stateRoot, 'conditions')
   const locked = condition()
-  writeJson(dataset, 'conditions/locked.json', locked)
-  writeJson(dataset, 'conditions/locked.lock.json', {
+  writeJson(library, 'locked.json', locked)
+  writeJson(library, 'locked.lock.json', {
     schema: 'dataseek.condition-lock/1',
     condition: 'locked',
     sha: hashConditionDocument(locked),
     home: { sha: 'a'.repeat(64) },
   })
-  writeJson(dataset, 'conditions/drafting.json', condition({
+  writeJson(library, 'drafting.json', condition({
     harness: { name: 'kimi', version: null, drive: 'exec' },
     permissions: 'auto-approve',
     model: { declared: null, endpoint: null },
   }))
-  return repo
+  return library
+}
+
+/** A registered dataset set `reg/harness-comparison`: one item, one stage schema. */
+function registeredSet(): { dataset: string; service: EvalService } {
+  const dataset = join(tmpTree(), 'view', 'harness-comparison')
+  writeJson(dataset, 'schemas/stage1.json', { type: 'object', properties: { done: { type: 'boolean' } } })
+  writeJson(dataset, 'items/P0/item.json', { id: 'P0' })
+  return { dataset, service: new EvalService(hostsWith(fakeRegistry({ sets: { 'harness-comparison': dataset } }))) }
 }
 
 /** Build the five tools over one service and index them by name. */
@@ -69,40 +78,21 @@ function toolsOver(service: EvalService): Map<string, RegisteredTool> {
   return new Map(definitions.map(tool => [tool.name, tool]))
 }
 
-/**
- * A service whose session `s1` is BOUND to `repo` — the shape every tool call
- * in this spec has to have since I5·T58, because a model tool now resolves
- * against the binding and nothing else.
- * @param repo - the bound repository.
- * @param datasets - the binding's dataset whitelist, when it has one.
- */
-function serviceBoundTo(repo: string, datasets?: string[]): EvalService {
-  const face = {
-    binding: (session: { id: string }) => (session.id === 's1'
-      ? { repoPath: repo, ...(datasets === undefined ? {} : { datasets }) }
-      : undefined),
-  }
-  return new EvalService({ get: (name: string) => (name === 'datasets' ? face : undefined) })
-}
-
-/** The exec face of a call from the bound session. */
+/** The exec face of a call from session `s1`. */
 const BOUND = { agent: { session: { id: 's1' } } }
 
 describe('eval_conditions', () => {
-  it('lists each condition with its hash, readiness, and unresolved fields', async () => {
-    const repo = writeRepo()
-    const tool = toolsOver(serviceBoundTo(repo)).get('eval_conditions') as RegisteredTool
+  it('lists each library condition with its hash, readiness, and unresolved fields', async () => {
+    const library = writeLibrary()
+    const tool = toolsOver(new EvalService()).get('eval_conditions') as RegisteredTool
     const report = await tool.execute({}, BOUND) as {
       repo: string
-      datasets: string[]
-      conditions: Array<{ id: string; dataset: string; status: string; sha: string; harness: { name: string }; model: { declared: string | null }; lock: { present: boolean; matches: boolean }; unresolved: string[]; warnings: Array<{ code: string }> }>
+      conditions: Array<{ id: string; status: string; sha: string; harness: { name: string }; model: { declared: string | null }; lock: { present: boolean; matches: boolean }; unresolved: string[]; warnings: Array<{ code: string }> }>
     }
-    expect(report.repo).toBe(repo)
-    expect(report.datasets).toEqual(['harness-comparison'])
+    expect(report.repo).toBe(library)
     const [drafting, locked] = report.conditions
     expect(locked).toMatchObject({
       id: 'locked',
-      dataset: 'harness-comparison',
       status: 'ready',
       harness: { name: 'dsh' },
       model: { declared: 'deepseek-official/deepseek-v4-flash' },
@@ -124,63 +114,33 @@ describe('eval_conditions', () => {
     expect(locked?.model).toEqual({ declared: 'deepseek-official/deepseek-v4-flash', endpoint: null })
   })
 
-  it('refuses a repo argument that is not the session\'s binding, and any at all when nothing is bound', async () => {
-    const repo = writeRepo()
-    const elsewhere = join(tmpTree(), 'someone-elses-checkout')
-    const tool = toolsOver(serviceBoundTo(repo)).get('eval_conditions') as RegisteredTool
-
-    // Restating the binding is fine — the agent that types it out is not doing
-    // anything the binding does not already say.
-    const restated = await tool.execute({ repo }, BOUND) as { repo: string }
-    expect(restated.repo).toBe(repo)
-
-    // Naming a DIFFERENT repository is refused, and the refusal names both so
-    // the agent can tell the person which one it wanted.
-    await expect(tool.execute({ repo: elsewhere }, BOUND))
-      .rejects.toThrow(/is not this session's bound dataset repository/)
-
-    // And an unbound session cannot reach a repository through the parameter
-    // at all: this is the door an agent walked through to write three files
-    // into a shared checkout (I5·T39 · G1).
-    await expect(tool.execute({ repo }, { agent: { session: { id: 's2' } } }))
-      .rejects.toThrow(/not this session's to read[\s\S]*\/datasets bind/)
+  it('takes no repository argument — the library is the deployment\'s, whoever asks', async () => {
+    writeLibrary()
+    const tool = toolsOver(new EvalService()).get('eval_conditions') as RegisteredTool
+    expect(Object.keys((tool as unknown as { parameters: Record<string, unknown> }).parameters)).not.toContain('repo')
+    const report = await tool.execute({}, { agent: { session: { id: 's2' } } }) as { conditions: unknown[] }
+    expect(report.conditions).toHaveLength(2)
   })
 
-  it('falls back to the session binding and honours its dataset whitelist', async () => {
-    const repo = writeRepo()
-    const datasets = { binding: (session: { id: string }) => (session.id === 's1' ? { repoPath: repo, datasets: ['harness-comparison'] } : undefined) }
-    const tool = toolsOver(new EvalService({ get: (name) => (name === 'datasets' ? datasets : undefined) })).get('eval_conditions') as RegisteredTool
-
-    const bound = await tool.execute({}, { agent: { session: { id: 's1' } } }) as { repo: string; conditions: unknown[] }
-    expect(bound.repo).toBe(repo)
-    expect(bound.conditions).toHaveLength(2)
-
-    // A dataset the human did not admit is refused, not quietly read.
-    await expect(tool.execute({ dataset: 'other' }, { agent: { session: { id: 's1' } } }))
-      .rejects.toThrow(/outside this session's binding/)
-    // No binding, no repo argument: the answer says who fixes it.
-    await expect(tool.execute({}, { agent: { session: { id: 's2' } } }))
-      .rejects.toThrow(/\/datasets bind/)
+  it('diffs two library conditions field by field', async () => {
+    writeLibrary()
+    const tool = toolsOver(new EvalService()).get('eval_conditions') as RegisteredTool
+    const diff = await tool.execute({ diff: ['locked', 'drafting'] }, BOUND) as { differences: Array<{ path: string }> }
+    expect(diff.differences.map(d => d.path)).toContain('harness.name')
+    await expect(tool.execute({ diff: ['locked'] }, BOUND)).rejects.toThrow(/exactly two/)
   })
 })
 
 describe('eval_plan_validate', () => {
-  it('reports ok, diagnostics, and the resolved condition shas', async () => {
-    const repo = writeRepo()
-    const dataset = join(repo, 'datasets', 'harness-comparison')
-    writeJson(dataset, 'schemas/stage1.json', { type: 'object', properties: { done: { type: 'boolean' } } })
-    const planPath = writeJson(dataset, 'plans/p.json', {
-      schema: 'dataseek.plan/1',
-      dataset: { repo, commit: null, id: 'harness-comparison', items: ['P0'] },
-      conditions: ['locked'],
-      reps: 1,
-      stages: ['stage1'],
-      order: { seed: 42, interleave: true },
-      budget: { activeMinutes: 60, turns: 10 },
-      expectedNs: ['script'],
+  it('validates an experiment against its pinned dataset view and the condition library', async () => {
+    writeLibrary()
+    const { service } = registeredSet()
+    const draft = await service.draftExperiment({
+      name: 'p', dataset: 'reg/harness-comparison', items: ['P0'], conditions: ['locked'], reps: 1,
+      stages: ['stage1'], seed: 42, activeMinutes: 60, turns: 10, expectedNs: ['script'],
     })
-    const tool = toolsOver(new EvalService()).get('eval_plan_validate') as RegisteredTool
-    const report = await tool.execute({ plan: planPath }, {}) as {
+    const tool = toolsOver(service).get('eval_plan_validate') as RegisteredTool
+    const report = await tool.execute({ experiment: draft.experimentId }, {}) as {
       ok: boolean
       errors: unknown[]
       warnings: Array<{ code: string }>
@@ -188,19 +148,25 @@ describe('eval_plan_validate', () => {
     }
     expect(report.ok).toBe(true)
     expect(report.errors).toEqual([])
-    expect(report.warnings.map(w => w.code)).toContain('COMMIT_UNRESOLVED')
+    // The draft pinned a commit, so there is nothing left unresolved about it.
+    expect(report.warnings.map(w => w.code)).not.toContain('COMMIT_UNRESOLVED')
     expect(report.conditions).toEqual([
       { id: 'locked', sha: expect.stringMatching(/^[0-9a-f]{64}$/), lock: expect.anything(), status: 'ready' },
     ])
   })
 
-  it('requires a plan path and reports an unreadable one as an error, not a throw', async () => {
+  it('wants an experiment id, and reports an unreadable legacy plan as an error, not a throw', async () => {
     const tool = toolsOver(new EvalService()).get('eval_plan_validate') as RegisteredTool
-    expect(tool.parameters.required).toEqual(['plan'])
-    await expect(tool.execute({}, {})).rejects.toThrow(/plan/)
+    await expect(tool.execute({}, {})).rejects.toThrow(/pass experiment/)
     const report = await tool.execute({ plan: join(tmpTree(), 'nope.json') }, {}) as { ok: boolean; errors: Array<{ code: string }> }
     expect(report.ok).toBe(false)
     expect(report.errors.map(e => e.code)).toEqual(['PLAN_UNREADABLE'])
+  })
+
+  it('refuses an experiment id this deployment does not hold', async () => {
+    useDshHome()
+    const tool = toolsOver(new EvalService()).get('eval_plan_validate') as RegisteredTool
+    await expect(tool.execute({ experiment: 'nope-20260101-abcd' }, {})).rejects.toThrow(/no experiment "nope-20260101-abcd"/)
   })
 })
 
@@ -288,18 +254,15 @@ function missionFace(): {
 }
 
 describe('eval_plan_draft — the row\'s one write, and the form\'s own verb', () => {
-  /** A repository the draft can land in: one item, one stage schema, one condition. */
-  function draftableRepo(): string {
-    const repo = writeRepo()
-    const dataset = join(repo, 'datasets', 'harness-comparison')
-    writeJson(dataset, 'schemas/stage1.json', { type: 'object', properties: { done: { type: 'boolean' } } })
-    writeJson(dataset, 'items/P0/item.json', { id: 'P0' })
-    return repo
+  /** A deployment the draft can land in: a registered set and a library. */
+  function draftable(): { service: EvalService; stateRoot: string } {
+    const library = writeLibrary()
+    return { service: registeredSet().service, stateRoot: join(library, '..') }
   }
 
   const DRAFT_ARGS = {
     name: 'i5-walk',
-    dataset: 'harness-comparison',
+    dataset: 'reg/harness-comparison',
     items: ['P0'],
     conditions: ['locked'],
     reps: 1,
@@ -309,47 +272,45 @@ describe('eval_plan_draft — the row\'s one write, and the form\'s own verb', (
     turns: 10,
   }
 
-  it('writes the plan, validates it, and answers with both', async () => {
-    const repo = draftableRepo()
-    const tool = toolsOver(serviceBoundTo(repo)).get('eval_plan_draft') as RegisteredTool
+  it('writes the experiment, validates it, and answers with both', async () => {
+    const { service } = draftable()
+    const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
 
     const result = await tool.execute({ ...DRAFT_ARGS }, BOUND) as {
+      experimentId: string
       planPath: string
       conditionPaths: string[]
       conditions: string[]
       review: { ok: boolean; errors: number }
     }
 
-    expect(result.planPath).toBe(join(repo, 'datasets', 'harness-comparison', 'plans', 'i5-walk.json'))
+    expect(result.planPath).toMatch(new RegExp(`/experiments/${result.experimentId}/plan\\.json$`))
     expect(result.conditions).toEqual(['locked'])
     expect(result.review.ok).toBe(true)
     expect(result.review.errors).toBe(0)
   })
 
   it('reaches the SAME service verb the 新建实验 form\'s Remote reaches', async () => {
-    const repo = draftableRepo()
-    const service = serviceBoundTo(repo)
+    const { service } = draftable()
     const draft = vi.spyOn(service, 'draftExperiment')
     const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
 
-    await tool.execute({ ...DRAFT_ARGS, repo }, BOUND)
+    await tool.execute({ ...DRAFT_ARGS }, BOUND)
 
     // One verb, three faces (form, tool, skill). A second implementation of
     // "write the plan and validate it" is a second place for the two to
     // disagree about what a draft IS — and the lab list would then be able to
     // tell a person's draft from an agent's.
     expect(draft).toHaveBeenCalledTimes(1)
-    expect(draft.mock.calls[0]?.[0]).toMatchObject({ name: 'i5-walk', dataset: 'harness-comparison', repo })
-    // The session rides along, because the repository a draft lands in is the
-    // human's binding decision, not the model's — and `agent: true` says which
-    // side of that decision this caller is on, which is what turns the `repo`
-    // argument from an override into a restatement.
-    expect(draft.mock.calls[0]?.[1]).toEqual({ agent: true, session: { id: 's1' } })
+    expect(draft.mock.calls[0]?.[0]).toMatchObject({ name: 'i5-walk', dataset: 'reg/harness-comparison' })
+    // The session rides along as the experiment's origin — the lab list's
+    // 本会话发起 split reads it.
+    expect(draft.mock.calls[0]?.[1]).toEqual({ session: { id: 's1' } })
   })
 
   it('mints a condition as a copy, and refuses one with no source to copy', async () => {
-    const repo = draftableRepo()
-    const tool = toolsOver(serviceBoundTo(repo)).get('eval_plan_draft') as RegisteredTool
+    const { service } = draftable()
+    const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
 
     const result = await tool.execute({
       ...DRAFT_ARGS,
@@ -366,8 +327,8 @@ describe('eval_plan_draft — the row\'s one write, and the form\'s own verb', (
   })
 
   it('carries model.endpoint through as a seventh editable field', async () => {
-    const repo = draftableRepo()
-    const tool = toolsOver(serviceBoundTo(repo)).get('eval_plan_draft') as RegisteredTool
+    const { service } = draftable()
+    const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
 
     const result = await tool.execute({
       ...DRAFT_ARGS,
@@ -391,8 +352,7 @@ describe('eval_plan_draft — the row\'s one write, and the form\'s own verb', (
   })
 
   it('never starts anything — the row has no run verb and this one reaches none', async () => {
-    const repo = draftableRepo()
-    const service = serviceBoundTo(repo)
+    const { service } = draftable()
     const runStart = vi.spyOn(service, 'runStart')
     const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
 
@@ -594,8 +554,8 @@ describe('eval_cells', () => {
     const tool = toolsOver(service()).get('eval_cells') as RegisteredTool
     // `run_id` is no longer required — the two modes share one tool.
     expect(tool.parameters.required ?? []).not.toContain('run_id')
+    useDshHome()
     const listing = await tool.execute({}, {}) as {
-      repo: string | null
       rows: Array<Record<string, unknown>>
       notes: string[]
     }
@@ -615,10 +575,8 @@ describe('eval_cells', () => {
       progress: { done: 0, total: 2 },
       startedAt: 5,
     })
-    expect(listing.rows[0]?.['snapshot']).toEqual({ repo: null, datasetId: 'harness-comparison', commit: 'c'.repeat(40) })
-    // No session binding in this fake exec, so drafts are not listed — and
-    // the listing says so rather than looking empty.
-    expect(listing.repo).toBeNull()
-    expect(listing.notes.some(note => note.includes('no dataset repository'))).toBe(true)
+    expect(listing.rows[0]?.['snapshot']).toEqual({ registry: null, datasetId: 'harness-comparison', commit: 'c'.repeat(40) })
+    // No experiment claims it: an old run, shown as one.
+    expect(listing.rows[0]).toMatchObject({ experimentId: null, legacy: true })
   })
 })

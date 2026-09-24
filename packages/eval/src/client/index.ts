@@ -38,7 +38,7 @@ import type {
   EvalApproveRequest, EvalArchiveRunRequest, EvalCellArtifactRequest, EvalCloseRunRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
   EvalConditionEndpointRequest, EvalConditionProvisionRequest,
   EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
-  EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
+  EvalExperimentArtifactRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
   EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest,
   EvalMatrixRequest, EvalPlanRequest, EvalReexportRequest, EvalReportRequest, EvalRunUnitsRequest,
 } from '../types.ts'
@@ -124,6 +124,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         // The attachment a reader clicks: the bytes were always reachable
         // (the judge bench reads the same directory), only the door was missing.
         fetchCellArtifact: (sid: SessionId, request: EvalCellArtifactRequest) => remote.cellArtifact(sid, request),
+        // The analysis drafts an agent wrote into the experiment (T73).
+        fetchExperimentArtifact: (sid: SessionId, request: EvalExperimentArtifactRequest) => remote.experimentArtifact(sid, request),
         retryCell: (sid: SessionId, request: EvalCellRetryRequest) => remote.retry(sid, request),
         releaseCheck: (sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(sid, request),
         planExport: (sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(sid, request),

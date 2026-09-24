@@ -198,13 +198,17 @@ export function repoName(path: string): string {
   return path.replace(/\/+$/, '').split('/').filter(Boolean).pop() ?? path
 }
 
-/** `dataset @ abcdef1`; whichever half is missing simply does not print. */
+/**
+ * `<registration id>/<set> @ abcdef1` — the dataset version as an experiment
+ * pins it (T73), and never a path. A legacy run that recorded no registration
+ * prints its set alone; whichever part is missing simply does not print.
+ */
 export function snapshotCell(row: EvalExperimentRow): string {
-  const { datasetId, commit } = row.snapshot
-  if (datasetId === null && commit === null) return '—'
+  const { registry, datasetId, commit } = row.snapshot
+  const name = registry !== null && datasetId !== null ? `${registry}/${datasetId}` : datasetId ?? registry
   const short = commit === null ? null : commit.slice(0, 7)
-  if (datasetId === null) return short as string
-  return short === null ? datasetId : `${datasetId} @ ${short}`
+  if (name === null) return short ?? '—'
+  return short === null ? name : `${name} @ ${short}`
 }
 
 /**

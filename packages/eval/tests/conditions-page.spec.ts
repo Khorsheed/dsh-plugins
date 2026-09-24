@@ -1,6 +1,5 @@
 /**
- * The conditions page's two WRITES (I5·T58), and the rule that keeps the
- * repository a human's choice.
+ * The conditions page's two WRITES (I5·T58).
  *
  * Step 4 of the walkthrough cost six human actions where it should cost two,
  * and four of the six were this page's missing half: `model.endpoint` had no
@@ -9,19 +8,18 @@
  * reachable from a model tool — provisioning decides what a subject IS, which
  * R1 keeps beside 批准并启动 and 终评.
  *
- * The third thing pinned here is `resolveRepoScope`'s agent narrowing (G1):
- * a `repo` argument from a model tool may only restate the session's binding,
- * including when the two are spelled differently.
+ * Both write into the deployment's condition library
+ * (`$DSH_HOME/state/eval/conditions/`, T73) — there is no bound repository to
+ * pick any more, so neither takes a dataset or a session.
  */
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { hashConditionDocument } from '../src/hash.ts'
 import { EvalService } from '../src/service.ts'
 import { EvalConditionEditRefused } from '../src/condition-edit.ts'
-import { normalizeRepoPath, sameRepoPath } from '../src/validate.ts'
 import type { LocalAgentEffectiveSettingsFace, LocalAgentFace, LocalAgentScopeStatus } from '../src/faces.ts'
-import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
+import { cleanupTmp, tmpTree, useDshHome, writeJson } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -68,32 +66,29 @@ function fakeLocalAgent(homesRoot: string): LocalAgentFace {
   } as LocalAgentFace
 }
 
-/** A repository whose session `s1` is bound to it, with one condition in it. */
+/** A deployment whose condition library holds one condition. */
 function bound(overrides: Record<string, unknown> = {}): {
-  repo: string
+  library: string
   homesRoot: string
   conditionPath: string
   service: EvalService
 } {
-  const root = tmpTree()
-  const repo = join(root, 'repo')
-  const homesRoot = join(root, 'homes')
-  const conditionPath = writeJson(join(repo, 'datasets', 'ds', 'conditions'), 'dsh-exec.json', { ...DSH_EXEC, ...overrides })
-  const datasets = { binding: (session: { id: string }) => (session.id === 's1' ? { repoPath: repo } : undefined) }
+  const { stateRoot } = useDshHome()
+  const library = join(stateRoot, 'conditions')
+  const homesRoot = join(tmpTree(), 'homes')
+  const conditionPath = writeJson(library, 'dsh-exec.json', { ...DSH_EXEC, ...overrides })
   const localAgent = fakeLocalAgent(homesRoot)
   const service = new EvalService({
-    get: (name: string) => (name === 'datasets' ? datasets : name === 'localAgent' ? localAgent : undefined),
+    get: (name: string) => (name === 'localAgent' ? localAgent : undefined),
   })
-  return { repo, homesRoot, conditionPath, service }
+  return { library, homesRoot, conditionPath, service }
 }
-
-const SESSION = { session: { id: 's1' } }
 
 describe('provisionCondition — one click, and the condition is ready (G7)', () => {
   it('corrects home.sha in the declaration and locks the corrected document', async () => {
     const { conditionPath, service } = bound()
 
-    const view = await service.provisionCondition({ dataset: 'ds', condition: 'dsh-exec' }, SESSION)
+    const view = await service.provisionCondition({ condition: 'dsh-exec' })
 
     expect(view.written).toBe(true)
     expect(view.homeShaWritten).toBe(true)
@@ -110,8 +105,7 @@ describe('provisionCondition — one click, and the condition is ready (G7)', ()
     const before = readFileSync(conditionPath, 'utf8')
 
     const view = await service.provisionCondition(
-      { dataset: 'ds', condition: 'dsh-exec', keepDeclaration: true },
-      SESSION,
+      { condition: 'dsh-exec', keepDeclaration: true }
     )
 
     expect(readFileSync(conditionPath, 'utf8')).toBe(before)
@@ -123,7 +117,7 @@ describe('provisionCondition — one click, and the condition is ready (G7)', ()
 
   it('answers with the same ok / warn / error lines the plan-review page renders', async () => {
     const { service } = bound()
-    const view = await service.provisionCondition({ dataset: 'ds', condition: 'dsh-exec' }, SESSION)
+    const view = await service.provisionCondition({ condition: 'dsh-exec' })
 
     expect(view.checks.length).toBeGreaterThan(0)
     for (const check of view.checks) expect(['ok', 'warn', 'error']).toContain(check.severity)
@@ -135,19 +129,17 @@ describe('provisionCondition — one click, and the condition is ready (G7)', ()
     // condition, and provision reports it with no severity only because there
     // was nothing to compare it against (I5·T58 · G6).
     const { service } = bound()
-    const view = await service.provisionCondition({ dataset: 'ds', condition: 'dsh-exec' }, SESSION)
+    const view = await service.provisionCondition({ condition: 'dsh-exec' })
     const endpoint = view.checks.find(check => check.message.startsWith('model.endpoint:'))
 
     expect(endpoint).toMatchObject({ severity: 'warn', code: 'UNRESOLVED_FIELD' })
   })
 
-  it('refuses a condition id that is not a file name, and an unbound session', async () => {
+  it('refuses a condition id that is not a file name', async () => {
     const { service } = bound()
 
-    await expect(service.provisionCondition({ dataset: 'ds', condition: '../../escape' }, SESSION))
+    await expect(service.provisionCondition({ condition: '../../escape' }))
       .rejects.toThrow(/not a usable name/)
-    await expect(service.provisionCondition({ dataset: 'ds', condition: 'dsh-exec' }, { session: { id: 's2' } }))
-      .rejects.toThrow(/\/datasets bind/)
   })
 })
 
@@ -155,11 +147,10 @@ describe('setConditionEndpoint — the field the readiness gate refuses (G6)', (
   it('writes it, re-hashes the condition, and says the lock beside it is now stale', async () => {
     const { conditionPath, service } = bound()
     // A locked, ready condition: the edit is what makes its lock stale.
-    await service.provisionCondition({ dataset: 'ds', condition: 'dsh-exec' }, SESSION)
+    await service.provisionCondition({ condition: 'dsh-exec' })
 
     const view = await service.setConditionEndpoint(
-      { dataset: 'ds', condition: 'dsh-exec', endpoint: 'default' },
-      SESSION,
+      { condition: 'dsh-exec', endpoint: 'default' }
     )
 
     expect(view.written).toBe(true)
@@ -175,8 +166,7 @@ describe('setConditionEndpoint — the field the readiness gate refuses (G6)', (
     const before = readFileSync(conditionPath, 'utf8')
 
     const view = await service.setConditionEndpoint(
-      { dataset: 'ds', condition: 'dsh-exec', endpoint: 'default' },
-      SESSION,
+      { condition: 'dsh-exec', endpoint: 'default' }
     )
 
     expect(view.written).toBe(false)
@@ -186,7 +176,7 @@ describe('setConditionEndpoint — the field the readiness gate refuses (G6)', (
   it('an empty value declares "not resolved yet", which is legal and not ready', async () => {
     const { service } = bound({ model: { declared: 'deepseek-v4-flash', endpoint: 'default' } })
 
-    const view = await service.setConditionEndpoint({ dataset: 'ds', condition: 'dsh-exec', endpoint: '' }, SESSION)
+    const view = await service.setConditionEndpoint({ condition: 'dsh-exec', endpoint: '' })
 
     expect(view.after).toBeNull()
     expect(view.row?.unresolved).toContain('model.endpoint')
@@ -196,7 +186,7 @@ describe('setConditionEndpoint — the field the readiness gate refuses (G6)', (
     const { conditionPath, service } = bound()
     const before = JSON.parse(readFileSync(conditionPath, 'utf8')) as Record<string, unknown>
 
-    await service.setConditionEndpoint({ dataset: 'ds', condition: 'dsh-exec', endpoint: 'default' }, SESSION)
+    await service.setConditionEndpoint({ condition: 'dsh-exec', endpoint: 'default' })
 
     const after = JSON.parse(readFileSync(conditionPath, 'utf8')) as Record<string, unknown>
     expect({ ...after, model: undefined }).toEqual({ ...before, model: undefined })
@@ -204,47 +194,10 @@ describe('setConditionEndpoint — the field the readiness gate refuses (G6)', (
   })
 
   it('refuses a declaration nothing else would accept either', async () => {
-    const { repo, service } = bound()
-    writeJson(join(repo, 'datasets', 'ds', 'conditions'), 'broken.json', { schema: 'dataseek.condition/1' })
+    const { library, service } = bound()
+    writeJson(library, 'broken.json', { schema: 'dataseek.condition/1' })
 
-    await expect(service.setConditionEndpoint({ dataset: 'ds', condition: 'broken', endpoint: 'default' }, SESSION))
+    await expect(service.setConditionEndpoint({ condition: 'broken', endpoint: 'default' }))
       .rejects.toThrow(EvalConditionEditRefused)
-  })
-})
-
-describe('the repo argument an agent may pass (G1)', () => {
-  it('accepts a spelling of the binding that differs from the recorded one', async () => {
-    const { repo, service } = bound()
-    // A symlink to the same directory: the shape a binding recorded as
-    // `~/…` and an argument typed as an absolute path arrive in.
-    const alias = join(tmpTree(), 'alias')
-    symlinkSync(repo, alias)
-
-    expect(sameRepoPath(alias, repo)).toBe(true)
-    expect(normalizeRepoPath(`${repo}/`)).toBe(normalizeRepoPath(repo))
-
-    const report = await service.conditions({ ...SESSION, agent: true, repo: alias })
-    expect(report.conditions.map(condition => condition.id)).toEqual(['dsh-exec'])
-  })
-
-  it('refuses a repository that is not the binding, and names both', async () => {
-    const { repo, service } = bound()
-    const elsewhere = join(tmpTree(), 'shared-checkout')
-    mkdirSync(join(elsewhere, 'datasets'), { recursive: true })
-
-    await expect(service.conditions({ ...SESSION, agent: true, repo: elsewhere }))
-      .rejects.toThrow(new RegExp(`is not this session's bound dataset repository \\(${repo}\\)`))
-  })
-
-  it('still lets a HUMAN caller name one — the CLI flag and the tab are not the agent', async () => {
-    const { repo, service } = bound()
-    const report = await service.conditions({ repo })
-    expect(report.conditions.map(condition => condition.id)).toEqual(['dsh-exec'])
-  })
-
-  it('normalizes a path that does not exist rather than refusing to compare', () => {
-    const missing = join(tmpTree(), 'not-created-yet')
-    expect(normalizeRepoPath(missing)).toBe(missing)
-    expect(sameRepoPath(missing, `${missing}/`)).toBe(true)
   })
 })

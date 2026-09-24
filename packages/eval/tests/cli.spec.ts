@@ -130,7 +130,7 @@ describe('dsh-eval usage', () => {
 
     // provision IS a verb now, but not one this process can perform: it needs
     // the harness family, so it refuses (exit 1) rather than reading as usage.
-    const provision = await run(['conditions', 'provision', 'x', '--repo', '/tmp'])
+    const provision = await run(['conditions', 'provision', 'x'])
     expect(provision.code).toBe(1)
     expect(provision.stderr).toContain('/eval conditions provision')
 

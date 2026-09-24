@@ -47,6 +47,8 @@ slash 的 `--no-write-back`（服务面的 `writeBack: false`、页面动词的 
 
 ### `repo` 参数只能复述绑定（G1）
 
+> T73 分支 2 部分取代了本节（[实验成为部署级对象](../architecture/2026-09-23-eval-experiments-deployment-level.zh.md)）：模型工具不再收 `repo` 参数，也没有任何东西再读绑定；agent 用 `<登记 id>/<set>` 指题库。下面一节记的是 G1 时的形态。
+
 `EvalService.resolveRepoScope` 与 datasets 的 `resolveScope` 各多一个 `agent` 旗标，只有模型工具适配器会设它。设了之后：
 
 - 没有绑定（datasets 侧还包括没有配置默认题库）→ 拒绝，点名 `/datasets bind`，无论有没有传 `repo`；

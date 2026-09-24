@@ -418,8 +418,8 @@ export type EvalKey =
   | 'error.notDatasetRepo.fix'
   | 'error.pathMissing'
   | 'error.pathMissing.fix'
-  | 'error.unbound'
-  | 'error.unbound.fix'
+  | 'error.noStateRoot'
+  | 'error.noStateRoot.fix'
   | 'error.serviceMissing'
   | 'error.serviceMissing.fix'
   | 'error.cancelled'
@@ -549,12 +549,6 @@ export type EvalKey =
   | 'design.notes'
   | 'design.verdictSources'
   | 'design.gridHint'
-  | 'design.bind'
-  | 'design.noRepo'
-  | 'design.noRepoHint'
-  | 'design.bindTitle'
-  | 'design.bindWhere'
-  | 'design.bindShape'
   | 'ready.badge'
   | 'ready.badgeAtStart'
   | 'ready.recheck'
@@ -657,6 +651,10 @@ export type EvalKey =
   | 'report.void'
   | 'report.voidHint'
   | 'report.audit'
+  | 'report.analysis'
+  | 'report.analysisLoading'
+  | 'report.analysisNoExperiment'
+  | 'list.legacy'
   | 'report.lastFinalAt'
   | 'readiness.blockers'
   | 'readiness.reminders'
@@ -664,7 +662,6 @@ export type EvalKey =
   | 'readiness.agentAsk'
   | 'fix.provision'
   | 'fix.endpoint'
-  | 'fix.bind'
   | 'fix.agent'
   | 'notice.rerun'
   | 'notice.rerunRefused'
@@ -792,14 +789,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const en: Record<EvalKey, string> = {
   // The three-part error seat (ui-spec §九): one sentence on what happened,
   // one on the fix; the raw text and the path stay folded under Details.
-  'error.notGitRepo': 'The bound dataset path is not a git repository',
-  'error.notGitRepo.fix': 'Bind the repository root instead: /datasets bind <path> --layers visible',
+  'error.notGitRepo': 'The registered dataset path is not a git repository',
+  'error.notGitRepo.fix': 'Register the repository root instead: dsh-datasets register --repo <path>',
   'error.notDatasetRepo': 'That repository holds no datasets (no datasets/ directory)',
-  'error.notDatasetRepo.fix': 'Bind the dataset repository’s root, or create datasets/ in it first',
-  'error.pathMissing': 'The bound dataset path is not on disk',
-  'error.pathMissing.fix': 'Check the directory is still there, then bind again: /datasets bind <path> --layers visible',
-  'error.unbound': 'This session has no dataset repository bound',
-  'error.unbound.fix': 'Bind one first: /datasets bind <path> --layers visible',
+  'error.notDatasetRepo.fix': 'Register the dataset repository’s root, or create datasets/ in it first',
+  'error.pathMissing': 'A file or directory this page reads is not on disk',
+  'error.pathMissing.fix': 'Check it is still there; if the dataset repository moved, register it again',
+  'error.noStateRoot': 'This instance has no eval state directory',
+  'error.noStateRoot.fix': 'Start the instance with DSH_HOME set (the dsh launcher sets it), then reopen this tab',
   'error.serviceMissing': 'This instance is missing a service this page needs',
   'error.serviceMissing.fix': 'A member is absent from the preset; install it and reopen this tab',
   'error.cancelled': 'The request was cancelled',
@@ -1341,12 +1338,6 @@ export const en: Record<EvalKey, string> = {
   'design.addGroupHint': 'Copy an existing group and change one field; the wizard writes both it and the plan.',
   'design.notes': 'Author’s note',
   'design.verdictSources': 'Verdict sources',
-  'design.bind': 'Bind a dataset',
-  'design.noRepo': 'This session has no dataset bound',
-  'design.noRepoHint': 'An experiment is designed against a dataset — items, comparison groups and plans all live in one.',
-  'design.bindTitle': 'Bind a dataset',
-  'design.bindWhere': 'Binding is a person’s act and it is made in the datasets tab: open it and use its import action, which takes a directory or a repository and a commit, validates it, and binds it to this session.',
-  'design.bindShape': 'What it takes: a git repository organized by the dataset protocol — a dataset.json naming its layers, items under items/, and the conditions/ and plans/ directories this tab writes into.',
   'ready.badge': 'Environment ready',
   'ready.badgeAtStart': 'Environment ready when it started',
   'ready.recheck': 'Check again',
@@ -1454,6 +1445,10 @@ export const en: Record<EvalKey, string> = {
   'report.void': 'Evaluation void: {reason}',
   'report.voidHint': 'No conclusion is drawn from this run. The run records are still there.',
   'report.audit': 'Audit',
+  'report.analysis': 'Analysis drafts ({n})',
+  'report.analysisLoading': 'Reading…',
+  'report.analysisNoExperiment': 'This run belongs to no experiment.',
+  'list.legacy': 'Legacy run (no experiment)',
   'report.lastFinalAt': 'latest final review {at}',
   'readiness.blockers': 'Blockers ({count})',
   'readiness.reminders': 'Reminders ({count})',
@@ -1461,7 +1456,6 @@ export const en: Record<EvalKey, string> = {
   'readiness.agentAsk': 'Experiment {name}, readiness checklist item {k}: {text}',
   'fix.provision': 'Provision {condition}',
   'fix.endpoint': 'Change endpoint',
-  'fix.bind': 'Register repository',
   'fix.agent': 'Let the agent handle it',
   'notice.rerun': '{name} started again as run {runId}. The stalled row stays; archive it when you no longer need it.',
   'notice.rerunRefused': 'Rerun refused: {reason}. Fix it on the design page, then try again.',
@@ -1582,14 +1576,14 @@ export const en: Record<EvalKey, string> = {
 /** 中文词典。 */
 export const zh: Record<EvalKey, string> = {
   // 错误态三段式（ui-spec §九）：一句人话 + 一句修法，异常原文与路径折在「详情」里。
-  'error.notGitRepo': '绑定的题库路径不是 git 仓库',
-  'error.notGitRepo.fix': '改绑到仓库根目录：/datasets bind <路径> --layers visible',
+  'error.notGitRepo': '登记的题库路径不是 git 仓库',
+  'error.notGitRepo.fix': '改为登记仓库根目录：dsh-datasets register --repo <路径>',
   'error.notDatasetRepo': '这个仓库里没有题集（缺 datasets/ 目录）',
-  'error.notDatasetRepo.fix': '改绑到题库仓库的根目录，或先在仓库里建出 datasets/',
-  'error.pathMissing': '绑定的题库路径在磁盘上找不到',
-  'error.pathMissing.fix': '确认目录还在，再重新绑定：/datasets bind <路径> --layers visible',
-  'error.unbound': '本会话还没绑定题库',
-  'error.unbound.fix': '先绑定题库：/datasets bind <路径> --layers visible',
+  'error.notDatasetRepo.fix': '登记题库仓库的根目录，或先在仓库里建出 datasets/',
+  'error.pathMissing': '本页要读的文件或目录在磁盘上找不到',
+  'error.pathMissing.fix': '确认它还在；题库仓库挪了位置就重新登记',
+  'error.noStateRoot': '这台实例没有评测状态目录',
+  'error.noStateRoot.fix': '用设置了 DSH_HOME 的方式启动实例（dsh 启动器会设），再重开这个 tab',
   'error.serviceMissing': '这台实例缺少本页要用的服务',
   'error.serviceMissing.fix': '预设里少装了成员；补齐后重开这个 tab',
   'error.cancelled': '这次请求被取消了',
@@ -2128,12 +2122,6 @@ export const zh: Record<EvalKey, string> = {
   'design.addGroupHint': '从一个已有对比组复制，改一个字段；向导会把它和计划一起写出来。',
   'design.notes': '作者备注',
   'design.verdictSources': '判定来源',
-  'design.bind': '绑定题库',
-  'design.noRepo': '本会话还没绑定题库',
-  'design.noRepoHint': '实验是对着题库设计的——题目、对比组、计划都住在题库里。',
-  'design.bindTitle': '绑定题库',
-  'design.bindWhere': '绑定是人的动作，在题集 tab 里做：打开它，用导入题集指一个目录或一个仓库加 commit，校验通过即绑定到本会话。',
-  'design.bindShape': '它要的东西：一个按题库协议组织的 git 仓库——dataset.json 声明层，题目在 items/ 下，还有本 tab 要写入的 conditions/ 与 plans/ 两个目录。',
   'ready.badge': '环境就绪',
   'ready.badgeAtStart': '启动时环境就绪',
   'ready.recheck': '重新检查',
@@ -2241,6 +2229,10 @@ export const zh: Record<EvalKey, string> = {
   'report.void': '评估不成立：{reason}',
   'report.voidHint': '这次运行不出结论；运行记录仍在。',
   'report.audit': '审计',
+  'report.analysis': '分析初稿（{n}）',
+  'report.analysisLoading': '读取中…',
+  'report.analysisNoExperiment': '这次运行不属于任何实验。',
+  'list.legacy': '旧运行（未关联实验）',
   'report.lastFinalAt': '最近一次终评 {at}',
   'readiness.blockers': '阻塞项（{count}）',
   'readiness.reminders': '提醒（{count}）',
@@ -2248,7 +2240,6 @@ export const zh: Record<EvalKey, string> = {
   'readiness.agentAsk': '实验 {name} 的就绪清单第 {k} 条：{text}',
   'fix.provision': 'provision {condition}',
   'fix.endpoint': '改端点',
-  'fix.bind': '登记仓库',
   'fix.agent': '让 agent 处理',
   'notice.rerun': '{name} 已重新启动（运行 {runId}）。停滞的那行还在，不需要时可以归档。',
   'notice.rerunRefused': '重跑被拒：{reason}。到设计页处理后再试。',

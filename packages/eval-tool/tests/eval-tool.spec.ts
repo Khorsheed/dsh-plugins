@@ -8,7 +8,7 @@ import { apply, type EvalToolConfig } from '../src/index.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 const EVAL_TOOLS = [
-  'eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_repo_write', 'eval_run_status', 'eval_cells',
+  'eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_analysis_write', 'eval_run_status', 'eval_cells',
 ]
 
 interface RegisteredTool {
@@ -93,8 +93,11 @@ describe('eval-tool companion row', () => {
     // The second write (I5·T60) and the door it is: the analysis draft's home,
     // and never an item's material — said where the model reads it, so that
     // reaching for `write` plus a sandbox escalation stops being the path.
-    expect(text).toContain('eval_repo_write')
-    expect(text).toContain('datasets/<set>/analysis/<path>')
+    expect(text).toContain('eval_analysis_write')
+    expect(text).toContain("an experiment's analysis/<path>")
+    // T73: the version question is the person's, and a skipped question stops.
+    expect(text).toContain('version is ambiguous')
+    expect(text).toContain('ask_user_question')
     expect(text).toContain('must not ask for a sandbox escalation')
   })
 
@@ -123,7 +126,7 @@ describe('eval-tool companion row', () => {
     // The hint's content is copy; its PRESENCE is the contract (a capable
     // composer submits a bare invocation without it).
     expect(command?.input?.hint).toBeTypeOf('string')
-    expect(command?.input?.hint).toContain('run <plan.json>')
+    expect(command?.input?.hint).toContain('run <experimentId>')
     // The handler is the core's own: a bare invocation answers the usage
     // (success-kind help semantics; the grant backstop fails open on this
     // ctx-less invocation).

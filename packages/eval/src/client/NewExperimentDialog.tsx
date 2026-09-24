@@ -170,7 +170,8 @@ export function NewExperimentDialog(props: {
   // showing another set's would only offer a refusal later.
   const chosen = sets.find(entry => entry.id === dataset) ?? (sets.length === 1 ? sets[0] : undefined)
   const setId = chosen?.id ?? dataset
-  const available = rows.filter(row => row.dataset === setId)
+  // The condition library is deployment-wide (T73): every condition may run any set.
+  const available = rows
   const mintedName = mintOpen ? mintId.trim() : ''
   const changedFields = MINT_FIELDS.filter(field => mint[field].trim() !== '')
 
