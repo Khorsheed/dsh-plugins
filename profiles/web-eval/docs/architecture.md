@@ -10,7 +10,7 @@
 
 | 插件 | 服务面（编排器用） | agent 工具（eval 域开放） | CLI（人与脚本） | UI | 备注 |
 |---|---|---|---|---|---|
-| **datasets** | `snapshot` / `worktree_path` / `read`（显式层，operator scope） | 读类：`list` `show` `describe` `read` `validate` `snapshot`；作者：`put_item` | `dsh-datasets` 全动词 + `bind` | datasets tab：绑定条、层树、预览 | 判官要的 verify / grading 层由编排器经服务面显式取，绝不经会话白名单 |
+| **datasets** | `snapshot` / `worktreePath`（按钉住的 commit 物化）/ `read`（显式层，operator scope） | 读类：`list` `show` `describe` `read` `validate` `snapshot`；作者：`put_item` | `dsh-datasets` 全动词（`register` / `registry` 登记；`bind` 已退役） | datasets tab：登记表、层树、预览 | 判官要的 verify / grading 层由编排器经服务面显式取，绝不经会话白名单 |
 | **mission** | 全部写方法：`runCreate` `transition` `submit` `annotate` `attest` `retry` `setRefs` `addArtifact` `addCheckpoint`；读：`get` `runStatus` `isReleasable` | 不开——eval 预设不挂 `mission-tool`（I5·T46）；逐格投影改由 eval 的 `eval_cells` 给 | `dsh-mission` 全动词，`export` 带 TTY 泄题闸 | missions tab：五桶队列、详情、重跑、释放检查、导出对话框 | 写工具在 eval 域关闭（工具分组配置，I2） |
 | **lab** | 全部：`acquire` `populate` `collect` `checkpoint` `verify` `archive` `release` `status` | 无（刻意） | `dsh-lab` 全动词，`status` 进度表 | 无自有 UI；单元状态进实验台（I5） | 只记录不判断；`release` 是闸的执行点 |
 | **local-agent 家族** | `start` / `resume` / `cancel` 门面；`effectiveSettings`（I1）；每条件 home 覆盖（I4） | 不开——codex / claude-code / kimi 三行 `tools: none`，dsh 那家默认不挂（I3·T27）；选手与判官的委派都由编排器经门面发起 | slash：`status` `login` `records` | 设置卡、成员 dock、成员续聊 | 委派记录 `delegations.jsonl`、transcript 镜像、用量归一 |
@@ -72,11 +72,11 @@ flowchart LR
 | 9 | 钉快照 | 编排器 | `datasets.service.snapshot` | run.meta.snapshot = {repo, commit, datasetId} | I2 |
 | 10 | 建 run、lint、展开矩阵、随机交错 | 编排器 | `mission.service.runCreate`（模板 lint 在内） | `runs/RUN.json`：每格一个 mission，labels {task, condition, rep}；`runs/RUN/data/` | I2 |
 | 11 | 取单元、记指纹 | 编排器 | `lab.service.acquire`（I3 前用宿主临时目录代替） | mission refs：resource、fingerprint | I2 宿主目录，I3 容器 |
-| 12 | 物化题面与 skill 包，记清单哈希 | 编排器 | `datasets.service.worktree_path`（显式 visible 层）→ `lab.service.populate` | `attempt-N/materialization.json`（artifact kind materialization） | I2 |
+| 12 | 物化题面与 skill 包，记清单哈希 | 编排器 | `datasets.service.worktreePath` 按实验钉住的 commit 物化显式 visible 层 → `lab.service.populate` | `attempt-N/materialization.json`（artifact kind materialization） | I2 |
 | 13 | 委派一轮：prompt = 阶段提示词 + task.md 字节 | 编排器 | `localAgent.service.start / resume`（exec 驱动） | 成员子会话 transcript；`delegations.jsonl`；orchestrator ns 注解 {promptSha, model.observed, usage} | I2 |
 | 14 | 每个返回点打 tag、跑验证 | 编排器 | `lab.service.checkpoint`、`lab.service.verify` | 单元内 git tag；mission checkpoint（ref = sha）；lab ns 注解（退出码、stdout、stderr、耗时） | I2 tag 由编排器在宿主目录打，I3 由 lab |
 | 15 | 收产出、结构校验、推进状态 | 编排器 | `mission.service.submit`（schema-check）、`transition` | `attempt-N/` 下的 submission 文件；history | I2 |
-| 16 | 跑探针，写硬指标 | 编排器 | `datasets.service.worktree_path`（verify 层）→ `lab.service.verify` → 解析 `dataseek.verdict/1` → `mission.service.annotate(script)` | `attempt-N/verdicts/script.json`；script ns | I2 手工探针，I3 脚本探针 |
+| 16 | 跑探针，写硬指标 | 编排器 | `datasets.service.worktreePath` 按钉住的 commit 物化 verify 层 → `lab.service.verify` → 解析 `dataseek.verdict/1` → `mission.service.annotate(script)` | `attempt-N/verdicts/script.json`；script ns | I2 手工探针，I3 脚本探针 |
 | 17 | 归档、过闸、释放 | 编排器 | `lab.service.archive` → `mission.service.transition`（file-check）→ `lab.service.release` | `attempt-N/archive/` + `manifest.json`；released 状态 | I2 宿主目录，I3 容器 |
 | 18 | 失败重跑 | 编排器 | `mission.service.retry(reason)` | 新 attempt；原 attempt 不动 | I1 加 reason，I2 策略 |
 | 19 | 判官盲评 | 编排器 | 去指纹产物 + `datasets.service.read`（grading 层）→ `localAgent.service.start`（判官条件）→ 解析 verdict → `mission.service.annotate(llm-draft)` | `attempt-N/verdicts/llm-draft-<k>.json`；llm-draft ns | I2 |
