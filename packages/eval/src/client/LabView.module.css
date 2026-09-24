@@ -1976,3 +1976,10 @@
   background: var(--dsw-alias-bg-l2);
   font-weight: 600;
 }
+
+/* The row 打开实验 asked for from the tool-row card (T76): the business
+   accent as an inset rule, so the row keeps its own hover and status tones. */
+.row[data-marked='true'] {
+  box-shadow: inset 3px 0 0 var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}

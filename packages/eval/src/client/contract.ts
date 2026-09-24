@@ -22,6 +22,7 @@ import type {
   EvalJudgeQueueRequest, EvalJudgeQueueView, EvalPlanRequest, EvalPlanReview, EvalReexportRequest,
   EvalReportRequest, EvalRunOutputView, EvalRunReportView, EvalRunUnitsRequest, EvalRunUnitsView,
 } from '../types.ts'
+import type { LabFocus } from './draft-card.ts'
 import type { createLabViewStore } from './store.ts'
 
 /** The eval Remote namespace, mounted by this plugin. */
@@ -186,6 +187,13 @@ export interface LabViewInjected {
    * back to the clipboard.
    */
   insertDraft: (sessionId: SessionId, text: string) => boolean
+  /**
+   * The 打开实验 requests from the eval_plan_draft tool-row card (T76). The
+   * view takes its session's pending request on mount and on every new one:
+   * back to the list, 全部 when the row is outside this session's scope, and
+   * the row marked. Optional so a view mounted without it simply never marks.
+   */
+  focus?: LabFocus
 }
 
 /** Full props of the lab view entry (runtime + store + injected + locale shares). */
