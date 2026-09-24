@@ -158,6 +158,10 @@ describe('what the web-eval pack ships outside the profile directory', () => {
     expect(body).toContain('You draft. They decide.')
     expect(body).toContain('/eval conditions provision')
     expect(body).toContain('批准并启动')
-    expect(body).toMatch(/Do not write `plans\/\*\.json`/)
+    expect(body).toContain('Do not write an experiment\'s plan or a library condition')
+    // T73: datasets come only from the registry, and a skipped version
+    // question ends the turn without a draft.
+    expect(body).toContain('Pick datasets only from `datasets_list`')
+    expect(body).toContain('If the person skips the question, stop.')
   })
 })
