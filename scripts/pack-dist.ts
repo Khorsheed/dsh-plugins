@@ -38,13 +38,17 @@ const STAGED_ROOT_FILES = ['package.json', 'README.md', 'README.zh.md', 'README.
 /** Expand a `dir` + double-star + `<pattern>` files glob into the relative
  * paths present in the package, so pack-dist honors the same globs pnpm pack
  * does — e.g. the `skills` glob shipping the 3d-artifact / restart-guard
- * skill files. Supports the two shapes in use: recursive suffix match
- * (`<dir>/**&#47;*.ext`) and every file (`<dir>/**&#47;*`). Returns [] for any
- * other glob shape. */
+ * skill files, or the display metadata's `locale/*.json`. Supports the shapes
+ * in use: recursive suffix match (`<dir>/**&#47;*.ext`) and every file
+ * (`<dir>/**&#47;*`), plus their single-level forms (`<dir>/*.ext`, `<dir>/*`).
+ * Returns [] for any other glob shape. */
 function expandGlobEntry(packageDir: string, entry: string): string[] {
-  const match = /^(.+?)\/\*\*\/(.+)$/.exec(entry)
-  if (match === null) return []
-  const [, root, rest] = match
+  const recursive = /^(.+?)\/\*\*\/(.+)$/.exec(entry)
+  // Single-level forms (`<dir>/*.ext`, `<dir>/*`): the card-metadata
+  // `locale/*.json` glob declared by the display-metadata wave.
+  const single = recursive === null ? /^(.+?)\/(\*[^/]*)$/.exec(entry) : null
+  if (recursive === null && single === null) return []
+  const [, root, rest] = (recursive ?? single)! as RegExpExecArray
   const rootDir = join(packageDir, root)
   if (!existsSync(rootDir) || !statSync(rootDir).isDirectory()) return []
   const suffix = rest === '*' ? '' : rest.replace(/^\*/, '')
@@ -55,7 +59,7 @@ function expandGlobEntry(packageDir: string, entry: string): string[] {
     for (const name of readdirSync(join(packageDir, dir))) {
       const rel = join(dir, name)
       if (statSync(join(packageDir, rel)).isDirectory()) {
-        stack.push(rel)
+        if (recursive !== null) stack.push(rel)
       } else if (suffix === '' || name.endsWith(suffix)) {
         out.push(rel)
       }

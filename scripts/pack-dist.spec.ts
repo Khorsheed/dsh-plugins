@@ -349,7 +349,16 @@ describe('filesDeclaredExtras', () => {
       // `<dir>/**/*` matches every file recursively.
       expect(filesDeclaredExtras(['skills/**/*'], dir).sort())
         .toEqual(['skills/3d-artifact/SKILL.md', 'skills/ignore.txt', 'skills/nested/other.md'])
-      // Unknown glob shapes expand to nothing.
+      // Single-level globs (the display metadata's locale/*.json): only the
+      // root level, nested files stay out.
+      mkdirSync(join(dir, 'locale', 'nested'), { recursive: true })
+      writeFileSync(join(dir, 'locale', 'en.json'), '{}')
+      writeFileSync(join(dir, 'locale', 'zh.json'), '{}')
+      writeFileSync(join(dir, 'locale', 'nested', 'deep.json'), '{}')
+      expect(filesDeclaredExtras(['locale/*.json'], dir).sort())
+        .toEqual(['locale/en.json', 'locale/zh.json'])
+      // Unknown glob shapes (a `*` segment mid-path) expand to nothing.
+      expect(filesDeclaredExtras(['assets/*/icon.png'], dir)).toEqual([])
       expect(filesDeclaredExtras(['assets/*.png'], dir)).toEqual([])
     } finally {
       rmSync(dir, { recursive: true, force: true })
