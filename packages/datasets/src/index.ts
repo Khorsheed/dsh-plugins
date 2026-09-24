@@ -26,17 +26,11 @@ import { DatasetsRemoteService } from './remote.ts'
 
 /** Plugin configuration. */
 export interface DatasetsPluginConfig {
-  /**
-   * Default dataset repository when a call carries no explicit `repo` and the
-   * session has no binding ('' = none).
-   */
-  repo?: string
   /** Materialized-layer root override ('' = the three-stage default). */
   materializedRoot?: string
 }
 
 export const Config: z<DatasetsPluginConfig> = z.object({
-  repo: z.string().default(''),
   materializedRoot: z.string().default(''),
 })
 
@@ -62,24 +56,21 @@ export const inject = []
  * command and the model tools are deliberately NOT registered here: both
  * moved to the companion `@khorsheed/dsh-datasets-tool`, which an agent
  * preset composes per session — the companion also carries the tool-guidance
- * prompt section. The configured default repo rides the service
- * (`service.defaultRepo`) so the companion's slash handler resolves the same
- * scope fallback without seeing this plugin's config.
+ * prompt section. There is no configured default repository: every face
+ * resolves datasets through the deployment's registry.
  * @param ctx - plugin context.
  * @param config - validated plugin config.
  */
 export function apply(ctx: Context, config: DatasetsPluginConfig): void {
-  const defaultRepo = config.repo ?? ''
   const service = createDatasetsService({
     materializedRoot: resolveMaterializedRoot(config.materializedRoot),
     bindingsRoot: join(resolveStateRoot(undefined), 'bindings'),
     registryPath: registryPathOf(resolveStateRoot(undefined)),
-    defaultRepo,
   })
   ctx.provide('datasets', service)
   // The web session tab's data face: the same service core behind a Typert
-  // Remote (wire namespace `datasets`), session bindings resolved per call.
-  ctx.plugin(DatasetsRemoteService, { defaultRepo })
+  // Remote (wire namespace `datasets`), registrations resolved per call.
+  ctx.plugin(DatasetsRemoteService)
 }
 
 export { handleDatasetsCommand, registerDatasetsSlash } from './slash.ts'

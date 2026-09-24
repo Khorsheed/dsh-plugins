@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/dataset-authoring-protocol.en.md
-docs/dataset-authoring-protocol.en.md: 9caabe2427b26b3b5d0dd503b351f0bf363d7952
-docs/dataset-authoring-protocol.md: 3b94f11cdffbad267e968fdde72572c99f2ec363
+docs/dataset-authoring-protocol.en.md: ee7966f6a8f931156e7b7715b9f294908cb64378
+docs/dataset-authoring-protocol.md: 1cae902536448ccb83941ac5a6b56671d56ac7a7

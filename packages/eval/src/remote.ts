@@ -14,15 +14,18 @@
  * None of those four takes an agent parameter: a CI caller has no agent, and
  * requiring one would put the door back where it was.
  *
- * The LAB TAB's verbs all take one, for the opposite reason: which experiments
- * and conditions a browser may see follows the calling session's dataset
- * binding, and a session-less read would either see everything or nothing.
+ * The LAB TAB's verbs all take one: they are the browser's, reached through a
+ * session. Since T73 no verb reads a per-session binding any more —
+ * experiments and the condition library belong to the deployment, datasets
+ * are pinned registrations — so the agent is only the caller's identity.
  * `runs` / `run` (I5·T35a) read the list and one experiment's overview;
  * `plan` / `conditions` / `conditionDiff` (I5·T36) read the plan review and
  * the condition registry; `matrix` / `cells` / `cell` (I5·T35b) read the
  * matrix, the cell list and one cell in full; `cellArtifact` (I5·T69) reads
  * ONE of that cell's artifacts in place, so the record detail's attachment
- * list is something a person can open rather than a list of paths.
+ * list is something a person can open rather than a list of paths;
+ * `experimentArtifact` (T73) does the same for one experiment's files (the
+ * report's 分析初稿 block), and `importExperiments` brings old plans over.
  *
  * `newExperiment` / `draftOptions` (I5·T34) are the 新建实验 form's: one read
  * to fill its pickers, one write that drafts the plan and its new conditions
@@ -89,7 +92,11 @@ import type {
   EvalDraftResult,
   EvalExperimentDetail,
   EvalExperimentRequest,
+  EvalExperimentArtifactRequest,
+  EvalExperimentArtifactView,
   EvalExperimentsRequest,
+  EvalImportRequest,
+  EvalImportResult,
   EvalExperimentsResult,
   EvalExportPlanRequest,
   EvalExportPlanView,
@@ -142,12 +149,14 @@ export class EvalRemoteService extends TypertRemoteService<never> {
 
   /**
    * Start a run in the background and answer with its ids.
-   * @param request - the plan path (on the instance) and the run's knobs.
+   * @param request - the experiment (or, legacy, a plan path on the instance) and the run's knobs.
    * @returns the job id, the run id, and the parent session that was resolved.
    */
   @Remote('runStart')
   async runStart(request: EvalRunRequest): Promise<EvalRunStarted> {
-    const handle = await this.service.runStart(request.plan, {
+    const target = request.experimentId ?? request.plan
+    if (target === undefined || target === '') throw new Error('runStart needs experimentId (or, for an old plan, plan)')
+    const options = {
       ...(request.dryRun === true ? { dryRun: true } : {}),
       ...(request.concurrency === undefined ? {} : { concurrency: request.concurrency }),
       ...(request.finalize === false ? { finalize: false } : {}),
@@ -157,8 +166,11 @@ export class EvalRemoteService extends TypertRemoteService<never> {
       ...(request.only === undefined ? {} : { only: request.only }),
       ...(request.maxCells === undefined ? {} : { maxCells: request.maxCells }),
       ...(request.ignoreReadiness === true ? { ignoreReadiness: true } : {}),
-      label: `eval run ${request.plan} (remote)`,
-    })
+      label: `eval run ${target} (remote)`,
+    }
+    const handle = request.experimentId !== undefined
+      ? await this.service.runExperimentStart(request.experimentId, options)
+      : await this.service.runStart(target, options)
     return {
       jobId: handle.jobId,
       runId: handle.runId,
@@ -210,26 +222,17 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   }
 
   /**
-   * The lab tab's LIST: every experiment this instance can see — the runs eval
-   * started, and the plans in the calling session's dataset repository nobody
-   * has started yet.
-   *
-   * The agent is here for its session: the dataset binding is a human's
-   * decision about what this session may see, and honouring it is the whole
-   * reason a browser read is not the CI read. Every optional selector rides in
-   * the request object — the gateway's client proxy enforces exact positional
-   * arity.
-   * @param agent - owning live agent; its session resolves the dataset binding.
-   * @param request - repository / dataset overrides.
+   * The lab tab's LIST: every experiment this deployment holds and every run
+   * eval started, paired. The request object is kept (empty) because the
+   * gateway's client proxy enforces exact positional arity.
+   * @param agent - owning live agent; its session is echoed back.
+   * @param request - no selectors since T73.
    * @returns the rows, plus a sentence per degraded source.
    */
   @Remote('runs')
   runs(agent: Agent, request: EvalExperimentsRequest): Promise<EvalExperimentsResult> {
-    return this.service.experiments({
-      session: { id: String(agent.session.id) },
-      ...(request.repo === undefined ? {} : { repo: request.repo }),
-      ...(request.dataset === undefined ? {} : { dataset: request.dataset }),
-    })
+    void request
+    return this.service.experiments({ session: { id: String(agent.session.id) } })
   }
 
   /**
@@ -250,46 +253,39 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * The PLAN-REVIEW page: the plan's own fields plus `validatePlan`'s verdict
    * as a flat `ok / warn / error` list (ui-spec §五, step 3).
    * @param agent - owning live agent.
-   * @param request - the plan document to review.
+   * @param request - the experiment (or, legacy, a plan path) to review.
    * @returns the digest, the check list, and every condition the plan names.
    */
   @Remote('plan')
   plan(agent: Agent, request: EvalPlanRequest): Promise<EvalPlanReview> {
     void agent
-    return this.service.planReview(request.planPath)
+    return this.service.planReview(request)
   }
 
   /**
-   * The CONDITIONS page: every condition the session's repository declares,
-   * with its lock and its readiness (ui-spec §五, step 4).
-   * @param agent - owning live agent; its session resolves the dataset binding.
-   * @param request - repository / dataset overrides.
+   * The CONDITIONS page: every condition in the deployment's library, with
+   * its lock and its readiness (ui-spec §五, step 4).
+   * @param agent - owning live agent.
+   * @param request - no selectors since T73 (kept for positional arity).
    * @returns the table rows.
    */
   @Remote('conditions')
   conditions(agent: Agent, request: EvalConditionsRequest): Promise<EvalConditionsView> {
-    return this.service.conditionsPage({
-      session: { id: String(agent.session.id) },
-      ...(request.repo === undefined ? {} : { repo: request.repo }),
-      ...(request.dataset === undefined ? {} : { dataset: request.dataset }),
-    })
+    void agent
+    void request
+    return this.service.conditionsPage()
   }
 
   /**
    * Two conditions, field by field — ONLY what differs.
-   * @param agent - owning live agent; its session resolves the dataset binding.
+   * @param agent - owning live agent.
    * @param request - the two references (a condition id, or a path).
    * @returns the differing paths and each side's value as canonical JSON text.
    */
   @Remote('conditionDiff')
   conditionDiff(agent: Agent, request: EvalConditionDiffRequest): Promise<EvalConditionDiffView> {
-    return this.service.conditionDiffPage({
-      a: request.a,
-      b: request.b,
-      session: { id: String(agent.session.id) },
-      ...(request.repo === undefined ? {} : { repo: request.repo }),
-      ...(request.dataset === undefined ? {} : { dataset: request.dataset }),
-    })
+    void agent
+    return this.service.conditionDiffPage({ a: request.a, b: request.b })
   }
 
   /**
@@ -301,13 +297,14 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * the declaration's `home.sha` from what it measured and writes the lock
    * against the corrected document, which is what the person used to do by
    * copying a digest between a terminal and an editor (I5·T39 · G7).
-   * @param agent - the clicking session; its binding names the working copy.
-   * @param request - the set, the condition, and whether to keep the declaration.
+   * @param agent - the clicking session.
+   * @param request - the condition, and whether to keep the declaration.
    * @returns what provision did, and the row as it now reads.
    */
   @Remote('provisionCondition')
   provisionCondition(agent: Agent, request: EvalConditionProvisionRequest): Promise<EvalConditionProvisionView> {
-    return this.service.provisionCondition(request, { session: { id: String(agent.session.id) } })
+    void agent
+    return this.service.provisionCondition(request)
   }
 
   /**
@@ -318,13 +315,14 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * way to fill it in was a text editor (I5·T39 · G6). It is a factor edit:
    * the condition re-hashes, any lock beside it goes stale, and the answer
    * says so rather than re-provisioning on the person's behalf.
-   * @param agent - the clicking session; its binding names the working copy.
-   * @param request - the set, the condition, and the value.
+   * @param agent - the clicking session.
+   * @param request - the condition and the value.
    * @returns what changed, and the row as it now reads.
    */
   @Remote('setConditionEndpoint')
   setConditionEndpoint(agent: Agent, request: EvalConditionEndpointRequest): Promise<EvalConditionEndpointView> {
-    return this.service.setConditionEndpoint(request, { session: { id: String(agent.session.id) } })
+    void agent
+    return this.service.setConditionEndpoint(request)
   }
 
   /**
@@ -335,11 +333,11 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * agent makes in one sentence are the same file written by the same code,
    * and the lab list cannot tell them apart.
    *
-   * A write, but NOT a start. It writes into the session's bound repository
-   * working copy and validates what it wrote; a plan validate rejects still
-   * lands, as a 草稿. The starting verb is `approve`, one page further on, and
-   * this one has no path to it.
-   * @param agent - the drafting session; its binding resolves the repository.
+   * A write, but NOT a start. It creates the experiment directory and
+   * validates what it wrote; a plan validate rejects still lands, as a 草稿.
+   * The starting verb is `approve`, one page further on, and this one has no
+   * path to it.
+   * @param agent - the drafting session, recorded as the experiment's origin.
    * @param request - ui-spec §五's form fields, flat.
    * @returns where the files landed, and validate's verdict on them.
    */
@@ -349,17 +347,41 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   }
 
   /**
-   * The 新建实验 form's pickers: which dataset sets this session may draft
-   * into, and the items and stage schemas each one holds.
-   * @param agent - owning live agent; its session resolves the dataset binding.
-   * @param request - repository override.
+   * The 新建实验 form's pickers: every registered dataset set, and the items
+   * and stage schemas each one holds at its latest commit.
+   * @param agent - owning live agent.
+   * @param request - no selectors since T73 (kept for positional arity).
    */
   @Remote('draftOptions')
   draftOptions(agent: Agent, request: EvalDraftOptionsRequest): Promise<EvalDraftOptionsView> {
-    return this.service.draftOptions({
-      session: { id: String(agent.session.id) },
-      ...(request.repo === undefined ? {} : { repo: request.repo }),
-    })
+    void agent
+    void request
+    return this.service.draftOptions()
+  }
+
+  /**
+   * IMPORT plans from `<registration id>@<ref>` as experiments — the same
+   * verb as `dsh-eval import --from`. `git show` only, bytes verbatim; a
+   * same-id condition conflict refuses and writes nothing.
+   * @param agent - owning live agent.
+   * @param request - the source, and optionally the one plan.
+   */
+  @Remote('importExperiments')
+  importExperiments(request: EvalImportRequest): Promise<EvalImportResult> {
+    return this.service.importExperiments(request)
+  }
+
+  /**
+   * Read one file of one experiment in place — the report page's 分析初稿
+   * block. The same rules as `cellArtifact`: that experiment's directory only,
+   * text only, cut past the size limit and said so.
+   * @param agent - owning live agent.
+   * @param request - the experiment and the experiment-relative path.
+   */
+  @Remote('experimentArtifact')
+  experimentArtifact(agent: Agent, request: EvalExperimentArtifactRequest): Promise<EvalExperimentArtifactView> {
+    void agent
+    return this.service.experimentArtifact(request)
   }
 
   /**
@@ -369,13 +391,13 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * parent and its workspace the run's cwd, exactly as `/eval run` resolves
    * them.
    * @param agent - the approving session's live agent (the run's parent).
-   * @param request - the plan document to approve.
+   * @param request - the experiment to approve.
    * @returns the check list, and — when it started — the job and run ids.
    */
   @Remote('approve')
   approve(agent: Agent, request: EvalApproveRequest): Promise<EvalApproveResult> {
     const cwd = agent.session.header?.cwd
-    return this.service.approve(request.planPath, {
+    return this.service.approve(request.experimentId, {
       parentSessionId: String(agent.session.id),
       ...(cwd === undefined ? {} : { cwd }),
       ...(request.keepUnits === true ? { keepUnits: true } : {}),

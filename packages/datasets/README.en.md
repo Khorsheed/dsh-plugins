@@ -67,7 +67,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # this plugin
 
 The package declares `dsh.bundle`, so the add reconciles its `cordis.patch.yml` row (a bare `datasets` mount) into the profile's bundles layer — no hand-edited cordis.yml. A composition may mount the `datasets` row id only once; `dsh --profile web --dump-config | grep datasets` printing nothing means the add is safe.
 
-Config (all optional): `repo` (the fallback repository of the legacy binding read path, which only eval still reads — see [Legacy session bindings](#legacy-session-bindings); default none) and `materializedRoot` (materialization root override; default `$DSH_HOME/state/datasets/materialized`, else `<cwd>/.dsh-datasets/materialized`). The registry file is fixed under the state root: `$DSH_HOME/state/datasets/registry.json`. `tools` is no longer a key on this row: the model-tool grouping moved to the companion row `@khorsheed/dsh-datasets-tool`, see [Model tools](#model-tools).
+Config (optional): `materializedRoot` (materialization root override; default `$DSH_HOME/state/datasets/materialized`, else `<cwd>/.dsh-datasets/materialized`). The registry file is fixed under the state root: `$DSH_HOME/state/datasets/registry.json`. `tools` is no longer a key on this row: the model-tool grouping moved to the companion row `@khorsheed/dsh-datasets-tool`, see [Model tools](#model-tools).
 
 The plugin provides the `ctx.datasets` service for other plugins to consume optionally, mounts the `datasetsRemote` Typert Remote service (the web session tab's data face), and (when the composition mounts `@khorsheed/dsh-datasets/invariant`) checks the materialization root's structural integrity at load. Since the preset-visibility rollout (A3) the `/datasets` slash command's REGISTRATION belongs to the companion row — it lands in the preset's scope layer, so only granted sessions see it; the handler and definition stay in this package, registered by the companion through `registerDatasetsSlash`. The `datasets_*` model tools and the `datasets:tools` prompt section belong to the companion row `@khorsheed/dsh-datasets-tool`, granted per session by an agent preset — see [Model tools](#model-tools).
 
@@ -100,7 +100,7 @@ The third comes from a real incident: an agent in a session with no data was tol
 
 ### Legacy session bindings
 
-Before T73 each session bound one repository (`$DSH_HOME/state/datasets/bindings/<session>.json`). That path is **read-only now**: eval's experiment orchestration still reads it through `DatasetsBindingFace.binding()` (moving it to registry references is eval's side of the change), so binding files are **never deleted automatically**, and `dsh-datasets binding` / `unbind` stay. Every door that wrote a binding (`/datasets bind`, the CLI's `bind`, the tab's binding bar, the composer's binding chip) is retired; `/datasets bind` answers with directions to register.
+Before T73 each session bound one repository (`$DSH_HOME/state/datasets/bindings/<session>.json`). From T73's second step that path is **fully retired**: no code reads a binding any more (eval's experiments now pin their own `{registry id, set, commit}`), and the `repo` fallback config, the CLI's `binding` / `unbind`, and `/datasets unbind` are deleted. Every door that wrote a binding (`/datasets bind`, the CLI's `bind`, the tab's binding bar, the composer's binding chip) was retired earlier; `/datasets bind` answers with directions to register. The only thing that still touches these files is the one-click migration below, and it only reads them. Binding files are **never deleted automatically**: once the migration looks right, remove the `$DSH_HOME/state/datasets/bindings/` directory by hand.
 
 Migrating from bindings is one click: the tab's «从旧绑定登记» (import from bindings; CLI `import-bindings`) folds every binding that points at one repository into one registration and marks bindings whose path no longer exists in red and skips them; the binding files stay byte-identical, and running it again never registers twice.
 
@@ -125,7 +125,7 @@ Migrating from bindings is one click: the tab's «从旧绑定登记» (import f
 
 ## CLI
 
-The `dsh-datasets` bin mirrors the tools' read verbs (same semantics, same parameters) and adds the registry verbs. The CLI is the human's face: its read verbs take a repository by path (`--repo`, else `$DSH_DATASETS_REPO`), not through the registry. Exit codes: 0 ok, 1 operational failure, 2 usage error. Reached through a symlink — a `PATH` entry, pnpm's `.bin/<name>` — the bin behaves exactly as `node lib/cli.js` does: the entry guard resolves `argv[1]` to its real path before comparing, so a symlinked path can never make it exit 0 doing nothing.
+The `dsh-datasets` bin mirrors the tools' read verbs (same semantics, same parameters) and adds the registry verbs. The CLI is the human's face: its read verbs' `--repo` takes a registry id or a repository path; omitted, it uses the deployment's only registration (zero or several are refused, with a sentence saying to pass `--repo`). By registry id, `--commit` defaults to the registration's tracked-branch tip; by path, to HEAD. Exit codes: 0 ok, 1 operational failure, 2 usage error. Reached through a symlink — a `PATH` entry, pnpm's `.bin/<name>` — the bin behaves exactly as `node lib/cli.js` does: the entry guard resolves `argv[1]` to its real path before comparing, so a symlinked path can never make it exit 0 doing nothing.
 
 ```sh
 dsh-datasets list [--repo R] [--dataset D] [--commit C]
@@ -140,21 +140,18 @@ dsh-datasets register --repo R [--id ID] [--tracked-ref B] [--set-layers set=a+b
 dsh-datasets update --id ID [--tracked-ref B] [--set-layers set=a+b,…] [--authoring-checkout P|none]
 dsh-datasets unregister --id ID
 dsh-datasets import-bindings [--state-root DIR]
-dsh-datasets unbind --session ID [--state-root DIR]
-dsh-datasets binding --session ID [--state-root DIR]
 ```
 
-The registry verbs write `registry.json` under `--state-root` (default `$DSH_HOME/state/datasets`), read per call, so a running instance's next tool call sees a new registration. `bind` is retired and answers with `register`'s usage; `unbind` / `binding` remain for the legacy binding files only.
+The registry verbs write `registry.json` under `--state-root` (default `$DSH_HOME/state/datasets`), read per call, so a running instance's next tool call sees a new registration. `bind` is retired and answers with `register`'s usage; `unbind` / `binding` are deleted.
 
 ## Slash commands
 
 ```
-/datasets list [dataset]
-/datasets show <dataset> [item]
-/datasets unbind
+/datasets list [<id>/<set>]
+/datasets show <id>/<set> [item]
 ```
 
-`/datasets bind` is retired: it now answers with one sentence pointing to the 题集 tab's Register repository (or `dsh-datasets register`) and writes nothing. A dataset repository is registered once per deployment; it is no longer a per-session act.
+`/datasets bind` is retired: it now answers with one sentence pointing to the 题集 tab's Register repository (or `dsh-datasets register`) and writes nothing. A dataset repository is registered once per deployment; it is no longer a per-session act. `list` with no argument lists every registration's `<id>/<set>`.
 
 The command declares its free-form input (`input.hint`). That is not decoration: without it a capable composer has no reason to believe `/datasets` takes arguments — picking the command from the completion strip submits a bare invocation and leaves the `show <dataset>` the human typed in the MESSAGE body, so the command answers with its usage line (found during T36's live pass).
 

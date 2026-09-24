@@ -97,7 +97,7 @@ describe('the readiness checklist', () => {
     expect(reminders.map(entry => entry.code)).toEqual(['LOCK_STALE', 'COMMIT_UNRESOLVED'])
   })
 
-  it('maps codes to the four fixes', () => {
+  it('maps codes to the three fixes', () => {
     expect(readinessFix(check('error', 'LOCK_MISSING', 'a'))).toEqual({ kind: 'provision', condition: 'a' })
     expect(readinessFix(check('error', 'SCOPE_NOT_PROVISIONED', 'a'))).toEqual({ kind: 'provision', condition: 'a' })
     expect(readinessFix(check('error', 'CAPABILITIES_SNAPSHOT_STALE', 'a'))).toEqual({ kind: 'provision', condition: 'a' })
@@ -106,8 +106,9 @@ describe('the readiness checklist', () => {
     expect(readinessFix(check('error', 'UNRESOLVED_FIELD', 'a', 'endpoint is unresolved')))
       .toEqual({ kind: 'endpoint', condition: 'a' })
     expect(readinessFix(check('error', 'UNRESOLVED_FIELD', 'a', 'model is unresolved'))).toEqual({ kind: 'agent' })
-    expect(readinessFix(check('warn', 'DATASET_ROOT_UNRESOLVABLE'))).toEqual({ kind: 'bind' })
-    expect(readinessFix(check('warn', 'COMMIT_UNRESOLVED'))).toEqual({ kind: 'bind' })
+    // No binding since T73: an unresolvable dataset is the agent's to fix (re-draft with a pinned commit).
+    expect(readinessFix(check('warn', 'DATASET_ROOT_UNRESOLVABLE'))).toEqual({ kind: 'agent' })
+    expect(readinessFix(check('warn', 'COMMIT_UNRESOLVED'))).toEqual({ kind: 'agent' })
     expect(readinessFix(check('error', 'PLAN_SCHEMA'))).toEqual({ kind: 'agent' })
     expect(fixLabel({ kind: 'provision', condition: 'a' })).toEqual({ key: 'fix.provision', params: { condition: 'a' } })
     expect(fixLabel({ kind: 'agent' }).key).toBe('fix.agent')

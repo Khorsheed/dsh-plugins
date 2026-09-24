@@ -185,9 +185,18 @@ export interface RunOptions {
   keepUnits?: boolean
   /**
    * Bundle export directory. Overrides the plan's `exports`; without either,
-   * `<dataset repo>/exports/` (decision 11).
+   * the experiment directory's `exports/` (T73) — or, for an old plan run by
+   * path, `<dataset repo>/exports/` (decision 11).
    */
   exportsDir?: string
+  /**
+   * The experiment this run belongs to (T73), resolved by the service: its id
+   * is written into `run.meta.experimentId` (what the lab list pairs on
+   * first), its dataset pin decides the snapshot, and its roots are what
+   * validate and the run read contract files and conditions from. Absent for
+   * an old plan run by path.
+   */
+  experiment?: RunExperiment
   /**
    * Infrastructure-retry budget per cell. Overrides the plan's
    * `retry.infrastructure` (the reviewed default); without either, 1.
@@ -241,6 +250,18 @@ export interface RunOptions {
   ignoreReadiness?: boolean
   /** Wall-clock cap on one readiness probe. Default 2 minutes. */
   readinessTimeoutMs?: number
+}
+
+/** An experiment as the run loop needs it. */
+export interface RunExperiment {
+  id: string
+  /** The experiment directory (absolute). */
+  dir: string
+  dataset: { registry: string; set: string; commit: string }
+  /** The materialized dataset view at the pinned commit, and the condition library's root. */
+  roots: { datasetRoot: string; conditionsRoot: string }
+  /** The registered repository's git directory — what the snapshot reads. */
+  repo: string
 }
 
 /** The resolved upstream faces + host paths the run loop needs. */
@@ -1582,7 +1603,8 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   const passGate = options.keepUnits === true ? false : options.finalize !== false
 
   // ── Offline validation first: a plan with errors never executes. ──────
-  const validation: PlanValidation = await validatePlan(planPath)
+  const experiment = options.experiment
+  const validation: PlanValidation = await validatePlan(planPath, experiment === undefined ? {} : { roots: experiment.roots })
   if (!validation.ok) {
     throw new EvalRunRefused(
       `plan ${planPath} has ${validation.errors.length} validation error(s) — nothing was executed`,
@@ -1590,12 +1612,17 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     )
   }
   const datasetRoot = validation.datasetRoot
-  if (datasetRoot === null) {
-    throw new EvalRunRefused('cannot locate the dataset root — cannot resolve manifest, conditions, or schemas')
+  const conditionsRoot = validation.conditionsRoot
+  if (datasetRoot === null || conditionsRoot === null) {
+    throw new EvalRunRefused(
+      experiment === undefined && validation.warnings.some(warning => warning.code === 'DATASET_ROOT_UNRESOLVABLE')
+        ? `cannot locate the dataset root — ${validation.warnings.find(warning => warning.code === 'DATASET_ROOT_UNRESOLVABLE')?.message ?? ''}`
+        : 'cannot locate the dataset root — cannot resolve manifest, conditions, or schemas',
+    )
   }
   const planAbs = resolve(planPath)
-  const plan = JSON.parse(await readFile(planAbs, 'utf8')) as {
-    dataset: { repo: string; id: string; commit: string | null; items: string[] }
+  const planDocument = JSON.parse(await readFile(planAbs, 'utf8')) as {
+    dataset: { repo?: string; id?: string; registry?: string; set?: string; commit: string | null; items: string[] }
     conditions: string[]
     reps: number
     stages: string[]
@@ -1607,7 +1634,18 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     expectedNs?: string[]
     unit?: unknown
   }
-  const planSha = sha256(Buffer.from(canonicalJson(plan), 'utf8'))
+  // One dataset id and one commit for everything below, whichever form the
+  // plan's block is in: an experiment's pin wins (an imported plan keeps its
+  // legacy block verbatim, and that block must not decide what is read).
+  const plan = {
+    ...planDocument,
+    dataset: {
+      ...planDocument.dataset,
+      id: experiment?.dataset.set ?? planDocument.dataset.set ?? planDocument.dataset.id ?? '',
+      commit: experiment?.dataset.commit ?? planDocument.dataset.commit,
+    },
+  }
+  const planSha = sha256(Buffer.from(canonicalJson(planDocument), 'utf8'))
   // The one switch between the two paths. A plan without it is the host path,
   // byte for byte what it was before containers existed.
   const planUnit = planUnitOf(plan)
@@ -1671,7 +1709,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   const conditions: ResolvedCondition[] = []
   const conditionWarnings: EvalDiagnostic[] = []
   for (const resolution of validation.conditions) {
-    const document = JSON.parse(await readFile(join(datasetRoot, 'conditions', `${resolution.id}.json`), 'utf8')) as Record<string, unknown>
+    const document = JSON.parse(await readFile(join(conditionsRoot, 'conditions', `${resolution.id}.json`), 'utf8')) as Record<string, unknown>
     const { errors } = conditionDiagnostics(document)
     if (errors.length > 0) {
       throw new EvalRunRefused(`condition ${resolution.id} violates the contract — nothing was executed`, errors)
@@ -1682,7 +1720,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     // lock is an I1-style unresolved condition — recorded as a warning and
     // the fresh hash is used (the full readiness gate lands with provision,
     // I4).
-    const lockPath = join(datasetRoot, 'conditions', `${resolution.id}.lock.json`)
+    const lockPath = join(conditionsRoot, 'conditions', `${resolution.id}.lock.json`)
     if (existsSync(lockPath)) {
       const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { sha?: string }
       if (lock.sha !== sha) {
@@ -1731,7 +1769,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   const judgeDocuments = new Map<string, Record<string, unknown>>()
   const judges: ResolvedJudge[] = []
   for (const judgeId of judgeIds) {
-    const judgePath = join(datasetRoot, 'conditions', `${judgeId}.json`)
+    const judgePath = join(conditionsRoot, 'conditions', `${judgeId}.json`)
     if (!existsSync(judgePath)) {
       throw new EvalRunRefused(`judge condition ${judgeId} does not exist — nothing was executed`, [
         { code: 'JUDGE_MISSING', message: `conditions/${judgeId}.json is not in the dataset` },
@@ -1789,6 +1827,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       runId: options.runId ?? '(dry-run)',
       dryRun: true,
       meta: {
+        ...(experiment === undefined ? {} : { experimentId: experiment.id }),
         planSha,
         planPath: planAbs,
         conditions: conditions.map(condition => ({ id: condition.id, sha: condition.sha })),
@@ -2090,7 +2129,11 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   }
 
   // ── Snapshot (the pin lives in run.meta). ─────────────────────────────
-  const snapshot = await faces.datasets.snapshot({ repo: expandHome(plan.dataset.repo) }, plan.dataset.id, plan.dataset.commit ?? undefined)
+  const snapshot = await faces.datasets.snapshot(
+    { repo: experiment?.repo ?? expandHome(plan.dataset.repo ?? '') },
+    plan.dataset.id,
+    plan.dataset.commit ?? undefined,
+  )
 
   // Samples per judge condition: the plan's number, or decision 9's floor of
   // two when the plan leaves it out. A plan may legitimately say 0 ("no LLM
@@ -2113,6 +2156,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
 
   const startedAt = now()
   const meta: Record<string, unknown> = {
+    ...(experiment === undefined ? {} : { experimentId: experiment.id, registry: experiment.dataset.registry }),
     datasetId: plan.dataset.id,
     commit: snapshot.commit,
     planSha,
@@ -2291,7 +2335,8 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   }
 
   // ── Bundle export (decision 11): visible layer only. ─────────────────
-  const outDir = options.exportsDir ?? planExportsDir ?? join(snapshot.repoPath, 'exports')
+  const outDir = options.exportsDir ?? planExportsDir
+    ?? (experiment === undefined ? join(snapshot.repoPath, 'exports') : join(experiment.dir, 'exports'))
   let bundleDir: string | undefined
   let exportError: string | undefined
   try {

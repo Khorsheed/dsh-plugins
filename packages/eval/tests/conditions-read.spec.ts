@@ -31,13 +31,12 @@ const PROVISIONED = {
   effective: { model: 'gpt-5.6-sol', reasoningEffort: 'default', permissions: 'workspace-write', endpoint: 'default' },
 }
 
-/** A repo with the given conditions under one dataset set. */
+/** A condition library root (`<root>/conditions/`) holding the given conditions. */
 function repoWith(conditions: Record<string, Record<string, unknown>>, locks: Record<string, unknown> = {}): string {
-  const repo = join(tmpTree(), 'repo')
-  const dataset = join(repo, 'datasets', 'ds')
-  for (const [id, document] of Object.entries(conditions)) writeJson(dataset, `conditions/${id}.json`, document)
-  for (const [id, lock] of Object.entries(locks)) writeJson(dataset, `conditions/${id}.lock.json`, lock)
-  return repo
+  const root = join(tmpTree(), 'state')
+  for (const [id, document] of Object.entries(conditions)) writeJson(root, `conditions/${id}.json`, document)
+  for (const [id, lock] of Object.entries(locks)) writeJson(root, `conditions/${id}.lock.json`, lock)
+  return root
 }
 
 describe('conditions list — the provisioned column', () => {
@@ -96,7 +95,7 @@ describe('conditions diff — shows, never chooses', () => {
 
   it('takes a path as readily as an id', async () => {
     const repo = repoWith({ a: { ...CONDITION }, b: { ...CONDITION, permissions: 'read-only' } })
-    const diff = await diffConditions(repo, join(repo, 'datasets/ds/conditions/a.json'), 'b')
+    const diff = await diffConditions(repo, join(repo, 'conditions/a.json'), 'b')
     expect(diff.differences).toEqual([{ path: 'permissions', a: 'workspace-write', b: 'read-only' }])
   })
 

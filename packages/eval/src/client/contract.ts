@@ -10,7 +10,7 @@ import type {} from '@khorsheed/dsh-eval/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  EvalApproveRequest, EvalApproveResult, EvalArchiveRunRequest, EvalArchiveWrite, EvalCellArtifactRequest, EvalCellArtifactView,
+  EvalApproveRequest, EvalApproveResult, EvalArchiveRunRequest, EvalArchiveWrite, EvalCellArtifactRequest, EvalCellArtifactView, EvalExperimentArtifactRequest, EvalExperimentArtifactView,
   EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
   EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCloseRunRequest, EvalClosureWrite, EvalCellsResult, EvalConditionDiffRequest,
   EvalConditionDiffView, EvalConditionEndpointRequest, EvalConditionEndpointView,
@@ -99,6 +99,12 @@ export interface LabViewInjected {
    * comes back as its entries, and anything else is refused by name.
    */
   fetchCellArtifact: (sessionId: SessionId, request: EvalCellArtifactRequest) => Promise<RemoteResult<EvalCellArtifactView>>
+  /**
+   * ONE file of ONE experiment (T73), read in place — the report page's
+   * 分析初稿 block. The same rules as a cell artifact: inside the experiment
+   * directory or nowhere, text only, cut above 256 KB and said so.
+   */
+  fetchExperimentArtifact: (sessionId: SessionId, request: EvalExperimentArtifactRequest) => Promise<RemoteResult<EvalExperimentArtifactView>>
   /** Re-run one cell: a fresh attempt against an auditable reason. */
   retryCell: (sessionId: SessionId, request: EvalCellRetryRequest) => Promise<RemoteResult<EvalCellRetryResult>>
   /** The release check: may this cell's resources be destroyed? */

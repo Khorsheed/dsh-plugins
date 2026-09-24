@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { encodeSegment } from '../src/binding.ts'
 import { removeReadOnlyTree } from '../src/materialize.ts'
 
 /** Run git synchronously in the fixture (setup-only; the code under test uses async git). */
@@ -168,4 +169,15 @@ export function makeJudgingRepo(): FixtureRepo {
  */
 export function stateOptions(root: string): { materializedRoot: string; registryPath: string } {
   return { materializedRoot: join(root, 'materialized'), registryPath: join(root, 'registry.json') }
+}
+
+/**
+ * Write a legacy session-binding record the way the retired store did
+ * (`<root>/<encoded-session-id>.json`, `{version: 1, binding}`) — the input
+ * the registry's one-click import reads. The service has no write path for
+ * these any more (T73 branch 2).
+ */
+export function writeLegacyBinding(root: string, sessionId: string, binding: { repoPath: string; datasets?: string[]; layers?: string[] }): void {
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, `${encodeSegment(sessionId)}.json`), `${JSON.stringify({ version: 1, binding }, null, 2)}\n`, 'utf8')
 }

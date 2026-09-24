@@ -24,7 +24,7 @@
  * document would make the reviewer the author.
  */
 
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
   EvalExperimentDetail, EvalExperimentRow, EvalPlanCheck, EvalPlanCondition, EvalPlanReview,
@@ -36,8 +36,8 @@ import { ConditionsTable } from './ConditionsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import { RunGrid, plannedRows, type GridColumn } from './Grid.tsx'
 import {
-  Chip, Detail, EmptyState, FactorCell, Field, ReadyBadge, Section, StartedRun, Word,
-  listOrDash, repoName, severityKey, severityTone, snapshotCell,
+  Chip, Detail, FactorCell, Field, ReadyBadge, Section, StartedRun, Word,
+  listOrDash, severityKey, severityTone, snapshotCell,
 } from './parts.tsx'
 import { factorPhrase, preferredColumn } from './vocab.ts'
 import { fixLabel, readinessFix, readinessSentence, splitReadiness, type ReadinessFix } from './journey.ts'
@@ -218,33 +218,6 @@ function ReadinessChecklist(props: {
   )
 }
 
-/**
- * Where a dataset binding comes from.
- *
- * It is NOT a form: binding is a person's act made in the 题集 tab, this tab's
- * Remote has no verb for it, and a client bundle never reaches into a sibling
- * plugin (ui-spec §八). What the page owes a reader is therefore the next step
- * in words rather than a command line (§九) — which tab, which action, and
- * what that action will ask for.
- */
-function BindDialog(props: { open: boolean; onClose: () => void; t: LabViewProps['t'] }) {
-  const { open, onClose, t } = props
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={t('design.bindTitle')}
-      closeLabel={t('export.close')}
-      footer={<Button size="sm" onClick={onClose}>{t('export.close')}</Button>}
-    >
-      <div className={css.newForm}>
-        <div>{t('design.bindWhere')}</div>
-        <div className={css.dim}>{t('design.bindShape')}</div>
-      </div>
-    </Modal>
-  )
-}
-
 /** ① The scale, the variables, the dataset version and the judges. Four lines. */
 function ScaleSection(props: {
   row: EvalExperimentRow
@@ -265,9 +238,6 @@ function ScaleSection(props: {
       <Field label={t('overview.factors')}><FactorCell row={row} t={t} /></Field>
       <Field label={t('overview.snapshot')}>
         <span className={css.mono}>{snapshotCell(row)}</span>
-        {row.snapshot.repo !== null && (
-          <span className={css.dim} title={row.snapshot.repo}> · {repoName(row.snapshot.repo)}</span>
-        )}
       </Field>
       <Field label={t('overview.judge')}>
         {row.judges.length === 0
@@ -423,9 +393,6 @@ export function DesignPage(props: {
   onEditEndpoint: (id: string | null) => void
   onSetEndpoint: (row: EvalConditionRow, endpoint: string) => void
   onAddGroup: () => void
-  /** The bind dialog is the stage bar's too (登记仓库), so its state lives above. */
-  binding: boolean
-  onBinding: (open: boolean) => void
   /** Run one checklist line's fix; `k` is its number on screen. */
   onFix: (fix: ReadinessFix, check: EvalPlanCheck, k: number) => void
   t: LabViewProps['t']
@@ -435,7 +402,7 @@ export function DesignPage(props: {
     conditions, conditionsLoading, conditionsError, conditionBusy, provision, conditionAction, endpointEditing,
     pair, diff, diffError, sentBack, started, output, outputError, refusal, approveError,
     keepUnits, onKeepUnits, onSendBack, onRecheck, onPick, onProvision, onEditEndpoint, onSetEndpoint,
-    onAddGroup, binding, onBinding: setBinding, onFix, t,
+    onAddGroup, onFix, t,
   } = props
   const digest = review?.digest ?? null
   // The grid's columns are the PLAYERS; the table and the badge also carry the
@@ -460,7 +427,6 @@ export function DesignPage(props: {
   const checklistShown = CHECKLIST_STAGES.has(row.status)
   const passing = (review?.checks ?? []).filter(check => check.severity === 'ok')
   const single = groups.length < 2
-  const repoMissing = conditions !== null && conditions.rows.length === 0 && (conditions.repo === '' || conditions.repo === null)
 
   // ui-spec §九: the heading is the group, the comparison variable's value is
   // its subtitle. The variable is the one the grid would put on its columns
@@ -532,33 +498,25 @@ export function DesignPage(props: {
         {review !== null && review.checks.length === 0 && (
           <div className={css.dim}>{t('review.checksNone')}</div>
         )}
-        {repoMissing
-          ? (
-            <EmptyState title={t('design.noRepo')} hint={t('design.noRepoHint')}>
-              <Button size="sm" variant="primary" onClick={() => { setBinding(true) }}>{t('design.bind')}</Button>
-            </EmptyState>
-          )
-          : (
-            <ConditionsTable
-              view={conditions}
-              loading={conditionsLoading}
-              error={conditionsError}
-              pair={pair}
-              diff={diff}
-              diffError={diffError}
-              busy={conditionBusy}
-              provision={provision}
-              action={conditionAction}
-              editing={endpointEditing}
-              only={subjects}
-              judges={digest?.judge.conditions ?? row.judges}
-              onPick={onPick}
-              onProvision={onProvision}
-              onEditEndpoint={onEditEndpoint}
-              onSetEndpoint={onSetEndpoint}
-              t={t}
-            />
-          )}
+        <ConditionsTable
+          view={conditions}
+          loading={conditionsLoading}
+          error={conditionsError}
+          pair={pair}
+          diff={diff}
+          diffError={diffError}
+          busy={conditionBusy}
+          provision={provision}
+          action={conditionAction}
+          editing={endpointEditing}
+          only={subjects}
+          judges={digest?.judge.conditions ?? row.judges}
+          onPick={onPick}
+          onProvision={onProvision}
+          onEditEndpoint={onEditEndpoint}
+          onSetEndpoint={onSetEndpoint}
+          t={t}
+        />
       </Section>
 
       <Section title={t('design.grid')} meta={t('design.gridHint')}>
@@ -617,7 +575,6 @@ export function DesignPage(props: {
         </Field>
       )}
       {started !== null && <StartedRun started={started} output={output} outputError={outputError} t={t} />}
-      <BindDialog open={binding} onClose={() => { setBinding(false) }} t={t} />
     </div>
   )
 }

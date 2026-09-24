@@ -34,20 +34,19 @@ function hookOf(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: 
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
-const PLAN_PATH = '/repo/datasets/ds/plans/i5-walk.json'
+const EXPERIMENT_ID = 'i5-walk-20260924-9f3e'
+const PLAN_PATH = `/state/eval/experiments/${EXPERIMENT_ID}/plan.json`
+const COMMIT = 'c0ffee'.padEnd(40, '0')
 
 const OPTIONS: EvalDraftOptionsView = {
-  repo: '/repo',
-  datasets: [{ id: 'ds', items: ['P0', 'P1'], stages: ['stage1', 'stage2'] }],
+  datasets: [{ id: 'reg/ds', commit: COMMIT, items: ['P0', 'P1'], stages: ['stage1', 'stage2'] }],
   notes: [],
 }
 
 const CONDITIONS: EvalConditionsView = {
-  repo: '/repo',
-  datasets: ['ds'],
   rows: [
     {
-      id: 'dsh-exec', dataset: 'ds', harness: 'dsh', drive: 'exec', model: 'deepseek-v4-flash',
+      id: 'dsh-exec', harness: 'dsh', drive: 'exec', model: 'deepseek-v4-flash',
       scope: null, preset: null, sha: 'a'.repeat(64),
       lock: { present: true, matches: true, homeSha: 'b'.repeat(64), cliVersion: '0.1.5', provisionedAt: null },
       status: 'ready', unresolved: [], problems: [],
@@ -68,8 +67,8 @@ const REVIEW: EvalPlanReview = {
 }
 
 const DRAFTED: EvalDraftResult = {
-  repo: '/repo',
-  dataset: 'ds',
+  experimentId: EXPERIMENT_ID,
+  dataset: { registry: 'reg', set: 'ds', commit: COMMIT },
   planPath: PLAN_PATH,
   conditionPaths: [],
   conditions: ['dsh-exec'],
@@ -78,17 +77,19 @@ const DRAFTED: EvalDraftResult = {
 }
 
 /** The list BEFORE the draft, and the list after — the row appears on refresh. */
-const EMPTY_LIST: EvalExperimentsResult = { repo: '/repo', datasets: ['ds'], rows: [], notes: [], session: 's1' }
+const EMPTY_LIST: EvalExperimentsResult = { rows: [], notes: [], session: 's1' }
 const WITH_DRAFT: EvalExperimentsResult = {
   ...EMPTY_LIST,
   rows: [{
-    id: `plan:${PLAN_PATH}`,
+    id: `experiment:${EXPERIMENT_ID}`,
+    experimentId: EXPERIMENT_ID,
+    legacy: false,
     name: 'i5-walk',
     planPath: PLAN_PATH,
     runId: null,
     status: 'pending-approval',
     statusDetail: null,
-    snapshot: { repo: '/repo', datasetId: 'ds', commit: null },
+    snapshot: { registry: 'reg', datasetId: 'ds', commit: COMMIT },
     conditions: ['dsh-exec'],
     judges: [],
     items: 1,
@@ -167,7 +168,7 @@ async function openForm(h: Harness): Promise<void> {
 function fillMinimum(): void {
   // ① dataset and items
   fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'i5-walk' } })
-  fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'ds' } })
+  fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'reg/ds' } })
   fireEvent.click(screen.getByText('P0').previousSibling as Element)
   next()
   // ② comparison groups
@@ -198,7 +199,7 @@ describe('the 新建实验 form', () => {
     // …and the step will not be left until it has what it needs.
     expect(screen.getByRole('button', { name: 'new.next' }).hasAttribute('disabled')).toBe(true)
     fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'i5-walk' } })
-    fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'ds' } })
+    fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'reg/ds' } })
     fireEvent.click(screen.getByText('P0').previousSibling as Element)
     next()
 
@@ -229,7 +230,7 @@ describe('the 新建实验 form', () => {
 
     await waitFor(() => { expect(h.draftExperiment).toHaveBeenCalled() })
     expect(h.draftExperiment.mock.calls[0]?.[1]).toMatchObject({
-      name: 'i5-walk', dataset: 'ds', items: ['P0'], stages: ['stage1'], conditions: ['dsh-exec'],
+      name: 'i5-walk', dataset: 'reg/ds', items: ['P0'], stages: ['stage1'], conditions: ['dsh-exec'],
     })
     // Step 2 hands the reader to step 3: 实验设计, where 批准并启动 is — and the
     // wizard itself has no approve verb at all.
@@ -237,9 +238,7 @@ describe('the 新建实验 form', () => {
       expect(screen.getByRole('button', { name: 'page.design' }).getAttribute('aria-pressed')).toBe('true')
     })
     expect(h.approvePlan).not.toHaveBeenCalled()
-    // The notice names the EXPERIMENT (the plan's file stem, since the row
-    // that carries the name does not exist client-side yet) and the path, so
-    // both are on screen and not only in the answer the RPC gave.
+    // The notice names the EXPERIMENT by the row's own name.
     // The NAME, not the path: ui-spec §九 keeps absolute paths off page text,
     // and the plan file is named under «详情» on the page this lands on.
     expect(screen.getByText('notice.drafted {"name":"i5-walk"}')).toBeTruthy()
@@ -280,7 +279,7 @@ describe('the 新建实验 form', () => {
     await openForm(h)
     // Minting lives on step ②, so the walk stops there, mints, and goes on.
     fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'i5-walk' } })
-    fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'ds' } })
+    fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'reg/ds' } })
     fireEvent.click(screen.getByText('P0').previousSibling as Element)
     next()
     fireEvent.click(screen.getByText('dsh-exec · dsh / deepseek-v4-flash').previousSibling as Element)

@@ -1,9 +1,9 @@
 /**
  * The `/datasets` slash face — the human interface over {@link DatasetsService},
  * a thin adapter exactly like the CLI: the handler parses `invocation.rawInput`
- * itself and takes the session from `invocation.agent` (unbind clears the
- * invoking session's legacy binding record; bind is retired and says where
- * registration lives).
+ * itself. Every set is addressed by its registry reference `<id>/<set>`, the
+ * same one the model tools take (bind is retired and says where registration
+ * lives).
  *
  * The REGISTRATION no longer happens in this core: it moved to the companion
  * `@khorsheed/dsh-datasets-tool` row (preset-visibility rollout A3), which an
@@ -18,9 +18,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { DatasetsError } from './dataset.ts'
 import { formatList, formatShow, formatWarnings } from './format.ts'
-import { resolveScope, type DatasetsService } from './service.ts'
+import type { DatasetsService } from './service.ts'
+import { registryScope } from './tool.ts'
 
-const USAGE = 'usage: /datasets list [dataset] | show <dataset> [item] | unbind'
+const USAGE = 'usage: /datasets list [<id>/<set>] | show <id>/<set> [item]'
 
 /** What `/datasets bind` answers now that binding is retired. */
 export const BIND_RETIRED = '/datasets bind is retired: dataset repositories are registered once per deployment now. '
@@ -73,24 +74,28 @@ async function slashGrantRefusal(invocation: CommandInvocation): Promise<Command
  * Handle one `/datasets` invocation. Usage problems answer with the usage
  * text; service failures surface as error results — the slash face never
  * throws across the registry.
- * @param service - the datasets service (its `defaultRepo` is the scope
- *   fallback the core's plugin config set).
- * @param invocation - the command invocation (the calling session is the
- *   binding owner).
+ * @param service - the datasets service.
+ * @param invocation - the command invocation.
  */
 export async function handleDatasetsCommand(service: DatasetsService, invocation: CommandInvocation): Promise<CommandResult> {
   const refusal = await slashGrantRefusal(invocation)
   if (refusal !== null) return refusal
-  const session = invocation.agent.session
   const parts = invocation.rawInput.trim().split(/\s+/).filter(part => part !== '')
   const verb = parts[0]
   const flags = parseSlashFlags(parts.slice(1))
-  const defaultRepo = service.defaultRepo
   try {
     switch (verb) {
       case 'list': {
-        const scope = resolveScope({}, service.binding(session), defaultRepo)
-        const result = await service.list(scope, flags.positionals[0])
+        const ref = flags.positionals[0]
+        if (ref === undefined) {
+          const rows = await service.registry.rows()
+          const lines = rows.flatMap(row => row.problem !== undefined
+            ? [`${row.entry.id}: ${row.problem}`]
+            : row.sets.map(set => `${set.ref}  ${set.title}`))
+          return { kind: 'success', text: lines.length === 0 ? 'no dataset repository is registered (Datasets tab → Register repository)' : lines.join('\n') }
+        }
+        const resolved = await service.registry.resolveRef(ref)
+        const result = await service.list(registryScope(resolved), resolved.set)
         const warnings = result.kind === 'datasets'
           ? result.datasets.flatMap(dataset => dataset.warnings)
           : result.dataset.warnings
@@ -98,10 +103,10 @@ export async function handleDatasetsCommand(service: DatasetsService, invocation
         return { kind: 'success', text: `${formatList(result)}${suffix}` }
       }
       case 'show': {
-        const dataset = flags.positionals[0]
-        if (dataset === undefined) return { kind: 'error', text: 'usage: /datasets show <dataset> [item]' }
-        const scope = resolveScope({}, service.binding(session), defaultRepo)
-        const result = await service.show(scope, dataset, flags.positionals[1])
+        const ref = flags.positionals[0]
+        if (ref === undefined) return { kind: 'error', text: 'usage: /datasets show <id>/<set> [item]' }
+        const resolved = await service.registry.resolveRef(ref)
+        const result = await service.show(registryScope(resolved), resolved.set, flags.positionals[1])
         const suffix = result.dataset.warnings.length === 0 ? '' : `\n${formatWarnings(result.dataset.warnings)}`
         return { kind: 'success', text: `${formatShow(result)}${suffix}` }
       }
@@ -109,10 +114,6 @@ export async function handleDatasetsCommand(service: DatasetsService, invocation
         // Per-session binding is retired (T73): what agents may use is the
         // deployment's registry, written by a person on the Datasets tab.
         return { kind: 'error', text: BIND_RETIRED }
-      }
-      case 'unbind': {
-        service.unbind(session)
-        return { kind: 'success', text: 'dataset binding cleared' }
       }
       default:
         return { kind: 'error', text: USAGE }
@@ -134,8 +135,8 @@ export function registerDatasetsSlash(ctx: Context, service: DatasetsService): v
   ctx.commands.register({
     name: 'datasets',
     description:
-      'Dataset browsing: /datasets list [dataset] | show <dataset> [item] | unbind (clears a legacy session '
-      + 'binding). Repositories are registered on the Datasets tab.',
+      'Dataset browsing: /datasets list [<id>/<set>] | show <id>/<set> [item]. '
+      + 'Repositories are registered on the Datasets tab.',
     // WITHOUT this descriptor a capable composer has no reason to believe the
     // command takes anything: picking `/datasets` from the completion strip
     // submits a bare invocation and leaves everything the human typed after it
@@ -144,7 +145,7 @@ export function registerDatasetsSlash(ctx: Context, service: DatasetsService): v
     // Declaring the free-form input is what makes the composer forward the
     // rest of the line; `rawInput` below is unchanged either way.
     input: {
-      hint: 'list [dataset] | show <dataset> [item] | unbind',
+      hint: 'list [<id>/<set>] | show <id>/<set> [item]',
     },
     handler: invocation => handleDatasetsCommand(service, invocation),
   })

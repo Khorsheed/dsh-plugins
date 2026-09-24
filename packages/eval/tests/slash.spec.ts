@@ -3,14 +3,17 @@
  * --dry-run` works anywhere (the offline kernel needs no host); a live run
  * outside a host context is refused, honestly.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { handleEvalCommand } from '../src/slash.ts'
 import { EvalService } from '../src/service.ts'
+import { cleanupTmp, useDshHome } from './helpers.ts'
 
 const FIXTURE_DATASET = join(import.meta.dirname, 'fixtures/dataset/datasets/harness-comparison')
 const T1_PLAN = join(FIXTURE_DATASET, 'plans/i1-walk.json')
 
 import { join } from 'node:path'
+
+afterEach(cleanupTmp)
 
 function invocation(rawInput: string): Parameters<typeof handleEvalCommand>[1] {
   return { rawInput, agent: { session: { id: 'sess-eval-slash' } } } as Parameters<typeof handleEvalCommand>[1]
@@ -27,7 +30,7 @@ describe('/eval', () => {
   it('run without arguments, unknown verbs, and bad flags answer with usage or errors', async () => {
     const bare = await handleEvalCommand(new EvalService(), invocation('run'))
     expect(bare.kind).toBe('error')
-    expect(bare.text).toContain('exactly one plan path')
+    expect(bare.text).toContain('exactly one experiment id')
 
     const unknown = await handleEvalCommand(new EvalService(), invocation('deploy something'))
     expect(unknown.kind).toBe('error')
@@ -48,6 +51,8 @@ describe('/eval', () => {
 describe('/eval conditions provision — the write-back and the way back (I5·T58 · G7)', () => {
   /** A service whose provision only records what it was asked for. */
   function recordingService(): { service: EvalService; calls: Array<Record<string, unknown>> } {
+    // provision takes a LIBRARY condition id (T73), so the library needs a home.
+    useDshHome()
     const calls: Array<Record<string, unknown>> = []
     const service = new EvalService()
     vi.spyOn(service, 'provision').mockImplementation((conditionPath, options) => {
@@ -77,7 +82,7 @@ describe('/eval conditions provision — the write-back and the way back (I5·T5
 
   it('corrects the declaration by default and says so in the reply', async () => {
     const { service, calls } = recordingService()
-    const result = await handleEvalCommand(service, invocation('conditions provision /repo/datasets/ds/conditions/c1.json --repo /repo'))
+    const result = await handleEvalCommand(service, invocation('conditions provision c1'))
 
     expect(result.kind).toBe('success')
     expect(calls[0]).not.toHaveProperty('writeBack')
@@ -88,7 +93,7 @@ describe('/eval conditions provision — the write-back and the way back (I5·T5
     const { service, calls } = recordingService()
     const result = await handleEvalCommand(
       service,
-      invocation('conditions provision /repo/datasets/ds/conditions/c1.json --repo /repo --no-write-back'),
+      invocation('conditions provision c1 --no-write-back'),
     )
 
     expect(result.kind).toBe('success')
@@ -102,7 +107,7 @@ describe('/eval conditions provision — the write-back and the way back (I5·T5
     expect(misplaced.kind).toBe('error')
     expect(misplaced.text).toContain('--no-write-back is a provision option')
 
-    const unknown = await handleEvalCommand(service, invocation('conditions provision c1.json --repo /repo --rewrite-everything'))
+    const unknown = await handleEvalCommand(service, invocation('conditions provision c1 --rewrite-everything'))
     expect(unknown.kind).toBe('error')
     expect(unknown.text).toContain('unknown option(s)')
   })
@@ -264,6 +269,37 @@ describe('/eval run — the 保留单元 switch (T57)', () => {
   })
 })
 
+describe('/eval run <experimentId> (T73)', () => {
+  const host = {
+    get: (name: string) => (name === 'jobs' ? { start: () => 'eval-run-1', get: () => undefined, kill: () => 'requested' } : undefined),
+  }
+
+  it('an experiment id starts that experiment; a path still starts an old plan', async () => {
+    const service = new EvalService(host)
+    const byExperiment = vi.spyOn(service, 'runExperimentStart')
+      .mockResolvedValue({ jobId: 'eval-run-1', runId: 'run-20260924000000-abcd' })
+    const byPath = vi.spyOn(service, 'runStart')
+      .mockResolvedValue({ jobId: 'eval-run-2', runId: 'run-20260924000001-abcd' })
+
+    const started = await handleEvalCommand(service, invocation('run harness-comparison-20260924-1a2b --keep-units'))
+    expect(started.kind).toBe('success')
+    expect(byExperiment).toHaveBeenCalledWith('harness-comparison-20260924-1a2b', expect.objectContaining({ keepUnits: true }))
+    expect(byPath).not.toHaveBeenCalled()
+
+    await handleEvalCommand(service, invocation(`run ${T1_PLAN}`))
+    expect(byPath).toHaveBeenCalledWith(T1_PLAN, expect.anything())
+  })
+
+  it('--wait runs the experiment in this turn through the experiment verb', async () => {
+    const service = new EvalService(host)
+    const waited = vi.spyOn(service, 'runExperiment').mockRejectedValue(new Error('no experiment "x-20260924-0000" in this deployment'))
+    const result = await handleEvalCommand(service, invocation('run x-20260924-0000 --wait'))
+    expect(waited).toHaveBeenCalledWith('x-20260924-0000', expect.anything())
+    expect(result.kind).toBe('error')
+    expect(result.text).toContain('no experiment "x-20260924-0000"')
+  })
+})
+
 describe('/eval run — --creds-root is gone (T20c)', () => {
   it('no longer takes a credentials root: the mount source is the instance\'s own scoped home', async () => {
     // It used to be a value flag. Now it is an unknown switch, and its value
@@ -271,7 +307,7 @@ describe('/eval run — --creds-root is gone (T20c)', () => {
     // than silently ignoring a flag someone still believes in.
     const result = await handleEvalCommand(new EvalService(), invocation('run plan.json --creds-root /tmp/creds'))
     expect(result.kind).toBe('error')
-    expect(result.text).toContain('exactly one plan path')
+    expect(result.text).toContain('exactly one experiment id')
   })
 })
 

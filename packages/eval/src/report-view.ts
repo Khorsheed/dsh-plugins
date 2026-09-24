@@ -34,6 +34,7 @@ import type { MissionReadFace } from './faces.ts'
 import { readRunMarks } from './closure.ts'
 import { readExportState, type EvalExportNote } from './export-note.ts'
 import { EvalReadRefused } from './read.ts'
+import { listAnalysisFiles } from './experiment-artifact.ts'
 import {
   analyzeBundle,
   type CriterionGroupResult, type CriterionSample, type EvalReport, type JudgeAssignment,
@@ -124,18 +125,21 @@ async function planExportsDir(planPath: string | null): Promise<string | null> {
  * @param meta - the run's `run.meta` as the ledger holds it.
  * @param outDir - the directory the caller wants tried first (the dialog's).
  * @param noted - the directory the run's newest export note names, if any.
+ * @param experimentExports - the owning experiment's `exports/` (T73's default), if the run has one.
  * @returns absolute candidate directories, de-duplicated, first-listed wins.
  */
 export async function exportDirCandidates(
   meta: Record<string, unknown>,
   outDir?: string,
   noted?: string,
+  experimentExports?: string,
 ): Promise<string[]> {
   const snapshot = isPlainObject(meta['snapshot']) ? meta['snapshot'] : undefined
   const repo = stringOrNull(snapshot?.['repo'])
   const candidates: Array<string | null> = [
     outDir === undefined || outDir.trim() === '' ? null : expandHome(outDir.trim()),
     noted === undefined || noted.trim() === '' ? null : expandHome(noted.trim()),
+    experimentExports ?? null,
     await planExportsDir(stringOrNull(meta['planPath'])),
     repo === null ? null : join(repo, 'exports'),
   ]
@@ -277,6 +281,9 @@ function criteriaOf(report: EvalReport): EvalReportTaskCriteria[] {
 export function projectReport(report: EvalReport, runId: string): EvalRunReportView {
   return {
     runId: report.runId ?? runId,
+    // Filled by {@link runReportView} when the run belongs to an experiment.
+    experimentId: null,
+    analysis: [],
     bundleDir: report.bundleDir,
     searched: [],
     refusal: null,
@@ -345,6 +352,8 @@ export function projectReport(report: EvalReport, runId: string): EvalRunReportV
 function notExported(runId: string, searched: string[]): EvalRunReportView {
   return {
     runId,
+    experimentId: null,
+    analysis: [],
     bundleDir: null,
     searched,
     refusal: searched.length === 0
@@ -392,7 +401,7 @@ function notExported(runId: string, searched: string[]): EvalRunReportView {
 export async function runReportView(
   mission: MissionReadFace,
   runId: string,
-  options: { outDir?: string } = {},
+  options: { outDir?: string; experiment?: { id: string; dir: string } } = {},
 ): Promise<EvalRunReportView> {
   let meta: Record<string, unknown>
   try {
@@ -402,19 +411,27 @@ export async function runReportView(
   }
   const state = readExportState(mission, runId)
   const closure = readRunMarks(mission, runId).closure
-  const candidates = await exportDirCandidates(meta, options.outDir, state.note?.outDir)
+  const experiment = options.experiment
+  const candidates = await exportDirCandidates(
+    meta, options.outDir, state.note?.outDir, experiment === undefined ? undefined : join(experiment.dir, 'exports'),
+  )
+  const owner = {
+    experimentId: experiment?.id ?? null,
+    analysis: experiment === undefined ? [] : await listAnalysisFiles(experiment.dir),
+  }
   const searched: string[] = []
   for (const candidate of candidates) {
     const bundle = bundleDirOf(candidate, runId)
     searched.push(candidate)
     if (!await isBundle(bundle)) continue
     const view = projectReport(await analyzeBundle(bundle), runId)
-    return { ...view, ...await exportFreshness(bundle, state), closure }
+    return { ...view, ...await exportFreshness(bundle, state), closure, ...owner }
   }
   return {
     ...notExported(runId, searched),
     lastHumanFinalAt: state.lastHumanFinalAt,
     closure,
+    ...owner,
   }
 }
 

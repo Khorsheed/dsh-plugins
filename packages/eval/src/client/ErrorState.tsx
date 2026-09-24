@@ -36,7 +36,7 @@ export type ErrorKind =
   | 'notGitRepo'
   | 'notDatasetRepo'
   | 'pathMissing'
-  | 'unbound'
+  | 'noStateRoot'
   | 'serviceMissing'
   | 'cancelled'
   | 'unknown'
@@ -50,7 +50,7 @@ export type ErrorKind =
 const MARKERS: ReadonlyArray<readonly [RegExp, ErrorKind]> = [
   [/not a dataset repository|no datasets\/ directory|holds no datasets\//i, 'notDatasetRepo'],
   [/not a git repository|rev-parse --show-toplevel/i, 'notGitRepo'],
-  [/no dataset repository/i, 'unbound'],
+  [/no eval state root/i, 'noStateRoot'],
   [/\bENOENT\b|no such file or directory|does not exist|is not a directory/i, 'pathMissing'],
   [/\bno \w+ service\b|mounts no |mount the dsh-/i, 'serviceMissing'],
   [/\bcancelled\b|\bcanceled\b|\baborted\b/i, 'cancelled'],
@@ -77,7 +77,7 @@ const COPY: Readonly<Record<ErrorKind, { head: EvalKey | null; fix: EvalKey }>> 
   notGitRepo: { head: 'error.notGitRepo', fix: 'error.notGitRepo.fix' },
   notDatasetRepo: { head: 'error.notDatasetRepo', fix: 'error.notDatasetRepo.fix' },
   pathMissing: { head: 'error.pathMissing', fix: 'error.pathMissing.fix' },
-  unbound: { head: 'error.unbound', fix: 'error.unbound.fix' },
+  noStateRoot: { head: 'error.noStateRoot', fix: 'error.noStateRoot.fix' },
   serviceMissing: { head: 'error.serviceMissing', fix: 'error.serviceMissing.fix' },
   cancelled: { head: 'error.cancelled', fix: 'error.cancelled.fix' },
   unknown: { head: null, fix: 'error.unknownFix' },

@@ -9,9 +9,8 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { writeBinding } from '../src/binding.ts'
 import { looksLikePath, openRegistry, readRegistry, type RepoRegistry } from '../src/registry.ts'
-import { cleanup, commitAll, git, makeFixtureRepo, writeFiles, type FixtureRepo } from './helpers.ts'
+import { cleanup, commitAll, git, makeFixtureRepo, writeFiles, writeLegacyBinding, type FixtureRepo } from './helpers.ts'
 
 let repo: FixtureRepo
 let state: string
@@ -186,10 +185,10 @@ describe('resolveRef — the three refusals', () => {
 describe('importBindings — the one-click «从旧绑定登记»', () => {
   it('folds bindings of one repository into one registration, skips dangling ones, deletes nothing', async () => {
     const bindings = join(state, 'bindings')
-    writeBinding(bindings, 's1', { repoPath: repo.dir, layers: ['visible'] })
-    writeBinding(bindings, 's2', { repoPath: repo.dir, layers: ['visible', 'hidden'] })
+    writeLegacyBinding(bindings, 's1', { repoPath: repo.dir, layers: ['visible'] })
+    writeLegacyBinding(bindings, 's2', { repoPath: repo.dir, layers: ['visible', 'hidden'] })
     const gone = mkdtempSync(join(tmpdir(), 'dsh-registry-gone-'))
-    writeBinding(bindings, 's3', { repoPath: gone, layers: ['visible'] })
+    writeLegacyBinding(bindings, 's3', { repoPath: gone, layers: ['visible'] })
     cleanup(gone)
     const before = ['s1', 's2', 's3'].map(sid => readFileSync(join(bindings, `${sid}.json`), 'utf8'))
 
@@ -198,7 +197,7 @@ describe('importBindings — the one-click «从旧绑定登记»', () => {
     expect(result.imported[0]).toMatchObject({ created: true, sessions: 2 })
     expect(result.dangling).toEqual([expect.objectContaining({ sessions: 1, reason: 'the path no longer exists' })])
     expect(registry.entries()).toHaveLength(1)
-    // The legacy files stay byte-identical: eval still reads them (branch 2).
+    // The legacy files stay byte-identical: nothing deletes them automatically.
     expect(['s1', 's2', 's3'].map(sid => readFileSync(join(bindings, `${sid}.json`), 'utf8'))).toEqual(before)
 
     // Idempotent: a second import finds the registration already there.

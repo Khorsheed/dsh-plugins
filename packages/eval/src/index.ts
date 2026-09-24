@@ -86,8 +86,20 @@ export type { ReadinessRecord, ReadinessSubject, ReadinessInput, ReadinessUnit }
 export { capabilityRefusal } from './readiness.ts'
 export { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 export { EvalReadRefused } from './read.ts'
-/** The narrow dataset-repository write door (the analysis draft's; I5·T39 · G16). */
-export { EvalWriteRefused, REPO_WRITE_PREFIXES, REPO_WRITE_SET_DIRS, resolveRepoWrite, writeRepoFile } from './repo-write.ts'
+/** The narrow write into one experiment's analysis/ (the analysis draft's door; I5·T39 · G16, T73). */
+export { ANALYSIS_WRITE_PREFIX, EvalWriteRefused, resolveAnalysisWrite, writeAnalysisFile } from './analysis-write.ts'
+export type { AnalysisWriteResult, AnalysisWriteTarget } from './analysis-write.ts'
+/** Experiments as deployment-level objects, and the condition library beside them (T73). */
+export {
+  conditionLibraryDir, conditionLibraryRoot, createExperiment, EvalExperimentError, EXPERIMENT_ID_RE, EXPERIMENT_META_SCHEMA,
+  experimentIdOfPlanPath, experimentsRoot, listExperimentRecords, mintExperimentId, readExperiment,
+} from './experiment-store.ts'
+export type { CreateExperimentInput, ExperimentDataset, ExperimentMeta, ExperimentRecord } from './experiment-store.ts'
+export { decideDatasetVersion, DatasetVersionRefused } from './dataset-version.ts'
+export type { DatasetVersionCandidate, DatasetVersionDecision, DatasetVersionFace } from './dataset-version.ts'
+export { EvalImportRefused, importExperiments, parseImportSource } from './import.ts'
+export type { ImportedExperiment, ImportRegistryFace, ImportReport } from './import.ts'
+export { listAnalysisFiles, readExperimentArtifact } from './experiment-artifact.ts'
 /** The run-level export note: where a run's bundle went, and when (I5·T53 / G17). */
 export { EXPORT_NOTE_KIND, readExportState, recordExportNote, recordExportNoteOn, reexportDirOf } from './export-note.ts'
 export type { ConditionHash, RunOptions, RunReport, RunCellReport, RunSubset } from './service.ts'
@@ -165,7 +177,7 @@ export { discardDir, hostProbeExecutor, unitProbeExecutor } from './probe-exec.t
 export type { ProbeExecution, ProbeExecResult, ProbeExecutor } from './probe-exec.ts'
 export type { RunSubset as RunSubsetRecord } from './run.ts'
 export type {
-  DatasetsBindingFace, DatasetsFace, MissionActionFace, MissionAnnotateFace, MissionExportRemoteFace,
+  DatasetsFace, DatasetsRegistryFace, MissionActionFace, MissionAnnotateFace, MissionExportRemoteFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, MissionStatusRow,
   LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile,
   LabFace, LabAcquireSpec, LabFingerprintComponents, LabMountSpec, LabPopulateResult, LabResourceLimits,

@@ -17,14 +17,14 @@
  * is a file and a 草稿 row, it starts nothing, and a person still has to read
  * it and press the button.
  *
- * `eval_repo_write` is the second write (I5·T60), and the same shape of safe:
- * one text file, into the bound repository's pass-through areas, never into an
- * item's material. It exists because the agent's OTHER product — the analysis
- * it writes after reading a bundle — lives in the dataset repository too, and
- * the session's workspace is not that repository. The `write` tool reaching
- * there asked a person to escalate the sandbox to `danger-full-access`: the
- * whole machine, once per markdown file (I5·T39 · G16). A narrow verb is the
- * grant that matches the act.
+ * `eval_analysis_write` is the second write (I5·T60, renamed from
+ * `eval_repo_write` in T73), and the same shape of safe: one text file, into
+ * one experiment's `analysis/` and nowhere else. It exists because the agent's
+ * OTHER product — the analysis it writes after reading a bundle — belongs
+ * with the experiment, and the session's workspace is not there. The `write`
+ * tool reaching there asked a person to escalate the sandbox to
+ * `danger-full-access`: the whole machine, once per markdown file (I5·T39 ·
+ * G16). A narrow verb is the grant that matches the act.
  *
  * `eval_cells` is the fourth (T46). An evaluation session no longer composes
  * the mission tool row, so the four mission read tools it used to carry for
@@ -35,14 +35,12 @@
  * used to fill, now through the same projection the 实验室 tab reads, so the
  * two surfaces cannot disagree about what exists.
  *
- * The `repo` parameter of the two tools that take one is a RESTATEMENT of the
- * session's dataset binding and nothing more: `agent: true` goes to the
- * service with every call from this module, and there a repository that is not
- * the bound one — or any repository at all in a session nobody bound — is
- * refused with the bind command. It was an override until I5·T58, which is how
- * an agent that had just been told to ask a person instead searched the disk,
- * found a shared checkout, and wrote three files onto another branch of it
- * (I5·T39 · G1).
+ * No tool takes a repository path any more (T73). Experiments and the
+ * condition library belong to the deployment, and a dataset is named by its
+ * registration (`<id>/<set>`) and pinned at a commit — there is no path for an
+ * agent to pick, which is the end state of the I5·T39 · G1 lesson: an agent
+ * told to ask a person searched the disk, found a shared checkout, and wrote
+ * onto another branch of it.
  *
  * Every tool is a thin adapter over {@link EvalService} — the service is the
  * body, the adapters only translate (the mission precedent). This module is
@@ -58,7 +56,7 @@ import { expandHome } from './validate.ts'
 
 /** The names this module registers, in registration order. */
 export const EVAL_TOOL_NAMES: readonly string[] =
-  ['eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_repo_write', 'eval_run_status', 'eval_cells']
+  ['eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_analysis_write', 'eval_run_status', 'eval_cells']
 
 /**
  * JSON pass-through output. The rendering is the whole document, pretty —
@@ -139,7 +137,7 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
   definitions.push(defineTool({
     name: 'eval_conditions',
     description:
-      'List the evaluation conditions (the subjects under test) a dataset repository declares, with their '
+      'List the evaluation conditions (the subjects under test) in this deployment\'s condition library, with their '
       + 'harness, declared model, condition hash, and READINESS: whether conditions/<id>.lock.json exists and '
       + 'still matches the declaration, and which contract fields are still null. A condition is a data file — '
       + 'draft a new one by copying an existing one and changing ONE field, then have the human provision and '
@@ -147,14 +145,8 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       + 'reports the `provisioned` snapshot: what the scoped home actually read back when it was provisioned. '
       + 'With `diff` set to two conditions instead, answers which FIELDS the two declarations differ on and '
       + 'what each side says — facts only, no recommendation about whether the pair is worth running. '
-      + 'Resolves against this session\'s bound dataset repository — the only one it can resolve against.',
+      + 'The library is the deployment\'s ($DSH_HOME/state/eval/conditions), shared by every experiment.',
     parameters: {
-      repo: {
-        type: 'string',
-        description: 'Optional, and only ever a restatement of the session\'s datasets binding: a path that is not the '
-          + 'bound repository is refused, and so is any path in a session nobody has bound. Omit it.',
-      },
-      dataset: { type: 'string', description: 'One dataset set (default: every set in the repository that declares conditions).' },
       diff: {
         type: 'array',
         items: { type: 'string' },
@@ -165,20 +157,13 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
     },
     output: jsonOutput(),
     isConcurrencySafe: () => true,
-    async execute(args, exec) {
-      const session = sessionOf(exec)
-      const scope = {
-        agent: true as const,
-        ...(args.repo !== undefined ? { repo: args.repo } : {}),
-        ...(args.dataset !== undefined ? { dataset: args.dataset } : {}),
-        ...(session !== undefined ? { session } : {}),
-      }
+    async execute(args) {
       const diff = args.diff
-      if (diff === undefined) return (await service.conditions(scope)) as unknown as JsonValue
+      if (diff === undefined) return (await service.conditions()) as unknown as JsonValue
       if (diff.length !== 2) {
         throw new Error(`diff wants exactly two conditions, got ${diff.length} — a diff is between two declarations`)
       }
-      return (await service.conditionDiff({ ...scope, a: diff[0] as string, b: diff[1] as string })) as unknown as JsonValue
+      return (await service.conditionDiff({ a: diff[0] as string, b: diff[1] as string })) as unknown as JsonValue
     },
   }))
 
@@ -189,37 +174,49 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       + 'expectedNs must match the judge, budgets must be positive), the referenced conditions (declaration, '
       + 'lock, resolved sha), and the stage schemas. Data problems come back as `errors` (the plan cannot run) '
       + 'and `warnings` (not resolved yet). Validating never starts anything — a human starts the run with '
-      + '/eval run once they approve the plan. Use this to re-check a plan you edited by hand; eval_plan_draft '
-      + 'already validates what it writes.',
+      + '/eval run <experimentId> once they approve the plan. eval_plan_draft already validates what it writes; '
+      + 'use this to re-check an experiment later (a condition may have been provisioned since). An experiment is '
+      + 'checked against the dataset commit it pins and the deployment\'s condition library.',
     parameters: {
+      experiment: {
+        type: 'string',
+        description: 'The experiment id (eval_plan_draft returns it; eval_cells without run_id lists them).',
+      },
       plan: {
         type: 'string',
-        required: true,
-        description: 'Path to the plan JSON (absolute, ~-relative, or relative to the working directory); '
-          + 'plans live at <repo>/datasets/<dataset>/plans/<name>.json and eval_conditions reports <repo>.',
+        description: 'Legacy only: a path to an old plan JSON that is not an experiment yet. Pass experiment instead.',
       },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => true,
     async execute(args) {
-      return (await service.validatePlan(expandHome(args.plan))) as unknown as JsonValue
+      if (args.experiment !== undefined && args.experiment !== '') {
+        return (await service.validateExperiment(args.experiment)) as unknown as JsonValue
+      }
+      if (args.plan !== undefined && args.plan !== '') {
+        return (await service.validatePlan(expandHome(args.plan))) as unknown as JsonValue
+      }
+      throw new Error('pass experiment (the experiment id) — or, for an old plan file, plan')
     },
   }))
 
   definitions.push(defineTool({
     name: 'eval_plan_draft',
     description:
-      'DRAFT an experiment: write plans/<name>.json and any new condition files into the session\'s bound dataset '
-      + 'repository, then validate what was written and answer with the paths and the verdict. One call instead of '
+      'DRAFT an experiment: create the experiment (its plan, pinned to a dataset commit) and mint any new conditions '
+      + 'into the deployment\'s condition library, then validate what was written and answer with the experiment id '
+      + 'and the verdict. One call instead of '
       + 'hand-writing each file and validating afterwards — and the same verb the 新建实验 form uses, so a draft you '
       + 'make and a draft a person makes are the same file and land in the same list. '
       + 'DRAFTING IS NOT STARTING: nothing here runs a cell, and there is no run tool to look for. The person '
-      + 'approves the plan and starts it (实验室 › 计划审阅 › 批准并启动, or /eval run <plan.json>); logging the '
+      + 'approves the plan and starts it (实验室 › 计划审阅 › 批准并启动, or /eval run <experimentId>); logging the '
       + 'harnesses in and provisioning their conditions is theirs too. Report the paths and the validate result back '
       + 'and stop there. '
       + 'A plan validate REJECTS is still written — it lands as a 草稿 with its errors named, which is the honest '
-      + 'thing to hand a person. Files are written into the repository WORKING COPY and never committed. Nothing is '
-      + 'ever overwritten: a name already taken is refused, so pick another. '
+      + 'thing to hand a person. The dataset repository is never written: it is read-only input, pinned at a commit. '
+      + 'If the answer says the version is ambiguous, do what it says — ask the person which commit with '
+      + 'ask_user_question and draft again with that commit; if they skip the question, stop. Nothing is ever '
+      + 'overwritten: a condition id already taken is refused, so pick another. '
       + 'A new condition is always a COPY: `new_conditions` names an existing condition with `from` and changes some '
       + 'of seven fields (harness, model, endpoint, scope, preset, permissions, reasoning). That is the whole discipline of the '
       + 'comparison — two conditions differing in ONE field are a single-factor pair, and a declaration written from '
@@ -232,16 +229,18 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       name: {
         type: 'string',
         required: true,
-        description: 'The experiment name; it doubles as the plan\'s file name (plans/<name>.json), so it must be a '
-          + 'usable one and must not already exist.',
+        description: 'The experiment name — shown in the lab list, and the stem of the experiment id.',
       },
-      dataset: { type: 'string', required: true, description: 'The dataset set to draft into (eval_conditions reports which sets exist).' },
-      repo: {
+      dataset: {
         type: 'string',
-        description: 'Optional, and only ever a restatement of the session\'s datasets binding — a different path is '
-          + 'refused, and so is any path in a session nobody has bound. Omit it; the binding is where the draft goes.',
+        required: true,
+        description: 'The dataset as <registration id>/<set>, e.g. dataseek-eval/core (the datasets read tools list registrations).',
       },
-      commit: { type: 'string', description: 'Pin the dataset snapshot to this commit. Omit to let the run pin it at start, which is the usual shape.' },
+      commit: {
+        type: 'string',
+        description: 'The dataset commit to pin. Omit it: the draft pins the tracked branch\'s latest commit when that is '
+          + 'unambiguous. Pass it only after a person chose one from the candidates an ambiguous-version answer listed.',
+      },
       items: {
         type: 'array',
         items: { type: 'string' },
@@ -261,8 +260,8 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
           type: 'object',
           additionalProperties: false,
           properties: {
-            id: { type: 'string', description: 'The new condition id; it doubles as the file name (conditions/<id>.json).' },
-            from: { type: 'string', description: 'The existing condition to copy, by id, in the same dataset set.' },
+            id: { type: 'string', description: 'The new condition id; it doubles as its library file name (conditions/<id>.json).' },
+            from: { type: 'string', description: 'The existing library condition to copy, by id.' },
             harness: { type: 'string', description: 'New harness.name. Changing it nulls harness.version — that version was the other CLI\'s.' },
             model: { type: 'string', description: 'New model.declared.' },
             endpoint: {
@@ -312,20 +311,19 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
         description: 'argv of a probe run inside each fresh unit before any delegation; a non-zero exit refuses the whole run. Declare one on any run whose units sit on an internal network — a unit that cannot reach its proxy answers NOTHING, which reads exactly like a subject with nothing to say.',
       },
       egress_timeout_ms: { type: 'number', description: 'Budget for that probe, in ms; default 30000.' },
-      exports: { type: 'string', description: 'Bundle export directory. Omit for the repository\'s own exports/.' },
+      exports: { type: 'string', description: 'Bundle export directory. Omit for the experiment\'s own exports/.' },
       notes: { type: 'string', description: 'Review commentary written into the plan verbatim — say what the comparison is FOR and what it cannot settle.' },
     },
     output: jsonOutput(),
-    // Two drafts at once would race on the same `plans/` directory, and the
-    // second would be refused on a name the first had just taken — a confusing
-    // way to learn that the tool is fine and the concurrency is not.
+    // Two drafts at once would race on minting the same library condition, and
+    // the second would be refused on an id the first had just taken — a
+    // confusing way to learn that the tool is fine and the concurrency is not.
     isConcurrencySafe: () => false,
     async execute(args, exec) {
       const session = sessionOf(exec)
       return (await service.draftExperiment({
         name: args.name,
         dataset: args.dataset,
-        ...(args.repo === undefined ? {} : { repo: args.repo }),
         ...(args.commit === undefined ? {} : { commit: args.commit }),
         items: [...args.items],
         conditions: [...args.conditions],
@@ -353,51 +351,43 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
           }),
         ...(args.exports === undefined ? {} : { exports: args.exports }),
         ...(args.notes === undefined ? {} : { notes: args.notes }),
-      }, { agent: true, ...(session === undefined ? {} : { session }) })) as unknown as JsonValue
+      }, session === undefined ? {} : { session })) as unknown as JsonValue
     },
   }))
 
   definitions.push(defineTool({
-    name: 'eval_repo_write',
+    name: 'eval_analysis_write',
     description:
-      'WRITE one text file into the session\'s bound dataset repository working copy — the analysis draft\'s door, and '
-      + 'the way to put a write beside the plan and the conditions it is about without asking a person to open the '
-      + 'whole machine. Use it for the analysis you write after reading a bundle (step 8), and for hand-fixing a '
-      + 'pass-through file; use eval_plan_draft for a plan or a condition, which it validates and this does not. '
-      + 'The path is RELATIVE to the bound repository and only these areas are writable: docs/<path>, '
-      + 'datasets/<set>/plans/<path>, datasets/<set>/conditions/<path>, datasets/<set>/analysis/<path>. '
-      + 'The item material (datasets/<set>/items/…) is never writable here — not the题面, not standards.yml, not a '
-      + 'rubric, not an oracle — whatever your read tools can see. Anything else is refused with the path and this '
-      + 'list quoted back, and nothing is written. Files land in the WORKING COPY and are never committed; nothing is '
-      + 'overwritten unless you pass overwrite, and an empty body is refused.',
+      'WRITE one text file into an experiment\'s analysis/ directory — the analysis draft\'s door. Use it for the '
+      + 'analysis you write after reading a bundle (step 8). The path is RELATIVE to the experiment directory and '
+      + 'only analysis/<path> is writable; anything else — and the dataset repository always — is refused with the '
+      + 'path and the allowed prefix quoted back, and nothing is written. Nothing is overwritten unless you pass '
+      + 'overwrite, and an empty body is refused. The answer\'s `confirmation` is what to tell the person: the file '
+      + 'shows on the experiment\'s report page (结果对比), in the 分析初稿 block.',
     parameters: {
+      experiment: {
+        type: 'string',
+        required: true,
+        description: 'The experiment id (eval_cells without run_id lists experiments; a run row names its experimentId).',
+      },
       path: {
         type: 'string',
         required: true,
-        description: 'Repository-relative path, e.g. docs/<experiment>-analysis.md or datasets/<set>/analysis/<name>.md. '
-          + 'Absolute paths, "~" and ".." are refused.',
+        description: 'Experiment-relative path under analysis/, e.g. analysis/<name>.md. Absolute paths, "~" and ".." are refused.',
       },
       content: { type: 'string', required: true, description: 'The file\'s full text (UTF-8). An empty body is refused.' },
       overwrite: { type: 'boolean', description: 'Replace the file when it already exists. Default false — an existing path is refused instead.' },
-      repo: {
-        type: 'string',
-        description: 'Optional, and only ever a restatement of the session\'s datasets binding — a different path is '
-          + 'refused, and so is any path in a session nobody has bound. Omit it; the binding is where the write goes.',
-      },
     },
     output: jsonOutput(),
     // Two writes at once may create the same parent directory and land in
     // either order; the door is per-file, so serializing is the cheap answer.
     isConcurrencySafe: () => false,
-    async execute(args, exec) {
-      const session = sessionOf(exec)
-      return (await service.writeRepoFile({
+    async execute(args) {
+      return (await service.writeAnalysis({
+        experimentId: args.experiment,
         path: args.path,
         content: args.content,
         ...(args.overwrite === undefined ? {} : { overwrite: args.overwrite }),
-        ...(args.repo === undefined ? {} : { repo: args.repo }),
-        agent: true,
-        ...(session === undefined ? {} : { session }),
       })) as unknown as JsonValue
     },
   }))
@@ -433,7 +423,7 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       + 'and the child session the delegation ran in when it started one — open that session to READ the player\'s '
       + 'transcript, never to steer it mid-run. Narrow with bucket / task / condition (exact matches). '
       + 'WITHOUT run_id it answers the other question instead: WHICH experiments exist — every evaluation run this '
-      + 'instance holds plus every plan nobody has started yet, each with its dataset snapshot, condition count, '
+      + 'instance holds plus every experiment nobody has started yet, each with its experiment id, dataset pin, condition count, '
       + 'matrix size, the factors a condition diff derived, status and progress. That is the same listing the '
       + '实验室 tab shows, so the two can never disagree; call it with no arguments to find a run id, then call it '
       + 'again with one. This is the whole per-cell view: an evaluation session grants no mission tools, so there is '
@@ -461,7 +451,7 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
         // Remote verb does — one implementation, so the tab and the model can
         // never report different experiments.
         const session = sessionOf(exec)
-        return (await service.experiments({ agent: true, ...(session === undefined ? {} : { session }) })) as unknown as JsonValue
+        return (await service.experiments(session === undefined ? {} : { session })) as unknown as JsonValue
       }
       return service.cells(args.run_id, {
         ...(args.bucket !== undefined ? { bucket: args.bucket } : {}),

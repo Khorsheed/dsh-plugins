@@ -3,7 +3,6 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { writeBinding } from '../src/binding.ts'
 import { parse, runCli, type CliIo } from '../src/cli.ts'
 import { removeReadOnlyTree } from '../src/materialize.ts'
 import { cleanup, git, makeFixtureRepo, type FixtureRepo } from './helpers.ts'
@@ -20,12 +19,16 @@ afterEach(() => {
 
 const scratchDir = (): string => scratch ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-cli-'))
 
-/** Capture one CLI run. */
-async function run(argv: readonly string[], env: Record<string, string | undefined> = {}): Promise<{ code: number; out: string; err: string }> {
+/**
+ * Capture one CLI run. A run that names no `--state-root` gets the scratch
+ * one: without it the CLI would read the machine's real registry.
+ */
+async function run(argv: readonly string[], extra: readonly string[] = []): Promise<{ code: number; out: string; err: string }> {
   let out = ''
   let err = ''
   const io: CliIo = { stdout: line => { out += line }, stderr: line => { err += line } }
-  const code = await runCli(argv, io, env)
+  const all = [...argv, ...extra]
+  const code = await runCli(all.includes('--state-root') ? all : [...all, '--state-root', join(scratchDir(), 'state')], io)
   return { code, out, err }
 }
 
@@ -44,7 +47,7 @@ describe('parse', () => {
 describe('read verbs', () => {
   it('list/show/describe/read/snapshot exit 0 with content; usage errors exit 2; failures exit 1', async () => {
     repo = makeFixtureRepo()
-    const env = { DSH_DATASETS_REPO: repo.dir }
+    const env = ['--repo', repo.dir]
     const list = await run(['list'], env)
     expect(list.code).toBe(0)
     expect(list.out).toContain('alpha')
@@ -76,7 +79,11 @@ describe('read verbs', () => {
     expect((await run(['show'], env)).code).toBe(2)
     expect((await run(['read', '--dataset', 'alpha'], env)).code).toBe(2)
     expect((await run(['nonsense'], env)).code).toBe(2)
-    expect((await run(['list'], {})).code).toBe(1) // no repo source: fail loud
+    expect((await run(['list'])).code).toBe(1) // nothing registered, no --repo: fail loud
+    // Registered once, --repo may be dropped: the only registration answers, by its id too.
+    expect((await run(['register', '--repo', repo.dir, '--id', 'lib'])).code).toBe(0)
+    expect((await run(['snapshot', '--dataset', 'alpha'])).out).toContain(repo.commit)
+    expect((await run(['snapshot', '--dataset', 'alpha', '--repo', 'lib'])).out).toContain(repo.commit)
     expect((await run(['show', '--dataset', 'ghost'], env)).code).toBe(1)
   })
 })
@@ -85,7 +92,7 @@ describe('worktree path (git archive materialization)', () => {
   it('prints a read-only, content-addressed directory; a repeat hits the cache', async () => {
     repo = makeFixtureRepo()
     const root = join(scratchDir(), 'materialized')
-    const env = { DSH_DATASETS_REPO: repo.dir }
+    const env = ['--repo', repo.dir]
     const first = await run(['worktree', 'path', '--dataset', 'alpha', '--layers', 'visible', '--materialized-root', root], env)
     expect(first.code).toBe(0)
     const path = first.out.trim()
@@ -120,15 +127,12 @@ describe('registry verbs (human-only writes)', () => {
     expect((await run(['register', '--state-root', root])).code).toBe(2)
   })
 
-  it('bind is retired and points at register; binding/unbind still read and clear a legacy record', async () => {
+  it('bind is retired and points at register; the legacy binding/unbind verbs are gone', async () => {
     const root = join(scratchDir(), 'state')
     const bind = await run(['bind', '--session', 's1', '--repo', '/repo', '--state-root', root])
     expect(bind.code).toBe(2)
     expect(bind.err).toContain('dsh-datasets register')
-    writeBinding(join(root, 'bindings'), 's1', { repoPath: '/repo', layers: ['visible'] })
-    const binding = await run(['binding', '--session', 's1', '--state-root', root])
-    expect(JSON.parse(binding.out)).toEqual({ repoPath: '/repo', layers: ['visible'] })
-    expect((await run(['unbind', '--session', 's1', '--state-root', root])).code).toBe(0)
-    expect((await run(['binding', '--session', 's1', '--state-root', root])).out.trim()).toBe('null')
+    expect((await run(['binding', '--session', 's1', '--state-root', root])).code).toBe(2)
+    expect((await run(['unbind', '--session', 's1', '--state-root', root])).code).toBe(2)
   })
 })

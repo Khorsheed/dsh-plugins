@@ -5,7 +5,9 @@ import { conditionFactors } from '../src/read.ts'
 import type { MissionRunListFace } from '../src/faces.ts'
 import type { EvalRunStatus } from '../src/job.ts'
 import { canonicalJson, hashConditionDocument } from '../src/hash.ts'
-import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
+import { createExperiment, type ExperimentRecord } from '../src/experiment-store.ts'
+import { EvalService } from '../src/service.ts'
+import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson } from './helpers.ts'
 import { createHash } from 'node:crypto'
 
 afterEach(cleanupTmp)
@@ -13,7 +15,8 @@ afterEach(cleanupTmp)
 /**
  * I5·T35a — the lab tab's projection. The status rule is a pure function with
  * one test per word plus its named coarse edges; the list and the overview are
- * projections over a fake mission ledger and a real plans/ tree.
+ * projections over a fake mission ledger and real experiment directories
+ * under the deployment's state root (T73).
  */
 
 const CONDITION_A = {
@@ -33,7 +36,7 @@ const CONDITION_B = { ...CONDITION_A, model: { declared: 'gpt-5.6-thinking', end
 
 const PLAN = {
   schema: 'dataseek.plan/1',
-  dataset: { repo: '~/repo', commit: null, id: 'ds', items: ['P0', 'P1'] },
+  dataset: { registry: 'reg', set: 'ds', commit: 'c0ffee1234567890c0ffee1234567890c0ffee12', items: ['P0', 'P1'] },
   conditions: ['cond-a', 'cond-b'],
   reps: 3,
   stages: ['stage1'],
@@ -47,20 +50,24 @@ function shaOf(document: unknown): string {
   return createHash('sha256').update(canonicalJson(document)).digest('hex')
 }
 
-/** A dataset repository with one plan and its two conditions. */
-function repoWithPlan(
+/** A deployment with one experiment, its two conditions in the library, and the set's view. */
+async function experimentWithPlan(
   plan: Record<string, unknown> = { ...PLAN },
-  options: { locked?: boolean } = {},
-): { repo: string; planPath: string } {
-  const repo = join(tmpTree(), 'repo')
-  const dataset = join(repo, 'datasets', 'ds')
-  writeJson(dataset, 'conditions/cond-a.json', CONDITION_A)
-  writeJson(dataset, 'conditions/cond-b.json', CONDITION_B)
+  options: { locked?: boolean; source?: { from: string; path: string } } = {},
+): Promise<{
+  stateRoot: string
+  record: ExperimentRecord
+  planPath: string
+  validate: (record: ExperimentRecord) => ReturnType<EvalService['validateExperiment']>
+}> {
+  const { stateRoot } = useDshHome()
+  writeJson(stateRoot, 'conditions/cond-a.json', CONDITION_A)
+  writeJson(stateRoot, 'conditions/cond-b.json', CONDITION_B)
   if (options.locked === true) {
     // What `conditions provision` writes: the lock carries the declaration it
     // was taken against, so a later edit to the declaration breaks the match.
     for (const [id, document] of [['cond-a', CONDITION_A], ['cond-b', CONDITION_B]] as const) {
-      writeJson(dataset, `conditions/${id}.lock.json`, {
+      writeJson(stateRoot, `conditions/${id}.lock.json`, {
         schema: 'dataseek.condition-lock/1',
         sha: hashConditionDocument(document),
         homeSha: 'a'.repeat(64),
@@ -68,11 +75,19 @@ function repoWithPlan(
       })
     }
   }
-  writeJson(dataset, 'schemas/stage1.json', { type: 'object' })
-  const planPath = writeJson(dataset, 'plans/harness-comparison.json', plan)
-  // A generated template sits beside every started plan; it is not an experiment.
-  writeJson(dataset, 'plans/harness-comparison.template.json', { states: [] })
-  return { repo, planPath }
+  // The materialized dataset view validate reads the contract files from.
+  const view = join(tmpTree(), 'view', 'ds')
+  writeJson(view, 'schemas/stage1.json', { type: 'object' })
+  writeJson(view, 'items/P0/item.json', { id: 'P0' })
+  writeJson(view, 'items/P1/item.json', { id: 'P1' })
+  const record = await createExperiment(stateRoot, {
+    name: 'harness-comparison',
+    dataset: { registry: 'reg', set: 'ds', commit: 'c0ffee1234567890c0ffee1234567890c0ffee12' },
+    plan: `${JSON.stringify(plan, null, 2)}\n`,
+    ...(options.source === undefined ? {} : { source: options.source }),
+  })
+  const service = new EvalService(hostsWith(fakeRegistry({ sets: { ds: view }, latest: 'c0ffee1234567890c0ffee1234567890c0ffee12' })))
+  return { stateRoot, record, planPath: record.planPath, validate: entry => service.validateExperiment(entry.id) }
 }
 
 /** One cell of the fake ledger. */
@@ -317,15 +332,17 @@ describe('conditionFactors', () => {
 })
 
 describe('listExperiments', () => {
-  it('lists an unstarted plan as a draft row with the plan digest', async () => {
-    const { repo, planPath } = repoWithPlan()
-    const result = await listExperiments({ repo, datasets: ['ds'] })
-    expect(result.repo).toBe(repo)
+  it('lists an unstarted experiment as a draft row with its pin', async () => {
+    const { stateRoot, record, planPath, validate } = await experimentWithPlan()
+    const result = await listExperiments({ stateRoot, validate })
     expect(result.rows).toHaveLength(1)
     const row = result.rows[0]!
     expect(row).toMatchObject({
-      id: `plan:${planPath}`,
+      id: `experiment:${record.id}`,
+      experimentId: record.id,
+      legacy: false,
       name: 'harness-comparison',
+      planPath,
       runId: null,
       conditions: ['cond-a', 'cond-b'],
       items: 2,
@@ -335,7 +352,7 @@ describe('listExperiments', () => {
       startedAt: null,
       unit: null,
     })
-    expect(row.snapshot.datasetId).toBe('ds')
+    expect(row.snapshot).toEqual({ registry: 'reg', datasetId: 'ds', commit: 'c0ffee1234567890c0ffee1234567890c0ffee12' })
     // This plan validates (a missing lock is a warning, not an error), so it
     // is waiting for a human rather than for its author.
     expect(row.status).toBe('pending-approval')
@@ -345,34 +362,36 @@ describe('listExperiments', () => {
   })
 
   it('locked conditions still validate — the row stays 待批准', async () => {
-    const { repo } = repoWithPlan({ ...PLAN }, { locked: true })
-    const result = await listExperiments({ repo, datasets: ['ds'] })
+    const { stateRoot, validate } = await experimentWithPlan({ ...PLAN }, { locked: true })
+    const result = await listExperiments({ stateRoot, validate })
     expect(result.rows[0]).toMatchObject({ status: 'pending-approval', validation: { ok: true } })
   })
 
   it('a plan validate rejects is a draft, with its error count on the row', async () => {
     // expectedNs empty: the plan names no verdict source, which is a contract
     // error rather than a warning — nothing could judge this run.
-    const { repo } = repoWithPlan({ ...PLAN, expectedNs: [] })
-    const result = await listExperiments({ repo, datasets: ['ds'] })
+    const { stateRoot, validate } = await experimentWithPlan({ ...PLAN, expectedNs: [] })
+    const result = await listExperiments({ stateRoot, validate })
     expect(result.rows[0]).toMatchObject({ status: 'draft' })
     expect(result.rows[0]!.validation?.errors).toBeGreaterThan(0)
   })
 
-  it('a plan with a run of its own is ONE row — the run, not a duplicate draft', async () => {
-    const { repo, planPath } = repoWithPlan()
+  it('an experiment with a run of its own is ONE row — the run, not a duplicate draft', async () => {
+    const { stateRoot, record, planPath } = await experimentWithPlan()
     const mission = ledger([{
       id: 'run-20260913-aa',
-      meta: runMeta(planPath),
+      meta: runMeta(planPath, { experimentId: record.id }),
       cells: [
         { id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'released', bucket: 'done' },
         { id: '2', task: 'P1', condition: 'cond-b', rep: 1, state: 'released', bucket: 'done' },
       ],
     }])
-    const result = await listExperiments({ mission, repo, datasets: ['ds'] })
+    const result = await listExperiments({ mission, stateRoot })
     expect(result.rows).toHaveLength(1)
     expect(result.rows[0]).toMatchObject({
       id: 'run-20260913-aa',
+      experimentId: record.id,
+      legacy: false,
       name: 'harness-comparison',
       runId: 'run-20260913-aa',
       status: 'judging',
@@ -384,36 +403,76 @@ describe('listExperiments', () => {
       progress: { done: 2, total: 2 },
       startedAt: 1_757_600_000_000,
     })
+    expect(result.rows[0]!.snapshot.registry).toBe('reg')
   })
 
-  it('matches a run to its plan by sha even when the path differs (another checkout)', async () => {
-    const { repo } = repoWithPlan()
+  it('pairs by experimentId first, even when the plan was edited after the run', async () => {
+    const { stateRoot, record } = await experimentWithPlan()
     const mission = ledger([{
-      id: 'run-elsewhere',
-      meta: runMeta('/somewhere/else/harness-comparison.json'),
+      id: 'run-new',
+      meta: runMeta('/elsewhere/plan.json', { experimentId: record.id, planSha: 'f'.repeat(64) }),
       cells: [{ id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'archived', bucket: 'done' }],
     }])
-    const result = await listExperiments({ mission, repo, datasets: ['ds'] })
-    expect(result.rows.map(row => row.runId)).toEqual(['run-elsewhere'])
+    const result = await listExperiments({ mission, stateRoot })
+    expect(result.rows.map(row => [row.runId, row.experimentId])).toEqual([['run-new', record.id]])
   })
 
-  it('ignores runs another package wrote (no evalVersion) and non-plan JSON in plans/', async () => {
-    const { repo, planPath } = repoWithPlan()
-    writeJson(join(repo, 'datasets', 'ds'), 'plans/notes.json', { hello: 'world' })
+  it('an old run without experimentId pairs by planSha — the reason import keeps the bytes', async () => {
+    const { stateRoot, record } = await experimentWithPlan()
+    const mission = ledger([{
+      id: 'run-old',
+      meta: runMeta('/home/user/repo/datasets/ds/plans/harness-comparison.json'),
+      cells: [{ id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'archived', bucket: 'done' }],
+    }])
+    const result = await listExperiments({ mission, stateRoot })
+    expect(result.rows.map(row => [row.runId, row.experimentId, row.legacy])).toEqual([['run-old', record.id, false]])
+  })
+
+  it('falls back to planPath against an imported experiment\'s source path when the sha no longer matches', async () => {
+    const { stateRoot, record } = await experimentWithPlan({ ...PLAN }, {
+      source: { from: 'reg@main', path: 'datasets/ds/plans/harness-comparison.json' },
+    })
+    const mission = ledger([{
+      id: 'run-edited',
+      meta: runMeta('/home/user/repo/datasets/ds/plans/harness-comparison.json', { planSha: 'e'.repeat(64) }),
+      cells: [{ id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'archived', bucket: 'done' }],
+    }])
+    const result = await listExperiments({ mission, stateRoot })
+    expect(result.rows.map(row => [row.runId, row.experimentId])).toEqual([['run-edited', record.id]])
+  })
+
+  it('a run no experiment claims is still listed, flagged legacy (旧运行（未关联实验）)', async () => {
+    const { stateRoot, record } = await experimentWithPlan()
+    const mission = ledger([{
+      id: 'run-orphan',
+      meta: runMeta('/home/user/repo/datasets/ds/plans/other.json', { planSha: 'd'.repeat(64) }),
+      cells: [{ id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'archived', bucket: 'done' }],
+    }])
+    const result = await listExperiments({ mission, stateRoot })
+    const orphan = result.rows.find(row => row.runId === 'run-orphan')
+    expect(orphan).toMatchObject({ experimentId: null, legacy: true, name: 'other' })
+    // The experiment it did not claim stays a draft of its own.
+    expect(result.rows.find(row => row.experimentId === record.id)).toMatchObject({ runId: null })
+  })
+
+  it('ignores runs another package wrote (no evalVersion), and skips a broken experiment directory with a note', async () => {
+    const { stateRoot, record, planPath } = await experimentWithPlan()
+    writeJson(join(stateRoot, 'experiments', 'broken-20260920-0000'), 'meta.json', { experimentId: 'nope' })
     const mission = ledger([
       { id: 'session-s1', meta: { originSession: 's1' }, cells: [] },
       {
         id: 'run-eval',
-        meta: runMeta(planPath),
+        meta: runMeta(planPath, { experimentId: record.id }),
         cells: [{ id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'archived', bucket: 'done' }],
       },
     ])
-    const result = await listExperiments({ mission, repo, datasets: ['ds'] })
+    const result = await listExperiments({ mission, stateRoot })
     expect(result.rows.map(row => row.id)).toEqual(['run-eval'])
+    expect(result.notes.some(note => note.includes('broken-20260920-0000'))).toBe(true)
   })
 
-  it('a job that failed before runCreate marks its plan refused and carries the detail', async () => {
-    const { repo, planPath } = repoWithPlan()
+  it('a job that failed before runCreate marks its experiment refused and carries the detail', async () => {
+    const { stateRoot, planPath } = await experimentWithPlan()
     const jobs: EvalRunStatus[] = [{
       jobId: 'eval-run-1',
       runId: 'run-never-created',
@@ -424,7 +483,7 @@ describe('listExperiments', () => {
       lines: 12,
       plan: planPath,
     }]
-    const result = await listExperiments({ mission: ledger([]), repo, datasets: ['ds'], jobs })
+    const result = await listExperiments({ mission: ledger([]), stateRoot, jobs })
     expect(result.rows).toHaveLength(1)
     expect(result.rows[0]).toMatchObject({
       runId: null,
@@ -433,7 +492,7 @@ describe('listExperiments', () => {
     })
   })
 
-  it('without a repository it lists runs only, and says so', async () => {
+  it('without a state root it lists runs only, as legacy rows, and says so', async () => {
     const mission = ledger([{
       id: 'run-only',
       meta: runMeta('/gone/plan.json'),
@@ -442,15 +501,14 @@ describe('listExperiments', () => {
     // The fixture's ledger last moved in 2025; the clock is pinned to that
     // run's start so the stall rule does not fire on an old fixture.
     const result = await listExperiments({ mission, now: 1_757_600_000_000 })
-    expect(result.repo).toBeNull()
-    expect(result.rows.map(row => row.status)).toEqual(['running'])
-    expect(result.notes.some(note => note.includes('no dataset repository'))).toBe(true)
+    expect(result.rows.map(row => [row.status, row.legacy])).toEqual([['running', true]])
+    expect(result.notes.some(note => note.includes('no eval state root'))).toBe(true)
   })
 
   it('a mission face that cannot list runs degrades to drafts with a note', async () => {
-    const { repo } = repoWithPlan()
+    const { stateRoot } = await experimentWithPlan()
     const narrow = { runStatus: () => { throw new Error('unused') }, get: () => ({ mission: { annotations: [] } }) } as unknown as MissionRunListFace
-    const result = await listExperiments({ mission: narrow, repo, datasets: ['ds'] })
+    const result = await listExperiments({ mission: narrow, stateRoot })
     expect(result.rows).toHaveLength(1)
     expect(result.rows[0]!.runId).toBeNull()
     expect(result.notes.some(note => note.includes('cannot list runs'))).toBe(true)
@@ -551,8 +609,8 @@ describe('listExperiments — T72 journey fields', () => {
   })
 
   it('drafts carry the journey fields as empty', async () => {
-    const { repo } = repoWithPlan()
-    const result = await listExperiments({ repo, datasets: ['ds'] })
+    const { stateRoot } = await experimentWithPlan()
+    const result = await listExperiments({ stateRoot })
     expect(result.rows[0]).toMatchObject({ originSession: null, archived: false, closure: null, lastProgressAt: null, stalledMinutes: null })
   })
 })

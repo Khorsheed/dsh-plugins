@@ -47,6 +47,8 @@ A harness the table has no line for gets **nothing**: validate's `UNIT_SCOPED_HO
 
 ### The `repo` argument may only restate the binding (G1)
 
+> Superseded in part by T73 branch 2 ([experiments as deployment-level objects](../architecture/2026-09-23-eval-experiments-deployment-level.md)): the model tools no longer take a `repo` argument and nothing reads a binding; agents name `<registration id>/<set>`. The section below records the G1 shape.
+
 `EvalService.resolveRepoScope` and datasets' `resolveScope` both take an `agent` flag, set by the model-tool adapters and by nothing else. Under it:
 
 - no binding (and no configured default repo on the datasets side) → refused, naming `/datasets bind`, whether or not a `repo` was passed;

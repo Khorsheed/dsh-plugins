@@ -24,7 +24,7 @@ afterEach(() => {
 
 const service = () => createDatasetsService({
   ...stateOptions(mkdtempSync(join(tmpdir(), 'dsh-datasets-state-'))),
-  bindingsRoot: mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-')),
+  bindingsRoot: join(tmpdir(), 'dsh-datasets-no-bindings'),
 })
 
 /** A healthy rubric: one leaf of every kind, plus a well-formed negative leaf. */
@@ -230,7 +230,9 @@ describe('service.validate — judgeability over a repository', () => {
 
     let out = ''
     const io: CliIo = { stdout: line => { out += line }, stderr: () => {} }
-    const code = await runCli(['validate', '--dataset', 'eval'], io, { DSH_DATASETS_REPO: path })
+    const state = mkdtempSync(join(tmpdir(), 'dsh-datasets-cli-state-'))
+    const code = await runCli(['validate', '--dataset', 'eval', '--repo', path, '--state-root', state], io)
+    rmSync(state, { recursive: true, force: true })
     expect(code).toBe(1)
     expect(out).toContain('error [RUBRIC_NO_ITEMS]')
   })

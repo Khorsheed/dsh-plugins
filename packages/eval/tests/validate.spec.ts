@@ -98,6 +98,36 @@ describe('validatePlan — resolution paths', () => {
     expect(codes(report.warnings)).toContain('DATASET_ROOT_UNRESOLVABLE')
     expect(report.conditions[0]).toMatchObject({ id: 'c1', sha: null, status: 'unready' })
   })
+
+  it('reads an experiment\'s roots — the materialized view and the library — never the plan\'s repo or siblings (T73)', async () => {
+    // A legacy repo the plan still names, with no stage schema: read, it would warn STAGE_SCHEMA_MISSING.
+    const { repoPath } = writeRepo()
+    const view = join(tmpTree(), 'view', 'ds')
+    writeJson(view, 'schemas/stage1.json', { type: 'object' })
+    // The library root holds conditions/, as $DSH_HOME/state/eval does.
+    const library = tmpTree()
+    writeJson(library, 'conditions/c1.json', { ...T1_CONDITION, notes: undefined })
+    const planPath = writeJson(join(repoPath, 'datasets', 'ds'), 'plans/plan.json', planBody({
+      dataset: { repo: repoPath, commit: 'c'.repeat(40), id: 'ds', items: ['I1'] },
+    }))
+
+    const report = await validatePlan(planPath, { roots: { datasetRoot: view, conditionsRoot: library } })
+    expect(report.datasetRoot).toBe(view)
+    expect(report.conditionsRoot).toBe(library)
+    expect(codes(report.warnings)).not.toContain('STAGE_SCHEMA_MISSING')
+    expect(report.conditions[0]).toMatchObject({ id: 'c1', sha: expect.stringMatching(/^[0-9a-f]{64}$/) })
+  })
+
+  it('a registry-form plan outside an experiment gets no plan-sibling fallback', async () => {
+    const { repoPath } = writeRepo()
+    const planPath = writeJson(join(repoPath, 'datasets', 'ds'), 'plans/plan.json', planBody({
+      dataset: { registry: 'reg', set: 'ds', commit: 'c'.repeat(40), items: ['I1'] },
+    }))
+    const report = await validatePlan(planPath)
+    expect(report.datasetRoot).toBeNull()
+    const unresolvable = report.warnings.find(warning => warning.code === 'DATASET_ROOT_UNRESOLVABLE')
+    expect(unresolvable?.message).toContain('validate it by experiment id')
+  })
 })
 
 describe('validatePlan — lock states', () => {

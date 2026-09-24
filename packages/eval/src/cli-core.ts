@@ -13,7 +13,9 @@ import { EvalService } from './service.ts'
 import { CONDITION_ID_RE } from './schema.ts'
 import { finalizeRun } from './finalize.ts'
 import { missionCliFace } from './mission-cli.ts'
-import { runOnInstance } from './instance.ts'
+import { authenticateInstance, callInstance, runOnInstance } from './instance.ts'
+import { EXPERIMENT_ID_RE } from './experiment-store.ts'
+import type { EvalImportResult, EvalRunRequest } from './types.ts'
 
 /** Injected output channels. */
 export interface CliIo {
@@ -31,13 +33,18 @@ const USAGE = `dsh-eval <verb> [options]
                                     declarations, locks, stage schemas.
                                     Report as stdout JSON; exit 0 when valid
                                     (warnings allowed), 1 when errors remain.
-  run <plan.json> --instance URL    Start a run ON a running instance through its
-                  [--token T]       Remote face and follow the log to the end: the CI
-                  [--no-follow]     door (no browser needed). The plan path is resolved
-                  [--keep-units]    ON THE INSTANCE. --token (or \$DSH_TOKEN) carries the
-                                    instance's launch token; --no-follow prints the job
-                                    and run ids and returns. Stopping it is job_kill on
-                                    the instance — the one cancel path there is.
+  run --experiment <id>             Start a run ON a running instance through its
+      --instance URL                Remote face and follow the log to the end: the CI
+                  [--token T]       door (no browser needed). An experiment lives in
+                  [--no-follow]     the instance's \$DSH_HOME/state/eval/experiments
+                  [--keep-units]    and pins its dataset {registry, set, commit}.
+                  [--dry-run]       --token (or \$DSH_TOKEN) carries the instance's
+                                    launch token; --no-follow prints the job and run
+                                    ids and returns. Stopping it is job_kill on the
+                                    instance — the one cancel path there is.
+                                    run <plan.json> --instance URL still runs an old
+                                    plan that was never imported (the path resolved
+                                    ON THE INSTANCE); its runs pair to no experiment.
                                     Every cell walks the release gate as it
                                     finishes, so a container run holds one unit
                                     at a time; --keep-units stops each cell at
@@ -46,6 +53,18 @@ const USAGE = `dsh-eval <verb> [options]
                                     maxConcurrentUnits cannot finish that way).
                                     --finalize is accepted and means what the
                                     default already does.
+  import --from <id>@<ref>          Bring old plans over from a registered dataset
+         --instance URL             repository as experiments, through the instance
+         [--plan NAME] [--token T]  (it holds the registry and the state root). Reads
+                                    datasets/<set>/plans/*.json at <ref> with git show
+                                    only and keeps every plan byte for byte, pinning
+                                    the plan's own dataset.commit, else the ref's
+                                    commit. Every condition a plan names goes into the
+                                    condition library: an identical hash is the same
+                                    condition; the same id with different content
+                                    refuses the whole import with the differences
+                                    listed, and nothing is written. --plan imports
+                                    one plan (file stem or repo-relative path).
   run <plan.json> --dry-run         Offline rehearsal: validate, generate the
                                     run template, expand the matrix, print the
                                     seeded execution order. [--only id,id] and
@@ -81,22 +100,22 @@ const USAGE = `dsh-eval <verb> [options]
   conditions hash <condition.json>  sha256 of the condition document's
                                     canonical JSON (notes excluded); the file
                                     must be a valid dataseek.condition/1.
-  conditions list [--repo DIR]      Every condition a dataset repository
-                  [--dataset ID]    declares: id, hash, lock state, whether the
-                                    locked home still matches, and the
-                                    provisioned snapshot the lock recorded.
-                                    Read-only.
+  conditions list                   Every condition in the deployment's library
+                                    (\$DSH_HOME/state/eval/conditions): id, hash,
+                                    lock state, whether the locked home still
+                                    matches, and the provisioned snapshot the
+                                    lock recorded. Read-only.
   conditions diff <a> <b>           Field-by-field difference between two
-                  [--repo DIR]      declarations (canonical deep compare; the
-                  [--dataset ID]    hash excludes notes, the diff still shows
+                                    library declarations (canonical deep compare;
+                                    the hash excludes notes, the diff still shows
                                     them). Each side is a condition id or a
                                     path. Prints WHICH fields differ and what
                                     each side says — and nothing else: whether
                                     a pair is worth running is the reviewer's
                                     call, not a tool's.
-  conditions provision <cond.json>  Turn a declaration into a real scoped home
-                  --repo DIR        and write conditions/<id>.lock.json beside
-                                    it. Needs the local-agent service (the
+  conditions provision <id>         Turn a library declaration into a real scoped
+                                    home and write conditions/<id>.lock.json
+                                    beside it. Needs the local-agent service (the
                                     credential grade and the scope's effective
                                     settings live there), so it runs from a
                                     live session: /eval conditions provision.
@@ -211,11 +230,17 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return report.ok ? 0 : 1
       }
       case 'run': {
-        const [planPath, ...extra] = rest
-        if (planPath === undefined) throw new UsageError('run wants a plan path')
-        const { values, switches, leftovers } = splitOptions(extra, [
-          '--only', '--max-cells', '--instance', '--token', '--concurrency', '--retries', '--out',
+        const { values, switches, leftovers: positionals } = splitOptions(rest, [
+          '--only', '--max-cells', '--instance', '--token', '--concurrency', '--retries', '--out', '--experiment',
         ])
+        const experimentId = values.get('--experiment')?.[0]
+        const [planPath, ...leftovers] = experimentId === undefined ? positionals : [undefined, ...positionals]
+        if (experimentId !== undefined && !EXPERIMENT_ID_RE.test(experimentId)) {
+          throw new UsageError(`--experiment wants an experiment id, got ${JSON.stringify(experimentId)}`)
+        }
+        if (experimentId === undefined && planPath === undefined) {
+          throw new UsageError('run wants --experiment <id> (or, for an old plan, a plan path)')
+        }
         const dryRun = switches.has('--dry-run')
         switches.delete('--dry-run')
         const instance = values.get('--instance')?.[0]
@@ -235,10 +260,11 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         }
         if (instance !== undefined) {
           // The instance path: this process is a CALLER, not an orchestrator.
-          // The plan path is resolved on the INSTANCE (it is the machine that
-          // holds the dataset repository), so it is passed through verbatim.
-          const request = {
-            plan: planPath,
+          // The experiment (or an old plan's path) is resolved on the INSTANCE
+          // — it holds the state root and the registry — so it is passed
+          // through verbatim.
+          const request: EvalRunRequest = {
+            ...(experimentId !== undefined ? { experimentId } : { plan: planPath as string }),
             ...(dryRun ? { dryRun: true } : {}),
             ...(keepUnits ? { keepUnits: true } : {}),
             ...(ignoreReadiness ? { ignoreReadiness: true } : {}),
@@ -265,6 +291,11 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
             return 1
           }
         }
+        if (experimentId !== undefined) {
+          io.stderr('dsh-eval: refusing: an experiment pins a registered dataset at a commit, and reading that pin needs the'
+            + ' instance\'s datasets registry — pass --instance <url> (add --dry-run for the rehearsal there).\n')
+          return 1
+        }
         if (!dryRun) {
           io.stderr(`dsh-eval: refusing: a run starts from a live session (/eval run), or from a running instance (--instance <url>) — outside both there is no parent agent to delegate through. Re-run with --dry-run for the offline rehearsal.\n`)
           return 1
@@ -275,7 +306,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         if (maxCells !== undefined && (!Number.isInteger(maxCells) || maxCells < 1)) {
           throw new UsageError(`--max-cells wants a positive integer, got ${JSON.stringify(maxCellsRaw)}`)
         }
-        const report = await service.run(planPath, {
+        const report = await service.run(planPath as string, {
           dryRun: true,
           ...(only.length > 0 ? { only } : {}),
           ...(maxCells !== undefined ? { maxCells } : {}),
@@ -296,6 +327,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         io.stderr(`dsh-eval: dry-run ok — ${sequence.length} of ${report.subset.totalCells} cell(s), order seeded (order.sequence)\n`)
         return 0
       }
+      case 'import':
+        return await runImport(rest, io)
       case 'finalize': {
         const { values, switches, leftovers } = splitOptions(rest, ['--data-dir', '--mission-cli'])
         const [runId, ...extraPositionals] = leftovers
@@ -402,10 +435,8 @@ async function runConditions(service: EvalService, rest: readonly string[], io: 
   const [sub, ...tail] = rest
   const VERBS = 'hash, list, diff, provision'
   if (sub === undefined) throw new UsageError(`conditions wants a verb (${VERBS})`)
-  const { values, switches, leftovers } = splitOptions(tail, ['--repo', '--dataset'])
+  const { switches, leftovers } = splitOptions(tail, [])
   if (switches.size > 0) throw new UsageError(`unexpected option(s) for conditions ${sub}: ${[...switches].join(' ')}`)
-  const repo = values.get('--repo')?.[0]
-  const dataset = values.get('--dataset')?.[0]
 
   if (sub === 'hash') {
     const [target, ...extra] = leftovers
@@ -426,14 +457,11 @@ async function runConditions(service: EvalService, rest: readonly string[], io: 
 
   if (sub === 'list') {
     if (leftovers.length > 0) throw new UsageError(`unexpected argument(s): ${leftovers.join(' ')}`)
-    const report = await service.conditions({
-      ...(repo !== undefined ? { repo } : {}),
-      ...(dataset !== undefined ? { dataset } : {}),
-    })
+    const report = await service.conditions()
     io.stdout(`${JSON.stringify(report, null, 2)}\n`)
     const ready = report.conditions.filter(condition => condition.status === 'ready').length
     const provisioned = report.conditions.filter(condition => condition.lock.provisioned !== null).length
-    io.stderr(`dsh-eval: ${report.conditions.length} condition(s) over ${report.datasets.length} dataset set(s)`
+    io.stderr(`dsh-eval: ${report.conditions.length} condition(s) in the library`
       + ` — ${ready} ready, ${provisioned} carrying a provisioned record\n`)
     return 0
   }
@@ -442,12 +470,7 @@ async function runConditions(service: EvalService, rest: readonly string[], io: 
     const [a, b, ...extra] = leftovers
     if (a === undefined || b === undefined) throw new UsageError('conditions diff wants two conditions (id or path)')
     if (extra.length > 0) throw new UsageError(`unexpected argument(s): ${extra.join(' ')}`)
-    const diff = await service.conditionDiff({
-      a,
-      b,
-      ...(repo !== undefined ? { repo } : {}),
-      ...(dataset !== undefined ? { dataset } : {}),
-    })
+    const diff = await service.conditionDiff({ a, b })
     io.stdout(`${JSON.stringify(diff, null, 2)}\n`)
     const substantive = diff.differences.filter(difference => difference.path !== 'notes')
     io.stderr(diff.identical
@@ -459,9 +482,51 @@ async function runConditions(service: EvalService, rest: readonly string[], io: 
   if (sub === 'provision') {
     io.stderr('dsh-eval: refusing: provision resolves the condition\'s scoped home, grades its credential and reads that scope\'s'
       + ' effective settings — all three live in the local-agent service, which this process does not have.'
-      + ' Run it from a live session: /eval conditions provision <condition.json> --repo <working copy>.\n')
+      + ' Run it from a live session: /eval conditions provision <condition id>.\n')
     return 1
   }
 
   throw new UsageError(`unknown conditions verb ${JSON.stringify(sub)} (want ${VERBS})`)
+}
+
+/**
+ * `import --from <id>@<ref> --instance URL [--plan NAME]`: the instance holds
+ * the datasets registry and the state root, so the import runs THERE and this
+ * process prints what it did. Offline there is no registry to read a ref from.
+ * @param rest - arguments after `import`.
+ * @param io - output channels.
+ * @returns the exit code.
+ */
+async function runImport(rest: readonly string[], io: CliIo): Promise<number> {
+  const { values, switches, leftovers } = splitOptions(rest, ['--from', '--plan', '--instance', '--token'])
+  const unknown = [...switches, ...leftovers]
+  if (unknown.length > 0) throw new UsageError(`unexpected argument(s) for import: ${unknown.join(' ')}`)
+  const from = values.get('--from')?.[0]
+  if (from === undefined) throw new UsageError('import wants --from <registration id>@<ref>')
+  const instance = values.get('--instance')?.[0]
+  if (instance === undefined) {
+    io.stderr('dsh-eval: refusing: import reads the dataset repository through the instance\'s datasets registry and writes'
+      + ' into its state root — pass --instance <url>.\n')
+    return 1
+  }
+  const plan = values.get('--plan')?.[0]
+  const token = values.get('--token')?.[0] ?? process.env['DSH_TOKEN']
+  const target = { baseUrl: instance, ...(token === undefined ? {} : { token }) }
+  try {
+    const cookie = await authenticateInstance(target)
+    const report = await callInstance<EvalImportResult>(
+      { ...target, ...(cookie === undefined ? {} : { cookie }) },
+      'importExperiments',
+      { request: { from, ...(plan === undefined ? {} : { plan }) } },
+    )
+    io.stdout(`${JSON.stringify(report, null, 2)}\n`)
+    const created = report.experiments.filter(experiment => experiment.created).length
+    io.stderr(`dsh-eval: import ${report.from} (${report.refCommit.slice(0, 7)}) — ${created} experiment(s) created, `
+      + `${report.experiments.length - created} already there, ${report.skipped.length} skipped; conditions: `
+      + `${report.conditionsAdded.length} added, ${report.conditionsSame.length} identical\n`)
+    return 0
+  } catch (error) {
+    io.stderr(`dsh-eval: ${error instanceof Error ? error.message : String(error)}\n`)
+    return 1
+  }
 }

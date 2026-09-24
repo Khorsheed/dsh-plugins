@@ -11,12 +11,14 @@
  * land here — so a draft a person makes and a draft an agent makes are the
  * same file written by the same code, and the lab list cannot tell them apart.
  *
- * What it does NOT do is start anything. Drafting writes two kinds of file
- * into the bound dataset repository's pass-through area (`plans/` and
- * `conditions/`, the 其他文件 slot of ui-spec §三), validates what it wrote,
- * and stops. Nothing is committed — the working copy is where a draft lives
- * until a person commits it — and nothing is approved: 批准并启动 is the
- * plan-review page's button and R1 keeps it there.
+ * What it does NOT do is start anything. Drafting creates one experiment
+ * directory under the deployment's state root (`experiments/<id>/`, see
+ * experiment-store.ts) and mints any new condition into the deployment's
+ * condition library, then stops. The dataset repository is never written: it
+ * is read-only input, pinned as `{registry, set, commit}` — and which commit
+ * is decided here, by dataset-version.ts, not left to the run. Nothing is
+ * approved either: 批准并启动 is the plan-review page's button and R1 keeps it
+ * there.
  *
  * A new condition is a COPY, never an invention. `from` names a declaration
  * that already exists and the edit changes the seven fields ui-spec §五 lists
@@ -41,15 +43,23 @@
  * @module @khorsheed/dsh-eval
  */
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join, resolve, sep } from 'node:path'
+import { join } from 'node:path'
+import { decideDatasetVersion } from './dataset-version.ts'
+import {
+  conditionLibraryDir,
+  createExperiment,
+  EvalExperimentError,
+  type ExperimentDataset,
+  listExperimentRecords,
+} from './experiment-store.ts'
+import type { DatasetsRegistryFace } from './faces.ts'
 import { CONDITION_ID_RE, PLAN_SCHEMA_ID } from './schema.ts'
 import { conditionUnitOf, defaultConditionUnit } from './unit.ts'
 
 /**
- * Thrown when a draft cannot be written at all: an unresolvable repository, a
+ * Thrown when a draft cannot be written at all: an unregistered dataset, a
  * name that is not a file name, a source condition that does not exist, a
- * target file that does.
+ * target condition that does.
  *
  * Deliberately NOT the class of refusal a contract violation gets. A plan
  * whose conditions do not resolve is still a draft — it lands on disk, the
@@ -60,9 +70,9 @@ export class EvalDraftRefused extends Error {}
 
 /** The six condition fields a minted copy may change (ui-spec §五). */
 export interface DraftConditionEdit {
-  /** The new condition's id; it doubles as the file name (`conditions/<id>.json`). */
+  /** The new condition's id; it doubles as the library file name (`conditions/<id>.json`). */
   id: string
-  /** The existing condition to copy, by id, in the same dataset set. */
+  /** The existing condition to copy, by id, from the condition library. */
   from: string
   /** `harness.name`. Changing it nulls `harness.version` — that version was another CLI's. */
   harness?: string
@@ -93,21 +103,25 @@ export interface DraftUnit {
   egressCheck?: { command: readonly string[]; timeoutMs?: number }
 }
 
-/** Everything a draft needs. The repository is already resolved by the caller. */
+/** Everything a draft needs. */
 export interface DraftExperimentInput {
-  /** The dataset repository working copy to write into (absolute). */
-  repo: string
-  /** The dataset set; `<repo>/datasets/<dataset>/` must exist. */
+  /** The eval state root: experiments and the condition library live under it. */
+  stateRoot: string
+  /** The datasets registry reads — the set's items, the version decision. */
+  registry: DatasetsRegistryFace
+  /** `<registration id>/<set>`. */
   dataset: string
-  /** The experiment name — the plan's file stem. */
+  /** The experiment name — the plan's `name` and the id's slug. */
   name: string
-  /** The commit to pin, or null/absent to let the run's snapshot pin it. */
+  /** The commit to pin; absent lets the version decision choose (or refuse). */
   commit?: string | null
+  /** The session drafting it, recorded in meta.json; absent for the CLI. */
+  originSession?: string | null
   /** The dataset items the matrix runs over. */
   items: readonly string[]
   /** Player condition ids; minted conditions are appended when not already named. */
   conditions: readonly string[]
-  /** Conditions to mint, each a copy of an existing declaration. */
+  /** Conditions to mint, each a copy of an existing declaration in the library. */
   newConditions?: readonly DraftConditionEdit[]
   /** The judge conditions and how many samples each cell draws; absent writes no judge. */
   judge?: { conditions: readonly string[]; samples?: number }
@@ -125,20 +139,24 @@ export interface DraftExperimentInput {
   retryInfrastructure?: number
   /** The container segment; absent takes the host path. */
   unit?: DraftUnit
-  /** Bundle export directory; absent takes the repository's own `exports/`. */
+  /** Bundle export directory; absent takes the experiment's own `exports/`. */
   exports?: string
   /** Review commentary written into the plan verbatim. */
   notes?: string
+  /** Epoch ms, for the id and `createdAt`; tests pin it. */
+  now?: number
 }
 
 /** What was written, and where. */
 export interface DraftWrite {
-  /** The dataset repository written into (absolute). */
-  repo: string
-  dataset: string
-  /** The plan document (absolute). */
+  experimentId: string
+  /** The experiment directory (absolute). */
+  experimentDir: string
+  /** `<experimentDir>/plan.json`. */
   planPath: string
-  /** The condition declarations minted, in mint order (absolute). */
+  /** The pinned dataset. */
+  dataset: ExperimentDataset
+  /** The condition declarations minted into the library, in mint order (absolute). */
   conditionPaths: string[]
   /** The plan's player condition ids as written, minted ones included. */
   conditions: string[]
@@ -164,33 +182,12 @@ const DEFAULT_EXPECTED_NS: readonly string[] = ['script', 'human-final']
 /** With a judge declared, the llm-draft source is real and the plan says so. */
 const DEFAULT_EXPECTED_NS_JUDGED: readonly string[] = ['script', 'llm-draft', 'human-final']
 
-/**
- * A generated run template is written beside its plan as
- * `<plan>.template.json`, and the lab list skips exactly that suffix — so a
- * plan whose own stem ends in `.template` would land on disk and never appear
- * anywhere. Refused rather than silently renamed.
- */
-const TEMPLATE_STEM = /\.template$/i
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' ? value : null
-}
-
-/**
- * Write a path back in `~`-relative form when it is under this user's home.
- * The plans in a dataset repository are committed and read on other machines,
- * and every hand-written one pins its repository that way; a drafted plan that
- * hard-coded an absolute home path would be the odd one out in its own
- * directory.
- */
-function contractHome(path: string): string {
-  const home = homedir()
-  if (path === home) return '~'
-  return path.startsWith(home + sep) ? `~/${path.slice(home.length + 1)}` : path
 }
 
 /** Read one JSON document, or refuse naming the file and what was wrong with it. */
@@ -374,90 +371,129 @@ function checkName(name: string, what: string): void {
   }
 }
 
+/** Split `<registration id>/<set>`, or refuse. */
+function parseDatasetRef(ref: string): { registry: string; set: string } {
+  const trimmed = ref.trim()
+  const slash = trimmed.indexOf('/')
+  const registry = slash < 0 ? '' : trimmed.slice(0, slash)
+  const set = slash < 0 ? '' : trimmed.slice(slash + 1)
+  if (registry === '' || set === '' || set.includes('/')) {
+    throw new EvalDraftRefused(
+      `dataset ${JSON.stringify(ref)} is not "<registration id>/<set>" — name a registered dataset repository and one of its sets, `
+      + 'e.g. "dataseek-eval/pilot". `/datasets` lists the registrations.',
+    )
+  }
+  checkName(registry, 'registration id')
+  checkName(set, 'dataset set')
+  return { registry, set }
+}
+
+/** Every condition id a plan names — players and judges — or none when it cannot be read. */
+export async function planConditionIds(planPath: string): Promise<string[]> {
+  try {
+    const plan: unknown = JSON.parse(await readFile(planPath, 'utf8'))
+    if (!isPlainObject(plan)) return []
+    const ids = Array.isArray(plan['conditions']) ? plan['conditions'] : []
+    const judge = isPlainObject(plan['judge']) && Array.isArray(plan['judge']['conditions']) ? plan['judge']['conditions'] : []
+    return [...ids, ...judge].filter((id): id is string => typeof id === 'string')
+  } catch {
+    return []
+  }
+}
+
 /**
- * Draft one experiment: mint the new conditions, write the plan, and answer
- * with what landed where. Validation is the CALLER's next call — this function
- * writes, and the same `validatePlan` every other face runs judges what it
- * wrote, so a draft can never be approved by a check of its own.
- * @param input - the form's fields (or the tool's arguments), repository resolved.
- * @returns the paths written and the condition ids the plan names.
+ * Draft one experiment: decide the dataset version, mint the new conditions
+ * into the deployment's condition library, and create the experiment
+ * directory with the plan. Validation is the CALLER's next call — this
+ * function writes, and the same `validatePlan` every other face runs judges
+ * what it wrote, so a draft can never be approved by a check of its own.
+ *
+ * Nothing is written into the dataset repository: it is read-only input,
+ * pinned by `{registry, set, commit}`.
+ * @param input - the form's fields (or the tool's arguments).
+ * @returns the experiment written and the condition ids the plan names.
  * @throws {@link EvalDraftRefused} when there would be no draft to look at.
+ * @throws {@link DatasetVersionRefused} when the version must be asked for.
  */
 export async function draftExperiment(input: DraftExperimentInput): Promise<DraftWrite> {
-  const repo = resolve(input.repo)
-  const dataset = input.dataset.trim()
+  const { registry, set } = parseDatasetRef(input.dataset)
   const name = input.name.trim()
-  if (dataset === '') throw new EvalDraftRefused('no dataset set named — a plan is drafted into one set of the repository')
-  checkName(dataset, 'dataset set')
-  if (name === '') throw new EvalDraftRefused('no experiment name — the name is the plan\'s file name')
+  if (name === '') throw new EvalDraftRefused('no experiment name — every experiment carries one')
   checkName(name, 'experiment name')
-  if (TEMPLATE_STEM.test(name)) {
-    throw new EvalDraftRefused(
-      `experiment name ${JSON.stringify(name)} ends in ".template" — a run writes its generated template beside the plan `
-      + 'under exactly that suffix, and the lab list skips those, so this plan would never appear anywhere.',
-    )
-  }
-  const datasetRoot = join(repo, 'datasets', dataset)
-  try {
-    await readdir(datasetRoot)
-  } catch {
-    throw new EvalDraftRefused(
-      `no dataset set ${JSON.stringify(dataset)} in ${repo} — expected ${datasetRoot}. `
-      + 'The 题集 tab is where a set is created or imported.',
-    )
-  }
 
   const items = input.items.map(item => item.trim()).filter(item => item !== '')
   if (items.length === 0) throw new EvalDraftRefused('no items selected — a matrix with no rows runs nothing')
-  const known = await itemIdsOf(datasetRoot)
-  // A WARNING's job, not a refusal's — except that nothing downstream warns:
-  // validate checks the items against the rubric, not against the tree, and a
-  // typo'd item id first surfaces as a cell that materializes nothing. The
-  // list of what the set does hold makes the fix obvious.
-  const unknown = known.length === 0 ? [] : items.filter(item => !known.includes(item))
-  if (unknown.length > 0) {
-    throw new EvalDraftRefused(
-      `dataset set ${JSON.stringify(dataset)} declares no item(s) ${unknown.map(item => JSON.stringify(item)).join(', ')} `
-      + `— it holds: ${known.join(', ')}`,
-    )
-  }
-
   if (!Number.isInteger(input.reps) || input.reps < 1) {
     throw new EvalDraftRefused(`reps must be a positive integer, got ${JSON.stringify(input.reps)}`)
   }
   const stages = input.stages.map(stage => stage.trim()).filter(stage => stage !== '')
   if (stages.length === 0) throw new EvalDraftRefused('no stages named — a cell with no stage has nothing to submit')
 
-  // ── mint the new conditions ───────────────────────────────────────────────
-  const conditionsDir = join(datasetRoot, 'conditions')
-  const minted: string[] = []
-  const conditionPaths: string[] = []
-  for (const edit of input.newConditions ?? []) {
-    const id = edit.id.trim()
-    const from = edit.from.trim()
-    checkName(id, 'condition id')
-    if (from === '') {
+  const judgeIds = (input.judge?.conditions ?? []).map(id => id.trim()).filter(id => id !== '')
+  const named = input.conditions.map(id => id.trim()).filter(id => id !== '')
+  const edits = (input.newConditions ?? []).map(edit => ({ ...edit, id: edit.id.trim(), from: edit.from.trim() }))
+
+  // ── the version ───────────────────────────────────────────────────────────
+  try {
+    await input.registry.registration(registry)
+  } catch (error) {
+    throw new EvalDraftRefused(error instanceof Error ? error.message : String(error))
+  }
+  const { records } = await listExperimentRecords(input.stateRoot)
+  const experiments = await Promise.all(records.map(async record => ({ ...record, conditions: await planConditionIds(record.planPath) })))
+  const decision = await decideDatasetVersion(input.registry, {
+    registry,
+    set,
+    conditions: [...named, ...judgeIds, ...edits.map(edit => edit.from)],
+    experiments,
+    ...(input.commit === undefined ? {} : { commit: input.commit }),
+  })
+  const dataset: ExperimentDataset = { registry, set, commit: decision.commit }
+
+  let datasetRoot: string
+  try {
+    datasetRoot = (await input.registry.datasetView(registry, set, decision.commit)).path
+  } catch (error) {
+    throw new EvalDraftRefused(
+      `dataset set ${JSON.stringify(set)} cannot be read from ${registry} at ${decision.commit.slice(0, 7)}: `
+      + (error instanceof Error ? error.message : String(error)),
+    )
+  }
+  const known = await itemIdsOf(datasetRoot)
+  if (known.length === 0) {
+    throw new EvalDraftRefused(`dataset set ${JSON.stringify(set)} of ${registry} holds no items at ${decision.commit.slice(0, 7)}`)
+  }
+  // A WARNING's job, not a refusal's — except that nothing downstream warns:
+  // validate checks the items against the rubric, not against the tree, and a
+  // typo'd item id first surfaces as a cell that materializes nothing. The
+  // list of what the set does hold makes the fix obvious.
+  const unknown = items.filter(item => !known.includes(item))
+  if (unknown.length > 0) {
+    throw new EvalDraftRefused(
+      `dataset set ${JSON.stringify(set)} declares no item(s) ${unknown.map(item => JSON.stringify(item)).join(', ')} `
+      + `— it holds: ${known.join(', ')}`,
+    )
+  }
+
+  // ── mint the new conditions into the library ──────────────────────────────
+  const conditionsDir = conditionLibraryDir(input.stateRoot)
+  const mintedDocs: Array<{ id: string; document: Record<string, unknown> }> = []
+  for (const edit of edits) {
+    checkName(edit.id, 'condition id')
+    if (edit.from === '') {
       throw new EvalDraftRefused(
-        `condition ${JSON.stringify(id)} names no condition to copy — a condition is always a copy of one that exists, `
+        `condition ${JSON.stringify(edit.id)} names no condition to copy — a condition is always a copy of one that exists, `
         + 'because a declaration written from scratch differs in however many fields its author forgot to think about.',
       )
     }
-    checkName(from, 'source condition id')
+    checkName(edit.from, 'source condition id')
     const source = await readJsonOrRefuse(
-      join(conditionsDir, `${from}.json`),
-      `condition ${JSON.stringify(id)} copies ${JSON.stringify(from)}, which`,
+      join(conditionsDir, `${edit.from}.json`),
+      `condition ${JSON.stringify(edit.id)} copies ${JSON.stringify(edit.from)}, which`,
     )
-    const { document } = mintCondition(source, edit, name, input.unit !== undefined)
-    await mkdir(conditionsDir, { recursive: true })
-    const path = join(conditionsDir, `${id}.json`)
-    await writeNewJson(path, document, `condition ${JSON.stringify(id)}`)
-    minted.push(id)
-    conditionPaths.push(path)
+    mintedDocs.push({ id: edit.id, document: mintCondition(source, edit, name, input.unit !== undefined).document })
   }
-
-  // ── the plan ──────────────────────────────────────────────────────────────
-  const judgeIds = (input.judge?.conditions ?? []).map(id => id.trim()).filter(id => id !== '')
-  const named = input.conditions.map(id => id.trim()).filter(id => id !== '')
+  const minted = mintedDocs.map(doc => doc.id)
   // A minted condition the caller forgot to name is APPENDED rather than
   // refused: minting a subject for an experiment and then leaving it out of
   // the experiment is not a thing anyone means. What the plan ended up naming
@@ -465,14 +501,19 @@ export async function draftExperiment(input: DraftExperimentInput): Promise<Draf
   const conditions = [...named, ...minted.filter(id => !named.includes(id) && !judgeIds.includes(id))]
   if (conditions.length === 0) throw new EvalDraftRefused('no conditions named — there is no subject under test')
 
+  const conditionPaths: string[] = []
+  for (const { id, document } of mintedDocs) {
+    await mkdir(conditionsDir, { recursive: true })
+    const path = join(conditionsDir, `${id}.json`)
+    await writeNewJson(path, document, `condition ${JSON.stringify(id)}`)
+    conditionPaths.push(path)
+  }
+
+  // ── the plan ──────────────────────────────────────────────────────────────
   const plan: Record<string, unknown> = {
     schema: PLAN_SCHEMA_ID,
-    dataset: {
-      repo: contractHome(repo),
-      commit: input.commit ?? null,
-      id: dataset,
-      items,
-    },
+    name,
+    dataset: { registry, set, commit: decision.commit, items },
     conditions,
     reps: input.reps,
     stages,
@@ -489,12 +530,28 @@ export async function draftExperiment(input: DraftExperimentInput): Promise<Draf
     ...(input.notes === undefined || input.notes.trim() === '' ? {} : { notes: input.notes.trim() }),
   }
 
-  const plansDir = join(datasetRoot, 'plans')
-  await mkdir(plansDir, { recursive: true })
-  const planPath = join(plansDir, `${name}.json`)
-  await writeNewJson(planPath, plan, `plan ${JSON.stringify(name)}`)
-
-  return { repo, dataset, planPath, conditionPaths, conditions, judges: judgeIds }
+  let record
+  try {
+    record = await createExperiment(input.stateRoot, {
+      name,
+      originSession: input.originSession ?? null,
+      dataset,
+      plan: `${JSON.stringify(plan, null, 2)}\n`,
+      ...(input.now === undefined ? {} : { now: input.now }),
+    })
+  } catch (error) {
+    if (error instanceof EvalExperimentError) throw new EvalDraftRefused(error.message)
+    throw error
+  }
+  return {
+    experimentId: record.id,
+    experimentDir: record.dir,
+    planPath: record.planPath,
+    dataset,
+    conditionPaths,
+    conditions,
+    judges: judgeIds,
+  }
 }
 
 /** The plan's `unit` block, with the optional keys left out rather than nulled. */
@@ -517,7 +574,10 @@ function unitOf(unit: DraftUnit): Record<string, unknown> {
 
 /** One dataset set as the 新建实验 form's pickers read it. */
 export interface DraftDatasetOption {
+  /** `<registration id>/<set>` — what the draft's `dataset` takes. */
   id: string
+  /** The commit the lists were read at (the tracked branch's latest). */
+  commit: string
   /** Item ids the set declares, sorted. */
   items: string[]
   /** Stage names it ships a schema for, sorted (`run-meta` is not a stage). */
@@ -526,8 +586,6 @@ export interface DraftDatasetOption {
 
 /** Everything the 新建实验 form needs to fill its pickers, in one read. */
 export interface DraftOptions {
-  /** The dataset repository the options were read from (absolute); null when none resolved. */
-  repo: string | null
   datasets: DraftDatasetOption[]
   /** Honest degrades, one sentence each — the list still answers. */
   notes: string[]
@@ -551,37 +609,36 @@ async function stageNamesOf(datasetRoot: string): Promise<string[]> {
 }
 
 /**
- * What the 新建实验 form may offer: the dataset sets of the bound repository,
- * each with its items and its stage schemas.
- *
- * Read straight off the working copy's pass-through area, the way the plan and
- * condition listings already are — these are file NAMES in the 其他文件 slot,
- * not item content, and the layer discipline that governs content is the
- * datasets service's to enforce when something actually reads an item.
- * @param repo - the resolved dataset repository.
- * @param only - the session binding's dataset whitelist; absent means every set.
+ * What the 新建实验 form may offer: every set of every registered dataset
+ * repository, each with its items and stage schemas at the tracked branch's
+ * latest commit — the version a draft pins when nothing makes it ambiguous.
+ * @param registry - the datasets registry reads.
  */
-export async function draftOptions(repo: string, only?: readonly string[]): Promise<DraftOptions> {
+export async function draftOptions(registry: DatasetsRegistryFace): Promise<DraftOptions> {
   const notes: string[] = []
-  let names: string[]
-  try {
-    const entries = await readdir(join(repo, 'datasets'), { withFileTypes: true })
-    names = entries.filter(entry => entry.isDirectory()).map(entry => entry.name).sort()
-  } catch {
-    return { repo, datasets: [], notes: [`${repo} holds no datasets/ directory — it is not a dataset repository`] }
-  }
-  const visible = only === undefined || only.length === 0 ? names : names.filter(name => only.includes(name))
-  if (only !== undefined && only.length > 0) {
-    const missing = only.filter(name => !names.includes(name))
-    if (missing.length > 0) notes.push(`this session's binding names dataset set(s) the repository does not hold: ${missing.join(', ')}`)
-  }
   const datasets: DraftDatasetOption[] = []
-  for (const id of visible) {
-    const root = join(repo, 'datasets', id)
-    const [items, stages] = await Promise.all([itemIdsOf(root), stageNamesOf(root)])
-    if (items.length === 0 && stages.length === 0) continue
-    datasets.push({ id, items, stages })
+  let rows
+  try {
+    rows = await registry.registry.rows()
+  } catch (error) {
+    return { datasets, notes: [`the dataset registry cannot be read: ${error instanceof Error ? error.message : String(error)}`] }
   }
-  if (datasets.length === 0) notes.push(`no dataset set in ${repo} declares items or stage schemas`)
-  return { repo, datasets, notes }
+  for (const row of rows) {
+    if (row.problem !== undefined || row.latest === undefined) {
+      notes.push(`${row.entry.id}: ${row.problem ?? 'no latest commit on the tracked branch'}`)
+      continue
+    }
+    for (const { ref, set } of row.sets) {
+      try {
+        const view = await registry.datasetView(row.entry.id, set, row.latest.commit)
+        const [items, stages] = await Promise.all([itemIdsOf(view.path), stageNamesOf(view.path)])
+        if (items.length === 0 && stages.length === 0) continue
+        datasets.push({ id: ref, commit: row.latest.commit, items, stages })
+      } catch (error) {
+        notes.push(`${ref}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  }
+  if (datasets.length === 0 && notes.length === 0) notes.push('no registered dataset set declares items or stage schemas — register one under /datasets')
+  return { datasets, notes }
 }

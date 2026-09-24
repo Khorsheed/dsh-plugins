@@ -12,12 +12,10 @@
  * unknown-cause copy in front of a user.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { cleanup as unmount, render, screen } from '@testing-library/react'
 import { EvalService } from '../src/service.ts'
 import { classifyError, ErrorState } from '../src/client/ErrorState.tsx'
-import { cleanupTmp, tmpTree } from './helpers.ts'
+import { cleanupTmp } from './helpers.ts'
 
 afterEach(() => {
   unmount()
@@ -35,25 +33,17 @@ async function failureOf(run: () => Promise<unknown> | unknown): Promise<string>
 }
 
 describe('the classifier answers to the host, not to a fixture string', () => {
-  it('recognizes a repository that holds no datasets/', async () => {
-    // A directory that IS there and simply has no datasets/ — the other half
-    // of this pair is a path that is not there at all, and the two get
-    // different fixes.
-    const repo = join(tmpTree(), 'not-a-dataset-repo')
-    mkdirSync(repo, { recursive: true })
-    const message = await failureOf(() => new EvalService().conditions({ repo }))
-    expect(classifyError(message)).toBe('notDatasetRepo')
-  })
-
-  it('recognizes a repository path that is not on disk at all', async () => {
-    const repo = join(tmpTree(), 'never-created')
-    const message = await failureOf(() => new EvalService().conditions({ repo }))
-    expect(classifyError(message)).toBe('pathMissing')
-  })
-
-  it('recognizes a session with nothing bound', async () => {
-    const message = await failureOf(() => new EvalService().conditions({ session: { id: 's1' } }))
-    expect(classifyError(message)).toBe('unbound')
+  it('recognizes an instance with no eval state root', async () => {
+    // Experiments and the condition library live under $DSH_HOME/state/eval
+    // since T73; an instance started without DSH_HOME has neither.
+    const saved = process.env['DSH_HOME']
+    delete process.env['DSH_HOME']
+    try {
+      const message = await failureOf(() => new EvalService().conditions())
+      expect(classifyError(message)).toBe('noStateRoot')
+    } finally {
+      if (saved !== undefined) process.env['DSH_HOME'] = saved
+    }
   })
 
   it('recognizes a composition that mounts no mission service', async () => {

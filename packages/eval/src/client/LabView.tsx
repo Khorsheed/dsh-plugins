@@ -33,7 +33,7 @@
  * hairline separators, tokenized colors, official primitives throughout.
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
@@ -48,7 +48,7 @@ import { ErrorState } from './ErrorState.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
 import { JudgingPage } from './JudgingPage.tsx'
 import { NewExperimentDialog } from './NewExperimentDialog.tsx'
-import { ReportPage } from './ReportPage.tsx'
+import { ReportPage, type ReadAnalysis } from './ReportPage.tsx'
 import { preferredColumn } from './vocab.ts'
 import {
   LIST_GROUPS, fixLabel, groupRows, readinessFix as readinessFixOf, readListScope, scopeRows, splitReadiness, writeListScope,
@@ -67,7 +67,7 @@ export function LabView(props: LabViewProps) {
     provisionCondition, setConditionEndpoint,
     fetchDraftOptions, draftExperiment,
     fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
-    fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, submitHumanFinal,
+    fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, submitHumanFinal, fetchExperimentArtifact,
     closeRun, archiveRun, insertDraft,
   } = props
   const list = useStore(s => s.list)
@@ -157,9 +157,6 @@ export function LabView(props: LabViewProps) {
   // store's notice belongs to the open experiment and is cleared by `open`.
   const [listNotice, setListNotice] = useState<string | null>(null)
   const [closing, setClosing] = useState(false)
-  // The bind dialog: opened from the design page's empty seat, from a
-  // checklist line, and from the stage bar (登记仓库).
-  const [binding, setBinding] = useState(false)
 
   // Fetch the list on mount and whenever refreshRev moves.
   useEffect(() => {
@@ -186,25 +183,24 @@ export function LabView(props: LabViewProps) {
       ?? (started === null ? undefined : rows.find(row => row.planPath === started.planPath))
   const openRunId = openRow?.runId ?? null
   const planPath = openRow?.planPath ?? null
+  const openExperimentId = openRow?.experimentId ?? null
 
-  // What the draft's own sentence says: the paths, and whether validate found
-  // anything. A draft with errors is still a draft — it is on disk and in the
-  // list — so the notice reports rather than apologizes.
-  // The experiment's own name is the plan's file stem — the drafting verb
-  // answers with the path, and the row that carries the name does not exist
-  // client-side yet when this sentence is composed.
-  const draftName = drafted === null
-    ? ''
-    : (drafted.planPath.split('/').pop() ?? drafted.planPath).replace(/\.json$/, '')
-  // The plan's PATH is not in the sentence (ui-spec §九): the name is what a
-  // person calls the experiment, and the path is on the plan-review page under
-  // «详情», beside the file it names.
+  // Until the list carries the new row, the list-level notice names the draft
+  // by its id's slug (the name, lower-cased) — the row's own name replaces it
+  // the moment the row lands.
   const draftNotice = drafted === null
     ? null
     : (drafted.review.errors === 0
-      ? t('notice.drafted', { name: draftName })
-      : t('notice.draftedWithErrors', { name: draftName, errors: drafted.review.errors }))
+      ? t('notice.drafted', { name: drafted.experimentId.replace(/-\d{8}-[0-9a-f]{4}$/, '') })
+      : t('notice.draftedWithErrors', { name: drafted.experimentId.replace(/-\d{8}-[0-9a-f]{4}$/, ''), errors: drafted.review.errors }))
 
+  // What the draft's own sentence says: the name, and whether validate found
+  // anything. A draft with errors is still a draft — it is on disk and in the
+  // list — so the notice reports rather than apologizes. The name is the
+  // experiment row's (its plan file is `plan.json` for every experiment since
+  // T73, so the file stem names nothing); the path is not in the sentence
+  // (ui-spec §九).
+  //
   // Keyed on `list`, NOT on `rows`: `rows` is a fresh array on every render
   // (`list?.rows ?? []`), which would re-run this on every render for nothing.
   // The effect does write `drafted`, but it writes it to null and then early
@@ -212,14 +208,16 @@ export function LabView(props: LabViewProps) {
   // T47 hit.
   useEffect(() => {
     if (drafted === null) return
-    const row = (list?.rows ?? []).find(entry => entry.planPath === drafted.planPath)
+    const row = (list?.rows ?? []).find(entry => entry.experimentId === drafted.experimentId)
     if (row === undefined) return
     actions.open(row.id)
     // `open` already lands on 实验设计 and clears the per-experiment notice, so
     // the sentence is set after it, never before.
-    if (draftNotice !== null) actions.setNotice(draftNotice)
+    actions.setNotice(drafted.review.errors === 0
+      ? t('notice.drafted', { name: row.name })
+      : t('notice.draftedWithErrors', { name: row.name, errors: drafted.review.errors }))
     setDrafted(null)
-  }, [list, drafted, draftNotice, actions])
+  }, [list, drafted, actions, t])
 
   // Fetch the open experiment's detail. A DRAFT has no run: its overview is
   // the row, and spending an RPC on it would only produce a refusal.
@@ -244,14 +242,17 @@ export function LabView(props: LabViewProps) {
     if (page !== 'design' || planPath === null) return
     let cancelled = false
     actions.setReviewLoading(true)
-    void fetchPlanReview(sessionId, { planPath }).then((result) => {
+    // An experiment is reviewed by id — that is what brings its meta.json pin
+    // along; only a legacy run's plan is still named by path.
+    const request = openExperimentId !== null ? { experimentId: openExperimentId } : { planPath }
+    void fetchPlanReview(sessionId, request).then((result) => {
       if (cancelled) return
       actions.setReviewLoading(false)
       if (result.ok) actions.setReview(result.value)
       else actions.setReviewError(result.error.message)
     })
     return () => { cancelled = true }
-  }, [sessionId, page, planPath, refreshRev, actions, fetchPlanReview])
+  }, [sessionId, page, planPath, openExperimentId, refreshRev, actions, fetchPlanReview])
 
   // The comparison-group registry, likewise — it is the REPOSITORY's, so it is
   // not re-read when the open experiment changes, only when the design stage
@@ -339,10 +340,10 @@ export function LabView(props: LabViewProps) {
    * of the same directory.
    * @param row - the condition to provision.
    */
-  function provisionRow(row: { id: string; dataset: string }): void {
+  function provisionRow(row: { id: string }): void {
     actions.setConditionBusy(row.id)
     actions.setProvision(null)
-    void provisionCondition(sessionId, { dataset: row.dataset, condition: row.id }).then((result) => {
+    void provisionCondition(sessionId, { condition: row.id }).then((result) => {
       actions.setConditionBusy(null)
       if (!result.ok) {
         actions.setConditionAction({ kind: 'failure', what: t('conditions.provisionFailed'), message: result.error.message })
@@ -362,9 +363,9 @@ export function LabView(props: LabViewProps) {
    * @param row - the condition being edited.
    * @param endpoint - the value typed (empty declares "not resolved yet").
    */
-  function setEndpoint(row: { id: string; dataset: string }, endpoint: string): void {
+  function setEndpoint(row: { id: string }, endpoint: string): void {
     actions.setConditionBusy(row.id)
-    void setConditionEndpoint(sessionId, { dataset: row.dataset, condition: row.id, endpoint }).then((result) => {
+    void setConditionEndpoint(sessionId, { condition: row.id, endpoint }).then((result) => {
       actions.setConditionBusy(null)
       if (!result.ok) {
         actions.setConditionAction({ kind: 'failure', what: t('conditions.endpointFailed'), message: result.error.message })
@@ -390,10 +391,11 @@ export function LabView(props: LabViewProps) {
    *   walks the release gate cell by cell.
    */
   function approve(keepUnits: boolean): void {
-    if (planPath === null) return
+    const experimentId = openRow?.experimentId ?? null
+    if (planPath === null || experimentId === null) return
     const approvedPlan = planPath
     actions.setApproving(true)
-    void approvePlan(sessionId, { planPath, ...(keepUnits ? { keepUnits: true } : {}) }).then((result) => {
+    void approvePlan(sessionId, { experimentId, ...(keepUnits ? { keepUnits: true } : {}) }).then((result) => {
       actions.setApproving(false)
       if (!result.ok) {
         actions.setApproveError(result.error.message)
@@ -433,10 +435,10 @@ export function LabView(props: LabViewProps) {
    * @param row - the stalled row (its plan path is what is approved).
    */
   function rerun(row: EvalExperimentRow): void {
-    if (row.planPath === null) return
-    const plan = row.planPath
+    if (row.experimentId === null) return
+    const experimentId = row.experimentId
     setListNotice(null)
-    void approvePlan(sessionId, { planPath: plan }).then((result) => {
+    void approvePlan(sessionId, { experimentId }).then((result) => {
       const said = !result.ok
         ? t('notice.rerunFailed', { message: result.error.message })
         : (!result.value.started || result.value.runId === null)
@@ -656,6 +658,15 @@ export function LabView(props: LabViewProps) {
     return () => { cancelled = true }
   }, [sessionId, openRunId, page, refreshRev, lookIn, actions, fetchReport])
 
+  // Block ⑤'s one read: an analysis file of the experiment the open report
+  // belongs to. Stable per report so the block's effect does not re-fire.
+  const reportExperiment = useStore(s => s.report?.experimentId ?? null)
+  const readAnalysis = useCallback<ReadAnalysis>((path: string) => (
+    reportExperiment === null
+      ? Promise.resolve({ ok: false as const, error: { message: t('report.analysisNoExperiment') } })
+      : fetchExperimentArtifact(sessionId, { experimentId: reportExperiment, path })
+  ), [sessionId, reportExperiment, fetchExperimentArtifact, t])
+
   // The containers this run still holds, read beside the report and NOT as
   // part of it: the report is a projection of an exported bundle (a fact
   // about the past), and this is what `docker ps` would say right now. Tying
@@ -745,10 +756,8 @@ export function LabView(props: LabViewProps) {
 
   /**
    * Run one readiness line's fix (T72 §4). Provision and the endpoint edit
-   * are the design page's own gestures; 登记仓库 opens the bind dialog (the
-   * 题集 tab is where binding happens, and the dialog says how — the host
-   * gives a plugin no way to switch tabs); everything else goes to the agent
-   * as a sentence in the composer, never sent.
+   * are the design page's own gestures; everything else goes to the agent as
+   * a sentence in the composer, never sent.
    * @param fix - what the line's button does.
    * @param check - the line.
    * @param k - its number on screen.
@@ -766,9 +775,6 @@ export function LabView(props: LabViewProps) {
       }
       case 'endpoint':
         actions.editEndpoint(fix.condition)
-        return
-      case 'bind':
-        setBinding(true)
         return
       case 'agent':
         break
@@ -1028,8 +1034,6 @@ export function LabView(props: LabViewProps) {
                     onEditEndpoint={(id: string | null) => { actions.editEndpoint(id) }}
                     onSetEndpoint={setEndpoint}
                     onAddGroup={() => { setNewOpen(true) }}
-                    binding={binding}
-                    onBinding={setBinding}
                     onFix={applyFix}
                     t={t}
                   />
@@ -1102,6 +1106,7 @@ export function LabView(props: LabViewProps) {
                         actions.openCell(missionId)
                       }}
                       onOpenRuns={() => { actions.setPage('runs') }}
+                      readAnalysis={readAnalysis}
                       t={t}
                     />
                   )
@@ -1195,7 +1200,13 @@ function ExperimentRowLine(props: {
         }
       }}
     >
-      <span className={css.colName} title={row.planPath ?? row.name}>{row.name}</span>
+      <span className={css.colName} title={row.experimentId ?? row.name}>
+        <span className={css.nameText}>{row.name}</span>
+        {/* A run from before experiments were deployment-level that no
+            imported experiment claims: said, not hidden (T73) — so the name
+            takes the ellipsis and the chip never shrinks. */}
+        {row.legacy && <span className={css.nameChip}><Chip tone="neutral">{t('list.legacy')}</Chip></span>}
+      </span>
       <span className={css.colSnapshot}>{snapshotCell(row)}</span>
       <span className={css.colNum}>
         {row.judges.length === 0
@@ -1213,7 +1224,7 @@ function ExperimentRowLine(props: {
       </span>
       <span className={css.colStarted}>{stamp(row.startedAt)}</span>
       <span className={css.colActions}>
-        {row.status === 'stalled' && row.planPath !== null && !row.archived && (
+        {row.status === 'stalled' && row.experimentId !== null && !row.archived && (
           <Button size="sm" variant="primary" onClick={(event) => { event.stopPropagation(); onRerun(row) }}>
             {t('cta.stalled')}
           </Button>

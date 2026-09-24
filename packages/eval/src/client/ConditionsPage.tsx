@@ -48,7 +48,7 @@ import type {
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { ErrorState } from './ErrorState.tsx'
-import { Chip, Detail, EmptyState, Field, Hash, Word, repoName, severityKey, severityTone } from './parts.tsx'
+import { Chip, Detail, EmptyState, Field, Hash, Word, severityKey, severityTone } from './parts.tsx'
 import { factorPhrase, shortenValue } from './vocab.ts'
 import type { ConditionActionNote } from './store.ts'
 import css from './LabView.module.css'
@@ -301,7 +301,7 @@ export function ConditionsTable(props: {
             // of it. The picking affordance is kept whole — role, pressed
             // state, tab stop and the Enter/Space keys.
             <div
-              key={`${row.dataset}/${row.id}`}
+              key={row.id}
               role="button"
               tabIndex={0}
               className={css.condRow}
@@ -377,12 +377,6 @@ export function ConditionsTable(props: {
       )}
       {diffError !== null && <ErrorState what={t('conditions.diffError')} message={diffError} compact t={t} />}
       {diff !== null && <Diff diff={diff} t={t} />}
-      {view !== null && (
-        <Detail summary={t('conditions.repo')}>
-          <div className={css.errorDetailLine}>{repoName(view.repo)} — {view.repo}</div>
-          {view.datasets.length > 0 && <div className={css.errorDetailLine}>{view.datasets.join(', ')}</div>}
-        </Detail>
-      )}
     </>
   )
 }

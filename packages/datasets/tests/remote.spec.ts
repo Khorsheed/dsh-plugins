@@ -10,10 +10,9 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { BindingSession } from '../src/binding.ts'
 import { DatasetsRemoteService } from '../src/remote.ts'
 import { createDatasetsService, type DatasetsService } from '../src/service.ts'
-import { cleanup, commitAll, git, makeFixtureRepo, makeJudgingRepo, stateOptions, writeFiles, type FixtureRepo } from './helpers.ts'
+import { cleanup, commitAll, git, makeFixtureRepo, makeJudgingRepo, stateOptions, writeFiles, type FixtureRepo, writeLegacyBinding } from './helpers.ts'
 
 let repo: FixtureRepo | undefined
 let worktreeRoot: string | undefined
@@ -28,12 +27,12 @@ afterEach(() => {
   bindingsRoot = undefined
 })
 
-/** A minimal live-session fake: the binding store keys on the id alone. */
-function fakeSession(): BindingSession {
+/** A minimal live-session fake: nothing here reads more than the id. */
+function fakeSession(): { id: string } {
   return { id: 's1' }
 }
 
-function agentOf(session: BindingSession): Agent {
+function agentOf(session: { id: string }): Agent {
   return { session } as unknown as Agent
 }
 
@@ -43,13 +42,13 @@ async function registerLib(remote: DatasetsRemoteService, agent: Agent, dir: str
 }
 
 /** Mount the Remote service over a real service core in a bare context. */
-async function bench(defaultRepo = '') {
+async function bench() {
   const ctx = new Context()
   ctx.provide('datasets', createDatasetsService({
     ...stateOptions(worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-state-'))),
     bindingsRoot: bindingsRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-')),
   }))
-  const fiber = ctx.plugin(DatasetsRemoteService, { defaultRepo })
+  const fiber = ctx.plugin(DatasetsRemoteService, {})
   await fiber.await()
   const remote = ctx.get('datasetsRemote') as DatasetsRemoteService
   return { ctx, fiber, remote }
@@ -189,9 +188,9 @@ describe('DatasetsRemoteService', () => {
     await fiber.dispose()
   })
 
-  it('reads name a registration: an unknown id is refused, never resolved against a default', async () => {
+  it('reads name a registration: an unknown id is refused', async () => {
     repo = makeFixtureRepo()
-    const { fiber, remote } = await bench(repo.dir)
+    const { fiber, remote } = await bench()
     await expect(remote.list(agentOf(fakeSession()), { repo: 'ghost' }))
       .rejects.toThrowError(/is not registered in this deployment/)
     await fiber.dispose()
@@ -448,9 +447,9 @@ describe('DatasetsRemoteService', () => {
     const agent = agentOf(fakeSession())
     const service = ctx.get('datasets') as DatasetsService
     // Three sessions: two name the same repository by two spellings, one a path that is gone.
-    service.bind({ id: 'a' }, { repoPath: repo.dir })
-    service.bind({ id: 'b' }, { repoPath: join(repo.dir, 'datasets') })
-    service.bind({ id: 'c' }, { repoPath: join(repo.dir, 'gone') })
+    writeLegacyBinding(service.bindingsRoot, 'a', { repoPath: repo.dir })
+    writeLegacyBinding(service.bindingsRoot, 'b', { repoPath: join(repo.dir, 'datasets') })
+    writeLegacyBinding(service.bindingsRoot, 'c', { repoPath: join(repo.dir, 'gone') })
     const before = readdirSync(service.bindingsRoot).map(name => readFileSync(join(service.bindingsRoot, name), 'utf8'))
     const result = await remote.importBindings(agent)
     expect(result.imported).toHaveLength(1)

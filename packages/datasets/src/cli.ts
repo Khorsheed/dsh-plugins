@@ -2,7 +2,7 @@
 /**
  * `dsh-datasets` CLI — the script/ops face of the datasets service: every
  * read verb the model tools have (same semantics, same parameters), plus the
- * human-only maintenance verbs (the dataset registry, legacy bindings). Run from
+ * human-only maintenance verbs (the dataset registry, the legacy-binding import). Run from
  * source: `node --import tsx/esm src/cli.ts <command>`; as a published
  * package: the `dsh-datasets` bin or `node lib/cli.js <command>`.
  *
@@ -24,16 +24,17 @@
  *     deployment's dataset registry (human-only writes; agents resolve
  *     `<id>/<set>` through it)
  *   bind             — retired: prints how to register instead
- *   unbind / binding — clear / read a legacy session binding
+ *
+ * `--repo` takes a registry id or a path; without it the only registration
+ * is used, and zero or several registrations are refused.
  */
 import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { readBinding, writeBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
 import { resolveMaterializedRoot, resolveStateRoot } from './defaults.ts'
 import { formatList, formatShow, formatValidate, formatWarnings } from './format.ts'
-import { createDatasetsService, resolveScope, type DatasetScope } from './service.ts'
+import { createDatasetsService, resolveOperatorScope, type DatasetScope } from './service.ts'
 import { registryPathOf, type RegistrySet } from './registry.ts'
 
 /** stdout/stderr sink (injected so tests capture output). */
@@ -56,11 +57,9 @@ commands:
   update --id ID [--tracked-ref B] [--set-layers set=a+b,…] [--authoring-checkout P|none] [--state-root DIR]
   unregister --id ID [--state-root DIR]
   import-bindings [--state-root DIR]
-  unbind --session ID [--state-root DIR]
-  binding --session ID [--state-root DIR]
 flags:
-  --repo R           dataset repository (default: $DSH_DATASETS_REPO)
-  --commit C         pinned commit (default: HEAD)
+  --repo R           registry id or repository path (default: the only registration)
+  --commit C         pinned commit (default: the registration's latest, else HEAD)
   --dataset D        dataset id
   --item I           item id
   --layer L          layer name (read)
@@ -72,7 +71,6 @@ flags:
                      its model-facing layers and nothing else
   --authoring-checkout P   the working tree datasets_put_item writes to
                      (update: none clears it)
-  --session ID       session id (unbind/binding)
   --materialized-root DIR  materialized-layer root (default: $DSH_HOME/state/datasets/materialized)
   --state-root DIR     plugin state root (default: $DSH_HOME/state/datasets)
 `
@@ -130,14 +128,9 @@ function csv(value: string | undefined): string[] | undefined {
  * Run one CLI invocation.
  * @param argv - arguments after the bin name.
  * @param io - output sinks.
- * @param env - environment (injectable for tests).
  * @returns the process exit code.
  */
-export async function runCli(
-  argv: readonly string[],
-  io: CliIo,
-  env: Record<string, string | undefined> = process.env,
-): Promise<number> {
+export async function runCli(argv: readonly string[], io: CliIo): Promise<number> {
   const parsed = parse(argv)
   if ('error' in parsed) {
     io.stderr(parsed.error)
@@ -154,12 +147,8 @@ export async function runCli(
   // Read verbs run as the operator (a human at their own machine — the
   // whitelist constrains agent tools and worktree materialization, not this
   // CLI). worktree path keeps the non-operator scope: it is a boundary.
-  const scope = (operator = true): DatasetScope => ({
-    ...resolveScope(
-      flags['repo'] !== undefined ? { repo: flags['repo'] } : {},
-      undefined,
-      env['DSH_DATASETS_REPO'],
-    ),
+  const scope = async (operator = true): Promise<DatasetScope> => ({
+    ...await resolveOperatorScope(service.registry, flags['repo']),
     ...(operator ? { operator: true as const } : {}),
   })
   const verb = command.join(' ')
@@ -167,7 +156,7 @@ export async function runCli(
   try {
     switch (verb) {
       case 'list': {
-        const result = await service.list(scope(), flags['dataset'], flags['commit'])
+        const result = await service.list(await scope(), flags['dataset'], flags['commit'])
         const warnings = result.kind === 'datasets'
           ? result.datasets.flatMap(dataset => dataset.warnings)
           : result.dataset.warnings
@@ -178,7 +167,7 @@ export async function runCli(
       case 'show': {
         const dataset = flags['dataset']
         if (dataset === undefined) return usageError(io, 'show requires --dataset D')
-        const result = await service.show(scope(), dataset, flags['item'], flags['commit'])
+        const result = await service.show(await scope(), dataset, flags['item'], flags['commit'])
         if (result.dataset.warnings.length > 0) io.stderr(`${formatWarnings(result.dataset.warnings)}\n`)
         io.stdout(`${formatShow(result)}\n`)
         return 0
@@ -187,7 +176,7 @@ export async function runCli(
         const dataset = flags['dataset']
         if (dataset === undefined) return usageError(io, 'describe requires --dataset D')
         // show carries the same raw descriptor plus the summary (warnings ride it).
-        const result = await service.show(scope(), dataset, undefined, flags['commit'])
+        const result = await service.show(await scope(), dataset, undefined, flags['commit'])
         if (result.dataset.warnings.length > 0) io.stderr(`${formatWarnings(result.dataset.warnings)}\n`)
         io.stdout(`${JSON.stringify(result.descriptor, null, 2)}\n`)
         return 0
@@ -200,7 +189,7 @@ export async function runCli(
         if (dataset === undefined || item === undefined || layer === undefined || path === undefined) {
           return usageError(io, 'read requires --dataset D --item I --layer L --path P')
         }
-        const result = await service.read(scope(), {
+        const result = await service.read(await scope(), {
           dataset, item, layer, path,
           ...(flags['commit'] !== undefined ? { commit: flags['commit'] } : {}),
         })
@@ -210,14 +199,14 @@ export async function runCli(
       case 'snapshot': {
         const dataset = flags['dataset']
         if (dataset === undefined) return usageError(io, 'snapshot requires --dataset D')
-        const result = await service.snapshot(scope(), dataset, flags['commit'])
+        const result = await service.snapshot(await scope(), dataset, flags['commit'])
         io.stdout(`${JSON.stringify(result)}\n`)
         return 0
       }
       case 'worktree path': {
         const dataset = flags['dataset']
         if (dataset === undefined) return usageError(io, 'worktree path requires --dataset D')
-        const result = await service.worktreePath(scope(false), dataset, {
+        const result = await service.worktreePath(await scope(false), dataset, {
           ...(flags['commit'] !== undefined ? { commit: flags['commit'] } : {}),
           ...(csv(flags['layers']) !== undefined ? { layers: csv(flags['layers']) ?? [] } : {}),
         })
@@ -225,7 +214,7 @@ export async function runCli(
         return 0
       }
       case 'validate': {
-        const result = await service.validate(scope(), flags['dataset'])
+        const result = await service.validate(await scope(), flags['dataset'])
         io.stdout(`${formatValidate(result)}\n`)
         return result.datasets.some(dataset => dataset.errors.length > 0) ? 1 : 0
       }
@@ -280,20 +269,6 @@ export async function runCli(
         io.stderr('bind is retired: datasets are registered per deployment now — '
           + 'dsh-datasets register --repo R [--tracked-ref B] (or the Datasets tab → Register repository)\n')
         return 2
-      }
-      case 'unbind': {
-        const session = flags['session']
-        if (session === undefined) return usageError(io, 'unbind requires --session ID')
-        writeBinding(bindingsRoot, session, null)
-        io.stdout(`cleared the binding of session ${session}\n`)
-        return 0
-      }
-      case 'binding': {
-        const session = flags['session']
-        if (session === undefined) return usageError(io, 'binding requires --session ID')
-        const binding = readBinding(bindingsRoot, session)
-        io.stdout(`${binding === undefined ? 'null' : JSON.stringify(binding)}\n`)
-        return 0
       }
       default:
         io.stderr(`unknown command ${JSON.stringify(verb)}\n\n${USAGE}`)

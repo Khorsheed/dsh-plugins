@@ -37,6 +37,7 @@ export class EvalConditionEditRefused extends Error {
 /** What one edit changed. */
 export interface ConditionEditReport {
   condition: string
+  /** Empty since T73 (the library is deployment-wide); kept for old readers. */
   dataset: string
   /** The declaration that was written (absolute). */
   conditionPath: string
@@ -63,49 +64,44 @@ function isInside(root: string, child: string): boolean {
 }
 
 /**
- * Where one dataset set's declaration of a condition lives.
- * @param repo - the dataset repository working copy.
- * @param dataset - the dataset set.
+ * Where the condition library's declaration of a condition lives.
+ * @param root - the library root (the directory holding `conditions/` — the eval state root).
  * @param condition - the condition id (its file stem).
  * @returns the absolute path.
- * @throws {@link EvalConditionEditRefused} when either name could not be a
- *   directory or file name — the two segments are joined into a path, so a
- *   name carrying a separator would address a file outside the set.
+ * @throws {@link EvalConditionEditRefused} when the id could not be a file
+ *   name — it is joined into a path, so an id carrying a separator would
+ *   address a file outside the library.
  */
-export function conditionPathIn(repo: string, dataset: string, condition: string): string {
-  for (const [what, value] of [['dataset set', dataset], ['condition id', condition]] as const) {
-    if (!CONDITION_ID_RE.test(value)) {
-      throw new EvalConditionEditRefused(
-        `${what} ${JSON.stringify(value)} is not a usable name — it doubles as a path segment, so it must start with a `
-        + 'letter or digit and hold only letters, digits, dot, dash and underscore.',
-      )
-    }
+export function conditionPathIn(root: string, condition: string): string {
+  if (!CONDITION_ID_RE.test(condition)) {
+    throw new EvalConditionEditRefused(
+      `condition id ${JSON.stringify(condition)} is not a usable name — it doubles as a file name, so it must start with a `
+      + 'letter or digit and hold only letters, digits, dot, dash and underscore.',
+    )
   }
-  return join(resolve(expandHome(repo)), 'datasets', dataset, 'conditions', `${condition}.json`)
+  return join(resolve(expandHome(root)), 'conditions', `${condition}.json`)
 }
 
 /**
  * Set one condition's `model.endpoint`.
  *
- * Writes only inside the `repo` working copy, and only that one field; the
+ * Writes only inside the condition library, and only that one field; the
  * rest of the document is carried through as it was parsed, so key order and
  * every other value survive. Nothing is committed.
- * @param options - the repository working copy, the set, the condition, and
+ * @param options - the library root, the condition, and
  *   the value (null declares "not resolved yet", which the readiness gate
  *   refuses — legal, and sometimes what a person means).
  * @returns what changed, including the condition hash on both sides.
  * @throws {@link EvalConditionEditRefused} when the declaration cannot be
- *   read, is not a valid `dataseek.condition/1`, or sits outside `repo`.
+ *   read, is not a valid `dataseek.condition/1`, or sits outside the library.
  */
 export async function setConditionEndpoint(
-  options: { repo: string; dataset: string; condition: string; endpoint: string | null },
+  options: { root: string; condition: string; endpoint: string | null },
 ): Promise<ConditionEditReport> {
-  const repo = resolve(expandHome(options.repo))
-  const conditionAbs = conditionPathIn(repo, options.dataset, options.condition)
-  if (!isInside(repo, conditionAbs)) {
-    throw new EvalConditionEditRefused(
-      `condition ${conditionAbs} is not inside the dataset repository working copy ${repo}`,
-    )
+  const root = resolve(expandHome(options.root))
+  const conditionAbs = conditionPathIn(root, options.condition)
+  if (!isInside(root, conditionAbs)) {
+    throw new EvalConditionEditRefused(`condition ${conditionAbs} is not inside the condition library ${root}`)
   }
   let document: unknown
   try {
@@ -130,7 +126,7 @@ export async function setConditionEndpoint(
   if (before === endpoint) {
     return {
       condition: options.condition,
-      dataset: options.dataset,
+      dataset: '',
       conditionPath: conditionAbs,
       before,
       after: endpoint,
@@ -150,7 +146,7 @@ export async function setConditionEndpoint(
   }
   return {
     condition: options.condition,
-    dataset: options.dataset,
+    dataset: '',
     conditionPath: conditionAbs,
     before,
     after: endpoint,

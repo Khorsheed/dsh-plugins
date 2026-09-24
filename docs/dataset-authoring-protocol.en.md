@@ -1,12 +1,12 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev12** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev13** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator and the bind form's prefill derive from it. The `dataset-authoring` skill is also planned to derive from this protocol, but remains planned and is not yet distributed with `@khorsheed/dsh-datasets`. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
 ## 0. Mental model
 
-A dataset = one `datasets/<dataset-id>/` directory in a git repository; a repository may hold many datasets. Version = git commit; an evaluation run pins `{repo, commit, datasetId}` through a snapshot.
+A dataset = one `datasets/<dataset-id>/` directory in a git repository; a repository may hold many datasets. Version = git commit; an evaluation experiment pins `{registry, set, commit}` (registration id, dataset set, commit), and run.meta records it (v1-rev13).
 
 Your files keep their names and their homes: roles are declared by the registration file (§2's `register`); the directory layout is merely the zero-configuration default.
 
@@ -73,24 +73,36 @@ When done, run `dsh-datasets validate` (or call the `datasets_validate` tool). S
 - `FIELD_NAME_SENSITIVE`: an item.json key containing a note / hint / answer / rubric / grading root (a cheap literal heuristic that catches "sensitive note written in the wrong place");
 - `CANARY_MISSING`: in a dataset that declares a `canary`, a text file of a visible layer that does not contain the string. Text is decided by an extension whitelist — `.md` / `.txt` / `.yml` / `.yaml` / `.json` and extensionless files; everything else (images, archives) is skipped, as are `modelFacing: false` layers and item.json. A dataset with no `canary` is not checked at all. This is the one rule that reads file content, so it runs on `validate` only and never on the list/show summary.
 - `UNREGISTERED_FILES`: files covered by no layer directory or register entry (they silently fall into the passthrough zone and become always-visible; single-level globs not covering subdirectories is the common trap).
-- The eval contract directories (§6.1's `conditions/`, `plans/`, `schemas/`, `templates/`) are reported as UNREGISTERED_FILES by design: they live in the dataset-level passthrough zone and are outside the layer/register vocabulary.
+- The eval contract directories (§6.1's `schemas/`, `templates/`, and the `conditions/`, `plans/` left from before rev13) are reported as UNREGISTERED_FILES by design: they live in the dataset-level passthrough zone and are outside the layer/register vocabulary.
 
 ## 6. Eval contracts (condition / plan / verdict)
 
 This chapter brings the web-eval contract schemas into the protocol, alongside `dataseek.verify/1` and `dataseek.rubric/2`. They are validated and hashed by `@khorsheed/dsh-eval` (`dsh-eval validate` / `dsh-eval conditions hash`); the execution semantics belong to web-eval's orchestrator, and `dsh-datasets` does not interpret them. Every JSON example here is a validator fixture, and the schema documents are pinned against the code constants (`packages/eval/src/schema.ts`) by tests — **editing a schema here is editing the contract**.
 
-### 6.1 Location: the dataset-level passthrough zone
+### 6.1 Location: the dataset repository is read-only; eval records live on the deployment (v1-rev13)
 
-The contract files live in four directories under the dataset directory (§1's passthrough semantics; `dsh-datasets validate` reporting them as UNREGISTERED_FILES is expected):
+The dataset repository is the evaluation's **read-only input**: items and stage schemas live under the dataset directory, and eval reads them from the registered repository (an id in `/datasets registry`) at the commit the plan pins — it never writes back.
 
 ```text
 datasets/<id>/
-  conditions/<id>.json        # condition declaration (agent drafts, human reviews)
-  conditions/<id>.lock.json   # the material record of a condition hash and its scoped home (tool-written)
-  plans/<plan>.json           # run plan (agent drafts, human approves)
   schemas/<stage>.json        # stage structured schema (authoritative, see §6.6)
   templates/<name>.json       # run template (generated from the manifest from I2 on, never hand-written)
 ```
+
+Conditions, plans and analyses are an evaluation's **own** records. They live on the deployment (`$DSH_HOME/state/eval/`), never in the dataset repository:
+
+```text
+$DSH_HOME/state/eval/
+  conditions/<id>.json          # condition declaration (the deployment's condition library; agent drafts, human reviews)
+  conditions/<id>.lock.json     # the material record of a condition hash and its scoped home (tool-written)
+  experiments/<experimentId>/
+    plan.json                   # run plan (agent drafts, human approves; kept byte for byte)
+    meta.json                   # name, originSession, createdAt, dataset {registry, set, commit}, experimentId
+    analysis/                   # analysis drafts (the only place eval_analysis_write may write)
+    exports/                    # default bundle export directory
+```
+
+Up to rev12, `conditions/` and `plans/` (and `analysis/`) sat under the dataset directory. Those files in an older repository stay readable: `dsh-eval import --from <registration id>@<ref>` moves a plan byte for byte into a deployment experiment through `git show` and merges the conditions it names into the library (the same id with different content is refused); nothing writes them on the dataset side any more.
 
 ### 6.2 dataseek.condition/1 — the subject under test
 
@@ -591,34 +603,47 @@ A sub-dsh condition carries a few more lines — `provisioned.preset` is read ba
     "schema": {
       "const": "dataseek.plan/1"
     },
+    "name": {
+      "type": "string",
+      "description": "Optional. The experiment's display name; the experiment id is minted from it. An imported plan without one takes its file stem."
+    },
     "dataset": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "repo",
         "commit",
-        "id",
         "items"
       ],
-      "description": "What is being tested against. commit: null means the snapshot pins it at run start.",
+      "description": "What is being tested against: {registry, set, commit} — a registry id, a set inside that repository, and the full commit every contract file is read at (required). The legacy {repo, id} form (commit may be null) is read-only: old plans still validate and import, nothing writes it.",
       "properties": {
-        "repo": {
-          "type": "string"
+        "registry": {
+          "type": "string",
+          "description": "The dataset registration id (/datasets registry)."
+        },
+        "set": {
+          "type": "string",
+          "description": "The dataset set inside the registered repository."
         },
         "commit": {
           "type": [
             "string",
             "null"
-          ]
-        },
-        "id": {
-          "type": "string"
+          ],
+          "description": "The pinned commit; required and non-null in the registry form."
         },
         "items": {
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "repo": {
+          "type": "string",
+          "description": "Legacy, read-only: a repository path."
+        },
+        "id": {
+          "type": "string",
+          "description": "Legacy, read-only: the set, beside repo."
         }
       }
     },
@@ -721,7 +746,7 @@ A sub-dsh condition carries a few more lines — `provisioned.preset` is read ba
     },
     "exports": {
       "type": "string",
-      "description": "Optional. Bundle export directory (~/… allowed); default <dataset repo>/exports. Run-call options may override."
+      "description": "Optional. Bundle export directory (~/… allowed); default the experiment directory's exports/. Run-call options may override."
     },
     "unit": {
       "type": "object",
@@ -793,12 +818,13 @@ A sub-dsh condition carries a few more lines — `provisioned.preset` is read ba
 }
 ```
 
-- `conditions` and `judge.conditions` carry **condition ids** (file names), never shas; the validator resolves shas from `conditions/<id>.lock.json` and run.meta records them.
+- `conditions` and `judge.conditions` carry **condition ids** (file names), never shas; the validator resolves shas from the deployment condition library's `conditions/<id>.lock.json` and run.meta records them.
 - `judge` may be absent entirely: when it is, `expectedNs` must not contain `llm-draft` (validate cross-checks). A present judge with `samples: 0` legally means "no LLM judging in this run"; the report then marks llm-draft honestly missing.
 - The judge must not be a contestant: `judge.conditions` and `conditions` must be disjoint (validate errors).
-- `retry.infrastructure` and `exports` are both optional: the first is the per-cell infrastructure-retry budget (spawn failures, facade errors, timeouts), default 1, `0` disabling retries; the second is the bundle export directory (`~/…` allowed), default `<dataset repo>/exports`. Both are **reviewed defaults** — the run call options (`retryInfrastructure` / `exportsDir`) override them, so the plan is what review reads and the options are what a one-off run bends.
+- `retry.infrastructure` and `exports` are both optional: the first is the per-cell infrastructure-retry budget (spawn failures, facade errors, timeouts), default 1, `0` disabling retries; the second is the bundle export directory (`~/…` allowed), default the experiment directory's `exports/`. Both are **reviewed defaults** — the run call options (`retryInfrastructure` / `exportsDir`) override them, so the plan is what review reads and the options are what a one-off run bends.
 - A plan carries **no template field**: the run template is a deterministic function of the dataset manifest, generated and linted at validate time and reviewed alongside the plan (I2).
-- `dataset.commit` of `null` means "pinned by the snapshot at run start"; run.meta records the actual commit.
+- `dataset` is `{registry, set, commit}` (v1-rev13): `registry` is the dataset registration id, `set` the dataset set in that repository, and `commit` is **required** and a full hash — every contract file the plan uses is read at that commit. Drafting without a commit, `eval_plan_draft` takes the tracked branch's latest, and refuses with the candidates listed when that disagrees in content (the `items/` and `schemas/` tree hashes) with the version pinned by existing experiments on the same set and conditions. The legacy `{repo, id, commit}` form (`commit` may be `null`, meaning pinned at run start) is **read-only**: old plans still validate and import, and no tool writes it any more.
+- `name` is optional: the experiment's display name, from which the experiment id `<slug>-<yyyymmdd>-<4hex>` is minted; an imported legacy plan without one takes its file stem.
 - `unit` may be omitted. Omitted, the run takes the **host path**: per-cell directories under `$DSH_HOME/state/eval`, no containers, byte for byte what it was before this field existed. Present, it takes the **container path**: every cell of the run goes acquire → populate → one delegation round and one checkpoint per stage → probes (inside the unit, through `lab.verify`) → archive → release, in one lab unit built from `image`. An undeclared `network` is docker's default bridge, which HAS egress — a sealed run must name its internal network; an undeclared `user` is the image's own `USER`; `resources` is both applied to the container and hashed into the environment fingerprint.
 - `unit.egressCheck` may be omitted, and omitted it is byte for byte what the run was before this field existed. Present, it is the **egress self-check**: every freshly acquired unit runs this command first — the readiness probe's unit before it delegates, each cell's between acquire and populate. Exit 0 passes; anything else, a timeout included, refuses the whole run as `EGRESS_UNAVAILABLE` without spending one delegation. **A run on an internal network should declare it**: a unit that cannot reach its proxy does not fail, it answers NOTHING, which reads exactly like a subject with nothing to say (measured: codex ran 230 seconds in a unit with no egress and returned `task_complete` with `last_agent_message: null`, and not one word about the network). The command and its target live here, beside the network they belong to — the orchestrator holds no address of its own. A declaration whose `command` is empty or carries an empty word is refused as `EGRESS_CHECK_MALFORMED` (the contract subset has no `minItems`, so the run loop is the only place that can catch it).
 - validate does NOT check that the image exists: reviewing a plan must not require a reachable docker daemon. The first `acquire` is that check.
@@ -807,10 +833,11 @@ A sub-dsh condition carries a few more lines — `provisioned.preset` is read ba
 ```json
 {
   "schema": "dataseek.plan/1",
+  "name": "harness-comparison-effort",
   "dataset": {
-    "repo": "~/dataseek",
-    "commit": null,
-    "id": "harness-comparison",
+    "registry": "dataseek-eval",
+    "set": "harness-comparison",
+    "commit": "3f2a9c0e1b7d4a6f8e2c5b1d9a0f7e3c6b8d2a41",
     "items": [
       "F2-multi-agent-room",
       "F3-self-restart-report"
@@ -856,8 +883,7 @@ A sub-dsh condition carries a few more lines — `provisioned.preset` is read ba
   "retry": {
     "infrastructure": 1
   },
-  "exports": "~/dataseek/exports",
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，挂的是评测实例自己的该家作用域目录，不写进本文件。"
+  "notes": "dataset 钉 {registry, set, commit}，commit 必填，contract 文件全在这个 commit 上读；conditions 与 judge.conditions 都写条件 id，sha 由部署条件库里的 conditions/<id>.lock.json 解析。retry 是 run 的默认值，run 调用选项可覆盖；exports 缺省即实验目录的 exports/。unit 在场即容器路径：每格一个单元，挂的是评测实例自己的该家作用域目录，不写进本文件。"
 }
 ```
 

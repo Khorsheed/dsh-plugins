@@ -169,8 +169,8 @@ export type DatasetsKey =
   | 'error.notDatasetRepo.fix'
   | 'error.pathMissing'
   | 'error.pathMissing.fix'
-  | 'error.unbound'
-  | 'error.unbound.fix'
+  | 'error.noneRegistered'
+  | 'error.noneRegistered.fix'
   | 'error.serviceMissing'
   | 'error.serviceMissing.fix'
   | 'error.cancelled'
@@ -195,8 +195,8 @@ export const zh: Record<DatasetsKey, string> = {
   'error.notDatasetRepo.fix': '换题库仓库的路径登记，或先在仓库里建出 datasets/',
   'error.pathMissing': '这个路径在磁盘上找不到',
   'error.pathMissing.fix': '确认目录还在，或换一个路径',
-  'error.unbound': '本会话还没有可用的题库',
-  'error.unbound.fix': '先在题集页点「登记仓库」登记题库',
+  'error.noneRegistered': '这个部署还没有登记任何题库',
+  'error.noneRegistered.fix': '先在题集页点「登记仓库」登记题库',
   'error.serviceMissing': '这台实例缺少本页要用的服务',
   'error.serviceMissing.fix': '预设里少装了成员；补齐后重开这个 tab',
   'error.cancelled': '这次请求被取消了',
@@ -376,8 +376,8 @@ export const en: Record<DatasetsKey, string> = {
   'error.notDatasetRepo.fix': 'Register the dataset repository’s path, or create datasets/ in it first',
   'error.pathMissing': 'That path is not on disk',
   'error.pathMissing.fix': 'Check the directory is still there, or pick another path',
-  'error.unbound': 'This session has no dataset repository to use',
-  'error.unbound.fix': 'Register one first: Datasets tab → Register repository',
+  'error.noneRegistered': 'No dataset repository is registered in this deployment',
+  'error.noneRegistered.fix': 'Register one first: Datasets tab → Register repository',
   'error.serviceMissing': 'This instance is missing a service this page needs',
   'error.serviceMissing.fix': 'A member is absent from the preset; install it and reopen this tab',
   'error.cancelled': 'The request was cancelled',

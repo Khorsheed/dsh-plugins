@@ -22,6 +22,8 @@ It lives in `repo-path.ts` — the module I5·T58 had just added for the very sa
 
 **An old record is migrated in place on read.** `readBinding` compares the stored spelling with the canonical one and, when they differ, writes the record back. A user who bound before this fix does not have to rebind, and the file stops being a trap for the next reader — the CLI, `git`, and `readdir` all see the same path. The write-back is best effort: a store we may not write to still answers the read correctly.
 
+> Superseded in part by T73 branch 2 ([experiments as deployment-level objects](../architecture/2026-09-23-eval-experiments-deployment-level.md)): eval no longer reads bindings, and `normalizeRepoPath` and `resolveRepoScope`'s binding branch are gone. The paragraph below records the T62 shape.
+
 **The eval side normalizes what it reads, too.** `resolveRepoScope` puts the binding's `repoPath` through eval's own `normalizeRepoPath`, not just the explicit `repo` argument it already expanded. The datasets plugin now canonicalizes what it stores, so this is belt and braces — but an old binding should not be the reader's problem, and eval reads bindings written by a plugin it deliberately does not import.
 
 **Failures render as three parts** (ui-spec §九): one human sentence on what happened, one on how to fix it (with the command when there is one), and the raw exception plus the path folded under «详情». The page never renders `error.message` and never exposes an absolute path. The raw text still has a reader — whoever debugs the host — so it is folded away, not dropped.

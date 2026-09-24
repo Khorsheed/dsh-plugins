@@ -43,6 +43,8 @@ After an approval, while the open row still has no run id, the view re-reads the
 
 ### `eval_repo_write`: the analysis draft's own door
 
+> Superseded in part by T73 branch 2 ([experiments as deployment-level objects](../architecture/2026-09-23-eval-experiments-deployment-level.md)): the tool is now `eval_analysis_write`, and its door is `analysis/<path>` of one experiment under the deployment's state root; nothing writes into the dataset repository. What follows is the I5 · T60 shape.
+
 The row's second write, and a new tool rather than an extension of `eval_plan_draft`. It writes ONE text file into the session's bound repository, against a whitelist hardcoded in `src/repo-write.ts`:
 
 - `docs/<path>` — the repository's own documentation, outside `datasets/` entirely.

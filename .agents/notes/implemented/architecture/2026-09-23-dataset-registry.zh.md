@@ -26,7 +26,7 @@ T73 之前，题库仓库经会话绑定到达 agent（`bindings/<session>.json`
 
 **物化**（`src/materialize.ts`）替换托管 worktree：`git archive <sha> -- <层路径>` 解包进私有暂存目录、去写权限、原子 rename 到 `$DSH_HOME/state/datasets/materialized/<repoKey>/<sha>/<set>/<layers-key>/`。`repoKey` 是 common dir 的哈希，sha 必须是仓库认识的完整 id，每条 pathspec 必须在 `datasets/<set>/` 之内。键完全决定内容，所以目录已在就是缓存命中。返回形状 `{path, commit, layers, reused}` 不变，eval 的 `run.ts` 消费的就是它。
 
-**旧绑定仍可读。** eval 仍经 `DatasetsBindingFace.binding()` 读会话绑定，并经绑定读路径解析仓库；`resolveScope` 里三句「no dataset repository」原样不动。把 eval 迁到引用是 T73 分支 2 的事。所以绑定文件从不自动删除，CLI 保留 `binding` / `unbind`，所有**写**绑定的入口退役：`/datasets bind` 与 CLI `bind` 回答去登记的指引，tab 绑定条与 composer 的 `BindingChip` 删除。`importBindings` 把同一仓库的多条绑定合成一条登记，悬空的标出并跳过，绑定文件逐字节不动。
+**旧绑定是记录，不再是读取路径。** 所有**写**绑定的入口退役：`/datasets bind` 与 CLI `bind` 回答去登记的指引，tab 绑定条与 composer 的 `BindingChip` 删除。自 1cdea3f4 起 datasets 侧也不再读绑定（`resolveScope`、`repo` 回退配置、CLI `binding` / `unbind` 与 `/datasets unbind` 删除），T73 分支 2 把 eval 迁到登记引用（[实验成为部署级对象](2026-09-23-eval-experiments-deployment-level.zh.md)）。绑定文件仍从不自动删除：`importBindings` 把同一仓库的多条绑定合成一条登记，悬空的标出并跳过，绑定文件逐字节不动。
 
 ### 本变更不碰的
 
@@ -73,6 +73,6 @@ git -C "$REPO" worktree prune
 - agent 再也拿不到部署没登记的题库，拒绝语告诉它该做什么：去问人，名字有歧义时经 `ask_user_question`。
 - 「最新」不受其他 agent 的检出影响；要移动它，就是有意往跟踪分支上合并。
 - 整层视图不再往共享 worktree 列表里加记录。物化缓存不回收：跟踪分支每前进一次可能多一个目录，回收空间就是删 `materialized/` 子树（先 `chmod -R u+w`）。
-- 分支 2 之前仓库身份有两个来源：eval 的绑定读路径和登记表。`importBindings` 单向连接二者。
-- CLI 的读取动词仍按路径收 `--repo`：那是人的面，登记管的是 agent。
-- T73 分支 2 还带一个只读的 `experimentArtifact({experimentId, path})` Remote 动词，用来看分析初稿。它计划在分支 2，本分支没做。
+- 登记表是仓库身份的唯一来源；旧绑定文件留在 `$DSH_HOME/state/datasets/bindings/<session>.json`，作为 `importBindings` 可读的记录。
+- CLI 的 `--repo` 收登记 id 或路径：那是人的面，登记管的是 agent。省略时由部署唯一的登记作答。
+- 看分析初稿用的只读 Remote 动词 `experimentArtifact({experimentId, path})` 已随 T73 分支 2 在 eval 落地。

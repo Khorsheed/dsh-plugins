@@ -49,19 +49,19 @@ interface Harness {
 }
 
 const LIST: EvalExperimentsResult = {
-  repo: '/repo',
-  datasets: ['ds'],
   notes: [],
   session: 's1',
   rows: [
     {
       id: 'run-20260913-aa',
+      experimentId: 'harness-comparison-20260911-0a0b',
+      legacy: false,
       name: 'harness-comparison',
-      planPath: '/repo/datasets/ds/plans/harness-comparison.json',
+      planPath: '/state/eval/experiments/harness-comparison-20260911-0a0b/plan.json',
       runId: 'run-20260913-aa',
       status: 'judging',
       statusDetail: null,
-      snapshot: { repo: '/repo', datasetId: 'ds', commit: 'c0ffee1234567890' },
+      snapshot: { registry: 'reg', datasetId: 'ds', commit: 'c0ffee1234567890' },
       conditions: ['cond-a', 'cond-b'],
       judges: ['judge-a'],
       items: 2,
@@ -78,13 +78,15 @@ const LIST: EvalExperimentsResult = {
       unit: { image: 'dataseek/bench:1', network: 'sealed', user: '1000' },
     },
     {
-      id: 'plan:/repo/datasets/ds/plans/effort-sweep.json',
+      id: 'experiment:effort-sweep-20260912-0c0d',
+      experimentId: 'effort-sweep-20260912-0c0d',
+      legacy: false,
       name: 'effort-sweep',
-      planPath: '/repo/datasets/ds/plans/effort-sweep.json',
+      planPath: '/state/eval/experiments/effort-sweep-20260912-0c0d/plan.json',
       runId: null,
       status: 'pending-approval',
       statusDetail: null,
-      snapshot: { repo: '/repo', datasetId: 'ds', commit: null },
+      snapshot: { registry: 'reg', datasetId: 'ds', commit: 'beef0001'.padEnd(40, '0') },
       conditions: ['cond-a', 'cond-c'],
       judges: [],
       items: 4,
@@ -107,7 +109,7 @@ const DETAIL: EvalExperimentDetail = {
   row: LIST.rows[0]!,
   meta: {
     planSha: 'd'.repeat(64),
-    planPath: '/repo/datasets/ds/plans/harness-comparison.json',
+    planPath: '/state/eval/experiments/harness-comparison-20260911-0a0b/plan.json',
     evalVersion: '0.1.0-rc.1+abc1234',
     datasetId: 'ds',
     commit: 'c0ffee1234567890',
@@ -212,9 +214,10 @@ describe('LabView list', () => {
     // The status word comes from the dictionary, keyed by the derived status.
     expect(screen.getByText('status.judging')).toBeTruthy()
     expect(screen.getByText('status.pending-approval')).toBeTruthy()
-    // The snapshot cell abbreviates the commit; a draft with none prints the set alone.
-    expect(screen.getByText('ds @ c0ffee1')).toBeTruthy()
-    expect(screen.getByText('ds')).toBeTruthy()
+    // The snapshot cell is `<registration>/<set> @ short hash` — never a path (T73).
+    expect(screen.getByText('reg/ds @ c0ffee1')).toBeTruthy()
+    expect(screen.getByText('reg/ds @ beef000')).toBeTruthy()
+    expect(screen.queryByText(/\/state\//)).toBeNull()
     // ui-spec §九: the factor column carries the field's WORD, never the
     // dotted path — the path stays on the cell's title.
     expect(screen.getByText('factor.model.declared')).toBeTruthy()
@@ -292,7 +295,7 @@ describe('LabView detail', () => {
     expect(await screen.findByText('cta.pendingHint')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'cta.pending' }))
     await waitFor(() => {
-      expect(h.approvePlan).toHaveBeenCalledWith('s1', { planPath: '/repo/datasets/ds/plans/effort-sweep.json' })
+      expect(h.approvePlan).toHaveBeenCalledWith('s1', { experimentId: 'effort-sweep-20260912-0c0d' })
     })
   })
 
@@ -399,6 +402,23 @@ describe('the grouped list (T72 §1)', () => {
   }
   const groupOf = (name: string) => screen.getByText(name).closest('[data-group]')?.getAttribute('data-group')
 
+  it('marks a run no experiment claims as 旧运行（未关联实验）, and only that row (T73)', async () => {
+    const h = makeHarness({ list: { ...LIST, rows: [
+      ...LIST.rows,
+      row({
+        id: 'r-legacy', runId: 'r-legacy', name: 'old-plan', status: 'done', experimentId: null, legacy: true,
+        snapshot: { registry: null, datasetId: 'ds', commit: '0ld0001'.padEnd(40, '0') },
+      }),
+    ] } })
+    renderView(h)
+    await screen.findByText('old-plan')
+    const chips = screen.getAllByText('list.legacy')
+    expect(chips).toHaveLength(1)
+    expect(chips[0]!.closest('[data-group]')?.textContent).toContain('old-plan')
+    // No registration recorded: the set and the hash, and still no path.
+    expect(screen.getByText('ds @ 0ld0001')).toBeTruthy()
+  })
+
   it('groups by what the row asks of the reader, and the archive is its own fold', async () => {
     const h = makeHarness({ list: GROUPED })
     renderView(h)
@@ -443,7 +463,7 @@ describe('the grouped list (T72 §1)', () => {
     expect(rerun).toHaveLength(1)
     fireEvent.click(rerun[0]!)
     await waitFor(() => {
-      expect(h.approvePlan).toHaveBeenCalledWith('s1', { planPath: RUN.planPath })
+      expect(h.approvePlan).toHaveBeenCalledWith('s1', { experimentId: RUN.experimentId })
     })
     expect(await screen.findByText('notice.rerun {"name":"stalled-mine","runId":"r-new"}')).toBeTruthy()
     // Still on the list: the row's button is not a click on the row.

@@ -119,9 +119,10 @@ describe('datasets-tool companion row', () => {
     // submits a bare invocation and leaves the arguments in the MESSAGE body
     // (T36's live pass). The hint's content is copy; its PRESENCE is the contract.
     expect(command?.input?.hint).toBeTypeOf('string')
-    expect(command?.input?.hint).toContain('list [dataset]')
-    // T73: bind is retired — the registry is the Datasets tab's, not a verb's.
-    expect(command?.input?.hint).not.toContain('bind <')
+    expect(command?.input?.hint).toContain('list [<id>/<set>]')
+    // T73: bind is retired — the registry is the Datasets tab's, not a verb's;
+    // unbind went with the binding tail (branch 2).
+    expect(command?.input?.hint).not.toContain('bind')
     // The handler is the core's own: a bare invocation answers its usage line
     // (and the grant backstop fails open on this ctx-less invocation).
     const result = await command?.handler({ rawInput: '', agent: { session: { id: 'sess-1' } } })
