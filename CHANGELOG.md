@@ -2,6 +2,11 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— capability-catalog：技能环境提示的退役 source 外壳在 rc.1 杀回合（已修）
+
+- **修 turn 级事故**：envHint（`skill` 工具 `tools/post-execute` 上的凭证映射提示）把注入消息盖成 0.1.5 时代的 `{kind: 'plugin', plugin: 'capability-catalog'}`——rc.1 的 v4 持久层在 append 编码时拒绝裸 `'plugin'` kind（退役外壳），拒绝在回合内抛出、被拍平成 `UNKNOWN`，日志停在 `tool/call`（3093 实测：模型加载带已配置凭证声明的技能必炸，普通回合无恙）。这处写入藏在 `as unknown as never` 强转后，逃过了 rc.1 波按构造函数的清查；以字面量 `kind: 'plugin'` 全仓 grep 复核，生产写入只此一处（其余为刻意的测试 fixture 与 message-tools 的旧日志读取侧）
+- 修复：改盖生产者自持 kind `{kind: 'capability-catalog', plugin: 'capability-catalog', form: 'env-hint'}`（ankh-guard 先例），自持 kind 在 0.1.5 与 rc.1 双线皆合法，无需探测。新增 `tests/env-hint.spec.ts` 3 例钉住注入 source 形状；包套件 235 绿
+
 ## Unreleased —— 预览面板的「刷新当前文件」手势（仓主 2026-09-24 提出）
 
 - `@khorsheed/dsh-client-ui-content-preview` 新增可选 prop `onReload`（contract 同步加 `action.reload` 文案键）：标题行动作区在复制路径之前多一个刷新钮（官方 `IconRefreshOutlineMedium`），仅在调用方注入 `onReload` 时渲染；点击后按钮禁用、图标旋转直至调用方 promise 落定（dsh-reader `.toolSpinning` 先例，含 `prefers-reduced-motion` 回落）。未传 `onReload` 的调用方零变化
