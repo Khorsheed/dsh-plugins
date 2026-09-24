@@ -1,12 +1,12 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev12** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev13** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器与绑定表单预填从本协议派生；`dataset-authoring` skill 也计划从本协议派生，但目前仍处于 planned，尚未随 `@khorsheed/dsh-datasets` 包分发。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
 ## 0. 心智模型
 
-一个数据集 = 一个 git 仓库里的 `datasets/<dataset-id>/` 目录；一个仓库可含多个数据集。版本 = git commit；评测 run 经 snapshot 固化 `{repo, commit, datasetId}`。
+一个数据集 = 一个 git 仓库里的 `datasets/<dataset-id>/` 目录；一个仓库可含多个数据集。版本 = git commit；评测实验钉住 `{registry, set, commit}`（登记 id、题集、commit），run.meta 照记（v1-rev13）。
 
 你的文件不用改名、不用搬家到固定层目录：角色由注册文件声明（§2 的 `register`），目录布局只是零配置的默认形态。
 
@@ -73,24 +73,36 @@ datasets/<id>/
 - `FIELD_NAME_SENSITIVE`：item.json 里出现 note / hint / answer / rubric / grading 词根的键（便宜的字面启发式，专门抓「敏感备注写错地方」）；
 - `CANARY_MISSING`：声明了 `canary` 的数据集里，某个可见层的文本文件没有包含该串。文本按扩展名白名单判定：`.md` / `.txt` / `.yml` / `.yaml` / `.json` 与无扩展名的文件；其余（图片、压缩包等）跳过，`modelFacing: false` 的层与 item.json 也不在检查范围。未声明 `canary` 的数据集完全不做此检查；这是唯一读文件内容的检查，因而只在 `validate` 上跑，不进 list/show 的摘要。
 - `UNREGISTERED_FILES`：未被任何层目录或 register 条目覆盖的文件（漏配的文件会静默掉进透传区变成「永远可见」；glob 单层通配盖不住子目录是高频踩法）。
-- 评测契约目录（§6.1 的 `conditions/`、`plans/`、`schemas/`、`templates/`）被报为 UNREGISTERED_FILES 属预期：它们本来就是题集级透传区，不进层与 register 的语义。
+- 评测契约目录（§6.1 的 `schemas/`、`templates/`，以及 rev12 以前留下的 `conditions/`、`plans/`）被报为 UNREGISTERED_FILES 属预期：它们本来就是题集级透传区，不进层与 register 的语义。
 
 ## 6. 评测契约（condition / plan / verdict）
 
 本节把 web-eval 的三份契约 schema 收进协议，与 `dataseek.verify/1`、`dataseek.rubric/2` 并列。它们由 `@khorsheed/dsh-eval` 校验与哈希（`dsh-eval validate` / `dsh-eval conditions hash`），执行语义归 web-eval 的编排器；`dsh-datasets` 不解释它们。每个 JSON 示例都是校验器夹具，schema 文档与代码常量（`packages/eval/src/schema.ts`）由测试钉住互不漂移——**改这里的 schema 就是改契约**。
 
-### 6.1 位置：题集级透传区
+### 6.1 位置：题库只读，评测记录在部署侧（v1-rev13）
 
-契约文件住在题集目录下的四个目录（§1 的透传区语义；`dsh-datasets validate` 对它们报 UNREGISTERED_FILES 属预期）：
+题库仓库是评测的**只读输入**：题目与阶段 schema 在题集目录下，评测从登记的仓库（`/datasets registry` 里的 id）按 plan 钉住的 commit 读取，从不写回。
 
 ```text
 datasets/<id>/
-  conditions/<id>.json        # 条件声明（agent 起草、人评审）
-  conditions/<id>.lock.json   # 条件哈希与 scoped home 的实物记录（工具写）
-  plans/<plan>.json           # run 计划（agent 起草、人批准）
   schemas/<stage>.json        # 阶段 structured schema（见 §6.6，权威）
   templates/<name>.json       # run 模板（I2 起由 manifest 生成，不手写）
 ```
+
+条件、计划与分析是一次评测**自己的**记录，住在部署侧（`$DSH_HOME/state/eval/`），不进题库仓库：
+
+```text
+$DSH_HOME/state/eval/
+  conditions/<id>.json          # 条件声明（部署条件库；agent 起草、人评审）
+  conditions/<id>.lock.json     # 条件哈希与 scoped home 的实物记录（工具写）
+  experiments/<experimentId>/
+    plan.json                   # run 计划（agent 起草、人批准；逐字节保存）
+    meta.json                   # name、originSession、createdAt、dataset {registry, set, commit}、experimentId
+    analysis/                   # 分析初稿（eval_analysis_write 唯一可写处）
+    exports/                    # bundle 默认导出目录
+```
+
+rev12 及以前，`conditions/` 与 `plans/`（以及 `analysis/`）放在题集目录下。旧仓库里的这些文件仍可读：`dsh-eval import --from <登记 id>@<ref>` 用 `git show` 把 plan 逐字节搬成部署侧实验、把它点名的条件并进条件库（同 id 内容不同即拒绝）；题库侧不再新写它们。
 
 ### 6.2 dataseek.condition/1 —— 受试对象
 
@@ -591,34 +603,47 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
     "schema": {
       "const": "dataseek.plan/1"
     },
+    "name": {
+      "type": "string",
+      "description": "Optional. The experiment's display name; the experiment id is minted from it. An imported plan without one takes its file stem."
+    },
     "dataset": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "repo",
         "commit",
-        "id",
         "items"
       ],
-      "description": "What is being tested against. commit: null means the snapshot pins it at run start.",
+      "description": "What is being tested against: {registry, set, commit} — a registry id, a set inside that repository, and the full commit every contract file is read at (required). The legacy {repo, id} form (commit may be null) is read-only: old plans still validate and import, nothing writes it.",
       "properties": {
-        "repo": {
-          "type": "string"
+        "registry": {
+          "type": "string",
+          "description": "The dataset registration id (/datasets registry)."
+        },
+        "set": {
+          "type": "string",
+          "description": "The dataset set inside the registered repository."
         },
         "commit": {
           "type": [
             "string",
             "null"
-          ]
-        },
-        "id": {
-          "type": "string"
+          ],
+          "description": "The pinned commit; required and non-null in the registry form."
         },
         "items": {
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "repo": {
+          "type": "string",
+          "description": "Legacy, read-only: a repository path."
+        },
+        "id": {
+          "type": "string",
+          "description": "Legacy, read-only: the set, beside repo."
         }
       }
     },
@@ -721,7 +746,7 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
     },
     "exports": {
       "type": "string",
-      "description": "Optional. Bundle export directory (~/… allowed); default <dataset repo>/exports. Run-call options may override."
+      "description": "Optional. Bundle export directory (~/… allowed); default the experiment directory's exports/. Run-call options may override."
     },
     "unit": {
       "type": "object",
@@ -793,12 +818,13 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
 }
 ```
 
-- `conditions` 与 `judge.conditions` 写**条件 id**（文件名），不写 sha；sha 由校验器从 `conditions/<id>.lock.json` 解析并随 run.meta 记录。
+- `conditions` 与 `judge.conditions` 写**条件 id**（文件名），不写 sha；sha 由校验器从部署条件库的 `conditions/<id>.lock.json` 解析并随 run.meta 记录。
 - `judge` 可整个缺省：缺省时 `expectedNs` 不得含 `llm-draft`（validate 交叉检查）。judge 在场但 `samples: 0` 是合法的「本 run 无 LLM 判定」，此时 llm-draft 在报告里如实缺失。
 - 判官不得是选手：`judge.conditions` 与 `conditions` 的交集必须为空（validate 报 error）。
-- `retry.infrastructure` 与 `exports` 都可缺省：前者是每格的基础设施重试预算（spawn 失败、facade 报错、超时），缺省 1，`0` 表示不重试；后者是 bundle 导出目录（允许 `~/…`），缺省 `<题库仓库>/exports`。两者都是**被审阅的默认值**，run 调用选项（`retryInfrastructure` / `exportsDir`）可覆盖——审阅看 plan，临时跑法看选项。
+- `retry.infrastructure` 与 `exports` 都可缺省：前者是每格的基础设施重试预算（spawn 失败、facade 报错、超时），缺省 1，`0` 表示不重试；后者是 bundle 导出目录（允许 `~/…`），缺省为实验目录的 `exports/`。两者都是**被审阅的默认值**，run 调用选项（`retryInfrastructure` / `exportsDir`）可覆盖——审阅看 plan，临时跑法看选项。
 - plan **不含 template 字段**：run 模板是题集 manifest 的确定性函数，validate 时生成、lint，随 plan 一起审阅（I2）。
-- `dataset.commit` 为 `null` 表示「run 启动时由 snapshot 钉入」，run.meta 记实际值。
+- `dataset` 写 `{registry, set, commit}`（v1-rev13）：`registry` 是题库登记 id，`set` 是仓库里的题集，`commit` **必填**且是完整哈希——plan 用到的每个契约文件都在这个 commit 上读。起草时不给 commit，`eval_plan_draft` 取跟踪分支最新，与同题集、同条件的既有实验所钉版本内容（`items/`、`schemas/` 树哈希）不一致时拒绝并列出候选。旧形态 `{repo, id, commit}`（`commit` 可为 `null`，表示 run 启动时钉入）**只读**：旧 plan 仍能校验与导入，任何工具都不再写它。
+- `name` 可缺省：实验的显示名，实验 id `<slug>-<yyyymmdd>-<4hex>` 由它生成；导入的旧 plan 缺省时取文件名。
 - `unit` 可缺省。缺省即**宿主路径**：格子目录在 `$DSH_HOME/state/eval` 下，与容器无关，与本字段出现之前逐字节相同。在场即**容器路径**：本 run 的每一格都在一个由 `image` 建出的 lab 单元里跑完 acquire → populate → 逐阶段委派与 checkpoint → 探针（经 `lab.verify` 在单元内）→ archive → release。`network` 不声明就是 docker 默认网桥（**有外网**），封闭跑法必须点名内网；`user` 不声明就是镜像自带的 `USER`；`resources` 既真加到容器上，也进环境指纹。
 - `unit.egressCheck` 可缺省，缺省即与本字段出现之前逐字节相同。在场即**出网自检**：每个新 acquire 出来的单元都先跑这条命令——就绪探针在委派之前跑，每一格在 acquire 与 populate 之间跑；退出码 0 过，其余（含超时）以 `EGRESS_UNAVAILABLE` 拒掉整个 run，一次委派都不花。**内网跑法应当声明它**：单元够不到代理时不会失败，而是**什么都不答**，读起来与「选手没话说」一模一样（实测：codex 在断网单元里跑满 230 秒，`task_complete` 的 `last_agent_message` 是 null，全程没有一句网络错误）。命令与目标写在这里、与它们所属的网络放在一起——编排器自己不持有任何地址。声明了但 `command` 为空或含空词，run 以 `EGRESS_CHECK_MALFORMED` 拒绝（契约子集没有 `minItems`，只能在 run 这一层挡）。
 - validate **不查镜像是否存在**：审阅一份 plan 不该要求 docker daemon 在场。第一次 `acquire` 就是这项检查。
@@ -807,10 +833,11 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
 ```json
 {
   "schema": "dataseek.plan/1",
+  "name": "harness-comparison-effort",
   "dataset": {
-    "repo": "~/dataseek",
-    "commit": null,
-    "id": "harness-comparison",
+    "registry": "dataseek-eval",
+    "set": "harness-comparison",
+    "commit": "3f2a9c0e1b7d4a6f8e2c5b1d9a0f7e3c6b8d2a41",
     "items": [
       "F2-multi-agent-room",
       "F3-self-restart-report"
@@ -856,8 +883,7 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
   "retry": {
     "infrastructure": 1
   },
-  "exports": "~/dataseek/exports",
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，挂的是评测实例自己的该家作用域目录，不写进本文件。"
+  "notes": "dataset 钉 {registry, set, commit}，commit 必填，contract 文件全在这个 commit 上读；conditions 与 judge.conditions 都写条件 id，sha 由部署条件库里的 conditions/<id>.lock.json 解析。retry 是 run 的默认值，run 调用选项可覆盖；exports 缺省即实验目录的 exports/。unit 在场即容器路径：每格一个单元，挂的是评测实例自己的该家作用域目录，不写进本文件。"
 }
 ```
 
