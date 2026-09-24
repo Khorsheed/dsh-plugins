@@ -8,7 +8,7 @@
 import { defineStore } from '@deepseek-ai/dsh-client-store'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
-  EvalCellArtifactView, EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow,
+  EvalAnswerSheet, EvalCellArtifactView, EvalCellDetail, EvalCellsResult, EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow,
   EvalConditionsView, EvalExperimentDetail,
   EvalExperimentsResult, EvalFinalizeView, EvalJudgeQueueView, EvalMatrixView, EvalPlanReview,
   EvalRunOutputView, EvalRunReportView, EvalRunUnitsView,
@@ -300,6 +300,19 @@ export interface LabViewState {
   /** Whether a human-final submission is in flight (the button is disabled meanwhile). */
   judgeSubmitting: boolean
 
+  /**
+   * The answer view's door (I5·T75): which 题 it shows and which cell the
+   * entry named, or null while the page underneath is showing. Opened from
+   * the run record's 看作答 (题 × 组 × 次) and the 结果对比 tables (题 × 组,
+   * every rep); the 人工评估 page renders the same view over its own blind
+   * queue and does not come through here.
+   */
+  answers: { task: string; condition: string | null; rep: number | null } | null
+  /** The named sheet behind {@link LabViewState.answers}, or null before it loads. */
+  answerSheet: EvalAnswerSheet | null
+  answerLoading: boolean
+  answerError: string | null
+
   /** Whether the export dialog is open. */
   exportOpen: boolean
   /** Whether a one-click re-export is in flight (both buttons are disabled meanwhile). */
@@ -383,6 +396,10 @@ export type LabViewActions = {
   setJudgeDraft: (draft: LabViewState, ticket: string, criterion: string, value: { pass: boolean; evidence: string }) => void
   clearJudgeDraft: (draft: LabViewState, ticket: string) => void
   setJudgeSubmitting: (draft: LabViewState, submitting: boolean) => void
+  openAnswers: (draft: LabViewState, focus: { task: string; condition: string | null; rep: number | null } | null) => void
+  setAnswerSheet: (draft: LabViewState, sheet: EvalAnswerSheet) => void
+  setAnswerLoading: (draft: LabViewState, loading: boolean) => void
+  setAnswerError: (draft: LabViewState, error: string | null) => void
   setExportOpen: (draft: LabViewState, open: boolean) => void
   setReexporting: (draft: LabViewState, reexporting: boolean) => void
   setNotice: (draft: LabViewState, notice: string | null) => void
@@ -453,6 +470,10 @@ const INITIAL: LabViewState = {
   judgeTask: null,
   judgeDraft: {},
   judgeSubmitting: false,
+  answers: null,
+  answerSheet: null,
+  answerLoading: false,
+  answerError: null,
   exportOpen: false,
   reexporting: false,
   notice: null,
@@ -473,6 +494,7 @@ const PER_EXPERIMENT: Pick<
   | 'artifactPath' | 'artifact' | 'artifactError' | 'recordFocus'
   | 'report' | 'reportError' | 'finalizing' | 'finalizeResult' | 'runUnits' | 'runUnitsError' | 'lookIn'
   | 'judge' | 'judgeError' | 'judgeTask' | 'judgeSubmitting'
+  | 'answers' | 'answerSheet' | 'answerError'
   | 'exportOpen' | 'reexporting' | 'notice' | 'noticeError'
 > = {
   detail: null,
@@ -511,6 +533,9 @@ const PER_EXPERIMENT: Pick<
   judgeError: null,
   judgeTask: null,
   judgeSubmitting: false,
+  answers: null,
+  answerSheet: null,
+  answerError: null,
   exportOpen: false,
   reexporting: false,
   notice: null,
@@ -551,7 +576,11 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
         d.diff = null
         d.diffError = null
       },
-      setPage: (d, page: LabPage) => { d.page = page },
+      setPage: (d, page: LabPage) => {
+        d.page = page
+        // The answer view sits over a stage; changing stage leaves it.
+        d.answers = null
+      },
       setDetail: (d, detail: EvalExperimentDetail) => {
         d.detail = detail
         d.detailError = null
@@ -766,6 +795,18 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
         d.judgeDraft = next
       },
       setJudgeSubmitting: (d, submitting: boolean) => { d.judgeSubmitting = submitting },
+      openAnswers: (d, focus: { task: string; condition: string | null; rep: number | null } | null) => {
+        d.answers = focus
+        // A sheet belongs to its 题: a different 题 is a fresh read.
+        if (focus === null || d.answerSheet?.task !== focus.task) d.answerSheet = null
+        d.answerError = null
+      },
+      setAnswerSheet: (d, sheet: EvalAnswerSheet) => {
+        d.answerSheet = sheet
+        d.answerError = null
+      },
+      setAnswerLoading: (d, loading: boolean) => { d.answerLoading = loading },
+      setAnswerError: (d, error: string | null) => { d.answerError = error },
       setExportOpen: (d, open: boolean) => { d.exportOpen = open },
       setReexporting: (d, reexporting: boolean) => { d.reexporting = reexporting },
       // One seat, two renderers: whichever kind of news arrives clears the other.

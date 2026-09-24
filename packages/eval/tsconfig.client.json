@@ -14,6 +14,7 @@
     ]
   },
   "files": [
+    "src/client/AnswerView.tsx",
     "src/client/ConditionsPage.tsx",
     "src/client/DesignPage.tsx",
     "src/client/ErrorState.tsx",
@@ -21,9 +22,11 @@
     "src/client/Grid.tsx",
     "src/client/JudgingPage.tsx",
     "src/client/LabView.tsx",
+    "src/client/MarkdownDoc.tsx",
     "src/client/NewExperimentDialog.tsx",
     "src/client/ReportPage.tsx",
     "src/client/RunsPage.tsx",
+    "src/client/answer-view.ts",
     "src/client/contract.ts",
     "src/client/index.ts",
     "src/client/journey.ts",

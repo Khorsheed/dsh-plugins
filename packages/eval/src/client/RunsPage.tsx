@@ -245,6 +245,8 @@ function RecordDetail(props: {
   onRelease: () => void
   onExport: () => void
   onOpenSession: (sessionId: string, parentSessionId: string | null) => void
+  /** 看作答 (I5·T75): this cell in the answer view. */
+  onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
   /** Which attachment is expanded, and what the read answered with. */
   artifactPath: string | null
   artifact: EvalCellArtifactView | null
@@ -254,7 +256,7 @@ function RecordDetail(props: {
   t: LabViewProps['t']
 }) {
   const {
-    cell, loading, error, onClose, onRetry, onRelease, onExport, onOpenSession,
+    cell, loading, error, onClose, onRetry, onRelease, onExport, onOpenSession, onOpenAnswers,
     artifactPath, artifact, artifactLoading, artifactError, onOpenArtifact, t,
   } = props
   const [reason, setReason] = useState('')
@@ -505,6 +507,14 @@ function RecordDetail(props: {
               >
                 {t('drawer.openSession')}
               </Button>
+              {cell.task !== null && (
+                <Button
+                  size="sm"
+                  onClick={() => { if (cell.task !== null) onOpenAnswers({ task: cell.task, condition: cell.condition, rep: cell.rep }) }}
+                >
+                  {t('answer.open')}
+                </Button>
+              )}
               <select
                 className={css.select}
                 value={category}
@@ -571,6 +581,7 @@ export function RunsPage(props: {
   onRelease: () => void
   onExport: () => void
   onOpenSession: (sessionId: string, parentSessionId: string | null) => void
+  onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
   /** The open record's expanded attachment (see {@link ArtifactPane}). */
   artifactPath: string | null
   artifact: EvalCellArtifactView | null
@@ -757,6 +768,7 @@ export function RunsPage(props: {
             onRelease={props.onRelease}
             onExport={props.onExport}
             onOpenSession={props.onOpenSession}
+            onOpenAnswers={props.onOpenAnswers}
             artifactPath={props.artifactPath}
             artifact={props.artifact}
             artifactLoading={props.artifactLoading}

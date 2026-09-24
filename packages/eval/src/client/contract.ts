@@ -19,7 +19,7 @@ import type {
   EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
   EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
   EvalFinalizeRequest, EvalFinalizeView, EvalHumanFinalRequest, EvalHumanFinalResult,
-  EvalJudgeQueueRequest, EvalJudgeQueueView, EvalPlanRequest, EvalPlanReview, EvalReexportRequest,
+  EvalJudgeQueueRequest, EvalJudgeQueueView, EvalAnswerSheet, EvalCellAnswersRequest, EvalPlanRequest, EvalPlanReview, EvalReexportRequest,
   EvalReportRequest, EvalRunOutputView, EvalRunReportView, EvalRunUnitsRequest, EvalRunUnitsView,
 } from '../types.ts'
 import type { createLabViewStore } from './store.ts'
@@ -153,6 +153,12 @@ export interface LabViewInjected {
    * chooses to render.
    */
   fetchJudgeQueue: (sessionId: SessionId, request: EvalJudgeQueueRequest) => Promise<RemoteResult<EvalJudgeQueueView>>
+  /**
+   * One 题's answers, every group and rep (I5·T75): the stage files by name,
+   * every verdict layer, the script output. NOT blind — the scoring page
+   * keeps reading {@link fetchJudgeQueue}.
+   */
+  fetchCellAnswers: (sessionId: SessionId, request: EvalCellAnswersRequest) => Promise<RemoteResult<EvalAnswerSheet>>
   /** Record one cell's human-final verdicts — append-only, tagged by session. */
   submitHumanFinal: (sessionId: SessionId, request: EvalHumanFinalRequest) => Promise<RemoteResult<EvalHumanFinalResult>>
   /**

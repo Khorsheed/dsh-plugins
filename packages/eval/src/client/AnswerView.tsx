@@ -1,0 +1,368 @@
+/**
+ * 作答视图 (I5·T75, ui-spec §五): ONE component for every place an answer is
+ * read — the run record's 看作答, the 结果对比 tables, and the 人工评估 page.
+ *
+ * A 题's groups sit side by side, one row per 次, and the same parts line up
+ * across a row: every stage on its own grid row, every criterion on its own.
+ * Two views — 提交的报告 (the stage markdown, rendered; a verdict hangs under
+ * a paragraph only when its evidence quotes that paragraph, see
+ * `answer-view.ts`) and 判定证据 (each criterion's verdicts with their reasons,
+ * and the script output verbatim). 过程 opens the player's session (T69's
+ * door).
+ *
+ * The blind switch swaps each group's name for a letter in the run's seeded
+ * order and folds 过程 away (a transcript names its harness). On the 人工评估
+ * page the switch is locked on and the payload is the blind queue's — the
+ * scrubbed material with no group on the wire — and the scoring form sits on
+ * top of each column with the reports folded under it: the bench's own rule
+ * (I5·T67 · W9), kept inside the component rather than beside it.
+ */
+
+import { useState, type ReactNode } from 'react'
+import { Button, MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { EvalAnswerVerdict, EvalJudgeCriterionRow } from '../types.ts'
+import {
+  blocksOf, criteriaOrder, hangVerdicts, stagesOf, stemsOfRow,
+  type AnswerColumnModel, type AnswerFile, type AnswerRow, type AnswerSource, type HungAt,
+} from './answer-view.ts'
+import type { LabViewProps } from './contract.ts'
+import { Chip, type Tone } from './parts.tsx'
+import base from './LabView.module.css'
+import css from './AnswerView.module.css'
+
+type T = LabViewProps['t']
+
+const SOURCE_KEY: Record<AnswerSource, 'answer.sourceHuman' | 'answer.sourceJudge' | 'answer.sourceScript' | 'answer.sourceNone'> = {
+  human: 'answer.sourceHuman',
+  judge: 'answer.sourceJudge',
+  script: 'answer.sourceScript',
+  none: 'answer.sourceNone',
+}
+
+const SOURCE_TONE: Record<AnswerSource, Tone> = { human: 'ok', judge: 'busy', script: 'neutral', none: 'warn' }
+
+/** A stage's heading: 阶段 1 for `stage1`, the stem itself otherwise. */
+function stageLabel(stem: string, t: T): string {
+  const match = /(\d+)$/.exec(stem)
+  return match === null ? stem : t('answer.stage', { stage: match[1] ?? stem })
+}
+
+function markdownLabels(t: T): MarkdownLabels {
+  return {
+    code: { copyLabel: t('markdown.copy'), copiedLabel: t('markdown.copied') },
+    footnotes: t('markdown.footnotes'),
+  }
+}
+
+/** The layer word of one verdict: 脚本 / 判官 A / 人工. */
+function layerOf(verdict: EvalAnswerVerdict, t: T): string {
+  if (verdict.ns === 'human-final') return t('answer.layerHuman')
+  if (verdict.ns === 'llm-draft') return verdict.judge ?? t('answer.layerJudge')
+  return t('answer.layerScript')
+}
+
+/** One verdict as a line: criterion, holds / does not, who, and why. */
+function VerdictLine(props: { verdict: EvalAnswerVerdict; at?: HungAt | undefined; showCriterion: boolean; t: T }) {
+  const { verdict, at, showCriterion, t } = props
+  return (
+    <div className={css.verdict} data-pass={verdict.pass}>
+      <div className={css.verdictHead}>
+        {showCriterion && <span className={base.mono}>{verdict.criterion}</span>}
+        <Chip tone={verdict.pass ? 'ok' : 'warn'}>{verdict.pass ? t('judge.pass') : t('judge.fail')}</Chip>
+        <span className={css.layer}>{layerOf(verdict, t)}</span>
+        {at !== undefined && (
+          <span className={base.dim}>{t('answer.quoteAt', { file: at.file, no: at.block + 1 })}</span>
+        )}
+      </div>
+      {verdict.evidence !== null && <div className={css.evidence}>{verdict.evidence}</div>}
+    </div>
+  )
+}
+
+/** One stage's markdown, block by block, with the verdicts that quote each block under it. */
+function MarkdownWithVerdicts(props: {
+  file: AnswerFile
+  hung: ReadonlyArray<{ verdict: EvalAnswerVerdict; at: HungAt }>
+  t: T
+}) {
+  const { file, hung, t } = props
+  const blocks = blocksOf(file.text)
+  return (
+    <div className={base.markdownDoc}>
+      <div className={base.markdownBanner}>
+        <span className={base.markdownInfo}>{file.name}</span>
+        {/* The blind face's redaction count, on the banner: the grader sees
+            the scrubber ran without opening anything. */}
+        {file.replacements !== null && <span className={base.dim}>&nbsp;{t('judge.scrubbed', { count: file.replacements })}</span>}
+      </div>
+      <div className={base.markdownBody}>
+        {blocks.map((block, index) => (
+          // Blocks are positional and never reorder within one file.
+          <div key={index} className={css.block}>
+            <MarkdownText text={block} labels={markdownLabels(t)} />
+            {hung.filter(entry => entry.at.block === index).map(entry => (
+              <div key={`${entry.verdict.ns}:${entry.verdict.criterion}:${entry.verdict.judge ?? ''}:${String(entry.verdict.sample)}`} className={css.hung}>
+                <VerdictLine verdict={entry.verdict} showCriterion t={t} />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** A non-markdown file (the structured stage json), folded, verbatim. */
+function FoldedFile(props: { file: AnswerFile; t: T }) {
+  const { file, t } = props
+  return (
+    <details className={base.errorDetails}>
+      <summary className={base.errorSummary}>
+        <span className={base.mono}>{file.name}</span>
+        {file.replacements !== null && <span className={base.dim}> {t('judge.scrubbed', { count: file.replacements })}</span>}
+      </summary>
+      <pre className={base.pre}>{file.text}</pre>
+    </details>
+  )
+}
+
+/** One column's head: its name, its verdict source, and 过程. */
+function ColumnHead(props: {
+  column: AnswerColumnModel
+  blind: boolean
+  onOpenSession: ((child: string, parent: string | null) => void) | null
+  t: T
+}) {
+  const { column, blind, onOpenSession, t } = props
+  const name = blind || column.condition === null ? t('answer.blindName', { letter: column.letter }) : column.condition
+  return (
+    <div className={css.head}>
+      <span className={css.name}>{name}</span>
+      <Chip tone={SOURCE_TONE[column.source]}>{t(SOURCE_KEY[column.source])}</Chip>
+      {/* 过程 is the player's transcript, and a transcript names its harness:
+          behind the blind it is folded away with the name. */}
+      {!blind && onOpenSession !== null && column.childSessionId !== null && (
+        <Button size="sm" onClick={() => { onOpenSession(column.childSessionId as string, column.parentSessionId) }}>
+          {t('answer.process')}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/** One column's cell of one stage row in 提交的报告. */
+function StageCell(props: { column: AnswerColumnModel; stem: string; hangs: Map<number, HungAt>; t: T }) {
+  const { column, stem, hangs, t } = props
+  const stage = stagesOf(column.files, [stem])[0]
+  if (stage === undefined || (stage.markdown === null && stage.others.length === 0)) {
+    return <div className={base.dim}>{t('answer.stageMissing', { stage: stageLabel(stem, t) })}</div>
+  }
+  const hung = stage.markdown === null
+    ? []
+    : [...hangs.entries()]
+      .filter(([, at]) => at.file === stage.markdown?.name)
+      .flatMap(([index, at]) => {
+        const verdict = column.verdicts[index]
+        return verdict === undefined ? [] : [{ verdict, at }]
+      })
+  const cut = [stage.markdown, ...stage.others].filter((file): file is AnswerFile => file !== null && file.truncated)
+  return (
+    <>
+      {stage.markdown !== null && <MarkdownWithVerdicts file={stage.markdown} hung={hung} t={t} />}
+      {stage.others.map(file => <FoldedFile key={file.name} file={file} t={t} />)}
+      {cut.map(file => (
+        <div key={file.name} className={base.note}>{t('answer.truncated', { name: file.name, bytes: file.bytes ?? 0 })}</div>
+      ))}
+    </>
+  )
+}
+
+/** The props the three entries compose. */
+export interface AnswerViewProps {
+  task: string
+  rows: readonly AnswerRow[]
+  criteria: readonly EvalJudgeCriterionRow[]
+  criteriaNote: string | null
+  notes: readonly string[]
+  /** The 人工评估 page: blind locked on, the scoring form on top of each column. */
+  scoring: ((column: AnswerColumnModel) => ReactNode) | null
+  /** The rep the entry named; the chips start there. */
+  rep: number | null
+  onOpenSession: ((child: string, parent: string | null) => void) | null
+  onBack: (() => void) | null
+  t: T
+}
+
+/**
+ * The answer view.
+ * @param props - the rows of one 题 and the face they came from.
+ */
+export function AnswerView(props: AnswerViewProps) {
+  const { task, rows, criteria, criteriaNote, notes, scoring, onOpenSession, onBack, t } = props
+  const locked = scoring !== null
+  const [blindChoice, setBlind] = useState(false)
+  const blind = locked || blindChoice
+  const [view, setView] = useState<'report' | 'evidence'>('report')
+  const reps = rows.map(row => row.rep).filter((rep): rep is number => rep !== null)
+  const [rep, setRep] = useState<number | null>(props.rep)
+  // Blind drops the outline too: the entry named a group, so an outlined
+  // «作答 A» would say which letter that group is.
+  const shown = (rep === null ? rows : rows.filter(row => row.rep === rep))
+    .map(row => blind ? { ...row, columns: row.columns.map(column => ({ ...column, located: false })) } : row)
+  const order = criteriaOrder(criteria, rows)
+  const rubric = new Map(criteria.map(row => [row.id, row]))
+
+  return (
+    <div className={css.view}>
+      <div className={css.bar}>
+        {onBack !== null && <Button size="sm" onClick={onBack}>{t('answer.back')}</Button>}
+        <span className={css.title}>{t('answer.title', { task })}</span>
+        {reps.length > 1 && (
+          <div className={base.segmented} role="group" aria-label={t('answer.reps')}>
+            {[null, ...reps].map(value => (
+              <button
+                key={String(value)}
+                type="button"
+                className={base.chip}
+                aria-pressed={rep === value}
+                onClick={() => { setRep(value) }}
+              >
+                {value === null ? t('answer.repAll') : t('answer.rep', { rep: value })}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className={base.segmented} role="group" aria-label={t('answer.blindSwitch')}>
+          {([false, true] as const).map(value => (
+            <button
+              key={String(value)}
+              type="button"
+              className={base.chip}
+              aria-pressed={blind === value}
+              disabled={locked && !value}
+              title={locked ? t('answer.blindLocked') : undefined}
+              onClick={() => { setBlind(value) }}
+            >
+              {t(value ? 'answer.blind' : 'answer.names')}
+            </button>
+          ))}
+        </div>
+        <div className={base.segmented} role="group" aria-label={t('answer.views')}>
+          {(['report', 'evidence'] as const).map(value => (
+            <button
+              key={value}
+              type="button"
+              className={base.chip}
+              aria-pressed={view === value}
+              onClick={() => { setView(value) }}
+            >
+              {t(value === 'report' ? 'answer.viewReport' : 'answer.viewEvidence')}
+            </button>
+          ))}
+        </div>
+      </div>
+      {blind && <div className={base.dim}>{t(locked ? 'answer.blindScoring' : 'answer.blindNote')}</div>}
+      {notes.map(note => <div key={note} className={base.note}>{note}</div>)}
+
+      {shown.map((row) => {
+        const width = row.columns.length
+        const stems = stemsOfRow(row)
+        const hangs = new Map(row.columns.map(column => [column.key, hangVerdicts(column.files, column.verdicts)]))
+        return (
+          <section key={String(row.rep)} className={css.row} aria-label={row.rep === null ? task : t('answer.rep', { rep: row.rep })}>
+            {row.rep !== null && <div className={css.repTitle}>{t('answer.rep', { rep: row.rep })}</div>}
+            <div className={css.grid} style={{ gridTemplateColumns: `repeat(${String(width)}, minmax(300px, 1fr))` }}>
+              {row.columns.map(column => (
+                <div key={column.key} className={css.cell} data-located={column.located} data-part="head">
+                  <ColumnHead column={column} blind={blind} onOpenSession={onOpenSession} t={t} />
+                </div>
+              ))}
+
+              {scoring !== null && row.columns.map(column => (
+                <div key={column.key} className={css.cell} data-located={column.located} data-part="scoring">
+                  {scoring(column)}
+                </div>
+              ))}
+
+              {view === 'report' && (scoring !== null
+                // Scoring: the criteria on top and the reports folded — the
+                // material is thousands of lines and above the forms it would
+                // push the columns out of step (I5·T67 · W9).
+                ? row.columns.map(column => (
+                  <div key={column.key} className={css.cell} data-located={column.located} data-part="reports">
+                    {column.files.length === 0
+                      ? <div className={base.dim}>{t('judge.materialNone')}</div>
+                      : (
+                        <details className={base.errorDetails}>
+                          <summary className={base.errorSummary}>
+                            {t('answer.reportsFolded', { files: column.files.map(file => file.name).join('、') })}
+                          </summary>
+                          {stems.map(stem => (
+                            <div key={stem} className={css.stage}>
+                              <div className={css.stageTitle}>{stageLabel(stem, t)}</div>
+                              <StageCell column={column} stem={stem} hangs={hangs.get(column.key) ?? new Map()} t={t} />
+                            </div>
+                          ))}
+                        </details>
+                      )}
+                  </div>
+                ))
+                : stems.length === 0
+                  ? row.columns.map(column => (
+                    <div key={column.key} className={css.cell} data-located={column.located} data-part="reports">
+                      <div className={base.dim}>{t('answer.noReports')}</div>
+                    </div>
+                  ))
+                  : stems.flatMap(stem => row.columns.map(column => (
+                    <div key={`${stem}:${column.key}`} className={css.cell} data-located={column.located} data-part={stem}>
+                      <div className={css.stageTitle}>{stageLabel(stem, t)}</div>
+                      <StageCell column={column} stem={stem} hangs={hangs.get(column.key) ?? new Map()} t={t} />
+                    </div>
+                  ))))}
+
+              {view === 'evidence' && order.flatMap(id => row.columns.map((column) => {
+                const verdicts = column.verdicts
+                  .map((verdict, index) => ({ verdict, index }))
+                  .filter(entry => entry.verdict.criterion === id)
+                const row0 = rubric.get(id)
+                return (
+                  <div key={`${id}:${column.key}`} className={css.cell} data-located={column.located} data-part="criterion">
+                    <div className={css.criterionTitle}>
+                      <span className={base.mono}>{id}</span>
+                      {row0 !== undefined && <span className={css.criterionText}>{row0.criterion}</span>}
+                    </div>
+                    {verdicts.length === 0
+                      ? <div className={base.dim}>{t('answer.unjudged')}</div>
+                      : verdicts.map(({ verdict, index }) => (
+                        <VerdictLine
+                          key={index}
+                          verdict={verdict}
+                          at={hangs.get(column.key)?.get(index)}
+                          showCriterion={false}
+                          t={t}
+                        />
+                      ))}
+                  </div>
+                )
+              }))}
+              {view === 'evidence' && order.length === 0 && row.columns.map(column => (
+                <div key={column.key} className={css.cell} data-located={column.located} data-part="criterion">
+                  <div className={base.dim}>{t('answer.noVerdicts', { reason: criteriaNote ?? '—' })}</div>
+                </div>
+              ))}
+              {view === 'evidence' && !locked && row.columns.map(column => (
+                <div key={column.key} className={css.cell} data-located={column.located} data-part="scripts">
+                  <div className={css.stageTitle}>{t('answer.scripts')}</div>
+                  {column.scripts.length === 0
+                    ? <div className={base.dim}>{t('answer.noScripts')}</div>
+                    // The script's output VERBATIM: the drawer's own read.
+                    : column.scripts.map(run => <pre key={run.at} className={base.pre}>{run.raw}</pre>)}
+                </div>
+              ))}
+            </div>
+          </section>
+        )
+      })}
+    </div>
+  )
+}

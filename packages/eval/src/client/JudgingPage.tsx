@@ -37,6 +37,8 @@ import type {
   EvalClosure, EvalClosureExit, EvalJudgeCriterionRow, EvalJudgeDraftSample, EvalJudgeQueueCell, EvalJudgeQueueView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
+import { AnswerView } from './AnswerView.tsx'
+import { rowsOfQueue } from './answer-view.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { Chip, EmptyState, Section } from './parts.tsx'
 import css from './LabView.module.css'
@@ -215,7 +217,11 @@ function CriterionRow(props: {
  * One answer's column: the material, the criteria, and its own button.
  * @param props - the blind cell, this column's draft answers, and the write.
  */
-function AnswerColumn(props: {
+/**
+ * One answer's scoring form: the notices, a row per criterion, and its own
+ * button. The answer view (I5·T75) puts it on top of each blind column.
+ */
+function ScoringBlock(props: {
   cell: EvalJudgeQueueCell
   draft: Record<string, { pass: boolean; evidence: string }>
   /**
@@ -241,10 +247,9 @@ function AnswerColumn(props: {
   const answers = Object.entries(draft).filter(([, value]) => value.evidence.trim() !== '')
   return (
     <div className={css.answerColumn}>
-      <div className={css.sectionTitle}>
-        <span>{t('judge.column', { no: cell.cellNo })}</span>
-        <span className={css.sectionMeta}>rep {cell.rep ?? DASH}</span>
-      </div>
+      {/* The run-wide number, next to the view's per-row letter: it is what
+          the 判官缺席 notice and the button name the answer by. */}
+      <div className={css.sectionMeta}>{t('judge.column', { no: cell.cellNo })}</div>
       {cell.graded && <div className={css.notice}>{t('judge.regrade')}</div>}
       {/* What a verdict here DOES, said before the button. Until T54 it was a
           warning with a real cost behind it: the report scored a cell from one
@@ -262,27 +267,9 @@ function AnswerColumn(props: {
         </div>
       )}
 
-      {/* The material is what a verdict RESTS on, and it is thousands of lines
-          of stage json and markdown. Above the criteria it pushed the scoring
-          boxes so far down that two columns never showed their forms at the
-          same scroll position — which is the one thing side by side exists to
-          give (I5·T67 · W9). Folded, the header still carries the file and how
-          many fingerprints were scrubbed, so a grader can see the redaction
-          ran without opening anything. */}
-      {cell.materials.length === 0
-        ? <div className={css.dim}>{t('judge.materialNone')}</div>
-        : cell.materials.map(material => (
-          <details key={material.path} className={css.errorDetails}>
-            <summary className={css.errorSummary}>
-              <span className={css.mono}>{material.path}</span>
-              <span className={css.dim}> {t('judge.scrubbed', { count: material.replacements })}</span>
-            </summary>
-            {/* The stage file VERBATIM, after scrubbing: a summary would
-                hide exactly what a verdict has to rest on. */}
-            <pre className={css.pre}>{material.text}</pre>
-          </details>
-        ))}
-
+      {/* The material is not here since I5·T75: the answer view this block
+          sits in renders it, folded under the forms, for every column at
+          once (the I5·T67 · W9 rule — forms first — kept by the view). */}
       {cell.criteria.length === 0
         ? <div className={css.dim}>{t('judge.criteriaNone', { reason: cell.criteriaNote ?? DASH })}</div>
         : cell.criteria.map(criterion => (
@@ -533,19 +520,35 @@ export function JudgingPage(props: {
               : (
                 <div className={css.bench}>
                   <div className={css.dim}>{t('judge.sideBySide')}</div>
-                  <div className={css.benchColumns}>
-                    {open.cells.map(cell => (
-                      <AnswerColumn
-                        key={cell.ticket}
-                        cell={cell}
-                        draft={draft[cell.ticket] ?? {}}
-                        submitting={submitting}
-                        onAnswer={(criterion, value) => { onAnswer(cell.ticket, criterion, value) }}
-                        onSubmit={() => { onSubmit(cell.ticket) }}
-                        t={t}
-                      />
-                    ))}
-                  </div>
+                  {/* The answer view, blind locked on (I5·T75): the same
+                      side-by-side the named doors open, over the scrubbed
+                      queue payload, with each column's form on top. */}
+                  <AnswerView
+                    key={open.task}
+                    task={open.task}
+                    rows={rowsOfQueue(open.cells)}
+                    criteria={open.cells[0]?.criteria ?? []}
+                    criteriaNote={open.cells[0]?.criteriaNote ?? null}
+                    notes={[]}
+                    scoring={(column) => {
+                      const cell = column.queueCell
+                      if (cell === null) return null
+                      return (
+                        <ScoringBlock
+                          cell={cell}
+                          draft={draft[cell.ticket] ?? {}}
+                          submitting={submitting}
+                          onAnswer={(criterion, value) => { onAnswer(cell.ticket, criterion, value) }}
+                          onSubmit={() => { onSubmit(cell.ticket) }}
+                          t={t}
+                        />
+                      )
+                    }}
+                    rep={null}
+                    onOpenSession={null}
+                    onBack={null}
+                    t={t}
+                  />
                 </div>
               )}
           </div>
