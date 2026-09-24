@@ -52,7 +52,7 @@ package(能力单元)
 | ui-shortcuts | 快捷键 | 会话体验 | basic |
 | whalesong | 进度提醒 | 品牌 | 全量 |
 
-库(无卡,作依赖随包走):local-agent-dsh-headless、local-agent-tool-subagent、ui-content-preview。
+库(无卡,作依赖随包走):local-agent-dsh-headless、local-agent-tool-subagent、ui-content-preview。**无卡是合法且与官方同构的形态**(rc.1 实测:官方区只策展 6 卡,几十个官方包隐形;我们 deps-only 的工具包与传递依赖库在清单页均不出现;禁用/卸载粒度是 bundle 卡,库随使用方存亡)。家族 bundle 化后,成员包成传递依赖、独立卡消失,收进 bundle 卡详情页的组件行(行级开关,官方智能体团队同款形态)。
 
 **预览内核共享 ≠ bundle 依赖**:local-files / worktrees / ui-file-preview 的预览区渲染的是同一份实现——它们各自在**源码面**内联 ui-content-preview 内核、独立构建、独立可装,运行时不互相依赖。所以 local-files 并进「本地文件及预览」后,工作树 bundle 对该 bundle **没有**任何依赖;感知上的「像一套」来自内核同源,用户侧无感,单侧安装永远成立。
 
