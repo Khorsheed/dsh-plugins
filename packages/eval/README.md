@@ -294,6 +294,7 @@ Ask the person which version this experiment should pin with ask_user_question, 
 | `finalizeView(runId, by?)` | 报告页那颗 finalize 按钮背后的 `finalize`：同一条闸、同一次走，把逐行进度**原文**一起收下来，页面因此能按格显示闸说了什么，而不是只有一个成功数 |
 | `judgeQueue(runId)` | 判官台的**盲**队列（I5·T37）：每格一条——序号 + 不透明 ticket、去指纹产物原文（复用 run 循环那个 `deidentify`，规则由 `run.meta.conditions` 重建）、rubric 里 `kind: human` 的判据、各判官各样本的 llm-draft、已有的 human-final，外加按**活账本**实时算出的一致性。载荷里没有条件 id、harness、模型，也没有 missionId——盲是载荷的属性，页面漏不出它没收到的东西 |
 | `draftExperiment(request, {session?})` | 起草一个实验：定版本钉、铸新条件进条件库、建实验目录并读回、再 validate（见上节与 `eval_plan_draft`）。从不起跑 |
+| `setPlanNumbers({experimentId, reps?, activeMinutes?, turns?, judgeSamples?})` | 就地改一个**还没启动**的实验 plan 里的四个数字（T74），其余字节一个不动，写完读回；已启动（账本里有它的 run，或有正在起的 job）一律拒绝 |
 | `importExperiments({from, plan?})` | 从登记仓库导入旧计划为实验（见上节）；拒绝时什么都不写 |
 | `writeAnalysis({experimentId, path, content, overwrite?})` | 往一个实验的 `analysis/` 写一个文本文件；回执带「在结果对比页可看」 |
 | `experimentArtifact({experimentId, path})` | 读一个实验目录里的一个文件：只在这个实验目录里（字面判越界 + realpath 再判），只内联文本，超 256 KB 截断并说明 |
@@ -482,6 +483,17 @@ T67 把详情收成四个阶段，每页一条「状态 + 一个主动作」；T
 - **结果页结论先行**：顺序是**结论卡 → 判据表 → 效率 → 审计（默认折叠）**。结论卡第一行说来源：终评或带标记 →「来源：判官初判 + 人终评」（带标记的把理由放在最上面）；没收尾或选了 ③ →「判官初判，未经人工确认」。第二行是**有效性校验 5/5 ✓ / 4/5 ⚠**，点开就是审计节。④ 之后整页只剩「评估不成立：<理由>」和一个去运行记录的链接——一份被作废的结果没有「但是数字还是可以看看」这一说。
 - **`eval_run_status` 说同一套词**：工具回的 `status` / `stalledMinutes` / `closure` / `archived` 与列表这一行取自同一个 `experimentDetail`，agent 告诉人「这个 run 停滞了」时，用的就是人在页面上看到的那个词。
 - **所有字都在词典里**：状态词、按钮、就绪句、收尾回执、组名，中英两份；服务端只下发结构字段（code、condition、exit、分钟数），不下发句子。颜色只用宿主 tokens。
+
+## 实验要回答的问题（I5·T74，协议 v1-rev14）
+
+一个实验是为了回答一个问题跑的，但 T74 之前 plan 里没有地方写这个问题：人在会话里说「high 比 medium 强吗」，agent 起草出一份只有名字和矩阵的 plan，结果页的结论卡回答的是「哪一对谁赢」，而不是人问的那句话。
+
+- **plan 顶层三个可选字段**（协议 §6.4，v1-rev14）：`question`（人的问题，原话）、`expectation`（人预期的答案）、`answeredWhen`（什么结果算回答了）。全是可选的自由文本：旧 plan 一个都没有，validate 不因此告警，页面也不出那一块；空白字符串等于没写。`eval_plan_draft` 收 `question` / `expectation` / `answered_when` 三个参数，描述里写明「起草时把人的问题原样写进 question」——不改写、不概括。
+- **实验设计页 ⓪ 要回答的问题**：有问题时在 ① 之上多一块，三行原文；没有就没有这一块。
+- **数字就地改**：① 里的**次数、每格预算（分钟 / 轮）、判官采样**四个数在启动前可以直接改，按「保存」走 `setPlanNumbers` Remote，回执写「已写入：次数 2 → 3」这样的前后值，页面随即重读 review。写是**文本级**的：plan.json 自 T73 起按字节保存（导入的旧 plan 靠哈希找回），重新序列化会改掉缩进、键序和转义，所以只替换那几个数字的值的字节，替换后按规范化 JSON 与预期文档比对，不一致就一个字节都不写；写入走临时文件 + rename，写完再读回核对。结构性的改动（题、对比组、判官本身）不在这里：没有判官的 plan 改采样数被拒，理由写「加判官是结构改动，请让 agent 起草」。**启动后冻结**：服务端看账本（该实验有 run）与正在起的 job，前端看这一行有没有 run id；冻结后四个数只读，下面一行写原因「实验已启动，方案已冻结；要改请起草一个新实验」。
+- **结论卡回答问题**：有问题时第一行是「问题：<原文> — 结论：<答案>」，答案取报告自己的名次（`pair.rank`）：一方领先写「A 优于 B」，未排名写「A 与 B 未分高下」，比较节没开写「暂时不能下结论」，单对比组写「单对比组，无对比数据」。下面两行小字：「怎么算回答了：…」与「预期：<原文> · 实际：<方向>」。**不判一致 / 相反**：预期是自由文本，把一句话和一个名次对齐需要理解那句话，页面只把两者并排放，判断留给人；也因此不加新颜色。没有问题的实验，结论卡与 T72 一样。
+- **列表第二行**：有问题的实验在名称下多一行问题原文，单行省略，悬停看全文。
+- **⑤ 分析初稿按 markdown 渲染**：此前是 `<pre>` 原文。渲染用官方 `MarkdownText`（`@deepseek-ai/dsh-client-ui-primitives`），外框与 datasets 预览同一套 tokens；插件之间不互相 import，所以 eval 自己装配一个 `MarkdownDoc`，不引第三方库。
 
 ## 视觉与文案收口（I5·T63）
 
