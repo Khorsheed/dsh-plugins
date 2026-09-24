@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-25-family-bundle-member-retreat.md
+.agents/notes/implemented/process/2026-09-25-family-bundle-member-retreat.md: ea278371751052eebd45487842db65aede2a7607
+.agents/notes/implemented/process/2026-09-25-family-bundle-member-retreat.zh.md: abfe207930411c37743c222c3199fc9fc379b66c

@@ -64,6 +64,8 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
 
 **首次安装与更新统一走 `deploy:3080`。** 对明确用 `--package` 指定、声明了 `dsh.bundle.patch` 的插件，脚本检查 dependency 与 `dsh.profile.bundles`：任一缺失，就调用当前 `DSH_HARNESS` 的已构建官方 CLI 执行 `plugin add <tarball> --profile web`，由宿主登记 bundle；已完整登记的插件直接更新。安装后验证实际包名、版本、bundle 登记和 patch 文件，再进入凭证/守护预检。首次安装需要宿主 `apps/cli/lib/bin.js` 已构建；无 bundle 的新内部 companion 不会被自动挂载，应通过其所属插件安装。
 
+**家族 bundle 部署与成员退场**：部署声明 `dsh.bundle.kind: 'family'` 的元包（`bundle-local-agent`、`bundle-conversation-toolbox`）时，脚本在刷新清单后自动**成员退场**——把每个 member 移出 profile 的 `dependencies` 与 `dsh.profile.bundles`（已不在则记日志跳过，幂等）；成员的自挂载 patch 随之不再收编（reconcilePlugins 只认直接依赖），bundle patch 接管同名规范行，无双挂，清单页也不再给成员出顶层卡。`pnpm-workspace.yaml` overrides 里成员的 `file:` 钉**保留**——bundle 里重写后的 `^版本` 边靠它传递解析；钉缺失时从本次同部署成员的新 tarball 或 tarballs 目录最新匹配补齐，两者都没有则拒绝部署并提示把成员一起点名。**成员更新随 bundle 一起点名即可**（`--package packages/bundle-x --package packages/<member>`，顺序无关：成员先 pack 刷新，bundle 后注册退场）；bundle 自身的首装仍走官方 `plugin add`。安装后校验同步扩为：bundle 在 dependencies、成员不在 bundles 名册、成员包从 bundle 安装目录出发仍可 `require.resolve`。
+
 **部署依赖诊断**：脚本在构建/部署写入前，以及安装后录制凭证前，各检查一次失效链接。也可以单独运行只读诊断：
 
 ```sh
