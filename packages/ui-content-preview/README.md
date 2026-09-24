@@ -15,7 +15,7 @@
 | 内容搜索 | 保留渲染态，用 CSS Custom Highlight API 画命中；命中只在源码语法里（`**`、围栏、折叠的 JSON 节点）时如实降级到原始行视图；不支持该 API 的引擎同样降级，不白屏 |
 | Markdown / JSON / CSV | 走官方 `MarkdownText` / `JsonTree`；**只覆盖 `--dsw-font-markdown-*` 字号 token，不覆盖任何元素级 margin/padding**，所以节奏与官方文档一致 |
 | 面板 chrome | 复制路径 / 打开目录 / 在 IDE 中打开（按宿主 open-in-app 探测结果逐项显隐）、滚动位置记忆、格式 banner |
-| 无头模式（`headless`） | 显式按调用点打开：不渲染标题行/路径行、视图切换与内容搜索框，只出内容区（外加截断提示、渲染超时提示与内容区右上角的浮动复制路径钮）——供嵌进自带 chrome 的宿主框架（ui-file-preview 注册进官方 document tab 的内容渲染器）；local-files / worktrees 无官方框架可借，继续完整 chrome |
+| 无头模式（`headless`） | 显式按调用点打开：不渲染标题行/路径行与视图切换（宿主框架已携带），只出内容区（外加截断提示与渲染超时提示）；**内容搜索行保留**——rc.1 官方 document tab 没有内容搜索，保留不是重复而是独有贡献——外加内容区右上角的浮动复制路径钮（官方 actions 无等价物）。供嵌进自带 chrome 的宿主框架（ui-file-preview 注册进官方 document tab 的内容渲染器）；local-files / worktrees 无官方框架可借，继续完整 chrome |
 
 **不**负责：文件树、数据面（Remote / store / 根目录选择）、diff 与提交对比（由调用方以 render prop 传入）、tab 注册与可见性——那些是各插件自己的数据面与身份。
 

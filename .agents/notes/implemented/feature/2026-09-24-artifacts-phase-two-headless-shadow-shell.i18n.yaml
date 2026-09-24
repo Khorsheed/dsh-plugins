@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-24-artifacts-phase-two-headless-shadow-shell.md
-.agents/notes/implemented/feature/2026-09-24-artifacts-phase-two-headless-shadow-shell.md: 3e0c1aea52a39e308b7bc2b99982e8da81527d81
-.agents/notes/implemented/feature/2026-09-24-artifacts-phase-two-headless-shadow-shell.zh.md: 70a8cca02e4181268437863e865f9b9a580e1503
+.agents/notes/implemented/feature/2026-09-24-artifacts-phase-two-headless-shadow-shell.md: 9948ea880ff33b59585262553529f31314ed118e
+.agents/notes/implemented/feature/2026-09-24-artifacts-phase-two-headless-shadow-shell.zh.md: 8302cdce78904a43239dad2adc3a76a02436d164

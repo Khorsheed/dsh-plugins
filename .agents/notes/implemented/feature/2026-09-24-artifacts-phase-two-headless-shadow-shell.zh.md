@@ -26,16 +26,15 @@ document tab 作为默认渲染器，并退役了自建 FilePreviewTab 内容页
 三招，全部只落在 rc.1 臂；0.1.5 臂不动。
 
 **A. 共享内核长出显式 `headless` 模式**（opt-in prop，永不探测）：
-`packages/ui-content-preview` 的 ContentPane 只渲染内容区（外加截断提示、渲染超时
-提示与内容区右上角一个浮动复制路径钮）。标题/路径栏、视图切换与内容搜索行一律不
-渲染。只有 ui-file-preview 的 FileContentBody（官方 document tab 的默认渲染器）用
-它；local-files 与 worktrees 没有宿主框架可借，继续完整 chrome。复制路径是唯一保留
-的手势：官方 `sidebar.right.tab.document.actions` 的贡献（ui-open-in-app 的
-OpenPathAction）只有原生打开，官方 TextPreview 头部（PathLabel + 下拉 + 重载）没有
-复制手段——已在 rc.1 源码核实。内容搜索**不**随并入：rc.1 官方 document tab 自身没
-有内容搜索（已核实：ui-sidebar-documentpreview 的 rc.1 源码与产物包里都没有任何搜
-索输入框），所以这是 rc.1 线上一次有意的净减，已记入 README 已知限制；0.1.5 自建页
-不受影响。
+`packages/ui-content-preview` 的 ContentPane 只压制宿主框架已携带的 chrome——
+标题/路径栏与视图切换——渲染内容区（外加截断提示与渲染超时提示）。两个手势
+**保留**，因为 rc.1 官方 document tab 对两者都没有等价物：内容搜索行（已核实：
+ui-sidebar-documentpreview 的 rc.1 源码与产物包里都没有任何搜索输入框——保留是
+独有贡献，不是去重对象；headless 首版曾压掉它，同日被仓主纠正）与内容区右上角的
+浮动复制路径钮（官方 `sidebar.right.tab.document.actions` 的贡献——ui-open-in-app
+的 OpenPathAction——只有原生打开，官方 TextPreview 头部没有复制手段）。只有
+ui-file-preview 的 FileContentBody（官方 document tab 的默认渲染器）用它；
+local-files 与 worktrees 没有宿主框架可借，继续完整 chrome。
 
 **B. 官方产物卡被遮蔽，而非删除。** 机制评估按任务顺序走完：
 
@@ -90,9 +89,12 @@ OpenPathAction）只有原生打开，官方 TextPreview 头部（PathLabel + �
 - **壳注册为 `dsh-resource://file/**` 的认领方**（0.1.5 页的形态）——那会重新拆开
   「一个文件一个 tab」：rc.1 上官方 document tab 已认领全部文件地址并承载我们两个渲
   染器。page 类型零认领，路由保持单家。
-- **把内容搜索作为内容内手势带进 headless**——否决：headless 的意义就是框架拥有
-  chrome；半吊子 chrome 的搜索行会重建它要消除的叠加。损失已作为已知限制记录，并写
-  明复评条件（官方 tab 长出内容搜索）。
+- **把内容搜索行也压掉（整齐划一的 headless）**——首版正是这样做的，理由是宿主框
+  架拥有全部 chrome。但 rc.1 官方 document tab 根本没有内容搜索（源码与产物包双向
+  核实），压掉搜索行不是去重而是静默砍功能；仓主同日纠正。留下的规则：headless 只
+  压制框架真正携带的东西。
+- **把 HTML 脚本档的启动切换器带进 headless**——否决：切换器在形态上就是 chrome
+  （视图切换），且同一下拉里的官方 HTML 渲染器已覆盖带脚本文档。
 
 ## Consequences
 
@@ -100,9 +102,8 @@ OpenPathAction）只有原生打开，官方 TextPreview 头部（PathLabel + �
   卡（我们的，持久且全量）。
 - 遮蔽单向且可逆：卸载或停用本插件即恢复官方卡；组合里没有 ui-deliverables 时只是多
   一条无害的空条目。
-- rc.1 线上有意放弃的：内容内搜索（官方尚无对应物——官方 document tab 长出内容搜索
-  时复评）与面板在 document tab 内的 HTML 脚本档（其启动切换器属 chrome；官方 HTML
-  渲染器一个下拉之遥）。
+- rc.1 线上有意放弃的：只有面板在 document tab 内的 HTML 脚本档（其启动切换器属
+  chrome；官方 HTML 渲染器一个下拉之遥）。内容搜索保留——见 Decision A。
 - turnTail 遮蔽把官方条目 id 钉为数据。上游若改条目 id，遮蔽退化为空转（卡片回
   来）——fail-open，由断言赢家 priority 的 browser-plugin spec 兜底。
 - 0.1.5 行为逐字节不变：chain 臂永不注册遮蔽（chain 槽没有遮蔽概念），没有
@@ -110,8 +111,9 @@ OpenPathAction）只有原生打开，官方 TextPreview 头部（PathLabel + �
 
 ## Testing
 
-- `ui-content-preview`——content-pane spec 新增 headless describe：chrome 缺席、浮
-  动复制钮（存在/点击/缺席）、diff supply 下钉住内容视图、截断提示。
+- `ui-content-preview`——content-pane spec 新增 headless describe:chrome 缺席（标
+  题栏、视图切换）、搜索行在场且高亮可用、浮动复制钮（存在/点击/缺席）、diff
+  supply 下钉住内容视图、截断提示。
 - `ui-file-preview`——browser-plugin spec 断言账册形态（官方条目 + 遮蔽 + 我们的行
   共存）、经 `entriesOfSlot` 的遮蔽赢家、遮蔽体渲染 null、artifacts 类型/本体只在
   rc.1 注册、晚到退役与完全卸载；FileArtifactsTab spec 钉住列表渲染（只产物、最新在

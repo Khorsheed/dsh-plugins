@@ -2,11 +2,12 @@
    filename + language chip | view + preview/source controls | host-open
    gestures, then the relative path), an optional content-search row for text
    reads, and the content body. A `headless` call site drops the title bar and
-   the search row (a host frame already carries them) and keeps the content
-   area plus one floating copy-path affordance. Spacing rules here are the
-   pane's own — the markdown rhythm itself belongs to the official sheet, so
-   this file overrides only the --dsw-font-markdown-* scale tokens (in
-   .structuredBody) and never a per-element margin. */
+   the view controls (a host frame already carries them) while keeping the
+   search row (no official equivalent — keeping it is no duplication) plus one
+   floating copy-path affordance. Spacing rules here are the pane's own — the
+   markdown rhythm itself belongs to the official sheet, so this file overrides
+   only the --dsw-font-markdown-* scale tokens (in .structuredBody) and never a
+   per-element margin. */
 
 .root {
   display: flex;

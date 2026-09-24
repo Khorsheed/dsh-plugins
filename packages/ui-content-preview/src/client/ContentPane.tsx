@@ -22,12 +22,15 @@
  *   heading/paragraph/list rhythm cannot drift from the document renderer.
  * - Every rendered form is wrapped in the same block chrome (format banner +
  *   padded body), so JSON/CSV no longer render at chat-sized type.
- * - `headless` (explicit per call site) drops the pane's own chrome — title
- *   bar, view controls, content search — for embeddings whose host frame
- *   already carries them (ui-file-preview's official-document-tab renderer):
- *   only the content area renders, plus a floating copy-path button (the one
- *   gesture the host frame's actions have no equivalent for). Surfaces without
- *   a host frame keep the full chrome.
+ * - `headless` (explicit per call site) drops the pane's own chrome — the
+ *   title bar and the view controls — for embeddings whose host frame already
+ *   carries them (ui-file-preview's official-document-tab renderer). The
+ *   content-search row STAYS: the rc.1 official document tab has no content
+ *   search of its own, so the row is no duplication — dropping it would be a
+ *   net loss, not a de-overlap (repo-owner call, 2026-09-24). The floating
+ *   copy-path button likewise stays (the one gesture the host frame's actions
+ *   have no equivalent for). Surfaces without a host frame keep the full
+ *   chrome.
  *
  * @module @khorsheed/dsh-client-ui-content-preview
  */
@@ -586,7 +589,11 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
         </div>
       </div>
       )}
-      {!headless && !diffActive && content !== null && (
+      {/* The content-search row rides both modes: headless drops the chrome
+          the host frame already carries (title bar, view controls); the
+          official document tab has no content search, so this row is kept —
+          no duplication, and dropping it would be a net loss. */}
+      {!diffActive && content !== null && (
         <div className={css.contentSearch}>
           <input
             type="search"

@@ -244,16 +244,26 @@ describe('ContentPane chrome and non-text reads', () => {
 describe('ContentPane headless mode (the official document tab embedding)', () => {
   const read: PreviewRead = { kind: 'text', path: '/work/README.md', content: MARKDOWN }
 
-  it('renders the content without any chrome of its own', () => {
+  it('renders the content without the chrome the host frame carries', () => {
     mount(read, { headless: true, displayPath: '/work/README.md' })
     // The content area renders as before…
     expect(screen.getByRole('heading', { name: 'Title' })).toBeTruthy()
-    // …but the title/path bar, the view controls, and the content-search row
-    // are the host frame's, so the pane repeats none of them.
-    expect(screen.queryByRole('searchbox')).toBeNull()
+    // …and the title/path bar plus the view controls are the host frame's, so
+    // the pane repeats none of them…
     expect(screen.queryByRole('button', { name: 'detail.source' })).toBeNull()
     expect(screen.queryByText('/work/README.md')).toBeNull()
     expect(document.querySelector('.titleBar')).toBeNull()
+    // …but the content-search row STAYS: the official document tab has no
+    // content search of its own, so keeping it is no duplication.
+    expect(screen.getByRole('searchbox')).toBeTruthy()
+  })
+
+  it('searches content in headless mode exactly as in the full chrome', () => {
+    mount(read, { headless: true })
+    search('hit')
+    expect(screen.getByRole('heading', { name: 'Title' })).toBeTruthy()
+    expect(registry.get('dsh-file-search-hits')?.ranges).toHaveLength(2)
+    expect(screen.getByText('search.hit', { exact: false })).toBeTruthy()
   })
 
   it('keeps the copy-path gesture as the one floating affordance', async () => {

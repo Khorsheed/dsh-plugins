@@ -31,20 +31,20 @@ problems the first cut accepted:
 Three moves, all rc.1-arm only; the 0.1.5 arm is untouched.
 
 **A. The shared kernel grew an explicit `headless` mode** (opt-in prop, never
-probed): `packages/ui-content-preview`'s ContentPane renders only the content
-area (plus the truncation notice, the slow-render hint, and one floating
-copy-path button at the content's top-right corner). The title/path bar, the
-view controls, and the content-search row stay off. Only ui-file-preview's
-FileContentBody (the official document tab's default renderer) uses it;
-local-files and worktrees have no host frame to borrow and keep the full chrome.
-Copy path is the one gesture kept: the official `sidebar.right.tab.document.actions`
-contributions (ui-open-in-app's OpenPathAction) carry native opens only, and the
-official TextPreview header (PathLabel + picker + reload) has no copy affordance —
-verified in the rc.1 source. Content search does NOT ride along: rc.1's official
-document tab carries no content search of its own (verified: no search input
-anywhere in ui-sidebar-documentpreview's rc.1 source or shipped bundle), so this
-is a deliberate net loss on the rc.1 line, documented in the README's known
-limitations; the 0.1.5 self-drawn page is unaffected.
+probed): `packages/ui-content-preview`'s ContentPane drops the chrome its host
+frame already carries — the title/path bar and the view controls — and renders
+the content area (plus the truncation notice and the slow-render hint). Two
+affordances STAY because the rc.1 official document tab has no equivalent for
+either: the content-search row (verified: no search input anywhere in
+ui-sidebar-documentpreview's rc.1 source or shipped bundle — keeping it is a
+unique contribution, not a de-duplication target; the first cut of headless
+dropped it and was corrected by the repo owner the same day) and the floating
+copy-path button at the content's top-right corner (the official
+`sidebar.right.tab.document.actions` contributions — ui-open-in-app's
+OpenPathAction — carry native opens only, and the official TextPreview header
+has no copy affordance). Only ui-file-preview's FileContentBody (the official
+document tab's default renderer) uses it; local-files and worktrees have no
+host frame to borrow and keep the full chrome.
 
 **B. The official deliverables cards are shadowed, not removed.** The mechanism
 evaluation went in the task's order:
@@ -116,11 +116,15 @@ exists exactly on the rc.1 line.
   page's shape) — that would re-split "one file, one tab": the official document
   tab already claims every file address on rc.1 and hosts both our renderers. A
   page type with no claims keeps routing single-homed.
-- **Carry content search into headless as an in-content gesture** — rejected:
-  the point of headless is that the frame owns the chrome; a half-chrome search
-  row recreates the overlap it exists to remove. The loss is recorded as a known
-  limitation with the re-activation condition (the official tab gaining a
-  content search).
+- **Suppress the content-search row too (uniform headless)** — the first cut
+  did exactly this, on the theory that a host frame owns all chrome. The rc.1
+  official document tab has no content search at all (verified in source and
+  bundle), so suppressing the row is not de-duplication but a silent feature
+  removal; the repo owner corrected it the same day. The rule that survived:
+  headless drops only what the frame actually carries.
+- **Carry the HTML scripted tier's arming toggle into headless** — rejected:
+  the toggle is chrome by shape (a view switch), and the official HTML renderer
+  in the same dropdown already covers scripted documents.
 
 ## Consequences
 
@@ -129,10 +133,10 @@ exists exactly on the rc.1 line.
 - The shadow is one-directional and reversible: uninstalling or disabling this
   plugin restores the official cards, and a composition without ui-deliverables
   just gains a harmless empty entry in its cell.
-- Given up on the rc.1 line, deliberately: in-content search (no official
-  equivalent exists yet — re-evaluate when the official document tab grows one)
-  and the pane's HTML scripted tier inside the document tab (its arming toggle
-  was chrome; the official HTML renderer remains one dropdown switch away).
+- Given up on the rc.1 line, deliberately: only the pane's HTML scripted tier
+  inside the document tab (its arming toggle was chrome; the official HTML
+  renderer remains one dropdown switch away). Content search stays — see
+  Decision A.
 - The turnTail shadow pins the official entry id as data. If upstream renames
   the entry id, the shadow degrades to a no-op (the cards return) — fail-open,
   caught by the browser-plugin spec that asserts the winner's priority.
@@ -143,8 +147,9 @@ exists exactly on the rc.1 line.
 ## Testing
 
 - `ui-content-preview` — content-pane spec gained a headless describe: chrome
-  absence, the floating copy affordance (present/clicked/absent), pinned content
-  view against a diff supply, and the truncation notice.
+  absence (title bar, view controls), the search row's presence and working
+  highlighting, the floating copy affordance (present/clicked/absent), pinned
+  content view against a diff supply, and the truncation notice.
 - `ui-file-preview` — browser-plugin spec asserts the ledger shape (official
   entry + shadow + our row coexist), the shadowed winner through
   `entriesOfSlot`, the shadow rendering null, the artifacts type/body

@@ -2,7 +2,7 @@
 
 ## 未发布
 
-- **产物面二期（用户拍板 2026-09-24）：三层收敛。** ① 内容面板在官方 document tab 内改走共享内核的 **headless 模式**——不再渲染自己的标题行/路径行、视图切换与内容搜索框（消除与官方 chrome 的三重叠加；内容搜索在 rc.1 官方 document tab 无对应物，属净减让位，0.1.5 自建页不受影响）；复制路径无官方等价物（官方 document actions 只有原生打开），保留为内容区右上角浮动小按钮。② 回合产物卡收敛：list 臂额外注册一条同官方 deliverables cell id、`priority: -1` 的空体——slot 系统一等遮蔽（同 cell 异优先级共存、最低者渲染），官方 present 卡与内存态 changes 卡不再渲染而注册仍在册（其声明的 `deliverables.file.actions` 子槽不塌），回合区只留我们的持久全量卡。③「会话产物」入口回归为新 tab 类型 `file-artifacts` 薄列表壳（rc.1 臂注册；fold 数据源、名称过滤、刷新，点行经官方 resource 地址打开官方 document tab，壳不画内容）；0.1.5 臂的 FilePreviewTab 全功能照旧。
+- **产物面二期（用户拍板 2026-09-24）：三层收敛。** ① 内容面板在官方 document tab 内改走共享内核的 **headless 模式**——不再渲染自己的标题行/路径行与视图切换（消除与官方 chrome 的三重叠加）；**内容搜索行保留**（rc.1 官方 document tab 没有内容搜索，保留是独有贡献而非去重对象）；复制路径无官方等价物（官方 document actions 只有原生打开），保留为内容区右上角浮动小按钮。② 回合产物卡收敛：list 臂额外注册一条同官方 deliverables cell id、`priority: -1` 的空体——slot 系统一等遮蔽（同 cell 异优先级共存、最低者渲染），官方 present 卡与内存态 changes 卡不再渲染而注册仍在册（其声明的 `deliverables.file.actions` 子槽不塌），回合区只留我们的持久全量卡。③「会话产物」入口回归为新 tab 类型 `file-artifacts` 薄列表壳（rc.1 臂注册；fold 数据源、名称过滤、刷新，点行经官方 resource 地址打开官方 document tab，壳不画内容）；0.1.5 臂的 FilePreviewTab 全功能照旧。
 
 ## 未发布
 

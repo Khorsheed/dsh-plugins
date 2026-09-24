@@ -19,16 +19,17 @@
  * reports settlement through `loaded(version)` / `failed()`.
  *
  * The body is the shared content pane (@khorsheed/dsh-client-ui-content-preview)
- * in its HEADLESS mode (the pane's own title/path bar, view controls, and
- * content-search row stay off — the owner frame already carries the path row,
- * the renderer picker, and the reload gesture, and the pane's repeats stacked
- * as a double toolbar): document-form previews (markdown, JSON tree, CSV
- * table, sandboxed HTML tiers, highlighted code) ride along, and copy-path —
- * the one gesture the frame's `sidebar.right.tab.document.actions`
- * contributions (native opens) have no equivalent for — survives as the pane's
- * floating content-corner affordance. The change history is the dropdown's
- * sibling renderer (FileHistoryBody), so the pane's content⇄diff toggle is
- * not repeated either.
+ * in its HEADLESS mode (the pane's own title/path bar and view controls stay
+ * off — the owner frame already carries the path row, the renderer picker, and
+ * the reload gesture, and the pane's repeats stacked as a double toolbar; the
+ * content-search row STAYS, the official frame having no content search of its
+ * own): document-form previews (markdown, JSON tree, CSV table, sandboxed HTML
+ * tiers, highlighted code) and content search ride along, and copy-path — the
+ * one gesture the frame's `sidebar.right.tab.document.actions` contributions
+ * (native opens) have no equivalent for — survives as the pane's floating
+ * content-corner affordance. The change history is the dropdown's sibling
+ * renderer (FileHistoryBody), so the pane's content⇄diff toggle is not
+ * repeated either.
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
