@@ -132,7 +132,7 @@ export async function importExperiments(
     throw new EvalImportRefused(`cannot resolve ${input.from}: ${error instanceof Error ? error.message : String(error)}`)
   }
 
-  const files = await face.registryListFiles(registry, refCommit, 'datasets/')
+  const files = await face.registryListFiles(registry, refCommit, 'datasets')
   const planFiles = files.filter(path => /^datasets\/[^/]+\/plans\/[^/]+\.json$/.test(path) && !path.endsWith('.template.json'))
   const wanted = input.plan === undefined || input.plan.trim() === '' ? undefined : input.plan.trim()
   const selected = wanted === undefined

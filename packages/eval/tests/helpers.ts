@@ -89,6 +89,13 @@ export interface FakeRegistryOptions {
   refs?: Record<string, string>
 }
 
+/** The real face's path rule (datasets `assertSafeRelativePath`): no empty or '..' segment — so no trailing slash either. */
+function safeRelative(path: string): void {
+  if (path === '' || path.split('/').some(segment => segment === '..' || segment === '')) {
+    throw new Error(`invalid file path ${JSON.stringify(path)}: must be a relative path without '..' segments`)
+  }
+}
+
 /** A `datasets` service answering the registry reads from memory. */
 export function fakeRegistry(options: FakeRegistryOptions): DatasetsRegistryFace {
   const id = options.id ?? 'reg'
@@ -119,10 +126,12 @@ export function fakeRegistry(options: FakeRegistryOptions): DatasetsRegistryFace
     },
     registryListFiles: async (asked, commit, prefix) => {
       known(asked)
-      return Object.keys(options.files?.[commit] ?? {}).filter(path => path.startsWith(prefix)).sort()
+      if (prefix !== '') safeRelative(prefix)
+      return Object.keys(options.files?.[commit] ?? {}).filter(path => prefix === '' || path.startsWith(`${prefix}/`)).sort()
     },
     registryShowFile: async (asked, commit, path) => {
       known(asked)
+      safeRelative(path)
       const text = options.files?.[commit]?.[path]
       return text === undefined ? undefined : Buffer.from(text, 'utf8')
     },
