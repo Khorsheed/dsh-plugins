@@ -15,7 +15,10 @@
  *                        preset bundle (`dsh.bundle.kind: preset-declarations`)
  *                        mounts ONLY `@deepseek-ai/dsh-agent-preset` rows with
  *                        `preset-<id>` loader ids instead of its own runtime
- *                        row; `src/invariant.ts`'s PACKAGE_NAME equals it;
+ *                        row; a family bundle (`dsh.bundle.kind: family`)
+ *                        re-mounts ONLY the canonical rows of its declared
+ *                        `dsh.bundle.members` and registers nothing of its own;
+ *                        `src/invariant.ts`'s PACKAGE_NAME equals it;
  *                        browser halves build through the shared `clientBundle`
  *                        helper with the same id — never a hand-rolled bundle
  *   3. no foreign scope  package docs/patches never reference one of THIS
@@ -85,14 +88,35 @@ export const COMPOSITION_COMPONENTS: ReadonlyArray<string> = [
  *                        not apply: the bundle's rows are data interpreted by
  *                        the official preset plugin, so the check pins THAT
  *                        convention instead. Added 2026-09-24 with `presets`.
+ *   family               a thin meta package (proposal
+ *                        2026-09-24-family-bundles-and-collections) whose patch
+ *                        re-mounts the canonical rows of its declared
+ *                        `dsh.bundle.members` — the official "one bundle card,
+ *                        many rows" shape. Members are real self-mounting
+ *                        packages carried as npm dependencies (installing the
+ *                        bundle brings the family along; `dsh plugin add`
+ *                        reconciles only the profile's DIRECT dependencies, so
+ *                        the members' own patches stay inert and no row mounts
+ *                        twice). The bundle registers nothing itself: no own
+ *                        runtime row, no client half, no service/tool/slot
+ *                        registrations in src. Added 2026-09-24 with
+ *                        `bundle-local-agent` / `bundle-conversation-toolbox`.
  */
-export const BUNDLE_KINDS: ReadonlyArray<string> = ['preset-declarations']
+export const BUNDLE_KINDS: ReadonlyArray<string> = ['preset-declarations', 'family']
 
 /** The official plugin a preset-declarations bundle's rows are interpreted by. */
 export const AGENT_PRESET_ROW_NAME = '@deepseek-ai/dsh-agent-preset'
 
 /** Loader row id convention of one preset declaration (SKILL: `preset-<id>`). */
 export const PRESET_ROW_ID_RE = /^preset-[a-z0-9-]+$/
+
+/**
+ * Registration surface a `family` bundle's sources must never touch: the kind
+ * is pure composition (its patch re-mounts member rows), so an apply entry, an
+ * inject declaration, or any service/tool/slot/command registration would be
+ * logic the meta package promised not to carry.
+ */
+export const FAMILY_REGISTRATION_RE = /ctx\.tools\.register|ctx\.commands\.register|ctx\.slots\.(?:register|inject)|ctx\.provide\(|ctx\.set\(|export\s+const\s+inject|export\s+function\s+apply|export\s+default/
 
 /**
  * The same set as `COMPOSITION_COMPONENTS`, keyed by directory, kept as a
@@ -161,6 +185,11 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
     '@khorsheed/dsh-local-agent-dsh-headless',
   ],
   'local-agent-tool-subagent': ['@khorsheed/dsh-local-agent'],
+  // bundle-local-agent (family meta package): edges onto its declared
+  // `dsh.bundle.members` are sanctioned by the manifest itself; this entry
+  // covers only the family's DEPS-ONLY libraries it also installs (card-less,
+  // no patch rows of their own beyond what the members' canonical rows name).
+  'bundle-local-agent': ['@khorsheed/dsh-local-agent-tool-subagent', '@khorsheed/dsh-local-agent-dsh-headless'],
   // The worktrees core/companion pair: the companion consumes the core's
   // tool-definition factory and probes its global service (declare-and-degrade
   // — the probe is `ctx.get`, the peer dep keeps the module resolvable).
@@ -229,7 +258,7 @@ interface Pkg {
     readonly keywords?: readonly string[]
     readonly repository?: { readonly url?: string; readonly directory?: string }
     readonly dsh?: {
-      readonly bundle?: { readonly patch?: string; readonly kind?: string }
+      readonly bundle?: { readonly patch?: string; readonly kind?: string; readonly members?: readonly string[] }
       readonly client?: { readonly inject?: readonly string[] }
       /** Sibling names a package mentions as DATA (never as a dependency edge). */
       readonly references?: readonly string[]
@@ -467,9 +496,44 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
   // preset rows are YAML too); the own-row rule reads TOP-LEVEL rows only — a
   // preset-declarations bundle mounts no runtime row of its own, so the kind
   // replaces that rule with the preset-row convention, mechanically pinned.
+  // A family bundle likewise mounts no own row: the cross-package scan pins
+  // each of its patch rows to the canonical rows of its declared members.
   const bundleKind = json.dsh?.bundle?.kind
   if (bundleKind !== undefined && !BUNDLE_KINDS.includes(bundleKind)) {
     add('package.json', 'bundle kind', `dsh.bundle.kind "${bundleKind}" is not one of ${BUNDLE_KINDS.join(' / ')}`)
+  }
+  const familyMembers = bundleKind === 'family' ? (json.dsh?.bundle?.members ?? []) : []
+  const isFamilyMember = (name: string): boolean => familyMembers.includes(name)
+  if (bundleKind === 'family') {
+    const members = json.dsh?.bundle?.members
+    if (members === undefined || members.length === 0) {
+      add('package.json', 'family bundle', 'dsh.bundle.kind family requires a non-empty dsh.bundle.members list')
+    } else {
+      if (members.includes(json.name)) {
+        add('package.json', 'family bundle', 'dsh.bundle.members names the bundle itself')
+      }
+      for (const member of members) {
+        if (!allNames.includes(member)) {
+          add('package.json', 'family bundle', `dsh.bundle.members names ${member}, which is not a package in this repo`)
+        }
+        if (json.dependencies?.[member] === undefined) {
+          add('package.json', 'family bundle', `member ${member} is not in dependencies — installing the bundle must bring the whole family along`)
+        }
+        if (!(json.dsh?.references ?? []).includes(member)) {
+          add('package.json', 'family bundle', `member ${member} is not registered in dsh.references — the family roster is data every pack-time and catalog check reads`)
+        }
+      }
+    }
+    if (json.dsh?.client) {
+      add('package.json', 'family bundle', 'a family bundle is pure composition — it declares no dsh.client browser half')
+    }
+    for (const src of listSources(path)) {
+      const text = stripCodeComments(readFileSync(src, 'utf8'))
+      const hit = FAMILY_REGISTRATION_RE.exec(text)
+      if (hit !== null) {
+        add(src.slice(path.length + 1), 'family bundle', `registers runtime surface (${hit[0]}) — a family bundle is pure composition: no services, tools, slots, commands, or apply entry of its own`)
+      }
+    }
   }
   if (patchRel && existsSync(join(path, patchRel))) {
     const patch = readFileSync(join(path, patchRel), 'utf8')
@@ -488,6 +552,14 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
         } else if (row.id === undefined || !PRESET_ROW_ID_RE.test(row.id)) {
           add(patchRel, 'identity', `agent-preset row id ${row.id ?? '(missing)'} does not match preset-<id> — the loader row id convention`)
         }
+      }
+    } else if (bundleKind === 'family') {
+      // The row whitelist itself is a TREE-level check: the exact allowlist is
+      // the union of the members' canonical patch rows (a provider's own row
+      // legitimately names the family's deps-only tool package), which this
+      // per-package scan cannot see. Here only the own-row rule is replaced.
+      if (rows.length === 0) {
+        add(patchRel, 'identity', 'declares dsh.bundle.kind family but mounts no rows')
       }
     } else if (!NO_OWN_PATCH.includes(dir) && !rows.some((r) => r.name === json.name)) {
       add(patchRel, 'identity', `no row named ${json.name} — patch id, invariant PACKAGE_NAME and tsdown id must move together`)
@@ -537,7 +609,9 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
   for (const field of ['dependencies', 'devDependencies', 'peerDependencies'] as const) {
     for (const [name, spec] of Object.entries(json[field] ?? {})) {
       if (!name.startsWith('@khorsheed/')) continue
-      if (!isAllowedEdge(dir, name)) {
+      // A family bundle's edges onto its declared members ARE the install
+      // contract (npm brings the family along); the manifest sanctions them.
+      if (!isAllowedEdge(dir, name) && !isFamilyMember(name)) {
         add('package.json', 'cross-plugin dependency', `${field}.${name} — not one of the sanctioned pairs`)
       }
       if (spec.startsWith('workspace:') && spec !== 'workspace:*') {
@@ -581,7 +655,9 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
     if (!allNames.includes(ref)) {
       add('package.json', 'data reference', `dsh.references names ${ref}, which is not a package in this repo`)
     }
-    if (edgeNames.has(ref)) {
+    // A family bundle's members are deliberately BOTH: the dependency edge
+    // installs them, the reference registers the roster as data.
+    if (edgeNames.has(ref) && !isFamilyMember(ref)) {
       add('package.json', 'data reference', `dsh.references names ${ref}, which is also a dependency edge — a sibling is an edge or data, never both`)
     }
   }
@@ -635,8 +711,13 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
   // Only TOP-LEVEL rows collide — nested `config.plugins` entries compose in
   // their own preset's scope (a community preset legitimately reuses the
   // official ids `persona`/`compaction`/… and the family tool-row ids there).
+  // A family bundle's rows are skipped: they ARE the members' canonical rows
+  // (the row-id owner stays the member), and installing the bundle never
+  // applies the members' own patches alongside — `dsh plugin add` reconciles
+  // only the profile's direct dependencies.
   const rowOwners = new Map<string, string[]>()
   for (const pkg of pkgs) {
+    if (pkg.json.dsh?.bundle?.kind === 'family') continue
     const patch = pkg.json.dsh?.bundle?.patch
     if (patch === undefined) continue
     const file = join(pkg.path, patch)
@@ -665,6 +746,29 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
   // the core row that its own package name resolves to (the incident the
   // local-agent family documented but nothing froze). Top-level rows only, for
   // the same scope reason as the row-id ledger above.
+  //
+  // Sanctioned exception: a family bundle re-mounts its DECLARED members'
+  // canonical rows — that is the kind's whole job. The exemption is exact: a
+  // row must BE one of those canonical rows (same id, same name when named;
+  // a provider's row naming the family's deps-only tool package rides along
+  // this way), so a bundle poaching a non-member row still fails here.
+  const byName = new Map(pkgs.map((p) => [p.json.name, p]))
+  const ownRowsOf = (pkg: Pkg): PatchRow[] => {
+    const patch = pkg.json.dsh?.bundle?.patch
+    if (patch === undefined) return []
+    const file = join(pkg.path, patch)
+    return existsSync(file) ? parseTopLevelPatchRows(readFileSync(file, 'utf8')) : []
+  }
+  /** The exact allowlist of one family bundle's patch: the union of its declared members' own top-level rows. */
+  const familyCanonicalRows = (pkg: Pkg): PatchRow[] => {
+    if (pkg.json.dsh?.bundle?.kind !== 'family') return []
+    return (pkg.json.dsh.bundle.members ?? []).flatMap((member) => {
+      const owner = byName.get(member)
+      return owner === undefined ? [] : ownRowsOf(owner)
+    })
+  }
+  const isCanonicalRow = (canonical: PatchRow[], row: PatchRow): boolean =>
+    canonical.some((r) => r.id === row.id && (row.name === undefined || r.name === row.name))
   const selfMounting = new Set(
     pkgs.filter((p) => p.json.dsh?.bundle?.patch !== undefined).map((p) => p.json.name),
   )
@@ -672,16 +776,83 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
     const patch = pkg.json.dsh?.bundle?.patch
       ?? (existsSync(join(pkg.path, 'cordis.patch.yml')) ? 'cordis.patch.yml' : undefined)
     if (patch === undefined) continue
+    const canonical = familyCanonicalRows(pkg)
     const file = join(pkg.path, patch)
     if (!existsSync(file)) continue
     for (const row of parseTopLevelPatchRows(readFileSync(file, 'utf8'))) {
       if (row.name === undefined) continue
       if (row.name === pkg.json.name || !selfMounting.has(row.name)) continue
+      if (canonical.length > 0 && isCanonicalRow(canonical, row)) continue
       findings.push({
         path: `packages/${pkg.dir}/${patch}`,
         kind: 'patch row ownership',
         detail: `patch inserts a row for ${row.name}, which self-mounts — a package must not mount another self-mounting package's row (both installed mounts it twice)`,
       })
+    }
+  }
+
+  // Family bundles (dsh.bundle.kind: 'family'), the strict half of the
+  // sanction the two exemptions above open: members must be real self-mounting
+  // packages; every bundle row must come from the exact allowlist above — a
+  // row named outside the declared members, an invented id, or an override no
+  // member patch carries all fail — and every member must contribute at least
+  // one row, so the manifest roster and the patch cannot drift apart.
+  for (const pkg of pkgs) {
+    if (pkg.json.dsh?.bundle?.kind !== 'family') continue
+    const patch = pkg.json.dsh?.bundle?.patch
+    const members = pkg.json.dsh?.bundle?.members ?? []
+    const memberRows = new Map<string, PatchRow[]>()
+    for (const member of members) {
+      const owner = byName.get(member)
+      if (owner === undefined) continue // scanPackage reports the ghost
+      if (owner.json.dsh?.bundle?.patch === undefined) {
+        findings.push({
+          path: `packages/${pkg.dir}/package.json`,
+          kind: 'family bundle',
+          detail: `member ${member} does not self-mount (no dsh.bundle.patch) — family members must be real self-mounting packages`,
+        })
+        continue
+      }
+      memberRows.set(member, ownRowsOf(owner))
+    }
+    if (patch === undefined || !existsSync(join(pkg.path, patch))) continue
+    const canonical = [...memberRows.values()].flat()
+    const covered = new Set<string>()
+    for (const row of parseTopLevelPatchRows(readFileSync(join(pkg.path, patch), 'utf8'))) {
+      if (isCanonicalRow(canonical, row)) {
+        for (const [member, rows] of memberRows) {
+          if (rows.some((r) => r.id === row.id && r.name === row.name)) covered.add(member)
+        }
+        continue
+      }
+      if (row.name === undefined) {
+        findings.push({
+          path: `packages/${pkg.dir}/${patch}`,
+          kind: 'family bundle',
+          detail: `override row ${row.id ?? '(no id)'} matches no top-level row of any member's own patch — a family bundle re-mounts canonical rows verbatim`,
+        })
+      } else if (memberRows.has(row.name)) {
+        findings.push({
+          path: `packages/${pkg.dir}/${patch}`,
+          kind: 'family bundle',
+          detail: `row ${row.id ?? '(no id)'} (${row.name}) is not a top-level row of that member's own patch — a family bundle re-mounts canonical rows verbatim`,
+        })
+      } else {
+        findings.push({
+          path: `packages/${pkg.dir}/${patch}`,
+          kind: 'family bundle',
+          detail: `row ${row.id ?? '(no id)'} is named ${row.name} — the kind mounts only the canonical rows of its declared dsh.bundle.members`,
+        })
+      }
+    }
+    for (const member of members) {
+      if (memberRows.has(member) && !covered.has(member)) {
+        findings.push({
+          path: `packages/${pkg.dir}/${patch}`,
+          kind: 'family bundle',
+          detail: `member ${member} contributes no row to the bundle patch — every declared member must be mounted (or dropped from dsh.bundle.members)`,
+        })
+      }
     }
   }
 

@@ -1,0 +1,41 @@
+# @khorsheed/dsh-bundle-conversation-toolbox bundle patch: the conversation
+# toolbox family as one bundle card — seven session-experience plugins,
+# re-mounted VERBATIM from each member package's own cordis.patch.yml (the
+# canonical rows; check-plugin-independence's `family` sanction pins this file
+# to exactly that union — no invented ids, no foreign rows).
+#
+# Why no double mount: `dsh plugin add` reconciles only the profile's DIRECT
+# dependencies into the bundles layer (apps/cli plugin.ts reconcilePlugins).
+# Installing this bundle applies THIS patch only; the member packages arrive as
+# transitive npm dependencies and their own patches stay inert. Installing a
+# member directly alongside still self-mounts that member — the official bundle
+# detail page's row-level switches resolve any overlap.
+
+- insert:
+    # Message tools: host Remote + client projection surface.
+    - id: message-tools
+      name: '@khorsheed/dsh-client-message-tools'
+
+    # Message timeline: floating jump-back navigator.
+    - id: message-timeline
+      name: '@khorsheed/dsh-message-timeline'
+
+    # Session title edit: inline rename on the session header.
+    - id: session-title-edit
+      name: '@khorsheed/dsh-client-session-title-edit'
+
+    # Quote anything: selection overlay + quote routes (current session / side chat).
+    - id: quote
+      name: '@khorsheed/dsh-quote'
+
+    # Inline HTML cards in the transcript.
+    - id: inline-html-render
+      name: '@khorsheed/dsh-inline-html-render'
+
+    # Context guard: occupancy reminder + settings card.
+    - id: context-guard
+      name: '@khorsheed/dsh-context-guard'
+
+    # TaskPilot: stop/interrupt commands for background work.
+    - id: taskpilot
+      name: '@khorsheed/dsh-taskpilot'

@@ -4,8 +4,8 @@
 
 ## 概览
 
-- 包总数:**41**
-- 自挂载 bundle(`dsh.bundle.patch`):**32**
+- 包总数:**43**
+- 自挂载 bundle(`dsh.bundle.patch`):**34**
 - 组合组件(不自挂载,`dsh.composition.component`):**9** — `preset-composed-row` 6、`provider-mounted-row` 1、`source-plane-library` 1、`sub-profile-patch` 1
 - 带浏览器半边(`dsh.client`):**28**
 - 整合 profile(默认安装单元):**3** — `web-basic`、`web-dev`、`web-eval`
@@ -18,6 +18,8 @@
 | 包 | 目录 | 版本 | 形态 | 组件 | 客户端 | minHost | 出现在 profile |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-bundle-conversation-toolbox` | `packages/bundle-conversation-toolbox` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.4.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.95 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |

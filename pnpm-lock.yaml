@@ -169,6 +169,80 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.1)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.12)(yaml@2.9.1)
 
+  packages/bundle-conversation-toolbox:
+    dependencies:
+      '@khorsheed/dsh-client-message-tools':
+        specifier: workspace:*
+        version: link:../message-tools
+      '@khorsheed/dsh-client-session-title-edit':
+        specifier: workspace:*
+        version: link:../session-title-edit
+      '@khorsheed/dsh-context-guard':
+        specifier: workspace:*
+        version: link:../context-guard
+      '@khorsheed/dsh-inline-html-render':
+        specifier: workspace:*
+        version: link:../inline-html-render
+      '@khorsheed/dsh-message-timeline':
+        specifier: workspace:*
+        version: link:../message-timeline
+      '@khorsheed/dsh-quote':
+        specifier: workspace:*
+        version: link:../quote
+      '@khorsheed/dsh-taskpilot':
+        specifier: workspace:*
+        version: link:../taskpilot
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.4
+        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.14(tsx@4.23.12)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.2.0)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.12)(yaml@2.9.1)
+
+  packages/bundle-local-agent:
+    dependencies:
+      '@khorsheed/dsh-local-agent':
+        specifier: workspace:*
+        version: link:../local-agent
+      '@khorsheed/dsh-local-agent-claude-code':
+        specifier: workspace:*
+        version: link:../local-agent-claude-code
+      '@khorsheed/dsh-local-agent-codex':
+        specifier: workspace:*
+        version: link:../local-agent-codex
+      '@khorsheed/dsh-local-agent-dsh':
+        specifier: workspace:*
+        version: link:../local-agent-dsh
+      '@khorsheed/dsh-local-agent-dsh-headless':
+        specifier: workspace:*
+        version: link:../local-agent-dsh-headless
+      '@khorsheed/dsh-local-agent-kimi':
+        specifier: workspace:*
+        version: link:../local-agent-kimi
+      '@khorsheed/dsh-local-agent-tool-subagent':
+        specifier: workspace:*
+        version: link:../local-agent-tool-subagent
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.4
+        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.14(tsx@4.23.12)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.2.0)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.12)(yaml@2.9.1)
+
   packages/canvas:
     dependencies:
       '@khorsheed/dsh-inline-html-render':

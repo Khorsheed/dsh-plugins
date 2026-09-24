@@ -1,6 +1,6 @@
 # 家族 bundle 与集合：细拆映射草案(评审稿)
 
-- 日期:2026-09-24 · 状态:idea(待评审)· 官方依赖:纯插件
+- 日期:2026-09-24 · 状态:idea(v3 仓主已拍板;v4 标记:波 1 已落地,见「实现记录」)· 官方依赖:纯插件
 - 衔接:形态 C 出自 [2026-09-15-host-016-adaptation](2026-09-15-host-016-adaptation.md);首个实例是 `@khorsheed/dsh-presets`(preset-declarations 类元包,已在 3093 验证七模式名册)。
 
 ## 背景与判据
@@ -30,12 +30,14 @@ package(能力单元)
 | bundle-file-preview | 本地文件及预览 | file-preview + ui-file-preview + local-files | 文件·预览 | basic, dev | — |
 | bundle-worktrees | 工作树 | worktrees + worktrees-tool | 开发·git | dev | — |
 | bundle-room | 多Agent协同 | room + room-tool | 协作·多Agent | dev | — |
-| bundle-local-agent | 本地代理 | local-agent + kimi/codex/claude-code/dsh(tool-subagent、headless 隐形随附) | 委派·多Agent | dev | — |
+| bundle-local-agent | 本地多Agent(v4 定稿卡名) | local-agent + kimi/codex/claude-code/dsh(tool-subagent、headless 隐形随附) | 委派·多Agent | dev | — |
 | bundle-eval | 评测 | eval + eval-tool + lab | 评测 | eval | **preset-dsh-eval 挪入**(行 id 不变,会话无感) |
 | bundle-datasets | 数据集 | datasets + datasets-tool | 数据·评测 | eval | — |
 | bundle-mission | 任务规划 | mission + mission-tool | 任务·评测 | eval | — |
 | bundle-typesafe | 快速决策 | typesafe + typesafe-tool | 裁决·评测·开发 | eval, dev | — |
 | bundle-conversation-toolbox | 会话工具箱 | message-tools + message-timeline + session-title-edit + quote + inline-html-render + context-guard + taskpilot | 会话体验 | basic | — |
+
+波 1 落地状态(v4):`bundle-local-agent`、`bundle-conversation-toolbox` 与闸门 sanction(`dsh.bundle.kind: 'family'`)**已落地**(commit 为引入本行标记的提交自身,hash 以 git 历史为准);其余 7 个 bundle 保持待办(波 2)。
 | dsh-presets(已存在) | 预设模式 | presets | 模式 | basic, eval, dev | preset-dev / preset-dsh-writing |
 
 ### 独立卡(9 张,不套壳)
@@ -70,7 +72,7 @@ package(能力单元)
 
 ## 实施波次
 
-1. **波 1(形态验证)**:check-plugin-independence 扩展 sanction 词表 `dsh.bundle.kind: 'family'`(参照 preset-declarations 先例)+ 样例 bundle-local-agent、bundle-messages + 3093 验收(卡面分组、行开关、成员独立安装不破)。
+1. **波 1(形态验证)**:check-plugin-independence 扩展 sanction 词表 `dsh.bundle.kind: 'family'`(参照 preset-declarations 先例)+ 样例 bundle-local-agent、bundle-conversation-toolbox(原「bundle-messages」,按 v3 归属说明的定稿名)+ 3093 验收(卡面分组、行开关、成员独立安装不破)。**已落地(v4)**:sanction 与两个样例元包入库(commit 即引入「实现记录」本条的提交);3093 验收不在本次范围,待另行安排。
 2. **波 2(全量)**:全部 bundle 落地 + preset-dsh-eval 挪入 bundle-eval + npm 发布 + 3080 profile 换引元包(deploy:3080)+ profiles/web-basic|web-dev|web-eval 退役拆解(模式已归 preset,包集已归 bundle)。
 3. **波 3(发现层)**:catalog source + 镜像同步 action + 集合安装命令。
 
@@ -83,4 +85,8 @@ package(能力单元)
 
 ## 实现记录
 
-(待波 1 开工后登记 Agent Note / 提交)
+- **波 1 已落地**(2026-09-24,worktree 分支 `feat/host-016-adaptation`;commit 为引入本条的提交自身,hash 以 `git log` 本文件为准):
+  - 闸门 sanction:`scripts/check-plugin-independence.ts` 的 `BUNDLE_KINDS` 收入 `dsh.bundle.kind: 'family'`。校验口径:patch 行只允许落在「成员规范行全集」白名单(id+name 逐字匹配成员自己 patch 的顶层行;bare override 的 id 同理)、members 必须是真实存在的自挂载包且逐员进 `dependencies` + `dsh.references`、每个成员至少贡献一行、bundle 自身零注册(无 `dsh.client`、src 无服务/工具/槽位/命令注册与 apply 入口);row-id 台账与 patch row ownership 两条跨包规则对「成员规范行」放开。spec 补正反用例(真实树重跑 0 findings)。
+  - 样例元包:`packages/bundle-local-agent`(@khorsheed/dsh-bundle-local-agent,卡名「本地多Agent」)与 `packages/bundle-conversation-toolbox`(@khorsheed/dsh-bundle-conversation-toolbox,卡名「会话工具箱」),形态照 dsh-presets 薄元包样板。
+  - Agent Note:`.agents/notes/implemented/architecture/2026-09-24-family-bundle-meta-packages.md`(含 zh 对照与 sidecar)。
+  - 不在本次范围:装进任何 profile、3093 验收、npm 发布。其余 7 个 bundle 保持待办(波 2)。
