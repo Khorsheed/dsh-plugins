@@ -347,6 +347,17 @@
   .tableHead .colStarted {
     display: none;
   }
+
+  /* The name column is all that is left, so it wraps instead of clipping:
+     the 旧运行 chip drops under the name (T73). */
+  .row .colName {
+    flex-wrap: wrap;
+  }
+
+  .row .nameText {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 .colName,
@@ -363,6 +374,23 @@
 
 .colName {
   color: var(--dsw-alias-label-primary);
+}
+
+.row .colName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nameText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nameChip {
+  flex-shrink: 0;
 }
 
 .colNum,

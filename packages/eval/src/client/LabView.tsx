@@ -1201,10 +1201,11 @@ function ExperimentRowLine(props: {
       }}
     >
       <span className={css.colName} title={row.experimentId ?? row.name}>
-        {row.name}
+        <span className={css.nameText}>{row.name}</span>
         {/* A run from before experiments were deployment-level that no
-            imported experiment claims: said, not hidden (T73). */}
-        {row.legacy && <> <Chip tone="neutral">{t('list.legacy')}</Chip></>}
+            imported experiment claims: said, not hidden (T73) — so the name
+            takes the ellipsis and the chip never shrinks. */}
+        {row.legacy && <span className={css.nameChip}><Chip tone="neutral">{t('list.legacy')}</Chip></span>}
       </span>
       <span className={css.colSnapshot}>{snapshotCell(row)}</span>
       <span className={css.colNum}>
