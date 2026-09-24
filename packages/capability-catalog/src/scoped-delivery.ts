@@ -39,7 +39,7 @@ import type { SkillCandidate, SkillDefinition, SkillProvider, SkillProviderContr
 // Type-only: the ctx.agentPresets service merge and the `agent-preset/selected`
 // event declaration (the roster itself is a real dependency).
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
-import type { PresetRosterSlice } from './preset-scope.ts'
+import { acquireStandingScope, type PresetRosterSlice } from './preset-scope.ts'
 
 /** Provider label for managed entries; also the candidate's `provider` field. */
 export const SCOPED_PROVIDER_NAME = 'capability-catalog'
@@ -401,7 +401,7 @@ export class ScopedSkillDelivery {
       this.managed = []
       return
     }
-    if (roster?.standingKeyFor === undefined) {
+    if (roster?.standingKeyFor === undefined && roster?.acquireScope === undefined) {
       this.failure = 'no agent-preset roster is composed'
       this.disposeEntries()
       this.managed = []
@@ -432,8 +432,9 @@ export class ScopedSkillDelivery {
 
     this.presetErrors = new Map()
     const live = this.liveKeys()
-    // Resolve each named preset once: the roster's `standingKeyFor` ensures the
-    // standing mount, so repeated calls are wasted work and repeated mounts.
+    // Resolve each named preset once: the roster's standing-scope acquisition
+    // (either roster face) ensures the standing mount, so repeated calls are
+    // wasted work and repeated mounts.
     const resolved = new Map<string, ScopeKey | undefined>()
     for (const presetId of byPreset.keys()) {
       resolved.set(presetId, await this.resolveKey(roster, presetId))
@@ -582,12 +583,21 @@ export class ScopedSkillDelivery {
   /** Resolve one preset's standing key, remembering why it failed. */
   private async resolveKey(roster: PresetRosterSlice, presetId: string): Promise<ScopeKey | undefined> {
     try {
-      const key = await roster.standingKeyFor?.(presetId)
-      if (key === undefined) {
-        this.presetErrors.set(presetId, 'the roster resolved no standing scope')
-        return undefined
+      const read = await acquireStandingScope(roster, presetId)
+      try {
+        if (read.key === undefined) {
+          this.presetErrors.set(presetId, 'the roster resolved no standing scope')
+          return undefined
+        }
+        return read.key as ScopeKey
+      } finally {
+        // The key outlives the lease (a generation is reaped only once its
+        // preset is unregistered AND unleased), so entries keep it; a release
+        // failure is logged, not mistaken for a resolution failure.
+        await read.dispose?.().catch((error: unknown) => {
+          this.deps.log(`capability-catalog: scope lease release failed: ${describeError(error)}`)
+        })
       }
-      return key as ScopeKey
     } catch (error) {
       this.presetErrors.set(presetId, describeError(error))
       return undefined

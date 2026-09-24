@@ -2,6 +2,12 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— capability-catalog：rc.1 的按模式能力面读取恢复（host-016 适配漏网）
+
+- **修 rc.1 适配漏网**：rc.1 的 `@deepseek-ai/dsh-agent-preset-registry` 删除了 `standingKeyFor(id)`，换成租约式 `acquireScope(id?)`——内部走 `retain()`，未知 preset 抛 `agent-preset/not-found`、坏 preset 抛 `agent-preset/invalid` 带诊断，**租约用完必须 async dispose**（否则 generation.users 泄漏，preset 卸载后 scope 永不回收）。capability-catalog 的 `resolvePresetScope` 只探旧面，rc.1 上 100% 落入「无 roster」静默回退：`snapshotAt` / `snapshotFor` / `modeFaces` 与按 preset 投递全部读成全局层且不盖 preset 戳（3093 实测，roster 本身健康）
+- 修复走**双线探测**（`packages/capability-catalog/src/preset-scope.ts` 新导出 `acquireStandingScope`）：0.1.5 的无租约 `standingKeyFor` 优先，缺失时用 rc.1 的 `acquireScope`；`ResolvedPresetScope` 新增可选 `dispose`，所有消费点 try/finally 释放——`collect` 整段 body 包 try（`catalogSnapshot` 改 `return await`，释放不抢在指纹正文加载前）、`catalogScope` 获取即放（租约只挡「卸载且零占用」的回收，活 preset 的 scope 不受释放影响，与 0.1.5 无租约键同语义）、scoped-delivery 的 `resolveKey` 读完 key 即放。释放失败只记日志不砸读；strict/降级措辞两线逐字一致（`agent-preset/not-found` / `agent-preset/invalid` 的 message 直接进既有措辞）
+- 232 测试绿（+6：rc.1 臂的读取盖戳 / 租约恰好释放一次 / 无 key 租约由解析器自放 / broken·unknown 的 listing 降级与 fingerprint strict 抛错 / 双面 roster 下 0.1.5 臂优先；scoped-delivery 真注册表下租约面投递 + 每 preset 释放一次）
+
 ## Unreleased —— I5 · T59：子 dsh 的权限边界是作用域目录里的一个文件
 
 - `@khorsheed/dsh-local-agent-dsh` 新增配置键 `permissions`（`read-only` / `workspace-write` / `danger-full-access`）：供给时多写一层生成 patch，**覆盖** `sandbox-policy` 的 `mode` 与 `user-approval` 的 `policy`（两者按 `dsh-base` 自己的 `permission-presets` 表配对）。不写这个键就一层都不写，子 profile 的 patch 与从前逐字节相同——宿主上现存的每个作用域仍是 `workspace-write` + `ask`。同时导出 `permissionBoundaryLayer` 与 `readSubProfilePermissions`

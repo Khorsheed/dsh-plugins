@@ -431,10 +431,11 @@ export class CapabilityCatalogService extends TypertRemoteService {
    * catalog degrades to the global layer alone.
    *
    * `presetId` names WHICH preset — the deployment default when omitted, the
-   * way every reader before `snapshotFor` behaved. The roster's own
-   * `standingKeyFor` has always taken an id; the catalog simply never passed
-   * one, so "the capability face of preset X" was unaskable and a condition
-   * declaring `preset: X` could only be believed.
+   * way every reader before `snapshotFor` behaved. The roster's scope face
+   * (0.1.5's `standingKeyFor`, rc.1's leased `acquireScope`) has always taken
+   * an id; the catalog simply never passed one, so "the capability face of
+   * preset X" was unaskable and a condition declaring `preset: X` could only
+   * be believed.
    *
    * `strict` is the listing/fingerprint split — see
    * {@link resolvePresetScope}, which owns the policy.
@@ -442,7 +443,22 @@ export class CapabilityCatalogService extends TypertRemoteService {
    * @param strict - throw instead of degrading when the roster cannot answer.
    */
   private async catalogScope(presetId?: string, strict = false): Promise<unknown | undefined> {
-    return (await resolvePresetScope(this.agentPresets(), presetId, strict)).scope
+    const { scope, dispose } = await resolvePresetScope(this.agentPresets(), presetId, strict)
+    // Release before the caller reads: the roster reaps a generation only
+    // once its preset is unregistered AND unleased, so a live preset's scope
+    // survives the release — the same guarantee a lease-free 0.1.5 key had.
+    await this.releaseScope(dispose)
+    return scope
+  }
+
+  /** Release a scope lease, logging rather than failing the read it followed. */
+  private async releaseScope(dispose: (() => Promise<void>) | undefined): Promise<void> {
+    if (dispose === undefined) return
+    try {
+      await dispose()
+    } catch (error) {
+      this.ctx.logger.warn(`capability-catalog: scope lease release failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /** The optional agent-preset roster (absent in a rosterless composition). */
@@ -551,24 +567,30 @@ export class CapabilityCatalogService extends TypertRemoteService {
   private async collect(presetId: string | undefined, workdir: string | undefined, fingerprint: boolean): Promise<CapabilityCatalogSnapshot> {
     const { registry } = resolveServicesHelper(this.ctx)
     if (workdir !== undefined && workdir !== '') this.observedWorkdir = workdir
-    const { scope, preset } = await resolvePresetScope(this.agentPresets(), presetId, fingerprint)
-    if (registry === undefined) {
-      const empty: CapabilityCatalogSnapshot = {
-        skills: [], tools: [], mcpServers: [], channels: [],
-        ...preset !== undefined ? { preset } : {},
+    // The scope may be LEASED (rc.1 roster): every read below must finish
+    // before the release, so the whole body sits in one try.
+    const { scope, preset, dispose } = await resolvePresetScope(this.agentPresets(), presetId, fingerprint)
+    try {
+      if (registry === undefined) {
+        const empty: CapabilityCatalogSnapshot = {
+          skills: [], tools: [], mcpServers: [], channels: [],
+          ...preset !== undefined ? { preset } : {},
+        }
+        return fingerprint ? { ...empty, sha: hashOf(empty) } : empty
       }
-      return fingerprint ? { ...empty, sha: hashOf(empty) } : empty
+      return await catalogSnapshot(
+        workdir,
+        registry,
+        this.toolSchemasIn(scope),
+        this.mcpServerNamesIn(scope),
+        this.appearedAfterApply,
+        [scope],
+        this.toolOriginsMap(scope),
+        { fingerprint, ...preset !== undefined ? { preset } : {} },
+      )
+    } finally {
+      await this.releaseScope(dispose)
     }
-    return catalogSnapshot(
-      workdir,
-      registry,
-      this.toolSchemasIn(scope),
-      this.mcpServerNamesIn(scope),
-      this.appearedAfterApply,
-      [scope],
-      this.toolOriginsMap(scope),
-      { fingerprint, ...preset !== undefined ? { preset } : {} },
-    )
   }
 
   @Remote('detail')
