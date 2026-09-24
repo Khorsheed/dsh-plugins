@@ -363,7 +363,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 
 **T58 / T33d 验收（2026-09-17）**：T58 合入 `db3176a5`，T33d 合入 `a526d55b`（两个 README sidecar 与 T58 冲突，按合并后的 README.en.md 重录；T33d 基于 b3ae78b4，主体无冲突）；合并态 eval 741、datasets 182、eval-tool 4、datasets-tool 5，T33d 的 gate --all 全绿；主检出里的 gate 在 package map 一步红是未提交的 `packages/dsh-rss-reader` 让 docs/packages.md 显得过期，与两条无关。T58 六条缺口的修法都接受；两件超出文案的：改 eval-planning SKILL.md（不改则 agent 起草永远把 endpoint 留 null，G6 的收益拿不到）接受；ui-spec §五 的条件页「人的动作」与新建实验的七个字段由协调者补上。第 4 步人介入 6 → 2 是从代码路径推的，不是重跑走查；3171 上的三条判据里两条在真工具面与真题库上验过（未绑定被拒的原文、bind 缺省下 grading / verify 两层 `[LAYER_NOT_ALLOWED]`），「一次 provision 变 ready」由 conditions-page.spec 用真服务 + 假门面钉住，真机等 T62 后条件页打得开再看。协调者核过一处：判官读 grading 走的是 run 循环的显式 `layers: ['grading']`，`effectiveLayers` 里显式白名单优先，不受 bind 缺省收紧影响。实施者在临时实例（3199）截了明暗两套图并靠它查出三处自己没看出来的问题——截图确实值回票价，但规则不变：切片不各自截，统一由 T63 交；临时实例里 local-agent 不认 dsh（unknown harness dsh）与改动无关，pilot D 在 3171 上跑。T33d 接手了 9/12 的残留 worktree，改法与文案一致沿用。**接下来**：T62 负责把 3171 重装到 main ≥ `a526d55b`（T58 + T59 + T33d 一起上去）；T60 文案已写（§三）；T33c 可发。
 
-**T62 / T55 验收（2026-09-17）**：T62 合入 `35b23bf7`，T55 第二步合入 `dbc76d7f`；主检出这次被别的会话 stage 的 rss-reader 包挡了两回（ort 遇脏索引即拒），协调者把那 18 个文件从索引拿出、文件原样留在工作区。T62：四种错误码的原文都是三段式，两份 ErrorState 只差类型名与注释举例；超文案两处（存在性先于 git、「不是题库」拆两句）接受，修法从此不说错话。T55：定案 (a) 新者胜（用户放行）；判定步没碰真凭据就把两件事定死——清空发生在单元侧、只读挂载是死路。**未闭环的一条**：完成判据第 4 条（容器轮 ready 后宿主轮仍 ready）要修复先装进 3171 再跑，顺序写在 §三 T55 补充；另一件：3171 默认 scope 的凭据文件 13:30 被写但装的是昨天的凭证，最自然的读法是用户的重登当场被旧同步拨回，要人跑一次 keychain 元数据核对才能坐实——修复装上之后再登一次就不会再被拨回。T63 自此可发，与 T60 并行。**3171 重装（2026-09-17 14:51，T62 收尾）**：`e0a37060` → `2c4476f8`，13 s 就绪，两个 tab 真机打开，35 个工具无 mission_*；T33c 与 T55 活体验收的前置至此满足，等用户核 keychain / 重登。**T55 二期（同日下午）**：keychain 核对暴露第二处缺陷——印记解析从未生效，「最新写入优先」是空操作，3171 上一直镜像 9/16 的旧代，status 却全程报已认证；修入 `a36cf6b6`（夹具先改、用例先红再改源码，回归证据干净），3171 要再装一次，T1 判别之后再做容器轮验收，接缝要 21:31 之后才碰得到。**T33c 受阻收口（2026-09-17）**：pilot D 在容器轮被机制顶住（单元不挂 preset 根，sub-dsh 解析不到 preset），宿主轮比较节不开；按「只留必要测试」不跑宿主轮凑三条，已有证据入题库日志，机制缺口立 T65（先方案），pilot D 的那一次 P0 由 T65 顺手跑。**T63 验收（2026-09-17 晚）**：合入 `00828fcd`，合并态 eval 777 / datasets 203。协调者看了 8 张图（题集列表、实验室列表、矩阵明暗、报告、条件暗、判官台暗、格子暗）与核对表：矩阵页列头归条件、因子作副标题、随动字段折到底部一行、run 级汇总一行、状态词表一致、空态说下一步、宿主 tokens 都成立——还纠出 §九 举例里四个根本不存在的 token 名（bg-l2 / label-warning / label-danger / font-family-mono），这是「设计感弱」里最实的一条。两条进用户走查清单：条件页列头仍是键名（model.declared / model.endpoint / scope / preset / lock）与英文动作词 provision；几处列头是英文术语（canary / validate / attempt / rep），算不算「中英不混」由用户定。两条只记不改记 T66。**T60 回报同日到**（`4b7a4633`，一个提交，测试 eval 796 / eval-tool 4 / mission 134 / datasets 200）：与 T63 在 LabView.tsx / ReportPage.tsx 冲突，退回实施者并 main 按 graft 解后再合；写口形状选新工具 eval_repo_write（不扩 eval_plan_draft，三条理由成立：契约不同、起草不可并发、账本会记假话），mission 里 effectivePresetOf 那份同改按判据接受；活体验收定在 3171、不起新的容器轮——报告页导出 / 重新导出 / 终评用 T39 那个已 finalize 的 run，G11 用一次 dsh 单条件宿主轮 P0（分钟级），G16 在会话里直接试，G13 打开旧格子的成员子会话看 tab 条。**3171 重装到 `00828fcd` 由 T63 的实施者做**（21:31 T55 探针之前），用户走查两个 tab；T60 合入后再装一次。**T60 验收 / 3171 重装（2026-09-17 21:00）**：3171 装到 `00828fcd`（19 s 就绪）；T60 graft 后合入 `0bc517d3`，合并态 eval 817 / mission 134 / datasets 205 / eval-tool 4；下一次重装（≥ `0bc517d3`）等 T55 21:31 的探针跑完再做，然后 T60 活体验收四项、用户走查一轮收完。重装踩到两个坑（PATH / DSH_HOME 要导出；stop marker + TERM 留孤儿）记进通用提醒，后者交 ankh-guard 线 ⑥。**用户走查 T63（2026-09-17 夜 → 09-18 定）**：用户的判断是问题还挺多，并给了一整套意见——四阶段导航、术语降维、每页主动作、高级设置折叠、就绪徽章、向导式新建、运行记录详情、报告图表与有效性校验、并排盲评、色彩语义。协调者看完全部 24 张图后认同：§九 只定了文案与视觉基线，没定「每一页该让人做什么」，七个子页成了标签正确的数据倾倒（概览与计划审阅几乎同一份定义列表、没有主动作），这是规格缺口不是执行缺口。三个分叉用户已定：网格跑前跑中都要（同一个组件两处显示）；条件改叫对比组；判官台按同题并排、各自打分，不做二选一（判定契约不变）。落地：ui-spec §五 改成 v2 四阶段 + §九 补术语表 / 色彩语义 / 数字与句子；T63 只收文案级的一轮（§三 补充（二））；结构级的开 T67（两个里程碑，一人）；「预期得分（历史数据）」与 Cmd+K 记为后续不做。下一轮验收协调者自己起临时实例驱浏览器看。**T55 两次探针（09-18 晨读）**：文件侧证成、宿主链在轮换时死在 keychain——前提错了（macOS CLI 读写 keychain），(a2) 因密文进 argv 否决，定案 (b) 容器专用 scope + eval 守卫（补充（四））；用户先重登默认 scope，再登一个 c-claude。**T60 活体验收通过（09-18）**：四项原文齐，未起容器轮，I5 第 6 / 7 / 8 步人介入 0 / 2 / 1 兑现；ankh-guard 泳道空载复核全绿。**T55 第三步合入（09-18）**：`a672db2a` + 题库 `90cf6a8`，反例离线证过；等 3171 再装一次跑两条探针即结案。**T55 结案（09-18）**：两条探针在轮换窗口里做成一组 A/B——c-claude 被轮换、默认 scope 一个字节没动、宿主轮仍 ready、0 warn；前一夜共用 scope 时同一时序宿主报续期被拒，变量只有 scope 隔离。**同日**：T65 方案定案（完整变体、rev12）、T63 补充（二）合入、T67 可发、新记 T68（计划 dataset.repo 指旧检出）；**T54 用户拍板逐判据合并**，文案已写（§三），可发。**T67 验收（2026-09-18 下午）**：两个里程碑合入 `b2f0c7a5`，合并态 eval 850。3171 当时被 T65 第二步占着（13:44 装了未合 main 的 `4599ae89`、跑了 pilot D），协调者没碰它：起临时实例 3199（独立 DSH_HOME，拷 3171 的账本与会话、不拷凭据与 local-agent，题库绑到 i1-walk 开的工作树），用 playwright 逐页截明暗两套、读 DOM 量尺寸。实施者那张 14 行的表在真机上全部成立：四阶段、每页一个主动作按状态换词、规模四行、就绪徽章与逐条红叉、计划网格与运行网格同一张、高级设置折叠、五档筛选、运行记录详情（时间轴逐段时长、键值表、人话附件名）、有效性校验悬停各一句、效率柱状图各自归一、判官台按题并排各自打分、四步向导回退不丢。真机比回报多抓到的都是只有渲染才暴露的：`.judgeColumns` 仍是三列 grid，判据并进每列后第三列空着、作答区只剩 509 px，第二份被裁一半；chip 的 ok/busy 映到了品牌蓝与正文色，宿主明明有 success 绿；五处空态与向导文案还指向已并掉的「计划审阅」；计划文件读不到时裸渲染英文原句加绝对路径；计划点名、仓库里没有的对比组在表里静默省略而徽章照样 ✓。13 条都是呈现层，写成「T67 补充」一轮收完；实施者记下的三条数据面缺口（得分数值、产物下载、出网自检）与两处做不到文案字面的（绑定表单跨 tab、向导直落第 ② 步）理由成立，接受。走查稿 `scratch-screenshots/t67/walkthrough.md`。**T65 第二步 / T67 补充验收（2026-09-18 傍晚）**：两份回报同到。T65 第二步 `4599ae89` 合入 `a4880014`（eval README sidecar 冲突按配对脚本重生成），T67 补充 `6ea07d75` 合入 `e70f62fe`；合并态 eval 884 / datasets 214 / local-agent 270 / local-agent-dsh 206（主检出要先离线装上 T65 新加的 js-yaml，否则 10 个测试文件整体报找不到包，不是回归）。pilot D 收口证据全：四条不变量 ✅（环境一致那条是 T33c 拿不到的），比较节打开；实施者主动点明本轮 Δ 不作数（dsh-full 判官两次采样瞬时 error 被丢弃），按「只留必要测试」不重跑，接受。T33c 与 T65 一起 ✅。题库 `i4-pilot-d-close` → i1-walk `d9af6bc`（临时 worktree 合，共享检出 HEAD 仍 i3-probes）。T67 补充十条对照走查逐条落地；W13 一半是协调者看错（框有缺省、阶段没勾），W12 两份载荷定 review 赢（表画不画得出行由注册表定、就不就绪由 review 定），都接受。实施者删了一把别的 worktree 留下的 test-admission 陈锁（owner 已死、核过无活测试进程），共享资源先报后做，按规矩。3171 现在跑的是 T65 分支源码，不是 main：下一次重装（≥ `e70f62fe`，一次把 T55 守卫、T63 补充二、T67 与补充、T65 都装上）交 T65 实施者，文案 §三「T65 补充（二）」。**3171 重装 / 结果页反馈（2026-09-18 晚）**：3171 18:46 装到 `e70f62fe`，回报六项齐、协调者核过。用户看了结果页后的判断：「看不出来每个维度的得分对比和评委的评判依据，也看不到每个 agent 的运行过程以及结果」。查到根上：判据级判定（criterion / pass / ratio / evidence / by / judge）在 bundle 的 results.jsonl 里一行一条，report-view 只下发 invariants / pairs / efficiency，页面只画到每题总分——呈现与投影的缺口，并进 T54 一起做（§三「T54 补充（一）」）；产物内容判官台已能读归档、运行记录页只列路径；容器轮选手的过程转录在挂载的 scope home `local-agent/dsh@<scope>/sessions/` 里、宿主可读、没人挂到格子上，宿主轮的 childSessionId 是宿主会话——立 T69（产物内联 + 过程回放，可发，与 T54 并行按 graft）。**T69 用户改口径（09-18）**：直接用宿主的子对话视图，不自渲染。**T69 验收（2026-09-23）**：合入 `2be4b3bf`，eval 916。最值钱的发现是「认领」这个问题本身不成立——容器轮 sub-dsh 的会话经 session-mirror 本来就是宿主的 subagent 会话，协调者 09-18 记的「转录只在 scope home、没人挂到格子上」是看漏了镜像那层；顺带修了自 T35b 起「打开子会话」就打不开的缺陷（宿主要父地址）。判官会话开出来第一眼就是 claude 的 session limit 提示，这就是 pilot D 第二轮判官的由来——过程可见的价值当场兑现。协调者这次没起临时实例复核：实施者在活的 3171 上按 Remote 逐项验了（含拒绝路径），像素层等 T54 合入、3171 重装后一起看。另：协调者 09-18 起的临时实例 3199 已不在，端口被别的会话的复现实例占用（`/tmp/dsh-tab-repro-*`，DSH_HOME 不同，没碰），临时 home 与题库工作树已清。**T54 验收（2026-09-23 深夜）**：graft 后 `f48c6c35` 合入 `41dd6483`，合并态 eval 937。两处冲突都按文案解：守卫回到 `primaryPass` 顶部且是整格的——实施者点名「不符的列缺席」那支从 analyzeBundle 走不到（不变量先把闸合上），没为测它开口子、写明冗余，接受；判据表格子走 T69 同两条路。协调者顺带核 3171 时发现 guard 锚点 worktree 与 `guard/eval-3171` 在 09-21 的分支清理里被删（清理前账本 `../dsh-plugins-retired/all-branch-shas-before-2026-09-21.txt` 第 116 行记着 e70f62fe），launch-spec 还指着那个路径；实例本身 09-18 18:46 起没重启过、健康，只是看门狗此刻没有回滚点。重装文案「T54 补充（三）」：先重建锚点再装 `41dd6483`，不起新 run——报告页每次读都从 bundle 重算，pilot D 装上就有判据表。**3171 重装（2026-09-23 02:08）**：装到 `41dd6483`，26 秒就绪，guard 锚点重建在同一提交；停实例那步被实施者的自动模式拦，用户手跑放行。pilot D 结果页投影核到判据表、展开原文、产物内联与父会话地址，用户走查可开始。**I5 收口批立项（2026-09-23）**：交互稿作者交了提案 `2026-09-23-eval-journey-redesign` 与 v5（外壳不动、按仓库登记、D7 最先、事件回流待证），协调者审：可立项，四处要补（D1 没答 agent 往哪写——题库是共享检出、写走 worktree，这才是会话绑定 worktree 的由来；D7 按字面会误伤终评，改「判定覆盖一致」且 CI 与不排名同一个 n；D8 的中断推导不写账本、无 originSession 的 run 不隐藏；实验 chip 要用 composer 插槽）。分工：交互稿作者做 T70（ui-spec + 提案定稿）并协助后续前端验收，协调者审整体方案与合并。用户对现在的交互不满意，答复是：内容每页都改、外壳不换；不满若在壳上要赶在 T72 前定。**T70 修订（二）（同日）**：交互稿作者回了修订意见，转述用户三项裁定——会话里不放实验 chip（多实验显示不了，退路 tab 计数 + 列表 + eval_run_status）、人工评估不做阻塞项（只有启动有阻塞项，数据问题由计算口径降级、人的判断以标记跟着结果走，加 D9 四个出口与终态「评估不成立」）、置信区间按题数算（有差值的题 ≥ 3 道才给，排名仍按各题配对次数最小值 ≥ 3）；另指出「进程里没有活 job」会误判 CLI 起的 run，改为「停滞」= 无活 job 且无进展。协调者核过 comparePair 的 n 确是各题最小值、CLI 路径的 job 确在 CLI 进程里，五条全部接受，文案已改。**用户同日定验收参照线**：不满意的是内容、旅程、设计感，外壳不改；T71–T76 以交互稿 v5 按场景对照、视觉同等层次、待证项走退路不算失败；实施者每任务截图自查，收口时交互稿作者与协调者真机走一遍、一轮补充、再请用户走查。这回答了协调者此前「不满落在哪一层」的问题：T72 边界不变。**T70 验收 / T71、T73 发（2026-09-23 深夜）**：`bfc84273` 合入 `4a5f65b8`，11 条逐条落点、S18 入登记处；作者未跟踪草稿移到 scratch，package map 重生成 `6180ff61` 后 main gate 绿。T71（D7）与 T73（D1+D2 实施计划）文案已写，可发；T68 并入 T73。**T73 第一步验收（2026-09-23）**：计划 `adfc5233` 合入 `c1b70a4d`，现场数据（15 个实验分支未合回 main、38 条 worktree、3171 三份绑定一份悬空）与代码引用协调者全部复核成立；定 (b) 不设过渡期、条件与 lock 同搬部署级、rev13 归 T73（T74 顺延 rev14）、会话收窄不保留；六处修订随分支 1 第一个提交进计划。分支 1（datasets 登记表）可发、与 T71 并行；分支 2 等 T72；分支 3 随分支 2。题库仓库自此对 agent 纯只读、分析只随 bundle，用户若要一条回仓库的路在 T72 合入前说。实施者误在主检出 `pull --rebase`，当场 abort、主检出干净；上游就是 origin/main，不是配置问题。**T71 验收 / T72 发（2026-09-23）**：`5df1443a` 合入 `b67b645f`，合并态 eval 942（detached worktree 离线装依赖跑的；主检出 node_modules 陈旧）；第五条校验、区间按题数、降级只到这一对都按文案落地，pilot-d 的 summary 不再有 [4, 4]。实施者三点：短实验不再排名是「区间按题数」的直接后果（没有区间就没有名次，单题实验永远只做描述），协调者按裁定字面接受、请用户确认；降级那一对保留逐题数据只去平均 Δ / 区间 / 名次，接受并改 ui-spec 措辞；判官缺席用 bundle 原文不加注解，接受。T53 核实已由 T60 做掉（export-note）；T66 只剩句子半条。T72 文案已写（列表四组、停滞推导、页顶主动作全表、就绪清单 code → 修法映射、结论卡置顶、四个出口的 run 级注解 ns `eval-closure`、归档），可发；T74–T76 入表待发。**T73 分支 1 验收（2026-09-23 晚）**：五个提交合入 `036910ed`，合并态四包全绿；真机截图（登记表、题集列表、拒绝语，明暗 + 400px）与「从旧绑定登记」合并 3171 两份绑定都成立，共享检出前后没变。发现两件：`install.sh` 同族包漏 devDependencies 装不出来（立 T77，下一次重装前置）；3171 会话库里两份 09-19 由别的运行时写的会话带 `room/created` 事件、rc.1 拒绝解析，选中即题集页报错（交用户定）。分支 2 文案已写，等 T72 合入后开。**T72 验收（2026-09-23 夜）**：四个提交合入 `ee0a01fc`，合并态 eval 998；四张图核到交互稿同等层次（分组列表、就绪清单主按钮即第一条修法、结论卡第一屏、人工标记在卡顶）。代价按 Agent Note 接受：旧 run 没人收尾即读作评估中、CLI run 无心跳可能读成停滞。补充（一）的清单（人工评估页首判官缺席提示、provision 按钮中文、评估中与进度口径、行内主动作、旧 run 批量归档）等用户走查后一起发。T77 范围扩成 pack-dist + install.sh 两处；3171 重装文案已写、等 T77；T73 分支 2 可发。
+**T62 / T55 验收（2026-09-17）**：T62 合入 `35b23bf7`，T55 第二步合入 `dbc76d7f`；主检出这次被别的会话 stage 的 rss-reader 包挡了两回（ort 遇脏索引即拒），协调者把那 18 个文件从索引拿出、文件原样留在工作区。T62：四种错误码的原文都是三段式，两份 ErrorState 只差类型名与注释举例；超文案两处（存在性先于 git、「不是题库」拆两句）接受，修法从此不说错话。T55：定案 (a) 新者胜（用户放行）；判定步没碰真凭据就把两件事定死——清空发生在单元侧、只读挂载是死路。**未闭环的一条**：完成判据第 4 条（容器轮 ready 后宿主轮仍 ready）要修复先装进 3171 再跑，顺序写在 §三 T55 补充；另一件：3171 默认 scope 的凭据文件 13:30 被写但装的是昨天的凭证，最自然的读法是用户的重登当场被旧同步拨回，要人跑一次 keychain 元数据核对才能坐实——修复装上之后再登一次就不会再被拨回。T63 自此可发，与 T60 并行。**3171 重装（2026-09-17 14:51，T62 收尾）**：`e0a37060` → `2c4476f8`，13 s 就绪，两个 tab 真机打开，35 个工具无 mission_*；T33c 与 T55 活体验收的前置至此满足，等用户核 keychain / 重登。**T55 二期（同日下午）**：keychain 核对暴露第二处缺陷——印记解析从未生效，「最新写入优先」是空操作，3171 上一直镜像 9/16 的旧代，status 却全程报已认证；修入 `a36cf6b6`（夹具先改、用例先红再改源码，回归证据干净），3171 要再装一次，T1 判别之后再做容器轮验收，接缝要 21:31 之后才碰得到。**T33c 受阻收口（2026-09-17）**：pilot D 在容器轮被机制顶住（单元不挂 preset 根，sub-dsh 解析不到 preset），宿主轮比较节不开；按「只留必要测试」不跑宿主轮凑三条，已有证据入题库日志，机制缺口立 T65（先方案），pilot D 的那一次 P0 由 T65 顺手跑。**T63 验收（2026-09-17 晚）**：合入 `00828fcd`，合并态 eval 777 / datasets 203。协调者看了 8 张图（题集列表、实验室列表、矩阵明暗、报告、条件暗、判官台暗、格子暗）与核对表：矩阵页列头归条件、因子作副标题、随动字段折到底部一行、run 级汇总一行、状态词表一致、空态说下一步、宿主 tokens 都成立——还纠出 §九 举例里四个根本不存在的 token 名（bg-l2 / label-warning / label-danger / font-family-mono），这是「设计感弱」里最实的一条。两条进用户走查清单：条件页列头仍是键名（model.declared / model.endpoint / scope / preset / lock）与英文动作词 provision；几处列头是英文术语（canary / validate / attempt / rep），算不算「中英不混」由用户定。两条只记不改记 T66。**T60 回报同日到**（`4b7a4633`，一个提交，测试 eval 796 / eval-tool 4 / mission 134 / datasets 200）：与 T63 在 LabView.tsx / ReportPage.tsx 冲突，退回实施者并 main 按 graft 解后再合；写口形状选新工具 eval_repo_write（不扩 eval_plan_draft，三条理由成立：契约不同、起草不可并发、账本会记假话），mission 里 effectivePresetOf 那份同改按判据接受；活体验收定在 3171、不起新的容器轮——报告页导出 / 重新导出 / 终评用 T39 那个已 finalize 的 run，G11 用一次 dsh 单条件宿主轮 P0（分钟级），G16 在会话里直接试，G13 打开旧格子的成员子会话看 tab 条。**3171 重装到 `00828fcd` 由 T63 的实施者做**（21:31 T55 探针之前），用户走查两个 tab；T60 合入后再装一次。**T60 验收 / 3171 重装（2026-09-17 21:00）**：3171 装到 `00828fcd`（19 s 就绪）；T60 graft 后合入 `0bc517d3`，合并态 eval 817 / mission 134 / datasets 205 / eval-tool 4；下一次重装（≥ `0bc517d3`）等 T55 21:31 的探针跑完再做，然后 T60 活体验收四项、用户走查一轮收完。重装踩到两个坑（PATH / DSH_HOME 要导出；stop marker + TERM 留孤儿）记进通用提醒，后者交 ankh-guard 线 ⑥。**用户走查 T63（2026-09-17 夜 → 09-18 定）**：用户的判断是问题还挺多，并给了一整套意见——四阶段导航、术语降维、每页主动作、高级设置折叠、就绪徽章、向导式新建、运行记录详情、报告图表与有效性校验、并排盲评、色彩语义。协调者看完全部 24 张图后认同：§九 只定了文案与视觉基线，没定「每一页该让人做什么」，七个子页成了标签正确的数据倾倒（概览与计划审阅几乎同一份定义列表、没有主动作），这是规格缺口不是执行缺口。三个分叉用户已定：网格跑前跑中都要（同一个组件两处显示）；条件改叫对比组；判官台按同题并排、各自打分，不做二选一（判定契约不变）。落地：ui-spec §五 改成 v2 四阶段 + §九 补术语表 / 色彩语义 / 数字与句子；T63 只收文案级的一轮（§三 补充（二））；结构级的开 T67（两个里程碑，一人）；「预期得分（历史数据）」与 Cmd+K 记为后续不做。下一轮验收协调者自己起临时实例驱浏览器看。**T55 两次探针（09-18 晨读）**：文件侧证成、宿主链在轮换时死在 keychain——前提错了（macOS CLI 读写 keychain），(a2) 因密文进 argv 否决，定案 (b) 容器专用 scope + eval 守卫（补充（四））；用户先重登默认 scope，再登一个 c-claude。**T60 活体验收通过（09-18）**：四项原文齐，未起容器轮，I5 第 6 / 7 / 8 步人介入 0 / 2 / 1 兑现；ankh-guard 泳道空载复核全绿。**T55 第三步合入（09-18）**：`a672db2a` + 题库 `90cf6a8`，反例离线证过；等 3171 再装一次跑两条探针即结案。**T55 结案（09-18）**：两条探针在轮换窗口里做成一组 A/B——c-claude 被轮换、默认 scope 一个字节没动、宿主轮仍 ready、0 warn；前一夜共用 scope 时同一时序宿主报续期被拒，变量只有 scope 隔离。**同日**：T65 方案定案（完整变体、rev12）、T63 补充（二）合入、T67 可发、新记 T68（计划 dataset.repo 指旧检出）；**T54 用户拍板逐判据合并**，文案已写（§三），可发。**T67 验收（2026-09-18 下午）**：两个里程碑合入 `b2f0c7a5`，合并态 eval 850。3171 当时被 T65 第二步占着（13:44 装了未合 main 的 `4599ae89`、跑了 pilot D），协调者没碰它：起临时实例 3199（独立 DSH_HOME，拷 3171 的账本与会话、不拷凭据与 local-agent，题库绑到 i1-walk 开的工作树），用 playwright 逐页截明暗两套、读 DOM 量尺寸。实施者那张 14 行的表在真机上全部成立：四阶段、每页一个主动作按状态换词、规模四行、就绪徽章与逐条红叉、计划网格与运行网格同一张、高级设置折叠、五档筛选、运行记录详情（时间轴逐段时长、键值表、人话附件名）、有效性校验悬停各一句、效率柱状图各自归一、判官台按题并排各自打分、四步向导回退不丢。真机比回报多抓到的都是只有渲染才暴露的：`.judgeColumns` 仍是三列 grid，判据并进每列后第三列空着、作答区只剩 509 px，第二份被裁一半；chip 的 ok/busy 映到了品牌蓝与正文色，宿主明明有 success 绿；五处空态与向导文案还指向已并掉的「计划审阅」；计划文件读不到时裸渲染英文原句加绝对路径；计划点名、仓库里没有的对比组在表里静默省略而徽章照样 ✓。13 条都是呈现层，写成「T67 补充」一轮收完；实施者记下的三条数据面缺口（得分数值、产物下载、出网自检）与两处做不到文案字面的（绑定表单跨 tab、向导直落第 ② 步）理由成立，接受。走查稿 `scratch-screenshots/t67/walkthrough.md`。**T65 第二步 / T67 补充验收（2026-09-18 傍晚）**：两份回报同到。T65 第二步 `4599ae89` 合入 `a4880014`（eval README sidecar 冲突按配对脚本重生成），T67 补充 `6ea07d75` 合入 `e70f62fe`；合并态 eval 884 / datasets 214 / local-agent 270 / local-agent-dsh 206（主检出要先离线装上 T65 新加的 js-yaml，否则 10 个测试文件整体报找不到包，不是回归）。pilot D 收口证据全：四条不变量 ✅（环境一致那条是 T33c 拿不到的），比较节打开；实施者主动点明本轮 Δ 不作数（dsh-full 判官两次采样瞬时 error 被丢弃），按「只留必要测试」不重跑，接受。T33c 与 T65 一起 ✅。题库 `i4-pilot-d-close` → i1-walk `d9af6bc`（临时 worktree 合，共享检出 HEAD 仍 i3-probes）。T67 补充十条对照走查逐条落地；W13 一半是协调者看错（框有缺省、阶段没勾），W12 两份载荷定 review 赢（表画不画得出行由注册表定、就不就绪由 review 定），都接受。实施者删了一把别的 worktree 留下的 test-admission 陈锁（owner 已死、核过无活测试进程），共享资源先报后做，按规矩。3171 现在跑的是 T65 分支源码，不是 main：下一次重装（≥ `e70f62fe`，一次把 T55 守卫、T63 补充二、T67 与补充、T65 都装上）交 T65 实施者，文案 §三「T65 补充（二）」。**3171 重装 / 结果页反馈（2026-09-18 晚）**：3171 18:46 装到 `e70f62fe`，回报六项齐、协调者核过。用户看了结果页后的判断：「看不出来每个维度的得分对比和评委的评判依据，也看不到每个 agent 的运行过程以及结果」。查到根上：判据级判定（criterion / pass / ratio / evidence / by / judge）在 bundle 的 results.jsonl 里一行一条，report-view 只下发 invariants / pairs / efficiency，页面只画到每题总分——呈现与投影的缺口，并进 T54 一起做（§三「T54 补充（一）」）；产物内容判官台已能读归档、运行记录页只列路径；容器轮选手的过程转录在挂载的 scope home `local-agent/dsh@<scope>/sessions/` 里、宿主可读、没人挂到格子上，宿主轮的 childSessionId 是宿主会话——立 T69（产物内联 + 过程回放，可发，与 T54 并行按 graft）。**T69 用户改口径（09-18）**：直接用宿主的子对话视图，不自渲染。**T69 验收（2026-09-23）**：合入 `2be4b3bf`，eval 916。最值钱的发现是「认领」这个问题本身不成立——容器轮 sub-dsh 的会话经 session-mirror 本来就是宿主的 subagent 会话，协调者 09-18 记的「转录只在 scope home、没人挂到格子上」是看漏了镜像那层；顺带修了自 T35b 起「打开子会话」就打不开的缺陷（宿主要父地址）。判官会话开出来第一眼就是 claude 的 session limit 提示，这就是 pilot D 第二轮判官的由来——过程可见的价值当场兑现。协调者这次没起临时实例复核：实施者在活的 3171 上按 Remote 逐项验了（含拒绝路径），像素层等 T54 合入、3171 重装后一起看。另：协调者 09-18 起的临时实例 3199 已不在，端口被别的会话的复现实例占用（`/tmp/dsh-tab-repro-*`，DSH_HOME 不同，没碰），临时 home 与题库工作树已清。**T54 验收（2026-09-23 深夜）**：graft 后 `f48c6c35` 合入 `41dd6483`，合并态 eval 937。两处冲突都按文案解：守卫回到 `primaryPass` 顶部且是整格的——实施者点名「不符的列缺席」那支从 analyzeBundle 走不到（不变量先把闸合上），没为测它开口子、写明冗余，接受；判据表格子走 T69 同两条路。协调者顺带核 3171 时发现 guard 锚点 worktree 与 `guard/eval-3171` 在 09-21 的分支清理里被删（清理前账本 `../dsh-plugins-retired/all-branch-shas-before-2026-09-21.txt` 第 116 行记着 e70f62fe），launch-spec 还指着那个路径；实例本身 09-18 18:46 起没重启过、健康，只是看门狗此刻没有回滚点。重装文案「T54 补充（三）」：先重建锚点再装 `41dd6483`，不起新 run——报告页每次读都从 bundle 重算，pilot D 装上就有判据表。**3171 重装（2026-09-23 02:08）**：装到 `41dd6483`，26 秒就绪，guard 锚点重建在同一提交；停实例那步被实施者的自动模式拦，用户手跑放行。pilot D 结果页投影核到判据表、展开原文、产物内联与父会话地址，用户走查可开始。**I5 收口批立项（2026-09-23）**：交互稿作者交了提案 `2026-09-23-eval-journey-redesign` 与 v5（外壳不动、按仓库登记、D7 最先、事件回流待证），协调者审：可立项，四处要补（D1 没答 agent 往哪写——题库是共享检出、写走 worktree，这才是会话绑定 worktree 的由来；D7 按字面会误伤终评，改「判定覆盖一致」且 CI 与不排名同一个 n；D8 的中断推导不写账本、无 originSession 的 run 不隐藏；实验 chip 要用 composer 插槽）。分工：交互稿作者做 T70（ui-spec + 提案定稿）并协助后续前端验收，协调者审整体方案与合并。用户对现在的交互不满意，答复是：内容每页都改、外壳不换；不满若在壳上要赶在 T72 前定。**T70 修订（二）（同日）**：交互稿作者回了修订意见，转述用户三项裁定——会话里不放实验 chip（多实验显示不了，退路 tab 计数 + 列表 + eval_run_status）、人工评估不做阻塞项（只有启动有阻塞项，数据问题由计算口径降级、人的判断以标记跟着结果走，加 D9 四个出口与终态「评估不成立」）、置信区间按题数算（有差值的题 ≥ 3 道才给，排名仍按各题配对次数最小值 ≥ 3）；另指出「进程里没有活 job」会误判 CLI 起的 run，改为「停滞」= 无活 job 且无进展。协调者核过 comparePair 的 n 确是各题最小值、CLI 路径的 job 确在 CLI 进程里，五条全部接受，文案已改。**用户同日定验收参照线**：不满意的是内容、旅程、设计感，外壳不改；T71–T76 以交互稿 v5 按场景对照、视觉同等层次、待证项走退路不算失败；实施者每任务截图自查，收口时交互稿作者与协调者真机走一遍、一轮补充、再请用户走查。这回答了协调者此前「不满落在哪一层」的问题：T72 边界不变。**T70 验收 / T71、T73 发（2026-09-23 深夜）**：`bfc84273` 合入 `4a5f65b8`，11 条逐条落点、S18 入登记处；作者未跟踪草稿移到 scratch，package map 重生成 `6180ff61` 后 main gate 绿。T71（D7）与 T73（D1+D2 实施计划）文案已写，可发；T68 并入 T73。**T73 第一步验收（2026-09-23）**：计划 `adfc5233` 合入 `c1b70a4d`，现场数据（15 个实验分支未合回 main、38 条 worktree、3171 三份绑定一份悬空）与代码引用协调者全部复核成立；定 (b) 不设过渡期、条件与 lock 同搬部署级、rev13 归 T73（T74 顺延 rev14）、会话收窄不保留；六处修订随分支 1 第一个提交进计划。分支 1（datasets 登记表）可发、与 T71 并行；分支 2 等 T72；分支 3 随分支 2。题库仓库自此对 agent 纯只读、分析只随 bundle，用户若要一条回仓库的路在 T72 合入前说。实施者误在主检出 `pull --rebase`，当场 abort、主检出干净；上游就是 origin/main，不是配置问题。**T71 验收 / T72 发（2026-09-23）**：`5df1443a` 合入 `b67b645f`，合并态 eval 942（detached worktree 离线装依赖跑的；主检出 node_modules 陈旧）；第五条校验、区间按题数、降级只到这一对都按文案落地，pilot-d 的 summary 不再有 [4, 4]。实施者三点：短实验不再排名是「区间按题数」的直接后果（没有区间就没有名次，单题实验永远只做描述），协调者按裁定字面接受、请用户确认；降级那一对保留逐题数据只去平均 Δ / 区间 / 名次，接受并改 ui-spec 措辞；判官缺席用 bundle 原文不加注解，接受。T53 核实已由 T60 做掉（export-note）；T66 只剩句子半条。T72 文案已写（列表四组、停滞推导、页顶主动作全表、就绪清单 code → 修法映射、结论卡置顶、四个出口的 run 级注解 ns `eval-closure`、归档），可发；T74–T76 入表待发。**T73 分支 1 验收（2026-09-23 晚）**：五个提交合入 `036910ed`，合并态四包全绿；真机截图（登记表、题集列表、拒绝语，明暗 + 400px）与「从旧绑定登记」合并 3171 两份绑定都成立，共享检出前后没变。发现两件：`install.sh` 同族包漏 devDependencies 装不出来（立 T77，下一次重装前置）；3171 会话库里两份 09-19 由别的运行时写的会话带 `room/created` 事件、rc.1 拒绝解析，选中即题集页报错（交用户定）。分支 2 文案已写，等 T72 合入后开。**T72 验收（2026-09-23 夜）**：四个提交合入 `ee0a01fc`，合并态 eval 998；四张图核到交互稿同等层次（分组列表、就绪清单主按钮即第一条修法、结论卡第一屏、人工标记在卡顶）。代价按 Agent Note 接受：旧 run 没人收尾即读作评估中、CLI run 无心跳可能读成停滞。补充（一）的清单（人工评估页首判官缺席提示、provision 按钮中文、评估中与进度口径、行内主动作、旧 run 批量归档）等用户走查后一起发。T77 范围扩成 pack-dist + install.sh 两处；3171 重装文案已写、等 T77；T73 分支 2 可发。**T77 + T73 分支 2 验收（2026-09-24）**：T77 合入 `53b93082`（pack-dist 删 devDependencies、workspace:* 同样改写、install.sh 同族算 devDependencies；docs/packages.md 顺手重生成），T73 分支 2 合入 `587c12ae`（实验成为部署级对象：experiments/<id>/ 与条件库、起草钉版本与「版本不唯一」拒绝、导入、eval_analysis_write、第 ⑤ 块、配对三键、绑定尾巴退场、协议 rev13）；合并态四包全绿。pilot-d 的旧 run 靠 planPath 兜底配上（从修改版计划起跑、planSha 对不上），接受。可发：3171 重装（装 ≥ `587c12ae`，多一步导入 pilot-d）、分支 3（SKILL / preset + 试点，试点要用户配 provider）、T74 / T75 / T76（同包串行合）；25 条旧托管 worktree 清理文案已写、重装之后放行。
 
 目标：一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评。
 
@@ -401,11 +401,11 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T70 ✅ | 文档 | 提案 `proposals/active/2026-09-23-eval-journey-redesign.md` + 交互稿 v5 立项（协调者 2026-09-23 审：可立项，四处要补——D1 没答「agent 往哪写」、D7 不变量按字面会误伤终评、D8 的「中断」应推导不写账本、实验 chip 要有宿主插槽）。ui-spec 是口径正本，先按提案改 §四–§七 再派 T71–T76；由交互稿作者做，协调者审整体方案。文案见 §三「T70」；**修订（二）同日**按用户三项裁定改了 2、3、8、9 条并加第 11 条 D9（不放实验 chip；人工评估无阻塞项、四个出口；CI 按题数、排名门槛不变；「中断」并「卡住」为推导态「停滞」）。**验收 2026-09-23**：`bfc84273` 合入 main `4a5f65b8`，11 条逐条落点、S18 入登记处、提案定稿（planned） | T67 T54 T69 | ui-spec 成为 I5 收口批（T71–T76）的口径正本；提案定稿 |
 | T71 | 代码 ✅（`5df1443a` → main `b67b645f`，2026-09-23） | D7 结论校准：第五条校验「判定覆盖一致」（只降级这一对，不闸整节）、置信区间按题数（有差值的题 < 3 道不给）、排名门槛不变（n = 各题配对次数最小值 ≥ 3）、判官缺席可点名；summary.md 同步。文案与验收见 §三「T71」 | T70 T54 | pilot-d 不再出现 CI [4, 4]；两组来源不齐降级为描述并说明原因 |
 | T72 | 代码 ✅（`7edc08a1` → main `ee0a01fc`，2026-09-23；补充（一）待用户走查后发） | 实验室四阶段的旅程与结论先行（提案 D8 / D9 / 第 1、2、3、11 条）：列表四组 + 缺省「本会话发起」+ 「另有 n 个」、状态词加终态「评估不成立」与推导态「停滞」（无活 job 且无进展）、每阶段页顶状态 + 一个主动作全表、实验设计下半段「就绪清单」（阻塞项 / 提醒 + 就地修复）、结果对比「结论卡」置顶（用 T71 的字段）、人工评估四个出口（run 级注解）与「判官缺席」提示、归档。文案与验收见 §三「T72」 | T71 T70 | 交互稿 v5 四个场景（列表、就绪清单、结果对比、人工评估）真机对照同等层次；pilot-d 的结果页第一屏是结论不是表 |
-| T73 | 方案 ✅（第一步计划 `c1b70a4d`）→ 代码 | D1 + D2 会话去绑定、按仓库登记。第一步计划已评审（2026-09-23）：定 (b) 不设过渡期、条件与 lock 同搬部署级、协议 rev13 归 T73、会话收窄不保留。第二步三条分支——**分支 1** datasets 登记表 ✅（`201fb6cc` → main `036910ed`，2026-09-23）、**分支 2** eval 实验目录（**可发**，T72 已合入 `ee0a01fc`；文案见 §三「T73 第二步 · 分支 2」，T74 排其后）、**分支 3** SKILL / 提示词（随分支 2）。T68 并入 | T70 T68 | 写入模型定案；agent 不再翻磁盘找检出；未登记仓库不可用 |
-| T74 | 代码（中，**等 T72 与 T73 分支 2 合入**） | D5 方案卡：plan 加「要回答的问题 / 预期 / 怎么算回答了」三个字段（协议 rev14）、实验设计上半段方案卡、结论卡原样回答问题、就地改数字（启动前，写回同一个 plan，启动后冻结）；文案待发 | T72 T73 | 结论卡第一句是对问题的回答 |
-| T75 | 代码（中，**等 T72 合入**） | D6 作答视图：按「题 × 组 × 次」并排，两个视角（提交的报告 / 判定证据），盲评开关即人工评估视图；三处入口；文案待发 | T72 T69 | 人工评估与作答视图是同一个组件 |
-| T76 | 代码（中，**等 T73 分支 2 合入**） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案待发 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
-| T77 | 代码（小，**可发，下一次 3171 重装的前置**） | 源码模式装不出来：`install.sh:327` 算同族包只看 dependencies / peerDependencies，`scripts/pack-dist.ts:343` 只改写 `workspace:^`；`e9110d52` 把 content-preview 以 `workspace:*` 加进 local-files / ui-file-preview / worktrees 的 devDependencies，pack 时 ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL（T73 分支 1 与 T72 验收各自撞上、各自临时绕过）。文案见 §三「T77」 | 无 | 从 detached worktree 跑 `install.sh --source … --fresh` 到临时 DSH_HOME 一次成功 |
+| T73 | 方案 ✅（第一步计划 `c1b70a4d`）→ 代码 | D1 + D2 会话去绑定、按仓库登记。第一步计划已评审（2026-09-23）：定 (b) 不设过渡期、条件与 lock 同搬部署级、协议 rev13 归 T73、会话收窄不保留。第二步三条分支——**分支 1** datasets 登记表 ✅（`201fb6cc` → main `036910ed`，2026-09-23）、**分支 2** eval 实验目录 ✅（`cdea013e` → main `587c12ae`，2026-09-24；验收见 §三）、**分支 3** SKILL / 提示词 + 试点（**可发**，文案见 §三「T73 第二步 · 分支 3」；三条合完、试点过才算 T73 验收）。T68 并入 | T70 T68 | 写入模型定案；agent 不再翻磁盘找检出；未登记仓库不可用 |
+| T74 | 代码（中，**可发**，2026-09-24；与 T75 / T76 同包串行合） | D5 方案卡：plan 加「要回答的问题 / 预期 / 怎么算回答了」三个字段（协议 rev14）、实验设计上半段方案卡、结论卡原样回答问题、就地改数字（启动前，写回同一个 plan，启动后冻结）；文案见 §三「T74」 | T72 T73 | 结论卡第一句是对问题的回答 |
+| T75 | 代码（中，**可发**，2026-09-24；与 T74 / T76 同包串行合） | D6 作答视图：按「题 × 组 × 次」并排，两个视角（提交的报告 / 判定证据），盲评开关即人工评估视图；三处入口；文案见 §三「T75」 | T72 T69 | 人工评估与作答视图是同一个组件 |
+| T76 | 代码（中，**可发**，2026-09-24；与 T74 / T75 同包串行合） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案见 §三「T76」 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
+| T77 | 代码 ✅（`ced3702e` → main `53b93082`，2026-09-24） | 源码模式装不出来：`install.sh:327` 算同族包只看 dependencies / peerDependencies，`scripts/pack-dist.ts:343` 只改写 `workspace:^`；`e9110d52` 把 content-preview 以 `workspace:*` 加进 local-files / ui-file-preview / worktrees 的 devDependencies，pack 时 ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL（T73 分支 1 与 T72 验收各自撞上、各自临时绕过）。文案见 §三「T77」 | 无 | 从 detached worktree 跑 `install.sh --source … --fresh` 到临时 DSH_HOME 一次成功 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -2746,13 +2746,13 @@ eval / eval-tool 测试全绿，gate 绿。临时实例（配方随通用提醒�
 
 **验收（2026-09-23）**：`feat/eval-lab-journey`（`e89d6615` 主体、`bb8d9693` eval-tool、`25ab0e27` 合 main、`7edc08a1` 截图自查七处）合入 main `ee0a01fc`。合并态在 detached worktree 离线装依赖、建包后跑：eval 998 / eval-tool 6 / datasets 246 / datasets-tool 7 全绿，tsc 干净。协调者看了四张图（列表全部范围、pilot-a 待批准的就绪清单、pilot-d 收尾前的结论卡、带标记提交后的结论卡）：四组分组与「另有 n 个」、停滞行带时长与「重跑」、页顶「还有 15 条阻塞项，先处理第一条」+ 主按钮就是第一条的修法、阻塞项逐条人话 + 修复按钮（改端点 / provision X / 让 agent 处理）、提醒里「题库版本还没钉住」+ 登记仓库、结论卡第一屏（对比组一对、判定覆盖不一致原文、来源句、有效性校验 4/5 ⚠）、人工标记原话在卡顶、来源句随出口变——到交互稿 v5 的同等层次。实施者的场景对照表诚实，「走退路」两条（停滞归「需要你处理」是 ui-spec 的原话，不算退路；「登记仓库」没有切 tab 的接口改弹对话框）接受；「让 agent 处理」用了宿主 conversation 的 input.setDraft，拿不到退回剪贴板。四个出口的 run 级注解 ns `eval-closure` / `eval-archive`，停滞阈值 `STALL_THRESHOLD_MS` 在 experiments.ts。Agent Note 写明的代价（没人收尾的旧 run 从此读作评估中——列表里「需要你处理」26 条大半是这个；别的进程里健康的 CLI run 单阶段满十分钟会读成停滞，账本没心跳）与 ui-spec 一致，接受。**记进 T72 补充（一）、等用户走查后一起发**：人工评估页首少了「判官缺席在哪几格 + 补判」的提示（ui-spec 有，只在结论卡与校验里出现）；「provision X」按钮英文；「评估中」与进度 0/1 口径不一（状态把 halted 格算已判，进度只数 done，实施者记的原有问题）；列表行没有每行专属主动作（去批准 / 去处理）；26 条旧 run 全进「需要你处理」，要不要「批量归档」或按日期折叠由用户定；列表行卡片化（问题原文、规模）等 T74 的 rev14 字段一起。部署阻塞（pack-dist 只改写 `workspace:^`）并进 T77，范围已改。实施者 worktree 已删。3171 重装等 T77 合入，文案见下。
 
-### 3171 重装到 main（T77 合入之后；带上 T71 / T72 / T73 分支 1）（可发条件：T77 合入，2026-09-23）
+### 3171 重装到 main（带上 T71 / T72 / T73 分支 1 + 2 / T77）（**可发**，2026-09-24；T77 已合入）
 
 ```text
 # 任务：3171 重装到 main（T77 之后）
 
 ## 背景
-3171 现在装的是 41dd6483（09-23 02:08）。main 之后合入了 T71（结论校准）、T72（实验室旅程与结论先行）、T73 分支 1（题库登记）。源码模式现在装不出来（T77），本任务在 T77 合入 main 之后做，装含 T77 的 main。工具链固定 rc-0.1.5-rc.1（通用提醒）；宿主检出已是 rc.3，不从那里起。
+3171 现在装的是 41dd6483（09-23 02:08）。main 之后合入了 T71（结论校准）、T72（实验室旅程与结论先行）、T73 分支 1（题库登记）、T73 分支 2（实验成为部署级对象：experiments/<id>/、条件库、导入、eval_analysis_write）、T77（源码模式安装修复，已合入 53b93082）。装 main ≥ 587c12ae。工具链固定 rc-0.1.5-rc.1（通用提醒）；宿主检出已是 rc.3，不从那里起。
 
 ## 先读
 §三「T54 补充（三）」的重装配方与验收记录（guard 锚点、停实例、install.sh、supervise）；通用提醒里的坑（PATH / DSH_HOME 要导出；stop marker + TERM 那步自动模式会拦）。
@@ -2760,10 +2760,10 @@ eval / eval-tool 测试全绿，gate 绿。临时实例（配方随通用提醒�
 ## 步骤
 1. 停 3171：`touch ~/.dsh-lab/state/watchdog-stop && kill -TERM <listener pid>`——这一步自动模式会拦，由用户手跑；你把 pid 与整行命令报出来等用户，不要绕。
 2. guard 锚点（`DSH_HOME=~/.dsh-lab`）：先 checkpoint 当前部署（41dd6483），再 clear；装完 record deployment、supervise。锚点 worktree ../dsh-plugins-wt-eval-guard 与分支 guard/eval-3171 不得删、不得当普通分支清理。
-3. 装：从本地 main（≥ T77 合入的提交）开 detached worktree → `CI=true pnpm install --frozen-lockfile --prefer-offline` → `export PATH=~/.dsh-toolchains/rc-0.1.5-rc.1/node_modules/.bin:$PATH; export DSH_HOME=~/.dsh-lab` → `install.sh --source <dir> --fresh`。不从 npm 装任何包。
+3. 装：从本地 main（≥ 587c12ae）开 detached worktree → `CI=true pnpm install --frozen-lockfile --prefer-offline` → `export PATH=~/.dsh-toolchains/rc-0.1.5-rc.1/node_modules/.bin:$PATH; export DSH_HOME=~/.dsh-lab` → `install.sh --source <dir> --fresh`。不从 npm 装任何包。
 4. 起实例、等看门狗就绪（stdout 里的启动 URL 证就绪），记就绪秒数；启动 URL 只打码回报，token 不进任何回报、不交给任何 agent。
-5. 装后核对（活的 3171，页面或 Remote，不起新 run）：实验室列表四组与「另有 n 个」；pilot-d 结果页第一屏是结论卡（判定覆盖不一致、来源「判官初判，未经人工确认」、有效性校验 4/5 ⚠）；题集 tab 登记 dataseek-eval、跟踪 i1-walk，用「从旧绑定登记」合并三份旧绑定（对共享检出只读，HEAD 与 worktree 行数前后一致）；eval_run_status 回新状态词。
-6. 不做：清理 25 条旧托管 worktree（等分支 2）；不碰 ~/.dsh、~/.dsh-official、3080；不重跑任何实验；不动那两份带 room/created 事件的旧会话。
+5. 装后核对（活的 3171，页面或 Remote，不起新 run）：实验室列表四组与「另有 n 个」；pilot-d 结果页第一屏是结论卡（判定覆盖不一致、来源「判官初判，未经人工确认」、有效性校验 4/5 ⚠）；题集 tab 登记 dataseek-eval、跟踪 i1-walk，用「从旧绑定登记」合并三份旧绑定（对共享检出只读，HEAD 与 worktree 行数前后一致）；再导入 pilot-d：`dsh-eval import --from dataseek-eval@i4-pilot-d --instance <3171>`（只 git show，不 checkout；分支 2 验收时在临时实例上做过一遍，建 1 个实验、3 条条件）——`--instance` 要的 token 从 ~/.dsh-lab/state/eval-launch-token 读进命令、不回显、不进回报；确认列表里 pilot-d 的 run 配上实验、其余仍标「旧运行（未关联实验）」，实验设计页题库版本行是 `dataseek-eval/harness-comparison @ 短哈希`、无路径、无「未绑定」；eval_run_status 回新状态词。
+6. 不做：清理 25 条旧托管 worktree（另有文案，重装之后由协调者放行）；不碰 ~/.dsh、~/.dsh-official、3080；不重跑任何实验；不动那两份带 room/created 事件的旧会话。
 
 ## 回报
 装的提交、就绪秒数、锚点前后、第 5 步逐项原文（打码）、异常。通用提醒照旧。
@@ -2847,7 +2847,7 @@ datasets / datasets-tool 测试全绿，gate 绿；eval 测试不动也绿。临
 
 **分支 1 验收（2026-09-23）**：`feat/t73-datasets-registry` 五个提交（计划修订 `2392f95f`、`791e163a`；主体 `8b468639`；Agent Note 补清理排除 `7f89ade3`；真机修三处 `201fb6cc`）合入 main `036910ed`。合并态在 detached worktree 离线装依赖、建包后跑：datasets 246 / datasets-tool 7 / eval 942 / eval-tool 5 全绿，三包 tsc 干净。协调者看了列表明暗 1440 与 400、拒绝语暗色：登记表按仓库分组、题集行「i1-walk@d9af6bc · 2026-09-18 · agent 可见：visible」、窄屏换行、拒绝语三段式（标题 / 修法「点编辑登记」/ 详情折叠）、宿主 tokens；「从旧绑定登记」把 3171 两份有效绑定并进一条、wt-t60 标红「路径已不存在」。Remote 的 list 返回摘录无路径；共享检出前后 HEAD `050e22d1`、38 行 worktree 都没变；实例 pid 核对后停、临时 home 已删、无凭据。实施者报的五件：① `install.sh:327` 同族包漏 devDependencies——协调者核过 local-files 第 102 行确有 `workspace:*`，立 T77，下一次重装前置；② 3171 会话库里两份 cwd 在 `.worktrees/room-coordinator-runtime/…` 下的会话（09-19 写的，`room/created` 事件）rc.1 宿主拒绝解析，选中它们时题集页报加载失败——不是 eval 的缺陷，是别的运行时写进 `~/.dsh-lab/sessions` 的，交用户定去留，协调者不动；③ ankh-guard 泳道红是负载（main 基线 10 个失败是分支 3 个的超集），接受；④ 计划修订第 7 条在分支 2；⑤ 3199 / 3171 / 题库都没碰。协调者记两条小事给分支 2：题集行「用于：…」列的计划名有重复（t29d-container-egress × 3 等，按文件出现次数列的），分支 2 把「用于」换成实验目录里的实验后自然消失；25 条旧托管 worktree 的清理排除 `~/.dsh/state/…`（3182），等 3171 装上分支 2 后协调者跑。实施者 worktree 已删。
 
-### T73 第二步 · 分支 2 · 实验成为部署级对象（eval + eval-tool，收绑定尾巴）（**等 T72 合入后开**，2026-09-23）
+### T73 第二步 · 分支 2 · 实验成为部署级对象（eval + eval-tool，收绑定尾巴）（已完成，2026-09-24 验收见块后）
 
 ```text
 # 任务 T73 第二步 · 分支 2：实验成为部署级对象（eval + eval-tool），收绑定的尾巴
@@ -2888,7 +2888,40 @@ eval / eval-tool / datasets 测试全绿，gate 绿。临时实例（配方随�
 分支与 commit（协议文档单列）；Agent Note（Alternatives considered 双语）；gate；版本不唯一的返回原文；导入结果（几份 plan、几条条件、有无冲突）；截图路径；共享检出前后核对数。通用提醒照旧。
 ```
 
-### T77 · install.sh 同族包漏 devDependencies（可发，2026-09-23；下一次 3171 重装的前置）
+**验收（2026-09-24）**：`feat/t73-eval-experiments`（`1cdea3f4` datasets 绑定尾巴、`150a52eb` eval 主体、`20e6e69f` 协议 rev13 单列、`68791bb1` datasets-tool 测试跟进、`e60b6219` / `a8c4bbb1` 临时实例验收修的两处、`cdea013e` Note 补记）合入 main `587c12ae`。合并态在 detached worktree 离线装依赖、建包后跑：eval 1030 / eval-tool 6 / datasets 238 / datasets-tool 7 全绿，tsc 干净。协调者看了三张图（列表 22 条：pilot-d 配上实验、其余 21 条「旧运行（未关联实验）」徽标不再被名字吞；设计页题库版本行 `dataseek-eval/harness-comparison @ 07fde76`、无「未绑定」无路径；第 ⑤ 块两份分析、最新展开旧的折叠）。完成判据里一条没按字面过：pilot-d 的 run 配对走的是 planPath 不是 planSha——那个 run 从计划后来的修改版（07fde763）起跑，记的 planSha 与 fd04079 导入字节算出的不同；配对三键由强到弱 experimentId → planSha → planPath 以 source.path 结尾，planPath 是兜底不是主路径，接受，ui-spec 不改。「版本不唯一」拒绝原文（`version is ambiguous for …`，列候选、要求 ask_user_question、跳过就停）与「不在候选里的 commit 同样拒绝」都做到、什么都不写。分析初稿块现在是 `<pre>` 等宽原文而非 markdown 渲染，记进 T74 顺手一条。发布说明：旧绑定文件 `$DSH_HOME/state/datasets/bindings/<session>.json` 不自动删。共享检出前后 HEAD 050e22d1、worktree 38 行不变；3196 / 3199 / 3171 没碰，3207 用完即停。Agent Note：`.agents/notes/implemented/architecture/2026-09-23-eval-experiments-deployment-level.md`。分支 3 文案见下；三条合完、试点过，T73 才算验收。
+
+### T73 第二步 · 分支 3 · SKILL 与 preset 提示词按登记模型改写，并跑 agent 行为试点（可发，2026-09-24）
+
+```text
+# 任务 T73 第二步 · 分支 3：SKILL / preset 提示词改写 + agent 行为试点
+
+## 背景
+分支 1（题库登记，main 036910ed）与分支 2（实验成为部署级对象，main 587c12ae）已合入：agent 只经 datasets_list 选登记项；eval_plan_draft 的 dataset 只收「登记 id/题集」，版本不唯一时拒绝并列候选（原文 version is ambiguous for …，要求 ask_user_question，跳过就停）；eval_repo_write 改成 eval_analysis_write 只写实验目录 analysis/；eval_experiment_get 归 T76、还没有。profile 文本还是旧模型：SKILL.md 第 98 行起「The repository is not yours to pick」一节让人跑 /datasets bind，第 119 行「Drafts live in the repository working copy」；preset 人设前缀说 you read the dataset repository。本分支只动 profile 文本，然后按计划 §六 跑试点；三条分支合完、试点过，T73 才算验收。
+
+## 先读
+profiles/web-eval/docs/t73-registry-and-write-model.md §四（SKILL 五条规则与 preset 三行；修订 4：落地沿用英文，中文是语义规格）与 §六（试点脚本、8 条判据）；分支 2 的 Agent Note（.agents/notes/implemented/architecture/2026-09-23-eval-experiments-deployment-level.md：版本不唯一、条件冲突、analysis 写门三处原文）；分支 1 的 Agent Note 与 packages/datasets-tool/README（三类拒绝文本）；profiles/web-eval/skills/eval-planning/SKILL.md 全文；profiles/web-eval/presets/eval/agent.cordis.yml 的人设前缀；profiles/web-eval/README.md 第 148 行档位表、docs/architecture.md 里 worktree_path / bind 的提法；通用提醒里的临时实例配方。
+
+## 分支
+从本地 main（≥ 587c12ae）开 worktree ../dsh-plugins-wt-t73-skill，分支 feat/t73-skill-prompt；只改 profiles/web-eval 下的文本（SKILL.md、presets/eval/agent.cordis.yml、README 双语 + sidecar、docs/architecture.md 两处提法）；不改任何包代码——试点若暴露代码缺陷，记原文报协调者，不顺手修。
+
+## 已定决定
+1. SKILL.md：整节替换「The repository is not yours to pick」为计划 §四 的五条规则（英文落地，语义逐条对应：只从 datasets_list 选；版本由 eval_plan_draft 判定、报不唯一就 ask_user_question 且选项就是报错里的版本；人跳过就本轮不起草、不调写工具、回一句等人选定版本再起草；不用 read / glob / grep / bash 看题库仓库，看题目用 datasets_* 读工具；仓库没登记就告诉人去登记，不替人登记、不去读那个目录）。删「Do not commit anything. Drafts live in the repository working copy…」，改成草稿存在部署里的实验目录、仓库只读。写分析的段落改说 eval_analysis_write（experiment + analysis/ 下的路径，回执会说在结果对比页可看），引用格子按 eval_cells 的「题 × 组 × 次」；eval_experiment_get 等 T76，先不提。
+2. preset 人设前缀追加三行（英文落地，语义：数据集只认 datasets_list 的登记项、不读仓库目录；名字或版本不唯一时 ask_user_question 让人选，人跳过就停下不起草；实验草稿写在部署里，不写数据集仓库）。「you read the dataset repository」改成读登记的题集。不去掉 tool-fs-search（计划的可选收紧，看试点第 5 条再定）。
+3. README / architecture 里 bind、worktree_path 的提法改成登记与物化；档位表 datasets 一行按分支 1 的 datasets-tool README 对齐；不改 iterations / ui-spec（协调者管）。
+4. 试点按计划 §六，在临时实例上（配方随通用提醒；工具链 rc-0.1.5-rc.1；端口开跑前报协调者）。试点要真的让 agent 起草，实例要有一个 provider：你不配、不复制任何凭据文件——起实例后把启动链接写进临时 home 下一个 0600 文件，回报里只给路径，由用户自己打开配置 provider 后告诉你；用哪家、配额多少由用户定。准备：登记 dataseek-eval 跟踪 main（制造版本歧义）、dsh-eval import --from dataseek-eval@i4-pilot-d 只导 pilot-d-preset、记共享检出 HEAD（050e22d1）与 worktree 行数（38）。两个会话、8 条判据逐条核对：第 3 条的英文串是 version is ambiguous；第 6 条是 is not registered in this deployment 或分支 1 的等价原文；判据 7 的 bundle 在题库 wt-t65 工作树 exports 下的 run-20260918054718-8o0o-bundle。
+5. 判据不过的：属 profile 文本的当场改、再跑一轮；属代码的（工具返回、拒绝文本、页面）记原文报协调者，不修。
+
+## 不做
+不动 packages/*；不登记到 3171、不在 3171 上跑；不跑完整实验（起草到 ask_user_question 为止，跳过后就停）；不删 tool-fs-search；不复制凭据。
+
+## 完成判据
+profile 文本三处改完、hygiene 钩子过；试点 8 条判据逐条有结论（过 / 不过 + 原文）；共享检出前后 HEAD 与 worktree 行数一致；临时实例停掉、临时 home 删除；token 与凭据不进回报。
+
+## 回报
+分支与 commit；SKILL / preset 改动前后摘录；试点 8 条判据的逐条结论与工具日志摘录（打码、去绝对路径）；试点暴露的代码缺陷清单；用的端口与 provider 名（不含凭据）。通用提醒照旧。
+```
+
+### T77 · install.sh 同族包漏 devDependencies（已完成，2026-09-24 验收见块后）
 
 ```text
 # 任务 T77：install.sh 算同族包时把 devDependencies 里的 workspace:* 也算进去
@@ -2911,6 +2944,8 @@ install.sh 的 UNPUBLISHED_DIRS 循环（第 320–345 行）与 pack-dist 对 f
 ## 回报
 分支与 commit；实测命令与结果（去掉绝对路径）；gate。通用提醒照旧。
 ```
+
+**验收（2026-09-24）**：`fix/install-family-devdeps`（`7a0c92a2` 修复 + 测试、`ced3702e` Note）合入 main `53b93082`。两半都修了：pack-dist 的 dist manifest 整段删 devDependencies、`workspace:*` 与 `workspace:^` 同样改写成源码版本 caret（peerDependencies 与经 runtimeDependencies 保留的 dependencies）；install.sh 的同族成员算上 devDependencies。文案之外多改一处——`verifyTarball` 多收 `devDeclared`（源 manifest 的 devDependencies 映射到 dist 名），否则构建时内联兄弟包、只以 devDependency 声明的包会过不了自己的校验；理由成立，接受。实测：detached worktree 上 install.sh --source --fresh 到临时 DSH_HOME 退出 0，24 个成员、177 条 patch 行，local-files 的 tarball manifest 无 devDependencies、无 workspace:。合并态 pack-dist 测试 36 全绿。docs/packages.md 在 main 上因 canvas 0.4.7 过期（`c72062ca` 没重生成）——协调者随本次验收提交重生成。3171 重装的前置至此满足。
 
 ### T69 · 运行记录详情看得见「跑了什么、交了什么」：产物内联与过程回放（可发，2026-09-18）
 
@@ -3279,6 +3314,127 @@ Cmd+K 全局搜索；「预期得分（历史数据）」；二选一盲评；�
 ```
 
 **补充验收（2026-09-18）**：`fix/lab-v2-walkthrough`（`6ea07d75`）合入 main `e70f62fe`，合并态 eval 884 / datasets 214。十条逐条有落点：五色进 tokens 且加 `tests/tones.spec.ts` 读样式表钉住；`.judgeColumns` 改两列、答案列 `flex: 1 1 320px`；产物改 `<details>` 折叠、判据表置顶；五处「计划审阅」改掉；PLAN_UNREADABLE 走三段式（ErrorState 加可选 fix，两份副本同改）；缺失对比组成「缺失」行、徽章按计划自己的受试对象清单算；终态「在态时长」显示「—」、列名改「判定」；时间轴真凶是 Chip 作 grid item 被 stretch 拉满，改三列 + 按本记录最长段归一；finalize → 终评收口、rep → 次数、预算缺省 60 → 30、「保存草稿并校验」、「逐次 Δ」；红叉原因从 review 结构读、只有端点未解析借 validate 自己写的前缀。两处纠正：W13「无缺省」是协调者看错（框有缺省，卡的是阶段没勾）——留一条小项：阶段按 schema 缺省全勾或提示点名缺什么；W12 徽章信 review、表信注册表，定 review 赢。真机复核（临时实例重装到 `e70f62fe`，2026-09-18 18:27）：chip 已完成绿 / 运行中蓝 / 待批准橙；列头「判定」、终态在态时长「—」；时间轴条按时长比例（2 / 46 / 48 / 9 / 241 / 2 px）；动作行「终评收口」、无英文 finalize、无「逐 rep Δ」；判官台作答区 944 px、两列各 466、无横向溢出、8 个产物块默认折叠；计划文件不在了走三段式（人话 + 修法 + 详情折叠）；缺失对比组成「缺失」行；红叉行尾带原因（端点未解析 · 家目录指纹未写回 · 声明旁边没有锁 / 声明文件不在）；空态与向导不再出现「计划审阅」；向导 ③ 标签「次数 / 预算」、缺省 1 / 30 / 10；末步「保存草稿并校验」。十条全部落地。留一条小项（不阻塞）：向导 ③ 的阶段列表缺省没勾，提示只说「这一步填完才能往下走」不点名——按 schema 缺省全勾或提示点名。
+
+### 题库共享检出的旧托管 worktree 清理（3171 重装到 ≥ 587c12ae 之后；共享资源，先报后做）
+
+```text
+# 任务：清掉题库共享检出里 3171 旧模型登记的 25 条托管 worktree
+
+## 背景
+T73 分支 1 起题库按 git archive 物化到 state/datasets/materialized/，不再开托管 worktree；分支 2 之后 eval 也不再读绑定。共享检出 ~/.dsh/scratch/dataseek-eval 的 .git 里还登记着旧模型开出来的 25 条托管 worktree（路径形如 …/state/datasets/worktrees/<16 位十六进制>/<题集>），分支 1 的 Agent Note（.agents/notes/implemented/architecture/2026-09-23-dataset-registry.md）写了清理规则。共享检出是多 agent 共用的，这次写它的 .git 属共享资源：第 2 步先贴候选清单报协调者，放行后再删。
+
+## 先读
+上面那份 Agent Note 的清理一节；通用提醒里题库共享检出的规则（不 checkout、HEAD 留在 i3-probes 050e22d1、只在 worktree 里写）。
+
+## 步骤
+1. git -C <共享检出> worktree list --porcelain 存一份；记 HEAD（rev-parse HEAD，应为 050e22d1）与行数（现在 38 行）。
+2. 候选 = 路径匹配 /state/datasets/worktrees/[0-9a-f]{16}/[^/]+$ 且在 ~/.dsh-lab 之下的条目。排除 ~/.dsh/state/… 下的（那是 3182 的）；排除一切不匹配的（wt-t65 这类人手开的工作树、实验分支的工作树都不动）。候选清单先报协调者，放行后再做第 3 步。
+3. 逐条 git worktree remove --force <path>；目录已不在的用 git worktree prune 收尾。不删任何分支、不 checkout、不动 HEAD、不 fetch。
+4. 之后再存一份 worktree list：行数 = 38 − 候选数，HEAD 仍是 050e22d1，~/.dsh-lab/state/datasets/worktrees/ 下不再有目录。
+
+## 不做
+不删分支（15 条实验分支留着，去留另议）；不碰 ~/.dsh、~/.dsh-official、3080；不 pull。
+
+## 回报
+前后两份 worktree list（去绝对路径前缀）、删了几条、HEAD 前后、异常。通用提醒照旧。
+```
+
+### T74 · 方案卡与结论卡：plan 加「要回答的问题 / 预期 / 怎么算回答了」（协议 rev14），数字就地可改（可发，2026-09-24）
+
+```text
+# 任务 T74：方案卡 + 结论卡回答问题 + 就地改数字（协议 rev14）
+
+## 背景
+T72 把结论卡放到了结果对比第一屏，但它只能给配对结论：plan 里没有「这次实验要回答什么」。ui-spec §五 实验设计的「上半段 · 方案」与结果对比 ①「结论卡」都要 rev14 的三个字段；§四 定这三个字段顺延到 rev14（rev13 归 T73 分支 2，已在 main 587c12ae）。就地改数字要写回同一份 plan——T73 之后 plan 在部署里的实验目录 experiments/<id>/plan.json，写入目标定了，本任务才可开。
+
+## 先读
+ui-spec §五（实验设计一行的「上半段 · 方案」、结果对比 ①、人工评估四个出口对结论来源的影响）与 §九；交互稿 v5 的「方案卡」「结果对比」两场景（proposals/prototypes/）；docs/dataset-authoring-protocol.md §6.5 的 plan schema（rev13 现状；packages/eval/src/schema.ts 的常量与 protocol.spec 的钉法——协议文档与代码常量要在同一提交里对齐，否则测试红）；T72 的 Agent Note（结论卡、就绪清单、experiments.ts 的状态推导）；T73 分支 2 的 Agent Note（实验目录、plan.json 逐字节保存、experiment-store.ts、experimentId 配对）；packages/eval/src/client/DesignPage.tsx、ReportPage.tsx、LabView.tsx，src/draft.ts、tool.ts（eval_plan_draft 的参数）；T72 补充（一）清单里「列表行卡片化（问题原文、规模）」一条；packages/datasets/src/client/preview.tsx（第 6 条用）。
+
+## 分支
+从本地 main（≥ 587c12ae）开 worktree ../dsh-plugins-wt-t74-question，分支 feat/t74-question-card；改 packages/eval（schema、draft、tool、client）、packages/eval-tool（eval_plan_draft 的参数说明）、docs/dataset-authoring-protocol（rev14，单独一个提交）；README 双语 + sidecar。T75 / T76 同期在 packages/eval 上开：谁后合谁合 main、按 graft 法解，不 hunk 拼接。
+
+## 已定决定
+1. 协议 rev14：plan 顶层加三个可选字符串——要回答的问题（一句）、预期（可空）、怎么算回答了（一句）；字段名建议 question / expectation / answeredWhen，更贴切的在 Note 里写理由。旧 plan 没有就不显示这块，validate 不因缺失报警；plan.example.json 与 §6.5 文档随 rev14 提交更新。
+2. eval_plan_draft 收这三个字段（可选）落进 plan.json；工具说明加一句「起草时把人的问题原样写进 question」。SKILL 归 T73 分支 3，不在这里改。
+3. 实验设计页上半段按 ui-spec：① 问题 / 预期 / 怎么算回答了；② 规模与对比变量、题库版本、判官与采样——次数、每格预算、判官采样数就地可改（启动前），写回同一份 plan.json：Remote 加一个只改这几个数字字段的动词，其它字节不动、写完回读；启动后冻结，控件只读并说明原因。③ 对比组表与计划网格已有，不动。
+4. 结论卡第一句原样回答问题（有配对结论时「问题：… — 结论：…」；没有问题块时保持 T72 的配对结论）；「怎么算回答了」原文在卡上一行小字；预期与实际方向一致 / 相反用词表里的词，不加新颜色。
+5. 实验室列表行带问题原文一行（有才显示，超长省略；T72 补充（一）记的那条），规模列沿用。
+6. 顺手一条（用户 2026-09-23 问的）：结果对比第 ⑤ 块「分析初稿」现在是 <pre> 等宽原文，改成 markdown 渲染，做法与 packages/datasets/src/client/preview.tsx 的文档预览一致（同一宿主块 chrome；跨包复用有困难就在 eval 里做同样式的最小实现，Note 里写），不引第三方库；读取规则不变。
+7. 状态词、颜色、术语按 §九；截图自查按 §九（临时实例配方，明 / 暗 / 400 三套：方案卡、结论卡、列表各一）。
+
+## 不做
+Cmd+K；「预期得分（历史数据）」；结构性改动（加题、加对比组）仍交给 agent（输入框预填引用，T72 的 setDraft 通道）；不改 run.meta 的形状；不改 SKILL。
+
+## 完成判据
+eval / eval-tool 测试全绿（rev14 的 protocol.spec 绿），gate 绿；临时实例上：起草带三个字段的实验 → 实验设计页上半段三段都在 → 改次数为 2 → plan.json 只有那一个数字变了、回读一致 → 批准后控件只读；导入的旧 plan（pilot-d）页面无此块、结论卡仍是配对结论；第 ⑤ 块渲染成 markdown；截图三套。
+
+## 回报
+分支与 commit（rev14 单列）；Agent Note（Alternatives considered 双语）；gate；截图路径；就地改数字的写回前后 diff。通用提醒照旧。
+```
+
+### T75 · 作答视图：按「题 × 组 × 次」并排，两个视角，盲评开关即人工评估视图，三处入口（可发，2026-09-24）
+
+```text
+# 任务 T75：作答视图（D6）
+
+## 背景
+ui-spec §五「作答视图」（D6 · 第 4 条）：跨阶段视图，从运行记录、人工评估、结果对比三处进入，按「题 × 组 × 次」定位，不向人展示路径。现在人工评估页（T67 判官台改造）已经把同题各对比组产物并排、去指纹；运行记录详情有附件区但只是「点开预览」；结果对比的格子只能跳运行记录（T69）。本任务把三处统一成一个组件：同一份并排视图，盲评开关决定露不露组名。T72 已合入，可开。
+
+## 先读
+ui-spec §五 作答视图一段、人工评估一行、运行记录一行的「看作答」；交互稿 v5「作答并排」「人工评估」两场景（proposals/prototypes/）；T67 两份 Agent Note（判官台并排、产物折叠、cellArtifact 三条规则）与 T69 的 Note（跳转与子会话）；packages/eval/src/client/JudgingPage.tsx、运行记录详情、ReportPage.tsx 的判据表格子；packages/eval/src/read.ts 的 cellArtifact；bundle 里 stage*.md 与判定注解的位置（report.ts 的 cell 投影）；packages/datasets/src/client/preview.tsx（markdown 渲染的宿主块 chrome——复用做法，跨包复用有困难就在 eval 里做同样式的最小实现，与 T74 第 6 条用同一个，谁先合谁定形）。
+
+## 分支
+从本地 main（≥ 587c12ae）开 worktree ../dsh-plugins-wt-t75-answers，分支 feat/t75-answer-view；只改 packages/eval 的 client 与 read（cellArtifact 若要加「一格多文件」的批量读动词，点名加、别的不扩）；README 双语 + sidecar。与 T74 / T76 同包，谁后合谁合 main、graft 法解。
+
+## 已定决定
+1. 一个组件（作答视图）：输入是「题 × 组 × 次」的定位（experimentId / runId + 题 + 对比组 + 次），按题并排各组、同一部分对齐；组名可显示，或按种子顺序换成 A / B（盲评开关）。
+2. 两个视角：「提交的报告」——stage*.md 按 markdown 渲染，判官引用过的段落就地挂判定（判定注解里有引文才挂，没有就不挂，不猜）；「判定证据」——逐条判据的判定与理由、脚本输出（verify 层）。「过程」链到 T69 的打开子会话（已有入口，复用）。
+3. 人工评估页 = 作答视图开盲评 + 每格打分（契约不变：每格一份分数，human-final 唯一写入口）；现有判官台「判据表置顶、产物折叠」的规矩保留在组件里。
+4. 三处入口：运行记录详情「看作答」（定位到这一格）；人工评估队列（定位到题，盲评开）；结果对比判据表与配对表的格子（定位到题 × 组，多次时列出各次）。不向人展示路径。
+5. 读取沿 cellArtifact 三条规则：只读本格、只读文本、超 256 KB 截断并说明；作答仍在 attempt 的 archive/workspace/，随 bundle 导出，本任务不改导出。
+6. 状态词、颜色、术语按 §九；截图自查按 §九（明 / 暗 / 400：报告视角、证据视角、盲评各一）。
+
+## 不做
+二期「代码改动」diff（要钉住的 commit + populate-manifest，口径另评审）；二选一盲评；产物下载。
+
+## 完成判据
+eval 测试全绿，gate 绿；临时实例拷 pilot-d bundle（题库 wt-t65 工作树 exports 下的 run-20260918054718-8o0o-bundle）或 3171 账本的只读副本（不连 3171）：三处入口都定位到同一格，盲评开关切换组名 ↔ A / B，人工评估打分路径不变（已有测试仍绿），markdown 渲染、引用段落挂判定；截图三套。
+
+## 回报
+分支与 commit；Agent Note（Alternatives considered 双语）；gate；截图路径；数据面记下来没做的清单。通用提醒照旧。
+```
+
+### T76 · 会话面：eval_plan_draft 工具行渲染成实验卡、eval_experiment_get、实验 tab 计数待证、S18 退路（可发，2026-09-24）
+
+```text
+# 任务 T76：会话面（D3）
+
+## 背景
+旅程的起点在会话：人说想法，agent 起草，然后人要能一跳到实验设计。现在 eval_plan_draft 的返回只是文本，人要自己去实验室列表找。ui-spec §五「跨面旅程」与 §六定了：工具行渲染成实验卡（宿主 tool.call.toolview，卡上没有批准按钮，「打开实验」进实验设计）；eval_experiment_get(id) 只读合成投影 + 作答索引；实验 tab 标签计数要证 conversation.view 的 label 能否随状态重绘；运行完成等节点回流会话需要宿主 API（S18，已登记在 docs/upstream-seam-registry.md）。T73 分支 2 已合入（experimentId 是稳定引用），可开。
+
+## 先读
+ui-spec §五 跨面旅程、§六 eval-tool 一行、§七 第 2 与第 8 步；交互稿 v5 总览与会话起草的场景（proposals/prototypes/）；T72 的 Agent Note（setDraft 通道、状态推导）；T73 分支 2 的 Agent Note（experimentId、experiment-store、eval_cells 的投影）；packages/eval-tool/src/index.ts 与 packages/eval/src/tool.ts；宿主 tool.call.toolview 的挂法——看仓里已经挂过 toolview 的包（grep 一下）；docs/upstream-seam-registry.md 的 S18 一节；packages/eval/src/client/index.ts 的 conversation.view 挂载（tab 标签）。
+
+## 分支
+从本地 main（≥ 587c12ae）开 worktree ../dsh-plugins-wt-t76-session，分支 feat/t76-session-face；改 packages/eval（client、tool、read）、packages/eval-tool；README 双语 + sidecar。与 T74 / T75 同包，谁后合谁合 main、graft 法解。
+
+## 已定决定
+1. eval_plan_draft 的工具行挂宿主 tool.call.toolview 渲染实验卡：名字、问题原文（rev14 有才显示，T74 未合就只有名字与规模）、规模、题库版本（id/set @ 短哈希）、状态；一个动作「打开实验」跳到实验室 › 实验设计（切 tab 的接口 T72 探过没有：退回列表并高亮该行，Note 里写）；没有批准按钮（R1，只在实验设计页）。
+2. eval_experiment_get({experiment})：只读，= eval_cells + eval_run_status 合成的与页面同源投影 + 作答索引（每格：题 × 组 × 次 → 可读的产物名清单，不给路径）；agent 写分析按此引用。没有 run / finalize / provision，不写人工评估出口。eval-tool 注册、README 档位表更新；ui-spec §六 那一行由协调者回写。
+3. 实验 tab 标签计数：先证 conversation.view 的 label 能否随状态重绘；能则显示「本会话发起、需要你处理」的个数，不能就不显示，不用 DOM 锚点硬改；结论写进 Note。
+4. S18 退路：会话里不放实验 chip；运行完成 / 判官判完 / 人工评估完成三个节点不投通知（宿主缝未开），agent 用 eval_run_status 读；若 rc.1 宿主已有可用的只通知事件 API 就记下来不接（换线是另一个任务）。
+5. 真机看实验卡需要一次真实的工具调用：要 provider 的话开跑前报协调者、由用户配，你不配、不复制凭据；没有 provider 就用客户端测试渲染实验卡 + 在临时实例页面里挂一次夹具截图，Note 里说明。截图按 §九（明 / 暗 / 400：会话里的实验卡一张、打开后的实验设计一张）。
+
+## 不做
+不做批准按钮；不做通知回流；不改 SKILL（T73 分支 3 管）；不动宿主。
+
+## 完成判据
+eval / eval-tool 测试全绿，gate 绿；实验卡渲染、「打开实验」到位；eval_experiment_get 对导入的 pilot-d 返回的投影与页面数字一致、返回里没有以 / 或 ~/ 开头的字符串；tab 计数有结论。
+
+## 回报
+分支与 commit；Agent Note（Alternatives considered 双语）；gate；截图路径；tab 计数的可行性结论；ui-spec 需要回写的句子。通用提醒照旧。
+```
+
 
 ## 四、验收规程
 
