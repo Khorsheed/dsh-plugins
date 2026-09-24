@@ -2,9 +2,9 @@
 
 English | [中文](README.md)
 
-The shared content kernel behind the community file surfaces: the file list (`@khorsheed/dsh-local-files`) and the worktree tab (`@khorsheed/dsh-worktrees`) render their right-hand preview through **one implementation**, so a fix in one place lands in both.
+The shared content kernel behind the community file surfaces: the file list (`@khorsheed/dsh-local-files`), the worktree tab (`@khorsheed/dsh-worktrees`), and ui-file-preview's content faces all render through **one implementation**, so a fix in one place lands everywhere.
 
-This is not a plugin. It registers no slot, service or locale, owns no loader row and ships no client bundle of its own — it is consumed at the **source plane**: the two plugins declare it as a workspace dependency and import `@khorsheed/dsh-client-ui-content-preview/src/client/…` directly, so each plugin's tsdown client bundle inlines it into its own `lib/client.js`. Zero runtime coupling, and both plugins stay independently installable and uninstallable.
+This is not a plugin. It registers no slot, service or locale, owns no loader row and ships no client bundle of its own — it is consumed at the **source plane**: each plugin declares it as a workspace dependency and imports `@khorsheed/dsh-client-ui-content-preview/src/client/…` directly, so each plugin's tsdown client bundle inlines it into its own `lib/client.js`. Zero runtime coupling, and every plugin stays independently installable and uninstallable.
 
 ## What it provides
 
@@ -15,6 +15,7 @@ This is not a plugin. It registers no slot, service or locale, owns no loader ro
 | Content search | Keeps the rendered body and paints hits through the CSS Custom Highlight API; degrades honestly to the raw matched-lines view when a query exists only in source syntax (`**`, a fence, a collapsed JSON node), and on engines without the API — never a blank pane |
 | Markdown / JSON / CSV | Through the official `MarkdownText` / `JsonTree`; **only the `--dsw-font-markdown-*` scale tokens are overridden, never per-element margins/padding**, so the rhythm matches the official document sheet |
 | Pane chrome | Copy path / open folder / open in IDE (each shown only when the host open-in-app probe resolved that kind of app), scroll memory per (session, path), format banner |
+| Headless mode (`headless`) | Explicit per call site: the title/path bar, the view controls and the content-search row stay off — only the content area renders (plus the truncation notice, the slow-render hint, and a floating copy-path button at the content's top-right corner). For embeddings whose host frame already carries the chrome (ui-file-preview's renderer inside the official document tab); local-files / worktrees have no host frame and keep the full chrome |
 
 Deliberately **not** here: the file tree, the data face (Remote / store / root selection), diffs and commit comparison (the caller passes them in as a render prop), tab registration and visibility — those are each plugin's own data face and identity.
 
@@ -33,9 +34,10 @@ Localized copy belongs to the caller: the kernel holds no locale namespace and r
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-local-files
 dsh plugin --profile web add @khorsheed/dsh-worktrees
+dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
 ```
 
-Removing either plugin leaves the other intact — the kernel is inlined into each client bundle.
+Removing any one plugin leaves the others intact — the kernel is inlined into each client bundle.
 
 ## Compatibility
 

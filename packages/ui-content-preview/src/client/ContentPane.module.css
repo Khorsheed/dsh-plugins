@@ -1,10 +1,12 @@
 /* The shared content pane. Chrome: a two-line title bar (back control |
    filename + language chip | view + preview/source controls | host-open
    gestures, then the relative path), an optional content-search row for text
-   reads, and the content body. Spacing rules here are the pane's own — the
-   markdown rhythm itself belongs to the official sheet, so this file overrides
-   only the --dsw-font-markdown-* scale tokens (in .structuredBody) and never a
-   per-element margin. */
+   reads, and the content body. A `headless` call site drops the title bar and
+   the search row (a host frame already carries them) and keeps the content
+   area plus one floating copy-path affordance. Spacing rules here are the
+   pane's own — the markdown rhythm itself belongs to the official sheet, so
+   this file overrides only the --dsw-font-markdown-* scale tokens (in
+   .structuredBody) and never a per-element margin. */
 
 .root {
   display: flex;
@@ -12,6 +14,39 @@
   flex: 1 1 0;
   min-width: 0;
   height: 100%;
+}
+
+/* Headless embedding (a host frame owns the chrome): the root anchors the
+   floating copy-path button. */
+.rootHeadless {
+  position: relative;
+}
+
+/* The headless mode's one affordance: copy path, floating over the content's
+   top-right corner (the host frame's actions carry native opens only). */
+.copyFloat {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.copyFloat:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  opacity: 1;
 }
 
 .titleBar {

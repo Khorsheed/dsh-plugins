@@ -2,9 +2,9 @@
 
 [English](README.en.md) | 中文
 
-社区文件预览面的共享内容内核：文件列表（`@khorsheed/dsh-local-files`）与工作树（`@khorsheed/dsh-worktrees`）的右侧预览区渲染的是**同一份实现**，一处修复两边生效。
+社区文件预览面的共享内容内核：文件列表（`@khorsheed/dsh-local-files`）、工作树（`@khorsheed/dsh-worktrees`）的右侧预览区与 ui-file-preview 的内容面渲染的是**同一份实现**，一处修复处处生效。
 
-这不是插件。它不注册 slot、service、locale，也没有自己的 loader row 和 client bundle——它在**源码面**被消费：两个插件把它声明为 workspace 依赖，直接 `import '@khorsheed/dsh-client-ui-content-preview/src/client/…'`，各自的 tsdown client bundle 把它内联进 `lib/client.js`。因此它零运行时耦合，两个插件仍然各自可独立安装、独立卸载。
+这不是插件。它不注册 slot、service、locale，也没有自己的 loader row 和 client bundle——它在**源码面**被消费：各插件把它声明为 workspace 依赖，直接 `import '@khorsheed/dsh-client-ui-content-preview/src/client/…'`，各自的 tsdown client bundle 把它内联进 `lib/client.js`。因此它零运行时耦合，各插件仍然各自可独立安装、独立卸载。
 
 ## 提供什么
 
@@ -15,6 +15,7 @@
 | 内容搜索 | 保留渲染态，用 CSS Custom Highlight API 画命中；命中只在源码语法里（`**`、围栏、折叠的 JSON 节点）时如实降级到原始行视图；不支持该 API 的引擎同样降级，不白屏 |
 | Markdown / JSON / CSV | 走官方 `MarkdownText` / `JsonTree`；**只覆盖 `--dsw-font-markdown-*` 字号 token，不覆盖任何元素级 margin/padding**，所以节奏与官方文档一致 |
 | 面板 chrome | 复制路径 / 打开目录 / 在 IDE 中打开（按宿主 open-in-app 探测结果逐项显隐）、滚动位置记忆、格式 banner |
+| 无头模式（`headless`） | 显式按调用点打开：不渲染标题行/路径行、视图切换与内容搜索框，只出内容区（外加截断提示、渲染超时提示与内容区右上角的浮动复制路径钮）——供嵌进自带 chrome 的宿主框架（ui-file-preview 注册进官方 document tab 的内容渲染器）；local-files / worktrees 无官方框架可借，继续完整 chrome |
 
 **不**负责：文件树、数据面（Remote / store / 根目录选择）、diff 与提交对比（由调用方以 render prop 传入）、tab 注册与可见性——那些是各插件自己的数据面与身份。
 
@@ -33,9 +34,10 @@ localized 文案由调用方提供：内核不持有任何 locale 命名空间�
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-local-files
 dsh plugin --profile web add @khorsheed/dsh-worktrees
+dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
 ```
 
-卸载上面任一个插件都不影响另一个——内核被内联进了各自的 client bundle。
+卸载其中任一个插件都不影响其余——内核被内联进了各自的 client bundle。
 
 ## Compatibility
 

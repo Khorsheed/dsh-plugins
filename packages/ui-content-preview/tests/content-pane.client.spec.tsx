@@ -240,3 +240,51 @@ describe('ContentPane chrome and non-text reads', () => {
     expect(screen.queryByRole('searchbox')).toBeNull()
   })
 })
+
+describe('ContentPane headless mode (the official document tab embedding)', () => {
+  const read: PreviewRead = { kind: 'text', path: '/work/README.md', content: MARKDOWN }
+
+  it('renders the content without any chrome of its own', () => {
+    mount(read, { headless: true, displayPath: '/work/README.md' })
+    // The content area renders as before…
+    expect(screen.getByRole('heading', { name: 'Title' })).toBeTruthy()
+    // …but the title/path bar, the view controls, and the content-search row
+    // are the host frame's, so the pane repeats none of them.
+    expect(screen.queryByRole('searchbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'detail.source' })).toBeNull()
+    expect(screen.queryByText('/work/README.md')).toBeNull()
+    expect(document.querySelector('.titleBar')).toBeNull()
+  })
+
+  it('keeps the copy-path gesture as the one floating affordance', async () => {
+    const onCopyPath = vi.fn(async () => true)
+    mount(read, { headless: true, onCopyPath })
+    const button = screen.getByRole('button', { name: 'action.copyPath' })
+    fireEvent.click(button)
+    await vi.waitFor(() => { expect(onCopyPath).toHaveBeenCalledTimes(1) })
+    await vi.waitFor(() => {
+      expect(screen.getByRole('button', { name: 'action.copied' })).toBeTruthy()
+    })
+  })
+
+  it('omits the floating affordance when no copy-path gesture is supplied', () => {
+    mount(read, { headless: true })
+    expect(screen.queryByRole('button', { name: 'action.copyPath' })).toBeNull()
+  })
+
+  it('pins the content view — a diff supply has no switch to reach it', () => {
+    mount({ kind: 'text', path: '/work/a.ts', content: 'const x = 1\n' }, {
+      headless: true,
+      diffView: <div>the-diff</div>,
+      view: 'diff' as const,
+      onViewChange: () => {},
+    })
+    expect(screen.queryByText('the-diff')).toBeNull()
+    expect(document.querySelector('pre')?.textContent).toContain('const x = 1')
+  })
+
+  it('keeps the truncated notice above the content', () => {
+    mount({ kind: 'text', path: '/work/big.ts', content: 'x\n', truncated: true }, { headless: true })
+    expect(screen.getByText('local.tooLarge')).toBeTruthy()
+  })
+})

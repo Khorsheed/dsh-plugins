@@ -19,14 +19,16 @@
  * reports settlement through `loaded(version)` / `failed()`.
  *
  * The body is the shared content pane (@khorsheed/dsh-client-ui-content-preview)
- * with this plugin's adapter (preview.ts): document-form previews (markdown,
- * JSON tree, CSV table, sandboxed HTML tiers, highlighted code), content
- * search, and the copy-path gesture ride along unchanged. The frame's own
- * gestures (open in app / reveal) come from the official
- * `sidebar.right.tab.document.actions` contributions, so the pane's folder/IDE
- * chrome is NOT repeated here; the change history is the dropdown's sibling
- * renderer (FileHistoryBody), so the pane's content⇄diff toggle is not
- * repeated either.
+ * in its HEADLESS mode (the pane's own title/path bar, view controls, and
+ * content-search row stay off — the owner frame already carries the path row,
+ * the renderer picker, and the reload gesture, and the pane's repeats stacked
+ * as a double toolbar): document-form previews (markdown, JSON tree, CSV
+ * table, sandboxed HTML tiers, highlighted code) ride along, and copy-path —
+ * the one gesture the frame's `sidebar.right.tab.document.actions`
+ * contributions (native opens) have no equivalent for — survives as the pane's
+ * floating content-corner affordance. The change history is the dropdown's
+ * sibling renderer (FileHistoryBody), so the pane's content⇄diff toggle is
+ * not repeated either.
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
@@ -111,6 +113,10 @@ export function FileContentBody(props: FileContentBodyProps): ReactNode {
         {...(path === undefined ? {} : { onCopyPath: () => copyPath(resolveWorkspacePath(cwd, path)) })}
         labels={structuredLabels(t)}
         t={previewTranslator(t)}
+        // The official document tab already carries the chrome (path row,
+        // renderer picker, reload, native-open actions): the pane renders
+        // headless — content only, plus its floating copy-path affordance.
+        headless
       />
     </div>
   )

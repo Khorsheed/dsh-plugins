@@ -209,4 +209,20 @@ export interface ContentPaneProps {
   readonly notice?: ReactNode
   /** When true the pane sits inside an already-padded container. */
   readonly embedded?: boolean
+  /**
+   * Headless embedding: the pane renders ONLY its content area (plus the
+   * content-level affordances that still make sense without chrome — the
+   * truncated notice, the slow-render hint, and the floating copy-path button
+   * when `onCopyPath` is supplied). Its own chrome — the title/path bar, the
+   * view and preview/source controls, and the content-search row — is NOT
+   * rendered: a host frame (the official document tab) already carries the
+   * path, the renderer picker, and the reload gesture, and repeating them
+   * stacks two toolbars. Explicit opt-in per call site, never probed; the
+   * surfaces without a host frame (local-files, worktrees) keep the full
+   * chrome. A `diffView` supply is incompatible with headless (its toggle
+   * lives in the suppressed bar), so the body pins the content view; the HTML
+   * scripted tier is likewise unreachable (its arming toggle is chrome), which
+   * the host frame's renderer picker already covers.
+   */
+  readonly headless?: boolean
 }
