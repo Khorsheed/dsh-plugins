@@ -12,6 +12,7 @@
   - **工作树待提交档**：当前选中工作树的全部未提交改动（工作树维度，不做会话过滤；顶部切换器切到别的 worktree，列表跟着切），VS Code Source Control 风格，叶子带 A/M/D/?? 徽标和行数；点文件 → 右侧详情 `改动 | 内容` 双视图（diff 彩色渲染 / 官方 CodeBlock）；点文件后左树收起为图标栏，再点恢复。
   - **仓库提交记录档**：`main..HEAD` 提交列表（短 sha + subject + 相对时间）；选中提交内联展开其**提交文件树**，点文件看该提交的 diff。
   - **仓库文件档**：`git ls-files -co` 全量文件树（tracked + untracked、排除 ignored），点文件看内容。
+  - **详情面板的「重新加载」手势**：重读当前文件的当前视图（diff 走 diff Remote，内容/图片走 read Remote）；重读期间旧内容保持显示、按钮禁用并旋转，失败保留旧内容并报进既有错误槽。提交详情的文件钉死在那一提交（内容不可变），不提供此手势。
 - **git 动作行**：刷新 / 复制分支名 / 在文件夹中显示（官方 open-in-app 探测确认宿主有文件管理器时显示）。
 - 树默认只展开第一层，随时可「展开全部 / 收起全部」看整棵树；所有数据一次拿全（客户端 trie），仅单文件 diff 按需拉取。
 
@@ -34,6 +35,6 @@ dsh plugin --profile web remove @khorsheed/dsh-worktrees   # 卸载
 ## Compatibility
 
 - **npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）**：✅ 完整——改动/提交/仓库视图迁移至官方右栏 tab 面（page-type 注册进 `ctx.sidebarRightTabs`，body 进 keyed `sidebar.right.pane.tab` 槽位，徽标点按经 `ctx.sidebarRight.openTab` 打开）；「在文件夹中显示」手势改走官方 open-in-app 路由探测（GET `/open-in-app/apps` + POST `/open-in-app/open`，仅目录），恢复了 0.1.2 上被迫隐藏的手势。徽标留在 `conversation.session.header.utilities`：0.1.5 的 header corner 是 single 槽，默认 web 组合里已被 ui-sidebar-right 的 ExpandButton 占用，而 single 槽语义是遮蔽（同优先级注册即抛错，不同优先级替换占用者），无法共存。徽标与右栏 tab 显隐默认读官方 `pluginInventory` 组合判据（tab 为注册级：guide 枚举注册表，隐藏即注销；0.1.5 实测：dev preset 显示、standard 隐藏、切换干净翻转）。全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
-- **源码线（deepseek-harness master）**：✅（verifiedHost: 0.1.5-rc.1）。headless profile 无浏览器消费方，本插件不贡献任何东西。徽标与右栏 tab 显隐判据：默认读官方 `pluginInventory.list()` 的 preset 组合数据（组合里有 `@khorsheed/dsh-worktrees-tool` 行则显示）；`visiblePresets` 非空时是手动 override（读会话投影 `projectionValues.agentPreset`）；两条路径读不到都保持显示（fail-open）。
+- **源码线（deepseek-harness master）**：✅（verifiedHost: 0.1.7-rc.1）。headless profile 无浏览器消费方，本插件不贡献任何东西。徽标与右栏 tab 显隐判据：默认读官方 `pluginInventory.list()` 的 preset 组合数据（组合里有 `@khorsheed/dsh-worktrees-tool` 行则显示）；`visiblePresets` 非空时是手动 override（读会话投影 `projectionValues.agentPreset`）；两条路径读不到都保持显示（fail-open）。Session V4 适配：directAgent 上下文消息的 source 改为生产者归属 kind `worktrees`（保留 `form: 'notice'` 一行通知形态；V4 原生准入在落盘写入时拒收退役的 `kind: 'plugin'` 包装；0.1.5 宿主的 `user/message` 准入只查 kind 非空，两条线都能落盘，且两条线的渲染器都把未知非 `user` kind 归为上下文注入行、以 kind 为标签）。Config schema 注解按 schemastery 3.18.4 收紧的 variance 改裸导出（ankh-guard 先例）；补登 `@khorsheed/dsh-client-ui-content-preview` 的 workspace 依赖（055558e8 切换共享预览内核时漏登，tsc 解析不到其 `./src/*` 深导入）。
 
 **版本线对照**：`0.2.0` 起支持宿主 `0.1.5-rc.1` 及以后；宿主 `0.1.2-rc.1` 请停留在 `0.1.0-rc.9`。

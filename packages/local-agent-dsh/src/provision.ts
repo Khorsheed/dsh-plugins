@@ -44,7 +44,7 @@
  * The headless bundle declares no `dsh.bundle` on purpose (the T6/G3
  * incident): a declaration would let the host's `dsh plugin` reconcile mount
  * its sub-dsh-only composition into any profile where the package is a
- * direct dependency — duplicate `code-runtime` at best. The patch therefore
+ * direct dependency — duplicate `ptc-runtime` at best. The patch therefore
  * reaches the sub-profile through this copy, not through the manifest
  * declaration; being the profile's own layer, it lands after every bundle
  * layer, the same position the headless bundle layer used to occupy.

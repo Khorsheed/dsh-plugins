@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type DragEvent } from 'react'
-  import { Button, IconFolderOpenOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { Button, IconFolderOpenOutlineMedium, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
   import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo } from '@khorsheed/dsh-capability-catalog/types'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { ModalShell } from './ModalShell.tsx'
@@ -148,7 +148,7 @@ export function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory,
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
         >
-          <span className={css.dropzoneIcon}><IconFolderOpenOutline16 size={28} /></span>
+          <span className={css.dropzoneIcon}><IconFolderOpenOutlineMedium size={28} /></span>
           <div className={css.dropTitle}>{t('dropTitle')}</div>
           <div className={css.dropHint}>{t('dropHint')}</div>
           <input type="file" accept=".zip,.md" className={css.fileInput} onChange={onFile} />

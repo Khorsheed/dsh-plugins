@@ -17,10 +17,11 @@
  *   the coupling being removed. It ends when it finishes, when `job_kill`
  *   stops it, or when the service is destroyed.
  * - **Its output is readable while it runs.** Every log line the run emits is
- *   retained here and served two ways: the registry's own consuming reader
- *   (`job_output`) and this module's cursor reader ({@link EvalRunJobs.output}),
- *   which is non-consuming so a poller and the model-facing tool never eat
- *   each other's lines.
+ *   retained here and served two ways: the registry's own output channel
+ *   (`job_output` — pushed into the ring through the `run(job)` handle on
+ *   rc.1, pulled through the `readOutput` hook on 0.1.5) and this module's
+ *   cursor reader ({@link EvalRunJobs.output}), which is non-consuming so a
+ *   poller and the model-facing tool never eat each other's lines.
  * - **It has exactly one cancel path.** `job_kill` → the job's `cancel` → the
  *   run's `AbortSignal` → the same lever the per-cell budget timer pulls. No
  *   second stop verb exists anywhere in this package.
@@ -32,9 +33,11 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultStateRoot } from './run.ts'
 // Type-only, and the producer contract is the REAL one: the kind merge below
-// registers `eval-run` in the registry's own kind map, and `JobStart` /
-// `JobHooks` keep this producer honest at compile time.
-import type { JobHooks, JobOutcome, JobSnapshot, JobStart } from '@deepseek-ai/dsh-jobs'
+// registers `eval-run` in the registry's own kind map, and `JobSpec` /
+// `JobHooks` keep this producer honest at compile time. rc.1 renamed the
+// pair (`JobStart` → `JobSpec`, `JobSnapshot` → `JobView`); the rename is
+// type-level only, so the 0.1.5 runtime keeps working on the same shapes.
+import type { JobHandle, JobHooks, JobOutcome, JobSpec, JobView } from '@deepseek-ai/dsh-jobs'
 import type { RunOptions, RunReport } from './run.ts'
 
 declare module '@deepseek-ai/dsh-jobs' {
@@ -102,8 +105,8 @@ export interface EvalRunStatus {
  * is the registry's own, so the producer contract is checked, not guessed.
  */
 export interface JobsFace {
-  start(spec: JobStart): string
-  get(id: string): JobSnapshot
+  start(spec: JobSpec): string
+  get(id: string): JobView
   kill(id: string, caller?: undefined, reason?: string): 'requested' | 'already-finished'
 }
 
@@ -145,6 +148,13 @@ interface RunRecord {
   lines: string[]
   /** How much the REGISTRY's consuming reader (`job_output`) has taken. */
   consumed: number
+  /**
+   * The rc.1 registry's ring append, bound from the `run(job)` handle. rc.1
+   * removed the pulling `readOutput` hook for a push model; 0.1.5's `run`
+   * takes no argument, so this stays absent there and the pull hook below
+   * serves the bytes instead.
+   */
+  ringAppend?: (text: string) => void
   controller: AbortController
   /** Set once the job settles, so a late reader still gets the verdict. */
   settled?: { status: string; detail?: string; finishedAt: number }
@@ -158,6 +168,12 @@ interface RunRecord {
 export function evalRunId(now: number): string {
   const stamp = new Date(now).toISOString().replace(/[-:T]/g, '').slice(0, 14)
   return `run-${stamp}-${Math.random().toString(36).slice(2, 6)}`
+}
+
+/** Retain one output line and, on rc.1, push it into the registry's ring. */
+function emitLine(record: RunRecord, line: string): void {
+  record.lines.push(line)
+  record.ringAppend?.(`${line}\n`)
 }
 
 /**
@@ -268,7 +284,7 @@ export class EvalRunJobs {
       parentSessionId: parent.parentSessionId,
       signal: controller.signal,
       log: (message: string) => {
-        record.lines.push(message)
+        emitLine(record, message)
         options.log?.(message)
       },
     }
@@ -277,7 +293,12 @@ export class EvalRunJobs {
       label: options.label ?? `eval run ${runId}`,
       // No owner ON PURPOSE: an owned job dies with its owning agent, which is
       // the coupling this whole change removes.
-      run: (): JobHooks => {
+      run: (job?: JobHandle): JobHooks => {
+        // rc.1 hands the producer a ring handle here; 0.1.5's `run` takes no
+        // argument, so the append binds only where the handle exists (the
+        // 0.1.5 registry pulls the same bytes through `readOutput` below).
+        const append = job?.append.bind(job)
+        if (append !== undefined) record.ringAppend = append
         // The run executes INSIDE the parent agent's initiator boundary. A
         // slash-started run inherited that boundary from the turn it ran in;
         // a job has no turn, and the host services behave differently
@@ -294,7 +315,7 @@ export class EvalRunJobs {
         )
         const done = start().then(
           async (report): Promise<JobOutcome> => {
-            for (const line of this.settleLines(report)) record.lines.push(line)
+            for (const line of this.settleLines(report)) emitLine(record, line)
             await this.releaseParent(record)
             const cancelled = report.meta['cancelled'] === true
             record.settled = {
@@ -309,28 +330,33 @@ export class EvalRunJobs {
           },
           async (error: unknown): Promise<JobOutcome> => {
             const detail = error instanceof Error ? error.message : String(error)
-            record.lines.push(`run ${runId} refused: ${detail}`)
+            emitLine(record, `run ${runId} refused: ${detail}`)
             const diagnostics = (error as { diagnostics?: Array<{ code: string; message: string }> }).diagnostics
             for (const diagnostic of diagnostics ?? []) {
-              record.lines.push(`  [${diagnostic.code}] ${diagnostic.message}`)
+              emitLine(record, `  [${diagnostic.code}] ${diagnostic.message}`)
             }
             await this.releaseParent(record)
             record.settled = { status: 'failed', detail, finishedAt: Date.now() }
             return { status: 'failed', detail }
           },
         )
-        return {
+        const hooks: JobHooks = {
           cancel: (reason?: string) => {
-            record.lines.push(`run ${runId}: cancel requested${reason === undefined ? '' : ` (${reason})`}`)
+            emitLine(record, `run ${runId}: cancel requested${reason === undefined ? '' : ` (${reason})`}`)
             controller.abort()
           },
           done,
-          readOutput: () => {
-            const delta = record.lines.slice(record.consumed)
-            record.consumed = record.lines.length
-            return delta.join('\n')
-          },
         }
+        // The 0.1.5 registry's consuming `job_output` reader pulls through
+        // this hook; rc.1 dropped it from `JobHooks` (push model — the ring
+        // append above), so the key attaches outside the typed literal and
+        // simply never runs there.
+        ;(hooks as { readOutput?: () => string }).readOutput = () => {
+          const delta = record.lines.slice(record.consumed)
+          record.consumed = record.lines.length
+          return delta.join('\n')
+        }
+        return hooks
       },
     })
     record.jobId = String(jobId)
@@ -421,7 +447,7 @@ export class EvalRunJobs {
   }
 
   /** The registry's snapshot for one job, or undefined when it no longer knows it. */
-  private snapshot(jobId: string): JobSnapshot | undefined {
+  private snapshot(jobId: string): JobView | undefined {
     const jobs = this.jobs()
     if (jobs === undefined) return undefined
     try {

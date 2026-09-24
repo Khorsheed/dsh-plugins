@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
-import type { JobView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { JobView } from '@deepseek-ai/dsh-jobs/view'
 import { TaskPilotDock } from '../src/client/TaskPilotDock.tsx'
 import { t } from './helpers.ts'
 
@@ -23,6 +23,11 @@ function dockProps(overrides: Partial<Parameters<typeof TaskPilotDock>[0]> = {})
   const base = {
     sessionId: SESSION,
     useSessions: (selector: (state: unknown) => unknown) => selector(empty),
+    // rc.1's jobs channel starts empty: every legacy-mirror stub below drives
+    // through the 0.1.5 read it names.
+    useJobs: (selector: (state: { rows: Record<string, never> }) => unknown) => selector({ rows: {} }),
+    watchRows: () => () => {},
+    refreshCatalog: () => {},
     t,
     stopJob: vi.fn(async () => undefined),
     interruptSubagent: vi.fn(async () => undefined),
@@ -83,6 +88,14 @@ describe('TaskPilotDock', () => {
     fireEvent.click(screen.getByRole('button', { name: /Background jobs/ }))
     expect(screen.getByText('pnpm build')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Stop job bash-1' })).toBeNull()
+  })
+
+  it('reads the roster from rc.1\'s jobs channel when the session-list mirror is absent', () => {
+    render(<TaskPilotDock {...dockProps({
+      useJobs: (selector: (state: { rows: Record<string, JobView[]> }) => unknown) => selector({ rows: { [SESSION]: [job()] } }),
+    })} />)
+    fireEvent.click(screen.getByRole('button', { name: /Background jobs/ }))
+    expect(screen.getByText('pnpm build')).toBeTruthy()
   })
 
   it('calls stopJob with the job id when Stop is clicked inside the popover', () => {

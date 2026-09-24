@@ -20,7 +20,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { Button, IconEditOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconEditOutlineMedium, IconTrashOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { MAX_DRAW_STROKES, type CanvasDrawPoint, type CanvasStroke } from '../../types.ts'
 import {
   appendStroke, boxPointOf, samplesNext, sampleWidth, strokeAt, unitsPerPixel,
@@ -176,7 +176,7 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
             size="sm"
             variant={tool === 'pen' ? 'primary' : 'toolbar'}
             aria-pressed={tool === 'pen'}
-            icon={<IconEditOutline16 size={12} />}
+            icon={<IconEditOutlineMedium size={12} />}
             onClick={() => { onTool(tool === 'pen' ? 'text' : 'pen') }}
           >
             {t('draw.pen')}
@@ -199,7 +199,7 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
           {hasInk && (
             <Button
               size="sm"
-              icon={<IconTrashOutline16 size={12} />}
+              icon={<IconTrashOutlineMedium size={12} />}
               onClick={() => {
                 onStrokes([])
                 onTool('text')
@@ -236,7 +236,7 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
               size="sm"
               variant="toolbar"
               className={css.continue}
-              icon={<IconEditOutline16 size={12} />}
+              icon={<IconEditOutlineMedium size={12} />}
               onClick={() => { onTool('pen') }}
             >
               {t('draw.continue')}

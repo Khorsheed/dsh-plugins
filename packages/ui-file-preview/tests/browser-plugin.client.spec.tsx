@@ -1,15 +1,24 @@
 // @vitest-environment jsdom
 /**
  * ui-file-preview browser half on a real cordis Context with fake slots /
- * remote / sidebarRight faces and recording registries: the plugin mounts its
- * Remote, registers the `file-preview` page type into `ctx.sidebarRightTabs`,
- * the tab body into the keyed `sidebar.right.pane.tab` seat under the type's
- * id, the change-history renderer into `ctx.documentPreviews` (builtin band —
- * listed in the document tab's dropdown, never the default) plus the keyed
- * `sidebar.right.tab.document` seat, and the per-turn file row into the
- * turnTail chain at default priority (no more `priority: -1` preemption — the
- * official deliverables row elects first). Registration disposal rides the
- * plugin fiber (HMR safety).
+ * remote / sidebarRight faces and a recording tab-type registry: the plugin
+ * mounts its Remote and registers the ONE surface form both host lines share
+ * (plan B — embedding into the official document tab — landed and was vetoed
+ * the same day, 2026-09-24):
+ *
+ * - the `file-preview` page type goes into `ctx.sidebarRightTabs` (guide entry
+ *   PLUS `dsh-resource://file/**` renderable-suffix claims — extension band,
+ *   outranking the official document tab's fallback band on both lines), its
+ *   body into the keyed `sidebar.right.pane.tab` seat;
+ * - the turn row registers into `conversation.chat.turnTail`: list-kind slots
+ *   (0.1.6-alpha.2+) get a plain `id` entry PLUS a lower-priority empty body
+ *   under the official deliverables entry's cell id (first-class list
+ *   shadowing — the cell's lowest-priority entry renders, so the official
+ *   present/changes cards stop while their registration, and the child slot
+ *   it declares, stay live); a chain-declared slot (0.1.5) drives the old
+ *   select + priority -1 preemption instead.
+ *
+ * Registration disposal rides the plugin fiber (HMR safety).
  */
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
@@ -17,23 +26,25 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-import type { DocumentPreviewDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { FilePreviewService } from '@khorsheed/dsh-file-preview'
 import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND } from '../src/client/definition.tsx'
-import { FILE_HISTORY_ID } from '../src/client/history-definition.ts'
 import { apply, inject } from '../src/client/index.ts'
 import type { FilePreviewTabInjected, FilePreviewTurnRowInjected } from '../src/client/contract.ts'
 
 const sid = (k: string): SessionId => k as SessionId
 
 /** Boot the plugin over fake faces; the filePreview Remote records calls. */
-async function bench(opts: { documentPreviews?: boolean; host?: boolean } = {}) {
+async function bench(opts: { host?: boolean; turnTailKind?: 'list' | 'chain'; officialTail?: boolean } = {}) {
   const ctx = new Context()
   const calls: { method: string; args: unknown[] }[] = []
   const list = vi.fn(async (...args: unknown[]) => {
     calls.push({ method: 'list', args })
     return { ok: true, value: { entries: [{ path: 'src/agent.ts', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: -1, truncated: false } }
+  })
+  const read = vi.fn(async (...args: unknown[]) => {
+    calls.push({ method: 'read', args })
+    return { ok: true, value: { kind: 'text', path: 'docs/a.md', content: '# a', truncated: false } }
   })
   const turnFiles = vi.fn(async (...args: unknown[]) => {
     calls.push({ method: 'turnFiles', args })
@@ -65,7 +76,7 @@ async function bench(opts: { documentPreviews?: boolean; host?: boolean } = {}) 
     host = new FilePreviewService(ctx, { captureBashWrites: false })
     ctx.provide('remote.filePreview', {
       capabilities: () => Promise.resolve({ ok: true, value: host!.capabilities() }),
-      list, turnFiles, reveal, openExternal,
+      list, read, turnFiles, reveal, openExternal,
     })
   }
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -82,32 +93,31 @@ async function bench(opts: { documentPreviews?: boolean; host?: boolean } = {}) 
     },
   })
   const openTab = vi.fn()
-  ctx.provide('sidebarRight', { openTab })
-  // A fake document-renderer registry recording registrations; the real
-  // registry's suffix ranking is the host's own test coverage.
-  const previews: DocumentPreviewDefinition[] = []
-  if (opts.documentPreviews !== false) {
-    ctx.provide('documentPreviews', {
-      register: (definition: DocumentPreviewDefinition) => {
-        previews.push(definition)
-        return () => { previews.splice(previews.indexOf(definition), 1) }
-      },
-    })
-  }
+  const openResource = vi.fn()
+  ctx.provide('sidebarRight', { openTab, openResource })
   await ctx.plugin(SlotRegistry).await()
   // Declare the target slots (normally declared by ui-sidebar-right /
-  // ui-sidebar-documentpreview / ui-chat).
+  // ui-chat). turnTail is list-kind since 0.1.6-alpha.2; `turnTailKind:
+  // 'chain'` reproduces the 0.1.5 declaration.
   ctx.slots.register({
     name: 'root',
     children: {
       'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
-      'sidebar.right.tab.document': { kind: 'keyed', scope: 'session' },
-      'conversation.chat.turnTail': { kind: 'chain', scope: 'session', owner: {} },
+      'conversation.chat.turnTail': { kind: opts.turnTailKind ?? 'list', scope: 'session', owner: {} },
     },
   } as never, (() => null) as never)
+  // An official-card stand-in, registered before the plugin applies: the
+  // deliverables row's registration shape on the list-kind slot.
+  if (opts.officialTail === true && (opts.turnTailKind ?? 'list') === 'list') {
+    ctx.slots.register({
+      name: 'conversation.chat.turnTail',
+      id: '@deepseek-ai/dsh-client-ui-deliverables',
+      inject: () => ({}),
+    } as never, (() => null) as never)
+  }
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, host, calls, list, turnFiles, reveal, openExternal, mount, registered, previews, openTab }
+  return { ctx, fiber, host, calls, list, read, turnFiles, reveal, openExternal, mount, registered, openTab, openResource }
 }
 
 /** The tab body entry's inject factory, called the way the outlet would. */
@@ -117,16 +127,13 @@ function tabApi(b: Awaited<ReturnType<typeof bench>>) {
   return { entry, injected }
 }
 
-/** The document renderer entry's inject factory, called the way the outlet would. */
-function historyApi(b: Awaited<ReturnType<typeof bench>>) {
-  const entry = b.ctx.slots.entries('sidebar.right.tab.document')[0]
-  const injected = (entry?.inject as unknown as (() => Pick<FilePreviewTabInjected, 'listFiles'>) | undefined)?.()
-  return { entry, injected }
-}
-
 /** The turn card entry's inject factory, called the way the outlet would. */
 function turnApi(b: Awaited<ReturnType<typeof bench>>) {
-  const entry = b.ctx.slots.entries('conversation.chat.turnTail')[0]
+  // The list arm also registers the deliverables shadow (same slot, another
+  // cell id), so pick the row by its identity rather than by position; the
+  // chain arm's row carries a select instead of an id.
+  const entry = b.ctx.slots.entries('conversation.chat.turnTail')
+    .find(e => (e.options as { id?: string }).id === FILE_PREVIEW_ID || typeof (e as { select?: unknown }).select === 'function')
   const injected = (entry?.inject as unknown as (() => FilePreviewTurnRowInjected) | undefined)?.()
   return { entry, injected }
 }
@@ -136,9 +143,7 @@ describe('ui-file-preview browser plugin', () => {
     const b = await bench({ host: false })
     expect(b.mount).toHaveBeenCalledTimes(1)
     expect(b.registered).toHaveLength(0)
-    expect(b.previews).toHaveLength(0)
     expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(0)
-    expect(b.ctx.slots.entries('sidebar.right.tab.document')).toHaveLength(0)
     expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     await b.fiber.dispose()
   })
@@ -151,16 +156,18 @@ describe('ui-file-preview browser plugin', () => {
     expect(ctx.get('sidebarRightTabs')).toBeUndefined()
   })
 
-  it('paired: the client probes the real host handler before installing all UI surfaces', async () => {
+  it('paired: the client probes the real host handler before installing the surfaces', async () => {
     const b = await bench()
     expect(b.host).toBeInstanceOf(FilePreviewService)
-    expect(b.registered.some(d => d.kind === FILE_PREVIEW_KIND)).toBe(true)
+    // One form on both lines: the page type + its body + the turn row pair
+    // (row + deliverables shadow on the list-kind slot).
+    expect(b.registered.map(d => d.kind)).toEqual([FILE_PREVIEW_KIND])
     expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(1)
-    expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(1)
+    expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(2)
     await b.fiber.dispose()
   })
 
-  it('mounts the Remote and registers the tab type, the body, and the turn row', async () => {
+  it('registers the self-drawn tab type and its body, claiming the renderable file addresses', async () => {
     const b = await bench()
     expect(b.mount).toHaveBeenCalledTimes(1)
     // Stage one: the type — page (guide entry) AND claimant of
@@ -175,39 +182,72 @@ describe('ui-file-preview browser plugin', () => {
     // immediately (no data dependency); session-less addresses and
     // unrenderable suffixes decline to the official document tab.
     expect(definition?.canOpen?.('dsh-resource://file/session/s1/src/agent.ts')).toBe(true)
+    expect(definition?.canOpen?.('dsh-resource://file/session/s1/docs/report.pdf')).toBe(false)
+    expect(definition?.canOpen?.('dsh-resource://file/session/s1/assets/logo.png')).toBe(true)
     expect(definition?.canOpen?.('dsh-resource://file/absolute/tmp/a.md')).toBe(false)
     // Stage two: the body under the type's id, with the store and the locale.
     const { entry } = tabApi(b)
     expect(entry?.options).toMatchObject({ key: FILE_PREVIEW_ID })
     expect(entry?.locale).toBe('filePreview')
     expect(entry?.store).toBeTruthy()
-    // The turn row: priority -1, explicitly BEFORE the official deliverables
-    // entry (default 0) — the chain elects ascending, so our product table
-    // claims every turn and the official row never mounts (product decision).
-    const { entry: turnEntry } = turnApi(b)
-    expect(turnEntry).toBeTruthy()
-    expect(turnEntry?.options.priority).toBe(-1)
-    expect(turnEntry?.locale).toBe('filePreview')
-    // The change-history renderer: builtin band (never the default), cheapest
-    // loading mode, body in the keyed document seat.
-    const renderer = b.previews.find(d => d.id === FILE_HISTORY_ID)
-    expect(renderer?.priority).toBe('builtin')
-    expect(renderer?.loading).toBe('text-pages')
-    expect(renderer?.title()).toBeTruthy()
-    expect(renderer?.extensions).toContain('md')
-    const { entry: historyEntry, injected: historyInjected } = historyApi(b)
-    expect(historyEntry?.options).toMatchObject({ key: FILE_HISTORY_ID })
-    expect(historyEntry?.locale).toBe('filePreview')
-    expect(historyInjected?.listFiles).toBeTypeOf('function')
     await b.fiber.dispose()
   })
 
-  it('claims renderable session files deterministically, never unrenderable ones', async () => {
+  it('registers the turn row as a plain list entry plus the deliverables shadow', async () => {
     const b = await bench()
-    const definition = b.registered.find(d => d.kind === FILE_PREVIEW_KIND)
-    expect(definition?.canOpen?.('dsh-resource://file/session/s1/src/agent.ts')).toBe(true)
-    expect(definition?.canOpen?.('dsh-resource://file/session/s1/docs/report.pdf')).toBe(false)
-    expect(definition?.canOpen?.('dsh-resource://file/session/s1/assets/logo.png')).toBe(true)
+    // The row: a plain entry under the package id — no select, no priority;
+    // it self-hides without data.
+    const { entry: turnEntry } = turnApi(b)
+    expect(turnEntry).toBeTruthy()
+    expect(turnEntry?.options).toMatchObject({ id: FILE_PREVIEW_ID })
+    expect(turnEntry?.options.priority).toBeUndefined()
+    expect(turnEntry?.select).toBeUndefined()
+    expect(turnEntry?.locale).toBe('filePreview')
+    // The shadow: same cell id as the official card, priority -1, empty body.
+    const shadow = b.ctx.slots.entries('conversation.chat.turnTail')
+      .find(e => (e.options as { id?: string }).id === '@deepseek-ai/dsh-client-ui-deliverables')
+    expect(shadow).toBeTruthy()
+    expect(shadow?.options.priority).toBe(-1)
+    expect((shadow?.component as () => unknown)()).toBeNull()
+    await b.fiber.dispose()
+  })
+
+  it('shadows the official deliverables card on the list-kind turnTail slot', async () => {
+    const b = await bench({ officialTail: true })
+    const entries = b.ctx.slots.entries('conversation.chat.turnTail')
+    // All three registrations coexist on the ledger — the official entry is
+    // never unregistered (its declared `deliverables.file.actions` child slot
+    // must stay alive for ui-open-in-app's contributions).
+    expect(entries.map(entry => (entry.options as { id?: string }).id).sort()).toEqual([
+      '@deepseek-ai/dsh-client-ui-deliverables',
+      '@deepseek-ai/dsh-client-ui-deliverables',
+      FILE_PREVIEW_ID,
+    ].sort())
+    // The cell's winner is the lowest-priority live entry: our empty shadow
+    // (priority -1), never the official card (default 0) — the list outlet
+    // renders entriesOfSlot's projection.
+    const winners = b.ctx.slots.entriesOfSlot('conversation.chat.turnTail')
+    const deliverablesWinner = winners.find(e => (e.options as { id?: string }).id === '@deepseek-ai/dsh-client-ui-deliverables')
+    expect(deliverablesWinner?.options.priority).toBe(-1)
+    // The winning body is the empty shadow.
+    expect((deliverablesWinner?.component as () => unknown)()).toBeNull()
+    // Our row keeps its own cell and stays renderable.
+    expect(winners.some(e => (e.options as { id?: string }).id === FILE_PREVIEW_ID)).toBe(true)
+    await b.fiber.dispose()
+  })
+
+  it('falls back to the preemptive chain registration on a 0.1.5 (chain-kind) host', async () => {
+    const b = await bench({ turnTailKind: 'chain' })
+    const { entry } = turnApi(b)
+    expect(entry).toBeTruthy()
+    // The 0.1.5 shape: the select claims every turn and priority -1 elects
+    // ascending, ahead of the official deliverables entry's default 0.
+    expect(entry?.options.priority).toBe(-1)
+    expect(entry?.select).toBeTypeOf('function')
+    expect(entry?.options.id).toBeUndefined()
+    expect(entry?.locale).toBe('filePreview')
+    // The chain arm has no shadowing concept — no deliverables shadow entry.
+    expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(1)
     await b.fiber.dispose()
   })
 
@@ -232,7 +272,7 @@ describe('ui-file-preview browser plugin', () => {
     await b.fiber.dispose()
   })
 
-  it('wraps chatFileMentions so mention opens route to our detail view', async () => {
+  it('wraps chatFileMentions so mention opens route to the sidebar address', async () => {
     // Provided before the plugin applies (the nested fiber pends on the
     // service); the wrap keeps the claim logic and reroutes open + label.
     const nativeOpen = vi.fn()
@@ -256,7 +296,7 @@ describe('ui-file-preview browser plugin', () => {
     ctx2.provide('remote.filePreview', {
       capabilities: vi.fn(async () => ({ ok: true, value: { protocolVersion: 1 } })),
       list: vi.fn(async () => ({ ok: true, value: { entries: [], asOfSeq: -1, truncated: false } })),
-      turnFiles: vi.fn(), reveal: vi.fn(), openExternal: vi.fn(),
+      read: vi.fn(), turnFiles: vi.fn(), reveal: vi.fn(), openExternal: vi.fn(),
     })
     ctx2.provide('sidebarRightTabs', { register: () => () => {} })
     const openResource = vi.fn()
@@ -264,7 +304,7 @@ describe('ui-file-preview browser plugin', () => {
     await ctx2.plugin(SlotRegistry).await()
     ctx2.slots.register({
       name: 'root',
-      children: { 'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' }, 'sidebar.right.tab.document': { kind: 'keyed', scope: 'session' }, 'conversation.chat.turnTail': { kind: 'chain', scope: 'session', owner: {} } },
+      children: { 'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' }, 'conversation.chat.turnTail': { kind: 'list', scope: 'session', owner: {} } },
     } as never, (() => null) as never)
     const fiber = ctx2.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -305,22 +345,11 @@ describe('ui-file-preview browser plugin', () => {
     await b.fiber.dispose()
   })
 
-  it('skips the history renderer on a composition without documentPreviews', async () => {
-    const b = await bench({ documentPreviews: false })
-    expect(b.previews).toHaveLength(0)
-    expect(b.ctx.slots.entries('sidebar.right.tab.document')).toHaveLength(0)
-    // The rest of the plugin still registers.
-    expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(1)
-    await b.fiber.dispose()
-  })
-
   it('unregisters every surface on fiber disposal', async () => {
     const b = await bench()
     await b.fiber.dispose()
     expect(b.ctx.slots.entries('sidebar.right.pane.tab')).toHaveLength(0)
-    expect(b.ctx.slots.entries('sidebar.right.tab.document')).toHaveLength(0)
     expect(b.ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     expect(b.registered.some(d => d.kind === FILE_PREVIEW_KIND)).toBe(false)
-    expect(b.previews.some(d => d.id === FILE_HISTORY_ID)).toBe(false)
   })
 })

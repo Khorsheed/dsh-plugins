@@ -1,5 +1,5 @@
 import { useState } from 'react'
-  import { IconChevronDownOutline14, IconChevronRightOutline14, IconCopyOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCopyOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
   import type { CatalogPresetOption, CatalogPresetScopeEditResult, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
   import type { CatalogModeChip } from './mode-model.ts'
   import type { CapabilityCatalogKey } from './locales.ts'
@@ -300,7 +300,7 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
             return (
               <section className={css.sourceSection}>
                 <button type="button" className={css.sourceTrigger} onClick={() => setSourceOpen((o) => !o)} aria-expanded={sourceOpen}>
-                  <span className={css.sourceChevron}>{sourceOpen ? <IconChevronDownOutline14 size={16} /> : <IconChevronRightOutline14 size={16} />}</span>
+                  <span className={css.sourceChevron}>{sourceOpen ? <IconChevronDownOutlineMedium size={16} /> : <IconChevronRightOutlineMedium size={16} />}</span>
                   <span className={css.sourceLabel}>{t('viewSource')}</span>
                 </button>
                 {sourceOpen ? (
@@ -309,7 +309,7 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
                       <div className={css.sourceBar}>
                         <span className={css.sourceBarFile}>{srcFile === '' || srcFile === 'SKILL.md' ? 'SKILL.md' : srcFile}</span>
                         <button type="button" className={css.sourceCopy} onClick={() => void copySource()} aria-label={t('copy')}>
-                          {copied ? t('copied') : <span className={css.codeCopyIcon}><IconCopyOutline16 size={16} /> {t('copy')}</span>}
+                          {copied ? t('copied') : <span className={css.codeCopyIcon}><IconCopyOutlineMedium size={16} /> {t('copy')}</span>}
                         </button>
                       </div>
                       <div className={css.detailPane}>
@@ -330,7 +330,7 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
                       </div>
                       <div className={css.detailPane}>
                         <button type="button" className={css.codeCopy} onClick={() => void copySource()} aria-label={t('copy')}>
-                          {copied ? <span>{t('copied')}</span> : <span className={css.codeCopyIcon}><IconCopyOutline16 size={16} /> {t('copy')}</span>}
+                          {copied ? <span>{t('copied')}</span> : <span className={css.codeCopyIcon}><IconCopyOutlineMedium size={16} /> {t('copy')}</span>}
                         </button>
                         {srcLoading ? <div className={css.empty}>{t('loading')}</div>
                           : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>

@@ -3,10 +3,11 @@ import { MemberFeeds } from './member-feed.ts'
  * Local-agent records plugin, browser half: the member composer for delegated
  * CLI sessions, plus the shared settings-card building blocks the provider
  * packages compose (ProviderAuthBlock, the auth-status bus, AuthStatusDot).
- * The per-harness auth/live settings live in each provider's own
- * `settings.plugin.item` card (Plugins → 可配置插件); the standalone「本地
- * Agent」section was retired once the cards carried auth (the live-settings
- * proposal's M3). Roster and status ride the read-only local-agent Remote
+ * The per-harness auth/live settings live in each provider's own settings
+ * card — on alpha.2 the bundle's configuration on its Plugins-page detail
+ * view (`plugins.bundle.config`), on 0.1.5 the `settings.plugin.item` card
+ * (Plugins → 可配置插件); the standalone「本地 Agent」section was retired
+ * once the cards carried auth (the live-settings proposal's M3). Roster and status ride the read-only local-agent Remote
  * channel (no session events); only the user-initiated login/logout/preset
  * commands go through the commands Remote, whose visible command node is the
  * expected feedback. Delegation records live with the shared subagent

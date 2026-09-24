@@ -12,8 +12,8 @@
  * once withdrawals backfill the draft automatically.
  */
 import { useState, type ReactNode } from 'react'
-import { Button, IconChevronDownOutline14, IconChevronRightOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconUndoOutline16 } from './icons.tsx'
+import { Button, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconUndoOutlineMedium } from './icons.tsx'
 import {
   collectWithdrawnEntries, countHiddenInSpan, foldHiddenRanges, hasRestoreForSpan, isRestoreSuperseded,
   type WithdrawnEntry,
@@ -85,12 +85,12 @@ export function WithdrawnDividerView({
         onClick={toggle}
       >
         <span className={css.leading} aria-hidden>
-          {expanded ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}
+          {expanded ? <IconChevronDownOutlineMedium /> : <IconChevronRightOutlineMedium />}
         </span>
         <span className={css.title}>{t('withdrawn.divider', { count })}</span>
         {restored && (
           <span className={css.badge}>
-            <IconUndoOutline16 />
+            <IconUndoOutlineMedium />
             {t('withdrawn.restored')}
           </span>
         )}

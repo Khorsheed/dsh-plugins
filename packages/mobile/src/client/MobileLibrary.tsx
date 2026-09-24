@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { GROUPING_KEY, groupSessions, recentSessions } from './navigation.ts'
+import { GROUPING_KEY, groupSessions, mainSessionId, recentSessions } from './navigation.ts'
 import type { LibraryGrouping, NavigationCapabilities } from './navigation.ts'
 import type { MobileRooms } from './rooms.ts'
 import { MobileIcon } from './MobileIcon.tsx'
@@ -21,6 +21,7 @@ export function MobileLibrary({ rooms, navigation, onOpen, onBeforeOpen, t }: Pr
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const input = useRef<HTMLInputElement>(null)
   const rows = recentSessions(sessions, workspaces.archivedSessionIds, query)
+  const current = mainSessionId(sessions)
   const groups = groupSessions(rows, grouping, { today: t('today'), yesterday: t('yesterday'), earlier: t('earlier'), workspace: t('unassignedWorkspace') })
   const chooseGrouping = (value: LibraryGrouping) => {
     setGrouping(value)
@@ -42,7 +43,7 @@ export function MobileLibrary({ rooms, navigation, onOpen, onBeforeOpen, t }: Pr
             const next = new Set(previous); next.has(group.key) ? next.delete(group.key) : next.add(group.key); return next
           })}><MobileIcon name="folder" size={18}/><strong>{group.label}</strong><small>{group.rows.length}</small><MobileIcon name={open ? "down" : "right"} size={18}/></button> : <h2>{group.label}</h2>}
           {open && <ul>{group.rows.map(row => <li key={row.id}>
-            <button data-mobile-session data-mobile-session-id={row.id} aria-current={sessions.current === row.id ? 'page' : undefined} onClick={() => {
+            <button data-mobile-session data-mobile-session-id={row.id} aria-current={current === row.id ? 'page' : undefined} onClick={() => {
               try { onBeforeOpen?.(); navigation.workspace.openSession(row.id); setError(false); onOpen() } catch { setError(true) }
             }}>
               <span data-mobile-session-copy><strong>{row.title || (row.blank ? t('newSession') : row.displayTitle)}</strong><SessionMetadata id={row.id} cwd={row.cwd ?? ''} {...(rooms ? { rooms } : {})} t={t}/></span>

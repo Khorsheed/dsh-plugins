@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { Button, IconCheckOutline16, Input, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCheckOutlineMedium, Input, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { RegisterInput, RegisterPreview, RegistryEntry, RegistrySet, UpdateInput } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
@@ -207,7 +207,7 @@ export function RegisterForm(props: RegisterFormProps) {
         )}
         {ok !== null && !duplicate && ok.latest !== undefined && ok.sets.length > 0 && (
           <span className={css.previewOk}>
-            <IconCheckOutline16 size={14} />
+            <IconCheckOutlineMedium size={14} />
             {t('register.preview.ok', {
               count: ok.sets.length,
               ref: trackedRef ?? '',

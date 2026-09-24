@@ -11,9 +11,9 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close = function () { this.open = false }
 })
 afterEach(() => { cleanup(); instances.splice(0).forEach(r => r.dispose()) })
-function fixture() {
+function fixture(legacyCurrent = false) {
   let members = [{ name: 'main', kind: 'main-agent' }, { name: 'ada', kind: 'cli', provider: 'codex-local', childSessionId: 'child-1' }]
-  const open = vi.fn(), invite = vi.fn(async (request: Record<string, unknown>) => {
+  const openSession = vi.fn(), invite = vi.fn(async (request: Record<string, unknown>) => {
     members = [...members, { name: request.name as string, kind: 'cli' }]
     return { ok: true, value: { ok: true, value: { name: request.name } } }
   }), updateMember = vi.fn().mockResolvedValue({ ok: true, value: { ok: true, value: {} } })
@@ -21,15 +21,23 @@ function fixture() {
     getState: async () => ({ ok: true, value: { ok: true, value: { members, runs: [] } } }), invite, updateMember,
     listProviders: async () => ({ ok: true, value: { localAgentAvailable: true, providers: [{ provider: 'codex-local', displayName: 'Codex', authenticated: true }] } }),
   })); instances.push(rooms)
-  const navigation = { sessions: { list: { getSnapshot: () => ({ current: 'room-1' }), subscribe: () => () => {} }, open } } as unknown as NavigationCapabilities
+  // alpha.2 marks the main-view session as a per-row retain count; 0.1.5 carried the list's own `current`.
+  const state = legacyCurrent
+    ? { ids: [] as string[], byId: {}, current: 'room-1' }
+    : { ids: ['room-1'], byId: { 'room-1': { id: 'room-1', retainedBy: { mainView: 1 } } } }
+  const navigation = { sessions: { list: { getSnapshot: () => state, subscribe: () => () => {} } }, workspace: { openSession } } as unknown as NavigationCapabilities
   render(<MobileRoomNavigation rooms={rooms} navigation={navigation} prepareNavigation={() => {}} t={key => en[key]}/>)
-  return { open, invite, updateMember }
+  return { openSession, invite, updateMember }
 }
 it('opens the real child identity and distinguishes main from invitable members', async () => {
-  const { open } = fixture(); fireEvent.click(await screen.findByRole('button', { name: en.members }))
+  const { openSession } = fixture(); fireEvent.click(await screen.findByRole('button', { name: en.members }))
   expect(screen.getByRole('button', { name: /main.*Main agent/ }).disabled).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: /ada.*codex-local/ }))
-  expect(open).toHaveBeenCalledExactlyOnceWith('child-1')
+  expect(openSession).toHaveBeenCalledExactlyOnceWith('child-1')
+})
+it('reads the current session from the 0.1.5 list `current` as well', async () => {
+  fixture(true)
+  expect((await screen.findByRole('button', { name: en.members })).textContent).toContain('2')
 })
 it('opens the installed Room invite action, never a second mutation implementation', async () => {
   document.documentElement.setAttribute('data-dsh-mobile', '')

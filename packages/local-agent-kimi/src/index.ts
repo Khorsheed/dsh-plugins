@@ -14,11 +14,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-settings'
+import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import type { KimiLiveSettings } from './live-switch.ts'
 import { KimiModelCatalog } from './model-catalog.ts'
 import { KimiModelBroker } from './model-broker.ts'
 import { kimiAuthenticated, kimiCredentialStamp, listKimiSessions } from './records.ts'
@@ -78,14 +80,45 @@ export interface Config {
   liveIdleMs?: number
   /** @deprecated Accepted for old profiles; live output is always incremental. */
   liveMirrorGranularity?: 'event' | 'token'
+  /** Model identifiers the settings card saved before (settings field). */
+  recentModels?: readonly string[]
 }
 
-export const Config: z<Config> = z.object({
-  model: z.string(),
-  thinkingEffort: z.union([z.const('low'), z.const('high'), z.const('max')]),
+/**
+ * The settings fields (`live`, `liveMirrorGranularity`, `model`,
+ * `recentModels`) ride the plugin Config, marked `.volatile()` where the
+ * host's schemastery has it (3.18.4+, the rc.1 line — probed, never sniffed):
+ * there the SettingsForms writes hot-track the running fiber's Volatile
+ * references without a remount, and the official one-shot import moves an old
+ * settings.yaml section into this row's config. On 0.1.5 the call is absent,
+ * the fields stay plain config keys (a semantic superset — the profile row
+ * can now preset them too), and the legacy settings namespace below carries
+ * the user layer exactly as before.
+ */
+const SETTINGS_FIELDS = {
   live: z.boolean().default(false),
-  liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
+  // `model` deliberately carries NO default: an unset key must resolve to
+  // undefined, which is what keeps the pre-key behavior byte-identical.
+  model: z.string(),
+  recentModels: z.array(z.string()).default([]),
+}
+
+/** Mark one schema field volatile when the host's schemastery has the method (rc.1), pass it through plain when not (0.1.5). */
+function volatilize<S extends { volatile?: unknown }>(field: S): S {
+  return typeof field.volatile === 'function' ? (field.volatile as () => S)() : field
+}
+
+// Bare `z` annotation: `z<Config>` fails schemastery 3.18.4's variance under
+// exactOptionalPropertyTypes (TS2375) and dropping the annotation trips
+// TS2742; the interface stays the apply signature's contract.
+export const Config: z = z.object({
+  model: volatilize(SETTINGS_FIELDS.model),
+  thinkingEffort: z.union([z.const('low'), z.const('high'), z.const('max')]),
+  live: volatilize(SETTINGS_FIELDS.live),
+  liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
+  liveMirrorGranularity: volatilize(SETTINGS_FIELDS.liveMirrorGranularity),
+  recentModels: volatilize(SETTINGS_FIELDS.recentModels),
 })
 
 /**
@@ -100,12 +133,7 @@ export const KIMI_SETTINGS_NAMESPACE = 'local-agent-kimi'
  * `model` deliberately carries NO default: an unset key must resolve to
  * undefined, which is what keeps the pre-key behavior byte-identical.
  */
-const KIMI_SETTINGS_SCHEMA = z.object({
-  live: z.boolean().default(false),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
-  model: z.string(),
-  recentModels: z.array(z.string()).default([]),
-})
+const KIMI_SETTINGS_SCHEMA = z.object(SETTINGS_FIELDS)
 
 /**
  * Handle the harness's extra subcommands: `session <id>` renders a kimi
@@ -162,7 +190,7 @@ export function apply(ctx: Context, config: Config): void {
     // bootstrap raced the config write — on a fresh home it could read
     // ENOENT and return early, leaving the Bash(*) allow rule unwritten
     // until the next boot (first-boot delegations answered without tools).
-    void provisionKimiConfig(homeDir, config.model ?? 'kimi-code/k3', thinkingEffort)
+    void provisionKimiConfig(homeDir, vol(config.model) ?? 'kimi-code/k3', thinkingEffort)
       .then(() => ensureKimiPermissions(homeDir))
       .catch((error: unknown) => {
         ctx.logger.warn(`local-agent-kimi: config provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -172,12 +200,30 @@ export function apply(ctx: Context, config: Config): void {
     // a reload. Toggling OFF drains the retiring generation — new rounds fall
     // back to exec, in-flight rounds finish on their runtime, idle runtimes
     // are reclaimed at once. Legacy granularity settings are accepted but ignored.
-    const scope = ctx.settings.register(KIMI_SETTINGS_NAMESPACE, KIMI_SETTINGS_SCHEMA, {
-      base: {
-        ...config.live === undefined ? {} : { live: config.live },
-        ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
-        ...config.model === undefined ? {} : { model: config.model },
-      },
+    // The settings face hides the two host lines: 0.1.5 serves the legacy
+    // namespace scope (register + base); rc.1 reads the row config's volatile
+    // fields and re-reads on `settings/document-updated`. Both hot-apply the
+    // card's writes without a reload.
+    const readSettings = (): KimiLiveSettings => {
+      const model = vol(config.model)
+      const recentModels = vol(config.recentModels)
+      return {
+        live: vol(config.live) ?? false,
+        liveMirrorGranularity: vol(config.liveMirrorGranularity) ?? 'token',
+        ...model === undefined ? {} : { model },
+        ...recentModels === undefined ? {} : { recentModels },
+      }
+    }
+    const legacyBase: Record<string, unknown> = {}
+    for (const field of ['live', 'liveMirrorGranularity', 'model'] as const) {
+      const value = vol(config[field])
+      if (value !== undefined) legacyBase[field] = value
+    }
+    const face = settingsFace<KimiLiveSettings>(ctx, {
+      namespace: KIMI_SETTINGS_NAMESPACE,
+      legacySchema: KIMI_SETTINGS_SCHEMA,
+      legacyBase,
+      read: readSettings,
     })
     // The model is read PER ROUND, not captured at apply: the settings card
     // writes the same namespace field, so a change has to reach the next
@@ -185,7 +231,7 @@ export function apply(ctx: Context, config: Config): void {
     // Blank is not a model: a whitespace-only value means "unset", which is
     // the pre-key argv.
     const resolveModel = (): string | undefined => {
-      const model = scope.get().model?.trim()
+      const model = face.get().model?.trim()
       return model === undefined || model === '' ? undefined : model
     }
     // The model broker owns the per-member state (session-level overrides,
@@ -194,7 +240,7 @@ export function apply(ctx: Context, config: Config): void {
     // the switch (a switch retires runtimes through it) — the circularity is
     // construction-order only, and no round can run before both exist.
     let broker: KimiModelBroker
-    const liveSwitch = new LiveDriverSwitch(ctx, scope, config.liveIdleMs, child => broker.spawnModel(child))
+    const liveSwitch = new LiveDriverSwitch(ctx, face, config.liveIdleMs, child => broker.spawnModel(child))
     const modelCatalog = new KimiModelCatalog(childSessionId => {
       const record = childSessionId === undefined ? undefined : ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId)
       const native = childSessionId === undefined ? undefined : liveSwitch.memberRuntimeConfiguration(childSessionId)
@@ -208,8 +254,8 @@ export function apply(ctx: Context, config: Config): void {
       homeDir: childSessionId => ctx.localAgent.homeDir('kimi', childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.scope),
       catalog: modelCatalog,
       settingsModel: resolveModel,
-      recentModels: () => scope.get().recentModels ?? [],
-      isLive: () => scope.get().live,
+      recentModels: () => face.get().recentModels ?? [],
+      isLive: () => face.get().live,
       liveSwitch,
     })
     const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveSwitch.resolve, resolveModel, broker))
@@ -231,7 +277,7 @@ export function apply(ctx: Context, config: Config): void {
       // permission bootstrap the default scope gets from the apply above, in
       // the same order (the permission write reads the config file).
       provision: async (scopedHome) => {
-        await provisionKimiConfig(scopedHome, config.model ?? 'kimi-code/k3', thinkingEffort)
+        await provisionKimiConfig(scopedHome, vol(config.model) ?? 'kimi-code/k3', thinkingEffort)
         await ensureKimiPermissions(scopedHome)
       },
       isAuthenticated: kimiAuthenticated,
@@ -266,7 +312,7 @@ export function apply(ctx: Context, config: Config): void {
         const baseUrlHost = custom ? endpointHost(baseUrl) : undefined
         const model = resolveModel() ?? defaultModel
         return {
-          drive: scope.get().live ? 'live' : 'exec',
+          drive: face.get().live ? 'live' : 'exec',
           autoApprove,
           ...reasoningEffort !== undefined ? { reasoningEffort } : {},
           baseUrlSet: custom,

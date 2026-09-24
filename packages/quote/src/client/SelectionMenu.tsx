@@ -16,8 +16,12 @@
  * @module @khorsheed/dsh-quote/client
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+// Type-only: pulls the SessionReferenceSourceMap 'mainView' merge (retainedBy.mainView).
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import {
-  IconCopyOutline16, IconListPenOutline16, IconRightUpOutline16, IconSparkle16,
+  IconCopyOutlineMedium, IconListPenOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatQuoteBlock } from '../types.ts'
 import type { QuoteMenuProps } from './contract.ts'
@@ -27,6 +31,18 @@ import css from './SelectionMenu.module.css'
 
 /** Viewport margin the card clamps to, and its gap from the selection. */
 const MARGIN = 8
+
+/** Pre-0.1.6 SessionListState carried the main-view selection as `current`. */
+type LegacyCurrent = { current?: SessionId }
+
+/**
+ * The main-view session: host 0.1.6-alpha.2 dropped SessionListState.current
+ * for the retainedBy.mainView count on each summary, so probe the count first
+ * and fall back to the legacy field on older hosts.
+ */
+const mainSessionId = (list: SessionListState): SessionId | undefined =>
+  Object.values(list.byId ?? {}).find(session => (session.retainedBy?.mainView ?? 0) > 0)?.id
+  ?? (list as LegacyCurrent).current
 
 /** Resolved card position in the viewport (null = measuring). */
 interface Placement {
@@ -54,7 +70,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
   const [placement, setPlacement] = useState<Placement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const consumedRef = useRef<SelectionSnapshot | null>(null)
-  const current = useSessions(sessions => sessions.current)
+  const current = useSessions(sessions => mainSessionId(sessions))
   const currentTitle = useSessions(sessions =>
     current === undefined ? undefined : sessions.byId[current]?.displayTitle)
   // Contributed rows: the feed's list reference only changes on register /
@@ -107,7 +123,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
     const sessionId = current
     actions.push({
       id: 'conversation',
-      icon: <IconListPenOutline16 />,
+      icon: <IconListPenOutlineMedium />,
       label: t('menu.quoteToConversation'),
       run: () => {
         insertQuote(sessionId, formatQuoteBlock(snapshot.text, t('quote.attribution', { label })))
@@ -117,7 +133,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
     if (sideChatAvailable()) {
       actions.push({
         id: 'sidechat',
-        icon: <IconRightUpOutline16 />,
+        icon: <IconRightUpOutlineMedium />,
         label: t('menu.quoteToSideChat'),
         run: () => {
           close()
@@ -130,7 +146,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
   }
   actions.push({
     id: 'copy',
-    icon: <IconCopyOutline16 />,
+    icon: <IconCopyOutlineMedium />,
     label: t('menu.copy'),
     run: () => {
       close()
@@ -144,7 +160,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
     if (action.available !== undefined && !action.available(target)) continue
     actions.push({
       id: action.id,
-      icon: action.icon ?? <IconSparkle16 />,
+      icon: action.icon ?? <IconSparkleMedium />,
       label: action.label(),
       run: () => {
         close()

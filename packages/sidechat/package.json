@@ -39,7 +39,8 @@
       "default": "./lib/typert.remote-client.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "lib",
@@ -47,7 +48,8 @@
     "lib/typert.host.js",
     "lib/typert.remote-client.d.ts",
     "lib/typert.remote-client.js",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "locale/*.json"
   ],
   "license": "MIT",
   "dependencies": {
@@ -56,15 +58,15 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-agent-preset-registry": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-chat": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-chat": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-session": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-fs": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
@@ -79,7 +81,7 @@
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-agent-presets": {
+    "@deepseek-ai/dsh-agent-preset-registry": {
       "optional": true
     },
     "@deepseek-ai/dsh-api-remotes": {
@@ -136,29 +138,29 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-agent-presets": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-store": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-chat": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-layout": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-fs": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-sandbox": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-sandbox-policy": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-session-persistence": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-system-prompt": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-agent": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-agent-preset-registry": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-store": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-chat": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-fs": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-sandbox": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-sandbox-policy": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-session": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-session-persistence": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.7-rc.1",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.0.0",
     "@types/react": "~18.3.1",
@@ -202,7 +204,7 @@
     "compat": {
       "minHost": "0.1.5-rc.1",
       "notes": "侧边对话 is a page-type right-Sidebar tab (0.1.5's sidebar.right.pane.tab + sidebarRightTabs registry, the local-files/canvas precedent) — hosts before 0.1.5 have no right Sidebar seat, so minHost starts there. The「引用到侧边对话」message action rides the `conversation.chat.assistant-actions` list seat and the floating dock rides the frame-wide `shell.overlay` list seat (declared by ui-chat's turn-tail node and ui-layout's frame; all registrations ride ctx.slots.inject, so a host without a seat simply shows no action / no dock — the tab stays the whole surface). It is a web surface: a headless profile has no browser consumer and the plugin contributes nothing there. The host half runs each context's chat as a real agent session (ctx.agents.create/resume, the room precedent) and persists its contextKey→session mapping at $DSH_HOME/state/sidechat/contexts.json through the mounted ctx.fs with the sandbox fence RE-ROOTED at that state dir (the canvas store.ts precedent: calling session resolves the mode and lends its id, boundary is the plugin state root; a host without ctx.fs degrades to in-memory state, lost on restart). Consumer tools/systemPrompt are host-side objects passed in-process (ctx.sideChat.openWith) — they never cross the Remote wire; origin tagging of caller tools is the caller's job. The side agent mounts the deployment's default agent preset (probed agentPresets) so ordinary file tools work with the inherited cwd; without a presets roster it composes plain (chat-only).",
-      "verifiedHost": "0.1.5-rc.1"
+      "verifiedHost": "0.1.7-rc.1"
     }
   }
 }

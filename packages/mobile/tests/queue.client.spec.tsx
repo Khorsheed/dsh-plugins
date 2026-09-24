@@ -19,6 +19,29 @@ it('sends the selected queue occurrence through official steer, retaining it unt
   await waitFor(() => expect(updateQueue).toHaveBeenCalledExactlyOnceWith('q-1', { kind: 'steer' }))
   expect(snapshot.queue).toHaveLength(1); expect(screen.getByText('Do next')).toBeTruthy()
 })
+it('reads queued rows from the alpha.2 inbox projection, correlating admissions by source rpcId', async () => {
+  const updateQueue = vi.fn().mockResolvedValue(undefined)
+  const inbox = { 'next-turn': [
+    { id: 'q-9', content: [{ type: 'text', text: 'Inbox row' }], source: { kind: 'user', rpcId: 'request-1' } },
+    { id: 'q-10', content: [{ type: 'image' }], source: { kind: 'user' } },
+  ] }
+  const snapshot = { running: true, subagent: null, pendingSubmissions: [{ requestId: 'request-1', placement: 'queued' }, { requestId: 'request-2', placement: 'queued' }] }
+  render(<MobileQueue {...({ useSession: (select: (s: unknown) => unknown) => select(snapshot), useProjection: () => inbox, updateQueue, t: (key: keyof typeof en) => en[key] } as any)}/>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Queued messages · 3' }))
+  fireEvent.click(screen.getAllByRole('button', { name: en.sendNow })[0]!)
+  await waitFor(() => expect(updateQueue).toHaveBeenCalledExactlyOnceWith('q-9', { kind: 'steer' }))
+  expect(screen.getByText('Inbox row')).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toBe(en.sendingQueued)
+  expect(screen.getAllByRole('button', { name: en.editQueued })[1]!.disabled).toBe(true)
+})
+it('lets the inbox projection shadow the legacy snapshot queue on hosts serving both', async () => {
+  const snapshot = { queue: [{ id: 'legacy-1', placement: 'queued', text: 'Legacy', content: [{ type: 'text', text: 'Legacy' }] }], running: true, subagent: null, pendingSubmissions: [] }
+  const inbox = { 'next-turn': [{ id: 'inbox-1', content: [{ type: 'text', text: 'Inbox' }], source: { kind: 'user' } }] }
+  render(<MobileQueue {...({ useSession: (select: (s: unknown) => unknown) => select(snapshot), useProjection: () => inbox, updateQueue: vi.fn(), t: (key: keyof typeof en) => en[key] } as any)}/>)
+  fireEvent.click(await screen.findByRole('button', { name: 'Queued messages · 1' }))
+  expect(screen.getByText('Inbox')).toBeTruthy()
+  expect(screen.queryByText('Legacy')).toBeNull()
+})
 it('keeps the original Room preview when the mutation service is missing', async () => {
   render(<MobileQueue {...({ useSession: (select: (s: unknown) => unknown) => select({ queue: [], running: false, subagent: null, pendingSubmissions: [] }), t: (key: keyof typeof en) => en[key] } as any)}/>)
   expect(screen.getByText('Host queue preview')).toBeTruthy()

@@ -117,5 +117,21 @@ const MouseSchema = z.object({
 const NoneSchema = z.object({ kind: z.const('none').required() })
 const PreferenceSchema = z.union([NoneSchema, KeySchema, MouseSchema])
 
-/** Durable shortcut schema: an open action-id → preference dict; also the wire envelope the browser scope validates against. */
-export const ShortcutSettingsSchema: z<ShortcutSettings> = z.dict(PreferenceSchema).default({})
+const dictField = z.dict(PreferenceSchema).default({})
+type VolatileCapable = { volatile?: () => typeof dictField }
+
+/**
+ * Durable shortcut schema: an open action-id → preference dict; also the wire
+ * envelope the browser scope validates against. The whole dict is marked
+ * `.volatile()` when the running schemastery supports it (3.18.4, host rc.1 —
+ * SettingsForms serves and edits ONLY volatile fields, and a volatile root
+ * makes every action-id path writable); 0.1.5's schemastery has no such
+ * method, the probe leaves the dict plain, and the legacy `settings.register`
+ * path carries the section. The bare `z` annotation keeps the emitted type
+ * nameable under pnpm's layout (the probed call's mode parameter defeats the
+ * old `z<ShortcutSettings>` one).
+ */
+export const ShortcutSettingsSchema: z = typeof (dictField as VolatileCapable).volatile === 'function'
+  ? (dictField as Required<VolatileCapable>).volatile()
+  : dictField
+

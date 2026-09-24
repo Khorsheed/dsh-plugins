@@ -3,7 +3,8 @@
  * every community file surface.
  *
  * Layout — a two-line title bar (back control, basename with a language chip,
- * then the view/preview/source controls and the host-open gestures, with the
+ * then the view/preview/source controls, the caller's reload gesture and the
+ * host-open gestures, with the
  * relative path on its own line), an optional content-search row for text reads
  * (query, hit counter, stepper, the source/render control, and the HTML tier
  * control), then the body: HTML through the tiered sandbox, markdown / JSON /
@@ -27,8 +28,9 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
-  CodeBlock, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14,
-  IconCodeOutline16, IconCopyOutline16, IconFolderOpenOutline16, MarkdownText, Menu,
+  CodeBlock, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium,
+  IconCodeOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium, IconRefreshOutlineMedium,
+  MarkdownText, Menu,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContentPaneProps, PreviewTranslator, PreviewRead, PreviewView } from './contract.ts'
 import { basenameOf, dirnameOf, isHtmlPath, isMarkdown, languageFor } from './language.ts'
@@ -146,7 +148,7 @@ function HtmlRenderView(props: {
           title={t('preview.exitFullscreen')}
           onClick={() => { void document.exitFullscreen?.() }}
         >
-          <IconCheckOutline16 size={12} />
+          <IconCheckOutlineMedium size={12} />
         </button>
       )}
     </div>
@@ -250,7 +252,7 @@ function PreviewBody(props: {
 export function ContentPane(props: ContentPaneProps): ReactNode {
   const {
     path, read, loading, error, sessionId, displayPath, chrome, labels, t,
-    onCopyPath, onBack, diffView, view, onViewChange, imageView, notice, embedded = false,
+    onCopyPath, onReload, onBack, diffView, view, onViewChange, imageView, notice, embedded = false,
   } = props
 
   // HTML source ⇄ render ⇄ scripted; the sandboxed static render is default.
@@ -258,6 +260,9 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   // Markdown / JSON / CSV source ⇄ rendered; rendered is the default.
   const [sourceMode, setSourceMode] = useState(false)
   const [copiedPath, setCopiedPath] = useState(false)
+  // In-flight state of the caller's reload gesture (the button owns it: the
+  // caller's promise settling is the only "done" signal that exists).
+  const [reloading, setReloading] = useState(false)
   // The IDE split control's menu (only rendered when more than one IDE resolved).
   const [ideOpen, setIdeOpen] = useState(false)
   const [contentQuery, setContentQuery] = useState('')
@@ -368,6 +373,16 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
       }
     })
   }
+  const doReload = (): void => {
+    if (onReload === undefined || reloading) return
+    setReloading(true)
+    // The caller reports failures through its own error channel, so a rejected
+    // promise here means the caller forgot to; either way the button re-arms.
+    void Promise.resolve(onReload()).then(
+      () => { setReloading(false) },
+      () => { setReloading(false) },
+    )
+  }
   const onHtmlLoaded = (): void => {
     setSlow(false)
     if (slowTimer.current !== null) {
@@ -398,7 +413,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
               aria-label={t('detail.back')}
               onClick={onBack}
             >
-              <IconChevronLeftOutline14 />
+              <IconChevronLeftOutlineMedium />
             </button>
           )}
           <span className={css.title} title={basename}>
@@ -406,6 +421,18 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
             {lang !== undefined && <span className={css.langTag}>{isMarkdown(path) ? 'MD' : lang}</span>}
           </span>
           <span className={css.titleActions}>
+            {onReload !== undefined && (
+              <button
+                type="button"
+                className={css.action}
+                title={t('action.reload')}
+                aria-label={t('action.reload')}
+                disabled={reloading}
+                onClick={doReload}
+              >
+                <IconRefreshOutlineMedium size={14} className={reloading ? css.actionSpinning : undefined} />
+              </button>
+            )}
             {onCopyPath !== undefined && (
               <button
                 type="button"
@@ -414,7 +441,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                 aria-label={copiedPath ? t('action.copied') : t('action.copyPath')}
                 onClick={doCopyPath}
               >
-                {copiedPath ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
+                {copiedPath ? <IconCheckOutlineMedium size={14} /> : <IconCopyOutlineMedium size={14} />}
               </button>
             )}
             {chrome?.openFolder !== undefined && (
@@ -425,7 +452,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                 aria-label={t('action.openFolder')}
                 onClick={chrome.openFolder}
               >
-                <IconFolderOpenOutline16 size={14} />
+                <IconFolderOpenOutlineMedium size={14} />
               </button>
             )}
             {splitIde
@@ -438,7 +465,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                     aria-label={t('action.openIDE')}
                     onClick={chrome.openIDE}
                   >
-                    <IconCodeOutline16 size={14} />
+                    <IconCodeOutlineMedium size={14} />
                   </button>
                   <Menu
                     open={ideOpen}
@@ -452,7 +479,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                         aria-expanded={ideOpen}
                         onClick={() => { setIdeOpen(value => !value) }}
                       >
-                        <IconChevronDownOutline14 />
+                        <IconChevronDownOutlineMedium />
                       </button>
                     )}
                     items={ideChoices.map(choice => ({ id: choice.id, label: choice.label }))}
@@ -469,7 +496,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                   aria-label={t('action.openIDE')}
                   onClick={chrome.openIDE}
                 >
-                  <IconCodeOutline16 size={14} />
+                  <IconCodeOutlineMedium size={14} />
                 </button>
               )}
           </span>
@@ -553,7 +580,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                       else if (typeof frame.requestFullscreen === 'function') { void frame.requestFullscreen() }
                     }}
                   >
-                    <IconCodeOutline16 size={14} />
+                    <IconCodeOutlineMedium size={14} />
                   </button>
                 )}
               </div>

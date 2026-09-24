@@ -2,6 +2,23 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— capability-catalog：技能环境提示的退役 source 外壳在 rc.1 杀回合（已修）
+
+- **修 turn 级事故**：envHint（`skill` 工具 `tools/post-execute` 上的凭证映射提示）把注入消息盖成 0.1.5 时代的 `{kind: 'plugin', plugin: 'capability-catalog'}`——rc.1 的 v4 持久层在 append 编码时拒绝裸 `'plugin'` kind（退役外壳），拒绝在回合内抛出、被拍平成 `UNKNOWN`，日志停在 `tool/call`（3093 实测：模型加载带已配置凭证声明的技能必炸，普通回合无恙）。这处写入藏在 `as unknown as never` 强转后，逃过了 rc.1 波按构造函数的清查；以字面量 `kind: 'plugin'` 全仓 grep 复核，生产写入只此一处（其余为刻意的测试 fixture 与 message-tools 的旧日志读取侧）
+- 修复：改盖生产者自持 kind `{kind: 'capability-catalog', plugin: 'capability-catalog', form: 'env-hint'}`（ankh-guard 先例），自持 kind 在 0.1.5 与 rc.1 双线皆合法，无需探测。新增 `tests/env-hint.spec.ts` 3 例钉住注入 source 形状；包套件 235 绿
+
+## Unreleased —— 预览面板的「刷新当前文件」手势（仓主 2026-09-24 提出）
+
+- `@khorsheed/dsh-client-ui-content-preview` 新增可选 prop `onReload`（contract 同步加 `action.reload` 文案键）：标题行动作区在复制路径之前多一个刷新钮（官方 `IconRefreshOutlineMedium`），仅在调用方注入 `onReload` 时渲染；点击后按钮禁用、图标旋转直至调用方 promise 落定（dsh-reader `.toolSpinning` 先例，含 `prefers-reduced-motion` 回落）。未传 `onReload` 的调用方零变化
+- 三个消费面同构接入——`@khorsheed/dsh-local-files` 文件列表详情、`@khorsheed/dsh-worktrees` 详情面板（diff 档重拉 diff、内容/图片档重走 read Remote）、`@khorsheed/dsh-client-ui-file-preview` 产物详情页：重走各自 Remote 读当前文件，重读期间旧内容保持显示；失败保留旧内容、错误走各包既有 error 槽；晚到的旧答案按选择键丢弃。worktrees 的提交详情页不接——文件钉死在那一提交，内容不可变
+- 三包字典各加 `action.reload`（zh 重新加载 / en Reload），PREVIEW_KEYS 覆盖测试机械保证三命名空间双语齐全
+
+## Unreleased —— capability-catalog：rc.1 的按模式能力面读取恢复（host-016 适配漏网）
+
+- **修 rc.1 适配漏网**：rc.1 的 `@deepseek-ai/dsh-agent-preset-registry` 删除了 `standingKeyFor(id)`，换成租约式 `acquireScope(id?)`——内部走 `retain()`，未知 preset 抛 `agent-preset/not-found`、坏 preset 抛 `agent-preset/invalid` 带诊断，**租约用完必须 async dispose**（否则 generation.users 泄漏，preset 卸载后 scope 永不回收）。capability-catalog 的 `resolvePresetScope` 只探旧面，rc.1 上 100% 落入「无 roster」静默回退：`snapshotAt` / `snapshotFor` / `modeFaces` 与按 preset 投递全部读成全局层且不盖 preset 戳（3093 实测，roster 本身健康）
+- 修复走**双线探测**（`packages/capability-catalog/src/preset-scope.ts` 新导出 `acquireStandingScope`）：0.1.5 的无租约 `standingKeyFor` 优先，缺失时用 rc.1 的 `acquireScope`；`ResolvedPresetScope` 新增可选 `dispose`，所有消费点 try/finally 释放——`collect` 整段 body 包 try（`catalogSnapshot` 改 `return await`，释放不抢在指纹正文加载前）、`catalogScope` 获取即放（租约只挡「卸载且零占用」的回收，活 preset 的 scope 不受释放影响，与 0.1.5 无租约键同语义）、scoped-delivery 的 `resolveKey` 读完 key 即放。释放失败只记日志不砸读；strict/降级措辞两线逐字一致（`agent-preset/not-found` / `agent-preset/invalid` 的 message 直接进既有措辞）
+- 232 测试绿（+6：rc.1 臂的读取盖戳 / 租约恰好释放一次 / 无 key 租约由解析器自放 / broken·unknown 的 listing 降级与 fingerprint strict 抛错 / 双面 roster 下 0.1.5 臂优先；scoped-delivery 真注册表下租约面投递 + 每 preset 释放一次）
+
 ## Unreleased —— I5 · T59：子 dsh 的权限边界是作用域目录里的一个文件
 
 - `@khorsheed/dsh-local-agent-dsh` 新增配置键 `permissions`（`read-only` / `workspace-write` / `danger-full-access`）：供给时多写一层生成 patch，**覆盖** `sandbox-policy` 的 `mode` 与 `user-approval` 的 `policy`（两者按 `dsh-base` 自己的 `permission-presets` 表配对）。不写这个键就一层都不写，子 profile 的 patch 与从前逐字节相同——宿主上现存的每个作用域仍是 `workspace-write` + `ask`。同时导出 `permissionBoundaryLayer` 与 `readSubProfilePermissions`

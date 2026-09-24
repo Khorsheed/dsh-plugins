@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Worktrees",
+    "description": "Show the session worktree's branch, pending changes, and commit history."
+  }
+}

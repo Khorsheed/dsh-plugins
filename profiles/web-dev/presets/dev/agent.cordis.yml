@@ -219,8 +219,8 @@
         backgroundMode: one-shot
         maxDepth: provider-managed
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
 
@@ -229,6 +229,9 @@
 
     - id: tool-ralph
       name: '@deepseek-ai/dsh-tool-ralph'
+      # 0.1.6 ships tool-ralph disabled in the base bundle; the documented
+      # restore form is an overlay row with `disabled: false`.
+      disabled: false
       config:
         subagentProvider: spawn
         maxRounds: 64

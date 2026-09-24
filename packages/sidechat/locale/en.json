@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Side Chat",
+    "description": "Lightweight sidebar chat with a persistent agent per context."
+  }
+}

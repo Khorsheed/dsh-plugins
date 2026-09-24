@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "本地代理",
+    "description": "使用本机安装的编码 agent CLI，支持隔离登录与委派。"
+  }
+}

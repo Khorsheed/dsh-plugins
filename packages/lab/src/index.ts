@@ -36,7 +36,7 @@ export interface LabConfig {
   stateDir?: string
 }
 
-export const Config: z<LabConfig> = z.object({
+export const Config: z = z.object({
   maxConcurrentUnits: z.natural().min(1).default(DEFAULT_MAX_CONCURRENT_UNITS),
   stateDir: z.string().default(''),
 })

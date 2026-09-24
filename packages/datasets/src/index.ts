@@ -30,7 +30,7 @@ export interface DatasetsPluginConfig {
   materializedRoot?: string
 }
 
-export const Config: z<DatasetsPluginConfig> = z.object({
+export const Config: z = z.object({
   materializedRoot: z.string().default(''),
 })
 

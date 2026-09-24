@@ -28,9 +28,9 @@ import {
   type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
 import {
-  IconArchiveOutline20, IconCheckOutline16, IconCloseOutline16,
-  IconLinkOutline14, IconPlusOutline16,
-  IconRefreshOutline14, IconRightUpOutline14, IconSparkle16,
+  IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium,
+  IconLinkOutlineMedium, IconPlusOutlineMedium,
+  IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium,
   MarkdownText, Toast, type MarkdownLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
@@ -379,7 +379,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         <div className={css.header}>
           <div className={css.meta}>
             <span className={css.kindTag}>
-              <IconPlusOutline16 size={12} />
+              <IconPlusOutlineMedium size={12} />
               {categoryLabels.get(create.kind) ?? create.kind}
             </span>
             <span className={css.ghostFlag}>{t('detail.unsaved')}</span>
@@ -470,13 +470,13 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         </span>
         {proposed && (
           <span className={css.ghostFlag}>
-            <IconSparkle16 size={12} />
+            <IconSparkleMedium size={12} />
             {t('card.proposed')}
           </span>
         )}
         {archived && (
           <span className={css.archivedTag}>
-            <IconArchiveOutline20 size={11} />
+            <IconArchiveOutlineMedium size={11} />
             {t('detail.archived')}
           </span>
         )}
@@ -521,7 +521,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
                 canvasId: open.board.id, cardId: card.id, status: 'kept',
               }), 'toast.cardRestored')}
             >
-              <IconRefreshOutline14 size={12} />
+              <IconRefreshOutlineMedium size={12} />
               {t('card.restore')}
             </button>
           )}
@@ -537,7 +537,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               canvasId: open.board.id, cardId: card.id, status: 'kept',
             }), 'toast.accepted')}
           >
-            <IconCheckOutline16 size={12} />
+            <IconCheckOutlineMedium size={12} />
             {t('card.accept')}
           </button>
           <button
@@ -546,7 +546,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               canvasId: open.board.id, cardId: card.id, status: 'archived',
             }), 'toast.rejected')}
           >
-            <IconCloseOutline16 size={12} />
+            <IconCloseOutlineMedium size={12} />
             {t('card.reject')}
           </button>
         </div>
@@ -612,9 +612,9 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               target="_blank"
               rel="noreferrer"
             >
-              <IconLinkOutline14 size={12} />
+              <IconLinkOutlineMedium size={12} />
               {card.source.title ?? card.source.ref}
-              <IconRightUpOutline14 size={11} />
+              <IconRightUpOutlineMedium size={11} />
             </a>
           ) : card.source.type === 'file' ? (
             <button
@@ -622,7 +622,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               className={css.attachmentButton}
               onClick={() => { if (sessionId !== undefined) openFile(sessionId, workspaceRoot, card.source!.ref) }}
             >
-              <IconRightUpOutline14 size={12} />
+              <IconRightUpOutlineMedium size={12} />
               {t('detail.openFile', { name: card.source.title ?? basenameOf(card.source.ref) })}
             </button>
           ) : (

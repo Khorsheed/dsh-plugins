@@ -4,7 +4,9 @@
  * @module @khorsheed/dsh-whalesong/client/status
  */
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { SessionPendingInteraction, SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Events derived from one frame transition of the session list. */
 export interface WhalesongEvents {
@@ -53,24 +55,60 @@ export function diffSessionList(prev: SessionListState | undefined, next: Sessio
 }
 
 /**
- * Diff two consecutive pending-interaction snapshots into blocked edges: a
- * session whose pending interaction appears (absent → present) blocks. The
+ * Diff two consecutive Session status snapshots into blocked edges: a session
+ * whose pending interaction appears (absent or cleared → present) blocks. The
  * first frame is a baseline — pass `prev === undefined` and no edge fires (a
  * session discovered already-waiting is not a transition). An interaction
  * that persists across frames never re-fires; one that clears and returns
- * re-fires on the new appearance.
+ * re-fires on the new appearance. Status entries carrying no pending
+ * interaction (running/completion facts only) never count.
  * @param prev - previous frame, or undefined for the baseline frame.
  * @param next - current frame.
  * @returns the sessions that became blocked this frame.
  */
 export function diffPendingInteractions(
-  prev: SessionPendingInteractionSnapshot | undefined,
-  next: SessionPendingInteractionSnapshot,
+  prev: SessionStatusSnapshot | undefined,
+  next: SessionStatusSnapshot,
 ): readonly string[] {
   if (prev === undefined) return []
   const blocked: string[] = []
-  for (const id of next.keys()) {
-    if (!prev.has(id)) blocked.push(id)
+  for (const [id, status] of next) {
+    if (status.pendingInteraction !== undefined && prev.get(id)?.pendingInteraction === undefined) {
+      blocked.push(id)
+    }
   }
   return blocked
+}
+
+/** 0.1.5 ui-session feed shape (removed in 0.1.6-alpha.2): pending interaction per Session. */
+export type LegacyPendingInteractionSnapshot = ReadonlyMap<SessionId, SessionPendingInteraction>
+
+/**
+ * Adapt the 0.1.5 `uiSession.pendingInteractions` feed to the SessionStatus
+ * face the runtime consumes: every mapped interaction becomes a status entry
+ * carrying only its `pendingInteraction`. The projection is memoized on the
+ * source snapshot identity so the controller's unchanged-frame short-circuit
+ * (`next === prev`) keeps working across the adapter.
+ * @param source - legacy pending-interaction feed.
+ * @returns a status-shaped feed mirroring the source.
+ */
+export function sessionStatusFromLegacyPending(
+  source: ObservableSnapshot<LegacyPendingInteractionSnapshot>,
+): ObservableSnapshot<SessionStatusSnapshot> {
+  let cachedSource: LegacyPendingInteractionSnapshot | undefined
+  let cached: SessionStatusSnapshot = new Map()
+  return {
+    getSnapshot: () => {
+      const snapshot = source.getSnapshot()
+      if (snapshot === cachedSource) return cached
+      cachedSource = snapshot
+      cached = new Map([...snapshot].map(([id, interaction]) => [id, {
+        running: undefined,
+        pendingInteraction: interaction,
+        completionUnread: false,
+      }]))
+      return cached
+    },
+    subscribe: listener => source.subscribe(listener),
+  }
 }

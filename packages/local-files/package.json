@@ -38,10 +38,12 @@
       "types": "./lib/typert.remote-client.d.ts",
       "default": "./lib/typert.remote-client.js"
     },
+    "./locale/*.json": "./locale/*.json",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
+    "locale/*.json",
     "lib",
     "lib/typert.host.d.ts",
     "lib/typert.host.js",
@@ -58,7 +60,7 @@
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-session": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
@@ -89,16 +91,16 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-store": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-store": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-session": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.7-rc.1",
     "@khorsheed/dsh-client-ui-content-preview": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/react": "~18.3.1",
@@ -136,7 +138,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "The \u6587\u4ef6\u5217\u8868/Files browser is a page-type right-Sidebar tab that TAKES OVER the official `files` kind \u2014 the registry's designed extension-over-builtin shadowing, so the guide shows one files card (ours) and the official card resumes on uninstall. The right Sidebar exists from 0.1.5 on, so minHost moved up with the conversation.view tab's retirement (0.1.2\u20130.1.4 hosts get no browser surface; stay on the previous release line there). It is a web surface \u2014 headless profiles have no browser consumer and the plugin contributes nothing there. The external-open gestures (open-in-folder / open-in-IDE) ride the official open-in-app routes: the browser probes `GET /open-in-app/apps` once per page and shows a gesture only when the host resolved a backing app (file manager resp. editor/IDE).",
+      "notes": "The 文件列表/Files browser is a page-type right-Sidebar tab that TAKES OVER the official `files` kind — the registry's designed extension-over-builtin shadowing, so the guide shows one files card (ours) and the official card resumes on uninstall. The right Sidebar exists from 0.1.5 on, so minHost moved up with the conversation.view tab's retirement (0.1.2–0.1.4 hosts get no browser surface; stay on the previous release line there). It is a web surface — headless profiles have no browser consumer and the plugin contributes nothing there. The external-open gestures (open-in-folder / open-in-IDE) ride the official open-in-app routes: the browser probes `GET /open-in-app/apps` once per page and shows a gesture only when the host resolved a backing app (file manager resp. editor/IDE).",
       "verifiedHost": "0.1.5-rc.1"
     }
   }

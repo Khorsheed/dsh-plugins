@@ -4,7 +4,7 @@
  * focused client modules alongside this shell.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconSearchOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CatalogMcpSnapshot, CatalogModeFace, CatalogPresetOption, CatalogPresetScopeStatus, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
 import type { CapabilityCatalogKey } from './locales.ts'
 import type { CapabilityCatalogCardProps } from './slots.ts'
@@ -382,7 +382,7 @@ export function CapabilityCatalogCard({
         <>
           <div className={css.filterBar} role="search">
             <div className={css.searchBox}>
-              <span className={css.searchIcon}><IconSearchOutline16 size={16} /></span>
+              <span className={css.searchIcon}><IconSearchOutlineMedium size={16} /></span>
               <input
                 className={css.searchInput}
                 type="search"
@@ -416,7 +416,7 @@ export function CapabilityCatalogCard({
         <>
           <div className={css.filterBar} role="search">
             <div className={css.searchBox}>
-              <span className={css.searchIcon}><IconSearchOutline16 size={16} /></span>
+              <span className={css.searchIcon}><IconSearchOutlineMedium size={16} /></span>
               <input
                 className={css.searchInput}
                 type="search"

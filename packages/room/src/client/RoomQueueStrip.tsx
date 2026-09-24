@@ -11,11 +11,11 @@
  * hidden official dock.
  */
 import { useId, useState, type ReactNode } from 'react'
-import { IconChevronDownOutline14, IconChevronUpOutline14, IconQueueOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronUpOutlineMedium, IconQueueOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RoomComposerProps } from './slots.ts'
 import css from './RoomQueueStrip.module.css'
 
-/** One queued message, pre-selected by the composer from the session snapshot. */
+/** One queued message, pre-selected by the composer from the inbox projection (the legacy snapshot queue on 0.1.5). */
 export interface RoomQueueItem {
   readonly id: string
   readonly preview: string
@@ -38,7 +38,7 @@ export function RoomQueueStrip({ items, t }: RoomQueueStripProps): ReactNode {
     return (
       <div className={css.root} data-testid="room-queue-strip">
         <div className={css.header} role="status">
-          <span className={css.lead} aria-hidden><IconQueueOutline14 /></span>
+          <span className={css.lead} aria-hidden><IconQueueOutlineMedium /></span>
           <span className={css.preview}>{items[0]!.preview}</span>
         </div>
       </div>
@@ -54,10 +54,10 @@ export function RoomQueueStrip({ items, t }: RoomQueueStripProps): ReactNode {
         aria-expanded={!collapsed}
         onClick={() => { setCollapsed(v => !v) }}
       >
-        <span className={css.lead} aria-hidden><IconQueueOutline14 /></span>
+        <span className={css.lead} aria-hidden><IconQueueOutlineMedium /></span>
         <span className={css.count}>{t('queue.count', { n: items.length })}</span>
         <span className={css.chevron} aria-hidden>
-          {collapsed ? <IconChevronUpOutline14 /> : <IconChevronDownOutline14 />}
+          {collapsed ? <IconChevronUpOutlineMedium /> : <IconChevronDownOutlineMedium />}
         </span>
       </button>
       {!collapsed && (

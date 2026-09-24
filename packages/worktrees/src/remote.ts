@@ -12,7 +12,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { boundContextSummary, createUserMessage, type ContextFormed } from '@deepseek-ai/dsh-llm'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   BadgeConfig, ChangesResult, CommitFilesResult, FileDiffRequest, FileDiffResult,
@@ -26,6 +26,41 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     worktreesRemote: WorktreesRemoteService
   }
+}
+
+/**
+ * The worktrees producer's durable identity: the current producer-owned kind
+ * (`worktrees`) and the released V3 wrapper's `plugin` value (the official
+ * V3→V4 migration rewrites it to `kind: 'plugin:@khorsheed/dsh-worktrees'`).
+ * {@link isWorktreesSource} accepts all three forms; new writes always carry
+ * the producer kind.
+ */
+export const WORKTREES_PLUGIN = '@khorsheed/dsh-worktrees'
+
+/** The producer-owned source kind identifying the directAgent context message. */
+export const WORKTREES_KIND = 'worktrees'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** worktrees producer: the worktree-switch context message appended without waking the agent. */
+    worktrees: { kind: 'worktrees' } & ContextFormed
+  }
+}
+
+/**
+ * Whether a durable source belongs to the worktrees producer, in every form
+ * the log can hold: the current producer-owned kind, the V3→V4 migrated
+ * kind, and the released V3 wrapper a pre-V4 (0.1.5) host still serves
+ * verbatim.
+ * @param source - the persisted message source to test.
+ * @returns true when the source names this producer.
+ */
+export function isWorktreesSource(source: unknown): boolean {
+  if (typeof source !== 'object' || source === null) return false
+  const record = source as { kind?: unknown; plugin?: unknown }
+  return record.kind === WORKTREES_KIND
+    || record.kind === `plugin:${WORKTREES_PLUGIN}`
+    || (record.kind === 'plugin' && record.plugin === WORKTREES_PLUGIN)
 }
 
 /** Remote construction options: the badge's display gate, forwarded from the plugin config. */
@@ -111,12 +146,13 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
    * context message to the session WITHOUT waking it. The message is appended
    * as a durable `user/message` (`surfaceOp: 'append'`), which the transcript
    * renders immediately as a 上下文注入 row (the renderer classifies by
-   * `source.kind`, and a `plugin` source is a non-user context, not a user
-   * bubble), and which `session.deriveMessages()` folds into the next model
-   * boundary — so the agent reads it on its next natural turn at no extra
-   * model call (no wake). Unlike `agent.inject` (inbox, `next-step`), an
-   * appended session message is visible even while the agent is idle, instead
-   * of sitting pending in the inbox until the agent is next woken.
+   * `source.kind`, and any non-`user` producer kind is a non-user context,
+   * not a user bubble), and which `session.deriveMessages()` folds into the
+   * next model boundary — so the agent reads it on its next natural turn at
+   * no extra model call (no wake). Unlike `agent.inject` (inbox,
+   * `next-step`), an appended session message is visible even while the
+   * agent is idle, instead of sitting pending in the inbox until the agent
+   * is next woken.
    */
   @Remote('directAgent')
   directAgent(agent: Agent, request: { path: string; branch: string | null }): Promise<{ ok: true }> {
@@ -124,8 +160,7 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
     agent.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: `本会话已切换到 worktree「${label}」(${request.path})。后续文件/命令行工具请用 workdir=${request.path} 干活。` }],
       source: {
-        kind: 'plugin',
-        plugin: '@khorsheed/dsh-worktrees',
+        kind: WORKTREES_KIND,
         form: 'notice',
         summary: boundContextSummary(`已切换到 worktree「${label}」`),
       },

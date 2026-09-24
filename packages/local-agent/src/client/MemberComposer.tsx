@@ -17,7 +17,7 @@
 import { requestId } from './request-id.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent, ReactNode } from 'react'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalAgentDelegationView, LocalAgentModelInfo, LocalAgentModelSource, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
@@ -397,7 +397,7 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
                 onClick={() => { setModelMenuOpen(open => !open) }}
               >
                 <span className={css.modelChipLabel}>{modelLabel(modelInfo)}</span>
-                <IconChevronDownOutline14 className={modelMenuOpen ? css.chevronOpen : css.chevron} />
+                <IconChevronDownOutlineMedium className={modelMenuOpen ? css.chevronOpen : css.chevron} />
               </button>
               {modelMenuOpen && (
                 <div className={css.modelMenu} role="menu" aria-label={t('member.model.picker')}>

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Codex 委派",
+    "description": "把编码任务委派给本地 Codex CLI，在隔离作用域中运行。"
+  }
+}

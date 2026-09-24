@@ -1,6 +1,6 @@
 /* Right-Sidebar file-preview tab: the filter row over a full-height file
-   list; the change-history document renderer (FileHistoryBody) reuses the
-   stepper/diff/scroll classes below. */
+   list; the change-history view (DiffHistory) reuses the stepper/diff/scroll
+   classes below. */
 
 .root {
   display: flex;

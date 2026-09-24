@@ -65,6 +65,7 @@ export function worktreesDefinition(t: TranslateNS<'worktrees'>): SidebarRightTa
     kind: WORKTREES_KIND,
     title: () => t('tab.title'),
     guide: [{
+      id: WORKTREES_KIND,
       order: 30,
       title: () => t('guide.title'),
       description: () => t('guide.description'),

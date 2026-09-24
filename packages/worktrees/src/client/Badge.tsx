@@ -13,7 +13,7 @@
  * the browser surface itself (shell.overlay) stays mounted.
  */
 import { useEffect, useState, type ReactNode } from 'react'
-import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBranchOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PluginInventorySnapshot, SessionSummary } from '../types.ts'
 import type { WorktreesBadgeProps } from './contract.ts'
 // The criterion's row constant lives with the tab's registration-level gate —
@@ -165,7 +165,7 @@ export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, fetchComp
         aria-label={t('aria.openDrawer')}
         onClick={() => { open('worktree') }}
       >
-        <IconBranchOutline16 />
+        <IconBranchOutlineMedium />
         <span className={css.zoneText}>{branchLabel}</span>
         <span className={`${css.counts} ${hasChanges ? css.countsDirty : ''}`}>+{totalAdd} −{totalDel}</span>
       </button>

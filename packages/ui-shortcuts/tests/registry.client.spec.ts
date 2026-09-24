@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { ShortcutRegistryRuntime } from '../src/client/registry.ts'
 import type { ShortcutActionContribution } from '../src/client/contract.ts'
 import {
@@ -44,7 +44,7 @@ describe('ShortcutRegistryRuntime', () => {
   })
 
   it('publishes a rebind live before writing through the host scope', () => {
-    const host = stubSettingsScope<ShortcutSettings>()
+    const host = stubConfigForm<ShortcutSettings>()
     host.publish({ status: 'ready', revision: 1, writable: true, value: {} })
     const registry = new ShortcutRegistryRuntime(host.scope)
     registry.registerAction(action('pause'))
@@ -71,7 +71,7 @@ describe('ShortcutRegistryRuntime', () => {
   })
 
   it('adopts persisted preferences on registration and on host updates', () => {
-    const host = stubSettingsScope<ShortcutSettings>()
+    const host = stubConfigForm<ShortcutSettings>()
     host.publish({ status: 'ready', revision: 1, writable: true, value: { pause: PREFERENCE } })
     const registry = new ShortcutRegistryRuntime(host.scope)
     // A persisted value wins over the shipped default at registration time.

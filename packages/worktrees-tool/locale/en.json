@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Worktrees Tool",
+    "description": "Session-granted git worktree management tool"
+  }
+}

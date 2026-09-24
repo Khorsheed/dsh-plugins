@@ -21,8 +21,8 @@ import {
   useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode,
 } from 'react'
 import {
-  IconArchiveOutline20, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconPlusOutline16, IconRefreshOutline14,
+  IconArchiveOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium,
+  IconPlusOutlineMedium, IconRefreshOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { CanvasSummary } from '../../types.ts'
@@ -119,7 +119,7 @@ export function CanvasSwitcher({
         aria-expanded={open}
         onClick={() => { setOpen(value => !value) }}
       >
-        <IconPlusOutline16 size={12} />
+        <IconPlusOutlineMedium size={12} />
         {t('strip.canvases')}
       </button>
 
@@ -155,7 +155,7 @@ export function CanvasSwitcher({
                       aria-label={t('action.archive')}
                       onClick={event => { event.stopPropagation(); void onArchive(row, true) }}
                     >
-                      <IconArchiveOutline20 size={13} />
+                      <IconArchiveOutlineMedium size={13} />
                     </button>
                   )}
                 </div>
@@ -170,7 +170,7 @@ export function CanvasSwitcher({
                   aria-expanded={showArchived}
                   onClick={() => { setShowArchived(value => !value) }}
                 >
-                  {showArchived ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+                  {showArchived ? <IconChevronDownOutlineMedium size={12} /> : <IconChevronRightOutlineMedium size={12} />}
                   {t('space.archived', { count: String(archivedRows.length) })}
                 </button>
                 {showArchived && archivedRows.map(row => (
@@ -193,7 +193,7 @@ export function CanvasSwitcher({
                         aria-label={t('action.restore')}
                         onClick={event => { event.stopPropagation(); void onArchive(row, false) }}
                       >
-                        <IconRefreshOutline14 size={13} />
+                        <IconRefreshOutlineMedium size={13} />
                       </button>
                     )}
                   </div>
@@ -256,7 +256,7 @@ export function CanvasSwitcher({
                   setError(null)
                 }}
               >
-                <IconPlusOutline16 size={12} />
+                <IconPlusOutlineMedium size={12} />
                 {t('space.new')}
               </button>
             )

@@ -15,7 +15,7 @@
 
 每个来源都可选目标根（`$DSH_HOME/skills` / `.agents/skills`）与是否进模型 catalog；skill-filesystem watcher 自动发现结果。
 
-目录用 **agent preset 的 standing scope**（`agentPresets.standingKeyFor(defaultId)`）读 skill registry，列出的官方/插件/用户技能与模型一致；`list_capabilities` 工具跑在调用方的 agent scope。`snapshotFor(presetId)` 以同样的方式读**任何别的** preset 的 scope——见[能力指纹](#能力指纹)。
+目录用 **agent preset 的 standing scope**（0.1.5 宿主线的 `agentPresets.standingKeyFor(defaultId)`，rc.1 的租约式 `agentPresets.acquireScope(defaultId)`——见 [Compatibility](#compatibility)）读 skill registry，列出的官方/插件/用户技能与模型一致；`list_capabilities` 工具跑在调用方的 agent scope。`snapshotFor(presetId)` 以同样的方式读**任何别的** preset 的 scope——见[能力指纹](#能力指纹)。
 
 零 host 改动。`ctx.skills` / `ctx.tools` / `ctx.credentials` / `ctx.agentPresets` 缺失时降级为空态，不拖垮 boot。
 
@@ -71,7 +71,7 @@ capsTag(face.sha)          // 'caps:2f8b6d40…'
 hashOf(face) === face.sha  // true——`sha` 字段本身不进它摘要的那份规范形
 ```
 
-`snapshotFor(presetId?, workdir?)` 是指纹动词：按**该 preset** 的 standing scope（`agentPresets.standingKeyFor(id)`）读 skill 与 tool 注册表，加载每个技能正文使行带上 `bodySha`，并盖 `sha`。不给 presetId 就读部署默认 preset。`snapshot()` 仍是清单动词——同样的行，不读正文，不出摘要。`list_capabilities` 以 `capabilities` 带回**整面**的标签，即使调用方只要了 skill 或只要了 tool。
+`snapshotFor(presetId?, workdir?)` 是指纹动词：按**该 preset** 的 standing scope（0.1.5 的 `agentPresets.standingKeyFor(id)`，rc.1 的租约式 `acquireScope(id)`）读 skill 与 tool 注册表，加载每个技能正文使行带上 `bodySha`，并盖 `sha`。不给 presetId 就读部署默认 preset。`snapshot()` 仍是清单动词——同样的行，不读正文，不出摘要。`list_capabilities` 以 `capabilities` 带回**整面**的标签，即使调用方只要了 skill 或只要了 tool。
 
 **清单降级，指纹拒绝。** preset 的 scope 解析不出来时——没有 roster、id 不存在、composition 挂不起来——`snapshot()` 退回全局层并且**不带** `preset` 标签（设置卡不该因为一行配置坏了就变空）；`snapshotFor()` 则抛错，带上 preset 名与原因。这不是假想：真机上一个 preset 只错了一行，降级版本让两个 roster 着**不同** preset 的 scope 算出了同一个哈希，而且悄无声息。
 
@@ -127,7 +127,9 @@ harness 的 `@deepseek-ai/dsh-skill` 已文档化 `resourceBase` 与 `register()
 
 | Host 线 | 结论 |
 |---|---|
-| npm 发布（≥ `0.1.2-rc.1`） | 支持 |
-| deepseek-harness master | 支持（`verifiedHost: 0.1.2-rc.1`） |
+| npm 发布（≥ `0.1.5-rc.1`） | 支持 |
+| npm `0.1.7-rc.1` / deepseek-harness master | 支持（`verifiedHost: 0.1.5-rc.1`） |
 
-机器可读：`package.json` 的 `dsh.compat.minHost`（当前 `0.1.2-rc.1`——地板随 0.1.2 基线迁移前移；旧宿主请停留在旧发布线）。若上面省略了降级项，请在 `dsh.compat.notes` 里注明。
+按模式的能力面读取（模式下拉、`snapshotAt` / `snapshotFor` / `modeFaces`、按 preset 的技能投递）按宿主线走两条 roster 面解析 preset 的 standing scope：0.1.5 的无租约 `standingKeyFor`，rc.1 的租约式 `acquireScope`——rc.1 删除了 `standingKeyFor`，本次双线修复前的目录版本在 rc.1 上全部静默读成全局层。清单与指纹两条路径每次读完都释放租约；strict/降级措辞两线逐字一致。
+
+机器可读：`package.json` 的 `dsh.compat.minHost`（当前 `0.1.5-rc.1`；旧宿主请停留在旧发布线）。若上面省略了降级项，请在 `dsh.compat.notes` 里注明。

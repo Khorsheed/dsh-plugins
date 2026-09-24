@@ -9,7 +9,7 @@
  */
 
 import type { ReactNode } from 'react'
-import { IconChevronDownOutline14, IconChevronRightOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { exposureOfRole, type DatasetExposure, type DatasetRole, type DatasetSlot } from '../slots.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import type { Phrase } from './vocab.ts'
@@ -35,8 +35,8 @@ export function exposureClass(exposure: DatasetExposure): string {
 /** A group-row chevron: the official 14px disclosure glyphs. */
 export function Chevron(props: { open: boolean }) {
   return props.open
-    ? <IconChevronDownOutline14 className={css.chevron} />
-    : <IconChevronRightOutline14 className={css.chevron} />
+    ? <IconChevronDownOutlineMedium className={css.chevron} />
+    : <IconChevronRightOutlineMedium className={css.chevron} />
 }
 
 /** The leaf file glyph: a minimal inline document outline (the official icon

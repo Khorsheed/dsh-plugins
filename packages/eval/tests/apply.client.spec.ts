@@ -48,6 +48,8 @@ async function bench(options: {
   mountFails?: boolean
   preset?: string
   composition?: EvalPluginInventorySnapshot
+  /** Publish the 0.1.5-shaped list (top-level `current`, no per-row retention). */
+  legacyCurrent?: boolean
   /** A whole session list, for the parent-chain cases; overrides `preset`. */
   rows?: Record<string, unknown>
 } = {}) {
@@ -62,16 +64,23 @@ async function bench(options: {
   ctx.provide('remote', remoteService as never)
   const remote = remoteStub()
   ctx.provide('remote.dshEval', remote as never)
-  // No preset on the row = the fail-open default; a named preset reads the composition.
+  // No preset on the row = the fail-open default; a named preset reads the
+  // composition; `rows` supplies a whole list for the parent-chain cases.
+  // The on-screen session: 0.1.6-alpha.2 reads the row's main-view retention
+  // count; `legacyCurrent` exercises the 0.1.5 `current` fallback instead.
   const byId = options.rows
     ?? (options.preset === undefined ? { s1: {} } : { s1: { projectionValues: { agentPreset: options.preset } } })
-  const list = createSnapshotStore({
-    ids: Object.keys(byId),
-    byId,
-    current: 's1' as SessionId,
-    phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
-  })
-  ctx.provide('sessions', { list, open: vi.fn() } as never)
+  const list = createSnapshotStore(options.legacyCurrent === true
+    ? { ids: Object.keys(byId), byId, current: 's1' as SessionId, phase: 'ready', subagentsByParent: {}, jobsBySession: {} }
+    : {
+        ids: Object.keys(byId),
+        byId: Object.fromEntries(Object.entries(byId).map(([id, row]) => [
+          id,
+          { id, ...(row as Record<string, unknown>), ...(id === 's1' ? { retainedBy: { mainView: 1 } } : {}) },
+        ])),
+        phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+      })
+  ctx.provide('sessions', { list } as never)
   if (options.composition !== undefined) {
     ctx.provide('remote.pluginInventory', {
       list: async () => ({ ok: true as const, value: options.composition }),
@@ -106,6 +115,12 @@ describe('eval client apply', () => {
 
   it('still registers the view when the Remote mount fails (already mounted elsewhere)', async () => {
     const { ctx, slots } = await bench({ mountFails: true })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+  })
+
+  it('registers the tab on a 0.1.5-shaped list (legacy current fallback)', async () => {
+    const { ctx, slots } = await bench({ legacyCurrent: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })

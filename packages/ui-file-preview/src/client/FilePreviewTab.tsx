@@ -1,6 +1,13 @@
 /**
- * The file-preview right-Sidebar tab body: the session's touched files as a
- * full-height list, navigating IN-TAB to a detail view on row click.
+ * The file-preview right-Sidebar tab body — **both host lines** (the plan-B
+ * embedding into the official document tab landed and was vetoed the same
+ * day, 2026-09-24): the session's touched files as a
+ * full-height list, navigating IN-TAB to a detail view on row click. The
+ * tab type claims `dsh-resource://file/**` at the extension band, which the
+ * rc.1 tab registry kept outranking the official document tab's fallback
+ * band — so file clicks (file tree, mentions, deliverables row, turn card)
+ * land here with this package's full chrome, and only the declined suffixes
+ * (pdf, archives, binaries) fall through to the official tab.
  *
  * The detail view is the SHARED content pane (@khorsheed/dsh-client-ui-content-preview)
  * with this plugin's adapter (preview.ts): the pane owns the title/path rows,
@@ -10,8 +17,8 @@
  * choices and the 改动记录 body (the shared DiffHistory). Being our own view it
  * works for outside-workspace files too (reveal/openExternal take absolute
  * paths, and the host `read` resolves them) — they are no longer list-only
- * rows. Mentions still open in the official document tab (the quick preview
- * path); the 「改动记录」 renderer registration there is unaffected.
+ * rows. The mention wrap routes prose opens through the same claim, so a
+ * mentioned file lands in this page too.
  *
  * Navigation params (`openTab('file-preview', { params: { path } })`, the
  * turn card's outside-workspace gesture) select the path on arrival — which
@@ -21,7 +28,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
-  FileTypeIcon, IconGlobeOutline14, IconRefreshOutline16,
+  FileTypeIcon, IconGlobeOutlineMedium, IconRefreshOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   ContentPane, type PreviewView,
@@ -82,6 +89,21 @@ function DetailView(props: {
     return () => { cancelled = true }
   }, [sessionId, path, readFile])
 
+  // The pane's reload gesture re-reads the same file. Unlike a fresh selection
+  // the old read is NOT cleared first — the panel keeps showing it in flight,
+  // and a failure keeps it in state, reported through the same error slot. An
+  // answer landing after the selection moved is dropped.
+  const pathRef = useRef(path)
+  pathRef.current = path
+  const reload = (): Promise<void> => {
+    const target = path
+    return readFile(sessionId, target).then((result) => {
+      if (pathRef.current !== target) return
+      if (result.ok) { setRead(result.value); setError(null) }
+      else setError(result.error.message)
+    })
+  }
+
   return (
     <div className={css.detail}>
       <ContentPane
@@ -94,6 +116,7 @@ function DetailView(props: {
         displayPath={displayPath}
         onBack={onBack}
         onCopyPath={() => copyPath(path)}
+        onReload={reload}
         chrome={{
           ...(fileManager === undefined ? {} : { openFolder: () => { revealFolder(path) } }),
           ...(currentIde === undefined
@@ -159,7 +182,9 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
   // openResource route — the official card, the file tree, mentions). The
   // revision bumps on every navigation, so a repeat open re-applies it.
   const revision = navigation.revision
-  const navPath = navigation.params?.path
+  // The params union also carries the official file resource params ({ line }),
+  // so narrow on the key the way the official TextPreview does.
+  const navPath = navigation.params !== undefined && 'path' in navigation.params ? navigation.params.path : undefined
   const navAddress = navigation.address
   // Applied once per navigation revision: the list arriving later must NOT
   // re-apply (a refresh would yank the user out of the list they backed into).
@@ -229,7 +254,7 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
           title={t('list.refresh')}
           onClick={() => { actions.refreshList() }}
         >
-          <IconRefreshOutline16 />
+          <IconRefreshOutlineMedium />
         </button>
       </div>
       <nav className={css.list} aria-label={t('open')}>
@@ -263,7 +288,7 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
                       {parts[2]}
                     </>
                   )}
-                {!within && <IconGlobeOutline14 className={css.rowOutside} size={12} />}
+                {!within && <IconGlobeOutlineMedium className={css.rowOutside} size={12} />}
               </span>
               <span className={css.rowDir}>{relativeToCwd(parentPath(entry.path), cwd)}</span>
               <span className={css.rowStep}>{t('history.step', { turn: entry.turn, step: entry.step })}</span>

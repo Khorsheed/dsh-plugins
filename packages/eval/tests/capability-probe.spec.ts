@@ -35,8 +35,8 @@ function generatedPatch(preset: string): string {
     mode: !!js process.env.DSH_TOOLS_MODE
 
 - insert:
-    - id: code-runtime
-      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+    - id: ptc-runtime
+      name: '@deepseek-ai/dsh-ptc-runtime-node'
 
     - id: member-bridge
       name: '@deepseek-ai/dsh-mcp-client'

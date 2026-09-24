@@ -115,7 +115,7 @@ export const withdrawnDividerDefinition: ConversationNodeDefinition<WithdrawnDiv
   },
   start: (_context, match) => {
     const event = match.event
-    if (!isMessageToolsReplacement(event)) {
+    if (event.type !== 'user/message' || !isMessageToolsReplacement(event)) {
       throw new Error('message-tools-withdrawn start requires a message-tools replacement event')
     }
     return { seq: event.seq, hiddenStartSeq: event.surfaceOp.startSeq }
@@ -141,7 +141,7 @@ export const editedMessageDefinition: ConversationNodeDefinition<EditedMessageDa
   },
   start: (_context, match) => {
     const event = match.event
-    if (!isMessageToolsEdit(event)) {
+    if (event.type !== 'user/message' || !isMessageToolsEdit(event)) {
       throw new Error('message-tools-edited start requires a message-tools edit replacement event')
     }
     return {
@@ -230,7 +230,7 @@ function joinAssistantText(blocks: readonly unknown[]): string {
 
 /**
  * The restore-row Definition: one single-event Context per message-tools
- * user-message restore event (append-surface, plugin-tagged), replaying the
+ * user-message restore event (append-surface, producer-tagged), replaying the
  * withdrawn message's content at the tail.
  */
 export const restoredMessageDefinition: ConversationNodeDefinition<RestoredMessageData> = {
@@ -242,7 +242,7 @@ export const restoredMessageDefinition: ConversationNodeDefinition<RestoredMessa
   },
   start: (_context, match) => {
     const event = match.event
-    if (!isMessageToolsRestore(event)) {
+    if (event.type !== 'user/message' || !isMessageToolsRestore(event)) {
       throw new Error('message-tools-restored start requires a message-tools restore event')
     }
     return {
@@ -275,7 +275,7 @@ export const restoredAssistantMessageDefinition: ConversationNodeDefinition<Rest
   },
   start: (_context, match) => {
     const event = match.event
-    if (!isMessageToolsRestoreAssistant(event)) {
+    if (event.type !== 'user/message' || !isMessageToolsRestoreAssistant(event)) {
       throw new Error('message-tools-restored-assistant start requires a restore-assistant replay event')
     }
     return {
