@@ -208,9 +208,29 @@
   cursor: pointer;
 }
 
-.action:hover {
+.action:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Reload in flight: the icon spins until the caller's promise settles (the
+   dsh-reader .toolSpinning precedent), so a slow re-read never looks dead. */
+.actionSpinning {
+  animation: pane-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actionSpinning { animation: none; }
+}
+
+@keyframes pane-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* Truncated/content-cap notice, shown above the preview body. */

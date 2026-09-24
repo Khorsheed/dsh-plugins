@@ -14,7 +14,7 @@
 | HTML 分级沙箱 | Tier0 `sandbox=""` + 内嵌 meta CSP（默认）；Tier1 `sandbox="allow-scripts"` 且**永不同开** `allow-same-origin`，需显式确认；含 `content-visibility` 大文档延迟、`<script>` 探测提示条、能力桥（`openLink`/`copy`/`download` 白名单 + `message.source` 校验） |
 | 内容搜索 | 保留渲染态，用 CSS Custom Highlight API 画命中；命中只在源码语法里（`**`、围栏、折叠的 JSON 节点）时如实降级到原始行视图；不支持该 API 的引擎同样降级，不白屏 |
 | Markdown / JSON / CSV | 走官方 `MarkdownText` / `JsonTree`；**只覆盖 `--dsw-font-markdown-*` 字号 token，不覆盖任何元素级 margin/padding**，所以节奏与官方文档一致 |
-| 面板 chrome | 复制路径 / 打开目录 / 在 IDE 中打开（按宿主 open-in-app 探测结果逐项显隐）、滚动位置记忆、格式 banner |
+| 面板 chrome | 重新加载当前文件（调用方注入 `onReload` 才渲染，排在复制路径之前；进行中禁用并旋转图标）/ 复制路径 / 打开目录 / 在 IDE 中打开（按宿主 open-in-app 探测结果逐项显隐）、滚动位置记忆、格式 banner |
 
 **不**负责：文件树、数据面（Remote / store / 根目录选择）、diff 与提交对比（由调用方以 render prop 传入）、tab 注册与可见性——那些是各插件自己的数据面与身份。
 

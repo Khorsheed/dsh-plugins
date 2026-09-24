@@ -14,7 +14,7 @@ This is not a plugin. It registers no slot, service or locale, owns no loader ro
 | Tiered HTML sandbox | Tier0 `sandbox=""` plus an embedded meta CSP (default); Tier1 `sandbox="allow-scripts"` that **never** combines with `allow-same-origin`, behind an explicit confirmation; includes `content-visibility` deferral for large documents, a "scripts did not run" hint, and the capability bridge (`openLink`/`copy`/`download` allowlist plus `message.source` validation) |
 | Content search | Keeps the rendered body and paints hits through the CSS Custom Highlight API; degrades honestly to the raw matched-lines view when a query exists only in source syntax (`**`, a fence, a collapsed JSON node), and on engines without the API — never a blank pane |
 | Markdown / JSON / CSV | Through the official `MarkdownText` / `JsonTree`; **only the `--dsw-font-markdown-*` scale tokens are overridden, never per-element margins/padding**, so the rhythm matches the official document sheet |
-| Pane chrome | Copy path / open folder / open in IDE (each shown only when the host open-in-app probe resolved that kind of app), scroll memory per (session, path), format banner |
+| Pane chrome | Reload the current file (renders only when the caller injects `onReload`, ahead of copy-path; disabled with a spinning icon while in flight) / copy path / open folder / open in IDE (each shown only when the host open-in-app probe resolved that kind of app), scroll memory per (session, path), format banner |
 
 Deliberately **not** here: the file tree, the data face (Remote / store / root selection), diffs and commit comparison (the caller passes them in as a render prop), tab registration and visibility — those are each plugin's own data face and identity.
 

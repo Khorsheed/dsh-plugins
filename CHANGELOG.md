@@ -2,6 +2,12 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— 预览面板的「刷新当前文件」手势（仓主 2026-09-24 提出）
+
+- `@khorsheed/dsh-client-ui-content-preview` 新增可选 prop `onReload`（contract 同步加 `action.reload` 文案键）：标题行动作区在复制路径之前多一个刷新钮（官方 `IconRefreshOutlineMedium`），仅在调用方注入 `onReload` 时渲染；点击后按钮禁用、图标旋转直至调用方 promise 落定（dsh-reader `.toolSpinning` 先例，含 `prefers-reduced-motion` 回落）。未传 `onReload` 的调用方零变化
+- 三个消费面同构接入——`@khorsheed/dsh-local-files` 文件列表详情、`@khorsheed/dsh-worktrees` 详情面板（diff 档重拉 diff、内容/图片档重走 read Remote）、`@khorsheed/dsh-client-ui-file-preview` 产物详情页：重走各自 Remote 读当前文件，重读期间旧内容保持显示；失败保留旧内容、错误走各包既有 error 槽；晚到的旧答案按选择键丢弃。worktrees 的提交详情页不接——文件钉死在那一提交，内容不可变
+- 三包字典各加 `action.reload`（zh 重新加载 / en Reload），PREVIEW_KEYS 覆盖测试机械保证三命名空间双语齐全
+
 ## Unreleased —— capability-catalog：rc.1 的按模式能力面读取恢复（host-016 适配漏网）
 
 - **修 rc.1 适配漏网**：rc.1 的 `@deepseek-ai/dsh-agent-preset-registry` 删除了 `standingKeyFor(id)`，换成租约式 `acquireScope(id?)`——内部走 `retain()`，未知 preset 抛 `agent-preset/not-found`、坏 preset 抛 `agent-preset/invalid` 带诊断，**租约用完必须 async dispose**（否则 generation.users 泄漏，preset 卸载后 scope 永不回收）。capability-catalog 的 `resolvePresetScope` 只探旧面，rc.1 上 100% 落入「无 roster」静默回退：`snapshotAt` / `snapshotFor` / `modeFaces` 与按 preset 投递全部读成全局层且不盖 preset 戳（3093 实测，roster 本身健康）

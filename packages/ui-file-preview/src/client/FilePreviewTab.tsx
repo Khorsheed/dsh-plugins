@@ -89,6 +89,21 @@ function DetailView(props: {
     return () => { cancelled = true }
   }, [sessionId, path, readFile])
 
+  // The pane's reload gesture re-reads the same file. Unlike a fresh selection
+  // the old read is NOT cleared first — the panel keeps showing it in flight,
+  // and a failure keeps it in state, reported through the same error slot. An
+  // answer landing after the selection moved is dropped.
+  const pathRef = useRef(path)
+  pathRef.current = path
+  const reload = (): Promise<void> => {
+    const target = path
+    return readFile(sessionId, target).then((result) => {
+      if (pathRef.current !== target) return
+      if (result.ok) { setRead(result.value); setError(null) }
+      else setError(result.error.message)
+    })
+  }
+
   return (
     <div className={css.detail}>
       <ContentPane
@@ -101,6 +116,7 @@ function DetailView(props: {
         displayPath={displayPath}
         onBack={onBack}
         onCopyPath={() => copyPath(path)}
+        onReload={reload}
         chrome={{
           ...(fileManager === undefined ? {} : { openFolder: () => { revealFolder(path) } }),
           ...(currentIde === undefined

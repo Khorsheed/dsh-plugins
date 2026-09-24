@@ -6,7 +6,7 @@
  * plain local filesystem paths. Per-session memory keeps each session on its
  * own last-browsed root.
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, writeClipboard,
   type IconProps,
@@ -144,6 +144,23 @@ export function WorkspaceView({
     return () => { cancelled = true }
   }, [selectedPath, readFile, actions])
 
+  // The pane's reload gesture re-reads the selected file through the same
+  // Remote. Unlike a fresh selection the old read is NOT cleared first — the
+  // panel keeps showing it while the re-read is in flight, and a failure keeps
+  // it too, reporting through the shared error slot like any other failed
+  // read. An answer that lands after the selection moved is dropped.
+  const selectedPathRef = useRef(selectedPath)
+  selectedPathRef.current = selectedPath
+  const reloadPreview = (): Promise<void> => {
+    const path = selectedPath
+    if (path === null) return Promise.resolve()
+    return readFile({ path }).then(result => {
+      if (selectedPathRef.current !== path) return
+      if (result.ok) actions.setPreview(result.value)
+      else actions.setError(result.error.message)
+    })
+  }
+
   const navigate = (path: string): void => {
     actions.setRoot(path)
     if (sessionId !== undefined) rememberLocalRoot(sessionId, path)
@@ -269,6 +286,7 @@ export function WorkspaceView({
               ? {}
               : {
                 onCopyPath: () => writeClipboard(selectedPath),
+                onReload: reloadPreview,
                 chrome: {
                   ...(canOpenFolder ? { openFolder: () => { openFolder(dirnameOf(selectedPath) || selectedPath) } } : {}),
                   ...(canOpenIDE ? { openIDE: () => { openIDE(dirnameOf(selectedPath) || selectedPath) } } : {}),

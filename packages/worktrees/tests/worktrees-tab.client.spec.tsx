@@ -195,4 +195,52 @@ describe('WorktreesTab', () => {
     await new Promise(r => setTimeout(r, 200))
     expect(instance.getSnapshot().mode).toBe('commits')
   })
+
+  it('the pane reload gesture re-reads the active view (diff and content)', async () => {
+    const { props, fetchFileDiff, fetchReadFile } = makeHarness()
+    fetchReadFile
+      .mockResolvedValueOnce({ ok: true as const, value: { content: 'v1\n' } })
+      .mockResolvedValueOnce({ ok: true as const, value: { content: 'v2\n' } })
+    render(<WorktreesTab {...props} />)
+    const region = () => within(screen.getByRole('region'))
+    await drillToIndexTs(region)
+    fireEvent.click(await region().findByRole('button', { name: /index\.ts/ }))
+    // The detail opens on the diff view; reload re-fetches the diff.
+    await waitFor(() => expect(fetchFileDiff).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'action.reload' }))
+    await waitFor(() => expect(fetchFileDiff).toHaveBeenCalledTimes(2))
+
+    // The content view reloads through readFile and the fresh read renders.
+    fireEvent.click(await screen.findByText('detail.content'))
+    await waitFor(() => expect(fetchReadFile).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(document.body.textContent).toContain('v1'))
+    fireEvent.click(screen.getByRole('button', { name: 'action.reload' }))
+    await waitFor(() => expect(fetchReadFile).toHaveBeenCalledTimes(2))
+    expect(fetchReadFile).toHaveBeenLastCalledWith(SESSION, { path: 'packages/room/src/index.ts' })
+    await waitFor(() => expect(document.body.textContent).toContain('v2'))
+  })
+
+  it('a failed reload keeps the old content and recovers on the next one', async () => {
+    const { instance, props, fetchReadFile } = makeHarness()
+    fetchReadFile
+      .mockResolvedValueOnce({ ok: true as const, value: { content: 'v1\n' } })
+      .mockResolvedValueOnce({ ok: false as const, error: { code: 'io', message: 'disk gone' } })
+      .mockResolvedValueOnce({ ok: true as const, value: { content: 'v2\n' } })
+    render(<WorktreesTab {...props} />)
+    const region = () => within(screen.getByRole('region'))
+    await drillToIndexTs(region)
+    fireEvent.click(await region().findByRole('button', { name: /index\.ts/ }))
+    fireEvent.click(await screen.findByText('detail.content'))
+    await waitFor(() => expect(fetchReadFile).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(document.body.textContent).toContain('v1'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'action.reload' }))
+    await waitFor(() => expect(instance.getSnapshot().error).toBe('disk gone'))
+    // The old read survives the failed reload in state.
+    expect(instance.getSnapshot().content).toEqual({ content: 'v1\n' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'action.reload' }))
+    await waitFor(() => expect(document.body.textContent).toContain('v2'))
+    expect(instance.getSnapshot().error).toBeNull()
+  })
 })
