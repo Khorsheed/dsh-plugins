@@ -349,8 +349,10 @@
   }
 
   /* The name column is all that is left, so it wraps instead of clipping:
-     the 旧运行 chip drops under the name (T73). */
-  .row .colName {
+     the 旧运行 chip drops under the name (T73). The name and the chip share
+     .nameLine since T74 (the question is the column's second line), so the
+     wrap sits there. */
+  .row .nameLine {
     flex-wrap: wrap;
   }
 
