@@ -23,22 +23,22 @@ package(能力单元)
 
 两张表各带「归属集合」列——它只回答「这个卡出现在哪个推广集合/镜像仓」,与「是否套 bundle 壳」无关:**独立卡 = 单包单卡不套壳,照样归属集合**。
 
-### 家族 bundle(10 个 + 已有的 presets)
+### 家族 bundle(9 个 + 已有的 presets)
 
 | bundle | 中文卡名 | 成员包 | 标签(可交叉) | 归属集合 | preset 行 |
 |---|---|---|---|---|---|
-| bundle-file-preview | 文件预览 | file-preview + ui-file-preview | 预览·文件 | basic, dev | — |
+| bundle-file-preview | 本地文件及预览 | file-preview + ui-file-preview + local-files | 文件·预览 | basic, dev | — |
 | bundle-worktrees | 工作树 | worktrees + worktrees-tool | 开发·git | dev | — |
-| bundle-room | Room | room + room-tool | 协作·多Agent | dev | — |
+| bundle-room | 多Agent协同 | room + room-tool | 协作·多Agent | dev | — |
 | bundle-local-agent | 本地代理 | local-agent + kimi/codex/claude-code/dsh(tool-subagent、headless 隐形随附) | 委派·多Agent | dev | — |
-| bundle-eval | 评测 | eval + eval-tool | 评测 | eval | **preset-dsh-eval 挪入**(行 id 不变,会话无感) |
+| bundle-eval | 评测 | eval + eval-tool + lab | 评测 | eval | **preset-dsh-eval 挪入**(行 id 不变,会话无感) |
 | bundle-datasets | 数据集 | datasets + datasets-tool | 数据·评测 | eval | — |
 | bundle-mission | 任务规划 | mission + mission-tool | 任务·评测 | eval | — |
-| bundle-typesafe | TypeSafe 裁决 | typesafe + typesafe-tool | 裁决·评测·开发 | eval, dev | — |
+| bundle-typesafe | 快速决策 | typesafe + typesafe-tool | 裁决·评测·开发 | eval, dev | — |
 | bundle-conversation-toolbox | 会话工具箱 | message-tools + message-timeline + session-title-edit + quote + inline-html-render + context-guard + taskpilot | 会话体验 | basic | — |
 | dsh-presets(已存在) | 预设模式 | presets | 模式 | basic, eval, dev | preset-dev / preset-dsh-writing |
 
-### 独立卡(11 张,不套壳)
+### 独立卡(9 张,不套壳)
 
 | 卡 | 中文名 | 标签 | 归属集合 |
 |---|---|---|---|
@@ -47,16 +47,16 @@ package(能力单元)
 | canvas | 灵感画布 | 内容 | basic |
 | capture | 渲染抓取 | 开发·网页 | dev |
 | dsh-reader | 灵感空间 | 内容 | basic |
-| lab | 实验单元 | 评测 | eval |
-| local-files | 文件列表 | 文件 | basic |
 | mobile | 移动端 | 移动 | 全量 |
 | sidechat | 侧边对话 | 会话体验·协作 | basic |
 | ui-shortcuts | 快捷键 | 会话体验 | basic |
-| whalesong | Whalesong | 品牌 | 全量 |
+| whalesong | 进度提醒 | 品牌 | 全量 |
 
 库(无卡,作依赖随包走):local-agent-dsh-headless、local-agent-tool-subagent、ui-content-preview。
 
-归属说明:quote 的「引用到侧边对话」动作依赖 sidechat 的服务,分卡后按探测降级处理(只装一边时另一边功能收窄不报错);会话工具箱按仓主意见由「消息体验」扩编改名而来(收 quote / 内联卡片 / 上下文守卫 / 后台任务)。集合间允许重叠(同一 bundle 可被多个集合引用;typesafe 跨 eval/dev)。重合发生在能力增强面(探测降级),不发生在组合行(划分唯一)——已核查 eval 家族对 localAgent 为运行时探测降级、对 room 零引用。
+**预览内核共享 ≠ bundle 依赖**:local-files / worktrees / ui-file-preview 的预览区渲染的是同一份实现——它们各自在**源码面**内联 ui-content-preview 内核、独立构建、独立可装,运行时不互相依赖。所以 local-files 并进「本地文件及预览」后,工作树 bundle 对该 bundle **没有**任何依赖;感知上的「像一套」来自内核同源,用户侧无感,单侧安装永远成立。
+
+归属说明:quote 的「引用到侧边对话」动作依赖 sidechat 的服务,分卡后按探测降级处理(只装一边时另一边功能收窄不报错);会话工具箱按仓主意见由「消息体验」扩编改名而来(收 quote / 内联卡片 / 上下文守卫 / 后台任务);lab 主要搭配评测使用,入 bundle-eval;卡名以仓主定稿为准(多Agent协同 / 快速决策 / 进度提醒)。集合间允许重叠(同一 bundle 可被多个集合引用;typesafe 跨 eval/dev)。重合发生在能力增强面(探测降级),不发生在组合行(划分唯一)——已核查 eval 家族对 localAgent 为运行时探测降级、对 room 零引用。
 
 ## 标签机制
 

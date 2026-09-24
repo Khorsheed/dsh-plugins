@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "TypeSafe 裁决",
+    "title": "快速决策",
     "description": "提供类型化的模型判断原语，供其它插件在代码中调用。"
   }
 }
