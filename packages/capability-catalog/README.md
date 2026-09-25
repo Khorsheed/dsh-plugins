@@ -275,9 +275,12 @@ dsh-skill to state explicitly that a runtime plugin skill should carry a
 
 | Host line | Verdict |
 |---|---|
-| npm release (≥ `0.1.5-rc.1`) | supported |
-| npm `0.1.7-rc.1` / deepseek-harness master | supported (`verifiedHost: 0.1.5-rc.1`) |
+| npm release (≥ `0.1.5-rc.1`) | supported — 0.1.5-rc.1 full-line boot-verified (42 packages including capture, 2026-09-25) |
+| npm `0.1.7-rc.1` / deepseek-harness master | supported (`verifiedHost: 0.1.7-rc.1`) |
+| earlier hosts | stay on the previous release line |
+
+Both host lines are usable: the 0.1.5 boot passes end-to-end through three compat layers — the [preset-registry dual-name probe](../../.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md), [dual-shape typert codecs](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md), and [typert faces carrying zod@4](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md).
 
 Per-mode capability reads (the mode picker, `snapshotAt` / `snapshotFor` / `modeFaces`, preset-scoped skill delivery) resolve a preset's standing scope through whichever roster face the host line offers: lease-free `standingKeyFor` on 0.1.5, the leased `acquireScope` on rc.1 — rc.1 removed `standingKeyFor`, and catalog releases before this dual-face fix silently read the global layer on rc.1. The lease is released after every read, on the listing and the fingerprint path alike; the strict/degrade wording is identical on both faces.
 
-Machine-readable: `dsh.compat.minHost` in `package.json` (currently `0.1.5-rc.1`; older hosts stay on the previous release line). When a degraded mode is omitted above, note it in `dsh.compat.notes`.
+Machine-readable: `dsh.compat.minHost` in `package.json` (currently `0.1.5-rc.1`; `verifiedHost` tracks the newest verified line, currently `0.1.7-rc.1`). When a degraded mode is omitted above, note it in `dsh.compat.notes`.

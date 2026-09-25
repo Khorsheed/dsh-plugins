@@ -127,9 +127,12 @@ harness 的 `@deepseek-ai/dsh-skill` 已文档化 `resourceBase` 与 `register()
 
 | Host 线 | 结论 |
 |---|---|
-| npm 发布（≥ `0.1.5-rc.1`） | 支持 |
-| npm `0.1.7-rc.1` / deepseek-harness master | 支持（`verifiedHost: 0.1.5-rc.1`） |
+| npm 发布（≥ `0.1.5-rc.1`） | 支持——0.1.5-rc.1 全量 boot 实证通过（42 包含 capture,2026-09-25) |
+| npm `0.1.7-rc.1` / deepseek-harness master | 支持（`verifiedHost: 0.1.7-rc.1`) |
+| 更早宿主 | 停留在旧发布线 |
+
+0.1.5 与 0.1.7 双线可用：0.1.5 的 boot 经三层兼容修复端到端通过——[preset-registry 双名探测](../../.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md)、[typert codec 双形状](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md)、[face 自带 zod@4](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md)。
 
 按模式的能力面读取（模式下拉、`snapshotAt` / `snapshotFor` / `modeFaces`、按 preset 的技能投递）按宿主线走两条 roster 面解析 preset 的 standing scope：0.1.5 的无租约 `standingKeyFor`，rc.1 的租约式 `acquireScope`——rc.1 删除了 `standingKeyFor`，本次双线修复前的目录版本在 rc.1 上全部静默读成全局层。清单与指纹两条路径每次读完都释放租约；strict/降级措辞两线逐字一致。
 
-机器可读：`package.json` 的 `dsh.compat.minHost`（当前 `0.1.5-rc.1`；旧宿主请停留在旧发布线）。若上面省略了降级项，请在 `dsh.compat.notes` 里注明。
+机器可读：`package.json` 的 `dsh.compat.minHost`（当前 `0.1.5-rc.1`；`verifiedHost` 跟踪最近验证的宿主线，当前 `0.1.7-rc.1`）。若上面省略了降级项，请在 `dsh.compat.notes` 里注明。
