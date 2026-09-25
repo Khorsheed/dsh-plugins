@@ -20,7 +20,7 @@
 | `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | `packages/bundle-conversation-toolbox` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-canvas` | `packages/canvas` | 0.4.7 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-canvas` | `packages/canvas` | 0.4.8 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.95 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
