@@ -21,7 +21,7 @@ export interface LocalIconProps {
  * @param props - size and className.
  * @returns the icon element.
  */
-export const IconUndoOutline16 = ({ size = 16, className }: LocalIconProps) => (
+export const IconUndoOutlineMedium = ({ size = 16, className }: LocalIconProps) => (
   <svg
     width={size}
     height={size}

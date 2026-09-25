@@ -284,4 +284,41 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     expect(listFiles).toHaveBeenCalledTimes(2)
   })
+
+  it('the pane reload gesture re-reads the open file and shows the fresh content', async () => {
+    const readFile = vi.fn()
+      .mockResolvedValueOnce({ ok: true as const, value: { path: 'src/agent.ts', kind: 'text', content: 'const a = 1', truncated: false } satisfies FilePreviewRead })
+      .mockResolvedValueOnce({ ok: true as const, value: { path: 'src/agent.ts', kind: 'text', content: 'const b = 2', truncated: false } satisfies FilePreviewRead })
+    renderTab({ readFile })
+    await act(async () => {})
+    fireEvent.click(screen.getByText('agent.ts'))
+    await act(async () => {})
+    expect(readFile).toHaveBeenCalledTimes(1)
+    expect(document.body.textContent).toContain('const a = 1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'action.reload' }))
+    await act(async () => {})
+    expect(readFile).toHaveBeenCalledTimes(2)
+    expect(readFile).toHaveBeenLastCalledWith('s1', 'src/agent.ts')
+    expect(document.body.textContent).toContain('const b = 2')
+  })
+
+  it('a failed reload keeps the old read and the next one recovers', async () => {
+    const readFile = vi.fn()
+      .mockResolvedValueOnce({ ok: true as const, value: READ })
+      .mockResolvedValueOnce({ ok: false as const, error: { code: 'io', message: 'disk gone' } })
+      .mockResolvedValueOnce({ ok: true as const, value: { path: 'src/agent.ts', kind: 'text', content: 'const b = 2', truncated: false } satisfies FilePreviewRead })
+    renderTab({ readFile })
+    await act(async () => {})
+    fireEvent.click(screen.getByText('agent.ts'))
+    await act(async () => {})
+
+    fireEvent.click(screen.getByRole('button', { name: 'action.reload' }))
+    await act(async () => {})
+    expect(document.body.textContent).toContain('state.error')
+
+    fireEvent.click(screen.getByRole('button', { name: 'action.reload' }))
+    await act(async () => {})
+    expect(document.body.textContent).toContain('const b = 2')
+  })
 })

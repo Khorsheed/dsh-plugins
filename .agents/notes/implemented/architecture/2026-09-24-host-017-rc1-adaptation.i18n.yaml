@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-24-host-017-rc1-adaptation.md
+.agents/notes/implemented/architecture/2026-09-24-host-017-rc1-adaptation.md: d8ef5c885ad150e211c89b1ff05488f214814837
+.agents/notes/implemented/architecture/2026-09-24-host-017-rc1-adaptation.zh.md: 31802091ddb83b093b027bcacf15f3b11b36ddbc

@@ -2,6 +2,14 @@
 
 ## 未发布
 
+- 详情页标题行新增「重新加载」手势（共享内容面板的 `onReload`）：重走本插件 Remote 的 `readFile` 读当前文件，磁盘上的新内容一键进面板；重读期间旧内容保持显示、按钮禁用并旋转图标，失败保留旧内容并走既有错误槽，下一次成功顺带清掉旧错误；晚于选择变更到达的旧答案丢弃。改动记录档的数据来自 fold 清单，不在此手势范围（清单刷新走列表页的刷新钮）
+
+## 未发布
+
+- **方案 B 与产物面二期整体回退（仓主拍板 2026-09-24，同日落地同日否决）。** 恢复 0.1.5 的自绘产物页形态，双线同一份：page 型右栏 tab 以 extension 档认领 `dsh-resource://file/**` 可渲染后缀（压过官方 document tab 的 fallback 档——rc.1 的 tab-registry 保留 band 机制），文件树/mention/回合卡/产物行点击全部落自绘详情页（共享内容面板全 chrome + 内容/改动记录切换）；pdf/压缩包/二进制等 decline 后缀落回官方 document tab。撤回物：内容/改动记录两个 `documentPreviews` 渲染器注册与 `documentPreviews` 探测/延迟退役机制、FileContentBody/FileHistoryBody/file-artifacts 薄壳、共享内核的 headless 模式（prop/分支/CSS/spec 整体退役）。否决依据：嵌入方案的接缝成本（renderer loading 协议、extension 档接管语义、headless 布局耦合）与 UX 妥协（改动记录塞进渲染器下拉、复制钮浮动压搜索行）。**不在否决范围、予以保留**：turnTail 回合卡的 deliverables 遮蔽（list 槽臂同官方 cell id 注册 priority -1 空体）与 FilePreviewTab 读 `navigation.params.path` 的 `'path' in` 收窄修复。minHost 不动（`0.1.5-rc.1`）：包内不再有 rc.1 专有 API。
+
+## 未发布
+
 - 内容搜索不再劫持视图：命中经 CSS Custom Highlight API 画在渲染后的正文上（`::highlight()` 外包 `:global()`，否则 lightningcss 会像类名一样改写标识符导致静默不上色）；只有渲染态确实看不见的查询才回落到原始命中行视图，代码视图搜索时因此保留语法配色；HTML 沙箱预览与不支持该 API 的宿主行为不变。
 - 注册任何 UI 前探测宿主的零会话 `capabilities()` Remote；client-only 组合不再留下错误卡、renderer、locale 或空 tab。
 - 导出 `installFilePreviewSurfaces(ctx, remote)`，让握手、安装与卸载边界可直接测试。

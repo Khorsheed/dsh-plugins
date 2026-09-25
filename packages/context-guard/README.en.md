@@ -31,7 +31,7 @@ dsh plugin --profile web remove @khorsheed/dsh-context-guard
 
 ## Config
 
-One tunable, editable in the GUI (Settings → Plugins → "压缩提醒时机 / Compaction reminder timing") and live with no restart.
+One tunable, editable in the GUI and live with no restart — on 0.1.5 under Settings → Plugins ("压缩提醒时机 / Compaction reminder timing"); on 0.1.6-alpha.2+ in the bundle's own configuration section on its Plugins-page detail view.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -48,6 +48,7 @@ plugins:
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- 0.1.6-alpha.2 pre-release line (`@deepseek-ai/dsh@0.1.6-alpha.2`): ✅ full — the `settings.plugin.item` slot is removed in the ui-settings-plugins refactor; the settings card moves to `plugins.bundle.config` (keyed by package name, the Plugins page drawing the title chrome); the dual-inject probe keeps the 0.1.5 card working, minHost unchanged.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
 
 **Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).

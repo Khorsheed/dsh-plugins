@@ -1,5 +1,5 @@
 import { useState } from 'react'
-  import { IconChevronRightOutline14, IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { IconChevronRightOutlineMedium, IconSearchOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
   import type { CatalogMcpTool, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { CredentialField, type CredentialSaveState } from './CredentialField.tsx'
@@ -68,7 +68,7 @@ export function McpServerManageModal({ group, discovering, onClose, onSetCredent
           <>
             <details className={css.mcpConfigDetails}>
               <summary className={css.mcpConfigSummary}>
-                <span className={css.mcpConfigChevron}><IconChevronRightOutline14 size={14} /></span>
+                <span className={css.mcpConfigChevron}><IconChevronRightOutlineMedium size={14} /></span>
                 {t('mcpConfig')}
               </summary>
               <pre className={css.mcpConfig}>{configDisplay(group.config)}</pre>
@@ -107,7 +107,7 @@ export function McpServerManageModal({ group, discovering, onClose, onSetCredent
             </div>
             {live.length > 0 ? (
               <div className={css.mcpToolSearchBox}>
-                <span className={css.searchIcon}><IconSearchOutline16 size={14} /></span>
+                <span className={css.searchIcon}><IconSearchOutlineMedium size={14} /></span>
                 <input
                   className={css.mcpToolSearch}
                   type="search"

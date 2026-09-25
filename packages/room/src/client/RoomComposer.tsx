@@ -26,7 +26,8 @@
  * re-homed INTO this component — the main agent's turn Stop (the send circle
  * swaps while `running`), the dock capsules (RoomDockCapsules), the main
  * agent's todo strip (RoomTodoStrip, the `todos` projection), the queued-
- * messages strip (RoomQueueStrip, the session snapshot's queue), the session
+ * messages strip (RoomQueueStrip, the `inbox` projection — the 0.1.5 session
+ * snapshot's queue on the old line), the session
  * stats row (RoomStatsLine below the card), and the main agent's model seat
  * (RoomModelPicker over the official per-session ModelDirectory — the seat
  * itself is single-owner and cannot be re-hosted, so the picker is our own
@@ -39,16 +40,38 @@ import {
 } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: InboxState plus the `inbox` key merge into SessionProjectionMap.
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { RoomComposerMatch, RoomComposerProps } from './slots.ts'
 import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
 import { RoomDockCapsules } from './RoomDockCapsules.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
 import { RoomPlanView } from './RoomPlanView.tsx'
-import { RoomQueueStrip } from './RoomQueueStrip.tsx'
+import { RoomQueueStrip, type RoomQueueItem } from './RoomQueueStrip.tsx'
 import { RoomRecoveryView } from './RoomRecoveryView.tsx'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
 import css from './RoomComposer.module.css'
+
+/** The 0.1.5 session-snapshot queue row (alpha.2 deleted the snapshot queue for the inbox projection). */
+interface LegacyQueuedMessage {
+  readonly id: unknown
+  readonly placement: string
+  readonly preview: string
+}
+
+const EMPTY_LEGACY_QUEUE: readonly LegacyQueuedMessage[] = []
+const QUEUE_PREVIEW_CHARS = 200
+
+/** The queue row's flat preview: attachment blocks dropped, the rest joined and whitespace-collapsed, 200 chars max (the official QueueDock's rule). */
+function previewOf(content: InboxState['next-turn'][number]['content']): string {
+  const flat = content
+    .filter(block => block.type !== 'image' && block.type !== 'file')
+    .map(block => (block.type === 'text' ? block.text : `[${block.type}]`))
+    .join(' ').replace(/\s+/g, ' ').trim()
+  const chars = Array.from(flat)
+  return chars.length > QUEUE_PREVIEW_CHARS ? `${chars.slice(0, QUEUE_PREVIEW_CHARS).join('')}…` : flat
+}
 
 interface ActiveMention {
   /** The partial name after the trailing `@`. */
@@ -114,13 +137,23 @@ export function RoomComposer({
     : members.filter(member => member.name.startsWith(mention.query))
   // The inherited environment state: the room's own main-agent turn flag
   // (drives the Send/Stop swap) and the still-queued inbox rows (the official
-  // queue dock's data, re-homed as a read-only strip).
+  // queue dock's data, re-homed as a read-only strip). alpha.2 moved the
+  // queue off the session snapshot into the `inbox` projection; 0.1.5 serves
+  // no `inbox` key — the undefined read falls back to the legacy snapshot
+  // queue.
   const nativeRunning = useSession(snapshot => snapshot.running) ?? false
   const coordinator = state === undefined ? undefined : coordinatorMember(state)
   const external = coordinator?.kind === 'cli'
   const running = external ? state?.runs.some(run => run.member === coordinator.name && run.state === 'running') ?? false : nativeRunning
-  const queued = (useSession(snapshot => snapshot.queue) ?? [])
-    .filter(row => row.placement === 'queued')
+  const legacyQueue = useSession(snapshot => (snapshot as { queue?: readonly LegacyQueuedMessage[] }).queue)
+    ?? EMPTY_LEGACY_QUEUE
+  const inbox = (useProjection === undefined ? undefined : useProjection('inbox')) as unknown as InboxState | undefined
+  const nextTurn = inbox?.['next-turn']
+  const queued: readonly RoomQueueItem[] = nextTurn === undefined
+    ? legacyQueue
+      .filter(row => row.placement === 'queued')
+      .map(row => ({ id: String(row.id), preview: row.preview }))
+    : nextTurn.map(row => ({ id: String(row.id), preview: previewOf(row.content) }))
 
   const resize = (area: HTMLTextAreaElement): void => {
     area.style.height = 'auto'
@@ -229,7 +262,7 @@ export function RoomComposer({
         {state !== undefined && planCommand !== undefined && <RoomPlanView plan={state.plan} members={state.members} command={planCommand} openSession={openPlanSession} stopMember={stopMember} t={t} />}
         {state !== undefined && reconcileDelivery !== undefined && <RoomRecoveryView deliveries={state.deliveries ?? []} members={state.members} reconcile={reconcileDelivery} openSession={openPlanSession} t={t} />}
         <RoomQueueStrip
-          items={[...external ? [] : queued.map(row => ({ id: String(row.id), preview: row.preview })), ...(state?.deliveries ?? []).filter(row => row.memberId === coordinator?.id && (row.status === 'queued' || row.status === 'uncertain')).map(row => ({ id: row.id, preview: row.status === 'uncertain' ? `${row.error ?? 'Outcome unknown'}: ${row.text}` : row.text }))]}
+          items={[...external ? [] : queued, ...(state?.deliveries ?? []).filter(row => row.memberId === coordinator?.id && (row.status === 'queued' || row.status === 'uncertain')).map(row => ({ id: row.id, preview: row.status === 'uncertain' ? `${row.error ?? 'Outcome unknown'}: ${row.text}` : row.text }))]}
           t={t}
         />
       </div>

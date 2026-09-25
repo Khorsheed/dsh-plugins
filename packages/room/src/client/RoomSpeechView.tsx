@@ -13,7 +13,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
-  IconCheckOutline16, IconCopyOutline16, IconLinkOutline16, MarkdownText, Tooltip, writeClipboard,
+  IconCheckOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium, MarkdownText, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { memberColor } from './member-color.ts'
@@ -96,7 +96,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
             aria-label={copied ? t('action.copied') : t('action.copy')}
             onClick={copy}
           >
-            {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
+            {copied ? <IconCheckOutlineMedium /> : <IconCopyOutlineMedium />}
           </button>
         </Tooltip>
         {child !== undefined && (
@@ -107,7 +107,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
               aria-label={t('speech.jump')}
               onClick={() => { openSession(child) }}
             >
-              <IconLinkOutline16 />
+              <IconLinkOutlineMedium />
             </button>
           </Tooltip>
         )}

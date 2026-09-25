@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 
 /** The variant preset ids earlier bundle versions bootstrapped. */
 const LEGACY_VARIANTS = ['standard-kimi', 'code-kimi', 'minimal-kimi', 'kimi'] as const

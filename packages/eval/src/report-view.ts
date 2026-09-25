@@ -35,13 +35,14 @@ import { readRunMarks } from './closure.ts'
 import { readExportState, type EvalExportNote } from './export-note.ts'
 import { EvalReadRefused } from './read.ts'
 import { listAnalysisFiles } from './experiment-artifact.ts'
+import { planQuestionOf } from './plan-question.ts'
 import {
   analyzeBundle,
   type CriterionGroupResult, type CriterionSample, type EvalReport, type JudgeAssignment,
 } from './report.ts'
 import type {
   EvalFinalizeView, EvalReportCriterionCell, EvalReportCriterionSample, EvalReportEfficiencyRow,
-  EvalReportJudgeTag, EvalReportPair, EvalReportPairRow, EvalReportTaskCriteria, EvalRunReportView,
+  EvalPlanQuestion, EvalReportJudgeTag, EvalReportPair, EvalReportPairRow, EvalReportTaskCriteria, EvalRunReportView,
 } from './types.ts'
 import { expandHome } from './validate.ts'
 import type { FinalizeReport } from './finalize.ts'
@@ -283,6 +284,7 @@ export function projectReport(report: EvalReport, runId: string): EvalRunReportV
     runId: report.runId ?? runId,
     // Filled by {@link runReportView} when the run belongs to an experiment.
     experimentId: null,
+    question: null,
     analysis: [],
     bundleDir: report.bundleDir,
     searched: [],
@@ -353,6 +355,7 @@ function notExported(runId: string, searched: string[]): EvalRunReportView {
   return {
     runId,
     experimentId: null,
+    question: null,
     analysis: [],
     bundleDir: null,
     searched,
@@ -391,6 +394,19 @@ function notExported(runId: string, searched: string[]): EvalRunReportView {
 }
 
 /**
+ * The question block of the experiment's plan (v1-rev14). An unreadable plan
+ * has no question to answer, which is also what an older plan has — the card
+ * then gives the pairing conclusion alone, and that is not a failure.
+ */
+async function experimentQuestion(dir: string): Promise<EvalPlanQuestion | null> {
+  try {
+    return planQuestionOf(JSON.parse(await readFile(join(dir, 'plan.json'), 'utf8')) as unknown)
+  } catch {
+    return null
+  }
+}
+
+/**
  * The report page's payload for one run: find its bundle, analyze it, project.
  * @param mission - the mission READ face (the run's meta names its plan and repo).
  * @param runId - the run the page is open on.
@@ -417,6 +433,7 @@ export async function runReportView(
   )
   const owner = {
     experimentId: experiment?.id ?? null,
+    question: experiment === undefined ? null : await experimentQuestion(experiment.dir),
     analysis: experiment === undefined ? [] : await listAnalysisFiles(experiment.dir),
   }
   const searched: string[] = []

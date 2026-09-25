@@ -70,7 +70,9 @@ export function installSkillEnvHint(ctx: Context, getScope: () => Promise<unknow
         id: `capability-catalog-env-hint-${skillName}`,
         role: 'user',
         content: [{ type: 'text', text: hint }],
-        source: { kind: 'plugin', plugin: 'capability-catalog' },
+        // Producer-owned kind: the retired {kind: 'plugin'} wrapper fails the
+        // rc.1 native source admission at the durable write (turn-killing).
+        source: { kind: 'capability-catalog', plugin: 'capability-catalog', form: 'env-hint' },
       }] as unknown as never,
     }
     }) as never)

@@ -16,7 +16,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   EvalApproveResult, EvalConditionDiffView, EvalConditionEndpointView, EvalConditionProvisionView,
   EvalConditionRow, EvalConditionsView, EvalExperimentsResult,
-  EvalPlanReview, EvalRunOutputView,
+  EvalPlanNumbersResult, EvalPlanReview, EvalRunOutputView,
 } from '../src/types.ts'
 import type { LabViewProps } from '../src/client/contract.ts'
 import { LabView } from '../src/client/LabView.tsx'
@@ -61,6 +61,7 @@ const LIST: EvalExperimentsResult = {
     lastProgressAt: null,
     stalledMinutes: null,
     unit: null,
+    question: null,
   }],
 }
 
@@ -84,6 +85,7 @@ const REVIEW: EvalPlanReview = {
     exports: null,
     unit: null,
     notes: 'first effort sweep',
+    question: null,
   },
   checks: [
     { severity: 'warn', code: 'COMMIT_UNRESOLVED', message: 'dataset.commit is null — the snapshot pins it at run start' },
@@ -229,6 +231,7 @@ interface Harness {
   fetchDraftOptions: ReturnType<typeof vi.fn>
   draftExperiment: ReturnType<typeof vi.fn>
   insertDraft: ReturnType<typeof vi.fn>
+  setPlanNumbers: ReturnType<typeof vi.fn>
 }
 
 function makeHarness(overrides: Partial<{ review: EvalPlanReview; composer: boolean }> = {}): Harness {
@@ -250,6 +253,15 @@ function makeHarness(overrides: Partial<{ review: EvalPlanReview; composer: bool
     fetchRunOutput: vi.fn(async (): Promise<Result<EvalRunOutputView>> => ({ ok: true, value: OUTPUT })),
     // 让 agent 处理 fills the composer and never sends; false = no composer here.
     insertDraft: vi.fn(() => overrides.composer ?? true),
+    setPlanNumbers: vi.fn(async (): Promise<Result<EvalPlanNumbersResult>> => ({
+      ok: true,
+      value: {
+        experimentId: EXPERIMENT_ID,
+        changes: [{ field: 'reps', before: 2, after: 3 }],
+        written: true,
+        review: { ...(overrides.review ?? REVIEW), digest: { ...(overrides.review ?? REVIEW).digest!, reps: 3 } },
+      },
+    })),
   }
 }
 
@@ -270,6 +282,7 @@ function renderView(h: Harness) {
     approvePlan: h.approvePlan,
     fetchRunOutput: h.fetchRunOutput,
     insertDraft: h.insertDraft,
+    setPlanNumbers: h.setPlanNumbers,
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
@@ -792,6 +805,78 @@ describe('the conditions page', () => {
     expect(screen.getByText('error.noStateRoot.fix')).toBeTruthy()
     expect(screen.getByText('conditions.error')).toBeTruthy()
     expect(screen.getByText('no eval state root: set DSH_HOME — experiments and the condition library live under $DSH_HOME/state/eval')).toBeTruthy()
+  })
+})
+
+describe('the design page asks its question and edits its numbers in place (T74)', () => {
+  const ASKED: EvalPlanReview = {
+    ...REVIEW,
+    digest: {
+      ...REVIEW.digest!,
+      question: { question: 'does effort high beat medium?', expectation: 'high wins', answeredWhen: 'a pair ranks' },
+    },
+  }
+
+  it('⓪ 要回答的问题 shows the three fields verbatim, and a plan with none shows no block', async () => {
+    const h = makeHarness({ review: ASKED })
+    renderView(h)
+    await openPage(h, 'page.design')
+    expect(await screen.findByText('design.question')).toBeTruthy()
+    expect(screen.getByText('does effort high beat medium?')).toBeTruthy()
+    expect(screen.getByText('high wins')).toBeTruthy()
+    expect(screen.getByText('a pair ranks')).toBeTruthy()
+    cleanup()
+
+    const old = makeHarness()
+    renderView(old)
+    await openPage(old, 'page.design')
+    await screen.findByText('design.numbers')
+    expect(screen.queryByText('design.question')).toBeNull()
+  })
+
+  it('changing 次数 calls the numbers verb with ONLY that number and shows the receipt', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.design')
+    const reps = await screen.findByRole('spinbutton', { name: 'design.numbers.reps' })
+    fireEvent.change(reps, { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: 'design.numbers.save' }))
+    await waitFor(() => { expect(h.setPlanNumbers).toHaveBeenCalledWith('s1', { experimentId: EXPERIMENT_ID, reps: 3 }) })
+    expect(await screen.findByText(/design\.numbers\.written .*design\.numbers\.reps 2 → 3/)).toBeTruthy()
+  })
+
+  it('a refusal is said on the page and nothing else moves', async () => {
+    const h = makeHarness()
+    h.setPlanNumbers.mockResolvedValue({ ok: false, error: { code: 'EVAL_PLAN_FROZEN', message: 'the plan is frozen' } })
+    renderView(h)
+    await openPage(h, 'page.design')
+    fireEvent.change(await screen.findByRole('spinbutton', { name: 'design.numbers.reps' }), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'design.numbers.save' }))
+    expect(await screen.findByText(/the plan is frozen/)).toBeTruthy()
+  })
+
+  it('a started experiment shows the numbers read-only, with the reason', async () => {
+    const h = makeHarness()
+    h.fetchExperiments.mockResolvedValue({
+      ok: true,
+      value: { ...LIST, rows: [{ ...(LIST.rows[0] as EvalExperimentsResult['rows'][number]), id: 'run-20260914-zz', runId: 'run-20260914-zz', status: 'running' }] },
+    })
+    renderView(h)
+    await openPage(h, 'page.design')
+    expect(await screen.findByText('design.numbers.frozen')).toBeTruthy()
+    expect(screen.queryByRole('spinbutton')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'design.numbers.save' })).toBeNull()
+  })
+
+  it('the list row carries the question on its own line, only when there is one', async () => {
+    const h = makeHarness()
+    h.fetchExperiments.mockResolvedValue({
+      ok: true,
+      value: { ...LIST, rows: [{ ...(LIST.rows[0] as EvalExperimentsResult['rows'][number]), question: 'does effort high beat medium?' }] },
+    })
+    renderView(h)
+    const line = await screen.findByText('does effort high beat medium?')
+    expect(line.getAttribute('title')).toBe('does effort high beat medium?')
   })
 })
 

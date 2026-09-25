@@ -90,13 +90,29 @@ const HARNESS_PACKAGE_DIRS: Record<string, string> = {
  * composition-layering difference between the supported host lines:
  * - rc line (through 0.1.1-rc.*): positional, sync, and runs BEFORE the
  *   profile load (the launcher's prepareProfile heals, then loads);
- * - 0.1.2 line: an async options object that also links bundle-carried
- *   packages into the profile, so it runs AFTER the profile load.
+ * - 0.1.2 line (through 0.1.5): an async options object that also links
+ *   bundle-carried packages into the profile, so it runs AFTER the profile
+ *   load;
+ * - 0.1.6 line: same options object, but the launcher compose calls it only
+ *   in the opt-in link/dual resolution modes — the default runtime mode
+ *   computes the generation through {@link CreateProfileResolutionGeneration}
+ *   instead (apps/cli composeProfile).
  */
 type HealProfilesModuleFallback = {
   (installAnchor: string, home?: string): void
   (options: { installAnchor: string; profile?: unknown; home?: string }): Promise<void>
 }
+
+/**
+ * The 0.1.6 line's compose-time replacement for the heal: compute the
+ * profile's package-resolution generation without materializing fallback
+ * links (`healProfilesModuleFallback` with `materialize: false`); the boot
+ * mounts the generation in-process (PluginPackages), so runtime mode never
+ * writes `profiles/node_modules`.
+ */
+type CreateProfileResolutionGeneration = (
+  options: { installAnchor: string; profile?: unknown; home?: string },
+) => Promise<unknown>
 
 /**
  * Dynamically import one host package from the explicitly selected surface.
@@ -162,7 +178,7 @@ export interface PreflightComposition {
  * bundle layers in `dsh.profile.bundles` order, the profile user layer, the
  * home-level user layer, `--patch` overlays, the agent-presets roots overlay
  * (rc host line only; the 0.1.2 line's preset package self-ships its root),
- * then the telemetry switch. Two host API generations are mirrored and
+ * then the telemetry switch. Three host API generations are mirrored and
  * feature-detected per run — see the `hostLine` branch below. Exported so
  * the drift tripwire can compare this assembly against the launcher's own
  * dump without booting anything.
@@ -194,6 +210,8 @@ export async function composePreflightPatches(
   }
   const composeEntries = appBoot.composeEntries as (layers: readonly unknown[][], warn?: (msg: string) => void) => Array<{ id?: unknown; config?: Record<string, unknown> }>
   const healProfilesModuleFallback = appBoot.healProfilesModuleFallback as HealProfilesModuleFallback
+  const createProfileResolutionGeneration = appBoot.createProfileResolutionGeneration as CreateProfileResolutionGeneration
+  const createRuntimeResolution = appBoot.createRuntimeResolution as ((options: { installAnchor: string; profile: unknown }) => Promise<unknown>) | undefined
   const loadOptionalPatches = appBoot.loadOptionalPatches as (bin: string, file: string) => unknown[] | undefined
   const loadOverlayPatches = appBoot.loadOverlayPatches as (bin: string, file: string) => unknown[]
   const loadProfile = appBoot.loadProfile as (bin: string, name: string, anchor: string, home: string, opts: { userLayer?: boolean }) => {
@@ -214,12 +232,21 @@ export async function composePreflightPatches(
   // the profile composition: the heal moved behind the async options API and
   // below the profile load (see HealProfilesModuleFallback), and the launcher
   // dropped its agent-presets shipped-root overlay because the preset package
-  // now self-ships its root. DEFAULT_PROFILE_PATCH_RELOAD is a value export
-  // only the new line carries, so it is the feature marker; a version parse
-  // would break on exactly the unreleased builds this runner must dry-run.
-  // Both lines stay supported: prod hosts run the rc line until 0.1.2 lands
-  // on npm.
-  const hostLine: 'rc' | '0.1.2' = 'DEFAULT_PROFILE_PATCH_RELOAD' in appBoot ? '0.1.2' : 'rc'
+  // now self-ships its root. The 0.1.6 line flipped the default resolution
+  // mode from link to runtime: its compose computes an immutable resolution
+  // generation instead of materializing fallback links, and it removed
+  // DEFAULT_PROFILE_PATCH_RELOAD — the 0.1.2 line's marker. The 0.1.7 line
+  // deleted the fallback projections outright (in-memory runtime resolution
+  // interception): its compose calls createRuntimeResolution and carries
+  // neither older marker, so the markers must be probed newest-first. Each
+  // marker is a value export only its line carries; a version parse would
+  // break on exactly the unreleased builds this runner must dry-run. All
+  // lines stay supported: prod hosts run 0.1.5 until the next npm line lands.
+  const hostLine: 'rc' | '0.1.2' | '0.1.6' | '0.1.7' = 'createRuntimeResolution' in appBoot
+    ? '0.1.7'
+    : 'createProfileResolutionGeneration' in appBoot
+      ? '0.1.6'
+      : 'DEFAULT_PROFILE_PATCH_RELOAD' in appBoot ? '0.1.2' : 'rc'
   if (hostLine === 'rc') healProfilesModuleFallback(anchor, resolvedHome)
   const composed = loadProfile(NAME, profile, anchor, resolvedHome, { userLayer: true })
   // Mirror prepareProfile: rewrite the empty root config the tree patches
@@ -230,6 +257,20 @@ export async function composePreflightPatches(
   writeFileSync(join(composed.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   if (hostLine === '0.1.2') {
     await healProfilesModuleFallback({ installAnchor: anchor, profile: composed, home: resolvedHome })
+  } else if (hostLine === '0.1.6') {
+    // The launcher compose's runtime-mode step (apps/cli composeProfile):
+    // compute the generation AFTER the profile load and root-config rewrite,
+    // materializing nothing. Awaited, so a resolution-graph failure rejects
+    // the compose instead of escaping as an unhandled rejection. The explicit
+    // home keeps the recorded profilesDir on the deployment under check.
+    await createProfileResolutionGeneration({ installAnchor: anchor, profile: composed, home: resolvedHome })
+  } else if (hostLine === '0.1.7') {
+    // The 0.1.7 launcher compose (apps/cli composeProfile): the resolution is
+    // computed in memory right after the profile load and root-config rewrite
+    // — the older lines' fallback projections are gone for good. Awaited, so
+    // a resolution-graph failure rejects the compose instead of escaping as
+    // an unhandled rejection.
+    await createRuntimeResolution!({ installAnchor: anchor, profile: composed })
   }
   const homePatches = loadOptionalPatches(NAME, join(resolvedHome, HOME_PATCH_FILENAME)) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))

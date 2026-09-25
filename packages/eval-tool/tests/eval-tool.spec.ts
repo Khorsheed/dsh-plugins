@@ -90,6 +90,7 @@ describe('eval-tool companion row', () => {
     // A minted condition is always a copy — the discipline the whole
     // comparison rests on, stated where the model reads it.
     expect(text).toContain('always a COPY')
+    expect(text).toContain("Put the person's question into its question field verbatim")
     // The second write (I5·T60) and the door it is: the analysis draft's home,
     // and never an item's material — said where the model reads it, so that
     // reaching for `write` plus a sandbox escalation stops being the path.

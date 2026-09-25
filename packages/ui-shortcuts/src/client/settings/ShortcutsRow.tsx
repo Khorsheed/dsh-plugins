@@ -2,9 +2,10 @@
 import { Fragment, useEffect } from 'react'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: the settings.plugin.item keyed-slot SlotMap merge, so this
-// component's props type matches the plugin configuration card contract.
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+// Type-only: the settings.plugins.tab list-slot SlotMap merge (declared in
+// ui-settings' canonical contract), so this component's props type matches
+// the Plugins settings tab contract.
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { bindingOfEvent, bindingParts, equalPreference, formatBinding, isBindingKey, mouseBindingOfEvent, partLabel } from '../bindings.ts'
 import type { BindingPart } from '../bindings.ts'
 import type { ShortcutPreference } from '../../settings.ts'
@@ -43,7 +44,7 @@ export interface ShortcutsRowInjected {
 
 /** Full settings-card props. */
 export type ShortcutsRowProps =
-  PropsRuntime<'settings.plugin.item'>
+  PropsRuntime<'settings.plugins.tab'>
   & PropsLocale<'shortcuts'>
   & InjectFace<ShortcutsRowInjected>
 

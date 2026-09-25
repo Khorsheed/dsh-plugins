@@ -242,7 +242,6 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
     inputActions: undefined,
     useProjection: undefined,
     useSessions: ((sel: (s: unknown) => unknown) => sel({
-      current: 's1',
       byId: { s1: { cwd: '/work' } },
     })) as never,
     useWorkspaces: undefined,

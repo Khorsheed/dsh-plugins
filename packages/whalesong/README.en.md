@@ -41,7 +41,8 @@ Optional, hot-applied within one poll round-trip (no browser refresh), in the pr
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface, full build+test green; the blocked chime now subscribes `ctx.uiSession.pendingInteractions` (the ui-session service), and in an assembly without that service the blocked chime degrades off silently while completion chimes keep working. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface, full build+test green; the blocked chime subscribes the ui-session Session status snapshot (the 0.1.5 `ctx.uiSession.pendingInteractions` face is adapted forward), and in an assembly without that service the blocked chime degrades off silently while completion chimes keep working. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- 0.1.6-alpha.2 pre-release line (`@deepseek-ai/dsh@0.1.6-alpha.2`): ✅ full — the `SessionPendingInteractionSnapshot` face is removed in alpha.2; the blocked chime now reads the unified `ctx.uiSession.sessionStatus` (each entry's `pendingInteraction`); the probe + adapter keep the 0.1.5 line working, minHost unchanged.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
 
 **Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).

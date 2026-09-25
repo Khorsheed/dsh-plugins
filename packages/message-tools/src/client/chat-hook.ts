@@ -31,6 +31,7 @@ const EMPTY_CHAT: ChatSlice = {
   nodes: {
     get: () => undefined,
     source: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
+    turnDataSource: () => ({ getSnapshot: () => [], subscribe: () => () => {} }),
     processSource: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
     values: () => [],
   },

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "渲染抓取",
+    "description": "渲染 JS 重页面，带回内联样式的静态 DOM。"
+  }
+}

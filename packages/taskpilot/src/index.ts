@@ -33,7 +33,7 @@ export function apply(ctx: Context): void {
         return { kind: 'error', text: 'usage: /taskpilot-stop <jobId>' }
       }
       try {
-        const outcome = ctx.jobs.kill(jobId as JobId, invocation.agent, 'user stop')
+        const outcome = ctx.jobs.kill(jobId as JobId, invocation.agent.id, 'user stop')
         return {
           kind: 'success',
           text: outcome === 'already-finished'

@@ -16,6 +16,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the ctx.sessions service merge (ISessions).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
@@ -34,6 +35,24 @@ import { MissionPresetVisibility, RegistrationToggle } from './preset-visibility
 import { createMissionsViewStore } from './store.ts'
 
 export { MissionsView }
+
+/**
+ * The on-screen session across host lines: 0.1.6-alpha.2 dropped
+ * `SessionListState.current` for per-row `retainedBy.mainView` counts (the
+ * `mainView` reference source is declared by ui-session, outside this
+ * package's type program — hence the duck shape), while 0.1.5 publishes only
+ * `current`. One build reads both.
+ * @param list - sessions list snapshot.
+ * @returns the main-view session id, or undefined when nothing is on screen.
+ */
+type SessionListCurrent = SessionListState & {
+  current?: SessionId
+  byId: Record<SessionId, { id: SessionId; retainedBy?: Readonly<Record<string, number>> }>
+}
+function mainSessionId(list: SessionListState): SessionId | undefined {
+  const view = list as SessionListCurrent
+  return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
+}
 
 /** Required services: the slot registry, the remote channel, the copy, and the
  * session list (the preset-composition criterion reads the current session).
@@ -92,7 +111,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         exportRun: (sid: SessionId, request: MissionExportRequest) => remote.exportRun(sid, request),
       }),
     }, MissionsView),
-    () => chrome.show(ctx.sessions.list.getSnapshot().current),
+    () => chrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
   )
   ctx.slots.inject('conversation.view', () => {
     missionsToggle.setReady(true)

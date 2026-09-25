@@ -1,33 +1,67 @@
 /**
  * Stage one of this package's right-Sidebar registration: what the
- * `file-preview` tab type IS.
+ * `file-preview` tab type IS — on both host lines (the plan-B embedding into
+ * the official document tab landed and was vetoed the same day, 2026-09-24;
+ * this self-drawn page is the content face again).
  *
  * Both a page and a claimant: the guide page offers it as an entry box, and
  * it claims `dsh-resource://file/**` addresses whose suffix the detail view's
  * preview stack renders (text/code/markup/data/images — pdf, archives, and
  * binaries stay with the official document tab). At the default `extension`
- * band it outranks the official `text` type (fallback band), so every
- * openResource route — the official deliverables card, the file tree,
- * wrapped mentions' fallback — lands files in our detail view. The claim is
- * deterministic by construction: an earlier cut also required fold
- * membership, but the cache warms only after our surfaces fetch, and turns
- * the official card claims never mount our card (its loader) — exactly those
- * files kept falling back to the official tab (the "sometimes ours,
- * sometimes official" race). The turn card opens the page by kind with
- * `params: { path }` for outside-workspace paths (no addressable resource).
+ * band it outranks the official `text` type (fallback band) — the rc.1 tab
+ * registry kept the band mechanism — so every openResource route (the
+ * deliverables card, the file tree, wrapped mentions' fallback, the turn
+ * card) lands files in our detail view. The claim is deterministic by
+ * construction: an earlier cut also required fold membership, but the cache
+ * warms only after our surfaces fetch, and turns the official card claims
+ * never mount our card (its loader) — exactly those files kept falling back
+ * to the official tab (the "sometimes ours, sometimes official" race). The
+ * turn card opens the page by kind with `params: { path }` for
+ * outside-workspace paths (no addressable resource).
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import type {} from './locales.ts'
-import { renderablePath } from './history-definition.ts'
 
 /** The tab kind this package owns. */
 export const FILE_PREVIEW_KIND = 'file-preview'
 
 /** This implementation's identity in the tab system, and the key its body registers under. */
 export const FILE_PREVIEW_ID = '@khorsheed/dsh-client-ui-file-preview'
+
+/**
+ * Suffixes the detail view's preview stack renders: the change-history text
+ * set plus the image formats the pane's image arm serves. Everything else
+ * (pdf, archives, binaries) stays with the official document tab — the type's
+ * `canOpen` filters on this set before claiming an address.
+ */
+export const RENDERABLE_EXTENSIONS: readonly string[] = [
+  'md', 'mdx', 'txt', 'log',
+  'json', 'jsonc', 'jsonl', 'csv', 'tsv', 'xml', 'svg',
+  'yaml', 'yml', 'toml', 'ini',
+  'ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs',
+  'py', 'sh', 'bash', 'sql',
+  'html', 'htm', 'css', 'scss', 'less',
+  'go', 'rs', 'java', 'c', 'h', 'cpp', 'hpp', 'rb', 'php', 'swift', 'kt',
+  'vue', 'svelte', 'diff', 'patch',
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico',
+]
+
+const RENDERABLE = new Set(RENDERABLE_EXTENSIONS)
+
+/**
+ * Whether the detail view can render this path's content (suffix match,
+ * case-insensitive, compound suffixes intentionally not special-cased).
+ * @param path - any file path spelling.
+ */
+export function renderablePath(path: string): boolean {
+  const base = path.replaceAll('\\', '/').toLowerCase()
+  const name = base.slice(base.lastIndexOf('/') + 1)
+  const dot = name.lastIndexOf('.')
+  return dot > 0 && RENDERABLE.has(name.slice(dot + 1))
+}
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
   interface SidebarRightTabParamsMap {
@@ -104,6 +138,7 @@ export function filePreviewDefinition(t: TranslateNS<'filePreview'>): SidebarRig
     },
     title: (address) => chipTitle(address, () => t('open')),
     guide: [{
+      id: FILE_PREVIEW_KIND,
       order: 20,
       title: () => t('guide.title'),
       description: () => t('guide.description'),

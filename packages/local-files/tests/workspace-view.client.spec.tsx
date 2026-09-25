@@ -8,7 +8,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { WorkspaceViewProps } from '../src/client/contract.ts'
 import { clearLocalRoot, localRootOf, rememberLocalRoot } from '../src/client/local-root.ts'
 import { createLocalFilesStore } from '../src/client/store-local.ts'
@@ -117,5 +117,48 @@ describe('WorkspaceView back-to-workspace', () => {
     fireEvent.click(screen.getByTitle('local.backToWorkspace'))
     expect(instance.getSnapshot().root).toBe(WORKSPACE)
     expect(localRootOf(SESSION)).toBe(WORKSPACE)
+  })
+})
+
+describe('WorkspaceView reload gesture', () => {
+  const FILE = '/work/repo/a.md'
+
+  it('re-reads the selected file through the Remote and shows the fresh content', async () => {
+    const readFile = vi.fn()
+      .mockResolvedValueOnce({ ok: true, value: { path: FILE, kind: 'text', content: 'old draft' } })
+      .mockResolvedValueOnce({ ok: true, value: { path: FILE, kind: 'text', content: 'new draft' } })
+    const { props, instance } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+    props.readFile = readFile as never
+    render(<WorkspaceView {...props} />)
+    act(() => { instance.actions.select(FILE) })
+    await act(async () => {})
+    expect(readFile).toHaveBeenCalledTimes(1)
+    expect(document.body.textContent).toContain('old draft')
+
+    fireEvent.click(screen.getByRole('button', { name: 'action.reload' }))
+    await act(async () => {})
+    expect(readFile).toHaveBeenCalledTimes(2)
+    expect(readFile).toHaveBeenLastCalledWith({ path: FILE })
+    expect(document.body.textContent).toContain('new draft')
+  })
+
+  it('keeps the old read in state and reports the failure through the error slot', async () => {
+    const readFile = vi.fn()
+      .mockResolvedValueOnce({ ok: true, value: { path: FILE, kind: 'text', content: 'old draft' } })
+      .mockResolvedValueOnce({ ok: false, error: { code: 'io', message: 'disk gone' } })
+    const { props, instance } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+    props.readFile = readFile as never
+    render(<WorkspaceView {...props} />)
+    act(() => { instance.actions.select(FILE) })
+    await act(async () => {})
+
+    fireEvent.click(screen.getByRole('button', { name: 'action.reload' }))
+    await act(async () => {})
+    // The stored read is not wiped by a failed reload; the failure surfaces
+    // through the package's shared error slot (the tree column AND the pane
+    // both print it — the existing convention for any failed read).
+    expect(instance.getSnapshot().preview).toMatchObject({ kind: 'text', content: 'old draft' })
+    expect(instance.getSnapshot().error).toBe('disk gone')
+    expect(screen.getAllByText('state.error').length).toBeGreaterThan(0)
   })
 })

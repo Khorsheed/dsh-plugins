@@ -8,6 +8,7 @@
  * is missing.
  * @module @khorsheed/dsh-eval
  */
+import { resolve } from 'node:path'
 import { hashConditionDocument, hashHome, type HomeHash } from './hash.ts'
 import { writeEvalReport, type ReportWrite } from './report.ts'
 import { CONDITION_SCHEMA_ID } from './schema.ts'
@@ -50,7 +51,8 @@ import { listAnalysisFiles, readExperimentArtifact } from './experiment-artifact
 import { composeExperimentGet, type EvalExperimentGetView } from './experiment-get.ts'
 import { importExperiments, type ImportReport } from './import.ts'
 import { recordArchive, recordClosure } from './closure.ts'
-import { experimentDetail, listExperiments, pairRun, readPlans, runsForItem } from './experiments.ts'
+import { experimentDetail, experimentRunIds, listExperiments, pairRun, readPlans, runsForItem } from './experiments.ts'
+import { EvalPlanEditRefused, writePlanNumbers } from './plan-numbers.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
 import { readCellArtifact } from './cell-artifact.ts'
 import { judgeQueueView, writeHumanFinal } from './judge-bench.ts'
@@ -75,7 +77,7 @@ import type {
   EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult, EvalExperimentArtifactRequest, EvalExperimentArtifactView, EvalImportRequest,
   EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
   EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView,
-  EvalJudgeVerdictInput, EvalMatrixView, EvalPlanRequest, EvalPlanReview, EvalReexportRequest, EvalRunReportView, EvalRunUnitsView,
+  EvalJudgeVerdictInput, EvalMatrixView, EvalPlanNumbersRequest, EvalPlanNumbersResult, EvalPlanRequest, EvalPlanReview, EvalReexportRequest, EvalRunReportView, EvalRunUnitsView,
 } from './types.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
@@ -606,6 +608,9 @@ export class EvalService {
       dataset: request.dataset,
       ...(options.session === undefined ? {} : { originSession: options.session.id }),
       name: request.name,
+      ...(request.question === undefined ? {} : { question: request.question }),
+      ...(request.expectation === undefined ? {} : { expectation: request.expectation }),
+      ...(request.answeredWhen === undefined ? {} : { answeredWhen: request.answeredWhen }),
       ...(request.commit === undefined ? {} : { commit: request.commit }),
       items: request.items,
       conditions: request.conditions,
@@ -706,6 +711,57 @@ export class EvalService {
       return reviewPlan(request.planPath, { validation: await this.validatePlan(request.planPath) })
     }
     throw new EvalReadRefused('plan review needs an experimentId (or, for an old plan, a planPath)')
+  }
+
+  /**
+   * Change a plan's numbers in place — 每组次数, the per-cell budget, the
+   * judge's sample count — the design page's one write into a plan (T74).
+   *
+   * Only before the experiment starts. The plan is what a run was started
+   * FROM, and a number changed afterwards would make the page describe a run
+   * that never happened; so a run the ledger pairs with this experiment, or a
+   * run job for its plan still in flight, freezes the plan and the edit is
+   * refused with that reason. Structural edits are not here at all: they go
+   * back to the agent through the composer.
+   * @param request - the experiment and the values.
+   * @returns what changed, and the review re-read from disk.
+   * @throws {@link EvalPlanEditRefused} when the plan is frozen or a value is not allowed.
+   */
+  async setPlanNumbers(request: EvalPlanNumbersRequest): Promise<EvalPlanNumbersResult> {
+    const record = await this.experimentRecord(request.experimentId)
+    const frozen = await this.experimentStartedBy(record)
+    if (frozen !== null) {
+      throw new EvalPlanEditRefused(`experiment ${record.id} has started (${frozen}) — its plan is frozen; draft a new experiment to change it`)
+    }
+    const report = await writePlanNumbers(record.planPath, {
+      ...(request.reps === undefined ? {} : { reps: request.reps }),
+      ...(request.activeMinutes === undefined ? {} : { activeMinutes: request.activeMinutes }),
+      ...(request.turns === undefined ? {} : { turns: request.turns }),
+      ...(request.judgeSamples === undefined ? {} : { judgeSamples: request.judgeSamples }),
+    })
+    return {
+      experimentId: record.id,
+      changes: report.changes,
+      written: report.written,
+      review: await this.planReview({ experimentId: record.id }),
+    }
+  }
+
+  /**
+   * What started an experiment, in words — a run the ledger pairs with it, or
+   * this instance's run job for its plan still running — or null when nothing
+   * did. A composition without mission can only see its own jobs.
+   */
+  private async experimentStartedBy(record: ExperimentRecord): Promise<string | null> {
+    const mission = this.hosts?.get('mission') as MissionRunListFace | undefined
+    if (mission !== undefined) {
+      const runs = experimentRunIds(mission, await readPlans(this.stateRoot()), record.id)
+      if (runs.length > 0) return `run ${runs[0] as string}`
+    }
+    const planPath = resolve(record.planPath)
+    const job = this.jobs.list().find(entry =>
+      entry.status === 'running' && entry.plan !== undefined && resolve(expandHome(entry.plan)) === planPath)
+    return job === undefined ? null : `run job ${job.jobId} is running`
   }
 
   /**
@@ -1692,6 +1748,9 @@ export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
 export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
 export { EvalProvisionRefused } from './provision.ts'
 export { EvalDraftRefused, draftExperiment, draftOptions } from './draft.ts'
+export { EvalPlanEditRefused, writePlanNumbers } from './plan-numbers.ts'
+export type { PlanNumberChange, PlanNumberField, PlanNumbers, PlanNumbersReport } from './plan-numbers.ts'
+export { planQuestionOf } from './plan-question.ts'
 export type { DraftConditionEdit, DraftExperimentInput, DraftOptions, DraftWrite } from './draft.ts'
 export type { ProvisionReport } from './provision.ts'
 export type { ProvisionCheck } from './effective.ts'

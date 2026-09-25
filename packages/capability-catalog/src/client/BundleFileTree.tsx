@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-  import { IconChevronDownOutline14, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16 } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium } from '@deepseek-ai/dsh-client-ui-primitives'
   import css from './CapabilityCatalogCard.module.css'
 
 /** One node of the bundle file tree. */
@@ -85,8 +85,8 @@ export function BundleFileTree({ files, selectedPath, onSelect }: {
       return (
         <div key={node.path}>
           <button type="button" className={css.treeRow} style={indent} onClick={() => toggle(node.path)}>
-            <span className={css.treeChevron}>{open ? <IconChevronDownOutline14 size={16} /> : <IconChevronRightOutline14 size={16} />}</span>
-            {open ? <IconFolderOpen16 /> : <IconFolderClose16 />}
+            <span className={css.treeChevron}>{open ? <IconChevronDownOutlineMedium size={16} /> : <IconChevronRightOutlineMedium size={16} />}</span>
+            {open ? <IconFolderOpenMedium /> : <IconFolderCloseMedium />}
             <span className={css.treeName}>{node.name}</span>
           </button>
           {open && node.children.length > 0 ? (

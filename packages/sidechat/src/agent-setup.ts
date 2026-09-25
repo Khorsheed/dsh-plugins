@@ -19,7 +19,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentSetup } from '@deepseek-ai/dsh-agent'
-import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
+import type AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 

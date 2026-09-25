@@ -345,6 +345,18 @@ export const PLAN_SCHEMA: SchemaObject = {
       type: 'string',
       description: 'Optional. The experiment\'s display name; the experiment id is minted from it. An imported plan without one takes its file stem.',
     },
+    question: {
+      type: 'string',
+      description: 'Optional (v1-rev14). The question this experiment is run to answer, one sentence in the person\'s own words; the conclusion card answers it verbatim. Absent on older plans, and absence is not a warning.',
+    },
+    expectation: {
+      type: 'string',
+      description: 'Optional (v1-rev14). What the person expects the answer to be, before anything ran; may be omitted when there is no expectation.',
+    },
+    answeredWhen: {
+      type: 'string',
+      description: 'Optional (v1-rev14). One sentence: what result would count as having answered the question.',
+    },
     dataset: {
       type: 'object',
       additionalProperties: false,

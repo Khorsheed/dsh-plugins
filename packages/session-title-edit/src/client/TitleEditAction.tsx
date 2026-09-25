@@ -15,7 +15,7 @@
  * becomes a pure slot consumer and the probe/overlay logic is removed.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { Button, IconEditOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconEditOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { isRenameFailure } from './slots.ts'
 import type { TitleEditActionProps } from './slots.ts'
 import { MAX_TITLE_BYTES, normalizedTitleByteLength } from './title-length.ts'
@@ -203,7 +203,7 @@ export function TitleEditAction({ sessionId, useSessions, renameSession, t }: Ti
         title={t('action.rename')}
         onClick={begin}
       >
-        <IconEditOutline16 size={14} />
+        <IconEditOutlineMedium size={14} />
       </button>
     )
   }

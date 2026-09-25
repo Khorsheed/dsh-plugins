@@ -1,6 +1,6 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev13** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev14** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器与绑定表单预填从本协议派生；`dataset-authoring` skill 也计划从本协议派生，但目前仍处于 planned，尚未随 `@khorsheed/dsh-datasets` 包分发。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
@@ -607,6 +607,18 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
       "type": "string",
       "description": "Optional. The experiment's display name; the experiment id is minted from it. An imported plan without one takes its file stem."
     },
+    "question": {
+      "type": "string",
+      "description": "Optional (v1-rev14). The question this experiment is run to answer, one sentence in the person's own words; the conclusion card answers it verbatim. Absent on older plans, and absence is not a warning."
+    },
+    "expectation": {
+      "type": "string",
+      "description": "Optional (v1-rev14). What the person expects the answer to be, before anything ran; may be omitted when there is no expectation."
+    },
+    "answeredWhen": {
+      "type": "string",
+      "description": "Optional (v1-rev14). One sentence: what result would count as having answered the question."
+    },
     "dataset": {
       "type": "object",
       "additionalProperties": false,
@@ -825,6 +837,7 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
 - plan **不含 template 字段**：run 模板是题集 manifest 的确定性函数，validate 时生成、lint，随 plan 一起审阅（I2）。
 - `dataset` 写 `{registry, set, commit}`（v1-rev13）：`registry` 是题库登记 id，`set` 是仓库里的题集，`commit` **必填**且是完整哈希——plan 用到的每个契约文件都在这个 commit 上读。起草时不给 commit，`eval_plan_draft` 取跟踪分支最新，与同题集、同条件的既有实验所钉版本内容（`items/`、`schemas/` 树哈希）不一致时拒绝并列出候选。旧形态 `{repo, id, commit}`（`commit` 可为 `null`，表示 run 启动时钉入）**只读**：旧 plan 仍能校验与导入，任何工具都不再写它。
 - `name` 可缺省：实验的显示名，实验 id `<slug>-<yyyymmdd>-<4hex>` 由它生成；导入的旧 plan 缺省时取文件名。
+- `question` / `expectation` / `answeredWhen` 都可缺省（v1-rev14）：这次实验**要回答的问题**（一句，人的原话）、**预期**（跑之前人以为的答案，没有就不写）、**怎么算回答了**（一句：什么样的结果算回答了这个问题）。它们是给人看的方案，不进任何编排：实验设计页把三者放在上半段第一块，结果对比的结论卡用 question 原样开头、把 answeredWhen 放在卡上一行小字。rev13 及更早的 plan 没有这三个字段，页面不显示这一块，validate 也不因缺失报警。三者和其余字段一样进 planSha——改问题就是改方案，启动后的实验不再改它。
 - `unit` 可缺省。缺省即**宿主路径**：格子目录在 `$DSH_HOME/state/eval` 下，与容器无关，与本字段出现之前逐字节相同。在场即**容器路径**：本 run 的每一格都在一个由 `image` 建出的 lab 单元里跑完 acquire → populate → 逐阶段委派与 checkpoint → 探针（经 `lab.verify` 在单元内）→ archive → release。`network` 不声明就是 docker 默认网桥（**有外网**），封闭跑法必须点名内网；`user` 不声明就是镜像自带的 `USER`；`resources` 既真加到容器上，也进环境指纹。
 - `unit.egressCheck` 可缺省，缺省即与本字段出现之前逐字节相同。在场即**出网自检**：每个新 acquire 出来的单元都先跑这条命令——就绪探针在委派之前跑，每一格在 acquire 与 populate 之间跑；退出码 0 过，其余（含超时）以 `EGRESS_UNAVAILABLE` 拒掉整个 run，一次委派都不花。**内网跑法应当声明它**：单元够不到代理时不会失败，而是**什么都不答**，读起来与「选手没话说」一模一样（实测：codex 在断网单元里跑满 230 秒，`task_complete` 的 `last_agent_message` 是 null，全程没有一句网络错误）。命令与目标写在这里、与它们所属的网络放在一起——编排器自己不持有任何地址。声明了但 `command` 为空或含空词，run 以 `EGRESS_CHECK_MALFORMED` 拒绝（契约子集没有 `minItems`，只能在 run 这一层挡）。
 - validate **不查镜像是否存在**：审阅一份 plan 不该要求 docker daemon 在场。第一次 `acquire` 就是这项检查。
@@ -834,6 +847,9 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
 {
   "schema": "dataseek.plan/1",
   "name": "harness-comparison-effort",
+  "question": "codex-exec 和 claude-exec 在这两道题上谁做得更完整？",
+  "expectation": "claude-exec 更完整",
+  "answeredWhen": "两组各跑满 3 次、判定覆盖一致，配对差值给出方向与区间",
   "dataset": {
     "registry": "dataseek-eval",
     "set": "harness-comparison",

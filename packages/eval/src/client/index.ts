@@ -27,6 +27,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the ctx.sessions service merge (ISessions).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
@@ -40,7 +41,7 @@ import type {
   EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
   EvalExperimentArtifactRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
   EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest,
-  EvalMatrixRequest, EvalPlanRequest, EvalReexportRequest, EvalReportRequest, EvalRunUnitsRequest,
+  EvalMatrixRequest, EvalPlanNumbersRequest, EvalPlanRequest, EvalReexportRequest, EvalReportRequest, EvalRunUnitsRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { DraftCard, type DraftCardFace } from './DraftCard.tsx'
@@ -51,6 +52,34 @@ import { EvalPresetVisibility, RegistrationToggle } from './preset-visibility.ts
 import { createLabViewStore } from './store.ts'
 
 export { LabView }
+
+/**
+ * The on-screen session across host lines: 0.1.6-alpha.2 dropped
+ * `SessionListState.current` for per-row `retainedBy.mainView` counts (the
+ * `mainView` reference source is declared by ui-session, outside this
+ * package's type program — hence the duck shape), while 0.1.5 publishes only
+ * `current`. One build reads both.
+ * @param list - sessions list snapshot.
+ * @returns the main-view session id, or undefined when nothing is on screen.
+ */
+type SessionListCurrent = SessionListState & {
+  current?: SessionId
+  byId: Record<SessionId, { id: SessionId; retainedBy?: Readonly<Record<string, number>> }>
+}
+function mainSessionId(list: SessionListState): SessionId | undefined {
+  const view = list as SessionListCurrent
+  return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
+}
+
+/**
+ * Minimal navigation face of ui-workspace's `ctx.uiWorkspace`, probed per
+ * call rather than injected: 0.1.6-alpha.2 deleted `ISessions.open`, and
+ * `uiWorkspace.openSession` is the session-navigation entry on both host
+ * lines. A composition without ui-workspace degrades the verb to a no-op.
+ */
+interface UiWorkspaceNav {
+  openSession(id: SessionId): void
+}
 
 /** Required services: the slot registry, the remote channel, the copy, and the
  * session list (the preset-composition criterion reads the current session).
@@ -113,6 +142,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
         provisionCondition: (sid: SessionId, request: EvalConditionProvisionRequest) => remote.provisionCondition(sid, request),
         setConditionEndpoint: (sid: SessionId, request: EvalConditionEndpointRequest) => remote.setConditionEndpoint(sid, request),
+        setPlanNumbers: (sid: SessionId, request: EvalPlanNumbersRequest) => remote.setPlanNumbers(sid, request),
         // ui-spec step 2. The same service verb `eval_plan_draft` reaches —
         // a draft a person fills in and a draft an agent makes in one
         // sentence are the same file in the same list.
@@ -152,7 +182,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         // member composer and dock there are local-agent's, not this tab's.
         //
         // Through the SUBAGENT address, because that is the only address the
-        // host will read one at. `sessions.open(childId)` selects the row and
+        // host will read one at. `openSession(childId)` selects the row and
         // then fails to load its history — «subagent Sessions require their
         // durable parent address (session/agent-busy)» — which is what pilot D
         // did on every one of these buttons until this call learned the
@@ -161,22 +191,53 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         // that can fail — no parent recorded, a refresh that throws, a child
         // the catalog does not call healthy — falls back to selecting by id,
         // which is strictly what this code did before.
+        //
+        // One call, two host lines: 0.1.5 reads the address through
+        // `ISessions.openSubagent`; 0.1.6-alpha.2 removed that method and
+        // widened `uiWorkspace.openSession`'s target to take the address
+        // (0.1.7-rc.1 renames the catalog refresh `refreshProjections`).
+        // Every opener is wrapped: alpha.2 throws synchronously on an unknown
+        // target, and the drawer stays put so the entry can be retried.
         openSession: (childSessionId: SessionId, parentSessionId: SessionId | null) => {
-          const byId = (): void => { ctx.sessions.open(childSessionId) }
-          const retained = ctx.sessions.subagentAddress(childSessionId)
+          const sessions = ctx.sessions as unknown as {
+            subagentAddress?(id: SessionId): unknown
+            openSubagent?(target: unknown): void
+            refreshSubagents?(id: SessionId): Promise<void>
+            refreshProjections?(id: SessionId): Promise<void>
+            open?(id: SessionId): void
+          }
+          const nav = ctx.get('uiWorkspace') as UiWorkspaceNav | undefined
+          const openTarget = (target: unknown): void => {
+            try {
+              if (sessions.openSubagent !== undefined) sessions.openSubagent(target)
+              else nav?.openSession(target as SessionId)
+            } catch { /* unknown target: the drawer stays put, the entry can be retried */ }
+          }
+          const byId = (): void => {
+            try {
+              if (nav !== undefined) nav.openSession(childSessionId)
+              else sessions.open?.(childSessionId)
+            } catch { /* same degrade */ }
+          }
+          const retained = sessions.subagentAddress?.(childSessionId)
           if (retained !== undefined) {
-            ctx.sessions.openSubagent(retained)
+            openTarget(retained)
             return
           }
           if (parentSessionId === null) {
             byId()
             return
           }
-          void ctx.sessions.refreshSubagents(parentSessionId).then(() => {
+          const refresh = sessions.refreshSubagents?.bind(sessions) ?? sessions.refreshProjections?.bind(sessions)
+          if (refresh === undefined) {
             // One-shot: an evaluation delegation is `{ mode: 'one-shot' }` on
             // its own descriptor, which is the mode the catalog entry has to
             // match for the host to accept the address.
-            ctx.sessions.openSubagent({ parentSessionId, childSessionId, mode: 'one-shot' })
+            openTarget({ parentSessionId, childSessionId, mode: 'one-shot' })
+            return
+          }
+          void refresh(parentSessionId).then(() => {
+            openTarget({ parentSessionId, childSessionId, mode: 'one-shot' })
           }).catch(byId)
         },
         // T72's four exits and the archive flag: run-level annotations a
@@ -198,7 +259,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         },
       }),
     }, LabView),
-    () => chrome.show(ctx.sessions.list.getSnapshot().current),
+    () => chrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
   )
   ctx.slots.inject('conversation.view', () => {
     labToggle.setReady(true)

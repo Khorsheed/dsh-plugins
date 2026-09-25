@@ -119,6 +119,8 @@ export { LiveFlush, LIVE_FLUSH_INTERVAL_MS } from './live-flush.ts'
 import { LocalAgentStreams } from './live-stream.ts'
 export { LocalAgentStreams, LiveStreamPublisher, LIVE_CHECKPOINT_INTERVAL_MS } from './live-stream.ts'
 export { containerExecSpawn, containerScopedHome } from './container.ts'
+export { settingsFace, vol } from './settings-face.ts'
+export type { SettingsFace } from './settings-face.ts'
 
 export {
   CLI_VERSION_FAILURE_TTL_MS,
@@ -776,7 +778,11 @@ export function assertResumeCwdUnchanged(
   }
 }
 
-export const Config: z<Config> = z.object({
+// Bare `z` annotation: `z<Config>`/`z<any, Config>` both fail schemastery
+// 3.18.4's variance under exactOptionalPropertyTypes (TS2375), and dropping
+// the annotation trips TS2742 on the inferred type's private names. The
+// interface stays the apply signature's contract.
+export const Config: z = z.object({
   homesRoot: z.string().required(),
   loginPromptTimeoutMs: z.number().default(10_000),
 })
@@ -2938,6 +2944,7 @@ export class LocalAgentRegistry {
       argv: [login.pty.command, ...args],
       cwd: homeDir,
       env: { [harness.homeEnvVar]: homeDir },
+      terminalType: 'xterm-256color',
       rows: 24,
       cols: 80,
       graceMs: REPLACE_LOGIN_GRACE_MS,

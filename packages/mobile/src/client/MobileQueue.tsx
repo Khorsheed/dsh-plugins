@@ -3,12 +3,21 @@ import { MobileIcon } from './MobileIcon.tsx'
 import { createPortal } from 'react-dom'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { IConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { queuedRows } from './queue.ts'
+import type { LegacyQueuedMessage, MobileInboxState } from './queue.ts'
 
 export interface MobileQueueInjected { updateQueue?: IConversation['updateQueue'] }
 /** Room's takeover hides the official QueueDock. Restore its mutation verbs
  * through the same scoped Conversation API, without touching the Room composer. */
-export function MobileQueue({ useSession, updateQueue, t }: PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'mobile'> & MobileQueueInjected) {
-  const rows = useSession(s => s.queue), running = useSession(s => s.running)
+export function MobileQueue({ useSession, useProjection, updateQueue, t }: PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'mobile'> & MobileQueueInjected) {
+  // alpha.2 serves the queue as the `inbox` projection (its declared value is
+  // wire JSON; the official QueueDock narrows it the same way); the 0.1.5
+  // standard kit has no projection hook and its host serves no `inbox` key —
+  // both absence paths fall back to the legacy snapshot queue inside queuedRows.
+  const legacyQueue = useSession(s => (s as { queue?: readonly LegacyQueuedMessage[] }).queue)
+  const inbox = (useProjection === undefined ? undefined : useProjection('inbox')) as unknown as MobileInboxState | undefined
+  const rows = queuedRows(legacyQueue, inbox)
+  const running = useSession(s => s.running)
   const pending = useSession(s => s.pendingSubmissions)
   const mutable = useSession(s => s.subagent === null || s.subagent.address.mode === 'continuable')
   const [seat, setSeat] = useState<HTMLDivElement | null>(null), [open, setOpen] = useState(false)
@@ -31,16 +40,15 @@ export function MobileQueue({ useSession, updateQueue, t }: PropsRuntime<'conver
     return () => { alive.current = false; observer.disconnect(); owned?.remove() }
   }, [updateQueue])
   useEffect(() => { if (open && seat) dialog.current?.showModal(); else dialog.current?.close() }, [open, seat])
-  const queued = rows.filter(r => r.placement === 'queued')
-  const admitted = new Set(queued.flatMap(row => row.rpcId === undefined ? [] : [row.rpcId]))
+  const admitted = new Set(rows.flatMap(row => row.rpcId === undefined ? [] : [row.rpcId]))
   const pendingQueue = pending.filter(row => row.placement === 'queued' && !admitted.has(row.requestId))
-  const count = queued.length + pendingQueue.length
+  const count = rows.length + pendingQueue.length
   useEffect(() => {
     if (!count) setOpen(false)
-    if (edit && (!mutable || !queued.some(row => row.id === edit.id))) setEdit(null)
-  }, [count, mutable, queued, edit])
+    if (edit && (!mutable || !rows.some(row => row.id === edit.id))) setEdit(null)
+  }, [count, mutable, rows, edit])
   const apply = async (id: string, action: Parameters<NonNullable<MobileQueueInjected['updateQueue']>>[1]) => {
-    if (!updateQueue || busy || !mutable || !queued.some(row => row.id === id)) return
+    if (!updateQueue || busy || !mutable || !rows.some(row => row.id === id)) return
     setBusy(true); setError(false)
     try { await updateQueue(id as Parameters<typeof updateQueue>[0], action); if (alive.current) setEdit(null) }
     catch { if (alive.current) setError(true) }
@@ -52,7 +60,7 @@ export function MobileQueue({ useSession, updateQueue, t }: PropsRuntime<'conver
     <dialog ref={dialog} data-mobile-tools-dialog aria-label={t('queued')} onClose={() => setOpen(false)}>
       <div data-mobile-tools-handle/><header><strong>{t('queued')}</strong><button aria-label={t('done')} onClick={() => dialog.current?.close()}><MobileIcon name="close"/></button></header>
       {error && <p role="alert">{t('queueError')}</p>}
-      {queued.map(row => <section data-mobile-queue-row key={row.id}>
+      {rows.map(row => <section data-mobile-queue-row key={row.id}>
         {edit?.id === row.id ? <textarea aria-label={t('editQueued')} value={edit.text} onChange={e => setEdit({ id: row.id, text: e.target.value })}/> : <p>{row.content.map(b => b.type === 'text' ? b.text : `[${t('attachments')}]`).join('')}</p>}
         <div>
           {edit?.id === row.id ? <><button disabled={busy || !edit.text.trim()} onClick={() => void apply(row.id, { kind: 'edit', content: [{ type: 'text', text: edit.text }] })}>{t('save')}</button><button disabled={busy} onClick={() => setEdit(null)}>{t('cancel')}</button></> : <>

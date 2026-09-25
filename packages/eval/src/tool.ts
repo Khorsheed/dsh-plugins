@@ -227,12 +227,26 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       + 'refused; home.sha is nulled on every copy (the scoped home is not provisioned yet) and the notes record '
       + 'what was copied from what. On a plan that declares a unit_image, a copy whose source has no container segment '
       + 'gets one filled in from its harness\'s default credential mount, recorded in the notes. '
-      + 'Call eval_conditions first to see what there is to copy.',
+      + 'Call eval_conditions first to see what there is to copy. '
+      + '起草时把人的问题原样写进 question: the plan carries what the experiment is FOR, and the conclusion card '
+      + 'answers that sentence, so do not paraphrase it.',
     parameters: {
       name: {
         type: 'string',
         required: true,
         description: 'The experiment name — shown in the lab list, and the stem of the experiment id.',
+      },
+      question: {
+        type: 'string',
+        description: 'The question this experiment answers — the person\'s own sentence, verbatim. The design page shows it first and the conclusion card answers it.',
+      },
+      expectation: {
+        type: 'string',
+        description: 'What the person expects the answer to be, in their words. Omit when they have no expectation.',
+      },
+      answered_when: {
+        type: 'string',
+        description: 'One sentence: what result would count as having answered the question.',
       },
       dataset: {
         type: 'string',
@@ -326,6 +340,9 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       const session = sessionOf(exec)
       return (await service.draftExperiment({
         name: args.name,
+        ...(args.question === undefined ? {} : { question: args.question }),
+        ...(args.expectation === undefined ? {} : { expectation: args.expectation }),
+        ...(args.answered_when === undefined ? {} : { answeredWhen: args.answered_when }),
         dataset: args.dataset,
         ...(args.commit === undefined ? {} : { commit: args.commit }),
         items: [...args.items],

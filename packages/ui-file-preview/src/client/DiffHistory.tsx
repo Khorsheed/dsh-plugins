@@ -11,17 +11,23 @@ import css from './FilePreviewTab.module.css'
 
 /** Localized DiffBlock chrome from the filePreview dictionary. */
 function diffBlockChrome(t: TranslateNS<'filePreview'>): { labels: DiffBlockLabels } {
-  return {
-    labels: {
-      copy: t('diff.copy'),
-      copied: t('diff.copied'),
-      collapse: t('diff.collapse'),
-      collapseAria: t('diff.collapseAria'),
-      expand: (count: number) => t('diff.expand', { count }),
-      expandAria: (count: number) => t('diff.expandAria', { count }),
-      files: (count: number) => t('diff.files', { count }),
-    },
+  const labels: DiffBlockLabels = {
+    copy: t('diff.copy'),
+    copied: t('diff.copied'),
+    collapse: t('diff.collapse'),
+    collapseAria: t('diff.collapseAria'),
+    expand: (count: number) => t('diff.expand', { count }),
+    expandAria: (count: number) => t('diff.expandAria', { count }),
+    codeLabel: t('diff.code'),
+    wrapLabel: t('diff.wrap'),
+    unwrapLabel: t('diff.unwrap'),
   }
+  // 0.1.5's DiffBlock draws a `files` footer and looks the formatter up on
+  // the labels; rc.1 dropped the label from the type (and the footer with
+  // it). Attach it outside the literal so rc.1's excess-property check stays
+  // green while the legacy runtime still finds its formatter.
+  ;(labels as { files?: (count: number) => string }).files = (count: number) => t('diff.files', { count })
+  return { labels }
 }
 
 /**

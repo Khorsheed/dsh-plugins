@@ -2,9 +2,9 @@
 
 [English](README.en.md) | 中文
 
-社区文件预览面的共享内容内核：文件列表（`@khorsheed/dsh-local-files`）与工作树（`@khorsheed/dsh-worktrees`）的右侧预览区渲染的是**同一份实现**，一处修复两边生效。
+社区文件预览面的共享内容内核：文件列表（`@khorsheed/dsh-local-files`）、工作树（`@khorsheed/dsh-worktrees`）的右侧预览区与 ui-file-preview 的内容面渲染的是**同一份实现**，一处修复处处生效。
 
-这不是插件。它不注册 slot、service、locale，也没有自己的 loader row 和 client bundle——它在**源码面**被消费：两个插件把它声明为 workspace 依赖，直接 `import '@khorsheed/dsh-client-ui-content-preview/src/client/…'`，各自的 tsdown client bundle 把它内联进 `lib/client.js`。因此它零运行时耦合，两个插件仍然各自可独立安装、独立卸载。
+这不是插件。它不注册 slot、service、locale，也没有自己的 loader row 和 client bundle——它在**源码面**被消费：各插件把它声明为 workspace 依赖，直接 `import '@khorsheed/dsh-client-ui-content-preview/src/client/…'`，各自的 tsdown client bundle 把它内联进 `lib/client.js`。因此它零运行时耦合，各插件仍然各自可独立安装、独立卸载。
 
 ## 提供什么
 
@@ -14,7 +14,7 @@
 | HTML 分级沙箱 | Tier0 `sandbox=""` + 内嵌 meta CSP（默认）；Tier1 `sandbox="allow-scripts"` 且**永不同开** `allow-same-origin`，需显式确认；含 `content-visibility` 大文档延迟、`<script>` 探测提示条、能力桥（`openLink`/`copy`/`download` 白名单 + `message.source` 校验） |
 | 内容搜索 | 保留渲染态，用 CSS Custom Highlight API 画命中；命中只在源码语法里（`**`、围栏、折叠的 JSON 节点）时如实降级到原始行视图；不支持该 API 的引擎同样降级，不白屏 |
 | Markdown / JSON / CSV | 走官方 `MarkdownText` / `JsonTree`；**只覆盖 `--dsw-font-markdown-*` 字号 token，不覆盖任何元素级 margin/padding**，所以节奏与官方文档一致 |
-| 面板 chrome | 复制路径 / 打开目录 / 在 IDE 中打开（按宿主 open-in-app 探测结果逐项显隐）、滚动位置记忆、格式 banner |
+| 面板 chrome | 重新加载当前文件（调用方注入 `onReload` 才渲染，排在复制路径之前；进行中禁用并旋转图标）/ 复制路径 / 打开目录 / 在 IDE 中打开（按宿主 open-in-app 探测结果逐项显隐）、滚动位置记忆、格式 banner |
 
 **不**负责：文件树、数据面（Remote / store / 根目录选择）、diff 与提交对比（由调用方以 render prop 传入）、tab 注册与可见性——那些是各插件自己的数据面与身份。
 
@@ -33,9 +33,10 @@ localized 文案由调用方提供：内核不持有任何 locale 命名空间�
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-local-files
 dsh plugin --profile web add @khorsheed/dsh-worktrees
+dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
 ```
 
-卸载上面任一个插件都不影响另一个——内核被内联进了各自的 client bundle。
+卸载其中任一个插件都不影响其余——内核被内联进了各自的 client bundle。
 
 ## Compatibility
 

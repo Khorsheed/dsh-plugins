@@ -297,9 +297,10 @@ describe('SideChatService — the contextKey lifecycle', () => {
     expect(outcome.ok).toBe(true)
     expect(agentsKit.created).toHaveLength(1)
     expect(agentsKit.created[0]!.meta).toEqual({ cwd: SOURCE_CWD, agentPreset: 'default-preset' })
-    // The followup carries the user's text with the plugin source tag.
+    // The followup carries the user's text with the producer-owned source.
     const rec = agentsKit.live.values().next().value as FakeAgentRec
     expect(rec.followup).toHaveBeenCalledTimes(1)
+    expect(rec.followup.mock.calls[0]![0]).toMatchObject({ source: { kind: 'sidechat' } })
     expect(rec.events[0]).toMatchObject({ type: 'user/message' })
     // The mapping persisted: contextKey → the new session id.
     const doc = docOf(fs)

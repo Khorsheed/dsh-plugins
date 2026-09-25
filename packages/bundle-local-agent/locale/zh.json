@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "本地多Agent",
+    "description": "把 dsh Agent 委派给本地 CLI 智能体(Kimi、Codex、Claude Code、dsh)——local-agent 家族一次装齐。"
+  }
+}

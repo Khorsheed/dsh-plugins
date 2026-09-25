@@ -38,7 +38,7 @@ import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
-import { DesignPage } from './DesignPage.tsx'
+import { DesignPage, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
 import {
   Chip, Detail, EmptyState, FactorCell, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
 } from './parts.tsx'
@@ -64,7 +64,7 @@ export function LabView(props: LabViewProps) {
   const {
     sessionId, useStore, actions, t,
     fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
-    provisionCondition, setConditionEndpoint,
+    provisionCondition, setConditionEndpoint, setPlanNumbers,
     fetchDraftOptions, draftExperiment,
     fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, submitHumanFinal, fetchExperimentArtifact,
@@ -409,6 +409,23 @@ export function LabView(props: LabViewProps) {
         text: value.lockStale ? `${said} ${t('conditions.endpointLockStale')}` : said,
       })
       if (value.row !== null) actions.applyConditionRow(value.row)
+    })
+  }
+
+  /**
+   * Write the open plan's numbers in place (T74). The answer carries the
+   * plan-review payload read AFTER the write, so the page shows the file as it
+   * now is; the list is refreshed too, because its scale column reads reps.
+   * @param numbers - the values the person typed.
+   */
+  function setNumbers(numbers: PlanNumbersDraft): Promise<PlanNumbersAnswer> {
+    const experimentId = openRow?.experimentId ?? null
+    if (experimentId === null) return Promise.resolve({ ok: false, message: t('design.numbers.noPlan') })
+    return setPlanNumbers(sessionId, { experimentId, ...numbers }).then((result): PlanNumbersAnswer => {
+      if (!result.ok) return { ok: false, message: result.error.message }
+      actions.setReview(result.value.review)
+      if (result.value.written) actions.refresh()
+      return { ok: true, value: result.value }
     })
   }
 
@@ -1063,6 +1080,7 @@ export function LabView(props: LabViewProps) {
                     onEditEndpoint={(id: string | null) => { actions.editEndpoint(id) }}
                     onSetEndpoint={setEndpoint}
                     onAddGroup={() => { setNewOpen(true) }}
+                    onSetNumbers={setNumbers}
                     onFix={applyFix}
                     t={t}
                   />
@@ -1237,11 +1255,17 @@ function ExperimentRowLine(props: {
       }}
     >
       <span className={css.colName} title={row.experimentId ?? row.name}>
-        <span className={css.nameText}>{row.name}</span>
-        {/* A run from before experiments were deployment-level that no
-            imported experiment claims: said, not hidden (T73) — so the name
-            takes the ellipsis and the chip never shrinks. */}
-        {row.legacy && <span className={css.nameChip}><Chip tone="neutral">{t('list.legacy')}</Chip></span>}
+        <span className={css.nameLine}>
+          <span className={css.nameText}>{row.name}</span>
+          {/* A run from before experiments were deployment-level that no
+              imported experiment claims: said, not hidden (T73) — so the name
+              takes the ellipsis and the chip never shrinks. */}
+          {row.legacy && <span className={css.nameChip}><Chip tone="neutral">{t('list.legacy')}</Chip></span>}
+        </span>
+        {/* The question the experiment is run to answer (rev14, T74): one
+            line under the name, cut with an ellipsis, whole on hover. A plan
+            without one keeps the single-line row it always had. */}
+        {row.question !== null && <span className={css.questionLine} title={row.question}>{row.question}</span>}
       </span>
       <span className={css.colSnapshot}>{snapshotCell(row)}</span>
       <span className={css.colNum}>

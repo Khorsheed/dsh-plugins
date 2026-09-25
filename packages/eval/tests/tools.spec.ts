@@ -351,6 +351,27 @@ describe('eval_plan_draft — the row\'s one write, and the form\'s own verb', (
     expect(minted.notes).toContain('model.endpoint')
   })
 
+  it('carries the person\'s question into the plan, and says to write it verbatim (T74)', async () => {
+    const { service } = draftable()
+    const draft = vi.spyOn(service, 'draftExperiment')
+    const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
+
+    const result = await tool.execute({
+      ...DRAFT_ARGS,
+      question: 'does effort high beat medium?',
+      expectation: 'high wins',
+      answered_when: 'a pair ranks',
+    }, BOUND) as { planPath: string }
+
+    expect(draft.mock.calls[0]?.[0]).toMatchObject({
+      question: 'does effort high beat medium?', expectation: 'high wins', answeredWhen: 'a pair ranks',
+    })
+    const plan = JSON.parse(readFileSync(result.planPath, 'utf8')) as Record<string, unknown>
+    expect(plan['question']).toBe('does effort high beat medium?')
+    expect(plan['answeredWhen']).toBe('a pair ranks')
+    expect((tool as unknown as { description: string }).description).toContain('起草时把人的问题原样写进 question')
+  })
+
   it('never starts anything — the row has no run verb and this one reaches none', async () => {
     const { service } = draftable()
     const runStart = vi.spyOn(service, 'runStart')

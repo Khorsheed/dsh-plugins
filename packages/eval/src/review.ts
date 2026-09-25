@@ -19,6 +19,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { canonicalJson } from './hash.ts'
+import { planQuestionOf } from './plan-question.ts'
 import type { ConditionDiff, ConditionsReport } from './read.ts'
 import type { ProvisionCheck } from './effective.ts'
 import type { ProvisionReport } from './provision.ts'
@@ -95,6 +96,7 @@ function digestOf(plan: Record<string, unknown>, pin?: ReviewPin): EvalPlanDiges
     exports: stringOrNull(plan['exports']),
     unit: unitOf(plan['unit']),
     notes: stringOrNull(plan['notes']),
+    question: planQuestionOf(plan),
   }
 }
 

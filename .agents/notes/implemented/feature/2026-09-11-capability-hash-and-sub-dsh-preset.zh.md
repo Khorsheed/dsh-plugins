@@ -35,7 +35,7 @@ Status: implemented
 
 ### 两个动词，一个出清单，一个出身份
 
-`snapshotFor(presetId?, workdir?)` 是指纹动词：解析 `standingKeyFor(presetId ?? defaultId)`，按该 scope 读 skill 与 tool 注册表，加载每个技能正文使行带上 `bodySha`，并盖 `sha`。`snapshot()` 仍是清单动词——同样的行，不读正文，不出摘要——因为设置卡要的就是一份清单，为了画一张网格而每个技能多读一次注册表，这笔开销没有买主。`list_capabilities` 以 `capabilities` 带回**整面**的标签，即使调用方只要了 skill 或只要了 tool：标签命名的是这个实例，不是别人向它提的那个问题。
+`snapshotFor(presetId?, workdir?)` 是指纹动词：按宿主线提供的 roster 面解析该 preset 的 standing scope——0.1.5 的 `standingKeyFor(presetId ?? defaultId)`，rc.1 的租约式 `acquireScope`（见 [rc.1 租约面笔记](../../implemented/bug-fix/2026-09-24-capability-catalog-rc1-leased-scope.md)）——按该 scope 读 skill 与 tool 注册表，加载每个技能正文使行带上 `bodySha`，并盖 `sha`。`snapshot()` 仍是清单动词——同样的行，不读正文，不出摘要——因为设置卡要的就是一份清单，为了画一张网格而每个技能多读一次注册表，这笔开销没有买主。`list_capabilities` 以 `capabilities` 带回**整面**的标签，即使调用方只要了 skill 或只要了 tool：标签命名的是这个实例，不是别人向它提的那个问题。
 
 **清单降级，指纹拒绝**（`resolvePresetScope`）。preset 的 scope 解析不出来时——没有 roster、id 不存在、composition 挂不起来——`snapshot()` 退回全局层并且**不带** `preset` 标签：设置卡不该因为一行配置坏了就变空，而一份不带标签的全局层读数是诚实的。`snapshotFor()` 则抛错，带上 preset 名与原因。这条规则写下来，是因为本次改动的第一次真机跑：一个 preset 只错了一行 persona 配置，降级版本让两个 roster 着**不同** preset 的 scope 拿到同一个哈希，还各自贴着自己 preset 的名字，全程无声。会降级的指纹不是「弱一点的指纹」，是**假的**指纹。
 

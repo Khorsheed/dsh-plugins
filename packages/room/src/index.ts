@@ -8,7 +8,7 @@
  * model never sees them, and harnesses without this plugin replay the session
  * safely); every read folds the journal through the pure replay, and every
  * mutating Remote appends and flushes. Dispatch records and first tasks are
- * executed by the DispatchEngine: main-agent members get a plugin-sourced
+ * executed by the DispatchEngine: main-agent members get a producer-sourced
  * followup on the room's own agent, CLI members go through the probed
  * local-agent delegation facade (absent facade = degraded CLI capability,
  * never a boot failure). The member-notification gate lives here too: the
@@ -53,7 +53,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { DispatchEngine, ROOM_PLUGIN } from './dispatch.ts'
+import { DispatchEngine, isRoomSource } from './dispatch.ts'
 import { coordinatorMember, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
@@ -162,7 +162,7 @@ export class RoomService extends TypertRemoteService {
       if (!isRoomLog(events) || coordinatorMember(replay(events), events)?.kind !== 'cli') return next()
       if (nativeTurns.get(agent) === turn) return next()
       if (step !== 1) throw new Error('Room native turn has no explicit member dispatch')
-      if (messages.some(message => message.source.kind === 'plugin' && message.source.plugin === ROOM_PLUGIN)) {
+      if (messages.some(message => isRoomSource(message.source))) {
         nativeTurns.set(agent, turn)
         return next()
       }

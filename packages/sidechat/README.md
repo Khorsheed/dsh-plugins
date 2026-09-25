@@ -58,7 +58,7 @@ dsh plugin --profile web remove @khorsheed/dsh-sidechat
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——右栏页型 tab（`ctx.sidebarRightTabs` + keyed `sidebar.right.pane.tab`）与助手消息动作槽（`conversation.chat.assistant-actions`）自 0.1.5 起存在，`minHost` 由此钉在 0.1.5-rc.1；旧宿主没有右栏面，本包不向其发布。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.7-rc.1）——Session V4 适配：send 的 followup source 改为生产者归属 kind `sidechat`（V4 原生准入在落盘写入时拒收退役的 `kind: 'plugin'` 包装；0.1.5 宿主的 `user/message` 准入只查 kind 非空，两条线都能落盘）；transcript 投影在三种来源形态下都把本包发送视为用户发言（新 kind / `plugin:@khorsheed/dsh-sidechat` 迁移形态 / V3 包装存量），tool/result 折叠兼读 V4 消息级 `toolCallId`/`isError` 与 V3 块级包装。
 - **座位探测降级**：tab、消息动作与浮层 dock（`shell.overlay`）都走 `ctx.slots.inject` 注册——宿主不声明对应座位时表面静默缺席，不影响启动；无 overlay 座位时「弹出为浮层」按钮直接隐藏，tab 即是全部。右栏导航面 `ctx.sidebarRight` 探测不到时，引用照常落库，只跳过自动展开 tab。
 - **web 面插件**：headless profile 没有浏览器消费者，本插件在那里不贡献任何东西；宿主半边照常提供 `ctx.sideChat` 服务与 Remote。
 - **状态写入围栏重定界**：contexts 映射是部署级状态（`$DSH_HOME/state/sidechat/contexts.json`），写入沿用挂载的 `ctx.fs`（版本守卫、原子写），调用会话解析出**模式**与 session id（只读部署照样拒绝），可写边界重定界为插件自己的 state 目录——绝不用裸 `node:fs` 绕。宿主侧 `openWith`（无会话）按部署默认模式写入。未挂载 `ctx.fs` 的组合降级为纯内存状态（重启即失，不阻塞任何手势）。`DSH_HOME` 未设置时 state 根退回 `process.cwd()`（datasets 先例）。

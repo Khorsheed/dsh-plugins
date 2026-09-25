@@ -6,9 +6,9 @@
  * plain local filesystem paths. Per-session memory keeps each session on its
  * own last-browsed root.
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  IconFolderOpenOutline16, IconProjectAddOutline16, IconRefreshOutline16, writeClipboard,
+  IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, writeClipboard,
   type IconProps,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ListLocalDirectoryResult } from '../types.ts'
@@ -34,12 +34,12 @@ function toItems(listing: ListLocalDirectoryResult | null, showHidden: boolean):
 /**
  * The back-to-original-workspace glyph: a closed folder with a return arrow.
  * Self-drawn (the BranchGlyph / ProductsGlyph precedent) — the official icon
- * set has no undo / home / return glyph, and IconFolderClose16 read as
+ * set has no undo / home / return glyph, and IconFolderCloseMedium read as
  * "closed folder", not "go back". Sized on the official 16px grid: the folder
  * footprint (x 1.7–14.3, y 2.6–13.4) matches the official folder glyphs'
  * near-full-bleed outline, stroke 1.4 to their filled-ring weight.
  */
-function IconFolderReturn16({ size = 16, className }: IconProps) {
+function IconFolderReturnMedium({ size = 16, className }: IconProps) {
   return (
     <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
@@ -144,6 +144,23 @@ export function WorkspaceView({
     return () => { cancelled = true }
   }, [selectedPath, readFile, actions])
 
+  // The pane's reload gesture re-reads the selected file through the same
+  // Remote. Unlike a fresh selection the old read is NOT cleared first — the
+  // panel keeps showing it while the re-read is in flight, and a failure keeps
+  // it too, reporting through the shared error slot like any other failed
+  // read. An answer that lands after the selection moved is dropped.
+  const selectedPathRef = useRef(selectedPath)
+  selectedPathRef.current = selectedPath
+  const reloadPreview = (): Promise<void> => {
+    const path = selectedPath
+    if (path === null) return Promise.resolve()
+    return readFile({ path }).then(result => {
+      if (selectedPathRef.current !== path) return
+      if (result.ok) actions.setPreview(result.value)
+      else actions.setError(result.error.message)
+    })
+  }
+
   const navigate = (path: string): void => {
     actions.setRoot(path)
     if (sessionId !== undefined) rememberLocalRoot(sessionId, path)
@@ -200,20 +217,20 @@ export function WorkspaceView({
         </div>
         <div className={css.actions}>
           <button type="button" className={css.action} title={t('local.chooseWorkspace')} onClick={() => { void pickWorkspace().then(path => { if (path !== null) navigate(path) }) }}>
-            <IconProjectAddOutline16 />
+            <IconProjectAddOutlineMedium />
           </button>
           {workspaceRoot !== undefined && workspaceRoot !== '' && root !== null && root !== workspaceRoot && (
             <button type="button" className={css.action} title={t('local.backToWorkspace')} onClick={() => { navigate(workspaceRoot) }}>
-              <IconFolderReturn16 />
+              <IconFolderReturnMedium />
             </button>
           )}
           {canOpenFolder && root !== null && (
             <button type="button" className={css.action} title={t('local.openFolder')} onClick={() => { openFolder(root) }}>
-              <IconFolderOpenOutline16 />
+              <IconFolderOpenOutlineMedium />
             </button>
           )}
           <button type="button" className={css.action} title={t('local.refreshFiles')} onClick={() => { if (root !== null) actions.refresh() }}>
-            <IconRefreshOutline16 />
+            <IconRefreshOutlineMedium />
           </button>
         </div>
       </div>
@@ -269,6 +286,7 @@ export function WorkspaceView({
               ? {}
               : {
                 onCopyPath: () => writeClipboard(selectedPath),
+                onReload: reloadPreview,
                 chrome: {
                   ...(canOpenFolder ? { openFolder: () => { openFolder(dirnameOf(selectedPath) || selectedPath) } } : {}),
                   ...(canOpenIDE ? { openIDE: () => { openIDE(dirnameOf(selectedPath) || selectedPath) } } : {}),

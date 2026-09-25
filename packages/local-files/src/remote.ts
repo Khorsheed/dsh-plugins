@@ -47,9 +47,11 @@ export class LocalFilesRemoteService extends TypertRemoteService<LocalFilesRemot
   }
 
   /** Read one local file for preview — the git-agnostic browser's content
-   * plane. The path is absolute; no caller lookup parameter. */
+   * plane. The path is absolute; no caller lookup parameter. The optional
+   * `offset` starts the text window mid-file (a truncated read's `nextOffset`
+   * continues it); image reads ignore it. */
   @Remote('readFile')
   readFile(request: ReadLocalFileRequest): Promise<LocalFilesRead> {
-    return this.localFiles.readFile(request.path)
+    return this.localFiles.readFile(request.path, request.offset)
   }
 }

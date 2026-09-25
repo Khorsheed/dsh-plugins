@@ -13,7 +13,7 @@
  */
 
 import { useState } from 'react'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ShortcutsRow, type ShortcutsRowProps } from './ShortcutsRow.tsx'
 import css from './ShortcutsCard.module.css'
 
@@ -42,7 +42,7 @@ export function ShortcutsCard(props: ShortcutsCardProps) {
           <span className={css.name}>{title}</span>
           <span className={css.description}>{t('settings.description')}</span>
         </span>
-        <IconChevronDownOutline14 className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+        <IconChevronDownOutlineMedium className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </button>
       {open
         ? (

@@ -13,32 +13,55 @@ interface BridgeRequest {
   readonly args?: unknown
 }
 
-/** Each handler runs with validated args and may throw; errors become an error reply. */
-const HANDLERS: Record<string, (args: readonly unknown[]) => void | Promise<void>> = {
-  // Default: https only, noopener. `javascript:`/`file:`/`data:` are refused.
-  openLink: (args) => {
-    const url = String(args[0] ?? '')
-    if (!/^https:/i.test(url)) throw new Error(`openLink: only https: targets are allowed (got ${url.slice(0, 40)})`)
-    window.open(url, '_blank', 'noopener,noreferrer')
-  },
-  copy: async (args) => {
-    const text = String(args[0] ?? '')
-    if (text.length > 1_000_000) throw new Error('copy: text too large')
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      fallbackCopy(text)
-    }
-  },
-  download: (args) => {
-    const name = String(args[0] ?? 'download')
-    const dataUrl = String(args[1] ?? '')
-    if (!/^data:/i.test(dataUrl)) throw new Error('download: only data: URLs are allowed')
-    const anchor = document.createElement('a')
-    anchor.href = dataUrl
-    anchor.download = name
-    anchor.click()
-  },
+/**
+ * Host capabilities the plugin wires from its context at install time. Every
+ * one is optional: absence keeps the plain-browser default.
+ */
+export interface BridgeCapabilities {
+  /**
+   * Open an https card link. The plugin routes this into the right-Sidebar
+   * Browser tab when the host registers that type (0.1.6-alpha.2's
+   * ui-sidebar-browser), falling back to a new window otherwise.
+   */
+  readonly openLink?: (url: string) => void
+}
+
+/** The default link route: a new window, https only enforced by the caller. */
+function openLinkInWindow(url: string): void {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+/**
+ * Each handler runs with validated args and may throw; errors become an error reply.
+ * @param capabilities - the install's wired capabilities (openLink falls back to a new window).
+ */
+function handlersFor(capabilities: BridgeCapabilities): Record<string, (args: readonly unknown[]) => void | Promise<void>> {
+  return {
+    // Default: https only, noopener. `javascript:`/`file:`/`data:` are refused.
+    openLink: (args) => {
+      const url = String(args[0] ?? '')
+      if (!/^https:/i.test(url)) throw new Error(`openLink: only https: targets are allowed (got ${url.slice(0, 40)})`)
+      ;(capabilities.openLink ?? openLinkInWindow)(url)
+    },
+    copy: async (args) => {
+      const text = String(args[0] ?? '')
+      if (text.length > 1_000_000) throw new Error('copy: text too large')
+      try {
+        await navigator.clipboard.writeText(text)
+      } catch {
+        fallbackCopy(text)
+      }
+    },
+    download: (args) => {
+      const name = String(args[0] ?? 'download')
+      const dataUrl = String(args[1] ?? '')
+      if (!/^data:/i.test(dataUrl)) throw new Error('download: only data: URLs are allowed')
+      const anchor = document.createElement('a')
+      anchor.href = dataUrl
+      anchor.download = name
+      anchor.click()
+    },
+  }
 }
 
 /** execCommand copy fallback for contexts without the async clipboard API. */
@@ -67,9 +90,11 @@ const MAX_FRAME_HEIGHT = 20_000
 /**
  * Listen for bridge/height messages from one controlled iframe.
  * @param frame - the card iframe; only its window's messages are honored.
+ * @param capabilities - wired host capabilities; absence keeps browser defaults.
  * @returns a disposer removing the listener.
  */
-export function attachBridge(frame: HTMLIFrameElement): () => void {
+export function attachBridge(frame: HTMLIFrameElement, capabilities: BridgeCapabilities = {}): () => void {
+  const handlers = handlersFor(capabilities)
   const onMessage = (event: MessageEvent): void => {
     if (event.source !== frame.contentWindow) return
     const data = event.data as BridgeRequest | null
@@ -87,7 +112,7 @@ export function attachBridge(frame: HTMLIFrameElement): () => void {
       return
     }
     if (typeof id !== 'string' || typeof fn !== 'string') return
-    const handler = HANDLERS[fn]
+    const handler = handlers[fn]
     if (handler === undefined) {
       reply(frame, { id, ok: false, error: `unknown bridge function: ${fn}` })
       return

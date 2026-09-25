@@ -62,6 +62,7 @@ const DETAIL: EvalExperimentDetail = {
 /** A report whose invariants all hold: the comparison section is open. */
 const REPORT: EvalRunReportView = {
   runId: 'run-1',
+  question: null,
   bundleDir: '/repo/exports/run-1-bundle',
   searched: [],
   refusal: null,
@@ -475,6 +476,39 @@ describe('the four invariants', () => {
   })
 })
 
+describe('the conclusion card answers the plan\'s question (T74)', () => {
+  const ASKED: EvalRunReportView = {
+    ...REPORT,
+    question: { question: 'cond-a 比 cond-b 强吗？', expectation: 'cond-a 更强', answeredWhen: '每题跑满 3 次' },
+    pairs: [{ ...REPORT.pairs[0]!, rank: 'a', rankReason: 'n = 3，cond-a 领先' }],
+  }
+
+  it('opens with 「问题：… — 结论：…」, the yardstick and the expectation beside the actual direction', async () => {
+    const h = makeHarness(ASKED)
+    await openReport(h)
+    const direction = 'report.directionAhead {"ahead":"cond-a","behind":"cond-b"}'
+    // The mock t() JSON-encodes its params, so the nested sentence arrives escaped.
+    expect(await screen.findByText(`report.answerLine ${JSON.stringify({ question: 'cond-a 比 cond-b 强吗？', answer: direction })}`)).toBeTruthy()
+    expect(screen.getByText('report.answeredWhen {"text":"每题跑满 3 次"}')).toBeTruthy()
+    expect(screen.getByText(`report.expectation ${JSON.stringify({ text: 'cond-a 更强', actual: direction })}`)).toBeTruthy()
+    // The pairing conclusion is still under it: the answer is a summary, not a replacement.
+    expect(screen.getAllByText('report.pairTitle {"a":"cond-a","b":"cond-b"}').length).toBeGreaterThan(0)
+  })
+
+  it('an unranked pair answers 「未分高下」 — the report\'s rank, never re-decided', async () => {
+    const h = makeHarness({ ...ASKED, pairs: REPORT.pairs })
+    await openReport(h)
+    expect(await screen.findByText(/report\.answerLine .*report\.directionNone/)).toBeTruthy()
+  })
+
+  it('a plan without a question keeps T72\'s pairing conclusion, with no question lines', async () => {
+    const h = makeHarness()
+    await openReport(h)
+    expect(await screen.findByText('report.conclusion')).toBeTruthy()
+    expect(screen.queryByText(/report\.answerLine|report\.answeredWhen|report\.expectation/)).toBeNull()
+  })
+})
+
 describe('⑤ 分析初稿 (T73)', () => {
   const WITH_ANALYSIS: EvalRunReportView = {
     ...REPORT,
@@ -513,7 +547,9 @@ describe('⑤ 分析初稿 (T73)', () => {
         experimentId: 'pilot-d-20260924-ab12', path: 'analysis/round-2.md',
       })
     })
-    expect(await screen.findByText('# body of analysis/round-2.md')).toBeTruthy()
+    // Rendered as markdown (T74), not printed: the `#` line is a heading.
+    expect(await screen.findByRole('heading', { name: 'body of analysis/round-2.md' })).toBeTruthy()
+    expect(screen.queryByText('# body of analysis/round-2.md')).toBeNull()
     // Only the newest is expanded — the older one is read when opened.
     expect(h.fetchExperimentArtifact).toHaveBeenCalledTimes(1)
   })

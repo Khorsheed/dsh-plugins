@@ -1,0 +1,68 @@
+# @khorsheed/dsh-bundle-local-agent bundle patch: the local-agent family as one
+# bundle card — the family core row plus the four delegation provider rows,
+# re-mounted VERBATIM from each member package's own cordis.patch.yml (the
+# canonical rows; check-plugin-independence's `family` sanction pins this file
+# to exactly that union — no invented ids, no foreign rows).
+#
+# Why no double mount: `dsh plugin add` reconciles only the profile's DIRECT
+# dependencies into the bundles layer (apps/cli plugin.ts reconcilePlugins).
+# Installing this bundle applies THIS patch only; the member packages arrive as
+# transitive npm dependencies and their own patches stay inert. Installing a
+# member directly alongside still self-mounts that member — the official bundle
+# detail page's row-level switches resolve any overlap.
+#
+# The two bare overrides disable the official preset rows whose model-facing
+# tool names the family takes (subagent_codex / subagent_claude_code) — carried
+# verbatim from the codex / claude-code providers' own patches.
+#
+# The deps-only family libraries (@khorsheed/dsh-local-agent-tool-subagent,
+# @khorsheed/dsh-local-agent-dsh-headless) are npm dependencies of this bundle
+# but contribute NO row here beyond what the members' canonical rows already
+# name — card-less by design (see the family-bundles proposal).
+
+- id: tool-subagent-codex
+  disabled: true
+
+- id: tool-subagent-claude-code
+  disabled: true
+
+- insert:
+    # The family core: shared scoped-homes root.
+    - id: local-agent
+      name: '@khorsheed/dsh-local-agent'
+      config:
+        homesRoot: !!js dshHomePath('local-agent')
+
+    # Kimi harness + its delegation tool.
+    - id: local-agent-kimi
+      name: '@khorsheed/dsh-local-agent-kimi'
+
+    - id: tool-subagent-kimi
+      name: '@khorsheed/dsh-local-agent-tool-subagent'
+      config:
+        provider: kimi-cli
+        toolName: subagent_kimi
+
+    # Codex harness + its delegation tool.
+    - id: local-agent-codex
+      name: '@khorsheed/dsh-local-agent-codex'
+
+    - id: tool-subagent-codex-local
+      name: '@khorsheed/dsh-local-agent-tool-subagent'
+      config:
+        provider: codex-local
+        toolName: subagent_codex
+
+    # Claude Code harness + its delegation tool.
+    - id: local-agent-claude-code
+      name: '@khorsheed/dsh-local-agent-claude-code'
+
+    - id: tool-subagent-claude-code-local
+      name: '@khorsheed/dsh-local-agent-tool-subagent'
+      config:
+        provider: claude-local
+        toolName: subagent_claude_code
+
+    # The dsh harness controller (Settings → 本地 Agent switch, default off).
+    - id: local-agent-dsh
+      name: '@khorsheed/dsh-local-agent-dsh'

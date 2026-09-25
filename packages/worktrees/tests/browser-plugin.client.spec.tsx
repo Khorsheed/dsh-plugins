@@ -20,7 +20,10 @@ import { apply, inject } from '../src/client/index.ts'
 import type { WorktreesBadgeInjected, WorktreesTabInjected } from '../src/client/contract.ts'
 
 /** Boot the plugin over fake faces; the worktrees Remote records calls. */
-async function bench() {
+async function bench(options: {
+  /** Publish the 0.1.5-shaped list (top-level `current`, no per-row retention). */
+  legacyCurrent?: boolean
+} = {}) {
   const ctx = new Context()
   const calls: { method: string; args: unknown[] }[] = []
   const record = (method: string) => vi.fn(async (...args: unknown[]) => {
@@ -66,7 +69,12 @@ async function bench() {
   ctx.provide('locale', new LocaleRuntime(ctx))
   ctx.provide('sessions', {
     list: {
-      getSnapshot: () => ({ byId: {}, current: undefined }),
+      // The on-screen session: 0.1.6-alpha.2 reads the row's main-view
+      // retention count; `legacyCurrent` exercises the 0.1.5 `current`
+      // fallback instead.
+      getSnapshot: () => (options.legacyCurrent === true
+        ? { byId: { s1: { id: 's1' } }, current: 's1' }
+        : { byId: { s1: { id: 's1', retainedBy: { mainView: 1 } } } }),
       subscribe: () => () => {},
     },
   })
@@ -142,6 +150,11 @@ describe('worktrees browser plugin', () => {
     await b.fiber.dispose()
   })
 
+  it('registers the tab type on a 0.1.5-shaped list (legacy current fallback)', async () => {
+    const b = await bench({ legacyCurrent: true })
+    expect(b.registered.some(d => d.kind === WORKTREES_KIND)).toBe(true)
+    await b.fiber.dispose()
+  })
   it('subscribes to the two forwarded session events and releases them on disposal', async () => {
     const b = await bench()
     // The official api/remotes allowlist forwards exactly these two events that

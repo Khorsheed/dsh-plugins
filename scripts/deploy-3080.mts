@@ -11,7 +11,15 @@
  *      (~/.dsh-official/tarballs — deliberately OUTSIDE the workspace, see
  *      docs/ops.md step 3)
  *   3. refresh the profile manifest (dep → file:<tgz>, version bumps handled)
- *      + family overrides, then a clean profile install
+ *      + family overrides, then a clean profile install. A named FAMILY bundle
+ *      (`dsh.bundle.kind: 'family'`) additionally retreats its members: each
+ *      member leaves the profile's direct dependencies and the bundles roster
+ *      (its own patch then never reconciles — reconcilePlugins folds only
+ *      DIRECT dsh.bundle dependencies — so the bundle patch mounts the
+ *      canonical rows exactly once), while the member's overrides pin STAYS
+ *      for transitive resolution of the bundle's rewritten ^-edges. Member
+ *      updates ship by naming the member next to its bundle in one call (any
+ *      --package order): the member packs first, the bundle retreats it after.
  *   4. record the green-build credential for the harness checkout
  *   5. schedule-exit (owns the one preflight; FAIL stops before host exit)
  *   6. watchdog respawn → wait for authenticated canary PASS
@@ -33,7 +41,8 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { checkDeploymentLinks } from './dependency-links.mts'
@@ -86,6 +95,56 @@ function runGuard(verbArgs) {
   run(GUARD[0], [...GUARD[1], ...verbArgs], { env: { ...process.env, DSH_HOME } })
 }
 
+// Update a name's overrides pin, or insert the line inside the overrides block
+// (never at EOF: a later top-level key such as minimumReleaseAgeExclude, added
+// by dsh plugin add, would swallow the line into its own list and corrupt the
+// YAML). Returns the rewritten workspace file.
+function upsertOverride(ws, name, tgzPath) {
+  const line = `  '${name}': 'file:${tgzPath}'`
+  if (ws.includes(`'${name}':`)) {
+    return ws.replace(new RegExp(`  '${name.replace(/[.*+?^${'{}()|[\]\\]/g, '\\$&')}': '[^']*'`), line)
+  }
+  if (ws.includes('overrides:')) {
+    const rest = ws.slice(ws.indexOf('overrides:'))
+    const nextKey = rest.search(/\n(?=\S)/) // first subsequent line at column 0
+    const insertAt = nextKey === -1 ? ws.length : ws.indexOf('overrides:') + nextKey + 1
+    return ws.slice(0, insertAt).trimEnd() + `\n${line}\n` + ws.slice(insertAt).replace(/^\n*/, '\n')
+  }
+  return ws.trimEnd() + `\n\noverrides:\n${line}\n`
+}
+
+// The newest stashed tarball for a retreated member — the fallback for
+// restoring a missing overrides pin when the member is not co-deployed.
+function latestMemberTarball(member) {
+  if (!existsSync(TARBALLS)) return undefined
+  const base = member.replace('@khorsheed/', 'khorsheed-').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const candidates = readdirSync(TARBALLS)
+    .filter((f) => new RegExp(`^${base}-\\d.*\\.tgz$`).test(f))
+    .sort((a, b) => statSync(join(TARBALLS, a)).mtimeMs - statSync(join(TARBALLS, b)).mtimeMs)
+  return candidates.length === 0 ? undefined : join(TARBALLS, candidates.at(-1))
+}
+
+// A retreated member must be OUT of both direct lists yet still resolvable
+// through the bundle's installed dependency tree — the proof that the family
+// edge and its overrides pin line up. Resolution starts at the bundle's REAL
+// directory: pnpm keeps a package's dependencies beside its own store entry,
+// so the symlinked top-level path would miss them.
+function verifyRetreatedMember(installed, ownerName, member, expectedVersion) {
+  if (installed.dependencies?.[member] !== undefined) throw new Error(`${member}: family member is still a direct dependency after the retreat`)
+  if (installed.dsh?.profile?.bundles?.includes(member)) throw new Error(`${member}: family member is still in the bundles roster after the retreat`)
+  const bundleDir = realpathSync(join(PROFILE, 'node_modules', ownerName))
+  let memberPkgPath
+  try {
+    memberPkgPath = createRequire(join(bundleDir, 'package.json')).resolve(`${member}/package.json`)
+  } catch (error) {
+    throw new Error(`${member}: family member does not resolve from ${ownerName}'s installed tree — the overrides pin is missing or stale`, { cause: error })
+  }
+  if (expectedVersion !== undefined) {
+    const actual = JSON.parse(readFileSync(memberPkgPath, 'utf8'))
+    if (actual.name !== member || actual.version !== expectedVersion) throw new Error(`${member}: resolved family member identity/version mismatch`)
+  }
+}
+
 // Diagnose existing damage before build work or any deployment writes.
 checkDeploymentLinks(DSH_HOME, HARNESS)
 
@@ -115,9 +174,24 @@ try {
     return { dir, pkg, name: pkg.name, version: versionOverride ?? pkg.version }
   })
 
+  // Family member retreat: a named family bundle (`dsh.bundle.kind: 'family'`)
+  // takes over its members' canonical rows, so every member leaves the
+  // profile's DIRECT dependencies and the bundles roster in step 3. A member
+  // update ships by naming the member next to its bundle in ONE call (any
+  // --package order): the member packs first (step 2 refreshes its tarball and
+  // its overrides pin), the bundle registers and retreats it after (step 3).
+  const retreat = new Map() // member name → owning family bundle meta
+  for (const m of metas) {
+    if (m.pkg.dsh?.bundle?.kind !== 'family') continue
+    for (const member of m.pkg.dsh.bundle.members ?? []) retreat.set(member, m)
+  }
+
   const manifestPath = join(PROFILE, 'package.json')
   const initial = JSON.parse(readFileSync(manifestPath, 'utf8'))
   const needsRegistration = metas.filter(m => {
+    // A co-named family member rides the bundle's dependency tree — official
+    // add would (re)register its own row on top of the bundle patch's copy.
+    if (retreat.has(m.name)) return false
     if (!m.pkg.dsh?.bundle?.patch) {
       if (!initial.dependencies?.[m.name]) usage(`${m.name} has no self-mounting bundle; install internal companions through their owning plugin`)
       return false
@@ -170,24 +244,34 @@ try {
     // New names and bundle registration remain owned by the official CLI.
     if (manifest.dependencies?.[m.name] !== undefined) manifest.dependencies[m.name] = `file:${m.tgzPath}`
   }
+  // Member retreat on the manifest (see the retreat map above): the member
+  // leaves the direct dependency list and the bundles roster, so its
+  // self-mount patch never reconciles and the plugin inventory stops giving
+  // it a top-level card. Members absent from the manifest are skipped with a
+  // log line — retreat is idempotent.
+  for (const member of retreat.keys()) {
+    const hadDep = manifest.dependencies?.[member] !== undefined
+    if (hadDep) delete manifest.dependencies[member]
+    const bundles = manifest.dsh?.profile?.bundles
+    const hadBundle = Array.isArray(bundles) && bundles.includes(member)
+    if (hadBundle) manifest.dsh.profile.bundles = bundles.filter((b) => b !== member)
+    if (!hadDep && !hadBundle) process.stdout.write(`deploy-3080: family member ${member} is not in the profile manifest — nothing to retreat\n`)
+  }
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
   const wsPath = join(PROFILE, 'pnpm-workspace.yaml')
   let ws = readFileSync(wsPath, 'utf8')
-  for (const m of metas) {
-    const line = `  '${m.name}': 'file:${m.tgzPath}'`
-    if (ws.includes(`'${m.name}':`)) {
-      ws = ws.replace(new RegExp(`  '${m.name.replace(/[.*+?^${'{}()|[\]\\]/g, '\\$&')}': '[^']*'`), line)
-    } else if (ws.includes('overrides:')) {
-      // Append inside the overrides block, not at EOF: a later top-level key
-      // (e.g. minimumReleaseAgeExclude, added by dsh plugin add) must not
-      // swallow the line into its own list — that corrupts the YAML.
-      const rest = ws.slice(ws.indexOf('overrides:'))
-      const nextKey = rest.search(/\n(?=\S)/) // first subsequent line at column 0
-      const insertAt = nextKey === -1 ? ws.length : ws.indexOf('overrides:') + nextKey + 1
-      ws = ws.slice(0, insertAt).trimEnd() + `\n${line}\n` + ws.slice(insertAt).replace(/^\n*/, '\n')
-    } else {
-      ws = ws.trimEnd() + `\n\noverrides:\n${line}\n`
-    }
+  for (const m of metas) ws = upsertOverride(ws, m.name, m.tgzPath)
+  // Retreat pins: the member's file: pin STAYS — the bundle's rewritten
+  // ^-edges resolve transitively through it. A missing pin is restored from
+  // this call's fresh member tarball, else the newest stashed one; with
+  // neither, refuse — an unpinned member edge would resolve from the registry
+  // (404 for unpublished members, a silently stale release for published ones).
+  for (const member of retreat.keys()) {
+    if (ws.includes(`'${member}':`)) continue
+    const pin = metas.find((m) => m.name === member)?.tgzPath ?? latestMemberTarball(member)
+    if (pin === undefined) throw new Error(`family member ${member} has no overrides pin in ${wsPath} and no tarball in ${TARBALLS} — name the member package next to its bundle so the family edge stays on a file: tarball`)
+    process.stdout.write(`deploy-3080: restored missing overrides pin for family member ${member} → file:${pin}\n`)
+    ws = upsertOverride(ws, member, pin)
   }
   writeFileSync(wsPath, ws)
   if (needsRegistration.length) {
@@ -202,12 +286,25 @@ try {
 
   const installed = JSON.parse(readFileSync(manifestPath, 'utf8'))
   for (const m of metas) {
+    // A co-named family member verifies through the retreat contract, not the
+    // direct-dependency one: it just LEFT both direct lists.
+    const owner = retreat.get(m.name)
+    if (owner !== undefined) {
+      verifyRetreatedMember(installed, owner.name, m.name, m.version)
+      continue
+    }
     if (!installed.dependencies?.[m.name]) throw new Error(`${m.name}: official install did not register the dependency`)
     const packageDir = join(PROFILE, 'node_modules', m.name)
     const actual = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
     if (actual.name !== m.name || actual.version !== m.version) throw new Error(`${m.name}: installed artifact identity/version mismatch`)
     if (m.pkg.dsh?.bundle?.patch && (!installed.dsh?.profile?.bundles?.includes(m.name) || !actual.dsh?.bundle?.patch || !existsSync(join(packageDir, actual.dsh.bundle.patch)))) {
       throw new Error(`${m.name}: installed bundle/patch missing; refusing credential and restart`)
+    }
+    if (m.pkg.dsh?.bundle?.kind === 'family') {
+      for (const member of m.pkg.dsh.bundle.members ?? []) {
+        if (metas.some((x) => x.name === member)) continue // co-named members verify on their own pass, with their version
+        verifyRetreatedMember(installed, m.name, member)
+      }
     }
   }
   // Recheck links introduced by install, before recording proof or requesting a restart.

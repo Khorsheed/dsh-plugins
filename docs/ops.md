@@ -64,6 +64,8 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
 
 **首次安装与更新统一走 `deploy:3080`。** 对明确用 `--package` 指定、声明了 `dsh.bundle.patch` 的插件，脚本检查 dependency 与 `dsh.profile.bundles`：任一缺失，就调用当前 `DSH_HARNESS` 的已构建官方 CLI 执行 `plugin add <tarball> --profile web`，由宿主登记 bundle；已完整登记的插件直接更新。安装后验证实际包名、版本、bundle 登记和 patch 文件，再进入凭证/守护预检。首次安装需要宿主 `apps/cli/lib/bin.js` 已构建；无 bundle 的新内部 companion 不会被自动挂载，应通过其所属插件安装。
 
+**家族 bundle 部署与成员退场**：部署声明 `dsh.bundle.kind: 'family'` 的元包（`bundle-local-agent`、`bundle-conversation-toolbox`）时，脚本在刷新清单后自动**成员退场**——把每个 member 移出 profile 的 `dependencies` 与 `dsh.profile.bundles`（已不在则记日志跳过，幂等）；成员的自挂载 patch 随之不再收编（reconcilePlugins 只认直接依赖），bundle patch 接管同名规范行，无双挂，清单页也不再给成员出顶层卡。`pnpm-workspace.yaml` overrides 里成员的 `file:` 钉**保留**——bundle 里重写后的 `^版本` 边靠它传递解析；钉缺失时从本次同部署成员的新 tarball 或 tarballs 目录最新匹配补齐，两者都没有则拒绝部署并提示把成员一起点名。**成员更新随 bundle 一起点名即可**（`--package packages/bundle-x --package packages/<member>`，顺序无关：成员先 pack 刷新，bundle 后注册退场）；bundle 自身的首装仍走官方 `plugin add`。安装后校验同步扩为：bundle 在 dependencies、成员不在 bundles 名册、成员包从 bundle 安装目录出发仍可 `require.resolve`。
+
 **部署依赖诊断**：脚本在构建/部署写入前，以及安装后录制凭证前，各检查一次失效链接。也可以单独运行只读诊断：
 
 ```sh
@@ -114,6 +116,8 @@ pnpm deploy:check-links
    boot 的 activation 阶段已读取每个 client bundle 的字节(缺失即 ClientPackageCompositionError、boot 失败),所以"ready + canary PASS"证明的是"被读取并组合";这条探针补 HTTP 层的直接证据,"浏览器里真跑起来"仍靠浏览器验收兜底:开一条有用户消息的会话,确认功能渲染且 console 零错误。
 
 打包产物层面的验证已由工具接管(pack-dist 打包即校验、CI 全包 pack 门禁、`check:plugins` 的 files 覆盖不变量),迁移方不需要手工 `tar -tzf` 抽查——但验收清单这三步是部署后信号,替代不了。
+
+**构建卫生:跨宿主大版本,先清缓存强查再信「全绿」。** tsc -b 的增量缓存(tsbuildinfo)只认源码指纹——源码未变的包直接跳过复查,永远不会对新宿主的类型面验证过,跨宿主大版本(minHost 抬升、宿主 API/类型面变化)时「全绿」可能是缓存假象。规则:这类验收的全量构建前先 `find packages -name '*.tsbuildinfo' -delete`(或整 lib/ 清掉)再跑。实证(2026-09-25,host-016 波):worktree 全绿,main 清缓存强查后 mission / eval-tool / mission-tool 三个 typed `Config: z<XxxConfig>` 在 rc.1 的 schemastery + `exactOptionalPropertyTypes` 下全炸(TS2375,`Volatile<string>` 不可赋,照裸 `z` 先例修);`--force` 复算同样炸,坐实是缓存掩盖而非合并引入。同类第二坑:删过源码的包,tsc -b 不清 lib/types 的陈旧产物,pack-dist 的 stale-types 闸会在打包时拦(「stale lib/types emits with no backing src module」)——部署前对改动包清 lib/ 最稳。第三坑:全量构建卡在某个包的 gen-typert、进程 0% CPU 超过一分钟,查 `~/.dsh/scratch/typert-gen.lock`——被强杀的生成器留下锁目录,后续等待者按 900 秒自愈期互相打断形成活锁(所有进程 0% CPU、锁目录 mtime 却持续刷新),`rm -rf` 锁目录再跑即可(自愈设计保证最坏只是重复生成同字节产物)。
 
 **门禁时效**:preflight 的 PASS 只对"那一刻的组合"负责。preflight 与真实 boot 之间任何对 profile 的改动(`dsh plugin add/remove`、手改 bundles 列表或 cordis.patch.yml、pnpm install 刷新链接)都会使门禁失效——**改动后必须重新过 preflight 再重启**。(2026-08-23 事故:preflight PASS 后 boot 撞 `duplicate loader entry id: code-runtime`,查证是 preflight 与 boot 之间 profile 被改动;已实验证明 preflight 对跨层重复行无盲区——同样的组合在 preflight 里一样炸。)
 

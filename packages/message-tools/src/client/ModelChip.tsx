@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
-import { IconCheckOutline16, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UserMessageViewProps } from './slots.ts'
 import css from './ModelChip.module.css'
@@ -103,7 +103,7 @@ export function ModelChip({ useModelDirectory, loadModels, selectModel, t }: Mod
       >
         <span className={css.triggerLabel}>{modelLabel}</span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
-        <IconChevronDownOutline14 />
+        <IconChevronDownOutlineMedium />
       </button>
       {open && (
         <div className={css.menu} role="menu" aria-label={t('model.menuAria')} aria-busy={state.status === 'loading'}>
@@ -126,7 +126,7 @@ export function ModelChip({ useModelDirectory, loadModels, selectModel, t }: Mod
                   onClick={() => { chooseEffort(level.effort) }}
                 >
                   <span className={css.optionLabel}>{level.label}</span>
-                  <span className={css.check}>{effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}</span>
+                  <span className={css.check}>{effectiveEffort === level.effort ? <IconCheckOutlineMedium /> : null}</span>
                 </button>
               ))}
             </section>
@@ -147,7 +147,7 @@ export function ModelChip({ useModelDirectory, loadModels, selectModel, t }: Mod
                     onClick={() => { chooseModel(group.id, model.id, model.reasoning?.defaultEffort) }}
                   >
                     <span className={css.optionLabel}>{model.name}</span>
-                    <span className={css.check}>{selected ? <IconCheckOutline16 /> : null}</span>
+                    <span className={css.check}>{selected ? <IconCheckOutlineMedium /> : null}</span>
                   </button>
                 )
               })}

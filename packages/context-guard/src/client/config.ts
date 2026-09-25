@@ -42,6 +42,19 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
+ * Unwrap one maybe-Volatile config field. rc.1 resolves volatile-marked
+ * Config fields into live references (`{ get() }`); 0.1.5 passes the plain
+ * value. The schema's volatile marker is probed per line (see
+ * ../settings.ts), so BOTH shapes arrive depending on the host line.
+ */
+function unwrapVolatile<T>(value: T | { get(): T } | undefined): T | undefined {
+  if (value !== null && typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function') {
+    return (value as { get(): T }).get()
+  }
+  return value as T | undefined
+}
+
+/**
  * Normalize the entry config into the full {@link ContextGuardConfig}: every
  * omitted field takes its documented default and every numeric field is
  * clamped into its legal range.
@@ -49,9 +62,10 @@ function clamp(value: number, min: number, max: number): number {
  * @returns the effective guard behavior.
  */
 export function resolveConfig(config: Partial<ContextGuardConfig> | undefined): ContextGuardConfig {
+  const ratio = unwrapVolatile(config?.thresholdRatio)
   return {
     thresholdRatio: clamp(
-      config?.thresholdRatio ?? 0.8,
+      typeof ratio === 'number' ? ratio : 0.8,
       THRESHOLD_RATIO_MIN,
       THRESHOLD_RATIO_MAX,
     ),

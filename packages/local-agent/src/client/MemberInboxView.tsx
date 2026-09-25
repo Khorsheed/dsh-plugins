@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react'
-import { IconChevronDownOutline14, IconChevronUpOutline14, IconQueueOutline14, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronUpOutlineMedium, IconQueueOutlineMedium, IconTrashOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalAgentMemberInbox, LocalAgentPromptResult } from '../types.ts'
 import type { NS } from './locales.ts'
@@ -41,17 +41,17 @@ export function MemberInboxView({ face, t }: { face: MemberInboxFace } & PropsLo
     <div className={css.panel}>
       {queued.length > 1 && <div className={css.header}>
         <button className={css.toggle} type="button" aria-expanded={expanded} aria-controls={listId} onClick={() => setExpanded(value => !value)}>
-          <IconQueueOutline14 /><span>{t('inbox.title')} · {queued.length}</span>
-          {expanded ? <IconChevronUpOutline14 /> : <IconChevronDownOutline14 />}
+          <IconQueueOutlineMedium /><span>{t('inbox.title')} · {queued.length}</span>
+          {expanded ? <IconChevronUpOutlineMedium /> : <IconChevronDownOutlineMedium />}
         </button>
         {pause}
       </div>}
       {(queued.length === 1 || expanded) && queued.length > 0 && <ul className={css.list} id={listId}>
         {queued.map(row => <li key={row.id} className={css.row}>
-          <span className={css.lead} aria-label={t('inbox.status.queued')}><IconQueueOutline14 /></span>
+          <span className={css.lead} aria-label={t('inbox.status.queued')}><IconQueueOutlineMedium /></span>
           <span className={css.preview} title={row.text}>{row.text}</span>
           {queued.length === 1 && pause}
-          <button className={css.iconAction} type="button" aria-label={t('inbox.cancel')} title={t('inbox.cancel')} onClick={() => control('cancel', row.id)}><IconTrashOutline16 /></button>
+          <button className={css.iconAction} type="button" aria-label={t('inbox.cancel')} title={t('inbox.cancel')} onClick={() => control('cancel', row.id)}><IconTrashOutlineMedium /></button>
         </li>)}
       </ul>}
       {state.paused && <div className={css.notice}><span>{t('inbox.paused')}</span>{queued.length === 0 && pause}</div>}

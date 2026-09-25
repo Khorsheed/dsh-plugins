@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { SessionPendingInteraction, SessionStatus, SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { anySessionRunning, diffPendingInteractions, diffSessionList } from '../src/client/status.ts'
+import {
+  anySessionRunning,
+  diffPendingInteractions,
+  diffSessionList,
+  sessionStatusFromLegacyPending,
+  type LegacyPendingInteractionSnapshot,
+} from '../src/client/status.ts'
 
 type RowSpec = Partial<SessionSummary> & { running: boolean }
 
@@ -21,9 +28,18 @@ function state(rows: Record<string, RowSpec>): SessionListState {
   } as unknown as SessionListState
 }
 
-/** Build a pending-interaction frame: one approval-shaped entry per session id. */
-function pending(...ids: string[]): SessionPendingInteractionSnapshot {
-  return new Map(ids.map(id => [id as SessionId, { key: `${id}:approval`, kind: 'approval', sessionId: id as SessionId }]))
+/** Build a Session status frame: one approval-shaped pending interaction per session id. */
+function pending(...ids: string[]): SessionStatusSnapshot {
+  return new Map(ids.map(id => [id as SessionId, {
+    running: undefined,
+    pendingInteraction: { key: `${id}:approval`, kind: 'approval', sessionId: id as SessionId },
+    completionUnread: false,
+  }]))
+}
+
+/** A status frame entry without a pending interaction (running/completion facts only). */
+function runningOnly(id: string): readonly [SessionId, SessionStatus] {
+  return [id as SessionId, { running: true, pendingInteraction: undefined, completionUnread: false }]
 }
 
 describe('anySessionRunning', () => {
@@ -146,5 +162,77 @@ describe('diffPendingInteractions', () => {
 
   it('tolerates sessions vanishing between frames (no crash, no edge)', () => {
     expect(diffPendingInteractions(pending('a', 'b'), pending('a'))).toEqual([])
+  })
+
+  it('ignores status entries without a pending interaction', () => {
+    // alpha.2 status frames also carry running/completion-only entries; those
+    // appearing or persisting are not blocked edges.
+    const running = new Map([runningOnly('a')])
+    expect(diffPendingInteractions(undefined, running)).toEqual([])
+    expect(diffPendingInteractions(pending(), running)).toEqual([])
+    expect(diffPendingInteractions(running, running)).toEqual([])
+    // running-only → pending is a blocked edge; pending → running-only is not.
+    expect(diffPendingInteractions(running, pending('a'))).toEqual(['a'])
+    expect(diffPendingInteractions(pending('a'), running)).toEqual([])
+  })
+})
+
+describe('sessionStatusFromLegacyPending', () => {
+  /** Controllable legacy feed mirroring the 0.1.5 ui-session snapshot face. */
+  class FakeLegacyFeed implements ObservableSnapshot<LegacyPendingInteractionSnapshot> {
+    private readonly listeners = new Set<() => void>()
+    constructor(private snapshot: LegacyPendingInteractionSnapshot) {}
+    getSnapshot(): LegacyPendingInteractionSnapshot { return this.snapshot }
+    subscribe(fn: () => void): () => void {
+      this.listeners.add(fn)
+      return () => { this.listeners.delete(fn) }
+    }
+    set(next: LegacyPendingInteractionSnapshot): void {
+      this.snapshot = next
+      for (const fn of [...this.listeners]) fn()
+    }
+  }
+
+  function legacy(...ids: string[]): LegacyPendingInteractionSnapshot {
+    const entries = ids.map(id => [id as SessionId, {
+      key: `${id}:approval`,
+      kind: 'approval',
+      sessionId: id as SessionId,
+    }] as const)
+    return new Map<SessionId, SessionPendingInteraction>(entries)
+  }
+
+  it('projects legacy entries to pendingInteraction-only status entries', () => {
+    const source = new FakeLegacyFeed(legacy('a'))
+    const feed = sessionStatusFromLegacyPending(source)
+    expect(feed.getSnapshot().get('a' as SessionId)).toEqual({
+      running: undefined,
+      pendingInteraction: { key: 'a:approval', kind: 'approval', sessionId: 'a' },
+      completionUnread: false,
+    })
+  })
+
+  it('memoizes the projection on the source snapshot identity', () => {
+    const source = new FakeLegacyFeed(legacy('a'))
+    const feed = sessionStatusFromLegacyPending(source)
+    const first = feed.getSnapshot()
+    expect(feed.getSnapshot()).toBe(first)
+    source.set(legacy('a', 'b'))
+    const second = feed.getSnapshot()
+    expect(second).not.toBe(first)
+    expect(feed.getSnapshot()).toBe(second)
+  })
+
+  it('passes subscriptions through to the source', () => {
+    const source = new FakeLegacyFeed(legacy())
+    const feed = sessionStatusFromLegacyPending(source)
+    let notified = 0
+    const unsubscribe = feed.subscribe(() => { notified += 1 })
+    source.set(legacy('a'))
+    expect(notified).toBe(1)
+    expect(feed.getSnapshot().has('a' as SessionId)).toBe(true)
+    unsubscribe()
+    source.set(legacy())
+    expect(notified).toBe(1)
   })
 })

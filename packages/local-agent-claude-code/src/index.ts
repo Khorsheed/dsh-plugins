@@ -16,11 +16,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-settings'
+import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { ClaudeCliProvider, claudeCliVersion } from './claude-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
+import type { ClaudeLiveSettings } from './live-switch.ts'
 import { ClaudeModelCatalog } from './model-catalog.ts'
 import { ClaudeModelBroker, ClaudeScopedModelMemory } from './model-broker.ts'
 import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, readClaudeTranscriptModel, syncClaudeCredentialFile } from './records.ts'
@@ -75,20 +77,50 @@ export interface Config {
   liveIdleMs?: number
   /** @deprecated Accepted for old profiles; live output is always incremental. */
   liveMirrorGranularity?: 'event' | 'token'
+  /** Model identifiers the settings card saved before (settings field). */
+  recentModels?: readonly string[]
 }
 
-/** Runtime schema so the Loader always passes an object, never undefined. */
-export const Config: z<Config> = z.object({
+/**
+ * The settings fields (`live`, `liveMirrorGranularity`, `model`,
+ * `recentModels`) ride the plugin Config, marked `.volatile()` where the
+ * host's schemastery has it (3.18.4+, the rc.1 line — probed, never sniffed):
+ * there the SettingsForms writes hot-track the running fiber's Volatile
+ * references without a remount, and the official one-shot import moves an old
+ * settings.yaml section into this row's config. On 0.1.5 the call is absent,
+ * the fields stay plain config keys (a semantic superset — the profile row
+ * can now preset them too), and the legacy settings namespace below carries
+ * the user layer exactly as before. `model` deliberately carries NO default:
+ * an unset key must resolve to undefined, which is what keeps the pre-key
+ * behavior byte-identical.
+ */
+const SETTINGS_FIELDS = {
+  live: z.boolean().default(false),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
+  model: z.string(),
+  recentModels: z.array(z.string()).default([]),
+}
+
+/** Mark one schema field volatile when the host's schemastery has the method (rc.1), pass it through plain when not (0.1.5). */
+function volatilize<S extends { volatile?: unknown }>(field: S): S {
+  return typeof field.volatile === 'function' ? (field.volatile as () => S)() : field
+}
+
+// Bare `z` annotation: `z<Config>` fails schemastery 3.18.4's variance under
+// exactOptionalPropertyTypes (TS2375) and dropping the annotation trips
+// TS2742; the interface stays the apply signature's contract.
+export const Config: z = z.object({
   permissionMode: z.union([
     z.const('skip'),
     z.const('normal'),
   ]),
-  model: z.string(),
+  model: volatilize(SETTINGS_FIELDS.model),
   baseUrl: z.string(),
   proxyUrl: z.string(),
-  live: z.boolean().default(false),
+  live: volatilize(SETTINGS_FIELDS.live),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
+  liveMirrorGranularity: volatilize(SETTINGS_FIELDS.liveMirrorGranularity),
+  recentModels: volatilize(SETTINGS_FIELDS.recentModels),
 })
 
 /** The permission mode a fresh delegation defaults to. */
@@ -102,16 +134,10 @@ export const DEFAULT_PERMISSION_MODE: NonNullable<Config['permissionMode']> = 's
 export const CLAUDE_SETTINGS_NAMESPACE = 'local-agent-claude-code'
 
 /**
- * The card's schema; field defaults are the innermost layer below `base`.
- * `model` deliberately carries NO default: an unset key must resolve to
- * undefined, which is what keeps the pre-key behavior byte-identical.
+ * The card's 0.1.5 schema; field defaults are the innermost layer below
+ * `base`. Shared with the Config schema's settings fields above.
  */
-const CLAUDE_SETTINGS_SCHEMA = z.object({
-  live: z.boolean().default(false),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
-  model: z.string(),
-  recentModels: z.array(z.string()).default([]),
-})
+const CLAUDE_SETTINGS_SCHEMA = z.object(SETTINGS_FIELDS)
 
 /**
  * Register the Claude Code harness into the local-agent registry.
@@ -133,12 +159,30 @@ export function apply(ctx: Context, config: Config): void {
     // a reload. Toggling OFF drains the retiring generation — new rounds fall
     // back to exec, in-flight rounds finish on their runtime, idle runtimes
     // are reclaimed at once. Legacy granularity settings are accepted but ignored.
-    const scope = ctx.settings.register(CLAUDE_SETTINGS_NAMESPACE, CLAUDE_SETTINGS_SCHEMA, {
-      base: {
-        ...config.live === undefined ? {} : { live: config.live },
-        ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
-        ...config.model === undefined ? {} : { model: config.model },
-      },
+    // The settings face hides the two host lines: 0.1.5 serves the legacy
+    // namespace scope (register + base); rc.1 reads the row config's volatile
+    // fields and re-reads on `settings/document-updated`. Both hot-apply the
+    // card's writes without a reload.
+    const readSettings = (): ClaudeLiveSettings => {
+      const model = vol(config.model)
+      const recentModels = vol(config.recentModels)
+      return {
+        live: vol(config.live) ?? false,
+        liveMirrorGranularity: vol(config.liveMirrorGranularity) ?? 'token',
+        ...model === undefined ? {} : { model },
+        ...recentModels === undefined ? {} : { recentModels },
+      }
+    }
+    const legacyBase: Record<string, unknown> = {}
+    for (const field of ['live', 'liveMirrorGranularity', 'model'] as const) {
+      const value = vol(config[field])
+      if (value !== undefined) legacyBase[field] = value
+    }
+    const face = settingsFace<ClaudeLiveSettings>(ctx, {
+      namespace: CLAUDE_SETTINGS_NAMESPACE,
+      legacySchema: CLAUDE_SETTINGS_SCHEMA,
+      legacyBase,
+      read: readSettings,
     })
     // The model is read PER ROUND, not captured at apply: the settings card
     // writes the same namespace field, so a change has to reach the next
@@ -146,7 +190,7 @@ export function apply(ctx: Context, config: Config): void {
     // Blank is not a model: a whitespace-only value means "unset", which is
     // the pre-key argv.
     const resolveModel = (): string | undefined => {
-      const model = scope.get().model?.trim()
+      const model = face.get().model?.trim()
       return model === undefined || model === '' ? undefined : model
     }
     // The member model layers above the settings key: the session-level
@@ -169,7 +213,7 @@ export function apply(ctx: Context, config: Config): void {
       if (named !== undefined && named !== '') return named
       return resolveModel()
     }
-    const liveSwitch = new LiveDriverSwitch(ctx, scope, {
+    const liveSwitch = new LiveDriverSwitch(ctx, face, {
       ...config.permissionMode === undefined ? {} : { permissionMode: config.permissionMode },
       ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
       ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
@@ -204,8 +248,8 @@ export function apply(ctx: Context, config: Config): void {
         const context = modelContext(childSessionId)
         return modelCatalog.follow(context.home, context.cwd, signal)
       },
-      recentModels: () => scope.get().recentModels ?? [],
-      live: () => scope.get().live,
+      recentModels: () => face.get().recentModels ?? [],
+      live: () => face.get().live,
       overrides,
       liveSwitch,
       // The lastObserved backstop: the member's own transcript (or the
@@ -282,7 +326,7 @@ export function apply(ctx: Context, config: Config): void {
         ])
         const model = resolveModel() ?? scopedModel
         return {
-          drive: scope.get().live ? 'live' : 'exec',
+          drive: face.get().live ? 'live' : 'exec',
           permissionMode,
           baseUrlSet: effectiveBaseUrl !== undefined,
           ...baseUrlHost !== undefined ? { baseUrlHost } : {},

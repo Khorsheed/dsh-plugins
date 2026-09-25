@@ -3,7 +3,7 @@
  * row and settings-card registrations against the real SlotRegistry (with
  * fiber teardown proving removal — HMR safety), the injected compact verb's
  * three paths against a stubbed command Remote, the shared settings-scope
- * hooks source, the host half's settings-namespace registration, and the
+ * channel, the host half's dual-face settings registration, and the
  * invariant companion's ownership reservation.
  */
 import { Context } from '@deepseek-ai/cordis'
@@ -11,34 +11,85 @@ import { describe, expect, it, vi } from 'vitest'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { SettingsProvider } from '@deepseek-ai/dsh-settings'
-import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import { CONTEXT_GUARD_NS } from '../src/namespace.ts'
 import * as ContextGuardInvariant from '../src/invariant.ts'
 import { en, zh } from '../src/client/locales.ts'
 import type { ContextGuardConfig } from '../src/client/config.ts'
+import type { GuardScope } from '../src/client/scope.ts'
 import type { ContextGuardInjected, ContextGuardSettingsCardInjected } from '../src/client/slots.ts'
 
 /** A session id the slot system may materialize the inject face for. */
 const KNOWN = 's1' as SessionId
 
-/** In-memory settings provider for the host-half registration test. */
-class MemorySettings extends SettingsProvider {
-  readonly writable = true
-  protected load(): Promise<Record<string, unknown>> { return Promise.resolve({}) }
-  protected persist(_ns: SettingsNamespace, _section: Record<string, unknown>): Promise<void> {
-    return Promise.resolve()
+/** This bundle's package name — the key the alpha.2 plugins.bundle.config entry registers under. */
+const PACKAGE_NAME = '@khorsheed/dsh-context-guard'
+
+/**
+ * In-memory fake of the 0.1.5 settings face: the explicit `register` face the
+ * host half's legacy arm probes for, plus describe/get/update for the
+ * assertions. The schema is invoked directly (schemastery schemas are
+ * callable), and volatile-marked fields are unwrapped on read — the same
+ * plain projection the provider served on 0.1.5.
+ */
+class MemorySettings {
+  private readonly sections = new Map<string, {
+    schema: (value: unknown) => unknown
+    base: Record<string, unknown>
+    section: Record<string, unknown>
+  }>()
+
+  register(ns: string, schema: unknown, options?: { base?: Record<string, unknown> }): {
+    get(): unknown
+    update(patch: Record<string, unknown>): Promise<void>
+    watch(): () => void
+  } {
+    if (this.sections.has(ns)) throw new Error(`settings namespace "${ns}" is already registered`)
+    this.sections.set(ns, {
+      schema: schema as (value: unknown) => unknown,
+      base: options?.base ?? {},
+      section: {},
+    })
+    return {
+      get: () => this.get(ns),
+      update: (patch) => this.update(ns, patch),
+      watch: () => () => {},
+    }
+  }
+
+  describe(): { ns: string }[] {
+    return [...this.sections.keys()].map(ns => ({ ns }))
+  }
+
+  get(ns: string): unknown {
+    const entry = this.sections.get(ns)
+    if (entry === undefined) return undefined
+    const resolved = entry.schema({ ...entry.base, ...entry.section }) as Record<string, unknown>
+    return Object.fromEntries(Object.entries(resolved).map(([key, value]) => [
+      key,
+      value !== null && typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function'
+        ? (value as { get(): unknown }).get()
+        : value,
+    ]))
+  }
+
+  async update(ns: string, patch: Record<string, unknown>): Promise<void> {
+    const entry = this.sections.get(ns)
+    if (entry === undefined) throw new Error(`no settings namespace "${ns}"`)
+    // Validation rejects the write exactly where the 0.1.5 provider did.
+    entry.schema({ ...entry.base, ...entry.section, ...patch })
+    entry.section = { ...entry.section, ...patch }
+  }
+
+  remove(ns: string): void {
+    this.sections.delete(ns)
   }
 }
 
 /** A controllable settings-scope stub over the context-guard section. */
 function stubScope(initial?: Partial<ContextGuardConfig>) {
-  const set = vi.fn(async () => {})
-  const unset = vi.fn(async () => {})
   let value: ContextGuardConfig | undefined = initial === undefined
     ? undefined
     : { thresholdRatio: 0.8, ...initial }
@@ -46,7 +97,7 @@ function stubScope(initial?: Partial<ContextGuardConfig>) {
   let revision = 1
   const listeners = new Set<() => void>()
   const publish = (): void => { for (const listener of listeners) listener() }
-  const scope: SettingsScope<ContextGuardConfig> = {
+  const scope: GuardScope = {
     getSnapshot: () => ({
       status: 'ready',
       value,
@@ -54,39 +105,43 @@ function stubScope(initial?: Partial<ContextGuardConfig>) {
       user,
       revision,
       writable: true,
-      mode: 'host',
     }),
     subscribe: (listener) => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
-    set: async (field, next) => {
+    set: (field, next) => {
       value = { ...(value ?? { thresholdRatio: 0.8 }), [field]: next } as ContextGuardConfig
       user = { ...(user ?? {}), [field]: next }
       revision += 1
       publish()
+      return Promise.resolve(true)
     },
-    unset: async (field) => {
+    unset: (field) => {
       value = { ...(value ?? { thresholdRatio: 0.8 }) } as ContextGuardConfig
       delete (value as Record<string, unknown>)[field]
       user = { ...(user ?? {}) }
       delete user[field]
       revision += 1
       publish()
+      return Promise.resolve(true)
     },
   }
-  return { scope, set, unset }
+  return { scope }
 }
 
 interface Bench {
   ctx: Context
   fiber: ReturnType<Context['plugin']>
   execute: ReturnType<typeof vi.fn>
-  scope: SettingsScope<ContextGuardConfig>
+  scope: GuardScope
 }
 
-/** Boot the browser half over a real slot tree that declares the input.right list and the plugin-item slot. */
-async function bench(config?: Parameters<typeof apply>[1]): Promise<Bench> {
+/** Boot the browser half over a real slot tree that declares the input.right list and the given settings slot. */
+async function bench(
+  config?: Parameters<typeof apply>[1],
+  settingsSlot: 'settings.plugin.item' | 'plugins.bundle.config' = 'settings.plugin.item',
+): Promise<Bench> {
   const execute = vi.fn()
   const { scope } = stubScope()
   const ctx = new Context()
@@ -95,7 +150,7 @@ async function bench(config?: Parameters<typeof apply>[1]): Promise<Bench> {
     name: 'root',
     children: {
       'conversation.input.right': { kind: 'list', scope: 'session' },
-      'settings.plugin.item': { kind: 'keyed', scope: 'root' },
+      [settingsSlot]: { kind: 'keyed', scope: 'root' },
     },
   } as never, () => null)
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -103,6 +158,8 @@ async function bench(config?: Parameters<typeof apply>[1]): Promise<Bench> {
   // The plugin injects the exact 'remote.commands' service key (how the
   // generated commands namespace is mounted in the real client assembly).
   ctx.provide('remote.commands', { execute } as never)
+  // The 0.1.5 settings face: the scope channel's legacy probe arms from this
+  // (the rc.1 `configForms` probe never fires here — by design).
   ctx.provide('settingsScope', { bind: () => scope } as never)
   // ctx.plugin(meta, config) hands `config` to apply as its second argument.
   const fiber = ctx.plugin({ inject: [...inject], apply }, config)
@@ -119,7 +176,7 @@ function buttonInjectedFor(ctx: Context, sessionId: SessionId): ContextGuardInje
   return (entry.inject as unknown as (id: SessionId) => ContextGuardInjected)(sessionId)
 }
 
-/** Read the registered settings-card entry's inject factory. */
+/** Read the registered settings-card entry's inject factory (0.1.5 slot). */
 function cardInjectedFor(ctx: Context): ContextGuardSettingsCardInjected {
   const entry = ctx.slots
     .entries('settings.plugin.item')
@@ -128,9 +185,18 @@ function cardInjectedFor(ctx: Context): ContextGuardSettingsCardInjected {
   return (entry.inject as unknown as () => ContextGuardSettingsCardInjected)()
 }
 
+/** Read the registered bundle-config entry's inject factory (alpha.2 slot). */
+function bundleConfigInjectedFor(ctx: Context): ContextGuardSettingsCardInjected {
+  const entry = ctx.slots
+    .entries('plugins.bundle.config')
+    .find(e => e.options.key === PACKAGE_NAME)
+  if (entry === undefined) throw new Error('context-guard bundle config missing')
+  return (entry.inject as unknown as () => ContextGuardSettingsCardInjected)()
+}
+
 describe('context-guard browser half', () => {
-  it('declares the services it binds', () => {
-    expect(inject).toEqual(['slots', 'remote', 'remote.commands', 'locale', 'settingsScope'])
+  it('declares the services it binds (the settings scope is probed, never injected)', () => {
+    expect(inject).toEqual(['slots', 'remote', 'remote.commands', 'locale'])
   })
 
   it('registers the compact entry, and fiber teardown removes it (HMR safety)', async () => {
@@ -144,11 +210,22 @@ describe('context-guard browser half', () => {
     expect(ctx.slots.entries('conversation.input.right').map(e => e.options.id)).not.toContain('context-guard')
   })
 
-  it('registers the settings card keyed on the namespace, removed with the fiber', async () => {
+  it('registers the settings card keyed on the namespace on the 0.1.5 slot, removed with the fiber', async () => {
     const { ctx, fiber } = await bench()
     expect(ctx.slots.entries('settings.plugin.item').map(e => e.options.key)).toContain(CONTEXT_GUARD_NS)
+    // The alpha.2 registration never fires without the bundle-config declaration.
+    expect(ctx.slots.entries('plugins.bundle.config').map(e => e.options.key)).not.toContain(PACKAGE_NAME)
     await fiber.dispose()
     expect(ctx.slots.entries('settings.plugin.item').map(e => e.options.key)).not.toContain(CONTEXT_GUARD_NS)
+  })
+
+  it('registers the bundle configuration keyed by package name on the alpha.2 slot, removed with the fiber', async () => {
+    const { ctx, fiber } = await bench(undefined, 'plugins.bundle.config')
+    expect(ctx.slots.entries('plugins.bundle.config').map(e => e.options.key)).toContain(PACKAGE_NAME)
+    // The legacy registration never fires without the 0.1.5 declaration.
+    expect(ctx.slots.entries('settings.plugin.item').map(e => e.options.key)).not.toContain(CONTEXT_GUARD_NS)
+    await fiber.dispose()
+    expect(ctx.slots.entries('plugins.bundle.config').map(e => e.options.key)).not.toContain(PACKAGE_NAME)
   })
 
   it('registers both dictionaries under its own namespace and releases them with the fiber', async () => {
@@ -166,16 +243,49 @@ describe('context-guard browser half', () => {
     expect(translate('settings.title')).not.toBe(en['settings.title'])
   })
 
-  it('shares one live settings scope between the button and the card', async () => {
+  it('arms one shared scope channel from the 0.1.5 face for the button and the card', async () => {
     const { ctx, scope } = await bench()
-    expect(buttonInjectedFor(ctx, KNOWN).hooks.config).toBe(scope)
-    expect(cardInjectedFor(ctx).hooks.config).toBe(scope)
+    const buttonConfig = buttonInjectedFor(ctx, KNOWN).hooks.config
+    const cardConfig = cardInjectedFor(ctx).hooks.config
+    // Both faces bind the SAME channel, and the armed channel mirrors the
+    // stubbed legacy scope's snapshot.
+    expect(buttonConfig).toBe(cardConfig)
+    expect(buttonConfig.getSnapshot()).toEqual(scope.getSnapshot())
+  })
+
+  it('shares the same live settings scope on the alpha.2 bundle-config face', async () => {
+    const { ctx, scope } = await bench(undefined, 'plugins.bundle.config')
+    expect(bundleConfigInjectedFor(ctx).hooks.config.getSnapshot()).toEqual(scope.getSnapshot())
+  })
+
+  it('publishes `unavailable` while no settings provider serves the section', async () => {
+    const execute = vi.fn()
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry).await()
+    ctx.slots.register({
+      name: 'root',
+      children: { 'conversation.input.right': { kind: 'list', scope: 'session' } },
+    } as never, () => null)
+    ctx.provide('locale', new LocaleRuntime(ctx))
+    ctx.provide('remote', { commands: { execute } } as never)
+    ctx.provide('remote.commands', { execute } as never)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const snapshot = buttonInjectedFor(ctx, KNOWN).hooks.config.getSnapshot()
+    expect(snapshot.status).toBe('unavailable')
+    expect(snapshot.writable).toBe(false)
+    await fiber.dispose()
   })
 
   it('carries the resolved fallback config on the button inject face', async () => {
     const { ctx } = await bench({ thresholdRatio: 0.6 })
     const face = buttonInjectedFor(ctx, KNOWN)
     expect(face.thresholdRatio).toBe(0.6)
+  })
+
+  it('unwraps a rc.1 volatile-shaped entry config for the fallback', async () => {
+    const { ctx } = await bench({ thresholdRatio: { get: () => 0.5 } } as never)
+    expect(buttonInjectedFor(ctx, KNOWN).thresholdRatio).toBe(0.5)
   })
 
   it('executes the official /compact command, returning null when admitted', async () => {
@@ -201,21 +311,31 @@ describe('context-guard browser half', () => {
 })
 
 describe('context-guard node half', () => {
-  it('registers the settings namespace, validates the section, and disposes it', async () => {
+  it('registers the legacy namespace, validates the section, and disposes it', async () => {
     const ctx = new Context()
-    await ctx.plugin(MemorySettings).await()
-    const fiber = ctx.plugin({ apply: applyNode }, { thresholdRatio: 0.7 })
+    const settings = new MemorySettings()
+    ctx.provide('settings', settings as never)
+    const fiber = ctx.plugin({
+      apply: (pluginCtx, config: Record<string, unknown>) => {
+        applyNode(pluginCtx, config)
+        // Test-side emulation of the 0.1.5 provider's own fiber-effect: the
+        // real service removed the namespace when the registrant fiber
+        // disposed; the fake has no fiber of its own, so the removal rides
+        // the plugin's.
+        pluginCtx.effect(() => () => { settings.remove(CONTEXT_GUARD_NS) })
+      },
+    }, { thresholdRatio: 0.7 })
     await fiber.await()
     const ns = CONTEXT_GUARD_NS
-    expect(ctx.settings.describe().map(row => row.ns)).toContain(ns)
+    expect(settings.describe().map(row => row.ns)).toContain(ns)
     // The composition entry becomes the section's base layer: the resolved
     // section carries the composed threshold over the schema default.
-    await ctx.settings.update(ns, { thresholdRatio: 0.6 })
-    expect(ctx.settings.get(ns)).toEqual({ thresholdRatio: 0.6 })
+    await settings.update(ns, { thresholdRatio: 0.6 })
+    expect(settings.get(ns)).toEqual({ thresholdRatio: 0.6 })
     // Out-of-schema values are rejected.
-    await expect(ctx.settings.update(ns, { thresholdRatio: 2 })).rejects.toThrow()
+    await expect(settings.update(ns, { thresholdRatio: 2 })).rejects.toThrow()
     await fiber.dispose()
-    expect(ctx.settings.describe().map(row => row.ns)).not.toContain(ns)
+    expect(settings.describe().map(row => row.ns)).not.toContain(ns)
   })
 
   it('contributes nothing when no settings provider exists', () => {

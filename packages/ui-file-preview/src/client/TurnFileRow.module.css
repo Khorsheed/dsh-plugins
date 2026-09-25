@@ -1,8 +1,8 @@
 /* Turn product table: a finished turn's created/edited files as a compact
- * table — it preempts the official deliverables row through the turnTail
- * chain (priority -1, a deliberate product decision). The geometry follows
- * the app's diff-card chrome (hairline border) so the card reads as native.
- * At >3 products the card collapses to the quiet summary row. */
+ * table in the turnTail slot, coexisting with the official cards since the
+ * 0.1.6-alpha.2 list re-kind. The geometry follows the app's diff-card
+ * chrome (hairline border) so the card reads as native. At >3 products the
+ * card collapses to the quiet summary row. */
 
 .card {
   margin-top: 16px;

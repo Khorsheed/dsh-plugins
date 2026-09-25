@@ -20,12 +20,12 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
+import type { SettingsFace } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentDshConfig } from './index.ts'
 import { DshLiveDriver } from './live-driver.ts'
 import type { DshLiveMirrorGranularity } from './session-mirror.ts'
 
-/** The resolved `local-agent-dsh` settings (schema defaults ← YAML base ← user layer). */
+/** The resolved `local-agent-dsh` settings (rc.1: volatile row config; 0.1.5: schema defaults ← YAML base ← user layer). */
 export interface DshLiveSettings {
   /** The DeepSeek delegation toggle; the switch itself reads only the live fields. */
   enabled: boolean
@@ -42,7 +42,7 @@ export class LiveDriverSwitch {
 
   constructor(
     private readonly ctx: Context,
-    scope: SettingsScope<DshLiveSettings>,
+    face: SettingsFace<DshLiveSettings>,
     private readonly config: LocalAgentDshConfig,
     private readonly extras: {
       /**
@@ -53,8 +53,8 @@ export class LiveDriverSwitch {
       modelFor?: (childSessionId: string) => string | undefined
     } = {},
   ) {
-    this.apply(scope.get())
-    this.unwatch = scope.watch((next) => { this.apply(next) })
+    this.apply(face.get())
+    this.unwatch = face.watch((next) => { this.apply(next) })
   }
 
   /**

@@ -11,7 +11,7 @@
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { IconGlobeOutline14, type IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconGlobeOutlineMedium, type IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from './locales.ts'
 
 /** The tab kind: minted, since no official kind means "reader". */
@@ -22,7 +22,7 @@ export const READER_TAB_ID = '@khorsheed/dsh-reader'
 
 /** The type's glyph on the guide card. */
 function ReaderGlyph({ size, className }: IconProps) {
-  return <IconGlobeOutline14 size={size} className={className} />
+  return <IconGlobeOutlineMedium size={size} className={className} />
 }
 
 /**
@@ -39,6 +39,7 @@ export function readerDefinition(t: TranslateNS<'reader'>): SidebarRightTabDefin
     kind: READER_KIND,
     title: () => t('tab.label'),
     guide: [{
+      id: READER_KIND,
       order: 60,
       title: () => t('tab.label'),
       description: () => t('guide.description'),

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Lab",
+    "description": "Manage the lifecycle of isolated, reproducible experiment units."
+  }
+}
