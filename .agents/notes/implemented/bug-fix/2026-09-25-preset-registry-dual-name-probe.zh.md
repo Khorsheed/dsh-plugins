@@ -45,7 +45,7 @@ package.json 三包同则:旧名加入 `devDependencies`(`^0.1.0-rc.6`,编译期
 
 0.1.5 真机证据(实证 profile 装入三个 tarball——capability-catalog 0.1.95、ankh-guard 0.3.0、room 0.1.0,均从修复后的 `lib/` 打包):三个 `lib/index.js` 现在都能在 0.1.5 安装树上干净导入,而此前 boot 正死于 `Cannot find package '@deepseek-ai/dsh-agent-preset-registry'`;探测链解析到旧名模块,其 `agentPresetProjectionDefinition` 对「header + 选择事件」的日志折叠正确(`from-header` → `switched`)——0.1.5 上是全功能,不是降级。3095 端口的真 boot 现已通过模块导入阶段:`Cannot find package` 为零、`failed to import loader entry` 为零。
 
-boot 随后在一个阶段之后死于第二个、独立的 0.1.5 不兼容——本修复明确不触碰:0.1.5 的 typert-loader 校验每个调用编解码器必须是立即求值的 zod-v4 `schema`,而当前(rc.1)typert 生成器发出的是惰性 `create()` 工厂——0.1.7 的 loader 接受 `create`,0.1.5 的拒绝(报 `parameter codec is not backed by a zod v4 schema`)。已发布的 capability-catalog 0.1.95 tarball 的 face 与本次重新生成的逐字节一致,所以这第二个阻塞先于本探测修复存在,只是被导入阶段的死亡掩盖;带 typert face 的包要想在 0.1.5 上完整 boot,还需要它自己的决策(生成器双形状发射 vs. 上游 loader 容忍请求)。
+boot 随后在一个阶段之后死于第二个、独立的 0.1.5 不兼容——本修复当时明确不触碰:0.1.5 的 typert-loader 校验每个调用编解码器必须是立即求值的 zod-v4 `schema`,而当前(rc.1)typert 生成器发出的是惰性 `create()` 工厂——0.1.7 的 loader 接受 `create`,0.1.5 的拒绝(报 `parameter codec is not backed by a zod v4 schema`)。已发布的 capability-catalog 0.1.95 tarball 的 face 与重新生成的逐字节一致,所以这第二个阻塞先于本探测修复存在,只是被导入阶段的死亡掩盖。它现已由 gen-typert write 接缝的双形状 codec 发射修复——见 [typert strict codecs emit both an eager `schema` and a lazy `create()`](../../implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md)——两层都落地后,同三个 tarball 在 0.1.5 实证 profile 上干净 boot。
 
 0.1.7 路径无需额外复验:探测顺序新名在前,3080(rc.1)的解析结果与修复前完全一致,未动。
 

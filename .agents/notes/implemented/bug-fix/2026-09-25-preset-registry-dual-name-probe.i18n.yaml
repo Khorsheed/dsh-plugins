@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md
-.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md: 6b37540759ade5567d22d10f964d6b6e263454e8
-.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.zh.md: dab7f3f5155acfb8e23a1a7e1e5f076b72f5e767
+.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md: 622eea6c21a1c2dcd7d7f0bec164d3650953360e
+.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.zh.md: 9f693e7cbc4b090dce718d972a61f256378c0e1e
