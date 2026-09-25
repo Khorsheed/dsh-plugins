@@ -201,6 +201,17 @@ export const zh = {
   orphanManaged: '{n} 个受管 skill 未在任何模式生效',
   orphanManagedHint: '它们的 preset 范围指向了本部署没有的 preset，或投递被同名副本拒绝。展开后可打开详情改范围或释放回用户技能目录。',
 
+  /* The four shipped presets publish no name; their copy resolves through these
+   * keys (mirrors the host's ui-agent-preset dictionary, same strings). */
+  presetStandardName: '标准模式',
+  presetStandardDescription: '处理代码、文件和资料，适合大多数任务。Agent 会按需使用检索、编辑和终端等工具。',
+  presetPtcName: 'PTC 模式',
+  presetPtcDescription: '包含标准模式的所有能力，更适合批量调用工具，并对结果进行筛选、整理、去重、统计或汇总的任务。',
+  presetMinimalName: '极简模式',
+  presetMinimalDescription: 'Agent 仅使用终端工具完成任务，适合测试和对比其基础表现。',
+  presetCordisName: '创造模式',
+  presetCordisDescription: '用对话定制 DSH：让 Agent 编写插件，添加新功能或界面；也能组合工具和提示词，创建自己的模式。',
+
   /* Frontmatter metadata block. */
   frontmatterMetadata: 'frontmatter metadata',
 }
@@ -390,6 +401,21 @@ export const en = {
   modeFallback: 'This mode cannot be composed right now (or is not mounted), so the global layer is shown — it is not that mode\'s real visibility.',
   orphanManaged: '{n} managed skill(s) load in no mode',
   orphanManagedHint: 'Their preset scope names a preset this deployment does not supply, or delivery was refused by a duplicate copy. Expand to open a skill and change its scope or release it to the user skill root.',
+
+  /* The four shipped presets publish no name; their copy resolves through these
+   * keys (mirrors the host's ui-agent-preset dictionary, same strings). */
+  presetStandardName: 'Standard mode',
+  presetStandardDescription:
+    'Work with code, files, and information. Suitable for most tasks, with search, editing, terminal commands, and other tools available as needed.',
+  presetPtcName: 'PTC mode',
+  presetPtcDescription:
+    'Includes all Standard mode capabilities. Better suited to tasks that call tools in batches and then filter, organize, deduplicate, count, or summarize the results.',
+  presetMinimalName: 'Minimal mode',
+  presetMinimalDescription:
+    'The agent works using only a terminal tool. Useful for testing and comparing its basic performance.',
+  presetCordisName: 'Creator mode',
+  presetCordisDescription:
+    'Customize DSH through conversation. Let the agent write plugins that add features or UI, or combine tools and prompts to create your own mode.',
 
   /* Frontmatter metadata block. */
   frontmatterMetadata: 'frontmatter metadata',

@@ -18,6 +18,7 @@ import { McpServerManageModal } from './McpServerManageModal.tsx'
 import { AddMcpDialog } from './AddMcpDialog.tsx'
 import { buildMcpGroups } from './mcp-model.ts'
 import { buildModeComparison, orphanManagedSkills, resolveModeChips, type CatalogModeChip, type ModeComparison, type OrphanManagedSkill } from './mode-model.ts'
+import { presetName } from './preset-display.ts'
 import css from './CapabilityCatalogCard.module.css'
 
 type Kind = 'skills' | 'tools'
@@ -77,11 +78,26 @@ export function CapabilityCatalogCard({
   // handlers re-read the view they were installed for, not the one at render.
   const modeRef = useRef<ModeSelection | null>(null)
 
+  /** Roster rows with display names localized for the active locale: the four
+   * shipped presets publish no name (their copy resolves through the host's
+   * built-in-preset keys), so every surface renders these, never the raw rows.
+   * Identity fields (id/isDefault/broken) pass through untouched. */
+  const localizedOptions = useMemo(
+    () => presetOptions.map(option => ({ ...option, name: presetName(option, t) })),
+    [presetOptions, t],
+  )
+  /** Mode faces with the same localization applied (their `name` feeds the
+   * comparison's mode labels and the unavailable list). */
+  const localizedFaces = useMemo(
+    () => (faces === null ? null : faces.map(face => ({ ...face, name: presetName({ id: face.preset, name: face.name }, t) }))),
+    [faces, t],
+  )
+
   /** The preset a session naming none composes, i.e. the mode the store holds
    * before a human picks one — the store's first read is the default's face. */
   const defaultPreset = useMemo(
-    () => presetOptions.find(option => option.isDefault === true) ?? presetOptions[0],
-    [presetOptions],
+    () => localizedOptions.find(option => option.isDefault === true) ?? localizedOptions[0],
+    [localizedOptions],
   )
   /** The preset id a read of THIS view should use (undefined = global fallback). */
   const presetIdOf = useCallback((selection: ModeSelection | null): string | undefined =>
@@ -89,8 +105,8 @@ export function CapabilityCatalogCard({
   [defaultPreset])
   /** The comparison model, or null when the grid shows one mode's face. */
   const comparison = useMemo<ModeComparison | null>(
-    () => (mode?.kind === 'compare' && faces !== null ? buildModeComparison(faces) : null),
-    [mode, faces],
+    () => (mode?.kind === 'compare' && localizedFaces !== null ? buildModeComparison(localizedFaces) : null),
+    [mode, localizedFaces],
   )
   const comparing = mode?.kind === 'compare'
 
@@ -106,14 +122,14 @@ export function CapabilityCatalogCard({
   const skills = faceSkills
   /** Display name per preset id, for the managed badges. */
   const presetNames = useMemo(
-    () => new Map(presetOptions.map(option => [option.id, option.name ?? option.id])),
-    [presetOptions],
+    () => new Map(localizedOptions.map(option => [option.id, option.name ?? option.id])),
+    [localizedOptions],
   )
   /** One chip per mode id a capability was found in (comparison view only). */
   const modeChipsFor = useCallback(
     (ids: readonly string[] | undefined): readonly CatalogModeChip[] =>
-      ids === undefined ? [] : resolveModeChips(ids, presetOptions),
-    [presetOptions],
+      ids === undefined ? [] : resolveModeChips(ids, localizedOptions),
+    [localizedOptions],
   )
   /** The chips a card should render, or undefined when it has no row at all: an
    * EMPTY list must not claim the row, because the card gives that row its bottom
@@ -139,8 +155,8 @@ export function CapabilityCatalogCard({
   const orphans = useMemo(() => {
     if (scopeStatus === null) return []
     const failed = scopeStatus.presets.filter(row => row.error !== undefined).map(row => row.presetId)
-    return orphanManagedSkills(scopeStatus.skills, presetOptions, failed)
-  }, [scopeStatus, presetOptions])
+    return orphanManagedSkills(scopeStatus.skills, localizedOptions, failed)
+  }, [scopeStatus, localizedOptions])
   const tools = comparison !== null ? comparison.tools : (snapshot?.tools ?? [])
   const loading = snapshot == null && comparison === null
 
@@ -396,7 +412,7 @@ export function CapabilityCatalogCard({
               <option value="name">{t('sortBy')}: {t('sortName')}</option>
               <option value="updated">{t('sortBy')}: {t('sortUpdated')}</option>
             </select>
-            <ModeSelect options={presetOptions} value={modeValue} busy={modeBusy} onSelect={handleModeChange} t={t} />
+            <ModeSelect options={localizedOptions} value={modeValue} busy={modeBusy} onSelect={handleModeChange} t={t} />
           </div>
           <SegmentBar
             segments={[
@@ -426,7 +442,7 @@ export function CapabilityCatalogCard({
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-            <ModeSelect options={presetOptions} value={modeValue} busy={modeBusy} onSelect={handleModeChange} t={t} />
+            <ModeSelect options={localizedOptions} value={modeValue} busy={modeBusy} onSelect={handleModeChange} t={t} />
           </div>
           <SegmentBar
             segments={[
@@ -563,7 +579,7 @@ export function CapabilityCatalogCard({
           setCredential={setCredential}
           readSkillFile={readSkillFile}
           t={t}
-          scope={scopeEditorFor(selectedName, skills, scopeStatus, presetOptions, {
+          scope={scopeEditorFor(selectedName, skills, scopeStatus, localizedOptions, {
             save: async (presets) => {
               const result = await presetScopeSet(selectedName, presets)
               await Promise.all([refreshScope(), reloadView()])
