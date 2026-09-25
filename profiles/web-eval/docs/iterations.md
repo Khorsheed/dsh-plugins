@@ -3613,6 +3613,19 @@ main 上 capability-catalog 与 ankh-guard 在 0.1.5 宿主上起不来：两处
 
 用户 2026-09-25 定：不叫换线。0.1.5 跑通（T78）的前提下，web-eval 以 0.1.7-rc.1 为主宿主，同时向下兼容 0.1.5-rc.1；评测线（3171、题库 7 条 dsh 条件、已有 bundle）留在 0.1.5，不动。
 
+**前置核查结论（2026-09-25，拿旧 T81 文案的实施者先做了「开工前两件事」，记在这里给 T82 用）**：
+1. preset 迁移：host-016 线 799bb5cb 建了 packages/presets（@khorsheed/dsh-presets，preset-declarations，dev / dsh-eval / dsh-writing 三行一包，Note `2026-09-24-community-presets-declarative-bundle`），profiles/ 都还没切过去。它的 eval 条目不能直接用：id 是 dsh-eval；内容早于 T73 分支 3（persona 少 3 行、改 1 行，装置已变）；三个 preset 一包装，违背「只装评测装置、整份替换」。**协调者定 A**：profiles/web-eval 自带一个只含 preset-eval 一行的声明式 bundle，行形与 kind 约定跟 packages/presets 对齐，内容逐字取目录版；packages/presets 不动，dsh-eval 过期一事由协调者转它的 owner。web / web-dev 切 bundle 不归评测线。
+2. 0.1.5-rc.1 不认 preset bundle（工具链里没有 dsh-agent-preset、没有 install_bundle），两种形态都留：install.sh 0.1.5 走目录式整份替换、0.1.7 装 bundle、其他版本报错退出；加一个 spec 比对 bundle 的 plugins 块与目录版 agent.cordis.yml 逐字等价。
+3. 建 ~/.dsh-toolchains/rc-0.1.7-rc.1：T82 发出时放行，现在不建。
+
+**给这位实施者的回复（协调者转）**：
+
+```text
+谢谢，两件核查都很扎实，结论全部记进 iterations §三 T82（preset 走 A；两种形态并存 + 等价 spec）。
+但这份文案已经改号为 T82，暂停、先不开 worktree、不建 0.1.7 工具链。原因：T78 在 0.1.5 上起不来（typert 生成器跟着已到 0.1.7 的 harness 走，capability-catalog / ankh-guard 只改了 0.1.7 包名），用户定先把评测线在 0.1.5 上恢复——那是新的 T81，文案在 iterations §三「T81 · 评测线在 0.1.5-rc.1 上恢复」。0.1.7 侧（也就是你这份）排在它之后；T81 阶段二也要改 install.sh，同时做会撞。
+请改接新的 T81：从阶段一做起，端口与 0.1.5 harness 克隆目录照文案先报。
+```
+
 ```text
 # 任务 T81：web-eval 双宿主——在 0.1.7-rc.1 上装得起、跑得通，同时不丢 0.1.5-rc.1
 
