@@ -7,7 +7,7 @@
  * / import), the board gestures (new card, ghost ✓/✗, checkbox multi-select,
  * lens bar, follow-up, their full-hide degrade), the drill (body click →
  * detail page → back, the tri-state source save), the new-card draft (the
- * ⌘⏎-only save, the one discard question), focus reporting, the
+ * ⏎-or-⌘⏎ save that returns to the board, the one discard question), focus reporting, the
  * once-per-session wide-mode suggestion, and the read-only degrade.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'

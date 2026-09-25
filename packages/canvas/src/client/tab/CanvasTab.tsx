@@ -183,8 +183,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   }, [])
 
   /**
-   * The first save. The row STAYS and comes back empty: it is where cards get
-   * filed, and closing it on a save would take the confirmation toast with it.
+   * The first save. The card lands on its board and the writer goes back there
+   * with it: the row's work is done, so it comes off the strip and the board
+   * row shows what just arrived. The toast lives at the tab's root, so it
+   * survives the row it reports on.
    */
   const saveDraft = useCallback(async (
     id: string, canvasId: string, kind: CardCategoryId, text: string, draw: readonly CanvasStroke[],
@@ -210,8 +212,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       return next
     })
     showToast(t('toast.cardAdded'))
+    closeTab(id)
+    showCanvas(canvasId)
     return true
-  }, [sessionId, putCard, showToast, t])
+  }, [sessionId, putCard, showToast, t, closeTab, showCanvas])
 
   /* ---------------------------------------------------------------- wide mode */
 

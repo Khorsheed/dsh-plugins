@@ -125,7 +125,8 @@ export const zh = {
   'card.enterDetail': '在标签里编辑',
 
   'detail.unsaved': '未保存',
-  'detail.createHint': '⌘⏎ 建卡 · Esc 关掉这张标签',
+  'detail.createHint': '⏎ 建卡 · Esc 关掉这张标签',
+  'detail.createHintMulti': '⌘⏎ 建卡（⏎ 已是换行）· Esc 关掉这张标签',
   'detail.nothingToRender': '先写正文，回来才看得到渲染',
 
   'draw.tools': '绘画工具',
@@ -342,7 +343,8 @@ export const en: Record<keyof typeof zh, string> = {
   'card.enterDetail': 'Edit in a tab',
 
   'detail.unsaved': 'Unsaved',
-  'detail.createHint': '⌘⏎ adds the card · Esc closes this tab',
+  'detail.createHint': '⏎ adds the card · Esc closes this tab',
+  'detail.createHintMulti': '⌘⏎ adds the card (⏎ is a newline now) · Esc closes this tab',
   'detail.nothingToRender': 'Write the text first, then the render shows it',
 
   'draw.tools': 'Drawing tools',

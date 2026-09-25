@@ -395,7 +395,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
                   className={css.editor}
                   defaultValue={create.text}
                   placeholder={t('board.newCardPlaceholder')}
-                  submitOn="mod-enter"
+                  submitOn="auto-enter"
                   blurSubmits={false}
                   autoFocus={mode === 'source'}
                   onPaste={onPaste}
@@ -403,7 +403,10 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
                   onSubmit={text => { void create.onSave(create.kind, text, create.draw) }}
                   onCancel={create.onLeave}
                 />
-                <span className={css.editHint}>{t('detail.createHint')}</span>
+                {/* The chord the box just agreed to: one line says ⏎, two say ⌘⏎. */}
+                <span className={css.editHint}>
+                  {t(create.text.includes('\n') ? 'detail.createHintMulti' : 'detail.createHint')}
+                </span>
               </div>
             ) : null}
             {mode === 'render' || mode === 'split' ? (

@@ -5,7 +5,9 @@
  * the board scroll or the tab body is the one container), and IME-hard-stopped
  * submits (a candidate window is never torn down mid-word).
  * `submitOn` picks the chord: 'mod-enter' for card text (⌘⏎, plus blur unless
- * `blurSubmits` says otherwise), 'enter' for comments (⏎).
+ * `blurSubmits` says otherwise), 'enter' for comments (⏎), and 'auto-enter'
+ * for the new-card draft — ⏎ while the words are still one line (a title-like
+ * quick card files itself), a newline once they run to two, and ⌘⏎ always.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -19,7 +21,7 @@ import css from './board.module.css'
 export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, className, blurSubmits = true, onTextChange, onPaste, onSubmit, onCancel }: {
   readonly defaultValue?: string
   readonly placeholder?: string
-  readonly submitOn: 'mod-enter' | 'enter'
+  readonly submitOn: 'mod-enter' | 'enter' | 'auto-enter'
   readonly autoFocus?: boolean
   /** Overrides the board's editor class (the detail reader's own editor style). */
   readonly className?: string | undefined
@@ -57,9 +59,14 @@ export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, c
       return
     }
     if (event.key !== 'Enter' || composingRef.current) return
+    const bare = !event.shiftKey && !event.metaKey && !event.ctrlKey
     const chord = submitOn === 'enter'
-      ? !event.shiftKey && !event.metaKey && !event.ctrlKey
-      : event.metaKey || event.ctrlKey
+      ? bare
+      : submitOn === 'auto-enter'
+        // Bare ⏎ files a one-line draft; once the words hold a newline it is
+        // prose and ⏎ goes back to meaning a newline. ⌘⏎ files either way.
+        ? (event.metaKey || event.ctrlKey) || (bare && !(ref.current?.value.includes('\n') ?? false))
+        : event.metaKey || event.ctrlKey
     if (chord) {
       event.preventDefault()
       submit()
