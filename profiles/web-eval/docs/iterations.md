@@ -404,7 +404,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T73 | 方案 ✅（第一步计划 `c1b70a4d`）→ 代码 | D1 + D2 会话去绑定、按仓库登记。第一步计划已评审（2026-09-23）：定 (b) 不设过渡期、条件与 lock 同搬部署级、协议 rev13 归 T73、会话收窄不保留。第二步三条分支——**分支 1** datasets 登记表 ✅（`201fb6cc` → main `036910ed`，2026-09-23）、**分支 2** eval 实验目录 ✅（`cdea013e` → main `587c12ae`，2026-09-24；验收见 §三）、**分支 3** SKILL / 提示词 ✅（`637b47f7` → main `ed9e62f9`，2026-09-24）+ 试点（**用户 2026-09-25 定：并进 3171 重装之后，在 3171 上跑**；3185 撤掉）；三条已合完，试点过才算 T73 验收。T68 并入 | T70 T68 | 写入模型定案；agent 不再翻磁盘找检出；未登记仓库不可用 |
 | T74 | 代码 ✅（`57533026` → main `e80a328c`，2026-09-24；补充一条见验收） | D5 方案卡：plan 加「要回答的问题 / 预期 / 怎么算回答了」三个字段（协议 rev14）、实验设计上半段方案卡、结论卡原样回答问题、就地改数字（启动前，写回同一个 plan，启动后冻结）；文案见 §三「T74」 | T72 T73 | 结论卡第一句是对问题的回答 |
 | T75 | 代码（`2d883a2e` 已报，**等 T76 合入后合 main 解冲突再合**） | D6 作答视图：按「题 × 组 × 次」并排，两个视角（提交的报告 / 判定证据），盲评开关即人工评估视图；三处入口；文案见 §三「T75」 | T72 T69 | 人工评估与作答视图是同一个组件 |
-| T76 | 代码（`139336e5` 已报，**合 main（含 T74）解冲突后合**） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案见 §三「T76」 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
+| T76 | 代码（`139336e5` 已报，**合 main（含 T74 与 host-016）解冲突后合**，文案 §三「T76 补充（一）」） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案见 §三「T76」 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
 | T77 | 代码 ✅（`ced3702e` → main `53b93082`，2026-09-24） | 源码模式装不出来：`install.sh:327` 算同族包只看 dependencies / peerDependencies，`scripts/pack-dist.ts:343` 只改写 `workspace:^`；`e9110d52` 把 content-preview 以 `workspace:*` 加进 local-files / ui-file-preview / worktrees 的 devDependencies，pack 时 ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL（T73 分支 1 与 T72 验收各自撞上、各自临时绕过）。文案见 §三「T77」 | 无 | 从 detached worktree 跑 `install.sh --source … --fresh` 到临时 DSH_HOME 一次成功 |
 | T78 | 验证（可发，2026-09-25） | host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟：main 已钉官方线 0.1.7-rc.1、eval 家族做了「双线」适配，评测线 3171 与临时实例仍是 0.1.5-rc.1；只回答「当前 main 能不能在评测线上装得起、跑得通」，不修代码。文案见 §三「T78」 | 无（与 T76 合 main 并行） | 成立 → 3171 照常重装；不成立 → 错误原文 + 定位提交，交用户定钉旧提交还是换线 |
 | T79 | 验收（联合走查，可发的前置见文案） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
@@ -429,7 +429,7 @@ eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eva
 
 ## 三、指引文案
 
-可直接转发给实施 agent。每段自包含，含分支与 worktree 要求。**下面这段「实施者通用提醒」随每条文案一起转，文案正文不再重复**（2026-09-11 起）：
+可直接转发给实施 agent。每段自包含，含分支与 worktree 要求。**下面这段「实施者通用提醒」随每条文案一起转，文案正文不再重复**（2026-09-11 起；2026-09-25 修订截图、工具链、题库绑定三条）：
 
 ```text
 实施者通用提醒（随任务文案一起生效）
@@ -439,11 +439,11 @@ eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eva
 - 从 main 开 worktree，分支只改文案指明的目录；题库仓库是多 agent 共享检出，写操作一律 `git worktree add` 后再动，从 i1-walk 开，不在共享检出上 checkout。
 - 不碰 ~/.dsh-official 与 3080；凭据不复制，不进日志、回报、提交；共享资源（docker 容器、边车、实例进程）要动之前先在回报里提出，由协调者放行。
 - Agent Note 双语并写 Alternatives considered；README 双语 + sidecar；`pnpm gate` 绿，ankh-guard 的 lane 抖动按既有规则单跑复核并点名。worktree 里跑 gate 用 `pnpm --config.verify-deps-before-run=false gate`（绕过 pnpm 对软链 node_modules 的依赖状态检查），不改 pnpm-workspace.yaml。
-- UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。UI 切片按 ui-spec §九 自查，回报里逐条说明落在哪一页；不要求每个切片各自截图（每次截图都得登录 + 发一条消息才进得到聊天界面，成本高），截图由界面收口任务（T63）统一交每页明暗两套，协调者与用户看图验收。
-- **工具链固定在 `~/.dsh-toolchains/rc-0.1.5-rc.1`（2026-09-23 明写）**：宿主检出 `~/code/deepseek-harness` 已到 dsh-v0.1.5-rc.3（prod 3080 从它起），评测线不跟——题库 7 条 dsh 条件与 lock 钉的是 0.1.5-rc.1，换工具链等于换受试对象（provision 核对会把全部条件判成未就绪，第四条不变量会把新旧 run 隔开）。3171 与所有临时实例只用 rc.1 工具链的 PATH，不从 harness 检出起实例；切 rc.3 是单独的任务（建工具链目录、依赖与 minHost 对齐、条件重声明与重 provision、镜像重打），I5 收口后再排。
+- UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval，配方见交接文档与 §九），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。**2026-09-23 起每个 UI 任务都自己截图**：按 ui-spec §九 交明 / 暗 / 400 宽三套，参照交互稿 v5（proposals/prototypes/eval-journey-redesign.html）按场景对照，截图放 ~/.dsh/scratch/<任务号>-shots/，回报里逐张说明对应哪个场景、哪一页；截图只在自己的临时实例上做，不截 3171。
+- **工具链固定在 `~/.dsh-toolchains/rc-0.1.5-rc.1`（2026-09-25 修订）**：main 已合入 host-016（pnpm-workspace.yaml 把官方线钉到 @deepseek-ai/*@0.1.7-rc.1，eval 家族做了双线适配），但评测线不跟——题库 7 条 dsh 条件与 lock 钉的是 0.1.5-rc.1，换工具链等于换受试对象。3171 与所有临时实例只用 rc-0.1.5-rc.1 工具链的 PATH，不从 harness 检出起实例。**「rc.1」两义**：host-016 文档里指 0.1.7-rc.1，评测线文档里指 0.1.5-rc.1，回报里写全版本号。改 eval 家族代码要守双线：在 0.1.7-rc.1 类型面上 tsc / gate 绿（仓里构建就是它），同时在 0.1.5-rc.1 临时实例上真机跑通；不引入 host-016 已删的 API（ISessions.open / current、JobStart / JobSnapshot 等），用到宿主插槽或服务前先核它在两条线上的契约。换线（0.1.7 上目录式 preset 迁移、条件重声明、重 provision、镜像重打）是单独任务，I5 收口后再排。
 - 重装 3171 的配方（T63 踩过的坑）：先 `export PATH=~/.dsh-toolchains/rc-0.1.5-rc.1/node_modules/.bin:$PATH` 与 `export DSH_HOME=~/.dsh-lab`（install.sh 的 preflight 与 guard 的 record deployment 都要）；停法先 TERM 启动器那层，或放 stop marker 后等看门狗自己收——直接 TERM 看门狗会把启动器与实例进程孤儿化、端口 60 秒不放。
 - 分支开出去之后 main 若又合了同一个包的别的切片，回报前先把 main 并进分支、解掉冲突、重跑 gate；协调者不代解代码冲突。解追加型冲突用 graft：从 base / ours / theirs 取原文，按稳定锚点把自己追加的整块插进 main 版本，不逐 hunk 拼 ours+theirs。
-- 并行任务写题库时各用各的 worktree，不碰别人分支上的 plan / condition；会话里的 agent 起草只认本会话绑定的题库（T58 之前尤其要盯：未绑定时它会拿 repo 参数自己挑一个）。
+- 并行任务写题库时各用各的 worktree，不碰别人分支上的 plan / condition。会话绑定题库已随 T73 退场，agent 起草时题库由实验本身指明（id/set @ 短哈希），不要依赖「会话当前题库」。
 ```
 
 ### I1 的文案（已全部完成）
@@ -3446,7 +3446,39 @@ eval / eval-tool 测试全绿，gate 绿；实验卡渲染、「打开实验」�
 分支与 commit；Agent Note（Alternatives considered 双语）；gate；截图路径；tab 计数的可行性结论；ui-spec 需要回写的句子。通用提醒照旧。
 ```
 
-**回报已到（2026-09-24），等合 main**：`feat/t76-session-face`（`01cf4eef` eval_experiment_get、`ad688910` 实验卡、`139336e5` 标记行改细框），gate 过，eval 1048。与 T74 在 eval-tool/src/index.ts、两包 README、LabView.module.css 上冲突（merge-tree 核过）：**实施者把 main（≥ `e80a328c`）合进分支、按 graft 法解、gate 重跑后报 commit，协调者再合**；T75 排在它之后。协调者看了两张图（会话里的实验卡：名字 / 问题 / 规模 / 题库版本 / 待批准 + 「打开实验」；实验室列表被标出的一行细框）。三条结论先记：tab 标签计数做不到（SlotLabel 只在订阅 / 切语言时重读，T76 证伪；不显示、不用 DOM 锚点）；「打开实验」没有切标签接口，退回「在实验室列表标出这一行」（LabFocus 通道，宿主日后给了接口就直达设计页）；S18 三个候选（Session.append 无 ignorable、agent.inject 面向模型、shell.overlay root 作用域）只记不接。ui-spec 两句已回写（§五、§六）。实验卡的真机图是写进临时实例存储的夹具会话（没配 provider），客户端测试覆盖真实块形状，接受。观察进补充清单：条件 sha 设计页显示当前锁、run.meta 记开跑时的锁，页面标「开跑时 / 当前」；datasets 缺席时 draftRow 的 validate 直接拒绝（不在范围，低）。
+**回报已到（2026-09-24），等合 main**：`feat/t76-session-face`（`01cf4eef` eval_experiment_get、`ad688910` 实验卡、`139336e5` 标记行改细框），gate 过，eval 1048。与 T74 在 eval-tool/src/index.ts、两包 README、LabView.module.css 上冲突（merge-tree 核过）：**实施者把 main（≥ `e80a328c`）合进分支、按 graft 法解、gate 重跑后报 commit，协调者再合**（文案见下「T76 补充（一）」）；T75 排在它之后。协调者看了两张图（会话里的实验卡：名字 / 问题 / 规模 / 题库版本 / 待批准 + 「打开实验」；实验室列表被标出的一行细框）。三条结论先记：tab 标签计数做不到（SlotLabel 只在订阅 / 切语言时重读，T76 证伪；不显示、不用 DOM 锚点）；「打开实验」没有切标签接口，退回「在实验室列表标出这一行」（LabFocus 通道，宿主日后给了接口就直达设计页）；S18 三个候选（Session.append 无 ignorable、agent.inject 面向模型、shell.overlay root 作用域）只记不接。ui-spec 两句已回写（§五、§六）。实验卡的真机图是写进临时实例存储的夹具会话（没配 provider），客户端测试覆盖真实块形状，接受。观察进补充清单：条件 sha 设计页显示当前锁、run.meta 记开跑时的锁，页面标「开跑时 / 当前」；datasets 缺席时 draftRow 的 validate 直接拒绝（不在范围，低）。
+
+**T76 补充（一）：合 main（2026-09-25，可发）**：
+
+```text
+# T76 补充（一）：把 main 合进 feat/t76-session-face
+
+## 背景
+你的回报（01cf4eef / ad688910 / 139336e5）协调者已验收，等合 main。其间 main 先后合入 T74 与 host-016 适配线（59077d33 及后续：官方线钉 @deepseek-ai/*@0.1.7-rc.1，eval 家族双线适配）。merge-tree 核过，当前 main（≥ 9da732aa）与你的分支有 6 处冲突：
+- packages/eval-tool/README.i18n.yaml
+- packages/eval-tool/src/index.ts
+- packages/eval/README.en.md
+- packages/eval/README.i18n.yaml
+- packages/eval/README.md
+- packages/eval/src/client/LabView.module.css
+协调者不代解代码冲突，请你并进来解掉后再报。
+
+## 做法
+1. 在原 worktree ../dsh-plugins-wt-t76-session 里 git merge main（不 rebase，保留原提交）。
+2. 冲突按 graft 法解：从 base / ours / theirs 取原文，以 main 版本为底，按稳定锚点把 T76 追加的整块（eval_experiment_get 的注册与档位表行、实验卡相关 README 段、标记行细框样式）插进去；不逐 hunk 拼 ours+theirs。T74 加的（问题原文 rev14、结论卡等）与 host-016 改的（双线适配、Config 注解裸 z）一律保留。
+3. 双线核对：
+   - main 的类型面是 0.1.7-rc.1。合完后 eval / eval-tool 在它上面 tsc 与测试必须绿（你的分支基点 006779b0 在 0.1.5 类型面上写的，这里可能第一次暴露问题）。
+   - 重点核 tool.call.toolview：host-016 的提案（proposals/active/2026-09-15-host-016-adaptation.md，只读）把它记为「分相」的零消费复核项，从没人适配过，你是仓里第一个消费者。查清它在 0.1.5-rc.1 与 0.1.7-rc.1 两条线上的声明、注册形状、渲染时传进来的块形状是否一致；不一致就按「探测、退化」写成双线（缺插槽或形状不对时不渲染实验卡、不抛），Note 里写明两线差异。不能只在 0.1.5 上成立。
+   - 不引入 host-016 已删的 API（ISessions.open / current、JobStart / JobSnapshot 等）。
+4. 真机：用 rc-0.1.5-rc.1 工具链起临时实例（独立 DSH_HOME、空闲端口，源码模式装 web-eval），重看两张图：会话里的实验卡、实验室列表标出的一行；明 / 暗 / 400 三套，放 ~/.dsh/scratch/t76-shots/merge/。确认合并后外观与验收时一致。
+5. pnpm --config.verify-deps-before-run=false gate 重跑。
+
+## 不做
+不加新功能；补充清单 ②⑥（条件 sha 标「开跑时 / 当前」、draftRow validate 三段式）不在这里做，等 T79 走查后统一发；不动宿主；不自己合 main。
+
+## 回报
+合并提交号；6 处冲突各自怎么解的（一句话一处）；tool.call.toolview 两条线的核对结论（一致 / 不一致及怎么退化）；0.1.7 类型面上 tsc 与测试结果；gate；截图路径。通用提醒照旧。
+```
 
 **T74–T76 补充清单（并入 T72 补充（一），等用户走查后一起发）**：① 结论卡 `rank === null` 分「暂时不能下结论：<rankReason>」与「未分高下」（T74，已定）；② 条件 sha 标「开跑时 / 当前」（T76）；③ judgeQueue 带 script 层，判官台与具名面的来源词一致（T75）；④ X-no-patch 极性先问出题方（T75，数据面或页面待定）；⑤ SKILL「计划审阅」→「实验设计」（分支 3，随试点后修订）；⑥ datasets 缺席时 draftRow validate 的拒绝改三段式（T76，低）。
 
