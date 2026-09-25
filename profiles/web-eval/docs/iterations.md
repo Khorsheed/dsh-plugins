@@ -406,6 +406,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T75 | 代码（`2d883a2e` 已报，**等 T76 合入后合 main 解冲突再合**） | D6 作答视图：按「题 × 组 × 次」并排，两个视角（提交的报告 / 判定证据），盲评开关即人工评估视图；三处入口；文案见 §三「T75」 | T72 T69 | 人工评估与作答视图是同一个组件 |
 | T76 | 代码（`139336e5` 已报，**合 main（含 T74）解冲突后合**） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案见 §三「T76」 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
 | T77 | 代码 ✅（`ced3702e` → main `53b93082`，2026-09-24） | 源码模式装不出来：`install.sh:327` 算同族包只看 dependencies / peerDependencies，`scripts/pack-dist.ts:343` 只改写 `workspace:^`；`e9110d52` 把 content-preview 以 `workspace:*` 加进 local-files / ui-file-preview / worktrees 的 devDependencies，pack 时 ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL（T73 分支 1 与 T72 验收各自撞上、各自临时绕过）。文案见 §三「T77」 | 无 | 从 detached worktree 跑 `install.sh --source … --fresh` 到临时 DSH_HOME 一次成功 |
+| T78 | 验证（可发，2026-09-25） | host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟：main 已钉官方线 0.1.7-rc.1、eval 家族做了「双线」适配，评测线 3171 与临时实例仍是 0.1.5-rc.1；只回答「当前 main 能不能在评测线上装得起、跑得通」，不修代码。文案见 §三「T78」 | 无（与 T76 合 main 并行） | 成立 → 3171 照常重装；不成立 → 错误原文 + 定位提交，交用户定钉旧提交还是换线 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -3446,6 +3447,43 @@ eval / eval-tool 测试全绿，gate 绿；实验卡渲染、「打开实验」�
 **回报已到（2026-09-24），等合 main**：`feat/t76-session-face`（`01cf4eef` eval_experiment_get、`ad688910` 实验卡、`139336e5` 标记行改细框），gate 过，eval 1048。与 T74 在 eval-tool/src/index.ts、两包 README、LabView.module.css 上冲突（merge-tree 核过）：**实施者把 main（≥ `e80a328c`）合进分支、按 graft 法解、gate 重跑后报 commit，协调者再合**；T75 排在它之后。协调者看了两张图（会话里的实验卡：名字 / 问题 / 规模 / 题库版本 / 待批准 + 「打开实验」；实验室列表被标出的一行细框）。三条结论先记：tab 标签计数做不到（SlotLabel 只在订阅 / 切语言时重读，T76 证伪；不显示、不用 DOM 锚点）；「打开实验」没有切标签接口，退回「在实验室列表标出这一行」（LabFocus 通道，宿主日后给了接口就直达设计页）；S18 三个候选（Session.append 无 ignorable、agent.inject 面向模型、shell.overlay root 作用域）只记不接。ui-spec 两句已回写（§五、§六）。实验卡的真机图是写进临时实例存储的夹具会话（没配 provider），客户端测试覆盖真实块形状，接受。观察进补充清单：条件 sha 设计页显示当前锁、run.meta 记开跑时的锁，页面标「开跑时 / 当前」；datasets 缺席时 draftRow 的 validate 直接拒绝（不在范围，低）。
 
 **T74–T76 补充清单（并入 T72 补充（一），等用户走查后一起发）**：① 结论卡 `rank === null` 分「暂时不能下结论：<rankReason>」与「未分高下」（T74，已定）；② 条件 sha 标「开跑时 / 当前」（T76）；③ judgeQueue 带 script 层，判官台与具名面的来源词一致（T75）；④ X-no-patch 极性先问出题方（T75，数据面或页面待定）；⑤ SKILL「计划审阅」→「实验设计」（分支 3，随试点后修订）；⑥ datasets 缺席时 draftRow validate 的拒绝改三段式（T76，低）。
+
+### T78 · host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟（3171 下一次重装的前置；可发，2026-09-25）
+
+```text
+# 任务 T78：host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟
+
+## 背景
+2026-09-25 凌晨 main 合入 host-016 适配线（59077d33 及后续）：pnpm-workspace.yaml 把官方线钉到 @deepseek-ai/*@0.1.7-rc.1，eval / eval-tool / datasets / datasets-tool 做了「双线」适配，compat 仍写 minHost / verifiedHost 0.1.5-rc.1。评测线的 3171 装的是 host-016 之前的 006779b0，3171 与所有临时实例都跑 ~/.dsh-toolchains/rc-0.1.5-rc.1（= 0.1.5-rc.1）。注意两边文档里的「rc.1」不是同一个版本：host-016 文档指 0.1.7-rc.1，评测线文档指 0.1.5-rc.1。源码两条线都兼容，不等于按 0.1.7 类型面构建的产物在 0.1.5 运行时里成立。本任务只回答一个问题：当前 main 在评测线工具链上装不装得起、跑不跑得通。结论决定下一次 3171 重装（带 T73 分支 3 / T74 / T75 / T76）怎么走。
+
+## 先读
+交接文档 profiles/web-eval/docs/handoff-2026-09-25.md §0、§5、§6；本文 §三「3171 重装到 main（T77 之后）」的装后核对五项（冒烟项照它来）；host-016 改到评测线的提交：21363d83（ISessions.open / current 移除迁移：mainSessionId 读 retainedBy.mainView 回落 current、openSession 改为按次探测 uiWorkspace）、fd1181e4（jobs 面 JobStart→JobSpec / JobSnapshot→JobView，rc.1 走 run(job) 环推、0.1.5 保留 readOutput 拉取）、12751fa1 / 6c4be81d / 2894c42b（Config 注解改裸 z）；proposals/active/2026-09-15-host-016-adaptation.md（只读，别人的工作流）。
+
+## 分支
+不改代码、不开分支。从本地 main 当前 HEAD 开 detached worktree：git worktree add --detach ../dsh-plugins-wt-t78-smoke main；回报里写明 HEAD 提交号。发现缺陷只记录、不修（修另立任务）。
+
+## 步骤
+1. 端口与模型配额是共享资源：先 lsof -nP -iTCP:<port> -sTCP:LISTEN 找一个空闲端口，报协调者后再起。不配 provider，所以不用模型配额。
+2. 装：在 worktree 里 CI=true pnpm install --frozen-lockfile --prefer-offline（ECONNRESET 重跑即可）→ export PATH=~/.dsh-toolchains/rc-0.1.5-rc.1/node_modules/.bin:$PATH → TH=$(cd "$(mktemp -d)" && pwd -P)（DSH_HOME 必须是 realpath）→ export DSH_HOME=$TH → profiles/web-eval/scripts/install.sh --source <worktree> --fresh。记下构建与安装输出里的错误和警告，重点看 peer 版本、typert、import 阶段。不从 npm 装任何 @khorsheed 包。
+3. 数据：按临时实例配方把 3171 账本拷一份只读副本到 $TH（rsync ~/.dsh-lab/，排除 .credentials.yaml、eval-creds/、local-agent/、state 里的 token / cookie / watchdog / launch-spec / instance-launch / self-restart-guard / last-*、*.log、profiles/、tarballs/、bin/、logs/、scratch/）；拷完 find $TH -iname '*token*' -o -iname '*cred*' 必须为空。
+4. 起实例：dsh --profile web-eval --port <p> --no-open，stdout 只写进 $TH 下的 0600 文件，启动链接打码。记下就绪秒数，以及启动日志里的插件加载错误（「Failed to load plugins」、pending 行、import 报错）。provider 对话框点「Configure later」。
+5. 冒烟（playwright；截一套明色即可，放 ~/.dsh/scratch/t78-shots/，不要放系统临时目录）：
+   a. 题集、实验室两个 tab 都出现，打开时没有整页错误；浏览器 console 里没有 eval / datasets 的报错。
+   b. 题集 tab：登记表随副本带过来就核对列表；没带过来就登记 dataseek-eval（跟踪 i1-walk）。对共享检出只读，前后 git rev-parse HEAD 与 git worktree list | wc -l 一致。
+   c. 实验室：列表四组与「另有 n 个」；打开 pilot-d-preset 走一遍四阶段（实验设计的方案卡与就绪清单、运行记录网格与一格详情、结果对比的结论卡、人工评估页），每页都能打开。
+   d. 双线改到的地方实测：切换会话后「本会话发起」的过滤跟着换（mainSessionId）；运行记录详情的「打开子会话」能跳过去（uiWorkspace.openSession 探测）；数字就地改写回一次再改回（T74 路径）。jobs 面的 readOutput 分支如果不起真 run 就走不到，写明「未覆盖」，不要为它配 provider。
+   e. pilot-d bundle 报告页（题库 wt-t65 工作树 exports 下的 run-20260918054718-8o0o-bundle）：打得开，结论卡与有效性校验和 T71 / T74 验收记录一致（判定覆盖不一致、4/5 ⚠）。
+6. 收尾：停实例（先核 pid 是自己的）、rm -rf $TH、git worktree remove 那个 worktree。
+
+## 不做
+不修代码；不换工具链、不建 rc-0.1.7-rc.1 工具链（换线是另一个决定）；不碰 3171 / ~/.dsh / ~/.dsh-official / 3080 / 3093；不配 provider、不复制凭据；不起真 run；不在共享检出上 checkout。
+
+## 完成判据
+一句话结论：成立 / 不成立。成立的条件是第 2、4 步没有错误，第 5 步 a–c、e 全过。不成立时给出错误原文、定位到的提交（先从背景里那五个查起）、以及估计是小修还是结构性问题。
+
+## 回报
+main 提交号、端口、就绪秒数、第 2 / 4 步的告警摘录（打码）、第 5 步逐项原文、截图路径、未覆盖项、结论。通用提醒照旧。
+```
 
 
 ## 四、验收规程
