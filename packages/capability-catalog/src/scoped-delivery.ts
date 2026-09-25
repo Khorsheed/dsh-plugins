@@ -31,7 +31,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createScope, type ScopeKey } from '@deepseek-ai/dsh-scope'
-import { livePresetMounts } from '@deepseek-ai/dsh-agent-preset-registry'
 // Type-only: the ctx.skills service merge and the provider contract this module
 // implements. The skill registry is an optional peer; a runtime import would
 // make the catalog fail to boot without it.
@@ -40,6 +39,36 @@ import type { SkillCandidate, SkillDefinition, SkillProvider, SkillProviderContr
 // event declaration (the roster itself is a real dependency).
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { acquireStandingScope, type PresetRosterSlice } from './preset-scope.ts'
+
+let presetRegistryProbe: Promise<unknown> | undefined
+
+/**
+ * Resolve the preset-registry module by name. The 0.1.7-rc.1 host renamed
+ * `@deepseek-ai/dsh-agent-presets` to `@deepseek-ai/dsh-agent-preset-registry`
+ * (the livePresetMounts API carried over); 0.1.5/0.1.6 hosts install only the
+ * old name, and a host without preset composition installs neither — `null`,
+ * and {@link ScopedSkillDelivery.liveKeys} then reports nothing live, the same
+ * degrade the call's own catch encodes. A STATIC import of either name is a
+ * module-resolution failure at load on hosts installing only the other —
+ * pack-dist strips `dependencies`, so the specifier resolves against the
+ * host's install tree. Both specifiers stay static string literals so tsdown
+ * externalizes them and tsc type-checks them.
+ * @returns the module namespace, or null when neither name resolves.
+ */
+export function loadPresetRegistry(): Promise<unknown> {
+  presetRegistryProbe ??= import('@deepseek-ai/dsh-agent-preset-registry')
+    .catch((): unknown => import('@deepseek-ai/dsh-agent-presets'))
+    .catch((): null => null)
+  return presetRegistryProbe
+}
+
+/** Test seam: drop the cached probe so a mocked resolution path re-runs. */
+export function resetPresetRegistryProbeForTest(): void {
+  presetRegistryProbe = undefined
+}
+
+/** The registry's `livePresetMounts` face (structural — the module is probed). */
+type LivePresetMounts = () => readonly { readonly key: ScopeKey | undefined }[]
 
 /** Provider label for managed entries; also the candidate's `provider` field. */
 export const SCOPED_PROVIDER_NAME = 'capability-catalog'
@@ -373,6 +402,8 @@ export class ScopedSkillDelivery {
   private failure: string | undefined
   private started = false
   private disposed = false
+  /** The probed registry's mount list (undefined until start()'s probe resolves). */
+  private presetMounts: LivePresetMounts | undefined
 
   /**
    * @param ctx - the host context the delivery scopes are minted under.
@@ -384,6 +415,11 @@ export class ScopedSkillDelivery {
   async start(): Promise<void> {
     if (this.started || this.disposed) return
     this.started = true
+    // Resolve the registry's mount list before the first reconcile: the
+    // 0.1.7-rc.1 host renamed the package (see loadPresetRegistry). An
+    // unresolved probe leaves presetMounts undefined and liveKeys() reports
+    // nothing live — the same degrade the call's own catch encodes.
+    this.presetMounts = ((await loadPresetRegistry()) as { livePresetMounts?: LivePresetMounts } | null)?.livePresetMounts
     await this.ensureRoot()
     this.watchRoot()
     this.ctx.on('agent-preset/selected', () => { void this.reconcile() })
@@ -569,6 +605,12 @@ export class ScopedSkillDelivery {
   /** The standing keys that still have a live mount in this process. */
   private liveKeys(): Set<ScopeKey> {
     const keys = new Set<ScopeKey>()
+    const livePresetMounts = this.presetMounts
+    // Undefined until start()'s probe resolves (a file event can fire first),
+    // or forever on a host with neither registry name — the same degrade the
+    // catch below encodes: nothing is KNOWN to be live, registrations for
+    // needed presets are still kept, only stale generations are dropped.
+    if (livePresetMounts === undefined) return keys
     try {
       for (const mount of livePresetMounts()) {
         if (mount.key !== undefined) keys.add(mount.key)

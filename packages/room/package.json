@@ -88,6 +88,7 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-agent-preset-registry": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
@@ -107,6 +108,12 @@
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-agent-preset-registry": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-agent-presets": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-session-stats": {
       "optional": true
     },
@@ -124,6 +131,7 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-agent-preset-registry": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-api-remotes": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-api-session-controller": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.1.7-rc.1",

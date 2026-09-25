@@ -47,7 +47,7 @@ const catalogSpecifier = ['@deepseek-ai/dsh-session', 'src', 'known-event-types'
 const catalogModule = await import(catalogSpecifier)
   .catch(() => import('@deepseek-ai/dsh-session')) as { KNOWN_SESSION_EVENT_TYPES: Set<string> }
 for (const type of ROOM_EVENT_TYPES) catalogModule.KNOWN_SESSION_EVENT_TYPES.add(type)
-import { agentPresetsDerivationHost, composeRoomAgent, deriveSessionPreset, inspectCold, roomSessionPreset } from './agent-setup.ts'
+import { composeRoomAgent, deriveSessionPreset, inspectCold, preloadPresetDerivationHost, presetDerivationHost, roomSessionPreset } from './agent-setup.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Type-only: pulls the `room/*` SessionEventMap merges.
 import type {} from './types.ts'
@@ -135,6 +135,13 @@ export class RoomService extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, 'room')
+    // Resolve the preset-registry module before any resume/create path
+    // derives a session preset (the 0.1.7-rc.1 host renamed the package; the
+    // probe falls back to the old name, then to the no-preset degrade).
+    ctx.effect(async () => {
+      await preloadPresetDerivationHost()
+      return () => {}
+    }, 'room: preset-registry probe')
     ctx.effect(async () => {
       const loader = ctx.get('loader') as { import?: (name: string) => Promise<{ KNOWN_SESSION_EVENT_TYPES?: ReadonlySet<string> }> } | undefined
       if (loader?.import === undefined) return () => {}
@@ -207,7 +214,7 @@ export class RoomService extends TypertRemoteService {
     return {
       ok: true,
       state: replay(inspected.events),
-      preset: deriveSessionPreset(agentPresetsDerivationHost, { header: inspected.meta, events: inspected.events }),
+      preset: deriveSessionPreset(presetDerivationHost(), { header: inspected.meta, events: inspected.events }),
     }
   }
 

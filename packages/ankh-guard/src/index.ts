@@ -33,13 +33,6 @@ declare module '@deepseek-ai/dsh-llm' {
 // Type-only: pulls the agent package's event merge ('agent/pre-step').
 import type {} from '@deepseek-ai/dsh-agent'
 import type { AgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
-// Namespace handle for runtime feature detection: the 0.1.2 host replaced
-// the `resolveSessionPreset` free function (and the `PresetBearingSession`
-// type) with the `agentPresetProjectionDefinition` unit, and a STATIC named
-// import of a removed export is a SyntaxError at module load — exactly the
-// failure this dual-host probing exists to survive. The derivation below
-// reads both surfaces through one structural cast.
-import * as agentPresetsHost from '@deepseek-ai/dsh-agent-preset-registry'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -84,6 +77,34 @@ export interface PresetDerivationSurface {
     apply(state: string | null, event: { type: string; data?: unknown }): string | null
   }
   resolveSessionPreset?: (session: PersistedPresetSource) => string | undefined
+}
+
+let presetRegistryProbe: Promise<unknown> | undefined
+
+/**
+ * Resolve the preset-registry module by name. The 0.1.7-rc.1 host renamed
+ * `@deepseek-ai/dsh-agent-presets` to `@deepseek-ai/dsh-agent-preset-registry`
+ * (the resolve/mount/livePresetMounts/agentPresetProjectionDefinition API
+ * carried over); 0.1.5/0.1.6 hosts install only the old name, and a host
+ * without preset composition installs neither — `null`, and the derivation
+ * then receives `{}`, the established no-preset degrade (the resume falls
+ * back to the deployment's default preset). A STATIC import of either name is
+ * a module-resolution failure at load on hosts installing only the other —
+ * pack-dist strips `dependencies`, so the specifier resolves against the
+ * host's install tree. Both specifiers stay static string literals so tsdown
+ * externalizes them and tsc type-checks them.
+ * @returns the module namespace, or null when neither name resolves.
+ */
+export function loadPresetRegistry(): Promise<unknown> {
+  presetRegistryProbe ??= import('@deepseek-ai/dsh-agent-preset-registry')
+    .catch((): unknown => import('@deepseek-ai/dsh-agent-presets'))
+    .catch((): null => null)
+  return presetRegistryProbe
+}
+
+/** Test seam: drop the cached probe so a mocked resolution path re-runs. */
+export function resetPresetRegistryProbeForTest(): void {
+  presetRegistryProbe = undefined
 }
 
 /**
@@ -591,7 +612,8 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       const persistence = probeColdReader(ctx)
       if (presets !== undefined && persistence !== undefined) {
         const inspected = await readColdLog(persistence, id)
-        const presetId = deriveSessionPreset(agentPresetsHost as unknown as PresetDerivationSurface, {
+        const host = await loadPresetRegistry()
+        const presetId = deriveSessionPreset((host ?? {}) as PresetDerivationSurface, {
           header: inspected.meta as PersistedPresetSource['header'],
           events: inspected.events,
         })

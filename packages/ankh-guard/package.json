@@ -53,6 +53,7 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-agent-preset-registry": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
@@ -61,6 +62,8 @@
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-agent-preset-registry": { "optional": true },
+    "@deepseek-ai/dsh-agent-presets": { "optional": true },
     "@deepseek-ai/dsh-client-connection": { "optional": true },
     "@deepseek-ai/dsh-host-webserver": { "optional": true }
   },
@@ -69,6 +72,7 @@
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
     "@deepseek-ai/dsh-agent": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-agent-preset-registry": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-llm": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-session-persistence": "^0.1.7-rc.1",

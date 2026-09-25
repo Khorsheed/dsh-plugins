@@ -15,12 +15,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentSetup } from '@deepseek-ai/dsh-agent'
 import type AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
-// Namespace handle for runtime feature detection: the 0.1.2 host replaced
-// the `resolveSessionPreset` free function with the
-// `agentPresetProjectionDefinition` unit, and a STATIC named import of a
-// removed export is a SyntaxError at module load — the derivation below
-// reads both surfaces through one structural cast (the ankh-guard pattern).
-import * as agentPresetsHost from '@deepseek-ai/dsh-agent-preset-registry'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 
@@ -69,8 +63,50 @@ export function deriveSessionPreset(host: PresetDerivationSurface, session: Pers
   return host.resolveSessionPreset?.(session)
 }
 
-/** The agent-presets module namespace as the derivation's probe input. */
-export const agentPresetsDerivationHost = agentPresetsHost as unknown as PresetDerivationSurface
+let presetRegistryProbe: Promise<unknown> | undefined
+let probedHost: PresetDerivationSurface = {}
+
+/**
+ * Resolve the preset-registry module by name. The 0.1.7-rc.1 host renamed
+ * `@deepseek-ai/dsh-agent-presets` to `@deepseek-ai/dsh-agent-preset-registry`
+ * (the API carried over); 0.1.5/0.1.6 hosts install only the old name, and a
+ * host without preset composition installs neither — `null`, and the
+ * derivation host stays `{}`, the established no-preset degrade (the resume
+ * falls back to the deployment's default preset). A STATIC import of either
+ * name is a module-resolution failure at load on hosts installing only the
+ * other — pack-dist strips `dependencies`, so the specifier resolves against
+ * the host's install tree. Both specifiers stay static string literals so
+ * tsdown externalizes them and tsc type-checks them.
+ * @returns the module namespace, or null when neither name resolves.
+ */
+export function loadPresetRegistry(): Promise<unknown> {
+  presetRegistryProbe ??= import('@deepseek-ai/dsh-agent-preset-registry')
+    .catch((): unknown => import('@deepseek-ai/dsh-agent-presets'))
+    .catch((): null => null)
+  return presetRegistryProbe
+}
+
+/**
+ * The derivation input resolved by the last preload. `{}` before it, which
+ * the derivation reads as "no preset surface" — the no-preset degrade.
+ */
+export function presetDerivationHost(): PresetDerivationSurface {
+  return probedHost
+}
+
+/**
+ * Populate {@link presetDerivationHost} once, at apply time — every
+ * derivation happens on the resume/create paths that run after apply.
+ */
+export async function preloadPresetDerivationHost(): Promise<void> {
+  probedHost = ((await loadPresetRegistry()) ?? {}) as PresetDerivationSurface
+}
+
+/** Test seam: drop the cached probe and host so a mocked resolution re-runs. */
+export function resetPresetRegistryProbeForTest(): void {
+  presetRegistryProbe = undefined
+  probedHost = {}
+}
 
 /** The agentPresets face this package consumes (probed, never injected). */
 export type AgentPresetsProbe = Pick<AgentPresets, 'resolve' | 'mount'>
@@ -122,7 +158,7 @@ export async function composeRoomAgent(ctx: Context, presetId: string | undefine
  * @returns the preset id, or undefined when none was recorded.
  */
 export function roomSessionPreset(session: Session): string | undefined {
-  return deriveSessionPreset(agentPresetsDerivationHost, { header: session.header, events: session.snapshotEvents() })
+  return deriveSessionPreset(presetDerivationHost(), { header: session.header, events: session.snapshotEvents() })
 }
 
 /** The sessionPersistence face this package consumes (probed, never injected). */

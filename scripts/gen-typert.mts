@@ -312,6 +312,17 @@ async function buildOverlay(packages: readonly TypertPackage[]): Promise<void> {
     const dir = /^\.\/(.+\/src)\//.exec(targets[0] ?? '')
     if (dir !== null) paths[`${match[1]}/src/*`] = [`./${dir[1]}/*`]
   }
+  // The 0.1.7-rc.1 host renamed @deepseek-ai/dsh-agent-presets to
+  // @deepseek-ai/dsh-agent-preset-registry (API carried over), and plugins
+  // dual-name-probe the module at runtime, so the OLD name must still
+  // type-check here — the overlay has no node_modules copy of it (the
+  // harness no longer ships it, and plugin devDependencies are not overlaid).
+  // Alias it onto the new name's source-plane mapping: the surfaces are the
+  // same by upstream contract, and every consumer casts structurally anyway.
+  const presetRegistryPaths = paths['@deepseek-ai/dsh-agent-preset-registry']
+  if (paths['@deepseek-ai/dsh-agent-presets'] === undefined && presetRegistryPaths !== undefined) {
+    paths['@deepseek-ai/dsh-agent-presets'] = presetRegistryPaths
+  }
   base.compilerOptions = { ...base.compilerOptions, paths }
   writeFileSync(basePath, `${JSON.stringify(base, null, 2)}\n`)
   const aggregatePath = join(overlay, 'tsconfig.host.json')
