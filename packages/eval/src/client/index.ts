@@ -44,6 +44,8 @@ import type {
   EvalMatrixRequest, EvalPlanNumbersRequest, EvalPlanRequest, EvalReexportRequest, EvalReportRequest, EvalRunUnitsRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
+import { DraftCard, type DraftCardFace } from './DraftCard.tsx'
+import { createLabFocus } from './draft-card.ts'
 import { LabView } from './LabView.tsx'
 import { en, NS, zh } from './locales.ts'
 import { EvalPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
@@ -119,6 +121,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // composition data, fail-open on every unreadable path. Hidden means NO
   // registration (the tab strip's buttons enumerate registrations), so the
   // strip never carries an empty-body button.
+  // The 打开实验 channel between the tool-row card and the lab tab (T76): the
+  // host offers no tab switch, so the card asks and the lab view takes.
+  const focus = createLabFocus()
+
   const chrome = new EvalPresetVisibility(ctx)
   const labToggle = new RegistrationToggle(
     () => ctx.slots.register({
@@ -241,6 +247,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         // 「让 agent 处理」: the quote plugin's backfill path — the session's
         // conversation input, draft merged, NEVER sent. Every absence answers
         // false so the button can fall back to the clipboard.
+        focus,
         insertDraft: (sid: SessionId, text: string): boolean => {
           const scope = ctx.sessions.scope(sid)
           if (scope === undefined) return false
@@ -259,6 +266,31 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return () => { labToggle.setReady(false) }
   })
   ctx.effect(() => chrome.subscribe(() => { labToggle.sync() }), 'eval: lab tab visibility')
+
+  // The experiment card on the eval_plan_draft tool row (T76 · D3). The slot
+  // is declared by @deepseek-ai/dsh-client-ui-tool, which this package does
+  // not depend on — its SlotMap entry is not in this type graph, so the one
+  // registration goes through a structural view of the registry. Without that
+  // package the slot is never declared, the inject never fires, and the call
+  // keeps the host's generic row. Not gated on the preset: a session that has
+  // this call in its transcript was granted the tool that made it.
+  const slots = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (options: Record<string, unknown>, component: unknown) => () => void
+  }
+  slots.inject('tool.call.toolview', () => slots.register({
+    name: 'tool.call.toolview',
+    key: 'eval_plan_draft',
+    locale: NS,
+    inject: (sessionId: SessionId): DraftCardFace => ({
+      loadStatus: async (experimentId: string) => {
+        const result = await remote.runs(sessionId, {})
+        if (!result.ok) return null
+        return result.value.rows.find(row => row.experimentId === experimentId)?.status ?? null
+      },
+      openExperiment: (experimentId: string) => { focus.request(sessionId, experimentId) },
+    }),
+  }, DraftCard))
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

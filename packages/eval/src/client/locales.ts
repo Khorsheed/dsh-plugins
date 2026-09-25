@@ -804,6 +804,18 @@ export type EvalKey =
   | 'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED'
   | 'readiness.UNRESOLVED_FIELD'
   | 'readiness.BUDGET_INVALID'
+  // T76: the experiment card on the eval_plan_draft tool row.
+  | 'card.kind'
+  | 'card.question'
+  | 'card.scale'
+  | 'card.dataset'
+  | 'card.status'
+  | 'card.open'
+  | 'card.opened'
+  | 'card.running'
+  | 'card.failed'
+  | 'card.unreadable'
+  | 'card.errors'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -1625,6 +1637,18 @@ export const en: Record<EvalKey, string> = {
   'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED': 'Condition {condition}\'s per-item home uses an undeclared variable.',
   'readiness.UNRESOLVED_FIELD': 'Condition {condition}: {field} is still to fill in.',
   'readiness.BUDGET_INVALID': 'The budget must be positive.',
+  // T76 — the experiment card on the eval_plan_draft tool row.
+  'card.kind': 'Experiment draft',
+  'card.question': 'Question',
+  'card.scale': 'Scale',
+  'card.dataset': 'Dataset version',
+  'card.status': 'Status',
+  'card.open': 'Open experiment',
+  'card.opened': 'Marked in the list on the Experiments tab — switch to that tab to see it.',
+  'card.running': 'Drafting the experiment…',
+  'card.failed': 'The draft did not go through; the tool output below says why.',
+  'card.unreadable': 'The result of this call names no experiment.',
+  'card.errors': 'Validation found {errors} to fix — see Design on the Experiments tab.',
 }
 
 /** 中文词典。 */
@@ -2436,4 +2460,16 @@ export const zh: Record<EvalKey, string> = {
   'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED': '对比组 {condition} 的逐题 home 用了未声明的变量。',
   'readiness.UNRESOLVED_FIELD': '对比组 {condition} 的 {field} 还没填。',
   'readiness.BUDGET_INVALID': '预算必须是正数。',
+  // T76——eval_plan_draft 工具行上的实验卡。
+  'card.kind': '实验草稿',
+  'card.question': '问题',
+  'card.scale': '规模',
+  'card.dataset': '题库版本',
+  'card.status': '状态',
+  'card.open': '打开实验',
+  'card.opened': '已在「实验室」标签的列表里标出这一行——切到那个标签就能看到。',
+  'card.running': '正在起草实验…',
+  'card.failed': '起草没有成功，原因见下面的工具输出。',
+  'card.unreadable': '这次调用的结果里读不出实验。',
+  'card.errors': '校验有 {errors} 处要修——在实验室 › 实验设计里看。',
 }

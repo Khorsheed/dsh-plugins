@@ -47,7 +47,8 @@ import {
   conditionLibraryDir, conditionLibraryRoot, EvalExperimentError, readExperiment,
   type ExperimentRecord,
 } from './experiment-store.ts'
-import { readExperimentArtifact } from './experiment-artifact.ts'
+import { listAnalysisFiles, readExperimentArtifact } from './experiment-artifact.ts'
+import { composeExperimentGet, type EvalExperimentGetView } from './experiment-get.ts'
 import { importExperiments, type ImportReport } from './import.ts'
 import { recordArchive, recordClosure } from './closure.ts'
 import { experimentDetail, experimentRunIds, listExperiments, pairRun, readPlans, runsForItem } from './experiments.ts'
@@ -518,6 +519,59 @@ export class EvalService {
       )
     }
     return experimentDetail(mission, runId, this.jobs.list())
+  }
+
+  /**
+   * ONE experiment as the lab tab reads it, in one read — the
+   * `eval_experiment_get` tool (I5·T76): the list row, the newest run's
+   * digest and bucket counts, and the ANSWER INDEX (every 题 × 组 × 次 with the
+   * names of the files its attempt registered). Composed from the reads the
+   * page already makes (`experiments`, `runStatus`, `cells`), so the numbers
+   * agree with it by construction; no path of this machine is in the answer.
+   *
+   * Read-only, and degrading: a draft answers with its row and an empty
+   * index, a composition without mission answers with the row and a note.
+   * @param ref - the experiment id, the list row id, or a run id.
+   * @param options - the calling session, for the list's session split.
+   * @throws {@link EvalReadRefused} when the ref names no experiment here.
+   */
+  async experimentGet(ref: string, options: { session?: { id: string } } = {}): Promise<EvalExperimentGetView> {
+    const list = await this.experiments(options)
+    const rows = list.rows.filter(row => row.experimentId === ref || row.id === ref || row.runId === ref)
+    const first = rows[0]
+    if (first === undefined) {
+      throw new EvalReadRefused(`no experiment "${ref}" in this deployment — eval_cells (no run_id) lists them`)
+    }
+    // A run id names one run; an experiment id names every run of it, newest first (the list's own order).
+    const scoped = first.experimentId === null || rows.some(row => row.runId === ref)
+      ? rows
+      : list.rows.filter(row => row.experimentId === first.experimentId)
+    const notes = [...list.notes]
+    const newest = scoped.find(row => row.runId !== null)
+    const mission = this.hosts?.get('mission') as MissionReadFace | undefined
+    let status: RunStatusReport | undefined
+    let cells: RunCellsReport | undefined
+    if (newest?.runId != null) {
+      if (mission === undefined) {
+        notes.push('no mission service: the run digest and the answer index live in the mission ledger')
+      } else {
+        status = this.runStatus(newest.runId)
+        cells = this.cells(newest.runId)
+      }
+    }
+    let analysis: string[] = []
+    if (first.experimentId !== null) {
+      const record = await this.experimentRecord(first.experimentId).catch(() => undefined)
+      if (record !== undefined) analysis = (await listAnalysisFiles(record.dir)).map(file => file.name)
+    }
+    return composeExperimentGet({
+      rows: scoped,
+      ...(status === undefined ? {} : { status }),
+      ...(cells === undefined ? {} : { cells }),
+      ...(mission === undefined ? {} : { mission }),
+      analysis,
+      notes,
+    })
   }
 
   /**

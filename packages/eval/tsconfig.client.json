@@ -16,6 +16,7 @@
   "files": [
     "src/client/ConditionsPage.tsx",
     "src/client/DesignPage.tsx",
+    "src/client/DraftCard.tsx",
     "src/client/ErrorState.tsx",
     "src/client/ExportDialog.tsx",
     "src/client/Grid.tsx",
@@ -26,6 +27,7 @@
     "src/client/MarkdownDoc.tsx",
     "src/client/RunsPage.tsx",
     "src/client/contract.ts",
+    "src/client/draft-card.ts",
     "src/client/index.ts",
     "src/client/journey.ts",
     "src/client/locales.ts",

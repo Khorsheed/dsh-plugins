@@ -2078,3 +2078,13 @@
   --dsw-font-markdown-table-head: 500 13px/22px var(--dsw-font-family);
   --dsw-font-markdown-code: 12px/20px var(--ds-font-family-code);
 }
+
+/* The row 打开实验 asked for from the tool-row card (T76): the business
+   accent as a hairline frame, so the row keeps its own hover and status
+   tones. Not a left rule: the row has no padding, so an inset rule would sit
+   on the name's first letter. */
+.row[data-marked='true'] {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -1px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}

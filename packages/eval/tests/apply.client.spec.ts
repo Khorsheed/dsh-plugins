@@ -102,6 +102,38 @@ describe('eval client apply', () => {
     expect(inject).toEqual(['slots', 'remote', 'locale', 'sessions'])
   })
 
+  // T76 · D3: the experiment card on the eval_plan_draft tool row. The slot is
+  // ui-tool's; without its declaration the inject never fires and the call
+  // keeps the host's generic row.
+  it('registers the eval_plan_draft card once the host declares tool.call.toolview', async () => {
+    const { ctx, slots, remote } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    expect(slots.entries('tool.call.toolview' as never)).toHaveLength(0)
+    // Declared the way ui-tool does it: by an entry that owns the child slot.
+    slots.register({
+      name: 'conversation.view',
+      id: 'chat',
+      children: { 'tool.call.toolview': { kind: 'keyed', scope: 'session' } },
+    } as never, () => null)
+    const entries = slots.entries('tool.call.toolview' as never)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.options).toMatchObject({ key: 'eval_plan_draft' })
+
+    const face = (entries[0]!.inject as unknown as (sessionId: string) => {
+      loadStatus: (id: string) => Promise<string | null>
+      openExperiment: (id: string) => void
+    })('s1')
+    remote.runs.mockResolvedValueOnce({ ok: true, value: { repo: null, datasets: [], notes: [], rows: [{ experimentId: 'x-20260924-0a0b', status: 'running' }] } } as never)
+    await expect(face.loadStatus('x-20260924-0a0b')).resolves.toBe('running')
+    expect(remote.runs).toHaveBeenLastCalledWith('s1', {})
+    await expect(face.loadStatus('missing')).resolves.toBeNull()
+
+    // 打开实验 reaches the lab view's face through the shared channel.
+    face.openExperiment('x-20260924-0a0b')
+    const lab = (slots.entries('conversation.view').find(entry => (entry.options as { id?: string }).id === 'lab')!.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
+    expect(lab.focus?.take('s1' as SessionId)).toBe('x-20260924-0a0b')
+  })
+
   it('mounts the Remote and registers the lab view entry at order 40', async () => {
     const { ctx, slots, remoteService } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()

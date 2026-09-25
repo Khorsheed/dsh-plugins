@@ -33,7 +33,7 @@
  * hairline separators, tokenized colors, official primitives throughout.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
@@ -68,7 +68,7 @@ export function LabView(props: LabViewProps) {
     fetchDraftOptions, draftExperiment,
     fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, submitHumanFinal, fetchExperimentArtifact,
-    closeRun, archiveRun, insertDraft,
+    closeRun, archiveRun, insertDraft, focus,
   } = props
   const list = useStore(s => s.list)
   const loading = useStore(s => s.loading)
@@ -156,6 +156,10 @@ export function LabView(props: LabViewProps) {
   // The list's own one-line notice (a re-run started, an archive failed): the
   // store's notice belongs to the open experiment and is cleared by `open`.
   const [listNotice, setListNotice] = useState<string | null>(null)
+  // The experiment the tool-row card asked for (T76): marked in the list until
+  // the reader opens a row. The host has no tab switch a plugin can call, so
+  // this is as far as 打开实验 can carry the reader — the tab is theirs.
+  const [marked, setMarked] = useState<string | null>(null)
   const [closing, setClosing] = useState(false)
 
   // Fetch the list on mount and whenever refreshRev moves.
@@ -171,7 +175,31 @@ export function LabView(props: LabViewProps) {
     return () => { cancelled = true }
   }, [sessionId, refreshRev, actions, fetchExperiments])
 
+  // Take this session's pending 打开实验 on mount and on every new request:
+  // back to the list and a fresh read, so a draft made seconds ago is in it.
+  useEffect(() => {
+    if (focus === undefined) return
+    const take = (): void => {
+      const experimentId = focus.take(sessionId)
+      if (experimentId === null) return
+      setListNotice(null)
+      actions.open(null)
+      actions.refresh()
+      setMarked(experimentId)
+    }
+    take()
+    return focus.subscribe(take)
+  }, [focus, sessionId, actions])
+
   const rows = list?.rows ?? []
+  // A marked row the session filter would hide switches the filter to 全部 —
+  // a mark nobody can see is not an answer to 打开实验.
+  const markedRow = marked === null ? undefined : rows.find(row => row.experimentId === marked)
+  const markedHidden = markedRow !== undefined
+    && scopeRows(rows, list?.session ?? null, scope).shown.every(row => row.id !== markedRow.id)
+  useEffect(() => {
+    if (markedHidden) setScopeState('all')
+  }, [markedHidden])
   // The row id changes under the selection exactly once: a plan approved in
   // this visit is `plan:<path>` until the orchestrator calls `runCreate`, and
   // its run id afterwards. Re-finding it by the plan that was approved keeps
@@ -968,7 +996,8 @@ export function LabView(props: LabViewProps) {
                 session={list?.session ?? null}
                 scope={scope}
                 onScope={setScope}
-                onOpen={(id) => { setListNotice(null); actions.open(id) }}
+                marked={markedRow?.id ?? null}
+                onOpen={(id) => { setListNotice(null); setMarked(null); actions.open(id) }}
                 onRerun={rerun}
                 onArchive={setArchived}
                 t={t}
@@ -1195,20 +1224,27 @@ export function LabView(props: LabViewProps) {
 /** One list row: the columns, and the row's own actions after them. */
 function ExperimentRowLine(props: {
   row: EvalExperimentRow
+  marked: boolean
   onOpen: (id: string) => void
   onRerun: (row: EvalExperimentRow) => void
   onArchive: (row: EvalExperimentRow, archived: boolean) => void
   t: LabViewProps['t']
 }) {
-  const { row, onOpen, onRerun, onArchive, t } = props
+  const { row, marked, onOpen, onRerun, onArchive, t } = props
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (marked) ref.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [marked])
   // A div with the button role rather than a <button>: the row carries its
   // own buttons (重跑, 归档), and a button may not contain buttons.
   return (
     <div
+      ref={ref}
       role="button"
       tabIndex={0}
       className={css.row}
       data-status={row.status}
+      data-marked={marked ? 'true' : undefined}
       onClick={() => { onOpen(row.id) }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return
@@ -1280,16 +1316,18 @@ function ExperimentList(props: {
   session: string | null
   scope: ListScope
   onScope: (scope: ListScope) => void
+  /** The row 打开实验 asked for (T76), marked until the reader opens a row. */
+  marked: string | null
   onOpen: (id: string) => void
   onRerun: (row: EvalExperimentRow) => void
   onArchive: (row: EvalExperimentRow, archived: boolean) => void
   t: LabViewProps['t']
 }) {
-  const { rows, session, scope, onScope, onOpen, onRerun, onArchive, t } = props
+  const { rows, session, scope, onScope, marked, onOpen, onRerun, onArchive, t } = props
   const { shown, others } = scopeRows(rows, session, scope)
   const groups = groupRows(shown)
   const line = (row: EvalExperimentRow) => (
-    <ExperimentRowLine key={row.id} row={row} onOpen={onOpen} onRerun={onRerun} onArchive={onArchive} t={t} />
+    <ExperimentRowLine key={row.id} row={row} marked={row.id === marked} onOpen={onOpen} onRerun={onRerun} onArchive={onArchive} t={t} />
   )
   return (
     <>
