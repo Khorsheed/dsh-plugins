@@ -14,9 +14,12 @@
  * switcher's own dropdown, not this strip's business.
  *
  * The strip scrolls sideways instead of shrinking rows: a tab whose title is
- * squeezed to four characters identifies nothing, and the ＋ at the end is
- * sticky for the same reason a control that can be scrolled away is not a
- * control (the category strip above the board follows the same rule).
+ * squeezed to four characters identifies nothing. The ＋ sits OUTSIDE the
+ * scroll box, not sticky inside it — a control that can be scrolled away is
+ * not a control (the category strip above the board follows the same rule),
+ * and the scroll box's `overflow` clipped the tail's dropdown to a sliver the
+ * one time the menu was asked for (the 新画布 "dead click"). The frame owns
+ * the bottom rule instead, so the active row still paints its cover over it.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -60,31 +63,33 @@ function glyphOf(kind: CanvasTabRow['kind']): ReactNode {
 /** The canvas surface's tab strip. */
 export function TabStrip({ t, rows, active, onSelect, onClose, tail }: TabStripProps): ReactNode {
   return (
-    <div className={css.strip} role="tablist">
-      {rows.map(row => (
-        <span key={row.id} className={css.tab} data-active={row.id === active || undefined}>
-          <button
-            type="button"
-            role="tab"
-            className={css.label}
-            aria-selected={row.id === active}
-            title={row.label}
-            onClick={() => { onSelect(row.id) }}
-          >
-            {glyphOf(row.kind)}
-            <span className={css.labelText}>{row.label}</span>
-          </button>
-          <button
-            type="button"
-            className={css.close}
-            title={t('strip.close')}
-            aria-label={t('strip.close')}
-            onClick={() => { onClose(row.id) }}
-          >
-            <IconCloseFillMedium size={12} />
-          </button>
-        </span>
-      ))}
+    <div className={css.stripFrame}>
+      <div className={css.strip} role="tablist">
+        {rows.map(row => (
+          <span key={row.id} className={css.tab} data-active={row.id === active || undefined}>
+            <button
+              type="button"
+              role="tab"
+              className={css.label}
+              aria-selected={row.id === active}
+              title={row.label}
+              onClick={() => { onSelect(row.id) }}
+            >
+              {glyphOf(row.kind)}
+              <span className={css.labelText}>{row.label}</span>
+            </button>
+            <button
+              type="button"
+              className={css.close}
+              title={t('strip.close')}
+              aria-label={t('strip.close')}
+              onClick={() => { onClose(row.id) }}
+            >
+              <IconCloseFillMedium size={12} />
+            </button>
+          </span>
+        ))}
+      </div>
       {tail !== undefined && <span className={css.tail}>{tail}</span>}
     </div>
   )
