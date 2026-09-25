@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-25-official-optional-bundles-no-deps-pin.md
+.agents/notes/implemented/process/2026-09-25-official-optional-bundles-no-deps-pin.md: b4f067967d8eaa72404b5f20651e98e26dc3e967
+.agents/notes/implemented/process/2026-09-25-official-optional-bundles-no-deps-pin.zh.md: 20f4ecbb5cb491c9341a68726229ce9274cea530
