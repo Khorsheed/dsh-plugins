@@ -25,7 +25,7 @@
  */
 import type { ReactNode } from 'react'
 import {
-  IconCloseFillMedium, IconLightOutlineMedium, IconListPenOutlineMedium, IconPlusOutlineMedium,
+  IconCloseFillRegular, IconLightOutlineMedium, IconListPenOutlineMedium, IconPlusOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { CanvasTabRow } from '../space/selection.ts'
@@ -85,7 +85,11 @@ export function TabStrip({ t, rows, active, onSelect, onClose, tail }: TabStripP
               aria-label={t('strip.close')}
               onClick={() => { onClose(row.id) }}
             >
-              <IconCloseFillMedium size={12} />
+              {/* The host dock's own close: Regular weight at 14 (TabPanel.tsx).
+                The Fill artwork's cross spans only 9/16 of its box, so at the
+                rows' 12px it read smaller than every outline glyph beside it —
+                14 is the size the host chose for the same glyph. */}
+            <IconCloseFillRegular size={14} />
             </button>
           </span>
         ))}
