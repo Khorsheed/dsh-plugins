@@ -54,5 +54,22 @@ agent 在会话里起草了一个实验，会话里留下的只是一行通用�
 
 - `LabViewInjected` 新增可选字段 `focus`；手写 lab 注入面的测试不受影响。
 - 工具卡片挂在 `@deepseek-ai/dsh-client-ui-tool` 声明的 slot 上。宿主如果改了 `ToolCallBlock` 的形状，卡片会落到 unreadable，只显示「这次调用的结果里读不出实验」，不会崩。
+- **两条宿主线（合 main 时核对，2026-09-25）。** host-016 把 `tool.call.toolview` 的「分相」列为零消费复核项，本卡是仓里第一个消费者。对照的是 harness 的 `dsh-v0.1.5-rc.1` 与 `dsh-v0.1.7-rc.1` 两个 tag（`packages/client/ui-tool`、`ui-conversation/contract/records.ts`、`ui-slots`、`ui-renderer`）。rc-0.1.5-rc.1 工具链装的 ui-tool 是 0.1.5-rc.2，这几处文件与 rc.1 无差异。
+  - **两线一致：**
+    - slot 由 ui-tool 声明为 `tool-call` 聊天节点的子 slot，`kind: 'keyed', scope: 'session'`；
+    - 按线上工具名选条目（`key: 'eval_plan_draft'`），选中就替换通用行；
+    - 注册层 `inject` 收到 `sessionId`（`InjectParams` 相同）；
+    - 已结算的块是同一个 `ToolResultNode`（`kind: 'tool-result'`、`call`、`content`、`isError`）。
+  - **不一致：**
+    - owner props：0.1.7-rc.1 拆成 `phase: 'preparing' | 'start' | 'result'`，并新增 `useDisclosure`，仍然带 `block`。
+    - 运行中的块：0.1.5-rc.1 只有一种 `RunningToolCall`，总带 `argsRaw`。0.1.7-rc.1 拆成 `PreparingToolCall`（只有名字、没有参数）和 `StartedToolCall`（带 `argsRaw`），preparing 阶段也会分派到 keyed 视图。
+    - slot 层 inject：0.1.7-rc.1 新增一个（`hooks.toolCallArgumentsPartial`）。renderer 把它展开在注册层之后、owner 之前，与 `loadStatus` / `openExperiment` 不撞名。
+    - 自动审查：0.1.7-rc.1 上被自动审查拒掉的调用绕过 keyed 视图，直接走通用卡。
+  - **本包的改动：**
+    - `DraftToolBlock.argsRaw` 原本就是可选的，现在在类型注释里写明了原因。
+    - preparing 块读成「起草中」（名称 `—`，没有动作）。
+    - 不是对象的块读成 unreadable，不抛。
+    - 测试钉住 preparing 与 start 两种形态。
+  - 不读版本号，不用 host-016 已删的 API。
 - 模型工具从六个变成七个（五读、一草、一扇分析的门），eval-tool 的提示词段与两份 README 已同步。界面规格 §六 的对应句子由协调者写回。
 - 如果宿主以后提供了切标签接口，「打开实验」可以改成直达设计页，`LabFocus` 通道随之退役。

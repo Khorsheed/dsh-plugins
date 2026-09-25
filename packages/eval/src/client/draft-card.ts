@@ -23,11 +23,20 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
  * (the card is additive: without that package no row renders, and nothing
  * here is reached); the fields below are the subset of its
  * `ToolCallOwnerProps` / `ToolCallBlock` the card touches.
+ *
+ * The two host lines differ in the running form only. 0.1.5-rc.1 has one
+ * running form, `RunningToolCall`, which always carries `argsRaw`. 0.1.7-rc.1
+ * splits it into a `preparing` stage (named, no arguments yet) and a `start`
+ * stage (arguments complete), and dispatches BOTH to the keyed view. So
+ * `argsRaw` is optional here, and a block without it reads as a call still
+ * being drafted. The settled `ToolResultNode` is the same on both lines.
  */
 export interface DraftToolBlock {
   /** Settled form only. */
   kind?: string
-  /** Running form: the wire tool name and the raw arguments. */
+  /** 0.1.7-rc.1 running forms only: `preparing` (no arguments yet) or `start`. */
+  phase?: string
+  /** Running form: the wire tool name and the raw arguments (absent while preparing). */
   name?: string
   argsRaw?: string
   /** Settled form: the call as sent, the result content, the error flag. */
@@ -79,7 +88,15 @@ export function slugOf(experimentId: string): string {
  * @param block - the running call or its settled result node.
  * @returns the card's model; never a path.
  */
-export function draftCardOf(block: DraftToolBlock): DraftCardModel {
+export function draftCardOf(block: DraftToolBlock | null | undefined): DraftCardModel {
+  // A block the owner did not hand over as an object is a host shape this
+  // card does not know. Say so; never throw into the turn.
+  if (block === null || typeof block !== 'object') {
+    return {
+      state: 'unreadable', experimentId: null, name: null, question: null,
+      items: null, conditions: null, reps: null, dataset: null, errors: 0,
+    }
+  }
   const settled = block.kind === 'tool-result'
   const args = objectOf(settled ? block.call?.argsRaw : block.argsRaw) ?? {}
   const empty: DraftCardModel = {

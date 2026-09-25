@@ -54,5 +54,22 @@ When an agent drafted an experiment in a session, the session kept only a generi
 
 - `LabViewInjected` gains an optional `focus` field; tests that hand-write the lab inject face are unaffected.
 - The card mounts on a slot declared by `@deepseek-ai/dsh-client-ui-tool`. If the host changes `ToolCallBlock`'s shape, the card falls to unreadable and says "The result of this call names no experiment". It does not crash.
+- **Two host lines (checked when main was merged in, 2026-09-25).** host-016 listed the "phase split" of `tool.call.toolview` as a zero-consumer review item, and this card is the repo's first consumer. The contract was compared at the `dsh-v0.1.5-rc.1` and `dsh-v0.1.7-rc.1` tags of the harness (`packages/client/ui-tool`, `ui-conversation/contract/records.ts`, `ui-slots`, `ui-renderer`). The rc-0.1.5-rc.1 toolchain ships ui-tool 0.1.5-rc.2, which has no diff to rc.1 on these files.
+  - **Same on both lines:**
+    - the slot is declared by ui-tool as a child of the `tool-call` chat node, `kind: 'keyed', scope: 'session'`;
+    - the entry is picked by the wire tool name (`key: 'eval_plan_draft'`) and replaces the generic row;
+    - a registration `inject` gets `sessionId` (same `InjectParams`);
+    - the settled block is the same `ToolResultNode` (`kind: 'tool-result'`, `call`, `content`, `isError`).
+  - **Different:**
+    - The owner props: 0.1.7-rc.1 splits them into `phase: 'preparing' | 'start' | 'result'` and adds `useDisclosure`. The props still carry `block`.
+    - The running block: 0.1.5-rc.1 has one `RunningToolCall` that always holds `argsRaw`. 0.1.7-rc.1 has `PreparingToolCall` (a name and no arguments) and `StartedToolCall` (with `argsRaw`), and it dispatches the keyed view in the preparing phase too.
+    - The slot-level inject: 0.1.7-rc.1 adds one (`hooks.toolCallArgumentsPartial`). The renderer spreads it after the registration's own face and before the owner props, and none of the names collide with `loadStatus` / `openExperiment`.
+    - Auto-review: an auto-review denial on 0.1.7-rc.1 skips the keyed view for the generic card.
+  - **What changed here:**
+    - `DraftToolBlock.argsRaw` was already optional; the note on the type now says why.
+    - A preparing block reads as a call still being drafted (name `—`, no action).
+    - A block that is not an object reads as unreadable, and nothing throws.
+    - Tests pin the preparing and start forms.
+  - No version is read and no host-016-removed API is used.
 - The model tools go from six to seven (five reads, a draft, an analysis door). The eval-tool prompt section and both READMEs are updated; the coordinator writes the matching UI-spec §六 sentences back.
 - If the host ever offers a tab-switch interface, 打开实验 can go straight to the design page and the `LabFocus` channel retires.

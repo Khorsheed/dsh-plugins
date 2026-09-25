@@ -102,6 +102,22 @@ describe('draftCardOf', () => {
     expect(draftCardOf({ name: 'eval_plan_draft', argsRaw: '{"name": "half' }).name).toBeNull()
   })
 
+  it('reads both host lines\' running forms: 0.1.7-rc.1 preparing (no arguments) and start', () => {
+    const preparing = draftCardOf({ phase: 'preparing', name: 'eval_plan_draft' })
+    expect(preparing.state).toBe('running')
+    expect(preparing.name).toBeNull()
+    expect(preparing.experimentId).toBeNull()
+    const started = draftCardOf({ phase: 'start', name: 'eval_plan_draft', argsRaw: JSON.stringify(ARGS) })
+    expect(started.state).toBe('running')
+    expect(started.name).toBe('effort-sweep')
+    expect(started.reps).toBe(3)
+  })
+
+  it('a block that is not an object reads as unreadable, never throws', () => {
+    expect(draftCardOf(undefined).state).toBe('unreadable')
+    expect(draftCardOf(null).state).toBe('unreadable')
+  })
+
   it('names the experiment by its id slug when the arguments carry no name', () => {
     const card = draftCardOf(settled(RESULT, { call: { name: 'eval_plan_draft', argsRaw: '{}' } }))
     expect(card.name).toBe('effort-sweep')
