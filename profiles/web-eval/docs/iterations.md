@@ -409,7 +409,8 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T78 | ❌ 不成立（2026-09-25，main `9da732aa`；原因见 §三 T78 末尾「结果」） | host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟：main 已钉官方线 0.1.7-rc.1、eval 家族做了「双线」适配，评测线 3171 与临时实例仍是 0.1.5-rc.1；只回答「当前 main 能不能在评测线上装得起、跑得通」，不修代码。文案见 §三「T78」 | 无（与 T76 合 main 并行） | 成立 → 3171 照常重装；不成立 → 错误原文 + 定位提交，交用户定钉旧提交还是换线 |
 | T79 | 验收（联合走查，可发的前置见文案） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
 | T80 | 代码（待 T79） | 收口补充一轮：按 T79 的清单改；文案在 T79 之后写 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
-| T81 | 代码（待 T78 成立后发） | web-eval 双宿主：0.1.7-rc.1 上装得起、跑得通，同时向下兼容 0.1.5-rc.1（不换线：3171 与现有条件留在 0.1.5）；preset 两种形态、install.sh 按宿主版本分支、compat 两线标注、受试对象版本与宿主版本是否解耦的结论；文案见 §三「T81」 | T78 | 0.1.7 临时实例上 T78 的冒烟 a–e 全过，0.1.5 上照旧；不属 I5 收口，可与 T79 / T80 并行开发，合 main 排在 T73 试点验收之后 |
+| T81 | 验证 + 代码（可发，2026-09-25） | 评测线在 0.1.5 上恢复：T78 断点不在 eval 家族代码里——一是 typert 用了 0.1.7 harness 的生成器，二是 web-eval 带的 capability-catalog / ankh-guard 只改了 0.1.7 包名。先验证（0.1.5 harness 克隆构建 + 两处引用只在临时 profile 本地补丁，跑 T78 的 a–e），过了再做 install.sh 按宿主版本选 harness；两个外线包的修法交 host-016 线。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；不过就退回「只支持 0.1.7」由用户定 |
+| T82 | 代码（待排，T81 之后） | web-eval 在 0.1.7-rc.1 上：preset 迁 bundle、install.sh 0.1.7 分支、0.1.7 临时实例冒烟、受试对象版本与宿主版本是否解耦（原 T81 文案，改号） | T81 | 0.1.7 临时实例上 a–e 全过，0.1.5 照旧 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -3560,9 +3561,70 @@ I5 收口批的代码（T71–T76）都已写完。用户 2026-09-25 定：先�
 ```
 
 
-### T81 · web-eval 双宿主：支持 0.1.7-rc.1，向下兼容 0.1.5-rc.1（T78 成立后发，2026-09-25）
+### T81 · 评测线在 0.1.5-rc.1 上恢复：先验证、再修 install.sh（可发，2026-09-25）
+
+用户 2026-09-25 定：eval 家族的源码本来就两个宿主都支持；T78 的两处断点，一处在构建环境（typert 生成器跟着 `DSH_HARNESS` 走，那份 harness 已到 0.1.7），一处在外线包。先花小成本验证「换成 0.1.5 的生成器 + 补两处引用」能不能让评测线恢复；能，就维持双宿主，3171、题库条件、lock、镜像都不动；不能，退回「只支持 0.1.7」，由用户定。
+
+```text
+# 任务 T81：评测线在 0.1.5-rc.1 上恢复——先验证，再修 install.sh
+
+## 背景
+T78（main 9da732aa）在 0.1.5-rc.1 工具链上装得上、起不来，T76 补充（一）独立复现。两处断点：
+1. capability-catalog（src/scoped-delivery.ts:34）与 ankh-guard（src/index.ts:42）静态 import @deepseek-ai/dsh-agent-preset-registry，0.1.5 里这个包叫 dsh-agent-presets。这两个包归 host-016 线，不是 eval 家族，但 web-eval 装了它们。
+2. typert：scripts/gen-typert.mts 用 DSH_HARNESS（默认 ~/code/deepseek-harness）的生成器，那份检出现在是 dsh-v0.1.7-rc.1；0.1.7 生成器把 codec 从 schema: 改成延迟的 create:，0.1.5-rc.1 的 typert-loader 要 schema._zod，7 个带 typert 的包（含 eval）全挂。09-23 以前能跑，是因为那时 harness 检出还在 0.1.5-rc.3。
+eval 家族源码本身是双线的。本任务先证明：换 0.1.5 的生成器 + 补上两处引用，main 就能在评测线上跑。
+
+## 先读
+本文 §三 T78 的文案与末尾「结果」；scripts/gen-typert.mts 顶部注释（overlay 从 DSH_HARNESS 克隆、需要 harness 的哪些目录、freshness cache 以 harness HEAD 为键）；profiles/web-eval/scripts/install.sh 里 gen-typert / build 那段；AGENTS.md「Build contract」。
+
+## 阶段一：验证（不提交任何修复）
+1. 0.1.5 harness：从本地检出克隆一份，不动 ~/code/deepseek-harness 本身：git clone --branch dsh-v0.1.5-rc.1 ~/code/deepseek-harness <目录>，按 gen-typert 的要求把依赖装好（它要 harness 的 node_modules 等）。目录放 ~/.dsh-toolchains/harness-0.1.5-rc.1——这是共享资源，建之前报协调者，已有就复用。rc.1 tag 不行时改用 dsh-v0.1.5-rc.3（09-23 以前实际用的就是它，已知可用），回报里写明用的哪个。
+2. 从本地 main 开 worktree ../dsh-plugins-wt-t81-lab015，分支 feat/t81-lab015。两处外线引用在这个分支里做「按包名探测，谁在用谁」的最小补丁，commit 标 [probe]，只用于验证，不进 main。
+3. 起 0.1.5 临时实例：PATH 用 ~/.dsh-toolchains/rc-0.1.5-rc.1，独立 DSH_HOME（realpath），空闲端口（先 lsof 查，**报协调者、等回复再起**），DSH_HARNESS 指向第 1 步的克隆，install.sh --source <worktree> --fresh。数据按 T78 的配方 rsync 3171 账本（排除凭据；room-coordinator-*-home 也排除）。
+4. 冒烟照 T78 的 a–e 全跑，截图明 / 暗 / 400 放 ~/.dsh/scratch/t81-shots/。启动日志里其他 warning 与 error 都记下：两个外线包同批还有别的只按 0.1.7 改的地方（settings 迁移、roster acquireScope 等），看会不会撞到；浏览器端 dsh-client-store / dsh-client-ui-primitives（local-agent、mission、context-guard 在用）与 file-preview / local-files / taskpilot 的 peer ^0.1.7-rc.1 在浏览器里的表现也记下。
+5. **阶段一跑完先回报，等协调者放行再进阶段二。** a–e 不过就停，把卡在哪里原文报上来。
+
+## 阶段二：修（放行后）
+1. install.sh：按宿主版本（dsh --version 或等价物）选 DSH_HARNESS——0.1.5 线用 0.1.5 harness 克隆，0.1.7 线用默认；也接受显式传入。克隆不存在时明确报错并给出建的命令，不自动去网络拉。不支持的版本报错退出。README 双语 + sidecar 写明。
+2. 回到 0.1.7：同一个 install.sh 在默认 harness 下行为不变（跑 install.sh 的自检或 dry-run 即可，0.1.7 真机冒烟不归本任务，是 T82）。
+3. 两个外线包不在本分支修：把 [probe] 提交摘出来，另开分支 fix/t81-preset-registry-dual 单独提交（每包一个提交，只改 import，加最小测试），回报里给出，由协调者转 host-016 线决定收不收。本分支回报时不含 [probe] 提交。
+4. 构建时重新生成的 typert 输出不要提交（git status 核一下）。gate 绿。
+
+## 不做
+不动 ~/code/deepseek-harness；不动 3171、~/.dsh-lab、题库（只读副本）、镜像；不碰 3093 / 3080 / ~/.dsh-official / ~/.dsh；不做 0.1.7 侧的 preset 迁移（T82）；不自己合 main。
+
+## 完成判据
+阶段一：0.1.5 临时实例上 a–e 全过，外线包之外没有新断点（有就列出）。阶段二：install.sh 在 0.1.5 上自动选对 harness 并装起来，在 0.1.7 上行为不变；gate 绿；外线包修法单独成分支。
+
+## 回报
+阶段一：harness 用哪个 tag、克隆与依赖安装过程的坑、a–e 逐项结果、截图路径、日志里其他告警。阶段二：分支与 commit、install.sh 的选法、外线包修复分支与 commit；Agent Note（Alternatives considered 双语：至少比较「install.sh 选 harness」与「生成器产出同时带两种格式」）。通用提醒照旧。
+```
+
+**给 host-016 线的说明（协调者转，用户放行后发）**：
+
+```text
+来自 web-eval 评测线（2026-09-25）：
+main 上 capability-catalog 与 ankh-guard 在 0.1.5 宿主上起不来：两处静态 import @deepseek-ai/dsh-agent-preset-registry（capability-catalog src/scoped-delivery.ts:34，090df709 / 4a3716f8 / 9260fd3b；ankh-guard src/index.ts:42，8390361e），0.1.5 里这个包叫 dsh-agent-presets。两个包的 dsh.compat 仍写 minHost 0.1.5，npm latest 也还是 0.1.5-rc.3，所以现在的声明与实际不符。
+我们的评测线（3171）留在 0.1.5-rc.1，web-eval 装这两个包。T81 会给出「按包名探测」的最小修法分支（fix/t81-preset-registry-dual），请你们决定：收下补双线，或者把两包的 minHost 改成 0.1.7-rc.1（那样评测线要另想办法）。同批还有 settings 迁移、roster acquireScope 等只按 0.1.7 改的地方，T81 真机跑时撞到会一并告诉你们。
+另：typert 生成器在 0.1.7 改成延迟 codec，0.1.5 的 loader 不认；我们用 0.1.5 的 harness 克隆构建绕过，不需要你们改，仅供知悉。
+```
+
+### T82 · web-eval 在 0.1.7-rc.1 上（原 T81 文案，09-25 改号；待排，T81 之后发，发前把正文里的「T81」「t81」改成 T82、背景按 T81 结果改写）
 
 用户 2026-09-25 定：不叫换线。0.1.5 跑通（T78）的前提下，web-eval 以 0.1.7-rc.1 为主宿主，同时向下兼容 0.1.5-rc.1；评测线（3171、题库 7 条 dsh 条件、已有 bundle）留在 0.1.5，不动。
+
+**前置核查结论（2026-09-25，拿旧 T81 文案的实施者先做了「开工前两件事」，记在这里给 T82 用）**：
+1. preset 迁移：host-016 线 799bb5cb 建了 packages/presets（@khorsheed/dsh-presets，preset-declarations，dev / dsh-eval / dsh-writing 三行一包，Note `2026-09-24-community-presets-declarative-bundle`），profiles/ 都还没切过去。它的 eval 条目不能直接用：id 是 dsh-eval；内容早于 T73 分支 3（persona 少 3 行、改 1 行，装置已变）；三个 preset 一包装，违背「只装评测装置、整份替换」。**协调者定 A**：profiles/web-eval 自带一个只含 preset-eval 一行的声明式 bundle，行形与 kind 约定跟 packages/presets 对齐，内容逐字取目录版；packages/presets 不动，dsh-eval 过期一事由协调者转它的 owner。web / web-dev 切 bundle 不归评测线。
+2. 0.1.5-rc.1 不认 preset bundle（工具链里没有 dsh-agent-preset、没有 install_bundle），两种形态都留：install.sh 0.1.5 走目录式整份替换、0.1.7 装 bundle、其他版本报错退出；加一个 spec 比对 bundle 的 plugins 块与目录版 agent.cordis.yml 逐字等价。
+3. 建 ~/.dsh-toolchains/rc-0.1.7-rc.1：T82 发出时放行，现在不建。
+
+**给这位实施者的回复（协调者转）**：
+
+```text
+谢谢，两件核查都很扎实，结论全部记进 iterations §三 T82（preset 走 A；两种形态并存 + 等价 spec）。
+但这份文案已经改号为 T82，暂停、先不开 worktree、不建 0.1.7 工具链。原因：T78 在 0.1.5 上起不来（typert 生成器跟着已到 0.1.7 的 harness 走，capability-catalog / ankh-guard 只改了 0.1.7 包名），用户定先把评测线在 0.1.5 上恢复——那是新的 T81，文案在 iterations §三「T81 · 评测线在 0.1.5-rc.1 上恢复」。0.1.7 侧（也就是你这份）排在它之后；T81 阶段二也要改 install.sh，同时做会撞。
+请改接新的 T81：从阶段一做起，端口与 0.1.5 harness 克隆目录照文案先报。
+```
 
 ```text
 # 任务 T81：web-eval 双宿主——在 0.1.7-rc.1 上装得起、跑得通，同时不丢 0.1.5-rc.1
