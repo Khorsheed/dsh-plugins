@@ -248,6 +248,35 @@ describe('rescopePackageJson', () => {
     expect(out.dependencies).toEqual({ 'puppeteer-core': '^25.11.0', '@puppeteer/browsers': '^3.2.2' })
   })
 
+  it('keeps zod for a package exporting a typert face — its bare import must resolve v4 against any hoisted zod@3', () => {
+    const out = rescopePackageJson({
+      name: '@khorsheed/dsh-room',
+      version: '0.1.0',
+      exports: { '.': './lib/index.js', './typert': './lib/typert.host.js', './remote': './lib/typert.remote-client.js' },
+      dependencies: { zod: '^4.4.3', '@khorsheed/unrelated': '^1.0.0' },
+    } as Parameters<typeof rescopePackageJson>[0], '@khorsheed/dsh-room', '0.1.0')
+    expect(out.dependencies).toEqual({ zod: '^4.4.3' })
+  })
+
+  it('drops zod for a package whose exports carry no typert face', () => {
+    const out = rescopePackageJson({
+      name: '@khorsheed/dsh-x',
+      version: '0.1.0',
+      exports: { '.': './lib/index.js', './client': './lib/client.js' },
+      dependencies: { zod: '^4.4.3' },
+    } as Parameters<typeof rescopePackageJson>[0], '@khorsheed/dsh-x', '0.1.0')
+    expect(out.dependencies).toBeUndefined()
+  })
+
+  it('fails loud when a typert-faced package declares no zod dependency', () => {
+    expect(() => rescopePackageJson({
+      name: '@khorsheed/dsh-x',
+      version: '0.1.0',
+      exports: { '.': './lib/index.js', './remote': './lib/typert.remote-client.js' },
+      dependencies: {},
+    } as Parameters<typeof rescopePackageJson>[0], '@khorsheed/dsh-x', '0.1.0')).toThrow(/typert face.*no zod dependency/)
+  })
+
   it('fails loud when dsh.runtimeDependencies names a non-dependency', () => {
     expect(() => rescopePackageJson({
       name: '@khorsheed/dsh-x',

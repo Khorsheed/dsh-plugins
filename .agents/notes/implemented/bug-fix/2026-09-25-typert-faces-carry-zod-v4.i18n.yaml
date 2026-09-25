@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md
+.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md: e77a1f9dbee63fc9a0221514d660d604c9d7df7a
+.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.zh.md: b283c3b81a7fefa93f482090f72058e7758115d2
