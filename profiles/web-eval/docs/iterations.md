@@ -409,6 +409,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T78 | 验证（可发，2026-09-25） | host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟：main 已钉官方线 0.1.7-rc.1、eval 家族做了「双线」适配，评测线 3171 与临时实例仍是 0.1.5-rc.1；只回答「当前 main 能不能在评测线上装得起、跑得通」，不修代码。文案见 §三「T78」 | 无（与 T76 合 main 并行） | 成立 → 3171 照常重装；不成立 → 错误原文 + 定位提交，交用户定钉旧提交还是换线 |
 | T79 | 验收（联合走查，可发的前置见文案） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
 | T80 | 代码（待 T79） | 收口补充一轮：按 T79 的清单改；文案在 T79 之后写 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
+| T81 | 代码（待 T78 成立后发） | web-eval 双宿主：0.1.7-rc.1 上装得起、跑得通，同时向下兼容 0.1.5-rc.1（不换线：3171 与现有条件留在 0.1.5）；preset 两种形态、install.sh 按宿主版本分支、compat 两线标注、受试对象版本与宿主版本是否解耦的结论；文案见 §三「T81」 | T78 | 0.1.7 临时实例上 T78 的冒烟 a–e 全过，0.1.5 上照旧；不属 I5 收口，可与 T79 / T80 并行开发，合 main 排在 T73 试点验收之后 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -440,7 +441,7 @@ eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eva
 - 不碰 ~/.dsh-official 与 3080；凭据不复制，不进日志、回报、提交；共享资源（docker 容器、边车、实例进程）要动之前先在回报里提出，由协调者放行。
 - Agent Note 双语并写 Alternatives considered；README 双语 + sidecar；`pnpm gate` 绿，ankh-guard 的 lane 抖动按既有规则单跑复核并点名。worktree 里跑 gate 用 `pnpm --config.verify-deps-before-run=false gate`（绕过 pnpm 对软链 node_modules 的依赖状态检查），不改 pnpm-workspace.yaml。
 - UI 切片的真机验证用独立 DSH_HOME + 空闲端口的临时实例（源码模式装 web-eval，配方见交接文档与 §九），不碰 3171 / 3080 / ~/.dsh-official / ~/.dsh；用完停掉、清掉。**2026-09-23 起每个 UI 任务都自己截图**：按 ui-spec §九 交明 / 暗 / 400 宽三套，参照交互稿 v5（proposals/prototypes/eval-journey-redesign.html）按场景对照，截图放 ~/.dsh/scratch/<任务号>-shots/，回报里逐张说明对应哪个场景、哪一页；截图只在自己的临时实例上做，不截 3171。
-- **工具链固定在 `~/.dsh-toolchains/rc-0.1.5-rc.1`（2026-09-25 修订）**：main 已合入 host-016（pnpm-workspace.yaml 把官方线钉到 @deepseek-ai/*@0.1.7-rc.1，eval 家族做了双线适配），但评测线不跟——题库 7 条 dsh 条件与 lock 钉的是 0.1.5-rc.1，换工具链等于换受试对象。3171 与所有临时实例只用 rc-0.1.5-rc.1 工具链的 PATH，不从 harness 检出起实例。**「rc.1」两义**：host-016 文档里指 0.1.7-rc.1，评测线文档里指 0.1.5-rc.1，回报里写全版本号。改 eval 家族代码要守双线：在 0.1.7-rc.1 类型面上 tsc / gate 绿（仓里构建就是它），同时在 0.1.5-rc.1 临时实例上真机跑通；不引入 host-016 已删的 API（ISessions.open / current、JobStart / JobSnapshot 等），用到宿主插槽或服务前先核它在两条线上的契约。换线（0.1.7 上目录式 preset 迁移、条件重声明、重 provision、镜像重打）是单独任务，I5 收口后再排。
+- **工具链固定在 `~/.dsh-toolchains/rc-0.1.5-rc.1`（2026-09-25 修订）**：main 已合入 host-016（pnpm-workspace.yaml 把官方线钉到 @deepseek-ai/*@0.1.7-rc.1，eval 家族做了双线适配），但评测线不跟——题库 7 条 dsh 条件与 lock 钉的是 0.1.5-rc.1，换工具链等于换受试对象。3171 与所有临时实例只用 rc-0.1.5-rc.1 工具链的 PATH，不从 harness 检出起实例。**「rc.1」两义**：host-016 文档里指 0.1.7-rc.1，评测线文档里指 0.1.5-rc.1，回报里写全版本号。改 eval 家族代码要守双线：在 0.1.7-rc.1 类型面上 tsc / gate 绿（仓里构建就是它），同时在 0.1.5-rc.1 临时实例上真机跑通；不引入 host-016 已删的 API（ISessions.open / current、JobStart / JobSnapshot 等），用到宿主插槽或服务前先核它在两条线上的契约。web-eval 在 0.1.7 上的适配（目录式 preset 迁成 bundle 等）由 T81 做——双宿主、向下兼容 0.1.5，不是换线；评测线的条件、lock、镜像留在 0.1.5。
 - 重装 3171 的配方（T63 踩过的坑）：先 `export PATH=~/.dsh-toolchains/rc-0.1.5-rc.1/node_modules/.bin:$PATH` 与 `export DSH_HOME=~/.dsh-lab`（install.sh 的 preflight 与 guard 的 record deployment 都要）；停法先 TERM 启动器那层，或放 stop marker 后等看门狗自己收——直接 TERM 看门狗会把启动器与实例进程孤儿化、端口 60 秒不放。
 - 分支开出去之后 main 若又合了同一个包的别的切片，回报前先把 main 并进分支、解掉冲突、重跑 gate；协调者不代解代码冲突。解追加型冲突用 graft：从 base / ours / theirs 取原文，按稳定锚点把自己追加的整块插进 main 版本，不逐 hunk 拼 ours+theirs。
 - 并行任务写题库时各用各的 worktree，不碰别人分支上的 plan / condition。会话绑定题库已随 T73 退场，agent 起草时题库由实验本身指明（id/set @ 短哈希），不要依赖「会话当前题库」。
@@ -3552,6 +3553,47 @@ I5 收口批的代码（T71–T76）都已写完。用户 2026-09-25 定：先�
 清单路径、P0 / P1 / P2 各几条、按包的批次建议、截图路径。通用提醒照旧。
 ```
 
+
+### T81 · web-eval 双宿主：支持 0.1.7-rc.1，向下兼容 0.1.5-rc.1（T78 成立后发，2026-09-25）
+
+用户 2026-09-25 定：不叫换线。0.1.5 跑通（T78）的前提下，web-eval 以 0.1.7-rc.1 为主宿主，同时向下兼容 0.1.5-rc.1；评测线（3171、题库 7 条 dsh 条件、已有 bundle）留在 0.1.5，不动。
+
+```text
+# 任务 T81：web-eval 双宿主——在 0.1.7-rc.1 上装得起、跑得通，同时不丢 0.1.5-rc.1
+
+## 背景
+main 已合入 host-016（官方线钉 @deepseek-ai/*@0.1.7-rc.1），eval 家族的代码做了「双线」适配，compat 仍写 minHost / verifiedHost 0.1.5-rc.1。T78 证明了 main 在 0.1.5-rc.1 上成立。本任务补另一半：web-eval 这个 profile 在 0.1.7-rc.1 宿主上能装、能用，且改完之后 0.1.5-rc.1 上照旧。目标是「两个宿主版本都支持」，不是把评测线搬到 0.1.7：3171、题库条件、lock、镜像、已有 bundle 一律不动。
+
+已知的 0.1.7 断点：目录式 preset 彻底废弃——$DSH_HOME/.agent-presets 在 0.1.7 没有代码路径、也没有自动迁移工具，要做成 preset bundle（两文件 + install_bundle）；settings.yaml 的 agent-presets 段不导入，装完要重选默认 preset。web-eval 的 presets/eval 与 scripts/install.sh 都还是目录式。其余断点以真机为准。
+
+## 先读
+proposals/active/2026-09-15-host-016-adaptation.md（只读，别人的工作流）：「遗留项放行结论」里 preset 迁移一条、「零消费复核项」一条；AGENTS.md「Package conventions」里 declarative preset bundle（dsh.bundle.kind: 'preset-declarations'）；profiles/web-eval/scripts/install.sh 的 preset 与 skills 两段注释（为什么整份替换：preset 是实验装置，不是偏好）；profiles/web-eval/presets/eval；packages/eval/src/effective.ts 的 provision 核对（harness.version 对 cliVersion）；交接文档 profiles/web-eval/docs/handoff-2026-09-25.md §0、§5。
+
+## 开工前先核两件事，结论报协调者再动手
+1. preset 迁移有没有人在做：git log --oneline -5 -- profiles/ 与 .agents/notes/ 里 grep preset / install_bundle。host-016 线若已开了迁移（web / web-dev / web-eval 三个 profile 同一件事），跟它的形态对齐，不另起一套；只有它没覆盖 web-eval 时才由你做。
+2. 0.1.5-rc.1 认不认 preset bundle：认，就只保留 bundle 一种形态；不认，就两种都留，install.sh 按宿主版本装对应那种。
+
+## 分支
+从本地 main 开 worktree ../dsh-plugins-wt-t81-dual-host，分支 feat/t81-dual-host；改 profiles/web-eval（presets、scripts、README 双语 + sidecar、package.json 的 dsh.compat），必要时 packages/eval 家族的 Compatibility 段与 dsh.compat。T73 分支 3 的试点可能改 presets/eval 与 SKILL 的文本：回报前把 main 并进来，按 graft 法解。
+
+## 步骤
+1. 工具链：建 ~/.dsh-toolchains/rc-0.1.7-rc.1（npm install @deepseek-ai/dsh@0.1.7-rc.1；官方包不受 @khorsheed 风控限制）。这个目录是共享资源，建之前报协调者；已有就复用，不覆盖。
+2. preset：按「开工前」第 2 条的结论做 bundle 形态；preset id 不变（eval）；内容与目录版逐字等价（它是实验装置，内容变了就是换装置）。装完后默认 preset 要能落到 eval：0.1.7 不导入 settings 段，看 install.sh 能否用官方接口设好，设不了就在 install.sh 输出里打一行明确提示。
+3. install.sh：探测宿主版本（dsh --version 或等价物），分支装 preset；preflight、备份与回滚逻辑两条线都要覆盖。不支持的版本明确报错退出，不猜。
+4. 0.1.7 真机：独立 DSH_HOME（realpath）、空闲端口（先 lsof 查、报协调者），PATH 用 rc-0.1.7-rc.1 工具链，install.sh --source <worktree> --fresh。冒烟照 T78 的 a–e（两个 tab、题集登记、实验室四阶段、双线点、pilot-d bundle 报告页），截图明 / 暗 / 400 放 ~/.dsh/scratch/t81-shots/0.1.7/。
+5. 0.1.5 回归：同一个分支用 rc-0.1.5-rc.1 工具链另起临时实例，同样 a–e，截图放 ~/.dsh/scratch/t81-shots/0.1.5/。
+6. 受试对象与宿主是否解耦（只查、不改题库）：在 0.1.7 实例上导入 pilot-d 所用的题库版本，看 7 条 harness.version = 0.1.5-rc.1 的条件 provision 核对判成什么。回答：受试对象的 CLI 版本来自哪里（实例自己的 PATH，还是条件能指定工具链）？如果绑死在实例 PATH 上，那么 0.1.7 实例只能跑声明 0.1.7 的条件，0.1.5 条件只能在 0.1.5 实例上跑；这个结论写进 Note 和 README，不试图改掉。
+7. compat：dsh.compat 与两份 README 的 Compatibility 段写成两条线都「支持」，并写明各自验证过的项与降级项；minHost 保持 0.1.5-rc.1。
+
+## 不做
+不动 3171、~/.dsh-lab、题库（不改条件、不重 provision、不写 lock）、镜像；不碰 3093 / 3080 / ~/.dsh-official / ~/.dsh；不迁 web / web-dev 的 preset（不归你；第 1 条核到没人做时，在回报里提出）；不自己合 main。
+
+## 完成判据
+两条线的临时实例上 a–e 全过；preset 在两条线上内容逐字等价、默认 preset 能落到 eval（或有明确提示）；install.sh 对不支持的版本报错退出；gate 绿；第 6 条有结论。
+
+## 回报
+分支与 commit；开工前两件事的结论；两条线 a–e 逐项结果与截图路径；第 6 条结论；compat 写法；Agent Note（Alternatives considered 双语：至少比较「两种 preset 形态并存」与「只留 bundle」）。通用提醒照旧。
+```
 
 ## 四、验收规程
 
