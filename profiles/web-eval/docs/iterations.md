@@ -403,8 +403,8 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T72 | 代码 ✅（`7edc08a1` → main `ee0a01fc`，2026-09-23；补充（一）待用户走查后发） | 实验室四阶段的旅程与结论先行（提案 D8 / D9 / 第 1、2、3、11 条）：列表四组 + 缺省「本会话发起」+ 「另有 n 个」、状态词加终态「评估不成立」与推导态「停滞」（无活 job 且无进展）、每阶段页顶状态 + 一个主动作全表、实验设计下半段「就绪清单」（阻塞项 / 提醒 + 就地修复）、结果对比「结论卡」置顶（用 T71 的字段）、人工评估四个出口（run 级注解）与「判官缺席」提示、归档。文案与验收见 §三「T72」 | T71 T70 | 交互稿 v5 四个场景（列表、就绪清单、结果对比、人工评估）真机对照同等层次；pilot-d 的结果页第一屏是结论不是表 |
 | T73 | 方案 ✅（第一步计划 `c1b70a4d`）→ 代码 | D1 + D2 会话去绑定、按仓库登记。第一步计划已评审（2026-09-23）：定 (b) 不设过渡期、条件与 lock 同搬部署级、协议 rev13 归 T73、会话收窄不保留。第二步三条分支——**分支 1** datasets 登记表 ✅（`201fb6cc` → main `036910ed`，2026-09-23）、**分支 2** eval 实验目录 ✅（`cdea013e` → main `587c12ae`，2026-09-24；验收见 §三）、**分支 3** SKILL / 提示词 ✅（`637b47f7` → main `ed9e62f9`，2026-09-24）+ 试点（**用户 2026-09-25 定：并进 3171 重装之后，在 3171 上跑**；3185 撤掉）；三条已合完，试点过才算 T73 验收。T68 并入 | T70 T68 | 写入模型定案；agent 不再翻磁盘找检出；未登记仓库不可用 |
 | T74 | 代码 ✅（`57533026` → main `e80a328c`，2026-09-24；补充一条见验收） | D5 方案卡：plan 加「要回答的问题 / 预期 / 怎么算回答了」三个字段（协议 rev14）、实验设计上半段方案卡、结论卡原样回答问题、就地改数字（启动前，写回同一个 plan，启动后冻结）；文案见 §三「T74」 | T72 T73 | 结论卡第一句是对问题的回答 |
-| T75 | 代码（`2d883a2e` 已报，**等 T76 合入后合 main 解冲突再合**） | D6 作答视图：按「题 × 组 × 次」并排，两个视角（提交的报告 / 判定证据），盲评开关即人工评估视图；三处入口；文案见 §三「T75」 | T72 T69 | 人工评估与作答视图是同一个组件 |
-| T76 | ✅ 已合（`ebdf74d8`，2026-09-25；合 main 提交 `b26345ec` + 双线读工具块 `dcf84812`；**合并后的明 / 暗 / 400 截图待补拍**：文案 §三「T76 补充（二）」，顺带看 datasets 图标） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案见 §三「T76」 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
+| T75 | 代码（`2d883a2e` 已报；**合 main 可发**：文案 §三「T75 补充（一）」） | D6 作答视图：按「题 × 组 × 次」并排，两个视角（提交的报告 / 判定证据），盲评开关即人工评估视图；三处入口；文案见 §三「T75」 | T72 T69 | 人工评估与作答视图是同一个组件 |
+| T76 | ✅ 已合（`ebdf74d8`，2026-09-25；合 main 提交 `b26345ec` + 双线读工具块 `dcf84812`）；补拍 ✅（2026-09-26，main `82a69fb7` 在 0.1.5-rc.1 上，datasets 图标全出，console 零报错；验收见 §三「T76 补充（二）」块后） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案见 §三「T76」 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
 | T77 | 代码 ✅（`ced3702e` → main `53b93082`，2026-09-24） | 源码模式装不出来：`install.sh:327` 算同族包只看 dependencies / peerDependencies，`scripts/pack-dist.ts:343` 只改写 `workspace:^`；`e9110d52` 把 content-preview 以 `workspace:*` 加进 local-files / ui-file-preview / worktrees 的 devDependencies，pack 时 ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL（T73 分支 1 与 T72 验收各自撞上、各自临时绕过）。文案见 §三「T77」 | 无 | 从 detached worktree 跑 `install.sh --source … --fresh` 到临时 DSH_HOME 一次成功 |
 | T78 | ❌ 不成立（2026-09-25，main `9da732aa`；原因见 §三 T78 末尾「结果」） | host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟：main 已钉官方线 0.1.7-rc.1、eval 家族做了「双线」适配，评测线 3171 与临时实例仍是 0.1.5-rc.1；只回答「当前 main 能不能在评测线上装得起、跑得通」，不修代码。文案见 §三「T78」 | 无（与 T76 合 main 并行） | 成立 → 3171 照常重装；不成立 → 错误原文 + 定位提交，交用户定钉旧提交还是换线 |
 | T79 | 验收（联合走查，可发的前置见文案） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
@@ -3417,6 +3417,28 @@ eval 测试全绿，gate 绿；临时实例拷 pilot-d bundle（题库 wt-t65 �
 
 **回报已到（2026-09-24），等合 main**：`feat/t75-answer-view`（`ae74dc1c` cellAnswers、`06b10ca9` 作答视图、`2d883a2e` README + Note），gate 两次过（后一次在盲评修复之后），eval 1046。与 T74（README.i18n、LabView.module.css、contract.ts、client/index.ts、service.ts）和 T76（README.i18n、CSS、LabView.tsx、locales.ts）都冲突（merge-tree 核过）：**等 T76 合入后，实施者把 main 合进分支、按 graft 法解（MarkdownDoc.tsx / markdown CSS / markdown.* 文案键与 T74 的取任一边）、gate 重跑后报 commit，协调者再合**。协调者看了两张图（具名面：dsh-lean 那列描边、stage1.md 渲染、C2 判定挂在被引用那段之下；盲评面：作答 A / B、过程入口收起、描边去掉）。设计取舍都认：判定只在证据原文引用某段（≥ 6 字）时挂上、不猜；盲评字母每次从 A 起；具名面的盲评只在显示层、真正的盲面仍是人工评估的 judgeQueue；配对表的「看作答」放题行。验收中修的一处（盲评时入口描边泄露组）已补测试。观察进补充清单：judgeQueue 不带 script 层，判官台上只有脚本判定的格子来源标「未判」、具名面标「仅脚本判定」，两边要一致；X-no-patch 这类否决型判据 pass=false 是好结果、页面按 pass 上色（题库 rubric 把极性写成正向，先问出题方是数据面还是页面的错）。数据面记下：`dataseek.verdict/1` 加位置或引文字段（rev15 候选），判定不必靠引文反查段落。
 
+**T75 补充（一）：合 main（2026-09-26，可发）**：
+
+```text
+# T75 补充（一）：把 main 合进 feat/t75-answer-view
+
+## 背景
+T76 已合入（ebdf74d8），补拍在 0.1.5 上通过；main 现在是双宿主：默认构建在 0.1.5-rc.1 上能跑（T81：typert 双形态 codec 00cfa1d6、preset 双名探测 380a469c、图标自带 d49f29af）。T75 分支（2d883a2e）与 main 在 7 个文件上冲突（协调者用 merge-tree 核过）：packages/eval 的 README.i18n.yaml、client/LabView.module.css、LabView.tsx、contract.ts、client/index.ts、locales.ts、service.ts。
+
+## 做法
+1. 在你原来的 worktree ../dsh-plugins-wt-t75-answers 上，把本地 main（≥ 本文所在提交）合进 feat/t75-answer-view；不 rebase、不 pull。
+2. 冲突按 graft 解：两边的功能都要留，不取整边。重点：T74 的 MarkdownDoc 与 markdown 样式、文案键和你的取同一份（原文案已定「谁先合谁定形」，main 上已有的为准，你的改为复用）；T76 的实验卡、LabFocus、标记行细框，与你的「看作答」入口共存；contract / service 两边新增的 Remote 方法都留。
+3. 双宿主：合完后不要从 @deepseek-ai/dsh-ui-primitives 按名字取图标。若作答视图要新图标，照 d49f29af 的做法加进生成器、重跑 scripts/sync-icon-artwork.mts；不论加没加，都跑一次 `--check` 确认没有漂移。宿主差异按 T76 dcf84812（双线读工具块）的方式探测两边，不钉某一条线。
+4. gate：`pnpm run build` 与 eval 测试全绿；README 双语 + sidecar 同步。
+5. 截图：在 0.1.5-rc.1 临时实例上重拍（配方照 T76 补充（二）：detached worktree 装、独立 DSH_HOME、不设 DSH_HARNESS、端口先报协调者）。报告视角、证据视角、盲评各一套，明 / 暗 / 400，放 ~/.dsh/scratch/t75-shots/merge/；三处入口（运行记录详情「看作答」、人工评估队列、结果对比格子）都要点到同一格；console 里 eval 相关报错与 React #130 为零。收尾照旧：停实例、删临时 home（先 chmod -R u+w）、题库共享检出前后一致。
+
+## 不做
+不扩范围，补充清单里的条目都不在本次做。不碰 3171 / ~/.dsh-lab / 3080 / 3093 / ~/.dsh-official / ~/.dsh。
+
+## 回报
+合并 commit 号；每处冲突怎么解的（一行一处）；gate；icons `--check` 的结果；截图路径逐张对应；console；收尾。通用提醒照旧（合并归协调者，你只合 main 进分支）。
+```
+
 ### T76 · 会话面：eval_plan_draft 工具行渲染成实验卡、eval_experiment_get、实验 tab 计数待证、S18 退路（已报，等合 main 解冲突，2026-09-24）
 
 ```text
@@ -3507,7 +3529,9 @@ eval / eval-tool 测试全绿，gate 绿；实验卡渲染、「打开实验」�
 main 提交号、端口、截图路径（逐张对应哪一项）、与验收时的对比结论、datasets 图标结论、console 情况、收尾。通用提醒照旧。
 ```
 
-**T74–T76 补充清单（并入 T72 补充（一），等用户走查后一起发）**：① 结论卡 `rank === null` 分「暂时不能下结论：<rankReason>」与「未分高下」（T74，已定）；② 条件 sha 标「开跑时 / 当前」（T76）；③ judgeQueue 带 script 层，判官台与具名面的来源词一致（T75）；④ X-no-patch 极性先问出题方（T75，数据面或页面待定）；⑤ SKILL「计划审阅」→「实验设计」（分支 3，随试点后修订）；⑥ datasets 缺席时 draftRow validate 的拒绝改三段式（T76，低）。
+**补充（二）验收（2026-09-26）**：main `82a69fb7` 在 0.1.5-rc.1 临时实例（3183，源码模式 24 个成员、177 行 patch、零 npm @khorsheed，未设 DSH_HARNESS）上补拍 19 张，放 `~/.dsh/scratch/t76-shots/merge/`。协调者看了四张（01 亮色实验卡、06 暗色标记行、14 暗色题集详情、17 400 宽题集详情）。实验卡的布局、「待批准」徽标、「打开实验」和验收图一致；题库版本文字不同，是临时 home 的登记名和提交不同（数据，不是缺陷）。标记行的细框一致；名称列多了一行截断的问题原文（T74 合进来的问题原文行，预期内）。卡片写 2 次、行写 3，是夹具 digest 沿用旧 reps，实施者自认是数据造错，接受。datasets 的图标（chevron 右 / 下、文件夹开 / 合、文件、登记预览的勾）三套都画出来了，`d49f29af` 在 0.1.5 上成立。console 监听先用探针证实生效，eval / datasets / 其他包的报错与 React #130 全为 0，instance.out 无 error。第一次 install 撞 npm 网络抖动（ECONNRESET 135 次，supply-chain policy check 失败），清掉半装目录后重跑成功，不是代码问题。收尾：实例已停、临时 home 已删、worktree 已移除，题库共享检出前后比对（HEAD / status / worktree / refs）diff 为空。协调者已清 `../dsh-plugins-wt-t76-session` 与分支 `feat/t76-session-face`（已在 main 里）。新发现两条进下面的补充清单（⑦⑧）。
+
+**T74–T76 补充清单（并入 T72 补充（一），等用户走查后一起发）**：① 结论卡 `rank === null` 分「暂时不能下结论：<rankReason>」与「未分高下」（T74，已定）；② 条件 sha 标「开跑时 / 当前」（T76）；③ judgeQueue 带 script 层，判官台与具名面的来源词一致（T75）；④ X-no-patch 极性先问出题方（T75，数据面或页面待定）；⑤ SKILL「计划审阅」→「实验设计」（分支 3，随试点后修订）；⑥ datasets 缺席时 draftRow validate 的拒绝改三段式（T76，低）；⑦ 400 宽下题集详情右栏被挤成窄列、中文竖排，「← 题集列表」「校验」两个按钮换行（T76 补拍发现，见 merge/17、18；列表与登记表单在 400 宽下正常）；⑧ 实验室标记行的细框内左侧无内边距，名称贴边（验收图同样，旧问题）。
 
 ### T78 · host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟（3171 下一次重装的前置；可发，2026-09-25）
 
