@@ -38,6 +38,9 @@
     "./locale/*.json": "./locale/*.json"
   },
   "dsh": {
+    "references": [
+      "@khorsheed/dsh-bundle-conversation-toolbox"
+    ],
     "bundle": {
       "patch": "./cordis.patch.yml"
     },

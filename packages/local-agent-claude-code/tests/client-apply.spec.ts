@@ -3,9 +3,10 @@
  * `status(name, scope?)` and the api-gateway client enforces EXACT arity —
  * the card's status probe must pass the default scope explicitly or the call
  * throws and the auth dot reads unavailable (the 0.1.5 prod outage). Plus the
- * dual-arm settings-surface registration: one arm per host line (alpha.2
- * `plugins.bundle.config` keyed by package name, 0.1.5 `settings.plugin.item`
- * keyed by the settings namespace).
+ * three-track settings-surface registration: standalone install (alpha.2
+ * `plugins.bundle.config` keyed by package name), family-bundle install
+ * (`plugins.row.config` keyed `<bundle>#<row id>`), 0.1.5
+ * (`settings.plugin.item` keyed by the settings namespace).
  */
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -48,10 +49,15 @@ describe('client apply: gateway call arity', () => {
   })
 })
 
-describe('client apply: dual-arm settings surfaces', () => {
+describe('client apply: three-track settings surfaces', () => {
   it('registers the bundle configuration keyed by package name on the alpha.2 slot', () => {
     const { registrations } = bench(vi.fn())
     expect(registrations).toContainEqual({ name: 'plugins.bundle.config', key: '@khorsheed/dsh-local-agent-claude-code' })
+  })
+
+  it('registers the row-level configuration keyed by the family bundle row id', () => {
+    const { registrations } = bench(vi.fn())
+    expect(registrations).toContainEqual({ name: 'plugins.row.config', key: '@khorsheed/dsh-bundle-local-agent#local-agent-claude-code' })
   })
 
   it('registers the settings card keyed by the settings namespace on the 0.1.5 slot', () => {

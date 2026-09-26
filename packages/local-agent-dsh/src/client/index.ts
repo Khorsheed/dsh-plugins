@@ -2,9 +2,13 @@ import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 /**
  * Local-agent-dsh plugin, browser half: the dsh settings surface, one face
- * per host line — on alpha.2 the bundle's own configuration on its
- * Plugins-page detail view (`plugins.bundle.config`, keyed by package name),
- * on 0.1.5 the `settings.plugin.item` card (keyed to the `local-agent-dsh`
+ * per install shape and host line — a standalone install renders the
+ * bundle's own configuration on its Plugins-page detail view
+ * (`plugins.bundle.config`, keyed by package name), a family-bundle install
+ * renders the same card through the row-level configure entry on the
+ * BUNDLE's detail view (`plugins.row.config`, keyed
+ * `@khorsheed/dsh-bundle-local-agent#local-agent-dsh`), and 0.1.5 renders
+ * the `settings.plugin.item` card (keyed to the `local-agent-dsh`
  * settings namespace the host half registers) in the official
  * Plugins → 可配置插件 tab. The card carries the family core's shared
  * ProviderAuthBlock (dsh authenticates through the host credentials, so the
@@ -29,7 +33,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the ctx.slots service merge (renderer-owned slot registry).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-// Type-only: the 'plugins.bundle.config' keyed-slot SlotMap merge (alpha.2).
+// Type-only: the 'plugins.bundle.config' / 'plugins.row.config' keyed-slot
+// SlotMap merges (alpha.2).
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 // Type-only: the family core's LocaleNamespaceMap merge ('local-agent', the
 // auth block's copy) and the gateway Remote type.
@@ -108,17 +113,27 @@ export function apply(ctx: Context): void {
           .then(result => (result.ok ? result.value?.result.text : undefined)),
     },
   })
-  // The settings surface follows the host line. alpha.2 renders a bundle's own
-  // configuration on its Plugins-page detail view (`plugins.bundle.config`,
-  // keyed by package name); 0.1.5 renders the configurable-plugins tab card
-  // (`settings.plugin.item`, keyed by the settings namespace). Each name is
-  // absent from the other line's registry, so both registrations ride
-  // slots.inject — each wait fires only where the declaration exists — and the
-  // legacy calls go through a string-keyed duck narrow of the same service
-  // (the slot name is gone from the alpha.2 SlotMap).
+  // The settings surface follows the host line AND the install shape — three
+  // tracks, all riding slots.inject so each fires only where its declaration
+  // exists. Standalone install: the package's own Plugins-page detail view
+  // (`plugins.bundle.config`, keyed by package name). Installed as a family
+  // member: the member is no longer the profile's direct dependency, so only
+  // the bundle gets a detail view — the card rides the row-level slot
+  // (`plugins.row.config`, keyed `<bundle package>#<row id>` with the row id
+  // the bundle's patch declares) and the bundle's page gains a configure
+  // entry opening it. 0.1.5: the legacy configurable-plugins tab card
+  // (`settings.plugin.item`, keyed by the settings namespace) through a
+  // string-keyed duck narrow of the same service (the slot name is gone from
+  // the alpha.2 SlotMap).
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config',
     key: PACKAGE_NAME,
+    locale: NS,
+    inject: cardInject,
+  }, DshBundleConfig))
+  ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+    name: 'plugins.row.config',
+    key: '@khorsheed/dsh-bundle-local-agent#local-agent-dsh',
     locale: NS,
     inject: cardInject,
   }, DshBundleConfig))

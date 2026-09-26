@@ -48,6 +48,9 @@
     "./locale/*.json": "./locale/*.json"
   },
   "dsh": {
+    "references": [
+      "@khorsheed/dsh-bundle-local-agent"
+    ],
     "client": {
       "inject": [
         "@deepseek-ai/dsh-api-remotes",

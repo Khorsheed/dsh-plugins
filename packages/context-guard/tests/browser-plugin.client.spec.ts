@@ -140,7 +140,7 @@ interface Bench {
 /** Boot the browser half over a real slot tree that declares the input.right list and the given settings slot. */
 async function bench(
   config?: Parameters<typeof apply>[1],
-  settingsSlot: 'settings.plugin.item' | 'plugins.bundle.config' = 'settings.plugin.item',
+  settingsSlot: 'settings.plugin.item' | 'plugins.bundle.config' | 'plugins.row.config' = 'settings.plugin.item',
 ): Promise<Bench> {
   const execute = vi.fn()
   const { scope } = stubScope()
@@ -226,6 +226,14 @@ describe('context-guard browser half', () => {
     expect(ctx.slots.entries('settings.plugin.item').map(e => e.options.key)).not.toContain(CONTEXT_GUARD_NS)
     await fiber.dispose()
     expect(ctx.slots.entries('plugins.bundle.config').map(e => e.options.key)).not.toContain(PACKAGE_NAME)
+  })
+
+  it('registers the row-level configuration keyed by the family bundle row id, removed with the fiber', async () => {
+    const ROW_KEY = '@khorsheed/dsh-bundle-conversation-toolbox#context-guard'
+    const { ctx, fiber } = await bench(undefined, 'plugins.row.config')
+    expect(ctx.slots.entries('plugins.row.config').map(e => e.options.key)).toContain(ROW_KEY)
+    await fiber.dispose()
+    expect(ctx.slots.entries('plugins.row.config').map(e => e.options.key)).not.toContain(ROW_KEY)
   })
 
   it('registers both dictionaries under its own namespace and releases them with the fiber', async () => {

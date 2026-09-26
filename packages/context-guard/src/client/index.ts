@@ -4,10 +4,14 @@
  * tool row that appears automatically when the next request's budget
  * (`contextPressure.projectedTokens` + the output budget) crosses
  * `thresholdRatio` of the routed model's context window — plus one settings
- * surface editing the same number live: on alpha.2 the bundle's own
- * configuration on its Plugins-page detail view (`plugins.bundle.config`,
- * keyed by package name), on 0.1.5 the `settings.plugin.item` card in the
- * plugin configuration tab (keyed by the settings namespace). The action
+ * surface editing the same number live: a standalone install renders the
+ * bundle's own configuration on its Plugins-page detail view
+ * (`plugins.bundle.config`, keyed by package name), a family-bundle install
+ * renders the same card through the row-level configure entry on the
+ * BUNDLE's detail view (`plugins.row.config`, keyed
+ * `@khorsheed/dsh-bundle-conversation-toolbox#context-guard`), and 0.1.5
+ * renders the `settings.plugin.item` card in the plugin configuration tab
+ * (keyed by the settings namespace). The action
  * rides the official `/compact` command
  * channel (`remote.commands.execute` → host `ctx.commands` →
  * `ctx.compaction.compactNow`); the config rides the official settings
@@ -121,17 +125,30 @@ export function apply(ctx: Context, config?: Partial<ContextGuardConfig>): void 
     }),
   }, CompactGuardButton))
 
-  // The settings surface follows the host line. alpha.2 renders a bundle's own
-  // configuration on its Plugins-page detail view (`plugins.bundle.config`,
-  // keyed by package name); 0.1.5 renders the configurable-plugins tab card
-  // (`settings.plugin.item`, keyed by the settings namespace). Each name is
-  // absent from the other line's registry, so both registrations ride
-  // slots.inject — each wait fires only where the declaration exists — and the
-  // legacy calls go through a string-keyed duck narrow of the same service
-  // (the slot name is gone from the alpha.2 SlotMap).
+  // The settings surface follows the host line AND the install shape — three
+  // tracks, all riding slots.inject so each fires only where its declaration
+  // exists. Standalone install: the package's own Plugins-page detail view
+  // (`plugins.bundle.config`, keyed by package name). Installed as a
+  // conversation-toolbox member: the member is no longer the profile's
+  // direct dependency, so only the bundle gets a detail view — the card rides
+  // the row-level slot (`plugins.row.config`, keyed `<bundle package>#<row
+  // id>` with the row id the bundle's patch declares) and the bundle's page
+  // gains a configure entry opening it. 0.1.5: the legacy
+  // configurable-plugins tab card (`settings.plugin.item`, keyed by the
+  // settings namespace) through a string-keyed duck narrow of the same
+  // service (the slot name is gone from the alpha.2 SlotMap).
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config',
     key: PACKAGE_NAME,
+    locale: NS,
+    inject: (): ContextGuardSettingsCardInjected => ({
+      scope,
+      hooks: { config: scope },
+    }),
+  }, ContextGuardBundleConfig))
+  ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+    name: 'plugins.row.config',
+    key: '@khorsheed/dsh-bundle-conversation-toolbox#context-guard',
     locale: NS,
     inject: (): ContextGuardSettingsCardInjected => ({
       scope,
