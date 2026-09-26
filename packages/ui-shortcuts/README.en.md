@@ -29,7 +29,11 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # uninstall
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.7-rc.2). Two shapes by host line:
+  - **0.1.5 ~ 0.1.7-rc.1** (no official shortcuts service): the package ships its **full capability** — its own registry (`ctx.shortcuts`), the settings card, keyboard and mouse bindings, all five built-in actions.
+  - **0.1.7-rc.2+** (the official shortcut system `dsh-client-shortcuts` is resident): the own registry, settings card, and mouse bindings are **all retired** (cordis throws on a duplicate `shortcuts` provide); the package shrinks to contributing the two commands the official catalog lacks — steer-send and compact. Pause, new-session, and the right-sidebar toggle are official natives (Esc Esc / `session.new` / `sidebar.right.toggle`), and rebinding rides the official shortcuts panel.
+
+  Both paths verified: dual-baseline build+test plus a real rc.2 full-composition boot (2026-09-26).
 
 **Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 
@@ -39,16 +43,19 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # uninstall
 - **Ctrl/Cmd+S is draft-only** — an empty draft is a no-op; whole-queue steering stays on the composer's `Cmd/Ctrl+Enter` gesture.
 - **Mouse bindings are the middle and secondary buttons only** — the primary button is deliberately not bindable (a page-wide left-click action would consume every ordinary click), and the browser's back/forward buttons are absent too: engines hand them to history navigation before the page sees a reliable event.
 - **The shipped default is a global middle click** — the right-sidebar toggle ships bound to the middle button, which means **out of the box** it takes over autoscroll (Windows), primary-selection paste (Linux), and — the one people notice — **middle-clicking a link no longer opens it in a new tab**. That is a deliberate product choice: the right column is what a link click opens, so the middle button is the one that puts it away again. On a trackpad, or if you want those gestures back, one click in Settings → Plugins → Keyboard shortcuts rebinds it to `Ctrl/Cmd+B` or any other chord.
+- **No mouse bindings on rc.2+** — the official binding protocol expresses physical keyboard keys only; the middle/secondary button gestures have no representation. On the official path every default lands on a key chord (steer-send is `Ctrl/Cmd+Shift+S` on the web — the official web policy refuses a bare `primary+Key`; compact ships unbound on Linux desktop/web because the window manager owns the chord — bind it yourself in the official shortcuts panel). 0.1.5 through 0.1.7-rc.1 are unaffected.
 
 ## How it works
 
 <details>
 <summary>Internals (click to expand)</summary>
 
+This section describes the package's own implementation, which applies to **0.1.5 ~ 0.1.7-rc.1**; on 0.1.7-rc.2+ the official path mounts none of these parts — what remains is the two-command contribution (see Compatibility).
+
 - `src/index.ts` (node half) — registers the `ui-shortcuts` settings namespace.
 - `src/client/` (browser half, `/plugins/ui-shortcuts/client.js`) — wires the keys and the shortcuts card in Settings → Plugins.
 
-The row id `ui-shortcuts` is shared with the official `@deepseek-ai/dsh-client-ui-shortcuts` bundle — compose at most one per profile (duplicate loader ids fail loud at boot); the default web image mounts neither, so the install above is the normal path.
+The row id is `khorsheed-ui-shortcuts`, deliberately distinct from the official `@deepseek-ai/dsh-client-ui-shortcuts` bundle's `ui-shortcuts` row: loader composition collapses same-id rows (last layer wins), and reusing it would shadow the official panel outright. With distinct ids the two coexist — the official panel owns the catalog and rebinding, this package contributes its two extra commands (see Compatibility).
 
 Actions go through public services, never ui-conversation internals:
 

@@ -8,7 +8,7 @@
     "shortcuts",
     "keyboard"
   ],
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publishConfig": {
     "access": "public"
   },
@@ -53,7 +53,8 @@
     },
     "compat": {
       "minHost": "0.1.2-rc.1",
-      "verifiedHost": "0.1.2-rc.1"
+      "verifiedHost": "0.1.7-rc.2",
+      "notes": "Dual-path verified 2026-09-26 (build+test green on both baselines; 42-package real boot on the rc.2 npm toolchain; steer-send fired end-to-end). On 0.1.7-rc.2+ the official shortcuts service is resident, so the package contributes steer-send and compact to the official catalog and never provides its own shortcuts key (cordis throws on a duplicate); pause / new-session / sidebar-toggle are official natives there, the official panel owns rebinding, and mouse-button bindings have no representation in the official keyboard-only protocol. 0.1.5–rc.1 compositions keep the full local registry, settings card and mouse bindings."
     }
   },
   "scripts": {

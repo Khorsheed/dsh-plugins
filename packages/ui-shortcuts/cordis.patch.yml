@@ -3,5 +3,9 @@
 # loader tree. The `name` value must stay quoted — `@` is a YAML-reserved
 # indicator and an unquoted scalar fails the parse at boot.
 - insert:
-    - id: ui-shortcuts
+    # rc.2's web-app bundle mounts the official shortcuts panel at row id
+    # `ui-shortcuts`; loader composition collapses same-id rows (last layer
+    # wins), so this row must not reuse it — our entry would shadow the
+    # official panel outright.
+    - id: khorsheed-ui-shortcuts
       name: '@khorsheed/dsh-ui-shortcuts'

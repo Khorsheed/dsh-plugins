@@ -29,7 +29,11 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # 卸载
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.7-rc.2）。按宿主线分两种形态：
+  - **0.1.5 ~ 0.1.7-rc.1**（官方无快捷键服务）：本包提供**完整能力**——自有注册表（`ctx.shortcuts`）、设置里的快捷键卡片、键盘与鼠标键绑定，五个内置动作全量运行。
+  - **0.1.7-rc.2 起**（官方自带快捷键系统 `dsh-client-shortcuts`）：自有注册表、设置卡、鼠标键绑定**全部下线**（cordis 对重复的 `shortcuts` 服务名直接抛错），本包收缩为向官方目录贡献两条官方没有的命令——插队发送与压缩上下文；暂停、新建会话、右侧边栏开关由官方原生承载（Esc Esc / `session.new` / `sidebar.right.toggle`），改键由官方快捷键面板承接。
+
+  双路径经两基线构建测试 + rc.2 全量组合真实启动实证（2026-09-26）。
 
 **版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.0`）。
 
@@ -39,16 +43,19 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # 卸载
 - **Ctrl/Cmd+S 仅草稿**——空草稿不做事；整队列插队仍是 composer 的 `Cmd/Ctrl+Enter` 手势。
 - **鼠标只能绑中键与右键**——主键（左键）刻意不可绑：一个全页左键动作会吃掉每一次普通点击。浏览器的后退/前进侧键也不可绑，引擎会先把它们交给历史导航，页面拿不到可靠事件。
 - **出厂默认就是全局中键**——右栏开关默认绑鼠标中键，意味着**开箱即接管**这些浏览器默认：中键的自动滚屏（Windows）与主选区粘贴（Linux），以及**中键点链接不再打开新标签页**（这条最容易被感知）。这是刻意的产品选择——右栏是"点出来的"面板，开链接的那颗键顺手把它收回去；触控板用户或不想让出这些手势的人，在 设置 → 插件 → 快捷键 里一次点击就能改回 `Ctrl/Cmd+B` 之类的键盘组合键。
+- **rc.2+ 上没有鼠标键绑定**——官方绑定协议只表达物理键盘键，中键/右键手势没有表示；官方路径下默认键位全部落在键盘组合上（插队发送在 web 上是 `Ctrl/Cmd+Shift+S`——官方网页策略不允许裸 `primary+Key`，Linux 桌面/网页因窗口管理器占用不预置 compact 键位，可在官方快捷键面板自行绑定）。0.1.5 ~ 0.1.7-rc.1 不受影响。
 
 ## 实现原理
 
 <details>
 <summary>内部结构（点击展开）</summary>
 
+本节描述的是本包的自有实现，适用于 **0.1.5 ~ 0.1.7-rc.1**；0.1.7-rc.2 起官方路径下这些部件不装载，仅剩「向官方目录注册两条命令」（见 Compatibility）。
+
 - `src/index.ts`（node 半边）——注册 `ui-shortcuts` 设置命名空间。
 - `src/client/`（浏览器半边，`/plugins/ui-shortcuts/client.js`）——按键接线与 设置 → 插件 里的快捷键卡片。
 
-行 id `ui-shortcuts` 与官方 `@deepseek-ai/dsh-client-ui-shortcuts` bundle 同名——一个 profile 里最多组合其一（重复 loader id 会在启动时 fail loud）；官方默认镜像不挂载任何一方，上文的一条命令安装即常规路径。
+行 id 用 `khorsheed-ui-shortcuts`，刻意与官方 `@deepseek-ai/dsh-client-ui-shortcuts` bundle 的 `ui-shortcuts` 行错开：loader 组配对同 id 行后层覆盖前层，同名会把官方面板整个顶替掉。错开后两者共存——官方面板承接目录与改键，本包贡献它缺的两条命令（见 Compatibility）。
 
 动作全部走公开服务，从不触及 ui-conversation 内部：
 
