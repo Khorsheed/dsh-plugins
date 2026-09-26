@@ -6,7 +6,7 @@ English | [中文](README.md)
 
 Without it, an agent that wants you to *see* a result can only paste code for you to imagine, or write an HTML file you have to open in a preview. This plugin swaps the fenced block whose info string is `dsh-card` for a sandboxed iframe — mid-message — that runs the authored HTML: inline between paragraphs and genuinely interactive, not ASCII art or a prose description.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="a dsh-card block in the agent's reply rendered as a design-token reference card, flowing with the surrounding text">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="a dsh-card block in the agent's reply rendered as a tabbed data-observation card, flowing with the surrounding text">
 
 ```dsh-card
 <div style="font:14px system-ui;padding:16px;background:#1e1e1e;border-radius:10px;color:#eee">
@@ -30,8 +30,6 @@ In the session, that is not a code block — it is a rendered card.
 - **Links follow the host's route** — `openLink` opens into the right-Sidebar Browser tab on hosts shipping ui-sidebar-browser, and falls back to a new window (`noopener`) otherwise; probed on every open, so hot-added or hot-removed tab types never wedge.
 - **Zero-invasive, degrades by design** — it only rewrites DOM the official client has **already rendered** (inserting an iframe beside the code block and hiding the block); no official source is touched. Without this plugin, `` ```dsh-card `` is just a normal code block — nothing breaks.
 - **Two bundled authoring skills** — the host half registers `inline-html-card` and `3d-artifact` (both with provider `inline-html-render`), discovered pull-style: the agent picks up the protocol when it needs to *draw*, instead of every session carrying it.
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/inline-html-card-2.png" width="640" alt="an interactive inline card: tab switching and button clicks working inside the sandboxed iframe">
 
 ## Install
 

@@ -157,8 +157,6 @@ dsh-datasets import-bindings [--state-root DIR]
 
 ## 题集 tab（web）
 
-<!-- 截图占位：docs/screenshots/…-datasets-tab.png（待补） -->
-
 web profile 下插件向会话的视图环贡献 **`datasets` tab**（标签「题集 / Datasets」，与 chat、trajectory 并列）。两页一壳，形状按 [web-eval 界面规格](../../profiles/web-eval/docs/ui-spec.md) §三 §四。
 
 **槽位词汇**。文件按**谁看得到**标注，不按层名——层名是一个题集内部的作者约定，看 tab 的人要判断的是可见性。每个文件恰好落一个**角色**（由 `dataset.json` 的 `layers` + `register` 算出，是机制事实）：选手看得到（`modelFacing` 层）、只有判官（`grading`）、只有探针（`verify`）、不发给选手（其他敏感层）、所有人可读（透传区）。角色之上再给一个**槽位**显示名（题干 / 验收标准 / 参考答案 / 评估标准 / 检查脚本 / 其他文件），由基名启发式给出：`oracle/` 下的一律是参考答案，`task.md` 与 `prompts/` 下的是题干，`rubric*` 与 `standards-notes*` 是评估标准，`standards*` 是验收标准，`checks/` 与 `probes/` 下的是检查脚本，都不匹配时按角色兜底（verify 层归检查脚本，grading 层归评估标准）。协议的两种布局因此得到同一个答案：register 形态的 `answers/rubric.yml` 与约定形态的 `rubric.yml` 都是「评估标准 · 只有判官」。启发式与角色计算都在 `src/slots.ts` 一处，宿主与浏览器共用同一个函数——协议没有槽位字段，为一个显示名分叉 descriptor 格式不值得；题集自定义槽位名是后话。

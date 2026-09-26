@@ -19,8 +19,6 @@
 - **模型回读与独立工作目录**——每轮从 wire.jsonl 的 usage/request 记录回读实际模型，写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
 - **常驻驱动（可选）**——`live: true` 让每个成员常驻一个 `kimi acp` 进程，按轮 `session/prompt`，支持运行时级优雅取消；关闭或通道不可用即回一次性 `kimi -p`。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-kimi-sessions.png" width="640" alt="会话中的 /kimi sessions 委派记录列表与 /kimi session 转写回放">
-
 ## 安装
 
 需要一个可运行的 dsh profile，且 `PATH` 上有 Kimi Code CLI（`kimi`）——插件既不替你安装，也不替你登录。

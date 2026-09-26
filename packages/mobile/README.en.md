@@ -6,10 +6,6 @@ Your dsh sessions, in your pocket — the Mac still runs the sessions, models, s
 
 The official Web client is desktop-shaped: a sidebar that eats the screen, a dense composer, touch targets made for a mouse. This plugin re-presents the very same client for narrow touch screens — a conversation library with grouping and search, a wrapping composer with reachable controls, a sheet for picking directories on the computer — and adds an optional [iOS shell](../../apps/ios/README.md) that embeds that same official Web client and pairs to it over a QR login link. Everything stays removable: uninstalling restores the official desktop UI exactly, and no Host or sibling-plugin state is ever written.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-library.png" width="640" alt="mobile conversation library: time and workspace grouping, collapsible workspace sections, bottom search">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-conversation.png" width="640" alt="a conversation in mobile layout with the wrapping composer toolbar and the expanded plus menu grouping attachment, command and permission triggers">
-
 ## Features
 
 - **Conversation library home** — time/workspace grouping, collapsible workspace sections and bottom search. Grouping stays local to this browser (`dsh.mobile.grouping`); the official chat and your draft remain mounted behind navigation.

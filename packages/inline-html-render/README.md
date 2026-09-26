@@ -6,7 +6,7 @@
 
 没有它的时候,agent 想让你**看到**一个效果,只能贴段代码让你脑补,或者写个 HTML 文件等你去预览里打开。这个插件把 info string 为 `dsh-card` 的 fenced block 在消息流中间替换成一个沙箱 iframe,直接运行其中的 HTML——内联在段落之间、真正可交互,而不是 ASCII 图或一句描述。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="agent 回复中间的 dsh-card 代码块被渲染成设计 token 对照卡片,与上下文文字自然衔接">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="agent 回复中间的 dsh-card 代码块被渲染成一张带 tab 的数据观测卡片，与上下文文字自然衔接">
 
 ```dsh-card
 <div style="font:14px system-ui;padding:16px;background:#1e1e1e;border-radius:10px;color:#eee">
@@ -30,8 +30,6 @@
 - **链接走宿主路由**——`openLink` 在带 ui-sidebar-browser 的宿主上开进右侧栏 Browser 标签页,否则退化为新窗口(`noopener`);每次打开时现探测,标签类型热增热删都不卡死。
 - **零侵入、天然降级**——只改写官方**已经渲染出来的** DOM(在代码块旁插入 iframe 并隐藏原块),不改一行官方源码;没装本插件时,`` ```dsh-card `` 就是一个普通代码块,什么也不坏。
 - **随包两个作者 skill**——host 半边注册 `inline-html-card` 与 `3d-artifact`(provider 均为 `inline-html-render`),拉取式发现:agent 需要「画出来」时按协议写作,不往每个会话里塞协议。
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/inline-html-card-2.png" width="640" alt="可交互的内联卡片:tab 切换与按钮点击在沙箱 iframe 内真实生效">
 
 ## 安装
 

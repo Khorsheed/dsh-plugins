@@ -8,8 +8,6 @@ The file list, the worktree tab, and the session-products page all need the same
 
 **This is not a plugin.** It registers no slot, service or locale, owns no loader row and ships no client bundle of its own — it is consumed at the **source plane**: each plugin declares it as a dependency and imports `@khorsheed/dsh-client-ui-content-preview/src/client/…` directly, so each plugin's tsdown client bundle inlines it into its own `lib/client.js`. Zero runtime coupling, every plugin stays independently installable and uninstallable, and installing this package into a profile mounts nothing.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="the shared content pane: search hits painted over rendered markdown, with reload, copy path, open folder and open in IDE in the title bar">
-
 ## Features
 
 - **Content dispatch on a kind union** — one read normalizes into `PreviewRead`: `text` (with `truncated` / `htmlScripted` markers) / `image` / `binary` / `missing` (with a reason) / `too-large` / `error`; the kernel owns the contract and each plugin adapts its own Remote payload into it.
@@ -20,8 +18,6 @@ The file list, the worktree tab, and the session-products page all need the same
 - **Pane chrome** — back control, basename with a language chip, reload-current-file (rendered only when the caller injects `onReload`, ahead of copy-path; disabled with a spinning icon while in flight), copy path, open folder, open in IDE (each shown only when the host open-in-app probe resolved that kind of app; multiple IDEs render as a split button); scroll memory per (session, path); a format banner on every structured render; the diff/content toggle plugs in as a caller-owned render prop.
 
 Deliberately **not** here: the file tree, the data face (Remote / store / root selection), the diff and commit-comparison implementation (the caller passes it in as a render prop), tab registration and visibility — those are each plugin's own data face and identity.
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/content-preview-2.png" width="640" alt="the tiered HTML sandbox: the source / render / script three-way toggle and the scripts-did-not-run hint bar over a statically rendered page">
 
 ## Usage
 

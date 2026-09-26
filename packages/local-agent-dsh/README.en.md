@@ -6,8 +6,6 @@ Delegate a task to dsh itself — a headless sub-dsh in its own scoped home, con
 
 Some subtasks deserve a full, isolated dsh instance: an evaluation control, its own session history, its own permission boundary — without ever touching the current instance's state. This plugin spawns a sub-dsh headless CLI: it runs under its own scoped home (profile, sessions, and state fully separate), authenticates through the parent's DeepSeek API key, and takes a caller-supplied session id it can resume across rounds. Nothing mounts by default — flip the DeepSeek delegation switch on the settings card and the model gets the `subagent_dsh` tool.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-dsh-settings.png" width="640" alt="the Local Agent · dsh settings card: credential status, the DeepSeek delegation switch, and the resident-mode and default-model blocks">
-
 ## Features
 
 - **Delegate to dsh itself** — spawns a sub-dsh headless CLI process: one-shot exec (the default), or the live driver with one resident `--serve` process per member (`live: true` — runtime-level graceful interrupt, push-mode mirroring).

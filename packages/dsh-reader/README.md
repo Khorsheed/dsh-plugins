@@ -22,8 +22,6 @@ RSS 订阅和随手粘来的文章链接收在同一面墙上——点开就在 
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/reader-2.png" width="640" alt="详情页:正文以 DOM 文本渲染,地球开关点亮后按句对照翻译,点一句展开该句原文">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/reader-3.png" width="640" alt="订阅管理页:每个源一行,名称与订阅地址就地编辑,顶部是缓存策略与存储读数">
-
 ## 安装
 
 ```sh

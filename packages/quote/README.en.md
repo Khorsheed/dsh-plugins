@@ -17,7 +17,7 @@ To follow up on a passage from an assistant reply or a file preview, you used to
 - **Extensible menu rows** — other plugins register their own action rows through the `ctx.quoteActions` registry (the canvas package, say, registering "Save as canvas card"), receiving the same opaque `{ text, label, sessionId }` payload; the menu never learns where an action delivers to.
 - **Probe-and-degrade everywhere** — the overlay seat, the current session, side-chat, and both Remote namespaces are probed one by one: whatever is absent hides its menu item (or the whole menu), and every composition boots.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-2.png" width="640" alt="the composer's > quote block with its closing source annotation after Quote to current chat">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-2.png" width="640" alt="the same action menu floating over a selection inside the file preview panel: quote to current chat, quote to side chat, copy">
 
 ## The selection overlay
 

@@ -19,8 +19,6 @@ dsh 的 agent 已经能干活,但有些任务你就是想交给本机的 Codex C
 - **自定义端点**——经作用域 `config.toml` 的自定义 provider 把 Codex 的 LLM 请求路由到你自己的路由端点。
 - **回读与独立工作目录**——每轮从本轮 rollout 回读实际模型、CLI 版本与用量写进委派记录;定位按 threadId + cwd + 时间窗,并发跑也读的是自己那一轮。编排器可用 `cwd` 选项给每格独立目录,resume 换目录即拒绝。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-codex-delegation.png" width="640" alt="一次 Codex 委派在子会话里的实时镜像:推理块、工具行与文件改动卡">
-
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="展开的 Codex 设置卡:认证状态与登录/退出、默认模型、常驻模式开关">
 
 ## 安装

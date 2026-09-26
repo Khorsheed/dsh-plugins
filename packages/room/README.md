@@ -6,8 +6,6 @@
 
 让多个 agent 干同一件事，过去只能在几个窗口之间复制粘贴，或者靠一次性的子代理调用——返回即遗忘。Room 把会话本身变成共享的协作场所：邀请第一位成员，当前会话就升级为 Room，原生 DSH agent 入座初始协调者；每位成员跨轮次、跨重启都保留自己的原生会话。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/room-1.png" width="640" alt="一个进行中的 Room：聊天流里的成员发言与运行行、dock 上的目标与任务胶囊、输入框展开的 @ 提及菜单">
-
 ## 特性
 
 - **邀请即升级**——没有单独的「创建房间」步骤：在任意会话里邀请第一位成员，它就变成 Room；原生 DSH agent 入座初始协调者（新 Room 命名为 `dsh`，已有 Room 保留日志里记录的寻址名）。
@@ -20,7 +18,7 @@
 - **实时输出与定向停止**——成员把原生正文与推理增量同时呈现在自己的会话和 Room 中；最终消息与工具记录仍是权威内容。定向停止只中断该成员，非空部分输出带明确的停止/失败标记、耗时与会话入口保留；长回答可从紧凑预览展开。
 - **入口随 preset 授权显隐、失败放行**——「邀请 agent」chip 与「成员」tab 只在当前会话的 preset 组合授予 `@khorsheed/dsh-room-tool` 行时出现；读不到组合时保持可见（fail-open）；已是 Room 的会话始终保留界面。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/m4-room-dev-session.png" width="640" alt="会话头部的「邀请 agent」入口与「成员」标签页">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/room-invite.png" width="640" alt="成员标签页：空态的「把会话变成多 agent 协作间」与会话头部的「邀请 agent」入口">
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/room-2.png" width="640" alt="成员页：成员卡片（名称、provider、角色、模型）与「设为协调者」操作">
 

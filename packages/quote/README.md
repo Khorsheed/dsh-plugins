@@ -17,7 +17,7 @@
 - **菜单行可扩展**——其他插件经 `ctx.quoteActions` 注册表注册自己的动作行（比如画布插件注册「存为画布卡片」），收到同样的 `{ text, label, sessionId }` 不透明载荷；菜单不知道任何动作把内容投递到哪里。
 - **全程探测降级**——overlay 座位、当前会话、side-chat、两个 Remote 命名空间逐项探测：缺席即隐藏对应菜单项（或整体不出现），任何组合都能正常启动。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-2.png" width="640" alt="点击「引用到当前会话」后，composer 输入框里的 > 引用块与块尾的来源标注">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-2.png" width="640" alt="文件预览面板里选中一段内容后浮出的同一动作菜单：引用到当前会话、引用到侧边对话、复制">
 
 ## 选区浮层
 

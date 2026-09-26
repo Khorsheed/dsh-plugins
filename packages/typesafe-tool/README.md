@@ -60,8 +60,6 @@ dsh plugin --profile web remove @khorsheed/dsh-typesafe-tool
 
 首次使用前在「**设置 → 工具与技能 → typesafe-decide → 凭据配置**」填一次 `TYPESAFE_API_KEY`（或写进 `$DSH_HOME/.env` 后重启）。凭据声明由本包的 skill 携带，写的是宿主凭据库；core 每次调用重新解析。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/typesafe-tool-credentials.png" width="640" alt="「设置 → 工具与技能」中 typesafe-decide 的凭据配置：TYPESAFE_API_KEY 密码输入框">
-
 > 注：`metadata.credentials` 是 capability-catalog 的约定，声明后该值也会以 `DSH_TYPESAFE_API_KEY` 注入 bash 执行（默认隐藏，但仍可能被模型主动 echo）。不愿扩大暴露面就用 `.env` 路径。
 
 ## Compatibility

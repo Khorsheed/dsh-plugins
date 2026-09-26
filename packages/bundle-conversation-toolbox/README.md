@@ -6,8 +6,6 @@
 
 七个成员各自单装也完全成立,但插件清单里会散成七张卡。这个家族 bundle 把它们的规范行收成一张「会话工具箱」卡:一次 `dsh plugin add` 装齐整个家族,清单里按一张卡管理。薄元包——patch 插成员规范行 + npm 依赖带齐成员 + locale 卡面元数据,**自身零运行时代码、零客户端面**(纯组合:不注册任何服务/工具/槽位/命令)。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/bundle-conversation-toolbox-card.png" width="640" alt="插件列表里的「会话工具箱」bundle 卡片:一张卡收拢七个会话体验插件的行">
-
 ## 特性
 
 - **一条命令装齐**——七个成员全部列进 `dependencies`,装本 bundle 即带齐整个家族,不用逐包安装。

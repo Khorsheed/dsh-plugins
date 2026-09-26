@@ -22,8 +22,6 @@ Interesting papers and articles pile up as browser tabs, and feeding one to the 
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/reader-2.png" width="640" alt="the detail view: the body rendered as DOM text, the globe lit with sentence-aligned translation, clicking one sentence revealing its original">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/reader-3.png" width="640" alt="the subscription page: one row per source with in-place name and address editing, cache policy and storage readouts at the top">
-
 ## Install
 
 ```sh

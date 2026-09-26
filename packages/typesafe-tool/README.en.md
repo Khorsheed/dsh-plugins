@@ -60,8 +60,6 @@ Removing only breaks module resolution — remember to delete the referencing ro
 
 Before first use, fill `TYPESAFE_API_KEY` once under 「设置 → 工具与技能 → typesafe-decide → 凭据配置」 (or put it in `$DSH_HOME/.env` and restart). The declaration rides this package's skill and writes the host credential store; the core re-resolves it per call.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/typesafe-tool-credentials.png" width="640" alt="the typesafe-decide credential entry under Settings → Tools &amp; Skills: the TYPESAFE_API_KEY password field">
-
 > Note: `metadata.credentials` is the capability-catalog convention, so the value is also injected into bash executions as `DSH_TYPESAFE_API_KEY` (hidden by default, but a model that echoes it would expose it). Prefer the `.env` path if that is not acceptable.
 
 ## Compatibility

@@ -19,8 +19,6 @@ Getting the model to hand a whole chunk of work to another coding agent used to 
 - **Model readback and per-cell working directory** — every settled round reads back the model from the wire.jsonl usage/request records into the delegation record; orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
 - **Resident driver (optional)** — `live: true` keeps one resident `kimi acp` process per member, one `session/prompt` per round, with runtime-level graceful cancel; off — or a channel that cannot come up — means the one-shot `kimi -p` path.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-kimi-sessions.png" width="640" alt="the /kimi sessions delegation list and a /kimi session transcript replay inside a session">
-
 ## Install
 
 Requires a running dsh profile and the Kimi Code CLI (`kimi`) on `PATH` — the plugin installs neither and never logs in on your behalf.

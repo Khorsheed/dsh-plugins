@@ -19,8 +19,6 @@ dsh agents already get work done, but some tasks you simply want to give to your
 - **Custom endpoint** — route Codex's LLM requests through your own router via a scoped `config.toml` provider.
 - **Read-back and per-cell working directory** — every settled round reads the model, CLI version and usage back out of its own rollout into the delegation record; the file is located by thread id, cwd and time window, so concurrent runs each read their own round. Orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-codex-delegation.png" width="640" alt="a Codex delegation mirrored live in its child session: reasoning blocks, tool rows and a file-change card">
-
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="the expanded Codex settings card: auth status with sign-in and sign-out, the default model, and the resident-mode switch">
 
 ## Install

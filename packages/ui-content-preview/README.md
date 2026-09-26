@@ -8,8 +8,6 @@
 
 **这不是插件。** 它不注册 slot、service、locale，没有自己的 loader row 和 client bundle——它在**源码面**被消费：各插件把它声明为依赖，直接 `import '@khorsheed/dsh-client-ui-content-preview/src/client/…'`，各自的 tsdown client bundle 把它内联进自己的 `lib/client.js`。零运行时耦合，各插件仍然各自可独立安装、独立卸载；把它自己装进 profile 不会挂载任何东西。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="共享内容面板：markdown 渲染态上的搜索命中高亮，标题栏带重新加载、复制路径、打开文件夹、在 IDE 中打开">
-
 ## 特性
 
 - **kind 联合的内容分发**——一次读取归一化为 `PreviewRead`：`text`（含 `truncated` / `htmlScripted` 标记）/ `image` / `binary` / `missing`（带原因）/ `too-large` / `error`；内核持有契约，各插件把自己 Remote 的读取结果适配进来。
@@ -20,8 +18,6 @@
 - **面板 chrome**——返回、basename + 语言 chip、重新加载当前文件（调用方注入 `onReload` 才渲染，排在复制路径之前；进行中禁用并旋转图标）、复制路径、打开文件夹、在 IDE 中打开（按宿主 open-in-app 探测结果逐项显隐，多个 IDE 时渲染成分裂按钮）；滚动位置按 (session, path) 记忆；结构化渲染统一带格式 banner；diff/内容 视图切换由调用方以 render prop 接入。
 
 **故意不做**：文件树、数据面（Remote / store / 根目录选择）、diff 与提交对比的实现（调用方以 render prop 传入）、tab 注册与可见性——那些是各插件自己的数据面与身份。
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/content-preview-2.png" width="640" alt="HTML 预览的分级沙箱：源码 / 渲染 / 脚本三态切换，静态渲染档下带脚本页面的提示条">
 
 ## 使用
 

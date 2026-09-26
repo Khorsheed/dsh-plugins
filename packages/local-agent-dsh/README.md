@@ -6,8 +6,6 @@
 
 有些子任务值得一个完整而隔离的 dsh 实例：评测对照、独立的会话历史、自己的权限边界——同时绝不碰当前实例的状态。这个插件 spawn 一个子 dsh headless CLI：它在自己的 scoped home 下运行（profile、会话、状态全独立），用父级的 DeepSeek API key 认证，会话 id 由调用方指定、可跨轮续接。默认什么都不挂——在设置卡片上打开「DeepSeek 委派」开关后，模型才看得到 `subagent_dsh` 工具。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-dsh-settings.png" width="640" alt="「Local Agent · dsh」设置卡片：认证状态、DeepSeek 委派开关、常驻模式与默认模型块">
-
 ## 特性
 
 - **委派给 dsh 自己**——spawn 一个子 dsh headless CLI 进程：一次性 exec（默认），或每成员常驻一个 `--serve` 进程的长驻驱动（`live: true`，runtime 级优雅中断、事件推送镜像）。
