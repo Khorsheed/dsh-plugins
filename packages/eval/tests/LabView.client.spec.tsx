@@ -216,26 +216,35 @@ describe('LabView list', () => {
     // The status word comes from the dictionary, keyed by the derived status.
     expect(screen.getByText('status.judging')).toBeTruthy()
     expect(screen.getByText('status.pending-approval')).toBeTruthy()
-    // The snapshot cell is `<registration>/<set> @ short hash` — never a path (T73).
-    expect(screen.getByText('reg/ds @ c0ffee1')).toBeTruthy()
-    expect(screen.getByText('reg/ds @ beef000')).toBeTruthy()
+    // The snapshot rides on the card's hover as `<registration>/<set> @ short
+    // hash` — never a path (T73); the columns moved to the design stage (T80c).
+    const card = (name: string) => screen.getByText(name).closest('[role="button"]') as HTMLElement
+    expect(card('harness-comparison').getAttribute('title')).toBe('reg/ds @ c0ffee1')
+    expect(card('effort-sweep').getAttribute('title')).toBe('reg/ds @ beef000')
     expect(screen.queryByText(/\/state\//)).toBeNull()
-    // ui-spec §九: the factor column carries the field's WORD, never the
-    // dotted path — the path stays on the cell's title.
-    expect(screen.getByText('factor.model.declared')).toBeTruthy()
-    expect(screen.getByText('factor.reasoning.effort')).toBeTruthy()
-    expect(screen.getByText('10/12')).toBeTruthy()
-    // A draft has nothing expanded, so no progress and no start time.
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
+    expect(within(card('harness-comparison')).getByText(/10 \/ 12/)).toBeTruthy()
     expect(h.fetchExperiments).toHaveBeenCalledWith('s1', {})
   })
 
-  it('the condition column counts judges separately', async () => {
+  it('each card carries ONE button, by what its status asks for (T80c P1-1)', async () => {
     const h = makeHarness()
     renderView(h)
     await screen.findByText('harness-comparison')
-    expect(screen.getByText('conditions.withJudges {"count":2,"judges":1}')).toBeTruthy()
-    expect(screen.getByText('conditions.count {"count":2}')).toBeTruthy()
+    const card = (name: string) => screen.getByText(name).closest('[role="button"]') as HTMLElement
+    // 评估中 → 去人工评估, and it lands on that stage, not on 实验设计.
+    const judging = within(card('harness-comparison')).getByRole('button', { name: 'list.act.review' })
+    // 待批准 → 去批准: a door to the checklist, never an approval from the list.
+    expect(within(card('effort-sweep')).getByRole('button', { name: 'list.act.approve' })).toBeTruthy()
+    fireEvent.click(judging)
+    expect((await screen.findByRole('button', { name: 'page.review' })).getAttribute('aria-pressed')).toBe('true')
+    expect(h.approvePlan).not.toHaveBeenCalled()
+  })
+
+  it('a card without a question says the experiment\'s size on its second line', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await screen.findByText('harness-comparison')
+    expect(screen.getAllByText(/^list\.scale /).length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders each degraded-source note the host sent', async () => {
@@ -289,6 +298,14 @@ describe('LabView detail', () => {
     expect(await screen.findByText('cta.judgingHint')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'cta.judging' }))
     expect(screen.getByRole('button', { name: 'page.review' }).getAttribute('aria-pressed')).toBe('true')
+    // On the page its action would open, the bar offers no door to itself
+    // (T80c P2-11): the sentence becomes that page's own, and no button.
+    expect(screen.queryByRole('button', { name: 'cta.judging' })).toBeNull()
+    expect(screen.getByText('cta.here.review')).toBeTruthy()
+    // The stage tabs carry where the experiment stands (T80c P2-1).
+    expect(screen.getByRole('button', { name: 'page.design' }).getAttribute('data-dot')).toBe('done')
+    expect(screen.getByRole('button', { name: 'page.review' }).getAttribute('data-dot')).toBe('active')
+    expect(screen.getByRole('button', { name: 'page.compare' }).getAttribute('data-dot')).toBe('todo')
 
     // `pending-approval` — the action IS the human act, pressed where a
     // reader stands rather than hunted for on a sub-page.
@@ -417,8 +434,41 @@ describe('the grouped list (T72 §1)', () => {
     const chips = screen.getAllByText('list.legacy')
     expect(chips).toHaveLength(1)
     expect(chips[0]!.closest('[data-group]')?.textContent).toContain('old-plan')
+    // The mark sits on the second line, so it never takes width from the name.
+    expect(chips[0]!.closest('[class*="questionLine"]')).not.toBeNull()
     // No registration recorded: the set and the hash, and still no path.
-    expect(screen.getByText('ds @ 0ld0001')).toBeTruthy()
+    expect(screen.getByText('old-plan').closest('[role="button"]')?.getAttribute('title')).toBe('ds @ 0ld0001')
+  })
+
+  it('归档 N 条旧运行 asks first, says it can be undone, then marks each legacy run (T80c P1-2)', async () => {
+    const h = makeHarness({ list: { ...LIST, rows: [
+      ...LIST.rows,
+      row({ id: 'r-l1', runId: 'r-l1', name: 'old-1', status: 'judging', experimentId: null, legacy: true }),
+      row({ id: 'r-l2', runId: 'r-l2', name: 'old-2', status: 'stalled', experimentId: null, legacy: true, stalledMinutes: 90 }),
+      // Finished legacy runs are not in 需要你处理, so the button leaves them.
+      row({ id: 'r-l3', runId: 'r-l3', name: 'old-3', status: 'done', experimentId: null, legacy: true }),
+    ] } })
+    renderView(h)
+    await screen.findByText('old-1')
+    fireEvent.click(screen.getByRole('button', { name: 'list.archiveLegacy {"count":2}' }))
+    // Nothing is written until the confirmation is answered.
+    expect(h.archiveRun).not.toHaveBeenCalled()
+    expect(screen.getByText('list.archiveLegacyConfirm {"count":2}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'list.archiveLegacyGo' }))
+    await waitFor(() => { expect(h.archiveRun).toHaveBeenCalledTimes(2) })
+    expect(h.archiveRun).toHaveBeenCalledWith('s1', { runId: 'r-l1', archived: true })
+    expect(h.archiveRun).toHaveBeenCalledWith('s1', { runId: 'r-l2', archived: true })
+    expect(await screen.findByText('list.archivedLegacy {"count":2}')).toBeTruthy()
+  })
+
+  it('a stalled legacy run cannot be re-run from the list, so its button is its run records', async () => {
+    const h = makeHarness({ list: { ...LIST, rows: [
+      row({ id: 'r-l2', runId: 'r-l2', name: 'old-2', status: 'stalled', experimentId: null, legacy: true, stalledMinutes: 90 }),
+    ] } })
+    renderView(h)
+    const card = (await screen.findByText('old-2')).closest('[role="button"]') as HTMLElement
+    expect(within(card).queryByRole('button', { name: 'cta.stalled' })).toBeNull()
+    expect(within(card).getByRole('button', { name: 'list.act.runs' })).toBeTruthy()
   })
 
   it('groups by what the row asks of the reader, and the archive is its own fold', async () => {
@@ -460,7 +510,8 @@ describe('the grouped list (T72 §1)', () => {
     })
     renderView(h)
     await screen.findByText('stalled-mine')
-    expect(screen.getByText('list.stalledMeta {"duration":"dur.ms {\\"m\\":42,\\"s\\":0}"}')).toBeTruthy()
+    // The reason sits in the progress slot (T80c P2-14), not a line of its own.
+    expect(screen.getByText(/list\.stalledMeta \{"duration":"dur\.ms \{\\"m\\":42,\\"s\\":0\}"\}/)).toBeTruthy()
     const rerun = screen.getAllByRole('button', { name: 'cta.stalled' })
     expect(rerun).toHaveLength(1)
     fireEvent.click(rerun[0]!)
@@ -477,20 +528,24 @@ describe('the grouped list (T72 §1)', () => {
     renderView(h)
     await screen.findByText('done-mine')
     const calls = h.fetchExperiments.mock.calls.length
+    // 归档 is in the card's overflow menu (T80c P1-1), not beside the step.
     const doneRow = screen.getByText('done-mine').closest('[role="button"]') as HTMLElement
-    fireEvent.click(within(doneRow).getByRole('button', { name: 'list.archive' }))
+    expect(within(doneRow).queryByRole('button', { name: 'list.archive' })).toBeNull()
+    fireEvent.click(within(doneRow).getByRole('button', { name: 'list.more' }))
+    fireEvent.click(within(doneRow).getByRole('menuitem', { name: 'list.archive' }))
     await waitFor(() => {
       expect(h.archiveRun).toHaveBeenCalledWith('s1', { runId: 'r-done', archived: true })
     })
     await waitFor(() => { expect(h.fetchExperiments.mock.calls.length).toBeGreaterThan(calls) })
     const archivedRow = screen.getByText('archived-mine').closest('[role="button"]') as HTMLElement
-    fireEvent.click(within(archivedRow).getByRole('button', { name: 'list.unarchive' }))
+    fireEvent.click(within(archivedRow).getByRole('button', { name: 'list.more' }))
+    fireEvent.click(within(archivedRow).getByRole('menuitem', { name: 'list.unarchive' }))
     await waitFor(() => {
       expect(h.archiveRun).toHaveBeenCalledWith('s1', { runId: 'r-arch', archived: false })
     })
     // A draft has no run to mark.
     const draftRow = screen.getByText('effort-sweep').closest('[role="button"]') as HTMLElement
-    expect(within(draftRow).queryByRole('button', { name: 'list.archive' })).toBeNull()
+    expect(within(draftRow).queryByRole('button', { name: 'list.more' })).toBeNull()
   })
 
   // T76: the tool-row card's 打开实验 lands here — the host has no tab switch,

@@ -65,6 +65,89 @@ export function groupRows<T extends Pick<EvalExperimentRow, 'status' | 'archived
   return out
 }
 
+/** Where a list row's one button goes, or `rerun`, which it does in place. */
+export type RowVerb = 'design' | 'runs' | 'compare' | 'review' | 'rerun'
+
+/**
+ * The ONE button each list row carries (T80c P1-1), by what the row asks of
+ * the reader next. Unlike the stage bar these are DOORS — 去批准 opens the
+ * design stage where the checklist is, it does not approve from the list —
+ * except 重跑, which is one click whatever page it is pressed on.
+ */
+const ROW_ACTIONS: Readonly<Record<EvalExperimentStatus, { cta: EvalKey; verb: RowVerb }>> = {
+  'draft': { cta: 'list.act.validate', verb: 'design' },
+  'pending-approval': { cta: 'list.act.approve', verb: 'design' },
+  'stalled': { cta: 'cta.stalled', verb: 'rerun' },
+  'judging': { cta: 'list.act.review', verb: 'review' },
+  'done': { cta: 'list.act.results', verb: 'compare' },
+  'running': { cta: 'list.act.runs', verb: 'runs' },
+  'refused': { cta: 'list.act.refused', verb: 'design' },
+  'cancelled': { cta: 'list.act.runs', verb: 'runs' },
+  'void': { cta: 'list.act.runs', verb: 'runs' },
+}
+
+/**
+ * The one button a list row carries.
+ * @param row - the list row.
+ * @returns the button word and what it does. A stalled run no experiment
+ *   claims (or one archived) cannot be re-run from here — there is no plan to
+ *   approve again — so it offers its run records instead.
+ */
+export function rowAction(
+  row: Pick<EvalExperimentRow, 'status' | 'experimentId' | 'archived'>,
+): { cta: EvalKey; verb: RowVerb } {
+  const action = ROW_ACTIONS[row.status] ?? ROW_ACTIONS.draft
+  if (action.verb === 'rerun' && (row.experimentId === null || row.archived)) {
+    return { cta: 'list.act.runs', verb: 'runs' }
+  }
+  return action
+}
+
+/**
+ * The legacy runs 归档 N 条旧运行 would move (T80c P1-2): the unclaimed runs
+ * still sitting in 需要你处理. A legacy run is almost always a leftover —
+ * nobody will approve, re-run or review a plan no experiment owns.
+ * @param rows - the rows the list is showing.
+ * @returns the rows the header button archives.
+ */
+export function legacyInAttention<T extends Pick<EvalExperimentRow, 'status' | 'archived' | 'legacy' | 'runId'>>(
+  rows: readonly T[],
+): T[] {
+  return rows.filter(row => row.legacy && row.runId !== null && listGroupOf(row) === 'attention')
+}
+
+// ── the stage shell ─────────────────────────────────────────────────────
+
+/** One stage tab's dot: 已完成 / 进行中 / 未开始. */
+export type StageDot = 'done' | 'active' | 'todo'
+
+/**
+ * Each stage tab's dot (T80c P2-1), by the experiment's status. 结果对比 is
+ * only 进行中 once there is a verdict to compare, so while a run is being
+ * judged it is still 未开始 and 人工评估 is the one in progress.
+ * @param status - the experiment's status.
+ * @returns one dot per stage.
+ */
+export function stageDots(status: EvalExperimentStatus): Record<'design' | 'runs' | 'compare' | 'review', StageDot> {
+  switch (status) {
+    case 'draft':
+    case 'pending-approval':
+    case 'refused':
+      return { design: 'active', runs: 'todo', compare: 'todo', review: 'todo' }
+    case 'running':
+    case 'stalled':
+    case 'cancelled':
+      return { design: 'done', runs: 'active', compare: 'todo', review: 'todo' }
+    case 'judging':
+      return { design: 'done', runs: 'done', compare: 'todo', review: 'active' }
+    case 'done':
+    case 'void':
+      return { design: 'done', runs: 'done', compare: 'done', review: 'done' }
+    default:
+      return { design: 'active', runs: 'todo', compare: 'todo', review: 'todo' }
+  }
+}
+
 /** Which rows the list shows: this session's, or all of them. */
 export type ListScope = 'session' | 'all'
 

@@ -667,6 +667,13 @@ export type EvalKey =
   | 'cta.void'
   | 'cta.voidHint'
   | 'cta.pendingBlocked'
+  | 'page.dot.done'
+  | 'page.dot.active'
+  | 'page.dot.todo'
+  | 'cta.recheck'
+  | 'cta.here.runs'
+  | 'cta.here.review'
+  | 'cta.here.compare'
   | 'report.conclusion'
   | 'report.ciAdvisoryShort'
   | 'report.flagged'
@@ -743,6 +750,20 @@ export type EvalKey =
   | 'list.stalledMeta'
   | 'list.archive'
   | 'list.unarchive'
+  | 'list.act.validate'
+  | 'list.act.approve'
+  | 'list.act.review'
+  | 'list.act.results'
+  | 'list.act.runs'
+  | 'list.act.refused'
+  | 'list.more'
+  | 'list.scale'
+  | 'list.archiveLegacy'
+  | 'list.archiveLegacyConfirm'
+  | 'list.archiveLegacyGo'
+  | 'list.archiveLegacyCancel'
+  | 'list.archivedLegacy'
+  | 'list.archiveLegacyFailed'
   | 'col.actions'
   | 'readiness.CAPABILITIES_NOT_PROVISIONED'
   | 'readiness.CAPABILITIES_PRESET_MISMATCH'
@@ -1390,9 +1411,9 @@ export const en: Record<EvalKey, string> = {
   'cta.pending': 'Approve and start',
   'cta.pendingHint': 'Validate passed. Approving starts the run — the readiness gate is checked first.',
   'cta.running': 'See run records',
-  'cta.runningHint': 'The cells are running. The run records show each one as it lands.',
+  'cta.runningHint': 'It is running. The run records show each one as it lands.',
   'cta.judging': 'Go to human review',
-  'cta.judgingHint': 'Every cell has run. The final verdict is yours to record.',
+  'cta.judgingHint': 'Everything has run. The final verdict is yours to record.',
   'cta.done': 'See results',
   'cta.doneHint': 'The report is out. The results page holds the comparison.',
   'cta.refused': 'Check again',
@@ -1536,6 +1557,13 @@ export const en: Record<EvalKey, string> = {
   'cta.void': 'See run records',
   'cta.voidHint': 'This evaluation was declared void. The run records still hold everything that ran.',
   'cta.pendingBlocked': '{count} blocker(s) stand between this plan and a run. Start with the first.',
+  'page.dot.done': 'done',
+  'page.dot.active': 'in progress',
+  'page.dot.todo': 'not started',
+  'cta.recheck': 'Validate again',
+  'cta.here.runs': 'Each one shows up below as it lands.',
+  'cta.here.review': 'Judge every answer, then pick how to close this evaluation at the bottom of the page.',
+  'cta.here.compare': 'The comparison is below.',
   'report.conclusion': 'Conclusion',
   'report.ciAdvisoryShort': 'For reference only — the ranking conditions are not met',
   'report.flagged': 'Flagged by a person: “{reason}”',
@@ -1612,6 +1640,20 @@ export const en: Record<EvalKey, string> = {
   'list.stalledMeta': 'no progress for {duration}',
   'list.archive': 'Archive',
   'list.unarchive': 'Unarchive',
+  'list.act.validate': 'Validate',
+  'list.act.approve': 'Go approve',
+  'list.act.review': 'Go to human review',
+  'list.act.results': 'See the conclusion',
+  'list.act.runs': 'See run records',
+  'list.act.refused': 'See why',
+  'list.more': 'More',
+  'list.scale': '{items} item(s) × {groups} arm(s) × {reps} take(s)',
+  'list.archiveLegacy': 'Archive {count} legacy run(s)',
+  'list.archiveLegacyConfirm': 'Move {count} legacy run(s) to Archived? Only the grouping changes: the runs, their status and their records stay as they are. This can be undone — Unarchive any of them under Archived.',
+  'list.archiveLegacyGo': 'Archive',
+  'list.archiveLegacyCancel': 'Cancel',
+  'list.archivedLegacy': 'Archived {count} legacy run(s). Unarchive any of them under Archived.',
+  'list.archiveLegacyFailed': 'Archived {done} of {count}; the rest were refused: {message}',
   'col.actions': 'Actions',
   'readiness.CAPABILITIES_NOT_PROVISIONED': 'Condition {condition} has no capability snapshot yet — provision it.',
   'readiness.CAPABILITIES_PRESET_MISMATCH': 'Condition {condition}\'s capabilities do not match its preset.',
@@ -2249,9 +2291,9 @@ export const zh: Record<EvalKey, string> = {
   'cta.pending': '批准并启动',
   'cta.pendingHint': '校验已通过。批准即启动，启动前先过就绪检查。',
   'cta.running': '看运行记录',
-  'cta.runningHint': '格子正在跑，运行记录里逐格落地。',
+  'cta.runningHint': '正在跑，运行记录里逐个落地。',
   'cta.judging': '去人工评估',
-  'cta.judgingHint': '格子都跑完了，终评是你的事。',
+  'cta.judgingHint': '都跑完了，终评是你的事。',
   'cta.done': '看结果',
   'cta.doneHint': '报告已出，对比在结果页。',
   'cta.refused': '重新检查',
@@ -2395,6 +2437,13 @@ export const zh: Record<EvalKey, string> = {
   'cta.void': '看运行记录',
   'cta.voidHint': '这次评估已宣告不成立；跑过的东西仍在运行记录里。',
   'cta.pendingBlocked': '还有 {count} 条阻塞项，先处理第一条。',
+  'page.dot.done': '已完成',
+  'page.dot.active': '进行中',
+  'page.dot.todo': '未开始',
+  'cta.recheck': '重新校验',
+  'cta.here.runs': '下面逐个落地。',
+  'cta.here.review': '逐份评完，再在页底选这次评估怎么结束。',
+  'cta.here.compare': '对比就在下面。',
   'report.conclusion': '结论',
   'report.ciAdvisoryShort': '仅供参考，未达排名条件',
   'report.flagged': '人工标记：「{reason}」',
@@ -2471,6 +2520,20 @@ export const zh: Record<EvalKey, string> = {
   'list.stalledMeta': '{duration} 没有进展',
   'list.archive': '归档',
   'list.unarchive': '取消归档',
+  'list.act.validate': '去校验',
+  'list.act.approve': '去批准',
+  'list.act.review': '去人工评估',
+  'list.act.results': '看结论',
+  'list.act.runs': '看运行记录',
+  'list.act.refused': '看原因',
+  'list.more': '更多',
+  'list.scale': '{items} 题 × {groups} 组 × {reps} 次',
+  'list.archiveLegacy': '归档 {count} 条旧运行',
+  'list.archiveLegacyConfirm': '把 {count} 条旧运行移到「已归档」？只改分组：运行本身、状态和记录都不动。可以撤销——在「已归档」里对任意一条点「取消归档」。',
+  'list.archiveLegacyGo': '归档',
+  'list.archiveLegacyCancel': '取消',
+  'list.archivedLegacy': '已归档 {count} 条旧运行；在「已归档」里可逐条取消归档。',
+  'list.archiveLegacyFailed': '{count} 条里归档了 {done} 条，其余被拒：{message}',
   'col.actions': '操作',
   'readiness.CAPABILITIES_NOT_PROVISIONED': '对比组 {condition} 还没有能力快照，需要 provision。',
   'readiness.CAPABILITIES_PRESET_MISMATCH': '对比组 {condition} 的能力与预设不一致。',
