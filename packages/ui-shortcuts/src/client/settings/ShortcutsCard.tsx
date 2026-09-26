@@ -13,7 +13,7 @@
  */
 
 import { useState } from 'react'
-import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from '../icons.tsx'
 import { ShortcutsRow, type ShortcutsRowProps } from './ShortcutsRow.tsx'
 import css from './ShortcutsCard.module.css'
 

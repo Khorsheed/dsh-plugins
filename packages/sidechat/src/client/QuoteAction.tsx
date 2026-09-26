@@ -15,7 +15,8 @@
  * @module @khorsheed/dsh-sidechat/client
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { IconRightUpOutlineMedium, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconRightUpOutlineMedium } from './icons.tsx'
 import type { QuoteActionProps } from './contract.ts'
 import css from './QuoteAction.module.css'
 

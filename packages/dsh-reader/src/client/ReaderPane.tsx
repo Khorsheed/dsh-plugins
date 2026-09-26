@@ -28,18 +28,7 @@
  * @module @khorsheed/dsh-reader/client/ReaderPane
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  IconChevronDownOutlineMedium,
-  IconChevronLeftOutlineMedium,
-  IconClockOutlineMedium,
-  IconCopyOutlineMedium,
-  IconGlobeOutlineMedium,
-  IconPlusOutlineMedium,
-  IconRefreshOutlineMedium,
-  IconRightUpOutlineMedium,
-  IconSettingsOutlineMedium,
-  IconTrashOutlineMedium,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium, IconClockOutlineMedium, IconCopyOutlineMedium, IconGlobeOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSettingsOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
 import type { ReaderPaneProps } from './contract.ts'
 import {
   kindQuery,

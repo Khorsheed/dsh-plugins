@@ -1,4 +1,4 @@
-import { IconBrowseOutlineMedium, IconTrashOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBrowseOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { transportLabel, type McpGroup } from './mcp-model.ts'
   import css from './CapabilityCatalogCard.module.css'

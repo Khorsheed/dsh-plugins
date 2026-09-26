@@ -13,7 +13,7 @@
  * mirror theirs into their child sessions (family R3), never here.
  */
 import { useId, useState, type ReactNode } from 'react'
-import { IconChecklistOutlineMedium, IconChevronDownOutlineMedium, IconChevronUpOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChecklistOutlineMedium, IconChevronDownOutlineMedium, IconChevronUpOutlineMedium } from './icons.tsx'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: merges the `todos` key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-tool-todo/client'

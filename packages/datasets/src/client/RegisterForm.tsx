@@ -20,7 +20,8 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { Button, IconCheckOutlineMedium, Input, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Input, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium } from './icons.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { RegisterInput, RegisterPreview, RegistryEntry, RegistrySet, UpdateInput } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'

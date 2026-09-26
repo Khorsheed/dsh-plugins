@@ -7,10 +7,9 @@
  * own last-browsed root.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import {
-  IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, writeClipboard,
-  type IconProps,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+
+import { IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, type IconProps } from './icons.tsx'
 import type { ListLocalDirectoryResult } from '../types.ts'
 import {
   ContentPane, basenameOf, dirnameOf, pickFileManager, pickIde,

@@ -26,7 +26,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { IconEditOutlineMedium, IconPlusOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconEditOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { COMPOSE_SEND_TEXT, GROUP_ASK_SEND_TEXT } from '../../prompt.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'

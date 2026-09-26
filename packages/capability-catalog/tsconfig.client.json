@@ -5,7 +5,11 @@
     "outDir": "lib/types",
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
     "jsx": "react-jsx",
-    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
   },
   "files": [
     "src/css-modules.d.ts",
@@ -32,6 +36,7 @@
     "src/client/ToolDetailModal.tsx",
     "src/client/mcp-model.ts",
     "src/client/mode-model.ts",
-    "src/client/preset-display.ts"
+    "src/client/preset-display.ts",
+    "src/client/icons.tsx"
   ]
 }

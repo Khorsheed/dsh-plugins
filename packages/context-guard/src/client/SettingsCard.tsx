@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from './icons.tsx'
 import type { GuardScopeSnapshot } from './scope.ts'
 import type { ContextGuardConfig } from './config.ts'
 import type { ContextGuardBundleConfigProps, ContextGuardSettingsCardProps } from './slots.ts'

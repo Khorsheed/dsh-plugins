@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-  import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium } from './icons.tsx'
   import css from './CapabilityCatalogCard.module.css'
 
 /** One node of the bundle file tree. */

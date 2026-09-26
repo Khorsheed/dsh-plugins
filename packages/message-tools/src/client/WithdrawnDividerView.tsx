@@ -12,8 +12,9 @@
  * once withdrawals backfill the draft automatically.
  */
 import { useState, type ReactNode } from 'react'
-import { Button, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconUndoOutlineMedium } from './icons.tsx'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium } from './icons.tsx'
+import { IconUndoOutlineMedium } from './icons-local.tsx'
 import {
   collectWithdrawnEntries, countHiddenInSpan, foldHiddenRanges, hasRestoreForSpan, isRestoreSuperseded,
   type WithdrawnEntry,

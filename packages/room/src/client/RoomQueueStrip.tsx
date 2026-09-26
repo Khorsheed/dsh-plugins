@@ -11,7 +11,7 @@
  * hidden official dock.
  */
 import { useId, useState, type ReactNode } from 'react'
-import { IconChevronDownOutlineMedium, IconChevronUpOutlineMedium, IconQueueOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronUpOutlineMedium, IconQueueOutlineMedium } from './icons.tsx'
 import type { RoomComposerProps } from './slots.ts'
 import css from './RoomQueueStrip.module.css'
 

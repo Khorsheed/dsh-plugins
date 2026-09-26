@@ -41,6 +41,7 @@
     "src/client/tab/CanvasTab.tsx",
     "src/client/tab/CanvasTabTitle.tsx",
     "src/client/tab/TabStrip.tsx",
-    "src/prompt.ts"
+    "src/prompt.ts",
+    "src/client/icons-local.tsx"
   ]
 }

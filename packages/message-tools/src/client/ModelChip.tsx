@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
-import { IconCheckOutlineMedium, IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconChevronDownOutlineMedium } from './icons.tsx'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UserMessageViewProps } from './slots.ts'
 import css from './ModelChip.module.css'

@@ -31,9 +31,8 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  Button, IconFolderOpenOutlineMedium, IconPlusOutlineMedium, Modal, Toast,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconFolderOpenOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasTabProps } from '../contract.ts'
 import {

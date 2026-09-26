@@ -1,5 +1,6 @@
 import { useState, type ChangeEvent, type DragEvent } from 'react'
-  import { Button, IconFolderOpenOutlineMedium, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconFolderOpenOutlineMedium } from './icons.tsx'
   import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo } from '@khorsheed/dsh-capability-catalog/types'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { ModalShell } from './ModalShell.tsx'

@@ -27,12 +27,8 @@ import {
   useCallback, useEffect, useMemo, useRef, useState,
   type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
-import {
-  IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium,
-  IconLinkOutlineMedium, IconPlusOutlineMedium,
-  IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium,
-  MarkdownText, Toast, type MarkdownLabels,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { MarkdownText, Toast, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium, IconLinkOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium } from '../icons.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { attachBridge } from '@khorsheed/dsh-inline-html-render/src/client/bridge.ts'

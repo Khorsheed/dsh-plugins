@@ -4,7 +4,7 @@
  * focused client modules alongside this shell.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { IconSearchOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconSearchOutlineMedium } from './icons.tsx'
 import type { CatalogMcpSnapshot, CatalogModeFace, CatalogPresetOption, CatalogPresetScopeStatus, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
 import type { CapabilityCatalogKey } from './locales.ts'
 import type { CapabilityCatalogCardProps } from './slots.ts'

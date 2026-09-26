@@ -7,7 +7,7 @@
  * adaptive-path truncation and right-aligned counts.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { IconCopyOutlineMedium, IconFolderOpenOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCopyOutlineMedium, IconFolderOpenOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   PreviewChrome, StructuredLabels,

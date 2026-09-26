@@ -27,9 +27,8 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
-import {
-  FileTypeIcon, IconGlobeOutlineMedium, IconRefreshOutlineMedium,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { FileTypeIcon } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconGlobeOutlineMedium, IconRefreshOutlineMedium } from './icons.tsx'
 import {
   ContentPane, type PreviewView,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'

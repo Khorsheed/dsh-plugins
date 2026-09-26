@@ -27,11 +27,8 @@
  * @module @khorsheed/dsh-client-ui-content-preview
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import {
-  CodeBlock, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium,
-  IconCodeOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium, IconRefreshOutlineMedium,
-  MarkdownText, Menu,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { CodeBlock, MarkdownText, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium, IconCodeOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium, IconRefreshOutlineMedium } from './icons.tsx'
 import type { ContentPaneProps, PreviewTranslator, PreviewRead, PreviewView } from './contract.ts'
 import { basenameOf, dirnameOf, isHtmlPath, isMarkdown, languageFor } from './language.ts'
 import { hasStructuredPreview, structuredPreview } from './structured.tsx'

@@ -13,7 +13,8 @@
  */
 import { coordinatorMember } from '../journal.ts'
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Button, IconAgentPresetOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconAgentPresetOutlineMedium } from './icons.tsx'
 import type { RoomMember } from '../types.ts'
 import { MemberCard } from './MemberCard.tsx'
 import { InviteDialog, type InviteDialogSubmit } from './InviteDialog.tsx'

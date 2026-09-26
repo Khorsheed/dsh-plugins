@@ -18,7 +18,8 @@
  */
 
 import { useState } from 'react'
-import { IconFolderCloseMedium, IconFolderOpenMedium, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconFolderCloseMedium, IconFolderOpenMedium } from './icons.tsx'
 import { classifyFile, DATASET_SLOTS, type DatasetSlot } from '../slots.ts'
 import type { DatasetOverviewRow, ItemBrief, ItemRecord, JsonObject } from '../types.ts'
 import type { DatasetsViewProps, ItemRunsView } from './contract.ts'

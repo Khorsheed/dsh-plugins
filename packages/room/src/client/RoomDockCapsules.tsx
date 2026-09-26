@@ -61,7 +61,7 @@ import {
   useEffect, useRef, useState, useSyncExternalStore,
   type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react'
-import { IconChecklistOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChecklistOutlineMedium } from './icons.tsx'
 import { taskProgress } from '../journal.ts'
 import type { RoomProviderList, RoomTask } from '../types.ts'
 import { formatRelativeTime } from './format.ts'

@@ -22,9 +22,8 @@ import {
 } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import {
-  IconChevronDownOutlineMedium, IconSendOutlineMedium, MarkdownText, type MarkdownLabels,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconSendOutlineMedium } from './icons.tsx'
 import type {
   SideChatContextSummary, SideChatListResult, SideChatSendOutcome,
   SideChatSendRequest, SideChatState, SideChatStateOutcome,

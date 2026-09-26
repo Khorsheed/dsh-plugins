@@ -9,7 +9,8 @@
  * never reach here.
  */
 import { useEffect, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
-import { IconStopFillMedium, StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconStopFillMedium } from './icons.tsx'
 import { formatDurationMs } from './format.ts'
 import type { RoomRunViewProps } from './slots.ts'
 import css from './RoomRunView.module.css'

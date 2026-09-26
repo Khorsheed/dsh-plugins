@@ -25,6 +25,7 @@
     "src/client/SideChatDock.tsx",
     "src/client/SideChatPanel.tsx",
     "src/client/SideChatView.tsx",
-    "src/client/use-open-with-surfacer.ts"
+    "src/client/use-open-with-surfacer.ts",
+    "src/client/icons.tsx"
   ]
 }

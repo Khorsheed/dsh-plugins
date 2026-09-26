@@ -5,7 +5,8 @@ import type { SettingsScope, SettingsScopeSnapshot } from '@khorsheed/dsh-local-
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the plugins.bundle.config keyed-slot SlotMap merge (alpha.2).
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
-import { IconChevronDownOutlineMedium, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from './icons.tsx'
 // The shared auth block is bundled from the family core's source — the
 // sanctioned core/companion edge (the host half already depends on the core);
 // the block carries no runtime identity to share.

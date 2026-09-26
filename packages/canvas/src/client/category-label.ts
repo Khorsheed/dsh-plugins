@@ -12,10 +12,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import {
-  IconCodeOutlineMedium, IconDatabaseOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium,
-  IconQuestionOutlineMedium,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCodeOutlineMedium, IconDatabaseOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconQuestionOutlineMedium } from './icons.tsx'
 import {
   defaultCategories, isBoardCardKind, type BoardCardKind, type BoardCategory, type CardCategoryId,
 } from '../types.ts'

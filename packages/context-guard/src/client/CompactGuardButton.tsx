@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { IconWarningOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconWarningOutlineMedium } from './icons.tsx'
 // Type-only: pulls ui-conversation's SlotMap merge (the input.right seat and
 // its InputZone owner share).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'

@@ -11,7 +11,7 @@
 import { useMemo, type ReactNode } from 'react'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconUndoOutlineMedium } from './icons.tsx'
+import { IconUndoOutlineMedium } from './icons-local.tsx'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls this plugin's ChatNodeDataMap merge.
 import type {} from './withdrawn-node.ts'

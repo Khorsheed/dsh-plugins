@@ -12,9 +12,8 @@
  * roster/blackboard semantics) and TPS/TTFT (a CLI run has no token stream).
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import {
-  IconCheckOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium, MarkdownText, Tooltip, writeClipboard,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { MarkdownText, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium } from './icons.tsx'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { memberColor } from './member-color.ts'
 import { formatClock, formatDurationMs } from './format.ts'

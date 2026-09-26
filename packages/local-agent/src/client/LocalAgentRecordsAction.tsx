@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { LocalAgentRosterRow, LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent/types'
-import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from './icons.tsx'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'

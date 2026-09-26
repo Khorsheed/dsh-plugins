@@ -20,14 +20,15 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { Button, IconEditOutlineMedium, IconTrashOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconEditOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { MAX_DRAW_STROKES, type CanvasDrawPoint, type CanvasStroke } from '../../types.ts'
 import {
   appendStroke, boxPointOf, samplesNext, sampleWidth, strokeAt, unitsPerPixel,
   type PadTool,
 } from '../draw.ts'
 import type { CanvasDetailProps } from '../contract.ts'
-import { IconEraserOutline16, IconUndoOutline16 } from '../icons.tsx'
+import { IconEraserOutline16, IconUndoOutline16 } from '../icons-local.tsx'
 import { DrawFigure } from './DrawFigure.tsx'
 import css from './CardPad.module.css'
 

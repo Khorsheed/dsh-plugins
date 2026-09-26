@@ -24,9 +24,8 @@
 import { useEffect, useState } from 'react'
 import type { FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
 import type { FilePreviewTurnRowProps } from './contract.ts'
-import {
-  FileTypeIcon, IconChevronDownOutlineMedium, IconChevronUpOutlineMedium,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { FileTypeIcon } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronUpOutlineMedium } from './icons.tsx'
 import { basename } from './turn-files.ts'
 import { parentPath } from './path-utils.ts'
 import css from './TurnFileRow.module.css'

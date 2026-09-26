@@ -43,6 +43,7 @@
     "src/journal.ts",
     "src/types.ts",
     "src/plan.ts",
-    "src/deliveries.ts"
+    "src/deliveries.ts",
+    "src/client/icons.tsx"
   ]
 }

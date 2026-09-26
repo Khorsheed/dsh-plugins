@@ -17,7 +17,7 @@
 import { requestId } from './request-id.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent, ReactNode } from 'react'
-import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from './icons.tsx'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalAgentDelegationView, LocalAgentModelInfo, LocalAgentModelSource, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'

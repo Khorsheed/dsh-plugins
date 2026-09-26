@@ -12,11 +12,9 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
 import type { UserMessageNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import {
-  Button, IconCheckOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium,
-  JsonBlock, RiskConfirmation, Tooltip, writeClipboard,
-} from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconUndoOutlineMedium } from './icons.tsx'
+import { Button, JsonBlock, RiskConfirmation, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium } from './icons.tsx'
+import { IconUndoOutlineMedium } from './icons-local.tsx'
 import { foldHiddenRanges, isSeqHidden } from './withdrawn-node.ts'
 import { chatHookOf, type ChatSlice } from './chat-hook.ts'
 import { withdrawAndBackfill } from './withdraw-backfill.ts'

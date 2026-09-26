@@ -1,5 +1,5 @@
 import { useState } from 'react'
-  import { IconChevronRightOutlineMedium, IconSearchOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { IconChevronRightOutlineMedium, IconSearchOutlineMedium } from './icons.tsx'
   import type { CatalogMcpTool, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { CredentialField, type CredentialSaveState } from './CredentialField.tsx'

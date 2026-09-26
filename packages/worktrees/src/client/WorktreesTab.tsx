@@ -20,10 +20,7 @@
  * re-asserts the requested mode.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  IconBranchOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium,
-  IconPanelLeftOutlineMedium, IconRefreshOutlineMedium,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBranchOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium, IconPanelLeftOutlineMedium, IconRefreshOutlineMedium } from './icons.tsx'
 import type { ChangedFile, FileDiffRequest, WorktreeInfo } from '../types.ts'
 import type { WorktreesTabProps } from './contract.ts'
 import type { WorktreesTabParams } from './definition.tsx'

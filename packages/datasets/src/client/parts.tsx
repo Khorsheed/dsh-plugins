@@ -9,7 +9,7 @@
  */
 
 import type { ReactNode } from 'react'
-import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium } from './icons.tsx'
 import { exposureOfRole, type DatasetExposure, type DatasetRole, type DatasetSlot } from '../slots.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import type { Phrase } from './vocab.ts'

@@ -1,4 +1,4 @@
-  import { IconBrowseOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { IconBrowseOutlineMedium } from './icons.tsx'
   import type { CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { McpCard } from './McpCards.tsx'

@@ -10,10 +10,7 @@
  * trie.
  */
 import { useMemo, useState, type ReactNode } from 'react'
-import {
-  IconChevronDownOutlineMedium, IconChevronRightOutlineMedium,
-  IconFolderCloseMedium, IconFolderOpenMedium, IconPanelLeftOutlineMedium,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium, IconPanelLeftOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './FileTree.module.css'
 

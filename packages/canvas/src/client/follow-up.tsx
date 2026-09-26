@@ -8,7 +8,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import type { ReactNode } from 'react'
-import { IconRightUpOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconRightUpOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 
 /** 追问 on one agent comment: the words plus the go-there glyph. */

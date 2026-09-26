@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react'
-import { IconChevronDownOutlineMedium, IconChevronUpOutlineMedium, IconQueueOutlineMedium, IconTrashOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronUpOutlineMedium, IconQueueOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalAgentMemberInbox, LocalAgentPromptResult } from '../types.ts'
 import type { NS } from './locales.ts'

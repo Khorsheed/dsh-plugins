@@ -15,7 +15,8 @@
  * becomes a pure slot consumer and the probe/overlay logic is removed.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { Button, IconEditOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconEditOutlineMedium } from './icons.tsx'
 import { isRenameFailure } from './slots.ts'
 import type { TitleEditActionProps } from './slots.ts'
 import { MAX_TITLE_BYTES, normalizedTitleByteLength } from './title-length.ts'

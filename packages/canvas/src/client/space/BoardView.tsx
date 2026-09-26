@@ -18,13 +18,8 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useState, type ReactNode } from 'react'
-import {
-  IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium,
-  IconCloseOutlineMedium, IconCodeOutlineMedium, IconEditOutlineMedium,
-  IconLightOutlineMedium, IconLinkOutlineMedium,
-  IconNewChatOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium,
-  IconSparkleMedium, Button, Modal,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconEditOutlineMedium, IconLightOutlineMedium, IconLinkOutlineMedium, IconNewChatOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
   CANVAS_LENS_IDS, documentHeadingOf, enabledCategories, isBoardCardKind, isLongCardText,

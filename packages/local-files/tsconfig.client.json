@@ -23,6 +23,7 @@
     "src/client/locales.ts",
     "src/client/store-local.ts",
     "src/client/FileTree.tsx",
-    "src/client/WorkspaceView.tsx"
+    "src/client/WorkspaceView.tsx",
+    "src/client/icons.tsx"
   ]
 }

@@ -33,7 +33,7 @@ import type {
 } from './slots.ts'
 import type { RoomMember, RoomProviderInfo } from '../types.ts'
 import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
-import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from './icons.tsx'
 import { MemberCard } from './MemberCard.tsx'
 import { rollName } from './name-pool.ts'
 import css from './InviteDialog.module.css'

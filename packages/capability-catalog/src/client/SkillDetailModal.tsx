@@ -1,5 +1,5 @@
 import { useState } from 'react'
-  import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCopyOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCopyOutlineMedium } from './icons.tsx'
   import type { CatalogPresetOption, CatalogPresetScopeEditResult, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
   import type { CatalogModeChip } from './mode-model.ts'
   import type { CapabilityCatalogKey } from './locales.ts'

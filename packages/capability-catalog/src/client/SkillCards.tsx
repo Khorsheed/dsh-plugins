@@ -1,5 +1,6 @@
 import { useState } from 'react'
-  import { Button, IconBrowseOutlineMedium, IconTrashOutlineMedium, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBrowseOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
   import type { CatalogSkillRow } from '@khorsheed/dsh-capability-catalog/types'
   import { ModeChips } from './ModeChips.tsx'
   import type { CatalogModeChip } from './mode-model.ts'

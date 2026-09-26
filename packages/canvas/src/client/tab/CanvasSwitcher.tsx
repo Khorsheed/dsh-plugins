@@ -20,10 +20,7 @@
 import {
   useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode,
 } from 'react'
-import {
-  IconArchiveOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium,
-  IconPlusOutlineMedium, IconRefreshOutlineMedium,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconArchiveOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { CanvasSummary } from '../../types.ts'
 import type {} from '../locales.ts'

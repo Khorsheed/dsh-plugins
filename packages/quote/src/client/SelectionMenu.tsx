@@ -20,9 +20,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the SessionReferenceSourceMap 'mainView' merge (retainedBy.mainView).
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import {
-  IconCopyOutlineMedium, IconListPenOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCopyOutlineMedium, IconListPenOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium } from './icons.tsx'
 import { formatQuoteBlock } from '../types.ts'
 import type { QuoteMenuProps } from './contract.ts'
 import type { QuoteActionTarget } from './registry.ts'

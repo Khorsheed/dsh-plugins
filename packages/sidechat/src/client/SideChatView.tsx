@@ -16,7 +16,8 @@
  * @module @khorsheed/dsh-sidechat/client
  */
 import { useEffect, useState, type ReactNode } from 'react'
-import { IconBrowseOutlineMedium, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBrowseOutlineMedium } from './icons.tsx'
 import type { SideChatTabParams } from './definition.ts'
 import type { SideChatViewProps } from './contract.ts'
 import { SideChatPanel } from './SideChatPanel.tsx'

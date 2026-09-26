@@ -17,9 +17,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import {
-  IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium } from './icons.tsx'
 import type { RoomModelDirectory, RoomModelSelection } from './slots.ts'
 import css from './RoomModelPicker.module.css'
 

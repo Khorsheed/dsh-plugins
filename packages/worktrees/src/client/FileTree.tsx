@@ -8,10 +8,7 @@
  * collapse-all, so the whole tree is always reachable.
  */
 import { useMemo, useState, type ReactNode } from 'react'
-import {
-  IconChevronDownOutlineMedium, IconChevronRightOutlineMedium,
-  IconFolderCloseMedium, IconFolderOpenMedium, IconPanelLeftOutlineMedium,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium, IconPanelLeftOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile } from '../types.ts'
 import { formatCount } from './Overview.tsx'
