@@ -75,14 +75,13 @@ describe('checkReleaseGroups', () => {
     expect(findings.filter(f => f.severity !== 'warn')).toEqual([])
   })
 
-  it('reports the known family skew as a warning, and as fatal under --release', () => {
-    // local-agent-claude-code sits at rc.5 while the rest of the family is at
-    // rc.6. docs/publishing.md forbids a worktree from moving a version, so the
-    // gate warns; the pre-publish run must refuse.
-    const warned = checkReleaseGroups(repoRoot)
-    expect(warned.some(f => f.kind === 'release group' && f.severity === 'warn')).toBe(true)
-    const strict = checkReleaseGroups(repoRoot, { release: true })
-    expect(strict.some(f => f.kind === 'release group' && f.severity !== 'warn')).toBe(true)
+  it('reports no family skew on the real tree now that the local-agent line is aligned', () => {
+    // The known skew this gate was built for — local-agent-claude-code at rc.5
+    // while the rest of the family sat at rc.6 — was resolved when the family
+    // aligned at 0.1.0-rc.6 for the first npm wave. Detection coverage lives in
+    // the synthetic fixture test below; the real tree must stay warning-free.
+    const findings = checkReleaseGroups(repoRoot)
+    expect(findings.filter(f => f.kind === 'release group')).toEqual([])
   })
 
   it('flags a family package that drifted off the line', () => {

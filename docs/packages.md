@@ -33,7 +33,7 @@
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.13 | bundle | — | web | 0.1.2-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.1.0-rc.1 | bundle | — | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.1.0-rc.6 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
-| `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.1.0-rc.5 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
+| `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.1.0-rc.6 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.1.0-rc.6 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-local-agent-dsh` | `packages/local-agent-dsh` | 0.1.0-rc.6 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-local-agent-dsh-headless` | `packages/local-agent-dsh-headless` | 0.1.0-rc.6 | composition | sub-profile-patch | — | 0.1.5-rc.1 | — |
