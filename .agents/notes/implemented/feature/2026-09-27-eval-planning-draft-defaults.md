@@ -32,4 +32,13 @@ The coordinator ruled (2026-09-27) to change the SKILL, not the criteria.
 - A sentence naming the factor now yields a draft in one turn; the design page carries the defaults the person may disagree with.
 - A plan drafted with all items may include a fixture item (P0-placeholder in harness-comparison). The report names the defaults, so the person sees it; the SKILL does not special-case fixtures.
 - Not addressed here and recorded for the next iteration: `eval_cells` returns absolute `planPath`s of legacy runs (pointing into dataset-repository worktrees) and `eval_conditions` returns the deployment's conditions directory as an absolute path. The agent saw those paths in the pilot but did not read them.
-- Verification: after merge, 3171 is reinstalled and the two sentences are rerun in two fresh sessions to re-check criteria 6 and 8, and the draft from the first session checks the draft card's normal state.
+- Verification: after merge, 3171 is reinstalled and the two sentences are rerun in two fresh sessions to re-check criteria 6 and 8, and the draft from the first session checks the draft card's normal state. Results below.
+
+## Verification (rerun, 2026-09-27)
+
+3171 was reinstalled from main bd4ed32c (ac3c2a04 plus a README-only commit), ready in 14 s; the instance's SKILL and preset carry the new sentences, the console shows no errors, and the pilot-d 结果对比 numbers match the pre-reinstall baseline. The coordinator accepted the rerun and closed T73 branch 3.
+
+- **Session 1 («用 harness-comparison 比一下 lean 和 full») drafted in one turn.** No `ask_user_question`, no read / grep / bash. The draft `dsh-lean-vs-full-20260926-7204` covers all 3 items × lean / full × 1 rep, judge `t31-judge-other`, pinned at d9af6bc; validation ok, with two warnings on the P0 fixture. The report lists the defaults (all items, reps 1, the judge, stages, seed, budget) and says they can be changed on the 实验设计 page. The draft card shows 实验草稿 / 待批准 / question / scale / dataset version / 打开实验; 打开实验 marks the row on the 实验室 tab (待批准, 去批准). The draft stays on 3171.
+- **Session 2 («用 ~/code/dsh-plugins 里的数据集建个实验») called `datasets_list`,** said the path is not registered in this deployment, pointed to the 题集 tab (登记仓库), and did not map the path onto a registered id; nothing under the path was read. When the person skipped the follow-up questions it drafted nothing.
+- **Criterion 8:** `experiments/` gained only session 1's draft; the shared checkout's HEAD (050e22d1) and worktree count (38) did not move. **Criterion 6** passes on meaning: the refusal is the SKILL's Chinese sentence, since no tool refused a call.
+- **Minor deviations, recorded for the next iteration, not rerun:** session 2 also asked which items to run (a default under the new rule) alongside the dataset and factor questions; `eval_plan_draft` returns the plan's absolute `planPath`, which session 1 echoed into its reply — same class as the `eval_cells` / `eval_conditions` item above.

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-27-eval-planning-draft-defaults.md
-.agents/notes/implemented/feature/2026-09-27-eval-planning-draft-defaults.md: edcdfdd14331a1bfd0943613a7f35050ceb86ce3
-.agents/notes/implemented/feature/2026-09-27-eval-planning-draft-defaults.zh.md: 68c9a2e16263ffb0eb56fe00cb91f8ab8a2d94f0
+.agents/notes/implemented/feature/2026-09-27-eval-planning-draft-defaults.md: 250eba2f761a74e5ccc6117aac4e074fc5986f3d
+.agents/notes/implemented/feature/2026-09-27-eval-planning-draft-defaults.zh.md: cf8d20643231a648afd5bfe3439e6d7768e10868
