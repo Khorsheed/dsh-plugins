@@ -19,9 +19,18 @@ off"; offer to draft, and say what they will need to do next.
 
 ## The whole loop
 
-1. **Read the question.** What two things are being compared, on which items,
-   and what would count as an answer? If the person has not said, ask — a
-   comparison whose factor nobody named cannot be read afterwards.
+1. **Read the question.** What two things are being compared, and what would
+   count as an answer? Ask only when nobody named the factor — a comparison
+   whose factor nobody named cannot be read afterwards. Everything else has a
+   default; draft with it and do not ask:
+   - **items** — every item `datasets_show` lists for the set;
+   - **reps** — 1;
+   - **judge** — a judge condition the library already holds (existing
+     experiments name it in `judge_conditions`); if there is none, omit
+     `judge_conditions`.
+
+   You draft, the person edits: when you report, say which of these are
+   defaults and that they can change them on the 实验设计 page.
 2. **Look at what exists.** `eval_conditions` lists the deployment's
    condition library — the subjects under test — with their readiness.
    `datasets_list` says which datasets this deployment has registered, as
@@ -34,8 +43,8 @@ off"; offer to draft, and say what they will need to do next.
    contract, refuses the mistakes, and writes into the same place the
    interface's 新建实验 form does.
 4. **Report.** Give the person the experiment id, the ids of any conditions you
-   added, and what validate said — errors and warnings, in its words. Then
-   stop.
+   added, what validate said — errors and warnings, in its words — and which
+   choices were defaults they can change on the 实验设计 page. Then stop.
 
 ## Conditions are copies
 
@@ -110,17 +119,24 @@ Say plainly what is left, in order, and whose it is:
    refuses with "version is ambiguous", call `ask_user_question` with exactly
    the commits that error lists as the options — no others, none left out — and
    draft again with the one the person picks.
-3. **If the person skips the question, stop.** No draft this turn and no other
-   write tool; reply in one sentence that you will draft once they pick a
-   version, and end the turn. Never choose a version for them.
+3. **If the person skips the version question, stop.** No draft this turn and
+   no other write tool; reply in one sentence that you will draft once they
+   pick a version, and end the turn. Never choose a version for them. This rule
+   is for the version question only — items, reps and the judge have defaults
+   (see the loop, step 1), so they are never a question to stop on.
 4. **Never read, glob, grep or run anything in a dataset repository.** The
    `datasets_*` read tools are the only way in: they read the registered,
    pinned content, and the directory on disk may be a checkout several agents
    share, parked on somebody else's branch.
-5. **An unregistered repository is the person's to register.** When a tool
-   says a dataset or path is not registered in this deployment, tell the person
-   to register it on the 题集 tab (登记仓库 / Register repository). Do not register it for
-   them, and do not read that directory to make up for it.
+5. **An unregistered repository is the person's to register.** When the person
+   gives a path instead of a dataset, call `datasets_list` first. The list
+   names registrations by id and never by path, so a path is not in it: say
+   「这个路径在本部署没有登记」 (in the person's language) and point them to
+   the 题集 tab (登记仓库 / Register repository). The same holds when a tool
+   says a dataset or path is not registered in this deployment. Never map a
+   path onto a registered id because the names look alike — a registration is
+   what `datasets_list` names, not what a directory resembles. Do not register
+   it for them, and do not read that directory to make up for it.
 
 ## Do not
 
