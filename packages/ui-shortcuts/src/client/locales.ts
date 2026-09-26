@@ -1,7 +1,9 @@
-/** `shortcuts` namespace dictionaries. */
+/** `ui-shortcuts` namespace dictionaries. */
 
-/** Dictionary namespace owned by this plugin. */
-export const NS = 'shortcuts'
+/** Dictionary namespace owned by this plugin. NOT `shortcuts`: the official
+ * rc.2 shortcuts panel owns that namespace, and locale registration throws on
+ * a duplicate (ns, locale) pair — both bundles coexist on rc.2+. */
+export const NS = 'ui-shortcuts'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {

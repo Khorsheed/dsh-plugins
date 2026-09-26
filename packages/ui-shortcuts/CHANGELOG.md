@@ -1,5 +1,17 @@
 # 变更记录
 
+## 0.2.3（2026-09-26）
+
+适配宿主 0.1.7-rc.2:官方自带快捷键系统(`dsh-client-shortcuts` + 面板 bundle)与本包在三个名字平面上撞车,改为按组合环境分双臂运行。
+
+- **rc.2+(官方服务驻留):只贡献,不提供。** `ctx.provide('shortcuts')` 退场(cordis 对重复 provide 抛错),自有注册表/设置卡/键鼠分发全部不装;改为向官方目录贡献官方缺的两条命令——插队发送 `ui-shortcuts.steerSend` 与压缩上下文 `ui-shortcuts.compact`。暂停(Esc Esc)、新建会话(⌥⌘N)、右侧边栏(⇧⌘B)由官方原生承载,改键由官方快捷键面板承接
+- **0.1.5 / rc.1(无官方服务):** 完整本地实现原样运行,行为不变
+- **行 id 改名** `ui-shortcuts` → `khorsheed-ui-shortcuts`:官方面板行 id 同为 `ui-shortcuts`,loader 同 id 行后层覆盖前层,原名会把官方面板顶替掉
+- **locale 命名空间改名** `shortcuts` → `ui-shortcuts`:官方面板已占 `shortcuts`,`locale.register` 对重复 (ns, locale) 抛错(症状是客户端条目卡在 loading)
+- 键位政策适配官方注册表:web 不允许裸 `primary+Key`(插队发送 web 端默认改为 `Ctrl/Cmd+Shift+S`),web:linux 只收白名单(不预置),Linux 窗口管理器占用 `primary+shift+X`(compact 在两个 linux profile 不预置);单命令注册护栏——政策拒绝只丢该命令,不炸整包
+- **rc.2 路径已知损失:鼠标键绑定无表示**(官方绑定协议纯键盘),中键开关右栏在 rc.2+ 不可用;0.1.5/rc.1 不受影响
+- 验证:双基线 build+test 全绿(55 测试,新增 `tests/official.client.spec.ts` 6 用例),rc.2 npm 工具链 42 包全量组合真实启动实证——console 零报错,⌘/ 官方面板列出两条贡献命令且可改键,⇧⌘S 端到端提交草稿
+
 ## 0.2.2（2026-09-26）
 
 适配宿主 rc.1 线并实证 0.1.5/0.1.7 双线可用（0.1.5-rc.1 全量 boot 实证，2026-09-25）。

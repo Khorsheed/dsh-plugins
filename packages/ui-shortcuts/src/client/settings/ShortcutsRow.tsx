@@ -45,7 +45,7 @@ export interface ShortcutsRowInjected {
 /** Full settings-card props. */
 export type ShortcutsRowProps =
   PropsRuntime<'settings.plugins.tab'>
-  & PropsLocale<'shortcuts'>
+  & PropsLocale<'ui-shortcuts'>
   & InjectFace<ShortcutsRowInjected>
 
 /**

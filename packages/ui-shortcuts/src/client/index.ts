@@ -67,8 +67,9 @@ import type {} from './contract.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** The shortcut settings row copy. */
-    shortcuts: ShortcutKey
+    /** The shortcut settings row copy. Named `ui-shortcuts`, not `shortcuts`:
+     * the official rc.2 shortcuts panel owns the latter (see locales.ts). */
+    'ui-shortcuts': ShortcutKey
   }
 }
 
@@ -385,6 +386,93 @@ function suppressAuxiliaryDefault(event: MouseEvent, registry: ShortcutRegistryR
 }
 
 /**
+ * The official rc.2+ shortcuts service face this build probes for.
+ * Structurally typed on purpose: `@deepseek-ai/dsh-client-shortcuts` does not
+ * exist on the 0.1.5 / rc.1 host lines this build also serves, so no type or
+ * module import may point at it.
+ */
+interface OfficialShortcutCommand {
+  id: string
+  label: () => string
+  aliases: readonly string[]
+  defaults: Readonly<Partial<Record<string, { readonly code: string, readonly modifiers: readonly string[] }>>>
+  regions: readonly string[]
+  modals: readonly string[]
+  resolve(): { readonly status: 'handled', run(): void } | { readonly status: 'pass' }
+}
+
+/** The official service's `register` verb plus the catalog marker that distinguishes it from this package's own registry. */
+interface OfficialShortcutsFace {
+  readonly catalog: { getSnapshot(): unknown }
+  register(command: OfficialShortcutCommand): () => void
+}
+
+/**
+ * The rc.2+ path: contribute the two commands the official catalog lacks.
+ * Both gate on a main-view session and pass without one — the exact analogue
+ * of the legacy `available` gates standing the gestures down. The retired
+ * three (pause, new-session, toggle-sidebar) are official natives there:
+ * `response.stop` owns Esc Esc, `session.new` and `sidebar.right.toggle` carry
+ * their own chords; the official binding protocol is keyboard-only, so the
+ * middle-mouse default has no representation on this path regardless.
+ * @param ctx - client root context.
+ * @param official - the resident official shortcuts service.
+ */
+function applyOfficial(ctx: Context, official: OfficialShortcutsFace): void {
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-shortcuts: dictionaries')
+  const t = ctx.locale.bind(NS)
+  // The official web policy admits only its allowlist on Linux and primary+
+  // shift/alt chords on macOS/Windows (a bare primary+Key throws at register
+  // time), so web:linux ships unbound — the official packages' own convention.
+  const defaults = (code: string, modifiers: readonly string[]): OfficialShortcutCommand['defaults'] => ({
+    'desktop:macos': { code, modifiers }, 'desktop:windows': { code, modifiers }, 'desktop:linux': { code, modifiers },
+    'web:macos': { code, modifiers: [...modifiers, 'shift'] }, 'web:windows': { code, modifiers: [...modifiers, 'shift'] },
+  })
+  // Per-command guard: the official registry throws on policy violations, and a
+  // future policy change must cost one command, not the whole plugin.
+  const contribute = (name: string, command: OfficialShortcutCommand): void => {
+    let dispose: (() => void) | undefined
+    try {
+      dispose = official.register(command)
+    } catch (error) {
+      console.warn(`[ui-shortcuts] official registry refused ${command.id}:`, error)
+      return
+    }
+    const disposer = dispose
+    ctx.effect(() => disposer, name)
+  }
+  contribute('ui-shortcuts: official steerSend', {
+    id: 'ui-shortcuts.steerSend',
+    label: () => t('action.steerSend'),
+    aliases: ['steer', 'send draft'],
+    defaults: defaults('KeyS', ['primary']),
+    regions: ['page', 'editable'],
+    modals: [],
+    resolve: () => hasMainSession(ctx)
+      ? { status: 'handled' as const, run: () => { steerSendDraft(ctx) } }
+      : { status: 'pass' as const },
+  })
+  contribute('ui-shortcuts: official compact', {
+    id: 'ui-shortcuts.compact',
+    label: () => t('action.compact'),
+    aliases: ['compact', 'compact context'],
+    // Linux reserves primary+shift+X at the window-manager level, so the
+    // command ships unbound on both Linux profiles.
+    defaults: {
+      'desktop:macos': { code: 'KeyX', modifiers: ['primary', 'shift'] },
+      'desktop:windows': { code: 'KeyX', modifiers: ['primary', 'shift'] },
+      'web:macos': { code: 'KeyX', modifiers: ['primary', 'shift'] },
+      'web:windows': { code: 'KeyX', modifiers: ['primary', 'shift'] },
+    },
+    regions: ['page', 'editable'],
+    modals: [],
+    resolve: () => hasMainSession(ctx)
+      ? { status: 'handled' as const, run: () => { compactCurrentSession(ctx) } }
+      : { status: 'pass' as const },
+  })
+}
+
+/**
  * Browser plugin body: provide the registry, bind the built-in actions
  * through it, and register the shortcut settings card. The binding snapshots
  * are read in the handlers (event-handler code may read live snapshots); the
@@ -395,6 +483,19 @@ function suppressAuxiliaryDefault(event: MouseEvent, registry: ShortcutRegistryR
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
+  // rc.2+ compositions carry the official shortcuts service under the same
+  // `shortcuts` key this package historically provided, and cordis throws on
+  // a duplicate provide. Composition layering mounts the official bundle rows
+  // before this package's, so when the key is taken this apply runs second —
+  // and must never provide its own (in the reverse order the official service
+  // would be the one to throw). On those hosts the plugin contributes its two
+  // commands and stands everything else down; 0.1.5 / rc.1 compositions have
+  // no such service and run the full local implementation below.
+  const official = ctx.get('shortcuts') as unknown as OfficialShortcutsFace | undefined
+  if (typeof official?.register === 'function' && typeof official.catalog?.getSnapshot === 'function') {
+    applyOfficial(ctx, official)
+    return
+  }
   const registry = new ShortcutRegistryRuntime()
   ctx.inject(['configForms'], (formsCtx) => {
     const forms = formsCtx.get('configForms') as { get?(entryId: string): ShortcutScope } | undefined

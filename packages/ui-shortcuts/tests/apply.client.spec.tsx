@@ -286,8 +286,8 @@ describe('ui-shortcuts apply', () => {
     const run = vi.fn()
     const dispose = registry.registerAction({
       id: 'test.yieldMouse',
-      label: { ns: 'shortcuts', key: 'action.pause' },
-      description: { ns: 'shortcuts', key: 'action.pause.desc' },
+      label: { ns: 'ui-shortcuts', key: 'action.pause' },
+      description: { ns: 'ui-shortcuts', key: 'action.pause.desc' },
       defaultBinding: { kind: 'mouse', modifiers: [], button: 2 },
       layering: 'yield',
       run,
@@ -326,8 +326,8 @@ describe('ui-shortcuts apply', () => {
     let available = true
     const dispose = registry.registerAction({
       id: 'test.contributed',
-      label: { ns: 'shortcuts', key: 'action.pause' },
-      description: { ns: 'shortcuts', key: 'action.pause.desc' },
+      label: { ns: 'ui-shortcuts', key: 'action.pause' },
+      description: { ns: 'ui-shortcuts', key: 'action.pause.desc' },
       defaultBinding: { kind: 'key', modifiers: ['primary'], key: 'k' },
       layering: 'global',
       available: () => available,
