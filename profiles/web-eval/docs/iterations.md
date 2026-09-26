@@ -404,12 +404,12 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T73 | 方案 ✅（第一步计划 `c1b70a4d`）→ 代码 | D1 + D2 会话去绑定、按仓库登记。第一步计划已评审（2026-09-23）：定 (b) 不设过渡期、条件与 lock 同搬部署级、协议 rev13 归 T73、会话收窄不保留。第二步三条分支——**分支 1** datasets 登记表 ✅（`201fb6cc` → main `036910ed`，2026-09-23）、**分支 2** eval 实验目录 ✅（`cdea013e` → main `587c12ae`，2026-09-24；验收见 §三）、**分支 3** SKILL / 提示词 ✅（`637b47f7` → main `ed9e62f9`，2026-09-24）+ 试点（**用户 2026-09-25 定：并进 3171 重装之后，在 3171 上跑**；3185 撤掉）；三条已合完，试点过才算 T73 验收。T68 并入 | T70 T68 | 写入模型定案；agent 不再翻磁盘找检出；未登记仓库不可用 |
 | T74 | 代码 ✅（`57533026` → main `e80a328c`，2026-09-24；补充一条见验收） | D5 方案卡：plan 加「要回答的问题 / 预期 / 怎么算回答了」三个字段（协议 rev14）、实验设计上半段方案卡、结论卡原样回答问题、就地改数字（启动前，写回同一个 plan，启动后冻结）；文案见 §三「T74」 | T72 T73 | 结论卡第一句是对问题的回答 |
 | T75 | 代码（`2d883a2e` 已报，**等 T76 合入后合 main 解冲突再合**） | D6 作答视图：按「题 × 组 × 次」并排，两个视角（提交的报告 / 判定证据），盲评开关即人工评估视图；三处入口；文案见 §三「T75」 | T72 T69 | 人工评估与作答视图是同一个组件 |
-| T76 | ✅ 已合（`ebdf74d8`，2026-09-25；合 main 提交 `b26345ec` + 双线读工具块 `dcf84812`；**合并后的明 / 暗 / 400 截图待 0.1.5 能起实例后补拍**） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案见 §三「T76」 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
+| T76 | ✅ 已合（`ebdf74d8`，2026-09-25；合 main 提交 `b26345ec` + 双线读工具块 `dcf84812`；**合并后的明 / 暗 / 400 截图可以补拍了**：main 默认构建装 0.1.5 临时实例即可，见 §三 T81 阶段一结果） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案见 §三「T76」 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
 | T77 | 代码 ✅（`ced3702e` → main `53b93082`，2026-09-24） | 源码模式装不出来：`install.sh:327` 算同族包只看 dependencies / peerDependencies，`scripts/pack-dist.ts:343` 只改写 `workspace:^`；`e9110d52` 把 content-preview 以 `workspace:*` 加进 local-files / ui-file-preview / worktrees 的 devDependencies，pack 时 ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL（T73 分支 1 与 T72 验收各自撞上、各自临时绕过）。文案见 §三「T77」 | 无 | 从 detached worktree 跑 `install.sh --source … --fresh` 到临时 DSH_HOME 一次成功 |
 | T78 | ❌ 不成立（2026-09-25，main `9da732aa`；原因见 §三 T78 末尾「结果」） | host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟：main 已钉官方线 0.1.7-rc.1、eval 家族做了「双线」适配，评测线 3171 与临时实例仍是 0.1.5-rc.1；只回答「当前 main 能不能在评测线上装得起、跑得通」，不修代码。文案见 §三「T78」 | 无（与 T76 合 main 并行） | 成立 → 3171 照常重装；不成立 → 错误原文 + 定位提交，交用户定钉旧提交还是换线 |
 | T79 | 验收（联合走查，可发的前置见文案） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
 | T80 | 代码（待 T79） | 收口补充一轮：按 T79 的清单改；文案在 T79 之后写 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
-| T81 | 验证 + 代码（可发，2026-09-25） | 评测线在 0.1.5 上恢复：T78 断点不在 eval 家族代码里——一是 typert 用了 0.1.7 harness 的生成器，二是 web-eval 带的 capability-catalog / ankh-guard 只改了 0.1.7 包名。先验证（0.1.5 harness 克隆构建 + 两处引用只在临时 profile 本地补丁，跑 T78 的 a–e），过了再做 install.sh 按宿主版本选 harness；两个外线包的修法交 host-016 线。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；不过就退回「只支持 0.1.7」由用户定 |
+| T81 | 阶段一 ✅（2026-09-26，main `35e617ad`，0.1.5-rc.1 上 a–e 全过）；阶段二可发 | 评测线在 0.1.5 上恢复。结果：各包负责人在 main 上修了 typert 双形态 codec（`00cfa1d6`）与 preset 双名探测（`380a469c`），默认 harness 构建的产物即可装进 0.1.5，**install.sh 不用选 harness**。阶段二改为：eval 家族在 0.1.5 上的 0.1.7-only 客户端名字（datasets 的 `Icon*OutlineMedium`、eval 的 `writeClipboard`）按名字探测回落。文案见 §三「T81」末尾 | T78 | 0.1.5 临时实例上 datasets 登记表单等用到图标的面不崩、「交给 agent」兜底不抛；0.1.7 行为不变 |
 | T82 | 代码（待排，T81 之后） | web-eval 在 0.1.7-rc.1 上：preset 迁 bundle、install.sh 0.1.7 分支、0.1.7 临时实例冒烟、受试对象版本与宿主版本是否解耦（原 T81 文案，改号） | T81 | 0.1.7 临时实例上 a–e 全过，0.1.5 照旧 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
@@ -3608,6 +3608,42 @@ main 上 capability-catalog 与 ankh-guard 在 0.1.5 宿主上起不来：两处
 我们的评测线（3171）留在 0.1.5-rc.1，web-eval 装这两个包。T81 会给出「按包名探测」的最小修法分支（fix/t81-preset-registry-dual），请你们决定：收下补双线，或者把两包的 minHost 改成 0.1.7-rc.1（那样评测线要另想办法）。同批还有 settings 迁移、roster acquireScope 等只按 0.1.7 改的地方，T81 真机跑时撞到会一并告诉你们。
 另：typert 生成器在 0.1.7 改成延迟 codec，0.1.5 的 loader 不认；我们用 0.1.5 的 harness 克隆构建绕过，不需要你们改，仅供知悉。
 ```
+
+**阶段一结果（2026-09-26）：a–e 在 0.1.5-rc.1 上全过**（main `35e617ad`，端口 3197，截图 `~/.dsh/scratch/t81-shots/0.1.5/`）。期间各包负责人在 main 上修了 typert 双形态 codec（`00cfa1d6`：eager schema + lazy create）与 preset 双名探测（`380a469c`：ankh-guard / capability-catalog / room），默认 harness 构建即可装进 0.1.5；0.1.5 harness 克隆建了但没用上。中途撞到的第三处断点（0.1.5 生成器拿 0.1.5 类型面做诊断，eval / message-tools / local-agent / capability-catalog 过不去）因此不再相关。
+新发现：0.1.5 上部分插件按钮不渲染——插件从 dsh-client-ui-primitives 导入 0.1.7 才有的 `Icon*OutlineMedium`（0.1.5 叫 `Icon*Outline`），拿到 undefined，React #130，slot entry crashed（`conversation.session.header.actions`、`conversation.chat.node`）。实测崩：session-title-edit、local-agent、message-tools；静态同类：capability-catalog、context-guard、datasets、local-agent 四个 provider、ui-shortcuts。eval 的 `writeClipboard`（「交给 agent」写输入框失败时的剪贴板兜底）0.1.5 也没有。其他：file-preview / taskpilot 的 sidebar-right peer `^0.1.7-rc.1` 只是 WARN，右侧栏正常；两个 room/created 会话打不开是旧问题（web-eval 不装 room）；New experiment 对话框说草稿写进「bound repository working copy」，实际写 `state/eval/experiments/`，文案过时（进 T79 清单）。
+**协调者定（2026-09-26）**：install.sh 选 harness 不做；0.1.5 harness 克隆删掉。图标问题要修：eval 家族（datasets、eval）归 T81 阶段二；其他包列清单交各自负责人（用户转）。T76 补拍现在就能做（默认构建装 0.1.5 临时实例即可）。
+
+**T81 阶段二（2026-09-26，可发）**：
+
+```text
+# T81 阶段二：eval 家族在 0.1.5 上的 0.1.7-only 客户端名字补回落
+
+## 背景
+阶段一 a–e 在 0.1.5-rc.1 上全过；typert 与 preset 两处断点已由各包负责人在 main 修掉，install.sh 不用选 harness——原阶段二第 1、3 条作废。剩下的是客户端：插件从 @deepseek-ai/dsh-client-ui-primitives 导入 0.1.7 才有的名字，在 0.1.5 上拿到 undefined，渲染时 React #130、slot entry 崩。eval 家族里有两处：
+- packages/datasets/src/client/RegisterForm.tsx、parts.tsx：Icon*OutlineMedium（0.1.5 叫 Icon*Outline）；
+- packages/eval/src/client/LabView.tsx:37 / 552：writeClipboard（0.1.5 没有），「交给 agent」写输入框失败时的剪贴板兜底。
+
+## 分支
+从本地 main 开新分支 feat/t81-client-fallback（可以复用 ../dsh-plugins-wt-t81-lab015 这个 worktree，先把 feat/t81-lab015 的 [probe] 提交丢掉——main 已有正式修法）。只改 packages/datasets、packages/eval 的客户端。
+
+## 做法
+1. 图标：按名字探测回落——先取 Icon*OutlineMedium，没有取 Icon*Outline，再没有就不渲染图标（不抛、不占位崩）。写成包内一个小 helper，别在每处现场判断；先看 main 上别的包（message-tools、local-agent 等）的负责人有没有已经做了同样的 helper，有就对齐写法（不跨包 import）。
+2. writeClipboard：探测不到就退到 navigator.clipboard.writeText，再不行就走现有的失败提示；不抛。
+3. 注意 clientBundle 的 INLINE_PURE_FOLD：确认 dsh-client-ui-primitives 是按运行时解析的（你阶段一核过它在浏览器里按名解析），探测才有意义；构建出 lib/client.js 后 grep 一下。
+4. 客户端测试覆盖「名字缺席」两种情形。
+5. 真机（0.1.5，沿用 3197 的实例或重装）：打开 datasets 的登记表单和用到 parts.tsx 图标的面、eval 的「交给 agent」，console 里没有 eval / datasets 的 #130；明 / 暗 / 400 截图放 ~/.dsh/scratch/t81-shots/0.1.5-fallback/。0.1.7 类型面上 tsc / 测试 / gate 绿。
+
+## 不做
+不改别的包的图标导入（清单协调者交各包负责人）；不改 New experiment 对话框文案（进 T79 清单）；不改 install.sh；不自己合 main。
+
+## 收尾
+删 ~/.dsh-toolchains/harness-0.1.5-rc.1（本任务建的，没用上）；停 3197 实例、清临时 home；feat/t81-lab015 分支与 worktree 在回报里点名，协调者清。
+
+## 回报
+分支与 commit；helper 的写法（与别的包是否对齐）；真机结果与截图路径；gate；收尾情况。通用提醒照旧。
+```
+
+**交各包负责人的图标清单（用户转，2026-09-26）**：0.1.5 上 `Icon*OutlineMedium` 拿到 undefined，slot entry 崩。实测崩：session-title-edit（IconEditOutlineMedium，`conversation.session.header.actions`）、local-agent、message-tools（`conversation.chat.node`）；静态扫出同类导入：capability-catalog、context-guard、local-agent 四个 provider、ui-shortcuts。修法同 codec / preset：按名字探测回落到 `Icon*Outline`。另：client-ui-file-preview、taskpilot 的 `dsh-client-ui-sidebar-right` peer 写成 `^0.1.7-rc.1`，与 minHost 0.1.5 不符。
 
 ### T82 · web-eval 在 0.1.7-rc.1 上（原 T81 文案，09-25 改号；待排，T81 之后发，发前把正文里的「T81」「t81」改成 T82、背景按 T81 结果改写）
 
