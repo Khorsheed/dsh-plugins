@@ -5,7 +5,8 @@
  * job-controller client service (probed through ./jobs-channel.ts; on 0.1.5
  * the components' duck-typed `jobsBySession` session-list read carries it
  * instead), the subagent lineage rides the `useSessions` mirrors, a
- * capability-probed history loader feeds the trail
+ * capability-probed history loader feeds the trail and the dock's
+ * background-bash verdict
  * (./history-loader.ts: the generated `remote.session.follow`/`page` when
  * mounted — read via `ctx.get('remote.session')` since the namespace may be
  * absent and must not sit in the inject list — `connection.api.sessions.history`
@@ -42,6 +43,7 @@ import { JobTab, type JobTabInjected } from './JobTab.tsx'
 import { JobTabTitle } from './JobTabTitle.tsx'
 import { TASKPILOT_KIND, TASKPILOT_TAB_ID, taskpilotDefinition } from './definition.ts'
 import { createHistoryLoader } from './history-loader.ts'
+import { createAnnouncedBashLoader } from './announced-jobs.ts'
 import { pollActiveDelegations } from './active-delegations.ts'
 import { JobsChannel, type JobsServiceLike } from './jobs-channel.ts'
 import { renderTaskPilotCommand } from '../types.ts'
@@ -85,6 +87,11 @@ export function apply(ctx: Context): void {
   // and the proxy throws on undeclared sub-service access.
   const loadHistory = createHistoryLoader(ctx.get('remote.session'), ctx.get('connection'))
 
+  // The dock's row verdict reads the same channel: the session log tail names
+  // the background jobs, so the foreground `bash` records the tool deletes with
+  // their command never enter the capsule (see ./announced-jobs.ts).
+  const loadAnnouncedBashJobs = createAnnouncedBashLoader(loadHistory)
+
   // rc.1 loads a session's projections (the subagent catalog among them) on
   // demand; 0.1.5 has no such verb (its catalog mirror needs no trigger).
   const refreshCatalog = (sessionId: SessionId): void => {
@@ -123,6 +130,7 @@ export function apply(ctx: Context): void {
       pollActiveDelegations: () => pollActiveDelegations(ctx),
       watchRows: jobsChannel.watchRows,
       refreshCatalog,
+      loadAnnouncedBashJobs,
       hooks: { jobs: jobsChannel },
     }),
   }, TaskPilotDock))

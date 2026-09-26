@@ -28,6 +28,9 @@ function dockProps(overrides: Partial<Parameters<typeof TaskPilotDock>[0]> = {})
     useJobs: (selector: (state: { rows: Record<string, never> }) => unknown) => selector({ rows: {} }),
     watchRows: () => () => {},
     refreshCatalog: () => {},
+    // The log read defaults to unreadable, so every test that does not stage an
+    // announcement keeps the fail-open behavior (all rows show).
+    loadAnnouncedBashJobs: vi.fn(async () => undefined),
     t,
     stopJob: vi.fn(async () => undefined),
     interruptSubagent: vi.fn(async () => undefined),
@@ -36,6 +39,15 @@ function dockProps(overrides: Partial<Parameters<typeof TaskPilotDock>[0]> = {})
     pollActiveDelegations: vi.fn(async () => []),
   }
   return { ...base, ...overrides }
+}
+
+/** A judged page that announced nothing: every covered bash row is foreground. */
+function judged(window: { ids?: readonly string[]; since?: number; ambiguousSince?: number } = {}) {
+  return {
+    ids: new Set(window.ids ?? []),
+    since: window.since ?? 0,
+    ...window.ambiguousSince !== undefined ? { ambiguousSince: window.ambiguousSince } : {},
+  }
 }
 
 
@@ -263,5 +275,100 @@ describe('TaskPilotDock', () => {
     const poll = vi.fn(async () => [])
     render(<TaskPilotDock {...dockProps({ pollActiveDelegations: poll })} />)
     expect(poll).not.toHaveBeenCalled()
+  })
+
+  it('hides a foreground bash row the session log never announced', async () => {
+    const loadAnnouncedBashJobs = vi.fn(async () => judged())
+    render(<TaskPilotDock {...dockProps({
+      loadAnnouncedBashJobs,
+      useSessions: (selector) => selector({ jobsBySession: { [SESSION]: [job()] }, subagentsByParent: {} }),
+    })} />)
+    // Fail-open until the read lands, then the foreground row leaves the dock.
+    await flushPoll()
+    expect(loadAnnouncedBashJobs).toHaveBeenCalledWith(SESSION)
+    expect(screen.queryByRole('button', { name: /Background jobs/ })).toBeNull()
+  })
+
+  it('keeps the announced background row and its stop verb', async () => {
+    render(<TaskPilotDock {...dockProps({
+      loadAnnouncedBashJobs: vi.fn(async () => judged({ ids: ['bash-1'] })),
+      useSessions: (selector) => selector({ jobsBySession: { [SESSION]: [job()] }, subagentsByParent: {} }),
+    })} />)
+    await flushPoll()
+    fireEvent.click(screen.getByRole('button', { name: /Background jobs/ }))
+    expect(screen.getByText('pnpm build')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Stop job bash-1' })).toBeTruthy()
+  })
+
+  it('shows every row while the log is unreadable', async () => {
+    render(<TaskPilotDock {...dockProps({
+      loadAnnouncedBashJobs: vi.fn(async () => undefined),
+      useSessions: (selector) => selector({ jobsBySession: { [SESSION]: [job()] }, subagentsByParent: {} }),
+    })} />)
+    await flushPoll()
+    expect(screen.getByRole('button', { name: /Background jobs/ })).toBeTruthy()
+  })
+
+  it('hides only the bash row when a non-bash job shares the roster', async () => {
+    const subagent = job({ id: 'subagent-1' as JobView['id'], kind: 'subagent', label: 'delegate' })
+    render(<TaskPilotDock {...dockProps({
+      loadAnnouncedBashJobs: vi.fn(async () => judged()),
+      useSessions: (selector) => selector({ jobsBySession: { [SESSION]: [job(), subagent] }, subagentsByParent: {} }),
+    })} />)
+    await flushPoll()
+    fireEvent.click(screen.getByRole('button', { name: /Background jobs/ }))
+    expect(screen.getByText('delegate')).toBeTruthy()
+    expect(screen.queryByText('pnpm build')).toBeNull()
+  })
+
+  it('reveals a background row once its ack reaches a later read', async () => {
+    vi.useFakeTimers()
+    try {
+      const loadAnnouncedBashJobs = vi.fn()
+        // The mount read arms an empty verdict; the row's own arrival re-reads
+        // it; only the retry that follows finds the ack.
+        .mockResolvedValueOnce(judged())
+        .mockResolvedValueOnce(judged())
+        .mockResolvedValue(judged({ ids: ['bash-1'] }))
+      // One fixed registration time: the roster selector re-runs on every
+      // render, so a Date.now() read inside it would keep the row eternally young.
+      const startedAt = Date.now()
+      render(<TaskPilotDock {...dockProps({
+        loadAnnouncedBashJobs,
+        useSessions: (selector) => selector({ jobsBySession: { [SESSION]: [job({ startedAt })] }, subagentsByParent: {} }),
+      })} />)
+      // The row is judged and unannounced: hidden while its ack is in flight.
+      await act(async () => {})
+      expect(screen.queryByRole('button', { name: /Background jobs/ })).toBeNull()
+      // The retry finds the ack: the row (and its capsule) appears.
+      await act(async () => { vi.advanceTimersByTime(1_500) })
+      expect(screen.getByRole('button', { name: /Background jobs/ })).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops re-reading the log once an unannounced row ages out of its grace window', async () => {
+    vi.useFakeTimers()
+    try {
+      const loadAnnouncedBashJobs = vi.fn(async () => judged())
+      const startedAt = Date.now()
+      render(<TaskPilotDock {...dockProps({
+        loadAnnouncedBashJobs,
+        useSessions: (selector) => selector({ jobsBySession: { [SESSION]: [job({ startedAt })] }, subagentsByParent: {} }),
+      })} />)
+      await act(async () => {})
+      const armed = loadAnnouncedBashJobs.mock.calls.length
+      // The retries run out at the 5s grace; past it the row is a foreground
+      // record whose verdict is final.
+      await act(async () => { vi.advanceTimersByTime(6_000) })
+      const settled = loadAnnouncedBashJobs.mock.calls.length
+      expect(settled).toBeGreaterThan(armed)
+      expect(screen.queryByRole('button', { name: /Background jobs/ })).toBeNull()
+      await act(async () => { vi.advanceTimersByTime(6_000) })
+      expect(loadAnnouncedBashJobs.mock.calls.length).toBe(settled)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

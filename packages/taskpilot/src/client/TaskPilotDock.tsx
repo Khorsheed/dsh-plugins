@@ -2,7 +2,10 @@
  * TaskPilot dock pills: two entry capsules above the composer card —
  * "Background jobs" and "Subagents" — each opening a popover listing the
  * current session's rows. Jobs read the same `jobsBySession` mirror as the
- * header list; subagents fold the whole subagent-only descendant lineage from
+ * header list, minus the foreground `bash` rows the tool removes with their
+ * command (./announced-jobs.ts folds the session log for that verdict, and
+ * every unreadable path shows the row). Subagents fold the whole
+ * subagent-only descendant lineage from
  * session summaries (the same index the header tree counts), so counts and
  * rows stay consistent with the title by construction. Jobs tick once per
  * second while a popover is open; each row carries its stop/interrupt verb,
@@ -15,7 +18,7 @@
  * @module dsh-taskpilot/client/dock
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 // rc.1 retired the remotes-assembly `JobView` re-export together with the
@@ -27,6 +30,15 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { indexSubagentDescendants } from './subagent-lineage.ts'
 import type { JobsSnapshotLike } from './jobs-channel.ts'
+import {
+  ANNOUNCED_REFRESH_MS,
+  BASH_ANNOUNCE_GRACE_MS,
+  isLiveJob,
+  unannouncedBashIds,
+  visibleJobs,
+  type AnnouncedBashWindow,
+  type LoadAnnouncedBashJobs,
+} from './announced-jobs.ts'
 import type { NS, TaskPilotLocale } from './locales.ts'
 import css from './TaskPilotDock.module.css'
 
@@ -40,16 +52,11 @@ const NO_ACTIVE: ReadonlySet<string> = new Set()
 
 type T = TranslateNS<typeof NS>
 
-/** A job the registry still holds open, and whose duration therefore ticks. */
-function isLive(job: JobView): boolean {
-  return job.status === 'running' || job.status === 'stopping'
-}
-
 /** Live rows first in start order, then settled rows newest-first. */
 function ordered(jobs: readonly JobView[]): JobView[] {
   return [...jobs].sort((left, right) => {
-    const liveLeft = isLive(left)
-    if (liveLeft !== isLive(right)) return liveLeft ? -1 : 1
+    const liveLeft = isLiveJob(left)
+    if (liveLeft !== isLiveJob(right)) return liveLeft ? -1 : 1
     if (liveLeft) return left.startedAt - right.startedAt
     const finished = (right.finishedAt ?? right.startedAt) - (left.finishedAt ?? left.startedAt)
     return finished !== 0 ? finished : left.startedAt - right.startedAt
@@ -145,6 +152,13 @@ export interface TaskPilotDockInjected {
   watchRows: (sessionId: SessionId) => () => void
   /** Load one session's projections (rc.1's subagent catalog); a no-op on 0.1.5. */
   refreshCatalog: (sessionId: SessionId) => void
+  /**
+   * Read the session log tail for the background-job acknowledgments that tell
+   * a background `bash` row from the foreground call the tool removes with its
+   * command (./announced-jobs.ts). Resolves undefined whenever the log cannot
+   * be read, which shows every row (fail-open).
+   */
+  loadAnnouncedBashJobs: LoadAnnouncedBashJobs
   hooks: {
     /** rc.1's job-roster mirror (empty on 0.1.5, where the legacy session-list read answers). */
     jobs: {
@@ -259,15 +273,63 @@ export function collectDescendants(
 export function TaskPilotDock(props: TaskPilotDockProps): React.ReactElement | null {
   const {
     sessionId, useSessions, useJobs, stopJob, interruptSubagent, openJob, openSession, t,
-    pollActiveDelegations, watchRows, refreshCatalog,
+    pollActiveDelegations, watchRows, refreshCatalog, loadAnnouncedBashJobs,
   } = props
   // Dual-channel roster: rc.1 serves it through the jobs channel (undefined
   // for an unwatched/empty session), 0.1.5 through the session-list mirror
   // (undefined on rc.1, whose state has no such key).
   const legacyJobs = useSessions(state => (state as LegacySessionListState).jobsBySession?.[sessionId])
   const controllerJobs = useJobs(state => state.rows[sessionId])
-  const jobs = controllerJobs ?? legacyJobs ?? NO_JOBS
+  const roster = controllerJobs ?? legacyJobs ?? NO_JOBS
   useEffect(() => watchRows(sessionId), [sessionId, watchRows])
+
+  // Which roster rows are jobs the model was told about. A foreground `bash`
+  // call is a registry record the tool deletes the moment it settles, so it
+  // must not reach the capsule; only the session log can say which rows are
+  // real background jobs (./announced-jobs.ts). A window of `undefined` — the
+  // read has not landed yet, or the log channel is unavailable — shows every
+  // row, so an unreadable path degrades to the behavior before this filter.
+  const [loaded, setLoaded] = useState<{ sessionId: SessionId; window: AnnouncedBashWindow | undefined } | undefined>(undefined)
+  const announced = loaded?.sessionId === sessionId ? loaded.window : undefined
+  const readWindow = useCallback((cancelled: () => boolean): void => {
+    // Only a successful read publishes. An unreadable one leaves the last
+    // verdict in place, and a session that never had one stays at the
+    // fail-open default, so an absent channel shows every row.
+    void loadAnnouncedBashJobs(sessionId).then(
+      window => {
+        if (!cancelled() && window !== undefined) setLoaded({ sessionId, window })
+      },
+      () => {},
+    )
+  }, [sessionId, loadAnnouncedBashJobs])
+  // Arm the verdict for the session before its first row arrives, so a
+  // foreground command is hidden from its very first frame.
+  useEffect(() => {
+    let cancelled = false
+    readWindow(() => cancelled)
+    return () => { cancelled = true }
+  }, [readWindow])
+  // A new unannounced id is a fresh registration whose ack may still be in
+  // flight, so the read repeats for the grace window and then gives up: past
+  // it the row is a foreground record and the verdict is final. A status tick
+  // inside the same id set changes nothing, so it triggers no read.
+  const unannouncedKey = unannouncedBashIds(roster, announced).join(',')
+  useEffect(() => {
+    if (unannouncedKey === '') return
+    let cancelled = false
+    const startedAt = Date.now()
+    readWindow(() => cancelled)
+    const timer = setInterval(() => {
+      if (Date.now() - startedAt >= BASH_ANNOUNCE_GRACE_MS) {
+        clearInterval(timer)
+        return
+      }
+      readWindow(() => cancelled)
+    }, ANNOUNCED_REFRESH_MS)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [unannouncedKey, readWindow])
+
+  const jobs = useMemo(() => visibleJobs(roster, announced), [roster, announced])
   const summaries = useSessions(state => state.byId) ?? {}
   const legacyCatalog = useSessions(state => (state as LegacySessionListState).subagentsByParent?.[sessionId])
   const catalogProjection = useSessions(
@@ -275,7 +337,7 @@ export function TaskPilotDock(props: TaskPilotDockProps): React.ReactElement | n
   )
 
   const rows = useMemo(() => ordered(jobs), [jobs])
-  const liveJobs = useMemo(() => jobs.filter(isLive), [jobs])
+  const liveJobs = useMemo(() => jobs.filter(isLiveJob), [jobs])
   // Direct children carry the durable creation label (descriptor label, same
   // source as the header tree); deep descendants fall back to the summary's
   // displayTitle, whose session-title projection can lag one beat. rc.1 reads
@@ -380,7 +442,7 @@ export function TaskPilotDock(props: TaskPilotDockProps): React.ReactElement | n
         {open === 'jobs' && (
           <ul className={css.popover} aria-label={t('dock.jobs.label')}>
             {rows.map((job) => {
-              const live = isLive(job)
+              const live = isLiveJob(job)
               const elapsed = live ? now - job.startedAt : (job.finishedAt ?? job.startedAt) - job.startedAt
               return (
                 <li key={job.id} className={live ? css.row : `${css.row} ${css.rowSettled}`}>
