@@ -56,7 +56,7 @@
 | `@khorsheed/dsh-typesafe-tool` | `packages/typesafe-tool` | 0.1.1 | composition | preset-composed-row | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/ui-content-preview` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-file-preview` | `packages/ui-file-preview` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
-| `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.3 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-worktrees-tool` | `packages/worktrees-tool` | 0.1.1 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
