@@ -394,7 +394,9 @@ function runRow(
     items: tasks.size,
     reps: reps.size,
     factors: conditionFactors(conditions.map(entry => entry.document)),
-    progress: { done: buckets['done'] ?? 0, total: run.rows.length },
+    // The same predicate the status rule reads (T80c P1-3): mission's `done`
+    // bucket leaves halted cells out, so a run could read 「评估中」 at 0/1.
+    progress: { done: cellStates.filter(isJudgedOrBeyond).length, total: run.rows.length },
     startedAt: numberOrNull(meta['startedAt']) ?? run.createdAt,
     validation: null,
     unit: unitOf(meta['unit']),

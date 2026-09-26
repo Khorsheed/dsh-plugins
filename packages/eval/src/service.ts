@@ -435,6 +435,7 @@ export class EvalService {
     return {
       ...ledger,
       status: row.status,
+      progress: row.progress,
       stalledMinutes: row.stalledMinutes,
       closure: row.closure,
       archived: row.archived,

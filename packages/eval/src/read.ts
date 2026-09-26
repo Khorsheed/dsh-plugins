@@ -413,9 +413,11 @@ export interface RunLedgerStatus {
  * WORD the lab list shows for the same run (T72 §2) — derived by the one rule
  * in `experiments.ts`, never stored. `stalledMinutes` is set only when the
  * word is `stalled`; `closure` is the human's standing exit, if any.
+ * `progress` is the list row's count, by the same predicate as the word.
  */
 export interface RunStatusReport extends RunLedgerStatus {
   status: EvalExperimentStatus
+  progress: { done: number; total: number } | null
   stalledMinutes: number | null
   closure: EvalClosure | null
   archived: boolean

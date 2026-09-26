@@ -247,7 +247,10 @@ export interface EvalExperimentRow {
    * Empty when the run has one condition, or when no document could be read.
    */
   factors: string[]
-  /** Cells settled / cells total; null for a draft (nothing is expanded yet). */
+  /**
+   * Cells judged-or-beyond / cells total — the predicate `judging` is derived
+   * from, so `judging` always coincides with done === total. Null for a draft.
+   */
   progress: { done: number; total: number } | null
   /** Epoch ms the run started; null for a draft. */
   startedAt: number | null

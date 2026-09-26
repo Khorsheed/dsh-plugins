@@ -420,7 +420,8 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       + 'bucket, what the orchestrator last did to it, and how often a submission was rejected. `status` is the '
       + 'same word the lab list shows (draft / pending-approval / running / stalled / judging / done / void / '
       + 'refused / cancelled — derived, never stored; `stalled` means nothing is driving unfinished cells and the '
-      + 'ledger has not moved for over 10 minutes, with `stalledMinutes` saying how long), plus the human\'s '
+      + 'ledger has not moved for over 10 minutes, with `stalledMinutes` saying how long), `progress` as the list '
+      + 'counts it (cells judged or past it / all cells — `judging` is exactly done = total), plus the human\'s '
       + '`closure` exit if one was taken and whether the run is `archived`. Read-only: '
       + 'nothing here advances, retries, or annotates a cell.',
     parameters: {
