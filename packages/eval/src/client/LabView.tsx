@@ -1148,6 +1148,11 @@ export function LabView(props: LabViewProps) {
                       rep={answers.rep}
                       onOpenSession={(childId, parentId) => { openSession(childId as SessionId, parentId === null ? null : parentId as SessionId) }}
                       onBack={() => { actions.openAnswers(null) }}
+                      onRejudge={(column) => {
+                        handToAgent(t('answer.rejudgeAsk', {
+                          name: openRow?.name ?? openRunId, condition: column.condition ?? '—', rep: column.rep ?? 1,
+                        }))
+                      }}
                       t={t}
                     />
                   )

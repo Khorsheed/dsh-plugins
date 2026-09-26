@@ -593,6 +593,9 @@ export function JudgingPage(props: {
                     rep={null}
                     onOpenSession={null}
                     onBack={null}
+                    // Blind: the column is named by its run-wide number, the
+                    // same sentence the 判官缺席 card sends.
+                    onRejudge={(column) => { if (column.queueCell !== null) onRejudge([column.queueCell.cellNo]) }}
                     t={t}
                   />
                 </div>

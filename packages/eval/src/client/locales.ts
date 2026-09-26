@@ -879,6 +879,9 @@ export type EvalKey =
   | 'answer.truncated'
   | 'answer.reportsFolded'
   | 'answer.unjudged'
+  | 'answer.scriptOnly'
+  | 'answer.noneJudged'
+  | 'answer.rejudgeAsk'
   | 'answer.noVerdicts'
   | 'answer.scripts'
   | 'answer.noScripts'
@@ -1778,6 +1781,9 @@ export const en: Record<EvalKey, string> = {
   'answer.truncated': '{name} is {bytes} bytes, over the limit; only the beginning is shown',
   'answer.reportsFolded': 'Submitted report: {files}',
   'answer.unjudged': 'Not judged on this criterion',
+  'answer.scriptOnly': 'Script checks only \u2014 no judge reached this answer ({count} criteria unjudged).',
+  'answer.noneJudged': 'Nothing has judged this answer yet ({count} criteria).',
+  'answer.rejudgeAsk': 'Experiment {name}: re-run the judge on {condition}, run {rep}.',
   'answer.noVerdicts': 'No verdicts: {reason}',
   'answer.scripts': 'Script output',
   'answer.noScripts': 'No script output',
@@ -2667,6 +2673,9 @@ export const zh: Record<EvalKey, string> = {
   'answer.truncated': '{name} 共 {bytes} 字节，超过上限，只显示开头部分',
   'answer.reportsFolded': '提交的报告：{files}',
   'answer.unjudged': '这条判据未判',
+  'answer.scriptOnly': '只有脚本判定：判官没有判这份作答（{count} 条判据未判）。',
+  'answer.noneJudged': '这份作答还没有任何判定（{count} 条判据）。',
+  'answer.rejudgeAsk': '实验 {name}：给 {condition} 第 {rep} 次的作答补判。',
   'answer.noVerdicts': '没有判定：{reason}',
   'answer.scripts': '脚本输出',
   'answer.noScripts': '没有脚本输出',
