@@ -206,7 +206,9 @@ function Segmented<V extends string | number>(props: SegProps<V> & { kind: 'seg'
             type="button"
             role="radio"
             aria-checked={checked}
-            tabIndex={checked ? 0 : -1}
+            // Nothing chosen yet (成立 / 不成立 before an answer): the first
+            // option keeps the group reachable from the keyboard.
+            tabIndex={checked || (index === 0 && !options.some(each => each.value === value)) ? 0 : -1}
             disabled={disabled || option.disabled === true}
             className={kind === 'seg' ? css.segItem : css.seg2Item}
             onClick={() => { if (!checked) onChange(option.value) }}

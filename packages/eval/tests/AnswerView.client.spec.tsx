@@ -76,8 +76,30 @@ describe('the answer view', () => {
     expect((hung[0] as HTMLElement).textContent).toContain('D1')
     // The group that did not submit keeps its stage slot.
     expect(screen.getByText(/answer.stageMissing/)).toBeTruthy()
-    fireEvent.click(screen.getByText('answer.process'))
+    // 过程 is a tab (T83 · v5 subtabs), one 打开选手会话 per column.
+    fireEvent.click(screen.getByRole('tab', { name: 'answer.process' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'answer.processOpen' })[0]!)
     expect(onOpenSession).toHaveBeenCalledWith('child-lean', 'parent')
+  })
+
+  it('shows 代码改动 as a tab with an empty state, never hides it (T83)', () => {
+    renderView()
+    const tabs = screen.getAllByRole('tab').map(node => node.textContent)
+    expect(tabs).toEqual(['answer.viewReport', 'answer.viewDiff', 'answer.process', 'answer.viewEvidence'])
+    fireEvent.click(screen.getByRole('tab', { name: 'answer.viewDiff' }))
+    expect(screen.getByText('answer.diffNone')).toBeTruthy()
+  })
+
+  it('单份 shows one column at a time, picked from the same bar (T83)', () => {
+    renderView()
+    fireEvent.click(screen.getByRole('radio', { name: 'answer.single' }))
+    // The located column (dsh-full) is the one it opens on.
+    const heads = () => [...document.querySelectorAll('[data-part="head"]')].map(node => node.textContent)
+    expect(heads()).toHaveLength(1)
+    expect(heads()[0]).toContain('dsh-full')
+    fireEvent.click(screen.getByRole('radio', { name: 'dsh-lean' }))
+    expect(heads()).toHaveLength(1)
+    expect(heads()[0]).toContain('dsh-lean')
   })
 
   it('blind swaps names for seeded letters and folds 过程 away', () => {
@@ -87,7 +109,9 @@ describe('the answer view', () => {
     expect(screen.queryByText('dsh-full')).toBeNull()
     expect(screen.getByText('answer.blindName {"letter":"A"}')).toBeTruthy()
     expect(screen.getByText('answer.blindName {"letter":"B"}')).toBeTruthy()
-    expect(screen.queryByText('answer.process')).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'answer.process' }))
+    expect(screen.getAllByText('answer.processBlind')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'answer.processOpen' })).toBeNull()
     expect(document.querySelectorAll('[data-located="true"]')).toHaveLength(0)
     fireEvent.click(screen.getByText('answer.names'))
     expect(screen.getByText('dsh-lean')).toBeTruthy()
@@ -111,7 +135,10 @@ describe('the answer view', () => {
   it('the scoring face locks the blind on and renders its form above the folded reports', () => {
     renderView({ scoring: column => <div data-testid="form">{column.letter}</div>, onOpenSession: null })
     expect(screen.queryByText('dsh-lean')).toBeNull()
-    expect((screen.getByText('answer.names') as HTMLButtonElement).disabled).toBe(true)
+    // Locked blind: no names switch and no tabs — the reports only (T83).
+    expect(screen.queryByText('answer.names')).toBeNull()
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.getByText('answer.blindScoring')).toBeTruthy()
     expect(screen.getAllByTestId('form').map(node => node.textContent)).toEqual(['A', 'B'])
     const parts = [...document.querySelectorAll('[data-part]')].map(node => node.getAttribute('data-part'))
     expect(parts.indexOf('scoring')).toBeLessThan(parts.indexOf('reports'))

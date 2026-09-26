@@ -258,7 +258,8 @@ describe('the blind queue', () => {
     // a cell's visible name, and it says nothing about which arm produced it.
     expect(screen.getByText('judge.column {"no":1}')).toBeTruthy()
     expect(screen.getByText('judge.column {"no":2}')).toBeTruthy()
-    expect(screen.getByText('judge.sideBySide')).toBeTruthy()
+    // One sentence beside the title says both are blind and graded apart.
+    expect(screen.getByText('answer.blindScoring')).toBeTruthy()
   })
 
   it('renders no harness, model, condition or mission id anywhere in the DOM', async () => {
@@ -274,7 +275,7 @@ describe('the blind queue', () => {
     }
     // And the page SAYS it is blind, so a grader knows the omission is on
     // purpose rather than a page that failed to load.
-    expect(screen.getByText('judge.blindNotice')).toBeTruthy()
+    expect(screen.getByText('answer.blindScoring')).toBeTruthy()
   })
 
   it('shows the scrubbed artifacts verbatim, with how many fingerprints were removed', async () => {
@@ -305,6 +306,10 @@ describe('the criteria table', () => {
     await openBench(h)
     await screen.findByText('judge.queue')
     pickItem('P0', 2)
+    // The compact table says each line's judge mark; the samples themselves
+    // sit in the line's detail, one click away (T83 · v5).
+    expect(screen.queryByText('判官 A')).toBeNull()
+    for (const toggle of screen.getAllByRole('button', { name: /^judge\.criterionDetail/ })) fireEvent.click(toggle)
     expect(screen.getByText('判官 A')).toBeTruthy()
     expect(screen.getByText('判官 B')).toBeTruthy()
     expect(screen.getByText('读着顺')).toBeTruthy()
@@ -364,11 +369,14 @@ describe('the human-final write', () => {
     pickItem('P0', 2)
     const submit = screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":0}' })
     expect(submit.hasAttribute('disabled')).toBe(true)
-    expect(screen.getAllByText('judge.submitBlocked').length).toBe(2)
+    const blocked = [...document.querySelectorAll('[title="judge.submitBlocked"]')]
+    expect(blocked.length).toBe(2)
+    // No evidence box until a line is chosen: the box is the choice's own.
+    expect(screen.queryByLabelText('judge.column {"no":1} judge.evidence H1')).toBeNull()
 
     // A verdict with no evidence is still not sendable: the protocol asks for
     // a checkable fact, and the host refuses a blank one anyway.
-    fireEvent.click(screen.getAllByRole('button', { name: 'judge.pass' })[0] as HTMLElement)
+    fireEvent.click(screen.getAllByRole('radio', { name: 'judge.pass' })[0] as HTMLElement)
     expect(screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":0}' }).hasAttribute('disabled')).toBe(true)
 
     fireEvent.change(evidenceOf(1, 'H1'), { target: { value: '结论段是给人读的' } })
@@ -384,7 +392,7 @@ describe('the human-final write', () => {
     pickItem('P0', 2)
     // Answer H1 only — H2 is left untouched, and an untouched criterion is
     // not a verdict of "does not hold".
-    fireEvent.click(screen.getAllByRole('button', { name: 'judge.fail' })[0] as HTMLElement)
+    fireEvent.click(screen.getAllByRole('radio', { name: 'judge.fail' })[0] as HTMLElement)
     fireEvent.change(evidenceOf(1, 'H1'), { target: { value: '读着像给模型写的' } })
     fireEvent.click(screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":1}' }))
 
@@ -407,7 +415,7 @@ describe('the human-final write', () => {
     await openBench(h)
     await screen.findByText('judge.queue')
     pickItem('P0', 2)
-    fireEvent.click(screen.getAllByRole('button', { name: 'judge.pass' })[0] as HTMLElement)
+    fireEvent.click(screen.getAllByRole('radio', { name: 'judge.pass' })[0] as HTMLElement)
     fireEvent.change(evidenceOf(1, 'H1'), { target: { value: '同一句话' } })
     fireEvent.click(screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":1}' }))
     expect(await screen.findByText('notice.humanFinalDuplicate {"no":1}')).toBeTruthy()
@@ -418,11 +426,13 @@ describe('the human-final write', () => {
     await openBench(h)
     await screen.findByText('judge.queue')
     pickItem('P0', 2)
+    fireEvent.click(screen.getAllByRole('radio', { name: 'judge.pass' })[0] as HTMLElement)
     fireEvent.change(evidenceOf(1, 'H1'), { target: { value: '写到一半' } })
 
     // Evidence about answer 1 must not be submittable against answer 2 — the
     // whole reason the drafts are keyed by ticket now that both are on screen.
-    expect((evidenceOf(2, 'H1') as HTMLInputElement).value).toBe('')
+    // Answer 2 chose nothing, so it has no box at all.
+    expect(screen.queryByLabelText('judge.column {"no":2} judge.evidence H1')).toBeNull()
     expect(screen.getByRole('button', { name: 'judge.submitOne {"no":2,"count":0}' }).hasAttribute('disabled')).toBe(true)
 
     // Leaving the question drops every column's draft: a grader must not carry
@@ -430,7 +440,8 @@ describe('the human-final write', () => {
     // fixture, so «leaving» is picking it again — the store clears on the
     // selection, not on the id changing.)
     pickItem('P0', 2)
-    expect((evidenceOf(1, 'H1') as HTMLInputElement).value).toBe('')
+    expect(screen.queryByLabelText('judge.column {"no":1} judge.evidence H1')).toBeNull()
+    expect(screen.getAllByRole('radio', { name: 'judge.pass' }).every(node => node.getAttribute('aria-checked') === 'false')).toBe(true)
   })
 
   it('surfaces a refusal verbatim instead of pretending the verdict landed', async () => {
@@ -441,7 +452,7 @@ describe('the human-final write', () => {
     await openBench(h)
     await screen.findByText('judge.queue')
     pickItem('P0', 2)
-    fireEvent.click(screen.getAllByRole('button', { name: 'judge.pass' })[0] as HTMLElement)
+    fireEvent.click(screen.getAllByRole('radio', { name: 'judge.pass' })[0] as HTMLElement)
     fireEvent.change(evidenceOf(1, 'H1'), { target: { value: 'x' } })
     fireEvent.click(screen.getByRole('button', { name: 'judge.submitOne {"no":1,"count":1}' }))
     expect(await screen.findByText('判据 H1 缺证据：终评每条都要写清依据')).toBeTruthy()
@@ -589,7 +600,7 @@ describe('landing (T80c P1-6)', () => {
   it('opens on the first item with an ungraded answer — no pick needed to start', async () => {
     const h = makeHarness()
     await openBench(h)
-    expect(await screen.findByText('judge.sideBySide')).toBeTruthy()
+    expect(await screen.findByText('answer.blindScoring')).toBeTruthy()
     expect(screen.queryByText('judge.itemPick')).toBeNull()
     expect(screen.getByRole('button', { name: /judge\.itemCount \{"task":"P0"/ }).getAttribute('aria-pressed')).toBe('true')
   })

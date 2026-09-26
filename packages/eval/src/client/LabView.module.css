@@ -1999,11 +1999,6 @@ tr:last-child > .reportTd {
   min-width: 0;
 }
 
-.benchLead {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 1.6;
-}
 
 .itemSwitch {
   display: flex;
@@ -2098,21 +2093,7 @@ tr:last-child > .reportTd {
   padding-top: 4px;
 }
 
-.criterionRow {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 0;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  min-width: 0;
-}
 
-.criterionHead {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: baseline;
-}
 
 .criterionDrafts {
   display: flex;
@@ -2122,21 +2103,7 @@ tr:last-child > .reportTd {
   min-width: 0;
 }
 
-/* The two verdict buttons and the evidence box on one line, the box taking
-   whatever is left: evidence is the field that must not feel optional. */
-.criterionAnswer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  padding-top: 2px;
-  min-width: 0;
-}
 
-.criterionAnswer > *:nth-child(3) {
-  flex: 1 1 180px;
-  min-width: 0;
-}
 
 /* ── the 新建实验 form (ui-spec §五, step 2) ─────────────────────────────── */
 
@@ -2465,6 +2432,122 @@ tr:last-child > .reportTd {
   padding-bottom: 4px;
 }
 
+/* T83 · judge: one card's criteria as v5's compact table — 判据 · 判官 ·
+   你的终评 — with a line's detail (rubric evidence, drafts, the required
+   evidence box) opening under it across all three columns. */
+.critTable {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px 12px;
+  align-items: center;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.critHead {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.critLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.critToggle {
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.critText {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.critToggle[aria-expanded='true'] .critText {
+  color: var(--dsw-alias-label-primary);
+}
+
+.critWeight {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.critWeight::before {
+  content: '· ';
+}
+
+.critJudge {
+  color: var(--dsw-alias-label-primary);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.critJudgeNone {
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+.critSub,
+.critDetail {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.critDetail {
+  flex-direction: column;
+  align-items: stretch;
+  margin: -2px 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsh-eval-surface-2);
+}
+
+.scoreFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.scoreFootNotes {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* v5 · 放弃终评…: the exit that voids the review is red text, no fill. */
+.dangerText.dangerText {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .answerColumn {
   display: flex;
   /* Grows into the room the third column used to waste, and never shrinks
@@ -2531,10 +2614,10 @@ tr:last-child > .reportTd {
   font-weight: 600;
 }
 
-/* A defect that occurred, and a criterion that failed: the same colour,
-   because they are the same fact about the score. */
+/* A defect that occurred, and a criterion that failed: the same mark, in a
+   neutral tone (v5) — the glyph carries the fact, red is kept for alarms. */
 .criteriaMark[data-bad] {
-  color: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .criteriaSource {
@@ -3041,6 +3124,11 @@ tr:last-child > .reportTd {
   font-weight: 600;
   line-height: 30px;
   font-variant-numeric: tabular-nums;
+}
+
+/* The side a coverage gap names: its number, greyed (not comparable). */
+.scoreCell[data-na] .scoreBig {
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .scoreName,

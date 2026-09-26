@@ -350,6 +350,12 @@ function deltaSentence(pair: EvalReportPair, scores: { a: number; b: number }, t
     : t('report.deltaAhead', { ahead: pair.b, behind: pair.a, d: fmtNum(-d) })
 }
 
+/** A reason's lead, marked `**…**` in the catalog, set in bold (v5). */
+function leadText(text: string): ReactNode[] {
+  return text.split(/\*\*(.+?)\*\*/).map((part, index) =>
+    index % 2 === 1 ? <b key={index}>{part}</b> : part)
+}
+
 /** One pair on the card: the two big scores, the gap in words, and why it is not yet a result. */
 function ConclusionPair(props: { pair: EvalReportPair; named: boolean; t: LabViewProps['t'] }) {
   const { pair, named, t } = props
@@ -368,7 +374,13 @@ function ConclusionPair(props: { pair: EvalReportPair; named: boolean; t: LabVie
       {scores !== null && (
         <div className={css.scoreRow}>
           {([[pair.a, scores.a], [pair.b, scores.b]] as const).map(([condition, score]) => (
-            <div key={condition} className={css.scoreCell}>
+            <div
+              key={condition}
+              className={css.scoreCell}
+              // v5: the side a coverage gap names is not comparable — its
+              // number stays, greyed, so nobody reads it as the loser's.
+              data-na={pair.coverage.some(entry => entry.condition === condition) ? '' : undefined}
+            >
               <span className={css.scoreBig}>{fmtNum(score)}</span>
               <span className={css.scoreName}>{condition}</span>
             </div>
@@ -386,7 +398,7 @@ function ConclusionPair(props: { pair: EvalReportPair; named: boolean; t: LabVie
           {reasons.map(reason => (
             <li key={reason.text} className={css.reasonItem} data-level={reason.level}>
               <span className={css.reasonMark} aria-hidden>{reason.level === 'block' ? '✗' : '!'}</span>
-              <span>{reason.text}</span>
+              <span>{leadText(reason.text)}</span>
             </li>
           ))}
         </ul>

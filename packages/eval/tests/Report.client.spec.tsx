@@ -542,6 +542,10 @@ describe('the conclusion card answers the plan\'s question (T74)', () => {
     expect(coverage.closest('li')?.getAttribute('data-level')).toBe('block')
     expect(within(card).getByText('report.reason.fewTasks {"k":1}')).toBeTruthy()
     expect(within(card).getByText('report.reason.multi {"fields":"model.declared、scope"}')).toBeTruthy()
+    // The side the gap names is not comparable: its number stays, greyed.
+    const greyed = [...card.querySelectorAll('[data-na]')].map(node => node.textContent)
+    expect(greyed).toHaveLength(1)
+    expect(greyed[0]).toContain('cond-b')
     // The report's own sentence stays one hover away.
     expect(within(card).getByTitle('n = 2 < 3，不排名')).toBeTruthy()
     // At most three next steps, the rejudge first.

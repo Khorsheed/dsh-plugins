@@ -3,22 +3,24 @@
  * read — the run record's 看作答, the 结果对比 tables, and the 人工评估 page.
  *
  * A 题's groups sit side by side, one row per 次, and the same parts line up
- * across a row: every stage on its own grid row, every criterion on its own.
- * Two views — 提交的报告 (the stage markdown, rendered; a verdict hangs under
- * a paragraph only when its evidence quotes that paragraph, see
- * `answer-view.ts`) and 判定证据 (each criterion's verdicts with their reasons,
- * and the script output verbatim). 过程 opens the player's session (T69's
- * door).
+ * across a row: every criterion on its own grid row. Four tabs under the
+ * title (T83, v5): 提交的报告 (each column's stage markdown in one card,
+ * clamped to about 16 lines until 展开全文; a verdict hangs under a paragraph
+ * only when its evidence quotes that paragraph, see `answer-view.ts`), 代码改动
+ * (no data yet — the tab stays and says so), 过程 (the player's session, T69's
+ * door) and 判定证据 (each criterion's verdicts with their reasons, and the
+ * script output verbatim). 并排 / 单份 and the blind switch sit top right.
  *
  * The blind switch swaps each group's name for a letter in the run's seeded
- * order and folds 过程 away (a transcript names its harness). On the 人工评估
- * page the switch is locked on and the payload is the blind queue's — the
- * scrubbed material with no group on the wire — and the scoring form sits on
- * top of each column with the reports folded under it: the bench's own rule
- * (I5·T67 · W9), kept inside the component rather than beside it.
+ * order and closes 过程 (a transcript names its harness). On the 人工评估
+ * page the view is locked blind and the payload is the blind queue's — the
+ * scrubbed material with no group on the wire — and it drops the tabs: the
+ * scoring form sits on top of each column and the reports stay folded under
+ * it until the column head's 看作答 opens them (I5·T67 · W9, kept inside the
+ * component rather than beside it).
  */
 
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Button, MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalAnswerVerdict, EvalJudgeCriterionRow } from '../types.ts'
 import {
@@ -26,7 +28,7 @@ import {
   type AnswerColumnModel, type AnswerFile, type AnswerRow, type AnswerSource, type HungAt,
 } from './answer-view.ts'
 import type { LabViewProps } from './contract.ts'
-import { Chip, type Tone } from './parts.tsx'
+import { Chip, Seg2, type Tone } from './parts.tsx'
 import base from './LabView.module.css'
 import css from './AnswerView.module.css'
 
@@ -128,25 +130,61 @@ function FoldedFile(props: { file: AnswerFile; t: T }) {
   )
 }
 
-/** One column's head: its name, its verdict source, and 过程. */
+/** One column's head: its name, its verdict source, and (scoring) 看作答. */
 function ColumnHead(props: {
   column: AnswerColumnModel
   blind: boolean
-  onOpenSession: ((child: string, parent: string | null) => void) | null
+  /** Scoring face: the head's 看作答 opens this column's folded reports. */
+  onOpenReports: (() => void) | null
+  aside: ReactNode
   t: T
 }) {
-  const { column, blind, onOpenSession, t } = props
+  const { column, blind, onOpenReports, aside, t } = props
   const name = blind || column.condition === null ? t('answer.blindName', { letter: column.letter }) : column.condition
   return (
     <div className={css.head}>
       <span className={css.name}>{name}</span>
+      {aside}
       <Chip tone={SOURCE_TONE[column.source]}>{t(SOURCE_KEY[column.source])}</Chip>
-      {/* 过程 is the player's transcript, and a transcript names its harness:
-          behind the blind it is folded away with the name. */}
-      {!blind && onOpenSession !== null && column.childSessionId !== null && (
-        <Button variant="outline" size="sm" onClick={() => { onOpenSession(column.childSessionId as string, column.parentSessionId) }}>
-          {t('answer.process')}
-        </Button>
+      {onOpenReports !== null && (
+        <button type="button" className={css.headLink} onClick={onOpenReports}>{t('answer.open')}</button>
+      )}
+    </div>
+  )
+}
+
+/** About 16 lines of 13/22 reading text: where a long report is cut. */
+const CLAMP_PX = 352
+
+/**
+ * A long report cut to about 16 lines, with a fade and 展开全文 (T83). Each
+ * column clamps and opens on its own: a grader comparing two openings should
+ * not have to scroll past the whole of the first answer to reach the second.
+ */
+function Clamp(props: { open: boolean; onToggle: () => void; children: ReactNode; t: T }) {
+  const { open, onToggle, children, t } = props
+  const inner = useRef<HTMLDivElement>(null)
+  const [over, setOver] = useState(false)
+  useLayoutEffect(() => {
+    const node = inner.current
+    if (node === null) return undefined
+    const measure = (): void => { setOver(node.offsetHeight > CLAMP_PX + 8) }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => { observer.disconnect() }
+  }, [])
+  const clamped = over && !open
+  return (
+    <div className={css.clamp} data-clamped={clamped ? 'true' : undefined}>
+      <div className={css.clampBody} style={clamped ? { maxHeight: `${String(CLAMP_PX)}px` } : undefined}>
+        <div ref={inner}>{children}</div>
+      </div>
+      {over && (
+        <button type="button" className={css.clampToggle} aria-expanded={open} onClick={onToggle}>
+          {t(open ? 'answer.collapse' : 'answer.expand')}
+        </button>
       )}
     </div>
   )
@@ -198,81 +236,127 @@ export interface AnswerViewProps {
    * ask: by blind number on the 人工评估 page, by group and 次 elsewhere.
    */
   onRejudge: ((column: AnswerColumnModel) => void) | null
+  /** Scoring face: a quiet word beside each column's name (its run-wide number). */
+  headAside?: ((column: AnswerColumnModel) => ReactNode) | undefined
   t: T
 }
+
+type Tab = 'report' | 'diff' | 'process' | 'evidence'
+const TABS: ReadonlyArray<[Tab, 'answer.viewReport' | 'answer.viewDiff' | 'answer.process' | 'answer.viewEvidence']> = [
+  ['report', 'answer.viewReport'], ['diff', 'answer.viewDiff'], ['process', 'answer.process'], ['evidence', 'answer.viewEvidence'],
+]
 
 /**
  * The answer view.
  * @param props - the rows of one 题 and the face they came from.
  */
 export function AnswerView(props: AnswerViewProps) {
-  const { task, rows, criteria, criteriaNote, notes, scoring, onOpenSession, onBack, onRejudge, t } = props
+  const { task, rows, criteria, criteriaNote, notes, scoring, onOpenSession, onBack, onRejudge, headAside, t } = props
   const locked = scoring !== null
   const [blindChoice, setBlind] = useState(false)
   const blind = locked || blindChoice
-  const [view, setView] = useState<'report' | 'evidence'>('report')
+  const [tab, setTab] = useState<Tab>('report')
+  // The scoring face has no tabs: the forms are the page, and the reports
+  // open per column from the head's 看作答.
+  const view: Tab = locked ? 'report' : tab
+  const [layout, setLayout] = useState<'side' | 'single'>('side')
   const reps = rows.map(row => row.rep).filter((rep): rep is number => rep !== null)
   const [rep, setRep] = useState<number | null>(props.rep)
+  // 单份 shows one column per row; which one is its index in the row, so a
+  // switch of 次 keeps the same group (the rows share the seeded order).
+  const firstRow = rows[0]
+  const [single, setSingle] = useState(() => Math.max(0, firstRow?.columns.findIndex(column => column.located) ?? 0))
+  // Per column: the report opened past its clamp (named face) or unfolded
+  // from 看作答 (scoring face).
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
+  const toggle = (key: string): void => {
+    setOpened((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
   // Blind drops the outline too: the entry named a group, so an outlined
   // «作答 A» would say which letter that group is.
   const shown = (rep === null ? rows : rows.filter(row => row.rep === rep))
     .map(row => blind ? { ...row, columns: row.columns.map(column => ({ ...column, located: false })) } : row)
+    .map(row => layout === 'single' && !locked
+      ? { ...row, columns: row.columns.filter((_, index) => index === Math.min(single, row.columns.length - 1)) }
+      : row)
   const order = criteriaOrder(criteria, rows)
   const rubric = new Map(criteria.map(row => [row.id, row]))
+  const nameOf = (column: AnswerColumnModel): string => (
+    blind || column.condition === null ? t('answer.blindName', { letter: column.letter }) : column.condition
+  )
 
   return (
     <div className={css.view}>
       <div className={css.bar}>
         {onBack !== null && <Button variant="outline" size="sm" onClick={onBack}>{t('answer.back')}</Button>}
-        <span className={css.title}>{t('answer.title', { task })}</span>
+        <span className={css.title}>
+          {t(locked ? 'answer.blindTitle' : 'answer.title', { task })}
+          {/* The page's one sentence about the blind (T83, v5): beside the
+              title, not a paragraph above the answers. */}
+          {locked && <span className={css.titleAside}>{t('answer.blindScoring')}</span>}
+        </span>
         {reps.length > 1 && (
-          <div className={base.segmented} role="group" aria-label={t('answer.reps')}>
-            {[null, ...reps].map(value => (
-              <button
-                key={String(value)}
-                type="button"
-                className={base.chip}
-                aria-pressed={rep === value}
-                onClick={() => { setRep(value) }}
-              >
-                {value === null ? t('answer.repAll') : t('answer.rep', { rep: value })}
-              </button>
-            ))}
+          <Seg2
+            label={t('answer.reps')}
+            value={rep ?? 0}
+            options={[{ value: 0, label: t('answer.repAll') }, ...reps.map(value => ({ value, label: t('answer.rep', { rep: value }) }))]}
+            onChange={(value) => { setRep(value === 0 ? null : value) }}
+          />
+        )}
+        {!locked && (
+          <div className={css.barRight}>
+            {layout === 'single' && firstRow !== undefined && firstRow.columns.length > 1 && (
+              <Seg2
+                label={t('answer.pickColumn')}
+                value={single}
+                options={firstRow.columns.map((column, index) => ({ value: index, label: nameOf(column) }))}
+                onChange={setSingle}
+              />
+            )}
+            <Seg2
+              label={t('answer.layout')}
+              value={layout}
+              options={[{ value: 'side', label: t('answer.sideBySide') }, { value: 'single', label: t('answer.single') }]}
+              onChange={setLayout}
+            />
+            <Seg2
+              label={t('answer.blindSwitch')}
+              value={blind ? 'blind' : 'names'}
+              options={[{ value: 'names', label: t('answer.names') }, { value: 'blind', label: t('answer.blind') }]}
+              onChange={(value) => { setBlind(value === 'blind') }}
+            />
           </div>
         )}
-        <div className={base.segmented} role="group" aria-label={t('answer.blindSwitch')}>
-          {([false, true] as const).map(value => (
-            <button
-              key={String(value)}
-              type="button"
-              className={base.chip}
-              aria-pressed={blind === value}
-              disabled={locked && !value}
-              title={locked ? t('answer.blindLocked') : undefined}
-              onClick={() => { setBlind(value) }}
-            >
-              {t(value ? 'answer.blind' : 'answer.names')}
-            </button>
-          ))}
-        </div>
-        <div className={base.segmented} role="group" aria-label={t('answer.views')}>
-          {(['report', 'evidence'] as const).map(value => (
+      </div>
+      {!locked && (
+        <div className={css.tabs} role="tablist" aria-label={t('answer.views')}>
+          {TABS.map(([value, key]) => (
             <button
               key={value}
               type="button"
-              className={base.chip}
-              aria-pressed={view === value}
-              onClick={() => { setView(value) }}
+              role="tab"
+              className={css.tab}
+              aria-selected={view === value}
+              onClick={() => { setTab(value) }}
             >
-              {t(value === 'report' ? 'answer.viewReport' : 'answer.viewEvidence')}
+              {t(key)}
             </button>
           ))}
         </div>
-      </div>
-      {blind && <div className={base.dim}>{t(locked ? 'answer.blindScoring' : 'answer.blindNote')}</div>}
+      )}
+      {blind && !locked && <div className={base.dim}>{t('answer.blindNote')}</div>}
       {notes.map(note => <div key={note} className={base.note}>{note}</div>)}
 
-      {shown.map((row) => {
+      {/* 代码改动 has no data behind it yet: the tab stays, and says so once
+          for the whole view rather than once per column. */}
+      {view === 'diff' && <div className={css.tabEmpty}>{t('answer.diffNone')}</div>}
+
+      {view !== 'diff' && shown.map((row) => {
         const width = row.columns.length
         const stems = stemsOfRow(row)
         const hangs = new Map(row.columns.map(column => [column.key, hangVerdicts(column.files, column.verdicts)]))
@@ -288,13 +372,28 @@ export function AnswerView(props: AnswerViewProps) {
         const firstUnjudged = new Map(row.columns
           .filter(column => column.source === 'script' || column.source === 'none')
           .map(column => [column.key, order.find(id => !column.verdicts.some(verdict => verdict.criterion === id))]))
+        const stages = (column: AnswerColumnModel): ReactNode => stems.map(stem => (
+          <div key={stem} className={css.stage}>
+            <div className={css.stageTitle}>{stageLabel(stem, t)}</div>
+            <StageCell column={column} stem={stem} hangs={hangs.get(column.key) ?? new Map()} t={t} />
+          </div>
+        ))
         return (
           <section key={String(row.rep)} className={css.row} aria-label={row.rep === null ? task : t('answer.rep', { rep: row.rep })}>
             {row.rep !== null && <div className={css.repTitle}>{t('answer.rep', { rep: row.rep })}</div>}
             <div className={css.grid} style={{ gridTemplateColumns: `repeat(${String(width)}, minmax(300px, 1fr))` }}>
               {row.columns.map(column => (
                 <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="head">
-                  <ColumnHead column={column} blind={blind} onOpenSession={onOpenSession} t={t} />
+                  <ColumnHead
+                    column={column}
+                    blind={blind}
+                    onOpenReports={locked && column.files.length > 0 ? () => {
+                      toggle(column.key)
+                      document.getElementById(`eval-answer-reports-${column.key}`)?.scrollIntoView({ block: 'nearest' })
+                    } : null}
+                    aside={headAside?.(column) ?? null}
+                    t={t}
+                  />
                 </div>
               ))}
 
@@ -304,7 +403,7 @@ export function AnswerView(props: AnswerViewProps) {
                 </div>
               ))}
 
-              {view === 'report' && (scoring !== null
+              {view === 'report' && (locked
                 // Scoring: the criteria on top and the reports folded — the
                 // material is thousands of lines and above the forms it would
                 // push the columns out of step (I5·T67 · W9).
@@ -313,32 +412,48 @@ export function AnswerView(props: AnswerViewProps) {
                     {column.files.length === 0
                       ? <div className={base.dim}>{t('judge.materialNone')}</div>
                       : (
-                        <details className={base.errorDetails}>
+                        <details
+                          id={`eval-answer-reports-${column.key}`}
+                          className={base.errorDetails}
+                          open={opened.has(column.key)}
+                          onToggle={(event) => {
+                            const now = (event.currentTarget as HTMLDetailsElement).open
+                            if (now !== opened.has(column.key)) toggle(column.key)
+                          }}
+                        >
                           <summary className={base.errorSummary}>
                             {t('answer.reportsFolded', { files: column.files.map(file => file.name).join('、') })}
                           </summary>
-                          {stems.map(stem => (
-                            <div key={stem} className={css.stage}>
-                              <div className={css.stageTitle}>{stageLabel(stem, t)}</div>
-                              <StageCell column={column} stem={stem} hangs={hangs.get(column.key) ?? new Map()} t={t} />
-                            </div>
-                          ))}
+                          {stages(column)}
                         </details>
                       )}
                   </div>
                 ))
-                : stems.length === 0
-                  ? row.columns.map(column => (
-                    <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="reports">
-                      <div className={base.dim}>{t('answer.noReports')}</div>
-                    </div>
-                  ))
-                  : stems.flatMap(stem => row.columns.map(column => (
-                    <div key={`${stem}:${column.key}`} className={css.cell} style={at(column)} data-located={column.located} data-part={stem}>
-                      <div className={css.stageTitle}>{stageLabel(stem, t)}</div>
-                      <StageCell column={column} stem={stem} hangs={hangs.get(column.key) ?? new Map()} t={t} />
-                    </div>
-                  ))))}
+                // One card per column, every stage in it (v5), cut at about
+                // 16 lines until 展开全文 — each column on its own.
+                : row.columns.map(column => (
+                  <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="reports">
+                    {stems.length === 0
+                      ? <div className={base.dim}>{t('answer.noReports')}</div>
+                      : <Clamp open={opened.has(column.key)} onToggle={() => { toggle(column.key) }} t={t}>{stages(column)}</Clamp>}
+                  </div>
+                )))}
+
+              {view === 'process' && row.columns.map(column => (
+                <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="process">
+                  {/* 过程 is the player's transcript, and a transcript names
+                      its harness: behind the blind it stays closed. */}
+                  {blind
+                    ? <div className={base.dim}>{t('answer.processBlind')}</div>
+                    : onOpenSession !== null && column.childSessionId !== null
+                      ? (
+                        <Button variant="outline" size="sm" onClick={() => { onOpenSession(column.childSessionId as string, column.parentSessionId) }}>
+                          {t('answer.processOpen')}
+                        </Button>
+                      )
+                      : <div className={base.dim}>{t('answer.processNone')}</div>}
+                </div>
+              ))}
 
               {view === 'evidence' && order.flatMap(id => row.columns.map((column) => {
                 const unjudged = (col: AnswerColumnModel, criterion: string): ReactNode => {
@@ -363,7 +478,7 @@ export function AnswerView(props: AnswerViewProps) {
                 return (
                   <div key={`${id}:${column.key}`} className={css.cell} style={at(column)} data-located={column.located} data-part="criterion">
                     <div className={css.criterionTitle}>
-                      <span className={base.mono}>{id}</span>
+                      <span className={base.itemName}>{id}</span>
                       {row0 !== undefined && <span className={css.criterionText}>{row0.criterion}</span>}
                     </div>
                     {verdicts.length === 0
