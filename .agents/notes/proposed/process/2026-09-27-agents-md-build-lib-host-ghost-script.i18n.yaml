@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/process/2026-09-27-agents-md-build-lib-host-ghost-script.md
+.agents/notes/proposed/process/2026-09-27-agents-md-build-lib-host-ghost-script.md: dcd33bb57b288218b7e9e59c384ba2294d36958e
+.agents/notes/proposed/process/2026-09-27-agents-md-build-lib-host-ghost-script.zh.md: aab453bc641d6ca440d140978c958dbce9d7ebfb
