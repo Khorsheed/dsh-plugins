@@ -65,14 +65,17 @@ export const Config: z = z.object({
 export const name = 'datasets-tool'
 
 /**
- * No hard injects: the `datasets` service belongs to another package and is
- * PROBED at apply time (community-service inject discipline — inject only
- * inside the owning family), and the tools registry plus the system-prompt
- * assembly join through deferred injection so mount order can never strand
- * the row. A preset naming this row therefore mounts cleanly in every
- * composition.
+ * The `datasets` core is a declared inject (the owning-family companion
+ * exception to the community-service probe rule): a preset's standing scope
+ * mounts at registry-activation time, BEFORE the profile's later bundle rows
+ * provide the core, so a one-shot ctx.get probe at apply saw ABSENT there and
+ * nothing re-ran the row (rc.1 boot order; 3080 production 2026-09-27). The
+ * declared inject pends the row until the core provides, then the body
+ * applies. The tools registry and the system-prompt assembly still join
+ * through deferred injection so their mount order cannot strand the
+ * registrations.
  */
-export const inject = []
+export const inject = ['datasets']
 
 /** The narrow prompt-section registry surface this plugin opportunistically uses. */
 interface PromptSections {
@@ -80,8 +83,10 @@ interface PromptSections {
 }
 
 /**
- * Plugin body: register the tools this row grants and their guidance section
- * when the service core is present, degrade to a no-op when it is not.
+ * Plugin body: register the tools this row grants and their guidance section.
+ * The declared `datasets` inject pends the row until the core provides, so
+ * mount order can no longer strand it; the in-body guard stays as the
+ * defensive direct-call path.
  * @param ctx - Cordis context (the preset's agent-plane mount).
  * @param config - validated plugin config.
  */

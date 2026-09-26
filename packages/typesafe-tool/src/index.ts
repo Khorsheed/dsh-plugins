@@ -97,13 +97,16 @@ export const Config: z<TypeSafeToolConfig> = z.object({
 export const name = 'typesafe-tool'
 
 /**
- * No hard injects: the `typesafe` service belongs to another package and is
- * PROBED at apply time (community-service inject discipline — inject only
- * inside the owning family), and the tools/prompt/skill registries join through
- * deferred injection so mount order can never strand the row. A preset naming
- * this row therefore mounts cleanly in every composition.
+ * The `typesafe` core is a declared inject (the owning-family companion
+ * exception to the community-service probe rule): a preset's standing scope
+ * mounts at registry-activation time, BEFORE the profile's later bundle rows
+ * provide the core, so a one-shot ctx.get probe at apply saw ABSENT there and
+ * nothing re-ran the row (rc.1 boot order; 3080 production 2026-09-27). The
+ * declared inject pends the row until the core provides, then the whole body
+ * applies. The tools/prompt/skill registries still join through deferred
+ * injection so their mount order cannot strand the registrations.
  */
-export const inject: readonly string[] = []
+export const inject = ['typesafe']
 
 /** The narrow prompt-section registry surface this plugin opportunistically uses. */
 interface PromptSections {
@@ -331,8 +334,10 @@ export function typesafeJudgeTool(service: TypeSafeSeam): ToolDefinition {
 /* ── apply ─────────────────────────────────────────────────────────────────── */
 
 /**
- * Plugin body: register the tool, its guidance and the skill when the service
- * core is present; degrade to a no-op when it is not.
+ * Plugin body: register the tool, its guidance and the skill. The declared
+ * `typesafe` inject pends the row until the core provides, so mount order can
+ * no longer strand it; the in-body guard stays as the defensive direct-call
+ * path (tests invoke apply without the loader's inject machinery).
  * @param ctx - Cordis context (the preset's agent-plane mount).
  * @param config - validated plugin config.
  */

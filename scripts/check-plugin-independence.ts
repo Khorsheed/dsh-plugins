@@ -241,6 +241,16 @@ export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   localAgent: /^local-agent/,
   localAgentDshHeadlessStartup: /^local-agent-dsh-headless$/,
   shortcuts: /^ui-shortcuts$/,
+  // The preset-composed tool companions inject their owning core: a one-shot
+  // apply-time probe lost the rc.1 boot-order race (the standing scope mounts
+  // before the profile's later bundle rows provide the core), so the row
+  // pends on the core instead (2026-09-27 3080 incident).
+  typesafe: /^typesafe-tool$/,
+  worktrees: /^worktrees-tool$/,
+  room: /^room-tool$/,
+  datasets: /^datasets-tool$/,
+  dshEval: /^eval-tool$/,
+  mission: /^mission-tool$/,
 }
 
 const MONOREPO_URL = 'git+https://github.com/Khorsheed/dsh-plugins.git'

@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-room-tool",
   "description": "The session-granted room model tools (room_invite / room_task / room_message), companion to @khorsheed/dsh-room: a tool-only row (provides no service) that agent presets compose to grant the room's agent-facing member/task/message paths per session. Deliberately NOT self-mounting — installing it as a dependency only makes the module resolvable; an agent preset's agent.cordis.yml references the row by name.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
@@ -62,7 +62,7 @@
     "compat": {
       "minHost": "0.1.5-rc.1",
       "verifiedHost": "0.1.5-rc.1",
-      "notes": "Host-plane companion row: provides no service, registers room model tools into the host tools registry, so agent presets may compose it bare (the official tool-row shape). Probes the global `ctx.room` service at apply time and silently skips registration when the core plugin is absent — a preset naming this row still mounts cleanly. No browser half: the room UI lives in the core package."
+      "notes": "Host-plane companion row: provides no service, registers room model tools into the host tools registry, so agent presets may compose it bare (the official tool-row shape). Declares the global `ctx.room` service as an inject — the row pends until the core provides (a one-shot apply-time probe lost the rc.1 boot-order race, 2026-09-27). No browser half: the room UI lives in the core package."
     }
   }
 }

@@ -11,7 +11,7 @@
     "tool",
     "agent-preset"
   ],
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
@@ -69,7 +69,7 @@
     "compat": {
       "minHost": "0.1.5-rc.1",
       "verifiedHost": "0.1.5-rc.1",
-      "notes": "Host-plane companion row: provides no service, registers the `typesafe_judge` tool, its guidance section and the typesafe-decide skill, all delegating to the global `ctx.typesafe` service core. Probes that service at apply time and silently skips registration when it is absent, so a preset naming this row still mounts cleanly. No browser half."
+      "notes": "Host-plane companion row: provides no service, registers the `typesafe_judge` tool, its guidance section and the typesafe-decide skill, all delegating to the global `ctx.typesafe` service core. Declares the core service as an inject (the row pends until the core provides — a one-shot apply-time probe lost the rc.1 boot-order race). No browser half."
     }
   }
 }

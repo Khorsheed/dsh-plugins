@@ -39,17 +39,21 @@ const definePluginTool = <T extends object>(def: T): T =>
 export const name = 'worktrees-tool'
 
 /**
- * No hard injects: the `worktrees` service belongs to another package and is
- * PROBED at apply time (community-service inject discipline — inject only
- * inside the owning family), and the tools registry joins through deferred
- * injection so mount order can never strand the row. A preset naming this
- * row therefore mounts cleanly in every composition.
+ * The `worktrees` core is a declared inject (the owning-family companion
+ * exception to the community-service probe rule): a preset's standing scope
+ * mounts at registry-activation time, BEFORE the profile's later bundle rows
+ * provide the core, so a one-shot ctx.get probe at apply saw ABSENT there and
+ * nothing re-ran the row (rc.1 boot order; 3080 production 2026-09-27). The
+ * declared inject pends the row until the core provides, then the body
+ * applies. The tools registry still joins through deferred injection so its
+ * mount order cannot strand the registration.
  */
-export const inject = []
+export const inject = ['worktrees']
 
 /**
- * Plugin body: register the tool when the service core is present, degrade
- * to a no-op when it is not.
+ * Plugin body: register the tool. The declared `worktrees` inject pends the
+ * row until the core provides, so mount order can no longer strand it; the
+ * in-body guard stays as the defensive direct-call path.
  * @param ctx - Cordis context (the preset's agent-plane mount).
  */
 export function apply(ctx: Context): void {
