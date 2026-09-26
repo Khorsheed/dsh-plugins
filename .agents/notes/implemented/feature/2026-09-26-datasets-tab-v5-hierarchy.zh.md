@@ -18,7 +18,7 @@ T79 走查（场景 11、P1-11、P1-12、P2-15）把真机上的题集 tab 和�
   - 详情页顶栏用同一个组件（`parts.tsx` 的 `LayersWordView`）。
   - 这个值只读。旁边的「改」（`LayersEdit`）打开这个登记的编辑表单，也就是组行上「编辑登记」打开的那张。宿主的 `previewRepo` 对已登记的仓库按登记时的层作答（`setView(…, existing.sets[set])`），所以表单上的 chip 已经预填好。改一个题集的可见层仍然只有这张表单一个写入口。详情页顶栏同样带「改」。
 - **「用在哪些实验」只写计数。** 写成「N 个实验 · 分布在 M 个版本」，点一下展开实验名和各自钉的 commit。
-  - 按 `experimentId` 合并 run（重跑不算另一个实验）。
+  - 按 `experimentId` 合并 run（重跑不算另一个实验）。旧账本的 run 没有这个 id，就按实验名合并：按 run id 合并时，3171 账本显示 22 个实验，实际只有 17 个。
   - 版本 = 不同的钉住 commit。
   - 按题集 id 匹配；快照带登记 id 时再按登记 id 过滤，两个登记各自的 `default` 题集不会共用计数。
   - 为此，结构镜像（`client/index.ts`）与 `DatasetExperimentRow` 新增 `experimentId`、`registry`、`commit` 三个字段。它们在镜像上是可选的，老版本 eval 退化为「只按题集匹配、计为未钉版本」。

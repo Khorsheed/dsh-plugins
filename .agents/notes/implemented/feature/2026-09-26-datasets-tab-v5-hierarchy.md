@@ -18,7 +18,7 @@ The list page is one table under one header: 仓库 · 题集 / 最新版本 / �
   - The detail header uses the same component (`LayersWordView` in `parts.tsx`).
   - The word is read-only. Beside it, a «改» (`LayersEdit`) opens this registration's edit form, the same form the group row's «编辑登记» opens. The host's `previewRepo` answers an already-registered repository with its registered layers (`setView(…, existing.sets[set])`), so the chips arrive prefilled. The form stays the one writer of a set's layers. The detail header carries the same «改».
 - **«用在哪些实验» is a count.** It reads 「N 个实验 · 分布在 M 个版本」, and a click unfolds the names with each one's pinned commits.
-  - Runs fold by `experimentId` (a re-run is not another experiment).
+  - Runs fold by `experimentId` (a re-run is not another experiment). A run from the older ledger has no id and folds by its name instead: folding those by run id showed 22 experiments on the 3171 ledger where 17 were real.
   - A version is a distinct pinned commit.
   - Rows match on the set id and, when the snapshot names one, on the registration id, so two registrations' `default` sets do not share counts.
   - To make this possible, the structural eval mirror (`client/index.ts`) and `DatasetExperimentRow` now carry `experimentId`, `registry` and `commit`. They are optional on the mirror, so an older eval degrades to «match by set, count unpinned».
