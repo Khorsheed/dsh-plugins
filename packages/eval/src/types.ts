@@ -1382,6 +1382,19 @@ export interface EvalReportPair {
   rank: 'a' | 'b' | null
   /** Why it ranked, or why it would not — verbatim from the report. */
   rankReason: string
+  /**
+   * The conclusion's shape, decided from the same gates as `rank`: `ranked`
+   * when one side won, `tied` when every gate passed and the CI contains 0,
+   * `withheld` when a gate refused (coverage, n, factor, no interval). The
+   * page's headline reads this instead of parsing `rankReason`.
+   */
+  verdict: 'ranked' | 'tied' | 'withheld'
+  /**
+   * The comparison groups whose verdict sources fall short of the other
+   * side's, one entry per (group, why) — the report's coverage gaps without
+   * the per-rep detail. Empty when coverage is even.
+   */
+  coverage: Array<{ condition: string; why: 'judge-absent' | 'script-only' | 'none' }>
 }
 
 /** One verdict behind a criteria-table cell, as the report page shows it. */

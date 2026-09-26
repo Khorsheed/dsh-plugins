@@ -1053,18 +1053,20 @@ export function LabView(props: LabViewProps) {
               </span>
               <span className={css.barSpacer} />
               {blockedBy !== null && <span className={css.warning}>{t('cta.blocked', { errors: blockedBy })}</span>}
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={approving || blockedBy !== null}
-                onClick={runAction}
-              >
-                {approving && action.verb === 'approve'
-                  ? t('cta.waiting')
-                  : firstFix !== null
-                    ? fixText(firstFix)
-                    : t(action.cta)}
-              </Button>
+              <span className={css.stageAction}>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={approving || blockedBy !== null}
+                  onClick={runAction}
+                >
+                  {approving && action.verb === 'approve'
+                    ? t('cta.waiting')
+                    : firstFix !== null
+                      ? fixText(firstFix)
+                      : t(action.cta)}
+                </Button>
+              </span>
             </div>
             <div className={css.body}>
               {answers !== null && openRunId !== null && (
@@ -1211,6 +1213,10 @@ export function LabView(props: LabViewProps) {
                       onOpenAnswers={(focus) => { actions.openAnswers(focus) }}
                       onOpenRuns={() => { actions.setPage('runs') }}
                       readAnalysis={readAnalysis}
+                      onRejudge={(condition) => {
+                        handToAgent(t('report.rejudgeAsk', { name: openRow.name, condition }))
+                      }}
+                      onAskAnalysis={() => { handToAgent(t('report.analysisAsk', { name: openRow.name })) }}
                       t={t}
                     />
                   )

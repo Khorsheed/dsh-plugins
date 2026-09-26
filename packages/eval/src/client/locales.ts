@@ -852,6 +852,68 @@ export type EvalKey =
   | 'answer.noVerdicts'
   | 'answer.scripts'
   | 'answer.noScripts'
+  | 'conditions.same'
+  | 'conditions.differsWarn'
+  | 'conditions.shaMovedChip'
+  | 'conditions.shaMoved'
+  | 'conditions.factorHover'
+  | 'conditions.homeShaHover'
+  | 'design.compare'
+  | 'design.compareHint'
+  | 'design.items'
+  | 'design.itemsCol.item'
+  | 'design.itemsCol.how'
+  | 'design.how'
+  | 'design.how.judge'
+  | 'design.how.human'
+  | 'design.how.script'
+  | 'design.how.humanOn'
+  | 'design.how.scriptOn'
+  | 'design.how.off'
+  | 'design.scaleCost'
+  | 'design.ready'
+  | 'design.gridFold'
+  | 'readiness.remindersNote'
+  | 'readiness.then.COMMIT_UNRESOLVED'
+  | 'readiness.then.EXPECTED_NS_NO_PROBE'
+  | 'readiness.then.EXPECTED_NS_NO_RUBRIC'
+  | 'readiness.then.EXPECTED_NS_NO_LLM_DRAFT_CRITERIA'
+  | 'readiness.then.HOME_SHA_UNDECLARED'
+  | 'readiness.then.HOME_SHA_WRITTEN'
+  | 'readiness.then.CAPABILITIES_UNMEASURED'
+  | 'readiness.then.CLAUDE_CONTAINER_SCOPE_SHARED'
+  | 'report.criteriaMeta'
+  | 'report.criteriaHowRead'
+  | 'report.axisNone'
+  | 'report.notJudgedChip'
+  | 'report.exportFold'
+  | 'report.exportedShort'
+  | 'report.reexportReady'
+  | 'report.efficiencyDetail'
+  | 'report.headlineWithheld'
+  | 'report.scoreOne'
+  | 'report.scoreMean'
+  | 'report.deltaAhead'
+  | 'report.deltaEqual'
+  | 'report.reasonsLead'
+  | 'report.reason.coverage'
+  | 'report.coverage.judge-absent'
+  | 'report.coverage.script-only'
+  | 'report.coverage.none'
+  | 'report.reason.fewTasks'
+  | 'report.reason.fewReps'
+  | 'report.reason.multi'
+  | 'report.reason.unknown'
+  | 'report.next.rejudge'
+  | 'report.next.answers'
+  | 'report.next.analysis'
+  | 'report.rejudgeAsk'
+  | 'report.analysisAsk'
+  | 'invariant.short.materialization'
+  | 'invariant.short.fingerprint'
+  | 'invariant.short.subject'
+  | 'invariant.short.procedure'
+  | 'invariant.short.verdict-coverage'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -1127,7 +1189,7 @@ export const en: Record<EvalKey, string> = {
   'report.col.weightedDelta': 'Δ weighted',
   'report.col.deltas': 'Δ per rep',
   'report.col.n': 'n',
-  'report.criteria': 'Per-criterion scores and the grounds behind them',
+  'report.criteria': 'Criteria',
   'report.criteriaHint': 'Each cell is what this criterion concluded in that arm: ✓ / ✗, or the proportion for a proportionally scored one; over several reps, how many it held in. The small print is where the SCORE came from — each criterion independently takes the most authoritative layer that judged it (human > judge > script), so one cell may mix them. Click a cell for the evidence and who wrote it.',
   'report.criteriaTotal': 'Item total',
   'report.criteriaUndeclared': 'Not in the rubric weight table — only the verdicts name it, so it is treated as declaring no weight and no polarity.',
@@ -1218,9 +1280,9 @@ export const en: Record<EvalKey, string> = {
   'severity.ok': 'ok',
   'severity.warn': 'warn',
   'severity.error': 'error',
-  'review.keepUnits': 'Keep the units',
+  'review.keepUnits': 'Keep the containers after the run (debugging)',
   'review.keepUnitsHint': "Every cell will stop at 'archived' and keep its container for you to open. Nothing is released until you finalize the run, so a matrix larger than lab's unit ceiling cannot finish this way.",
-  'review.sendBack': 'Send back for changes',
+  'review.sendBack': 'Send back to the agent',
   'review.sentBack': 'Sent back for changes. This is a note on this page only: the plan file is unchanged, and the experiment is shown as a draft until it validates again.',
   'review.started': 'Started',
   'review.startedValue': 'job {jobId} · run {runId}',
@@ -1546,7 +1608,7 @@ export const en: Record<EvalKey, string> = {
   'report.validityOpen': 'Open the audit to see each check',
   'report.void': 'Evaluation void: {reason}',
   'report.voidHint': 'No conclusion is drawn from this run. The run records are still there.',
-  'report.audit': 'Audit',
+  'report.audit': 'Validity checks',
   'report.analysis': 'Analysis drafts ({n})',
   'report.analysisLoading': 'Reading…',
   'report.analysisNoExperiment': 'This run belongs to no experiment.',
@@ -1556,7 +1618,7 @@ export const en: Record<EvalKey, string> = {
   'readiness.reminders': 'Reminders ({count})',
   'readiness.forRerun': 'Before a re-run: this is the plan checked as it stands now, not as it was when this run started.',
   'readiness.agentAsk': 'Experiment {name}, readiness checklist item {k}: {text}',
-  'fix.provision': 'Provision {condition}',
+  'fix.provision': "Prepare {condition}'s environment",
   'fix.endpoint': 'Change endpoint',
   'fix.agent': 'Let the agent handle it',
   'notice.rerun': '{name} started again as run {runId}. The stalled row stays; archive it when you no longer need it.',
@@ -1721,6 +1783,68 @@ export const en: Record<EvalKey, string> = {
   'answer.noVerdicts': 'No verdicts: {reason}',
   'answer.scripts': 'Script output',
   'answer.noScripts': 'No script output',
+  'conditions.same': 'Same in every group: {fields}',
+  'conditions.differsWarn': '{count} differences ({fields}) — the result can only be described, not attributed to one of them',
+  'conditions.shaMovedChip': 'At start / now',
+  'conditions.shaMoved': 'The declaration changed after the run started: {started} at start, {now} now',
+  'conditions.factorHover': '{field} — hover a group name',
+  'conditions.homeShaHover': 'Scoped-home digest {sha}',
+  'design.compare': 'What is compared',
+  'design.compareHint': 'Only the fields the groups differ on, highlighted; a result is attributable only when one field differs',
+  'design.items': 'Which items',
+  'design.itemsCol.item': 'Item',
+  'design.itemsCol.how': 'Judged by',
+  'design.how': 'How it is judged',
+  'design.how.judge': 'Judge',
+  'design.how.human': 'Final verdict',
+  'design.how.script': 'Check scripts',
+  'design.how.humanOn': 'A person gives the final verdict on every answer',
+  'design.how.scriptOn': 'Run wherever the dataset has one for the item',
+  'design.how.off': 'Not in this plan',
+  'design.scaleCost': 'Scale and cost',
+  'design.ready': 'Readiness',
+  'design.gridFold': 'Planned grid · {cells} runs',
+  'readiness.remindersNote': 'Does not block the start',
+  'readiness.then.COMMIT_UNRESOLVED': 'The start pins the latest commit; later dataset edits do not touch this run.',
+  'readiness.then.EXPECTED_NS_NO_PROBE': 'These items get no script verdict; only the judge and a person score them.',
+  'readiness.then.EXPECTED_NS_NO_RUBRIC': 'Items without a rubric are scored only by the other sources.',
+  'readiness.then.EXPECTED_NS_NO_LLM_DRAFT_CRITERIA': 'The judge has no criteria to score against, so these items get no judge draft.',
+  'readiness.then.HOME_SHA_UNDECLARED': 'The start records the home fingerprint as it is then.',
+  'readiness.then.HOME_SHA_WRITTEN': 'Already corrected; nothing left to do.',
+  'readiness.then.CAPABILITIES_UNMEASURED': 'The result will have no capability snapshot of this group to check against.',
+  'readiness.then.CLAUDE_CONTAINER_SCOPE_SHARED': 'The groups share one login home, so memory and settings can leak between them.',
+  'report.criteriaMeta': 'click a cell for the verdict evidence behind it',
+  'report.criteriaHowRead': 'How to read this table',
+  'report.axisNone': 'No dimension declared',
+  'report.notJudgedChip': 'not judged',
+  'report.exportFold': 'Export and sources',
+  'report.exportedShort': 'bundle exported {at}',
+  'report.reexportReady': 'can re-export',
+  'report.efficiencyDetail': 'Details',
+  'report.headlineWithheld': '{a} vs {b}: no conclusion yet',
+  'report.scoreOne': '{task} · {n} rep(s) each',
+  'report.scoreMean': 'mean over {k} items',
+  'report.deltaAhead': '{ahead} scores {d} above {behind}',
+  'report.deltaEqual': '{a} and {b} score the same',
+  'report.reasonsLead': ', but the gap cannot be trusted yet:',
+  'report.reason.coverage': "The two groups' scores come from different sources: {detail}.",
+  'report.coverage.judge-absent': '{condition} has no judge verdicts',
+  'report.coverage.script-only': '{condition} has only script checks',
+  'report.coverage.none': '{condition} has no verdicts at all',
+  'report.reason.fewTasks': 'Only {k} item(s) have a difference, so there is no interval.',
+  'report.reason.fewReps': 'Each item ran only {n} time(s); ranking needs at least 3.',
+  'report.reason.multi': "The groups differ in more than one variable ({fields}): describe, don't attribute.",
+  'report.reason.unknown': 'What separates the two groups is unknown: describe only.',
+  'report.next.rejudge': 'Judge {condition}',
+  'report.next.answers': 'Answers side by side',
+  'report.next.analysis': 'Ask the agent for an analysis draft',
+  'report.rejudgeAsk': "Experiment {name}: run the judge on comparison group {condition}'s answers.",
+  'report.analysisAsk': 'Experiment {name}: read the result comparison and write an analysis draft into analysis/.',
+  'invariant.short.materialization': 'items',
+  'invariant.short.fingerprint': 'environment',
+  'invariant.short.subject': 'groups',
+  'invariant.short.procedure': 'procedure',
+  'invariant.short.verdict-coverage': 'verdict coverage',
 }
 
 /** 中文词典。 */
@@ -1989,7 +2113,7 @@ export const zh: Record<EvalKey, string> = {
   'report.col.weightedDelta': 'Δ 加权',
   'report.col.deltas': '逐次 Δ',
   'report.col.n': 'n',
-  'report.criteria': '判据 × 对比组（每条判据的得分与判官依据）',
+  'report.criteria': '逐条判据',
   'report.criteriaHint': '格内是该判据在该组的结论：✓ / ✗ 成立与否（负向判据成立即缺陷），按比例给分的写比例，多次运行写成立次数。小字是这格得分的来源——逐判据取最权威的那一层（人 > 判官 > 脚本），所以同一格可以混合。点格子看证据原文与是谁写的。',
   'report.criteriaTotal': '本题总分',
   'report.criteriaUndeclared': '不在 rubric 权重表里——只有判定记录提到它，按未声明权重与极性处理。',
@@ -2080,9 +2204,9 @@ export const zh: Record<EvalKey, string> = {
   'severity.ok': '通过',
   'severity.warn': '警告',
   'severity.error': '错误',
-  'review.keepUnits': '保留单元',
+  'review.keepUnits': '跑完保留容器（调试用）',
   'review.keepUnitsHint': '每条运行记录跑完停在「已归档」，容器留着给你打开。不 finalize 就不会释放，记录数超过 lab 的单元上限时这样跑不完。',
-  'review.sendBack': '退回修改',
+  'review.sendBack': '退回给 agent 改',
   'review.sentBack': '已退回修改。这只是本页上的一段备注：计划文件没有改动，实验按草稿显示，直到它重新通过 validate。',
   'review.started': '已启动',
   'review.startedValue': 'job {jobId} · run {runId}',
@@ -2405,7 +2529,7 @@ export const zh: Record<EvalKey, string> = {
   'report.validityOpen': '展开审计，逐条看校验',
   'report.void': '评估不成立：{reason}',
   'report.voidHint': '这次运行不出结论；运行记录仍在。',
-  'report.audit': '审计',
+  'report.audit': '实验有效性校验',
   'report.analysis': '分析初稿（{n}）',
   'report.analysisLoading': '读取中…',
   'report.analysisNoExperiment': '这次运行不属于任何实验。',
@@ -2415,7 +2539,7 @@ export const zh: Record<EvalKey, string> = {
   'readiness.reminders': '提醒（{count}）',
   'readiness.forRerun': '重跑前要处理：这是按计划现在的样子重新校验的结果，不是这次运行启动时的状态。',
   'readiness.agentAsk': '实验 {name} 的就绪清单第 {k} 条：{text}',
-  'fix.provision': 'provision {condition}',
+  'fix.provision': '准备 {condition} 的环境',
   'fix.endpoint': '改端点',
   'fix.agent': '让 agent 处理',
   'notice.rerun': '{name} 已重新启动（运行 {runId}）。停滞的那行还在，不需要时可以归档。',
@@ -2580,4 +2704,66 @@ export const zh: Record<EvalKey, string> = {
   'answer.noVerdicts': '没有判定：{reason}',
   'answer.scripts': '脚本输出',
   'answer.noScripts': '没有脚本输出',
+  'conditions.same': '各组相同：{fields}',
+  'conditions.differsWarn': '不同处：{count} 个（{fields}），结论只能描述，不能归因',
+  'conditions.shaMovedChip': '开跑时 / 当前',
+  'conditions.shaMoved': '开跑后声明改过：开跑时 {started}，当前 {now}',
+  'conditions.factorHover': '{field}——悬停组名看',
+  'conditions.homeShaHover': '家目录指纹 {sha}',
+  'design.compare': '比什么',
+  'design.compareHint': '只列两组不同的字段并标出；只有一处不同，结论才能归因',
+  'design.items': '用哪些题',
+  'design.itemsCol.item': '题',
+  'design.itemsCol.how': '怎么判',
+  'design.how': '怎么判',
+  'design.how.judge': '判官',
+  'design.how.human': '人工终评',
+  'design.how.script': '检查脚本',
+  'design.how.humanOn': '每份作答都由人终评',
+  'design.how.scriptOn': '题库里有检查脚本的题就跑',
+  'design.how.off': '这次不用',
+  'design.scaleCost': '规模与花费',
+  'design.ready': '就绪',
+  'design.gridFold': '计划网格 · {cells} 次运行',
+  'readiness.remindersNote': '不影响启动',
+  'readiness.then.COMMIT_UNRESOLVED': '启动时钉住当时的最新提交，之后题库再改不影响这次。',
+  'readiness.then.EXPECTED_NS_NO_PROBE': '这些题拿不到脚本判定，只有判官和人会给分。',
+  'readiness.then.EXPECTED_NS_NO_RUBRIC': '没有量表的题只能靠其他来源判分。',
+  'readiness.then.EXPECTED_NS_NO_LLM_DRAFT_CRITERIA': '判官没有判据可对照，这些题拿不到判官初判。',
+  'readiness.then.HOME_SHA_UNDECLARED': '启动时记录当时的 home 指纹。',
+  'readiness.then.HOME_SHA_WRITTEN': '已经补好，不用再做什么。',
+  'readiness.then.CAPABILITIES_UNMEASURED': '结果里没有这组的能力快照可对照。',
+  'readiness.then.CLAUDE_CONTAINER_SCOPE_SHARED': '几组共用一份登录态，记忆和设置可能互相串。',
+  'report.criteriaMeta': '点单元格可看对应的判定证据',
+  'report.criteriaHowRead': '怎么读这张表',
+  'report.axisNone': '未标维度',
+  'report.notJudgedChip': '未判',
+  'report.exportFold': '导出与来源',
+  'report.exportedShort': 'bundle 导出于 {at}',
+  'report.reexportReady': '可重新导出',
+  'report.efficiencyDetail': '明细',
+  'report.headlineWithheld': '{a} 对 {b}：暂时不能下结论',
+  'report.scoreOne': '{task} · 各 {n} 次',
+  'report.scoreMean': '{k} 道题平均',
+  'report.deltaAhead': '{ahead} 比 {behind} 高 {d} 分',
+  'report.deltaEqual': '{a} 与 {b} 得分相同',
+  'report.reasonsLead': '，但这个差距还不可信：',
+  'report.reason.coverage': '两组分数的来源不同：{detail}。',
+  'report.coverage.judge-absent': '{condition} 没有判官判定',
+  'report.coverage.script-only': '{condition} 只有脚本判定',
+  'report.coverage.none': '{condition} 没有任何判定',
+  'report.reason.fewTasks': '只有 {k} 道题有差值，给不出区间。',
+  'report.reason.fewReps': '每道题只跑了 {n} 次，排名至少要 3 次。',
+  'report.reason.multi': '两组不止差在一个变量（{fields}），只能描述，不能归因。',
+  'report.reason.unknown': '说不清两组差在哪，只能描述。',
+  'report.next.rejudge': '给 {condition} 补判',
+  'report.next.answers': '并排看作答',
+  'report.next.analysis': '让 agent 写分析初稿',
+  'report.rejudgeAsk': '实验 {name}：给对比组 {condition} 的作答补判。',
+  'report.analysisAsk': '实验 {name}：读结果对比，写一份分析初稿到 analysis/。',
+  'invariant.short.materialization': '题面',
+  'invariant.short.fingerprint': '环境',
+  'invariant.short.subject': '对比组',
+  'invariant.short.procedure': '程序',
+  'invariant.short.verdict-coverage': '判定覆盖',
 }

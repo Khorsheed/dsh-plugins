@@ -38,7 +38,7 @@ import { listAnalysisFiles } from './experiment-artifact.ts'
 import { planQuestionOf } from './plan-question.ts'
 import {
   analyzeBundle,
-  type CriterionGroupResult, type CriterionSample, type EvalReport, type JudgeAssignment,
+  type CoverageGap, type CriterionGroupResult, type CriterionSample, type EvalReport, type JudgeAssignment, type PairComparison,
 } from './report.ts'
 import type {
   EvalFinalizeView, EvalReportCriterionCell, EvalReportCriterionSample, EvalReportEfficiencyRow,
@@ -279,6 +279,48 @@ function criteriaOf(report: EvalReport): EvalReportTaskCriteria[] {
  * @param runId - the run this page is open on (the bundle's id when it has one).
  * @returns the page payload.
  */
+/**
+ * A pair's conclusion shape, off the same gates `comparePair` walked: a rank
+ * is `ranked`; no rank with every gate open (even coverage, n ≥ 3, one known
+ * factor, an interval drawn) is `tied` — the CI contains 0; anything else was
+ * refused before an interval could speak.
+ * @param pair - the report's comparison.
+ * @returns the verdict.
+ */
+export function pairVerdictOf(pair: PairComparison): EvalReportPair['verdict'] {
+  if (pair.rank !== null) return 'ranked'
+  const open = pair.coverageGaps.length === 0
+    && pair.n >= 3
+    && pair.factor.known
+    && pair.factor.multi === null
+    && pair.ciWithheld === null
+    && pair.ci !== null
+  return open ? 'tied' : 'withheld'
+}
+
+const COVERAGE_WHY: Record<CoverageGap['why'], EvalReportPair['coverage'][number]['why']> = {
+  判官缺席: 'judge-absent',
+  仅脚本: 'script-only',
+  无判定: 'none',
+}
+
+/**
+ * A pair's coverage gaps folded to (group, why), first-seen order.
+ * @param pair - the report's comparison.
+ * @returns one entry per distinct (group, why).
+ */
+export function pairCoverageOf(pair: PairComparison): EvalReportPair['coverage'] {
+  const seen = new Set<string>()
+  const out: EvalReportPair['coverage'] = []
+  for (const gap of pair.coverageGaps) {
+    const key = `${gap.condition}\u0000${gap.why}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ condition: gap.condition, why: COVERAGE_WHY[gap.why] })
+  }
+  return out
+}
+
 export function projectReport(report: EvalReport, runId: string): EvalRunReportView {
   return {
     runId: report.runId ?? runId,
@@ -318,6 +360,8 @@ export function projectReport(report: EvalReport, runId: string): EvalRunReportV
         ciAdvisory: pair.ciAdvisory,
         rank: pair.rank,
         rankReason: pair.rankReason,
+        verdict: pairVerdictOf(pair),
+        coverage: pairCoverageOf(pair),
       }))
       : [],
     // Same gate, decided in `analyzeBundle`: a closed comparison ships no
