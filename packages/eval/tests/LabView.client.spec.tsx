@@ -308,9 +308,11 @@ describe('LabView detail', () => {
 
     // ① scale and variables: four lines, at the top, where the decision starts.
     expect(await screen.findByText('overview.shapeValue {"items":2,"conditions":2,"reps":3,"cells":12}')).toBeTruthy()
-    expect(screen.getByText('overview.snapshot')).toBeTruthy()
-    expect(screen.getByText('cond-a, cond-b')).toBeTruthy()
-    expect(screen.getByText(/judge-a · overview.judgeSamples/)).toBeTruthy()
+    // The dataset snapshot is the 用哪些题 block's meta (T80d), not a field of its own.
+    expect(screen.getByText('design.items')).toBeTruthy()
+    // The groups are the 对比组 table's rows now (T80d), not a comma list.
+    expect(screen.getByText('design.compare')).toBeTruthy()
+    expect(screen.getByText((_, el) => el?.tagName === 'DD' && /^judge-a · overview.judgeSamples/.test(el.textContent ?? ''))).toBeTruthy()
 
     // ② the readiness BADGE, not six paragraphs of probe output: one chip per
     // group that failed, with the count and the way to re-read it.
