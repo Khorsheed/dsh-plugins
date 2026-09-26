@@ -403,7 +403,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T72 | 代码 ✅（`7edc08a1` → main `ee0a01fc`，2026-09-23；补充（一）待用户走查后发） | 实验室四阶段的旅程与结论先行（提案 D8 / D9 / 第 1、2、3、11 条）：列表四组 + 缺省「本会话发起」+ 「另有 n 个」、状态词加终态「评估不成立」与推导态「停滞」（无活 job 且无进展）、每阶段页顶状态 + 一个主动作全表、实验设计下半段「就绪清单」（阻塞项 / 提醒 + 就地修复）、结果对比「结论卡」置顶（用 T71 的字段）、人工评估四个出口（run 级注解）与「判官缺席」提示、归档。文案与验收见 §三「T72」 | T71 T70 | 交互稿 v5 四个场景（列表、就绪清单、结果对比、人工评估）真机对照同等层次；pilot-d 的结果页第一屏是结论不是表 |
 | T73 | 方案 ✅（第一步计划 `c1b70a4d`）→ 代码 | D1 + D2 会话去绑定、按仓库登记。第一步计划已评审（2026-09-23）：定 (b) 不设过渡期、条件与 lock 同搬部署级、协议 rev13 归 T73、会话收窄不保留。第二步三条分支——**分支 1** datasets 登记表 ✅（`201fb6cc` → main `036910ed`，2026-09-23）、**分支 2** eval 实验目录 ✅（`cdea013e` → main `587c12ae`，2026-09-24；验收见 §三）、**分支 3** SKILL / 提示词 ✅（`637b47f7` → main `ed9e62f9`，2026-09-24）+ 试点（**用户 2026-09-25 定：并进 3171 重装之后，在 3171 上跑**；3185 撤掉）；三条已合完，试点过才算 T73 验收。T68 并入 | T70 T68 | 写入模型定案；agent 不再翻磁盘找检出；未登记仓库不可用 |
 | T74 | 代码 ✅（`57533026` → main `e80a328c`，2026-09-24；补充一条见验收） | D5 方案卡：plan 加「要回答的问题 / 预期 / 怎么算回答了」三个字段（协议 rev14）、实验设计上半段方案卡、结论卡原样回答问题、就地改数字（启动前，写回同一个 plan，启动后冻结）；文案见 §三「T74」 | T72 T73 | 结论卡第一句是对问题的回答 |
-| T75 | 代码（`2d883a2e` 已报；**合 main 可发**：文案 §三「T75 补充（一）」） | D6 作答视图：按「题 × 组 × 次」并排，两个视角（提交的报告 / 判定证据），盲评开关即人工评估视图；三处入口；文案见 §三「T75」 | T72 T69 | 人工评估与作答视图是同一个组件 |
+| T75 | ✅ 已合（`068f5211`，2026-09-26；合 main 提交 `941199b3`，0.1.5 上补拍，验收见 §三「T75 补充（一）」块后） | D6 作答视图：按「题 × 组 × 次」并排，两个视角（提交的报告 / 判定证据），盲评开关即人工评估视图；三处入口；文案见 §三「T75」 | T72 T69 | 人工评估与作答视图是同一个组件 |
 | T76 | ✅ 已合（`ebdf74d8`，2026-09-25；合 main 提交 `b26345ec` + 双线读工具块 `dcf84812`）；补拍 ✅（2026-09-26，main `82a69fb7` 在 0.1.5-rc.1 上，datasets 图标全出，console 零报错；验收见 §三「T76 补充（二）」块后） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案见 §三「T76」 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
 | T77 | 代码 ✅（`ced3702e` → main `53b93082`，2026-09-24） | 源码模式装不出来：`install.sh:327` 算同族包只看 dependencies / peerDependencies，`scripts/pack-dist.ts:343` 只改写 `workspace:^`；`e9110d52` 把 content-preview 以 `workspace:*` 加进 local-files / ui-file-preview / worktrees 的 devDependencies，pack 时 ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL（T73 分支 1 与 T72 验收各自撞上、各自临时绕过）。文案见 §三「T77」 | 无 | 从 detached worktree 跑 `install.sh --source … --fresh` 到临时 DSH_HOME 一次成功 |
 | T78 | ❌ 不成立（2026-09-25，main `9da732aa`；原因见 §三 T78 末尾「结果」） | host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟：main 已钉官方线 0.1.7-rc.1、eval 家族做了「双线」适配，评测线 3171 与临时实例仍是 0.1.5-rc.1；只回答「当前 main 能不能在评测线上装得起、跑得通」，不修代码。文案见 §三「T78」 | 无（与 T76 合 main 并行） | 成立 → 3171 照常重装；不成立 → 错误原文 + 定位提交，交用户定钉旧提交还是换线 |
@@ -3439,6 +3439,8 @@ T76 已合入（ebdf74d8），补拍在 0.1.5 上通过；main 现在是双宿�
 合并 commit 号；每处冲突怎么解的（一行一处）；gate；icons `--check` 的结果；截图路径逐张对应；console；收尾。通用提醒照旧（合并归协调者，你只合 main 进分支）。
 ```
 
+**补充（一）验收（2026-09-26）**：`941199b3` 把 main 合进 `feat/t75-answer-view`，7 处冲突都按两边都保留解：service / contract / index 的 import 与 Remote 方法并存；LabView 同时解构 fetchCellAnswers 与 focus，实验卡跳进实验室时 open(null) 顺带清掉作答视图；CSS 取 main 的两块，markdown 样式只留 T74 那一份；locales 去掉分支里重复的 markdown.* 三个键；tsconfig.client.json 里被自动合成两遍的 MarkdownDoc.tsx 删掉一条。协调者在 detached worktree 上把它合到当前 main 复跑：eval 构建绿、测试 59 个文件 1090 条全过。合入 main `068f5211`，worktree 与分支已清。作答视图没用图标，全仓没有按名字从 primitives 取 Icon*。`sync-icon-artwork --check` 在 main 上也失败（`d49f29af` 之后各包从自己的 `./icons` 取图标，检查脚本只数 primitives 的引用，于是判 canvas「不再用图标」），与本合并无关，已请用户转给图标负责人。补拍在 0.1.5-rc.1 临时实例（3183）上，19 张放 `~/.dsh/scratch/t75-shots/merge/`。协调者看了四张：02 报告视角 dsh-lean 定位框、markdown 渲染；09 从人工评估队列进的盲评，作答 A / B 带评分表；12 暗色证据视角逐判据；22 400 宽盲评。三处入口都定位到 P0-placeholder × dsh-lean × 第 1 次。console 三轮零报错。收尾干净，题库共享检出前后 65 行一致。新发现两条进补充清单（⑨⑩）。
+
 ### T76 · 会话面：eval_plan_draft 工具行渲染成实验卡、eval_experiment_get、实验 tab 计数待证、S18 退路（已报，等合 main 解冲突，2026-09-24）
 
 ```text
@@ -3531,7 +3533,7 @@ main 提交号、端口、截图路径（逐张对应哪一项）、与验收时
 
 **补充（二）验收（2026-09-26）**：main `82a69fb7` 在 0.1.5-rc.1 临时实例（3183，源码模式 24 个成员、177 行 patch、零 npm @khorsheed，未设 DSH_HARNESS）上补拍 19 张，放 `~/.dsh/scratch/t76-shots/merge/`。协调者看了四张（01 亮色实验卡、06 暗色标记行、14 暗色题集详情、17 400 宽题集详情）。实验卡的布局、「待批准」徽标、「打开实验」和验收图一致；题库版本文字不同，是临时 home 的登记名和提交不同（数据，不是缺陷）。标记行的细框一致；名称列多了一行截断的问题原文（T74 合进来的问题原文行，预期内）。卡片写 2 次、行写 3，是夹具 digest 沿用旧 reps，实施者自认是数据造错，接受。datasets 的图标（chevron 右 / 下、文件夹开 / 合、文件、登记预览的勾）三套都画出来了，`d49f29af` 在 0.1.5 上成立。console 监听先用探针证实生效，eval / datasets / 其他包的报错与 React #130 全为 0，instance.out 无 error。第一次 install 撞 npm 网络抖动（ECONNRESET 135 次，supply-chain policy check 失败），清掉半装目录后重跑成功，不是代码问题。收尾：实例已停、临时 home 已删、worktree 已移除，题库共享检出前后比对（HEAD / status / worktree / refs）diff 为空。协调者已清 `../dsh-plugins-wt-t76-session` 与分支 `feat/t76-session-face`（已在 main 里）。新发现两条进下面的补充清单（⑦⑧）。
 
-**T74–T76 补充清单（并入 T72 补充（一），等用户走查后一起发）**：① 结论卡 `rank === null` 分「暂时不能下结论：<rankReason>」与「未分高下」（T74，已定）；② 条件 sha 标「开跑时 / 当前」（T76）；③ judgeQueue 带 script 层，判官台与具名面的来源词一致（T75）；④ X-no-patch 极性先问出题方（T75，数据面或页面待定）；⑤ SKILL「计划审阅」→「实验设计」（分支 3，随试点后修订）；⑥ datasets 缺席时 draftRow validate 的拒绝改三段式（T76，低）；⑦ 400 宽下题集详情右栏被挤成窄列、中文竖排，「← 题集列表」「校验」两个按钮换行（T76 补拍发现，见 merge/17、18；列表与登记表单在 400 宽下正常）；⑧ 实验室标记行的细框内左侧无内边距，名称贴边（验收图同样，旧问题）。
+**T74–T76 补充清单（并入 T72 补充（一），等用户走查后一起发）**：① 结论卡 `rank === null` 分「暂时不能下结论：<rankReason>」与「未分高下」（T74，已定）；② 条件 sha 标「开跑时 / 当前」（T76）；③ judgeQueue 带 script 层，判官台与具名面的来源词一致（T75）；④ X-no-patch 极性先问出题方（T75，数据面或页面待定）；⑤ SKILL「计划审阅」→「实验设计」（分支 3，随试点后修订）；⑥ datasets 缺席时 draftRow validate 的拒绝改三段式（T76，低）；⑦ 400 宽下题集详情右栏被挤成窄列、中文竖排，「← 题集列表」「校验」两个按钮换行（T76 补拍发现，见 merge/17、18；列表与登记表单在 400 宽下正常）；⑧ 实验室标记行的细框内左侧无内边距，名称贴边（验收图同样，旧问题）；⑨ 人工评估评分表的提示文案 `judge.scoringMix`（main `8c47f0a2`）按纯文本渲染，`**只覆盖你答的那几条判据**` 的星号原样露出（T75 补拍发现，见 t75-shots/merge/09、14、23b）；⑩ 400 宽作答视图第二列只露出右边一条（见 22），并排在窄屏上要不要改为上下排，由 T79 定。
 
 ### T78 · host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟（3171 下一次重装的前置；可发，2026-09-25）
 
@@ -3578,7 +3580,7 @@ main 提交号、端口、就绪秒数、第 2 / 4 步的告警摘录（打码�
 次要：file-preview、local-files、taskpilot 的 tarball 把 `dsh-client-ui-sidebar-right` 的 peer 写成 `^0.1.7-rc.1`；浏览器端 `dsh-client-store` / `dsh-client-ui-primitives` 在 0.1.5 工具链里没有（local-agent、mission、context-guard 在用）——都没走到浏览器，未判。
 影响：T79 走查、3171 重装（含 T73 试点）、T76 补拍都卡在这里；T81「0.1.5 能跑通」的前提不成立，等用户定路线。实施者起 3197 没先等协调者回复，事后补报，已释放。
 
-### T79 · 联合走查：对照交互稿 v5 的 13 个场景，产出收口补充清单（T75 / T76 合入且 T78 成立后发，2026-09-25）
+### T79 · 联合走查：对照交互稿 v5 的 13 个场景，产出收口补充清单（可发，2026-09-26：T75 / T76 已合，T81 在 0.1.5 上成立）
 
 ```text
 # 任务 T79：I5 收口联合走查（交互稿作者 + 协调者）
@@ -3587,10 +3589,10 @@ main 提交号、端口、就绪秒数、第 2 / 4 步的告警摘录（打码�
 I5 收口批的代码（T71–T76）都已写完。用户 2026-09-25 定：先由交互稿作者与协调者在真机上对照交互稿 v5 走一遍整条旅程，把所有差距与已攒的补充合成一份清单、改完一轮（T80），再重装 3171 请用户走查。用户的参照线（09-23）：不满在内容、旅程和设计感，不在外壳；按场景对照、视觉同等层次、只用宿主 tokens；依赖宿主能力的待证项走退路不算不过。
 
 ## 先读
-交互稿 proposals/prototypes/eval-journey-redesign.html（13 个场景）；提案 proposals/active/2026-09-23-eval-journey-redesign.md 的验收标准 1–7；ui-spec §五、§九；本文 §三 T72 验收段里的「T72 补充（一）」与 T76 一节末尾的「T74–T76 补充清单」；T71–T76 各自的 Agent Note。
+交互稿 proposals/prototypes/eval-journey-redesign.html（13 个场景）；提案 proposals/active/2026-09-23-eval-journey-redesign.md 的验收标准 1–7；ui-spec §五、§九；本文 §三 T72 验收段里的「T72 补充（一）」与 T76 一节末尾的「T74–T76 补充清单」（现在到 ⑩，⑦–⑩ 是 T75 / T76 补拍时发现的）；T71–T76 各自的 Agent Note；T75 / T76 补拍图（~/.dsh/scratch/t75-shots/merge/、t76-shots/merge/），已拍过的场景可直接对照、不必重拍。
 
 ## 环境
-按 T78 的装法（0.1.5-rc.1 工具链、独立 DSH_HOME、3171 账本只读副本、不配 provider、不复制凭据），装 T75 / T76 都合入之后的 main。端口先报协调者。截图放 ~/.dsh/scratch/t79-shots/，明 / 暗 / 400 三套。
+照 T76 补充（二）的装法：从本地 main（≥ 068f5211）开 detached worktree，0.1.5-rc.1 工具链，独立 DSH_HOME（realpath），不设 DSH_HARNESS，install.sh --source <worktree> --fresh；数据 rsync 3171 账本的只读副本（排除凭据与 room-coordinator-*-home），不配 provider。npm 抖动（ECONNRESET）清掉半装目录重跑即可。端口先报协调者。截图放 ~/.dsh/scratch/t79-shots/，明 / 暗 / 400 三套。
 
 ## 做法
 1. 逐场景对照：旅程地图、提问、方案 · 实验卡、实验设计 · 方案段、就绪、运行、作答、人工评估 · 盲评、结论、实验列表、题库、Agent 旅程、决策清单。每个场景记「交互稿 / 真机 / 差距 / 修法 / 归属包」。
@@ -3603,7 +3605,7 @@ I5 收口批的代码（T71–T76）都已写完。用户 2026-09-25 定：先�
 不改代码；不碰 3171 / ~/.dsh / ~/.dsh-official / 3080 / 3093；不配 provider；外壳不动。
 
 ## 交付
-一份清单 profiles/web-eval/docs/t79-closeout-walkthrough.md（场景表 + 并入的旧补充 + 分级 + 按包切的修改批次建议），附截图路径。协调者据此写 T80 文案。
+一份清单 profiles/web-eval/docs/t79-closeout-walkthrough.md（场景表 + 并入的旧补充 + 分级 + 按包切的修改批次建议），附截图路径。在 worktree 的 docs/t79-walkthrough 分支上提交，回报 commit，协调者合。协调者据此写 T80 文案。收尾：停实例、删临时 home（先 chmod -R u+w）、移除安装 worktree，题库共享检出前后一致。
 
 ## 回报
 清单路径、P0 / P1 / P2 各几条、按包的批次建议、截图路径。通用提醒照旧。
