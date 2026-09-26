@@ -166,9 +166,11 @@ function PairBlock(props: {
    * its detail, several leave the list standing under a chip (I5·T69).
    */
   onOpenRecords: (task: string, condition: string) => void
+  /** 看作答 (I5·T75): the 题's answers, both groups side by side, every rep. */
+  onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
   t: LabViewProps['t']
 }) {
-  const { pair, onOpenRecords, t } = props
+  const { pair, onOpenRecords, onOpenAnswers, t } = props
   // The weighted columns appear only when the rubric carried weights for both
   // sides — an empty pair of columns would read as "weight zero".
   const weighted = pair.rows.some(row => row.aWeighted !== null && row.bWeighted !== null)
@@ -194,7 +196,17 @@ function PairBlock(props: {
             <tbody>
               {pair.rows.map(row => (
                 <tr key={row.task}>
-                  <th className={css.reportRowHead}>{row.task}</th>
+                  <th className={css.reportRowHead}>
+                    {row.task}
+                    {' '}
+                    <button
+                      type="button"
+                      className={css.reportJump}
+                      onClick={() => { onOpenAnswers({ task: row.task, condition: null, rep: null }) }}
+                    >
+                      {t('answer.open')}
+                    </button>
+                  </th>
                   {/* Each side's number opens the records it was computed
                       from. A mean nobody can get behind is a number a reader
                       has to take on faith, and this table is exactly where
@@ -478,9 +490,11 @@ function CriteriaTable(props: {
    * pick, so picking it is not picking FOR the reader (I5·T69).
    */
   onOpenRecord: (task: string, condition: string, missionId: string) => void
+  /** 看作答 (I5·T75): this 题 × 组, every rep behind the cell. */
+  onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
   t: LabViewProps['t']
 }) {
-  const { table, onOpenRecords, onOpenRecord, t } = props
+  const { table, onOpenRecords, onOpenRecord, onOpenAnswers, t } = props
   const [open, setOpen] = useState<string | null>(null)
   const columns = 4 + table.conditions.length
   // Same rule as the pair table: the weighted figure shows only when every
@@ -576,6 +590,13 @@ function CriteriaTable(props: {
                           </button>
                         )
                       })()}
+                      <button
+                        type="button"
+                        className={css.reportJump}
+                        onClick={() => { onOpenAnswers({ task: table.task, condition: cell.condition, rep: null }) }}
+                      >
+                        {t('answer.open')}
+                      </button>
                     </div>
                     {cell.samples.map(sample => (
                       <CriterionSampleLine
@@ -984,6 +1005,8 @@ export function ReportPage(props: {
   onOpenRecords: (task: string, condition: string) => void
   /** Land on 运行记录 AND open ONE record — the criteria table's jump. */
   onOpenRecord: (task: string, condition: string, missionId: string) => void
+  /** Open the answer view on one 题 (× 组) — the tables' 看作答 (I5·T75). */
+  onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
   /** Go to 运行记录 — the one link a voided experiment's page keeps. */
   onOpenRuns: () => void
   /** Read one of the experiment's analysis files (block ⑤). */
@@ -992,7 +1015,7 @@ export function ReportPage(props: {
 }) {
   const {
     report, loading, error, finalizing, finalizeResult, units, unitsError, reexporting,
-    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, onOpenRecord, onOpenRuns, readAnalysis, t,
+    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, onOpenRecord, onOpenAnswers, onOpenRuns, readAnalysis, t,
   } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
@@ -1148,6 +1171,7 @@ export function ReportPage(props: {
           table={table}
           onOpenRecords={onOpenRecords}
           onOpenRecord={onOpenRecord}
+          onOpenAnswers={onOpenAnswers}
           t={t}
         />
       ))}
@@ -1198,7 +1222,7 @@ export function ReportPage(props: {
         </Section>
 
         {report.comparisonAllowed && !report.singleCondition && report.pairs.map(pair => (
-          <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} onOpenRecords={onOpenRecords} t={t} />
+          <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} onOpenRecords={onOpenRecords} onOpenAnswers={onOpenAnswers} t={t} />
         ))}
 
         <JudgeConsistency report={report} t={t} />

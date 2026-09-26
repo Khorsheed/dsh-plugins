@@ -66,10 +66,12 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { EvalService } from './service.ts'
 import type {
+  EvalAnswerSheet,
   EvalApproveRequest,
   EvalApproveResult,
   EvalArchiveRunRequest,
   EvalArchiveWrite,
+  EvalCellAnswersRequest,
   EvalCellArtifactRequest,
   EvalCellArtifactView,
   EvalCellDetail,
@@ -623,6 +625,19 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   runUnits(agent: Agent, request: EvalRunUnitsRequest): Promise<EvalRunUnitsView> {
     void agent
     return this.service.runUnits(request.runId)
+  }
+
+  /**
+   * One 题's answers, every group and rep — the answer view's named read
+   * (I5·T75). Names the groups, like the record detail it opens from; the
+   * blind read stays {@link judgeQueue}'s.
+   * @param agent - owning live agent (the tab's session).
+   * @param request - the run and the 题.
+   */
+  @Remote('cellAnswers')
+  cellAnswers(agent: Agent, request: EvalCellAnswersRequest): Promise<EvalAnswerSheet> {
+    void agent
+    return this.service.cellAnswers(request)
   }
 
   /**

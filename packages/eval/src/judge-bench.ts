@@ -99,7 +99,7 @@ export function resolveTicket(
 }
 
 /** One annotation as the ledger hands it over. */
-interface LedgerAnnotation {
+export interface LedgerAnnotation {
   ns: string
   attempt: number
   payload: unknown
@@ -108,7 +108,7 @@ interface LedgerAnnotation {
 }
 
 /** The run's meta, as far as this module reads it. */
-interface BenchMeta {
+export interface BenchMeta {
   datasetId: string | null
   commit: string | null
   repo: string | null
@@ -119,7 +119,7 @@ interface BenchMeta {
 }
 
 /** Read the run's meta into what the bench needs: the scrub rules and the panel. */
-function benchMetaOf(meta: Record<string, unknown>): BenchMeta {
+export function benchMetaOf(meta: Record<string, unknown>): BenchMeta {
   const models: Array<string | null> = []
   const harnesses: string[] = []
   const entries = Array.isArray(meta['conditions']) ? meta['conditions'] : []
@@ -157,7 +157,7 @@ function benchMetaOf(meta: Record<string, unknown>): BenchMeta {
  * among the ids actually seen — still no condition id, still stable within
  * one answer.
  */
-function judgeLabel(judgeIds: readonly string[], condition: string): string {
+export function judgeLabel(judgeIds: readonly string[], condition: string): string {
   const index = judgeIds.indexOf(condition)
   const slot = index >= 0 ? index : judgeIds.length + [...condition].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 26
   return `判官 ${String.fromCharCode(65 + (slot % 26))}${slot >= 26 ? String(Math.floor(slot / 26) + 1) : ''}`
@@ -168,7 +168,7 @@ function judgeLabel(judgeIds: readonly string[], condition: string): string {
  * shapes the ledger carries (a bare array, or `{ verdicts: [...] }`), read
  * the same way {@link analyzeBundle} reads them.
  */
-function verdictDocsOf(payload: unknown): Record<string, unknown>[] {
+export function verdictDocsOf(payload: unknown): Record<string, unknown>[] {
   const raw = Array.isArray(payload)
     ? payload
     : isPlainObject(payload) && Array.isArray(payload['verdicts'])
@@ -217,7 +217,7 @@ async function materialsOf(
  * is being asked to answer).
  * @returns the criteria, or an empty list plus the reason it is empty.
  */
-async function humanCriteriaOf(
+export async function humanCriteriaOf(
   datasets: DatasetsFace | undefined,
   meta: BenchMeta,
   taskId: string | null,

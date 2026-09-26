@@ -44,6 +44,8 @@ import {
 } from './parts.tsx'
 import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS, type LabPage, type RunFilter } from './store.ts'
 import { RunsPage } from './RunsPage.tsx'
+import { AnswerView } from './AnswerView.tsx'
+import { rowsOfSheet } from './answer-view.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
 import { JudgingPage } from './JudgingPage.tsx'
@@ -67,7 +69,7 @@ export function LabView(props: LabViewProps) {
     provisionCondition, setConditionEndpoint, setPlanNumbers,
     fetchDraftOptions, draftExperiment,
     fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
-    fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, submitHumanFinal, fetchExperimentArtifact,
+    fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, fetchCellAnswers, submitHumanFinal, fetchExperimentArtifact,
     closeRun, archiveRun, insertDraft, focus,
   } = props
   const list = useStore(s => s.list)
@@ -131,6 +133,10 @@ export function LabView(props: LabViewProps) {
   const judgeTask = useStore(s => s.judgeTask)
   const judgeDraft = useStore(s => s.judgeDraft)
   const judgeSubmitting = useStore(s => s.judgeSubmitting)
+  const answers = useStore(s => s.answers)
+  const answerSheet = useStore(s => s.answerSheet)
+  const answerLoading = useStore(s => s.answerLoading)
+  const answerError = useStore(s => s.answerError)
   const exportOpen = useStore(s => s.exportOpen)
   const reexporting = useStore(s => s.reexporting)
   const startFollowUps = useStore(s => s.startFollowUps)
@@ -751,6 +757,23 @@ export function LabView(props: LabViewProps) {
     return () => { cancelled = true }
   }, [sessionId, openRunId, page, refreshRev, actions, fetchJudgeQueue])
 
+  // The answer view's read (I5·T75): one 题, every group and rep, once per
+  // 题 — the entry's group and rep only mark and narrow what is already read,
+  // so moving between the cells of one 题 costs no round trip.
+  const answerTask = answers?.task ?? null
+  useEffect(() => {
+    if (openRunId === null || answerTask === null) return
+    let cancelled = false
+    actions.setAnswerLoading(true)
+    void fetchCellAnswers(sessionId, { runId: openRunId, task: answerTask }).then((result) => {
+      if (cancelled) return
+      actions.setAnswerLoading(false)
+      if (result.ok) actions.setAnswerSheet(result.value)
+      else actions.setAnswerError(result.error.message)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, openRunId, answerTask, refreshRev, actions, fetchCellAnswers])
+
   /**
    * The stage bar: the ONE action this experiment's state asks for.
    *
@@ -1044,6 +1067,38 @@ export function LabView(props: LabViewProps) {
               </Button>
             </div>
             <div className={css.body}>
+              {answers !== null && openRunId !== null && (
+                answerSheet === null
+                  ? (answerError !== null
+                      ? (
+                        <div>
+                          <Button size="sm" onClick={() => { actions.openAnswers(null) }}>{t('answer.back')}</Button>
+                          <ErrorState what={t('answer.error')} message={answerError} t={t} />
+                        </div>
+                      )
+                      : <div className={css.dim}>{answerLoading ? t('answer.loading') : ''}</div>)
+                  : (
+                    <AnswerView
+                      // Remount per entry: the rep chips and the blind switch
+                      // start from what THIS door named.
+                      key={`${answers.task}|${answers.condition ?? ''}|${String(answers.rep)}`}
+                      task={answerSheet.task}
+                      rows={rowsOfSheet(answerSheet, { condition: answers.condition, rep: null })}
+                      criteria={answerSheet.criteria}
+                      criteriaNote={answerSheet.criteriaNote}
+                      notes={answerSheet.notes}
+                      scoring={null}
+                      rep={answers.rep}
+                      onOpenSession={(childId, parentId) => { openSession(childId as SessionId, parentId === null ? null : parentId as SessionId) }}
+                      onBack={() => { actions.openAnswers(null) }}
+                      t={t}
+                    />
+                  )
+              )}
+              {/* The stage stays mounted under the answer view, so 返回 lands
+                  on the table exactly as it was left (an expanded criteria
+                  cell, a scrolled list). */}
+              <div style={{ display: answers !== null && openRunId !== null ? 'none' : 'contents' }}>
               {page === 'design' && (
                 <>
                   {detailError !== null && (
@@ -1111,6 +1166,7 @@ export function LabView(props: LabViewProps) {
                       onRelease={onRelease}
                       onExport={() => { actions.setExportOpen(true) }}
                       onOpenSession={(childId, parentId) => { openSession(childId as SessionId, parentId === null ? null : parentId as SessionId) }}
+                      onOpenAnswers={(focus) => { actions.openAnswers(focus) }}
                       artifactPath={artifactPath}
                       artifact={artifact}
                       artifactLoading={artifactLoading}
@@ -1152,6 +1208,7 @@ export function LabView(props: LabViewProps) {
                         actions.focusRecords({ task, condition })
                         actions.openCell(missionId)
                       }}
+                      onOpenAnswers={(focus) => { actions.openAnswers(focus) }}
                       onOpenRuns={() => { actions.setPage('runs') }}
                       readAnalysis={readAnalysis}
                       t={t}
@@ -1184,6 +1241,7 @@ export function LabView(props: LabViewProps) {
                     />
                   )
               )}
+              </div>
             </div>
             <ExportDialog
               runId={openRunId ?? ''}

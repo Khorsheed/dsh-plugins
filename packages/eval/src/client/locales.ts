@@ -816,6 +816,42 @@ export type EvalKey =
   | 'card.failed'
   | 'card.unreadable'
   | 'card.errors'
+  | 'answer.open'
+  | 'answer.title'
+  | 'answer.back'
+  | 'answer.loading'
+  | 'answer.error'
+  | 'answer.reps'
+  | 'answer.repAll'
+  | 'answer.rep'
+  | 'answer.blindSwitch'
+  | 'answer.names'
+  | 'answer.blind'
+  | 'answer.blindLocked'
+  | 'answer.blindNote'
+  | 'answer.blindScoring'
+  | 'answer.views'
+  | 'answer.viewReport'
+  | 'answer.viewEvidence'
+  | 'answer.process'
+  | 'answer.blindName'
+  | 'answer.sourceHuman'
+  | 'answer.sourceJudge'
+  | 'answer.sourceScript'
+  | 'answer.sourceNone'
+  | 'answer.layerHuman'
+  | 'answer.layerJudge'
+  | 'answer.layerScript'
+  | 'answer.quoteAt'
+  | 'answer.stage'
+  | 'answer.stageMissing'
+  | 'answer.noReports'
+  | 'answer.truncated'
+  | 'answer.reportsFolded'
+  | 'answer.unjudged'
+  | 'answer.noVerdicts'
+  | 'answer.scripts'
+  | 'answer.noScripts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -1649,6 +1685,42 @@ export const en: Record<EvalKey, string> = {
   'card.failed': 'The draft did not go through; the tool output below says why.',
   'card.unreadable': 'The result of this call names no experiment.',
   'card.errors': 'Validation found {errors} to fix — see Design on the Experiments tab.',
+  'answer.open': 'View answers',
+  'answer.title': 'Answers to {task}',
+  'answer.back': 'Back',
+  'answer.loading': 'Reading the answers…',
+  'answer.error': 'Could not read the answers',
+  'answer.reps': 'Repetitions',
+  'answer.repAll': 'All',
+  'answer.rep': 'Rep {rep}',
+  'answer.blindSwitch': 'Blind switch',
+  'answer.names': 'Show groups',
+  'answer.blind': 'Blind',
+  'answer.blindLocked': 'Human review is always blind',
+  'answer.blindNote': 'Group names are replaced by letters in the run\'s seeded order; the process is folded away.',
+  'answer.blindScoring': 'Blind: the material is scrubbed and no group name reaches the page. Score each answer; only the human verdict is written.',
+  'answer.views': 'View',
+  'answer.viewReport': 'Submitted report',
+  'answer.viewEvidence': 'Verdict evidence',
+  'answer.process': 'Process',
+  'answer.blindName': 'Answer {letter}',
+  'answer.sourceHuman': 'Judged by a person',
+  'answer.sourceJudge': 'Judged by the judge',
+  'answer.sourceScript': 'Script only',
+  'answer.sourceNone': 'Not judged',
+  'answer.layerHuman': 'Person',
+  'answer.layerJudge': 'Judge',
+  'answer.layerScript': 'Script',
+  'answer.quoteAt': 'Quotes {file}, paragraph {no}',
+  'answer.stage': 'Stage {stage}',
+  'answer.stageMissing': 'No {stage} submitted',
+  'answer.noReports': 'No submitted report was read',
+  'answer.truncated': '{name} is {bytes} bytes, over the limit; only the beginning is shown',
+  'answer.reportsFolded': 'Submitted report: {files}',
+  'answer.unjudged': 'Not judged on this criterion',
+  'answer.noVerdicts': 'No verdicts: {reason}',
+  'answer.scripts': 'Script output',
+  'answer.noScripts': 'No script output',
 }
 
 /** 中文词典。 */
@@ -2472,4 +2544,40 @@ export const zh: Record<EvalKey, string> = {
   'card.failed': '起草没有成功，原因见下面的工具输出。',
   'card.unreadable': '这次调用的结果里读不出实验。',
   'card.errors': '校验有 {errors} 处要修——在实验室 › 实验设计里看。',
+  'answer.open': '看作答',
+  'answer.title': '{task} 的作答',
+  'answer.back': '返回',
+  'answer.loading': '正在读取作答…',
+  'answer.error': '读不到作答',
+  'answer.reps': '次数',
+  'answer.repAll': '全部',
+  'answer.rep': '第 {rep} 次',
+  'answer.blindSwitch': '盲评开关',
+  'answer.names': '显示组名',
+  'answer.blind': '盲评',
+  'answer.blindLocked': '人工评估始终盲评',
+  'answer.blindNote': '组名换成字母，按运行的种子顺序排；过程入口已收起。',
+  'answer.blindScoring': '盲评：材料已抹去指纹，组名不上页面。逐份评分，只写人工判定。',
+  'answer.views': '视图',
+  'answer.viewReport': '提交的报告',
+  'answer.viewEvidence': '判定证据',
+  'answer.process': '过程',
+  'answer.blindName': '作答 {letter}',
+  'answer.sourceHuman': '人已判',
+  'answer.sourceJudge': '判官已判',
+  'answer.sourceScript': '仅脚本判定',
+  'answer.sourceNone': '未判',
+  'answer.layerHuman': '人工',
+  'answer.layerJudge': '判官',
+  'answer.layerScript': '脚本',
+  'answer.quoteAt': '引用 {file} 第 {no} 段',
+  'answer.stage': '阶段 {stage}',
+  'answer.stageMissing': '这一组没有交{stage}',
+  'answer.noReports': '没有读到提交的报告',
+  'answer.truncated': '{name} 共 {bytes} 字节，超过上限，只显示开头部分',
+  'answer.reportsFolded': '提交的报告：{files}',
+  'answer.unjudged': '这条判据未判',
+  'answer.noVerdicts': '没有判定：{reason}',
+  'answer.scripts': '脚本输出',
+  'answer.noScripts': '没有脚本输出',
 }

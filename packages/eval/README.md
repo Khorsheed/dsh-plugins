@@ -281,6 +281,7 @@ Ask the person which version this experiment should pin with ask_user_question, 
 | `matrix(runId, {column?, groupBy?, filter?, stuckMs?})` | 矩阵页的排布（I5·T35b）：**行永远是题**，列是调用方选的那一个因子，其余因子分组或钉死。因子集合就是 run.meta 里各条件文档两两 diff 的键并集；格内四样——rep 圆点（实心 ≥ judged / 半心进行中 / 空心未起）、阶段（各 rep 一致就是那个态，否则 `mixed`）、卡格（在态时长超阈值，缺省 30 分钟，已判的格不算卡）、题面哈希是否与同题其余格一致。物化哈希从 run 循环自己写的 `materialization.json` 读；mission 面报不出 `dataDir` 就记「无法核验」，绝不猜 |
 | `cell(runId, missionId)` | 一格的全部（格子详情抽屉）：各次 attempt（含重跑原因与类别）、检查点、产物、refs、各注解命名空间的条数与最近一条摘要、**verify 原样输出全文**、**选手**委派的子会话 id、**判官各轮的子会话**、以及这一格此刻可不可释放 |
 | `cellArtifact(runId, missionId, attempt, path)` | **一件产物本身**（I5·T69）。路径对着那次 attempt 的运行数据目录解，先按字面判越界、再对两侧 `realpath` 判一次——前者不看磁盘，所以 `../` 不论目标在不在都按越界拒（拒绝语句的差别不能被用来探测文件存在）；后者抓的是归档里指向外面的软链，字面判看不出来。只认文本扩展名（md / json / txt / yml / yaml / log / jsonl），超 256 KB 返回开头并说明截断，目录返回条目，其余按**名字**拒并说明。**不去指纹**：这一页的页眉本来就写着对比组，去指纹只会挡住排查的人而保护不了任何人——盲的那份是判官台的 |
+| `cellAnswers({runId, task})` | **一道题的全部作答**（I5·T75，作答视图的具名面）：这道题在 run 里的每个「组 × 次」一条——判过的阶段文件（`JUDGE_MATERIAL_FILES`，先读 attempt 归档里的 `workspace`、缺了再读 attempt 目录）、当前 attempt 三层判定（script / llm-draft / human-final，判官按判官台的「判官 A / B」标、不给判官条件 id）、脚本原样输出、选手子会话与父会话 id，外加 rubric 里 `kind: human` 的判据。只给文件名不给路径，只内联文本，每个文件超 256 KB 截断并说明。**不盲**：和它打开的记录详情一样具名；盲的那份仍是 `judgeQueue`。这道题一格都没有就拒绝 |
 | `cellRows(runId, query)` | 格子页表格要的那几列，由同一个 `cells` 投影收窄而来——模型读整份，tab 读这份，一份实现 |
 | `retryCell(runId, missionId, {reason, category, by?})` | 带原因重跑，原样转发给 mission。**原因是必填**：空原因在这里就被拒，不劳 mission 再拒一次——没人说得清来由的 attempt 比没有更糟 |
 | `releaseCheck(runId, missionId)` | 释放检查：这一格的资源现在能不能销毁。答案是状态机自己的 `releasableStates`，eval 不加意见 |
@@ -433,7 +434,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
   **地址要带父会话**（I5·T69 真机验收翻出来的）：`sessions.open(childSessionId)` 会选中那一行然后历史加载失败——*subagent Sessions require their durable parent address (session/agent-busy)*——这颗按钮自上线起在两条路上都是这个结果。格子详情因此带上 run 的 `originSession`（决策 1：run 的父会话就是它每次委派的父），客户端先刷该父的 catalog 再交 `{parentSessionId, childSessionId, mode: 'one-shot'}` 给宿主；没记父、刷新被拒、catalog 不认这个孩子，一律回落到按 id 选中。
 - **verify 原样输出**：这条线上**没有 `lab` 注解命名空间**。探针（容器轮经 `lab.verify`、宿主轮直跑）由编排器记成 `kind: 'probes'` 的 orchestrator 注解，抽屉展示的就是它，整段原样——退出码与「本轮不适用」的原因正是人打开这个抽屉要看的东西，摘要会把它们摘掉。把它说成「lab 的」会指认一个不存在的来源。
 - **导出闸不在 eval 这边**：`exportPlan` / `exportRun` 转发给 mission 自己的 Remote，guarded 层的判定与「每一层都确认过才写」的 fail-closed 复核都留在那里。对话框的职责只是让人逐项**有意识地**勾；改了任何一个字段就作废已勾的确认，因为那些确认属于当时看到的那一套层。
-- **前端仍然零兄弟包**：读与写都走 eval 自己的 Remote（`matrix` / `cells` / `cell` / `cellArtifact` / `retry` / `releaseCheck` / `exportPlan` / `exportRun`，都带会话参数），浏览器半边一次都没有提到 mission。
+- **前端仍然零兄弟包**：读与写都走 eval 自己的 Remote（`matrix` / `cells` / `cell` / `cellArtifact` / `cellAnswers` / `retry` / `releaseCheck` / `exportPlan` / `exportRun`，都带会话参数），浏览器半边一次都没有提到 mission。
 
 ## 结果对比页（I5·T38、T67）
 
@@ -469,6 +470,15 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 - **每条判定都要证据**：`dataseek.verdict/1` 的 `evidence` 是「可核对的事实，不是观感」，空白的会被服务端拒绝，页面也在按钮上先拦一道——判官当时的依据一旦丢了，这条判定就永远无法复核了。没答的判据**不发**：没碰过的判据不是一条「不成立」。
 - **顶部一致性用账本实时算**：同判官 κ、跨判官、llm-draft 对 human-final，走的是报告页那同一个 `judgeConsistencyOf`（这次为它加了一个结构化的入参，不是抄一份）。区别只在数据源：报告读 bundle，判官台读**活账本**——判官刚打的那一条必须立刻反映在他自己看得见的数字上，而不是等一次重新导出。
 - **没有模型工具，将来也不会有**：`@khorsheed/dsh-eval-tool` 不注册 `humanFinal` 的任何孪生动词。R1 的「终评是人的」在这里成立，靠的是工具面**根本没有通往这段代码的路**，不是靠一个检查把模型挡回去。
+
+## 作答视图（I5·T75）
+
+- **一个组件、三个入口**：运行记录抽屉的「看作答」落到那一格（组 × 次）；结果对比的配对表题行与判据表展开行落到「题 × 组」、列出每一次；人工评估的队列落到那道题、盲评开着。同一个 `AnswerView` 把一道题的各组并排放，相同的部分对齐——阶段按文件名的 stem（`stage1` / `stage2`）取全行并集，某组缺了一个阶段也占住那一格，下一阶段仍然齐平。
+- **两个视角**：「提交的报告」按段渲染 markdown，json 折叠在下面；「判定证据」按判据逐条列各层判定与理由，外加脚本输出。「过程」按钮复用 T69 的开子会话入口。
+- **判定只在引用时挂到段落上**：`dataseek.verdict/1` 没有「看的是哪一段」这个字段，只有一句 evidence；判官提示要求它原文引用材料，所以 evidence 里被引号括起来的一段（「」“”""''``‘’，去掉 markdown 标记与空白后 ≥ 6 字）出现在哪一段里，就挂在那一段下面，每条至多挂一次。更弱的关联（词重叠、判据自己的措辞）是页面在猜，而猜出来的锚点和真的一模一样。没引用、或者引的是 json 的判定，只在「判定证据」里读。
+- **盲评开关**把组名换成「作答 A / B」，字母按 run 的种子顺序、**每一次各自从 A 起**——跨次沿用字母会让人把第 1 次的 A 和第 2 次的 A 对上，那正是盲要藏的配对。具名面的盲只是显示层（报告没去指纹，「过程」按钮盲时隐藏）；真正的盲面仍是人工评估。
+- **人工评估就是这个视图的盲评锁定版**：`judgeQueue` 的格子喂同一个组件，盲开关锁定，判据表置顶、产物折叠，每列多一块打分——`humanFinal` 仍是唯一写入口，打分路径不变。
+- 读的只是这一道题：一次 `cellAnswers`，只有文本，256 KB 截断并说明，不露路径。不做：代码改动 diff、二选一盲评、下载。
 
 ## 四个阶段的旅程与结论先行（I5·T72）
 

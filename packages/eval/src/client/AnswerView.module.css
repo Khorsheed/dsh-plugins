@@ -1,0 +1,148 @@
+/* The answer view (I5·T75, ui-spec §五 作答视图). One grid per 次: every
+   part of a column sits on its own grid row, so the same stage and the same
+   criterion stay level across the groups whatever each one's length. */
+
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.repTitle {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Wider than the pane: the grid scrolls sideways, the page does not. */
+.grid {
+  display: grid;
+  gap: 0 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.cell {
+  min-width: 0;
+  padding: 8px 10px;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+}
+
+.cell[data-part='head'] {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px 8px 0 0;
+  background: var(--dsw-alias-bg-l2);
+}
+
+/* The column the entry named: the lab row's hairline (T76), on the column. */
+.cell[data-located='true'] {
+  border-left-color: var(--dsw-alias-state-business-primary);
+  border-right-color: var(--dsw-alias-state-business-primary);
+}
+
+.cell[data-located='true'][data-part='head'] {
+  border-top-color: var(--dsw-alias-state-business-primary);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.stage + .stage {
+  margin-top: 8px;
+}
+
+.stageTitle,
+.criterionTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.criterionText {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 400;
+}
+
+.block + .block {
+  margin-top: 2px;
+}
+
+/* A verdict that quotes this paragraph, hung right under it. */
+.hung {
+  margin: 4px 0 10px;
+  padding-left: 8px;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+}
+
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.verdict + .verdict {
+  margin-top: 8px;
+}
+
+.verdictHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.layer {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.evidence {
+  color: var(--dsw-alias-label-primary);
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
