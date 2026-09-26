@@ -19,6 +19,25 @@
      over its bottom edge; scrollable panes pad their bottoms by this
      clearance (the trajectory ledger's pattern). */
   --dsh-datasets-bottom-clearance: calc(var(--dsh-composer-height, 152px) + 16px);
+  /* T83: body 13px (v5); notes, meta and table heads stay 12px. Supersedes
+     T35a's 12px. The two surface/ink locals are the 实验室 tab's, by hand. */
+  font-size: 13px;
+  line-height: 20px;
+  --dsh-datasets-surface-2: var(--dsw-alias-markdown-code-block-banner);
+  --dsh-datasets-warn-ink: var(--dsw-alias-state-warn-label);
+  --dsh-datasets-ok-ink: var(--dsw-alias-state-success-primary);
+}
+
+:global(body[data-ds-dark-theme]) .view {
+  --dsh-datasets-warn-ink: var(--dsw-alias-state-warn-secondary);
+  --dsh-datasets-ok-ink: var(--dsw-alias-state-success-secondary);
+}
+
+/* T83 · E1: the reading column, on the composer's axis. */
+.column {
+  width: min(100%, var(--dsh-chat-content-width, 720px));
+  min-width: 0;
+  margin-inline: auto;
 }
 
 .bindingBar {
@@ -364,6 +383,8 @@
   .body {
     flex-direction: column;
     overflow-y: auto;
+    /* T83: the one scroller in this layout, so it carries the clearance. */
+    padding-bottom: var(--dsh-datasets-bottom-clearance, 0px);
   }
 
   .tree {
@@ -449,24 +470,30 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .table th {
-  padding: 4px 8px 6px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
   font-weight: 400;
   text-align: left;
   white-space: nowrap;
 }
 
 .table td {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l3);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
   color: var(--dsw-alias-label-primary);
   vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
 }
 
 .tableRow:hover td {
@@ -726,7 +753,7 @@
 }
 
 .exposureWithheld {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-datasets-warn-ink);
 }
 
 .exposureUnprotected {
@@ -814,7 +841,7 @@
 }
 
 .panelWarn {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-datasets-warn-ink);
   font-size: 11px;
   line-height: 16px;
   overflow-wrap: anywhere;
@@ -899,36 +926,49 @@
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 4px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 9px;
-  background: color-mix(in srgb, currentColor 12%, transparent);
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--dsh-datasets-surface-2);
   color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 20px;
   white-space: nowrap;
 }
 
 /* ui-spec §九's five, the same two corrections the lab tab's copy took
-   (I5·T67 · W3): `ok` had the BRAND blue and `busy` the body label colour, so
-   「完成」 read blue and 「进行中」 read grey. The two tabs carry one chip by
-   hand (§八: a client bundle never imports a sibling plugin), so they are
-   corrected together or they drift. */
+   (I5·T67 · W3). The two tabs carry one chip by hand (§八: a client bundle
+   never imports a sibling plugin), so they are corrected together or they
+   drift. T83 · E6: v5's pill — the tone's tertiary fill, its ink as text. */
 .chipTag[data-tone='ok'] {
-  color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-tertiary);
+  color: var(--dsh-datasets-ok-ink);
 }
 
 .chipTag[data-tone='busy'] {
+  background: var(--dsw-alias-state-business-tertiary);
   color: var(--dsw-alias-state-business-primary);
 }
 
 .chipTag[data-tone='warn'] {
-  color: var(--dsw-alias-state-warn-label);
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsh-datasets-warn-ink);
 }
 
 .chipTag[data-tone='danger'] {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
   color: var(--dsw-alias-state-error-primary);
+}
+
+.chipTag[data-dot]::before {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
 }
 
 /* A count riding on a chip. */

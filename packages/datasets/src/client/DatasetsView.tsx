@@ -362,19 +362,19 @@ export function DatasetsView(props: DatasetsViewProps) {
               <Button size="sm" variant="primary" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
                 {t('registry.register')}
               </Button>
-              <Button size="sm" onClick={runImport} disabled={importing}>
+              <Button variant="outline" size="sm" onClick={runImport} disabled={importing}>
                 {importing ? t('registry.importing') : t('registry.import')}
               </Button>
             </>
           )}
           {page === 'detail' && openRow?.entry.authoringCheckout != null && (
             <>
-              <Button size="sm" onClick={() => { openForm('newItem') }}>{t('detail.newItem')}</Button>
-              <Button size="sm" onClick={() => { openForm('importItem') }}>{t('detail.importItem')}</Button>
+              <Button variant="outline" size="sm" onClick={() => { openForm('newItem') }}>{t('detail.newItem')}</Button>
+              <Button variant="outline" size="sm" onClick={() => { openForm('importItem') }}>{t('detail.importItem')}</Button>
             </>
           )}
           {page === 'detail' && (
-            <Button size="sm" onClick={runValidate} disabled={validating}>
+            <Button variant="outline" size="sm" onClick={runValidate} disabled={validating}>
               {validating ? t('detail.validating') : t('detail.validate')}
             </Button>
           )}
@@ -413,7 +413,7 @@ export function DatasetsView(props: DatasetsViewProps) {
                 </div>
               )
             })}
-            <Button size="sm" onClick={() => { actions.setImported(null) }}>{t('import.dismiss')}</Button>
+            <Button variant="outline" size="sm" onClick={() => { actions.setImported(null) }}>{t('import.dismiss')}</Button>
           </div>
         )}
         {validatedRow !== undefined && (
@@ -444,7 +444,7 @@ export function DatasetsView(props: DatasetsViewProps) {
             {skeleton.written.map(path => <div key={path} className={css.noticeLine}>{path}</div>)}
             {skeleton.notes.map(note => <div key={note} className={css.noticeLine}>{note}</div>)}
             <div className={css.noticeLine}>{t('skeleton.commitHint')}</div>
-            <Button size="sm" onClick={() => { actions.setSkeleton(null) }}>{t('skeleton.dismiss')}</Button>
+            <Button variant="outline" size="sm" onClick={() => { actions.setSkeleton(null) }}>{t('skeleton.dismiss')}</Button>
           </div>
         )}
         {form !== null && (

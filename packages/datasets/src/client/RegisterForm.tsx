@@ -164,7 +164,7 @@ export function RegisterForm(props: RegisterFormProps) {
             aria-label={t('register.path')}
           />
           {canPick && (
-            <Button
+            <Button variant="outline"
               type="button"
               size="sm"
               onClick={() => {
@@ -289,7 +289,7 @@ export function RegisterForm(props: RegisterFormProps) {
         <Button type="submit" variant="primary" size="sm" disabled={!canConfirm}>
           {initial !== undefined ? t('register.save') : t('register.submit')}
         </Button>
-        <Button type="button" size="sm" onClick={onCancel}>{t('register.cancel')}</Button>
+        <Button variant="outline" type="button" size="sm" onClick={onCancel}>{t('register.cancel')}</Button>
       </div>
       {notice !== null && <ErrorState what={t('notice.failed')} message={notice} compact t={t} />}
     </form>

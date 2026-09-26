@@ -149,9 +149,9 @@ export function Word(props: { phrase: Phrase; t: DatasetsViewProps['t']; title?:
  * by hand, and the stylesheet rule beside them is identical too.
  * @param props - the tone, an optional hover title, and the word itself.
  */
-export function Chip(props: { tone?: Tone; title?: string | undefined; children: ReactNode }) {
-  const { tone = 'neutral', title, children } = props
-  return <span className={css.chipTag} data-tone={tone} title={title}>{children}</span>
+export function Chip(props: { tone?: Tone; title?: string | undefined; dot?: boolean | undefined; children: ReactNode }) {
+  const { tone = 'neutral', title, dot = false, children } = props
+  return <span className={css.chipTag} data-tone={tone} data-dot={dot ? '' : undefined} title={title}>{children}</span>
 }
 
 /**
