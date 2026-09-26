@@ -408,7 +408,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T77 | 代码 ✅（`ced3702e` → main `53b93082`，2026-09-24） | 源码模式装不出来：`install.sh:327` 算同族包只看 dependencies / peerDependencies，`scripts/pack-dist.ts:343` 只改写 `workspace:^`；`e9110d52` 把 content-preview 以 `workspace:*` 加进 local-files / ui-file-preview / worktrees 的 devDependencies，pack 时 ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL（T73 分支 1 与 T72 验收各自撞上、各自临时绕过）。文案见 §三「T77」 | 无 | 从 detached worktree 跑 `install.sh --source … --fresh` 到临时 DSH_HOME 一次成功 |
 | T78 | ❌ 不成立（2026-09-25，main `9da732aa`；原因见 §三 T78 末尾「结果」） | host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟：main 已钉官方线 0.1.7-rc.1、eval 家族做了「双线」适配，评测线 3171 与临时实例仍是 0.1.5-rc.1；只回答「当前 main 能不能在评测线上装得起、跑得通」，不修代码。文案见 §三「T78」 | 无（与 T76 合 main 并行） | 成立 → 3171 照常重装；不成立 → 错误原文 + 定位提交，交用户定钉旧提交还是换线 |
 | T79 | ✅ 清单已合（`bc34de1d`，2026-09-26：P0 1 / P1 12 / P2 16，见 `profiles/web-eval/docs/t79-closeout-walkthrough.md`） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
-| T80 | 代码（2026-09-26 发，四条：T80a ✅ `0f59af27`；T80b / c / d 进行中） | 收口补充一轮：按 T79 清单改，P0 + 全部 P1 + 协调者提升的 12 条 P2。文案见 §三「T80」 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
+| T80 | 代码（2026-09-26 发，四条：T80a ✅ `0f59af27`；T80b ✅ `b028f906`；T80d ✅ `23cd336a`；T80c 待合 main 解冲突） | 收口补充一轮：按 T79 清单改，P0 + 全部 P1 + 协调者提升的 12 条 P2。文案见 §三「T80」 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
 | T81 | ✅ 收口（2026-09-26）：阶段一 main 在 0.1.5-rc.1 上 a–e 全过；阶段二被 main 的 `d49f29af` 取代，不合 | 评测线在 0.1.5 上恢复。typert 双形态 codec（`00cfa1d6`）、preset 双名探测（`380a469c`）、图标自带（`d49f29af`：`scripts/sync-icon-artwork.mts` 给每个包生成 `src/client/icons.tsx`，0.1.5 与 0.1.7 都不再按名字取宿主图标）都由各包负责人在 main 上做了。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；datasets 图标面由 T76 补拍一并看 |
 | T82 | 代码（待排，T81 之后） | web-eval 在 0.1.7-rc.1 上：preset 迁 bundle、install.sh 0.1.7 分支、0.1.7 临时实例冒烟、受试对象版本与宿主版本是否解耦（原 T81 文案，改号） | T81 | 0.1.7 临时实例上 a–e 全过，0.1.5 照旧 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
@@ -3641,6 +3641,14 @@ eval、eval-tool 构建与测试全绿（提示词若被测试钉住，改测试
 ```
 
 **T80a 验收（2026-09-26）**：`fix/t80a-design-page-name`（`85a455b7`）合入 main `0f59af27`。改了 14 个文件：eval 的 tool.ts 描述与文件头、eval-tool 的 EVAL_PROMPT、SKILL.md 第 2 步和第 61 行（「条件页有字段」改指实验设计页的对比组表；协调者核过，DesignPage 有端点编辑）、eval / eval-tool / profile 的 README 双语与 sidecar、architecture.md。ui-spec 第 117 行是 T67 的改动记录，保留。协调者在分支上复跑 eval 1090、eval-tool 6 全过；提示词没有测试钉住。worktree 与分支已清。实施者点名的两处留到下一轮，不进 T80：① eval 代码注释、类型注释、测试 describe 里的「plan review」「conditions page」（多指内部载荷 planReview，模型和用户都看不到）；② profile README 的界面表还是 v1 七个子页的写法（矩阵、格子、报告、判官台几行），T80 合完后按四阶段整张重写。T80c / T80d 合 main 时带上本提交。
+
+**T80b 验收（2026-09-26）**：`feat/t80b-datasets-tab`（5 个提交，至 `e4e4c174`）合入 main `b028f906`。列表加表头，可见层写成人话并在旁边加「改」（打开预填好的登记表单，写入口仍只有这一个）；详情分「选手将看到 / 只有判官和探针看得到」两栏；题数请求改成并发。截图时实施者自己查出两处问题并修掉：旧账本的 run 没有实验 id，实验数多算（22 个，实为 17 个）；400 宽时详情顶栏被裁。协调者看了 light / dark / 400 的列表、详情、窄屏整页：层次对得上 v5，窄屏不横向滚动。与 v5 有意不同的三处（「agent 可见」少了「规划」二字；可见层是只读文字加「改」，不做切换；点题集名打开）都接受。「可切到任一实验钉的版本」这轮没做。另记一处待定：作答记录里已归档的 run 仍标「进行中 · 已归档」，和 T80c 的「完成」口径（JUDGED_OR_BEYOND）不一致，下一轮让 datasets 读同一口径。
+
+**T80d 验收（2026-09-26）**：`feat/t80d-design-result`（`0d972a9a`、`b56bd060`、追加 `de158f35`）合入 main `23cd336a`。报告投影带出 `pair.verdict` / `pair.coverage`；实验设计页与结果对比页按 v5 排层次。协调者对首批截图的三点裁定：判据表加修饰类 `criteriaTable` 拉满宽度，共享的 `.reportTable` 不动；D1–D4 同判定合并成一行，延到下轮定口径；家目录指纹仍靠悬停，但警告行点明「悬停组名看」，规则对所有没有单独一列的不同字段通用。补拍后看过：判据表与结论卡同宽。「用哪些题」缺的考什么、满分、看题面三个字段是隐藏，不是编造，记入下轮。
+
+**T80b + T80d 合并态核验**：在 detached worktree 上把 main 依次合入 b、d，eval / datasets 链构建通过，datasets 250、eval 1098 全过。worktree 与分支都已清。
+
+**T80c 待合**：分支 `feat/t80c-lab-journey`（6 个提交，至 `cc057bbf`）截图已看，列表卡片、停滞行「重跑」、运行记录卡片就地展开、人工评估首屏落在评分表、判官缺席提醒卡、作答视图 400 宽上下排都对得上 v5。试合时它和 T80d 冲突 4 处：`LabView.tsx` 阶段条主按钮（d 包了一层 `stageAction` span，c 让按钮随阶段隐藏或改成「重新校验」）、`LabView.module.css`、`journey.spec.ts`、`README.i18n.yaml`。按文案，d 已先合，由 T80c 实施者合 main 解冲突：两边的语义都要保留，即 c 的按钮随页规则放进 d 的 span。解完重跑 eval 测试和 gate，补拍列表和实验设计首屏（阶段条在那里），报新的提交号。
 
 **T80b：datasets 题集 tab（P1-11、P1-12、P2-15）**
 
