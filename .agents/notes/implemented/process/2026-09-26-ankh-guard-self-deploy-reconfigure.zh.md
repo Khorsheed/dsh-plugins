@@ -10,12 +10,14 @@ Status: implemented
 
 ## 决策
 
-部署包含 ankh-guard 且撞上 runner 哈希拒绝时:
+**已随当日后续提交落地:deploy-3080 自己处理漂移。** 第 5 步先读活 `state/launch-spec.json` 再选重启动词:被钉 runner 文件的 sha256 与录得哈希不一致时,流程打印重绑提示、重录绿构建凭证(reconfigure 的组合 preflight 要跑两遍,10 分钟新鲜窗必须覆盖到 canary 时刻),然后以 `reconfigure --on-failure restore-previous` 重启,每个字段都从活 spec 照抄(`command`、`home`、`credentialRepo`、`harnessRoot`、`profile`、`preflight.*` 含 `candidateProbeCommand`)。没有 spec、spec 不可读、或 runner 未变,都保持普通 `schedule-exit` 路径;runner 漂移但 spec 缺字段时响亮拒绝并指向下面的人工 runbook。`--initiator` 的报告路由只有 schedule-exit 有——reconfigure 路径的回执在 `launch-cutover.json`。
+
+人工 runbook(自动化拒不动手时的兜底):
 
 1. 让部署走完第 1–4 步(构建+测试、pack、profile 刷新、录凭证)——拒绝不会动它们,也不停任何东西。
 2. 用新 runner 跑一次诊断 preflight,在真实 profile 上零风险自证:`DSH_HOME=$HOME/.dsh-official node packages/ankh-guard/lib/cli.js preflight --profile web --preflight-surface built --preflight-install-anchor <harness>/apps/cli/package.json`。
 3. **重启前立刻重录凭证**(10 分钟窗口必须覆盖 preflight + 启动 + canary):`record build --trust-command --command 'pnpm deploy:3080 (build+test green)' --repo <harness>`。
-4. 用 `reconfigure` 重启——受支持的事务化路径,会重绑 launch spec(runner 哈希按当前文件重算)并以 `--on-failure restore-previous` cutover。每个字段都从活 `launch-spec.json` 照抄(`active.command`、`home`、`credentialRepo`、`harnessRoot`、`profile`、`preflight.*` 含 `candidateProbeCommand`),不要新造启动命令。2026-09-26 会话里有完整示例;命令很长但只是逐字段复制。
+4. 用 `reconfigure` 重启——受支持的事务化路径,会重绑 launch spec(runner 哈希按当前文件重算)并以 `--on-failure restore-previous` cutover。每个字段都从活 `launch-spec.json` 照抄(`active.command`、`home`、`credentialRepo`、`harnessRoot`、`profile`、`preflight.*` 含 `candidateProbeCommand`),不要新造启动命令。
 5. 验证:watchdog 日志出现 `canary PASS`、`launch-cutover.json` 到 `phase: ready`、spec 的 `runnerSha256` 与盘上文件重新一致。
 
 绝不用「临时换回旧 runner 字节」绕过拒绝:respawn 的 watchdog 继承持久化 spec,下一次重启闸门会在同一处再绊一次——只有 `reconfigure` 能耐久重绑。
@@ -24,13 +26,13 @@ Status: implemented
 
 **先临时换回旧 runner 字节跑 schedule-exit,跑完再重建。** 否决:respawn 的 watchdog 继承持久化 spec 里的旧哈希,而仓库文件已是新构建,之后每次重启闸门都在同一处再绊;而且重启后的 guard 自己的 `verify-restart` 可能把这份漂移读成篡改。只有 `reconfigure` 能耐久重绑。
 
-**让 deploy-3080 检测「包里含 ankh-guard」时自动改走 reconfigure。** 正确的结构性修法,刻意缓做:cutover 的每个旗标都必须从活 `launch-spec.json` 逐字段照抄,自动化写错就是把错误启动命令写进生产。本 note 即过渡 runbook。
+**让 deploy-3080 检测到漂移时自动改走 reconfigure。** 已在后续提交落地——见决策节。cutover 的每个旗标都从活 `launch-spec.json` 逐字段照抄,绝不新造;spec 缺必需字段是唯一仍拒绝给人工的情形。
 
 **手动 kill 宿主子进程让 watchdog respawn。** 否决:无闸重启绕过 AGENTS.md 给 3080 定的 preflight 契约,且反复启动失败会冒 watchdog 回滚宿主检出的风险。
 
 ## 后果
 
-2026-09-26 部署:ankh-guard 0.3.1(preflight 挂载自己算出的 runtime resolution)+ taskpilot 0.3.1 正是沿这条路上线 3080——修复后的 runner 组合 preflight PASS、cutover `ready`、canary PASS、runner 重绑核验一致。结构性缺口仍在:deploy-3080 可以检测「包里含 ankh-guard」时自动改走 reconfigure,或把录凭证挪到流水线更后面;在有人做掉之前,本 note 即 runbook。
+2026-09-26 部署:ankh-guard 0.3.1(preflight 挂载自己算出的 runtime resolution)+ taskpilot 0.3.1 沿这条路径的人工版上线 3080——修复后的 runner 组合 preflight PASS、cutover `ready`、canary PASS、runner 重绑核验一致。自动化同日落地(`scripts/deploy-3080.mts` 的 `restartVerb`,由 `scripts/deploy-3080.spec.ts` 三个新用例钉住:runner 未变保持 schedule-exit、漂移则带凭证重录走 reconfigure、spec 缺字段响亮拒绝)。
 
 ## 相关
 

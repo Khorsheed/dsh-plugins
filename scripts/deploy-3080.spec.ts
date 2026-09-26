@@ -1,5 +1,6 @@
 /** Run the real orchestrator with fake executables and an isolated home: no production processes. */
 import { afterEach, describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -28,7 +29,7 @@ if(cmd==='pnpm'&&args[0]==='install') { const p=JSON.parse(fs.readFileSync(file)
  const materialize=(pkg,dir)=>{fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify(pkg));if(pkg.dsh&&pkg.dsh.bundle&&pkg.dsh.bundle.patch&&process.env.FAILURE!=='patch')fs.writeFileSync(path.join(dir,pkg.dsh.bundle.patch),'# fixture');};
  for(const [name,spec] of Object.entries(p.dependencies)){const pkg=JSON.parse(fs.readFileSync(spec.slice(5))),dir=path.join(profile,'node_modules',name);materialize(pkg,dir);for(const [dn,ds]of Object.entries(pkg.dependencies??{})){if(String(ds).startsWith('file:'))continue;const tar=pin(dn);if(tar)materialize(JSON.parse(fs.readFileSync(tar)),path.join(dir,'node_modules',dn));}}
  if(process.env.FAILURE==='installed-link')fs.symlinkSync('absent',path.join(profile,'node_modules/lost')); }
-if(cmd==='node'&&args[1]==='schedule-exit')fs.appendFileSync(path.join(home,'state/watchdog.log'),'canary PASS\\n');
+if(cmd==='node'&&(args[1]==='schedule-exit'||args[1]==='reconfigure'))fs.appendFileSync(path.join(home,'state/watchdog.log'),'canary PASS\\n');
 if(cmd==='curl'){const marker=path.join(home,'curl-once');const first=process.env.FAILURE==='http-once'&&!fs.existsSync(marker);fs.writeFileSync(marker,'1');process.stdout.write(first?'500':'401');}
 `
 function writeStubs(bin: string) {
@@ -120,6 +121,56 @@ describe('deploy 3080 flow', () => {
     const namedExit = named.calls.find(c => c[1]?.endsWith('cli.js') && c[2] === 'schedule-exit')!
     expect(namedExit.slice(namedExit.indexOf('--initiator'))).toEqual(['--initiator', 'session-abc'])
   }, 30000)
+
+  // The watchdog pins its preflight runner by path+sha256; a deploy that
+  // rebuilds ankh-guard's runner makes schedule-exit refuse, so the flow must
+  // rebind through reconfigure with the live spec's own fields (2026-09-26).
+  function writeLaunchSpec(f: { home: string }, runnerContent: string, recordedSha: string) {
+    const runner = join(f.home, 'state/preflight-runner.js')
+    writeFileSync(runner, runnerContent)
+    writeFileSync(join(f.home, 'state/launch-spec.json'), JSON.stringify({ version: 1, active: {
+      command: 'node harness/bin.js web', port: 3080, home: f.home,
+      credentialRepo: 'harness-repo', harnessRoot: 'harness-root', profile: 'web',
+      preflight: { surface: 'built', runnerPath: runner, runnerSha256: recordedSha, installAnchor: 'anchor/package.json', candidateProbeCommand: 'probe cmd' },
+    } }))
+    return runner
+  }
+  it('keeps schedule-exit when the bound runner is unchanged', () => {
+    const f = fixture()
+    writeLaunchSpec(f, '// runner', createHash('sha256').update('// runner').digest('hex'))
+    const r = f.run(false)
+    expect(r.status, r.output).toBe(0)
+    expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(true)
+    expect(r.calls.some(c => c[2] === 'reconfigure')).toBe(false)
+  })
+  it('rebinds through reconfigure with the live spec fields when the runner drifted, re-recording the credential first', () => {
+    const f = fixture()
+    const runner = writeLaunchSpec(f, '// new runner build', 'deadbeef'.repeat(8))
+    const r = f.run(false)
+    expect(r.status, r.output).toBe(0)
+    expect(r.output).toContain('rebinding the launch spec through reconfigure')
+    expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(false)
+    const records = r.calls.filter(c => c[1]?.endsWith('cli.js') && c[2] === 'record')
+    const reconfigure = r.calls.find(c => c[1]?.endsWith('cli.js') && c[2] === 'reconfigure')
+    expect(reconfigure, r.calls.map(c => c.join(' ')).join('\n')).toBeDefined()
+    expect(records.length).toBeGreaterThanOrEqual(2) // step 4 plus the freshness re-record
+    expect(r.calls.indexOf(reconfigure!)).toBeGreaterThan(r.calls.lastIndexOf(records.at(-1)!))
+    expect(reconfigure).toContain('--on-failure'); expect(reconfigure).toContain('restore-previous')
+    expect(reconfigure).toContain('--candidate-probe-command'); expect(reconfigure).toContain('probe cmd')
+    expect(reconfigure).toContain('--preflight-runner'); expect(reconfigure).toContain(runner)
+    expect(reconfigure!.slice(reconfigure!.indexOf('--start'))[1]).toBe('node harness/bin.js web')
+  })
+  it('refuses the drift rebind loudly when the live spec lacks a field reconfigure needs', () => {
+    const f = fixture()
+    writeLaunchSpec(f, '// new runner build', 'deadbeef'.repeat(8))
+    const spec = JSON.parse(readFileSync(join(f.home, 'state/launch-spec.json'), 'utf8'))
+    delete spec.active.preflight.candidateProbeCommand
+    writeFileSync(join(f.home, 'state/launch-spec.json'), JSON.stringify(spec))
+    const r = f.run(false)
+    expect(r.status).not.toBe(0)
+    expect(r.output).toContain('candidateProbeCommand')
+    expect(r.calls.some(c => c[2] === 'reconfigure' || c[2] === 'schedule-exit')).toBe(false)
+  })
 })
 
 /** A family bundle (packages/bundle) whose one member (packages/demo) currently sits in the profile as a standalone install. */

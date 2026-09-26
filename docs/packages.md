@@ -39,7 +39,7 @@
 | `@khorsheed/dsh-local-agent-dsh-headless` | `packages/local-agent-dsh-headless` | 0.1.0-rc.6 | composition | sub-profile-patch | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.1.0-rc.6 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-local-agent-tool-subagent` | `packages/local-agent-tool-subagent` | 0.1.0-rc.6 | composition | provider-mounted-row | — | 0.1.2-rc.1 | web-dev, web-eval |
-| `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
+| `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-mission` | `packages/mission` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |

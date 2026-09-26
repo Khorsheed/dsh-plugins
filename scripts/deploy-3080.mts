@@ -41,6 +41,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
@@ -93,6 +94,55 @@ function run(cmd, argv, options = {}) {
 
 function runGuard(verbArgs) {
   run(GUARD[0], [...GUARD[1], ...verbArgs], { env: { ...process.env, DSH_HOME } })
+}
+
+function sha256(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex')
+}
+
+/**
+ * The restart verb for step 5. The live watchdog pins its preflight runner by
+ * path+sha256 in `state/launch-spec.json`; whenever a deploy rebuilt
+ * ankh-guard's runner (any change to preflight-runner.ts), schedule-exit's
+ * binding check refuses — the guard self-deploy deadlock. On drift, rebind
+ * and restart through reconfigure instead (transactional, restore-previous on
+ * failure), copying every field from the live spec. No spec, an unreadable
+ * spec, or an unchanged runner keeps the ordinary schedule-exit path.
+ * @returns the guard argv for the restart.
+ */
+function restartVerb() {
+  const scheduleExit = ['schedule-exit', '--port', PORT, '--delay-ms', '5000', '--profile', 'web', '--repo', HARNESS, '--preflight-timeout-ms', '300000', ...(initiator === undefined ? [] : ['--initiator', initiator])]
+  const specPath = join(DSH_HOME, 'state', 'launch-spec.json')
+  if (!existsSync(specPath)) return scheduleExit
+  let active
+  try { active = JSON.parse(readFileSync(specPath, 'utf8')).active } catch { return scheduleExit }
+  const pf = active?.preflight
+  if (typeof pf?.runnerPath !== 'string' || typeof pf?.runnerSha256 !== 'string' || !existsSync(pf.runnerPath)) return scheduleExit
+  if (sha256(pf.runnerPath) === pf.runnerSha256) return scheduleExit
+  if (typeof active?.command !== 'string' || typeof pf.installAnchor !== 'string' || typeof pf.candidateProbeCommand !== 'string') {
+    throw new Error('the bound preflight runner changed on disk and launch-spec.json lacks a field reconfigure needs (command / installAnchor / candidateProbeCommand) — rebind by hand per .agents/notes/implemented/process/2026-09-26-ankh-guard-self-deploy-reconfigure.md')
+  }
+  process.stdout.write('\ndeploy-3080: bound preflight runner changed on disk — rebinding the launch spec through reconfigure (the ankh-guard self-deploy path)\n')
+  if (initiator !== undefined) process.stdout.write('deploy-3080: note — --initiator report routing is schedule-exit-only; the reconfigure receipt lives in state/launch-cutover.json\n')
+  // Re-record the green credential: reconfigure runs its composition preflight
+  // twice (live + isolated candidate copy) and the 10-minute freshness window
+  // must still be open when the post-restart canary re-verifies it.
+  runGuard(['record', 'build', '--trust-command', '--command', 'pnpm deploy:3080 (build+test green)', '--repo', HARNESS])
+  return [
+    'reconfigure',
+    '--start', active.command,
+    '--on-failure', 'restore-previous',
+    '--port', String(active.port ?? PORT),
+    '--home', active.home ?? DSH_HOME,
+    '--repo', active.credentialRepo ?? HARNESS,
+    '--harness-root', active.harnessRoot ?? HARNESS,
+    '--profile', active.profile ?? 'web',
+    '--preflight-surface', pf.surface ?? 'built',
+    '--preflight-runner', pf.runnerPath,
+    '--preflight-install-anchor', pf.installAnchor,
+    '--candidate-probe-command', pf.candidateProbeCommand,
+    '--preflight-timeout-ms', '300000',
+  ]
 }
 
 // Update a name's overrides pin, or insert the line inside the overrides block
@@ -321,16 +371,25 @@ try {
     runGuard(['preflight', '--profile', 'web'])
     process.stdout.write('\ndeploy-3080: packed + refreshed (no restart, per --no-restart)\n')
   } else {
-    // 5. gated restart + canary watch. schedule-exit owns the single
-    // composition preflight; running it separately here doubled the slowest
-    // part of an ordinary 3080 restart without strengthening the gate.
+    // 5. gated restart + canary watch. The verb is chosen by the live launch
+    // spec: the watchdog pins its preflight runner by path+sha256, and step
+    // 1's build rewrites that file whenever ankh-guard's runner source
+    // changed — schedule-exit then refuses ("the bound preflight runner
+    // changed after launch configuration"), which made every runner-touching
+    // ankh-guard deploy self-block. On drift, rebind+restart through
+    // reconfigure (the sanctioned transactional path) instead, copying the
+    // live launch spec field-by-field and re-recording the credential so its
+    // 10-minute freshness window covers reconfigure's double preflight.
+    // Without drift, schedule-exit owns the single composition preflight;
+    // running it separately here doubled the slowest part of an ordinary
+    // 3080 restart without strengthening the gate.
     // --preflight-timeout-ms 300000: the guard's 120s default was calibrated
     // on an idle machine; under multi-agent load (several builds/tests sharing
     // 8 cores + swap pressure) a clean full-profile dry-run can legitimately
     // exceed it. The timeout exists to catch a HUNG preflight, not a slow one.
     const logPath = join(DSH_HOME, 'state', 'watchdog.log')
     const logOffset = existsSync(logPath) ? readFileSync(logPath, 'utf8').length : 0
-    runGuard(['schedule-exit', '--port', PORT, '--delay-ms', '5000', '--profile', 'web', '--repo', HARNESS, '--preflight-timeout-ms', '300000', ...(initiator === undefined ? [] : ['--initiator', initiator])])
+    runGuard(restartVerb())
     // Same load reasoning as above: restart + readiness + browser handoff
     // normally land in 20-40s; the window is a hang bound, not a speed gate.
     const deadline = Date.now() + 300_000
