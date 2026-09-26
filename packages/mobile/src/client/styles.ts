@@ -326,6 +326,12 @@ html[data-dsh-mobile] [data-mobile-room-form] :is(input,textarea,select) { box-s
 html[data-dsh-mobile] [data-mobile-room-form] textarea { min-height:94px; resize:vertical; }
 html[data-dsh-mobile] [data-mobile-room-form] button { min-height:44px; min-width:44px; font-size:16px; border-radius:14px; }
 html[data-dsh-mobile] [data-mobile-room-form] summary { min-height:44px; padding:10px 0; font-size:16px; color:var(--dsw-alias-label-primary); }
+/* Harness model controls are expandable summaries, not native selects. Keep the
+   advanced-settings disclosure plain while aligning picker faces with form fields. */
+html[data-dsh-mobile] [data-mobile-room-form] details > summary[aria-expanded] { display:flex; align-items:center; box-sizing:border-box; width:100%; max-width:none; min-width:0; min-height:48px; gap:12px; padding:11px 12px; border:1px solid var(--mobile-edge); border-radius:14px; background:var(--mobile-soft); font-size:17px; line-height:1.5; color:var(--dsw-alias-label-primary); }
+html[data-dsh-mobile] [data-mobile-room-form] details > summary[aria-expanded] > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+html[data-dsh-mobile] [data-mobile-room-form] details > summary[aria-expanded]::after { flex-shrink:0; margin-inline-start:auto; margin-inline-end:2px; }
+
 html[data-dsh-mobile] [data-mobile-room-form] > div:last-child { position:sticky; bottom:-16px; background:var(--mobile-face); padding:12px 0 0; margin-top:0; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 html[data-dsh-mobile] [data-mobile-room-form] [role=alert] { font-size:15px; line-height:1.5; }
 html[data-dsh-mobile] [data-member] { font-size:16px; }
