@@ -47,7 +47,7 @@
 
 .cell {
   min-width: 0;
-  padding: 8px 10px;
+  padding: 8px 14px;
   border-left: 1px solid var(--dsw-alias-border-l2);
   border-right: 1px solid var(--dsw-alias-border-l2);
   background: transparent;
@@ -55,7 +55,8 @@
 
 .cell[data-part='head'] {
   border-top: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px 8px 0 0;
+  border-radius: 12px 12px 0 0;
+  padding: 10px 14px;
   background: var(--dsh-eval-surface-2, var(--dsw-alias-markdown-code-block-banner));
 }
 
@@ -63,6 +64,16 @@
 .cell[data-located='true'] {
   border-left-color: var(--dsw-alias-state-business-primary);
   border-right-color: var(--dsw-alias-state-business-primary);
+}
+
+.cell[data-part='foot'] {
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0 0 12px 12px;
+}
+
+.cell[data-located='true'][data-part='foot'] {
+  border-bottom-color: var(--dsw-alias-state-business-primary);
 }
 
 .cell[data-located='true'][data-part='head'] {
@@ -83,7 +94,37 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--dsw-alias-label-primary);
+  font-size: 15px;
   font-weight: 600;
+}
+
+/* T83 · answer: a stage file inside a column is the column's text, not a
+   code block inside a card — v5 prints it straight into the column at
+   reading size (headings 14–16px, not the reading pane's 21px). The file
+   name stays as one quiet line above it. */
+.cell .doc {
+  margin: 0 0 8px;
+  border-radius: 0;
+  background: transparent;
+}
+
+.cell .docBanner {
+  padding: 0 0 4px;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.cell .docBody {
+  padding: 0;
+  --dsw-font-markdown-base: 400 13px/22px var(--dsw-font-family);
+  --dsw-font-markdown-base-strong: 600 13px/22px var(--dsw-font-family);
+  --dsw-font-markdown-base-italic: italic 400 13px/22px var(--dsw-font-family);
+  --dsw-font-markdown-h1: 600 16px/24px var(--dsw-font-family);
+  --dsw-font-markdown-h2: 600 15px/23px var(--dsw-font-family);
+  --dsw-font-markdown-h3: 600 14px/22px var(--dsw-font-family);
+  --dsw-font-markdown-h4: 600 13px/22px var(--dsw-font-family);
+  --dsw-font-markdown-table: 12px/20px var(--dsw-font-family);
+  --dsw-font-markdown-table-head: 500 12px/20px var(--dsw-font-family);
 }
 
 .stage + .stage {

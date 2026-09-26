@@ -233,7 +233,7 @@ function ReadinessChecklist(props: {
                   {ready.map(row => (
                     <tr key={`ready:${row.id}`}>
                       <td>
-                        <span className={css.itemName}>{row.id}</span>
+                        <span className={css.checkName}>{row.id}</span>
                         {row.note !== undefined && row.note !== '' && <span className={css.readinessThen}>{row.note}</span>}
                       </td>
                       <td>

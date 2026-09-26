@@ -183,7 +183,7 @@ function CriterionRow(props: {
   return (
     <div className={css.criterionRow}>
       <div className={css.criterionHead}>
-        <span className={css.mono}>{criterion.id}</span>
+        <span className={css.itemName}>{criterion.id}</span>
         {/* Polarity is the RUBRIC's property, never the grader's reading of
             it: `pass` always means the criterion HOLDS, and for a negative
             criterion holding means the defect is present. Saying so on the
@@ -489,7 +489,6 @@ export function JudgingPage(props: {
 
   return (
     <div className={css.judgePage}>
-      <div className={css.notice}>{t('judge.blindNotice')}</div>
       {/* 判官缺席: the judge ran on these answers and left no parseable
           verdict. Named by blind number only; 补判 is optional because the
           human's own verdict stands without it. */}
@@ -530,10 +529,15 @@ export function JudgingPage(props: {
       {view.cells.length === 0
         ? <EmptyState title={t('judge.empty')} hint={t('judge.emptyHint')} />
         : (
-          <div className={css.judgeColumns}>
-            <div className={css.judgeQueue}>
-              <div className={css.sectionTitle}>{t('judge.queue')}</div>
-              <div className={css.matrixBar}>
+          <div className={css.judgeBench}>
+            <div className={css.benchLead}>{t('judge.blindNotice')}</div>
+            {/* T83 · judge: the item queue is a compact 题目切换 row above the
+                answers, not a sidebar — the answers get the full content
+                column (v5 renders one item at a time; the switch only has to
+                say which one and how far grading has got). */}
+            <div className={css.itemSwitch} role="group" aria-label={t('judge.queue')}>
+              <span className={css.itemSwitchLabel}>{t('judge.queue')}</span>
+              <div className={css.itemSwitchFilter}>
                 {([['all', 'judge.filterAll'], ['ungraded', 'judge.filterUngraded'], ['graded', 'judge.filterGraded']] as const)
                   .map(([value, key]) => (
                     <button
@@ -547,25 +551,28 @@ export function JudgingPage(props: {
                     </button>
                   ))}
               </div>
-              {shown.map(item => (
-                <button
-                  key={item.task}
-                  type="button"
-                  className={css.queueRow}
-                  aria-pressed={selection === item.task}
-                  onClick={() => { onPick(item.task) }}
-                >
-                  <span className={css.queueTask}>{t('judge.itemCount', { task: item.task, count: item.cells.length })}</span>
-                  <span className={css.dim}>{t('judge.graded', { count: item.graded })}</span>
-                </button>
-              ))}
+              <div className={css.itemSwitchItems}>
+                {shown.map(item => (
+                  <button
+                    key={item.task}
+                    type="button"
+                    className={css.queueRow}
+                    aria-pressed={selection === item.task}
+                    data-done={item.graded === item.cells.length ? '' : undefined}
+                    onClick={() => { onPick(item.task) }}
+                  >
+                    <span className={css.queueTask}>{t('judge.itemCount', { task: item.task, count: item.cells.length })}</span>
+                    <span className={css.queueGraded}>{t('judge.graded', { count: item.graded })}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {open === null
               ? <EmptyState title={t('judge.itemPick')} hint={t('judge.pickHint')} />
               : (
                 <div className={css.bench}>
-                  <div className={css.dim}>{t('judge.sideBySide')}</div>
+                  <div className={css.benchLead}>{t('judge.sideBySide')}</div>
                   {/* The answer view, blind locked on (I5·T75): the same
                       side-by-side the named doors open, over the scrubbed
                       queue payload, with each column's form on top. */}

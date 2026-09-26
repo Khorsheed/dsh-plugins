@@ -39,7 +39,9 @@ const SOURCE_KEY: Record<AnswerSource, 'answer.sourceHuman' | 'answer.sourceJudg
   none: 'answer.sourceNone',
 }
 
-const SOURCE_TONE: Record<AnswerSource, Tone> = { human: 'ok', judge: 'busy', script: 'neutral', none: 'warn' }
+// T83 · answer: v5's tones — a judged column reads green, a script-only one
+// amber (the judge's word is missing), matching the 判官缺席 card.
+const SOURCE_TONE: Record<AnswerSource, Tone> = { human: 'ok', judge: 'ok', script: 'warn', none: 'warn' }
 
 /** A stage's heading: 阶段 1 for `stage1`, the stem itself otherwise. */
 function stageLabel(stem: string, t: T): string {
@@ -88,14 +90,14 @@ function MarkdownWithVerdicts(props: {
   const { file, hung, t } = props
   const blocks = blocksOf(file.text)
   return (
-    <div className={base.markdownDoc}>
-      <div className={base.markdownBanner}>
+    <div className={`${base.markdownDoc} ${css.doc}`}>
+      <div className={`${base.markdownBanner} ${css.docBanner}`}>
         <span className={base.markdownInfo}>{file.name}</span>
         {/* The blind face's redaction count, on the banner: the grader sees
             the scrubber ran without opening anything. */}
         {file.replacements !== null && <span className={base.dim}>&nbsp;{t('judge.scrubbed', { count: file.replacements })}</span>}
       </div>
-      <div className={base.markdownBody}>
+      <div className={`${base.markdownBody} ${css.docBody}`}>
         {blocks.map((block, index) => (
           // Blocks are positional and never reorder within one file.
           <div key={index} className={css.block}>
@@ -391,6 +393,11 @@ export function AnswerView(props: AnswerViewProps) {
                     // The script's output VERBATIM: the drawer's own read.
                     : column.scripts.map(run => <pre key={run.at} className={base.pre}>{run.raw}</pre>)}
                 </div>
+              ))}
+              {/* T83 · answer: each column closes as a card (v5), so the
+                  last part does not trail off into the page. */}
+              {row.columns.map(column => (
+                <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="foot" aria-hidden="true" />
               ))}
             </div>
           </section>

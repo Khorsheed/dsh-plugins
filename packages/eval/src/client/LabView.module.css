@@ -1005,19 +1005,30 @@
 /* The conclusion card leads the result page: one line per pair, then where
    the verdicts came from and whether the checks held. */
 .conclusionCard {
+  /* v5 · result: a white card on the page, its left rule the verdict's tone. */
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
+  padding: 14px 16px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsh-eval-surface-2);
+  border-left: 3px solid var(--dsh-eval-warn-ink);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.conclusionCard[data-tone='ok'] {
+  border-left-color: var(--dsh-eval-ok-ink);
 }
 
 .conclusionFlag {
-  color: var(--dsh-eval-warn-ink);
-  font-size: 12px;
-  line-height: 18px;
+  /* v5 · hmark: the person's own mark, quoted above the answer. */
+  padding: 8px 12px;
+  border-left: 3px solid var(--dsw-alias-state-warn-primary);
+  border-radius: 0 6px 6px 0;
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .conclusionTitle {
@@ -1178,6 +1189,12 @@
 .itemName {
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* A checklist line's subject: a name, read in the body face at body weight. */
+.checkName {
+  color: var(--dsw-alias-label-primary);
   overflow-wrap: anywhere;
 }
 
@@ -1973,39 +1990,48 @@ tr:last-child > .reportTd {
   min-width: 0;
 }
 
-/* Queue · artifacts · criteria. The artifacts column is the widest because it
-   is the one a grader actually reads; the queue only has to hold a number. */
-/* TWO columns: the item queue, and the answers to the open item. It was three
-   while the material and the criteria were separate panes; after I5·T67 put
-   the criteria inside each answer the third column sat empty and squeezed the
-   answers into 509 px of a 1134 px page — two columns of 358 px, the second
-   one half off the edge behind a scrollbar macOS does not draw (W8). */
-.judgeColumns {
-  display: grid;
-  grid-template-columns: minmax(150px, 180px) minmax(0, 1fr);
+/* T83 · judge: one column. The item queue used to be a 150–180px sidebar
+   that squeezed the answers; it is now the 题目切换 row above them. */
+.judgeBench {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-items: start;
   min-width: 0;
 }
 
-/* Narrow panes stack rather than squeeze: a de-fingerprinted stage file is
-   unreadable in a 90px column, and an unreadable artifact is a guessed
-   verdict. */
-@media (width <= 900px) {
-  .judgeColumns {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.benchLead {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
-.judgeQueue,
-.judgeMaterial,
-.judgeCriteria {
+.itemSwitch {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 6px 10px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.itemSwitchLabel {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.itemSwitchFilter {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.itemSwitchItems {
+  display: flex;
+  flex: 1 1 240px;
+  flex-wrap: wrap;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -2050,9 +2076,18 @@ tr:last-child > .reportTd {
 }
 
 .queueTask {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.queueGraded {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.queueRow[data-done] .queueGraded {
+  color: var(--dsh-eval-ok-ink);
 }
 
 .materialHead {
@@ -2356,22 +2391,24 @@ tr:last-child > .reportTd {
    with a picture attached. The number stays beside the bar: the bar carries
    the ratio a reader sees at a glance, the number carries the fact. */
 .chartGroup {
+  /* v5 · bars: a narrow block, neutral bars — efficiency is context, not a score. */
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  max-width: 540px;
   margin-top: 8px;
 }
 
 .chartTitle {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .chartRow {
   display: grid;
-  grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr) minmax(64px, auto);
-  gap: 8px;
+  grid-template-columns: minmax(64px, 120px) minmax(0, 1fr) minmax(56px, max-content);
+  gap: 12px;
   align-items: center;
 }
 
@@ -2387,17 +2424,17 @@ tr:last-child > .reportTd {
 .chartTrack {
   overflow: hidden;
   display: block;
-  height: 10px;
-  border-radius: 5px;
-  background: var(--dsw-alias-interactive-bg-hover);
+  height: 6px;
+  border-radius: 3px;
+  background: var(--dsh-eval-surface-2);
 }
 
 .chartBar {
   display: block;
   height: 100%;
   min-width: 2px;
-  border-radius: 5px;
-  background: var(--dsw-alias-state-business-primary);
+  border-radius: 3px;
+  background: var(--dsw-alias-label-secondary);
 }
 
 .chartValue {
@@ -2436,9 +2473,6 @@ tr:last-child > .reportTd {
   min-width: 320px;
   flex-direction: column;
   gap: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  padding: 8px;
   min-width: 0;
 }
 
@@ -2652,28 +2686,28 @@ tr:last-child > .reportTd {
    item · rep · time — and the one opened unfolds UNDER the cards at full
    width instead of squeezing a side drawer beside a list that is not drawn. */
 .sectionLabel {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 20px;
 }
 
+/* T83 · run: the cards fill the content column two-up, as v5 draws them. */
 .recordCards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
-  max-width: 660px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
 }
 
 .recordCard {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 12px 14px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
   color: inherit;
   font: inherit;
   font-size: 12px;
@@ -2687,8 +2721,8 @@ tr:last-child > .reportTd {
 }
 
 .recordCard[aria-pressed='true'] {
-  border-color: var(--dsw-alias-state-business-primary);
-  box-shadow: 0 0 0 1px var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-alias-label-primary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-label-primary);
 }
 
 .recordCardTop {
@@ -2701,6 +2735,7 @@ tr:last-child > .reportTd {
 
 .recordCardGroup {
   overflow: hidden;
+  font-size: 14px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2757,10 +2792,10 @@ tr:last-child > .reportTd {
   flex-wrap: wrap;
   gap: 8px 12px;
   align-items: center;
-  padding: 10px 12px;
-  border: 1px solid var(--dsh-eval-warn-ink);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
+  /* T83 · judge: v5's amber hint card — a filled warn surface, no frame. */
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--dsw-alias-state-warn-tertiary);
   font-size: 12px;
   line-height: 18px;
 }
@@ -2774,8 +2809,9 @@ tr:last-child > .reportTd {
 }
 
 .judgeAbsentTitle {
+  font-size: 13px;
   font-weight: 600;
-  color: var(--dsh-eval-warn-ink);
+  color: var(--dsw-alias-label-primary);
 }
 
 /* ── T80d · 实验设计方案段 ─────────────────────────────────────────────
@@ -2975,21 +3011,22 @@ tr:last-child > .reportTd {
 }
 
 .conclusionHead > .conclusionTitle {
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 15px;
+  line-height: 22px;
 }
 
 .conclusionSource {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .scoreRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 24px;
+  gap: 4px 22px;
   align-items: flex-end;
+  margin: 2px 0 6px;
 }
 
 .scoreCell {
@@ -3008,9 +3045,9 @@ tr:last-child > .reportTd {
 
 .scoreName,
 .scoreMeta {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
   overflow-wrap: anywhere;
 }
 
@@ -3052,7 +3089,20 @@ tr:last-child > .reportTd {
 .conclusionActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* v5 · btn.ai: the hand-to-agent action carries the small agent diamond. */
+.aiButton::before {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--dsw-alias-state-business-primary);
+  transform: rotate(45deg);
+  content: '';
 }
 
 /* The page's closing folds read as one list of rows, not as three cards. */
