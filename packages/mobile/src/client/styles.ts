@@ -1,4 +1,4 @@
-export const ORDINARY_TITLE = '[data-slot="main.conversation"] header:has([data-conversation-header-corner]) nav:has(> span:only-child > button:disabled + [data-slot="conversation.session.header.lineage"]:empty)'
+export const ORDINARY_TITLE = '[data-slot="main.conversation"] header:has([data-conversation-header-corner]) nav:has(> span:only-child > :is(button:disabled,span:not([data-slot])) + [data-slot="conversation.session.header.lineage"]:empty)'
 /** Local overrides target official slot anchors; frame attributes are verified before activation. */
 export const MOBILE_CSS = `
 html[data-dsh-mobile] { --mobile-bar: 56px; --mobile-accent: #4d6bfe; }

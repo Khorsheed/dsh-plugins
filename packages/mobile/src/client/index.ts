@@ -18,6 +18,7 @@ import type { MobileChromeInjected } from './MobileChrome.tsx'
 import { MobileQueue } from './MobileQueue.tsx'
 import { MobileRooms, type RoomRemoteFace } from './rooms.ts'
 import { MessageMenu } from './messageMenu.ts'
+import { installSheetGestures } from './sheetGestures.ts'
 import { installForegroundRecovery } from './foreground.ts'
 import { NS, en, zh } from './locales.ts'
 
@@ -52,6 +53,7 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => { const off = presentation.subscribe(() => { if (!presentation.getSnapshot().active) directory.finish(null) }); return () => { off(); directory.finish(null) } }, 'mobile: pending directory')
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'mobile-directory', locale: NS, inject: () => ({ directory, navigation }) }, MobileDirectoryOverlay))
+  ctx.effect(() => installSheetGestures(document), 'mobile: sheet dismissal')
   ctx.effect(() => () => { presentation.dispose() }, 'mobile: presentation')
   ctx.effect(() => {
     let remove: (() => void) | undefined

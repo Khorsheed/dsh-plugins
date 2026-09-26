@@ -97,3 +97,17 @@ it('leaves unknown lineage shapes and interactive subagent switchers unchanged',
   expect(document.querySelector('nav [data-mobile-header-hidden]')).toBeNull()
   expect(document.querySelector('[data-mobile-lineage-count]')).toBeNull()
 })
+
+it('compacts the 0.1.7 text crumb without relying on Agent Team being present', () => {
+  const { frame, surface } = fixture()
+  const title = document.querySelector('nav button:disabled')!
+  const plain = document.createElement('span'); plain.textContent = title.textContent
+  title.replaceWith(plain)
+  surface.sync(frame)
+  expect(document.querySelector('[data-test-row]')!.hasAttribute('data-mobile-header-hidden')).toBe(true)
+  const slot = document.querySelector('[data-slot="conversation.session.header.lineage"]')!
+  slot.innerHTML = '<div><span>/</span><button aria-haspopup="tree">2 个子代理</button></div>'
+  surface.sync(frame)
+  expect(plain.hasAttribute('data-mobile-header-hidden')).toBe(true)
+  expect(slot.querySelector('button')!.hasAttribute('data-mobile-lineage-count')).toBe(true)
+})

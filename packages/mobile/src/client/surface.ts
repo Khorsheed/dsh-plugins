@@ -16,7 +16,7 @@ export class MobileSurface {
     this.clearMarks()
     const root = frame?.querySelector<HTMLElement>('[data-slot="main.conversation"] > [data-phase]')
     const row = root?.querySelector<HTMLElement>('header [data-conversation-header-corner]')?.parentElement
-    const ordinary = row?.querySelector('nav > span:only-child > button:disabled + [data-slot="conversation.session.header.lineage"]:empty')
+    const ordinary = row?.querySelector('nav > span:only-child > :is(button:disabled,span:not([data-slot])) + [data-slot="conversation.session.header.lineage"]:empty')
     let preset = ''
     if (row) {
       for (const button of row.querySelectorAll<HTMLElement>('[data-slot="conversation.session.header.actions"] button[aria-label]')) {
@@ -26,7 +26,7 @@ export class MobileSurface {
     if (root?.dataset.phase === 'active' && row) {
       // The ordinary current title duplicates the mobile title. Compact only the
       // checked count dropdown; preserve ancestor links and subagent switchers.
-      for (const title of row.querySelectorAll<HTMLElement>('nav > span > button:disabled')) {
+      for (const title of row.querySelectorAll<HTMLElement>('nav > span > :is(button:disabled,span:not([data-slot]))')) {
         const slot = title.nextElementSibling
         if (slot?.getAttribute('data-slot') !== 'conversation.session.header.lineage') continue
         const count = slot.querySelector<HTMLElement>(':scope > div:only-child > button[aria-haspopup="tree"]')
