@@ -177,8 +177,7 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
                             key={chip.id}
                             type="button"
                             className={css.modeChip}
-                            data-default={chip.isDefault ? 'true' : undefined}
-                            title={t('modeChipHint')}
+                            title={chip.isDefault ? t('modeChipDefaultHint') : t('modeChipHint')}
                             onClick={() => onModeSelect?.(chip.id)}
                           >
                             {chip.label}

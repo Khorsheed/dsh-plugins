@@ -456,11 +456,10 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* The deployment default's chip carries the same tint the active pill does. */
-.modeChip[data-default='true'] {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2));
-  color: var(--dsw-alias-state-business-primary);
-}
+/* Every chip in the row carries the same weight — they are all modes that load
+   the capability. The deployment default used to be tinted here and read as
+   "only this mode has it"; default-ness now lives in the chip's tooltip (and in
+   the mode picker's （默认）suffix), not in the row's color. */
 
 /* The one-pill answer for a capability every readable mode loads: a fact, not a
    link — naming seven modes adds nothing when the answer is "all of them". */

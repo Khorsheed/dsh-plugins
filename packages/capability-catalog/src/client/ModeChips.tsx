@@ -60,8 +60,7 @@ export function ModeChips({ modes, total, onSelect, t }: {
             key={mode.id}
             type="button"
             className={css.modeChip}
-            data-default={mode.isDefault ? 'true' : undefined}
-            title={t('modeChipHint')}
+            title={mode.isDefault ? t('modeChipDefaultHint') : t('modeChipHint')}
             onClick={() => onSelect(mode.id)}
           >
             {mode.label}
