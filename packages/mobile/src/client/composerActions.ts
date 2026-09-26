@@ -1,7 +1,7 @@
-/** Checked rc1 button bridge. The official editor, chooser, permission menu and
+/** Checked legacy and 0.1.7 composer bridge. The official editor, chooser, permission menu and
  * confirmation remain mounted and retain their callbacks. Unknown markup falls back. */
 export type ComposerAction = 'commands' | 'attachments' | 'permissions'
-export interface ActionTarget { button: HTMLButtonElement; label: string; disabled: boolean }
+export interface ActionTarget { button: HTMLButtonElement | HTMLInputElement; label: string; disabled: boolean }
 export type ComposerActionsSnapshot = Partial<Record<ComposerAction, ActionTarget>>
 export class ComposerActions {
   private snapshot: ComposerActionsSnapshot = {}
@@ -11,7 +11,7 @@ export class ComposerActions {
   constructor(private readonly seat: HTMLElement) {
     this.observer = new MutationObserver(() => this.sync())
     const card = seat.closest('[data-composer-card]')
-    if (card) this.observer.observe(card, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'aria-label'] })
+    if (card) this.observer.observe(card, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'aria-label', 'contenteditable'] })
     this.sync()
   }
   readonly getSnapshot = () => this.snapshot
@@ -19,24 +19,30 @@ export class ComposerActions {
   private sync() {
     const card = this.seat.closest('[data-composer-card]')
     const file = card?.querySelector<HTMLInputElement>(':scope > div:last-child > div:first-child > input[type=file][hidden]')
-    const attachments = file?.previousElementSibling
-    const commands = attachments?.previousElementSibling
+    const previous = file?.previousElementSibling
+    const unified = previous instanceof HTMLButtonElement && previous.getAttribute('aria-haspopup') === 'listbox'
+    const attachments = unified ? file : previous
+    const commands = unified ? previous : previous?.previousElementSibling
     const next: ComposerActionsSnapshot = {}
-    if (commands instanceof HTMLButtonElement && commands.getAttribute('aria-haspopup') === 'listbox' && attachments instanceof HTMLButtonElement) {
+    if (commands instanceof HTMLButtonElement && commands.getAttribute('aria-haspopup') === 'listbox' && (attachments instanceof HTMLButtonElement || attachments instanceof HTMLInputElement)) {
       next.commands = this.target(commands)
       next.attachments = this.target(attachments)
+      // The new host retains its file input and onChange validation, but folds
+      // its button into commands. Match the owner picker admission: editable
+      // composer (live, unlocked, not committing) and input enabled (not child).
+      if (unified) next.attachments.disabled ||= commands.disabled || !card?.querySelector('[contenteditable="true"]')
       const modes = file?.nextElementSibling
-      const permission = modes?.querySelector<HTMLButtonElement>(':scope > span > button[aria-label]')
+      const permission = modes?.querySelector<HTMLButtonElement>('[data-slot="conversation.input.permission"] button[aria-label], :scope > span > button[aria-label]')
       // PermissionSelect has a text label between optional glyph and chevron spans.
       if (permission?.querySelector(':scope > span:not([aria-hidden])') && permission.querySelector(':scope > span[aria-hidden] svg')) next.permissions = this.target(permission)
     }
     for (const button of this.marked) if (!Object.values(next).some(value => value.button === button)) { button.removeAttribute('data-mobile-folded-action'); this.marked.delete(button) }
-    for (const value of Object.values(next)) if (!this.marked.has(value.button)) { value.button.setAttribute('data-mobile-folded-action', ''); this.marked.add(value.button) }
+    for (const value of Object.values(next)) if (value.button instanceof HTMLButtonElement && !this.marked.has(value.button)) { value.button.setAttribute('data-mobile-folded-action', ''); this.marked.add(value.button) }
     if ((['commands', 'attachments', 'permissions'] as const).some(key => next[key]?.button !== this.snapshot[key]?.button || next[key]?.label !== this.snapshot[key]?.label || next[key]?.disabled !== this.snapshot[key]?.disabled)) {
       this.snapshot = next; for (const listener of this.listeners) listener()
     }
   }
-  private target(button: HTMLButtonElement): ActionTarget {
+  private target(button: HTMLButtonElement | HTMLInputElement): ActionTarget {
     return { button, label: button.textContent?.trim() || button.getAttribute('aria-label') || '', disabled: button.disabled }
   }
   invoke(action: ComposerAction): boolean {

@@ -43,3 +43,23 @@ it('focuses the existing editor only for an explicit command choice, keeping its
   actions.invoke('permissions'); expect(focus).not.toHaveBeenCalled()
   actions.invoke('commands'); expect(focus).toHaveBeenCalledWith({ preventScroll: true })
 })
+it('adapts the unified add button and keeps attachment admission aligned with the editable owner', async () => {
+  fixture(); controller!.dispose()
+  document.querySelector('[aria-label=Attachment]')!.remove()
+  const editor = document.querySelector('[contenteditable]')!
+  editor.setAttribute('contenteditable', 'true')
+  const actions = controller = new ComposerActions(document.querySelector('[data-seat]')!)
+  const file = document.querySelector<HTMLInputElement>('input[type=file]')!, pick = vi.fn()
+  file.addEventListener('click', pick)
+  expect(actions.getSnapshot().attachments!.button).toBe(file)
+  expect(document.querySelectorAll('[data-mobile-folded-action]')).toHaveLength(2)
+  expect(actions.invoke('attachments')).toBe(true); expect(pick).toHaveBeenCalledOnce()
+  editor.setAttribute('contenteditable', 'false')
+  await vi.waitFor(() => expect(actions.getSnapshot().attachments!.disabled).toBe(true))
+  expect(actions.invoke('attachments')).toBe(false)
+  editor.setAttribute('contenteditable', 'true'); file.disabled = true
+  expect(actions.invoke('attachments')).toBe(false)
+  file.disabled = false
+  ;(actions.getSnapshot().commands!.button as HTMLButtonElement).disabled = true
+  expect(actions.invoke('attachments')).toBe(false); expect(pick).toHaveBeenCalledOnce()
+})

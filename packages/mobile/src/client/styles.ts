@@ -207,17 +207,17 @@ html[data-dsh-mobile]:has([data-mobile-session-title]) [data-mobile-header-hidde
 [data-mobile-folded-action] { display:none!important; }
 [data-mobile-tools-seat] { display:contents; }
 html[data-dsh-mobile] [data-mobile-tools-open] { display:grid; place-items:center; width:44px; height:44px; min-width:44px; padding:0; border:0; border-radius:50%; corner-shape:round; color:var(--dsw-alias-label-primary); background:var(--mobile-soft); }
-[data-mobile-tools-dialog] { box-sizing:border-box; margin:auto auto 0; width:min(100%,520px); max-width:100%; max-height:75dvh; overflow-y:auto; padding:16px 20px max(20px,env(safe-area-inset-bottom)); border:1px solid var(--mobile-line); border-bottom:0; border-radius:26px 26px 0 0; background:var(--mobile-face); color:var(--dsw-alias-label-primary); box-shadow:0 -8px 40px #0002; }
+[data-mobile-tools-dialog] { box-sizing:border-box; margin:auto auto 0; width:min(100%,520px); max-width:100%; max-height:75dvh; overscroll-behavior:contain; overflow-y:auto; padding:16px 20px max(20px,env(safe-area-inset-bottom)); border:1px solid var(--mobile-line); border-bottom:0; border-radius:26px 26px 0 0; background:var(--mobile-face); color:var(--dsw-alias-label-primary); box-shadow:0 -8px 40px #0002; }
 [data-mobile-tools-dialog]::backdrop { background:#0005; }
-[data-mobile-tools-dialog] [data-mobile-tools-handle] { width:34px; height:4px; margin:0 auto 12px; border-radius:4px; background:var(--dsw-alias-label-tertiary); opacity:.5; }
-[data-mobile-tools-dialog] header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-[data-mobile-tools-dialog] strong { font-size:16px; font-weight:500; }
+[data-mobile-tools-dialog] [data-mobile-tools-handle] { width:34px; height:4px; margin:0 auto 12px; touch-action:pan-x; border-radius:4px; background:var(--dsw-alias-label-tertiary); opacity:.5; }
+[data-mobile-tools-dialog] header { touch-action:pan-x; display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+[data-mobile-tools-dialog] strong { font-size:20px; font-weight:600; }
 [data-mobile-tools-dialog] button { font:inherit; color:inherit; cursor:pointer; border:0; background:transparent; -webkit-tap-highlight-color:transparent; }
 [data-mobile-tools-dialog] button:disabled { opacity:.45; cursor:default; }
 [data-mobile-tools-dialog] header button { width:44px; height:44px; display:grid; place-items:center; border-radius:50%; padding:0; }
 [data-mobile-tools-grid] { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-[data-mobile-tools-grid] button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:92px; padding:12px; border-radius:20px; background:var(--mobile-soft); font-size:14px; }
-[data-mobile-tools-permission] { display:flex; align-items:center; width:100%; gap:10px; margin-top:12px; min-height:64px; padding:12px 0; text-align:left; font-size:14px!important; }
+[data-mobile-tools-grid] button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:96px; padding:16px; border-radius:18px; background:var(--mobile-soft); font-size:14px; }
+[data-mobile-tools-permission] { display:flex; align-items:center; width:100%; gap:10px; margin-top:12px; border-top:1px solid var(--mobile-line)!important; min-height:64px; padding:12px 0; text-align:left; font-size:14px!important; }
 [data-mobile-tools-permission] > span { flex-shrink:0; }
 [data-mobile-tools-permission] > small { margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:var(--dsw-alias-label-secondary); }
 [data-mobile-tools-dialog] svg { flex:none; }

@@ -38,3 +38,16 @@ it('restores drag styles on cancellation and removes handlers on disposal', () =
   fireEvent.touchCancel(title); expect(sheet.style.transform).toBe('')
   dispose?.(); swipe(title); expect(close).not.toHaveBeenCalled()
 })
+it('closes the native tools sheet only from its header or backdrop, preserving body interactions', () => {
+  document.documentElement.setAttribute('data-dsh-mobile', '')
+  document.body.innerHTML = '<dialog open data-mobile-tools-dialog><header><strong>Tools</strong><button>Close</button></header><div><button>Attachment</button></div></dialog>'
+  const sheet = document.querySelector('dialog')!, close = vi.fn()
+  sheet.close = close
+  sheet.getBoundingClientRect = () => ({ top: 200, bottom: 600, left: 0, right: 393 } as DOMRect)
+  dispose = installSheetGestures(document)
+  swipe(sheet.querySelector('strong')!, 220, 320); expect(close).toHaveBeenCalledOnce()
+  swipe(sheet, 100, 100); expect(close).toHaveBeenCalledTimes(2)
+  swipe(sheet, 400, 500); swipe(sheet.querySelector('button')!, 220, 320)
+  swipe(sheet.querySelector('strong')!, 220, 245)
+  expect(close).toHaveBeenCalledTimes(2)
+})
