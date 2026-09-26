@@ -10,7 +10,7 @@
  * opening the player's child session through the host.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -107,18 +107,20 @@ const CELLS: EvalCellsResult = {
   runId: 'run-1',
   state: 'active',
   filter: {},
-  total: 2,
+  // Past `CARDS_MAX`, so this page draws the grid, the filters and the list;
+  // a small run's card page has its own tests below (T80c P1-7).
+  total: 20,
   matched: 2,
   buckets: { done: 1, active: 1 },
   rows: [
     {
       missionId: 'p0-codex-a-rep1', task: 'P0', condition: 'codex-a', rep: 1, state: 'archived', bucket: 'done',
-      attempt: 2, inStateMs: 120_000, refs: { resource: 'unit-b', fingerprint: null }, checkpoints: ['stage1'],
+      attempt: 2, inStateMs: 120_000, elapsedMs: 254_000, refs: { resource: 'unit-b', fingerprint: null }, checkpoints: ['stage1'],
       annotations: { orchestrator: 4, 'llm-draft': 2 }, childSessionId: 'child-c',
     },
     {
       missionId: 'p0-codex-b-rep1', task: 'P0', condition: 'codex-b', rep: 1, state: 'stage-2', bucket: 'active',
-      attempt: 1, inStateMs: 9_999_999, refs: { resource: null, fingerprint: null }, checkpoints: [],
+      attempt: 1, inStateMs: 9_999_999, elapsedMs: 190_000, refs: { resource: null, fingerprint: null }, checkpoints: [],
       annotations: {}, childSessionId: null,
     },
   ],
@@ -300,15 +302,17 @@ describe('the matrix page', () => {
     expect(screen.getByText(/factor\.scope\s+b/)).toBeTruthy()
     // Which factor separates the columns is said once, in words, above the table.
     expect(screen.getByText(/matrix\.columnIs/)).toBeTruthy()
-    // The row header is the item, and each seat's stage comes from the word
-    // table. The grid and the run-record list are ONE page now (ui-spec §五
-    // v2), so each state word is on screen twice — in the seat and in the
-    // row — which is the merge working, not a duplicate rendering.
+    // The row header is the item, and each seat's word is the LIST's (T80c
+    // P1-7): a settled cell reads 完成, never the ledger's 已归档 / 已释放; a
+    // moving one keeps its stage. The grid and the run-record list are ONE
+    // page (ui-spec §五 v2), so each word is on screen twice — in the seat and
+    // in the row — which is the merge working, not a duplicate rendering.
     expect(screen.getByText('P0')).toBeTruthy()
-    expect(screen.getAllByText('stage.archived').length).toBe(2)
+    expect(screen.getAllByText('runs.filter.done').length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('stage.archived')).toBeNull()
     expect(screen.getAllByText('stage.stage-2').length).toBe(2)
     // One dot per rep, labelled so a reader (and a screen reader) can tell them apart.
-    expect(screen.getByLabelText(/matrix\.repLabel .*"condition":"codex-a".*"stage":"stage\.archived"/)).toBeTruthy()
+    expect(screen.getByLabelText(/matrix\.repLabel .*"condition":"codex-a".*"stage":"runs\.filter\.done"/)).toBeTruthy()
     expect(screen.getByLabelText(/matrix\.repLabel .*"condition":"codex-b".*"stage":"stage\.stage-2"/)).toBeTruthy()
   })
 
@@ -377,6 +381,64 @@ describe('the matrix page', () => {
     await waitFor(() => {
       expect(h.fetchCell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'p0-codex-a-rep1' })
     })
+  })
+})
+
+describe('a small run is its cards (T80c P1-7)', () => {
+  function smallHarness() {
+    const h = makeHarness()
+    h.fetchCells.mockResolvedValue({ ok: true, value: { ...CELLS, total: 2 } })
+    return h
+  }
+
+  it('draws one card per record — group, word, item · rep · time — and no grid, filters or list', async () => {
+    const h = smallHarness()
+    await openPage(h, 'page.runs')
+    await waitFor(() => { expect(h.fetchCells).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
+    const done = (await screen.findByText('codex-a')).closest('button') as HTMLElement
+    const moving = screen.getByText('codex-b').closest('button') as HTMLElement
+    // 完成, in the list's word — and how long it RAN, not how long ago it ended.
+    expect(within(done).getByText('runs.filter.done')).toBeTruthy()
+    expect(within(done).getByText(/runs\.card\.meta \{"task":"P0","rep":1\} · dur\.ms \{"m":4,"s":14\}/)).toBeTruthy()
+    // Still moving: its stage, and the time so far.
+    expect(within(moving).getByText('stage.stage-2')).toBeTruthy()
+    expect(within(moving).getByText(/runs\.card\.running \{"duration":"dur\.ms \{\\"m\\":3,\\"s\\":10\}"\}/)).toBeTruthy()
+    // The same two records are NOT drawn three times.
+    expect(screen.queryByText('matrix.task')).toBeNull()
+    expect(screen.queryByText(/^runs\.filtered/)).toBeNull()
+    expect(screen.queryByText('P0 × codex-a × 1')).toBeNull()
+  })
+
+  it('a card opens under the cards: the timeline and 看作答', async () => {
+    const h = smallHarness()
+    await openPage(h, 'page.runs')
+    const card = (await screen.findByText('codex-a')).closest('button') as HTMLElement
+    fireEvent.click(card)
+    await waitFor(() => { expect(h.fetchCell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'p0-codex-a-rep1' }) })
+    expect(await screen.findByText('record.timeline')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'answer.open' })).toBeTruthy()
+    expect(card.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('folds the run-level bookkeeping into 实验卫生, open when an invariant breaks', async () => {
+    const h = smallHarness()
+    await openPage(h, 'page.runs')
+    const line = await screen.findByText(/^summary\.line /)
+    const fold = line.closest('details') as HTMLDetailsElement
+    // This fixture's 题面 is inconsistent, so the fold is open by itself.
+    expect(fold.open).toBe(true)
+  })
+
+  it('实验卫生 stays folded while every invariant holds', async () => {
+    const h = smallHarness()
+    h.fetchMatrix.mockResolvedValue({
+      ok: true,
+      value: { ...MATRIX, summary: { ...MATRIX.summary, materialization: { status: 'ok', detail: '' }, fingerprint: { status: 'ok', detail: '' } } },
+    })
+    await openPage(h, 'page.runs')
+    const line = await screen.findByText(/^summary\.line /)
+    expect((line.closest('details') as HTMLDetailsElement).open).toBe(false)
+    expect(line.textContent).toContain('"materialization":"✓"')
   })
 })
 

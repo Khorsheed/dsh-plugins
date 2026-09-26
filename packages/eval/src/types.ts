@@ -1286,6 +1286,11 @@ export interface EvalCellRow {
   attempt: number
   /** How long the cell has been in its current state; null when the ledger does not say. */
   inStateMs: number | null
+  /**
+   * How long the current attempt RAN: to its finish once finished, to now
+   * while running (T80c P1-7, the card's 用时). Null when the ledger timed nothing.
+   */
+  elapsedMs: number | null
   refs: { resource: string | null; fingerprint: string | null }
   /** Checkpoint names of the current attempt. */
   checkpoints: string[]

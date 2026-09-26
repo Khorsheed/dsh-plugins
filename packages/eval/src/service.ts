@@ -1015,6 +1015,7 @@ export class EvalService {
         bucket: cell.bucket,
         attempt: cell.attempt,
         inStateMs: cell.inStateMs,
+        elapsedMs: cell.elapsedMs,
         refs: { resource: cell.refs.resource, fingerprint: cell.refs.fingerprint },
         checkpoints: [...cell.checkpoints],
         annotations: { ...cell.annotations },

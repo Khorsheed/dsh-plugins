@@ -2158,3 +2158,106 @@
   outline-offset: -1px;
   background: var(--dsw-alias-interactive-bg-hover);
 }
+
+/* ── 运行记录 · small runs are their cards (T80c P1-7) ─────────────────
+   v5 「格子就是记录」: at ≤ 12 records each one is a card — group, word,
+   item · rep · time — and the one opened unfolds UNDER the cards at full
+   width instead of squeezing a side drawer beside a list that is not drawn. */
+.sectionLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.recordCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  max-width: 660px;
+}
+
+.recordCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recordCard:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.recordCard[aria-pressed='true'] {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-state-business-primary);
+}
+
+.recordCardTop {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.recordCardGroup {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawerInline {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+/* 实验卫生: one line folded; opens by itself when an invariant breaks. */
+.hygiene {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hygieneSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  cursor: pointer;
+  list-style: none;
+}
+
+.hygieneSummary::-webkit-details-marker {
+  display: none;
+}
+
+.hygieneSummary::before {
+  content: '▸';
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.hygiene[open] .hygieneSummary::before {
+  content: '▾';
+}
+
+.hygiene[open] > .hygieneSummary {
+  margin-bottom: 8px;
+}
+
+.hygieneTitle {
+  font-weight: 600;
+}

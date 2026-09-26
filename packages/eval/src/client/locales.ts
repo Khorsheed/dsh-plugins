@@ -653,6 +653,11 @@ export type EvalKey =
   | 'new.next'
   | 'new.stepBlocked'
   | 'runs.settled'
+  | 'runs.cards'
+  | 'runs.card.meta'
+  | 'runs.card.running'
+  | 'runs.card.now'
+  | 'summary.line'
   | 'error.planUnreadable'
   | 'error.planUnreadable.fix'
   | 'why.endpoint'
@@ -1049,14 +1054,15 @@ export const en: Record<EvalKey, string> = {
   'matrix.hashUnknown': 'no evidence of item consistency was recorded',
   'matrix.stuck': 'nothing has happened here for over {minutes} min',
   'matrix.reps': '{count} rep(s)',
-  'summary.title': 'Experiment summary',
+  'summary.title': 'Run hygiene',
   'summary.materialization': 'Item consistency',
   'summary.fingerprint': 'Environment consistency',
   'summary.unreleased': 'Unreleased units',
   'summary.judge': 'Grader agreement',
   'summary.judgePending': 'awaiting the report',
-  'summary.stuck': 'Stuck records',
-  'summary.cells': 'Records shown',
+  'summary.stuck': 'Stalled records',
+  'summary.cells': 'Records',
+  'summary.line': 'Same items {materialization} · Same environment {fingerprint} · Unreleased {unreleased} · Stalled {stuck}',
   'invariant.ok': 'ok',
   'invariant.violated': 'violated',
   'invariant.unverifiable': 'unverifiable',
@@ -1543,6 +1549,10 @@ export const en: Record<EvalKey, string> = {
 
   // ── the walkthrough fixups (I5·T67 補, W4–W15) ─────────────────────────
   'runs.settled': 'This record is finished — nothing is elapsing here. How long it took is on its timeline.',
+  'runs.cards': 'Item × group',
+  'runs.card.meta': '{task} · rep {rep}',
+  'runs.card.running': '{duration} so far',
+  'runs.card.now': 'in progress',
   'error.planUnreadable': 'The plan document is not there any more',
   'error.planUnreadable.fix': 'Its dataset working tree was probably deleted. Re-create the working tree, or read the run from its run records and results — a finished run keeps its own copy of what the plan said.',
   'why.endpoint': 'the endpoint is not resolved',
@@ -1932,14 +1942,15 @@ export const zh: Record<EvalKey, string> = {
   'matrix.hashUnknown': '没有记录题面一致性的证据',
   'matrix.stuck': '这里已经 {minutes} 分钟没有动静了',
   'matrix.reps': '{count} 个 rep',
-  'summary.title': '本次实验汇总',
+  'summary.title': '实验卫生',
   'summary.materialization': '题面一致',
   'summary.fingerprint': '环境一致',
   'summary.unreleased': '未释放单元',
   'summary.judge': '评分者一致性',
   'summary.judgePending': '待报告',
-  'summary.stuck': '卡住的记录',
-  'summary.cells': '显示的记录',
+  'summary.stuck': '停滞的记录',
+  'summary.cells': '记录数',
+  'summary.line': '题面一致 {materialization} · 环境一致 {fingerprint} · 未释放单元 {unreleased} · 停滞 {stuck}',
   'invariant.ok': '一致',
   'invariant.violated': '不一致',
   'invariant.unverifiable': '无法核验',
@@ -2423,6 +2434,10 @@ export const zh: Record<EvalKey, string> = {
 
   // ── the walkthrough fixups (I5·T67 補, W4–W15) ─────────────────────────
   'runs.settled': '这条记录已经结束了，没有在走的时长。它花了多久看时间轴。',
+  'runs.cards': '题 × 对比组',
+  'runs.card.meta': '{task} · 第 {rep} 次',
+  'runs.card.running': '已用 {duration}',
+  'runs.card.now': '进行中',
   'error.planUnreadable': '计划文件不在了',
   'error.planUnreadable.fix': '多半是它那个题库工作树被删了。重建工作树，或者直接从运行记录与结果对比读这次 run——跑完的 run 自己留了一份计划说了什么。',
   'why.endpoint': '端点未解析',
