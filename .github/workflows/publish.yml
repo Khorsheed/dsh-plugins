@@ -99,7 +99,11 @@ jobs:
             # versions (the same derivation deploy-3080 uses).
             tgz=$(pnpm exec tsx scripts/pack-dist.ts --package "$dir" --scope @khorsheed --version "$version" --out "$out" --family auto | tail -1)
             echo "== staging $name@$version"
-            npm stage publish "$tgz"
+            # npm requires an explicit tag for prerelease versions (same rule as
+            # npm publish); the family's rc line goes on `latest` — the
+            # established convention (dist-tags: latest → 0.1.0-rc.6).
+            tag=(); case "$version" in *-*) tag=(--tag latest);; esac
+            npm stage publish "$tgz" "${tag[@]}"
           done
 
       - name: Summary — what awaits approval
