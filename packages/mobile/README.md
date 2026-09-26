@@ -1,109 +1,109 @@
 # @khorsheed/dsh-mobile
 
-English | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-Your dsh sessions, in your pocket — the Mac still runs the sessions, models, skills and tools; the phone just gets an interface built for it.
+把 dsh 会话装进口袋——会话、模型、skill、工具仍由 Mac 跑，手机只拿走一个真正为它做的界面。
 
-The official Web client is desktop-shaped: a sidebar that eats the screen, a dense composer, touch targets made for a mouse. This plugin re-presents the very same client for narrow touch screens — a conversation library with grouping and search, a wrapping composer with reachable controls, a sheet for picking directories on the computer — and adds an optional [iOS shell](../../apps/ios/README.md) that embeds that same official Web client and pairs to it over a QR login link. Everything stays removable: uninstalling restores the official desktop UI exactly, and no Host or sibling-plugin state is ever written.
+官方 Web 客户端是桌面形态：侧栏吃掉半个屏幕、输入区密密麻麻、触控目标按鼠标设计。这个插件把同一套客户端重新呈现给窄屏触控设备——带分组和搜索的会话首页、可换行且够得着的输入工具栏、在手机上选电脑目录的面板——再配上一个可选的 [iOS 薄壳](../../apps/ios/README.zh.md)：嵌入同一套官方 Web 客户端，扫码登录即用。一切都可以干净移除：卸载即精确还原官方桌面界面，绝不写入宿主或兄弟插件的状态。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-library.png" width="640" alt="mobile conversation library: time and workspace grouping, collapsible workspace sections, bottom search">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-library.png" width="640" alt="移动端会话首页：时间与工作区分组、可折叠的工作区分节、底部搜索框">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-conversation.png" width="640" alt="a conversation in mobile layout with the wrapping composer toolbar and the expanded plus menu grouping attachment, command and permission triggers">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-conversation.png" width="640" alt="移动布局下的会话页：可换行的输入工具栏，展开的加号菜单归并了附件、指令和权限入口">
 
-## Features
+## 特性
 
-- **Conversation library home** — time/workspace grouping, collapsible workspace sections and bottom search. Grouping stays local to this browser (`dsh.mobile.grouping`); the official chat and your draft remain mounted behind navigation.
-- **A real mobile layout, client-local** — full-width right-panel details, mobile settings, and a wrapping composer toolbar with larger touch targets (reading text ≥ 17px, primary controls 16–17px). The official conversation renderer, composer, model/permission selectors, attachments and streaming transport stay in place.
-- **Pick a computer directory from your phone** — saved workspaces, one-level folder browsing, parent navigation, a hidden-folder toggle and a validated absolute-path fallback. Workspace adoption and Room member picks share this sheet; desktop clients keep the native chooser.
-- **Connect a phone by QR** — an authenticated Web settings section mints the official login link for your deployment's HTTPS origin and shows it as a locally encoded QR; the iOS shell scans, confirms the host, and is in.
-- **Versioned native bridge** — an authenticated `GET /api/mobile/handshake` plus a bridge-version-1 message channel for presentation status and optional native settings/scanning. Foreground recovery rides the official connection service and never replays a send command; brief interruptions and initial connecting states avoid redundant reconnects, while a suspension of 5 s or more still refreshes the stream generation.
-- **Plays well with the ecosystem, requires none of it** — no community plugin is a boot dependency. Long-press recognized user messages for message-tools' original copy/edit/withdraw; the plus sheet opens Room's original invite form; TaskPilot and Local Agent surfaces keep their owners.
+- **会话首页**——时间/工作区分组、可折叠的工作区分节和底部搜索。分组偏好只存在当前浏览器（`dsh.mobile.grouping`）；导航覆盖期间官方聊天与草稿保持挂载。
+- **真正的移动布局，仅作用于当前客户端**——全宽右栏详情、移动设置、可换行且触控区域更大的输入工具栏（正文最低 17px，主要控件 16–17px）。官方正文渲染、输入框、模型/权限选择、附件与流式传输原样保留。
+- **在手机上选电脑目录**——已有工作区、逐级浏览、返回上级、显示隐藏目录、校验完整路径。工作区接入和 Room 成员目录选择共用此面板；桌面客户端保留原生选择器。
+- **扫码连接手机**——已认证的 Web 设置分区为部署的 HTTPS origin 现场生成官方登录链接，并在浏览器本地编码成二维码；iOS 壳扫码、确认主机即连上。
+- **带版本的原生桥接**——受认证的 `GET /api/mobile/handshake` 加 bridge version 1 消息通道，提供展示状态与可选原生设置/扫码入口。回前台经官方连接服务恢复，绝不重放发送命令；短暂切换且连接正常、初次正在连接时不重复重连，后台停留至少 5 秒仍刷新流式连接代际。
+- **与生态共处，但不强依赖**——没有任何社区插件是启动依赖。长按已识别的用户消息调用 message-tools 原有的复制/编辑/撤回；加号面板打开 Room 原有邀请表单；TaskPilot 与 Local Agent 界面各归其主。
 
-This is a development baseline, not a released or real-device-qualified app — see Known Limitations.
+当前是开发基线，尚未发布或通过真机资格验收——见已知限制。
 
-## Install
+## 安装
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-mobile
 ```
 
-The package self-mounts its own row — do not edit profile YAML. Restart the web instance and reload the client to activate.
+插件自挂载自身行——不要手改 profile YAML。重启 web 实例并刷新客户端后生效。
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-mobile
 ```
 
-Unload removes owned styles, frame markers, observers, listeners, routes and slot contributions. It does not delete sessions, cancel Host tasks, close the shared connection, revoke official cookies or uninstall the App/VPN. Preferences may remain for reinstall.
+卸载移除自有样式、布局标记、observer、监听、路由和槽位贡献；不删除会话、不取消宿主任务、不关闭共享连接、不撤销官方 Cookie、不卸载 App/VPN。偏好可保留用于重装。
 
-A narrow touch screen (`max-width: 760px` with a coarse pointer) or the native shell enables the layout automatically. `?mobile=1` explicitly enables it; `?mobile=0` disables it. The mobile settings choice persists only in this browser under `dsh.mobile.display`; after selecting desktop layout, `?mobile=1` restores the settings entry. The login exchange redirects to `/`, so apply a query override after authentication if needed.
+窄屏触控设备（`max-width: 760px` 且粗指针）或原生壳自动启用移动布局。`?mobile=1` 显式启用，`?mobile=0` 停用。移动设置中的选择仅保存在当前浏览器的 `dsh.mobile.display`；切到桌面布局后，可用 `?mobile=1` 恢复设置入口。官方登录交换会跳转 `/`，需要时在认证后再加参数。
 
-## Connect a phone from Web settings
+## 从 Web 设置连接手机
 
-The authenticated Web client exposes **Settings → Connect phone** through the public `settings.section` slot — available on desktop without enabling the mobile layout. Configure the phone-reachable **clean HTTPS origin** as the plugin's `publicOrigin` option, or set `DSH_MOBILE_PUBLIC_ORIGIN` on the **Host process** (the plugin option wins). Add the same hostname to the Host's `--trusted-host` list; the ingress `PUBLIC_ORIGIN` must also match. These are deployment settings, not phone preferences.
+已登录的 Web 客户端通过公开 `settings.section` 槽位提供 **设置 → 连接手机**——桌面无需开启移动布局。将手机可达的**无凭据 HTTPS origin** 配置为插件的 `publicOrigin` 选项，或在 **Host 进程**上设置 `DSH_MOBILE_PUBLIC_ORIGIN`（插件选项优先）。同一域名需加入 Host 的 `--trusted-host`，ingress 的 `PUBLIC_ORIGIN` 也必须一致。这些属于部署设置，不是手机偏好。
 
 ```sh
 DSH_MOBILE_PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
 ```
 
-1. Open Web **Settings → Connect phone** and check the displayed host.
-2. Click **Show login QR code**.
-3. In the iOS App, open **Connection Settings → Scan to connect**, scan and confirm the host.
+1. 打开 Web「设置 → 连接手机」，核对展示的主机。
+2. 点击**显示登录二维码**。
+3. 在 iOS App 进入**连接设置 → 扫码连接电脑**，扫描后确认主机。
 
-`GET /api/mobile/connect` returns configuration status only. An authenticated, same-origin JSON `POST` obtains the official `connection.authenticatedUrl()` for the deployment-owned origin — browser input cannot override the destination. Both routes ride the official Connection registry, preserving its cookie and Host/Origin checks, and answer `no-store`. QR encoding happens locally in the browser: no third-party QR service, no secret logging, no browser persistence. Leaving the section, hiding the page or waiting two minutes conceals the code and aborts pending requests. Missing/invalid origin, an unsupported Host capability or an untrusted destination shows setup guidance instead of generating a login link.
+`GET /api/mobile/connect` 仅返回配置状态。已认证、同源的 JSON `POST` 为部署者配置的 origin 调用官方 `connection.authenticatedUrl()` 取登录链接——浏览器输入不能覆盖目标地址。两个接口都经官方 Connection 注册，保留 Cookie 与 Host/Origin 校验，响应均为 `no-store`。二维码在浏览器本地编码：不调用第三方二维码服务、不记录凭据日志、不写浏览器存储。离开设置分区、页面隐藏或展示两分钟后会隐藏二维码并取消未完成的请求。地址缺失或无效、宿主能力不支持、目标域名未受信任时，只显示配置引导，不生成登录链接。
 
-**Concealment is not credential expiry.** The QR carries the official process login token, valid until that Host process restarts — not a short-lived or one-use pairing token. Hiding or regenerating the QR does not revoke a copied link or a logged-in phone, and existing cookies keep their Host-owned lifetime.
+**隐藏不等于凭据过期。** 二维码携带的是宿主进程的官方登录 token，在该进程重启前有效——不是短时或一次性配对码。隐藏或重新生成二维码不会撤销已复制的链接，也不会登出手机；已有 Cookie 的有效期仍由宿主控制。
 
-Different physical networks need an independently configured HTTPS/WSS ingress to the loopback Host port, valid official authentication, an awake/online Mac and a reachable phone — starting the Host alone does not establish remote access, and the App does not configure networking or credentials for you. Debug simulator builds allow HTTP on loopback only; Release requires HTTPS.
+跨物理网络需要独立配置的 HTTPS/WSS 入口转发到 loopback Host 端口、有效官方认证、保持唤醒联网的 Mac 和网络可达的手机——仅启动 Host 不等于远程可用，App 也不会替你配置网络或凭据。Debug 模拟器构建仅允许 loopback HTTP，Release 要求 HTTPS。
 
-## Optional: a Quick Tunnel preview
+## 可选：Quick Tunnel 预览
 
-Networking is deployment configuration, not a plugin dependency — bring your own HTTPS reverse tunnel/server or private networking; the plugin embeds no domain, server or Cloudflare account. For temporary previews, [Cloudflare Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) mint a temporary HTTPS address without an account or domain: no uptime guarantee, 200 concurrent requests, no SSE (the tested conversation transport uses WebSocket).
+网络接入属于部署配置，不是插件依赖——自建 HTTPS 反向隧道/服务器或私网连接均可；插件不嵌入任何域名、服务器或 Cloudflare 账号。临时预览可用 [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)：无需账号或自有域名即可生成临时 HTTPS 地址，但不保证在线时间、限 200 并发、不支持 SSE（实测会话传输走 WebSocket）。
 
 ```sh
 cloudflared tunnel --url http://127.0.0.1:3182 --protocol quic --no-autoupdate
 PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com HOST_PORT=3181 INGRESS_PORT=3182 node packages/mobile/examples/https-ingress.mjs
-dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com   # own DSH_HOME, workspace, model
+dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com   # 独立 DSH_HOME、工作区、模型
 ```
 
-The bundled `examples/https-ingress.mjs` binds loopback only, preserves the public Host/Origin for official authentication, requires the HTTPS forwarded scheme, adds `Secure` to upstream cookies and forwards HTTP streams plus WebSocket upgrades. It reads no Host private keys and adds no pairing or device-revocation system — run it only behind the HTTPS tunnel; authorization stays with the Host. For phone login, replace only the origin of the Host's launch URL with the tunnel origin, preserving `?token=...`; keep that credential-bearing URL private. A new tunnel allocates a new hostname: update ingress origin, Host trusted-host and mobile public origin together, then log in again — old cookies are bound to their old authority. Stopping the tunnel closes this public path; removing the plugin alone does not. See the [Quick Tunnel acceptance record](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md).
+随包分发的 `examples/https-ingress.mjs` 只绑定 loopback，保留公网 Host/Origin 交给官方认证，要求转发协议为 HTTPS，为上游 Cookie 补充 `Secure`，并透传 HTTP 流与 WebSocket 升级。它不读取 Host 私钥，也不增加配对或逐设备撤销系统——仅在 HTTPS 隧道之后运行，授权始终由 Host 负责。手机登录时，仅将 Host 启动链接的 origin 替换为隧道 origin，保留 `?token=...`；带凭据链接请私下保存。新建隧道会分配新域名：同步更新 ingress origin、Host trusted-host 和 mobile 公网 origin 后重新登录——旧 Cookie 绑定旧 authority。停止隧道进程即关闭这条公网路径；仅卸载插件不会。参见 [Quick Tunnel 验收记录](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md)。
 
-## Optional collaboration surfaces
+## 可选协作界面
 
-Install message-tools, TaskPilot, Room and the Local Agent family separately; mobile reads their public capabilities and never requires them to boot. Long-press recognized user messages for the original copy/edit/withdraw actions; unrecognized renderers keep their original controls. The plus sheet opens **Room's original invite form** styled as a mobile bottom sheet — provider discovery, authentication, random names, first-task dispatch and removal confirmation all stay with Room; there is no second mobile invite/edit API. Mobile temporarily adapts the public `uiWorkspace.pickDirectory` method in this browser so Room's original form consumes the sheet's result unchanged, and restores it on unload. Room and Local Agent keep their own composers, so not every ordinary-session TaskPilot pill is promised inside a Room. A known Room revision can leave the composer election stale after its first asynchronous cache fill; a declining mobile chain entry refreshes the public slot election without replacing its winner. See the [collaboration acceptance](../../docs/acceptance/mobile-collaboration-2026-09-12.md).
+message-tools、TaskPilot、Room 与 Local Agent 家族独立安装；移动端读取它们的公开能力，从不把它们作为启动依赖。长按已识别的用户消息调用原有复制/编辑/撤回；无法识别的渲染器保留原控件。加号面板打开 **Room 原有邀请表单**，仅调整为移动端底部面板样式——代理发现、认证、随机命名、首个任务派发和移除确认都由 Room 负责，不存在第二套移动邀请/编辑 API。移动端在当前浏览器内临时适配公开的 `uiWorkspace.pickDirectory` 方法，让 Room 原表单原样消费面板返回的结果，卸载时恢复。Room 与 Local Agent 保留各自输入框，因此不承诺 Room 内展示全部普通会话的 TaskPilot 胶囊。已知 Room 版本首次异步填充缓存时可能未刷新输入框选举；移动端用一个始终让出的 chain 条目刷新公开槽位选举，不替换胜者。参见[协作验收](../../docs/acceptance/mobile-collaboration-2026-09-12.md)。
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ⚠️ usable with documented degradations — `dsh.compat.minHost` is `0.1.5-rc.1`. Local browser/Host validation and the iOS simulator build pass on `0.1.5-rc.1` (`183f08e9c6`), but the mobile layout and iOS shell are still under validation; **Safari live-reply resume on 0.1.5-rc.1 requires the opt-in bundled ingress adapter** (`MOBILE_SAFARI_COMPAT=1`, see Internals); **device pairing and push are not provided**. Older hosts: stay below `minHost` at your own risk — none are supported.
-- source line (deepseek-harness master): build+test green against the pinned `0.1.7-rc.1` surface (2026-09-26), but per `dsh.compat` no `verifiedHost` is claimed while the real-device/network acceptance matrix is incomplete — audit before adopting other hosts.
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 可用，带已声明的降级——`dsh.compat.minHost` 为 `0.1.5-rc.1`。本地浏览器/Host 验证与 iOS 模拟器构建在 `0.1.5-rc.1`（`183f08e9c6`）上通过，但移动布局与 iOS 壳仍在验收中；**Safari 在 0.1.5-rc.1 上恢复进行中回复需要选择启用的随包 ingress 适配层**（`MOBILE_SAFARI_COMPAT=1`，见「实现原理」）；**不提供设备配对与推送**。更旧的宿主：低于 `minHost` 自行承担风险——均不受支持。
+- 源码线（deepseek-harness master）：对固定的 `0.1.7-rc.1` 类型面构建+测试通过（2026-09-26），但按 `dsh.compat` 的声明，真机/网络验收矩阵完成前不声明 `verifiedHost`——在其他宿主上采用前请先审计。
 
-The library uses the optional official sessions/workspaces/uiWorkspace services, filtering archived sessions and subagent rows while retaining ordinary forks; a missing service falls back to the basic official sidebar. The public frame/slot DOM anchors are checked before the layout enables; an unknown frame keeps the official page — a changed structure can reduce mobile usability without breaking Host execution. Native bridge version changes require an App compatibility decision; compatible Web updates do not automatically require a new IPA. See the [navigation/QR acceptance](../../docs/acceptance/mobile-navigation-2026-09-11.md), the [rc1 acceptance evidence](../../docs/acceptance/mobile-rc1-2026-09-11.md) and the [proposal](../../proposals/active/2026-08-19-mobile-access.md). No upstream or sibling source changes are required.
+会话首页使用可选的官方 sessions/workspaces/uiWorkspace 服务，过滤已归档会话和子代理行、保留普通分叉会话；缺少服务时回退基础官方侧栏。启用布局前检查公开 frame/slot DOM 锚点；未知结构保留官方页面——结构变化可能降低移动可用性，但不改变 Host 执行。原生桥接版本变化需要判断 App 兼容性；兼容的 Web 更新不自动要求重发 IPA。参见[导航/扫码验收](../../docs/acceptance/mobile-navigation-2026-09-11.md)、[rc1 验收证据](../../docs/acceptance/mobile-rc1-2026-09-11.md)与[提案](../../proposals/active/2026-08-19-mobile-access.md)。无需修改官方或兄弟插件源码。
 
-## Known Limitations
+## 已知限制
 
-- **Development baseline** — camera/file picking, sharing/downloads, background recovery and community-plugin combinations are not yet qualified. The iOS scanner accepts existing official HTTPS login links and requires host confirmation; camera acceptance is still pending.
-- **No per-device credentials** — one-time device pairing, per-device revocation, Keychain pairing and APNs push are all unimplemented; hiding the QR never revokes anything (above).
-- **No hot uninstall qualification** — dependency changes require a controlled Host restart and client reload.
-- **Browser-local preferences only** — layout choice (`dsh.mobile.display`) and library grouping (`dsh.mobile.grouping`) never leave this browser; nothing is written to the Host.
-- **Library search is shallow** — it filters session titles and workspace paths, not message contents.
-- **Foreground recovery has a floor** — healthy brief interruptions skip redundant reconnects, but an already-dead reply subscription does not recover by reconnecting the socket alone.
+- **开发基线**——相机/文件选择、分享/下载、后台恢复和社区插件组合尚未完成验收。iOS 扫码接收已有官方 HTTPS 登录链接并要求确认主机；相机实测验收仍待完成。
+- **没有逐设备凭据**——一次性设备配对、逐设备撤销、Keychain 配对和 APNs 推送均未实现；隐藏二维码不撤销任何东西（见上）。
+- **热卸载未通过验收**——依赖变化需要受控重启 Host 并刷新客户端。
+- **偏好仅存在当前浏览器**——布局选择（`dsh.mobile.display`）与首页分组（`dsh.mobile.grouping`）绝不离开此浏览器，不写入宿主。
+- **首页搜索是浅搜索**——只过滤会话标题和工作区路径，不搜消息正文。
+- **回前台恢复有下限**——健康的短暂切换不重复重连，但已经停止的正文订阅不能仅靠重连 socket 恢复。
 
-## Internals
+## 实现原理
 
 <details>
-<summary>Architecture, security boundaries and the Safari adapter (click to expand)</summary>
+<summary>架构、安全边界与 Safari 适配层（点击展开）</summary>
 
-**Host face.** Three routes on the official authenticated Connection registry, attached only when `connection` is composed (`ctx.inject(['connection'])`): `GET/POST /api/mobile/connect` (QR login minting — the POST additionally requires a same-origin JSON action and a `ready` destination, so a navigation or form can never reveal a login URL, and provider errors are never echoed back), `GET /api/mobile/directories` (read-only directory names/paths within the operator's existing filesystem access — never file contents, never creates directories; bounded to 1,000 rows / 10,000 scanned entries with a truncation flag) and `GET /api/mobile/handshake` (read-only feature discovery: bridge version, capabilities, `devicePairing: false`, `pushNotifications: false`). All responses are `no-store`.
+**Host 面。** 三条路由挂在官方受认证的 Connection 注册表上，且仅在组合中存在 `connection` 时才挂载（`ctx.inject(['connection'])`）：`GET/POST /api/mobile/connect`（扫码登录签发——POST 额外要求同源 JSON 动作与 `ready` 状态的目标地址，导航或表单永远无法引出登录链接，provider 错误绝不回显）、`GET /api/mobile/directories`（只读目录名/路径，不超出操作者现有文件系统权限——不读文件内容、不创建目录；上限 1,000 行目录 / 10,000 个扫描条目并带截断标记）、`GET /api/mobile/handshake`（只读能力发现：桥接版本、能力清单、`devicePairing: false`、`pushNotifications: false`）。所有响应均为 `no-store`。
 
-**Client face.** One browser-owned `MobilePresentation` toggles `data-dsh-mobile` on the document element, owns the stylesheet, observers and listeners, and activates only when the official frame anchors (`[data-slot="root"]` with main/sidebar) match the expected arrangement — otherwise the official page is kept. Slot contributions all go through `slots.inject` (never a bare register): `settings.section`/`mobile-connect`, `shell.overlay`/`mobile-directory` and `/mobile-navigation`, `conversation.input.dock` + `conversation.session.header.actions`/`mobile-send-focus` (dismisses the empty focused editor on successful admission; rejected submissions and newer drafts keep focus), `conversation.session.header.actions`/`mobile-room-queue`, a welcome mark in `conversation.hero.brand.mark`, `conversation.input.left`/`mobile-input-tools` (the plus menu grouping the official attachment/command/permission triggers), and priority-−100 shadows of the two public `directoryFlow` slots while mobile mode is active. The Room composer-election refresh is a declining `conversation.composer` entry that never replaces the winner. Dictionaries ship in `en`/`zh`.
+**Client 面。** 一个浏览器持有的 `MobilePresentation` 切换文档元素上的 `data-dsh-mobile`，持有样式表、observer 与监听器，且仅在官方 frame 锚点（`[data-slot="root"]` 且含 main/sidebar）符合预期结构时启用——否则保留官方页面。槽位贡献全部经 `slots.inject`（绝不裸 register）：`settings.section`/`mobile-connect`、`shell.overlay`/`mobile-directory` 与 `/mobile-navigation`、`conversation.input.dock` + `conversation.session.header.actions`/`mobile-send-focus`（本机消息确认提交后收起同一个空白编辑器；提交失败和后续草稿保留焦点）、`conversation.session.header.actions`/`mobile-room-queue`、`conversation.hero.brand.mark` 的欢迎内容、`conversation.input.left`/`mobile-input-tools`（加号菜单归并官方附件/指令/权限入口），以及移动模式激活期间对两个公开 `directoryFlow` 槽位的 priority −100 遮蔽。Room 输入框选举刷新使用一个始终让出的 `conversation.composer` 条目，绝不替换胜者。词典随包提供 `en`/`zh`。
 
-**Native bridge (version 1).** The shell advertises `window.__DSH_MOBILE_SHELL__`; the client posts `ready`/`unloaded` with layout and anchor diagnostics, and accepts only matching-origin main-frame messages for `chrome`, `settings` and `scan`. New native actions require advertised capabilities; older shells keep their fallback controls. The bridge grants no file or command privileges.
+**原生桥接（version 1）。** 壳声明 `window.__DSH_MOBILE_SHELL__`；客户端上报 `ready`/`unloaded` 及布局与锚点诊断，仅接受同 origin 主框架的 `chrome`、`settings`、`scan` 消息。新增原生动作需壳声明能力，旧壳保留回退控件。桥接不授予文件或命令权限。
 
-**Safari live-stream compatibility adapter.** Host `0.1.5-rc.1` ships a JSON validator that rejects ordinary objects in Safari when restoring an in-progress reply. The bundled ingress accepts `MOBILE_SAFARI_COMPAT=1` as an opt-in, delivery-layer adaptation — not a Host source patch: only WebKit `GET` requests for `/plugins/` JavaScript are examined, a SHA-256 fingerprint of the complete known validator gates replacement, and unknown or already-fixed code passes through unchanged. Authentication, RPC bodies, WebSocket frames and Host execution are untouched; a direct LAN connection or another ingress receives no adaptation. Bounded JavaScript is gzip-compressed for gzip-accepting clients (assets above 16 MiB, non-JS, auth failures and identity-encoding mismatches pass through); adapted assets carry corrected lengths and no stale ETag/digest under `private/no-store`. Inspect the `x-dsh-mobile-compat` header and the ingress's value-only compatibility log when qualifying a Host upgrade, do not broaden the fingerprint automatically, and remove the flag once an upstream-fixed build passes real WebKit foreground/reconnect acceptance. Run the ingress from an installed tarball's `examples/`, not a development checkout.
+**Safari 流式同步兼容层。** 宿主 `0.1.5-rc.1` 的 JSON 校验会在 Safari 还原进行中回复时误拒绝普通对象。随包 ingress 接受 `MOBILE_SAFARI_COMPAT=1`，作为选择启用的交付层适配——不修改宿主源码：只检查 WebKit 对 `/plugins/` JavaScript 的 GET 请求，由完整已知校验函数的 SHA-256 指纹决定是否替换，未知代码和已修复代码原样透传。认证、RPC 请求体、WebSocket 帧和宿主执行保持不变；直连局域网或其他 ingress 不会获得此适配。有界 JavaScript 向支持 gzip 的客户端压缩输出（超过 16 MiB、非 JS、认证失败、identity 编码不匹配的响应原样透传）；适配后的资源带校正后的字节长度、无旧 ETag/digest，保持 `private/no-store`。升级宿主时检查 `x-dsh-mobile-compat` 响应头与 ingress 不含请求内容的兼容日志，不自动扩大指纹范围；上游修复通过真实 WebKit 前后台/重连验收后移除该开关。正式部署从已安装 tarball 的 `examples/` 启动 ingress，不用开发检出。
 
-**Unload.** Disposal removes only owned resources — styles, the `data-dsh-mobile` frame markers, observers, listeners, routes and slot contributions — and restores the adapted `pickDirectory` method. Sessions, Host tasks, the shared connection, official cookies and the App/VPN are all left alone.
+**卸载。** dispose 只移除自有资源——样式、`data-dsh-mobile` 布局标记、observer、监听、路由和槽位贡献——并恢复被适配的 `pickDirectory` 方法。会话、宿主任务、共享连接、官方 Cookie 和 App/VPN 全部原样保留。
 
 </details>
 
-## Development
+## 开发
 
-Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/mobile`). Issues and contributions welcome there.
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/mobile`）。问题与贡献请移步该仓库。

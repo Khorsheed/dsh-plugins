@@ -12,7 +12,7 @@ All 22 packages' README pairs were rewritten on the message-tools / ankh-guard t
 
 - Top language toggle on line 3 of both files — mandatory because npm renders only README.md; a bottom toggle reads as single-language.
 - Pitch + problem paragraph → screenshots (where the plugin has UI) → Features → Install (add/remove blocks + restart note) → `## Compatibility` (exact English heading in both files, grounded in package.json `dsh.compat`) → Known Limitations → internals in `<details>` → Development → Changelog (only when CHANGELOG.md exists).
-- Per-package language convention was kept as-is (19 Chinese-primary, 3 English-primary) rather than unified.
+- Language convention was subsequently unified to Chinese-primary across all published packages (user decision, same day): room / capability-catalog / mobile were swapped from English-primary (README.md English + README.zh.md) to the common layout (README.md 中文 + README.en.md English), with toggles, package.json `files`, and the apps/ios cross-links moved along.
 - Screenshots are referenced by absolute URL under `https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/`; new captures are user-supplied and land before the rc2-aligned re-publish — until then the new img tags are intentionally broken.
 - README.i18n.yaml sidecars were re-recorded in the same change (466 pairs in sync).
 - Tags (`<dir>-v<version>`) and GitHub Releases for the 22 first publishes point at the post-README HEAD; the npm tarballs still carry the old READMEs and pick the new ones up on the next version bump.

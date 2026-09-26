@@ -1,40 +1,40 @@
 # @khorsheed/dsh-capability-catalog
 
-English | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-Every skill and tool the running instance actually has — who registered it, which mode loads it — in one settings tab, with new skills and MCP servers installable in place.
+这个 agent 到底会什么、每个工具是谁装的——一个设置页全列出来，新 skill 和 MCP server 当场就能装；模型自己也有 `list_capabilities` 可查。
 
-dsh composes each session from an agent preset, and plugins, skill roots, and MCP servers all register capabilities into it — but the host ships no surface that lists them, so "what can this agent do, and where did that tool come from?" had no answer short of reading logs. This plugin adds a standalone settings tab (工具与技能) that answers it for a human, and a `list_capabilities` tool that answers it for the model.
+dsh 的每个会话都由一个 agent preset 组合而成，插件、技能目录、MCP server 都在往里注册能力——但宿主没有任何界面把它们列出来，「这个 agent 能干什么、那个工具从哪来的」以前只能翻日志回答。这个插件补上一个独立设置页（工具与技能）回答给人看，再注册一个 `list_capabilities` 工具回答给模型看。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-1.png" width="640" alt="the 工具与技能 settings tab: a three-column skill grid with source badges, search and sort, and the mode picker">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-1.png" width="640" alt="「工具与技能」设置页：技能三列预览网格，带来源徽标、搜索排序与模式选择框">
 
-## Features
+## 特性
 
-- **Skills at a glance** — a three-column preview grid (name, one-line description, source/provider badge) with search, sort, and a 内置/插件/其他 segment filter. Click a card for the detail modal: full description and invocation meta, a unified source browser (bundle file tree on the left, content pane on the right — a content-only skill renders as a single virtual `SKILL.md` node), frontmatter metadata (secret-shaped values render as `···`), and a credential form for every env the skill declares, parsed from `metadata.credentials` and from `$ENV` / `process.env.X` / `env['X']` / `{{env:X}}` references in the body. Values land in the dsh credential store and never cross the wire.
-- **Tools with channel attribution** — collapsible cards that say where each tool came from: the author-declared origin tag (exact), the `mcp__` prefix (exact), a generated official-tools whitelist (exact), or an apply-time baseline diff (inferred). A detail modal shows the parameter schema as a tree or raw JSON.
+- **技能一览**——三列预览网格（名字、一行描述、来源/provider 徽标），带搜索、排序和 内置/插件/其他 分段过滤。点卡片进详情弹窗：完整描述与调用面 meta、统一源码浏览器（左边 bundle 文件树、右边内容窗格——内容合成型 skill 渲染成单个虚拟 `SKILL.md` 节点）、frontmatter metadata（形似密钥的值显示为 `···`），以及凭据表单——从 `metadata.credentials` 与正文里的 `$ENV` / `process.env.X` / `env['X']` / `{{env:X}}` 引用解析出的每个 env 都可在此配置。值落在 dsh 凭据库，不上 wire。
+- **工具带渠道归因**——折叠卡标明每个工具从哪来：作者声明的 origin 标记（精确）、`mcp__` 前缀（精确）、生成的官方工具白名单（精确）、apply 时序差分（推断）。详情弹窗把参数 schema 展示为结构树或原始 JSON。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-2.png" width="640" alt="the skill detail modal: bundle file tree on the left, content pane on the right, and the credential form for the skill's declared env vars">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-2.png" width="640" alt="技能详情弹窗：左侧 bundle 文件树、右侧内容窗格，下方是该技能声明环境变量的凭据表单">
 
-- **Install a skill three ways** — one modal: upload (a `SKILL.md`, a `.zip` containing one, or a whole skill folder, read by a dependency-free `node:zlib` zip reader); install from source (an `owner/repo`, a git URL, or a whole pasted `npx skills add <repo> [--skill <name>]` command — GitHub in-repo paths and `tree/`/`blob/` URLs normalize to the same clone, and only `github.com` is split into owner/repo, so GitLab subgroups survive); or pick skills from a local directory. Each source chooses the target root (`$DSH_HOME/skills` or `.agents/skills`) and whether the skill enters the model catalog; the skill-filesystem watcher discovers the result on its own.
-- **The mode view** — every session is composed from an agent preset (「模式」), and each preset registers a different set of skills and tools. The mode control beside the search box reads one preset's face (`snapshotAt(presetId)`) — the grid is that mode's face and nothing else — and 全部模式（对比） reads every mode in one call (`modeFaces`) and tags each card with the modes that load it, so "which modes does this capability appear in?" is one click. A mode that cannot be read is reported as unavailable, never rendered as an empty face.
-- **Preset-scoped skills** — the plugin owns a managed root (`$DSH_HOME/capability-catalog/skills`) whose skills declare the presets they belong to in frontmatter `presetScope`; the detail modal edits it (save, adopt an installed skill into the managed root, release it back to the user root), and a diagnostic row keeps managed skills no mode loads reachable instead of hidden.
-- **MCP server management** — paste an `mcp.json` server entry and the dialog parses the transport and detects credentials (a credential-looking field becomes a `secretRef:` marker in the stored config, and the Remote only ever reports `configured` state — values never reach the browser). Connect to discover a server's tools, toggle a whole server or a single tool, and every enabled tool is registered on `ctx.tools` as `mcp__<server>__<tool>` so the model can call it. Configured servers survive restarts through the settings service.
+- **三种方式装技能**——一个弹窗：上传（单个 `SKILL.md`、含 SKILL.md 的 `.zip`、或整个技能文件夹，零依赖 `node:zlib` 解压）；命令安装（`owner/repo`、git URL，或整条粘贴来的 `npx skills add <repo> [--skill <名字>]` 命令——GitHub 仓库内路径与 `tree/`/`blob/` URL 都归一到同一个克隆，只有 `github.com` 会拆成 owner/repo，GitLab 子组按原样存活）；或从本机目录勾选。每个来源都可选目标根（`$DSH_HOME/skills` 或 `.agents/skills`）与是否进模型 catalog；skill-filesystem watcher 会自动发现结果。
+- **模式视图**——每个会话都由一个 agent preset（「模式」）组合而成，不同模式注册的 skill 与 tool 各不相同。搜索框旁边的模式选择框按**该 preset 的 standing scope** 读（`snapshotAt(presetId)`）——网格就是那个模式的能力面，不再合并任何东西；「全部模式（对比）」一次调用读回每个模式的面（`modeFaces`），给每张卡片标上加载它的模式 chip，「这个能力出现在哪些模式」一点即达。读不到的模式标为「无法读取」，绝不渲染成空面。
+- **按 preset 投递的技能**——插件自管一个受管根（`$DSH_HOME/capability-catalog/skills`），其中技能用 frontmatter `presetScope` 声明属于哪些模式；详情弹窗直接编辑（保存、把已装技能收编进受管根、释放回用户技能目录），不在任何模式生效的受管技能由一条诊断行保持可达，而不是被过滤没了。
+- **MCP server 管理**——粘贴一段 `mcp.json` server 配置，弹窗自动解析传输、识别凭据（形似凭据的字段在存储的配置里变成 `secretRef:` 标记，Remote 只回 `configured` 状态——值永远到不了浏览器）。连接后发现该 server 的工具，整台 server 或单个工具都可开关，每个启用的工具都以 `mcp__<server>__<tool>` 注册到 `ctx.tools`，模型当场可调。配置的 server 经 settings 服务跨重启存活。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="MCP server management: a server added from a pasted mcp.json entry, connected, with its discovered tools and per-tool toggles">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="MCP 服务器管理：粘贴 mcp.json 片段添加的 server，已连接，列出发现的工具并可按工具开关">
 
-- **`list_capabilities` for the model** — a model-facing tool that lists the skills and tools visible in the caller's own agent scope, stamped with the capability fingerprint tag.
-- **A capability fingerprint** — `snapshotFor(presetId?)` loads every skill body and stamps a sha256 over the canonical capability face (names, sources, channels, parameters, body hashes — prose excluded), so two instances registering the same capabilities in a different order hash alike; `hashOf` / `capsTag` are exported for host-side readers.
-- **Credential env injection** — a configured credential for a skill's declared env var is exposed to the model's shell as a trusted, per-execution `DSH_<KEY>` variable, referenced by shell expansion so the raw value stays out of the model's context by default; when the `skill` tool loads such a skill, a runtime hint tells the model each `KEY → DSH_<KEY>` mapping without touching the `SKILL.md`.
-- **The tool-origin convention** — `setToolOrigin` / `TOOL_ORIGIN` are exported so any plugin can tag its tools before `ctx.tools.register` and be attributed exactly; the tab ships a help modal with a copyable prompt that teaches a coding agent to do the tagging.
-- **Degrades, never explodes** — zero host edits; everything rides existing official services through `ctx.get`, and a composition missing `ctx.skills` / `ctx.tools` / `ctx.credentials` / `ctx.agentPresets` renders an empty state instead of failing boot.
+- **给模型的 `list_capabilities`**——模型可调的工具，列出调用方自己 agent scope 里可见的 skill 与 tool，并盖上能力指纹标签。
+- **能力指纹**——`snapshotFor(presetId?)` 加载每个技能正文，对规范化能力面（名字、来源、渠道、参数、正文哈希——措辞不进）盖 sha256；同样的能力按不同顺序注册，哈希相同。`hashOf` / `capsTag` 导出给宿主侧读者。
+- **凭据 env 注入**——某 skill 声明 env 对应的已配置凭据，以可信、逐执行的 `DSH_<KEY>` 变量暴露给模型 shell，模型用 shell 展开引用，原始值默认不进模型上下文；`skill` 工具加载这类技能时，运行时提示会把每个 `KEY → DSH_<KEY>` 映射告诉模型，从不改动 `SKILL.md`。
+- **工具来源约定**——导出 `setToolOrigin` / `TOOL_ORIGIN`，任何插件在 `ctx.tools.register` 前给工具打标即可获得精确归因；设置页自带一个帮助弹窗，内置可复制的一段话，发给写插件的 agent 就能完成打标。
+- **降级，不爆炸**——零宿主改动，全部经 `ctx.get` 探测现有官方服务；组合缺 `ctx.skills` / `ctx.tools` / `ctx.credentials` / `ctx.agentPresets` 时渲染空态，不拖垮 boot。
 
-## Install
+## 安装
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-capability-catalog
 ```
 
-Restart the web instance to activate; the 工具与技能 tab appears in Settings, right after the Plugins section. Uninstalling removes the row exactly:
+重启 web 实例后生效；「工具与技能」出现在设置页，紧随「插件」区块之后。卸载即精确移除挂载行：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-capability-catalog
@@ -42,94 +42,94 @@ dsh plugin --profile web remove @khorsheed/dsh-capability-catalog
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — 0.1.5-rc.1 full-line boot-verified (42 packages including capture, 2026-09-25) through three compat layers: the [preset-registry dual-name probe](../../.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md), [dual-shape typert codecs](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md), and [typert faces carrying zod@4](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md). `minHost` is 0.1.5-rc.1, and 0.1.95 is this package's first published release — older hosts have no compatible line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.7-rc.1) — 0.1.7-rc.1 is also the 3080 production-verified line.
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——0.1.5-rc.1 全量 boot 实证通过（42 包含 capture，2026-09-25），经三层兼容修复：[preset-registry 双名探测](../../.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md)、[typert codec 双形状](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md)、[face 自带 zod@4](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md)。`minHost` 即 0.1.5-rc.1，且 0.1.95 是本包首个发布——更早的宿主没有可用发布线。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.7-rc.1）——0.1.7-rc.1 同时是 3080 生产实证线。
 
-Per-mode capability reads (the mode picker, `snapshotAt` / `snapshotFor` / `modeFaces`, preset-scoped skill delivery) resolve a preset's standing scope through whichever roster face the host line offers: lease-free `standingKeyFor` on 0.1.5, the leased `acquireScope` on rc.1 — rc.1 removed `standingKeyFor`, and catalog builds before this dual-face fix silently read the global layer on rc.1. The lease is released after every read, on the listing and the fingerprint path alike. Machine-readable: `dsh.compat` in `package.json` (`minHost`, `verifiedHost`, `notes`).
+按模式的能力面读取（模式下拉、`snapshotAt` / `snapshotFor` / `modeFaces`、按 preset 的技能投递）按宿主线走两条 roster 面解析 preset 的 standing scope：0.1.5 的无租约 `standingKeyFor`，rc.1 的租约式 `acquireScope`——rc.1 删除了 `standingKeyFor`，本次双线修复前的目录版本在 rc.1 上会静默读成全局层。清单与指纹两条路径每次读完都释放租约。机器可读字段见 `package.json` 的 `dsh.compat`（`minHost`、`verifiedHost`、`notes`）。
 
-## Known Limitations
+## 已知限制
 
-- **Credential injection is default-hide, not a secret boundary** — a crafted prompt can still make the model `echo $DSH_KEY`. For "the model never holds the raw value", the [masked-credential-proxy proposal](../../proposals/active/2026-08-29-masked-credential-proxy.md) is the harder edge.
-- **Untagged plugin tools fall back to heuristics** — a tool whose author did not set an origin tag may be listed under 内置/builtin; the tab's 「为什么我的插件工具不在这里？」 modal (and [docs/tool-origin-guide.md](../../docs/tool-origin-guide.md)) explains the one-line fix.
-- **The MCP bridge covers the text-result case** — discovered tools are registered text-in/text-out, without image/attachment projection; and on a composition without the settings service, MCP server state is in-memory only and resets on restart.
+- **凭据注入是 default-hide，不是秘密边界**——构造的提示仍可让模型 `echo $DSH_KEY`。若要「模型永不持有原始值」，更硬的边界见 [masked-credential-proxy 提案](../../proposals/active/2026-08-29-masked-credential-proxy.md)。
+- **未打标的插件工具退回启发式**——作者没设 origin 标记的工具可能被归到「内置」；设置页的「为什么我的插件工具不在这里？」弹窗（与 [docs/tool-origin-guide.md](../../docs/tool-origin-guide.md)）给出了一行的修法。
+- **MCP 桥只覆盖文本结果形态**——发现的工具按纯文本进出注册，无图片/附件投影；组合里没有 settings 服务时，MCP server 状态只活在内存里，重启即重置。
 
-## How it works
+## 实现原理
 
 <details>
-<summary>Internals (click to expand)</summary>
+<summary>内部结构（点击展开）</summary>
 
-**Architecture.** The host half is `CapabilityCatalogService`, a Typert Remote service in the `capabilityCatalog` namespace; the browser half mounts the generated Remote via `ctx.remote.$mount` and registers a standalone `settings.section` slot (id `capabilities`, order 20 — right after Plugins) through `slots.inject`, so apply order never matters. The identity triangle is the `capability-catalog` row id in `cordis.patch.yml`, the npm name, and `src/invariant.ts`'s `PACKAGE_NAME`. The package root exports the service, the fingerprint helpers (`hashOf` / `capsTag` / `canonicalCapabilities`), the preset-scope/delivery primitives, and the tool-origin helpers; `/client` exports the browser plugin body.
+**架构。** host 半是 `CapabilityCatalogService`，一个 `capabilityCatalog` 命名空间的 Typert Remote 服务；浏览器半经 `ctx.remote.$mount` 挂载生成的 Remote，再经 `slots.inject` 注册独立 `settings.section` 槽位（id `capabilities`，order 20——紧随「插件」区块），因此 apply 顺序永远不影响。身份三角：`cordis.patch.yml` 的 `capability-catalog` 行 id、npm 包名、`src/invariant.ts` 的 `PACKAGE_NAME`。包根导出服务本体、指纹 helper（`hashOf` / `capsTag` / `canonicalCapabilities`）、preset-scope/投递原语与工具来源 helper；`/client` 导出浏览器插件体。
 
-**Channel attribution.** `ToolSchema` carries no source field, so a tool's channel is resolved in precedence order: the author-declared origin tag (a `Symbol.for('dsh.tool.origin')` property on the retained definition, read back via `ctx.tools.get(name)` — the system-prompt projection strips it, so it never crosses the model wire), then the `mcp__` prefix (server name by longest configured-prefix match), then a generated official-tools whitelist (`scripts/gen-official-tools.mts`, generated from the pinned harness checkout), then an apply-time baseline diff. The baseline is taken inside the deferred `ctx.inject(['tools'], …)`, so the registry's own mount order cannot produce an empty baseline that mislabels every tool as plugin.
+**渠道归因。** `ToolSchema` 不携带来源字段，所以工具渠道按优先级解析：作者声明的 origin 标记（留在注册表按引用保留的 definition 上的 `Symbol.for('dsh.tool.origin')` 属性，经 `ctx.tools.get(name)` 读回——系统提示投影会剥掉它，所以永不上模型 wire），然后 `mcp__` 前缀（按最长已配置前缀匹配 server 名），然后生成的官方工具白名单（`scripts/gen-official-tools.mts`，由锁定的 harness 检出生成），最后 apply 时序差分。基线在延迟的 `ctx.inject(['tools'], …)` 里取，注册表自己的挂载顺序不可能造成空基线、把每个工具误标成插件。
 
-**The mode view.** An instance composes every session from an agent preset: the shipped standard / minimal / PTC / 创造 presets plus deployment- or user-authored ones, each registering a different set of skills and tools. Picking a preset reads the catalog at that preset's standing scope (`snapshotAt(presetId)`), and the grid is that mode's face and nothing else — a skill delivered only to 写作模式 does not appear under 开发模式, and the tab's counts are the mode's counts. 全部模式（对比） reads every preset's face in one call (`modeFaces`) and shows the union, with a chip row on each card naming the modes that load it; a capability in every readable mode collapses to one `全部模式 · N` pill, and a long partial list shows two chips plus `+N`, expanding in place. A mode that cannot be read (a broken composition, a roster that resolves no standing scope) keeps its row and is reported as unreadable rather than rendered as an empty face — "this mode loads nothing" and "this mode could not be read" are different claims. An unscoped managed skill (no `presetScope`) is delivered to every preset; one scoped to a preset this deployment does not supply appears in no mode's face, and the tab then shows it under a diagnostic line (`N 个受管 skill 未在任何模式生效`) whose cards open the detail modal, where its scope can be changed or released — without that list, filtering by mode would make such a skill unreachable rather than merely hidden. Reading a mode is not free: resolving a preset's standing scope MOUNTS its composition (the roster's single-flight standing mount), so the comparison is an explicit choice, never done on open; the client reads faces once per session behind a single-flight cache shared with the detail modal. Detail and delete follow the same read position: opening a card reads that capability's detail and bundle at the mode the card came from, and a delete targets the same one.
+**模式视图。** 实例把每个会话组合自一个 agent preset：内置的 标准/极简/PTC/创造，加上部署或用户自建的 preset，各自注册不同的 skill 与 tool。选中某个 preset 就按该 preset 的 standing scope 读（`snapshotAt(presetId)`），网格**就是那个模式的能力面**——只投递给写作模式的 skill 不会出现在开发模式下，标签页计数也是这个模式的计数。「全部模式（对比）」一次调用读回每个 preset 的面（`modeFaces`）显示并集，每张卡片一排模式 chip 标明哪些模式加载它；每个可读模式都加载的能力折叠成一颗 `全部模式 · N`，部分匹配但很长时只显示两颗 chip + `+N`，就地展开。读不到的模式（组合失败、roster 解不出 standing scope）保留自己的行并标为「无法读取」，而不是渲染成空面——「这个模式什么都没有」和「这个模式读不出来」是两回事。没声明 `presetScope` 的受管 skill 投递给每个 preset；范围指向本部署没有的 preset 的受管 skill 不属于任何模式的面，技能页此时给一条诊断行（`N 个受管 skill 未在任何模式生效`），展开点卡片进详情即可改范围或释放——没有这条出口，按模式过滤就不只是隐藏，而是让这类 skill 彻底够不着。读一个模式**不是免费的**：解析 preset 的 standing scope 会**挂载**它的组合（roster 的 single-flight standing mount），所以对比是一次显式选择，打开页面绝不做；客户端每个会话只读一次能力面（single-flight 缓存，和详情弹窗共用）。详情与删除跟着同一个读位置走：点卡片读的是该卡片来源模式下的详情与技能包，删除同样针对这个模式。
 
-Card badges name the source (插件 / 内置 / 用户 / 项目 / 自定义); a managed skill's `preset` scope is policy, not provenance, so it is shown where that policy is the subject — the orphan list and the detail modal.
+卡片徽标标的是**来源**（插件 / 内置 / 用户 / 项目 / 自定义）；受管 skill 的 `preset` 范围是策略不是来源，所以只在「范围就是主题」的地方出现——未生效清单和详情弹窗。
 
-**A preset scope is editable only where the host will write one.** The detail modal's 「生效的 preset」 section writes `presetScope` into the frontmatter of a skill in the managed root, so the section says which shape it is instead of offering a Save the host refuses (`"<name>" is not a managed skill`):
+**只有 host 会写入的地方才可编辑 preset 范围。** 详情弹窗的「生效的 preset」区块是把 `presetScope` 写进受管根里某个 skill 的 frontmatter，所以该区块会说明自己属于哪一种形态，而不是给一个 host 必然拒绝（`"<name>" is not a managed skill`）的「保存」：
 
-| skill | what the section shows |
+| skill | 该区块显示 |
 |---|---|
-| in the managed root | the preset grid + 保存 + 释放回用户技能目录 |
-| user / project / custom root | the preset grid + 移入受管目录并可限定 preset (no 保存: the selection is the scope adopt installs it with) |
-| plugin-provided (`runtime`) | why it cannot be set, plus the modes that actually load it (chips from the shared faces cache) |
-| built-in (`bundled`) | why it cannot be set — it follows the deployment composition |
-| no roster / no managed delivery in this deployment | the unavailable note |
+| 在受管根里 | preset 勾选网格 + 保存 + 释放回用户技能目录 |
+| 用户 / 项目 / 自定义根 | preset 勾选网格 + 移入受管目录并可限定 preset（没有「保存」：勾选就是 adopt 装进去时的范围） |
+| 插件提供（`runtime`） | 说明为什么不能设，并列出实际加载它的模式（chip 取自共用的能力面缓存） |
+| 内置（`bundled`） | 说明为什么不能设——跟随部署组合 |
+| 该部署没有 preset 名单 / 没有受管投递 | 不可用提示 |
 
-The modal's frontmatter-metadata block prints the metadata keys that have no dedicated surface: `presetScope` (the editor above) and `credentials` (the credential form) stay out of it, so a skill that merely declares a credential does not grow a raw JSON block; secret-shaped values (a key matching `key|token|secret|password`) render as `···`.
+弹窗的 frontmatter metadata 区块只打印「没有专用界面」的 metadata 键：`presetScope`（上面的编辑器）和 `credentials`（凭据表单）不再重复出现，所以仅仅声明了凭据的 skill 不会多出一块原始 JSON；键名命中 `key|token|secret|password` 的值显示为 `···`。
 
-**The capability fingerprint.** A snapshot is a LISTING — registration order, human wording, file mtimes. The capability FACE is what remains when everything that is not a capability is removed, and `hashOf` is its sha256:
+**能力指纹。** snapshot 是一份**清单**——注册序、给人读的措辞、文件 mtime。把「不是能力的东西」去掉之后剩下的才是**能力面**，`hashOf` 是它的 sha256：
 
-| Row | What enters | What does not |
+| 行 | 进哈希 | 不进 |
 |---|---|---|
-| skill | `name`, `source`, sha256 of the SKILL.md body | description, whenToUse, provider, `updatedAt` |
-| tool | `name`, `channel`, `parameters` | description, confidence, owner |
-| mcpServer | `name` + its tool NAMES | the tool count (derived) |
-| channel | the names | the counts (derived) |
+| skill | `name`、`source`、SKILL.md 正文的 sha256 | description、whenToUse、provider、`updatedAt` |
+| tool | `name`、`channel`、`parameters` | description、confidence、owner |
+| mcpServer | `name` + 它的工具**名单** | 工具数（可从行推出） |
+| channel | 名单 | 计数（可从行推出） |
 
-Every list is sorted by name and the digest is taken over canonical JSON, so two instances registering the same things in a different order hash alike. The exclusions are the claim: prose is not a capability — rewording a tool description changes what the model reads, not what it can do. A skill's BODY is the opposite (it is the procedure), so it enters as a sha.
+每个列表按 name 排序，摘要取在规范 JSON 上——同样的东西按不同顺序注册，哈希相同。排除项本身就是主张：**措辞不是能力**——改一句工具描述改的是模型读到的字，不是它能做的事。技能**正文**相反（它就是那套流程），所以以 sha 进入。
 
 ```ts
 import { hashOf, capsTag } from '@khorsheed/dsh-capability-catalog'
 
-const face = await remote.snapshotFor('eval-lean')   // sha already stamped
+const face = await remote.snapshotFor('eval-lean')   // sha 已盖好
 capsTag(face.sha)          // 'caps:2f8b6d40…'
-hashOf(face) === face.sha  // true — the `sha` field is not part of what it digests
+hashOf(face) === face.sha  // true——`sha` 字段本身不进它摘要的那份规范形
 ```
 
-`snapshotFor(presetId?, workdir?)` is the fingerprint verb: it reads the skill and tool registries at that preset's standing scope, loads every skill body so the rows carry `bodySha`, and stamps `sha`; `presetId` omitted reads the deployment default. `snapshot()` stays the listing verb — same rows, no body loads, no digest. `list_capabilities` reports the full face's tag as `capabilities`, even when the caller filtered the answer to skills or tools.
+`snapshotFor(presetId?, workdir?)` 是指纹动词：按该 preset 的 standing scope 读 skill 与 tool 注册表，加载每个技能正文使行带上 `bodySha`，并盖 `sha`；不给 presetId 就读部署默认 preset。`snapshot()` 仍是清单动词——同样的行，不读正文，不出摘要。`list_capabilities` 以 `capabilities` 带回**整面**的标签，即使调用方只要了 skill 或只要了 tool。
 
-A listing degrades; a fingerprint refuses. When the preset's scope cannot be resolved — no roster, unknown id, a composition that will not mount — `snapshot()` falls back to the global layer and carries no `preset` label, because a settings card must not go blank over a bad row; `snapshotFor()` throws instead, naming the preset and the reason. Two costs are worth naming: fingerprinting loads one skill body per skill (the listing path does not), and asking for a preset nothing has composed yet MOUNTS it — the roster's standing mount is what "that preset's scope" means. Who uses it: an evaluation records the orchestrating instance's own hash in `run.meta.orchestrator.capabilities` as provenance, and a condition that declares a `preset` must carry the hash of its provisioned environment in its lock — which is what turns that declaration from a claim into a fact.
+**清单降级，指纹拒绝。** preset 的 scope 解析不出来时——没有 roster、id 不存在、composition 挂不起来——`snapshot()` 退回全局层并且不带 `preset` 标签（设置卡不该因为一行配置坏了就变空）；`snapshotFor()` 则抛错，带上 preset 名与原因。两处代价要说清楚：算指纹时每个技能多读一次正文（清单那条路不读）；问一个还没人组过的 preset 会把它**挂起来**——「该 preset 的 scope」本来就只有挂了才存在。谁在用：评测把编排实例自己的哈希记进 `run.meta.orchestrator.capabilities` 做取证；声明了 `preset` 的条件必须在 lock 里带上其已配环境的哈希——正是这一步把声明从「一句话」变成「一个事实」。
 
-**Skill credential env injection.** A configured credential for a skill's declared env var is exposed to the model's shell so the skill can query. Two pieces, both service-agnostic and generic (derived from each skill's own env-decl keys — no hardcoded key):
+**skill 凭据 env 注入。** 把某 skill 声明 env 变量对应的已配置凭据暴露给模型 shell，让 skill 能查询。两块，都**服务无关且通用**（从每个 skill 自己的 env-decl 动态推导，无硬编码 key）：
 
-- `ctx.shellEnv` injects each configured credential as a trusted, per-execution `DSH_<KEY>` variable. The model uses it by shell expansion (`KEY="$DSH_KEY" <cmd>`), so the raw value never enters the model's context by default (it only becomes visible if the model actively echoes it — a default-hide, not a hard secret boundary). Keys mapping onto the reserved built-ins (`DSH_HOME` / `DSH_SHELL` / `DSH_SESSION_ID`) or already owned by another contributor are skipped with a warning, so one bad key cannot break the whole registration. If `ctx.shellEnv` / `ctx.credentials` / `ctx.skills` are absent, or a session has no skill, this is a no-op.
-- Runtime companion hint — the model won't derive the `KEY → DSH_<KEY>` alias on its own, so when the `skill` tool loads a skill with configured credentials, the catalog appends a per-skill note (`tools/post-execute` + `additionalContexts`) listing each mapping and how to use it. It never touches the user's `SKILL.md`.
+- `ctx.shellEnv` 把每个已配置凭据作为可信、逐执行的 `DSH_<KEY>` 变量注入。模型用 shell 展开引用（`KEY="$DSH_KEY" <cmd>`），所以原始值默认不进模型上下文（只有模型主动 echo 时才可见——是 default-hide，不是硬秘密边界）。映射到保留内建名（`DSH_HOME` / `DSH_SHELL` / `DSH_SESSION_ID`）或已被其他贡献者占用的 key 会跳过并告警，一个坏 key 不会拖垮整个注册。`ctx.shellEnv` / `ctx.credentials` / `ctx.skills` 缺失、或会话无 skill 时是 no-op。
+- 运行时 companion 提示——模型不会自己推导 `KEY → DSH_<KEY>` 别名，所以当 `skill` 工具加载某个有已配置凭据的 skill 时，目录通过 `tools/post-execute` + `additionalContexts` 附加按 skill 生成的说明，列出每个映射与用法。**从不改用户的 SKILL.md**。
 
-The credential store is the dsh credential store (`.credentials.yaml`, ref space); reads use `credentials.resolve(decl.key)` / `describe(decl.key).configured` (presence only, never the value) and writes `set(request.key, value)`, validated with a local POSIX ref-name check — no runtime `@deepseek-ai/dsh-credentials` import, so degradation stays graceful when it is absent.
+凭据库是 dsh 官方 store（`.credentials.yaml`，ref 空间）；读用 `credentials.resolve(decl.key)` / `describe(decl.key).configured`（仅 presence，绝无值），写 `set(request.key, value)`，用本地 POSIX ref-name 校验——不做运行时 `@deepseek-ai/dsh-credentials` import，保持缺失时优雅降级。
 
-**MCP management.** Configured servers persist through the settings service on both host lines — 0.1.5's free-form `settings.register` namespace, 0.1.7's volatile plugin Config field through SettingsForms with the `settings/document-updated` round-trip — and degrade to an in-process store when settings is absent. The persisted block stores only tool names and toggle flags (descriptions and parameter schemas would bloat `settings.yaml` and go stale), so boot reconnects enabled servers asynchronously to refill them; boot is not blocked, and each server's errors are contained. Discovered tools register on `ctx.tools` under the stable `mcp__<serverName>__<rawName>` contract, normalized to the function-name constraints (a sha256 suffix disambiguates a lossy normalization); registration is a dispose-then-register reconcile that always invokes `register` as a member call on the traceable service proxy. Credential-looking config fields become `secretRef:` markers resolved through `ctx.credentials` at connect time — `mcpSnapshot` reports only `configured` state, and the markers never leave the host.
+**MCP 管理。** 配置的 server 在两条宿上线都经 settings 服务持久化——0.1.5 的自由形 `settings.register` 命名空间，0.1.7 的 volatile 插件 Config 字段（经 SettingsForms，以 `settings/document-updated` 回合）——settings 缺失时降级为进程内 store。持久化块只存工具名与开关（描述和参数 schema 会撑大 `settings.yaml` 且会过期），所以 boot 时异步重连启用的 server 把它们补回来；boot 不被阻塞，各 server 的错误各自隔离。发现的工具按稳定的 `mcp__<serverName>__<rawName>` 契约注册到 `ctx.tools`，按函数名约束归一化（有损归一时追加 sha256 后缀消歧）；注册是「先 dispose 再 register」的 reconcile，且始终以可追踪服务代理上的成员调用发起 `register`。形似凭据的配置字段变成 `secretRef:` 标记，连接时经 `ctx.credentials` 解析——`mcpSnapshot` 只回 `configured` 状态，标记永不出宿主。
 
-**Plugin skill registration protocol.** The contract the catalog relies on to render a skill's file tree. A skill is discoverable two ways: filesystem/provider discovery (`@deepseek-ai/dsh-skill-filesystem` scans a configured root for `<name>/SKILL.md`; these already carry `resourceBase: { kind: 'directory', path }`, so the catalog lists their bundle files automatically), and runtime plugin registration (`ctx.skills.register(...)`), where the catalog can list a skill's bundle files only if the plugin exposes them:
+**插件 skill 注册协议。** 目录渲染 skill 文件树所依赖的契约。skill 有两种被发现的方式：文件/提供者发现（`@deepseek-ai/dsh-skill-filesystem` 扫配置根目录里的 `<name>/SKILL.md`，这类自带 `resourceBase: { kind: 'directory', path }`，目录自动列出其 bundle 文件），以及运行时插件注册（`ctx.skills.register(...)`）——后者只有在你暴露了 bundle 时目录才能列出文件：
 
 ```ts
 ctx.skills.register({
   name: 'my-skill',
   description: '…',
-  content: '…',                  // the SKILL.md body
+  content: '…',                  // SKILL.md 正文
   source: 'runtime',
-  provider: 'my-plugin',         // optional; labels the catalog card
-  resourceBase: {                // expose the bundle so it can be browsed
+  provider: 'my-plugin',         // 可选；目录卡片的标签
+  resourceBase: {                // 暴露 bundle 以便浏览
     kind: 'directory',
-    path: <absolute path to the plugin's skills/<name> directory>,
+    path: <插件包 skills/<name> 目录的绝对路径>,
   },
 })
 ```
 
-When `resourceBase.kind === 'directory'`, the catalog walks `resourceBase.path` and shows the bundle as a file tree, and the model's relative-resource resolution can reach those files too. Asking the catalog to "scan every plugin package" is deliberately not done: the registry is the source of truth for what is installed, and it already attributes each skill to its provider. A content-only skill (a single self-contained `SKILL.md` with no scripts, assets, or references beside it) should omit `resourceBase` rather than point at a directory holding only `SKILL.md` — the browser renders it as a single virtual `SKILL.md` node, and `files` is reported only when a bundle exists.
+当 `resourceBase.kind === 'directory'`，目录会 walk `resourceBase.path` 并把 bundle 显示成文件树，模型的相对资源解析也能触达这些文件。**有意不做**「目录去扫所有插件包」：registry 才是「装了哪些」的真相源，它已把每个 skill 归属到 provider。内容合成型 skill（单个自包含的 SKILL.md，无 scripts/assets/references）应**省略** `resourceBase`，而不是指向一个只有 SKILL.md 的目录——浏览器半把它渲染成单个虚拟 `SKILL.md` 节点，且只有存在 bundle 时才报 `files`。
 
 </details>
 
-## Development
+## 开发
 
-Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/capability-catalog`). Issues and contributions welcome there.
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/capability-catalog`）。问题与贡献请移步该仓库。

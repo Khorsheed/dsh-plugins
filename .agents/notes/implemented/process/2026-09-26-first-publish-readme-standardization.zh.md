@@ -12,7 +12,7 @@ Status: implemented
 
 - 两个文件第 3 行都放语言切换——这是硬要求：npm 只渲染 README.md，切换压在底部就等于单语言。
 - 结构：pitch + 问题段 → 截图（有 UI 的包）→ 特性 → 安装（add/remove 代码块 + 重启提示）→ `## Compatibility`（两个文件都用这个英文标题，内容对照 package.json `dsh.compat`）→ 已知限制 → `<details>` 内部结构 → 开发 → 变更记录（仅当 CHANGELOG.md 存在）。
-- 各包语言约定保持原样（19 个中文优先，3 个英文优先），不做统一。
+- 语言约定随后统一为中文优先（用户当日拍板）：room / capability-catalog / mobile 从英文优先（README.md 英文 + README.zh.md）对调到统一布局（README.md 中文 + README.en.md 英文），切换链接、package.json `files` 与 apps/ios 的交叉引用一并跟上。
 - 截图一律用绝对 URL 引用 `https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/`；新图由用户补拍，在 rc2 对齐的重发前落位——此前新 img 标签是有意的死链。
 - README.i18n.yaml 台账在同一变更里重录（466 对同步）。
 - 22 个首发的 tag（`<目录>-v<版本>`）与 GitHub Release 打在 README 改进后的 HEAD 上；npm tarball 里仍是旧 README，随下一次版本升级带上新文案。

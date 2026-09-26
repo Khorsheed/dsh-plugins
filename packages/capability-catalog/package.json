@@ -155,7 +155,7 @@
     "lib/typert.remote-client.js",
     "scripts/gen-official-tools.mts",
     "README.md",
-    "README.zh.md",
+    "README.en.md",
     "LICENSE"
   ]
 }
