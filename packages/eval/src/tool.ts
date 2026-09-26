@@ -9,7 +9,7 @@
  * is that same pair of files through the service verb the 新建实验 form uses,
  * validated in the same call.
  *
- * It is a write, and starting a run is not: `/eval run` and the plan-review
+ * It is a write, and starting a run is not: `/eval run` and the 实验设计
  * page's 批准并启动 are a human act, and every other write-class verb —
  * materialize, delegate, submit, transition, annotate, archive, export,
  * finalize — belongs to the orchestrator's service face or to the human's CLI.
@@ -212,7 +212,7 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       + 'hand-writing each file and validating afterwards — and the same verb the 新建实验 form uses, so a draft you '
       + 'make and a draft a person makes are the same file and land in the same list. '
       + 'DRAFTING IS NOT STARTING: nothing here runs a cell, and there is no run tool to look for. The person '
-      + 'approves the plan and starts it (实验室 › 计划审阅 › 批准并启动, or /eval run <experimentId>); logging the '
+      + 'approves the plan and starts it (实验室 › 实验设计 › 批准并启动, or /eval run <experimentId>); logging the '
       + 'harnesses in and provisioning their conditions is theirs too. Report the paths and the validate result back '
       + 'and stop there. '
       + 'A plan validate REJECTS is still written — it lands as a 草稿 with its errors named, which is the honest '

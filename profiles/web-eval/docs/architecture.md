@@ -15,7 +15,7 @@
 | **lab** | 全部：`acquire` `populate` `collect` `checkpoint` `verify` `archive` `release` `status` | 无（刻意） | `dsh-lab` 全动词，`status` 进度表 | 无自有 UI；单元状态进实验台（I5） | 只记录不判断；`release` 是闸的执行点 |
 | **local-agent 家族** | `start` / `resume` / `cancel` 门面；`effectiveSettings`（I1）；每条件 home 覆盖（I4） | 不开——codex / claude-code / kimi 三行 `tools: none`，dsh 那家默认不挂（I3·T27）；选手与判官的委派都由编排器经门面发起 | slash：`status` `login` `records` | 设置卡、成员 dock、成员续聊 | 委派记录 `delegations.jsonl`、transcript 镜像、用量归一 |
 | **capability-catalog** | 按 preset scope 读注册表 | `list_capabilities` | 无 | catalog tab | I4 输出可哈希的能力清单，作为 condition 的取证 |
-| **eval** | `validatePlan` `hashCondition` `readiness` `generateTemplate` `run` `report` | 只读：`eval_conditions` `eval_plan_validate` `eval_run_status` `eval_cells`；不开 `run` | `dsh-eval conditions | validate | run | report`，`provision`（I4） | 实验台、计划审阅、判官台、报告（I5） | 唯一的执行者；对四个上游用 `ctx.get` 探测，缺一即拒绝 `run`。服务键是 `dshEval`，不能叫 `eval`：loader 用 with(ctx) 求值 !!js 表达式，同名属性会遮蔽全局 eval |
+| **eval** | `validatePlan` `hashCondition` `readiness` `generateTemplate` `run` `report` | 只读：`eval_conditions` `eval_plan_validate` `eval_run_status` `eval_cells`；不开 `run` | `dsh-eval conditions | validate | run | report`，`provision`（I4） | 实验室四阶段：实验设计 · 运行记录 · 结果对比 · 人工评估（I5） | 唯一的执行者；对四个上游用 `ctx.get` 探测，缺一即拒绝 `run`。服务键是 `dshEval`，不能叫 `eval`：loader 用 with(ctx) 求值 !!js 表达式，同名属性会遮蔽全局 eval |
 | **ankh-guard** | 守卫重启 | 无 | `restart` | 无 | 不在实验流程内，负责评测实例的切换与看护 |
 
 工具开放的原则：agent 只在规划期与分析期出现，需要的是**读**与**起草**；执行期没有 agent；判官是一次委派而不是一个带工具的会话。写类工具留给编排器（服务面）和人（CLI、tab）。
@@ -68,7 +68,7 @@ flowchart LR
 | 5 | 把 condition 变成实物 scoped home 并回算哈希。**本例跳过**，见例二 | 编排器 / 人 | `eval.cli.conditions provision`；`localAgent.effectiveSettings` | `conditions/<id>.lock.json`，`$DSH_HOME/state/eval/homes/<sha>/` | I1 只做就绪检查（对既有 home），I4 才创建新 home |
 | 6 | 写 plan：items [F2, F3]，conditions 四个 sha，reps 3，stages 取 manifest 的 stage1 与 stage2，order.seed，budget，judge 用既有判官条件 | agent | 文件写入 | `plans/2026-09-20-pilot-a.json` | I2 起草，I5 由 skill 引导 |
 | 7 | 校验 plan：schema、条件就绪、题目存在、判官不是选手；生成 run 模板 | agent / 人 | `eval.tool.plan_validate` 或 `eval.cli.validate`；`eval.service.generateTemplate` 读题集 manifest | 校验报告（stdout）；`plans/<plan>.template.json` | I1 校验，I2 生成模板 |
-| 8 | 批准并启动 | 人 | `eval.cli.run` 或计划审阅面板 | `runs/RUN.json` 的 meta 记 planSha、evalVersion、snapshot | I2 CLI，I5 面板 |
+| 8 | 批准并启动 | 人 | `eval.cli.run` 或实验室 › 实验设计的「批准并启动」 | `runs/RUN.json` 的 meta 记 planSha、evalVersion、snapshot | I2 CLI，I5 面板 |
 | 9 | 钉快照 | 编排器 | `datasets.service.snapshot` | run.meta.snapshot = {repo, commit, datasetId} | I2 |
 | 10 | 建 run、lint、展开矩阵、随机交错 | 编排器 | `mission.service.runCreate`（模板 lint 在内） | `runs/RUN.json`：每格一个 mission，labels {task, condition, rep}；`runs/RUN/data/` | I2 |
 | 11 | 取单元、记指纹 | 编排器 | `lab.service.acquire`（I3 前用宿主临时目录代替） | mission refs：resource、fingerprint | I2 宿主目录，I3 容器 |
