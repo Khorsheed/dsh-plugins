@@ -57,7 +57,7 @@ The two skills the host half registers, `inline-html-card` and `3d-artifact`, sh
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — this plugin consumes only standard DOM plus the client-runtime `ClientContext`, with no host-service dependency; minHost is 0.1.2-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1) — the DOM anchors re-checked on master (0.1.7-rc.1) are unchanged: `CodeBlock` still renders the `.md-code-block` wrapper with the info string in its banner (a CSS-module hashed class, caught by the leading-text fallback), `AssistantMarkdown` still sets `data-streaming`, and `ui-sidebar-browser` still registers the `browser` right-Sidebar tab kind.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1) — the DOM anchors re-checked on master (0.1.7-rc.2) are unchanged: `CodeBlock` still renders the `.md-code-block` wrapper with the info string in its banner (a CSS-module hashed class, caught by the leading-text fallback), `AssistantMarkdown` still sets `data-streaming`, and `ui-sidebar-browser` still registers the `browser` right-Sidebar tab kind.
 
 ## Known Limitations
 

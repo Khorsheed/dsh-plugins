@@ -74,7 +74,7 @@ message-tools、TaskPilot、Room 与 Local Agent 家族独立安装；移动端�
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 可用，带已声明的降级——`dsh.compat.minHost` 为 `0.1.5-rc.1`。本地浏览器/Host 验证与 iOS 模拟器构建在 `0.1.5-rc.1`（`183f08e9c6`）上通过，但移动布局与 iOS 壳仍在验收中；**Safari 在 0.1.5-rc.1 上恢复进行中回复需要选择启用的随包 ingress 适配层**（`MOBILE_SAFARI_COMPAT=1`，见「实现原理」）；**不提供设备配对与推送**。更旧的宿主：低于 `minHost` 自行承担风险——均不受支持。
-- 源码线（deepseek-harness master）：对固定的 `0.1.7-rc.1` 类型面构建+测试通过（2026-09-26），但按 `dsh.compat` 的声明，真机/网络验收矩阵完成前不声明 `verifiedHost`——在其他宿主上采用前请先审计。
+- 源码线（deepseek-harness master）：对固定的 `0.1.7-rc.2` 类型面构建+测试通过（2026-09-27），但按 `dsh.compat` 的声明，真机/网络验收矩阵完成前不声明 `verifiedHost`——在其他宿主上采用前请先审计。
 
 会话首页使用可选的官方 sessions/workspaces/uiWorkspace 服务，过滤已归档会话和子代理行、保留普通分叉会话；缺少服务时回退基础官方侧栏。启用布局前检查公开 frame/slot DOM 锚点；未知结构保留官方页面——结构变化可能降低移动可用性，但不改变 Host 执行。原生桥接版本变化需要判断 App 兼容性；兼容的 Web 更新不自动要求重发 IPA。参见[导航/扫码验收](../../docs/acceptance/mobile-navigation-2026-09-11.md)、[rc1 验收证据](../../docs/acceptance/mobile-rc1-2026-09-11.md)与[提案](../../proposals/active/2026-08-19-mobile-access.md)。无需修改官方或兄弟插件源码。
 

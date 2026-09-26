@@ -42,7 +42,7 @@ dsh plugin --profile web remove @khorsheed/dsh-bundle-conversation-toolbox
 ## Compatibility
 
 - npm 发布线(`@deepseek-ai/dsh@0.1.5-rc.1`):✅ 完整——纯组合,地板取成员最高者(minHost `0.1.5-rc.1`:message-tools、quote、taskpilot 的地板;其余成员 0.1.2-rc.1)。成员各自在该线上的降级项(如 quote 的侧边对话路由探测)见各成员自己的 Compatibility 节。
-- 源码线(deepseek-harness master):✅ 完整(verifiedHost: 0.1.7-rc.1)。
+- 源码线(deepseek-harness master):✅ 完整(verifiedHost: 0.1.7-rc.2)。
 
 **版本线对照**:`0.1.0` 起要求宿主 `0.1.5-rc.1` 及以后。
 

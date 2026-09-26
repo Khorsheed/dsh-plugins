@@ -8,7 +8,7 @@ agent 干了半天活，到底动了哪些文件、改成了什么样？装了�
 
 ## 特性
 
-- **右栏「产物」页（双线一致）**——page-type 右栏 tab（向导页进入）兼认领方：会话写入或编辑过的每个文件按最近活动倒序、可搜索；点行进入详情页。0.1.5 与 0.1.7-rc.1 同一份形态（方案 B 的官方面嵌入已于 2026-09-24 回退）。
+- **右栏「产物」页（双线一致）**——page-type 右栏 tab（向导页进入）兼认领方：会话写入或编辑过的每个文件按最近活动倒序、可搜索；点行进入详情页。0.1.5 与 0.1.7-rc.2 同一份形态（方案 B 的官方面嵌入已于 2026-09-24 回退）。
 - **详情页**——面包屑路径头 + 行动作（复制路径恒定可用；宿主探测到对应应用时另有「在文件夹中打开」= 文件管理器选中该文件、「在 IDE 打开」= 文件级精确打开，split button 下拉可选探测到的任一 IDE）；标题行「重新加载」手势重读当前文件的内容（磁盘上的新内容一键进面板，重读期间旧内容保持显示，失败保留旧内容并走既有错误槽）；「内容 / 改动记录」切换——内容是文档形态预览（Markdown/JSON/CSV/HTML 沙箱分级/代码高亮 + 内容搜索），改动记录逐次步进每一次 write/edit 的 diff（官方至今仍无对应维度：workspace-changes 内存态、git-only、宿主重启即失——此维度长期自留，**跟踪上游**）。
 - **工作区外产物同等待遇**——bash 写到工作区外的文件在我们自己的详情页里内容和改动记录都照常可看（走本插件 Remote，官方工作区读覆盖不到）。
 - **回合变更卡片（双线）**——每个已完成回合末尾可收起的「N 个产物」卡片（含 bash 捕获，比官方产物行数据全），逐文件列出行数增减；点击走官方打开路由（可渲染地址由本页认领）。list 槽宿主上同槽官方 deliverables 条目（present 卡 + 内存态 changes 卡）被一等 slot 遮蔽压下——回合区只留这张持久全量卡。
@@ -32,7 +32,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 
 | Host 行 | 结论 |
 | --- | --- |
-| deepseek-harness master（`0.1.7-rc.1`） | ✅ 完整——与 0.1.5 同一形态：自建产物页 extension 档认领可渲染地址（rc.1 的 tab-registry 保留 band 机制）；turnTail list 槽臂附带官方 deliverables 遮蔽 |
+| deepseek-harness master（`0.1.7-rc.2`） | ✅ 完整——与 0.1.5 同一形态：自建产物页 extension 档认领可渲染地址（rc.1 的 tab-registry 保留 band 机制）；turnTail list 槽臂附带官方 deliverables 遮蔽 |
 | npm release（`>= 0.1.5-rc.1`） | ✅ 完整（`verifiedHost: 0.1.5-rc.1`）——同一形态；turnTail 为 chain 槽时按探测回落 select + priority -1 抢占臂 |
 | npm release（`<= 0.1.4.x`） | ❌ 不可用——右栏 tab 体系（`ctx.sidebarRightTabs` / `openResource`）随 0.1.5 落地；旧宿主请停留在旧发布线 |
 

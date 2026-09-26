@@ -44,7 +44,7 @@ dsh plugin --profile web remove @khorsheed/dsh-capability-catalog
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——0.1.5-rc.1 全量 boot 实证通过（42 包含 capture，2026-09-25），经三层兼容修复：[preset-registry 双名探测](../../.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md)、[typert codec 双形状](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md)、[face 自带 zod@4](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md)。`minHost` 即 0.1.5-rc.1，且 0.1.95 是本包首个发布——更早的宿主没有可用发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.7-rc.1）——0.1.7-rc.1 同时是 3080 生产实证线。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.7-rc.2）——0.1.7-rc.2 同时是 3080 生产实证线。
 
 按模式的能力面读取（模式下拉、`snapshotAt` / `snapshotFor` / `modeFaces`、按 preset 的技能投递）按宿主线走两条 roster 面解析 preset 的 standing scope：0.1.5 的无租约 `standingKeyFor`，rc.1 的租约式 `acquireScope`——rc.1 删除了 `standingKeyFor`，本次双线修复前的目录版本在 rc.1 上会静默读成全局层。清单与指纹两条路径每次读完都释放租约。机器可读字段见 `package.json` 的 `dsh.compat`（`minHost`、`verifiedHost`、`notes`）。
 

@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-local-files",
   "description": "Git-agnostic local file browser in the right sidebar: a lazy file tree with structured HTML/Markdown/JSON/CSV/image previews over its own Typert Remote, defaulting to the session's workspace but not limited to it",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },

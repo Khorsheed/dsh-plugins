@@ -57,7 +57,7 @@ host 半边注册的 `inline-html-card` 与 `3d-artifact` 两个 skill 同属一
 ## Compatibility
 
 - npm 发布线(`@deepseek-ai/dsh@0.1.5-rc.1`):✅ 完整——本插件只消费标准 DOM 与客户端运行时 `ClientContext`,不依赖任何 host 服务;minHost 0.1.2-rc.1,0.1.2 之前的宿主请停留在旧发布线。
-- 源码线(deepseek-harness master):✅(verifiedHost: 0.1.2-rc.1)——所依赖的 DOM 锚点在 master(0.1.7-rc.1)复核无变化:`CodeBlock` 仍渲染 `.md-code-block` 容器且 banner 带 info string(CSS-module 哈希类名,由前导文本回退路径识别),`AssistantMarkdown` 仍置 `data-streaming`,`ui-sidebar-browser` 仍注册 `browser` 右侧栏标签类型。
+- 源码线(deepseek-harness master):✅(verifiedHost: 0.1.2-rc.1)——所依赖的 DOM 锚点在 master(0.1.7-rc.2)复核无变化:`CodeBlock` 仍渲染 `.md-code-block` 容器且 banner 带 info string(CSS-module 哈希类名,由前导文本回退路径识别),`AssistantMarkdown` 仍置 `data-streaming`,`ui-sidebar-browser` 仍注册 `browser` 右侧栏标签类型。
 
 ## 已知限制
 

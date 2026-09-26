@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-capture",
   "description": "Rendered fetch (capture) host service: one Remote verb renders a URL in a managed headless Chrome and returns the serialized rendered page with CSSOM styles inlined, so static extractors can read JS-heavy pages",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },

@@ -7,7 +7,7 @@
     "cordis",
     "multi-agent"
   ],
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
@@ -69,8 +69,8 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "0.1.5-rc.1 full-line boot-verified 2026-09-25 (42 packages including capture) through the three compat layers: preset-registry dual-name probe, dual-shape typert codecs, and typert faces carrying zod@4; 0.1.7-rc.1 is the 3080 production-verified line. External coordinators require the unpublished local-agent family with prepared members, shared model/effort controls and authenticated member tools; without it these operations degrade to unavailable. Scoped cwd and cross-restart mappings are supported. Native DSH session model switching retains host semantics. Room vocabulary is registered through the active loader. DSH/Kimi source-host runtime checks and candidate tarball fresh/upgrade checks on the npm host pass; Codex/Claude auth and full P95 streaming acceptance remain pending.",
-      "verifiedHost": "0.1.7-rc.1"
+      "notes": "0.1.5-rc.1 full-line boot-verified 2026-09-25 (42 packages including capture) through the three compat layers: preset-registry dual-name probe, dual-shape typert codecs, and typert faces carrying zod@4; 0.1.7-rc.2 is the 3080 production-verified line. External coordinators require the unpublished local-agent family with prepared members, shared model/effort controls and authenticated member tools; without it these operations degrade to unavailable. Scoped cwd and cross-restart mappings are supported. Native DSH session model switching retains host semantics. Room vocabulary is registered through the active loader. DSH/Kimi source-host runtime checks and candidate tarball fresh/upgrade checks on the npm host pass; Codex/Claude auth and full P95 streaming acceptance remain pending.",
+      "verifiedHost": "0.1.7-rc.2"
     }
   },
   "scripts": {

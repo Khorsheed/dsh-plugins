@@ -44,7 +44,7 @@ dsh plugin --profile web remove @khorsheed/dsh-capability-catalog
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — 0.1.5-rc.1 full-line boot-verified (42 packages including capture, 2026-09-25) through three compat layers: the [preset-registry dual-name probe](../../.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md), [dual-shape typert codecs](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md), and [typert faces carrying zod@4](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md). `minHost` is 0.1.5-rc.1, and 0.1.95 is this package's first published release — older hosts have no compatible line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.7-rc.1) — 0.1.7-rc.1 is also the 3080 production-verified line.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.7-rc.2) — 0.1.7-rc.2 is also the 3080 production-verified line.
 
 Per-mode capability reads (the mode picker, `snapshotAt` / `snapshotFor` / `modeFaces`, preset-scoped skill delivery) resolve a preset's standing scope through whichever roster face the host line offers: lease-free `standingKeyFor` on 0.1.5, the leased `acquireScope` on rc.1 — rc.1 removed `standingKeyFor`, and catalog builds before this dual-face fix silently read the global layer on rc.1. The lease is released after every read, on the listing and the fingerprint path alike. Machine-readable: `dsh.compat` in `package.json` (`minHost`, `verifiedHost`, `notes`).
 

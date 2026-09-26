@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-bundle-conversation-toolbox",
   "description": "Family bundle 会话工具箱: message-tools, message-timeline, session-title-edit, quote, inline-html-render, context-guard and taskpilot in one install. Thin meta package: a patch carrying the members' canonical rows, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
@@ -83,7 +83,7 @@
     ],
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.1.7-rc.1",
+      "verifiedHost": "0.1.7-rc.2",
       "notes": "Pure composition: the bundle mounts the members' canonical rows and registers nothing of its own, so the floor is the members' highest — message-tools, quote and taskpilot floor at 0.1.5-rc.1, the rest at 0.1.2-rc.1. Member-level degraded items on the floor line (e.g. quote's side-chat route probing) are documented in each member's own dsh.compat."
     }
   }

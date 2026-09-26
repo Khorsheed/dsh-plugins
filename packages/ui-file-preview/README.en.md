@@ -8,7 +8,7 @@ The agent worked for an hour; which files did it actually touch, and what did th
 
 ## Features
 
-- **Right-sidebar Produced page (one form on both host lines)** — a page-type right-sidebar tab (entered from the guide page) that is also a claimant: every file the session wrote or edited, latest activity first, searchable; a row click opens the detail view in-tab. 0.1.5 and 0.1.7-rc.1 share the same form (the plan-B embedding into the official pane was reverted on 2026-09-24).
+- **Right-sidebar Produced page (one form on both host lines)** — a page-type right-sidebar tab (entered from the guide page) that is also a claimant: every file the session wrote or edited, latest activity first, searchable; a row click opens the detail view in-tab. 0.1.5 and 0.1.7-rc.2 share the same form (the plan-B embedding into the official pane was reverted on 2026-09-24).
 - **Detail view** — breadcrumb path header with actions (copy path always; "show in folder" = the file selected in the host file manager, and "open in IDE" = file-exact open via a split button listing every probed IDE, when the host probe finds a handler); the title row's "Reload" gesture re-reads the current file's content (fresh on-disk content in one click; the old read stays visible in flight, and a failure keeps it, reporting through the existing error slot); a Content / Change history toggle — document-form previews (markdown/JSON/CSV/tiered sandboxed HTML/highlighted code + content search) and per-write diff stepping (the official side still has no such dimension: workspace-changes is memory-resident, git-only, and lost on a host restart — this dimension stays self-drawn, **tracked upstream**).
 - **Outside-workspace artifacts get the same detail view** — files bash wrote beyond the workspace root read through this plugin's Remote (the workspace-scoped official read cannot serve them); content and change history both work.
 - **Turn mutation card (both lines)** — each finished turn ends with a collapsible "N products" card (including bash captures — broader than the official deliverables row) with per-file line deltas; clicks take the official open route (renderable addresses are claimed by this page). On list-kind hosts the official deliverables entry in the same slot (present card + memory-resident changes card) is shadowed by a first-class slot mechanism (an empty lower-priority body wins the shared cell id) — the turn area keeps only this durable, complete card.
@@ -32,7 +32,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 
 | Host line | Verdict |
 | --- | --- |
-| deepseek-harness master (`0.1.7-rc.1`) | ✅ full — the same form as 0.1.5: the self-drawn page claims renderable addresses at the extension band (rc.1's tab registry kept the band mechanism); the turnTail list arm also carries the official deliverables shadow |
+| deepseek-harness master (`0.1.7-rc.2`) | ✅ full — the same form as 0.1.5: the self-drawn page claims renderable addresses at the extension band (rc.1's tab registry kept the band mechanism); the turnTail list arm also carries the official deliverables shadow |
 | npm release (`>= 0.1.5-rc.1`) | ✅ full (`verifiedHost: 0.1.5-rc.1`) — same form; on chain-kind turnTail slots the registration probes and falls back to the select + priority -1 preemptive arm |
 | npm release (`<= 0.1.4.x`) | ❌ unsupported — the right-sidebar tab system (`ctx.sidebarRightTabs` / `openResource`) landed in 0.1.5; older hosts stay on the previous release line |
 

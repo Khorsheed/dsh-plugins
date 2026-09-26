@@ -41,7 +41,7 @@ dsh plugin --profile web remove @khorsheed/dsh-room
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 支持、带一处设计内降级——0.1.5-rc.1 全量 boot 实证通过（42 包含 capture，2026-09-25），经三层兼容修复（[preset-registry 双名探测](../../.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md)、[typert codec 双形状](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md)、[face 自带 zod@4](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md)）；`minHost` 钉在 0.1.5-rc.1。外部成员依赖 local-agent 家族（core + provider），该家族尚未发布到 npm：缺失时成员准备、共享模型/强度控制与认证成员工具返回不可用，原生 DSH Room 功能保持完整。候选 tarball 在 npm 宿主上的全新安装与升级检查通过，旧 Room 状态得到保留。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.7-rc.1——也是 3080 生产实证线）——Session V4 适配：主 agent followup 的 source 改为生产者归属 kind `room`（V4 原生准入在落盘写入时拒收退役的 `kind: 'plugin'` 包装；0.1.5 宿主的 `user/message` 准入只查 kind 非空，两条线都能落盘），读侧兼认 `room`、`plugin:@khorsheed/dsh-room`（V3→V4 迁移形态）与 V3 包装存量。`conversation.chat.node` rc.1 契约复验通过（5 个 room 渲染器均不触 hookContext 与 disclosure 工厂）。DSH/Kimi 协调者、委派、两阶段验收与中断恢复已端到端实测——见[验收记录](../../docs/acceptance/room-coordinator-2026-09-19.md)。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.7-rc.2——也是 3080 生产实证线）——Session V4 适配：主 agent followup 的 source 改为生产者归属 kind `room`（V4 原生准入在落盘写入时拒收退役的 `kind: 'plugin'` 包装；0.1.5 宿主的 `user/message` 准入只查 kind 非空，两条线都能落盘），读侧兼认 `room`、`plugin:@khorsheed/dsh-room`（V3→V4 迁移形态）与 V3 包装存量。`conversation.chat.node` rc.1 契约复验通过（5 个 room 渲染器均不触 hookContext 与 disclosure 工厂）。DSH/Kimi 协调者、委派、两阶段验收与中断恢复已端到端实测——见[验收记录](../../docs/acceptance/room-coordinator-2026-09-19.md)。
 
 ## 已知限制
 

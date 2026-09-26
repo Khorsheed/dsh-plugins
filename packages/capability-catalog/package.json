@@ -9,7 +9,7 @@
     "catalog",
     "skills"
   ],
-  "version": "0.1.95",
+  "version": "0.1.96",
   "publishConfig": {
     "access": "public"
   },
@@ -65,8 +65,8 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "0.1.5-rc.1 full-line boot-verified 2026-09-25 (42 packages including capture) through the three compat layers: preset-registry dual-name probe, dual-shape typert codecs, and typert faces carrying zod@4; 0.1.7-rc.1 is the 3080 production-verified line",
-      "verifiedHost": "0.1.7-rc.1"
+      "notes": "0.1.5-rc.1 full-line boot-verified 2026-09-25 (42 packages including capture) through the three compat layers: preset-registry dual-name probe, dual-shape typert codecs, and typert faces carrying zod@4; 0.1.7-rc.2 is the 3080 production-verified line",
+      "verifiedHost": "0.1.7-rc.2"
     }
   },
   "scripts": {
