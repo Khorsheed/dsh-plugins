@@ -2,6 +2,14 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— 0.1.7 双线适配波 + 十个已发布包的重发预备（发布流首练）
+
+- **背景**：npm 上十包的产物是 0.1.5 前的形状，rc.1 宿主装上即挂；本波把 rc.1 适配与 0.1.5 回退兼容一次性做完并实证（0.1.5-rc.1 全量 42 包 boot 实证 2026-09-25，含 capture；0.1.7-rc.1 为 3080 生产验证线），十个已发布包 patch+1 重发：ankh-guard 0.3.1、context-guard 0.2.2、file-preview 0.3.1、ui-file-preview 0.3.1、message-timeline 0.2.2、message-tools 0.3.1、session-title-edit 0.2.2、taskpilot 0.3.1、ui-shortcuts 0.2.2、whalesong 0.2.2
+- **0.1.5 兼容三层修复**（实证驱动，层层揭开）：① preset-registry 双名探测——rc.1 把官方包改名为 `dsh-agent-preset-registry`，静态导入在只装旧名的 0.1.5 上炸穿 loader 树，改运行期双名探测（ankh-guard / capability-catalog / room）；② typert codec 双形状——0.1.5 loader 校验立即求值 `schema`、rc.1 校验惰性 `create()`，gen-typert 写出接缝给每个 codec 补双形状（全 15 个 typert 包）；③ face 自钉 zod@4——capture 的 puppeteer 链把 zod@3 抬到 profile 根会劫走 face 的裸 `import 'zod'`，pack-dist 现在给带 typert 面的 tarball 保留 zod 依赖
+- **图标自持化**：两条宿主线的图标导出名零交集（0.1.5 像素后缀 vs rc.1 字重后缀），外部化引用在 0.1.5 上是 undefined 炸槽位（React #130）；新增 `scripts/sync-icon-artwork.mts` 生成器把用到的 rc.1 图样摊平成 20 个包各自的 `src/client/icons.tsx`（纯 SVG 无宿主身份，双线渲染一致，每包 bundle +0.4~18.5 KB）；上游 `./icons` 发布出口提案见 `docs/upstream-proposals/2026-09-26-ui-primitives-icons-export.md`
+- **家族 bundle 行级配置**：成员设置卡从 `plugins.bundle.config`（成员包名）迁到 `plugins.row.config`（`<bundle>#<行 id>`）——成员不再是 profile 直依时插件页只给 bundle 开详情页，卡从 bundle 页的行级「配置」入口打开（local-agent 四 provider + context-guard）
+- **插件清单中文化**：37 包补 `locale/*.json` 展示元数据，rc.1 的 `readPluginMeta` 卡面出中文标题/描述
+
 ## Unreleased —— capability-catalog：技能环境提示的退役 source 外壳在 rc.1 杀回合（已修）
 
 - **修 turn 级事故**：envHint（`skill` 工具 `tools/post-execute` 上的凭证映射提示）把注入消息盖成 0.1.5 时代的 `{kind: 'plugin', plugin: 'capability-catalog'}`——rc.1 的 v4 持久层在 append 编码时拒绝裸 `'plugin'` kind（退役外壳），拒绝在回合内抛出、被拍平成 `UNKNOWN`，日志停在 `tool/call`（3093 实测：模型加载带已配置凭证声明的技能必炸，普通回合无恙）。这处写入藏在 `as unknown as never` 强转后，逃过了 rc.1 波按构造函数的清查；以字面量 `kind: 'plugin'` 全仓 grep 复核，生产写入只此一处（其余为刻意的测试 fixture 与 message-tools 的旧日志读取侧）

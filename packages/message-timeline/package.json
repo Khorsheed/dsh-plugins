@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-message-timeline",
   "description": "Message timeline: a flat floating list over the conversation scrollport that jumps to any user message, with a tick-only rest state",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

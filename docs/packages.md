@@ -17,19 +17,19 @@
 
 | 包 | 目录 | 版本 | 形态 | 组件 | 客户端 | minHost | 出现在 profile |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | `packages/bundle-conversation-toolbox` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.4.8 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.95 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-datasets-tool` | `packages/datasets-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-eval-tool` | `packages/eval-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
-| `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.3.0 | bundle | — | — | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.3.1 | bundle | — | — | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.13 | bundle | — | web | 0.1.2-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.1.0-rc.1 | bundle | — | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.1.0-rc.6 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
@@ -40,8 +40,8 @@
 | `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.1.0-rc.6 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-local-agent-tool-subagent` | `packages/local-agent-tool-subagent` | 0.1.0-rc.6 | composition | provider-mounted-row | — | 0.1.2-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
-| `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
-| `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-mission` | `packages/mission` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-mission-tool` | `packages/mission-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
@@ -49,15 +49,15 @@
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-room` | `packages/room` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-room-tool` | `packages/room-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
-| `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-typesafe` | `packages/typesafe` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-typesafe-tool` | `packages/typesafe-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/ui-content-preview` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-client-ui-file-preview` | `packages/ui-file-preview` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
-| `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
-| `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.1 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-client-ui-file-preview` | `packages/ui-file-preview` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
+| `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-worktrees-tool` | `packages/worktrees-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
 
