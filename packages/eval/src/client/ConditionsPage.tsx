@@ -99,7 +99,7 @@ function EndpointEditor(props: {
           if (event.key === 'Escape') onCancel()
         }}
       />
-      <Button size="sm" disabled={busy} onClick={() => { onSubmit(value) }}>{t('conditions.endpointSave')}</Button>
+      <Button variant="outline" size="sm" disabled={busy} onClick={() => { onSubmit(value) }}>{t('conditions.endpointSave')}</Button>
       <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>{t('conditions.endpointCancel')}</Button>
     </span>
   )
@@ -454,7 +454,7 @@ export function ConditionsTable(props: {
                       </Chip>
                       {row.status !== 'ready' && <span className={css.dim}>{lockCell(row, t)}</span>}
                       {row.status !== 'ready' && (
-                        <Button
+                        <Button variant="outline"
                           size="sm"
                           disabled={busy !== null}
                           title={t('conditions.provisionHint')}

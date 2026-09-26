@@ -142,7 +142,7 @@ function ColumnHead(props: {
       {/* 过程 is the player's transcript, and a transcript names its harness:
           behind the blind it is folded away with the name. */}
       {!blind && onOpenSession !== null && column.childSessionId !== null && (
-        <Button size="sm" onClick={() => { onOpenSession(column.childSessionId as string, column.parentSessionId) }}>
+        <Button variant="outline" size="sm" onClick={() => { onOpenSession(column.childSessionId as string, column.parentSessionId) }}>
           {t('answer.process')}
         </Button>
       )}
@@ -221,7 +221,7 @@ export function AnswerView(props: AnswerViewProps) {
   return (
     <div className={css.view}>
       <div className={css.bar}>
-        {onBack !== null && <Button size="sm" onClick={onBack}>{t('answer.back')}</Button>}
+        {onBack !== null && <Button variant="outline" size="sm" onClick={onBack}>{t('answer.back')}</Button>}
         <span className={css.title}>{t('answer.title', { task })}</span>
         {reps.length > 1 && (
           <div className={base.segmented} role="group" aria-label={t('answer.reps')}>
@@ -346,7 +346,7 @@ export function AnswerView(props: AnswerViewProps) {
                     <div className={css.unjudgedSummary} role="note">
                       <span>{t(col.source === 'script' ? 'answer.scriptOnly' : 'answer.noneJudged', { count })}</span>
                       {onRejudge !== null && (
-                        <Button size="sm" onClick={() => { onRejudge(col) }}>{t('judge.rejudge')}</Button>
+                        <Button variant="outline" size="sm" onClick={() => { onRejudge(col) }}>{t('judge.rejudge')}</Button>
                       )}
                     </div>
                   )

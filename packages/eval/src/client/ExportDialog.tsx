@@ -134,7 +134,7 @@ export function ExportDialog(props: {
       closeLabel={t('export.close')}
       footer={(
         <>
-          <Button size="sm" onClick={onClose}>{t('export.cancel')}</Button>
+          <Button variant="outline" size="sm" onClick={onClose}>{t('export.cancel')}</Button>
           <Button size="sm" variant="outline" disabled={busy || outDir.trim() === ''} onClick={check}>
             {t('export.plan')}
           </Button>

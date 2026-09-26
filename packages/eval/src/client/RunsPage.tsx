@@ -338,7 +338,7 @@ function RecordDetail(props: {
           {cell === null ? '' : t('record.head', { task: cell.task ?? '—', condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
         </span>
         <span className={css.barSpacer} />
-        <Button size="sm" onClick={onClose}>{t('drawer.close')}</Button>
+        <Button variant="outline" size="sm" onClick={onClose}>{t('drawer.close')}</Button>
       </div>
       <div className={css.drawerBody}>
         {loading && cell === null && <div className={css.empty}>{t('drawer.loading')}</div>}
@@ -481,7 +481,7 @@ function RecordDetail(props: {
                       {round.selfJudged ? ` · ${t('record.judgeSelf')}` : ''}
                     </span>
                     {round.error !== null && <span className={css.dim}>{round.error}</span>}
-                    <Button
+                    <Button variant="outline"
                       size="sm"
                       disabled={round.childSessionId === null}
                       title={round.childSessionId === null ? t('record.judgeNoSession') : undefined}
@@ -557,7 +557,7 @@ function RecordDetail(props: {
             </Field>
 
             <div className={css.drawerActions}>
-              <Button
+              <Button variant="outline"
                 size="sm"
                 disabled={cell.childSessionId === null}
                 title={cell.childSessionId === null ? t('drawer.noSession') : undefined}
@@ -566,7 +566,7 @@ function RecordDetail(props: {
                 {t('drawer.openSession')}
               </Button>
               {cell.task !== null && (
-                <Button
+                <Button variant="outline"
                   size="sm"
                   onClick={() => { if (cell.task !== null) onOpenAnswers({ task: cell.task, condition: cell.condition, rep: cell.rep }) }}
                 >
@@ -594,14 +594,14 @@ function RecordDetail(props: {
                 placeholder={t('retry.reason')}
                 aria-label={t('retry.reason')}
               />
-              <Button
+              <Button variant="outline"
                 size="sm"
                 disabled={reason.trim() === ''}
                 onClick={() => { onRetry(reason.trim(), category); setReason('') }}
               >
                 {t('action.retry')}
               </Button>
-              <Button size="sm" onClick={onRelease}>{t('action.release')}</Button>
+              <Button variant="outline" size="sm" onClick={onRelease}>{t('action.release')}</Button>
               <Button size="sm" variant="outline" onClick={onExport}>{t('action.export')}</Button>
             </div>
             {cell.childSessionId === null && <div className={css.dim}>{t('drawer.noSession')}</div>}
@@ -694,7 +694,7 @@ export function RunsPage(props: {
     <div className={css.notice}>
       <div>{t('runs.focus', { task: focus.task, condition: focus.condition, matched: compact ? population.length : shown.length })}</div>
       <div className={css.actions}>
-        <Button size="sm" onClick={onClearFocus}>{t('runs.focusClear')}</Button>
+        <Button variant="outline" size="sm" onClick={onClearFocus}>{t('runs.focusClear')}</Button>
       </div>
     </div>
   )
@@ -737,7 +737,7 @@ export function RunsPage(props: {
         <div className={css.notice}>
           <div>{t('design.single')}</div>
           <div className={css.actions}>
-            <Button size="sm" onClick={onAddGroup}>{t('design.addGroup')}</Button>
+            <Button variant="outline" size="sm" onClick={onAddGroup}>{t('design.addGroup')}</Button>
           </div>
         </div>
       )}
@@ -806,7 +806,7 @@ export function RunsPage(props: {
               {cells !== null && shown.length === 0 && (
                 <EmptyState title={t('cells.empty')} hint={t('cells.emptyHint')}>
                   {filter !== 'all' && (
-                    <Button size="sm" onClick={() => { onSetFilter('all') }}>{t('cells.emptyClear')}</Button>
+                    <Button variant="outline" size="sm" onClick={() => { onSetFilter('all') }}>{t('cells.emptyClear')}</Button>
                   )}
                 </EmptyState>
               )}

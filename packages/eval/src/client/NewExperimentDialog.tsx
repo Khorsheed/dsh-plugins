@@ -243,10 +243,10 @@ export function NewExperimentDialog(props: {
       closeLabel={t('export.close')}
       footer={(
         <>
-          <Button size="sm" onClick={onClose}>{t('new.cancel')}</Button>
+          <Button variant="outline" size="sm" onClick={onClose}>{t('new.cancel')}</Button>
           {/* Every step goes back, and back never discards: the answers live
               above this component's steps, not inside them. */}
-          <Button size="sm" disabled={step === 1} onClick={() => { setStep(step - 1) }}>{t('new.back')}</Button>
+          <Button variant="outline" size="sm" disabled={step === 1} onClick={() => { setStep(step - 1) }}>{t('new.back')}</Button>
           {step < 4
             ? (
               <Button
@@ -331,7 +331,7 @@ export function NewExperimentDialog(props: {
             }}
             empty={t('new.conditionsEmpty')}
           />
-          <Button size="sm" onClick={() => { setMintOpen(!mintOpen) }}>
+          <Button variant="outline" size="sm" onClick={() => { setMintOpen(!mintOpen) }}>
             {mintOpen ? t('new.mintClose') : t('new.mintOpen')}
           </Button>
         </Row>

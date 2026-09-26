@@ -472,16 +472,16 @@ function ConclusionCard(props: {
             ))}
       <div className={css.conclusionActions}>
         {uncovered !== null && (
-          <Button size="sm" onClick={() => { onRejudge(uncovered) }}>
+          <Button variant="outline" size="sm" onClick={() => { onRejudge(uncovered) }}>
             {t('report.next.rejudge', { condition: uncovered })}
           </Button>
         )}
         {firstTask !== null && (
-          <Button size="sm" onClick={() => { onOpenAnswers({ task: firstTask, condition: null, rep: null }) }}>
+          <Button variant="outline" size="sm" onClick={() => { onOpenAnswers({ task: firstTask, condition: null, rep: null }) }}>
             {t('report.next.answers')}
           </Button>
         )}
-        <Button size="sm" onClick={onAskAnalysis}>{t('report.next.analysis')}</Button>
+        <Button variant="outline" size="sm" onClick={onAskAnalysis}>{t('report.next.analysis')}</Button>
       </div>
       {validity.total > 0 && (
         <div className={css.conclusionMeta}>
@@ -1018,11 +1018,11 @@ function UnitsStrip(props: {
               onClick={() => { setConfirming(false); onReclaim() }}>
               {t('report.reclaimConfirm')}
             </Button>
-            <Button size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
+            <Button variant="outline" size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
           </>
         )
         : (
-          <Button size="sm" disabled={reclaiming} onClick={() => { setConfirming(true) }}>
+          <Button variant="outline" size="sm" disabled={reclaiming} onClick={() => { setConfirming(true) }}>
             {t('report.reclaim')}
           </Button>
         )}
@@ -1276,7 +1276,7 @@ export function ReportPage(props: {
           title={t('report.void', { reason: report.closure.reason ?? DASH })}
           hint={t('report.voidHint')}
         >
-          <Button size="sm" onClick={onOpenRuns}>{t('cta.void')}</Button>
+          <Button variant="outline" size="sm" onClick={onOpenRuns}>{t('cta.void')}</Button>
         </EmptyState>
       </div>
     )
@@ -1304,19 +1304,19 @@ export function ReportPage(props: {
               onClick={() => { setConfirming(false); onFinalize() }}>
               {t('report.finalizeConfirm')}
             </Button>
-            <Button size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
+            <Button variant="outline" size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
           </>
         )
         : (
-          <Button size="sm" disabled={finalizing || report.bundleDir === null} onClick={() => { setConfirming(true) }}>
+          <Button variant="outline" size="sm" disabled={finalizing || report.bundleDir === null} onClick={() => { setConfirming(true) }}>
             {t('report.finalize')}
           </Button>
         )}
-      <Button size="sm" onClick={onExport}>{t('action.export')}</Button>
+      <Button variant="outline" size="sm" onClick={onExport}>{t('action.export')}</Button>
       {/* The repeat, beside the dialog that made the first one. It is
           disabled with a reason rather than hidden: a reader who has just
           written a final verdict looks here for it. */}
-      <Button
+      <Button variant="outline"
         size="sm"
         disabled={reexporting || report.reexportable !== true}
         title={report.reexportable === true ? '' : t('report.reexportNeedsDialog')}
@@ -1365,7 +1365,7 @@ export function ReportPage(props: {
               placeholder={t('report.lookInDir')}
               aria-label={t('report.lookInDir')}
             />
-            <Button size="sm" disabled={dir.trim() === ''} onClick={() => { onLookIn(dir.trim()) }}>
+            <Button variant="outline" size="sm" disabled={dir.trim() === ''} onClick={() => { onLookIn(dir.trim()) }}>
               {t('report.lookInGo')}
             </Button>
           </div>

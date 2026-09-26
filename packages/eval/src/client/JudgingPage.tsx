@@ -216,14 +216,14 @@ function CriterionRow(props: {
       <div className={css.criterionAnswer}>
         <Button
           size="sm"
-          {...(answer?.pass === true ? { variant: 'primary' as const } : {})}
+          variant={answer?.pass === true ? 'primary' : 'outline'}
           onClick={() => { onAnswer({ pass: true, evidence }) }}
         >
           {t('judge.pass')}
         </Button>
         <Button
           size="sm"
-          {...(answer?.pass === false ? { variant: 'primary' as const } : {})}
+          variant={answer?.pass === false ? 'primary' : 'outline'}
           onClick={() => { onAnswer({ pass: false, evidence }) }}
         >
           {t('judge.fail')}
@@ -385,7 +385,7 @@ function ClosureExits(props: {
           <Button
             key={exit}
             size="sm"
-            {...(exit === 'final' ? { variant: 'primary' as const } : {})}
+            variant={exit === 'final' ? 'primary' : 'outline'}
             disabled={closing || (exit === 'final' && !anyGraded)}
             title={exit === 'final' && !anyGraded ? t('closure.finalNeedsGrade') : t(`closure.exitHint.${exit}`)}
             onClick={() => { take(exit) }}
@@ -413,7 +413,7 @@ function ClosureExits(props: {
             >
               {t(`closure.confirm.${asking}`)}
             </Button>
-            <Button size="sm" onClick={() => { setAsking(null) }}>{t('closure.cancel')}</Button>
+            <Button variant="outline" size="sm" onClick={() => { setAsking(null) }}>{t('closure.cancel')}</Button>
           </div>
         </div>
       )}
@@ -502,7 +502,7 @@ export function JudgingPage(props: {
             <span className={css.judgeAbsentTitle}>{t('judge.absent', { cells: absent.join('、'), count: absent.length })}</span>
             <span className={css.dim}>{t('judge.absentBody')}</span>
           </div>
-          <Button size="sm" onClick={() => { onRejudge(absent) }}>{t('judge.rejudge')}</Button>
+          <Button variant="outline" size="sm" onClick={() => { onRejudge(absent) }}>{t('judge.rejudge')}</Button>
         </div>
       )}
       {/* A re-read over an already-rendered queue: say so rather than blanking
