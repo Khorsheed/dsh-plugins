@@ -30,7 +30,7 @@
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-eval-tool` | `packages/eval-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.3.1 | bundle | — | — | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
-| `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.13 | bundle | — | web | 0.1.2-rc.1 | web-dev, web-eval |
+| `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.14 | bundle | — | web | 0.1.2-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.1.0-rc.1 | bundle | — | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.1.0-rc.6 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.1.0-rc.6 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
@@ -48,18 +48,18 @@
 | `@khorsheed/dsh-presets` | `packages/presets` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-room` | `packages/room` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | web-dev |
-| `@khorsheed/dsh-room-tool` | `packages/room-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
+| `@khorsheed/dsh-room-tool` | `packages/room-tool` | 0.1.1 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-typesafe` | `packages/typesafe` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-typesafe-tool` | `packages/typesafe-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-typesafe-tool` | `packages/typesafe-tool` | 0.1.1 | composition | preset-composed-row | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/ui-content-preview` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-file-preview` | `packages/ui-file-preview` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.2 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | web-dev |
-| `@khorsheed/dsh-worktrees-tool` | `packages/worktrees-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
+| `@khorsheed/dsh-worktrees-tool` | `packages/worktrees-tool` | 0.1.1 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
 
 ## 整合 profile
 
