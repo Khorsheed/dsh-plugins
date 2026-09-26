@@ -48,5 +48,5 @@ Full-monorepo `pnpm run build` + `pnpm run test` against `DSH_HARNESS=~/code/dee
 
 ## Related
 
-- [ui-shortcuts rides the official shortcuts service](../feature/2026-09-26-ui-shortcuts-official-service-dual-path.md) (dual-path details).
+- [ui-shortcuts rides the official shortcuts service](2026-09-26-ui-shortcuts-official-service-dual-path.md) (dual-path details).
 - [Preset tool rows declare their core as an inject](../bug-fix/2026-09-27-preset-tool-rows-declared-core-inject.md) — the rc.1-era mount-order lesson this inventory confirms unchanged for rc.2.

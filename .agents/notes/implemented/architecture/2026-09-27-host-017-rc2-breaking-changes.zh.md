@@ -48,5 +48,5 @@ main 现在对 rc.2 构建、测试全绿,插件代码改动只有 message-tools
 
 ## 相关
 
-- [ui-shortcuts 搭乘官方 shortcuts 服务](../feature/2026-09-26-ui-shortcuts-official-service-dual-path.md)(双路径细节)。
+- [ui-shortcuts 搭乘官方 shortcuts 服务](2026-09-26-ui-shortcuts-official-service-dual-path.zh.md)(双路径细节)。
 - [preset 组合的工具行以 inject 声明 core](../bug-fix/2026-09-27-preset-tool-rows-declared-core-inject.zh.md)——rc.1 时代的挂载序教训,本清单确认 rc.2 未再变。
