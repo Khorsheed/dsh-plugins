@@ -407,8 +407,8 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T76 | ✅ 已合（`ebdf74d8`，2026-09-25；合 main 提交 `b26345ec` + 双线读工具块 `dcf84812`）；补拍 ✅（2026-09-26，main `82a69fb7` 在 0.1.5-rc.1 上，datasets 图标全出，console 零报错；验收见 §三「T76 补充（二）」块后） | D3 会话面：eval_plan_draft 工具行渲染成实验卡（宿主 tool.call.toolview，无批准按钮）、eval_experiment_get、实验 tab 标签计数待证、S18 退路；文案见 §三「T76」 | T73 T72 | 会话里起草 → 打开实验设计一跳到位 |
 | T77 | 代码 ✅（`ced3702e` → main `53b93082`，2026-09-24） | 源码模式装不出来：`install.sh:327` 算同族包只看 dependencies / peerDependencies，`scripts/pack-dist.ts:343` 只改写 `workspace:^`；`e9110d52` 把 content-preview 以 `workspace:*` 加进 local-files / ui-file-preview / worktrees 的 devDependencies，pack 时 ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL（T73 分支 1 与 T72 验收各自撞上、各自临时绕过）。文案见 §三「T77」 | 无 | 从 detached worktree 跑 `install.sh --source … --fresh` 到临时 DSH_HOME 一次成功 |
 | T78 | ❌ 不成立（2026-09-25，main `9da732aa`；原因见 §三 T78 末尾「结果」） | host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟：main 已钉官方线 0.1.7-rc.1、eval 家族做了「双线」适配，评测线 3171 与临时实例仍是 0.1.5-rc.1；只回答「当前 main 能不能在评测线上装得起、跑得通」，不修代码。文案见 §三「T78」 | 无（与 T76 合 main 并行） | 成立 → 3171 照常重装；不成立 → 错误原文 + 定位提交，交用户定钉旧提交还是换线 |
-| T79 | 验收（联合走查，可发的前置见文案） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
-| T80 | 代码（待 T79） | 收口补充一轮：按 T79 的清单改；文案在 T79 之后写 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
+| T79 | ✅ 清单已合（`bc34de1d`，2026-09-26：P0 1 / P1 12 / P2 16，见 `profiles/web-eval/docs/t79-closeout-walkthrough.md`） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
+| T80 | 代码（可发，2026-09-26，四条：T80a 先合，T80b / c / d 并行） | 收口补充一轮：按 T79 清单改，P0 + 全部 P1 + 协调者提升的 12 条 P2。文案见 §三「T80」 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
 | T81 | ✅ 收口（2026-09-26）：阶段一 main 在 0.1.5-rc.1 上 a–e 全过；阶段二被 main 的 `d49f29af` 取代，不合 | 评测线在 0.1.5 上恢复。typert 双形态 codec（`00cfa1d6`）、preset 双名探测（`380a469c`）、图标自带（`d49f29af`：`scripts/sync-icon-artwork.mts` 给每个包生成 `src/client/icons.tsx`，0.1.5 与 0.1.7 都不再按名字取宿主图标）都由各包负责人在 main 上做了。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；datasets 图标面由 T76 补拍一并看 |
 | T82 | 代码（待排，T81 之后） | web-eval 在 0.1.7-rc.1 上：preset 迁 bundle、install.sh 0.1.7 分支、0.1.7 临时实例冒烟、受试对象版本与宿主版本是否解耦（原 T81 文案，改号） | T81 | 0.1.7 临时实例上 a–e 全过，0.1.5 照旧 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
@@ -3580,7 +3580,7 @@ main 提交号、端口、就绪秒数、第 2 / 4 步的告警摘录（打码�
 次要：file-preview、local-files、taskpilot 的 tarball 把 `dsh-client-ui-sidebar-right` 的 peer 写成 `^0.1.7-rc.1`；浏览器端 `dsh-client-store` / `dsh-client-ui-primitives` 在 0.1.5 工具链里没有（local-agent、mission、context-guard 在用）——都没走到浏览器，未判。
 影响：T79 走查、3171 重装（含 T73 试点）、T76 补拍都卡在这里；T81「0.1.5 能跑通」的前提不成立，等用户定路线。实施者起 3197 没先等协调者回复，事后补报，已释放。
 
-### T79 · 联合走查：对照交互稿 v5 的 13 个场景，产出收口补充清单（可发，2026-09-26：T75 / T76 已合，T81 在 0.1.5 上成立）
+### T79 · 联合走查：对照交互稿 v5 的 13 个场景，产出收口补充清单（已完成，2026-09-26：清单合入 `bc34de1d`，裁定见 T80）
 
 ```text
 # 任务 T79：I5 收口联合走查（交互稿作者 + 协调者）
@@ -3609,6 +3609,129 @@ I5 收口批的代码（T71–T76）都已写完。用户 2026-09-25 定：先�
 
 ## 回报
 清单路径、P0 / P1 / P2 各几条、按包的批次建议、截图路径。通用提醒照旧。
+```
+
+
+### T80 · 收口补充一轮：按 T79 清单改到交互稿 v5 的同等层次（可发，2026-09-26）
+
+**协调者对 T79 清单的裁定**（交互稿作者走查、协调者对照截图复核，列表页与结果对比页的差距与清单一致）：
+
+- P0 与 12 条 P1 全收。P0 的范围扩一处：`profiles/web-eval/skills/eval-planning/SKILL.md` 和 profiles/web-eval、eval、eval-tool 的 README、ui-spec、architecture 里也还有「计划审阅」，一并改。
+- P2 里收 12 条，理由是它们在交互稿里看得见、改动是文案或局部版式，不做就到不了同等层次：1 阶段 tab 状态点、2 设计页脚术语、5「怎么判」写全、6 就绪行冗余「准备环境」（连同 400 宽「批准并启动」折行）、7 提醒的「不影响启动」和后果句、9 阶段条措辞、10 作答视图逐条「未判」和补判入口、11 主按钮随阶段变、12 判据表、13 效率块二选一（留条形图，表收进折叠）、14 停滞原因进进度列（随 P1-1）、15 题集详情两栏（随 P1-11）。
+- P2 缓做 4 条，记进下一轮：3 设计段出处行、4 规模与花费估算（要新算）、8 就绪检查项列表、16 datasets 缺席的三段式拒绝。
+- 三条默认照清单：旧运行批量归档由用户点、X-no-patch 极性先问出题方（不改页面）、短实验永不排名。
+- 分四条发，按文件切开以便并行：T80a（P0，最小，先合）；T80b（datasets）；T80c（eval 列表 + 人工评估 + 运行记录 + 作答视图）；T80d（eval 实验设计 + 结果对比）。c 与 d 共用 `locales.ts` 与 `LabView.module.css`：各自把新键 / 新样式放在自己页面的块里，不重排别人的；后合的那条合 main、graft 解。T80a 合入后 c / d 再合 main 一次。
+
+**T80a：模型面的页面名对齐（P0）**
+
+```text
+# 任务 T80a：「计划审阅」→「实验设计」
+
+## 背景
+T79 走查的唯一 P0：模型面提示词让 agent 告诉人去「实验室 › 计划审阅 › 批准并启动」，这个页面名 T67 就没了，现在叫「实验设计」。agent 会照着说错话。
+
+## 做法
+从本地 main（≥ 本文所在提交）开 worktree ../dsh-plugins-wt-t80a，分支 fix/t80a-design-page-name。把下列文件里指页面的「计划审阅」改成「实验设计」（历史记录、Agent Note、iterations、t79 清单不改）：packages/eval/src/tool.ts（第 215 行附近的描述）、packages/eval-tool/src/index.ts 的 EVAL_PROMPT、packages/eval 与 eval-tool 的 README（中英 + sidecar 重录）、profiles/web-eval/skills/eval-planning/SKILL.md、profiles/web-eval/README.md、profiles/web-eval/docs/ui-spec.md、architecture.md。顺手把 README 里「条件页的 provision 按钮」这类旧说法对齐成现在的页面名。改完 grep 一遍，除历史文档外不剩。英文面若写的是页面英文名，照 locales.ts 的英文值。
+
+## 完成判据
+eval、eval-tool 构建与测试全绿（提示词若被测试钉住，改测试的期望、说明为什么）；pre-commit 过。不需要截图。
+
+## 回报
+分支与 commit、改了哪些文件、grep 结果。通用提醒照旧。
+```
+
+**T80b：datasets 题集 tab（P1-11、P1-12、P2-15）**
+
+```text
+# 任务 T80b：题集列表与详情到交互稿 v5 的层次
+
+## 背景
+T79 清单（profiles/web-eval/docs/t79-closeout-walkthrough.md）第 11 场景：列表没有表头、可见层原样写 visible、「用于」平铺 21 个实验名；详情页右栏在 400 宽被挤成竖排（⑦），可见性靠逐文件彩色标签。
+
+## 先读
+清单第 11 场景与 P1-11 / P1-12 / P2-15；交互稿 v5 的「题库 tab」场景（~/.dsh/scratch/t79-shots/v5/11-lib.png 与 proposals/prototypes/eval-journey-redesign.html）；T76 补拍 t76-shots/merge/10–21；packages/datasets/src/client/RegistryList.tsx、DatasetDetail.tsx、DatasetsView.module.css、vocab.ts。
+
+## 分支
+worktree ../dsh-plugins-wt-t80b，分支 feat/t80b-datasets-tab；只改 packages/datasets 的 client 与 README。
+
+## 已定决定
+1. 列表加表头：仓库 · 题集 / 最新版本 / 题数 / agent 可见 / 用在哪些实验。
+2. 可见层写人话：「只看题面 / 含答案」（按现有 visible 层取值映射，映射放 vocab.ts；未知取值原样显示并带悬停说明，不猜）。
+3. 「用于」改成「N 个实验 · 分布在 M 个版本」，点击展开明细。
+4. 详情页按「选手将看到 / 只有判官和探针看得到」两栏；窄屏（< 700px）改上下排，右栏到下方，顶部按钮不换行。逐文件彩色标签可以保留为次要信息。
+5. 图标只用本包 icons.tsx；要新图标照 d49f29af 的做法加进生成器，跑 --check。
+
+## 完成判据
+datasets 测试全绿、gate 过；0.1.5-rc.1 临时实例（装法照 T76 补充（二），端口先报协调者）上明 / 暗 / 400 截图：列表、详情展开、详情 400 宽，放 ~/.dsh/scratch/t80b-shots/，与 v5 的 11-lib 并排对照写一句结论；console 零报错。
+
+## 回报
+分支与 commit、Agent Note、截图路径与对照结论。通用提醒照旧。
+```
+
+**T80c：eval 列表 + 人工评估 + 运行记录 + 作答视图（P1-1/2/3/6/7/9/10，P2-1/9/10/11/14）**
+
+```text
+# 任务 T80c：实验室的「列表、运行、作答、人工评估」到交互稿 v5 的层次
+
+## 背景
+T79 清单第 1、6、7、8、10 场景。列表是九列平表、每行只有「归档」、21 条旧运行占满「需要你处理」、「评估中」与进度 0/1 口径不一；运行记录的格子只有圆点和灰 chip、同样的记录显示两遍、状态词「已释放」；人工评估进来右栏是空的、判官缺席是灰字、一致性面板全是「—」、评分提示的 ** 原样露出；作答视图 400 宽第二列被挤出去。
+
+## 先读
+清单全文（尤其第二节 1、6、7、8、10 场景，第四节 P1-1/2/3/6/7/9/10 与 P2-1/9/10/11/14）；v5 截图 ~/.dsh/scratch/t79-shots/v5/01-map、06-run、07-answer、08-judge、10-list 与交互稿 html；真机截图 t79-shots/{light,dark,400}-01、04、06；packages/eval/src/client/LabView.tsx、RunsPage.tsx、Grid.tsx、JudgingPage.tsx、AnswerView.tsx、parts.tsx、locales.ts、LabView.module.css；packages/eval/src/experiments.ts 的状态推导与 T72 的 Agent Note；eval_run_status（eval-tool）的状态词。
+
+## 分支
+worktree ../dsh-plugins-wt-t80c，分支 feat/t80c-lab-journey；改 packages/eval（client、experiments.ts 与相关单测、README 双语）。eval-tool 只在状态词确实要跟着变时改提示词里的词。与 T80d 同包：新文案键和样式放在自己页面的块里；T80a 合入后合一次 main；T80d 若先合，你合 main、graft 解。
+
+## 已定决定
+1. 列表行卡片化（P1-1）：第一行名称 + 状态 chip，第二行问题原文（没有就一句话规模）；右侧每行一个主动作按状态定——待批准 → 去批准、停滞 → 重跑、评估中 → 去人工评估、已完成 → 看结论、草稿 → 去校验；「归档」进溢出菜单或悬停出现；「旧运行」标记不挤名称；停滞原因写进进度位置（P2-14）；标记行的内边距随卡片化解决（⑧）。
+2. 「需要你处理」组头放「归档 N 条旧运行」（P1-2），点了先确认，确认文案写清能不能撤销（照 eval-archive 注解的实际语义写）。
+3. 状态口径统一（P1-3）：选一个口径让列表、详情、eval_run_status 三处一致，带单测；Agent Note 写明为什么选它。
+4. 运行记录（P1-7）：格子 ≤ 12 时只显示网格，格子是小卡（组名、状态词、题 · 次、用时），点开是阶段时间线 +「看作答」；状态词用列表的（「完成」不是「已释放」）；「本次实验汇总」里的术语改人话或收进折叠。
+5. 人工评估（P1-6）：打开落在第一道未评题；判官缺席做成提醒卡（缺在哪几格 +「补判」）；评分者一致性折到页尾，数据不足时摘要写「数据不足」。judge.scoringMix 的 ** 去掉或经 MarkdownDoc 渲染（P1-9）。
+6. 作答视图：窄屏（< 700px）上下排（P1-10）；证据视角里只有脚本判定的一侧不逐条重复「这条判据未判」，改成一句概括 + 补判入口（P2-10）。
+7. 阶段 tab 带状态点（完成 / 进行中 / 未开始，P2-1）；阶段条措辞去掉「格子」（P2-9）；阶段条主按钮随所在阶段变，已在人工评估页就不再显示「去人工评估」（P2-11）。
+8. 标准 2 补验：临时实例里造一条带实验的停滞 run，截到「重跑」按钮。
+
+## 不做
+T80d 的页面（实验设计、结果对比）；P2-3/4/8/16；外壳。
+
+## 完成判据
+eval 测试全绿、gate 过；0.1.5-rc.1 临时实例（装法照 T76 补充（二），端口先报协调者）明 / 暗 / 400：列表（本会话与全部）、带实验的停滞行、运行记录网格与点开一格、人工评估首屏、作答视图 400 宽，放 ~/.dsh/scratch/t80c-shots/；每张与 v5 对应场景并排对照写一句结论；console 零报错。
+
+## 回报
+分支与 commit、Agent Note（Alternatives considered 双语）、gate、截图路径与对照结论、状态口径的选择。通用提醒照旧。
+```
+
+**T80d：eval 实验设计 + 结果对比（P1-4/5/8，P2-2/5/6/7/12/13）**
+
+```text
+# 任务 T80d：实验设计与结果对比到交互稿 v5 的层次
+
+## 背景
+T79 清单第 4、5、9 场景。实验设计的方案段是等权卡片平铺，问题没有标题分量，对比组表把所有字段全列、不标差异，没有「用哪些题」；结果对比的结论卡没有答句（旧 plan）、没有每组得分和下一步，下面一排「终评收口 / 导出 bundle / 重新导出 / 单元：无占用」，判据表缺值写「—」、列序和标题反着，效率块表和条形图重复。
+
+## 先读
+清单全文（尤其第二节 4、5、9 场景，第四节 P1-4/5/8 与 P2-2/5/6/7/12/13）；v5 截图 ~/.dsh/scratch/t79-shots/v5/04-plan、05-ready、09-result 与交互稿 html；真机截图 t79-shots/{light,dark,400}-02、03、05 与 probe-pd-*.png；packages/eval/src/client/DesignPage.tsx、ReportPage.tsx、parts.tsx、locales.ts、LabView.module.css；packages/eval/src/report.ts 的 rankReason / 校验、report-view.ts；T71、T74 的 Agent Note。
+
+## 分支
+worktree ../dsh-plugins-wt-t80d，分支 feat/t80d-design-result；改 packages/eval（client、必要时 report-view 投影与单测、README 双语）。与 T80c 同包：新文案键和样式放在自己页面的块里；T80a 合入后合一次 main；T80c 若先合，你合 main、graft 解。
+
+## 已定决定
+1. 方案段（P1-4）：问题做标题，预期 / 怎么算回答了在下；规模一句话；对比组表只列不同的字段并高亮，就地警告「不同处：N 个，只能描述」；sha 放悬停，只在开跑后与当前不一致时标「开跑时 / 当前」（②）；只有问题块和阶段条抬起来，其余不再是等权卡片。
+2. 「用哪些题」表：题 / 考什么 / 怎么判 / 满分 / 看题面。数据取现有的 planReview 与题目字段；某列在数据里没有就不显示那一列，并在回报里列出缺的字段（数据面另立，不在页面里编）。「怎么判」写全：判官、人工终评、检查脚本（P2-5）。
+3. 就绪段：就绪时不再显示冗余的「准备环境」，400 宽「批准并启动」不折行（P2-6）；提醒带「不影响启动」和后果句（P2-7）；fix.provision 中文值改「准备 {condition} 的环境」（P1-8）；页脚「退回修改 / 保留单元」改人话（P2-2）。
+4. 结论卡（P1-5）：答句不依赖 question，旧 plan 也给「暂时不能下结论 / A 优于 B / 未分高下」（①）；每组一个大号得分；原因拆成人话条目（来源不同 / 只有 n 道题有差值 / 不止差在一个变量），✗ / ! 标级别；下一步动作最多三个（补判 / 并排看作答 / 让 agent 写分析初稿，后者沿用 T72 的 input.setDraft 与剪贴板退路）；「终评收口 / 导出 bundle / 重新导出 / 单元」收进「导出与来源」折叠，有效性校验也折叠、摘要行带 ✓ / ✗。
+5. 判据表（P2-12）：按维度分组；缺值用「未判」chip；列序与结论卡标题一致；说明文字收起。效率块（P2-13）：留条形图，明细表收进折叠。
+6. 数字、判定、校验的算法不改；report.ts 只在投影需要新字段时加，带单测。
+
+## 不做
+T80c 的页面；P2-3/4/8/16；X-no-patch 极性（等出题方）；外壳。
+
+## 完成判据
+eval 测试全绿、gate 过；0.1.5-rc.1 临时实例（装法照 T76 补充（二），端口先报协调者）明 / 暗 / 400：夹具草稿的方案段与就绪段、pilot-d 的结果对比首屏与展开的折叠，放 ~/.dsh/scratch/t80d-shots/；每张与 v5 的 04 / 05 / 09 并排对照写一句结论；console 零报错。
+
+## 回报
+分支与 commit、Agent Note（Alternatives considered 双语）、gate、截图路径与对照结论、「用哪些题」缺的数据字段。通用提醒照旧。
 ```
 
 
