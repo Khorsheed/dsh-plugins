@@ -250,8 +250,8 @@ export function TitleEditAction({ sessionId, useSessions, renameSession, t }: Ti
       {error !== null
         ? <span className={css.editorError} role="alert">{error}</span>
         : overLimit && <span className={css.editorHint} role="alert">{overLimitHint}</span>}
-      <Button variant="outline" disabled={busy} onClick={cancel}>{t('cancel')}</Button>
-      <Button variant="primary" disabled={busy || trimmed === '' || overLimit} onClick={() => { void commit() }}>
+      <Button variant="outline" size="sm" disabled={busy} onClick={cancel}>{t('cancel')}</Button>
+      <Button variant="primary" size="sm" disabled={busy || trimmed === '' || overLimit} onClick={() => { void commit() }}>
         {t('editor.save')}
       </Button>
     </span>
