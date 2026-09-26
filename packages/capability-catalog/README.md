@@ -21,6 +21,8 @@ dsh 的每个会话都由一个 agent preset 组合而成，插件、技能目�
 - **按 preset 投递的技能**——插件自管一个受管根（`$DSH_HOME/capability-catalog/skills`），其中技能用 frontmatter `presetScope` 声明属于哪些模式；详情弹窗直接编辑（保存、把已装技能收编进受管根、释放回用户技能目录），不在任何模式生效的受管技能由一条诊断行保持可达，而不是被过滤没了。
 - **MCP server 管理**——粘贴一段 `mcp.json` server 配置，弹窗自动解析传输、识别凭据（形似凭据的字段在存储的配置里变成 `secretRef:` 标记，Remote 只回 `configured` 状态——值永远到不了浏览器）。连接后发现该 server 的工具，整台 server 或单个工具都可开关，每个启用的工具都以 `mcp__<server>__<tool>` 注册到 `ctx.tools`，模型当场可调。配置的 server 经 settings 服务跨重启存活。
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="新增 MCP 服务器弹窗:粘贴一段 mcp.json server 配置,自动解析传输与凭据">
+
 - **给模型的 `list_capabilities`**——模型可调的工具，列出调用方自己 agent scope 里可见的 skill 与 tool，并盖上能力指纹标签。
 - **能力指纹**——`snapshotFor(presetId?)` 加载每个技能正文，对规范化能力面（名字、来源、渠道、参数、正文哈希——措辞不进）盖 sha256；同样的能力按不同顺序注册，哈希相同。`hashOf` / `capsTag` 导出给宿主侧读者。
 - **凭据 env 注入**——某 skill 声明 env 对应的已配置凭据，以可信、逐执行的 `DSH_<KEY>` 变量暴露给模型 shell，模型用 shell 展开引用，原始值默认不进模型上下文；`skill` 工具加载这类技能时，运行时提示会把每个 `KEY → DSH_<KEY>` 映射告诉模型，从不改动 `SKILL.md`。

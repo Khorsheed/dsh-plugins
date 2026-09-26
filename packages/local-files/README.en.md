@@ -6,10 +6,15 @@ Browse any local directory from the right sidebar — a lazy-loading file tree w
 
 To glance at an assets folder next to the workspace or a data file outside the repo, you used to switch to the system file manager. This plugin registers a **Files** page-type tab in the right sidebar (entered from the guide page's "Files" card): a per-level lazy-loading file tree on the left, and a detail pane on the right that renders HTML/Markdown/JSON/CSV as structured views and inlines images. It browses any absolute local path — untracked, ignored, and git-external files alike; the data plane rides its own Typert Remote, decoupled from the worktrees plugin's git badges: that one only shows git status, this one only does plain local-file browsing. (The split in one line: this plugin is "browse any local directory"; file-preview is "the current session's products" — different semantics, hence two independent packages.)
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-files-1.png" width="640" alt="the app entry card on the home page: Files (opens the current session's workspace by default)">
+
 ## Features
 
 - **Files tab** — a page-type right-sidebar tab, entered from the guide page's "Files" card. The registration takes over the official `files` kind at the extension band (the registry's built-in per-kind shadowing): the guide shows a single files card, and the official "Workspace files" card resumes on uninstall — never two cards at once.
 - **Tree left, preview right** — the tree lazy-loads per level, toggles dot-files in one click, and drags wider or narrower; the detail pane renders HTML/Markdown/JSON/CSV structurally and inlines images; the title row's "Reload" gesture re-reads the current file — on-disk changes land without reselecting, and a failed re-read keeps the old content and reports through the existing error slot.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-files-2.png" width="640" alt="the Files tab: a per-level lazy-loading file tree on the left, a structured preview on the right (rendered markdown, the content search box, and the preview/source toggle)">
+
 - **Default root = the session's workspace** — the same data source as the official files tree (the session row's `cwd`, read reactively — a late-loading row fills in); a manually chosen directory is remembered per session (localStorage `dsh-local-files-root:<sessionId>`) and restored across tab reopens and page reloads; the toolbar's "Back to original workspace" jumps to the current session's workspace root (hidden while already there).
 - **Breadcrumbs + action row** — breadcrumbs navigate level by level; the action buttons are "Choose workspace" (the native directory picker), "Back to original workspace", "Show in folder" (shown when the host's open-in-app probe resolved a file manager), and "Refresh files".
 - **Git-agnostic** — it browses any absolute local path (including untracked, ignored, and git-external files), with no repository judgment.

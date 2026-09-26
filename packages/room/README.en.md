@@ -6,6 +6,8 @@ One session, a whole team of agents — invite DSH, Kimi, Codex or Claude Code m
 
 Getting several agents onto one piece of work today means copy-pasting between windows, or one-shot subagent calls that forget everything on return. Room makes the session itself the shared place: inviting the first member promotes the current session into a Room and seats the native DSH agent as the initial coordinator, and every member keeps its own native conversation across turns and restarts.
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/room-1.png" width="640" alt="an active Room: member receipts and run rows in the chat flow, with the @-member menu open above the composer">
+
 ## Features
 
 - **Inviting promotes the session** — no separate "create room" step: invite the first member into any session and it becomes a Room; the native DSH agent joins as the initial coordinator (named `dsh` in new rooms; existing rooms keep their recorded addressing names).

@@ -6,6 +6,8 @@
 
 让多个 agent 干同一件事，过去只能在几个窗口之间复制粘贴，或者靠一次性的子代理调用——返回即遗忘。Room 把会话本身变成共享的协作场所：邀请第一位成员，当前会话就升级为 Room，原生 DSH agent 入座初始协调者；每位成员跨轮次、跨重启都保留自己的原生会话。
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/room-1.png" width="640" alt="一个进行中的 Room:聊天流里的成员回执与运行行,输入框上方展开的 @ 成员菜单">
+
 ## 特性
 
 - **邀请即升级**——没有单独的「创建房间」步骤：在任意会话里邀请第一位成员，它就变成 Room；原生 DSH agent 入座初始协调者（新 Room 命名为 `dsh`，已有 Room 保留日志里记录的寻址名）。
