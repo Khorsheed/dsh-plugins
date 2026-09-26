@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-26-eval-design-result-hierarchy.md
-.agents/notes/implemented/feature/2026-09-26-eval-design-result-hierarchy.md: 6f47d57eb28e5d76b57f1fc42c295d7aa0b2cb29
-.agents/notes/implemented/feature/2026-09-26-eval-design-result-hierarchy.zh.md: a172e124b992f9080d9086f912a816d5ff383166
+.agents/notes/implemented/feature/2026-09-26-eval-design-result-hierarchy.md: 118dfce10af12c172cb719c28478673cb51a7c9b
+.agents/notes/implemented/feature/2026-09-26-eval-design-result-hierarchy.zh.md: 9bf5dc50827f7dbd05fd518e31133801340a8434

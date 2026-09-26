@@ -3,7 +3,7 @@
  * read off the rows themselves, so what is highlighted is what is on screen.
  */
 import { describe, expect, it } from 'vitest'
-import { compareColumns } from '../src/client/ConditionsPage.tsx'
+import { compareColumns, condIdHover } from '../src/client/ConditionsPage.tsx'
 import type { EvalConditionRow } from '../src/types.ts'
 
 const row = (over: Partial<EvalConditionRow>): EvalConditionRow => ({
@@ -39,5 +39,16 @@ describe('compareColumns', () => {
   it('falls back to harness and model when nothing differs, or there is one row', () => {
     expect(shown([row({ id: 'a' }), row({ id: 'b' })])).toEqual(['harness', 'model'])
     expect(shown([row({ id: 'a', endpoint: null })])).toEqual(['harness', 'model', 'endpoint'])
+  })
+})
+
+describe('condIdHover', () => {
+  const t = (key: string, params?: Record<string, unknown>) => (params === undefined ? key : `${key} ${JSON.stringify(params)}`)
+
+  it('is the declaration sha, plus the scoped-home digest once a lock recorded one', () => {
+    expect(condIdHover(row({ id: 'a' }), t as never)).toBe('a')
+    expect(condIdHover(row({ id: 'a', sha: 'abc' }), t as never)).toBe('abc')
+    expect(condIdHover(row({ id: 'a', sha: 'abc', lock: { present: true, matches: true, homeSha: 'h1', provisionedAt: null, cliVersion: null } }), t as never))
+      .toBe('abc\nconditions.homeShaHover {"sha":"h1"}')
   })
 })

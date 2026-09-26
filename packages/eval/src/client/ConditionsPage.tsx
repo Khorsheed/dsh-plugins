@@ -263,6 +263,12 @@ export function compareColumns(rows: readonly EvalConditionRow[]): Array<Compare
   return [...base, ...shown.filter(column => !base.some(entry => entry.key === column.key))]
 }
 
+/** The group name's hover: the declaration sha, and the scoped-home digest once a lock recorded one. */
+export function condIdHover(row: EvalConditionRow, t: LabViewProps['t']): string {
+  const own = row.sha ?? row.id
+  return row.lock.homeSha === null ? own : `${own}\n${t('conditions.homeShaHover', { sha: row.lock.homeSha })}`
+}
+
 /** The cell a column renders for one row. */
 function compareCell(column: CompareColumn, row: EvalConditionRow, t: LabViewProps['t']) {
   const value = column.value(row)
@@ -345,7 +351,15 @@ export function ConditionsTable(props: {
   // The spec's own order (the designed variables first), the same order the
   // experiment list's factor cell reads in.
   const ordered = ((split): string[] => [...split.named, ...split.incidental])(splitFactors(factors))
-  const factorWords = ordered.map(path => factorPhrase(path)).map(phrase => (phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)))
+  // A differing field with no column of its own (the scoped-home digest, say)
+  // lives in the group name's hover; the warning says so, or a count of three
+  // over two highlighted columns reads as a column gone missing (T80d · ②).
+  const factorWords = ordered.map((path) => {
+    const phrase = factorPhrase(path)
+    const word = phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)
+    const columned = columns.some(column => column.paths.some(prefix => path.startsWith(prefix)))
+    return columned ? word : t('conditions.factorHover', { field: word })
+  })
   return (
     <>
       {loading && view === null && <div className={css.empty}>{t('conditions.loading')}</div>}
@@ -396,7 +410,7 @@ export function ConditionsTable(props: {
                       reader compares by eye: it is the hover. Only when the
                       declaration moved since the run started does it earn a
                       mark on the page (T80d · ②). */}
-                  <span className={css.condId} title={row.sha ?? row.id}>
+                  <span className={css.condId} title={condIdHover(row, t)}>
                     {row.id}
                     {/* A judge is a subject like any other — same declaration,
                         same lock, same readiness gate — and nothing else in this

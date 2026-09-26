@@ -51,7 +51,7 @@ const LIST: EvalExperimentsResult = {
     judges: ['judge-a'],
     items: 4,
     reps: 2,
-    factors: ['harness.name', 'model.declared'],
+    factors: ['harness.name', 'model.declared', 'home.sha'],
     progress: null,
     startedAt: null,
     validation: { ok: true, errors: 0, warnings: 1 },
@@ -327,6 +327,11 @@ describe('the plan-review page', () => {
     // fields in WORDS, in the spec's own order, and warns that two of them
     // make the comparison descriptive; the dotted paths stay on its title.
     expect(screen.getByText(/conditions\.differsWarn .*factor\.model\.declared、factor\.harness\.name/)).toBeTruthy()
+    // A differing field with no column (the home digest) is named as living in
+    // the group name's hover, so three differences over two columns do not
+    // read as a column gone missing; the columned ones carry no such hint.
+    expect(screen.getByText(/conditions\.differsWarn .*conditions\.factorHover \{\\"field\\":\\"factor\.home\.sha\\"\}/)).toBeTruthy()
+    expect(screen.queryByText(/factorHover \{\\"field\\":\\"factor\.(model|harness)/)).toBeNull()
     expect(screen.getByText((_, el) => el?.tagName === 'DD' && /^judge-a · overview.judgeSamples/.test(el.textContent ?? ''))).toBeTruthy()
     // Seed, stages, budget, items and the author's note are settings a reader
     // needs once: ui-spec §五 v2 folds them under 高级设置 rather than smearing

@@ -1376,6 +1376,18 @@
   line-height: 18px;
 }
 
+/* The per-criterion table fills its column (v5 · 09-result); the wrapper, not
+   the table, scrolls when a wide one meets a narrow screen. */
+.criteriaScroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.criteriaTable {
+  display: table;
+  width: 100%;
+}
+
 .reportHead,
 .reportRowHead,
 .reportTd {

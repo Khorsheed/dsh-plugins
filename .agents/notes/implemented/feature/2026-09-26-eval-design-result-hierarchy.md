@@ -43,3 +43,5 @@ The T79 walkthrough (P1-4, P1-5, P2-12, P2-13) found that the design and results
 - Test fixtures that build `EvalReportPair` by hand need `verdict` and `coverage`.
 - An item id now appears twice on the design page (用哪些题 and the grid). Specs that queried it with `getByText` now count occurrences.
 - If per-item topic, points or prompt ever reach `planReview`, 用哪些题 gains the columns without a layout change: they are data-gated, not removed.
+- Two additions after the coordinator's walkthrough: the per-criterion table fills its column through a `criteriaTable` modifier inside its own scrolling wrapper, leaving the shared `.reportTable`'s other uses alone; a differing field with no column of its own (the scoped-home digest) reads "— hover a group name" in the warning, and the group name's hover now carries that digest.
+- Whether criteria with the same verdict (D1–D4) collapse into one row is a display rule that needs a decision first. This round keeps one row per criterion; it is on the next round's open list.

@@ -701,155 +701,159 @@ function CriteriaTable(props: {
   return (
     <>
       {titled && <div className={css.criteriaTask}>{table.task}</div>}
-      <table className={css.reportTable}>
-        <thead>
-          <tr>
-            <th className={css.reportHead}>{t('report.col.criterion')}</th>
-            <th className={css.reportHead}>{t('report.col.weight')}</th>
-            {conditions.map(condition => (
-              <th key={condition} className={css.reportHead}>{condition}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {axes.map(axis => (
-            <Fragment key={axis ?? ''}>
-              {grouped && (
-                <tr>
-                  <th className={css.criteriaAxis} colSpan={columns}>{axis ?? t('report.axisNone')}</th>
-                </tr>
-              )}
-              {table.rows.filter(row => row.axis === axis).map(row => (
-                <Fragment key={row.id}>
+      {/* The criteria table spans the column like the other report blocks (T80d);
+          the wrapper keeps a wide one scrolling on its own at phone width. */}
+      <div className={css.criteriaScroll}>
+        <table className={`${css.reportTable} ${css.criteriaTable}`}>
+          <thead>
+            <tr>
+              <th className={css.reportHead}>{t('report.col.criterion')}</th>
+              <th className={css.reportHead}>{t('report.col.weight')}</th>
+              {conditions.map(condition => (
+                <th key={condition} className={css.reportHead}>{condition}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {axes.map(axis => (
+              <Fragment key={axis ?? ''}>
+                {grouped && (
                   <tr>
-                    <th className={css.reportRowHead}>
-                      <span className={css.mono}>{row.id}</span>
-                      {row.undeclared && <Chip tone="warn" title={t('report.criteriaUndeclared')}>⚠</Chip>}
-                      {row.negative && <span className={css.criteriaPolarity}>{t('report.polarityNegative')}</span>}
-                    </th>
-                    <td className={css.reportTd}>{row.weight ?? DASH}</td>
-                    {cellsOf(row).map((cell) => {
-                      const key = `${row.id}|${cell.condition}`
-                      // A negative criterion that HELD is a defect, and a positive
-                      // one that did not is a miss: both cost the same point, so
-                      // both wear the same colour.
-                      const bad = cell.reps > 0 && (row.negative ? cell.holds === true : cell.holds !== true)
-                      const empty = cell.samples.length === 0 && cell.superseded.length === 0
-                      // Not judged is a state, not a dash: the chip says so in
-                      // words, and the hover says whose verdict is missing.
-                      if (cell.reps === 0 && empty) {
+                    <th className={css.criteriaAxis} colSpan={columns}>{axis ?? t('report.axisNone')}</th>
+                  </tr>
+                )}
+                {table.rows.filter(row => row.axis === axis).map(row => (
+                  <Fragment key={row.id}>
+                    <tr>
+                      <th className={css.reportRowHead}>
+                        <span className={css.mono}>{row.id}</span>
+                        {row.undeclared && <Chip tone="warn" title={t('report.criteriaUndeclared')}>⚠</Chip>}
+                        {row.negative && <span className={css.criteriaPolarity}>{t('report.polarityNegative')}</span>}
+                      </th>
+                      <td className={css.reportTd}>{row.weight ?? DASH}</td>
+                      {cellsOf(row).map((cell) => {
+                        const key = `${row.id}|${cell.condition}`
+                        // A negative criterion that HELD is a defect, and a positive
+                        // one that did not is a miss: both cost the same point, so
+                        // both wear the same colour.
+                        const bad = cell.reps > 0 && (row.negative ? cell.holds === true : cell.holds !== true)
+                        const empty = cell.samples.length === 0 && cell.superseded.length === 0
+                        // Not judged is a state, not a dash: the chip says so in
+                        // words, and the hover says whose verdict is missing.
+                        if (cell.reps === 0 && empty) {
+                          return (
+                            <td key={cell.condition} className={css.reportTd}>
+                              <Chip tone="neutral" title={t('report.criteriaNotJudged')}>{t('report.notJudgedChip')}</Chip>
+                            </td>
+                          )
+                        }
                         return (
                           <td key={cell.condition} className={css.reportTd}>
-                            <Chip tone="neutral" title={t('report.criteriaNotJudged')}>{t('report.notJudgedChip')}</Chip>
+                            <button
+                              type="button"
+                              className={css.criteriaCell}
+                              disabled={empty}
+                              aria-expanded={open === key}
+                              title={empty ? t('report.criteriaNotJudged') : t('report.criteriaExpand', { criterion: row.id, condition: cell.condition })}
+                              onClick={() => { setOpen(open === key ? null : key) }}
+                            >
+                              {cell.reps === 0
+                                ? <Chip tone="neutral">{t('report.notJudgedChip')}</Chip>
+                                : (
+                                  <span className={css.criteriaMark} data-bad={bad ? '' : undefined}>
+                                    {criterionMark(cell)}
+                                  </span>
+                                )}
+                              <SourceMix sources={cell.sources} t={t} />
+                            </button>
                           </td>
                         )
-                      }
-                      return (
-                        <td key={cell.condition} className={css.reportTd}>
-                          <button
-                            type="button"
-                            className={css.criteriaCell}
-                            disabled={empty}
-                            aria-expanded={open === key}
-                            title={empty ? t('report.criteriaNotJudged') : t('report.criteriaExpand', { criterion: row.id, condition: cell.condition })}
-                            onClick={() => { setOpen(open === key ? null : key) }}
-                          >
-                            {cell.reps === 0
-                              ? <Chip tone="neutral">{t('report.notJudgedChip')}</Chip>
-                              : (
-                                <span className={css.criteriaMark} data-bad={bad ? '' : undefined}>
-                                  {criterionMark(cell)}
-                                </span>
-                              )}
-                            <SourceMix sources={cell.sources} t={t} />
-                          </button>
-                        </td>
-                      )
-                    })}
-                  </tr>
-                  {cellsOf(row).filter(cell => open === `${row.id}|${cell.condition}`).map(cell => (
-                    <tr key={`${row.id}|${cell.condition}|open`}>
-                      <td className={css.criteriaDetail} colSpan={columns}>
-                        <div className={css.sectionTitle}>
-                          <span>{t('report.criteriaEvidence')}</span>
-                          <span className={css.sectionMeta}>
-                            {row.id} · {cell.condition} · {t('report.criteriaReps', { count: cell.reps })}
-                          </span>
-                          {/* The mark a person who re-judged this cell earned: the
-                              criterion now scores on their word, and the judge's
-                              original verdict stays right beside it. */}
-                          {cell.superseded.length > 0 && (cell.sources['human-final'] ?? 0) > 0 && (
-                            <Chip tone="warn">{t('report.humanOverride')}</Chip>
-                          )}
-                          {/* The same road the pair table's numbers take, keyed
-                              off what this cell actually knows: one record behind
-                              it opens that record, several leave the list standing
-                              under its chip for the reader to choose. */}
-                          {recordsOf(cell).length > 0 && (() => {
-                            const records = recordsOf(cell)
-                            const only = records.length === 1 ? records[0] as string : null
-                            return (
-                              <button
-                                type="button"
-                                className={css.reportJump}
-                                title={only === null
-                                  ? t('report.openRecords', { task: table.task, condition: cell.condition })
-                                  : t('report.openRecord', { record: only })}
-                                onClick={() => {
-                                  if (only === null) onOpenRecords(table.task, cell.condition)
-                                  else onOpenRecord(table.task, cell.condition, only)
-                                }}
-                              >
-                                {t(only === null ? 'report.criteriaOpenRecords' : 'report.criteriaOpenRecord')}
-                              </button>
-                            )
-                          })()}
-                          <button
-                            type="button"
-                            className={css.reportJump}
-                            onClick={() => { onOpenAnswers({ task: table.task, condition: cell.condition, rep: null }) }}
-                          >
-                            {t('answer.open')}
-                          </button>
-                        </div>
-                        {cell.samples.map(sample => (
-                          <CriterionSampleLine
-                            key={`${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
-                            sample={sample}
-                            superseded={false}
-                            t={t}
-                          />
-                        ))}
-                        {cell.superseded.map(sample => (
-                          <CriterionSampleLine
-                            key={`old|${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
-                            sample={sample}
-                            superseded
-                            t={t}
-                          />
-                        ))}
-                      </td>
+                      })}
                     </tr>
-                  ))}
-                </Fragment>
-              ))}
-            </Fragment>
-          ))}
-          <tr className={css.criteriaTotalRow}>
-            <th className={css.reportRowHead}>{t('report.criteriaTotal')}</th>
-            <td className={css.reportTd} />
-            {totals.map(total => (
-              <td key={total.condition} className={css.reportTd}>
-                {total.scored === null ? DASH : fmtNum(total.scored)}
-                {weighted && total.weighted !== null && (
-                  <span className={css.dim}> ({t('report.criteriaWeighted', { value: fmtNum(total.weighted) })})</span>
-                )}
-                <span className={css.criteriaSource}> {t('report.criteriaReps', { count: total.reps })}</span>
-              </td>
+                    {cellsOf(row).filter(cell => open === `${row.id}|${cell.condition}`).map(cell => (
+                      <tr key={`${row.id}|${cell.condition}|open`}>
+                        <td className={css.criteriaDetail} colSpan={columns}>
+                          <div className={css.sectionTitle}>
+                            <span>{t('report.criteriaEvidence')}</span>
+                            <span className={css.sectionMeta}>
+                              {row.id} · {cell.condition} · {t('report.criteriaReps', { count: cell.reps })}
+                            </span>
+                            {/* The mark a person who re-judged this cell earned: the
+                                criterion now scores on their word, and the judge's
+                                original verdict stays right beside it. */}
+                            {cell.superseded.length > 0 && (cell.sources['human-final'] ?? 0) > 0 && (
+                              <Chip tone="warn">{t('report.humanOverride')}</Chip>
+                            )}
+                            {/* The same road the pair table's numbers take, keyed
+                                off what this cell actually knows: one record behind
+                                it opens that record, several leave the list standing
+                                under its chip for the reader to choose. */}
+                            {recordsOf(cell).length > 0 && (() => {
+                              const records = recordsOf(cell)
+                              const only = records.length === 1 ? records[0] as string : null
+                              return (
+                                <button
+                                  type="button"
+                                  className={css.reportJump}
+                                  title={only === null
+                                    ? t('report.openRecords', { task: table.task, condition: cell.condition })
+                                    : t('report.openRecord', { record: only })}
+                                  onClick={() => {
+                                    if (only === null) onOpenRecords(table.task, cell.condition)
+                                    else onOpenRecord(table.task, cell.condition, only)
+                                  }}
+                                >
+                                  {t(only === null ? 'report.criteriaOpenRecords' : 'report.criteriaOpenRecord')}
+                                </button>
+                              )
+                            })()}
+                            <button
+                              type="button"
+                              className={css.reportJump}
+                              onClick={() => { onOpenAnswers({ task: table.task, condition: cell.condition, rep: null }) }}
+                            >
+                              {t('answer.open')}
+                            </button>
+                          </div>
+                          {cell.samples.map(sample => (
+                            <CriterionSampleLine
+                              key={`${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
+                              sample={sample}
+                              superseded={false}
+                              t={t}
+                            />
+                          ))}
+                          {cell.superseded.map(sample => (
+                            <CriterionSampleLine
+                              key={`old|${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
+                              sample={sample}
+                              superseded
+                              t={t}
+                            />
+                          ))}
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </Fragment>
             ))}
-          </tr>
-        </tbody>
-      </table>
+            <tr className={css.criteriaTotalRow}>
+              <th className={css.reportRowHead}>{t('report.criteriaTotal')}</th>
+              <td className={css.reportTd} />
+              {totals.map(total => (
+                <td key={total.condition} className={css.reportTd}>
+                  {total.scored === null ? DASH : fmtNum(total.scored)}
+                  {weighted && total.weighted !== null && (
+                    <span className={css.dim}> ({t('report.criteriaWeighted', { value: fmtNum(total.weighted) })})</span>
+                  )}
+                  <span className={css.criteriaSource}> {t('report.criteriaReps', { count: total.reps })}</span>
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </>
   )
 }

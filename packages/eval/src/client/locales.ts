@@ -856,6 +856,8 @@ export type EvalKey =
   | 'conditions.differsWarn'
   | 'conditions.shaMovedChip'
   | 'conditions.shaMoved'
+  | 'conditions.factorHover'
+  | 'conditions.homeShaHover'
   | 'design.compare'
   | 'design.compareHint'
   | 'design.items'
@@ -1785,6 +1787,8 @@ export const en: Record<EvalKey, string> = {
   'conditions.differsWarn': '{count} differences ({fields}) — the result can only be described, not attributed to one of them',
   'conditions.shaMovedChip': 'At start / now',
   'conditions.shaMoved': 'The declaration changed after the run started: {started} at start, {now} now',
+  'conditions.factorHover': '{field} — hover a group name',
+  'conditions.homeShaHover': 'Scoped-home digest {sha}',
   'design.compare': 'What is compared',
   'design.compareHint': 'Only the fields the groups differ on, highlighted; a result is attributable only when one field differs',
   'design.items': 'Which items',
@@ -2704,6 +2708,8 @@ export const zh: Record<EvalKey, string> = {
   'conditions.differsWarn': '不同处：{count} 个（{fields}），结论只能描述，不能归因',
   'conditions.shaMovedChip': '开跑时 / 当前',
   'conditions.shaMoved': '开跑后声明改过：开跑时 {started}，当前 {now}',
+  'conditions.factorHover': '{field}——悬停组名看',
+  'conditions.homeShaHover': '家目录指纹 {sha}',
   'design.compare': '比什么',
   'design.compareHint': '只列两组不同的字段并标出；只有一处不同，结论才能归因',
   'design.items': '用哪些题',
