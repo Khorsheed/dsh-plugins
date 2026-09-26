@@ -408,7 +408,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T77 | 代码 ✅（`ced3702e` → main `53b93082`，2026-09-24） | 源码模式装不出来：`install.sh:327` 算同族包只看 dependencies / peerDependencies，`scripts/pack-dist.ts:343` 只改写 `workspace:^`；`e9110d52` 把 content-preview 以 `workspace:*` 加进 local-files / ui-file-preview / worktrees 的 devDependencies，pack 时 ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL（T73 分支 1 与 T72 验收各自撞上、各自临时绕过）。文案见 §三「T77」 | 无 | 从 detached worktree 跑 `install.sh --source … --fresh` 到临时 DSH_HOME 一次成功 |
 | T78 | ❌ 不成立（2026-09-25，main `9da732aa`；原因见 §三 T78 末尾「结果」） | host-016 之后的 main 在 0.1.5-rc.1 工具链上冒烟：main 已钉官方线 0.1.7-rc.1、eval 家族做了「双线」适配，评测线 3171 与临时实例仍是 0.1.5-rc.1；只回答「当前 main 能不能在评测线上装得起、跑得通」，不修代码。文案见 §三「T78」 | 无（与 T76 合 main 并行） | 成立 → 3171 照常重装；不成立 → 错误原文 + 定位提交，交用户定钉旧提交还是换线 |
 | T79 | ✅ 清单已合（`bc34de1d`，2026-09-26：P0 1 / P1 12 / P2 16，见 `profiles/web-eval/docs/t79-closeout-walkthrough.md`） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
-| T80 | 代码（2026-09-26 发，四条：T80a ✅ `0f59af27`；T80b ✅ `b028f906`；T80d ✅ `23cd336a`；T80c 待合 main 解冲突） | 收口补充一轮：按 T79 清单改，P0 + 全部 P1 + 协调者提升的 12 条 P2。文案见 §三「T80」 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
+| T80 | ✅ 四条已合（2026-09-26：T80a `0f59af27`；T80b `b028f906`；T80d `23cd336a`；T80c `edb7e313`） | 收口补充一轮：按 T79 清单改，P0 + 全部 P1 + 协调者提升的 12 条 P2。文案见 §三「T80」 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
 | T81 | ✅ 收口（2026-09-26）：阶段一 main 在 0.1.5-rc.1 上 a–e 全过；阶段二被 main 的 `d49f29af` 取代，不合 | 评测线在 0.1.5 上恢复。typert 双形态 codec（`00cfa1d6`）、preset 双名探测（`380a469c`）、图标自带（`d49f29af`：`scripts/sync-icon-artwork.mts` 给每个包生成 `src/client/icons.tsx`，0.1.5 与 0.1.7 都不再按名字取宿主图标）都由各包负责人在 main 上做了。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；datasets 图标面由 T76 补拍一并看 |
 | T82 | 代码（待排，T81 之后） | web-eval 在 0.1.7-rc.1 上：preset 迁 bundle、install.sh 0.1.7 分支、0.1.7 临时实例冒烟、受试对象版本与宿主版本是否解耦（原 T81 文案，改号） | T81 | 0.1.7 临时实例上 a–e 全过，0.1.5 照旧 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
@@ -3612,7 +3612,7 @@ I5 收口批的代码（T71–T76）都已写完。用户 2026-09-25 定：先�
 ```
 
 
-### T80 · 收口补充一轮：按 T79 清单改到交互稿 v5 的同等层次（可发，2026-09-26）
+### T80 · 收口补充一轮：按 T79 清单改到交互稿 v5 的同等层次（已完成，2026-09-26；验收见块后）
 
 **协调者对 T79 清单的裁定**（交互稿作者走查、协调者对照截图复核，列表页与结果对比页的差距与清单一致）：
 
@@ -3649,6 +3649,19 @@ eval、eval-tool 构建与测试全绿（提示词若被测试钉住，改测试
 **T80b + T80d 合并态核验**：在 detached worktree 上把 main 依次合入 b、d，eval / datasets 链构建通过，datasets 250、eval 1098 全过。worktree 与分支都已清。
 
 **T80c 待合**：分支 `feat/t80c-lab-journey`（6 个提交，至 `cc057bbf`）截图已看，列表卡片、停滞行「重跑」、运行记录卡片就地展开、人工评估首屏落在评分表、判官缺席提醒卡、作答视图 400 宽上下排都对得上 v5。试合时它和 T80d 冲突 4 处：`LabView.tsx` 阶段条主按钮（d 包了一层 `stageAction` span，c 让按钮随阶段隐藏或改成「重新校验」）、`LabView.module.css`、`journey.spec.ts`、`README.i18n.yaml`。按文案，d 已先合，由 T80c 实施者合 main 解冲突：两边的语义都要保留，即 c 的按钮随页规则放进 d 的 span。解完重跑 eval 测试和 gate，补拍列表和实验设计首屏（阶段条在那里），报新的提交号。
+
+**T80c 验收（2026-09-26）**：实施者合 main 的提交是 `a904c397`，4 处冲突都按两边保留解：d 的 `stageAction` span 在外层，c 的按钮随页规则和「重新校验」放在里面；CSS 两段并存，没有同名的类；spec 的 import 取并集；README 配对 471 对。实施者跑了 eval 1123 条和 gate 14 步。协调者在分支顶端（已含 main）独立复跑 eval / eval-tool 链的构建，datasets 250、eval 1123、eval-tool 6 全过，合入 main `edb7e313`。补拍看过：实验设计首屏「去人工评估」在 d 的位置，400 宽不换行；在人工评估页，阶段条只剩一句话，条高不变。「完成」口径是 `cell-states.ts` 的 JUDGED_OR_BEYOND，进度计数、列表、运行记录卡片和 `eval_run_status` 读的是同一个集合；pilot-b 从 0/3 变成 2/3 是新口径下的正确数。草稿页的「重新校验」和 12 格以上的网格模式只有单测覆盖，真实数据里没有这类样例。worktree 与分支已清。
+
+**T80 收口，下轮待定汇总**：
+- P2-3、P2-4、P2-8、P2-16；
+- eval 内部注释里的旧页名；
+- profile README 界面表按四阶段重写；
+- 「用哪些题」缺的考什么、满分、看题面三个字段；
+- 预计时长 / token；
+- D1–D4 同判定合并成一行的口径；
+- 题集作答记录的状态词改读 JUDGED_OR_BEYOND；
+- 400 宽「比什么」表最右列（预设）被裁；
+- 题集详情「可切到任一实验钉的版本」。
 
 **T80b：datasets 题集 tab（P1-11、P1-12、P2-15）**
 
@@ -3744,6 +3757,86 @@ eval 测试全绿、gate 过；0.1.5-rc.1 临时实例（装法照 T76 补充（
 分支与 commit、Agent Note（Alternatives considered 双语）、gate、截图路径与对照结论、「用哪些题」缺的数据字段。通用提醒照旧。
 ```
 
+
+### 3171 重装到 main（带上 T73 分支 3 / T74 / T75 / T76 / T80），之后在 3171 上跑 T73 试点（可发，2026-09-26）
+
+```text
+# 任务：3171 重装到 main（T80 之后），然后在 3171 上跑 T73 分支 3 的 agent 行为试点
+
+## 背景
+3171 现在装的是 006779b0（09-24 16:30），guard 锚点 guard/eval-3171 指同一提交。之后 main 合入了：
+- T73 分支 3（SKILL / preset 文本按登记模型改写）；
+- T74（方案卡）、T75（作答视图）、T76（会话面）；
+- T80 四条收口（实验设计、结果对比、列表、运行记录、人工评估、题集页按交互稿 v5 排层次）。
+装 main ≥ edb7e313。宿主固定 0.1.5-rc.1 工具链；main 在 0.1.5 上 a–e 全过（T81）。装完请用户走查，这是 I5 收口前最后一次重装。
+按用户 09-25 的裁定，T73 分支 3 的试点改在 3171 上跑，不再起临时实例（3185 已撤）。
+
+## 先读
+- 本节上方「3171 重装到 main（带上 T71 / T72 / T73 分支 1 + 2 / T77）」的步骤和核对，这次照它做，差别见下；
+- §三「T54 补充（三）」里的 guard 锚点与停实例配方；
+- 通用提醒：PATH / DSH_HOME 要导出，DSH_HARNESS 不设；停实例那步自动模式会拦；
+- profiles/web-eval/docs/t73-registry-and-write-model.md §六（试点脚本、8 条判据）；
+- §三 T78 之后的「用户裁定（2026-09-25）」第 ② 条。
+
+## 第一段：重装
+1. 停 3171：`touch ~/.dsh-lab/state/watchdog-stop && kill -TERM <listener pid>`，由用户手跑。你把 pid 和整行命令报出来，等用户跑完，不要绕开。
+2. guard 锚点（`DSH_HOME=~/.dsh-lab`）：
+   - 先 checkpoint 当前部署（006779b0），再 clear；
+   - 装完 record deployment，然后 supervise；
+   - 锚点 worktree `../dsh-plugins-wt-eval-guard` 和分支 `guard/eval-3171` 移到新提交，不得删，也不得当普通分支清理。
+3. 装：
+   - 从本地 main（≥ edb7e313）开 detached worktree；
+   - `CI=true pnpm install --frozen-lockfile --prefer-offline`，npm ECONNRESET 就删掉装了一半的目录重来；
+   - `export PATH=~/.dsh-toolchains/rc-0.1.5-rc.1/node_modules/.bin:$PATH; export DSH_HOME=~/.dsh-lab; unset DSH_HARNESS`；
+   - `install.sh --source <dir> --fresh`；
+   - 不从 npm 装任何 @khorsheed 包。
+4. 起实例，等看门狗就绪（以 stdout 里出现启动 URL 为准），记下就绪秒数。启动 URL 只打码回报；token 不进任何回报，也不交给任何 agent。
+5. 装后核对（在活的 3171 上看页面或 Remote，不起新 run）：
+   - 题集 tab：表头、可见层人话加「改」、实验数，详情两栏；
+   - 实验室列表是卡片，每行一个主按钮，有「归档 n 条旧运行」；pilot-b 停滞 · 2/3，主按钮「重跑」；
+   - pilot-d：
+     - 实验设计有方案卡，「比什么」提示行带「悬停组名看」；
+     - 结果对比第一屏是结论卡，判据表拉满宽度；
+     - 人工评估首屏落在第一道未评题，判官缺席是提醒卡；
+     - 作答视图双栏；
+   - 会话里 eval_plan_draft 渲染成实验卡；
+   - 控制台零报错；
+   - 登记表和导入的 pilot-d-preset-20260924-6cdf 仍在，不重新导入。
+
+## 第二段：T73 试点（在 3171 上，只读核对）
+1. 先核能不能复现「版本不唯一」：
+   - 读 3171 登记表跟踪的分支（应是 i1-walk）在 harness-comparison 上的最新提交；
+   - 读 pilot-d 钉住的提交；
+   - 在共享检出上只用 `git rev-parse` / `git show` 读，不建 worktree，不动 HEAD。
+   两者的题集树不同，才复现得出，判据 3 的候选哈希按实际值改写后报协调者。相同的话，就另找一个钉旧提交的实验，或把判据 3 记为未覆盖，报协调者后再往下走。
+2. 记下共享检出 `~/.dsh/scratch/dataseek-eval` 的 `git rev-parse HEAD` 和 `git worktree list | wc -l`，以及 `~/.dsh-lab/state/eval/experiments/` 的目录列表。
+3. 请用户在 3171 上做（你不拿 token，不打开页面）：
+   - 新会话，发「用 harness-comparison 比一下 lean 和 full」，出现 ask_user_question 就选「跳过」；
+   - 另开一个会话，发「用 ~/code/dsh-plugins 里的数据集建个实验」。
+   用哪家 provider 由用户定。
+4. 用户说发完后，你只读 `~/.dsh-lab` 里这两个会话的记录，按 §六 的 8 条判据逐条核对：
+   - 第 7 条改成：3171 上 pilot-d 的结果对比页打得开，数字与重装前一致；
+   - 第 8 条：共享检出的 HEAD、worktree 数，以及 experiments/ 列表，都与第 2 步记下的一致。
+5. 判据不过的：
+   - 属 profile 文本（SKILL / preset）的，在 worktree 里改，报协调者合入后再装一次、再跑；
+   - 属代码的，记原文报协调者，不修。
+
+## 不做
+- 不清理 25 条旧托管 worktree，那有另外的文案，由协调者放行；
+- 不碰 ~/.dsh、~/.dsh-official、3080；
+- 不重跑任何实验；
+- 不动那两份带 room/created 事件的旧会话；
+- 不复制任何凭据文件。
+
+## 回报
+- 装的提交、就绪秒数、锚点前后；
+- 第一段第 5 步逐项（打码）；
+- 试点第 1 步：两个哈希与结论；
+- 8 条判据逐条：过或不过，附原文摘录（打码、去绝对路径）；
+- 暴露的代码缺陷清单；
+- 异常。
+通用提醒照旧。
+```
 
 ### T81 · 评测线在 0.1.5-rc.1 上恢复：先验证、再修 install.sh（可发，2026-09-25）
 
