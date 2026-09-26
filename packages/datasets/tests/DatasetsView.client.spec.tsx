@@ -24,6 +24,7 @@ import type {
 } from '../src/types.ts'
 import type { DatasetsViewProps, ItemRunsView } from '../src/client/contract.ts'
 import { DatasetsView } from '../src/client/DatasetsView.tsx'
+import { setUsage } from '../src/client/RegistryList.tsx'
 import { createDatasetsViewStore } from '../src/client/store.ts'
 
 /** Selector hook over the store engine instance (the test-sanctioned engine path). */
@@ -420,6 +421,20 @@ describe('the list page', () => {
     expect(screen.getByText(`@${TIP.slice(0, 7)} @bbbbbbb`)).toBeTruthy()
     // Filtered by set AND registration: neither stray run leaks into this row.
     expect(screen.queryByText(/other-set-run|other-repo-run/)).toBeNull()
+  })
+
+  it('folds id-less runs of one experiment by name, not by run id', () => {
+    // The older ledger re-ran a plan under one name without an experiment id.
+    const run = { status: 'done', registry: 'dataseek-eval', datasetId: 'bench', experimentId: null }
+    const usage = setUsage([
+      { ...run, id: 'run-1', name: 'walk', commit: TIP },
+      { ...run, id: 'run-2', name: 'walk', commit: 'b'.repeat(40) },
+      { ...run, id: 'run-3', name: 'walk', commit: TIP },
+      { ...run, id: 'run-4', name: 'other', commit: TIP },
+    ], 'dataseek-eval', 'bench')
+    expect(usage.experiments.map(entry => entry.name)).toEqual(['walk', 'other'])
+    expect(usage.experiments[0]?.commits).toEqual([TIP, 'b'.repeat(40)])
+    expect(usage.versions).toBe(2)
   })
 
   it('removal is two clicks and names the registration, not the path', async () => {

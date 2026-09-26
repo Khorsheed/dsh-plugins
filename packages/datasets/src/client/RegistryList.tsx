@@ -50,8 +50,11 @@ export interface SetUsage {
  *
  * A run matches on the set id AND, when its snapshot names one, on the
  * registration — two registrations may both carry a `default` set. Runs of
- * one experiment fold into one entry (a re-run is not another experiment),
- * and a version is a distinct pinned commit across all of them.
+ * one experiment fold into one entry (a re-run is not another experiment):
+ * by `experimentId`, or, for a run from before experiments had ids, by its
+ * name — the older ledger re-ran a plan under the same name, and folding by
+ * run id there counted every re-run as another experiment. A version is a
+ * distinct pinned commit across all of them.
  * @param rows - eval's experiment rows.
  * @param registry - the registration id.
  * @param set - the set id.
@@ -63,7 +66,7 @@ export function setUsage(rows: readonly DatasetExperimentRow[], registry: string
   for (const row of rows) {
     if (row.datasetId !== set) continue
     if (row.registry !== null && row.registry !== registry) continue
-    const key = row.experimentId ?? row.id
+    const key = row.experimentId ?? `name:${row.name}`
     const entry = byKey.get(key) ?? { name: row.name, commits: [] }
     byKey.set(key, entry)
     if (row.commit !== null) {
