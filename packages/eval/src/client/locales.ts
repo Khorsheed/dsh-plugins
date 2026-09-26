@@ -740,6 +740,10 @@ export type EvalKey =
   | 'judge.absent'
   | 'judge.rejudge'
   | 'judge.rejudgeAsk'
+  | 'judge.absentBody'
+  | 'judge.statsThin'
+  | 'judge.statsLine'
+  | 'judge.statsSelfLine'
   | 'runs.stalled'
   | 'list.scope'
   | 'list.scopeSession'
@@ -980,7 +984,7 @@ export const en: Record<EvalKey, string> = {
   'judge.reexporting': 'Exporting…',
   'judge.scoringMix': 'Your verdict covers only the criteria you answer here. The report scores each criterion from the most authoritative layer that judged IT, so these {count} criteria the judge answered and you do not ({criteria}) keep counting, on the judge\u2019s word. This record\u2019s score then comes from both, and the report says so beside it.',
   'judge.regrade': 'This record already carries a human-final verdict. Recording again APPENDS: the report reads the latest value per criterion, and the earlier one stays in the ledger.',
-  'judge.stats': 'Grader agreement (live, from the ledger)',
+  'judge.stats': 'Grader agreement',
   'judge.statsSame': 'One judge, resampled',
   'judge.statsCross': 'Across judges',
   'judge.statsHuman': 'llm-draft vs human-final',
@@ -1633,6 +1637,10 @@ export const en: Record<EvalKey, string> = {
   'agent.copied': 'Copied — paste it into the chat box.',
   'agent.copyFailed': 'Could not reach the chat box or clipboard. Copy this yourself: {text}',
   'judge.absent': 'Note: the judge is absent for answer(s) {cells} ({count}).',
+  'judge.absentBody': 'The judge left no readable verdict on these answers; only the script checks remain. You can go on without a re-judge \u2014 your own verdicts are recorded all the same.',
+  'judge.statsThin': 'Not enough data: {count} judge(s) on the panel, no repeated sample, no second judge and no final verdict to compare against yet',
+  'judge.statsLine': 'resampled {same} \u00b7 across judges {cross} \u00b7 draft vs final {human}',
+  'judge.statsSelfLine': '{count} self-judged criteria',
   'judge.rejudge': 'Re-judge (optional)',
   'judge.rejudgeAsk': 'Experiment {name}: re-run the judge on answer(s) {cells}.',
   'runs.stalled': 'Stalled: no progress for {duration}, and no job is running.',
@@ -1866,9 +1874,9 @@ export const zh: Record<EvalKey, string> = {
   'judge.bundleStale': '已导出的 bundle 写在这些终评之前，里面没有它们。重新导出一次就带上了——报告一起写，旧目录不动。',
   'judge.reexport': '重新导出',
   'judge.reexporting': '正在导出…',
-  'judge.scoringMix': '你在这里打的分**只覆盖你答的那几条判据**。报告逐条判据取最权威的那一层，所以这 {count} 条你不答、判官答过的判据（{criteria}）仍按判官的计入得分。这条记录的得分来源随之变成「人 + 判官」的混合，报告页会在得分旁标出来。',
-  'judge.regrade': '这条记录已经有人工终评了。再记一次是**追加**：报告读每条判据的最新值，早先那次留在账本里。',
-  'judge.stats': '评分者一致性（实时，来自账本）',
+  'judge.scoringMix': '你在这里打的分只覆盖你答的那几条判据。报告逐条判据取最权威的那一层，所以这 {count} 条你不答、判官答过的判据（{criteria}）仍按判官的计入得分。这条记录的得分来源随之变成「人 + 判官」的混合，报告页会在得分旁标出来。',
+  'judge.regrade': '这条记录已经有人工终评了。再记一次是追加：报告读每条判据的最新值，早先那次留在账本里。',
+  'judge.stats': '评分者一致性',
   'judge.statsSame': '同一判官重复采样',
   'judge.statsCross': '不同判官之间',
   'judge.statsHuman': '判官初评与人工终评',
@@ -2379,7 +2387,7 @@ export const zh: Record<EvalKey, string> = {
   'record.ok': '成功',
   'record.failed': '异常',
   'record.scoreWhere': '分数是从导出的 bundle 里算的，在结果对比页。',
-  'record.scoreMixed': '这条记录在多个层上都有判定（{sources}）。报告**逐条判据**取判过它的最权威那一层，所以这条记录的得分来自不止一个来源——具体哪条判据取了哪一层，在结果对比页上逐条标着。',
+  'record.scoreMixed': '这条记录在多个层上都有判定（{sources}）。报告逐条判据取判过它的最权威那一层，所以这条记录的得分来自不止一个来源——具体哪条判据取了哪一层，在结果对比页上逐条标着。',
   'record.timeline': '阶段时间轴',
   'record.timelineNone': '账本没记这次尝试的转移时间。',
   'record.params': '参数配置',
@@ -2517,7 +2525,11 @@ export const zh: Record<EvalKey, string> = {
   'agent.inserted': '已放进输入框，改好再发。',
   'agent.copied': '已复制，粘到输入框',
   'agent.copyFailed': '输入框和剪贴板都不可用，请手动复制：{text}',
-  'judge.absent': '提示：作答 {cells} 判官缺席（{count} 格）。',
+  'judge.absent': '提示：作答 {cells} 判官缺席（{count} 份）',
+  'judge.absentBody': '判官在这些作答上没有留下可读的判定，只剩脚本判定。不补判也能往下走，你的终评照常记录。',
+  'judge.statsThin': '数据不足：判官 {count} 位，还没有重复采样、第二位判官或人工终评可以对照',
+  'judge.statsLine': '重复采样 {same} · 判官之间 {cross} · 初评对终评 {human}',
+  'judge.statsSelfLine': '自评判据 {count} 条',
   'judge.rejudge': '补判（可选）',
   'judge.rejudgeAsk': '实验 {name}：给作答 {cells} 补判。',
   'runs.stalled': '停滞：已有 {duration} 没有进展，也没有在跑的任务',

@@ -2261,3 +2261,31 @@
 .hygieneTitle {
   font-weight: 600;
 }
+
+/* 人工评估 · 判官缺席 (T80c P1-6): the v5 reminder card — says where, offers
+   the optional fix, never blocks. */
+.judgeAbsentCard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-state-warn-label);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.judgeAbsentSay {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.judgeAbsentTitle {
+  font-weight: 600;
+  color: var(--dsw-alias-state-warn-label);
+}

@@ -14,14 +14,15 @@
  * cell has just moved groups and the agreement numbers have just changed.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
-  EvalExperimentDetail, EvalExperimentsResult, EvalHumanFinalResult, EvalJudgeQueueView,
+  EvalExperimentDetail, EvalExperimentsResult, EvalHumanFinalResult, EvalJudgeQueueCell, EvalJudgeQueueView,
 } from '../src/types.ts'
 import type { LabViewProps } from '../src/client/contract.ts'
 import { LabView } from '../src/client/LabView.tsx'
+import { byItem, landingItem } from '../src/client/JudgingPage.tsx'
 import { createLabViewStore } from '../src/client/store.ts'
 
 function hookOf(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => unknown }) {
@@ -447,14 +448,40 @@ describe('the human-final write', () => {
   })
 })
 
-describe('the agreement header', () => {
+describe('the agreement fold (T80c P1-6)', () => {
   it('shows the run\'s live numbers, and flags self-judged criteria', async () => {
     const h = makeHarness()
     await openBench(h)
     expect(await screen.findByText('judge.stats')).toBeTruthy()
+    expect(screen.getByText('judge.statsLine {"same":"0/1","cross":"1/1","human":"—"}')).toBeTruthy()
+    expect(screen.getByText('judge.statsSelfLine {"count":1}')).toBeTruthy()
     expect(screen.getByText('report.judgeSameValue {"criteria":1,"agreement":"0/1","kappa":"0.250"}')).toBeTruthy()
     expect(screen.getByText('report.judgeCrossValue {"criteria":1,"agreement":"1/1","kappa":"—"}')).toBeTruthy()
     expect(screen.getByText('judge.panel {"count":2}')).toBeTruthy()
+  })
+
+  it('sits folded at the foot of the page, below the four exits', async () => {
+    const h = makeHarness()
+    await openBench(h)
+    const title = await screen.findByText('judge.stats')
+    const fold = title.closest('details') as HTMLDetailsElement
+    expect(fold.open).toBe(false)
+    const exits = screen.getByRole('button', { name: 'closure.exit.final' })
+    expect(exits.compareDocumentPosition(fold) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('says 数据不足 in words when there is no pair to compare yet', async () => {
+    const thin = {
+      ...QUEUE,
+      judgeCount: 1,
+      consistency: {
+        ...QUEUE.consistency, llmAgreement: null, crossAgreement: null, humanAgreement: null, selfJudgedCriteria: 0,
+      },
+    }
+    const h = makeHarness(thin)
+    await openBench(h)
+    expect(await screen.findByText('judge.statsThin {"count":1}')).toBeTruthy()
+    expect(screen.queryByText(/judge\.statsSelfLine/)).toBeNull()
   })
 
   it('opens the queue only once per visit — the fetch effect never cancels itself', async () => {
@@ -545,12 +572,37 @@ describe('the four exits (T72 §5)', () => {
     expect(screen.queryByRole('button', { name: 'closure.exit.final' })).toBeNull()
   })
 
-  it('names the cells the judge never reached, and 补判 hands them to the agent', async () => {
+  it('names the cells the judge never reached in a reminder card, and 补判 hands them to the agent', async () => {
     const absent = { ...QUEUE, cells: QUEUE.cells.map(cell => ({ ...cell, judgeAbsent: cell.cellNo === 2 })) }
     const h = makeHarness(absent)
     await openBench(h)
-    expect(await screen.findByText('judge.absent {"cells":"2","count":1}')).toBeTruthy()
+    const title = await screen.findByText('judge.absent {"cells":"2","count":1}')
+    const card = title.closest('[role="note"]') as HTMLElement
+    expect(within(card).getByText('judge.absentBody')).toBeTruthy()
+    expect(within(card).getByRole('button', { name: 'judge.rejudge' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'judge.rejudge' }))
     expect(h.insertDraft).toHaveBeenCalledWith('s1', expect.stringMatching(/^judge\.rejudgeAsk .*"name":"t31-judge-panel"/))
+  })
+})
+
+describe('landing (T80c P1-6)', () => {
+  it('opens on the first item with an ungraded answer — no pick needed to start', async () => {
+    const h = makeHarness()
+    await openBench(h)
+    expect(await screen.findByText('judge.sideBySide')).toBeTruthy()
+    expect(screen.queryByText('judge.itemPick')).toBeNull()
+    expect(screen.getByRole('button', { name: /judge\.itemCount \{"task":"P0"/ }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('skips a fully graded item for the next one that still needs a grader', () => {
+    const cell = QUEUE.cells[0] as EvalJudgeQueueCell
+    const items = byItem([
+      { ...cell, cellNo: 1, task: 'P0', graded: true },
+      { ...cell, cellNo: 2, task: 'P1', graded: false },
+      { ...cell, cellNo: 3, task: 'P2', graded: false },
+    ])
+    expect(landingItem(items)).toBe('P1')
+    expect(landingItem(byItem([{ ...cell, task: 'P0', graded: true }]))).toBe('P0')
+    expect(landingItem([])).toBeNull()
   })
 })
