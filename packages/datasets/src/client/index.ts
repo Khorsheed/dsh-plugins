@@ -115,7 +115,18 @@ interface EvalProjectionRemote {
     { ok: true; value: { runs: ItemRunsView['runs']; notes: string[] } } | { ok: false }
   >
   runs?: (sessionId: SessionId, request: Record<string, never>) => Promise<
-    { ok: true; value: { rows: Array<{ id: string; name: string; status: string; snapshot: { datasetId: string | null } }> } }
+    {
+      ok: true
+      value: {
+        rows: Array<{
+          id: string
+          name: string
+          status: string
+          experimentId?: string | null
+          snapshot: { datasetId: string | null; registry?: string | null; commit?: string | null }
+        }>
+      }
+    }
     | { ok: false }
   >
 }
@@ -211,7 +222,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           const answer = await face(sid, {})
           if (!answer.ok) return null
           return answer.value.rows.map(row => ({
-            id: row.id, name: row.name, status: row.status, datasetId: row.snapshot.datasetId,
+            id: row.id,
+            name: row.name,
+            status: row.status,
+            datasetId: row.snapshot.datasetId,
+            // Optional on the mirror: an older eval that lacks them degrades to
+            // «match by set, count unpinned» rather than to a crash.
+            experimentId: row.experimentId ?? null,
+            registry: row.snapshot.registry ?? null,
+            commit: row.snapshot.commit ?? null,
           }))
         },
         isLoopback: connection.isLoopback,

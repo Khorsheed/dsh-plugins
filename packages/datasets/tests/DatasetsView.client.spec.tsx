@@ -4,8 +4,9 @@
  * (createDatasetsViewStore().create()) and injected Remote mocks.
  *
  * What the assertions are about, page by page: the LIST is the deployment's
- * registry grouped by repository, one row per set — `set · trackedRef@short ·
- * date · layers` — and no path is page text (ui-spec §九); the REGISTER form's
+ * registry under one header, a group row per repository and a row per set —
+ * set · trackedRef@short + date · item count · the layer word · the
+ * experiment count — and no path is page text (ui-spec §九); the REGISTER form's
  * live preview drives the per-set layer chips and confirm sends exactly what
  * they show; «从旧绑定登记» reports each folded registration and marks a
  * dangling binding in red; the DETAIL tree marks each file with its slot AND
@@ -131,6 +132,12 @@ const ITEMS: ListItemsResult = {
       verify: ['checks/probes/link-check.mjs'],
     },
   }],
+}
+
+/** The list page's count read: the set-less answer. */
+const SUMMARIES: ListDatasetsResult = {
+  kind: 'datasets',
+  datasets: [{ id: 'bench', name: 'Bench set', layers: ['visible'], nonModelFacingLayers: [], itemCount: 14, warnings: [] }],
 }
 
 const BRIEF: ItemBrief = {
@@ -284,22 +291,43 @@ async function openItem(h: Harness): Promise<void> {
 afterEach(() => { cleanup() })
 
 describe('the list page', () => {
-  it('groups by repository, one row per set: set · trackedRef@short · date · layers, in one RPC', async () => {
+  it('one header, a group row per repository, a row per set: set · tip + date · count · layer word', async () => {
     const h = makeHarness()
+    h.listDatasets.mockResolvedValue({ ok: true, value: SUMMARIES })
     renderView(h)
     expect(await screen.findByText('bench')).toBeTruthy()
     expect(h.fetchRegistry).toHaveBeenCalledWith('s1')
-    // The list is one call: no per-registration overview, no per-set item read.
+    for (const column of ['registry.colSet', 'registry.colLatest', 'registry.colItems', 'registry.colVisible']) {
+      expect(screen.getByRole('columnheader', { name: column })).toBeTruthy()
+    }
+    // No eval plugin: the experiments column is absent, header included.
+    expect(screen.queryByRole('columnheader', { name: 'registry.colUsed' })).toBeNull()
+    // No per-registration overview; the counts are ONE set-less read per registration.
     expect(h.overview).not.toHaveBeenCalled()
-    expect(h.listDatasets).not.toHaveBeenCalled()
+    await waitFor(() => { expect(h.listDatasets).toHaveBeenCalledWith('s1', 'dataseek-eval') })
+    expect(h.listDatasets).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('14')).toBeTruthy()
     expect(screen.getByText('dataseek-eval')).toBeTruthy()
     expect(screen.getByText('Bench set')).toBeTruthy()
     // «latest» is the tracked branch's tip, named as such.
     expect(screen.getByText('i1-walk@a4f9c2e')).toBeTruthy()
     expect(screen.getByText('2026-09-21')).toBeTruthy()
-    expect(screen.getByText(/registry\.rowLayers .*"layers":"visible"/)).toBeTruthy()
+    // The layer word, not the layer name — which rides on the title.
+    expect(screen.getByText('layers.faceOnly')).toBeTruthy()
+    expect(screen.getByTitle(/layers\.title .*"layers":"visible"/)).toBeTruthy()
+    expect(screen.queryByText(/visible/)).toBeNull()
     // The reference an agent names rides on the set cell's title.
     expect(screen.getByTitle('dataseek-eval/bench')).toBeTruthy()
+  })
+
+  it('a failed or not-yet-answered count is a dash, never a zero', async () => {
+    const h = makeHarness()
+    h.listDatasets.mockResolvedValue({ ok: false, error: { code: 'internal', message: 'unreadable' } })
+    renderView(h)
+    expect(await screen.findByText('bench')).toBeTruthy()
+    await waitFor(() => { expect(h.listDatasets).toHaveBeenCalled() })
+    expect(screen.getByText('—')).toBeTruthy()
+    expect(screen.queryByText('0')).toBeNull()
   })
 
   it('no path is page text: the repository location rides on a title only', async () => {
@@ -348,14 +376,27 @@ describe('the list page', () => {
     cleanup()
 
     const h = makeHarness()
+    const run = { status: 'done', registry: 'dataseek-eval' }
     h.datasetExperiments.mockResolvedValue([
-      { id: 'run-1', name: 'pilot-a', status: 'done', datasetId: 'bench' },
-      { id: 'run-2', name: 'other-set-run', status: 'done', datasetId: 'elsewhere' },
+      { ...run, id: 'run-1', experimentId: 'e1', name: 'pilot-a', datasetId: 'bench', commit: TIP },
+      // A re-run of the same experiment at another commit: one experiment, two versions.
+      { ...run, id: 'run-2', experimentId: 'e1', name: 'pilot-a', datasetId: 'bench', commit: 'b'.repeat(40) },
+      { ...run, id: 'run-3', experimentId: 'e2', name: 'pilot-b', datasetId: 'bench', commit: TIP },
+      { ...run, id: 'run-4', experimentId: 'e3', name: 'other-set-run', datasetId: 'elsewhere', commit: TIP },
+      // Same set id, another registration: not this row's.
+      { ...run, id: 'run-5', experimentId: 'e4', name: 'other-repo-run', datasetId: 'bench', registry: 'other', commit: TIP },
     ])
     renderView(h)
-    expect(await screen.findByText(/registry\.usedBy .*pilot-a/)).toBeTruthy()
-    // Filtered by set: another set's run never leaks into this row.
-    expect(screen.queryByText(/other-set-run/)).toBeNull()
+    const toggle = await screen.findByText(/registry\.usedCount .*"count":2.*"versions":2/)
+    expect(screen.getByRole('columnheader', { name: 'registry.colUsed' })).toBeTruthy()
+    // A count, not a list: the names wait behind the click.
+    expect(screen.queryByText('pilot-a')).toBeNull()
+    fireEvent.click(toggle)
+    expect(screen.getByText('pilot-a')).toBeTruthy()
+    expect(screen.getByText('pilot-b')).toBeTruthy()
+    expect(screen.getByText(`@${TIP.slice(0, 7)} @bbbbbbb`)).toBeTruthy()
+    // Filtered by set AND registration: neither stray run leaks into this row.
+    expect(screen.queryByText(/other-set-run|other-repo-run/)).toBeNull()
   })
 
   it('removal is two clicks and names the registration, not the path', async () => {
@@ -541,6 +582,20 @@ describe('the detail page', () => {
     const panel = screen.getByText('detail.player').closest('section')
     expect(panel?.textContent).toContain('task.md')
     expect(panel?.textContent).not.toContain('rubric')
+  })
+
+  it('«只有判官和探针看得到» sits beside «选手将看到» and lists exactly the non-model-facing files', async () => {
+    const h = makeHarness()
+    await openItem(h)
+    expect(await screen.findByText('detail.judgeOnly')).toBeTruthy()
+    const player = screen.getByText('detail.player').closest('section')
+    const judge = screen.getByText('detail.judgeOnly').closest('section')
+    expect(player?.parentElement).toBe(judge?.parentElement)
+    expect(judge?.textContent).toContain('grading/answers/rubric.yml')
+    expect(judge?.textContent).toContain('grading/answers/oracle/notes.md')
+    expect(judge?.textContent).toContain('verify/checks/probes/link-check.mjs')
+    expect(judge?.textContent).not.toContain('task.md')
+    expect(judge?.textContent).toContain('tree.fileCount {"count":3}')
   })
 
   it('«可判性» counts the rubric’s leaves per kind, the probes and the schemas', async () => {

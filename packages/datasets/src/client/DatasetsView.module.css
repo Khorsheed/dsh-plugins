@@ -12,6 +12,9 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  /* The detail page's narrow layout keys off the VIEW's width, not the
+     window's: the tab may sit in a split pane on a wide screen. */
+  container: datasets-view / inline-size;
   /* The view marks data-conversation-composer-overlay, so the composer floats
      over its bottom edge; scrollable panes pad their bottoms by this
      clearance (the trajectory ledger's pattern). */
@@ -29,14 +32,34 @@
 
 .bindingSummary {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   min-width: 0;
   font-size: 12px;
   line-height: 18px;
 }
 
+/* Buttons wrap as WHOLE buttons onto the next line; their own label never
+   breaks (T76 shot 17: 「新建一道题」 folded into a vertical column at 400px). */
+.bindingSummary > button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* The detail header's title half: the set reference and the layer word, one
+   truncating line that gives way before any button does. */
+.bindingTitle {
+  display: flex;
+  flex: 1 1 200px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .bindingRepo {
+  min-width: 0;
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
   text-overflow: ellipsis;
@@ -44,7 +67,8 @@
 }
 
 .bindingScope {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   color: var(--dsw-alias-label-tertiary);
   text-overflow: ellipsis;
@@ -327,6 +351,33 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  container: datasets-preview / inline-size;
+}
+
+/* A narrow view (T79 P1-11): the right pane moves BELOW the tree instead of
+   being squeezed into a column of one character per line, and the whole body
+   scrolls as one page. */
+@container datasets-view (max-width: 699px) {
+  .body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .tree {
+    width: auto;
+    padding-bottom: 8px;
+    overflow: visible;
+    border-right: none;
+    border-bottom: 1px solid var(--dsw-alias-border-l2);
+  }
+
+  .preview {
+    flex: none;
+  }
+
+  .previewScroll {
+    overflow: visible;
+  }
 }
 
 /* The selected file's header: one quiet line — the file glyph, the
@@ -400,7 +451,7 @@
 }
 
 .table th {
-  padding: 4px 8px;
+  padding: 4px 8px 6px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-tertiary);
   font-weight: 400;
@@ -420,11 +471,24 @@
 }
 
 /* A narrow pane (phone width) cannot hold the set row's five columns: each
-   row becomes a wrapping block — the set on its own line, the facts after. */
+   row becomes a wrapping block — the set on its own line, the facts after.
+   The header goes (its words would label nothing), so the item count takes
+   its column name inline. */
 @container (max-width: 560px) {
   .table,
-  .table tbody {
+  .table tbody,
+  .repoRow,
+  .repoRow > td {
     display: block;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table td[data-label]::after {
+    content: " " attr(data-label);
+    color: var(--dsw-alias-label-tertiary);
   }
 
   .tableRow {
@@ -447,6 +511,10 @@
   .tableRow > td:last-child {
     flex-basis: 100%;
   }
+
+  .table .setCell {
+    padding-left: 0;
+  }
 }
 
 /* The dataset id doubles as the row's open affordance. */
@@ -455,12 +523,19 @@
   font-weight: 500;
 }
 
-/* One registration: its heading, then one table row per set. */
+/* One registration: a group row carrying its heading, then one row per set
+   (a tbody each, under the table's one header). */
 .repoGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 16px;
+  font-size: 12px;
+}
+
+.repoRow > td {
+  padding: 12px 0 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.repoGroup:first-of-type .repoRow > td {
+  padding-top: 4px;
 }
 
 .repoHead {
@@ -469,9 +544,66 @@
   align-items: center;
   gap: 4px 10px;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
   font-size: 12px;
   line-height: 18px;
+}
+
+/* Set rows sit one step in from their repository row (v5's indent). */
+.table .setCell {
+  padding-left: 20px;
+}
+
+.layersWord {
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+}
+
+/* «用在哪些实验»: the count as a disclosure, the names folded under it. */
+.usage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.usageToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  align-self: flex-start;
+  margin: 0 0 0 -4px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.usageToggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.usageList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0 0 0 16px;
+  list-style: none;
+}
+
+.usageRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.usageName {
+  color: var(--dsw-alias-label-primary);
 }
 
 .repoName {
@@ -585,7 +717,33 @@
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-/* One block of the right pane: 选手将看到 / 可判性 / 作答记录 / the preview. */
+/* The item's two sides, side by side: 选手将看到 | 只有判官和探针看得到.
+   A narrow pane stacks them, the judge side below. */
+.compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 960px;
+  margin-bottom: 14px;
+}
+
+@container datasets-preview (max-width: 520px) {
+  .compare {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+/* One block of the right pane: 作答记录 / the preview. */
 .panel {
   display: flex;
   flex-direction: column;
