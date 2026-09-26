@@ -12,13 +12,14 @@
  * two files build the same props by the same rule.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { EvalExperimentDetail, EvalExperimentsResult } from '../src/types.ts'
 import type { LabViewProps } from '../src/client/contract.ts'
 import { LabView } from '../src/client/LabView.tsx'
 import { createLabViewStore } from '../src/client/store.ts'
+import { createLabFocus } from '../src/client/draft-card.ts'
 
 /** Selector hook over the store engine instance (the test-sanctioned engine path). */
 function hookOf(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => unknown }) {
@@ -174,7 +175,7 @@ function makeHarness(overrides: { list?: EvalExperimentsResult } = {}): Harness 
   }
 }
 
-function renderView(h: Harness) {
+function renderView(h: Harness, extra: Record<string, unknown> = {}) {
   const props = {
     sessionId: 's1' as SessionId,
     useSession: undefined,
@@ -199,6 +200,7 @@ function renderView(h: Harness) {
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
+    ...extra,
   } as unknown as LabViewProps
   return render(<LabView {...props} />)
 }
@@ -489,6 +491,56 @@ describe('the grouped list (T72 §1)', () => {
     // A draft has no run to mark.
     const draftRow = screen.getByText('effort-sweep').closest('[role="button"]') as HTMLElement
     expect(within(draftRow).queryByRole('button', { name: 'list.archive' })).toBeNull()
+  })
+
+  // T76: the tool-row card's 打开实验 lands here — the host has no tab switch,
+  // so the lab view takes the request and marks the row.
+  const MARKABLE: EvalExperimentsResult = {
+    ...GROUPED,
+    rows: GROUPED.rows.map(entry => (entry.id === 'r-other' ? { ...entry, experimentId: 'other-exp-20260901-abcd' } : entry)),
+  }
+  const markedName = (): string | null => document.querySelector('[data-marked="true"]')?.textContent ?? null
+
+  it('打开实验 taken on mount marks the row, switching to 全部 when the row is another session\'s (T76)', async () => {
+    const h = makeHarness({ list: MARKABLE })
+    const focus = createLabFocus()
+    focus.request('s1' as SessionId, 'other-exp-20260901-abcd')
+    renderView(h, { focus })
+    await screen.findByText('other-session')
+    expect(markedName()).toContain('other-session')
+    expect(screen.getByRole('button', { name: 'list.scopeAll' }).getAttribute('aria-pressed')).toBe('true')
+    // The switch is the mark's, not the viewer's preference: nothing remembered.
+    expect(localStorage.getItem('dsh-eval.listScope')).toBeNull()
+    // Taken once: a second view of the same session starts unmarked.
+    expect(focus.take('s1' as SessionId)).toBeNull()
+  })
+
+  it('a request while the view is open leaves the open experiment for the list, re-reads it and marks the row', async () => {
+    const h = makeHarness({ list: MARKABLE })
+    const focus = createLabFocus()
+    renderView(h, { focus })
+    fireEvent.click(await screen.findByText('judging-mine'))
+    expect(screen.queryByText('stalled-mine')).toBeNull()
+    const reads = h.fetchExperiments.mock.calls.length
+    act(() => { focus.request('s1' as SessionId, 'effort-sweep-20260912-0c0d') })
+    await screen.findByText('stalled-mine')
+    await waitFor(() => { expect(h.fetchExperiments.mock.calls.length).toBeGreaterThan(reads) })
+    expect(markedName()).toContain('effort-sweep')
+    // Opening any row clears the mark.
+    fireEvent.click(screen.getByText('effort-sweep'))
+    fireEvent.click(screen.getByRole('button', { name: 'detail.back' }))
+    await screen.findByText('stalled-mine')
+    expect(markedName()).toBeNull()
+  })
+
+  it('a request for another session is not taken here', async () => {
+    const h = makeHarness({ list: MARKABLE })
+    const focus = createLabFocus()
+    focus.request('s9' as SessionId, 'effort-sweep-20260912-0c0d')
+    renderView(h, { focus })
+    await screen.findByText('judging-mine')
+    expect(markedName()).toBeNull()
+    expect(focus.take('s9' as SessionId)).toBe('effort-sweep-20260912-0c0d')
   })
 
   it('an empty session view says what to do next', async () => {

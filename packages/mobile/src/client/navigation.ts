@@ -2,6 +2,19 @@ import type { ISessions, SessionListState, SessionSummary } from '@deepseek-ai/d
 import type { IWorkspaces } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
+type SessionId = SessionSummary['id']
+
+/**
+ * The session the main view shows, read off both host lines: alpha.2 deleted
+ * the list's `current` for the per-row `retainedBy.mainView` reference count;
+ * 0.1.5 carries only `current`.
+ */
+export function mainSessionId(list: SessionListState): SessionId | undefined {
+  return Object.values(list.byId).find(summary =>
+    ((summary.retainedBy as { mainView?: number } | undefined)?.mainView ?? 0) > 0)?.id
+    ?? (list as { current?: SessionId }).current
+}
+
 export interface NavigationCapabilities {
   sessions: ISessions
   workspaces: IWorkspaces
@@ -50,9 +63,10 @@ export class MobileNavigation {
 export function recentSessions(state: SessionListState, archived: readonly string[], query: string): SessionSummary[] {
   const hidden = new Set(archived)
   const term = query.trim().toLocaleLowerCase()
+  const current = mainSessionId(state)
   return state.ids.flatMap(id => {
     const row = state.byId[id]
-    if (!row || hidden.has(id) || row.origin === 'subagent' || (row.blank && id !== state.current)) return []
+    if (!row || hidden.has(id) || row.origin === 'subagent' || (row.blank && id !== current)) return []
     if (term && !`${row.title ?? ''} ${row.displayTitle} ${row.cwd ?? ''}`.toLocaleLowerCase().includes(term)) return []
     return [row]
   }).sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))

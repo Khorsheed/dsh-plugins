@@ -9,7 +9,19 @@ import { FilePreviewService } from '@khorsheed/dsh-file-preview'
 interface FsDouble {
   resolve: ReturnType<typeof vi.fn>
   stat: ReturnType<typeof vi.fn>
-  readText: ReturnType<typeof vi.fn>
+  readByteRange: ReturnType<typeof vi.fn>
+}
+
+/** The UTF-8 bytes of `text`, as a backend's raw read primitives return them. */
+function bytesOf(text: string): Uint8Array {
+  return new TextEncoder().encode(text)
+}
+
+/** A readByteRange mock that honors the requested window over `text`. */
+function rangeOf(text: string): ReturnType<typeof vi.fn> {
+  const bytes = bytesOf(text)
+  return vi.fn((_target: unknown, range: { offset: number; length: number }) =>
+    Promise.resolve(bytes.subarray(range.offset, range.offset + range.length)))
 }
 
 function makeService(fs: Partial<FileSystem>, config = {}): FilePreviewService {
@@ -38,7 +50,7 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockRejectedValue(new Error('no such path')),
       stat: vi.fn(),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
@@ -50,7 +62,7 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockRejectedValue('no such path'),
       stat: vi.fn(),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
@@ -61,7 +73,7 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue(undefined),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
@@ -76,7 +88,7 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockRejectedValue(new Error('stat denied')),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
@@ -87,31 +99,31 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file', size: 1024 * 1024 }),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem, { maxReadBytes: 1024 })
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
     expect(result).toEqual({ path: 'notes.md', kind: 'too-large', size: 1024 * 1024 })
-    expect(fs.readText).not.toHaveBeenCalled()
+    expect(fs.readByteRange).not.toHaveBeenCalled()
   })
 
   it('classifies binary extensions without reading', async () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file', size: 42 }),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'bundle.tar.gz', new AbortController().signal)
     expect(result).toEqual({ path: 'bundle.tar.gz', kind: 'binary', size: 42 })
-    expect(fs.readText).not.toHaveBeenCalled()
+    expect(fs.readByteRange).not.toHaveBeenCalled()
   })
 
   it('classifies binary extensions without a backend size report', async () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file' }),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'asset.woff2', new AbortController().signal)
@@ -122,7 +134,7 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file', size: 42 }),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const ctx = new Context()
     Object.assign(ctx, { fs })
@@ -138,7 +150,7 @@ describe('FilePreviewService.read', () => {
       url: '/file-preview-image/session-1/image.PNG',
       size: 42,
     })
-    expect(fs.readText).not.toHaveBeenCalled()
+    expect(fs.readByteRange).not.toHaveBeenCalled()
     expect(webServer.register).toHaveBeenCalledWith(expect.objectContaining({ kind: 'prefix', path: '/file-preview-image' }))
   })
 
@@ -146,7 +158,7 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file' }),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const ctx = new Context()
     Object.assign(ctx, { fs })
@@ -162,7 +174,7 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file', size: 42 }),
-      readText: vi.fn().mockResolvedValue('not image bytes'),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'a.png', new AbortController().signal)
@@ -177,7 +189,7 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file' }),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'session.jsonl.zstd', new AbortController().signal)
@@ -188,13 +200,13 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue(fileInfo),
-      readText: vi.fn().mockResolvedValue('hello\nworld'),
+      readByteRange: rangeOf('hello\nworld'),
     }
     const service = makeService(fs as unknown as FileSystem)
     const text = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
     expect(text).toEqual({ path: 'notes.md', kind: 'text', content: 'hello\nworld', truncated: false, size: 5 })
 
-    fs.readText.mockResolvedValue('a\u0000b')
+    fs.readByteRange.mockResolvedValue(bytesOf('a\u0000b'))
     const binary = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
     expect(binary).toEqual({ path: 'notes.md', kind: 'binary', size: 5 })
 
@@ -203,26 +215,63 @@ describe('FilePreviewService.read', () => {
     expect(noSize).toEqual({ path: 'notes.md', kind: 'binary' })
   })
 
+  it('reads through a bounded byte window of cap + 1, never the whole file', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(target),
+      stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file' }),
+      readByteRange: rangeOf('abcdef'),
+    }
+    const service = makeService(fs as unknown as FileSystem, { maxReadBytes: 3 })
+    const signal = new AbortController().signal
+    const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', signal)
+    expect(result).toEqual({ path: 'notes.md', kind: 'text', content: 'abc', truncated: true })
+    // The window, not the file, bounds the read: cap + 1 bytes at offset 0.
+    expect(fs.readByteRange).toHaveBeenCalledTimes(1)
+    expect(fs.readByteRange).toHaveBeenCalledWith(target, { offset: 0, length: 4 }, signal)
+  })
+
+  it('does not truncate a read that ends exactly at the cap', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(target),
+      stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file' }),
+      readByteRange: rangeOf('abc'),
+    }
+    const service = makeService(fs as unknown as FileSystem, { maxReadBytes: 3 })
+    const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
+    expect(result).toEqual({ path: 'notes.md', kind: 'text', content: 'abc', truncated: false })
+  })
+
+  it('decodes invalid UTF-8 non-fatally instead of failing the read', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(target),
+      stat: vi.fn().mockResolvedValue(fileInfo),
+      readByteRange: vi.fn().mockResolvedValue(Uint8Array.from([0xff, 0xfe, 0x61])),
+    }
+    const service = makeService(fs as unknown as FileSystem)
+    const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
+    expect(result).toEqual({ path: 'notes.md', kind: 'text', content: '\ufffd\ufffda', truncated: false, size: 5 })
+  })
+
   it('truncates oversized text reads without a backend size report', async () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file' }),
-      readText: vi.fn().mockResolvedValue('abcdef'),
+      readByteRange: rangeOf('abcdef'),
     }
     const service = makeService(fs as unknown as FileSystem, { maxReadBytes: 3 })
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
     expect(result).toEqual({ path: 'notes.md', kind: 'text', content: 'abc', truncated: true })
   })
 
-  it('reports a decode failure as error', async () => {
+  it('reports a read failure as error', async () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue(fileInfo),
-      readText: vi.fn().mockRejectedValue(new Error('invalid utf8')),
+      readByteRange: vi.fn().mockRejectedValue(new Error('read denied')),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(makeAgent({ events: [], header: { cwd: '/tmp' } }), 'notes.md', new AbortController().signal)
-    expect(result).toEqual({ path: 'notes.md', kind: 'error', message: 'invalid utf8' })
+    expect(result).toEqual({ path: 'notes.md', kind: 'error', message: 'read denied' })
   })
 
   it('resolves relative paths against the session cwd', async () => {
@@ -231,7 +280,7 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: resolve as never,
       stat: vi.fn().mockResolvedValue(fileInfo),
-      readText: vi.fn().mockResolvedValue('x'),
+      readByteRange: vi.fn().mockResolvedValue(bytesOf('x')),
     }
     const service = makeService(fs as unknown as FileSystem)
     await service.read(makeAgent({ events: [], header: { cwd: '/work' } }), 'notes.md', new AbortController().signal)
@@ -246,7 +295,7 @@ describe('FilePreviewService.read', () => {
     const fs: FsDouble = {
       resolve: resolve as never,
       stat: vi.fn().mockResolvedValue(fileInfo),
-      readText: vi.fn().mockResolvedValue('x'),
+      readByteRange: vi.fn().mockResolvedValue(bytesOf('x')),
     }
     const service = makeService(fs as unknown as FileSystem)
     await service.read(makeAgent({ events: [], header: { cwd: undefined } }), 'notes.md', new AbortController().signal)
@@ -273,7 +322,7 @@ describe('FilePreviewService.read — HTML render-channel cap and scripted hint'
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(htmlTarget),
       stat: vi.fn().mockResolvedValue(htmlInfo(2 * 1024 * 1024)),
-      readText: vi.fn().mockResolvedValue('<h1>big page</h1>'),
+      readByteRange: rangeOf('<h1>big page</h1>'),
     }
     const service = makeService(fs as unknown as FileSystem, { maxReadBytes: 512 * 1024 })
     const result = await service.read(agent, 'page.html', new AbortController().signal)
@@ -281,40 +330,40 @@ describe('FilePreviewService.read — HTML render-channel cap and scripted hint'
     expect(result.content).toBe('<h1>big page</h1>')
     expect(result.truncated).toBe(false)
     // 2 MiB > base cap, but the html cap allowed the read — the base cap must
-    // not have been applied.
-    expect(fs.readText).toHaveBeenCalled()
+    // not have been applied; the window is the html cap + 1.
+    expect(fs.readByteRange).toHaveBeenCalledWith(htmlTarget, { offset: 0, length: 4 * 1024 * 1024 + 1 }, expect.any(AbortSignal))
   })
 
   it('answers too-large for HTML beyond htmlMaxReadBytes without reading', async () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(htmlTarget),
       stat: vi.fn().mockResolvedValue(htmlInfo(5 * 1024 * 1024)),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(agent, 'page.html', new AbortController().signal)
     expect(result).toEqual({ path: 'page.html', kind: 'too-large', size: 5 * 1024 * 1024 })
-    expect(fs.readText).not.toHaveBeenCalled()
+    expect(fs.readByteRange).not.toHaveBeenCalled()
   })
 
   it('answers too-large for HTML beyond a custom htmlMaxReadBytes', async () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(htmlTarget),
       stat: vi.fn().mockResolvedValue(htmlInfo(64 * 1024)),
-      readText: vi.fn(),
+      readByteRange: vi.fn(),
     }
     const service = makeService(fs as unknown as FileSystem, { htmlMaxReadBytes: 32 * 1024 })
     const result = await service.read(agent, 'page.html', new AbortController().signal)
     expect(result).toEqual({ path: 'page.html', kind: 'too-large', size: 64 * 1024 })
-    expect(fs.readText).not.toHaveBeenCalled()
+    expect(fs.readByteRange).not.toHaveBeenCalled()
   })
 
   it('truncates at the custom htmlMaxReadBytes when the backend reports no size', async () => {
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(htmlTarget),
-      // No size: the read proceeds and the content cap applies.
+      // No size: the read proceeds and the byte cap applies.
       stat: vi.fn().mockResolvedValue({ version: FsVersion('v1'), type: 'file' } as FsInfo),
-      readText: vi.fn().mockResolvedValue('x'.repeat(64 * 1024 + 10)),
+      readByteRange: rangeOf('x'.repeat(64 * 1024 + 10)),
     }
     const service = makeService(fs as unknown as FileSystem, { htmlMaxReadBytes: 32 * 1024 })
     const result = await service.read(agent, 'page.html', new AbortController().signal)
@@ -327,7 +376,7 @@ describe('FilePreviewService.read — HTML render-channel cap and scripted hint'
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(htmlTarget),
       stat: vi.fn().mockResolvedValue(htmlInfo(50)),
-      readText: vi.fn().mockResolvedValue('<script>alert(1)</script><p>hi</p>'),
+      readByteRange: rangeOf('<script>alert(1)</script><p>hi</p>'),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(agent, 'page.html', new AbortController().signal)
@@ -338,7 +387,7 @@ describe('FilePreviewService.read — HTML render-channel cap and scripted hint'
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(htmlTarget),
       stat: vi.fn().mockResolvedValue(htmlInfo(50)),
-      readText: vi.fn().mockResolvedValue('<button onclick="go()">x</button>'),
+      readByteRange: rangeOf('<button onclick="go()">x</button>'),
     }
     const service = makeService(fs as unknown as FileSystem)
     const result = await service.read(agent, 'page.html', new AbortController().signal)
@@ -349,7 +398,7 @@ describe('FilePreviewService.read — HTML render-channel cap and scripted hint'
     const fs: FsDouble = {
       resolve: vi.fn().mockResolvedValue(htmlTarget),
       stat: vi.fn().mockResolvedValue(htmlInfo(50)),
-      readText: vi.fn().mockResolvedValue('<p>static only</p>'),
+      readByteRange: rangeOf('<p>static only</p>'),
     }
     const service = makeService(fs as unknown as FileSystem)
     const html = await service.read(agent, 'page.html', new AbortController().signal)

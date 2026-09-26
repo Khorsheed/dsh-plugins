@@ -1,12 +1,13 @@
 # 变更记录
 
-## 未发布
+## 0.3.1（2026-09-26）
 
-- 从只读宿主包移除 `3d-artifact` 作者 skill；现在由 `@khorsheed/dsh-inline-html-render` 分发并注册。
-- 新增零会话 `capabilities()` Remote 握手（`protocolVersion: 1`），供客户端在宿主缺席时抑制全部 UI。
+适配宿主 rc.1 线并实证 0.1.5/0.1.7 双线可用（0.1.5-rc.1 全量 boot 实证，2026-09-25）。
 
-## 未发布
-
+- V4 一等 tool-role 双形读：读取侧同时接受 rc.1 的一等 `tool` 角色与 0.1.5 的包装形态，V3→V4 迁移存量照常展示
+- 大文件读取窗口收敛：超大文件的预览读取以预览窗为界，不再整文件进内存
+- typert 面双线：生成的 face 同时携带 0.1.5 要的立即求值 `schema` 与 rc.1 要的惰性 `create()` 工厂（两版 loader 各自只查自己的键）；tarball 自带 zod@4 依赖，face 的裸 `import 'zod'` 不再被 profile 里提升的 zod@3 劫走（0.1.5 loader 的 `_zod` 品牌校验实证通过）
+- 插件清单展示元数据（`locale/*.json`）：rc.1 宿主插件页的卡面标题/描述中文化
 - 从只读宿主包移除 `3d-artifact` 作者 skill；现在由 `@khorsheed/dsh-inline-html-render` 分发并注册。
 - 新增零会话 `capabilities()` Remote 握手（`protocolVersion: 1`），供客户端在宿主缺席时抑制全部 UI。
 

@@ -179,8 +179,13 @@ html[data-dsh-mobile] [data-composer-card] > div:last-child > div:first-child > 
 html[data-dsh-mobile] [data-composer-card] > div:last-child > div:first-child > button:has(~ input[type=file][hidden]):active:not(:disabled) { background:var(--dsw-alias-interactive-bg-active); }
 html[data-dsh-mobile] [data-slot="conversation.input.model"] { max-width:min(43vw,210px); }
 html[data-dsh-mobile] [data-composer-seat] { padding-bottom:2px; }
-html[data-dsh-mobile] [data-composer-stats] { padding:4px 12px 0; gap:10px; font-size:11px; }
-html[data-dsh-mobile] [data-composer-stats] button { min-height:32px; }
+/* The compact stats row on both host lines: 0.1.5 mounts it as
+   [data-composer-stats]; alpha.2 deleted that attribute and wraps the dock
+   (stats pills + context meter) in a real flex row directly after the card.
+   On 0.1.5 the sibling selector lands on the display:contents slot wrapper —
+   inert for padding/gap, same font-size by inheritance — so both rules stay. */
+html[data-dsh-mobile] [data-composer-stats], html[data-dsh-mobile] [data-composer-card] + div { padding:4px 12px 0; gap:10px; font-size:11px; }
+html[data-dsh-mobile] [data-composer-stats] button, html[data-dsh-mobile] [data-composer-card] + div button { min-height:32px; }
 /* Follow the real chain fallback -> stack -> HeroShell path, not display:contents wrappers. */
 html[data-dsh-mobile] [data-phase=hero] [data-composer-seat] { flex:1 0 auto; }
 html[data-dsh-mobile] [data-phase=hero] [data-chain-overlay-fallback="conversation.composer"] > div:has([data-mobile-welcome]) { flex:1; align-self:stretch; padding-bottom:0; width:100%; }
@@ -220,7 +225,8 @@ html[data-mobile-input=pointer] [data-mobile-tools-dialog] button:focus { outlin
 html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child > button:has(>svg):not([aria-haspopup]) { width:44px; height:44px; min-width:44px; padding:0; border-radius:50%; corner-shape:round; transform:none; }
 html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child > button:has(>svg):not([aria-haspopup]) > svg { width:20px; height:20px; flex:none; }
 html[data-dsh-mobile] [data-slot="conversation.input.model"] { max-width:min(56vw,260px); }
-/* Keep the host context meter immediately before Send in the same flex row. */
+/* Keep the send row on one line; 0.1.5 also seats the host context meter in it
+   (alpha.2 moved the meter into the dock row below the card). */
 html[data-dsh-mobile] [data-composer-card] > div:last-child, html[data-dsh-mobile] [data-composer-card] > div:last-child > div:last-child { flex-wrap:nowrap; }
 html[data-dsh-mobile] [data-slot="conversation.input.model"] { min-width:0; max-width:min(43vw,210px); flex:1 1 auto; }
 /* rc1's model slot uses display:contents. Size its root and restore the label

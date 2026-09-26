@@ -44,9 +44,13 @@
     },
     "./src/*": "./src/*",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "dsh": {
+    "references": [
+      "@khorsheed/dsh-bundle-local-agent"
+    ],
     "client": {
       "inject": [
         "@deepseek-ai/dsh-api-remotes",
@@ -62,13 +66,14 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "Live output uses the local-agent transient Remote and public Conversation nodes, with incremental durable recovery checkpoints; native final messages retain their existing transcript and usage semantics. End-to-end latency acceptance is tracked by the room coordinator proposal.",
+      "notes": "liveMirrorGranularity token: host 0.1.5 retired the per-chunk session event, so token-mode deltas no longer land in the child session log — they ride the run-progress channel and the round settles as one combined assistant/message (identical final text); a late-arriving usage whose carrier message already mirrored is dropped with a warn (no usage-backfill event exists)",
       "verifiedHost": "0.1.5-rc.1"
     }
   },
   "files": [
     "lib",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "locale/*.json"
   ],
   "license": "MIT",
   "dependencies": {
@@ -98,53 +103,40 @@
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-agent-default-model": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-api-remotes": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-locale": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-primitives": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-settings": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-slots": {
-      "optional": true
-    },
-    "react": {
-      "optional": true
-    }
+    "@deepseek-ai/dsh-agent-default-model": { "optional": true },
+    "@deepseek-ai/dsh-api-remotes": { "optional": true },
+    "@deepseek-ai/dsh-client-locale": { "optional": true },
+    "@deepseek-ai/dsh-client-ui-primitives": { "optional": true },
+    "@deepseek-ai/dsh-client-ui-settings": { "optional": true },
+    "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
+    "react": { "optional": true }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
-    "@deepseek-ai/dsh-agent-default-model": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-test-runtime": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-commands": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-credentials": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-loader-smoke": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-settings": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-subagent": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-subprocess": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-system-prompt": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-tool-todo": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-agent-default-model": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-commands": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-credentials": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-loader-smoke": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-session": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-settings": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-subagent": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-subprocess": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-tool-todo": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.7-rc.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/js-yaml": "^4.0.9",

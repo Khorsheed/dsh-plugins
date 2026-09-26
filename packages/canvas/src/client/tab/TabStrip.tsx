@@ -14,16 +14,17 @@
  * switcher's own dropdown, not this strip's business.
  *
  * The strip scrolls sideways instead of shrinking rows: a tab whose title is
- * squeezed to four characters identifies nothing, and the ＋ at the end is
- * sticky for the same reason a control that can be scrolled away is not a
- * control (the category strip above the board follows the same rule).
+ * squeezed to four characters identifies nothing. The ＋ sits OUTSIDE the
+ * scroll box, not sticky inside it — a control that can be scrolled away is
+ * not a control (the category strip above the board follows the same rule),
+ * and the scroll box's `overflow` clipped the tail's dropdown to a sliver the
+ * one time the menu was asked for (the 新画布 "dead click"). The frame owns
+ * the bottom rule instead, so the active row still paints its cover over it.
  *
  * @module @khorsheed/dsh-canvas/client
  */
 import type { ReactNode } from 'react'
-import {
-  IconCloseFill14, IconLightOutline16, IconListPenOutline16, IconPlusOutline16,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseFillRegular, IconLightOutlineMedium, IconListPenOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { CanvasTabRow } from '../space/selection.ts'
 import type {} from '../locales.ts'
@@ -52,39 +53,45 @@ export interface TabStripProps {
 
 /** The glyph that tells a board row from a card row from a draft at a glance. */
 function glyphOf(kind: CanvasTabRow['kind']): ReactNode {
-  if (kind === 'board') return <IconLightOutline16 size={12} />
-  if (kind === 'draft') return <IconPlusOutline16 size={12} />
-  return <IconListPenOutline16 size={12} />
+  if (kind === 'board') return <IconLightOutlineMedium size={12} />
+  if (kind === 'draft') return <IconPlusOutlineMedium size={12} />
+  return <IconListPenOutlineMedium size={12} />
 }
 
 /** The canvas surface's tab strip. */
 export function TabStrip({ t, rows, active, onSelect, onClose, tail }: TabStripProps): ReactNode {
   return (
-    <div className={css.strip} role="tablist">
-      {rows.map(row => (
-        <span key={row.id} className={css.tab} data-active={row.id === active || undefined}>
-          <button
-            type="button"
-            role="tab"
-            className={css.label}
-            aria-selected={row.id === active}
-            title={row.label}
-            onClick={() => { onSelect(row.id) }}
-          >
-            {glyphOf(row.kind)}
-            <span className={css.labelText}>{row.label}</span>
-          </button>
-          <button
-            type="button"
-            className={css.close}
-            title={t('strip.close')}
-            aria-label={t('strip.close')}
-            onClick={() => { onClose(row.id) }}
-          >
-            <IconCloseFill14 size={12} />
-          </button>
-        </span>
-      ))}
+    <div className={css.stripFrame}>
+      <div className={css.strip} role="tablist">
+        {rows.map(row => (
+          <span key={row.id} className={css.tab} data-active={row.id === active || undefined}>
+            <button
+              type="button"
+              role="tab"
+              className={css.label}
+              aria-selected={row.id === active}
+              title={row.label}
+              onClick={() => { onSelect(row.id) }}
+            >
+              {glyphOf(row.kind)}
+              <span className={css.labelText}>{row.label}</span>
+            </button>
+            <button
+              type="button"
+              className={css.close}
+              title={t('strip.close')}
+              aria-label={t('strip.close')}
+              onClick={() => { onClose(row.id) }}
+            >
+              {/* The host dock's own close: Regular weight at 14 (TabPanel.tsx).
+                The Fill artwork's cross spans only 9/16 of its box, so at the
+                rows' 12px it read smaller than every outline glyph beside it —
+                14 is the size the host chose for the same glyph. */}
+            <IconCloseFillRegular size={14} />
+            </button>
+          </span>
+        ))}
+      </div>
       {tail !== undefined && <span className={css.tail}>{tail}</span>}
     </div>
   )

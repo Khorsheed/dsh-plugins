@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Inline Cards",
+    "description": "Render agent-authored HTML as sandboxed interactive cards inline in the conversation"
+  }
+}

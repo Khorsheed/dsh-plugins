@@ -60,6 +60,11 @@ function hasNulByte(content: string): boolean {
   return content.slice(0, 4096).includes('\u0000')
 }
 
+/** Shared non-fatal UTF-8 decoder for the bounded byte-window read: invalid
+ * sequences become U+FFFD (a cut multi-byte character at the window edge
+ * included) instead of failing the read. */
+const utf8Decoder = new TextDecoder()
+
 /** Detect a binary file from its display path extension. */
 function isBinaryPath(path: string): boolean {
   const dot = path.lastIndexOf('.')
@@ -390,7 +395,10 @@ export class FilePreviewService extends TypertRemoteService {
 
   /**
    * Read the current content of one recorded file, resolved against the
-   * session cwd and capped by `maxReadBytes`.
+   * session cwd and capped by `maxReadBytes`. The text read is a bounded byte
+   * window (`readByteRange` of cap + 1 bytes), so an oversized file costs the
+   * cap, never its full size; a known oversized stat still short-circuits to
+   * `too-large` before any bytes move.
    * @param agent - owning live agent; its session cwd anchors relative paths.
    * @param path - the display path recorded by the write/edit tool call.
    * @param signal - cooperative cancellation from the calling UI request.
@@ -443,15 +451,18 @@ export class FilePreviewService extends TypertRemoteService {
       return { path, kind: 'binary', ...(info.size === undefined ? {} : { size: info.size }) }
     }
     try {
-      const content = await this.fs.readText(target, signal)
+      // Bounded by the window, not the file: at most cap + 1 bytes are
+      // transferred (the extra byte decides `truncated`), never the whole file.
+      const bytes = await this.fs.readByteRange(target, { offset: 0, length: cap + 1 }, signal)
+      const truncated = bytes.length > cap
+      const content = utf8Decoder.decode(truncated ? bytes.subarray(0, cap) : bytes)
       if (hasNulByte(content)) {
         return { path, kind: 'binary', ...(info.size === undefined ? {} : { size: info.size }) }
       }
-      const truncated = content.length > cap
       return {
         path,
         kind: 'text',
-        content: truncated ? content.slice(0, cap) : content,
+        content,
         truncated,
         ...(html && isScriptedHtml(content) ? { htmlScripted: true } : {}),
         ...(info.size === undefined ? {} : { size: info.size }),

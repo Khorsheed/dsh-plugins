@@ -11,7 +11,7 @@
 import { useMemo, type ReactNode } from 'react'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconUndoOutline16 } from './icons.tsx'
+import { IconUndoOutlineMedium } from './icons-local.tsx'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls this plugin's ChatNodeDataMap merge.
 import type {} from './withdrawn-node.ts'
@@ -37,7 +37,7 @@ export function RestoredMessageView({ node, t }: RestoredMessageViewProps): Reac
   return (
     <div className={css.restoredAssistantRow}>
       <div className={css.restoredLabel}>
-        <IconUndoOutline16 />
+        <IconUndoOutlineMedium />
         <span>{t('restored.assistant')}</span>
       </div>
       <MarkdownText text={data.text} labels={labels} />

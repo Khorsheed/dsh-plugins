@@ -47,7 +47,9 @@ and whether the skill enters the model catalog. The skill-filesystem watcher
 discovers the result.
 
 The catalog reads the skill registry at the **agent preset's standing scope**
-(`agentPresets.standingKeyFor(defaultId)`) so it lists the same official/plugin/user
+(`agentPresets.standingKeyFor(defaultId)` on the 0.1.5 host line, the leased
+`agentPresets.acquireScope(defaultId)` on rc.1 — see [Compatibility](#compatibility))
+so it lists the same official/plugin/user
 skills the model sees, and the `list_capabilities` tool runs in the caller's agent
 scope. `snapshotFor(presetId)` reads any OTHER preset's scope the same way — see
 [The capability fingerprint](#the-capability-fingerprint).
@@ -160,8 +162,9 @@ hashOf(face) === face.sha  // true — the `sha` field is not part of what it di
 ```
 
 `snapshotFor(presetId?, workdir?)` is the fingerprint verb: it reads the
-skill and tool registries at **that preset's** standing scope
-(`agentPresets.standingKeyFor(id)`), loads every skill body so the rows carry
+skill and tool registries at **that preset's** standing scope (the roster's
+`standingKeyFor(id)` on 0.1.5, its leased `acquireScope(id)` on rc.1), loads
+every skill body so the rows carry
 `bodySha`, and stamps `sha`. `presetId` omitted reads the deployment default.
 `snapshot()` stays the listing verb — same rows, no body loads, no digest.
 `list_capabilities` reports the full face's tag as `capabilities`, even when
@@ -272,7 +275,12 @@ dsh-skill to state explicitly that a runtime plugin skill should carry a
 
 | Host line | Verdict |
 |---|---|
-| npm release (≥ `0.1.2-rc.1`) | supported |
-| deepseek-harness master | supported (`verifiedHost: 0.1.2-rc.1`) |
+| npm release (≥ `0.1.5-rc.1`) | supported — 0.1.5-rc.1 full-line boot-verified (42 packages including capture, 2026-09-25) |
+| npm `0.1.7-rc.1` / deepseek-harness master | supported (`verifiedHost: 0.1.7-rc.1`) |
+| earlier hosts | stay on the previous release line |
 
-Machine-readable: `dsh.compat.minHost` in `package.json` (currently `0.1.2-rc.1` — the floor moved up with the 0.1.2 baseline migration; older hosts stay on the previous release line). When a degraded mode is omitted above, note it in `dsh.compat.notes`.
+Both host lines are usable: the 0.1.5 boot passes end-to-end through three compat layers — the [preset-registry dual-name probe](../../.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md), [dual-shape typert codecs](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md), and [typert faces carrying zod@4](../../.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md).
+
+Per-mode capability reads (the mode picker, `snapshotAt` / `snapshotFor` / `modeFaces`, preset-scoped skill delivery) resolve a preset's standing scope through whichever roster face the host line offers: lease-free `standingKeyFor` on 0.1.5, the leased `acquireScope` on rc.1 — rc.1 removed `standingKeyFor`, and catalog releases before this dual-face fix silently read the global layer on rc.1. The lease is released after every read, on the listing and the fingerprint path alike; the strict/degrade wording is identical on both faces.
+
+Machine-readable: `dsh.compat.minHost` in `package.json` (currently `0.1.5-rc.1`; `verifiedHost` tracks the newest verified line, currently `0.1.7-rc.1`). When a degraded mode is omitted above, note it in `dsh.compat.notes`.

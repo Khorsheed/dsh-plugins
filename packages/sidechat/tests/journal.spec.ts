@@ -150,6 +150,53 @@ describe('projectTranscript', () => {
     ])
     expect(rows).toEqual([{ kind: 'user', text: '我们自己的发送', refs: [], time: 1 }])
   })
+
+  it('keeps our own send visible in every durable source form (current, V3→V4 migrated, released V3)', () => {
+    const send = (source: Record<string, unknown>, time: number) => event('user/message', time, {
+      id: `s${time}`, role: 'user', content: [{ type: 'text', text: `发送 ${time}` }], source,
+    })
+    const rows = projectTranscript([
+      send({ kind: 'sidechat' }, 1),
+      send({ kind: 'plugin:@khorsheed/dsh-sidechat' }, 2),
+      send({ kind: 'plugin', plugin: '@khorsheed/dsh-sidechat' }, 3),
+    ])
+    expect(rows).toEqual([
+      { kind: 'user', text: '发送 1', refs: [], time: 1 },
+      { kind: 'user', text: '发送 2', refs: [], time: 2 },
+      { kind: 'user', text: '发送 3', refs: [], time: 3 },
+    ])
+  })
+
+  it('pairs and settles V4 tool-role results (message-level toolCallId/isError)', () => {
+    const rows = projectTranscript([
+      event('tool/call', 1, { turn: 1, step: 1, callId: 'c1', name: 'read', arguments: '{}' }),
+      event('tool/result', 2, {
+        turn: 1, step: 1,
+        message: { id: 'r1', role: 'tool', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }], source: { kind: 'tool', callId: 'c1' } },
+      }),
+      event('tool/call', 3, { turn: 1, step: 1, callId: 'c2', name: 'write', arguments: '{}' }),
+      event('tool/result', 4, {
+        turn: 1, step: 1,
+        message: { id: 'r2', role: 'tool', toolCallId: 'c2', isError: true, content: [{ type: 'text', text: 'denied' }], source: { kind: 'tool', callId: 'c2' } },
+        error: { name: 'FsError', code: 'FS_SANDBOX_DENIED' },
+      }),
+    ])
+    expect(rows).toEqual([
+      { kind: 'tool', name: 'read', state: 'done', time: 1 },
+      { kind: 'tool', name: 'write', state: 'error', time: 3 },
+    ])
+  })
+
+  it('marks a V4 tool-role result with only message-level isError as error (no event error identity)', () => {
+    const rows = projectTranscript([
+      event('tool/call', 1, { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: '{}' }),
+      event('tool/result', 2, {
+        turn: 1, step: 1,
+        message: { id: 'r1', role: 'tool', toolCallId: 'c1', isError: true, content: [{ type: 'text', text: 'exit 1' }], source: { kind: 'tool', callId: 'c1' } },
+      }),
+    ])
+    expect(rows).toEqual([{ kind: 'tool', name: 'bash', state: 'error', time: 1 }])
+  })
 })
 
 describe('projectTurnError', () => {

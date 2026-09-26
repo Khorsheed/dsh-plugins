@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "TypeSafe",
+    "description": "Typed model judgement primitives for other plugins to call in code."
+  }
+}

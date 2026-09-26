@@ -9,10 +9,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the Controller service merge (ctx.sessions).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 // Type-only: pulls the uiSession service merge (probed via ctx.get).
-import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import { createConfigSync } from './config.ts'
 import { createWhalesongRuntime } from './controller.ts'
+import { sessionStatusFromLegacyPending, type LegacyPendingInteractionSnapshot } from './status.ts'
 
 /** Required services: the global session list snapshot feed. */
 export const inject = ['sessions']
@@ -23,15 +25,24 @@ export const inject = ['sessions']
  */
 export function apply(ctx: Context): void {
   ctx.effect(() => {
-    // The pending-interaction feed lives on the ui-session service; probe it
-    // so an assembly without that UI layer degrades the blocked chime off
-    // instead of pending the fiber.
-    const uiSession = ctx.get('uiSession')
+    // The Session status feed lives on the ui-session service; probe it so an
+    // assembly without that UI layer degrades the blocked chime off instead of
+    // pending the fiber. 0.1.6-alpha.2 merged `pendingInteractions` into
+    // `sessionStatus`; the legacy name is gone from the new types, so both
+    // faces are read off a duck type and the 0.1.5 feed is adapted forward.
+    const uiSession = ctx.get('uiSession') as {
+      sessionStatus?: ObservableSnapshot<SessionStatusSnapshot>
+      pendingInteractions?: ObservableSnapshot<LegacyPendingInteractionSnapshot>
+    } | undefined
+    const status = uiSession?.sessionStatus
+      ?? (uiSession?.pendingInteractions === undefined
+        ? undefined
+        : sessionStatusFromLegacyPending(uiSession.pendingInteractions))
     const runtime = createWhalesongRuntime({
       doc: document,
       win: window,
       list: ctx.sessions.list,
-      ...(uiSession === undefined ? {} : { pending: uiSession.pendingInteractions }),
+      ...(status === undefined ? {} : { pending: status }),
     })
     const sync = createConfigSync(window)
     const unsubscribe = sync.subscribe((config) => { runtime.applyConfig(config) })

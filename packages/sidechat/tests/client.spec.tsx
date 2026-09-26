@@ -289,6 +289,7 @@ interface DockHarness {
 function dockBench(opts: {
   open?: boolean
   current?: string | undefined
+  mainView?: string
   activePanelId?: string | null
   hints?: Result<SideChatSurfaceHints>
 } = {}): DockHarness {
@@ -307,11 +308,16 @@ function dockBench(opts: {
      
     useSyncExternalStore(instance.store.subscribe, () => selector(instance.store.getSnapshot()))) as SideChatDockProps['useStore']
   const current = opts.current
+  // The two host-line list shapes: 0.1.5 publishes `current`; 0.1.6-alpha.2
+  // carries the on-screen session as its row's retainedBy.mainView count.
+  const sessionsState = opts.mainView === undefined
+    ? { current, byId: current === undefined ? {} : { [current]: { displayTitle: '主会话' } } }
+    : { byId: { [opts.mainView]: { id: opts.mainView, displayTitle: '主会话', retainedBy: { mainView: 1 } } } }
   const props = {
     useStore,
     actions: instance.actions,
     useSessions: ((selector: (state: unknown) => unknown) =>
-      selector({ current, byId: current === undefined ? {} : { [current]: { displayTitle: '主会话' } } })) as SideChatDockProps['useSessions'],
+      selector(sessionsState)) as SideChatDockProps['useSessions'],
     usePanelInfo: ((selector: (state: unknown) => unknown) =>
       selector({ activePanelId: opts.activePanelId ?? null })) as SideChatDockProps['usePanelInfo'],
     t,
@@ -345,6 +351,14 @@ describe('SideChatDock', () => {
     dockBench({ open: true, current: undefined })
     await waitFor(() => expect(screen.getByPlaceholderText(zh['dock.readonly'])).toBeTruthy())
     expect(screen.getByRole('button', { name: zh['composer.send'] })).toHaveProperty('disabled', true)
+  })
+
+  it('derives the donating session from the row\'s mainView retain count on hosts without `current`', async () => {
+    const { mocks } = dockBench({ open: true, mainView: 's-main' })
+    const input = await screen.findByPlaceholderText(zh['composer.placeholder'])
+    fireEvent.input(input, { target: { value: '问题' } })
+    fireEvent.keyDown(input, { key: 'Enter', metaKey: true })
+    await waitFor(() => expect(mocks.send).toHaveBeenCalledWith('s-main', { contextKey: 's-main', text: '问题', label: '主会话' }))
   })
 
   it('drags the frame by its handle, clamped into the viewport', async () => {

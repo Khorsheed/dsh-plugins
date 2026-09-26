@@ -145,10 +145,10 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 | 插件 | agent 工具（eval 域） | 编排器服务面 | 人 |
 |---|---|---|---|
-| datasets | 读类全开（含 snapshot，它只解析当前 commit）；`put_item` 留给出题 | worktree_path、read（显式层） | bind、tab、validate |
+| datasets | tier `authoring`：六个读类动词（`list` `show` `describe` `read` `snapshot` `validate`）+ `put_item`；只按登记 `<登记 id>/<set>` 取题，不碰仓库目录 | 按钉住的 commit 物化（`worktreePath`）、read（显式层） | 题集 tab 登记、validate |
 | mission | **eval 预设不挂**（I5·T46）；账本与释放闸仍由 mission 提供 | 全部写方法 | export、retry、human-final |
 | lab | 不开 | 全部 | status、release |
-| eval | `eval_conditions` `eval_plan_validate` `eval_plan_draft` `eval_run_status` `eval_cells`；不开 run | 内核 | 批准、run、report |
+| eval | 四读 `eval_conditions` `eval_plan_validate` `eval_run_status` `eval_cells` + 两写 `eval_plan_draft`（部署内实验目录）`eval_analysis_write`（只写 `analysis/`）；不开 run | 内核 | 批准、run、report |
 | tool-subagent（四家委派工具） | 不开——三行 `tools: none`，第四家默认不挂（I3·T27 落地） | 经 local-agent 门面委派选手 | `/codex login`、`/kimi status` 等 provider 动词 |
 
 **M4'③ 起这三个机制插件拆成 core + companion**：profile 根只挂 core（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归 companion，所以上表的按域 tier 由 pack 的 `eval` 预设的伴生行授予——`datasets-tool: authoring`、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，任务 / 数据集两个标签页另按同一组合判据自隐（判据读不到时 fail-open）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）；同一条自隐规则的另一半随之生效——任务 tab 判的就是预设里有没有这一行，所以它一走，评测会话的任务 tab 自己就不见了。包照装，谁要在自己的覆盖层预设里加回这一行都还在。三个伴生包随 pack 安装：`package.json` 的成员清单加依赖，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
@@ -159,7 +159,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 「工具按域开放」限的是 profile 根上注册的那批工具；另一半由**预设**限。评测实例的 agent 走 pack 自带的 `eval` 预设（`presets/eval/`），它的组成表是随发行版的 `standard` 减去两类行：
 
-- **能执行宿主命令的**：`tool-bash` / `tool-pwsh`；`tool-workflow` 与它依赖的 `workflow-worker-thread`——workflow 脚本是**模型写的 JavaScript**，在 Node worker 线程里当作 async 函数体执行，够得着 `node:child_process`，全程没有 shell；`tool-ralph` 驱动同一个引擎，一起去掉。
+- **能执行宿主命令的**：`tool-bash` / `tool-pwsh`；`tool-workflow` 与它依赖的 `workflow-ptc`——workflow 脚本是**模型写的 JavaScript**，在 Node worker 线程里当作 async 函数体执行，够得着 `node:child_process`，全程没有 shell；`tool-ralph` 驱动同一个引擎，一起去掉。
 - **词汇与本线冲突的**：`plan-mode`。它的提示词规划的是**实现**并明令不要写文件，而这个 agent 的产出恰恰是写到盘上、由人批准的 `dataseek.plan/1`。一个会话里两个「plan」是混淆，不是能力缺口。
 
 留下的是读、起草，以及委派给**跑在同一个预设上**的 agent：进程内子 agent 继承父 agent 的预设（宿主的 `subagent-in-process-driver/tests/preset-inheritance.spec.ts` 就是这条的证明），所以委派递不出这个预设本身没有的 shell。docker 从来不在这张表上——`lab` 一个模型可见工具都不注册，容器动作全在编排器的服务面。
@@ -241,7 +241,7 @@ pending → ws-ready → stage-1 → stage-2 → iterating ⇄ checkpoint-N → 
 
 | 面 | 作用 | 状态 |
 |---|---|---|
-| **题集 › 列表** | 一行一个题集：id、快照（分支 @ commit）、题目数、槽位与层的对应、canary 是否设置、validate 结果、用于哪些实验。动作：新建题集（生成带 `dataset.json` 的骨架）、导入题集（指一个已按协议组织的目录或仓库 + commit，validate 后入列——本质是绑定） | ✅ I5·T47 |
+| **题集 › 列表** | 一行一个题集：id、快照（分支 @ commit）、题目数、槽位与层的对应、canary 是否设置、validate 结果、用于哪些实验。动作：新建题集（生成带 `dataset.json` 的骨架）、导入题集（指一个已按协议组织的目录或仓库 + commit，validate 后入列——本质是登记） | ✅ I5·T47 |
 | **题集 › 详情**（题集 › 题目） | 文件树 + 预览：树上每个文件标槽位与「谁看得到」，槽位可筛选；「选手将看到」把这道题在单元里的样子原样列出（防泄题自查）；可判性一行（评估标准几条、探针几个、阶段 schema 几个）；「作答记录」按题目投影各实验的格子。动作：题目骨架、导入题目、validate | ✅ I5·T47 |
 | **实验室 › 列表** | 一行一个实验：名称、题库快照、条件数（+ 判官）、题数、rep、因子（由条件 diff 自动推出）、状态、进度、开始时间；草稿与 run 同列。状态：草稿 → 待批准 → 运行中 → 评估中 → 已完成，另有被拒、已取消 | ✅ I5·T35a |
 | **实验室 › 新建实验** | 名称、题库快照、题目多选、条件（选已有或新建：harness、模型、scope、preset、权限、推理强度）、判官与采样数、rep、阶段、顺序 seed、环境（镜像、网络、出网自检）、预算。产出是 `plans/<name>.json` 与新条件文件，进题库工作树的透传区；动作只有「保存草稿并 validate」——**启动不在这张表单上**。agent 起草的草稿与人建的落在同一个列表：两条路走同一个服务面动词（`draftExperiment`），所以是同一份文件 | ✅ I5·T34 |

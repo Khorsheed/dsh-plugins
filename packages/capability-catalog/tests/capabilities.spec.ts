@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   CAPS_TAG_PREFIX, canonicalCapabilities, canonicalJson, capsTag, hashOf, hashSkillBody,
 } from '../src/capabilities.ts'
@@ -241,5 +241,59 @@ describe('resolvePresetScope — a listing degrades, a fingerprint does not', ()
     // answer — and it carries no label.
     expect(await resolvePresetScope(undefined, undefined, true)).toEqual({ scope: undefined, preset: undefined })
     expect(await resolvePresetScope({ defaultId: 'x' }, undefined, true)).toEqual({ scope: undefined, preset: undefined })
+  })
+})
+
+describe('resolvePresetScope — the rc.1 leased roster face', () => {
+  const key = Symbol('standing-scope')
+
+  /** A lease as the rc.1 roster hands it out: the key, and the release on `Symbol.asyncDispose`. */
+  function leaseOf(keyValue: unknown, onRelease: () => void): unknown {
+    return { key: keyValue, [Symbol.asyncDispose]: async () => { onRelease() } }
+  }
+
+  it('resolves through acquireScope when standingKeyFor is absent, and labels the preset', async () => {
+    let releases = 0
+    const roster = { defaultId: 'eval-lean', acquireScope: async () => leaseOf(key, () => { releases += 1 }) }
+    const resolved = await resolvePresetScope(roster, 'eval-full', false)
+    expect(resolved.scope).toBe(key)
+    expect(resolved.preset).toBe('eval-full')
+    // The lease rides the result: the caller reads first, then releases ONCE.
+    expect(typeof resolved.dispose).toBe('function')
+    expect(releases).toBe(0)
+    await resolved.dispose?.()
+    expect(releases).toBe(1)
+  })
+
+  it('releases a keyless lease itself on the degrade path — no caller ever sees it', async () => {
+    let releases = 0
+    const roster = { acquireScope: async () => leaseOf(undefined, () => { releases += 1 }) }
+    expect(await resolvePresetScope(roster, 'ghost', false)).toEqual({ scope: undefined, preset: undefined })
+    expect(releases).toBe(1)
+    await expect(resolvePresetScope(roster, 'ghost', true)).rejects.toThrow(/resolved no standing scope for preset "ghost"/)
+    expect(releases).toBe(2)
+  })
+
+  it('a broken or unknown preset degrades a listing and refuses a fingerprint — the 0.1.5 wording', async () => {
+    const invalid = {
+      defaultId: 'eval-lean',
+      acquireScope: async (): Promise<unknown> => { throw new Error('agent-preset/invalid: preset "eval-lean" failed to mount: invalid config') },
+    }
+    expect(await resolvePresetScope(invalid, 'eval-lean', false)).toEqual({ scope: undefined, preset: undefined })
+    await expect(resolvePresetScope(invalid, 'eval-lean', true)).rejects.toThrow(/cannot fingerprint preset "eval-lean".*failed to mount/s)
+    const missing = {
+      acquireScope: async (): Promise<unknown> => { throw new Error('agent-preset/not-found: Unknown agent preset: ghost') },
+    }
+    expect(await resolvePresetScope(missing, 'ghost', false)).toEqual({ scope: undefined, preset: undefined })
+    await expect(resolvePresetScope(missing, 'ghost', true)).rejects.toThrow(/cannot fingerprint preset "ghost".*Unknown agent preset: ghost/s)
+  })
+
+  it('prefers the lease-free 0.1.5 face when a roster offers both', async () => {
+    const acquireScope = vi.fn(async () => leaseOf(key, () => {}))
+    const standingKeyFor = vi.fn(async (): Promise<unknown> => key)
+    const resolved = await resolvePresetScope({ standingKeyFor, acquireScope }, undefined, true)
+    expect(standingKeyFor).toHaveBeenCalledOnce()
+    expect(acquireScope).not.toHaveBeenCalled()
+    expect(resolved).toEqual({ scope: key, preset: undefined })
   })
 })

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import type { JobView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { JobView } from '@deepseek-ai/dsh-jobs/view'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { JobTab, type HistoryPage } from '../src/client/JobTab.tsx'
 import { taskpilotDefinition, TASKPILOT_KIND, TASKPILOT_TAB_ID } from '../src/client/definition.ts'
@@ -79,6 +79,10 @@ function tabProps(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: SESSION,
     useSessions: (selector: (state: unknown) => unknown) => selector(empty),
+    // rc.1's jobs channel starts empty: every legacy-mirror stub below drives
+    // through the 0.1.5 read it names.
+    useJobs: (selector: (state: { rows: Record<string, never> }) => unknown) => selector({ rows: {} }),
+    watchRows: () => () => {},
     useTabInfo: useTabInfo('bash-1'),
     loadHistory: vi.fn(async () => historyPage()),
     t,
@@ -165,6 +169,16 @@ describe('JobTab', () => {
       }),
     }) as never} />)
     expect(metaValue('Duration')).toBe('2m 10s')
+  })
+
+  it('reads the job from rc.1\'s jobs channel when the session-list mirror is absent', () => {
+    render(<JobTab {...tabProps({
+      useJobs: (selector: (state: { rows: Record<string, JobView[]> }) => unknown) => selector({
+        rows: { [SESSION]: [job({ status: 'completed', startedAt: 1_000, finishedAt: 61_000 })] },
+      }),
+    }) as never} />)
+    expect(screen.getByText('pnpm build')).toBeTruthy()
+    expect(metaValue('Duration')).toBe('1m 0s')
   })
 
   it('renders — for the duration of a settled row that carries no finish time', () => {

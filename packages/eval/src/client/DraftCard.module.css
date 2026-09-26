@@ -1,0 +1,78 @@
+/* The experiment card on the eval_plan_draft tool row (T76). A bordered block
+   in the turn, the same tokens as the lab tab; the chips come from the lab's
+   own stylesheet (parts.tsx) so the status word looks the same in both. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 560px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kind {
+  flex: none;
+  font-size: 12px;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 2px;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.question {
+  color: var(--dsw-alias-label-primary);
+}
+
+.note {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.warn {
+  color: var(--dsw-alias-state-warn-label);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}

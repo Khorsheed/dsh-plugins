@@ -1,0 +1,86 @@
+{
+  "name": "@khorsheed/dsh-bundle-local-agent",
+  "description": "Family bundle 本地多Agent: the local-agent core plus the four delegation providers (kimi / codex / claude-code / dsh) in one install. Thin meta package: a patch carrying the members' canonical rows, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/bundle-local-agent"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "locale/*.json"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "local-agent",
+    "bundle"
+  ],
+  "dependencies": {
+    "@khorsheed/dsh-local-agent": "workspace:*",
+    "@khorsheed/dsh-local-agent-claude-code": "workspace:*",
+    "@khorsheed/dsh-local-agent-codex": "workspace:*",
+    "@khorsheed/dsh-local-agent-dsh": "workspace:*",
+    "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
+    "@khorsheed/dsh-local-agent-kimi": "workspace:*",
+    "@khorsheed/dsh-local-agent-tool-subagent": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml",
+      "kind": "family",
+      "members": [
+        "@khorsheed/dsh-local-agent",
+        "@khorsheed/dsh-local-agent-kimi",
+        "@khorsheed/dsh-local-agent-codex",
+        "@khorsheed/dsh-local-agent-claude-code",
+        "@khorsheed/dsh-local-agent-dsh"
+      ]
+    },
+    "references": [
+      "@khorsheed/dsh-local-agent",
+      "@khorsheed/dsh-local-agent-kimi",
+      "@khorsheed/dsh-local-agent-codex",
+      "@khorsheed/dsh-local-agent-claude-code",
+      "@khorsheed/dsh-local-agent-dsh"
+    ],
+    "compat": {
+      "minHost": "0.1.5-rc.1",
+      "verifiedHost": "0.1.7-rc.1",
+      "notes": "Pure composition: the bundle mounts the members' canonical rows and registers nothing of its own, so the floor is the members' highest — local-agent core and the four providers all floor at 0.1.5-rc.1 (the deps-only libraries local-agent-tool-subagent / local-agent-dsh-headless floor lower). Individual member behaviors behind that floor (e.g. token-mode live-mirror granularity on 0.1.5) are documented in each member's own dsh.compat."
+    }
+  }
+}

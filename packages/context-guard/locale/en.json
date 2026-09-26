@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Context Guard",
+    "description": "Show a composer compact button when context occupancy crosses the threshold."
+  }
+}

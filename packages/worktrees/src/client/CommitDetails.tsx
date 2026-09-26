@@ -7,7 +7,7 @@
  * adaptive-path truncation and right-aligned counts.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCopyOutlineMedium, IconFolderOpenOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   PreviewChrome, StructuredLabels,
@@ -98,11 +98,11 @@ export function CommitDetails({
           </div>
           <span className={css.titleActions}>
             <button type="button" className={css.action} title={t('action.copy')} onClick={() => { void copySha(commit.sha) }}>
-              <IconCopyOutline16 />
+              <IconCopyOutlineMedium />
             </button>
             {openFolder !== undefined && (
               <button type="button" className={css.action} title={t('action.openFolder')} onClick={openFolder}>
-                <IconFolderOpenOutline16 />
+                <IconFolderOpenOutlineMedium />
               </button>
             )}
           </span>

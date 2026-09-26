@@ -1,7 +1,12 @@
 # 变更记录
 
-## 0.2.2（未发布）
+## 0.2.2（2026-09-26）
 
+适配宿主 rc.1 线并实证 0.1.5/0.1.7 双线可用（0.1.5-rc.1 全量 boot 实证，2026-09-25）。
+
+- 设置面双线：rc.1 走 entry Config（dict 根 volatile 探测）+ `configForms`，0.1.5 留 `settings.register` + `settingsScope`；`settings.plugins.tab` 双臂注册；会话面迁移（宿主移除 `ISessions.open/current`）
+- 图标自持化：rc.1 图标图样由 `sync-icon-artwork` 生成器摊平进包内 `src/client/icons.tsx`（双线渲染同一份图样）
+- 插件清单展示元数据（`locale/*.json`）：rc.1 宿主插件页的卡面标题/描述中文化
 - 新增「压缩上下文」动作（默认 `Ctrl/Cmd+Shift+X`）：对当前会话调用公开的 `ISession.command('/compact')`，与 composer 斜杠菜单走同一条宿主命令通道
 - 新增「开关右侧边栏」动作（原「开关侧边栏」的**目标已修正**：`ctx.layout.toggleSidebar()` 是左导航栏，产品要的是右栏），**默认绑定鼠标中键**：调用 ui-sidebar-right 的公开服务 `ctx.sidebarRight.toggleExpanded()`；该服务是**探测**而非注入（`ctx.reflect.get('sidebarRight')`），没有右栏的组合里其余快捷键照常工作
 - **修复**（随 0.2.2 首发即修的回归）：右栏开关第一版拿服务自身的 `active()` 当挂载探针，而「从未打开过的右栏」没有活动 tab —— 正是这个手势本来要展开的状态，结果中键毫无反应。现在门禁只要求「有右栏服务 + 有当前会话」，写入口在挂载前的抛错由兜底吞掉，并补了回归用例

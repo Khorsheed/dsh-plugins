@@ -31,15 +31,44 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createScope, type ScopeKey } from '@deepseek-ai/dsh-scope'
-import { livePresetMounts } from '@deepseek-ai/dsh-agent-presets'
 // Type-only: the ctx.skills service merge and the provider contract this module
 // implements. The skill registry is an optional peer; a runtime import would
 // make the catalog fail to boot without it.
 import type { SkillCandidate, SkillDefinition, SkillProvider, SkillProviderControl } from '@deepseek-ai/dsh-skill'
 // Type-only: the ctx.agentPresets service merge and the `agent-preset/selected`
 // event declaration (the roster itself is a real dependency).
-import type {} from '@deepseek-ai/dsh-agent-presets'
-import type { PresetRosterSlice } from './preset-scope.ts'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import { acquireStandingScope, type PresetRosterSlice } from './preset-scope.ts'
+
+let presetRegistryProbe: Promise<unknown> | undefined
+
+/**
+ * Resolve the preset-registry module by name. The 0.1.7-rc.1 host renamed
+ * `@deepseek-ai/dsh-agent-presets` to `@deepseek-ai/dsh-agent-preset-registry`
+ * (the livePresetMounts API carried over); 0.1.5/0.1.6 hosts install only the
+ * old name, and a host without preset composition installs neither — `null`,
+ * and {@link ScopedSkillDelivery.liveKeys} then reports nothing live, the same
+ * degrade the call's own catch encodes. A STATIC import of either name is a
+ * module-resolution failure at load on hosts installing only the other —
+ * pack-dist strips `dependencies`, so the specifier resolves against the
+ * host's install tree. Both specifiers stay static string literals so tsdown
+ * externalizes them and tsc type-checks them.
+ * @returns the module namespace, or null when neither name resolves.
+ */
+export function loadPresetRegistry(): Promise<unknown> {
+  presetRegistryProbe ??= import('@deepseek-ai/dsh-agent-preset-registry')
+    .catch((): unknown => import('@deepseek-ai/dsh-agent-presets'))
+    .catch((): null => null)
+  return presetRegistryProbe
+}
+
+/** Test seam: drop the cached probe so a mocked resolution path re-runs. */
+export function resetPresetRegistryProbeForTest(): void {
+  presetRegistryProbe = undefined
+}
+
+/** The registry's `livePresetMounts` face (structural — the module is probed). */
+type LivePresetMounts = () => readonly { readonly key: ScopeKey | undefined }[]
 
 /** Provider label for managed entries; also the candidate's `provider` field. */
 export const SCOPED_PROVIDER_NAME = 'capability-catalog'
@@ -373,6 +402,8 @@ export class ScopedSkillDelivery {
   private failure: string | undefined
   private started = false
   private disposed = false
+  /** The probed registry's mount list (undefined until start()'s probe resolves). */
+  private presetMounts: LivePresetMounts | undefined
 
   /**
    * @param ctx - the host context the delivery scopes are minted under.
@@ -384,6 +415,11 @@ export class ScopedSkillDelivery {
   async start(): Promise<void> {
     if (this.started || this.disposed) return
     this.started = true
+    // Resolve the registry's mount list before the first reconcile: the
+    // 0.1.7-rc.1 host renamed the package (see loadPresetRegistry). An
+    // unresolved probe leaves presetMounts undefined and liveKeys() reports
+    // nothing live — the same degrade the call's own catch encodes.
+    this.presetMounts = ((await loadPresetRegistry()) as { livePresetMounts?: LivePresetMounts } | null)?.livePresetMounts
     await this.ensureRoot()
     this.watchRoot()
     this.ctx.on('agent-preset/selected', () => { void this.reconcile() })
@@ -401,7 +437,7 @@ export class ScopedSkillDelivery {
       this.managed = []
       return
     }
-    if (roster?.standingKeyFor === undefined) {
+    if (roster?.standingKeyFor === undefined && roster?.acquireScope === undefined) {
       this.failure = 'no agent-preset roster is composed'
       this.disposeEntries()
       this.managed = []
@@ -432,8 +468,9 @@ export class ScopedSkillDelivery {
 
     this.presetErrors = new Map()
     const live = this.liveKeys()
-    // Resolve each named preset once: the roster's `standingKeyFor` ensures the
-    // standing mount, so repeated calls are wasted work and repeated mounts.
+    // Resolve each named preset once: the roster's standing-scope acquisition
+    // (either roster face) ensures the standing mount, so repeated calls are
+    // wasted work and repeated mounts.
     const resolved = new Map<string, ScopeKey | undefined>()
     for (const presetId of byPreset.keys()) {
       resolved.set(presetId, await this.resolveKey(roster, presetId))
@@ -568,6 +605,12 @@ export class ScopedSkillDelivery {
   /** The standing keys that still have a live mount in this process. */
   private liveKeys(): Set<ScopeKey> {
     const keys = new Set<ScopeKey>()
+    const livePresetMounts = this.presetMounts
+    // Undefined until start()'s probe resolves (a file event can fire first),
+    // or forever on a host with neither registry name — the same degrade the
+    // catch below encodes: nothing is KNOWN to be live, registrations for
+    // needed presets are still kept, only stale generations are dropped.
+    if (livePresetMounts === undefined) return keys
     try {
       for (const mount of livePresetMounts()) {
         if (mount.key !== undefined) keys.add(mount.key)
@@ -582,12 +625,21 @@ export class ScopedSkillDelivery {
   /** Resolve one preset's standing key, remembering why it failed. */
   private async resolveKey(roster: PresetRosterSlice, presetId: string): Promise<ScopeKey | undefined> {
     try {
-      const key = await roster.standingKeyFor?.(presetId)
-      if (key === undefined) {
-        this.presetErrors.set(presetId, 'the roster resolved no standing scope')
-        return undefined
+      const read = await acquireStandingScope(roster, presetId)
+      try {
+        if (read.key === undefined) {
+          this.presetErrors.set(presetId, 'the roster resolved no standing scope')
+          return undefined
+        }
+        return read.key as ScopeKey
+      } finally {
+        // The key outlives the lease (a generation is reaped only once its
+        // preset is unregistered AND unleased), so entries keep it; a release
+        // failure is logged, not mistaken for a resolution failure.
+        await read.dispose?.().catch((error: unknown) => {
+          this.deps.log(`capability-catalog: scope lease release failed: ${describeError(error)}`)
+        })
       }
-      return key as ScopeKey
     } catch (error) {
       this.presetErrors.set(presetId, describeError(error))
       return undefined

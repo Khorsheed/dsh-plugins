@@ -2,7 +2,11 @@
  * Client apply regression: the localAgentGateway Remote declares
  * `status(name, scope?)` and the api-gateway client enforces EXACT arity —
  * the card's status probe must pass the default scope explicitly or the call
- * throws and the auth dot reads unavailable (the 0.1.5 prod outage).
+ * throws and the auth dot reads unavailable (the 0.1.5 prod outage). Plus the
+ * three-track settings-surface registration: standalone install (alpha.2
+ * `plugins.bundle.config` keyed by package name), family-bundle install
+ * (`plugins.row.config` keyed `<bundle>#<row id>`), 0.1.5
+ * (`settings.plugin.item` keyed by the settings namespace).
  */
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -13,21 +17,51 @@ interface InjectedFace {
   auth: { status: (name: string) => Promise<unknown> }
 }
 
+/** Boot apply over a registry that fires every inject immediately and records registrations. */
+function bench(status: ReturnType<typeof vi.fn>): {
+  injectedFaces: InjectedFace[]
+  registrations: Array<{ name: string; key: string }>
+} {
+  const injectedFaces: InjectedFace[] = []
+  const registrations: Array<{ name: string; key: string }> = []
+  const ctx = new Context()
+  ctx.provide('locale', { bind: () => vi.fn(), register: vi.fn() } as never)
+  ctx.provide('settingsScope', { bind: () => ({}) } as never)
+  ctx.provide('slots', {
+    inject: (_name: string, factory: () => void) => { factory() },
+    register: (descriptor: { name: string; key: string; inject: () => InjectedFace }) => {
+      registrations.push({ name: descriptor.name, key: descriptor.key })
+      injectedFaces.push(descriptor.inject())
+    },
+  } as never)
+  ctx.provide('remote.localAgentGateway' as never, { status } as never)
+  apply(ctx)
+  return { injectedFaces, registrations }
+}
+
 describe('client apply: gateway call arity', () => {
   it('status probes pass the default scope explicitly', async () => {
     const status = vi.fn(async () => ({ ok: true as const, value: { name: 'dsh', authenticated: true } }))
-    const ctx = new Context()
-    ctx.provide('locale', { bind: () => vi.fn(), register: vi.fn() } as never)
-    ctx.provide('settingsScope', { bind: () => ({}) } as never)
-    let injected: InjectedFace | undefined
-    ctx.provide('slots', {
-      inject: (_name: string, factory: () => void) => { factory() },
-      register: (descriptor: { inject: () => InjectedFace }) => { injected = descriptor.inject() },
-    } as never)
-    ctx.provide('remote.localAgentGateway' as never, { status } as never)
-    apply(ctx)
-    expect(injected).toBeDefined()
-    await injected!.auth.status('dsh')
+    const { injectedFaces } = bench(status)
+    expect(injectedFaces.length).toBeGreaterThan(0)
+    await injectedFaces[0]!.auth.status('dsh')
     expect(status).toHaveBeenCalledWith('dsh', undefined)
+  })
+})
+
+describe('client apply: three-track settings surfaces', () => {
+  it('registers the bundle configuration keyed by package name on the alpha.2 slot', () => {
+    const { registrations } = bench(vi.fn())
+    expect(registrations).toContainEqual({ name: 'plugins.bundle.config', key: '@khorsheed/dsh-local-agent-dsh' })
+  })
+
+  it('registers the row-level configuration keyed by the family bundle row id', () => {
+    const { registrations } = bench(vi.fn())
+    expect(registrations).toContainEqual({ name: 'plugins.row.config', key: '@khorsheed/dsh-bundle-local-agent#local-agent-dsh' })
+  })
+
+  it('registers the settings card keyed by the settings namespace on the 0.1.5 slot', () => {
+    const { registrations } = bench(vi.fn())
+    expect(registrations).toContainEqual({ name: 'settings.plugin.item', key: 'local-agent-dsh' })
   })
 })

@@ -1,18 +1,26 @@
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
+import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 /**
- * Local-agent-dsh plugin, browser half: one `settings.plugin.item` card
- * (keyed to the `local-agent-dsh` settings namespace the host half registers)
- * in the official Plugins → 可配置插件 tab. The card carries the family
- * core's shared ProviderAuthBlock (dsh authenticates through the host
- * credentials, so the block renders status only), the DeepSeek delegation
- * switch — migrated from the core section's `local-agent.settings.row-action`
- * seat, which this plugin no longer contributes to — and the resident-mode
- * block (live switch) plus the default-model block (free-text input, the
- * broker's effective-model line and suggestion vocabulary), whose writes ride
- * the bound settingsScope: the host watcher hot-applies them, no reload.
- * Every read degrades: an absent gateway renders the auth block's
- * 'unavailable' state and drops the model surface to the bare input, an
- * unregistered namespace disables the controls.
+ * Local-agent-dsh plugin, browser half: the dsh settings surface, one face
+ * per install shape and host line — a standalone install renders the
+ * bundle's own configuration on its Plugins-page detail view
+ * (`plugins.bundle.config`, keyed by package name), a family-bundle install
+ * renders the same card through the row-level configure entry on the
+ * BUNDLE's detail view (`plugins.row.config`, keyed
+ * `@khorsheed/dsh-bundle-local-agent#local-agent-dsh`), and 0.1.5 renders
+ * the `settings.plugin.item` card (keyed to the `local-agent-dsh`
+ * settings namespace the host half registers) in the official
+ * Plugins → 可配置插件 tab. The card carries the family core's shared
+ * ProviderAuthBlock (dsh authenticates through the host credentials, so the
+ * block renders status only), the DeepSeek delegation switch — migrated from
+ * the core section's `local-agent.settings.row-action` seat, which this
+ * plugin no longer contributes to — and the resident-mode block (live switch)
+ * plus the default-model block (free-text input, the broker's effective-model
+ * line and suggestion vocabulary), whose writes ride the bound settingsScope:
+ * the host watcher hot-applies them, no reload. Every read degrades: an
+ * absent gateway renders the auth block's 'unavailable' state and drops the
+ * model surface to the bare input, an unregistered namespace disables the
+ * controls.
  * @module @khorsheed/dsh-local-agent-dsh/client
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -25,8 +33,9 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the ctx.slots service merge (renderer-owned slot registry).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-// Type-only: the 'settings.plugin.item' keyed-slot SlotMap merge.
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+// Type-only: the 'plugins.bundle.config' / 'plugins.row.config' keyed-slot
+// SlotMap merges (alpha.2).
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 // Type-only: the family core's LocaleNamespaceMap merge ('local-agent', the
 // auth block's copy) and the gateway Remote type.
 import type {} from '@khorsheed/dsh-local-agent/client'
@@ -38,27 +47,41 @@ import type {} from '@khorsheed/dsh-local-agent/remote'
 import type { LocalAgentGatewayRemote } from '@khorsheed/dsh-local-agent/client'
 import { en, NS, zh, type LocalAgentDshKey } from './locales.ts'
 import {
-  DshSettingsCard, type DshCardSettings, type DshSettingsCardInjected,
+  DshBundleConfig, DshSettingsCard, type DshCardSettings, type DshSettingsCardInjected,
 } from './SettingsCard.tsx'
 
-export { DshSettingsCard } from './SettingsCard.tsx'
+export { DshBundleConfig, DshSettingsCard } from './SettingsCard.tsx'
 export type {
-  DshCardSettings, DshSettingsCardInjected, DshSettingsCardProps,
+  DshCardSettings, DshBundleConfigProps, DshSettingsCardInjected, DshSettingsCardProps,
 } from './SettingsCard.tsx'
 export { en, NS, zh }
 export type { LocalAgentDshKey }
 
-/** Required services: slot registry, settings scope, command Remote, and locale registry. */
-export const inject = ['slots', 'settingsScope', 'remote', 'remote.commands', 'locale']
+/**
+ * This bundle's package name — the key the Plugins page dispatches
+ * `plugins.bundle.config` entries on (identity triangle: cordis.patch.yml,
+ * tsdown.config.ts, invariant.ts).
+ */
+const PACKAGE_NAME = '@khorsheed/dsh-local-agent-dsh'
 
 /**
- * Client plugin body: register the dictionaries and the dsh settings card
+ * Required services: slot registry, command Remote, and locale registry. The
+ * settings scope is NOT a static inject — its service name differs per host
+ * line (`settingsScope` on 0.1.5, `configForms` on rc.1), so a static entry
+ * would pend the whole client plugin on the other line; bindSettingsScope
+ * probes the serving one instead (the settings client package is a declared
+ * client inject, so one of them is always already up).
+ */
+export const inject = ['slots', 'remote', 'remote.commands', 'locale']
+
+/**
+ * Client plugin body: register the dictionaries and the dsh settings surfaces
  * bound to the local-agent-dsh namespace.
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-agent-dsh: dictionaries')
-  const scope = ctx.settingsScope.bind<DshCardSettings>({ namespace: 'local-agent-dsh' })
+  const scope = bindSettingsScope<DshCardSettings>(ctx, 'local-agent-dsh')
   // The auth block's copy lives in the family core's dictionary; binding is
   // stable per namespace and late dictionary registration still resolves.
   const authT = ctx.locale.bind('local-agent')
@@ -68,33 +91,65 @@ export function apply(ctx: Context): void {
   // the core client is absent.
   const gateway = (): LocalAgentGatewayRemote | undefined =>
     ctx.get('remote.localAgentGateway') as LocalAgentGatewayRemote | undefined
-  ctx.slots.inject(
-    'settings.plugin.item',
-    () => ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: 'local-agent-dsh',
-      locale: NS,
-      inject: (): DshSettingsCardInjected => ({
-        scope,
-        hooks: { settings: scope },
-        authT,
-        renderModelPicker: props => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker('dsh', props),
-        // The harness's memberless model surface; absent gateway/broker
-        // degrades to the bare input with its recent-models suggestions.
-        harnessModel: () =>
-          gateway()?.harnessModel('dsh').then(result => (result.ok ? result.value : undefined))
-            ?? Promise.resolve(undefined),
-        auth: {
-          status: name =>
-            // The Remote declares (name, scope?) and the client enforces exact arity:
-            // pass the default scope explicitly (undefined reads as omitted host-side).
-            gateway()?.status(name, undefined).then(result => (result.ok ? result.value : undefined))
-              ?? Promise.resolve(undefined),
-          runCommand: (sessionId: SessionId, line: string) =>
-            ctx.remote.commands.execute(sessionId, line, [])
-              .then(result => (result.ok ? result.value?.result.text : undefined)),
-        },
-      }),
-    }, DshSettingsCard),
-  )
+  // Both settings surfaces inject the same face.
+  const cardInject = (): DshSettingsCardInjected => ({
+    scope,
+    hooks: { settings: scope },
+    authT,
+    renderModelPicker: props => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker('dsh', props),
+    // The harness's memberless model surface; absent gateway/broker
+    // degrades to the bare input with its recent-models suggestions.
+    harnessModel: () =>
+      gateway()?.harnessModel('dsh').then(result => (result.ok ? result.value : undefined))
+        ?? Promise.resolve(undefined),
+    auth: {
+      status: name =>
+        // The Remote declares (name, scope?) and the client enforces exact arity:
+        // pass the default scope explicitly (undefined reads as omitted host-side).
+        gateway()?.status(name, undefined).then(result => (result.ok ? result.value : undefined))
+          ?? Promise.resolve(undefined),
+      runCommand: (sessionId: SessionId, line: string) =>
+        ctx.remote.commands.execute(sessionId, line, [])
+          .then(result => (result.ok ? result.value?.result.text : undefined)),
+    },
+  })
+  // The settings surface follows the host line AND the install shape — three
+  // tracks, all riding slots.inject so each fires only where its declaration
+  // exists. Standalone install: the package's own Plugins-page detail view
+  // (`plugins.bundle.config`, keyed by package name). Installed as a family
+  // member: the member is no longer the profile's direct dependency, so only
+  // the bundle gets a detail view — the card rides the row-level slot
+  // (`plugins.row.config`, keyed `<bundle package>#<row id>` with the row id
+  // the bundle's patch declares) and the bundle's page gains a configure
+  // entry opening it. 0.1.5: the legacy configurable-plugins tab card
+  // (`settings.plugin.item`, keyed by the settings namespace) through a
+  // string-keyed duck narrow of the same service (the slot name is gone from
+  // the alpha.2 SlotMap).
+  ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+    name: 'plugins.bundle.config',
+    key: PACKAGE_NAME,
+    locale: NS,
+    inject: cardInject,
+  }, DshBundleConfig))
+  ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+    name: 'plugins.row.config',
+    key: '@khorsheed/dsh-bundle-local-agent#local-agent-dsh',
+    locale: NS,
+    inject: cardInject,
+  }, DshBundleConfig))
+  const legacy = ctx.slots as unknown as {
+    inject(key: string, callback: () => unknown): unknown
+    register(entry: {
+      name: string
+      key: string
+      locale: string
+      inject: () => DshSettingsCardInjected
+    }, component: typeof DshSettingsCard): unknown
+  }
+  legacy.inject('settings.plugin.item', () => legacy.register({
+    name: 'settings.plugin.item',
+    key: 'local-agent-dsh',
+    locale: NS,
+    inject: cardInject,
+  }, DshSettingsCard))
 }

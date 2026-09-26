@@ -38,13 +38,17 @@ const STAGED_ROOT_FILES = ['package.json', 'README.md', 'README.zh.md', 'README.
 /** Expand a `dir` + double-star + `<pattern>` files glob into the relative
  * paths present in the package, so pack-dist honors the same globs pnpm pack
  * does — e.g. the `skills` glob shipping the 3d-artifact / restart-guard
- * skill files. Supports the two shapes in use: recursive suffix match
- * (`<dir>/**&#47;*.ext`) and every file (`<dir>/**&#47;*`). Returns [] for any
- * other glob shape. */
+ * skill files, or the display metadata's `locale/*.json`. Supports the shapes
+ * in use: recursive suffix match (`<dir>/**&#47;*.ext`) and every file
+ * (`<dir>/**&#47;*`), plus their single-level forms (`<dir>/*.ext`, `<dir>/*`).
+ * Returns [] for any other glob shape. */
 function expandGlobEntry(packageDir: string, entry: string): string[] {
-  const match = /^(.+?)\/\*\*\/(.+)$/.exec(entry)
-  if (match === null) return []
-  const [, root, rest] = match
+  const recursive = /^(.+?)\/\*\*\/(.+)$/.exec(entry)
+  // Single-level forms (`<dir>/*.ext`, `<dir>/*`): the card-metadata
+  // `locale/*.json` glob declared by the display-metadata wave.
+  const single = recursive === null ? /^(.+?)\/(\*[^/]*)$/.exec(entry) : null
+  if (recursive === null && single === null) return []
+  const [, root, rest] = (recursive ?? single)! as RegExpExecArray
   const rootDir = join(packageDir, root)
   if (!existsSync(rootDir) || !statSync(rootDir).isDirectory()) return []
   const suffix = rest === '*' ? '' : rest.replace(/^\*/, '')
@@ -55,7 +59,7 @@ function expandGlobEntry(packageDir: string, entry: string): string[] {
     for (const name of readdirSync(join(packageDir, dir))) {
       const rel = join(dir, name)
       if (statSync(join(packageDir, rel)).isDirectory()) {
-        stack.push(rel)
+        if (recursive !== null) stack.push(rel)
       } else if (suffix === '' || name.endsWith(suffix)) {
         out.push(rel)
       }
@@ -331,8 +335,32 @@ export function rescopePackageJson(
   // entry survives verbatim. Naming something absent from `dependencies` fails
   // loud: a kept entry that points nowhere is worse than a dropped one.
   const keepRuntime = new Set(pkg.dsh?.runtimeDependencies ?? [])
+  // Third exception: a package exporting a generated typert face (`./typert`
+  // host face, `./remote` browser face) ships artifacts whose head line is a
+  // bare `import { z } from 'zod'`. That specifier resolves against the
+  // INSTALL tree, and a profile that hoists any zod@3 — observed: capture's
+  // runtimeDependency chain puppeteer-core → chromium-bidi → zod@3.25.76 at
+  // the profile root — makes every face materialize brand-less v3 schemas, so
+  // the 0.1.5 typert-loader's `_zod` brand check kills the whole plugin tree
+  // at boot, while the rc.1 line (no brand check) silently runs v3 codecs:
+  // the 3080 profile root carries exactly that zod@3.25.76 today. Keeping zod
+  // as a real dependency pins the resolution to v4 either way: pnpm nests it
+  // inside the package when the root is taken and hoists it (also v4) when it
+  // is not. A typert-faced package WITHOUT a zod dependency authors exactly
+  // this failure — fail loud instead of stripping it silently.
+  const faceExports = typeof pkg.exports === 'object' && pkg.exports !== null ? Object.keys(pkg.exports) : []
+  const keepsTypertFace = faceExports.some(key => key === './typert' || key === './remote')
+  if (keepsTypertFace) keepRuntime.add('zod')
   for (const dep of keepRuntime) {
     if (out.dependencies?.[dep] === undefined) {
+      if (dep === 'zod' && keepsTypertFace) {
+        throw new Error(
+          `pack-dist: ${pkg.name} exports a generated typert face (./typert or ./remote) but declares no zod dependency: `
+          + `the face's bare import 'zod' must resolve to v4 from the tarball itself — a profile-hoisted zod@3 `
+          + `(capture → puppeteer-core → chromium-bidi → zod@3.25.76) otherwise answers it, and the 0.1.5 `
+          + `typert-loader's _zod brand check kills the boot (Agent Note: 2026-09-25-typert-faces-carry-zod-v4)`,
+        )
+      }
       throw new Error(`dsh.runtimeDependencies names ${dep}, which is not in dependencies`)
     }
   }

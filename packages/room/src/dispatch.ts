@@ -25,13 +25,50 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context.
 import type {} from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
 import { probeLocalAgent, runOutputText } from './adapter.ts'
 import { coordinatorMember, memberId, parseRelayDirective, pendingInstructions, previousCursor, replay, rosterStaleSince } from './journal.ts'
 import type { RoomMember, RoomRelay, RoomState } from './types.ts'
 
-/** Plugin tag carried by the main-agent followup's message source. */
+/**
+ * The room producer's durable identity in its two historical forms: the
+ * released V3 wrapper's `plugin` value (`@khorsheed/dsh-room` — the official
+ * V3→V4 migration rewrites it to `kind: 'plugin:@khorsheed/dsh-room'`), and
+ * the current producer-owned kind (`room`). {@link isRoomSource} accepts all
+ * three forms; new writes always carry the producer kind.
+ */
 export const ROOM_PLUGIN = '@khorsheed/dsh-room'
+
+/** The producer-owned source kind identifying every room-dispatch followup. */
+export const ROOM_KIND = 'room'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** room producer: the main-agent member turn's followup prompt. */
+    room: { kind: 'room' } & ContextFormed
+  }
+}
+
+/** The producer-owned source of a room main-agent followup. */
+export function roomSource(): MessageSource {
+  return Object.freeze({ kind: ROOM_KIND })
+}
+
+/**
+ * Whether a durable source belongs to the room producer, in every form the
+ * log can hold: the current producer-owned kind (`room`), the V3→V4 migrated
+ * kind (`plugin:@khorsheed/dsh-room`), and the released V3 wrapper a pre-V4
+ * (0.1.5) host still serves verbatim.
+ * @param source - the persisted message source to test.
+ * @returns true when the source names this producer.
+ */
+export function isRoomSource(source: unknown): boolean {
+  if (typeof source !== 'object' || source === null) return false
+  const record = source as { kind?: unknown; plugin?: unknown }
+  return record.kind === ROOM_KIND
+    || record.kind === `plugin:${ROOM_PLUGIN}`
+    || (record.kind === 'plugin' && record.plugin === ROOM_PLUGIN)
+}
 
 function closedGoal(state: RoomState, goalId: string | undefined): boolean {
   return goalId !== undefined && state.plan !== undefined
@@ -319,7 +356,7 @@ export class DispatchEngine {
     await this.ctx.sessions.flush(room)
   }
 
-  /** Main-agent member turn: a plugin-sourced followup on the room's own agent. */
+  /** Main-agent member turn: a producer-sourced followup on the room's own agent. */
   private async runMainAgent(
     room: Session, member: RoomMember, cursor: number | undefined,
     text: string, _startedAt: number, relayIds: readonly string[],
@@ -332,7 +369,7 @@ export class DispatchEngine {
     const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: prompt }],
-      source: { kind: 'plugin', plugin: ROOM_PLUGIN },
+      source: roomSource(),
     }))
     await this.markSent(room, [
       ...carried,

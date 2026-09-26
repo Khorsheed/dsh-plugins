@@ -1,13 +1,13 @@
 {
   "name": "@khorsheed/dsh-client-ui-file-preview",
-  "description": "Session products page in the right sidebar: the files a session wrote or edited with per-change diff history; content preview delegates to the official document tab",
+  "description": "Session products page in the right sidebar: the files a session wrote or edited — content preview plus per-change diff history in the in-tab detail view",
   "keywords": [
     "dsh",
     "dsh-plugin",
     "cordis",
     "file-preview"
   ],
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publishConfig": {
     "access": "public"
   },
@@ -33,6 +33,7 @@
       "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -44,7 +45,6 @@
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-deliverables",
         "@deepseek-ai/dsh-client-ui-session",
-        "@deepseek-ai/dsh-client-ui-sidebar-documentpreview",
         "@deepseek-ai/dsh-client-ui-sidebar-right"
       ],
       "platform": "web"
@@ -54,7 +54,8 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.1.5-rc.1"
+      "verifiedHost": "0.1.5-rc.1",
+      "notes": "单一形态双线一致：自建「会话产物」page 型右栏 tab（向导页进入 + extension 档认领 dsh-resource://file/** 可渲染后缀，压过官方 document tab 的 fallback 档——rc.1 的 tab-registry 保留 band 机制），文件树/mention/回合卡/产物行点击全部落自绘详情页（共享内容面板全 chrome + 内容/改动记录切换 + 复制路径/在文件夹/IDE 打开）；pdf/压缩包/二进制等 decline 后缀落回官方 document tab。方案 B（内容面注册进官方 documentPreviews 面做默认渲染器）与二期 headless 嵌入已于 2026-09-24 同日被仓主否决回退——接缝成本（renderer loading 协议/extension 档语义/headless 布局耦合）与 UX 妥协（改动记录塞进渲染器下拉、复制钮浮动压搜索行）不成立；改动记录维度（TurnFileRow + 详情页 DiffHistory）官方仍无对应物（workspace-changes 内存态、git-only、重启即失），维持自留并跟踪上游。turnTail 回合卡照常：0.1.6-alpha.2 起 list 槽臂同时注册官方 deliverables 条目的一等遮蔽（同 cell id、priority -1 空体胜出，官方条目在册故其子槽不塌），0.1.5 chain 槽臂保持 select + priority -1 抢占回退——均不涉及 rc.1 专有 API，minHost 不动。"
     }
   },
   "scripts": {
@@ -71,8 +72,7 @@
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-chat": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-sidebar-documentpreview": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.7-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
@@ -82,38 +82,33 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-store": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-test-runtime": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-chat": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-sidebar-documentpreview": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-util-workspace-path": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-store": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-chat": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-util-workspace-path": "^0.1.7-rc.1",
     "@khorsheed/dsh-client-ui-content-preview": "workspace:*",
     "@khorsheed/dsh-file-preview": "workspace:*",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "immer": "^10.1.1",
+    "zustand": "~4.4.7",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "zustand": "~4.4.7"
+    "react-dom": "^18.2.0"
   },
   "files": [
     "lib",
     "cordis.patch.yml",
+    "locale/*.json",
     "LICENSE"
-  ],
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-client-ui-sidebar-documentpreview": {
-      "optional": true
-    }
-  }
+  ]
 }

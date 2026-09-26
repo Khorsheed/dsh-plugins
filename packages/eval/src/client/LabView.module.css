@@ -349,8 +349,10 @@
   }
 
   /* The name column is all that is left, so it wraps instead of clipping:
-     the 旧运行 chip drops under the name (T73). */
-  .row .colName {
+     the 旧运行 chip drops under the name (T73). The name and the chip share
+     .nameLine since T74 (the question is the column's second line), so the
+     wrap sits there. */
+  .row .nameLine {
     flex-wrap: wrap;
   }
 
@@ -378,8 +380,26 @@
 
 .row .colName {
   display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+}
+
+.nameLine {
+  display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+
+/* The experiment's question under its name (T74): one dim line, ellipsis. */
+.questionLine {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
 }
 
 .nameText {
@@ -1977,6 +1997,45 @@
   font-weight: 600;
 }
 
+/* ⓪ 问题 on the design page and the conclusion card (T74). */
+.questionText {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+  white-space: pre-wrap;
+}
+
+/* The design page's in-place numbers (T74). */
+.numbersRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 16px;
+}
+
+.numberCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.numberInput {
+  width: 88px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-3);
+  padding: 1px 6px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  line-height: 20px;
+}
+
+.numbersActions {
+  display: flex;
+  gap: 6px;
+}
+
 /* A rendered markdown document (T74, MarkdownDoc): the block chrome the
    official code / diff views use, the datasets preview's scheme replicated
    over the same official parts (cross-plugin imports are forbidden). */
@@ -2018,4 +2077,14 @@
   --dsw-font-markdown-table: 13px/22px var(--dsw-font-family);
   --dsw-font-markdown-table-head: 500 13px/22px var(--dsw-font-family);
   --dsw-font-markdown-code: 12px/20px var(--ds-font-family-code);
+}
+
+/* The row 打开实验 asked for from the tool-row card (T76): the business
+   accent as a hairline frame, so the row keeps its own hover and status
+   tones. Not a left rule: the row has no padding, so an inset rule would sit
+   on the name's first letter. */
+.row[data-marked='true'] {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -1px;
+  background: var(--dsw-alias-interactive-bg-hover);
 }

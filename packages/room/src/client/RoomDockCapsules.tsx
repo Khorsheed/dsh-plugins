@@ -21,7 +21,7 @@
  * inline [编辑], a progress bar with the done/total fraction, and the recent
  * advance records (who finished what, relative time).
  *
- * The TASK capsule leads with the checklist icon (IconChecklistOutline14 from
+ * The TASK capsule leads with the checklist icon (IconChecklistOutlineMedium from
  * the official primitives — never a Unicode glyph), then the open-task count
  * and the members currently running (color dot + name). It expands into the
  * Linear-style task panel: a member filter chip row (color-dot capsules, the
@@ -61,7 +61,7 @@ import {
   useEffect, useRef, useState, useSyncExternalStore,
   type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react'
-import { IconChecklistOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChecklistOutlineMedium } from './icons.tsx'
 import { taskProgress } from '../journal.ts'
 import type { RoomProviderList, RoomTask } from '../types.ts'
 import { formatRelativeTime } from './format.ts'
@@ -625,7 +625,7 @@ export function RoomDockCapsules({
           data-running={runners.length > 0 || undefined}
           onClick={() => { toggle('tasks') }}
         >
-          <IconChecklistOutline14 size={14} className={css.checklistIcon} />
+          <IconChecklistOutlineMedium size={14} className={css.checklistIcon} />
           {progress.total === 0 ? (
             <span className={css.capsuleText}>{t(formalPlans ? 'tasks.chat' : 'tasks.capsule')}</span>
           ) : (

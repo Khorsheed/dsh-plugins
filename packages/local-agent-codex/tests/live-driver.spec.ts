@@ -409,7 +409,10 @@ describe('codex live driver rounds', () => {
     expect(calls[0]?.data).toMatchObject({ name: 'Bash', arguments: 'ls' })
     const toolResults = child.snapshotEvents().filter(e => e.type === 'tool/result')
     expect(toolResults).toHaveLength(1)
-    expect(toolResults[0]?.data.message.content[0]).toMatchObject({ content: [{ type: 'text', text: 'a.txt' }] })
+    // rc.1's tool-result message is the native tool role: the content holds
+    // the raw result blocks at the top level (the pre-V4 shape wrapped them
+    // in one tool-result content block).
+    expect(toolResults[0]?.data.message).toMatchObject({ role: 'tool', content: [{ type: 'text', text: 'a.txt' }] })
     expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
     expect(m.reports.some(r => r.progress.kind === 'delta' && r.progress.text === '第一条回复')).toBe(true)
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })

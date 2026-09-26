@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { LocalAgentRosterRow, LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent/types'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from './icons.tsx'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -99,7 +99,7 @@ export function RecordsDropdown({ harness, sessionId, listRecords, t }: {
         onClick={() => { setOpen(value => !value) }}
       >
         {harness.label}
-        <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
+        <IconChevronDownOutlineMedium className={open ? css.triggerOpen : undefined} />
       </button>
       {open && (
         <ul className={css.menu} role="listbox" aria-label={t('list.title', { harness: harness.label })}>

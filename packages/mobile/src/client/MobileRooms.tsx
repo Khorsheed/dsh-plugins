@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { createPortal } from 'react-dom'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { NavigationCapabilities } from './navigation.ts'
+import { mainSessionId } from './navigation.ts'
 import { MobileRooms } from './rooms.ts'
 import { MobileIcon } from './MobileIcon.tsx'
 import { openRoomInvite, openRoomMemberSettings } from './roomActions.ts'
@@ -11,7 +12,7 @@ type Props = PropsLocale<'mobile'> & { rooms: MobileRooms; navigation: Navigatio
 /** A read-only roster shortcut. All mutations open the installed Room UI. */
 export function MobileRoomNavigation({ rooms, navigation, prepareNavigation, t }: Props) {
   const feed = navigation.sessions.list
-  const current = useSyncExternalStore(useCallback(fn => feed.subscribe(fn), [feed]), useCallback(() => feed.getSnapshot().current, [feed]))
+  const current = useSyncExternalStore(useCallback(fn => feed.subscribe(fn), [feed]), useCallback(() => mainSessionId(feed.getSnapshot()), [feed]))
   useSyncExternalStore(rooms.subscribe, rooms.getSnapshot)
   const room = current ? rooms.get(current) : undefined
   const [open, setOpen] = useState(false), [error, setError] = useState(false)
@@ -40,6 +41,13 @@ export function MobileRoomNavigation({ rooms, navigation, prepareNavigation, t }
     const ok = await openRoomMemberSettings(document, name, () => epoch.current === generation)
     if (!ok && epoch.current === generation) { setError(true); setOpen(true) }
   }
+  // The official workspace service is the only navigation writer on both host
+  // lines (alpha.2 deleted sessions.open); it throws synchronously on failure.
+  const openChat = (childSessionId: string) => {
+    prepareNavigation()
+    try { navigation.workspace.openSession(childSessionId as Parameters<NavigationCapabilities['workspace']['openSession']>[0]); close() }
+    catch { setError(true); setOpen(true) }
+  }
   return <>
     {room && <button data-mobile-members-open aria-label={t('members')} onClick={() => { setOpen(true); setError(false) }}><MobileIcon name="members"/><small>{room.members.length}</small></button>}
     {createPortal(<dialog ref={dialog} data-mobile-room-dialog data-mobile-tools-dialog aria-label={t('members')} onClose={() => setOpen(false)}>
@@ -50,7 +58,7 @@ export function MobileRoomNavigation({ rooms, navigation, prepareNavigation, t }
       {room?.members.map(m => {
         const run = room.runs.find(r => r.member === m.name)
         return <div data-mobile-member-row key={m.name}>
-          <button data-mobile-member-chat disabled={!m.childSessionId} onClick={() => { if (m.childSessionId) { prepareNavigation(); navigation.sessions.open(m.childSessionId as Parameters<typeof navigation.sessions.open>[0]); close() } }}>
+          <button data-mobile-member-chat disabled={!m.childSessionId} onClick={() => { if (m.childSessionId) openChat(m.childSessionId) }}>
             <span data-mobile-avatar><MobileIcon name={m.kind === 'main-agent' ? 'compose' : 'members'} size={20}/></span>
             <span><strong>{m.name}</strong><small>{m.provider ?? t('mainMember')} · {m.kind === 'main-agent' ? t('currentConversation') : run?.state === 'running' ? t('running') : run?.state === 'failed' ? t('memberFailed') : m.childSessionId ? t('openMemberChat') : t('awaitingMember')}</small></span>
           </button>

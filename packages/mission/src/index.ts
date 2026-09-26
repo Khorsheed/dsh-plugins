@@ -33,7 +33,7 @@ export interface MissionConfig {
   dataDir?: string
 }
 
-export const Config: z<MissionConfig> = z.object({
+export const Config: z = z.object({
   dataDir: z.string().default(''),
 })
 

@@ -15,14 +15,19 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-// JobView moved onto the remotes assembly in 0.1.2-alpha.1 (SessionJob,
-// re-exported as JobView); HistoryEntry retired with the apiproxy — the tab
-// reads the generated session remote's history records, unwrapped at the seam
-// into the fold's narrow row shape.
-import type { JobView, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+// rc.1 retired the remotes-assembly `JobView` re-export together with the
+// session-list `jobsBySession` mirror: the view type lives at the registry's
+// own subpath now, and the roster rides `ctx.jobs` (see ./jobs-channel.ts —
+// 0.1.5 keeps the session-list mirror, both reads converge below).
+// HistoryEntry retired with the apiproxy — the tab reads the generated
+// session remote's history records, unwrapped at the seam into the fold's
+// narrow row shape.
+import type { JobView } from '@deepseek-ai/dsh-jobs/view'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { buildJobTrajectory, type SessionLogRow } from './job-trajectory.ts'
+import type { JobsSnapshotLike } from './jobs-channel.ts'
 import type { TaskPilotTabParams } from './definition.ts'
 import type { TrajectoryEntry } from '../types.ts'
 import type { NS } from './locales.ts'
@@ -34,6 +39,11 @@ export interface HistoryPage {
   readonly hasMore: boolean
 }
 
+/** 0.1.5's session-list job mirror; rc.1 removed the key (see ./jobs-channel.ts). */
+interface LegacySessionListState {
+  jobsBySession?: Readonly<Record<string, readonly JobView[]>>
+}
+
 /** Injected data channel; the apply closure wires it to the session remote. */
 export interface JobTabInjected {
   loadHistory: (
@@ -41,11 +51,20 @@ export interface JobTabInjected {
     beforeSeq: number | undefined,
     maxMessages: number,
   ) => Promise<HistoryPage | undefined>
+  /** Keep rc.1's job roster for one session current; a no-op disposer on 0.1.5. */
+  watchRows: (sessionId: SessionId) => () => void
+  hooks: {
+    /** rc.1's job-roster mirror (empty on 0.1.5, where the legacy session-list read answers). */
+    jobs: {
+      getSnapshot(): JobsSnapshotLike
+      subscribe(listener: () => void): () => void
+    }
+  }
 }
 
 export type JobTabProps =
   PropsRuntime<'sidebar.right.pane.tab'>
-  & JobTabInjected
+  & InjectFace<JobTabInjected>
   & PropsLocale<typeof NS>
 
 const PAGE_MESSAGES = 200
@@ -120,15 +139,22 @@ function TrajectoryRow({ entry, t }: { entry: TrajectoryEntry; t: T }): React.Re
 }
 
 export function JobTab(props: JobTabProps): React.ReactElement {
-  const { sessionId, useSessions, useTabInfo, loadHistory, t } = props
+  const { sessionId, useSessions, useJobs, useTabInfo, loadHistory, watchRows, t } = props
   const { tab } = useTabInfo()
   const params = tab.navigation.params as TaskPilotTabParams | undefined
   const jobId = params?.jobId ?? null
   const revision = tab.navigation.revision
 
-  const job: JobView | undefined = useSessions(
-    state => jobId === null ? undefined : state.jobsBySession[sessionId]?.find(j => j.id === jobId),
+  // Dual-channel roster: rc.1 serves it through the jobs channel, 0.1.5
+  // through the session-list mirror (absent on rc.1).
+  const legacyJob = useSessions(
+    state => jobId === null ? undefined : (state as LegacySessionListState).jobsBySession?.[sessionId]?.find(j => j.id === jobId),
   )
+  const controllerJob = useJobs(
+    state => jobId === null ? undefined : state.rows[sessionId]?.find(j => j.id === jobId),
+  )
+  const job: JobView | undefined = controllerJob ?? legacyJob
+  useEffect(() => watchRows(sessionId), [sessionId, watchRows])
 
   const [entries, setEntries] = useState<readonly TrajectoryEntry[]>([])
   const [hasMore, setHasMore] = useState(false)

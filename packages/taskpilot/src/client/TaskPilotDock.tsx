@@ -17,13 +17,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-// JobView moved onto the remotes assembly in 0.1.2-alpha.1 (SessionJob,
-// re-exported as JobView); the index helper went package-internal upstream,
-// mirrored locally in ./subagent-lineage.ts.
-import type { JobView, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+// rc.1 retired the remotes-assembly `JobView` re-export together with the
+// session-list `jobsBySession` mirror: the view type lives at the registry's
+// own subpath now, and the roster rides `ctx.jobs` (see ./jobs-channel.ts —
+// 0.1.5 keeps the session-list mirror, both reads converge below).
+import type { JobView } from '@deepseek-ai/dsh-jobs/view'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { indexSubagentDescendants } from './subagent-lineage.ts'
+import type { JobsSnapshotLike } from './jobs-channel.ts'
 import type { NS, TaskPilotLocale } from './locales.ts'
 import css from './TaskPilotDock.module.css'
 
@@ -138,11 +141,40 @@ export interface TaskPilotDockInjected {
    * in that case and the dock matches the single-source behavior exactly.
    */
   pollActiveDelegations: () => Promise<readonly string[]>
+  /** Keep rc.1's job roster for one session current; a no-op disposer on 0.1.5. */
+  watchRows: (sessionId: SessionId) => () => void
+  /** Load one session's projections (rc.1's subagent catalog); a no-op on 0.1.5. */
+  refreshCatalog: (sessionId: SessionId) => void
+  hooks: {
+    /** rc.1's job-roster mirror (empty on 0.1.5, where the legacy session-list read answers). */
+    jobs: {
+      getSnapshot(): JobsSnapshotLike
+      subscribe(listener: () => void): () => void
+    }
+  }
+}
+
+/**
+ * 0.1.5's session-list job/subagent mirrors; rc.1 removed both keys (jobs
+ * moved to `ctx.jobs`, the subagent catalog to the parent's projections).
+ */
+interface LegacySessionListState {
+  jobsBySession?: Readonly<Record<string, readonly JobView[]>>
+  subagentsByParent?: Readonly<Record<string, {
+    readonly entries?: readonly { readonly kind: string; readonly id: SessionId; readonly label?: string }[]
+  } | undefined>>
+}
+
+/** rc.1's projection-carried subagent catalog, read structurally. */
+interface ProjectedSessionListState {
+  projectionsBySession?: Readonly<Record<string, {
+    readonly values?: { readonly subagentCatalog?: readonly { readonly id: SessionId; readonly label?: string }[] }
+  } | undefined>>
 }
 
 export type TaskPilotDockProps =
   PropsRuntime<'conversation.input.dock'>
-  & TaskPilotDockInjected
+  & InjectFace<TaskPilotDockInjected>
   & PropsLocale<typeof NS>
 
 /** Narrow view of one session summary (wire-shaped, fields the row reads). */
@@ -226,23 +258,39 @@ export function collectDescendants(
 
 export function TaskPilotDock(props: TaskPilotDockProps): React.ReactElement | null {
   const {
-    sessionId, useSessions, stopJob, interruptSubagent, openJob, openSession, t,
-    pollActiveDelegations,
+    sessionId, useSessions, useJobs, stopJob, interruptSubagent, openJob, openSession, t,
+    pollActiveDelegations, watchRows, refreshCatalog,
   } = props
-  const jobs = useSessions(state => state.jobsBySession[sessionId]) ?? NO_JOBS
+  // Dual-channel roster: rc.1 serves it through the jobs channel (undefined
+  // for an unwatched/empty session), 0.1.5 through the session-list mirror
+  // (undefined on rc.1, whose state has no such key).
+  const legacyJobs = useSessions(state => (state as LegacySessionListState).jobsBySession?.[sessionId])
+  const controllerJobs = useJobs(state => state.rows[sessionId])
+  const jobs = controllerJobs ?? legacyJobs ?? NO_JOBS
+  useEffect(() => watchRows(sessionId), [sessionId, watchRows])
   const summaries = useSessions(state => state.byId) ?? {}
-  const catalog = useSessions(state => state.subagentsByParent?.[sessionId])
+  const legacyCatalog = useSessions(state => (state as LegacySessionListState).subagentsByParent?.[sessionId])
+  const catalogProjection = useSessions(
+    state => (state as ProjectedSessionListState).projectionsBySession?.[sessionId]?.values?.subagentCatalog,
+  )
 
   const rows = useMemo(() => ordered(jobs), [jobs])
   const liveJobs = useMemo(() => jobs.filter(isLive), [jobs])
   // Direct children carry the durable creation label (descriptor label, same
   // source as the header tree); deep descendants fall back to the summary's
-  // displayTitle, whose session-title projection can lag one beat.
-  const catalogLabels = useMemo(() => new Map(
-    (catalog?.entries ?? [])
-      .filter((entry): entry is Extract<typeof entry, { kind: 'child' }> => entry.kind === 'child')
-      .map(entry => [entry.id, entry.label]),
-  ), [catalog])
+  // displayTitle, whose session-title projection can lag one beat. rc.1 reads
+  // the parent's subagentCatalog projection (loaded on popover open below),
+  // 0.1.5 the session-list catalog mirror.
+  const catalogLabels = useMemo(() => {
+    const labels = new Map<SessionId, string>()
+    for (const entry of catalogProjection ?? []) {
+      if (entry.label !== undefined) labels.set(entry.id, entry.label)
+    }
+    for (const entry of legacyCatalog?.entries ?? []) {
+      if (entry.kind === 'child' && entry.label !== undefined) labels.set(entry.id, entry.label)
+    }
+    return labels
+  }, [catalogProjection, legacyCatalog])
   const stats = useMemo(() => indexSubagentDescendants(summaries).get(sessionId), [summaries, sessionId])
 
   // Second running source: one-shot external-CLI rows (local-agent family)
@@ -285,6 +333,12 @@ export function TaskPilotDock(props: TaskPilotDockProps): React.ReactElement | n
   // Which capsule's popover is open: 'jobs' | 'subagents' | null.
   const [open, setOpen] = useState<'jobs' | 'subagents' | null>(null)
   const [now, setNow] = useState(() => Date.now())
+
+  // rc.1's subagent catalog projection loads on demand — ask for it when the
+  // labels become visible; on 0.1.5 the verb is a no-op by construction.
+  useEffect(() => {
+    if (open === 'subagents') refreshCatalog(sessionId)
+  }, [open, sessionId, refreshCatalog])
 
   const clockOn = open !== null && (open === 'jobs' ? liveJobs.length > 0 : runningSubagents.length > 0)
 

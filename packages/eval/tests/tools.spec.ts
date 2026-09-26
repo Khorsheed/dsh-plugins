@@ -1,5 +1,5 @@
 /**
- * The five tools the companion row registers — four reads and `eval_plan_draft`
+ * The seven tools the companion row registers — five reads and the two writes
  * — through the definition factory's names and each adapter's `execute`
  * against fake service faces: a temp dataset tree for the contract tools, a
  * fake mission ledger for the two run projections. Registration, origin
@@ -351,6 +351,27 @@ describe('eval_plan_draft — the row\'s one write, and the form\'s own verb', (
     expect(minted.notes).toContain('model.endpoint')
   })
 
+  it('carries the person\'s question into the plan, and says to write it verbatim (T74)', async () => {
+    const { service } = draftable()
+    const draft = vi.spyOn(service, 'draftExperiment')
+    const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
+
+    const result = await tool.execute({
+      ...DRAFT_ARGS,
+      question: 'does effort high beat medium?',
+      expectation: 'high wins',
+      answered_when: 'a pair ranks',
+    }, BOUND) as { planPath: string }
+
+    expect(draft.mock.calls[0]?.[0]).toMatchObject({
+      question: 'does effort high beat medium?', expectation: 'high wins', answeredWhen: 'a pair ranks',
+    })
+    const plan = JSON.parse(readFileSync(result.planPath, 'utf8')) as Record<string, unknown>
+    expect(plan['question']).toBe('does effort high beat medium?')
+    expect(plan['answeredWhen']).toBe('a pair ranks')
+    expect((tool as unknown as { description: string }).description).toContain('起草时把人的问题原样写进 question')
+  })
+
   it('never starts anything — the row has no run verb and this one reaches none', async () => {
     const { service } = draftable()
     const runStart = vi.spyOn(service, 'runStart')
@@ -578,5 +599,106 @@ describe('eval_cells', () => {
     expect(listing.rows[0]?.['snapshot']).toEqual({ registry: null, datasetId: 'harness-comparison', commit: 'c'.repeat(40) })
     // No experiment claims it: an old run, shown as one.
     expect(listing.rows[0]).toMatchObject({ experimentId: null, legacy: true })
+  })
+})
+
+describe('eval_experiment_get', () => {
+  /**
+   * The same two-cell ledger, with the files rep1's current attempt handed in:
+   * one registered under the attempt directory by absolute path, one already
+   * relative, one outside the attempt directory, and a checkpoint's own file.
+   */
+  function service(): EvalService {
+    const base = missionFace()
+    const dataDir = '/state/mission'
+    const attemptDir = `${dataDir}/runs/run-1/data/p0-dsh-exec-rep1/attempt-2`
+    const mission = {
+      ...base,
+      dataDir,
+      get: (missionId: string, runId?: string) => {
+        const record = base.get(missionId, runId) as { mission: { attempts: Array<Record<string, unknown>> } }
+        if (missionId !== 'p0-dsh-exec-rep1') return record
+        const attempts = record.mission.attempts.map(attempt => attempt['attempt'] !== 2
+          ? attempt
+          : {
+            ...attempt,
+            artifacts: [
+              { path: `${attemptDir}/submission/stage1.md`, kind: 'submission' },
+              { path: 'materialization.json', kind: 'materialization' },
+              { path: '/elsewhere/archive.tar', kind: 'archive' },
+            ],
+            checkpoints: [{ name: 'stage1', at: 38, artifacts: [`${attemptDir}/submission/stage1.md`, '~/notes/raw.txt'] }],
+          })
+        return { mission: { ...record.mission, attempts } }
+      },
+    }
+    return new EvalService({ get: name => (name === 'mission' ? mission : undefined) })
+  }
+
+  /** Every string anywhere in a JSON-shaped value. */
+  function strings(value: unknown): string[] {
+    if (typeof value === 'string') return [value]
+    if (Array.isArray(value)) return value.flatMap(strings)
+    if (value !== null && typeof value === 'object') return Object.values(value).flatMap(strings)
+    return []
+  }
+
+  it('reads one experiment the way the lab list does, plus the answer index by name', async () => {
+    useDshHome()
+    const svc = service()
+    const tool = toolsOver(svc).get('eval_experiment_get') as RegisteredTool
+    expect(tool.parameters.required).toEqual(['experiment'])
+    const view = await tool.execute({ experiment: 'run-1' }, BOUND) as {
+      experiment: Record<string, unknown>
+      runs: string[]
+      run: Record<string, unknown>
+      answers: Array<{ cell: string; files: Array<{ name: string; kind: string }> } & Record<string, unknown>>
+      analysis: string[]
+    }
+    // The row is the lab list's row — same status word, same progress.
+    const listing = await svc.experiments({ session: { id: 's1' } })
+    const row = listing.rows[0] as unknown as Record<string, unknown>
+    for (const key of ['id', 'name', 'status', 'conditions', 'items', 'reps', 'progress', 'startedAt', 'legacy']) {
+      expect(view.experiment[key]).toEqual(row[key])
+    }
+    expect(view.runs).toEqual(['run-1'])
+    // The numbers beside the 运行记录 page's filters.
+    expect(view.run).toMatchObject({ runId: 'run-1', state: 'active', buckets: { active: 1, ready: 1 }, total: 2, unreleased: 1 })
+    expect(view.answers.map(answer => answer.cell)).toEqual(['P0 × dsh-exec × #1', 'P0 × dsh-exec × #2'])
+    expect(view.answers[0]).toMatchObject({ state: 'stage-2', bucket: 'active', attempt: 2, checkpoints: ['stage1'], childSessionId: 'child-c' })
+    expect(view.answers[0]?.files).toEqual([
+      { name: 'submission/stage1.md', kind: 'submission' },
+      { name: 'materialization.json', kind: 'materialization' },
+      { name: 'archive.tar', kind: 'archive' },
+      { name: 'raw.txt', kind: 'checkpoint' },
+    ])
+    expect(view.answers[1]?.files).toEqual([])
+    expect(view.analysis).toEqual([])
+    // No path of this machine anywhere in the answer — the plan path included.
+    const leaked = strings(view).filter(text => text.startsWith('/') || text.startsWith('~/'))
+    expect(leaked).toEqual([])
+  })
+
+  it('refuses a ref that names no experiment, and starts nothing either way', async () => {
+    useDshHome()
+    const tool = toolsOver(service()).get('eval_experiment_get') as RegisteredTool
+    await expect(tool.execute({ experiment: 'nope' }, {})).rejects.toThrow(/no experiment "nope"/)
+  })
+
+  it('answers a draft with its row and an empty index', async () => {
+    const { composeExperimentGet } = await import('../src/experiment-get.ts')
+    const draft = {
+      id: 'experiment:e1', experimentId: 'e1', legacy: false, name: 'draft', planPath: '/abs/plan.json', runId: null,
+      status: 'draft', statusDetail: null, snapshot: { registry: 'reg', datasetId: 'set', commit: 'c'.repeat(40) },
+      conditions: ['a', 'b'], judges: [], items: 3, reps: 2, factors: [], progress: null, startedAt: null,
+      validation: { ok: true, errors: 0, warnings: 0 }, unit: null, originSession: 's1', archived: false, closure: null,
+      lastProgressAt: null, stalledMinutes: null,
+    }
+    const view = composeExperimentGet({ rows: [draft as never], analysis: ['summary.md'], notes: [] })
+    expect(view.run).toBeNull()
+    expect(view.answers).toEqual([])
+    expect(view.runs).toEqual([])
+    expect(view.experiment).toMatchObject({ id: 'experiment:e1', status: 'draft', items: 3, reps: 2 })
+    expect(JSON.stringify(view)).not.toContain('/abs/plan.json')
   })
 })

@@ -12,7 +12,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
+import type { SettingsFace } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import { CodexLiveDriver } from './live-driver.ts'
 import type { CodexLiveMirrorGranularity } from './live-driver.ts'
@@ -36,7 +36,7 @@ export class LiveDriverSwitch {
 
   constructor(
     private readonly ctx: Context,
-    scope: SettingsScope<CodexLiveSettings>,
+    face: SettingsFace<CodexLiveSettings>,
     private readonly options: {
       sandbox: Config['sandbox']
       liveIdleMs?: number
@@ -48,8 +48,8 @@ export class LiveDriverSwitch {
       model?: (childSessionId: string) => string | undefined
     },
   ) {
-    this.apply(scope.get())
-    this.unwatch = scope.watch((next) => { this.apply(next) })
+    this.apply(face.get())
+    this.unwatch = face.watch((next) => { this.apply(next) })
   }
 
   /**

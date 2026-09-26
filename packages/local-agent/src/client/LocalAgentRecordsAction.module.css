@@ -49,6 +49,9 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-specific-menu);
+  /* rc.1's menu material is translucent (~0.5 alpha); pair it with the host's
+     backdrop blur or the page bleeds through. */
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   box-shadow: var(--dsw-shadow-lv3);

@@ -50,6 +50,7 @@ export type PreviewKey =
   | 'action.openFolder'
   | 'action.openIDE'
   | 'action.chooseIDE'
+  | 'action.reload'
   | 'detail.noSelection'
   | 'detail.back'
   | 'detail.diff'
@@ -88,6 +89,7 @@ export const PREVIEW_KEYS: readonly PreviewKey[] = [
   'action.openFolder',
   'action.openIDE',
   'action.chooseIDE',
+  'action.reload',
   'detail.noSelection',
   'detail.back',
   'detail.diff',
@@ -187,6 +189,14 @@ export interface ContentPaneProps {
   readonly t: PreviewTranslator
   /** Called when the copy-path gesture is accepted (the caller owns the clipboard). */
   readonly onCopyPath?: (() => Promise<boolean>) | undefined
+  /**
+   * Re-reads the current file through the caller's own Remote and resolves once
+   * the fresh read is applied. Renders the reload button FIRST in the title
+   * actions; while the returned promise is pending the button is disabled and
+   * its icon spins. A surface whose read cannot go stale (a file pinned at a
+   * commit) simply omits it, and no button renders.
+   */
+  readonly onReload?: (() => Promise<void>) | undefined
   /** Renders the back control when supplied (leaving a nested file view). */
   readonly onBack?: (() => void) | undefined
   /** The diff body, when this surface has one; enables the diff/content toggle. */

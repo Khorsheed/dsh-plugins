@@ -48,6 +48,8 @@ async function bench(options: {
   mountFails?: boolean
   preset?: string
   composition?: EvalPluginInventorySnapshot
+  /** Publish the 0.1.5-shaped list (top-level `current`, no per-row retention). */
+  legacyCurrent?: boolean
   /** A whole session list, for the parent-chain cases; overrides `preset`. */
   rows?: Record<string, unknown>
 } = {}) {
@@ -62,16 +64,23 @@ async function bench(options: {
   ctx.provide('remote', remoteService as never)
   const remote = remoteStub()
   ctx.provide('remote.dshEval', remote as never)
-  // No preset on the row = the fail-open default; a named preset reads the composition.
+  // No preset on the row = the fail-open default; a named preset reads the
+  // composition; `rows` supplies a whole list for the parent-chain cases.
+  // The on-screen session: 0.1.6-alpha.2 reads the row's main-view retention
+  // count; `legacyCurrent` exercises the 0.1.5 `current` fallback instead.
   const byId = options.rows
     ?? (options.preset === undefined ? { s1: {} } : { s1: { projectionValues: { agentPreset: options.preset } } })
-  const list = createSnapshotStore({
-    ids: Object.keys(byId),
-    byId,
-    current: 's1' as SessionId,
-    phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
-  })
-  ctx.provide('sessions', { list, open: vi.fn() } as never)
+  const list = createSnapshotStore(options.legacyCurrent === true
+    ? { ids: Object.keys(byId), byId, current: 's1' as SessionId, phase: 'ready', subagentsByParent: {}, jobsBySession: {} }
+    : {
+        ids: Object.keys(byId),
+        byId: Object.fromEntries(Object.entries(byId).map(([id, row]) => [
+          id,
+          { id, ...(row as Record<string, unknown>), ...(id === 's1' ? { retainedBy: { mainView: 1 } } : {}) },
+        ])),
+        phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+      })
+  ctx.provide('sessions', { list } as never)
   if (options.composition !== undefined) {
     ctx.provide('remote.pluginInventory', {
       list: async () => ({ ok: true as const, value: options.composition }),
@@ -93,6 +102,38 @@ describe('eval client apply', () => {
     expect(inject).toEqual(['slots', 'remote', 'locale', 'sessions'])
   })
 
+  // T76 · D3: the experiment card on the eval_plan_draft tool row. The slot is
+  // ui-tool's; without its declaration the inject never fires and the call
+  // keeps the host's generic row.
+  it('registers the eval_plan_draft card once the host declares tool.call.toolview', async () => {
+    const { ctx, slots, remote } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    expect(slots.entries('tool.call.toolview' as never)).toHaveLength(0)
+    // Declared the way ui-tool does it: by an entry that owns the child slot.
+    slots.register({
+      name: 'conversation.view',
+      id: 'chat',
+      children: { 'tool.call.toolview': { kind: 'keyed', scope: 'session' } },
+    } as never, () => null)
+    const entries = slots.entries('tool.call.toolview' as never)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.options).toMatchObject({ key: 'eval_plan_draft' })
+
+    const face = (entries[0]!.inject as unknown as (sessionId: string) => {
+      loadStatus: (id: string) => Promise<string | null>
+      openExperiment: (id: string) => void
+    })('s1')
+    remote.runs.mockResolvedValueOnce({ ok: true, value: { repo: null, datasets: [], notes: [], rows: [{ experimentId: 'x-20260924-0a0b', status: 'running' }] } } as never)
+    await expect(face.loadStatus('x-20260924-0a0b')).resolves.toBe('running')
+    expect(remote.runs).toHaveBeenLastCalledWith('s1', {})
+    await expect(face.loadStatus('missing')).resolves.toBeNull()
+
+    // 打开实验 reaches the lab view's face through the shared channel.
+    face.openExperiment('x-20260924-0a0b')
+    const lab = (slots.entries('conversation.view').find(entry => (entry.options as { id?: string }).id === 'lab')!.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
+    expect(lab.focus?.take('s1' as SessionId)).toBe('x-20260924-0a0b')
+  })
+
   it('mounts the Remote and registers the lab view entry at order 40', async () => {
     const { ctx, slots, remoteService } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
@@ -106,6 +147,12 @@ describe('eval client apply', () => {
 
   it('still registers the view when the Remote mount fails (already mounted elsewhere)', async () => {
     const { ctx, slots } = await bench({ mountFails: true })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+  })
+
+  it('registers the tab on a 0.1.5-shaped list (legacy current fallback)', async () => {
+    const { ctx, slots } = await bench({ legacyCurrent: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })

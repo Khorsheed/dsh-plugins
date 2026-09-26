@@ -1,4 +1,4 @@
-  import { IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { IconBrowseOutlineMedium } from './icons.tsx'
   import type { CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { McpCard } from './McpCards.tsx'
@@ -49,7 +49,7 @@ function ToolCard({ tool, modes, modeTotal, onMode, onOpen, t }: {
       {modes === undefined ? null : <ModeChips modes={modes} total={modeTotal ?? 0} onSelect={onMode} t={t} />}
       <div className={css.pvFoot}>
         <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
-          <IconBrowseOutline16 size={16} />
+          <IconBrowseOutlineMedium size={16} />
         </button>
       </div>
     </div>

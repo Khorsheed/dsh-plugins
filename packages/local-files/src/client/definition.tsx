@@ -49,6 +49,7 @@ export function localFilesDefinition(t: TranslateNS<'localFiles'>): SidebarRight
     kind: LOCAL_FILES_KIND,
     title: () => t('tab.label'),
     guide: [{
+      id: LOCAL_FILES_KIND,
       order: 40,
       title: () => t('tab.label'),
       description: () => t('guide.description'),

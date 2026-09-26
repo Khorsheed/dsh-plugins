@@ -89,12 +89,63 @@ export function checkWorkflow(path: string, yaml: string, scripts: ReadonlySet<s
   return findings
 }
 
+/** The static `ref:` a workflow pins its harness seed clone at; a `${{ }}`
+ * template ref (the forward-looking next-compat lane) is deliberately dynamic
+ * and reports nothing. */
+export function harnessCloneRefs(yaml: string): readonly string[] {
+  const refs: string[] = []
+  const lines = yaml.split('\n')
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!/repository:\s*deepseek-ai\/deepseek-harness/.test(lines[i]!)) continue
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const ref = /^\s*ref:\s*(\S+)\s*$/.exec(lines[j]!)
+      if (ref !== null) {
+        if (!ref[1]!.includes('${{')) refs.push(ref[1]!)
+        break
+      }
+      if (/^\s*-\s/.test(lines[j]!)) break // the clone step pins nothing
+    }
+  }
+  return refs
+}
+
+/** Every workflow must seed the harness at the SAME tag: a publish pipeline
+ * cloning a different host line than CI verified is a silent compatibility gap
+ * (the ci.yml ↔ publish.yml comments long carried the rule; this makes it
+ * mechanical). */
+export function checkHarnessPinLockstep(workflows: readonly (readonly [string, string])[]): Finding[] {
+  const first = new Map<string, string>() // ref → first workflow that pinned it
+  const order: string[] = []
+  const perWorkflow = new Map<string, readonly string[]>()
+  for (const [workflow, yaml] of workflows) {
+    perWorkflow.set(workflow, harnessCloneRefs(yaml))
+    for (const ref of harnessCloneRefs(yaml)) {
+      if (!first.has(ref)) { first.set(ref, workflow); order.push(ref) }
+    }
+  }
+  if (order.length < 2) return []
+  const canonical = order[0]!
+  const findings: Finding[] = []
+  for (const [workflow, refs] of perWorkflow) {
+    for (const ref of refs) {
+      if (ref !== canonical) {
+        findings.push({
+          workflow, step: 'Clone deepseek-harness (type/test seed)', reference: ref,
+          reason: `harness pin drift: every workflow must clone the same tag (${canonical}, first pinned by ${first.get(canonical)})`,
+        })
+      }
+    }
+  }
+  return findings
+}
+
 export function main(): void {
   const scripts = new Set(Object.keys(
     (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts?: Record<string, string> }).scripts ?? {},
   ))
   const workflows = globSync('.github/workflows/*.{yml,yaml}', { cwd: root })
   const findings = workflows.flatMap((w) => checkWorkflow(w, readFileSync(join(root, w), 'utf8'), scripts))
+  findings.push(...checkHarnessPinLockstep(workflows.map((w) => [w, readFileSync(join(root, w), 'utf8')])))
   for (const f of findings) {
     process.stderr.write(`${f.workflow} › ${f.step}: ${f.reference} — ${f.reason}\n`)
   }

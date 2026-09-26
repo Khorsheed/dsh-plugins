@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Claude 委派",
+    "description": "把编码任务委派给本地 Claude Code，回答实时流回。"
+  }
+}

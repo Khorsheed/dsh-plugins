@@ -12,11 +12,9 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
 import type { UserMessageNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import {
-  Button, IconCheckOutline16, IconCopyOutline16, IconEditOutline16,
-  JsonBlock, RiskConfirmation, Tooltip, writeClipboard,
-} from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconUndoOutline16 } from './icons.tsx'
+import { Button, JsonBlock, RiskConfirmation, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium } from './icons.tsx'
+import { IconUndoOutlineMedium } from './icons-local.tsx'
 import { foldHiddenRanges, isSeqHidden } from './withdrawn-node.ts'
 import { chatHookOf, type ChatSlice } from './chat-hook.ts'
 import { withdrawAndBackfill } from './withdraw-backfill.ts'
@@ -107,7 +105,7 @@ function CopyButton({ text, t }: { text: string; t: Translate }): ReactNode {
   return (
     <Tooltip label={copied ? t('copied') : t('copy')} side="bottom">
       <button type="button" className={css.action} aria-label={copied ? t('copied') : t('copy')} onClick={onCopy}>
-        {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
+        {copied ? <IconCheckOutlineMedium /> : <IconCopyOutlineMedium />}
       </button>
     </Tooltip>
   )
@@ -267,7 +265,7 @@ export const UserMessageView = memo(function UserMessageView({
             aria-label={t('edit')}
             onClick={() => { setFailed(null); setEditing(true) }}
           >
-            <IconEditOutline16 />
+            <IconEditOutlineMedium />
           </button>
         </Tooltip>
         <Tooltip label={t('action.withdraw')} side="bottom">
@@ -277,7 +275,7 @@ export const UserMessageView = memo(function UserMessageView({
             aria-label={t('action.withdraw')}
             onClick={() => { setFailed(null); setAcknowledged(false); setConfirming(true) }}
           >
-            <IconUndoOutline16 />
+            <IconUndoOutlineMedium />
           </button>
         </Tooltip>
       </div>

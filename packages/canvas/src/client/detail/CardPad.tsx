@@ -20,16 +20,49 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { Button, IconEditOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconEditOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { MAX_DRAW_STROKES, type CanvasDrawPoint, type CanvasStroke } from '../../types.ts'
 import {
   appendStroke, boxPointOf, samplesNext, sampleWidth, strokeAt, unitsPerPixel,
   type PadTool,
 } from '../draw.ts'
 import type { CanvasDetailProps } from '../contract.ts'
-import { IconEraserOutline16, IconUndoOutline16 } from '../icons.tsx'
+import { IconEraserOutline16, IconUndoOutline16 } from '../icons-local.tsx'
 import { DrawFigure } from './DrawFigure.tsx'
 import css from './CardPad.module.css'
+
+/** The two MODE buttons are one choice, so they wear the page's segmented
+ *  control (the reader's render/source/split switch above them) — a dark
+ *  "primary" capsule for a toggle was the odd one out on the strip. */
+function ToolSeg({ tool, hasInk, onTool, t }: {
+  readonly tool: PadTool
+  readonly hasInk: boolean
+  readonly onTool: (tool: PadTool) => void
+  readonly t: CanvasDetailProps['t']
+}): ReactNode {
+  return (
+    <span className={css.seg}>
+      <button
+        type="button"
+        aria-pressed={tool === 'pen'}
+        onClick={() => { onTool(tool === 'pen' ? 'text' : 'pen') }}
+      >
+        <IconEditOutlineMedium size={12} />
+        {t('draw.pen')}
+      </button>
+      <button
+        type="button"
+        aria-pressed={tool === 'erase'}
+        disabled={!hasInk}
+        onClick={() => { onTool(tool === 'erase' ? 'text' : 'erase') }}
+      >
+        <IconEraserOutline16 size={12} />
+        {t('draw.erase')}
+      </button>
+    </span>
+  )
+}
 
 /** How far from a stroke the eraser still counts as aimed, in SCREEN pixels. */
 const ERASE_TOLERANCE = 12
@@ -172,25 +205,7 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
     <div className={css.pad} data-tool={drawing ? tool : 'text'}>
       {editing && (
         <div className={css.bar} role="group" aria-label={t('draw.tools')}>
-          <Button
-            size="sm"
-            variant={tool === 'pen' ? 'primary' : 'toolbar'}
-            aria-pressed={tool === 'pen'}
-            icon={<IconEditOutline16 size={12} />}
-            onClick={() => { onTool(tool === 'pen' ? 'text' : 'pen') }}
-          >
-            {t('draw.pen')}
-          </Button>
-          <Button
-            size="sm"
-            variant={tool === 'erase' ? 'primary' : 'toolbar'}
-            aria-pressed={tool === 'erase'}
-            disabled={!hasInk}
-            icon={<IconEraserOutline16 size={12} />}
-            onClick={() => { onTool(tool === 'erase' ? 'text' : 'erase') }}
-          >
-            {t('draw.erase')}
-          </Button>
+          <ToolSeg tool={tool} hasInk={hasInk} onTool={onTool} t={t} />
           {hasInk && (
             <Button size="sm" icon={<IconUndoOutline16 size={12} />} onClick={undo}>
               {t('draw.undo')}
@@ -199,7 +214,7 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
           {hasInk && (
             <Button
               size="sm"
-              icon={<IconTrashOutline16 size={12} />}
+              icon={<IconTrashOutlineMedium size={12} />}
               onClick={() => {
                 onStrokes([])
                 onTool('text')
@@ -236,7 +251,7 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
               size="sm"
               variant="toolbar"
               className={css.continue}
-              icon={<IconEditOutline16 size={12} />}
+              icon={<IconEditOutlineMedium size={12} />}
               onClick={() => { onTool('pen') }}
             >
               {t('draw.continue')}

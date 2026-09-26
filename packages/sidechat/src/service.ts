@@ -22,7 +22,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentOptions, AgentSetup, ModelSelection } from '@deepseek-ai/dsh-agent'
 import { FsError, type FsVersion } from '@deepseek-ai/dsh-fs'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionId, type Session } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the ctx.systemPrompt service merge (the agent-scope section registration).
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -39,6 +39,43 @@ import {
   type SideChatRef, type SideChatSendOutcome, type SideChatSendRequest, type SideChatState,
   type SideChatStateOutcome, type SideChatStatus, type SideChatSurfaceHints,
 } from './types.ts'
+
+/**
+ * The sidechat producer's durable identity: the current producer-owned kind
+ * (`sidechat`) and the released V3 wrapper's `plugin` value (the official
+ * V3→V4 migration rewrites it to `kind: 'plugin:@khorsheed/dsh-sidechat'`).
+ * {@link isSidechatSource} accepts all three forms; new writes always carry
+ * the producer kind.
+ */
+export const SIDECHAT_KIND = 'sidechat'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** sidechat producer: one user message sent into a side-chat context. */
+    sidechat: { kind: 'sidechat' } & ContextFormed
+  }
+}
+
+/** The producer-owned source of a side-chat send. */
+export function sidechatSource(): MessageSource {
+  return Object.freeze({ kind: SIDECHAT_KIND })
+}
+
+/**
+ * Whether a durable source belongs to the sidechat producer, in every form
+ * the log can hold: the current producer-owned kind, the V3→V4 migrated
+ * kind, and the released V3 wrapper a pre-V4 (0.1.5) host still serves
+ * verbatim.
+ * @param source - the persisted message source to test.
+ * @returns true when the source names this producer.
+ */
+export function isSidechatSource(source: unknown): boolean {
+  if (typeof source !== 'object' || source === null) return false
+  const record = source as { kind?: unknown; plugin?: unknown }
+  return record.kind === SIDECHAT_KIND
+    || record.kind === `plugin:${PACKAGE_NAME}`
+    || (record.kind === 'plugin' && record.plugin === PACKAGE_NAME)
+}
 
 /** Plugin config for the side-chat service; every key is optional. */
 export interface SideChatConfig {
@@ -519,7 +556,7 @@ export class SideChatService {
   /**
    * Send one user message into one context: pending refs (plus any one-shot
    * refs) fold into the message and clear, the context's agent spins up
-   * lazily, and the turn starts as a plugin-sourced followup. The CALLING
+   * lazily, and the turn starts as a producer-sourced followup. The CALLING
    * agent's session only donates the fence and the cwd inheritance — the
    * message never touches it.
    * @param calling - the calling session's agent (the wire's agent-first convention).
@@ -545,7 +582,7 @@ export class SideChatService {
       }
       agent.followup(createUserMessage({
         content: [{ type: 'text', text: foldRefsIntoText(refs, text) }],
-        source: { kind: 'plugin', plugin: PACKAGE_NAME },
+        source: sidechatSource(),
       }))
       return { ok: true, state: await this.stateOf(runtime) }
     })

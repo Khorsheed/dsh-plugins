@@ -14,7 +14,8 @@ async function bench(scopeBehavior: 'ok' | 'no-scope' | 'no-conversation' = 'ok'
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
   const conversation = { loadOlder: vi.fn(() => Promise.resolve()) }
-  const list = createSnapshotStore<{ current?: string | undefined }>({ current: undefined })
+  // No session on screen: the 0.1.6-alpha.2 shape carries no main-view row.
+  const list = createSnapshotStore({ ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
   const provideInfo = createSnapshotStore({})
   ctx.provide('sessions', {
     list,

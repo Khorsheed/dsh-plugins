@@ -17,6 +17,7 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the ctx.sessions service merge.
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { TimelineRailState } from './slots.ts'
 import { isTimelineRowKind } from './timeline-kinds.ts'
 
@@ -26,6 +27,23 @@ const RAIL_LEFT_INSET = 6
 const RAIL_VERTICAL_PADDING = 8
 /** Keep the target row this far below the scrollport top after a jump (px). */
 const JUMP_OFFSET = 16
+
+/**
+ * The on-screen session across host lines: 0.1.6-alpha.2 dropped
+ * `SessionListState.current` for per-row `retainedBy.mainView` counts (the
+ * duck shape keeps this module independent of ui-session's reference-source
+ * merge), while 0.1.5 publishes only `current`. One build reads both.
+ * @param list - sessions list snapshot.
+ * @returns the main-view session id, or undefined when nothing is on screen.
+ */
+type SessionListCurrent = SessionListState & {
+  current?: SessionId
+  byId: Record<SessionId, { id: SessionId; retainedBy?: Readonly<Record<string, number>> }>
+}
+function mainSessionId(list: SessionListState): SessionId | undefined {
+  const view = list as SessionListCurrent
+  return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
+}
 
 /** Idle state published before any session binds or while none is current. */
 const IDLE: TimelineRailState = {
@@ -288,7 +306,7 @@ export function installRailTracker(ctx: Context, includeSteering: boolean): Rail
   }
 
   const bindCurrent = (): void => {
-    bind(ctx.sessions.list.getSnapshot().current)
+    bind(mainSessionId(ctx.sessions.list.getSnapshot()))
   }
   const stopList = ctx.sessions.list.subscribe(bindCurrent)
   // Host 0.1.2-alpha.1 removed ISessions.currentProvideInfo (commit

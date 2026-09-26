@@ -37,6 +37,7 @@ import {
 import { compactCount, durationParts, sourceOf, sourceShares, stagePhrase, verdictKey } from './vocab.ts'
 import { conclusionSourceKey, validityCount } from './journey.ts'
 import type { EvalKey } from './locales.ts'
+import { MarkdownDoc } from './MarkdownDoc.tsx'
 import css from './LabView.module.css'
 
 const DASH = '—'
@@ -265,6 +266,29 @@ export function pairVerdictLine(pair: EvalReportPair, t: LabViewProps['t']): str
 }
 
 /**
+ * One pair's direction in the vocabulary's words — 「A 优于 B」 or 「A 与 B 未分
+ * 高下」. `rank` is the report's own decision (the rank gate, the coverage
+ * downgrade); this only says it out loud, it never re-decides.
+ */
+export function pairDirection(pair: EvalReportPair, t: LabViewProps['t']): string {
+  if (pair.rank === 'a') return t('report.directionAhead', { ahead: pair.a, behind: pair.b })
+  if (pair.rank === 'b') return t('report.directionAhead', { ahead: pair.b, behind: pair.a })
+  return t('report.directionNone', { a: pair.a, b: pair.b })
+}
+
+/**
+ * The answer the conclusion card gives the plan's question (T74): the pairs'
+ * directions, or why there is no answer yet. Same four branches as the card's
+ * body, so the first line and what is under it cannot disagree.
+ */
+export function conclusionAnswer(report: EvalRunReportView, t: LabViewProps['t']): string {
+  if (!report.comparisonAllowed) return t('report.answerClosed')
+  if (report.singleCondition) return t('report.answerSingle')
+  if (report.pairs.length === 0) return t('report.answerClosed')
+  return report.pairs.map(pair => pairDirection(pair, t)).join('；')
+}
+
+/**
  * The CONCLUSION CARD (T72 §6) — the first thing on the page, because the
  * question a reader opens this stage with is «so which one is better, and can
  * I believe it», and v1 answered it at the bottom of four sections of
@@ -273,6 +297,14 @@ export function pairVerdictLine(pair: EvalReportPair, t: LabViewProps['t']): str
  * The source line is decided by the closure, not by the bundle: a human's
  * final verdicts exist or not whatever was exported, and 「判官初判，未经人工
  * 确认」 is the honest default when nobody took an exit.
+ *
+ * Since plan v1-rev14 (T74) the card ANSWERS the plan's question: the first
+ * line is 「问题：… — 结论：…」, the answeredWhen sentence sits under it as the
+ * yardstick, and the person's expectation is quoted beside the actual
+ * direction. The card does not grade the expectation as 一致 / 相反: it is free
+ * text and the direction is a structured rank, and a page that parsed the one
+ * to compare it with the other would be guessing. An old plan has no question
+ * and the card is T72's pairing conclusion, unchanged.
  */
 function ConclusionCard(props: {
   report: EvalRunReportView
@@ -288,7 +320,21 @@ function ConclusionCard(props: {
   return (
     <section className={css.conclusionCard} aria-label={t('report.conclusion')}>
       {flagged !== null && <div className={css.conclusionFlag}>{t('report.flagged', { reason: flagged })}</div>}
-      <div className={css.conclusionTitle}>{t('report.conclusion')}</div>
+      {report.question?.question != null
+        ? (
+          <div className={css.conclusionTitle}>
+            {t('report.answerLine', { question: report.question.question, answer: conclusionAnswer(report, t) })}
+          </div>
+        )
+        : <div className={css.conclusionTitle}>{t('report.conclusion')}</div>}
+      {report.question?.answeredWhen != null && (
+        <div className={css.dim}>{t('report.answeredWhen', { text: report.question.answeredWhen })}</div>
+      )}
+      {report.question?.expectation != null && (
+        <div className={css.dim}>
+          {t('report.expectation', { text: report.question.expectation, actual: conclusionAnswer(report, t) })}
+        </div>
+      )}
       {!report.comparisonAllowed
         ? (
           <div>
@@ -926,7 +972,9 @@ export function AnalysisBlock(props: {
                 : (
                   <>
                     {body.view.note !== null && <div className={css.warning}>{body.view.note}</div>}
-                    {body.view.text !== null && <pre className={css.pre}>{body.view.text}</pre>}
+                    {/* Rendered, not printed (T74): these are markdown
+                        documents an agent or a person wrote to be read. */}
+                    {body.view.text !== null && <MarkdownDoc text={body.view.text} banner={file.name} t={t} />}
                   </>
                 )}
           </Detail>

@@ -157,8 +157,13 @@ export interface RoomModelDirectory {
   }
   /** Ensure the shared advisory catalog is loaded (errors land on the store). */
   readonly load: () => Promise<unknown>
-  /** Select the complete provider/model/reasoning selection; rejects on a refused switch. */
-  readonly select: (selection: RoomModelSelection) => Promise<void>
+  /**
+   * Select the complete provider/model/reasoning selection. 0.1.5 rejects on
+   * a refused switch; alpha.2 never rejects and answers the RemoteResult
+   * instead — a settled object carrying `ok` reports the outcome there, any
+   * other resolution reads as success.
+   */
+  readonly select: (selection: RoomModelSelection) => Promise<unknown>
 }
 
 /**

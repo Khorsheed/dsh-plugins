@@ -6,7 +6,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { WithdrawnDividerView } from '../src/client/WithdrawnDividerView.tsx'
 import { RestoredMessageView, type RestoredMessageViewProps } from '../src/client/RestoredMessageView.tsx'
-import { IconUndoOutline16 } from '../src/client/icons.tsx'
+import { IconUndoOutlineMedium } from '../src/client/icons-local.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import type { ChatSlice } from '../src/client/chat-hook.ts'
 import type { WithdrawnDividerViewProps } from '../src/client/slots.ts'
@@ -264,9 +264,9 @@ describe('RestoredMessageView', () => {
   })
 })
 
-describe('IconUndoOutline16', () => {
+describe('IconUndoOutlineMedium', () => {
   it('renders at the authored 16px size by default', () => {
-    const { container } = render(<IconUndoOutline16 />)
+    const { container } = render(<IconUndoOutlineMedium />)
     const svg = container.querySelector('svg') as SVGSVGElement
     expect(svg.getAttribute('width')).toBe('16')
     expect(svg.getAttribute('height')).toBe('16')
@@ -275,7 +275,7 @@ describe('IconUndoOutline16', () => {
   })
 
   it('honors a custom size and className', () => {
-    const { container } = render(<IconUndoOutline16 size={24} className="mt-undo" />)
+    const { container } = render(<IconUndoOutlineMedium size={24} className="mt-undo" />)
     const svg = container.querySelector('svg') as SVGSVGElement
     expect(svg.getAttribute('width')).toBe('24')
     expect(svg.getAttribute('height')).toBe('24')

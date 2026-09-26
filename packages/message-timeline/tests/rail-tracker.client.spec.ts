@@ -258,8 +258,27 @@ describe('jumpRow', () => {
   })
 })
 
-function fakeSessions(current: string | undefined) {
-  const list = createSnapshotStore<{ current?: string | undefined }>({ current })
+/** The list snapshot shape the tracker reads, across host lines. */
+type FakeList = {
+  ids: string[]
+  byId: Record<string, { id: string; retainedBy?: Record<string, number> }>
+  /** 0.1.5 line only: top-level current, no per-row retention. */
+  current?: string | undefined
+}
+
+/** The 0.1.6-alpha.2 shape: the on-screen session is the row retained by the main view. */
+function mainViewList(current: string | undefined): FakeList {
+  return current === undefined
+    ? { ids: [], byId: {} }
+    : { ids: [current], byId: { [current]: { id: current, retainedBy: { mainView: 1 } } } }
+}
+
+function fakeSessions(current: string | undefined, opts: { legacy?: boolean } = {}) {
+  const list = createSnapshotStore<FakeList>(
+    opts.legacy === true && current !== undefined
+      ? { ids: [current], byId: { [current]: { id: current } }, current }
+      : mainViewList(current),
+  )
   const provideInfo = createSnapshotStore({})
   return {
     list,
@@ -276,8 +295,8 @@ function frame(): Promise<void> {
 }
 
 /** A fake client context carrying the fake sessions service. */
-function fakeCtx(current: string | undefined): { sessions: ReturnType<typeof fakeSessions> } {
-  return { sessions: fakeSessions(current) }
+function fakeCtx(current: string | undefined, opts: { legacy?: boolean } = {}): { sessions: ReturnType<typeof fakeSessions> } {
+  return { sessions: fakeSessions(current, opts) }
 }
 
 describe('installRailTracker', () => {
@@ -367,11 +386,30 @@ describe('installRailTracker', () => {
     await frame()
     expect(tracker.state.getSnapshot().sessionId).toBe('s1')
 
-    ctx.sessions.list.set({ current: 's2' })
+    ctx.sessions.list.set(mainViewList('s2'))
     await frame()
 
     expect(tracker.state.getSnapshot().sessionId).toBe('s2')
     tracker.dispose()
+  })
+
+  it('binds and rebinds the 0.1.5-shaped list current when no row carries main-view retention', async () => {
+    // The 0.1.5 host line publishes `current` with no per-row retainedBy; the
+    // fallback keeps the rail tracking there.
+    document.body.innerHTML = '<div data-conversation-scroll=""></div>'
+    rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
+      top: 0, left: 0, width: 400, height: 300,
+    })
+    const legacy = fakeCtx('s1', { legacy: true })
+    const legacyTracker = installRailTracker(legacy as unknown as Context, true)
+    await frame()
+    expect(legacyTracker.state.getSnapshot().sessionId).toBe('s1')
+
+    legacy.sessions.list.set({ ids: ['s2'], byId: { s2: { id: 's2' } }, current: 's2' })
+    await frame()
+
+    expect(legacyTracker.state.getSnapshot().sessionId).toBe('s2')
+    legacyTracker.dispose()
   })
 
   it('coalesces scroll-driven updates into one frame', async () => {
@@ -540,7 +578,7 @@ describe('installRailTracker', () => {
     const tracker = installRailTracker(ctx as unknown as Context, true)
     await frame()
 
-    ctx.sessions.list.set({ current: 's1' })
+    ctx.sessions.list.set(mainViewList('s1'))
     await frame()
 
     expect(tracker.state.getSnapshot().sessionId).toBe('s1')
@@ -580,8 +618,8 @@ describe('installRailTracker', () => {
     const tracker = installRailTracker(ctx as unknown as Context, true)
 
     // Two session changes land before either bind frame runs.
-    ctx.sessions.list.set({ current: 's1' })
-    ctx.sessions.list.set({ current: 's2' })
+    ctx.sessions.list.set(mainViewList('s1'))
+    ctx.sessions.list.set(mainViewList('s2'))
     await frame()
 
     expect(tracker.state.getSnapshot().sessionId).toBe('s2')
@@ -613,13 +651,13 @@ describe('installRailTracker', () => {
     const ctx = fakeCtx(undefined)
     const tracker = installRailTracker(ctx as unknown as Context, true)
 
-    ctx.sessions.list.set({ current: 's1' })
+    ctx.sessions.list.set(mainViewList('s1'))
     await frame()
     expect(warn).toHaveBeenCalledTimes(1)
 
-    ctx.sessions.list.set({ current: undefined })
+    ctx.sessions.list.set(mainViewList(undefined))
     await frame()
-    ctx.sessions.list.set({ current: 's1' })
+    ctx.sessions.list.set(mainViewList('s1'))
     await frame()
 
     expect(warn).toHaveBeenCalledTimes(1)

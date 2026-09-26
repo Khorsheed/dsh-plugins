@@ -54,7 +54,7 @@ export interface MissionToolConfig {
   tools?: MissionToolsTier
 }
 
-export const Config: z<MissionToolConfig> = z.object({
+export const Config: z = z.object({
   tools: z.union([z.const('all'), z.const('read'), z.const('none')]).default('all'),
 })
 

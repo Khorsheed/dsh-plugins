@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Local Agent",
+    "description": "Use locally installed coding agent CLIs with scoped logins and delegation."
+  }
+}

@@ -1,4 +1,4 @@
-import { IconBrowseOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBrowseOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
   import type { CapabilityCatalogKey } from './locales.ts'
   import { transportLabel, type McpGroup } from './mcp-model.ts'
   import css from './CapabilityCatalogCard.module.css'
@@ -40,11 +40,11 @@ export function McpCard({ group, onOpen, onSetEnabled, onRemove, t }: {
         ) : null}
         <span className={css.mcpCardActions}>
           <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
-            <IconBrowseOutline16 size={16} />
+            <IconBrowseOutlineMedium size={16} />
           </button>
           {group.managed ? (
             <button type="button" className={`${css.iconButton} ${css.iconDanger}`} onClick={() => void onRemove(group.serverName)} aria-label={t('mcpRemove')} title={t('mcpRemove')}>
-              <IconTrashOutline16 size={16} />
+              <IconTrashOutlineMedium size={16} />
             </button>
           ) : null}
         </span>

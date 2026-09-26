@@ -8,10 +8,7 @@
  * collapse-all, so the whole tree is always reachable.
  */
 import { useMemo, useState, type ReactNode } from 'react'
-import {
-  IconChevronDownOutline14, IconChevronRightOutline14,
-  IconFolderClose16, IconFolderOpen16, IconPanelLeftOutline16,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium, IconPanelLeftOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile } from '../types.ts'
 import { formatCount } from './Overview.tsx'
@@ -150,7 +147,7 @@ export interface FileTreeProps {
 }
 
 /** A neutral document glyph: the official icon set has no file icon (the
- * closest, IconCodeOutline16, reads as a '#'-like mark), so the tree draws its
+ * closest, IconCodeOutlineMedium, reads as a '#'-like mark), so the tree draws its
  * own folded-corner paper in the neutral tone via currentColor. */
 function FileGlyph(): ReactNode {
   return (
@@ -187,7 +184,7 @@ function EyeGlyph({ open }: { open: boolean }): ReactNode {
 /** Expand/collapse-all glyph: a folder-open icon when collapsed (click to
  * expand all), a folder-close icon when any level is expanded. */
 function ExpandGlyph({ open }: { open: boolean }): ReactNode {
-  return open ? <IconFolderOpen16 /> : <IconFolderClose16 />
+  return open ? <IconFolderOpenMedium /> : <IconFolderCloseMedium />
 }
 
 /** Relative time for a commit (compact form). */
@@ -319,8 +316,8 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
             if (!isOpen && loadChildren !== undefined) lazyChildren(node)
             toggle(node.path)
           }}>
-            <span className={css.chevron}>{isOpen ? <IconChevronDownOutline14 size={18} /> : <IconChevronRightOutline14 size={18} />}</span>
-            {isOpen ? <IconFolderOpen16 /> : <IconFolderClose16 />}
+            <span className={css.chevron}>{isOpen ? <IconChevronDownOutlineMedium size={18} /> : <IconChevronRightOutlineMedium size={18} />}</span>
+            {isOpen ? <IconFolderOpenMedium /> : <IconFolderCloseMedium />}
             <span className={css.dirName}>{node.name}</span>
           </button>
           {isOpen && (
@@ -404,7 +401,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
               title={collapsed ? t('tree.expand') : t('tree.collapse')}
               onClick={onToggleCollapse}
             >
-              <IconPanelLeftOutline16 />
+              <IconPanelLeftOutlineMedium />
             </button>
           )}
         </span>

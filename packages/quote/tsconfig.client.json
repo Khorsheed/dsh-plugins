@@ -19,6 +19,7 @@
     "src/client/locales.ts",
     "src/client/registry.ts",
     "src/client/selection.ts",
-    "src/client/SelectionMenu.tsx"
+    "src/client/SelectionMenu.tsx",
+    "src/client/icons.tsx"
   ]
 }

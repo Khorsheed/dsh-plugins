@@ -12,12 +12,12 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
+import type { SettingsFace } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import { ClaudeLiveDriver } from './live-driver.ts'
 import type { ClaudeLiveMirrorGranularity } from './live-driver.ts'
 
-/** The resolved live settings (schema defaults ← YAML base ← user layer). */
+/** The resolved live settings (rc.1: volatile row config; 0.1.5: schema defaults ← YAML base ← user layer). */
 export interface ClaudeLiveSettings {
   live: boolean
   liveMirrorGranularity: ClaudeLiveMirrorGranularity
@@ -49,11 +49,11 @@ export class LiveDriverSwitch {
 
   constructor(
     private readonly ctx: Context,
-    scope: SettingsScope<ClaudeLiveSettings>,
+    face: SettingsFace<ClaudeLiveSettings>,
     private readonly driverBase: DriverBase,
   ) {
-    this.apply(scope.get())
-    this.unwatch = scope.watch((next) => { this.apply(next) })
+    this.apply(face.get())
+    this.unwatch = face.watch((next) => { this.apply(next) })
   }
 
   /**

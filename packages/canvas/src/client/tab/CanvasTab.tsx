@@ -31,9 +31,8 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  Button, IconFolderOpenOutline16, IconPlusOutline16, Modal, Toast,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconFolderOpenOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasTabProps } from '../contract.ts'
 import {
@@ -183,8 +182,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   }, [])
 
   /**
-   * The first save. The row STAYS and comes back empty: it is where cards get
-   * filed, and closing it on a save would take the confirmation toast with it.
+   * The first save. The card lands on its board and the writer goes back there
+   * with it: the row's work is done, so it comes off the strip and the board
+   * row shows what just arrived. The toast lives at the tab's root, so it
+   * survives the row it reports on.
    */
   const saveDraft = useCallback(async (
     id: string, canvasId: string, kind: CardCategoryId, text: string, draw: readonly CanvasStroke[],
@@ -210,8 +211,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       return next
     })
     showToast(t('toast.cardAdded'))
+    closeTab(id)
+    showCanvas(canvasId)
     return true
-  }, [sessionId, putCard, showToast, t])
+  }, [sessionId, putCard, showToast, t, closeTab, showCanvas])
 
   /* ---------------------------------------------------------------- wide mode */
 
@@ -583,7 +586,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                   aria-expanded={newCardMenu}
                   onClick={() => { setNewCardMenu(open => !open) }}
                 >
-                  <IconPlusOutline16 size={12} />
+                  <IconPlusOutlineMedium size={12} />
                   {t('board.newCard')}
                 </button>
                 {newCardMenu && (
@@ -617,7 +620,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             )}
             {openBoard?.board.attachedWorkspaces.map(workspace => (
               <span key={workspace} className={css.attachChip} title={workspace}>
-                <IconFolderOpenOutline16 size={12} />
+                <IconFolderOpenOutlineMedium size={12} />
                 <b>{basenameOf(workspace)}</b>
               </span>
             ))}

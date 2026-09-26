@@ -19,9 +19,10 @@ import type {
   EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
   EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
   EvalFinalizeRequest, EvalFinalizeView, EvalHumanFinalRequest, EvalHumanFinalResult,
-  EvalJudgeQueueRequest, EvalJudgeQueueView, EvalAnswerSheet, EvalCellAnswersRequest, EvalPlanRequest, EvalPlanReview, EvalReexportRequest,
+  EvalJudgeQueueRequest, EvalJudgeQueueView, EvalAnswerSheet, EvalCellAnswersRequest, EvalPlanNumbersRequest, EvalPlanNumbersResult, EvalPlanRequest, EvalPlanReview, EvalReexportRequest,
   EvalReportRequest, EvalRunOutputView, EvalRunReportView, EvalRunUnitsRequest, EvalRunUnitsView,
 } from '../types.ts'
+import type { LabFocus } from './draft-card.ts'
 import type { createLabViewStore } from './store.ts'
 
 /** The eval Remote namespace, mounted by this plugin. */
@@ -32,7 +33,9 @@ export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
  * experiment's overview, the plan review, the condition registry and its diff,
  * the matrix, the cell list and one cell in full.
  *
- * Seven of them WRITE, and every one is a human's click. `draftExperiment` is
+ * Eight of them WRITE, and every one is a human's click. `setPlanNumbers`
+ * is the design page's in-place numbers (T74) — an unstarted plan's reps,
+ * budget and judge samples, nothing structural. `draftExperiment` is
  * ui-spec step 2 — the 新建实验 form, and the ONE write this face shares with a
  * model tool (`eval_plan_draft` reaches the same service verb), because
  * drafting starts nothing. `approvePlan` is ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
@@ -66,6 +69,12 @@ export interface LabViewInjected {
    * re-hashes and any lock beside it goes stale.
    */
   setConditionEndpoint: (sessionId: SessionId, request: EvalConditionEndpointRequest) => Promise<RemoteResult<EvalConditionEndpointView>>
+  /**
+   * SET an unstarted plan's numbers in place (T74): reps, the per-cell budget
+   * and the judge's sample count — only those bytes change, and the file is
+   * read back before the answer. A started experiment is refused.
+   */
+  setPlanNumbers: (sessionId: SessionId, request: EvalPlanNumbersRequest) => Promise<RemoteResult<EvalPlanNumbersResult>>
   /**
    * What the 新建实验 form's pickers may offer: the dataset sets this session
    * can draft into, with the items and stage schemas each one holds.
@@ -192,6 +201,13 @@ export interface LabViewInjected {
    * back to the clipboard.
    */
   insertDraft: (sessionId: SessionId, text: string) => boolean
+  /**
+   * The 打开实验 requests from the eval_plan_draft tool-row card (T76). The
+   * view takes its session's pending request on mount and on every new one:
+   * back to the list, 全部 when the row is outside this session's scope, and
+   * the row marked. Optional so a view mounted without it simply never marks.
+   */
+  focus?: LabFocus
 }
 
 /** Full props of the lab view entry (runtime + store + injected + locale shares). */

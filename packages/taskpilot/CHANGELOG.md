@@ -1,5 +1,14 @@
 # 变更记录
 
+## 0.3.1（2026-09-26）
+
+适配宿主 rc.1 线并实证 0.1.5/0.1.7 双线可用（0.1.5-rc.1 全量 boot 实证，2026-09-25）。
+
+- 作业花名册双通道：rc.1 走 `ctx.jobs`（jobs-channel 代理 + watchRows），0.1.5 落 `jobsBySession` 鸭子读；子代理目录读 `projectionsBySession`（0.1.5 落 `subagentsByParent`）；宿主侧 kill 调用者改 SessionId
+- 详情 tab 的耗时在运行中每秒走秒，算不出时显示 —
+- 会话面迁移：宿主移除 `ISessions.open/current` 后的读面切换
+- 插件清单展示元数据（`locale/*.json`）：rc.1 宿主插件页的卡面标题/描述中文化
+
 ## 0.3.0（2026-09-11）
 
 迁移至宿主 0.1.5 的右栏体系。

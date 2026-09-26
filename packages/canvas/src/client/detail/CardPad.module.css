@@ -18,6 +18,46 @@
   gap: 6px;
 }
 
+/* The pen/eraser pair is ONE mode choice, so it borrows the page's segmented
+   control (the reader's render/source/split switch wears the same tokens); a
+   filled "primary" capsule said "action", and these two say "mode". */
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-radius: 5px;
+  padding: 3px 9px;
+  background: transparent;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.seg button:hover:not(:disabled):not([aria-pressed="true"]) {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.seg button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 .hint {
   font: var(--dsw-font-xxxs-11);
   line-height: 1.6;

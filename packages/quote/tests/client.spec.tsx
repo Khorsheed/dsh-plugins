@@ -43,6 +43,8 @@ function menuBench(opts: {
   title?: string | undefined
   /** Render the session with no displayTitle (the source-label fallback case). */
   noTitle?: boolean
+  /** Model the 0.1.6 shape: no legacy `current`; the row carries retainedBy.mainView. */
+  mainView?: boolean
   sideChat?: boolean
   addRefResult?: boolean
   /** Contributions registered before render. */
@@ -59,13 +61,17 @@ function menuBench(opts: {
   const registry = new QuoteActionRegistryRuntime(vi.fn())
   for (const contribution of opts.contribute ?? []) registry.registerAction(contribution)
   const current = opts.current
+  const row = current === undefined
+    ? undefined
+    : {
+      ...opts.mainView === true ? { id: current, retainedBy: { mainView: 1 } } : {},
+      ...opts.noTitle === true ? {} : { displayTitle: opts.title ?? '主会话' },
+    }
   const props = {
     useSessions: ((selector: (state: unknown) => unknown) =>
       selector({
-        current,
-        byId: current === undefined
-          ? {}
-          : { [current]: opts.noTitle === true ? {} : { displayTitle: opts.title ?? '主会话' } },
+        ...opts.mainView === true ? {} : { current },
+        byId: row === undefined ? {} : { [current as string]: row },
       })) as QuoteMenuProps['useSessions'],
     t,
     selection: { start: (next: SelectionListener) => { listener = next; return () => {} } },
@@ -114,6 +120,13 @@ describe('SelectionQuoteMenu visibility (the degrade matrix)', () => {
     expect(screen.getByRole('button', { name: zh['menu.quoteToConversation'] })).toBeTruthy()
     expect(screen.getByRole('button', { name: zh['menu.quoteToSideChat'] })).toBeTruthy()
     expect(screen.getByRole('button', { name: zh['menu.copy'] })).toBeTruthy()
+  })
+
+  it('reads the 0.1.6 main-view marker (retainedBy.mainView, no legacy current)', () => {
+    const { emit, mocks } = menuBench({ current: 's-1', mainView: true, title: '主会话' })
+    emit(SNAPSHOT)
+    fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「主会话」')
   })
 
   it('hides again when the selection collapses', () => {

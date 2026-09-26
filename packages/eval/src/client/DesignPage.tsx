@@ -8,7 +8,12 @@
  * thing — decide whether this comparison is worth starting — so everything
  * that decision needs is on this page, in the order the decision is made:
  *
- *   ① 实验规模与对比变量 — how big it is and what it varies. Four lines.
+ *   ⓪ 问题 — what the experiment is FOR (plan v1-rev14, T74): the person's
+ *     question verbatim, what they expect, what counts as answered. Absent on
+ *     a plan that says none of the three — no empty block, no placeholder.
+ *   ① 实验规模与对比变量 — how big it is and what it varies. Four lines, and
+ *     the three NUMBERS (次数, 每格预算, 判官采样) are editable in place until
+ *     the experiment starts (T74); anything structural goes back to the agent.
  *   ② 对比组与就绪 — who the subjects are, whether they can run, and the
  *     planned grid, which is where the shape of the experiment becomes a
  *     picture rather than an arithmetic expression.
@@ -24,11 +29,12 @@
  * document would make the reviewer the author.
  */
 
+import { useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
-  EvalExperimentDetail, EvalExperimentRow, EvalPlanCheck, EvalPlanCondition, EvalPlanReview,
-  EvalRunOutputView,
+  EvalExperimentDetail, EvalExperimentRow, EvalPlanCheck, EvalPlanCondition, EvalPlanNumbersResult,
+  EvalPlanQuestion, EvalPlanReview, EvalRunOutputView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
@@ -218,13 +224,168 @@ function ReadinessChecklist(props: {
   )
 }
 
-/** ① The scale, the variables, the dataset version and the judges. Four lines. */
+/** ⓪ The question block (plan v1-rev14). Rendered only when the plan has one. */
+function QuestionSection(props: { question: EvalPlanQuestion; t: LabViewProps['t'] }) {
+  const { question, t } = props
+  return (
+    <Section title={t('design.question')}>
+      {question.question !== null && (
+        <Field label={t('design.questionAsked')}><div className={css.questionText}>{question.question}</div></Field>
+      )}
+      {question.expectation !== null && (
+        <Field label={t('design.expectation')}>{question.expectation}</Field>
+      )}
+      {question.answeredWhen !== null && (
+        <Field label={t('design.answeredWhen')}>{question.answeredWhen}</Field>
+      )}
+    </Section>
+  )
+}
+
+/** The numbers the design page may change, as the person typed them. */
+export interface PlanNumbersDraft {
+  reps?: number
+  activeMinutes?: number
+  turns?: number
+  judgeSamples?: number
+}
+
+/** What one save answered: the server's receipt, or why not. */
+export type PlanNumbersAnswer = { ok: true; value: EvalPlanNumbersResult } | { ok: false; message: string }
+
+/** The four numbers as the plan holds them now. */
+interface PlanNumbersNow {
+  reps: number | null
+  activeMinutes: number | null
+  turns: number | null
+  judgeSamples: number | null
+}
+
+const NUMBER_INPUTS: ReadonlyArray<{ key: keyof PlanNumbersNow; label: EvalKey; step: string; min: number }> = [
+  { key: 'reps', label: 'design.numbers.reps', step: '1', min: 1 },
+  { key: 'activeMinutes', label: 'design.numbers.activeMinutes', step: 'any', min: 0 },
+  { key: 'turns', label: 'design.numbers.turns', step: '1', min: 1 },
+  { key: 'judgeSamples', label: 'design.numbers.judgeSamples', step: '1', min: 0 },
+]
+
+/**
+ * The in-place numbers (T74): 次数, 每格预算 (minutes / turns) and 判官采样.
+ *
+ * Editable only while nothing has started — the plan a run was started from is
+ * the record of that run, so once one exists the inputs turn into text and the
+ * reason is said beside them. A field the plan does not declare (no budget, no
+ * judge) is text too: adding one is a structural edit, which is the agent's.
+ * The receipt quotes the server's before → after, which it wrote only after
+ * reading the file back — the page does not claim a change it did not see.
+ */
+function NumbersField(props: {
+  now: PlanNumbersNow
+  frozen: boolean
+  onSave: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
+  t: LabViewProps['t']
+}) {
+  const { now, frozen, onSave, t } = props
+  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<{ kind: 'receipt' | 'failure'; text: string } | null>(null)
+  const shown = (key: keyof PlanNumbersNow): string => draft[key] ?? (now[key] === null ? '' : String(now[key]))
+  const dirty = NUMBER_INPUTS.some(spec => draft[spec.key] !== undefined && draft[spec.key] !== String(now[spec.key] ?? ''))
+
+  function save(): void {
+    const numbers: PlanNumbersDraft = {}
+    for (const spec of NUMBER_INPUTS) {
+      const text = draft[spec.key]
+      if (text === undefined || now[spec.key] === null) continue
+      const value = Number(text)
+      if (text.trim() === '' || !Number.isFinite(value)) {
+        setNote({ kind: 'failure', text: t('design.numbers.invalid', { field: t(spec.label) }) })
+        return
+      }
+      numbers[spec.key] = value
+    }
+    setBusy(true)
+    setNote(null)
+    void onSave(numbers).then((answer) => {
+      setBusy(false)
+      if (!answer.ok) {
+        setNote({ kind: 'failure', text: answer.message })
+        return
+      }
+      setDraft({})
+      const changes = answer.value.changes
+      setNote({
+        kind: 'receipt',
+        text: changes.length === 0
+          ? t('design.numbers.unchanged')
+          : t('design.numbers.written', {
+            changes: changes.map(change => `${t(labelOf(change.field))} ${change.before} → ${change.after}`).join(' · '),
+          }),
+      })
+    })
+  }
+
+  return (
+    <Field label={t('design.numbers')}>
+      <div className={css.numbersRow}>
+        {NUMBER_INPUTS.map(spec => (
+          <label key={spec.key} className={css.numberCell}>
+            <span className={css.dim}>{t(spec.label)}</span>
+            {frozen || now[spec.key] === null
+              ? <span className={css.mono}>{now[spec.key] ?? '—'}</span>
+              : (
+                <input
+                  className={css.numberInput}
+                  type="number"
+                  inputMode="decimal"
+                  step={spec.step}
+                  min={spec.min}
+                  value={shown(spec.key)}
+                  disabled={busy}
+                  aria-label={t(spec.label)}
+                  onChange={(event) => { setDraft({ ...draft, [spec.key]: event.target.value }) }}
+                  onKeyDown={(event) => { if (event.key === 'Enter' && dirty) save() }}
+                />
+              )}
+          </label>
+        ))}
+        {!frozen && (
+          <span className={css.numbersActions}>
+            <Button size="sm" disabled={busy || !dirty} onClick={save}>{t('design.numbers.save')}</Button>
+            {dirty && (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setDraft({}); setNote(null) }}>
+                {t('design.numbers.cancel')}
+              </Button>
+            )}
+          </span>
+        )}
+      </div>
+      <div className={css.dim}>{frozen ? t('design.numbers.frozen') : t('design.numbers.hint')}</div>
+      {note !== null && (
+        <div className={note.kind === 'failure' ? css.warning : css.dim} role="status">{note.text}</div>
+      )}
+    </Field>
+  )
+}
+
+function labelOf(field: EvalPlanNumbersResult['changes'][number]['field']): EvalKey {
+  switch (field) {
+    case 'reps': return 'design.numbers.reps'
+    case 'budget.activeMinutes': return 'design.numbers.activeMinutes'
+    case 'budget.turns': return 'design.numbers.turns'
+    case 'judge.samples': return 'design.numbers.judgeSamples'
+  }
+}
+
+/** ① The scale, the variables, the dataset version and the judges, plus the editable numbers. */
 function ScaleSection(props: {
   row: EvalExperimentRow
   judgeSamples: number | null
+  numbers: PlanNumbersNow | null
+  frozen: boolean
+  onSetNumbers: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
   t: LabViewProps['t']
 }) {
-  const { row, judgeSamples, t } = props
+  const { row, judgeSamples, numbers, frozen, onSetNumbers, t } = props
   // A STARTED experiment knows how many cells it really has; the product is
   // only the shape a plan implies, and a subset run (`--only` / `--max-cells`)
   // legitimately has fewer. Prefer the fact over the arithmetic.
@@ -244,6 +405,7 @@ function ScaleSection(props: {
           ? t('overview.judgeNone')
           : `${row.judges.join(', ')}${judgeSamples === null ? '' : ` · ${t('overview.judgeSamples', { samples: judgeSamples })}`}`}
       </Field>
+      {numbers !== null && <NumbersField now={numbers} frozen={frozen} onSave={onSetNumbers} t={t} />}
     </Section>
   )
 }
@@ -393,6 +555,8 @@ export function DesignPage(props: {
   onEditEndpoint: (id: string | null) => void
   onSetEndpoint: (row: EvalConditionRow, endpoint: string) => void
   onAddGroup: () => void
+  /** Write the plan's numbers in place (T74); refused server-side once started. */
+  onSetNumbers: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
   /** Run one checklist line's fix; `k` is its number on screen. */
   onFix: (fix: ReadinessFix, check: EvalPlanCheck, k: number) => void
   t: LabViewProps['t']
@@ -402,7 +566,7 @@ export function DesignPage(props: {
     conditions, conditionsLoading, conditionsError, conditionBusy, provision, conditionAction, endpointEditing,
     pair, diff, diffError, sentBack, started, output, outputError, refusal, approveError,
     keepUnits, onKeepUnits, onSendBack, onRecheck, onPick, onProvision, onEditEndpoint, onSetEndpoint,
-    onAddGroup, onFix, t,
+    onAddGroup, onSetNumbers, onFix, t,
   } = props
   const digest = review?.digest ?? null
   // The grid's columns are the PLAYERS; the table and the badge also carry the
@@ -464,7 +628,25 @@ export function DesignPage(props: {
       {sentBack && <div className={css.notice}>{t('review.sentBack')}</div>}
       {row.planPath === null && <div className={css.notice}>{t('review.noPlan')}</div>}
 
-      <ScaleSection row={row} judgeSamples={detail?.meta?.judge.samples ?? digest?.judge.samples ?? null} t={t} />
+      {digest?.question != null && <QuestionSection question={digest.question} t={t} />}
+
+      <ScaleSection
+        row={row}
+        judgeSamples={detail?.meta?.judge.samples ?? digest?.judge.samples ?? null}
+        numbers={digest === null || row.planPath === null || row.experimentId === null
+          ? null
+          : {
+            reps: digest.reps,
+            activeMinutes: digest.budget?.activeMinutes ?? null,
+            turns: digest.budget?.turns ?? null,
+            judgeSamples: digest.judge.samples,
+          }}
+        // The plan a run was started from IS that run's record: past the
+        // start, the numbers are text and the reason is said beside them.
+        frozen={row.runId !== null || started !== null}
+        onSetNumbers={onSetNumbers}
+        t={t}
+      />
 
       <Section title={t('design.groups')}>
         <ReadyBadge rows={readyRows} onRecheck={onRecheck} atStart={row.status === 'stalled'} t={t} />

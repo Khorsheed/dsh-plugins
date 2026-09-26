@@ -28,18 +28,7 @@
  * @module @khorsheed/dsh-reader/client/ReaderPane
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  IconChevronDownOutline14,
-  IconChevronLeftOutline14,
-  IconClockOutline16,
-  IconCopyOutline16,
-  IconGlobeOutline14,
-  IconPlusOutline16,
-  IconRefreshOutline16,
-  IconRightUpOutline16,
-  IconSettingsOutline16,
-  IconTrashOutline16,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium, IconClockOutlineMedium, IconCopyOutlineMedium, IconGlobeOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSettingsOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
 import type { ReaderPaneProps } from './contract.ts'
 import {
   kindQuery,
@@ -221,7 +210,7 @@ function TagSuggestions({ t, tags, applied, draft, onToggle, onCreate }: {
           onMouseDown={event => { event.preventDefault() }}
           onClick={() => { onCreate(name) }}
         >
-          <IconPlusOutline16 size={12} />
+          <IconPlusOutlineMedium size={12} />
           <span className={css.tagRowName}>{t('tag.create', { name })}</span>
         </button>
       )}
@@ -2823,11 +2812,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           title={t('action.back')}
           onClick={() => { actions.setView('list'); actions.closeEntry() }}
         >
-          <IconChevronLeftOutline14 size={14} />
+          <IconChevronLeftOutlineMedium size={14} />
         </button>
       )}
       <span className={css.headTitle}>
-        <IconGlobeOutline14 size={14} />
+        <IconGlobeOutlineMedium size={14} />
         {t('tab.label')}
         <span className={css.count} title={t('filter.unreadOnly')}>
           {countUnread(displayRows)} {t('foot.unread')}
@@ -2840,7 +2829,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         disabled={refreshing}
         onClick={() => { void refreshAll() }}
       >
-        <IconRefreshOutline16 size={15} />
+        <IconRefreshOutlineMedium size={15} />
       </button>
       {/* The wall's own controls, in the header row with refresh: the filter
           (every way to narrow the wall), the sort, and the wall's translation
@@ -2881,7 +2870,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                       title={t('action.back')}
                       onClick={() => { setFilterPage('root'); setSourceFilter('') }}
                     >
-                      <IconChevronLeftOutline14 size={12} />
+                      <IconChevronLeftOutlineMedium size={12} />
                     </button>
                     <span className={css.filterPanelTitle}>{t('filter.bySource')}</span>
                     <span className={css.filterCount}>{sources.length}</span>
@@ -3073,7 +3062,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 void runWallPass()
               }}
             >
-              <IconGlobeOutline14 size={15} />
+              <IconGlobeOutlineMedium size={15} />
             </button>
             {wallOn && (
               <>
@@ -3084,7 +3073,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   title={t('translate.view')}
                   onClick={() => { setWallMenu(open => !open) }}
                 >
-                  <IconChevronDownOutline14 size={10} />
+                  <IconChevronDownOutlineMedium size={10} />
                 </button>
                 {wallMenu && (
                   <div className={css.translateMenu} role="menu">
@@ -3127,9 +3116,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         onClick={() => { actions.closeEntry(); actions.setView('recent') }}
       >
         {/* The official clock, not a hand-rolled stroke: the custom path filled
-            10.8/16 of the box where the Icon*Outline16 neighbours fill ~12/16,
+            10.8/16 of the box where the Icon*OutlineMedium neighbours fill ~12/16,
             so it read a size smaller beside them. */}
-        <IconClockOutline16 size={15} />
+        <IconClockOutlineMedium size={15} />
       </button>
       <button
         type="button"
@@ -3140,7 +3129,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         {/* A host settings glyph, not the hand-rolled filter stroke: the filter
             stroke is already the unread toggle's icon two buttons to the right,
             and two different controls with one glyph is a coin flip. */}
-        <IconSettingsOutline16 size={15} />
+        <IconSettingsOutlineMedium size={15} />
       </button>
       <button
         type="button"
@@ -3148,7 +3137,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         title={t('action.add')}
         onClick={() => { setAddOpen(true); setVerdict(null) }}
       >
-        <IconPlusOutline16 size={15} />
+        <IconPlusOutlineMedium size={15} />
       </button>
     </div>
   )
@@ -3269,7 +3258,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               title={t('action.back')}
               onClick={() => { actions.setView('list'); actions.closeEntry() }}
             >
-              <IconChevronLeftOutline14 size={14} />
+              <IconChevronLeftOutlineMedium size={14} />
             </button>
             <span className={css.barLabel}>{t('tab.label')}</span>
             <span className={css.spacer} />
@@ -3304,7 +3293,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             title={t('action.back')}
             onClick={() => { actions.setView('list'); actions.closeEntry() }}
           >
-            <IconChevronLeftOutline14 size={14} />
+            <IconChevronLeftOutlineMedium size={14} />
           </button>
           <span className={css.barLabel}>{openEntry.title}</span>
           <span className={css.spacer} />
@@ -3323,7 +3312,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 aria-pressed={translatePhase === 'ready' && translateView !== 'orig'}
                 onClick={toggleGlobe}
               >
-                <IconGlobeOutline14 size={15} />
+                <IconGlobeOutlineMedium size={15} />
               </button>
               <button
                 type="button"
@@ -3332,7 +3321,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 title={t('translate.view')}
                 onClick={() => { setTranslateMenu(open => !open) }}
               >
-                <IconChevronDownOutline14 size={10} />
+                <IconChevronDownOutlineMedium size={10} />
               </button>
               {translateMenu && (
                 <div className={css.translateMenu} role="menu">
@@ -3371,7 +3360,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             </span>
           )}
           <button type="button" className={css.tool} title={t('action.copyLink')} onClick={() => { void copyLink() }}>
-            <IconCopyOutline16 size={15} />
+            <IconCopyOutlineMedium size={15} />
           </button>
           <button
             type="button"
@@ -3379,7 +3368,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             title={t('action.openExternal')}
             onClick={() => { if (openEntry.link !== undefined) props.openExternal(openEntry.link) }}
           >
-            <IconRightUpOutline16 size={15} />
+            <IconRightUpOutlineMedium size={15} />
           </button>
           {/* A saved link is one item, so deleting it HERE is honest. A feed
               entry gets no such button: the next refresh would bring it back,
@@ -3391,7 +3380,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               title={t('detail.removeLink')}
               onClick={() => { void removeLink(openEntry.sourceId) }}
             >
-              <IconTrashOutline16 size={15} />
+              <IconTrashOutlineMedium size={15} />
             </button>
           )}
         </div>
@@ -3652,7 +3641,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               )
               : (
                 <button type="button" className={css.tagAdd} onClick={() => setTagInputOpen(true)}>
-                  <IconPlusOutline16 size={12} />
+                  <IconPlusOutlineMedium size={12} />
                 </button>
               )}
           </div>
@@ -3729,7 +3718,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             title={t('action.back')}
             onClick={() => actions.setView('list')}
           >
-            <IconChevronLeftOutline14 size={14} />
+            <IconChevronLeftOutlineMedium size={14} />
           </button>
           <span className={css.barLabel}>{t('recent.title')}</span>
           <span className={css.spacer} />
@@ -3740,7 +3729,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               title={t('recent.clearTitle')}
               onClick={() => { void clearRecent() }}
             >
-              <IconTrashOutline16 size={15} />
+              <IconTrashOutlineMedium size={15} />
             </button>
           )}
         </div>
@@ -3795,12 +3784,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             title={t('action.back')}
             onClick={() => actions.setView('list')}
           >
-            <IconChevronLeftOutline14 size={14} />
+            <IconChevronLeftOutlineMedium size={14} />
           </button>
           <span className={css.barLabel}>{t('sources.title')}</span>
           <span className={css.spacer} />
           <button type="button" className={css.tool} title={t('action.add')} onClick={() => setAddOpen(true)}>
-            <IconPlusOutline16 size={15} />
+            <IconPlusOutlineMedium size={15} />
           </button>
         </div>
         <div className={css.paneBody}>
@@ -3994,7 +3983,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                         title={t('action.refreshOne')}
                         onClick={() => { void refreshOne(source.id) }}
                       >
-                        <IconRefreshOutline16 size={14} />
+                        <IconRefreshOutlineMedium size={14} />
                       </button>
                       <button
                         type="button"
@@ -4294,7 +4283,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                     onClick={event => { event.stopPropagation(); setCardMenu(null); openCardTag(row.entry.id) }}
                     onKeyDown={event => { if (event.key === 'Enter') { event.stopPropagation(); openCardTag(row.entry.id) } }}
                   >
-                    <IconPlusOutline16 size={11} />
+                    <IconPlusOutlineMedium size={11} />
                   </span>
                 </span>
                 <span className={css.chevron}>{glyph('chevron', 13)}</span>
@@ -4366,7 +4355,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             />
           </div>
           <div className={css.tagPanelField}>
-            <IconPlusOutline16 size={12} />
+            <IconPlusOutlineMedium size={12} />
             <input
               autoFocus
               className={css.tagInput}

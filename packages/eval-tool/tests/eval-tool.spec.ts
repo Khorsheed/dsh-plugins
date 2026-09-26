@@ -1,4 +1,4 @@
-/** The companion row: the six tools (four reads plus the two writes), the
+/** The companion row: the seven tools (five reads plus the two writes), the
  * origin tag (this package, not the core), the `tool:eval` guidance section,
  * the `none` grant, the `/eval` slash registration (preset-visibility
  * rollout A3 — registered at every tier, delegated to the core's handler),
@@ -8,7 +8,7 @@ import { apply, type EvalToolConfig } from '../src/index.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 const EVAL_TOOLS = [
-  'eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_analysis_write', 'eval_run_status', 'eval_cells',
+  'eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_analysis_write', 'eval_run_status', 'eval_cells', 'eval_experiment_get',
 ]
 
 interface RegisteredTool {
@@ -63,7 +63,7 @@ function mount(service: unknown, config?: EvalToolConfig): {
 }
 
 describe('eval-tool companion row', () => {
-  it('grants the six tools, tags them by this package, and adds the guidance section', () => {
+  it('grants the seven tools, tags them by this package, and adds the guidance section', () => {
     const { tools, sections } = mount({})
     expect(tools.map(tool => tool.name).sort()).toEqual([...EVAL_TOOLS].sort())
     for (const tool of tools) {
@@ -90,6 +90,7 @@ describe('eval-tool companion row', () => {
     // A minted condition is always a copy — the discipline the whole
     // comparison rests on, stated where the model reads it.
     expect(text).toContain('always a COPY')
+    expect(text).toContain("Put the person's question into its question field verbatim")
     // The second write (I5·T60) and the door it is: the analysis draft's home,
     // and never an item's material — said where the model reads it, so that
     // reaching for `write` plus a sandbox escalation stops being the path.

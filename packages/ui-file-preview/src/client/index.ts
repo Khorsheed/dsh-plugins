@@ -2,23 +2,45 @@
  * File-preview plugin, browser half: a pure additive surface over official
  * extension points only. It registers a page-type right-Sidebar tab (the
  * session's touched files as one full-height list, entered from the guide
- * page; in-workspace file clicks hand content preview to the official
- * document tab through the tab's `actions.openResource`), a switchable
- * change-history renderer in that document tab (the toolbar dropdown's
- * 「改动记录」 entry — the per-write diff stepping the official renderers
- * have no counterpart for), and a per-turn mutation card in the
- * `conversation.chat.turnTail` chain at default priority — the official
- * deliverables row elects first, so the card renders exactly the turns
- * official data misses (the bash captures the host half collects, S2). The
- * filePreview Remote is mounted here through the official `ctx.remote.$mount`
- * channel, so the plugin distributes as an independent package with no edits
- * to core packages. Composing this plugin out of cordis.yml removes every
- * surface it adds.
+ * page), claiming `dsh-resource://file/**` addresses the preview stack renders
+ * at the extension band — which outranks the official document tab's fallback
+ * band on BOTH host lines (the rc.1 tab registry kept the band mechanism), so
+ * file clicks (the file tree, wrapped mentions, the turn card, the
+ * deliverables row) land in this package's own page with its full chrome;
+ * suffixes the stack declines (pdf, archives, binaries) fall through to the
+ * official document tab. A per-turn mutation card sits in the
+ * `conversation.chat.turnTail` slot (the bash captures the host half
+ * collects, S2). The filePreview Remote is mounted here through the official
+ * `ctx.remote.$mount` channel, so the plugin distributes as an independent
+ * package with no edits to core packages. Composing this plugin out of
+ * cordis.yml removes every surface it adds.
+ *
+ * Plan B — registering the content pane INTO the official document tab as its
+ * default renderer (rc.1's `documentPreviews` registry) plus the headless
+ * embedding of phase two — landed and was VETOED by the repo owner the same
+ * day (2026-09-24): the seam cost (the renderer loading protocol, the
+ * extension-band takeover semantics, the headless layout coupling) and the UX
+ * compromises (change history demoted to the renderer dropdown, the copy
+ * button floating over the search row) lost to the self-drawn page, which the
+ * address claim restores wholesale. The turn-tail convergence survives the
+ * veto and stays: on list-kind hosts (0.1.6-alpha.2+) the arm also shadows
+ * the official deliverables entry (a second registration under its cell id at
+ * `priority: -1` whose empty body wins the cell — the slot system's
+ * first-class shadowing; the official entry stays on the ledger so its
+ * declared `deliverables.file.actions` child slot never collapses), because
+ * the official present card duplicates our durable row with a model-curated
+ * subset and the official changes card is memory-resident. On a 0.1.5 host
+ * the slot is still the election chain; the registration probes the
+ * declaration kind and keeps the old preemptive shape (select + priority -1)
+ * there.
  *
  * Retired at the 0.1.5-rc.1 move (seam registry S1): the conversation.view
- * tab, the shell.overlay drawer, the mention capture-phase DOM interception,
- * and the turnTail `priority: -1` preemption — the right-Sidebar resource
- * routing (openResource + the tab-type registry) covers all three openings.
+ * tab, the shell.overlay drawer, and the mention capture-phase DOM
+ * interception — the right-Sidebar resource routing (openResource + the
+ * tab-type registry) covers all three openings. Retired with the plan-B
+ * revert (2026-09-24): the change-history renderer in the official document
+ * tab's dropdown (FileHistoryBody) — the change history lives only in this
+ * page's detail view again (the Content / 改动记录 toggle).
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -36,16 +58,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls the ctx.sidebarRight/ctx.sidebarRightTabs service merges.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-// Type-only: pulls the ctx.documentPreviews merge, the 'sidebar.right.tab.document'
-// SlotMap seat, and DocumentPreviewProps.
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import filePreviewRemote from '@khorsheed/dsh-file-preview/remote'
 import { FilePreviewTab } from './FilePreviewTab.tsx'
-import { FileHistoryBody } from './FileHistoryBody.tsx'
 import { TurnFileRow } from './TurnFileRow.tsx'
 import { createFilePreviewStore } from './file-preview-store.ts'
 import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, filePreviewDefinition } from './definition.tsx'
-import { FILE_HISTORY_ID, HISTORY_EXTENSIONS } from './history-definition.ts'
 import { basename } from './path-utils.ts'
 import { en, NS, zh } from './locales.ts'
 import { wrapChatFileMentions } from './mentions-wrap.ts'
@@ -56,8 +73,20 @@ import { selectTurnFiles } from './turn-files.ts'
 import type { FilePreviewRemote, FilePreviewTabInjected, FilePreviewTurnRowInjected } from './contract.ts'
 
 export { DiffHistory } from './DiffHistory.tsx'
-export { FilePreviewTab, FileHistoryBody, TurnFileRow }
-export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, FILE_HISTORY_ID }
+export { FilePreviewTab, TurnFileRow }
+export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND }
+
+/** The official deliverables card's turnTail cell id — the shadow target. */
+const DELIVERABLES_TURN_ENTRY = '@deepseek-ai/dsh-client-ui-deliverables'
+
+/**
+ * The deliverables shadow: the empty body that wins the official card's list
+ * cell at a lower priority, so the present/changes cards stop rendering while
+ * the official registration (and the child slot it declares) stays live.
+ */
+function DeliverablesShadow(): null {
+  return null
+}
 
 /** Required services: slots, sessions (cwd for the row gestures), the remote
  * channel, the locale, and the right-Sidebar faces (tab-type registry + the
@@ -91,7 +120,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
   // The namespace is registered by $mount above; `ctx.remote.filePreview`
   // cannot see it (the property proxy walks the fiber chain, and the namespace
-  // lives in the sibling fiber $mount spawned), so read it from the global
+  // lives in the sibling fiber $mount spawned), so read it back from the global
   // store once the mount has settled and hand the concrete handle to the
   // inject closures, so a lazy `ctx.remote.filePreview` read at call time
   // never trips the property proxy.
@@ -117,7 +146,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 /**
  * Install every visible file-preview client surface after a successful host
  * handshake. Tests can drive this boundary directly; disposal removes the
- * dictionaries, tab type/body, turn row, mention wrapper, and history face.
+ * dictionaries, the tab type/body, the turn row and its deliverables shadow,
+ * and the mention wrapper.
  */
 export function installFilePreviewSurfaces(
   ctx: Context,
@@ -148,9 +178,10 @@ export function installFilePreviewSurfaces(
         // `dsh-resource://file/session/<id>/<path>` content id the
         // deliverables card's open resolves to, so one file is one tab (the
         // page address `sidebar://file-preview` would mint a second tab for
-        // the same file). Our type claims the renderable ones; the rest fall
-        // through to the official document tab. A throw (no mounted sidebar
-        // surface) falls back to the owner's openFile inside the wrap.
+        // the same file). Our type claims the renderable ones on both host
+        // lines; the rest fall through to the official document tab. A throw
+        // (no mounted sidebar surface) falls back to the owner's openFile
+        // inside the wrap.
         open: (sessionId, path) => {
           ctx.sidebarRight.openResource(fileAddressFor(sessionId, sessionCwd(sessionId as SessionId), path))
         },
@@ -194,8 +225,9 @@ export function installFilePreviewSurfaces(
 
   // Stage one of the right-Sidebar registration: the tab type (guide entry
   // PLUS address claims — `dsh-resource://file/**` for every session-scoped
-  // path the preview stack renders; see definition.tsx). The default band is
-  // 'extension', outranking the official document tab's 'fallback'.
+  // path the preview stack renders; see definition.tsx). Unconditional on
+  // both host lines: the default 'extension' band outranks the official
+  // document tab's 'fallback'.
   disposers.push(ctx.effect(() => ctx.sidebarRightTabs.register(filePreviewDefinition(t)), 'ui-file-preview: tab type'))
 
   // Stage two: the body under the type's id in the keyed pane seat.
@@ -215,60 +247,59 @@ export function installFilePreviewSurfaces(
     }),
   }, FilePreviewTab)), 'ui-file-preview: tab body'))
 
-  disposers.push(ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
-    name: 'conversation.chat.turnTail',
-    // Priority -1: the chain elects the first non-null select in ASCENDING
-    // priority order (ui-slots ChainSelect contract), and the official
-    // deliverables entry carries the default 0 — so this card claims every
-    // turn and the official row never mounts while this plugin is composed.
-    // Deliberate product decision (2026-09-11): the turn's compact product
-    // table REPLACES the official deliverables row (its presented card never
-    // collapses and its spacing reads wrong); the S1-era preemption returns
-    // in table form.
-    priority: -1,
-    select: selectTurnFiles,
-    locale: NS,
-    inject: (): FilePreviewTurnRowInjected => ({
+  // The turn card. Probe the declared slot kind inside inject (the callback
+  // only runs once the slot exists): a 0.1.6-alpha.2+ host declares a LIST —
+  // register a plain entry under the package id, plus the deliverables shadow
+  // (the convergence, user decision 2026-09-24: the official present card
+  // duplicates this row with a model-curated subset and the official changes
+  // card is memory-resident, so only this row renders). The shadow is the
+  // slot system's first-class mechanism, not a DOM hack: one cell (the
+  // official entry's id), two entries at distinct priorities, the lowest
+  // renders (ui-slots SlotCore.register pins the rule — a same-id
+  // same-priority registration throws with "register at a different priority
+  // to shadow it", and entriesOfSlot projects each cell to its lowest live
+  // entry). The official entry stays registered — its declared
+  // `deliverables.file.actions` child slot survives for ui-open-in-app's
+  // contributions — it just never renders. The row itself returns null until
+  // its fetch settles. A 0.1.5 host declares the election CHAIN — keep the
+  // old preemptive shape (select claims every turn; priority -1 elects
+  // ascending, ahead of the official entry's default 0). The alpha.2
+  // KindOptions for this key carry no chain fields, so the chain-branch call
+  // is duck-typed through `never` (the escape the spec bench already uses);
+  // the list branch stays fully typed and is what checks TurnFileRow's props
+  // contract.
+  disposers.push(ctx.slots.inject('conversation.chat.turnTail', () => {
+    const injectRow = (): FilePreviewTurnRowInjected => ({
       turnFiles: (sessionId: SessionId, turn: number) => turnFilesLoader(sessionId, turn),
-    }),
-  }, TurnFileRow)))
-
-  // The change-history document renderer: metadata into the registry, the
-  // body into the keyed document seat. `priority: 'builtin'` keeps the
-  // official renderer the default (an extension band would take it over);
-  // the toolbar dropdown lists every match regardless.
-  // A one-shot `ctx.get` here races the documentpreview fiber's provide —
-  // cordis only re-wakes fibers that declare a service in `inject` — so the
-  // registrations live in a nested plugin pended on the service; in a
-  // composition without document previews it simply never activates.
-  const historyFiber = ctx.plugin({
-    name: '@khorsheed/dsh-client-ui-file-preview/history-renderer',
-    inject: ['documentPreviews'],
-    apply: (sub: Context) => {
-      const previews = sub.documentPreviews
-      sub.effect(() => previews.register({
-        id: FILE_HISTORY_ID,
-        extensions: HISTORY_EXTENSIONS,
-        priority: 'builtin',
-        title: () => t('history.title'),
-        // The body never touches the owner's prepared content — the diffs come
-        // from the filePreview fold — so the cheapest delivery mode applies.
-        loading: 'text-pages',
-      }), 'ui-file-preview: history renderer metadata')
-      sub.effect(() => sub.slots.inject('sidebar.right.tab.document', () => sub.slots.register(
-        {
-          name: 'sidebar.right.tab.document',
-          key: FILE_HISTORY_ID,
-          locale: NS,
-          inject: (): Pick<FilePreviewTabInjected, 'listFiles'> => ({
-            listFiles: (sid: SessionId) => remote.list(sid),
-          }),
-        },
-        FileHistoryBody,
-      )), 'ui-file-preview: history renderer body')
-    },
-  })
-  disposers.push(() => historyFiber.dispose())
+    })
+    const spec = ctx.slots.spec('conversation.chat.turnTail') as { kind?: string } | undefined
+    if (spec?.kind === 'chain') {
+      return ctx.slots.register({
+        name: 'conversation.chat.turnTail',
+        priority: -1,
+        select: selectTurnFiles,
+        locale: NS,
+        inject: injectRow,
+      } as never, TurnFileRow as never)
+    }
+    const row = ctx.slots.register({
+      name: 'conversation.chat.turnTail',
+      id: FILE_PREVIEW_ID,
+      locale: NS,
+      inject: injectRow,
+    }, TurnFileRow)
+    // Lower than the official entry's default 0, so the empty body wins the
+    // cell; a same-priority second registration would throw instead.
+    const shadow = ctx.slots.register({
+      name: 'conversation.chat.turnTail',
+      id: DELIVERABLES_TURN_ENTRY,
+      priority: -1,
+    }, DeliverablesShadow)
+    return () => {
+      row()
+      shadow()
+    }
+  }))
 
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()

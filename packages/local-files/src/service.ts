@@ -8,11 +8,33 @@
  *
  * @module @khorsheed/dsh-local-files
  */
-import { readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { open, readdir, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, sep } from 'node:path'
 
 /** Read cap for the content view (guards rendering against monster files). */
 export const MAX_CONTENT_BYTES = 2 * 1024 * 1024
+
+/**
+ * Read at most `length` bytes of the file at `canonical`, starting at byte
+ * `offset`. The window is the bound: at most `length` bytes are ever buffered,
+ * no matter how large the file is. Returns the bytes read — shorter than
+ * `length` when the file ends inside the window, empty at or past its end.
+ */
+async function readByteWindow(canonical: string, offset: number, length: number): Promise<Buffer> {
+  const handle = await open(canonical, 'r')
+  try {
+    const buffer = Buffer.allocUnsafe(length)
+    let total = 0
+    while (total < length) {
+      const { bytesRead } = await handle.read(buffer, total, length - total, offset + total)
+      if (bytesRead === 0) break
+      total += bytesRead
+    }
+    return buffer.subarray(0, total)
+  } finally {
+    await handle.close()
+  }
+}
 
 /** MIME types this plugin previews inline as images. */
 const IMAGE_EXTENSIONS: Record<string, string> = {
@@ -87,6 +109,9 @@ export interface ListLocalDirectoryResult {
 export interface ReadLocalFileRequest {
   /** Absolute local file path to preview. */
   path: string
+  /** Byte offset the text window starts at (default 0). Image reads are
+   * all-or-nothing and ignore it. */
+  offset?: number
 }
 
 /** Local file read outcome classification (mirrors file-preview's vocabulary). */
@@ -105,6 +130,9 @@ export interface LocalFilesRead {
   url?: string
   /** Whether `content` was truncated to the byte cap. */
   truncated?: boolean
+  /** Truncated text reads only: the byte offset a follow-up `readFile` call
+   * starts from to continue the window (`offset` + returned byte count). */
+  nextOffset?: number
   /** HTML files only: best-effort hint the document contains scripts. */
   htmlScripted?: boolean
   /** Byte size of the file when the backend reported one. */
@@ -117,6 +145,9 @@ export interface LocalFilesRead {
 export interface ReadLocalFileRequest {
   /** Absolute local file path to preview. */
   path: string
+  /** Byte offset the text window starts at (default 0). Image reads are
+   * all-or-nothing and ignore it. */
+  offset?: number
 }
 
 /** Thrown for client-supplied local paths that fail the absolute-path rules. */
@@ -191,15 +222,21 @@ export class LocalFilesService {
    * plane. Mirrors the file-preview read vocabulary: the response is a single
    * kind-union (`text` / `image` / `binary` / `missing` / `too-large` /
    * `error`) so the render layer can reuse the products pane's kind-dispatch
-   * logic one-for-one. Reads at most {@link MAX_CONTENT_BYTES} and reports
-   * `truncated` when the file is larger. Binary detection: if the decoded
-   * text's NUL/control-byte ratio exceeds the threshold, content is omitted
-   * and the client shows a non-text placeholder. Images are returned as a
-   * base64 data URL in the `url` field (an `<img src>` accepts it directly).
+   * logic one-for-one. The read is bounded by its window, not by the file: a
+   * text read transfers at most {@link MAX_CONTENT_BYTES} + 1 bytes starting
+   * at `offset` (the extra byte decides `truncated`), never the whole file;
+   * `nextOffset` marks where a follow-up read continues. Binary detection: if
+   * the decoded text's NUL/control-byte ratio exceeds the threshold, content
+   * is omitted and the client shows a non-text placeholder. Images are
+   * all-or-nothing: a stat size over the cap answers `too-large` without
+   * reading, otherwise the whole image is returned as a base64 data URL in
+   * the `url` field (an `<img src>` accepts it directly).
    * @param path - absolute local file path.
+   * @param offset - byte offset the text window starts at (default 0);
+   *   ignored for image reads.
    * @returns the kind-union preview result.
    */
-  async readFile(path: string): Promise<LocalFilesRead> {
+  async readFile(path: string, offset: number = 0): Promise<LocalFilesRead> {
     const safe = assertSafeLocalPath(path)
     const canonical = await realpath(safe).catch(() => safe)
     const info = await stat(canonical).catch(() => null)
@@ -210,27 +247,32 @@ export class LocalFilesService {
       return { path, kind: 'missing' }
     }
     if (imageMimeOf(path) !== null) {
-      const handle = await readFile(canonical).catch(() => null)
-      if (handle === null) {
+      if (info.size > MAX_CONTENT_BYTES) {
+        return { path, kind: 'too-large', size: info.size }
+      }
+      const image = await readByteWindow(canonical, 0, MAX_CONTENT_BYTES + 1).catch(() => null)
+      if (image === null) {
         return { path, kind: 'error', message: `local-files: cannot read: ${path}` }
       }
-      if (handle.byteLength > MAX_CONTENT_BYTES) {
+      // The stat said the image fits; a post-read overflow means it grew
+      // between stat and read — answer too-large rather than a partial image.
+      if (image.byteLength > MAX_CONTENT_BYTES) {
         return { path, kind: 'too-large', size: info.size }
       }
       const mime = imageMimeOf(path) ?? 'application/octet-stream'
       return {
         path,
         kind: 'image',
-        url: `data:${mime};base64,${Buffer.from(handle).toString('base64')}`,
+        url: `data:${mime};base64,${image.toString('base64')}`,
         size: info.size,
       }
     }
-    const handle = await readFile(canonical).catch(() => null)
-    if (handle === null) {
+    const bytes = await readByteWindow(canonical, offset, MAX_CONTENT_BYTES + 1).catch(() => null)
+    if (bytes === null) {
       return { path, kind: 'error', message: `local-files: cannot read: ${path}` }
     }
-    const truncated = handle.byteLength > MAX_CONTENT_BYTES
-    const buffer = handle.subarray(0, MAX_CONTENT_BYTES)
+    const truncated = bytes.byteLength > MAX_CONTENT_BYTES
+    const buffer = bytes.subarray(0, MAX_CONTENT_BYTES)
     const text = buffer.toString('utf8')
     let controls = 0
     for (let i = 0; i < text.length; i++) {
@@ -247,6 +289,7 @@ export class LocalFilesService {
       content: text,
       truncated,
       size: info.size,
+      ...(truncated ? { nextOffset: offset + buffer.byteLength } : {}),
       ...(isHtmlPath(path) && isScriptedHtml(text) ? { htmlScripted: true } : {}),
     }
   }

@@ -4,6 +4,8 @@
 
 文件列表浏览器首发线（自 worktrees 拆出后的独立包）。
 
+- 详情面板标题行新增「重新加载」手势（共享内容面板的 `onReload`）：重走 `readLocalFile` 读当前选中文件，磁盘上的改动不必重选即得；重读期间旧内容保持显示、按钮禁用并旋转图标，失败保留旧内容、错误走既有共享 error 槽；晚于选择变更到达的旧答案丢弃。
+
 - 内容搜索不再劫持视图：命中经 CSS Custom Highlight API 画在渲染后的 markdown / JSON 树 / CSV 表 / 代码视图上（`::highlight()` 外包 `:global()`，否则 lightningcss 会像类名一样改写标识符导致静默不上色）；只有渲染态确实看不见的查询（如搜 `**`、命中落在折叠的 JSON 节点里）才回落到原始命中行视图。计数在绘制态按可见出现次数（绘制上限 2000 个 Range），HTML 沙箱预览与不支持该 API 的宿主行为不变。
 
 - 唯一入口：右栏 page-type tab（kind 级 extension 压 builtin 接管官方 `files` 类型，guide 页单张「文件列表」卡片，官方「工作区文件」卡片卸载即恢复）；minHost `0.1.5-rc.1`

@@ -16,7 +16,7 @@
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { IconLightOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconLightOutlineMedium } from './icons.tsx'
 import type {} from './locales.ts'
 
 /** The tab kind this package owns. */
@@ -40,10 +40,11 @@ export function canvasDefinition(t: TranslateNS<'canvas'>): SidebarRightTabDefin
     kind: CANVAS_KIND,
     title: () => t('tab.label'),
     guide: [{
+      id: CANVAS_KIND,
       order: 50,
       title: () => t('tab.label'),
       description: () => t('guide.description'),
-      icon: IconLightOutline16,
+      icon: IconLightOutlineMedium,
     }],
   }
 }

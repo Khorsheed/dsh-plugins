@@ -2,15 +2,30 @@
    than the topbar under it. Colours are all `--dsw-*` tokens, so light and
    dark stay the theme's business. */
 
-.strip {
+/* The FRAME owns the fill and the bottom rule, and clips nothing: the tail's
+   dropdown mounts inside it, and a scroll box's overflow would cut that menu
+   to a sliver (the 新画布 "dead click"). Only the rows scroll. */
+.stripFrame {
   display: flex;
   align-items: flex-end;
-  gap: 1px;
   min-height: 32px;
   padding: 0 8px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-layer-1);
   flex-shrink: 0;
+}
+
+.strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* The padding is the active row's cover room: overflow clips at the padding
+     edge, so the cover lands INSIDE the box, and the strip's own −1px rides it
+     over the frame's rule. */
+  padding-bottom: 1px;
+  margin-bottom: -1px;
   /* Rows keep their reading width and the strip gives up ground sideways: a
      tab squeezed to four characters identifies nothing. */
   overflow-x: auto;
@@ -36,8 +51,8 @@
 }
 
 /* The active row is the page continuing into the strip: same fill as the body
-   below, and its own bottom border paints over the strip's rule so the two
-   read as one surface. */
+   below, and its own bottom border (carried the −1px into the strip's padding)
+   paints over the frame's rule so the two read as one surface. */
 .tab[data-active="true"] {
   border-color: var(--dsw-alias-border-l1);
   border-bottom-color: var(--dsw-alias-bg-base);
@@ -104,22 +119,18 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* The ＋ tail: sticky so scrolling the strip sideways cannot hide the one
-   gesture that adds a row (the board's 管理分类 chip is sticky for the same
-   reason and carries the strip's own fill for the same reason too). The
-   trigger itself is the switcher's — its styles live with it in
+/* The ＋ tail: a sibling of the scroll box, not a sticky passenger in it, so
+   scrolling the rows sideways can neither hide the one gesture that adds a
+   row nor clip the dropdown it opens (the board's 管理分类 chip is sticky for
+   the same reason and carries the strip's own fill for the same reason too).
+   The trigger itself is the switcher's — its styles live with it in
    `board.module.css`, and nothing here reaches into a foreign component: the
    dropdown panel is mounted INSIDE this slot, so a `button` selector here
    would style every row of the menu too. */
 .tail {
-  position: sticky;
-  right: 0;
-  z-index: 1;
   display: inline-flex;
   align-items: flex-end;
   align-self: stretch;
   flex: none;
-  margin-left: auto;
   padding-left: 6px;
-  background: var(--dsw-alias-bg-layer-1);
 }

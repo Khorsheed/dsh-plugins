@@ -332,8 +332,11 @@ describe('codex-cli-provider run settlement', () => {
       .toMatchObject({ callId: 'item_1', name: 'Bash', arguments: 'ls' })
     const results = child.snapshotEvents().filter(event => event.type === 'tool/result')
     expect(results).toHaveLength(1)
-    expect((results[0]!.data as { message: { content: { toolCallId: string; content: unknown }[] } }).message.content[0])
-      .toMatchObject({ toolCallId: 'item_1', content: [{ type: 'text', text: 'a.txt' }] })
+    // rc.1's tool-result message is the native tool role: the call id sits at
+    // the message top level, the content holds the raw result blocks (the
+    // pre-V4 shape wrapped everything in one content block).
+    expect((results[0]!.data as { message: { toolCallId: string; content: unknown } }).message)
+      .toMatchObject({ role: 'tool', toolCallId: 'item_1', content: [{ type: 'text', text: 'a.txt' }] })
 
     // Settle: the live mirror already covered the stream — no duplicates.
     finish({ exitCode: 0, signal: null })

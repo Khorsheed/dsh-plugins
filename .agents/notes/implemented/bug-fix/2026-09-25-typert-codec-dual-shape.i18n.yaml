@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md
+.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md: b30331afde56d8ba2073d6b26daa5d0286be24d7
+.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.zh.md: 14e5aebf0f62bd33a7630750adf44ef52dfbb608

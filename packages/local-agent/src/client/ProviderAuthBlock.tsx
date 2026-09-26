@@ -4,7 +4,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconCheckOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium } from './icons.tsx'
 import { NS } from './locales.ts'
 import { publishAuthStatus } from './auth-status.ts'
 import type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
@@ -32,6 +33,20 @@ export function parseLoginUrl(text: string): string | undefined {
 function harnessLabel(id: string): string {
   return KNOWN_HARNESSES.find(harness => harness.id === id)?.label ?? id
 }
+
+/** Pre-0.1.6 SessionListState carried the main-view selection as `current`. */
+type LegacyCurrent = { current?: SessionId }
+
+/**
+ * The main-view session: host 0.1.6-alpha.2 dropped SessionListState.current
+ * for the retainedBy.mainView count on each summary (the label is ui-session's
+ * declaration merge, read here as a plain duck-typed count so this package
+ * needs no ui-session edge), with the legacy field as the older-host fallback.
+ */
+const mainSessionId = (list: SessionListState): SessionId | undefined =>
+  Object.values(list.byId ?? {}).find(session =>
+    ((session.retainedBy as Record<string, number> | undefined)?.mainView ?? 0) > 0)?.id
+  ?? (list as LegacyCurrent).current
 
 /** Per-harness view state: the last status, its capability flags, and the login prompt. */
 interface HarnessView {
@@ -77,8 +92,9 @@ export interface ProviderAuthBlockProps extends ProviderAuthInjected, PropsLocal
 }
 
 /**
- * One harness's auth interactions, shared between the core settings section
- * row and the per-provider `settings.plugin.item` cards: auth status through
+ * One harness's auth interactions, shared between the per-provider settings
+ * cards (the alpha.2 `plugins.bundle.config` pages and the 0.1.5
+ * `settings.plugin.item` tab): auth status through
  * the read-only Remote channel and a web-login action that runs
  * `/<harness> login`, surfaces the device-code prompt, and offers a link to
  * the authorization page. The login command returns at prompt time while the
@@ -90,7 +106,7 @@ export interface ProviderAuthBlockProps extends ProviderAuthInjected, PropsLocal
  * @returns the block content (head row, prompts, and the login toast).
  */
 export function ProviderAuthBlock({ harness, useSessions, status, runCommand, actions, t }: ProviderAuthBlockProps) {
-  const sessionId = useSessions((state: SessionListState) => state.current)
+  const sessionId = useSessions((state: SessionListState) => mainSessionId(state))
   const [view, setView] = useState<HarnessView>({ status: 'checking' })
   /** The login start time while the device-code login is still pending. */
   const [pendingSince, setPendingSince] = useState<number | undefined>(undefined)
@@ -281,7 +297,7 @@ export function ProviderAuthBlock({ harness, useSessions, status, runCommand, ac
         <Toast
           key={loginToast.seq}
           text={t('settings.loginSuccess', { harness: harnessLabel(harness.id) })}
-          icon={<IconCheckOutline16 />}
+          icon={<IconCheckOutlineMedium />}
           onDone={() => { setLoginToast(null) }}
         />
       )}

@@ -11,7 +11,7 @@
  * makes a static render non-silent (D2).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { PreviewRead } from '../src/client/contract.ts'
 import type { StructuredLabels } from '../src/client/labels.ts'
 import { ContentPane } from '../src/client/ContentPane.tsx'
@@ -238,5 +238,48 @@ describe('ContentPane chrome and non-text reads', () => {
     })
     expect(screen.getByText('the-diff')).toBeTruthy()
     expect(screen.queryByRole('searchbox')).toBeNull()
+  })
+})
+
+describe('ContentPane reload gesture', () => {
+  const read: PreviewRead = { kind: 'text', path: '/work/a.ts', content: 'x\n' }
+
+  it('renders the button ahead of copy-path, and only when onReload is supplied', () => {
+    mount(read, {
+      onReload: () => Promise.resolve(),
+      onCopyPath: () => Promise.resolve(true),
+    })
+    const reload = screen.getByRole('button', { name: 'action.reload' })
+    const copy = screen.getByRole('button', { name: 'action.copyPath' })
+    expect(reload.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    cleanup()
+    mount(read, { onCopyPath: () => Promise.resolve(true) })
+    expect(screen.queryByRole('button', { name: 'action.reload' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'action.copyPath' })).toBeTruthy()
+  })
+
+  it('calls the caller-owned onReload on click', async () => {
+    const onReload = vi.fn(() => Promise.resolve())
+    mount(read, { onReload })
+    fireEvent.click(screen.getByRole('button', { name: 'action.reload' }))
+    expect(onReload).toHaveBeenCalledTimes(1)
+    await act(async () => {})
+  })
+
+  it('stays disabled while the reload is in flight and re-arms when it settles', async () => {
+    let settle: () => void = () => {}
+    const onReload = vi.fn(() => new Promise<void>(resolve => { settle = resolve }))
+    mount(read, { onReload })
+    const button = screen.getByRole('button', { name: 'action.reload' }) as HTMLButtonElement
+    fireEvent.click(button)
+    expect(button.disabled).toBe(true)
+    // A second click while in flight is a no-op (the guard, not just disabled).
+    fireEvent.click(button)
+    expect(onReload).toHaveBeenCalledTimes(1)
+    await act(async () => { settle() })
+    expect(button.disabled).toBe(false)
+    fireEvent.click(button)
+    expect(onReload).toHaveBeenCalledTimes(2)
+    await act(async () => {})
   })
 })

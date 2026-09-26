@@ -25,6 +25,7 @@
     "src/client/store.ts",
     "src/client/selectors.ts",
     "src/client/ReaderPane.tsx",
-    "src/client/translate.ts"
+    "src/client/translate.ts",
+    "src/client/icons.tsx"
   ]
 }

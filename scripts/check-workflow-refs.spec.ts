@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkWorkflow, runBlocks } from './check-workflow-refs.ts'
+import { checkHarnessPinLockstep, checkWorkflow, runBlocks } from './check-workflow-refs.ts'
 
 // The regression this checker exists for, verbatim: the step cc31c1a left
 // behind when it deleted scripts/sync-harness-paths.mjs.
@@ -62,5 +62,41 @@ describe('checkWorkflow', () => {
     expect(checkWorkflow('ci.yml', yaml, new Set(['verify-agent-note-format']))).toMatchObject([
       { reference: 'verify-translation-pairing' },
     ])
+  })
+})
+
+describe('checkHarnessPinLockstep', () => {
+  const clone = (ref: string): string => `jobs:
+  g:
+    steps:
+      - name: Clone deepseek-harness (type/test seed)
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: ${ref}
+          path: deepseek-harness
+`
+
+  it('flags a workflow cloning the harness at a different tag than the rest', () => {
+    const findings = checkHarnessPinLockstep([['ci.yml', clone('dsh-v0.1.7-rc.1')], ['publish.yml', clone('dsh-v0.1.5-rc.1')]])
+    expect(findings).toHaveLength(1)
+    expect(findings[0]).toMatchObject({ workflow: 'publish.yml', reference: 'dsh-v0.1.5-rc.1' })
+    expect(findings[0]!.reason).toContain('dsh-v0.1.7-rc.1')
+  })
+
+  it('passes matching pins and ignores the dynamic next-compat lane', () => {
+    const yaml = `${clone('dsh-v0.1.7-rc.1')}
+      - name: Clone deepseek-harness (next)
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: \${{ steps.next.outputs.ref }}
+          path: deepseek-harness-next
+`
+    expect(checkHarnessPinLockstep([['ci.yml', yaml], ['publish.yml', clone('dsh-v0.1.7-rc.1')]])).toEqual([])
+  })
+
+  it('passes when no workflow clones the harness at a static tag', () => {
+    expect(checkHarnessPinLockstep([['ci.yml', 'jobs: {}']])).toEqual([])
   })
 })

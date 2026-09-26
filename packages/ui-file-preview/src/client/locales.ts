@@ -25,10 +25,6 @@ export type FilePreviewKey =
   | 'preview.exitFullscreen'
   | 'preview.staticHint'
   | 'turn.count'
-  | 'turn.summary'
-  | 'turn.summaryOne'
-  | 'turn.expand'
-  | 'turn.collapse'
   | 'json.copyValue'
   | 'json.copyJson'
   | 'json.copyPath'
@@ -43,14 +39,6 @@ export type FilePreviewKey =
   | 'markdown.copy'
   | 'markdown.copied'
   | 'markdown.footnotes'
-  | 'drawer.kind.binary'
-  | 'drawer.kind.missing'
-  | 'drawer.kind.tooLarge'
-  | 'drawer.kind.error'
-  | 'drawer.truncated'
-  | 'drawer.tab.diff'
-  | 'drawer.tab.content'
-  | 'drawer.missingPath'
   | 'diff.copy'
   | 'diff.copied'
   | 'diff.collapse'
@@ -58,6 +46,9 @@ export type FilePreviewKey =
   | 'diff.expand'
   | 'diff.expandAria'
   | 'diff.files'
+  | 'diff.code'
+  | 'diff.wrap'
+  | 'diff.unwrap'
   | 'guide.title'
   | 'guide.description'
   | 'list.empty'
@@ -65,18 +56,12 @@ export type FilePreviewKey =
   | 'list.loading'
   | 'list.outsideWorkspace'
   | 'list.refresh'
-  | 'history.title'
   | 'history.empty'
   | 'history.step'
   | 'history.step.count'
   | 'history.step.latest'
   | 'history.step.older'
   | 'history.step.newer'
-  | 'row.copyPath'
-  | 'row.copied'
-  | 'row.openFolder'
-  | 'row.openIdeIn'
-  | 'row.openIdeMore'
   | 'detail.back'
   | 'mention.open'
   // Printed by the shared content pane (@khorsheed/dsh-client-ui-content-preview).
@@ -86,6 +71,7 @@ export type FilePreviewKey =
   | 'action.copyPath'
   | 'action.openFolder'
   | 'action.openIDE'
+  | 'action.reload'
   | 'detail.content'
   | 'detail.deleted'
   | 'detail.diff'
@@ -133,10 +119,6 @@ export const zh: Record<FilePreviewKey, string> = {
   'preview.exitFullscreen': '退出全屏',
   'preview.staticHint': '静态预览：此页面含脚本，脚本不会运行——点右上角「运行脚本」可交互',
   'turn.count': '{count} 个产物',
-  'turn.summary': '{count} 个文件已修改',
-  'turn.summaryOne': '1 个文件已修改',
-  'turn.expand': '展开其余 {count} 个',
-  'turn.collapse': '收起',
   'json.copyValue': '复制值',
   'json.copyJson': '复制 JSON',
   'json.copyPath': '复制属性路径',
@@ -151,14 +133,6 @@ export const zh: Record<FilePreviewKey, string> = {
   'markdown.copy': '复制',
   'markdown.copied': '已复制',
   'markdown.footnotes': '脚注',
-  'drawer.kind.binary': '二进制文件，无法预览',
-  'drawer.kind.missing': '文件不存在',
-  'drawer.kind.tooLarge': '文件过大，仅显示大小',
-  'drawer.kind.error': '读取失败',
-  'drawer.truncated': '内容已截断',
-  'drawer.tab.diff': '改动记录',
-  'drawer.tab.content': '当前内容',
-  'drawer.missingPath': '记录路径：{path}',
   'diff.copy': '复制差异',
   'diff.copied': '已复制',
   'diff.collapse': '收起',
@@ -166,6 +140,9 @@ export const zh: Record<FilePreviewKey, string> = {
   'diff.expand': '展开其余 {count} 行',
   'diff.expandAria': '展开其余 {count} 行',
   'diff.files': '{count} 个文件',
+  'diff.code': '代码块',
+  'diff.wrap': '自动换行',
+  'diff.unwrap': '取消自动换行',
   'guide.title': '会话产物',
   'guide.description': '会话写过的每个文件：看内容，也看每一次改动',
   'list.empty': '这个会话还没有写过文件',
@@ -173,18 +150,12 @@ export const zh: Record<FilePreviewKey, string> = {
   'list.loading': '加载中…',
   'list.outsideWorkspace': '位于工作区外，无内容预览',
   'list.refresh': '刷新',
-  'history.title': '改动记录',
   'history.empty': '该文件没有记录到改动内容',
   'history.step': '第 {turn} 轮 · 第 {step} 步',
   'history.step.count': '修改 {current}/{total}',
   'history.step.latest': '最新',
   'history.step.older': '查看更早的修改',
   'history.step.newer': '查看更新的修改',
-  'row.copyPath': '复制路径',
-  'row.copied': '已复制',
-  'row.openFolder': '在文件夹中打开',
-  'row.openIdeIn': '在 {app} 打开',
-  'row.openIdeMore': '选择应用打开',
   'detail.back': '返回产物列表',
   'mention.open': '在侧边栏打开 {name}',
 
@@ -195,6 +166,7 @@ export const zh: Record<FilePreviewKey, string> = {
   'action.copyPath': '复制路径',
   'action.openFolder': '打开目录',
   'action.openIDE': '在 IDE 中打开',
+  'action.reload': '重新加载',
   'detail.content': '内容',
   'detail.deleted': '文件已删除',
   'detail.diff': '改动',
@@ -236,10 +208,6 @@ export const en: Record<FilePreviewKey, string> = {
   'preview.exitFullscreen': 'Exit fullscreen',
   'preview.staticHint': 'Static preview: this page contains scripts, which do not run here — use "Run scripts" above for interactivity',
   'turn.count': '{count} products',
-  'turn.summary': '{count} files changed',
-  'turn.summaryOne': '1 file changed',
-  'turn.expand': 'Show {count} more',
-  'turn.collapse': 'Collapse',
   'json.copyValue': 'Copy value',
   'json.copyJson': 'Copy JSON',
   'json.copyPath': 'Copy property path',
@@ -254,14 +222,6 @@ export const en: Record<FilePreviewKey, string> = {
   'markdown.copy': 'Copy',
   'markdown.copied': 'Copied',
   'markdown.footnotes': 'Footnotes',
-  'drawer.kind.binary': 'Binary file; preview unavailable',
-  'drawer.kind.missing': 'File not found',
-  'drawer.kind.tooLarge': 'File too large; size only',
-  'drawer.kind.error': 'Failed to read',
-  'drawer.truncated': 'Content truncated',
-  'drawer.tab.diff': 'Change history',
-  'drawer.tab.content': 'Current content',
-  'drawer.missingPath': 'Recorded path: {path}',
   'diff.copy': 'Copy diff',
   'diff.copied': 'Copied',
   'diff.collapse': 'Collapse',
@@ -269,6 +229,9 @@ export const en: Record<FilePreviewKey, string> = {
   'diff.expand': 'Show {count} more lines',
   'diff.expandAria': 'Show {count} more lines',
   'diff.files': '{count} files',
+  'diff.code': 'Code block',
+  'diff.wrap': 'Wrap lines',
+  'diff.unwrap': 'Do not wrap lines',
   'guide.title': 'Session products',
   'guide.description': 'Every file the session wrote — its content and each change',
   'list.empty': 'This session has not written any files yet',
@@ -276,18 +239,12 @@ export const en: Record<FilePreviewKey, string> = {
   'list.loading': 'Loading…',
   'list.outsideWorkspace': 'Outside the workspace — no content preview',
   'list.refresh': 'Refresh',
-  'history.title': 'Change history',
   'history.empty': 'No change content recorded for this file',
   'history.step': 'Turn {turn} · Step {step}',
   'history.step.count': 'Change {current}/{total}',
   'history.step.latest': 'latest',
   'history.step.older': 'View an earlier change',
   'history.step.newer': 'View a newer change',
-  'row.copyPath': 'Copy path',
-  'row.copied': 'Copied',
-  'row.openFolder': 'Show in folder',
-  'row.openIdeIn': 'Open in {app}',
-  'row.openIdeMore': 'Choose an application',
   'detail.back': 'Back to products',
   'mention.open': 'Open {name} in the sidebar',
 
@@ -298,6 +255,7 @@ export const en: Record<FilePreviewKey, string> = {
   'action.copyPath': 'Copy path',
   'action.openFolder': 'Open folder',
   'action.openIDE': 'Open in IDE',
+  'action.reload': 'Reload',
   'detail.content': 'Content',
   'detail.deleted': 'File deleted',
   'detail.diff': 'Changes',

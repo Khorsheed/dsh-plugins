@@ -20,10 +20,7 @@
  * re-asserts the requested mode.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  IconBranchOutline16, IconChevronDownOutline14, IconCopyOutline16, IconFolderOpenOutline16,
-  IconPanelLeftOutline16, IconRefreshOutline16,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBranchOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium, IconPanelLeftOutlineMedium, IconRefreshOutlineMedium } from './icons.tsx'
 import type { ChangedFile, FileDiffRequest, WorktreeInfo } from '../types.ts'
 import type { WorktreesTabProps } from './contract.ts'
 import type { WorktreesTabParams } from './definition.tsx'
@@ -216,40 +213,55 @@ export function WorktreesTab({
     return () => { cancelled = true }
   }, [mode, selectedCommit, sessionId, fetchCommitFiles, actions, tab.signal])
 
-  // Selected file detail (diff / content).
-  useEffect(() => {
-    if (selectedPath === null) return
-    let cancelled = false
+  // Selected file detail (diff / content), shared by the selection effect and
+  // the pane's reload gesture. `dropped` is the caller's staleness guard; the
+  // detail key guards a reload answer landing after the selection moved on. A
+  // reload deliberately does NOT clear the old read first: the panel keeps
+  // showing it in flight, and a failed re-read keeps it in state, reporting
+  // through the shared error slot like any other failed read.
+  const detailKeyRef = useRef('')
+  detailKeyRef.current = `${selectedPath ?? ''} ${selectedSegment ?? ''} ${detailView} ${selectedCommit ?? ''}`
+  const fetchDetail = (dropped: () => boolean): Promise<void> => {
+    if (selectedPath === null) return Promise.resolve()
+    const key = detailKeyRef.current
+    const stale = (): boolean => dropped() || tab.signal.aborted || detailKeyRef.current !== key
     if (detailView === 'diff' && selectedSegment !== null) {
       const request: FileDiffRequest = selectedSegment === 'commit'
         ? { path: selectedPath, segment: 'commit', commit: selectedCommit ?? '' }
         : { path: selectedPath, segment: selectedSegment }
-      void fetchFileDiff(sessionId, request).then(result => {
-        if (!cancelled && !tab.signal.aborted && result.ok) actions.setDiff(result.value)
+      return fetchFileDiff(sessionId, request).then(result => {
+        if (!stale() && result.ok) actions.setDiff(result.value)
       })
-    } else if (detailView === 'content') {
-      // The commits mode's content view reads the file as it was at the
-      // selected commit; the other segments read the working-tree content.
-      // An image (non-commit segment) is read as an inline image instead of
-      // text, so it renders rather than showing garbage.
-      if (selectedSegment !== 'commit' && isImageFile(selectedPath)) {
-        void fetchReadRepoImage(sessionId, { path: selectedPath }).then(result => {
-          if (cancelled || tab.signal.aborted) return
-          if (result.ok) actions.setRepoImage(result.value)
-          else actions.setError(result.error.message)
-        })
-      } else {
-        const fetch = selectedSegment === 'commit'
-          ? fetchReadFileAtCommit(sessionId, { path: selectedPath, commit: selectedCommit ?? '' })
-          : fetchReadFile(sessionId, { path: selectedPath })
-        void fetch.then(result => {
-          if (cancelled || tab.signal.aborted) return
-          if (result.ok) actions.setContent(result.value)
-          else actions.setError(result.error.message)
-        })
-      }
     }
+    if (detailView !== 'content') return Promise.resolve()
+    // The commits mode's content view reads the file as it was at the selected
+    // commit; the other segments read the working-tree content. An image
+    // (non-commit segment) is read as an inline image instead of text, so it
+    // renders rather than showing garbage.
+    if (selectedSegment !== 'commit' && isImageFile(selectedPath)) {
+      return fetchReadRepoImage(sessionId, { path: selectedPath }).then(result => {
+        if (stale()) return
+        if (result.ok) { actions.setRepoImage(result.value); actions.setError(null) }
+        else actions.setError(result.error.message)
+      })
+    }
+    const fetch = selectedSegment === 'commit'
+      ? fetchReadFileAtCommit(sessionId, { path: selectedPath, commit: selectedCommit ?? '' })
+      : fetchReadFile(sessionId, { path: selectedPath })
+    return fetch.then(result => {
+      if (stale()) return
+      if (result.ok) { actions.setContent(result.value); actions.setError(null) }
+      else actions.setError(result.error.message)
+    })
+  }
+
+  // Selected file detail (diff / content).
+  useEffect(() => {
+    if (selectedPath === null) return
+    let cancelled = false
+    void fetchDetail(() => cancelled)
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchDetail is the same closure over exactly these values
   }, [selectedPath, selectedSegment, detailView, selectedCommit, sessionId, fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, actions, tab.signal])
 
   // Repository mode: default to previewing the first file so the detail
@@ -349,7 +361,7 @@ export function WorktreesTab({
             title={t('tree.expand')}
             onClick={() => { actions.toggleTree() }}
           >
-            <IconPanelLeftOutline16 />
+            <IconPanelLeftOutlineMedium />
           </button>
         </div>
       )
@@ -396,10 +408,10 @@ export function WorktreesTab({
               title={t('wt.pickWorktree')}
               onClick={onToggleWorktrees}
             >
-              <IconBranchOutline16 />
+              <IconBranchOutlineMedium />
               <span className={css.branchText}>{summary?.branch ?? t('summary.detached')}</span>
               {summary !== null && summary.isMain && summary.branch !== 'main' && <span className={css.mainTag}>main</span>}
-              <IconChevronDownOutline14 className={css.branchChevron} />
+              <IconChevronDownOutlineMedium className={css.branchChevron} />
             </button>
             {activeWorktreePath !== null && directTarget !== null && (
               <button
@@ -410,7 +422,7 @@ export function WorktreesTab({
                   void directAgent(sessionId, directTarget.path, directTarget.branch).catch(() => { /* degrade */ })
                 }}
               >
-                <IconBranchOutline16 />
+                <IconBranchOutlineMedium />
                 {t('wt.direct')}
               </button>
             )}
@@ -450,7 +462,7 @@ export function WorktreesTab({
         </div>
         <div className={css.actions}>
           <button type="button" className={css.action} title={t('action.refresh')} onClick={() => { actions.refresh() }}>
-            <IconRefreshOutline16 />
+            <IconRefreshOutlineMedium />
           </button>
           <button
             type="button"
@@ -467,12 +479,12 @@ export function WorktreesTab({
               })
             }}
           >
-            <IconCopyOutline16 />
+            <IconCopyOutlineMedium />
             {copied && <span className={css.copied}>{t('action.copyBranch')}</span>}
           </button>
           {folderApp !== undefined && worktreePath !== '' && (
             <button type="button" className={css.action} title={t('action.openFolder')} onClick={() => { openExternal(folderApp, worktreePath) }}>
-              <IconFolderOpenOutline16 />
+              <IconFolderOpenOutlineMedium />
             </button>
           )}
         </div>
@@ -550,6 +562,7 @@ export function WorktreesTab({
               error={error}
               displayPath={absolutePath(worktreePath, selectedPath)}
               onCopyPath={() => copyText(absolutePath(worktreePath, selectedPath))}
+              onReload={() => fetchDetail(() => false)}
               chrome={paneChrome(selectedPath)}
               labels={structuredLabels(t)}
               t={previewTranslator(t)}

@@ -1,24 +1,24 @@
 // @vitest-environment jsdom
 /**
- * The dsh settings card in the plugin configuration tab: collapsible chrome,
- * the family core's shared ProviderAuthBlock (status only — dsh authenticates
- * through the host credentials, so no login action renders), the DeepSeek
- * delegation switch, the resident-mode block (live switch) writing through
- * the bound settingsScope, and the default-model block reading the harness's
- * broker surface (an unset field DISPLAYS the followed default dimmed; the
- * chevron menu leads with a follow-default item over the full unfiltered
- * vocabulary) with a bare-input degrade.
+ * The dsh settings surfaces: the 0.1.5 plugin-configuration-tab card
+ * (collapsible chrome, the family core's shared ProviderAuthBlock — status
+ * only, the DeepSeek delegation switch, the resident-mode block (live
+ * switch) writing through the bound settingsScope, and the default-model
+ * block reading the harness's broker surface with a bare-input degrade) and
+ * the alpha.2 plugins.bundle.config entry (the summary one-liner, the bare
+ * page form).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
-  DshSettingsCard, type DshCardSettings, type DshSettingsCardProps,
+  DshBundleConfig, DshSettingsCard,
+  type DshCardSettings, type DshBundleConfigProps, type DshSettingsCardProps,
 } from '../src/client/SettingsCard.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -63,8 +63,7 @@ interface CardHarness {
   }
 }
 
-/** Render the card over a scope whose writes update the snapshot reactively. */
-function renderCard(options: {
+interface CardOptions {
   value?: DshCardSettings
   user?: Record<string, unknown>
   base?: Record<string, unknown>
@@ -72,7 +71,10 @@ function renderCard(options: {
   authenticated?: boolean
   authStatus?: LocalAgentStatus | undefined
   harnessModel?: () => Promise<LocalAgentModelInfo | null | undefined>
-}): CardHarness {
+}
+
+/** The card props over a scope whose writes update the snapshot reactively. */
+function makeCardProps(options: CardOptions): { props: Record<string, unknown> } & CardHarness {
   const defaults: DshCardSettings = { enabled: false, live: false }
   let snapshot: SettingsScopeSnapshot<DshCardSettings> = options.snapshot
     ?? makeSnapshot(options.value ?? defaults, options.user, options.base)
@@ -124,9 +126,22 @@ function renderCard(options: {
     authT,
     harnessModel,
     t,
-  } as unknown as DshSettingsCardProps
-  render(<DshSettingsCard {...props} />)
-  return { scope: { set, unset } }
+  }
+  return { props, scope: { set, unset } }
+}
+
+/** Render the 0.1.5 card over a scope whose writes update the snapshot reactively. */
+function renderCard(options: CardOptions): CardHarness {
+  const { props, scope } = makeCardProps(options)
+  render(<DshSettingsCard {...props as unknown as DshSettingsCardProps} />)
+  return { scope }
+}
+
+/** Render the alpha.2 bundle-config entry over the same reactive scope. */
+function renderBundleConfig(entryView: 'summary' | 'page', options: CardOptions = {}): CardHarness {
+  const { props, scope } = makeCardProps(options)
+  render(<DshBundleConfig {...{ view: entryView, ...props } as unknown as DshBundleConfigProps} />)
+  return { scope }
 }
 
 /** The disclosure header: the only button carrying aria-expanded. */
@@ -472,5 +487,27 @@ describe('DshSettingsCard model surface (harness broker)', () => {
     renderCard({ harnessModel: () => Promise.resolve(info()) })
     await openCard()
     expect(screen.queryByRole('button', { name: zh['model.menu'] })).toBeNull()
+  })
+})
+
+describe('DshBundleConfig', () => {
+  it('renders the one-liner alone in the summary view and never reads the model surface', async () => {
+    const harnessModel = vi.fn(() => Promise.resolve(null))
+    renderBundleConfig('summary', { harnessModel })
+    await act(async () => {})
+    expect(document.body.textContent).toContain(zh['card.description'])
+    expect(document.body.querySelector('button')).toBeNull()
+    expect(document.body.querySelector('input')).toBeNull()
+    expect(harnessModel).not.toHaveBeenCalled()
+  })
+
+  it('renders the bare form in the page view without the collapsible chrome and writes the live switch through the scope', async () => {
+    const { scope } = renderBundleConfig('page')
+    await act(async () => {})
+    expect(document.body.querySelector('li')).toBeNull()
+    expect(document.body.querySelector('button[aria-expanded]')).toBeNull()
+    fireEvent.click(screen.getByRole('switch', { name: zh['live.title'] }))
+    await act(async () => {})
+    expect(scope.set).toHaveBeenCalledWith('live', true)
   })
 })

@@ -16,9 +16,11 @@
  *   overlay (`[role="dialog"]/menu/listbox` — modals, menus, and the settings
  *   panel close on Escape without preventDefault), or a non-composer editable
  *   target (inline rename, search fields).
- * - new-session starts a session through the public `sessions.create()` →
- *   `sessions.open()` pair (the same entry the sidebar New-session button
- *   rides). Its layering is `global`, like steer-send.
+ * - new-session starts the official New Session flow through the probed
+ *   `ctx.uiWorkspace.startSession()` (the same entry the shell's New-session
+ *   button rides on both host lines; 0.1.6-alpha.2 deleted the
+ *   `sessions.create()` → `sessions.open()` pair's open half). Its layering
+ *   is `global`, like steer-send.
  * - compact runs the host's `/compact` command through the public session
  *   face (`ISession.command`) — the typed slash command's own admission path,
  *   so the outcome is the same flow node. `global`.
@@ -40,11 +42,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the Controller service merge (ctx.sessions).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
-// Type-only: pulls the locale Context merge (ctx.locale), the settings-scope
-// merge (ctx.settingsScope), and the conversation service merge
-// (ctx.conversation) into this program.
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+// Type-only: pulls the locale Context merge (ctx.locale) and the conversation
+// service merge (ctx.conversation) into this program.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -52,9 +54,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // registration below type-checks against the official contract.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { matches, matchesMouse } from './bindings.ts'
-import { ShortcutRegistryRuntime } from './registry.ts'
+import { ShortcutRegistryRuntime, type ShortcutScope } from './registry.ts'
 import { DEFAULT_PREFERENCES, UI_SHORTCUTS_NAMESPACE } from '../settings.ts'
-import type { ShortcutPreference, ShortcutSettings } from '../settings.ts'
+import type { ShortcutPreference } from '../settings.ts'
 import { ShortcutsCard } from './settings/ShortcutsCard.tsx'
 import type { ShortcutsRowInjected } from './settings/ShortcutsRow.tsx'
 import type { ShortcutActionContribution, ShortcutLayering } from './contract.ts'
@@ -70,8 +72,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Services required by the shortcuts plugin. */
-export const inject = ['slots', 'sessions', 'conversation', 'settingsScope', 'locale']
+/** Services required by the shortcuts plugin. The settings scope is deliberately
+ * NOT injected: rc.1 and 0.1.5 name different services (`configForms` vs
+ * `settingsScope`), and a composition without either must not pend the bundle
+ * (the registry stays process-local then — see the dual probe in apply). */
+export const inject = ['slots', 'sessions', 'conversation', 'locale']
 
 /** IME guard: a composition in flight never triggers a shortcut. */
 function isComposing(event: KeyboardEvent): boolean {
@@ -117,6 +122,72 @@ function yieldsToOthers(event: KeyboardEvent | MouseEvent): boolean {
 }
 
 /**
+ * The on-screen session across host lines: 0.1.6-alpha.2 dropped
+ * `SessionListState.current` for per-row `retainedBy.mainView` counts (the
+ * `mainView` reference source is declared by ui-session, outside this
+ * package's type program — hence the duck shape), while 0.1.5 publishes only
+ * `current`. One build reads both.
+ * @param list - sessions list snapshot.
+ * @returns the main-view session id, or undefined when nothing is on screen.
+ */
+type SessionListCurrent = SessionListState & {
+  current?: SessionId
+  byId: Record<SessionId, { id: SessionId; retainedBy?: Readonly<Record<string, number>> }>
+}
+function mainSessionId(list: SessionListState): SessionId | undefined {
+  const view = list as SessionListCurrent
+  return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
+}
+
+/**
+ * The availability-gate read shared by the global actions: a session is on
+ * screen. An absent sessions service answers false, standing the gesture
+ * down without claiming the browser default.
+ * @param ctx - client root context.
+ * @returns whether a main-view session resolves.
+ */
+function hasMainSession(ctx: Context): boolean {
+  const list = ctx.get('sessions')?.list.getSnapshot() as SessionListState | undefined
+  return list !== undefined && mainSessionId(list) !== undefined
+}
+
+/**
+ * Minimal face of ui-workspace's `ctx.uiWorkspace` this plugin probes for:
+ * the official New-session entry (`startSession`) that both host lines' shell
+ * button rides. Probed rather than injected so a composition without
+ * ui-workspace keeps every other shortcut alive; 0.1.6-alpha.2 deleted
+ * `ISessions.open`, the previous open half.
+ */
+interface WorkspaceNavFace {
+  /** Start the New Session flow (reusable blank of the current/recent workspace) and navigate to it. */
+  startSession(): void
+}
+
+/**
+ * The live ui-workspace navigation service, or undefined in a composition
+ * without it.
+ * @param ctx - client root context.
+ * @returns the service face, or undefined.
+ */
+function workspaceNav(ctx: Context): WorkspaceNavFace | undefined {
+  return ctx.get('uiWorkspace') as WorkspaceNavFace | undefined
+}
+
+/**
+ * The 0.1.5 Plugins settings seat, string-typed: 0.1.6-alpha.2 replaced the
+ * keyed 'settings.plugin.item' page list with the tabbed
+ * 'settings.plugins.tab' and deleted the old name from the settings SlotMap,
+ * so the legacy registration no longer types against the canonical contract.
+ * Runtime behavior is unchanged — `slots.inject` only waits for a
+ * declaration, so the armed legacy half fires exactly on the hosts that still
+ * declare the seat (0.1.5) and never on alpha.2.
+ */
+interface LegacyPluginsItemSlots {
+  inject(name: string, callback: () => unknown): unknown
+  register(options: Record<string, unknown>, component: unknown): unknown
+}
+
+/**
  * Steer-send the current session's draft through the public input facade.
  * Absent services or an absent current session are silent no-ops; the machine
  * itself rejects an empty draft.
@@ -124,7 +195,7 @@ function yieldsToOthers(event: KeyboardEvent | MouseEvent): boolean {
  */
 function steerSendDraft(ctx: Context): void {
   const sessions = ctx.get('sessions')
-  const id = sessions?.list.getSnapshot().current
+  const id = sessions === undefined ? undefined : mainSessionId(sessions.list.getSnapshot() as SessionListState)
   // v8 ignore next -- defensive: the inject list guarantees the sessions service.
   if (sessions === undefined || id === undefined) return
   const scope = sessions.scope(id)
@@ -142,7 +213,7 @@ function steerSendDraft(ctx: Context): void {
  */
 function pauseCurrentTask(ctx: Context): void {
   const sessions = ctx.get('sessions')
-  const id = sessions?.list.getSnapshot().current
+  const id = sessions === undefined ? undefined : mainSessionId(sessions.list.getSnapshot() as SessionListState)
   // v8 ignore next -- defensive: the inject list guarantees the sessions service.
   if (sessions === undefined || id === undefined) return
   const scope = sessions.scope(id)
@@ -161,18 +232,20 @@ function pauseCurrentTask(ctx: Context): void {
 }
 
 /**
- * Start a new session through the public sessions service — the same
- * create-then-open pair the sidebar New-session button rides. An absent
- * service is a silent no-op.
+ * Start a new session through the probed ui-workspace navigation face — the
+ * official New Session flow the shell's own button rides on both host lines
+ * (0.1.6-alpha.2 deleted the `sessions.create()` → `sessions.open()` pair's
+ * open half). An absent service is a silent no-op; a synchronous navigation
+ * failure is swallowed like the sidebar toggle's, since the gesture is
+ * already claimed.
  * @param ctx - client root context.
  */
 function startNewSession(ctx: Context): void {
-  const sessions = ctx.get('sessions')
-  if (sessions === undefined) return
-  void sessions.create().then(
-    (id) => { sessions.open(id) },
-    () => { /* the creation failure surfaces through the host's own error path */ },
-  )
+  try {
+    workspaceNav(ctx)?.startSession()
+  } catch {
+    // No session surface to navigate in; the failure never escapes the listener.
+  }
 }
 
 /**
@@ -186,7 +259,7 @@ function startNewSession(ctx: Context): void {
  */
 function compactCurrentSession(ctx: Context): void {
   const sessions = ctx.get('sessions')
-  const id = sessions?.list.getSnapshot().current
+  const id = sessions === undefined ? undefined : mainSessionId(sessions.list.getSnapshot() as SessionListState)
   // v8 ignore next -- defensive: the inject list guarantees the sessions service.
   if (sessions === undefined || id === undefined) return
   const session = sessions.binding(id)?.session
@@ -315,13 +388,22 @@ function suppressAuxiliaryDefault(event: MouseEvent, registry: ShortcutRegistryR
  * Browser plugin body: provide the registry, bind the built-in actions
  * through it, and register the shortcut settings card. The binding snapshots
  * are read in the handlers (event-handler code may read live snapshots); the
- * wiring stands down entirely while the card records a new binding.
+ * wiring stands down entirely while the card records a new binding. The
+ * durable scope arrives through the deferred dual probe — rc.1's
+ * `configForms` first, 0.1.5's `settingsScope` second; a composition with
+ * neither keeps preferences process-local.
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
-  const registry = new ShortcutRegistryRuntime(
-    ctx.settingsScope.bind<ShortcutSettings>({ namespace: UI_SHORTCUTS_NAMESPACE }),
-  )
+  const registry = new ShortcutRegistryRuntime()
+  ctx.inject(['configForms'], (formsCtx) => {
+    const forms = formsCtx.get('configForms') as { get?(entryId: string): ShortcutScope } | undefined
+    if (typeof forms?.get === 'function') registry.bindHost(forms.get(UI_SHORTCUTS_NAMESPACE))
+  })
+  ctx.inject(['settingsScope'], (legacyCtx) => {
+    const legacy = legacyCtx.get('settingsScope') as { bind?(spec: { namespace: string }): ShortcutScope } | undefined
+    if (typeof legacy?.bind === 'function') registry.bindHost(legacy.bind({ namespace: UI_SHORTCUTS_NAMESPACE }))
+  })
   ctx.provide('shortcuts', registry)
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-shortcuts: dictionaries')
@@ -359,7 +441,7 @@ export function apply(ctx: Context): void {
     layering: 'global',
     // Without a current session there is nothing to compact; standing the
     // gesture down also leaves the browser default on this chord alone.
-    available: () => ctx.get('sessions')?.list.getSnapshot().current !== undefined,
+    available: () => hasMainSession(ctx),
     run: () => { compactCurrentSession(ctx) },
   }), 'ui-shortcuts: action compact')
   ctx.effect(() => registry.registerAction({
@@ -375,8 +457,7 @@ export function apply(ctx: Context): void {
     // no session on screen there is no column of this session's to write to.
     // Neither case may claim the gesture (and with it the button's browser
     // default) for a no-op.
-    available: () => rightSidebarService(ctx) !== undefined
-      && ctx.get('sessions')?.list.getSnapshot().current !== undefined,
+    available: () => rightSidebarService(ctx) !== undefined && hasMainSession(ctx),
     run: () => { toggleRightSidebar(ctx) },
   }), 'ui-shortcuts: action toggleSidebar')
 
@@ -403,23 +484,37 @@ export function apply(ctx: Context): void {
     }
   }, 'ui-shortcuts: global keydown + mousedown')
 
-  // The plugin configuration tab keys its cards on the settings namespace, so
-  // the shortcut preferences card registers under UI_SHORTCUTS_NAMESPACE and
-  // renders wherever the tab dispatches that key.
-  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+  // The Plugins settings card's seat moved on 0.1.6-alpha.2: the keyed
+  // 'settings.plugin.item' page list became tabbed 'settings.plugins.tab'
+  // pages (declared by ui-settings-plugins' section). The two seats never
+  // coexist on one host line, so both injects are armed and exactly one
+  // fires; the legacy seat falls outside alpha.2's SlotMap, so its half goes
+  // through the string-typed probe face (see LegacyPluginsItemSlots).
+  const cardInject = (): ShortcutsRowInjected => ({
+    hooks: {
+      actions: registry.actions,
+      preferences: registry.preferences,
+      capturing: registry.capturing,
+    },
+    translate: (ns, key) => ctx.locale.bind(ns)(key),
+    setPreference: (id, preference: ShortcutPreference) => { registry.setPreference(id, preference) },
+    reset: (id) => { registry.reset(id) },
+    setCapturing: (id) => { registry.capturing.set(id) },
+  })
+  const t = ctx.locale.bind(NS)
+  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+    name: 'settings.plugins.tab',
+    id: UI_SHORTCUTS_NAMESPACE,
+    order: 40,
+    label: () => t('settings.title'),
+    locale: NS,
+    inject: cardInject,
+  }, ShortcutsCard))
+  const legacySlots = ctx.slots as unknown as LegacyPluginsItemSlots
+  legacySlots.inject('settings.plugin.item', () => legacySlots.register({
     name: 'settings.plugin.item',
     key: UI_SHORTCUTS_NAMESPACE,
     locale: NS,
-    inject: (): ShortcutsRowInjected => ({
-      hooks: {
-        actions: registry.actions,
-        preferences: registry.preferences,
-        capturing: registry.capturing,
-      },
-      translate: (ns, key) => ctx.locale.bind(ns)(key),
-      setPreference: (id, preference: ShortcutPreference) => { registry.setPreference(id, preference) },
-      reset: (id) => { registry.reset(id) },
-      setCapturing: (id) => { registry.capturing.set(id) },
-    }),
+    inject: cardInject,
   }, ShortcutsCard))
 }

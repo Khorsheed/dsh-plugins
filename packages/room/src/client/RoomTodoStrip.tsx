@@ -13,7 +13,7 @@
  * mirror theirs into their child sessions (family R3), never here.
  */
 import { useId, useState, type ReactNode } from 'react'
-import { IconChecklistOutline14, IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChecklistOutlineMedium, IconChevronDownOutlineMedium, IconChevronUpOutlineMedium } from './icons.tsx'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: merges the `todos` key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-tool-todo/client'
@@ -108,11 +108,11 @@ export function RoomTodoStrip({ useProjection, t }: RoomTodoStripProps): ReactNo
           aria-expanded={!collapsed}
           onClick={() => { setCollapsed(v => !v) }}
         >
-          <span className={css.lead} aria-hidden><IconChecklistOutline14 /></span>
+          <span className={css.lead} aria-hidden><IconChecklistOutlineMedium /></span>
           <span className={css.title}>{t('todo.title')}</span>
           <span className={css.progress}>{progressLabel(todos, t)}</span>
           <span className={css.chevron} aria-hidden>
-            {collapsed ? <IconChevronUpOutline14 /> : <IconChevronDownOutline14 />}
+            {collapsed ? <IconChevronUpOutlineMedium /> : <IconChevronDownOutlineMedium />}
           </span>
         </button>
         {!collapsed && (

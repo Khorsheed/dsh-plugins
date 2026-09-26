@@ -221,7 +221,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       },
       selectModel: selection => directory === undefined
         ? Promise.resolve(false)
-        : directory.select(selection).then(() => true, () => false),
+        // Host 0.1.6-alpha.2 turned select() into a never-rejecting
+        // RemoteResult; 0.1.5 still rejects on failure. Read the settled
+        // shape: a value carrying `ok` is the new contract, anything else is
+        // the old void success, and a rejection only happens on the old line
+        // (the official consumer reads `!result.ok` the same way).
+        : directory.select(selection).then(
+            result => (result && typeof result === 'object' && 'ok' in result ? result.ok : true),
+            () => false,
+          ),
       hooks: {
         modelDirectory: directory === undefined ? EMPTY_MODEL_DIRECTORY : directory.store,
       },

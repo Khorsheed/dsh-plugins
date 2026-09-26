@@ -148,9 +148,11 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
    * structural agent-preset roster stub, and managed skills in a temp home.
    * @param scope - the frontmatter scope of the `md-to-wechat` entry.
    * @param extra - further managed entries to create.
+   * @param rosterFor - roster override (e.g. the rc.1 leased face); the default
+   *   stub is the 0.1.5 lease-free `standingKeyFor` face.
    * @returns the context, standing keys, delivery, and temp home.
    */
-  async function boot(scope: string, extra: readonly { name: string; scope?: string }[] = []) {
+  async function boot(scope: string, extra: readonly { name: string; scope?: string }[] = [], rosterFor?: (keys: Map<string, ScopeKey>) => PresetRosterSlice) {
     const home = await mkdtemp(join(tmpdir(), 'catalog-delivery-'))
     const keys = new Map<string, ScopeKey>([
       ['standard', { agentPreset: 'standard' }],
@@ -166,7 +168,7 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
     }
 
     const ctx = new Context()
-    const roster: PresetRosterSlice = {
+    const roster: PresetRosterSlice = rosterFor?.(keys) ?? {
       defaultId: 'standard',
       standingKeyFor: vi.fn(async (id?: string) => keys.get(id ?? 'standard')),
     }
@@ -305,5 +307,33 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
     await delivery.start()
     expect(delivery.status().enabled).toBe(false)
     expect(delivery.status().reason).toContain('roster')
+  })
+
+  it('delivers through the rc.1 leased roster face, releasing the lease after the key read', async () => {
+    const release = vi.fn(async () => {})
+    const { ctx, keys, delivery } = await boot('[dsh-writing]', [], (standing) => ({
+      defaultId: 'standard',
+      acquireScope: vi.fn(async (id?: string) => ({
+        key: standing.get(id ?? 'standard'),
+        [Symbol.asyncDispose]: release,
+      })),
+    }))
+    expect(await namesIn(ctx, keys.get('dsh-writing'))).toContain('md-to-wechat')
+    expect(await namesIn(ctx, keys.get('standard'))).not.toContain('md-to-wechat')
+    expect(delivery.status().presets.map(row => row.presetId)).toEqual(['dsh-writing'])
+    // One named preset resolved once; its lease released exactly once.
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('records an rc.1 broken preset as a preset error, not a delivery failure', async () => {
+    const { delivery } = await boot('[dsh-writing]', [], () => ({
+      defaultId: 'standard',
+      acquireScope: async (): Promise<unknown> => {
+        throw new Error('agent-preset/invalid: row "canvas-agent" is waiting for service canvasBoard')
+      },
+    }))
+    expect(delivery.status().enabled).toBe(false)
+    const row = delivery.status().presets.find(preset => preset.presetId === 'dsh-writing')
+    expect(row?.error).toContain('agent-preset/invalid')
   })
 })

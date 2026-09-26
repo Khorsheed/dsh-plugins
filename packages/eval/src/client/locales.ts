@@ -549,6 +549,33 @@ export type EvalKey =
   | 'design.notes'
   | 'design.verdictSources'
   | 'design.gridHint'
+  | 'design.question'
+  | 'design.questionAsked'
+  | 'design.expectation'
+  | 'design.answeredWhen'
+  | 'design.numbers'
+  | 'design.numbers.reps'
+  | 'design.numbers.activeMinutes'
+  | 'design.numbers.turns'
+  | 'design.numbers.judgeSamples'
+  | 'design.numbers.save'
+  | 'design.numbers.cancel'
+  | 'design.numbers.hint'
+  | 'design.numbers.frozen'
+  | 'design.numbers.written'
+  | 'design.numbers.unchanged'
+  | 'design.numbers.invalid'
+  | 'design.numbers.noPlan'
+  | 'report.answerLine'
+  | 'report.answeredWhen'
+  | 'report.expectation'
+  | 'report.answerClosed'
+  | 'report.answerSingle'
+  | 'report.directionAhead'
+  | 'report.directionNone'
+  | 'markdown.copy'
+  | 'markdown.copied'
+  | 'markdown.footnotes'
   | 'ready.badge'
   | 'ready.badgeAtStart'
   | 'ready.recheck'
@@ -777,9 +804,18 @@ export type EvalKey =
   | 'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED'
   | 'readiness.UNRESOLVED_FIELD'
   | 'readiness.BUDGET_INVALID'
-  | 'markdown.copy'
-  | 'markdown.copied'
-  | 'markdown.footnotes'
+  // T76: the experiment card on the eval_plan_draft tool row.
+  | 'card.kind'
+  | 'card.question'
+  | 'card.scale'
+  | 'card.dataset'
+  | 'card.status'
+  | 'card.open'
+  | 'card.opened'
+  | 'card.running'
+  | 'card.failed'
+  | 'card.unreadable'
+  | 'card.errors'
   | 'answer.open'
   | 'answer.title'
   | 'answer.back'
@@ -1377,6 +1413,33 @@ export const en: Record<EvalKey, string> = {
   'design.addGroupHint': 'Copy an existing group and change one field; the wizard writes both it and the plan.',
   'design.notes': 'Author’s note',
   'design.verdictSources': 'Verdict sources',
+  'design.question': 'The question',
+  'design.questionAsked': 'Question',
+  'design.expectation': 'Expectation',
+  'design.answeredWhen': 'Answered when',
+  'design.numbers': 'Numbers',
+  'design.numbers.reps': 'Takes',
+  'design.numbers.activeMinutes': 'Minutes per record',
+  'design.numbers.turns': 'Turns per record',
+  'design.numbers.judgeSamples': 'Judge samples',
+  'design.numbers.save': 'Save',
+  'design.numbers.cancel': 'Cancel',
+  'design.numbers.hint': 'Editable until the experiment starts; saved into the same plan, nothing else in it changes. Anything structural — items, groups, the judge — ask the agent.',
+  'design.numbers.frozen': 'The experiment has started, so its plan is frozen: these numbers are the record of that run. To change them, draft a new experiment.',
+  'design.numbers.written': 'Saved and read back: {changes}.',
+  'design.numbers.unchanged': 'Nothing changed — the plan already holds these numbers.',
+  'design.numbers.invalid': '{field} is not a number.',
+  'design.numbers.noPlan': 'This experiment has no plan to write into.',
+  'report.answerLine': 'Question: {question} — Conclusion: {answer}',
+  'report.answeredWhen': 'Answered when: {text}',
+  'report.expectation': 'Expected: {text} · Actual: {actual}',
+  'report.answerClosed': 'no conclusion yet',
+  'report.answerSingle': 'a single comparison group — nothing to compare',
+  'report.directionAhead': '{ahead} ahead of {behind}',
+  'report.directionNone': '{a} and {b} not separated',
+  'markdown.copy': 'Copy',
+  'markdown.copied': 'Copied',
+  'markdown.footnotes': 'Footnotes',
   'ready.badge': 'Environment ready',
   'ready.badgeAtStart': 'Environment ready when it started',
   'ready.recheck': 'Check again',
@@ -1610,9 +1673,18 @@ export const en: Record<EvalKey, string> = {
   'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED': 'Condition {condition}\'s per-item home uses an undeclared variable.',
   'readiness.UNRESOLVED_FIELD': 'Condition {condition}: {field} is still to fill in.',
   'readiness.BUDGET_INVALID': 'The budget must be positive.',
-  'markdown.copy': 'Copy',
-  'markdown.copied': 'Copied',
-  'markdown.footnotes': 'Footnotes',
+  // T76 — the experiment card on the eval_plan_draft tool row.
+  'card.kind': 'Experiment draft',
+  'card.question': 'Question',
+  'card.scale': 'Scale',
+  'card.dataset': 'Dataset version',
+  'card.status': 'Status',
+  'card.open': 'Open experiment',
+  'card.opened': 'Marked in the list on the Experiments tab — switch to that tab to see it.',
+  'card.running': 'Drafting the experiment…',
+  'card.failed': 'The draft did not go through; the tool output below says why.',
+  'card.unreadable': 'The result of this call names no experiment.',
+  'card.errors': 'Validation found {errors} to fix — see Design on the Experiments tab.',
   'answer.open': 'View answers',
   'answer.title': 'Answers to {task}',
   'answer.back': 'Back',
@@ -2200,6 +2272,33 @@ export const zh: Record<EvalKey, string> = {
   'design.addGroupHint': '从一个已有对比组复制，改一个字段；向导会把它和计划一起写出来。',
   'design.notes': '作者备注',
   'design.verdictSources': '判定来源',
+  'design.question': '要回答的问题',
+  'design.questionAsked': '问题',
+  'design.expectation': '预期',
+  'design.answeredWhen': '怎么算回答了',
+  'design.numbers': '数字',
+  'design.numbers.reps': '次数',
+  'design.numbers.activeMinutes': '每格预算（分钟）',
+  'design.numbers.turns': '每格预算（轮）',
+  'design.numbers.judgeSamples': '判官采样',
+  'design.numbers.save': '保存',
+  'design.numbers.cancel': '取消',
+  'design.numbers.hint': '启动前可改，写回同一个 plan，其他内容不动。题、对比组、判官这类结构性改动交给 agent。',
+  'design.numbers.frozen': '实验已启动，方案已冻结：这些数字是那次运行的记录。要改请起草一个新实验。',
+  'design.numbers.written': '已写回并读回核对：{changes}。',
+  'design.numbers.unchanged': '没有变化——plan 里已经是这些数字。',
+  'design.numbers.invalid': '{field} 不是数字。',
+  'design.numbers.noPlan': '这个实验没有可写的 plan。',
+  'report.answerLine': '问题：{question} — 结论：{answer}',
+  'report.answeredWhen': '怎么算回答了：{text}',
+  'report.expectation': '预期：{text} · 实际：{actual}',
+  'report.answerClosed': '暂时不能下结论',
+  'report.answerSingle': '单对比组，无对比数据',
+  'report.directionAhead': '{ahead} 优于 {behind}',
+  'report.directionNone': '{a} 与 {b} 未分高下',
+  'markdown.copy': '复制',
+  'markdown.copied': '已复制',
+  'markdown.footnotes': '脚注',
   'ready.badge': '环境就绪',
   'ready.badgeAtStart': '启动时环境就绪',
   'ready.recheck': '重新检查',
@@ -2433,9 +2532,18 @@ export const zh: Record<EvalKey, string> = {
   'readiness.UNIT_SCOPED_HOME_VAR_UNDECLARED': '对比组 {condition} 的逐题 home 用了未声明的变量。',
   'readiness.UNRESOLVED_FIELD': '对比组 {condition} 的 {field} 还没填。',
   'readiness.BUDGET_INVALID': '预算必须是正数。',
-  'markdown.copy': '复制',
-  'markdown.copied': '已复制',
-  'markdown.footnotes': '脚注',
+  // T76——eval_plan_draft 工具行上的实验卡。
+  'card.kind': '实验草稿',
+  'card.question': '问题',
+  'card.scale': '规模',
+  'card.dataset': '题库版本',
+  'card.status': '状态',
+  'card.open': '打开实验',
+  'card.opened': '已在「实验室」标签的列表里标出这一行——切到那个标签就能看到。',
+  'card.running': '正在起草实验…',
+  'card.failed': '起草没有成功，原因见下面的工具输出。',
+  'card.unreadable': '这次调用的结果里读不出实验。',
+  'card.errors': '校验有 {errors} 处要修——在实验室 › 实验设计里看。',
   'answer.open': '看作答',
   'answer.title': '{task} 的作答',
   'answer.back': '返回',

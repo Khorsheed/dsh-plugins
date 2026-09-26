@@ -7,7 +7,7 @@
  * gap and the selected row gets a light-blue surface with a 2px left accent.
  */
 import type { ReactNode } from 'react'
-import { IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconPanelLeftOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CommitInfo } from '../types.ts'
 import { relativeTime } from './FileTree.tsx'
@@ -63,7 +63,7 @@ export function CommitList({
               title={collapsed ? t('tree.expand') : t('tree.collapse')}
               onClick={onToggleCollapse}
             >
-              <IconPanelLeftOutline16 />
+              <IconPanelLeftOutlineMedium />
             </button>
           )}
         </span>

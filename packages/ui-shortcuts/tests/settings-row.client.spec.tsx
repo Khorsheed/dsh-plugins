@@ -64,7 +64,7 @@ const ACTIONS: readonly ShortcutActionContribution[] = [
 
 function emptySessions() {
   return bindSnapshotSelector(createSnapshotStore<SessionListState>({
-    ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+    ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {},
   }))
 }
 

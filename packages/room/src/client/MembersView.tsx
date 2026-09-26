@@ -13,7 +13,8 @@
  */
 import { coordinatorMember } from '../journal.ts'
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Button, IconAgentPresetOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconAgentPresetOutlineMedium } from './icons.tsx'
 import type { RoomMember } from '../types.ts'
 import { MemberCard } from './MemberCard.tsx'
 import { InviteDialog, type InviteDialogSubmit } from './InviteDialog.tsx'
@@ -180,7 +181,7 @@ export function MembersView({
     return (
       <div className={css.guide}>
         <span className={css.guideIcon} aria-hidden>
-          <IconAgentPresetOutline16 size={30} />
+          <IconAgentPresetOutlineMedium size={30} />
         </span>
         <p className={css.guideTitle}>{t('members.notRoomTitle')}</p>
         <p className={css.guideHint}>{t('members.notRoom')}</p>

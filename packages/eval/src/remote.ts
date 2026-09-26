@@ -34,7 +34,10 @@
  * precisely because drafting is not starting: a draft is a file and a 草稿 row,
  * and every door to `runStart` stays on the human side of R1.
  *
- * Seven of them WRITE, and every one is a human's click. `provisionCondition`
+ * Eight of them WRITE, and every one is a human's click. `setPlanNumbers`
+ * (T74) is the design page's: 每组次数, the per-cell budget and the judge's
+ * sample count, changed in place in the experiment's plan.json before it
+ * starts — those four numbers and no other byte, refused once a run exists. `provisionCondition`
  * and `setConditionEndpoint` (I5·T58) are the conditions page's two: the first
  * turns a declaration into a real scoped home and locks it, the second fills
  * in the one contract field the readiness gate refuses a condition for leaving
@@ -83,6 +86,8 @@ import type {
   EvalConditionDiffRequest,
   EvalConditionDiffView,
   EvalConditionEndpointRequest,
+  EvalPlanNumbersRequest,
+  EvalPlanNumbersResult,
   EvalConditionEndpointView,
   EvalConditionProvisionRequest,
   EvalConditionProvisionView,
@@ -325,6 +330,20 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   setConditionEndpoint(agent: Agent, request: EvalConditionEndpointRequest): Promise<EvalConditionEndpointView> {
     void agent
     return this.service.setConditionEndpoint(request)
+  }
+
+  /**
+   * Change an unstarted experiment's numbers in place (T74). No model tool
+   * reaches this: structural edits are the agent's, through a new draft, and
+   * the numbers are a person's, on the design page.
+   * @param agent - the clicking session.
+   * @param request - the experiment and the values to set.
+   * @returns what changed, and the plan review re-read from disk.
+   */
+  @Remote('setPlanNumbers')
+  setPlanNumbers(agent: Agent, request: EvalPlanNumbersRequest): Promise<EvalPlanNumbersResult> {
+    void agent
+    return this.service.setPlanNumbers(request)
   }
 
   /**

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-  import { Button, IconBrowseOutline16, IconTrashOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+  import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBrowseOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
   import type { CatalogSkillRow } from '@khorsheed/dsh-capability-catalog/types'
   import { ModeChips } from './ModeChips.tsx'
   import type { CatalogModeChip } from './mode-model.ts'
@@ -55,11 +56,11 @@ export function SkillPreviewCard({ skill, tag, modes, modeTotal, onMode, onOpen,
       {modes === undefined ? null : <ModeChips modes={modes} total={modeTotal ?? 0} onSelect={onMode} t={t} />}
       <div className={css.pvFoot}>
         <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
-          <IconBrowseOutline16 size={16} />
+          <IconBrowseOutlineMedium size={16} />
         </button>
         {deletable ? (
           <button type="button" className={`${css.iconButton} ${css.iconDanger}`} onClick={onDelete} aria-label={t('delete')} title={t('delete')}>
-            <IconTrashOutline16 size={16} />
+            <IconTrashOutlineMedium size={16} />
           </button>
         ) : null}
       </div>

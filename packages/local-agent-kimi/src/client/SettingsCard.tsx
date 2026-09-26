@@ -1,11 +1,12 @@
 import type { HarnessModelPickerInput } from '@khorsheed/dsh-local-agent/client'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: the settings.plugin.item keyed-slot SlotMap merge.
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-import { IconChevronDownOutline14, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+// Type-only: the plugins.bundle.config keyed-slot SlotMap merge (alpha.2).
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from './icons.tsx'
 import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 // The shared auth block is bundled from the family core's source — the
 // sanctioned core/companion edge (the host half already depends on the core);
@@ -59,27 +60,48 @@ export interface KimiSettingsCardInjected {
   }
 }
 
-/** Full props of the settings.plugin.item card entry. */
+/**
+ * Full props of the 0.1.5 settings.plugin.item card entry. The removed slot's
+ * owner share was intentionally empty and its root scope delivered the global
+ * seats; the structural type below is exact about the one seat the auth block
+ * consumes (the slot name is gone from the alpha.2 SlotMap, so the
+ * registration goes through a duck-typed narrow — see client/index.ts).
+ */
 export type KimiSettingsCardProps =
-  PropsRuntime<'settings.plugin.item'>
+  InjectFace<KimiSettingsCardInjected>
+  & PropsLocale<typeof NS>
+  & {
+    /** The standing root-scope global seat (ui-session's merge), delivered to the 0.1.5 card by the renderer. */
+    useSessions: ProviderAuthBlockProps['useSessions']
+  }
+
+/** Full props of the alpha.2 plugins.bundle.config entry (owner prop `view`). */
+export type KimiBundleConfigProps =
+  PropsRuntime<'plugins.bundle.config'>
   & InjectFace<KimiSettingsCardInjected>
   & PropsLocale<typeof NS>
 
 /**
- * The kimi harness settings card in the plugin configuration tab: the same
- * collapsible chrome the official plugin cards use, re-implemented locally
- * (the bundle-purity gate forbids value-importing the official chrome — the
- * context-guard pattern). The body carries the family core's shared
- * ProviderAuthBlock and the resident-mode block; both writes go through the
- * bound settingsScope immediately (revision-fenced), so a flip takes effect
- * on the next delegation round without a reload. Explanation copy lives in
- * hover/focus bubbles behind ⓘ anchors — the card's rows stay one line each.
- * @param props - runtime slot currency, the injected scope/auth faces, and copy.
- * @returns the card.
+ * The staged card state both settings surfaces share: the resident-mode and
+ * model edits write through the bound settingsScope immediately
+ * (revision-fenced), so a flip takes effect on the next delegation round
+ * without a reload; the memberless model surface is re-read whenever the
+ * stored model changes — a save can move the effective layer between settings
+ * and the CLI's own default.
+ * @param active - whether the surface reads the model surface at all (the summary one-liner never does).
+ * @param useSettings - the bound settings hook from the inject hooks compartment.
+ * @param scope - the bound settings scope the writes go through.
+ * @param harnessModel - the harness's memberless model surface read.
+ * @param t - copy.
  */
-export function KimiSettingsCard({ useSettings, scope, auth, authT, renderModelPicker, harnessModel, useSessions, t }: KimiSettingsCardProps) {
+function useCardState(
+  active: boolean,
+  useSettings: KimiSettingsCardProps['useSettings'],
+  scope: KimiSettingsCardProps['scope'],
+  harnessModel: KimiSettingsCardInjected['harnessModel'],
+  t: KimiSettingsCardProps['t'],
+) {
   const snapshot: SettingsScopeSnapshot<KimiLiveSettings> = useSettings(value => value)
-  const [open, setOpen] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(false)
   const ready = snapshot.status === 'ready' && snapshot.writable
@@ -98,10 +120,11 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, renderModelP
   // the effective layer between settings and the CLI's own default.
   const [modelInfo, setModelInfo] = useState<LocalAgentModelInfo | undefined>(undefined)
   useEffect(() => {
+    if (!active) return
     let stale = false
     void harnessModel().then((info) => { if (!stale) setModelInfo(info) })
     return () => { stale = true }
-  }, [harnessModel, storedModel])
+  }, [active, harnessModel, storedModel])
   /**
    * Commit the model field. A blank value UNSETS the key rather than storing
    * an empty string, so the field re-inherits the YAML composition base — and
@@ -191,16 +214,29 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, renderModelP
         ? t('model.menuDefault.lastObserved', { model: modelInfo.lastObserved })
         : t('model.menuDefault')
 
-  const title = t('card.title')
-  // The at-a-glance credential dot in the collapsed header: every mount
-  // re-probes (a credential expiring mid-session must flip the dot at the
-  // next view); the bus dedupes identical results, so no re-render storm.
-  const authStatus = useHarnessAuthStatus('kimi', auth.status)
-  const dotLabel = authT(
-    authStatus === 'authenticated' ? 'settings.authenticated'
-      : authStatus === 'anonymous' ? 'settings.notAuthenticated'
-        : authStatus === 'checking' ? 'loading' : 'error',
-  )
+  return {
+    snapshot, saved, error, ready, live, storedModel, modelValue, modelSaved,
+    modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
+    modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
+    setModelDraft, setModelMenuOpen,
+  }
+}
+
+/** The card body both settings surfaces share: the auth block, the default-model block, and the resident-mode block. */
+function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
+  readonly state: ReturnType<typeof useCardState>
+  readonly auth: KimiSettingsCardInjected['auth']
+  readonly authT: KimiSettingsCardInjected['authT']
+  readonly renderModelPicker: KimiSettingsCardInjected['renderModelPicker']
+  readonly useSessions: KimiSettingsCardProps['useSessions']
+  readonly t: KimiSettingsCardProps['t']
+}) {
+  const {
+    snapshot, saved, error, ready, live, storedModel, modelValue, modelSaved,
+    modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
+    modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
+    setModelDraft, setModelMenuOpen,
+  } = state
   // The free-text input, single-sourced for both presentations: bare when no
   // vocabulary exists (a fresh install degrades to exactly the pre-picker
   // field), or inside the select-like field next to its chevron. No datalist:
@@ -217,6 +253,145 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, renderModelP
     />
   )
   return (
+    <div className={css.body}>
+      <section className={css.block}>
+        <h3 className={css.blockTitle}>{t('auth.title')}</h3>
+        <ProviderAuthBlock
+          harness={{ id: 'kimi', label: 'Kimi Code' }}
+          useSessions={useSessions}
+          status={auth.status}
+          runCommand={auth.runCommand}
+          t={authT}
+        />
+      </section>
+      <section className={css.block}>
+        <h3 className={css.blockTitle}>
+          {t('model.title')}
+          <Tooltip label={t('model.info')} side="bottom" maxWidth={360}>
+            <button type="button" className={css.info} aria-label={t('model.info.aria')}>ⓘ</button>
+          </Tooltip>
+        </h3>
+        <div className={css.row}>
+          {renderModelPicker?.({ value: modelValue, onChange: setModelDraft, disabled: !ready, defaultLabel: modelDefaultItem }) ?? (choices.length > 0 ? (
+            <div className={css.modelField} ref={modelFieldRef}>
+              {modelInputElement}
+              <button
+                type="button"
+                className={css.modelMenuButton}
+                aria-label={t('model.menu')}
+                aria-haspopup="menu"
+                aria-expanded={modelMenuOpen}
+                disabled={!ready}
+                onClick={() => { toggleModelMenu() }}
+              >
+                <IconChevronDownOutlineMedium className={modelMenuOpen ? `${css.modelMenuChevron} ${css.modelMenuChevronOpen}` : css.modelMenuChevron} />
+              </button>
+              {modelMenuOpen && (
+                <div
+                  className={modelMenuUp ? `${css.modelMenu} ${css.modelMenuUp}` : css.modelMenu}
+                  role="menu"
+                  aria-label={t('model.menu')}
+                >
+                  {/* The leading follow-default item: checked while the
+                      field is unset; picking it clears the draft back to
+                      follow-default (a save then unsets the key). */}
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={modelValue.trim() === ''}
+                    className={modelValue.trim() === '' ? `${css.modelItemDefault} ${css.modelItemCurrent}` : css.modelItemDefault}
+                    onClick={() => { setModelDraft(''); setModelMenuOpen(false) }}
+                  >
+                    <span className={css.modelItemLabel}>{modelDefaultItem}</span>
+                    <span className={css.modelItemCheck} aria-hidden>{modelValue.trim() === '' ? '✓' : ''}</span>
+                  </button>
+                  {choices.map(choice => (
+                    <button
+                      key={choice}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={choice === modelValue}
+                      className={choice === modelValue ? css.modelItemCurrent : css.modelItem}
+                      onClick={() => { setModelDraft(choice); setModelMenuOpen(false) }}
+                    >
+                      <span className={css.modelItemLabel}>{choice}</span>
+                      <span className={css.modelItemCheck} aria-hidden>{choice === modelValue ? '✓' : ''}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : modelInputElement)}
+          <button
+            type="button"
+            className={css.modelSave}
+            disabled={!ready || modelValue.trim() === storedModel}
+            onClick={() => { saveModel() }}
+          >
+            {t('model.save')}
+          </button>
+        </div>
+        {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
+        {modelError && <span className={css.errorText}>{t('model.error')}</span>}
+      </section>
+      <section className={css.block}>
+        <div className={css.row}>
+          <span className={css.rowLabel}>
+            {t('live.title')}
+            <Tooltip label={t('live.info')} side="bottom" maxWidth={360}>
+              <button type="button" className={css.info} aria-label={t('live.info.aria')}>ⓘ</button>
+            </Tooltip>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={live}
+            aria-label={t('live.title')}
+            className={live ? `${css.switch} ${css.switchOn}` : css.switch}
+            disabled={!ready}
+            onClick={() => { write('live', !live) }}
+          >
+            <span className={css.knob} />
+          </button>
+        </div>
+        {saved && <span className={css.saved}>{t('live.applied')}</span>}
+        {error && <span className={css.errorText}>{t('live.error')}</span>}
+        {snapshot.status === 'unavailable' && (
+          <span className={css.hint}>{t('live.unavailable')}</span>
+        )}
+      </section>
+    </div>
+  )
+}
+
+/**
+ * The kimi harness settings card in the 0.1.5 plugin configuration tab: the
+ * same collapsible chrome the official plugin cards use, re-implemented
+ * locally (the bundle-purity gate forbids value-importing the official chrome
+ * — the context-guard pattern), with the at-a-glance credential dot in the
+ * header. Explanation copy lives in hover/focus bubbles behind ⓘ anchors —
+ * the card's rows stay one line each.
+ * @param props - the injected scope/auth faces and copy.
+ * @returns the card.
+ */
+export function KimiSettingsCard(props: KimiSettingsCardProps) {
+  const { useSettings, scope, auth, authT, renderModelPicker, harnessModel, useSessions, t } = props
+  const [open, setOpen] = useState(false)
+  // The model surface read is NOT open-gated on this surface (it warms the
+  // vocabulary while the card is collapsed), so the 0.1.5 card always reads.
+  const state = useCardState(true, useSettings, scope, harnessModel, t)
+  // The at-a-glance credential dot in the collapsed header: every mount
+  // re-probes (a credential expiring mid-session must flip the dot at the
+  // next view); the bus dedupes identical results, so no re-render storm.
+  const authStatus = useHarnessAuthStatus('kimi', auth.status)
+  const dotLabel = authT(
+    authStatus === 'authenticated' ? 'settings.authenticated'
+      : authStatus === 'anonymous' ? 'settings.notAuthenticated'
+        : authStatus === 'checking' ? 'loading' : 'error',
+  )
+
+  const title = t('card.title')
+  return (
     <li className={open ? `${css.card} ${css.cardOpen}` : css.card}>
       <button
         type="button"
@@ -232,118 +407,23 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, renderModelP
           </span>
           <span className={css.description}>{t('card.description')}</span>
         </span>
-        <IconChevronDownOutline14 className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+        <IconChevronDownOutlineMedium className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </button>
-      {open && (
-        <div className={css.body}>
-          <section className={css.block}>
-            <h3 className={css.blockTitle}>{t('auth.title')}</h3>
-            <ProviderAuthBlock
-              harness={{ id: 'kimi', label: 'Kimi Code' }}
-              useSessions={useSessions}
-              status={auth.status}
-              runCommand={auth.runCommand}
-              t={authT}
-            />
-          </section>
-          <section className={css.block}>
-            <h3 className={css.blockTitle}>
-              {t('model.title')}
-              <Tooltip label={t('model.info')} side="bottom" maxWidth={360}>
-                <button type="button" className={css.info} aria-label={t('model.info.aria')}>ⓘ</button>
-              </Tooltip>
-            </h3>
-            <div className={css.row}>
-              {renderModelPicker?.({ value: modelValue, onChange: setModelDraft, disabled: !ready, defaultLabel: modelDefaultItem }) ?? (choices.length > 0 ? (
-                <div className={css.modelField} ref={modelFieldRef}>
-                  {modelInputElement}
-                  <button
-                    type="button"
-                    className={css.modelMenuButton}
-                    aria-label={t('model.menu')}
-                    aria-haspopup="menu"
-                    aria-expanded={modelMenuOpen}
-                    disabled={!ready}
-                    onClick={() => { toggleModelMenu() }}
-                  >
-                    <IconChevronDownOutline14 className={modelMenuOpen ? `${css.modelMenuChevron} ${css.modelMenuChevronOpen}` : css.modelMenuChevron} />
-                  </button>
-                  {modelMenuOpen && (
-                    <div
-                      className={modelMenuUp ? `${css.modelMenu} ${css.modelMenuUp}` : css.modelMenu}
-                      role="menu"
-                      aria-label={t('model.menu')}
-                    >
-                      {/* The leading follow-default item: checked while the
-                          field is unset; picking it clears the draft back to
-                          follow-default (a save then unsets the key). */}
-                      <button
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={modelValue.trim() === ''}
-                        className={modelValue.trim() === '' ? `${css.modelItemDefault} ${css.modelItemCurrent}` : css.modelItemDefault}
-                        onClick={() => { setModelDraft(''); setModelMenuOpen(false) }}
-                      >
-                        <span className={css.modelItemLabel}>{modelDefaultItem}</span>
-                        <span className={css.modelItemCheck} aria-hidden>{modelValue.trim() === '' ? '✓' : ''}</span>
-                      </button>
-                      {choices.map(choice => (
-                        <button
-                          key={choice}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={choice === modelValue}
-                          className={choice === modelValue ? css.modelItemCurrent : css.modelItem}
-                          onClick={() => { setModelDraft(choice); setModelMenuOpen(false) }}
-                        >
-                          <span className={css.modelItemLabel}>{choice}</span>
-                          <span className={css.modelItemCheck} aria-hidden>{choice === modelValue ? '✓' : ''}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : modelInputElement)}
-              <button
-                type="button"
-                className={css.modelSave}
-                disabled={!ready || modelValue.trim() === storedModel}
-                onClick={() => { saveModel() }}
-              >
-                {t('model.save')}
-              </button>
-            </div>
-            {modelSaved && <span className={css.saved}>{t('model.applied')}</span>}
-            {modelError && <span className={css.errorText}>{t('model.error')}</span>}
-          </section>
-          <section className={css.block}>
-            <div className={css.row}>
-              <span className={css.rowLabel}>
-                {t('live.title')}
-                <Tooltip label={t('live.info')} side="bottom" maxWidth={360}>
-                  <button type="button" className={css.info} aria-label={t('live.info.aria')}>ⓘ</button>
-                </Tooltip>
-              </span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={live}
-                aria-label={t('live.title')}
-                className={live ? `${css.switch} ${css.switchOn}` : css.switch}
-                disabled={!ready}
-                onClick={() => { write('live', !live) }}
-              >
-                <span className={css.knob} />
-              </button>
-            </div>
-            {saved && <span className={css.saved}>{t('live.applied')}</span>}
-            {error && <span className={css.errorText}>{t('live.error')}</span>}
-            {snapshot.status === 'unavailable' && (
-              <span className={css.hint}>{t('live.unavailable')}</span>
-            )}
-          </section>
-        </div>
-      )}
+      {open && <CardBody state={state} auth={auth} authT={authT} renderModelPicker={renderModelPicker} useSessions={useSessions} t={t} />}
     </li>
   )
+}
+
+/**
+ * The bundle's configuration on the alpha.2 Plugins page
+ * (`plugins.bundle.config`, keyed by package name): the page draws the title,
+ * the icon, and the crumb itself, so the entry renders the one-liner for the
+ * `summary` view and the bare form — with its own save control — for `page`.
+ * @param props - the owner view, the injected scope/auth faces, and copy.
+ * @returns the entry.
+ */
+export function KimiBundleConfig({ view, useSettings, scope, auth, authT, renderModelPicker, harnessModel, useSessions, t }: KimiBundleConfigProps) {
+  const state = useCardState(view === 'page', useSettings, scope, harnessModel, t)
+  if (view === 'summary') return <span className={css.description}>{t('card.description')}</span>
+  return <CardBody state={state} auth={auth} authT={authT} renderModelPicker={renderModelPicker} useSessions={useSessions} t={t} />
 }

@@ -47,21 +47,22 @@ const ROOT_MOUNTED: CanvasPluginInventorySnapshot = {
 
 interface BenchOptions {
   rows?: Record<string, unknown>
-  current?: string
   /** The inventory answer; undefined = a host with NO pluginInventory namespace. */
   composition?: CanvasPluginInventorySnapshot
   compositionFails?: boolean
 }
 
 function bench(over: BenchOptions = {}) {
+  // The alpha.2 list shape: 0.1.6-alpha.2 dropped the top-level `current`
+  // (the on-screen session is now a per-row `retainedBy.mainView` count) and
+  // `currentAddress`; the criterion reads `byId` only, on either host line.
   const list = createSnapshotStore({
     ids: Object.keys(over.rows ?? {}),
     byId: over.rows ?? {},
-    current: over.current as SessionId | undefined,
-    phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+    phase: 'ready', subagentsByParent: {}, jobsBySession: {},
   })
   const ctx = new Context()
-  ctx.provide('sessions', { list, open: vi.fn() } as never)
+  ctx.provide('sessions', { list } as never)
   const pluginInventory = over.composition === undefined && over.compositionFails !== true
     ? undefined
     : {
@@ -109,6 +110,17 @@ describe('CanvasTabVisibility.show', () => {
     })
     await settled()
     expect(visibility.show('s1' as SessionId)).toBe(false)
+  })
+
+  it('reads the alpha.2 row shape (per-row retainedBy main-view counts)', async () => {
+    const { visibility } = bench({
+      rows: {
+        s1: { id: 's1', retainedBy: { mainView: 1 }, projectionValues: { agentPreset: 'dsh-writing' } },
+      },
+      composition: PRESET_MOUNTED,
+    })
+    await settled()
+    expect(visibility.show('s1' as SessionId)).toBe(true)
   })
 
   it('fails open without a pluginInventory namespace', () => {

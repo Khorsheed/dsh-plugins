@@ -445,28 +445,57 @@ describe('CanvasTab — the draft row', () => {
     expect(stripLabels()).toEqual(['为什么人们不愿表达异议', '反方观点'])
   })
 
-  it('files the card under the row’s own category, on ⌘⏎ only, and keeps the row for the next one', async () => {
+  it('files a one-line draft on bare ⏎ and returns to the board it landed on', async () => {
     const { mocks, store, props } = makeBench([board(CANVAS_ID, [card('c_1')])])
     render(<CanvasTab {...props} />)
     await pickCategory('反方观点')
     const editor = await screen.findByPlaceholderText(/写点什么/)
+    // One line: the hint promises ⏎.
+    screen.getByText('⏎ 建卡 · Esc 关掉这张标签')
     fireEvent.compositionStart(editor)
     fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })
     expect(mocks.putCard).not.toHaveBeenCalled()
     fireEvent.compositionEnd(editor)
     typeInto(editor, '会上其实有人想反对')
-    fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })
+    // A stray blur is never a create.
+    fireEvent.blur(editor)
+    expect(mocks.putCard).not.toHaveBeenCalled()
+    fireEvent.keyDown(editor, { key: 'Enter' })
     await waitFor(() => {
       expect(mocks.putCard).toHaveBeenCalledWith('s1', {
         canvasId: CANVAS_ID, kind: custom.id, text: '会上其实有人想反对',
       })
     })
     await screen.findByText('已建卡')
-    // The row STAYS (it is where cards get filed) and comes back empty, and a
-    // stray blur is never a create.
-    expect(store.source.getSnapshot().active).toBe(draftTabId(CANVAS_ID))
-    fireEvent.blur(editor)
-    expect(mocks.putCard).toHaveBeenCalledTimes(1)
+    // The row's work is done: it comes off the strip, and the board that took
+    // the card is what shows.
+    expect(store.source.getSnapshot().tabs.map(row => row.id)).toEqual([boardTabId(CANVAS_ID)])
+    expect(store.source.getSnapshot().active).toBe(boardTabId(CANVAS_ID))
+    await screen.findByText('卡片 c_1')
+  })
+
+  it('treats ⏎ as the newline it is once the draft runs to two lines — ⌘⏎ still files', async () => {
+    const { mocks, store, props } = makeBench([board(CANVAS_ID, [card('c_1')])])
+    render(<CanvasTab {...props} />)
+    await pickCategory('反方观点')
+    const editor = await screen.findByPlaceholderText(/写点什么/)
+    typeInto(editor, '第一行\n第二行')
+    // Two lines: ⏎ is a newline and the hint says so.
+    screen.getByText('⌘⏎ 建卡（⏎ 已是换行）· Esc 关掉这张标签')
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    expect(mocks.putCard).not.toHaveBeenCalled()
+    // Shift+⏎ is the explicit newline even while the words are one line.
+    typeInto(editor, '只有一行')
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })
+    expect(mocks.putCard).not.toHaveBeenCalled()
+    fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })
+    await waitFor(() => {
+      expect(mocks.putCard).toHaveBeenCalledWith('s1', {
+        canvasId: CANVAS_ID, kind: custom.id, text: '只有一行',
+      })
+    })
+    await screen.findByText('已建卡')
+    expect(store.source.getSnapshot().active).toBe(boardTabId(CANVAS_ID))
   })
 
   it('saves a draft that is only ink, with the strokes and an empty body', async () => {

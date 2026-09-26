@@ -15,7 +15,8 @@
  * @module @khorsheed/dsh-sidechat/client
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { IconRightUpOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconRightUpOutlineMedium } from './icons.tsx'
 import type { QuoteActionProps } from './contract.ts'
 import css from './QuoteAction.module.css'
 
@@ -58,7 +59,7 @@ export function QuoteAction({ messageId, sessionId, useSessions, quote, openSide
           data-phase={phase}
           onClick={onClick}
         >
-          <IconRightUpOutline16 />
+          <IconRightUpOutlineMedium />
         </button>
       </Tooltip>
       {phase === 'done' && <span className={css.notice}>{t('action.quoted')}</span>}

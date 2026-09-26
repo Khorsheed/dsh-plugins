@@ -41,7 +41,8 @@ dsh plugin --profile web remove @khorsheed/dsh-whalesong
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面，全量构建测试通过；blocked 铃改订阅 `ctx.uiSession.pendingInteractions`（ui-session 服务），该服务缺席的组合里 blocked 铃静默关闭，完成铃不受影响。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面，全量构建测试通过；blocked 铃订阅 ui-session 服务的 Session status 快照（0.1.5 宿主的旧 `ctx.uiSession.pendingInteractions` 面经适配层前向兼容），该服务缺席的组合里 blocked 铃静默关闭，完成铃不受影响。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
+- 0.1.6-alpha.2 预发布线（`@deepseek-ai/dsh@0.1.6-alpha.2`）：✅ 完整——`SessionPendingInteractionSnapshot` 面在 alpha.2 删除，blocked 铃改读统一的 `ctx.uiSession.sessionStatus`（取各项 `pendingInteraction`）；探测 + 适配保持 0.1.5 线可用，minHost 不动。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）
 
 **版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.0`）。

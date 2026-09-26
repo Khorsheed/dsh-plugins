@@ -26,13 +26,15 @@
       "types": "./lib/types/cli.d.ts",
       "default": "./lib/cli.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "lib/*.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "locale/*.json"
   ],
   "license": "MIT",
   "peerDependencies": {
@@ -49,8 +51,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
-    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-subprocess": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.7-rc.1",
+    "@deepseek-ai/dsh-subprocess": "^0.1.7-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1",
     "@types/node": "^22.0.0",
     "tsdown": "^0.22.2",

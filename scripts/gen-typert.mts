@@ -312,6 +312,17 @@ async function buildOverlay(packages: readonly TypertPackage[]): Promise<void> {
     const dir = /^\.\/(.+\/src)\//.exec(targets[0] ?? '')
     if (dir !== null) paths[`${match[1]}/src/*`] = [`./${dir[1]}/*`]
   }
+  // The 0.1.7-rc.1 host renamed @deepseek-ai/dsh-agent-presets to
+  // @deepseek-ai/dsh-agent-preset-registry (API carried over), and plugins
+  // dual-name-probe the module at runtime, so the OLD name must still
+  // type-check here — the overlay has no node_modules copy of it (the
+  // harness no longer ships it, and plugin devDependencies are not overlaid).
+  // Alias it onto the new name's source-plane mapping: the surfaces are the
+  // same by upstream contract, and every consumer casts structurally anyway.
+  const presetRegistryPaths = paths['@deepseek-ai/dsh-agent-preset-registry']
+  if (paths['@deepseek-ai/dsh-agent-presets'] === undefined && presetRegistryPaths !== undefined) {
+    paths['@deepseek-ai/dsh-agent-presets'] = presetRegistryPaths
+  }
   base.compilerOptions = { ...base.compilerOptions, paths }
   writeFileSync(basePath, `${JSON.stringify(base, null, 2)}\n`)
   const aggregatePath = join(overlay, 'tsconfig.host.json')
@@ -437,6 +448,26 @@ export function releaseTypertLock(lockDir: string): void {
   rmSync(lockDir, { recursive: true, force: true })
 }
 
+/**
+ * Dual-shape strict codecs for the 0.1.5↔rc.1 loader split. The 0.1.5
+ * typert-loader validates (and consumes) an EAGER zod instance at
+ * `codec.schema` (packages/typert/loader/src/index.ts:263-274 @ 0.1.5) and
+ * does not reject unknown keys; rc.1 validates (and consumes) a LAZY factory
+ * at `codec.create` (same function, :265-284 @ rc.1) and likewise tolerates
+ * extras. The rc.1 generator emits only `create`. Materializing the same
+ * factory once as `schema: <factory>()` therefore satisfies both loaders at
+ * zero cost on either: the factory's own `$value` memoization makes the eager
+ * call return the one instance every later `create()` also hands out, and
+ * every factory const is declared before the TYPERT manifest literal that
+ * references it (verified across all 30 generated faces), so the call is
+ * TDZ-safe. The single `create: <identifier>,` literal shape covers every
+ * emission site — invocation parameter/result/Context codecs and
+ * TYPERT.schemas entries alike.
+ */
+export function dualShapeCodecs(content: string): string {
+  return content.replace(/^([ \t]*)create: ([A-Za-z0-9_$]+),$/gm, '$1create: $2,\n$1schema: $2(),')
+}
+
 /** Run one generation batch; returns the repo-relative outputs written, hashed. */
 async function generate(selected: readonly TypertPackage[]): Promise<Record<string, string>> {
   const generatorModule = join(harness, 'packages/typert/generator/src/workspace.ts')
@@ -446,8 +477,9 @@ async function generate(selected: readonly TypertPackage[]): Promise<Record<stri
   const written: Record<string, string> = {}
   const write = (out: string, name: string, content: string): void => {
     const path = join(out, name)
-    writeFileSync(path, content)
-    written[relative(repoRoot, path)] = createHash('sha256').update(content).digest('hex')
+    const finalContent = name.endsWith('.js') ? dualShapeCodecs(content) : content
+    writeFileSync(path, finalContent)
+    written[relative(repoRoot, path)] = createHash('sha256').update(finalContent).digest('hex')
   }
   await buildOverlay(selected)
   try {

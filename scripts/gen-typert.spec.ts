@@ -2,12 +2,51 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { acquireTypertLock, copyTypertPackageSources, copyTypertSiblingTypes, harnessGitState, isTypertCacheFresh, releaseTypertLock, selectTypertPackages, typertFileHash, typertInputHash, typertSiblingTypePaths, TYPERT_PACKAGES, writeTypertCache } from './gen-typert.mts'
+import { acquireTypertLock, copyTypertPackageSources, copyTypertSiblingTypes, dualShapeCodecs, harnessGitState, isTypertCacheFresh, releaseTypertLock, selectTypertPackages, typertFileHash, typertInputHash, typertSiblingTypePaths, TYPERT_PACKAGES, writeTypertCache } from './gen-typert.mts'
 
 const temporaryRoots: string[] = []
 
 afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+describe('dualShapeCodecs', () => {
+  it('materializes an eager schema beside every lazy create factory, keeping indentation', () => {
+    const generated = [
+      'const X$schema = () => (X$schema$value ??= z.object({}))',
+      'export const TYPERT = {',
+      '  invocations: [',
+      '    {',
+      '      parameters: [',
+      '        {',
+      '          codec: {',
+      '            mode: \'strict\',',
+      '            typeSymbol: \'pkg/types#Req\',',
+      '            create: X$schema,',
+      '          },',
+      '        },',
+      '      ],',
+      '      result: {',
+      '        mode: \'strict\',',
+      '        typeSymbol: \'pkg/types#Res\',',
+      '        create: X$schema,',
+      '      },',
+      '    },',
+      '  ],',
+      '}',
+    ].join('\n')
+    const out = dualShapeCodecs(generated)
+    expect(out).toContain('            create: X$schema,\n            schema: X$schema(),')
+    expect(out).toContain('        create: X$schema,\n        schema: X$schema(),')
+    // Two codec literals transformed, nothing else touched.
+    expect(out.match(/schema: X\$schema\(\),/g)).toHaveLength(2)
+    expect(out.replace(/^([ \t]*)create: [A-Za-z0-9_$]+,\n\1schema: [A-Za-z0-9_$]+\(\),$/gm, '')).toBe(generated.replace(/^([ \t]*)create: [A-Za-z0-9_$]+,$/gm, ''))
+  })
+
+  it('leaves content without create-factory literals byte-identical', () => {
+    const plain = 'const x = { created: 1, create: makeThing, }\nfoo(createBar)\n'
+    expect(dualShapeCodecs(plain)).toBe(plain)
+  })
 })
 
 describe('selectTypertPackages', () => {

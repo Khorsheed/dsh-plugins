@@ -56,11 +56,14 @@ import { expandHome } from './validate.ts'
 
 /** The names this module registers, in registration order. */
 export const EVAL_TOOL_NAMES: readonly string[] =
-  ['eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_analysis_write', 'eval_run_status', 'eval_cells']
+  [
+    'eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_analysis_write', 'eval_run_status', 'eval_cells',
+    'eval_experiment_get',
+  ]
 
 /**
  * JSON pass-through output. The rendering is the whole document, pretty —
- * what the render emits IS what the model reads, and every field these five
+ * what the render emits IS what the model reads, and every field these
  * tools return is one the caller asked for: a condition's sha and unresolved
  * list, a plan's diagnostics, a draft's paths and verdict, a run's meta
  * digest, a cell's stage and refs.
@@ -224,12 +227,26 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       + 'refused; home.sha is nulled on every copy (the scoped home is not provisioned yet) and the notes record '
       + 'what was copied from what. On a plan that declares a unit_image, a copy whose source has no container segment '
       + 'gets one filled in from its harness\'s default credential mount, recorded in the notes. '
-      + 'Call eval_conditions first to see what there is to copy.',
+      + 'Call eval_conditions first to see what there is to copy. '
+      + '起草时把人的问题原样写进 question: the plan carries what the experiment is FOR, and the conclusion card '
+      + 'answers that sentence, so do not paraphrase it.',
     parameters: {
       name: {
         type: 'string',
         required: true,
         description: 'The experiment name — shown in the lab list, and the stem of the experiment id.',
+      },
+      question: {
+        type: 'string',
+        description: 'The question this experiment answers — the person\'s own sentence, verbatim. The design page shows it first and the conclusion card answers it.',
+      },
+      expectation: {
+        type: 'string',
+        description: 'What the person expects the answer to be, in their words. Omit when they have no expectation.',
+      },
+      answered_when: {
+        type: 'string',
+        description: 'One sentence: what result would count as having answered the question.',
       },
       dataset: {
         type: 'string',
@@ -323,6 +340,9 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       const session = sessionOf(exec)
       return (await service.draftExperiment({
         name: args.name,
+        ...(args.question === undefined ? {} : { question: args.question }),
+        ...(args.expectation === undefined ? {} : { expectation: args.expectation }),
+        ...(args.answered_when === undefined ? {} : { answeredWhen: args.answered_when }),
         dataset: args.dataset,
         ...(args.commit === undefined ? {} : { commit: args.commit }),
         items: [...args.items],
@@ -458,6 +478,32 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
         ...(args.task !== undefined ? { task: args.task } : {}),
         ...(args.condition !== undefined ? { condition: args.condition } : {}),
       }) as unknown as JsonValue
+    },
+  }))
+
+  definitions.push(defineTool({
+    name: 'eval_experiment_get',
+    description:
+      'ONE experiment the way the 实验室 tab shows it, in one read: its list row (name, status word, dataset pin, '
+      + 'conditions, judges, matrix size, progress, validation), the newest run\'s digest (state, bucket counts, '
+      + 'unreleased units, readiness warnings), every run id it has, the analysis files already written into it, '
+      + 'and the ANSWER INDEX — one entry per task × condition × rep ("P0 × high × #1") with the stage, the '
+      + 'checkpoints it reached, and the NAMES of the files its attempt handed in. Cite answers in an analysis by '
+      + 'that handle and those names; the index carries no paths, and none are needed. Read-only: nothing here '
+      + 'starts, finalizes, provisions, retries, or scores anything — approving a plan and the human evaluation '
+      + 'stay on the 实验室 pages.',
+    parameters: {
+      experiment: {
+        type: 'string',
+        required: true,
+        description: 'The experiment id (eval_cells without run_id lists them), or one of its run ids.',
+      },
+    },
+    output: jsonOutput(),
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      const session = sessionOf(exec)
+      return (await service.experimentGet(args.experiment, session === undefined ? {} : { session })) as unknown as JsonValue
     },
   }))
 

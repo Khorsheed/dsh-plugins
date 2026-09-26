@@ -35,8 +35,8 @@
 
 - insert:
     # Code Mode is a core execution capability, not a Web component.
-    - id: code-runtime
-      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+    - id: ptc-runtime
+      name: '@deepseek-ai/dsh-ptc-runtime-node'
 
     - id: local-agent-dsh-headless-startup
       name: '@khorsheed/dsh-local-agent-dsh-headless/startup'

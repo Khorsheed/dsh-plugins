@@ -219,6 +219,11 @@ export interface EvalExperimentRow {
   legacy: boolean
   /** Display name: the experiment's name; a legacy run falls back to its plan file's stem, then its run id. */
   name: string
+  /**
+   * The plan's question (v1-rev14), verbatim — the list row's second line.
+   * Null for a plan that asks none and for a legacy run no experiment claims.
+   */
+  question: string | null
   /** The plan document (absolute); null when a run's meta does not record one. */
   planPath: string | null
   /** The mission run, when the experiment has been started. */
@@ -424,6 +429,20 @@ export interface EvalPlanDigest {
   unit: EvalExperimentUnit | null
   /** The plan's own review commentary, verbatim; null when it carries none. */
   notes: string | null
+  /** The question block (v1-rev14); null on a plan that says none of the three. */
+  question: EvalPlanQuestion | null
+}
+
+/**
+ * What an experiment is run to answer (plan v1-rev14): the person's question,
+ * their expectation and what counts as answered, each verbatim. A plan from
+ * rev13 or earlier has none, and the block is null rather than three nulls so
+ * a page has one thing to test before it draws nothing.
+ */
+export interface EvalPlanQuestion {
+  question: string | null
+  expectation: string | null
+  answeredWhen: string | null
 }
 
 /** The plan-review page's answer: what the plan says, and what validate makes of it. */
@@ -575,6 +594,34 @@ export interface EvalConditionProvisionView {
   checks: EvalPlanCheck[]
   /** The registry row as it now reads; null when the listing could not be retaken. */
   row: EvalConditionRow | null
+}
+
+/**
+ * The design page's in-place number edit (T74): which experiment, and the
+ * values to set. An omitted field is left as it is; every other byte of the
+ * plan is left as it is too.
+ */
+export interface EvalPlanNumbersRequest {
+  experimentId: string
+  /** 每组次数 — independent samples per cell, integer ≥ 1. */
+  reps?: number
+  /** Per-cell budget in active minutes, > 0. */
+  activeMinutes?: number
+  /** Per-cell budget in delegation turns, integer ≥ 1. */
+  turns?: number
+  /** 判官采样数, integer ≥ 0; the plan must already declare a judge. */
+  judgeSamples?: number
+}
+
+/** What one number edit changed, and the plan review as it now reads. */
+export interface EvalPlanNumbersResult {
+  experimentId: string
+  /** The fields whose value changed; empty when every value was already this. */
+  changes: Array<{ field: 'reps' | 'budget.activeMinutes' | 'budget.turns' | 'judge.samples'; before: number; after: number }>
+  /** Whether plan.json was written. */
+  written: boolean
+  /** Re-read and re-validated after the write — the page never guesses what its own edit produced. */
+  review: EvalPlanReview
 }
 
 /** Which condition's `model.endpoint` a human is setting, and to what. */
@@ -739,6 +786,12 @@ export interface EvalDraftRequest {
   exports?: string
   /** Review commentary, written into the plan verbatim. */
   notes?: string
+  /** The question the experiment answers, the person's own sentence (v1-rev14). */
+  question?: string
+  /** What the person expects the answer to be (v1-rev14). */
+  expectation?: string
+  /** What result would count as answered (v1-rev14). */
+  answeredWhen?: string
 }
 
 /**
@@ -1496,6 +1549,12 @@ export interface EvalRunReportView {
   notes: string[]
   /** The experiment this run belongs to; null for a legacy run no experiment claims. */
   experimentId: string | null
+  /**
+   * The experiment's question block (v1-rev14), read from its plan.json —
+   * what the conclusion card answers. Null for an older plan, and for a run
+   * no experiment claims; the card then gives the pairing conclusion alone.
+   */
+  question: EvalPlanQuestion | null
   /**
    * The experiment's `analysis/` files, newest first — the 分析初稿 block.
    * Empty when there are none or the run belongs to no experiment; the page

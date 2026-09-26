@@ -114,7 +114,7 @@ function toolResult(): SessionEvent {
   return event as SessionEvent
 }
 
-/** A restore replay of a user message (append, plugin, no op). */
+/** A restore replay of a user message (append, no op) pinned to the LEGACY released-V3 wrapper source form. */
 function restoreEvent(fromSeq: number, text: string): SessionEvent {
   const event = {
     type: 'user/message',
@@ -133,7 +133,7 @@ function restoreEvent(fromSeq: number, text: string): SessionEvent {
   return event as SessionEvent
 }
 
-/** A restore replay of assistant text (append, plugin, op 'restore-assistant'). */
+/** A restore replay of assistant text (append, op 'restore-assistant') in the current producer-owned source form. */
 function restoreAssistantEvent(fromSeq: number, text: string): SessionEvent {
   const event = {
     type: 'user/message',
@@ -152,7 +152,7 @@ function restoreAssistantEvent(fromSeq: number, text: string): SessionEvent {
   return event as SessionEvent
 }
 
-/** An edit trigger wake message (append, plugin, op 'edit-trigger'). */
+/** An edit trigger wake message (append, op 'edit-trigger') in the current producer-owned source form. */
 function editTriggerEvent(): SessionEvent {
   const event = {
     type: 'user/message',
@@ -279,7 +279,7 @@ describe('planWithdrawal', () => {
 })
 
 describe('isMessageToolsReplacement', () => {
-  it('matches a plugin-tagged user/message replacement', () => {
+  it('matches a producer-sourced user/message replacement (legacy wrapper form)', () => {
     reset()
     const event = withdrawalReplacement(2, 5, [2, 3, 4, 5])
     expect(isMessageToolsReplacement(event)).toBe(true)
@@ -291,7 +291,7 @@ describe('isMessageToolsReplacement', () => {
     expect(isMessageToolsReplacement(userMessage('first'))).toBe(false)
   })
 
-  it('rejects replacements from other plugins', () => {
+  it('rejects replacements from other producers', () => {
     reset()
     const event = withdrawalReplacement(0, 1, [0, 1])
     const compact = {

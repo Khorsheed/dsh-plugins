@@ -19,7 +19,7 @@ export interface WorktreesPluginConfig {
    * Branch the committed segment (`base...HEAD`) and ahead/behind are
    * measured against. '' disables the committed segment entirely.
    */
-  baseRef?: string
+  baseRef?: string | undefined
   /**
    * Agent-preset ids the session-header badge stays visible for. Absent or
    * empty keeps the badge unconditionally visible (the zero-change default);
@@ -30,10 +30,13 @@ export interface WorktreesPluginConfig {
    * boot composes client entries without config, so the client apply never
    * sees this object.
    */
-  visiblePresets?: string[]
+  visiblePresets?: string[] | undefined
 }
 
-export const Config: z<WorktreesPluginConfig> = z.object({
+// Bare `z`: schemastery 3.18.4's tightened variance reports TS2375 on the
+// annotated form under exactOptionalPropertyTypes (the ankh-guard precedent);
+// the interface stays the apply parameter type.
+export const Config: z = z.object({
   baseRef: z.string().default('main'),
   visiblePresets: z.array(z.string()).default([]),
 })

@@ -112,8 +112,12 @@ describe('session-mirror', () => {
     expect(calls[0]!.data).toMatchObject({ callId: 'kimi-tool-3', name: 'Write', arguments: '' })
     const results = events.filter(event => event.type === 'tool/result')
     expect(results).toHaveLength(1)
-    expect(results[0]!.data.message.content[0]).toMatchObject({
-      type: 'tool-result',
+    // rc.1's tool-result message is the native tool role: the call id and the
+    // error flag sit at the message top level, the content holds the raw
+    // result blocks (the pre-V4 shape wrapped everything in one content
+    // block — the mirror reads both, see session-mirror.ts).
+    expect(results[0]!.data.message).toMatchObject({
+      role: 'tool',
       toolCallId: 'kimi-tool-3',
       content: [{ type: 'text', text: 'Wrote 10 bytes' }],
       isError: false,
@@ -150,8 +154,8 @@ describe('session-mirror', () => {
     total = await mirrorKimiSession(ctx, child, home, 's1', total)
     const results = child.snapshotEvents().filter(event => event.type === 'tool/result')
     expect(results).toHaveLength(1)
-    expect(results[0]!.data.message.content[0]).toMatchObject({
-      type: 'tool-result',
+    expect(results[0]!.data.message).toMatchObject({
+      role: 'tool',
       toolCallId: 'tc1',
       content: [{ type: 'text', text: 'Wrote 10 bytes' }],
     })

@@ -308,8 +308,14 @@ export async function mirrorKimiSessionDelta(
       const call = event.data as { turn: number; step: number; callId: string }
       openCalls.set(call.callId, { turn: call.turn, step: call.step, seq: event.seq })
     } else if (event.type === 'tool/result') {
-      const message = (event.data as { message?: { content?: readonly { type: string; toolCallId?: string }[] } }).message
-      const id = message?.content?.[0]?.toolCallId
+      // The call id moved with the V4 message shape: rc.1's native tool-role
+      // message carries it at the top level, the pre-V4 user-role shape
+      // wrapped it in the single content block. Read both — a session
+      // mirrored before the upgrade still owes its old-shape results pairing.
+      const message = (event.data as {
+        message?: { toolCallId?: string; content?: readonly { type: string; toolCallId?: string }[] }
+      }).message
+      const id = message?.toolCallId ?? message?.content?.[0]?.toolCallId
       if (id !== undefined) {
         openCalls.delete(id)
         settledCalls.add(id)
