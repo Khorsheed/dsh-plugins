@@ -190,3 +190,41 @@ describe('mobile session navigation', () => {
   })
 
 })
+
+describe('cold mobile catalog enrichment', () => {
+  it('hydrates a visible cold title through the official projection store without opening it', async () => {
+    const f = fixture()
+    let state = list([row('cold', { cwd: '/home/user/project', displayTitle: 'project' })])
+    const listeners = new Set<() => void>()
+    const refreshProjections = vi.fn(async () => {
+      state = list([row('cold', { cwd: '/home/user/project', displayTitle: 'Saved conversation', title: 'Saved conversation' })])
+      for (const listener of listeners) listener()
+    })
+    const sessions = { list: { getSnapshot: () => state, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } } }, refreshProjections }
+    const navigation = { ...f.navigation, sessions } as unknown as NavigationCapabilities
+    await act(async () => { render(<MobileLibrary navigation={navigation} onOpen={f.onOpen} t={t}/>) })
+    expect(refreshProjections).toHaveBeenCalledExactlyOnceWith('cold')
+    expect(screen.getByText('Saved conversation')).toBeTruthy()
+    expect(f.openSession).not.toHaveBeenCalled()
+  })
+  it('does no catalog enrichment while the library is hidden and cancels offscreen queued reads', async () => {
+    const f = fixture()
+    const callbacks: IntersectionObserverCallback[] = []
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: IntersectionObserverCallback) { callbacks.push(callback) }
+      observe() {} disconnect() {}
+    })
+    const refreshProjections = vi.fn(() => new Promise<void>(() => {}))
+    const state = list(Array.from({ length: 8 }, (_, i) => row(String(i), { displayTitle: 'project' })))
+    const navigation = { ...f.navigation, sessions: { list: { getSnapshot: () => state, subscribe: () => () => {} }, refreshProjections } } as unknown as NavigationCapabilities
+    const page = render(<MobileLibrary navigation={navigation} onOpen={f.onOpen} t={t} visible={false}/>)
+    expect(callbacks).toHaveLength(0)
+    expect(refreshProjections).not.toHaveBeenCalled()
+    page.rerender(<MobileLibrary navigation={navigation} onOpen={f.onOpen} t={t} visible/>)
+    await act(async () => {
+      for (const callback of callbacks) callback([{ isIntersecting: true }] as IntersectionObserverEntry[], {} as IntersectionObserver)
+    })
+    expect(refreshProjections).toHaveBeenCalledTimes(2)
+    page.unmount()
+  })
+})

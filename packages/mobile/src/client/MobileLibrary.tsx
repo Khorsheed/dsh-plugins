@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { GROUPING_KEY, groupSessions, mainSessionId, recentSessions } from './navigation.ts'
 import type { LibraryGrouping, NavigationCapabilities } from './navigation.ts'
 import type { MobileRooms } from './rooms.ts'
+import { CatalogReads } from './catalogReads.ts'
 import { MobileIcon } from './MobileIcon.tsx'
 import { hasNativeAction, requestNativeAction } from './native.ts'
 
-type Props = PropsLocale<'mobile'> & { rooms?: MobileRooms; navigation: NavigationCapabilities; onOpen: () => void; onBeforeOpen?: () => void }
+type Props = PropsLocale<'mobile'> & { rooms?: MobileRooms; navigation: NavigationCapabilities; onOpen: () => void; onBeforeOpen?: () => void; visible?: boolean }
 
 /** Browse official metadata; the official workspace service remains the only navigation writer. */
-export function MobileLibrary({ rooms, navigation, onOpen, onBeforeOpen, t }: Props) {
+export function MobileLibrary({ rooms, navigation, onOpen, onBeforeOpen, visible = true, t }: Props) {
+  const reads = useMemo(() => new CatalogReads(), [navigation.sessions])
   const sessionFeed = navigation.sessions.list, workspaceFeed = navigation.workspaces.list
   // Official feeds may expose prototype methods. Keep their receiver and stable subscriptions.
   const sessions = useSyncExternalStore(useCallback(listener => sessionFeed.subscribe(listener), [sessionFeed]), useCallback(() => sessionFeed.getSnapshot(), [sessionFeed]))
@@ -46,7 +48,7 @@ export function MobileLibrary({ rooms, navigation, onOpen, onBeforeOpen, t }: Pr
             <button data-mobile-session data-mobile-session-id={row.id} aria-current={current === row.id ? 'page' : undefined} onClick={() => {
               try { onBeforeOpen?.(); navigation.workspace.openSession(row.id); setError(false); onOpen() } catch { setError(true) }
             }}>
-              <span data-mobile-session-copy><strong>{row.title || (row.blank ? t('newSession') : row.displayTitle)}</strong><SessionMetadata id={row.id} cwd={row.cwd ?? ''} {...(rooms ? { rooms } : {})} t={t}/></span>
+              <span data-mobile-session-copy><strong>{row.title || (row.blank ? t('newSession') : row.displayTitle)}</strong><SessionMetadata row={row} sessions={navigation.sessions} reads={reads} visible={visible} {...(rooms ? { rooms } : {})} t={t}/></span>
               {row.running ? <span data-mobile-activity role="status">{t('running')}</span> : <time dateTime={new Date(row.updatedAt).toISOString()}>{new Date(row.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time>}
             </button>
           </li>)}</ul>}
@@ -62,15 +64,33 @@ export function MobileLibrary({ rooms, navigation, onOpen, onBeforeOpen, t }: Pr
 
 const emptyRoomSubscribe = () => () => {}
 const emptyRoomSnapshot = () => 0
-function SessionMetadata({ id, cwd, rooms, t }: { id: string; cwd: string; rooms?: MobileRooms } & PropsLocale<'mobile'>) {
+function SessionMetadata({ row, sessions, reads, visible, rooms, t }: { row: ReturnType<typeof recentSessions>[number]; sessions: NavigationCapabilities['sessions']; reads: CatalogReads; visible: boolean; rooms?: MobileRooms } & PropsLocale<'mobile'>) {
   const ref = useRef<HTMLElement>(null)
   useSyncExternalStore(rooms?.subscribe ?? emptyRoomSubscribe, rooms?.getSnapshot ?? emptyRoomSnapshot)
   useEffect(() => {
-    if (!rooms?.available() || !ref.current) return
-    if (typeof IntersectionObserver === 'undefined') { void rooms.refresh(id); return }
-    const observer = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) { void rooms.refresh(id); observer.disconnect() } })
-    observer.observe(ref.current); return () => observer.disconnect()
-  }, [rooms, id])
-  const state = rooms?.get(id), count = state ? state.members.length : state === null || !rooms?.available() ? 1 : '…'
-  return <small ref={ref}>{cwd.split(/[\\/]/).filter(Boolean).at(-1) || t('unassignedWorkspace')} · {count} {t('memberUnit')}</small>
+    if (!visible || !ref.current) return
+    let cancel: (() => void) | undefined
+    const enter = () => {
+      if (cancel) return
+      // Cold list hints may omit titles. Read the official projection store without
+      // retaining/opening a Session; queued title reads take priority over Room scans.
+      const cancelTitle = !row.title && !row.blank && typeof sessions.refreshProjections === 'function'
+        ? reads.add(async () => { await sessions.refreshProjections(row.id) }, 0)
+        : undefined
+      const cancelRoom = rooms?.available()
+        ? reads.add(async () => { await rooms.refresh(row.id) })
+        : undefined
+      cancel = () => { cancelTitle?.(); cancelRoom?.() }
+    }
+    const leave = () => { cancel?.(); cancel = undefined }
+    if (typeof IntersectionObserver === 'undefined') { enter(); return leave }
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) enter()
+      else leave()
+    }, { root: ref.current.closest('[data-mobile-recents]') })
+    observer.observe(ref.current)
+    return () => { observer.disconnect(); leave() }
+  }, [rooms, row.id, row.title, row.blank, sessions, reads, visible])
+  const state = rooms?.get(row.id), count = state ? state.members.length : state === null || !rooms?.available() ? 1 : '…'
+  return <small ref={ref}>{(row.cwd ?? '').split(/[\\/]/).filter(Boolean).at(-1) || t('unassignedWorkspace')} · {count} {t('memberUnit')}</small>
 }
