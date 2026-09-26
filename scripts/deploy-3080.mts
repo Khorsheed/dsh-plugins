@@ -104,10 +104,13 @@ function sha256(path) {
  * The restart verb for step 5. The live watchdog pins its preflight runner by
  * path+sha256 in `state/launch-spec.json`; whenever a deploy rebuilt
  * ankh-guard's runner (any change to preflight-runner.ts), schedule-exit's
- * binding check refuses — the guard self-deploy deadlock. On drift, rebind
- * and restart through reconfigure instead (transactional, restore-previous on
- * failure), copying every field from the live spec. No spec, an unreadable
- * spec, or an unchanged runner keeps the ordinary schedule-exit path.
+ * binding check refuses — the guard self-deploy deadlock. A host-version
+ * cutover drifts the pinned install anchor the same way (the anchor is the
+ * CLI's package.json, whose version field moves with the host — rc.1 → rc.2,
+ * 2026-09-27). On either drift, rebind and restart through reconfigure instead
+ * (transactional, restore-previous on failure), copying every field from the
+ * live spec. No spec, an unreadable spec, or no drift keeps the ordinary
+ * schedule-exit path.
  * @returns the guard argv for the restart.
  */
 function restartVerb() {
@@ -118,11 +121,15 @@ function restartVerb() {
   try { active = JSON.parse(readFileSync(specPath, 'utf8')).active } catch { return scheduleExit }
   const pf = active?.preflight
   if (typeof pf?.runnerPath !== 'string' || typeof pf?.runnerSha256 !== 'string' || !existsSync(pf.runnerPath)) return scheduleExit
-  if (sha256(pf.runnerPath) === pf.runnerSha256) return scheduleExit
+  const runnerDrift = sha256(pf.runnerPath) !== pf.runnerSha256
+  const anchorDrift = typeof pf.installAnchor === 'string' && typeof pf.installAnchorSha256 === 'string'
+    && existsSync(pf.installAnchor) && sha256(pf.installAnchor) !== pf.installAnchorSha256
+  if (!runnerDrift && !anchorDrift) return scheduleExit
   if (typeof active?.command !== 'string' || typeof pf.installAnchor !== 'string' || typeof pf.candidateProbeCommand !== 'string') {
-    throw new Error('the bound preflight runner changed on disk and launch-spec.json lacks a field reconfigure needs (command / installAnchor / candidateProbeCommand) — rebind by hand per .agents/notes/implemented/process/2026-09-26-ankh-guard-self-deploy-reconfigure.md')
+    throw new Error('the bound preflight runner or install anchor changed on disk and launch-spec.json lacks a field reconfigure needs (command / installAnchor / candidateProbeCommand) — rebind by hand per .agents/notes/implemented/process/2026-09-26-ankh-guard-self-deploy-reconfigure.md')
   }
-  process.stdout.write('\ndeploy-3080: bound preflight runner changed on disk — rebinding the launch spec through reconfigure (the ankh-guard self-deploy path)\n')
+  const drift = [runnerDrift ? 'preflight runner' : '', anchorDrift ? 'install anchor' : ''].filter(Boolean).join(' and ')
+  process.stdout.write(`\ndeploy-3080: bound ${drift} changed on disk — rebinding the launch spec through reconfigure (the transactional cutover path)\n`)
   if (initiator !== undefined) process.stdout.write('deploy-3080: note — --initiator report routing is schedule-exit-only; the reconfigure receipt lives in state/launch-cutover.json\n')
   // Re-record the green credential: reconfigure runs its composition preflight
   // twice (live + isolated candidate copy) and the 10-minute freshness window

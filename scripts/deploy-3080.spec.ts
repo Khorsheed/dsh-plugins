@@ -125,13 +125,23 @@ describe('deploy 3080 flow', () => {
   // The watchdog pins its preflight runner by path+sha256; a deploy that
   // rebuilds ankh-guard's runner makes schedule-exit refuse, so the flow must
   // rebind through reconfigure with the live spec's own fields (2026-09-26).
-  function writeLaunchSpec(f: { home: string }, runnerContent: string, recordedSha: string) {
+  // A host-version cutover drifts the pinned install anchor (the CLI's
+  // package.json carries the version) and gets the same refusal — same rebind
+  // path (2026-09-27, the rc.1 → rc.2 cutover).
+  function writeLaunchSpec(f: { home: string }, runnerContent: string, recordedSha: string, anchor?: { content: string; recordedSha: string }) {
     const runner = join(f.home, 'state/preflight-runner.js')
     writeFileSync(runner, runnerContent)
+    let installAnchor: string = 'anchor/package.json'
+    let preflightExtra = {}
+    if (anchor !== undefined) {
+      installAnchor = join(f.home, 'state/anchor-package.json')
+      writeFileSync(installAnchor, anchor.content)
+      preflightExtra = { installAnchorSha256: anchor.recordedSha }
+    }
     writeFileSync(join(f.home, 'state/launch-spec.json'), JSON.stringify({ version: 1, active: {
       command: 'node harness/bin.js web', port: 3080, home: f.home,
       credentialRepo: 'harness-repo', harnessRoot: 'harness-root', profile: 'web',
-      preflight: { surface: 'built', runnerPath: runner, runnerSha256: recordedSha, installAnchor: 'anchor/package.json', candidateProbeCommand: 'probe cmd' },
+      preflight: { surface: 'built', runnerPath: runner, runnerSha256: recordedSha, installAnchor, candidateProbeCommand: 'probe cmd', ...preflightExtra },
     } }))
     return runner
   }
@@ -142,6 +152,24 @@ describe('deploy 3080 flow', () => {
     expect(r.status, r.output).toBe(0)
     expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(true)
     expect(r.calls.some(c => c[2] === 'reconfigure')).toBe(false)
+  })
+  it('keeps schedule-exit when runner and install anchor are both current', () => {
+    const f = fixture()
+    const anchorSha = createHash('sha256').update('{"version":"0.1.7-rc.2"}').digest('hex')
+    writeLaunchSpec(f, '// runner', createHash('sha256').update('// runner').digest('hex'), { content: '{"version":"0.1.7-rc.2"}', recordedSha: anchorSha })
+    const r = f.run(false)
+    expect(r.status, r.output).toBe(0)
+    expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(true)
+    expect(r.calls.some(c => c[2] === 'reconfigure')).toBe(false)
+  })
+  it('rebinds through reconfigure when only the install anchor drifted (host-version cutover)', () => {
+    const f = fixture()
+    writeLaunchSpec(f, '// runner', createHash('sha256').update('// runner').digest('hex'), { content: '{"version":"0.1.7-rc.2"}', recordedSha: 'deadbeef'.repeat(8) })
+    const r = f.run(false)
+    expect(r.status, r.output).toBe(0)
+    expect(r.output).toContain('install anchor')
+    expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(false)
+    expect(r.calls.some(c => c[2] === 'reconfigure')).toBe(true)
   })
   it('rebinds through reconfigure with the live spec fields when the runner drifted, re-recording the credential first', () => {
     const f = fixture()
