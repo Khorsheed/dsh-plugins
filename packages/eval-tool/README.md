@@ -17,7 +17,7 @@
   ```
 
 - **运行依赖 core 的全局服务**：apply 时探测的是 **`ctx.dshEval`，不是 `ctx.eval`**——ctx 上叫 `eval` 的属性会遮蔽 loader `with (ctx) { return eval(expr) }` 里的全局 `eval`，凡挂载的组合一遇 `!!js` 即炸（真实 3171 实例踩出）。core（`@khorsheed/dsh-eval`）未挂载则**静默跳过注册**并留一行日志（degrade：不炸 preset 挂载，该 preset 组合照常挂上，只是模型看不到这七个工具）；工具注册走 `ctx.inject(['tools'])` 延迟注入（挂载序竞态的历史教训），无 tools 注册表的组合同样安全。
-- 工具定义工厂由 core 的 `./tool` 子路径导出（`@khorsheed/dsh-eval/tool` 的 `evalToolDefinitions(service)`），业务实现零复制；origin tag 的 owner 是本包（挂在哪个包名下就归因到哪个包）。七个里五个是读；`eval_plan_draft` 建一个实验——plan 进部署的实验目录、新条件进部署的条件库（`$DSH_HOME/state/eval/`），题库仓库一个字节都不写；`eval_analysis_write`（I5·T60，T73 改名收窄）只往一个实验的 `analysis/` 写一个文本文件。**起草不是启动**：run 仍由人在会话里用 `/eval run` 或在计划审阅页按「批准并启动」发起，其余写类动词（materialize / submit / transition / annotate / archive / export）归编排器服务面与人的 CLI。
+- 工具定义工厂由 core 的 `./tool` 子路径导出（`@khorsheed/dsh-eval/tool` 的 `evalToolDefinitions(service)`），业务实现零复制；origin tag 的 owner 是本包（挂在哪个包名下就归因到哪个包）。七个里五个是读；`eval_plan_draft` 建一个实验——plan 进部署的实验目录、新条件进部署的条件库（`$DSH_HOME/state/eval/`），题库仓库一个字节都不写；`eval_analysis_write`（I5·T60，T73 改名收窄）只往一个实验的 `analysis/` 写一个文本文件。**起草不是启动**：run 仍由人在会话里用 `/eval run` 或在实验设计页按「批准并启动」发起，其余写类动词（materialize / submit / transition / annotate / archive / export）归编排器服务面与人的 CLI。
 
 **配置**（可选）：`tools` 决定这一行授予哪一组工具。分组是从 core 搬来的：core 不再注册任何模型工具，也不再贡献提示词段。
 

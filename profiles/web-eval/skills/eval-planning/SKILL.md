@@ -58,7 +58,7 @@ gate refuses a condition that leaves it null — so a plan drafted without it
 cannot start until a person edits JSON. Two conditions declaring different
 endpoints are two subjects, which is a second factor nobody asked for. If the
 condition you copied declares `null`, say so in your reply: that one needs a
-person too, and the conditions page has a field for it.
+person too, and the 实验设计 page's comparison-group table has a field for it.
 
 That is a single-factor pair with `dsh-exec`. Two changes at once is a legal
 plan and a weaker answer — if you draft one, say so in the plan's `notes` and
@@ -89,7 +89,7 @@ Say plainly what is left, in order, and whose it is:
 
 1. **Theirs** — log in to each harness under the condition's scope, then
    `/eval conditions provision <condition id>` for each one.
-2. **Theirs** — read the plan in 实验室 › 计划审阅 and press 批准并启动 (or run
+2. **Theirs** — read the plan in 实验室 › 实验设计 and press 批准并启动 (or run
    `/eval run <experimentId>` in this session).
 3. **Yours, later** — once cells are moving, `eval_cells` (with no arguments it
    lists the experiments; with a `run_id` it goes cell by cell) and

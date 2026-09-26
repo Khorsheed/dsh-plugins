@@ -9,7 +9,7 @@
  * 1. The pickers are filled from what the REPOSITORY holds — the sets, their
  *    items, their stage schemas, and the condition registry — never from a
  *    free-text field that lets a person invent an item id.
- * 2. 保存草稿并 validate lands on 计划审阅. 启动不在这张表单上: the form has no
+ * 2. 保存草稿并 validate lands on 实验设计. 启动不在这张表单上: the form has no
  *    approve verb at all, and the button that starts a run is on the page it
  *    hands the reader to.
  * 3. 新建条件 sends a COPY: an id, the condition it was copied from, and only
