@@ -73,7 +73,11 @@ local-agent 家族七包(core → tool-subagent / dsh-headless → 各 provider)
 
 ## README 图片
 
-包 README 的截图一律用 dsh-web-basic 仓的绝对地址(`https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/<文件>`),不用相对路径——npm 按 `repository` 字段改写相对路径,dsh-plugins 未 public 时会全裂。新增/更新截图时两个仓同步:dsh-plugins 的 `docs/screenshots/` 留档,web-basic 的同名目录是图床,两边文件保持一致。
+包 README 的截图一律用 dsh-web-basic 仓的绝对地址(`https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/<文件>`),不用相对路径——npm 按 `repository` 字段改写相对路径,dsh-plugins 未 public 时会全裂。截图有三个位置,职责各不同(机制细节与事故史见 [README 截图图床 Agent Note](../.agents/notes/implemented/process/2026-09-27-readme-screenshot-hosting.md)):
+
+- **长久跟踪位:`profiles/web-basic/docs/screenshots/`(本仓,`git add -f` 跟踪**——图片扩展名在 gitignore 里)。sync-mirror 只保留这里被 git 跟踪的文件;直接提交进镜像仓的图下一次 sync 就被抹掉
+- **镜像仓 `dsh-web-basic/docs/screenshots/`**:图床本体,raw URL 从这里服务。新图在进跟踪位的同一次提交里也直接提交一份到镜像仓,让 URL 即时生效,不必等下一次 sync
+- **本仓 `docs/screenshots/`**:留档位——doc 页与 Agent Note 本地引用的图片放这里,与包 README 图床互不同步
 
 ## 纪律
 
