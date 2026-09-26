@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-26-icon-artwork-self-owned.md
-.agents/notes/implemented/bug-fix/2026-09-26-icon-artwork-self-owned.md: 83dded733f623c42371cd6fcb782814970460caf
-.agents/notes/implemented/bug-fix/2026-09-26-icon-artwork-self-owned.zh.md: f731de55193610d927143cf8c7e06ed33722d8d1
+.agents/notes/implemented/bug-fix/2026-09-26-icon-artwork-self-owned.md: d4bfc39d0328f63193d48e320e0781cc9b1c8802
+.agents/notes/implemented/bug-fix/2026-09-26-icon-artwork-self-owned.zh.md: 8c4f821654ecd913693485ddd233152d2569e8ef

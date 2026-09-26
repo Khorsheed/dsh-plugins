@@ -8,7 +8,7 @@ Status: implemented
 
 ## Decision
 
-二十个包各自持有一个生成并提交进仓的 `src/client/icons.tsx`,导出与原先导入同名的组件(`IconCheckOutlineMedium` 等),由 `scripts/sync-icon-artwork.mts` 从 harness 检出的 `packages/client/ui-primitives/src/icons/{index.tsx,shared-artwork.tsx}` 生成。生成器解析上游模块的均匀结构(字重包装 → artwork 常量 → 共享 `IconProps`、stroke 常量 `ICON_REGULAR_STROKE`/`ICON_MEDIUM_STROKE`、共享路径常量),把每个用到的图标摊平成自包含 SVG 组件(stroke 宽度内联为字面量,artwork 的 size 默认值保留,复合 artwork 与 shield 路径常量一并折叠),确定性排序输出,并拒绝覆盖不带生成标记的文件——canvas 与 message-tools 既有手写图标文件为此迁名 `icons-local.tsx`。调用点只换说明符(`./icons.tsx` 相对路径,绝不写包根);非图标组件(Button、Modal、FileTypeIcon 等)保持包根外部化导入——它们带宿主主题/上下文身份,且已核实全部存在于 0.1.5 根导出。纯度门无需改动:相对导入不碰它的 `@deepseek-ai/*` 规则。
+二十个包各自持有一个生成并提交进仓的 `src/client/icons.tsx`,导出与原先导入同名的组件(`IconCheckOutlineMedium` 等),由 `scripts/sync-icon-artwork.mts` 从 harness 检出的 `packages/client/ui-primitives/src/icons/{index.tsx,shared-artwork.tsx}` 生成。生成器解析上游模块的均匀结构(字重包装 → artwork 常量 → 共享 `IconProps`、stroke 常量 `ICON_REGULAR_STROKE`/`ICON_MEDIUM_STROKE`、共享路径常量),把每个用到的图标摊平成自包含 SVG 组件(stroke 宽度内联为字面量,artwork 的 size 默认值保留,复合 artwork 与 shield 路径常量一并折叠),确定性排序输出,并拒绝覆盖不带生成标记的文件——canvas 与 message-tools 既有手写图标文件为此迁名 `icons-local.tsx`。调用点只换说明符(`./icons.tsx` 相对路径,绝不写包根);用量扫描因此也读这些相对导入,而来自 ui-primitives 包根的 `Icon*` 值导入一见即抛——React #130 事故类的回归闸。非图标组件(Button、Modal、FileTypeIcon 等)保持包根外部化导入——它们带宿主主题/上下文身份,且已核实全部存在于 0.1.5 根导出。纯度门无需改动:相对导入不碰它的 `@deepseek-ai/*` 规则。
 
 图标是纯 artwork、零宿主运行时态,所以每个 bundle 各带一份在任何宿主线上行为一致——dsh-client-store 内联先例。体积:各 bundle 增量在 +0.4 KB 到 +18.5 KB 之间(tree-shake 后只带用到的图样)。
 
@@ -28,7 +28,7 @@ Status: implemented
 
 ## Testing
 
-`scripts/sync-icon-artwork.spec.ts` 用合成 fixture 钉住解析器与渲染器(九例:本地/共享/fill/复合 artwork 摊平、stroke 常量代入、共享路径常量按需发射、缺名报错、逐字节幂等输出)外加 `collectIconUsage` 的 fixture 例;真跑的 `--check` 模式挡住漂移。二十个包的全量 build+test 与仓级脚本测试套件保持全绿。
+`scripts/sync-icon-artwork.spec.ts` 用合成 fixture 钉住解析器与渲染器(九例:本地/共享/fill/复合 artwork 摊平、stroke 常量代入、共享路径常量按需发射、缺名报错、逐字节幂等输出),外加 `collectIconUsage` 的 fixture 例和一条真实树 pin(凡带生成标记 icons.tsx 的包必须有调用点引用)。收集器的出生缺陷——调用点已切相对模块却仍扫描包根导入,`--check` 于是统计出零使用、从出生起就撞在字母序第一的 canvas 上——已于 2026-09-26 修复,扫描面改为相对模块。真跑的 `--check` 模式挡住漂移。二十个包的全量 build+test 与仓级脚本测试套件保持全绿。
 
 ## Related
 

@@ -4,11 +4,14 @@
  * renderer, the missing-name error, and output idempotence. All fixtures are
  * synthetic — the real harness checkout is a dev-time input, not a test one.
  */
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { collectIconUsage, parseUpstreamIcons, renderIconModule } from './sync-icon-artwork.mts'
+import { GENERATED_MARKER, collectIconUsage, parseUpstreamIcons, renderIconModule } from './sync-icon-artwork.mts'
+
+const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 const FIXTURE_SHARED = `import type { IconProps } from './props.ts'
 
@@ -180,18 +183,52 @@ describe('renderIconModule', () => {
 })
 
 describe('collectIconUsage', () => {
-  it('collects Icon* value imports from the primitives root, skipping type-only and other packages', () => {
+  it('collects Icon* value imports from the generated relative icons module at any depth', () => {
     const root = mkdtempSync(join(tmpdir(), 'sync-icon-artwork-'))
     const client = join(root, 'src', 'client')
     mkdirSync(client, { recursive: true })
     writeFileSync(join(client, 'A.tsx'), [
-      "import { Button, IconCheckOutlineMedium, type IconProps } from '@deepseek-ai/dsh-client-ui-primitives'",
-      "import type { IconSearchOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'",
+      "import { IconCheckOutlineMedium, type IconProps } from './icons.tsx'",
+      "import type { IconSearchOutlineMedium } from './icons.tsx'",
+      // The hand-written companion is hand-owned — never generated from here.
+      "import { IconEraserOutline16 } from './icons-local.tsx'",
       "import { IconTrashOutlineMedium } from '@khorsheed/dsh-other'",
-      "import { IconGhostMedium } from './icons.tsx'",
     ].join('\n'))
     mkdirSync(join(client, 'detail'), { recursive: true })
-    writeFileSync(join(client, 'detail', 'B.tsx'), "import {\n  IconCopyOutlineMedium,\n} from '@deepseek-ai/dsh-client-ui-primitives'\n")
+    writeFileSync(join(client, 'detail', 'B.tsx'), "import {\n  IconCopyOutlineMedium,\n} from '../icons.tsx'\n")
     expect(collectIconUsage(root)).toEqual(['IconCheckOutlineMedium', 'IconCopyOutlineMedium'])
+  })
+
+  it('throws on an Icon* value import from ui-primitives — the 0.1.5 React #130 regression class', () => {
+    const root = mkdtempSync(join(tmpdir(), 'sync-icon-artwork-'))
+    const client = join(root, 'src', 'client')
+    mkdirSync(client, { recursive: true })
+    writeFileSync(join(client, 'A.tsx'),
+      "import { Button, IconCheckOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'\n")
+    expect(() => collectIconUsage(root)).toThrow(/IconCheckOutlineMedium/)
+    // Non-icon primitives imports and type-only Icon* imports never reach the
+    // bundle, so they stay legal.
+    writeFileSync(join(client, 'A.tsx'), [
+      "import { Button, type IconProps } from '@deepseek-ai/dsh-client-ui-primitives'",
+      "import type { IconSearchOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'",
+    ].join('\n'))
+    expect(collectIconUsage(root)).toEqual([])
+  })
+
+  it('real tree: every package with a generated icons module imports from it', () => {
+    // Pins the birth defect of the primitives-only scan: after the migration
+    // moved call sites to './icons.tsx', the collector saw zero usage for all
+    // twenty packages and --check failed on canvas (alphabetically first).
+    const packagesRoot = join(repoRoot, 'packages')
+    let seen = 0
+    for (const dir of readdirSync(packagesRoot, { withFileTypes: true })) {
+      const target = join(packagesRoot, dir.name, 'src', 'client', 'icons.tsx')
+      if (!dir.isDirectory() || !existsSync(target)) continue
+      if (!readFileSync(target, 'utf8').includes(GENERATED_MARKER)) continue
+      seen += 1
+      expect(collectIconUsage(join(packagesRoot, dir.name)).length,
+        `${dir.name} ships a generated icons module no client source imports`).toBeGreaterThan(0)
+    }
+    expect(seen).toBeGreaterThan(0)
   })
 })
