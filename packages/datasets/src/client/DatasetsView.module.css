@@ -558,6 +558,30 @@
   white-space: nowrap;
 }
 
+.layersCell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.layersEdit {
+  flex: none;
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.layersEdit:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
 /* «用在哪些实验»: the count as a disclosure, the names folded under it. */
 .usage {
   display: flex;

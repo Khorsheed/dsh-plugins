@@ -11,6 +11,10 @@
  * the title). The repository's path is not page text (ui-spec §九); it rides
  * on the group heading's title for the person who needs it.
  *
+ * The «agent 可见» word is read-only here; its 「改」 opens the registration's
+ * edit form (prefilled with the registered layers), which stays the one
+ * place a set's visibility is written.
+ *
  * «用在哪些实验» is a count, not a list — 「N 个实验 · 分布在 M 个版本」, where a
  * version is a pinned commit — and a click unfolds the names. Twenty names
  * flat in a cell (T76 shot 10) answered a question nobody asked of a list.
@@ -24,7 +28,7 @@ import { useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RegisteredSet, RegistryRow } from '../types.ts'
 import type { DatasetExperimentRow, DatasetsViewProps } from './contract.ts'
-import { Chevron, Chip, LayersWordView, shortCommit } from './parts.tsx'
+import { Chevron, Chip, LayersEdit, LayersWordView, shortCommit } from './parts.tsx'
 import css from './DatasetsView.module.css'
 
 /** One experiment in a set's «用在哪些实验» fold: its name and every commit it pinned. */
@@ -130,9 +134,10 @@ function SetRow(props: {
   count: number | undefined
   usage: SetUsage | null
   onOpen: (repo: string, dataset: string) => void
+  onEdit: (repo: string) => void
   t: DatasetsViewProps['t']
 }) {
-  const { repo, trackedRef, latest, set, count, usage, onOpen, t } = props
+  const { repo, trackedRef, latest, set, count, usage, onOpen, onEdit, t } = props
   return (
     <tr className={css.tableRow}>
       <td className={css.setCell}>
@@ -152,7 +157,12 @@ function SetRow(props: {
         <div className={css.cellQuiet}>{latest.date.slice(0, 10)}</div>
       </td>
       <td className={css.cellNumber} data-label={t('registry.colItems')}>{count ?? '—'}</td>
-      <td><LayersWordView layers={set.layers} t={t} className={css.layersWord} /></td>
+      <td>
+        <span className={css.layersCell}>
+          <LayersWordView layers={set.layers} t={t} className={css.layersWord} />
+          <LayersEdit set={set.ref} onEdit={() => { onEdit(repo) }} t={t} />
+        </span>
+      </td>
       {usage !== null && <td><UsageCell usage={usage} t={t} /></td>}
     </tr>
   )
@@ -233,6 +243,7 @@ export function RegistryList(props: RegistryListProps) {
                 count={itemCounts[entry.id]?.[set.set]}
                 usage={experiments === null ? null : setUsage(experiments, entry.id, set.set)}
                 onOpen={onOpen}
+                onEdit={onEdit}
                 t={t}
               />
             ))}

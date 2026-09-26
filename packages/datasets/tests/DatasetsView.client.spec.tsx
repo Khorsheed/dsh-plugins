@@ -330,6 +330,29 @@ describe('the list page', () => {
     expect(screen.queryByText('0')).toBeNull()
   })
 
+  it('the counts go out together: every registration\u2019s read is in flight before any answers', async () => {
+    const other = { ...ENTRY, id: 'other', commonDir: '/work/other/.git' }
+    const h = makeHarness([rowOf(), rowOf(other)])
+    const pending: Array<(value: Result<ListDatasetsResult>) => void> = []
+    h.listDatasets.mockImplementation(() => new Promise((resolve) => { pending.push(resolve) }))
+    renderView(h)
+    await waitFor(() => { expect(h.listDatasets).toHaveBeenCalledTimes(2) })
+    expect(h.listDatasets.mock.calls.map(call => call[1])).toEqual(['dataseek-eval', 'other'])
+    // Neither has answered yet: both cells are still dashes.
+    expect(screen.getAllByText('—')).toHaveLength(2)
+    pending[1]!({ ok: true, value: SUMMARIES })
+    expect(await screen.findByText('14')).toBeTruthy()
+    expect(screen.getAllByText('—')).toHaveLength(1)
+  })
+
+  it('the read-only layer word carries a 「改」 that opens the registration\u2019s edit form', async () => {
+    const h = makeHarness()
+    renderView(h)
+    fireEvent.click(await screen.findByText('layers.edit'))
+    expect(await screen.findByText(/register\.titleEdit .*dataseek-eval/)).toBeTruthy()
+    expect(screen.getByTitle(/layers\.editTitle .*dataseek-eval\/bench/)).toBeTruthy()
+  })
+
   it('no path is page text: the repository location rides on a title only', async () => {
     const h = makeHarness()
     const { container } = renderView(h)
@@ -666,6 +689,15 @@ describe('the detail page', () => {
     fireEvent.click(await screen.findByText('bench'))
     expect(await screen.findByText('dataseek-eval/bench · i1-walk@a4f9c2e')).toBeTruthy()
     expect(h.overview).toHaveBeenCalledWith('s1', 'dataseek-eval')
+  })
+
+  it('the heading\u2019s layer word opens the same edit form', async () => {
+    const h = makeHarness()
+    renderView(h)
+    fireEvent.click(await screen.findByText('bench'))
+    expect(await screen.findByText('dataseek-eval/bench · i1-walk@a4f9c2e')).toBeTruthy()
+    fireEvent.click(screen.getByText('layers.edit'))
+    expect(await screen.findByText(/register\.titleEdit .*dataseek-eval/)).toBeTruthy()
   })
 
   it('going back returns to the list', async () => {

@@ -204,3 +204,17 @@ export function LayersWordView(props: { layers: readonly string[]; t: DatasetsVi
     </span>
   )
 }
+
+/**
+ * The 「改」 beside a read-only «agent 可见» word: it opens the registration's
+ * edit form, the one writer of a set's layers.
+ * @param props - the set's reference (for the title), the opener and the locale seat.
+ */
+export function LayersEdit(props: { set: string; onEdit: () => void; t: DatasetsViewProps['t'] }) {
+  const { set, onEdit, t } = props
+  return (
+    <button type="button" className={css.layersEdit} title={t('layers.editTitle', { set })} onClick={onEdit}>
+      {t('layers.edit')}
+    </button>
+  )
+}

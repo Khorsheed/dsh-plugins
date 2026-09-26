@@ -33,7 +33,7 @@ import type { DatasetOverviewRow, ListDatasetsResult, ListItemsResult, RegisterI
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetDetail } from './DatasetDetail.tsx'
 import { classifyError, ErrorState } from './ErrorState.tsx'
-import { Chip, EmptyState, LayersWordView, shortCommit } from './parts.tsx'
+import { Chip, EmptyState, LayersEdit, LayersWordView, shortCommit } from './parts.tsx'
 import { RegisterForm } from './RegisterForm.tsx'
 import { RegistryList } from './RegistryList.tsx'
 import { SkeletonForm } from './SkeletonForm.tsx'
@@ -314,6 +314,13 @@ export function DatasetsView(props: DatasetsViewProps) {
     ? registry?.find(row => row.entry.id === registerOpen.id)?.entry
     : undefined
 
+  // The registration's edit form: the one writer of a set's layers, opened
+  // from the registration row and from every read-only «agent 可见» word.
+  const editRegistration = (repo: string): void => {
+    actions.setNotice(null)
+    setRegisterOpen({ mode: 'edit', id: repo })
+  }
+
   const openForm = (next: Exclude<DatasetsForm, null>, repo?: string): void => {
     actions.setNotice(null)
     if (repo !== undefined) setFormRepo(repo)
@@ -340,6 +347,7 @@ export function DatasetsView(props: DatasetsViewProps) {
                   </span>
                   <span className={css.bindingScope}>
                     {t('registry.colVisible')} · <LayersWordView layers={openSet.layers} t={t} />
+                    <LayersEdit set={openSet.ref} onEdit={() => { editRegistration(openRow.entry.id) }} t={t} />
                   </span>
                 </span>
               </>
@@ -488,10 +496,7 @@ export function DatasetsView(props: DatasetsViewProps) {
               itemCounts={itemCounts}
               onOpen={(repo, dataset) => { actions.openDataset({ repo, dataset }) }}
               onNewDataset={(repo) => { openForm('newDataset', repo) }}
-              onEdit={(repo) => {
-                actions.setNotice(null)
-                setRegisterOpen({ mode: 'edit', id: repo })
-              }}
+              onEdit={editRegistration}
               onRemove={removeRegistration}
               t={t}
             />

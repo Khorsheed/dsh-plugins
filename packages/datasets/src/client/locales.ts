@@ -30,6 +30,8 @@ export type DatasetsKey =
   | 'layers.raw'
   | 'layers.none'
   | 'layers.title'
+  | 'layers.edit'
+  | 'layers.editTitle'
   | 'layers.unknownTitle'
   | 'registry.problem'
   | 'registry.problemFix'
@@ -356,6 +358,8 @@ export const zh: Record<DatasetsKey, string> = {
   'layers.raw': '{layers}',
   'layers.none': '一层都看不到',
   'layers.title': 'agent 能读的层：{layers}',
+  'layers.edit': '改',
+  'layers.editTitle': '在登记表单里改 {set} 的 agent 可见层',
   'layers.unknownTitle': '{layers} 不在词表里，原样显示；这里不推断它是否含答案',
   'registry.problem': '这条登记现在读不出来',
   'registry.problemFix': '点「编辑登记」换一个存在的跟踪分支，或移除这条登记',
@@ -553,6 +557,8 @@ export const en: Record<DatasetsKey, string> = {
   'layers.raw': '{layers}',
   'layers.none': 'No layer at all',
   'layers.title': 'Layers the agent can read: {layers}',
+  'layers.edit': 'Change',
+  'layers.editTitle': 'Change what the agent can read of {set} in the registration form',
   'layers.unknownTitle': '{layers} is not in the word table and is shown as is; this page does not guess whether it carries answers',
   'registry.problem': 'This registration cannot be read right now',
   'registry.problemFix': 'Edit the registration to pick an existing tracked branch, or remove it',
