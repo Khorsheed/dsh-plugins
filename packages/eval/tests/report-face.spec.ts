@@ -209,6 +209,9 @@ describe('the projection', () => {
         perTask: [{ task: 'P0', aMean: 3, bMean: 2, aWeighted: 6, bWeighted: 4, deltas: [1, 1], n: 2 }],
         n: 2,
         ci: null,
+        ciWithheld: null,
+        ciAdvisory: false,
+        coverageGaps: [],
         rank: null,
         rankReason: 'n = 2 < 3，不排名',
       }],
@@ -267,6 +270,47 @@ describe('the projection', () => {
     // to the ROW, because the row's number is what it could have biased.
     expect(row?.judges).toEqual([{ condition: 'judge-x', model: 'gpt-x', selfJudged: true }])
     expect(pair?.rankReason).toBe('n = 2 < 3，不排名')
+  })
+
+  it('names the conclusion shape and folds coverage gaps to (group, why) — T80d', () => {
+    const base = reportWith({ comparisonAllowed: true }).comparisons[0]
+    if (base === undefined) throw new Error('fixture')
+    const ci = { mean: 0.2, lo: -0.1, hi: 0.5, samples: 1000, seed: 1 }
+    const at = (pair: Partial<typeof base>) => {
+      const view = projectReport(reportWith({ comparisonAllowed: true, comparisons: [{ ...base, ...pair }] }), 'run-1').pairs[0]
+      if (view === undefined) throw new Error('no pair')
+      return view
+    }
+
+    // n < 3 refused before any interval could speak.
+    expect(at({}).verdict).toBe('withheld')
+    // Every gate open and the CI contains 0: a real 未分高下.
+    expect(at({ n: 3, ci }).verdict).toBe('tied')
+    expect(at({ n: 3, ci: { ...ci, lo: 0.1 }, rank: 'a' }).verdict).toBe('ranked')
+    // An interval drawn but a gate shut — multi factor, unknown factor, or
+    // too few tasks — is still withheld, never tied.
+    expect(at({ n: 3, ci, factor: { ...base.factor, multi: ['scope', 'preset'] } }).verdict).toBe('withheld')
+    expect(at({ n: 3, ci, factor: { ...base.factor, known: false } }).verdict).toBe('withheld')
+    expect(at({ n: 3, ci: null, ciWithheld: { tasksWithDelta: 1 } }).verdict).toBe('withheld')
+
+    const gap = { task: 'P0', rep: 1, condition: 'cond-b', criteria: ['c1'], failures: [] }
+    const gapped = at({
+      n: 3,
+      ci,
+      coverageGaps: [
+        { ...gap, why: '判官缺席' },
+        { ...gap, rep: 2, why: '判官缺席' },
+        { ...gap, task: 'P1', why: '仅脚本' },
+        { ...gap, condition: 'cond-a', why: '无判定' },
+      ],
+    })
+    expect(gapped.verdict).toBe('withheld')
+    expect(gapped.coverage).toEqual([
+      { condition: 'cond-b', why: 'judge-absent' },
+      { condition: 'cond-b', why: 'script-only' },
+      { condition: 'cond-a', why: 'none' },
+    ])
+    expect(at({}).coverage).toEqual([])
   })
 
   it('projects the criteria table verbatim — rubric order, the source mix, and the replaced judgement', () => {
