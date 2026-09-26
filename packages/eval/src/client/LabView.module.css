@@ -2449,19 +2449,25 @@ tr:last-child > .reportTd {
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* The 判据 cell takes every pixel the two content-sized columns leave
+   (grid `minmax(0, 1fr) auto auto`) and reads as one flowing line — id,
+   text, · 权重 — wrapping rather than cutting; only past two lines (a
+   narrow pane) does it end in an ellipsis. */
 .critLabel {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: -webkit-box;
   min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.critLabel > * + * {
+  margin-left: 6px;
 }
 
 .critToggle {
-  display: inline-flex;
-  flex: 0 1 auto;
-  gap: 6px;
-  align-items: baseline;
-  min-width: 0;
+  display: inline;
   padding: 0;
   border: 0;
   background: transparent;
@@ -2472,17 +2478,13 @@ tr:last-child > .reportTd {
 }
 
 .critToggle > .itemName {
-  flex: none;
+  margin-right: 6px;
   overflow-wrap: normal;
   white-space: nowrap;
 }
 
 .critText {
-  min-width: 0;
-  overflow: hidden;
   color: var(--dsw-alias-label-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .critToggle[aria-expanded='true'] .critText {
@@ -2490,7 +2492,6 @@ tr:last-child > .reportTd {
 }
 
 .critWeight {
-  flex: none;
   color: var(--dsw-alias-label-secondary);
   white-space: nowrap;
 }

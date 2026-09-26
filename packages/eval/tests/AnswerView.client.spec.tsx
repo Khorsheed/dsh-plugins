@@ -76,6 +76,11 @@ describe('the answer view', () => {
     expect((hung[0] as HTMLElement).textContent).toContain('D1')
     // The group that did not submit keeps its stage slot.
     expect(screen.getByText(/answer.stageMissing/)).toBeTruthy()
+    // The file name rides on the card head (v5), not above the text; no
+    // 阶段 N line either — the report's own headings carry the stages.
+    expect(within(document.querySelector('[data-part="head"]') as HTMLElement).getByText('stage1.md')).toBeTruthy()
+    expect(document.querySelectorAll('[data-part="reports"] [class*="docBanner"]')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-part="reports"] [class*="stageTitle"]')).toHaveLength(0)
     // 过程 is a tab (T83 · v5 subtabs), one 打开选手会话 per column.
     fireEvent.click(screen.getByRole('tab', { name: 'answer.process' }))
     fireEvent.click(screen.getAllByRole('button', { name: 'answer.processOpen' })[0]!)

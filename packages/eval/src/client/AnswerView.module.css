@@ -172,6 +172,19 @@
   text-decoration: underline;
 }
 
+/* v5 · 提交的报告: the column's files, small, at the head's right end. */
+.headFiles {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* A long report cut at about 16 lines, fading into the column (T83). */
 .clamp {
   position: relative;

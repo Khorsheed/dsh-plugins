@@ -87,18 +87,24 @@ function VerdictLine(props: { verdict: EvalAnswerVerdict; at?: HungAt | undefine
 function MarkdownWithVerdicts(props: {
   file: AnswerFile
   hung: ReadonlyArray<{ verdict: EvalAnswerVerdict; at: HungAt }>
+  /** 提交的报告 (T83 · v5): the file name sits on the card head, not here. */
+  bare: boolean
   t: T
 }) {
-  const { file, hung, t } = props
+  const { file, hung, bare, t } = props
   const blocks = blocksOf(file.text)
   return (
     <div className={`${base.markdownDoc} ${css.doc}`}>
+      {bare
+        ? file.replacements !== null && <div className={base.dim}>{t('judge.scrubbed', { count: file.replacements })}</div>
+        : (
       <div className={`${base.markdownBanner} ${css.docBanner}`}>
         <span className={base.markdownInfo}>{file.name}</span>
         {/* The blind face's redaction count, on the banner: the grader sees
             the scrubber ran without opening anything. */}
         {file.replacements !== null && <span className={base.dim}>&nbsp;{t('judge.scrubbed', { count: file.replacements })}</span>}
       </div>
+        )}
       <div className={`${base.markdownBody} ${css.docBody}`}>
         {blocks.map((block, index) => (
           // Blocks are positional and never reorder within one file.
@@ -137,15 +143,18 @@ function ColumnHead(props: {
   /** Scoring face: the head's 看作答 opens this column's folded reports. */
   onOpenReports: (() => void) | null
   aside: ReactNode
+  /** 提交的报告 (v5): the column's report files, small, at the head's right. */
+  files: string | null
   t: T
 }) {
-  const { column, blind, onOpenReports, aside, t } = props
+  const { column, blind, onOpenReports, aside, files, t } = props
   const name = blind || column.condition === null ? t('answer.blindName', { letter: column.letter }) : column.condition
   return (
     <div className={css.head}>
       <span className={css.name}>{name}</span>
       {aside}
       <Chip tone={SOURCE_TONE[column.source]}>{t(SOURCE_KEY[column.source])}</Chip>
+      {files !== null && <span className={css.headFiles} title={files}>{files}</span>}
       {onOpenReports !== null && (
         <button type="button" className={css.headLink} onClick={onOpenReports}>{t('answer.open')}</button>
       )}
@@ -191,8 +200,8 @@ function Clamp(props: { open: boolean; onToggle: () => void; children: ReactNode
 }
 
 /** One column's cell of one stage row in 提交的报告. */
-function StageCell(props: { column: AnswerColumnModel; stem: string; hangs: Map<number, HungAt>; t: T }) {
-  const { column, stem, hangs, t } = props
+function StageCell(props: { column: AnswerColumnModel; stem: string; hangs: Map<number, HungAt>; bare: boolean; t: T }) {
+  const { column, stem, hangs, bare, t } = props
   const stage = stagesOf(column.files, [stem])[0]
   if (stage === undefined || (stage.markdown === null && stage.others.length === 0)) {
     return <div className={base.dim}>{t('answer.stageMissing', { stage: stageLabel(stem, t) })}</div>
@@ -208,7 +217,7 @@ function StageCell(props: { column: AnswerColumnModel; stem: string; hangs: Map<
   const cut = [stage.markdown, ...stage.others].filter((file): file is AnswerFile => file !== null && file.truncated)
   return (
     <>
-      {stage.markdown !== null && <MarkdownWithVerdicts file={stage.markdown} hung={hung} t={t} />}
+      {stage.markdown !== null && <MarkdownWithVerdicts file={stage.markdown} hung={hung} bare={bare} t={t} />}
       {stage.others.map(file => <FoldedFile key={file.name} file={file} t={t} />)}
       {cut.map(file => (
         <div key={file.name} className={base.note}>{t('answer.truncated', { name: file.name, bytes: file.bytes ?? 0 })}</div>
@@ -372,12 +381,22 @@ export function AnswerView(props: AnswerViewProps) {
         const firstUnjudged = new Map(row.columns
           .filter(column => column.source === 'script' || column.source === 'none')
           .map(column => [column.key, order.find(id => !column.verdicts.some(verdict => verdict.criterion === id))]))
+        // The open report card (v5) reads as the answer itself: no 阶段 N /
+        // file-name lines above each stage — the stage headings are the
+        // report's own, and the file names ride on the card head. The folded
+        // scoring face keeps both, since there they are the only labels.
+        const bare = !locked
         const stages = (column: AnswerColumnModel): ReactNode => stems.map(stem => (
           <div key={stem} className={css.stage}>
-            <div className={css.stageTitle}>{stageLabel(stem, t)}</div>
-            <StageCell column={column} stem={stem} hangs={hangs.get(column.key) ?? new Map()} t={t} />
+            {!bare && <div className={css.stageTitle}>{stageLabel(stem, t)}</div>}
+            <StageCell column={column} stem={stem} hangs={hangs.get(column.key) ?? new Map()} bare={bare} t={t} />
           </div>
         ))
+        const filesOf = (column: AnswerColumnModel): string | null => {
+          if (locked || view !== 'report' || column.files.length === 0) return null
+          const markdown = column.files.filter(file => /\.md$/i.test(file.name))
+          return (markdown.length > 0 ? markdown : column.files).map(file => file.name).join(' · ')
+        }
         return (
           <section key={String(row.rep)} className={css.row} aria-label={row.rep === null ? task : t('answer.rep', { rep: row.rep })}>
             {row.rep !== null && <div className={css.repTitle}>{t('answer.rep', { rep: row.rep })}</div>}
@@ -392,6 +411,7 @@ export function AnswerView(props: AnswerViewProps) {
                       document.getElementById(`eval-answer-reports-${column.key}`)?.scrollIntoView({ block: 'nearest' })
                     } : null}
                     aside={headAside?.(column) ?? null}
+                    files={filesOf(column)}
                     t={t}
                   />
                 </div>
