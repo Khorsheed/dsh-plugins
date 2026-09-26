@@ -22,11 +22,11 @@
  * judge be a player and discloses it per cell instead of dropping it.
  */
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalAnalysisFile, EvalExperimentArtifactView, EvalFinalizeView, EvalReportCriterionCell, EvalReportCriterionSample, EvalReportJudgeTag,
-  EvalReportPair, EvalReportTaskCriteria, EvalRunReportView, EvalRunUnitsView,
+  EvalReportCriterionRow, EvalReportPair, EvalReportTaskCriteria, EvalRunReportView, EvalRunUnitsView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
@@ -105,7 +105,6 @@ function EfficiencyChart(props: { report: EvalRunReportView; t: LabViewProps['t'
   }
   return (
     <>
-      <div className={css.sectionTitle}><span>{t('report.chart')}</span></div>
       {CHART_METRICS.map((metric) => {
         const rows = report.efficiency
           .map(row => ({ condition: row.condition, value: valueOf(row, metric.key) }))
@@ -277,63 +276,178 @@ export function pairDirection(pair: EvalReportPair, t: LabViewProps['t']): strin
 }
 
 /**
- * The answer the conclusion card gives the plan's question (T74): the pairs'
- * directions, or why there is no answer yet. Same four branches as the card's
- * body, so the first line and what is under it cannot disagree.
+ * One pair's headline: the direction when the report ranked or tied it, and
+ * 「暂时不能下结论」 when a gate withheld it. `alone` drops the pair names —
+ * a card with one pair has already said which two it is.
+ */
+export function pairHeadline(pair: EvalReportPair, t: LabViewProps['t'], alone: boolean): string {
+  if (pair.verdict !== 'withheld') return pairDirection(pair, t)
+  return alone ? t('report.answerClosed') : t('report.headlineWithheld', { a: pair.a, b: pair.b })
+}
+
+/**
+ * The answer the conclusion card gives (T74, T80d ①): the pairs' headlines,
+ * or why there is no answer yet. It no longer depends on the plan carrying a
+ * question — an old plan gets the same three shapes, so the first line and
+ * what is under it cannot disagree whichever plan the run came from.
  */
 export function conclusionAnswer(report: EvalRunReportView, t: LabViewProps['t']): string {
   if (!report.comparisonAllowed) return t('report.answerClosed')
   if (report.singleCondition) return t('report.answerSingle')
-  if (report.pairs.length === 0) return t('report.answerClosed')
-  return report.pairs.map(pair => pairDirection(pair, t)).join('；')
+  if (report.pairs.length === 0 || report.pairs.every(pair => pair.verdict === 'withheld')) return t('report.answerClosed')
+  return report.pairs.map(pair => pairHeadline(pair, t, report.pairs.length === 1)).join('；')
+}
+
+/** One reason a pair's gap cannot be trusted: ✗ blocks the comparison, ! qualifies it. */
+export interface ConclusionReason { level: 'block' | 'caution'; text: string }
+
+/**
+ * Why a withheld pair was withheld, as the sentences a reader acts on — the
+ * report's own gates (coverage, n, factor, interval) read off the projected
+ * fields, never re-decided. `rankReason` stays on the hover: it is the
+ * report's sentence, and these items are its parts in plain words. A pair the
+ * report ranked or tied has no reasons.
+ */
+export function pairReasons(pair: EvalReportPair, t: LabViewProps['t']): ConclusionReason[] {
+  if (pair.verdict !== 'withheld') return []
+  const reasons: ConclusionReason[] = []
+  if (pair.coverage.length > 0) {
+    const detail = pair.coverage
+      .map(entry => t(`report.coverage.${entry.why}`, { condition: entry.condition }))
+      .join('；')
+    reasons.push({ level: 'block', text: t('report.reason.coverage', { detail }) })
+  }
+  if (pair.rows.length > 0 && pair.n < 3) reasons.push({ level: 'caution', text: t('report.reason.fewReps', { n: pair.n }) })
+  if (pair.ciWithheld !== null) {
+    reasons.push({ level: 'caution', text: t('report.reason.fewTasks', { k: pair.ciWithheld.tasksWithDelta }) })
+  }
+  if (!pair.factor.known) reasons.push({ level: 'caution', text: t('report.reason.unknown') })
+  else if (pair.factor.factor === null && (pair.factor.multi ?? []).length > 1) {
+    reasons.push({ level: 'caution', text: t('report.reason.multi', { fields: (pair.factor.multi ?? []).join('、') }) })
+  }
+  if (reasons.length === 0) reasons.push({ level: 'caution', text: pair.rankReason })
+  return reasons
 }
 
 /**
- * The CONCLUSION CARD (T72 §6) — the first thing on the page, because the
- * question a reader opens this stage with is «so which one is better, and can
- * I believe it», and v1 answered it at the bottom of four sections of
- * evidence. Evidence stays, collapsed, under 审计.
+ * Each side's one big number: its per-item mean when the pair covers one
+ * item, the plain mean of its per-item means otherwise — the same figures the
+ * pair table prints, averaged only when there is more than one row to say it
+ * in one number, and labelled so.
+ */
+export function pairScores(pair: EvalReportPair): { a: number; b: number } | null {
+  if (pair.rows.length === 0) return null
+  const mean = (values: number[]): number => values.reduce((sum, value) => sum + value, 0) / values.length
+  return { a: mean(pair.rows.map(row => row.aMean)), b: mean(pair.rows.map(row => row.bMean)) }
+}
+
+/** The descriptive sentence under the scores: who is ahead by how much, nothing more. */
+function deltaSentence(pair: EvalReportPair, scores: { a: number; b: number }, t: LabViewProps['t']): string {
+  const d = scores.a - scores.b
+  if (Math.abs(d) < 1e-9) return t('report.deltaEqual', { a: pair.a, b: pair.b })
+  return d > 0
+    ? t('report.deltaAhead', { ahead: pair.a, behind: pair.b, d: fmtNum(d) })
+    : t('report.deltaAhead', { ahead: pair.b, behind: pair.a, d: fmtNum(-d) })
+}
+
+/** One pair on the card: the two big scores, the gap in words, and why it is not yet a result. */
+function ConclusionPair(props: { pair: EvalReportPair; named: boolean; t: LabViewProps['t'] }) {
+  const { pair, named, t } = props
+  const scores = pairScores(pair)
+  const reasons = pairReasons(pair, t)
+  // The interval line stays whenever there IS an interval (an advisory one
+  // included); 「没有区间」 is already one of the reasons above.
+  const line = pair.ci === null ? '' : pairVerdictLine(pair, t)
+  const only = pair.rows.length === 1 ? pair.rows[0] : undefined
+  const scoreMeta = only === undefined
+    ? t('report.scoreMean', { k: pair.rows.length })
+    : t('report.scoreOne', { task: only.task, n: only.n })
+  return (
+    <div className={css.conclusionPair}>
+      {named && <div className={css.conclusionPairName}>{pairHeadline(pair, t, false)}</div>}
+      {scores !== null && (
+        <div className={css.scoreRow}>
+          {([[pair.a, scores.a], [pair.b, scores.b]] as const).map(([condition, score]) => (
+            <div key={condition} className={css.scoreCell}>
+              <span className={css.scoreBig}>{fmtNum(score)}</span>
+              <span className={css.scoreName}>{condition}</span>
+            </div>
+          ))}
+          <span className={css.scoreMeta}>{scoreMeta}</span>
+        </div>
+      )}
+      {scores !== null && (
+        <div className={css.deltaLine}>
+          {deltaSentence(pair, scores, t)}{reasons.length > 0 ? t('report.reasonsLead') : ''}
+        </div>
+      )}
+      {reasons.length > 0 && (
+        <ul className={css.reasonList} title={pair.rankReason}>
+          {reasons.map(reason => (
+            <li key={reason.text} className={css.reasonItem} data-level={reason.level}>
+              <span className={css.reasonMark} aria-hidden>{reason.level === 'block' ? '✗' : '!'}</span>
+              <span>{reason.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {line !== '' && <div className={css.dim} title={pair.rankReason}>{line}</div>}
+    </div>
+  )
+}
+
+/**
+ * The CONCLUSION CARD (T72 §6, T80d P1-5) — the first thing on the page,
+ * because the question a reader opens this stage with is «so which one is
+ * better, and can I believe it».
  *
- * The source line is decided by the closure, not by the bundle: a human's
- * final verdicts exist or not whatever was exported, and 「判官初判，未经人工
- * 确认」 is the honest default when nobody took an exit.
+ * The headline is the answer (A 优于 B / 未分高下 / 暂时不能下结论) with its
+ * source beside it; under it each group's score, big, and then the reasons
+ * the gap is not a result yet, one plain item each. The card ends on at most
+ * three things to do about those reasons. The source line is decided by the
+ * closure, not by the bundle: 「判官初判，未经人工确认」 is the honest default
+ * when nobody took an exit.
  *
- * Since plan v1-rev14 (T74) the card ANSWERS the plan's question: the first
- * line is 「问题：… — 结论：…」, the answeredWhen sentence sits under it as the
- * yardstick, and the person's expectation is quoted beside the actual
- * direction. The card does not grade the expectation as 一致 / 相反: it is free
- * text and the direction is a structured rank, and a page that parsed the one
- * to compare it with the other would be guessing. An old plan has no question
- * and the card is T72's pairing conclusion, unchanged.
+ * The plan's question, when there is one, sits above the headline as its
+ * eyebrow; the expectation is quoted beside the actual direction but never
+ * graded against it — it is free text and the direction is a structured rank.
  */
 function ConclusionCard(props: {
   report: EvalRunReportView
   onOpenAudit: () => void
+  onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
+  onRejudge: (condition: string) => void
+  onAskAnalysis: () => void
   t: LabViewProps['t']
 }) {
-  const { report, onOpenAudit, t } = props
+  const { report, onOpenAudit, onOpenAnswers, onRejudge, onAskAnalysis, t } = props
   const sourceKey = conclusionSourceKey(report.closure)
   const validity = validityCount(report.invariants)
   const allPass = validity.total > 0 && validity.passed === validity.total
   const flagged = report.closure?.exit === 'flagged' ? report.closure.reason : null
   const failing = report.invariants.filter(check => check.status !== 'ok' && check.id !== 'verdict-coverage')
+  const pairs = report.comparisonAllowed && !report.singleCondition ? report.pairs : []
+  const answer = conclusionAnswer(report, t)
+  // At most three next steps, each the fix for a reason on the card: judge
+  // the side the coverage gap names, read the answers the numbers came from,
+  // and hand the whole page to the agent for a draft.
+  const uncovered = pairs.flatMap(pair => pair.coverage)[0]?.condition ?? null
+  const firstTask = pairs.flatMap(pair => pair.rows)[0]?.task ?? null
   return (
     <section className={css.conclusionCard} aria-label={t('report.conclusion')}>
       {flagged !== null && <div className={css.conclusionFlag}>{t('report.flagged', { reason: flagged })}</div>}
-      {report.question?.question != null
-        ? (
-          <div className={css.conclusionTitle}>
-            {t('report.answerLine', { question: report.question.question, answer: conclusionAnswer(report, t) })}
-          </div>
-        )
-        : <div className={css.conclusionTitle}>{t('report.conclusion')}</div>}
+      {report.question?.question != null && (
+        <div className={css.questionEyebrow}>{report.question.question}</div>
+      )}
+      <div className={css.conclusionHead}>
+        <span className={css.conclusionTitle}>{answer}</span>
+        {sourceKey !== null && <span className={css.conclusionSource}>{t(sourceKey)}</span>}
+      </div>
       {report.question?.answeredWhen != null && (
         <div className={css.dim}>{t('report.answeredWhen', { text: report.question.answeredWhen })}</div>
       )}
       {report.question?.expectation != null && (
-        <div className={css.dim}>
-          {t('report.expectation', { text: report.question.expectation, actual: conclusionAnswer(report, t) })}
-        </div>
+        <div className={css.dim}>{t('report.expectation', { text: report.question.expectation, actual: answer })}</div>
       )}
       {!report.comparisonAllowed
         ? (
@@ -353,19 +467,24 @@ function ConclusionCard(props: {
           ? <div>{t('report.singleCondition')}</div>
           : report.pairs.length === 0
             ? <div className={css.dim}>{t('report.noPairs')}</div>
-            : report.pairs.map((pair) => {
-              const line = pairVerdictLine(pair, t)
-              return (
-                <div key={`${pair.a}|${pair.b}`} className={css.conclusionPair}>
-                  <div className={css.conclusionPairName}>{t('report.pairTitle', { a: pair.a, b: pair.b })}</div>
-                  <div className={css.rankReason}>{pair.rankReason}</div>
-                  {line !== '' && <div className={css.dim}>{line}</div>}
-                </div>
-              )
-            })}
-      <div className={css.conclusionMeta}>
-        {sourceKey !== null && <span>{t(sourceKey)}</span>}
-        {validity.total > 0 && (
+            : report.pairs.map(pair => (
+              <ConclusionPair key={`${pair.a}|${pair.b}`} pair={pair} named={report.pairs.length > 1} t={t} />
+            ))}
+      <div className={css.conclusionActions}>
+        {uncovered !== null && (
+          <Button size="sm" onClick={() => { onRejudge(uncovered) }}>
+            {t('report.next.rejudge', { condition: uncovered })}
+          </Button>
+        )}
+        {firstTask !== null && (
+          <Button size="sm" onClick={() => { onOpenAnswers({ task: firstTask, condition: null, rep: null }) }}>
+            {t('report.next.answers')}
+          </Button>
+        )}
+        <Button size="sm" onClick={onAskAnalysis}>{t('report.next.analysis')}</Button>
+      </div>
+      {validity.total > 0 && (
+        <div className={css.conclusionMeta}>
           <button
             type="button"
             className={css.reportJump}
@@ -376,10 +495,67 @@ function ConclusionCard(props: {
               {t(allPass ? 'report.validityAll' : 'report.validitySome', validity)}
             </Chip>
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   )
+}
+
+/**
+ * A page-level fold whose summary line carries its own state on the right —
+ * 「题面 ✓ · 环境 ✓ · 判定覆盖 ✗」, 「bundle 导出于 … · 可重新导出」 — so a
+ * reader learns whether to open it without opening it (T80d).
+ */
+function Fold(props: {
+  summary: string
+  aside?: ReactNode
+  open?: boolean
+  onToggle?: (open: boolean) => void
+  id?: string
+  children: ReactNode
+}) {
+  const controlled = props.open === undefined
+    ? {}
+    : {
+      open: props.open,
+      onToggle: (event: { currentTarget: HTMLDetailsElement }) => { props.onToggle?.(event.currentTarget.open) },
+    }
+  return (
+    <details className={css.reportFold} id={props.id} {...controlled}>
+      <summary className={css.reportFoldSummary}>
+        <span className={css.reportFoldTitle}>{props.summary}</span>
+        {props.aside !== undefined && <span className={css.reportFoldAside}>{props.aside}</span>}
+      </summary>
+      <div className={css.reportFoldBody}>{props.children}</div>
+    </details>
+  )
+}
+
+/** The validity fold's summary: each check's short name with ✓ / ✗ / !. */
+function ValidityAside(props: { report: EvalRunReportView; t: LabViewProps['t'] }) {
+  const { report, t } = props
+  return (
+    <>
+      {report.invariants.map((check, index) => {
+        const short = invariantShort(check.id)
+        const mark = check.status === 'ok' ? '✓' : check.status === 'violated' ? '✗' : '!'
+        return (
+          <Fragment key={check.id}>
+            {index > 0 && ' · '}
+            <span data-bad={check.status === 'ok' ? undefined : ''} className={css.foldCheck}>
+              {short === null ? check.title : t(short)} {mark}
+            </span>
+          </Fragment>
+        )
+      })}
+    </>
+  )
+}
+
+/** An invariant's two-character name for the fold's summary line. */
+function invariantShort(id: string): EvalKey | null {
+  const why = invariantWhy(id)
+  return why === null ? null : `invariant.short.${id}` as EvalKey
 }
 
 /**
@@ -492,209 +668,259 @@ function CriteriaTable(props: {
   onOpenRecord: (task: string, condition: string, missionId: string) => void
   /** 看作答 (I5·T75): this 题 × 组, every rep behind the cell. */
   onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
+  /** Pair order across the run — the column order. */
+  order: readonly string[]
+  /** Print the task's name above its table (more than one task). */
+  titled: boolean
   t: LabViewProps['t']
 }) {
-  const { table, onOpenRecords, onOpenRecord, onOpenAnswers, t } = props
+  const { table, order, titled, onOpenRecords, onOpenRecord, onOpenAnswers, t } = props
   const [open, setOpen] = useState<string | null>(null)
-  const columns = 4 + table.conditions.length
+  // Columns follow the conclusion card's reading order (T80d P2-12): the
+  // card says 「A 比 B 高」, so A is the first column here too.
+  const rank = (condition: string): number => {
+    const at = order.indexOf(condition)
+    return at === -1 ? order.length + table.conditions.indexOf(condition) : at
+  }
+  const conditions = [...table.conditions].sort((x, y) => rank(x) - rank(y))
+  const columns = 2 + conditions.length
+  const cellsOf = (row: EvalReportCriterionRow): EvalReportCriterionCell[] => conditions
+    .map(condition => row.cells.find(cell => cell.condition === condition))
+    .filter((cell): cell is EvalReportCriterionCell => cell !== undefined)
+  const totals = conditions
+    .map(condition => table.totals.find(total => total.condition === condition))
+    .filter((total): total is EvalReportTaskCriteria['totals'][number] => total !== undefined)
+  // Rows grouped under their dimension, first appearance first. A rubric that
+  // declares no dimensions at all gets no group rows — one lone 「未标维度」
+  // heading would only restate the empty column it replaced.
+  const axes = [...new Set(table.rows.map(row => row.axis))]
+  const grouped = axes.some(axis => axis !== null)
   // Same rule as the pair table: the weighted figure shows only when every
   // column carries one, because a blank beside a number reads as zero.
   const weighted = table.totals.length > 0 && table.totals.every(total => total.weighted !== null)
   return (
-    <Section title={table.task} meta={t('report.criteriaHint')}>
-      <table className={css.reportTable}>
-        <thead>
-          <tr>
-            <th className={css.reportHead}>{t('report.col.criterion')}</th>
-            <th className={css.reportHead}>{t('report.col.axis')}</th>
-            <th className={css.reportHead}>{t('report.col.weight')}</th>
-            <th className={css.reportHead}>{t('report.col.polarity')}</th>
-            {table.conditions.map(condition => (
-              <th key={condition} className={css.reportHead}>{condition}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {table.rows.map(row => (
-            <Fragment key={row.id}>
-              <tr>
-                <th className={css.reportRowHead}>
-                  <span className={css.mono}>{row.id}</span>
-                  {row.undeclared && <Chip tone="warn" title={t('report.criteriaUndeclared')}>⚠</Chip>}
-                </th>
-                <td className={css.reportTd}>{row.axis ?? DASH}</td>
-                <td className={css.reportTd}>{row.weight ?? DASH}</td>
-                <td className={css.reportTd}>
-                  {t(row.negative ? 'report.polarityNegative' : 'report.polarityPositive')}
-                </td>
-                {row.cells.map((cell) => {
-                  const key = `${row.id}|${cell.condition}`
-                  // A negative criterion that HELD is a defect, and a positive
-                  // one that did not is a miss: both cost the same point, so
-                  // both wear the same colour.
-                  const bad = cell.reps > 0 && (row.negative ? cell.holds === true : cell.holds !== true)
-                  const empty = cell.samples.length === 0 && cell.superseded.length === 0
-                  return (
-                    <td key={cell.condition} className={css.reportTd}>
-                      <button
-                        type="button"
-                        className={css.criteriaCell}
-                        disabled={empty}
-                        aria-expanded={open === key}
-                        title={empty ? t('report.criteriaNotJudged') : t('report.criteriaExpand', { criterion: row.id, condition: cell.condition })}
-                        onClick={() => { setOpen(open === key ? null : key) }}
-                      >
-                        <span className={css.criteriaMark} data-bad={bad ? '' : undefined}>
-                          {criterionMark(cell)}
-                        </span>
-                        <SourceMix sources={cell.sources} t={t} />
-                      </button>
-                    </td>
-                  )
-                })}
-              </tr>
-              {row.cells.filter(cell => open === `${row.id}|${cell.condition}`).map(cell => (
-                <tr key={`${row.id}|${cell.condition}|open`}>
-                  <td className={css.criteriaDetail} colSpan={columns}>
-                    <div className={css.sectionTitle}>
-                      <span>{t('report.criteriaEvidence')}</span>
-                      <span className={css.sectionMeta}>
-                        {row.id} · {cell.condition} · {t('report.criteriaReps', { count: cell.reps })}
-                      </span>
-                      {/* The mark a person who re-judged this cell earned: the
-                          criterion now scores on their word, and the judge's
-                          original verdict stays right beside it. */}
-                      {cell.superseded.length > 0 && (cell.sources['human-final'] ?? 0) > 0 && (
-                        <Chip tone="warn">{t('report.humanOverride')}</Chip>
-                      )}
-                      {/* The same road the pair table's numbers take, keyed
-                          off what this cell actually knows: one record behind
-                          it opens that record, several leave the list standing
-                          under its chip for the reader to choose. */}
-                      {recordsOf(cell).length > 0 && (() => {
-                        const records = recordsOf(cell)
-                        const only = records.length === 1 ? records[0] as string : null
-                        return (
-                          <button
-                            type="button"
-                            className={css.reportJump}
-                            title={only === null
-                              ? t('report.openRecords', { task: table.task, condition: cell.condition })
-                              : t('report.openRecord', { record: only })}
-                            onClick={() => {
-                              if (only === null) onOpenRecords(table.task, cell.condition)
-                              else onOpenRecord(table.task, cell.condition, only)
-                            }}
-                          >
-                            {t(only === null ? 'report.criteriaOpenRecords' : 'report.criteriaOpenRecord')}
-                          </button>
-                        )
-                      })()}
-                      <button
-                        type="button"
-                        className={css.reportJump}
-                        onClick={() => { onOpenAnswers({ task: table.task, condition: cell.condition, rep: null }) }}
-                      >
-                        {t('answer.open')}
-                      </button>
-                    </div>
-                    {cell.samples.map(sample => (
-                      <CriterionSampleLine
-                        key={`${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
-                        sample={sample}
-                        superseded={false}
-                        t={t}
-                      />
-                    ))}
-                    {cell.superseded.map(sample => (
-                      <CriterionSampleLine
-                        key={`old|${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
-                        sample={sample}
-                        superseded
-                        t={t}
-                      />
-                    ))}
-                  </td>
-                </tr>
+    <>
+      {titled && <div className={css.criteriaTask}>{table.task}</div>}
+      {/* The criteria table spans the column like the other report blocks (T80d);
+          the wrapper keeps a wide one scrolling on its own at phone width. */}
+      <div className={css.criteriaScroll}>
+        <table className={`${css.reportTable} ${css.criteriaTable}`}>
+          <thead>
+            <tr>
+              <th className={css.reportHead}>{t('report.col.criterion')}</th>
+              <th className={css.reportHead}>{t('report.col.weight')}</th>
+              {conditions.map(condition => (
+                <th key={condition} className={css.reportHead}>{condition}</th>
               ))}
-            </Fragment>
-          ))}
-          <tr className={css.criteriaTotalRow}>
-            <th className={css.reportRowHead}>{t('report.criteriaTotal')}</th>
-            <td className={css.reportTd} />
-            <td className={css.reportTd} />
-            <td className={css.reportTd} />
-            {table.totals.map(total => (
-              <td key={total.condition} className={css.reportTd}>
-                {total.scored === null ? DASH : fmtNum(total.scored)}
-                {weighted && total.weighted !== null && (
-                  <span className={css.dim}> ({t('report.criteriaWeighted', { value: fmtNum(total.weighted) })})</span>
+            </tr>
+          </thead>
+          <tbody>
+            {axes.map(axis => (
+              <Fragment key={axis ?? ''}>
+                {grouped && (
+                  <tr>
+                    <th className={css.criteriaAxis} colSpan={columns}>{axis ?? t('report.axisNone')}</th>
+                  </tr>
                 )}
-                <span className={css.criteriaSource}> {t('report.criteriaReps', { count: total.reps })}</span>
-              </td>
+                {table.rows.filter(row => row.axis === axis).map(row => (
+                  <Fragment key={row.id}>
+                    <tr>
+                      <th className={css.reportRowHead}>
+                        <span className={css.mono}>{row.id}</span>
+                        {row.undeclared && <Chip tone="warn" title={t('report.criteriaUndeclared')}>⚠</Chip>}
+                        {row.negative && <span className={css.criteriaPolarity}>{t('report.polarityNegative')}</span>}
+                      </th>
+                      <td className={css.reportTd}>{row.weight ?? DASH}</td>
+                      {cellsOf(row).map((cell) => {
+                        const key = `${row.id}|${cell.condition}`
+                        // A negative criterion that HELD is a defect, and a positive
+                        // one that did not is a miss: both cost the same point, so
+                        // both wear the same colour.
+                        const bad = cell.reps > 0 && (row.negative ? cell.holds === true : cell.holds !== true)
+                        const empty = cell.samples.length === 0 && cell.superseded.length === 0
+                        // Not judged is a state, not a dash: the chip says so in
+                        // words, and the hover says whose verdict is missing.
+                        if (cell.reps === 0 && empty) {
+                          return (
+                            <td key={cell.condition} className={css.reportTd}>
+                              <Chip tone="neutral" title={t('report.criteriaNotJudged')}>{t('report.notJudgedChip')}</Chip>
+                            </td>
+                          )
+                        }
+                        return (
+                          <td key={cell.condition} className={css.reportTd}>
+                            <button
+                              type="button"
+                              className={css.criteriaCell}
+                              disabled={empty}
+                              aria-expanded={open === key}
+                              title={empty ? t('report.criteriaNotJudged') : t('report.criteriaExpand', { criterion: row.id, condition: cell.condition })}
+                              onClick={() => { setOpen(open === key ? null : key) }}
+                            >
+                              {cell.reps === 0
+                                ? <Chip tone="neutral">{t('report.notJudgedChip')}</Chip>
+                                : (
+                                  <span className={css.criteriaMark} data-bad={bad ? '' : undefined}>
+                                    {criterionMark(cell)}
+                                  </span>
+                                )}
+                              <SourceMix sources={cell.sources} t={t} />
+                            </button>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                    {cellsOf(row).filter(cell => open === `${row.id}|${cell.condition}`).map(cell => (
+                      <tr key={`${row.id}|${cell.condition}|open`}>
+                        <td className={css.criteriaDetail} colSpan={columns}>
+                          <div className={css.sectionTitle}>
+                            <span>{t('report.criteriaEvidence')}</span>
+                            <span className={css.sectionMeta}>
+                              {row.id} · {cell.condition} · {t('report.criteriaReps', { count: cell.reps })}
+                            </span>
+                            {/* The mark a person who re-judged this cell earned: the
+                                criterion now scores on their word, and the judge's
+                                original verdict stays right beside it. */}
+                            {cell.superseded.length > 0 && (cell.sources['human-final'] ?? 0) > 0 && (
+                              <Chip tone="warn">{t('report.humanOverride')}</Chip>
+                            )}
+                            {/* The same road the pair table's numbers take, keyed
+                                off what this cell actually knows: one record behind
+                                it opens that record, several leave the list standing
+                                under its chip for the reader to choose. */}
+                            {recordsOf(cell).length > 0 && (() => {
+                              const records = recordsOf(cell)
+                              const only = records.length === 1 ? records[0] as string : null
+                              return (
+                                <button
+                                  type="button"
+                                  className={css.reportJump}
+                                  title={only === null
+                                    ? t('report.openRecords', { task: table.task, condition: cell.condition })
+                                    : t('report.openRecord', { record: only })}
+                                  onClick={() => {
+                                    if (only === null) onOpenRecords(table.task, cell.condition)
+                                    else onOpenRecord(table.task, cell.condition, only)
+                                  }}
+                                >
+                                  {t(only === null ? 'report.criteriaOpenRecords' : 'report.criteriaOpenRecord')}
+                                </button>
+                              )
+                            })()}
+                            <button
+                              type="button"
+                              className={css.reportJump}
+                              onClick={() => { onOpenAnswers({ task: table.task, condition: cell.condition, rep: null }) }}
+                            >
+                              {t('answer.open')}
+                            </button>
+                          </div>
+                          {cell.samples.map(sample => (
+                            <CriterionSampleLine
+                              key={`${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
+                              sample={sample}
+                              superseded={false}
+                              t={t}
+                            />
+                          ))}
+                          {cell.superseded.map(sample => (
+                            <CriterionSampleLine
+                              key={`old|${sample.missionId}|${sample.ns}|${String(sample.judge?.sample ?? 0)}|${sample.evidence}`}
+                              sample={sample}
+                              superseded
+                              t={t}
+                            />
+                          ))}
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </Fragment>
             ))}
-          </tr>
-        </tbody>
-      </table>
-    </Section>
+            <tr className={css.criteriaTotalRow}>
+              <th className={css.reportRowHead}>{t('report.criteriaTotal')}</th>
+              <td className={css.reportTd} />
+              {totals.map(total => (
+                <td key={total.condition} className={css.reportTd}>
+                  {total.scored === null ? DASH : fmtNum(total.scored)}
+                  {weighted && total.weighted !== null && (
+                    <span className={css.dim}> ({t('report.criteriaWeighted', { value: fmtNum(total.weighted) })})</span>
+                  )}
+                  <span className={css.criteriaSource}> {t('report.criteriaReps', { count: total.reps })}</span>
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }
 
-/** The efficiency table: parallel columns, never one score. */
+/**
+ * Efficiency: the bars at a glance, the model line as the section's meta, and
+ * the full table folded under 明细 (T80d P2-13) — the chart answers «which one
+ * was cheaper», the table is for whoever asks «by how much, exactly».
+ */
 function Efficiency(props: { report: EvalRunReportView; t: LabViewProps['t'] }) {
   const { report, t } = props
   const models = [...new Set(report.efficiency.map(row => row.model).filter((model): model is string => model !== null))]
   const excluded = report.efficiencyExcluded
+  // 冻结决策 10: tokens compare only within one model. Two models on the
+  // table is exactly when a reader would otherwise subtract, so that case is
+  // a warning in the body rather than a quiet meta.
+  const crossModel = models.length > 1
   return (
-    <Section title={t('report.efficiency')} meta={t('report.efficiencyScope')}>
+    <Section
+      title={t('report.efficiency')}
+      meta={report.efficiency.length === 0 || crossModel ? undefined : t('report.tokensSameModel', { model: models[0] ?? DASH })}
+    >
       {report.efficiency.length === 0
         ? <div className={css.dim}>{t('report.efficiencyNone')}</div>
         : (
           <>
-            <table className={css.reportTable}>
-              <thead>
-                <tr>
-                  <th className={css.reportHead}>{t('report.col.condition')}</th>
-                  <th className={css.reportHead}>{t('report.col.model')}</th>
-                  <th className={css.reportHead}>{t('report.col.activeMs')}</th>
-                  <th className={css.reportHead}>{t('report.col.rounds')}</th>
-                  <th className={css.reportHead}>{t('report.col.toolCalls')}</th>
-                  <th className={css.reportHead}>{t('report.col.outputTokens')}</th>
-                  <th className={css.reportHead}>{t('report.col.inputTokens')}</th>
-                  <th className={css.reportHead}>{t('report.col.cacheRead')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.efficiency.map(row => (
-                  <tr key={row.condition}>
-                    <th className={css.reportRowHead}>{row.condition}</th>
-                    <td className={css.reportTd}>{row.model ?? DASH}</td>
-                    <td className={css.reportTd}><Duration ms={row.activeMs} t={t} /></td>
-                    <td className={css.reportTd}><Count value={row.rounds} /></td>
-                    <td className={css.reportTd}><Count value={row.toolCalls} /></td>
-                    <td className={css.reportTd}><Count value={row.outputTokens} /></td>
-                    <td className={css.reportTd}><Count value={row.inputTokens} /></td>
-                    <td className={css.reportTd}><Count value={row.cacheReadTokens} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {/* 冻结决策 10: tokens compare only within one model. Two models on
-                the table is exactly when a reader would otherwise subtract. */}
-            <div className={models.length > 1 ? css.warning : css.dim}>
-              {models.length > 1
-                ? t('report.tokensCrossModel')
-                : t('report.tokensSameModel', { model: models[0] ?? DASH })}
-            </div>
-            <div className={css.dim}>
-              {excluded.length === 0
-                ? t('report.excludedNone')
-                : t('report.excluded', {
-                  total: excluded.reduce((sum, entry) => sum + entry.count, 0),
-                  detail: excluded.map(entry => `${entry.condition} ${entry.state} × ${entry.count}`).join('; '),
-                })}
-            </div>
+            {crossModel && <div className={css.warning}>{t('report.tokensCrossModel')}</div>}
             <EfficiencyChart report={report} t={t} />
+            <Detail summary={t('report.efficiencyDetail')}>
+              <table className={css.reportTable}>
+                <thead>
+                  <tr>
+                    <th className={css.reportHead}>{t('report.col.condition')}</th>
+                    <th className={css.reportHead}>{t('report.col.model')}</th>
+                    <th className={css.reportHead}>{t('report.col.activeMs')}</th>
+                    <th className={css.reportHead}>{t('report.col.rounds')}</th>
+                    <th className={css.reportHead}>{t('report.col.toolCalls')}</th>
+                    <th className={css.reportHead}>{t('report.col.outputTokens')}</th>
+                    <th className={css.reportHead}>{t('report.col.inputTokens')}</th>
+                    <th className={css.reportHead}>{t('report.col.cacheRead')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.efficiency.map(row => (
+                    <tr key={row.condition}>
+                      <th className={css.reportRowHead}>{row.condition}</th>
+                      <td className={css.reportTd}>{row.model ?? DASH}</td>
+                      <td className={css.reportTd}><Duration ms={row.activeMs} t={t} /></td>
+                      <td className={css.reportTd}><Count value={row.rounds} /></td>
+                      <td className={css.reportTd}><Count value={row.toolCalls} /></td>
+                      <td className={css.reportTd}><Count value={row.outputTokens} /></td>
+                      <td className={css.reportTd}><Count value={row.inputTokens} /></td>
+                      <td className={css.reportTd}><Count value={row.cacheReadTokens} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className={css.dim}>{t('report.efficiencyScope')}</div>
+              <div className={css.dim}>
+                {excluded.length === 0
+                  ? t('report.excludedNone')
+                  : t('report.excluded', {
+                    total: excluded.reduce((sum, entry) => sum + entry.count, 0),
+                    detail: excluded.map(entry => `${entry.condition} ${entry.state} × ${entry.count}`).join('; '),
+                  })}
+              </div>
+            </Detail>
           </>
         )}
     </Section>
@@ -955,7 +1181,13 @@ export function AnalysisBlock(props: {
     })
   }
   return (
-    <Detail summary={t('report.analysis', { n: files.length })} open={open} onToggle={setOpen} id="eval-report-analysis">
+    <Fold
+      summary={t('report.analysis', { n: files.length })}
+      aside={stamp(files[0]?.modifiedAt ?? null)}
+      open={open}
+      onToggle={setOpen}
+      id="eval-report-analysis"
+    >
       {files.map((file) => {
         const body = bodies[file.path]
         return (
@@ -980,7 +1212,7 @@ export function AnalysisBlock(props: {
           </Detail>
         )
       })}
-    </Detail>
+    </Fold>
   )
 }
 
@@ -1011,11 +1243,16 @@ export function ReportPage(props: {
   onOpenRuns: () => void
   /** Read one of the experiment's analysis files (block ⑤). */
   readAnalysis: ReadAnalysis
+  /** Hand the agent a 「给 {condition} 补判」 ask — the card's first next step. */
+  onRejudge: (condition: string) => void
+  /** Hand the agent a 「写分析初稿」 ask (T72's setDraft, clipboard fallback). */
+  onAskAnalysis: () => void
   t: LabViewProps['t']
 }) {
   const {
     report, loading, error, finalizing, finalizeResult, units, unitsError, reexporting,
-    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, onOpenRecord, onOpenAnswers, onOpenRuns, readAnalysis, t,
+    onFinalize, onExport, onReexport, onLookIn, onOpenRecords, onOpenRecord, onOpenAnswers, onOpenRuns, readAnalysis,
+    onRejudge, onAskAnalysis, t,
   } = props
   // finalize walks EVERY archived cell of the run through the release gate.
   // One click from a reading page is too few for a run-wide write, so the
@@ -1140,14 +1377,28 @@ export function ReportPage(props: {
     )
   }
 
-  // T72 §6 order: 结论卡 → (收尾 / 导出 / 重新导出) → 判据表 → 效率 → 审计（折叠）→ 分析初稿（折叠，T73）.
+  // Column order for every criteria table: the pairs' own reading order.
+  const order = [...new Set(report.pairs.flatMap(pair => [pair.a, pair.b]))]
+  const held = units !== null && units.available ? units.units.length : 0
+  const exportAside = [
+    report.exportedAt === null ? t('report.exportedAtUnknown') : t('report.exportedShort', { at: stamp(report.exportedAt) }),
+    ...(report.reexportable === true ? [t('report.reexportReady')] : []),
+  ].join(' · ')
+
+  // T80d order: 结论卡 → 逐条判据 → 效率 → 实验有效性校验（折叠）→ 导出与来源（折叠）→ 分析初稿（折叠，T73）.
   return (
     <div className={css.reportPage}>
-      <ConclusionCard report={report} onOpenAudit={openAudit} t={t} />
-      {bar}
-      {/* The whole of G17, said once, right under the buttons that fix it:
-          the bundle was exported before the last final verdict, so the card
-          above was computed without it. */}
+      <ConclusionCard
+        report={report}
+        onOpenAudit={openAudit}
+        onOpenAnswers={onOpenAnswers}
+        onRejudge={onRejudge}
+        onAskAnalysis={onAskAnalysis}
+        t={t}
+      />
+      {/* The whole of G17, said once and kept out of any fold: the bundle was
+          exported before the last final verdict, so the card above was
+          computed without it. */}
       {report.staleAfterFinal && (
         <div className={css.blocked}>
           <div>{t('report.staleAfterFinal', { final: stamp(report.lastHumanFinalAt) })}</div>
@@ -1165,89 +1416,117 @@ export function ReportPage(props: {
       {/* Where a reader who has just read the verdict asks WHICH dimension
           moved and on what grounds. `criteria` is empty when the invariants
           closed the comparison, and a single-group run still gets the table. */}
-      {report.criteria.map(table => (
-        <CriteriaTable
-          key={table.task}
-          table={table}
-          onOpenRecords={onOpenRecords}
-          onOpenRecord={onOpenRecord}
-          onOpenAnswers={onOpenAnswers}
-          t={t}
-        />
-      ))}
+      {report.criteria.length > 0 && (
+        <Section title={t('report.criteria')} meta={t('report.criteriaMeta')}>
+          {report.criteria.map(table => (
+            <CriteriaTable
+              key={table.task}
+              table={table}
+              order={order}
+              titled={report.criteria.length > 1}
+              onOpenRecords={onOpenRecords}
+              onOpenRecord={onOpenRecord}
+              onOpenAnswers={onOpenAnswers}
+              t={t}
+            />
+          ))}
+          <Detail summary={t('report.criteriaHowRead')}>
+            <div className={css.dim}>{t('report.criteriaHint')}</div>
+          </Detail>
+        </Section>
+      )}
 
       <Efficiency report={report} t={t} />
 
-      {/* 审计: everything the card was computed from, folded. The paired
-          tables, the five checks with the reason each matters on hover, the
-          judges' agreement, and which bundle this is and when it was written
-          against the latest final verdict. */}
-      <Detail summary={t('report.audit')} open={auditOpen} onToggle={setAuditOpen} id="eval-report-audit">
-        <div className={css.dim}>
-          {/* The bundle's own name, not the path it happens to sit at. */}
-          <span className={css.mono} title={report.bundleDir}>
-            {report.bundleDir.split('/').filter(Boolean).pop() ?? ''}
-          </span>
-          {' · '}
-          {t('report.counts', {
-            rows: report.counts.rows, missions: report.counts.missions,
-            attempts: report.counts.attempts, retries: report.counts.retries,
-          })}
-        </div>
-        <div className={css.dim}>
-          {report.exportedAt === null
-            ? t('report.exportedAtUnknown')
-            : t('report.exportedAt', { at: stamp(report.exportedAt) })}
-          {report.lastHumanFinalAt !== null && <> · {t('report.lastFinalAt', { at: stamp(report.lastHumanFinalAt) })}</>}
-          {report.summaryWritten && <> · {t('report.summaryIn')}</>}
-        </div>
-        {!report.summaryWritten && !report.staleAfterFinal && (
-          <div className={css.dim}>{t('report.summaryMissing')}</div>
-        )}
-
-        <Section title={t('report.invariants')}>
-          {report.invariants.map((check) => {
-            // The hover says why this check affects the COMPARISON — the
-            // one thing the title and the facts under it never said, and
-            // the reason a reader can act on a ⚠ instead of shrugging.
-            const why = invariantWhy(check.id)
-            return (
-              <div key={check.id} className={css.invariantRow} title={why === null ? check.id : t(why)}>
-                <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
-                <span className={css.invariantTitle}>{check.title}</span>
-                {check.details.map(detail => <div key={detail} className={css.invariantDetail}>{detail}</div>)}
-              </div>
-            )
-          })}
-        </Section>
-
-        {report.comparisonAllowed && !report.singleCondition && report.pairs.map(pair => (
-          <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} onOpenRecords={onOpenRecords} onOpenAnswers={onOpenAnswers} t={t} />
-        ))}
-
-        <JudgeConsistency report={report} t={t} />
-
-        {report.notes.length > 0 && (
-          <Section title={t('report.notes')}>
-            {report.notes.map(note => <div key={note} className={css.dim}>{note}</div>)}
+      <div className={css.reportFolds}>
+        {/* 实验有效性校验: everything the card was computed from, folded, with
+            each check's ✓ / ✗ on the summary line so a reader learns whether
+            to open it without opening it. */}
+        <Fold
+          summary={t('report.audit')}
+          aside={<ValidityAside report={report} t={t} />}
+          open={auditOpen}
+          onToggle={setAuditOpen}
+          id="eval-report-audit"
+        >
+          <Section title={t('report.invariants')}>
+            {report.invariants.map((check) => {
+              // The hover says why this check affects the COMPARISON — the
+              // one thing the title and the facts under it never said, and
+              // the reason a reader can act on a ⚠ instead of shrugging.
+              const why = invariantWhy(check.id)
+              return (
+                <div key={check.id} className={css.invariantRow} title={why === null ? check.id : t(why)}>
+                  <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
+                  <span className={css.invariantTitle}>{check.title}</span>
+                  {check.details.map(detail => <div key={detail} className={css.invariantDetail}>{detail}</div>)}
+                </div>
+              )
+            })}
           </Section>
-        )}
 
-        {/* The path and the shell line that reproduces this page belong to
-            whoever is at a terminal; §九 keeps both out of the page body. */}
-        <Detail summary={t('report.whereFold')}>
-          <div className={css.errorDetailLine}>{report.bundleDir}</div>
-          {report.cliHint !== null && (
-            <div className={css.errorDetailLine}>{t('report.cliHint')}: {report.cliHint}</div>
+          {report.comparisonAllowed && !report.singleCondition && report.pairs.map(pair => (
+            <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} onOpenRecords={onOpenRecords} onOpenAnswers={onOpenAnswers} t={t} />
+          ))}
+
+          <JudgeConsistency report={report} t={t} />
+
+          {report.notes.length > 0 && (
+            <Section title={t('report.notes')}>
+              {report.notes.map(note => <div key={note} className={css.dim}>{note}</div>)}
+            </Section>
           )}
-        </Detail>
-      </Detail>
+        </Fold>
 
-      {/* ⑤ 分析初稿: a draft about the numbers above, so it reads after them. */}
-      <AnalysisBlock key={report.runId} files={report.analysis} read={readAnalysis} t={t} />
+        {/* 导出与来源: the run-wide writes (收尾、导出、重新导出、回收) and
+            which bundle this is. Held containers ride the summary line — a
+            leak must not hide behind a closed fold (T57). */}
+        <Fold
+          summary={t('report.exportFold')}
+          aside={(
+            <>
+              {exportAside}
+              {held > 0 && <span className={css.warning}> · {t('report.unitsHeld', { count: held })}</span>}
+            </>
+          )}
+        >
+          {bar}
+          <div className={css.dim}>
+            {/* The bundle's own name, not the path it happens to sit at. */}
+            <span className={css.mono} title={report.bundleDir}>
+              {report.bundleDir.split('/').filter(Boolean).pop() ?? ''}
+            </span>
+            {' · '}
+            {t('report.counts', {
+              rows: report.counts.rows, missions: report.counts.missions,
+              attempts: report.counts.attempts, retries: report.counts.retries,
+            })}
+          </div>
+          <div className={css.dim}>
+            {report.exportedAt === null
+              ? t('report.exportedAtUnknown')
+              : t('report.exportedAt', { at: stamp(report.exportedAt) })}
+            {report.lastHumanFinalAt !== null && <> · {t('report.lastFinalAt', { at: stamp(report.lastHumanFinalAt) })}</>}
+            {report.summaryWritten && <> · {t('report.summaryIn')}</>}
+          </div>
+          {!report.summaryWritten && !report.staleAfterFinal && (
+            <div className={css.dim}>{t('report.summaryMissing')}</div>
+          )}
+          {units !== null && units.available && units.units.length > 0 && <UnitsSection units={units} t={t} />}
+          {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}
+          {/* The path and the shell line that reproduces this page belong to
+              whoever is at a terminal; §九 keeps both out of the page body. */}
+          <Detail summary={t('report.whereFold')}>
+            <div className={css.errorDetailLine}>{report.bundleDir}</div>
+            {report.cliHint !== null && (
+              <div className={css.errorDetailLine}>{t('report.cliHint')}: {report.cliHint}</div>
+            )}
+          </Detail>
+        </Fold>
 
-      {units !== null && units.available && units.units.length > 0 && <UnitsSection units={units} t={t} />}
-      {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}
+        {/* ⑤ 分析初稿: a draft about the numbers above, so it reads after them. */}
+        <AnalysisBlock key={report.runId} files={report.analysis} read={readAnalysis} t={t} />
+      </div>
     </div>
   )
 }

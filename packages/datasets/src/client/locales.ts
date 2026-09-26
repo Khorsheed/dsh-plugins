@@ -16,8 +16,23 @@ export type DatasetsKey =
   | 'registry.tracking'
   | 'registry.authoring'
   | 'registry.noAuthoring'
-  | 'registry.rowLayers'
-  | 'registry.usedBy'
+  | 'registry.colSet'
+  | 'registry.colLatest'
+  | 'registry.colItems'
+  | 'registry.colVisible'
+  | 'registry.colUsed'
+  | 'registry.usedCount'
+  | 'registry.usedCountUnpinned'
+  | 'registry.usedUnpinned'
+  | 'layers.faceOnly'
+  | 'layers.withAnswers'
+  | 'layers.withAnswersPlus'
+  | 'layers.raw'
+  | 'layers.none'
+  | 'layers.title'
+  | 'layers.edit'
+  | 'layers.editTitle'
+  | 'layers.unknownTitle'
   | 'registry.problem'
   | 'registry.problemFix'
   | 'registry.noSets'
@@ -90,6 +105,9 @@ export type DatasetsKey =
   | 'detail.playerShared'
   | 'detail.playerEmpty'
   | 'detail.judge'
+  | 'detail.judgeOnly'
+  | 'detail.judgeOnlyHint'
+  | 'detail.judgeOnlyEmpty'
   | 'detail.judgeRubric'
   | 'detail.judgeKind'
   | 'detail.judgeProbes'
@@ -231,13 +249,16 @@ export const zh: Record<DatasetsKey, string> = {
   'detail.validating': '校验中…',
   'detail.validateOk': '校验通过（{warnings} 个提示）',
   'detail.validateFound': '校验：{errors} 个错误 · {warnings} 个提示',
-  'detail.itemEmpty': '在左侧选一道题，看它的题面与可判性',
+  'detail.itemEmpty': '在左侧选一道题，看选手和判官各看得到什么',
   'detail.player': '选手将看到',
   'detail.playerHint': '这道题在单元里的样子：可见层文件 + 题集级题干。其他槽位的字节不会进选手的运行记录。',
   'detail.playerSummary': '{count} 个文件 · {bytes} 字节',
   'detail.playerShared': '题集级',
   'detail.playerEmpty': '这道题没有任何可见层文件——选手会拿到一个空工作区',
   'detail.judge': '可判性',
+  'detail.judgeOnly': '只有判官和探针看得到',
+  'detail.judgeOnlyHint': '不进选手单元的层：判分标准、探针与参考答案。',
+  'detail.judgeOnlyEmpty': '这道题没有只给判官的文件',
   'detail.judgeRubric': '评估标准 {leaves} 条',
   'detail.judgeKind': '{kind} {count}',
   'detail.judgeProbes': '探针 {count} 个',
@@ -288,7 +309,7 @@ export const zh: Record<DatasetsKey, string> = {
   'json.expandNode': '展开 JSON 节点',
   'json.copyButtonTitle': '{action}；右键查看更多复制选项',
 
-  'detail.itemEmptyHint': '右边会列出「选手将看到」的每个文件与字节数（防泄题自查），以及这道题能不能判。',
+  'detail.itemEmptyHint': '右边并排两栏：「选手将看到」的每个文件与字节数（防泄题自查），和「只有判官和探针看得到」的文件与这道题能不能判。',
   'detail.filterEmptyHint': '这个题集在这些槽位下没有文件。点上面的「全部」看整棵树。',
   'detail.runsEmptyHint': '实验跑过这道题之后，每条运行记录会按对比组与次数列在这里。',
   // ── 状态词表（ui-spec §九）：与实验室 tab 同一张表 ──────────────────────
@@ -323,8 +344,23 @@ export const zh: Record<DatasetsKey, string> = {
   'registry.tracking': '跟踪 {ref}',
   'registry.authoring': '新建题集、题目写进登记的检出',
   'registry.noAuthoring': '只读登记（没有写入检出）',
-  'registry.rowLayers': 'agent 可见：{layers}',
-  'registry.usedBy': '用于：{names}',
+  'registry.colSet': '仓库 · 题集',
+  'registry.colLatest': '最新版本',
+  'registry.colItems': '题数',
+  'registry.colVisible': 'agent 可见',
+  'registry.colUsed': '用在哪些实验',
+  'registry.usedCount': '{count} 个实验 · 分布在 {versions} 个版本',
+  'registry.usedCountUnpinned': '{count} 个实验',
+  'registry.usedUnpinned': '未钉版本',
+  'layers.faceOnly': '只看题面',
+  'layers.withAnswers': '含答案',
+  'layers.withAnswersPlus': '含答案 · {layers}',
+  'layers.raw': '{layers}',
+  'layers.none': '一层都看不到',
+  'layers.title': 'agent 能读的层：{layers}',
+  'layers.edit': '改',
+  'layers.editTitle': '在登记表单里改 {set} 的 agent 可见层',
+  'layers.unknownTitle': '{layers} 不在词表里，原样显示；这里不推断它是否含答案',
   'registry.problem': '这条登记现在读不出来',
   'registry.problemFix': '点「编辑登记」换一个存在的跟踪分支，或移除这条登记',
   'registry.noSets': '{ref} 上没有题集（datasets/ 为空）',
@@ -412,13 +448,16 @@ export const en: Record<DatasetsKey, string> = {
   'detail.validating': 'Validating…',
   'detail.validateOk': 'Validation passes ({warnings} warnings)',
   'detail.validateFound': 'Validation: {errors} errors · {warnings} warnings',
-  'detail.itemEmpty': 'Pick an item on the left to see its task face and judgeability',
+  'detail.itemEmpty': 'Pick an item on the left to see what the player and the judge each get',
   'detail.player': 'What the player will see',
   'detail.playerHint': 'This item as it looks inside the unit: the model-facing layer files plus the dataset-level task prompts. No other slot’s bytes reach the player’s cell.',
   'detail.playerSummary': '{count} files · {bytes} bytes',
   'detail.playerShared': 'dataset-level',
   'detail.playerEmpty': 'This item has no model-facing file — the player would get an empty workspace',
   'detail.judge': 'Judgeability',
+  'detail.judgeOnly': 'Only judges and probes see',
+  'detail.judgeOnlyHint': 'Layers that never reach the player’s unit: rubric, probes, reference answers.',
+  'detail.judgeOnlyEmpty': 'This item has no judge-only file',
   'detail.judgeRubric': '{leaves} rubric leaves',
   'detail.judgeKind': '{kind} {count}',
   'detail.judgeProbes': '{count} probes',
@@ -469,7 +508,7 @@ export const en: Record<DatasetsKey, string> = {
   'json.expandNode': 'Expand JSON node',
   'json.copyButtonTitle': '{action}; right-click for copy options',
 
-  'detail.itemEmptyHint': 'The right pane lists every file the player will receive, with byte counts (the anti-leak self-check), and whether the item can be scored at all.',
+  'detail.itemEmptyHint': 'Two boxes side by side on the right: every file the player will receive, with byte counts (the anti-leak self-check), and the files only the judge and probes can see, with whether the item can be scored at all.',
   'detail.filterEmptyHint': 'This dataset has no file in those slots. Press All above to see the whole tree.',
   'detail.runsEmptyHint': 'Once an experiment has run this item, each of its run records is listed here by arm and take.',
   // ── the word table (ui-spec §九): the same table the 实验室 tab carries ──
@@ -504,8 +543,23 @@ export const en: Record<DatasetsKey, string> = {
   'registry.tracking': 'tracking {ref}',
   'registry.authoring': 'new datasets and items are written to the registered checkout',
   'registry.noAuthoring': 'read-only registration (no authoring checkout)',
-  'registry.rowLayers': 'agent-visible: {layers}',
-  'registry.usedBy': 'used by: {names}',
+  'registry.colSet': 'Repository · set',
+  'registry.colLatest': 'Latest version',
+  'registry.colItems': 'Items',
+  'registry.colVisible': 'Agent sees',
+  'registry.colUsed': 'Used by experiments',
+  'registry.usedCount': '{count} experiments · across {versions} versions',
+  'registry.usedCountUnpinned': '{count} experiments',
+  'registry.usedUnpinned': 'no pinned version',
+  'layers.faceOnly': 'Task only',
+  'layers.withAnswers': 'Includes answers',
+  'layers.withAnswersPlus': 'Includes answers · {layers}',
+  'layers.raw': '{layers}',
+  'layers.none': 'No layer at all',
+  'layers.title': 'Layers the agent can read: {layers}',
+  'layers.edit': 'Change',
+  'layers.editTitle': 'Change what the agent can read of {set} in the registration form',
+  'layers.unknownTitle': '{layers} is not in the word table and is shown as is; this page does not guess whether it carries answers',
   'registry.problem': 'This registration cannot be read right now',
   'registry.problemFix': 'Edit the registration to pick an existing tracked branch, or remove it',
   'registry.noSets': 'No datasets on {ref} (empty datasets/)',

@@ -93,8 +93,12 @@ const REPORT: EvalRunReportView = {
     }],
     n: 2,
     ci: { mean: 1, lo: 0.5, hi: 1.5, samples: 2000, seed: 7 },
+    ciWithheld: null,
+    ciAdvisory: false,
     rank: null,
     rankReason: 'n = 2 < 3，不排名',
+    verdict: 'withheld',
+    coverage: [],
   }],
   criteria: [{
     task: 'P0',
@@ -470,8 +474,9 @@ describe('the four invariants', () => {
   it('all four ok opens the comparison section', async () => {
     const h = makeHarness()
     await openReport(h)
-    // Once in the conclusion card, once in the audit's pair table.
-    expect(await screen.findAllByText('report.pairTitle {"a":"cond-a","b":"cond-b"}')).toHaveLength(2)
+    // The audit's pair table; a card holding ONE pair does not name it again
+    // (T80d — the headline and the two scores already say which two).
+    expect(await screen.findAllByText('report.pairTitle {"a":"cond-a","b":"cond-b"}')).toHaveLength(1)
     expect(screen.queryByText(/report\.comparisonClosed/)).toBeNull()
   })
 })
@@ -480,32 +485,70 @@ describe('the conclusion card answers the plan\'s question (T74)', () => {
   const ASKED: EvalRunReportView = {
     ...REPORT,
     question: { question: 'cond-a 比 cond-b 强吗？', expectation: 'cond-a 更强', answeredWhen: '每题跑满 3 次' },
-    pairs: [{ ...REPORT.pairs[0]!, rank: 'a', rankReason: 'n = 3，cond-a 领先' }],
+    pairs: [{ ...REPORT.pairs[0]!, rank: 'a', verdict: 'ranked', rankReason: 'n = 3，cond-a 领先' }],
   }
 
-  it('opens with 「问题：… — 结论：…」, the yardstick and the expectation beside the actual direction', async () => {
+  it('puts the question above the answer, then the yardstick and the expectation beside the actual direction', async () => {
     const h = makeHarness(ASKED)
     await openReport(h)
+    const card = await screen.findByRole('region', { name: 'report.conclusion' })
     const direction = 'report.directionAhead {"ahead":"cond-a","behind":"cond-b"}'
+    expect(within(card).getByText('cond-a 比 cond-b 强吗？')).toBeTruthy()
+    expect(within(card).getByText(direction)).toBeTruthy()
+    expect(within(card).getByText('report.answeredWhen {"text":"每题跑满 3 次"}')).toBeTruthy()
     // The mock t() JSON-encodes its params, so the nested sentence arrives escaped.
-    expect(await screen.findByText(`report.answerLine ${JSON.stringify({ question: 'cond-a 比 cond-b 强吗？', answer: direction })}`)).toBeTruthy()
-    expect(screen.getByText('report.answeredWhen {"text":"每题跑满 3 次"}')).toBeTruthy()
-    expect(screen.getByText(`report.expectation ${JSON.stringify({ text: 'cond-a 更强', actual: direction })}`)).toBeTruthy()
-    // The pairing conclusion is still under it: the answer is a summary, not a replacement.
-    expect(screen.getAllByText('report.pairTitle {"a":"cond-a","b":"cond-b"}').length).toBeGreaterThan(0)
+    expect(within(card).getByText(`report.expectation ${JSON.stringify({ text: 'cond-a 更强', actual: direction })}`)).toBeTruthy()
+    // Each group's score, big, and the gap in words — with no 「但」 after it:
+    // a ranked pair has no reasons.
+    expect(within(card).getByText('3')).toBeTruthy()
+    expect(within(card).getByText('2')).toBeTruthy()
+    expect(within(card).getByText('report.deltaAhead {"ahead":"cond-a","behind":"cond-b","d":"1"}')).toBeTruthy()
+    expect(within(card).queryByText(/report\.reason\./)).toBeNull()
   })
 
-  it('an unranked pair answers 「未分高下」 — the report\'s rank, never re-decided', async () => {
-    const h = makeHarness({ ...ASKED, pairs: REPORT.pairs })
+  it('a tied pair answers 「未分高下」 — the report\'s verdict, never re-decided', async () => {
+    const h = makeHarness({ ...ASKED, pairs: [{ ...REPORT.pairs[0]!, verdict: 'tied', rank: null }] })
     await openReport(h)
-    expect(await screen.findByText(/report\.answerLine .*report\.directionNone/)).toBeTruthy()
+    const card = await screen.findByRole('region', { name: 'report.conclusion' })
+    expect(within(card).getByText('report.directionNone {"a":"cond-a","b":"cond-b"}')).toBeTruthy()
   })
 
-  it('a plan without a question keeps T72\'s pairing conclusion, with no question lines', async () => {
+  it('a plan without a question still answers — 「暂时不能下结论」 with the reasons as items (T80d ①)', async () => {
     const h = makeHarness()
     await openReport(h)
-    expect(await screen.findByText('report.conclusion')).toBeTruthy()
-    expect(screen.queryByText(/report\.answerLine|report\.answeredWhen|report\.expectation/)).toBeNull()
+    const card = await screen.findByRole('region', { name: 'report.conclusion' })
+    expect(within(card).getByText('report.answerClosed')).toBeTruthy()
+    expect(within(card).queryByText(/report\.answeredWhen|report\.expectation/)).toBeNull()
+    expect(within(card).getByText('report.reason.fewReps {"n":2}')).toBeTruthy()
+  })
+
+  it('names each reason in plain words, ✗ for a coverage gap, and offers the fix for it first', async () => {
+    const onlyScript: EvalRunReportView = {
+      ...REPORT,
+      pairs: [{
+        ...REPORT.pairs[0]!,
+        factor: { factor: null, multi: ['model.declared', 'scope'], known: true, detail: '' },
+        ciWithheld: { tasksWithDelta: 1 },
+        ci: null,
+        coverage: [{ condition: 'cond-b', why: 'script-only' }],
+      }],
+    }
+    const h = makeHarness(onlyScript)
+    await openReport(h)
+    const card = await screen.findByRole('region', { name: 'report.conclusion' })
+    const coverage = within(card).getByText(
+      'report.reason.coverage {"detail":"report.coverage.script-only {\\"condition\\":\\"cond-b\\"}"}',
+    )
+    expect(coverage.closest('li')?.getAttribute('data-level')).toBe('block')
+    expect(within(card).getByText('report.reason.fewTasks {"k":1}')).toBeTruthy()
+    expect(within(card).getByText('report.reason.multi {"fields":"model.declared、scope"}')).toBeTruthy()
+    // The report's own sentence stays one hover away.
+    expect(within(card).getByTitle('n = 2 < 3，不排名')).toBeTruthy()
+    // At most three next steps, the rejudge first.
+    const actions = within(card).getAllByRole('button').filter(button => /report\.next\./.test(button.textContent ?? ''))
+    expect(actions.map(button => button.textContent)).toEqual([
+      'report.next.rejudge {"condition":"cond-b"}', 'report.next.answers', 'report.next.analysis',
+    ])
   })
 })
 
@@ -523,7 +566,7 @@ describe('⑤ 分析初稿 (T73)', () => {
     const h = makeHarness()
     await openReport(h)
     await screen.findByText('report.audit')
-    expect(screen.queryByText(/report\.analysis/)).toBeNull()
+    expect(screen.queryByText(/report\.analysis \{/)).toBeNull()
     expect(h.fetchExperimentArtifact).not.toHaveBeenCalled()
   })
 
@@ -596,8 +639,9 @@ describe('the pair table', () => {
     expect(screen.getByText('report.col.weightedDelta')).toBeTruthy()
     // A mean keeps three decimals; an integer stays an integer (summary.md's rule).
     expect(screen.getByText('report.ci {"mean":"1","lo":"0.500","hi":"1.500","samples":2000,"seed":7}')).toBeTruthy()
-    // The refusal to rank is the report's own sentence, kept whole.
-    expect(screen.getByText(/n = 2 < 3，不排名/)).toBeTruthy()
+    // The refusal to rank is the report's own sentence, kept whole — on the
+    // card's hover, behind the plain-words reasons (T80d).
+    expect(screen.getAllByTitle('n = 2 < 3，不排名').length).toBeGreaterThan(0)
   })
 })
 
@@ -607,8 +651,12 @@ describe('the 判据 × 对比组 table (T54 补一)', () => {
     await openReport(h)
     await screen.findByText('report.col.criterion')
 
-    expect(screen.getByText('report.col.axis')).toBeTruthy()
-    expect(screen.getByText('正确性')).toBeTruthy()
+    // Rows sit under their dimension (T80d P2-12) instead of a column of it.
+    expect(screen.queryByText('report.col.axis')).toBeNull()
+    expect(screen.getByText('正确性').tagName).toBe('TH')
+    expect(screen.getByText('代价')).toBeTruthy()
+    // A group that never judged a criterion says 未判 in words.
+    expect(screen.getAllByText('report.notJudgedChip').length).toBeGreaterThan(0)
     // The three shapes of the source label, on one table: one layer prints
     // the WORD alone, and the 自评 / weight columns stay per row.
     expect(screen.getAllByText('source.human')).toHaveLength(1)
@@ -683,7 +731,7 @@ describe('the efficiency table', () => {
   it('draws the three metrics as bars, each scaled inside its OWN metric', async () => {
     const h = makeHarness()
     await openReport(h)
-    await screen.findByText('report.chart')
+    await screen.findByText('report.chart.activeMs')
 
     // The three ui-spec §五 v2 names, and nothing summed across them: they
     // have no common unit, so one shared scale would be a lie with a picture
@@ -1003,7 +1051,8 @@ describe('the conclusion card (T72 §6)', () => {
     const h = makeHarness()
     await openReport(h)
     const card = await screen.findByRole('region', { name: 'report.conclusion' })
-    expect(within(card).getByText('n = 2 < 3，不排名')).toBeTruthy()
+    expect(within(card).getAllByTitle('n = 2 < 3，不排名').length).toBeGreaterThan(0)
+    expect(within(card).getByText('report.ci {"mean":"1","lo":"0.500","hi":"1.500","samples":2000,"seed":7}')).toBeTruthy()
     expect(within(card).getByText('report.sourceDraft')).toBeTruthy()
     // The card comes before the criteria table and the efficiency section.
     const criteria = screen.getAllByText('report.col.criterion')[0]!

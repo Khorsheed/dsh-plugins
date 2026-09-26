@@ -51,7 +51,7 @@ const LIST: EvalExperimentsResult = {
     judges: ['judge-a'],
     items: 4,
     reps: 2,
-    factors: ['harness.name', 'model.declared'],
+    factors: ['harness.name', 'model.declared', 'home.sha'],
     progress: null,
     startedAt: null,
     validation: { ok: true, errors: 0, warnings: 1 },
@@ -323,10 +323,16 @@ describe('the plan-review page', () => {
 
     // The kv block: snapshot, shape, factors, judge and samples, order, stages.
     expect(await screen.findByText('overview.shapeValue {"items":4,"conditions":2,"reps":2,"cells":16}')).toBeTruthy()
-    // ui-spec §九: the factor cell carries the fields' WORDS, in the spec's
-    // own order; the dotted paths stay on the cell's title.
-    expect(screen.getByText(/factor\.model\.declared · factor\.harness\.name/)).toBeTruthy()
-    expect(screen.getByText(/judge-a · overview.judgeSamples/)).toBeTruthy()
+    // ui-spec §九 / T80d: the comparison table's foot names the differing
+    // fields in WORDS, in the spec's own order, and warns that two of them
+    // make the comparison descriptive; the dotted paths stay on its title.
+    expect(screen.getByText(/conditions\.differsWarn .*factor\.model\.declared、factor\.harness\.name/)).toBeTruthy()
+    // A differing field with no column (the home digest) is named as living in
+    // the group name's hover, so three differences over two columns do not
+    // read as a column gone missing; the columned ones carry no such hint.
+    expect(screen.getByText(/conditions\.differsWarn .*conditions\.factorHover \{\\"field\\":\\"factor\.home\.sha\\"\}/)).toBeTruthy()
+    expect(screen.queryByText(/factorHover \{\\"field\\":\\"factor\.(model|harness)/)).toBeNull()
+    expect(screen.getByText((_, el) => el?.tagName === 'DD' && /^judge-a · overview.judgeSamples/.test(el.textContent ?? ''))).toBeTruthy()
     // Seed, stages, budget, items and the author's note are settings a reader
     // needs once: ui-spec §五 v2 folds them under 高级设置 rather than smearing
     // them across the page (the note kept its line breaks on the way).
@@ -571,15 +577,17 @@ describe('the planned grid', () => {
     const h = makeHarness()
     renderView(h)
     await openPage(h, 'page.design')
-    await screen.findByText('design.grid')
+    // Folded under 方案 (T80d): the grid is the plan's receipt, not its headline.
+    await screen.findByText(/^design\.gridFold/)
 
     // 4 items × 2 groups, each seat carrying the reps the plan asks for. v1
     // had nothing here at all: the shape of an experiment was an arithmetic
     // expression until the run made it a picture, which is too late to change
     // it (ui-spec §五 v2).
     expect(screen.getAllByText('design.planned {"reps":2}')).toHaveLength(8)
+    // Each item twice: the 用哪些题 table's row and the grid's row head.
     for (const item of ['p0-001', 'p0-002', 'f2-001', 'f3-001']) {
-      expect(screen.getByText(item)).toBeTruthy()
+      expect(screen.getAllByText(item)).toHaveLength(2)
     }
     // ui-spec §九: the heading is the group, the comparison VARIABLE's value
     // is the subtitle — not a repeat of the harness the table already spells
@@ -612,8 +620,10 @@ describe('the conditions page', () => {
     expect(screen.getByText('conditions.scopeDefault')).toBeTruthy()
     expect(screen.getByText('eval-b')).toBeTruthy()
     expect(screen.getByText('bench')).toBeTruthy()
-    expect(screen.getByText('conditions.lockOk')).toBeTruthy()
-    expect(screen.getByText(/conditions.lockNone/)).toBeTruthy()
+    // A ready row's lock is its chip's hover (T80d): the sentence is spelled
+    // out only on the row that needs doing something about.
+    expect(screen.getByTitle('conditions.lockOk')).toBeTruthy()
+    expect(screen.getAllByText(/conditions.lockNone/).length).toBeGreaterThan(0)
     expect(screen.getByText('conditions.ready')).toBeTruthy()
     expect(screen.getByText('conditions.unready')).toBeTruthy()
   })
@@ -632,7 +642,7 @@ describe('the conditions page', () => {
     const h = makeHarness()
     renderView(h)
     await openPage(h, 'page.design')
-    await screen.findByText('conditions.pickHint')
+    await screen.findAllByTitle('conditions.pickHint')
     pick('dsh-exec')
     expect(screen.getByText('conditions.pickOne')).toBeTruthy()
     pick('codex-exec')
@@ -659,7 +669,7 @@ describe('the conditions page', () => {
     })
     renderView(h)
     await openPage(h, 'page.design')
-    await screen.findByText('conditions.pickHint')
+    await screen.findAllByTitle('conditions.pickHint')
     pick('dsh-exec')
     pick('codex-exec')
     await waitFor(() => { expect(h.fetchConditionDiff).toHaveBeenCalledTimes(1) })
@@ -673,7 +683,7 @@ describe('the conditions page', () => {
     const h = makeHarness()
     renderView(h)
     await openPage(h, 'page.design')
-    await screen.findByText('conditions.pickHint')
+    await screen.findAllByTitle('conditions.pickHint')
     pick('dsh-exec')
     pick('codex-exec')
     expect(await screen.findByText('conditions.diffCount {"count":3}')).toBeTruthy()
@@ -691,7 +701,9 @@ describe('the conditions page', () => {
     await screen.findAllByText('codex-exec')
     expect(screen.getByText(/conditions.lockNone/)).toBeTruthy()
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[1] as HTMLElement)
+    // Only the unready row carries the button (T80d).
+    expect(screen.getAllByRole('button', { name: 'conditions.provision' })).toHaveLength(1)
+    fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[0] as HTMLElement)
 
     await waitFor(() => {
       expect(h.provisionCondition).toHaveBeenCalledWith('s1', { condition: 'codex-exec' })
@@ -701,7 +713,9 @@ describe('the conditions page', () => {
     expect(h.provisionCondition).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('conditions.provisionWritten')).toBeTruthy()
     expect(screen.getByText('conditions.provisionWroteBack')).toBeTruthy()
-    await waitFor(() => { expect(screen.getAllByText('conditions.ready')).toHaveLength(2) })
+    // Every row ready: the state column has nothing left to say and goes.
+    await waitFor(() => { expect(screen.queryByText('conditions.unready')).toBeNull() })
+    expect(screen.queryByRole('button', { name: 'conditions.provision' })).toBeNull()
     // The check lines are the plan-review page's own shape, verbatim.
     expect(screen.getByText(/the declaration was corrected and re-hashed/)).toBeTruthy()
   })
@@ -718,7 +732,9 @@ describe('the conditions page', () => {
     // so waiting for «exactly one» is waiting for a page that never settles.
     await screen.findAllByText('codex-exec')
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[1] as HTMLElement)
+    // Only the unready row carries the button (T80d).
+    expect(screen.getAllByRole('button', { name: 'conditions.provision' })).toHaveLength(1)
+    fireEvent.click(screen.getAllByRole('button', { name: 'conditions.provision' })[0] as HTMLElement)
 
     // Three-part seat (ui-spec §九): the page says what happened and what to
     // do, and the host's own sentence is inside the fold — not on the page.

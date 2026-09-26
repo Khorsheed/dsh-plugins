@@ -95,6 +95,12 @@ export interface DatasetsViewState {
    * absent key) means this instance carries no eval plugin — the section hides.
    */
   runs: Record<string, ItemRunsView | null>
+  /**
+   * The list page's «题数» per registration id, then per set id. An absent
+   * registration is still loading; `null` means its count read failed, and
+   * the cells stay a dash either way.
+   */
+  itemCounts: Record<string, Record<string, number> | null>
   /** Experiments the repository's plans declare, or null when no eval plugin answered. */
   experiments: readonly DatasetExperimentRow[] | null
   /** The detail page's latest validate outcome, keyed by dataset id. */
@@ -132,6 +138,7 @@ export type DatasetsViewActions = {
   setBriefLoading: (draft: DatasetsViewState, key: string, loading: boolean) => void
   setBriefError: (draft: DatasetsViewState, key: string, error: string | null) => void
   setRuns: (draft: DatasetsViewState, key: string, runs: ItemRunsView | null) => void
+  setItemCounts: (draft: DatasetsViewState, repo: string, counts: Record<string, number> | null) => void
   setExperiments: (draft: DatasetsViewState, rows: readonly DatasetExperimentRow[] | null) => void
   setValidated: (draft: DatasetsViewState, dataset: string, result: ValidateDatasetResult) => void
   setValidating: (draft: DatasetsViewState, running: boolean) => void
@@ -163,6 +170,7 @@ const INITIAL: DatasetsViewState = {
   briefLoading: {},
   briefError: {},
   runs: {},
+  itemCounts: {},
   experiments: null,
   validated: {},
   validating: false,
@@ -248,6 +256,7 @@ export function createDatasetsViewStore(): EngineStoreHandle<DatasetsViewState, 
         else d.briefError[key] = error
       },
       setRuns: (d, key: string, runs: ItemRunsView | null) => { d.runs[key] = runs },
+      setItemCounts: (d, repo: string, counts: Record<string, number> | null) => { d.itemCounts[repo] = counts },
       setExperiments: (d, rows: readonly DatasetExperimentRow[] | null) => { d.experiments = rows },
       setValidated: (d, dataset: string, result: ValidateDatasetResult) => { d.validated[dataset] = result },
       setValidating: (d, running: boolean) => { d.validating = running },

@@ -338,6 +338,24 @@ export function readinessSentence(
   return { key, params: en[key].includes('{field}') && field !== null ? { condition, field } : { condition } }
 }
 
+/**
+ * The consequence line under one REMINDER (T80d · P2-7): what starting anyway
+ * will cost, so 「不影响启动」 is not read as 「不重要」. Only the codes whose
+ * consequence is known have one; the rest keep their sentence alone rather
+ * than a guess.
+ * @param code - validate's code.
+ * @returns the dictionary key, or null.
+ */
+export function reminderConsequenceKey(code: string): EvalKey | null {
+  return REMINDER_CONSEQUENCES.has(code) ? `readiness.then.${code}` as EvalKey : null
+}
+
+/** The reminder codes {@link reminderConsequenceKey} has a sentence for. */
+export const REMINDER_CONSEQUENCES: ReadonlySet<string> = new Set([
+  'COMMIT_UNRESOLVED', 'EXPECTED_NS_NO_PROBE', 'EXPECTED_NS_NO_RUBRIC', 'EXPECTED_NS_NO_LLM_DRAFT_CRITERIA',
+  'HOME_SHA_UNDECLARED', 'HOME_SHA_WRITTEN', 'CAPABILITIES_UNMEASURED', 'CLAUDE_CONTAINER_SCOPE_SHARED',
+])
+
 // ── the conclusion card ──────────────────────────────────────────────────
 
 /**

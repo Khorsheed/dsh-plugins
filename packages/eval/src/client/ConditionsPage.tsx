@@ -48,8 +48,8 @@ import type {
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { ErrorState } from './ErrorState.tsx'
-import { Chip, Detail, EmptyState, Field, Hash, Word, severityKey, severityTone } from './parts.tsx'
-import { factorPhrase, shortenValue } from './vocab.ts'
+import { Chip, Detail, EmptyState, Field, Word, severityKey, severityTone } from './parts.tsx'
+import { factorPhrase, shortenValue, splitFactors } from './vocab.ts'
 import type { ConditionActionNote } from './store.ts'
 import css from './LabView.module.css'
 
@@ -113,6 +113,8 @@ function EndpointEditor(props: {
  */
 function EndpointCell(props: {
   row: EvalConditionRow
+  /** The column is one the groups differ on (T80d): the cell carries the highlight. */
+  differs?: boolean
   editing: boolean
   busy: boolean
   onEdit: () => void
@@ -120,13 +122,14 @@ function EndpointCell(props: {
   onCancel: () => void
   t: LabViewProps['t']
 }) {
-  const { row, editing, busy, onEdit, onSubmit, onCancel, t } = props
+  const { row, differs = false, editing, busy, onEdit, onSubmit, onCancel, t } = props
   if (editing) return <EndpointEditor row={row} busy={busy} onSubmit={onSubmit} onCancel={onCancel} t={t} />
   return (
     <span
       role="button"
       tabIndex={0}
       className={row.endpoint === null ? css.warning : css.mono}
+      data-differs={differs ? '' : undefined}
       title={t('conditions.endpointEdit')}
       onClick={(event) => { event.stopPropagation(); onEdit() }}
       onKeyDown={(event) => {
@@ -221,6 +224,61 @@ function Diff(props: { diff: EvalConditionDiffView; t: LabViewProps['t'] }) {
   )
 }
 
+/** One column the table MAY show: its field name, its factor paths, and how a row reads it. */
+interface CompareColumn {
+  key: 'harness' | 'model' | 'endpoint' | 'scope' | 'preset'
+  label: EvalKey
+  /** A factor path belongs to this column when it starts with one of these. */
+  paths: readonly string[]
+  value: (row: EvalConditionRow) => string | null
+}
+
+const COMPARE_COLUMNS: readonly CompareColumn[] = [
+  { key: 'harness', label: 'conditions.col.harness', paths: ['harness.', 'drive'], value: row => row.harness === null ? null : `${row.harness}${row.drive === null ? '' : ` · ${row.drive}`}` },
+  { key: 'model', label: 'conditions.col.model', paths: ['model.declared'], value: row => row.model },
+  { key: 'endpoint', label: 'conditions.col.endpoint', paths: ['model.endpoint', 'endpoint'], value: row => row.endpoint },
+  { key: 'scope', label: 'conditions.col.scope', paths: ['scope'], value: row => row.scope },
+  { key: 'preset', label: 'conditions.col.preset', paths: ['preset', 'agentPreset'], value: row => row.preset },
+]
+
+/**
+ * Which columns the table shows, and which of them differ (T80d · P1-4).
+ *
+ * The table is there to show what separates the subjects, so it lists the
+ * fields the rows DISAGREE on — read off the rows themselves, so what is
+ * highlighted is exactly what is on screen. The endpoint joins whenever one
+ * is unset, because that cell is where it gets fixed. With nothing differing
+ * (or one row) the harness and model still say what the subject is.
+ * @param rows - the declared rows this experiment names.
+ * @returns the columns in display order, each with whether it differs.
+ */
+export function compareColumns(rows: readonly EvalConditionRow[]): Array<CompareColumn & { differs: boolean }> {
+  const marked = COMPARE_COLUMNS.map(column => ({
+    ...column,
+    differs: rows.length > 1 && new Set(rows.map(row => column.value(row))).size > 1,
+  }))
+  const shown = marked.filter(column => column.differs || (column.key === 'endpoint' && rows.some(row => row.endpoint === null)))
+  if (shown.some(column => column.differs)) return shown
+  const base = marked.filter(column => column.key === 'harness' || column.key === 'model')
+  return [...base, ...shown.filter(column => !base.some(entry => entry.key === column.key))]
+}
+
+/** The group name's hover: the declaration sha, and the scoped-home digest once a lock recorded one. */
+export function condIdHover(row: EvalConditionRow, t: LabViewProps['t']): string {
+  const own = row.sha ?? row.id
+  return row.lock.homeSha === null ? own : `${own}\n${t('conditions.homeShaHover', { sha: row.lock.homeSha })}`
+}
+
+/** The cell a column renders for one row. */
+function compareCell(column: CompareColumn, row: EvalConditionRow, t: LabViewProps['t']) {
+  const value = column.value(row)
+  switch (column.key) {
+    case 'model': return <span className={css.mono}>{value ?? '—'}</span>
+    case 'scope': return <span>{value ?? <span className={css.dim}>{t('conditions.scopeDefault')}</span>}</span>
+    default: return <span>{value ?? '—'}</span>
+  }
+}
+
 /**
  * The comparison-group table.
  * @param props - the registry payload, the picked pair and its diff.
@@ -247,6 +305,17 @@ export function ConditionsTable(props: {
   only: readonly string[]
   /** Which of them judge rather than play — the one thing the columns cannot say. */
   judges: readonly string[]
+  /**
+   * Every field the experiment's groups disagree on (the list row's
+   * `factors`). More than one and the warning says the result can only be
+   * described (T80d · P1-4).
+   */
+  factors?: readonly string[]
+  /**
+   * The sha each group had when the run started, by id; absent before a
+   * start. A row whose declaration moved since carries 「开跑时 / 当前」.
+   */
+  startedShas?: Readonly<Record<string, string | null>>
   onPick: (id: string) => void
   onProvision: (row: EvalConditionRow) => void
   onEditEndpoint: (id: string | null) => void
@@ -255,7 +324,7 @@ export function ConditionsTable(props: {
 }) {
   const {
     view, loading, error, pair, diff, diffError, busy, provision, action, editing, only, judges,
-    onPick, onProvision, onEditEndpoint, onSetEndpoint, t,
+    factors = [], startedShas = {}, onPick, onProvision, onEditEndpoint, onSetEndpoint, t,
   } = props
   const declared = (view?.rows ?? []).filter(row => only.includes(row.id))
   // A group the plan NAMES and the repository does not declare used to be
@@ -263,6 +332,34 @@ export function ConditionsTable(props: {
   // one-row table and said nothing about the other two (I5·T67 · W12). It is
   // a row now, carrying the one fact there is about it.
   const absent = only.filter(id => !declared.some(row => row.id === id))
+  // Only the players are compared: a judge differs from them by design.
+  const players = declared.filter(row => !judges.includes(row.id))
+  const columns = compareColumns(players.length > 1 ? players : declared)
+  // The state column is for the rows that still need something; a table of
+  // ready groups has nothing to say there, and 准备环境 on a ready row was a
+  // button that did nothing new (T80d · P2-6).
+  const stateShown = absent.length > 0 || declared.some(row => row.status !== 'ready')
+  const template = `minmax(150px, 1.2fr) ${columns.map(() => 'minmax(90px, 1fr)').join(' ')}${stateShown ? ' minmax(170px, 1.4fr)' : ''}`
+  const same = COMPARE_COLUMNS
+    .filter(column => !columns.some(entry => entry.key === column.key))
+    .map((column) => {
+      const values = new Set(players.map(row => column.value(row)))
+      const only1 = [...values][0]
+      return values.size === 1 && only1 !== null && only1 !== undefined ? `${t(column.label)} ${only1}` : null
+    })
+    .filter((entry): entry is string => entry !== null)
+  // The spec's own order (the designed variables first), the same order the
+  // experiment list's factor cell reads in.
+  const ordered = ((split): string[] => [...split.named, ...split.incidental])(splitFactors(factors))
+  // A differing field with no column of its own (the scoped-home digest, say)
+  // lives in the group name's hover; the warning says so, or a count of three
+  // over two highlighted columns reads as a column gone missing (T80d · ②).
+  const factorWords = ordered.map((path) => {
+    const phrase = factorPhrase(path)
+    const word = phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)
+    const columned = columns.some(column => column.paths.some(prefix => path.startsWith(prefix)))
+    return columned ? word : t('conditions.factorHover', { field: word })
+  })
   return (
     <>
       {loading && view === null && <div className={css.empty}>{t('conditions.loading')}</div>}
@@ -272,9 +369,6 @@ export function ConditionsTable(props: {
       )}
       {(declared.length > 0 || absent.length > 0) && (
         <>
-          {declared.length > 1 && (
-            <div className={css.dim}>{pair.length === 1 ? t('conditions.pickOne') : t('conditions.pickHint')}</div>
-          )}
           {/* Above the table, not below it: this is the answer to a button the
               person just pressed, and a registry of a dozen conditions pushes
               anything under it off the screen. */}
@@ -283,96 +377,120 @@ export function ConditionsTable(props: {
             <ErrorState what={action.what} message={action.message} compact t={t} />
           )}
           {provision !== null && <ProvisionReport view={provision} t={t} />}
-          <div className={css.condHead}>
-            <span>{t('conditions.col.id')}</span>
-            <span>{t('conditions.col.harness')}</span>
-            <span>{t('conditions.col.model')}</span>
-            <span>{t('conditions.col.endpoint')}</span>
-            <span>{t('conditions.col.scope')}</span>
-            <span>{t('conditions.col.preset')}</span>
-            <span>{t('conditions.col.lock')}</span>
-            <span>{t('conditions.col.ready')}</span>
-            <span>{t('conditions.col.action')}</span>
-          </div>
-          {declared.map(row => (
-            // A div rather than a button: the row now holds an input and a
-            // button of its own, and interactive content inside a <button> is
-            // invalid HTML that browsers resolve by hoisting the children out
-            // of it. The picking affordance is kept whole — role, pressed
-            // state, tab stop and the Enter/Space keys.
-            <div
-              key={row.id}
-              role="button"
-              tabIndex={0}
-              className={css.condRow}
-              aria-pressed={pair.includes(row.id)}
-              onClick={() => { onPick(row.id) }}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return
-                event.preventDefault()
-                onPick(row.id)
-              }}
-            >
-              <span className={css.condId} title={row.sha ?? row.id}>
-                {row.id}
-                {/* A judge is a subject like any other — same declaration,
-                    same lock, same readiness gate — and nothing else in this
-                    table would say which one it is. */}
-                {judges.includes(row.id) && <Chip>{t('role.judge')}</Chip>}
-                {row.sha !== null && <span className={css.condSha}><Hash value={row.sha} /></span>}
-              </span>
-              <span>{row.harness ?? '—'}{row.drive === null ? '' : ` · ${row.drive}`}</span>
-              <span className={css.mono}>{row.model ?? '—'}</span>
-              <EndpointCell
-                row={row}
-                editing={editing === row.id}
-                busy={busy === row.id}
-                onEdit={() => { onEditEndpoint(row.id) }}
-                onSubmit={(value) => { onSetEndpoint(row, value) }}
-                onCancel={() => { onEditEndpoint(null) }}
-                t={t}
-              />
-              <span>{row.scope ?? <span className={css.dim}>{t('conditions.scopeDefault')}</span>}</span>
-              <span>{row.preset ?? '—'}</span>
-              <span className={css.dim}>{lockCell(row, t)}</span>
-              <span>
-                <Chip tone={row.status === 'ready' ? 'ok' : 'warn'}>
-                  {t(STATUS_KEY[row.status] ?? 'conditions.unready')}
-                </Chip>
-              </span>
-              <span
-                className={css.condAction}
-                onClick={(event) => { event.stopPropagation() }}
-                onKeyDown={(event) => { event.stopPropagation() }}
-              >
-                <Button
-                  size="sm"
-                  disabled={busy !== null}
-                  title={t('conditions.provisionHint')}
-                  onClick={() => { onProvision(row) }}
+          <div className={css.compareTable} style={{ ['--compare-cols' as string]: template }}>
+            <div className={css.condHead}>
+              <span>{t('conditions.col.id')}</span>
+              {columns.map(column => <span key={column.key}>{t(column.label)}</span>)}
+              {stateShown && <span>{t('conditions.col.ready')}</span>}
+            </div>
+            {declared.map((row) => {
+              const startedSha = startedShas[row.id]
+              const moved = startedSha !== undefined && startedSha !== null && row.sha !== null && startedSha !== row.sha
+              return (
+                // A div rather than a button: the row now holds an input and a
+                // button of its own, and interactive content inside a <button> is
+                // invalid HTML that browsers resolve by hoisting the children out
+                // of it. The picking affordance is kept whole — role, pressed
+                // state, tab stop and the Enter/Space keys.
+                <div
+                  key={row.id}
+                  role="button"
+                  tabIndex={0}
+                  className={css.condRow}
+                  aria-pressed={pair.includes(row.id)}
+                  title={t('conditions.pickHint')}
+                  onClick={() => { onPick(row.id) }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    onPick(row.id)
+                  }}
                 >
-                  {busy === row.id ? t('conditions.provisioning') : t('conditions.provision')}
-                </Button>
-              </span>
+                  {/* The sha is the declaration's identity, not something a
+                      reader compares by eye: it is the hover. Only when the
+                      declaration moved since the run started does it earn a
+                      mark on the page (T80d · ②). */}
+                  <span className={css.condId} title={condIdHover(row, t)}>
+                    {row.id}
+                    {/* A judge is a subject like any other — same declaration,
+                        same lock, same readiness gate — and nothing else in this
+                        table would say which one it is. */}
+                    {judges.includes(row.id) && <Chip>{t('role.judge')}</Chip>}
+                    {moved && (
+                      <Chip tone="warn" title={t('conditions.shaMoved', { started: startedSha.slice(0, 7), now: (row.sha ?? '').slice(0, 7) })}>
+                        {t('conditions.shaMovedChip')}
+                      </Chip>
+                    )}
+                  </span>
+                  {columns.map(column => (
+                    column.key === 'endpoint'
+                      ? (
+                        <EndpointCell
+                          key={column.key}
+                          row={row}
+                          differs={column.differs && !judges.includes(row.id)}
+                          editing={editing === row.id}
+                          busy={busy === row.id}
+                          onEdit={() => { onEditEndpoint(row.id) }}
+                          onSubmit={(value) => { onSetEndpoint(row, value) }}
+                          onCancel={() => { onEditEndpoint(null) }}
+                          t={t}
+                        />
+                      )
+                      : (
+                        <span key={column.key} data-differs={column.differs && !judges.includes(row.id) ? '' : undefined}>
+                          {compareCell(column, row, t)}
+                        </span>
+                      )
+                  ))}
+                  {stateShown && (
+                    <span
+                      className={css.condAction}
+                      onClick={(event) => { event.stopPropagation() }}
+                      onKeyDown={(event) => { event.stopPropagation() }}
+                    >
+                      <Chip tone={row.status === 'ready' ? 'ok' : 'warn'} title={lockCell(row, t)}>
+                        {t(STATUS_KEY[row.status] ?? 'conditions.unready')}
+                      </Chip>
+                      {row.status !== 'ready' && <span className={css.dim}>{lockCell(row, t)}</span>}
+                      {row.status !== 'ready' && (
+                        <Button
+                          size="sm"
+                          disabled={busy !== null}
+                          title={t('conditions.provisionHint')}
+                          onClick={() => { onProvision(row) }}
+                        >
+                          {busy === row.id ? t('conditions.provisioning') : t('conditions.provision')}
+                        </Button>
+                      )}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+            {absent.map(id => (
+              // Not pickable and not provisionable: there is no declaration to
+              // diff or to turn into a scoped home. The row exists so the group
+              // is COUNTED — an experiment naming a subject nobody has is a
+              // fact about the experiment, not an empty space in a table.
+              <div key={`absent/${id}`} className={css.condRow} data-absent="">
+                <span className={css.condId} title={id}>{id}</span>
+                {columns.map(column => <span key={column.key} className={css.dim}>—</span>)}
+                <span><Chip tone="danger">{t('conditions.missing')}</Chip></span>
+              </div>
+            ))}
+          </div>
+          {(same.length > 0 || factors.length > 1) && (
+            <div className={css.compareFoot}>
+              {same.length > 0 && <span className={css.dim}>{t('conditions.same', { fields: same.join(' · ') })}</span>}
+              {factors.length > 1 && (
+                <span className={css.warning} title={factors.join(', ')}>
+                  {t('conditions.differsWarn', { count: factors.length, fields: factorWords.join('、') })}
+                </span>
+              )}
             </div>
-          ))}
-          {absent.map(id => (
-            // Not pickable and not provisionable: there is no declaration to
-            // diff or to turn into a scoped home. The row exists so the group
-            // is COUNTED — an experiment naming a subject nobody has is a
-            // fact about the experiment, not an empty space in a table.
-            <div key={`absent/${id}`} className={css.condRow} data-absent="">
-              <span className={css.condId} title={id}>{id}</span>
-              <span className={css.dim}>—</span>
-              <span className={css.dim}>—</span>
-              <span className={css.dim}>—</span>
-              <span className={css.dim}>—</span>
-              <span className={css.dim}>—</span>
-              <span className={css.dim}>—</span>
-              <span><Chip tone="danger">{t('conditions.missing')}</Chip></span>
-              <span className={css.dim}>—</span>
-            </div>
-          ))}
+          )}
+          {pair.length === 1 && <div className={css.dim}>{t('conditions.pickOne')}</div>}
         </>
       )}
       {diffError !== null && <ErrorState what={t('conditions.diffError')} message={diffError} compact t={t} />}

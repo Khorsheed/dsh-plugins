@@ -29,7 +29,7 @@
  * document would make the reviewer the author.
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
@@ -42,11 +42,13 @@ import { ConditionsTable } from './ConditionsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import { RunGrid, plannedRows, type GridColumn } from './Grid.tsx'
 import {
-  Chip, Detail, FactorCell, Field, ReadyBadge, Section, StartedRun, Word,
+  Chip, Detail, Field, ReadyBadge, StartedRun, Word,
   listOrDash, severityKey, severityTone, snapshotCell,
 } from './parts.tsx'
 import { factorPhrase, preferredColumn } from './vocab.ts'
-import { fixLabel, readinessFix, readinessSentence, splitReadiness, type ReadinessFix } from './journey.ts'
+import {
+  fixLabel, readinessFix, readinessSentence, reminderConsequenceKey, splitReadiness, type ReadinessFix,
+} from './journey.ts'
 import type { ConditionActionNote, LabStartedRun } from './store.ts'
 import css from './LabView.module.css'
 
@@ -191,10 +193,16 @@ function ReadinessChecklist(props: {
     const label = fixLabel(fix)
     const said = readinessSentence(check)
     const sentence = said === null ? check.message : t(said.key, said.params)
+    // A reminder says what it will cost, so 「不影响启动」 is not read as
+    // 「不重要」 (T80d · P2-7). Blockers need no such line: they stop the start.
+    const then = k > blockers.length ? reminderConsequenceKey(check.code) : null
     return (
       <div key={`${check.code}:${String(k)}`} className={css.readinessLine}>
         <span className={css.readinessNo}>{k}</span>
-        <span className={css.checkMessage} title={`${check.code} · ${check.message}`}>{sentence}</span>
+        <span className={css.checkMessage} title={`${check.code} · ${check.message}`}>
+          {sentence}
+          {then !== null && <span className={css.readinessThen}>{t(then)}</span>}
+        </span>
         <Button size="sm" onClick={() => { onFix(fix, check, k) }}>
           {label.params === undefined ? t(label.key) : t(label.key, label.params)}
         </Button>
@@ -216,6 +224,7 @@ function ReadinessChecklist(props: {
         <div className={css.readinessGroup}>
           <div className={css.readinessHead}>
             <Chip tone="warn">{t('readiness.reminders', { count: reminders.length })}</Chip>
+            <span className={css.dim}>{t('readiness.remindersNote')}</span>
           </div>
           {reminders.map((check, index) => line(check, blockers.length + index + 1))}
         </div>
@@ -224,21 +233,115 @@ function ReadinessChecklist(props: {
   )
 }
 
-/** ⓪ The question block (plan v1-rev14). Rendered only when the plan has one. */
+/**
+ * ⓪ The question block (plan v1-rev14). Rendered only when the plan has one.
+ *
+ * The one raised card on the page (T80d · P1-4): the question IS the title,
+ * and what the person expects and what counts as answered sit under it as two
+ * labelled lines — it is what the result page answers, so it reads as the
+ * heading of the whole experiment rather than as one more field list.
+ */
 function QuestionSection(props: { question: EvalPlanQuestion; t: LabViewProps['t'] }) {
   const { question, t } = props
   return (
-    <Section title={t('design.question')}>
-      {question.question !== null && (
-        <Field label={t('design.questionAsked')}><div className={css.questionText}>{question.question}</div></Field>
+    <section className={css.questionCard} aria-label={t('design.question')}>
+      <div className={css.questionEyebrow}>{t('design.question')}</div>
+      {question.question !== null && <div className={css.questionTitle}>{question.question}</div>}
+      {(question.expectation !== null || question.answeredWhen !== null) && (
+        <dl className={css.questionRows}>
+          {question.expectation !== null && (
+            <><dt>{t('design.expectation')}</dt><dd>{question.expectation}</dd></>
+          )}
+          {question.answeredWhen !== null && (
+            <><dt>{t('design.answeredWhen')}</dt><dd>{question.answeredWhen}</dd></>
+          )}
+        </dl>
       )}
-      {question.expectation !== null && (
-        <Field label={t('design.expectation')}>{question.expectation}</Field>
-      )}
-      {question.answeredWhen !== null && (
-        <Field label={t('design.answeredWhen')}>{question.answeredWhen}</Field>
-      )}
-    </Section>
+    </section>
+  )
+}
+
+/**
+ * One flat block of the design page (T80d · P1-4): a title line and its body,
+ * no card. Only the question and the stage bar are raised; the rest reads as
+ * one document, in the order the decision is made.
+ */
+function Block(props: { title: string; meta?: ReactNode; children: ReactNode }) {
+  const { title, meta, children } = props
+  return (
+    <section className={css.designBlock} aria-label={title}>
+      <div className={css.designBlockHead}>
+        <span className={css.designBlockTitle}>{title}</span>
+        {meta !== undefined && meta !== null && <span className={css.dim}>{meta}</span>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** The words for one verdict layer a plan expects. */
+const VERDICT_SOURCE: Readonly<Record<string, EvalKey>> = {
+  'script': 'source.script',
+  'llm-draft': 'source.llm',
+  'human-final': 'source.human',
+}
+
+/**
+ * 用哪些题 (T80d · P2-5): one row per item, and how it is judged.
+ *
+ * The plan review carries the item ids and the verdict sources it expects —
+ * nothing per item about what an item tests, its full score or a link to its
+ * text. Those columns are absent rather than invented; they need a data face
+ * of their own (the T80d report lists them).
+ */
+function ItemsTable(props: { items: readonly string[]; expectedNs: readonly string[]; t: LabViewProps['t'] }) {
+  const { items, expectedNs, t } = props
+  const how = expectedNs.map(ns => (VERDICT_SOURCE[ns] === undefined ? ns : t(VERDICT_SOURCE[ns]))).join(' · ') || '—'
+  return (
+    <div className={css.itemsTable}>
+      <div className={css.itemsHead}>
+        <span>{t('design.itemsCol.item')}</span>
+        <span>{t('design.itemsCol.how')}</span>
+      </div>
+      {items.map(item => (
+        <div key={item} className={css.itemsRow}>
+          <span className={css.mono}>{item}</span>
+          <span className={css.dim}>{how}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * 怎么判 (T80d · P2-5): the three verdict layers written out — who judges and
+ * how often, whether a person gives the final verdict, whether check scripts
+ * run. A layer the plan does not expect says so rather than disappearing.
+ */
+function HowJudged(props: {
+  judges: readonly string[]
+  samples: number | null
+  /** null — the plan was not read: only the judges are known. */
+  expectedNs: readonly string[] | null
+  t: LabViewProps['t']
+}) {
+  const { judges, samples, expectedNs, t } = props
+  const on = (ns: string) => expectedNs === null || expectedNs.includes(ns)
+  return (
+    <dl className={css.howRows}>
+      <dt>{t('design.how.judge')}</dt>
+      <dd>
+        {judges.length === 0 || !on('llm-draft')
+          ? <span className={css.dim}>{t('overview.judgeNone')}</span>
+          : <><span className={css.mono}>{judges.join(', ')}</span>{samples === null ? '' : ` · ${t('overview.judgeSamples', { samples })}`}</>}
+      </dd>
+      {expectedNs !== null && <>
+        <dt>{t('design.how.human')}</dt>
+        <dd>{on('human-final') ? t('design.how.humanOn') : <span className={css.dim}>{t('design.how.off')}</span>}</dd>
+        <dt>{t('design.how.script')}</dt>
+        <dd>{on('script') ? t('design.how.scriptOn') : <span className={css.dim}>{t('design.how.off')}</span>}</dd>
+      </>}
+    </dl>
   )
 }
 
@@ -376,37 +479,30 @@ function labelOf(field: EvalPlanNumbersResult['changes'][number]['field']): Eval
   }
 }
 
-/** ① The scale, the variables, the dataset version and the judges, plus the editable numbers. */
+/**
+ * 规模与花费: the shape in one sentence, plus the editable numbers. What it
+ * varies is the compare table's; the dataset version heads 用哪些题; the
+ * judges are 怎么判's (T80d · P1-4).
+ */
 function ScaleSection(props: {
   row: EvalExperimentRow
-  judgeSamples: number | null
   numbers: PlanNumbersNow | null
   frozen: boolean
   onSetNumbers: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
   t: LabViewProps['t']
 }) {
-  const { row, judgeSamples, numbers, frozen, onSetNumbers, t } = props
+  const { row, numbers, frozen, onSetNumbers, t } = props
   // A STARTED experiment knows how many cells it really has; the product is
   // only the shape a plan implies, and a subset run (`--only` / `--max-cells`)
   // legitimately has fewer. Prefer the fact over the arithmetic.
   const cells = row.progress?.total ?? row.items * row.conditions.length * row.reps
   return (
-    <Section title={t('design.scale')}>
-      <Field label={t('overview.shape')}>
+    <Block title={t('design.scaleCost')}>
+      <div>
         {t('overview.shapeValue', { items: row.items, conditions: row.conditions.length, reps: row.reps, cells })}
-        <div className={css.dim}>{row.conditions.join(', ') || '—'}</div>
-      </Field>
-      <Field label={t('overview.factors')}><FactorCell row={row} t={t} /></Field>
-      <Field label={t('overview.snapshot')}>
-        <span className={css.mono}>{snapshotCell(row)}</span>
-      </Field>
-      <Field label={t('overview.judge')}>
-        {row.judges.length === 0
-          ? t('overview.judgeNone')
-          : `${row.judges.join(', ')}${judgeSamples === null ? '' : ` · ${t('overview.judgeSamples', { samples: judgeSamples })}`}`}
-      </Field>
+      </div>
       {numbers !== null && <NumbersField now={numbers} frozen={frozen} onSave={onSetNumbers} t={t} />}
-    </Section>
+    </Block>
   )
 }
 
@@ -591,6 +687,12 @@ export function DesignPage(props: {
   const checklistShown = CHECKLIST_STAGES.has(row.status)
   const passing = (review?.checks ?? []).filter(check => check.severity === 'ok')
   const single = groups.length < 2
+  // The sha each subject had when the run started: a declaration edited since
+  // carries 「开跑时 / 当前」 in the compare table (T80d · ②).
+  const startedShas: Record<string, string | null> = {}
+  for (const entry of [...(detail?.meta?.conditions ?? []), ...(detail?.meta?.judge.conditions ?? [])]) {
+    startedShas[entry.id] = entry.sha
+  }
 
   // ui-spec §九: the heading is the group, the comparison variable's value is
   // its subtitle. The variable is the one the grid would put on its columns
@@ -630,9 +732,58 @@ export function DesignPage(props: {
 
       {digest?.question != null && <QuestionSection question={digest.question} t={t} />}
 
+      <Block title={t('design.compare')} meta={t('design.compareHint')}>
+        <ConditionsTable
+          view={conditions}
+          loading={conditionsLoading}
+          error={conditionsError}
+          pair={pair}
+          diff={diff}
+          diffError={diffError}
+          busy={conditionBusy}
+          provision={provision}
+          action={conditionAction}
+          editing={endpointEditing}
+          only={subjects}
+          judges={digest?.judge.conditions ?? row.judges}
+          factors={row.factors}
+          startedShas={startedShas}
+          onPick={onPick}
+          onProvision={onProvision}
+          onEditEndpoint={onEditEndpoint}
+          onSetEndpoint={onSetEndpoint}
+          t={t}
+        />
+        {single && (
+          <div className={css.notice}>
+            <div>{t('design.single')}</div>
+            <div className={css.actions}>
+              <Button size="sm" onClick={onAddGroup}>{t('design.addGroup')}</Button>
+              <span className={css.dim}>{t('design.addGroupHint')}</span>
+            </div>
+          </div>
+        )}
+      </Block>
+
+      <Block title={t('design.items')} meta={<span className={css.mono}>{snapshotCell(row)}</span>}>
+        {digest === null || digest.items.length === 0
+          ? <div className={css.dim}>{t('new.itemsEmpty')}</div>
+          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} t={t} />}
+      </Block>
+
+      {/* No plan review yet: the row still names its judges, and that is
+          the one line of 怎么判 worth showing without the plan. */}
+      <Block title={t('design.how')}>
+        <HowJudged
+          judges={digest?.judge.conditions ?? row.judges}
+          samples={detail?.meta?.judge.samples ?? digest?.judge.samples ?? null}
+          expectedNs={digest?.expectedNs ?? null}
+          t={t}
+        />
+      </Block>
+
       <ScaleSection
         row={row}
-        judgeSamples={detail?.meta?.judge.samples ?? digest?.judge.samples ?? null}
         numbers={digest === null || row.planPath === null || row.experimentId === null
           ? null
           : {
@@ -648,7 +799,7 @@ export function DesignPage(props: {
         t={t}
       />
 
-      <Section title={t('design.groups')}>
+      <Block title={t('design.ready')}>
         <ReadyBadge rows={readyRows} onRecheck={onRecheck} atStart={row.status === 'stalled'} t={t} />
         {/* The list row already carries validate's COUNTS, so the page can
             answer «can this be approved» before the review walk lands. Once it
@@ -680,47 +831,18 @@ export function DesignPage(props: {
         {review !== null && review.checks.length === 0 && (
           <div className={css.dim}>{t('review.checksNone')}</div>
         )}
-        <ConditionsTable
-          view={conditions}
-          loading={conditionsLoading}
-          error={conditionsError}
-          pair={pair}
-          diff={diff}
-          diffError={diffError}
-          busy={conditionBusy}
-          provision={provision}
-          action={conditionAction}
-          editing={endpointEditing}
-          only={subjects}
-          judges={digest?.judge.conditions ?? row.judges}
-          onPick={onPick}
-          onProvision={onProvision}
-          onEditEndpoint={onEditEndpoint}
-          onSetEndpoint={onSetEndpoint}
-          t={t}
-        />
-      </Section>
+      </Block>
 
-      <Section title={t('design.grid')} meta={t('design.gridHint')}>
-        {single && (
-          <div className={css.notice}>
-            <div>{t('design.single')}</div>
-            <div className={css.actions}>
-              <Button size="sm" onClick={onAddGroup}>{t('design.addGroup')}</Button>
-              <span className={css.dim}>{t('design.addGroupHint')}</span>
-            </div>
-          </div>
-        )}
-        {digest === null || digest.items.length === 0
-          ? <div className={css.dim}>{t('new.itemsEmpty')}</div>
-          : (
-            <RunGrid
-              columns={columns}
-              rows={plannedRows(digest.items, groups, row.reps)}
-              t={t}
-            />
-          )}
-      </Section>
+      {digest !== null && digest.items.length > 0 && (
+        <Detail summary={t('design.gridFold', { cells: digest.items.length * groups.length * row.reps })}>
+          <div className={css.dim}>{t('design.gridHint')}</div>
+          <RunGrid
+            columns={columns}
+            rows={plannedRows(digest.items, groups, row.reps)}
+            t={t}
+          />
+        </Detail>
+      )}
 
       <AdvancedSection row={row} review={review} detail={detail} t={t} />
 

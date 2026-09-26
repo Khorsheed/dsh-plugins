@@ -681,9 +681,13 @@
 .condHead,
 .condRow {
   display: grid;
-  grid-template-columns:
+  /* The compare table (T80d) sets its own column list — only the fields the
+     groups differ on — on its wrapper; this is the registry's full list. */
+  grid-template-columns: var(
+    --compare-cols,
     minmax(150px, 1.4fr) minmax(88px, 0.9fr) minmax(120px, 1.2fr) minmax(96px, 1fr)
-    minmax(64px, 0.6fr) minmax(64px, 0.6fr) minmax(112px, 0.9fr) 64px minmax(88px, 0.8fr);
+    minmax(64px, 0.6fr) minmax(64px, 0.6fr) minmax(112px, 0.9fr) 64px minmax(88px, 0.8fr)
+  );
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -1441,6 +1445,18 @@
   max-width: 100%;
   font-size: 12px;
   line-height: 18px;
+}
+
+/* The per-criterion table fills its column (v5 · 09-result); the wrapper, not
+   the table, scrolls when a wide one meets a narrow screen. */
+.criteriaScroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.criteriaTable {
+  display: table;
+  width: 100%;
 }
 
 .reportHead,
@@ -2288,4 +2304,342 @@
 .judgeAbsentTitle {
   font-weight: 600;
   color: var(--dsw-alias-state-warn-label);
+}
+
+/* ── T80d · 实验设计方案段 ─────────────────────────────────────────────
+   Only the question card is raised; every other block is flat, a title line
+   and its body, so the page reads as one document in decision order. */
+.questionCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-l2);
+  min-width: 0;
+}
+
+.questionEyebrow {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.questionTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.questionRows,
+.howRows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.questionRows {
+  padding-top: 6px;
+  border-top: 1px dashed var(--dsw-alias-border-l2);
+}
+
+.questionRows dt,
+.howRows dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.questionRows dd,
+.howRows dd {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.designBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.designBlockHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.designBlockTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* The compare table: its column list is set inline (only the fields that
+   differ), and it scrolls on its own at 400 wide rather than the page. */
+.compareTable {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.compareTable > .condHead,
+.compareTable > .condRow {
+  min-width: max-content;
+}
+
+.condRow > span[data-differs] {
+  margin: -2px -4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-label) 12%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+
+.compareTable .condAction {
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.compareFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.itemsTable {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.itemsHead,
+.itemsRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1.4fr);
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.itemsHead {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.itemsRow > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A reminder's consequence: the second line of the same item. */
+.readinessThen {
+  display: block;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* The stage bar's primary action never wraps: at 400 wide the hint gives way
+   (it ellipsizes), the button does not (T80d · P2-6). */
+.stageAction {
+  flex: none;
+  white-space: nowrap;
+}
+
+.stageBar > .stageHint {
+  min-width: 0;
+}
+
+/* ───────── T80d: the result page — conclusion card, folds, criteria ─────── */
+
+.conclusionHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.conclusionHead > .conclusionTitle {
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.conclusionSource {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.scoreRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  align-items: flex-end;
+}
+
+.scoreCell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.scoreBig {
+  color: var(--dsw-alias-label-primary);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 30px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreName,
+.scoreMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.deltaLine {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.reasonList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reasonItem {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.reasonMark {
+  flex: none;
+  width: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.reasonItem[data-level='block'] > .reasonMark {
+  color: var(--dsw-alias-state-danger-label);
+}
+
+.conclusionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The page's closing folds read as one list of rows, not as three cards. */
+.reportFolds {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.reportFold {
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.reportFoldSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.reportFoldSummary::-webkit-details-marker {
+  display: none;
+}
+
+.reportFoldTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.reportFoldTitle::before {
+  content: '▸ ';
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.reportFold[open] .reportFoldTitle::before {
+  content: '▾ ';
+}
+
+.reportFoldAside {
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.foldCheck[data-bad] {
+  color: var(--dsw-alias-state-danger-label);
+  font-weight: 600;
+}
+
+.reportFoldBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 10px;
+}
+
+.criteriaTask {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.criteriaAxis {
+  padding: 6px 6px 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+  text-align: left;
+}
+
+.criteriaPolarity {
+  display: block;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
 }

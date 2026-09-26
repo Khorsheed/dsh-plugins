@@ -6,9 +6,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  conclusionSourceKey, fixLabel, groupRows, legacyInAttention, listGroupOf, READINESS_CODES, readinessField, readinessFix,
-  readinessKey, readinessSentence, readListScope, rowAction, scopeRows, splitReadiness, stageDots, validityCount,
-  writeListScope,
+  conclusionSourceKey, fixLabel, REMINDER_CONSEQUENCES, reminderConsequenceKey, groupRows, legacyInAttention, listGroupOf,
+  READINESS_CODES, readinessField, readinessFix, readinessKey, readinessSentence, readListScope, rowAction, scopeRows,
+  splitReadiness, stageDots, validityCount, writeListScope,
 } from '../src/client/journey.ts'
 import { en, zh } from '../src/client/locales.ts'
 import type { EvalExperimentRow } from '../src/types.ts'
@@ -197,5 +197,20 @@ describe('the conclusion card', () => {
   it('counts only ok checks as passed', () => {
     expect(validityCount([{ status: 'ok' }, { status: 'violated' }, { status: 'unverifiable' }, { status: 'ok' }, { status: 'ok' }]))
       .toEqual({ passed: 3, total: 5 })
+  })
+})
+
+describe('reminder consequences (T80d)', () => {
+  it('gives every known reminder code a consequence sentence in both languages', () => {
+    for (const code of REMINDER_CONSEQUENCES) {
+      const key = reminderConsequenceKey(code)
+      expect(key).toBe(`readiness.then.${code}`)
+      expect(en[key!]).toBeTruthy()
+      expect(zh[key!]).toBeTruthy()
+    }
+  })
+
+  it('says nothing for a code it has no sentence for, rather than a raw key', () => {
+    expect(reminderConsequenceKey('SOMETHING_NEW')).toBeNull()
   })
 })

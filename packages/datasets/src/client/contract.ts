@@ -76,6 +76,12 @@ export interface DatasetExperimentRow {
   status: string
   /** The dataset set this experiment's snapshot names; null when it names none. */
   datasetId: string | null
+  /** The experiment behind the row (several runs may share one); null on a legacy run. */
+  experimentId: string | null
+  /** The registration id the snapshot names; null on an old run that recorded only a path. */
+  registry: string | null
+  /** The pinned commit — one «版本» in the 用在哪些实验 count; null when never recorded. */
+  commit: string | null
 }
 
 /**
