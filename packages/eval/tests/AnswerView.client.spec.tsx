@@ -54,6 +54,7 @@ function renderView(extra: Partial<Parameters<typeof AnswerView>[0]> = {}) {
       rep={1}
       onOpenSession={onOpenSession}
       onBack={null}
+      onRejudge={null}
       t={t as never}
       {...extra}
     />,
@@ -96,7 +97,10 @@ describe('the answer view', () => {
     renderView()
     fireEvent.click(screen.getByText('answer.viewEvidence'))
     expect(screen.getAllByText('H1')).toHaveLength(2)
-    expect(screen.getAllByText('answer.unjudged').length).toBeGreaterThanOrEqual(3)
+    // dsh-lean was judged on D1 only, so H1 says 未判 on its own row;
+    // dsh-full was judged on nothing and says so once (T80c P2-10).
+    expect(screen.getAllByText('answer.unjudged')).toHaveLength(1)
+    expect(screen.getByText('answer.noneJudged {"count":3}')).toBeTruthy()
     expect(screen.getByText('git status 不干净')).toBeTruthy()
     expect(screen.getByText('原文「结论是可以合并」')).toBeTruthy()
     expect(screen.getByText('answer.quoteAt {"file":"stage1.md","no":2}')).toBeTruthy()
@@ -112,5 +116,33 @@ describe('the answer view', () => {
     const parts = [...document.querySelectorAll('[data-part]')].map(node => node.getAttribute('data-part'))
     expect(parts.indexOf('scoring')).toBeLessThan(parts.indexOf('reports'))
     expect(document.querySelector('[data-part="reports"] details')).not.toBeNull()
+  })
+
+  it('a script-only column says so once and offers 补判, keeping the other column level (T80c P2-10)', () => {
+    const scriptOnly: EvalAnswerSheet = {
+      ...SHEET,
+      cells: SHEET.cells.map(cell => cell.condition === 'dsh-full'
+        ? { ...cell, verdicts: [{ criterion: 'X1', ns: 'script', pass: true, evidence: 'ok', judge: null, sample: null, at: 1 }] }
+        : cell),
+    }
+    const onRejudge = vi.fn()
+    renderView({ rows: rowsOfSheet(scriptOnly, { condition: 'dsh-full', rep: null }), onRejudge })
+    fireEvent.click(screen.getByText('answer.viewEvidence'))
+    const summary = screen.getByText('answer.scriptOnly {"count":2}').closest('[role="note"]') as HTMLElement
+    fireEvent.click(within(summary).getByRole('button', { name: 'judge.rejudge' }))
+    expect(onRejudge).toHaveBeenCalledWith(expect.objectContaining({ condition: 'dsh-full' }))
+    // Its X1 verdict still shows; its other unjudged row is an empty slot.
+    expect(screen.getByText('ok')).toBeTruthy()
+    expect(document.querySelectorAll('[data-quiet="true"]')).toHaveLength(1)
+    // Every criterion row still has one cell per column.
+    expect(document.querySelectorAll('[data-part="criterion"]')).toHaveLength(6)
+  })
+
+  it('tags every cell with its column so a narrow pane can stack them (T80c P1-10)', () => {
+    renderView()
+    const heads = [...document.querySelectorAll<HTMLElement>('[data-part="head"]')]
+    expect(heads.map(node => node.style.getPropertyValue('--col'))).toEqual(['0', '1'])
+    const cells = [...document.querySelectorAll<HTMLElement>('[data-part]')]
+    expect(cells.every(node => node.style.getPropertyValue('--col') !== '')).toBe(true)
   })
 })

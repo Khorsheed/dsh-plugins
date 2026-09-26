@@ -653,6 +653,11 @@ export type EvalKey =
   | 'new.next'
   | 'new.stepBlocked'
   | 'runs.settled'
+  | 'runs.cards'
+  | 'runs.card.meta'
+  | 'runs.card.running'
+  | 'runs.card.now'
+  | 'summary.line'
   | 'error.planUnreadable'
   | 'error.planUnreadable.fix'
   | 'why.endpoint'
@@ -667,6 +672,13 @@ export type EvalKey =
   | 'cta.void'
   | 'cta.voidHint'
   | 'cta.pendingBlocked'
+  | 'page.dot.done'
+  | 'page.dot.active'
+  | 'page.dot.todo'
+  | 'cta.recheck'
+  | 'cta.here.runs'
+  | 'cta.here.review'
+  | 'cta.here.compare'
   | 'report.conclusion'
   | 'report.ciAdvisoryShort'
   | 'report.flagged'
@@ -728,6 +740,10 @@ export type EvalKey =
   | 'judge.absent'
   | 'judge.rejudge'
   | 'judge.rejudgeAsk'
+  | 'judge.absentBody'
+  | 'judge.statsThin'
+  | 'judge.statsLine'
+  | 'judge.statsSelfLine'
   | 'runs.stalled'
   | 'list.scope'
   | 'list.scopeSession'
@@ -743,6 +759,20 @@ export type EvalKey =
   | 'list.stalledMeta'
   | 'list.archive'
   | 'list.unarchive'
+  | 'list.act.validate'
+  | 'list.act.approve'
+  | 'list.act.review'
+  | 'list.act.results'
+  | 'list.act.runs'
+  | 'list.act.refused'
+  | 'list.more'
+  | 'list.scale'
+  | 'list.archiveLegacy'
+  | 'list.archiveLegacyConfirm'
+  | 'list.archiveLegacyGo'
+  | 'list.archiveLegacyCancel'
+  | 'list.archivedLegacy'
+  | 'list.archiveLegacyFailed'
   | 'col.actions'
   | 'readiness.CAPABILITIES_NOT_PROVISIONED'
   | 'readiness.CAPABILITIES_PRESET_MISMATCH'
@@ -849,6 +879,9 @@ export type EvalKey =
   | 'answer.truncated'
   | 'answer.reportsFolded'
   | 'answer.unjudged'
+  | 'answer.scriptOnly'
+  | 'answer.noneJudged'
+  | 'answer.rejudgeAsk'
   | 'answer.noVerdicts'
   | 'answer.scripts'
   | 'answer.noScripts'
@@ -1016,7 +1049,7 @@ export const en: Record<EvalKey, string> = {
   'judge.reexporting': 'Exporting…',
   'judge.scoringMix': 'Your verdict covers only the criteria you answer here. The report scores each criterion from the most authoritative layer that judged IT, so these {count} criteria the judge answered and you do not ({criteria}) keep counting, on the judge\u2019s word. This record\u2019s score then comes from both, and the report says so beside it.',
   'judge.regrade': 'This record already carries a human-final verdict. Recording again APPENDS: the report reads the latest value per criterion, and the earlier one stays in the ledger.',
-  'judge.stats': 'Grader agreement (live, from the ledger)',
+  'judge.stats': 'Grader agreement',
   'judge.statsSame': 'One judge, resampled',
   'judge.statsCross': 'Across judges',
   'judge.statsHuman': 'llm-draft vs human-final',
@@ -1090,14 +1123,15 @@ export const en: Record<EvalKey, string> = {
   'matrix.hashUnknown': 'no evidence of item consistency was recorded',
   'matrix.stuck': 'nothing has happened here for over {minutes} min',
   'matrix.reps': '{count} rep(s)',
-  'summary.title': 'Experiment summary',
+  'summary.title': 'Run hygiene',
   'summary.materialization': 'Item consistency',
   'summary.fingerprint': 'Environment consistency',
   'summary.unreleased': 'Unreleased units',
   'summary.judge': 'Grader agreement',
   'summary.judgePending': 'awaiting the report',
-  'summary.stuck': 'Stuck records',
-  'summary.cells': 'Records shown',
+  'summary.stuck': 'Stalled records',
+  'summary.cells': 'Records',
+  'summary.line': 'Same items {materialization} · Same environment {fingerprint} · Unreleased {unreleased} · Stalled {stuck}',
   'invariant.ok': 'ok',
   'invariant.violated': 'violated',
   'invariant.unverifiable': 'unverifiable',
@@ -1452,9 +1486,9 @@ export const en: Record<EvalKey, string> = {
   'cta.pending': 'Approve and start',
   'cta.pendingHint': 'Validate passed. Approving starts the run — the readiness gate is checked first.',
   'cta.running': 'See run records',
-  'cta.runningHint': 'The cells are running. The run records show each one as it lands.',
+  'cta.runningHint': 'It is running. The run records show each one as it lands.',
   'cta.judging': 'Go to human review',
-  'cta.judgingHint': 'Every cell has run. The final verdict is yours to record.',
+  'cta.judgingHint': 'Everything has run. The final verdict is yours to record.',
   'cta.done': 'See results',
   'cta.doneHint': 'The report is out. The results page holds the comparison.',
   'cta.refused': 'Check again',
@@ -1584,6 +1618,10 @@ export const en: Record<EvalKey, string> = {
 
   // ── the walkthrough fixups (I5·T67 補, W4–W15) ─────────────────────────
   'runs.settled': 'This record is finished — nothing is elapsing here. How long it took is on its timeline.',
+  'runs.cards': 'Item × group',
+  'runs.card.meta': '{task} · rep {rep}',
+  'runs.card.running': '{duration} so far',
+  'runs.card.now': 'in progress',
   'error.planUnreadable': 'The plan document is not there any more',
   'error.planUnreadable.fix': 'Its dataset working tree was probably deleted. Re-create the working tree, or read the run from its run records and results — a finished run keeps its own copy of what the plan said.',
   'why.endpoint': 'the endpoint is not resolved',
@@ -1598,6 +1636,13 @@ export const en: Record<EvalKey, string> = {
   'cta.void': 'See run records',
   'cta.voidHint': 'This evaluation was declared void. The run records still hold everything that ran.',
   'cta.pendingBlocked': '{count} blocker(s) stand between this plan and a run. Start with the first.',
+  'page.dot.done': 'done',
+  'page.dot.active': 'in progress',
+  'page.dot.todo': 'not started',
+  'cta.recheck': 'Validate again',
+  'cta.here.runs': 'Each one shows up below as it lands.',
+  'cta.here.review': 'Judge every answer, then pick how to close this evaluation at the bottom of the page.',
+  'cta.here.compare': 'The comparison is below.',
   'report.conclusion': 'Conclusion',
   'report.ciAdvisoryShort': 'For reference only — the ranking conditions are not met',
   'report.flagged': 'Flagged by a person: “{reason}”',
@@ -1657,6 +1702,10 @@ export const en: Record<EvalKey, string> = {
   'agent.copied': 'Copied — paste it into the chat box.',
   'agent.copyFailed': 'Could not reach the chat box or clipboard. Copy this yourself: {text}',
   'judge.absent': 'Note: the judge is absent for answer(s) {cells} ({count}).',
+  'judge.absentBody': 'The judge left no readable verdict on these answers; only the script checks remain. You can go on without a re-judge \u2014 your own verdicts are recorded all the same.',
+  'judge.statsThin': 'Not enough data: {count} judge(s) on the panel, no repeated sample, no second judge and no final verdict to compare against yet',
+  'judge.statsLine': 'resampled {same} \u00b7 across judges {cross} \u00b7 draft vs final {human}',
+  'judge.statsSelfLine': '{count} self-judged criteria',
   'judge.rejudge': 'Re-judge (optional)',
   'judge.rejudgeAsk': 'Experiment {name}: re-run the judge on answer(s) {cells}.',
   'runs.stalled': 'Stalled: no progress for {duration}, and no job is running.',
@@ -1674,6 +1723,20 @@ export const en: Record<EvalKey, string> = {
   'list.stalledMeta': 'no progress for {duration}',
   'list.archive': 'Archive',
   'list.unarchive': 'Unarchive',
+  'list.act.validate': 'Validate',
+  'list.act.approve': 'Go approve',
+  'list.act.review': 'Go to human review',
+  'list.act.results': 'See the conclusion',
+  'list.act.runs': 'See run records',
+  'list.act.refused': 'See why',
+  'list.more': 'More',
+  'list.scale': '{items} item(s) × {groups} arm(s) × {reps} take(s)',
+  'list.archiveLegacy': 'Archive {count} legacy run(s)',
+  'list.archiveLegacyConfirm': 'Move {count} legacy run(s) to Archived? Only the grouping changes: the runs, their status and their records stay as they are. This can be undone — Unarchive any of them under Archived.',
+  'list.archiveLegacyGo': 'Archive',
+  'list.archiveLegacyCancel': 'Cancel',
+  'list.archivedLegacy': 'Archived {count} legacy run(s). Unarchive any of them under Archived.',
+  'list.archiveLegacyFailed': 'Archived {done} of {count}; the rest were refused: {message}',
   'col.actions': 'Actions',
   'readiness.CAPABILITIES_NOT_PROVISIONED': 'Condition {condition} has no capability snapshot yet — provision it.',
   'readiness.CAPABILITIES_PRESET_MISMATCH': 'Condition {condition}\'s capabilities do not match its preset.',
@@ -1780,6 +1843,9 @@ export const en: Record<EvalKey, string> = {
   'answer.truncated': '{name} is {bytes} bytes, over the limit; only the beginning is shown',
   'answer.reportsFolded': 'Submitted report: {files}',
   'answer.unjudged': 'Not judged on this criterion',
+  'answer.scriptOnly': 'Script checks only \u2014 no judge reached this answer ({count} criteria unjudged).',
+  'answer.noneJudged': 'Nothing has judged this answer yet ({count} criteria).',
+  'answer.rejudgeAsk': 'Experiment {name}: re-run the judge on {condition}, run {rep}.',
   'answer.noVerdicts': 'No verdicts: {reason}',
   'answer.scripts': 'Script output',
   'answer.noScripts': 'No script output',
@@ -1938,9 +2004,9 @@ export const zh: Record<EvalKey, string> = {
   'judge.bundleStale': '已导出的 bundle 写在这些终评之前，里面没有它们。重新导出一次就带上了——报告一起写，旧目录不动。',
   'judge.reexport': '重新导出',
   'judge.reexporting': '正在导出…',
-  'judge.scoringMix': '你在这里打的分**只覆盖你答的那几条判据**。报告逐条判据取最权威的那一层，所以这 {count} 条你不答、判官答过的判据（{criteria}）仍按判官的计入得分。这条记录的得分来源随之变成「人 + 判官」的混合，报告页会在得分旁标出来。',
-  'judge.regrade': '这条记录已经有人工终评了。再记一次是**追加**：报告读每条判据的最新值，早先那次留在账本里。',
-  'judge.stats': '评分者一致性（实时，来自账本）',
+  'judge.scoringMix': '你在这里打的分只覆盖你答的那几条判据。报告逐条判据取最权威的那一层，所以这 {count} 条你不答、判官答过的判据（{criteria}）仍按判官的计入得分。这条记录的得分来源随之变成「人 + 判官」的混合，报告页会在得分旁标出来。',
+  'judge.regrade': '这条记录已经有人工终评了。再记一次是追加：报告读每条判据的最新值，早先那次留在账本里。',
+  'judge.stats': '评分者一致性',
   'judge.statsSame': '同一判官重复采样',
   'judge.statsCross': '不同判官之间',
   'judge.statsHuman': '判官初评与人工终评',
@@ -2014,14 +2080,15 @@ export const zh: Record<EvalKey, string> = {
   'matrix.hashUnknown': '没有记录题面一致性的证据',
   'matrix.stuck': '这里已经 {minutes} 分钟没有动静了',
   'matrix.reps': '{count} 个 rep',
-  'summary.title': '本次实验汇总',
+  'summary.title': '实验卫生',
   'summary.materialization': '题面一致',
   'summary.fingerprint': '环境一致',
   'summary.unreleased': '未释放单元',
   'summary.judge': '评分者一致性',
   'summary.judgePending': '待报告',
-  'summary.stuck': '卡住的记录',
-  'summary.cells': '显示的记录',
+  'summary.stuck': '停滞的记录',
+  'summary.cells': '记录数',
+  'summary.line': '题面一致 {materialization} · 环境一致 {fingerprint} · 未释放单元 {unreleased} · 停滞 {stuck}',
   'invariant.ok': '一致',
   'invariant.violated': '不一致',
   'invariant.unverifiable': '无法核验',
@@ -2373,9 +2440,9 @@ export const zh: Record<EvalKey, string> = {
   'cta.pending': '批准并启动',
   'cta.pendingHint': '校验已通过。批准即启动，启动前先过就绪检查。',
   'cta.running': '看运行记录',
-  'cta.runningHint': '格子正在跑，运行记录里逐格落地。',
+  'cta.runningHint': '正在跑，运行记录里逐个落地。',
   'cta.judging': '去人工评估',
-  'cta.judgingHint': '格子都跑完了，终评是你的事。',
+  'cta.judgingHint': '都跑完了，终评是你的事。',
   'cta.done': '看结果',
   'cta.doneHint': '报告已出，对比在结果页。',
   'cta.refused': '重新检查',
@@ -2450,7 +2517,7 @@ export const zh: Record<EvalKey, string> = {
   'record.ok': '成功',
   'record.failed': '异常',
   'record.scoreWhere': '分数是从导出的 bundle 里算的，在结果对比页。',
-  'record.scoreMixed': '这条记录在多个层上都有判定（{sources}）。报告**逐条判据**取判过它的最权威那一层，所以这条记录的得分来自不止一个来源——具体哪条判据取了哪一层，在结果对比页上逐条标着。',
+  'record.scoreMixed': '这条记录在多个层上都有判定（{sources}）。报告逐条判据取判过它的最权威那一层，所以这条记录的得分来自不止一个来源——具体哪条判据取了哪一层，在结果对比页上逐条标着。',
   'record.timeline': '阶段时间轴',
   'record.timelineNone': '账本没记这次尝试的转移时间。',
   'record.params': '参数配置',
@@ -2505,6 +2572,10 @@ export const zh: Record<EvalKey, string> = {
 
   // ── the walkthrough fixups (I5·T67 補, W4–W15) ─────────────────────────
   'runs.settled': '这条记录已经结束了，没有在走的时长。它花了多久看时间轴。',
+  'runs.cards': '题 × 对比组',
+  'runs.card.meta': '{task} · 第 {rep} 次',
+  'runs.card.running': '已用 {duration}',
+  'runs.card.now': '进行中',
   'error.planUnreadable': '计划文件不在了',
   'error.planUnreadable.fix': '多半是它那个题库工作树被删了。重建工作树，或者直接从运行记录与结果对比读这次 run——跑完的 run 自己留了一份计划说了什么。',
   'why.endpoint': '端点未解析',
@@ -2519,6 +2590,13 @@ export const zh: Record<EvalKey, string> = {
   'cta.void': '看运行记录',
   'cta.voidHint': '这次评估已宣告不成立；跑过的东西仍在运行记录里。',
   'cta.pendingBlocked': '还有 {count} 条阻塞项，先处理第一条。',
+  'page.dot.done': '已完成',
+  'page.dot.active': '进行中',
+  'page.dot.todo': '未开始',
+  'cta.recheck': '重新校验',
+  'cta.here.runs': '下面逐个落地。',
+  'cta.here.review': '逐份评完，再在页底选这次评估怎么结束。',
+  'cta.here.compare': '对比就在下面。',
   'report.conclusion': '结论',
   'report.ciAdvisoryShort': '仅供参考，未达排名条件',
   'report.flagged': '人工标记：「{reason}」',
@@ -2577,7 +2655,11 @@ export const zh: Record<EvalKey, string> = {
   'agent.inserted': '已放进输入框，改好再发。',
   'agent.copied': '已复制，粘到输入框',
   'agent.copyFailed': '输入框和剪贴板都不可用，请手动复制：{text}',
-  'judge.absent': '提示：作答 {cells} 判官缺席（{count} 格）。',
+  'judge.absent': '提示：作答 {cells} 判官缺席（{count} 份）',
+  'judge.absentBody': '判官在这些作答上没有留下可读的判定，只剩脚本判定。不补判也能往下走，你的终评照常记录。',
+  'judge.statsThin': '数据不足：判官 {count} 位，还没有重复采样、第二位判官或人工终评可以对照',
+  'judge.statsLine': '重复采样 {same} · 判官之间 {cross} · 初评对终评 {human}',
+  'judge.statsSelfLine': '自评判据 {count} 条',
   'judge.rejudge': '补判（可选）',
   'judge.rejudgeAsk': '实验 {name}：给作答 {cells} 补判。',
   'runs.stalled': '停滞：已有 {duration} 没有进展，也没有在跑的任务',
@@ -2595,6 +2677,20 @@ export const zh: Record<EvalKey, string> = {
   'list.stalledMeta': '{duration} 没有进展',
   'list.archive': '归档',
   'list.unarchive': '取消归档',
+  'list.act.validate': '去校验',
+  'list.act.approve': '去批准',
+  'list.act.review': '去人工评估',
+  'list.act.results': '看结论',
+  'list.act.runs': '看运行记录',
+  'list.act.refused': '看原因',
+  'list.more': '更多',
+  'list.scale': '{items} 题 × {groups} 组 × {reps} 次',
+  'list.archiveLegacy': '归档 {count} 条旧运行',
+  'list.archiveLegacyConfirm': '把 {count} 条旧运行移到「已归档」？只改分组：运行本身、状态和记录都不动。可以撤销——在「已归档」里对任意一条点「取消归档」。',
+  'list.archiveLegacyGo': '归档',
+  'list.archiveLegacyCancel': '取消',
+  'list.archivedLegacy': '已归档 {count} 条旧运行；在「已归档」里可逐条取消归档。',
+  'list.archiveLegacyFailed': '{count} 条里归档了 {done} 条，其余被拒：{message}',
   'col.actions': '操作',
   'readiness.CAPABILITIES_NOT_PROVISIONED': '对比组 {condition} 还没有能力快照，需要 provision。',
   'readiness.CAPABILITIES_PRESET_MISMATCH': '对比组 {condition} 的能力与预设不一致。',
@@ -2701,6 +2797,9 @@ export const zh: Record<EvalKey, string> = {
   'answer.truncated': '{name} 共 {bytes} 字节，超过上限，只显示开头部分',
   'answer.reportsFolded': '提交的报告：{files}',
   'answer.unjudged': '这条判据未判',
+  'answer.scriptOnly': '只有脚本判定：判官没有判这份作答（{count} 条判据未判）。',
+  'answer.noneJudged': '这份作答还没有任何判定（{count} 条判据）。',
+  'answer.rejudgeAsk': '实验 {name}：给 {condition} 第 {rep} 次的作答补判。',
   'answer.noVerdicts': '没有判定：{reason}',
   'answer.scripts': '脚本输出',
   'answer.noScripts': '没有脚本输出',

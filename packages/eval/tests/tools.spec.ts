@@ -434,6 +434,14 @@ describe('eval_run_status', () => {
     expect(report.archived).toBe(false)
   })
 
+  it('answers the lab list\'s progress too, counted by the predicate the word is derived from (T80c P1-3)', async () => {
+    const mission = missionFace()
+    const tool = toolsOver(new EvalService({ get: (name) => (name === 'mission' ? mission : undefined) })).get('eval_run_status') as RegisteredTool
+    const report = await tool.execute({ run_id: 'run-1' }, {}) as { progress: { done: number; total: number } | null }
+    // stage-2 and pending: neither is judged or past it.
+    expect(report.progress).toEqual({ done: 0, total: 2 })
+  })
+
   it('says so in words when the composition mounts no mission service', async () => {
     const tool = toolsOver(new EvalService({ get: () => undefined })).get('eval_run_status') as RegisteredTool
     await expect(tool.execute({ run_id: 'run-1' }, {})).rejects.toThrow(/no mission service/)

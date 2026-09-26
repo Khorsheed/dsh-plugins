@@ -435,6 +435,7 @@ export class EvalService {
     return {
       ...ledger,
       status: row.status,
+      progress: row.progress,
       stalledMinutes: row.stalledMinutes,
       closure: row.closure,
       archived: row.archived,
@@ -1014,6 +1015,7 @@ export class EvalService {
         bucket: cell.bucket,
         attempt: cell.attempt,
         inStateMs: cell.inStateMs,
+        elapsedMs: cell.elapsedMs,
         refs: { resource: cell.refs.resource, fingerprint: cell.refs.fingerprint },
         checkpoints: [...cell.checkpoints],
         annotations: { ...cell.annotations },

@@ -555,6 +555,32 @@ describe('listExperiments — T72 journey fields', () => {
     expect(result.rows[0]).toMatchObject({ status: 'running', stalledMinutes: null })
   })
 
+  it('progress counts the cells the status rule counts: a halted cell is done, so 评估中 is always n/n (T80c P1-3)', async () => {
+    const mission = ledger([{
+      id: 'run-halted',
+      meta: runMeta('/gone/plan.json', { startedAt: NOW - 40 * 60_000 }),
+      createdAt: NOW - 40 * 60_000,
+      // mission files a halted cell under `halted`, not `done` — the old count read 评估中 at 0/1.
+      cells: [{ id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'halted', bucket: 'halted' }],
+    }])
+    const result = await listExperiments({ mission, now: NOW })
+    expect(result.rows[0]).toMatchObject({ status: 'judging', progress: { done: 1, total: 1 } })
+  })
+
+  it('a partly finished run counts only its judged-or-beyond cells, whatever mission\'s buckets say', async () => {
+    const mission = ledger([{
+      id: 'run-part',
+      meta: runMeta('/gone/plan.json', { startedAt: NOW - 5 * 60_000 }),
+      createdAt: NOW - 5 * 60_000,
+      cells: [
+        { id: '1', task: 'P0', condition: 'cond-a', rep: 1, state: 'judged', bucket: 'active' },
+        { id: '2', task: 'P0', condition: 'cond-b', rep: 1, state: 'stage-1', bucket: 'active', enteredCurrentAt: NOW - 60_000 },
+      ],
+    }])
+    const result = await listExperiments({ mission, now: NOW })
+    expect(result.rows[0]).toMatchObject({ status: 'running', progress: { done: 1, total: 2 } })
+  })
+
   it('a live job of this instance keeps an old run out of 停滞', async () => {
     const mission = ledger([{
       id: 'run-live',

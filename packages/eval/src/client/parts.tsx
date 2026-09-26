@@ -17,6 +17,7 @@
  */
 
 import type { ReactNode } from 'react'
+import { isJudgedOrBeyond } from '../cell-states.ts'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalExperimentRow, EvalExperimentStatus, EvalRunOutputView } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
@@ -91,6 +92,17 @@ export function stageTone(state: string): Tone {
   if (state === 'archived' || state === 'releasable' || state === 'released') return 'neutral'
   if (state === 'pending') return 'neutral'
   return 'busy'
+}
+
+/**
+ * The tone of {@link recordPhrase}'s word: 完成 is good news, 失败 is the one
+ * that needs a look, and a cell still running is busy.
+ * @param state - the ledger's own state token.
+ */
+export function recordTone(state: string): Tone {
+  if (state === 'halted') return 'danger'
+  if (state === 'pending') return 'neutral'
+  return isJudgedOrBeyond(state) ? 'ok' : 'busy'
 }
 
 /**

@@ -16,6 +16,7 @@
 import { statSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve, sep } from 'node:path'
+import { attemptElapsedMs } from './cell-states.ts'
 import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
 import { canonicalJson, hashConditionDocument } from './hash.ts'
 import { CONDITION_ID_RE, jsonEquals } from './schema.ts'
@@ -413,9 +414,11 @@ export interface RunLedgerStatus {
  * WORD the lab list shows for the same run (T72 §2) — derived by the one rule
  * in `experiments.ts`, never stored. `stalledMinutes` is set only when the
  * word is `stalled`; `closure` is the human's standing exit, if any.
+ * `progress` is the list row's count, by the same predicate as the word.
  */
 export interface RunStatusReport extends RunLedgerStatus {
   status: EvalExperimentStatus
+  progress: { done: number; total: number } | null
   stalledMinutes: number | null
   closure: EvalClosure | null
   archived: boolean
@@ -563,6 +566,12 @@ export interface RunCellDetail {
    * happened here", which is exactly the question a stuck cell fails.
    */
   inStateMs: number | null
+  /**
+   * How long the current attempt RAN — first state entered to the first
+   * finished one, or to `now` while it runs (`cell-states.ts`). The card's
+   * 用时; unlike `inStateMs` it stops counting when the cell finishes.
+   */
+  elapsedMs: number | null
   refs: RunCellRefs
   /** Checkpoint NAMES of this attempt, in the order they were reached. */
   checkpoints: string[]
@@ -685,6 +694,7 @@ export function runCells(mission: MissionReadFace, runId: string, query: RunCell
       // A clock that ran backwards between the two reads is not a negative
       // duration; it is zero and a puzzle for whoever set the clock.
       inStateMs: enteredCurrentAt === null ? null : Math.max(0, now - enteredCurrentAt),
+      elapsedMs: attemptElapsedMs(attempt?.enteredAt, row.state, now),
       refs: {
         resource: attempt?.refs?.resource ?? null,
         fingerprint: attempt?.refs?.fingerprint ?? null,

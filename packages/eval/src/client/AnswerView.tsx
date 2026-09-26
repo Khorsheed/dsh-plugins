@@ -18,7 +18,7 @@
  * (I5·T67 · W9), kept inside the component rather than beside it.
  */
 
-import { useState, type ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { Button, MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalAnswerVerdict, EvalJudgeCriterionRow } from '../types.ts'
 import {
@@ -190,6 +190,12 @@ export interface AnswerViewProps {
   rep: number | null
   onOpenSession: ((child: string, parent: string | null) => void) | null
   onBack: (() => void) | null
+  /**
+   * Ask for a re-judge of one column the judge never reached (T80c P2-10);
+   * null hides the button. The face decides how the column is named in the
+   * ask: by blind number on the 人工评估 page, by group and 次 elsewhere.
+   */
+  onRejudge: ((column: AnswerColumnModel) => void) | null
   t: T
 }
 
@@ -198,7 +204,7 @@ export interface AnswerViewProps {
  * @param props - the rows of one 题 and the face they came from.
  */
 export function AnswerView(props: AnswerViewProps) {
-  const { task, rows, criteria, criteriaNote, notes, scoring, onOpenSession, onBack, t } = props
+  const { task, rows, criteria, criteriaNote, notes, scoring, onOpenSession, onBack, onRejudge, t } = props
   const locked = scoring !== null
   const [blindChoice, setBlind] = useState(false)
   const blind = locked || blindChoice
@@ -268,18 +274,30 @@ export function AnswerView(props: AnswerViewProps) {
         const width = row.columns.length
         const stems = stemsOfRow(row)
         const hangs = new Map(row.columns.map(column => [column.key, hangVerdicts(column.files, column.verdicts)]))
+        // Each cell carries its column's index: below 700px the grid drops
+        // to one track and `order` regathers a column's parts under its own
+        // head, so the second answer is a scroll away, not a sliver (T80c P1-10).
+        const colOf = new Map(row.columns.map((column, index) => [column.key, { '--col': index } as CSSProperties]))
+        const at = (column: AnswerColumnModel): CSSProperties | undefined => colOf.get(column.key)
+        // A column no judge and no person reached says so ONCE, on its first
+        // unjudged criterion, instead of 「这条判据未判」 down every row
+        // (T80c P2-10). The rows below stay as empty cells so the other
+        // columns' criteria keep their level.
+        const firstUnjudged = new Map(row.columns
+          .filter(column => column.source === 'script' || column.source === 'none')
+          .map(column => [column.key, order.find(id => !column.verdicts.some(verdict => verdict.criterion === id))]))
         return (
           <section key={String(row.rep)} className={css.row} aria-label={row.rep === null ? task : t('answer.rep', { rep: row.rep })}>
             {row.rep !== null && <div className={css.repTitle}>{t('answer.rep', { rep: row.rep })}</div>}
             <div className={css.grid} style={{ gridTemplateColumns: `repeat(${String(width)}, minmax(300px, 1fr))` }}>
               {row.columns.map(column => (
-                <div key={column.key} className={css.cell} data-located={column.located} data-part="head">
+                <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="head">
                   <ColumnHead column={column} blind={blind} onOpenSession={onOpenSession} t={t} />
                 </div>
               ))}
 
               {scoring !== null && row.columns.map(column => (
-                <div key={column.key} className={css.cell} data-located={column.located} data-part="scoring">
+                <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="scoring">
                   {scoring(column)}
                 </div>
               ))}
@@ -289,7 +307,7 @@ export function AnswerView(props: AnswerViewProps) {
                 // material is thousands of lines and above the forms it would
                 // push the columns out of step (I5·T67 · W9).
                 ? row.columns.map(column => (
-                  <div key={column.key} className={css.cell} data-located={column.located} data-part="reports">
+                  <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="reports">
                     {column.files.length === 0
                       ? <div className={base.dim}>{t('judge.materialNone')}</div>
                       : (
@@ -309,30 +327,45 @@ export function AnswerView(props: AnswerViewProps) {
                 ))
                 : stems.length === 0
                   ? row.columns.map(column => (
-                    <div key={column.key} className={css.cell} data-located={column.located} data-part="reports">
+                    <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="reports">
                       <div className={base.dim}>{t('answer.noReports')}</div>
                     </div>
                   ))
                   : stems.flatMap(stem => row.columns.map(column => (
-                    <div key={`${stem}:${column.key}`} className={css.cell} data-located={column.located} data-part={stem}>
+                    <div key={`${stem}:${column.key}`} className={css.cell} style={at(column)} data-located={column.located} data-part={stem}>
                       <div className={css.stageTitle}>{stageLabel(stem, t)}</div>
                       <StageCell column={column} stem={stem} hangs={hangs.get(column.key) ?? new Map()} t={t} />
                     </div>
                   ))))}
 
               {view === 'evidence' && order.flatMap(id => row.columns.map((column) => {
+                const unjudged = (col: AnswerColumnModel, criterion: string): ReactNode => {
+                  if (firstUnjudged.get(col.key) !== criterion) return <div className={base.dim}>{t('answer.unjudged')}</div>
+                  const count = order.filter(each => !col.verdicts.some(verdict => verdict.criterion === each)).length
+                  return (
+                    <div className={css.unjudgedSummary} role="note">
+                      <span>{t(col.source === 'script' ? 'answer.scriptOnly' : 'answer.noneJudged', { count })}</span>
+                      {onRejudge !== null && (
+                        <Button size="sm" onClick={() => { onRejudge(col) }}>{t('judge.rejudge')}</Button>
+                      )}
+                    </div>
+                  )
+                }
                 const verdicts = column.verdicts
                   .map((verdict, index) => ({ verdict, index }))
                   .filter(entry => entry.verdict.criterion === id)
                 const row0 = rubric.get(id)
+                if (verdicts.length === 0 && firstUnjudged.has(column.key) && firstUnjudged.get(column.key) !== id) {
+                  return <div key={`${id}:${column.key}`} className={css.cell} style={at(column)} data-located={column.located} data-part="criterion" data-quiet="true" />
+                }
                 return (
-                  <div key={`${id}:${column.key}`} className={css.cell} data-located={column.located} data-part="criterion">
+                  <div key={`${id}:${column.key}`} className={css.cell} style={at(column)} data-located={column.located} data-part="criterion">
                     <div className={css.criterionTitle}>
                       <span className={base.mono}>{id}</span>
                       {row0 !== undefined && <span className={css.criterionText}>{row0.criterion}</span>}
                     </div>
                     {verdicts.length === 0
-                      ? <div className={base.dim}>{t('answer.unjudged')}</div>
+                      ? unjudged(column, id)
                       : verdicts.map(({ verdict, index }) => (
                         <VerdictLine
                           key={index}
@@ -346,12 +379,12 @@ export function AnswerView(props: AnswerViewProps) {
                 )
               }))}
               {view === 'evidence' && order.length === 0 && row.columns.map(column => (
-                <div key={column.key} className={css.cell} data-located={column.located} data-part="criterion">
+                <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="criterion">
                   <div className={base.dim}>{t('answer.noVerdicts', { reason: criteriaNote ?? '—' })}</div>
                 </div>
               ))}
               {view === 'evidence' && !locked && row.columns.map(column => (
-                <div key={column.key} className={css.cell} data-located={column.located} data-part="scripts">
+                <div key={column.key} className={css.cell} style={at(column)} data-located={column.located} data-part="scripts">
                   <div className={css.stageTitle}>{t('answer.scripts')}</div>
                   {column.scripts.length === 0
                     ? <div className={base.dim}>{t('answer.noScripts')}</div>

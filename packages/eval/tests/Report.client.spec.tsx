@@ -355,7 +355,7 @@ function makeHarness(report: EvalRunReportView = REPORT, units: EvalRunUnitsView
     fetchCells: vi.fn(async () => ({
       ok: true as const,
       value: {
-        runId: 'run-1', state: 'active', filter: {}, total: 3, matched: 3,
+        runId: 'run-1', state: 'active', filter: {}, total: 20, matched: 3,
         buckets: { ready: 0, scheduled: 0, blocked: 0, active: 0, done: 3 },
         rows: [
           cellRow('p0-cond-a-rep1', 'cond-a', 1),
@@ -379,7 +379,7 @@ function makeHarness(report: EvalRunReportView = REPORT, units: EvalRunUnitsView
 function cellRow(missionId: string, condition: string, rep: number) {
   return {
     missionId, task: 'P0', condition, rep, state: 'archived', bucket: 'done', attempt: 1,
-    inStateMs: 0, refs: { resource: null, fingerprint: null }, checkpoints: [],
+    inStateMs: 0, elapsedMs: 0, refs: { resource: null, fingerprint: null }, checkpoints: [],
     annotations: { script: 1 }, childSessionId: null,
   }
 }

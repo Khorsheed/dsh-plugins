@@ -38,9 +38,10 @@ import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
+import type { EvalKey } from './locales.ts'
 import { DesignPage, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
 import {
-  Chip, Detail, EmptyState, FactorCell, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
+  Chip, Detail, EmptyState, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
 } from './parts.tsx'
 import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS, type LabPage, type RunFilter } from './store.ts'
 import { RunsPage } from './RunsPage.tsx'
@@ -53,8 +54,8 @@ import { NewExperimentDialog } from './NewExperimentDialog.tsx'
 import { ReportPage, type ReadAnalysis } from './ReportPage.tsx'
 import { preferredColumn } from './vocab.ts'
 import {
-  LIST_GROUPS, fixLabel, groupRows, readinessFix as readinessFixOf, readListScope, scopeRows, splitReadiness, writeListScope,
-  type ListScope, type ReadinessFix,
+  LIST_GROUPS, fixLabel, groupRows, legacyInAttention, readinessFix as readinessFixOf, readListScope, rowAction, scopeRows,
+  splitReadiness, stageDots, writeListScope, type ListScope, type ReadinessFix, type RowVerb,
 } from './journey.ts'
 import css from './LabView.module.css'
 
@@ -522,6 +523,39 @@ export function LabView(props: LabViewProps) {
   }
 
   /**
+   * 归档 N 条旧运行 (T80c P1-2): the same mark as the row's 归档, one run at a
+   * time so the ledger sees ordinary single writes, and one sentence after.
+   */
+  function archiveAll(targets: readonly EvalExperimentRow[]): void {
+    void (async () => {
+      let done = 0
+      let refusal: string | null = null
+      for (const row of targets) {
+        if (row.runId === null) continue
+        const result = await archiveRun(sessionId, { runId: row.runId, archived: true })
+        if (result.ok && result.value.recorded) done += 1
+        else refusal ??= result.ok ? (result.value.detail ?? '') : result.error.message
+      }
+      setListNotice(refusal === null
+        ? t('list.archivedLegacy', { count: done })
+        : t('list.archiveLegacyFailed', { done, count: targets.length, message: refusal }))
+      actions.refresh()
+    })()
+  }
+
+  /** A list row's one button (T80c P1-1): a door into a stage, or 重跑 in place. */
+  function actOnRow(row: EvalExperimentRow, verb: RowVerb): void {
+    if (verb === 'rerun') {
+      rerun(row)
+      return
+    }
+    setListNotice(null)
+    setMarked(null)
+    actions.open(row.id)
+    if (verb !== 'design') actions.setPage(verb)
+  }
+
+  /**
    * Take one of the four exits (T72 §5). The server enforces every rule — a
    * reason for ② and ④, nothing after ④ — and answers with a structured
    * refusal the page turns into a sentence.
@@ -802,6 +836,14 @@ export function LabView(props: LabViewProps) {
     ? validation.errors
     : null
 
+  // The stage bar on the page its own action would open (T80c P2-11).
+  const onOwnPage = firstFix === null && action.verb === page
+  const recheckHere = onOwnPage && page === 'design'
+  const here: EvalKey | null = !onOwnPage || recheckHere
+    ? null
+    : page === 'runs' ? 'cta.here.runs' : page === 'review' ? 'cta.here.review' : 'cta.here.compare'
+  const dots = stageDots(shownStatus ?? openRow?.status ?? 'draft')
+
   const runAction = (): void => {
     if (firstBlocker !== null && firstFix !== null) {
       applyFix(firstFix, firstBlocker, 1)
@@ -1021,8 +1063,9 @@ export function LabView(props: LabViewProps) {
                 onScope={setScope}
                 marked={markedRow?.id ?? null}
                 onOpen={(id) => { setListNotice(null); setMarked(null); actions.open(id) }}
-                onRerun={rerun}
+                onAct={actOnRow}
                 onArchive={setArchived}
+                onArchiveAll={archiveAll}
                 t={t}
               />
             )}
@@ -1037,8 +1080,14 @@ export function LabView(props: LabViewProps) {
                   type="button"
                   className={css.pageTab}
                   aria-pressed={page === entry}
+                  data-dot={dots[entry]}
+                  title={t(`page.dot.${dots[entry]}`)}
                   onClick={() => { actions.setPage(entry) }}
                 >
+                  {/* Where the experiment stands on each stage (T80c P2-1):
+                      done / in progress / not started — the word on hover,
+                      so the tab's name stays the stage's name. */}
+                  <span className={css.pageDot} data-dot={dots[entry]} aria-hidden="true" />
                   {t(`page.${entry}`)}
                 </button>
               ))}
@@ -1049,23 +1098,31 @@ export function LabView(props: LabViewProps) {
                 without reading the page. */}
             <div className={css.stageBar}>
               <span className={css.stageHint}>
-                {firstBlocker !== null ? t('cta.pendingBlocked', { count: blockers.length }) : t(action.hint)}
+                {firstBlocker !== null
+                  ? t('cta.pendingBlocked', { count: blockers.length })
+                  : here !== null ? t(here) : t(action.hint)}
               </span>
               <span className={css.barSpacer} />
               {blockedBy !== null && <span className={css.warning}>{t('cta.blocked', { errors: blockedBy })}</span>}
               <span className={css.stageAction}>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={approving || blockedBy !== null}
-                  onClick={runAction}
-                >
-                  {approving && action.verb === 'approve'
-                    ? t('cta.waiting')
-                    : firstFix !== null
-                      ? fixText(firstFix)
-                      : t(action.cta)}
-                </Button>
+                {/* The button follows the stage on screen (T80c P2-11): a door
+                    to the page the reader is already on is no action, so there
+                    it gives way to that page's own sentence — or, on 实验设计,
+                    to re-validating the draft. */}
+                {(here === null || recheckHere) && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={approving || blockedBy !== null}
+                    onClick={recheckHere ? () => { actions.refresh() } : runAction}
+                  >
+                    {approving && action.verb === 'approve'
+                      ? t('cta.waiting')
+                      : firstFix !== null
+                        ? fixText(firstFix)
+                        : recheckHere ? t('cta.recheck') : t(action.cta)}
+                  </Button>
+                )}
               </span>
             </div>
             <div className={css.body}>
@@ -1093,6 +1150,11 @@ export function LabView(props: LabViewProps) {
                       rep={answers.rep}
                       onOpenSession={(childId, parentId) => { openSession(childId as SessionId, parentId === null ? null : parentId as SessionId) }}
                       onBack={() => { actions.openAnswers(null) }}
+                      onRejudge={(column) => {
+                        handToAgent(t('answer.rejudgeAsk', {
+                          name: openRow?.name ?? openRunId, condition: column.condition ?? '—', rep: column.rep ?? 1,
+                        }))
+                      }}
                       t={t}
                     />
                   )
@@ -1285,28 +1347,95 @@ export function LabView(props: LabViewProps) {
   )
 }
 
-/** One list row: the columns, and the row's own actions after them. */
+/**
+ * A row's overflow menu (T80c P1-1): 归档 / 取消归档 live here, so the row's
+ * one visible button is the step the row asks for. A menu rather than a
+ * hover reveal because the 400px layout has no hover.
+ */
+function RowMenu(props: { row: EvalExperimentRow; onArchive: (row: EvalExperimentRow, archived: boolean) => void; t: LabViewProps['t'] }) {
+  const { row, onArchive, t } = props
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (event: MouseEvent): void => {
+      if (ref.current !== null && !ref.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => { document.removeEventListener('mousedown', close) }
+  }, [open])
+  return (
+    <span
+      ref={ref}
+      className={css.rowMenu}
+      onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }}
+    >
+      <button
+        type="button"
+        className={css.rowMenuButton}
+        aria-label={t('list.more')}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(event) => { event.stopPropagation(); setOpen(!open) }}
+      >
+        ⋯
+      </button>
+      {open && (
+        <span className={css.rowMenuList} role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            className={css.rowMenuItem}
+            onClick={(event) => { event.stopPropagation(); setOpen(false); onArchive(row, !row.archived) }}
+          >
+            {t(row.archived ? 'list.unarchive' : 'list.archive')}
+          </button>
+        </span>
+      )}
+    </span>
+  )
+}
+
+/**
+ * One list row as a card (T80c P1-1): the name and the status word on the
+ * first line, the question — or the experiment's size when it has none — on
+ * the second, the progress slot, and ONE button for the step the row asks for.
+ * The columns the table used to carry (dataset version, arms, factors) are on
+ * the experiment's own design stage; the snapshot stays on the card's hover.
+ */
 function ExperimentRowLine(props: {
   row: EvalExperimentRow
   marked: boolean
   onOpen: (id: string) => void
-  onRerun: (row: EvalExperimentRow) => void
+  onAct: (row: EvalExperimentRow, verb: RowVerb) => void
   onArchive: (row: EvalExperimentRow, archived: boolean) => void
   t: LabViewProps['t']
 }) {
-  const { row, marked, onOpen, onRerun, onArchive, t } = props
+  const { row, marked, onOpen, onAct, onArchive, t } = props
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (marked) ref.current?.scrollIntoView?.({ block: 'nearest' })
   }, [marked])
-  // A div with the button role rather than a <button>: the row carries its
-  // own buttons (重跑, 归档), and a button may not contain buttons.
+  const action = rowAction(row)
+  const scale = t('list.scale', { items: row.items, groups: row.conditions.length, reps: row.reps })
+  const stalled = row.status === 'stalled' && row.stalledMinutes !== null
+  const progress = row.progress === null ? null : `${row.progress.done} / ${row.progress.total}`
+  // The progress slot says where the run is — and, for a stalled run, why it
+  // is not moving (P2-14), which used to be a line of its own under the row.
+  const slot = stalled
+    ? `${progress ?? ''} · ${t('list.stalledMeta', { duration: stalledFor(row.stalledMinutes ?? 0, t) })}`
+    : progress === null
+      ? (row.question === null ? null : scale)
+      : `${stamp(row.startedAt).slice(5, 10)} · ${progress}`
+  // A div with the button role rather than a <button>: the card carries its
+  // own buttons (the step, the menu), and a button may not contain buttons.
   return (
     <div
       ref={ref}
       role="button"
       tabIndex={0}
       className={css.row}
+      title={snapshotCell(row)}
       data-status={row.status}
       data-marked={marked ? 'true' : undefined}
       onClick={() => { onOpen(row.id) }}
@@ -1318,50 +1447,64 @@ function ExperimentRowLine(props: {
         }
       }}
     >
-      <span className={css.colName} title={row.experimentId ?? row.name}>
+      <span className={css.rowMain}>
         <span className={css.nameLine}>
-          <span className={css.nameText}>{row.name}</span>
-          {/* A run from before experiments were deployment-level that no
-              imported experiment claims: said, not hidden (T73) — so the name
-              takes the ellipsis and the chip never shrinks. */}
-          {row.legacy && <span className={css.nameChip}><Chip tone="neutral">{t('list.legacy')}</Chip></span>}
+          <span className={css.nameText} title={row.experimentId ?? row.name}>{row.name}</span>
+          <span className={css.nameChip}><Chip tone={statusTone(row.status)}>{t(statusKey(row.status))}</Chip></span>
         </span>
-        {/* The question the experiment is run to answer (rev14, T74): one
-            line under the name, cut with an ellipsis, whole on hover. A plan
-            without one keeps the single-line row it always had. */}
-        {row.question !== null && <span className={css.questionLine} title={row.question}>{row.question}</span>}
+        <span className={css.questionLine}>
+          {/* A run no imported experiment claims (T73) is said on the second
+              line, so the mark never takes width from the name. */}
+          {row.legacy && <span className={css.nameChip}><Chip tone="neutral">{t('list.legacy')}</Chip></span>}
+          <span className={css.questionText} title={row.question ?? scale}>{row.question ?? scale}</span>
+        </span>
       </span>
-      <span className={css.colSnapshot}>{snapshotCell(row)}</span>
-      <span className={css.colNum}>
-        {row.judges.length === 0
-          ? t('conditions.count', { count: row.conditions.length })
-          : t('conditions.withJudges', { count: row.conditions.length, judges: row.judges.length })}
-      </span>
-      <span className={css.colNum}>{row.items}</span>
-      <span className={css.colNum}>{row.reps}</span>
-      <span className={css.colFactors}><FactorCell row={row} t={t} /></span>
-      <span className={css.colStatus}>
-        <Chip tone={statusTone(row.status)}>{t(statusKey(row.status))}</Chip>
-      </span>
-      <span className={css.colProgress}>
-        {row.progress === null ? '—' : `${row.progress.done}/${row.progress.total}`}
-      </span>
-      <span className={css.colStarted}>{stamp(row.startedAt)}</span>
+      <span className={css.rowSlot} data-stalled={stalled ? 'true' : undefined}>{slot}</span>
       <span className={css.colActions}>
-        {row.status === 'stalled' && row.experimentId !== null && !row.archived && (
-          <Button size="sm" variant="primary" onClick={(event) => { event.stopPropagation(); onRerun(row) }}>
-            {t('cta.stalled')}
-          </Button>
-        )}
-        {row.runId !== null && (
-          <Button size="sm" onClick={(event) => { event.stopPropagation(); onArchive(row, !row.archived) }}>
-            {t(row.archived ? 'list.unarchive' : 'list.archive')}
-          </Button>
-        )}
+        <Button
+          size="sm"
+          // 重跑 acts in place, so it carries the primary weight; the doors do not.
+          {...(action.verb === 'rerun' ? { variant: 'primary' as const } : {})}
+          onClick={(event) => { event.stopPropagation(); onAct(row, action.verb) }}
+        >
+          {t(action.cta)}
+        </Button>
+        {row.runId !== null && <RowMenu row={row} onArchive={onArchive} t={t} />}
       </span>
-      {row.status === 'stalled' && row.stalledMinutes !== null && (
-        <span className={css.rowMeta}>{t('list.stalledMeta', { duration: stalledFor(row.stalledMinutes, t) })}</span>
-      )}
+    </div>
+  )
+}
+
+/**
+ * 归档 N 条旧运行 (T80c P1-2): the header button, and the confirmation it
+ * asks first. The confirmation says what archiving IS — a grouping mark,
+ * newest wins, undone by 取消归档 — because a bulk button that does not say
+ * whether it can be taken back reads as a delete.
+ */
+function ArchiveLegacy(props: {
+  rows: readonly EvalExperimentRow[]
+  onArchiveAll: (rows: readonly EvalExperimentRow[]) => void
+  t: LabViewProps['t']
+}) {
+  const { rows, onArchiveAll, t } = props
+  const [asking, setAsking] = useState(false)
+  if (rows.length === 0) return null
+  if (!asking) {
+    return (
+      <button type="button" className={css.reportJump} onClick={() => { setAsking(true) }}>
+        {t('list.archiveLegacy', { count: rows.length })}
+      </button>
+    )
+  }
+  return (
+    <div className={css.listConfirm} role="alertdialog" aria-label={t('list.archiveLegacy', { count: rows.length })}>
+      <span>{t('list.archiveLegacyConfirm', { count: rows.length })}</span>
+      <span className={css.listConfirmActions}>
+        <Button size="sm" variant="primary" onClick={() => { setAsking(false); onArchiveAll(rows) }}>
+          {t('list.archiveLegacyGo')}
+        </Button>
+        <Button size="sm" onClick={() => { setAsking(false) }}>{t('list.archiveLegacyCancel')}</Button>
+      </span>
     </div>
   )
 }
@@ -1383,15 +1526,17 @@ function ExperimentList(props: {
   /** The row 打开实验 asked for (T76), marked until the reader opens a row. */
   marked: string | null
   onOpen: (id: string) => void
-  onRerun: (row: EvalExperimentRow) => void
+  onAct: (row: EvalExperimentRow, verb: RowVerb) => void
   onArchive: (row: EvalExperimentRow, archived: boolean) => void
+  onArchiveAll: (rows: readonly EvalExperimentRow[]) => void
   t: LabViewProps['t']
 }) {
-  const { rows, session, scope, onScope, marked, onOpen, onRerun, onArchive, t } = props
+  const { rows, session, scope, onScope, marked, onOpen, onAct, onArchive, onArchiveAll, t } = props
   const { shown, others } = scopeRows(rows, session, scope)
   const groups = groupRows(shown)
+  const legacy = legacyInAttention(shown)
   const line = (row: EvalExperimentRow) => (
-    <ExperimentRowLine key={row.id} row={row} marked={row.id === marked} onOpen={onOpen} onRerun={onRerun} onArchive={onArchive} t={t} />
+    <ExperimentRowLine key={row.id} row={row} marked={row.id === marked} onOpen={onOpen} onAct={onAct} onArchive={onArchive} t={t} />
   )
   return (
     <>
@@ -1419,23 +1564,14 @@ function ExperimentList(props: {
         ? <EmptyState title={t('list.scopeEmpty')} hint={t('list.scopeEmptyHint')} />
         : (
           <div className={css.listTable}>
-            <div className={css.tableHead}>
-              <span className={css.colName}>{t('col.name')}</span>
-              <span className={css.colSnapshot}>{t('col.snapshot')}</span>
-              <span className={css.colNum}>{t('col.conditions')}</span>
-              <span className={css.colNum}>{t('col.items')}</span>
-              <span className={css.colNum}>{t('col.reps')}</span>
-              <span className={css.colFactors}>{t('col.factors')}</span>
-              <span className={css.colStatus}>{t('col.status')}</span>
-              <span className={css.colProgress}>{t('col.progress')}</span>
-              <span className={css.colStarted}>{t('col.startedAt')}</span>
-              <span className={css.colActions} />
-            </div>
             {LIST_GROUPS.filter(group => group !== 'archived' && groups[group].length > 0).map(group => (
               <div key={group} className={css.listGroup} data-group={group}>
                 <div className={css.listGroupHead}>
-                  {t(`list.group.${group}`)}
-                  <span className={css.dim}> {groups[group].length}</span>
+                  <span>
+                    {t(`list.group.${group}`)}
+                    <span className={css.dim}> {groups[group].length}</span>
+                  </span>
+                  {group === 'attention' && <ArchiveLegacy rows={legacy} onArchiveAll={onArchiveAll} t={t} />}
                 </div>
                 {groups[group].map(line)}
               </div>

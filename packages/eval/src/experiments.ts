@@ -22,6 +22,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
+import { isJudgedOrBeyond, JUDGED_OR_BEYOND } from './cell-states.ts'
 import { readRunMarks } from './closure.ts'
 import { conditionLibraryDir, type ExperimentRecord, listExperimentRecords } from './experiment-store.ts'
 import type { EvalRunStatus } from './job.ts'
@@ -39,25 +40,9 @@ import type {
 /** The template state a finalized cell rests in (the generated template's last one). */
 const RELEASED_STATE = 'released'
 
-/**
- * `judged` and everything after it in the generated template's state order
- * (`… → judged | halted → archived → releasable → released`). A cell in one
- * of these has nothing left for the ORCHESTRATOR to do; what remains is the
- * judge's and the human's, which is what `judging` means.
- */
-const JUDGED_OR_BEYOND: ReadonlySet<string> = new Set(['judged', 'halted', 'archived', 'releasable', RELEASED_STATE])
-
-/**
- * Whether a cell's template state is `judged` or past it — the orchestrator
- * has nothing left to do with it. The matrix page's rep dot and the status
- * rule read the SAME predicate, so a cell can never be a solid dot in one
- * view and "still running" in the other.
- * @param state - the template state, as the ledger holds it.
- * @returns true when nothing further is the orchestrator's to do.
- */
-export function isJudgedOrBeyond(state: string): boolean {
-  return JUDGED_OR_BEYOND.has(state)
-}
+// The finished-cell set lives in `cell-states.ts` (no imports) so the browser
+// reads the same one; re-exported here for the callers that always had it.
+export { isJudgedOrBeyond }
 
 /** The template state a cell rests in once finalize released it. */
 export function isReleased(state: string): boolean {
@@ -394,7 +379,9 @@ function runRow(
     items: tasks.size,
     reps: reps.size,
     factors: conditionFactors(conditions.map(entry => entry.document)),
-    progress: { done: buckets['done'] ?? 0, total: run.rows.length },
+    // The same predicate the status rule reads (T80c P1-3): mission's `done`
+    // bucket leaves halted cells out, so a run could read 「评估中」 at 0/1.
+    progress: { done: cellStates.filter(isJudgedOrBeyond).length, total: run.rows.length },
     startedAt: numberOrNull(meta['startedAt']) ?? run.createdAt,
     validation: null,
     unit: unitOf(meta['unit']),

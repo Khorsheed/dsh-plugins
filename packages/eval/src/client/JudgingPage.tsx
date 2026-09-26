@@ -31,7 +31,7 @@
  * checkable fact and a blank box is how a grader's reasoning gets lost.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalClosure, EvalClosureExit, EvalJudgeCriterionRow, EvalJudgeDraftSample, EvalJudgeQueueCell, EvalJudgeQueueView,
@@ -54,12 +54,30 @@ function fmtKappa(value: number | null): string {
   return value === null || Number.isNaN(value) ? DASH : value.toFixed(3)
 }
 
-/** The run's agreement numbers, computed off the LIVE ledger. */
+/**
+ * The run's agreement numbers, computed off the LIVE ledger — folded at the
+ * FOOT of the page (T80c P1-6). A pilot's numbers are all dashes, and a
+ * block of dashes at the head of the page pushed the thing a grader came to
+ * do below the fold (T79 · 8). The summary line says 「数据不足」 in words
+ * when there is no pair to agree or disagree yet, instead of four dashes.
+ */
 function Stats(props: { view: EvalJudgeQueueView; t: LabViewProps['t'] }) {
   const { view, t } = props
   const c = view.consistency
+  const thin = c.llmAgreement === null && c.crossAgreement === null && c.humanAgreement === null
   return (
-    <Section title={t('judge.stats')}>
+    <details className={css.hygiene}>
+      <summary className={css.hygieneSummary}>
+        <span className={css.hygieneTitle}>{t('judge.stats')}</span>
+        <span className={css.dim}>
+          {thin
+            ? t('judge.statsThin', { count: view.judgeCount })
+            : t('judge.statsLine', {
+              same: fmtAgreement(c.llmAgreement), cross: fmtAgreement(c.crossAgreement), human: fmtAgreement(c.humanAgreement),
+            })}
+        </span>
+        {c.selfJudgedCriteria > 0 && <Chip tone="warn">{t('judge.statsSelfLine', { count: c.selfJudgedCriteria })}</Chip>}
+      </summary>
       <div className={css.summaryRow}>
         <span className={css.summaryLabel}>{t('judge.statsSame')}</span>
         <span>{t('report.judgeSameValue', {
@@ -81,8 +99,19 @@ function Stats(props: { view: EvalJudgeQueueView; t: LabViewProps['t'] }) {
         <Chip tone={c.selfJudgedCriteria > 0 ? 'warn' : 'neutral'}>{c.selfJudgedCriteria}</Chip>
       </div>
       <div className={css.dim}>{t('judge.panel', { count: view.judgeCount })}</div>
-    </Section>
+    </details>
   )
+}
+
+/**
+ * The item the page opens on: the first one with an answer still ungraded,
+ * else the first. A grader arriving here came to grade; an empty 「先选一道题」
+ * panel beside a one-item queue was one click of pure ceremony (T79 · 8).
+ * @param items - the queue grouped by item, in the run's order.
+ * @returns the task to open, or null for an empty queue.
+ */
+export function landingItem(items: readonly QueueItem[]): string | null {
+  return (items.find(item => item.graded < item.cells.length) ?? items[0])?.task ?? null
 }
 
 /** One item in the queue: how many answers it has, and how many are graded. */
@@ -432,6 +461,20 @@ export function JudgingPage(props: {
   // is looking at and nothing else on the page (or in the ledger) depends on
   // it. Filtering never reorders: the seeded order IS part of the blind.
   const [mode, setMode] = useState<'all' | 'ungraded' | 'graded'>('all')
+  // Land once per visit, and only while nothing is picked: after that the
+  // item on screen is the grader's choice, and a submission that grades the
+  // last answer must not yank the page to the next item mid-read.
+  const landed = useRef(false)
+  const queued = view === null ? [] : byItem(view.cells)
+  const landing = landingItem(queued)
+  // A pick this run does not have (the store outlives a run switch) counts
+  // as no pick at all.
+  const picked = selection !== null && queued.some(item => item.task === selection)
+  useEffect(() => {
+    if (landed.current || landing === null) return
+    landed.current = true
+    if (!picked) onPick(landing)
+  }, [landing, picked, onPick])
 
   if (error !== null) return <ErrorState what={t('judge.error')} message={error} t={t} />
   if (view === null) return <div className={css.empty}>{t('judge.loading')}</div>
@@ -451,11 +494,15 @@ export function JudgingPage(props: {
           verdict. Named by blind number only; 补判 is optional because the
           human's own verdict stands without it. */}
       {absent.length > 0 && (
-        <div className={css.notice}>
-          <div>{t('judge.absent', { cells: absent.join('、'), count: absent.length })}</div>
-          <div className={css.actions}>
-            <Button size="sm" onClick={() => { onRejudge(absent) }}>{t('judge.rejudge')}</Button>
+        // A reminder card, not a grey line (T80c P1-6): it names where the
+        // judge is missing and offers the fix, and it does not block — the
+        // v5 rule for data problems is «point it out, never stand in the way».
+        <div className={css.judgeAbsentCard} role="note">
+          <div className={css.judgeAbsentSay}>
+            <span className={css.judgeAbsentTitle}>{t('judge.absent', { cells: absent.join('、'), count: absent.length })}</span>
+            <span className={css.dim}>{t('judge.absentBody')}</span>
           </div>
+          <Button size="sm" onClick={() => { onRejudge(absent) }}>{t('judge.rejudge')}</Button>
         </div>
       )}
       {/* A re-read over an already-rendered queue: say so rather than blanking
@@ -479,7 +526,6 @@ export function JudgingPage(props: {
           </div>
         </div>
       )}
-      <Stats view={view} t={t} />
 
       {view.cells.length === 0
         ? <EmptyState title={t('judge.empty')} hint={t('judge.emptyHint')} />
@@ -547,6 +593,9 @@ export function JudgingPage(props: {
                     rep={null}
                     onOpenSession={null}
                     onBack={null}
+                    // Blind: the column is named by its run-wide number, the
+                    // same sentence the 判官缺席 card sends.
+                    onRejudge={(column) => { if (column.queueCell !== null) onRejudge([column.queueCell.cellNo]) }}
                     t={t}
                   />
                 </div>
@@ -554,6 +603,7 @@ export function JudgingPage(props: {
           </div>
         )}
       <ClosureExits closure={closure} anyGraded={anyGraded} closing={closing} onClose={onClose} t={t} />
+      <Stats view={view} t={t} />
     </div>
   )
 }

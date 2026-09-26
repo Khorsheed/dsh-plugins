@@ -24,9 +24,9 @@
 import { useState, type ReactNode } from 'react'
 import type { EvalMatrixCell, EvalMatrixInvariant, EvalMatrixView } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
-import { Chip, EmptyState, Section, Word, invariantTone, stageTone } from './parts.tsx'
+import { Chip, EmptyState, Word, invariantTone, recordTone } from './parts.tsx'
 import {
-  distinctStates, factorPhrase, factorValueText, shortenValue, splitFactors, stagePhrase,
+  distinctStates, factorPhrase, factorValueText, recordPhrase, shortenValue, splitFactors,
   verdictKey, type VerdictSource,
 } from './vocab.ts'
 import css from './LabView.module.css'
@@ -60,19 +60,24 @@ export interface GridRow {
   cells: Array<GridCell | null>
 }
 
-/** The stage word of one live seat: the state its reps agree on, or 「多态」. */
+/**
+ * The word of one live seat, in the run-records vocabulary (T80c P1-7): the
+ * word its reps agree on, or 「多态」. Reps are compared by WORD, not token,
+ * so a seat whose reps sit in `judged` and `released` reads 「完成」 once —
+ * the difference is the ledger's bookkeeping, not the reader's.
+ */
 function StageChip(props: { cell: EvalMatrixCell; t: LabViewProps['t'] }) {
   const { cell, t } = props
   const states = distinctStates(cell.reps)
   if (states.length === 0) return <span className={css.dim}>—</span>
-  const only = states[0] as string
-  if (states.length === 1) {
-    return <Chip tone={stageTone(only)} title={only}><Word phrase={stagePhrase(only)} t={t} /></Chip>
-  }
-  const words = states.map((state) => {
-    const phrase = stagePhrase(state)
+  const wordOf = (state: string) => {
+    const phrase = recordPhrase(state)
     return phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)
-  })
+  }
+  const words = [...new Set(states.map(wordOf))]
+  if (words.length === 1) {
+    return <Chip tone={recordTone(states[0] as string)} title={states.join(' / ')}>{words[0]}</Chip>
+  }
   return <Chip tone="busy" title={states.join(' / ')}>{t('stage.mixed', { states: words.join(' / ') })}</Chip>
 }
 
@@ -99,7 +104,7 @@ function LiveSeat(props: {
     >
       <div className={css.matrixDots}>
         {cell.reps.map((rep) => {
-          const phrase = stagePhrase(rep.state)
+          const phrase = recordPhrase(rep.state)
           const word = phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)
           return (
             <button
@@ -390,8 +395,71 @@ function Incidental(props: { matrix: EvalMatrixView; paths: readonly string[]; t
 }
 
 /**
- * The LIVE grid in full: the arrangement bar, the banded tables, and the
- * run-level summary under them.
+ * 实验卫生 — the run-level invariants, FOLDED (T80c P1-7).
+ *
+ * It sat open under every grid as 「本次实验汇总」 with 未释放单元 / 卡住的记录 /
+ * 显示的记录 as its headings, which is the ledger's own bookkeeping read out to
+ * someone who came to see whether the answers are in. Folded, its one line
+ * still says the four things worth a glance; it opens by itself when an
+ * invariant does NOT hold, because then it is the reason the page was opened.
+ * @param props - the matrix payload (the summary and the derived fields).
+ */
+export function Hygiene(props: { matrix: EvalMatrixView; t: LabViewProps['t'] }) {
+  const { matrix, t } = props
+  const { summary } = matrix
+  const { incidental } = splitFactors(matrix.factors)
+  const broken = summary.materialization.status !== 'ok' || summary.fingerprint.status !== 'ok'
+  const mark = (value: EvalMatrixInvariant) => (value.status === 'ok' ? '✓' : t(`invariant.${value.status}`))
+  return (
+    <details className={css.hygiene} open={broken}>
+      <summary className={css.hygieneSummary}>
+        <span className={css.hygieneTitle}>{t('summary.title')}</span>
+        <span className={css.dim}>
+          {t('summary.line', {
+            materialization: mark(summary.materialization),
+            fingerprint: mark(summary.fingerprint),
+            unreleased: summary.unreleased,
+            stuck: summary.stuck,
+          })}
+        </span>
+      </summary>
+      <div className={css.summaryBar}>
+        <Invariant label={t('summary.materialization')} value={summary.materialization} t={t} />
+        <Invariant label={t('summary.fingerprint')} value={summary.fingerprint} t={t} />
+        <span className={css.summaryItem}>
+          <span className={css.summaryLabel}>{t('summary.unreleased')}</span>
+          <Chip tone={summary.unreleased > 0 ? 'warn' : 'neutral'}>{summary.unreleased}</Chip>
+        </span>
+        <span className={css.summaryItem}>
+          <span className={css.summaryLabel}>{t('summary.stuck')}</span>
+          <Chip tone={summary.stuck > 0 ? 'warn' : 'neutral'}>{summary.stuck}</Chip>
+        </span>
+        <span className={css.summaryItem}>
+          <span className={css.summaryLabel}>{t('summary.judge')}</span>
+          <span className={css.dim}>{summary.judgeConsistency ?? t('summary.judgePending')}</span>
+        </span>
+        <span className={css.summaryItem}>
+          <span className={css.summaryLabel}>{t('summary.cells')}</span>
+          <span className={css.dim}>{summary.cells}</span>
+        </span>
+      </div>
+      {/* An invariant that HOLDS does not have to explain itself; one that
+          does not is the reason a reader opened this page. */}
+      {summary.materialization.status !== 'ok' && (
+        <div className={css.summaryWhy}>{summary.materialization.detail}</div>
+      )}
+      {summary.fingerprint.status !== 'ok' && (
+        <div className={css.summaryWhy}>{summary.fingerprint.detail}</div>
+      )}
+      <Incidental matrix={matrix} paths={incidental} t={t} />
+    </details>
+  )
+}
+
+/**
+ * The LIVE grid in full: the arrangement bar and the banded tables. The
+ * run-level summary is {@link Hygiene}, which the page places under the grid
+ * or under the record cards, whichever it drew.
  * @param props - the matrix payload, the reader's controls, the verdict
  *   lookup and the drawer opener.
  */
@@ -408,7 +476,7 @@ export function LiveGrid(props: {
   const { matrix, loading, verdictOf, onColumn, onToggleGroup, onFilter, onOpenCell, t } = props
   const [legendOpen, setLegendOpen] = useState(false)
   const stuckMinutes = Math.round(matrix.stuckMs / 60_000)
-  const { named, incidental } = splitFactors(matrix.factors)
+  const { named } = splitFactors(matrix.factors)
   const columns = liveColumns(matrix, t)
   const columnPhrase = matrix.column === null ? null : factorPhrase(matrix.column)
 
@@ -462,37 +530,6 @@ export function LiveGrid(props: {
           />
         ))}
 
-      <Section title={t('summary.title')}>
-        <div className={css.summaryBar}>
-          <Invariant label={t('summary.materialization')} value={matrix.summary.materialization} t={t} />
-          <Invariant label={t('summary.fingerprint')} value={matrix.summary.fingerprint} t={t} />
-          <span className={css.summaryItem}>
-            <span className={css.summaryLabel}>{t('summary.unreleased')}</span>
-            <Chip tone={matrix.summary.unreleased > 0 ? 'warn' : 'neutral'}>{matrix.summary.unreleased}</Chip>
-          </span>
-          <span className={css.summaryItem}>
-            <span className={css.summaryLabel}>{t('summary.stuck')}</span>
-            <Chip tone={matrix.summary.stuck > 0 ? 'warn' : 'neutral'}>{matrix.summary.stuck}</Chip>
-          </span>
-          <span className={css.summaryItem}>
-            <span className={css.summaryLabel}>{t('summary.judge')}</span>
-            <span className={css.dim}>{matrix.summary.judgeConsistency ?? t('summary.judgePending')}</span>
-          </span>
-          <span className={css.summaryItem}>
-            <span className={css.summaryLabel}>{t('summary.cells')}</span>
-            <span className={css.dim}>{matrix.summary.cells}</span>
-          </span>
-        </div>
-        {/* An invariant that HOLDS does not have to explain itself; one that
-            does not is the reason a reader opened this page. */}
-        {matrix.summary.materialization.status !== 'ok' && (
-          <div className={css.summaryWhy}>{matrix.summary.materialization.detail}</div>
-        )}
-        {matrix.summary.fingerprint.status !== 'ok' && (
-          <div className={css.summaryWhy}>{matrix.summary.fingerprint.detail}</div>
-        )}
-        <Incidental matrix={matrix} paths={incidental} t={t} />
-      </Section>
     </>
   )
 }

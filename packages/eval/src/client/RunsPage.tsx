@@ -43,16 +43,20 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
+import { isJudgedOrBeyond } from '../cell-states.ts'
 import type {
   EvalCellArtifactView, EvalCellDetail, EvalCellRow, EvalCellsResult, EvalMatrixView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
-import { LiveGrid } from './Grid.tsx'
+import { Hygiene, LiveGrid } from './Grid.tsx'
 import type { EvalKey } from './locales.ts'
-import { Chip, Detail, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, stageTone, stalledFor } from './parts.tsx'
 import {
-  RETRY_CATEGORIES, bucketPhrase, retryPhrase, stagePhrase, verdictKey, verdictSourceOf, verdictSourcesOf,
+  Chip, Detail, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, recordTone, stageTone, stalledFor,
+} from './parts.tsx'
+import {
+  RETRY_CATEGORIES, bucketPhrase, durationParts, recordPhrase, retryPhrase, stagePhrase, verdictKey, verdictSourceOf,
+  verdictSourcesOf,
 } from './vocab.ts'
 import { RUN_FILTERS, type RunFilter } from './store.ts'
 import css from './LabView.module.css'
@@ -86,6 +90,50 @@ export function passesFilter(row: Pick<EvalCellRow, 'state' | 'bucket'>, filter:
 }
 
 export { RETRY_CATEGORIES } from './vocab.ts'
+
+/**
+ * Up to this many records the page is the cards alone (T80c P1-7, v5 「格子
+ * 就是记录」): at that size the grid, the summary and a full-width list drew
+ * the same two records three times. Past it a reader needs the filters and the
+ * sortable rows, so the grid comes back with the list under it.
+ */
+export const CARDS_MAX = 12
+
+/**
+ * One record as a small card: the comparison group, the word, then item ·
+ * rep · how long it ran. The group leads because that is what the reader is
+ * comparing; the item is the second line because on a small run most cards
+ * share it.
+ */
+function RecordCard(props: {
+  row: EvalCellRow
+  selected: boolean
+  onOpen: () => void
+  t: LabViewProps['t']
+}) {
+  const { row, selected, onOpen, t } = props
+  const phrase = recordPhrase(row.state)
+  const parts = durationParts(row.elapsedMs)
+  const duration = parts === null ? null : t(parts.key, parts.params)
+  const running = !isJudgedOrBeyond(row.state)
+  return (
+    <button
+      type="button"
+      className={css.recordCard}
+      aria-pressed={selected}
+      onClick={onOpen}
+    >
+      <span className={css.recordCardTop}>
+        <b className={css.recordCardGroup}>{row.condition ?? '—'}</b>
+        <Chip tone={recordTone(row.state)} title={row.state}><Word phrase={phrase} t={t} /></Chip>
+      </span>
+      <span className={css.dim}>
+        {t('runs.card.meta', { task: row.task ?? '—', rep: row.rep ?? '—' })}
+        {duration !== null && ` · ${running ? t('runs.card.running', { duration }) : duration}`}
+      </span>
+    </button>
+  )
+}
 
 /**
  * How long each stage of one attempt took, from the ledger's own transition
@@ -253,6 +301,8 @@ function RecordDetail(props: {
   artifactLoading: boolean
   artifactError: string | null
   onOpenArtifact: (path: string | null) => void
+  /** Under the cards, full width, rather than the list's side drawer. */
+  inline?: boolean
   t: LabViewProps['t']
 }) {
   const {
@@ -277,9 +327,12 @@ function RecordDetail(props: {
   // shared scale would say something about other cells that this panel is not
   // showing.
   const longest = Math.max(0, ...segments.map(segment => segment.ms ?? 0))
+  // The last state of a cell still moving has no length YET — 进行中, which
+  // is what a reader wants to know about it, not a dash.
+  const moving = cell !== null && !isJudgedOrBeyond(cell.state)
 
   return (
-    <div className={css.drawer}>
+    <div className={props.inline === true ? `${css.drawer} ${css.drawerInline}` : css.drawer}>
       <div className={css.drawerBar}>
         <span className={css.title}>
           {cell === null ? '' : t('record.head', { task: cell.task ?? '—', condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
@@ -298,9 +351,12 @@ function RecordDetail(props: {
             <div className={css.recordHead}>
               <span className={css.recordVerdict}>{t(verdictKey(verdict))}</span>
               <Chip tone={halted ? 'danger' : 'ok'}>{t(halted ? 'record.failed' : 'record.ok')}</Chip>
-              <Chip tone={stageTone(cell.state)} title={cell.state}>
-                <Word phrase={stagePhrase(cell.state)} t={t} />
-              </Chip>
+              {/* The list's word (完成), not the ledger's (已释放) — T80c P1-7. */}
+              {!halted && (
+                <Chip tone={recordTone(cell.state)} title={cell.state}>
+                  <Word phrase={recordPhrase(cell.state)} t={t} />
+                </Chip>
+              )}
               {(cell.bucket === 'blocked' || cell.bucket === 'scheduled') && (
                 <Chip tone={bucketTone(cell.bucket)} title={cell.bucket}>
                   <Word phrase={bucketPhrase(cell.bucket)} t={t} />
@@ -341,7 +397,9 @@ function RecordDetail(props: {
                           )}
                         </span>
                         <span className={css.dim}>
-                          {segment.ms === null ? '—' : <Duration ms={segment.ms} t={t} />}
+                          {segment.ms !== null
+                            ? <Duration ms={segment.ms} t={t} />
+                            : index === segments.length - 1 && moving ? t('runs.card.now') : '—'}
                         </span>
                       </div>
                     ))}
@@ -629,6 +687,37 @@ export function RunsPage(props: {
   // The comparison groups the ledger actually ran — the honest source for
   // 「只有一个对比组」, which a plan can claim and a `--only` run can contradict.
   const groups = new Set(rows.map(row => row.condition).filter((id): id is string => id !== null))
+  // A small run is its cards (see `CARDS_MAX`). Decided on the WHOLE run, not
+  // the focus, so narrowing to one pair never swaps the page's layout.
+  const compact = cells !== null && cells.total <= CARDS_MAX
+  const focusNotice = focus !== null && (
+    <div className={css.notice}>
+      <div>{t('runs.focus', { task: focus.task, condition: focus.condition, matched: compact ? population.length : shown.length })}</div>
+      <div className={css.actions}>
+        <Button size="sm" onClick={onClearFocus}>{t('runs.focusClear')}</Button>
+      </div>
+    </div>
+  )
+  const detail = (inline: boolean) => (
+    <RecordDetail
+      cell={props.cell}
+      loading={props.cellLoading}
+      error={props.cellError}
+      onClose={() => { props.onOpenCell(null) }}
+      onRetry={props.onRetry}
+      onRelease={props.onRelease}
+      onExport={props.onExport}
+      onOpenSession={props.onOpenSession}
+      onOpenAnswers={props.onOpenAnswers}
+      artifactPath={props.artifactPath}
+      artifact={props.artifact}
+      artifactLoading={props.artifactLoading}
+      artifactError={props.artifactError}
+      onOpenArtifact={props.onOpenArtifact}
+      inline={inline}
+      t={t}
+    />
+  )
 
   return (
     <div className={css.cellsPage}>
@@ -652,132 +741,134 @@ export function RunsPage(props: {
           </div>
         </div>
       )}
-      {matrixError !== null && <ErrorState what={t('matrix.error')} message={matrixError} t={t} />}
-      {matrix === null && matrixError === null && <div className={css.empty}>{t('matrix.loading')}</div>}
-      {matrix !== null && (
-        <LiveGrid
-          matrix={matrix}
-          loading={matrixLoading}
-          verdictOf={missionId => verdicts.get(missionId) ?? null}
-          onColumn={onColumn}
-          onToggleGroup={onToggleGroup}
-          onFilter={onFilter}
-          onOpenCell={(missionId) => { props.onOpenCell(missionId) }}
-          t={t}
-        />
-      )}
-
-      {focus !== null && (
-        <div className={css.notice}>
-          <div>{t('runs.focus', { task: focus.task, condition: focus.condition, matched: shown.length })}</div>
-          <div className={css.actions}>
-            <Button size="sm" onClick={onClearFocus}>{t('runs.focusClear')}</Button>
-          </div>
-        </div>
-      )}
-      <div className={css.matrixBar}>
-        {RUN_FILTERS.map(entry => (
-          <button
-            key={entry}
-            type="button"
-            className={css.chip}
-            aria-pressed={filter === entry}
-            onClick={() => { onSetFilter(entry) }}
-          >
-            {t(`runs.filter.${entry}`)}
-            <span className={css.chipCount}>{counts[entry]}</span>
-          </button>
-        ))}
-        <span className={css.barSpacer} />
-        {cells !== null && (
-          <span className={css.dim}>{t('runs.filtered', { matched: shown.length, total: population.length })}</span>
-        )}
-      </div>
-      <div className={css.cellsSplit}>
-        <div className={css.cellsTable}>
-          {error !== null && <ErrorState what={t('cells.error')} message={error} t={t} />}
-          {cells === null && error === null && <div className={css.empty}>{t('cells.loading')}</div>}
-          {cells !== null && shown.length === 0 && (
-            <EmptyState title={t('cells.empty')} hint={t('cells.emptyHint')}>
-              {filter !== 'all' && (
-                <Button size="sm" onClick={() => { onSetFilter('all') }}>{t('cells.emptyClear')}</Button>
-              )}
-            </EmptyState>
-          )}
-          {shown.length > 0 && (
-            <>
-              <div className={css.cellsHead}>
-                <span className={css.colCell}>{t('cells.col.cell')}</span>
-                <span className={css.colState}>{t('cells.col.state')}</span>
-                <span className={css.colVerdict}>{t('runs.col.verdict')}</span>
-                <span className={css.colDuration}>{t('cells.col.duration')}</span>
-                <span className={css.colAttempt}>{t('cells.col.attempt')}</span>
-              </div>
-              {shown.map(row => (
-                <button
-                  key={row.missionId}
-                  type="button"
-                  className={selection === row.missionId ? `${css.cellsRow} ${css.rowSelected}` : css.cellsRow}
-                  onClick={() => { props.onOpenCell(selection === row.missionId ? null : row.missionId) }}
-                >
-                  <span className={css.colCell}>
-                    {row.task ?? '—'} × {row.condition ?? '—'} × {row.rep ?? '—'}
-                  </span>
-                  {/* One 运行状态 column (ui-spec §九 术语表 v2). The STAGE is the
-                      specific fact and always shows; the bucket only adds
-                      something the stage cannot say — «阻塞» (a dependency is
-                      unmet) and «排期» (it is waiting for a clock). For every
-                      other bucket the stage already implies it, and two chips
-                      saying one thing is the noise this pass is removing. */}
-                  <span className={css.colState}>
-                    <Chip tone={stageTone(row.state)} title={row.state}>
-                      <Word phrase={stagePhrase(row.state)} t={t} />
-                    </Chip>
-                    {(row.bucket === 'blocked' || row.bucket === 'scheduled') && (
-                      <Chip tone={bucketTone(row.bucket)} title={row.bucket}>
-                        <Word phrase={bucketPhrase(row.bucket)} t={t} />
-                      </Chip>
-                    )}
-                  </span>
-                  <span className={css.colVerdict}><VerdictChip annotations={row.annotations} t={t} /></span>
-                  {/* A cell that is FINISHED has not been «in this state» for
-                      two days in any sense a reader cares about — the ledger
-                      measures from the last transition to now, and for a
-                      terminal state that is just how long ago the run ended.
-                      An em dash says «nothing is elapsing here» (W4); the time
-                      a finished record actually took is on its timeline. */}
-                  <span className={css.colDuration}>
-                    {TERMINAL_STATES.has(row.state)
-                      ? <span className={css.dim} title={t('runs.settled')}>—</span>
-                      : <Duration ms={row.inStateMs} t={t} />}
-                  </span>
-                  <span className={css.colAttempt}>{row.attempt}</span>
-                </button>
-              ))}
-            </>
-          )}
-          {loading && cells !== null && <div className={css.dim}>{t('cells.loading')}</div>}
-        </div>
-        {selection !== null && (
-          <RecordDetail
-            cell={props.cell}
-            loading={props.cellLoading}
-            error={props.cellError}
-            onClose={() => { props.onOpenCell(null) }}
-            onRetry={props.onRetry}
-            onRelease={props.onRelease}
-            onExport={props.onExport}
-            onOpenSession={props.onOpenSession}
-            onOpenAnswers={props.onOpenAnswers}
-            artifactPath={props.artifactPath}
-            artifact={props.artifact}
-            artifactLoading={props.artifactLoading}
-            artifactError={props.artifactError}
-            onOpenArtifact={props.onOpenArtifact}
+      {!compact && matrixError !== null && <ErrorState what={t('matrix.error')} message={matrixError} t={t} />}
+      {!compact && matrix === null && matrixError === null && <div className={css.empty}>{t('matrix.loading')}</div>}
+      {!compact && matrix !== null && (
+        <>
+          <LiveGrid
+            matrix={matrix}
+            loading={matrixLoading}
+            verdictOf={missionId => verdicts.get(missionId) ?? null}
+            onColumn={onColumn}
+            onToggleGroup={onToggleGroup}
+            onFilter={onFilter}
+            onOpenCell={(missionId) => { props.onOpenCell(missionId) }}
             t={t}
           />
-        )}
-      </div>
+          <Hygiene matrix={matrix} t={t} />
+        </>
+      )}
+
+      {focusNotice}
+      {compact && (
+        <>
+          <div className={css.sectionLabel}>{t('runs.cards')}</div>
+          {error !== null && <ErrorState what={t('cells.error')} message={error} t={t} />}
+          <div className={css.recordCards}>
+            {population.map(row => (
+              <RecordCard
+                key={row.missionId}
+                row={row}
+                selected={selection === row.missionId}
+                onOpen={() => { props.onOpenCell(selection === row.missionId ? null : row.missionId) }}
+                t={t}
+              />
+            ))}
+          </div>
+          {selection !== null && detail(true)}
+          {matrix !== null && <Hygiene matrix={matrix} t={t} />}
+        </>
+      )}
+      {!compact && (
+        <>
+          <div className={css.matrixBar}>
+            {RUN_FILTERS.map(entry => (
+              <button
+                key={entry}
+                type="button"
+                className={css.chip}
+                aria-pressed={filter === entry}
+                onClick={() => { onSetFilter(entry) }}
+              >
+                {t(`runs.filter.${entry}`)}
+                <span className={css.chipCount}>{counts[entry]}</span>
+              </button>
+            ))}
+            <span className={css.barSpacer} />
+            {cells !== null && (
+              <span className={css.dim}>{t('runs.filtered', { matched: shown.length, total: population.length })}</span>
+            )}
+          </div>
+          <div className={css.cellsSplit}>
+            <div className={css.cellsTable}>
+              {error !== null && <ErrorState what={t('cells.error')} message={error} t={t} />}
+              {cells === null && error === null && <div className={css.empty}>{t('cells.loading')}</div>}
+              {cells !== null && shown.length === 0 && (
+                <EmptyState title={t('cells.empty')} hint={t('cells.emptyHint')}>
+                  {filter !== 'all' && (
+                    <Button size="sm" onClick={() => { onSetFilter('all') }}>{t('cells.emptyClear')}</Button>
+                  )}
+                </EmptyState>
+              )}
+              {shown.length > 0 && (
+                <>
+                  <div className={css.cellsHead}>
+                    <span className={css.colCell}>{t('cells.col.cell')}</span>
+                    <span className={css.colState}>{t('cells.col.state')}</span>
+                    <span className={css.colVerdict}>{t('runs.col.verdict')}</span>
+                    <span className={css.colDuration}>{t('cells.col.duration')}</span>
+                    <span className={css.colAttempt}>{t('cells.col.attempt')}</span>
+                  </div>
+                  {shown.map(row => (
+                    <button
+                      key={row.missionId}
+                      type="button"
+                      className={selection === row.missionId ? `${css.cellsRow} ${css.rowSelected}` : css.cellsRow}
+                      onClick={() => { props.onOpenCell(selection === row.missionId ? null : row.missionId) }}
+                    >
+                      <span className={css.colCell}>
+                        {row.task ?? '—'} × {row.condition ?? '—'} × {row.rep ?? '—'}
+                      </span>
+                      {/* One 运行状态 column (ui-spec §九 术语表 v2), in the list's
+                          words: 完成 / 失败 once settled, the stage while it
+                          moves (`recordPhrase`, T80c P1-7). The bucket only adds
+                          something the stage cannot say — «阻塞» (a dependency is
+                          unmet) and «排期» (it is waiting for a clock). For every
+                          other bucket the stage already implies it, and two chips
+                          saying one thing is the noise this pass is removing. */}
+                      <span className={css.colState}>
+                        <Chip tone={recordTone(row.state)} title={row.state}>
+                          <Word phrase={recordPhrase(row.state)} t={t} />
+                        </Chip>
+                        {(row.bucket === 'blocked' || row.bucket === 'scheduled') && (
+                          <Chip tone={bucketTone(row.bucket)} title={row.bucket}>
+                            <Word phrase={bucketPhrase(row.bucket)} t={t} />
+                          </Chip>
+                        )}
+                      </span>
+                      <span className={css.colVerdict}><VerdictChip annotations={row.annotations} t={t} /></span>
+                      {/* A cell that is FINISHED has not been «in this state» for
+                          two days in any sense a reader cares about — the ledger
+                          measures from the last transition to now, and for a
+                          terminal state that is just how long ago the run ended.
+                          An em dash says «nothing is elapsing here» (W4); the time
+                          a finished record actually took is on its timeline. */}
+                      <span className={css.colDuration}>
+                        {TERMINAL_STATES.has(row.state)
+                          ? <span className={css.dim} title={t('runs.settled')}>—</span>
+                          : <Duration ms={row.inStateMs} t={t} />}
+                      </span>
+                      <span className={css.colAttempt}>{row.attempt}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+              {loading && cells !== null && <div className={css.dim}>{t('cells.loading')}</div>}
+            </div>
+            {selection !== null && detail(false)}
+          </div>
+        </>
+      )}
     </div>
   )
 }

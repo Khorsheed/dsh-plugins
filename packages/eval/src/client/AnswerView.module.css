@@ -146,3 +146,41 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A column no judge reached: one line and the optional fix (T80c P2-10). */
+.unjudgedSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Narrow pane (T80c P1-10): one track, each column's parts gathered under
+   its own head by `--col`. A container query, not a media query — the view
+   sits in a session pane whose width is not the window's. The inline
+   `grid-template-columns` is what `!important` overrides here. */
+.view {
+  container-type: inline-size;
+}
+
+@container (max-width: 699px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    overflow-x: visible;
+  }
+
+  .cell {
+    order: var(--col, 0);
+  }
+
+  .cell[data-part='head'] + .cell[data-part='head'] {
+    margin-top: 12px;
+  }
+
+  .cell[data-quiet='true'] {
+    display: none;
+  }
+}

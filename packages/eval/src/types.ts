@@ -247,7 +247,10 @@ export interface EvalExperimentRow {
    * Empty when the run has one condition, or when no document could be read.
    */
   factors: string[]
-  /** Cells settled / cells total; null for a draft (nothing is expanded yet). */
+  /**
+   * Cells judged-or-beyond / cells total — the predicate `judging` is derived
+   * from, so `judging` always coincides with done === total. Null for a draft.
+   */
   progress: { done: number; total: number } | null
   /** Epoch ms the run started; null for a draft. */
   startedAt: number | null
@@ -1283,6 +1286,11 @@ export interface EvalCellRow {
   attempt: number
   /** How long the cell has been in its current state; null when the ledger does not say. */
   inStateMs: number | null
+  /**
+   * How long the current attempt RAN: to its finish once finished, to now
+   * while running (T80c P1-7, the card's 用时). Null when the ledger timed nothing.
+   */
+  elapsedMs: number | null
   refs: { resource: string | null; fingerprint: string | null }
   /** Checkpoint names of the current attempt. */
   checkpoints: string[]

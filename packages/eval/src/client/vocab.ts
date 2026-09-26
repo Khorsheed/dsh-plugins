@@ -28,6 +28,7 @@
  * ui-spec §八 gives (a client bundle never imports a sibling plugin).
  */
 
+import { isJudgedOrBeyond } from '../cell-states.ts'
 import type { EvalKey } from './locales.ts'
 
 /** How many hex characters of a digest reach the page (ui-spec §九). */
@@ -90,6 +91,26 @@ export function stagePhrase(state: string): Phrase {
     return key === undefined ? { key: 'stage.stageN', params: { n: position } } : { key }
   }
   return { key: 'stage.unknown', params: { token: state } }
+}
+
+/**
+ * The run-records word for one cell (T80c P1-7): the LIST's words where the
+ * list has one, the stage word only while the cell is still moving.
+ *
+ * `released` / `archived` / `releasable` are the ledger's bookkeeping after
+ * the player stopped — 「已释放」 on a card told a reader about a gate they
+ * never saw, while the experiment list beside it said 「完成」. So every state
+ * the progress count calls done (`cell-states.ts`) reads 「完成」, `halted`
+ * reads 「失败」 like the filter chip that finds it, and only a cell still
+ * running keeps 阶段一 / 阶段二, which is the one thing worth knowing about it.
+ * The raw token stays on the chip's title.
+ * @param state - the ledger's own state token.
+ * @returns the phrase to render.
+ */
+export function recordPhrase(state: string): Phrase {
+  if (state === 'halted') return { key: 'runs.filter.failed' }
+  if (isJudgedOrBeyond(state)) return { key: 'runs.filter.done' }
+  return stagePhrase(state)
 }
 
 /** mission's five projection buckets. */

@@ -146,6 +146,28 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* The stage's dot (T80c P2-1): filled done, ringed in progress, hollow not started. */
+.pageDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border: 1px solid var(--dsw-alias-label-tertiary);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.pageDot[data-dot='done'] {
+  border-color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.pageDot[data-dot='active'] {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 25%, transparent);
+  background: var(--dsw-alias-state-business-primary);
+}
+
 .pageTab:focus-visible {
   outline: 1px solid var(--dsw-alias-state-business-primary);
   outline-offset: 1px;
@@ -231,35 +253,27 @@
   padding-top: 4px;
 }
 
-.tableHead,
+/* ── the list as cards (T80c P1-1) ────────────────────────────────────────
+   Each row is a card: the name and the status word, the question (or the
+   experiment's size) under them, the progress slot, and ONE button for the
+   step the row asks for. The card has its own padding, so the 打开实验 mark
+   (below) frames the card instead of sitting on the name's first letter. */
 .row {
   display: grid;
-  grid-template-columns:
-    minmax(120px, 1.4fr) minmax(120px, 1fr) 96px 48px 44px
-    minmax(150px, 1.2fr) 84px 64px 116px 104px;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 220px) auto;
+  grid-template-areas: 'main slot actions';
+  gap: 12px;
   align-items: center;
   width: 100%;
-  text-align: left;
-}
-
-.tableHead {
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  padding: 4px 0;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.row {
+  box-sizing: border-box;
+  padding: 8px 10px;
   border: 0;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
   background: transparent;
-  padding: 0;
-  min-height: 24px;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
+  text-align: left;
   cursor: pointer;
 }
 
@@ -272,22 +286,93 @@
   outline-offset: -1px;
 }
 
-/* The row's own buttons sit after the columns; they never wrap under them.
-   The track is FIXED (重跑 + 归档 fit): an auto track sized per row would let
-   one stalled row's extra button shift every column of that row alone. */
+.rowMain {
+  display: flex;
+  grid-area: main;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The progress slot: where the run is, and for a stalled run why it is not
+   moving (P2-14) — two lines at most, never pushing the button. */
+.rowSlot {
+  display: -webkit-box;
+  grid-area: slot;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rowSlot[data-stalled='true'] {
+  color: var(--dsw-alias-state-warn-label);
+}
+
 .colActions {
   display: flex;
+  grid-area: actions;
   gap: 4px;
+  align-items: center;
   justify-content: flex-end;
 }
 
-/* A second line under a row — only the stalled minutes use it today. */
-.rowMeta {
-  grid-column: 1 / -1;
-  padding-bottom: 2px;
-  color: var(--dsw-alias-state-warn-label);
-  font-size: 11px;
-  line-height: 16px;
+.rowMenu {
+  position: relative;
+  display: inline-flex;
+}
+
+.rowMenuButton {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.rowMenuButton:hover,
+.rowMenuButton[aria-expanded='true'] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowMenuList {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+  margin-top: 2px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+.rowMenuItem {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.rowMenuItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .listScope {
@@ -311,47 +396,57 @@
 .listTable {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
 .listGroup {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .listGroupHead {
-  padding: 4px 0 2px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px 2px;
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
   font-weight: 600;
   line-height: 18px;
 }
 
-/* 400px: the table collapses to name, status and the actions; the other
-   columns are one click away in the experiment itself. */
+/* 归档 N 条旧运行's confirmation: the sentence, then the two buttons. */
+.listConfirm {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 400;
+}
+
+.listConfirmActions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* 400px: the slot drops under the name so the name keeps the width. */
 @media (width <= 560px) {
-  .tableHead,
   .row {
-    grid-template-columns: minmax(0, 1fr) 76px 88px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'main actions'
+      'slot slot';
+    row-gap: 2px;
   }
 
-  .row .colSnapshot,
-  .row .colNum,
-  .row .colFactors,
-  .row .colProgress,
-  .row .colStarted,
-  .tableHead .colSnapshot,
-  .tableHead .colNum,
-  .tableHead .colFactors,
-  .tableHead .colProgress,
-  .tableHead .colStarted {
-    display: none;
-  }
-
-  /* The name column is all that is left, so it wraps instead of clipping:
-     the 旧运行 chip drops under the name (T73). The name and the chip share
-     .nameLine since T74 (the question is the column's second line), so the
-     wrap sits there. */
   .row .nameLine {
     flex-wrap: wrap;
   }
@@ -362,44 +457,32 @@
   }
 }
 
-.colName,
-.colSnapshot,
-.colNum,
-.colFactors,
-.colStatus,
-.colProgress,
-.colStarted {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.colName {
-  color: var(--dsw-alias-label-primary);
-}
-
-.row .colName {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 1px;
-}
-
 .nameLine {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
 }
 
-/* The experiment's question under its name (T74): one dim line, ellipsis. */
+/* The second line (T74, T80c): the legacy mark, then the experiment's
+   question — or its size when it has none — one dim line, ellipsis. */
 .questionLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.questionText {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
 }
 
 .nameText {
@@ -411,18 +494,6 @@
 
 .nameChip {
   flex-shrink: 0;
-}
-
-.colNum,
-.colProgress,
-.colStarted {
-  color: var(--dsw-alias-label-tertiary);
-}
-
-/* The status cell holds a chip, so it must not clip it to one text line. */
-.colStatus,
-.colFactors {
-  white-space: normal;
 }
 
 .overview {
@@ -2096,13 +2167,143 @@
 }
 
 /* The row 打开实验 asked for from the tool-row card (T76): the business
-   accent as a hairline frame, so the row keeps its own hover and status
-   tones. Not a left rule: the row has no padding, so an inset rule would sit
-   on the name's first letter. */
+   accent as a hairline frame around the card (T80c ⑧: the card's own
+   padding keeps it off the name), so the row keeps its hover and tones. */
 .row[data-marked='true'] {
   outline: 1px solid var(--dsw-alias-state-business-primary);
   outline-offset: -1px;
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ── 运行记录 · small runs are their cards (T80c P1-7) ─────────────────
+   v5 「格子就是记录」: at ≤ 12 records each one is a card — group, word,
+   item · rep · time — and the one opened unfolds UNDER the cards at full
+   width instead of squeezing a side drawer beside a list that is not drawn. */
+.sectionLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.recordCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  max-width: 660px;
+}
+
+.recordCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recordCard:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.recordCard[aria-pressed='true'] {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-state-business-primary);
+}
+
+.recordCardTop {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.recordCardGroup {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawerInline {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+/* 实验卫生: one line folded; opens by itself when an invariant breaks. */
+.hygiene {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hygieneSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  cursor: pointer;
+  list-style: none;
+}
+
+.hygieneSummary::-webkit-details-marker {
+  display: none;
+}
+
+.hygieneSummary::before {
+  content: '▸';
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.hygiene[open] .hygieneSummary::before {
+  content: '▾';
+}
+
+.hygiene[open] > .hygieneSummary {
+  margin-bottom: 8px;
+}
+
+.hygieneTitle {
+  font-weight: 600;
+}
+
+/* 人工评估 · 判官缺席 (T80c P1-6): the v5 reminder card — says where, offers
+   the optional fix, never blocks. */
+.judgeAbsentCard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-state-warn-label);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.judgeAbsentSay {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.judgeAbsentTitle {
+  font-weight: 600;
+  color: var(--dsw-alias-state-warn-label);
 }
 
 /* ── T80d · 实验设计方案段 ─────────────────────────────────────────────

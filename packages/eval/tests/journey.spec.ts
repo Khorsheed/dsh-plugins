@@ -6,8 +6,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  conclusionSourceKey, fixLabel, REMINDER_CONSEQUENCES, reminderConsequenceKey, groupRows, listGroupOf, READINESS_CODES, readinessField, readinessFix, readinessKey,
-  readinessSentence, readListScope, scopeRows, splitReadiness, validityCount, writeListScope,
+  conclusionSourceKey, fixLabel, REMINDER_CONSEQUENCES, reminderConsequenceKey, groupRows, legacyInAttention, listGroupOf,
+  READINESS_CODES, readinessField, readinessFix, readinessKey, readinessSentence, readListScope, rowAction, scopeRows,
+  splitReadiness, stageDots, validityCount, writeListScope,
 } from '../src/client/journey.ts'
 import { en, zh } from '../src/client/locales.ts'
 import type { EvalExperimentRow } from '../src/types.ts'
@@ -34,6 +35,44 @@ describe('list grouping', () => {
     expect(groups.attention).toHaveLength(1)
     expect(groups.archived).toEqual([archived])
     expect(groups.finished).toHaveLength(1)
+  })
+})
+
+describe('the list row\'s one button (T80c P1-1)', () => {
+  const act = (status: EvalExperimentRow['status'], over: Partial<Pick<EvalExperimentRow, 'experimentId' | 'archived'>> = {}) =>
+    rowAction({ status, experimentId: 'e1', archived: false, ...over })
+
+  it('names the next step by status, and opens the stage it happens on', () => {
+    expect(act('pending-approval')).toEqual({ cta: 'list.act.approve', verb: 'design' })
+    expect(act('stalled')).toEqual({ cta: 'cta.stalled', verb: 'rerun' })
+    expect(act('judging')).toEqual({ cta: 'list.act.review', verb: 'review' })
+    expect(act('done')).toEqual({ cta: 'list.act.results', verb: 'compare' })
+    expect(act('draft')).toEqual({ cta: 'list.act.validate', verb: 'design' })
+    expect(act('running').verb).toBe('runs')
+  })
+
+  it('a stalled run with no plan behind it — or archived — offers its records, not 重跑', () => {
+    expect(act('stalled', { experimentId: null })).toEqual({ cta: 'list.act.runs', verb: 'runs' })
+    expect(act('stalled', { archived: true })).toEqual({ cta: 'list.act.runs', verb: 'runs' })
+  })
+
+  it('归档 N 条旧运行 counts only legacy runs still asking for attention', () => {
+    type L = Pick<EvalExperimentRow, 'status' | 'archived' | 'legacy' | 'runId'>
+    const l = (over: Partial<L>): L => ({ status: 'stalled', archived: false, legacy: true, runId: 'r', ...over })
+    const rows = [
+      l({ runId: 'a' }), l({ runId: 'b', status: 'judging' }),
+      l({ runId: 'c', status: 'done' }), l({ runId: 'd', archived: true }), l({ runId: 'e', legacy: false }),
+    ]
+    expect(legacyInAttention(rows).map(r => r.runId)).toEqual(['a', 'b'])
+  })
+})
+
+describe('the stage dots (T80c P2-1)', () => {
+  it('one stage is in progress at a time, and 人工评估 comes before there is a verdict to compare', () => {
+    expect(stageDots('pending-approval')).toEqual({ design: 'active', runs: 'todo', compare: 'todo', review: 'todo' })
+    expect(stageDots('stalled')).toEqual({ design: 'done', runs: 'active', compare: 'todo', review: 'todo' })
+    expect(stageDots('judging')).toEqual({ design: 'done', runs: 'done', compare: 'todo', review: 'active' })
+    expect(stageDots('done')).toEqual({ design: 'done', runs: 'done', compare: 'done', review: 'done' })
   })
 })
 
