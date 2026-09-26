@@ -499,7 +499,7 @@ describe('the grouped list (T72 §1)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'list.others {"count":2}' }))
     expect(screen.getByText('other-session')).toBeTruthy()
     expect(screen.getByText('from-cli')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'list.scopeAll' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('radio', { name: 'list.scopeAll' }).getAttribute('aria-checked')).toBe('true')
     // Remembered per viewer.
     expect(localStorage.getItem('dsh-eval.listScope')).toBe('all')
   })
@@ -565,7 +565,7 @@ describe('the grouped list (T72 §1)', () => {
     renderView(h, { focus })
     await screen.findByText('other-session')
     expect(markedName()).toContain('other-session')
-    expect(screen.getByRole('button', { name: 'list.scopeAll' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('radio', { name: 'list.scopeAll' }).getAttribute('aria-checked')).toBe('true')
     // The switch is the mark's, not the viewer's preference: nothing remembered.
     expect(localStorage.getItem('dsh-eval.listScope')).toBeNull()
     // Taken once: a second view of the same session starts unmarked.

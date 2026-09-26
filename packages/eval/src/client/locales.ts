@@ -907,6 +907,19 @@ export type EvalKey =
   | 'design.ready'
   | 'design.gridFold'
   | 'readiness.remindersNote'
+  | 'design.checks'
+  | 'design.checkCol.item'
+  | 'design.checkCol.state'
+  | 'design.checkReady'
+  | 'design.checkNotReady'
+  | 'design.checkBlocked'
+  | 'design.checkRemind'
+  | 'design.scale.reps'
+  | 'design.scale.answers'
+  | 'design.scale.duration'
+  | 'design.scale.tokens'
+  | 'design.scale.none'
+  | 'design.scale.noneNote'
   | 'readiness.then.COMMIT_UNRESOLVED'
   | 'readiness.then.EXPECTED_NS_NO_PROBE'
   | 'readiness.then.EXPECTED_NS_NO_RUBRIC'
@@ -1871,6 +1884,19 @@ export const en: Record<EvalKey, string> = {
   'design.ready': 'Readiness',
   'design.gridFold': 'Planned grid · {cells} runs',
   'readiness.remindersNote': 'Does not block the start',
+  'design.checks': 'Checks',
+  'design.checkCol.item': 'Item',
+  'design.checkCol.state': 'State',
+  'design.checkReady': 'Ready',
+  'design.checkNotReady': 'Not ready',
+  'design.checkBlocked': 'Blocks the start',
+  'design.checkRemind': 'Reminder',
+  'design.scale.reps': 'Runs per group',
+  'design.scale.answers': 'Answers',
+  'design.scale.duration': 'Est. time',
+  'design.scale.tokens': 'Est. output tokens',
+  'design.scale.none': 'No estimate',
+  'design.scale.noneNote': 'Time and token estimates come once comparable runs exist; nothing is guessed now.',
   'readiness.then.COMMIT_UNRESOLVED': 'The start pins the latest commit; later dataset edits do not touch this run.',
   'readiness.then.EXPECTED_NS_NO_PROBE': 'These items get no script verdict; only the judge and a person score them.',
   'readiness.then.EXPECTED_NS_NO_RUBRIC': 'Items without a rubric are scored only by the other sources.',
@@ -2825,6 +2851,19 @@ export const zh: Record<EvalKey, string> = {
   'design.ready': '就绪',
   'design.gridFold': '计划网格 · {cells} 次运行',
   'readiness.remindersNote': '不影响启动',
+  'design.checks': '检查项',
+  'design.checkCol.item': '项',
+  'design.checkCol.state': '状态',
+  'design.checkReady': '就绪',
+  'design.checkNotReady': '未就绪',
+  'design.checkBlocked': '阻塞',
+  'design.checkRemind': '提醒',
+  'design.scale.reps': '每组次数',
+  'design.scale.answers': '作答份数',
+  'design.scale.duration': '预计时长',
+  'design.scale.tokens': '预计输出 token',
+  'design.scale.none': '无估算',
+  'design.scale.noneNote': '时长和 token 要等有同类运行记录后才能估；现在不猜。',
   'readiness.then.COMMIT_UNRESOLVED': '启动时钉住当时的最新提交，之后题库再改不影响这次。',
   'readiness.then.EXPECTED_NS_NO_PROBE': '这些题拿不到脚本判定，只有判官和人会给分。',
   'readiness.then.EXPECTED_NS_NO_RUBRIC': '没有量表的题只能靠其他来源判分。',

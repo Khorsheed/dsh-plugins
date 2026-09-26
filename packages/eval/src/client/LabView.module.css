@@ -11,19 +11,48 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  /* T83: the list's meta column and the kv grid key off the VIEW's width. */
+  container: eval-view / inline-size;
   overflow: hidden;
-  font-size: 12px;
-  line-height: 18px;
+  /* T83: the body size is 13px (interaction prototype v5); notes, meta and
+     table heads stay 12px on their own rules. Supersedes T35a's 12px. */
+  font-size: 13px;
+  line-height: 20px;
   --dsh-eval-bottom-clearance: calc(var(--dsh-composer-height, 152px) + 16px);
+  /* T83 · the two v5 colours the host theme has no alias for, kept as ONE
+     local variable each so a later host token replaces them in one place.
+     - surface-2 is v5's bg-l2 (next bar, seg2 track, pane heads, bar tracks).
+     - warn-ink is v5's warn text: amber-600 light, amber-400 dark (the host's
+       warn-label is amber-600 in both). */
+  --dsh-eval-surface-2: var(--dsw-alias-markdown-code-block-banner);
+  --dsh-eval-warn-ink: var(--dsw-alias-state-warn-label);
+  --dsh-eval-ok-ink: var(--dsw-alias-state-success-primary);
+}
+
+:global(body[data-ds-dark-theme]) .view {
+  --dsh-eval-warn-ink: var(--dsw-alias-state-warn-secondary);
+  --dsh-eval-ok-ink: var(--dsw-alias-state-success-secondary);
+}
+
+/* E1 · the page column (T83): one column for every stage, the same width as
+   the host composer card under it, so content and composer share one axis.
+   `--dsh-chat-content-width` is the conversation root's width axis (the
+   user-resizable chat width); the fallback covers a host without it. */
+.column {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, var(--dsh-chat-content-width, 720px));
+  min-width: 0;
+  margin-inline: auto;
 }
 
 .bar {
+  /* T83 · E2: v5's xhead — in the page's flow, inside the column. */
   display: flex;
-  flex: none;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  gap: 6px 10px;
+  margin-bottom: 10px;
 }
 
 .barSpacer {
@@ -31,12 +60,325 @@
   min-width: 0;
 }
 
+/* The list head's title is a label, not a page name (v5 · list). */
+.title[data-level='list'] {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* ← 全部实验: the way back is a quiet line above the name (v5 `.back`). */
+.back {
+  flex-basis: 100%;
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+}
+
+.back:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The head's second line: the question the experiment answers (v5 `.q`). */
+.headQuestion {
+  flex-basis: 100%;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.headMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* T83 · E5: a navigation door (看题面 / 看作答 / 看结论) is a text link, not a
+   button — the link colour, no chrome. */
+.navLink {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-link);
+  cursor: pointer;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: nowrap;
+}
+
+.navLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.navLink:focus-visible {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* v5 `.btn.sm`: a row's own action is one size down from the host's sm.
+   Scoped under its containers so it outranks the host sheet's own rule. */
+.colActions .smButton,
+.remindRow .smButton,
+.tableFoot .smButton,
+.table .smButton {
+  height: 24px;
+  padding: 2px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+/* v5 `.btn.ai::before`: the mark on an action handed to the agent. */
+.aiMark {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 1.5px;
+  background: var(--dsw-alias-state-business-primary);
+  transform: rotate(45deg);
+}
+
+/* T83 · E12: seg (a compact decision) and seg2 (a view switch). */
+.seg {
+  display: inline-flex;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+}
+
+.segItem {
+  padding: 0 7px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.segItem + .segItem {
+  border-left: 1px solid var(--dsw-alias-border-l2);
+}
+
+.segItem[aria-checked='true'] {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.segItem:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.seg2 {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--dsh-eval-surface-2);
+}
+
+.seg2Item {
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.seg2Item[aria-checked='true'] {
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 0 0 1px var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.segItem:focus-visible,
+.seg2Item:focus-visible {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -1px;
+}
+
+/* T83 · E9: the box and its key–value grid. */
+.box {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  min-width: 0;
+}
+
+.boxBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+}
+
+.kv dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.kv dd {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+@container eval-view (max-width: 520px) {
+  .kv {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .kv dd {
+    margin-bottom: 6px;
+  }
+}
+
+/* T83 · E8: v5 `table.t` — horizontal lines only, the head line the heavier. */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-primary);
+  vertical-align: middle;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.table td[data-differs] {
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+
+.tableScroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* The line under a table: ＋加一组 and the like. */
+.tableFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 8px 10px 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.tableFootText {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+/* 规模与花费's numbers (v5 · plan). */
+.bigNums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+}
+
+.bigNum {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.bigNum > b {
+  color: var(--dsw-alias-label-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bigNum > b[data-none] {
+  color: var(--dsw-alias-label-caption);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 26px;
+}
+
+.bigNum > span,
+.scaleNote {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* A reminder row inside the 提醒 box (v5 · ready). */
+.remindRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.remindRow:last-child {
+  border-bottom: 0;
+}
+
+.remindText {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
 .title {
   overflow: hidden;
+  min-width: 0;
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -55,35 +397,51 @@
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 4px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 9px;
-  background: color-mix(in srgb, currentColor 12%, transparent);
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--dsh-eval-surface-2);
   color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 20px;
   white-space: nowrap;
 }
 
 /* ui-spec §九's five: 绿 = 完成 / 成功, 蓝 = 进行中, 灰 = 未开始, 红 = 失败 /
    阻塞, 橙 = 警告. `ok` took the BRAND blue and `busy` took the body label
    colour, so a finished run read blue and a running one read grey — the two
-   colours the rule is most specific about, both wrong (I5·T67 · W3). */
+   colours the rule is most specific about, both wrong (I5·T67 · W3).
+   T83 · E6: v5's pill — the tone's tertiary as the fill, its ink as text. */
 .chipTag[data-tone='ok'] {
-  color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-tertiary);
+  color: var(--dsh-eval-ok-ink);
 }
 
 .chipTag[data-tone='busy'] {
+  background: var(--dsw-alias-state-business-tertiary);
   color: var(--dsw-alias-state-business-primary);
 }
 
 .chipTag[data-tone='warn'] {
-  color: var(--dsw-alias-state-warn-label);
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsh-eval-warn-ink);
 }
 
 .chipTag[data-tone='danger'] {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* v5 `.pill.dot`: a 6px disc in the chip's own colour, for checklist states. */
+.chipTag[data-dot]::before {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
 }
 
 /* A count riding on a chip or a filter chip (`进行中 3`). */
@@ -118,32 +476,43 @@
    them: borderless compact toggles whose selection is aria-pressed alone, so
    the semantics and the visuals cannot drift apart. */
 .pages {
-  display: flex;
+  /* T83 · E3: v5 `.stages` — one framed strip, scrolling on its own. */
+  display: inline-flex;
   flex: none;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 12px;
+  padding: 3px;
+  overflow-x: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  box-sizing: border-box;
 }
 
 .pageTab {
   display: inline-flex;
   flex: none;
   align-items: center;
-  height: 20px;
-  padding: 0 7px;
+  padding: 4px 12px;
   border: 0;
-  border-radius: 3px;
+  border-radius: 7px;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  font: var(--dsw-font-xxs-12);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
 }
 
-.pageTab:hover,
-.pageTab[aria-pressed='true'] {
-  color: var(--dsw-alias-label-primary);
+.pageTab:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pageTab[aria-pressed='true'] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
 }
 
 /* The stage's dot (T80c P2-1): filled done, ringed in progress, hollow not started. */
@@ -151,20 +520,16 @@
   flex: none;
   width: 6px;
   height: 6px;
-  margin-right: 5px;
-  border: 1px solid var(--dsw-alias-label-tertiary);
+  margin-right: 6px;
   border-radius: 50%;
-  box-sizing: border-box;
+  background: var(--dsw-alias-border-l4);
 }
 
 .pageDot[data-dot='done'] {
-  border-color: var(--dsw-alias-state-success-primary);
   background: var(--dsw-alias-state-success-primary);
 }
 
 .pageDot[data-dot='active'] {
-  border-color: var(--dsw-alias-state-business-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 25%, transparent);
   background: var(--dsw-alias-state-business-primary);
 }
 
@@ -179,22 +544,26 @@
    the fold at every scroll position, because «下一步做什么» is the question
    this whole pass exists to answer. */
 .stageBar {
+  /* T83 · E4: v5 `.next` — a rounded band in the page's flow. */
   display: flex;
   flex: none;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   align-items: center;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l2);
+  margin-bottom: 16px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: var(--dsh-eval-surface-2);
 }
 
 .stageHint {
-  overflow: hidden;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1 1 200px;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow-wrap: anywhere;
 }
 
 /* The author's note keeps the line breaks it was written with (ui-spec §五
@@ -210,7 +579,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 12px var(--dsh-eval-bottom-clearance);
+  padding: 12px 12px var(--dsh-eval-bottom-clearance);
 }
 
 .empty {
@@ -223,25 +592,24 @@
 /* The empty seat: what is not here, how to change that, and the button that
    changes it. Shared with the 题集 tab, class for class (ui-spec §九). */
 .emptySeat {
+  /* T83 · E14: no frame — a sentence, the next step, the button. */
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 8px 0;
-  padding: 16px 12px;
-  border: 1px dashed var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  padding: 24px 0;
 }
 
 .emptyTitle {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
 .emptyHint {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
   overflow-wrap: anywhere;
 }
 
@@ -259,20 +627,21 @@
    step the row asks for. The card has its own padding, so the 打开实验 mark
    (below) frames the card instead of sitting on the name's first letter. */
 .row {
+  /* T83 · E13: v5 `.xrow` — name / meta / pill / action. */
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 220px) auto;
-  grid-template-areas: 'main slot actions';
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.3fr) max-content max-content;
+  grid-template-areas: 'main slot chip actions';
   gap: 12px;
   align-items: center;
   width: 100%;
   box-sizing: border-box;
   padding: 8px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 10px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 20px;
   text-align: left;
   cursor: pointer;
 }
@@ -302,12 +671,19 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
 
 .rowSlot[data-stalled='true'] {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-eval-warn-ink);
+}
+
+.rowChip {
+  display: inline-flex;
+  grid-area: chip;
 }
 
 .colActions {
@@ -396,7 +772,7 @@
 .listTable {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .listGroup {
@@ -411,11 +787,11 @@
   gap: 8px;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 10px 2px;
+  padding: 0 0 4px;
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 20px;
 }
 
 /* 归档 N 条旧运行's confirmation: the sentence, then the two buttons. */
@@ -437,18 +813,44 @@
   gap: 6px;
 }
 
-/* 400px: the slot drops under the name so the name keeps the width. */
-@media (width <= 560px) {
+/* v5 drops the meta column at 760; the break keys off the VIEW's width. */
+@container eval-view (max-width: 760px) {
   .row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) max-content max-content;
+    grid-template-areas: 'main chip actions';
+  }
+
+  .rowSlot {
+    display: none;
+  }
+
+  /* A stalled row keeps its why (P2-14): the slot drops under the name. */
+  .row:has(> .rowSlot[data-stalled='true']) {
     grid-template-areas:
-      'main actions'
-      'slot slot';
+      'main chip actions'
+      'slot slot slot';
     row-gap: 2px;
   }
 
-  .row .nameLine {
-    flex-wrap: wrap;
+  .rowSlot[data-stalled='true'] {
+    display: -webkit-box;
+  }
+}
+
+@container eval-view (max-width: 480px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-areas:
+      'main actions'
+      'chip chip';
+    row-gap: 4px;
+  }
+
+  .row:has(> .rowSlot[data-stalled='true']) {
+    grid-template-areas:
+      'main actions'
+      'chip chip'
+      'slot slot';
   }
 
   .row .nameText {
@@ -464,6 +866,7 @@
   min-width: 0;
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
+  font-weight: 500;
   line-height: 20px;
 }
 
@@ -476,6 +879,7 @@
   min-width: 0;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
+  line-height: 18px;
 }
 
 .questionText {
@@ -499,8 +903,18 @@
 .overview {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 8px 0;
+  gap: 0;
+  min-width: 0;
+}
+
+/* Sections carry their own 16px; folds share their hairlines; anything else
+   on the page (a notice, a field, the send-back row) keeps a 12px step. */
+.overview > :not(.reportSection, .reportFold, .arrange) {
+  margin-bottom: 12px;
+}
+
+.overview > :is(.reportFold, .arrange) + :not(.reportFold, .arrange) {
+  margin-top: 16px;
 }
 
 .field {
@@ -535,7 +949,7 @@
 }
 
 .warning {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-eval-warn-ink);
 }
 
 .readiness {
@@ -580,11 +994,11 @@
   padding: 12px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsh-eval-surface-2);
 }
 
 .conclusionFlag {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-eval-warn-ink);
   font-size: 12px;
   line-height: 18px;
 }
@@ -695,22 +1109,24 @@
 }
 
 .condHead {
+  /* T83 · E8: the table's head line — 12px, the heavier rule under it. */
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  padding: 4px 0;
+  padding: 6px 10px;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .condRow {
+  /* T83 · E8: v5 table body — 13px primary, the light rule between rows. */
   border: 0;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
   background: transparent;
-  padding: 0;
+  padding: 8px 10px;
   min-height: 24px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
   cursor: pointer;
 }
 
@@ -833,7 +1249,7 @@
 }
 
 .diffPath {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-eval-warn-ink);
   font-family: var(--ds-font-family-code, ui-monospace, monospace);
   overflow-wrap: anywhere;
 }
@@ -889,16 +1305,20 @@
 /* «换列 / 分组 / 筛选», closed by default and present only when there is more
    than one designed factor (ui-spec §九). */
 .arrange {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  padding: 6px 8px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+  /* T83 · E11: a fold row, not a framed card. */
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .arrangeSummary {
-  width: fit-content;
+  display: flex;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 9px 0;
   cursor: pointer;
   list-style: none;
 }
@@ -908,18 +1328,26 @@
 }
 
 .arrangeSummary::before {
-  content: '▸ ';
+  display: inline-block;
+  width: 14px;
+  color: var(--dsw-alias-label-tertiary);
+  content: '›';
+  transition: transform 0.12s;
 }
 
 .arrange[open] .arrangeSummary::before {
-  content: '▾ ';
+  transform: rotate(90deg);
+}
+
+.arrange + .arrange {
+  border-top: 0;
 }
 
 .arrangeBody {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-top: 6px;
+  padding: 0 0 12px 14px;
 }
 
 .chip {
@@ -1057,7 +1485,7 @@
 }
 
 .matrixDot[data-stuck] {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-eval-warn-ink);
 }
 
 .matrixDot:focus-visible {
@@ -1099,7 +1527,7 @@
 /* An invariant that holds needs no sentence; one that does not is the reason
    the page was opened. */
 .summaryWhy {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-eval-warn-ink);
   font-size: 11px;
   line-height: 16px;
   overflow-wrap: anywhere;
@@ -1342,7 +1770,7 @@
 }
 
 .guardedTitle {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-eval-warn-ink);
   font-size: 12px;
   line-height: 18px;
 }
@@ -1374,31 +1802,31 @@
 }
 
 .reportSection {
+  /* T83 · E7: v5 `.sec` — bare, a heading and its content. */
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  gap: 8px;
+  margin-bottom: 16px;
   min-width: 0;
 }
 
 .sectionTitle {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 2px 8px;
   align-items: baseline;
+  margin: 0;
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 20px;
 }
 
 .sectionMeta {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
-  line-height: 16px;
+  line-height: 18px;
 }
 
 /* One invariant: the verdict word, its title, and the facts under both — a
@@ -1431,9 +1859,9 @@
   flex-direction: column;
   gap: 6px;
   padding: 8px;
-  border: 1px solid var(--dsw-alias-state-warn-label);
+  border: 1px solid var(--dsh-eval-warn-ink);
   border-radius: 8px;
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-eval-warn-ink);
   font-size: 12px;
   line-height: 18px;
 }
@@ -1443,8 +1871,9 @@
   overflow-x: auto;
   border-collapse: collapse;
   max-width: 100%;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* The per-criterion table fills its column (v5 · 09-result); the wrapper, not
@@ -1462,16 +1891,19 @@
 .reportHead,
 .reportRowHead,
 .reportTd {
-  border: 1px solid var(--dsw-alias-border-l2);
-  padding: 4px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  padding: 8px 10px;
   text-align: left;
   vertical-align: top;
   white-space: nowrap;
 }
 
 .reportHead {
+  padding: 6px 10px;
+  border-bottom-color: var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
 }
 
@@ -1482,6 +1914,11 @@
 
 .reportTd {
   color: var(--dsw-alias-label-secondary);
+}
+
+tr:last-child > .reportRowHead,
+tr:last-child > .reportTd {
+  border-bottom: 0;
 }
 
 .judgeTag {
@@ -1545,10 +1982,8 @@
   min-width: 0;
 }
 
-.judgeMaterial {
-  max-height: 60vh;
-  overflow-y: auto;
-}
+/* T83: no inner scroll — the page is the one scroller, so the composer's
+   clearance at its foot is the only bottom there is. */
 
 .queueGroup {
   color: var(--dsw-alias-label-tertiary);
@@ -2038,7 +2473,7 @@
 /* A defect that occurred, and a criterion that failed: the same colour,
    because they are the same fact about the score. */
 .criteriaMark[data-bad] {
-  color: var(--dsw-alias-state-danger-label);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .criteriaSource {
@@ -2050,7 +2485,7 @@
 .criteriaDetail {
   padding: 6px 8px;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsh-eval-surface-2);
   white-space: normal;
 }
 
@@ -2080,7 +2515,7 @@
 }
 
 .criteriaTotalRow > * {
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsh-eval-surface-2);
   font-weight: 600;
 }
 
@@ -2089,6 +2524,16 @@
   color: var(--dsw-alias-label-primary);
   font-weight: 500;
   white-space: pre-wrap;
+}
+
+/* The list row borrows the class for its second line, which stays ONE dim
+   line with an ellipsis: the design page's pre-wrap above folded a row's
+   「1 题 × 1 组 × 1 次」 into a column at 400 wide (T83). */
+.questionLine > .questionText {
+  flex: 1 1 auto;
+  color: inherit;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 /* The design page's in-place numbers (T74). */
@@ -2286,7 +2731,7 @@
   gap: 8px 12px;
   align-items: center;
   padding: 10px 12px;
-  border: 1px solid var(--dsw-alias-state-warn-label);
+  border: 1px solid var(--dsh-eval-warn-ink);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   font-size: 12px;
@@ -2303,7 +2748,7 @@
 
 .judgeAbsentTitle {
   font-weight: 600;
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-eval-warn-ink);
 }
 
 /* ── T80d · 实验设计方案段 ─────────────────────────────────────────────
@@ -2316,7 +2761,7 @@
   padding: 12px 14px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsh-eval-surface-2);
   min-width: 0;
 }
 
@@ -2329,7 +2774,7 @@
 .questionTitle {
   color: var(--dsw-alias-label-primary);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 22px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -2400,11 +2845,15 @@
 }
 
 .condRow > span[data-differs] {
-  margin: -2px -4px;
-  padding: 2px 4px;
+  margin: -2px -6px;
+  padding: 2px 6px;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--dsw-alias-state-warn-label) 12%, transparent);
+  background: var(--dsw-alias-state-warn-tertiary);
   color: var(--dsw-alias-label-primary);
+}
+
+.compareTable > .condRow:last-child {
+  border-bottom: 0;
 }
 
 .compareTable .condAction {
@@ -2417,6 +2866,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
+  align-items: center;
+  padding: 8px 10px 0;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
 }
@@ -2465,8 +2918,16 @@
   white-space: nowrap;
 }
 
-.stageBar > .stageHint {
-  min-width: 0;
+.stageBar[data-tone='warn'] {
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+
+.stageSub {
+  display: block;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
 }
 
 /* ───────── T80d: the result page — conclusion card, folds, criteria ─────── */
@@ -2546,11 +3007,11 @@
   flex: none;
   width: 12px;
   font-weight: 600;
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-eval-warn-ink);
 }
 
 .reasonItem[data-level='block'] > .reasonMark {
-  color: var(--dsw-alias-state-danger-label);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .conclusionActions {
@@ -2563,11 +3024,10 @@
 .reportFolds {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
 .reportFold {
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
 .reportFoldSummary {
@@ -2575,7 +3035,7 @@
   flex-wrap: wrap;
   gap: 4px 12px;
   align-items: baseline;
-  padding: 8px 0;
+  padding: 9px 0;
   cursor: pointer;
   list-style: none;
 }
@@ -2585,31 +3045,38 @@
 }
 
 .reportFoldTitle {
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 13px;
   line-height: 20px;
 }
 
 .reportFoldTitle::before {
-  content: '▸ ';
+  display: inline-block;
+  width: 14px;
   color: var(--dsw-alias-label-tertiary);
+  content: '›';
+  transition: transform 0.12s;
 }
 
 .reportFold[open] .reportFoldTitle::before {
-  content: '▾ ';
+  transform: rotate(90deg);
+}
+
+.reportFold:last-child {
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
 .reportFoldAside {
   margin-left: auto;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 18px;
   text-align: right;
   overflow-wrap: anywhere;
 }
 
 .foldCheck[data-bad] {
-  color: var(--dsw-alias-state-danger-label);
+  color: var(--dsw-alias-state-error-primary);
   font-weight: 600;
 }
 

@@ -55,6 +55,24 @@ describe('the chip tones are the five ui-spec §九 names', () => {
       expect(toneRule(css, 'busy')).not.toContain('alias-label-')
     })
 
+    it(`${name}: names no token the host does not ship (T83)`, () => {
+      // Both were referenced for months and resolved to nothing, so the rule
+      // fell back to inherit: a second surface with no fill, a danger label in
+      // body colour. A missing custom property raises no warning anywhere.
+      expect(css).not.toContain('--dsw-alias-bg-l2')
+      expect(css).not.toContain('state-danger-label')
+    })
+
+    it(`${name}: no local variable is defined as itself (T83)`, () => {
+      // `--x: var(--x)` is a cycle, which CSS resolves to the guaranteed-invalid
+      // value: every use silently falls back to inherit. A global token rename
+      // wrote exactly that into both sheets once.
+      const cycles = [...css.matchAll(/(--[\w-]+)\s*:\s*var\(\s*(--[\w-]+)/g)]
+        .filter(match => match[1] === match[2])
+        .map(match => match[1])
+      expect(cycles).toEqual([])
+    })
+
     it(`${name}: 未开始 stays neutral — it takes no state token at all`, () => {
       // `neutral` is the base rule's own colour; a tone rule for it would mean
       // «not started» had been given a state, which is the opposite of grey.

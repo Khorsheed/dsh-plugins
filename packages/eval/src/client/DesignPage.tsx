@@ -42,7 +42,7 @@ import { ConditionsTable } from './ConditionsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import { RunGrid, plannedRows, type GridColumn } from './Grid.tsx'
 import {
-  Chip, Detail, Field, ReadyBadge, StartedRun, Word,
+  Chip, Detail, Field, Fold, Seg, StartedRun, Word,
   listOrDash, severityKey, severityTone, snapshotCell,
 } from './parts.tsx'
 import { factorPhrase, preferredColumn } from './vocab.ts'
@@ -182,54 +182,114 @@ const CHECKLIST_STAGES: ReadonlySet<EvalExperimentRow['status']> = new Set(['dra
 function ReadinessChecklist(props: {
   blockers: readonly EvalPlanCheck[]
   reminders: readonly EvalPlanCheck[]
+  /** Each group's readiness verdict — the table's first rows (v5 · ready). */
+  ready: ReadonlyArray<{ id: string; ok: boolean; note?: string | undefined }>
+  /** Whether the checklist lines are shown at all (the stage asks for a start). */
+  lines: boolean
   /** A stalled run's checklist is about the NEXT run; the lead line says so. */
   forRerun: boolean
   onFix: (fix: ReadinessFix, check: EvalPlanCheck, k: number) => void
+  onRecheck: () => void
   t: LabViewProps['t']
 }) {
-  const { blockers, reminders, forRerun, onFix, t } = props
-  const line = (check: EvalPlanCheck, k: number) => {
+  const { blockers, reminders, ready, lines, forRerun, onFix, onRecheck, t } = props
+  const said = (check: EvalPlanCheck): string => {
+    const sentence = readinessSentence(check)
+    return sentence === null ? check.message : t(sentence.key, sentence.params)
+  }
+  const fixButton = (check: EvalPlanCheck, k: number) => {
     const fix = readinessFix(check)
     const label = fixLabel(fix)
-    const said = readinessSentence(check)
-    const sentence = said === null ? check.message : t(said.key, said.params)
-    // A reminder says what it will cost, so 「不影响启动」 is not read as
-    // 「不重要」 (T80d · P2-7). Blockers need no such line: they stop the start.
-    const then = k > blockers.length ? reminderConsequenceKey(check.code) : null
     return (
-      <div key={`${check.code}:${String(k)}`} className={css.readinessLine}>
-        <span className={css.readinessNo}>{k}</span>
-        <span className={css.checkMessage} title={`${check.code} · ${check.message}`}>
-          {sentence}
-          {then !== null && <span className={css.readinessThen}>{t(then)}</span>}
-        </span>
-        <Button size="sm" onClick={() => { onFix(fix, check, k) }}>
-          {label.params === undefined ? t(label.key) : t(label.key, label.params)}
-        </Button>
-      </div>
+      <Button variant="outline" size="sm" className={css.smButton} onClick={() => { onFix(fix, check, k) }}>
+        {fix.kind === 'agent' && <span className={css.aiMark} aria-hidden="true" />}
+        {label.params === undefined ? t(label.key) : t(label.key, label.params)}
+      </Button>
     )
   }
+  const shownBlockers = lines ? blockers : []
+  const shownReminders = lines ? reminders : []
+  const anyFailed = ready.some(row => !row.ok)
   return (
-    <div className={css.readiness}>
-      {forRerun && <div className={css.dim}>{t('readiness.forRerun')}</div>}
-      {blockers.length > 0 && (
-        <div className={css.readinessGroup}>
-          <div className={css.readinessHead}>
-            <Chip tone="danger">{t('readiness.blockers', { count: blockers.length })}</Chip>
+    <>
+      <Block
+        title={t('design.checks')}
+        meta={shownBlockers.length > 0 ? t('readiness.blockers', { count: shownBlockers.length }) : undefined}
+      >
+        {forRerun && lines && <div className={css.dim}>{t('readiness.forRerun')}</div>}
+        {ready.length === 0 && shownBlockers.length === 0
+          ? <div className={css.dim}>{t('ready.pending')}</div>
+          : (
+            <div className={css.tableScroll}>
+              <table className={css.table}>
+                <thead>
+                  <tr>
+                    <th>{t('design.checkCol.item')}</th>
+                    <th>{t('design.checkCol.state')}</th>
+                    <th aria-label={t('design.checkCol.state')} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {ready.map(row => (
+                    <tr key={`ready:${row.id}`}>
+                      <td>
+                        <span className={css.mono}>{row.id}</span>
+                        {row.note !== undefined && row.note !== '' && <span className={css.readinessThen}>{row.note}</span>}
+                      </td>
+                      <td>
+                        <Chip dot tone={row.ok ? 'ok' : 'danger'}>{t(row.ok ? 'design.checkReady' : 'design.checkNotReady')}</Chip>
+                      </td>
+                      <td />
+                    </tr>
+                  ))}
+                  {shownBlockers.map((check, index) => (
+                    <tr key={`block:${check.code}:${String(index)}`} className={css.readinessLine}>
+                      <td title={`${check.code} · ${check.message}`}>
+                        <span className={css.readinessNo}>{index + 1}</span>
+                        {said(check)}
+                      </td>
+                      <td><Chip dot tone="danger">{t('design.checkBlocked')}</Chip></td>
+                      <td>{fixButton(check, index + 1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        {anyFailed && (
+          // One re-read for every group: the probe runs them together, so a
+          // button per failing row would be several doors to the same room.
+          <div className={css.tableFoot}>
+            <span className={css.tableFootText}>
+              {shownBlockers.length === 0 && t('ready.failedCount', { count: ready.filter(row => !row.ok).length, total: ready.length })}
+            </span>
+            <Button variant="outline" size="sm" className={css.smButton} onClick={onRecheck}>{t('ready.recheck')}</Button>
           </div>
-          {blockers.map((check, index) => line(check, index + 1))}
-        </div>
-      )}
-      {reminders.length > 0 && (
-        <div className={css.readinessGroup}>
-          <div className={css.readinessHead}>
-            <Chip tone="warn">{t('readiness.reminders', { count: reminders.length })}</Chip>
-            <span className={css.dim}>{t('readiness.remindersNote')}</span>
+        )}
+      </Block>
+      {shownReminders.length > 0 && (
+        <Block title={t('readiness.reminders', { count: shownReminders.length })} meta={t('readiness.remindersNote')}>
+          <div className={css.box}>
+            {shownReminders.map((check, index) => {
+              const k = shownBlockers.length + index + 1
+              // A reminder says what it will cost, so 「不影响启动」 is not read
+              // as 「不重要」 (T80d · P2-7).
+              const then = reminderConsequenceKey(check.code)
+              return (
+                <div key={`remind:${check.code}:${String(index)}`} className={`${css.remindRow} ${css.readinessLine}`}>
+                  <Chip tone="warn">{t('design.checkRemind')}</Chip>
+                  <span className={css.remindText} title={`${check.code} · ${check.message}`}>
+                    {said(check)}
+                    {then !== null && <span className={css.readinessThen}>{t(then)}</span>}
+                  </span>
+                  {fixButton(check, k)}
+                </div>
+              )
+            })}
           </div>
-          {reminders.map((check, index) => line(check, blockers.length + index + 1))}
-        </div>
+        </Block>
       )}
-    </div>
+    </>
   )
 }
 
@@ -244,20 +304,24 @@ function ReadinessChecklist(props: {
 function QuestionSection(props: { question: EvalPlanQuestion; t: LabViewProps['t'] }) {
   const { question, t } = props
   return (
-    <section className={css.questionCard} aria-label={t('design.question')}>
-      <div className={css.questionEyebrow}>{t('design.question')}</div>
-      {question.question !== null && <div className={css.questionTitle}>{question.question}</div>}
-      {(question.expectation !== null || question.answeredWhen !== null) && (
-        <dl className={css.questionRows}>
-          {question.expectation !== null && (
-            <><dt>{t('design.expectation')}</dt><dd>{question.expectation}</dd></>
+    <Block title={t('design.question')}>
+      {/* T83 · v5 plan: the question in a box, its two lines as a kv grid. */}
+      <div className={css.box}>
+        <div className={css.boxBody}>
+          {question.question !== null && <div className={css.questionTitle}>{question.question}</div>}
+          {(question.expectation !== null || question.answeredWhen !== null) && (
+            <dl className={css.kv}>
+              {question.expectation !== null && (
+                <><dt>{t('design.expectation')}</dt><dd>{question.expectation}</dd></>
+              )}
+              {question.answeredWhen !== null && (
+                <><dt>{t('design.answeredWhen')}</dt><dd>{question.answeredWhen}</dd></>
+              )}
+            </dl>
           )}
-          {question.answeredWhen !== null && (
-            <><dt>{t('design.answeredWhen')}</dt><dd>{question.answeredWhen}</dd></>
-          )}
-        </dl>
-      )}
-    </section>
+        </div>
+      </div>
+    </Block>
   )
 }
 
@@ -269,11 +333,12 @@ function QuestionSection(props: { question: EvalPlanQuestion; t: LabViewProps['t
 function Block(props: { title: string; meta?: ReactNode; children: ReactNode }) {
   const { title, meta, children } = props
   return (
-    <section className={css.designBlock} aria-label={title}>
-      <div className={css.designBlockHead}>
-        <span className={css.designBlockTitle}>{title}</span>
-        {meta !== undefined && meta !== null && <span className={css.dim}>{meta}</span>}
-      </div>
+    // T83 · E7: v5 `.sec` — a bare section, a 13px heading and its body.
+    <section className={css.reportSection} aria-label={title}>
+      <h5 className={css.sectionTitle}>
+        <span>{title}</span>
+        {meta !== undefined && meta !== null && <span className={css.sectionMeta}>{meta}</span>}
+      </h5>
       {children}
     </section>
   )
@@ -298,17 +363,23 @@ function ItemsTable(props: { items: readonly string[]; expectedNs: readonly stri
   const { items, expectedNs, t } = props
   const how = expectedNs.map(ns => (VERDICT_SOURCE[ns] === undefined ? ns : t(VERDICT_SOURCE[ns]))).join(' · ') || '—'
   return (
-    <div className={css.itemsTable}>
-      <div className={css.itemsHead}>
-        <span>{t('design.itemsCol.item')}</span>
-        <span>{t('design.itemsCol.how')}</span>
-      </div>
-      {items.map(item => (
-        <div key={item} className={css.itemsRow}>
-          <span className={css.mono}>{item}</span>
-          <span className={css.dim}>{how}</span>
-        </div>
-      ))}
+    <div className={css.tableScroll}>
+      <table className={css.table}>
+        <thead>
+          <tr>
+            <th>{t('design.itemsCol.item')}</th>
+            <th>{t('design.itemsCol.how')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map(item => (
+            <tr key={item}>
+              <td className={css.mono}>{item}</td>
+              <td className={css.dim}>{how}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -328,7 +399,7 @@ function HowJudged(props: {
   const { judges, samples, expectedNs, t } = props
   const on = (ns: string) => expectedNs === null || expectedNs.includes(ns)
   return (
-    <dl className={css.howRows}>
+    <dl className={css.kv}>
       <dt>{t('design.how.judge')}</dt>
       <dd>
         {judges.length === 0 || !on('llm-draft')
@@ -385,18 +456,21 @@ function NumbersField(props: {
   now: PlanNumbersNow
   frozen: boolean
   onSave: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
+  /** Numbers another control on the page already edits (次数 · the 1/3/5 seg). */
+  skip?: ReadonlySet<keyof PlanNumbersNow> | undefined
   t: LabViewProps['t']
 }) {
-  const { now, frozen, onSave, t } = props
+  const { now, frozen, onSave, skip, t } = props
+  const inputs = NUMBER_INPUTS.filter(spec => skip?.has(spec.key) !== true)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ kind: 'receipt' | 'failure'; text: string } | null>(null)
   const shown = (key: keyof PlanNumbersNow): string => draft[key] ?? (now[key] === null ? '' : String(now[key]))
-  const dirty = NUMBER_INPUTS.some(spec => draft[spec.key] !== undefined && draft[spec.key] !== String(now[spec.key] ?? ''))
+  const dirty = inputs.some(spec => draft[spec.key] !== undefined && draft[spec.key] !== String(now[spec.key] ?? ''))
 
   function save(): void {
     const numbers: PlanNumbersDraft = {}
-    for (const spec of NUMBER_INPUTS) {
+    for (const spec of inputs) {
       const text = draft[spec.key]
       if (text === undefined || now[spec.key] === null) continue
       const value = Number(text)
@@ -430,7 +504,7 @@ function NumbersField(props: {
   return (
     <Field label={t('design.numbers')}>
       <div className={css.numbersRow}>
-        {NUMBER_INPUTS.map(spec => (
+        {inputs.map(spec => (
           <label key={spec.key} className={css.numberCell}>
             <span className={css.dim}>{t(spec.label)}</span>
             {frozen || now[spec.key] === null
@@ -453,7 +527,7 @@ function NumbersField(props: {
         ))}
         {!frozen && (
           <span className={css.numbersActions}>
-            <Button size="sm" disabled={busy || !dirty} onClick={save}>{t('design.numbers.save')}</Button>
+            <Button variant="outline" size="sm" disabled={busy || !dirty} onClick={save}>{t('design.numbers.save')}</Button>
             {dirty && (
               <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setDraft({}); setNote(null) }}>
                 {t('design.numbers.cancel')}
@@ -492,19 +566,83 @@ function ScaleSection(props: {
   t: LabViewProps['t']
 }) {
   const { row, numbers, frozen, onSetNumbers, t } = props
+  const [repsBusy, setRepsBusy] = useState(false)
+  const [repsNote, setRepsNote] = useState<{ kind: 'receipt' | 'failure'; text: string } | null>(null)
   // A STARTED experiment knows how many cells it really has; the product is
   // only the shape a plan implies, and a subset run (`--only` / `--max-cells`)
   // legitimately has fewer. Prefer the fact over the arithmetic.
   const cells = row.progress?.total ?? row.items * row.conditions.length * row.reps
+  // v5 · plan: 每组次数 as a 1 / 3 / 5 seg while the plan is editable; a plan
+  // that says some other number keeps it as one more option.
+  const reps = numbers?.reps ?? null
+  const repsEditable = numbers !== null && reps !== null && !frozen
+  const repOptions = [...new Set([1, 3, 5, ...(reps === null ? [] : [reps])])].sort((x, y) => x - y)
+  const setReps = (next: number): void => {
+    setRepsBusy(true)
+    setRepsNote(null)
+    void onSetNumbers({ reps: next }).then((answer) => {
+      setRepsBusy(false)
+      if (!answer.ok) {
+        setRepsNote({ kind: 'failure', text: answer.message })
+        return
+      }
+      // The receipt quotes the server's before → after, as NumbersField does.
+      const changes = answer.value.changes
+      setRepsNote({
+        kind: 'receipt',
+        text: changes.length === 0
+          ? t('design.numbers.unchanged')
+          : t('design.numbers.written', {
+            changes: changes.map(change => `${t(labelOf(change.field))} ${change.before} → ${change.after}`).join(' · '),
+          }),
+      })
+    })
+  }
   return (
     <Block title={t('design.scaleCost')}>
-      <div>
+      <div className={css.dim}>
         {t('overview.shapeValue', { items: row.items, conditions: row.conditions.length, reps: row.reps, cells })}
       </div>
-      {numbers !== null && <NumbersField now={numbers} frozen={frozen} onSave={onSetNumbers} t={t} />}
+      {repsNote !== null && (
+        <div className={repsNote.kind === 'failure' ? css.warning : css.dim} role="status">{repsNote.text}</div>
+      )}
+      {/* v5 · plan: one row, label over value — 每组次数 (a 1 / 3 / 5 seg while
+          the plan is editable), then the three numbers. Only the first is known
+          before a run: time and tokens need comparable runs to estimate from,
+          so they say 无估算 rather than a guess (T83 · the estimate face is
+          phase 4). */}
+      <div className={css.bigNums}>
+        {repsEditable && (
+          <div className={css.bigNum}>
+            <span>{t('design.scale.reps')}</span>
+            <Seg
+              label={t('design.scale.reps')}
+              value={reps}
+              disabled={repsBusy}
+              onChange={setReps}
+              options={repOptions.map(value => ({ value, label: String(value) }))}
+            />
+          </div>
+        )}
+        <div className={css.bigNum}><span>{t('design.scale.answers')}</span><b>{cells}</b></div>
+        <div className={css.bigNum}><span>{t('design.scale.duration')}</span><b data-none="">{t('design.scale.none')}</b></div>
+        <div className={css.bigNum}><span>{t('design.scale.tokens')}</span><b data-none="">{t('design.scale.none')}</b></div>
+      </div>
+      <div className={css.scaleNote}>{t('design.scale.noneNote')}</div>
+      {numbers !== null && (
+        <NumbersField
+          now={numbers}
+          frozen={frozen}
+          onSave={onSetNumbers}
+          skip={repsEditable ? REPS_ONLY : undefined}
+          t={t}
+        />
+      )}
     </Block>
   )
 }
+
+const REPS_ONLY: ReadonlySet<keyof PlanNumbersNow> = new Set(['reps'])
 
 /** ③ Everything a reader needs once and then never again. Folded by default. */
 function AdvancedSection(props: {
@@ -758,7 +896,7 @@ export function DesignPage(props: {
           <div className={css.notice}>
             <div>{t('design.single')}</div>
             <div className={css.actions}>
-              <Button size="sm" onClick={onAddGroup}>{t('design.addGroup')}</Button>
+              <Button variant="outline" size="sm" onClick={onAddGroup}>{t('design.addGroup')}</Button>
               <span className={css.dim}>{t('design.addGroupHint')}</span>
             </div>
           </div>
@@ -799,58 +937,56 @@ export function DesignPage(props: {
         t={t}
       />
 
-      <Block title={t('design.ready')}>
-        <ReadyBadge rows={readyRows} onRecheck={onRecheck} atStart={row.status === 'stalled'} t={t} />
-        {/* The list row already carries validate's COUNTS, so the page can
-            answer «can this be approved» before the review walk lands. Once it
-            has landed the lines below say it better, and saying it twice would
-            read as two different checks. */}
-        {review === null && row.validation !== null && (
-          <Field label={t('overview.validation')}>
-            {row.validation.ok
-              ? t('overview.validationOk')
-              : t('overview.validationFailed', { errors: row.validation.errors, warnings: row.validation.warnings })}
-          </Field>
-        )}
-        {checklistShown && (blockers.length > 0 || reminders.length > 0) && (
-          <ReadinessChecklist
-            blockers={blockers}
-            reminders={reminders}
-            forRerun={row.status === 'stalled'}
-            onFix={onFix}
-            t={t}
-          />
-        )}
-        {passing.length > 0 && (
-          <Detail summary={t('review.checks')}>
-            {passing.map((check, index) => (
-              <CheckLine key={`ok:${check.code}:${String(index)}`} check={check} t={t} />
-            ))}
-          </Detail>
-        )}
-        {review !== null && review.checks.length === 0 && (
-          <div className={css.dim}>{t('review.checksNone')}</div>
-        )}
-      </Block>
+      <ReadinessChecklist
+        blockers={blockers}
+        reminders={reminders}
+        ready={readyRows}
+        lines={checklistShown}
+        forRerun={row.status === 'stalled'}
+        onFix={onFix}
+        onRecheck={onRecheck}
+        t={t}
+      />
+      {/* The list row already carries validate's COUNTS, so the page can
+          answer «can this be approved» before the review walk lands. Once it
+          has landed the lines above say it better. */}
+      {review === null && row.validation !== null && (
+        <Field label={t('overview.validation')}>
+          {row.validation.ok
+            ? t('overview.validationOk')
+            : t('overview.validationFailed', { errors: row.validation.errors, warnings: row.validation.warnings })}
+        </Field>
+      )}
+      {review !== null && review.checks.length === 0 && (
+        <div className={css.dim}>{t('review.checksNone')}</div>
+      )}
 
       {digest !== null && digest.items.length > 0 && (
-        <Detail summary={t('design.gridFold', { cells: digest.items.length * groups.length * row.reps })}>
+        <Fold title={t('design.gridFold', { cells: digest.items.length * groups.length * row.reps })}>
           <div className={css.dim}>{t('design.gridHint')}</div>
           <RunGrid
             columns={columns}
             rows={plannedRows(digest.items, groups, row.reps)}
             t={t}
           />
-        </Detail>
+        </Fold>
       )}
-
+      {/* v5 · ready: 校验原文 is the closing fold — the passing lines, which
+          a clean plan never needs to read. */}
+      {passing.length > 0 && (
+        <Fold title={t('review.checks')} aside={passing.length}>
+          {passing.map((check, index) => (
+            <CheckLine key={`ok:${check.code}:${String(index)}`} check={check} t={t} />
+          ))}
+        </Fold>
+      )}
       <AdvancedSection row={row} review={review} detail={detail} t={t} />
 
       {/* The reviewer's second gesture. The first — 批准并启动 — is the stage
           bar's one primary action, where ui-spec §五 v2 puts it. */}
       {row.runId === null && started === null && (
         <div className={css.actions}>
-          <Button size="sm" onClick={onSendBack}>{t('review.sendBack')}</Button>
+          <Button variant="outline" size="sm" onClick={onSendBack}>{t('review.sendBack')}</Button>
           {/* The debugging switch, and it is OFF unless someone ticks it. Left
               on by default it would be T33b's shape again: every cell's
               container survives the run. The hint under it says what it costs. */}

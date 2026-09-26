@@ -41,7 +41,7 @@ import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { DesignPage, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
 import {
-  Chip, Detail, EmptyState, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
+  Chip, EmptyState, Fold, Seg2, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
 } from './parts.tsx'
 import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS, type LabPage, type RunFilter } from './store.ts'
 import { RunsPage } from './RunsPage.tsx'
@@ -202,8 +202,10 @@ export function LabView(props: LabViewProps) {
   // A marked row the session filter would hide switches the filter to 全部 —
   // a mark nobody can see is not an answer to 打开实验.
   const markedRow = marked === null ? undefined : rows.find(row => row.experimentId === marked)
+  const scoped = scopeRows(rows, list?.session ?? null, scope)
+  const listOthers = scoped.others
   const markedHidden = markedRow !== undefined
-    && scopeRows(rows, list?.session ?? null, scope).shown.every(row => row.id !== markedRow.id)
+    && scoped.shown.every(row => row.id !== markedRow.id)
   useEffect(() => {
     if (markedHidden) setScopeState('all')
   }, [markedHidden])
@@ -1015,20 +1017,50 @@ export function LabView(props: LabViewProps) {
 
   return (
     <div className={css.view} data-conversation-composer-overlay="">
+      {/* T83 · E1: one scroller, one reading column on the composer's axis;
+          the head, the stage strip and the next-step band ride in its flow
+          (v5), so nothing is pinned above the page. */}
+      <div className={css.body}>
+      <div className={css.column}>
       <div className={css.bar}>
         {openRow === undefined
-          ? <span className={css.title}>{t('list.title')}</span>
+          ? (
+            <>
+              <span className={css.title} data-level="list">{t('list.title')}</span>
+              {rows.length > 0 && (
+                <Seg2
+                  label={t('list.scope')}
+                  value={scope}
+                  onChange={setScope}
+                  options={[
+                    { value: 'session', label: t('list.scopeSession') },
+                    { value: 'all', label: t('list.scopeAll') },
+                  ]}
+                />
+              )}
+              {scope === 'session' && listOthers > 0 && (
+                <button type="button" className={css.reportJump} onClick={() => { setScope('all') }}>
+                  {t('list.others', { count: listOthers })}
+                </button>
+              )}
+            </>
+          )
           : (
             <>
-              <Button size="sm" onClick={() => { actions.open(null) }}>{t('detail.back')}</Button>
+              <button type="button" className={css.back} onClick={() => { actions.open(null) }}>
+                <span aria-hidden="true">{'← '}</span>{t('detail.back')}
+              </button>
               <span className={css.title}>{openRow.name}</span>
               <Chip tone={statusTone(shownStatus ?? openRow.status)}>{t(statusKey(shownStatus ?? openRow.status))}</Chip>
             </>
           )}
         <span className={css.barSpacer} />
-        <Button size="sm" onClick={() => { actions.refresh() }}>{t('list.refresh')}</Button>
+        <Button variant="ghost" size="sm" onClick={() => { actions.refresh() }}>{t('list.refresh')}</Button>
         {openRow === undefined && (
           <Button size="sm" variant="primary" onClick={() => { setNewOpen(true) }}>{t('list.new')}</Button>
+        )}
+        {openRow !== undefined && openRow.question !== null && (
+          <span className={css.headQuestion}>{openRow.question}</span>
         )}
       </div>
       {draftNotice !== null && openRow === undefined && <div className={css.notice}>{draftNotice}</div>}
@@ -1039,7 +1071,7 @@ export function LabView(props: LabViewProps) {
       )}
       {openRow === undefined
         ? (
-          <div className={css.body}>
+          <>
             {loading && list === null && <div className={css.empty}>{t('list.loading')}</div>}
             {!loading && error !== null && list === null && (
               <ErrorState what={t('list.error')} message={error} t={t} />
@@ -1060,7 +1092,6 @@ export function LabView(props: LabViewProps) {
                 rows={rows}
                 session={list?.session ?? null}
                 scope={scope}
-                onScope={setScope}
                 marked={markedRow?.id ?? null}
                 onOpen={(id) => { setListNotice(null); setMarked(null); actions.open(id) }}
                 onAct={actOnRow}
@@ -1069,7 +1100,7 @@ export function LabView(props: LabViewProps) {
                 t={t}
               />
             )}
-          </div>
+          </>
         )
         : (
           <>
@@ -1101,9 +1132,8 @@ export function LabView(props: LabViewProps) {
                 {firstBlocker !== null
                   ? t('cta.pendingBlocked', { count: blockers.length })
                   : here !== null ? t(here) : t(action.hint)}
+                {blockedBy !== null && <span className={css.stageSub}>{t('cta.blocked', { errors: blockedBy })}</span>}
               </span>
-              <span className={css.barSpacer} />
-              {blockedBy !== null && <span className={css.warning}>{t('cta.blocked', { errors: blockedBy })}</span>}
               <span className={css.stageAction}>
                 {/* The button follows the stage on screen (T80c P2-11): a door
                     to the page the reader is already on is no action, so there
@@ -1125,13 +1155,13 @@ export function LabView(props: LabViewProps) {
                 )}
               </span>
             </div>
-            <div className={css.body}>
+            <div>
               {answers !== null && openRunId !== null && (
                 answerSheet === null
                   ? (answerError !== null
                       ? (
                         <div>
-                          <Button size="sm" onClick={() => { actions.openAnswers(null) }}>{t('answer.back')}</Button>
+                          <Button variant="outline" size="sm" onClick={() => { actions.openAnswers(null) }}>{t('answer.back')}</Button>
                           <ErrorState what={t('answer.error')} message={answerError} t={t} />
                         </div>
                       )
@@ -1328,6 +1358,8 @@ export function LabView(props: LabViewProps) {
             />
           </>
         )}
+      </div>
+      </div>
       <NewExperimentDialog
         open={newOpen}
         onClose={() => { setNewOpen(false) }}
@@ -1450,7 +1482,6 @@ function ExperimentRowLine(props: {
       <span className={css.rowMain}>
         <span className={css.nameLine}>
           <span className={css.nameText} title={row.experimentId ?? row.name}>{row.name}</span>
-          <span className={css.nameChip}><Chip tone={statusTone(row.status)}>{t(statusKey(row.status))}</Chip></span>
         </span>
         <span className={css.questionLine}>
           {/* A run no imported experiment claims (T73) is said on the second
@@ -1460,15 +1491,30 @@ function ExperimentRowLine(props: {
         </span>
       </span>
       <span className={css.rowSlot} data-stalled={stalled ? 'true' : undefined}>{slot}</span>
+      {/* v5 · list: the status pill has its own column (T83 · E13). */}
+      <span className={css.rowChip}><Chip tone={statusTone(row.status)}>{t(statusKey(row.status))}</Chip></span>
       <span className={css.colActions}>
-        <Button
-          size="sm"
-          // 重跑 acts in place, so it carries the primary weight; the doors do not.
-          {...(action.verb === 'rerun' ? { variant: 'primary' as const } : {})}
-          onClick={(event) => { event.stopPropagation(); onAct(row, action.verb) }}
-        >
-          {t(action.cta)}
-        </Button>
+        {action.verb === 'compare' || action.verb === 'runs'
+          // A door to a page is a link, not a button (T83 · E5).
+          ? (
+            <button
+              type="button"
+              className={css.navLink}
+              onClick={(event) => { event.stopPropagation(); onAct(row, action.verb) }}
+            >
+              {t(action.cta)}
+            </button>
+          )
+          : (
+            <Button
+              variant={action.verb === 'rerun' ? 'primary' : 'outline'}
+              size="sm"
+              className={css.smButton}
+              onClick={(event) => { event.stopPropagation(); onAct(row, action.verb) }}
+            >
+              {t(action.cta)}
+            </Button>
+          )}
         {row.runId !== null && <RowMenu row={row} onArchive={onArchive} t={t} />}
       </span>
     </div>
@@ -1503,7 +1549,7 @@ function ArchiveLegacy(props: {
         <Button size="sm" variant="primary" onClick={() => { setAsking(false); onArchiveAll(rows) }}>
           {t('list.archiveLegacyGo')}
         </Button>
-        <Button size="sm" onClick={() => { setAsking(false) }}>{t('list.archiveLegacyCancel')}</Button>
+        <Button variant="outline" size="sm" onClick={() => { setAsking(false) }}>{t('list.archiveLegacyCancel')}</Button>
       </span>
     </div>
   )
@@ -1522,7 +1568,6 @@ function ExperimentList(props: {
   rows: readonly EvalExperimentRow[]
   session: string | null
   scope: ListScope
-  onScope: (scope: ListScope) => void
   /** The row 打开实验 asked for (T76), marked until the reader opens a row. */
   marked: string | null
   onOpen: (id: string) => void
@@ -1531,8 +1576,9 @@ function ExperimentList(props: {
   onArchiveAll: (rows: readonly EvalExperimentRow[]) => void
   t: LabViewProps['t']
 }) {
-  const { rows, session, scope, onScope, marked, onOpen, onAct, onArchive, onArchiveAll, t } = props
-  const { shown, others } = scopeRows(rows, session, scope)
+  const { rows, session, scope, marked, onOpen, onAct, onArchive, onArchiveAll, t } = props
+  // The scope switch and its 另有 N 个 note live in the page head (T83 · list).
+  const { shown } = scopeRows(rows, session, scope)
   const groups = groupRows(shown)
   const legacy = legacyInAttention(shown)
   const line = (row: EvalExperimentRow) => (
@@ -1540,26 +1586,6 @@ function ExperimentList(props: {
   )
   return (
     <>
-      <div className={css.listScope}>
-        <div className={css.segmented} role="group" aria-label={t('list.scope')}>
-          {(['session', 'all'] as const).map(value => (
-            <button
-              key={value}
-              type="button"
-              className={css.chip}
-              aria-pressed={scope === value}
-              onClick={() => { onScope(value) }}
-            >
-              {t(value === 'session' ? 'list.scopeSession' : 'list.scopeAll')}
-            </button>
-          ))}
-        </div>
-        {scope === 'session' && others > 0 && (
-          <button type="button" className={css.reportJump} onClick={() => { onScope('all') }}>
-            {t('list.others', { count: others })}
-          </button>
-        )}
-      </div>
       {shown.length === 0
         ? <EmptyState title={t('list.scopeEmpty')} hint={t('list.scopeEmptyHint')} />
         : (
@@ -1577,9 +1603,9 @@ function ExperimentList(props: {
               </div>
             ))}
             {groups.archived.length > 0 && (
-              <Detail summary={t('list.group.archivedCount', { count: groups.archived.length })}>
+              <Fold title={t('list.group.archivedCount', { count: groups.archived.length })}>
                 <div className={css.listGroup} data-group="archived">{groups.archived.map(line)}</div>
-              </Detail>
+              </Fold>
             )}
           </div>
         )}

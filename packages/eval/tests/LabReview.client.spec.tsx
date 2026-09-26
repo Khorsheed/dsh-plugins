@@ -10,7 +10,7 @@
  * ONLY the differing fields.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -604,11 +604,10 @@ describe('the conditions page', () => {
     await openPage(h, 'page.design')
 
     await waitFor(() => { expect(h.fetchConditions).toHaveBeenCalledWith('s1', {}) })
-    // The group id is on the table row AND on the planned grid's column
-    // heading — the two halves of section ② (ui-spec §五 v2).
-    expect((await screen.findAllByText('dsh-exec')).length).toBe(2)
-    // codex-exec is the one that is NOT ready, so it is named a third time —
-    // on its own red cross in the readiness badge.
+    // The group id is on the table row, on the planned grid's column heading
+    // — the two halves of section ② (ui-spec §五 v2) — and, since T83 (v5 ·
+    // ready), on its own row of the 检查项 table, ready or not.
+    expect((await screen.findAllByText('dsh-exec')).length).toBe(3)
     expect(screen.getAllByText('codex-exec').length).toBe(3)
     expect(screen.getByText('dsh · exec')).toBeTruthy()
     expect(screen.getByText('deepseek-v4')).toBeTruthy()
@@ -854,9 +853,9 @@ describe('the design page asks its question and edits its numbers in place (T74)
     const h = makeHarness()
     renderView(h)
     await openPage(h, 'page.design')
-    const reps = await screen.findByRole('spinbutton', { name: 'design.numbers.reps' })
-    fireEvent.change(reps, { target: { value: '3' } })
-    fireEvent.click(screen.getByRole('button', { name: 'design.numbers.save' }))
+    // T83: 次数 is v5's 1 / 3 / 5 seg — one click writes it.
+    const reps = await screen.findByRole('radiogroup', { name: 'design.scale.reps' })
+    fireEvent.click(within(reps).getByRole('radio', { name: '3' }))
     await waitFor(() => { expect(h.setPlanNumbers).toHaveBeenCalledWith('s1', { experimentId: EXPERIMENT_ID, reps: 3 }) })
     expect(await screen.findByText(/design\.numbers\.written .*design\.numbers\.reps 2 → 3/)).toBeTruthy()
   })
@@ -866,8 +865,8 @@ describe('the design page asks its question and edits its numbers in place (T74)
     h.setPlanNumbers.mockResolvedValue({ ok: false, error: { code: 'EVAL_PLAN_FROZEN', message: 'the plan is frozen' } })
     renderView(h)
     await openPage(h, 'page.design')
-    fireEvent.change(await screen.findByRole('spinbutton', { name: 'design.numbers.reps' }), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: 'design.numbers.save' }))
+    const reps = await screen.findByRole('radiogroup', { name: 'design.scale.reps' })
+    fireEvent.click(within(reps).getByRole('radio', { name: '5' }))
     expect(await screen.findByText(/the plan is frozen/)).toBeTruthy()
   })
 
