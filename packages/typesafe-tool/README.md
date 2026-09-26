@@ -11,7 +11,7 @@ agent 干活总会遇到代码定不了的语义判断：以前不是拍脑袋�
 - **一次调用批量问完**——`typesafe_judge` 接收一段 `state` 加 1–32 个窄问题：`noul`（是/否概率）、`choice`（给定集合选一）、`score`（有序评级）。返回紧凑文本，每题一行：noul 给两位小数概率，choice/score 给答案 + `confidence` + 全分布。
 - **工具、指导、技能三件套同给同收**——提示词段 `typesafe:judge`（何时用、如何批量、怎么读答案、**禁止为 TypeSafe 新建 CLI / 包装进程**）与 `typesafe-decide` skill（问题设计与使用纪律）随工具一起授予。
 - **按会话授予**——授予入口是 preset 的 `agent.cordis.yml` 按名引用本行；没引用它的 preset 的会话完全无感。
-- **degrade，不炸**——core 未挂载时整行 no-op 加一行日志，preset 组合照常挂上，只是模型看不到工具；注册走 `ctx.inject` 延迟注入，挂载顺序竞不到它。
+- **core 缺席就 pending，不炸**——core 服务声明为 `inject = ['typesafe']`（同族 companion 例外）：core 未挂载时该行保持 pending（注册表审计显示 `waiting for typesafe`），preset 组合照常挂上、不报错；core 出现后行激活，工具、提示词段与 skill 一起注册生效。注册面走 `ctx.inject` 延迟注入，挂载顺序竞不到它。
 - **归属清晰**——工具的 origin tag 挂在**本包**名下（owner `@khorsheed/dsh-typesafe-tool`），在「工具与技能」里归入「插件」。
 - **凭据有输入框**——skill 声明 `metadata.credentials`，`TYPESAFE_API_KEY` 在「设置 → 工具与技能」里就有密码输入框，不用手改配置文件。
 
@@ -66,14 +66,14 @@ dsh plugin --profile web remove @khorsheed/dsh-typesafe-tool
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——工具注册进宿主 tools 注册表、贡献提示词段与 runtime skill；0.1.5 官方插件列表的「会话插件」组按 preset 组合呈现本行。core 缺席时行照常挂载、只是不注册任何面（记一行日志）。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）——`ctx.get` 探测 + `ctx.inject(['tools'|'systemPrompt'|'skills'])` 均为长期 seam，未见重命名。低于 0.1.5 的宿主未验证，minHost 钉 `0.1.5-rc.1`（与 worktrees-tool / room-tool / datasets-tool 三条伴生行同一档）。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——工具注册进宿主 tools 注册表、贡献提示词段与 runtime skill；0.1.5 官方插件列表的「会话插件」组按 preset 组合呈现本行。core 缺席时组合照常挂载，该行保持 pending（注册表审计显示 `waiting for typesafe`），core 出现后行激活、三个注册面一起生效。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）——core 服务的声明式 `inject` + `ctx.inject(['tools'|'systemPrompt'|'skills'])` 延迟注入均为长期 seam，未见重命名；行内 `ctx.get('typesafe')` 仅留作防御性直调守卫。低于 0.1.5 的宿主未验证，minHost 钉 `0.1.5-rc.1`（与 worktrees-tool / room-tool / datasets-tool 三条伴生行同一档）。
 
 **版本线对照**：`0.1.0` 起支持宿主 `0.1.5-rc.1` 及以后。
 
 ## 已知限制
 
-- **只授予，不带服务**——本行不提供 `ctx.typesafe`；core（`@khorsheed/dsh-typesafe`）未装时工具不会出现在任何会话里，整行 no-op 加一行日志。
+- **只授予，不带服务**——本行不提供 `ctx.typesafe`；core（`@khorsheed/dsh-typesafe`）未装时该行保持 pending（注册表审计显示 `waiting for typesafe`），工具不会出现在任何会话里，core 装好后行自动激活。
 - **引用与安装必须同步**——preset 引用一个解析不了的行会让该 preset 组合报 broken，而不是静默降级；装包、卸包、改 `agent.cordis.yml` 要一起走。
 
 ## 实现原理
@@ -81,7 +81,9 @@ dsh plugin --profile web remove @khorsheed/dsh-typesafe-tool
 <details>
 <summary>内部结构（点击展开）</summary>
 
-**不自挂载的伴生包。** 只注册工具、不发布服务（`ctx.provide` 为零）——preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset（官方 `tool-bash` 行同构）。包不声明 `dsh.bundle`：作为依赖安装只让模块可解析（plain dependency），不会自动挂进任何组合。core 包名只作为数据登记在 manifest 的 `dsh.references`——源码**不 import**、依赖字段**不出现**；apply 时 `ctx.get('typesafe')` 结构探测。两包因此互不牵连构建顺序，`pnpm check:plugins` 也不需要新增跨包边。
+**不自挂载的伴生包。** 只注册工具、不发布服务（`ctx.provide` 为零）——preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset（官方 `tool-bash` 行同构）。包不声明 `dsh.bundle`：作为依赖安装只让模块可解析（plain dependency），不会自动挂进任何组合。core 包名只作为数据登记在 manifest 的 `dsh.references`——源码**不 import**、依赖字段**不出现**。两包因此互不牵连构建顺序，`pnpm check:plugins` 也不需要新增跨包边。
+
+**core 服务走声明式 inject，不再一次性探测。** `export const inject = ['typesafe']`（同族 companion 例外，见 `scripts/check-plugin-independence.ts` 的 COMMUNITY_SERVICE_INJECTORS）：preset 的 standing scope 在注册表激活时挂载，早于 profile 靠后 bundle 行提供 core，apply 时一次性 `ctx.get` 探测看到 ABSENT 后没有任何东西会重跑该行（rc.1 挂载序；2026-09-27 3080 生产实证）。声明式 inject 让该行 pending 到 core 提供再整体 apply：pending 期间注册表审计显示 `waiting for typesafe`，preset 挂载本身不受影响。行内 `ctx.get('typesafe')` 守卫保留为防御性直调路径（测试不经 loader 的 inject 机制直调 apply）。
 
 **三个注册面都走延迟注入。** `ctx.inject(['tools'])` 注册 `typesafe_judge`——apply 时直接 `ctx.get('tools')` 会输掉与注册表自身挂载顺序的竞态、静默注册不上（挂载序竞态的历史教训）；`ctx.inject(['systemPrompt'])` 贡献提示词段 `typesafe:judge`（order 152）；`ctx.inject(['skills'])` 注册随包的 `skills/typesafe-decide/SKILL.md`（source `runtime`、provider 本包名；文件缺失只告警一行，不炸 boot），并借 skill 的 `metadata.credentials` 给凭据一个「工具与技能」里的输入框。
 

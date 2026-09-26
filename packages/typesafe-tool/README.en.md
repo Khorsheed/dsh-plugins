@@ -11,7 +11,7 @@ Every agent run hits judgements ordinary code cannot make, and until now the way
 - **Batch every question into one call** — `typesafe_judge` takes a piece of `state` plus 1–32 narrow questions: `noul` (a yes/no probability), `choice` (one option out of a defined set), `score` (a level on an ordered scale). It returns compact text, one line per question: a two-decimal probability for noul; the answer plus `confidence` and the full distribution for choice/score.
 - **Tool, guidance and skill move together** — the prompt section `typesafe:judge` (when to use it, how to batch, how to read answers, **never build a CLI or wrapper process for TypeSafe**) and the `typesafe-decide` skill (question design and discipline) are granted alongside the tool.
 - **Granted per session** — the grant is a preset's `agent.cordis.yml` naming this row; sessions of presets that do not name it are completely unaffected.
-- **Degrade, don't explode** — with the core absent the row is a no-op plus one log line: the preset composition still mounts, the model simply sees no tool. Registration goes through deferred `ctx.inject`, so mount order can never strand the row.
+- **Pending without the core, never broken** — the core service is a declared `inject = ['typesafe']` (the owning-family companion exception): while the core is unmounted the row stays pending (the registry audit shows `waiting for typesafe`), the preset composition still mounts and reports no error; once the core provides, the row activates and the tool, prompt section and skill register together. Registration goes through deferred `ctx.inject`, so mount order can never strand the row.
 - **Clear attribution** — the tool's origin tag names **this** package (owner `@khorsheed/dsh-typesafe-tool`) and appears under 插件 in 「工具与技能」.
 - **The key has an input field** — the skill declares `metadata.credentials`, so `TYPESAFE_API_KEY` gets a password field in 「设置 → 工具与技能」 instead of a hand-edited config file.
 
@@ -66,14 +66,14 @@ Before first use, fill `TYPESAFE_API_KEY` once under 「设置 → 工具与技�
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ complete — the tool registers into the host tools registry and contributes its prompt section and runtime skill; 0.1.5's plugin list shows this row under the per-preset session plugins. With the core absent the row still mounts and registers nothing (one log line).
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1) — `ctx.get` probing plus `ctx.inject(['tools'|'systemPrompt'|'skills'])` are long-standing seams and none has been renamed. Hosts below 0.1.5 are unverified; minHost is pinned at `0.1.5-rc.1`, the same tier as the worktrees-tool / room-tool / datasets-tool companion rows.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ complete — the tool registers into the host tools registry and contributes its prompt section and runtime skill; 0.1.5's plugin list shows this row under the per-preset session plugins. With the core absent the composition still mounts and the row stays pending (the registry audit shows `waiting for typesafe`); once the core provides, the row activates and all three registration faces take effect.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1) — the declared core `inject` plus the deferred `ctx.inject(['tools'|'systemPrompt'|'skills'])` registrations are long-standing seams and none has been renamed; the in-body `ctx.get('typesafe')` stays only as the defensive direct-call guard. Hosts below 0.1.5 are unverified; minHost is pinned at `0.1.5-rc.1`, the same tier as the worktrees-tool / room-tool / datasets-tool companion rows.
 
 **Version line mapping**: `0.1.0` supports host `0.1.5-rc.1` and later.
 
 ## Known Limitations
 
-- **Grants only, brings no service** — this row does not provide `ctx.typesafe`; without the core (`@khorsheed/dsh-typesafe`) the tool appears in no session, and the whole row is a no-op plus one log line.
+- **Grants only, brings no service** — this row does not provide `ctx.typesafe`; without the core (`@khorsheed/dsh-typesafe`) the row stays pending (the registry audit shows `waiting for typesafe`) and the tool appears in no session; once the core is mounted the row activates on its own.
 - **Reference and install must move together** — a preset naming an unresolvable row reports that preset composition broken instead of degrading silently; install, uninstall and `agent.cordis.yml` edits go together.
 
 ## How it works
@@ -81,7 +81,9 @@ Before first use, fill `TYPESAFE_API_KEY` once under 「设置 → 工具与技�
 <details>
 <summary>Internals (click to expand)</summary>
 
-**A companion that never self-mounts.** The row registers tools and publishes no service (`ctx.provide` is zero) — the preset-mount isolate-realm rule rejects service rows only, so a tool row composes bare, exactly like the official `tool-bash` rows. The package declares no `dsh.bundle`: installing it as a dependency only makes the module resolvable (a plain dependency) and mounts nothing. The core package is named as data only, in the manifest's `dsh.references` — never imported, never a dependency edge; at apply time the row probes `ctx.get('typesafe')` structurally. The two packages therefore cannot disturb each other's build order, and `pnpm check:plugins` needs no new cross-package edge.
+**A companion that never self-mounts.** The row registers tools and publishes no service (`ctx.provide` is zero) — the preset-mount isolate-realm rule rejects service rows only, so a tool row composes bare, exactly like the official `tool-bash` rows. The package declares no `dsh.bundle`: installing it as a dependency only makes the module resolvable (a plain dependency) and mounts nothing. The core package is named as data only, in the manifest's `dsh.references` — never imported, never a dependency edge. The two packages therefore cannot disturb each other's build order, and `pnpm check:plugins` needs no new cross-package edge.
+
+**The core service is a declared inject, not a one-shot probe.** `export const inject = ['typesafe']` (the owning-family companion exception — `COMMUNITY_SERVICE_INJECTORS` in `scripts/check-plugin-independence.ts`): a preset's standing scope mounts at registry-activation time, before the profile's later bundle rows provide the core, so a one-shot `ctx.get` probe at apply saw ABSENT and nothing ever re-ran the row (the rc.1 boot order; observed in production on 3080, 2026-09-27). The declared inject pends the row until the core provides, then the whole body applies — while pending, the registry audit shows `waiting for typesafe` and the preset mount itself is unaffected. The in-body `ctx.get('typesafe')` guard stays as the defensive direct-call path (tests invoke `apply` without the loader's inject machinery).
 
 **Every registration goes through deferred injection.** `ctx.inject(['tools'])` registers `typesafe_judge` — a direct `ctx.get('tools')` at apply time races the registry's own mount order and loses, silently never registering (the mount-order race learned the hard way); `ctx.inject(['systemPrompt'])` contributes the `typesafe:judge` section (order 152); `ctx.inject(['skills'])` registers the shipped `skills/typesafe-decide/SKILL.md` (source `runtime`, provider this package's name; a missing or malformed file warns once, never fails boot) and borrows the skill's `metadata.credentials` to give the key a password field in 「工具与技能」.
 

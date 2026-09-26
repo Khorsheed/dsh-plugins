@@ -10,7 +10,7 @@
 
 - **五个模型工具，按会话授予**——`room_read` 读名册/协调者/投递/近期成果/可用 provider（只读，不唤醒任何成员）；`room_plan` 经营正式目标（阶段、任务依赖、证据验收、暂停/恢复）；`room_invite` 邀请 CLI 成员（任意会话可调用，自动把会话升级为房间）；`room_task` 写共享任务板（add/close/update，与胶囊 UI 走同一组宿主函数，agent 开的任务与人类开的无法区分）；`room_message` 向成员派发消息（异步执行，回复以成员发言回到房间）。
 - **零业务复制**——工具定义工厂全部由 core 导出（`@khorsheed/dsh-room/tool`），本行只做注册；注册前为每个工具打上以本包为 owner 的 origin tag，能力目录把工具归因到挂它的行，而不是服务核心。
-- **core 缺席即静默降级**——apply 时 `ctx.get('room')` 探测，core 未挂载就记一行 info 日志后跳过注册，preset 挂载照常成功；工具注册走 `ctx.inject(['tools'])` 延迟注入，挂载顺序永远不会把这行卡住。
+- **core 缺席即 pending，不炸**——core 服务声明为 `inject = ['room']`（同族 companion 例外）：core 未挂载时该行保持 pending（注册表审计显示 `waiting for room`），preset 挂载照常成功、不报错；core 出现后行激活，五个工具注册生效。工具注册走 `ctx.inject(['tools'])` 延迟注入，挂载顺序永远不会把这行卡住。
 - **无配置、无服务、无浏览器半部分**——`ctx.provide` 为零（preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset，与官方 `tool-bash` 行同构）；房间 UI 全在 core；可邀请的 provider 名单在调用时从全局 room 服务的花名册读取。
 - **能力自适应**——`room_read` 只在挂载的 core 实现了 `readRoomContext` 时注册，`room_plan` 只在实现了 `commandPlan` 时注册；旧 core 上这两个工具整体缺席而不是报错。
 
@@ -62,13 +62,13 @@ dsh plugin --profile web remove @khorsheed/dsh-room-tool
 
 **形态：不自挂载的伴生行。** 本包故意不声明 `dsh.bundle`：作为依赖安装只让模块可解析（plain dependency，同 `@khorsheed/dsh-local-agent-dsh-headless` 先例），不往任何组合挂行；授予入口是 preset 的 `agent.cordis.yml` 按名引用。这正是官方工具行的形状——发布的 `tool-bash` 行同样只消费宿主服务、不发布服务。
 
-**注册路径。** apply 先 `ctx.get('room')` 探测 core 的全局服务，缺席则记一行 info 日志后返回（degrade，不炸 preset 挂载）。注册走 `ctx.inject(['tools'])` 延迟注入而非 apply 时探测：`ctx.get('tools')` 会与 tools 注册表自身的挂载顺序竞态并输掉（历史上静默永不注册的事故），`ctx.inject` 在注册表出现时触发，在没有注册表的组合里永不触发。每个注册都包一层带诊断标签的 `ctx.effect`（`room-tool: room_invite tool` 等）。
+**注册路径。** core 的全局服务声明为 `export const inject = ['room']`（同族 companion 例外，见 `scripts/check-plugin-independence.ts` 的 COMMUNITY_SERVICE_INJECTORS）——preset 的 standing scope 在注册表激活时挂载，早于 profile 靠后 bundle 行提供 core，apply 时一次性 `ctx.get` 探测看到 ABSENT 后没有任何东西会重跑该行（rc.1 挂载序；2026-09-27 3080 生产实证）。声明式 inject 让该行 pending 到 core 提供再 apply：pending 期间注册表审计显示 `waiting for room`，preset 挂载不受影响；行内 `ctx.get('room')` 守卫保留为防御性直调路径（测试不经 loader 的 inject 机制直调 apply）。工具注册走 `ctx.inject(['tools'])` 延迟注入而非 apply 时探测：`ctx.get('tools')` 会与 tools 注册表自身的挂载顺序竞态并输掉（历史上静默永不注册的事故），`ctx.inject` 在注册表出现时触发，在没有注册表的组合里永不触发。每个注册都包一层带诊断标签的 `ctx.effect`（`room-tool: room_invite tool` 等）。
 
 **origin tag。** core 导出工具定义时不带 tag（`@khorsheed/dsh-room/tool` 的契约——归因属于挂载方），本包在注册前为每个定义打上 `Symbol.for('dsh.tool.origin')` 键的 `{ channel: 'plugin', owner: '@khorsheed/dsh-room-tool' }`；tag 只留在宿主侧，从不上模型线路。
 
 **工具语义。** `room_invite` 与 `room_message` 会 PROMOTE：在普通会话里调用就把会话升级为房间，而不是拒绝；`room_task` 在执行期把关——不在房间里时返回可读错误文本而不抛错，模型看得见拒绝并能自我纠正。校验失败（成员名、任务 id）的回复自带当前名册或打开任务列表，重试不必先补一次读取。外部 harness 经家族认证桥复用同一套 `room_read` / `room_invite` / `room_message` / `room_plan` 词汇（core 的成员桥能力）。
 
-**导出。** 包导出插件本体（`apply`、空的 `inject`、cordis 诊断名 `room-tool`），无 Remote、无客户端 bundle；`./locale/*.json` 提供插件清单里的短名标题与描述（「房间工具」/「按会话授予房间成员、任务和消息工具。」）。
+**导出。** 包导出插件本体（`apply`、`inject = ['room']`、cordis 诊断名 `room-tool`），无 Remote、无客户端 bundle；`./locale/*.json` 提供插件清单里的短名标题与描述（「房间工具」/「按会话授予房间成员、任务和消息工具。」）。
 
 </details>
 
