@@ -171,6 +171,26 @@ export interface PreflightComposition {
   rows: Map<string, { id?: unknown; config?: Record<string, unknown> }>
   /** The profile directory (the include root's anchor). */
   profileDir: string
+  /**
+   * The launcher-owned profileContext service value (0.1.6+ lines), built
+   * field-for-field as runProfile builds it. Undefined on the heal-based
+   * lines, whose launcher provides no such service. The boot prepare must
+   * provide it before the tree mounts: the 0.1.7 settings service injects
+   * profileContext, so without it every settings-dependent apply never runs.
+   */
+  profileContext?: Record<string, unknown>
+  /**
+   * The PluginPackages mount config the boot prepare must apply, mirroring
+   * the launcher: `{ generation }` on the 0.1.6 line, `{ resolution }` on the
+   * 0.1.7 line. Undefined on the heal-based lines (rc, 0.1.2), where the heal
+   * materializes real fallback links and native Node resolution carries the
+   * tree — the launcher mounts no PluginPackages there either. Without this
+   * mount the in-memory resolution is computed and discarded, so on a tarball
+   * profile (whose own node_modules holds no `@deepseek-ai/*` entries) every
+   * entry import fails natively while the real boot of the same profile is
+   * clean.
+   */
+  pluginPackagesConfig?: Record<string, unknown>
 }
 
 /**
@@ -216,8 +236,9 @@ export async function composePreflightPatches(
   const loadOverlayPatches = appBoot.loadOverlayPatches as (bin: string, file: string) => unknown[]
   const loadProfile = appBoot.loadProfile as (bin: string, name: string, anchor: string, home: string, opts: { userLayer?: boolean }) => {
     dir: string
+    patchPath: string
     patches: unknown[]
-    layers: Array<{ patches: unknown[] }>
+    layers: Array<{ packageName: string; patches: unknown[] }>
   }
   const resolveDshHome = homePaths.resolveDshHome as (configured?: string) => string
   // The heal/load anchor mirrors the real launcher's INSTALL_ANCHOR (the dsh
@@ -255,6 +276,7 @@ export async function composePreflightPatches(
   // the dry-run would otherwise fail on exactly the tree a first boot
   // composes fine.
   writeFileSync(join(composed.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
+  let pluginPackagesConfig: Record<string, unknown> | undefined
   if (hostLine === '0.1.2') {
     await healProfilesModuleFallback({ installAnchor: anchor, profile: composed, home: resolvedHome })
   } else if (hostLine === '0.1.6') {
@@ -262,18 +284,47 @@ export async function composePreflightPatches(
     // compute the generation AFTER the profile load and root-config rewrite,
     // materializing nothing. Awaited, so a resolution-graph failure rejects
     // the compose instead of escaping as an unhandled rejection. The explicit
-    // home keeps the recorded profilesDir on the deployment under check.
-    await createProfileResolutionGeneration({ installAnchor: anchor, profile: composed, home: resolvedHome })
+    // home keeps the recorded profilesDir on the deployment under check. The
+    // generation is kept: the launcher hands it to the boot's PluginPackages
+    // mount (`{ generation }`), and so must the dry-run — computing it and
+    // dropping it leaves profile-tree imports to native Node resolution,
+    // which finds nothing in a tarball profile's node_modules.
+    const generation = await createProfileResolutionGeneration({ installAnchor: anchor, profile: composed, home: resolvedHome })
+    pluginPackagesConfig = { generation }
   } else if (hostLine === '0.1.7') {
     // The 0.1.7 launcher compose (apps/cli composeProfile): the resolution is
     // computed in memory right after the profile load and root-config rewrite
-    // — the older lines' fallback projections are gone for good. Awaited, so
+    // — the older lines' fallback projections are gone for good, so this
+    // interception is the ONLY way profile-tree imports resolve. Awaited, so
     // a resolution-graph failure rejects the compose instead of escaping as
-    // an unhandled rejection.
-    await createRuntimeResolution!({ installAnchor: anchor, profile: composed })
+    // an unhandled rejection. The resolution is kept for the boot's
+    // PluginPackages mount (`{ resolution }`), exactly as the launcher's
+    // runProfile hands it over; discarding it is the tarball-profile false
+    // FAIL (every official entry reports "failed to import" on a profile
+    // whose real boot is clean).
+    const resolution = await createRuntimeResolution!({ installAnchor: anchor, profile: composed })
+    pluginPackagesConfig = { resolution }
   }
   const homePatches = loadOptionalPatches(NAME, join(resolvedHome, HOME_PATCH_FILENAME)) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
+  // The launcher provides a data-only profileContext service before the tree
+  // mounts (since 0.1.6-alpha.2; the heal-based lines had no such service).
+  // The 0.1.7 settings service injects it, so a dry-run without it leaves
+  // `settings` — and everything injecting it — pending: applies the contract
+  // promises to exercise never run, on a profile the real boot runs clean.
+  const profileContext = hostLine === '0.1.6' || hostLine === '0.1.7'
+    ? {
+      name: profile,
+      dir: composed.dir,
+      patchPath: composed.patchPath,
+      installAnchor: anchor,
+      startedBundles: composed.layers.map(layer => layer.packageName),
+      cwd: process.cwd(),
+      home: resolvedHome,
+      overlays,
+      telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
+    }
+    : undefined
   const bundlePatches = composed.layers.flatMap(layer => layer.patches)
   const patches = [...bundlePatches, ...composed.patches, ...homePatches, ...overlays]
   const rows = new Map<string, { id?: unknown; config?: Record<string, unknown> }>()
@@ -310,6 +361,15 @@ export async function composePreflightPatches(
       },
     })
   }
+  if (profileContext !== undefined && rows.has('hmr')) {
+    // Providing profileContext satisfies the hmr row's disable expression
+    // (`!ctx.get('profileContext')`) on the runtime-resolution lines. A
+    // dry-run is one-shot — no HMR, no user-patch watchers: the boot's own
+    // tree write-back would queue a config refresh on hmr's operations queue,
+    // and dispose then awaits a queue that never drains (observed: preflight
+    // hung past boot and the process exited 13 on an unsettled await).
+    composedOverlays.push({ id: 'hmr', disabled: true })
+  }
   if (rows.has('ankh-guard')) {
     // The guard plugin writes state at apply (the instance-launch record,
     // snapshots). A dry-run is NOT the real instance — isolate its state to a
@@ -330,7 +390,13 @@ export async function composePreflightPatches(
     : undefined
   if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
   patches.push(...composedOverlays)
-  return { patches, rows, profileDir: composed.dir }
+  return {
+    patches,
+    rows,
+    profileDir: composed.dir,
+    ...(profileContext === undefined ? {} : { profileContext }),
+    ...(pluginPackagesConfig === undefined ? {} : { pluginPackagesConfig }),
+  }
 }
 
 interface ClientArtifactRegistry {
@@ -424,10 +490,11 @@ export async function runPreflight(
       error instanceof Error ? error.message : String(error)}\n`)
     return 3
   }
-  const boot = appBoot.boot as (bin: string, config: string, patches?: unknown[], prepare?: (ctx: { provide?: (key: string, value: unknown) => void }) => void | Promise<void>) => Promise<{ fiber: { dispose(): Promise<unknown> } }>
+  const boot = appBoot.boot as (bin: string, config: string, patches?: unknown[], prepare?: (ctx: { provide?: (key: string, value: unknown) => void; plugin?: (service: unknown, config?: unknown) => Promise<void> }) => void | Promise<void>) => Promise<{ fiber: { dispose(): Promise<unknown> } }>
   const loadLayeredEnv = appBoot.loadLayeredEnv as (bin: string) => unknown
   const launchEnvironmentKey = launchEnvironment.DSH_LAUNCH_ENVIRONMENT_KEY as string
   const provideCmdline = cmdline.provideCmdline as (ctx: unknown, options: { args: readonly string[]; exit: () => void; ready?: AppReady }) => void
+  const PluginPackages = appBoot.PluginPackages as ((ctx: unknown, config: Record<string, unknown>) => unknown) | undefined
 
   let environment: unknown
   try {
@@ -457,8 +524,25 @@ export async function runPreflight(
     const appReady = createAppReadyStub()
     // Cloned for the same insert-aliasing reason the launcher documents: boot
     // application mutates rows by reference.
-    const ctx = await boot(NAME, rootConfig, structuredClone(patches), (hostCtx) => {
+    const ctx = await boot(NAME, rootConfig, structuredClone(patches), async (hostCtx) => {
+      // Mirror runProfile's prepare order: profileContext, launch environment,
+      // PluginPackages, cmdline — all before boot() mounts the root include.
+      if (composed.profileContext !== undefined) hostCtx.provide?.('profileContext', composed.profileContext)
       hostCtx.provide?.(launchEnvironmentKey, environment)
+      // On the runtime-resolution lines the composed resolution/generation
+      // must be mounted in-process through PluginPackages BEFORE the config
+      // tree mounts — boot() awaits prepare before the root include, so every
+      // entry import resolves through the interception. Skipping the mount is
+      // not a neutral shortcut: without it Node resolves profile-tree imports
+      // natively, a tarball profile's node_modules holds no official packages,
+      // and the dry-run reports a wall of "failed to import" on a tree the
+      // real launcher boots clean.
+      if (composed.pluginPackagesConfig !== undefined) {
+        if (PluginPackages === undefined || hostCtx.plugin === undefined) {
+          throw new Error('host line requires a PluginPackages mount but the loaded app-boot does not export PluginPackages')
+        }
+        await hostCtx.plugin(PluginPackages, composed.pluginPackagesConfig)
+      }
       provideCmdline(hostCtx, { args: [], exit: () => {}, ready: appReady.service })
     })
     // The launcher commits readiness once boot and host setup settle; a
