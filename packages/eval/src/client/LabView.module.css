@@ -2471,6 +2471,12 @@ tr:last-child > .reportTd {
   cursor: pointer;
 }
 
+.critToggle > .itemName {
+  flex: none;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
 .critText {
   min-width: 0;
   overflow: hidden;
