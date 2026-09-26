@@ -10,7 +10,7 @@ Host 0.1.7 folds the attachment button into its command menu. Mobile expected tw
 
 Recognize both verified composer structures. For the unified structure, invoke the retained host file input synchronously; its change callback still owns validation, limits and upload. Disable the attachment action when the host command button or file input is disabled or the composer is not editable, matching the live/unlocked/not-committing and non-child gates. Unknown structures retain host controls. Permission lookup also accepts the named permission slot.
 
-Opening the mobile sheet blurs the editor and focuses the launcher before showModal, so native focus restoration returns to the launcher, not the keyboard. Only an explicit Commands choice opens the owner combobox and focuses its editor. The sheet uses themed solid surfaces, larger tiles, readable headings and row separators. Touch dismissal supports its title/handle band and backdrop through native dialog.close; form scrolling and controls remain untouched.
+Opening the mobile sheet blurs the editor and focuses the launcher before showModal, so native focus restoration returns to the launcher, not the keyboard. An explicit Commands choice opens the owner combobox. The [command and header follow-up](2026-09-27-mobile-command-header-followup.md) uses the public source controller without editor focus when available; older hosts retain their button behavior. The sheet uses themed solid surfaces, larger tiles, readable headings and row separators. Touch dismissal supports its title/handle band and backdrop through native dialog.close; form scrolling and controls remain untouched.
 
 ## Alternatives considered
 

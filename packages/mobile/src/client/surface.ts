@@ -36,8 +36,10 @@ export class MobileSurface {
         this.mark(separator as HTMLElement, 'data-mobile-header-hidden')
         this.mark(count, 'data-mobile-lineage-count')
       }
-      const label = row.querySelector<HTMLElement>('[data-slot="conversation.session.header.actions"] > span[title]:has(svg mask[id^="mask0_agent_preset"])')
+      const label = row.querySelector<HTMLElement>('[data-slot="conversation.session.header.actions"] > span[title]:has(svg :is(mask[id^="mask0_agent_preset"],path[d^="M6.51867 12.3282"]))')
       if (label) { preset = label.textContent?.trim() ?? ''; this.mark(label, 'data-mobile-header-hidden') }
+      // 0.1.7 publishes an explicit target; icons may now be data/blob URLs.
+      for (const target of row.querySelectorAll<HTMLElement>('[data-slot="conversation.session.header.utilities"] [data-open-target="directory"]')) this.mark(target, 'data-mobile-header-hidden')
       for (const img of row.querySelectorAll<HTMLImageElement>('img[src^="/open-in-app/icon/"]')) {
         const split = img.closest('button')?.parentElement
         if (split && split.querySelectorAll('button').length === 2) this.mark(split, 'data-mobile-header-hidden')
@@ -45,7 +47,7 @@ export class MobileSurface {
       for (const button of row.querySelectorAll<HTMLElement>('[data-sidebar-right-expand], [data-slot="conversation.session.header.utilities"] > span > button[aria-haspopup="menu"][aria-busy]')) {
         if (button.hasAttribute('data-sidebar-right-expand') || /^(更多操作|More actions)$/i.test(button.getAttribute('aria-label') ?? '')) this.mark(button, 'data-mobile-header-hidden')
       }
-      if (this.doc.querySelector('[data-mobile-members-open], [data-mobile-tools-open]')) {
+      if (this.doc.querySelector('[data-mobile-members-open]:not([disabled])')) {
         for (const button of row.querySelectorAll<HTMLElement>('[data-slot="conversation.session.header.actions"] button')) {
           if (/^(＋|\+)?\s*(邀请 agent|Invite agent)$/i.test(button.textContent?.trim() ?? '')) this.mark(button, 'data-mobile-header-hidden')
         }

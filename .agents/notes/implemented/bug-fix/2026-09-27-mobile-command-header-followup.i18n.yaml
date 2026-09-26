@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-27-mobile-command-header-followup.md
+.agents/notes/implemented/bug-fix/2026-09-27-mobile-command-header-followup.md: 4b1befa4a18895da4fe0b5f2fc7928b263120580
+.agents/notes/implemented/bug-fix/2026-09-27-mobile-command-header-followup.zh.md: 16bb71a1278c71e01253631e7dcdf0e12929acf5

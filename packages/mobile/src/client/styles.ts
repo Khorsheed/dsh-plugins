@@ -69,6 +69,10 @@ html[data-dsh-mobile] [data-slot="conversation.input.right"] { max-width: 100%; 
 [data-mobile-dialog] button[aria-pressed="true"] { color: #4d6bfe; background: #4d6bfe12; }
 [data-mobile-dialog] [data-mobile-done] { display: block; width: 100%; margin-top: 24px; background: #4d6bfe; color: white; border-radius: 100px; }
 
+/* The host trigger menu is translucent; mobile overlays need an opaque face. */
+html[data-dsh-mobile] [data-trigger-menu] { background:var(--mobile-face,var(--dsw-alias-bg-base))!important; --dsw-specific-menu:var(--mobile-face,var(--dsw-alias-bg-base)); opacity:1; backdrop-filter:none; -webkit-backdrop-filter:none; border:1px solid var(--mobile-edge); padding:8px; border-radius:22px; box-shadow:var(--mobile-shadow); }
+html[data-dsh-mobile] [data-trigger-menu] [role=option] { min-height:48px; padding:12px; font-size:16px; line-height:1.45; }
+html[data-dsh-mobile] [data-trigger-menu] [role=listbox] { overscroll-behavior:contain; }
 /* Hide an empty ordinary breadcrumb; populated catalogs keep their Host trigger. */
 html[data-dsh-mobile]:has([data-mobile-session-title]) ${ORDINARY_TITLE} { display:none; }
 html[data-dsh-mobile] [data-mobile-lineage-count] { flex-shrink:0; white-space:nowrap; }

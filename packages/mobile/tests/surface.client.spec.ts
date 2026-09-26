@@ -111,3 +111,24 @@ it('compacts the 0.1.7 text crumb without relying on Agent Team being present', 
   expect(plain.hasAttribute('data-mobile-header-hidden')).toBe(true)
   expect(slot.querySelector('button')!.hasAttribute('data-mobile-lineage-count')).toBe(true)
 })
+it('does not hide invitation just because a tools launcher exists; requires a real member shortcut', () => {
+  const { frame, surface } = fixture()
+  const actions = document.querySelector('[data-slot="conversation.session.header.actions"]')!
+  actions.insertAdjacentHTML('beforeend', '<button aria-label="邀请 agent">＋ 邀请 agent</button>')
+  document.body.insertAdjacentHTML('beforeend', '<button data-mobile-tools-open>+</button>')
+  const invite = actions.querySelector('button')!
+  surface.sync(frame); expect(invite.hasAttribute('data-mobile-header-hidden')).toBe(false)
+  document.body.insertAdjacentHTML('beforeend', '<button data-mobile-members-open>Members</button>')
+  surface.sync(frame); expect(invite.hasAttribute('data-mobile-header-hidden')).toBe(true)
+})
+it('reads the current host preset artwork and hides directory launch controls without relying on image URLs', () => {
+  const { frame, surface } = fixture()
+  document.querySelector('[title="Preset description"]')!.innerHTML = '<svg><path d="M6.51867 12.3282C7 12 8 12 9 12"/></svg>开发模式'
+  const utilities = document.querySelector('[data-slot="conversation.session.header.utilities"]')!
+  utilities.insertAdjacentHTML('beforeend', '<div data-open-target="directory"><button aria-label="Finder"><img src="data:image/png;base64,x"></button><button aria-haspopup="menu">More ways to open</button></div><button data-unrelated>Other</button>')
+  surface.sync(frame)
+  expect(surface.getSnapshot()).toBe('开发模式')
+  expect(document.querySelector('[data-open-target="directory"]')!.hasAttribute('data-mobile-header-hidden')).toBe(true)
+  expect(document.querySelector('[data-unrelated]')!.closest('[data-mobile-header-hidden]')).toBeNull()
+  surface.dispose(); expect(document.querySelector('[data-open-target="directory"]')!.hasAttribute('data-mobile-header-hidden')).toBe(false)
+})

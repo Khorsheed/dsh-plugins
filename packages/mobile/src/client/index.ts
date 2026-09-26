@@ -12,7 +12,9 @@ import { MobileDirectory, installMobileDirectoryPicker } from './directory.ts'
 import { MobileNavigation, mainSessionId } from './navigation.ts'
 import { MobileWelcome } from './MobileSeats.tsx'
 import { MobileSubmissionFocus } from './SubmissionFocus.tsx'
-import { MobileTools } from './MobileTools.tsx'
+import { openMobileCommands } from './commands.ts'
+import type { MobileCommandService } from './commands.ts'
+import { MobileTools, type MobileToolsInjected } from './MobileTools.tsx'
 import { MobileChrome } from './MobileChrome.tsx'
 import type { MobileChromeInjected } from './MobileChrome.tsx'
 import { MobileQueue } from './MobileQueue.tsx'
@@ -111,7 +113,11 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('conversation.input.left', () => {
     let remove: (() => void) | undefined
     const sync = () => {
-      if (presentation.getSnapshot().active) remove ??= ctx.slots.register({ name: 'conversation.input.left', id: 'mobile-input-tools', order: -100, locale: NS, inject: () => ({ rooms }) }, MobileTools)
+      if (presentation.getSnapshot().active) remove ??= ctx.slots.register({ name: 'conversation.input.left', id: 'mobile-input-tools', order: -100, locale: NS, inject: (): MobileToolsInjected => ({ rooms, openCommands: (id, draft, span) => {
+        const actx = ctx.get('sessions')?.scope(id)
+        const service = ctx.get('inputTriggers' as never) as MobileCommandService | undefined
+        return actx !== undefined && typeof service?.sessionOf === 'function' && openMobileCommands(service.sessionOf(actx), draft, span)
+      } }) }, MobileTools)
       else { remove?.(); remove = undefined }
     }
     sync(); const unsubscribe = presentation.subscribe(sync)

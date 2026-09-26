@@ -45,12 +45,13 @@ export class ComposerActions {
   private target(button: HTMLButtonElement | HTMLInputElement): ActionTarget {
     return { button, label: button.textContent?.trim() || button.getAttribute('aria-label') || '', disabled: button.disabled }
   }
-  invoke(action: ComposerAction): boolean {
+  invoke(action: ComposerAction, openCommands?: () => boolean): boolean {
     this.sync()
     const target = this.snapshot[action]
     if (!target || target.disabled || !target.button.isConnected) return false
-    // The official command list is a combobox whose keyboard handling stays
-    // with Lexical. Only an explicit command-menu choice may focus the editor.
+    // Open the public source without focusing Lexical. Older hosts retain
+    // their original button behavior when the optional service is absent.
+    if (action === 'commands' && openCommands?.()) return true
     if (action === 'commands') this.seat.closest('[data-composer-card]')?.querySelector<HTMLElement>('[contenteditable="true"]')?.focus({ preventScroll: true })
     // Synchronous with the user's click, including the native file-picker gesture.
     target.button.click()

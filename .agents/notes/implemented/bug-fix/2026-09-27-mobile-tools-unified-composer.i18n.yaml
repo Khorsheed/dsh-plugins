@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-27-mobile-tools-unified-composer.md
-.agents/notes/implemented/bug-fix/2026-09-27-mobile-tools-unified-composer.md: fff05dd91467eaa04d6454b3c248b55a66f02bb5
-.agents/notes/implemented/bug-fix/2026-09-27-mobile-tools-unified-composer.zh.md: 114934aac83e6b5e35d7dbe6ae2dc8f115856018
+.agents/notes/implemented/bug-fix/2026-09-27-mobile-tools-unified-composer.md: 06885aa95062e0480976a533ced14d7b2cd683f1
+.agents/notes/implemented/bug-fix/2026-09-27-mobile-tools-unified-composer.zh.md: 889811e5d325a83ceaa068c89ace97e401880e0f
