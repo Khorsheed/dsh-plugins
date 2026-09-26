@@ -13,6 +13,9 @@
   border: 0;
   border-radius: 16px;
   background: var(--dsw-specific-menu);
+  /* rc.1's menu material is translucent (~0.5 alpha); pair it with the host's
+     backdrop blur or the page bleeds through. */
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
   pointer-events: auto;

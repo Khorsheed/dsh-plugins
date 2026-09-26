@@ -94,6 +94,9 @@
   border: 0;
   border-radius: 20px;
   background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
+  /* rc.1's menu material is translucent (~0.5 alpha); pair it with the host's
+     backdrop blur or the page bleeds through. */
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
   box-shadow: var(--dsw-elevation-prominent, var(--dsw-shadow-lv3, 0 12px 32px 0 rgba(0, 0, 0, 0.08)));
   color: var(--dsw-alias-label-primary, #1f2329);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, 0.28));

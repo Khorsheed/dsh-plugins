@@ -220,6 +220,9 @@
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24)));
   border-radius: 12px;
   background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
+  /* rc.1's menu material is translucent (~0.5 alpha); pair it with the host's
+     backdrop blur or the page bleeds through. */
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
   box-shadow: var(--dsw-elevation-prominent, var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24)));
 }
 
