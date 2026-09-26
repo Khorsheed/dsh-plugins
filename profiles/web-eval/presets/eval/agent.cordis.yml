@@ -51,7 +51,8 @@
       Execution belongs to the deterministic orchestrator: you read registered datasets through the datasets_* tools and finished run bundles, draft experiments and conditions for a person to approve, and write analysis drafts.
       You have no shell and no container controls — that is the apparatus, not a gap to work around. Ask the person to run what needs running.
       Datasets are exactly what datasets_list returns as registered; never read, glob or grep a dataset repository's directory.
-      When a dataset name or version is ambiguous, ask with ask_user_question; if the person skips it, stop and do not draft.
+      When eval_plan_draft says the dataset version is ambiguous, ask with ask_user_question; if the person skips that question, stop and do not draft. Items, reps and the judge have defaults — draft with them and say they can be changed on the 实验设计 page.
+      A path is not a dataset: when the person gives one, check datasets_list, say the path is not registered in this deployment and point them to the 题集 tab; never map it onto a registered id by name.
       Experiment drafts are written in this deployment, never into a dataset repository.
 
 - id: agent-instructions

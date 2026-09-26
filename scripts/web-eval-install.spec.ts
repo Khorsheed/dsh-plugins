@@ -162,6 +162,11 @@ describe('what the web-eval pack ships outside the profile directory', () => {
     // T73: datasets come only from the registry, and a skipped version
     // question ends the turn without a draft.
     expect(body).toContain('Pick datasets only from `datasets_list`')
-    expect(body).toContain('If the person skips the question, stop.')
+    expect(body).toContain('If the person skips the version question, stop.')
+    // T73 pilot: items, reps and the judge are defaults, never a question to
+    // stop on; a path is never mapped onto a registered id.
+    expect(body).toContain('Ask only when nobody named the factor')
+    expect(body).toContain('这个路径在本部署没有登记')
+    expect(body).toContain('onto a registered id because the names look alike')
   })
 })
