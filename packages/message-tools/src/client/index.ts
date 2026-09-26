@@ -57,8 +57,12 @@ const EMPTY_MODEL_DIRECTORY: HostObservable<ModelDirectoryState> = {
   getSnapshot: () => EMPTY_MODEL_DIRECTORY_STATE,
   subscribe: () => () => {},
 }
-const EMPTY_MODEL_DIRECTORY_STATE: ModelDirectoryState = Object.freeze({
-  current: null, routable: null, groups: [], failures: [], status: 'idle', error: null,
+// No `: ModelDirectoryState` annotation on purpose: the literal must satisfy both
+// the 0.1.7-rc.1 shape (no `pending` yet — a fresh literal would trip the excess
+// check) and rc.2's (which made `pending` required). A non-fresh binding is
+// checked structurally, so both lines accept it.
+const EMPTY_MODEL_DIRECTORY_STATE = Object.freeze({
+  current: null, routable: null, groups: [], failures: [], status: 'idle' as const, pending: null, error: null,
 })
 
 /**
