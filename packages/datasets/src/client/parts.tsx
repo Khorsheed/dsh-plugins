@@ -12,7 +12,7 @@ import type { ReactNode } from 'react'
 import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium } from './icons.tsx'
 import { exposureOfRole, type DatasetExposure, type DatasetRole, type DatasetSlot } from '../slots.ts'
 import type { DatasetsViewProps } from './contract.ts'
-import type { Phrase } from './vocab.ts'
+import { layersPhrase, type Phrase } from './vocab.ts'
 import css from './DatasetsView.module.css'
 
 /** The dictionary key of one slot word — the union keeps the copy exhaustive. */
@@ -182,5 +182,39 @@ export function Detail(props: { summary: string; children: ReactNode }) {
       <summary className={css.errorSummary}>{props.summary}</summary>
       {props.children}
     </details>
+  )
+}
+
+/**
+ * The «agent 可见» word for one set — the same on the list row and the detail
+ * header. The exact layer names ride on the title, with a sentence for any
+ * name the word table does not know (shown as written, never classified).
+ * @param props - the set's agent-readable layers and the locale seat.
+ */
+export function LayersWordView(props: { layers: readonly string[]; t: DatasetsViewProps['t']; className?: string | undefined }) {
+  const { layers, t, className } = props
+  const { phrase, unknown } = layersPhrase(layers)
+  const title = [
+    t('layers.title', { layers: layers.length === 0 ? '—' : layers.join(', ') }),
+    ...(unknown.length === 0 ? [] : [t('layers.unknownTitle', { layers: unknown.join(', ') })]),
+  ].join('\n')
+  return (
+    <span className={className} title={title}>
+      <Word phrase={phrase} t={t} />
+    </span>
+  )
+}
+
+/**
+ * The 「改」 beside a read-only «agent 可见» word: it opens the registration's
+ * edit form, the one writer of a set's layers.
+ * @param props - the set's reference (for the title), the opener and the locale seat.
+ */
+export function LayersEdit(props: { set: string; onEdit: () => void; t: DatasetsViewProps['t'] }) {
+  const { set, onEdit, t } = props
+  return (
+    <button type="button" className={css.layersEdit} title={t('layers.editTitle', { set })} onClick={onEdit}>
+      {t('layers.edit')}
+    </button>
   )
 }

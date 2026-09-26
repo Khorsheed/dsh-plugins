@@ -29,11 +29,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DatasetOverviewRow, ListItemsResult, RegisterInput, UpdateInput } from '../types.ts'
+import type { DatasetOverviewRow, ListDatasetsResult, ListItemsResult, RegisterInput, UpdateInput } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetDetail } from './DatasetDetail.tsx'
 import { classifyError, ErrorState } from './ErrorState.tsx'
-import { Chip, EmptyState, shortCommit } from './parts.tsx'
+import { Chip, EmptyState, LayersEdit, LayersWordView, shortCommit } from './parts.tsx'
 import { RegisterForm } from './RegisterForm.tsx'
 import { RegistryList } from './RegistryList.tsx'
 import { SkeletonForm } from './SkeletonForm.tsx'
@@ -88,6 +88,7 @@ export function DatasetsView(props: DatasetsViewProps) {
   const briefError = useStore(s => s.briefError)
   const runs = useStore(s => s.runs)
   const experiments = useStore(s => s.experiments)
+  const itemCounts = useStore(s => s.itemCounts)
   const validated = useStore(s => s.validated)
   const validating = useStore(s => s.validating)
   const form = useStore(s => s.form)
@@ -133,6 +134,29 @@ export function DatasetsView(props: DatasetsViewProps) {
     })
     return () => { cancelled = true }
   }, [sessionId, openRepo, refreshRev, actions, overview])
+
+  // The «题数» cells: one set-less list read per registration (the registry
+  // itself carries no counts, and the host face stays as it is). Re-read with
+  // every registry answer, so a refresh refreshes the counts too.
+  useEffect(() => {
+    if (registry === null) return
+    let cancelled = false
+    for (const row of registry) {
+      if (row.problem !== undefined || row.sets.length === 0) continue
+      const repo = row.entry.id
+      void listDatasets(sessionId, repo).then((result) => {
+        if (cancelled) return
+        if (!result.ok || result.value.kind !== 'datasets') {
+          actions.setItemCounts(repo, null)
+          return
+        }
+        const counts: Record<string, number> = {}
+        for (const dataset of (result.value as ListDatasetsResult).datasets) counts[dataset.id] = dataset.itemCount
+        actions.setItemCounts(repo, counts)
+      })
+    }
+    return () => { cancelled = true }
+  }, [sessionId, registry, actions, listDatasets])
 
   // The «用于» cells, once. A null answer means this instance carries no eval
   // plugin, and the cells never render.
@@ -290,6 +314,13 @@ export function DatasetsView(props: DatasetsViewProps) {
     ? registry?.find(row => row.entry.id === registerOpen.id)?.entry
     : undefined
 
+  // The registration's edit form: the one writer of a set's layers, opened
+  // from the registration row and from every read-only «agent 可见» word.
+  const editRegistration = (repo: string): void => {
+    actions.setNotice(null)
+    setRegisterOpen({ mode: 'edit', id: repo })
+  }
+
   const openForm = (next: Exclude<DatasetsForm, null>, repo?: string): void => {
     actions.setNotice(null)
     if (repo !== undefined) setFormRepo(repo)
@@ -308,13 +339,16 @@ export function DatasetsView(props: DatasetsViewProps) {
           {page === 'detail' && openRow !== undefined && openSet !== undefined
             ? (
               <>
-                <span className={css.bindingRepo} title={openRow.entry.commonDir}>
-                  {openRow.latest === undefined
-                    ? openSet.ref
-                    : `${openSet.ref} · ${openRow.entry.trackedRef}@${shortCommit(openRow.latest.commit)}`}
-                </span>
-                <span className={css.bindingScope}>
-                  {t('registry.rowLayers', { layers: openSet.layers.join(', ') })}
+                <span className={css.bindingTitle}>
+                  <span className={css.bindingRepo} title={openRow.entry.commonDir}>
+                    {openRow.latest === undefined
+                      ? openSet.ref
+                      : `${openSet.ref} · ${openRow.entry.trackedRef}@${shortCommit(openRow.latest.commit)}`}
+                  </span>
+                  <span className={css.bindingScope}>
+                    {t('registry.colVisible')} · <LayersWordView layers={openSet.layers} t={t} />
+                    <LayersEdit set={openSet.ref} onEdit={() => { editRegistration(openRow.entry.id) }} t={t} />
+                  </span>
                 </span>
               </>
             )
@@ -459,12 +493,10 @@ export function DatasetsView(props: DatasetsViewProps) {
             <RegistryList
               rows={registry}
               experiments={experiments}
+              itemCounts={itemCounts}
               onOpen={(repo, dataset) => { actions.openDataset({ repo, dataset }) }}
               onNewDataset={(repo) => { openForm('newDataset', repo) }}
-              onEdit={(repo) => {
-                actions.setNotice(null)
-                setRegisterOpen({ mode: 'edit', id: repo })
-              }}
+              onEdit={editRegistration}
               onRemove={removeRegistration}
               t={t}
             />

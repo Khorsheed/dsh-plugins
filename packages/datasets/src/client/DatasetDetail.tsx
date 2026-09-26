@@ -2,8 +2,10 @@
  * The 题集 tab's detail page (ui-spec §四): 题集 › 题目. A file tree on the
  * left where every file carries its slot and who sees it, a slot filter over
  * it, and a right pane that answers the two questions an author actually has
- * about one item — «选手将看到» (the anti-leak self-check) and «可判性» (can
- * this be scored at all) — plus its «作答记录» and the selected file's preview.
+ * about one item in two boxes side by side (T80b) — «选手将看到» (the
+ * anti-leak self-check) and «只有判官和探针看得到» (the rest, closed by
+ * «可判性»: can this be scored at all) — plus its «作答记录» and the selected
+ * file's preview. A narrow view (< 700px) stacks the pane under the tree.
  *
  * The tree's rows are files, not layers. Layers group files by AUTHORING
  * convention; the reader is checking visibility, and the marker on every leaf
@@ -205,7 +207,7 @@ function PlayerView(props: { brief: ItemBrief; t: DatasetsViewProps['t'] }) {
   const { brief, t } = props
   const { files, totalBytes } = brief.player
   return (
-    <section className={css.panel}>
+    <section className={css.box}>
       <div className={css.panelTitle}>
         <span>{t('detail.player')}</span>
         <span className={css.panelCount}>
@@ -230,17 +232,64 @@ function PlayerView(props: { brief: ItemBrief; t: DatasetsViewProps['t'] }) {
   )
 }
 
-/** «可判性»: the rubric's shape, the probes, the stage schemas — one line each. */
-function Judgeability(props: { brief: ItemBrief; t: DatasetsViewProps['t'] }) {
-  const { brief, t } = props
+/** One file only the judge side reads: its layer-relative path, and whether it is dataset-level. */
+interface JudgeOnlyFile {
+  layer: string
+  path: string
+  shared: boolean
+}
+
+/**
+ * The files of one item (and the dataset-level layers) that sit in a layer
+ * that is NOT model-facing — the complement of «选手将看到», read off the
+ * same layer declaration the tree's markers use.
+ */
+function judgeOnlyFiles(
+  item: ItemRecord | undefined,
+  sharedLayers: Record<string, readonly string[]>,
+  sensitiveLayers: ReadonlySet<string>,
+): JudgeOnlyFile[] {
+  const files: JudgeOnlyFile[] = []
+  for (const [layer, paths] of Object.entries(item?.layers ?? {})) {
+    if (sensitiveLayers.has(layer)) for (const path of paths) files.push({ layer, path, shared: false })
+  }
+  for (const [layer, paths] of Object.entries(sharedLayers)) {
+    if (sensitiveLayers.has(layer)) for (const path of paths) files.push({ layer, path, shared: true })
+  }
+  return files
+}
+
+/**
+ * «只有判官和探针看得到»: the item's judge-only files, then «可判性» — the
+ * rubric's shape, the probes, the stage schemas — in one line under them.
+ */
+function JudgeOnlyView(props: { brief: ItemBrief; files: readonly JudgeOnlyFile[]; t: DatasetsViewProps['t'] }) {
+  const { brief, files, t } = props
   const { leaves, kinds, probes, sharedProbes, stageSchemas, notes } = brief.judgeability
   const kindText = Object.entries(kinds)
     .map(([kind, count]) => t('detail.judgeKind', { kind, count }))
     .join(' · ')
   return (
-    <section className={css.panel}>
-      <div className={css.panelTitle}>{t('detail.judge')}</div>
+    <section className={css.box}>
+      <div className={css.panelTitle}>
+        <span>{t('detail.judgeOnly')}</span>
+        <span className={css.panelCount}>{t('tree.fileCount', { count: files.length })}</span>
+      </div>
+      <div className={css.panelHint}>{t('detail.judgeOnlyHint')}</div>
+      {files.length === 0
+        ? <div className={css.panelHint}>{t('detail.judgeOnlyEmpty')}</div>
+        : (
+          <ul className={css.panelList}>
+            {files.map(file => (
+              <li key={`${file.shared ? 'shared' : 'item'}/${file.layer}/${file.path}`} className={css.panelRow}>
+                <span className={css.panelPath}>{`${file.layer}/${file.path}`}</span>
+                {file.shared && <span className={css.panelTag}>{t('detail.playerShared')}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
       <div className={css.panelLine}>
+        <span className={css.panelTag}>{t('detail.judge')}</span>
         {t('detail.judgeRubric', { leaves })}
         {kindText !== '' && ` （${kindText}）`}
         {' · '}
@@ -449,10 +498,16 @@ export function DatasetDetail(props: DatasetDetailProps) {
             <ErrorState what={t('detail.briefError')} message={briefError} compact t={t} />
           )}
           {openItem !== null && brief !== undefined && (
-            <>
+            // The two sides of the anti-leak check, side by side (T80b, v5's
+            // «选手将看到 / 只有判官和探针看得到»); a narrow pane stacks them.
+            <div className={css.compare}>
               <PlayerView brief={brief} t={t} />
-              <Judgeability brief={brief} t={t} />
-            </>
+              <JudgeOnlyView
+                brief={brief}
+                files={judgeOnlyFiles(openItemRecord, sharedLayers, sensitiveLayers)}
+                t={t}
+              />
+            </div>
           )}
           {/* The answer record only exists where an eval plugin does: a null
               answer means no orchestrator is installed, so the area is absent

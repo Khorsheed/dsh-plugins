@@ -93,3 +93,47 @@ export function bucketPhrase(bucket: string): Phrase {
   const known = BUCKET_KEYS[bucket]
   return known === undefined ? { key: 'bucket.other', params: { token: bucket } } : { key: known }
 }
+
+/**
+ * What a layer name says about the answer, for the layer names this protocol
+ * ships (the harness-comparison descriptor's three): `visible` is the task
+ * face, `verify` and `grading` carry what the answer is judged against.
+ * A registration may name any layer; a name outside this table is NOT
+ * classified here — the page shows it as written instead of guessing.
+ */
+const LAYER_CARRIES_ANSWER: Readonly<Record<string, boolean>> = {
+  visible: false,
+  verify: true,
+  grading: true,
+}
+
+/** The «agent 可见» word for one set, and the names the table did not know. */
+export interface LayersWord {
+  phrase: Phrase
+  /** Layer names outside the word table, in registration order (hover explains them). */
+  unknown: readonly string[]
+}
+
+/**
+ * The human word for the layers an agent may read (T80b).
+ *
+ * 「只看题面」 when every layer is known and none carries the answer;
+ * 「含答案」 as soon as one known layer does — true whatever else is in the
+ * list, so unknown names ride after it rather than hiding it. With no known
+ * answer layer and an unknown one present, the answer is undecidable here and
+ * the raw names are the word.
+ * @param layers - the set's agent-readable layers (`RegisteredSet.layers`).
+ * @returns the phrase, plus the unknown names for the hover sentence.
+ */
+export function layersPhrase(layers: readonly string[]): LayersWord {
+  if (layers.length === 0) return { phrase: { key: 'layers.none' }, unknown: [] }
+  const unknown = layers.filter(layer => LAYER_CARRIES_ANSWER[layer] === undefined)
+  const answers = layers.some(layer => LAYER_CARRIES_ANSWER[layer] === true)
+  if (answers) {
+    return unknown.length === 0
+      ? { phrase: { key: 'layers.withAnswers' }, unknown }
+      : { phrase: { key: 'layers.withAnswersPlus', params: { layers: unknown.join(', ') } }, unknown }
+  }
+  if (unknown.length === 0) return { phrase: { key: 'layers.faceOnly' }, unknown }
+  return { phrase: { key: 'layers.raw', params: { layers: layers.join(', ') } }, unknown }
+}
