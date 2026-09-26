@@ -1,5 +1,12 @@
 # 变更记录
 
+## 0.3.2（2026-09-27）
+
+适配宿主 0.1.7-rc.2 线：verifiedHost 前移至 0.1.7-rc.2（3080 生产实证线随宿主基线切到 rc.2）；rc.1→rc.2 对本包无破坏性变更（逐类清点见 [Agent Note](../../.agents/notes/implemented/architecture/2026-09-27-host-017-rc2-breaking-changes.md)），全量构建+测试双绿。
+
+- **修复 tarball profile 上 preflight 误报 FAIL**：runner 把 compose 算出的 runtime resolution（0.1.7 的 `resolution` / 0.1.6 的 `generation`）算完即丢，boot prepare 从不挂载——tarball profile 的 node_modules 没有任何 `@deepseek-ai/*` 条目，原生解析全灭（实测 177 个条目 failed to import，真实启动完全干净）。现在 composePreflightPatches 保留并按两线键名返回 pluginPackagesConfig，prepare 按 runProfile 顺序挂载（profileContext → 启动环境 → PluginPackages → provideCmdline）；提供 profileContext 的线追加 dry-run 覆写 `{ id: 'hmr', disabled: true }` 守住 no-HMR 契约。判定契约（0/1/3）与诊断强度不变
+- **skill 防踩坑**：`dsh-self-restart-guard` 的取证步骤写明「证据命令作用域到改动所在仓库」——凭证绑定 harness 检出的 git HEAD；家族外改动（tarball 进 profile 的插件）由部署驱动器（`pnpm deploy:3080`）在自己的绿色门禁里记录。对 harness 全量套件手跑 `record --run` 会先清空既有有效凭证再撞上本机无关红（~11 分钟、561 个与本改动无关的失败），跑完门禁零证据
+
 ## 0.3.1（2026-09-26）
 
 适配宿主 rc.1 线并实证 0.1.5/0.1.7 双线可用（0.1.5-rc.1 全量 boot 实证，2026-09-25；0.1.7-rc.1 为 3080 生产验证线）。

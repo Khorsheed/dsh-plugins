@@ -1,5 +1,10 @@
 # 变更记录
 
+## 0.3.2（2026-09-27）
+
+- **胶囊只列模型知道的后台作业，前台 bash 记录不再闪烁或漏显**：宿主 tool-bash 把每次调用（含前台）都注册成 job、settle 即移除，JobSpec/JobView 又没有前后台标记——前台 bash 的胶囊随命令结束一起闪没，在 job controller 100ms 合并窗口内完成的命令一帧都没显示过。新增 announced-jobs 折叠：从一页会话历史折出 background/promote ack 的 id 集合（后台 ack 只在配对调用带 `run_in_background: true` 时计入，防命令输出冒充；promote ack 无配对也计入，假阳性只多显示一行），只有被判为前台且无宣告的 bash 行被隐藏；缺 window 一律 fail-open，dock 挂载先武装判定、出现未宣告 id 时重读，最多 5s 宽限
+- 随宿主 0.1.7-rc.2 基线发布波重发：全量构建+测试在 rc.2 基线通过（rc.1→rc.2 无触及本包的宿主变更）
+
 ## 0.3.1（2026-09-26）
 
 适配宿主 rc.1 线并实证 0.1.5/0.1.7 双线可用（0.1.5-rc.1 全量 boot 实证，2026-09-25）。

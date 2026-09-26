@@ -1,6 +1,12 @@
 # 变更记录
 
-## Unreleased
+## 0.2.1（2026-09-27）
+
+适配宿主 0.1.7-rc.2 线（verifiedHost 前移至 0.1.7-rc.2；rc.1→rc.2 无触及本包的宿主变更，全量构建+测试双绿）。无功能变更。伴生工具行 `@khorsheed/dsh-worktrees-tool` 0.1.1 修复 rc.1 挂载顺序下工具行静默惰死（核心服务改声明式 inject，见其 CHANGELOG）。
+
+## 0.2.0（2026-09-26）
+
+首个公开发布。
 
 - 详情面板标题行新增「重新加载」手势（共享内容面板的 `onReload`）：重读当前文件的当前视图——diff 档重拉 `fetchFileDiff`，内容/图片档重走 read Remote；重读期间旧内容保持显示、按钮禁用并旋转图标，失败保留旧内容并报进既有 error 槽（成功臂顺带清掉旧 error，local-files `setPreview` 同惯例）；晚于选择变更到达的旧答案按详情键丢弃。提交详情页（CommitDetails）不接——文件钉死在那一提交，内容不可变
 

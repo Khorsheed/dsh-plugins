@@ -2,6 +2,13 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— 0.1.7-rc.2 发布波：33 个已发布包带 rc.2 验证标注重发（2026-09-27 版本治理）
+
+- **背景**：宿主基线 0.1.7-rc.1 → 0.1.7-rc.2（版本钉与 CI 已切，全量 build+test 双绿，3080 已跑 rc.2；rc.1→rc.2 逐类清点见 [Agent Note](.agents/notes/implemented/architecture/2026-09-27-host-017-rc2-breaking-changes.md)）。本波把 33 个已发布包带上 rc.2 验证标注发出；canvas / presets / sidechat / datasets / datasets-tool / eval / eval-tool / mission / mission-tool / lab 十包暂缓不动
+- **逐包版本**：ankh-guard 0.3.2、bundle-conversation-toolbox 0.1.1、bundle-local-agent 0.1.1、capability-catalog 0.1.96、capture 0.1.1、context-guard 0.2.3、dsh-reader 0.2.1、file-preview 0.3.2、inline-html-render 0.1.14（新改动折叠进未发版本）、local-agent 家族七包 0.1.0-rc.7（同版联动）、local-files 0.1.1、message-timeline 0.2.3、message-tools 0.3.2、mobile 0.1.1、quote 0.1.1、room 0.1.1、room-tool 0.1.1（折叠）、session-title-edit 0.2.3、taskpilot 0.3.2、typesafe 0.1.1、typesafe-tool 0.1.1（折叠）、ui-file-preview 0.3.2、ui-shortcuts 0.2.3（折叠）、whalesong 0.2.3、worktrees 0.2.1、worktrees-tool 0.1.1（折叠）、ui-content-preview 0.1.1
+- **compat 标注**：verifiedHost 已在 0.1.7-rc.1 的七包（ankh-guard、两个 bundle、capability-catalog、message-tools、room、worktrees）前移至 0.1.7-rc.2；其余包保持既有 verifiedHost（最近一次逐包宿主 API 审计所在线），README 与 `dsh.compat` 保持一致
+- **各包自有改动**：ankh-guard 的 preflight runtime-resolution 修复（tarball profile 误报 FAIL）与 skill 取证防踩坑文案；capability-catalog 默认模式 chip 去高亮；inline-html-render 的 dsh-card 内容签名臂（rc.1 CodeToolbar 吞信息串）；message-tools 适配 rc.2 的 `ModelDirectoryState.pending`；ui-shortcuts 官方 shortcuts 服务双路径（rc.2+ 只贡献 steer-send / compact）；mobile 六处修复；typesafe-tool / worktrees-tool / room-tool 核心服务改声明式 inject（修 rc.1 挂载顺序下工具行静默惰死）；全波 README 截图整理（实拍落地、无图引用删除，长久图床位收进 `profiles/web-basic/docs/screenshots/`）
+
 ## Unreleased —— 0.1.7 双线适配波 + 十个已发布包的重发预备（发布流首练）
 
 - **背景**：npm 上十包的产物是 0.1.5 前的形状，rc.1 宿主装上即挂；本波把 rc.1 适配与 0.1.5 回退兼容一次性做完并实证（0.1.5-rc.1 全量 42 包 boot 实证 2026-09-25，含 capture；0.1.7-rc.1 为 3080 生产验证线），十个已发布包 patch+1 重发：ankh-guard 0.3.1、context-guard 0.2.2、file-preview 0.3.1、ui-file-preview 0.3.1、message-timeline 0.2.2、message-tools 0.3.1、session-title-edit 0.2.2、taskpilot 0.3.1、ui-shortcuts 0.2.2、whalesong 0.2.2

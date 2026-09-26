@@ -1,5 +1,11 @@
 # 变更记录
 
+## 0.3.2（2026-09-27）
+
+适配宿主 0.1.7-rc.2 线（verifiedHost 前移至 0.1.7-rc.2）。
+
+- **适配 rc.2 的 `ModelDirectoryState.pending`**：rc.2 起模型目录自己持有在途选择，`pending: ModelSelection | null` 成为必填字段；本包从不渲染的空目录 stub 去掉 `: ModelDirectoryState` 标注、补上 `pending: null`，改按结构受检——同一份字面量在 rc.1（无此字段，新鲜字面量会撞 excess-property 检查）与 rc.2（必填）上都编译通过。双线行为不变
+
 ## 0.3.1（2026-09-26）
 
 适配宿主 rc.1 线并实证 0.1.5/0.1.7 双线可用（0.1.5-rc.1 全量 boot 实证，2026-09-25）。
