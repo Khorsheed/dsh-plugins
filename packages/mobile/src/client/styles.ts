@@ -396,6 +396,15 @@ html[data-dsh-mobile] [data-mobile-picker] { position:fixed!important; inset:aut
 html[data-dsh-mobile] [data-mobile-picker] > [role=presentation] { max-height:none; overflow:visible; }
 html[data-dsh-mobile] [data-mobile-picker] [role=menuitem] { min-height:52px; padding:12px; border-radius:14px; font-size:17px; }
 html[data-dsh-mobile] [data-mobile-picker] [role=menuitem][hidden] { display:none; }
+/* Keep the workspace list inside its flex viewport: visible overflow used to
+ * paint the last folder over the pinned add-action divider on short screens. */
+html[data-dsh-mobile] [data-mobile-picker=workspace] { overflow:hidden; }
+html[data-dsh-mobile] [data-mobile-picker=workspace] > [data-mobile-picker-chrome] { flex:none; }
+html[data-dsh-mobile] [data-mobile-picker=workspace] > [role=presentation]:nth-child(2) { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+html[data-dsh-mobile] [data-mobile-picker=workspace] > [role=presentation] > * { flex:none; }
+html[data-dsh-mobile] [data-mobile-picker=workspace] > [role=presentation]:nth-child(3):last-child { flex:none; margin-top:8px; padding-top:8px; border-top:1px solid var(--mobile-edge); }
+html[data-dsh-mobile] [data-mobile-picker=workspace] [role=menuitem] { box-sizing:border-box; min-height:52px; padding:12px; line-height:28px; }
+
 html[data-dsh-mobile] [data-mobile-picker=preset] [role=menuitem] span > span:last-child { font-size:14px; line-height:1.55; color:var(--dsw-alias-label-secondary); }
 
 html[data-mobile-gesture] [data-mobile-library-pane][hidden] { display:block; }

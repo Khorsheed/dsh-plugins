@@ -12,6 +12,8 @@ Invoke the public inputTriggers session controller with the official command sou
 
 Recognize both checked preset glyph structures and move their existing localized text to the mobile subtitle. Hide directory open-target controls using the host data attribute, retaining the older icon matcher. Hide the host invitation only when an enabled mobile member shortcut exists. Right-sidebar visibility is unchanged at the user's request.
 
+The workspace picker keeps its heading and add action outside a bounded scrolling list. Folder rows no longer overflow onto the footer divider; the add action shares their row padding and height, with eight pixels of spacing on each side of the separator.
+
 ## Alternatives considered
 
 **Clicking the host plus button** reintroduces editor focus. Rebuilding the command catalog forks host behavior; the public controller preserves it. On old hosts lacking this controller, keeping the original button is preferable to a dead command entry.
