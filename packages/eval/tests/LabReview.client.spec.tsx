@@ -472,10 +472,12 @@ describe('the plan-review page', () => {
     const h = makeHarness()
     renderView(h)
     await openPage(h, 'page.design')
-    await screen.findByRole('button', { name: 'review.sendBack' })
+    // T83 · design: 让 agent 改… sits in the stage bar, beside the primary.
+    await screen.findByRole('button', { name: 'cta.askAgent' })
+    expect(screen.queryByRole('button', { name: 'review.sendBack' })).toBeNull()
     expect(screen.getByText('status.pending-approval')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'review.sendBack' }))
+    fireEvent.click(screen.getByRole('button', { name: 'cta.askAgent' }))
 
     expect(screen.getByText('review.sentBack')).toBeTruthy()
     expect(screen.getByText('status.draft')).toBeTruthy()
@@ -525,7 +527,7 @@ describe('the readiness badge names every subject, and why each one is not ready
     expect(screen.getByText('why.homeSha · why.lock')).toBeTruthy()
   })
 
-  it('a subject the registry listing does not carry is a ROW, not a gap', async () => {
+  it('a judge the registry listing does not carry stays out of the compare table, and in the checklist', async () => {
     const h = makeHarness()
     renderView(h)
     await openPage(h, 'page.design')
@@ -537,9 +539,10 @@ describe('the readiness badge names every subject, and why each one is not ready
     // picked for a diff and cannot be provisioned — there is no declaration to
     // do either to — so it carries dashes and the one word there is about it.
     const row = screen.getAllByText('judge-a').map(node => node.closest('[data-absent]')).find(Boolean)
-    expect(row).toBeTruthy()
-    expect(row?.querySelector('button')).toBeNull()
-    expect(row?.textContent).toContain('conditions.missing')
+    // A JUDGE is not a row of the compare table (T83 · design): it is named
+    // in 怎么判, and its readiness is the checklist's line.
+    expect(row).toBeUndefined()
+    expect(screen.getAllByText('judge-a').some(node => node.closest('table') !== null)).toBe(true)
   })
 
   it('a plan whose file is gone gets the three-part seat, not its English sentence', async () => {
@@ -845,7 +848,7 @@ describe('the design page asks its question and edits its numbers in place (T74)
     const old = makeHarness()
     renderView(old)
     await openPage(old, 'page.design')
-    await screen.findByText('design.numbers')
+    await screen.findByText('design.numbers.hint')
     expect(screen.queryByText('design.question')).toBeNull()
   })
 

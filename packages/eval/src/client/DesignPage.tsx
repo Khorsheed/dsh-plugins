@@ -233,7 +233,7 @@ function ReadinessChecklist(props: {
                   {ready.map(row => (
                     <tr key={`ready:${row.id}`}>
                       <td>
-                        <span className={css.mono}>{row.id}</span>
+                        <span className={css.itemName}>{row.id}</span>
                         {row.note !== undefined && row.note !== '' && <span className={css.readinessThen}>{row.note}</span>}
                       </td>
                       <td>
@@ -374,7 +374,7 @@ function ItemsTable(props: { items: readonly string[]; expectedNs: readonly stri
         <tbody>
           {items.map(item => (
             <tr key={item}>
-              <td className={css.mono}>{item}</td>
+              <td className={css.itemName}>{item}</td>
               <td className={css.dim}>{how}</td>
             </tr>
           ))}
@@ -404,7 +404,7 @@ function HowJudged(props: {
       <dd>
         {judges.length === 0 || !on('llm-draft')
           ? <span className={css.dim}>{t('overview.judgeNone')}</span>
-          : <><span className={css.mono}>{judges.join(', ')}</span>{samples === null ? '' : ` · ${t('overview.judgeSamples', { samples })}`}</>}
+          : <><span>{judges.join(', ')}</span>{samples === null ? '' : ` · ${t('overview.judgeSamples', { samples })}`}</>}
       </dd>
       {expectedNs !== null && <>
         <dt>{t('design.how.human')}</dt>
@@ -502,13 +502,13 @@ function NumbersField(props: {
   }
 
   return (
-    <Field label={t('design.numbers')}>
+    <div className={css.numbersField}>
       <div className={css.numbersRow}>
         {inputs.map(spec => (
           <label key={spec.key} className={css.numberCell}>
             <span className={css.dim}>{t(spec.label)}</span>
             {frozen || now[spec.key] === null
-              ? <span className={css.mono}>{now[spec.key] ?? '—'}</span>
+              ? <span>{now[spec.key] ?? '—'}</span>
               : (
                 <input
                   className={css.numberInput}
@@ -540,7 +540,7 @@ function NumbersField(props: {
       {note !== null && (
         <div className={note.kind === 'failure' ? css.warning : css.dim} role="status">{note.text}</div>
       )}
-    </Field>
+    </div>
   )
 }
 
@@ -629,15 +629,6 @@ function ScaleSection(props: {
         <div className={css.bigNum}><span>{t('design.scale.tokens')}</span><b data-none="">{t('design.scale.none')}</b></div>
       </div>
       <div className={css.scaleNote}>{t('design.scale.noneNote')}</div>
-      {numbers !== null && (
-        <NumbersField
-          now={numbers}
-          frozen={frozen}
-          onSave={onSetNumbers}
-          skip={repsEditable ? REPS_ONLY : undefined}
-          t={t}
-        />
-      )}
     </Block>
   )
 }
@@ -649,9 +640,15 @@ function AdvancedSection(props: {
   row: EvalExperimentRow
   review: EvalPlanReview | null
   detail: EvalExperimentDetail | null
+  /** The plan's editable numbers (T74), or null when the plan has none to edit. */
+  numbers: PlanNumbersNow | null
+  frozen: boolean
+  onSetNumbers: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
+  /** The 保留单元 debugging switch; null once a run started (nothing left to keep). */
+  keepUnits: { on: boolean; set: (keep: boolean) => void } | null
   t: LabViewProps['t']
 }) {
-  const { row, review, detail, t } = props
+  const { row, review, detail, numbers, frozen, onSetNumbers, keepUnits, t } = props
   const digest = review?.digest ?? null
   const meta = detail?.meta ?? null
   return (
@@ -659,6 +656,30 @@ function AdvancedSection(props: {
       <summary className={css.arrangeSummary}>{t('design.advanced')}</summary>
       <div className={css.arrangeBody}>
         <div className={css.dim}>{t('design.advancedHint')}</div>
+        {/* 每格预算 and 判官采样 (T83 · design): numbers a reviewer rarely
+            touches, so they sit here; 每组次数 stays the 1 / 3 / 5 seg above
+            while it can change. */}
+        {numbers !== null && (
+          <NumbersField
+            now={numbers}
+            frozen={frozen}
+            onSave={onSetNumbers}
+            skip={!frozen && numbers.reps !== null ? REPS_ONLY : undefined}
+            t={t}
+          />
+        )}
+        {/* The debugging switch, and it is OFF unless someone ticks it. Left
+            on by default it would be T33b's shape again: every cell's
+            container survives the run. The hint under it says what it costs. */}
+        {keepUnits !== null && (
+          <>
+            <label className={css.guardedItem}>
+              <input type="checkbox" checked={keepUnits.on} onChange={(e) => { keepUnits.set(e.target.checked) }} />
+              <span>{t('review.keepUnits')}</span>
+            </label>
+            {keepUnits.on && <div className={css.notice}>{t('review.keepUnitsHint')}</div>}
+          </>
+        )}
         {digest !== null && (
           <>
             <Field label={t('review.order')}>
@@ -675,7 +696,7 @@ function AdvancedSection(props: {
             <Field label={t('review.retry')}>
               {digest.retryInfrastructure === null ? t('review.retryDefault') : String(digest.retryInfrastructure)}
             </Field>
-            <Field label={t('review.items')}><span className={css.mono}>{listOrDash(digest.items)}</span></Field>
+            <Field label={t('review.items')}>{listOrDash(digest.items)}</Field>
             <Field label={t('review.exports')}>
               <span className={css.mono}>{digest.exports ?? t('review.exportsDefault')}</span>
             </Field>
@@ -728,7 +749,7 @@ function AdvancedSection(props: {
         )}
         {detail?.job != null && (
           <Field label={t('overview.job')}>
-            <span className={css.mono}>{detail.job.jobId}</span>
+            <span>{detail.job.jobId}</span>
             <span className={css.dim}> · {detail.job.status}</span>
             {detail.job.detail !== null && (
               <Detail summary={t('error.details')}>
@@ -782,7 +803,6 @@ export function DesignPage(props: {
   /** The 保留单元 debugging switch, kept with the rest of the advanced settings. */
   keepUnits: boolean
   onKeepUnits: (keep: boolean) => void
-  onSendBack: () => void
   onRecheck: () => void
   onPick: (id: string) => void
   onProvision: (row: EvalConditionRow) => void
@@ -799,10 +819,21 @@ export function DesignPage(props: {
     row, detail, review, reviewLoading, reviewError,
     conditions, conditionsLoading, conditionsError, conditionBusy, provision, conditionAction, endpointEditing,
     pair, diff, diffError, sentBack, started, output, outputError, refusal, approveError,
-    keepUnits, onKeepUnits, onSendBack, onRecheck, onPick, onProvision, onEditEndpoint, onSetEndpoint,
+    keepUnits, onKeepUnits, onRecheck, onPick, onProvision, onEditEndpoint, onSetEndpoint,
     onAddGroup, onSetNumbers, onFix, t,
   } = props
   const digest = review?.digest ?? null
+  const numbers: PlanNumbersNow | null = digest === null || row.planPath === null || row.experimentId === null
+    ? null
+    : {
+      reps: digest.reps,
+      activeMinutes: digest.budget?.activeMinutes ?? null,
+      turns: digest.budget?.turns ?? null,
+      judgeSamples: digest.judge.samples,
+    }
+  // The plan a run was started from IS that run's record: past the start, the
+  // numbers are text and the reason is said beside them.
+  const frozen = row.runId !== null || started !== null
   // The grid's columns are the PLAYERS; the table and the badge also carry the
   // judges, because a judge that cannot run stops the experiment just as a
   // player does and it is declared the same way.
@@ -920,22 +951,7 @@ export function DesignPage(props: {
         />
       </Block>
 
-      <ScaleSection
-        row={row}
-        numbers={digest === null || row.planPath === null || row.experimentId === null
-          ? null
-          : {
-            reps: digest.reps,
-            activeMinutes: digest.budget?.activeMinutes ?? null,
-            turns: digest.budget?.turns ?? null,
-            judgeSamples: digest.judge.samples,
-          }}
-        // The plan a run was started from IS that run's record: past the
-        // start, the numbers are text and the reason is said beside them.
-        frozen={row.runId !== null || started !== null}
-        onSetNumbers={onSetNumbers}
-        t={t}
-      />
+      <ScaleSection row={row} numbers={numbers} frozen={frozen} onSetNumbers={onSetNumbers} t={t} />
 
       <ReadinessChecklist
         blockers={blockers}
@@ -980,25 +996,18 @@ export function DesignPage(props: {
           ))}
         </Fold>
       )}
-      <AdvancedSection row={row} review={review} detail={detail} t={t} />
-
-      {/* The reviewer's second gesture. The first — 批准并启动 — is the stage
-          bar's one primary action, where ui-spec §五 v2 puts it. */}
-      {row.runId === null && started === null && (
-        <div className={css.actions}>
-          <Button variant="outline" size="sm" onClick={onSendBack}>{t('review.sendBack')}</Button>
-          {/* The debugging switch, and it is OFF unless someone ticks it. Left
-              on by default it would be T33b's shape again: every cell's
-              container survives the run. The hint under it says what it costs. */}
-          <label className={css.guardedItem}>
-            <input type="checkbox" checked={keepUnits} onChange={(e) => { onKeepUnits(e.target.checked) }} />
-            <span>{t('review.keepUnits')}</span>
-          </label>
-        </div>
-      )}
-      {row.runId === null && started === null && keepUnits && (
-        <div className={css.notice}>{t('review.keepUnitsHint')}</div>
-      )}
+      {/* 让 agent 改… and 批准并启动 are the stage bar's (v5 · next); the
+          keep-containers switch is an advanced setting. */}
+      <AdvancedSection
+        row={row}
+        review={review}
+        detail={detail}
+        numbers={numbers}
+        frozen={frozen}
+        onSetNumbers={onSetNumbers}
+        keepUnits={frozen ? null : { on: keepUnits, set: onKeepUnits }}
+        t={t}
+      />
 
       {approveError !== null && (
         <ErrorState what={t('review.approveError')} message={approveError} compact t={t} />

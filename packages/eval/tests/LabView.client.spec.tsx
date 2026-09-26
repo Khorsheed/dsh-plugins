@@ -311,7 +311,10 @@ describe('LabView detail', () => {
     // reader stands rather than hunted for on a sub-page.
     fireEvent.click(screen.getByRole('button', { name: 'detail.back' }))
     fireEvent.click(await screen.findByText('effort-sweep'))
-    expect(await screen.findByText('cta.pendingHint')).toBeTruthy()
+    // v5 · next: the state and its next step, then the one line of why — for
+    // a plan nothing has started, that it can still change (T83 · design).
+    expect(await screen.findByText('cta.title {"status":"status.pending-approval","next":"cta.pending"}')).toBeTruthy()
+    expect(screen.getByText('cta.editableHint')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'cta.pending' }))
     await waitFor(() => {
       expect(h.approvePlan).toHaveBeenCalledWith('s1', { experimentId: 'effort-sweep-20260912-0c0d' })
@@ -358,7 +361,7 @@ describe('LabView detail', () => {
 
     // The stage bar's sentence IS the «this is a draft» notice v1 printed into
     // the page body, and it comes with the action that changes it.
-    expect(await screen.findByText('cta.pendingHint')).toBeTruthy()
+    expect(await screen.findByText('cta.editableHint')).toBeTruthy()
     expect(screen.getByText('overview.shapeValue {"items":4,"conditions":2,"reps":1,"cells":8}')).toBeTruthy()
     expect(screen.getByText('overview.environmentHost')).toBeTruthy()
     // validate's verdict off the LIST row, before the review walk lands.
@@ -423,7 +426,7 @@ describe('the grouped list (T72 §1)', () => {
   }
   const groupOf = (name: string) => screen.getByText(name).closest('[data-group]')?.getAttribute('data-group')
 
-  it('marks a run no experiment claims as 旧运行（未关联实验）, and only that row (T73)', async () => {
+  it('folds a run no experiment claims into 旧运行（未关联实验）, and only that row (T73, T83)', async () => {
     const h = makeHarness({ list: { ...LIST, rows: [
       ...LIST.rows,
       row({
@@ -433,11 +436,11 @@ describe('the grouped list (T72 §1)', () => {
     ] } })
     renderView(h)
     await screen.findByText('old-plan')
-    const chips = screen.getAllByText('list.legacy')
-    expect(chips).toHaveLength(1)
-    expect(chips[0]!.closest('[data-group]')?.textContent).toContain('old-plan')
-    // The mark sits on the second line, so it never takes width from the name.
-    expect(chips[0]!.closest('[class*="questionLine"]')).not.toBeNull()
+    expect(groupOf('old-plan')).toBe('legacy')
+    // One fold title says it once; the rows carry no repeated mark.
+    expect(screen.getByText('list.group.legacyCount {"count":1}')).toBeTruthy()
+    expect(screen.queryByText('list.legacy')).toBeNull()
+    expect(screen.getByText('old-plan').closest('details')?.open).toBe(false)
     // No registration recorded: the set and the hash, and still no path.
     expect(screen.getByText('old-plan').closest('[role="button"]')?.getAttribute('title')).toBe('ds @ 0ld0001')
   })
@@ -447,8 +450,8 @@ describe('the grouped list (T72 §1)', () => {
       ...LIST.rows,
       row({ id: 'r-l1', runId: 'r-l1', name: 'old-1', status: 'judging', experimentId: null, legacy: true }),
       row({ id: 'r-l2', runId: 'r-l2', name: 'old-2', status: 'stalled', experimentId: null, legacy: true, stalledMinutes: 90 }),
-      // Finished legacy runs are not in 需要你处理, so the button leaves them.
-      row({ id: 'r-l3', runId: 'r-l3', name: 'old-3', status: 'done', experimentId: null, legacy: true }),
+      // An archived legacy run is already archived, so the button leaves it.
+      row({ id: 'r-l3', runId: 'r-l3', name: 'old-3', status: 'done', experimentId: null, legacy: true, archived: true }),
     ] } })
     renderView(h)
     await screen.findByText('old-1')

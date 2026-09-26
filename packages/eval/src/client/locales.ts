@@ -553,7 +553,6 @@ export type EvalKey =
   | 'design.questionAsked'
   | 'design.expectation'
   | 'design.answeredWhen'
-  | 'design.numbers'
   | 'design.numbers.reps'
   | 'design.numbers.activeMinutes'
   | 'design.numbers.turns'
@@ -676,6 +675,9 @@ export type EvalKey =
   | 'page.dot.active'
   | 'page.dot.todo'
   | 'cta.recheck'
+  | 'cta.title'
+  | 'cta.editableHint'
+  | 'cta.askAgent'
   | 'cta.here.runs'
   | 'cta.here.review'
   | 'cta.here.compare'
@@ -756,6 +758,7 @@ export type EvalKey =
   | 'list.group.finished'
   | 'list.group.archived'
   | 'list.group.archivedCount'
+  | 'list.group.legacyCount'
   | 'list.stalledMeta'
   | 'list.archive'
   | 'list.unarchive'
@@ -1526,7 +1529,6 @@ export const en: Record<EvalKey, string> = {
   'design.questionAsked': 'Question',
   'design.expectation': 'Expectation',
   'design.answeredWhen': 'Answered when',
-  'design.numbers': 'Numbers',
   'design.numbers.reps': 'Takes',
   'design.numbers.activeMinutes': 'Minutes per record',
   'design.numbers.turns': 'Turns per record',
@@ -1653,6 +1655,9 @@ export const en: Record<EvalKey, string> = {
   'page.dot.active': 'in progress',
   'page.dot.todo': 'not started',
   'cta.recheck': 'Validate again',
+  'cta.title': '{status} · next: {next}',
+  'cta.editableHint': 'The plan can change until it starts; starting freezes it.',
+  'cta.askAgent': 'Ask the agent to change…',
   'cta.here.runs': 'Each one shows up below as it lands.',
   'cta.here.review': 'Judge every answer, then pick how to close this evaluation at the bottom of the page.',
   'cta.here.compare': 'The comparison is below.',
@@ -1733,6 +1738,7 @@ export const en: Record<EvalKey, string> = {
   'list.group.finished': 'Finished',
   'list.group.archived': 'Archived',
   'list.group.archivedCount': 'Archived ({count})',
+  'list.group.legacyCount': 'Legacy runs (no experiment) · {count}',
   'list.stalledMeta': 'no progress for {duration}',
   'list.archive': 'Archive',
   'list.unarchive': 'Unarchive',
@@ -2493,7 +2499,6 @@ export const zh: Record<EvalKey, string> = {
   'design.questionAsked': '问题',
   'design.expectation': '预期',
   'design.answeredWhen': '怎么算回答了',
-  'design.numbers': '数字',
   'design.numbers.reps': '次数',
   'design.numbers.activeMinutes': '每格预算（分钟）',
   'design.numbers.turns': '每格预算（轮）',
@@ -2620,6 +2625,9 @@ export const zh: Record<EvalKey, string> = {
   'page.dot.active': '进行中',
   'page.dot.todo': '未开始',
   'cta.recheck': '重新校验',
+  'cta.title': '{status} · 下一步是{next}',
+  'cta.editableHint': '启动之前方案都能改；启动后冻结。',
+  'cta.askAgent': '让 agent 改…',
   'cta.here.runs': '下面逐个落地。',
   'cta.here.review': '逐份评完，再在页底选这次评估怎么结束。',
   'cta.here.compare': '对比就在下面。',
@@ -2700,6 +2708,7 @@ export const zh: Record<EvalKey, string> = {
   'list.group.finished': '已完成',
   'list.group.archived': '已归档',
   'list.group.archivedCount': '已归档（{count}）',
+  'list.group.legacyCount': '旧运行（未关联实验）· {count}',
   'list.stalledMeta': '{duration} 没有进展',
   'list.archive': '归档',
   'list.unarchive': '取消归档',

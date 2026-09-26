@@ -795,6 +795,23 @@
 }
 
 /* 归档 N 条旧运行's confirmation: the sentence, then the two buttons. */
+/* The legacy fold's own action line (T83 · list): 归档 N 条旧运行 sits at the
+   fold's top, right-aligned, so the list head carries no second entry. */
+/* The advanced fold's numbers (T83 · design): inputs, then the one-line note. */
+.numbersField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.legacyFoldHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 0 0 4px;
+}
+
 .listConfirm {
   display: flex;
   flex-basis: 100%;
@@ -1156,6 +1173,14 @@
   box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary);
 }
 
+/* A name a person reads — an item, a group (T83 · design): the body face,
+   and the item's name bold as in v5. Mono is for repo@commit, paths, JSON. */
+.itemName {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .condId {
   display: flex;
   gap: 6px;
@@ -1315,8 +1340,10 @@
 }
 
 .arrangeSummary {
+  /* T83 · design: no gap after the chevron, so the title starts where
+     .reportFoldTitle's does (its chevron is inline, 14px wide). */
   display: flex;
-  gap: 4px 12px;
+  gap: 4px 0;
   align-items: baseline;
   padding: 9px 0;
   cursor: pointer;
@@ -1346,8 +1373,8 @@
 .arrangeBody {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 0 0 12px 14px;
+  gap: 8px;
+  padding: 0 0 10px;
 }
 
 .chip {
@@ -2914,12 +2941,20 @@ tr:last-child > .reportTd {
 /* The stage bar's primary action never wraps: at 400 wide the hint gives way
    (it ellipsizes), the button does not (T80d · P2-6). */
 .stageAction {
+  display: inline-flex;
   flex: none;
+  gap: 8px;
+  align-items: center;
   white-space: nowrap;
 }
 
 .stageBar[data-tone='warn'] {
   background: var(--dsw-alias-state-warn-tertiary);
+}
+
+.stageTitle {
+  display: block;
+  font-weight: 600;
 }
 
 .stageSub {

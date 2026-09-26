@@ -54,7 +54,7 @@ import { NewExperimentDialog } from './NewExperimentDialog.tsx'
 import { ReportPage, type ReadAnalysis } from './ReportPage.tsx'
 import { preferredColumn } from './vocab.ts'
 import {
-  LIST_GROUPS, fixLabel, groupRows, legacyInAttention, readinessFix as readinessFixOf, readListScope, rowAction, scopeRows,
+  LIST_GROUPS, fixLabel, archivableLegacy, groupRows, readinessFix as readinessFixOf, readListScope, rowAction, scopeRows, splitLegacy,
   splitReadiness, stageDots, writeListScope, type ListScope, type ReadinessFix, type RowVerb,
 } from './journey.ts'
 import css from './LabView.module.css'
@@ -845,6 +845,12 @@ export function LabView(props: LabViewProps) {
     ? null
     : page === 'runs' ? 'cta.here.runs' : page === 'review' ? 'cta.here.review' : 'cta.here.compare'
   const dots = stageDots(shownStatus ?? openRow?.status ?? 'draft')
+  const stageStatus = t(statusKey(shownStatus ?? openRow?.status ?? 'draft'))
+  const stageNext = approving && action.verb === 'approve'
+    ? t('cta.waiting')
+    : firstFix !== null ? fixText(firstFix) : recheckHere ? t('cta.recheck') : t(action.cta)
+  // Before anything started the plan is still the agent's to edit.
+  const planEditable = openRow !== undefined && openRow.runId === null && started === null
 
   const runAction = (): void => {
     if (firstBlocker !== null && firstFix !== null) {
@@ -1128,13 +1134,29 @@ export function LabView(props: LabViewProps) {
                 who lands anywhere in this shell can answer «下一步做什么»
                 without reading the page. */}
             <div className={css.stageBar}>
+              {/* v5 · next: the state and its next step as the title, one
+                  line of why under it (T83 · design). */}
               <span className={css.stageHint}>
-                {firstBlocker !== null
-                  ? t('cta.pendingBlocked', { count: blockers.length })
-                  : here !== null ? t(here) : t(action.hint)}
+                <span className={css.stageTitle}>
+                  {here !== null && !recheckHere
+                    ? stageStatus
+                    : t('cta.title', { status: stageStatus, next: stageNext })}
+                </span>
+                <span className={css.stageSub}>
+                  {firstBlocker !== null
+                    ? t('cta.pendingBlocked', { count: blockers.length })
+                    : here !== null ? t(here) : planEditable ? t('cta.editableHint') : t(action.hint)}
+                </span>
                 {blockedBy !== null && <span className={css.stageSub}>{t('cta.blocked', { errors: blockedBy })}</span>}
               </span>
               <span className={css.stageAction}>
+                {/* 让 agent 改… (T83 · design): the send-back gesture, beside the
+                    primary while the plan is still the agent's to edit. */}
+                {planEditable && page === 'design' && (
+                  <Button size="sm" variant="outline" onClick={() => { actions.sendBack() }}>
+                    {t('cta.askAgent')}
+                  </Button>
+                )}
                 {/* The button follows the stage on screen (T80c P2-11): a door
                     to the page the reader is already on is no action, so there
                     it gives way to that page's own sentence — or, on 实验设计,
@@ -1146,11 +1168,7 @@ export function LabView(props: LabViewProps) {
                     disabled={approving || blockedBy !== null}
                     onClick={recheckHere ? () => { actions.refresh() } : runAction}
                   >
-                    {approving && action.verb === 'approve'
-                      ? t('cta.waiting')
-                      : firstFix !== null
-                        ? fixText(firstFix)
-                        : recheckHere ? t('cta.recheck') : t(action.cta)}
+                    {stageNext}
                   </Button>
                 )}
               </span>
@@ -1222,7 +1240,6 @@ export function LabView(props: LabViewProps) {
                     approveError={approveError}
                     keepUnits={keepUnits}
                     onKeepUnits={setKeepUnits}
-                    onSendBack={() => { actions.sendBack() }}
                     onRecheck={() => { actions.refresh() }}
                     onPick={(id: string) => { actions.pickCondition(id) }}
                     onProvision={provisionRow}
@@ -1484,9 +1501,6 @@ function ExperimentRowLine(props: {
           <span className={css.nameText} title={row.experimentId ?? row.name}>{row.name}</span>
         </span>
         <span className={css.questionLine}>
-          {/* A run no imported experiment claims (T73) is said on the second
-              line, so the mark never takes width from the name. */}
-          {row.legacy && <span className={css.nameChip}><Chip tone="neutral">{t('list.legacy')}</Chip></span>}
           <span className={css.questionText} title={row.question ?? scale}>{row.question ?? scale}</span>
         </span>
       </span>
@@ -1579,8 +1593,10 @@ function ExperimentList(props: {
   const { rows, session, scope, marked, onOpen, onAct, onArchive, onArchiveAll, t } = props
   // The scope switch and its 另有 N 个 note live in the page head (T83 · list).
   const { shown } = scopeRows(rows, session, scope)
-  const groups = groupRows(shown)
-  const legacy = legacyInAttention(shown)
+  // Runs no experiment claims (T73) sit in their own fold at the bottom
+  // (T83 · list), so the three groups hold only experiments.
+  const { linked, legacy } = splitLegacy(shown)
+  const groups = groupRows(linked)
   const line = (row: EvalExperimentRow) => (
     <ExperimentRowLine key={row.id} row={row} marked={row.id === marked} onOpen={onOpen} onAct={onAct} onArchive={onArchive} t={t} />
   )
@@ -1597,11 +1613,20 @@ function ExperimentList(props: {
                     {t(`list.group.${group}`)}
                     <span className={css.dim}> {groups[group].length}</span>
                   </span>
-                  {group === 'attention' && <ArchiveLegacy rows={legacy} onArchiveAll={onArchiveAll} t={t} />}
                 </div>
                 {groups[group].map(line)}
               </div>
             ))}
+            {legacy.length > 0 && (
+              <Fold title={t('list.group.legacyCount', { count: legacy.length })}>
+                <div className={css.listGroup} data-group="legacy">
+                  <div className={css.legacyFoldHead}>
+                    <ArchiveLegacy rows={archivableLegacy(legacy)} onArchiveAll={onArchiveAll} t={t} />
+                  </div>
+                  {legacy.map(line)}
+                </div>
+              </Fold>
+            )}
             {groups.archived.length > 0 && (
               <Fold title={t('list.group.archivedCount', { count: groups.archived.length })}>
                 <div className={css.listGroup} data-group="archived">{groups.archived.map(line)}</div>

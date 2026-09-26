@@ -590,7 +590,7 @@ export function ReadyBadge(props: {
       {failed.map(row => (
         <div key={row.id} className={css.readinessLine}>
           <Chip tone="danger">✗</Chip>
-          <span className={css.mono}>{row.id}</span>
+          <span className={css.itemName}>{row.id}</span>
           {row.note !== undefined && row.note !== '' && <span className={css.dim}>{row.note}</span>}
         </div>
       ))}

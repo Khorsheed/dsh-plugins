@@ -128,7 +128,7 @@ function EndpointCell(props: {
     <span
       role="button"
       tabIndex={0}
-      className={row.endpoint === null ? css.warning : css.mono}
+      className={row.endpoint === null ? css.warning : undefined}
       data-differs={differs ? '' : undefined}
       title={t('conditions.endpointEdit')}
       onClick={(event) => { event.stopPropagation(); onEdit() }}
@@ -186,9 +186,9 @@ function Diff(props: { diff: EvalConditionDiffView; t: LabViewProps['t'] }) {
   return (
     <Field label={t('conditions.diff')}>
       <div className={css.diffHead}>
-        <span className={css.mono}>{diff.a.id}</span>
+        <span className={css.itemName}>{diff.a.id}</span>
         <span className={css.dim}>vs</span>
-        <span className={css.mono}>{diff.b.id}</span>
+        <span className={css.itemName}>{diff.b.id}</span>
         <span className={css.dim}>
           {diff.identical
             ? t('conditions.diffIdentical', { a: diff.a.id, b: diff.b.id })
@@ -200,8 +200,8 @@ function Diff(props: { diff: EvalConditionDiffView; t: LabViewProps['t'] }) {
         <div className={css.diffTable}>
           <div className={css.diffHeadRow}>
             <span>{t('conditions.col.id')}</span>
-            <span className={css.mono}>{diff.a.id}</span>
-            <span className={css.mono}>{diff.b.id}</span>
+            <span className={css.itemName}>{diff.a.id}</span>
+            <span className={css.itemName}>{diff.b.id}</span>
           </div>
           {diff.differences.map(entry => (
             // The path is the diff's own handle on the field; §九 keeps it on
@@ -273,7 +273,7 @@ export function condIdHover(row: EvalConditionRow, t: LabViewProps['t']): string
 function compareCell(column: CompareColumn, row: EvalConditionRow, t: LabViewProps['t']) {
   const value = column.value(row)
   switch (column.key) {
-    case 'model': return <span className={css.mono}>{value ?? '—'}</span>
+    case 'model': return <span>{value ?? '—'}</span>
     case 'scope': return <span>{value ?? <span className={css.dim}>{t('conditions.scopeDefault')}</span>}</span>
     default: return <span>{value ?? '—'}</span>
   }
@@ -331,14 +331,15 @@ export function ConditionsTable(props: {
   // filtered away silently, so an experiment with two absent players showed a
   // one-row table and said nothing about the other two (I5·T67 · W12). It is
   // a row now, carrying the one fact there is about it.
-  const absent = only.filter(id => !declared.some(row => row.id === id))
-  // Only the players are compared: a judge differs from them by design.
+  // The table is the PLAYERS (T83 · design): a judge differs from them by
+  // design, is named in 怎么判, and its readiness is the checklist's line.
+  const absent = only.filter(id => !judges.includes(id) && !declared.some(row => row.id === id))
   const players = declared.filter(row => !judges.includes(row.id))
-  const columns = compareColumns(players.length > 1 ? players : declared)
+  const columns = compareColumns(players)
   // The state column is for the rows that still need something; a table of
   // ready groups has nothing to say there, and 准备环境 on a ready row was a
   // button that did nothing new (T80d · P2-6).
-  const stateShown = absent.length > 0 || declared.some(row => row.status !== 'ready')
+  const stateShown = absent.length > 0 || players.some(row => row.status !== 'ready')
   const template = `minmax(150px, 1.2fr) ${columns.map(() => 'minmax(90px, 1fr)').join(' ')}${stateShown ? ' minmax(170px, 1.4fr)' : ''}`
   const same = COMPARE_COLUMNS
     .filter(column => !columns.some(entry => entry.key === column.key))
@@ -364,10 +365,10 @@ export function ConditionsTable(props: {
     <>
       {loading && view === null && <div className={css.empty}>{t('conditions.loading')}</div>}
       {error !== null && <ErrorState what={t('conditions.error')} message={error} t={t} />}
-      {view !== null && declared.length === 0 && absent.length === 0 && (
+      {view !== null && players.length === 0 && absent.length === 0 && (
         <EmptyState title={t('conditions.empty')} hint={t('conditions.emptyHint')} />
       )}
-      {(declared.length > 0 || absent.length > 0) && (
+      {(players.length > 0 || absent.length > 0) && (
         <>
           {/* Above the table, not below it: this is the answer to a button the
               person just pressed, and a registry of a dozen conditions pushes
@@ -383,7 +384,7 @@ export function ConditionsTable(props: {
               {columns.map(column => <span key={column.key}>{t(column.label)}</span>)}
               {stateShown && <span>{t('conditions.col.ready')}</span>}
             </div>
-            {declared.map((row) => {
+            {players.map((row) => {
               const startedSha = startedShas[row.id]
               const moved = startedSha !== undefined && startedSha !== null && row.sha !== null && startedSha !== row.sha
               return (
@@ -412,10 +413,6 @@ export function ConditionsTable(props: {
                       mark on the page (T80d · ②). */}
                   <span className={css.condId} title={condIdHover(row, t)}>
                     {row.id}
-                    {/* A judge is a subject like any other — same declaration,
-                        same lock, same readiness gate — and nothing else in this
-                        table would say which one it is. */}
-                    {judges.includes(row.id) && <Chip>{t('role.judge')}</Chip>}
                     {moved && (
                       <Chip tone="warn" title={t('conditions.shaMoved', { started: startedSha.slice(0, 7), now: (row.sha ?? '').slice(0, 7) })}>
                         {t('conditions.shaMovedChip')}
@@ -428,7 +425,7 @@ export function ConditionsTable(props: {
                         <EndpointCell
                           key={column.key}
                           row={row}
-                          differs={column.differs && !judges.includes(row.id)}
+                          differs={column.differs}
                           editing={editing === row.id}
                           busy={busy === row.id}
                           onEdit={() => { onEditEndpoint(row.id) }}
@@ -438,7 +435,7 @@ export function ConditionsTable(props: {
                         />
                       )
                       : (
-                        <span key={column.key} data-differs={column.differs && !judges.includes(row.id) ? '' : undefined}>
+                        <span key={column.key} data-differs={column.differs ? '' : undefined}>
                           {compareCell(column, row, t)}
                         </span>
                       )
