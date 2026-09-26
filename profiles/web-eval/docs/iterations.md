@@ -3580,7 +3580,7 @@ main 提交号、端口、就绪秒数、第 2 / 4 步的告警摘录（打码�
 次要：file-preview、local-files、taskpilot 的 tarball 把 `dsh-client-ui-sidebar-right` 的 peer 写成 `^0.1.7-rc.1`；浏览器端 `dsh-client-store` / `dsh-client-ui-primitives` 在 0.1.5 工具链里没有（local-agent、mission、context-guard 在用）——都没走到浏览器，未判。
 影响：T79 走查、3171 重装（含 T73 试点）、T76 补拍都卡在这里；T81「0.1.5 能跑通」的前提不成立，等用户定路线。实施者起 3197 没先等协调者回复，事后补报，已释放。
 
-### T79 · 联合走查：对照交互稿 v5 的 13 个场景，产出收口补充清单（T75 / T76 合入且 T78 成立后发，2026-09-25）
+### T79 · 联合走查：对照交互稿 v5 的 13 个场景，产出收口补充清单（可发，2026-09-26：T75 / T76 已合，T81 在 0.1.5 上成立）
 
 ```text
 # 任务 T79：I5 收口联合走查（交互稿作者 + 协调者）
@@ -3589,10 +3589,10 @@ main 提交号、端口、就绪秒数、第 2 / 4 步的告警摘录（打码�
 I5 收口批的代码（T71–T76）都已写完。用户 2026-09-25 定：先由交互稿作者与协调者在真机上对照交互稿 v5 走一遍整条旅程，把所有差距与已攒的补充合成一份清单、改完一轮（T80），再重装 3171 请用户走查。用户的参照线（09-23）：不满在内容、旅程和设计感，不在外壳；按场景对照、视觉同等层次、只用宿主 tokens；依赖宿主能力的待证项走退路不算不过。
 
 ## 先读
-交互稿 proposals/prototypes/eval-journey-redesign.html（13 个场景）；提案 proposals/active/2026-09-23-eval-journey-redesign.md 的验收标准 1–7；ui-spec §五、§九；本文 §三 T72 验收段里的「T72 补充（一）」与 T76 一节末尾的「T74–T76 补充清单」；T71–T76 各自的 Agent Note。
+交互稿 proposals/prototypes/eval-journey-redesign.html（13 个场景）；提案 proposals/active/2026-09-23-eval-journey-redesign.md 的验收标准 1–7；ui-spec §五、§九；本文 §三 T72 验收段里的「T72 补充（一）」与 T76 一节末尾的「T74–T76 补充清单」（现在到 ⑩，⑦–⑩ 是 T75 / T76 补拍时发现的）；T71–T76 各自的 Agent Note；T75 / T76 补拍图（~/.dsh/scratch/t75-shots/merge/、t76-shots/merge/），已拍过的场景可直接对照、不必重拍。
 
 ## 环境
-按 T78 的装法（0.1.5-rc.1 工具链、独立 DSH_HOME、3171 账本只读副本、不配 provider、不复制凭据），装 T75 / T76 都合入之后的 main。端口先报协调者。截图放 ~/.dsh/scratch/t79-shots/，明 / 暗 / 400 三套。
+照 T76 补充（二）的装法：从本地 main（≥ 068f5211）开 detached worktree，0.1.5-rc.1 工具链，独立 DSH_HOME（realpath），不设 DSH_HARNESS，install.sh --source <worktree> --fresh；数据 rsync 3171 账本的只读副本（排除凭据与 room-coordinator-*-home），不配 provider。npm 抖动（ECONNRESET）清掉半装目录重跑即可。端口先报协调者。截图放 ~/.dsh/scratch/t79-shots/，明 / 暗 / 400 三套。
 
 ## 做法
 1. 逐场景对照：旅程地图、提问、方案 · 实验卡、实验设计 · 方案段、就绪、运行、作答、人工评估 · 盲评、结论、实验列表、题库、Agent 旅程、决策清单。每个场景记「交互稿 / 真机 / 差距 / 修法 / 归属包」。
@@ -3605,7 +3605,7 @@ I5 收口批的代码（T71–T76）都已写完。用户 2026-09-25 定：先�
 不改代码；不碰 3171 / ~/.dsh / ~/.dsh-official / 3080 / 3093；不配 provider；外壳不动。
 
 ## 交付
-一份清单 profiles/web-eval/docs/t79-closeout-walkthrough.md（场景表 + 并入的旧补充 + 分级 + 按包切的修改批次建议），附截图路径。协调者据此写 T80 文案。
+一份清单 profiles/web-eval/docs/t79-closeout-walkthrough.md（场景表 + 并入的旧补充 + 分级 + 按包切的修改批次建议），附截图路径。在 worktree 的 docs/t79-walkthrough 分支上提交，回报 commit，协调者合。协调者据此写 T80 文案。收尾：停实例、删临时 home（先 chmod -R u+w）、移除安装 worktree，题库共享检出前后一致。
 
 ## 回报
 清单路径、P0 / P1 / P2 各几条、按包的批次建议、截图路径。通用提醒照旧。
