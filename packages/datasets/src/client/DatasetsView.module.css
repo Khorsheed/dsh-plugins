@@ -47,18 +47,21 @@
   white-space: nowrap;
 }
 
-/* The detail header's title half: the set reference and the layer word, one
-   truncating line that gives way before any button does. */
+/* The detail header's title half: the set reference and the layer word. It
+   gives way before any button does — the reference truncates, and when the
+   two no longer fit on one line the layer word (with its 「改」) drops to a
+   second line whole instead of being clipped. */
 .bindingTitle {
   display: flex;
   flex: 1 1 200px;
-  align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
   min-width: 0;
-  overflow: hidden;
 }
 
 .bindingRepo {
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
@@ -67,11 +70,11 @@
 }
 
 .bindingScope {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: 4px;
   color: var(--dsw-alias-label-tertiary);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
