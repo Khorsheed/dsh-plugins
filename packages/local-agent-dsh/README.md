@@ -1,19 +1,24 @@
-# `@khorsheed/dsh-local-agent-dsh`
+# @khorsheed/dsh-local-agent-dsh
 
 [English](README.en.md) | 中文
 
-**实时输出迁移。** live 轮次统一消费增量输出。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。DSH headless 进程把原生 assistant 帧转入共用的插件瞬时通道。
+把任务委派给 dsh 自己——一个跑在隔离 home 里、可跨轮续接的无头子 dsh，与 kimi / codex / claude-code harness 平级。
 
-把任务委派给 dsh 自己——作为独立的本地 CLI 进程运行，与 kimi / codex / claude-code harness 平级。子 dsh 在自己的 scoped home 下运行，通过父级的 API key 认证，可跨轮续接；设置开关（默认关）打开后才启用委派工具。
+有些子任务值得一个完整而隔离的 dsh 实例：评测对照、独立的会话历史、自己的权限边界——同时绝不碰当前实例的状态。这个插件 spawn 一个子 dsh headless CLI：它在自己的 scoped home 下运行（profile、会话、状态全独立），用父级的 DeepSeek API key 认证，会话 id 由调用方指定、可跨轮续接。默认什么都不挂——在设置卡片上打开「DeepSeek 委派」开关后，模型才看得到 `subagent_dsh` 工具。
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-dsh-settings.png" width="640" alt="「Local Agent · dsh」设置卡片：认证状态、DeepSeek 委派开关、常驻模式与默认模型块">
 
 ## 特性
 
-- **委派给 dsh 自己**——spawn 一个子 dsh headless CLI 进程。
-- **Scoped home**——自己的 `DSH_HOME`（`$DSH_HOME/local-agent/dsh`）：profile、会话与状态绝不混入父实例。
-- **跨轮续接**——把子会话 id 传回即可续接同一个子 dsh 会话。
-- **无需单独登录**——通过父级的 `DEEPSEEK_API_KEY` 认证，无 device-code 流程。
-- **DeepSeek 开关，默认关**——在 设置 → 本地 Agent 打开开关之前，模型看不到任何委派工具。
-- **模型回读与独立工作目录**——每轮从子会话事件的 source 回读实际模型（`provider/model`），写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
+- **委派给 dsh 自己**——spawn 一个子 dsh headless CLI 进程：一次性 exec（默认），或每成员常驻一个 `--serve` 进程的长驻驱动（`live: true`，runtime 级优雅中断、事件推送镜像）。
+- **Scoped home 隔离**——子 dsh 自己的 `DSH_HOME`（`$DSH_HOME/local-agent/dsh`）：profile、会话与状态绝不混入父实例。
+- **跨轮续接**——子会话 id 由调用方指定（`session-<uuid>`，绝不从 stdout 解析），后续轮传回即经 `--resume` 续接同一个子 dsh 会话。
+- **无需单独登录**——子 dsh 通过父级的 `DEEPSEEK_API_KEY` 认证，无 device-code 流程；`/dsh status` 报告凭据是否可解析。
+- **DeepSeek 委派开关，默认关**——开关打开之前模型看不到任何委派工具，委派只走官方内置子代理；开关经 settings watcher 实时翻转，无需重载。
+- **过程实时可见**——子 dsh 的增量输出逐事件镜像进父会话的子代理面，settle 时再以文件镜像对账。
+- **模型回读与独立工作目录**——每轮从子会话事件的 source 回读实际模型（`provider/model`），并数出本轮工具调用计数，一并写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
+- **评测就绪的供给**——命名 scope、按 scope 的 preset roster、`permissions` 权限边界、容器内委派（`docker exec`），全部经幂等的子 profile provisioning 落地。
+
 ## 安装
 
 家族核心与本 bundle 必须在同一条命令里指名，然后重启 profile：
@@ -22,7 +27,7 @@
 dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-dsh
 ```
 
-无需登录步骤；`/dsh status` 报告父级的 `DEEPSEEK_API_KEY` 凭据是否可解析。
+重启后在本包的设置卡片（插件详情页；0.1.5 宿主：设置 → 插件 → 插件配置）打开「DeepSeek 委派」开关。无需登录步骤；`/dsh status` 报告父级的 `DEEPSEEK_API_KEY` 凭据是否可解析。
 
 tarball 安装（npm 上未发布的家族包）需要在 profile 的 `pnpm-workspace.yaml` 里把各家族包名 `overrides:` 钉到 `file:` tarball——tarball 内的家族边是 registry range，钉版让 headless 等成员以**传递**依赖解析（headless 自身不声明 `dsh.bundle`，即便被误装成直接依赖也不会被挂进组合，但无需如此）。
 
@@ -43,6 +48,7 @@ scoped home（`$DSH_HOME/local-agent/dsh`）被有意保留——里面存着子
 | `cliLaunch` | 父级自身启动 | dsh 启动 argv 前缀覆盖 |
 | `headlessBundleDir` | 从安装解析 | 子 profile 符号链接指向的 headless bundle 目录（scoped home 被多个文件系统解析时**必须 pin**，见下文「容器内委派」） |
 | `permissions` | 不写（跟随 dsh-base） | 子 dsh 的权限档：`read-only` / `workspace-write` / `danger-full-access`，由 provisioning 写进子 profile 的 patch 层，见下文「权限边界」 |
+| `model` | 不写（跟随宿主默认） | 每轮委派以它起子 dsh（`--model <provider/model>`），见下文「默认模型」 |
 | `live` | `false` | 长驻驱动：每成员常驻一个 `--serve` 子 dsh 进程，委派 = 向活着的 runtime 发 turn（runtime 级优雅中断、事件推送镜像）；关闭或通道不可用即回一次性 exec 路径 |
 | `liveIdleMs` | `1800000`（30 分钟） | 长驻 runtime 的空闲回收时限 |
 
@@ -68,17 +74,27 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。浏览器 P95 另在 room 协调者提案中验收。更旧宿主留在前一发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容；minHost 为 0.1.5-rc.1，更旧宿主留在前一发布线。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。浏览器 P95 另在 room 协调者提案中验收。一处设计内降级：宿主 0.1.5 退役了逐 chunk 的会话事件，token 粒度的增量不再落进子会话日志——它们改走 run-progress 通道，本轮 settle 为一条合并的 `assistant/message`（最终文本相同）；迟到的 usage 若其载体消息已镜像，则以一条 warn 丢弃（不存在 usage 回填事件）。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程；评测继续保留 exec。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 
 ## 已知限制
 
-- 无交互式或 device-code 登录流程——子 dsh 只能通过父级的 `DEEPSEEK_API_KEY` 凭据认证；`/dsh login` 报告该 harness 无登录流程。
+- **无交互式或 device-code 登录流程**——子 dsh 只能通过父级的 `DEEPSEEK_API_KEY` 凭据认证；`/dsh login` 报告该 harness 无登录流程。
+- **命名 scope 只走一次性 exec**——长驻 `serve` 进程按成员绑的是缺省 scoped home，命名 scope 的委派不走 live 驱动。
+- **宿主 0.1.5 上 token 级增量不进子会话日志**——见 Compatibility 的降级说明；最终合并文本与逐 token 镜像完全一致。
 
 ## 实现原理
 
 <details>
 <summary>内部结构（点击展开）</summary>
+
+**DeepSeek 开关。** 与其他家族 harness 不同，本包默认不挂载任何模型可见的东西。互斥开关位于 dsh harness 行的动作区内（设置卡片，namespace `local-agent-dsh`，默认 off）：OFF 时委派走官方 in-process subagent 工具；ON 时注册 `dsh` harness、`dsh-cli` 委派 provider 与家族工具 `subagent_dsh`，与官方工具并存——两种委派形态语义不同（in-process continuable vs. 独立 CLI 进程），家族工具描述让模型可以区分。开关经 settings watcher 实时翻转组合。
+
+**委派。** provider 生成一个 uuid（`session-<uuid>`），记录委派（`childSessionId → cliSessionId` 恒等映射），并 spawn `dsh --profile headless-local-agent-dsh --session-id <uuid> "<task>"`，env 为 `{ DSH_HOME: <scoped home>, DEEPSEEK_API_KEY: <resolved> }`，cwd 为父会话 cwd。headless bundle（`@khorsheed/dsh-local-agent-dsh-headless`）用该确切 id 创建会话——id 由调用方提供，绝不从 stdout 解析——运行任务、打印最终助手文本、退出 0/1。后续轮把子会话 id 作为 `resume` 传入；provider spawn `--resume <uuid>`，子 dsh 经 `agents.resume` 续接同一会话。
+
+**长驻驱动（`live: true`）。** 替代每轮 spawn：成员首轮委派拉起一个常驻 `--serve` 子 dsh 进程，之后每轮 = 经家族内部 stdio JSON-RPC wire（headless 包 `src/wire.ts`）向活着的 runtime 发 `turn/start`；会话事件以 `session/event` 通知即时推回并逐事件镜像进子会话（与文件镜像同一折叠规则，settle 时再跑一次文件镜像做对账），`cancel` 落地为 runtime 级 `turn/interrupt`（进程内 `Agent.cancel`）——进程不死、会话可续。折叠规则是逐字拷贝：调用方任务的 `user/message`、每条 `assistant/message`、工具事件对，以及子 dsh 自己的 `step/start`–`step/end` 边界对（各带自己的 (turn, step) 坐标）都过河——宿主实时会话视图只在边界上登记 step，缺了边界 assistant 消息要等整页重建才渲染；turn 边界与脚手架用户消息（agent-instructions、plugin 等来源）留在子侧，被 interrupt 的 step 以开口对（有 start 无 end）原样过河，绝不合成边界。runtime 空闲超时回收（wire `shutdown` → SIGTERM 阶梯），崩溃后下一轮自动重连并 `agents.resume` 盘上会话；spawn/握手失败标记通道不可用并永久回退 exec 路径。
+
+**认证与供给。** 无 device-code 登录：子 dsh 通过父级的 `DEEPSEEK_API_KEY` 凭据认证（`apiKeyRef` 配置）；`/dsh status` 报告凭据是否可解析，`/dsh sessions` 从 scoped-home 存储列出子 dsh 自己的会话。子 profile 位于 `profiles/headless-local-agent-dsh`：一个 manifest（只列 `@deepseek-ai/dsh-base`）、headless 包的 patch 逐字节拷贝成的 profile 自己的 patch 层、一条解析 headless bundle 的符号链接（供 loader 解析 insert 行）——其余一切从 dsh 安装锚点解析，供给零 pnpm install 成本且幂等，内容漂移时自动重写（升级与旧格式自愈）。父级复制自己的启动方式（或配置 `cliLaunch`），让子 dsh 与父级跑同一个 dsh 构建。
 
 **会话日志按代次解析，不写死文件名。** 子 dsh 的历史住在 `<作用域目录>/sessions/<项目>/<会话 id>/` 里，但**哪个文件**是宿主的代次选择：最初的一代叫 `session.jsonl`，此后每一代带一个小写 `vN`——宿主 0.1.5 写的是 `session.v3.jsonl.zstd`；两种基名都可能再带 `.zstd`（压缩是缺省）。本包按宿主自己的规则解析目录里的每个条目（`^session(\.v[1-9][0-9]*)?\.jsonl$`，去掉压缩后缀后匹配——`.v0`、前导零、大写、`session.lock` 与临时文件都不是代次），取**版本号最高**的那一份，并把选中的文件名带回读回结果（`sessionLogFile`）。
 
@@ -135,14 +151,6 @@ readSubProfilePermissions(scopedHome)   // 'danger-full-access'——生成的�
 **容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> <原 argv>`，其余（会话镜像、settle、记录）逐字节不变。`env` 必须给出容器内的 `DSH_HOME`；解析出的 API key 只以 `-e DEEPSEEK_API_KEY` 的**名字**上 argv，值留在 docker 客户端环境里，不进宿主进程表。容器轮另有两条本包独有的行为。其一，**自动补 `NODE_OPTIONS=--use-env-proxy`**（调用方在 `target.env` 里自己给了就不覆盖）：dsh 的 HTTP 客户端是 node 的 `fetch`（undici），**默认不读** `HTTP(S)_PROXY`，在只有白名单代理、没有 NAT 出网的单元里会直连 API 并当场失败，而代理连一条 `CONNECT` 都收不到；这个开关打开 undici 的 `EnvHttpProxyAgent`。四家里只有 dsh 需要它，因此由 provider 自动补上，并在 `effectiveSettings.containerNodeOptions` 里报出来让条件文件看得见。其二，**跳过宿主侧子 profile 的 provisioning**：那份 profile 的 `node_modules` 符号链接指向宿主上的 headless bundle，在单元里解析不到；而作用域目录是 bind 挂载的，写进去等于在单元真正会读的目录里放一份坏 profile。容器轮的入口与 profile 由调用方用既有旋钮点名（`cliLaunch`、`profileName`），且**单元里必须备好家族 headless bundle 及其运行期依赖闭包**——镜像自带的 in-box `headless` profile 是另一个更小的 app，不认 `--session-id`/`--resume`，不足以承载一次委派轮。实测：`eval-env:pinned` 单元里备好之后，一次「回答 2+2」settle 为 `completed`、输出 `4`，`observedModel` 从容器写进宿主作用域目录的子 dsh 会话日志里回读为 `deepseek-official/deepseek-v4-flash`。
 
 **同一 scoped home 被多个文件系统解析时（双文件系统契约）。** 当 scoped home 同时被宿主（判官委派、就绪检查）和容器单元（bind 挂载）读写——例如 T20c「一个主人，一个目录」的评测布局——子 profile 里那条 `node_modules` 符号链接的目标是一个**字符串**，由读到它的文件系统各自解释：指向宿主安装路径时链接在单元里悬空，而宿主侧就绪重探会重新 provision、把宿主专用路径再写回去（跳过容器轮自己的 provisioning 防不住这条**已存在**的链接）。契约只有一条：**把 `headlessBundleDir` pin 到一条在两个文件系统里都成立的绝对路径**——宿主侧在同名路径建一条符号链接指向宿主安装里的 bundle（Node 按 realpath 解析，其依赖闭包随之可用），镜像侧在同名路径放真安装。pin 住之后，就绪检查的重 provision 只是把同一目标重写一遍，不再产生宿主专用路径。两个被评估后否决的替代：其一，**把 bundle 拷进 scoped home**——家族代码在运行期从 `@deepseek-ai/*` 导入的是服务键与类（`credentialRef`、`TypertRemoteService`、`SessionId` 等），拷一份闭包会让这些包出现第二份实例，cordis 按实例身份做服务查找与类型判断，症状是静默的服务缺失而非报错；bundle 的 `@deepseek-ai` peer 必须从**运行该子 dsh 的同一份安装**解析，pin 在两个运行时里都保住了这一点，拷贝必然破坏。其二，**给单元加第二条 bundle 挂载**——破坏 T20c「挂载只有一条」的立场，且只有 dsh 一家需要。pin 因此是调用方的一条机器级前置条件（写进题库 env/README），本包零代码改动。
-
-**DeepSeek 开关。** 与其他家族 harness 不同，本包默认不挂载任何模型可见的东西。互斥开关位于 dsh harness 行的动作区内（设置 → 本地 Agent，namespace `local-agent-dsh`，默认 off）：OFF 时委派走官方 in-process subagent 工具；ON 时注册 `dsh` harness、`dsh-cli` 委派 provider 与家族工具 `subagent_dsh`，与官方工具并存——两种委派形态语义不同（in-process continuable vs. 独立 CLI 进程），家族工具描述让模型可以区分。开关经 settings watcher 实时翻转组合。
-
-**委派。** provider 生成一个 uuid（`session-<uuid>`），记录委派（`childSessionId → cliSessionId` 恒等映射），并 spawn `dsh --profile headless-local-agent-dsh --session-id <uuid> "<task>"`，env 为 `{ DSH_HOME: <scoped home>, DEEPSEEK_API_KEY: <resolved> }`，cwd 为父会话 cwd。headless bundle（`@khorsheed/dsh-local-agent-dsh-headless`）用该确切 id 创建会话——id 由调用方提供，绝不从 stdout 解析——运行任务、打印最终助手文本、退出 0/1。后续轮把子会话 id 作为 `resume` 传入；provider spawn `--resume <uuid>`，子 dsh 经 `agents.resume` 续接同一会话。
-
-**长驻驱动（`live: true`）。** 替代每轮 spawn：成员首轮委派拉起一个常驻 `--serve` 子 dsh 进程，之后每轮 = 经家族内部 stdio JSON-RPC wire（headless 包 `src/wire.ts`）向活着的 runtime 发 `turn/start`；会话事件以 `session/event` 通知即时推回并逐事件镜像进子会话（与文件镜像同一折叠规则，settle 时再跑一次文件镜像做对账），`cancel` 落地为 runtime 级 `turn/interrupt`（进程内 `Agent.cancel`）——进程不死、会话可续。折叠规则是逐字拷贝：调用方任务的 `user/message`、每条 `assistant/message`、工具事件对，以及子 dsh 自己的 `step/start`–`step/end` 边界对（各带自己的 (turn, step) 坐标）都过河——宿主实时会话视图只在边界上登记 step，缺了边界 assistant 消息要等整页重建才渲染；turn 边界与脚手架用户消息（agent-instructions、plugin 等来源）留在子侧，被 interrupt 的 step 以开口对（有 start 无 end）原样过河，绝不合成边界。runtime 空闲超时回收（wire `shutdown` → SIGTERM 阶梯），崩溃后下一轮自动重连并 `agents.resume` 盘上会话；spawn/握手失败标记通道不可用并永久回退 exec 路径。
-
-**认证与供给。** 无 device-code 登录：子 dsh 通过父级的 `DEEPSEEK_API_KEY` 凭据认证（`apiKeyRef` 配置）；`/dsh status` 报告凭据是否可解析，`/dsh sessions` 从 scoped-home 存储列出子 dsh 自己的会话。子 profile 位于 `profiles/headless-local-agent-dsh`：一个 manifest（只列 `@deepseek-ai/dsh-base`）、headless 包的 patch 逐字节拷贝成的 profile 自己的 patch 层、一条解析 headless bundle 的符号链接（供 loader 解析 insert 行）——其余一切从 dsh 安装锚点解析，供给零 pnpm install 成本且幂等，内容漂移时自动重写（升级与旧格式自愈）。父级复制自己的启动方式（或配置 `cliLaunch`），让子 dsh 与父级跑同一个 dsh 构建。
 
 </details>
 

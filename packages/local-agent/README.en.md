@@ -1,33 +1,37 @@
-# `@khorsheed/dsh-local-agent`
-
-Model/effort controls, directories and visible member output share one member subscription per page, keeping multiple members and member-session navigation from multiplying HTTP/1 connections. Core queues busy selections for the next complete turn; frozen evaluation members reject changes.
-
-Live member output uses a streaming Remote and public Conversation nodes. Browser updates are batched for at most 50ms, while incremental recovery checkpoints use an independent one-second cadence. Native final messages replace the transient presentation and retain usage, tools and session navigation. Reconnect obtains a fresh baseline; a host crash may lose the uncheckpointed tail, which remains visibly partial. Browser P95 acceptance remains part of the room coordinator proposal.
+# @khorsheed/dsh-local-agent
 
 English | [中文](README.md)
 
-Run locally installed coding-agent CLIs — Kimi Code, Codex, Claude Code — from the dsh web GUI. Each CLI gets an isolated home, slash commands for login/sessions/status/logout, and an auth section in Settings.
+Drive the coding-agent CLIs installed on this machine — Kimi Code, Codex, Claude Code, even another dsh — from the dsh web UI.
 
-<img src="../../docs/screenshots/08-local-agent.png" width="480" alt="The Local Agent cards under Settings → Plugins, header dots showing each provider's auth state">
+This is the local-agent family core: each CLI registers as one harness and gets an isolated scoped home under the shared homes root (created 0700 — your native CLI installation is never touched), a `/<harness> login|sessions|status|logout` slash-command family, and an auth card in Settings; the family's delegation ability — handing session work to a local CLI and resuming it later, even across host restarts — hangs off the same registry. The harnesses themselves ship as separate packages (`@khorsheed/dsh-local-agent-kimi` and friends); this package contains none.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent cards under Settings → Plugins, header dots showing each provider's auth state">
 
 ## Features
 
 - **Scoped homes per CLI** — isolated credential/session home under a shared root, created 0700; your native CLI installation is never touched.
-- **Slash commands** — `/<harness> login|sessions|status|logout`, with the device-code login URL in the reply.
-- **A settings card per provider** — on alpha.2 the bundle's own Plugins-page detail view (`plugins.bundle.config`, keyed by package name), on 0.1.5 Settings → Plugins → 可配置插件 (`settings.plugin.item`, keyed by the settings namespace): the auth status dot (visible on the collapsed 0.1.5 header), web login/sign-out, and the hot-swappable resident-mode (live) toggle with mirror granularity; cards compose this package's shared `ProviderAuthBlock`.
-- **Subagent delegation** — hand work to a local CLI and resume it later, even across host restarts.
+- **Slash-command families** — `/<harness> login|sessions|status|logout`, with the device-code login URL in the reply; plus the family commands `/local-agent list` (the registered-harness roster) and `/local-agent stop <childSessionId>` (cancel an in-flight delegation).
+- **A settings card per provider** — under Settings → Plugins → 可配置插件 (`settings.plugin.item`, keyed by the settings namespace): the auth status dot on the card header, web login/sign-out, and the hot-swappable resident-mode (live) toggle with mirror granularity; cards compose this package's shared `ProviderAuthBlock`.
+- **Subagent delegation with resume** — hand work to a local CLI and resume it later, even across host restarts; delegation records persist per harness in the scoped home's `delegations.jsonl`.
+- **Member sessions stay writable** — a delegated child session is not a read-only replay: the MemberComposer keeps it open for input (sending resumes it), live output streams in, and the model and reasoning effort switch from the member composer; a selection made while busy takes effect on the next complete turn, and frozen evaluation members refuse changes.
 - **Member sessions continue in the sidebar (host 0.1.6+)** — the official subagent directory gained an "Open in sidebar" row action: member sessions are one-shot subagents, so opened aside, this family's MemberComposer is elected as the writable composer — a zero-change benefit of this package; 0.1.5 hosts have no such entry and behave as before.
 - **Several logins per harness (named scopes)** — `/<harness> login --scope <name>` opens a second scoped home at `<homesRoot>/<harness>@<name>`: its own login, its own session records, its own `delegations.jsonl`, and nothing copied from the default one. An evaluation can therefore compare two accounts of one harness in a single run.
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-member.png" width="640" alt="a member session delegated to a local CLI: live output streaming in, with the writable member composer and its model picker at the bottom">
+
 ## Install
 
-Install the core together with at least one harness bundle (`@khorsheed/dsh-local-agent-kimi`, `-codex`): `dsh plugin add` activates only *direct* dependencies, so the harness bundle's transitive dependency alone will not mount this core.
+The core must be installed alongside at least one harness package — `dsh plugin add` activates only *direct* dependencies, so a harness package's transitive dependency alone never mounts this core:
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-local-agent
+dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # or -codex / -claude-code / -dsh
 ```
 
-Then restart the web instance. Uninstall:
+To install the whole family at once (core + the four delegation providers), add the meta-package `@khorsheed/dsh-bundle-local-agent` instead.
+
+Restart the web instance to activate. Uninstall:
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-local-agent
@@ -47,14 +51,14 @@ A custom composition mounts the core once:
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — adapted to 0.1.5-rc.1 (format v2/v3; handle-based sessionPersistence), full build+test green; minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1).
 
 ## Known Limitations
 
-- **Login is a captured prompt or a manual handoff** — the web GUI has no interactive terminal: device-code harnesses (kimi/codex) surface the URL in the command reply while the CLI polls in the background; a harness whose auth is TTY-only (claude ≥2.1) declares the manual variant — `/login` replies with the exact command to run in the user's own terminal, and the registry watches the scoped home for the credential.
+- **Login is not an interactive terminal** — the web GUI has no interactive terminal surface, so each harness with a login flow takes an adapted lane: kimi's device-code URL lands in the command reply while the CLI polls in the background; codex's and claude's (≥2.1) auth runs only on a TTY, so the login command is spawned under a pseudo-terminal wrapper — the CLI opens the user's browser itself, an OAuth URL is scraped from its output as a fallback, and a code prompt is answered with `/<harness> code <value>` — while the registry watches the scoped home for the credential. The contract also carries a manual-handoff variant (the reply names the exact command for the user's own terminal); no family harness needs it today. The dsh harness has no login flow at all (it inherits the host instance's credential), and `/dsh login` says so.
 - **Homes root placement** — defaults to `$DSH_HOME/local-agent`, pending a standardized `var/state` layout.
 - **Delegation log growth** — each scoped home's `delegations.jsonl` is append-only with no rotation.
-- **One-sample shape** — the harness contract is induced from Kimi alone; not yet frozen.
+- **The harness contract is not frozen** — the four existing providers (kimi / codex / claude-code / dsh) each induced their share of it, and the registration interface may still move before a new harness joins.
 - **The member channel authenticates on the per-run token alone** — the token is delivered through the CLI's scoped MCP config (the 0700 scoped home keeps other users out) and invalidated the moment the run settles; host 0.1.5 removed the child pid, so there is no second factor. **Residual exposure**: a same-host, same-user sibling member CLI (its model-driven bash) can read another member's token and replay it — the old pid check was a self-reported field and never stopped a deliberate forgery, so dropping it loses little; but a deliberately crafted cross-member call is now possible. Hardening (kernel-level socket peer credentials, or a spawn-time injected capability token) is tracked in `proposals/active/2026-09-10-member-channel-auth-hardening.md`.
 
 ## How it works
@@ -62,17 +66,19 @@ A custom composition mounts the core once:
 <details>
 <summary>Internals (click to expand)</summary>
 
-Each harness registers into `ctx.localAgent`: a scoped home, an optional login declaration (a device-code command, or the manual-handoff variant for a TTY-only CLI), a session-records adapter, and optional auth-status and sign-out probes. The glue provisions each home and registers the `/<harness> login|sessions|status|logout` command family; per-harness differences are just `homeEnvVar`, the login invocation, the records adapter, and the auth/sign-out probes.
+Each harness registers into `ctx.localAgent`: a scoped home, an optional login declaration (a device-code command, a pty-wrapped TTY login, or the manual-handoff variant), a session-records adapter, and optional auth-status and sign-out probes. The glue provisions each home and registers the `/<harness> login|sessions|status|logout` command family; per-harness differences are just `homeEnvVar`, the login invocation, the records adapter, and the auth/sign-out probes.
 
 **Delegation stays out of this seam.** Each harness bundle mounts its own subagent-provider row into the existing `subagent` capability (subagent-acp for ACP-over-stdio harnesses, an app-server provider for Codex), reading the scoped home through `localAgent.homeDir(name)`.
 
 **Program queries ride a read-only Remote channel.** A `LocalAgentGateway` (service key `localAgentGateway`, generated `./remote`) exposes roster, per-harness status, and scoped sessions to the browser. It emits no session events, so UI polls leave no command nodes in the session log; login and logout stay on the slash-command channel, where a visible command node is the expected feedback.
 
+**The member live-output pipeline.** A member's (delegated child session's) live output rides a streaming Remote and public Conversation nodes: the provider hands the round's increments to a `LiveStreamPublisher`, browser-side updates coalesce within at most 50ms (`LIVE_FLUSH_INTERVAL_MS`), and incremental recovery checkpoints append `local-agent/stream` events on an independent one-second cadence (`LIVE_CHECKPOINT_INTERVAL_MS`); once the native final message lands it replaces the transient presentation, keeping usage, tools, and session navigation. A reconnect reads a fresh baseline; a host crash can lose the uncheckpointed tail, and the recovered content is explicitly marked partial. Model/effort configuration, model directories, and the visible members' live output share one member subscription per page (`MemberFeeds`), so many members and member-session entries never saturate the HTTP/1 connection pool. Browser P95 acceptance remains part of the room coordinator proposal.
+
 **Evaluation snapshot (`effectiveSettings`).** Every harness may declare a snapshot of the fairness-relevant settings currently in force: drive (exec/live), the sandbox or permission boundary (in each harness's own vocabulary — codex reports its sandbox policy, claude-code its permission mode, kimi its auto-approve state; a harness with no such knob omits the field, and the absence is itself the honest condition-hash input), the reasoning effort, the configured model (each harness reads its own configuration surface — kimi's `default_model`, codex's `model`, claude-code's scoped `settings.json`, dsh's inherited host selection; unreadable means the field drops out, never a guessed default), whether a non-default endpoint is pinned (hostname only, never the full URL), and the CLI version (asked of the CLI itself: `probeCliVersion` runs one `<cli> --version`, cached against the executable's resolved path + mtime + size, so an upgrade re-probes by itself while a missing CLI, a timeout, a non-zero exit, or output with no version-shaped token all just leave the field out). The snapshot is a live read — a person-edited scoped config reports the edited values — pure JSON, never credentials. `registry.effectiveSettings(name)` serves the evaluator's condition hash, and the same snapshot rides `/<harness> status` and the `LocalAgentStatus` Remote (additive fields; existing clients are unaffected).
 
 **The credential status says only what is known (`credentialState`).** Beside the `authenticated` boolean, `LocalAgentStatus` carries a grade: `absent` (no credential record in the scoped home), `present-unverified` (a record exists, but nothing in this host process has exercised it — an expired, unrefreshable grant looks exactly like a working one, and saying so is the whole point of this grade), `verified` (a delegation round reached the endpoint and completed since the last login/logout), and `rejected` (a round's endpoint rejected the credential and no fresh login has rewritten the credential marker since). `authenticated` is unchanged and exactly equals `verified || present-unverified`, so the settings card and every existing client keep reading the boolean they always read. The grade is per host process: after a restart a present credential reports `present-unverified`, because that is what is actually known — an eager pre-run liveness probe is not this field's job. Providers call `reportAuthSuccess` when a round settles completed, the symmetric counterpart of the existing `reportAuthFailure`.
 
-**Browser half ships in this package.** The `./client` export mounts automatically via the `dsh.client` manifest: the member composer (delegated child sessions stay writable) plus the shared settings-card building blocks (`ProviderAuthBlock`, the auth-status bus, `AuthStatusDot`) — each provider package's settings card (the alpha.2 `plugins.bundle.config` page, the 0.1.5 `settings.plugin.item` card) composes them, keeping the UI provider-neutral (it consumes only the `/<harness>` command family and the read-only gateway).
+**Browser half ships in this package.** The `./client` export mounts automatically via the `dsh.client` manifest: the member composer (delegated child sessions stay writable) plus the shared settings-card building blocks (`ProviderAuthBlock`, the auth-status bus, `AuthStatusDot`) — each provider package's settings card (the 0.1.5 `settings.plugin.item` card) composes them, keeping the UI provider-neutral (it consumes only the `/<harness>` command family and the read-only gateway).
 
 ### Adding a harness
 

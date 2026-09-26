@@ -1,6 +1,23 @@
 # @khorsheed/dsh-quote
 
-Quote anything: select any text anywhere in the app and a small menu floats beside the selection — **Quote to current chat** (into the composer, still editable), **Quote to side chat** (a side-chat ref), **Copy**; other plugins add their own rows through the `ctx.quoteActions` registry (see [Contributing menu actions](#contributing-menu-actions-other-plugins)). A quote is the selected plain text plus a short source label — an opaque chunk: the plugin knows nothing about any other plugin's types, items hide when side-chat/canvas are absent, and the plugin installs and uninstalls alone.
+English | [中文](README.md)
+
+Quote anything you see — select any text and the little menu floating beside the selection sends it to the current chat, to a side chat, or to the clipboard in one click.
+
+To follow up on a passage from an assistant reply or a file preview, you used to copy, switch, and paste by hand. This plugin floats an action menu beside any selection in the app: **Quote to current chat** (the selected text lands in the composer as a quote block with a source label — editable, never auto-sent), **Quote to side chat** (queued as a pending side-chat ref), **Copy**; other plugins add their own rows through the `ctx.quoteActions` registry (see [Contributing menu actions](#contributing-menu-actions-other-plugins)). A quote is the selected plain text plus a short source label — an opaque chunk: the plugin knows nothing about any other plugin's types, items hide when side-chat is absent, and the plugin installs and uninstalls alone.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-1.png" width="640" alt="the floating action menu beside a selection in an assistant reply: quote to current chat, quote to side chat, copy">
+
+## Features
+
+- **Menu on any selection** — select text anywhere outside inputs and a small toolbar floats beside the selection; selections inside inputs or the menu itself never trigger, and scroll or resize hides it.
+- **Quote to current chat** — the selection becomes a `> quote` block (the source label closing the block) merged into the composer draft: a blank draft is filled directly, a typed draft gets the block appended after one blank line — never overwritten, never sent.
+- **Quote to side chat** — the selection queues as a pending side-chat ref on the context bound to the current session (contextKey = session id); on success the side-chat tab surfaces in the right sidebar.
+- **Copy** — the verbatim text via the official `writeClipboard` helper.
+- **Extensible menu rows** — other plugins register their own action rows through the `ctx.quoteActions` registry (the canvas package, say, registering "Save as canvas card"), receiving the same opaque `{ text, label, sessionId }` payload; the menu never learns where an action delivers to.
+- **Probe-and-degrade everywhere** — the overlay seat, the current session, side-chat, and both Remote namespaces are probed one by one: whatever is absent hides its menu item (or the whole menu), and every composition boots.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-2.png" width="640" alt="the composer's > quote block with its closing source annotation after Quote to current chat">
 
 ## The selection overlay
 
@@ -56,11 +73,13 @@ if (registry !== undefined) {
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-quote
-# remove:
-dsh plugin --profile web remove @khorsheed/dsh-quote
 ```
 
-Restart the host afterwards. The plugin keeps no persistent state of its own, so uninstalling leaves nothing behind (quote blocks already sent and refs already queued belong to their hosts and are not removed).
+Restart the web instance to activate. The plugin keeps no persistent state of its own, so uninstalling leaves nothing behind (quote blocks already sent and refs already queued belong to their hosts and are not removed).
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-quote
+```
 
 ## Compatibility
 
@@ -92,7 +111,13 @@ Restart the host afterwards. The plugin keeps no persistent state of its own, so
 
 **The action registry**: `ctx.quoteActions` (`src/client/registry.ts`) is provided at the very top of the client apply; registration appends, disposal removes, and the menu subscribes through `useSyncExternalStore`, so hot adds/removals land in the same frame. `list()`'s reference stays stable between mutations, serving directly as the getSnapshot.
 
+**Main-session detection (across host shapes)**: host 0.1.6-alpha.2 retired `SessionListState.current` in favor of the `retainedBy.mainView` count on each summary; the menu probes the count first and falls back to the legacy field, so the npm line and the source line share one code path.
+
 **Identity triangle**: the cordis row id `quote`, `clientBundle('@khorsheed/dsh-quote')`, and `src/invariant.ts`'s `PACKAGE_NAME` move together.
+
+**Exports**: `/client` exports the plugin body (`apply`/`inject`), `SelectionQuoteMenu`, `QuoteActionRegistryRuntime`, and the registry/selection-seam types; the host export is `QuoteRemoteService`, the `/types` subpath carries the wire payload types, and `/invariant` ships the deployment self-check.
 </details>
 
-[中文](README.md)
+## Development
+
+Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/quote`). Issues and contributions welcome there.

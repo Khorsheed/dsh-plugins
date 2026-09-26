@@ -1,33 +1,37 @@
-# `@khorsheed/dsh-local-agent`
-
-模型/effort 配置、模型目录与可见成员的实时输出在每个页面共用一条成员订阅，避免多成员及成员会话入口占满 HTTP/1 连接池。运行中选项由 core 排到下一完整轮次，冻结评测成员拒绝变更。
-
-成员实时输出通过流式 Remote 与公开 Conversation 节点呈现。浏览器更新最多合并 50ms，增量恢复检查点独立按一秒节奏保存。原生最终消息替换临时展示，保留用量、工具与会话导航。重连读取新基线；宿主崩溃可能丢失未落检查点的末段，恢复内容明确标为部分记录。浏览器 P95 仍需在 room 协调者提案中验收。
+# @khorsheed/dsh-local-agent
 
 [English](README.en.md) | 中文
 
-从 dsh web GUI 使用本机安装的编码 agent CLI——Kimi Code、Codex、Claude Code。每个 CLI 获得一个隔离的作用域目录、一组登录/会话/状态/退出的斜杠命令，以及设置里的认证分区。
+从 dsh web 界面驱动本机装好的编码 agent CLI——Kimi Code、Codex、Claude Code，甚至另一个 dsh。
 
-<img src="../../docs/screenshots/08-local-agent.png" width="480" alt="设置 → 插件配置里的 Local Agent 卡片，卡头状态点一眼可见各 provider 授权状态">
+这是 local-agent 家族的核心包：每家 CLI 注册成一家 harness，得到共享 homes 根下一份 0700 的隔离作用域目录（你机器上原装的 CLI 安装绝不被动到）、一族 `/<harness> login|sessions|status|logout` 斜杠命令、设置里的一张认证卡片；家族的委派能力——把会话工作交给本机 CLI、之后跨宿主重启也能续跑——同样挂在这份注册表上。各家 harness 的实现在独立包里（`@khorsheed/dsh-local-agent-kimi` 等），本包自己一家都不含。
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置 → 插件 → 可配置插件里的 Local Agent 卡片，卡头状态点一眼可见各 provider 授权状态">
 
 ## 特性
 
 - **每个 CLI 一个作用域目录**——共享 homes 根下的隔离凭据/会话目录，以 0700 创建；你的本地 CLI 安装绝不被动到。
-- **斜杠命令族**——`/<harness> login|sessions|status|logout`，device-code 登录 URL 通过命令回复呈现。
-- **每 provider 一张设置卡片**——alpha.2 落在各 bundle 的插件详情页（`plugins.bundle.config`,按包名派发）,0.1.5 落在设置 → 插件 → 插件配置（`settings.plugin.item`,按设置命名空间派发）:认证状态点(0.1.5 卡头可见)、网页登录/退出、常驻模式(live)热切开关与输出粒度;卡片直接复用本包 client 面的共享 `ProviderAuthBlock`。
-- **子 agent 委派**——把会话工作交给本机 CLI 并在之后 resume，宿主重启也能续上。
+- **斜杠命令族**——`/<harness> login|sessions|status|logout`，device-code 登录 URL 通过命令回复呈现；另有家族命令 `/local-agent list`（已注册 harness 花名册）与 `/local-agent stop <childSessionId>`（取消在飞委派）。
+- **每 provider 一张设置卡片**——落在设置 → 插件 → 可配置插件（`settings.plugin.item`，按设置命名空间派发）：卡头认证状态点、网页登录/退出、常驻模式（live）热切开关与输出粒度；卡片直接复用本包 client 面的共享 `ProviderAuthBlock`。
+- **子 agent 委派与续跑**——把会话工作交给本机 CLI 并在之后 resume，宿主重启也能续上；委派记录按 harness 持久化在作用域目录的 `delegations.jsonl`。
+- **成员会话保持可写**——委派的子会话不是只读回放：MemberComposer 让它继续接受输入（发送即 resume），实时输出流式呈现，模型与推理强度可在成员输入栏切换；运行中选择排到下一完整轮次生效，冻结的评测成员拒绝变更。
 - **成员会话侧栏续写（宿主 0.1.6 起）**——官方 subagent 目录每行新增「在侧边栏打开」入口：成员会话本就是 one-shot subagent，侧栏内本家族 MemberComposer 自动当选为可写 composer，本包零改动受益；0.1.5 宿主没有该入口，行为不变。
 - **一家多份登录（命名 scope）**——`/<harness> login --scope <名>` 在 `<homesRoot>/<家名>@<名>` 里另开一份作用域目录：各自登录、各自会话记录、各自 `delegations.jsonl`，凭证不复制。评测因此能在同一次 run 里比较同一家的两个账号。
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-member.png" width="640" alt="委派给本机 CLI 的成员会话：实时输出流式呈现，底部成员输入栏可继续对话并切换模型">
+
 ## 安装
 
-core 本身就是 bundle；请把它与至少一个 harness bundle（`@khorsheed/dsh-local-agent-kimi`、`-codex`）一起安装——`dsh plugin add` 只激活**直接**依赖，仅靠 harness bundle 的传递依赖不会挂载本 core。
+core 必须与至少一个 harness 包一起装——`dsh plugin add` 只激活**直接**依赖，仅靠 harness 包的传递依赖不会挂载本 core：
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-local-agent
+dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # 或 -codex / -claude-code / -dsh
 ```
 
-然后重启 web 实例。卸载：
+想一次装齐整个家族（core + 四个委派 provider），改装元包 `@khorsheed/dsh-bundle-local-agent`。
+
+重启 web 实例后生效。卸载：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-local-agent
@@ -47,14 +51,14 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——适配 0.1.5-rc.1（format v2/v3；handle 制 sessionPersistence），全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）。
 
 ## 已知限制
 
-- **登录为抓取式 prompt 或人工交接**——web GUI 没有交互式终端面：device-code harness（kimi/codex）的 URL 通过命令回复呈现、CLI 在后台轮询；认证只在 TTY 可用的 harness（claude ≥2.1）声明 manual 变体——`/login` 回复用户在自己终端运行的完整命令，registry 监听作用域目录识别登录完成。
+- **登录不是交互式终端**——web GUI 没有交互式终端面，各家有登录流程的 harness 各走一条适配通道：kimi 的 device-code URL 由命令回复呈现、CLI 在后台轮询；codex 与 claude（≥2.1）的认证只在 TTY 上跑，登录命令在伪终端包装下 spawn——CLI 自己打开浏览器，输出里兜底解析 OAuth URL，要输码时用 `/<harness> code <值>` 粘贴——registry 监听作用域目录识别登录完成。契约里另有 manual 交接变体（回复一条让用户在自己终端运行的完整命令），目前家族没有 harness 需要它；dsh harness 没有登录流程（继承宿主实例的凭据），`/dsh login` 如实回答。
 - **homes 根位置**——默认 `$DSH_HOME/local-agent`，待 `var/state` 布局标准化后再议。
 - **委派日志增长**——每个作用域目录的 `delegations.jsonl` 只增不减、无轮转。
-- **单样本形状**——harness 契约仅由 Kimi 归纳，尚未冻结。
+- **harness 契约尚未冻结**——现有四家 provider（kimi / codex / claude-code / dsh）各自归纳了自己的一份，新 harness 入局前注册接口仍可能调整。
 - **成员通道是 per-run token 单因子认证**——token 经 CLI 作用域 MCP 配置下发（0700 的 scoped home 挡住其他用户），run 落定即焚；宿主 0.1.5 移除子进程 pid 后没有第二因子。**残余风险**：同机同用户的兄弟成员 CLI（其模型驱动的 bash）能读到另一个成员的 token 并回放它——原 pid 校验也是自报字段，本就不防刻意伪造，去掉它没有实质降级；但刻意构造的跨成员调用现在是可能的。加固（socket 内核级 peer 凭证，或 spawn 时注入的 capability token）由 `proposals/active/2026-09-10-member-channel-auth-hardening.md` 跟踪。
 
 ## 实现原理
@@ -62,17 +66,19 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 <details>
 <summary>内部结构（点击展开）</summary>
 
-每个 harness 向 `ctx.localAgent` 注册：一个作用域目录、一个可选的登录声明（device-code 命令，或 TTY-only CLI 的 manual 交接变体）、一个会话记录适配器，以及可选的认证状态与退出登录探测。glue 供给每个作用域目录并注册 `/<harness> login|sessions|status|logout` 命令族；harness 间差异只剩 `homeEnvVar`、登录调用、records 适配器与认证/退出探测。
+每个 harness 向 `ctx.localAgent` 注册：一个作用域目录、一个可选的登录声明（device-code 命令、伪终端包装的 TTY 登录，或 manual 交接变体）、一个会话记录适配器，以及可选的认证状态与退出登录探测。glue 供给每个作用域目录并注册 `/<harness> login|sessions|status|logout` 命令族；harness 间差异只剩 `homeEnvVar`、登录调用、records 适配器与认证/退出探测。
 
 **委派不属于这个 seam。** 每个 harness bundle 各自向既有的 `subagent` 能力挂载 subagent-provider 行（讲 stdio ACP 的 harness 用 subagent-acp，Codex 用其 app-server provider），经 `localAgent.homeDir(name)` 读取作用域目录。
 
 **程序查询走只读 Remote 通道。** `LocalAgentGateway`（服务键 `localAgentGateway`，生成物 `./remote`）通过 Typert Gateway 向浏览器暴露 roster、各 harness 状态与作用域会话。它不产生任何会话事件，因此 UI 轮询不会在会话日志里留下命令节点；登录与退出仍走斜杠命令通道——用户主动操作产生可见命令节点正是预期反馈。
 
+**成员实时输出管线。** 成员（委派的子会话）的实时输出经流式 Remote 与公开 Conversation 节点呈现：provider 把一轮的增量交给 `LiveStreamPublisher`，浏览器侧更新最多合并 50ms（`LIVE_FLUSH_INTERVAL_MS`），增量恢复检查点按独立的一秒节奏追加 `local-agent/stream` 事件（`LIVE_CHECKPOINT_INTERVAL_MS`）；原生最终消息落定后替换临时展示，用量、工具与会话导航全部保留。重连读取新基线；宿主崩溃可能丢失未落检查点的末段，恢复内容明确标为部分记录。模型/effort 配置、模型目录与可见成员的实时输出在每个页面共用一条成员订阅（`MemberFeeds`），多成员及成员会话入口不会占满 HTTP/1 连接池。浏览器 P95 仍需在 room 协调者提案中验收。
+
 **评测快照（effectiveSettings）。** 每个 harness 可声明一份当前生效的公平性相关设置：drive（exec/live）、沙箱或权限模式（各用自家词汇：codex 报 sandbox 策略、claude 报 permissionMode、kimi 报自动批准与否；没有该旋钮的 harness 字段缺位，缺位本身就是诚实的条件输入）、推理强度、已配置模型（各家读自家配置面：kimi 的 `default_model`、codex 的 `model`、claude 的作用域 `settings.json`、dsh 继承的宿主选择；读不到就不给字段，绝不猜默认值）、端点是否固定（只报主机名，绝不报完整 URL）、CLI 版本（问 CLI 自己：`probeCliVersion` 跑一次 `<cli> --version`，按可执行文件的解析路径+mtime+大小缓存，所以一次升级会自动重探，而没装、超时、非零退出、输出里没有版本形状的 token 都只是字段缺位）。快照是实时读——人改过的作用域配置报人改过的值——纯 JSON、绝不含凭证，`registry.effectiveSettings(name)` 供编排器读条件哈希，`/<harness> status` 与 `LocalAgentStatus` Remote 附带同一份（增量字段，旧客户端不受影响）。
 
 **凭证只说知道的（credentialState）。** `LocalAgentStatus` 除 `authenticated` 布尔外还带一档 `credentialState`：`absent`（作用域家目录里没有凭证记录）、`present-unverified`（有记录，但本宿主进程里还没有任何一轮委派碰过它——一份过期且刷不动的凭证和一份能用的凭证形状完全一样，说不知道正是这一档的意义）、`verified`（自上次登录/登出以来有一轮委派真的打通了端点并完成）、`rejected`（某轮的端点拒了这份凭证，且此后没有新登录重写凭证标记）。`authenticated` 保持不变，恒等于 `verified || present-unverified`，所以设置卡片与既有客户端读到的还是原来那个布尔。这一档是每宿主进程的：重启后一份在场的凭证回到 `present-unverified`，因为那才是当下真正知道的；开跑前的主动活性探测不归这个字段。provider 在一轮 settle 成 completed 时调 `reportAuthSuccess`，与既有的 `reportAuthFailure` 对称。
 
-**浏览器半身随本包提供。** `./client` 导出通过本包的 `dsh.client` manifest 自动挂载：成员 composer（委派的子会话可继续对话）+ 共享设置卡片构件（`ProviderAuthBlock`、认证状态总线、`AuthStatusDot`）——各 provider 包的设置卡片（alpha.2 `plugins.bundle.config` 页、0.1.5 `settings.plugin.item` 卡）直接组合它们，UI 保持 provider 无关（只消费 `/<harness>` 命令族和只读 gateway）。
+**浏览器半身随本包提供。** `./client` 导出通过本包的 `dsh.client` manifest 自动挂载：成员 composer（委派的子会话可继续对话）+ 共享设置卡片构件（`ProviderAuthBlock`、认证状态总线、`AuthStatusDot`）——各 provider 包的设置卡片（0.1.5 `settings.plugin.item` 卡）直接组合它们，UI 保持 provider 无关（只消费 `/<harness>` 命令族和只读 gateway）。
 
 ### 新增一个 harness
 

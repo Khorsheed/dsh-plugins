@@ -2,38 +2,74 @@
 
 English | [中文](README.md)
 
-The companion tool row of `@khorsheed/dsh-worktrees`: the model-facing `worktrees` tool (list / switch / create / remove git worktrees), **granted per session** — present only in sessions whose agent preset composition names it. The first link of the single-instance multi-mode chain (proposal 2026-08-26): community model tool rows live in presets, never at the profile root.
+Let the model manage git worktrees itself — but hand the key only to sessions that are granted it.
 
-## Shape: a companion package that never self-mounts
+The core plugin `@khorsheed/dsh-worktrees` brings the worktree badge, the sidebar drawer, and the global service to every session; whether the *model* may create, switch, or remove worktrees should be a per-mode, per-session decision. This companion package is that key: a preset tool row that registers the model-facing `worktrees` tool — sessions whose preset names the row get the tool; everywhere else the model never sees it.
 
-- **Registers a tool, provides NO service** (zero `ctx.provide`) — the preset-mount isolate-realm rule rejects only service rows; tool rows compose bare (the official `tool-bash` shape).
-- **Declares no `dsh.bundle`**: installing it as a dependency only makes the module resolvable (a plain dependency, the `@khorsheed/dsh-local-agent-dsh-headless` precedent) — nothing auto-mounts. Granting happens by naming the row in a preset's `agent.cordis.yml`:
+## Features
 
-  ```yaml
-  - id: worktrees-tool
-    name: '@khorsheed/dsh-worktrees-tool'
-  ```
-
-- **Runs on the core's global service**: probes `ctx.get('worktrees')` at apply time — when the core (`@khorsheed/dsh-worktrees`) is not mounted it silently skips registration (degrade, never breaks the preset mount); the tool registers through deferred `ctx.inject(['tools'])` (the mount-order race lesson), so compositions without a tools registry are equally safe.
-- The tool-definition factory is exported by the core (`defineWorktreesTool(service)` from `@khorsheed/dsh-worktrees/tool`) — zero copied business logic; the origin tag's owner is THIS package (attribution follows the mounting package).
+- **One tool, four actions** — `list` / `switch` / `create` / `remove` on the `worktrees` tool: enumerate the session repository's worktrees (path, branch, main?, dirty count, stale hint); switch which worktree the session follows (badge and drawer move with it); `git worktree add` a new one and switch to it; remove one after confirmation.
+- **Removal has service-side hard gates** — `remove` requires `confirm: true`, and the service refuses the main worktree and any worktree with uncommitted changes — enforced in code, not merely requested in the prompt.
+- **Granted per session** — the row lives only inside agent-preset compositions, never at the profile root: sessions of a preset that names it get the tool; every other session is unaffected.
+- **Zero copied logic** — the tool-definition factory is exported by the core (`defineWorktreesTool(service)` from `@khorsheed/dsh-worktrees/tool`); this row is a thin adapter that registers the definition into the host tools registry.
+- **Degrades, never explodes** — with the core absent it skips registration silently (one info log line) and the preset still mounts cleanly; registration goes through deferred `ctx.inject(['tools'])`, so compositions without a tools registry are equally safe.
+- **Attributed to this package** — the tool carries the `dsh.tool.origin` tag (owner = `@khorsheed/dsh-worktrees-tool`), so the capability catalog attributes it to the row that mounts it, not to the core.
 
 ## Install
 
+The core still installs globally as before (badge / drawer / service / Remote all live in the core); the companion row only needs to be resolvable in the profile's node_modules — it never self-mounts:
+
 ```sh
-# The core still installs globally as before (badge / sidebar tab / service / Remote)
 dsh plugin --profile web add @khorsheed/dsh-worktrees
-# The companion only needs to be resolvable in the profile's node_modules
 dsh plugin --profile web add @khorsheed/dsh-worktrees-tool
-# Then add the row above to the target preset's agent.cordis.yml
-# (copy the shipped standard preset and edit)
+```
+
+Then name the row in the target preset's `agent.cordis.yml` (copy the shipped standard preset and edit it):
+
+```yaml
+- id: worktrees-tool
+  name: '@khorsheed/dsh-worktrees-tool'
 ```
 
 The web-dev pack's dev-mode preset (`profiles/web-dev/presets/dev`) already carries this row; its `install.sh`/`update.sh` drops the preset into `$DSH_HOME/.agent-presets/dev`.
 
+Profile-composition changes (add/remove) take effect after restarting the web instance; a preset row takes effect as sessions of that preset mount. Before removing this package, drop the preset rows that reference it — a preset composition pointing at an uninstalled package reports `broken` (row-resolution failure): the instance boot is unaffected, but that preset's sessions don't get the intended composition.
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-worktrees-tool
+```
+
 ## Compatibility
 
-- **npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`)**: ✅ full — the 0.1.5 plugin list renders this row in its "session plugins" group (short-name title, state badge, live-mount phase dot); with the package removed, the naming preset's composition reports `broken` (a row-resolution message) while the instance boots unaffected (verified live on 3299).
-- **deepseek-harness master**: ✅ (verifiedHost: 0.1.5-rc.1).
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the 0.1.5 plugin list renders this row in its "session plugins" group (short-name title, state badge, live-mount phase dot); with the package removed, a preset composition naming it reports `broken` (row-resolution failure) while the instance boots unaffected.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1).
 - Hosts below 0.1.5: preset compositions existed on earlier lines, but the session-plugins inventory view is 0.1.5 presentation — minHost pins 0.1.5-rc.1.
 
 **Version-line map**: `0.1.0` and later support host `0.1.5-rc.1` and up.
+
+## Known Limitations
+
+- **With the core absent, the tool is silently missing** — the preset mount does not fail; the only trace is one info line in the instance log, and the model simply has no `worktrees` tool in those sessions. That is the designed degradation, not a malfunction.
+- **The session's own repository only** — the tool derives the target repo from the session cwd and cannot point at an arbitrary repository; a session without a working directory gets `{ error: 'worktrees: session has no working directory' }`.
+- **"Ask the user first" is model discipline** — the service enforces three hard rules (`confirm: true`, never the main worktree, never a dirty one); "always confirm with the user before removing" lives in the tool description, and honoring it is up to the model.
+
+## How it works
+
+<details>
+<summary>Internals (click to expand)</summary>
+
+**Row shape.** The Cordis entry exports `name = 'worktrees-tool'`, `inject = []` (no hard dependencies), and zero `ctx.provide` — the preset mount plane's isolate-realm rule rejects only service rows, so a tool row composes bare (the official `tool-bash` shape). The package deliberately declares no `dsh.bundle`: `dsh plugin add` only makes the module resolvable (a plain dependency, the `@khorsheed/dsh-local-agent-dsh-headless` precedent) and auto-mounts nothing; the manifest's `dsh.composition.component: 'preset-composed-row'` marks the shape. This is the first link of the single-instance multi-mode chain (proposal 2026-08-26): community model tool rows live in presets, never at the profile root.
+
+**Two probes, two absences.** At apply time the row first probes the core's global service via `ctx.get('worktrees')` — absent, it logs one info line and returns, leaving the preset mount unaffected. With the service present, it registers the tool through deferred `ctx.inject(['tools'])`: a direct `ctx.get('tools')` at apply time races the tools registry's own mount order on the real composition tree and loses (silently never registering), while `ctx.inject` fires when the registry appears and never fires in a composition without one.
+
+**Execute path.** The tool's `execute` is a thin adapter over the core service: it takes the session id and cwd from `exec.agent` and dispatches to `service.listWorktrees` / `switchWorktree` / `createWorktree` / `removeWorktree`; the return is always a JSON string (`{ ok: true, … }` or `{ error: … }`) rendered as plain text. `switch`/`create` set the session's active-worktree override so the badge and drawer follow; a successful `remove` clears the override when it pointed at the removed worktree.
+
+**Plugin-list presence.** The package ships locale metadata (`meta.title`: Worktrees Tool / 工作树工具); the 0.1.5 plugin list renders the row in its "session plugins" group per preset composition.
+
+**Exports.** The entry exports the loader contract trio (`name` / `inject` / `apply`); there is no browser half — the badge and drawer UI are the core's concern.
+
+</details>
+
+## Development
+
+Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/worktrees-tool`). Issues and contributions welcome there.

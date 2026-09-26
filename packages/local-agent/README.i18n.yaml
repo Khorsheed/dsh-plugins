@@ -1,2 +1,6 @@
-packages/local-agent/README.en.md: 2a3f23b5efe415f8ac0a2dd1b5351572d87c1877
-packages/local-agent/README.md: 0b373ec0729ac90b5565af227da9d68c39e7194b
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/local-agent/README.en.md
+packages/local-agent/README.en.md: 94d955ef6b3eda9061ab607d31a1b5dd6342e224
+packages/local-agent/README.md: 5e2809e46169bbdc1bee31ec56b3199c88bdc478

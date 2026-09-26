@@ -1,132 +1,109 @@
-# DSH Mobile
+# @khorsheed/dsh-mobile
 
 [English](README.md) | 中文
 
-可独立卸载的 DeepSeek Harness 移动适配插件。Mac 继续持有会话、模型、skill、tool 和插件执行；可选的 [iOS 薄壳](../../apps/ios/README.zh.md) 嵌入同一套官方 Web 客户端。
+把 dsh 会话装进口袋——会话、模型、skill、工具仍由 Mac 跑，手机只拿走一个真正为它做的界面。
 
-## 功能
+官方 Web 客户端是桌面形态：侧栏吃掉半个屏幕、输入区密密麻麻、触控目标按鼠标设计。这个插件把同一套客户端重新呈现给窄屏触控设备——带分组和搜索的会话首页、可换行且够得着的输入工具栏、在手机上选电脑目录的面板——再配上一个可选的 [iOS 薄壳](../../apps/ios/README.zh.md)：嵌入同一套官方 Web 客户端，扫码登录即用。一切都可以干净移除：卸载即精确还原官方桌面界面，绝不写入宿主或兄弟插件的状态。
 
-- 会话首页支持时间/工作区分组、工作区折叠和底部搜索。分组偏好仅保存在当前浏览器；导航覆盖期间仍挂载官方聊天与草稿。
-- 当前客户端独立的移动布局、全宽右栏详情、移动设置，以及可换行、扩大触控区域的输入工具栏。
-- 保留官方正文、输入框、模型/权限选择、附件及流式传输。
-- 通过移动端面板选择**电脑目录**：已有工作区、逐级浏览、返回上级、显示隐藏目录及校验完整路径。工作区接入和 Room 成员目录选择共用此面板；桌面客户端保留原生选择器。
-- 受认证的 `GET /api/mobile/handshake`；带版本的原生桥接提供展示状态与可选原生设置/扫码入口。回前台通过官方连接服务恢复，不重放发送命令。短暂切换且连接正常、初次正在连接时不重复重连；后台停留至少 5 秒仍刷新流式连接代际。
-- 无社区插件强依赖。message-tools、成员、预览保留各自所有者；移动组合仍需验收。
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-library.png" width="640" alt="移动端会话首页：时间与工作区分组、可折叠的工作区分节、底部搜索框">
 
-当前是开发基线，尚未发布或通过真机资格验收。相机/文件选择、分享/下载、后台恢复和社区组合尚未完成验收。iOS 扫码接收已有官方 HTTPS 登录链接，并要求确认主机；相机实测验收仍待完成。不提供一次性设备配对、逐设备凭据撤销或 APNs。
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-conversation.png" width="640" alt="移动布局下的会话页：可换行的输入工具栏，展开的加号菜单归并了附件、指令和权限入口">
 
-## 安装与卸载
+## 特性
 
-先在仓库 worktree 构建、打包：
+- **会话首页**——时间/工作区分组、可折叠的工作区分节和底部搜索。分组偏好只存在当前浏览器（`dsh.mobile.grouping`）；导航覆盖期间官方聊天与草稿保持挂载。
+- **真正的移动布局，仅作用于当前客户端**——全宽右栏详情、移动设置、可换行且触控区域更大的输入工具栏（正文最低 17px，主要控件 16–17px）。官方正文渲染、输入框、模型/权限选择、附件与流式传输原样保留。
+- **在手机上选电脑目录**——已有工作区、逐级浏览、返回上级、显示隐藏目录、校验完整路径。工作区接入和 Room 成员目录选择共用此面板；桌面客户端保留原生选择器。
+- **扫码连接手机**——已认证的 Web 设置分区为部署的 HTTPS origin 现场生成官方登录链接，并在浏览器本地编码成二维码；iOS 壳扫码、确认主机即连上。
+- **带版本的原生桥接**——受认证的 `GET /api/mobile/handshake` 加 bridge version 1 消息通道，提供展示状态与可选原生设置/扫码入口。回前台经官方连接服务恢复，绝不重放发送命令；短暂切换且连接正常、初次正在连接时不重复重连，后台停留至少 5 秒仍刷新流式连接代际。
+- **与生态共处，但不强依赖**——没有任何社区插件是启动依赖。长按已识别的用户消息调用 message-tools 原有的复制/编辑/撤回；加号面板打开 Room 原有邀请表单；TaskPilot 与 Local Agent 界面各归其主。
+
+当前是开发基线，尚未发布或通过真机资格验收——见已知限制。
+
+## 安装
 
 ```sh
-pnpm --filter @khorsheed/dsh-mobile build
-pnpm --filter @khorsheed/dsh-mobile test
-pnpm exec tsx scripts/pack-dist.ts --package packages/mobile --scope @khorsheed --version 0.1.0 --out packages/mobile/.dev/dist
+dsh plugin --profile web add @khorsheed/dsh-mobile
 ```
 
-用 `dsh plugin --profile web add /path/to/package.tgz` 安装产物；用 `dsh plugin --profile web remove @khorsheed/dsh-mobile` 移除。插件自挂载，不手改 profile YAML。实测 rc1 实例的依赖变化需要受控重启 Host 并刷新客户端，未通过热卸载验收。开发使用独立 `DSH_HOME` 与端口；生产 3080 仍走仓库部署门禁。
+插件自挂载自身行——不要手改 profile YAML。重启 web 实例并刷新客户端后生效。
 
-窄屏触控设备或原生壳自动启用移动布局。`?mobile=1` 显式启用，`?mobile=0` 停用。移动设置中的选择仅保存在当前浏览器的 `dsh.mobile.display`，首页分组使用 `dsh.mobile.grouping`。切到桌面布局后，可用 `?mobile=1` 恢复设置入口。官方登录交换会跳转 `/`，需要时在认证后再加参数。
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-mobile
+```
 
-卸载移除自有样式、布局标记、observer、监听、路由和槽贡献，不删除会话、取消 Host 任务、关闭共享连接、撤销官方 Cookie 或卸载 App/VPN。偏好可保留用于重装。浏览器热卸载与 tarball 验收分开记录于下方证据。
+卸载移除自有样式、布局标记、observer、监听、路由和槽位贡献；不删除会话、不取消宿主任务、不关闭共享连接、不撤销官方 Cookie、不卸载 App/VPN。偏好可保留用于重装。
 
-## 连接与认证
-
-App 接受配置的 HTTPS 主机地址或官方启动 token 登录链接，只保存无凭据的 origin；WebKit 保存官方浏览器会话 Cookie。桥接仅接受同 origin 主框架、bridge version 1 的消息，支持 `ready`、`unloaded`、`chrome`、`settings` 和 `scan`；新增原生动作需壳声明能力，旧壳保留回退控件。不授予文件或命令权限。
-
-跨物理网络需要独立配置的 HTTPS/WSS 入口转发到 loopback Host 端口（生产为 3080）、有效官方认证、保持唤醒和联网的 Mac，以及网络可达的手机。仅启动 3080 不等于远程可用。App 不自动配置网络或凭据。Debug 模拟器构建仅允许 loopback HTTP，Release 要求 HTTPS。清除 App 本地数据与服务端设备撤销是不同操作。
+窄屏触控设备（`max-width: 760px` 且粗指针）或原生壳自动启用移动布局。`?mobile=1` 显式启用，`?mobile=0` 停用。移动设置中的选择仅保存在当前浏览器的 `dsh.mobile.display`；切到桌面布局后，可用 `?mobile=1` 恢复设置入口。官方登录交换会跳转 `/`，需要时在认证后再加参数。
 
 ## 从 Web 设置连接手机
 
-已登录的 Web 客户端通过公开 `settings.section` 槽位提供 **设置 → 连接手机**；桌面无需开启移动布局。将手机可达的**无凭据 HTTPS origin** 配置为 mobile 插件的 `publicOrigin` 选项，或在 **Host 进程**上设置 `DSH_MOBILE_PUBLIC_ORIGIN`；插件选项优先。同一域名需加入 Host 的 `--trusted-host`，ingress 的 `PUBLIC_ORIGIN` 也必须一致。这些属于部署设置，不是手机偏好。
+已登录的 Web 客户端通过公开 `settings.section` 槽位提供 **设置 → 连接手机**——桌面无需开启移动布局。将手机可达的**无凭据 HTTPS origin** 配置为插件的 `publicOrigin` 选项，或在 **Host 进程**上设置 `DSH_MOBILE_PUBLIC_ORIGIN`（插件选项优先）。同一域名需加入 Host 的 `--trusted-host`，ingress 的 `PUBLIC_ORIGIN` 也必须一致。这些属于部署设置，不是手机偏好。
 
 ```sh
 DSH_MOBILE_PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
 ```
 
-示例使用隔离 profile；生产启动配置通过守护进程的受保护切换流程更新。地址缺失或无效、宿主能力不支持、目标域名未受信任时，只显示配置提示，不生成登录链接。
-
 1. 打开 Web「设置 → 连接手机」，核对展示的主机。
 2. 点击**显示登录二维码**。
 3. 在 iOS App 进入**连接设置 → 扫码连接电脑**，扫描后确认主机。
 
-`GET /api/mobile/connect` 仅返回配置状态。已认证、同源的 JSON `POST` 调用官方 `connection.authenticatedUrl()`，为部署者配置的 origin 获取登录链接；浏览器输入不能覆盖目标地址。两个接口都通过官方 Connection 注册，保留 Cookie 和 Host/Origin 校验，响应为 no-store。二维码在浏览器本地编码，不调用第三方二维码服务、不记录凭据日志、不写浏览器存储。离开设置分区、页面隐藏或展示两分钟后会隐藏二维码，并取消未完成的请求。
+`GET /api/mobile/connect` 仅返回配置状态。已认证、同源的 JSON `POST` 为部署者配置的 origin 调用官方 `connection.authenticatedUrl()` 取登录链接——浏览器输入不能覆盖目标地址。两个接口都经官方 Connection 注册，保留 Cookie 与 Host/Origin 校验，响应均为 `no-store`。二维码在浏览器本地编码：不调用第三方二维码服务、不记录凭据日志、不写浏览器存储。离开设置分区、页面隐藏或展示两分钟后会隐藏二维码并取消未完成的请求。地址缺失或无效、宿主能力不支持、目标域名未受信任时，只显示配置引导，不生成登录链接。
 
-**隐藏不等于凭据过期。** 这里使用宿主进程的官方登录 token，在该进程重启前有效，并非短时或一次性配对码。已有 Cookie 的有效期仍由宿主控制。隐藏或重新生成二维码不会撤销已复制的链接，也不会登出手机。逐设备凭据、撤销、Keychain 配对和推送仍未实现。
+**隐藏不等于凭据过期。** 二维码携带的是宿主进程的官方登录 token，在该进程重启前有效——不是短时或一次性配对码。隐藏或重新生成二维码不会撤销已复制的链接，也不会登出手机；已有 Cookie 的有效期仍由宿主控制。
 
-入口不可达时，应先恢复 HTTPS 隧道。隧道进程仍在但活跃连接数为零时，仍无法承载请求。临时域名改变后，同步更新 ingress origin、Host 信任域名和 mobile 公网 origin，再生成新二维码；旧 Cookie 绑定旧 authority。本机 3080 响应正常不等于手机能连通。日常使用建议使用固定 HTTPS 入口；扫码也不会续签过期的 iOS 开发签名。
+跨物理网络需要独立配置的 HTTPS/WSS 入口转发到 loopback Host 端口、有效官方认证、保持唤醒联网的 Mac 和网络可达的手机——仅启动 Host 不等于远程可用，App 也不会替你配置网络或凭据。Debug 模拟器构建仅允许 loopback HTTP，Release 要求 HTTPS。
 
-## 可选的 Quick Tunnel 预览
+## 可选：Quick Tunnel 预览
 
-网络接入属于部署配置，不是插件依赖。社区用户可以选择临时预览用的 Quick Tunnel、自建 HTTPS 反向隧道/服务器或私网连接。插件不嵌入个人域名、服务器或 Cloudflare 账号。稳定的托管中继属于独立服务，会有自己的运营成本。
-
-[Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) 无需 Cloudflare 账号或自有域名即可生成临时 HTTPS 地址。它用于测试，不保证在线时间，允许 200 个并发请求，不支持 SSE。实测 rc1 的会话传输使用 WebSocket；这不代表需要 SSE 的其他插件已通过验收。
-
-使用已安装 mobile tarball 的隔离 Host profile。从官方渠道安装 `cloudflared`，使用 Node 22+。在仓库根目录先启动隧道（分配地址时本地入口可以尚未启动）：
+网络接入属于部署配置，不是插件依赖——自建 HTTPS 反向隧道/服务器或私网连接均可；插件不嵌入任何域名、服务器或 Cloudflare 账号。临时预览可用 [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)：无需账号或自有域名即可生成临时 HTTPS 地址，但不保证在线时间、限 200 并发、不支持 SSE（实测会话传输走 WebSocket）。
 
 ```sh
 cloudflared tunnel --url http://127.0.0.1:3182 --protocol quic --no-autoupdate
-```
-
-协议选择取决于本地网络。已注册的 QUIC 隧道若在实际请求上卡住，可以尝试 `--protocol http2`；其他网络上的 HTTP/2 也可能失败，两者都不是普遍适用的默认选择。仅看到隧道注册成功或本地入口健康还不够，分享预览前需验证公网登录、会话列表和完整 WebSocket 回复。新建 Quick Tunnel 会分配另一个域名：通过受保护的启动切换同步更新 ingress origin 与 Host trusted-host，再让 App 重新连接。测试进程应独立运行，避免依赖短生命周期的自动化会话。
-
-将生成的主机名替换下方的 `YOUR-HOST.trycloudflare.com`，在第二个终端启动独立示例：
-
-```sh
 PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com HOST_PORT=3181 INGRESS_PORT=3182 node packages/mobile/examples/https-ingress.mjs
+dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com   # 独立 DSH_HOME、工作区、模型
 ```
 
-然后使用独立的 `DSH_HOME`、工作区和已配置模型启动隔离 Host，通过官方参数加入精确的公网 authority：
-
-```sh
-dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
-```
-
-示例也随 tarball 的 `examples/` 分发。它仅绑定 loopback，保留公网 Host 与 Origin 交给官方认证，要求转发协议为 HTTPS，为上游 Cookie 补充 Secure，并透传 HTTP 流和 WebSocket 升级。它不读取 Host 私有密钥，不增加配对或逐设备撤销系统。仅在 HTTPS 隧道之后运行；本地请求头不构成用户已认证的证明，授权仍由 Host 负责。
-
-手机登录时，仅将 Host 启动链接的 origin 替换为隧道 HTTPS origin，保留 `?token=...`，在 Safari 打开或粘贴到 iOS 壳。带凭据链接应私下保存。登录会跳转到干净的 `/`；如果设备没有自动启用移动布局，认证后再加 `?mobile=1`。
-
-Mac 保持唤醒，三个服务持续运行。停止隧道进程可关闭这条公网访问路径；仅卸载 mobile 不会停止隧道或撤销官方会话。重新分配域名后，需要同步更新 `PUBLIC_ORIGIN`、`--trusted-host` 并重新登录。这次预览不代表长期蜂窝网络可达性已验证。参见 [Quick Tunnel 验收记录](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md)。
-
-桌面模式在重载后仍保留“返回移动布局”按钮。移动端进入会话时阻止输入框自动聚焦，等待明确的输入手势；rc1 DOM 锚点变化时回退官方聚焦行为。普通会话标题去重，保留祖先/lineage 导航。这些 Web 层修复无需重新安装原生 App。
-
-新版移动界面保留输入区统计和官方消息动作，隐藏未选中的轨迹入口，通过公开品牌槽位提供欢迎内容。rc1 已有会话工作区/preset 为只读标签，新建会话才提供官方选择器。原生设置通过校验后的 `dsh-mobile-display` 事件调整布局。未知标题区结构保留原始标题及祖先导航。
-
-输入框加号菜单归并已有附件、指令和权限入口，当前权限名称与可选项仍由官方提供。校验后的 rc1 按钮锚点保留原回调和确认流程，结构未知时恢复官方控件。工作区/模式显示在移动标题下方；隐藏已识别的桌面标题控件，保留未知插件贡献。
+随包分发的 `examples/https-ingress.mjs` 只绑定 loopback，保留公网 Host/Origin 交给官方认证，要求转发协议为 HTTPS，为上游 Cookie 补充 `Secure`，并透传 HTTP 流与 WebSocket 升级。它不读取 Host 私钥，也不增加配对或逐设备撤销系统——仅在 HTTPS 隧道之后运行，授权始终由 Host 负责。手机登录时，仅将 Host 启动链接的 origin 替换为隧道 origin，保留 `?token=...`；带凭据链接请私下保存。新建隧道会分配新域名：同步更新 ingress origin、Host trusted-host 和 mobile 公网 origin 后重新登录——旧 Cookie 绑定旧 authority。停止隧道进程即关闭这条公网路径；仅卸载插件不会。参见 [Quick Tunnel 验收记录](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md)。
 
 ## 可选协作界面
 
-message-tools、TaskPilot、Room 和 Local Agent 家族独立安装。移动端读取公开能力，不把它们作为启动依赖。长按已识别的用户消息，调用原有复制/编辑/撤回；助手消息使用自己的回合动作。确认、禁用状态及修改语义仍由原组件负责。无法识别的渲染器保留原控件。
-
-加号面板打开 **Room 原有邀请表单**，仅调整为移动端底部面板样式。成员快捷面板读取名册、打开已有子会话；设置按钮进入 Room 原成员页与编辑表单。代理发现、认证、随机命名、首个任务派发、目录接入、仅修改字段的补丁、移除确认及业务错误都由 Room 负责，不再维护第二套移动邀请/编辑 API。移动端在当前浏览器内临时适配公开的 `uiWorkspace.pickDirectory` 方法，由面板返回所选路径，Room 原表单继续消费该结果。卸载时恢复方法；未知的只读服务外观保留原行为。首个任务留空表示待命；填写后沿用 Room 的派发行为。无法识别快捷入口时保留原成员页作为回退。
-
-Room 与 Local Agent 保留各自输入框。Room 排队面板使用官方会话 API 和 `row.text` 可编辑判据，按请求 ID 去重已接收/待确认消息，并在消息消失或不可修改时退出编辑。目标、任务与 TaskPilot 保留原组件所有权。Room 在两端都会用自己的输入框替换普通 dock，因此移动端不承诺 Room 内展示全部普通会话 TaskPilot 胶囊。
-
-移动阅读正文最低 17px，主要控件 16–17px，辅助信息约 14px；从宿主字体变量派生，不写入宿主字号偏好。邀请/编辑控件点击高度至少 44px，面板跟随键盘打开后的可见视口。
-
-会话列表统一保留工作区，并显示群聊和普通会话的成员数。仅为可见行查询可选 Room 元数据；失败保留未知状态，不显示错误的成员数。当前 Room 版本首次异步填充缓存时可能未刷新输入框选择；移动端通过始终让出的 chain 条目刷新公开槽位选择，不替换胜出的组件。待处理交互仍优先。
-
-本机消息确认提交后，收起同一个空白编辑器的键盘；提交失败和后续草稿保留焦点。上下文圆环留在发送按钮旁。玻璃质感表面跟随宿主浅暗色，文字保持不透明，并提供降低透明度时的回退。参见[协作验收](../../docs/acceptance/mobile-collaboration-2026-09-12.md)。
-
-
-## Safari 流式同步兼容层
-
-宿主 `0.1.5-rc.1` 的 JSON 校验会在 Safari 还原进行中回复时误拒绝普通对象。针对该已知缺陷，随包分发的 HTTPS ingress 支持 `MOBILE_SAFARI_COMPAT=1`。使用此环境变量重启 ingress，兼容层生效后重新加载客户端。已经停止的正文订阅不能仅靠重新连接 socket 恢复。
-
-这是默认关闭的交付层适配，不修改宿主源码：只检查 WebKit 对 `/plugins/` JavaScript 的 GET 请求。完整已知校验函数的 SHA-256 指纹决定是否替换；未知代码和已经修好的代码保持原样。补丁使用当前引擎的原生构造函数格式比较，不修改 `Function.prototype.toString`。认证、RPC 请求体、WebSocket 帧和宿主执行保持不变。直接连接局域网或使用其他 ingress 不会获得此兼容层。
-
-有界 JavaScript 完成检查后，向支持 gzip 的客户端压缩输出，包括未修改的 bundle，避免多兆字节的未压缩脚本拖慢手机隧道加载。响应保持 private/no-store；修改后的脚本重算字节长度并移除旧 ETag/digest。超过 16 MiB、非 JS、认证失败、上游忽略 identity 编码要求而返回压缩内容的响应原样透传。升级宿主时检查 `x-dsh-mobile-compat` 与 ingress 不含请求内容的兼容日志，不自动扩大指纹范围。上游修复通过真实 WebKit 前后台和重连验收后移除开关。正式部署从已安装 tarball 的 `examples/` 启动 ingress，避免使用开发检出。
-
-只读配套接口 `GET /api/mobile/directories` 复用官方 Connection 认证和 Host/Origin 检查。在已认证操作者现有文件系统权限内返回目录名称与路径，包括可进入的符号链接；不读取文件内容，不创建目录。每次最多返回 1,000 个目录、扫描 10,000 个条目，并提示截断。原生选择器宿主无需切换共享后端即可支持手机浏览。接口缺失或连接中断时显示错误和重试；此功能要求使用提供 HTTP 服务的连接方式。
+message-tools、TaskPilot、Room 与 Local Agent 家族独立安装；移动端读取它们的公开能力，从不把它们作为启动依赖。长按已识别的用户消息调用原有复制/编辑/撤回；无法识别的渲染器保留原控件。加号面板打开 **Room 原有邀请表单**，仅调整为移动端底部面板样式——代理发现、认证、随机命名、首个任务派发和移除确认都由 Room 负责，不存在第二套移动邀请/编辑 API。移动端在当前浏览器内临时适配公开的 `uiWorkspace.pickDirectory` 方法，让 Room 原表单原样消费面板返回的结果，卸载时恢复。Room 与 Local Agent 保留各自输入框，因此不承诺 Room 内展示全部普通会话的 TaskPilot 胶囊。已知 Room 版本首次异步填充缓存时可能未刷新输入框选举；移动端用一个始终让出的 chain 条目刷新公开槽位选举，不替换胜者。参见[协作验收](../../docs/acceptance/mobile-collaboration-2026-09-12.md)。
 
 ## Compatibility
 
-| 宿主线 | 结论 |
-|---|---|
-| 官方 `0.1.5-rc.1`、`183f08e9c6` | 本地浏览器/Host 验证，iOS 模拟器构建通过；完整真机/网络验收待完成。 |
-| 其他 npm RC / Harness master | 未验证，采用前审计。 |
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 可用，带已声明的降级——`dsh.compat.minHost` 为 `0.1.5-rc.1`。本地浏览器/Host 验证与 iOS 模拟器构建在 `0.1.5-rc.1`（`183f08e9c6`）上通过，但移动布局与 iOS 壳仍在验收中；**Safari 在 0.1.5-rc.1 上恢复进行中回复需要选择启用的随包 ingress 适配层**（`MOBILE_SAFARI_COMPAT=1`，见「实现原理」）；**不提供设备配对与推送**。更旧的宿主：低于 `minHost` 自行承担风险——均不受支持。
+- 源码线（deepseek-harness master）：对固定的 `0.1.7-rc.1` 类型面构建+测试通过（2026-09-26），但按 `dsh.compat` 的声明，真机/网络验收矩阵完成前不声明 `verifiedHost`——在其他宿主上采用前请先审计。
 
-`dsh.compat.minHost` 为 `0.1.5-rc.1`，发布矩阵未完成前不声明 `verifiedHost`。会话首页使用可选的官方 sessions/workspaces/uiWorkspace 服务，过滤已归档会话和子代理，保留普通分叉会话；缺少服务时回退基础官方侧栏。这里搜索的是标题和工作区路径，不是消息正文。启用布局前检查公开 frame/slot DOM 锚点；未知结构保留官方页面。结构变化可能降低移动可用性，但不改变 Host 执行。原生桥接版本变化需要判断 App 兼容性；兼容的 Web 更新不自动要求重发 IPA。
+会话首页使用可选的官方 sessions/workspaces/uiWorkspace 服务，过滤已归档会话和子代理行、保留普通分叉会话；缺少服务时回退基础官方侧栏。启用布局前检查公开 frame/slot DOM 锚点；未知结构保留官方页面——结构变化可能降低移动可用性，但不改变 Host 执行。原生桥接版本变化需要判断 App 兼容性；兼容的 Web 更新不自动要求重发 IPA。参见[导航/扫码验收](../../docs/acceptance/mobile-navigation-2026-09-11.md)、[rc1 验收证据](../../docs/acceptance/mobile-rc1-2026-09-11.md)与[提案](../../proposals/active/2026-08-19-mobile-access.md)。无需修改官方或兄弟插件源码。
 
-参见[导航/扫码验收](../../docs/acceptance/mobile-navigation-2026-09-11.md)、[验收证据](../../docs/acceptance/mobile-rc1-2026-09-11.md)与[提案](../../proposals/active/2026-08-19-mobile-access.md)。无需修改官方或兄弟插件源码。
+## 已知限制
+
+- **开发基线**——相机/文件选择、分享/下载、后台恢复和社区插件组合尚未完成验收。iOS 扫码接收已有官方 HTTPS 登录链接并要求确认主机；相机实测验收仍待完成。
+- **没有逐设备凭据**——一次性设备配对、逐设备撤销、Keychain 配对和 APNs 推送均未实现；隐藏二维码不撤销任何东西（见上）。
+- **热卸载未通过验收**——依赖变化需要受控重启 Host 并刷新客户端。
+- **偏好仅存在当前浏览器**——布局选择（`dsh.mobile.display`）与首页分组（`dsh.mobile.grouping`）绝不离开此浏览器，不写入宿主。
+- **首页搜索是浅搜索**——只过滤会话标题和工作区路径，不搜消息正文。
+- **回前台恢复有下限**——健康的短暂切换不重复重连，但已经停止的正文订阅不能仅靠重连 socket 恢复。
+
+## 实现原理
+
+<details>
+<summary>架构、安全边界与 Safari 适配层（点击展开）</summary>
+
+**Host 面。** 三条路由挂在官方受认证的 Connection 注册表上，且仅在组合中存在 `connection` 时才挂载（`ctx.inject(['connection'])`）：`GET/POST /api/mobile/connect`（扫码登录签发——POST 额外要求同源 JSON 动作与 `ready` 状态的目标地址，导航或表单永远无法引出登录链接，provider 错误绝不回显）、`GET /api/mobile/directories`（只读目录名/路径，不超出操作者现有文件系统权限——不读文件内容、不创建目录；上限 1,000 行目录 / 10,000 个扫描条目并带截断标记）、`GET /api/mobile/handshake`（只读能力发现：桥接版本、能力清单、`devicePairing: false`、`pushNotifications: false`）。所有响应均为 `no-store`。
+
+**Client 面。** 一个浏览器持有的 `MobilePresentation` 切换文档元素上的 `data-dsh-mobile`，持有样式表、observer 与监听器，且仅在官方 frame 锚点（`[data-slot="root"]` 且含 main/sidebar）符合预期结构时启用——否则保留官方页面。槽位贡献全部经 `slots.inject`（绝不裸 register）：`settings.section`/`mobile-connect`、`shell.overlay`/`mobile-directory` 与 `/mobile-navigation`、`conversation.input.dock` + `conversation.session.header.actions`/`mobile-send-focus`（本机消息确认提交后收起同一个空白编辑器；提交失败和后续草稿保留焦点）、`conversation.session.header.actions`/`mobile-room-queue`、`conversation.hero.brand.mark` 的欢迎内容、`conversation.input.left`/`mobile-input-tools`（加号菜单归并官方附件/指令/权限入口），以及移动模式激活期间对两个公开 `directoryFlow` 槽位的 priority −100 遮蔽。Room 输入框选举刷新使用一个始终让出的 `conversation.composer` 条目，绝不替换胜者。词典随包提供 `en`/`zh`。
+
+**原生桥接（version 1）。** 壳声明 `window.__DSH_MOBILE_SHELL__`；客户端上报 `ready`/`unloaded` 及布局与锚点诊断，仅接受同 origin 主框架的 `chrome`、`settings`、`scan` 消息。新增原生动作需壳声明能力，旧壳保留回退控件。桥接不授予文件或命令权限。
+
+**Safari 流式同步兼容层。** 宿主 `0.1.5-rc.1` 的 JSON 校验会在 Safari 还原进行中回复时误拒绝普通对象。随包 ingress 接受 `MOBILE_SAFARI_COMPAT=1`，作为选择启用的交付层适配——不修改宿主源码：只检查 WebKit 对 `/plugins/` JavaScript 的 GET 请求，由完整已知校验函数的 SHA-256 指纹决定是否替换，未知代码和已修复代码原样透传。认证、RPC 请求体、WebSocket 帧和宿主执行保持不变；直连局域网或其他 ingress 不会获得此适配。有界 JavaScript 向支持 gzip 的客户端压缩输出（超过 16 MiB、非 JS、认证失败、identity 编码不匹配的响应原样透传）；适配后的资源带校正后的字节长度、无旧 ETag/digest，保持 `private/no-store`。升级宿主时检查 `x-dsh-mobile-compat` 响应头与 ingress 不含请求内容的兼容日志，不自动扩大指纹范围；上游修复通过真实 WebKit 前后台/重连验收后移除该开关。正式部署从已安装 tarball 的 `examples/` 启动 ingress，不用开发检出。
+
+**卸载。** dispose 只移除自有资源——样式、`data-dsh-mobile` 布局标记、observer、监听、路由和槽位贡献——并恢复被适配的 `pickDirectory` 方法。会话、宿主任务、共享连接、官方 Cookie 和 App/VPN 全部原样保留。
+
+</details>
+
+## 开发
+
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/mobile`）。问题与贡献请移步该仓库。

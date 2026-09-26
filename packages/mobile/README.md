@@ -1,132 +1,109 @@
-# DSH Mobile
+# @khorsheed/dsh-mobile
 
 English | [中文](README.zh.md)
 
-An independently removable mobile presentation for DeepSeek Harness. The Mac continues to own sessions, models, skills, tools and plugin execution. The optional [iOS shell](../../apps/ios/README.md) embeds the same official Web client.
+Your dsh sessions, in your pocket — the Mac still runs the sessions, models, skills and tools; the phone just gets an interface built for it.
+
+The official Web client is desktop-shaped: a sidebar that eats the screen, a dense composer, touch targets made for a mouse. This plugin re-presents the very same client for narrow touch screens — a conversation library with grouping and search, a wrapping composer with reachable controls, a sheet for picking directories on the computer — and adds an optional [iOS shell](../../apps/ios/README.md) that embeds that same official Web client and pairs to it over a QR login link. Everything stays removable: uninstalling restores the official desktop UI exactly, and no Host or sibling-plugin state is ever written.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-library.png" width="640" alt="mobile conversation library: time and workspace grouping, collapsible workspace sections, bottom search">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-conversation.png" width="640" alt="a conversation in mobile layout with the wrapping composer toolbar and the expanded plus menu grouping attachment, command and permission triggers">
 
 ## Features
 
-- A conversation library with time/workspace grouping, collapsible workspace sections and bottom search. Grouping stays local to this browser; the official chat and draft remain mounted behind navigation.
-- Client-local mobile layout, full-width right-panel details, mobile settings and a wrapping composer toolbar with larger touch targets.
-- Official conversation renderer, composer, model/permission selectors, attachments and streaming transport stay in place.
-- Choose a **computer** directory in a mobile sheet: saved workspaces, one-level folder browsing, parent navigation, hidden-folder toggle and a validated absolute-path fallback. Workspace adoption and Room member picks share this sheet; desktop clients keep the native chooser.
-- Authenticated `GET /api/mobile/handshake`; versioned native bridge for presentation status and optional native settings/QR scanning. Foreground recovery uses the official connection service, never replays a send command. Healthy brief interruptions and initial connecting signals avoid redundant reconnects; suspension of at least 5 s still refreshes the stream generation.
-- No required community plugins. Existing message-tools/member/preview surfaces retain their owners; their mobile combinations still require acceptance.
+- **Conversation library home** — time/workspace grouping, collapsible workspace sections and bottom search. Grouping stays local to this browser (`dsh.mobile.grouping`); the official chat and your draft remain mounted behind navigation.
+- **A real mobile layout, client-local** — full-width right-panel details, mobile settings, and a wrapping composer toolbar with larger touch targets (reading text ≥ 17px, primary controls 16–17px). The official conversation renderer, composer, model/permission selectors, attachments and streaming transport stay in place.
+- **Pick a computer directory from your phone** — saved workspaces, one-level folder browsing, parent navigation, a hidden-folder toggle and a validated absolute-path fallback. Workspace adoption and Room member picks share this sheet; desktop clients keep the native chooser.
+- **Connect a phone by QR** — an authenticated Web settings section mints the official login link for your deployment's HTTPS origin and shows it as a locally encoded QR; the iOS shell scans, confirms the host, and is in.
+- **Versioned native bridge** — an authenticated `GET /api/mobile/handshake` plus a bridge-version-1 message channel for presentation status and optional native settings/scanning. Foreground recovery rides the official connection service and never replays a send command; brief interruptions and initial connecting states avoid redundant reconnects, while a suspension of 5 s or more still refreshes the stream generation.
+- **Plays well with the ecosystem, requires none of it** — no community plugin is a boot dependency. Long-press recognized user messages for message-tools' original copy/edit/withdraw; the plus sheet opens Room's original invite form; TaskPilot and Local Agent surfaces keep their owners.
 
-This is a development baseline, not a released or real-device-qualified app. Camera/file picking, sharing/downloads, background recovery and community combinations are not yet qualified. The iOS scanner accepts existing official HTTPS login links and requires host confirmation; camera acceptance is still pending. No one-time device pairing, per-device credential revocation or APNs is provided.
+This is a development baseline, not a released or real-device-qualified app — see Known Limitations.
 
-## Install and remove
-
-Build and pack from a repository worktree first:
+## Install
 
 ```sh
-pnpm --filter @khorsheed/dsh-mobile build
-pnpm --filter @khorsheed/dsh-mobile test
-pnpm exec tsx scripts/pack-dist.ts --package packages/mobile --scope @khorsheed --version 0.1.0 --out packages/mobile/.dev/dist
+dsh plugin --profile web add @khorsheed/dsh-mobile
 ```
 
-Install the resulting tarball with `dsh plugin --profile web add /path/to/package.tgz`; remove with `dsh plugin --profile web remove @khorsheed/dsh-mobile`. The package self-mounts; do not edit profile YAML. On the tested rc1 instance, dependency changes require a controlled Host restart and client reload; hot uninstall is not qualified. Use an isolated `DSH_HOME` and test port during development. Production 3080 still goes through the repository deployment gate.
+The package self-mounts its own row — do not edit profile YAML. Restart the web instance and reload the client to activate.
 
-A narrow touch screen or the native shell enables the layout automatically. `?mobile=1` explicitly enables it; `?mobile=0` disables it. The mobile settings choice persists only in this browser under `dsh.mobile.display`; library grouping uses `dsh.mobile.grouping`. After selecting desktop layout, `?mobile=1` restores the settings entry. The login exchange redirects to `/`, so apply a query override after authentication if needed.
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-mobile
+```
 
-Unload removes owned styles, frame markers, observers, listeners, routes and slot contributions. It does not delete sessions, cancel Host tasks, close the shared connection, revoke official cookies or uninstall the App/VPN. Preferences may remain for reinstall. Browser hot-unload and tarball acceptance are recorded separately below.
+Unload removes owned styles, frame markers, observers, listeners, routes and slot contributions. It does not delete sessions, cancel Host tasks, close the shared connection, revoke official cookies or uninstall the App/VPN. Preferences may remain for reinstall.
 
-## Connection and authentication
-
-The App accepts a configured HTTPS origin or official launch-token login URL. It persists the clean origin only; WebKit stores the official browser session cookie. The bridge accepts only matching-origin main-frame messages with bridge version 1, and supports `ready`, `unloaded`, `chrome`, `settings` and `scan`. New native actions require advertised capabilities; older shells keep their fallback controls. It does not grant file or command privileges.
-
-Different physical networks need an independently configured HTTPS/WSS ingress to the loopback Host port (3080 in production), valid official authentication, an awake/online Mac and reachable phone. Starting 3080 alone does not establish remote access. The App does not configure networking or credentials on your behalf. Debug simulator builds allow HTTP on loopback only; Release requires HTTPS. Clear local App data and server-side device revocation are different operations.
+A narrow touch screen (`max-width: 760px` with a coarse pointer) or the native shell enables the layout automatically. `?mobile=1` explicitly enables it; `?mobile=0` disables it. The mobile settings choice persists only in this browser under `dsh.mobile.display`; after selecting desktop layout, `?mobile=1` restores the settings entry. The login exchange redirects to `/`, so apply a query override after authentication if needed.
 
 ## Connect a phone from Web settings
 
-The authenticated Web client exposes **Settings → Connect phone** through the public `settings.section` slot. This is available on desktop without enabling mobile layout. Configure the phone-reachable **clean HTTPS origin** in the mobile plugin's `publicOrigin` option, or set `DSH_MOBILE_PUBLIC_ORIGIN` on the **Host process**. The plugin option takes precedence. Add the same hostname to the Host's `--trusted-host` list; the ingress `PUBLIC_ORIGIN` must also match. These are deployment settings, not phone preferences.
+The authenticated Web client exposes **Settings → Connect phone** through the public `settings.section` slot — available on desktop without enabling the mobile layout. Configure the phone-reachable **clean HTTPS origin** as the plugin's `publicOrigin` option, or set `DSH_MOBILE_PUBLIC_ORIGIN` on the **Host process** (the plugin option wins). Add the same hostname to the Host's `--trusted-host` list; the ingress `PUBLIC_ORIGIN` must also match. These are deployment settings, not phone preferences.
 
 ```sh
 DSH_MOBILE_PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
 ```
 
-Use an isolated profile for the example; change production launch configuration through its supervised cutover flow. Missing/invalid origin, unsupported Host capability and an untrusted destination show setup guidance without generating a login link.
-
-1. Open Web Settings → Connect phone and check the displayed host.
+1. Open Web **Settings → Connect phone** and check the displayed host.
 2. Click **Show login QR code**.
 3. In the iOS App, open **Connection Settings → Scan to connect**, scan and confirm the host.
 
-`GET /api/mobile/connect` returns configuration status only. An authenticated, same-origin JSON `POST` obtains the official `connection.authenticatedUrl()` for the deployment-owned origin; browser input cannot override the destination. Both routes use the official Connection registry, preserving its cookie and Host/Origin checks. Responses are no-store. QR encoding happens locally in the browser; no third-party QR service, secret logging or browser persistence is used. Leaving the section, hiding the page or waiting two minutes conceals the code and aborts pending requests.
+`GET /api/mobile/connect` returns configuration status only. An authenticated, same-origin JSON `POST` obtains the official `connection.authenticatedUrl()` for the deployment-owned origin — browser input cannot override the destination. Both routes ride the official Connection registry, preserving its cookie and Host/Origin checks, and answer `no-store`. QR encoding happens locally in the browser: no third-party QR service, no secret logging, no browser persistence. Leaving the section, hiding the page or waiting two minutes conceals the code and aborts pending requests. Missing/invalid origin, an unsupported Host capability or an untrusted destination shows setup guidance instead of generating a login link.
 
-**Concealment is not credential expiry.** This is the official process login token, valid until that Host process restarts, not a short-lived/one-use pairing token. Existing cookies have their own Host-owned lifetime. Hiding or regenerating the QR does not revoke a copied link or a logged-in phone. Per-device credentials, revocation, Keychain pairing and push remain unimplemented.
+**Concealment is not credential expiry.** The QR carries the official process login token, valid until that Host process restarts — not a short-lived or one-use pairing token. Hiding or regenerating the QR does not revoke a copied link or a logged-in phone, and existing cookies keep their Host-owned lifetime.
 
-If the entry is unreachable, restore the HTTPS tunnel first. A running tunnel process with zero active connections cannot carry requests. When a temporary domain changes, update ingress origin, Host trusted hostname and mobile public origin together, then generate a new login QR; old cookies are bound to their old authority. A successful local 3080 response alone does not prove the phone can connect. Prefer a stable HTTPS entry for regular use. Scanning does not renew an expired iOS development signature.
+Different physical networks need an independently configured HTTPS/WSS ingress to the loopback Host port, valid official authentication, an awake/online Mac and a reachable phone — starting the Host alone does not establish remote access, and the App does not configure networking or credentials for you. Debug simulator builds allow HTTP on loopback only; Release requires HTTPS.
 
-## Optional Quick Tunnel preview
+## Optional: a Quick Tunnel preview
 
-Networking is deployment configuration, not a plugin dependency. Community users can choose Quick Tunnel for temporary previews, their own HTTPS reverse tunnel/server, or private networking. No personal domain, server or Cloudflare account is embedded in the plugin. A stable managed relay would be a separate service with its own operating costs.
-
-[Cloudflare Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) create a temporary HTTPS address without a Cloudflare account or your own domain. They are for testing, have no uptime guarantee, allow 200 concurrent requests and do not support SSE. The tested rc1 conversation transport uses WebSocket; this does not qualify unrelated plugins that require SSE.
-
-Use an isolated Host profile with the mobile tarball installed. Install `cloudflared` from its official distribution and use Node 22+. From the repository root, start the tunnel first (the origin can be offline while the address is allocated):
+Networking is deployment configuration, not a plugin dependency — bring your own HTTPS reverse tunnel/server or private networking; the plugin embeds no domain, server or Cloudflare account. For temporary previews, [Cloudflare Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) mint a temporary HTTPS address without an account or domain: no uptime guarantee, 200 concurrent requests, no SSE (the tested conversation transport uses WebSocket).
 
 ```sh
 cloudflared tunnel --url http://127.0.0.1:3182 --protocol quic --no-autoupdate
-```
-
-Protocol choice depends on the local network. If the registered QUIC tunnel stalls on real requests, try `--protocol http2`; HTTP/2 can also fail on another network, so neither protocol is a universal default. A registered tunnel or a healthy loopback origin alone is not enough evidence. Verify public login, the session list and a full WebSocket reply before sharing the preview. A new Quick Tunnel allocates another hostname: update both the ingress origin and the Host trusted-host through the guarded launch cutover, then reconnect the app. Keep these processes running independently of short-lived automation sessions.
-
-Copy its generated hostname in place of `YOUR-HOST.trycloudflare.com` below. Start the standalone example in a second terminal:
-
-```sh
 PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com HOST_PORT=3181 INGRESS_PORT=3182 node packages/mobile/examples/https-ingress.mjs
+dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com   # own DSH_HOME, workspace, model
 ```
 
-Then start the isolated Host with its own `DSH_HOME`, workspace and configured model, adding the exact public authority through the official flag:
-
-```sh
-dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
-```
-
-The example is also included under `examples/` in the package tarball. It binds only to loopback, preserves the public Host and Origin for official authentication, requires an HTTPS forwarded scheme, adds Secure to upstream cookies, and forwards HTTP streams and WebSocket upgrades. It neither reads Host private keys nor adds a pairing or device-revocation system. Run it only behind the HTTPS tunnel; a local header is not proof of an authenticated user. The Host remains responsible for authorization.
-
-For phone login, replace only the origin of the Host's launch URL with the tunnel HTTPS origin, preserving its `?token=...`. Open it in Safari or paste it into the iOS shell. Keep that credential-bearing URL private. Login redirects to a clean `/`; use `?mobile=1` afterwards if the device does not enable mobile layout automatically.
-
-Keep the Mac awake and all three services running. Stop the tunnel process to close this public access path; removing the mobile plugin alone does not stop the tunnel or revoke official sessions. A newly allocated hostname requires updating both `PUBLIC_ORIGIN` and `--trusted-host` and logging in again. This preview does not establish long-term cellular availability. See the [Quick Tunnel acceptance record](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md).
-
-Desktop mode keeps a “Return to mobile layout” button even after reload. Mobile entry suppresses automatic composer focus until an explicit input gesture; rc1 DOM-anchor changes fall back to official focus behavior. Ordinary session titles are deduplicated while ancestor/lineage controls remain visible. These Web-only fixes do not require reinstalling the native App.
-
-The polished mobile view retains composer statistics and official message actions, hides the unselected trajectory entry, and contributes its welcome through the public brand seat. Existing session workspace/preset labels are read-only on rc1; only new sessions offer the official pickers. The native settings page now controls layout through the validated `dsh-mobile-display` event. Unknown header geometry preserves the original header and ancestor navigation.
-
-The composer’s plus menu groups the existing attachment, command and permission triggers. The current permission name and available options remain official. Checked rc1 button anchors retain the original callbacks and confirmation flow, with original controls restored if the structure is unknown. Workspace/preset metadata sits below the mobile title; known desktop header controls are hidden, while unknown plugin contributions remain available.
+The bundled `examples/https-ingress.mjs` binds loopback only, preserves the public Host/Origin for official authentication, requires the HTTPS forwarded scheme, adds `Secure` to upstream cookies and forwards HTTP streams plus WebSocket upgrades. It reads no Host private keys and adds no pairing or device-revocation system — run it only behind the HTTPS tunnel; authorization stays with the Host. For phone login, replace only the origin of the Host's launch URL with the tunnel origin, preserving `?token=...`; keep that credential-bearing URL private. A new tunnel allocates a new hostname: update ingress origin, Host trusted-host and mobile public origin together, then log in again — old cookies are bound to their old authority. Stopping the tunnel closes this public path; removing the plugin alone does not. See the [Quick Tunnel acceptance record](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md).
 
 ## Optional collaboration surfaces
 
-Install message-tools, TaskPilot, Room and the Local Agent family separately. Mobile reads their public capabilities and does not require them to boot. Long-press recognized user messages for the original copy/edit/withdraw actions; assistant messages use their own turn actions. Confirmations, disabled actions and mutation semantics remain with their owners. Unrecognized renderers retain their original controls.
-
-The plus sheet opens Room's **original invite form**, styled as a mobile bottom sheet. The member shortcut reads the roster and opens existing child sessions; its settings action opens the original Room members view and edit form. Provider discovery, authentication, random names, first-task dispatch, directory adoption, changed-field patches, removal confirmation and business errors belong to Room. There is no second mobile invite/edit API implementation. Mobile temporarily adapts the public `uiWorkspace.pickDirectory` method in this browser to resolve a selected path from its sheet; the original Room form consumes that result unchanged. Unloading restores the method, and unknown read-only facades keep their original behavior. Blank first task means idle invitation; a supplied first task retains Room's dispatch behavior. Missing checked UI anchors retain the original Members tab as fallback.
-
-Room and Local Agent keep their own composers. The Room queue panel uses the official scoped Conversation API and authoritative `row.text` editability, deduplicates admitted/pending request IDs, and closes an edit when its row disappears or becomes immutable. Goal/todo and TaskPilot entries keep their original owners. Room's own composer replaces the ordinary dock on both platforms, so mobile does not promise that every ordinary TaskPilot pill appears inside a Room.
-
-Mobile reading text uses a 17px floor, primary controls 16–17px and captions approximately 14px, derived from host typography without persisting a host preference. Invite/edit controls remain at least 44px high and their sheet uses the visible viewport when the keyboard opens.
-
-The library preserves workspace identity and shows member counts for both room and ordinary sessions. Visible rows fetch optional Room metadata; failures remain unknown rather than displaying a false count. In this Room revision, an asynchronous initial cache fill can leave the composer election stale; a declining mobile chain entry refreshes the public slot election without replacing its winner. Pending interactions still take precedence.
-
-Successful local message admission dismisses the same empty focused editor; rejected submissions and newer drafts retain focus. The context meter stays beside Send. Glass-like surfaces use host light/dark colors with opaque text and a reduced-transparency fallback. See [collaboration acceptance](../../docs/acceptance/mobile-collaboration-2026-09-12.md).
-
-
-## Safari live-stream compatibility adapter
-
-Host `0.1.5-rc.1` includes a JSON validator that rejects ordinary objects in Safari when restoring an in-progress reply. For this known defect, the bundled HTTPS ingress accepts `MOBILE_SAFARI_COMPAT=1`. Restart the ingress with that environment variable and have the client reload after the adapter is active. Existing dead reply subscriptions do not recover just by reconnecting the socket.
-
-This is opt-in delivery adaptation, not a Host source patch: only WebKit GET requests for `/plugins/` JavaScript are examined. A SHA-256 fingerprint of the complete known validator gates replacement; unknown code and already-fixed code pass unchanged. The adapter compares against the current engine's native constructor formatting without changing `Function.prototype.toString`. Authentication, RPC bodies, WebSocket frames and the Host's execution are preserved. A direct LAN connection or another ingress does not receive this adapter.
-
-Bounded JavaScript is gzip-compressed for clients that accept gzip after inspection, including unchanged bundles, to avoid sending multi-megabyte identity assets through the mobile tunnel. Responses remain private/no-store; adapted assets have corrected byte lengths and no stale ETag/digest. Assets above 16 MiB, non-JS responses, authentication failures and upstream responses that ignore the requested identity encoding pass through unchanged. Inspect `x-dsh-mobile-compat` and the ingress's value-only compatibility log when qualifying a Host upgrade. Do not broaden the fingerprint automatically. Remove the flag after an upstream-fixed build passes real WebKit foreground/reconnect acceptance. Run the ingress from an installed tarball's `examples/`, not a development checkout, for a reproducible deployment.
-
-The read-only `GET /api/mobile/directories` companion uses the official Connection authentication and Host/Origin checks. It lists directory names and paths, including enterable symlinks, within the authenticated operator’s existing filesystem access; it never reads file contents or creates directories. Listings are bounded to 1,000 directory rows / 10,000 scanned entries and identify truncation. This supports native-picker hosts without changing their shared backend. A missing route or disconnected host shows an inline error with retry; the served HTTP carrier is required.
+Install message-tools, TaskPilot, Room and the Local Agent family separately; mobile reads their public capabilities and never requires them to boot. Long-press recognized user messages for the original copy/edit/withdraw actions; unrecognized renderers keep their original controls. The plus sheet opens **Room's original invite form** styled as a mobile bottom sheet — provider discovery, authentication, random names, first-task dispatch and removal confirmation all stay with Room; there is no second mobile invite/edit API. Mobile temporarily adapts the public `uiWorkspace.pickDirectory` method in this browser so Room's original form consumes the sheet's result unchanged, and restores it on unload. Room and Local Agent keep their own composers, so not every ordinary-session TaskPilot pill is promised inside a Room. A known Room revision can leave the composer election stale after its first asynchronous cache fill; a declining mobile chain entry refreshes the public slot election without replacing its winner. See the [collaboration acceptance](../../docs/acceptance/mobile-collaboration-2026-09-12.md).
 
 ## Compatibility
 
-| Host line | Verdict |
-|---|---|
-| Official `0.1.5-rc.1`, `183f08e9c6` | Local browser/Host validation; iOS simulator build passes. Full device/network qualification pending. |
-| Other npm RCs / Harness master | Not verified. Audit before adopting. |
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ⚠️ usable with documented degradations — `dsh.compat.minHost` is `0.1.5-rc.1`. Local browser/Host validation and the iOS simulator build pass on `0.1.5-rc.1` (`183f08e9c6`), but the mobile layout and iOS shell are still under validation; **Safari live-reply resume on 0.1.5-rc.1 requires the opt-in bundled ingress adapter** (`MOBILE_SAFARI_COMPAT=1`, see Internals); **device pairing and push are not provided**. Older hosts: stay below `minHost` at your own risk — none are supported.
+- source line (deepseek-harness master): build+test green against the pinned `0.1.7-rc.1` surface (2026-09-26), but per `dsh.compat` no `verifiedHost` is claimed while the real-device/network acceptance matrix is incomplete — audit before adopting other hosts.
 
-`dsh.compat.minHost` is `0.1.5-rc.1`; no `verifiedHost` is claimed while the release matrix is incomplete. The library uses the optional official sessions/workspaces/uiWorkspace services; it filters archived sessions and subagent rows while retaining ordinary forks. Missing services fall back to the basic official sidebar. Search here filters titles and workspace paths, not message contents. The public frame/slot DOM anchors are checked before enabling layout; an unknown frame retains the official page. A changed structure can reduce mobile usability without breaking Host execution. Native bridge version changes require an App compatibility decision; compatible Web updates do not automatically require a new IPA.
+The library uses the optional official sessions/workspaces/uiWorkspace services, filtering archived sessions and subagent rows while retaining ordinary forks; a missing service falls back to the basic official sidebar. The public frame/slot DOM anchors are checked before the layout enables; an unknown frame keeps the official page — a changed structure can reduce mobile usability without breaking Host execution. Native bridge version changes require an App compatibility decision; compatible Web updates do not automatically require a new IPA. See the [navigation/QR acceptance](../../docs/acceptance/mobile-navigation-2026-09-11.md), the [rc1 acceptance evidence](../../docs/acceptance/mobile-rc1-2026-09-11.md) and the [proposal](../../proposals/active/2026-08-19-mobile-access.md). No upstream or sibling source changes are required.
 
-See [navigation/QR acceptance](../../docs/acceptance/mobile-navigation-2026-09-11.md), [acceptance evidence](../../docs/acceptance/mobile-rc1-2026-09-11.md) and the [proposal](../../proposals/active/2026-08-19-mobile-access.md). No upstream or sibling source changes are required.
+## Known Limitations
+
+- **Development baseline** — camera/file picking, sharing/downloads, background recovery and community-plugin combinations are not yet qualified. The iOS scanner accepts existing official HTTPS login links and requires host confirmation; camera acceptance is still pending.
+- **No per-device credentials** — one-time device pairing, per-device revocation, Keychain pairing and APNs push are all unimplemented; hiding the QR never revokes anything (above).
+- **No hot uninstall qualification** — dependency changes require a controlled Host restart and client reload.
+- **Browser-local preferences only** — layout choice (`dsh.mobile.display`) and library grouping (`dsh.mobile.grouping`) never leave this browser; nothing is written to the Host.
+- **Library search is shallow** — it filters session titles and workspace paths, not message contents.
+- **Foreground recovery has a floor** — healthy brief interruptions skip redundant reconnects, but an already-dead reply subscription does not recover by reconnecting the socket alone.
+
+## Internals
+
+<details>
+<summary>Architecture, security boundaries and the Safari adapter (click to expand)</summary>
+
+**Host face.** Three routes on the official authenticated Connection registry, attached only when `connection` is composed (`ctx.inject(['connection'])`): `GET/POST /api/mobile/connect` (QR login minting — the POST additionally requires a same-origin JSON action and a `ready` destination, so a navigation or form can never reveal a login URL, and provider errors are never echoed back), `GET /api/mobile/directories` (read-only directory names/paths within the operator's existing filesystem access — never file contents, never creates directories; bounded to 1,000 rows / 10,000 scanned entries with a truncation flag) and `GET /api/mobile/handshake` (read-only feature discovery: bridge version, capabilities, `devicePairing: false`, `pushNotifications: false`). All responses are `no-store`.
+
+**Client face.** One browser-owned `MobilePresentation` toggles `data-dsh-mobile` on the document element, owns the stylesheet, observers and listeners, and activates only when the official frame anchors (`[data-slot="root"]` with main/sidebar) match the expected arrangement — otherwise the official page is kept. Slot contributions all go through `slots.inject` (never a bare register): `settings.section`/`mobile-connect`, `shell.overlay`/`mobile-directory` and `/mobile-navigation`, `conversation.input.dock` + `conversation.session.header.actions`/`mobile-send-focus` (dismisses the empty focused editor on successful admission; rejected submissions and newer drafts keep focus), `conversation.session.header.actions`/`mobile-room-queue`, a welcome mark in `conversation.hero.brand.mark`, `conversation.input.left`/`mobile-input-tools` (the plus menu grouping the official attachment/command/permission triggers), and priority-−100 shadows of the two public `directoryFlow` slots while mobile mode is active. The Room composer-election refresh is a declining `conversation.composer` entry that never replaces the winner. Dictionaries ship in `en`/`zh`.
+
+**Native bridge (version 1).** The shell advertises `window.__DSH_MOBILE_SHELL__`; the client posts `ready`/`unloaded` with layout and anchor diagnostics, and accepts only matching-origin main-frame messages for `chrome`, `settings` and `scan`. New native actions require advertised capabilities; older shells keep their fallback controls. The bridge grants no file or command privileges.
+
+**Safari live-stream compatibility adapter.** Host `0.1.5-rc.1` ships a JSON validator that rejects ordinary objects in Safari when restoring an in-progress reply. The bundled ingress accepts `MOBILE_SAFARI_COMPAT=1` as an opt-in, delivery-layer adaptation — not a Host source patch: only WebKit `GET` requests for `/plugins/` JavaScript are examined, a SHA-256 fingerprint of the complete known validator gates replacement, and unknown or already-fixed code passes through unchanged. Authentication, RPC bodies, WebSocket frames and Host execution are untouched; a direct LAN connection or another ingress receives no adaptation. Bounded JavaScript is gzip-compressed for gzip-accepting clients (assets above 16 MiB, non-JS, auth failures and identity-encoding mismatches pass through); adapted assets carry corrected lengths and no stale ETag/digest under `private/no-store`. Inspect the `x-dsh-mobile-compat` header and the ingress's value-only compatibility log when qualifying a Host upgrade, do not broaden the fingerprint automatically, and remove the flag once an upstream-fixed build passes real WebKit foreground/reconnect acceptance. Run the ingress from an installed tarball's `examples/`, not a development checkout.
+
+**Unload.** Disposal removes only owned resources — styles, the `data-dsh-mobile` frame markers, observers, listeners, routes and slot contributions — and restores the adapted `pickDirectory` method. Sessions, Host tasks, the shared connection, official cookies and the App/VPN are all left alone.
+
+</details>
+
+## Development
+
+Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/mobile`). Issues and contributions welcome there.

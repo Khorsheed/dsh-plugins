@@ -1,6 +1,23 @@
 # @khorsheed/dsh-quote
 
-引用任意内容：在应用里选中任意文本，选区旁浮出小菜单——**引用到当前会话**（进 composer 待编辑）、**引用到侧边对话**（成 side-chat ref）、**复制**；其他插件可经 `ctx.quoteActions` 注册表往菜单里加自己的动作行（见[向菜单贡献动作](#向菜单贡献动作其他插件)）。引用 = 选中的纯文本 + 来源标签，是不透明文本块：本插件不知道任何具体插件的类型，side-chat / 画布缺席时各自菜单项隐藏，插件独立可装卸。
+[English](README.en.md) | 中文
+
+看到哪句都能随手引用——选中任意文本，选区旁浮出的小菜单一键把它带进当前会话、带进侧边对话，或者复制走。
+
+想把助手回复里的一段话、文件预览里的一段内容拿来追问，以前只能手动复制、切换、粘贴。这个插件在应用内任何选区旁浮出动作菜单：**引用到当前会话**（选中文本作为带来源标注的引用块进 composer，待编辑，绝不替你发送）、**引用到侧边对话**（排成 side-chat 的待发送 ref）、**复制**；其他插件可经 `ctx.quoteActions` 注册表往菜单里加自己的动作行（见[向菜单贡献动作](#向菜单贡献动作其他插件)）。引用 = 选中的纯文本 + 来源标签，是不透明文本块：本插件不认识任何具体插件的类型，side-chat 缺席时对应菜单项自动隐藏，插件独立可装卸。
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-1.png" width="640" alt="选中助手回复中的一段文本后，选区旁浮出的动作菜单：引用到当前会话、引用到侧边对话、复制">
+
+## 特性
+
+- **选中即出菜单**——应用内任意非输入区域选中文本，选区旁浮出小工具条；输入框、菜单自身内的选区不触发，滚动或缩放即隐藏。
+- **引用到当前会话**——选中文本变成 `> 引用块`（块尾带来源标注）合入 composer 草稿：空白草稿直接填入，已有内容空一行后追加——绝不覆盖、绝不发送。
+- **引用到侧边对话**——选中内容排成绑定当前会话的 side-chat 待发送 ref（contextKey = 会话 id），成功后右侧栏的 side-chat 标签页自动浮现。
+- **复制**——原文经官方 `writeClipboard` 助手进剪贴板。
+- **菜单行可扩展**——其他插件经 `ctx.quoteActions` 注册表注册自己的动作行（比如画布插件注册「存为画布卡片」），收到同样的 `{ text, label, sessionId }` 不透明载荷；菜单不知道任何动作把内容投递到哪里。
+- **全程探测降级**——overlay 座位、当前会话、side-chat、两个 Remote 命名空间逐项探测：缺席即隐藏对应菜单项（或整体不出现），任何组合都能正常启动。
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-2.png" width="640" alt="点击「引用到当前会话」后，composer 输入框里的 > 引用块与块尾的来源标注">
 
 ## 选区浮层
 
@@ -55,11 +72,13 @@ if (registry !== undefined) {
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-quote
-# 卸载：
-dsh plugin --profile web remove @khorsheed/dsh-quote
 ```
 
-装完重启宿主。本插件自身无任何持久状态，卸载无残留（已发出的引用块/已排队的 side-chat ref 属于各自宿主的内容，不随卸载删除）。
+重启 web 实例后生效。本插件自身无任何持久状态，卸载无残留（已发出的引用块/已排队的 side-chat ref 属于各自宿主的内容，不随卸载删除）。
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-quote
+```
 
 ## Compatibility
 
@@ -69,7 +88,7 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 - **选区读取是 last-resort DOM anchor**：只读 `window.getSelection()` 的纯文本与矩形；读取本身抛错时按「安静消失」兜底，绝不拖垮启动。
 - **side-chat 是声明式可选协作**：`dsh.references` 声明 `@khorsheed/dsh-sidechat`（数据引用，非依赖）；side-chat 缺席时对应菜单项隐藏，其余照常。
 
-## Known Limitations
+## 已知限制
 
 - **DOM anchor 的脆弱性**：宿主改版可能让浮层判定失效——兜底是安静消失；上游 seam（选区动作位）才是正解，已起草上游提案（`docs/upstream-proposals/2026-09-16-selection-actions.md`），落地后本路径按区域退役。
 - **引用是纯文本快照**：不回链原文位置（v1 无锚点 seam）；来源标注只到「会话」粒度（选中自画布卡/文件预览时同样标注当前会话名，是 best-effort 的刻意取舍）。
@@ -91,7 +110,13 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 
 **动作注册表**：`ctx.quoteActions`（`src/client/registry.ts`）在 client apply 最顶部 provide；注册即追加、dispose 即移除，菜单经 `useSyncExternalStore` 订阅，热增删同帧反映。`list()` 的引用在两次变更间保持稳定，直接充当 getSnapshot。
 
+**主会话判定（跨宿主形状）**：宿主 0.1.6-alpha.2 起 `SessionListState.current` 退役，主视图会话改由每个 summary 的 `retainedBy.mainView` 计数表达；菜单先探计数、再回退旧字段，npm 线与源码线共用同一份代码。
+
 **身份三角**：cordis 行 id `quote` / `clientBundle('@khorsheed/dsh-quote')` / `src/invariant.ts` 的 `PACKAGE_NAME` 三处同名。
+
+**导出**：`/client` 导出插件本体（`apply`/`inject`）、`SelectionQuoteMenu`、`QuoteActionRegistryRuntime` 与注册表/选区 seam 的类型；host 侧导出 `QuoteRemoteService`，`/types` 子路径提供线上载荷类型，`/invariant` 提供部署自检件。
 </details>
 
-[English](README.en.md)
+## 开发
+
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/quote`）。问题与贡献请移步该仓库。

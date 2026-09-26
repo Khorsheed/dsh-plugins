@@ -1,10 +1,12 @@
-# `@khorsheed/dsh-local-agent-claude-code`
+# @khorsheed/dsh-local-agent-claude-code
 
 English | [中文](README.md)
 
-**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
+Delegate coding tasks to the Claude Code on this machine — thinking, tool calls, and replies stream back live, and your personal `~/.claude` is never touched.
 
-Delegate coding tasks to a locally installed Claude Code from any dsh agent preset — answers stream back live, and your personal `~/.claude` is never touched. The Claude Code harness of the [local-agent family](../local-agent/README.md).
+Any dsh agent preset can delegate: the family tool mounts once at the profile root, the child session is visible end to end — abortable, resumable — and every round's accounting (the actual model, token usage, tool-call count) reads back for real. Login is scope-isolated: the plugin only ever manages the one directory `$DSH_HOME/local-agent/claude-code`, so your personal installation and credentials stay out of it from start to finish. The Claude Code harness of the [local-agent family](../local-agent/README.md).
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent family cards under Settings → Plugins → plugin configuration, the Claude Code row's status dot showing its auth state">
 
 ## Features
 
@@ -13,7 +15,10 @@ Delegate coding tasks to a locally installed Claude Code from any dsh agent pres
 - **Guided login, one command** — `/claude-code login` answers with the exact command to run in your own terminal (claude ≥2.1 prints its OAuth URL only on a TTY, so the host no longer spawns and scrapes) and watches the scoped home for the credential; `sessions`/`status`/`logout` and a Settings → 本地 Agent panel complete the family.
 - **Resume a delegation** — pass back the result's `resume` handle to continue the same Claude session, with per-round accounting.
 - **Live stream mirror** — the child session mirrors Claude's thinking, tool calls, and replies live; aborting keeps the partial transcript and real token usage.
-- **Model readback and per-cell working directory** — every settled round reads back the model from stream-json’s system/init into the delegation record; orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
+- **Model readback and per-cell working directory** — every settled round reads back the model from stream-json's system/init into the delegation record; orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="640" alt="the expanded Local Agent · Claude Code settings card: the authentication block, the default-model picker, and the resident-mode (live) switch">
+
 ## Install
 
 Prerequisites: a running dsh profile, and the Claude Code CLI (`claude`) on `PATH` — the plugin does not install it. Install the family core together with this bundle (`dsh plugin add` reconciles only *direct* dependencies, so name both):
@@ -22,7 +27,7 @@ Prerequisites: a running dsh profile, and the Claude Code CLI (`claude`) on `PAT
 dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-claude-code
 ```
 
-Restart the profile, then run `/claude-code login` once from a session. Uninstall:
+Restart the web instance to activate, then run `/claude-code login` once from a session. Uninstall:
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-local-agent-claude-code
@@ -37,8 +42,11 @@ Optional fields on the bundle row:
 - `permissionMode` — `skip` (default) passes `--dangerously-skip-permissions` so the child can write files without an approval prompt; `normal` runs without it, so approval-requiring actions (e.g. writing files) are denied.
 - `model` — every delegation round starts the CLI with it (`claude -p --model <model>`); absent passes no model flag at all. See below.
 - `baseUrl` — sets `ANTHROPIC_BASE_URL` for the child CLI (e.g. a self-hosted router or proxy); absent, the child inherits the host process environment. Config wins over environment.
+- `proxyUrl` — an HTTP proxy for the child CLI's own traffic (model calls AND OAuth refresh), provisioned into the scoped `settings.json` env block; for when the host process environment carries no proxy (a supervisor-spawned instance does not inherit your shell exports).
 - `live` — live driver: one resident stream-json process per member (`--input-format stream-json`), one stdin message per round (runtime-level graceful control interrupt, same-shape push stream); off — or a channel that cannot come up — means the one-shot `claude -p` path.
 - `liveIdleMs` — idle lifetime of a resident runtime before reclaim (default 30 min).
+
+> **Migration note** — live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
 
 ### Default model (`model`)
 
@@ -48,7 +56,7 @@ Optional fields on the bundle row:
 
 One-shot (exec) rounds never rewrite the scoped `settings.json`: `--model` overrules it per round and the file stays exactly as you edited it. A resident (live) spawn scratches the member's effective model into that file (a `--resume` reattach honors the file's model over the `--model` flag) and restores the previous value before a spawn that binds none; the "CLI config" layer that status and the settings card report is always the value you configured, never a member's scratch.
 
-The settings card’s "Default model" writes the provider setting for subsequent rounds. Its shared picker displays the scoped model directory, discovery source and completeness, plus an explicit model-ID input when needed. Clearing the selection follows the effective configuration/default chain. Saving does not interrupt an active round and requires no reload. If the shared picker is unavailable, the card retains its text-input fallback. Per-member model and effort changes use the durable controls described below.
+The settings card's "Default model" writes the provider setting for subsequent rounds. Its shared picker displays the scoped model directory, discovery source and completeness, plus an explicit model-ID input when needed. Clearing the selection follows the effective configuration/default chain. Saving does not interrupt an active round and requires no reload. If the shared picker is unavailable, the card retains its text-input fallback. Per-member model and effort changes use the durable controls described below.
 
 The model surface now also reads Claude's native `initialize` directory, preserving selection aliases, display labels, resolved names and supported effort levels. It shares the core cache and refresh subscription, retains successful data after a failed refresh, and labels historical suggestions separately. This scoped control probe sends no user task and writes no model settings. An older CLI without this directory reports unsupported; native candidates do not establish account entitlement. The shared model picker and member effort controls are connected. Busy selections apply at the next complete turn boundary, including tool continuations; core owns current/pending state, cancellation and retry, while frozen evaluation members reject changes.
 
@@ -64,7 +72,7 @@ The model surface now also reads Claude's native `initialize` directory, preserv
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; suffix checkpoints provide recovery, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked separately in the room coordinator proposal. Older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; incremental durable recovery checkpoints handle persistence, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked by the room coordinator proposal. minHost is 0.1.5-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations

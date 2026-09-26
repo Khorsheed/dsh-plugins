@@ -2,41 +2,76 @@
 
 English | [中文](README.md)
 
-The companion tool row of `@khorsheed/dsh-room`: the model-facing room tools (`room_read` / `room_plan` / `room_invite` / `room_task` / `room_message` — read room context, organize goals with evidence review, invite CLI members, write the shared task board, dispatch messages to members), **granted per session** — present only in sessions whose agent preset composition names it. The second core/companion pair of the tool-row decoupling (M4'②, proposal 2026-08-26): community model tool rows live in presets, never at the profile root.
+The room's multi-agent abilities, in the model's own hands: read the roster, dispatch messages, invite members, write the shared task board — granted per session, absent everywhere else.
 
-## Shape: a companion package that never self-mounts
+`@khorsheed/dsh-room` (the core) turns a plain session into a multi-agent room: the roster, the shared task board and the goal plans all live in the core's service and UI. But the model-facing entry points should not be global. This companion package packs the five room model tools — `room_read` / `room_plan` / `room_invite` / `room_task` / `room_message` — into a tool row an agent preset composes: a preset that names the row gives its sessions the room tools; every other preset's sessions never see them. The second pair of the tool-row decoupling (M4'②, proposal 2026-08-26): community model tool rows live in presets, never at the profile root.
 
-- **Registers tools, provides NO service** (zero `ctx.provide`) — the preset-mount isolate-realm rule rejects only service rows; tool rows compose bare (the official `tool-bash` shape).
-- **Declares no `dsh.bundle`**: installing it as a dependency only makes the module resolvable (a plain dependency, the `@khorsheed/dsh-local-agent-dsh-headless` precedent) — nothing auto-mounts. Granting happens by naming the row in a preset's `agent.cordis.yml`:
+## Features
 
-  ```yaml
-  - id: room-tool
-    name: '@khorsheed/dsh-room-tool'
-  ```
-
-- **Runs on the core's global service**: probes `ctx.get('room')` at apply time — when the core (`@khorsheed/dsh-room`) is not mounted it silently skips registration (degrade, never breaks the preset mount); the tools register through deferred `ctx.inject(['tools'])` (the mount-order race lesson), so compositions without a tools registry are equally safe.
-- The tool-definition factories are exported by the core (`roomReadTool` / `roomInviteTool` / `roomTaskTool` / `roomMessageTool` from `@khorsheed/dsh-room/tool`) — zero copied business logic; the origin tag's owner is THIS package (attribution follows the mounting package). The row takes no config — the invitable provider roster is read from the global room service at call time.
-
-The context reader is registered only when the mounted core supports it. After coordinator handoff, the former native coordinator can still read room context; coordinator writes require the current role. External harnesses use the member bridge for room reads, invitations and background messages.
+- **Five model tools, granted per session** — `room_read` reads the roster / coordinator / deliveries / recent outcomes / available providers (read-only, wakes no member); `room_plan` runs formal goals (stages, task dependencies, evidence review, pause/resume); `room_invite` invites a CLI member (callable in any session — it promotes the session into a room); `room_task` writes the shared task board (add/close/update through the very host functions the capsule UI uses, so an agent-opened task is indistinguishable from a human-added one); `room_message` dispatches a message to a member (runs asynchronously, the reply returns as member speech).
+- **Zero copied business logic** — the tool-definition factories are exported by the core (`@khorsheed/dsh-room/tool`); this row only registers, tagging each tool with this package as the origin owner so the capability catalog attributes the tools to the mounting row, not the service core.
+- **Silent degrade without the core** — apply probes `ctx.get('room')`; when the core is not mounted the row logs one info line and skips registration, and the preset still mounts cleanly. Registration joins through deferred `ctx.inject(['tools'])`, so mount order can never strand the row.
+- **No config, no service, no browser half** — zero `ctx.provide` (the preset-mount isolate-realm rule rejects only service rows; tool rows compose bare, the official `tool-bash` shape); the room UI lives entirely in the core; the invitable provider roster is read from the global room service at call time.
+- **Capability-adaptive** — `room_read` registers only when the mounted core implements `readRoomContext`, `room_plan` only when it implements `commandPlan`; on an older core both are absent rather than broken.
 
 ## Install
 
 ```sh
-# The core still installs globally as before (room service / members UI / Remotes)
+# The core installs globally as before (room service / members UI / Remotes)
 dsh plugin --profile web add @khorsheed/dsh-room
-# The companion only needs to be resolvable in the profile's node_modules
+# The companion tool row goes into the same profile (resolvable is enough — it never self-mounts)
 dsh plugin --profile web add @khorsheed/dsh-room-tool
-# Then add the row above to the target preset's agent.cordis.yml
+```
+
+Restart the web instance, then name the row in the target preset's `agent.cordis.yml` — that preset's sessions get the tools:
+
+```yaml
+- id: room-tool
+  name: '@khorsheed/dsh-room-tool'
 ```
 
 The web-dev pack's dev-mode preset (`profiles/web-dev/presets/dev`) already carries this row; its `install.sh`/`update.sh` drops the preset into `$DSH_HOME/.agent-presets/dev`.
 
-Formal planning is optional. Small work uses `room_message`; `room_plan` creates draft or executable goals, stages, task dependencies and reviewed attempts. `room_read` supplies the current plan and the shared command schema. Execution completion is a submission, not acceptance. Workers may submit only their own active attempt; review and organization belong to the coordinator or human. Budget changes and uncertain-execution reconciliation require the human. The planning tool degrades to absent on a core without its backend.
+Remove:
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-room-tool
+```
+
+After removal, sessions of presets naming this row simply lose the room tools; the room service and UI come from the core and are unaffected.
 
 ## Compatibility
 
-- **npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`)**: ✅ full — the 0.1.5 plugin list renders this row in its "session plugins" group (short-name title, state badge, live-mount phase dot; verified live on 3299 with the row `fiberPhase: active` in the dev preset's 33-row composition). Actual member invites depend on the local-agent family's delegation facade (see the core's compatibility notes).
-- **deepseek-harness master**: ✅ (verifiedHost: 0.1.5-rc.1).
-- Hosts below 0.1.5: the session-plugins inventory view is 0.1.5 presentation — minHost pins 0.1.5-rc.1.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the 0.1.5 plugin list renders this row in its "session plugins" group (short-name title, state badge, live-mount phase dot; verified live on 3299 with the row `fiberPhase: active` in the dev preset's 33-row composition). Actual member invites depend on the local-agent family's delegation facade being installed (see the core's compatibility notes).
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1).
+- Hosts below 0.1.5: preset composition existed on earlier lines, but the session-plugins inventory view is 0.1.5 presentation — minHost pins 0.1.5-rc.1.
 
 **Version-line map**: `0.1.0` and later support host `0.1.5-rc.1` and up.
+
+## Known Limitations
+
+- **Planning and context reading depend on the core's backend** — `room_plan` / `room_read` register only when the mounted core implements `commandPlan` / `readRoomContext`; on an older core both tools are entirely absent.
+- **Task-board writes require the current coordinator role** — after a handoff to an external coordinator, the former native coordinator can still read room context, but `room_task` accepts writes only from the current coordinator.
+- **A finished run is a submission, not an acceptance** — workers may submit only their own active attempt; acceptance and organization belong to the coordinator or the human; budget changes and uncertain-execution reconciliation require the human.
+- **Inviting CLI members needs the local-agent family** — with the delegation facade unmounted, `room_invite` answers with readable error text (`local-agent-unavailable`) instead of throwing, so the model can self-correct.
+
+## How it works
+
+<details>
+<summary>Internals (click to expand)</summary>
+
+**Shape: a companion row that never self-mounts.** The package deliberately declares no `dsh.bundle`: installing it as a dependency only makes the module resolvable (a plain dependency, the `@khorsheed/dsh-local-agent-dsh-headless` precedent) — nothing auto-mounts; the grant entry is a preset's `agent.cordis.yml` naming the row. This is the official tool-row shape — the shipped `tool-bash` rows likewise consume host services and provide none.
+
+**Registration path.** Apply first probes `ctx.get('room')`; when absent it logs one info line and returns (degrade, never breaks the preset mount). Registration goes through deferred `ctx.inject(['tools'])` rather than an apply-time probe: `ctx.get('tools')` races the tools registry's own mount order and loses (the historical silent-never-registered incident), while `ctx.inject` fires when the registry appears and never fires in a composition without one. Every registration is wrapped in a labelled `ctx.effect` (`room-tool: room_invite tool`, …).
+
+**Origin tag.** The core exports the definitions untagged (the `@khorsheed/dsh-room/tool` contract — attribution belongs to the mounter); this package tags each definition with the `Symbol.for('dsh.tool.origin')`-keyed `{ channel: 'plugin', owner: '@khorsheed/dsh-room-tool' }` before registering. The tag is host-side only and never travels on the model wire.
+
+**Tool semantics.** `room_invite` and `room_message` PROMOTE: calling them in a plain session turns the session into a room instead of rejecting; `room_task` stays gated at execute time — outside a room it answers with readable error text rather than throwing, so the model sees the rejection and self-corrects. Validation failures (member name, task id) come back with the live roster or the open-task list attached, so a retry needs no extra read. External harnesses reuse the same `room_read` / `room_invite` / `room_message` / `room_plan` vocabulary through the authenticated family member bridge (a core feature).
+
+**Exports.** The package exports the plugin body (`apply`, an empty `inject`, the cordis diagnostic name `room-tool`) — no Remote, no client bundle; `./locale/*.json` carries the short-name title and description shown in the plugin inventory ("Room Tool" / "Session-granted room member, task, and message tools").
+
+</details>
+
+## Development
+
+Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/room-tool`). Issues and contributions welcome there.

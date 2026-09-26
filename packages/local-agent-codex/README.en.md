@@ -1,30 +1,38 @@
-# `@khorsheed/dsh-local-agent-codex`
+# @khorsheed/dsh-local-agent-codex
 
 English | [中文](README.md)
 
-**Live output migration.** Live runs always consume incremental output. The old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored; changing it never changes a running process. Exec remains available for evaluation. Final provider items remain authoritative, including tool history and usage.
+Hand coding tasks to the Codex CLI installed on your own machine — its own login, its own session records, and your `~/.codex` never gets touched.
 
-Delegate coding tasks from any dsh agent preset to your locally installed Codex CLI. Delegations run under a plugin-scoped home, so your personal `~/.codex` — config, credentials, sessions — is never touched.
+dsh agents already get work done, but some tasks you simply want to give to your local Codex CLI: its account, its models, the toolchain you know. This plugin wires Codex in as a dsh local subagent — any agent preset can delegate with one call through the `subagent_codex` tool; delegations run inside a plugin-scoped home (`$DSH_HOME/local-agent/codex`), so your personal config, credentials and sessions are never touched; the process details (reasoning, tool calls, file changes) mirror live into the child session, and the final answer comes back to the parent.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent · Codex card on the Settings → plugin configuration page, its header status dot showing the auth state at a glance">
 
 ## Features
 
 - **Delegate from any preset** — the `subagent_codex` tool mounts at the profile root; no per-preset setup.
-- **Scoped-home isolation** — all Codex state lives in `$DSH_HOME/local-agent/codex`, separate from your `~/.codex`.
-- **In-session login** — device-code `/codex login`, with auth status and sign-out under Settings → 本地 Agent.
-- **Resume a thread** — pass `resume="<childSessionId>"` to continue the same codex thread in the same dsh child session.
+- **Scoped-home isolation** — all Codex state (config, credentials, rollout session records) lives in `$DSH_HOME/local-agent/codex`, separate from your `~/.codex`.
+- **In-session login** — `/codex login` runs `codex login` on a pseudo-terminal and the authorization page opens in your browser by itself; when the page hands you a code, paste it back with `/codex code <code>`. The settings card shows auth status and offers sign-out.
+- **Resident mode (live)** — one resident `codex app-server` process per member, one turn per round: output streams into the child session in real time, cancel does not kill the process, and a crash resumes the same thread; off — or a channel that cannot come up — means the one-shot `codex exec` path, hot-switched without a reload.
+- **Settings card** — the Codex card on the Plugins detail page (on 0.1.5, Settings → Plugins → 插件配置): sign-in, a default model (blank = follow the CLI default), and the resident switch; a save applies on the next round.
+- **Resume a thread** — pass `resume="<childSessionId>"` to continue the same codex thread in the same dsh child session, even across host restarts.
 - **Custom endpoint** — route Codex's LLM requests through your own router via a scoped `config.toml` provider.
 - **Read-back and per-cell working directory** — every settled round reads the model, CLI version and usage back out of its own rollout into the delegation record; the file is located by thread id, cwd and time window, so concurrent runs each read their own round. Orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-codex-delegation.png" width="640" alt="a Codex delegation mirrored live in its child session: reasoning blocks, tool rows and a file-change card">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="the expanded Codex settings card: auth status with sign-in and sign-out, the default model, and the resident-mode switch">
+
 ## Install
 
-Prerequisites: a dsh profile and the Codex CLI (`codex`) on `PATH` — the plugin neither installs it nor logs in for you.
+Prerequisites: a working dsh profile and the Codex CLI (`codex`) on `PATH` — the plugin neither installs it nor logs in for you.
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
-# restart the profile, then run /codex login once from a session
 ```
 
-Both packages must be named explicitly — `dsh plugin add` reconciles only direct dependencies.
+Both packages must be named explicitly — `dsh plugin add` reconciles only direct dependencies, so the family core is never mounted by a transitive dependency. Restart the web instance to activate, then run `/codex login` once from any session to authorize.
 
 Uninstall:
 
@@ -32,7 +40,7 @@ Uninstall:
 dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 ```
 
-The scoped home (`$DSH_HOME/local-agent/codex`) is kept so a reinstall needs no fresh login; delete it to remove every trace.
+The scoped home (`$DSH_HOME/local-agent/codex`) is kept on purpose, so a reinstall needs no fresh login; delete it to remove every trace.
 
 ## Config
 
@@ -46,6 +54,8 @@ Optional, in the profile patch layer:
     live: false                # live driver: one resident codex app-server process per member, one turn per round (runtime-level graceful interrupt, push-mode mirroring); off — or a channel that cannot come up — means the one-shot exec path
     liveIdleMs: 1800000        # idle lifetime of a resident runtime before reclaim (default 30 min)
 ```
+
+**Legacy key migration.** Live runs always consume incremental output: the old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored, and changing it never changes a running process. Exec remains available for evaluation; final provider items remain authoritative, including tool history and usage.
 
 ### Default model (`model`)
 
@@ -89,13 +99,14 @@ The last line selects the provider for delegations; keep the rest of the file in
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; suffix checkpoints provide recovery, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked separately in the room coordinator proposal. Older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; incremental durable checkpoints provide recovery, and native final messages retain their transcript and usage semantics. End-to-end latency acceptance is tracked by the room coordinator proposal. minHost 0.1.5-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
 
 ## Known Limitations
 
-- **Login needs one browser step** — device-code only; no API-key path.
-- **`codex exec` is non-interactive** — actions the sandbox policy would approve are denied, not prompted; see the `sandbox` config.
+- **Login needs one browser authorization** — `/codex login` opens the authorization page itself, and when the CLI asks for a code you paste it back with `/codex code <code>`; there is no API-key path.
+- **`codex exec` is non-interactive** — actions the sandbox policy would approve are denied, not prompted; in resident mode approval-shaped requests are likewise auto-declined unattended (cancel/decline). See the `sandbox` config.
+- **Named scopes are exec-only** — the resident app-server binds the default scoped home, so a scoped delegation never enters live mode.
 - **Headless caveat** — `/codex` commands need a Web session; headless can still delegate via a composition mounting the tool row.
 
 ## How it works
@@ -105,11 +116,11 @@ The last line selects the provider for delegations; keep the rest of the file in
 
 **Named scopes.** `/codex login --scope <name>` opens a second scoped home at `<homesRoot>/codex@<name>`: the directory is provisioned with the same `config.toml` that pins credential storage to a file rather than the macOS keychain, so that scope's login lands in its own `auth.json`. A scoped delegation runs `codex exec` there, writes its rollout there and reads it back from there — exec-only, because the resident app-server is bound to the default scoped home.
 
-**Bundle composition.** The patch registers the `codex` harness (scoped `CODEX_HOME`, device-code login, rollout-file session records) and mounts `subagent_codex` at the profile root; the `codex-local` one-shot provider spawns `codex exec` under that home. The settings section ships with the family core's `./client` half; the core itself comes from `@khorsheed/dsh-local-agent`, declared as a dependency.
+**Bundle composition.** The patch registers the `codex` harness (scoped `CODEX_HOME`, PTY login, rollout-file session records) and mounts the `subagent_codex` tool at the profile root — the official preset row of that name already ships `disabled: true`, and the patch disables it once more, so a community install can never register two `subagent_codex` tools; a user who deliberately re-enables the official row in their own preset layer gets a loud duplicate-name conflict and must choose one, by design. The `codex-local` provider spawns `codex exec` under that home (the one-shot drive when live is off). The browser half ships with this package's `./client`: the Codex settings card composes the family core's shared `ProviderAuthBlock`, landing on the Plugins page's per-package detail view (`plugins.bundle.config`, keyed by package name) for a standalone install, on the bundle detail view's row-level configure entry (`plugins.row.config`) when installed as a family-bundle member, and — on 0.1.5 — on the Settings → Plugins → 插件配置 tab (`settings.plugin.item`, keyed by the settings namespace); card writes ride the bound settingsScope and hot-apply without a reload. The core itself comes from `@khorsheed/dsh-local-agent`, declared as a dependency.
 
-**Login and credentials.** `/codex login` shows the device-code URL in-session and polls in the background; credentials land in the scoped home on authorization. First start writes a minimal `config.toml` pinning `cli_auth_credentials_store = "file"` — Codex's default `auto` would resolve to the macOS keychain, leaking credentials outside the scoped home and defeating this package's `auth.json` presence check; an existing config is left untouched. `/codex logout` deletes the scoped `auth.json`, so a later login authorizes a fresh account.
+**Login and credentials.** `/codex login` runs `codex login` on a pseudo-terminal through the host's subprocess seam — the CLI starts its own localhost callback server and opens the browser itself, the first-class flow; the command reply carries the authorization URL captured from the output as a fallback link, and when the CLI asks for a code the user pastes it with `/codex code <code>` (written to the child's stdin). Completion is decided by a credential watch on the scoped home: `auth.json` present with a stamp newer than the watch start — a leftover credential is never mistaken for a fresh login. A browserless remote terminal can still run `codex login --device-auth` by hand with `CODEX_HOME` pointed at the scoped home, landing in the same `auth.json`. First start writes a minimal `config.toml` pinning `cli_auth_credentials_store = "file"` — Codex's default `auto` would resolve to the macOS keychain, leaking credentials outside the scoped home and defeating this package's `auth.json` presence check; an existing config is left untouched. `/codex logout` deletes the scoped `auth.json`, so a later login authorizes a fresh account.
 
-**Session records.** `/codex sessions` lists the scoped home's `sessions/YYYY/MM/DD/rollout-*.jsonl` files — sessions this plugin's delegations created, never your personal ones. The settings section narrows the list to records whose `workDir` matches the session cwd.
+**Session records.** `/codex sessions` lists the scoped home's `sessions/YYYY/MM/DD/rollout-*.jsonl` files — sessions this plugin's delegations created, never your personal ones. The records entry in the session header (provided by the family core's client) narrows the same list to records whose `workDir` matches the session cwd.
 
 **Read-back and the cwd override.** After every settled round the provider reads three facts back out of that round's own rollout file, reports them through the `settled` run-progress event, and merges them into `delegations.jsonl`: the model (`turn_context.payload.model` — codex 0.144.0's exec stream carries no model at all, so the rollout is the only authority; filtered to this round's time window, so a resumed thread's earlier models are never misread), the CLI version (`session_meta.payload.cli_version` — written by the codex build that actually served the round, a stronger answer than probing the executable afterwards), and the token usage a non-completed round never streamed (the last `token_count`). Absence is recorded, never guessed.
 
