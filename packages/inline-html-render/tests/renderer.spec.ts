@@ -151,6 +151,53 @@ describe('reconcile — real (hashed) renderer DOM shape', () => {
   })
 })
 
+describe('reconcile — generic-label toolbar shape (0.1.7-rc.1 CodeToolbar)', () => {
+  // CodeToolbar shows the host's localized generic label (代码块) for any
+  // language shiki cannot highlight: the `dsh-card` info string never reaches
+  // the DOM. Detection falls to the content signature.
+  function toolbarBlock(code: string): HTMLElement {
+    const wrap = document.createElement('div')
+    wrap.className = 'md-code-block'
+    const banner = document.createElement('div')
+    banner.className = '_bannerWrap_abc_21'
+    banner.textContent = '代码块' // the generic localized label, no info string
+    wrap.appendChild(banner)
+    const pre = document.createElement('pre')
+    const codeEl = document.createElement('code')
+    codeEl.textContent = code
+    pre.appendChild(codeEl)
+    wrap.appendChild(pre)
+    return wrap
+  }
+
+  it('swaps a complete HTML document whose banner shows only the generic label', () => {
+    load('')
+    const doc = '<!doctype html>\n<meta charset="utf-8">\n<html><body><h1>card</h1></body></html>'
+    document.body.appendChild(toolbarBlock(doc))
+    const mounted = reconcile(document.body)
+    expect(mounted).toHaveLength(1)
+    expect(document.querySelector('iframe')?.srcdoc).toContain('<h1>card</h1>')
+  })
+
+  it('swaps a fragment that carries the verbatim strict-CSP meta', () => {
+    load('')
+    const frag = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; font-src data:; connect-src \'none\'; worker-src blob:; object-src \'none\'; base-uri \'none\'; form-action \'none\'">\n<div>frag</div>'
+    document.body.appendChild(toolbarBlock(frag))
+    expect(reconcile(document.body)).toHaveLength(1)
+  })
+
+  it('leaves an ordinary code listing and an html fragment alone', () => {
+    load('')
+    document.body.appendChild(toolbarBlock('print(1)'))
+    // A fragment with no CSP meta: nothing marks it as a card.
+    document.body.appendChild(toolbarBlock('<div>just a fragment</div>'))
+    // A complete document that is truncated (no </html> tail): not settled protocol shape.
+    document.body.appendChild(toolbarBlock('<!doctype html>\n<html><body>partial'))
+    expect(reconcile(document.body)).toHaveLength(0)
+    expect(document.querySelector('iframe')).toBeNull()
+  })
+})
+
 describe('installCardRenderer', () => {
   beforeEach(() => {
     load('')

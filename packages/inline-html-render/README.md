@@ -63,7 +63,7 @@ host 半边注册的 `inline-html-card` 与 `3d-artifact` 两个 skill 同属一
 
 ## 已知限制
 
-- **依赖官方渲染 DOM 细节**——定位靠 `.md-code-block` 容器与 banner 里 info string 的前导文本(本版本官方 CodeBlock 用哈希类名包裹,没有稳定的 `.infostring` 类;存在显式 `.infostring` 元素时优先),并用 `AssistantMarkdown` 的 `data-streaming` 对齐流式结束。这是仓库接受的 last-resort DOM-anchor 模式(与 message-tools 的 dom-hider 同型)。官方若改动容器类名、banner 文本形状或 info string 位置,卡片退化为普通代码块(不报错),识别逻辑需要跟进。
+- **依赖官方渲染 DOM 细节**——定位靠 `.md-code-block` 容器,识别走三层:显式 `.infostring` 元素(旧形状)→ banner 前导文本(0.1.6 形状)→ **内容签名**(0.1.7-rc.1 起:`CodeToolbar` 对 shiki 不认得的 fence 语言只显示本地化通用标签,`dsh-card` 信息串不进 DOM;此时完整 HTML 文档——doctype/`<html` 开头、`</html>` 收尾——或含逐字严格 CSP meta 的块即判为卡片)。并用 `AssistantMarkdown` 的 `data-streaming` 对齐流式结束。这是仓库接受的 last-resort DOM-anchor 模式(与 message-tools 的 dom-hider 同型)。已知缺口:信息串不可见的宿主上,**裸 HTML 片段**(非完整文档、无 CSP meta)不再识别为卡片——请把卡片写成完整文档;官方若提供 `data-lang` 钩子(提案见 docs/upstream-proposals)即可退回纯信息串识别。
 - **默认 CSP 无网络**——渲染器注入的默认 CSP 连白名单 CDN 也不放行(比 file-preview 的 Tier1 更严);卡片文档自带 CSP 时以自带为准(`3d-artifact` 协议即内嵌放行两个 CDN `script-src` 的 Tier1 CSP)。需要联网画面的其它场景请走 file-preview 的 HTML 渲染链路,而非本插件。
 - **卡片交互状态不跨重渲染**——React 内容变化会重建代码块节点,旧 iframe 随之回收重挂,卡片里的临时状态(输入、滚动位置)不保留。
 - **高度自适应有边界**——高度来自卡片内部上报,封顶 20000px;极少数持续动态撑高的布局可能需要手动触发重扫。

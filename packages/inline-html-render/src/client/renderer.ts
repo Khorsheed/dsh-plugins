@@ -22,7 +22,7 @@
  * @module @khorsheed/dsh-inline-html-render
  */
 
-import { buildCardSrcDoc } from './srcdoc.ts'
+import { buildCardSrcDoc, CARD_CSP } from './srcdoc.ts'
 import { attachBridge, type BridgeCapabilities } from './bridge.ts'
 
 /** Info string that marks a fence as an inline card. */
@@ -33,6 +33,21 @@ const PROCESSED_ATTR = 'data-dsh-card-processed'
 const FRAME_CLASS = 'dsh-inline-card-frame'
 /** Attribute used to find the bridge-ready frame and its disposer. */
 const BRIDGE_ATTR = 'data-dsh-bridge'
+
+/**
+ * The card document signature for hosts that hide the fence info string.
+ * The card protocol (skills/inline-html-card) authors a card as a COMPLETE
+ * HTML document, so a settled block whose decoded body is one — doctype or
+ * `<html` at the head, `</html>` at the tail — is a card even when the banner
+ * shows only the host's generic label. The verbatim strict-CSP meta (the
+ * skill's recommended self-describing header) is accepted on its own: no
+ * ordinary code listing carries that exact string.
+ */
+function isCardDocument(body: string): boolean {
+  if (body.includes(CARD_CSP)) return true
+  const complete = /<\/html>\s*$/i.test(body)
+  return (/^\s*<!doctype html[\s>]/i.test(body) || /^\s*<html[\s>]/i.test(body)) && complete
+}
 
 /** A mounted card: the block it replaced and the disposer of its bridge. */
 interface MountedCard {
@@ -46,19 +61,21 @@ interface MountedCard {
  *
  * The official `CodeBlock` renders the fence info string in the banner, but the
  * DOM shape is not a stable contract: some builds render a dedicated
- * `.infostring` element, while this release flattens the banner wrap
+ * `.infostring` element, one release flattened the banner wrap
  * (`_bannerWrap_…`) whose leading text is `<info>复制` (info string first, then
- * the localized copy label), with no `.infostring`. So we match on the block's
- * leading text: the info string is always rendered before the code body, and a
- * normal code block cannot begin with `dsh-card` unless it was authored that
- * way. Prefer the explicit `.infostring` element when present, then fall back
- * to the text prefix.
+ * the localized copy label), and the 0.1.7-rc.1 `CodeToolbar` shows only the
+ * host's localized generic label for any language shiki cannot highlight —
+ * `dsh-card` never reaches the DOM there at all. So: prefer the explicit
+ * `.infostring` element, then the leading-text prefix, and finally fall back
+ * to the content signature ({@link isCardDocument}) — the protocol's complete
+ * HTML document with its strict CSP is unambiguous regardless of the banner.
  */
 function isCardInfoBlock(block: HTMLElement): boolean {
   const explicit = block.querySelector<HTMLElement>('.infostring')
   if (explicit !== null) return explicit.textContent?.trim() === CARD_INFO_STRING
   // `textContent` begins with the info string baked before the copy label.
-  return block.textContent.trimStart().startsWith(CARD_INFO_STRING)
+  if (block.textContent.trimStart().startsWith(CARD_INFO_STRING)) return true
+  return isCardDocument(block.querySelector('pre')?.textContent ?? '')
 }
 
 /** Find every rendered `dsh-card` block under `root`. */
