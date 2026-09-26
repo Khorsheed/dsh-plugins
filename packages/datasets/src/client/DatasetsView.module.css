@@ -102,6 +102,23 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* T83 · datasets: the list page's bar is the column's header (v5 「已登记的
+   仓库」 + 登记一个仓库…): same 版心 as the table below it (the list scroller
+   pads 12px a side), no rule under it, the count as the page title. */
+.bindingBar[data-page='list'] {
+  width: min(calc(100% - 24px), var(--dsh-chat-content-width, 720px));
+  margin-inline: auto;
+  padding: 16px 0 4px;
+  border-bottom: 0;
+}
+
+.bindingBar[data-page='list'] .bindingNone {
+  color: var(--dsw-alias-label-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
 .notice {
   padding: 6px 8px;
   border-radius: 8px;
@@ -550,13 +567,13 @@
 /* The dataset id doubles as the row's open affordance. */
 .rowOpen {
   padding: 0;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 /* One registration: a group row carrying its heading, then one row per set
    (a tbody each, under the table's one header). */
 .repoGroup {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .repoRow > td {
@@ -573,7 +590,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
-  padding: 4px 8px;
+  padding: 6px 10px;
   font-size: 12px;
   line-height: 18px;
 }
@@ -662,7 +679,8 @@
 
 .repoName {
   color: var(--dsw-alias-label-primary);
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .repoActions {
@@ -696,8 +714,8 @@
 
 .cellQuiet {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .cellMono {

@@ -329,7 +329,12 @@ export function DatasetsView(props: DatasetsViewProps) {
 
   return (
     <div className={css.view} data-conversation-composer-overlay="">
-      <div className={css.bindingBar}>
+      {/* T83 · datasets: on the list page the bar is the page's own header,
+          so it sits in the content column (版心) above the table — title,
+          register, and the register form itself — instead of spanning the
+          pane. The detail page keeps the full-width bar: its body is the
+          full-width tree + preview, and the bar lines up with that. */}
+      <div className={css.bindingBar} data-page={page}>
         <div className={css.bindingSummary}>
           {page === 'detail' && (
             <Button size="sm" variant="ghost" onClick={() => { actions.openDataset(null) }}>
@@ -359,10 +364,10 @@ export function DatasetsView(props: DatasetsViewProps) {
             )}
           {page === 'list' && (
             <>
-              <Button size="sm" variant="primary" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
+              <Button size="sm" variant="outline" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
                 {t('registry.register')}
               </Button>
-              <Button variant="outline" size="sm" onClick={runImport} disabled={importing}>
+              <Button variant="ghost" size="sm" onClick={runImport} disabled={importing}>
                 {importing ? t('registry.importing') : t('registry.import')}
               </Button>
             </>
