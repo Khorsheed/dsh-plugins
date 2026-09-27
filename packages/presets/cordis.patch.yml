@@ -202,11 +202,14 @@
             name: '@khorsheed/dsh-worktrees/tool'
 
           # The room model tools (invite/task/message), same split (M4'②): the core
-          # stays global (room service/UI), the tool row is session-granted here. No
-          # config — the tools read the invitable provider roster from the global room
-          # service at call time.
+          # stays global (room service/UI), the tool row is session-granted here.
+          # Since room 0.2.0 the row ships inside the core package as the `./tool`
+          # composition entry (the standalone `@khorsheed/dsh-room-tool` companion is
+          # folded away); the row id stays `room-tool`, so the composition state is
+          # unaffected. No config — the tools read the invitable provider roster from
+          # the global room service at call time.
           - id: room-tool
-            name: '@khorsheed/dsh-room-tool'
+            name: '@khorsheed/dsh-room/tool'
 
           # The TypeSafe judgement tool (2026-09-20): the core `@khorsheed/dsh-typesafe`
           # publishes `ctx.typesafe` at the profile root and stays surface-free; this row

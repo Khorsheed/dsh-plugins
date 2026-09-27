@@ -65,7 +65,7 @@ Before first use, fill `TYPESAFE_API_KEY` once under 「设置 → 工具与技�
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ complete — the tool registers into the host tools registry and contributes its prompt section and runtime skill; 0.1.5's plugin list shows this row under the per-preset session plugins. With the core absent the composition still mounts and the row stays pending (the registry audit shows `waiting for typesafe`); once the core provides, the row activates and all three registration faces take effect.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1) — the declared core `inject` plus the deferred `ctx.inject(['tools'|'systemPrompt'|'skills'])` registrations are long-standing seams and none has been renamed; the in-body `ctx.get('typesafe')` stays only as the defensive direct-call guard. Hosts below 0.1.5 are unverified; minHost is pinned at `0.1.5-rc.1`, the same tier as the room-tool / datasets-tool companion rows.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1) — the declared core `inject` plus the deferred `ctx.inject(['tools'|'systemPrompt'|'skills'])` registrations are long-standing seams and none has been renamed; the in-body `ctx.get('typesafe')` stays only as the defensive direct-call guard. Hosts below 0.1.5 are unverified; minHost is pinned at `0.1.5-rc.1`, the same tier as the datasets-tool companion row and its siblings.
 
 **Version line mapping**: `0.1.0` supports host `0.1.5-rc.1` and later.
 

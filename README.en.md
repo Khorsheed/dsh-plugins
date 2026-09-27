@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The community plugin monorepo for the **dsh** (DeepSeek Harness) ecosystem: **41 purely additive plugin packages, 30 of them published on npm**. Every package integrates through official extension points only — slots, commands, Remote services, session projections. No official package is modified, no official UI slot is replaced, no core service is hacked; when an optional capability is absent the plugin degrades silently instead of failing the boot. The whole set is designed for coexistence: install, uninstall, or toggle any combination without interference, and the production instance runs the full stack long-term.
+The community plugin monorepo for the **dsh** (DeepSeek Harness) ecosystem: **40 purely additive plugin packages, 29 of them published on npm**. Every package integrates through official extension points only — slots, commands, Remote services, session projections. No official package is modified, no official UI slot is replaced, no core service is hacked; when an optional capability is absent the plugin degrades silently instead of failing the boot. The whole set is designed for coexistence: install, uninstall, or toggle any combination without interference, and the production instance runs the full stack long-term.
 
 > This page lists only **published** packages. Package counts, shapes, and profile membership follow the machine-generated [authoritative package map](docs/packages.md); per-package versions and the host-compatibility matrix follow the [release status](docs/release-status.md) (regenerated after every publish wave). The repository is also the development workspace — see [Development](#development).
 
@@ -62,8 +62,7 @@ Delegate subtasks to coding-agent CLIs installed on your machine — each with i
 
 | Package | What you get | Ships with |
 | --- | --- | --- |
-| [`room`](packages/room) | **Room conversations**: invite several agents into one session — member roster tab, @ dispatch, task board, notification gate | dev |
-| [`room-tool`](packages/room-tool) | (companion tool row) `room_invite / room_task / room_message`, granted per session by a preset | dev |
+| [`room`](packages/room) | **Room conversations**: invite several agents into one session — member roster tab, @ dispatch, task board, notification gate; the model tools ride the package's `./tool` subpath row, granted per session by a preset | dev |
 
 ### Tasks and ambience
 

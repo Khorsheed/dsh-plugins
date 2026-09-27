@@ -4,9 +4,9 @@
 
 ## 概览
 
-- 包总数:**41**
+- 包总数:**40**
 - 自挂载 bundle(`dsh.bundle.patch`):**33**
-- 组合组件(不自挂载,`dsh.composition.component`):**8** — `preset-composed-row` 5、`provider-mounted-row` 1、`source-plane-library` 1、`sub-profile-patch` 1
+- 组合组件(不自挂载,`dsh.composition.component`):**7** — `preset-composed-row` 4、`provider-mounted-row` 1、`source-plane-library` 1、`sub-profile-patch` 1
 - 带浏览器半边(`dsh.client`):**28**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
 
@@ -39,16 +39,15 @@
 | `@khorsheed/dsh-local-agent-dsh-headless` | `packages/local-agent-dsh-headless` | 0.1.0-rc.7 | composition | sub-profile-patch | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.1.0-rc.7 | bundle | — | web | 0.1.5-rc.1 | dev, web-eval |
 | `@khorsheed/dsh-local-agent-tool-subagent` | `packages/local-agent-tool-subagent` | 0.1.0-rc.7 | composition | provider-mounted-row | — | 0.1.2-rc.1 | dev, web-eval |
-| `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | dev, web-eval |
+| `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | basic, dev, web-eval |
 | `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.3 | bundle | — | web | 0.1.2-rc.1 | basic, dev, web-eval |
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.2 | bundle | — | web | 0.1.5-rc.1 | basic, dev, web-eval |
 | `@khorsheed/dsh-mission` | `packages/mission` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-mission-tool` | `packages/mission-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | basic, dev |
-| `@khorsheed/dsh-presets` | `packages/presets` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
+| `@khorsheed/dsh-presets` | `packages/presets` | 0.1.1 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | basic, dev |
-| `@khorsheed/dsh-room` | `packages/room` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | dev |
-| `@khorsheed/dsh-room-tool` | `packages/room-tool` | 0.1.1 | composition | preset-composed-row | — | 0.1.5-rc.1 | dev |
+| `@khorsheed/dsh-room` | `packages/room` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.3 | bundle | — | web | 0.1.2-rc.1 | basic, dev, web-eval |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.2 | bundle | — | web | 0.1.5-rc.1 | basic, dev, web-eval |
@@ -63,8 +62,8 @@
 
 | profile | 直接依赖 | bundles |
 | --- | --- | --- |
-| `profiles/basic` | 13 | 15 |
-| `profiles/dev` | 23 | 23 |
+| `profiles/basic` | 14 | 16 |
+| `profiles/dev` | 22 | 23 |
 | `profiles/web-eval` | 25 | 23 |
 
 ## 形态的含义

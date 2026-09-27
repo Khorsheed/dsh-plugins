@@ -4,7 +4,7 @@
  * registers the slot entries: the session-header「邀请 agent」action and the
  * 成员 `conversation.view` tab — both self-hiding by the current session's
  * preset composition (M3': visible exactly when the composition names the
- * `@khorsheed/dsh-room-tool` row, fail-open on every unreadable path, and
+ * `@khorsheed/dsh-room/tool` row, fail-open on every unreadable path, and
  * always visible inside an actual room) — plus the `conversation.composer`
  * chain takeover (claims the composer exactly when the current session is a
  * cached room — and renders the dock capsules plus the session stats row

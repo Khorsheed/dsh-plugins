@@ -1,7 +1,10 @@
 # 变更记录
 
-## 未发布
+## 0.2.0（2026-09-28）
 
+- **BREAKING（包结构）**：伴生包 `@khorsheed/dsh-room-tool` 回并进本包——模型工具行改由本包的 `./tool` 子路径导出承载（preset 引 `name: '@khorsheed/dsh-room/tool'`，行 id 仍为 `room-tool`，preset 组合状态不受影响；worktrees 0.3.0 同款回并，canvas `./agent` 先例）。迁移：preset 的 `agent.cordis.yml` 里把 `name: '@khorsheed/dsh-room-tool'` 改为 `name: '@khorsheed/dsh-room/tool'`，并卸载旧伴生包（旧 npm 名将在发布波 deprecate）。`./tool` 的导出内容从工具定义工厂变为可直接挂载的组合行（`name` / `inject = ['room']` / `apply`）；工厂退到内部模块 `./tool-definition.ts`（不进 exports 面）。
+- 会话 chrome 的 preset 组合判据常量同步指向 `@khorsheed/dsh-room/tool`。
+- 工具 origin 归因 owner 归一到本包名 `@khorsheed/dsh-room`。
 - 后台 Agent 与当前计划改用可折叠胶囊；运行中显示绿点，展开可查看执行任务、用量、会话并中止具体轮次。
 - 记录 Room 单次执行历史，归集宿主登记的下级会话；原生子会话用量明确标为会话累计。
 - 计划详情接入可选宿主侧栏，缺少侧栏时在面板内展开；运行限制默认折叠。

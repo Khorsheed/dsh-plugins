@@ -74,6 +74,7 @@ describe('cordis.patch.yml', () => {
     expect(dev).toContain('          - id: worktrees-tool\n')
     expect(dev).toContain("            name: '@khorsheed/dsh-worktrees/tool'\n")
     expect(dev).toContain('          - id: room-tool\n')
+    expect(dev).toContain("            name: '@khorsheed/dsh-room/tool'\n")
     expect(dev).toContain('          - id: typesafe-tool\n')
     // The eval companion rows stay OUT of dev (their tabs self-hide by row presence).
     expect(dev).not.toContain('datasets-tool')

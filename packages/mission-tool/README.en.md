@@ -43,7 +43,7 @@ The dev pack's dev-mode preset (`profiles/dev/presets/dev`) already carries this
 
 - **npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`)**: ✅ full — the tools register into the host tools registry and the prompt section is contributed; the 0.1.5 plugin list renders this row in its "session plugins" group (short-name title, state badge, live-mount phase dot). With the core absent the composition still mounts and the row stays pending (the registry audit shows `waiting for mission`); once the core provides, the row activates and registers the tools.
 - **deepseek-harness master**: ✅ (verifiedHost: 0.1.5-rc.1).
-- Hosts below 0.1.5: preset compositions and the tool-row mechanism existed on earlier lines, but the session-plugins inventory view is 0.1.5 presentation — the same tier as the room-tool companion row and its siblings, so minHost pins 0.1.5-rc.1.
+- Hosts below 0.1.5: preset compositions and the tool-row mechanism existed on earlier lines, but the session-plugins inventory view is 0.1.5 presentation — the same tier as the typesafe-tool companion row and its siblings, so minHost pins 0.1.5-rc.1.
 - **Release order**: a pack that names a companion row needs the companion published / installed first; a row that fails to resolve reports the preset composition `broken` (the instance boots unaffected) rather than degrading silently.
 
 **Version-line map**: `0.1.0` and later support host `0.1.5-rc.1` and up.

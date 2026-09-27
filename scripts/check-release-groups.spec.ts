@@ -61,8 +61,8 @@ describe('release group declaration', () => {
     expect(RELEASE_GROUPS.find(g => g.name === 'local-agent')?.dirs).toHaveLength(7)
   })
 
-  it('covers the four core/companion pairs', () => {
-    expect(COMPANION_PAIRS).toHaveLength(4)
+  it('covers the three core/companion pairs', () => {
+    expect(COMPANION_PAIRS).toHaveLength(3)
   })
 })
 

@@ -26,16 +26,15 @@
 | `@khorsheed/dsh-local-agent-dsh-headless` | 0.1.0-rc.7 | 0.1.0-rc.7 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-local-agent-kimi` | 0.1.0-rc.7 | 0.1.0-rc.7 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-local-agent-tool-subagent` | 0.1.0-rc.7 | 0.1.0-rc.7 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
-| `@khorsheed/dsh-local-files` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
+| `@khorsheed/dsh-local-files` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-message-timeline` | 0.2.3 | 0.2.3 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-client-message-tools` | 0.3.2 | 0.3.2 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-mission` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-mission-tool` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-mobile` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | — | ✓ |
-| `@khorsheed/dsh-presets` | 未发布 | 0.1.0 | 0.1.7-rc.1 | 0.1.7-rc.1 |  |
+| `@khorsheed/dsh-presets` | 未发布 | 0.1.1 | 0.1.7-rc.1 | 0.1.7-rc.1 |  |
 | `@khorsheed/dsh-quote` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |
-| `@khorsheed/dsh-room` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
-| `@khorsheed/dsh-room-tool` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
+| `@khorsheed/dsh-room` | 0.1.1 | 0.2.0 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-client-session-title-edit` | 0.2.3 | 0.2.3 | 0.1.2-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-sidechat` | 未发布 | 0.2.3 | 0.1.5-rc.1 | 0.1.7-rc.1 |  |
 | `@khorsheed/dsh-taskpilot` | 0.3.2 | 0.3.2 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |

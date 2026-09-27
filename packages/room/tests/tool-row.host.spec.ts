@@ -1,13 +1,14 @@
 /**
- * Companion-row spec for `@khorsheed/dsh-room-tool`: the row must mount
- * cleanly in every composition (no hard injects), skip registration when the
- * global room service is absent (degrade, never explode), and register all
- * three room tools with THIS package as their origin owner when the service
- * is present.
+ * Tool-row spec for `@khorsheed/dsh-room/tool` (the `./tool` composition
+ * entry, folded back from the standalone `@khorsheed/dsh-room-tool` companion
+ * at 0.2.0): the row must mount cleanly in every composition (no hard
+ * injects), skip registration when the global room service is absent
+ * (degrade, never explode), and register all three room tools with THIS
+ * package as their origin owner when the service is present.
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { apply } from '../src/index.ts'
+import { apply } from '../src/tool.ts'
 
 const TOOL_ORIGIN = Symbol.for('dsh.tool.origin')
 
@@ -31,7 +32,7 @@ function makeCtx(over: { service?: unknown; withTools?: boolean } = {}) {
   return { ctx, tools, logger }
 }
 
-describe('room-tool companion row', () => {
+describe('room ./tool composition entry', () => {
   it('registers nothing and does not throw when the room service is absent', () => {
     const { ctx, tools, logger } = makeCtx({ service: undefined })
     expect(() => { apply(ctx) }).not.toThrow()
@@ -47,7 +48,7 @@ describe('room-tool companion row', () => {
     expect(names).toEqual(['room_invite', 'room_task', 'room_message'])
     for (const call of tools.register.mock.calls) {
       const definition = call[0] as Record<symbol, unknown>
-      expect(definition[TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room-tool' })
+      expect(definition[TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room' })
     }
   })
 
@@ -55,14 +56,14 @@ describe('room-tool companion row', () => {
     const { ctx, tools } = makeCtx({ service: { readRoomContext: vi.fn() } })
     apply(ctx)
     expect(tools.register.mock.calls.map(call => call[0].name)).toEqual(['room_read', 'room_invite', 'room_task', 'room_message'])
-    expect(tools.register.mock.calls[0]![0][TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room-tool' })
+    expect(tools.register.mock.calls[0]![0][TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room' })
   })
 
   it('registers formal planning only when the core exposes the shared backend', () => {
     const { ctx, tools } = makeCtx({ service: { commandPlan: vi.fn(), readRoomContext: vi.fn() } })
     apply(ctx)
     expect(tools.register.mock.calls.map(call => call[0].name)).toEqual(['room_plan', 'room_read', 'room_invite', 'room_task', 'room_message'])
-    expect(tools.register.mock.calls[0]![0][TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room-tool' })
+    expect(tools.register.mock.calls[0]![0][TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room' })
   })
 
   it('registers nothing (and still does not throw) when the tools registry never appears', () => {

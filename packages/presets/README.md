@@ -8,7 +8,7 @@
 
 - **无运行时代码、无客户端面**：`cordis.patch.yml` 的一个 `- insert:` 列表携带全部三行声明；`src/index.ts` 只导出 `PRESET_IDS` 常量，让包有可构建的 `lib/`（pack-dist 的硬性要求）。清单以 `dsh.bundle.kind: 'preset-declarations'` 声明这一形态——check:plugins 据此改钉 preset 行约定（行名只能是 `@deepseek-ai/dsh-agent-preset`、行 id 必须是 `preset-<id>`），取代自挂载包的「自有运行时行」身份三角。
 - **行由官方插件解释**：声明的激活、schema 校验、会话组合都归宿主的 `@deepseek-ai/dsh-agent-preset` / `-registry`（0.1.7-rc.1 起随官方 web-app bundle 发布，本包以 optional peer 声明）。
-- **社区工具行按名引用、部署层解析**：preset 组合里的 `@khorsheed/dsh-local-agent-tool-subagent`、`-worktrees/tool`、`-room-tool`、`-typesafe-tool`、`-datasets-tool`、`-eval-tool`、`-canvas/agent` 行只命名模块——与旧目录式 preset 一样，这些包须装进同一个 profile 才能解析；它们是清单 `dsh.references` 里的数据引用，**不是** npm 依赖边。引用了装不上的模块的 preset 会带着诊断留在名册上（官方机制），不会炸掉宿主。
+- **社区工具行按名引用、部署层解析**：preset 组合里的 `@khorsheed/dsh-local-agent-tool-subagent`、`-worktrees/tool`、`-room/tool`、`-typesafe-tool`、`-datasets-tool`、`-eval-tool`、`-canvas/agent` 行只命名模块——与旧目录式 preset 一样，这些包须装进同一个 profile 才能解析；它们是清单 `dsh.references` 里的数据引用，**不是** npm 依赖边。引用了装不上的模块的 preset 会带着诊断留在名册上（官方机制），不会炸掉宿主。
 
 ## 三个 preset 的迁移来源
 

@@ -29,7 +29,7 @@
 
 一个 surface 能不能按 preset 自隐，取决于判据有没有**真值**且**语义自洽**，**与座位无关**（会话内 tab 环还是框架级 sidebar 都一样）：
 
-1. **判据有真值：组合里有可 keyed 的行，且枚举了全部授予路径**。判据问「当前会话能触达我的能力吗」。伴生行只做 preset 挂载的包（`preset-composed-row` 形态，如 room-tool）单查 preset 组即可；入口**可根挂也可 preset 挂**的包（canvas 的 `./agent` 行）必须双查（`entries` 根行 ∪ preset 组行）——只查 preset 组会让根挂部署永隐。
+1. **判据有真值：组合里有可 keyed 的行，且枚举了全部授予路径**。判据问「当前会话能触达我的能力吗」。伴生行只做 preset 挂载的包（`preset-composed-row` 形态，如 typesafe-tool）单查 preset 组即可；入口**可根挂也可 preset 挂**的包（canvas 的 `./agent` 行）必须双查（`entries` 根行 ∪ preset 组行）——只查 preset 组会让根挂部署永隐。
 2. **语义自洽：隐藏对未授予会话是正确体验**。入口配套的能力没被授予时入口无意义（worktrees tab 看不了提交页、canvas tab 用不了画布工具）。内容跨会话的 surface 要特别想清楚：canvas 空间内容跨会话，但入口语义是「触达画布工具」，未授予会话隐藏入口是（写作模式专属的）产品决策，由双查判据承载；连会话级能力语义都没有的全局空间，归安装层。
 
 canvas 2026-09-16 的 3080 事故：当时 canvas 是纯 UI 包，任何 preset 组合里都没有行，判据恒假 → 永隐（回滚 note：`.agents/notes/implemented/feature/2026-09-16-canvas-preset-self-hide-reverted.md`）。0.4.2 工具化（`./agent` 入口）后判据有了真值，2026-09-17 以双查判据恢复自隐（`packages/canvas/src/client/preset-visibility.ts`）。**框架级入口可以自隐，前提是判据枚举全部授予路径**（worktrees 右栏 tab 单查样板、canvas 双查样板）。

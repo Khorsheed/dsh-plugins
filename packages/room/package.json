@@ -1,13 +1,13 @@
 {
   "name": "@khorsheed/dsh-room",
-  "description": "Room conversations with native or external coordinators, background delegation, durable goal plans and evidence review, shared member controls, live output and session navigation",
+  "description": "Room conversations with native or external coordinators, background delegation, durable goal plans and evidence review, shared member controls, live output and session navigation; the session-granted room model tools (`room_invite` / `room_task` / `room_message`) ship as the package's `./tool` composition entry",
   "keywords": [
     "dsh",
     "dsh-plugin",
     "cordis",
     "multi-agent"
   ],
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },
@@ -53,9 +53,6 @@
     "./locale/*.json": "./locale/*.json"
   },
   "dsh": {
-    "references": [
-      "@khorsheed/dsh-room-tool"
-    ],
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
@@ -69,7 +66,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "0.1.5-rc.1 full-line boot-verified 2026-09-25 (42 packages including capture) through the three compat layers: preset-registry dual-name probe, dual-shape typert codecs, and typert faces carrying zod@4; 0.1.7-rc.2 is the 3080 production-verified line. External coordinators require the unpublished local-agent family with prepared members, shared model/effort controls and authenticated member tools; without it these operations degrade to unavailable. Scoped cwd and cross-restart mappings are supported. Native DSH session model switching retains host semantics. Room vocabulary is registered through the active loader. DSH/Kimi source-host runtime checks and candidate tarball fresh/upgrade checks on the npm host pass; Codex/Claude auth and full P95 streaming acceptance remain pending.",
+      "notes": "0.1.5-rc.1 full-line boot-verified 2026-09-25 (42 packages including capture) through the three compat layers: preset-registry dual-name probe, dual-shape typert codecs, and typert faces carrying zod@4; 0.1.7-rc.2 is the 3080 production-verified line. External coordinators require the unpublished local-agent family with prepared members, shared model/effort controls and authenticated member tools; without it these operations degrade to unavailable. Scoped cwd and cross-restart mappings are supported. Native DSH session model switching retains host semantics. Room vocabulary is registered through the active loader. DSH/Kimi source-host runtime checks and candidate tarball fresh/upgrade checks on the npm host pass; Codex/Claude auth and full P95 streaming acceptance remain pending. The session-granted room tool row folded back from the standalone `@khorsheed/dsh-room-tool` companion into this package at 0.2.0 as the `./tool` composition entry — the preset row id `room-tool` is unchanged, so a preset's composition state is unaffected once its row name points at `@khorsheed/dsh-room/tool`; the old npm name is deprecated.",
       "verifiedHost": "0.1.7-rc.2"
     }
   },

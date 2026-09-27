@@ -19,7 +19,7 @@
 - **成员保留原生会话**——成员页记录名称、provider、角色、工作目录覆盖（留空继承 Room 目录）、有效配置与会话入口；面包屑与任务入口能进入成员自己的会话，查看工具、耗时与 token 用量。Room 原生会话的统计不是所有成员消耗的总和。
 - **共享模型/强度控制**——协调者与成员输入栏共用同一套 core 模型/effort 控制；运行中选择新配置会排到下一完整轮次（工具续跑沿用本轮配置），冻结的评测成员拒绝变更。原生 DSH 主会话仍使用宿主模型选择器及其语义——它不是 local-agent 成员控制器。
 - **实时输出与定向停止**——成员把原生正文与推理增量同时呈现在自己的会话和 Room 中；最终消息与工具记录仍是权威内容。定向停止只中断该成员，非空部分输出带明确的停止/失败标记、耗时与会话入口保留；长回答可从紧凑预览展开。
-- **入口随 preset 授权显隐、失败放行**——「邀请 agent」chip 与「成员」tab 只在当前会话的 preset 组合授予 `@khorsheed/dsh-room-tool` 行时出现；读不到组合时保持可见（fail-open）；已是 Room 的会话始终保留界面。
+- **入口随 preset 授权显隐、失败放行**——「邀请 agent」chip 与「成员」tab 只在当前会话的 preset 组合授予 `@khorsheed/dsh-room/tool` 行时出现；读不到组合时保持可见（fail-open）；已是 Room 的会话始终保留界面。
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="成员标签页：空态的「把会话变成多 agent 协作间」与会话头部的「邀请 agent」入口">
 
@@ -31,7 +31,7 @@
 dsh plugin --profile web add @khorsheed/dsh-room
 ```
 
-本包自行挂载 loader 行与浏览器贡献；重启 web 实例后生效。需要外部 CLI 成员时，同时安装 local-agent core 和所需 provider——没有它们，Room 仍可与原生 DSH 协调者正常协作。面向模型的工具（`room_invite` / `room_task` / `room_message`）由伴生包 `@khorsheed/dsh-room-tool` 提供，按会话 preset 授权。
+本包自行挂载 loader 行与浏览器贡献；重启 web 实例后生效。需要外部 CLI 成员时，同时安装 local-agent core 和所需 provider——没有它们，Room 仍可与原生 DSH 协调者正常协作。面向模型的工具（`room_invite` / `room_task` / `room_message`）0.2.0 起随本包自带：工具行是包内 `./tool` 组合入口，由 agent preset 按会话授予（preset 组合里引 `@khorsheed/dsh-room/tool`，行 id `room-tool`；0.1.x 的独立伴生包 `@khorsheed/dsh-room-tool` 已退役）。
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-room
@@ -65,13 +65,13 @@ dsh plugin --profile web remove @khorsheed/dsh-room
 
 **客户端。** 浏览器半经 `ctx.remote.$mount` 挂载生成的 Remote，注册 zh/en 词典，并驱动客户端 `RoomStore`。槽位条目：会话头部「邀请 agent」动作（`conversation.session.header.actions`，order 30）、「成员」`conversation.view` tab（order 20；隐藏发生在注册层——隐藏的 tab 是注销而非空体）、`conversation.composer` 接管（priority -10：只认领缓存判定为 Room 的会话，对挂起的审批交互让位；dock 胶囊与统计行由它自行渲染，因为它们的官方座位随被藏起的回退树一起消失），以及五个 `conversation.chat.node` 渲染器（`room-speech` / `room-run` / `room-event` / `room-relay` / `room-task-line`）。
 
-**工具行拆分（M4'）。** core 不在 profile 根注册任何面向模型的工具：`room_invite` / `room_task` / `room_message` 的工厂留在 `./tool` 且不带 origin 标签；伴生包 `@khorsheed/dsh-room-tool` 把工具行挂进 agent preset 组合（按会话授予）并打上自己的 origin 标签。`room_invite` 与 `room_message` 会把调用所在会话升级为 Room；`room_task` 与胶囊 UI 走同一组宿主函数写共享任务板。外部成员经认证家族桥（`receiveMemberCommand`）使用 `room_read` / `room_invite` / `room_message` / `room_plan`——房间与调用者身份由宿主持有，绝不出现在工具参数里。
+**工具行（M4' 拆分，0.2.0 回并）。** core 不在 profile 根注册任何面向模型的工具：`room_invite` / `room_task` / `room_message` 的工厂留在内部模块 `./tool-definition.ts`（不进 exports 面）且不带 origin 标签；可挂载行是本包的 `./tool` 组合入口（`name` / `inject = ['room']` / `apply`，零 `ctx.provide`——preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset），由各 agent preset 的 `agent.cordis.yml` 按名引用（`name: '@khorsheed/dsh-room/tool'`，行 id `room-tool`），按会话授予并打上归本包的 origin 标签。0.1.x 时该行是独立伴生包 `@khorsheed/dsh-room-tool`，0.2.0 起回并（canvas `./agent` 先例），旧 npm 名退役。`room_invite` 与 `room_message` 会把调用所在会话升级为 Room；`room_task` 与胶囊 UI 走同一组宿主函数写共享任务板。外部成员经认证家族桥（`receiveMemberCommand`）使用 `room_read` / `room_invite` / `room_message` / `room_plan`——房间与调用者身份由宿主持有，绝不出现在工具参数里。
 
 **家族耦合。** 与 local-agent 家族唯一的耦合是探测式门面——`ctx.get('localAgent')` 加方法存在性鸭子类型判断，类型仅作 type-only 导入、编译期漂移检查。门面缺席时 CLI 成员降级（邀请返回结构化 `local-agent-unavailable`，派发落 `failed` 运行记录），绝不影响 boot。通知闸门的 `receiveMemberMessage` 由家族桥鸭子调用，跨无类型包边界做运行时校验。
 
-**模型体验。** 当前目标随每个成员提示词的名册段顶部下发；刻意不做黑板折叠——成员提示词从不消费房间的运行日志（speech/dispatch 事件只为 UI 投影与回放落日志）。面向模型的工具随会话 preset 授予到达，由伴生包打标。
+**模型体验。** 当前目标随每个成员提示词的名册段顶部下发；刻意不做黑板折叠——成员提示词从不消费房间的运行日志（speech/dispatch 事件只为 UI 投影与回放落日志）。面向模型的工具随会话 preset 授予到达，由本包的 `./tool` 行打标。
 
-**身份三角。** cordis 行 id `room`（`cordis.patch.yml`）= `clientBundle('@khorsheed/dsh-room')`（`tsdown.config.ts`）= `src/invariant.ts` 的 `PACKAGE_NAME`。导出：`.` 宿主服务、`/client`（插件 `apply`/`inject` 与 `RoomRemote` 类型）、`/tool` 工具工厂、`/types`、`/typert`、`/remote`、`/invariant`。
+**身份三角。** cordis 行 id `room`（`cordis.patch.yml`）= `clientBundle('@khorsheed/dsh-room')`（`tsdown.config.ts`）= `src/invariant.ts` 的 `PACKAGE_NAME`。导出：`.` 宿主服务、`/client`（插件 `apply`/`inject` 与 `RoomRemote` 类型）、`/tool` 按会话授予的模型工具行、`/types`、`/typert`、`/remote`、`/invariant`。
 
 </details>
 

@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**41 个纯增量插件包,其中 30 个已发布 npm**。所有包只走官方扩展点(slots、commands、Remote 服务、会话镜像)接入——不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;探测不到可选能力时静默降级,绝不拖垮启动。整套插件按共存设计:任意组合安装、卸载、开关,互不干扰,生产环境长期全量叠装运行。
+**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**40 个纯增量插件包,其中 29 个已发布 npm**。所有包只走官方扩展点(slots、commands、Remote 服务、会话镜像)接入——不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;探测不到可选能力时静默降级,绝不拖垮启动。整套插件按共存设计:任意组合安装、卸载、开关,互不干扰,生产环境长期全量叠装运行。
 
 > 本文只收录**已发布**的包;包总数、形态与 profile 归属以机器生成的[权威包地图](docs/packages.md)为准,各包版本与宿主兼容矩阵以[发布状态](docs/release-status.md)为准(每次发版后重新生成)。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
 
@@ -62,8 +62,7 @@
 
 | 包 | 你得到 | 随整合包 |
 | --- | --- | --- |
-| [`room`](packages/room) | **room 会话**:邀请多个 agent 进同一条会话——成员名册 tab、@ 派发、任务板、通知闸门 | dev |
-| [`room-tool`](packages/room-tool) | (伴生工具行)`room_invite / room_task / room_message`,由 preset 按会话授予 | dev |
+| [`room`](packages/room) | **room 会话**:邀请多个 agent 进同一条会话——成员名册 tab、@ 派发、任务板、通知闸门;模型工具经包内 `./tool` 子路径行由 preset 按会话授予 | dev |
 
 ### 任务与氛围
 

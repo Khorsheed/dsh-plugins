@@ -1,415 +1,84 @@
 /**
- * The room's model-facing tool DEFINITIONS, `room_invite`, `room_task`, and
- * `room_message`: the main
- * agent's paths into the room it belongs to. `room_invite` and
- * `room_message` PROMOTE: calling them in a plain session turns it into a
- * room (ensureRoom) instead of rejecting. `room_task` stays gated at execute
- * time — the calling agent's session must be a room (the journal carries
- * `room/created`); anywhere else the tool answers with readable error text
- * instead of throwing, so the model can see the rejection and self-correct.
- * `room_invite` lands in the same invite path as the human dialog
- * (`invitedBy: 'agent'`), producing an identical member record; `room_task`
- * writes the SHARED task board through the very host functions the capsule UI
- * uses (addTask/closeTask, plus the tool-only updateTask), so an agent-written
- * task is indistinguishable from a human-added one; `room_message` dispatches
- * a message to a member through the same engine path as the human's
- * `@member text`, minus the user bubble (the caller is the room's own agent).
+ * The session-granted room model tools — this package's `./tool` composition
+ * entry (the canvas `./agent` pattern) for agent-preset compositions. The row
+ * provides NO service (the preset-mount isolate-realm rule forbids service
+ * rows), it only registers the model-facing `room_invite` / `room_task` /
+ * `room_message` tools into the host tools registry, delegating to the global
+ * `ctx.room` service the main row provides at the profile root — the official
+ * tool-row shape (the shipped `tool-bash` rows work the same way). Granting
+ * is therefore per-session: a preset names the row, its sessions get the
+ * tools; every other preset's sessions do not.
  *
- * Since the tool-row split (M4') the core no longer REGISTERS these tools:
- * the factories are consumed by the companion `@khorsheed/dsh-room-tool`,
- * which mounts the tool row inside agent-preset compositions (session-granted,
- * never at the profile root). The definitions are therefore returned
- * UNTAGGED — the registering package applies its own tool-origin tag
- * (AGENTS.md § Tool origin tagging — the owner is whichever package mounts
- * the row).
+ * This entry used to ship as the standalone companion package
+ * `@khorsheed/dsh-room-tool` (0.1.x); 0.2.0 folded it back into the core
+ * package as this subpath row (the loader mounts a package's non-default
+ * export fine — the canvas `./agent` precedent), and the old package name is
+ * deprecated on npm. An agent preset's `agent.cordis.yml` references the row
+ * by name: `- id: room-tool / name: '@khorsheed/dsh-room/tool'`.
+ * The package's own bundle patch mounts ONLY the core row — a profile-root
+ * tool row would grant every session, exactly what the split removed.
+ *
  * @module @khorsheed/dsh-room/tool
  */
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import { coordinatorMember, isRoomLog } from './journal.ts'
-import type {
-  RoomAddTaskRequest, RoomAddTaskResult,
-  RoomCloseTaskRequest, RoomCloseTaskResult,
-  RoomGetStateRequest, RoomGetStateResult,
-  RoomInviteRequest, RoomInviteResult,
-  RoomMessageRequest, RoomMessageResult,
-  RoomUpdateTaskRequest, RoomUpdateTaskResult,
-} from './types.ts'
+import type { Context } from '@deepseek-ai/cordis'
+// Type-only: pulls this package's `Context.room` service augmentation.
+import type {} from './index.ts'
+import { roomInviteTool, roomMessageTool, roomTaskTool, roomReadTool, roomPlanTool } from './tool-definition.ts'
 
-/** The slice of RoomService the tool drives. */
-export interface RoomInviteToolBackend {
-  /** Validate and journal an invitation (see RoomService.inviteMember). */
-  inviteMember(request: RoomInviteRequest, invitedBy: 'human' | 'agent'): Promise<RoomInviteResult>
-}
+const PACKAGE_NAME = '@khorsheed/dsh-room'
 
 /**
- * Build the room_invite tool definition bound to the room service.
- * @param backend - the room service.
- * @returns a registry-ready tool definition.
+ * Tag the model-visible tools with their origin (AGENTS.md § Tool origin
+ * tagging; seam S12): the capability catalog reads this `Symbol.for`-keyed
+ * tag back through `ctx.tools.get()`, so the room tools attribute to THIS
+ * package (the row the preset mounts), not to the service core. The tag is
+ * host-side only and never travels on the model wire. Generic form (not
+ * `typeof defineTool`, which trips typert TS2321).
  */
-export function roomInviteTool(backend: RoomInviteToolBackend) {
-  return defineTool({
-    name: 'room_invite',
-    description:
-      'Invite a CLI agent member into the current session (any session works — inviting promotes it '
-      + 'into a room: the multi-agent group conversation surface wakes up on it). '
-      + 'The member becomes @-addressable by the human and by other members: pick a short unique '
-      + 'name (no whitespace, no "@", e.g. ada/bill/cathy) — it is the addressing name, decoupled '
-      + 'from the provider so two instances of one provider can coexist; prefer a function-style '
-      + 'name (e.g. design-review / restart-test) when the member has a standing role, so the human '
-      + 'and the other members can tell what it is for. The instructions are the '
-      + 'member\'s role briefing, prepended to its first dispatch and persisted in its own CLI '
-      + 'session from then on. Give a firstTask to put the member to work immediately, or omit it '
-      + 'to have the member join idle. A member keeps its own CLI session and accumulates context '
-      + 'across rounds, so prefer inviting over a one-shot subagent_* delegation whenever the work '
-      + 'expects follow-ups with the same agent — reserve one-shot delegations for self-contained '
-      + 'tasks with no continuation. The provider must be a registered delegation provider id — '
-      + 'an unknown one is rejected with the list of available ids, so retry with one of those.',
-    parameters: {
-      provider: {
-        type: 'string',
-        required: true,
-        description:
-          'The local-agent delegation provider id (e.g. kimi-cli / codex-cli / claude-code) — the '
-          + 'delegation id the family registered, which may differ from the harness\'s display '
-          + 'name. When unsure, call without firstTask first: an unknown id is rejected with the '
-          + 'list of available providers to retry with.',
-      },
-      name: {
-        type: 'string',
-        required: true,
-        description: 'The member\'s @-addressing name: unique in this room, no whitespace, no "@".',
-      },
-      instructions: {
-        type: 'string',
-        required: true,
-        description: 'The member\'s role instructions (responsibilities, constraints, output expectations).',
-      },
-      firstTask: {
-        type: 'string',
-        description: 'Optional first task, dispatched to the member as soon as it joins.',
-      },
-      cwd: {
-        type: 'string',
-        description: 'Optional working directory for the member (empty: inherits the room session\'s cwd).',
-      },
-    },
-    output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          text: { type: 'string', required: true },
-        },
-      },
-      render: (_args, value) => [{ type: 'text', text: value.text }],
-    },
-    // Invitations mutate only the room journal; two invites never conflict
-    // beyond a duplicate name, which the result text reports back.
-    isConcurrencySafe: () => true,
-    async execute(args, exec) {
-      const agent = exec.agent
-      if (agent === undefined) return { text: 'room_invite requires a calling agent (exec.agent was undefined).' }
-      // No room gate: inviteMember PROMOTES the calling session into a room.
-      const result = await backend.inviteMember({
-        sessionId: agent.session.id,
-        provider: args.provider,
-        name: args.name,
-        instructions: args.instructions,
-        ...args.firstTask === undefined ? {} : { firstTask: args.firstTask },
-        ...args.cwd === undefined ? {} : { cwd: args.cwd },
-      }, 'agent')
-      if (!result.ok) {
-        const hint = result.error.code === 'duplicate-name'
-          ? ' Pick a different name and retry.'
-          : result.error.code === 'invalid-name'
-            ? ' Names must be non-empty and free of whitespace and "@"; retry with a valid name.'
-            : result.error.code === 'local-agent-unavailable'
-              ? ' The local-agent delegation facade is not mounted; CLI members cannot join right now.'
-              : result.error.code === 'unknown-provider'
-                ? ` Unknown delegation provider "${result.error.provider}" (it must be the family's delegation provider id, not the harness's display name). Available: ${
-                  result.error.available.length === 0
-                    ? 'none (no harness with a delegation provider is registered)'
-                    : result.error.available.join(', ')
-                }. Retry with one of the available providers.`
-                : ''
-        return { text: `Could not invite "${args.name}": ${result.error.code}.${hint}` }
-      }
-      return {
-        text: result.value.pendingFirstTask
-          ? `Member ${result.value.name} joined the room and its first task was dispatched.`
-          : `Member ${result.value.name} joined the room (idle; @-address it to dispatch work).`,
-      }
-    },
+const definePluginTool = <T extends object>(def: T): T =>
+  Object.assign(def, {
+    [Symbol.for('dsh.tool.origin')]: { channel: 'plugin', owner: PACKAGE_NAME },
   })
-}
 
-/** The slice of RoomService the room_task tool drives. */
-export interface RoomTaskToolBackend {
-  /** Open a pending task on a member's lane (see RoomService.addTask). */
-  addTask(request: RoomAddTaskRequest): Promise<RoomAddTaskResult>
-  /** Close an open task (see RoomService.closeTask). */
-  closeTask(request: RoomCloseTaskRequest): Promise<RoomCloseTaskResult>
-  /** Edit an open task's title/blockedBy (see RoomService.updateTask). */
-  updateTask(request: RoomUpdateTaskRequest): Promise<RoomUpdateTaskResult>
-  /** Replay the room state (the error texts read the roster/open tasks from it). */
-  getState(request: RoomGetStateRequest): Promise<RoomGetStateResult>
-}
+/** Cordis plugin name used by loader diagnostics. */
+export const name = 'room-tool'
 
 /**
- * Build the room_task tool definition bound to the room service. Every write
- * goes through the same host functions as the capsule UI, so a task the agent
- * opens is a public commitment indistinguishable from a human-added one.
- * @param backend - the room service.
- * @returns a registry-ready tool definition.
+ * The `room` core is a declared inject (the owning-family companion
+ * exception to the community-service probe rule): a preset's standing scope
+ * mounts at registry-activation time, BEFORE the profile's later bundle rows
+ * provide the core, so a one-shot ctx.get probe at apply saw ABSENT there and
+ * nothing re-ran the row (rc.1 boot order; 3080 production 2026-09-27). The
+ * declared inject pends the row until the core provides, then the body
+ * applies. The tools registry still joins through deferred injection so its
+ * mount order cannot strand the registrations.
  */
-export function roomTaskTool(backend: RoomTaskToolBackend) {
-  return defineTool({
-    name: 'room_task',
-    description:
-      'Manage the current room\'s SHARED task board (only usable inside a room session). This '
-      + 'board is public — every room member and the human sees these tasks, so writing here is '
-      + 'a public commitment the room coordinates around; for your private work plan use your own '
-      + 'todo tool instead. Actions: "add" (title + member — the roster name owning the task, '
-      + 'use room_read to find your own or another member\'s name; optional blockedBy names the member the task waits '
-      + 'on, display only) opens a pending task and returns its id; "close" (taskId) marks an '
-      + 'open task done; "update" (taskId + a new title and/or blockedBy — null clears the wait) '
-      + 'edits an open task. Errors answer with the roster or the open-task list so you can retry '
-      + 'with a valid member name or task id.',
-    parameters: {
-      action: {
-        type: 'string',
-        enum: ['add', 'close', 'update'],
-        required: true,
-        description: 'add: open a task (title + member). close: mark a task done (taskId). update: edit title/blockedBy (taskId).',
-      },
-      title: {
-        type: 'string',
-        description: 'Task title. Required for add; optional new title for update.',
-      },
-      member: {
-        type: 'string',
-        description: 'The roster name owning the task (required for add; read room_read for current names).',
-      },
-      taskId: {
-        type: 'string',
-        description: 'The task id (required for close/update; add\'s success text returns the new id).',
-      },
-      blockedBy: {
-        oneOf: [{ type: 'string' }, { type: 'null' }],
-        description:
-          'The member this task waits on (must be on the roster; display only, never an automatic '
-          + 'dispatch). Optional on add; on update, a string re-targets the wait and null clears it.',
-      },
-    },
-    output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          text: { type: 'string', required: true },
-        },
-      },
-      render: (_args, value) => [{ type: 'text', text: value.text }],
-    },
-    // Board writes mutate only the room journal; two writes never conflict
-    // beyond the validations the result text reports back.
-    isConcurrencySafe: () => true,
-    async execute(args, exec) {
-      const agent = exec.agent
-      if (agent === undefined) return { text: 'room_task requires a calling agent (exec.agent was undefined).' }
-      if (!isRoomLog(agent.session.snapshotEvents())) {
-        return { text: 'The current session is not a room; room_task is only usable inside a room session.' }
-      }
-      const sessionId = agent.session.id
-      const ownership = await backend.getState({ sessionId })
-      if (ownership.ok && coordinatorMember(ownership.value)?.kind !== 'main-agent') return { text: 'Only the current coordinator may manage the shared room task board.' }
-      /** The self-correcting roster suffix: the legal member names, for member-not-found. */
-      const rosterHint = async (): Promise<string> => {
-        const state = await backend.getState({ sessionId })
-        if (!state.ok) return ''
-        const names = state.value.members.map(member => member.name)
-        return names.length === 0 ? '' : ` The room roster is: ${names.join(', ')}. Retry with one of these names.`
-      }
-      /** The self-correcting board suffix: the open tasks (id — title), for task-not-found. */
-      const openTasksHint = async (): Promise<string> => {
-        const state = await backend.getState({ sessionId })
-        if (!state.ok) return ''
-        const open = state.value.tasks.filter(task => task.status === 'pending' || task.status === 'in_progress')
-        if (open.length === 0) return ' The board has no open tasks right now.'
-        return ` Open tasks: ${open.map(task => `${task.id} — "${task.title}" (${task.member}, ${task.status})`).join('; ')}. Retry with one of these ids.`
-      }
-      const failureText = async (code: string): Promise<string> => {
-        switch (code) {
-          case 'member-not-found':
-            return `Unknown member.${await rosterHint()}`
-          case 'empty-text':
-            return 'The title must be non-blank; retry with a real title.'
-          case 'task-not-found':
-            return `No task with that id.${await openTasksHint()}`
-          case 'task-closed':
-            return 'That task is already closed (done/cancelled); closed tasks take no further changes.'
-          case 'nothing-to-update':
-            return 'update needs at least one field to change: a new title and/or blockedBy (null clears the wait).'
-          default:
-            return `The room rejected the write (${code}).`
-        }
-      }
-      switch (args.action) {
-        case 'add': {
-          if (args.title === undefined || args.member === undefined) {
-            return { text: 'room_task add requires both title and member (the roster name owning the task; read room_read for current names).' }
-          }
-          if (args.blockedBy === null) {
-            return { text: 'add takes no null blockedBy — simply omit blockedBy for an unblocked task.' }
-          }
-          const result = await backend.addTask({
-            sessionId,
-            member: args.member,
-            title: args.title,
-            ...args.blockedBy === undefined ? {} : { blockedBy: args.blockedBy },
-          })
-          if (!result.ok) return { text: `Could not add the task: ${result.error.code}. ${await failureText(result.error.code)}` }
-          return {
-            text: `Task "${args.title}" is now on ${args.member}'s lane of the shared room board `
-              + `(id: ${result.value.id}) — visible to every member and the human. `
-              + 'Keep the id to update or close the task later.',
-          }
-        }
-        case 'close': {
-          if (args.taskId === undefined) {
-            return { text: `room_task close requires taskId.${await openTasksHint()}` }
-          }
-          const result = await backend.closeTask({ sessionId, taskId: args.taskId })
-          if (!result.ok) return { text: `Could not close the task: ${result.error.code}. ${await failureText(result.error.code)}` }
-          return { text: `Task ${result.value.id} is done — the shared board shows it closed.` }
-        }
-        case 'update': {
-          if (args.taskId === undefined) {
-            return { text: `room_task update requires taskId.${await openTasksHint()}` }
-          }
-          const result = await backend.updateTask({
-            sessionId,
-            taskId: args.taskId,
-            ...args.title === undefined ? {} : { title: args.title },
-            ...args.blockedBy === undefined ? {} : { blockedBy: args.blockedBy },
-          })
-          if (!result.ok) return { text: `Could not update the task: ${result.error.code}. ${await failureText(result.error.code)}` }
-          return { text: `Task ${result.value.id} updated on the shared room board.` }
-        }
-      }
-    },
-  })
-}
-
-/** The slice of RoomService the room_message tool drives. */
-export interface RoomMessageToolBackend {
-  /** Dispatch one message to one member (see RoomService.messageMember). */
-  messageMember(request: RoomMessageRequest): Promise<RoomMessageResult>
-  /** Replay the room state (the error text reads the live roster from it). */
-  getState(request: RoomGetStateRequest): Promise<RoomGetStateResult>
-}
+export const inject = ['room']
 
 /**
- * Build the room_message tool definition bound to the room service: the main
- * agent's way to hand a member a message/task — the model-facing equivalent
- * of the human's `@member text`, minus the user bubble (the caller is the
- * room's own agent, not the human).
- * @param backend - the room service.
- * @returns a registry-ready tool definition.
+ * Plugin body: register the room tools. The declared `room` inject pends the
+ * row until the core provides, so mount order can no longer strand it; the
+ * in-body guard stays as the defensive direct-call path.
+ * @param ctx - Cordis context (the preset's agent-plane mount).
  */
-export function roomMessageTool(backend: RoomMessageToolBackend) {
-  return defineTool({
-    name: 'room_message',
-    description:
-      'Dispatch a message to a member of the current room (works in any session — it promotes the '
-      + 'session into a room if it is not one yet). '
-      + 'A member is an independent CLI session: the message runs asynchronously, and the member\'s '
-      + 'reply appears in the room as member speech (the human sees it; you read it through the '
-      + 'room\'s flow). Use this to ask a member something or hand it work — the equivalent of the '
-      + 'human typing "@member <text>" in the room composer. The member argument is a roster name '
-      + '(read room_read for current names); an unknown name is rejected with the live roster, so retry with one '
-      + 'of those.',
-    parameters: {
-      member: {
-        type: 'string',
-        required: true,
-        description: 'The addressee\'s roster name (read room_read for current names; new rooms name the native member "dsh").',
-      },
-      text: {
-        type: 'string',
-        required: true,
-        description: 'The message text the member receives as its task.',
-      },
-    },
-    output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          text: { type: 'string', required: true },
-        },
-      },
-      render: (_args, value) => [{ type: 'text', text: value.text }],
-    },
-    // A dispatch mutates only the room journal; two messages never conflict
-    // beyond the roster validation the result text reports back.
-    isConcurrencySafe: () => true,
-    async execute(args, exec) {
-      const agent = exec.agent
-      if (agent === undefined) return { text: 'room_message requires a calling agent (exec.agent was undefined).' }
-      // No room gate: messageMember PROMOTES the calling session into a room.
-      const sessionId = agent.session.id
-      const result = await backend.messageMember({ sessionId, member: args.member, text: args.text })
-      if (!result.ok) {
-        if (result.error.code === 'member-not-found') {
-          const state = await backend.getState({ sessionId })
-          const names = state.ok ? state.value.members.map(member => member.name) : []
-          const hint = names.length === 0 ? '' : ` The room roster is: ${names.join(', ')}. Retry with one of these names.`
-          return { text: `Could not message "${args.member}": unknown member.${hint}` }
-        }
-        if (result.error.code === 'empty-text') {
-          return { text: 'The message text must be non-blank; retry with real content.' }
-        }
-        return { text: `Could not message "${args.member}": ${result.error.code}.` }
-      }
-      return {
-        text: `Dispatched to ${result.value.member} — the member runs it asynchronously and its reply `
-          + 'appears in the room as member speech. Do not wait on it; the human watches the room.',
-      }
-    },
-  })
-}
-
-/** Native room tools use the same bounded context reader as the external MCP bridge. */
-export function roomReadTool(backend: { readRoomContext(sessionId: string): Promise<string> }) {
-  return defineTool({
-    name: 'room_read',
-    description: 'Read the current room roster, coordinator, deliveries, recent outcomes and available harness providers. Reading does not wake any member.',
-    parameters: {},
-    output: { schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: value.text }] },
-    isConcurrencySafe: () => true,
-    async execute(_args, exec) {
-      if (exec.agent === undefined) return { text: 'room_read requires a calling agent.' }
-      try { return { text: await backend.readRoomContext(exec.agent.session.id) } }
-      catch (error) { return { text: String(error) } }
-    },
-  })
-}
-
-/** Formal planning uses the same strict command grammar exposed by room_read. */
-export function roomPlanTool(backend: { commandPlan(sessionId: string, command: string): Promise<string> }) {
-  return defineTool({
-    name: 'room_plan',
-    description: 'Organize a requested goal into stages and dependent tasks, submit evidence, review/rework results, and pause/resume. Read room_read for current plan and planCommands JSON schema. Ordinary small tasks use room_message without a formal goal. A native run finishing only submits a result; acceptance requires evidence review.',
-    parameters: { command: { type: 'string', required: true, description: 'JSON command matching room_read planCommands: action, requestId, expectedRevision and action fields. Create mode execute is for authorized execution; draft saves a proposal without dispatch.' } },
-    output: { schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: value.text }] },
-    isConcurrencySafe: () => true,
-    async execute(args, exec) {
-      if (exec.agent === undefined) return { text: 'room_plan requires a calling agent.' }
-      try { return { text: await backend.commandPlan(exec.agent.session.id, args.command) } }
-      catch (error) { return { text: String(error) } }
-    },
+export function apply(ctx: Context): void {
+  const service = ctx.get('room')
+  if (service === undefined) {
+    // Degrade, don't explode: the core plugin is not mounted in this
+    // profile, so there is nothing to delegate to. The room UI is the
+    // core's own concern and unaffected; only the model tools stay absent.
+    ctx.logger.info(`${name}: the global room service is absent — the room tools are not registered`)
+    return
+  }
+  // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the
+  // tools registry's own mount order on the real composition tree and loses,
+  // silently never registering the tools. `ctx.inject` fires when the
+  // registry appears and never fires in a composition without one.
+  ctx.inject(['tools'], (toolsCtx) => {
+    if (typeof service.commandPlan === 'function') toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomPlanTool(service))), 'room-tool: room_plan tool')
+    if (typeof service.readRoomContext === 'function') toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomReadTool(service))), 'room-tool: room_read tool')
+    toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomInviteTool(service))), 'room-tool: room_invite tool')
+    toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomTaskTool(service))), 'room-tool: room_task tool')
+    toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomMessageTool(service))), 'room-tool: room_message tool')
   })
 }
