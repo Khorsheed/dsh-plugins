@@ -3972,3 +3972,10 @@ tr:last-child > .reportTd {
   gap: 4px;
   margin-left: auto;
 }
+
+/* T86: in 查看 a verbatim file is the whole page — the pane scrolls, the
+   block does not cap itself at the inline fold's height. */
+.inspectPane .pre,
+.inspectPane .rawFile {
+  max-height: none;
+}
