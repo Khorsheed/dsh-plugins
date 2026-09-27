@@ -54,7 +54,7 @@ import {
   type ReadinessRecord, type ReadinessSubject, type ReadinessUnit,
 } from './readiness.ts'
 import {
-  buildDeidentifyRules, deidentify, llmDraftCriteria, mergeReplacements,
+  buildDeidentifyRules, deidentify, judgedCriteria, mergeReplacements,
   pickRubricPath, runJudgeSamples, runProbes,
   DEFAULT_JUDGE_SAMPLES, JUDGE_MATERIAL_FILES,
   type DeidentifyRule, type ReplacementCount, type ResolvedJudge, type RubricCriterion,
@@ -625,6 +625,8 @@ async function judgeCell(
     parentSessionId: string
     /** The cell's own condition — the judging side needs it to mark a self-judged sample. */
     condition: { id: string; declaredModel: string | null }
+    /** The plan's `stages`: the judge is asked only the llm-draft criteria in that scope (T84). */
+    planStages: readonly string[]
     judge: JudgeEnv
     /** Set on the container path: the probes run inside this cell's unit. */
     unit?: { lab: LabFace; unitId: string }
@@ -636,9 +638,15 @@ async function judgeCell(
   // The grading layer is read with an EXPLICIT single-layer scope and never
   // reaches the cell: this listing is how both sources find the rubric.
   let rubricPath: string | null = null
+  let runIn: string[] | null = null
   try {
     const graded = await faces.datasets.show({ repo: env.repo, layers: ['grading'] }, env.datasetId, env.taskId, env.commit)
-    rubricPath = pickRubricPath(graded.items.find(item => item.id === env.taskId)?.layers['grading'] ?? [])
+    const gradedItem = graded.items.find(item => item.id === env.taskId)
+    rubricPath = pickRubricPath(gradedItem?.layers['grading'] ?? [])
+    const meta = gradedItem?.metadata
+    if (typeof meta === 'object' && meta !== null && Array.isArray((meta as Record<string, unknown>)['runIn'])) {
+      runIn = ((meta as Record<string, unknown>)['runIn'] as unknown[]).filter((s): s is string => typeof s === 'string')
+    }
   } catch (error) {
     await faces.mission.annotate(env.missionId, 'orchestrator', {
       kind: 'judge-skipped',
@@ -735,7 +743,11 @@ async function judgeCell(
     const rubric = await faces.datasets.read({ repo: env.repo, layers: ['grading'] }, {
       dataset: env.datasetId, item: env.taskId, layer: 'grading', path: rubricPath, commit: env.commit,
     })
-    criteria = llmDraftCriteria(rubric.content)
+    const judged = judgedCriteria(rubric.content, { task: env.taskId, runIn, planStages: env.planStages })
+    criteria = judged.criteria
+    if (judged.outOfScope.length > 0) {
+      env.log(`cell ${env.missionId}: ${judged.outOfScope.length} llm-draft criterion(s) outside the plan's stages are not put to the judge (${judged.outOfScope.join(', ')})`)
+    }
   } catch (error) {
     await faces.mission.annotate(env.missionId, 'orchestrator', {
       kind: 'judge-skipped',
@@ -746,7 +758,7 @@ async function judgeCell(
   if (criteria.length === 0) {
     await faces.mission.annotate(env.missionId, 'orchestrator', {
       kind: 'judge-skipped',
-      reason: `rubric ${rubricPath} declares no kind: llm-draft criteria — the LLM judge has nothing to answer`,
+      reason: `rubric ${rubricPath} declares no kind: llm-draft criteria inside the plan's stages — the LLM judge has nothing to answer`,
     }, { runId: env.runId, by: env.by }).catch(() => {})
     return counts
   }
@@ -1330,6 +1342,7 @@ async function runCellOnce(
     attempt: current.mission.currentAttempt,
     parentSessionId: env.parentSessionId,
     condition: { id: env.condition.id, declaredModel: env.condition.declaredModel },
+    planStages: env.planStages,
     judge: env.judge,
     ...(unit !== undefined ? { unit: { lab: (env.unit as CellUnitBinding).lab, unitId: unit.id } } : {}),
   })

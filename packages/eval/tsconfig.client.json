@@ -17,6 +17,7 @@
     "src/client/AnswerView.tsx",
     "src/client/ConditionsPage.tsx",
     "src/client/DesignPage.tsx",
+    "src/client/Inspect.tsx",
     "src/client/DraftCard.tsx",
     "src/client/ErrorState.tsx",
     "src/client/ExportDialog.tsx",

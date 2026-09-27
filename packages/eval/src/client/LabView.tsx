@@ -33,10 +33,10 @@
  * hairline separators, tokenized colors, official primitives throughout.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
+import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalJudgePromptView, EvalPlanCheck } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { DesignPage, type PlanFileAnswer, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
@@ -46,6 +46,7 @@ import {
 import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS, type LabPage, type RunFilter } from './store.ts'
 import { RunsPage } from './RunsPage.tsx'
 import { AnswerView } from './AnswerView.tsx'
+import { JudgePromptSheet, type Answer, type ItemInspectFaces } from './Inspect.tsx'
 import { rowsOfSheet } from './answer-view.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
@@ -76,6 +77,7 @@ export function LabView(props: LabViewProps) {
     fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, fetchCellAnswers, submitHumanFinal, fetchExperimentArtifact,
     closeRun, archiveRun, insertDraft, focus,
+    fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
   } = props
   const list = useStore(s => s.list)
   const loading = useStore(s => s.loading)
@@ -647,6 +649,32 @@ export function LabView(props: LabViewProps) {
       return { ok: true, text: result.value.text, note: result.value.truncated ? (result.value.note ?? t('design.raw.truncated')) : null }
     })
   }, [sessionId, openExperimentId, fetchExperimentArtifact, t])
+  // 看题 / 看判官 (T84 §三/§四): the pinned dataset and the judge prompt,
+  // through reads an older host half may not have — then the page keeps its
+  // inline 看题面 and shows no prompt button.
+  const inspect = useMemo((): ItemInspectFaces | null => {
+    if (openExperimentId === null || fetchItemMaterials === undefined || fetchDatasetFile === undefined) return null
+    const flat = <V,>(result: { ok: true; value: V } | { ok: false; error: { message: string } }): Answer<V> => (
+      result.ok ? { ok: true, value: result.value } : { ok: false, message: result.error.message }
+    )
+    return {
+      materials: item => fetchItemMaterials(sessionId, { experimentId: openExperimentId, item }).then(flat),
+      file: request => fetchDatasetFile(sessionId, { experimentId: openExperimentId, ...request }).then(flat),
+      preview: fetchJudgePromptPreview === undefined
+        ? null
+        : (item, judge) => fetchJudgePromptPreview(sessionId, {
+          experimentId: openExperimentId, item, ...(judge === null ? {} : { judge }),
+        }).then(flat),
+    }
+  }, [sessionId, openExperimentId, fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview])
+  const [promptCell, setPromptCell] = useState<{ runId: string; missionId: string; attempt: number; label: string } | null>(null)
+  const readJudgePrompt = useCallback((judge: string | null, sample: string | null): Promise<Answer<EvalJudgePromptView>> => {
+    if (promptCell === null || fetchJudgePrompt === undefined) return Promise.resolve({ ok: false, message: '—' })
+    return fetchJudgePrompt(sessionId, {
+      runId: promptCell.runId, missionId: promptCell.missionId, attempt: promptCell.attempt,
+      ...(judge === null ? {} : { judge }), ...(sample === null ? {} : { sample }),
+    }).then(result => (result.ok ? { ok: true, value: result.value } : { ok: false, message: result.error.message }))
+  }, [sessionId, promptCell, fetchJudgePrompt])
   const copyText = (text: string): void => {
     void writeClipboard(text).then((ok) => { actions.setNotice(t(ok ? 'design.raw.copied' : 'design.raw.copyFailed')) })
   }
@@ -1274,9 +1302,22 @@ export function LabView(props: LabViewProps) {
                           name: openRow?.name ?? openRunId, condition: column.condition ?? '—', rep: column.rep ?? 1,
                         }))
                       }}
+                      onJudgePrompt={fetchJudgePrompt === undefined
+                        ? null
+                        : (column) => {
+                          const cell = answerSheet.cells.find(each => each.missionId === column.key)
+                          if (cell === undefined) return
+                          setPromptCell({
+                            runId: answerSheet.runId, missionId: cell.missionId, attempt: cell.attempt,
+                            label: `${answerSheet.task} · ${column.condition ?? column.letter} · ${t('judgePrompt.sample')} ${String(column.rep ?? 1)}`,
+                          })
+                        }}
                       t={t}
                     />
                   )
+              )}
+              {promptCell !== null && answers !== null && (
+                <JudgePromptSheet cell={promptCell} read={readJudgePrompt} onClose={() => { setPromptCell(null) }} t={t} />
               )}
               {/* The stage stays mounted under the answer view, so 返回 lands
                   on the table exactly as it was left (an expanded criteria
@@ -1321,6 +1362,7 @@ export function LabView(props: LabViewProps) {
                     onFix={applyFix}
                     readPlan={openExperimentId === null ? null : readPlan}
                     onCopy={copyText}
+                    inspect={inspect}
                     t={t}
                   />
                 </>

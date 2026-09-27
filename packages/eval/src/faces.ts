@@ -79,6 +79,12 @@ export interface DatasetsFace {
     path: string
     commit?: string
   }): Promise<{ content: string; commit: string }>
+  /**
+   * A set-root file outside every layer (`schemas/stage1.json`). OPTIONAL on
+   * the face: only the design page's item drawer reads it (T84), and without
+   * it that tab lists the stage prompts alone.
+   */
+  readPassthrough?(scope: DatasetsScope, datasetId: string, path: string, commit?: string): Promise<{ content: string; commit: string }>
 }
 
 /**

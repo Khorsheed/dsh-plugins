@@ -969,6 +969,56 @@ export type EvalKey =
   | 'design.item.probes'
   | 'design.item.noProbes'
   | 'design.item.task'
+  | 'design.item.inspect'
+  | 'inspect.title'
+  | 'inspect.pinned'
+  | 'inspect.close'
+  | 'inspect.loading'
+  | 'inspect.error'
+  | 'inspect.tabs'
+  | 'inspect.tab.task'
+  | 'inspect.tab.stages'
+  | 'inspect.tab.rubric'
+  | 'inspect.tab.probes'
+  | 'inspect.tab.reference'
+  | 'inspect.who.task'
+  | 'inspect.who.stages'
+  | 'inspect.who.rubric'
+  | 'inspect.who.probes'
+  | 'inspect.who.reference'
+  | 'inspect.empty'
+  | 'inspect.pick'
+  | 'inspect.shared'
+  | 'inspect.skipped'
+  | 'inspect.binary'
+  | 'inspect.rubric.none'
+  | 'inspect.rubric.view'
+  | 'inspect.rubric.grouped'
+  | 'inspect.rubric.raw'
+  | 'inspect.rubric.kind.llm-draft'
+  | 'inspect.rubric.kind.human'
+  | 'inspect.rubric.kind.objective'
+  | 'inspect.rubric.kind.other'
+  | 'inspect.rubric.out'
+  | 'inspect.rubric.veto'
+  | 'inspect.rubric.stages'
+  | 'inspect.rubric.summary'
+  | 'judgeSees.label'
+  | 'judgeSees.text'
+  | 'judgePrompt.open'
+  | 'judgePrompt.close'
+  | 'judgePrompt.item'
+  | 'judgePrompt.judge'
+  | 'judgePrompt.part.fixed'
+  | 'judgePrompt.part.criteria'
+  | 'judgePrompt.part.criteriaRun'
+  | 'judgePrompt.part.materials'
+  | 'judgePrompt.part.output'
+  | 'judgePrompt.outOfScope'
+  | 'judgePrompt.previewNote'
+  | 'judgePrompt.actual'
+  | 'judgePrompt.actualTitle'
+  | 'judgePrompt.sample'
   | 'design.item.taskClose'
   | 'design.scale.approx'
   | 'design.scale.approxMinutes'
@@ -2033,6 +2083,56 @@ export const en: Record<EvalKey, string> = {
   'design.item.probes': '{n} check scripts',
   'design.item.noProbes': 'no check script',
   'design.item.task': 'Task text',
+  'design.item.inspect': 'Inspect',
+  'inspect.title': '{item} · item materials',
+  'inspect.pinned': '{dataset} @ {commit} — the version this experiment pins',
+  'inspect.close': 'Close',
+  'inspect.loading': 'Reading…',
+  'inspect.error': 'Could not read',
+  'inspect.tabs': 'Item materials',
+  'inspect.tab.task': 'Task',
+  'inspect.tab.stages': 'Stage prompts',
+  'inspect.tab.rubric': 'Criteria',
+  'inspect.tab.probes': 'Check scripts',
+  'inspect.tab.reference': 'Reference',
+  'inspect.who.task': 'The player sees this · the judge does not read it',
+  'inspect.who.stages': 'The player gets these stage by stage · the judge does not read them · this run: {stages}',
+  'inspect.who.rubric': 'The judge reads only the judge group; criteria for stages this run skips are greyed',
+  'inspect.who.probes': 'Run in the cell after the player finishes · the player never sees them',
+  'inspect.who.reference': 'For people only — the judge does not read these',
+  'inspect.empty': 'Nothing in this tab for this item',
+  'inspect.pick': 'Pick a file on the left',
+  'inspect.shared': 'set-wide',
+  'inspect.skipped': 'not run',
+  'inspect.binary': 'Not shown inline',
+  'inspect.rubric.none': 'This item ships no rubric',
+  'inspect.rubric.view': 'Criteria view',
+  'inspect.rubric.grouped': 'By kind',
+  'inspect.rubric.raw': 'Raw',
+  'inspect.rubric.kind.llm-draft': 'Judge ({n})',
+  'inspect.rubric.kind.human': 'Human ({n})',
+  'inspect.rubric.kind.objective': 'Script ({n})',
+  'inspect.rubric.kind.other': 'Other ({n})',
+  'inspect.rubric.out': 'not counted this run',
+  'inspect.rubric.veto': 'veto',
+  'inspect.rubric.stages': 'Stages {stages}',
+  'inspect.rubric.summary': '{n} criteria · {out} not counted this run',
+  'judgeSees.label': 'What the judge sees',
+  'judgeSees.text': 'The judge-group criteria and each stage report the player submits (de-identified). Not the task text, the reference material, or the human and script criteria.',
+  'judgePrompt.open': 'View the judge prompt',
+  'judgePrompt.close': 'Hide the judge prompt',
+  'judgePrompt.item': 'Item',
+  'judgePrompt.judge': 'Judge',
+  'judgePrompt.part.fixed': 'Built into eval — the same for every experiment',
+  'judgePrompt.part.criteria': 'From {path} · dataset @ {commit}',
+  'judgePrompt.part.criteriaRun': 'From the item\'s rubric.yml at the run\'s pinned commit',
+  'judgePrompt.part.materials': 'Filled at run time with the player\'s output',
+  'judgePrompt.part.output': 'Built into eval',
+  'judgePrompt.outOfScope': '{n} judge criteria outside this run\'s stages are not sent: {ids}',
+  'judgePrompt.previewNote': 'Preview: only the player\'s material differs from what the judge will receive.',
+  'judgePrompt.actual': 'Judge prompt actually sent',
+  'judgePrompt.actualTitle': 'Judge prompt · {cell}',
+  'judgePrompt.sample': 'Sample',
   'design.item.taskClose': 'Hide task',
   'design.scale.approx': '≈ {value}',
   'design.scale.approxMinutes': '≈ {m} min',
@@ -3087,6 +3187,56 @@ export const zh: Record<EvalKey, string> = {
   'design.item.probes': '检查脚本 {n} 个',
   'design.item.noProbes': '没有检查脚本',
   'design.item.task': '看题面',
+  'design.item.inspect': '查看',
+  'inspect.title': '{item} · 题目材料',
+  'inspect.pinned': '{dataset} @ {commit} · 本实验钉住的版本',
+  'inspect.close': '关闭',
+  'inspect.loading': '读取中…',
+  'inspect.error': '读不出来',
+  'inspect.tabs': '题目材料',
+  'inspect.tab.task': '题面',
+  'inspect.tab.stages': '阶段说明',
+  'inspect.tab.rubric': '判据',
+  'inspect.tab.probes': '检查脚本',
+  'inspect.tab.reference': '参考材料',
+  'inspect.who.task': '选手看得到 · 判官不读',
+  'inspect.who.stages': '选手按阶段收到 · 判官不读 · 本次跑 {stages}',
+  'inspect.who.rubric': '判官只读「判官」那组；本次不跑的阶段对应的判据置灰',
+  'inspect.who.probes': '选手交卷后在格子里执行 · 选手看不到',
+  'inspect.who.reference': '只给人看，判官不读',
+  'inspect.empty': '这道题这一栏没有文件',
+  'inspect.pick': '在左边选一个文件',
+  'inspect.shared': '题集级',
+  'inspect.skipped': '本次不跑',
+  'inspect.binary': '不内联',
+  'inspect.rubric.none': '这道题没有 rubric',
+  'inspect.rubric.view': '判据视图',
+  'inspect.rubric.grouped': '按类分组',
+  'inspect.rubric.raw': '原文',
+  'inspect.rubric.kind.llm-draft': '判官（{n} 条）',
+  'inspect.rubric.kind.human': '人工（{n} 条）',
+  'inspect.rubric.kind.objective': '脚本（{n} 条）',
+  'inspect.rubric.kind.other': '其他（{n} 条）',
+  'inspect.rubric.out': '本次不计',
+  'inspect.rubric.veto': '一票否决',
+  'inspect.rubric.stages': '阶段 {stages}',
+  'inspect.rubric.summary': '共 {n} 条 · 本次不计 {out} 条',
+  'judgeSees.label': '判官看到什么',
+  'judgeSees.text': '「判官」那组判据，加上选手每个阶段交的报告（去指纹）。不看题面、参考材料，也不看人工和脚本判据。',
+  'judgePrompt.open': '看判官提示词',
+  'judgePrompt.close': '收起判官提示词',
+  'judgePrompt.item': '题目',
+  'judgePrompt.judge': '判官',
+  'judgePrompt.part.fixed': 'eval 内置，所有实验相同',
+  'judgePrompt.part.criteria': '来自 {path} · 题集 @ {commit}',
+  'judgePrompt.part.criteriaRun': '来自该题 rubric.yml · 本次运行钉住的版本',
+  'judgePrompt.part.materials': '运行时填入选手产出',
+  'judgePrompt.part.output': 'eval 内置',
+  'judgePrompt.outOfScope': '本次阶段外的 {n} 条判官判据不发给判官：{ids}',
+  'judgePrompt.previewNote': '预览：只有选手材料一段与判官实际收到的不同',
+  'judgePrompt.actual': '判官实际收到的提示词',
+  'judgePrompt.actualTitle': '判官提示词 · {cell}',
+  'judgePrompt.sample': '样本',
   'design.item.taskClose': '收起题面',
   'design.scale.approx': '≈ {value}',
   'design.scale.approxMinutes': '≈ {m} 分钟',

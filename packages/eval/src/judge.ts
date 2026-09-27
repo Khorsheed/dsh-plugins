@@ -34,6 +34,7 @@ import yaml from 'js-yaml'
 import type { DatasetsFace, LocalAgentFace, MissionFace } from './faces.ts'
 import { discardDir, hostProbeExecutor, type ProbeExecution, type ProbeExecutor } from './probe-exec.ts'
 import { validateJson, VERDICT_SCHEMA, VERDICT_SCHEMA_ID } from './schema.ts'
+import { inStageScope, rubricWeightRows } from './weights.ts'
 
 /** The four material files handed to the judge, in prompt order. */
 export const JUDGE_MATERIAL_FILES: readonly string[] = ['stage1.json', 'stage1.md', 'stage2.json', 'stage2.md']
@@ -218,6 +219,36 @@ export function rubricCriteria(rubricText: string, kind: string): RubricCriterio
  */
 export function llmDraftCriteria(rubricText: string): RubricCriterion[] {
   return rubricCriteria(rubricText, 'llm-draft')
+}
+
+/**
+ * The llm-draft criteria a run's judge is actually asked — the ones inside the
+ * plan's stage scope (T84). A leaf that judges a stage this run never executes
+ * is neither scored nor put to the judge: asking it would only collect
+ * "material missing → false" verdicts the report then has to drop. The stage
+ * rule is the one the full score uses ({@link rubricWeightRows}), so the page's
+ * 满分, the report's score and the judge's prompt can never disagree.
+ * @param rubricText - the rubric YAML.
+ * @param scope.task - the item id (the weight rows need it).
+ * @param scope.runIn - the item's `runIn` stages (binds `verify.json` evidence).
+ * @param scope.planStages - the plan's `stages`; null/empty keeps every criterion.
+ * @returns the in-scope criteria in document order and the ids left out.
+ * @throws Error when the document does not parse as YAML.
+ */
+export function judgedCriteria(rubricText: string, scope: {
+  task: string
+  runIn?: readonly string[] | null
+  planStages?: readonly string[] | null
+}): { criteria: RubricCriterion[]; outOfScope: string[] } {
+  const all = llmDraftCriteria(rubricText)
+  const stagesOf = new Map(rubricWeightRows(rubricText, scope.task, { runIn: scope.runIn ?? null }).map(row => [row.id, row.stages]))
+  const criteria: RubricCriterion[] = []
+  const outOfScope: string[] = []
+  for (const criterion of all) {
+    if (inStageScope(stagesOf.get(criterion.id) ?? null, scope.planStages)) criteria.push(criterion)
+    else outOfScope.push(criterion.id)
+  }
+  return { criteria, outOfScope }
 }
 
 /**

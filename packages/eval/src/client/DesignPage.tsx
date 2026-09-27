@@ -41,6 +41,7 @@ import type { EvalKey } from './locales.ts'
 import { ConditionsTable } from './ConditionsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import { MarkdownDoc } from './MarkdownDoc.tsx'
+import { ItemDrawer, JudgePromptPreview, type ItemInspectFaces } from './Inspect.tsx'
 import { RunGrid, plannedRows, type GridColumn } from './Grid.tsx'
 import {
   Chip, Detail, Field, Fold, Seg, StartedRun, Word,
@@ -379,10 +380,13 @@ function ItemsTable(props: {
   facts: EvalPlanItemsView | null
   /** The plan's `stages` — the same for every cell; empty when it names none. */
   planStages: readonly string[]
+  /** The pinned-dataset reads: with them 查看 opens the drawer; without, the inline 看题面. */
+  inspect: ItemInspectFaces | null
   t: LabViewProps['t']
 }) {
-  const { items, expectedNs, facts, planStages, t } = props
+  const { items, expectedNs, facts, planStages, inspect, t } = props
   const [open, setOpen] = useState<string | null>(null)
+  const [drawer, setDrawer] = useState<string | null>(null)
   const how = expectedNs.map(ns => (VERDICT_SOURCE[ns] === undefined ? ns : t(VERDICT_SOURCE[ns]))).join(' · ') || '—'
   if (facts === null || facts.items.length === 0) {
     return (
@@ -430,6 +434,7 @@ function ItemsTable(props: {
               item={item}
               open={open === item.id}
               onToggle={() => setOpen(open === item.id ? null : item.id)}
+              onInspect={inspect === null ? null : () => { setDrawer(item.id) }}
               stagesColumn={anyPhases}
               t={t}
             />
@@ -437,6 +442,9 @@ function ItemsTable(props: {
         </tbody>
       </table>
       {facts.notes.length > 0 && <div className={css.scaleNote}>{facts.notes.join(' · ')}</div>}
+      {drawer !== null && inspect !== null && (
+        <ItemDrawer item={drawer} faces={inspect} onClose={() => { setDrawer(null) }} t={t} />
+      )}
     </div>
   )
 }
@@ -513,11 +521,13 @@ function ItemRow(props: {
   item: EvalPlanItemFacts
   open: boolean
   onToggle: () => void
+  /** Open the item drawer (T84 §三); null — the host has no drawer reads. */
+  onInspect: (() => void) | null
   /** Whether the 本次阶段 column is on (some item names its stages). */
   stagesColumn: boolean
   t: LabViewProps['t']
 }) {
-  const { item, open, onToggle, stagesColumn, t } = props
+  const { item, open, onToggle, onInspect, stagesColumn, t } = props
   const shape = itemShape(item, t)
   const phases = item.phases ?? []
   const running = item.runStages ?? phases
@@ -559,14 +569,19 @@ function ItemRow(props: {
             : cut ? `${item.fullScore} / ${item.fullScoreAll ?? ''}` : item.fullScore}
         </td>
         <td className={css.rowAction}>
-          {item.task !== null && (
+          {onInspect !== null && (
+            <Button variant="ghost" size="sm" className={css.smButton} onClick={onInspect}>
+              {t('design.item.inspect')}
+            </Button>
+          )}
+          {onInspect === null && item.task !== null && (
             <Button variant="ghost" size="sm" className={css.smButton} aria-expanded={open} onClick={onToggle}>
               {open ? t('design.item.taskClose') : t('design.item.task')}
             </Button>
           )}
         </td>
       </tr>
-      {open && item.task !== null && (
+      {open && onInspect === null && item.task !== null && (
         <tr>
           <td colSpan={stagesColumn ? 6 : 5} className={css.taskCell}>
             <MarkdownDoc text={item.task} {...(item.taskPath === null ? {} : { banner: item.taskPath })} t={t} />
@@ -587,11 +602,16 @@ function HowJudged(props: {
   samples: number | null
   /** null — the plan was not read: only the judges are known. */
   expectedNs: readonly string[] | null
+  /** The plan's items and the preview read, for 看判官提示词 (T84 §四). */
+  items: readonly string[]
+  preview: ItemInspectFaces['preview']
   t: LabViewProps['t']
 }) {
-  const { judges, samples, expectedNs, t } = props
+  const { judges, samples, expectedNs, items, preview, t } = props
   const on = (ns: string) => expectedNs === null || expectedNs.includes(ns)
+  const judged = judges.length > 0 && on('llm-draft')
   return (
+    <>
     <dl className={css.kv}>
       <dt>{t('design.how.judge')}</dt>
       <dd>
@@ -606,6 +626,10 @@ function HowJudged(props: {
         <dd>{on('script') ? t('design.how.scriptOn') : <span className={css.dim}>{t('design.how.off')}</span>}</dd>
       </>}
     </dl>
+    {judged && preview !== null && items.length > 0 && (
+      <JudgePromptPreview items={items} judges={judges} preview={preview} t={t} />
+    )}
+    </>
   )
 }
 
@@ -1159,10 +1183,12 @@ export function DesignPage(props: {
   readPlan: (() => Promise<PlanFileAnswer>) | null
   /** Copy a text (the plan viewer's 复制) — the caller says where it went. */
   onCopy: (text: string) => void
+  /** The pinned-dataset reads (T84 §三/§四); absent — the inline 看题面 stays. */
+  inspect?: ItemInspectFaces | null
   t: LabViewProps['t']
 }) {
   const {
-    readPlan, onCopy,
+    readPlan, onCopy, inspect = null,
     row, detail, review, reviewLoading, reviewError,
     conditions, conditionsLoading, conditionsError, conditionBusy, provision, conditionAction, endpointEditing,
     pair, diff, diffError, sentBack, started, output, outputError, refusal, approveError,
@@ -1284,7 +1310,7 @@ export function DesignPage(props: {
       <Block title={t('design.items')} meta={<span className={css.mono}>{snapshotCell(row)}</span>}>
         {digest === null || digest.items.length === 0
           ? <div className={css.dim}>{t('new.itemsEmpty')}</div>
-          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} facts={review?.items ?? null} planStages={digest.stages} t={t} />}
+          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} facts={review?.items ?? null} planStages={digest.stages} inspect={inspect} t={t} />}
       </Block>
 
       {/* No plan review yet: the row still names its judges, and that is
@@ -1294,6 +1320,8 @@ export function DesignPage(props: {
           judges={digest?.judge.conditions ?? row.judges}
           samples={detail?.meta?.judge.samples ?? digest?.judge.samples ?? null}
           expectedNs={digest?.expectedNs ?? null}
+          items={digest?.items ?? []}
+          preview={inspect?.preview ?? null}
           t={t}
         />
       </Block>

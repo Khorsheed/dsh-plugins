@@ -39,7 +39,8 @@ import type {
   EvalApproveRequest, EvalArchiveRunRequest, EvalCellArtifactRequest, EvalCloseRunRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
   EvalConditionEndpointRequest, EvalConditionProvisionRequest,
   EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
-  EvalExperimentArtifactRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
+  EvalExperimentArtifactRequest, EvalItemMaterialsRequest, EvalDatasetFileRequest, EvalJudgePromptPreviewRequest, EvalJudgePromptRequest,
+  EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
   EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest, EvalCellAnswersRequest,
   EvalMatrixRequest, EvalPlanNumbersRequest, EvalPlanRequest, EvalReexportRequest, EvalReportRequest, EvalRunUnitsRequest,
 } from '../types.ts'
@@ -162,6 +163,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         fetchCellArtifact: (sid: SessionId, request: EvalCellArtifactRequest) => remote.cellArtifact(sid, request),
         // The analysis drafts an agent wrote into the experiment (T73).
         fetchExperimentArtifact: (sid: SessionId, request: EvalExperimentArtifactRequest) => remote.experimentArtifact(sid, request),
+        // T84: the design page's item drawer and the judge's prompt.
+        fetchItemMaterials: (sid: SessionId, request: EvalItemMaterialsRequest) => remote.itemMaterials(sid, request),
+        fetchDatasetFile: (sid: SessionId, request: EvalDatasetFileRequest) => remote.datasetFile(sid, request),
+        fetchJudgePromptPreview: (sid: SessionId, request: EvalJudgePromptPreviewRequest) => remote.judgePromptPreview(sid, request),
+        fetchJudgePrompt: (sid: SessionId, request: EvalJudgePromptRequest) => remote.judgePrompt(sid, request),
         retryCell: (sid: SessionId, request: EvalCellRetryRequest) => remote.retry(sid, request),
         releaseCheck: (sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(sid, request),
         planExport: (sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(sid, request),
