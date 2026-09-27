@@ -52,7 +52,7 @@ import { ErrorState } from './ErrorState.tsx'
 import { Hygiene, LiveGrid } from './Grid.tsx'
 import type { EvalKey } from './locales.ts'
 import {
-  Chip, Detail, Duration, EmptyState, Hash, VerdictChip, Word, bucketTone, recordTone, stageTone, stalledFor,
+  Chip, Detail, Duration, EmptyState, Fold, Hash, VerdictChip, Word, bucketTone, recordTone, stageTone, stalledFor,
 } from './parts.tsx'
 import {
   RETRY_CATEGORIES, bucketPhrase, durationParts, recordPhrase, retryPhrase, stagePhrase, verdictKey, verdictSourceOf,
@@ -331,20 +331,12 @@ function RecordDetail(props: {
   // is what a reader wants to know about it, not a dash.
   const moving = cell !== null && !isJudgedOrBeyond(cell.state)
 
-  return (
-    <div className={props.inline === true ? `${css.drawer} ${css.drawerInline}` : css.drawer}>
-      <div className={css.drawerBar}>
-        <span className={css.title}>
-          {cell === null ? '' : t('record.head', { task: cell.task ?? '—', condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
-        </span>
-        <span className={css.barSpacer} />
-        <Button variant="outline" size="sm" onClick={onClose}>{t('drawer.close')}</Button>
-      </div>
-      <div className={css.drawerBody}>
-        {loading && cell === null && <div className={css.empty}>{t('drawer.loading')}</div>}
-        {error !== null && <ErrorState what={t('drawer.error')} message={error} compact t={t} />}
-        {cell !== null && (
-          <>
+  // The pieces, once: the drawer lays them out as one column, the inline
+  // record (a small run, T83 · phase 4) as v5's timeline + actions box with
+  // the receipts folded under it.
+  const parts = cell === null ? null : {
+    head: (
+      <>
             {/* The head: the verdict this record carries, big, with where it
                 came from — and what the ledger says became of the cell. The
                 NUMBER is not here and says so; see `verdictSourceOf`. */}
@@ -373,7 +365,9 @@ function RecordDetail(props: {
               </div>
             )}
             {verdict !== null && <div className={css.dim}>{t('record.scoreWhere')}</div>}
-
+      </>
+    ),
+    timeline: (
             <Field label={t('record.timeline')}>
               {segments.length === 0
                 ? <span className={css.dim}>{t('record.timelineNone')}</span>
@@ -406,7 +400,9 @@ function RecordDetail(props: {
                   </div>
                 )}
             </Field>
-
+    ),
+    receipts: (
+      <>
             <Field label={t('record.params')}>
               <div className={css.paramTable}>
                 <Param label={t('record.param.task')}>{cell.task ?? '—'}</Param>
@@ -555,8 +551,9 @@ function RecordDetail(props: {
                   </div>
                 ))}
             </Field>
-
-            <div className={css.drawerActions}>
+      </>
+    ),
+    session: (
               <Button variant="outline"
                 size="sm"
                 disabled={cell.childSessionId === null}
@@ -565,6 +562,9 @@ function RecordDetail(props: {
               >
                 {t('drawer.openSession')}
               </Button>
+    ),
+    answer: (
+      <>
               {cell.task !== null && (
                 <Button variant="outline"
                   size="sm"
@@ -573,6 +573,10 @@ function RecordDetail(props: {
                   {t('answer.open')}
                 </Button>
               )}
+      </>
+    ),
+    retry: (
+      <>
               <select
                 className={css.select}
                 value={category}
@@ -601,14 +605,158 @@ function RecordDetail(props: {
               >
                 {t('action.retry')}
               </Button>
+      </>
+    ),
+    releaseExport: (
+      <>
               <Button variant="outline" size="sm" onClick={onRelease}>{t('action.release')}</Button>
               <Button size="sm" variant="outline" onClick={onExport}>{t('action.export')}</Button>
+      </>
+    ),
+    noSession: cell.childSessionId === null && <div className={css.dim}>{t('drawer.noSession')}</div>,
+  }
+
+  if (props.inline === true) {
+    return (
+      <RecordInline
+        cell={cell}
+        loading={loading}
+        error={error}
+        segments={segments}
+        moving={moving}
+        submitted={(attempt?.artifacts ?? []).map(entry => entry.path.split('/').pop() ?? entry.path)}
+        parts={parts}
+        t={t}
+      />
+    )
+  }
+
+  return (
+    <div className={css.drawer}>
+      <div className={css.drawerBar}>
+        <span className={css.title}>
+          {cell === null ? '' : t('record.head', { task: cell.task ?? '—', condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
+        </span>
+        <span className={css.barSpacer} />
+        <Button variant="outline" size="sm" onClick={onClose}>{t('drawer.close')}</Button>
+      </div>
+      <div className={css.drawerBody}>
+        {loading && cell === null && <div className={css.empty}>{t('drawer.loading')}</div>}
+        {error !== null && <ErrorState what={t('drawer.error')} message={error} compact t={t} />}
+        {parts !== null && (
+          <>
+            {parts.head}
+            {parts.timeline}
+            {parts.receipts}
+            <div className={css.drawerActions}>
+              {parts.session}
+              {parts.answer}
+              {parts.retry}
+              {parts.releaseExport}
             </div>
-            {cell.childSessionId === null && <div className={css.dim}>{t('drawer.noSession')}</div>}
+            {parts.noSession}
           </>
         )}
       </div>
     </div>
+  )
+}
+
+type RecordParts = Record<'head' | 'timeline' | 'receipts' | 'session' | 'answer' | 'retry' | 'releaseExport' | 'noSession', ReactNode>
+
+/**
+ * One record under a small run's cards, the way v5 draws it (T83 · phase 4):
+ * what it is as the heading, then ONE box — where the time went on the left
+ * as a vertical stage list, what to do next on the right — and every receipt
+ * the drawer shows (verdict, parameters, attachments, judge rounds, attempts,
+ * probes) folded under it, closed. The drawer layout stays for a big run's
+ * side panel; this is the same data, reordered for a page with room.
+ *
+ * The stage list is the ledger's transitions only: a stage not reached yet is
+ * not drawn, because the plan's stage count is not on this record and a
+ * guessed «待办» row would outlive a retry that changed it.
+ */
+function RecordInline(props: {
+  cell: EvalCellDetail | null
+  loading: boolean
+  error: string | null
+  segments: ReturnType<typeof timelineOf>
+  moving: boolean
+  /** Basenames of this attempt's artifacts — `stage1.md` marks stage 1 as submitted. */
+  submitted: readonly string[]
+  parts: RecordParts | null
+  t: LabViewProps['t']
+}) {
+  const { cell, loading, error, moving, submitted, parts, t } = props
+  const [retryOpen, setRetryOpen] = useState(false)
+  // The untimed state the first transition left (待起) says nothing a reader
+  // can use; a record that never moved keeps it as its only row.
+  const segments = props.segments.length > 1 && props.segments[0]?.ms === null
+    ? props.segments.slice(1)
+    : props.segments
+  return (
+    <section className={css.recordInline}>
+      <h5 className={css.sectionTitle}>
+        {cell === null ? t('drawer.loading') : t('record.inlineHead', { task: cell.task ?? '—', condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
+      </h5>
+      {error !== null && <ErrorState what={t('drawer.error')} message={error} compact t={t} />}
+      {loading && cell === null && error === null && <div className={css.empty}>{t('drawer.loading')}</div>}
+      {cell !== null && parts !== null && (
+        <>
+          <div className={css.recordInlineBox}>
+            <div>
+              <span className={css.srOnly}>{t('record.timeline')}</span>
+              {segments.length === 0
+                ? <span className={css.dim}>{t('record.timelineNone')}</span>
+                : (
+                  <ol className={css.stageList}>
+                    {segments.map((segment, index) => {
+                      const last = index === segments.length - 1
+                      const current = last && moving
+                      const n = /^stage-(\d+)$/.exec(segment.state)?.[1]
+                      const file = n === undefined ? undefined : submitted.find(name => name === `stage${n}.md`)
+                      const phrase = stagePhrase(segment.state)
+                      return (
+                        <li
+                          key={`${segment.state}:${String(index)}`}
+                          className={css.stageStep}
+                          data-step={current ? 'current' : 'done'}
+                          title={segment.state}
+                        >
+                          <span className={css.stageStepDot} aria-hidden />
+                          <span className={css.stageStepLabel}>
+                            <Word phrase={phrase} t={t} />
+                            {file !== undefined && <span className={css.dim}>{` · ${t('record.submitted', { file })}`}</span>}
+                          </span>
+                          <span className={css.stageStepTime}>
+                            {segment.ms !== null
+                              ? <Duration ms={segment.ms} t={t} />
+                              : current ? t('runs.card.now') : ''}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ol>
+                )}
+            </div>
+            <div className={css.recordInlineActions}>
+              {parts.answer}
+              {parts.session}
+              <Button variant="outline" size="sm" aria-expanded={retryOpen} onClick={() => { setRetryOpen(open => !open) }}>
+                {t('record.retryOpen')}
+              </Button>
+              {retryOpen && <div className={css.recordInlineRetry}>{parts.retry}</div>}
+              {parts.noSession}
+            </div>
+          </div>
+          <Fold title={t('record.allDetails')}>
+            {parts.head}
+            {parts.receipts}
+            <div className={css.drawerActions}>{parts.releaseExport}</div>
+          </Fold>
+        </>
+      )}
+    </section>
   )
 }
 

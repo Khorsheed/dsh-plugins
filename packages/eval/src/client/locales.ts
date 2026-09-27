@@ -605,6 +605,10 @@ export type EvalKey =
   | 'record.scoreWhere'
   | 'record.scoreMixed'
   | 'record.timeline'
+  | 'record.inlineHead'
+  | 'record.submitted'
+  | 'record.retryOpen'
+  | 'record.allDetails'
   | 'record.timelineNone'
   | 'record.params'
   | 'record.attachments'
@@ -1620,6 +1624,10 @@ export const en: Record<EvalKey, string> = {
   'record.scoreWhere': 'The scores are computed from the exported bundle — they are on the results page.',
   'record.scoreMixed': 'This record carries verdicts in several layers ({sources}). The report scores EACH criterion from the most authoritative layer that judged it, so this record\u2019s score comes from more than one — the results page names which, criterion by criterion.',
   'record.timeline': 'Stage timeline',
+  'record.inlineHead': '{condition} · {task} · rep {rep}',
+  'record.submitted': 'submitted {file}',
+  'record.retryOpen': 'Retry with a reason…',
+  'record.allDetails': 'Everything about this record',
   'record.timelineNone': 'The ledger recorded no transition times for this attempt.',
   'record.params': 'Parameters',
   'record.attachments': 'Attachments',
@@ -2626,6 +2634,10 @@ export const zh: Record<EvalKey, string> = {
   'record.scoreWhere': '分数是从导出的 bundle 里算的，在结果对比页。',
   'record.scoreMixed': '这条记录在多个层上都有判定（{sources}）。报告逐条判据取判过它的最权威那一层，所以这条记录的得分来自不止一个来源——具体哪条判据取了哪一层，在结果对比页上逐条标着。',
   'record.timeline': '阶段时间轴',
+  'record.inlineHead': '{condition} · {task} · 第 {rep} 次',
+  'record.submitted': '已提交 {file}',
+  'record.retryOpen': '带原因重跑…',
+  'record.allDetails': '这条记录的全部细节',
   'record.timelineNone': '账本没记这次尝试的转移时间。',
   'record.params': '参数配置',
   'record.attachments': '附件',

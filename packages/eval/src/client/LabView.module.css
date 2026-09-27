@@ -2831,9 +2831,88 @@ tr:last-child > .reportTd {
   white-space: nowrap;
 }
 
-.drawerInline {
+/* T83 · phase 4: the opened record under the cards, as v5 draws it — the
+   heading, then one box with the stage list left and the next gestures
+   right, the receipts folded below. */
+.recordInline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.recordInlineBox {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.recordInlineActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.recordInlineRetry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.stageList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stageStep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.stageStepDot {
+  flex: none;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-secondary);
+}
+
+.stageStep[data-step='current'] .stageStepDot {
+  border: 2px solid var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-bg-base);
+}
+
+.stageStepLabel {
   flex: 1 1 auto;
-  max-width: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stageStepTime {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 实验卫生: one line folded; opens by itself when an invariant breaks. */
