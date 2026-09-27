@@ -15,7 +15,7 @@
  * checkout.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -615,7 +615,7 @@ describe('the detail page', () => {
     expect(screen.getByText(/detail\.playerSummary .*"count":3.*"bytes":300/)).toBeTruthy()
     // The shared stage prompt is marked as dataset-level, so a reader can tell
     // what is this item's and what every item carries.
-    expect(screen.getByText('detail.playerShared')).toBeTruthy()
+    expect(screen.getByText(/^detail\.playerShared · /)).toBeTruthy()
     // The answer key is NOT in the list — that is what this panel is for.
     const panel = screen.getByText('detail.player').closest('section')
     expect(panel?.textContent).toContain('task.md')
@@ -646,6 +646,55 @@ describe('the detail page', () => {
     expect(line).toContain('"kind":"llm-draft","count":1')
     expect(line).toContain('detail.judgeProbes {"count":1}')
     expect(line).toContain('detail.judgeSchemas {"count":1}')
+  })
+
+  it('the item heading is a crumb in the content column; the cards flag the rubric and a missing check script (T83 · phase 4)', async () => {
+    const h = makeHarness()
+    h.itemBrief.mockResolvedValue({
+      ok: true,
+      value: { ...BRIEF, judgeability: { ...BRIEF.judgeability, probes: [] } },
+    })
+    h.itemRuns.mockResolvedValue({ runs: [RUNS.runs[0]!, { ...RUNS.runs[0]!, runId: 'run-2' }, { ...RUNS.runs[0]!, runId: 'run-3', name: 'pilot-b' }], notes: [] })
+    await openItem(h)
+    const judge = (await screen.findByText('detail.judgeOnly')).closest('section')
+    // repo › set › item, read at the tracked ref and the brief's commit.
+    const crumb = screen.getByRole('heading', { level: 5 })
+    expect(crumb.textContent).toContain('dataseek-eval›bench›R1')
+    expect(crumb.textContent).toContain('detail.readAt')
+    expect(crumb.textContent).toContain('"commit":"a4f9c2e"')
+    // The crumb sits in the scrolling content column, above the two cards.
+    expect(crumb.compareDocumentPosition(judge!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The rubric carries its leaf count; no probe anywhere is said, in the card.
+    expect(judge?.textContent).toContain('detail.judgeLeaves {"leaves":2}')
+    expect(judge?.textContent).toContain('detail.noProbes')
+    // The experiments that used it, once each.
+    expect(await screen.findByText('detail.usedBy {"names":"pilot-a · pilot-b"}')).toBeTruthy()
+  })
+
+  it('one file per row; 用过 and 作答记录 show the newest five and fold the rest (T83 · phase 4 ruling)', async () => {
+    const h = makeHarness()
+    const base = RUNS.runs[0]!
+    h.itemRuns.mockResolvedValue({
+      runs: Array.from({ length: 7 }, (_, index) => ({ ...base, runId: `run-${String(index)}`, name: `exp-${String(index)}` })),
+      notes: [],
+    })
+    await openItem(h)
+    const player = (await screen.findByText('detail.player')).closest('section') as HTMLElement
+    // A row per file, the size as the row's note.
+    const rows = player.querySelectorAll('li')
+    expect(rows).toHaveLength(3)
+    expect(rows[0]?.children).toHaveLength(2)
+    const usedBy = await screen.findByText(/^detail\.usedBy /)
+    expect(usedBy.textContent).toContain('exp-0 · exp-1 · exp-2 · exp-3 · exp-4"')
+    expect(usedBy.textContent).not.toContain('exp-5')
+    fireEvent.click(screen.getByRole('button', { name: /detail\.usedByMore \{"count":2\}/ }))
+    expect(usedBy.textContent).toContain('exp-6')
+    expect(screen.queryByRole('button', { name: /detail\.usedByMore/ })).toBeNull()
+    // The answer record: five open, two behind the fold.
+    const older = screen.getByText('detail.runsOlder {"count":2}').closest('details') as HTMLDetailsElement
+    expect(older.open).toBe(false)
+    expect(within(older).getByText('exp-5')).toBeTruthy()
+    expect(within(older).queryByText('exp-4')).toBeNull()
   })
 
   it('«作答记录» is absent without an eval plugin, and present with one', async () => {

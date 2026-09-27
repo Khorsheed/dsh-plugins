@@ -10,7 +10,7 @@
  * ONLY the differing fields.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -472,10 +472,12 @@ describe('the plan-review page', () => {
     const h = makeHarness()
     renderView(h)
     await openPage(h, 'page.design')
-    await screen.findByRole('button', { name: 'review.sendBack' })
+    // T83 · design: 让 agent 改… sits in the stage bar, beside the primary.
+    await screen.findByRole('button', { name: 'cta.askAgent' })
+    expect(screen.queryByRole('button', { name: 'review.sendBack' })).toBeNull()
     expect(screen.getByText('status.pending-approval')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'review.sendBack' }))
+    fireEvent.click(screen.getByRole('button', { name: 'cta.askAgent' }))
 
     expect(screen.getByText('review.sentBack')).toBeTruthy()
     expect(screen.getByText('status.draft')).toBeTruthy()
@@ -525,7 +527,7 @@ describe('the readiness badge names every subject, and why each one is not ready
     expect(screen.getByText('why.homeSha · why.lock')).toBeTruthy()
   })
 
-  it('a subject the registry listing does not carry is a ROW, not a gap', async () => {
+  it('a judge the registry listing does not carry stays out of the compare table, and in the checklist', async () => {
     const h = makeHarness()
     renderView(h)
     await openPage(h, 'page.design')
@@ -537,9 +539,10 @@ describe('the readiness badge names every subject, and why each one is not ready
     // picked for a diff and cannot be provisioned — there is no declaration to
     // do either to — so it carries dashes and the one word there is about it.
     const row = screen.getAllByText('judge-a').map(node => node.closest('[data-absent]')).find(Boolean)
-    expect(row).toBeTruthy()
-    expect(row?.querySelector('button')).toBeNull()
-    expect(row?.textContent).toContain('conditions.missing')
+    // A JUDGE is not a row of the compare table (T83 · design): it is named
+    // in 怎么判, and its readiness is the checklist's line.
+    expect(row).toBeUndefined()
+    expect(screen.getAllByText('judge-a').some(node => node.closest('table') !== null)).toBe(true)
   })
 
   it('a plan whose file is gone gets the three-part seat, not its English sentence', async () => {
@@ -604,11 +607,10 @@ describe('the conditions page', () => {
     await openPage(h, 'page.design')
 
     await waitFor(() => { expect(h.fetchConditions).toHaveBeenCalledWith('s1', {}) })
-    // The group id is on the table row AND on the planned grid's column
-    // heading — the two halves of section ② (ui-spec §五 v2).
-    expect((await screen.findAllByText('dsh-exec')).length).toBe(2)
-    // codex-exec is the one that is NOT ready, so it is named a third time —
-    // on its own red cross in the readiness badge.
+    // The group id is on the table row, on the planned grid's column heading
+    // — the two halves of section ② (ui-spec §五 v2) — and, since T83 (v5 ·
+    // ready), on its own row of the 检查项 table, ready or not.
+    expect((await screen.findAllByText('dsh-exec')).length).toBe(3)
     expect(screen.getAllByText('codex-exec').length).toBe(3)
     expect(screen.getByText('dsh · exec')).toBeTruthy()
     expect(screen.getByText('deepseek-v4')).toBeTruthy()
@@ -846,7 +848,7 @@ describe('the design page asks its question and edits its numbers in place (T74)
     const old = makeHarness()
     renderView(old)
     await openPage(old, 'page.design')
-    await screen.findByText('design.numbers')
+    await screen.findByText('design.numbers.hint')
     expect(screen.queryByText('design.question')).toBeNull()
   })
 
@@ -854,9 +856,9 @@ describe('the design page asks its question and edits its numbers in place (T74)
     const h = makeHarness()
     renderView(h)
     await openPage(h, 'page.design')
-    const reps = await screen.findByRole('spinbutton', { name: 'design.numbers.reps' })
-    fireEvent.change(reps, { target: { value: '3' } })
-    fireEvent.click(screen.getByRole('button', { name: 'design.numbers.save' }))
+    // T83: 次数 is v5's 1 / 3 / 5 seg — one click writes it.
+    const reps = await screen.findByRole('radiogroup', { name: 'design.scale.reps' })
+    fireEvent.click(within(reps).getByRole('radio', { name: '3' }))
     await waitFor(() => { expect(h.setPlanNumbers).toHaveBeenCalledWith('s1', { experimentId: EXPERIMENT_ID, reps: 3 }) })
     expect(await screen.findByText(/design\.numbers\.written .*design\.numbers\.reps 2 → 3/)).toBeTruthy()
   })
@@ -866,8 +868,8 @@ describe('the design page asks its question and edits its numbers in place (T74)
     h.setPlanNumbers.mockResolvedValue({ ok: false, error: { code: 'EVAL_PLAN_FROZEN', message: 'the plan is frozen' } })
     renderView(h)
     await openPage(h, 'page.design')
-    fireEvent.change(await screen.findByRole('spinbutton', { name: 'design.numbers.reps' }), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: 'design.numbers.save' }))
+    const reps = await screen.findByRole('radiogroup', { name: 'design.scale.reps' })
+    fireEvent.click(within(reps).getByRole('radio', { name: '5' }))
     expect(await screen.findByText(/the plan is frozen/)).toBeTruthy()
   })
 
@@ -893,6 +895,100 @@ describe('the design page asks its question and edits its numbers in place (T74)
     renderView(h)
     const line = await screen.findByText('does effort high beat medium?')
     expect(line.getAttribute('title')).toBe('does effort high beat medium?')
+  })
+})
+
+describe('用哪些题 and 规模与花费 read the pinned dataset and past answers (T83 · phase 4)', () => {
+  const FACTS: EvalPlanReview = {
+    ...REVIEW,
+    items: {
+      items: [
+        {
+          id: 'p0-001', title: 'count files by extension', level: 'P0', stages: 2, container: true,
+          criteria: { total: 13, objective: 8, judge: 4, human: 1 }, probes: 0, fullScore: 100,
+          task: '# P0 task\n\ncount the files', taskPath: 'task.md',
+        },
+        {
+          id: 'p0-002', title: null, level: null, stages: 0, container: false,
+          criteria: null, probes: 2, fullScore: null, task: null, taskPath: null,
+        },
+      ],
+      notes: ['item p0-002 ships no rubric in its grading layer'],
+    },
+    estimate: {
+      perRep: { activeMs: 270_000, outputTokens: 28_050 },
+      // Only p0-001 was answered before: the sum is a floor over it (T83 ruling).
+      covered: { activeMs: ['p0-001'], outputTokens: ['p0-001'] },
+      items: ['p0-001', 'p0-002'],
+      samples: [
+        { runId: 'r1', condition: 'dsh-exec', task: 'p0-001', activeMs: 254_000, outputTokens: 25_100 },
+        { runId: 'r1', condition: 'codex-exec', task: 'p0-001', activeMs: 274_000, outputTokens: 31_000 },
+      ],
+    },
+  }
+
+  it('each item says what it tests, how it is judged, its full score, and opens its task text', async () => {
+    const h = makeHarness({ review: FACTS })
+    renderView(h)
+    await openPage(h, 'page.design')
+    expect(await screen.findByText('count files by extension')).toBeTruthy()
+    expect(screen.getByText('design.itemsCol.what')).toBeTruthy()
+    expect(screen.getByText('P0 · design.item.stages {"n":2} · design.item.container')).toBeTruthy()
+    const how = screen.getByTitle('design.item.kinds {"objective":8,"judge":4,"human":1}')
+    expect(how.textContent).toBe('design.item.criteria {"n":13} · design.item.human {"n":1} · design.item.noProbes')
+    // Objective criteria and no script to judge them: v5's warning.
+    expect(screen.getByText('design.item.noProbes').className).toMatch(/warnInk/)
+    expect(screen.getByText(/design\.item\.noRubric/).parentElement?.textContent).toBe('design.item.noRubric · design.item.probes {"n":2}')
+    expect(screen.getByText('100')).toBeTruthy()
+    expect(screen.getByText(/item p0-002 ships no rubric/)).toBeTruthy()
+    // Only the item with a task text offers one.
+    const open = screen.getAllByRole('button', { name: 'design.item.task' })
+    expect(open).toHaveLength(1)
+    fireEvent.click(open[0] as HTMLElement)
+    expect(await screen.findByText('count the files')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'design.item.taskClose' }))
+    expect(screen.queryByText('count the files')).toBeNull()
+  })
+
+  it('the estimate is one rep scaled by 每组次数, with the answers it came from', async () => {
+    const both = ['p0-001', 'p0-002']
+    const h = makeHarness({
+      review: { ...FACTS, estimate: { ...FACTS.estimate, covered: { activeMs: both, outputTokens: both }, items: both } },
+    })
+    renderView(h)
+    await openPage(h, 'page.design')
+    // reps 2: 4.5 min × 2 → 9 min; 28 050 × 2 → 56.1k.
+    expect(await screen.findByText('design.scale.approxMinutes {"m":9}')).toBeTruthy()
+    expect(screen.getByText('design.scale.approx {"value":"56.1k"}')).toBeTruthy()
+    const note = screen.getByText(/^design\.scale\.fromDetail/)
+    expect(note.textContent).toContain('design.scale.fromMany')
+    expect(note.textContent).toMatch(/dur\.ms .*"m\\*":4,\\*"s\\*":14.* \/ dur\.ms .*"s\\*":34/)
+    expect(note.textContent).toContain('25.1k / 31k')
+    expect(screen.queryByText('design.scale.none')).toBeNull()
+  })
+
+  it('a partial coverage is a floor over the answered items and names the rest — never extrapolated', async () => {
+    const h = makeHarness({ review: FACTS })
+    renderView(h)
+    await openPage(h, 'page.design')
+    // The same numbers as the full case, but «≥»: p0-002 is not in the sum.
+    expect(await screen.findByText('design.scale.atLeastMinutes {"m":9}')).toBeTruthy()
+    expect(screen.getByText('design.scale.atLeast {"value":"56.1k"}')).toBeTruthy()
+    expect(screen.queryByText(/^design\.scale\.approx/)).toBeNull()
+    const note = screen.getByText(/^design\.scale\.partial /)
+    expect(note.textContent).toContain('design.scale.coveredItem')
+    expect(note.textContent).toMatch(/p0-001.*"n\\*":2/)
+    expect(note.textContent).toContain('"missing":"p0-002"')
+  })
+
+  it('no past answers is 无估算, and no items face keeps the two columns the digest can fill', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.design')
+    expect(await screen.findAllByText('design.scale.none')).toHaveLength(2)
+    expect(screen.getByText('design.scale.noneNote')).toBeTruthy()
+    expect(screen.queryByText('design.itemsCol.what')).toBeNull()
+    expect(screen.getAllByText('p0-001').length).toBeGreaterThan(0)
   })
 })
 

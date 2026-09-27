@@ -19,6 +19,25 @@
      over its bottom edge; scrollable panes pad their bottoms by this
      clearance (the trajectory ledger's pattern). */
   --dsh-datasets-bottom-clearance: calc(var(--dsh-composer-height, 152px) + 16px);
+  /* T83: body 13px (v5); notes, meta and table heads stay 12px. Supersedes
+     T35a's 12px. The two surface/ink locals are the 实验室 tab's, by hand. */
+  font-size: 13px;
+  line-height: 20px;
+  --dsh-datasets-surface-2: var(--dsw-alias-markdown-code-block-banner);
+  --dsh-datasets-warn-ink: var(--dsw-alias-state-warn-label);
+  --dsh-datasets-ok-ink: var(--dsw-alias-state-success-primary);
+}
+
+:global(body[data-ds-dark-theme]) .view {
+  --dsh-datasets-warn-ink: var(--dsw-alias-state-warn-secondary);
+  --dsh-datasets-ok-ink: var(--dsw-alias-state-success-secondary);
+}
+
+/* T83 · E1: the reading column, on the composer's axis. */
+.column {
+  width: min(100%, var(--dsh-chat-content-width, 720px));
+  min-width: 0;
+  margin-inline: auto;
 }
 
 .bindingBar {
@@ -81,6 +100,23 @@
 .bindingNone {
   flex: 1;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* T83 · datasets: the list page's bar is the column's header (v5 「已登记的
+   仓库」 + 登记一个仓库…): same 版心 as the table below it (the list scroller
+   pads 12px a side), no rule under it, the count as the page title. */
+.bindingBar[data-page='list'] {
+  width: min(calc(100% - 24px), var(--dsh-chat-content-width, 720px));
+  margin-inline: auto;
+  padding: 16px 0 4px;
+  border-bottom: 0;
+}
+
+.bindingBar[data-page='list'] .bindingNone {
+  color: var(--dsw-alias-label-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
 }
 
 .notice {
@@ -364,6 +400,8 @@
   .body {
     flex-direction: column;
     overflow-y: auto;
+    /* T83: the one scroller in this layout, so it carries the clearance. */
+    padding-bottom: var(--dsh-datasets-bottom-clearance, 0px);
   }
 
   .tree {
@@ -449,24 +487,30 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .table th {
-  padding: 4px 8px 6px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
   font-weight: 400;
   text-align: left;
   white-space: nowrap;
 }
 
 .table td {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l3);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
   color: var(--dsw-alias-label-primary);
   vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
 }
 
 .tableRow:hover td {
@@ -523,13 +567,13 @@
 /* The dataset id doubles as the row's open affordance. */
 .rowOpen {
   padding: 0;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 /* One registration: a group row carrying its heading, then one row per set
    (a tbody each, under the table's one header). */
 .repoGroup {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .repoRow > td {
@@ -546,7 +590,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
-  padding: 4px 8px;
+  padding: 6px 10px;
   font-size: 12px;
   line-height: 18px;
 }
@@ -635,7 +679,8 @@
 
 .repoName {
   color: var(--dsw-alias-label-primary);
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .repoActions {
@@ -669,8 +714,8 @@
 
 .cellQuiet {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .cellMono {
@@ -726,7 +771,7 @@
 }
 
 .exposureWithheld {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-datasets-warn-ink);
 }
 
 .exposureUnprotected {
@@ -734,22 +779,12 @@
 }
 
 /* The open item's header above the right pane. */
-.itemHeader {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
 /* The item's two sides, side by side: 选手将看到 | 只有判官和探针看得到.
    A narrow pane stacks them, the judge side below. */
 .compare {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
   max-width: 960px;
   margin-bottom: 14px;
 }
@@ -760,14 +795,174 @@
   }
 }
 
+/* T83 · phase 4: v5's .box — a 12px card with a titled head over a rule,
+   the body under it. */
 .box {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   min-width: 0;
-  padding: 8px 10px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.boxHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.boxTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.boxHead .panelCount {
+  margin-left: auto;
+}
+
+.boxBody {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.boxFoot {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.boxFoot .panelTag {
+  margin-right: 6px;
+}
+
+/* One file per row (T83 ruling): the path in the code face, cut with an
+   ellipsis (the full path is the hover), and a small note right — its size,
+   「题集级」, the rubric's criteria count. */
+.fileRows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fileRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fileRowPath {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileRowNote {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.flowWarn {
+  color: var(--dsh-datasets-warn-ink);
+}
+
+/* The item heading in the content column: v5's
+   «仓库 › 题集 › 题目  看的是 main @ 07fde76». */
+.crumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  max-width: 960px;
+  margin: 10px 0 8px;
+}
+
+.crumbTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  min-width: 0;
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.crumbSep {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+}
+
+.crumbItem {
+  font-weight: 600;
+}
+
+.crumbSub {
+  margin-left: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.usedByMore {
+  margin-left: 0.35em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.usedByMore:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+}
+
+.olderRuns {
+  margin-top: 4px;
+}
+
+.olderRunsSummary {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.usedBy {
+  max-width: 960px;
+  margin: -6px 0 14px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 
 /* One block of the right pane: 作答记录 / the preview. */
@@ -814,7 +1009,7 @@
 }
 
 .panelWarn {
-  color: var(--dsw-alias-state-warn-label);
+  color: var(--dsh-datasets-warn-ink);
   font-size: 11px;
   line-height: 16px;
   overflow-wrap: anywhere;
@@ -899,36 +1094,49 @@
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 4px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 9px;
-  background: color-mix(in srgb, currentColor 12%, transparent);
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--dsh-datasets-surface-2);
   color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 20px;
   white-space: nowrap;
 }
 
 /* ui-spec §九's five, the same two corrections the lab tab's copy took
-   (I5·T67 · W3): `ok` had the BRAND blue and `busy` the body label colour, so
-   「完成」 read blue and 「进行中」 read grey. The two tabs carry one chip by
-   hand (§八: a client bundle never imports a sibling plugin), so they are
-   corrected together or they drift. */
+   (I5·T67 · W3). The two tabs carry one chip by hand (§八: a client bundle
+   never imports a sibling plugin), so they are corrected together or they
+   drift. T83 · E6: v5's pill — the tone's tertiary fill, its ink as text. */
 .chipTag[data-tone='ok'] {
-  color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-tertiary);
+  color: var(--dsh-datasets-ok-ink);
 }
 
 .chipTag[data-tone='busy'] {
+  background: var(--dsw-alias-state-business-tertiary);
   color: var(--dsw-alias-state-business-primary);
 }
 
 .chipTag[data-tone='warn'] {
-  color: var(--dsw-alias-state-warn-label);
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsh-datasets-warn-ink);
 }
 
 .chipTag[data-tone='danger'] {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
   color: var(--dsw-alias-state-error-primary);
+}
+
+.chipTag[data-dot]::before {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
 }
 
 /* A count riding on a chip. */

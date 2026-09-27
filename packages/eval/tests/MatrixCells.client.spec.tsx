@@ -420,6 +420,68 @@ describe('a small run is its cards (T80c P1-7)', () => {
     expect(card.getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('the opened record is v5\'s box: stages down the left, the next gestures on the right, receipts folded (T83 · phase 4)', async () => {
+    const h = smallHarness()
+    const moving: EvalCellDetail = {
+      ...CELL,
+      state: 'stage-2',
+      attempts: [{
+        ...(CELL.attempts[1] as EvalCellDetail['attempts'][number]),
+        state: 'stage-2',
+        history: [
+          { from: 'queued', to: 'stage-1', at: 1_000 },
+          { from: 'stage-1', to: 'stage-2', at: 113_000 },
+        ],
+      }],
+    }
+    h.fetchCell.mockResolvedValue({ ok: true, value: moving })
+    await openPage(h, 'page.runs')
+    fireEvent.click((await screen.findByText('codex-a')).closest('button') as HTMLElement)
+    const heading = await screen.findByText(/^record\.inlineHead /)
+    expect(heading.textContent).toContain('"condition":"codex-a"')
+    const steps = screen.getAllByRole('listitem').filter(item => item.hasAttribute('data-step'))
+    // The untimed state before the first transition is not drawn.
+    expect(steps.map(step => step.getAttribute('title'))).toEqual(['stage-1', 'stage-2'])
+    expect(steps[0]?.textContent).toContain('record.submitted {"file":"stage1.md"}')
+    expect(steps[0]?.textContent).toContain('dur.ms {"m":1,"s":52}')
+    expect(steps[0]?.getAttribute('data-step')).toBe('done')
+    expect(steps[1]?.getAttribute('data-step')).toBe('current')
+    expect(steps[1]?.textContent).toContain('runs.card.now')
+    // Retry is one button until asked for; the form is behind it.
+    expect(screen.queryByLabelText('retry.reason')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'record.retryOpen' }))
+    expect(screen.getByLabelText('retry.reason')).toBeTruthy()
+    // The receipts are in the fold, closed.
+    const fold = screen.getByText('record.allDetails').closest('details') as HTMLDetailsElement
+    expect(fold.open).toBe(false)
+    expect(within(fold).getByText('record.param.material')).toBeTruthy()
+  })
+
+  it('a stopped record ends on a failed step (T83 · phase 4 ruling)', async () => {
+    const h = smallHarness()
+    h.fetchCell.mockResolvedValue({
+      ok: true,
+      value: {
+        ...CELL,
+        state: 'halted',
+        attempts: [{
+          ...(CELL.attempts[1] as EvalCellDetail['attempts'][number]),
+          state: 'halted',
+          history: [
+            { from: 'queued', to: 'stage-1', at: 1_000 },
+            { from: 'stage-1', to: 'halted', at: 61_000 },
+          ],
+        }],
+      },
+    })
+    await openPage(h, 'page.runs')
+    fireEvent.click((await screen.findByText('codex-a')).closest('button') as HTMLElement)
+    await screen.findByText(/^record\.inlineHead /)
+    const steps = screen.getAllByRole('listitem').filter(item => item.hasAttribute('data-step'))
+    expect(steps.map(step => step.getAttribute('data-step'))).toEqual(['done', 'failed'])
+    expect(steps[1]?.textContent).not.toContain('runs.card.now')
+  })
+
   it('folds the run-level bookkeeping into 实验卫生, open when an invariant breaks', async () => {
     const h = smallHarness()
     await openPage(h, 'page.runs')

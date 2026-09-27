@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  conclusionSourceKey, fixLabel, REMINDER_CONSEQUENCES, reminderConsequenceKey, groupRows, legacyInAttention, listGroupOf,
+  conclusionSourceKey, fixLabel, REMINDER_CONSEQUENCES, reminderConsequenceKey, archivableLegacy, groupRows, listGroupOf, splitLegacy,
   READINESS_CODES, readinessField, readinessFix, readinessKey, readinessSentence, readListScope, rowAction, scopeRows,
   splitReadiness, stageDots, validityCount, writeListScope,
 } from '../src/client/journey.ts'
@@ -56,14 +56,18 @@ describe('the list row\'s one button (T80c P1-1)', () => {
     expect(act('stalled', { archived: true })).toEqual({ cta: 'list.act.runs', verb: 'runs' })
   })
 
-  it('归档 N 条旧运行 counts only legacy runs still asking for attention', () => {
+  it('归档 N 条旧运行 counts every unarchived legacy run, whatever its status (T83)', () => {
     type L = Pick<EvalExperimentRow, 'status' | 'archived' | 'legacy' | 'runId'>
     const l = (over: Partial<L>): L => ({ status: 'stalled', archived: false, legacy: true, runId: 'r', ...over })
     const rows = [
       l({ runId: 'a' }), l({ runId: 'b', status: 'judging' }),
       l({ runId: 'c', status: 'done' }), l({ runId: 'd', archived: true }), l({ runId: 'e', legacy: false }),
     ]
-    expect(legacyInAttention(rows).map(r => r.runId)).toEqual(['a', 'b'])
+    expect(archivableLegacy(rows).map(r => r.runId)).toEqual(['a', 'b', 'c'])
+    const { linked, legacy } = splitLegacy(rows)
+    expect(legacy.map(r => r.runId)).toEqual(['a', 'b', 'c'])
+    // An archived legacy run stays with the archive; a linked run with the groups.
+    expect(linked.map(r => r.runId)).toEqual(['d', 'e'])
   })
 })
 

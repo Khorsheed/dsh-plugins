@@ -104,16 +104,33 @@ export function rowAction(
 }
 
 /**
- * The legacy runs 归档 N 条旧运行 would move (T80c P1-2): the unclaimed runs
- * still sitting in 需要你处理. A legacy run is almost always a leftover —
+ * The legacy fold (T83 · list): runs no imported experiment claims leave the
+ * three groups and sit in one folded 旧运行（未关联实验） block at the bottom,
+ * so the groups hold only experiments. An archived legacy run stays in
+ * 已归档 — the archive mark wins.
+ * @param rows - the rows the list is showing.
+ * @returns the rows for the groups, and the unarchived legacy rows.
+ */
+export function splitLegacy<T extends Pick<EvalExperimentRow, 'archived' | 'legacy'>>(
+  rows: readonly T[],
+): { linked: T[]; legacy: T[] } {
+  const linked: T[] = []
+  const legacy: T[] = []
+  for (const row of rows) (row.legacy && !row.archived ? legacy : linked).push(row)
+  return { linked, legacy }
+}
+
+/**
+ * The legacy runs 归档 N 条旧运行 would move (T80c P1-2): every unarchived
+ * unclaimed run in the legacy fold. A legacy run is almost always a leftover —
  * nobody will approve, re-run or review a plan no experiment owns.
  * @param rows - the rows the list is showing.
- * @returns the rows the header button archives.
+ * @returns the rows the fold's button archives.
  */
-export function legacyInAttention<T extends Pick<EvalExperimentRow, 'status' | 'archived' | 'legacy' | 'runId'>>(
+export function archivableLegacy<T extends Pick<EvalExperimentRow, 'archived' | 'legacy' | 'runId'>>(
   rows: readonly T[],
 ): T[] {
-  return rows.filter(row => row.legacy && row.runId !== null && listGroupOf(row) === 'attention')
+  return rows.filter(row => row.legacy && !row.archived && row.runId !== null)
 }
 
 // ── the stage shell ─────────────────────────────────────────────────────

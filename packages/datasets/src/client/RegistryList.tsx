@@ -182,6 +182,9 @@ export function RegistryList(props: RegistryListProps) {
   const columns = experiments === null ? 4 : 5
   return (
     <div className={css.listScroll}>
+      {/* The 版心 the chat column uses (T83), so the list lines up with the
+          conversation beside it instead of spanning a wide pane. */}
+      <div className={css.column}>
       <table className={css.table}>
         <thead>
           <tr>
@@ -204,9 +207,9 @@ export function RegistryList(props: RegistryListProps) {
                   </span>
                   <span className={css.repoActions}>
                     {entry.authoringCheckout !== null && (
-                      <Button size="sm" onClick={() => { onNewDataset(entry.id) }}>{t('list.newDataset')}</Button>
+                      <Button variant="outline" size="sm" onClick={() => { onNewDataset(entry.id) }}>{t('list.newDataset')}</Button>
                     )}
-                    <Button size="sm" onClick={() => { onEdit(entry.id) }}>{t('registry.edit')}</Button>
+                    <Button variant="outline" size="sm" onClick={() => { onEdit(entry.id) }}>{t('registry.edit')}</Button>
                     {armed === entry.id
                       ? (
                         <Button
@@ -253,6 +256,7 @@ export function RegistryList(props: RegistryListProps) {
           </tbody>
         ))}
       </table>
+      </div>
     </div>
   )
 }

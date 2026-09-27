@@ -130,13 +130,16 @@ export function Chip(props: {
    * (I5·T67 · W7). The tone and the shape stay the chip's own.
    */
   className?: string | undefined
+  /** v5 `.pill.dot`: a leading disc, for checklist states (T83 · E6). */
+  dot?: boolean | undefined
   children: ReactNode
 }) {
-  const { tone = 'neutral', title, className, children } = props
+  const { tone = 'neutral', title, className, dot = false, children } = props
   return (
     <span
       className={className === undefined ? css.chipTag : `${css.chipTag} ${className}`}
       data-tone={tone}
+      data-dot={dot ? '' : undefined}
       title={title}
     >
       {children}
@@ -161,6 +164,87 @@ export function EmptyState(props: { title: string; hint?: string | undefined; ch
   )
 }
 
+/** One option of a {@link Seg} / {@link Seg2}. */
+export interface SegOption<V extends string | number> {
+  value: V
+  label: ReactNode
+  disabled?: boolean | undefined
+}
+
+/**
+ * The segmented control (T83 · E12). The host's 0.1.5 line has none, so this
+ * is a thin own copy (the 题集 tab keeps its twin): a radiogroup whose arrow
+ * keys move the choice, `seg` for a compact decision and `seg2` for a view
+ * switch.
+ * @param props - the options, the value, the change handler, the variant.
+ */
+export interface SegProps<V extends string | number> {
+  /** The group's accessible name. */
+  label: string
+  options: readonly SegOption<V>[]
+  value: V
+  onChange: (value: V) => void
+  disabled?: boolean | undefined
+}
+
+function Segmented<V extends string | number>(props: SegProps<V> & { kind: 'seg' | 'seg2' }) {
+  const { kind, label, options, value, onChange, disabled = false } = props
+  const move = (from: number, step: number) => {
+    for (let i = 1; i <= options.length; i++) {
+      const next = options[(((from + step * i) % options.length) + options.length) % options.length]
+      if (next !== undefined && next.disabled !== true) return next
+    }
+    return undefined
+  }
+  return (
+    <span className={kind === 'seg' ? css.seg : css.seg2} role="radiogroup" aria-label={label}>
+      {options.map((option, index) => {
+        const checked = option.value === value
+        return (
+          <button
+            key={String(option.value)}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            // Nothing chosen yet (成立 / 不成立 before an answer): the first
+            // option keeps the group reachable from the keyboard.
+            tabIndex={checked || (index === 0 && !options.some(each => each.value === value)) ? 0 : -1}
+            disabled={disabled || option.disabled === true}
+            className={kind === 'seg' ? css.segItem : css.seg2Item}
+            onClick={() => { if (!checked) onChange(option.value) }}
+            onKeyDown={(event) => {
+              const step = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                ? 1
+                : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0
+              if (step === 0) return
+              event.preventDefault()
+              const next = move(index, step)
+              if (next !== undefined) {
+                onChange(next.value)
+                const group = event.currentTarget.parentElement
+                const target = group?.children[options.indexOf(next)]
+                if (target instanceof HTMLElement) target.focus()
+              }
+            }}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </span>
+  )
+}
+
+/** v5 `.seg`: a compact decision (规模 1 / 3 / 5, 成立 / 不成立). */
+export function Seg<V extends string | number>(props: SegProps<V>) {
+  return <Segmented kind="seg" {...props} />
+}
+
+/** v5 `.seg2`: a view switch (本会话发起 / 全部). */
+export function Seg2<V extends string | number>(props: SegProps<V>) {
+  return <Segmented kind="seg2" {...props} />
+}
+
 /**
  * One boxed block of a page — the matrix footer, a report section, the judge
  * bench's three columns.
@@ -170,10 +254,10 @@ export function Section(props: { title: ReactNode; meta?: ReactNode; children: R
   const { title, meta, children } = props
   return (
     <div className={css.reportSection}>
-      <div className={css.sectionTitle}>
+      <h5 className={css.sectionTitle}>
         <span>{title}</span>
         {meta !== undefined && <span className={css.sectionMeta}>{meta}</span>}
-      </div>
+      </h5>
       {children}
     </div>
   )
@@ -349,6 +433,30 @@ export function Detail(props: {
 }
 
 /**
+ * v5's fold row (T83 · E11): a hairline, `›`, the title, an optional quiet
+ * summary on the right; the body opens under it. Consecutive folds share
+ * their lines, so a page's closing folds read as one list.
+ * @param props - the title, the right-hand summary, the body.
+ */
+export function Fold(props: {
+  title: ReactNode
+  aside?: ReactNode
+  children: ReactNode
+  open?: boolean | undefined
+}) {
+  const { title, aside, children, open } = props
+  return (
+    <details className={css.reportFold} open={open}>
+      <summary className={css.reportFoldSummary}>
+        <span className={css.reportFoldTitle}>{title}</span>
+        {aside !== undefined && <span className={css.reportFoldAside}>{aside}</span>}
+      </summary>
+      <div className={css.reportFoldBody}>{children}</div>
+    </details>
+  )
+}
+
+/**
  * What an approval started: the ids, and the job's log VERBATIM.
  *
  * The log is not a convenience. A run the readiness gate refuses never reaches
@@ -479,12 +587,12 @@ export function ReadyBadge(props: {
     <div className={css.readiness}>
       <div className={css.readinessLine}>
         <Chip tone="danger">{t('ready.failedCount', { count: failed.length, total: rows.length })}</Chip>
-        <Button size="sm" onClick={onRecheck}>{t('ready.recheck')}</Button>
+        <Button variant="outline" size="sm" onClick={onRecheck}>{t('ready.recheck')}</Button>
       </div>
       {failed.map(row => (
         <div key={row.id} className={css.readinessLine}>
           <Chip tone="danger">✗</Chip>
-          <span className={css.mono}>{row.id}</span>
+          <span className={css.itemName}>{row.id}</span>
           {row.note !== undefined && row.note !== '' && <span className={css.dim}>{row.note}</span>}
         </div>
       ))}

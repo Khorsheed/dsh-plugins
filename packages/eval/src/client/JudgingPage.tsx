@@ -40,7 +40,7 @@ import type { LabViewProps } from './contract.ts'
 import { AnswerView } from './AnswerView.tsx'
 import { rowsOfQueue } from './answer-view.ts'
 import { ErrorState } from './ErrorState.tsx'
-import { Chip, EmptyState, Section } from './parts.tsx'
+import { Chip, EmptyState, Section, Seg } from './parts.tsx'
 import css from './LabView.module.css'
 
 const DASH = '—'
@@ -167,9 +167,31 @@ function Drafts(props: { drafts: readonly EvalJudgeDraftSample[]; t: LabViewProp
   )
 }
 
-/** One criterion: what the rubric asks, what the judges said, what the person says. */
-function CriterionRow(props: {
-  /** Which answer this row belongs to — several are on screen at once. */
+/**
+ * The judge column of one criterion: ✓ / ✕ when the samples agree, both
+ * counts when they split, 未判 when there is none. Glyphs, not words — the
+ * samples themselves (who said what, and why) are one click away.
+ */
+function JudgeMark(props: { drafts: readonly EvalJudgeDraftSample[]; t: LabViewProps['t'] }) {
+  const { drafts, t } = props
+  if (drafts.length === 0) return <span className={css.critJudgeNone}>{t('judge.judgeNone')}</span>
+  const pass = drafts.filter(draft => draft.pass).length
+  const fail = drafts.length - pass
+  const text = fail === 0 ? '✓' : pass === 0 ? '✕' : `✓${String(pass)} ✕${String(fail)}`
+  return <span className={css.critJudge}>{text}</span>
+}
+
+/**
+ * One criterion as one line of the card's table (T83, v5): 判据 · 判官 · 你的终评.
+ *
+ * What the rubric asks for as evidence and every llm-draft sample open under
+ * the line — from the criterion's name, or by choosing 成立 / 不成立. The
+ * evidence box opens with the choice and stays required: the host refuses a
+ * verdict without one, and a line that looked answered without it would be
+ * a promise the button cannot keep.
+ */
+function CriterionLine(props: {
+  /** Which answer this line belongs to — several are on screen at once. */
   no: number
   criterion: EvalJudgeCriterionRow
   drafts: readonly EvalJudgeDraftSample[]
@@ -179,76 +201,79 @@ function CriterionRow(props: {
   t: LabViewProps['t']
 }) {
   const { no, criterion, drafts, recorded, answer, onAnswer, t } = props
+  const [detail, setDetail] = useState(false)
   const evidence = answer?.evidence ?? ''
+  const open = detail || answer !== undefined
   return (
-    <div className={css.criterionRow}>
-      <div className={css.criterionHead}>
-        <span className={css.mono}>{criterion.id}</span>
+    <>
+      <div className={css.critLabel}>
+        <button
+          type="button"
+          className={css.critToggle}
+          aria-expanded={open}
+          aria-label={t('judge.criterionDetail', { criterion: criterion.id })}
+          title={criterion.criterion}
+          onClick={() => { setDetail(!detail) }}
+        >
+          <span className={css.itemName}>{criterion.id}</span>
+          <span className={css.critText}>{criterion.criterion}</span>
+        </button>
+        {criterion.weight !== null && (
+          <span className={css.critWeight}>{t('judge.weight', { weight: criterion.weight })}</span>
+        )}
         {/* Polarity is the RUBRIC's property, never the grader's reading of
             it: `pass` always means the criterion HOLDS, and for a negative
             criterion holding means the defect is present. Saying so on the
-            row is what keeps a grader from inverting the answer. */}
+            line is what keeps a grader from inverting the answer. */}
         {criterion.negative && <Chip tone="warn">{t('judge.negative')}</Chip>}
         {criterion.veto && <Chip tone="danger">{t('judge.veto')}</Chip>}
-        {criterion.weight !== null && (
-          <span className={css.dim}>{t('judge.weight', { weight: criterion.weight })}</span>
-        )}
       </div>
-      <div>{criterion.criterion}</div>
-      {criterion.evidence !== null && (
-        <div className={css.dim}>{t('judge.criterionEvidence', { evidence: criterion.evidence })}</div>
-      )}
-      {criterion.note !== null && <div className={css.dim}>{criterion.note}</div>}
-
-      <div className={css.criterionDrafts}>
-        <span className={css.summaryLabel}>{t('judge.drafts')}</span>
-        <Drafts drafts={drafts} t={t} />
-      </div>
+      <JudgeMark drafts={drafts} t={t} />
+      <Seg
+        label={`${t('judge.column', { no })} ${criterion.id}`}
+        value={answer === undefined ? '' : answer.pass ? 'pass' : 'fail'}
+        options={[{ value: 'pass', label: t('judge.pass') }, { value: 'fail', label: t('judge.fail') }]}
+        onChange={(value) => { onAnswer({ pass: value === 'pass', evidence }) }}
+      />
 
       {recorded !== undefined && (
-        <div className={css.criterionDrafts}>
+        <div className={css.critSub}>
           <span className={css.summaryLabel}>{t('judge.humanFinal')}</span>
           <Chip tone={recorded.pass ? 'ok' : 'warn'}>{recorded.pass ? t('judge.pass') : t('judge.fail')}</Chip>
           {recorded.evidence !== null && <span className={css.dim}>{recorded.evidence}</span>}
         </div>
       )}
-
-      <div className={css.criterionAnswer}>
-        <Button
-          size="sm"
-          {...(answer?.pass === true ? { variant: 'primary' as const } : {})}
-          onClick={() => { onAnswer({ pass: true, evidence }) }}
-        >
-          {t('judge.pass')}
-        </Button>
-        <Button
-          size="sm"
-          {...(answer?.pass === false ? { variant: 'primary' as const } : {})}
-          onClick={() => { onAnswer({ pass: false, evidence }) }}
-        >
-          {t('judge.fail')}
-        </Button>
-        <Input
-          value={evidence}
-          onChange={(event) => { onAnswer({ pass: answer?.pass ?? true, evidence: event.target.value }) }}
-          placeholder={t('judge.evidencePlaceholder')}
-          // The answer's own number is in the label: side by side, four boxes
-          // named 「证据 H1」 are four boxes a screen reader cannot tell apart.
-          aria-label={`${t('judge.column', { no })} ${t('judge.evidence')} ${criterion.id}`}
-        />
-        {answer === undefined && <span className={css.dim}>{t('judge.unanswered')}</span>}
-      </div>
-    </div>
+      {open && (
+        <div className={css.critDetail}>
+          <div>{criterion.criterion}</div>
+          {criterion.evidence !== null && (
+            <div className={css.dim}>{t('judge.criterionEvidence', { evidence: criterion.evidence })}</div>
+          )}
+          {criterion.note !== null && <div className={css.dim}>{criterion.note}</div>}
+          <div className={css.criterionDrafts}>
+            <span className={css.summaryLabel}>{t('judge.drafts')}</span>
+            <Drafts drafts={drafts} t={t} />
+          </div>
+          {answer !== undefined && (
+            <Input
+              value={evidence}
+              onChange={(event) => { onAnswer({ pass: answer.pass, evidence: event.target.value }) }}
+              placeholder={t('judge.evidencePlaceholder')}
+              // The answer's own number is in the label: side by side, four boxes
+              // named 「证据 H1」 are four boxes a screen reader cannot tell apart.
+              aria-label={`${t('judge.column', { no })} ${t('judge.evidence')} ${criterion.id}`}
+            />
+          )}
+        </div>
+      )}
+    </>
   )
 }
 
 /**
- * One answer's column: the material, the criteria, and its own button.
- * @param props - the blind cell, this column's draft answers, and the write.
- */
-/**
- * One answer's scoring form: the notices, a row per criterion, and its own
- * button. The answer view (I5·T75) puts it on top of each blind column.
+ * One answer's scoring card body: the criteria as a compact table (T83, v5),
+ * a quiet line or two at the foot, and its own small record button. The
+ * answer view puts it on top of each blind column.
  */
 function ScoringBlock(props: {
   cell: EvalJudgeQueueCell
@@ -268,41 +293,23 @@ function ScoringBlock(props: {
   const recordedByCriterion = new Map<string, { pass: boolean; evidence: string | null }>()
   for (const verdict of cell.humanFinal) {
     // Append-only means a criterion can carry several; the latest is the one
-    // the report reads, so it is the one shown beside the input.
+    // the report reads, so it is the one shown on the line.
     recordedByCriterion.set(verdict.criterion, { pass: verdict.pass, evidence: verdict.evidence })
   }
   // Only answers with evidence are sendable — the host refuses a blank one,
   // and a button that could produce that refusal is a worse button.
   const answers = Object.entries(draft).filter(([, value]) => value.evidence.trim() !== '')
+  if (cell.criteria.length === 0) {
+    return <div className={css.dim}>{t('judge.criteriaNone', { reason: cell.criteriaNote ?? DASH })}</div>
+  }
   return (
     <div className={css.answerColumn}>
-      {/* The run-wide number, next to the view's per-row letter: it is what
-          the 判官缺席 notice and the button name the answer by. */}
-      <div className={css.sectionMeta}>{t('judge.column', { no: cell.cellNo })}</div>
-      {cell.graded && <div className={css.notice}>{t('judge.regrade')}</div>}
-      {/* What a verdict here DOES, said before the button. Until T54 it was a
-          warning with a real cost behind it: the report scored a cell from one
-          namespace, so a single human answer dropped every llm-draft-only
-          criterion from the score. Since the per-criterion merge it is the
-          opposite fact — those criteria keep counting on the judge's word —
-          and a grader still has to know, because the record's score stops
-          having a single author the moment this is sent. */}
-      {cell.draftOnlyCriteria.length > 0 && (
-        <div className={css.notice}>
-          {t('judge.scoringMix', {
-            count: cell.draftOnlyCriteria.length,
-            criteria: cell.draftOnlyCriteria.join(', '),
-          })}
-        </div>
-      )}
-
-      {/* The material is not here since I5·T75: the answer view this block
-          sits in renders it, folded under the forms, for every column at
-          once (the I5·T67 · W9 rule — forms first — kept by the view). */}
-      {cell.criteria.length === 0
-        ? <div className={css.dim}>{t('judge.criteriaNone', { reason: cell.criteriaNote ?? DASH })}</div>
-        : cell.criteria.map(criterion => (
-          <CriterionRow
+      <div className={css.critTable}>
+        <span className={css.critHead}>{t('judge.colCriterion')}</span>
+        <span className={css.critHead}>{t('judge.colJudge')}</span>
+        <span className={css.critHead}>{t('judge.colFinal')}</span>
+        {cell.criteria.map(criterion => (
+          <CriterionLine
             key={criterion.id}
             no={cell.cellNo}
             criterion={criterion}
@@ -313,19 +320,28 @@ function ScoringBlock(props: {
             t={t}
           />
         ))}
-      {cell.criteria.length > 0 && (
-        <div className={css.actions}>
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={submitting || answers.length === 0}
-            onClick={onSubmit}
-          >
-            {submitting ? t('judge.submitting') : t('judge.submitOne', { no: cell.cellNo, count: answers.length })}
-          </Button>
-          {answers.length === 0 && <span className={css.dim}>{t('judge.submitBlocked')}</span>}
+      </div>
+      <div className={css.scoreFoot}>
+        <div className={css.scoreFootNotes}>
+          {/* What a verdict here DOES, in one line at the foot (T83): since
+              the per-criterion merge (T54) the criteria a grader leaves
+              unanswered keep counting on the judge's word, and the record's
+              score stops having a single author the moment this is sent. */}
+          {cell.draftOnlyCriteria.length > 0 && (
+            <span>{t('judge.scoringMix', { count: cell.draftOnlyCriteria.length, criteria: cell.draftOnlyCriteria.join(', ') })}</span>
+          )}
+          {cell.graded && <span>{t('judge.regrade')}</span>}
         </div>
-      )}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={submitting || answers.length === 0}
+          title={answers.length === 0 ? t('judge.submitBlocked') : undefined}
+          onClick={onSubmit}
+        >
+          {submitting ? t('judge.submitting') : t('judge.submitOne', { no: cell.cellNo, count: answers.length })}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -385,7 +401,10 @@ function ClosureExits(props: {
           <Button
             key={exit}
             size="sm"
-            {...(exit === 'final' ? { variant: 'primary' as const } : {})}
+            // v5's order of weight: one primary, two outlines, and the exit
+            // that voids the review as a red text button.
+            variant={exit === 'final' ? 'primary' : exit === 'void' ? 'ghost' : 'outline'}
+            className={exit === 'void' ? css.dangerText : undefined}
             disabled={closing || (exit === 'final' && !anyGraded)}
             title={exit === 'final' && !anyGraded ? t('closure.finalNeedsGrade') : t(`closure.exitHint.${exit}`)}
             onClick={() => { take(exit) }}
@@ -413,7 +432,7 @@ function ClosureExits(props: {
             >
               {t(`closure.confirm.${asking}`)}
             </Button>
-            <Button size="sm" onClick={() => { setAsking(null) }}>{t('closure.cancel')}</Button>
+            <Button variant="outline" size="sm" onClick={() => { setAsking(null) }}>{t('closure.cancel')}</Button>
           </div>
         </div>
       )}
@@ -489,7 +508,6 @@ export function JudgingPage(props: {
 
   return (
     <div className={css.judgePage}>
-      <div className={css.notice}>{t('judge.blindNotice')}</div>
       {/* 判官缺席: the judge ran on these answers and left no parseable
           verdict. Named by blind number only; 补判 is optional because the
           human's own verdict stands without it. */}
@@ -502,7 +520,7 @@ export function JudgingPage(props: {
             <span className={css.judgeAbsentTitle}>{t('judge.absent', { cells: absent.join('、'), count: absent.length })}</span>
             <span className={css.dim}>{t('judge.absentBody')}</span>
           </div>
-          <Button size="sm" onClick={() => { onRejudge(absent) }}>{t('judge.rejudge')}</Button>
+          <Button variant="outline" size="sm" onClick={() => { onRejudge(absent) }}>{t('judge.rejudge')}</Button>
         </div>
       )}
       {/* A re-read over an already-rendered queue: say so rather than blanking
@@ -530,10 +548,14 @@ export function JudgingPage(props: {
       {view.cells.length === 0
         ? <EmptyState title={t('judge.empty')} hint={t('judge.emptyHint')} />
         : (
-          <div className={css.judgeColumns}>
-            <div className={css.judgeQueue}>
-              <div className={css.sectionTitle}>{t('judge.queue')}</div>
-              <div className={css.matrixBar}>
+          <div className={css.judgeBench}>
+            {/* T83 · judge: the item queue is a compact 题目切换 row above the
+                answers, not a sidebar — the answers get the full content
+                column (v5 renders one item at a time; the switch only has to
+                say which one and how far grading has got). */}
+            <div className={css.itemSwitch} role="group" aria-label={t('judge.queue')}>
+              <span className={css.itemSwitchLabel}>{t('judge.queue')}</span>
+              <div className={css.itemSwitchFilter}>
                 {([['all', 'judge.filterAll'], ['ungraded', 'judge.filterUngraded'], ['graded', 'judge.filterGraded']] as const)
                   .map(([value, key]) => (
                     <button
@@ -547,25 +569,27 @@ export function JudgingPage(props: {
                     </button>
                   ))}
               </div>
-              {shown.map(item => (
-                <button
-                  key={item.task}
-                  type="button"
-                  className={css.queueRow}
-                  aria-pressed={selection === item.task}
-                  onClick={() => { onPick(item.task) }}
-                >
-                  <span className={css.queueTask}>{t('judge.itemCount', { task: item.task, count: item.cells.length })}</span>
-                  <span className={css.dim}>{t('judge.graded', { count: item.graded })}</span>
-                </button>
-              ))}
+              <div className={css.itemSwitchItems}>
+                {shown.map(item => (
+                  <button
+                    key={item.task}
+                    type="button"
+                    className={css.queueRow}
+                    aria-pressed={selection === item.task}
+                    data-done={item.graded === item.cells.length ? '' : undefined}
+                    onClick={() => { onPick(item.task) }}
+                  >
+                    <span className={css.queueTask}>{t('judge.itemCount', { task: item.task, count: item.cells.length })}</span>
+                    <span className={css.queueGraded}>{t('judge.graded', { count: item.graded })}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {open === null
               ? <EmptyState title={t('judge.itemPick')} hint={t('judge.pickHint')} />
               : (
                 <div className={css.bench}>
-                  <div className={css.dim}>{t('judge.sideBySide')}</div>
                   {/* The answer view, blind locked on (I5·T75): the same
                       side-by-side the named doors open, over the scrubbed
                       queue payload, with each column's form on top. */}
@@ -596,6 +620,11 @@ export function JudgingPage(props: {
                     // Blind: the column is named by its run-wide number, the
                     // same sentence the 判官缺席 card sends.
                     onRejudge={(column) => { if (column.queueCell !== null) onRejudge([column.queueCell.cellNo]) }}
+                    // The run-wide number beside the letter: it is what the
+                    // 判官缺席 card and the record button name the answer by.
+                    headAside={column => column.queueCell === null
+                      ? null
+                      : <span className={css.dim}>{t('judge.column', { no: column.queueCell.cellNo })}</span>}
                     t={t}
                   />
                 </div>

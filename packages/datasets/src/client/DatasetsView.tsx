@@ -329,7 +329,12 @@ export function DatasetsView(props: DatasetsViewProps) {
 
   return (
     <div className={css.view} data-conversation-composer-overlay="">
-      <div className={css.bindingBar}>
+      {/* T83 · datasets: on the list page the bar is the page's own header,
+          so it sits in the content column (版心) above the table — title,
+          register, and the register form itself — instead of spanning the
+          pane. The detail page keeps the full-width bar: its body is the
+          full-width tree + preview, and the bar lines up with that. */}
+      <div className={css.bindingBar} data-page={page}>
         <div className={css.bindingSummary}>
           {page === 'detail' && (
             <Button size="sm" variant="ghost" onClick={() => { actions.openDataset(null) }}>
@@ -359,22 +364,22 @@ export function DatasetsView(props: DatasetsViewProps) {
             )}
           {page === 'list' && (
             <>
-              <Button size="sm" variant="primary" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
+              <Button size="sm" variant="outline" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
                 {t('registry.register')}
               </Button>
-              <Button size="sm" onClick={runImport} disabled={importing}>
+              <Button variant="ghost" size="sm" onClick={runImport} disabled={importing}>
                 {importing ? t('registry.importing') : t('registry.import')}
               </Button>
             </>
           )}
           {page === 'detail' && openRow?.entry.authoringCheckout != null && (
             <>
-              <Button size="sm" onClick={() => { openForm('newItem') }}>{t('detail.newItem')}</Button>
-              <Button size="sm" onClick={() => { openForm('importItem') }}>{t('detail.importItem')}</Button>
+              <Button variant="outline" size="sm" onClick={() => { openForm('newItem') }}>{t('detail.newItem')}</Button>
+              <Button variant="outline" size="sm" onClick={() => { openForm('importItem') }}>{t('detail.importItem')}</Button>
             </>
           )}
           {page === 'detail' && (
-            <Button size="sm" onClick={runValidate} disabled={validating}>
+            <Button variant="outline" size="sm" onClick={runValidate} disabled={validating}>
               {validating ? t('detail.validating') : t('detail.validate')}
             </Button>
           )}
@@ -413,7 +418,7 @@ export function DatasetsView(props: DatasetsViewProps) {
                 </div>
               )
             })}
-            <Button size="sm" onClick={() => { actions.setImported(null) }}>{t('import.dismiss')}</Button>
+            <Button variant="outline" size="sm" onClick={() => { actions.setImported(null) }}>{t('import.dismiss')}</Button>
           </div>
         )}
         {validatedRow !== undefined && (
@@ -444,7 +449,7 @@ export function DatasetsView(props: DatasetsViewProps) {
             {skeleton.written.map(path => <div key={path} className={css.noticeLine}>{path}</div>)}
             {skeleton.notes.map(note => <div key={note} className={css.noticeLine}>{note}</div>)}
             <div className={css.noticeLine}>{t('skeleton.commitHint')}</div>
-            <Button size="sm" onClick={() => { actions.setSkeleton(null) }}>{t('skeleton.dismiss')}</Button>
+            <Button variant="outline" size="sm" onClick={() => { actions.setSkeleton(null) }}>{t('skeleton.dismiss')}</Button>
           </div>
         )}
         {form !== null && (
@@ -506,6 +511,9 @@ export function DatasetsView(props: DatasetsViewProps) {
       {page === 'detail' && detailRow !== null && (
         <DatasetDetail
           dataset={detailRow}
+          crumb={openRow === undefined || openDataset === null
+            ? null
+            : { repo: openRow.entry.id, set: openDataset, ref: openRow.entry.trackedRef }}
           items={items[detailRow.id] ?? []}
           sharedLayers={sharedLayers[detailRow.id] ?? {}}
           passthrough={passthrough[detailRow.id] ?? []}

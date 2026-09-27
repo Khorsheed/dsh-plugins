@@ -42,7 +42,16 @@ export interface DatasetsFace {
     layers?: readonly string[]
   }): Promise<{ path: string; commit: string; layers: string[]; reused: boolean }>
   show(scope: DatasetsScope, datasetId: string, itemId?: string, commit?: string): Promise<{
-    items: Array<{ id: string; layers: Record<string, string[]> }>
+    items: Array<{
+      id: string
+      layers: Record<string, string[]>
+      /**
+       * The item's parsed `item.json`. OPTIONAL on the face: only the design
+       * page's 用哪些题 table reads it (the title, the stage count), and a
+       * facade that does not report it leaves those cells blank.
+       */
+      metadata?: Record<string, unknown>
+    }>
     /**
      * Dataset-level (shared) layer content, layer name → layer-relative paths.
      * OPTIONAL on the face: a facade predating it simply materializes no

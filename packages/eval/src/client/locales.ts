@@ -172,8 +172,12 @@ export type EvalKey =
   | 'judge.loading'
   | 'judge.error'
   | 'judge.empty'
-  | 'judge.blindNotice'
   | 'judge.queue'
+  | 'judge.colCriterion'
+  | 'judge.colJudge'
+  | 'judge.colFinal'
+  | 'judge.judgeNone'
+  | 'judge.criterionDetail'
   | 'judge.graded'
   | 'judge.materialNone'
   | 'judge.scrubbed'
@@ -553,7 +557,6 @@ export type EvalKey =
   | 'design.questionAsked'
   | 'design.expectation'
   | 'design.answeredWhen'
-  | 'design.numbers'
   | 'design.numbers.reps'
   | 'design.numbers.activeMinutes'
   | 'design.numbers.turns'
@@ -602,6 +605,10 @@ export type EvalKey =
   | 'record.scoreWhere'
   | 'record.scoreMixed'
   | 'record.timeline'
+  | 'record.inlineHead'
+  | 'record.submitted'
+  | 'record.retryOpen'
+  | 'record.allDetails'
   | 'record.timelineNone'
   | 'record.params'
   | 'record.attachments'
@@ -643,7 +650,6 @@ export type EvalKey =
   | 'judge.itemCount'
   | 'judge.column'
   | 'judge.submitOne'
-  | 'judge.sideBySide'
   | 'new.step'
   | 'new.step1'
   | 'new.step2'
@@ -676,6 +682,9 @@ export type EvalKey =
   | 'page.dot.active'
   | 'page.dot.todo'
   | 'cta.recheck'
+  | 'cta.title'
+  | 'cta.editableHint'
+  | 'cta.askAgent'
   | 'cta.here.runs'
   | 'cta.here.review'
   | 'cta.here.compare'
@@ -756,6 +765,7 @@ export type EvalKey =
   | 'list.group.finished'
   | 'list.group.archived'
   | 'list.group.archivedCount'
+  | 'list.group.legacyCount'
   | 'list.stalledMeta'
   | 'list.archive'
   | 'list.unarchive'
@@ -848,6 +858,7 @@ export type EvalKey =
   | 'card.errors'
   | 'answer.open'
   | 'answer.title'
+  | 'answer.blindTitle'
   | 'answer.back'
   | 'answer.loading'
   | 'answer.error'
@@ -855,6 +866,10 @@ export type EvalKey =
   | 'answer.repAll'
   | 'answer.rep'
   | 'answer.blindSwitch'
+  | 'answer.layout'
+  | 'answer.sideBySide'
+  | 'answer.single'
+  | 'answer.pickColumn'
   | 'answer.names'
   | 'answer.blind'
   | 'answer.blindLocked'
@@ -862,8 +877,13 @@ export type EvalKey =
   | 'answer.blindScoring'
   | 'answer.views'
   | 'answer.viewReport'
+  | 'answer.viewDiff'
+  | 'answer.diffNone'
   | 'answer.viewEvidence'
   | 'answer.process'
+  | 'answer.processOpen'
+  | 'answer.processBlind'
+  | 'answer.processNone'
   | 'answer.blindName'
   | 'answer.sourceHuman'
   | 'answer.sourceJudge'
@@ -877,6 +897,8 @@ export type EvalKey =
   | 'answer.stageMissing'
   | 'answer.noReports'
   | 'answer.truncated'
+  | 'answer.expand'
+  | 'answer.collapse'
   | 'answer.reportsFolded'
   | 'answer.unjudged'
   | 'answer.scriptOnly'
@@ -896,6 +918,32 @@ export type EvalKey =
   | 'design.items'
   | 'design.itemsCol.item'
   | 'design.itemsCol.how'
+  | 'design.itemsCol.what'
+  | 'design.itemsCol.full'
+  | 'design.itemsCol.task'
+  | 'design.item.stages'
+  | 'design.item.container'
+  | 'design.item.kinds'
+  | 'design.item.noRubric'
+  | 'design.item.criteria'
+  | 'design.item.human'
+  | 'design.item.probes'
+  | 'design.item.noProbes'
+  | 'design.item.task'
+  | 'design.item.taskClose'
+  | 'design.scale.approx'
+  | 'design.scale.approxMinutes'
+  | 'design.scale.atLeast'
+  | 'design.scale.atLeastMinutes'
+  | 'design.scale.partial'
+  | 'design.scale.partialSome'
+  | 'design.scale.coveredItem'
+  | 'design.scale.itemJoin'
+  | 'design.scale.itemsCount'
+  | 'design.scale.from'
+  | 'design.scale.fromOne'
+  | 'design.scale.fromMany'
+  | 'design.scale.fromDetail'
   | 'design.how'
   | 'design.how.judge'
   | 'design.how.human'
@@ -907,6 +955,19 @@ export type EvalKey =
   | 'design.ready'
   | 'design.gridFold'
   | 'readiness.remindersNote'
+  | 'design.checks'
+  | 'design.checkCol.item'
+  | 'design.checkCol.state'
+  | 'design.checkReady'
+  | 'design.checkNotReady'
+  | 'design.checkBlocked'
+  | 'design.checkRemind'
+  | 'design.scale.reps'
+  | 'design.scale.answers'
+  | 'design.scale.duration'
+  | 'design.scale.tokens'
+  | 'design.scale.none'
+  | 'design.scale.noneNote'
   | 'readiness.then.COMMIT_UNRESOLVED'
   | 'readiness.then.EXPECTED_NS_NO_PROBE'
   | 'readiness.then.EXPECTED_NS_NO_RUBRIC'
@@ -1021,8 +1082,12 @@ export const en: Record<EvalKey, string> = {
   'judge.loading': 'Loading the judging queue…',
   'judge.error': 'Failed to open the judging queue',
   'judge.empty': 'This experiment has no record to grade yet.',
-  'judge.blindNotice': 'Blind review: the harness, the model and the arm are deliberately absent from this page. Records are numbered in the run\u2019s own (seeded) order, and the panel reads Judge A / Judge B. Unblinding happens on the results page.',
-  'judge.queue': 'Queue',
+  'judge.queue': 'Items',
+  'judge.colCriterion': 'Criterion',
+  'judge.colJudge': 'Judge',
+  'judge.colFinal': 'Your verdict',
+  'judge.judgeNone': 'not judged',
+  'judge.criterionDetail': 'Details of {criterion}',
   'judge.graded': 'Graded ({count})',
   'judge.materialNone': 'This record archived none of the judged stage files — there is nothing to read, and a verdict on nothing would be a guess.',
   'judge.scrubbed': '{count} fingerprint(s) replaced',
@@ -1047,8 +1112,8 @@ export const en: Record<EvalKey, string> = {
   'judge.bundleStale': 'The exported bundle was written before these final verdicts, so it does not carry them. Export again to put them in it — the report goes with it, and the old directory is left alone.',
   'judge.reexport': 'Export again',
   'judge.reexporting': 'Exporting…',
-  'judge.scoringMix': 'Your verdict covers only the criteria you answer here. The report scores each criterion from the most authoritative layer that judged IT, so these {count} criteria the judge answered and you do not ({criteria}) keep counting, on the judge\u2019s word. This record\u2019s score then comes from both, and the report says so beside it.',
-  'judge.regrade': 'This record already carries a human-final verdict. Recording again APPENDS: the report reads the latest value per criterion, and the earlier one stays in the ledger.',
+  'judge.scoringMix': 'The {count} criteria you leave unanswered ({criteria}) keep counting on the judge’s word.',
+  'judge.regrade': 'This answer already has a human verdict; recording again appends, and the report reads the latest.',
   'judge.stats': 'Grader agreement',
   'judge.statsSame': 'One judge, resampled',
   'judge.statsCross': 'Across judges',
@@ -1513,7 +1578,6 @@ export const en: Record<EvalKey, string> = {
   'design.questionAsked': 'Question',
   'design.expectation': 'Expectation',
   'design.answeredWhen': 'Answered when',
-  'design.numbers': 'Numbers',
   'design.numbers.reps': 'Takes',
   'design.numbers.activeMinutes': 'Minutes per record',
   'design.numbers.turns': 'Turns per record',
@@ -1565,6 +1629,10 @@ export const en: Record<EvalKey, string> = {
   'record.scoreWhere': 'The scores are computed from the exported bundle — they are on the results page.',
   'record.scoreMixed': 'This record carries verdicts in several layers ({sources}). The report scores EACH criterion from the most authoritative layer that judged it, so this record\u2019s score comes from more than one — the results page names which, criterion by criterion.',
   'record.timeline': 'Stage timeline',
+  'record.inlineHead': '{condition} · {task} · rep {rep}',
+  'record.submitted': 'submitted {file}',
+  'record.retryOpen': 'Retry with a reason…',
+  'record.allDetails': 'Everything about this record',
   'record.timelineNone': 'The ledger recorded no transition times for this attempt.',
   'record.params': 'Parameters',
   'record.attachments': 'Attachments',
@@ -1606,7 +1674,6 @@ export const en: Record<EvalKey, string> = {
   'judge.itemCount': '{task} · {count} answer(s)',
   'judge.column': 'Answer {no}',
   'judge.submitOne': 'Record {count} verdict(s) for answer {no}',
-  'judge.sideBySide': 'The answers to one item, side by side and de-identified, in the run’s own seeded order. Each one is graded on its own — this is not a choice between them.',
   'new.step': 'Step {step} of 4',
   'new.step1': 'Dataset and items',
   'new.step2': 'Comparison groups',
@@ -1640,6 +1707,9 @@ export const en: Record<EvalKey, string> = {
   'page.dot.active': 'in progress',
   'page.dot.todo': 'not started',
   'cta.recheck': 'Validate again',
+  'cta.title': '{status} · next: {next}',
+  'cta.editableHint': 'The plan can change until it starts; starting freezes it.',
+  'cta.askAgent': 'Ask the agent to change…',
   'cta.here.runs': 'Each one shows up below as it lands.',
   'cta.here.review': 'Judge every answer, then pick how to close this evaluation at the bottom of the page.',
   'cta.here.compare': 'The comparison is below.',
@@ -1720,6 +1790,7 @@ export const en: Record<EvalKey, string> = {
   'list.group.finished': 'Finished',
   'list.group.archived': 'Archived',
   'list.group.archivedCount': 'Archived ({count})',
+  'list.group.legacyCount': 'Legacy runs (no experiment) · {count}',
   'list.stalledMeta': 'no progress for {duration}',
   'list.archive': 'Archive',
   'list.unarchive': 'Unarchive',
@@ -1812,6 +1883,7 @@ export const en: Record<EvalKey, string> = {
   'card.errors': 'Validation found {errors} to fix — see Design on the Experiments tab.',
   'answer.open': 'View answers',
   'answer.title': 'Answers to {task}',
+  'answer.blindTitle': '{task} · blind',
   'answer.back': 'Back',
   'answer.loading': 'Reading the answers…',
   'answer.error': 'Could not read the answers',
@@ -1819,15 +1891,24 @@ export const en: Record<EvalKey, string> = {
   'answer.repAll': 'All',
   'answer.rep': 'Rep {rep}',
   'answer.blindSwitch': 'Blind switch',
+  'answer.layout': 'Layout',
+  'answer.sideBySide': 'Side by side',
+  'answer.single': 'One at a time',
+  'answer.pickColumn': 'Which answer',
   'answer.names': 'Show groups',
   'answer.blind': 'Blind',
   'answer.blindLocked': 'Human review is always blind',
   'answer.blindNote': 'Group names are replaced by letters in the run\'s seeded order; the process is folded away.',
-  'answer.blindScoring': 'Blind: the material is scrubbed and no group name reaches the page. Score each answer; only the human verdict is written.',
+  'answer.blindScoring': 'Group names are hidden, and stay hidden when you open an answer. Grade each answer on its own; this is not a choice between them.',
   'answer.views': 'View',
   'answer.viewReport': 'Submitted report',
+  'answer.viewDiff': 'Code changes',
+  'answer.diffNone': 'No code changes are recorded for this run yet: only the submitted reports and verdicts reach the answer view.',
   'answer.viewEvidence': 'Verdict evidence',
   'answer.process': 'Process',
+  'answer.processOpen': 'Open the player\'s session',
+  'answer.processBlind': 'Blind: the process stays closed, because a transcript names its harness.',
+  'answer.processNone': 'This group left no player session.',
   'answer.blindName': 'Answer {letter}',
   'answer.sourceHuman': 'Judged by a person',
   'answer.sourceJudge': 'Judged by the judge',
@@ -1841,6 +1922,8 @@ export const en: Record<EvalKey, string> = {
   'answer.stageMissing': 'No {stage} submitted',
   'answer.noReports': 'No submitted report was read',
   'answer.truncated': '{name} is {bytes} bytes, over the limit; only the beginning is shown',
+  'answer.expand': 'Show the whole report',
+  'answer.collapse': 'Collapse',
   'answer.reportsFolded': 'Submitted report: {files}',
   'answer.unjudged': 'Not judged on this criterion',
   'answer.scriptOnly': 'Script checks only \u2014 no judge reached this answer ({count} criteria unjudged).',
@@ -1860,6 +1943,32 @@ export const en: Record<EvalKey, string> = {
   'design.items': 'Which items',
   'design.itemsCol.item': 'Item',
   'design.itemsCol.how': 'Judged by',
+  'design.itemsCol.what': 'Tests',
+  'design.itemsCol.full': 'Full score',
+  'design.itemsCol.task': 'Task text',
+  'design.item.stages': '{n} stages',
+  'design.item.container': 'container',
+  'design.item.kinds': 'objective {objective} · judge {judge} · human {human}',
+  'design.item.noRubric': 'no rubric',
+  'design.item.criteria': '{n} criteria',
+  'design.item.human': '{n} by a person',
+  'design.item.probes': '{n} check scripts',
+  'design.item.noProbes': 'no check script',
+  'design.item.task': 'Task text',
+  'design.item.taskClose': 'Hide task',
+  'design.scale.approx': '≈ {value}',
+  'design.scale.approxMinutes': '≈ {m} min',
+  'design.scale.atLeast': '≥ {value}',
+  'design.scale.atLeastMinutes': '≥ {m} min',
+  'design.scale.partial': 'Covers only {covered}; {missing} have no past answers, so they are not estimated.',
+  'design.scale.partialSome': 'Covers only {covered}; {missing} have no past answers from every group, so they are not estimated.',
+  'design.scale.coveredItem': '{item} ({n} answers)',
+  'design.scale.itemJoin': ', ',
+  'design.scale.itemsCount': '{n} items',
+  'design.scale.from': 'Estimated from {n} past answers by {who} on {items}',
+  'design.scale.fromOne': 'this group',
+  'design.scale.fromMany': 'these {n} groups',
+  'design.scale.fromDetail': '{lead} ({times}; {tokens})',
   'design.how': 'How it is judged',
   'design.how.judge': 'Judge',
   'design.how.human': 'Final verdict',
@@ -1871,6 +1980,19 @@ export const en: Record<EvalKey, string> = {
   'design.ready': 'Readiness',
   'design.gridFold': 'Planned grid · {cells} runs',
   'readiness.remindersNote': 'Does not block the start',
+  'design.checks': 'Checks',
+  'design.checkCol.item': 'Item',
+  'design.checkCol.state': 'State',
+  'design.checkReady': 'Ready',
+  'design.checkNotReady': 'Not ready',
+  'design.checkBlocked': 'Blocks the start',
+  'design.checkRemind': 'Reminder',
+  'design.scale.reps': 'Runs per group',
+  'design.scale.answers': 'Answers',
+  'design.scale.duration': 'Est. time',
+  'design.scale.tokens': 'Est. output tokens',
+  'design.scale.none': 'No estimate',
+  'design.scale.noneNote': 'No past answer by these groups to these items yet, so time and tokens are not guessed.',
   'readiness.then.COMMIT_UNRESOLVED': 'The start pins the latest commit; later dataset edits do not touch this run.',
   'readiness.then.EXPECTED_NS_NO_PROBE': 'These items get no script verdict; only the judge and a person score them.',
   'readiness.then.EXPECTED_NS_NO_RUBRIC': 'Items without a rubric are scored only by the other sources.',
@@ -1893,14 +2015,14 @@ export const en: Record<EvalKey, string> = {
   'report.deltaAhead': '{ahead} scores {d} above {behind}',
   'report.deltaEqual': '{a} and {b} score the same',
   'report.reasonsLead': ', but the gap cannot be trusted yet:',
-  'report.reason.coverage': "The two groups' scores come from different sources: {detail}.",
+  'report.reason.coverage': '**The two groups\' scores come from different sources.** {detail}.',
   'report.coverage.judge-absent': '{condition} has no judge verdicts',
   'report.coverage.script-only': '{condition} has only script checks',
   'report.coverage.none': '{condition} has no verdicts at all',
-  'report.reason.fewTasks': 'Only {k} item(s) have a difference, so there is no interval.',
-  'report.reason.fewReps': 'Each item ran only {n} time(s); ranking needs at least 3.',
-  'report.reason.multi': "The groups differ in more than one variable ({fields}): describe, don't attribute.",
-  'report.reason.unknown': 'What separates the two groups is unknown: describe only.',
+  'report.reason.fewTasks': '**Only {k} item(s) have a difference**, so there is no interval.',
+  'report.reason.fewReps': '**Each item ran only {n} time(s)**; ranking needs at least 3.',
+  'report.reason.multi': '**The groups differ in more than one variable** ({fields}): describe, don\'t attribute.',
+  'report.reason.unknown': '**What separates the two groups is unknown**: describe only.',
   'report.next.rejudge': 'Judge {condition}',
   'report.next.answers': 'Answers side by side',
   'report.next.analysis': 'Ask the agent for an analysis draft',
@@ -1978,8 +2100,12 @@ export const zh: Record<EvalKey, string> = {
   'judge.loading': '人工评估加载中…',
   'judge.error': '人工评估打不开',
   'judge.empty': '这次实验还没有可评的记录。',
-  'judge.blindNotice': '盲评：本页刻意不出现 harness、模型与对比组。记录按这次实验自己的（种子）顺序编号，判官只显示判官 A / 判官 B。揭盲在结果对比页。',
-  'judge.queue': '队列',
+  'judge.queue': '题目切换',
+  'judge.colCriterion': '判据',
+  'judge.colJudge': '判官',
+  'judge.colFinal': '你的终评',
+  'judge.judgeNone': '未判',
+  'judge.criterionDetail': '{criterion} 的说明',
   'judge.graded': '已评（{count}）',
   'judge.materialNone': '这条记录没有归档被判阶段的文件——没有可读的东西，对着空白下判定是猜。',
   'judge.scrubbed': '替换掉 {count} 处指纹',
@@ -2004,8 +2130,8 @@ export const zh: Record<EvalKey, string> = {
   'judge.bundleStale': '已导出的 bundle 写在这些终评之前，里面没有它们。重新导出一次就带上了——报告一起写，旧目录不动。',
   'judge.reexport': '重新导出',
   'judge.reexporting': '正在导出…',
-  'judge.scoringMix': '你在这里打的分只覆盖你答的那几条判据。报告逐条判据取最权威的那一层，所以这 {count} 条你不答、判官答过的判据（{criteria}）仍按判官的计入得分。这条记录的得分来源随之变成「人 + 判官」的混合，报告页会在得分旁标出来。',
-  'judge.regrade': '这条记录已经有人工终评了。再记一次是追加：报告读每条判据的最新值，早先那次留在账本里。',
+  'judge.scoringMix': '你没答的 {count} 条判据（{criteria}）仍按判官的判定计分。',
+  'judge.regrade': '这份已有人工终评，再记一次是追加，报告取最新一次。',
   'judge.stats': '评分者一致性',
   'judge.statsSame': '同一判官重复采样',
   'judge.statsCross': '不同判官之间',
@@ -2467,7 +2593,6 @@ export const zh: Record<EvalKey, string> = {
   'design.questionAsked': '问题',
   'design.expectation': '预期',
   'design.answeredWhen': '怎么算回答了',
-  'design.numbers': '数字',
   'design.numbers.reps': '次数',
   'design.numbers.activeMinutes': '每格预算（分钟）',
   'design.numbers.turns': '每格预算（轮）',
@@ -2519,6 +2644,10 @@ export const zh: Record<EvalKey, string> = {
   'record.scoreWhere': '分数是从导出的 bundle 里算的，在结果对比页。',
   'record.scoreMixed': '这条记录在多个层上都有判定（{sources}）。报告逐条判据取判过它的最权威那一层，所以这条记录的得分来自不止一个来源——具体哪条判据取了哪一层，在结果对比页上逐条标着。',
   'record.timeline': '阶段时间轴',
+  'record.inlineHead': '{condition} · {task} · 第 {rep} 次',
+  'record.submitted': '已提交 {file}',
+  'record.retryOpen': '带原因重跑…',
+  'record.allDetails': '这条记录的全部细节',
   'record.timelineNone': '账本没记这次尝试的转移时间。',
   'record.params': '参数配置',
   'record.attachments': '附件',
@@ -2560,7 +2689,6 @@ export const zh: Record<EvalKey, string> = {
   'judge.itemCount': '{task} · {count} 份作答',
   'judge.column': '第 {no} 份',
   'judge.submitOne': '记第 {no} 份的 {count} 条判定',
-  'judge.sideBySide': '同一道题的各份作答并排在这里，已去指纹，按 run 自己的种子顺序编号。每一份各自打分——这不是二选一。',
   'new.step': '第 {step} 步 / 共 4 步',
   'new.step1': '题库与题目',
   'new.step2': '对比组',
@@ -2594,6 +2722,9 @@ export const zh: Record<EvalKey, string> = {
   'page.dot.active': '进行中',
   'page.dot.todo': '未开始',
   'cta.recheck': '重新校验',
+  'cta.title': '{status} · 下一步是{next}',
+  'cta.editableHint': '启动之前方案都能改；启动后冻结。',
+  'cta.askAgent': '让 agent 改…',
   'cta.here.runs': '下面逐个落地。',
   'cta.here.review': '逐份评完，再在页底选这次评估怎么结束。',
   'cta.here.compare': '对比就在下面。',
@@ -2674,6 +2805,7 @@ export const zh: Record<EvalKey, string> = {
   'list.group.finished': '已完成',
   'list.group.archived': '已归档',
   'list.group.archivedCount': '已归档（{count}）',
+  'list.group.legacyCount': '旧运行（未关联实验）· {count}',
   'list.stalledMeta': '{duration} 没有进展',
   'list.archive': '归档',
   'list.unarchive': '取消归档',
@@ -2766,6 +2898,7 @@ export const zh: Record<EvalKey, string> = {
   'card.errors': '校验有 {errors} 处要修——在实验室 › 实验设计里看。',
   'answer.open': '看作答',
   'answer.title': '{task} 的作答',
+  'answer.blindTitle': '{task} · 盲评',
   'answer.back': '返回',
   'answer.loading': '正在读取作答…',
   'answer.error': '读不到作答',
@@ -2773,15 +2906,24 @@ export const zh: Record<EvalKey, string> = {
   'answer.repAll': '全部',
   'answer.rep': '第 {rep} 次',
   'answer.blindSwitch': '盲评开关',
+  'answer.layout': '排布',
+  'answer.sideBySide': '并排',
+  'answer.single': '单份',
+  'answer.pickColumn': '看哪一份',
   'answer.names': '显示组名',
   'answer.blind': '盲评',
   'answer.blindLocked': '人工评估始终盲评',
   'answer.blindNote': '组名换成字母，按运行的种子顺序排；过程入口已收起。',
-  'answer.blindScoring': '盲评：材料已抹去指纹，组名不上页面。逐份评分，只写人工判定。',
+  'answer.blindScoring': '组名已隐藏，看作答时同样是盲评；每份各自打分，不是二选一。',
   'answer.views': '视图',
   'answer.viewReport': '提交的报告',
+  'answer.viewDiff': '代码改动',
+  'answer.diffNone': '这次运行还没有记录代码改动：作答视图目前只读得到提交的报告和判定。',
   'answer.viewEvidence': '判定证据',
   'answer.process': '过程',
+  'answer.processOpen': '打开选手会话',
+  'answer.processBlind': '盲评时不显示过程：会话记录里有 harness 的名字。',
+  'answer.processNone': '这一组没有选手会话。',
   'answer.blindName': '作答 {letter}',
   'answer.sourceHuman': '人已判',
   'answer.sourceJudge': '判官已判',
@@ -2795,6 +2937,8 @@ export const zh: Record<EvalKey, string> = {
   'answer.stageMissing': '这一组没有交{stage}',
   'answer.noReports': '没有读到提交的报告',
   'answer.truncated': '{name} 共 {bytes} 字节，超过上限，只显示开头部分',
+  'answer.expand': '展开全文',
+  'answer.collapse': '收起',
   'answer.reportsFolded': '提交的报告：{files}',
   'answer.unjudged': '这条判据未判',
   'answer.scriptOnly': '只有脚本判定：判官没有判这份作答（{count} 条判据未判）。',
@@ -2814,6 +2958,32 @@ export const zh: Record<EvalKey, string> = {
   'design.items': '用哪些题',
   'design.itemsCol.item': '题',
   'design.itemsCol.how': '怎么判',
+  'design.itemsCol.what': '考什么',
+  'design.itemsCol.full': '满分',
+  'design.itemsCol.task': '题面',
+  'design.item.stages': '{n} 个阶段',
+  'design.item.container': '容器',
+  'design.item.kinds': '客观 {objective} · 判官 {judge} · 人工 {human}',
+  'design.item.noRubric': '没有评分标准',
+  'design.item.criteria': '{n} 条判据',
+  'design.item.human': '人工 {n} 条',
+  'design.item.probes': '检查脚本 {n} 个',
+  'design.item.noProbes': '没有检查脚本',
+  'design.item.task': '看题面',
+  'design.item.taskClose': '收起题面',
+  'design.scale.approx': '≈ {value}',
+  'design.scale.approxMinutes': '≈ {m} 分钟',
+  'design.scale.atLeast': '≥ {value}',
+  'design.scale.atLeastMinutes': '≥ {m} 分钟',
+  'design.scale.partial': '只含 {covered}；{missing} 没有过往作答，无估算',
+  'design.scale.partialSome': '只含 {covered}；{missing} 不是每个对比组都有过往作答，无估算',
+  'design.scale.coveredItem': '{item}（{n} 次作答）',
+  'design.scale.itemJoin': '、',
+  'design.scale.itemsCount': '{n} 道题',
+  'design.scale.from': '估算来自{who}过去在 {items} 上的 {n} 次作答',
+  'design.scale.fromOne': '这个对比组',
+  'design.scale.fromMany': '这 {n} 个对比组',
+  'design.scale.fromDetail': '{lead}（{times}，{tokens}）',
   'design.how': '怎么判',
   'design.how.judge': '判官',
   'design.how.human': '人工终评',
@@ -2825,6 +2995,19 @@ export const zh: Record<EvalKey, string> = {
   'design.ready': '就绪',
   'design.gridFold': '计划网格 · {cells} 次运行',
   'readiness.remindersNote': '不影响启动',
+  'design.checks': '检查项',
+  'design.checkCol.item': '项',
+  'design.checkCol.state': '状态',
+  'design.checkReady': '就绪',
+  'design.checkNotReady': '未就绪',
+  'design.checkBlocked': '阻塞',
+  'design.checkRemind': '提醒',
+  'design.scale.reps': '每组次数',
+  'design.scale.answers': '作答份数',
+  'design.scale.duration': '预计时长',
+  'design.scale.tokens': '预计输出 token',
+  'design.scale.none': '无估算',
+  'design.scale.noneNote': '这些对比组还没在这些题上作答过，时长和 token 不猜。',
   'readiness.then.COMMIT_UNRESOLVED': '启动时钉住当时的最新提交，之后题库再改不影响这次。',
   'readiness.then.EXPECTED_NS_NO_PROBE': '这些题拿不到脚本判定，只有判官和人会给分。',
   'readiness.then.EXPECTED_NS_NO_RUBRIC': '没有量表的题只能靠其他来源判分。',
@@ -2847,14 +3030,14 @@ export const zh: Record<EvalKey, string> = {
   'report.deltaAhead': '{ahead} 比 {behind} 高 {d} 分',
   'report.deltaEqual': '{a} 与 {b} 得分相同',
   'report.reasonsLead': '，但这个差距还不可信：',
-  'report.reason.coverage': '两组分数的来源不同：{detail}。',
+  'report.reason.coverage': '**两组分数的来源不同。**{detail}。',
   'report.coverage.judge-absent': '{condition} 没有判官判定',
   'report.coverage.script-only': '{condition} 只有脚本判定',
   'report.coverage.none': '{condition} 没有任何判定',
-  'report.reason.fewTasks': '只有 {k} 道题有差值，给不出区间。',
-  'report.reason.fewReps': '每道题只跑了 {n} 次，排名至少要 3 次。',
-  'report.reason.multi': '两组不止差在一个变量（{fields}），只能描述，不能归因。',
-  'report.reason.unknown': '说不清两组差在哪，只能描述。',
+  'report.reason.fewTasks': '**只有 {k} 道题有差值**，给不出区间。',
+  'report.reason.fewReps': '**每道题只跑了 {n} 次**，排名至少要 3 次。',
+  'report.reason.multi': '**两组不止差在一个变量**（{fields}），只能描述，不能归因。',
+  'report.reason.unknown': '**说不清两组差在哪**，只能描述。',
   'report.next.rejudge': '给 {condition} 补判',
   'report.next.answers': '并排看作答',
   'report.next.analysis': '让 agent 写分析初稿',

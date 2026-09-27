@@ -35,7 +35,7 @@ import {
   invariantTone, stageTone, stamp,
 } from './parts.tsx'
 import { compactCount, durationParts, sourceOf, sourceShares, stagePhrase, verdictKey } from './vocab.ts'
-import { conclusionSourceKey, validityCount } from './journey.ts'
+import { conclusionSourceKey } from './journey.ts'
 import type { EvalKey } from './locales.ts'
 import { MarkdownDoc } from './MarkdownDoc.tsx'
 import css from './LabView.module.css'
@@ -350,6 +350,12 @@ function deltaSentence(pair: EvalReportPair, scores: { a: number; b: number }, t
     : t('report.deltaAhead', { ahead: pair.b, behind: pair.a, d: fmtNum(-d) })
 }
 
+/** A reason's lead, marked `**…**` in the catalog, set in bold (v5). */
+function leadText(text: string): ReactNode[] {
+  return text.split(/\*\*(.+?)\*\*/).map((part, index) =>
+    index % 2 === 1 ? <b key={index}>{part}</b> : part)
+}
+
 /** One pair on the card: the two big scores, the gap in words, and why it is not yet a result. */
 function ConclusionPair(props: { pair: EvalReportPair; named: boolean; t: LabViewProps['t'] }) {
   const { pair, named, t } = props
@@ -368,7 +374,13 @@ function ConclusionPair(props: { pair: EvalReportPair; named: boolean; t: LabVie
       {scores !== null && (
         <div className={css.scoreRow}>
           {([[pair.a, scores.a], [pair.b, scores.b]] as const).map(([condition, score]) => (
-            <div key={condition} className={css.scoreCell}>
+            <div
+              key={condition}
+              className={css.scoreCell}
+              // v5: the side a coverage gap names is not comparable — its
+              // number stays, greyed, so nobody reads it as the loser's.
+              data-na={pair.coverage.some(entry => entry.condition === condition) ? '' : undefined}
+            >
               <span className={css.scoreBig}>{fmtNum(score)}</span>
               <span className={css.scoreName}>{condition}</span>
             </div>
@@ -386,7 +398,7 @@ function ConclusionPair(props: { pair: EvalReportPair; named: boolean; t: LabVie
           {reasons.map(reason => (
             <li key={reason.text} className={css.reasonItem} data-level={reason.level}>
               <span className={css.reasonMark} aria-hidden>{reason.level === 'block' ? '✗' : '!'}</span>
-              <span>{reason.text}</span>
+              <span>{leadText(reason.text)}</span>
             </li>
           ))}
         </ul>
@@ -414,16 +426,13 @@ function ConclusionPair(props: { pair: EvalReportPair; named: boolean; t: LabVie
  */
 function ConclusionCard(props: {
   report: EvalRunReportView
-  onOpenAudit: () => void
   onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
   onRejudge: (condition: string) => void
   onAskAnalysis: () => void
   t: LabViewProps['t']
 }) {
-  const { report, onOpenAudit, onOpenAnswers, onRejudge, onAskAnalysis, t } = props
+  const { report, onOpenAnswers, onRejudge, onAskAnalysis, t } = props
   const sourceKey = conclusionSourceKey(report.closure)
-  const validity = validityCount(report.invariants)
-  const allPass = validity.total > 0 && validity.passed === validity.total
   const flagged = report.closure?.exit === 'flagged' ? report.closure.reason : null
   const failing = report.invariants.filter(check => check.status !== 'ok' && check.id !== 'verdict-coverage')
   const pairs = report.comparisonAllowed && !report.singleCondition ? report.pairs : []
@@ -433,8 +442,11 @@ function ConclusionCard(props: {
   // and hand the whole page to the agent for a draft.
   const uncovered = pairs.flatMap(pair => pair.coverage)[0]?.condition ?? null
   const firstTask = pairs.flatMap(pair => pair.rows)[0]?.task ?? null
+  // v5 · result: the card's left rule says whether the answer stands — green
+  // when every pair is a result, the warning colour while any is not.
+  const settled = pairs.length > 0 && pairs.every(pair => pairReasons(pair, t).length === 0)
   return (
-    <section className={css.conclusionCard} aria-label={t('report.conclusion')}>
+    <section className={css.conclusionCard} data-tone={settled ? 'ok' : 'warn'} aria-label={t('report.conclusion')}>
       {flagged !== null && <div className={css.conclusionFlag}>{t('report.flagged', { reason: flagged })}</div>}
       {report.question?.question != null && (
         <div className={css.questionEyebrow}>{report.question.question}</div>
@@ -472,31 +484,17 @@ function ConclusionCard(props: {
             ))}
       <div className={css.conclusionActions}>
         {uncovered !== null && (
-          <Button size="sm" onClick={() => { onRejudge(uncovered) }}>
+          <Button variant="outline" size="sm" onClick={() => { onRejudge(uncovered) }}>
             {t('report.next.rejudge', { condition: uncovered })}
           </Button>
         )}
         {firstTask !== null && (
-          <Button size="sm" onClick={() => { onOpenAnswers({ task: firstTask, condition: null, rep: null }) }}>
+          <Button variant="outline" size="sm" onClick={() => { onOpenAnswers({ task: firstTask, condition: null, rep: null }) }}>
             {t('report.next.answers')}
           </Button>
         )}
-        <Button size="sm" onClick={onAskAnalysis}>{t('report.next.analysis')}</Button>
+        <Button variant="outline" size="sm" className={css.aiButton} onClick={onAskAnalysis}>{t('report.next.analysis')}</Button>
       </div>
-      {validity.total > 0 && (
-        <div className={css.conclusionMeta}>
-          <button
-            type="button"
-            className={css.reportJump}
-            title={t('report.validityOpen')}
-            onClick={onOpenAudit}
-          >
-            <Chip tone={allPass ? 'ok' : 'warn'}>
-              {t(allPass ? 'report.validityAll' : 'report.validitySome', validity)}
-            </Chip>
-          </button>
-        </div>
-      )}
     </section>
   )
 }
@@ -726,7 +724,7 @@ function CriteriaTable(props: {
                   <Fragment key={row.id}>
                     <tr>
                       <th className={css.reportRowHead}>
-                        <span className={css.mono}>{row.id}</span>
+                        <span className={css.itemName}>{row.id}</span>
                         {row.undeclared && <Chip tone="warn" title={t('report.criteriaUndeclared')}>⚠</Chip>}
                         {row.negative && <span className={css.criteriaPolarity}>{t('report.polarityNegative')}</span>}
                       </th>
@@ -1018,11 +1016,11 @@ function UnitsStrip(props: {
               onClick={() => { setConfirming(false); onReclaim() }}>
               {t('report.reclaimConfirm')}
             </Button>
-            <Button size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
+            <Button variant="outline" size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
           </>
         )
         : (
-          <Button size="sm" disabled={reclaiming} onClick={() => { setConfirming(true) }}>
+          <Button variant="outline" size="sm" disabled={reclaiming} onClick={() => { setConfirming(true) }}>
             {t('report.reclaim')}
           </Button>
         )}
@@ -1260,8 +1258,6 @@ export function ReportPage(props: {
   // still have meant it.
   const [confirming, setConfirming] = useState(false)
   const [dir, setDir] = useState('')
-  // The audit fold is controlled so the card's validity line can open it.
-  const [auditOpen, setAuditOpen] = useState(false)
 
   if (error !== null) return <ErrorState what={t('report.error')} message={error} t={t} />
   if (report === null) return <div className={css.empty}>{t('report.loading')}</div>
@@ -1276,23 +1272,12 @@ export function ReportPage(props: {
           title={t('report.void', { reason: report.closure.reason ?? DASH })}
           hint={t('report.voidHint')}
         >
-          <Button size="sm" onClick={onOpenRuns}>{t('cta.void')}</Button>
+          <Button variant="outline" size="sm" onClick={onOpenRuns}>{t('cta.void')}</Button>
         </EmptyState>
       </div>
     )
   }
 
-  const openAudit = (): void => {
-    setAuditOpen(true)
-    // After the fold has rendered open; a missing element is not an error.
-    setTimeout(() => {
-      try {
-        globalThis.document?.getElementById('eval-report-audit')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-      } catch {
-        // scrolling is a convenience
-      }
-    }, 0)
-  }
 
   const bar = (
     <div className={css.reportBar}>
@@ -1304,19 +1289,19 @@ export function ReportPage(props: {
               onClick={() => { setConfirming(false); onFinalize() }}>
               {t('report.finalizeConfirm')}
             </Button>
-            <Button size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
+            <Button variant="outline" size="sm" onClick={() => { setConfirming(false) }}>{t('report.finalizeCancel')}</Button>
           </>
         )
         : (
-          <Button size="sm" disabled={finalizing || report.bundleDir === null} onClick={() => { setConfirming(true) }}>
+          <Button variant="outline" size="sm" disabled={finalizing || report.bundleDir === null} onClick={() => { setConfirming(true) }}>
             {t('report.finalize')}
           </Button>
         )}
-      <Button size="sm" onClick={onExport}>{t('action.export')}</Button>
+      <Button variant="outline" size="sm" onClick={onExport}>{t('action.export')}</Button>
       {/* The repeat, beside the dialog that made the first one. It is
           disabled with a reason rather than hidden: a reader who has just
           written a final verdict looks here for it. */}
-      <Button
+      <Button variant="outline"
         size="sm"
         disabled={reexporting || report.reexportable !== true}
         title={report.reexportable === true ? '' : t('report.reexportNeedsDialog')}
@@ -1365,7 +1350,7 @@ export function ReportPage(props: {
               placeholder={t('report.lookInDir')}
               aria-label={t('report.lookInDir')}
             />
-            <Button size="sm" disabled={dir.trim() === ''} onClick={() => { onLookIn(dir.trim()) }}>
+            <Button variant="outline" size="sm" disabled={dir.trim() === ''} onClick={() => { onLookIn(dir.trim()) }}>
               {t('report.lookInGo')}
             </Button>
           </div>
@@ -1390,7 +1375,6 @@ export function ReportPage(props: {
     <div className={css.reportPage}>
       <ConclusionCard
         report={report}
-        onOpenAudit={openAudit}
         onOpenAnswers={onOpenAnswers}
         onRejudge={onRejudge}
         onAskAnalysis={onAskAnalysis}
@@ -1445,8 +1429,6 @@ export function ReportPage(props: {
         <Fold
           summary={t('report.audit')}
           aside={<ValidityAside report={report} t={t} />}
-          open={auditOpen}
-          onToggle={setAuditOpen}
           id="eval-report-audit"
         >
           <Section title={t('report.invariants')}>

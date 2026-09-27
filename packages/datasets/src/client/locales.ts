@@ -113,6 +113,13 @@ export type DatasetsKey =
   | 'detail.judgeProbes'
   | 'detail.judgeShared'
   | 'detail.judgeSchemas'
+  | 'detail.judgeLeaves'
+  | 'detail.noProbes'
+  | 'detail.readAt'
+  | 'detail.readAtCommit'
+  | 'detail.usedBy'
+  | 'detail.usedByMore'
+  | 'detail.runsOlder'
   | 'detail.runs'
   | 'detail.runsEmpty'
   | 'detail.itemEmptyHint'
@@ -264,6 +271,13 @@ export const zh: Record<DatasetsKey, string> = {
   'detail.judgeProbes': '探针 {count} 个',
   'detail.judgeShared': '题集级探针 {count} 个',
   'detail.judgeSchemas': '阶段 schema {count} 个',
+  'detail.judgeLeaves': '{leaves} 条判据',
+  'detail.noProbes': '没有检查脚本',
+  'detail.readAt': '看的是 {ref} @ {commit}',
+  'detail.readAtCommit': '看的是 @ {commit}',
+  'detail.usedBy': '用过这道题的实验：{names}',
+  'detail.usedByMore': '等 {count} 个',
+  'detail.runsOlder': '更早的作答记录 · {count}',
   'detail.runs': '作答记录',
   'detail.runsEmpty': '这道题还没有在任何实验里作答过',
   'detail.runsCell': '{condition} · 第 {rep} 次',
@@ -463,6 +477,13 @@ export const en: Record<DatasetsKey, string> = {
   'detail.judgeProbes': '{count} probes',
   'detail.judgeShared': '{count} dataset-level probes',
   'detail.judgeSchemas': '{count} stage schemas',
+  'detail.judgeLeaves': '{leaves} criteria',
+  'detail.noProbes': 'no check scripts',
+  'detail.readAt': 'read at {ref} @ {commit}',
+  'detail.readAtCommit': 'read at @ {commit}',
+  'detail.usedBy': 'Experiments that used this item: {names}',
+  'detail.usedByMore': 'and {count} more',
+  'detail.runsOlder': 'Earlier answer records · {count}',
   'detail.runs': 'Answer record',
   'detail.runsEmpty': 'This item has not been answered in any experiment yet',
   'detail.runsCell': '{condition} · take {rep}',

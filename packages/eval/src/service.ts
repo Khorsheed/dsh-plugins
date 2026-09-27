@@ -53,6 +53,7 @@ import { importExperiments, type ImportReport } from './import.ts'
 import { recordArchive, recordClosure } from './closure.ts'
 import { experimentDetail, experimentRunIds, listExperiments, pairRun, readPlans, runsForItem } from './experiments.ts'
 import { EvalPlanEditRefused, writePlanNumbers } from './plan-numbers.ts'
+import { planEstimate, planItemFacts } from './plan-items.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
 import { readCellArtifact } from './cell-artifact.ts'
 import { judgeQueueView, writeHumanFinal } from './judge-bench.ts'
@@ -78,7 +79,7 @@ import type {
   EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult, EvalExperimentArtifactRequest, EvalExperimentArtifactView, EvalImportRequest,
   EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
   EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView, EvalAnswerSheet, EvalCellAnswersRequest,
-  EvalJudgeVerdictInput, EvalMatrixView, EvalPlanNumbersRequest, EvalPlanNumbersResult, EvalPlanRequest, EvalPlanReview, EvalReexportRequest, EvalRunReportView, EvalRunUnitsView,
+  EvalJudgeVerdictInput, EvalMatrixView, EvalPlanItemsView, EvalPlanNumbersRequest, EvalPlanNumbersResult, EvalPlanRequest, EvalPlanReview, EvalReexportRequest, EvalRunReportView, EvalRunUnitsView,
 } from './types.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
@@ -707,12 +708,47 @@ export class EvalService {
     if (request.experimentId !== undefined && request.experimentId !== '') {
       const record = await this.experimentRecord(request.experimentId)
       const validation = await this.validatePlan(record.planPath, { roots: await this.experimentRoots(record) })
-      return reviewPlan(record.planPath, { pin: record.meta.dataset, validation })
+      const review = await reviewPlan(record.planPath, { pin: record.meta.dataset, validation })
+      return { ...review, ...await this.planFacts(record, review) }
     }
     if (request.planPath !== undefined && request.planPath !== '') {
       return reviewPlan(request.planPath, { validation: await this.validatePlan(request.planPath) })
     }
     throw new EvalReadRefused('plan review needs an experimentId (or, for an old plan, a planPath)')
+  }
+
+  /**
+   * 用哪些题's per-item columns and 规模与花费's estimate (T83 · phase 4) —
+   * the pinned dataset read the run loop's way, and the ledger's past answers
+   * of the same groups. Both degrade to null (and a note) rather than failing
+   * the review: the page without them is the page it was before.
+   */
+  private async planFacts(
+    record: ExperimentRecord,
+    review: EvalPlanReview,
+  ): Promise<Pick<EvalPlanReview, 'items' | 'estimate'>> {
+    const digest = review.digest
+    if (digest === null || digest.items.length === 0) return { items: null, estimate: null }
+    const pin = record.meta.dataset
+    let items: EvalPlanItemsView | null
+    try {
+      const registration = await this.registryFace().registration(pin.registry)
+      items = await planItemFacts({
+        datasets: this.hosts?.get('datasets') as DatasetsFace | undefined,
+        repo: registration.commonDir,
+        datasetId: pin.set,
+        commit: pin.commit,
+        items: digest.items,
+      })
+    } catch (error) {
+      items = { items: [], notes: [`the dataset registration could not be read: ${error instanceof Error ? error.message : String(error)}`] }
+    }
+    const estimate = planEstimate({
+      mission: this.hosts?.get('mission') as MissionRunListFace | undefined,
+      conditions: digest.conditions,
+      items: digest.items,
+    })
+    return { items, estimate }
   }
 
   /**

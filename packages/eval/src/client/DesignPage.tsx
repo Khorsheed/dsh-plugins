@@ -34,18 +34,19 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
   EvalExperimentDetail, EvalExperimentRow, EvalPlanCheck, EvalPlanCondition, EvalPlanNumbersResult,
-  EvalPlanQuestion, EvalPlanReview, EvalRunOutputView,
+  EvalPlanEstimate, EvalPlanItemFacts, EvalPlanItemsView, EvalPlanQuestion, EvalPlanReview, EvalRunOutputView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { ConditionsTable } from './ConditionsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
+import { MarkdownDoc } from './MarkdownDoc.tsx'
 import { RunGrid, plannedRows, type GridColumn } from './Grid.tsx'
 import {
-  Chip, Detail, Field, ReadyBadge, StartedRun, Word,
+  Chip, Detail, Field, Fold, Seg, StartedRun, Word,
   listOrDash, severityKey, severityTone, snapshotCell,
 } from './parts.tsx'
-import { factorPhrase, preferredColumn } from './vocab.ts'
+import { compactCount, durationParts, factorPhrase, preferredColumn } from './vocab.ts'
 import {
   fixLabel, readinessFix, readinessSentence, reminderConsequenceKey, splitReadiness, type ReadinessFix,
 } from './journey.ts'
@@ -182,54 +183,114 @@ const CHECKLIST_STAGES: ReadonlySet<EvalExperimentRow['status']> = new Set(['dra
 function ReadinessChecklist(props: {
   blockers: readonly EvalPlanCheck[]
   reminders: readonly EvalPlanCheck[]
+  /** Each group's readiness verdict — the table's first rows (v5 · ready). */
+  ready: ReadonlyArray<{ id: string; ok: boolean; note?: string | undefined }>
+  /** Whether the checklist lines are shown at all (the stage asks for a start). */
+  lines: boolean
   /** A stalled run's checklist is about the NEXT run; the lead line says so. */
   forRerun: boolean
   onFix: (fix: ReadinessFix, check: EvalPlanCheck, k: number) => void
+  onRecheck: () => void
   t: LabViewProps['t']
 }) {
-  const { blockers, reminders, forRerun, onFix, t } = props
-  const line = (check: EvalPlanCheck, k: number) => {
+  const { blockers, reminders, ready, lines, forRerun, onFix, onRecheck, t } = props
+  const said = (check: EvalPlanCheck): string => {
+    const sentence = readinessSentence(check)
+    return sentence === null ? check.message : t(sentence.key, sentence.params)
+  }
+  const fixButton = (check: EvalPlanCheck, k: number) => {
     const fix = readinessFix(check)
     const label = fixLabel(fix)
-    const said = readinessSentence(check)
-    const sentence = said === null ? check.message : t(said.key, said.params)
-    // A reminder says what it will cost, so 「不影响启动」 is not read as
-    // 「不重要」 (T80d · P2-7). Blockers need no such line: they stop the start.
-    const then = k > blockers.length ? reminderConsequenceKey(check.code) : null
     return (
-      <div key={`${check.code}:${String(k)}`} className={css.readinessLine}>
-        <span className={css.readinessNo}>{k}</span>
-        <span className={css.checkMessage} title={`${check.code} · ${check.message}`}>
-          {sentence}
-          {then !== null && <span className={css.readinessThen}>{t(then)}</span>}
-        </span>
-        <Button size="sm" onClick={() => { onFix(fix, check, k) }}>
-          {label.params === undefined ? t(label.key) : t(label.key, label.params)}
-        </Button>
-      </div>
+      <Button variant="outline" size="sm" className={css.smButton} onClick={() => { onFix(fix, check, k) }}>
+        {fix.kind === 'agent' && <span className={css.aiMark} aria-hidden="true" />}
+        {label.params === undefined ? t(label.key) : t(label.key, label.params)}
+      </Button>
     )
   }
+  const shownBlockers = lines ? blockers : []
+  const shownReminders = lines ? reminders : []
+  const anyFailed = ready.some(row => !row.ok)
   return (
-    <div className={css.readiness}>
-      {forRerun && <div className={css.dim}>{t('readiness.forRerun')}</div>}
-      {blockers.length > 0 && (
-        <div className={css.readinessGroup}>
-          <div className={css.readinessHead}>
-            <Chip tone="danger">{t('readiness.blockers', { count: blockers.length })}</Chip>
+    <>
+      <Block
+        title={t('design.checks')}
+        meta={shownBlockers.length > 0 ? t('readiness.blockers', { count: shownBlockers.length }) : undefined}
+      >
+        {forRerun && lines && <div className={css.dim}>{t('readiness.forRerun')}</div>}
+        {ready.length === 0 && shownBlockers.length === 0
+          ? <div className={css.dim}>{t('ready.pending')}</div>
+          : (
+            <div className={css.tableScroll}>
+              <table className={css.table}>
+                <thead>
+                  <tr>
+                    <th>{t('design.checkCol.item')}</th>
+                    <th>{t('design.checkCol.state')}</th>
+                    <th aria-label={t('design.checkCol.state')} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {ready.map(row => (
+                    <tr key={`ready:${row.id}`}>
+                      <td>
+                        <span className={css.checkName}>{row.id}</span>
+                        {row.note !== undefined && row.note !== '' && <span className={css.readinessThen}>{row.note}</span>}
+                      </td>
+                      <td>
+                        <Chip dot tone={row.ok ? 'ok' : 'danger'}>{t(row.ok ? 'design.checkReady' : 'design.checkNotReady')}</Chip>
+                      </td>
+                      <td />
+                    </tr>
+                  ))}
+                  {shownBlockers.map((check, index) => (
+                    <tr key={`block:${check.code}:${String(index)}`} className={css.readinessLine}>
+                      <td title={`${check.code} · ${check.message}`}>
+                        <span className={css.readinessNo}>{index + 1}</span>
+                        {said(check)}
+                      </td>
+                      <td><Chip dot tone="danger">{t('design.checkBlocked')}</Chip></td>
+                      <td>{fixButton(check, index + 1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        {anyFailed && (
+          // One re-read for every group: the probe runs them together, so a
+          // button per failing row would be several doors to the same room.
+          <div className={css.tableFoot}>
+            <span className={css.tableFootText}>
+              {shownBlockers.length === 0 && t('ready.failedCount', { count: ready.filter(row => !row.ok).length, total: ready.length })}
+            </span>
+            <Button variant="outline" size="sm" className={css.smButton} onClick={onRecheck}>{t('ready.recheck')}</Button>
           </div>
-          {blockers.map((check, index) => line(check, index + 1))}
-        </div>
-      )}
-      {reminders.length > 0 && (
-        <div className={css.readinessGroup}>
-          <div className={css.readinessHead}>
-            <Chip tone="warn">{t('readiness.reminders', { count: reminders.length })}</Chip>
-            <span className={css.dim}>{t('readiness.remindersNote')}</span>
+        )}
+      </Block>
+      {shownReminders.length > 0 && (
+        <Block title={t('readiness.reminders', { count: shownReminders.length })} meta={t('readiness.remindersNote')}>
+          <div className={css.box}>
+            {shownReminders.map((check, index) => {
+              const k = shownBlockers.length + index + 1
+              // A reminder says what it will cost, so 「不影响启动」 is not read
+              // as 「不重要」 (T80d · P2-7).
+              const then = reminderConsequenceKey(check.code)
+              return (
+                <div key={`remind:${check.code}:${String(index)}`} className={`${css.remindRow} ${css.readinessLine}`}>
+                  <Chip tone="warn">{t('design.checkRemind')}</Chip>
+                  <span className={css.remindText} title={`${check.code} · ${check.message}`}>
+                    {said(check)}
+                    {then !== null && <span className={css.readinessThen}>{t(then)}</span>}
+                  </span>
+                  {fixButton(check, k)}
+                </div>
+              )
+            })}
           </div>
-          {reminders.map((check, index) => line(check, blockers.length + index + 1))}
-        </div>
+        </Block>
       )}
-    </div>
+    </>
   )
 }
 
@@ -244,20 +305,24 @@ function ReadinessChecklist(props: {
 function QuestionSection(props: { question: EvalPlanQuestion; t: LabViewProps['t'] }) {
   const { question, t } = props
   return (
-    <section className={css.questionCard} aria-label={t('design.question')}>
-      <div className={css.questionEyebrow}>{t('design.question')}</div>
-      {question.question !== null && <div className={css.questionTitle}>{question.question}</div>}
-      {(question.expectation !== null || question.answeredWhen !== null) && (
-        <dl className={css.questionRows}>
-          {question.expectation !== null && (
-            <><dt>{t('design.expectation')}</dt><dd>{question.expectation}</dd></>
+    <Block title={t('design.question')}>
+      {/* T83 · v5 plan: the question in a box, its two lines as a kv grid. */}
+      <div className={css.box}>
+        <div className={css.boxBody}>
+          {question.question !== null && <div className={css.questionTitle}>{question.question}</div>}
+          {(question.expectation !== null || question.answeredWhen !== null) && (
+            <dl className={css.kv}>
+              {question.expectation !== null && (
+                <><dt>{t('design.expectation')}</dt><dd>{question.expectation}</dd></>
+              )}
+              {question.answeredWhen !== null && (
+                <><dt>{t('design.answeredWhen')}</dt><dd>{question.answeredWhen}</dd></>
+              )}
+            </dl>
           )}
-          {question.answeredWhen !== null && (
-            <><dt>{t('design.answeredWhen')}</dt><dd>{question.answeredWhen}</dd></>
-          )}
-        </dl>
-      )}
-    </section>
+        </div>
+      </div>
+    </Block>
   )
 }
 
@@ -269,11 +334,12 @@ function QuestionSection(props: { question: EvalPlanQuestion; t: LabViewProps['t
 function Block(props: { title: string; meta?: ReactNode; children: ReactNode }) {
   const { title, meta, children } = props
   return (
-    <section className={css.designBlock} aria-label={title}>
-      <div className={css.designBlockHead}>
-        <span className={css.designBlockTitle}>{title}</span>
-        {meta !== undefined && meta !== null && <span className={css.dim}>{meta}</span>}
-      </div>
+    // T83 · E7: v5 `.sec` — a bare section, a 13px heading and its body.
+    <section className={css.reportSection} aria-label={title}>
+      <h5 className={css.sectionTitle}>
+        <span>{title}</span>
+        {meta !== undefined && meta !== null && <span className={css.sectionMeta}>{meta}</span>}
+      </h5>
       {children}
     </section>
   )
@@ -287,29 +353,139 @@ const VERDICT_SOURCE: Readonly<Record<string, EvalKey>> = {
 }
 
 /**
- * 用哪些题 (T80d · P2-5): one row per item, and how it is judged.
+ * 用哪些题 (T80d · P2-5, T83 · phase 4): one row per item — v5's 题 / 考什么 /
+ * 怎么判 / 满分 / 看题面.
  *
- * The plan review carries the item ids and the verdict sources it expects —
- * nothing per item about what an item tests, its full score or a link to its
- * text. Those columns are absent rather than invented; they need a data face
- * of their own (the T80d report lists them).
+ * The per-item columns come from the review's `items` face (the pinned
+ * dataset, read host-side). Without it — a legacy plan path, or a composition
+ * with no datasets service — the table keeps the two columns the digest alone
+ * can fill, rather than inventing the rest.
  */
-function ItemsTable(props: { items: readonly string[]; expectedNs: readonly string[]; t: LabViewProps['t'] }) {
-  const { items, expectedNs, t } = props
+function ItemsTable(props: {
+  items: readonly string[]
+  expectedNs: readonly string[]
+  facts: EvalPlanItemsView | null
+  t: LabViewProps['t']
+}) {
+  const { items, expectedNs, facts, t } = props
+  const [open, setOpen] = useState<string | null>(null)
   const how = expectedNs.map(ns => (VERDICT_SOURCE[ns] === undefined ? ns : t(VERDICT_SOURCE[ns]))).join(' · ') || '—'
-  return (
-    <div className={css.itemsTable}>
-      <div className={css.itemsHead}>
-        <span>{t('design.itemsCol.item')}</span>
-        <span>{t('design.itemsCol.how')}</span>
+  if (facts === null || facts.items.length === 0) {
+    return (
+      <div className={css.tableScroll}>
+        <table className={css.table}>
+          <thead>
+            <tr>
+              <th>{t('design.itemsCol.item')}</th>
+              <th>{t('design.itemsCol.how')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(item => (
+              <tr key={item}>
+                <td className={css.itemName}>{item}</td>
+                <td className={css.dim}>{how}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {facts !== null && facts.notes.length > 0 && <div className={css.scaleNote}>{facts.notes.join(' · ')}</div>}
       </div>
-      {items.map(item => (
-        <div key={item} className={css.itemsRow}>
-          <span className={css.mono}>{item}</span>
-          <span className={css.dim}>{how}</span>
-        </div>
-      ))}
+    )
+  }
+  return (
+    <div className={css.tableScroll}>
+      <table className={css.table}>
+        <thead>
+          <tr>
+            <th>{t('design.itemsCol.item')}</th>
+            <th>{t('design.itemsCol.what')}</th>
+            <th>{t('design.itemsCol.how')}</th>
+            <th>{t('design.itemsCol.full')}</th>
+            <th><span className={css.srOnly}>{t('design.itemsCol.task')}</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {facts.items.map(item => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              open={open === item.id}
+              onToggle={() => setOpen(open === item.id ? null : item.id)}
+              t={t}
+            />
+          ))}
+        </tbody>
+      </table>
+      {facts.notes.length > 0 && <div className={css.scaleNote}>{facts.notes.join(' · ')}</div>}
     </div>
+  )
+}
+
+/** v5's sub line under an item id: level · stages · container. */
+function itemShape(item: EvalPlanItemFacts, t: LabViewProps['t']): string {
+  return [
+    item.level,
+    item.stages > 0 ? t('design.item.stages', { n: item.stages }) : null,
+    item.container ? t('design.item.container') : null,
+  ].filter((part): part is string => part !== null).join(' · ')
+}
+
+/**
+ * One item's 怎么判: how many criteria, how many of them are a person's, and
+ * whether a check script will run. «没有检查脚本» is the warning v5 raises —
+ * but only when there are objective criteria that a script would have judged.
+ */
+function ItemHow(props: { item: EvalPlanItemFacts; t: LabViewProps['t'] }) {
+  const { item, t } = props
+  const criteria = item.criteria
+  const probesWarn = item.probes === 0 && (criteria === null || criteria.objective > 0)
+  const breakdown = criteria === null
+    ? undefined
+    : t('design.item.kinds', { objective: criteria.objective, judge: criteria.judge, human: criteria.human })
+  return (
+    <span title={breakdown}>
+      {criteria === null
+        ? <span className={css.dim}>{t('design.item.noRubric')}</span>
+        : t('design.item.criteria', { n: criteria.total })}
+      {criteria !== null && criteria.human > 0 && <>{' · '}{t('design.item.human', { n: criteria.human })}</>}
+      {' · '}
+      {item.probes > 0
+        ? t('design.item.probes', { n: item.probes })
+        : <span className={probesWarn ? css.warnInk : css.dim}>{t('design.item.noProbes')}</span>}
+    </span>
+  )
+}
+
+function ItemRow(props: { item: EvalPlanItemFacts; open: boolean; onToggle: () => void; t: LabViewProps['t'] }) {
+  const { item, open, onToggle, t } = props
+  const shape = itemShape(item, t)
+  return (
+    <>
+      <tr>
+        <td>
+          <span className={css.itemName}>{item.id}</span>
+          {shape !== '' && <span className={css.itemSub}>{shape}</span>}
+        </td>
+        <td>{item.title ?? <span className={css.dim}>—</span>}</td>
+        <td><ItemHow item={item} t={t} /></td>
+        <td className={css.num}>{item.fullScore ?? <span className={css.dim}>—</span>}</td>
+        <td className={css.rowAction}>
+          {item.task !== null && (
+            <Button variant="ghost" size="sm" className={css.smButton} aria-expanded={open} onClick={onToggle}>
+              {open ? t('design.item.taskClose') : t('design.item.task')}
+            </Button>
+          )}
+        </td>
+      </tr>
+      {open && item.task !== null && (
+        <tr>
+          <td colSpan={5} className={css.taskCell}>
+            <MarkdownDoc text={item.task} {...(item.taskPath === null ? {} : { banner: item.taskPath })} t={t} />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -328,12 +504,12 @@ function HowJudged(props: {
   const { judges, samples, expectedNs, t } = props
   const on = (ns: string) => expectedNs === null || expectedNs.includes(ns)
   return (
-    <dl className={css.howRows}>
+    <dl className={css.kv}>
       <dt>{t('design.how.judge')}</dt>
       <dd>
         {judges.length === 0 || !on('llm-draft')
           ? <span className={css.dim}>{t('overview.judgeNone')}</span>
-          : <><span className={css.mono}>{judges.join(', ')}</span>{samples === null ? '' : ` · ${t('overview.judgeSamples', { samples })}`}</>}
+          : <><span>{judges.join(', ')}</span>{samples === null ? '' : ` · ${t('overview.judgeSamples', { samples })}`}</>}
       </dd>
       {expectedNs !== null && <>
         <dt>{t('design.how.human')}</dt>
@@ -385,18 +561,21 @@ function NumbersField(props: {
   now: PlanNumbersNow
   frozen: boolean
   onSave: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
+  /** Numbers another control on the page already edits (次数 · the 1/3/5 seg). */
+  skip?: ReadonlySet<keyof PlanNumbersNow> | undefined
   t: LabViewProps['t']
 }) {
-  const { now, frozen, onSave, t } = props
+  const { now, frozen, onSave, skip, t } = props
+  const inputs = NUMBER_INPUTS.filter(spec => skip?.has(spec.key) !== true)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ kind: 'receipt' | 'failure'; text: string } | null>(null)
   const shown = (key: keyof PlanNumbersNow): string => draft[key] ?? (now[key] === null ? '' : String(now[key]))
-  const dirty = NUMBER_INPUTS.some(spec => draft[spec.key] !== undefined && draft[spec.key] !== String(now[spec.key] ?? ''))
+  const dirty = inputs.some(spec => draft[spec.key] !== undefined && draft[spec.key] !== String(now[spec.key] ?? ''))
 
   function save(): void {
     const numbers: PlanNumbersDraft = {}
-    for (const spec of NUMBER_INPUTS) {
+    for (const spec of inputs) {
       const text = draft[spec.key]
       if (text === undefined || now[spec.key] === null) continue
       const value = Number(text)
@@ -428,13 +607,13 @@ function NumbersField(props: {
   }
 
   return (
-    <Field label={t('design.numbers')}>
+    <div className={css.numbersField}>
       <div className={css.numbersRow}>
-        {NUMBER_INPUTS.map(spec => (
+        {inputs.map(spec => (
           <label key={spec.key} className={css.numberCell}>
             <span className={css.dim}>{t(spec.label)}</span>
             {frozen || now[spec.key] === null
-              ? <span className={css.mono}>{now[spec.key] ?? '—'}</span>
+              ? <span>{now[spec.key] ?? '—'}</span>
               : (
                 <input
                   className={css.numberInput}
@@ -453,7 +632,7 @@ function NumbersField(props: {
         ))}
         {!frozen && (
           <span className={css.numbersActions}>
-            <Button size="sm" disabled={busy || !dirty} onClick={save}>{t('design.numbers.save')}</Button>
+            <Button variant="outline" size="sm" disabled={busy || !dirty} onClick={save}>{t('design.numbers.save')}</Button>
             {dirty && (
               <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setDraft({}); setNote(null) }}>
                 {t('design.numbers.cancel')}
@@ -466,7 +645,7 @@ function NumbersField(props: {
       {note !== null && (
         <div className={note.kind === 'failure' ? css.warning : css.dim} role="status">{note.text}</div>
       )}
-    </Field>
+    </div>
   )
 }
 
@@ -487,33 +666,164 @@ function labelOf(field: EvalPlanNumbersResult['changes'][number]['field']): Eval
 function ScaleSection(props: {
   row: EvalExperimentRow
   numbers: PlanNumbersNow | null
+  /** The review's estimate; null (or absent) is «无估算». */
+  estimate: EvalPlanEstimate | null
   frozen: boolean
   onSetNumbers: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
   t: LabViewProps['t']
 }) {
-  const { row, numbers, frozen, onSetNumbers, t } = props
+  const { row, numbers, estimate, frozen, onSetNumbers, t } = props
+  const [repsBusy, setRepsBusy] = useState(false)
+  const [repsNote, setRepsNote] = useState<{ kind: 'receipt' | 'failure'; text: string } | null>(null)
   // A STARTED experiment knows how many cells it really has; the product is
   // only the shape a plan implies, and a subset run (`--only` / `--max-cells`)
   // legitimately has fewer. Prefer the fact over the arithmetic.
   const cells = row.progress?.total ?? row.items * row.conditions.length * row.reps
+  // v5 · plan: 每组次数 as a 1 / 3 / 5 seg while the plan is editable; a plan
+  // that says some other number keeps it as one more option.
+  const reps = numbers?.reps ?? null
+  const repsEditable = numbers !== null && reps !== null && !frozen
+  const repOptions = [...new Set([1, 3, 5, ...(reps === null ? [] : [reps])])].sort((x, y) => x - y)
+  const setReps = (next: number): void => {
+    setRepsBusy(true)
+    setRepsNote(null)
+    void onSetNumbers({ reps: next }).then((answer) => {
+      setRepsBusy(false)
+      if (!answer.ok) {
+        setRepsNote({ kind: 'failure', text: answer.message })
+        return
+      }
+      // The receipt quotes the server's before → after, as NumbersField does.
+      const changes = answer.value.changes
+      setRepsNote({
+        kind: 'receipt',
+        text: changes.length === 0
+          ? t('design.numbers.unchanged')
+          : t('design.numbers.written', {
+            changes: changes.map(change => `${t(labelOf(change.field))} ${change.before} → ${change.after}`).join(' · '),
+          }),
+      })
+    })
+  }
   return (
     <Block title={t('design.scaleCost')}>
-      <div>
+      <div className={css.dim}>
         {t('overview.shapeValue', { items: row.items, conditions: row.conditions.length, reps: row.reps, cells })}
       </div>
-      {numbers !== null && <NumbersField now={numbers} frozen={frozen} onSave={onSetNumbers} t={t} />}
+      {repsNote !== null && (
+        <div className={repsNote.kind === 'failure' ? css.warning : css.dim} role="status">{repsNote.text}</div>
+      )}
+      {/* v5 · plan: one row, label over value — 每组次数 (a 1 / 3 / 5 seg while
+          the plan is editable), then the three numbers. Time and tokens are
+          the same groups' past answers to the same items, scaled by 每组次数
+          here so they follow the seg; with no such history they say 无估算
+          rather than a guess (T83 · phase 4). */}
+      <div className={css.bigNums}>
+        {repsEditable && (
+          <div className={css.bigNum}>
+            <span>{t('design.scale.reps')}</span>
+            <Seg
+              label={t('design.scale.reps')}
+              value={reps}
+              disabled={repsBusy}
+              onChange={setReps}
+              options={repOptions.map(value => ({ value, label: String(value) }))}
+            />
+          </div>
+        )}
+        <div className={css.bigNum}><span>{t('design.scale.answers')}</span><b>{cells}</b></div>
+        <div className={css.bigNum}>
+          <span>{t('design.scale.duration')}</span>
+          {estimate?.perRep.activeMs == null
+            ? <b data-none="">{t('design.scale.none')}</b>
+            : <b>{approxDuration(estimate.perRep.activeMs * (reps ?? row.reps), isFloor(estimate, 'activeMs'), t)}</b>}
+        </div>
+        <div className={css.bigNum}>
+          <span>{t('design.scale.tokens')}</span>
+          {estimate?.perRep.outputTokens == null
+            ? <b data-none="">{t('design.scale.none')}</b>
+            : (
+              <b>
+                {t(isFloor(estimate, 'outputTokens') ? 'design.scale.atLeast' : 'design.scale.approx', {
+                  value: compactCount(Math.round(estimate.perRep.outputTokens * (reps ?? row.reps))),
+                })}
+              </b>
+            )}
+        </div>
+      </div>
+      <div className={css.scaleNote}>{estimate == null ? t('design.scale.noneNote') : estimateSource(estimate, t)}</div>
     </Block>
   )
 }
+
+/** A sum over only some of the plan's items is a floor: «≥», never «≈». */
+function isFloor(estimate: EvalPlanEstimate, field: 'activeMs' | 'outputTokens'): boolean {
+  return estimate.covered[field].length < estimate.items.length
+}
+
+/** 「≈ 10 分钟」 (or 「≥」 for a floor): whole minutes under an hour, the two-unit phrase past it. */
+function approxDuration(ms: number, floor: boolean, t: LabViewProps['t']): string {
+  const minutes = Math.max(1, Math.round(ms / 60_000))
+  if (minutes < 60) return t(floor ? 'design.scale.atLeastMinutes' : 'design.scale.approxMinutes', { m: minutes })
+  const parts = durationParts(minutes * 60_000)
+  return t(floor ? 'design.scale.atLeast' : 'design.scale.approx', { value: parts === null ? String(minutes) : t(parts.key, parts.params) })
+}
+
+/** How many past answers are listed one by one before the line only counts them. */
+const SAMPLES_LISTED = 4
+
+/**
+ * v5's footnote: 「估算来自这两个对比组过去在 P0 上的 2 次作答（4 分 14 秒 /
+ * 4 分 34 秒，25.1k / 31.0k）」 — which groups, which items, how many answers,
+ * and the answers themselves while there are few enough to read.
+ */
+function estimateSource(estimate: EvalPlanEstimate, t: LabViewProps['t']): string {
+  // Partial coverage names what the floor covers and what it leaves out —
+  // 「只含 P0（2 次作答）；F2、F3 没有过往作答，无估算」.
+  const covered = estimate.covered.activeMs.length > 0 ? estimate.covered.activeMs : estimate.covered.outputTokens
+  if (covered.length < estimate.items.length) {
+    const missing = estimate.items.filter(item => !covered.includes(item))
+    const someAnswered = missing.some(item => estimate.samples.some(sample => sample.task === item))
+    return t(someAnswered ? 'design.scale.partialSome' : 'design.scale.partial', {
+      covered: covered.map(item => t('design.scale.coveredItem', {
+        item, n: estimate.samples.filter(sample => sample.task === item).length,
+      })).join(t('design.scale.itemJoin')),
+      missing: missing.join(t('design.scale.itemJoin')),
+    })
+  }
+  const groups = new Set(estimate.samples.map(sample => sample.condition)).size
+  const tasks = [...new Set(estimate.samples.map(sample => sample.task))]
+  const items = tasks.length <= 3 ? tasks.join(t('design.scale.itemJoin')) : t('design.scale.itemsCount', { n: tasks.length })
+  const lead = t('design.scale.from', {
+    who: groups === 1 ? t('design.scale.fromOne') : t('design.scale.fromMany', { n: groups }),
+    items,
+    n: estimate.samples.length,
+  })
+  if (estimate.samples.length > SAMPLES_LISTED) return lead
+  const times = estimate.samples.map((sample) => {
+    const parts = durationParts(sample.activeMs)
+    return parts === null ? '—' : t(parts.key, parts.params)
+  }).join(' / ')
+  const tokens = estimate.samples.map(sample => (sample.outputTokens === null ? '—' : compactCount(sample.outputTokens))).join(' / ')
+  return t('design.scale.fromDetail', { lead, times, tokens })
+}
+
+const REPS_ONLY: ReadonlySet<keyof PlanNumbersNow> = new Set(['reps'])
 
 /** ③ Everything a reader needs once and then never again. Folded by default. */
 function AdvancedSection(props: {
   row: EvalExperimentRow
   review: EvalPlanReview | null
   detail: EvalExperimentDetail | null
+  /** The plan's editable numbers (T74), or null when the plan has none to edit. */
+  numbers: PlanNumbersNow | null
+  frozen: boolean
+  onSetNumbers: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
+  /** The 保留单元 debugging switch; null once a run started (nothing left to keep). */
+  keepUnits: { on: boolean; set: (keep: boolean) => void } | null
   t: LabViewProps['t']
 }) {
-  const { row, review, detail, t } = props
+  const { row, review, detail, numbers, frozen, onSetNumbers, keepUnits, t } = props
   const digest = review?.digest ?? null
   const meta = detail?.meta ?? null
   return (
@@ -521,6 +831,30 @@ function AdvancedSection(props: {
       <summary className={css.arrangeSummary}>{t('design.advanced')}</summary>
       <div className={css.arrangeBody}>
         <div className={css.dim}>{t('design.advancedHint')}</div>
+        {/* 每格预算 and 判官采样 (T83 · design): numbers a reviewer rarely
+            touches, so they sit here; 每组次数 stays the 1 / 3 / 5 seg above
+            while it can change. */}
+        {numbers !== null && (
+          <NumbersField
+            now={numbers}
+            frozen={frozen}
+            onSave={onSetNumbers}
+            skip={!frozen && numbers.reps !== null ? REPS_ONLY : undefined}
+            t={t}
+          />
+        )}
+        {/* The debugging switch, and it is OFF unless someone ticks it. Left
+            on by default it would be T33b's shape again: every cell's
+            container survives the run. The hint under it says what it costs. */}
+        {keepUnits !== null && (
+          <>
+            <label className={css.guardedItem}>
+              <input type="checkbox" checked={keepUnits.on} onChange={(e) => { keepUnits.set(e.target.checked) }} />
+              <span>{t('review.keepUnits')}</span>
+            </label>
+            {keepUnits.on && <div className={css.notice}>{t('review.keepUnitsHint')}</div>}
+          </>
+        )}
         {digest !== null && (
           <>
             <Field label={t('review.order')}>
@@ -537,7 +871,7 @@ function AdvancedSection(props: {
             <Field label={t('review.retry')}>
               {digest.retryInfrastructure === null ? t('review.retryDefault') : String(digest.retryInfrastructure)}
             </Field>
-            <Field label={t('review.items')}><span className={css.mono}>{listOrDash(digest.items)}</span></Field>
+            <Field label={t('review.items')}>{listOrDash(digest.items)}</Field>
             <Field label={t('review.exports')}>
               <span className={css.mono}>{digest.exports ?? t('review.exportsDefault')}</span>
             </Field>
@@ -590,7 +924,7 @@ function AdvancedSection(props: {
         )}
         {detail?.job != null && (
           <Field label={t('overview.job')}>
-            <span className={css.mono}>{detail.job.jobId}</span>
+            <span>{detail.job.jobId}</span>
             <span className={css.dim}> · {detail.job.status}</span>
             {detail.job.detail !== null && (
               <Detail summary={t('error.details')}>
@@ -644,7 +978,6 @@ export function DesignPage(props: {
   /** The 保留单元 debugging switch, kept with the rest of the advanced settings. */
   keepUnits: boolean
   onKeepUnits: (keep: boolean) => void
-  onSendBack: () => void
   onRecheck: () => void
   onPick: (id: string) => void
   onProvision: (row: EvalConditionRow) => void
@@ -661,10 +994,21 @@ export function DesignPage(props: {
     row, detail, review, reviewLoading, reviewError,
     conditions, conditionsLoading, conditionsError, conditionBusy, provision, conditionAction, endpointEditing,
     pair, diff, diffError, sentBack, started, output, outputError, refusal, approveError,
-    keepUnits, onKeepUnits, onSendBack, onRecheck, onPick, onProvision, onEditEndpoint, onSetEndpoint,
+    keepUnits, onKeepUnits, onRecheck, onPick, onProvision, onEditEndpoint, onSetEndpoint,
     onAddGroup, onSetNumbers, onFix, t,
   } = props
   const digest = review?.digest ?? null
+  const numbers: PlanNumbersNow | null = digest === null || row.planPath === null || row.experimentId === null
+    ? null
+    : {
+      reps: digest.reps,
+      activeMinutes: digest.budget?.activeMinutes ?? null,
+      turns: digest.budget?.turns ?? null,
+      judgeSamples: digest.judge.samples,
+    }
+  // The plan a run was started from IS that run's record: past the start, the
+  // numbers are text and the reason is said beside them.
+  const frozen = row.runId !== null || started !== null
   // The grid's columns are the PLAYERS; the table and the badge also carry the
   // judges, because a judge that cannot run stops the experiment just as a
   // player does and it is declared the same way.
@@ -758,7 +1102,7 @@ export function DesignPage(props: {
           <div className={css.notice}>
             <div>{t('design.single')}</div>
             <div className={css.actions}>
-              <Button size="sm" onClick={onAddGroup}>{t('design.addGroup')}</Button>
+              <Button variant="outline" size="sm" onClick={onAddGroup}>{t('design.addGroup')}</Button>
               <span className={css.dim}>{t('design.addGroupHint')}</span>
             </div>
           </div>
@@ -768,7 +1112,7 @@ export function DesignPage(props: {
       <Block title={t('design.items')} meta={<span className={css.mono}>{snapshotCell(row)}</span>}>
         {digest === null || digest.items.length === 0
           ? <div className={css.dim}>{t('new.itemsEmpty')}</div>
-          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} t={t} />}
+          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} facts={review?.items ?? null} t={t} />}
       </Block>
 
       {/* No plan review yet: the row still names its judges, and that is
@@ -782,87 +1126,63 @@ export function DesignPage(props: {
         />
       </Block>
 
-      <ScaleSection
-        row={row}
-        numbers={digest === null || row.planPath === null || row.experimentId === null
-          ? null
-          : {
-            reps: digest.reps,
-            activeMinutes: digest.budget?.activeMinutes ?? null,
-            turns: digest.budget?.turns ?? null,
-            judgeSamples: digest.judge.samples,
-          }}
-        // The plan a run was started from IS that run's record: past the
-        // start, the numbers are text and the reason is said beside them.
-        frozen={row.runId !== null || started !== null}
-        onSetNumbers={onSetNumbers}
+      <ScaleSection row={row} numbers={numbers} estimate={review?.estimate ?? null} frozen={frozen} onSetNumbers={onSetNumbers} t={t} />
+
+      <ReadinessChecklist
+        blockers={blockers}
+        reminders={reminders}
+        ready={readyRows}
+        lines={checklistShown}
+        forRerun={row.status === 'stalled'}
+        onFix={onFix}
+        onRecheck={onRecheck}
         t={t}
       />
-
-      <Block title={t('design.ready')}>
-        <ReadyBadge rows={readyRows} onRecheck={onRecheck} atStart={row.status === 'stalled'} t={t} />
-        {/* The list row already carries validate's COUNTS, so the page can
-            answer «can this be approved» before the review walk lands. Once it
-            has landed the lines below say it better, and saying it twice would
-            read as two different checks. */}
-        {review === null && row.validation !== null && (
-          <Field label={t('overview.validation')}>
-            {row.validation.ok
-              ? t('overview.validationOk')
-              : t('overview.validationFailed', { errors: row.validation.errors, warnings: row.validation.warnings })}
-          </Field>
-        )}
-        {checklistShown && (blockers.length > 0 || reminders.length > 0) && (
-          <ReadinessChecklist
-            blockers={blockers}
-            reminders={reminders}
-            forRerun={row.status === 'stalled'}
-            onFix={onFix}
-            t={t}
-          />
-        )}
-        {passing.length > 0 && (
-          <Detail summary={t('review.checks')}>
-            {passing.map((check, index) => (
-              <CheckLine key={`ok:${check.code}:${String(index)}`} check={check} t={t} />
-            ))}
-          </Detail>
-        )}
-        {review !== null && review.checks.length === 0 && (
-          <div className={css.dim}>{t('review.checksNone')}</div>
-        )}
-      </Block>
+      {/* The list row already carries validate's COUNTS, so the page can
+          answer «can this be approved» before the review walk lands. Once it
+          has landed the lines above say it better. */}
+      {review === null && row.validation !== null && (
+        <Field label={t('overview.validation')}>
+          {row.validation.ok
+            ? t('overview.validationOk')
+            : t('overview.validationFailed', { errors: row.validation.errors, warnings: row.validation.warnings })}
+        </Field>
+      )}
+      {review !== null && review.checks.length === 0 && (
+        <div className={css.dim}>{t('review.checksNone')}</div>
+      )}
 
       {digest !== null && digest.items.length > 0 && (
-        <Detail summary={t('design.gridFold', { cells: digest.items.length * groups.length * row.reps })}>
+        <Fold title={t('design.gridFold', { cells: digest.items.length * groups.length * row.reps })}>
           <div className={css.dim}>{t('design.gridHint')}</div>
           <RunGrid
             columns={columns}
             rows={plannedRows(digest.items, groups, row.reps)}
             t={t}
           />
-        </Detail>
+        </Fold>
       )}
-
-      <AdvancedSection row={row} review={review} detail={detail} t={t} />
-
-      {/* The reviewer's second gesture. The first — 批准并启动 — is the stage
-          bar's one primary action, where ui-spec §五 v2 puts it. */}
-      {row.runId === null && started === null && (
-        <div className={css.actions}>
-          <Button size="sm" onClick={onSendBack}>{t('review.sendBack')}</Button>
-          {/* The debugging switch, and it is OFF unless someone ticks it. Left
-              on by default it would be T33b's shape again: every cell's
-              container survives the run. The hint under it says what it costs. */}
-          <label className={css.guardedItem}>
-            <input type="checkbox" checked={keepUnits} onChange={(e) => { onKeepUnits(e.target.checked) }} />
-            <span>{t('review.keepUnits')}</span>
-          </label>
-        </div>
+      {/* v5 · ready: 校验原文 is the closing fold — the passing lines, which
+          a clean plan never needs to read. */}
+      {passing.length > 0 && (
+        <Fold title={t('review.checks')} aside={passing.length}>
+          {passing.map((check, index) => (
+            <CheckLine key={`ok:${check.code}:${String(index)}`} check={check} t={t} />
+          ))}
+        </Fold>
       )}
-      {row.runId === null && started === null && keepUnits && (
-        <div className={css.notice}>{t('review.keepUnitsHint')}</div>
-      )}
+      {/* 让 agent 改… and 批准并启动 are the stage bar's (v5 · next); the
+          keep-containers switch is an advanced setting. */}
+      <AdvancedSection
+        row={row}
+        review={review}
+        detail={detail}
+        numbers={numbers}
+        frozen={frozen}
+        onSetNumbers={onSetNumbers}
+        keepUnits={frozen ? null : { on: keepUnits, set: onKeepUnits }}
+        t={t}
+      />
 
       {approveError !== null && (
         <ErrorState what={t('review.approveError')} message={approveError} compact t={t} />

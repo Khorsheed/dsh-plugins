@@ -90,7 +90,7 @@ export function SkeletonForm(props: {
       <div className={css.skeletonHint}>{t('skeleton.commitHint')}</div>
       <div className={css.bindFormActions}>
         <Button type="submit" variant="primary" size="sm" disabled={!ready}>{t('form.submit')}</Button>
-        <Button type="button" size="sm" onClick={onCancel}>{t('form.cancel')}</Button>
+        <Button variant="outline" type="button" size="sm" onClick={onCancel}>{t('form.cancel')}</Button>
       </div>
       {notice !== null && <ErrorState what={t('notice.failed')} message={notice} compact t={t} />}
     </form>

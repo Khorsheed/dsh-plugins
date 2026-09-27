@@ -24,6 +24,63 @@
   font-weight: 600;
 }
 
+/* The scoring face's one sentence, beside the title (v5 · h5s). */
+.titleAside {
+  margin-left: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.barRight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* v5 · subtabs: a text tab row with an underline on the open one. */
+.tabs {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.tab {
+  padding: 4px 0 7px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+  box-shadow: inset 0 -2px 0 var(--dsw-alias-label-primary);
+}
+
+.tab:focus-visible {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.tabEmpty {
+  padding: 24px 16px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+}
+
 .row {
   display: flex;
   flex-direction: column;
@@ -47,7 +104,7 @@
 
 .cell {
   min-width: 0;
-  padding: 8px 10px;
+  padding: 8px 14px;
   border-left: 1px solid var(--dsw-alias-border-l2);
   border-right: 1px solid var(--dsw-alias-border-l2);
   background: transparent;
@@ -55,14 +112,25 @@
 
 .cell[data-part='head'] {
   border-top: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px 8px 0 0;
-  background: var(--dsw-alias-bg-l2);
+  border-radius: 12px 12px 0 0;
+  padding: 10px 14px;
+  background: var(--dsh-eval-surface-2, var(--dsw-alias-markdown-code-block-banner));
 }
 
 /* The column the entry named: the lab row's hairline (T76), on the column. */
 .cell[data-located='true'] {
   border-left-color: var(--dsw-alias-state-business-primary);
   border-right-color: var(--dsw-alias-state-business-primary);
+}
+
+.cell[data-part='foot'] {
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0 0 12px 12px;
+}
+
+.cell[data-located='true'][data-part='foot'] {
+  border-bottom-color: var(--dsw-alias-state-business-primary);
 }
 
 .cell[data-located='true'][data-part='head'] {
@@ -77,13 +145,103 @@
 }
 
 .name {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--dsw-alias-label-primary);
+  font-size: 15px;
   font-weight: 600;
+}
+
+/* v5 · 看作答 on the scoring card's head: a quiet link at the right end. */
+.headLink {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-state-business-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.headLink:hover {
+  text-decoration: underline;
+}
+
+/* v5 · 提交的报告: the column's files, small, at the head's right end. */
+.headFiles {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A long report cut at about 16 lines, fading into the column (T83). */
+.clamp {
+  position: relative;
+}
+
+.clampBody {
+  overflow: hidden;
+}
+
+.clamp[data-clamped='true'] .clampBody {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+}
+
+.clampToggle {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-state-business-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+/* T83 · answer: a stage file inside a column is the column's text, not a
+   code block inside a card — v5 prints it straight into the column at
+   reading size (headings 14–16px, not the reading pane's 21px). The file
+   name stays as one quiet line above it. */
+.cell .doc {
+  margin: 0 0 8px;
+  border-radius: 0;
+  background: transparent;
+}
+
+.cell .docBanner {
+  padding: 0 0 4px;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.cell .docBody {
+  padding: 0;
+  --dsw-font-markdown-base: 400 13px/22px var(--dsw-font-family);
+  --dsw-font-markdown-base-strong: 600 13px/22px var(--dsw-font-family);
+  --dsw-font-markdown-base-italic: italic 400 13px/22px var(--dsw-font-family);
+  --dsw-font-markdown-h1: 600 16px/24px var(--dsw-font-family);
+  --dsw-font-markdown-h2: 600 15px/23px var(--dsw-font-family);
+  --dsw-font-markdown-h3: 600 14px/22px var(--dsw-font-family);
+  --dsw-font-markdown-h4: 600 13px/22px var(--dsw-font-family);
+  --dsw-font-markdown-table: 12px/20px var(--dsw-font-family);
+  --dsw-font-markdown-table-head: 500 12px/20px var(--dsw-font-family);
+  /* The host code block's 复制 strip, merged into its block: the banner
+     takes the block's own fill instead of a second tone. Tokens only — the
+     strip's padding is the host component's and stays (T83 gap list). */
+  --dsw-alias-markdown-code-block-banner: var(--dsw-alias-markdown-code-block);
 }
 
 .stage + .stage {

@@ -542,6 +542,10 @@ describe('the conclusion card answers the plan\'s question (T74)', () => {
     expect(coverage.closest('li')?.getAttribute('data-level')).toBe('block')
     expect(within(card).getByText('report.reason.fewTasks {"k":1}')).toBeTruthy()
     expect(within(card).getByText('report.reason.multi {"fields":"model.declared、scope"}')).toBeTruthy()
+    // The side the gap names is not comparable: its number stays, greyed.
+    const greyed = [...card.querySelectorAll('[data-na]')].map(node => node.textContent)
+    expect(greyed).toHaveLength(1)
+    expect(greyed[0]).toContain('cond-b')
     // The report's own sentence stays one hover away.
     expect(within(card).getByTitle('n = 2 < 3，不排名')).toBeTruthy()
     // At most three next steps, the rejudge first.
@@ -1085,21 +1089,13 @@ describe('the conclusion card (T72 §6)', () => {
     expect(screen.getByRole('button', { name: 'page.runs' }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('the validity line counts the checks, and clicking it opens the collapsed audit', async () => {
+  it('the card carries no validity line: the audit fold summary says each check (T83 · result)', async () => {
     const h = makeHarness(BLOCKED)
     await openReport(h)
     const card = await screen.findByRole('region', { name: 'report.conclusion' })
-    const validity = within(card).getByRole('button', { name: /report\.validitySome/ })
+    expect(within(card).queryByRole('button', { name: /report\.validity/ })).toBeNull()
     const audit = document.getElementById('eval-report-audit') as HTMLDetailsElement
     expect(audit.open).toBe(false)
-    fireEvent.click(validity)
-    expect(audit.open).toBe(true)
-  })
-
-  it('all checks passing reads ✓', async () => {
-    const h = makeHarness()
-    await openReport(h)
-    const card = await screen.findByRole('region', { name: 'report.conclusion' })
-    expect(within(card).getByText('report.validityAll {"passed":4,"total":4}')).toBeTruthy()
+    expect(audit.querySelector('summary [data-bad]')).not.toBeNull()
   })
 })
