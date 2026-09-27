@@ -3435,8 +3435,10 @@ tr:last-child > .reportTd {
   line-height: 18px;
 }
 
-.stageScope[data-partial] {
+.stageScope[data-partial]::before {
+  margin-right: 4px;
   color: var(--dsh-eval-warn-ink);
+  content: '⚠︎';
 }
 
 /* T84 · 原始文件: plan.json read in place. */

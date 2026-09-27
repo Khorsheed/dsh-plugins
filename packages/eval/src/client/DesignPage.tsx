@@ -535,14 +535,18 @@ function ItemRow(props: {
         <td>{item.title ?? <span className={css.dim}>—</span>}</td>
         {stagesColumn && (
           <td
-            className={partialStages ? css.warnInk : undefined}
+            className={css.num}
             title={phases.length === 0
               ? undefined
               : partialStages
                 ? t('design.item.stagesPartial', { run: running.join('、'), skip: phases.filter(stage => !running.includes(stage)).join('、') })
                 : t('design.item.stagesAll', { run: running.join('、') })}
           >
-            {phases.length === 0 ? <span className={css.dim}>—</span> : `${running.length} / ${phases.length}`}
+            {phases.length === 0
+              ? <span className={css.dim}>—</span>
+              : partialStages
+                ? <span className={css.warnInk}>{`${running.length} / ${phases.length}`} <span aria-hidden="true">⚠︎</span></span>
+                : `${running.length} / ${phases.length}`}
           </td>
         )}
         <td><ItemHow item={item} t={t} /></td>
