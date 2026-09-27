@@ -273,18 +273,30 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const htmlIframeRef = useRef<HTMLIFrameElement | null>(null)
   const htmlFrameRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  // The change-history face is a SECOND scrollport in the same pane, so it
+  // keeps an offset of its own: toggling 改动 ⇄ 内容 must not trade one face's
+  // position for the other's.
+  const diffScrollRef = useRef<HTMLDivElement | null>(null)
   const [slow, setSlow] = useState(false)
   const slowTimer = useRef<number | null>(null)
 
   const memKey = scrollKey(sessionId ?? '', path)
+  const diffMemKey = `${memKey}\u0000diff`
   const captureScroll = (): void => {
     const el = scrollRef.current
     if (el !== null) scrollMemory.set(memKey, el.scrollTop)
+  }
+  const captureDiffScroll = (): void => {
+    const el = diffScrollRef.current
+    if (el !== null) scrollMemory.set(diffMemKey, el.scrollTop)
   }
 
   // All hooks run unconditionally before the empty-path early return so the
   // hook order stays stable across `path` flipping '' → file (React #310).
   const html = path !== '' && isHtmlPath(path)
+  // Whether the change-history face is the one on screen — props only, so the
+  // scroll-restore hook below can key on it before the early return.
+  const diffFace = view === 'diff' && diffView !== undefined
   const htmlScripted = read?.kind === 'text' && read.htmlScripted === true && html
   const content = read?.kind === 'text' ? read.content : null
 
@@ -353,6 +365,14 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
     const saved = scrollMemory.get(memKey)
     if (saved !== undefined) el.scrollTop = saved
   }, [memKey, read])
+  // The same restore for the change-history scroller, keyed separately (it
+  // re-runs when the face comes back or a fresh read/step lands).
+  useEffect(() => {
+    const el = diffScrollRef.current
+    if (el === null) return
+    const saved = scrollMemory.get(diffMemKey)
+    if (saved !== undefined) el.scrollTop = saved
+  }, [diffMemKey, diffFace, read])
 
   if (path === '') {
     return <div className={css.placeholder}>{t('detail.noSelection')}</div>
@@ -398,7 +418,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   // one IDE; otherwise it is the plain single button every surface had.
   const ideChoices = chrome?.ideChoices ?? []
   const splitIde = chrome?.openIDE !== undefined && ideChoices.length > 1 && chrome.onIdeChoice !== undefined
-  const diffActive = showDiffToggle && view === 'diff'
+  const diffActive = diffFace && onViewChange !== undefined
 
   return (
     <div className={css.root}>
@@ -627,9 +647,13 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
       {html && slow && htmlMode !== 'source' && content !== null && (
         <div className={css.notice}>{t('preview.slowHint')}</div>
       )}
-      <div className={css.body}>
+      <div className={`${css.body} ${embedded ? css.bodyEmbedded : ''}`}>
         {diffActive
-          ? diffView
+          ? (
+            <div className={css.diffScroll} ref={diffScrollRef} onScroll={captureDiffScroll}>
+              {diffView}
+            </div>
+          )
           : loading
             ? <div className={css.placeholder}>{t('state.loading')}</div>
             : error !== null

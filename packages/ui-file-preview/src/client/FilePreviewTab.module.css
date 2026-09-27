@@ -121,43 +121,33 @@
 
 
 
-.historyScroll {
-  /* Same reading-size alignment as the pane (see FilePreviewPane.module.css). */
-  --dsw-font-markdown-code-block: var(--dsh-content-font-size-secondary, 13px)/1.6 var(--dsw-font-mono, ui-monospace, monospace);
-  flex: 1;
-  min-height: 0;
-  padding: 10px 12px;
-  overflow: auto;
-}
-
-/* The changes-tab step control: one pill grouping ◀ position ▶ (the arrows
-   never separate — a lone trailing arrow reads as decoration, not a button),
-   clamped at both ends of the change chain. */
+/* The change-history step control: one quiet line grouping ‹ position › (the
+   arrows never separate — a lone trailing arrow reads as decoration, not a
+   button), clamped at both ends of the change chain. The pane's diff face now
+   supplies the inset and the scrollport (the kernel's .diffScroll), so the
+   control carries no surface of its own — the diff card below is the face's
+   only card, and a second bordered pill above it read as double chrome. */
 .stepper {
-  display: inline-flex;
-  flex: none;
+  display: flex;
   align-items: center;
-  align-self: flex-start;
   gap: 2px;
-  margin-bottom: 8px;
-  padding: 2px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-base);
+  width: fit-content;
+  margin: 0 0 8px;
 }
 
 .stepButton {
   display: grid;
   flex: none;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: none;
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -167,14 +157,13 @@
 }
 
 .stepButton:disabled {
-  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.45;
   cursor: default;
 }
 
 .stepLabel {
-  flex: none;
   min-width: 0;
-  padding: 0 6px;
+  padding: 0 4px;
   overflow: hidden;
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);

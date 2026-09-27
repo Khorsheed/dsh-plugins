@@ -111,6 +111,20 @@
   flex: none;
 }
 
+/* The path row's trailing controls. The face switch (改动/内容) and the form
+   switch (预览/源码) answer two INDEPENDENT questions, so they must read as two
+   groups. This class was referenced in the JSX but never defined here, which
+   left the span unstyled: its inline-flex children then laid out in an inline
+   formatting context — no gap between the two groups, and baseline alignment
+   between boxes of different heights — so four buttons read as one accidental
+   cluster. */
+.viewControls {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Preview/source segmented control for the content view. */
 .seg {
   display: inline-flex;
@@ -145,11 +159,13 @@
   gap: 2px;
 }
 
+/* The face switch keeps the .segButton metrics (24px tall, 0 10px) so the two
+   groups in the row share one rhythm instead of sitting at 22 vs 24px. */
 .viewButton {
-  height: 22px;
-  padding: 0 8px;
+  height: 24px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
@@ -422,6 +438,24 @@
   padding: 10px var(--pane-inset);
   overflow: auto;
   scrollbar-gutter: stable;
+}
+
+/* The change-history face's body. The diff slot used to be dropped straight
+   into .body — no inset, no scrollport — so a consumer's history view rode the
+   pane's left edge (every other row sits on --pane-inset) and a diff taller
+   than the pane was clipped by .body's overflow with no way to scroll. It gets
+   the content face's body chrome; embedded panes keep padding 0, because there
+   the inset belongs to the consumer's own container. */
+.diffScroll {
+  flex: 1;
+  min-height: 0;
+  padding: 10px var(--pane-inset);
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.bodyEmbedded .diffScroll {
+  padding: 10px 0;
 }
 
 .previewScroll::-webkit-scrollbar {
