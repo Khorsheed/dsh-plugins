@@ -79,7 +79,7 @@ dsh-ankh-guard reconfigure --start "NEW CMD" --repo "<credential repo>" \
 
 ### preflight: the composition gate
 
-`preflight` 对重启将要 boot 的组合做完全一致的深度干跑：走与真实 launcher 相同的路径组装 profile 的全部 patch 层（bundle 层、用户层、overlay），在子进程里用同一个引擎 boot **整棵插件树**——每个插件的 apply 都真实执行，因为 apply 即激活——同时用 overlay 把 webserver 端口钉到 0（操作系统分配，绝不与在跑实例抢端口），检查每个已注册 client bundle 产物存在，然后 dispose（注册即 effect，dispose 即回滚这次干跑）。退出码即契约：
+`preflight` 对重启将要 boot 的组合做完全一致的深度干跑：走与真实 launcher 相同的路径组装 profile 的全部 patch 层（bundle 层、用户层、overlay），在子进程里用同一个引擎 boot **整棵插件树**——每个插件的 apply 都真实执行，因为 apply 即激活——同时用 overlay 把 webserver 端口钉到 0（操作系统分配，绝不与在跑实例抢端口），检查每个已注册 client bundle 产物存在，并回读 agent preset 注册表的 `broken` 诊断（preset 行挂在注册表的 standing scope 上而不是 profile 根，**boot 干净不代表 preset 可用**：坏 preset 的选择器卡片显示「加载失败」、其会话 resume 报 `never started`——3080 在 2026-09-28 撞过一次，干跑一路全绿），然后 dispose（注册即 effect，dispose 即回滚这次干跑）。退出码即契约：
 
 - `0`——组合干净通过。
 - `1`——组合结论：重启将要 boot 的树是坏的；输出会指明坏在哪一层。
