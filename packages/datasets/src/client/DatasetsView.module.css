@@ -931,6 +931,7 @@
 }
 
 .usedByMore {
+  margin-left: 0.35em;
   padding: 0;
   border: 0;
   background: none;
