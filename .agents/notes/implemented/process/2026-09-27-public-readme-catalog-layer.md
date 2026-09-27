@@ -34,6 +34,8 @@ The owner decided the public shape up front: dsh-plugins reads as a systematic c
 
 **Quantified badges (npm downloads, stars).** Rejected by the owner: numbers that need maintenance buys nothing a catalog row doesn't already say.
 
+**Meta-bundle each pack so the 0.1.7-rc.2 "Add plugin" dialog can install it.** Rejected by the owner: with a meta-bundle the members become transitive npm dependencies of the bundle package, so per-member uninstall is lost — `dsh plugin remove` and the manager page operate on the profile's direct dependencies only, and a member row could at best be disabled, never removed. Per-member removal is the pack's core promise ("the bundle is a starting point, not a lock-in"), and the dialog's single-package form cannot deliver it. The packs therefore stay profile-shaped with the script-based install; if the upstream host later grows a profile-type install entry, the packs adopt it and the READMEs gain the one-shot path.
+
 ## Consequences
 
 - The root README's factual surface is now: one count sentence (43/33, restated from the generated docs), the member-count table, and category tables whose rows are package-directory links. Everything else regenerable is a link.
