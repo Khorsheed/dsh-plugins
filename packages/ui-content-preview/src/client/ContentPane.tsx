@@ -10,7 +10,9 @@
  * control), then the body: HTML through the tiered sandbox, markdown / JSON /
  * CSV rendered through the official primitives inside shared block chrome,
  * everything else as a highlighted code block, and images / binary / missing /
- * too-large / error through their designed placeholders.
+ * too-large / error through their designed placeholders. The back control hangs
+ * inside the pane's left inset rather than in front of the basename, so the
+ * basename and the path line below it share one left edge.
  *
  * Decisions this pane froze (see proposal preview-kernel §能力清单):
  *
