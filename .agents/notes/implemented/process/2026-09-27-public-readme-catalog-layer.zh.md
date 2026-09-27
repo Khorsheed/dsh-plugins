@@ -45,7 +45,7 @@ Status: implemented
 - 根 README 的事实面收敛为:一句计数(43/33,转述自生成文档)、成员数对比表、行内容为包目录链接的类目表。其余一切可再生的内容都是链接。
 - `profiles/web-dev/docs/screenshots/` 新建并跟踪五张图;下一次 `sync-mirror profile web-dev` 会带过去。basic 素材池原样不动,仍是 npm 嵌入图的宿主。
 - 两份整合包 README 的配对记录已重录(`verify-translation-pairing --write`);根 README 这一对按设计没有 sidecar(配对 glob 只覆盖 `packages/`、`profiles/`、`.agents/`、`docs/`)。
-- **本次改动之外的已知后续:** 整合包的依赖区间落后于当前发布线——basic 钉 `^0.2.0` 而成员已发到 0.3.x;web-dev 钉 `^0.1.x`,而 local-agent 家族在 npm 上只有 `0.1.0-rc.7` 预发布,裸 `^0.1.0` 并不容纳它。在宣布 dsh-web-dev 可装之前,区间(或家族发布线)需要一轮刷新;README 现在陈述的是 npm 已发布状态,让这句陈述端到端成立是发版工作,不是文案。
+- ~~**本次改动之外的已知后续:**~~ **同日已解决**:两个整合包的依赖区间都已对齐到成员最新发布线(basic 按成员分别钉 `^0.3.2` / `^0.2.3` / `^0.1.x`;web-dev 的 local-agent 家族钉 `^0.1.0-rc.1` 以容纳预发布线)。web-dev 的 README 也已改成与 basic 相同的列表优先形态(可复制包名的插件列表 → 带元包详情页截图的功能展示 → preset → 折叠后置的安装指南),家族安装路径写明 `@khorsheed/dsh-bundle-local-agent`——已对官方 `dsh-experimental-agent-team-profile` 核实过同一薄元包形态(bundle 依赖把成员传递带入;每个组件行仍可单独禁用)。
 
 ## Testing
 

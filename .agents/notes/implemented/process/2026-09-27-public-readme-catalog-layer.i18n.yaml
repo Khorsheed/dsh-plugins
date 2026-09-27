@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-27-public-readme-catalog-layer.md
-.agents/notes/implemented/process/2026-09-27-public-readme-catalog-layer.md: 915284fb34e3725027dc1b3e9d4607b78e08ed7a
-.agents/notes/implemented/process/2026-09-27-public-readme-catalog-layer.zh.md: 2bff1ecdfad0159a426928c9ca96bcf20039d2f1
+.agents/notes/implemented/process/2026-09-27-public-readme-catalog-layer.md: 1a22e3f293bd2ed386d1945188e6841ea976e992
+.agents/notes/implemented/process/2026-09-27-public-readme-catalog-layer.zh.md: fce76fb262c1b95bbe4279fd315e06eb349b0405
