@@ -868,7 +868,7 @@ describe('runPlan — the derived rubric weight table (T24)', () => {
     expect(table.tasks).toEqual(['P0-placeholder'])
     expect(table.criteria.map(row => row['id'])).toEqual(['J1', 'J2', 'A2-1', 'H1', 'N1'])
     expect(table.criteria.find(row => row['id'] === 'N1')).toEqual({
-      task: 'P0-placeholder', id: 'N1', weight: -2, negative: true, kind: 'objective', axis: 'E1',
+      task: 'P0-placeholder', id: 'N1', weight: -2, negative: true, kind: 'objective', axis: 'E1', stages: ['stage2'],
     })
     expect(table.criteria.find(row => row['id'] === 'J1')?.['negative']).toBe(false)
 

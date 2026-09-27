@@ -452,6 +452,12 @@ export interface EvalPlanQuestion {
 export interface EvalPlanReview {
   /** The plan document (absolute). */
   planPath: string
+  /**
+   * sha256 of the plan document's bytes as read for this review (T84); null
+   * when it could not be read. The page compares it across reviews to tell
+   * «the agent changed the plan» from «nothing moved yet».
+   */
+  planSha?: string | null
   schema: string
   /** True when validate found no ERROR. Warnings never block approval. */
   ok: boolean
@@ -486,14 +492,32 @@ export interface EvalPlanItemFacts {
   level: string | null
   /** How many stages the item uses (`phasesUsed`); 0 when it names none. */
   stages: number
+  /** The item's stage names (`phasesUsed`), in item order (T84). */
+  phases?: string[]
+  /**
+   * The item's stages this run executes — `phases` ∩ the plan's `stages`, in
+   * item order; null when the plan names no stages (every stage runs).
+   */
+  runStages?: string[] | null
   /** Whether some stage runs in a container (`runIn` non-empty). */
   container: boolean
-  /** Rubric leaves by kind; null when the grading layer has no readable rubric. */
+  /**
+   * Rubric leaves by kind, counting only the leaves in this run's stage scope
+   * (T84); null when the grading layer has no readable rubric.
+   */
   criteria: { total: number; objective: number; judge: number; human: number } | null
+  /** Leaves outside this run's stages — neither judged nor counted (T84). */
+  criteriaOutOfScope?: number
   /** Check scripts that would run for this item (its own plus the dataset's shared ones). */
   probes: number
-  /** Σ of the rubric's positive weights; null when no leaf carries a weight. */
+  /**
+   * Σ of the positive weights of the leaves in this run's stage scope (T84:
+   * out-of-scope leaves are not scored, so they are not in the full score
+   * either); null when no in-scope leaf carries a weight.
+   */
   fullScore: number | null
+  /** Σ of ALL the rubric's positive weights — the denominator a full-stage run would use. */
+  fullScoreAll?: number | null
   /** The player's task text (visible layer, capped); null when none could be read. */
   task: string | null
   /** The file the task text came from, item-relative. */

@@ -57,7 +57,7 @@ import { join } from 'node:path'
 import { renderSummaryMd } from './report-render.ts'
 import { bootstrapMeanCi, cohenKappa, fnv1a, mean, type BootstrapCi } from './stats.ts'
 import { jsonEquals, VERDICT_SCHEMA, validateJson } from './schema.ts'
-import { readRubricWeightTable, rubricWeightRows, RUBRIC_WEIGHTS_PATH, type RubricWeightRow } from './weights.ts'
+import { inStageScope, readRubricWeightTable, rubricWeightRows, RUBRIC_WEIGHTS_PATH, type RubricWeightRow } from './weights.ts'
 
 // --- public shapes -----------------------------------------------------------
 
@@ -339,6 +339,18 @@ export interface RubricPolarity {
   negative: number
   /** True when at least one row carries a numeric weight (the weighted score's precondition). */
   weighted: boolean
+  /**
+   * The run's stage scope (T84): the plan's `stages` as run.meta (or the
+   * table) recorded them; null when the bundle recorded none — every
+   * criterion is then scored.
+   */
+  planStages?: string[] | null
+  /**
+   * Criteria outside that scope, per task — dropped from the map, their
+   * verdicts (if any) neither scored nor counted. `criteria`/`negative`
+   * count the in-scope rows only.
+   */
+  outOfScope?: number
 }
 
 /**
@@ -1050,6 +1062,8 @@ interface CriterionFacts {
   kind: string | null
   /** Rubric document order, so the criteria table can print the rubric's own. */
   order: number
+  /** The stages the leaf judges (weights.ts `leafStages`); null/absent: every run. */
+  stages?: string[] | null
 }
 
 /** task → criterion → the rubric's scoring facts. */
@@ -1061,6 +1075,7 @@ function indexRows(rows: readonly RubricWeightRow[], sink: PolarityMap): void {
     if (!sink.has(row.task)) sink.set(row.task, new Map())
     sink.get(row.task)?.set(row.id, {
       weight: row.weight, negative: row.negative, axis: row.axis, kind: row.kind, order: order++,
+      stages: row.stages ?? null,
     })
   }
 }
@@ -1143,7 +1158,10 @@ async function rowsOfDatasetLayers(bundleDir: string): Promise<RubricWeightRow[]
  * fallback for a deliberately guarded export. Neither present → polarity
  * unknown, and the report says so rather than assuming everything positive.
  */
-async function readPolarity(bundleDir: string): Promise<{ map: PolarityMap; polarity: RubricPolarity }> {
+async function readPolarity(
+  bundleDir: string,
+  metaStages: string[] | null = null,
+): Promise<{ map: PolarityMap; polarity: RubricPolarity; outOfScope: Set<string> }> {
   const map: PolarityMap = new Map()
   let origin: string | null = null
   const derived = await readRubricWeightTable(bundleDir)
@@ -1157,6 +1175,20 @@ async function readPolarity(bundleDir: string): Promise<{ map: PolarityMap; pola
       origin = 'dataset/'
     }
   }
+  // The stage scope (T84): run.meta's `stages` first, the table's own
+  // `planStages` second; neither → every criterion is in scope (old bundles).
+  const planStagesRaw = metaStages ?? derived?.planStages ?? null
+  const planStages = planStagesRaw !== null && planStagesRaw.length > 0 ? planStagesRaw : null
+  const outOfScope = new Set<string>()
+  if (planStages !== null) {
+    for (const [task, byCriterion] of map) {
+      for (const [criterion, facts] of [...byCriterion]) {
+        if (inStageScope(facts.stages, planStages)) continue
+        outOfScope.add(scopeKey(task, criterion))
+        byCriterion.delete(criterion)
+      }
+    }
+  }
   let criteria = 0
   let negative = 0
   let weighted = false
@@ -1167,7 +1199,18 @@ async function readPolarity(bundleDir: string): Promise<{ map: PolarityMap; pola
       if (facts.weight !== null) weighted = true
     }
   }
-  return { map, polarity: { available: origin !== null, origin, criteria, negative, weighted } }
+  return {
+    map,
+    polarity: {
+      available: origin !== null, origin, criteria, negative, weighted,
+      ...(planStages !== null ? { planStages, outOfScope: outOfScope.size } : {}),
+    },
+    outOfScope,
+  }
+}
+
+function scopeKey(task: string, criterion: string): string {
+  return `${task}\u0000${criterion}`
 }
 
 // --- invariants --------------------------------------------------------------
@@ -2384,8 +2427,24 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
   const expectedNs = Array.isArray(meta['expectedNs'])
     ? meta['expectedNs'].filter((ns): ns is string => typeof ns === 'string' && ns.length > 0)
     : null
-  const { map: polarityMap, polarity } = await readPolarity(bundleDir)
+  const metaStages = Array.isArray(meta['stages'])
+    ? meta['stages'].filter((stage): stage is string => typeof stage === 'string' && stage.length > 0)
+    : null
+  const { map: polarityMap, polarity, outOfScope } = await readPolarity(bundleDir, metaStages)
   const weightsAvailable = polarity.weighted
+  // Out-of-scope criteria are neither scored nor counted (T84): a verdict a
+  // probe or judge wrote on one anyway — a stage this run never executed —
+  // leaves the cell before any table, score or merge reads it.
+  let droppedVerdicts = 0
+  if (outOfScope.size > 0) {
+    for (const cell of cells) {
+      if (cell.task === null) continue
+      const task = cell.task
+      const kept = cell.verdicts.filter(verdict => !outOfScope.has(scopeKey(task, verdict.criterion)))
+      droppedVerdicts += cell.verdicts.length - kept.length
+      cell.verdicts = kept
+    }
+  }
 
   const rows: ReportRow[] = []
   for (const cell of cells) {
@@ -2489,6 +2548,14 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
       + '**极性未知，计数按正向处理**；负向判据数 unknown，加权分留空')
   }
   if (polarity.available && !weightsAvailable) notes.push('权重表有极性但无 weight——加权分留空，只出得分判据数')
+  if (polarity.planStages !== null && polarity.planStages !== undefined) {
+    if (outOfScope.size > 0) {
+      notes.push(`本次只跑 ${polarity.planStages.join('、')}：${outOfScope.size} 条判据属于其他阶段，不计分、不计入满分`
+        + (droppedVerdicts > 0 ? `（其上 ${droppedVerdicts} 条判定已剔除）` : ''))
+    }
+  } else if (polarity.available) {
+    notes.push('bundle 未记录本次阶段范围（旧 run）——按全部判据计分')
+  }
   const ratioRows = rows.filter(row => row.ratio !== undefined).length
   if (ratioRows > 0) {
     notes.push(`${ratioRows} 条判定带 \`ratio\`（按比例给分，协议 §6.5）——按 passed/total 计分，不按布尔；同判据多样本取所给比例的均值`)

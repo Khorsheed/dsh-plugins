@@ -739,6 +739,7 @@ export class EvalService {
         datasetId: pin.set,
         commit: pin.commit,
         items: digest.items,
+        planStages: digest.stages,
       })
     } catch (error) {
       items = { items: [], notes: [`the dataset registration could not be read: ${error instanceof Error ? error.message : String(error)}`] }

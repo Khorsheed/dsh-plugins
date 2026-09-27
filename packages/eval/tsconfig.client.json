@@ -27,6 +27,7 @@
     "src/client/NewExperimentDialog.tsx",
     "src/client/ReportPage.tsx",
     "src/client/RunsPage.tsx",
+    "src/client/SendBack.tsx",
     "src/client/answer-view.ts",
     "src/client/contract.ts",
     "src/client/draft-card.ts",

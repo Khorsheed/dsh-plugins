@@ -3426,3 +3426,113 @@ tr:last-child > .reportTd {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* T84 · 在哪些题上比: the stage-scope line under the items heading. */
+.stageScope {
+  margin: 0 0 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.stageScope[data-partial] {
+  color: var(--dsh-eval-warn-ink);
+}
+
+/* T84 · 原始文件: plan.json read in place. */
+.rawFileBar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.rawFile {
+  max-height: 480px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  line-height: 18px;
+  white-space: pre;
+}
+
+/* T84 · 退回给 agent…: the panel under the stage bar. */
+.sendBack {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  margin: -8px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  font-size: 13px;
+}
+
+.sendBackLabel {
+  font-weight: 600;
+}
+
+.sendBackText {
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  resize: vertical;
+}
+
+.sendBackChips,
+.sendBackTarget,
+.sendBackActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.sendBackTarget label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.sendBackActions {
+  justify-content: flex-end;
+}
+
+.sendBackKey {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.sendBackActions .sendBackKey {
+  margin-right: auto;
+}
+
+.sendBackChip {
+  padding: 2px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.sendBackChip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}

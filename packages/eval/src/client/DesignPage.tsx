@@ -29,7 +29,7 @@
  * document would make the reviewer the author.
  */
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
@@ -215,7 +215,20 @@ function ReadinessChecklist(props: {
     <>
       <Block
         title={t('design.checks')}
-        meta={shownBlockers.length > 0 ? t('readiness.blockers', { count: shownBlockers.length }) : undefined}
+        meta={(
+          <>
+            {shownBlockers.length > 0 && <span>{t('readiness.blockers', { count: shownBlockers.length })}</span>}
+            <span className={css.dim}>{t('ready.offline')}</span>
+            {/* 重新检查方案 (T84 §六.2): re-reads plan.json and re-runs validate's
+                offline checks — schema, the dataset commit, the stage
+                schemas, the verdict sources, each group's lock. It does NOT
+                probe the groups: that sends a delegation, and happens once,
+                when the run starts. The label and its hover say exactly that. */}
+            <Button variant="outline" size="sm" className={css.smButton} title={t('ready.recheckHint')} onClick={onRecheck}>
+              {t('ready.recheck')}
+            </Button>
+          </>
+        )}
       >
         {forRerun && lines && <div className={css.dim}>{t('readiness.forRerun')}</div>}
         {ready.length === 0 && shownBlockers.length === 0
@@ -257,14 +270,13 @@ function ReadinessChecklist(props: {
               </table>
             </div>
           )}
-        {anyFailed && (
-          // One re-read for every group: the probe runs them together, so a
-          // button per failing row would be several doors to the same room.
+        {anyFailed && shownBlockers.length === 0 && (
+          // One count for the failing rows; the re-check is the title line's
+          // single button — one offline re-read covers every group.
           <div className={css.tableFoot}>
             <span className={css.tableFootText}>
-              {shownBlockers.length === 0 && t('ready.failedCount', { count: ready.filter(row => !row.ok).length, total: ready.length })}
+              {t('ready.failedCount', { count: ready.filter(row => !row.ok).length, total: ready.length })}
             </span>
-            <Button variant="outline" size="sm" className={css.smButton} onClick={onRecheck}>{t('ready.recheck')}</Button>
           </div>
         )}
       </Block>
@@ -365,9 +377,11 @@ function ItemsTable(props: {
   items: readonly string[]
   expectedNs: readonly string[]
   facts: EvalPlanItemsView | null
+  /** The plan's `stages` — the same for every cell; empty when it names none. */
+  planStages: readonly string[]
   t: LabViewProps['t']
 }) {
-  const { items, expectedNs, facts, t } = props
+  const { items, expectedNs, facts, planStages, t } = props
   const [open, setOpen] = useState<string | null>(null)
   const how = expectedNs.map(ns => (VERDICT_SOURCE[ns] === undefined ? ns : t(VERDICT_SOURCE[ns]))).join(' · ') || '—'
   if (facts === null || facts.items.length === 0) {
@@ -393,13 +407,17 @@ function ItemsTable(props: {
       </div>
     )
   }
+  const scope = stageScopeLine(facts.items, planStages, t)
+  const anyPhases = facts.items.some(item => (item.phases?.length ?? 0) > 0)
   return (
     <div className={css.tableScroll}>
+      {scope !== null && <div className={css.stageScope} data-partial={scope.partial ? '' : undefined}>{scope.text}</div>}
       <table className={css.table}>
         <thead>
           <tr>
             <th>{t('design.itemsCol.item')}</th>
             <th>{t('design.itemsCol.what')}</th>
+            {anyPhases && <th>{t('design.itemsCol.stages')}</th>}
             <th>{t('design.itemsCol.how')}</th>
             <th>{t('design.itemsCol.full')}</th>
             <th><span className={css.srOnly}>{t('design.itemsCol.task')}</span></th>
@@ -412,6 +430,7 @@ function ItemsTable(props: {
               item={item}
               open={open === item.id}
               onToggle={() => setOpen(open === item.id ? null : item.id)}
+              stagesColumn={anyPhases}
               t={t}
             />
           ))}
@@ -420,6 +439,39 @@ function ItemsTable(props: {
       {facts.notes.length > 0 && <div className={css.scaleNote}>{facts.notes.join(' · ')}</div>}
     </div>
   )
+}
+
+/**
+ * The line under 在哪些题上比 (T84 §2.4): which stages this run executes —
+ * the plan's, one list for every cell — against the items' own stages, and
+ * what that leaves out of the score. Computed from `plan.stages` and each
+ * item's `phasesUsed`, never from the author's note. Null when there is
+ * nothing to say (no plan stages, or no item names its stages).
+ */
+export function stageScopeLine(
+  items: readonly EvalPlanItemFacts[],
+  planStages: readonly string[],
+  t: LabViewProps['t'],
+): { text: string; partial: boolean } | null {
+  if (planStages.length === 0) return null
+  const partial = items.filter(item => item.runStages != null && (item.phases?.length ?? 0) > item.runStages.length)
+  const lead = t('design.stageScope.lead', { stages: planStages.join('、'), n: planStages.length })
+  if (partial.length === 0) {
+    return items.some(item => (item.phases?.length ?? 0) > 0) ? { text: t('design.stageScope.all', { lead }), partial: false } : null
+  }
+  const missing = [...new Set(partial.flatMap(item => (item.phases ?? []).filter(stage => !(item.runStages ?? []).includes(stage))))]
+  const lost = partial.filter(item => (item.criteriaOutOfScope ?? 0) > 0 && item.fullScore !== item.fullScoreAll).map(item => t('design.stageScope.lost', {
+    item: item.id, n: item.criteriaOutOfScope ?? 0, score: (item.fullScoreAll ?? 0) - (item.fullScore ?? 0),
+  }))
+  return {
+    text: t('design.stageScope.partial', {
+      lead,
+      items: partial.map(item => item.id).join('、'),
+      stages: missing.join('、'),
+      lost: lost.length === 0 ? '' : t('design.stageScope.lostLead', { list: lost.join('；') }),
+    }),
+    partial: true,
+  }
 }
 
 /** v5's sub line under an item id: level · stages · container. */
@@ -457,9 +509,22 @@ function ItemHow(props: { item: EvalPlanItemFacts; t: LabViewProps['t'] }) {
   )
 }
 
-function ItemRow(props: { item: EvalPlanItemFacts; open: boolean; onToggle: () => void; t: LabViewProps['t'] }) {
-  const { item, open, onToggle, t } = props
+function ItemRow(props: {
+  item: EvalPlanItemFacts
+  open: boolean
+  onToggle: () => void
+  /** Whether the 本次阶段 column is on (some item names its stages). */
+  stagesColumn: boolean
+  t: LabViewProps['t']
+}) {
+  const { item, open, onToggle, stagesColumn, t } = props
   const shape = itemShape(item, t)
+  const phases = item.phases ?? []
+  const running = item.runStages ?? phases
+  const partialStages = phases.length > 0 && running.length < phases.length
+  // 满分 counts the in-scope criteria only (T84 ruling); a scope short of the
+  // item's stages writes both numbers so the reader sees what is left out.
+  const cut = item.fullScore !== null && item.fullScoreAll != null && item.fullScoreAll !== item.fullScore
   return (
     <>
       <tr>
@@ -468,8 +533,27 @@ function ItemRow(props: { item: EvalPlanItemFacts; open: boolean; onToggle: () =
           {shape !== '' && <span className={css.itemSub}>{shape}</span>}
         </td>
         <td>{item.title ?? <span className={css.dim}>—</span>}</td>
+        {stagesColumn && (
+          <td
+            className={partialStages ? css.warnInk : undefined}
+            title={phases.length === 0
+              ? undefined
+              : partialStages
+                ? t('design.item.stagesPartial', { run: running.join('、'), skip: phases.filter(stage => !running.includes(stage)).join('、') })
+                : t('design.item.stagesAll', { run: running.join('、') })}
+          >
+            {phases.length === 0 ? <span className={css.dim}>—</span> : `${running.length} / ${phases.length}`}
+          </td>
+        )}
         <td><ItemHow item={item} t={t} /></td>
-        <td className={css.num}>{item.fullScore ?? <span className={css.dim}>—</span>}</td>
+        <td
+          className={css.num}
+          title={cut ? t('design.item.fullCut', { lost: (item.fullScoreAll ?? 0) - (item.fullScore ?? 0), n: item.criteriaOutOfScope ?? 0 }) : undefined}
+        >
+          {item.fullScore === null
+            ? <span className={css.dim}>—</span>
+            : cut ? `${item.fullScore} / ${item.fullScoreAll ?? ''}` : item.fullScore}
+        </td>
         <td className={css.rowAction}>
           {item.task !== null && (
             <Button variant="ghost" size="sm" className={css.smButton} aria-expanded={open} onClick={onToggle}>
@@ -480,7 +564,7 @@ function ItemRow(props: { item: EvalPlanItemFacts; open: boolean; onToggle: () =
       </tr>
       {open && item.task !== null && (
         <tr>
-          <td colSpan={5} className={css.taskCell}>
+          <td colSpan={stagesColumn ? 6 : 5} className={css.taskCell}>
             <MarkdownDoc text={item.task} {...(item.taskPath === null ? {} : { banner: item.taskPath })} t={t} />
           </td>
         </tr>
@@ -670,9 +754,11 @@ function ScaleSection(props: {
   estimate: EvalPlanEstimate | null
   frozen: boolean
   onSetNumbers: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
+  /** 计划网格, the expansion of 作答份数 (T84 §一: it lives with the count). */
+  grid: ReactNode
   t: LabViewProps['t']
 }) {
-  const { row, numbers, estimate, frozen, onSetNumbers, t } = props
+  const { row, numbers, estimate, frozen, onSetNumbers, grid, t } = props
   const [repsBusy, setRepsBusy] = useState(false)
   const [repsNote, setRepsNote] = useState<{ kind: 'receipt' | 'failure'; text: string } | null>(null)
   // A STARTED experiment knows how many cells it really has; the product is
@@ -752,6 +838,19 @@ function ScaleSection(props: {
         </div>
       </div>
       <div className={css.scaleNote}>{estimate == null ? t('design.scale.noneNote') : estimateSource(estimate, t)}</div>
+      {/* 每格预算 and 判官采样 (T84 §一): the numbers that set the cost sit with
+          the cost, not under a fold of their own; 每组次数 is the seg above
+          while it can change. */}
+      {numbers !== null && (
+        <NumbersField
+          now={numbers}
+          frozen={frozen}
+          onSave={onSetNumbers}
+          skip={!frozen && numbers.reps !== null ? REPS_ONLY : undefined}
+          t={t}
+        />
+      )}
+      {grid}
     </Block>
   )
 }
@@ -810,140 +909,204 @@ function estimateSource(estimate: EvalPlanEstimate, t: LabViewProps['t']): strin
 
 const REPS_ONLY: ReadonlySet<keyof PlanNumbersNow> = new Set(['reps'])
 
-/** ③ Everything a reader needs once and then never again. Folded by default. */
-function AdvancedSection(props: {
+/** What reading plan.json answered (the 原始文件 block's viewer). */
+export type PlanFileAnswer = { ok: true; text: string; note: string | null } | { ok: false; message: string }
+
+/**
+ * plan.json, read in place (T84 §2.4): read-only, monospace, with a copy
+ * button. Fetched when the fold is first opened — a reader who never opens it
+ * costs no read — and again when the plan's sha moves under an open fold.
+ */
+function PlanFileFold(props: {
+  fileName: string
+  path: string | null
+  planSha: string | null
+  read: () => Promise<PlanFileAnswer>
+  onCopy: (text: string) => void
+  t: LabViewProps['t']
+}) {
+  const { fileName, path, planSha, read, onCopy, t } = props
+  const [open, setOpen] = useState(false)
+  const [answer, setAnswer] = useState<{ sha: string | null; value: PlanFileAnswer } | null>(null)
+  const stale = answer === null || answer.sha !== planSha
+  useEffect(() => {
+    if (!open || !stale) return
+    let cancelled = false
+    void read().then((value) => { if (!cancelled) setAnswer({ sha: planSha, value }) })
+    return () => { cancelled = true }
+  }, [open, stale, planSha, read])
+  const value = answer?.value ?? null
+  return (
+    <details className={css.reportFold} onToggle={(e) => { setOpen((e.currentTarget as HTMLDetailsElement).open) }}>
+      <summary className={css.reportFoldSummary}>
+        <span className={css.reportFoldTitle}>{fileName}</span>
+        <span className={css.reportFoldAside} title={path ?? undefined}>{t('design.raw.planAside')}</span>
+      </summary>
+      <div className={css.reportFoldBody}>
+        {value === null
+          ? <div className={css.dim}>{t('design.raw.planLoading')}</div>
+          : value.ok
+            ? (
+              <>
+                <div className={css.rawFileBar}>
+                  {value.note !== null && <span className={css.dim}>{value.note}</span>}
+                  <Button variant="outline" size="sm" className={css.smButton} onClick={() => { onCopy(value.text) }}>
+                    {t('design.raw.copy')}
+                  </Button>
+                </div>
+                <pre className={css.rawFile} aria-label={fileName}>{value.text}</pre>
+              </>
+            )
+            : <div className={css.warning}>{t('design.raw.planError', { message: value.message })}</div>}
+      </div>
+    </details>
+  )
+}
+
+/**
+ * 原始文件（核对用）(T84 §一 ⑦): what the page summarised, as written — the
+ * plan itself, the author's note, validate's passing lines, and the receipts.
+ * The numbers a reviewer can change live with the block they change (每格预算
+ * and 判官采样 under 规模与花费, the stage scope under 在哪些题上比); what is
+ * left here is for checking the page did not miss anything.
+ */
+function RawFilesSection(props: {
   row: EvalExperimentRow
   review: EvalPlanReview | null
   detail: EvalExperimentDetail | null
-  /** The plan's editable numbers (T74), or null when the plan has none to edit. */
-  numbers: PlanNumbersNow | null
-  frozen: boolean
-  onSetNumbers: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
+  passing: readonly EvalPlanCheck[]
+  /** Reads plan.json; null when there is no experiment to read it from. */
+  readPlan: (() => Promise<PlanFileAnswer>) | null
+  onCopy: (text: string) => void
   /** The 保留单元 debugging switch; null once a run started (nothing left to keep). */
   keepUnits: { on: boolean; set: (keep: boolean) => void } | null
   t: LabViewProps['t']
 }) {
-  const { row, review, detail, numbers, frozen, onSetNumbers, keepUnits, t } = props
+  const { row, review, detail, passing, readPlan, onCopy, keepUnits, t } = props
   const digest = review?.digest ?? null
   const meta = detail?.meta ?? null
+  const planPath = review?.planPath ?? row.planPath
+  const fileName = planPath === null ? 'plan.json' : (planPath.split('/').pop() ?? 'plan.json')
   return (
-    <details className={css.arrange}>
-      <summary className={css.arrangeSummary}>{t('design.advanced')}</summary>
-      <div className={css.arrangeBody}>
-        <div className={css.dim}>{t('design.advancedHint')}</div>
-        {/* 每格预算 and 判官采样 (T83 · design): numbers a reviewer rarely
-            touches, so they sit here; 每组次数 stays the 1 / 3 / 5 seg above
-            while it can change. */}
-        {numbers !== null && (
-          <NumbersField
-            now={numbers}
-            frozen={frozen}
-            onSave={onSetNumbers}
-            skip={!frozen && numbers.reps !== null ? REPS_ONLY : undefined}
-            t={t}
-          />
-        )}
-        {/* The debugging switch, and it is OFF unless someone ticks it. Left
-            on by default it would be T33b's shape again: every cell's
-            container survives the run. The hint under it says what it costs. */}
-        {keepUnits !== null && (
-          <>
-            <label className={css.guardedItem}>
-              <input type="checkbox" checked={keepUnits.on} onChange={(e) => { keepUnits.set(e.target.checked) }} />
-              <span>{t('review.keepUnits')}</span>
-            </label>
-            {keepUnits.on && <div className={css.notice}>{t('review.keepUnitsHint')}</div>}
-          </>
-        )}
-        {digest !== null && (
-          <>
-            <Field label={t('review.order')}>
-              {digest.order.seed === null ? '—' : t('review.orderValue', { seed: digest.order.seed })}
-              <span className={css.dim}> · {digest.order.interleave === false ? t('review.orderSequential') : t('review.orderInterleaved')}</span>
-            </Field>
-            <Field label={t('review.stages')}>{listOrDash(digest.stages)}</Field>
-            <Field label={t('review.budget')}>
-              {digest.budget === null
-                ? '—'
-                : t('review.budgetValue', { minutes: digest.budget.activeMinutes ?? '—', turns: digest.budget.turns ?? '—' })}
-            </Field>
-            <Field label={t('design.verdictSources')}>{listOrDash(digest.expectedNs)}</Field>
-            <Field label={t('review.retry')}>
-              {digest.retryInfrastructure === null ? t('review.retryDefault') : String(digest.retryInfrastructure)}
-            </Field>
-            <Field label={t('review.items')}>{listOrDash(digest.items)}</Field>
-            <Field label={t('review.exports')}>
-              <span className={css.mono}>{digest.exports ?? t('review.exportsDefault')}</span>
-            </Field>
-          </>
-        )}
-        <Field label={t('overview.environment')}>
-          {row.unit === null
-            ? t('overview.environmentHost')
-            : (
-              <span className={css.mono}>
-                {row.unit.image}
-                {row.unit.network !== null && ` · network ${row.unit.network}`}
-                {row.unit.user !== null && ` · user ${row.unit.user}`}
+    <Block title={t('design.raw')} meta={t('design.rawHint')}>
+      {readPlan !== null && (
+        <PlanFileFold
+          fileName={fileName}
+          path={planPath}
+          planSha={review?.planSha ?? null}
+          read={readPlan}
+          onCopy={onCopy}
+          t={t}
+        />
+      )}
+      {/* The author's note, with its line breaks kept: an aside, so it is a
+          fold of its own rather than a paragraph across the page. */}
+      {digest?.notes != null && digest.notes !== '' && (
+        <Fold title={t('design.notes')}>
+          <div className={css.notesBlock}>{digest.notes}</div>
+        </Fold>
+      )}
+      {/* v5 · ready: 校验原文 — the passing lines, which a clean plan never
+          needs to read. */}
+      {passing.length > 0 && (
+        <Fold title={t('review.checks')} aside={passing.length}>
+          {passing.map((check, index) => (
+            <CheckLine key={`ok:${check.code}:${String(index)}`} check={check} t={t} />
+          ))}
+        </Fold>
+      )}
+      <Fold title={t('design.advanced')}>
+        <div className={css.arrangeBody}>
+          <div className={css.dim}>{t('design.advancedHint')}</div>
+          {/* The debugging switch, and it is OFF unless someone ticks it. Left
+              on by default it would be T33b's shape again: every cell's
+              container survives the run. The hint under it says what it costs. */}
+          {keepUnits !== null && (
+            <>
+              <label className={css.guardedItem}>
+                <input type="checkbox" checked={keepUnits.on} onChange={(e) => { keepUnits.set(e.target.checked) }} />
+                <span>{t('review.keepUnits')}</span>
+              </label>
+              {keepUnits.on && <div className={css.notice}>{t('review.keepUnitsHint')}</div>}
+            </>
+          )}
+          {digest !== null && (
+            <>
+              <Field label={t('review.order')}>
+                {digest.order.seed === null ? '—' : t('review.orderValue', { seed: digest.order.seed })}
+                <span className={css.dim}> · {digest.order.interleave === false ? t('review.orderSequential') : t('review.orderInterleaved')}</span>
+              </Field>
+              <Field label={t('design.verdictSources')}>{listOrDash(digest.expectedNs)}</Field>
+              <Field label={t('review.retry')}>
+                {digest.retryInfrastructure === null ? t('review.retryDefault') : String(digest.retryInfrastructure)}
+              </Field>
+              <Field label={t('review.exports')}>
+                <span className={css.mono}>{digest.exports ?? t('review.exportsDefault')}</span>
+              </Field>
+            </>
+          )}
+          <Field label={t('overview.environment')}>
+            {row.unit === null
+              ? t('overview.environmentHost')
+              : (
+                <span className={css.mono}>
+                  {row.unit.image}
+                  {row.unit.network !== null && ` · network ${row.unit.network}`}
+                  {row.unit.user !== null && ` · user ${row.unit.user}`}
+                </span>
+              )}
+          </Field>
+          {review !== null && (
+            <Field label={t('review.planPath')}>
+              {/* An absolute path is not page text (ui-spec §九); the file name
+                  is what a reviewer says out loud, the path is for the person
+                  who is about to open an editor. */}
+              <span className={css.mono} title={review.planPath}>
+                {review.planPath.split('/').pop() ?? review.planPath}
               </span>
-            )}
-        </Field>
-        {/* The author's note, with its line breaks kept. It was a paragraph
-            smeared across the page in v1; it is an aside, and an aside belongs
-            under the fold with the rest of the receipts. */}
-        {digest?.notes !== null && digest?.notes !== undefined && (
-          <Field label={t('design.notes')}><div className={css.notesBlock}>{digest.notes}</div></Field>
-        )}
-        {review !== null && (
-          <Field label={t('review.planPath')}>
-            {/* An absolute path is not page text (ui-spec §九); the file name
-                is what a reviewer says out loud, the path is for the person
-                who is about to open an editor. */}
-            <span className={css.mono} title={review.planPath}>
-              {review.planPath.split('/').pop() ?? review.planPath}
-            </span>
-            <Detail summary={t('error.details')}>
-              <div className={css.errorDetailLine}>{review.planPath}</div>
-            </Detail>
-          </Field>
-        )}
-        {detail !== null && detail.readiness.length > 0 && (
-          <Field label={t('overview.readiness')}>
-            {/* The refusal sentence and the records verbatim: written by the
-                host for whoever debugs it, and the only place a refused run's
-                reason exists (the ledger never saw it). */}
-            <Detail summary={t('ready.rawFold')}>
-              {detail.readiness.filter(line => line.reason !== null).map(line => (
-                <div key={`why:${line.condition}:${line.startedAt}`} className={css.errorDetailLine}>
-                  {line.condition}: {line.reason}
-                </div>
-              ))}
-              <pre className={css.errorRaw}>{JSON.stringify(detail.readiness, null, 2)}</pre>
-            </Detail>
-          </Field>
-        )}
-        {detail?.job != null && (
-          <Field label={t('overview.job')}>
-            <span>{detail.job.jobId}</span>
-            <span className={css.dim}> · {detail.job.status}</span>
-            {detail.job.detail !== null && (
               <Detail summary={t('error.details')}>
-                <pre className={css.errorRaw}>{detail.job.detail}</pre>
+                <div className={css.errorDetailLine}>{review.planPath}</div>
               </Detail>
-            )}
-          </Field>
-        )}
-        {meta !== null && (
-          <Field label={t('overview.meta')}>
-            {/* A JSON document is not a page (ui-spec §九). The facts a reader
-                needs are the fields above; this is the receipt. */}
-            <Detail summary={t('overview.metaRaw')}>
-              <pre className={css.errorRaw}>{JSON.stringify(meta, null, 2)}</pre>
-            </Detail>
-          </Field>
-        )}
-      </div>
-    </details>
+            </Field>
+          )}
+          {detail !== null && detail.readiness.length > 0 && (
+            <Field label={t('overview.readiness')}>
+              {/* The refusal sentence and the records verbatim: written by the
+                  host for whoever debugs it, and the only place a refused run's
+                  reason exists (the ledger never saw it). */}
+              <Detail summary={t('ready.rawFold')}>
+                {detail.readiness.filter(line => line.reason !== null).map(line => (
+                  <div key={`why:${line.condition}:${line.startedAt}`} className={css.errorDetailLine}>
+                    {line.condition}: {line.reason}
+                  </div>
+                ))}
+                <pre className={css.errorRaw}>{JSON.stringify(detail.readiness, null, 2)}</pre>
+              </Detail>
+            </Field>
+          )}
+          {detail?.job != null && (
+            <Field label={t('overview.job')}>
+              <span>{detail.job.jobId}</span>
+              <span className={css.dim}> · {detail.job.status}</span>
+              {detail.job.detail !== null && (
+                <Detail summary={t('error.details')}>
+                  <pre className={css.errorRaw}>{detail.job.detail}</pre>
+                </Detail>
+              )}
+            </Field>
+          )}
+          {meta !== null && (
+            <Field label={t('overview.meta')}>
+              {/* A JSON document is not a page (ui-spec §九). The facts a reader
+                  needs are the fields above; this is the receipt. */}
+              <Detail summary={t('overview.metaRaw')}>
+                <pre className={css.errorRaw}>{JSON.stringify(meta, null, 2)}</pre>
+              </Detail>
+            </Field>
+          )}
+        </div>
+      </Fold>
+    </Block>
   )
 }
 
@@ -988,9 +1151,14 @@ export function DesignPage(props: {
   onSetNumbers: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
   /** Run one checklist line's fix; `k` is its number on screen. */
   onFix: (fix: ReadinessFix, check: EvalPlanCheck, k: number) => void
+  /** Read plan.json for the 原始文件 block; null when there is no experiment. */
+  readPlan: (() => Promise<PlanFileAnswer>) | null
+  /** Copy a text (the plan viewer's 复制) — the caller says where it went. */
+  onCopy: (text: string) => void
   t: LabViewProps['t']
 }) {
   const {
+    readPlan, onCopy,
     row, detail, review, reviewLoading, reviewError,
     conditions, conditionsLoading, conditionsError, conditionBusy, provision, conditionAction, endpointEditing,
     pair, diff, diffError, sentBack, started, output, outputError, refusal, approveError,
@@ -1112,7 +1280,7 @@ export function DesignPage(props: {
       <Block title={t('design.items')} meta={<span className={css.mono}>{snapshotCell(row)}</span>}>
         {digest === null || digest.items.length === 0
           ? <div className={css.dim}>{t('new.itemsEmpty')}</div>
-          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} facts={review?.items ?? null} t={t} />}
+          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} facts={review?.items ?? null} planStages={digest.stages} t={t} />}
       </Block>
 
       {/* No plan review yet: the row still names its judges, and that is
@@ -1126,7 +1294,24 @@ export function DesignPage(props: {
         />
       </Block>
 
-      <ScaleSection row={row} numbers={numbers} estimate={review?.estimate ?? null} frozen={frozen} onSetNumbers={onSetNumbers} t={t} />
+      <ScaleSection
+        row={row}
+        numbers={numbers}
+        estimate={review?.estimate ?? null}
+        frozen={frozen}
+        onSetNumbers={onSetNumbers}
+        grid={digest !== null && digest.items.length > 0 && (
+          <Fold title={t('design.gridFold', { cells: digest.items.length * groups.length * row.reps })}>
+            <div className={css.dim}>{t('design.gridHint')}</div>
+            <RunGrid
+              columns={columns}
+              rows={plannedRows(digest.items, groups, row.reps)}
+              t={t}
+            />
+          </Fold>
+        )}
+        t={t}
+      />
 
       <ReadinessChecklist
         blockers={blockers}
@@ -1152,34 +1337,13 @@ export function DesignPage(props: {
         <div className={css.dim}>{t('review.checksNone')}</div>
       )}
 
-      {digest !== null && digest.items.length > 0 && (
-        <Fold title={t('design.gridFold', { cells: digest.items.length * groups.length * row.reps })}>
-          <div className={css.dim}>{t('design.gridHint')}</div>
-          <RunGrid
-            columns={columns}
-            rows={plannedRows(digest.items, groups, row.reps)}
-            t={t}
-          />
-        </Fold>
-      )}
-      {/* v5 · ready: 校验原文 is the closing fold — the passing lines, which
-          a clean plan never needs to read. */}
-      {passing.length > 0 && (
-        <Fold title={t('review.checks')} aside={passing.length}>
-          {passing.map((check, index) => (
-            <CheckLine key={`ok:${check.code}:${String(index)}`} check={check} t={t} />
-          ))}
-        </Fold>
-      )}
-      {/* 让 agent 改… and 批准并启动 are the stage bar's (v5 · next); the
-          keep-containers switch is an advanced setting. */}
-      <AdvancedSection
+      <RawFilesSection
         row={row}
         review={review}
         detail={detail}
-        numbers={numbers}
-        frozen={frozen}
-        onSetNumbers={onSetNumbers}
+        passing={passing}
+        readPlan={readPlan}
+        onCopy={onCopy}
         keepUnits={frozen ? null : { on: keepUnits, set: onKeepUnits }}
         t={t}
       />

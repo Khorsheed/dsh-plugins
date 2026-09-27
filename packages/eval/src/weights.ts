@@ -46,6 +46,12 @@ export interface RubricWeightRow {
   kind: string | null
   /** The dimension sub-axis this leaf scores under; null when undeclared. */
   axis: string | null
+  /**
+   * The stages whose output this leaf judges (see {@link leafStages}); null
+   * when the leaf binds to no stage and therefore applies to every run.
+   * Absent on tables written before T84 — read as null.
+   */
+  stages?: string[] | null
 }
 
 /** The derived table as written into a bundle. */
@@ -57,6 +63,12 @@ export interface RubricWeightTable {
   /** Tasks whose rubric was read — a task absent here shipped none. */
   tasks: string[]
   criteria: RubricWeightRow[]
+  /**
+   * The run plan's `stages` when the table was derived — the scope a report
+   * scores against. Null/absent (old tables, plans without stages) means
+   * every criterion is in scope.
+   */
+  planStages?: string[] | null
 }
 
 function str(value: unknown): string | null {
@@ -77,6 +89,57 @@ function polarityOf(row: Record<string, unknown>, weight: number | null): boolea
   return row['negative'] === true || (weight !== null && weight < 0)
 }
 
+const STAGE_FILE_RE = /\b(stage\d+)\.(?:json|md)\b/g
+const VERIFY_FILE_RE = /\bverify\.json\b/
+
+function stringList(value: unknown): string[] | null {
+  if (typeof value === 'string' && value !== '') return [value]
+  if (!Array.isArray(value)) return null
+  const list = value.filter((v): v is string => typeof v === 'string' && v !== '')
+  return list.length === 0 ? null : list
+}
+
+/**
+ * The stages a rubric leaf judges. The rubric protocol has no stage field on
+ * leaves, so this is derived, in order:
+ *   1. an explicit leaf `stages` (list) or `stage` (string) wins;
+ *   2. otherwise the stage artefacts its `evidence` names (`stage1.json`,
+ *      `stage2.md`, …);
+ *   3. otherwise evidence reading the cell's `verify.json` binds to the
+ *      item's `runIn` (the stages that produce the implementation);
+ *   4. otherwise null — the leaf binds to no stage (a veto, a repo probe)
+ *      and applies to every run.
+ * @param leaf - the raw rubric leaf.
+ * @param runIn - the item's `runIn` stages, when known.
+ * @returns the sorted, de-duplicated stage list, or null.
+ */
+export function leafStages(leaf: Record<string, unknown>, runIn?: readonly string[] | null): string[] | null {
+  const explicit = stringList(leaf['stages']) ?? stringList(leaf['stage'])
+  if (explicit !== null) return [...new Set(explicit)].sort()
+  const evidence = typeof leaf['evidence'] === 'string' ? leaf['evidence'] : ''
+  const named = [...evidence.matchAll(STAGE_FILE_RE)].map(m => m[1] as string)
+  if (named.length > 0) return [...new Set(named)].sort()
+  if (VERIFY_FILE_RE.test(evidence) && runIn !== undefined && runIn !== null && runIn.length > 0) {
+    return [...new Set(runIn)].sort()
+  }
+  return null
+}
+
+/**
+ * Whether a leaf is in a run's stage scope: a plan without stages scores
+ * everything, a leaf bound to no stage always applies, otherwise every stage
+ * the leaf judges must be one this run executes (a leaf that also needs a
+ * stage the run skipped has nothing complete to judge).
+ * @param stages - the leaf's stages ({@link leafStages}).
+ * @param planStages - the plan's `stages`.
+ * @returns true when the leaf is scored in this run.
+ */
+export function inStageScope(stages: readonly string[] | null | undefined, planStages: readonly string[] | null | undefined): boolean {
+  if (planStages === null || planStages === undefined || planStages.length === 0) return true
+  if (stages === null || stages === undefined || stages.length === 0) return true
+  return stages.every(s => planStages.includes(s))
+}
+
 /**
  * Reduce one rubric document to its weight/polarity rows.
  *
@@ -86,10 +149,12 @@ function polarityOf(row: Record<string, unknown>, weight: number | null): boolea
  * @param rubricText - the rubric YAML as read from the grading layer.
  * @param task - the task id to stamp on every row; falls back to the
  *   document's own `task_id` / `task` / `id` when omitted.
+ * @param options - `runIn`: the item's implementation stages, used to bind
+ *   `verify.json` evidence to a stage (see {@link leafStages}).
  * @returns one row per leaf carrying an id, in document order.
  * @throws Error when the document does not parse as YAML.
  */
-export function rubricWeightRows(rubricText: string, task?: string): RubricWeightRow[] {
+export function rubricWeightRows(rubricText: string, task?: string, options?: { runIn?: readonly string[] | null }): RubricWeightRow[] {
   const doc = yaml.load(rubricText)
   if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return []
   const record = doc as Record<string, unknown>
@@ -110,6 +175,7 @@ export function rubricWeightRows(rubricText: string, task?: string): RubricWeigh
       negative: polarityOf(row, weight),
       kind: str(row['kind']),
       axis: str(row['axis']),
+      stages: leafStages(row, options?.runIn),
     })
   }
   return rows
@@ -125,12 +191,13 @@ export function rubricWeightRows(rubricText: string, task?: string): RubricWeigh
 export function buildRubricWeightTable(input: {
   dataset?: string | null
   commit?: string | null
-  rubrics: ReadonlyArray<{ task: string; rubricText: string }>
+  rubrics: ReadonlyArray<{ task: string; rubricText: string; runIn?: readonly string[] | null }>
+  planStages?: readonly string[] | null
 }): RubricWeightTable {
   const criteria: RubricWeightRow[] = []
   const tasks: string[] = []
   for (const entry of input.rubrics) {
-    const rows = rubricWeightRows(entry.rubricText, entry.task)
+    const rows = rubricWeightRows(entry.rubricText, entry.task, { runIn: entry.runIn ?? null })
     if (rows.length === 0) continue
     tasks.push(entry.task)
     criteria.push(...rows)
@@ -141,6 +208,7 @@ export function buildRubricWeightTable(input: {
     commit: input.commit ?? null,
     tasks: [...new Set(tasks)].sort(),
     criteria,
+    planStages: input.planStages === undefined || input.planStages === null ? null : [...input.planStages],
   }
 }
 
@@ -191,6 +259,7 @@ export async function readRubricWeightTable(bundleDir: string): Promise<RubricWe
       negative: row['negative'] === true,
       kind: str(row['kind']),
       axis: str(row['axis']),
+      stages: Array.isArray(row['stages']) ? row['stages'].filter((t): t is string => typeof t === 'string') : null,
     })
   }
   if (criteria.length === 0) return null
@@ -200,5 +269,6 @@ export async function readRubricWeightTable(bundleDir: string): Promise<RubricWe
     commit: str(record['commit']),
     tasks: Array.isArray(record['tasks']) ? record['tasks'].filter((t): t is string => typeof t === 'string') : [],
     criteria,
+    planStages: Array.isArray(record['planStages']) ? record['planStages'].filter((t): t is string => typeof t === 'string') : null,
   }
 }

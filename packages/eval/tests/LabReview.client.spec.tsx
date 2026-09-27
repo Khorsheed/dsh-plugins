@@ -333,14 +333,13 @@ describe('the plan-review page', () => {
     expect(screen.getByText(/conditions\.differsWarn .*conditions\.factorHover \{\\"field\\":\\"factor\.home\.sha\\"\}/)).toBeTruthy()
     expect(screen.queryByText(/factorHover \{\\"field\\":\\"factor\.(model|harness)/)).toBeNull()
     expect(screen.getByText((_, el) => el?.tagName === 'DD' && /^judge-a · overview.judgeSamples/.test(el.textContent ?? ''))).toBeTruthy()
-    // Seed, stages, budget, items and the author's note are settings a reader
-    // needs once: ui-spec §五 v2 folds them under 高级设置 rather than smearing
-    // them across the page (the note kept its line breaks on the way).
+    // T84 §一: 高级设置 is split up — the stage scope went to 在哪些题上比,
+    // 每格预算 and 判官采样 to 规模与花费; what is left (seed, the author's
+    // note with its line breaks, the receipts) sits under 原始文件（核对用）.
+    expect(screen.getByText('design.raw')).toBeTruthy()
     expect(screen.getByText('design.advanced')).toBeTruthy()
     expect(screen.getByText('review.orderValue {"seed":7}')).toBeTruthy()
-    expect(screen.getByText('stage-1, stage-2')).toBeTruthy()
-    expect(screen.getByText('review.budgetValue {"minutes":30,"turns":40}')).toBeTruthy()
-    expect(screen.getByText('p0-001, p0-002, f2-001, f3-001')).toBeTruthy()
+    expect(screen.queryByText('stage-1, stage-2')).toBeNull()
     expect(screen.getByText('first effort sweep')).toBeTruthy()
 
     // validate, one line per diagnostic, each carrying its severity and code.
@@ -468,20 +467,41 @@ describe('the plan-review page', () => {
     expect(h.approvePlan).not.toHaveBeenCalled()
   })
 
-  it('退回修改 is a note on the page: the status reads 草稿 and no verb is called', async () => {
-    const h = makeHarness()
+  it('退回给 agent… asks what to change, pre-fills the composer, and the note clears once the plan moves', async () => {
+    const h = makeHarness({ review: { ...REVIEW, planSha: 'sha-a' } })
     renderView(h)
     await openPage(h, 'page.design')
-    // T83 · design: 让 agent 改… sits in the stage bar, beside the primary.
+    // T83 · design: the send-back sits in the stage bar, beside the primary.
     await screen.findByRole('button', { name: 'cta.askAgent' })
     expect(screen.queryByRole('button', { name: 'review.sendBack' })).toBeNull()
     expect(screen.getByText('status.pending-approval')).toBeTruthy()
 
+    // T84 §五: the button opens the panel — nothing is marked yet.
     fireEvent.click(screen.getByRole('button', { name: 'cta.askAgent' }))
+    expect(screen.queryByText('review.sentBack')).toBeNull()
+    const submit = screen.getByRole('button', { name: 'sendBack.submit' })
+    expect((submit as HTMLButtonElement).disabled).toBe(true)
+    // The drafting session is this one, so there is no 放到 choice.
+    expect(screen.queryByRole('radiogroup', { name: 'sendBack.target' })).toBeNull()
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'align the scopes' } })
+    fireEvent.click(submit)
 
+    // Pre-filled in THIS session's composer, the experiment named — never sent.
+    await waitFor(() => {
+      expect(h.insertDraft).toHaveBeenCalledWith('s1', `sendBack.template ${JSON.stringify({ name: 'effort-sweep', id: EXPERIMENT_ID, text: 'align the scopes' })}`)
+    })
     expect(screen.getByText('review.sentBack')).toBeTruthy()
     expect(screen.getByText('status.draft')).toBeTruthy()
     expect(h.approvePlan).not.toHaveBeenCalled()
+
+    // The same plan re-read keeps the note; a changed plan clears it (§六.3).
+    fireEvent.click(screen.getByRole('button', { name: 'ready.recheck' }))
+    await waitFor(() => { expect(h.fetchPlanReview).toHaveBeenCalledTimes(2) })
+    expect(screen.getByText('review.sentBack')).toBeTruthy()
+    h.fetchPlanReview.mockResolvedValue({ ok: true, value: { ...REVIEW, planSha: 'sha-b' } })
+    fireEvent.click(screen.getByRole('button', { name: 'ready.recheck' }))
+    await waitFor(() => { expect(screen.queryByText('review.sentBack')).toBeNull() })
+    expect(screen.getByText('status.pending-approval')).toBeTruthy()
   })
 
   it('a run that records no plan document says so instead of reviewing a file nobody can name', async () => {

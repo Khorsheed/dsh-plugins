@@ -52,6 +52,8 @@ describe('用哪些题 per-item facts', () => {
     expect(rubricFacts(RUBRIC, 'P0')).toEqual({
       criteria: { total: 5, objective: 2, judge: 2, human: 1 },
       fullScore: 45,
+      fullScoreAll: 45,
+      outOfScope: 0,
     })
   })
 
@@ -61,7 +63,8 @@ describe('用哪些题 per-item facts', () => {
     expect(face.scopes).toEqual([{ repo: '/repo', layers: ['visible', 'verify', 'grading'] }])
     expect(view.items[0]).toEqual({
       id: 'P0', title: 'count files', level: 'P0', stages: 2, container: true,
-      criteria: { total: 5, objective: 2, judge: 2, human: 1 }, probes: 0, fullScore: 45,
+      phases: ['stage1', 'stage2'], runStages: null,
+      criteria: { total: 5, objective: 2, judge: 2, human: 1 }, criteriaOutOfScope: 0, probes: 0, fullScore: 45, fullScoreAll: 45,
       task: '# P0', taskPath: 'task.md',
     })
     // Its own two probes; the shared library is not a probe.

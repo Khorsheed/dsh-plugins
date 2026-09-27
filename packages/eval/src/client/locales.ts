@@ -921,6 +921,45 @@ export type EvalKey =
   | 'design.itemsCol.what'
   | 'design.itemsCol.full'
   | 'design.itemsCol.task'
+  | 'design.itemsCol.stages'
+  | 'design.item.stagesPartial'
+  | 'design.item.stagesAll'
+  | 'design.item.fullCut'
+  | 'design.stageScope.lead'
+  | 'design.stageScope.all'
+  | 'design.stageScope.partial'
+  | 'design.stageScope.lostLead'
+  | 'design.stageScope.lost'
+  | 'ready.offline'
+  | 'ready.recheckHint'
+  | 'design.raw'
+  | 'design.rawHint'
+  | 'design.raw.planAside'
+  | 'design.raw.planLoading'
+  | 'design.raw.planError'
+  | 'design.raw.planBinary'
+  | 'design.raw.truncated'
+  | 'design.raw.noExperiment'
+  | 'design.raw.copy'
+  | 'design.raw.copied'
+  | 'design.raw.copyFailed'
+  | 'sendBack.title'
+  | 'sendBack.placeholder'
+  | 'sendBack.suggest'
+  | 'sendBack.target'
+  | 'sendBack.target.here'
+  | 'sendBack.target.origin'
+  | 'sendBack.never'
+  | 'sendBack.cancel'
+  | 'sendBack.submit'
+  | 'sendBack.template'
+  | 'sendBack.chip.oneFactor'
+  | 'sendBack.say.oneFactor'
+  | 'sendBack.chip.stages'
+  | 'sendBack.say.stages'
+  | 'sendBack.say.remind'
+  | 'sendBack.fellBack'
+  | 'sendBack.copied'
   | 'design.item.stages'
   | 'design.item.container'
   | 'design.item.kinds'
@@ -1382,7 +1421,7 @@ export const en: Record<EvalKey, string> = {
   'review.keepUnits': 'Keep the containers after the run (debugging)',
   'review.keepUnitsHint': "Every cell will stop at 'archived' and keep its container for you to open. Nothing is released until you finalize the run, so a matrix larger than lab's unit ceiling cannot finish this way.",
   'review.sendBack': 'Send back to the agent',
-  'review.sentBack': 'Sent back for changes. This is a note on this page only: the plan file is unchanged, and the experiment is shown as a draft until it validates again.',
+  'review.sentBack': 'Handed to the agent — waiting for its changes. This page re-checks the plan by itself once the plan changes.',
   'review.started': 'Started',
   'review.startedValue': 'job {jobId} · run {runId}',
   'review.parentSession': 'Parent session',
@@ -1566,8 +1605,8 @@ export const en: Record<EvalKey, string> = {
   'design.groups': 'Comparison groups and readiness',
   'design.grid': 'Planned grid',
   'design.gridHint': 'Rows are items, columns are comparison groups — the same grid the run records fill in.',
-  'design.advanced': 'Advanced settings',
-  'design.advancedHint': 'Order, stages, per-cell budget, verdict sources, environment, and the author’s note.',
+  'design.advanced': 'Other settings and receipts',
+  'design.advancedHint': 'Order, verdict sources, retries, exports, environment, and the raw records behind the page.',
   'design.planned': '{reps} planned',
   'design.single': 'Only one comparison group — add another to have anything to compare.',
   'design.addGroup': 'Add a comparison group',
@@ -1602,7 +1641,7 @@ export const en: Record<EvalKey, string> = {
   'markdown.footnotes': 'Footnotes',
   'ready.badge': 'Environment ready',
   'ready.badgeAtStart': 'Environment ready when it started',
-  'ready.recheck': 'Check again',
+  'ready.recheck': 'Re-check the plan',
   'ready.pending': 'Not checked yet — readiness is probed when the run starts.',
   'ready.failedCount': '{count} of {total} comparison groups are not ready',
   'ready.rawFold': 'Readiness records, verbatim',
@@ -1706,10 +1745,10 @@ export const en: Record<EvalKey, string> = {
   'page.dot.done': 'done',
   'page.dot.active': 'in progress',
   'page.dot.todo': 'not started',
-  'cta.recheck': 'Validate again',
+  'cta.recheck': 'Re-check the plan',
   'cta.title': '{status} · next: {next}',
   'cta.editableHint': 'The plan can change until it starts; starting freezes it.',
-  'cta.askAgent': 'Ask the agent to change…',
+  'cta.askAgent': 'Send back to the agent…',
   'cta.here.runs': 'Each one shows up below as it lands.',
   'cta.here.review': 'Judge every answer, then pick how to close this evaluation at the bottom of the page.',
   'cta.here.compare': 'The comparison is below.',
@@ -1946,6 +1985,45 @@ export const en: Record<EvalKey, string> = {
   'design.itemsCol.what': 'Tests',
   'design.itemsCol.full': 'Full score',
   'design.itemsCol.task': 'Task text',
+  'design.itemsCol.stages': 'This run',
+  'design.item.stagesPartial': 'This run executes {run}; {skip} are not in this comparison.',
+  'design.item.stagesAll': 'This run executes all of the item’s stages: {run}.',
+  'design.item.fullCut': '{lost} points ({n} criteria) belong to stages this run does not execute — neither scored nor counted in the full score.',
+  'design.stageScope.lead': 'This run executes {stages} ({n} stage(s), set by the plan for every cell).',
+  'design.stageScope.all': '{lead} Every item runs all of its stages.',
+  'design.stageScope.partial': '{lead} {items} also have {stages}, which are not in this comparison.{lost}',
+  'design.stageScope.lostLead': ' Not counted this time: {list}.',
+  'design.stageScope.lost': '{item} {n} criteria ({score} pts)',
+  'ready.offline': 'Offline file check · no tokens',
+  'ready.recheckHint': 'Re-reads plan.json and re-runs the offline checks: schema, dataset commit, stage schemas, verdict sources and each group’s lock. It sends no delegation and spends no tokens; the one real probe of each group happens automatically when the run starts.',
+  'design.raw': 'Source files',
+  'design.rawHint': 'What the page summarised, as written',
+  'design.raw.planAside': 'Full text, read-only',
+  'design.raw.planLoading': 'Reading…',
+  'design.raw.planError': 'Could not read the plan: {message}',
+  'design.raw.planBinary': 'Not a text file.',
+  'design.raw.truncated': 'Cut at the size cap.',
+  'design.raw.noExperiment': 'Only an experiment’s plan can be read here.',
+  'design.raw.copy': 'Copy',
+  'design.raw.copied': 'Copied.',
+  'design.raw.copyFailed': 'The clipboard is not available — select the text and copy it yourself.',
+  'sendBack.title': 'What should change?',
+  'sendBack.placeholder': 'Your notes for the agent',
+  'sendBack.suggest': 'Suggestions',
+  'sendBack.target': 'Put it in',
+  'sendBack.target.here': 'This session’s chat box',
+  'sendBack.target.origin': 'The session that drafted it (switch there)',
+  'sendBack.never': 'Nothing is sent — you send it yourself.',
+  'sendBack.cancel': 'Cancel',
+  'sendBack.submit': 'Put in the chat box',
+  'sendBack.template': 'Please revise the plan of experiment “{name}” (id {id}):\n{text}\nWhen done, run eval validate; I will re-check it on the experiment design page.',
+  'sendBack.chip.oneFactor': 'Keep one difference only',
+  'sendBack.say.oneFactor': 'The groups differ in {count} places ({fields}); keep only one so the result can be attributed.',
+  'sendBack.chip.stages': 'Add {items} stages {stages}',
+  'sendBack.say.stages': '{items} also have {stages}; add them to the plan’s stages (or say why they stay out).',
+  'sendBack.say.remind': 'Handle this reminder: {text}',
+  'sendBack.fellBack': 'Could not switch to the drafting session — put in this session’s chat box instead.',
+  'sendBack.copied': 'Copied — paste it into any session.',
   'design.item.stages': '{n} stages',
   'design.item.container': 'container',
   'design.item.kinds': 'objective {objective} · judge {judge} · human {human}',
@@ -1980,7 +2058,7 @@ export const en: Record<EvalKey, string> = {
   'design.ready': 'Readiness',
   'design.gridFold': 'Planned grid · {cells} runs',
   'readiness.remindersNote': 'Does not block the start',
-  'design.checks': 'Checks',
+  'design.checks': 'Ready to start?',
   'design.checkCol.item': 'Item',
   'design.checkCol.state': 'State',
   'design.checkReady': 'Ready',
@@ -2400,7 +2478,7 @@ export const zh: Record<EvalKey, string> = {
   'review.keepUnits': '跑完保留容器（调试用）',
   'review.keepUnitsHint': '每条运行记录跑完停在「已归档」，容器留着给你打开。不 finalize 就不会释放，记录数超过 lab 的单元上限时这样跑不完。',
   'review.sendBack': '退回给 agent 改',
-  'review.sentBack': '已退回修改。这只是本页上的一段备注：计划文件没有改动，实验按草稿显示，直到它重新通过 validate。',
+  'review.sentBack': '已交给 agent，等它改完 · plan 改动后这里会自动重新检查',
   'review.started': '已启动',
   'review.startedValue': 'job {jobId} · run {runId}',
   'review.parentSession': '父会话',
@@ -2581,8 +2659,8 @@ export const zh: Record<EvalKey, string> = {
   'design.groups': '对比组与就绪',
   'design.grid': '计划网格',
   'design.gridHint': '行是题、列是对比组——和运行记录里那张是同一个网格。',
-  'design.advanced': '高级设置',
-  'design.advancedHint': '顺序、阶段、每格预算、判定来源、环境，以及作者备注。',
+  'design.advanced': '其余设置与回执',
+  'design.advancedHint': '顺序、判定来源、重试、导出、环境，以及页面背后的原始记录。',
   'design.planned': '计划 {reps} 次',
   'design.single': '只有一个对比组，添加对比组才能比较。',
   'design.addGroup': '添加对比组',
@@ -2617,7 +2695,7 @@ export const zh: Record<EvalKey, string> = {
   'markdown.footnotes': '脚注',
   'ready.badge': '环境就绪',
   'ready.badgeAtStart': '启动时环境就绪',
-  'ready.recheck': '重新检查',
+  'ready.recheck': '重新检查方案',
   'ready.pending': '还没做就绪检查——启动时才探。',
   'ready.failedCount': '{total} 个对比组里有 {count} 个未就绪',
   'ready.rawFold': '就绪检查原文',
@@ -2721,10 +2799,10 @@ export const zh: Record<EvalKey, string> = {
   'page.dot.done': '已完成',
   'page.dot.active': '进行中',
   'page.dot.todo': '未开始',
-  'cta.recheck': '重新校验',
+  'cta.recheck': '重新检查方案',
   'cta.title': '{status} · 下一步是{next}',
   'cta.editableHint': '启动之前方案都能改；启动后冻结。',
-  'cta.askAgent': '让 agent 改…',
+  'cta.askAgent': '退回给 agent…',
   'cta.here.runs': '下面逐个落地。',
   'cta.here.review': '逐份评完，再在页底选这次评估怎么结束。',
   'cta.here.compare': '对比就在下面。',
@@ -2961,6 +3039,45 @@ export const zh: Record<EvalKey, string> = {
   'design.itemsCol.what': '考什么',
   'design.itemsCol.full': '满分',
   'design.itemsCol.task': '题面',
+  'design.itemsCol.stages': '本次阶段',
+  'design.item.stagesPartial': '本次跑 {run}；{skip} 不在这次比较里。',
+  'design.item.stagesAll': '本次跑这道题的全部阶段：{run}。',
+  'design.item.fullCut': '{lost} 分（{n} 条判据）属于本次不跑的阶段，不计分，也不计入满分。',
+  'design.stageScope.lead': '本次跑 {stages}（{n} 个阶段，plan 统一定）。',
+  'design.stageScope.all': '{lead}每道题的阶段都跑全。',
+  'design.stageScope.partial': '{lead}{items} 还有 {stages}，不在这次比较里。{lost}',
+  'design.stageScope.lostLead': '本次不计：{list}。',
+  'design.stageScope.lost': '{item} 的 {n} 条判据（{score} 分）',
+  'ready.offline': '离线核对 · 不花 token',
+  'ready.recheckHint': '重读 plan.json，离线重新核对 schema、题集 commit、阶段 schema、判分来源和每组的环境锁。不发委派、不花 token；真正探一次各组，是开跑时自动做的。',
+  'design.raw': '原始文件（核对用）',
+  'design.rawHint': '页面有没有漏掉什么',
+  'design.raw.planAside': '全文 · 只读',
+  'design.raw.planLoading': '读取中…',
+  'design.raw.planError': '读不到方案文件：{message}',
+  'design.raw.planBinary': '不是文本文件。',
+  'design.raw.truncated': '超过大小上限，已截断。',
+  'design.raw.noExperiment': '只有实验的方案能在这里读。',
+  'design.raw.copy': '复制',
+  'design.raw.copied': '已复制',
+  'design.raw.copyFailed': '剪贴板不可用，请选中文字手动复制。',
+  'sendBack.title': '要改什么？',
+  'sendBack.placeholder': '写给 agent 的修改意见',
+  'sendBack.suggest': '建议',
+  'sendBack.target': '放到',
+  'sendBack.target.here': '这个会话的输入框',
+  'sendBack.target.origin': '起草它的会话（切过去）',
+  'sendBack.never': '不会自动发送，改好由你来发。',
+  'sendBack.cancel': '取消',
+  'sendBack.submit': '放进输入框',
+  'sendBack.template': '请修改实验「{name}」（id {id}）的方案：\n{text}\n改完请跑 eval validate，我在实验设计页复核。',
+  'sendBack.chip.oneFactor': '只留一处不同',
+  'sendBack.say.oneFactor': '两组现在有 {count} 处不同（{fields}），只留一处，结论才能归因。',
+  'sendBack.chip.stages': '补 {items} 的阶段 {stages}',
+  'sendBack.say.stages': '{items} 还有 {stages}，把它们加进 plan 的 stages（或写明为什么不跑）。',
+  'sendBack.say.remind': '处理这条提醒：{text}',
+  'sendBack.fellBack': '没能切到起草会话，已放进当前会话',
+  'sendBack.copied': '已复制，粘贴到任意会话',
   'design.item.stages': '{n} 个阶段',
   'design.item.container': '容器',
   'design.item.kinds': '客观 {objective} · 判官 {judge} · 人工 {human}',
@@ -2995,7 +3112,7 @@ export const zh: Record<EvalKey, string> = {
   'design.ready': '就绪',
   'design.gridFold': '计划网格 · {cells} 次运行',
   'readiness.remindersNote': '不影响启动',
-  'design.checks': '检查项',
+  'design.checks': '准备好了没有',
   'design.checkCol.item': '项',
   'design.checkCol.state': '状态',
   'design.checkReady': '就绪',

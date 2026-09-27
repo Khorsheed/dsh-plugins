@@ -119,6 +119,13 @@ export interface LabViewState {
    * it would make the reviewer the author.
    */
   sentBack: boolean
+  /**
+   * What the plan looked like when it was sent back (T84): its sha and
+   * whether validate passed. A review that answers a DIFFERENT sha, or turns
+   * a failing plan into a passing one, means the agent acted — the note
+   * clears. Null while nothing is sent back.
+   */
+  sentBackBasis: { planSha: string | null; ok: boolean } | null
   /** Whether an approval is in flight (the button is disabled meanwhile). */
   approving: boolean
   /** The refusal an approval answered with, verbatim; null when none. */
@@ -343,7 +350,7 @@ export type LabViewActions = {
   setReview: (draft: LabViewState, review: EvalPlanReview) => void
   setReviewLoading: (draft: LabViewState, loading: boolean) => void
   setReviewError: (draft: LabViewState, error: string | null) => void
-  sendBack: (draft: LabViewState) => void
+  sendBack: (draft: LabViewState, basis: { planSha: string | null; ok: boolean }) => void
   setApproving: (draft: LabViewState, approving: boolean) => void
   setApproveRefusal: (draft: LabViewState, refusal: string | null) => void
   setApproveError: (draft: LabViewState, message: string | null) => void
@@ -420,6 +427,7 @@ const INITIAL: LabViewState = {
   reviewLoading: false,
   reviewError: null,
   sentBack: false,
+  sentBackBasis: null,
   approving: false,
   approveRefusal: null,
   approveError: null,
@@ -488,7 +496,7 @@ const INITIAL: LabViewState = {
  */
 const PER_EXPERIMENT: Pick<
   LabViewState,
-  'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'approving' | 'approveRefusal' | 'approveError'
+  'detail' | 'detailError' | 'review' | 'reviewError' | 'sentBack' | 'sentBackBasis' | 'approving' | 'approveRefusal' | 'approveError'
   | 'started' | 'startFollowUps' | 'output' | 'outputError' | 'matrixColumn' | 'matrix' | 'matrixError'
   | 'runFilter' | 'cells' | 'cellsError' | 'cellSelection' | 'cell' | 'cellError'
   | 'artifactPath' | 'artifact' | 'artifactError' | 'recordFocus'
@@ -502,6 +510,7 @@ const PER_EXPERIMENT: Pick<
   review: null,
   reviewError: null,
   sentBack: false,
+  sentBackBasis: null,
   approving: false,
   approveRefusal: null,
   approveError: null,
@@ -590,10 +599,24 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
       setReview: (d, review: EvalPlanReview) => {
         d.review = review
         d.reviewError = null
+        // 已交给 agent clears once the plan moved or turned green (T84): the
+        // note was «waiting for the agent», and this review says it acted.
+        const basis = d.sentBackBasis
+        if (d.sentBack && basis !== null) {
+          const moved = basis.planSha !== null && review.planSha != null && review.planSha !== basis.planSha
+          const passed = !basis.ok && review.ok
+          if (moved || passed) {
+            d.sentBack = false
+            d.sentBackBasis = null
+          }
+        }
       },
       setReviewLoading: (d, loading: boolean) => { d.reviewLoading = loading },
       setReviewError: (d, error: string | null) => { d.reviewError = error },
-      sendBack: (d) => { d.sentBack = true },
+      sendBack: (d, basis: { planSha: string | null; ok: boolean }) => {
+        d.sentBack = true
+        d.sentBackBasis = basis
+      },
       setApproving: (d, approving: boolean) => { d.approving = approving },
       // One seat, two renderers (see the two fields' docs).
       setApproveRefusal: (d, refusal: string | null) => { d.approveRefusal = refusal; d.approveError = null },
@@ -606,6 +629,7 @@ export function createLabViewStore(): EngineStoreHandle<LabViewState, LabViewAct
         // An approved plan is no longer sent back, whatever the reviewer
         // pressed earlier in this visit.
         d.sentBack = false
+        d.sentBackBasis = null
       },
       // One tick of the wait for the started run to reach the ledger. Counted
       // rather than timed: the page only needs to know when to give up.
