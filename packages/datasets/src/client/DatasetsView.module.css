@@ -779,22 +779,12 @@
 }
 
 /* The open item's header above the right pane. */
-.itemHeader {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
 /* The item's two sides, side by side: 选手将看到 | 只有判官和探针看得到.
    A narrow pane stacks them, the judge side below. */
 .compare {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
   max-width: 960px;
   margin-bottom: 14px;
 }
@@ -805,14 +795,140 @@
   }
 }
 
+/* T83 · phase 4: v5's .box — a 12px card with a titled head over a rule,
+   the body under it. */
 .box {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   min-width: 0;
-  padding: 8px 10px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.boxHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.boxTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.boxHead .panelCount {
+  margin-left: auto;
+}
+
+.boxBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.boxFoot {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.boxFoot .panelTag {
+  margin-right: 6px;
+}
+
+/* The files of one card in one flowing line, «·» between them (v5's
+   «task.md · standards.yml»); a long list wraps rather than scrolls. */
+.flowList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.flowList > li {
+  display: inline;
+}
+
+.flowList > li + li::before {
+  content: ' · ';
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.flowList .panelTag {
+  margin-left: 4px;
+}
+
+.flowPath {
+  font-family: var(--ds-font-family-code);
+}
+
+.flowNote {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.flowWarn {
+  color: var(--dsh-datasets-warn-ink);
+}
+
+/* The item heading in the content column: v5's
+   «仓库 › 题集 › 题目  看的是 main @ 07fde76». */
+.crumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  max-width: 960px;
+  margin: 10px 0 8px;
+}
+
+.crumbTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  min-width: 0;
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.crumbSep {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+}
+
+.crumbItem {
+  font-weight: 600;
+}
+
+.crumbSub {
+  margin-left: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.usedBy {
+  max-width: 960px;
+  margin: -6px 0 14px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 
 /* One block of the right pane: 作答记录 / the preview. */

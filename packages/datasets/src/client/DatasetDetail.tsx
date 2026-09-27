@@ -27,7 +27,7 @@ import type { DatasetOverviewRow, ItemBrief, ItemRecord, JsonObject } from '../t
 import type { DatasetsViewProps, ItemRunsView } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
 import {
-  bucketTone, bytes, Chevron, Chip, EmptyState, FileIcon, SlotMark, slotKey, stageTone, stamp, Word,
+  bucketTone, bytes, Chevron, Chip, EmptyState, FileIcon, shortCommit, SlotMark, slotKey, stageTone, stamp, Word,
 } from './parts.tsx'
 import { bucketPhrase, stagePhrase } from './vocab.ts'
 import { DatasetPreview } from './preview.tsx'
@@ -202,32 +202,37 @@ function ItemNode(props: {
   )
 }
 
-/** «选手将看到»: the exact file list the player's cell receives. */
+/**
+ * «选手将看到»: the exact file list the player's cell receives, as v5's card —
+ * a titled head (count and bytes on the right) over the files in one flowing
+ * line. Each file keeps its own size: the anti-leak check reads bytes.
+ */
 function PlayerView(props: { brief: ItemBrief; t: DatasetsViewProps['t'] }) {
   const { brief, t } = props
   const { files, totalBytes } = brief.player
   return (
     <section className={css.box}>
-      <div className={css.panelTitle}>
-        <span>{t('detail.player')}</span>
+      <div className={css.boxHead} title={t('detail.playerHint')}>
+        <h4 className={css.boxTitle}>{t('detail.player')}</h4>
         <span className={css.panelCount}>
           {t('detail.playerSummary', { count: files.length, bytes: totalBytes })}
         </span>
       </div>
-      <div className={css.panelHint}>{t('detail.playerHint')}</div>
-      {files.length === 0
-        ? <div className={css.panelWarn}>{t('detail.playerEmpty')}</div>
-        : (
-          <ul className={css.panelList}>
-            {files.map(file => (
-              <li key={`${file.source}/${file.layer}/${file.path}`} className={css.panelRow}>
-                <span className={css.panelPath}>{file.path}</span>
-                {file.source === 'dataset' && <span className={css.panelTag}>{t('detail.playerShared')}</span>}
-                <span className={css.panelNumber}>{bytes(file.bytes)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+      <div className={css.boxBody}>
+        {files.length === 0
+          ? <div className={css.panelWarn}>{t('detail.playerEmpty')}</div>
+          : (
+            <ul className={css.flowList}>
+              {files.map(file => (
+                <li key={`${file.source}/${file.layer}/${file.path}`}>
+                  <span className={css.flowPath}>{file.path}</span>
+                  {file.source === 'dataset' && <span className={css.panelTag}>{t('detail.playerShared')}</span>}
+                  <span className={css.panelTag}>{bytes(file.bytes)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+      </div>
     </section>
   )
 }
@@ -260,46 +265,95 @@ function judgeOnlyFiles(
 }
 
 /**
- * «只有判官和探针看得到»: the item's judge-only files, then «可判性» — the
- * rubric's shape, the probes, the stage schemas — in one line under them.
+ * «只有判官和探针看得到»: the item's judge-only files in one flowing line (the
+ * rubric carrying its leaf count, the dataset-level ones folded into one entry
+ * per layer — every item shares them), a warning when nothing would run a
+ * check script, then «可判性» — the rubric's shape, the probes, the stage
+ * schemas — in one quiet line under them.
  */
 function JudgeOnlyView(props: { brief: ItemBrief; files: readonly JudgeOnlyFile[]; t: DatasetsViewProps['t'] }) {
   const { brief, files, t } = props
-  const { leaves, kinds, probes, sharedProbes, stageSchemas, notes } = brief.judgeability
+  const { rubricPath, leaves, kinds, probes, sharedProbes, stageSchemas, notes } = brief.judgeability
   const kindText = Object.entries(kinds)
     .map(([kind, count]) => t('detail.judgeKind', { kind, count }))
     .join(' · ')
+  const own = files.filter(file => !file.shared)
+  const shared = new Map<string, string[]>()
+  for (const file of files) if (file.shared) shared.set(file.layer, [...shared.get(file.layer) ?? [], file.path])
   return (
     <section className={css.box}>
-      <div className={css.panelTitle}>
-        <span>{t('detail.judgeOnly')}</span>
+      <div className={css.boxHead} title={t('detail.judgeOnlyHint')}>
+        <h4 className={css.boxTitle}>{t('detail.judgeOnly')}</h4>
         <span className={css.panelCount}>{t('tree.fileCount', { count: files.length })}</span>
       </div>
-      <div className={css.panelHint}>{t('detail.judgeOnlyHint')}</div>
-      {files.length === 0
-        ? <div className={css.panelHint}>{t('detail.judgeOnlyEmpty')}</div>
-        : (
-          <ul className={css.panelList}>
-            {files.map(file => (
-              <li key={`${file.shared ? 'shared' : 'item'}/${file.layer}/${file.path}`} className={css.panelRow}>
-                <span className={css.panelPath}>{`${file.layer}/${file.path}`}</span>
-                {file.shared && <span className={css.panelTag}>{t('detail.playerShared')}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      <div className={css.panelLine}>
-        <span className={css.panelTag}>{t('detail.judge')}</span>
-        {t('detail.judgeRubric', { leaves })}
-        {kindText !== '' && ` （${kindText}）`}
-        {' · '}
-        {t('detail.judgeProbes', { count: probes.length })}
-        {sharedProbes.length > 0 && ` · ${t('detail.judgeShared', { count: sharedProbes.length })}`}
-        {' · '}
-        {t('detail.judgeSchemas', { count: stageSchemas.length })}
+      <div className={css.boxBody}>
+        {files.length === 0
+          ? <div className={css.panelTag}>{t('detail.judgeOnlyEmpty')}</div>
+          : (
+            <ul className={css.flowList}>
+              {own.map(file => (
+                <li key={`item/${file.layer}/${file.path}`}>
+                  <span className={css.flowPath}>{`${file.layer}/${file.path}`}</span>
+                  {file.path === rubricPath && <span className={css.flowNote}>{t('detail.judgeLeaves', { leaves })}</span>}
+                </li>
+              ))}
+              {[...shared].map(([layer, paths]) => (
+                <li key={`shared/${layer}`} title={paths.join('\n')}>
+                  <span className={css.flowPath}>{`${layer}/`}</span>
+                  <span className={css.panelTag}>{t('detail.playerShared')} · {t('tree.fileCount', { count: paths.length })}</span>
+                </li>
+              ))}
+              {probes.length + sharedProbes.length === 0 && (
+                <li><span className={css.flowWarn}>{t('detail.noProbes')}</span></li>
+              )}
+            </ul>
+          )}
+        <div className={css.boxFoot}>
+          <span className={css.panelTag}>{t('detail.judge')}</span>
+          {t('detail.judgeRubric', { leaves })}
+          {kindText !== '' && ` （${kindText}）`}
+          {' · '}
+          {t('detail.judgeProbes', { count: probes.length })}
+          {sharedProbes.length > 0 && ` · ${t('detail.judgeShared', { count: sharedProbes.length })}`}
+          {' · '}
+          {t('detail.judgeSchemas', { count: stageSchemas.length })}
+        </div>
+        {notes.map(note => <div key={note} className={css.panelWarn}>{note}</div>)}
       </div>
-      {notes.map(note => <div key={note} className={css.panelWarn}>{note}</div>)}
     </section>
+  )
+}
+
+/**
+ * The item's heading in the content column, v5's «仓库 › 题集 › 题目» with the
+ * commit the two cards were read at under it, and item.json's chips.
+ */
+function ItemCrumb(props: {
+  crumb: DatasetCrumb | null
+  dataset: string
+  item: string
+  commit: string | null
+  metadata: JsonObject | undefined
+  t: DatasetsViewProps['t']
+}) {
+  const { crumb, dataset, item, commit, metadata, t } = props
+  return (
+    <div className={css.crumb}>
+      <h5 className={css.crumbTitle}>
+        {crumb !== null && <><span>{crumb.repo}</span><span className={css.crumbSep} aria-hidden="true">›</span></>}
+        <span>{crumb?.set ?? dataset}</span>
+        <span className={css.crumbSep} aria-hidden="true">›</span>
+        <span className={css.crumbItem}>{item}</span>
+        {commit !== null && (
+          <span className={css.crumbSub} title={commit}>
+            {crumb === null
+              ? t('detail.readAtCommit', { commit: shortCommit(commit) })
+              : t('detail.readAt', { ref: crumb.ref, commit: shortCommit(commit) })}
+          </span>
+        )}
+      </h5>
+      {metadata !== undefined && <MetaPills metadata={metadata} t={t} />}
+    </div>
   )
 }
 
@@ -346,8 +400,20 @@ function AnswerRecord(props: { runs: ItemRunsView; t: DatasetsViewProps['t'] }) 
 }
 
 /** The detail page's props (the shell owns every fetch; this owns the layout). */
+/** Where the open dataset lives, for the item heading's crumb. */
+export interface DatasetCrumb {
+  /** The registration's name. */
+  repo: string
+  /** The set's id. */
+  set: string
+  /** The branch the registration tracks. */
+  ref: string
+}
+
 export interface DatasetDetailProps {
   dataset: DatasetOverviewRow
+  /** The registration and set the page shows, or null when the registry has not answered. */
+  crumb: DatasetCrumb | null
   items: readonly ItemRecord[]
   sharedLayers: Record<string, readonly string[]>
   passthrough: readonly string[]
@@ -376,7 +442,7 @@ export interface DatasetDetailProps {
  */
 export function DatasetDetail(props: DatasetDetailProps) {
   const {
-    dataset, items, sharedLayers, passthrough, sensitiveLayers, agentLayers,
+    dataset, crumb, items, sharedLayers, passthrough, sensitiveLayers, agentLayers,
     openItem, onOpenItem, slotFilter, onSlotFilter, selection, onSelect,
     brief, briefLoading, briefError, runs, preview, previewLoading, previewError, t,
   } = props
@@ -481,15 +547,21 @@ export function DatasetDetail(props: DatasetDetailProps) {
         )}
       </nav>
       <section className={css.preview}>
-        {openItem !== null && (
-          <div className={css.itemHeader}>
-            <span className={css.previewPath}>{openItem}</span>
-            {openItemRecord?.metadata !== undefined && <MetaPills metadata={openItemRecord.metadata} t={t} />}
-          </div>
-        )}
         <div className={css.previewScroll}>
           {openItem === null && selection === null && (
             <EmptyState title={t('detail.itemEmpty')} hint={t('detail.itemEmptyHint')} />
+          )}
+          {openItem !== null && (
+            // T83 · phase 4: the heading sits in the content column above the
+            // two cards (v5 lib), not in a full-width strip over the pane.
+            <ItemCrumb
+              crumb={crumb}
+              dataset={dataset.id}
+              item={openItem}
+              commit={brief?.commit ?? null}
+              metadata={openItemRecord?.metadata}
+              t={t}
+            />
           )}
           {openItem !== null && briefLoading && brief === undefined && (
             <div className={css.empty}>{t('detail.briefLoading')}</div>
@@ -512,6 +584,11 @@ export function DatasetDetail(props: DatasetDetailProps) {
           {/* The answer record only exists where an eval plugin does: a null
               answer means no orchestrator is installed, so the area is absent
               rather than empty. */}
+          {openItem !== null && brief !== undefined && runs != null && runs.runs.length > 0 && (
+            <div className={css.usedBy}>
+              {t('detail.usedBy', { names: [...new Set(runs.runs.map(run => run.name))].join(' · ') })}
+            </div>
+          )}
           {openItem !== null && runs !== undefined && runs !== null && <AnswerRecord runs={runs} t={t} />}
           {selection !== null && (
             <section className={css.panel}>

@@ -648,6 +648,29 @@ describe('the detail page', () => {
     expect(line).toContain('detail.judgeSchemas {"count":1}')
   })
 
+  it('the item heading is a crumb in the content column; the cards flag the rubric and a missing check script (T83 · phase 4)', async () => {
+    const h = makeHarness()
+    h.itemBrief.mockResolvedValue({
+      ok: true,
+      value: { ...BRIEF, judgeability: { ...BRIEF.judgeability, probes: [] } },
+    })
+    h.itemRuns.mockResolvedValue({ runs: [RUNS.runs[0]!, { ...RUNS.runs[0]!, runId: 'run-2' }, { ...RUNS.runs[0]!, runId: 'run-3', name: 'pilot-b' }], notes: [] })
+    await openItem(h)
+    const judge = (await screen.findByText('detail.judgeOnly')).closest('section')
+    // repo › set › item, read at the tracked ref and the brief's commit.
+    const crumb = screen.getByRole('heading', { level: 5 })
+    expect(crumb.textContent).toContain('dataseek-eval›bench›R1')
+    expect(crumb.textContent).toContain('detail.readAt')
+    expect(crumb.textContent).toContain('"commit":"a4f9c2e"')
+    // The crumb sits in the scrolling content column, above the two cards.
+    expect(crumb.compareDocumentPosition(judge!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The rubric carries its leaf count; no probe anywhere is said, in the card.
+    expect(judge?.textContent).toContain('detail.judgeLeaves {"leaves":2}')
+    expect(judge?.textContent).toContain('detail.noProbes')
+    // The experiments that used it, once each.
+    expect(await screen.findByText('detail.usedBy {"names":"pilot-a · pilot-b"}')).toBeTruthy()
+  })
+
   it('«作答记录» is absent without an eval plugin, and present with one', async () => {
     const withoutEval = makeHarness()
     await openItem(withoutEval)

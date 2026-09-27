@@ -511,6 +511,9 @@ export function DatasetsView(props: DatasetsViewProps) {
       {page === 'detail' && detailRow !== null && (
         <DatasetDetail
           dataset={detailRow}
+          crumb={openRow === undefined || openDataset === null
+            ? null
+            : { repo: openRow.entry.id, set: openDataset, ref: openRow.entry.trackedRef }}
           items={items[detailRow.id] ?? []}
           sharedLayers={sharedLayers[detailRow.id] ?? {}}
           passthrough={passthrough[detailRow.id] ?? []}
