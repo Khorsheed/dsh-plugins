@@ -32,7 +32,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconArchiveOutlineMedium, IconFolderOpenOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconFolderOpenOutlineMedium, IconPlusOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasTabProps } from '../contract.ts'
 import {
@@ -53,6 +53,8 @@ import { CanvasSwitcher } from './CanvasSwitcher.tsx'
 import { TabStrip, type StripTab } from './TabStrip.tsx'
 import { basenameOf, messageOf } from '../text.ts'
 import { useDismiss } from '../use-dismiss.ts'
+import { MoreMenu } from '../more-menu.tsx'
+import { ConfirmDelete, type DeleteAsk } from '../confirm-delete.tsx'
 import css from './CanvasTab.module.css'
 // The dropdown panel primitive lives with the board styles (the switcher's
 // own module — a copy here was dead CSS and the M3.1 topbar bug's source).
@@ -77,7 +79,7 @@ function dirtyOf(draft: DraftContent | undefined): boolean {
 export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
-    archiveCanvas, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
+    archiveCanvas, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
     openCardDetail, openCardDraft, activateTab, closeTab, focusCanvas,
     askAgent, chatStatus, openSideChat, suggestWideMode, images, useImageRev,
     useSelection,
@@ -108,6 +110,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const [drafts, setDrafts] = useState<Readonly<Record<string, DraftContent>>>({})
   /** The discard question: the row whose × is waiting on an answer. */
   const [discardAsk, setDiscardAsk] = useState<string | null>(null)
+  /** The delete question: the canvas or card waiting on an answer. */
+  const [deleteAsk, setDeleteAsk] = useState<DeleteAsk | null>(null)
 
   const toastSeqRef = useRef(0)
   const newCardRef = useRef<HTMLSpanElement | null>(null)
@@ -389,6 +393,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         })
       }
     },
+    deleteCard: cardId => {
+      if (sessionId === undefined || openId === null) return
+      setDeleteAsk({ kind: 'card', canvasId: openId, cardId })
+    },
     markAnswered: cardId => {
       if (sessionId === undefined || openId === null) return
       void mutate(() => patchCard(sessionId, { canvasId: openId, cardId, question: { state: 'answered' } }), 'toast.answered')
@@ -499,6 +507,38 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         : undefined,
     )
   }, [sessionId, archiveCanvas, mutate])
+
+  /**
+   * The confirmed delete. A card delete is an ordinary board mutation (the
+   * fresh board comes back); a canvas delete leaves no board, so the page
+   * clears what it held and the list reloads without it.
+   */
+  const confirmDelete = useCallback((ask: DeleteAsk) => {
+    setDeleteAsk(null)
+    if (sessionId === undefined) return
+    if (ask.kind === 'card') {
+      setCardSelection(current => {
+        if (!current.has(ask.cardId)) return current
+        const next = new Set(current)
+        next.delete(ask.cardId)
+        return next
+      })
+      void mutate(() => deleteCard(sessionId, { canvasId: ask.canvasId, cardId: ask.cardId }), 'toast.cardDeleted')
+      return
+    }
+    void (async () => {
+      const value = await run(() => deleteCanvas(sessionId, { canvasId: ask.canvasId }))
+      if (value === null) return
+      if (!value.ok) {
+        showToast(errorText(value.error))
+        return
+      }
+      if (boardRef.current?.board.id === ask.canvasId) setOpenBoard(null)
+      setCanvases(current => current?.filter(row => row.id !== ask.canvasId) ?? current)
+      showToast(t('toast.canvasDeleted', { title: ask.title }))
+      void reloadList()
+    })()
+  }, [sessionId, mutate, deleteCard, deleteCanvas, run, showToast, errorText, t, reloadList])
 
   /**
    * One layout write (stage ⑥): the link view commits a gesture as ONE call,
@@ -694,6 +734,25 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
               </span>
             )}
             {readonly && <span className={css.readonlyHint}>{t('space.readonly')}</span>}
+            {/* The canvas's own ⋯: archive is the everyday way to put it away
+                (with 撤销); delete is the one door with no way back, so it is
+                last, marked, and behind a confirmation. An archived canvas
+                carries both of its gestures on its banner instead. */}
+            {!boardReadonly && openBoard !== null && loadError === null && (
+              <MoreMenu
+                label={t('canvas.more')}
+                className={css.moreButton}
+                items={[
+                  { id: 'archive', label: t('action.archiveCanvas'), icon: <IconArchiveOutlineMedium size={13} /> },
+                  { id: 'delete', label: t('action.deleteCanvas'), icon: <IconTrashOutlineMedium size={13} />, danger: true },
+                ]}
+                onSelect={id => {
+                  const row = summarizeBoard(openBoard.board)
+                  if (id === 'archive') void setCanvasArchived(row, true)
+                  else setDeleteAsk({ kind: 'canvas', canvasId: row.id, title: row.title })
+                }}
+              />
+            )}
           </header>
           {archivedRow !== null && (
             <div className={css.archivedBanner} role="status">
@@ -701,9 +760,18 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
               <span>{t('space.archivedBanner')}</span>
               <span className={css.spacer} />
               {!readonly && (
-                <Button size="sm" onClick={() => { void setCanvasArchived(archivedRow, false) }}>
-                  {t('action.restore')}
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setDeleteAsk({ kind: 'canvas', canvasId: archivedRow.id, title: archivedRow.title }) }}
+                  >
+                    {t('action.deleteForever')}
+                  </Button>
+                  <Button size="sm" onClick={() => { void setCanvasArchived(archivedRow, false) }}>
+                    {t('action.restore')}
+                  </Button>
+                </>
               )}
             </div>
           )}
@@ -808,6 +876,12 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       {fatal !== null && (
         <div className={css.fatal} onClick={() => { setFatal(null) }}>{fatal}</div>
       )}
+      <ConfirmDelete
+        t={t}
+        ask={deleteAsk}
+        onCancel={() => { setDeleteAsk(null) }}
+        onConfirm={confirmDelete}
+      />
       <Modal
         open={discardAsk !== null}
         onClose={() => { setDiscardAsk(null) }}

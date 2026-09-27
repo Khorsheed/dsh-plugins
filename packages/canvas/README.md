@@ -35,7 +35,7 @@ v1 的工作区级灵感稿纸**存储原样保留**（编辑器已退役）—�
 
 - **一个灵感 = 一个文件**。正本在 `<工作区>/灵感画布/` 下，`文章/` 与 `卡片/` 两个子目录分别是两种形态，文件名就是标题。没有数据库、没有私有格式。
 - **M1.5 起右栏 tab 不再是稿纸编辑器**（现为画布工作台）：原文件仍在磁盘上，任何编辑器都能打开；v1 的五个 Remote 动词（`list` / `read` / `create` / `write` / `setArchived`）在线上不动。
-- **归档而不是删除**（画布与稿纸同义）：归档只从列表里隐藏，**文件一个字节都不动**；已归档区可随时恢复。
+- **稿纸只归档**：归档只从列表里隐藏，**文件一个字节都不动**；已归档区可随时恢复。画布另有真删除，见下方「已知限制」。
 
 ## 安装
 
@@ -78,8 +78,8 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 
 ## Known Limitations
 
-- **只归档，不删除**。官方 `ctx.fs` 没有删除文件的接口（13 个抽象方法里没有 `remove`/`rename`；沙箱围栏也只挂在 `writeText`/`editText` 上，裸 `node:fs` 会绕过它）。要彻底删掉某个文件，请在文件管理器里删——它只是你的一个 markdown 文件。画布同理：归档的画布与卡都留在 `canvas.json` 里。
-- **贴进来的图片字节不会被回收**。像素落在宿主的内容寻址库里，归档画布、删掉卡片都不碰它——这些文件会一直留在宿主的附件目录，要彻底清掉得在宿主侧动手（本插件没有删除接口，见上条）。指针读不回对象时降级成 alt 文本：不报错，也不留破图。
+- **画布能删，稿纸不能**。画布与卡片都有「删除」（⋯ 菜单里，确认一次，不可撤销）；归档仍是可撤销的那条路。官方 `ctx.fs` 没有删除接口（13 个抽象方法里没有 `remove`/`rename`），所以删画布是插件对**自己的状态目录**（`$DSH_HOME/state/canvas/<id>/`）直接 `rm -r`：只读模式照样拒绝，删完再经 `ctx.fs` 读一遍确认真的没了——状态目录在 node 够不着的远端挂载上时会如实报失败，不假装成功。删卡片只是一次普通的 `canvas.json` 写入（连同指向它的连线）。**删除只给人，不给 Agent**：没有对应的工具。稿纸文件在工作区里，插件不替你删，请在文件管理器里删。
+- **贴进来的图片字节不会被回收**。像素落在宿主的内容寻址库里，归档或删除画布、删除卡片都不碰它——删掉的只是卡里的指针，像素会一直留在宿主的附件目录，要彻底清掉得在宿主侧动手（宿主附件库没有删除接口）。指针读不回对象时降级成 alt 文本：不报错，也不留破图。
 - **只有贴进去的图会显示**。渲染侧只认 `attachment://` 一种 scheme，`./pic.png` 这类自己写上去的路径永远停在 alt 文本（这条白名单就是风险 ⑬ 的设计）。想让图进卡片，就用粘贴。
 - **一张图的像素只过一次 Remote**。缓存未命中时字节以 base64 走一趟，之后 24 条以内不再重复读，第 25 条进来时最久没用到的那条出去。所以长文多图的首屏是「文字先到、图一张张亮起」，不是同时出现。
 - **画的上限是 60 笔、单笔 120 点**。到了线会说一声，不会静默截断（撤一笔或擦一笔就腾出空间）。存点列、轮廓每次渲染现算，所以线条规则以后改了老画自动跟上——代价是每次重绘多一次计算。
@@ -115,7 +115,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 **板服务**：`CanvasBoardService`（`ctx.canvasBoard`）整板版本围栏读写——读取 → 应用纯函数修改 → `replaceIfVersion` 写回；版本冲突**重读重放一次**再报 `stale`（两个浏览器标签页同时操作不丢卡）。写入围栏见 Compatibility 的「重定界」条。
 
-**Remote**：namespace `canvas` 在 v1 五动词（`list` / `read` / `create` / `write` / `setArchived`）之外的空间动词：`listCanvases` / `createCanvas` / `readBoard` / `putCard` / `patchCard` / `addComment` / `archiveCanvas` / `setCategories` / `setLayout` / `askAgent` / `chatStatus` / `focusCanvas`，加上图片那两条不带会话的 `attachImage` / `imageBytes`。变更类全部 agent 优先（调用会话供电围栏），读取类不带 agent——v1 的线上约定原样延续。`setLayout` 是连线面唯一的写动词：一次拖动可能同时动一张分区和它里面五张卡，逐张 `patchCard` 会各自撞自己的版本守卫，所以位置/分区/线三样合在一个动词里一盘落定。**「没带这个字段」和「带了一个空数组」是两件事**：省略 = 这一盘不动，`[]` = 清空。
+**Remote**：namespace `canvas` 在 v1 五动词（`list` / `read` / `create` / `write` / `setArchived`）之外的空间动词：`listCanvases` / `createCanvas` / `readBoard` / `putCard` / `patchCard` / `addComment` / `archiveCanvas` / `deleteCanvas` / `deleteCard` / `setCategories` / `setLayout` / `askAgent` / `chatStatus` / `focusCanvas`，加上图片那两条不带会话的 `attachImage` / `imageBytes`。变更类全部 agent 优先（调用会话供电围栏），读取类不带 agent——v1 的线上约定原样延续。`setLayout` 是连线面唯一的写动词：一次拖动可能同时动一张分区和它里面五张卡，逐张 `patchCard` 会各自撞自己的版本守卫，所以位置/分区/线三样合在一个动词里一盘落定。**「没带这个字段」和「带了一个空数组」是两件事**：省略 = 这一盘不动，`[]` = 清空。
 
 **右栏只有一个 tab 类型**（M3 注册一次；0.4.5 一度注册两次，0.4.6 把第二次收回来了）：`ctx.sidebarRightTabs.register` 一次，body 挂在 keyed `sidebar.right.pane.tab` 上，注册级开关一处管显隐。`canvas` 是**页面类型**（不认领地址，按 kind 打开），而 `tab/CanvasTab.tsx` 现在是一台路由器：`tab/TabStrip.tsx` 是那一排标签，下面的正文是「显示中那一行」的页面——板行 = 顶栏 + `space/BoardView.tsx`（或 `space/LinkView.tsx`），卡行 / 草稿行 = `detail/CanvasDetailView.tsx`，并且带 `key`（一个不受控 textarea 的值不能从你刚看的那张卡带进这张卡）。切换器（`tab/CanvasSwitcher.tsx`）挂在标签条行尾，只负责往这排里加行（新建 / 挑一块已有的 / 归档）。
 

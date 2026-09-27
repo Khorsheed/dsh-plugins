@@ -1,0 +1,6 @@
+/* The host's own destructive confirm (plugin manager) recolours the primary
+   button through its tokens; the canvas does the same instead of a new style. */
+.danger {
+  --dsw-alias-button-primary-fill: var(--dsw-alias-state-error-primary);
+  --dsw-alias-button-primary-hover: var(--dsw-alias-state-error-primary);
+}

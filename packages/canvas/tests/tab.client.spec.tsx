@@ -103,6 +103,8 @@ interface Harness {
     chatStatus: ReturnType<typeof vi.fn>
     openSideChat: ReturnType<typeof vi.fn>
     suggestWideMode: ReturnType<typeof vi.fn>
+    deleteCanvas: ReturnType<typeof vi.fn>
+    deleteCard: ReturnType<typeof vi.fn>
   }
   readonly props: CanvasTabProps
   /** The fake host's boards by id (mutations apply to them). */
@@ -180,6 +182,18 @@ function makeHarness(options: {
     archiveCanvas: vi.fn(async (sid: string, request: { canvasId: string; archived: boolean }): Promise<Result<BoardMutationResult>> => {
       const current = boards.get(request.canvasId)
       if (current !== undefined) current.archivedAt = request.archived ? NOW : null
+      return mutationFor(request.canvasId)
+    }),
+    // The deletes forget their strip rows, exactly as the production face does.
+    deleteCanvas: vi.fn(async (_sid: string, request: { canvasId: string }): Promise<Result<{ ok: true }>> => {
+      boards.delete(request.canvasId)
+      store.forget(request.canvasId)
+      return ok({ ok: true })
+    }),
+    deleteCard: vi.fn(async (_sid: string, request: { canvasId: string; cardId: string }): Promise<Result<BoardMutationResult>> => {
+      const current = boards.get(request.canvasId)
+      if (current !== undefined) current.cards = current.cards.filter(candidate => candidate.id !== request.cardId)
+      store.forget(request.canvasId, request.cardId)
       return mutationFor(request.canvasId)
     }),
     openFile: vi.fn(),
@@ -658,7 +672,8 @@ describe('CanvasTab — round-4 dismissal, undo and the archived canvas', () => 
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: '归档' }))
+    fireEvent.click(screen.getByRole('button', { name: '更多' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '归档' }))
     fireEvent.click(await screen.findByText('撤销'))
     await waitFor(() => {
       expect(mocks.patchCard).toHaveBeenLastCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', status: 'kept' })
@@ -676,6 +691,64 @@ describe('CanvasTab — round-4 dismissal, undo and the archived canvas', () => 
     fireEvent.click(within(banner).getByRole('button', { name: '恢复' }))
     await waitFor(() => {
       expect(mocks.archiveCanvas).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, archived: false })
+    })
+  })
+})
+
+describe('CanvasTab — true delete (round 5)', () => {
+  it('deletes a card from its ⋯ menu only after the confirmation', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1'), card('c_2')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getAllByRole('button', { name: '更多' })[0]!)
+    fireEvent.click(await screen.findByRole('menuitem', { name: '删除' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('删除这张卡片')
+    expect(mocks.deleteCard).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除' }))
+    await waitFor(() => {
+      expect(mocks.deleteCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1' })
+    })
+    await waitFor(() => { expect(screen.queryByText('卡片 c_1')).toBeNull() })
+    expect(screen.getByText('卡片 c_2')).toBeTruthy()
+  })
+
+  it('cancelling the confirmation deletes nothing', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getAllByRole('button', { name: '更多' })[0]!)
+    fireEvent.click(await screen.findByRole('menuitem', { name: '删除' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '取消' }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(mocks.deleteCard).not.toHaveBeenCalled()
+  })
+
+  it('deletes the open canvas from the canvas ⋯ menu', async () => {
+    const { mocks, props, boards } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: '画布操作' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '删除画布…' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '删除' }))
+    await waitFor(() => {
+      expect(mocks.deleteCanvas).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID })
+    })
+    expect(boards.has(CANVAS_ID)).toBe(false)
+    await waitFor(() => { expect(screen.queryByText('卡片 c_1')).toBeNull() })
+  })
+
+  it('offers 永久删除 on the archived canvas banner', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')], { archivedAt: NOW })] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    // Read-only: no per-card ⋯, no canvas ⋯ — the banner is the only door.
+    expect(screen.queryByRole('button', { name: '更多' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '画布操作' })).toBeNull()
+    fireEvent.click(within(screen.getByRole('status')).getByRole('button', { name: '永久删除…' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '删除' }))
+    await waitFor(() => {
+      expect(mocks.deleteCanvas).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID })
     })
   })
 })

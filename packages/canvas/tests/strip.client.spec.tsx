@@ -140,6 +140,35 @@ describe('CanvasSelectionStore — the rows', () => {
     expect(state.canvasId).toBeNull()
   })
 
+  it('forgets a deleted card\'s row and falls back to that canvas\'s board', () => {
+    const store = new CanvasSelectionStore()
+    store.openCardTab(CANVAS_ID, 'c_1', '一')
+    store.openCardTab(CANVAS_ID, 'c_2', '二')
+    store.activate(cardTabId(CANVAS_ID, 'c_1'))
+    // Not the showing row: the view stays put.
+    store.forget(CANVAS_ID, 'c_2')
+    expect(store.source.getSnapshot().active).toBe(cardTabId(CANVAS_ID, 'c_1'))
+    // The showing row: its board takes its place on a strip that lacked one.
+    store.forget(CANVAS_ID, 'c_1')
+    const state = store.source.getSnapshot()
+    expect(state.tabs.map(row => row.id)).toEqual([boardTabId(CANVAS_ID)])
+    expect(state.active).toBe(boardTabId(CANVAS_ID))
+  })
+
+  it('forgets every row of a deleted canvas and shows the neighbour', () => {
+    const store = new CanvasSelectionStore()
+    const other = 'canvas_zzzzzzzzabcdefgh'
+    store.openCanvas(other)
+    store.openCanvas(CANVAS_ID)
+    store.openCardTab(CANVAS_ID, 'c_1', '一')
+    store.forget(CANVAS_ID)
+    const state = store.source.getSnapshot()
+    expect(state.tabs.map(row => row.id)).toEqual([boardTabId(other)])
+    expect(state.active).toBe(boardTabId(other))
+    store.forget(other)
+    expect(store.source.getSnapshot().active).toBe('')
+  })
+
   it('caps the strip by evicting a card, never the board nor the row just added', () => {
     const store = new CanvasSelectionStore()
     store.openCanvas(CANVAS_ID)

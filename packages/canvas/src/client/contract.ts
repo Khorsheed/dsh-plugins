@@ -30,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
   BoardAttachImageOutcome, BoardAttachImageRequest, BoardChatStatusResult, BoardCreateRequest,
+  BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardFocusRequest, BoardFocusResult,
   BoardListResult, BoardMutationResult,
   BoardPatchCardRequest, BoardPutCardRequest,
@@ -94,8 +95,12 @@ export interface CanvasTabInjected extends CanvasChatInjected, CanvasImageInject
   patchCard: (sessionId: SessionId, request: BoardPatchCardRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Comment on one card. */
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
-  /** Archive a canvas from the switcher, or restore it (never a delete). */
+  /** Archive a canvas from the switcher, or restore it (the reversible half). */
   archiveCanvas: (sessionId: SessionId, request: BoardArchiveRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Delete one canvas for good; a landed delete also drops its strip rows. */
+  deleteCanvas: (sessionId: SessionId, request: BoardDeleteCanvasRequest) => Promise<RemoteResult<BoardDeleteCanvasResult>>
+  /** Delete one card for good (and its lines); a landed delete drops its strip row. */
+  deleteCard: (sessionId: SessionId, request: BoardDeleteCardRequest) => Promise<RemoteResult<BoardMutationResult>>
   /**
    * Write this canvas's category catalog (stage ⑤): the whole desired list, in
    * strip order. `archiveCardIds` rides the same write so retiring a category
@@ -190,6 +195,8 @@ export interface CanvasDetailInjected extends CanvasChatInjected, CanvasImageInj
   patchCard: (sessionId: SessionId, request: BoardPatchCardRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Comment on one card. */
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Delete one card for good (behind the page's own confirmation). */
+  deleteCard: (sessionId: SessionId, request: BoardDeleteCardRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Open a file attachment in the official document preview. */
   openFile: (sessionId: SessionId, cwd: string | undefined, path: string) => void
   hooks: {

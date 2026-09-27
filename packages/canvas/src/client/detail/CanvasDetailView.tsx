@@ -28,7 +28,9 @@ import {
   type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
 import { MarkdownText, Toast, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium, IconLinkOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium, IconLinkOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { MoreMenu } from '../more-menu.tsx'
+import { ConfirmDelete } from '../confirm-delete.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { attachBridge } from '@khorsheed/dsh-inline-html-render/src/client/bridge.ts'
@@ -126,7 +128,7 @@ function HtmlFrame({ html }: { html: string }): ReactNode {
 /** The card-detail reader. */
 export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const {
-    t, sessionId, canvasId, cardId, create, readBoard, patchCard, addComment, openFile, useSelection,
+    t, sessionId, canvasId, cardId, create, readBoard, patchCard, addComment, deleteCard, openFile, useSelection,
     askAgent, chatStatus, openSideChat, attachImage, images, pathImages,
   } = props
   // Only the rev is read from the shared store: which card this page shows came
@@ -148,6 +150,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const [tool, setTool] = useState<PadTool>('text')
   const [toast, setToast] = useState<{ text: string; seq: number; undo?: () => void } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
+  const [askDelete, setAskDelete] = useState(false)
   /** The chat seam's probe: null while probing, so entries never flash. */
   const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
   const toastSeqRef = useRef(0)
@@ -515,23 +518,6 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               {t('detail.compose')}
             </button>
           )}
-          {!proposed && !archived && !readonly && (
-            // A kept card is archived from here too (round-4 fix): the board's
-            // hover button was the only way, and the page you read a card on
-            // is where you decide it is done.
-            <button
-              type="button"
-              className={css.iconButton}
-              onClick={() => void mutate(sid => patchCard(sid, {
-                canvasId: open.board.id, cardId: card.id, status: 'archived',
-              }), 'toast.cardArchived', () => void mutate(sid => patchCard(sid, {
-                canvasId: open.board.id, cardId: card.id, status: 'kept',
-              }), 'toast.cardRestored'))}
-            >
-              <IconArchiveOutlineMedium size={12} />
-              {t('card.archive')}
-            </button>
-          )}
           {archived && !readonly && (
             <button
               type="button"
@@ -543,6 +529,27 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               <IconRefreshOutlineMedium size={12} />
               {t('card.restore')}
             </button>
+          )}
+          {!proposed && !readonly && (
+            // The page you read a card on is where you decide it is done, so
+            // its fate lives here too: archive (undoable) for a kept card, and
+            // a true delete behind a confirmation for any settled one.
+            <MoreMenu
+              label={t('action.more')}
+              className={css.iconButton}
+              items={[
+                ...(archived ? [] : [{ id: 'archive', label: t('card.archive'), icon: <IconArchiveOutlineMedium size={14} /> }]),
+                { id: 'delete', label: t('action.delete'), icon: <IconTrashOutlineMedium size={14} />, danger: true },
+              ]}
+              onSelect={id => {
+                if (id === 'delete') { setAskDelete(true); return }
+                void mutate(sid => patchCard(sid, {
+                  canvasId: open.board.id, cardId: card.id, status: 'archived',
+                }), 'toast.cardArchived', () => void mutate(sid => patchCard(sid, {
+                  canvasId: open.board.id, cardId: card.id, status: 'kept',
+                }), 'toast.cardRestored'))
+              }}
+            />
           )}
         </div>
       </div>
@@ -703,6 +710,17 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         )}
       </div>
 
+      <ConfirmDelete
+        t={t}
+        ask={askDelete ? { kind: 'card', canvasId: open.board.id, cardId: card.id } : null}
+        onCancel={() => { setAskDelete(false) }}
+        onConfirm={() => {
+          setAskDelete(false)
+          // A success takes this card's row off the strip (the face's
+          // `forget`), so the page unmounts onto the board it came from.
+          void mutate(sid => deleteCard(sid, { canvasId: open.board.id, cardId: card.id }), 'toast.cardDeleted')
+        }}
+      />
       {toast !== null && (
         <Toast
           key={toast.seq}

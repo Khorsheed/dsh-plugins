@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-27-canvas-true-delete.md
+.agents/notes/implemented/feature/2026-09-27-canvas-true-delete.md: 84d0c7c47ebd5375cc041a7c188d9d1b831d6768
+.agents/notes/implemented/feature/2026-09-27-canvas-true-delete.zh.md: 1acc80b9409c93b041a4ce52db8416d016e3476a

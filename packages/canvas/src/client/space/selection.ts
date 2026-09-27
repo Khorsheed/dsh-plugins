@@ -143,6 +143,34 @@ export class CanvasSelectionStore {
     this.commit(tabs, neighbour?.id ?? '')
   }
 
+  /**
+   * Drop the rows a delete took away: every row of a canvas, or one card's
+   * row. When the showing row went with them, a deleted card hands the view
+   * to its own canvas's board (seated where the card row was, if the strip did
+   * not hold it); a deleted canvas hands it to the neighbouring row.
+   */
+  forget(canvasId: string, cardId?: string): void {
+    const current = this.source.getSnapshot()
+    const gone = (row: CanvasTabRow): boolean =>
+      row.canvasId === canvasId && (cardId === undefined || (row.kind === 'card' && row.cardId === cardId))
+    if (!current.tabs.some(gone)) return
+    const at = current.tabs.findIndex(candidate => candidate.id === current.active)
+    const tabs = current.tabs.filter(candidate => !gone(candidate))
+    if (tabs.some(candidate => candidate.id === current.active)) {
+      this.commit(tabs, current.active)
+      return
+    }
+    if (cardId !== undefined) {
+      const board = boardTabId(canvasId)
+      if (!tabs.some(candidate => candidate.id === board)) {
+        tabs.splice(Math.min(at, tabs.length), 0, { id: board, kind: 'board', canvasId })
+      }
+      this.commit(tabs, board)
+      return
+    }
+    this.commit(tabs, tabs[Math.min(at, tabs.length - 1)]?.id ?? '')
+  }
+
   /** Note that a board changed under the open tabs (any seat's mutation). */
   touch(): void {
     const current = this.source.getSnapshot()

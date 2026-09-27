@@ -21,6 +21,7 @@
  * @module @khorsheed/dsh-canvas
  */
 import { randomBytes } from 'node:crypto'
+import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AttachmentIdType, AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -42,6 +43,7 @@ import {
   type BoardAddCommentRequest, type BoardArchiveRequest, type BoardAskAgentOutcome,
   type BoardAskAgentRequest, type BoardAttachImageOutcome, type BoardAttachImageRequest,
   type BoardCard, type BoardChatStatusResult, type BoardCreateRequest,
+  type BoardDeleteCanvasRequest, type BoardDeleteCanvasResult, type BoardDeleteCardRequest,
   type BoardFocusRequest, type BoardFocusResult,
   type BoardImageBytesOutcome, type BoardImageBytesRequest,
   type BoardListResult, type BoardMutationResult,
@@ -112,6 +114,18 @@ export interface CanvasBoardConfig {
 }
 
 /**
+ * Remove one directory tree. `ctx.fs` has no delete verb (read, list, write
+ * and edit only), so the canvas delete reaches the state root through node
+ * directly — legitimate only because that root is this plugin's own
+ * deployment-level directory (`$DSH_HOME/state/canvas`), never a workspace.
+ * The seam exists so the in-memory specs can stand in for the disk.
+ */
+export type RemoveTree = (path: string) => Promise<void>
+
+/** The default remover: the whole tree, a missing one included. */
+const removeTreeOnDisk: RemoveTree = path => rm(path, { recursive: true, force: true })
+
+/**
  * The probed side-chat seam, mirrored STRUCTURALLY — the side-chat package
  * itself is never imported (this package's one cross-plugin edge is the
  * probed service name, declared in the manifest's `dsh.references`). `send`
@@ -159,8 +173,13 @@ export class CanvasBoardService {
   /**
    * @param ctx - host context carrying the mounted filesystem and the pad core.
    * @param config - optional state-root override.
+   * @param removeTree - the directory remover the canvas delete uses (specs swap it).
    */
-  constructor(private readonly ctx: Context, config: CanvasBoardConfig = {}) {
+  constructor(
+    private readonly ctx: Context,
+    config: CanvasBoardConfig = {},
+    private readonly removeTree: RemoveTree = removeTreeOnDisk,
+  ) {
     this.stateRoot = resolveCanvasStateRoot(config.stateRoot)
     this.sandboxPolicy = ctx.fs.sandboxMode === undefined ? undefined : ctx.get('sandboxPolicy')
   }
@@ -458,7 +477,8 @@ export class CanvasBoardService {
 
   /**
    * Archive a canvas from the space list, or restore it. The directory and
-   * its file are never touched beyond the flag — archive is hide, not delete.
+   * its file are never touched beyond the flag — archive is hide; deleting is
+   * `deleteCanvas`, a separate and irreversible verb.
    * @param request - canvas id and the target archived state.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh board and token, or the failure code.
@@ -466,6 +486,54 @@ export class CanvasBoardService {
   async archiveCanvas(request: BoardArchiveRequest, session: Session): Promise<BoardMutationResult> {
     return this.mutate(request.canvasId, session, (board, now) => {
       board.archivedAt = request.archived ? (board.archivedAt ?? now) : null
+      return board
+    })
+  }
+
+  /**
+   * Delete one canvas for good: its whole directory. Operator-only — no agent
+   * tool reaches it, the client puts a confirmation in front of it. A
+   * read-only session is refused like any other write; a canvas that is not
+   * there reports `missing`; and the delete is verified through `ctx.fs`
+   * afterwards, so a backend whose files do not live where node looks (a
+   * remote mount) reports `io` instead of claiming a delete that did not
+   * happen. Pasted images stay in the host's attachment store (it has no
+   * delete verb; the store owns their lifetime) — only the pointers go.
+   * @param request - the canvas id (validated before any path is built).
+   * @param session - the session that owns the gesture; supplies the mode.
+   * @returns the receipt, or the failure code.
+   */
+  async deleteCanvas(request: BoardDeleteCanvasRequest, session: Session): Promise<BoardDeleteCanvasResult> {
+    const id = normalizeCanvasId(request.canvasId)
+    if (id === undefined) return { ok: false, error: 'invalid-name' }
+    if (this.policyOf(session)?.mode === 'read-only') return { ok: false, error: 'denied' }
+    if (await this.readRaw(id) === 'missing') return { ok: false, error: 'missing' }
+    try {
+      await this.removeTree(this.canvasDir(id))
+    } catch {
+      return { ok: false, error: 'io' }
+    }
+    if (await this.readRaw(id) !== 'missing') return { ok: false, error: 'io' }
+    for (const [sessionId, focused] of this.focused) {
+      if (focused === id) this.focused.delete(sessionId)
+    }
+    return { ok: true }
+  }
+
+  /**
+   * Delete one card for good: the card and every line touching it leave in
+   * one rewrite (a line to nowhere would otherwise survive until the next
+   * read normalized it away). Operator-only, like the canvas delete.
+   * @param request - canvas id and card id.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async deleteCard(request: BoardDeleteCardRequest, session: Session): Promise<BoardMutationResult> {
+    return this.mutate(request.canvasId, session, board => {
+      const index = board.cards.findIndex(card => card.id === request.cardId)
+      if (index < 0) return 'missing'
+      board.cards.splice(index, 1)
+      board.links = board.links.filter(link => link.from !== request.cardId && link.to !== request.cardId)
       return board
     })
   }

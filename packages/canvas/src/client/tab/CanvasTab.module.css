@@ -208,3 +208,25 @@
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
 }
+
+/* The canvas's ⋯: quiet at rest, a fill on hover — the host's icon-button
+   manner, so it reads as a menu, not as a fourth labelled action. */
+.moreButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.moreButton:hover,
+.moreButton[aria-expanded="true"] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}

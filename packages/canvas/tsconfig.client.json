@@ -30,6 +30,8 @@
     "src/client/preset-visibility.ts",
     "src/client/text.ts",
     "src/client/use-dismiss.ts",
+    "src/client/more-menu.tsx",
+    "src/client/confirm-delete.tsx",
     "src/client/detail/CardPad.tsx",
     "src/client/detail/CanvasDetailView.tsx",
     "src/client/detail/DrawFigure.tsx",

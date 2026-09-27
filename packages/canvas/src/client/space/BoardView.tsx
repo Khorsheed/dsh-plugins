@@ -19,7 +19,7 @@
  */
 import { useRef, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconEditOutlineMedium, IconLightOutlineMedium, IconLinkOutlineMedium, IconNewChatOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconEditOutlineMedium, IconLightOutlineMedium, IconLinkOutlineMedium, IconNewChatOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
   CANVAS_LENS_IDS, documentHeadingOf, enabledCategories, isBoardCardKind, isLongCardText,
@@ -35,6 +35,7 @@ import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
 import { useDismiss } from '../use-dismiss.ts'
+import { MoreMenu } from '../more-menu.tsx'
 import css from './board.module.css'
 
 /** The mutations the board can ask for (the page wires them to the Remote). */
@@ -45,6 +46,8 @@ export interface BoardActions {
   markAnswered: (cardId: string) => void
   /** Comment on one card. */
   comment: (cardId: string, text: string) => void
+  /** Ask to delete one card for good (the page puts the confirmation in front). */
+  deleteCard: (cardId: string) => void
   /** Archive every selected card. */
   archiveSelected: () => void
   /** Refile every selected card under another category (the batch bar's 「改分类」). */
@@ -288,6 +291,10 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
             <IconRefreshOutlineMedium size={12} />
             {t('card.restore')}
           </button>
+          <button type="button" onClick={event => { event.stopPropagation(); actions.deleteCard(card.id) }}>
+            <IconTrashOutlineMedium size={12} />
+            {t('action.delete')}
+          </button>
         </div>
       ) : (
         <div className={css.cardActions}>
@@ -311,15 +318,18 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
               <IconCheckOutlineMedium size={13} />
             </button>
           )}
-          <button
-            type="button"
+          <MoreMenu
+            label={t('action.more')}
             className={css.iconButton}
-            title={t('card.archive')}
-            aria-label={t('card.archive')}
-            onClick={event => { event.stopPropagation(); actions.setCardStatus(card.id, 'archived') }}
-          >
-            <IconArchiveOutlineMedium size={13} />
-          </button>
+            items={[
+              { id: 'archive', label: t('card.archive'), icon: <IconArchiveOutlineMedium size={13} /> },
+              { id: 'delete', label: t('action.delete'), icon: <IconTrashOutlineMedium size={13} />, danger: true },
+            ]}
+            onSelect={id => {
+              if (id === 'archive') actions.setCardStatus(card.id, 'archived')
+              else actions.deleteCard(card.id)
+            }}
+          />
         </div>
       )}
 

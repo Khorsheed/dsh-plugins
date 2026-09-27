@@ -13,7 +13,7 @@
  * pixels stayed in the store (§10.3).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { CanvasDetailProps } from '../src/client/contract.ts'
 import { CanvasDetailView } from '../src/client/detail/CanvasDetailView.tsx'
@@ -156,6 +156,10 @@ function makeHarness(
     addComment: vi.fn(async (_sessionId: string, request: { cardId: string; text: string }): Promise<Result<BoardMutationResult>> => {
       const target = current.board.cards.find(candidate => candidate.id === request.cardId)
       target?.comments.push({ id: `m_${request.text.length}`, author: 'user', text: request.text, createdAt: NOW })
+      return ok({ ok: true, board: current.board, version: '2' })
+    }),
+    deleteCard: vi.fn(async (_sessionId: string, request: { cardId: string }): Promise<Result<BoardMutationResult>> => {
+      current.board.cards = current.board.cards.filter(candidate => candidate.id !== request.cardId)
       return ok({ ok: true, board: current.board, version: '2' })
     }),
     openFile: vi.fn(),
@@ -494,6 +498,26 @@ describe('CanvasDetailView', () => {
     fireEvent.click(screen.getByRole('button', { name: /恢复/ }))
     await waitFor(() => {
       expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_x', status: 'kept' })
+    })
+  })
+
+  it('archives a kept card from its ⋯ menu, and deletes it only after the confirmation', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: '更多' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '归档' }))
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', status: 'archived' })
+    })
+    // Archived now: the menu keeps only the delete.
+    fireEvent.click(await screen.findByRole('button', { name: '更多' }))
+    expect(screen.queryByRole('menuitem', { name: '归档' })).toBeNull()
+    fireEvent.click(await screen.findByRole('menuitem', { name: '删除' }))
+    expect(mocks.deleteCard).not.toHaveBeenCalled()
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '删除' }))
+    await waitFor(() => {
+      expect(mocks.deleteCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1' })
     })
   })
 })

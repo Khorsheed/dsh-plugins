@@ -80,6 +80,8 @@ async function bench(): Promise<{ seen: Seen[]; remote: CanvasRemoteService; dis
     patchCard: async (_request: BoardPatchCardRequest, session: Session) => { seen.push({ method: 'patchCard', session }); return boardReceipt() },
     addComment: async (_request: BoardAddCommentRequest, session: Session) => { seen.push({ method: 'addComment', session }); return boardReceipt() },
     archiveCanvas: async (_request: BoardArchiveRequest, session: Session) => { seen.push({ method: 'archiveCanvas', session }); return boardReceipt() },
+    deleteCanvas: async (_request: { canvasId: string }, session: Session) => { seen.push({ method: 'deleteCanvas', session }); return { ok: true as const } },
+    deleteCard: async (_request: { canvasId: string; cardId: string }, session: Session) => { seen.push({ method: 'deleteCard', session }); return boardReceipt() },
     askAgent: async (_request: BoardAskAgentRequest, session: Session) => { seen.push({ method: 'askAgent', session }); return { ok: true as const, contextKey: `canvas:${CANVAS_ID}`, sent: true } },
     chatAvailable: () => ({ available: true }),
     focusCanvas: async (_request: { canvasId: string }, session: Session) => { seen.push({ method: 'focusCanvas', session }); return { ok: true as const } },
@@ -128,6 +130,8 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
     expect(await remote.patchCard(agent, { canvasId: CANVAS_ID, cardId: 'c_1', status: 'archived' })).toMatchObject({ ok: true })
     expect(await remote.addComment(agent, { canvasId: CANVAS_ID, cardId: 'c_1', text: 'x' })).toMatchObject({ ok: true })
     expect(await remote.archiveCanvas(agent, { canvasId: CANVAS_ID, archived: true })).toMatchObject({ ok: true })
+    expect(await remote.deleteCard(agent, { canvasId: CANVAS_ID, cardId: 'c_1' })).toMatchObject({ ok: true })
+    expect(await remote.deleteCanvas(agent, { canvasId: CANVAS_ID })).toEqual({ ok: true })
     expect(await remote.askAgent(agent, { canvasId: CANVAS_ID, lens: 'challenge' })).toMatchObject({ ok: true, sent: true })
     expect(await remote.focusCanvas(agent, { canvasId: CANVAS_ID })).toEqual({ ok: true })
     expect(seen).toEqual([
@@ -136,6 +140,8 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
       { method: 'patchCard', session: SESSION },
       { method: 'addComment', session: SESSION },
       { method: 'archiveCanvas', session: SESSION },
+      { method: 'deleteCard', session: SESSION },
+      { method: 'deleteCanvas', session: SESSION },
       { method: 'askAgent', session: SESSION },
       { method: 'focusCanvas', session: SESSION },
     ])

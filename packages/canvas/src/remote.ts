@@ -20,6 +20,7 @@ import type { CanvasService } from './service.ts'
 import type { CanvasBoardService } from './store.ts'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
+  BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardAttachImageOutcome, BoardAttachImageRequest,
   BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
   BoardImageBytesOutcome, BoardImageBytesRequest,
@@ -167,7 +168,7 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   }
 
   /**
-   * Archive a canvas from the space list, or restore it (never a delete).
+   * Archive a canvas from the space list, or restore it (the reversible half).
    * @param agent - the calling session's agent; its session fences the write.
    * @param request - canvas id and the target archived state.
    * @returns the fresh board and token, or the failure code.
@@ -175,6 +176,29 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('archiveCanvas')
   archiveCanvas(agent: Agent, request: BoardArchiveRequest): Promise<BoardMutationResult> {
     return this.board.archiveCanvas(request, agent.session)
+  }
+
+  /**
+   * Delete one canvas for good (the operator's confirmed gesture; no agent
+   * tool is built over this verb).
+   * @param agent - the calling session's agent; its session supplies the mode.
+   * @param request - the canvas id.
+   * @returns the receipt, or the failure code.
+   */
+  @Remote('deleteCanvas')
+  deleteCanvas(agent: Agent, request: BoardDeleteCanvasRequest): Promise<BoardDeleteCanvasResult> {
+    return this.board.deleteCanvas(request, agent.session)
+  }
+
+  /**
+   * Delete one card for good, with every line touching it (operator-only).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id and card id.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('deleteCard')
+  deleteCard(agent: Agent, request: BoardDeleteCardRequest): Promise<BoardMutationResult> {
+    return this.board.deleteCard(request, agent.session)
   }
 
   /**

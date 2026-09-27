@@ -43,6 +43,13 @@ class FakeFs {
   /** The fence each write carried, in call order (the fifth `writeText` argument). */
   readonly policies: SeenPolicy[] = []
 
+  /** Drop a whole subtree (stands in for the store's on-disk `rm -r`). */
+  removeTree(path: string): void {
+    for (const key of [...this.entries.keys()]) {
+      if (key === path || key.startsWith(`${path}/`)) this.entries.delete(key)
+    }
+  }
+
   /** Plant a file directly (setup for corruption cases). */
   seed(path: string, content: string): void {
     this.mkdirp(dirname(path))
@@ -153,12 +160,13 @@ interface Bench {
 }
 
 /** One board service over a fresh fake filesystem — a backend that does not confine. */
-function harness(): Bench {
+function harness(removeTree?: (fs: FakeFs, path: string) => Promise<void>): Bench {
   const fs = new FakeFs()
   const ctx = { fs } as unknown as Context
   const pad = new CanvasService(ctx)
   ;(ctx as { canvasStore?: CanvasService }).canvasStore = pad
-  return { fs, pad, board: new CanvasBoardService(ctx, { stateRoot: STATE }) }
+  const remove = removeTree ?? (async (target: FakeFs, path: string) => { target.removeTree(path) })
+  return { fs, pad, board: new CanvasBoardService(ctx, { stateRoot: STATE }, path => remove(fs, path)) }
 }
 
 /**
@@ -483,7 +491,7 @@ describe('CanvasBoardService.addComment', () => {
 })
 
 describe('CanvasBoardService.archiveCanvas', () => {
-  it('hides a canvas and restores it; the file is never deleted', async () => {
+  it('hides a canvas and restores it; archiving keeps the file', async () => {
     const { board } = harness()
     const created = await createBoard(board)
     const archived = await board.archiveCanvas({ canvasId: created.id, archived: true }, SESSION)
@@ -495,6 +503,73 @@ describe('CanvasBoardService.archiveCanvas', () => {
     expect(restored.board.archivedAt).toBeNull()
     // And the board content rode through both transitions untouched.
     expect(await readBoard(board, created.id)).toMatchObject({ title: '为什么人们不愿表达异议' })
+  })
+})
+
+describe('CanvasBoardService.deleteCanvas', () => {
+  it('removes the canvas directory and clears every session focus on it', async () => {
+    const { fs, board } = harness()
+    const kept = await createBoard(board, '留着')
+    const gone = await createBoard(board, '删掉')
+    await board.focusCanvas({ canvasId: gone.id }, SESSION)
+    expect(await board.deleteCanvas({ canvasId: gone.id }, SESSION)).toEqual({ ok: true })
+    expect(await board.readBoard({ canvasId: gone.id })).toEqual({ ok: false, error: 'missing' })
+    expect(await fs.stat(`${STATE}/${gone.id}`).catch(() => undefined)).toBeUndefined()
+    expect(board.focusedCanvasId(SESSION)).toBeUndefined()
+    expect((await board.listCanvases()).items.map(item => item.id)).toEqual([kept.id])
+  })
+
+  it('refuses a missing canvas and an unusable id', async () => {
+    const { board } = harness()
+    expect(await board.deleteCanvas({ canvasId: 'canvas_01234567abcdefgh' }, SESSION))
+      .toEqual({ ok: false, error: 'missing' })
+    expect(await board.deleteCanvas({ canvasId: '../etc' }, SESSION))
+      .toEqual({ ok: false, error: 'invalid-name' })
+  })
+
+  it('reports io when the removal throws or leaves the file behind', async () => {
+    const throwing = harness(async () => { throw new Error('EACCES') })
+    const first = await createBoard(throwing.board)
+    expect(await throwing.board.deleteCanvas({ canvasId: first.id }, SESSION))
+      .toEqual({ ok: false, error: 'io' })
+    // A mount node cannot reach: rm "succeeds" on a path that is not there.
+    const unreachable = harness(async () => {})
+    const second = await createBoard(unreachable.board)
+    expect(await unreachable.board.deleteCanvas({ canvasId: second.id }, SESSION))
+      .toEqual({ ok: false, error: 'io' })
+    expect(await readBoard(unreachable.board, second.id)).toMatchObject({ id: second.id })
+  })
+
+  it('stays fail-closed under read-only', async () => {
+    const { board } = confiningHarness('read-only')
+    expect(await board.deleteCanvas({ canvasId: 'canvas_01234567abcdefgh' }, SESSION))
+      .toEqual({ ok: false, error: 'denied' })
+  })
+})
+
+describe('CanvasBoardService.deleteCard', () => {
+  it('removes the card and every link touching it', async () => {
+    const { board } = harness()
+    const created = await createBoard(board)
+    const ids: string[] = []
+    for (const text of ['一', '二', '三']) {
+      const put = await board.putCard({ canvasId: created.id, kind: 'fragment', text }, SESSION)
+      if (!put.ok) throw new Error('expected a card')
+      ids.push(put.board.cards.at(-1)!.id)
+    }
+    const [a, b, c] = ids as [string, string, string]
+    await board.setLayout({ canvasId: created.id, links: [{ from: a, to: b }, { from: b, to: c }, { from: a, to: c }] }, SESSION)
+    const deleted = await board.deleteCard({ canvasId: created.id, cardId: b }, SESSION)
+    if (!deleted.ok) throw new Error('expected the delete to land')
+    expect(deleted.board.cards.map(card => card.text)).toEqual(['一', '三'])
+    expect(deleted.board.links).toEqual([{ from: a, to: c }])
+  })
+
+  it('reports a card that is not there', async () => {
+    const { board } = harness()
+    const created = await createBoard(board)
+    expect(await board.deleteCard({ canvasId: created.id, cardId: 'c_nope' }, SESSION))
+      .toEqual({ ok: false, error: 'missing' })
   })
 })
 

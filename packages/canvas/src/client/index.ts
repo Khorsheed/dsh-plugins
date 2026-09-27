@@ -230,6 +230,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
     archiveCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().archiveCanvas(sessionId, request)),
+    // A delete takes its rows off the strip too: a row naming a canvas or card
+    // that no longer exists would open onto 「找不到」 on the next click.
+    deleteCanvas: async (sessionId, request) => {
+      const result = touchOnSuccess(await requireRemote().deleteCanvas(sessionId, request))
+      if (result.ok && result.value.ok) selection.forget(request.canvasId)
+      return result
+    },
+    deleteCard: async (sessionId, request) => {
+      const result = touchOnSuccess(await requireRemote().deleteCard(sessionId, request))
+      if (result.ok && result.value.ok) selection.forget(request.canvasId, request.cardId)
+      return result
+    },
     // The category catalog (stage ⑤): one write for rename / add / retire, so a
     // retired row and the cards under it can never disagree between two calls.
     setCategories: async (sessionId, request) => touchOnSuccess(await requireRemote().setCategories(sessionId, request)),

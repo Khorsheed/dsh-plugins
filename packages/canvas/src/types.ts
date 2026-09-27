@@ -316,7 +316,7 @@ export type BoardCardKind = (typeof BOARD_CARD_KINDS)[number]
 /** The card statuses; `proposed` is the agent-contribution entrance (ghost). */
 export const BOARD_CARD_STATUSES = ['proposed', 'kept', 'archived'] as const
 
-/** One card status. Archiving never deletes (the v1 semantics, continued). */
+/** One card status. Archiving hides and restores; deleting is its own verb that drops the card. */
 export type BoardCardStatus = (typeof BOARD_CARD_STATUSES)[number]
 
 /** The question card lifecycle states. */
@@ -858,7 +858,7 @@ export interface CanvasBoard {
   /** This canvas's lanes (stage ⑥), same rule: absent in the file, empty here. */
   lanes: BoardLane[]
   stats: CanvasStats
-  /** Set when the canvas is archived from the list; the directory is never deleted. */
+  /** Set when the canvas is archived from the list (hide, restorable; deleting is its own verb). */
   archivedAt: string | null
   readonly createdAt: string
   updatedAt: string
@@ -1110,10 +1110,33 @@ export interface BoardAddCommentRequest {
   readonly author?: 'user' | 'agent'
 }
 
-/** Archive a canvas from the space list, or restore it (never a delete). */
+/** Archive a canvas from the space list, or restore it (the reversible half). */
 export interface BoardArchiveRequest {
   readonly canvasId: string
   readonly archived: boolean
+}
+
+/**
+ * Delete one canvas for good: its directory and everything in it. The
+ * irreversible half beside archive — the operator's gesture only, behind a
+ * confirmation; no agent tool reaches it.
+ */
+export interface BoardDeleteCanvasRequest {
+  readonly canvasId: string
+}
+
+/** The canvas delete's receipt (there is no board left to hand back). */
+export type BoardDeleteCanvasResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: CanvasError }
+
+/**
+ * Delete one card for good: the card and every line touching it leave the
+ * board in one rewrite. Operator-only, like the canvas delete.
+ */
+export interface BoardDeleteCardRequest {
+  readonly canvasId: string
+  readonly cardId: string
 }
 
 /**
