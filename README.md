@@ -12,8 +12,8 @@
 
 | 整合包 | 定位 | 成员 |
 | --- | --- | --- |
-| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **日常模式**:消息控制、产物预览、能力目录、移动端呈现、任务状态、快捷键与运维守护 | 13 |
-| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | **开发协作**:basic 全部体验,再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作,自带「开发模式」preset | 23 |
+| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **日常模式**:消息控制、产物预览、本地文件浏览、能力目录、移动端呈现、任务状态、快捷键与运维守护 | 14 |
+| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | **开发协作**:basic 全部体验,再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作,自带「开发模式」preset | 22 |
 | [web-eval](profiles/web-eval)(仓内) | **评测工作**:因子设计实验台——题库、条件、计划进 git 评审,确定性编排执行,自带「评测模式」preset | 25 |
 
 前两个是独立仓库,clone 后两条脚本完成安装与同端口交接,详见各自 README。单包安装是高级路径,见[安装](#安装)。
@@ -36,7 +36,7 @@
 | 包 | 你得到 | 随整合包 |
 | --- | --- | --- |
 | [`file-preview`](packages/file-preview) | 会话「**产物**」tab + 宿主服务一体:产物 tab、回合变更卡片、详情页预览抽屉,与只读文件预览 Remote 服务同包(0.4.0 起两行合一) | basic + dev |
-| [`local-files`](packages/local-files) | 右栏**本地文件浏览器**:懒加载文件树 + HTML/Markdown/JSON/CSV/图片结构化预览 | dev |
+| [`local-files`](packages/local-files) | 右栏**本地文件浏览器**:懒加载文件树 + HTML/Markdown/JSON/CSV/图片结构化预览 | basic + dev |
 
 ### 开发协作
 

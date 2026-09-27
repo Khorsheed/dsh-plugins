@@ -2,6 +2,14 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— 2026-09-28 preset 错位事故收尾：四层防错位闸 + room 工具行折回核心包
+
+- **背景**：3080 的 dev preset 因合并边界的版本错位崩坏（preset 行 `@khorsheed/dsh-worktrees/tool` 指向尚未提供该子路径的旧安装；boot 全绿但 preset 坏、会话 resume 报 `never started`）——preset 行挂在注册表 standing scope 上，boot 干净从不等于 preset 可用
+- **ankh-guard 0.4.0**：preflight 新增 agent preset 可用性审计——回读干跑 boot 里 preset 注册表的 `broken` 诊断，任何坏 preset 直接 FAIL 掉重启闸（输出列出 preset id 与逐行原因、附修复路径）；无注册表面的宿主降级为无发现，不拦重启
+- **`check:profiles` 三条新规则 + 退役登记处**：`scripts/retired-packages.ts` 统一登记退役名（worktrees-tool / ui-file-preview / ui-content-preview）；规则 5b（子路径行要求基础包导出该条目——事故的精确签名）、6（退役名不得再进任何组合）、7（caret 区间必须容纳工作区版本——上线即抓到并修复五处错位：basic/dev 的 file-preview `^0.4.0` 与 ankh-guard `^0.4.0`、dev 的 worktrees `^0.3.0`）；包自身 bundle patch（含 presets 的声明式 preset 行）纳入扫描
+- **deploy-3080**：开工前扫描生产 profile 的退役名残留并打印清理配方；各阶段打印 `[deploy-3080 +Ns]` 耗时；头部注明调用方预算纪律（后台默认 600s 超时会把它杀在全新安装中途 → profile 半写，修复 = 原命令重跑）；docs/ops.md 新增「部署卡在中途 / 退役包清理」处置手册
+- **room 0.2.0（BREAKING 边界移动）**：`@khorsheed/dsh-room-tool` 折回核心包为 `./tool` 组合条目（canvas `./agent`、worktrees 0.3.0 同模式）；preset 行 id `room-tool` 不变、组合状态无损，引用改为 `@khorsheed/dsh-room/tool`；工具 origin 标签 owner 归核心包；已发布 npm 名 30 → 29，旧名的 `npm deprecate` 留待发布波。presets 包与 dev pack 的 preset 正本同步改指
+
 ## Unreleased —— 0.1.7-rc.2 发布波：33 个已发布包带 rc.2 验证标注重发（2026-09-27 版本治理）
 
 - **背景**：宿主基线 0.1.7-rc.1 → 0.1.7-rc.2（版本钉与 CI 已切，全量 build+test 双绿，3080 已跑 rc.2；rc.1→rc.2 逐类清点见 [Agent Note](.agents/notes/implemented/architecture/2026-09-27-host-017-rc2-breaking-changes.md)）。本波把 33 个已发布包带上 rc.2 验证标注发出；canvas / presets / sidechat / datasets / datasets-tool / eval / eval-tool / mission / mission-tool / lab 十包暂缓不动
