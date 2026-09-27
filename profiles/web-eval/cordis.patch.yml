@@ -1,11 +1,11 @@
 # dsh-web-eval 的评测 pin 层：装置配置，不是个人偏好。
 #
-# 与 web-dev 的 cordis.patch.yml 不同，本文件**归 pack**：install.sh 与
+# 与 dev 的 cordis.patch.yml 不同，本文件**归 pack**：install.sh 与
 # update.sh 都覆盖它。理由是这里的每一行都是冻结决策的执行点（README 的
 # 「冻结决策」一节），而冻结决策属于评测装置——它决定两格之间「只差一个
 # 因子」这句话是否成立。留给用户层的后果是：一次 update 之后，实例可能
 # 静默地换了沙箱档位或推理强度，而 run.meta 里记的还是旧值，报告的
-# 「受试对象一致」失去意义。web-dev 没有这个约束，那里的 patch 层是用户的。
+# 「受试对象一致」失去意义。dev 没有这个约束，那里的 patch 层是用户的。
 #
 # 要改本文件的任何一行，先开新 run：条件哈希不覆盖 provider 配置（I4 的
 # provision 才把它们收进 home.sha），所以这一层的变化在条件哈希上是隐形的，

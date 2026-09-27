@@ -12,7 +12,7 @@ Two review passes (2026-09-02/03) found that the generic mechanisms are sound bu
 
 ## Proposal
 
-Stand up `profiles/web-eval/` now, in the same shape as `web-dev` (package.json member list, `[]` patch layer, install/update/restart scripts by name-swap only), and make its README the single document that fixes the **target** before any more code:
+Stand up `profiles/web-eval/` now, in the same shape as `dev` (package.json member list, `[]` patch layer, install/update/restart scripts by name-swap only), and make its README the single document that fixes the **target** before any more code:
 
 - a six-layer architecture (conversation / contract / orchestration / mechanism / execution / storage) with the rule that the orchestrator is the only executor, the agent only plans and drafts, and the human approves, writes final verdicts, and exports;
 - three contract schemas to be finalized in I1 — `condition.json` (the hashable subject: scoped home content + env keys + argv template + packs), `plan.json` (snapshot × conditions × reps × stages × order × budget × judge), `verdict.json` (the probe/judge output contract) — placed in the dataset authoring protocol next to `dataseek.verify/1`;
@@ -20,7 +20,7 @@ Stand up `profiles/web-eval/` now, in the same shape as `web-dev` (package.json 
 - twelve frozen fairness decisions (rep = mission, all exec, container-boundary sandboxing, pinned reasoning effort, model pin + read-back, byte-exact prompt, orchestrator-owned timeouts, active-time budgets, judge ≠ contestant, cost not tokens across harnesses, randomized interleave, single destroy path);
 - an iteration plan I0–I6 with observable done criteria, ordered contracts → one cell by hand → orchestrator v0 + pilot on stages 1–2 → containers + stages 3–4 → factor widening → agent-configured experiments + surfaces → external task sets + release.
 
-The roadmap's domain table now points at the profile README; the pack name is `dsh-web-eval`, consistent with `dsh-web-dev`. No plugin code changes in I0.
+The roadmap's domain table now points at the profile README; the pack name is `dsh-web-eval`, consistent with `dsh-dev`. No plugin code changes in I0.
 
 ## Alternatives considered
 
@@ -34,7 +34,7 @@ The roadmap's domain table now points at the profile README; the pack name is `d
 
 ## Acceptance criteria
 
-- `profiles/web-eval/` exists with README (zh + en, sidecar recorded), package.json listing the 22 members, `[]` patch layer, LICENSE, workspace file, CHANGELOG, and the three scripts; the restart script differs from web-dev's only by name.
+- `profiles/web-eval/` exists with README (zh + en, sidecar recorded), package.json listing the 22 members, `[]` patch layer, LICENSE, workspace file, CHANGELOG, and the three scripts; the restart script differs from dev's only by name.
 - `docs/roadmap.md`'s domain table names `dsh-web-eval` and links the profile README.
 - The README states the target architecture, member changes per plugin, the three schema intents, the tool-exposure-by-domain table, the target flow, the final UI surfaces, the twelve frozen decisions, and I0–I6 with done criteria.
 - `profiles/web-eval/docs/architecture.md` carries the capability map (plugin × face × eval-domain user), the 24-step trace from natural language to execution with the capability and the generated file per step, the file-location table, and the four invariants a report must verify; `docs/iterations.md` carries the plugin × layer landing matrix (each item marked satisfied / needs change / to build, with its iteration), the per-iteration task tables T1–T36 with dependencies, the four I1 briefs verbatim, and the acceptance procedure.

@@ -30,7 +30,7 @@ dsh plugin --profile web add @khorsheed/dsh-room-tool
   name: '@khorsheed/dsh-room-tool'
 ```
 
-web-dev 场景包的开发模式 preset（`profiles/web-dev/presets/dev`）已带此行，`install.sh`/`update.sh` 会把 preset 卸进 `$DSH_HOME/.agent-presets/dev`。
+dev 场景包的开发模式 preset（`profiles/dev/presets/dev`）已带此行，`install.sh`/`update.sh` 会把 preset 卸进 `$DSH_HOME/.agent-presets/dev`。
 
 卸载：
 

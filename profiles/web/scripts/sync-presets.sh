@@ -12,7 +12,7 @@
 #                （web-eval pack 的 eval preset 是唯一事实源；preset.yml 展示层
 #                归部署本地——3080 有自己的多模式排序，缺失时才补一份默认）
 #
-# dev 不在此列：它归 web-dev pack 的 install.sh/update.sh 管（会整体覆盖）。
+# dev 不在此列：它归 dev pack 的 install.sh/update.sh 管（会整体覆盖）。
 # 覆盖前备份到 $PRESET_ROOT/.backup-<epoch>/；幂等，重复跑无副作用。
 set -eu
 

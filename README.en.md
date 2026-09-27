@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The community plugin monorepo for the **dsh** (DeepSeek Harness) ecosystem: **43 purely additive plugin packages, 33 of them published on npm**. Every package integrates through official extension points only — slots, commands, Remote services, session projections. No official package is modified, no official UI slot is replaced, no core service is hacked; when an optional capability is absent the plugin degrades silently instead of failing the boot. The whole set is designed for coexistence: install, uninstall, or toggle any combination without interference, and the production instance runs the full stack long-term.
+The community plugin monorepo for the **dsh** (DeepSeek Harness) ecosystem: **41 purely additive plugin packages, 30 of them published on npm**. Every package integrates through official extension points only — slots, commands, Remote services, session projections. No official package is modified, no official UI slot is replaced, no core service is hacked; when an optional capability is absent the plugin degrades silently instead of failing the boot. The whole set is designed for coexistence: install, uninstall, or toggle any combination without interference, and the production instance runs the full stack long-term.
 
 > This page lists only **published** packages. Package counts, shapes, and profile membership follow the machine-generated [authoritative package map](docs/packages.md); per-package versions and the host-compatibility matrix follow the [release status](docs/release-status.md) (regenerated after every publish wave). The repository is also the development workspace — see [Development](#development).
 
@@ -12,9 +12,9 @@ The default install unit is a complete profile (a pack), not a single package. I
 
 | Pack | What it is | Members |
 | --- | --- | --- |
-| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **Everyday mode**: message control, artifact preview, the capability catalog, mobile presentation, task status, shortcuts, and the ops guard | 14 |
-| [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | **Development**: everything in basic, plus delegation to local coding agents, live worktree state, and room multi-agent collaboration — ships the "dev mode" preset | 23 |
-| [web-eval](profiles/web-eval) (in this repo) | **Evaluation**: a factorial experiment bench — datasets, conditions, and plans reviewed in git, deterministic orchestration — ships the "eval mode" preset | 26 |
+| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **Everyday mode**: message control, artifact preview, the capability catalog, mobile presentation, task status, shortcuts, and the ops guard | 13 |
+| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | **Development**: everything in basic, plus delegation to local coding agents, live worktree state, and room multi-agent collaboration — ships the "dev mode" preset | 23 |
+| [web-eval](profiles/web-eval) (in this repo) | **Evaluation**: a factorial experiment bench — datasets, conditions, and plans reviewed in git, deterministic orchestration — ships the "eval mode" preset | 25 |
 
 The first two are standalone repositories: clone, run two scripts, and the running instance hands over on the same port — see their READMEs. Single-package install is the advanced path; see [Install](#install).
 
@@ -35,17 +35,14 @@ Each package's full feature list, configuration, and screenshots live in its own
 
 | Package | What you get | Ships with |
 | --- | --- | --- |
-| [`file-preview`](packages/file-preview) | A read-only host-side **file-preview Remote service**: the files a session touched, current contents, per-change diffs | basic + dev |
-| [`ui-file-preview`](packages/ui-file-preview) | The session "**Artifacts**" tab, per-turn change cards, and a file-preview drawer (installs paired with the row above) | basic + dev |
+| [`file-preview`](packages/file-preview) | The session "**Artifacts**" tab plus its host service in one package: the products tab, per-turn change cards, the detail-view preview drawer, and the read-only file-preview Remote service (two rows merged into one since 0.4.0) | basic + dev |
 | [`local-files`](packages/local-files) | A **local file browser** in the right sidebar: lazy file tree plus structured HTML/Markdown/JSON/CSV/image previews | dev |
-| [`ui-content-preview`](packages/ui-content-preview) | (composition component) The shared **content-preview kernel** for community file surfaces, inlined at the source plane into each client bundle | inlined by its hosts |
 
 ### Development collaboration
 
 | Package | What you get | Ships with |
 | --- | --- | --- |
-| [`worktrees`](packages/worktrees) | A per-session **repo/worktree badge** in the session header plus a change drawer: uncommitted/committed file trees, diffs, commit history | dev |
-| [`worktrees-tool`](packages/worktrees-tool) | (companion tool row) The worktrees **model tool**, granted per session by a preset | dev |
+| [`worktrees`](packages/worktrees) | A per-session **repo/worktree badge** in the session header plus a change drawer: uncommitted/committed file trees, diffs, commit history; the model tool rides the package's `./tool` subpath row, granted per session by a preset | dev |
 
 ### Local multi-agent
 
@@ -121,7 +118,7 @@ The three community presets:
 
 | Preset | What it is | Community tools granted | Delivered by |
 | --- | --- | --- | --- |
-| **Dev mode** (dev) | Everything in the official standard mode, plus local delegation, live git state, and room collaboration | `subagent_kimi / subagent_codex / subagent_claude_code`, `worktrees`, `room_invite / room_task / room_message` | installs with [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) |
+| **Dev mode** (dev) | Everything in the official standard mode, plus local delegation, live git state, and room collaboration | `subagent_kimi / subagent_codex / subagent_claude_code`, `worktrees`, `room_invite / room_task / room_message` | installs with [dsh-dev](https://github.com/Khorsheed/dsh-dev) |
 | **Eval mode** (dsh-eval) | A read-only + delegation eval composition — no shell, no workflows | dataset authoring tools, eval execution tools | ships with the in-repo [profiles/web-eval](profiles/web-eval) |
 | **Writing mode** (dsh-writing) | A writing flow including the canvas agent row | `canvas/agent` | ships with the in-repo [profiles/web](profiles/web) |
 
@@ -182,7 +179,7 @@ A standalone pnpm monorepo; every package publishes as `@khorsheed/dsh-*`.
 
 ```
 packages/   one directory per publishable plugin
-profiles/   the packs (basic / web-dev / web-eval and the production web)
+profiles/   the packs (basic / dev / web-eval and the production web)
 build/      shared build/test presets (tsdown client bundle, vitest source-plane config)
 scripts/    repo tooling (pack-dist, gen-typert, mirror sync, gate checkers)
 ```

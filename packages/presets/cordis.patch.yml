@@ -174,7 +174,7 @@
           # The three local-agent delegation tools, the web-eval patch layer's row
           # shape minus the `tools: none` pin (dormancy is the preset's own decision
           # here — naming the row grants the tool). Provider names match the family
-          # rows the web-dev profile mounts at its root.
+          # rows the dev profile mounts at its root.
           - id: tool-subagent-kimi
             name: '@khorsheed/dsh-local-agent-tool-subagent'
             config:
@@ -193,10 +193,13 @@
               provider: claude-local
               toolName: subagent_claude_code
 
-          # The worktrees model tool, split out of the core plugin (M4'): the core
-          # stays global (badge/tab/service), the tool row is session-granted here.
+          # The worktrees model tool: the core stays global (badge/tab/service), the
+          # tool row is session-granted here. Since worktrees 0.3.0 the row ships
+          # inside the core package as the `./tool` composition entry (the standalone
+          # `@khorsheed/dsh-worktrees-tool` companion is folded away); the row id
+          # stays `worktrees-tool`, so the composition state is unaffected.
           - id: worktrees-tool
-            name: '@khorsheed/dsh-worktrees-tool'
+            name: '@khorsheed/dsh-worktrees/tool'
 
           # The room model tools (invite/task/message), same split (M4'②): the core
           # stays global (room service/UI), the tool row is session-granted here. No

@@ -9,6 +9,15 @@
 # already mounts the id by other means must NOT also add it — a duplicate
 # loader entry id fails boot. Check first:
 # `dsh --profile <name> --dump-config | grep worktrees`.
+#
+# The model-facing `worktrees` TOOL is not part of this row: it ships as the
+# package's `./tool` composition entry (row id `worktrees-tool`, module
+# `@khorsheed/dsh-worktrees/tool`), granted per session by an agent preset's
+# agent.cordis.yml — never mounted at the profile root, and never together
+# with a root-level mount of the same tool (the canvas `./agent` pattern).
+# Until 0.2.x the tool row shipped as the standalone companion package
+# `@khorsheed/dsh-worktrees-tool`; 0.3.0 folded it into this package as the
+# subpath entry and the old package name is deprecated.
 - insert:
     - id: worktrees
       name: "@khorsheed/dsh-worktrees"

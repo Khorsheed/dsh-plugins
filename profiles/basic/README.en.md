@@ -14,8 +14,7 @@ Every member is an independent plugin — copy its package name into the host's 
 | message-timeline | `@khorsheed/dsh-message-timeline` | A quiet timeline on the chat's left edge — hover to expand, click to jump |
 | session-title-edit | `@khorsheed/dsh-client-session-title-edit` | Rename sessions inline in the chat header |
 | quote | `@khorsheed/dsh-quote` | Select any text for a floating quote menu: into the composer / side chat / copy |
-| file-preview | `@khorsheed/dsh-file-preview` | The host-side file-preview service (pairs with the next row) |
-| ui-file-preview | `@khorsheed/dsh-client-ui-file-preview` | A Produced tab: preview every file the session touched, no IDE needed |
+| file-preview | `@khorsheed/dsh-file-preview` | The Produced tab plus its host service in one package: preview every file the session touched, no IDE needed |
 | taskpilot | `@khorsheed/dsh-taskpilot` | Background jobs and sub-agents become pills above the composer — stop/interrupt in one click |
 | context-guard | `@khorsheed/dsh-context-guard` | A compact button shows up before context overflow starts rejecting requests |
 | inline-html-render | `@khorsheed/dsh-inline-html-render` | Agent-written HTML becomes sandboxed interactive cards in the conversation |
@@ -29,7 +28,7 @@ Every member is an independent plugin — copy its package name into the host's 
 
 Members iterate fast and older release lines get no updates — pick the line by your host version:
 
-**Host ≥ `0.1.5-rc.1`**: use the package names as-is; all 14 members' latest works.
+**Host ≥ `0.1.5-rc.1`**: use the package names as-is; all 13 members' latest works.
 
 **Host `0.1.2-rc.1` ~ `0.1.4`**:
 
@@ -118,12 +117,12 @@ Select any text and a floating action menu appears — quote into the current se
 
 </details>
 
-### file-preview + ui-file-preview — session artifacts
+### file-preview — session artifacts
 
-| Host version | Install specs (copy into the dialog; install the pair) |
+| Host version | Install specs (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-file-preview` + `@khorsheed/dsh-client-ui-file-preview` |
-| `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-file-preview@^0.2.0` + `@khorsheed/dsh-client-ui-file-preview@^0.2.0` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-file-preview` (since 0.4.0 the host service and the UI ship as one package — one spec is everything) |
+| `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-file-preview@^0.2.0` + `@khorsheed/dsh-client-ui-file-preview@^0.2.0` (the old line is still the host/UI pair) |
 | `0.1.x` | `@khorsheed/dsh-file-preview@^0.1.0` + `@khorsheed/dsh-client-ui-file-preview@^0.1.0` |
 
 The Produced tab lists every file the session wrote or edited (most recent first); select one to preview its current content in-page, or step through every write/edit diff with content search.
@@ -307,7 +306,7 @@ Don't want to pick one by one? This single meta package installs the seven conve
 
 | Pack | What it is |
 |---|---|
-| [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | Development mode: everything in this pack, plus local coding-agent delegation, live worktree state, and room multi-agent collaboration |
+| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | Development mode: everything in this pack, plus local coding-agent delegation, live worktree state, and room multi-agent collaboration |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | The plugin monorepo: the capability map of every package, the preset designs, and the development docs |
 
 ## Changelog
@@ -344,7 +343,7 @@ git clone https://github.com/Khorsheed/dsh-basic.git /tmp/dsh-basic
 sh /tmp/dsh-basic/scripts/install.sh
 ```
 
-The installer prints the composed row count. To double-check: `dsh --profile basic --dump-config | grep -c "@khorsheed"` should print 14 (ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
+The installer prints the composed row count. To double-check: `dsh --profile basic --dump-config | grep -c "@khorsheed"` should print 13 (ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
 
 **2. Hand over on the same port (the critical step)**
 

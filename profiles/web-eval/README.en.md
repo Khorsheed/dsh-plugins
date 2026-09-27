@@ -10,7 +10,7 @@
 
 This is a **factorial-design bench**, not a traffic A/B platform. Factors are harness, model, preset, or skill; tasks are blocks; each cell is one independent sample. It answers questions shaped like "same task, change one factor, how much does the outcome move", not "who has the highest total".
 
-Three disciplines that differ from [dsh-web-dev](../web-dev/README.en.md):
+Three disciplines that differ from [dsh-dev](../dev/README.en.md):
 
 - **Determinism belongs to programs, judgment to the agent, approval to the human.** Starting containers, materializing tasks, tagging, running verifiers, archiving, destroying — all executed by the orchestrator; the agent only turns an idea into a plan and a bundle into a draft analysis; the human approves the plan, writes final verdicts, and decides on export.
 - **Every factor is hashable.** Task content has a snapshot commit, the environment an image digest, inputs a materialization manifest hash, the subject a condition hash, the prompt a byte hash. "These two cells differ in exactly one factor" must be provable, not declared.
@@ -127,11 +127,11 @@ The plan's `conditions` and `judge.conditions` carry **condition ids** (never sh
 
 ## Member plugins
 
-26 members in three groups:
+25 members in three groups:
 
 | Group | Members | Status | Changes this profile needs |
 |---|---|---|---|
-| Base experience | the same 13 as web-dev (`ankh-guard` among them) | ✅ / 🔶 | none; the eval instance gets its own `$DSH_HOME`, and `ankh-guard` owns switching it and watching over it |
+| Base experience | the same 12 as dev (`ankh-guard` among them) | ✅ / 🔶 | none; the eval instance gets its own `$DSH_HOME`, and `ankh-guard` owns switching it and watching over it |
 | Local-agent family | 6: `local-agent` + the kimi / codex / claude-code / dsh providers + `tool-subagent` | 🔶 | I1: evaluation pins (all exec, codex full-access inside containers, explicit reasoning effort for claude and kimi) and the effectiveSettings snapshot (including the configured model). I2: model read-back, recording the model actually used. I3: in-container exec wrapping landed (T17: `exec: {container, workdir, env}`, values never on argv); "the CLI driver extracted into its own package" is deferred until a second consumer exists; `cliVersion` and `credentialState` filled in (T25). I4: per-condition model parameter (set on the first delegation, fixed within a member, unchanged on resume) and scoped-home override, plus a "default model" field on each provider's settings card |
 | Evaluation mechanisms | 7: the `datasets` / `mission` / `lab` / `eval` cores plus the `datasets-tool` / `mission-tool` / `eval-tool` companions (split since M4'③; the companion rows belong to the preset) | 🔶 rc | `mission`: retry carries a reason; the ns report carries writtenBy. `lab`: composite fingerprint (image + resource limits + mount layout + env keys). `datasets`: canary field; item-level external source pointers. `eval`: the run loop's judge (T9), report (T10), read-only tools (T14), and the full readiness gate |
 
@@ -307,7 +307,7 @@ Explicitly out of scope for this period (I0 through I2): new surfaces, lab's mod
 
 ## Install
 
-> Until the orchestrator lands, this profile is only a plugin composition. The flow below matches web-dev and can stand the eval instance up early.
+> Until the orchestrator lands, this profile is only a plugin composition. The flow below matches dev and can stand the eval instance up early.
 
 The eval instance needs its own `$DSH_HOME`, sharing neither sessions nor credentials with the dev instance (environment isolation is a basic evaluation requirement; see the environment topology in `docs/ops.md`). I1 through I2 run the four CLIs directly on the host and need only node, git, and the CLIs themselves; from I3 on docker is required, and the checklist for the suite-level image, the local package mirror, the allowlist proxy, and credential volumes is in the "runtime environment" section of [docs/architecture.md](docs/architecture.md).
 
@@ -339,7 +339,7 @@ the 0.2.0 context-guard / ui-shortcuts on npm import it) — or later still, on
 an instance that boots fine and only reports
 `childSession.snapshotEvents is not a function` on a resume round.
 
-`install.sh` has two paths; both print the composed composition stats at the end, and `dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` should be 23 (distinct members — the dump repeats each member as a layer header plus entry rows, and tool-subagent appears only through its per-provider entries).
+`install.sh` has two paths; both print the composed composition stats at the end, and `dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` should be 22 (distinct members — the dump repeats each member as a layer header plus entry rows, and tool-subagent appears only through its per-provider entries).
 
 **npm mode** (no arguments) — every member resolves from the npm registry. It works as-is once every member is published (I6); until then, the unpublished members fail with a registry 404 at install time (the authoritative list is [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md) in dsh-plugins):
 
@@ -360,7 +360,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <port>
 
 Source-mode tarballs live inside the profile directory: uninstalling (`rm -rf "$DSH_HOME/profiles/web-eval"`) removes them too. To swap in fresh tarballs after the checkout moves, re-run **with `--fresh`**: an installed profile's `node_modules`, `pnpm-lock.yaml` and `tarballs/` would otherwise keep the newly packed tarballs out and the instance would keep running the old build with no sign of it. `--fresh` removes all three first, and a re-run without it is refused with exactly that reason printed.
 
-The evaluation pins (frozen decisions 2 through 4) belong to the apparatus, not to personal preference, so they **belong to the pack**: they live in this profile's `cordis.patch.yml`, and both `install.sh` and `update.sh` overwrite that file — the one patch-layer difference from [dsh-web-dev](../web-dev/README.en.md). Leaving it to the user means an update can silently change the sandbox tier or the reasoning effort while run.meta still records the old one, and the report's "the subject under test is the same" stops meaning anything. Personal preferences go in a preset layer, not here.
+The evaluation pins (frozen decisions 2 through 4) belong to the apparatus, not to personal preference, so they **belong to the pack**: they live in this profile's `cordis.patch.yml`, and both `install.sh` and `update.sh` overwrite that file — the one patch-layer difference from [dsh-dev](../dev/README.en.md). Leaving it to the user means an update can silently change the sandbox tier or the reasoning effort while run.meta still records the old one, and the report's "the subject under test is the same" stops meaning anything. Personal preferences go in a preset layer, not here.
 
 The agent preset and the skills **belong to the pack** for the same reason: both scripts replace `$DSH_HOME/.agent-presets/eval` with `presets/eval/` whole, and `cordis.patch.yml` pins it as the default preset ([frozen decision 12's execution point](#frozen-decision-12s-execution-point-the-eval-preset)); `skills/eval-planning/` is likewise replaced whole into `$DSH_HOME/skills/eval-planning` — the `user-dsh` root `dsh-skill-filesystem` scans, which the eval preset's own `skill-filesystem` row surfaces in an evaluation session's skill catalog. The skill is apparatus too: it teaches the one drafting verb (`eval_plan_draft`) and names what is not the agent's — approving, logging in, provisioning, the final verdict. Let that drift and a draft turns into a run nobody approved. Both land *outside* the profile directory (preset and skill rosters are organized per `$DSH_HOME`, not per profile), so the uninstall `rm -rf` does not take them with it; see [Uninstall](#update-switch-add-or-remove-a-member-uninstall).
 
@@ -368,7 +368,7 @@ The current pins (written by I2 · T15, three rows added by I3 · T27; since M4'
 
 ## Update, switch, add or remove a member, uninstall
 
-Switching is a same-port handoff; `update.sh` overwrites the member list, the lockfile, **`cordis.patch.yml`, `presets/eval/` and `skills/eval-planning/`** — the evaluation pins, the agent preset and the skill all belong to the pack (see [Install](#install)), the one difference from [dsh-web-dev](../web-dev/README.en.md#update); `dsh --profile web-eval plugin rm/add <pkg>` adds or removes one member; `rm -rf "$DSH_HOME/profiles/web-eval"` uninstalls the whole profile — neither the pack's agent preset nor its skills are under that directory, so add `rm -rf "$DSH_HOME/.agent-presets/eval" "$DSH_HOME/skills/eval-planning"` to clear them too (leaving them is harmless: with no profile pinning the preset as the default it is just one more roster entry, and so is the skill). Until I6, do not run `update.sh` on a source-mode install — it overwrites the member list back to npm ranges and the unpublished members start 404-ing; re-run `install.sh --source` instead.
+Switching is a same-port handoff; `update.sh` overwrites the member list, the lockfile, **`cordis.patch.yml`, `presets/eval/` and `skills/eval-planning/`** — the evaluation pins, the agent preset and the skill all belong to the pack (see [Install](#install)), the one difference from [dsh-dev](../dev/README.en.md#update); `dsh --profile web-eval plugin rm/add <pkg>` adds or removes one member; `rm -rf "$DSH_HOME/profiles/web-eval"` uninstalls the whole profile — neither the pack's agent preset nor its skills are under that directory, so add `rm -rf "$DSH_HOME/.agent-presets/eval" "$DSH_HOME/skills/eval-planning"` to clear them too (leaving them is harmless: with no profile pinning the preset as the default it is just one more roster entry, and so is the skill). Until I6, do not run `update.sh` on a source-mode install — it overwrites the member list back to npm ranges and the unpublished members start 404-ing; re-run `install.sh --source` instead.
 
 ## Related documents
 
@@ -384,7 +384,7 @@ Switching is a same-port handoff; `update.sh` overwrites the member list, the lo
 | Pack | Positioning |
 |---|---|
 | [dsh-basic](../basic/README.en.md) | daily mode: base experience only |
-| [dsh-web-dev](../web-dev/README.en.md) | dev mode: base experience + local-agent family + worktrees + room |
+| [dsh-dev](../dev/README.en.md) | dev mode: base experience + local-agent family + worktrees + room |
 
 ## License
 

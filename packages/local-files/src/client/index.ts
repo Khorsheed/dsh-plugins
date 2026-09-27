@@ -98,7 +98,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     openIDE: openWith(pickIde),
   })
 
-  // The right-Sidebar registration, straight-line (the ui-file-preview
+  // The right-Sidebar registration, straight-line (the file-preview
   // pattern): the tab type into the registry, the body into the keyed pane
   // seat under the type's id. The kind is the official files type's own: the
   // registry admits one extension per builtin kind and puts the extension in

@@ -1,0 +1,33 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "files": [
+    "src/css-modules.d.ts",
+    "src/types.ts",
+    "src/client/contract.ts",
+    "src/client/definition.tsx",
+    "src/client/DiffHistory.tsx",
+    "src/client/file-preview-store.ts",
+    "src/client/FilePreviewTab.tsx",
+    "src/client/icons.tsx",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/mentions-wrap.ts",
+    "src/client/open-in-app.ts",
+    "src/client/path-utils.ts",
+    "src/client/preview.ts",
+    "src/client/turn-files-cache.ts",
+    "src/client/turn-files.ts",
+    "src/client/TurnFileRow.tsx"
+  ]
+}

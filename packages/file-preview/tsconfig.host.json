@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/bash-writes.ts",
+    "src/fold.ts",
+    "src/index.ts",
+    "src/invariant.ts",
+    "src/open-external.ts",
+    "src/reveal.ts",
+    "src/types.ts"
+  ]
+}

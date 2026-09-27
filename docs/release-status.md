@@ -16,7 +16,7 @@
 | `@khorsheed/dsh-reader` | 0.2.1 | 0.2.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-eval` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-eval-tool` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
-| `@khorsheed/dsh-file-preview` | 0.3.2 | 0.3.2 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |
+| `@khorsheed/dsh-file-preview` | 0.3.2 | 0.4.0 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |
 | `@khorsheed/dsh-inline-html-render` | 0.1.14 | 0.1.14 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-lab` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-local-agent` | 0.1.0-rc.7 | 0.1.0-rc.7 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
@@ -41,12 +41,10 @@
 | `@khorsheed/dsh-taskpilot` | 0.3.2 | 0.3.2 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |
 | `@khorsheed/dsh-typesafe` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-typesafe-tool` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
-| `@khorsheed/dsh-client-ui-content-preview` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
-| `@khorsheed/dsh-client-ui-file-preview` | 0.3.2 | 0.3.2 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |
+| `@khorsheed/dsh-client-ui-content-preview` | (private) | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-ui-shortcuts` | 0.2.3 | 0.2.3 | 0.1.2-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-whalesong` | 0.2.3 | 0.2.3 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
-| `@khorsheed/dsh-worktrees` | 0.2.1 | 0.2.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
-| `@khorsheed/dsh-worktrees-tool` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
+| `@khorsheed/dsh-worktrees` | 0.2.1 | 0.3.0 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 
 - **npm 已发布**：registry 上的最新版本；`未发布` = 第一波/第二波均未含此包
 - **仓内版本**：下一条发布线（发版时才 bump，见 docs/publishing.md)

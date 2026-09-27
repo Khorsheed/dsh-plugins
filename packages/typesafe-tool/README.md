@@ -65,7 +65,7 @@ dsh plugin --profile web remove @khorsheed/dsh-typesafe-tool
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——工具注册进宿主 tools 注册表、贡献提示词段与 runtime skill；0.1.5 官方插件列表的「会话插件」组按 preset 组合呈现本行。core 缺席时组合照常挂载，该行保持 pending（注册表审计显示 `waiting for typesafe`），core 出现后行激活、三个注册面一起生效。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）——core 服务的声明式 `inject` + `ctx.inject(['tools'|'systemPrompt'|'skills'])` 延迟注入均为长期 seam，未见重命名；行内 `ctx.get('typesafe')` 仅留作防御性直调守卫。低于 0.1.5 的宿主未验证，minHost 钉 `0.1.5-rc.1`（与 worktrees-tool / room-tool / datasets-tool 三条伴生行同一档）。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）——core 服务的声明式 `inject` + `ctx.inject(['tools'|'systemPrompt'|'skills'])` 延迟注入均为长期 seam，未见重命名；行内 `ctx.get('typesafe')` 仅留作防御性直调守卫。低于 0.1.5 的宿主未验证，minHost 钉 `0.1.5-rc.1`（与 room-tool / datasets-tool 两条伴生行同一档）。
 
 **版本线对照**：`0.1.0` 起支持宿主 `0.1.5-rc.1` 及以后。
 

@@ -60,7 +60,8 @@ export function apply(ctx: Context, config: WorktreesPluginConfig): void {
   ctx.provide('worktrees', service)
   ctx.plugin(WorktreesRemoteService, { visiblePresets: config.visiblePresets ?? [] })
   // The model-facing `worktrees` tool is deliberately NOT registered here:
-  // it moved to the companion `@khorsheed/dsh-worktrees-tool`, which mounts
-  // the tool row inside agent-preset compositions (session-granted). The
-  // definition factory stays exported from ./tool.ts for that companion.
+  // it lives in this package's `./tool` composition entry, which agent-preset
+  // compositions mount by name (`@khorsheed/dsh-worktrees/tool`) so the
+  // capability is granted per session. The definition factory stays in
+  // ./tool-definition.ts, beside the service core it adapts.
 }

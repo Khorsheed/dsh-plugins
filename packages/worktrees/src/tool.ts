@@ -1,108 +1,82 @@
 /**
- * The model-facing `worktrees` tool DEFINITION. Since the tool-row split the
- * core package no longer registers the tool itself: the companion
- * `@khorsheed/dsh-worktrees-tool` consumes {@link defineWorktreesTool} and
- * mounts it inside agent-preset compositions, so the capability is granted
- * per session (the tool row only ever lives in a preset, never at the
- * profile root). The definition stays here, beside the service core it
- * adapts — a thin adapter over the same `ctx.worktrees` service the Remote
- * data face uses, no logic duplicated.
+ * The session-granted `worktrees` model tool — this package's `./tool`
+ * composition entry (the canvas `./agent` pattern) for agent-preset
+ * compositions. The row provides NO service (the preset-mount isolate-realm
+ * rule forbids service rows), it only registers the model-facing `worktrees`
+ * tool into the host tools registry, delegating to the global `ctx.worktrees`
+ * service core the main row provides at the profile root — the official
+ * tool-row shape (the shipped `tool-bash` rows work the same way). Granting
+ * is therefore per-session: a preset names the row, its sessions get the
+ * tool; every other preset's sessions do not.
  *
- * @module @khorsheed/dsh-worktrees
+ * This entry used to ship as the standalone companion package
+ * `@khorsheed/dsh-worktrees-tool` (0.1.x); 0.3.0 folded it back into the core
+ * package as this subpath row (the loader mounts a package's non-default
+ * export fine — the canvas `./agent` precedent), and the old package name is
+ * deprecated on npm. An agent preset's `agent.cordis.yml` references the row
+ * by name: `- id: worktrees-tool / name: '@khorsheed/dsh-worktrees/tool'`.
+ * The package's own bundle patch mounts ONLY the core row — a profile-root
+ * tool row would grant every session, exactly what the split removed.
+ *
+ * @module @khorsheed/dsh-worktrees/tool
  */
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { WorktreesService } from './service.ts'
+import type { Context } from '@deepseek-ai/cordis'
+// Type-only: pulls this package's `Context.worktrees` service augmentation.
+import type {} from './index.ts'
+import { defineWorktreesTool } from './tool-definition.ts'
 
-/** Parsed arguments of the `worktrees` tool. */
-interface WorktreesToolArgs {
-  action: 'list' | 'switch' | 'create' | 'remove'
-  path?: string
-  branch?: string
-  confirm?: boolean
-}
-
-const description = 'Manage the session\'s git worktrees. '
-  + '`list` shows the repository\'s worktrees (path, branch, main?, dirty, stale). '
-  + '`switch <path>` makes the session\'s badge/drawer follow that worktree. '
-  + '`create <path> [-b <branch>]` creates a git worktree (`git worktree add`) and switches to it. '
-  + '`remove <path>` (confirm:true) removes a worktree — ALWAYS confirm with the user first '
-  + '(ask via the `ask_user_question` tool if it is available in this session, otherwise ask them '
-  + 'in the conversation), and never remove the main worktree or a worktree with uncommitted changes.'
+const PACKAGE_NAME = '@khorsheed/dsh-worktrees'
 
 /**
- * Build the model-facing `worktrees` tool definition over one service core.
- * Within one session the model can list / switch / create / remove git
- * worktrees; switching (and creating) sets the session's active-worktree
- * override so the badge/tab follow, and removing (with `confirm: true`)
- * clears an override if it pointed at the removed worktree.
- *
- * The definition is returned UNTAGGED: the registering package applies its
- * own tool-origin tag (AGENTS.md § Tool origin tagging — the owner is
- * whichever package mounts the row).
- * @param service - the worktrees service core (the global `ctx.worktrees`
- *   the core package provides at the profile root).
- * @returns the tool definition, ready for `ctx.tools.register`.
+ * Tag the model-visible tool with its origin (AGENTS.md § Tool origin
+ * tagging; seam S12): the capability catalog reads this `Symbol.for`-keyed
+ * tag back through `ctx.tools.get()`, so the `worktrees` tool attributes to
+ * THIS package (the row the preset mounts), not to the service core. The tag
+ * is host-side only and never travels on the model wire.
  */
-export function defineWorktreesTool(service: WorktreesService) {
-  return defineTool({
-    name: 'worktrees',
-    description,
-    parameters: {
-      action: {
-        type: 'string',
-        required: true,
-        enum: ['list', 'switch', 'create', 'remove'],
-        description: 'What to do: list, switch, create, or remove a worktree.',
-      },
-      path: {
-        type: 'string',
-        description: 'Worktree directory. Required for switch/create/remove; ignored for list.',
-      },
-      branch: {
-        type: 'string',
-        description: 'Branch to create for `create`. Omit to checkout the base branch.',
-      },
-      confirm: {
-        type: 'boolean',
-        description: 'Must be true for `remove` (the caller confirmed with the user).',
-      },
-    },
-    output: {
-      schema: { type: 'string' },
-      render: (_args, value) => [{ type: 'text', text: String(value) }],
-    },
-    async execute(args: WorktreesToolArgs, exec): Promise<string> {
-      if (exec.agent === undefined) return JSON.stringify({ error: 'worktrees: no session agent' })
-      const sessionId = exec.agent.id
-      const cwd = exec.agent.session.header.cwd ?? ''
-      if (cwd === '') return JSON.stringify({ error: 'worktrees: session has no working directory' })
-      try {
-        switch (args.action) {
-          case 'list': {
-            const worktrees = await service.listWorktrees(cwd)
-            return JSON.stringify({ ok: true, worktrees })
-          }
-          case 'switch': {
-            if (args.path === undefined || args.path === '') return JSON.stringify({ error: 'worktrees: switch requires a path' })
-            const info = await service.switchWorktree(sessionId, cwd, args.path)
-            return JSON.stringify({ ok: true, active: info })
-          }
-          case 'create': {
-            if (args.path === undefined || args.path === '') return JSON.stringify({ error: 'worktrees: create requires a path' })
-            const info = await service.createWorktree(sessionId, cwd, args.path, args.branch)
-            return JSON.stringify({ ok: true, created: info })
-          }
-          case 'remove': {
-            if (args.path === undefined || args.path === '') return JSON.stringify({ error: 'worktrees: remove requires a path' })
-            const result = await service.removeWorktree(sessionId, cwd, args.path, args.confirm === true)
-            return JSON.stringify({ ok: true, removed: args.path, switchedTo: result.switchedTo })
-          }
-          default:
-            return JSON.stringify({ error: `worktrees: unknown action ${String(args.action)}` })
-        }
-      } catch (error) {
-        return JSON.stringify({ error: `worktrees: ${error instanceof Error ? error.message : String(error)}` })
-      }
-    },
+const definePluginTool = <T extends object>(def: T): T =>
+  Object.assign(def, {
+    [Symbol.for('dsh.tool.origin')]: { channel: 'plugin', owner: PACKAGE_NAME },
+  })
+
+/** Cordis plugin name used by loader diagnostics. */
+export const name = 'worktrees-tool'
+
+/**
+ * The `worktrees` core is a declared inject (the owning-family companion
+ * exception to the community-service probe rule): a preset's standing scope
+ * mounts at registry-activation time, BEFORE the profile's later bundle rows
+ * provide the core, so a one-shot ctx.get probe at apply saw ABSENT there and
+ * nothing re-ran the row (rc.1 boot order; 3080 production 2026-09-27). The
+ * declared inject pends the row until the core provides, then the body
+ * applies. The tools registry still joins through deferred injection so its
+ * mount order cannot strand the registration.
+ */
+export const inject = ['worktrees']
+
+/**
+ * Plugin body: register the tool. The declared `worktrees` inject pends the
+ * row until the core provides, so mount order can no longer strand it; the
+ * in-body guard stays as the defensive direct-call path.
+ * @param ctx - Cordis context (the preset's agent-plane mount).
+ */
+export function apply(ctx: Context): void {
+  const service = ctx.get('worktrees')
+  if (service === undefined) {
+    // Degrade, don't explode: the core plugin is not mounted in this
+    // profile, so there is nothing to delegate to. The badge/tab UI is the
+    // core's own concern and unaffected; only the model tool stays absent.
+    ctx.logger.info(`${name}: the global worktrees service is absent — the worktrees tool is not registered`)
+    return
+  }
+  // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the
+  // tools registry's own mount order on the real composition tree and loses,
+  // silently never registering the tool. `ctx.inject` fires when the
+  // registry appears and never fires in a composition without one.
+  ctx.inject(['tools'], (toolsCtx) => {
+    toolsCtx.effect(
+      () => toolsCtx.tools.register(definePluginTool(defineWorktreesTool(service))),
+      'worktrees-tool: worktrees tool',
+    )
   })
 }

@@ -5,7 +5,7 @@
  * pilot semantics — list outside = hidden); otherwise the DEFAULT criterion
  * reads the OFFICIAL pluginInventory composition data and shows the badge
  * exactly when the session's preset composition names the
- * `@khorsheed/dsh-worktrees-tool` row. Sessions with no preset, a missing
+ * `@khorsheed/dsh-worktrees/tool` row. Sessions with no preset, a missing
  * namespace, a failed RPC, and a missing/broken preset group all fail open
  * (visible). The badge reads the current session's preset through
  * `useSessions` (the ui-agent-preset header-label read, dual key per host
@@ -166,7 +166,7 @@ describe('WorktreesBadge visiblePresets gate', () => {
 describe('WorktreesBadge composition criterion (the default, no visiblePresets)', () => {
   const WITH_ROW: PluginInventorySnapshot = {
     agentPresets: [
-      { id: 'dev', rows: [{ moduleName: '@khorsheed/dsh-worktrees-tool' }] },
+      { id: 'dev', rows: [{ moduleName: '@khorsheed/dsh-worktrees/tool' }] },
       { id: 'standard', rows: [{ moduleName: '@deepseek-ai/dsh-tool-bash' }] },
     ],
   }

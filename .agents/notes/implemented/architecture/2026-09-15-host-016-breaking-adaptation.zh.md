@@ -14,7 +14,7 @@ Status: implemented
 2. **`SubprocessTerminalSpawnSpec.terminalType` 变必填**。gen-typert 的全 workspace 分析在 `packages/local-agent/src/index.ts`(登录 PTY spawn)挖出。修法:`terminalType: 'xterm-256color'`,与官方 terminal-controller 同款。
 3. **`code-runtime` 家族删包**(`dsh-code-runtime(-worker-thread)` → `dsh-ptc-runtime(-node)`,行 id `code-runtime` → `ptc-runtime`;`workflow-worker-thread` → `workflow-ptc`)。local-agent-dsh-headless 带着依赖、patch 行、pin spec 与文档;eval 的 capability-probe fixture 镜像了该行。全部改名;撞 id pin spec 保留 P0 原由并补改名注记。
 4. **`SidebarRightGuideEntry.id` 变必填**。四个 client definition(canvas、local-files、ui-file-preview、worktrees)注册了右栏 guide 条目;现在各自把 KIND 常量作为稳定条目 id 传入,与官方 `ui-sidebar-files` 同形。
-5. **profiles**:`tool-ralph` 在 base bundle 变 `disabled: true`(官方文档化的恢复形态是 overlay 行加 `disabled: false`——已加进 web-dev 的行);web-dev 的 `workflow-worker-thread` 行改 `workflow-ptc` / `@deepseek-ai/dsh-workflow-ptc`;web-eval 散文跟进改名。
+5. **profiles**:`tool-ralph` 在 base bundle 变 `disabled: true`(官方文档化的恢复形态是 overlay 行加 `disabled: false`——已加进 dev 的行);dev 的 `workflow-worker-thread` 行改 `workflow-ptc` / `@deepseek-ai/dsh-workflow-ptc`;web-eval 散文跟进改名。
 
 **零命中已核项**:e2b 删除(零引用)、provenance→source 类型改名(不 import)、`ComposerBarInjected.command` / `WorkspaceBrowserInjected.insertSessionBefore` / `MessageFeedbackInjected` 删除(零消费)、mobile 权限控件 DOM anchor(对照 0.1.6 `PermissionSelect.tsx` 静态核实:trigger 按钮仍渲染 anchor 探测的文本 span 与 aria-hidden chevron)。
 
@@ -29,7 +29,7 @@ Status: implemented
 
 - **minHost 随适配前移 0.1.6-alpha.1**——会把 npm `latest`(0.1.5-rc.1)上的社区用户全部关在门外,零行为收益;波次策略禁止。
 - **共享 harness 检出来回切换**——多 agent 隐患:其他 worktree 的类型解析与 gen-typert 都走 `DSH_HARNESS`,波中翻动会打断别人的构建。双检出在 0.1.2-alpha 复核时已有先例。
-- **整体适配等 rc 再说**——headless 的 `dsh-code-runtime-worker-thread` 依赖与 web-dev 的 `workflow-worker-thread` 行在 0.1.6 上是**安装期**失败,不是优雅降级;等 rc 会让仓库对着即将定稿的线处于不可构建状态。
+- **整体适配等 rc 再说**——headless 的 `dsh-code-runtime-worker-thread` 依赖与 dev 的 `workflow-worker-thread` 行在 0.1.6 上是**安装期**失败,不是优雅降级;等 rc 会让仓库对着即将定稿的线处于不可构建状态。
 
 ## 后果
 

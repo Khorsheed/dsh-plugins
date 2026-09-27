@@ -4,13 +4,13 @@ Status: implemented
 
 ## Problem
 
-在公开 dsh-plugins、dsh-basic、dsh-web-dev 之前,三份 README 的陈述已经从自己脚下漂走了:
+在公开 dsh-plugins、dsh-basic、dsh-dev 之前,三份 README 的陈述已经从自己脚下漂走了:
 
 - **根 README 是安装手册,不是地图。** 开头还写着「32 个包、25 个自挂载」,而机器生成的 `docs/packages.md` 早已是 43 / 34;它宣布 local-agent「待发布」,而这个家族在 npm 上以 0.1.0-rc.7 上架已有数周;约 20 个包(quote、dsh-reader、mobile、capture、typesafe、capability-catalog、room、worktrees、两个家族元包……)从未出现。它那七节深潜长文与各包 README 重复,也正是全文件腐烂最快的部分。
-- **dsh-web-dev 的 README 描述的是一个已不存在的整合包**:「21 个成员、13 个未上架 npm」对着真实的 23 个依赖、且全部已发布;四个截图占位符从文件写下那天起一直 pending。
+- **dsh-dev 的 README 描述的是一个已不存在的整合包**:「21 个成员、13 个未上架 npm」对着真实的 23 个依赖、且全部已发布;四个截图占位符从文件写下那天起一直 pending。
 - **dsh-basic 的 README 结构本来是对的**(定位 → 安装 → 成员表 → 逐插件截图展示),但缺一张首屏图,也没有指向兄弟整合包的入口。
 
-所有者当面敲定了公开形态:dsh-plugins 读作系统化的能力 + preset 设计总览(PerryLink 主页的目录式风格);两个整合包仓读作「整合包提供什么能力、包含哪些插件、附截图」;只列已发布的包;不做量化徽章;web-dev 缺的截图用现有素材拼。
+所有者当面敲定了公开形态:dsh-plugins 读作系统化的能力 + preset 设计总览(PerryLink 主页的目录式风格);两个整合包仓读作「整合包提供什么能力、包含哪些插件、附截图」;只列已发布的包;不做量化徽章;dev 缺的截图用现有素材拼。
 
 ## Decision
 
@@ -20,13 +20,15 @@ Status: implemented
 
 **未发布的在途工作在公开面不可见。** canvas、sidechat、datasets/eval/mission/lab、`@khorsheed/dsh-presets` 不出现在能力地图里。preset 一节按今天的真实交付方式描述三个 preset——由整合包 `install.sh` 安装的目录式 preset——`packages/presets` 只作为尚未上架的 0.1.7 线机制被点名,绝不附安装命令。
 
-**整合包 README 是展示层。** basic 只加了首屏图(`file-preview1.png`,原本就有跟踪)和相关整合包表,其余不动。web-dev 围绕修正后的成员清单重写(23 个包分四层:9 个基础体验 + ankh-guard + 3 个体验增强 + 10 个开发能力),四个截图占位符用现有素材池填满:`web-dev-overview.png` ← room-1、`local-agent-delegation.png` ← 08-local-agent、`local-agent-member.png` ← local-agent-member、`worktrees-drawer.png` ← worktrees-tab、`room-members.png` ← room-2。按[截图托管 note](2026-09-27-readme-screenshot-hosting.md),图片以 `git add -f` 跟踪在 `profiles/web-dev/docs/screenshots/` 下,镜像同步才会把它们带进 dsh-web-dev;它们是 basic 素材池的字节副本,素材池仍是包 README 嵌入图的规范宿主。
+**整合包 README 是展示层。** basic 只加了首屏图(`file-preview1.png`,原本就有跟踪)和相关整合包表,其余不动。dev 围绕修正后的成员清单重写(23 个包分四层:9 个基础体验 + ankh-guard + 3 个体验增强 + 10 个开发能力),四个截图占位符用现有素材池填满:`dev-overview.png` ← room-1、`local-agent-delegation.png` ← 08-local-agent、`local-agent-member.png` ← local-agent-member、`worktrees-drawer.png` ← worktrees-tab、`room-members.png` ← room-2。按[截图托管 note](2026-09-27-readme-screenshot-hosting.md),图片以 `git add -f` 跟踪在 `profiles/dev/docs/screenshots/` 下,镜像同步才会把它们带进 dsh-dev;它们是 basic 素材池的字节副本,素材池仍是包 README 嵌入图的规范宿主。
 
 **安装指引跟随宿主 0.1.7-rc.2 的「添加插件」对话框,并明说它的边界。** 已对 harness 检出的 `packages/boot/plugin-manager` 核实:对话框与 `dsh plugin add` 共享同一 pnpm 后端;git URL 只装仓库根的包(没有 monorepo 子路径语法,没有 workspace 探测),根不是 `dsh.bundle` 插件的仓库——本 monorepo、整合包的 profile 模板仓——会被 `not-bundle` 拒绝并回滚;也不存在任何安装整个 profile 整合包的官方入口。因此 README 让整合包继续走 clone + `install.sh`(并显式注明「对话框装不了本仓」),单包安装与成员装卸则在宿主 ≥ 0.1.7-rc.2 时指向 **设置 → 插件 → 添加插件** 填包名的免命令行路径。
 
 **basic 的正文以「复制包名单装」为主导,整包安装折叠到最后。** 所有者从真实用法出发的决定:多数安装是用户挑中某个插件、把包名贴进宿主对话框,所以正文三段式——为什么有这个整合包(日常高频体验插件;自用同时开放;明确以「被官方逐个原生替代」为终态)、带可复制包名的成员表 + 一张宿主线 → 发布线的兼容表(五个成员的 0.3.x 最新线要求宿主 ≥ 0.1.5-rc.1,0.1.2 线宿主装 `@^0.2.0`,0.1.x 装 `@^0.1.0`)、逐插件功能展示(每节给包名与兼容行,不再附安装命令)。全部安装机械细节——选线、整合包脚本、同端口交接、单包 CLI——收进文末一个折叠的「给 Agent 的安装指南」,agent 与手动用户共用。
 
-**basic 扩到 13 个成员,依赖区间对齐到 README 承诺的线。** capability-catalog、inline-html-render、mobile 三名新成员加入;由于 capability-catalog 与 mobile 根本没有 0.1.5 之前的线,整合包地板随之抬到宿主 0.1.5-rc.1——这也同时把落后区间的矛盾推向唯一自洽的方向解决:五个先前钉 `^0.2.0` 而最新线已到 0.3.x 的成员改钉 `^0.3.2`(整合包自己 2026-09-27 的 changelog 本来就把这些版本说成「随整合包更新即可获得」)。0.1.2 线宿主留在本次更新前的档案(`host-0.1.2-line` tag 随下一发布波补打),0.1.x 宿主继续用 `host-0.1.1-line`。
+**basic 扩到 13 个成员,依赖区间对齐到 README 承诺的线。** capability-catalog、inline-html-render、mobile 与稍后的 quote 加入;由于 capability-catalog 与 mobile 根本没有 0.1.5 之前的线,整合包地板随之抬到宿主 0.1.5-rc.1——这也同时把落后区间的矛盾推向唯一自洽的方向解决:五个先前钉 `^0.2.0` 而最新线已到 0.3.x 的成员改钉 `^0.3.2`(整合包自己 2026-09-27 的 changelog 本来就把这些版本说成「随整合包更新即可获得」)。0.1.2 线宿主留在本次更新前的档案(`host-0.1.2-line` tag 随下一发布波补打),0.1.x 宿主继续用 `host-0.1.1-line`。同一轮里整合包更名为 **dsh-basic**(profile `basic`),逐插件兼容行折叠成「宿主版本 × 安装规格」两列表;web-dev 更名为 **dsh-dev**(profile `dev`),并加入 quote 与 mobile 与 basic 对齐。
+
+**同日,四散的预览/工具面合并成三个包。** ui-file-preview 并入 file-preview 0.4.0(host+client 单包,行 id 统一为 `file-preview`;退役行 id `ui-file-preview` 写进了包 changelog);worktrees-tool 并入 worktrees 0.3.0 成为 `./tool` 子路径行——canvas 的 `./agent` 模式——preset 行 id `worktrees-tool` 不变,会话状态不受影响;ui-content-preview 变成 private 源码面库(它从来不是运行时插件)。npm 发布名从 33 收缩到 30;三个退役名字的 `npm deprecate` 是所有者发布波里的动作。[worktrees-tool 拆分 note](../../feature/2026-09-11-worktrees-tool-split.md)保留,作为「工具行按会话授予」这一性质的决策记录——合并保住了这个性质,只是包边界挪了位置。
 
 ## Alternatives considered
 
@@ -34,7 +36,7 @@ Status: implemented
 
 **把孵化中的包单列一节标注出现。** 所有者选择不出现:公开 README 只列今天 `dsh plugin add` 装得到的东西,清单随每个发布波刷新。preset 设计仍独占一节,因为 preset 随整合包交付,而不是以那个未上架的 bundle 交付。
 
-**为 web-dev 专门截一轮新图。** 所有者决定暂缓:basic 素材池里已有 web-dev 每个招牌能力的准确截图(room、worktrees、local-agent 设置卡片、成员通道),占位符直接用副本填。今后随时可以专门重截替换——文件名是稳定的。
+**为 dev 专门截一轮新图。** 所有者决定暂缓:basic 素材池里已有 dev 每个招牌能力的准确截图(room、worktrees、local-agent 设置卡片、成员通道),占位符直接用副本填。今后随时可以专门重截替换——文件名是稳定的。
 
 **量化徽章(npm 下载量、star 数)。** 所有者否决:需要维护的数字换不来任何目录行没有说出的东西。
 
@@ -43,9 +45,9 @@ Status: implemented
 ## Consequences
 
 - 根 README 的事实面收敛为:一句计数(43/33,转述自生成文档)、成员数对比表、行内容为包目录链接的类目表。其余一切可再生的内容都是链接。
-- `profiles/web-dev/docs/screenshots/` 新建并跟踪五张图;下一次 `sync-mirror profile web-dev` 会带过去。basic 素材池原样不动,仍是 npm 嵌入图的宿主。
+- `profiles/dev/docs/screenshots/` 新建并跟踪五张图;下一次 `sync-mirror profile dev` 会带过去。basic 素材池原样不动,仍是 npm 嵌入图的宿主。
 - 两份整合包 README 的配对记录已重录(`verify-translation-pairing --write`);根 README 这一对按设计没有 sidecar(配对 glob 只覆盖 `packages/`、`profiles/`、`.agents/`、`docs/`)。
-- ~~**本次改动之外的已知后续:**~~ **同日已解决**:两个整合包的依赖区间都已对齐到成员最新发布线(basic 按成员分别钉 `^0.3.2` / `^0.2.3` / `^0.1.x`;web-dev 的 local-agent 家族钉 `^0.1.0-rc.1` 以容纳预发布线)。web-dev 的 README 也已改成与 basic 相同的列表优先形态(可复制包名的插件列表 → 带元包详情页截图的功能展示 → preset → 折叠后置的安装指南),家族安装路径写明 `@khorsheed/dsh-bundle-local-agent`——已对官方 `dsh-experimental-agent-team-profile` 核实过同一薄元包形态(bundle 依赖把成员传递带入;每个组件行仍可单独禁用)。
+- ~~**本次改动之外的已知后续:**~~ **同日已解决**:两个整合包的依赖区间都已对齐到成员最新发布线(basic 按成员分别钉 `^0.3.2` / `^0.2.3` / `^0.1.x`;dev 的 local-agent 家族钉 `^0.1.0-rc.1` 以容纳预发布线)。dev 的 README 也已改成与 basic 相同的列表优先形态(可复制包名的插件列表 → 带元包详情页截图的功能展示 → preset → 折叠后置的安装指南),家族安装路径写明 `@khorsheed/dsh-bundle-local-agent`——已对官方 `dsh-experimental-agent-team-profile` 核实过同一薄元包形态(bundle 依赖把成员传递带入;每个组件行仍可单独禁用)。
 
 ## Testing
 

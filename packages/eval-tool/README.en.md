@@ -44,7 +44,7 @@ dsh plugin --profile web add @khorsheed/dsh-eval-tool
 # Then add the row above to the target preset's agent.cordis.yml
 ```
 
-The web-dev pack's dev-mode preset (`profiles/web-dev/presets/dev`) already carries this row (default `all`); the eval pack's `eval` preset (`profiles/web-eval`) names it with `tools: all` too — every mechanism row's tier follows its granting point, so no other preset's sessions in that profile get the tools.
+The dev pack's dev-mode preset (`profiles/dev/presets/dev`) already carries this row (default `all`); the eval pack's `eval` preset (`profiles/web-eval`) names it with `tools: all` too — every mechanism row's tier follows its granting point, so no other preset's sessions in that profile get the tools.
 
 **The fourth read tool, `eval_cells`, arrived with I5 · T46** (a pure tool-face change — nothing host-side moved): the evaluation preset stopped composing mission's companion row (UI spec R6), and `eval_cells` answers per cell what used to need `mission_list` / `mission_get` — bucket, stage and time in it, attempt, the unit's refs, checkpoint names, annotation counts per namespace, and the delegation's child session id, filterable by `bucket` / `task` / `condition`. The projection is computed in the core's service face (`ctx.dshEval.cells`); this row only adapts it. The `tool:eval` prompt section says so too: there are no mission tools on this line, so do not look for them.
 
@@ -58,7 +58,7 @@ The web-dev pack's dev-mode preset (`profiles/web-dev/presets/dev`) already carr
 
 - **npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`)**: ✅ full — the tools register into the host tools registry and the prompt section is contributed; the 0.1.5 plugin list renders this row in its "session plugins" group (short-name title, state badge, live-mount phase dot). With the core absent the composition still mounts and the row stays pending (the registry audit shows `waiting for dshEval`); once the core provides, the row activates and registers the tools.
 - **deepseek-harness master**: ✅ (verifiedHost: 0.1.5-rc.1).
-- Hosts below 0.1.5: preset compositions and the tool-row mechanism existed on earlier lines, but the session-plugins inventory view is 0.1.5 presentation — the same tier as the worktrees-tool / room-tool companions, so minHost pins 0.1.5-rc.1.
+- Hosts below 0.1.5: preset compositions and the tool-row mechanism existed on earlier lines, but the session-plugins inventory view is 0.1.5 presentation — the same tier as the room-tool companion row and its siblings, so minHost pins 0.1.5-rc.1.
 - **Release order**: a pack that names a companion row needs the companion published / installed first; a row that fails to resolve reports the preset composition `broken` (the instance boots unaffected) rather than degrading silently. This package is host-plane only — it has no browser half (the core's `/eval` slash face and CLI have none either).
 
 **Version-line map**: `0.1.0` and later support host `0.1.5-rc.1` and up.

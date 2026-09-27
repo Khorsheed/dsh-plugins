@@ -14,8 +14,7 @@
 | message-timeline | `@khorsheed/dsh-message-timeline` | 会话左缘一条安静的时间轴——悬停展开，点击跳转 |
 | session-title-edit | `@khorsheed/dsh-client-session-title-edit` | 聊天头部内联重命名会话 |
 | quote | `@khorsheed/dsh-quote` | 选中任意文本浮出引用动作菜单：引用进输入框 / 侧边对话 / 复制 |
-| file-preview | `@khorsheed/dsh-file-preview` | 宿主侧文件预览服务（与下一行成对） |
-| ui-file-preview | `@khorsheed/dsh-client-ui-file-preview` | 「产物」tab：会话写过的每个文件，不开 IDE 直接预览 |
+| file-preview | `@khorsheed/dsh-file-preview` | 「产物」tab + 宿主服务一体：会话写过的每个文件，不开 IDE 直接预览 |
 | taskpilot | `@khorsheed/dsh-taskpilot` | 后台任务与子 agent 变成聊天框上方的胶囊，一键停止/中断 |
 | context-guard | `@khorsheed/dsh-context-guard` | 上下文溢出拒绝请求之前，压缩按钮先出现 |
 | inline-html-render | `@khorsheed/dsh-inline-html-render` | agent 写的 HTML 变成会话内的沙箱交互卡片 |
@@ -29,7 +28,7 @@
 
 成员迭代快、老版本线不再更新，按你的宿主版本选线：
 
-**宿主 ≥ `0.1.5-rc.1`**：直接填包名，全部 14 个成员的 latest 可用。
+**宿主 ≥ `0.1.5-rc.1`**：直接填包名，全部 13 个成员的 latest 可用。
 
 **宿主 `0.1.2-rc.1` ~ `0.1.4`**：
 
@@ -118,12 +117,12 @@
 
 </details>
 
-### file-preview + ui-file-preview：会话产物预览
+### file-preview：会话产物预览
 
-| 宿主版本 | 安装规格（复制到对话框，两个包成对安装） |
+| 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-file-preview` + `@khorsheed/dsh-client-ui-file-preview` |
-| `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-file-preview@^0.2.0` + `@khorsheed/dsh-client-ui-file-preview@^0.2.0` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-file-preview`（0.4.0 起宿主服务与界面同包，一个规格即是全部） |
+| `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-file-preview@^0.2.0` + `@khorsheed/dsh-client-ui-file-preview@^0.2.0`（旧线仍是宿主/界面两包成对） |
 | `0.1.x` | `@khorsheed/dsh-file-preview@^0.1.0` + `@khorsheed/dsh-client-ui-file-preview@^0.1.0` |
 
 「产物」tab 列出会话写入/编辑过的每个文件（按最近活动倒序），选中即在页面内预览当前内容；改动记录逐条步进每次 write/edit 的 diff，带内容搜索。
@@ -307,7 +306,7 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 
 | 整合包 | 定位 |
 |---|---|
-| [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | 开发模式：包含本包全部体验，再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作 |
+| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | 开发模式：包含本包全部体验，再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作 |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | 插件 monorepo 主仓：全部插件的能力地图、preset 设计与开发文档 |
 
 ## 变更记录
@@ -344,7 +343,7 @@ git clone https://github.com/Khorsheed/dsh-basic.git /tmp/dsh-basic
 sh /tmp/dsh-basic/scripts/install.sh
 ```
 
-install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile basic --dump-config | grep -c "@khorsheed"` 应为 14（ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
+install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile basic --dump-config | grep -c "@khorsheed"` 应为 13（ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
 
 **二、同端口交接（关键一步）**
 

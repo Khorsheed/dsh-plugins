@@ -43,7 +43,7 @@
 
 `$DSH_HOME/.agent-presets` 的名册**无缓存**(每次 `list()` 重读文件系统,改完即生效不用重启),也因此是谁都能手改的部署资产——2026-09-17 dev preset 本地补挂评测三行、漂移进生产。规则:
 
-- 3080 名册里 prod 拥有的 preset 以 git 正本为准:`dsh-writing` 正本在 `profiles/web/presets/`;`dsh-eval` 的组合跟随 web-eval pack 的 eval preset;`dev` 归 web-dev pack 的 install/update 脚本。
+- 3080 名册里 prod 拥有的 preset 以 git 正本为准:`dsh-writing` 正本在 `profiles/web/presets/`;`dsh-eval` 的组合跟随 web-eval pack 的 eval preset;`dev` 归 dev pack 的 install/update 脚本。
 - 同步动作只有一个:`DSH_HOME=~/.dsh-official sh profiles/web/scripts/sync-presets.sh`(幂等、先备份、名册即时生效;存量会话的 preset 建会话时锁定,不受影响)。
 - 手改名册是允许的调试手段,但改动必须立即回流正本,否则下次 sync 覆盖回来。
 - 插件 UI 的 preset 自隐判据读的就是名册组合——名册漂移 = 可见性漂移,见 [plugin-visibility.md](plugin-visibility.md)。

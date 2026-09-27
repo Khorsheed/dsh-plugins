@@ -100,10 +100,13 @@ export function loadPackageIndex(repoRoot: string): PackageIndex {
   return index
 }
 
-/** Every `name:` value a YAML patch/overlay layer declares. */
+/** Every `name:` value a YAML patch/overlay layer declares. A row may name a
+ * package's subpath composition entry (`@khorsheed/dsh-worktrees/tool`, the
+ * canvas `./agent` pattern) — the full name is returned and rule 5 resolves
+ * the BASE package against the profile's dependencies. */
 export function parseRowNames(yaml: string): string[] {
   const names: string[] = []
-  for (const match of yaml.matchAll(/^\s*name:\s*(['"]?)(@khorsheed\/[a-z0-9-]+)\1\s*(?:#.*)?$/gm)) {
+  for (const match of yaml.matchAll(/^\s*name:\s*(['"]?)(@khorsheed\/[a-z0-9-]+(?:\/[a-z0-9-]+)?)\1\s*(?:#.*)?$/gm)) {
     names.push(match[2] as string)
   }
   return names
@@ -212,9 +215,12 @@ export function checkProfile(profile: ProfileShape, index: PackageIndex): Findin
     }
   }
 
-  // 5 — preset rows must resolve from this profile's own dependencies.
+  // 5 — preset rows must resolve from this profile's own dependencies. A row
+  // naming a subpath composition entry (`@khorsheed/dsh-worktrees/tool`)
+  // resolves through the BASE package — that is where the module ships.
   for (const name of profile.rows) {
-    if (!dependencies.has(name)) {
+    const base = name.split('/').slice(0, 2).join('/')
+    if (!dependencies.has(name) && !dependencies.has(base)) {
       add('preset-row-unresolvable', `a preset mounts ${name}, which is not a dependency of this profile`)
     }
   }

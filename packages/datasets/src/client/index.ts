@@ -67,7 +67,7 @@ function mainSessionId(list: SessionListState): SessionId | undefined {
  * proxy only resolves services declared in `inject` or provided by an ancestor
  * fiber — declaring it would deadlock the loader. The mount is awaited and the
  * namespace is then read back from the global store with `ctx.get` (the
- * ui-file-preview precedent). */
+ * file-preview precedent). */
 export const inject = ['slots', 'remote', 'locale', 'workspaces', 'connection', 'sessions']
 
 /** Static absence: no host-facts source on an unrecognized line (never reached on rc or 0.1.2). */

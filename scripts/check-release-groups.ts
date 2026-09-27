@@ -93,7 +93,8 @@ export const COMPANION_PAIRS: ReadonlyArray<{ core: string; companion: string }>
   { core: 'eval', companion: 'eval-tool' },
   { core: 'mission', companion: 'mission-tool' },
   { core: 'room', companion: 'room-tool' },
-  { core: 'worktrees', companion: 'worktrees-tool' },
+  // worktrees-tool folded back into the worktrees package at 0.3.0 (the ./tool
+  // composition entry) — there is no longer a separate companion package.
 ]
 
 interface Loaded {

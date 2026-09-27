@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-03-web-eval-profile-and-eval-line.md
-.agents/notes/proposed/architecture/2026-09-03-web-eval-profile-and-eval-line.md: e171cbbd8c8b723c0f996576814967b536596c8e
-.agents/notes/proposed/architecture/2026-09-03-web-eval-profile-and-eval-line.zh.md: df846c2c7e23ff8bbb7dfdce3d1aeafe43c1fd1a
+.agents/notes/proposed/architecture/2026-09-03-web-eval-profile-and-eval-line.md: b1151507d052ff05279c5b98c635cf958c2fed86
+.agents/notes/proposed/architecture/2026-09-03-web-eval-profile-and-eval-line.zh.md: cb9d136e4bb60ba16825eac9bde71d2224c90edd

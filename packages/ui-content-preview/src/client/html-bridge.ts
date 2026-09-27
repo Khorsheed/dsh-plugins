@@ -1,6 +1,6 @@
 /**
  * Parent-side capability bridge for the Tier1 sandboxed HTML iframe. Ported
- * verbatim from ui-file-preview (this plugin stays self-contained).
+ * verbatim from file-preview (this plugin stays self-contained).
  *
  * The artifact's scripts have no network and no host access; the only way out
  * is the tiny `window.dshBridge` client (see html-src-doc.ts) posting messages

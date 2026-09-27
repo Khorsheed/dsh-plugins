@@ -1,5 +1,10 @@
 # 变更记录
 
+## 2026-09-27 —— 产物预览合并为单包
+
+- `file-preview` 与 `ui-file-preview` 合并为单个 `@khorsheed/dsh-file-preview`（0.4.0）：产物预览只需装一个包，成员数 14 → 13；旧宿主线的成对安装说明保留
+- 已装用户：`@khorsheed/dsh-client-ui-file-preview` 可移除（npm 旧名已 deprecate，指向新包）
+
 ## 2026-09-27 —— 元包展示与兼容表格化
 
 - 功能展示末尾新增「打包装：bundle-conversation-toolbox」一节（含详情页截图）：七件会话工具一次装齐，组件行仍可单独禁用

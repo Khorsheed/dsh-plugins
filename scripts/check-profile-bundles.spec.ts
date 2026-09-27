@@ -50,6 +50,11 @@ describe('parseRowNames', () => {
     ].join('\n')
     expect(parseRowNames(yaml)).toEqual(['@khorsheed/dsh-a', '@khorsheed/dsh-b', '@khorsheed/dsh-c'])
   })
+
+  it('reads subpath composition-entry rows (the canvas ./agent pattern) verbatim', () => {
+    const yaml = `- id: worktrees-tool\n  name: '@khorsheed/dsh-worktrees/tool'\n`
+    expect(parseRowNames(yaml)).toEqual(['@khorsheed/dsh-worktrees/tool'])
+  })
 })
 
 describe('checkProfile rules', () => {
@@ -119,6 +124,10 @@ describe('checkProfile rules', () => {
     expect(kinds(profile({ rows: ['@khorsheed/dsh-row'] }))).toContain('preset-row-unresolvable')
     expect(kinds(profile({ dependencies: ['@khorsheed/dsh-row'], rows: ['@khorsheed/dsh-row'] })))
       .not.toContain('preset-row-unresolvable')
+    // A subpath row resolves through the base package that ships the entry.
+    expect(kinds(profile({ rows: ['@khorsheed/dsh-row/tool'] }))).toContain('preset-row-unresolvable')
+    expect(kinds(profile({ dependencies: ['@khorsheed/dsh-row'], rows: ['@khorsheed/dsh-row/tool'] })))
+      .not.toContain('preset-row-unresolvable')
   })
 })
 
@@ -127,7 +136,7 @@ describe('the real tree', () => {
     const profiles = loadProfiles(repoRoot)
     expect(profiles.map(p => p.path).sort()).toEqual([
       'profiles/basic/package.json',
-      'profiles/web-dev/package.json',
+      'profiles/dev/package.json',
       'profiles/web-eval/package.json',
     ])
   })

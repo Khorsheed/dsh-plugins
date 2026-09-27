@@ -10,7 +10,7 @@
 
 这是一个**因子设计的实验台**，不是流量 A/B 平台。因子是 harness、模型、preset 或 skill；题目是区组；每格是一次独立样本。它回答的问题形如「同一道题，换掉一个因子，结果差多少」，而不是「谁的总分高」。
 
-三条与 [dsh-web-dev](../web-dev/README.md) 不同的纪律：
+三条与 [dsh-dev](../dev/README.md) 不同的纪律：
 
 - **确定性归程序，判断归 agent，审批归人。** 起容器、物化题面、打 tag、跑判定、归档、销毁全部由编排器执行；agent 只把想法写成计划、把 bundle 写成分析初稿；人批准计划、写终评、决定导出。
 - **每一个因子都可哈希。** 题面有快照 commit，环境有镜像 digest，输入有物化清单哈希，受试对象有条件哈希，prompt 有字节哈希。两格之间「只差一个因子」必须能被证明，而不是被声明。
@@ -127,11 +127,11 @@ plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha
 
 ## 依赖插件
 
-26 个成员，三组：
+25 个成员，三组：
 
 | 组 | 成员 | 状态 | 为本 profile 需要的改动 |
 |---|---|---|---|
-| 基础体验 | 与 web-dev 相同的 13 个（`ankh-guard` 在其中） | ✅ / 🔶 | 无；评测实例用自己的 `$DSH_HOME`，切换与看护归 `ankh-guard` |
+| 基础体验 | 与 dev 相同的 12 个（`ankh-guard` 在其中） | ✅ / 🔶 | 无；评测实例用自己的 `$DSH_HOME`，切换与看护归 `ankh-guard` |
 | 本地 Agent 家族 | 6 个：`local-agent` + kimi / codex / claude-code / dsh 四个 provider + `tool-subagent` | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）与 effectiveSettings 快照（含已配置模型）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装已落地（T17：`exec: {container, workdir, env}`，值不上 argv）；「CLI 驱动抽成独立包」推迟到出现第二个消费者；`cliVersion` 与 `credentialState` 填实（T25）。I4：每条件的模型参数（首轮指定、成员内固定、resume 不换）与 scoped home 覆盖，provider 设置卡加「默认模型」 |
 | 评测机制 | 7 个：`datasets` / `mission` / `lab` / `eval` 四个 core + `datasets-tool` / `mission-tool` / `eval-tool` 三个伴生（M4'③ 起拆开，伴生行归预设） | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针。`eval`：run 循环的判官（T9）、报告（T10）、只读工具（T14）与完整就绪检查 |
 
@@ -307,7 +307,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 
 ## 安装
 
-> 编排器落地前，本 profile 只是插件组合。下面的流程与 web-dev 同款，可用于提前把评测实例立起来。
+> 编排器落地前，本 profile 只是插件组合。下面的流程与 dev 同款，可用于提前把评测实例立起来。
 
 评测实例要独立的 `$DSH_HOME`，不与开发实例共享会话与凭据（环境隔离是评测的基本要求，见 `docs/ops.md` 的环境拓扑）。I1 到 I2 在宿主上直跑四家 CLI，只需要 node、git 与各家 CLI；I3 起需要 docker，题集级镜像、本地包镜像、白名单代理与凭证卷的清单见 [docs/architecture.md](docs/architecture.md) 的「运行环境」一节。
 
@@ -315,7 +315,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 
 **宿主线：本 profile 要求 `dsh` ≥ 0.1.5-rc.1**（评测家族六个包的 `dsh.compat.minHost` 与 `verifiedHost` 自 2026-09-11 起都写这条线；local-agent 家族自基线提交 `bb04c84` 起已是）。源码模式的前置检查里因此多一条**宿主线核对**：脚本读每个待打包成员 `package.json` 的 `dsh.compat.minHost`，与 `dsh --version` 比一次，低于任一成员就在动文件前退出（退出码 2）并逐行列出谁要求什么版本。这条检查只在源码模式有——npm 模式的成员由 registry 解析，本地没有 `package.json` 可读。它挡的是一种到不了安装期的失败：宿主偏低不会在装的时候报错，而是在**起实例时**从某个插件的 import 里抛一个缺失导出（本机测到两次：`@deepseek-ai/dsh-settings` 在 0.1.5 上没有 `settingsNamespace`，而 npm 上 0.2.0 的 context-guard / ui-shortcuts 会 import 它），或者更晚——装完能起、跑到 resume 轮才报 `childSession.snapshotEvents is not a function`。
 
-`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 23（去重成员数——dump 里每个成员出现多次：层头加条目行，tool-subagent 只经 provider 条目出现）。
+`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 22（去重成员数——dump 里每个成员出现多次：层头加条目行，tool-subagent 只经 provider 条目出现）。
 
 **npm 模式**——成员全部从 npm registry 解析。成员全部上架后（I6）开箱即用；在此之前，未上架成员会在安装时报 registry 404（权威清单见 dsh-plugins 的 [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md)）：
 
@@ -336,7 +336,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 源码模式的 tarball 落在 profile 目录内：`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载时一并清掉。检出更新后要换新 tarball，重跑时**必须加 `--fresh`**：profile 已装的 `node_modules`、`pnpm-lock.yaml` 与 `tarballs/` 会让新打的 tarball 进不来，实例照旧跑旧构建且没有任何提示；`--fresh` 先清掉这三样再装。不加 `--fresh` 重跑时脚本直接拒绝并把这段原因打出来。
 
-评测 pin 配置（冻结决策 2 到 4）属于装置而非个人偏好，**归 pack**：它们写在本 profile 的 `cordis.patch.yml` 里，`install.sh` 与 `update.sh` 都覆盖该文件——这是与 [dsh-web-dev](../web-dev/README.md) 唯一的 patch 层差异。留给用户层的后果是一次 update 之后实例可能静默换了沙箱档位或推理强度，而 run.meta 里记的还是旧值，报告的「受试对象一致」失去意义。个人偏好放 preset 层，不放这里。
+评测 pin 配置（冻结决策 2 到 4）属于装置而非个人偏好，**归 pack**：它们写在本 profile 的 `cordis.patch.yml` 里，`install.sh` 与 `update.sh` 都覆盖该文件——这是与 [dsh-dev](../dev/README.md) 唯一的 patch 层差异。留给用户层的后果是一次 update 之后实例可能静默换了沙箱档位或推理强度，而 run.meta 里记的还是旧值，报告的「受试对象一致」失去意义。个人偏好放 preset 层，不放这里。
 
 同理由**归 pack** 的还有 agent 预设与技能：`presets/eval/` 由两个脚本整目录覆盖到 `$DSH_HOME/.agent-presets/eval`，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）；`skills/eval-planning/` 同样整目录覆盖到 `$DSH_HOME/skills/eval-planning`——那是 `dsh-skill-filesystem` 扫的 `user-dsh` 根，eval 预设里的 `skill-filesystem` 行把它带进评测会话的技能卡。技能也是装置：它教的是 `eval_plan_draft` 这一个起草动词，以及批准 / 登录 / provision / 终评都不是 agent 的——这条线歪了，草稿就会变成没人批的 run。两者都落在 profile 目录**之外**（预设与技能名册都按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它们——见[卸载](#更新切换装卸单个成员卸载)。
 
@@ -344,7 +344,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 ## 更新、切换、装卸单个成员、卸载
 
-切换是同端口交接；`update.sh` 覆盖成员清单、lockfile、**`cordis.patch.yml`、`presets/eval/` 与 `skills/eval-planning/`**——评测 pin、agent 预设与技能都归 pack（见[安装](#安装)），这是与 [dsh-web-dev](../web-dev/README.md#更新) 的唯一差异；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile——pack 的 agent 预设与技能都不在这个目录下，要一并清掉再加 `rm -rf "$DSH_HOME/.agent-presets/eval" "$DSH_HOME/skills/eval-planning"`（留着它们无害：没有 profile 把预设钉成默认，技能也只是名册上多一条）。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
+切换是同端口交接；`update.sh` 覆盖成员清单、lockfile、**`cordis.patch.yml`、`presets/eval/` 与 `skills/eval-planning/`**——评测 pin、agent 预设与技能都归 pack（见[安装](#安装)），这是与 [dsh-dev](../dev/README.md#更新) 的唯一差异；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile——pack 的 agent 预设与技能都不在这个目录下，要一并清掉再加 `rm -rf "$DSH_HOME/.agent-presets/eval" "$DSH_HOME/skills/eval-planning"`（留着它们无害：没有 profile 把预设钉成默认，技能也只是名册上多一条）。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
 
 ## 相关文档
 
@@ -360,7 +360,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 | 整合包 | 定位 |
 |---|---|
 | [dsh-basic](../basic/README.md) | 日常模式：只含基础体验 |
-| [dsh-web-dev](../web-dev/README.md) | 开发模式：基础体验 + 本地 Agent 家族 + worktrees + room |
+| [dsh-dev](../dev/README.md) | 开发模式：基础体验 + 本地 Agent 家族 + worktrees + room |
 
 ## 许可
 

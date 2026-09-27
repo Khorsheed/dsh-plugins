@@ -580,7 +580,7 @@ describe('checkInjectName', () => {
 describe('isAllowedEdge', () => {
   it('allows the sanctioned pairs and nothing else', () => {
     expect(isAllowedEdge('local-agent-kimi', '@khorsheed/dsh-local-agent')).toBe(true)
-    expect(isAllowedEdge('ui-file-preview', '@khorsheed/dsh-file-preview')).toBe(true)
+    expect(isAllowedEdge('file-preview', '@khorsheed/dsh-client-ui-content-preview')).toBe(true)
     expect(isAllowedEdge('whalesong', '@khorsheed/dsh-file-preview')).toBe(false)
     expect(isAllowedEdge('file-preview', '@khorsheed/dsh-client-ui-file-preview')).toBe(false)
   })
@@ -766,7 +766,7 @@ describe('composition metadata and the NO_OWN_PATCH cross-check', () => {
 
   it('flags a NO_OWN_PATCH entry that declares no metadata', () => {
     const { root, cleanup } = packagesRoot([
-      { dir: 'worktrees-tool', json: { name: '@khorsheed/dsh-worktrees-tool', private: true } },
+      { dir: 'room-tool', json: { name: '@khorsheed/dsh-room-tool', private: true } },
     ])
     try {
       const findings = scanTree(root).findings.filter((f) => f.kind === 'composition component')
@@ -778,7 +778,7 @@ describe('composition metadata and the NO_OWN_PATCH cross-check', () => {
 
   it('rejects a component value outside the declared vocabulary', () => {
     const { root, cleanup } = packagesRoot([
-      { dir: 'worktrees-tool', json: { name: '@khorsheed/dsh-worktrees-tool', private: true, dsh: { composition: { component: 'whatever' } } } },
+      { dir: 'room-tool', json: { name: '@khorsheed/dsh-room-tool', private: true, dsh: { composition: { component: 'whatever' } } } },
     ])
     try {
       const findings = scanTree(root).findings.filter((f) => f.kind === 'composition component')

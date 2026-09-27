@@ -42,7 +42,7 @@ export interface WorktreesBadgeInjected {
   /**
    * Fetch the OFFICIAL plugin inventory — the preset-composition data the
    * badge's DEFAULT visibility criterion reads ("the current session's
-   * preset composition names the `@khorsheed/dsh-worktrees-tool` row").
+   * preset composition names the `@khorsheed/dsh-worktrees/tool` row").
    * Undefined on a host without the pluginInventory namespace (the read is
    * probed, never injected): the badge then has no composition data and
    * fails open. A configured `visiblePresets` overrides this criterion, so

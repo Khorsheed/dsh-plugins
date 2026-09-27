@@ -14,7 +14,7 @@ The host published 0.1.6-alpha.1 (2026-09-15, ~804 commits past our 0.1.5-rc.1 b
 2. **`SubprocessTerminalSpawnSpec.terminalType` became required.** gen-typert's whole-workspace analysis surfaced it in `packages/local-agent/src/index.ts` (the login PTY spawn). Fixed with `terminalType: 'xterm-256color'`, the same value the official terminal-controller passes.
 3. **`code-runtime` packages were deleted** (`dsh-code-runtime(-worker-thread)` → `dsh-ptc-runtime(-node)`, row id `code-runtime` → `ptc-runtime`; `workflow-worker-thread` → `workflow-ptc`). local-agent-dsh-headless carried the dependency, the patch row, the pin spec, and docs; the eval capability-probe fixture mirrored the row. All renamed; the collision-pin spec keeps its P0 rationale with a rename note.
 4. **`SidebarRightGuideEntry.id` became required.** Four client definitions (canvas, local-files, ui-file-preview, worktrees) register right-sidebar guide entries; each now passes its KIND constant as the stable entry id, matching the official `ui-sidebar-files` shape.
-5. **Profiles**: `tool-ralph` is now `disabled: true` in the base bundle (the documented restore form is an overlay row with `disabled: false` — added to web-dev's row); web-dev's `workflow-worker-thread` row became `workflow-ptc` / `@deepseek-ai/dsh-workflow-ptc`; web-eval prose followed the rename.
+5. **Profiles**: `tool-ralph` is now `disabled: true` in the base bundle (the documented restore form is an overlay row with `disabled: false` — added to dev's row); dev's `workflow-worker-thread` row became `workflow-ptc` / `@deepseek-ai/dsh-workflow-ptc`; web-eval prose followed the rename.
 
 **Checked with zero hits**: e2b removal (no references), provenance→source type renames (not imported), `ComposerBarInjected.command` / `WorkspaceBrowserInjected.insertSessionBefore` / `MessageFeedbackInjected` removals (no consumers), mobile's permission-control DOM anchor (verified statically against 0.1.6's `PermissionSelect.tsx`: trigger button still renders the text span plus aria-hidden chevron the anchor probes).
 
@@ -29,7 +29,7 @@ The host published 0.1.6-alpha.1 (2026-09-15, ~804 commits past our 0.1.5-rc.1 b
 
 - **Bumping `minHost` to 0.1.6-alpha.1 with the adaptation** — locks community users on npm `latest` (0.1.5-rc.1) out of every package for no behavioral gain; the wave strategy forbids it.
 - **Keeping the shared harness checkout and switching it back and forth** — multi-agent hazard: other worktrees resolve types and run gen-typert against `DSH_HARNESS`; flipping it mid-wave breaks their builds. The dual-checkout pattern already has precedent from the 0.1.2-alpha reviews.
-- **Deferring the whole adaptation to the rc** — the headless `dsh-code-runtime-worker-thread` dependency and the web-dev `workflow-worker-thread` row are install-time failures on 0.1.6, not graceful degradations; waiting would leave the repo unbuildable against the line the rc will finalize in days.
+- **Deferring the whole adaptation to the rc** — the headless `dsh-code-runtime-worker-thread` dependency and the dev `workflow-worker-thread` row are install-time failures on 0.1.6, not graceful degradations; waiting would leave the repo unbuildable against the line the rc will finalize in days.
 
 ## Consequences
 

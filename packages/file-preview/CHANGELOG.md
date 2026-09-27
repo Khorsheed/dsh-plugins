@@ -1,5 +1,11 @@
 # 变更记录
 
+## 0.4.0（2026-09-27）
+
+- **BREAKING（包结构）**：`@khorsheed/dsh-client-ui-file-preview` 并入本包——宿主 Remote 与浏览器半（「会话产物」右栏 tab、回合变更卡片、详情页）合并为一个包、一条 loader 行（id 仍为 `file-preview`，浏览器半经 `dsh.client` 发现，message-tools / taskpilot 同形态）。迁移：卸载旧界面包并删除组合里的 `ui-file-preview` 行；针对旧行 id 的 `disabled` 覆盖不再匹配，需要的话改写为 `file-preview`。旧包名已在 npm deprecate。
+- 插件清单展示卡片（`locale/*.json` 的 meta）改用产物预览那张（会话产物 / Session Artifacts）。
+- tab 实现 id（`FILE_PREVIEW_ID`）与文档/注释里的旧包名统一归一到 `@khorsheed/dsh-file-preview`；行为、wire 命名空间（`filePreview`）与字典命名空间不变。
+
 ## 0.3.2（2026-09-27）
 
 无功能变更。随宿主 0.1.7-rc.2 基线发布波重发：全量构建+测试在 rc.2 基线通过（rc.1→rc.2 无触及本包的宿主变更，逐类清点见 [Agent Note](../../.agents/notes/implemented/architecture/2026-09-27-host-017-rc2-breaking-changes.md)）。

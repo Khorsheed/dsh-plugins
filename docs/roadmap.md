@@ -215,7 +215,7 @@ dsh-dev/
 
 ## 七、本期迭代：两个整合包上 GitHub
 
-**目标**：`dsh-basic` 更新、`dsh-web-dev` 新建，两者都上 GitHub，并由我们自己充分测试。**本期不发 npm**——推社区是下一期的事。
+**目标**：`dsh-basic` 更新、`dsh-dev` 新建，两者都上 GitHub，并由我们自己充分测试。**本期不发 npm**——推社区是下一期的事。
 
 **形态**：沿用 `dsh-basic` 的形态 B（profile 目录模板 + `install.sh` + 守卫重启脚本）。尚未上 npm 的成员按 dsh-plugins README 现有做法处理：README 标注「从源码安装」，本地用 tarball 装配。
 
@@ -252,18 +252,18 @@ dsh-dev/
 | A15 | **自由装卸载实测**：每个成员 `dsh --profile basic plugin rm <pkg>` → 重启 → 功能消失且其余不受影响 → `plugin add` 回来恢复 | A13 | 兑现「卸载即精确还原」的承诺；这是 README 的卖点，写进去就得验 |
 | A16 | 同步推镜像仓 | A6·A14·A15 | 镜像仓 clone 能照 README 装上 |
 
-### B 线：dsh-web-dev 新建
+### B 线：dsh-dev 新建
 
 成员清单以**「已合 main 且 3080 验收过」**为准，在途包不写进整合包。截至 2026-08-30，3080 上 21 个成员均已就位（`room` 08-29 18:55 上线，观察期刚起算）。
 
 | # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
 | B1 | 确认成员清单与各包版本线 | A 线机制就位 | **21 个成员**（= 3080 现有全集）。`mission` 不在 3080，按标准排除在首版之外 |
-| B2 | 建 `profiles/web-dev/`：`package.json` + `cordis.patch.yml` + `pnpm-workspace.yaml` + `pnpm-lock.yaml` | B1·A2 | 自带 hoisted linker |
+| B2 | 建 `profiles/dev/`：`package.json` + `cordis.patch.yml` + `pnpm-workspace.yaml` + `pnpm-lock.yaml` | B1·A2 | 自带 hoisted linker |
 | B3 | `dsh.profile.bundles` 挂 base + dev 的 feature | B2 | `--dump-config` 组合完整 |
 | B4 | ~~自带 preset~~ **首版不做**：用官方 `standard`，README 给出自建路径 | B3 | preset **无 patch 语义**，复制即快照、官方演进后不跟（官方 README：*A copy is a snapshot that drifts*）。官方自定义路径是 GUI 复制 + 「创造模式」辅助创作，用户随时可自建，存 `$DSH_HOME/.agent-presets/`，不受 profile 更新影响——**我们不分发，也不挡路** |
 | B5 | 写 `scripts/install.sh`（复用 A11 的升级策略） | B2·A11 | 全新与升级两条路径 |
-| B6 | 写 `scripts/restart-into-web-dev.sh` | B5 | 同端口交接成功 |
+| B6 | 写 `scripts/restart-into-dev.sh` | B5 | 同端口交接成功 |
 | B7 | 写双语 README + sidecar + CHANGELOG | B4·B6 | 门禁绿 |
 | B8 | 全新 `$DSH_HOME` 装一遍 | B5 | 一次通过 |
 | B9 | **五条切换判据实测** | B6·B8 | 见下方判据表 |
@@ -338,11 +338,11 @@ super(ctx, 'localFilesRemote', { namespace: 'localFiles' })
 
 | # | 判据 | 验证什么 | 判定方式 |
 |---|---|---|---|
-| 1 | **切得过去**：basic → web-dev 同端口交接，刷新后 **worktrees 徽标出现**在会话标题栏右上 | 切换成立，UI 随 profile 走 | 肉眼 + `--dump-config` 行数 |
+| 1 | **切得过去**：basic → dev 同端口交接，刷新后 **worktrees 徽标出现**在会话标题栏右上 | 切换成立，UI 随 profile 走 | 肉眼 + `--dump-config` 行数 |
 | 2 | **切得回来**：再切回 basic，徽标消失，**无残留组件、无报错空槽** | 可逆——敢日常使用的前提 | 肉眼 + 浏览器控制台无错误 |
-| 3 | **切不过去不伤当前实例**：故意改坏 web-dev 的一行 patch YAML 再切，**preflight 拒绝且当前实例继续服务** | 安全网真的在 | 实例仍响应 + 失败原因可读 |
+| 3 | **切不过去不伤当前实例**：故意改坏 dev 的一行 patch YAML 再切，**preflight 拒绝且当前实例继续服务** | 安全网真的在 | 实例仍响应 + 失败原因可读 |
 | 4 | **数据跨切换存活**：切过去开一个会话 → 切回 → 再切过去，会话仍在且能打开 | 切的是组合不是数据（sessions 在 `$DSH_HOME` home 级） | 会话列表 |
-| 5 | **隔离真的成立**：`--dump-config` 中 web-dev 比 basic **多 11 行**，且多出的正是 local-agent 家族 6 + worktrees + room + base 增量 | profile 层隔离有效 | 纯机器可判 |
+| 5 | **隔离真的成立**：`--dump-config` 中 dev 比 basic **多 11 行**，且多出的正是 local-agent 家族 6 + worktrees + room + base 增量 | profile 层隔离有效 | 纯机器可判 |
 
 第 2、3 条是核心：**可逆 + 失败不伤当前实例**，这两条成立才敢把切换当日常操作。第 5 条刻意用 `--dump-config` 而非 capability-catalog 的界面——catalog 尚未进 basic（等 A8），用它做判据会连带被 A1 卡住。
 

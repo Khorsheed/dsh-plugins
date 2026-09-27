@@ -7,7 +7,7 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$DSH_HOME/profiles/web-eval"
 
 # Overwritten on update: the member list, its lockfile, AND cordis.patch.yml.
-# The patch layer belongs to the pack here, unlike dsh-web-dev where it is the
+# The patch layer belongs to the pack here, unlike dsh-dev where it is the
 # user's: every row in it is an execution point of a frozen decision (drive,
 # sandbox tier, reasoning effort, tool-by-domain), and a frozen decision is
 # apparatus, not preference. Leaving it to the user means an update can

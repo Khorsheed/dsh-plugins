@@ -1,5 +1,11 @@
 # 变更记录
 
+## 0.3.0（2026-09-27）
+
+- **BREAKING（包结构）**：伴生包 `@khorsheed/dsh-worktrees-tool` 回并进本包——模型工具行改由本包的 `./tool` 子路径导出承载（`name: '@khorsheed/dsh-worktrees/tool'`，行 id 仍为 `worktrees-tool`，preset 组合里的行 id 不变、组合状态不受影响）。迁移：preset 的 `agent.cordis.yml` 里把 `name: '@khorsheed/dsh-worktrees-tool'` 改为 `name: '@khorsheed/dsh-worktrees/tool'`，并卸载旧伴生包（旧包名已在 npm deprecate）。工具定义工厂 `defineWorktreesTool` 从 `./tool` 出口退到内部模块 `./tool-definition.ts`——`./tool` 现在是可直接挂载的行模块（`name` / `inject = ['worktrees']` / `apply`），这是 2026-09-11 拆分记录里标记为「loader 支持子路径行后即可回并」的既定终点（canvas `./agent` 先例已验证该形态）。
+- 徽标/tab 的 preset 组合判据常量同步指向 `@khorsheed/dsh-worktrees/tool`。
+- 工具 origin 归因 owner 归一到本包名 `@khorsheed/dsh-worktrees`。
+
 ## 0.2.1（2026-09-27）
 
 适配宿主 0.1.7-rc.2 线（verifiedHost 前移至 0.1.7-rc.2；rc.1→rc.2 无触及本包的宿主变更，全量构建+测试双绿）。无功能变更。伴生工具行 `@khorsheed/dsh-worktrees-tool` 0.1.1 修复 rc.1 挂载顺序下工具行静默惰死（核心服务改声明式 inject，见其 CHANGELOG）。

@@ -269,7 +269,7 @@
 }
 
 /* Content-search row: pinned above the text preview, hairline-separated
-   (mirrors ui-file-preview's pane chrome). */
+   (mirrors file-preview's pane chrome). */
 .contentSearch {
   display: flex;
   flex: none;
@@ -373,7 +373,7 @@
 
 /* Structured document views (markdown / JSON tree / CSV table) share the block
    chrome the code view uses — rounded surface with a small format banner — so
-   every preview reads as one family (mirrors ui-file-preview). */
+   every preview reads as one family (mirrors file-preview). */
 .structured {
   margin: 12px 0;
   overflow: hidden;

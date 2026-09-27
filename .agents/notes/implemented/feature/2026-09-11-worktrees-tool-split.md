@@ -2,6 +2,8 @@
 
 Status: implemented
 
+> 2026-09-27: this split was partially reverted — the companion package folded back into `worktrees` as its `./tool` subpath row (the canvas `./agent` pattern this note had deferred on). See the follow-up record in `.agents/notes/implemented/process/2026-09-27-public-readme-catalog-layer.md`.
+
 English | [中文](2026-09-11-worktrees-tool-split.zh.md)
 
 ## Problem
@@ -15,11 +17,11 @@ The [mode-switcher proposal](../../../proposals/active/2026-08-26-mode-switcher.
 - The companion provides NO service (the only preset-mountable shape) and registers the one model tool, delegating to the global `ctx.worktrees` service core the main plugin still provides at the profile root — the official tool-row shape (the shipped `tool-bash` rows consume host services the same way).
 - The companion declares NO `dsh.bundle` patch: installing it as a dependency only makes the module resolvable (the `@khorsheed/dsh-local-agent-dsh-headless` plain-dependency precedent); granting happens by naming the row in a preset's `agent.cordis.yml`. `static inject = []` — the worktrees service is probed with `ctx.get` at apply time and the row silently skips registration when the core is absent (a preset naming it still mounts cleanly); the tools registry joins through deferred `ctx.inject` (the mount-order race lesson carried over from the in-core registration).
 - The tool-definition factory (`defineWorktreesTool(service)`) is exported from the core's `./tool` entry so business logic is not copied; the companion applies its own origin tag — attribution follows the mounting package.
-- The core **stops registering the tool at the profile root (BREAKING)**; UI/service/Remote are untouched. Migration: install the companion and name the row in the target preset (the web-dev dev preset already carries it).
+- The core **stops registering the tool at the profile root (BREAKING)**; UI/service/Remote are untouched. Migration: install the companion and name the row in the target preset (the dev dev preset already carries it).
 
 **The badge's default visibility criterion now reads the official composition data**, not the hand list: the client probes `ctx.get('remote.pluginInventory')` (never injected — a namespace-less host must not pend the client), fetches `pluginInventory.list()` once per mount, and shows the badge exactly when the current session's preset group names the `@khorsheed/dsh-worktrees-tool` row. `visiblePresets` stays as a manual override (a non-empty list gates exactly as the pilot pinned). Fail-open on every unreadable path: no namespace, failed RPC, a missing or `broken` preset group, and preset-less sessions all keep the badge.
 
-**The dev mode preset** (`profiles/web-dev/presets/dev`) is the shipped consumer: the official `standard` composition (0.1.5-rc.1) plus the three local-agent delegation tool rows (the web-eval patch shape minus `tools: none`) and the `worktrees-tool` row; `profiles/web-dev/scripts/install.sh`/`update.sh` drop it into `$DSH_HOME/.agent-presets/dev` (the web-eval form — presets are pack apparatus replaced whole, the roster is per-HOME and outlives the profile). The pack's patch layer stays the user's; nothing pins the default preset there.
+**The dev mode preset** (`profiles/dev/presets/dev`) is the shipped consumer: the official `standard` composition (0.1.5-rc.1) plus the three local-agent delegation tool rows (the web-eval patch shape minus `tools: none`) and the `worktrees-tool` row; `profiles/dev/scripts/install.sh`/`update.sh` drop it into `$DSH_HOME/.agent-presets/dev` (the web-eval form — presets are pack apparatus replaced whole, the roster is per-HOME and outlives the profile). The pack's patch layer stays the user's; nothing pins the default preset there.
 
 ## Alternatives considered
 
