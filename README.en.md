@@ -12,7 +12,7 @@ The default install unit is a complete profile (a pack), not a single package. I
 
 | Pack | What it is | Members |
 | --- | --- | --- |
-| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | **Everyday mode**: message control, artifact preview, task status, shortcuts, and the ops guard | 10 |
+| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | **Everyday mode**: message control, artifact preview, the capability catalog, mobile presentation, task status, shortcuts, and the ops guard | 13 |
 | [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | **Development**: everything in basic, plus delegation to local coding agents, live worktree state, and room multi-agent collaboration — ships the "dev mode" preset | 23 |
 | [web-eval](profiles/web-eval) (in this repo) | **Evaluation**: a factorial experiment bench — datasets, conditions, and plans reviewed in git, deterministic orchestration — ships the "eval mode" preset | 26 |
 
@@ -81,15 +81,15 @@ Delegate subtasks to coding-agent CLIs installed on your machine — each with i
 | Package | What you get | Ships with |
 | --- | --- | --- |
 | [`ui-shortcuts`](packages/ui-shortcuts) | **Rebindable shortcuts** (pause / steer-send / new session) plus a `ctx.shortcuts` action registry any plugin can register into | basic + dev |
-| [`inline-html-render`](packages/inline-html-render) | Renders agent-authored ```` ```dsh-card ```` HTML as **sandboxed interactive cards** inline in the conversation | dev |
+| [`inline-html-render`](packages/inline-html-render) | Renders agent-authored ```` ```dsh-card ```` HTML as **sandboxed interactive cards** inline in the conversation | basic + dev |
 | [`dsh-reader`](packages/dsh-reader) | A **link reader** tab: RSS/Atom subscriptions plus pasted article links, a card feed with a readable detail view | standalone |
-| [`mobile`](packages/mobile) | **Mobile presentation** and an iOS bridge | standalone |
+| [`mobile`](packages/mobile) | **Mobile presentation** and an iOS bridge | basic + dev |
 
 ### Capability and infrastructure
 
 | Package | What you get | Ships with |
 | --- | --- | --- |
-| [`capability-catalog`](packages/capability-catalog) | A **capability catalog**: every skill and tool in the running instance with its registration channel, a three-column settings grid with detail modals | dev |
+| [`capability-catalog`](packages/capability-catalog) | A **capability catalog**: every skill and tool in the running instance with its registration channel, a three-column settings grid with detail modals | basic + dev |
 | [`typesafe`](packages/typesafe) | **TypeSafe decision primitives** as a host service: typed noul/choice/score judgements with circuit breaker, cache, and decision logs | standalone |
 | [`typesafe-tool`](packages/typesafe-tool) | (companion tool row) The typesafe model tool, granted per session by a preset | standalone |
 | [`capture`](packages/capture) | A **rendered-fetch** Remote: a managed headless Chrome renders a URL and returns the serialized page with styles inlined | standalone |

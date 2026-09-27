@@ -1,5 +1,11 @@
 # 变更记录
 
+## 2026-09-27 —— 新增三名成员，成员区间对齐最新发布线
+
+- 新成员：capability-catalog（能力目录）、inline-html-render（内联 HTML 卡片）、mobile（移动端呈现）——成员数 10 → 13
+- 五个成员的依赖区间从 `^0.2.0` 升到最新线（ankh-guard / message-tools / file-preview / ui-file-preview / taskpilot → `^0.3.2`）：整合包整体安装与单包安装拿到同一代成员
+- 整合包宿主地板抬到 `0.1.5-rc.1`：capability-catalog 与 mobile 没有更老的线。`0.1.2` 线宿主请停留在本次更新前的档案（`host-0.1.2-line` tag 随下一发布波提供），`0.1.x` 宿主继续用 `host-0.1.1-line`
+
 ## 2026-09-27 —— 十个成员随宿主 0.1.7-rc.2 基线重发
 
 - 成员版本：ankh-guard 0.3.2、message-tools 0.3.2、taskpilot 0.3.2、context-guard 0.2.3、file-preview 0.3.2、ui-file-preview 0.3.2、message-timeline 0.2.3、session-title-edit 0.2.3、ui-shortcuts 0.2.3、whalesong 0.2.3。普通用户无需任何操作，随整合包更新即可

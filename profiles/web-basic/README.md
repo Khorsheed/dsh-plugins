@@ -25,8 +25,11 @@
 | ui-file-preview | `@khorsheed/dsh-client-ui-file-preview` | 「产物」tab：会话写过的每个文件，不开 IDE 直接预览 |
 | taskpilot | `@khorsheed/dsh-taskpilot` | 后台任务与子 agent 变成聊天框上方的胶囊，一键停止/中断 |
 | context-guard | `@khorsheed/dsh-context-guard` | 上下文溢出拒绝请求之前，压缩按钮先出现 |
+| inline-html-render | `@khorsheed/dsh-inline-html-render` | agent 写的 HTML 变成会话内的沙箱交互卡片 |
+| capability-catalog | `@khorsheed/dsh-capability-catalog` | 设置页枚举实例全部 skill 与工具及注册渠道，可在线加 skill |
 | ui-shortcuts | `@khorsheed/dsh-ui-shortcuts` | Esc 暂停、Ctrl/Cmd+S 插队发送、Ctrl/Cmd+O 新会话，键位可改 |
 | whalesong | `@khorsheed/dsh-whalesong` | 任务运行时侧栏鲸鱼喷水；完成时一声提示音 |
+| mobile | `@khorsheed/dsh-mobile` | 手机浏览器上的移动版界面 + iOS 桥 |
 | ankh-guard | `@khorsheed/dsh-ankh-guard` | 运维助手：agent 改完代码想重启时，先验证构建与测试再放行，改坏了自动回滚 |
 
 ### 版本兼容
@@ -35,11 +38,11 @@
 
 | 宿主线 | 怎么装 |
 |---|---|
-| ≥ `0.1.5-rc.1` | 直接填包名，全部成员的 latest 可用 |
-| `0.1.2-rc.1` ~ `0.1.4` | 五个成员（message-tools、file-preview、ui-file-preview、taskpilot、ankh-guard）的最新线已要求 0.1.5 宿主，需指定旧线：包名后加 `@^0.2.0`；其余五个成员直接装 latest |
-| `0.1.0-rc.6` ~ `0.1.1-rc.2` | 全部停留在 0.1.x 线：包名后加 `@^0.1.0`，功能不再更新 |
+| ≥ `0.1.5-rc.1` | 直接填包名，全部 13 个成员的 latest 可用；整合包整体安装也走这条线 |
+| `0.1.2-rc.1` ~ `0.1.4` | 11 个成员可装：message-tools、file-preview、ui-file-preview、taskpilot、ankh-guard 需指定旧线（包名后加 `@^0.2.0`），message-timeline、session-title-edit、context-guard、ui-shortcuts、whalesong、inline-html-render 直装 latest；capability-catalog 与 mobile 没有这条线的版本 |
+| `0.1.0-rc.6` ~ `0.1.1-rc.2` | 只有 10 个创始成员的 0.1.x 旧线（`@^0.1.0`），功能不再更新；后来加入的成员不在旧线 |
 
-整合包整体安装（见文末安装指南）目前装 0.2.x 成员线，要求宿主 ≥ `0.1.2-rc.1`；`0.1.0` / `0.1.1` 宿主请用 `host-0.1.1-line` tag 的档案。
+整合包整体安装（见文末安装指南）自本次更新起要求宿主 ≥ `0.1.5-rc.1`（capability-catalog、mobile 与五个成员的最新线都以它为地板）；`0.1.2` 线宿主请停留在本次更新前的档案（`host-0.1.2-line` tag 随下一发布波提供），`0.1.0` / `0.1.1` 宿主用 `host-0.1.1-line` tag 的档案。
 
 ## 功能展示
 
@@ -141,6 +144,36 @@
 
 </details>
 
+### inline-html-render：内联 HTML 卡片
+
+`@khorsheed/dsh-inline-html-render` · 宿主 ≥ `0.1.2-rc.1`（`0.1.x` 宿主无可用版本）
+
+agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的沙箱交互卡片——图表、小工具、可视化结果直接可玩，不必复制到别处打开。沙箱隔离，`prefers-reduced-motion` 下动画自动收敛。
+
+<details>
+<summary>展开查看功能示意（1 张）</summary>
+
+<img src="docs/screenshots/inline-html-card-1.png" width="840" alt="inline-html-render:会话里的交互卡片">
+
+</details>
+
+### capability-catalog：能力目录
+
+`@khorsheed/dsh-capability-catalog` · 宿主 ≥ `0.1.5-rc.1`（更老宿主无可用版本）
+
+设置页新增「工具与技能」入口：枚举运行实例里的全部 skill 与工具，每一行标注注册渠道（官方内置 / 项目 / 用户 / 插件）；三列卡片预览，点开看 SKILL.md 全文、元数据与凭据配置；还能从上传的 zip 或粘贴的 SKILL.md 直接安装新 skill。
+
+<details>
+<summary>展开查看功能示意（3 张）</summary>
+
+<img src="docs/screenshots/capability-catalog-1.png" width="840" alt="capability-catalog:能力目录三列预览">
+
+<img src="docs/screenshots/capability-catalog-2.png" width="840" alt="capability-catalog:skill 详情">
+
+<img src="docs/screenshots/capability-catalog-3.png" width="840" alt="capability-catalog:添加 skill">
+
+</details>
+
 ### ui-shortcuts：可自定义键位的快捷键
 
 `@khorsheed/dsh-ui-shortcuts` · 宿主 ≥ `0.1.2-rc.1`（`0.1.x` 宿主装 `@^0.1.0` 旧线）
@@ -166,6 +199,21 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 <img src="docs/screenshots/whalesong1.png" width="840" alt="whalesong:任务运行时鲸鱼喷水">
 
 <img src="docs/screenshots/whalesong2.png" width="840" alt="whalesong:完成时提示音与标签页图标变化">
+
+</details>
+
+### mobile：移动端呈现
+
+`@khorsheed/dsh-mobile` · 宿主 ≥ `0.1.5-rc.1`（更老宿主无可用版本）
+
+手机浏览器上的移动版界面适配，外加 iOS 桥——出门在外也能看会话、发消息、处理审批。
+
+<details>
+<summary>展开查看功能示意（2 张）</summary>
+
+<img src="docs/screenshots/mobile-conversation.png" width="840" alt="mobile:手机上的会话界面">
+
+<img src="docs/screenshots/mobile-library.png" width="840" alt="mobile:手机上的列表界面">
 
 </details>
 
@@ -216,7 +264,8 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 dsh --version    # 或从运行中实例的启动命令/进程信息里确认宿主版本
 ```
 
-- 宿主是 `0.1.2` 或更新（含各 rc）→ 用主线（clone 默认分支即可），整合包安装 0.2.x 成员线。
+- 宿主是 `0.1.5` 或更新（含各 rc）→ 用主线（clone 默认分支即可）。
+- 宿主是 `0.1.2-rc.*` ~ `0.1.4` → 停留在本次更新前的档案（`host-0.1.2-line` tag）。
 - 宿主是 `0.1.0-rc.*` / `0.1.1-rc.*` → 用旧线：clone 后 `git -C /tmp/dsh-web-basic checkout host-0.1.1-line`，成员插件停在 0.1.x（功能不再更新）。
 
 **一、安装与离线自检（不碰运行中的实例）**
@@ -226,7 +275,7 @@ git clone https://github.com/Khorsheed/dsh-web-basic.git /tmp/dsh-web-basic
 sh /tmp/dsh-web-basic/scripts/install.sh
 ```
 
-install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile web-basic --dump-config | grep -c "@khorsheed"` 应为 10（ankh-guard / context-guard / file-preview / message-timeline / message-tools / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
+install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile web-basic --dump-config | grep -c "@khorsheed"` 应为 13（ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
 
 **二、同端口交接（关键一步）**
 

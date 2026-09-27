@@ -25,8 +25,11 @@ Don't want the whole pack? Every member below is an independent plugin — copy 
 | ui-file-preview | `@khorsheed/dsh-client-ui-file-preview` | A Produced tab: preview every file the session touched, no IDE needed |
 | taskpilot | `@khorsheed/dsh-taskpilot` | Background jobs and sub-agents become pills above the composer — stop/interrupt in one click |
 | context-guard | `@khorsheed/dsh-context-guard` | A compact button shows up before context overflow starts rejecting requests |
+| inline-html-render | `@khorsheed/dsh-inline-html-render` | Agent-written HTML becomes sandboxed interactive cards in the conversation |
+| capability-catalog | `@khorsheed/dsh-capability-catalog` | A settings page enumerating every skill and tool in the instance, with add-a-skill built in |
 | ui-shortcuts | `@khorsheed/dsh-ui-shortcuts` | Esc to pause, Ctrl/Cmd+S to steer-send, Ctrl/Cmd+O for a new session — all rebindable |
 | whalesong | `@khorsheed/dsh-whalesong` | Sidebar whale spouts while tasks run; a chime when they finish |
+| mobile | `@khorsheed/dsh-mobile` | A mobile presentation for phone browsers, plus the iOS bridge |
 | ankh-guard | `@khorsheed/dsh-ankh-guard` | Ops assistant: when the agent wants to restart after changing code, it verifies the build and tests first — and rolls back if the boot fails |
 
 ### Version compatibility
@@ -35,11 +38,11 @@ Members iterate fast and older release lines get no updates — pick the line by
 
 | Host line | How to install |
 |---|---|
-| ≥ `0.1.5-rc.1` | Use the package names as-is; every member's latest works |
-| `0.1.2-rc.1` ~ `0.1.4` | Five members (message-tools, file-preview, ui-file-preview, taskpilot, ankh-guard) now require a 0.1.5 host at latest — pin the older line by appending `@^0.2.0` to the package name; the other five install fine at latest |
-| `0.1.0-rc.6` ~ `0.1.1-rc.2` | Everything stays on the 0.1.x line: append `@^0.1.0`; no further updates |
+| ≥ `0.1.5-rc.1` | Use the package names as-is; all 13 members' latest works — the whole-pack install also tracks this line |
+| `0.1.2-rc.1` ~ `0.1.4` | 11 members are installable: message-tools, file-preview, ui-file-preview, taskpilot, ankh-guard need the older line (append `@^0.2.0`); message-timeline, session-title-edit, context-guard, ui-shortcuts, whalesong, inline-html-render install fine at latest; capability-catalog and mobile have no release for this line |
+| `0.1.0-rc.6` ~ `0.1.1-rc.2` | Only the ten founding members have a 0.1.x line (`@^0.1.0`), no longer updated; members added later never shipped for it |
 
-A whole-pack install (see the install guide at the end) currently installs the 0.2.x member line and requires host ≥ `0.1.2-rc.1`; on `0.1.0` / `0.1.1` hosts use the `host-0.1.1-line` tag instead.
+A whole-pack install (see the install guide at the end) requires host ≥ `0.1.5-rc.1` as of this update (capability-catalog, mobile, and the latest lines of five members all floor there); on the `0.1.2` line stay with the pre-update archive (a `host-0.1.2-line` tag ships with the next publish wave), and on `0.1.0` / `0.1.1` hosts use the `host-0.1.1-line` tag.
 
 ## The tour
 
@@ -141,6 +144,36 @@ When context occupancy crosses your configured ratio, a compact button appears i
 
 </details>
 
+### inline-html-render — inline HTML cards
+
+`@khorsheed/dsh-inline-html-render` · host ≥ `0.1.2-rc.1` (no release for 0.1.x hosts)
+
+A ```` ```dsh-card ```` HTML block in the agent's reply renders as a sandboxed interactive card right in the conversation — charts, little tools, and visualizations you can play with instead of copying elsewhere. Sandboxed and isolated; animations settle down under `prefers-reduced-motion`.
+
+<details>
+<summary>View the screenshots (1)</summary>
+
+<img src="docs/screenshots/inline-html-card-1.png" width="840" alt="inline-html-render: an interactive card in the conversation">
+
+</details>
+
+### capability-catalog — the capability catalog
+
+`@khorsheed/dsh-capability-catalog` · host ≥ `0.1.5-rc.1` (no release for older hosts)
+
+A new Tools & Skills entry in settings: every skill and tool in the running instance, each labeled with its registration channel (official built-in / project / user / plugin); a three-column card grid, a detail modal with the full SKILL.md, metadata and credential config, and an add-skill modal that installs from an uploaded zip or a pasted SKILL.md.
+
+<details>
+<summary>View the screenshots (3)</summary>
+
+<img src="docs/screenshots/capability-catalog-1.png" width="840" alt="capability-catalog: the three-column grid">
+
+<img src="docs/screenshots/capability-catalog-2.png" width="840" alt="capability-catalog: skill detail">
+
+<img src="docs/screenshots/capability-catalog-3.png" width="840" alt="capability-catalog: adding a skill">
+
+</details>
+
 ### ui-shortcuts — rebindable keys
 
 `@khorsheed/dsh-ui-shortcuts` · host ≥ `0.1.2-rc.1` (`@^0.1.0` line on 0.1.x hosts)
@@ -166,6 +199,21 @@ While any session runs, the sidebar whale spouts and the tab icon moves; when a 
 <img src="docs/screenshots/whalesong1.png" width="840" alt="whalesong: spouting while tasks run">
 
 <img src="docs/screenshots/whalesong2.png" width="840" alt="whalesong: chime and tab icon on completion">
+
+</details>
+
+### mobile — mobile presentation
+
+`@khorsheed/dsh-mobile` · host ≥ `0.1.5-rc.1` (no release for older hosts)
+
+A mobile presentation of the web UI for phone browsers, plus the iOS bridge — check sessions, send messages, and handle approvals away from your desk.
+
+<details>
+<summary>View the screenshots (2)</summary>
+
+<img src="docs/screenshots/mobile-conversation.png" width="840" alt="mobile: the conversation view on a phone">
+
+<img src="docs/screenshots/mobile-library.png" width="840" alt="mobile: the list view on a phone">
 
 </details>
 
@@ -216,7 +264,8 @@ Plugins live in [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins
 dsh --version    # or read the host version from the running instance's process info
 ```
 
-- Host `0.1.2` or newer (any rc included) → use the main line (clone the default branch); the pack installs the 0.2.x member line.
+- Host `0.1.5` or newer (any rc included) → use the main line (clone the default branch).
+- Host `0.1.2-rc.*` ~ `0.1.4` → stay with the pre-update archive (the `host-0.1.2-line` tag).
 - Host `0.1.0-rc.*` / `0.1.1-rc.*` → use the legacy line: after cloning, `git -C /tmp/dsh-web-basic checkout host-0.1.1-line`; members stay on 0.1.x (no further updates).
 
 **1. Install and self-check offline (do not touch the running instance)**
@@ -226,7 +275,7 @@ git clone https://github.com/Khorsheed/dsh-web-basic.git /tmp/dsh-web-basic
 sh /tmp/dsh-web-basic/scripts/install.sh
 ```
 
-The installer prints the composed row count. To double-check: `dsh --profile web-basic --dump-config | grep -c "@khorsheed"` should print 10 (ankh-guard / context-guard / file-preview / message-timeline / message-tools / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
+The installer prints the composed row count. To double-check: `dsh --profile web-basic --dump-config | grep -c "@khorsheed"` should print 13 (ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
 
 **2. Hand over on the same port (the critical step)**
 

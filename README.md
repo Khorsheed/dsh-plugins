@@ -12,7 +12,7 @@
 
 | 整合包 | 定位 | 成员 |
 | --- | --- | --- |
-| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | **日常模式**:消息控制、产物预览、任务状态、快捷键与运维守护 | 10 |
+| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | **日常模式**:消息控制、产物预览、能力目录、移动端呈现、任务状态、快捷键与运维守护 | 13 |
 | [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | **开发协作**:basic 全部体验,再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作,自带「开发模式」preset | 23 |
 | [web-eval](profiles/web-eval)(仓内) | **评测工作**:因子设计实验台——题库、条件、计划进 git 评审,确定性编排执行,自带「评测模式」preset | 26 |
 
@@ -81,15 +81,15 @@
 | 包 | 你得到 | 随整合包 |
 | --- | --- | --- |
 | [`ui-shortcuts`](packages/ui-shortcuts) | **可自定义键位的快捷键**(暂停 / 插队发送 / 新建会话)+ `ctx.shortcuts` 动作注册表 | basic + dev |
-| [`inline-html-render`](packages/inline-html-render) | 把 agent 写的 ```` ```dsh-card ```` HTML 渲染成会话内**沙箱交互卡片** | dev |
+| [`inline-html-render`](packages/inline-html-render) | 把 agent 写的 ```` ```dsh-card ```` HTML 渲染成会话内**沙箱交互卡片** | basic + dev |
 | [`dsh-reader`](packages/dsh-reader) | **链接阅读器** tab:RSS/Atom 订阅 + 粘贴文章链接,卡片流 + 可读详情视图 | 单包 |
-| [`mobile`](packages/mobile) | **移动端呈现**与 iOS 桥 | 单包 |
+| [`mobile`](packages/mobile) | **移动端呈现**与 iOS 桥 | basic + dev |
 
 ### 能力与基础设施
 
 | 包 | 你得到 | 随整合包 |
 | --- | --- | --- |
-| [`capability-catalog`](packages/capability-catalog) | **能力目录**:枚举运行实例的全部 skill 与工具及其注册渠道,设置页三列预览 + 详情弹窗 | dev |
+| [`capability-catalog`](packages/capability-catalog) | **能力目录**:枚举运行实例的全部 skill 与工具及其注册渠道,设置页三列预览 + 详情弹窗 | basic + dev |
 | [`typesafe`](packages/typesafe) | **TypeSafe 判定原语**宿主服务:类型化 noul/choice/score 判定,带熔断、缓存与决策日志 | 单包 |
 | [`typesafe-tool`](packages/typesafe-tool) | (伴生工具行)typesafe 的模型工具,由 preset 按会话授予 | 单包 |
 | [`capture`](packages/capture) | **渲染抓取** Remote:托管 headless Chrome 渲染 URL,返回内联样式的序列化页面 | 单包 |

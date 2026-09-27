@@ -8,7 +8,7 @@
 | `@khorsheed/dsh-bundle-conversation-toolbox` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-bundle-local-agent` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-canvas` | 未发布 | 0.4.8 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
-| `@khorsheed/dsh-capability-catalog` | 0.1.96 | 0.1.96 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
+| `@khorsheed/dsh-capability-catalog` | 0.1.96 | 0.1.96 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-capture` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-context-guard` | 0.2.3 | 0.2.3 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-datasets` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
@@ -17,7 +17,7 @@
 | `@khorsheed/dsh-eval` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-eval-tool` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-file-preview` | 0.3.2 | 0.3.2 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |
-| `@khorsheed/dsh-inline-html-render` | 0.1.14 | 0.1.14 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
+| `@khorsheed/dsh-inline-html-render` | 0.1.14 | 0.1.14 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-lab` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-local-agent` | 0.1.0-rc.7 | 0.1.0-rc.7 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-local-agent-claude-code` | 0.1.0-rc.7 | 0.1.0-rc.7 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
@@ -31,7 +31,7 @@
 | `@khorsheed/dsh-client-message-tools` | 0.3.2 | 0.3.2 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-mission` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-mission-tool` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
-| `@khorsheed/dsh-mobile` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | — |  |
+| `@khorsheed/dsh-mobile` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | — | ✓ |
 | `@khorsheed/dsh-presets` | 未发布 | 0.1.0 | 0.1.7-rc.1 | 0.1.7-rc.1 |  |
 | `@khorsheed/dsh-quote` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-room` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |

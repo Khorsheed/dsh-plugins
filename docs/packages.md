@@ -21,7 +21,7 @@
 | `@khorsheed/dsh-bundle-conversation-toolbox` | `packages/bundle-conversation-toolbox` | 0.1.1 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.1.1 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.4.8 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.96 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
+| `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.96 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.3 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
@@ -30,7 +30,7 @@
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-eval-tool` | `packages/eval-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.3.2 | bundle | — | — | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
-| `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.14 | bundle | — | web | 0.1.2-rc.1 | web-dev, web-eval |
+| `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.14 | bundle | — | web | 0.1.2-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.1.0-rc.1 | bundle | — | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.1.0-rc.7 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
 | `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.1.0-rc.7 | bundle | — | web | 0.1.5-rc.1 | web-dev, web-eval |
@@ -44,7 +44,7 @@
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.2 | bundle | — | web | 0.1.5-rc.1 | web-basic, web-dev, web-eval |
 | `@khorsheed/dsh-mission` | `packages/mission` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-mission-tool` | `packages/mission-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
-| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | web-basic |
 | `@khorsheed/dsh-presets` | `packages/presets` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-room` | `packages/room` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | web-dev |
@@ -65,7 +65,7 @@
 
 | profile | 直接依赖 | bundles |
 | --- | --- | --- |
-| `profiles/web-basic` | 10 | 12 |
+| `profiles/web-basic` | 13 | 15 |
 | `profiles/web-dev` | 23 | 22 |
 | `profiles/web-eval` | 26 | 24 |
 
