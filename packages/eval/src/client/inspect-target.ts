@@ -147,6 +147,8 @@ export interface InspectMemory {
   tabId: string
   /** The navigation revision the stack last applied. */
   revision: number
+  /** The key of the target that revision carried (a reload restarts revisions, so the number alone can repeat). */
+  applied: string | null
   stack: InspectTarget[]
   recent: InspectTarget[]
 }
@@ -168,7 +170,8 @@ export function readInspectMemory(sessionId: string): InspectMemory | null {
     if (typeof value.tabId !== 'string' || typeof value.revision !== 'number') return null
     const stack = Array.isArray(value.stack) ? value.stack.filter(isInspectTarget) : []
     const recent = Array.isArray(value.recent) ? value.recent.filter(isInspectTarget) : []
-    return { tabId: value.tabId, revision: value.revision, stack, recent }
+    const applied = typeof value.applied === 'string' ? value.applied : null
+    return { tabId: value.tabId, revision: value.revision, applied, stack, recent }
   } catch {
     return null
   }
@@ -190,8 +193,8 @@ export function writeInspectMemory(sessionId: string, memory: InspectMemory): vo
  *
  * - No target in the params (0.1.7 after a reload, or a tab restored by
  *   undo): the remembered stack of this very tab, or nothing.
- * - The revision this memory already applied: the remembered stack (a
- *   remount must not push the same open twice).
+ * - The revision (and target) this memory already applied: the remembered
+ *   stack (a remount must not push the same open twice).
  * - A new revision of the same tab: pushed onto the remembered stack.
  * - Another tab: a fresh stack of one.
  * @param memory - what this session remembers, or null.
@@ -208,6 +211,6 @@ export function stackForNavigation(
   const mine = memory !== null && memory.tabId === tabId ? memory : null
   if (target === null) return mine?.stack ?? []
   if (mine === null) return [target]
-  if (mine.revision === revision) return mine.stack.length > 0 ? mine.stack : [target]
+  if (mine.revision === revision && mine.applied === targetKey(target)) return mine.stack.length > 0 ? mine.stack : [target]
   return pushTarget(mine.stack, target)
 }

@@ -19,6 +19,7 @@
     "src/client/DesignPage.tsx",
     "src/client/Inspect.tsx",
     "src/client/InspectPane.tsx",
+    "src/client/SidebarInspect.tsx",
     "src/client/inspect-context.ts",
     "src/client/inspect-target.ts",
     "src/client/readiness-basis.ts",

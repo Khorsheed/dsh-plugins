@@ -24,6 +24,19 @@ export type InspectReads =
   & Pick<LabViewInjected, 'fetchExperimentArtifact' | 'fetchCell' | 'fetchCellArtifact' | 'fetchReport' | 'fetchRunUnits' | 'openSession'>
   & { [K in 'fetchItemMaterials' | 'fetchDatasetFile' | 'fetchJudgePromptPreview' | 'fetchJudgePrompt']: LabViewInjected[K] | undefined }
 
+/**
+ * The pane's reads out of the lab's injected face.
+ * @param face - the lab tab's injected face.
+ */
+export function inspectReadsOf(face: LabViewInjected): InspectReads {
+  const { fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
+    fetchExperimentArtifact, fetchCell, fetchCellArtifact, fetchReport, fetchRunUnits, openSession } = face
+  return {
+    fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
+    fetchExperimentArtifact, fetchCell, fetchCellArtifact, fetchReport, fetchRunUnits, openSession,
+  }
+}
+
 /** Flatten a remote result into the pane's answer shape. */
 export function flat<V>(result: { ok: true; value: V } | { ok: false; error: { message: string } }): Answer<V> {
   return result.ok ? { ok: true, value: result.value } : { ok: false, message: result.error.message }

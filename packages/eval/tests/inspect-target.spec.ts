@@ -31,11 +31,13 @@ describe('inspect targets (T86)', () => {
   })
 
   it('restores, keeps, pushes or starts fresh by tab and revision', () => {
-    const memory = { tabId: 't1', revision: 2, stack: [item('F1')], recent: [] }
+    const memory = { tabId: 't1', revision: 2, applied: 'item:e1:F2', stack: [item('F1')], recent: [] }
     expect(stackForNavigation(memory, 't1', 5, null)).toEqual([item('F1')])
     expect(stackForNavigation(memory, 't2', 5, null)).toEqual([])
     expect(stackForNavigation(memory, 't1', 2, item('F2'))).toEqual([item('F1')])
     expect(stackForNavigation(memory, 't1', 3, item('F2'))).toEqual([item('F1'), item('F2')])
+    // A reload restarts revisions: the same number with another target is a new open.
+    expect(stackForNavigation(memory, 't1', 2, item('F3'))).toEqual([item('F1'), item('F3')])
     expect(stackForNavigation(memory, 't2', 3, item('F2'))).toEqual([item('F2')])
     expect(stackForNavigation(null, 't1', 1, item('F2'))).toEqual([item('F2')])
   })
