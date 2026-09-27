@@ -2,9 +2,9 @@
  * The dock chip's live text for the canvas tab (round 3, item ⑥).
  *
  * The surface holds a strip of its own now, so the chip has one job left: say
- * which row of it you are looking at from outside. A board row answers with the
+ * where in it you are from outside. A row on its board answers with the
  * registry's own label (that is what it has always said, and the row IS the
- * canvas); a card or a draft answers with `画布 · <heading>`, because a chip
+ * canvas); a row on a card or a draft answers with `画布 · <heading>`, because a chip
  * reading only 画布 over an open card told you nothing about the tab you were
  * in — and the prefix keeps the card attached to the surface it came from.
  *
@@ -22,6 +22,6 @@ export function CanvasTabTitle({ useTabInfo, useSelection }: CanvasTabTitleProps
   const { tab } = useTabInfo()
   const selection = useSelection(current => current)
   const row = selection.tabs.find(candidate => candidate.id === selection.active)
-  const heading = row === undefined || row.kind === 'board' ? '' : row.heading
+  const heading = row === undefined || row.at.kind === 'board' ? '' : row.at.heading
   return <>{heading === '' ? tab.title : `${tab.title} · ${heading}`}</>
 }

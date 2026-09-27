@@ -230,8 +230,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
     archiveCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().archiveCanvas(sessionId, request)),
-    // A delete takes its rows off the strip too: a row naming a canvas or card
-    // that no longer exists would open onto 「找不到」 on the next click.
+    // A delete reaches the strip too: a row naming a canvas that no longer
+    // exists, or standing on a deleted card, would open onto 「找不到」.
     deleteCanvas: async (sessionId, request) => {
       const result = touchOnSuccess(await requireRemote().deleteCanvas(sessionId, request))
       if (result.ok && result.value.ok) selection.forget(request.canvasId)
@@ -255,15 +255,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     attachImage: request => requireRemote().attachImage(request),
     images,
     // The strip is the surface's own state (round 3 item ⑥): a card open is a
-    // store write, not a dock navigation. The ids are derived from the subject
-    // (`selection.ts`), which is why "open it twice, you get one row" needs no
-    // cooperation from the caller — the same property the host's resource
-    // dedupe used to give stage ⑧, kept without the host's chrome.
+    // store write, not a dock navigation. A row is one canvas and a card open
+    // moves where that row stands (scheme B); the ids are derived from the
+    // canvas (`selection.ts`), so "open it twice, you get one row" needs no
+    // cooperation from the caller.
     openCardDetail: (canvasId, cardId, heading) => { selection.openCardTab(canvasId, cardId, heading) },
     openCardDraft: (canvasId, kind, heading) => { selection.openDraftTab(canvasId, kind, heading) },
     activateTab: id => { selection.activate(id) },
     closeTab: id => { selection.close(id) },
     openCanvas: canvasId => { selection.openCanvas(canvasId) },
+    backToBoard: canvasId => { selection.backToBoard(canvasId) },
     focusCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().focusCanvas(sessionId, request)),
     // The one-shot layout suggestion (M3.1): ONLY the session-list collapse
     // — the fullscreen suggestion is gone (the host's fullscreen hides the

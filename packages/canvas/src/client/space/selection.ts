@@ -10,55 +10,68 @@
  * the others re-read. Selection changes never bump it — opening a card is not
  * a board change.
  *
- * The tab rows are what the round-3 review asked for: 「打开一张卡」 used to add
- * a tab to the HOST dock, one level up from the board it came from. Inside this
- * surface a tab is a row here instead, and a row says which canvas it belongs
- * to — so a board, a card of it, and a card's unsaved draft are three rows of
- * one strip and one click moves between them. Row ids are DERIVED from their
- * subject (`b:`/`c:`/`d:` prefixes), which is what makes "open the same card
- * twice and you get one tab" a property of the id rather than a search the
- * caller has to remember to do.
+ * The strip holds CANVASES only (scheme B, 2026-09-27 review). Round 3 had a
+ * board, a card of it and a card's draft as three rows of one strip; with a
+ * few cards open the strip filled with look-alike rows and the user lost track
+ * of which canvas a card belonged to. Now a row is one canvas, and `at` says
+ * where inside it the row stands — its board, one card, or its draft. Moving
+ * between board and card is the breadcrumb's job, not the strip's, and a
+ * canvas you come back to returns to the card you left it on. Row ids are
+ * DERIVED from the canvas (`b:` prefix), which is what makes "open the same
+ * canvas twice and you get one tab" a property of the id rather than a search
+ * the caller has to remember to do.
  *
  * The strip also survives a reload, which the host dock never did: the list
  * rides `sessionStorage`, so closing the browser page and coming back returns
- * the tabs the user laid out. Draft TEXT does not ride along — an unsaved draft
- * is held by the view that shows it, and a page reload dropping it is the same
- * behaviour every other editor here has.
+ * the canvases the user laid out and the card each one stood on. Draft TEXT
+ * does not ride along — an unsaved draft is held by the view that shows it,
+ * and a page reload dropping it is the same behaviour every other editor here
+ * has.
  *
  * @module @khorsheed/dsh-canvas/client
  */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { CardCategoryId } from '../../types.ts'
 
-/** One row of the canvas surface's tab strip. */
-export type CanvasTabRow =
-  /** A canvas's board (its own face — 卡板 or 连线 — is the page's local state). */
-  | { readonly id: string; readonly kind: 'board'; readonly canvasId: string }
-  /** One card, opened to read or edit. */
-  | { readonly id: string; readonly kind: 'card'; readonly canvasId: string; readonly cardId: string; readonly heading: string }
-  /** One canvas's unsaved new card. One per canvas, so the ＋新卡 menu
-   *  re-categorizes the draft that is open instead of seating a second blank. */
-  | { readonly id: string; readonly kind: 'draft'; readonly canvasId: string; readonly catKind: CardCategoryId; readonly heading: string }
+/**
+ * Where one canvas row stands inside its canvas: the board, one card of it,
+ * or its unsaved new card. One draft per canvas, so the ＋新卡 menu
+ * re-categorizes the draft that is open instead of seating a second blank.
+ */
+export type CanvasPlace =
+  | { readonly kind: 'board' }
+  | { readonly kind: 'card'; readonly cardId: string; readonly heading: string }
+  | { readonly kind: 'draft'; readonly catKind: CardCategoryId; readonly heading: string }
 
-/** The row a canvas's board occupies. */
+/** One row of the canvas surface's tab strip: one canvas, and where in it. */
+export interface CanvasTabRow {
+  readonly id: string
+  readonly canvasId: string
+  readonly at: CanvasPlace
+}
+
+/** The row a canvas occupies. */
 export function boardTabId(canvasId: string): string {
   return `b:${canvasId}`
 }
 
-/** The row one card occupies. */
+/** The key one card's reader is mounted under (two cards never share an editor's DOM). */
 export function cardTabId(canvasId: string, cardId: string): string {
   return `c:${canvasId}:${cardId}`
 }
 
-/** The row one canvas's draft occupies. */
+/** The key one canvas's draft is held and mounted under. */
 export function draftTabId(canvasId: string): string {
   return `d:${canvasId}`
 }
 
+/** The board place, shared so an unchanged row compares by identity. */
+const AT_BOARD: CanvasPlace = { kind: 'board' }
+
 /**
- * How many rows the strip holds. Past this a new tab evicts another one (see
- * `withinCap`): the cards are the rows that pile up, losing a board row costs
- * one click in the ＋ menu, and losing a draft costs words the user typed.
+ * How many rows the strip holds. Past this a new canvas evicts another one
+ * (see `withinCap`): losing a canvas row costs one click in the 画布 menu, and
+ * losing a draft costs words the user typed.
  */
 const MAX_TABS = 16
 
@@ -95,26 +108,36 @@ const EMPTY: CanvasBoardState = { tabs: [], active: '', canvasId: null, rev: 0 }
 
 /**
  * The strip/freshness store. `touch` notes a board mutation from any seat so
- * the others re-read; every row operation is an ensure-and-activate, because
+ * the others re-read; every place operation is an ensure-and-activate, because
  * that is what clicking a card means.
  */
 export class CanvasSelectionStore {
   /** The published feed (what the inject faces hand to `hooks.selection`). */
   readonly source: SnapshotStore<CanvasBoardState> = createSnapshotStore<CanvasBoardState>(readStored() ?? EMPTY)
 
-  /** Switch to a canvas's board, opening its row if it is not on the strip. */
+  /**
+   * Switch to a canvas, opening its row if it is not on the strip. A row that
+   * is already there keeps its place inside the canvas: coming back to a
+   * canvas returns to the card you left it on.
+   */
   openCanvas(canvasId: string): void {
-    this.ensure({ id: boardTabId(canvasId), kind: 'board', canvasId })
+    const existing = this.source.getSnapshot().tabs.find(row => row.canvasId === canvasId)
+    this.ensure(canvasId, existing?.at ?? AT_BOARD)
   }
 
-  /** Open one card, or focus the row already showing it. */
+  /** Go back from a card (or the draft) to its canvas's board. */
+  backToBoard(canvasId: string): void {
+    this.ensure(canvasId, AT_BOARD)
+  }
+
+  /** Open one card inside its canvas's row. */
   openCardTab(canvasId: string, cardId: string, heading: string): void {
-    this.ensure({ id: cardTabId(canvasId, cardId), kind: 'card', canvasId, cardId, heading })
+    this.ensure(canvasId, { kind: 'card', cardId, heading })
   }
 
-  /** Open one canvas's draft, or focus the one that is open. */
+  /** Open one canvas's draft inside its row (re-categorizing an open one). */
   openDraftTab(canvasId: string, catKind: CardCategoryId, heading: string): void {
-    this.ensure({ id: draftTabId(canvasId), kind: 'draft', canvasId, catKind, heading })
+    this.ensure(canvasId, { kind: 'draft', catKind, heading })
   }
 
   /** Show a row that is already open. A row that is gone changes nothing. */
@@ -144,31 +167,23 @@ export class CanvasSelectionStore {
   }
 
   /**
-   * Drop the rows a delete took away: every row of a canvas, or one card's
-   * row. When the showing row went with them, a deleted card hands the view
-   * to its own canvas's board (seated where the card row was, if the strip did
-   * not hold it); a deleted canvas hands it to the neighbouring row.
+   * Drop what a delete took away. A deleted card sends its canvas's row back
+   * to the board when the row stood on it; a deleted canvas takes its row off
+   * the strip and, when that row was showing, hands the view to the neighbour.
    */
   forget(canvasId: string, cardId?: string): void {
     const current = this.source.getSnapshot()
-    const gone = (row: CanvasTabRow): boolean =>
-      row.canvasId === canvasId && (cardId === undefined || (row.kind === 'card' && row.cardId === cardId))
-    if (!current.tabs.some(gone)) return
-    const at = current.tabs.findIndex(candidate => candidate.id === current.active)
-    const tabs = current.tabs.filter(candidate => !gone(candidate))
-    if (tabs.some(candidate => candidate.id === current.active)) {
+    const index = current.tabs.findIndex(row => row.canvasId === canvasId)
+    if (index < 0) return
+    const row = current.tabs[index]!
+    if (cardId !== undefined) {
+      if (row.at.kind !== 'card' || row.at.cardId !== cardId) return
+      const tabs = [...current.tabs]
+      tabs[index] = { ...row, at: AT_BOARD }
       this.commit(tabs, current.active)
       return
     }
-    if (cardId !== undefined) {
-      const board = boardTabId(canvasId)
-      if (!tabs.some(candidate => candidate.id === board)) {
-        tabs.splice(Math.min(at, tabs.length), 0, { id: board, kind: 'board', canvasId })
-      }
-      this.commit(tabs, board)
-      return
-    }
-    this.commit(tabs, tabs[Math.min(at, tabs.length - 1)]?.id ?? '')
+    this.close(row.id)
   }
 
   /** Note that a board changed under the open tabs (any seat's mutation). */
@@ -178,24 +193,24 @@ export class CanvasSelectionStore {
   }
 
   /**
-   * Put a row on the strip and show it. A row already there keeps its place but
-   * takes the NEW payload: re-opening a card after an edit refreshes the strip's
-   * label, and picking another category on an open draft re-categorizes it —
-   * both are what the same click meant when the detail was a host tab and the
-   * facts travelled as navigation params.
+   * Put a canvas's row on the strip at one place and show it. A row already
+   * there keeps its slot but takes the NEW place: re-opening a card after an
+   * edit refreshes its heading, and picking another category on an open draft
+   * re-categorizes it.
    */
-  private ensure(row: CanvasTabRow): void {
+  private ensure(canvasId: string, at: CanvasPlace): void {
     const current = this.source.getSnapshot()
-    const at = current.tabs.findIndex(candidate => candidate.id === row.id)
-    if (at >= 0) {
-      const existing = current.tabs[at]!
-      if (current.active === row.id && sameRow(existing, row)) return
+    const id = boardTabId(canvasId)
+    const index = current.tabs.findIndex(candidate => candidate.id === id)
+    if (index >= 0) {
+      const existing = current.tabs[index]!
+      if (current.active === id && samePlace(existing.at, at)) return
       const tabs = [...current.tabs]
-      tabs[at] = row
-      this.commit(tabs, row.id)
+      tabs[index] = samePlace(existing.at, at) ? existing : { id, canvasId, at }
+      this.commit(tabs, id)
       return
     }
-    this.commit(withinCap([...current.tabs, row], row.id), row.id)
+    this.commit(withinCap([...current.tabs, { id, canvasId, at }], current.active, id), id)
   }
 
   /** Write a strip and derive its answers from it. */
@@ -210,41 +225,50 @@ export class CanvasSelectionStore {
   }
 }
 
-/**
- * True when two rows of ONE id carry the same facts. Ids are derived from the
- * subject, so a repeat `ensure` differs only in what the label says (an edited
- * card's first line) or which category the ＋新卡 menu moved a draft to.
- */
-function sameRow(a: CanvasTabRow, b: CanvasTabRow): boolean {
+/** True when two places name the same thing with the same words. */
+function samePlace(a: CanvasPlace, b: CanvasPlace): boolean {
   if (a.kind === 'draft' && b.kind === 'draft') return a.catKind === b.catKind && a.heading === b.heading
-  if (a.kind === 'card' && b.kind === 'card') return a.heading === b.heading
+  if (a.kind === 'card' && b.kind === 'card') return a.cardId === b.cardId && a.heading === b.heading
   return a.kind === b.kind
 }
 
-/** Drop the oldest evictable row when the strip is full. */
-function withinCap(tabs: readonly CanvasTabRow[], added: string): readonly CanvasTabRow[] {
+/**
+ * Drop the oldest evictable row when the strip is full. Neither the row just
+ * added nor the one the user was on goes, and a row holding a draft is the
+ * last resort: it costs the words typed into it.
+ */
+function withinCap(tabs: readonly CanvasTabRow[], showing: string, added: string): readonly CanvasTabRow[] {
   if (tabs.length <= MAX_TABS) return tabs
-  // A card first: it is the row that piles up, and re-opening one is one click
-  // on the card. A board row costs a trip through the ＋ menu, and a draft row
-  // costs the words the user typed into it — neither is a fair price for space.
-  const victim = tabs.find(candidate => candidate.id !== added && candidate.kind === 'card')
-    ?? tabs.find(candidate => candidate.id !== added && candidate.kind !== 'draft')
-    ?? tabs.find(candidate => candidate.id !== added)
-  /* v8 ignore next -- the strip always has at least the row just added */
+  const spare = (row: CanvasTabRow): boolean => row.id !== added && row.id !== showing
+  const victim = tabs.find(row => spare(row) && row.at.kind !== 'draft')
+    ?? tabs.find(spare)
+  /* v8 ignore next -- a full strip always has a spare row */
   if (victim === undefined) return tabs
   return tabs.filter(candidate => candidate.id !== victim.id)
 }
 
-/** Read a stashed strip, dropping anything the shape check cannot vouch for. */
+/**
+ * Read a stashed strip, dropping anything the shape check cannot vouch for.
+ * A stash from before the strip held canvases only (card and draft rows of
+ * their own, ids `c:`/`d:`) folds into one row per canvas, standing on its
+ * board — the draft text never rode the stash, so nothing is lost.
+ */
 function readStored(): CanvasBoardState | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY)
     if (raw === null) return null
     const parsed = JSON.parse(raw) as Partial<StoredTabs>
     if (!Array.isArray(parsed.tabs)) return null
-    const tabs = parsed.tabs.filter(isTabRow)
+    const tabs: CanvasTabRow[] = []
+    let active = ''
+    for (const value of parsed.tabs as unknown[]) {
+      const row = storedRowOf(value)
+      if (row === null) continue
+      if (!tabs.some(candidate => candidate.id === row.id)) tabs.push(row)
+      if (isRecord(value) && value.id === parsed.active) active = row.id
+    }
     if (tabs.length === 0) return null
-    const active = tabs.some(row => row.id === parsed.active) ? String(parsed.active) : tabs[0]!.id
+    if (active === '') active = tabs[0]!.id
     const row = tabs.find(candidate => candidate.id === active)
     return { tabs, active, canvasId: row?.canvasId ?? null, rev: 0 }
   } catch {
@@ -253,15 +277,26 @@ function readStored(): CanvasBoardState | null {
   }
 }
 
-/** True for a row this store could have written. */
-function isTabRow(value: unknown): value is CanvasTabRow {
-  if (typeof value !== 'object' || value === null) return false
-  const row = value as Record<string, unknown>
-  if (typeof row.id !== 'string' || typeof row.canvasId !== 'string') return false
-  if (row.kind === 'board') return true
-  if (row.kind === 'card') return typeof row.cardId === 'string' && typeof row.heading === 'string'
-  if (row.kind === 'draft') return typeof row.catKind === 'string' && typeof row.heading === 'string'
-  return false
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** The row a stashed value stands for, or null when it cannot be vouched for. */
+function storedRowOf(value: unknown): CanvasTabRow | null {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.canvasId !== 'string') return null
+  const canvasId = value.canvasId
+  const id = boardTabId(canvasId)
+  // The pre-canvas-only shapes: every one of them still names its canvas.
+  if (value.kind === 'board' || value.kind === 'card' || value.kind === 'draft') return { id, canvasId, at: AT_BOARD }
+  if (value.id !== id || !isRecord(value.at)) return null
+  const at = value.at
+  if (at.kind === 'board') return { id, canvasId, at: AT_BOARD }
+  if (at.kind === 'card' && typeof at.cardId === 'string' && typeof at.heading === 'string') {
+    return { id, canvasId, at: { kind: 'card', cardId: at.cardId, heading: at.heading } }
+  }
+  // A draft's words never rode the stash, so a reload stands on the board.
+  if (at.kind === 'draft') return { id, canvasId, at: AT_BOARD }
+  return null
 }
 
 /** Stash the strip. Its tab ids carry the canvas and card, so a reload finds them. */

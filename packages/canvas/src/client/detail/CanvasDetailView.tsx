@@ -28,14 +28,14 @@ import {
   type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
 import { MarkdownText, Toast, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium, IconLinkOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium, IconLinkOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { MoreMenu } from '../more-menu.tsx'
 import { ConfirmDelete } from '../confirm-delete.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { attachBridge } from '@khorsheed/dsh-inline-html-render/src/client/bridge.ts'
 import { buildCardSrcDoc } from '@khorsheed/dsh-inline-html-render/src/client/srcdoc.ts'
-import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { cardTitleOf, detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { COMPOSE_SEND_TEXT } from '../../prompt.ts'
 import { imageHtmlOf, imageMarkdownOf } from '../../image-token.ts'
 import {
@@ -44,7 +44,8 @@ import {
   type CanvasError, type CanvasImageError,
 } from '../../types.ts'
 import type { CanvasDetailProps } from '../contract.ts'
-import { categoryLabelMap, kindIconOf } from '../category-label.ts'
+import { categoryLabelMap } from '../category-label.ts'
+import { DetailCrumbs, KindTag } from './DetailCrumbs.tsx'
 import { canvasErrorText } from '../error-text.ts'
 import { base64Of, imageFilesOf, type CanvasImageFile } from '../images.ts'
 import { choosePaste, type PasteArm } from '../paste-table.ts'
@@ -128,7 +129,7 @@ function HtmlFrame({ html }: { html: string }): ReactNode {
 /** The card-detail reader. */
 export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const {
-    t, sessionId, canvasId, cardId, create, readBoard, patchCard, addComment, deleteCard, openFile, useSelection,
+    t, sessionId, canvasId, cardId, create, crumbs, readBoard, patchCard, addComment, deleteCard, openFile, useSelection,
     askAgent, chatStatus, openSideChat, attachImage, images, pathImages,
   } = props
   // Only the rev is read from the shared store: which card this page shows came
@@ -379,12 +380,20 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     return (
       <div className={css.root}>
         <div className={css.header}>
+          {crumbs !== undefined && (
+            <DetailCrumbs t={t} crumbs={crumbs} here={t('crumb.newCard')} cardId={null} />
+          )}
           <div className={css.meta}>
-            <span className={css.kindTag}>
-              <IconPlusOutlineMedium size={12} />
-              {categoryLabels.get(create.kind) ?? create.kind}
-            </span>
-            <span className={css.ghostFlag}>{t('detail.unsaved')}</span>
+            <KindTag
+              t={t}
+              kind={create.kind}
+              categories={open?.board.categories ?? []}
+              labels={categoryLabels}
+              // Re-filing a draft is the ＋新卡 menu's own verb: one draft per
+              // canvas, re-categorized in place.
+              onPick={create.onKind}
+            />
+            <span className={`${css.ghostFlag} ${css.rowFlag}`}>{t('detail.unsaved')}</span>
             <span className={css.spacer} />
             <ModeSeg mode={mode} onMode={setMode} t={t} />
           </div>
@@ -441,20 +450,23 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     )
   }
 
-  if (canvasId === null) {
-    return <div className={css.root}><div className={css.notice}>{t('detail.empty')}</div></div>
-  }
-  if (loadError !== null) {
-    return <div className={css.root}><div className={css.notice}>{loadError}</div></div>
-  }
-  if (open === null) {
-    return <div className={css.root}><div className={css.notice}>{t('state.loading')}</div></div>
-  }
-  if (card === null) {
-    return <div className={css.root}><div className={css.notice}>{t('detail.cardGone')}</div></div>
-  }
+  // Every stand-in page keeps the crumb row, so the way back never depends on
+  // the card having loaded.
+  const notice = (text: string): ReactNode => (
+    <div className={css.root}>
+      {crumbs !== undefined && (
+        <div className={css.header}>
+          <DetailCrumbs t={t} crumbs={crumbs} here={crumbs.heading} cardId={cardId} />
+        </div>
+      )}
+      <div className={css.notice}>{text}</div>
+    </div>
+  )
+  if (canvasId === null) return notice(t('detail.empty'))
+  if (loadError !== null) return notice(loadError)
+  if (open === null) return notice(t('state.loading'))
+  if (card === null) return notice(t('detail.cardGone'))
 
-  const KindIcon = kindIconOf(card.kind)
   const proposed = card.status === 'proposed'
   const archived = card.status === 'archived'
   const format = detectCardFormat(card.text)
@@ -464,29 +476,64 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     : undefined
   const created = Date.parse(card.createdAt)
   const updated = Date.parse(card.updatedAt)
+  // The page you read a card on is where you decide it is done, so its fate
+  // lives here too: archive (undoable) for a kept card, and a true delete
+  // behind a confirmation for any settled one. It ends the crumb row.
+  const moreMenu = !proposed && !readonly ? (
+    <MoreMenu
+      label={t('action.more')}
+      className={css.tool}
+      items={[
+        ...(archived ? [] : [{ id: 'archive', label: t('card.archive'), icon: <IconArchiveOutlineMedium size={14} /> }]),
+        { id: 'delete', label: t('action.delete'), icon: <IconTrashOutlineMedium size={14} />, danger: true },
+      ]}
+      onSelect={id => {
+        if (id === 'delete') { setAskDelete(true); return }
+        void mutate(sid => patchCard(sid, {
+          canvasId: open.board.id, cardId: card.id, status: 'archived',
+        }), 'toast.cardArchived', () => void mutate(sid => patchCard(sid, {
+          canvasId: open.board.id, cardId: card.id, status: 'kept',
+        }), 'toast.cardRestored'))
+      }}
+    />
+  ) : null
 
   return (
     <div className={css.root}>
       <div className={css.header}>
-        <span className={css.kindTag}>
-          {KindIcon !== undefined && <KindIcon size={12} />}
-          {categoryLabels.get(card.kind) ?? card.kind}
-          {card.createdBy === 'agent' && !proposed ? ` · ${t('card.fromAgent')}` : ''}
-        </span>
-        {proposed && (
-          <span className={css.ghostFlag}>
-            <IconSparkleMedium size={12} />
-            {t('card.proposed')}
-          </span>
-        )}
-        {archived && (
-          <span className={css.archivedTag}>
-            <IconArchiveOutlineMedium size={11} />
-            {t('detail.archived')}
-          </span>
+        {crumbs !== undefined && (
+          <DetailCrumbs
+            t={t}
+            crumbs={crumbs}
+            here={cardTitleOf(card.text) || crumbs.heading}
+            cardId={card.id}
+            trailing={moreMenu}
+          />
         )}
         {heading !== undefined && <div className={css.title}>{heading.title}</div>}
         <div className={css.meta}>
+          <KindTag
+            t={t}
+            kind={card.kind}
+            categories={open.board.categories}
+            labels={categoryLabels}
+            suffix={card.createdBy === 'agent' && !proposed ? t('card.fromAgent') : undefined}
+            onPick={readonly || archived ? undefined : kind => void mutate(sid => patchCard(sid, {
+              canvasId: open.board.id, cardId: card.id, kind,
+            }), 'toast.cardSaved')}
+          />
+          {proposed && (
+            <span className={css.ghostFlag}>
+              <IconSparkleMedium size={12} />
+              {t('card.proposed')}
+            </span>
+          )}
+          {archived && (
+            <span className={css.archivedTag}>
+              <IconArchiveOutlineMedium size={11} />
+              {t('detail.archived')}
+            </span>
+          )}
           {detectCardFormat(card.text) === 'html' && (
             <span className={css.formatTag}>{t('detail.formatHtml')}</span>
           )}
@@ -530,27 +577,8 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               {t('card.restore')}
             </button>
           )}
-          {!proposed && !readonly && (
-            // The page you read a card on is where you decide it is done, so
-            // its fate lives here too: archive (undoable) for a kept card, and
-            // a true delete behind a confirmation for any settled one.
-            <MoreMenu
-              label={t('action.more')}
-              className={css.iconButton}
-              items={[
-                ...(archived ? [] : [{ id: 'archive', label: t('card.archive'), icon: <IconArchiveOutlineMedium size={14} /> }]),
-                { id: 'delete', label: t('action.delete'), icon: <IconTrashOutlineMedium size={14} />, danger: true },
-              ]}
-              onSelect={id => {
-                if (id === 'delete') { setAskDelete(true); return }
-                void mutate(sid => patchCard(sid, {
-                  canvasId: open.board.id, cardId: card.id, status: 'archived',
-                }), 'toast.cardArchived', () => void mutate(sid => patchCard(sid, {
-                  canvasId: open.board.id, cardId: card.id, status: 'kept',
-                }), 'toast.cardRestored'))
-              }}
-            />
-          )}
+          {/* A composition without the crumb row keeps the ⋯ where it was. */}
+          {crumbs === undefined && moreMenu}
         </div>
       </div>
 

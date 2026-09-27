@@ -3,12 +3,14 @@
  * The canvas surface's own tab strip (round-3 review, item ⑥): the store that
  * holds its rows, and the page that routes a row to its body.
  *
- * Stage ⑧ put a card's detail in the HOST dock; item ⑥ moved it in here, so
- * what these specs lock is what that move is made of: row ids derived from their
- * subject (one card clicked twice is one row), the ＋新卡 menu re-categorizing
- * the draft row instead of seating a second blank, the strip's own × gating the
- * discard question the dock's × could never intercept, the eviction order when
- * the strip fills up, and the stash that survives a reload.
+ * Stage ⑧ put a card's detail in the HOST dock; item ⑥ moved it in here; the
+ * 2026-09-27 review (scheme B) made the strip hold canvases only, with a card or
+ * the draft standing INSIDE its canvas's row. What these specs lock: one row per
+ * canvas that remembers where in it you stood, the crumb row as the way back
+ * (and its ‹n/m› through the board's order), the ＋新卡 menu re-categorizing
+ * the one draft, the discard question on both × and ‹, the per-canvas view
+ * memory, the eviction order when the strip fills up, and the stash that
+ * survives a reload — including one written by the older card-row strip.
  *
  * The store gets its own section because its rules (which row gets evicted, what
  * a foreign sessionStorage payload is worth) are not reachable from a render.
@@ -96,19 +98,30 @@ function rowOf(value: CanvasBoard): CanvasSummary {
 describe('CanvasSelectionStore — the rows', () => {
   beforeEach(() => { sessionStorage.clear() })
 
-  it('derives the id from the subject, so one card clicked twice is one row', () => {
+  it('holds one row per canvas, and a card opens inside it', () => {
     const store = new CanvasSelectionStore()
     store.openCanvas(CANVAS_ID)
     store.openCardTab(CANVAS_ID, 'c_1', '第一版标题')
-    store.openCanvas(CANVAS_ID)
+    store.openCardTab(CANVAS_ID, 'c_2', '第二张')
     store.openCardTab(CANVAS_ID, 'c_1', '改过的标题')
     const state = store.source.getSnapshot()
-    expect(state.tabs.map(row => row.id)).toEqual([boardTabId(CANVAS_ID), cardTabId(CANVAS_ID, 'c_1')])
-    // The re-open keeps the row's PLACE but takes the new payload: the strip's
-    // label is what the card is called NOW, and showing it is what the click said.
-    expect(state.active).toBe(cardTabId(CANVAS_ID, 'c_1'))
-    const row = state.tabs[1]
-    expect(row?.kind === 'card' && row.heading).toBe('改过的标题')
+    expect(state.tabs.map(row => row.id)).toEqual([boardTabId(CANVAS_ID)])
+    // The row takes the new place with its payload: the heading is what the
+    // card is called NOW.
+    expect(state.tabs[0]?.at).toEqual({ kind: 'card', cardId: 'c_1', heading: '改过的标题' })
+    store.backToBoard(CANVAS_ID)
+    expect(store.source.getSnapshot().tabs[0]?.at).toEqual({ kind: 'board' })
+  })
+
+  it('returns to the card a canvas was left on', () => {
+    const store = new CanvasSelectionStore()
+    store.openCardTab(CANVAS_ID, 'c_1', '一')
+    store.openCanvas(OTHER_ID)
+    expect(store.source.getSnapshot().canvasId).toBe(OTHER_ID)
+    store.openCanvas(CANVAS_ID)
+    const state = store.source.getSnapshot()
+    expect(state.active).toBe(boardTabId(CANVAS_ID))
+    expect(state.tabs.find(row => row.canvasId === CANVAS_ID)?.at).toMatchObject({ kind: 'card', cardId: 'c_1' })
   })
 
   it('re-categorizes the open draft instead of seating a second blank one', () => {
@@ -117,22 +130,23 @@ describe('CanvasSelectionStore — the rows', () => {
     store.openDraftTab(CANVAS_ID, 'question', '问题')
     store.openDraftTab(CANVAS_ID, custom.id, '反方观点')
     const state = store.source.getSnapshot()
-    expect(state.tabs.map(row => row.id)).toEqual([boardTabId(CANVAS_ID), draftTabId(CANVAS_ID)])
-    const row = state.tabs[1]
-    expect(row?.kind === 'draft' && row.catKind).toBe(custom.id)
+    expect(state.tabs).toHaveLength(1)
+    const at = state.tabs[0]?.at
+    expect(at?.kind === 'draft' && at.catKind).toBe(custom.id)
   })
 
   it('activates the left neighbour on a close, and goes quiet on the last row', () => {
     const store = new CanvasSelectionStore()
+    const third = 'canvas_thirdzzzabcdefgh'
     store.openCanvas(CANVAS_ID)
-    store.openCardTab(CANVAS_ID, 'c_1', '一')
-    store.openCardTab(CANVAS_ID, 'c_2', '二')
-    store.close(cardTabId(CANVAS_ID, 'c_2'))
-    expect(store.source.getSnapshot().active).toBe(cardTabId(CANVAS_ID, 'c_1'))
+    store.openCanvas(OTHER_ID)
+    store.openCanvas(third)
+    store.close(boardTabId(third))
+    expect(store.source.getSnapshot().active).toBe(boardTabId(OTHER_ID))
     // Closing a row that is not showing leaves the view alone.
     store.close(boardTabId(CANVAS_ID))
-    expect(store.source.getSnapshot().active).toBe(cardTabId(CANVAS_ID, 'c_1'))
-    store.close(cardTabId(CANVAS_ID, 'c_1'))
+    expect(store.source.getSnapshot().active).toBe(boardTabId(OTHER_ID))
+    store.close(boardTabId(OTHER_ID))
     const state = store.source.getSnapshot()
     expect(state.tabs).toHaveLength(0)
     expect(state.active).toBe('')
@@ -140,66 +154,80 @@ describe('CanvasSelectionStore — the rows', () => {
     expect(state.canvasId).toBeNull()
   })
 
-  it('forgets a deleted card\'s row and falls back to that canvas\'s board', () => {
+  it('sends a row standing on a deleted card back to its board, and leaves other rows alone', () => {
     const store = new CanvasSelectionStore()
+    store.openCardTab(OTHER_ID, 'c_9', '九')
     store.openCardTab(CANVAS_ID, 'c_1', '一')
-    store.openCardTab(CANVAS_ID, 'c_2', '二')
-    store.activate(cardTabId(CANVAS_ID, 'c_1'))
-    // Not the showing row: the view stays put.
+    // Another card of the canvas: the row's place does not move.
     store.forget(CANVAS_ID, 'c_2')
-    expect(store.source.getSnapshot().active).toBe(cardTabId(CANVAS_ID, 'c_1'))
-    // The showing row: its board takes its place on a strip that lacked one.
+    expect(store.source.getSnapshot().tabs[1]?.at).toMatchObject({ kind: 'card', cardId: 'c_1' })
     store.forget(CANVAS_ID, 'c_1')
     const state = store.source.getSnapshot()
-    expect(state.tabs.map(row => row.id)).toEqual([boardTabId(CANVAS_ID)])
+    expect(state.tabs.map(row => row.at.kind)).toEqual(['card', 'board'])
     expect(state.active).toBe(boardTabId(CANVAS_ID))
   })
 
-  it('forgets every row of a deleted canvas and shows the neighbour', () => {
+  it('forgets a deleted canvas\'s row and shows the neighbour', () => {
     const store = new CanvasSelectionStore()
-    const other = 'canvas_zzzzzzzzabcdefgh'
-    store.openCanvas(other)
-    store.openCanvas(CANVAS_ID)
+    store.openCanvas(OTHER_ID)
     store.openCardTab(CANVAS_ID, 'c_1', '一')
     store.forget(CANVAS_ID)
     const state = store.source.getSnapshot()
-    expect(state.tabs.map(row => row.id)).toEqual([boardTabId(other)])
-    expect(state.active).toBe(boardTabId(other))
-    store.forget(other)
+    expect(state.tabs.map(row => row.id)).toEqual([boardTabId(OTHER_ID)])
+    expect(state.active).toBe(boardTabId(OTHER_ID))
+    store.forget(OTHER_ID)
     expect(store.source.getSnapshot().active).toBe('')
   })
 
-  it('caps the strip by evicting a card, never the board nor the row just added', () => {
+  it('caps the strip by evicting the oldest canvas, sparing a draft, the showing row and the new one', () => {
     const store = new CanvasSelectionStore()
-    store.openCanvas(CANVAS_ID)
     store.openDraftTab(CANVAS_ID, 'question', '问题')
     for (let index = 0; index < 20; index += 1) {
-      store.openCardTab(CANVAS_ID, `c_${index}`, `卡 ${index}`)
+      store.openCanvas(`canvas_n${String(index).padStart(2, '0')}abcdefgh`)
     }
     const state = store.source.getSnapshot()
-    // 16 rows: the board and the draft survive a full strip (one costs a click
-    // in the ＋ menu, the other costs words), and the newest card is in it.
     expect(state.tabs).toHaveLength(16)
-    expect(state.tabs.some(row => row.kind === 'board')).toBe(true)
-    expect(state.tabs.some(row => row.kind === 'draft')).toBe(true)
-    expect(state.active).toBe(cardTabId(CANVAS_ID, 'c_19'))
-    // The cards that went are the oldest ones.
-    expect(state.tabs.some(row => row.id === cardTabId(CANVAS_ID, 'c_0'))).toBe(false)
+    // The draft's row costs words, so it outlives canvases opened after it.
+    expect(state.tabs.some(row => row.canvasId === CANVAS_ID && row.at.kind === 'draft')).toBe(true)
+    expect(state.active).toBe(boardTabId('canvas_n19abcdefgh'))
+    expect(state.tabs.some(row => row.canvasId === 'canvas_n00abcdefgh')).toBe(false)
   })
 
   it('brings the strip back through sessionStorage, and drops what it cannot vouch for', () => {
     const first = new CanvasSelectionStore()
-    first.openCanvas(CANVAS_ID)
+    first.openCanvas(OTHER_ID)
     first.openCardTab(CANVAS_ID, 'c_1', '一张卡')
-    const restored = new CanvasSelectionStore()
-    expect(restored.source.getSnapshot().tabs.map(row => row.id))
-      .toEqual([boardTabId(CANVAS_ID), cardTabId(CANVAS_ID, 'c_1')])
-    expect(restored.source.getSnapshot().active).toBe(cardTabId(CANVAS_ID, 'c_1'))
+    const restored = new CanvasSelectionStore().source.getSnapshot()
+    expect(restored.tabs.map(row => row.id)).toEqual([boardTabId(OTHER_ID), boardTabId(CANVAS_ID)])
+    expect(restored.tabs[1]?.at).toEqual({ kind: 'card', cardId: 'c_1', heading: '一张卡' })
+    expect(restored.active).toBe(boardTabId(CANVAS_ID))
+
+    // A draft's words never rode the stash, so its row comes back on its board.
+    first.openDraftTab(OTHER_ID, 'question', '问题')
+    expect(new CanvasSelectionStore().source.getSnapshot().tabs[0]?.at).toEqual({ kind: 'board' })
 
     sessionStorage.setItem('dsh-canvas.tabs', JSON.stringify({ tabs: [{ id: 'x', kind: 'who-knows' }], active: 'x' }))
     expect(new CanvasSelectionStore().source.getSnapshot().tabs).toHaveLength(0)
     sessionStorage.setItem('dsh-canvas.tabs', '{not json')
     expect(new CanvasSelectionStore().source.getSnapshot().tabs).toHaveLength(0)
+  })
+
+  it('folds a stash from the card-row strip into one board row per canvas', () => {
+    sessionStorage.setItem('dsh-canvas.tabs', JSON.stringify({
+      tabs: [
+        { id: boardTabId(CANVAS_ID), kind: 'board', canvasId: CANVAS_ID },
+        { id: cardTabId(CANVAS_ID, 'c_1'), kind: 'card', canvasId: CANVAS_ID, cardId: 'c_1', heading: '一' },
+        { id: draftTabId(OTHER_ID), kind: 'draft', canvasId: OTHER_ID, catKind: 'question', heading: '问题' },
+      ],
+      active: draftTabId(OTHER_ID),
+    }))
+    const state = new CanvasSelectionStore().source.getSnapshot()
+    expect(state.tabs).toEqual([
+      { id: boardTabId(CANVAS_ID), canvasId: CANVAS_ID, at: { kind: 'board' } },
+      { id: boardTabId(OTHER_ID), canvasId: OTHER_ID, at: { kind: 'board' } },
+    ])
+    expect(state.active).toBe(boardTabId(OTHER_ID))
+    expect(state.canvasId).toBe(OTHER_ID)
   })
 })
 
@@ -271,6 +299,7 @@ function makeBench(boards: CanvasBoard[] = [board()]): Bench {
     openCardDraft: (canvasId: string, kind: Parameters<typeof store.openDraftTab>[1], heading: string) => {
       store.openDraftTab(canvasId, kind, heading)
     },
+    backToBoard: (canvasId: string) => { store.backToBoard(canvasId) },
     activateTab: (id: string) => { store.activate(id) },
     closeTab: (id: string) => { store.close(id) },
     useSessions: ((selector: (snapshot: { byId: Record<string, { cwd: string }> }) => unknown) =>
@@ -325,30 +354,20 @@ function stripLabels(): string[] {
   return screen.getAllByRole('tab').map(node => node.textContent ?? '')
 }
 
-/**
- * Click a card on the board. Once its row is on the strip the same words appear
- * TWICE — the row's label and the card — and the strip sits first in the DOM, so
- * the last match is the card.
- */
+/** Click a card on the board. */
 async function clickCard(words: string): Promise<void> {
-  const matches = await screen.findAllByText(words)
-  fireEvent.click(matches[matches.length - 1]!)
+  fireEvent.click(await screen.findByText(words))
 }
 
-/** Click the board row back into view. */
+/** The crumb row's ‹: back to the board. */
 function backToBoard(): void {
-  fireEvent.click(screen.getByRole('tab', { name: '为什么人们不愿表达异议' }))
+  fireEvent.click(screen.getByRole('button', { name: '回到卡板' }))
 }
 
-/**
- * Words as they appear in the BODY, not as a strip label. A card's heading is on
- * its row for as long as the row is open, so "this row is not showing" is only
- * observable below the strip — and the strip is exactly what a plain query
- * would keep finding.
- */
-function bodyMatches(words: string): HTMLElement[] {
-  const strip = screen.getByRole('tablist')
-  return screen.queryAllByText(words).filter(node => !strip.contains(node))
+/** The crumb row's current place (the card's or the draft's name). */
+function crumbHere(): string {
+  return within(screen.getByRole('navigation', { name: '所在位置' })).getByText((_, node) =>
+    node?.getAttribute('aria-current') === 'page').textContent ?? ''
 }
 
 /**
@@ -374,57 +393,60 @@ describe('CanvasTab — the strip routes its rows', () => {
     expect(screen.queryByRole('button', { name: '为什么人们不愿表达异议' })).toBeNull()
   })
 
-  it('opens a card as a row and comes back to the board through the strip', async () => {
-    const { props } = makeBench([board(CANVAS_ID, [card('c_1', { text: '会上没人开口' })])])
+  it('opens a card inside the canvas row, and the crumb goes back to the board', async () => {
+    const { props, store } = makeBench([board(CANVAS_ID, [card('c_1', { text: '会上没人开口' })])])
     render(<CanvasTab {...props} />)
-    await screen.findByText('会上没人开口')
     await clickCard('会上没人开口')
-    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('会上没人开口')
-    expect(stripLabels()).toEqual(['为什么人们不愿表达异议', '会上没人开口'])
-
-    backToBoard()
-    await clickCard('会上没人开口')
-    // Two clicks on one card: the row id is derived from the card, so the strip
-    // still holds two rows, not three.
-    expect(screen.getAllByRole('tab')).toHaveLength(2)
-    backToBoard()
-    // The board page is back (its ＋新卡 is the only button of its kind here).
+    // Still one row: the card stands inside its canvas, named by the crumb.
+    expect(stripLabels()).toEqual(['为什么人们不愿表达异议'])
+    await waitFor(() => { expect(crumbHere()).toBe('会上没人开口') })
+    // The canvas's name in the crumb is a way back too.
+    fireEvent.click(within(screen.getByRole('navigation', { name: '所在位置' }))
+      .getByRole('button', { name: '为什么人们不愿表达异议' }))
     await screen.findByRole('button', { name: /新卡/ })
-    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('为什么人们不愿表达异议')
+    expect(store.source.getSnapshot().tabs[0]?.at).toEqual({ kind: 'board' })
+    await clickCard('会上没人开口')
+    backToBoard()
+    await screen.findByRole('button', { name: /新卡/ })
   })
 
-  it('shows two cards as two rows, each reading its own card', async () => {
+  it('steps through the board’s shown order, and hides the stepper for a lone card', async () => {
     const { props } = makeBench([board(CANVAS_ID, [
-      card('c_1', { text: '第一张的正文' }), card('c_2', { text: '第二张的正文' }),
+      card('c_1', { text: '第一张的正文', kind: 'question' }),
+      card('c_2', { text: '第二张的正文' }),
+      card('c_3', { text: '第三张的正文', kind: 'question' }),
     ])])
     render(<CanvasTab {...props} />)
-    await screen.findByText('第一张的正文')
     await clickCard('第一张的正文')
+    await screen.findByText('1/3')
+    expect(screen.getByRole('button', { name: '上一张' })).toHaveProperty('disabled', true)
+    fireEvent.click(screen.getByRole('button', { name: '下一张' }))
+    await waitFor(() => { expect(crumbHere()).toBe('第二张的正文') })
+    expect(screen.getByText('2/3')).toBeTruthy()
+
+    // The order is the board's CURRENT one: filtered to 问题, the second card
+    // is not on the way, and a card the filter hides has no stepper at all.
     backToBoard()
-    await clickCard('第二张的正文')
-    expect(stripLabels()).toEqual(['为什么人们不愿表达异议', '第一张的正文', '第二张的正文'])
-    fireEvent.click(screen.getByRole('tab', { name: '第一张的正文' }))
-    await waitFor(() => {
-      expect(bodyMatches('第二张的正文')).toHaveLength(0)
-    })
-    expect(bodyMatches('第一张的正文')).toHaveLength(1)
-    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('第一张的正文')
+    fireEvent.click(await screen.findByRole('button', { name: '问题 2' }))
+    await clickCard('第三张的正文')
+    await screen.findByText('2/2')
+    fireEvent.click(screen.getByRole('button', { name: '上一张' }))
+    await waitFor(() => { expect(crumbHere()).toBe('第一张的正文') })
+    expect(screen.getByRole('button', { name: '下一张' })).toHaveProperty('disabled', false)
   })
 
-  it('keeps the reader for the row it shows: switching rows never carries the text across', async () => {
+  it('keeps the reader for the card it shows: stepping never carries the text across', async () => {
     const { props } = makeBench([board(CANVAS_ID, [
       card('c_1', { text: '甲的正文' }), card('c_2', { text: '乙的正文' }),
     ])])
     render(<CanvasTab {...props} />)
-    await screen.findByText('甲的正文')
     await clickCard('甲的正文')
     fireEvent.click(await screen.findByRole('button', { name: '源码' }))
     const editor = await screen.findByDisplayValue('甲的正文')
     typeInto(editor, '甲被改了一半')
-    // Turn to the other card mid-edit: the pad it shows is ITS own, not the
-    // uncontrolled textarea this row was typing in.
-    backToBoard()
-    await clickCard('乙的正文')
+    // Step to the other card mid-edit: the pad it shows is ITS own, not the
+    // uncontrolled textarea this card was typing in.
+    fireEvent.click(screen.getByRole('button', { name: '下一张' }))
     await waitFor(() => {
       expect(screen.queryByDisplayValue('甲被改了一半')).toBeNull()
     })
@@ -432,7 +454,7 @@ describe('CanvasTab — the strip routes its rows', () => {
     await screen.findByDisplayValue('乙的正文')
   })
 
-  it('leaves the board’s filters alone while a card row is open, and resets them for another canvas', async () => {
+  it('remembers each canvas’s filter across a card and across another canvas', async () => {
     const { props, store } = makeBench([
       board(CANVAS_ID, [card('c_1', { text: '甲的问题卡', kind: 'question' })]),
       board(OTHER_ID, [card('c_9', { text: '乙的正文' })]),
@@ -442,12 +464,28 @@ describe('CanvasTab — the strip routes its rows', () => {
     fireEvent.click(screen.getByRole('button', { name: '问题 1' }))
     await clickCard('甲的问题卡')
     backToBoard()
-    // The filter you left is still there (stage ⑧'s one win, kept by the row).
-    expect(screen.getByRole('button', { name: '问题 1' }).getAttribute('data-active')).toBe('true')
-    // Another canvas's board is a fresh page: no filter carried over.
+    expect((await screen.findByRole('button', { name: '问题 1' })).getAttribute('data-active')).toBe('true')
+    // Another canvas's board starts fresh…
     act(() => { store.openCanvas(OTHER_ID) })
     await screen.findByText('乙的正文')
     expect(screen.getByRole('button', { name: '全部 1' }).getAttribute('data-active')).toBe('true')
+    // …and coming back finds the filter this canvas was left with.
+    act(() => { store.openCanvas(CANVAS_ID) })
+    await screen.findByText('甲的问题卡')
+    expect(screen.getByRole('button', { name: '问题 1' }).getAttribute('data-active')).toBe('true')
+  })
+
+  it('re-files a card from its category tag', async () => {
+    const { props, mocks } = makeBench([board(CANVAS_ID, [card('c_1', { text: '会上没人开口' })])])
+    const patchCard = (props as unknown as { patchCard: ReturnType<typeof vi.fn> }).patchCard
+    render(<CanvasTab {...props} />)
+    await clickCard('会上没人开口')
+    fireEvent.click(await screen.findByRole('button', { name: /灵感/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '问题' }))
+    await waitFor(() => {
+      expect(patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', kind: 'question' })
+    })
+    expect(mocks.putCard).not.toHaveBeenCalled()
   })
 })
 
@@ -459,19 +497,23 @@ describe('CanvasTab — the draft row', () => {
     fireEvent.click(await screen.findByRole('button', { name: label }))
   }
 
-  it('turns the menu’s pick into a row, and a second pick re-categorizes that row', async () => {
+  it('opens the menu’s pick inside the canvas row, and a second pick re-categorizes it', async () => {
     const { props, store } = makeBench([board(CANVAS_ID, [card('c_1')])])
     render(<CanvasTab {...props} />)
     await pickCategory('问题')
     await screen.findByPlaceholderText(/写点什么/)
-    expect(store.source.getSnapshot().tabs.map(row => row.id))
-      .toEqual([boardTabId(CANVAS_ID), draftTabId(CANVAS_ID)])
-    expect(stripLabels()).toEqual(['为什么人们不愿表达异议', '问题'])
+    expect(store.source.getSnapshot().tabs.map(row => row.id)).toEqual([boardTabId(CANVAS_ID)])
+    expect(stripLabels()).toEqual(['为什么人们不愿表达异议'])
+    expect(crumbHere()).toBe('新卡片')
 
-    fireEvent.click(screen.getByRole('tab', { name: '为什么人们不愿表达异议' }))
-    await pickCategory('反方观点')
-    expect(store.source.getSnapshot().tabs).toHaveLength(2)
-    expect(stripLabels()).toEqual(['为什么人们不愿表达异议', '反方观点'])
+    // The draft's category tag is the other way to re-file it before it exists.
+    fireEvent.click(screen.getByRole('button', { name: /问题/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '反方观点' }))
+    await waitFor(() => {
+      const at = store.source.getSnapshot().tabs[0]?.at
+      expect(at?.kind === 'draft' && at.catKind).toBe(custom.id)
+    })
+    expect(store.source.getSnapshot().tabs).toHaveLength(1)
   })
 
   it('files a one-line draft on bare ⏎ and returns to the board it landed on', async () => {
@@ -480,7 +522,7 @@ describe('CanvasTab — the draft row', () => {
     await pickCategory('反方观点')
     const editor = await screen.findByPlaceholderText(/写点什么/)
     // One line: the hint promises ⏎.
-    screen.getByText('⏎ 建卡 · Esc 关掉这张标签')
+    screen.getByText('⏎ 建卡 · Esc 回到卡板')
     fireEvent.compositionStart(editor)
     fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })
     expect(mocks.putCard).not.toHaveBeenCalled()
@@ -496,10 +538,10 @@ describe('CanvasTab — the draft row', () => {
       })
     })
     await screen.findByText('已建卡')
-    // The row's work is done: it comes off the strip, and the board that took
-    // the card is what shows.
-    expect(store.source.getSnapshot().tabs.map(row => row.id)).toEqual([boardTabId(CANVAS_ID)])
-    expect(store.source.getSnapshot().active).toBe(boardTabId(CANVAS_ID))
+    // The draft's work is done: the row goes back to the board that took the card.
+    expect(store.source.getSnapshot().tabs).toEqual([
+      { id: boardTabId(CANVAS_ID), canvasId: CANVAS_ID, at: { kind: 'board' } },
+    ])
     await screen.findByText('卡片 c_1')
   })
 
@@ -510,7 +552,7 @@ describe('CanvasTab — the draft row', () => {
     const editor = await screen.findByPlaceholderText(/写点什么/)
     typeInto(editor, '第一行\n第二行')
     // Two lines: ⏎ is a newline and the hint says so.
-    screen.getByText('⌘⏎ 建卡（⏎ 已是换行）· Esc 关掉这张标签')
+    screen.getByText('⌘⏎ 建卡（⏎ 已是换行）· Esc 回到卡板')
     fireEvent.keyDown(editor, { key: 'Enter' })
     expect(mocks.putCard).not.toHaveBeenCalled()
     // Shift+⏎ is the explicit newline even while the words are one line.
@@ -524,7 +566,7 @@ describe('CanvasTab — the draft row', () => {
       })
     })
     await screen.findByText('已建卡')
-    expect(store.source.getSnapshot().active).toBe(boardTabId(CANVAS_ID))
+    expect(store.source.getSnapshot().tabs[0]?.at).toEqual({ kind: 'board' })
   })
 
   it('saves a draft that is only ink, with the strokes and an empty body', async () => {
@@ -544,43 +586,48 @@ describe('CanvasTab — the draft row', () => {
     expect(request.draw).toHaveLength(1)
   })
 
-  it('closes an untouched draft without a question, and asks once about a drafted one', async () => {
+  it('leaves an untouched draft without a question, and asks once about a drafted one', async () => {
     const { mocks, store, props } = makeBench([board(CANVAS_ID, [card('c_1')])])
     render(<CanvasTab {...props} />)
     await pickCategory('问题')
-    const closeBox = () => screen.getAllByRole('button', { name: '关闭这张标签' }).at(-1)!
+    const place = () => store.source.getSnapshot().tabs[0]?.at.kind
 
-    // Nothing written: the × takes the row off and asks nothing.
-    fireEvent.click(closeBox())
-    await waitFor(() => {
-      expect(store.source.getSnapshot().tabs.map(row => row.id)).toEqual([boardTabId(CANVAS_ID)])
-    })
+    // Nothing written: ‹ goes back and asks nothing.
+    await screen.findByPlaceholderText(/写点什么/)
+    backToBoard()
+    await waitFor(() => { expect(place()).toBe('board') })
     expect(screen.queryByRole('dialog')).toBeNull()
 
-    // Back in the menu, with words this time: the question names them, and
-    // 继续编辑 keeps every character.
-    fireEvent.click(screen.getByRole('tab', { name: '为什么人们不愿表达异议' }))
+    // With words this time: the question names them, and 继续编辑 keeps every
+    // character.
     await pickCategory('问题')
     typeInto(await screen.findByPlaceholderText(/写点什么/), '不表达是因为害怕吗？')
-    fireEvent.click(closeBox())
+    backToBoard()
     const dialog = await screen.findByRole('dialog')
     expect(dialog.textContent).toContain('10')
     fireEvent.click(within(dialog).getByRole('button', { name: '继续编辑' }))
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
-    expect(store.source.getSnapshot().active).toBe(draftTabId(CANVAS_ID))
+    expect(place()).toBe('draft')
     expect(mocks.putCard).not.toHaveBeenCalled()
     expect(screen.getByPlaceholderText(/写点什么/)).toHaveProperty('value', '不表达是因为害怕吗？')
 
-    // Esc is the same exit, and 丢掉 takes the row off without writing anything.
+    // The strip's × asks the same question before the canvas row goes.
+    fireEvent.click(screen.getByRole('button', { name: '关闭这块画布' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '继续编辑' }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(store.source.getSnapshot().tabs).toHaveLength(1)
+
+    // Esc is the same exit, and 丢掉 goes back without writing anything.
     fireEvent.keyDown(screen.getByPlaceholderText(/写点什么/), { key: 'Escape' })
     fireEvent.click(await screen.findByRole('button', { name: '丢掉' }))
-    await waitFor(() => {
-      expect(store.source.getSnapshot().tabs.map(row => row.id)).toEqual([boardTabId(CANVAS_ID)])
-    })
+    await waitFor(() => { expect(place()).toBe('board') })
     expect(mocks.putCard).not.toHaveBeenCalled()
+    // The words went with it: the next draft starts blank.
+    await pickCategory('问题')
+    expect(await screen.findByPlaceholderText(/写点什么/)).toHaveProperty('value', '')
   })
 
-  it('holds one draft per canvas while another canvas’s draft is open', async () => {
+  it('keeps one draft per canvas across a switch to another canvas', async () => {
     const { store, props } = makeBench([
       board(CANVAS_ID, [card('c_1')]), board(OTHER_ID, [card('c_9')]),
     ])
@@ -592,10 +639,10 @@ describe('CanvasTab — the draft row', () => {
     await screen.findByText('卡片 c_9')
     fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
     fireEvent.click(await screen.findByRole('button', { name: '共识' }))
-    // Two draft rows, one per canvas, each holding its own words.
-    expect(store.source.getSnapshot().tabs.map(row => row.kind))
-      .toEqual(['board', 'draft', 'board', 'draft'])
-    fireEvent.click(screen.getByRole('tab', { name: '问题' }))
+    // Two canvas rows, each standing on its own draft with its own words.
+    expect(store.source.getSnapshot().tabs.map(row => row.at.kind)).toEqual(['draft', 'draft'])
+    expect(stripLabels()).toEqual(['为什么人们不愿表达异议', '第二块画布'])
+    fireEvent.click(screen.getByRole('tab', { name: '为什么人们不愿表达异议' }))
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/写点什么/)).toHaveProperty('value', '甲块的草稿')
     })
@@ -607,26 +654,26 @@ describe('CanvasTab — an empty strip', () => {
     const { props, store } = makeBench([board(CANVAS_ID, [card('c_1')])])
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: '关闭这张标签' }))
-    await screen.findByText(/没有打开的标签了/)
+    fireEvent.click(screen.getByRole('button', { name: '关闭这块画布' }))
+    await screen.findByText(/没有打开的画布了/)
     expect(store.source.getSnapshot().tabs).toHaveLength(0)
     // The auto-open is a convenience for a fresh surface, not an argument: it
     // does not put the row back.
     await new Promise(resolve => { setTimeout(resolve, 20) })
     expect(store.source.getSnapshot().tabs).toHaveLength(0)
-    expect(screen.getByText('没有打开的标签了，点上面的「＋ 画布」挑一块或新建一块')).toBeTruthy()
+    expect(screen.getByText('没有打开的画布了，点上面的「画布」挑一块或新建一块')).toBeTruthy()
   })
 
   it('still says 还没有画布 when the account genuinely has none', async () => {
     const { props } = makeBench([])
     render(<CanvasTab {...props} />)
     expect(await screen.findByText('还没有画布')).toBeTruthy()
-    expect(screen.queryByText(/没有打开的标签了/)).toBeNull()
+    expect(screen.queryByText(/没有打开的画布了/)).toBeNull()
   })
 })
 
 describe('CanvasTabTitle — the dock chip', () => {
-  it('reads 画布 for a board row and names the card for a card row', async () => {
+  it('reads 画布 on a board and names the card a canvas row stands on', async () => {
     const { store, titleProps } = makeBench([board(CANVAS_ID, [card('c_1')])])
     const { rerender } = render(<CanvasTabTitle {...titleProps} />)
     store.openCanvas(CANVAS_ID)

@@ -940,16 +940,16 @@
   flex-shrink: 1;
 }
 
-/* The menu's bottom "+ 新画布" row: a full-width action row, not a header. */
+/* The menu's leading "+ 新画布" row: a full-width action row, not a header. */
 .newCanvasRow {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  margin-top: 4px;
+  margin-bottom: 4px;
   padding: 8px 10px;
   border: none;
-  border-top: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
   border-radius: 0;
   background: transparent;
   font: var(--dsw-font-xs-13);

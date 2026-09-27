@@ -25,6 +25,7 @@ import type {
   BoardAskAgentOutcome, BoardAttachImageOutcome, BoardChatStatusResult, BoardMutationResult,
   BoardReadOutcome, CanvasBoard, CanvasImageRef, CanvasStroke,
 } from '../src/types.ts'
+import { defaultCategories } from '../src/types.ts'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
@@ -50,6 +51,7 @@ function board(cards: CanvasBoard['cards'] = []): CanvasBoard {
     cards,
     links: [],
     lanes: [],
+    categories: defaultCategories(),
     stats: { proposed: { accepted: 0, rejected: 0 }, kindCounts: {}, lastActiveAt: NOW },
     archivedAt: null,
     createdAt: NOW,
@@ -204,7 +206,7 @@ describe('CanvasDetailView', () => {
   it('shows the empty state when its address points at no canvas', async () => {
     const { props } = makeHarness([card('c_1')], { canvasId: null })
     render(<CanvasDetailView {...props} />)
-    await screen.findByText('这张标签没有指向任何卡：回画布点一张')
+    await screen.findByText('这里没有指向任何卡：回卡板点一张')
   })
 
   it('renders the selected card in full — no summary clamp in the reader', async () => {

@@ -120,27 +120,32 @@ export interface CanvasTabInjected extends CanvasChatInjected, CanvasImageInject
    */
   openFile: (sessionId: SessionId, cwd: string | undefined, path: string) => void
   /**
-   * Open one card in its own strip row (a board body click): the row id is the
-   * card's, so clicking it twice focuses the row already showing it and two
-   * cards are two rows of one strip. `heading` is the row's live label.
+   * Open one card inside its canvas's strip row (a board body click, or the
+   * detail's ‹ › step): the row is the canvas's, so a card never adds a row.
+   * `heading` is the breadcrumb's live label.
    */
   openCardDetail: (canvasId: string, cardId: string, heading: string) => void
   /**
-   * Open one canvas's draft row (the ＋新卡 menu): one draft row per canvas, so
-   * the menu re-categorizes the draft that is already open instead of producing
-   * a second blank one.
+   * Open one canvas's draft (the ＋新卡 menu): one draft per canvas, so the
+   * menu re-categorizes the draft that is already open instead of producing a
+   * second blank one.
    */
   openCardDraft: (canvasId: string, kind: CardCategoryId, heading: string) => void
   /** Show a strip row that is already open (the strip's own gesture). */
   activateTab: (id: string) => void
   /**
-   * Take a strip row off (the × gesture). The caller gates this: a draft with
-   * words in it asks before it is dropped, which is why the verb itself is
-   * unconditional.
+   * Take a canvas row off the strip (the × gesture). The caller gates this: a
+   * row standing on a draft with words in it asks before it is dropped, which
+   * is why the verb itself is unconditional.
    */
   closeTab: (id: string) => void
-  /** Switch the open canvas (the switcher's gesture). */
+  /**
+   * Switch the open canvas (the switcher's gesture). A canvas already on the
+   * strip comes back where it was left — its board, or the card it stood on.
+   */
   openCanvas: (canvasId: string) => void
+  /** Go from a card or the draft back to its canvas's board (the breadcrumb). */
+  backToBoard: (canvasId: string) => void
   /**
    * Report the canvas this session's tab has open (the main-session tools'
    * target); called on mount and on every switch.
@@ -227,10 +232,36 @@ export interface CanvasDetailCreate {
   /** The first save; resolves true once the card is on the board. */
   onSave: (kind: CardCategoryId, text: string, draw: readonly CanvasStroke[]) => Promise<boolean>
   /**
-   * The draft's ONE exit (Esc, the same gesture the back bar fires): the
+   * The draft's ONE exit (Esc, the same gesture the crumb's ‹ fires): the
    * OWNER decides whether to ask first — it holds the draft's content.
    */
   onLeave: () => void
+  /** Re-file the draft from its category tag; omitted, the tag only reads. */
+  readonly onKind?: ((kind: CardCategoryId, label: string) => void) | undefined
+}
+
+/**
+ * The detail's breadcrumb (scheme B): the card page sits INSIDE its canvas's
+ * strip row, so the way back is here — the back icon and the canvas's name
+ * both return to the board — and so is the ‹n/m› step through the board's
+ * order. Omitted, the page draws no crumb row (a composition mounting the
+ * reader on its own).
+ */
+export interface CanvasDetailCrumbs {
+  /** The canvas's name, the breadcrumb's first stop. */
+  readonly canvasTitle: string
+  /** The row's heading: what the crumb says before the card has loaded. */
+  readonly heading: string
+  /**
+   * The board's cards under its current filter, in board order. The stepper
+   * walks this list; a card outside it (archived, or filtered away) shows no
+   * stepper at all.
+   */
+  readonly siblings: readonly string[]
+  /** Back to the board — the owner asks first when a draft would be lost. */
+  readonly onBack: () => void
+  /** Show a neighbouring card in this same row. */
+  readonly onStep: (cardId: string) => void
 }
 
 /**
@@ -249,6 +280,7 @@ export type CanvasDetailProps =
     /** The card to show; `null` is the draft (`create`) or the empty notice. */
     readonly cardId: string | null
     readonly create?: CanvasDetailCreate | undefined
+    readonly crumbs?: CanvasDetailCrumbs | undefined
     /**
      * The tab's bound image vocabulary (fresh identity whenever a read has
      * landed). Optional: a host without the attachment store renders text

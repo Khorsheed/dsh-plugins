@@ -1,14 +1,14 @@
 /**
- * The canvas switcher: the dropdown behind the ＋ at the end of the tab strip.
- * One hierarchy, no redundant headers: the active rows (open on click, archive
- * on hover), the archived well (collapsed, restore), then a bottom "+ 新画布"
- * row that unfolds the inline create form (topic input + attach multi-select +
- * create/cancel).
+ * The canvas switcher: the 「画布 ▾」 dropdown at the end of the tab strip.
+ * One hierarchy, no redundant headers: a leading "+ 新画布" row that unfolds
+ * the inline create form (topic input + attach multi-select + create/cancel),
+ * then the active rows (open on click, archive on hover) and the archived well
+ * (collapsed, restore).
  *
  * It used to hang off the canvas NAME in the topbar, which was the only way to
  * reach another canvas; the strip now carries one row per open canvas, so this
  * panel's job is putting rows ON the strip and the archive housekeeping. Its
- * trigger is a ＋ (the canvas names are on the strip, not here) and the panel
+ * trigger names what it lists — 画布 with a chevron (scheme B) — and the panel
  * opens leftwards, so it cannot hang past the strip's right edge.
  *
  * The dropdown floats above the row (absolute — its styles live in `../space/
@@ -105,15 +105,81 @@ export function CanvasSwitcher({
         type="button"
         className={css.switchTrigger}
         title={t('strip.canvases')}
+        aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => { setOpen(value => !value) }}
       >
-        <IconPlusOutlineMedium size={12} />
         {t('strip.canvases')}
+        <IconChevronDownOutlineMedium size={12} />
       </button>
 
       {open && (
         <div className={css.switcherMenu} style={{ left: 'auto', right: 0 }}>
+          {/* 新画布 leads the menu (scheme B): making a canvas is the one verb
+              the menu has besides picking one, so it sits where the eye lands. */}
+          {!readonly && (
+            creating ? (
+              <form className={css.form} onSubmit={event => { void submitCreate(event) }}>
+                <input
+                  className={css.input}
+                  autoFocus
+                  value={newTitle}
+                  placeholder={t('space.newPlaceholder')}
+                  onChange={event => { setNewTitle(event.target.value) }}
+                  onKeyDown={event => {
+                    if (event.key !== 'Escape') return
+                    event.stopPropagation()
+                    setCreating(false)
+                  }}
+                />
+                <span className={css.formLabel}>{t('space.newAttach')}</span>
+                {workspaces.length === 0 ? (
+                  <span className={css.formNote}>{t('space.noWorkspace')}</span>
+                ) : (
+                  <div className={css.attachList}>
+                    {workspaces.map(workspace => (
+                      <label key={workspace.workspaceId} className={css.attachItem} title={workspace.path}>
+                        <input
+                          type="checkbox"
+                          checked={attachPicks.has(workspace.path)}
+                          onChange={event => {
+                            setAttachPicks(current => {
+                              const next = new Set(current)
+                              if (event.target.checked) next.add(workspace.path)
+                              else next.delete(workspace.path)
+                              return next
+                            })
+                          }}
+                        />
+                        {workspace.title}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {error !== null && <span className={css.formNote}>{error}</span>}
+                <div className={css.formActions}>
+                  <button type="submit" className={css.primaryButton} disabled={busy}>{t('space.create')}</button>
+                  <button type="button" className={css.ghostButton} onClick={() => { setCreating(false) }}>
+                    {t('space.cancel')}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                type="button"
+                className={css.newCanvasRow}
+                onClick={() => {
+                  setCreating(true)
+                  setNewTitle('')
+                  setAttachPicks(new Set())
+                  setError(null)
+                }}
+              >
+                <IconPlusOutlineMedium size={12} />
+                {t('space.new')}
+              </button>
+            )
+          )}
           <div className={css.listBody}>
             {canvases === null ? (
               <div className={css.empty}>{t('state.loading')}</div>
@@ -191,69 +257,6 @@ export function CanvasSwitcher({
             )}
           </div>
 
-          {!readonly && (
-            creating ? (
-              <form className={css.form} onSubmit={event => { void submitCreate(event) }}>
-                <input
-                  className={css.input}
-                  autoFocus
-                  value={newTitle}
-                  placeholder={t('space.newPlaceholder')}
-                  onChange={event => { setNewTitle(event.target.value) }}
-                  onKeyDown={event => {
-                    if (event.key !== 'Escape') return
-                    event.stopPropagation()
-                    setCreating(false)
-                  }}
-                />
-                <span className={css.formLabel}>{t('space.newAttach')}</span>
-                {workspaces.length === 0 ? (
-                  <span className={css.formNote}>{t('space.noWorkspace')}</span>
-                ) : (
-                  <div className={css.attachList}>
-                    {workspaces.map(workspace => (
-                      <label key={workspace.workspaceId} className={css.attachItem} title={workspace.path}>
-                        <input
-                          type="checkbox"
-                          checked={attachPicks.has(workspace.path)}
-                          onChange={event => {
-                            setAttachPicks(current => {
-                              const next = new Set(current)
-                              if (event.target.checked) next.add(workspace.path)
-                              else next.delete(workspace.path)
-                              return next
-                            })
-                          }}
-                        />
-                        {workspace.title}
-                      </label>
-                    ))}
-                  </div>
-                )}
-                {error !== null && <span className={css.formNote}>{error}</span>}
-                <div className={css.formActions}>
-                  <button type="submit" className={css.primaryButton} disabled={busy}>{t('space.create')}</button>
-                  <button type="button" className={css.ghostButton} onClick={() => { setCreating(false) }}>
-                    {t('space.cancel')}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <button
-                type="button"
-                className={css.newCanvasRow}
-                onClick={() => {
-                  setCreating(true)
-                  setNewTitle('')
-                  setAttachPicks(new Set())
-                  setError(null)
-                }}
-              >
-                <IconPlusOutlineMedium size={12} />
-                {t('space.new')}
-              </button>
-            )
-          )}
         </div>
       )}
     </div>

@@ -3,7 +3,7 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'tab.label': '画布',
-  'guide.description': '灵感画布——一块卡板；点卡片在这块画布里开一张标签，展开全文',
+  'guide.description': '灵感画布——一块卡板；点卡片就地展开全文，面包屑带你回来',
 
   'meta.words': '{count} 字',
 
@@ -55,7 +55,7 @@ export const zh = {
 
 
   'board.newCard': '新卡',
-  'board.newCardPlaceholder': '写点什么…（⌘⏎ 建卡，Esc 取消）',
+  'board.newCardPlaceholder': '写点什么…',
   'board.filter.all': '全部',
   'board.empty': '空画布——从第一张卡开始',
   'board.emptyHint': '点「新卡」记下灵感、问题、共识或来源',
@@ -116,7 +116,7 @@ export const zh = {
   'link.wireDropped': '断了一条线，卡还在',
   'link.nodeEmpty': '（空卡）',
   'link.portTitle': '拖到另一张卡 = 连一条线',
-  'link.openDetail': '进详情 · 开一张标签',
+  'link.openDetail': '进详情',
 
   'card.edit': '编辑',
   'card.archive': '归档',
@@ -132,8 +132,8 @@ export const zh = {
   'card.enterDetail': '打开',
 
   'detail.unsaved': '未保存',
-  'detail.createHint': '⏎ 建卡 · Esc 关掉这张标签',
-  'detail.createHintMulti': '⌘⏎ 建卡（⏎ 已是换行）· Esc 关掉这张标签',
+  'detail.createHint': '⏎ 建卡 · Esc 回到卡板',
+  'detail.createHintMulti': '⌘⏎ 建卡（⏎ 已是换行）· Esc 回到卡板',
   'detail.nothingToRender': '先写正文，回来才看得到渲染',
 
   'draw.tools': '绘画工具',
@@ -174,7 +174,7 @@ export const zh = {
   'confirm.deleteCardBody': '卡片连同它的评论和连线一起删除，无法恢复。',
   'confirm.delete': '删除',
 
-  'detail.empty': '这张标签没有指向任何卡：回画布点一张',
+  'detail.empty': '这里没有指向任何卡：回卡板点一张',
   'detail.cardGone': '这张卡已不在板上',
   'detail.archived': '已归档',
   'detail.viewMode': '查看方式',
@@ -202,8 +202,15 @@ export const zh = {
   'detail.source': '源码',
   'detail.split': '并列',
   'strip.canvases': '画布',
-  'strip.close': '关闭这张标签',
-  'strip.none': '没有打开的标签了，点上面的「＋ 画布」挑一块或新建一块',
+  'strip.close': '关闭这块画布',
+  'strip.none': '没有打开的画布了，点上面的「画布」挑一块或新建一块',
+  'crumb.label': '所在位置',
+  'crumb.back': '回到卡板',
+  'crumb.prev': '上一张',
+  'crumb.next': '下一张',
+  'crumb.step': '第 {at} 张，共 {count} 张',
+  'crumb.newCard': '新卡片',
+  'crumb.kind': '改分类',
 
   'q.open': '待探索',
   'q.exploring': '探索中',
@@ -237,7 +244,7 @@ export const zh = {
 /** English dictionary (same key set). */
 export const en: Record<keyof typeof zh, string> = {
   'tab.label': 'Canvas',
-  'guide.description': 'The idea canvas — one board of cards; click a card to open it as a tab inside the canvas',
+  'guide.description': 'The idea canvas — one board of cards; click a card to read it in place, and the breadcrumb takes you back',
 
   'meta.words': '{count} words',
 
@@ -289,7 +296,7 @@ export const en: Record<keyof typeof zh, string> = {
 
 
   'board.newCard': 'New card',
-  'board.newCardPlaceholder': 'Write something… (⌘⏎ adds the card, Esc cancels)',
+  'board.newCardPlaceholder': 'Write something…',
   'board.filter.all': 'All',
   'board.empty': 'An empty board — start with the first card',
   'board.emptyHint': 'Use “New card” for a fragment, question, grounding, or reference',
@@ -350,7 +357,7 @@ export const en: Record<keyof typeof zh, string> = {
   'link.wireDropped': 'Line broken, both cards still here',
   'link.nodeEmpty': '(empty card)',
   'link.portTitle': 'Drag onto another card = link them',
-  'link.openDetail': 'Open detail · as a tab',
+  'link.openDetail': 'Open detail',
 
   'card.edit': 'Edit',
   'card.archive': 'Archive',
@@ -366,8 +373,8 @@ export const en: Record<keyof typeof zh, string> = {
   'card.enterDetail': 'Open',
 
   'detail.unsaved': 'Unsaved',
-  'detail.createHint': '⏎ adds the card · Esc closes this tab',
-  'detail.createHintMulti': '⌘⏎ adds the card (⏎ is a newline now) · Esc closes this tab',
+  'detail.createHint': '⏎ adds the card · Esc goes back to the board',
+  'detail.createHintMulti': '⌘⏎ adds the card (⏎ is a newline now) · Esc goes back to the board',
   'detail.nothingToRender': 'Write the text first, then the render shows it',
 
   'draw.tools': 'Drawing tools',
@@ -408,7 +415,7 @@ export const en: Record<keyof typeof zh, string> = {
   'confirm.deleteCardBody': 'The card goes with its comments and lines, and this cannot be undone.',
   'confirm.delete': 'Delete',
 
-  'detail.empty': 'This tab points at no card — click one on the board',
+  'detail.empty': 'Nothing here points at a card — click one on the board',
   'detail.cardGone': 'This card is no longer on the board',
   'detail.archived': 'Archived',
   'detail.viewMode': 'View',
@@ -436,8 +443,15 @@ export const en: Record<keyof typeof zh, string> = {
   'detail.source': 'Source',
   'detail.split': 'Split',
   'strip.canvases': 'Canvas',
-  'strip.close': 'Close this tab',
-  'strip.none': 'No tab is open — use “＋ Canvas” above',
+  'strip.close': 'Close this canvas',
+  'strip.none': 'No canvas is open — use “Canvas” above',
+  'crumb.label': 'Location',
+  'crumb.back': 'Back to the board',
+  'crumb.prev': 'Previous card',
+  'crumb.next': 'Next card',
+  'crumb.step': 'Card {at} of {count}',
+  'crumb.newCard': 'New card',
+  'crumb.kind': 'Change category',
 
   'q.open': 'Open',
   'q.exploring': 'Exploring',

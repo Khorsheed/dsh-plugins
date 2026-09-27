@@ -41,6 +41,158 @@
   align-self: flex-start;
 }
 
+/* ── Crumb row (scheme B) ───────────────────────────────────────────────
+   The host sidebar browser's `.tool`: borderless 28px squares, pale at rest,
+   filled on hover. The canvas name is set a step quieter than the card name —
+   the card is where you are, the canvas is where you go back to. */
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+  margin: -4px 0 0 -6px;
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.tool:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tool:disabled {
+  color: var(--dsw-alias-label-quaternary);
+  cursor: default;
+}
+
+.tool:focus-visible,
+.crumbCanvas:focus-visible,
+.kindTrigger:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-secondary);
+  outline-offset: 1px;
+}
+
+.crumbTrail {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding-left: 2px;
+  font: var(--dsw-font-xs-13);
+}
+
+.crumbCanvas {
+  flex: 0 1 auto;
+  max-width: 40%;
+  overflow: hidden;
+  padding: 2px 4px;
+  margin: 0 -4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.crumbCanvas:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.crumbSep {
+  flex: none;
+  color: var(--dsw-alias-label-quaternary);
+  font-weight: 300;
+}
+
+.crumbHere {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-strong-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  margin-left: 4px;
+}
+
+.stepper .tool {
+  width: 24px;
+  height: 24px;
+}
+
+.stepCount {
+  min-width: 34px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxs-12);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* The category, now the meta row's first word: a host Tag, and when the card
+   can be re-filed, the trigger of a host Menu. */
+.kindRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kindChip {
+  gap: 4px;
+}
+
+.kindTrigger {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.kindTrigger > * {
+  transition: filter 120ms ease;
+}
+
+.kindTrigger:hover > * {
+  filter: brightness(0.96);
+}
+
+.kindSuffix {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.menuIconSlot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+}
+
 .ghostFlag {
   display: inline-flex;
   align-items: center;
@@ -49,6 +201,11 @@
   color: var(--dsw-alias-state-business-primary);
   letter-spacing: 0.2px;
   align-self: flex-start;
+}
+
+/* In the draft's meta row the flag sits on the category tag's centre line. */
+.rowFlag {
+  align-self: center;
 }
 
 .archivedTag {

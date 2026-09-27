@@ -25,7 +25,7 @@
  *
  * @module @khorsheed/dsh-canvas/client
  */
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { IconEditOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { COMPOSE_SEND_TEXT, GROUP_ASK_SEND_TEXT } from '../../prompt.ts'
@@ -87,6 +87,13 @@ export interface LinkViewProps {
   readonly onLayout: (patch: LayoutPatch) => void
   /** A note for the gestures whose result has no other visible home. */
   readonly onToast: (message: string) => void
+  /**
+   * The selected line, when the caller keeps it (the tab does, so a trip to a
+   * card and back returns with the same line lit). Omitted, the view keeps
+   * its own.
+   */
+  readonly wire?: BoardLink | null | undefined
+  readonly onWire?: ((wire: BoardLink | null) => void) | undefined
 }
 
 /** A node's size before it has been measured (jsdom never measures, so: there). */
@@ -168,13 +175,18 @@ function runGesture(
 /** The link view. */
 export function LinkView({
   t, readonly, board, labels, selection, onToggleSelect, onAddSelection, onClearSelection,
-  onOpenDetail, chatAvailable, onAsk, onLayout, onToast,
+  onOpenDetail, chatAvailable, onAsk, onLayout, onToast, wire, onWire,
 }: LinkViewProps): ReactNode {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const [overlay, setOverlay] = useState<Overlay>(IDLE)
   const [box, setBox] = useState<Rect | null>(null)
   const [temp, setTemp] = useState<{ readonly x1: number; readonly y1: number; readonly x2: number; readonly y2: number } | null>(null)
-  const [wireSel, setWireSel] = useState<BoardLink | null>(null)
+  const [ownWire, setOwnWire] = useState<BoardLink | null>(null)
+  const wireSel = wire === undefined ? ownWire : wire
+  const setWireSel = useCallback((next: BoardLink | null) => {
+    setOwnWire(next)
+    onWire?.(next)
+  }, [onWire])
   const [expand, setExpand] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [draftLabel, setDraftLabel] = useState('')
@@ -452,7 +464,7 @@ export function LinkView({
 
   return (
     <div className={css.wrap}>
-      <div className={css.stage} ref={stageRef} data-readonly={readonly || undefined}>
+      <div className={css.stage} ref={stageRef} data-readonly={readonly || undefined} data-canvas-scroll="link">
         <div
           className={css.world}
           data-world
@@ -465,7 +477,8 @@ export function LinkView({
               const b = byId.get(link.to)
               if (a === undefined || b === undefined) return null
               const d = wirePathOf(a, b)
-              const on = link === wireSel
+              // A wire is its endpoints: the board re-reads into fresh objects.
+              const on = wireSel !== null && link.from === wireSel.from && link.to === wireSel.to
               return (
                 <g key={`${link.from}:${link.to}`}>
                   <path

@@ -417,6 +417,17 @@ function CategoryRow({ t, category, count, onRename, onToggle }: {
   )
 }
 
+/**
+ * The cards the board shows under one filter, in the order it shows them:
+ * the live (non-archived) cards, narrowed to one category unless the filter
+ * is 全部. The detail's ‹n/m› steps through exactly this list, so stepping
+ * past a card means the card that sat next to it on the board.
+ */
+export function shownCardsOf(board: CanvasBoard, filter: 'all' | CardCategoryId): readonly BoardCard[] {
+  const visible = board.cards.filter(card => card.status !== 'archived')
+  return filter === 'all' ? visible : visible.filter(card => card.kind === filter)
+}
+
 /** The board view. */
 export function BoardView({
   t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
@@ -447,7 +458,7 @@ export function BoardView({
   for (const card of visible) counts.set(card.kind, (counts.get(card.kind) ?? 0) + 1)
   const chips = enabledCategories(board.categories)
   const retired = board.categories.filter(category => !category.enabled)
-  const shown = filter === 'all' ? visible : visible.filter(card => card.kind === filter)
+  const shown = shownCardsOf(board, filter)
   // A move only means "somewhere else": when the whole selection already shares
   // one category, that one is the single target worth hiding. A mixed selection
   // hides nothing, because every chip is somewhere for at least one card.
@@ -499,7 +510,7 @@ export function BoardView({
 
   return (
     <section className={css.main}>
-      <div className={css.boardScroll}>
+      <div className={css.boardScroll} data-canvas-scroll="board">
         {/* One dismissal root for the chip row AND the panel it opens: the
             manage chip is the panel's trigger, so a click on it toggles. */}
         <div ref={catRef} style={{ display: 'contents' }}>

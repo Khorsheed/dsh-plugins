@@ -30,7 +30,7 @@
  *
  * @module @khorsheed/dsh-canvas/client
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react'
 import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconArchiveOutlineMedium, IconFolderOpenOutlineMedium, IconPlusOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
@@ -38,16 +38,16 @@ import type { CanvasTabProps } from '../contract.ts'
 import {
   enabledCategories, summarizeBoard,
   type BoardAskAgentRequest, type BoardCardStatus,
-  type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasStroke,
+  type BoardLink, type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasStroke,
   type CanvasSummary, type CardCategoryId,
 } from '../../types.ts'
 import { cardTitleOf } from '../../card-format.ts'
 import { COMPOSE_SEND_TEXT } from '../../prompt.ts'
 import { categoryLabelMap, categoryLabelOf, kindIconOf } from '../category-label.ts'
 import { canvasErrorText } from '../error-text.ts'
-import { BoardView, type BoardActions } from '../space/BoardView.tsx'
+import { BoardView, shownCardsOf, type BoardActions } from '../space/BoardView.tsx'
 import { LinkView, type LayoutPatch } from '../space/LinkView.tsx'
-import type { CanvasTabRow } from '../space/selection.ts'
+import { cardTabId, draftTabId } from '../space/selection.ts'
 import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { CanvasSwitcher } from './CanvasSwitcher.tsx'
 import { TabStrip, type StripTab } from './TabStrip.tsx'
@@ -75,12 +75,35 @@ function dirtyOf(draft: DraftContent | undefined): boolean {
   return draft !== undefined && (draft.text.trim().length > 0 || draft.draw.length > 0)
 }
 
+/** One canvas's board view, as it was when the user last left it. */
+interface BoardViewMemory {
+  readonly filter: 'all' | CardCategoryId
+  readonly picked: ReadonlySet<string>
+  /** Which face of the board (stage ⑥): edit, or group. */
+  readonly face: 'board' | 'link'
+  readonly showArchived: boolean
+  /** The wire picked on the 连线 face. */
+  readonly wire: BoardLink | null
+}
+
+/** A canvas nobody has looked at yet: every card, the edit face, nothing picked. */
+const FRESH_VIEW: BoardViewMemory = {
+  filter: 'all', picked: new Set(), face: 'board', showArchived: false, wire: null,
+}
+
+/** Leaving a draft that holds words: × closes the canvas row, ‹ goes back to its board. */
+interface DiscardAsk {
+  readonly rowId: string
+  readonly canvasId: string
+  readonly then: 'close' | 'back'
+}
+
 /** The canvas tab: the strip plus the row it is showing. */
 export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
     archiveCanvas, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
-    openCardDetail, openCardDraft, activateTab, closeTab, focusCanvas,
+    openCardDetail, openCardDraft, backToBoard, activateTab, closeTab, focusCanvas,
     askAgent, chatStatus, openSideChat, suggestWideMode, images, useImageRev,
     useSelection,
   } = props
@@ -96,20 +119,21 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const [canvases, setCanvases] = useState<readonly CanvasSummary[] | null>(null)
   const [openBoard, setOpenBoard] = useState<{ board: CanvasBoard; version: string } | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | CardCategoryId>('all')
-  const [selection_, setCardSelection] = useState<ReadonlySet<string>>(new Set())
+  /**
+   * Each canvas's board view, kept per canvas (scheme B): going into a card
+   * and coming back — or turning to another canvas and back — returns the
+   * filter, the picked cards, the face and the picked wire as they were.
+   */
+  const [views, setViews] = useState<Readonly<Record<string, BoardViewMemory>>>({})
   const [newCardMenu, setNewCardMenu] = useState(false)
-  const [showArchivedCards, setShowArchivedCards] = useState(false)
-  /** Which face of the board this page shows (stage ⑥): edit, or group. */
-  const [view, setView] = useState<'board' | 'link'>('board')
   const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
   /** The one banner; `undo` makes it offer 撤销 (archiving is one click to take back). */
   const [toast, setToast] = useState<{ text: string; seq: number; undo?: () => void } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
   /** Every open draft's content, by row id (turning tabs must not lose words). */
   const [drafts, setDrafts] = useState<Readonly<Record<string, DraftContent>>>({})
-  /** The discard question: the row whose × is waiting on an answer. */
-  const [discardAsk, setDiscardAsk] = useState<string | null>(null)
+  /** The discard question: the canvas whose draft is waiting on an answer, and what leaving meant. */
+  const [discardAsk, setDiscardAsk] = useState<DiscardAsk | null>(null)
   /** The delete question: the canvas or card waiting on an answer. */
   const [deleteAsk, setDeleteAsk] = useState<DeleteAsk | null>(null)
 
@@ -118,6 +142,46 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   useDismiss(newCardRef, newCardMenu, () => { setNewCardMenu(false) })
   const openIdRef = useRef(openId)
   openIdRef.current = openId
+
+  /* ----------------------------------------------------- per-canvas views */
+
+  const view_ = (openId === null ? undefined : views[openId]) ?? FRESH_VIEW
+  const { filter, picked: selection_, face: view, showArchived: showArchivedCards, wire } = view_
+  /** Change the open canvas's view memory, keeping what the patch leaves alone. */
+  const patchView = useCallback((patch: (was: BoardViewMemory) => Partial<BoardViewMemory>) => {
+    const id = openIdRef.current
+    if (id === null) return
+    setViews(all => {
+      const was = all[id] ?? FRESH_VIEW
+      return { ...all, [id]: { ...was, ...patch(was) } }
+    })
+  }, [])
+  const setFilter = useCallback((next: 'all' | CardCategoryId) => { patchView(() => ({ filter: next })) }, [patchView])
+  const setCardSelection = useCallback((
+    next: ReadonlySet<string> | ((current: ReadonlySet<string>) => ReadonlySet<string>),
+  ) => {
+    patchView(was => ({ picked: typeof next === 'function' ? next(was.picked) : next }))
+  }, [patchView])
+  const setView = useCallback((face: 'board' | 'link') => { patchView(() => ({ face })) }, [patchView])
+  const toggleShowArchived = useCallback(() => { patchView(was => ({ showArchived: !was.showArchived })) }, [patchView])
+  const setWire = useCallback((next: BoardLink | null) => { patchView(() => ({ wire: next })) }, [patchView])
+
+  /**
+   * Scroll memory, per canvas and face. Each scroller of the board marks itself
+   * `data-canvas-scroll`; the root records its offsets as they move, and the
+   * board puts them back whenever it shows again — after a card, after another
+   * canvas, or after its board finished loading.
+   */
+  const scrollsRef = useRef(new Map<string, { top: number; left: number }>())
+  const onScrollCapture = useCallback((event: UIEvent<HTMLDivElement>) => {
+    const target = event.target
+    if (!(target instanceof HTMLElement) || !target.hasAttribute('data-canvas-scroll')) return
+    if (openIdRef.current === null) return
+    scrollsRef.current.set(`${openIdRef.current}:${target.dataset.canvasScroll ?? ''}`, {
+      top: target.scrollTop, left: target.scrollLeft,
+    })
+  }, [])
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const boardRef = useRef(openBoard)
   boardRef.current = openBoard
   /** The first-run auto-open is a convenience, so it happens at most once. */
@@ -153,32 +217,50 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   /* ------------------------------------------------------------- the strip */
 
-  /** What one row reads as: a canvas's title, or the heading its subject carries. */
-  const labelOf = useCallback((row: CanvasTabRow): string => {
-    if (row.kind !== 'board') return row.heading
-    return canvases?.find(canvas => canvas.id === row.canvasId)?.title ?? '—'
-  }, [canvases])
-
+  /** Every row is a canvas now (scheme B), so every row reads as its title. */
   const stripRows = useMemo<readonly StripTab[]>(
-    () => selection.tabs.map(row => ({ id: row.id, kind: row.kind, label: labelOf(row) })),
-    [selection.tabs, labelOf],
+    () => selection.tabs.map(row => ({
+      id: row.id,
+      label: canvases?.find(canvas => canvas.id === row.canvasId)?.title ?? '—',
+    })),
+    [selection.tabs, canvases],
   )
 
+  /** Forget one canvas's draft words (they were saved, or given up). */
+  const dropDraft = useCallback((canvasId: string) => {
+    setDrafts(current => {
+      const id = draftTabId(canvasId)
+      if (!(id in current)) return current
+      const next = { ...current }
+      delete next[id]
+      return next
+    })
+  }, [])
+
+  /** Carry out a leave the user already agreed to. */
+  const leave = useCallback((ask: DiscardAsk) => {
+    dropDraft(ask.canvasId)
+    if (ask.then === 'close') closeTab(ask.rowId)
+    else backToBoard(ask.canvasId)
+  }, [dropDraft, closeTab, backToBoard])
+
   /**
-   * Take a row off the strip — asking once, and only when it is a draft that
-   * holds something. A board row's close costs one click in the ＋ menu and a
-   * card row's costs nothing, so neither is a question; an unsaved draft's
-   * costs words, which is exactly what stage ⑧ could not gate (the dock's own ×
-   * closes by tab id and offers no interception — this × is ours).
+   * Leave a canvas row's current place — its × takes the row off the strip,
+   * the crumb's ‹ goes back to its board. Either asks once, and only when the
+   * row stands on a draft that holds something: a board or a card costs one
+   * click to come back to, an unsaved draft costs words.
    */
-  const closeRow = useCallback((id: string) => {
-    const row = selection.tabs.find(candidate => candidate.id === id)
-    if (row !== undefined && row.kind === 'draft' && dirtyOf(drafts[id])) {
-      setDiscardAsk(id)
+  const leaveRow = useCallback((rowId: string, then: DiscardAsk['then']) => {
+    const row = selection.tabs.find(candidate => candidate.id === rowId)
+    if (row === undefined) return
+    const ask: DiscardAsk = { rowId, canvasId: row.canvasId, then }
+    if (row.at.kind === 'draft' && dirtyOf(drafts[draftTabId(row.canvasId)])) {
+      setDiscardAsk(ask)
       return
     }
-    closeTab(id)
-  }, [selection.tabs, drafts, closeTab])
+    leave(ask)
+  }, [selection.tabs, drafts, leave])
+  const closeRow = useCallback((rowId: string) => { leaveRow(rowId, 'close') }, [leaveRow])
 
   /** Report one keystroke of a draft, keeping the half that did not change. */
   const setDraftText = useCallback((id: string, text: string) => {
@@ -191,12 +273,12 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   /**
    * The first save. The card lands on its board and the writer goes back there
-   * with it: the row's work is done, so it comes off the strip and the board
-   * row shows what just arrived. The toast lives at the tab's root, so it
-   * survives the row it reports on.
+   * with it: the canvas row steps back to its board and shows what just
+   * arrived. The toast lives at the tab's root, so it survives the page it
+   * reports on.
    */
   const saveDraft = useCallback(async (
-    id: string, canvasId: string, kind: CardCategoryId, text: string, draw: readonly CanvasStroke[],
+    canvasId: string, kind: CardCategoryId, text: string, draw: readonly CanvasStroke[],
   ): Promise<boolean> => {
     if (sessionId === undefined) return false
     const trimmed = text.trim()
@@ -213,16 +295,11 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       showToast(canvasErrorText(t, result.value.error))
       return false
     }
-    setDrafts(current => {
-      const next = { ...current }
-      delete next[id]
-      return next
-    })
+    dropDraft(canvasId)
     showToast(t('toast.cardAdded'))
-    closeTab(id)
-    showCanvas(canvasId)
+    backToBoard(canvasId)
     return true
-  }, [sessionId, putCard, showToast, t, closeTab, showCanvas])
+  }, [sessionId, putCard, showToast, t, dropDraft, backToBoard])
 
   /* ---------------------------------------------------------------- wide mode */
 
@@ -304,20 +381,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     })()
     return () => { cancelled = true }
   }, [openId, selectionRev, readBoard, run, errorText])
-
-  /**
-   * Board-local view state belongs to ONE canvas at a time: turning to another
-   * canvas's board starts on the face you edit, with no stale filter or
-   * selection carried over. A card of the same canvas does not trip this — the
-   * derived `openId` does not move, which is what keeps a board's scroll and
-   * filters alive across an edit (stage ⑧'s one win, kept).
-   */
-  useEffect(() => {
-    setFilter('all')
-    setCardSelection(new Set())
-    setShowArchivedCards(false)
-    setView('board')
-  }, [openId])
 
   /* ------------------------------------------------------------- mutations */
 
@@ -579,6 +642,26 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   /* -------------------------------------------------------------- rendering */
 
+  const onBoard = activeRow?.at.kind === 'board'
+  const loadedId = openBoard?.board.id ?? null
+  // Put the board's scrollers back where this canvas and face left them (0 for
+  // a first visit: the scroller's DOM is shared across canvases).
+  useLayoutEffect(() => {
+    if (!onBoard || openId === null || loadedId !== openId) return
+    for (const node of rootRef.current?.querySelectorAll<HTMLElement>('[data-canvas-scroll]') ?? []) {
+      const at = scrollsRef.current.get(`${openId}:${node.dataset.canvasScroll ?? ''}`)
+      node.scrollTop = at?.top ?? 0
+      node.scrollLeft = at?.left ?? 0
+    }
+  }, [onBoard, openId, loadedId, view])
+
+  /** Open one card of the open canvas, named the same way the prompt names it. */
+  const openCard = useCallback((cardId: string) => {
+    if (openId === null) return
+    const card = boardRef.current?.board.cards.find(candidate => candidate.id === cardId)
+    openCardDetail(openId, cardId, card === undefined ? cardId : cardTitleOf(card.text))
+  }, [openId, openCardDetail])
+
   const openTitle = activeRow === undefined
     ? ''
     : (canvases?.find(canvas => canvas.id === activeRow.canvasId)?.title ?? '—')
@@ -592,7 +675,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     : summarizeBoard(openBoard.board).cardCount
 
   return (
-    <div className={css.root}>
+    <div className={css.root} ref={rootRef} onScrollCapture={onScrollCapture}>
       <TabStrip
         t={t}
         rows={stripRows}
@@ -623,25 +706,38 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             : canvases.length === 0 ? t('space.empty')
             : t('strip.none')}
         </div>
-      ) : activeRow.kind !== 'board' ? (
-        // A card, or a draft. The reader is the one stage ⑧ shipped — told
-        // which card, holding nothing of the board's — and keyed by row id:
-        // two rows of one surface must never share an editor's DOM value.
+      ) : activeRow.at.kind !== 'board' ? (
+        // A card, or the canvas's draft, inside the canvas's own row. The crumb
+        // row is the way back, and the stepper walks the board's current order
+        // (its filter, archived cards aside) without going back first. Keyed
+        // per card and per draft: two pages must never share an editor's DOM.
         <CanvasDetailView
           {...props}
-          key={activeRow.id}
+          key={activeRow.at.kind === 'card'
+            ? cardTabId(activeRow.canvasId, activeRow.at.cardId)
+            : draftTabId(activeRow.canvasId)}
           sessionId={sessionId}
           canvasId={activeRow.canvasId}
-          cardId={activeRow.kind === 'card' ? activeRow.cardId : null}
+          cardId={activeRow.at.kind === 'card' ? activeRow.at.cardId : null}
           pathImages={pathImages}
-          create={activeRow.kind === 'draft' ? {
-            kind: activeRow.catKind,
-            text: drafts[activeRow.id]?.text ?? '',
-            draw: drafts[activeRow.id]?.draw ?? [],
-            onTextChange: text => { setDraftText(activeRow.id, text) },
-            onDrawChange: draw => { setDraftDraw(activeRow.id, draw) },
-            onSave: (kind, text, draw) => saveDraft(activeRow.id, activeRow.canvasId, kind, text, draw),
-            onLeave: () => { closeRow(activeRow.id) },
+          crumbs={{
+            canvasTitle: openTitle,
+            heading: activeRow.at.heading,
+            siblings: openBoard === null || openBoard.board.id !== activeRow.canvasId
+              ? []
+              : shownCardsOf(openBoard.board, filter).map(card => card.id),
+            onBack: () => { leaveRow(activeRow.id, 'back') },
+            onStep: openCard,
+          }}
+          create={activeRow.at.kind === 'draft' ? {
+            kind: activeRow.at.catKind,
+            text: drafts[draftTabId(activeRow.canvasId)]?.text ?? '',
+            draw: drafts[draftTabId(activeRow.canvasId)]?.draw ?? [],
+            onTextChange: text => { setDraftText(draftTabId(activeRow.canvasId), text) },
+            onDrawChange: draw => { setDraftDraw(draftTabId(activeRow.canvasId), draw) },
+            onSave: (kind, text, draw) => saveDraft(activeRow.canvasId, kind, text, draw),
+            onLeave: () => { leaveRow(activeRow.id, 'back') },
+            onKind: (kind, label) => { openCardDraft(activeRow.canvasId, kind, label) },
           } : undefined}
         />
       ) : (
@@ -800,11 +896,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                   })
                 }}
                 onClearSelection={() => { setCardSelection(new Set()) }}
-                onOpenDetail={cardId => {
-                  if (openId === null) return
-                  const card = openBoard?.board.cards.find(candidate => candidate.id === cardId)
-                  openCardDetail(openId, cardId, card === undefined ? cardId : cardTitleOf(card.text))
-                }}
+                onOpenDetail={openCard}
+                wire={wire}
+                onWire={setWire}
                 chatAvailable={chatAvailable === true}
                 onAsk={(cardIds, text) => { void ask({ lens: 'ask', cardIds: [...cardIds], text }) }}
                 onLayout={layout}
@@ -827,14 +921,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                   })
                 }}
                 onClearSelection={() => { setCardSelection(new Set()) }}
-                onOpenDetail={cardId => {
-                  if (openId === null) return
-                  // The heading travels on the row, and it is the SAME rule the
-                  // prompt shows the agent — the tab and the model never
-                  // disagree on what a card is called.
-                  const card = openBoard?.board.cards.find(candidate => candidate.id === cardId)
-                  openCardDetail(openId, cardId, card === undefined ? cardId : cardTitleOf(card.text))
-                }}
+                onOpenDetail={openCard}
                 chatAvailable={chatAvailable === true}
                 onAsk={lens => { void ask({ lens, cardIds: [...selection_] }) }}
                 onCompose={() => { void ask({ lens: 'ask', cardIds: [...selection_], text: COMPOSE_SEND_TEXT }) }}
@@ -843,7 +930,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 }}
                 actions={actions}
                 showArchived={showArchivedCards}
-                onToggleArchived={() => { setShowArchivedCards(value => !value) }}
+                onToggleArchived={toggleShowArchived}
               />
             )
           ) : (
@@ -887,7 +974,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         onClose={() => { setDiscardAsk(null) }}
         title={t('confirm.discardTitle')}
         closeLabel={t('confirm.close')}
-        description={discardBodyOf(drafts[discardAsk ?? ''], t)}
+        description={discardBodyOf(discardAsk === null ? undefined : drafts[draftTabId(discardAsk.canvasId)], t)}
         footer={
           <>
             <Button size="sm" onClick={() => { setDiscardAsk(null) }}>
@@ -897,7 +984,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
               size="sm"
               variant="primary"
               onClick={() => {
-                if (discardAsk !== null) closeTab(discardAsk)
+                if (discardAsk !== null) leave(discardAsk)
                 setDiscardAsk(null)
               }}
             >
