@@ -51,7 +51,8 @@
     },
     "compat": {
       "minHost": "0.1.2-rc.1",
-      "verifiedHost": "0.1.2-rc.1"
+      "verifiedHost": "0.1.7-rc.2",
+      "notes": "就地编辑是 DOM 层过渡方案（官方 header 无标题槽位），定位按「crumbs nav 最后一段里文本等于当前 displayTitle 的叶子节点」做：0.1.5/0.1.6 的当前 crumb 是 disabled 按钮，0.1.7-alpha.1 起（上游 92101e1a5b，让标题进入窗口拖拽条）是纯文本 span.crumbCurrent，两条宿主线因此共用一套定位；标题尚未投影或官方 DOM 再次变化时按设计退回 actions 行的行内编辑器（改名始终走官方 session.rename，不受影响）。已发布的 0.2.3 及更早版本在 0.1.7-alpha.1 起的宿主上只会走退回臂。"
     }
   },
   "scripts": {

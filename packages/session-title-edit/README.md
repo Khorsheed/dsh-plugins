@@ -32,14 +32,15 @@ dsh plugin --profile web remove @khorsheed/dsh-client-session-title-edit
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）
+- npm 发布线（宿主 `0.1.7-rc.2`，下一版 `0.2.4`）：✅ 完整——改名走官方 `session.rename`；**就地覆盖在 0.1.5 与 0.1.7 两条宿主线上都可用**（同一套文本定位同时覆盖 0.1.5/0.1.6 的 disabled crumb 按钮与 0.1.7-alpha.1 起的纯文本 crumb），双线单测 + 两条宿主线实机验收通过；minHost 地板保持 `0.1.2-rc.1` 不动。
+- 已发布版本 `0.2.3` 及更早：在 0.1.7-alpha.1 起的宿主上，标题 crumb 不再是 disabled 按钮，就地覆盖会退回 actions 行内编辑器（**改名本身仍可用**，只是不再盖在标题上）；升到 `0.2.4` 即恢复。
+- 源码线（deepseek-harness master，`0.1.7-rc.2`）：✅（verifiedHost: `0.1.7-rc.2`）
 
 **版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.0`）。
 
 ## 已知限制
 
-- **原位编辑是 DOM 层过渡方案**——官方 header 没有暴露标题槽位，编辑器通过隐藏官方标题 crumb 并原位覆盖实现；官方 DOM 变化时退回 actions 行内编辑器。
+- **原位编辑是 DOM 层过渡方案**——官方 header 仍无标题槽位，编辑器通过 `data-ste-inplace` 隐藏官方标题节点、并在其测量矩形上覆盖输入框。定位按「crumbs nav 最后一段里文本等于当前标题的节点」完成，因此两条宿主线共用一套代码：0.1.5/0.1.6 的当前 crumb 是 disabled 按钮，0.1.7-alpha.1 起（上游 `92101e1a5b`，为让标题进入窗口拖拽条）改成了纯文本 `span.crumbCurrent`。标题尚未投影、或官方 DOM 再次变化时，退回 actions 行内编辑器（改名不受影响）。
 - **无乐观更新**——header 标题只在宿主投影结算重命名后刷新。
 - **字节预算归宿主所有，由客户端把关**——客户端镜像宿主的 80 字节上限；宿主提高上限后，需常量同步跟进编辑器才会放宽。
 
@@ -59,7 +60,7 @@ src/client/slots.ts     槽位声明
 
 纯浏览器侧插件：重命名走官方 `session.rename` RPC（`session.rename` → `sessions.rename` → `ctx.sessionTitle.rename`），因此无需宿主半边、无需新增 RPC、无需改动任何官方包。
 
-编辑是原位的：点击铅笔后，通过 `data-ste-inplace` 隐藏官方标题 crumb，并在其测量矩形上覆盖本插件的输入框。输入框宽度借助隐藏的、与输入框同字体的镜像 span 按草稿适配，下限为 crumb 原宽度、上限为 crumb 的 220px 上限。
+编辑是原位的：点击铅笔后，通过 `data-ste-inplace` 隐藏官方标题节点，并在其测量矩形上覆盖本插件的输入框。标题节点由「当前标题文本」定位（crumbs nav 最后一段里文本等于 `displayTitle` 的叶子节点），因此 0.1.5/0.1.6 的 disabled crumb 按钮与 0.1.7-alpha.1 起的 `span.crumbCurrent` 共用同一条路径；祖先 crumb 与官方 lineage 槽的内容都不会被误隐藏。输入框宽度借助隐藏的、与输入框同字体的镜像 span 按草稿适配，下限为标题节点原宽度、上限为官方 crumb 的 220px 上限。
 
 对模型没有任何变化：标题是仅投影的会话属性，永不进入模型上下文；重命名只是追加一条带用户来源的 `session/title` 事件——无 token 或 KV 缓存影响，投影落地后 header 标题随之刷新。另外，`@deepseek-ai/dsh-session-title` 限制接受的标题长度（`maxTitleBytes`，生产默认 80 UTF-8 字节）；编辑器镜像该上限以及宿主截断前的归一化（剥离转义/控制/方向序列、折叠空白、去首尾空白），把关恰好在宿主会截断时触发。
 
