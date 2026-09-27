@@ -2,263 +2,187 @@
 
 English | [中文](README.md)
 
-Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **32 purely additive packages**. 25 declare `dsh.bundle.patch` and self-mount their own loader row; the other 7 deliberately have no patch because they are internal composition components, not omissions. Every package uses official extension points (slots, commands, Remote services, session mirrors); none modifies an official package, replaces an official UI slot, or hacks a core service. The generated [authoritative package map](docs/packages.md) is the source of truth for package counts, self-mounting/component shape, and composition metadata.
+The community plugin monorepo for the **dsh** (DeepSeek Harness) ecosystem: **43 purely additive plugin packages, 33 of them published on npm**. Every package integrates through official extension points only — slots, commands, Remote services, session projections. No official package is modified, no official UI slot is replaced, no core service is hacked; when an optional capability is absent the plugin degrades silently instead of failing the boot. The whole set is designed for coexistence: install, uninstall, or toggle any combination without interference, and the production instance runs the full stack long-term.
 
-**Release status**: wave one — the 10 members of the [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) bundle (the first 10 rows below) — is live on npm (**0.2.0**, the 2026-09-10 wave aligned with host 0.1.2-rc.1). The local-agent family (the last 5 rows) is feature-complete (member-channel M1–M3 across all four providers) and publishes as one wave two once accepted. The datasets / lab / mission / eval packages in this repo are incubating work-in-progress and not on any release line. **Version lines**: 0.2.0 and up require a host ≥ 0.1.2-rc.1; hosts ≤ 0.1.1-rc.2 stay on the 0.1.x release line. The per-package release and host-compatibility matrix lives in [docs/release-status.md](docs/release-status.md) (regenerated after every release).
+> This page lists only **published** packages. Package counts, shapes, and profile membership follow the machine-generated [authoritative package map](docs/packages.md); per-package versions and the host-compatibility matrix follow the [release status](docs/release-status.md) (regenerated after every publish wave). The repository is also the development workspace — see [Development](#development).
 
-This README introduces the main plugins, how to load them, and exactly how to unload them. It does not duplicate the complete inventory; use the [authoritative package map](docs/packages.md) for that. The repo is also a developer workspace — see [Development](#development).
+## Profile packs: three ready-to-run experiences
 
-## What's in the box
+The default install unit is a complete profile (a pack), not a single package. Its `dependencies` decide which packages get installed and its `dsh.profile.bundles` decides which self-mounting rows get activated:
 
-Published (wave one, the dsh-web-basic members):
+| Pack | What it is | Members |
+| --- | --- | --- |
+| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | **Everyday mode**: message control, artifact preview, task status, shortcuts, and the ops guard | 10 |
+| [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | **Development**: everything in basic, plus delegation to local coding agents, live worktree state, and room multi-agent collaboration — ships the "dev mode" preset | 23 |
+| [web-eval](profiles/web-eval) (in this repo) | **Evaluation**: a factorial experiment bench — datasets, conditions, and plans reviewed in git, deterministic orchestration — ships the "eval mode" preset | 26 |
 
-| Package (npm) | Face | Row id | One-line feature |
+The first two are standalone repositories: clone, run two scripts, and the running instance hands over on the same port — see their READMEs. Single-package install is the advanced path; see [Install](#install).
+
+## Capability map
+
+Each package's full feature list, configuration, and screenshots live in its own directory README (follow the directory link). The "Ships with" column says which pack installs it by default; packages marked "standalone" are installed individually with `dsh plugin add`.
+
+### Conversation control
+
+| Package | What you get | Ships with |
+| --- | --- | --- |
+| [`message-tools`](packages/message-tools) | **In-place edit / true withdraw / restore** for user messages — the only plugin here that changes what the model sees, using the same mechanism as official compaction | basic + dev |
+| [`message-timeline`](packages/message-timeline) | A floating **message timeline** on the conversation's left edge; click to jump to any user message | basic + dev |
+| [`session-title-edit`](packages/session-title-edit) | **Inline rename** of the session title in the chat header; user-set titles are pinned against auto-generation | basic + dev |
+| [`quote`](packages/quote) | Select any text for a floating **quote action menu** (quote into the composer / side chat / copy); other plugins can register their own actions | standalone |
+
+### Files and artifacts
+
+| Package | What you get | Ships with |
+| --- | --- | --- |
+| [`file-preview`](packages/file-preview) | A read-only host-side **file-preview Remote service**: the files a session touched, current contents, per-change diffs | basic + dev |
+| [`ui-file-preview`](packages/ui-file-preview) | The session "**Artifacts**" tab, per-turn change cards, and a file-preview drawer (installs paired with the row above) | basic + dev |
+| [`local-files`](packages/local-files) | A **local file browser** in the right sidebar: lazy file tree plus structured HTML/Markdown/JSON/CSV/image previews | dev |
+| [`ui-content-preview`](packages/ui-content-preview) | (composition component) The shared **content-preview kernel** for community file surfaces, inlined at the source plane into each client bundle | inlined by its hosts |
+
+### Development collaboration
+
+| Package | What you get | Ships with |
+| --- | --- | --- |
+| [`worktrees`](packages/worktrees) | A per-session **repo/worktree badge** in the session header plus a change drawer: uncommitted/committed file trees, diffs, commit history | dev |
+| [`worktrees-tool`](packages/worktrees-tool) | (companion tool row) The worktrees **model tool**, granted per session by a preset | dev |
+
+### Local multi-agent
+
+Delegate subtasks to coding-agent CLIs installed on your machine — each with its own context, its own accounting, and cross-turn resume. Every harness runs under its own scoped home (`$DSH_HOME/local-agent/<name>`, mode 0700) and **never touches the private config and credentials in your user directory**.
+
+| Package | What you get | Ships with |
+| --- | --- | --- |
+| [`local-agent`](packages/local-agent) | The family **core**: harness registry, scoped-home provisioning, the `/<harness> login|sessions|status|logout` command family | dev |
+| [`local-agent-kimi`](packages/local-agent-kimi) | **Kimi Code** harness: `kimi -p` delegation, resume, accounting | dev |
+| [`local-agent-codex`](packages/local-agent-codex) | **Codex** harness: `codex exec` delegation, resume, accounting | dev |
+| [`local-agent-claude-code`](packages/local-agent-claude-code) | **Claude Code** harness: `claude -p` delegation, resume, accounting | dev |
+| [`local-agent-dsh`](packages/local-agent-dsh) | **dsh self-delegation** harness: use dsh itself as a local CLI | dev |
+| [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (composition component) The **headless sub-profile** patch for dsh delegation | mounted by its provider |
+| [`local-agent-tool-subagent`](packages/local-agent-tool-subagent) | (composition component) The family's shared **delegation tool row**, with a `resume` parameter | dev |
+
+### Multi-agent collaboration
+
+| Package | What you get | Ships with |
+| --- | --- | --- |
+| [`room`](packages/room) | **Room conversations**: invite several agents into one session — member roster tab, @ dispatch, task board, notification gate | dev |
+| [`room-tool`](packages/room-tool) | (companion tool row) `room_invite / room_task / room_message`, granted per session by a preset | dev |
+
+### Tasks and ambience
+
+| Package | What you get | Ships with |
+| --- | --- | --- |
+| [`taskpilot`](packages/taskpilot) | **Background-task / sub-agent pills** above the composer: live timers, stop/interrupt, and a detail drawer replaying the execution trace | basic + dev |
+| [`context-guard`](packages/context-guard) | A **one-click compact reminder** on the composer once context usage crosses your configured threshold | basic + dev |
+| [`whalesong`](packages/whalesong) | Task ambience: the whale spouts, the favicon animates, completion/blocking chimes (auto-muted under `prefers-reduced-motion`) | basic + dev |
+
+### Experience and efficiency
+
+| Package | What you get | Ships with |
+| --- | --- | --- |
+| [`ui-shortcuts`](packages/ui-shortcuts) | **Rebindable shortcuts** (pause / steer-send / new session) plus a `ctx.shortcuts` action registry any plugin can register into | basic + dev |
+| [`inline-html-render`](packages/inline-html-render) | Renders agent-authored ```` ```dsh-card ```` HTML as **sandboxed interactive cards** inline in the conversation | dev |
+| [`dsh-reader`](packages/dsh-reader) | A **link reader** tab: RSS/Atom subscriptions plus pasted article links, a card feed with a readable detail view | standalone |
+| [`mobile`](packages/mobile) | **Mobile presentation** and an iOS bridge | standalone |
+
+### Capability and infrastructure
+
+| Package | What you get | Ships with |
+| --- | --- | --- |
+| [`capability-catalog`](packages/capability-catalog) | A **capability catalog**: every skill and tool in the running instance with its registration channel, a three-column settings grid with detail modals | dev |
+| [`typesafe`](packages/typesafe) | **TypeSafe decision primitives** as a host service: typed noul/choice/score judgements with circuit breaker, cache, and decision logs | standalone |
+| [`typesafe-tool`](packages/typesafe-tool) | (companion tool row) The typesafe model tool, granted per session by a preset | standalone |
+| [`capture`](packages/capture) | A **rendered-fetch** Remote: a managed headless Chrome renders a URL and returns the serialized page with styles inlined | standalone |
+
+### Operations guard
+
+| Package | What you get | Ships with |
+| --- | --- | --- |
+| [`ankh-guard`](packages/ankh-guard) | A **safety gate for self-modification restarts**: a green-build credential bound to the git HEAD, a composition preflight, and watchdog rollback — let the AI change its own code and restart itself without taking the service down | basic + dev |
+
+### One-command family bundles
+
+If you'd rather not pick packages one by one, install a whole family in one command:
+
+| Package | Contents |
+| --- | --- |
+| [`bundle-conversation-toolbox`](packages/bundle-conversation-toolbox) | The conversation toolbox: message-tools, message-timeline, session-title-edit, quote, inline-html-render, context-guard, taskpilot |
+| [`bundle-local-agent`](packages/bundle-local-agent) | Local multi-agent: the local-agent core plus the kimi / codex / claude-code / dsh providers |
+
+## Agent preset design
+
+The packs deliver more than plugins — they ship **per-session-granted agent presets**. Three design rules:
+
+1. **Tools are granted per session.** Model tool rows never mount at the profile root: each tool surface splits into a core (global service/UI) plus a companion `-tool` package (the model tool row only), and a preset composition references the companion row by name — a session gets the tool set exactly when it runs on that preset, and every other session's tool surface stays clean. With the companion's core absent the row stays pending and never crashes the host.
+2. **UI hides itself with the grant.** Surfaces whose content binds to the session (session tabs, header badges) show or hide with the preset grant — a session that was never granted the preset never sees the entry point. Cross-session deployment surfaces get no runtime switch: whether they exist is the profile's install-layer decision. The full convention lives in [docs/plugin-visibility.md](docs/plugin-visibility.md).
+3. **Purely additive declarations.** Each preset re-bases verbatim on the official "standard mode" composition and only appends community tool rows at the end — no official row is modified.
+
+The three community presets:
+
+| Preset | What it is | Community tools granted | Delivered by |
 | --- | --- | --- | --- |
-| `@khorsheed/dsh-client-message-tools` | host + client | `message-tools` | Edit, really-withdraw and restore user messages |
-| `@khorsheed/dsh-message-timeline` | client | `message-timeline` | Floating history timeline along the chat scrollport, jump to any user message |
-| `@khorsheed/dsh-client-session-title-edit` | client | `session-title-edit` | Inline session-title editing in the chat header |
-| `@khorsheed/dsh-file-preview` | host | `file-preview` | Read-only file-preview Remote service (list + content + diffs) |
-| `@khorsheed/dsh-client-ui-file-preview` | client | `ui-file-preview` | 「产物」tab, per-turn "N files changed" card, file-preview drawer |
-| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | Background-job / subagent dock pills above the composer with stop/interrupt and a detail drawer |
-| `@khorsheed/dsh-whalesong` | client | `whalesong` | Task ambience: the whale spouts, the favicon animates, chimes on completion/blocked |
-| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | User-rebindable keyboard shortcuts: pause, steer-send, new session |
-| `@khorsheed/dsh-context-guard` | host + client | `context-guard` | One-click **compact reminder** in the composer once context occupancy crosses a configurable threshold |
-| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
+| **Dev mode** (dev) | Everything in the official standard mode, plus local delegation, live git state, and room collaboration | `subagent_kimi / subagent_codex / subagent_claude_code`, `worktrees`, `room_invite / room_task / room_message` | installs with [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) |
+| **Eval mode** (dsh-eval) | A read-only + delegation eval composition — no shell, no workflows | dataset authoring tools, eval execution tools | ships with the in-repo [profiles/web-eval](profiles/web-eval) |
+| **Writing mode** (dsh-writing) | A writing flow including the canvas agent row | `canvas/agent` | ships with the in-repo [profiles/web](profiles/web) |
 
-Pending release (wave two, the local-agent family, published together):
-
-| Package (npm) | Face | Row id | One-line feature |
-| --- | --- | --- | --- |
-| `@khorsheed/dsh-local-agent` | host + client | `local-agent` | Local coding-agent family **core**: scoped homes, login/session commands, delegation registry |
-| `@khorsheed/dsh-local-agent-kimi` | host | `local-agent-kimi` | **Kimi Code** harness: `kimi -p` delegation, resume, usage accounting |
-| `@khorsheed/dsh-local-agent-codex` | host | `local-agent-codex` | **Codex** harness: `codex exec` delegation, resume, usage accounting |
-| `@khorsheed/dsh-local-agent-claude-code` | host | `local-agent-claude-code` | **Claude Code** harness: `claude -p` delegation, resume, usage accounting |
-| `@khorsheed/dsh-local-agent-tool-subagent` | host (tool) | *(mounted by harnesses)* | Family-owned delegation tool with `resume` continuation |
-| `@khorsheed/dsh-room` | host + client | `room` | Multi-agent **group-conversation sessions** (WIP): @-member dispatch, shared blackboard, members tab |
-
-Versions are the current workspace lines; the npm registry may have newer ones. Each plugin’s feature tour and screenshots live in its own directory README — follow the package name.
+> The preset delivery mechanism moves with the host line: on the 0.1.5 line the packs install directory-style presets (`$DSH_HOME/.agent-presets/<id>/`); from 0.1.7-rc.1 presets become declarative bundle rows ([`packages/presets`](packages/presets) in this repo, to be published in the next wave). A preset that references a companion module which is not installed stays on the roster with a diagnostic and does not affect the other presets.
 
 ## Compatibility promise
 
-The plugins are designed to coexist: install, remove, or toggle any combination — they never interfere. Loader entry ids, UI seats, event and Remote namespaces are all distinct, and a plugin that cannot find an optional capability degrades silently instead of failing boot. The production deployment runs the full set, all the time.
+The whole set is designed for coexistence: row ids, UI seats, events, and namespaces never overlap. One exception to spell out: images that already carry an `ankh-guard` row (historical forks) must not add the package again — a duplicate row id fails the boot. See the [ankh-guard README](packages/ankh-guard/README.md).
 
-One exception to know: host images that already mount an `ankh-guard` row (historical forks) must not add the package again — a duplicate row id fails boot. See [the ankh-guard README](packages/ankh-guard/README.md).
+On the npm release line every package is fully functional, with one exception: ankh-guard's composition preflight gate degrades to warn-and-pass on a pure npm deployment (no harness checkout), while everything else stays complete. On the source line (deepseek-harness master) everything is complete. Per-package `minHost` ranges from 0.1.2-rc.1 to 0.1.5-rc.1 — see the [release status](docs/release-status.md) for the per-package matrix; hosts ≤ 0.1.1-rc.2 should stay on each package's 0.1.x release line.
+
+## Model-impact summary
+
+| Plugin | Model context | Tokens | KV cache |
+| --- | --- | --- | --- |
+| message-tools (edit/withdraw) | Yes — a surface replacement masks the range | Range tokens removed, small placeholders added | Prefix invalidated from the replacement point (same trade-off as official compaction) |
+| message-tools (restore) | Yes — tail replay | Replayable tokens added | Tail extension only, no rewrite |
+| local-agent delegation (sub-session) | Independent child context | Billed independently in the child, never enters the parent | Independent of the parent |
+| All other plugins | None | None | None |
 
 ## Install
 
-Prerequisite: a dsh host ≥ `0.1.2-rc.1`. The default installation unit is a complete profile: its `dependencies` select the installed packages, while `dsh.profile.bundles` selects the self-mounting bundles activated at the profile root. Choose by use case:
-
-- [`profiles/web-basic`](profiles/web-basic): everyday web use—message controls, file preview, task status, shortcuts, and operations guard.
-- [`profiles/web-dev`](profiles/web-dev): development collaboration—the basic experience plus local coding agents, worktree and room capabilities, and a development preset.
-- [`profiles/web-eval`](profiles/web-eval): evaluation work—the basic and local-agent capabilities plus datasets, mission, lab, eval, and an evaluation preset.
-
-See each profile directory's README for installation, update, and startup instructions. Installing one package is an advanced path for custom composition or debugging: the 25 self-mounting packages can be installed with `dsh plugin add`, which mounts that package's own loader row with **no hand-edited `cordis.yml`**. Restart the corresponding web instance afterwards.
-
-Each of the 7 patchless packages has an explicit composition owner. The five `*-tool` packages (`worktrees-tool`, `room-tool`, `mission-tool`, `datasets-tool`, and `eval-tool`) are **direct dependencies of the profile that installs them** (side by side with their core), and each declares the core as its own dependency (companion → core, which only makes the module resolvable); the corresponding agent preset's `agent.cordis.yml` then names their row. They never appear in `dsh.profile.bundles` and must not self-mount. `local-agent-tool-subagent` is a shared local-agent-family tool row referenced by provider patches, while `local-agent-dsh-headless` is a headless child profile provisioned by local-agent-dsh. See the [authoritative package map](docs/packages.md) for the complete relationships.
-
-Advanced-path examples:
+Prerequisite: a dsh host (per-package version requirements are in each package README's Compatibility section). **The recommended path is a profile pack** (see [Profile packs](#profile-packs-three-ready-to-run-experiences) above); single-package install is the advanced path for trimming or debugging.
 
 ```sh
-# one plugin, by npm name
+# Install one package by npm name (self-mounting packages mount their own loader row — no hand-editing of cordis.yml)
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 
-# from a tarball / a source directory
-dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.2.0.tgz
-dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline
-```
+# Install a whole family in one command (meta packages)
+dsh plugin --profile web add @khorsheed/dsh-bundle-conversation-toolbox
+dsh plugin --profile web add @khorsheed/dsh-bundle-local-agent
 
-The whole pack, family by family:
-
-```sh
-# dialog control
-dsh plugin --profile web add @khorsheed/dsh-client-message-tools
-dsh plugin --profile web add @khorsheed/dsh-message-timeline
-dsh plugin --profile web add @khorsheed/dsh-client-session-title-edit
-
-# file preview (host service + UI, install both)
-dsh plugin --profile web add @khorsheed/dsh-file-preview
-dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
-
-# local-agent family (wave two — install from source until it lands on npm)
+# Installing local-agent pieces individually: the core and each harness go in explicitly together
 dsh plugin --profile web add @khorsheed/dsh-local-agent
-dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
-dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
-dsh plugin --profile web add @khorsheed/dsh-local-agent-claude-code
-
-# task / ambience / shortcuts
-dsh plugin --profile web add @khorsheed/dsh-taskpilot
-dsh plugin --profile web add @khorsheed/dsh-whalesong
-dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
-
-# ops guard (self-hosting / self-modification scenarios)
-dsh plugin --profile web add @khorsheed/dsh-ankh-guard
+dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # or -codex / -claude-code / -dsh
 ```
+
+Restart the web instance afterwards. Composition-component packages (`*-tool`, `local-agent-dsh-headless`, `ui-content-preview`) are not mounted by `dsh plugin add` — they land through a profile's preset rows or a provider patch; see the [authoritative package map](docs/packages.md) for the full topology.
 
 ## Uninstall
-
-One command removes a plugin: the host CLI drops the dependency and reconciles its bundle row out of the profile, so every surface the plugin added disappears.
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-<name>
 ```
 
-The general rules:
+General rules:
 
-- **Uninstall is exact.** No plugin patches or replaces official files, so removal restores the previous composition precisely.
-- **User data is deliberately kept.** The local-agent family keeps each harness's scoped home (`$DSH_HOME/local-agent/<name>`) so a reinstall needs no fresh login — delete the directory to remove every trace. ankh-guard keeps its state under `stateDir` (`$DSH_HOME/state` by default): credentials, restart records, the interrupted-session snapshot. ui-shortcuts keeps your key bindings in `$DSH_HOME/settings.yaml`. Session logs are never touched by any uninstall — the audit trail of an edit/withdrawal lives in the log on purpose.
-- **Family rows travel together.** Removing a harness removes its harness row, its `/…` command family, its tool row, and its UI rows. Removing the core (`dsh-local-agent`) while harnesses remain leaves those harness rows **pending, not crashing** — re-add the core to reactivate.
-- **`enabled: false`** on a row disables a plugin without removing it — a deployment concern, not a code change.
-
-Per-plugin unload details follow in the catalog.
-
-## The plugin catalog
-
-### Dialog control
-
-#### `dsh-client-message-tools` — edit / withdraw / restore user messages
-
-The only plugin in the pack that changes what the model sees, and it uses the official compaction mechanism to do it:
-
-- **Edit** — in-place replacement: the host appends a `user/message` surface replacement whose content *is* the edited text; the model reads the edited text in place of the original, and everything that followed the original leaves the model context. Edit chains work (an edited bubble edits again), and the editor carries a real model chip.
-- **Withdraw** — a real withdrawal, not a marker: the host appends a surface replacement whose span covers the target message and every surface node after it, so the span leaves `session.surface` and never reaches the model again. Each landed withdrawal renders as an expandable 「已撤回 N 条消息」 divider; the original text is backfilled into the composer draft (never auto-sent).
-- **Restore** — a tail replay of the whole withdrawn span along its authoritative boundary (`sourceEventSeqs`): user messages verbatim, assistant replies as framed text, in original order. Tool calls/results never replay. Renders as a 「已恢复」 group.
-
-Model impact (the one significant one in the pack): an edit/withdraw removes the shadowed span's tokens from subsequent requests and invalidates the KV-cache prefix from the replacement point — the same tradeoff as official compaction.
-
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-client-message-tools`: all edit/withdraw/restore surfaces disappear; the audit trail stays in the session log by design.
-
-#### `dsh-message-timeline` — history timeline
-
-A flat floating timeline along the left edge of the chat scrollport — one row per loaded user message (steering messages included, configurable), a dimmed tick at rest, text on hover/focus, click to jump. Follows the reading position, pages older history at its top, `enabled` is the master switch. Pure read of the session snapshot: zero events, zero prompts, zero model/KV impact.
-
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-message-timeline`.
-
-#### `dsh-client-session-title-edit` — inline session-title editing
-
-A pencil control right of the title in the chat header → inline editor (Enter commits, Escape cancels, trimmed-empty disables save). Rides the official `session.rename` RPC, so a user-sourced title is **pinned** against automatic regeneration. No host half, no new RPC; titles are projection-only, so zero model impact.
-
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-client-session-title-edit`.
-
-### File preview (host + UI)
-
-#### `dsh-file-preview` — the host service
-
-A read-only Remote service: `list` folds one session's log into the files its `read`/`write`/`edit` tool calls touched (nested Code Mode dispatches included), with every change's diff; `read` serves the current content of one of those files through `ctx.fs` (images as browser URLs). Config caps `maxReadBytes` / `maxFiles`. Owns no session state, writes nothing — the log and the filesystem stay authoritative.
-
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-file-preview`. If the UI half stays installed, its surfaces degrade to empty rather than fail.
-
-#### `dsh-client-ui-file-preview` — the browser surface
-
-A 「产物」 tab in the conversation view ring (beside chat and trajectory) listing the session's files with inline preview, a change-history tab stepping through every diff, and content search; a per-turn "N files changed" card at the end of each finished turn; a content-only drawer with show-in-folder / open-in-IDE gestures (temporarily hidden on 0.1.2 hosts — `canOpenPath` moved to an RPC probe, restoration is a follow-up). Pairs with `dsh-file-preview` (declared as a peer, auto-installed); without the host row the surfaces render a degraded/empty state instead of failing boot.
-
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview`; remove both halves together unless you keep the headless service.
-
-### The local coding-agent family
-
-> **Release status: wave two.** The family is feature-complete — member-channel's M1 channel, M2 composer, and M3 member-to-member notification all landed across the four providers (claude-code and codex passed a real-CLI end-to-end probe on 2026-08-20); it lands on npm as one wave once accepted, and until then installs from this repo's source.
-
-Let dsh delegate sub-tasks to the coding-agent CLIs on your machine — Kimi Code, Codex, Claude Code — each in its own context, each with its own accounting, each continuable across rounds.
-
-**Architecture.** `dsh-local-agent` (the core) is a harness registry plus scoped-home provisioning: every harness runs under its own scoped home (`KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR` under `$DSH_HOME/local-agent/`, created 0700 because it holds credentials), so your personal config and credentials are never touched. The core registers the `/<harness> login|sessions|status|logout` command family. Each harness bundle registers one harness and mounts its delegation tool at the **profile root**, so every agent preset can delegate without per-preset variants. Every provider ships its own settings card (Settings → Plugins → 可配置插件): auth status at a glance (header dot), login/logout, and a hot-swappable resident-mode (live) toggle — YAML stays the deployment default, card overrides take effect immediately.
-
-**Delegation.** `subagent_kimi` (`kimi -p`), `subagent_codex` (`codex exec`), `subagent_claude_code` (`claude -p --output-format json`). The parent sees only the final answer or a precise error; the child has an independent context, independent tokens, independent KV cache — it never enters the parent's context. In resident (live) mode the member process stays up: output streams into the member session, cancel never kills the process, and a crash re-attaches the same session; off, every round is an independent process.
-
-**Continuation (resume).** The family tool (`dsh-local-agent-tool-subagent`) extends the official `subagent_*` schema with an optional `resume` parameter — the dsh child session id returned by the first delegation. A resumed call continues the **same** CLI conversation in the **same** dsh child session, accounting per round. The handle never travels inside the prompt: it is read from the parameter and validated against the registry per (parent, provider), so a forged handle is rejected before any CLI process starts.
-
-**Accounting & records.** Real usage and duration per delegation (`turn/start` … `turn/end`, closed on failure/cancel too; tokens bucketed per CLI's own accounting — kimi four-bucket sum, codex deduped cache hits, claude per-bucket), and `/… sessions` lists the sessions each delegation produced.
-
-**Install note — the core and the harnesses go in together.** `dsh plugin add` reconciles only *direct* dependencies into the bundles layer, so a harness's transitive dependency on the core does not activate the core row by itself:
-
-```sh
-dsh plugin --profile web add @khorsheed/dsh-local-agent
-dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # or -codex / -claude-code
-```
-
-Prerequisite: the corresponding CLI on `PATH` (the same binary you run interactively — the plugin never installs it). Then restart and log in from the provider's settings card.
-
-**Uninstall (each harness)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi` (or `-codex` / `-claude-code`): unregisters the harness, its command family, its tool row, and its settings card. The scoped home `$DSH_HOME/local-agent/<name>` is **kept on purpose** (sessions + credentials, so a reinstall needs no fresh login); delete it to remove every trace.
-
-**Uninstall (the core)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent`: unmounts the `local-agent` row; any harnesses left installed stay pending (never crash). Re-add the core to reactivate. The `$DSH_HOME/local-agent` homes root is left; delete to wipe.
-
-**`dsh-local-agent-tool-subagent`** has no bundle row of its own — it is mounted once per harness with a distinct tool name by the harness patches. Uninstalling the harnesses unmounts its rows and pnpm prunes the package as an unused dependency.
-
-### Task & subagent monitoring
-
-#### `dsh-taskpilot` — dock pills for background jobs and subagents
-
-Two capsule entries above the composer, each independently shown only when it has data:
-
-- **Background jobs** — the current session's jobs (running first, ticking every second), a stop button per running job, a row click opens the detail drawer.
-- **Subagents** — the session's **full subagent lineage** (direct children + deep descendants, same index as the title tree), duration and token readouts, an interrupt button per running subagent (deep-child interrupts are authorized to their direct parent), a row click jumps to the child session.
-- **Detail drawer** — command/type/status/times/duration plus a trajectory replayed from the session log (start, each `job_output` increment, stop, completion; collapsed by default).
-
-All data comes from official mirrors (`jobsBySession` / `subagentsByParent` — the same sources as the title-tree list); the stop/interrupt verbs register on the official `commands` extension point (`/taskpilot-stop`, `/taskpilot-interrupt`). Zero model impact.
-
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-taskpilot`.
-
-### Status ambience
-
-#### `dsh-whalesong` — the whale spouts while tasks run
-
-- **favicon waterline bubbles** — while any session runs, the tab icon becomes a whale bobbing at a waterline with three rising bubbles (SVG frames); idle keeps a static whale colored to the page palette.
-- **sidebar droplets** — three DeepSeek-blue droplets rise from the sidebar whale's blowhole (DOM overlay anchored to the official logo, with a rail-corner fallback).
-- **chimes** — completion: three rising sine glides; blocked: the same rise twice (WebAudio synthesis, no audio assets). `prefers-reduced-motion` silences both.
-
-Config (`enabled`, `volume`) hot-applies within one poll round-trip, no refresh. Read-only over the session list: zero model impact.
-
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-whalesong` restores the previous composition exactly.
-
-### Productivity
-
-#### `dsh-ui-shortcuts` — user-rebindable keyboard shortcuts
-
-Three fixed actions, your keys: **pause the running turn** (`Esc` — same as the composer Stop), **steer-send the draft** (`Ctrl/Cmd+S`), **new session** (`Ctrl/Cmd+O`). Rebind in Settings → 通用 → 快捷键; preferences persist in `$DSH_HOME/settings.yaml`. The package also exposes a `ctx.shortcuts` registry so any plugin can contribute its own actions and get the settings row, rebinding, persistence, and conflict-free dispatch for free. All actions run through public services only.
-
-> ⚠️ **Exclusive with the official shortcuts package.** This package shares the loader entry id `ui-shortcuts` with `@deepseek-ai/dsh-client-ui-shortcuts`; mounting both in one profile fails loud at boot on the duplicate id — keep exactly one. The official package was fork-grown, never published to npm, and removed from the harness when this package migrated in, so there is nothing to install and ours alone is always safe. Note the roles are reversed from what you might expect: **this package *provides* the `ctx.shortcuts` registry** that any plugin can register actions into — the official one had no contribution seam at all.
-
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts`; key bindings remain in `settings.yaml` (delete the `ui-shortcuts` section to clear them).
-
-### Ops guard
-
-#### `dsh-ankh-guard` — let the agent change its own code and restart without taking the service down
-
-For self-hosting scenarios where an AI agent edits code and restarts the service on its own. One rule at the core: **prove the code is good before you allow a restart.**
-
-- **Green-build credential gate** — after a green build + tests, record a credential bound to the current git commit (valid `maxAgeMinutes`, default 10). A restart request checks the credential exists, is fresh, and the HEAD still matches — broken builds never get a credential, so the restart is refused before it can hurt.
-- **preflight composition gate** — after the credential, before anything is stopped, deep-dry-run the exact composition in a subprocess (the whole plugin tree boots through the same engine, then disposes; the web port pinned to 0 so it never collides). A composition that cannot boot means the running instance is never stopped.
-- **watchdog, seamless restart** — a detached supervisor takes over the port when the instance exits, respawns it, runs the canary; on repeated boot failure it rolls back to the last known-good revision (healthy-boot stamp → checkpoint → credential HEAD), always leaving `guard-backup-*` recovery anchors, and stops at a crash page after four consecutive failures.
-- **The restart report reaches the model by itself** — queued as the next turn via `agent.followup`; interrupted sessions are snapshotted at SIGTERM and resumed with a "continue" followup on the next boot.
-
-Six-step protocol: `checkpoint` → modify → build+test → `record` → `verify` → restart + `canary`. The same surface is available as the `selfRestartGuard` service in-app.
-
-Compatibility note: on the npm release line the composition-preflight gate runs through a standalone `preflight-runner` (host 0.1.2-rc.1 still does not export `composeProfile`, so the runner assembles via the published `@deepseek-ai/dsh-app-boot` primitives, with a drift-tripwire test) and runs in full wherever it can resolve the dsh app layout (`--harness-root`, a durable launch spec, `DSH_HARNESS`, or the default checkout path); a pure-npm deployment without a harness checkout degrades the gate to proceed-with-notice. Every other capability (restart/supervise gating, watchdog, rollback-to-known-good) stays fully intact.
-
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-ankh-guard`: the row and its CLI/service surface go away; guard state under `stateDir` (default `$DSH_HOME/state`) is kept by design — delete it for a clean slate. If the host image already mounts the `ankh-guard` row, don't add the profile row at all (duplicate entry id → boot fail); disable the duplicate instead.
-
-## Compatibility with host lines
-
-All packages declare `minHost: 0.1.2-rc.1` and touch only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery):
-
-- npm release line: ✅ full — the single exception is `dsh-ankh-guard`, ⚠️ degraded (the composition-preflight gate runs through a standalone `preflight-runner` over the published `@deepseek-ai/dsh-app-boot` primitives; a pure-npm deployment without a harness checkout degrades the gate to proceed-with-notice, everything else intact).
-- source line (deepseek-harness master): ✅
-
-## Model impact at a glance
-
-| Plugin | Model context | Tokens | KV cache |
-| --- | --- | --- | --- |
-| message-tools (edit/withdraw) | Yes — surface replacement shadows the span | Removes the span's tokens, adds a minimal placeholder | Prefix invalidated from the replacement point (same as official compaction) |
-| message-tools (restore) | Yes — tail replay | Adds replayable tokens | Tail extension only, no rewrite |
-| local-agent delegation (child) | Independent child context | Child-side billing, never in the parent | Fully independent of the parent |
-| everything else | No | No | No |
+- **Uninstalling restores exactly.** No plugin modifies or replaces official files, so removing one returns the composition to precisely its previous state.
+- **User data is deliberately kept.** The local-agent family keeps each harness's scoped directory (`$DSH_HOME/local-agent/<name>`) so a reinstall needs no fresh login; ankh-guard keeps the state under its `stateDir` (credentials, restart records, interrupted-session snapshots); ui-shortcuts keybindings stay in `$DSH_HOME/settings.yaml`. No uninstall touches session logs — the audit trail of edits and withdrawals staying in the log is intentional.
+- **Family rows follow.** Remove the local-agent core while harnesses are still installed and the harness rows stay **pending, never crashing** — reinstalling the core restores them.
+- **`enabled: false`** disables a row without uninstalling — a deployment-layer operation, not a code change.
 
 ## Development
 
-Standalone pnpm monorepo; every package publishes as `@khorsheed/dsh-*`.
+A standalone pnpm monorepo; every package publishes as `@khorsheed/dsh-*`.
 
 ```
-packages/    one directory per publishable plugin
-build/       shared build/test presets (tsdown client bundle, vitest source-plane config)
-scripts/     repo tooling (pack-dist, gen-typert, gate checkers)
+packages/   one directory per publishable plugin
+profiles/   the packs (web-basic / web-dev / web-eval and the production web)
+build/      shared build/test presets (tsdown client bundle, vitest source-plane config)
+scripts/    repo tooling (pack-dist, gen-typert, mirror sync, gate checkers)
 ```
 
 ```sh
@@ -268,11 +192,11 @@ pnpm run test       # pnpm -r --if-present run test
 pnpm run typecheck  # pnpm -r --if-present run typecheck
 ```
 
-Tests must run through the root `pnpm test` or `pnpm --filter <pkg> test` — a bare `vitest run packages/xxx` bypasses the per-package vitest config (the source-plane alias preset) and fails with misleading resolution errors.
+Tests must run through the root `pnpm test` or `pnpm --filter <pkg> test` — bare `vitest run packages/xxx` bypasses each package's vitest config (the source-plane alias preset) and fails with misleading resolution errors.
 
-**Dev-time dependency on a harness checkout.** Two mechanisms resolve into a local deepseek-harness clone (env `DSH_HARNESS`, default `~/code/deepseek-harness`); the published npm artifacts alone cannot serve them:
+**The dev-time dependency on a harness checkout.** Two mechanisms resolve against a local deepseek-harness clone (env `DSH_HARNESS`, default `~/code/deepseek-harness`) that the published npm artifacts alone cannot satisfy:
 
-- `scripts/gen-typert.mts` regenerates the `lib/typert.*` artifacts (the ten packages with `./typert`/`./remote` exports) against the harness checkout; full builds are freshness-cached and regenerate only when inputs or outputs change (`GEN_TYPERT_FORCE=1` to force).
-- `build/vitest.ts` (the shared vitest preset) maps platform imports onto the harness's `tsconfig.base.json` paths — published packages ship no `src/` and their `/client` entries are loader-wrapped browser bundles that explode on a plain test import.
+- `scripts/gen-typert.mts` regenerates the `lib/typert.*` artifacts (for packages with `./typert`/`./remote` exports) against the harness checkout; full builds are freshness-cached and only regenerate when inputs or outputs change (`GEN_TYPERT_FORCE=1` forces).
+- `build/vitest.ts` (the shared vitest preset) maps platform imports onto the harness's `tsconfig.base.json` paths — published packages carry no `src/`, and their `/client` entry is a loader-wrapped browser bundle that explodes under a bare import.
 
-CI note: clone deepseek-harness next to this repo and point `DSH_HARNESS` at it before `pnpm test`; a stale harness checkout means the tested API surface may lag the production host. Publish via `scripts/pack-dist.ts` (`--family` rewrites scopes in peer deps) and verify the tarball before `npm publish`. Full repo conventions live in [AGENTS.md](AGENTS.md).
+CI note: clone deepseek-harness next to this repo and set `DSH_HARNESS` before `pnpm test`; a stale harness checkout means the API surface under test may lag the production host. Publishing goes through `scripts/pack-dist.ts` (`--family` rewrites peer-dependency scopes); verify the tarball before `npm publish`. The full repository discipline lives in [AGENTS.md](AGENTS.md).
