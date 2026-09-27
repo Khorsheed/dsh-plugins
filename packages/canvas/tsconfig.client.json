@@ -42,6 +42,7 @@
     "src/client/detail/DrawFigure.tsx",
     "src/client/space/BoardView.tsx",
     "src/client/space/CardTextarea.tsx",
+    "src/client/space/DraftTile.tsx",
     "src/client/space/LinkView.tsx",
     "src/client/space/layout-geometry.ts",
     "src/client/space/selection.ts",

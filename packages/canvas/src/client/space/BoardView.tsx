@@ -5,8 +5,9 @@
  *
  * v2.2 ②: the board is a READER. Every card body click — kept, ghost or
  * archived — opens the detail page, which is the only editor; the in-place
- * card textarea and the board's inline new-card draft are gone (the topbar's
- * ＋新卡 hands the draft to the detail page too). Selection stays a hover
+ * card textarea is gone. The one exception is the new card: it is drafted in
+ * place, in a dashed tile at the end of the grid (`DraftTile`), and only a
+ * drawing or a picture takes it to the detail page. Selection stays a hover
  * checkbox in the card's corner, so the two gestures never fight.
  *
  * The one editor left on the board is the comment box under a card, which
@@ -35,6 +36,7 @@ import { firstDrawingOf, withoutDrawLines } from '../../blocks.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
+import { DraftTile, type NewCardSlot } from './DraftTile.tsx'
 import { useDismiss } from '../use-dismiss.ts'
 import { MoreMenu } from '../more-menu.tsx'
 import css from './board.module.css'
@@ -87,6 +89,8 @@ export interface BoardViewProps {
   readonly actions: BoardActions
   readonly showArchived: boolean
   readonly onToggleArchived: () => void
+  /** The new-card slot at the end of the grid; absent on a read-only board. */
+  readonly newCard?: NewCardSlot | undefined
 }
 
 /** A fresh custom category id, minted where the panel adds one. */
@@ -431,7 +435,7 @@ export function shownCardsOf(board: CanvasBoard, filter: 'all' | CardCategoryId)
 /** The board view. */
 export function BoardView({
   t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
-  talkAvailable, onTalk, onWrite, onFollowUp, actions, showArchived, onToggleArchived,
+  talkAvailable, onTalk, onWrite, onFollowUp, actions, showArchived, onToggleArchived, newCard,
 }: BoardViewProps): ReactNode {
   const [catPanel, setCatPanel] = useState(false)
   /** The batch bar's 「改分类」 row is open (it replaces the action row). */
@@ -459,6 +463,9 @@ export function BoardView({
   const chips = enabledCategories(board.categories)
   const retired = board.categories.filter(category => !category.enabled)
   const shown = shownCardsOf(board, filter)
+  const draftKind: CardCategoryId = filter !== 'all' && chips.some(category => category.id === filter)
+    ? filter
+    : chips[0]?.id ?? 'fragment'
   // A move only means "somewhere else": when the whole selection already shares
   // one category, that one is the single target worth hiding. A mixed selection
   // hides nothing, because every chip is somewhere for at least one card.
@@ -684,21 +691,22 @@ export function BoardView({
           </div>
         )}
 
-        {shown.length === 0 ? (
+        {/* An empty board that can take a card says so in the ＋ tile itself,
+            the first cell of the grid; the notice is for the boards that cannot. */}
+        {shown.length === 0 && !(visible.length === 0 && newCard !== undefined) && (
           <div className={css.notice}>
             {visible.length === 0 ? (
               <>
                 <IconListPenOutlineMedium size={16} />
                 <br />
                 {t('board.empty')}
-                <br />
-                {t('board.emptyHint')}
               </>
             ) : (
               t('board.emptyFilter', { kind: filter === 'all' ? '' : labels.get(filter) ?? filter })
             )}
           </div>
-        ) : (
+        )}
+        {(shown.length > 0 || newCard !== undefined) && (
           <div className={css.grid}>
             {shown.map(card => (
               <CardItem
@@ -715,6 +723,16 @@ export function BoardView({
                 actions={actions}
               />
             ))}
+            {newCard !== undefined && chips.length > 0 && (
+              <DraftTile
+                t={t}
+                slot={newCard}
+                kinds={chips}
+                labels={labels}
+                defaultKind={draftKind}
+                empty={visible.length === 0}
+              />
+            )}
           </div>
         )}
 

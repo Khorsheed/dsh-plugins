@@ -202,6 +202,7 @@ function makeHarness(options: {
     // this tab renders. The mocks record the call; the board stays on screen.
     openCardDetail: vi.fn(),
     openCardDraft: vi.fn(),
+    backToBoard: vi.fn(),
     // The strip's own two verbs are the store's, exactly as the production face
     // wires them; the detail openings stay recorders, because these specs assert
     // what the gesture PASSES, not what the strip then renders.
@@ -556,11 +557,15 @@ describe('CanvasTab — the category catalog (stage ⑤)', () => {
     })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(screen.getByRole('button', { name: /新卡/, expanded: false }))
     fireEvent.click(await screen.findByRole('button', { name: '反方观点' }))
-    expect(mocks.openCardDraft).toHaveBeenCalledWith(CANVAS_ID, custom.id, '反方观点')
-    // The retired row never appears in the new-card menu.
+    // The pick opens the draft in place, already of that kind.
+    const kind = await screen.findByRole('combobox', { name: '新卡的分类' })
+    expect(kind).toHaveProperty('value', custom.id)
+    expect(mocks.openCardDraft).not.toHaveBeenCalled()
+    // The retired row appears neither in the menu nor in the draft's kinds.
     expect(screen.queryByRole('button', { name: '文档' })).toBeNull()
+    expect(within(kind).queryByRole('option', { name: '文档' })).toBeNull()
   })
 })
 
@@ -573,7 +578,7 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     // The heading travels with it: the host freezes a chip's title at open time.
     expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_1', '卡片 c_1')
     // Opening a tab is not a drill — the board is still here, ＋新卡 included.
-    await screen.findByRole('button', { name: /新卡/ })
+    await screen.findByRole('button', { name: /新卡/, expanded: false })
     expect(screen.queryByRole('button', { name: /返回画布/ })).toBeNull()
   })
 
@@ -629,16 +634,48 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_old', '归档掉的旧卡')
   })
 
-  it('opens the canvas\'s draft tab from the ＋新卡 menu, carrying the picked category', async () => {
+  it('opens the ＋新卡 menu\'s pick as a draft in place, and 展开 hands it to the draft tab', async () => {
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+    fireEvent.click(screen.getByRole('button', { name: /新卡/, expanded: false }))
     fireEvent.click(await screen.findByRole('button', { name: '问题' }))
+    // The draft sits on the board beside the cards, not on a page of its own.
+    const words = await screen.findByPlaceholderText(/写点什么/)
+    screen.getByText('卡片 c_1')
+    fireEvent.input(words, { target: { value: '为什么没人开口' } })
+    fireEvent.click(screen.getByRole('button', { name: '展开' }))
     expect(mocks.openCardDraft).toHaveBeenCalledWith(CANVAS_ID, 'question', '问题')
-    // The draft is a TAB of the dock: this seat never turns into an editor.
-    expect(screen.queryByPlaceholderText(/写点什么/)).toBeNull()
+    await waitFor(() => { expect(screen.queryByPlaceholderText(/写点什么/)).toBeNull() })
+  })
+
+  it('makes the ＋ tile the first cell of an empty board, carrying the invitation', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [])] })
+    render(<CanvasTab {...props} />)
+    const tile = await screen.findByText('记下一条灵感、问题、共识或来源')
+    expect(tile.closest('button')?.textContent).toContain('新卡')
+    fireEvent.click(tile)
+    await screen.findByPlaceholderText(/写点什么/)
+  })
+
+  it('files the in-place draft on ⏎ and folds the tile back to ＋', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
+    // The dashed tile at the end of the grid starts a card of the default kind.
+    fireEvent.click(screen.getAllByRole('button', { name: /新卡/ }).find(b => !b.hasAttribute('aria-expanded'))!)
+    const words = await screen.findByPlaceholderText(/写点什么/)
+    // Esc leaves words alone; it only drops an empty draft.
+    fireEvent.input(words, { target: { value: '会上其实有人想反对' } })
+    fireEvent.keyDown(words, { key: 'Escape' })
+    screen.getByPlaceholderText(/写点什么/)
+    fireEvent.keyDown(words, { key: 'Enter' })
+    await waitFor(() => {
+      expect(mocks.putCard).toHaveBeenCalledWith('s1', {
+        canvasId: CANVAS_ID, kind: 'fragment', text: '会上其实有人想反对',
+      })
+    })
+    await waitFor(() => { expect(screen.queryByPlaceholderText(/写点什么/)).toBeNull() })
   })
 })
 
@@ -691,7 +728,7 @@ describe('CanvasTab — round-4 dismissal, undo and the archived canvas', () => 
     const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    const trigger = screen.getByRole('button', { name: /新卡/ })
+    const trigger = screen.getByRole('button', { name: /新卡/, expanded: false })
     fireEvent.click(trigger)
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     fireEvent.keyDown(document, { key: 'Escape' })

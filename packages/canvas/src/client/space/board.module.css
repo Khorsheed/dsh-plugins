@@ -992,3 +992,162 @@
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
 }
+
+/* ── The new-card slot (DraftTile) ─────────────────────────────────────────
+   Dashed = not a card yet. The ＋ tile keeps a card's footprint so the grid
+   reads "the next one goes here"; the draft keeps the dash until it is filed. */
+.newTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 84px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.newTile:hover,
+.newTile:focus-visible {
+  border-color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* The first cell of an empty board: a little taller, it is the whole page. */
+.newTile[data-empty] {
+  min-height: 120px;
+}
+
+.newTileLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: var(--dsw-font-xs-strong-13);
+}
+
+.newTileHint {
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-caption);
+  text-align: center;
+}
+
+.draftTile {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 84px;
+  border: 1px dashed var(--dsw-alias-label-caption);
+  border-radius: 8px;
+  padding: 9px 12px 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.draftHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The kind picker wears the card's kind line: small, quiet, a caret. */
+.draftKind {
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 1px 2px;
+  cursor: pointer;
+}
+
+.draftKind:hover,
+.draftKind:focus-visible {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.draftExpand {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  border: none;
+  border-radius: 5px;
+  padding: 2px 5px;
+  background: transparent;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.draftExpand:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.draftWords {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: none;
+  padding: 0;
+  font: var(--dsw-font-xs-13);
+  line-height: 1.65;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  outline: none;
+  resize: none;
+  overflow: hidden;
+}
+
+.draftWords::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.draftFoot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.draftHint {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-caption);
+}
+
+.draftGhost,
+.draftAdd {
+  flex: none;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font: var(--dsw-font-xxs-12);
+  cursor: pointer;
+}
+
+.draftGhost {
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.draftGhost:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.draftAdd {
+  border: 1px solid var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-bg-base);
+  font-weight: 500;
+}
+
+.draftAdd:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

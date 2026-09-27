@@ -46,6 +46,7 @@ import { cardNameOf } from '../../card-format.ts'
 import { categoryLabelMap, categoryLabelOf, kindIconOf } from '../category-label.ts'
 import { canvasErrorText } from '../error-text.ts'
 import { BoardView, shownCardsOf, type BoardActions } from '../space/BoardView.tsx'
+import type { NewCardSlot } from '../space/DraftTile.tsx'
 import { LinkView, type LayoutPatch } from '../space/LinkView.tsx'
 import { cardTabId, draftTabId } from '../space/selection.ts'
 import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
@@ -139,6 +140,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
    */
   const [views, setViews] = useState<Readonly<Record<string, BoardViewMemory>>>({})
   const [newCardMenu, setNewCardMenu] = useState(false)
+  /** The board's in-place draft (the dashed tile turned card): which canvas, which kind. */
+  const [inlineDraft, setInlineDraft] = useState<{ canvasId: string; kind: CardCategoryId } | null>(null)
   /** The one banner; `undo` makes it offer 撤销 (archiving is one click to take back). */
   const [toast, setToast] = useState<{ text: string; seq: number; undo?: () => void } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
@@ -313,6 +316,27 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     backToBoard(canvasId)
     return true
   }, [sessionId, putCard, showToast, t, dropDraft, backToBoard])
+
+  /** The board's new-card slot, bound to the open canvas. */
+  const newCardSlot = useMemo<NewCardSlot | undefined>(() => {
+    if (openId === null) return undefined
+    return {
+      draft: inlineDraft?.canvasId === openId ? inlineDraft.kind : null,
+      onStart: kind => { setInlineDraft({ canvasId: openId, kind }) },
+      onSave: async (kind, text) => {
+        const ok = await saveDraft(openId, kind, text, {})
+        if (ok) setInlineDraft(current => (current?.canvasId === openId ? null : current))
+        return ok
+      },
+      onCancel: () => { setInlineDraft(null) },
+      onExpand: (kind, text) => {
+        setInlineDraft(null)
+        const category = openBoard?.board.categories.find(c => c.id === kind)
+        openCardDraft(openId, kind, category === undefined ? kind : categoryLabelOf(category, t))
+        if (text.trim().length > 0) setDraftText(draftTabId(openId), text)
+      },
+    }
+  }, [openId, inlineDraft, saveDraft, openBoard, openCardDraft, setDraftText, t])
 
   /* ---------------------------------------------------------------- wide mode */
 
@@ -832,10 +856,12 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                           className={css.menuRow}
                           onClick={() => {
                             setNewCardMenu(false)
-                            // The draft is a row of the strip: one draft row per
-                            // canvas, so picking another kind re-categorizes the
-                            // draft that is open instead of seating a second one.
-                            openCardDraft(openId, category.id, label)
+                            // The new card opens in place on the board, as the
+                            // dashed tile does: back to the 卡板 face, the draft
+                            // already of the picked kind.
+                            backToBoard(openId)
+                            setView('board')
+                            setInlineDraft({ canvasId: openId, kind: category.id })
                           }}
                         >
                           {KindIcon === undefined
@@ -1000,6 +1026,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 actions={actions}
                 showArchived={showArchivedCards}
                 onToggleArchived={toggleShowArchived}
+                newCard={boardReadonly ? undefined : newCardSlot}
               />
             )
           ) : (

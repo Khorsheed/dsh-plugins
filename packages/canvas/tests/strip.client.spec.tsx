@@ -404,11 +404,11 @@ describe('CanvasTab — the strip routes its rows', () => {
     // The canvas's name in the crumb is a way back too.
     fireEvent.click(within(screen.getByRole('navigation', { name: '所在位置' }))
       .getByRole('button', { name: '为什么人们不愿表达异议' }))
-    await screen.findByRole('button', { name: /新卡/ })
+    await screen.findByRole('button', { name: /新卡/, expanded: false })
     expect(store.source.getSnapshot().tabs[0]?.at).toEqual({ kind: 'board' })
     await clickCard('会上没人开口')
     backToBoard()
-    await screen.findByRole('button', { name: /新卡/ })
+    await screen.findByRole('button', { name: /新卡/, expanded: false })
   })
 
   it('steps through the board’s shown order, and hides the stepper for a lone card', async () => {
@@ -491,11 +491,15 @@ describe('CanvasTab — the strip routes its rows', () => {
 })
 
 describe('CanvasTab — the draft row', () => {
-  /** Open the ＋新卡 menu and pick one of its rows. */
-  async function pickCategory(label: string): Promise<void> {
-    await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
+  /**
+   * Open the ＋新卡 menu, pick one of its rows, and take the in-place draft to
+   * the full editor (展开) — the draft row these tests are about.
+   */
+  async function pickCategory(label: string, cardText = '卡片 c_1'): Promise<void> {
+    await screen.findByText(cardText)
+    fireEvent.click(screen.getByRole('button', { name: /新卡/, expanded: false }))
     fireEvent.click(await screen.findByRole('button', { name: label }))
+    fireEvent.click(await screen.findByRole('button', { name: '展开' }))
   }
 
   it('opens the menu’s pick inside the canvas row, and a second pick re-categorizes it', async () => {
@@ -639,9 +643,7 @@ describe('CanvasTab — the draft row', () => {
     typeInto(await screen.findByPlaceholderText(/写点什么/), '甲块的草稿')
     fireEvent.click(screen.getByRole('button', { name: '画布' }))
     fireEvent.click(await screen.findByText('第二块画布'))
-    await screen.findByText('卡片 c_9')
-    fireEvent.click(screen.getByRole('button', { name: /新卡/ }))
-    fireEvent.click(await screen.findByRole('button', { name: '共识' }))
+    await pickCategory('共识', '卡片 c_9')
     // Two canvas rows, each standing on its own draft with its own words.
     expect(store.source.getSnapshot().tabs.map(row => row.at.kind)).toEqual(['draft', 'draft'])
     expect(stripLabels()).toEqual(['为什么人们不愿表达异议', '第二块画布'])
