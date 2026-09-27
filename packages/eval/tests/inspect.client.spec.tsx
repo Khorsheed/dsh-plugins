@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { ItemDrawer, promptParts, type ItemInspectFaces } from '../src/client/Inspect.tsx'
+import { ItemDrawer, promptParts, tabFiles, type ItemInspectFaces } from '../src/client/Inspect.tsx'
 import type { EvalItemMaterialsView } from '../src/types.ts'
 
 afterEach(() => { cleanup() })
@@ -74,5 +74,13 @@ describe('judge prompt parts (T84 §四)', () => {
     expect(parts.map(p => p.kind)).toEqual(['fixed', 'criteria', 'materials', 'output'])
     expect(parts[1]?.text).toBe('## 判据（共 1 条）\n- A1')
     expect(promptParts('no headings').map(p => p.kind)).toEqual(['fixed'])
+  })
+})
+
+describe('tab file order', () => {
+  it('puts task.md first, then the item own files (markdown first) before set-level files, else stable', () => {
+    const f = (path: string, source: 'item' | 'dataset' = 'item') => ({ tab: 'task' as const, source, layer: 'visible' as const, path })
+    const files = [f('standards.yml'), f('notes.md', 'dataset'), f('extra.md'), f('task.md'), f('b.json')]
+    expect(tabFiles(files, 'task').map(x => x.path)).toEqual(['task.md', 'extra.md', 'standards.yml', 'b.json', 'notes.md'])
   })
 })

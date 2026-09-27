@@ -11,7 +11,7 @@
  * code the run uses (only the player's material is a placeholder); after a
  * run, the prompt.md each judge sample actually received.
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalDatasetFileRequest,
@@ -41,6 +41,17 @@ export interface ItemInspectFaces {
 }
 
 const TABS: readonly EvalItemMaterialTab[] = ['task', 'stages', 'rubric', 'probes', 'reference']
+
+/**
+ * One tab's files, the one a reader opens first on top: task.md on 题面,
+ * then markdown before data, the item's own before the set's.
+ */
+export function tabFiles(files: readonly EvalItemMaterialFile[], tab: EvalItemMaterialTab): EvalItemMaterialFile[] {
+  const rank = (file: EvalItemMaterialFile): number =>
+    (/(^|\/)task\.md$/.test(file.path) ? 0 : 10) + (file.path.endsWith('.md') ? 0 : 1) + (file.source === 'item' ? 0 : 2)
+  return files.filter(file => file.tab === tab).map((file, index) => ({ file, index }))
+    .sort((a, b) => rank(a.file) - rank(b.file) || a.index - b.index).map(entry => entry.file)
+}
 
 /**
  * The side sheet: a fixed right overlay over a dimmed page; Escape and the
@@ -225,6 +236,7 @@ export function ItemDrawer(props: { item: string; faces: ItemInspectFaces; onClo
     return () => { live = false }
   }, [item, faces])
   const value = view?.ok === true ? view.value : null
+  const shownFiles = useMemo(() => (value === null ? [] : tabFiles(value.files, tab)), [value, tab])
   const sub = value === null ? undefined : t('inspect.pinned', { dataset: value.dataset, commit: value.commit.slice(0, 8) })
   const counts = (key: EvalItemMaterialTab): number => key === 'rubric'
     ? (value?.rubric?.rows.length ?? 0)
@@ -263,7 +275,7 @@ export function ItemDrawer(props: { item: string; faces: ItemInspectFaces; onClo
           )}
           {tab === 'rubric'
             ? <RubricTab rubric={value.rubric} item={item} read={faces.file} t={t} />
-            : <FilesTab files={value.files.filter(file => file.tab === tab)} item={item} read={faces.file} t={t} />}
+            : <FilesTab files={shownFiles} item={item} read={faces.file} t={t} />}
           {value.notes.length > 0 && <div className={css.scaleNote}>{value.notes.join(' · ')}</div>}
         </>
       )}
