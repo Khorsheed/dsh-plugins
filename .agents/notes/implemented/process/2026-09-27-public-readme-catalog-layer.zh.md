@@ -47,9 +47,11 @@ Status: implemented
 - 根 README 的事实面收敛为:一句计数(43/33,转述自生成文档)、成员数对比表、行内容为包目录链接的类目表。其余一切可再生的内容都是链接。
 - `profiles/dev/docs/screenshots/` 新建并跟踪五张图;下一次 `sync-mirror profile dev` 会带过去。basic 素材池原样不动,仍是 npm 嵌入图的宿主。
 - 两份整合包 README 的配对记录已重录(`verify-translation-pairing --write`);根 README 这一对按设计没有 sidecar(配对 glob 只覆盖 `packages/`、`profiles/`、`.agents/`、`docs/`)。
-- ~~**本次改动之外的已知后续:**~~ **同日已解决**:两个整合包的依赖区间都已对齐到成员最新发布线(basic 按成员分别钉 `^0.3.2` / `^0.2.3` / `^0.1.x`;dev 的 local-agent 家族钉 `^0.1.0-rc.1` 以容纳预发布线)。dev 的 README 也已改成与 basic 相同的列表优先形态(可复制包名的插件列表 → 带元包详情页截图的功能展示 → preset → 折叠后置的安装指南),家族安装路径写明 `@khorsheed/dsh-bundle-local-agent`——已对官方 `dsh-experimental-agent-team-profile` 核实过同一薄元包形态(bundle 依赖把成员传递带入;每个组件行仍可单独禁用)。
+- ~~**本次改动之外的已知后续:**~~ **同日已解决**:两个整合包的依赖区间都已对齐到成员最新发布线(具体钉法次日又随合并波次移动过——file-preview `^0.4.0`、worktrees `^0.3.0`、ankh-guard `^0.4.0`——现在由 `check:profiles` 规则 7 机械看守,本文不再枚举)。dev 的 README 也已改成与 basic 相同的列表优先形态(可复制包名的插件列表 → 带元包详情页截图的功能展示 → preset → 折叠后置的安装指南),家族安装路径写明 `@khorsheed/dsh-bundle-local-agent`——已对官方 `dsh-experimental-agent-team-profile` 核实过同一薄元包形态(bundle 依赖把成员传递带入;每个组件行仍可单独禁用)。
 
 - **3080 事故,当夜闭环**:dev preset 的崩坏来自合并边界的版本错位——preset 行指向一个解析不了的模块时,行连 fiber 都拿不到(会话 resume 时报 `never started`,见宿主 agent-preset-registry 的 `auditRows`);boot preflight 看不到它,因为 preset 是按会话组合的,行级崩坏会拖垮整个 preset 而不只是该行。从 prod 退役一个包需要流程不会替你做的三步:`dsh plugin remove`(清依赖与 bundles 名册)、删掉 profile `pnpm-workspace.yaml` 里的孤儿 overrides、同步目录式 preset——然后一次前滚部署(worktrees 0.3.0 + file-preview 0.4.0 + 新打的 presets,canary PASS)。一个搭进去一轮的小教训:BSD sed 没有 `\|` 交替——静默空操作的清理比不清理更糟。
+
+- **事故的流程性收尾(2026-09-28),四层闸**:① ankh-guard 0.4.0 的 preflight 新增——回读干跑 boot 里 preset 注册表的 `broken` 诊断,任何坏 preset 直接 FAIL(preset 行挂在 standing scope 上,boot 干净从不等于 preset 可用,现在闸门知道了);② `scripts/retired-packages.ts` 成为唯一退役登记处,`check:profiles` 三条新规则在仓内组合上强制它——5b:子路径行要求基础包导出该条目(事故的精确签名)、6:退役名不得再进入任何组合、7:caret 区间必须容纳工作区版本(一上线就抓到合并波次留下的五处 pack 区间错位);③ deploy-3080 在开工前扫描生产 profile,发现退役名残留就打印清理配方,并按阶段打印耗时;④ docs/ops.md 补上「卡在中途」处置手册——含调用方预算纪律(后台任务默认 600s 超时会把它杀在全新安装中途,profile 半写;修复 = 原命令重跑)与 preset 错位的两条处置路径(前滚部署包,或把 preset 正本回滚)。
 
 ## Testing
 

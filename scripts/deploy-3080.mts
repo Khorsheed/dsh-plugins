@@ -24,6 +24,14 @@
  *   5. schedule-exit (owns the one preflight; FAIL stops before host exit)
  *   6. watchdog respawn → wait for authenticated canary PASS
  *
+ * The gates are deliberately non-incremental — a clean profile install, a
+ * full-tree composition dry-run, a gated restart with canary — so a typical
+ * run takes 10-20 minutes under multi-agent load (stage timings are printed
+ * as `[deploy-3080 +Ns]`). Give the caller a matching budget: a caller killed
+ * mid-install leaves the profile half-written (its node_modules is already
+ * replaced); re-run the same command to repair — the pidfile lock is
+ * reclaimed automatically once the holder is dead.
+ *
  * Usage:
  *   pnpm deploy:3080 --package packages/<dir> [--package packages/<dir2> ...]
  *   pnpm deploy:3080 --package packages/<dir> --no-restart   # pack+refresh only
@@ -50,6 +58,7 @@ import { join, resolve } from 'node:path'
 import { quickTunnelOrigin, rotateMobileCommand, rotateMobileProbe } from './mobile-tunnel-config.mts'
 import { checkDeploymentLinks } from './dependency-links.mts'
 import { familySpecsFor, formatFamilySpecs, loadWorkspaceVersions } from './pack-dist.ts'
+import { RETIRED_PACKAGES } from './retired-packages.ts'
 
 /** Every workspace package's own version — a family edge ranges on the target's. */
 const workspaceVersions = loadWorkspaceVersions(join(import.meta.dirname, '..', 'packages'))
@@ -235,6 +244,10 @@ if (existsSync(lockPath)) {
 writeFileSync(lockPath, String(process.pid))
 
 const startedAt = Date.now()
+/** Stage timer: the gates are non-incremental, so print each phase's cost for the operator's timeout budget. */
+const stamp = (label: string): void => {
+  process.stdout.write(`[deploy-3080 +${Math.round((Date.now() - startedAt) / 1000)}s] ${label}\n`)
+}
 try {
   const metas = packages.map((dir) => {
     const manifestPath = join(dir, 'package.json')
@@ -257,6 +270,18 @@ try {
 
   const manifestPath = join(PROFILE, 'package.json')
   const initial = JSON.parse(readFileSync(manifestPath, 'utf8'))
+
+  // Retired-package sweep: a folded companion left in the profile is the
+  // stuck-middle the 2026-09-28 incident ran into (the replacement shipped;
+  // the retired name was never cleaned out). Warn with the removal recipe
+  // before any build work — a leftover dep is harmless dead weight (a
+  // retired patch-less row mounts nothing), so this never blocks the deploy.
+  for (const retired of RETIRED_PACKAGES) {
+    const asDependency = initial.dependencies?.[retired.name] !== undefined
+    const asBundle = initial.dsh?.profile?.bundles?.includes(retired.name) === true
+    if (!asDependency && !asBundle) continue
+    process.stdout.write(`\nWARNING: retired package ${retired.name} is still ${[asDependency ? 'a direct dependency' : '', asBundle ? 'in the bundles roster' : ''].filter(Boolean).join(' and ')} of the prod profile — ${retired.note}; replacement: ${retired.replacement}.\n  Remove it: drop the dependency${asBundle ? ' and the bundles entry' : ''}, delete its overrides pin in ${join(PROFILE, 'pnpm-workspace.yaml')}, then run pnpm install in ${PROFILE}.\n`)
+  }
   const needsRegistration = metas.filter(m => {
     // A co-named family member rides the bundle's dependency tree — official
     // add would (re)register its own row on top of the bundle patch's copy.
@@ -284,6 +309,7 @@ try {
     run('pnpm', ['--filter', m.name, 'build'], { env })
     process.stdout.write(`\n=== test ${m.name} ===\n`)
     run('pnpm', ['--filter', m.name, 'test'], { env })
+    stamp(`${m.name} build+test green`)
   }
 
   // 2. pack-dist + copy to the profile tarball dir (outside the workspace).
@@ -305,6 +331,7 @@ try {
     copyFileSync(join(outDir, canonical), join(TARBALLS, m.tgzName))
     m.tgzPath = join(TARBALLS, m.tgzName)
   }
+  stamp(`packed: ${metas.map(m => `${m.name}@${m.version}`).join(', ')}`)
 
   // 3. profile manifest + family overrides + clean install.
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -378,11 +405,13 @@ try {
   }
   // Recheck links introduced by install, before recording proof or requesting a restart.
   checkDeploymentLinks(DSH_HOME, HARNESS)
+  stamp('profile refreshed, installed, verified')
 
   // 4. credential for the harness checkout HEAD.
   // This orchestrator has already observed every package build/test above;
   // use the explicit trusted seam instead of pretending the guard ran them.
   runGuard(['record', 'build', '--trust-command', '--command', 'pnpm deploy:3080 (build+test green)', '--repo', HARNESS])
+  stamp('credential recorded')
 
   if (noRestart) {
     // With no stop-capable verb there is no internal composition gate, so the

@@ -17,7 +17,7 @@
 
 | 包 | 目录 | 版本 | 形态 | 组件 | 客户端 | minHost | 出现在 profile |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.3.2 | bundle | — | web | 0.1.5-rc.1 | basic, dev, web-eval |
+| `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.4.0 | bundle | — | web | 0.1.5-rc.1 | basic, dev, web-eval |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | `packages/bundle-conversation-toolbox` | 0.1.1 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.1.1 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.4.8 | bundle | — | web | 0.1.5-rc.1 | — |

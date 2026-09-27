@@ -2,12 +2,12 @@
   "name": "dsh-profile-dev",
   "private": true,
   "dependencies": {
-    "@khorsheed/dsh-ankh-guard": "^0.3.2",
+    "@khorsheed/dsh-ankh-guard": "^0.4.0",
     "@khorsheed/dsh-capability-catalog": "^0.1.96",
     "@khorsheed/dsh-client-message-tools": "^0.3.2",
     "@khorsheed/dsh-client-session-title-edit": "^0.2.3",
     "@khorsheed/dsh-context-guard": "^0.2.3",
-    "@khorsheed/dsh-file-preview": "^0.3.2",
+    "@khorsheed/dsh-file-preview": "^0.4.0",
     "@khorsheed/dsh-inline-html-render": "^0.1.14",
     "@khorsheed/dsh-local-agent": "^0.1.0-rc.1",
     "@khorsheed/dsh-local-agent-claude-code": "^0.1.0-rc.1",
@@ -24,7 +24,7 @@
     "@khorsheed/dsh-taskpilot": "^0.3.2",
     "@khorsheed/dsh-ui-shortcuts": "^0.2.3",
     "@khorsheed/dsh-whalesong": "^0.2.3",
-    "@khorsheed/dsh-worktrees": "^0.2.1"
+    "@khorsheed/dsh-worktrees": "^0.3.0"
   },
   "dsh": {
     "profile": {

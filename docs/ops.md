@@ -85,6 +85,14 @@ pnpm deploy:check-links
    - **家族内部 bundle 的挂载声明已撤（T6, 2026-09-05）**——`@khorsheed/dsh-local-agent-dsh-headless` 这类子 profile 专属 bundle 不声明 `dsh.bundle`，reconcilePlugins 对它永不自动挂载（误装成直接依赖也只是 "plain dependency" 警告）;仍应经其父包传递安装（overrides 钉版），patch 由 provisioner 拷进子 profile 自己的 patch 层。历史背景（2026-08-23 P0）:声明还在时,直接依赖 → 自动挂载 → `code-runtime` 撞 web-app 同名行 → 全实例 boot 失败;未来新的家族内部组合包必须沿用"不声明 + provisioner/父 patch 落位"模式
    - 多人并行 install 会把官方包解析出多个 peer 变体,模块增强(SlotMap/LocaleNamespaceMap)挂到不同实例上,报 `constraint 'never'` 类错误——`pnpm dedupe` 收敛即可
 
+## 部署卡在中途 / 退役包清理(2026-09-28 事故后立)
+
+**时长预期与调用方预算。** 六道闸刻意全非增量——全新 profile 安装、整树组合干跑、按闸重启 + canary——多 agent 并发下全程 10-20 分钟是常态(16GB 机器,swap 压力会放大每一步);脚本按 `[deploy-3080 +Ns]` 打印各阶段耗时。**调用方必须给足预算**:后台任务默认 600s 超时会把它杀在中途——杀在全新安装中途 = profile 半写(node_modules 已删未装完,下一次任何重启都会踩中);杀在重启之后 = 实例其实会被 watchdog 自己拉回来,但调用方看不到 canary 结论。修复方式只有一个:原命令重跑一遍(锁在原 holder 死后自动回收)。
+
+**preset 与包的版本错位(本次事故的根因)。** preset 行挂在注册表的 standing scope 上,不在 profile 根——boot 干净 ≠ preset 可用。症状:模式选择器卡片「加载失败」、该 preset 的会话 resume 报 `<row> (<module>): never started`。preset 正本有两个载体:0.1.7 线是 `packages/presets` 的声明式 preset 行(随 `deploy:3080 --package packages/presets` 部署),目录名册 `$DSH_HOME/.agent-presets` 是 0.1.5 线与 pack install 脚本的卸出物——改 preset 时两处正本(还有 `profiles/dev/presets/dev`)要与引用的包**同波部署**。处置二选一:① 前滚——把行需要的模块/子路径所在的包 deploy 进生产;② 回滚——把 preset 正本里该行改回已安装包能提供的名字。ankh-guard 0.4.0 起 preflight 直接 FAIL 在坏 preset 上(回读注册表的 `broken` 诊断),这类错位从此过不了重启闸;不动任何东西时也可先跑 `node packages/ankh-guard/lib/cli.js preflight --profile web` 做只读诊断。
+
+**退役包。** 退役登记处在 `scripts/retired-packages.ts`(名字、替代、原因);`pnpm check:profiles` 拒绝仓内组合再引用它们;`deploy:3080` 开工前扫描生产 profile,发现退役名仍是直接依赖/bundles 条目就打印清理步骤(删 dependency + bundles 条目 + `pnpm-workspace.yaml` 的 overrides 钉,再在 profile 里 `pnpm install`)。残留本身无害(无 patch 的行什么都不挂),但要在同一发布波里清掉,别让下一个部署者替你还债。
+
 ## 变更驱动模型:流程不是审批
 
 **任何开发者都可以自己把插件送进 3080——但必须开完整条流程。** 守护者的职责是补漏、盯状态、收拾异常( watchdog 拓扑、profile 健康、凭证新鲜度),不是唯一司机。两条铁律没有例外:
