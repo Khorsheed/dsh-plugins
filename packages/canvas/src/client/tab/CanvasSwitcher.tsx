@@ -18,13 +18,14 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import {
-  useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode,
+  useCallback, useRef, useState, type FormEvent, type ReactNode,
 } from 'react'
 import { IconArchiveOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { CanvasSummary } from '../../types.ts'
 import type {} from '../locales.ts'
 import { agoOf } from '../text.ts'
+import { useDismiss } from '../use-dismiss.ts'
 import css from '../space/board.module.css'
 
 /** One workspace option the attach pickers list. */
@@ -69,18 +70,9 @@ export function CanvasSwitcher({
   const [error, setError] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
-  // Close on outside pointer down.
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (event: PointerEvent): void => {
-      const root = rootRef.current
-      if (root !== null && event.target instanceof Node && !root.contains(event.target)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => { document.removeEventListener('pointerdown', onPointerDown) }
-  }, [open])
+  // Escape and an outside pointer down both close it (the shared rule). The
+  // create form's own Escape still folds just the form: it stops there.
+  useDismiss(rootRef, open, () => { setOpen(false) })
 
   const active = canvases?.filter(canvas => canvas.archivedAt === null) ?? []
   const archivedRows = canvases?.filter(canvas => canvas.archivedAt !== null) ?? []
@@ -208,7 +200,11 @@ export function CanvasSwitcher({
                   value={newTitle}
                   placeholder={t('space.newPlaceholder')}
                   onChange={event => { setNewTitle(event.target.value) }}
-                  onKeyDown={event => { if (event.key === 'Escape') setCreating(false) }}
+                  onKeyDown={event => {
+                    if (event.key !== 'Escape') return
+                    event.stopPropagation()
+                    setCreating(false)
+                  }}
                 />
                 <span className={css.formLabel}>{t('space.newAttach')}</span>
                 {workspaces.length === 0 ? (

@@ -17,7 +17,7 @@
  *
  * @module @khorsheed/dsh-canvas/client
  */
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconEditOutlineMedium, IconLightOutlineMedium, IconLinkOutlineMedium, IconNewChatOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
@@ -34,6 +34,7 @@ import { FollowUp } from '../follow-up.tsx'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
+import { useDismiss } from '../use-dismiss.ts'
 import css from './board.module.css'
 
 /** The mutations the board can ask for (the page wires them to the Remote). */
@@ -214,7 +215,7 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
       data-selected={selected || undefined}
       onClick={onOpenDetail}
     >
-      {!proposed && !archivedWell && (
+      {!proposed && !archivedWell && !readonly && (
         <button
           type="button"
           className={css.selectBox}
@@ -270,7 +271,7 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
         </div>
       )}
 
-      {proposed ? (
+      {readonly ? null : proposed ? (
         <div className={css.ghostActions}>
           <button type="button" className={css.accept} onClick={event => { event.stopPropagation(); actions.setCardStatus(card.id, 'kept') }}>
             <IconCheckOutlineMedium size={12} />
@@ -289,39 +290,37 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
           </button>
         </div>
       ) : (
-        !readonly && (
-          <div className={css.cardActions}>
+        <div className={css.cardActions}>
+          <button
+            type="button"
+            className={css.iconButton}
+            title={t('card.enterDetail')}
+            aria-label={t('card.enterDetail')}
+            onClick={event => { event.stopPropagation(); onOpenDetail() }}
+          >
+            <IconEditOutlineMedium size={13} />
+          </button>
+          {card.kind === 'question' && card.question?.state !== 'answered' && (
             <button
               type="button"
               className={css.iconButton}
-              title={t('card.enterDetail')}
-              aria-label={t('card.enterDetail')}
-              onClick={event => { event.stopPropagation(); onOpenDetail() }}
+              title={t('card.markAnswered')}
+              aria-label={t('card.markAnswered')}
+              onClick={event => { event.stopPropagation(); actions.markAnswered(card.id) }}
             >
-              <IconEditOutlineMedium size={13} />
+              <IconCheckOutlineMedium size={13} />
             </button>
-            {card.kind === 'question' && card.question?.state !== 'answered' && (
-              <button
-                type="button"
-                className={css.iconButton}
-                title={t('card.markAnswered')}
-                aria-label={t('card.markAnswered')}
-                onClick={event => { event.stopPropagation(); actions.markAnswered(card.id) }}
-              >
-                <IconCheckOutlineMedium size={13} />
-              </button>
-            )}
-            <button
-              type="button"
-              className={css.iconButton}
-              title={t('card.archive')}
-              aria-label={t('card.archive')}
-              onClick={event => { event.stopPropagation(); actions.setCardStatus(card.id, 'archived') }}
-            >
-              <IconArchiveOutlineMedium size={13} />
-            </button>
-          </div>
-        )
+          )}
+          <button
+            type="button"
+            className={css.iconButton}
+            title={t('card.archive')}
+            aria-label={t('card.archive')}
+            onClick={event => { event.stopPropagation(); actions.setCardStatus(card.id, 'archived') }}
+          >
+            <IconArchiveOutlineMedium size={13} />
+          </button>
+        </div>
       )}
 
       {(words !== null || !archivedWell) && (
@@ -419,6 +418,17 @@ export function BoardView({
   const [newCat, setNewCat] = useState('')
   /** The retire question: the category awaiting confirmation, or none. */
   const [retireAsk, setRetireAsk] = useState<BoardCategory | null>(null)
+  const catRef = useRef<HTMLDivElement | null>(null)
+  const selBarRef = useRef<HTMLDivElement | null>(null)
+  // The panel closes like every other floating surface. A rename commits on
+  // blur, so the focused field is blurred FIRST — unmounting a focused input
+  // does not reliably fire its blur, and the rename would be lost.
+  useDismiss(catRef, catPanel && retireAsk === null, () => {
+    const focused = document.activeElement
+    if (focused instanceof HTMLElement && catRef.current?.contains(focused) === true) focused.blur()
+    setCatPanel(false)
+  })
+  useDismiss(selBarRef, refile, () => { setRefile(false) })
 
   const visible = board.cards.filter(card => card.status !== 'archived')
   const archived = board.cards.filter(card => card.status === 'archived')
@@ -480,6 +490,9 @@ export function BoardView({
   return (
     <section className={css.main}>
       <div className={css.boardScroll}>
+        {/* One dismissal root for the chip row AND the panel it opens: the
+            manage chip is the panel's trigger, so a click on it toggles. */}
+        <div ref={catRef} style={{ display: 'contents' }}>
         <div className={css.chips}>
           <button
             type="button"
@@ -587,9 +600,10 @@ export function BoardView({
             <p className={css.catTip}>{t('cat.tip')}</p>
           </div>
         )}
+        </div>
 
         {selection.size > 0 && (
-          <div className={css.selBar}>
+          <div className={css.selBar} ref={selBarRef}>
             <span className={css.selCount}>{t('board.selected', { count: String(selection.size) })}</span>
             {chatAvailable && !refile && CANVAS_LENS_IDS.map(lens => (
               <button

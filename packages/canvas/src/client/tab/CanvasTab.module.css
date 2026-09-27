@@ -194,3 +194,17 @@
   color: var(--dsw-alias-state-error-primary);
   cursor: pointer;
 }
+
+/* An archived canvas reads, never writes (round-4 fix): the banner says so and
+   carries the way back, so the state is never a mystery on a greyed board. */
+.archivedBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+}

@@ -32,7 +32,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconFolderOpenOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconFolderOpenOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasTabProps } from '../contract.ts'
 import {
@@ -52,6 +52,7 @@ import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { CanvasSwitcher } from './CanvasSwitcher.tsx'
 import { TabStrip, type StripTab } from './TabStrip.tsx'
 import { basenameOf, messageOf } from '../text.ts'
+import { useDismiss } from '../use-dismiss.ts'
 import css from './CanvasTab.module.css'
 // The dropdown panel primitive lives with the board styles (the switcher's
 // own module — a copy here was dead CSS and the M3.1 topbar bug's source).
@@ -100,7 +101,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   /** Which face of the board this page shows (stage ⑥): edit, or group. */
   const [view, setView] = useState<'board' | 'link'>('board')
   const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
-  const [toast, setToast] = useState<{ text: string; seq: number } | null>(null)
+  /** The one banner; `undo` makes it offer 撤销 (archiving is one click to take back). */
+  const [toast, setToast] = useState<{ text: string; seq: number; undo?: () => void } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
   /** Every open draft's content, by row id (turning tabs must not lose words). */
   const [drafts, setDrafts] = useState<Readonly<Record<string, DraftContent>>>({})
@@ -108,6 +110,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const [discardAsk, setDiscardAsk] = useState<string | null>(null)
 
   const toastSeqRef = useRef(0)
+  const newCardRef = useRef<HTMLSpanElement | null>(null)
+  useDismiss(newCardRef, newCardMenu, () => { setNewCardMenu(false) })
   const openIdRef = useRef(openId)
   openIdRef.current = openId
   const boardRef = useRef(openBoard)
@@ -122,9 +126,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   // The host's Toast owns its own timer and reports back here (v2.2: the
   // package's hand-rolled banner div is gone — same job, host's tokens).
-  const showToast = useCallback((text: string) => {
+  const showToast = useCallback((text: string, undo?: () => void) => {
     toastSeqRef.current += 1
-    setToast({ text, seq: toastSeqRef.current })
+    setToast({ text, seq: toastSeqRef.current, ...(undo === undefined ? {} : { undo }) })
   }, [])
 
   /** Localized copy for one shared error code. */
@@ -322,6 +326,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     call: () => Promise<RemoteResult<BoardMutationResult>>,
     toastKey: Parameters<typeof t>[0],
     toastParams?: Record<string, string>,
+    undo?: () => void,
   ): Promise<boolean> => {
     const value = await run(call)
     if (value === null) return false
@@ -333,9 +338,32 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       setOpenBoard({ board: value.board, version: value.version })
     }
     void reloadList()
-    showToast(t(toastKey, toastParams))
+    showToast(t(toastKey, toastParams), undo)
     return true
   }, [run, reloadList, showToast, errorText, t])
+
+  /** Take a batch archive back: one kept-write per card, in sequence (each
+   *  write presents the token the last one returned). */
+  const restoreCards = useCallback((canvasId: string, cardIds: readonly string[]) => {
+    if (sessionId === undefined) return
+    void (async () => {
+      let restored = 0
+      for (const cardId of cardIds) {
+        const value = await run(() => patchCard(sessionId, { canvasId, cardId, status: 'kept' as BoardCardStatus }))
+        if (value === null) return
+        if (!value.ok) {
+          showToast(errorText(value.error))
+          break
+        }
+        if (value.board.id === openIdRef.current) setOpenBoard({ board: value.board, version: value.version })
+        restored += 1
+      }
+      if (restored > 0) {
+        showToast(t('toast.cardsRestored', { count: String(restored) }))
+        void reloadList()
+      }
+    })()
+  }, [sessionId, run, patchCard, showToast, errorText, t, reloadList])
 
   /** The board gestures the view can ask for (editing lives in the card body). */
   const actions: BoardActions = {
@@ -345,7 +373,13 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       const toastKey: Parameters<typeof t>[0] = status === 'archived'
         ? (card?.status === 'proposed' ? 'toast.rejected' : 'toast.cardArchived')
         : (card?.status === 'proposed' ? 'toast.accepted' : 'toast.cardRestored')
-      void mutate(() => patchCard(sessionId, { canvasId: openId, cardId, status }), toastKey)
+      // Archiving a KEPT card offers 撤销; rejecting a proposal does not — its
+      // undo would have to un-count the rejection the stats already took.
+      const canvasId = openId
+      const undo = status === 'archived' && card?.status === 'kept'
+        ? () => { void mutate(() => patchCard(sessionId, { canvasId, cardId, status: 'kept' }), 'toast.cardRestored') }
+        : undefined
+      void mutate(() => patchCard(sessionId, { canvasId: openId, cardId, status }), toastKey, undefined, undo)
       if (status === 'archived') {
         setCardSelection(current => {
           if (!current.has(cardId)) return current
@@ -380,7 +414,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           archived += 1
         }
         if (archived > 0) {
-          showToast(t('toast.cardsArchived', { count: String(archived) }))
+          const done = ids.slice(0, archived)
+          showToast(t('toast.cardsArchived', { count: String(archived) }), () => { restoreCards(openId, done) })
           void reloadList()
         }
       })()
@@ -459,6 +494,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       () => archiveCanvas(sessionId, { canvasId: row.id, archived }),
       archived ? 'toast.canvasArchived' : 'toast.canvasRestored',
       { title: row.title },
+      archived
+        ? () => { void mutate(() => archiveCanvas(sessionId, { canvasId: row.id, archived: false }), 'toast.canvasRestored', { title: row.title }) }
+        : undefined,
     )
   }, [sessionId, archiveCanvas, mutate])
 
@@ -504,6 +542,11 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const openTitle = activeRow === undefined
     ? ''
     : (canvases?.find(canvas => canvas.id === activeRow.canvasId)?.title ?? '—')
+  // An archived canvas is read-only on this surface: its banner carries 恢复.
+  const archivedRow = openBoard !== null && openBoard.board.archivedAt !== null
+    ? summarizeBoard(openBoard.board)
+    : null
+  const boardReadonly = readonly || archivedRow !== null
   const openCount = activeRow === undefined || openBoard === null
     ? null
     : summarizeBoard(openBoard.board).cardCount
@@ -578,8 +621,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 pinned to the far end of the row, on a wide dock it lands a
                 thousand pixels from the thing it adds to, and the first question
                 a newcomer asks here is exactly this one. */}
-            {!readonly && openId !== null && (
-              <span className={css.newCardWrap}>
+            {!boardReadonly && openId !== null && (
+              <span className={css.newCardWrap} ref={newCardRef}>
                 <button
                   type="button"
                   className={css.actionButton}
@@ -652,12 +695,24 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             )}
             {readonly && <span className={css.readonlyHint}>{t('space.readonly')}</span>}
           </header>
+          {archivedRow !== null && (
+            <div className={css.archivedBanner} role="status">
+              <IconArchiveOutlineMedium size={13} />
+              <span>{t('space.archivedBanner')}</span>
+              <span className={css.spacer} />
+              {!readonly && (
+                <Button size="sm" onClick={() => { void setCanvasArchived(archivedRow, false) }}>
+                  {t('action.restore')}
+                </Button>
+              )}
+            </div>
+          )}
 
           {openBoard !== null && loadError === null ? (
             view === 'link' ? (
               <LinkView
                 t={t}
-                readonly={readonly}
+                readonly={boardReadonly}
                 board={openBoard.board}
                 labels={categoryLabelMap(openBoard.board.categories, t)}
                 selection={selection_}
@@ -690,7 +745,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             ) : (
               <BoardView
                 t={t}
-                readonly={readonly}
+                readonly={boardReadonly}
                 board={openBoard.board}
                 filter={filter}
                 onFilter={setFilter}
@@ -736,7 +791,19 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       )}
 
       {toast !== null && (
-        <Toast key={toast.seq} text={toast.text} onDone={() => { setToast(null) }} />
+        <Toast
+          key={toast.seq}
+          text={toast.text}
+          // Long enough to reach for the undo; a plain notice keeps the default.
+          {...(toast.undo === undefined ? {} : {
+            holdMs: 6000,
+            actions: [{
+              label: t('toast.undo'),
+              onClick: () => { const undo = toast.undo; setToast(null); undo?.() },
+            }],
+          })}
+          onDone={() => { setToast(null) }}
+        />
       )}
       {fatal !== null && (
         <div className={css.fatal} onClick={() => { setFatal(null) }}>{fatal}</div>

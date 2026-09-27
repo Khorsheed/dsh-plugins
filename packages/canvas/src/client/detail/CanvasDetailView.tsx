@@ -136,15 +136,17 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const workspaceRoot = useSessions(sessions =>
     sessionId === undefined ? undefined : sessions.byId[sessionId]?.cwd)
   /** The pane (root scope) can sit above no session: the reader then reads only. */
-  const readonly = sessionId === undefined
+  const noSession = sessionId === undefined
 
   const [open, setOpen] = useState<{ board: CanvasBoard; version: string } | null>(null)
+  /** An archived canvas reads only, like a session-less seat (its board says so too). */
+  const readonly = noSession || (open !== null && open.board.archivedAt !== null)
   const [loadError, setLoadError] = useState<string | null>(null)
   /** The detail's three reading modes (render / source / split). */
   const [mode, setMode] = useState<'render' | 'source' | 'split'>('render')
   /** The pen field's tool (§11.4): the pad takes the editor's place while this says so. */
   const [tool, setTool] = useState<PadTool>('text')
-  const [toast, setToast] = useState<{ text: string; seq: number } | null>(null)
+  const [toast, setToast] = useState<{ text: string; seq: number; undo?: () => void } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
   /** The chat seam's probe: null while probing, so entries never flash. */
   const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
@@ -152,9 +154,9 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
 
   // The host's Toast owns its timer and reports back (v2.2: the hand-rolled
   // banner div and its timeout constant are gone — same job, host's tokens).
-  const showToast = useCallback((text: string) => {
+  const showToast = useCallback((text: string, undo?: () => void) => {
     toastSeqRef.current += 1
-    setToast({ text, seq: toastSeqRef.current })
+    setToast({ text, seq: toastSeqRef.current, ...(undo === undefined ? {} : { undo }) })
   }, [])
 
   /** Put the pen up or down, and say which happened (the pad's only channel). */
@@ -222,6 +224,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const mutate = useCallback(async (
     call: (sessionId: SessionId) => Promise<RemoteResult<BoardMutationResult>>,
     toastKey?: Parameters<typeof t>[0],
+    undo?: () => void,
   ): Promise<void> => {
     if (sessionId === undefined) return
     const value = await run(() => call(sessionId))
@@ -233,13 +236,13 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     setOpen({ board: value.board, version: value.version })
     // Some writes announce themselves by being visible — a stroke lands on the
     // pad the moment it saves, so a toast per stroke would only be noise.
-    if (toastKey !== undefined) showToast(t(toastKey))
+    if (toastKey !== undefined) showToast(t(toastKey), undo)
   }, [sessionId, run, showToast, errorText, t])
 
   // Probe the chat seam once per mount: 问 Agent / 追问 hide when absent
   // (and a session-less pane never asks at all).
   useEffect(() => {
-    if (readonly) return
+    if (noSession) return
     let cancelled = false
     void (async () => {
       const value = await run(() => chatStatus())
@@ -247,7 +250,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       setChatAvailable(value.available)
     })()
     return () => { cancelled = true }
-  }, [readonly, chatStatus, run])
+  }, [noSession, chatStatus, run])
 
   /** Ask through the seam and activate the side-chat tab (the ask flow's tail). */
   const ask = useCallback(async (request: Omit<BoardAskAgentRequest, 'canvasId'>) => {
@@ -512,6 +515,23 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               {t('detail.compose')}
             </button>
           )}
+          {!proposed && !archived && !readonly && (
+            // A kept card is archived from here too (round-4 fix): the board's
+            // hover button was the only way, and the page you read a card on
+            // is where you decide it is done.
+            <button
+              type="button"
+              className={css.iconButton}
+              onClick={() => void mutate(sid => patchCard(sid, {
+                canvasId: open.board.id, cardId: card.id, status: 'archived',
+              }), 'toast.cardArchived', () => void mutate(sid => patchCard(sid, {
+                canvasId: open.board.id, cardId: card.id, status: 'kept',
+              }), 'toast.cardRestored'))}
+            >
+              <IconArchiveOutlineMedium size={12} />
+              {t('card.archive')}
+            </button>
+          )}
           {archived && !readonly && (
             <button
               type="button"
@@ -684,7 +704,18 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       </div>
 
       {toast !== null && (
-        <Toast key={toast.seq} text={toast.text} onDone={() => { setToast(null) }} />
+        <Toast
+          key={toast.seq}
+          text={toast.text}
+          {...(toast.undo === undefined ? {} : {
+            holdMs: 6000,
+            actions: [{
+              label: t('toast.undo'),
+              onClick: () => { const undo = toast.undo; setToast(null); undo?.() },
+            }],
+          })}
+          onDone={() => { setToast(null) }}
+        />
       )}
       {fatal !== null && (
         <div className={css.fatal} onClick={() => { setFatal(null) }}>{fatal}</div>

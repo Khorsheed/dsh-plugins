@@ -561,7 +561,7 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     await screen.findByText('卡片 c_1')
     // The card's text is never a textarea on the board.
     expect(screen.queryByDisplayValue('卡片 c_1')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '在标签里编辑' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开' }))
     expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_1', '卡片 c_1')
     expect(screen.queryByDisplayValue('卡片 c_1')).toBeNull()
   })
@@ -574,7 +574,7 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
       })])],
     })
     render(<CanvasTab {...props} />)
-    fireEvent.click(await screen.findByRole('button', { name: '在标签里编辑' }))
+    fireEvent.click(await screen.findByRole('button', { name: '打开' }))
     expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_page', '大模型心理学')
   })
 
@@ -620,5 +620,62 @@ describe('CanvasTab — wide mode and read-only', () => {
     fireEvent.click(screen.getByRole('button', { name: '画布' }))
     // Read-only: the 新画布 row is not even offered.
     expect(screen.queryByRole('button', { name: /新画布/ })).toBeNull()
+  })
+})
+
+describe('CanvasTab — round-4 dismissal, undo and the archived canvas', () => {
+  it('closes the ＋新卡 menu on Escape and on a pointer down outside it', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    const trigger = screen.getByRole('button', { name: /新卡/ })
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(trigger)
+    fireEvent.pointerDown(screen.getByText('卡片 c_1'))
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('closes the category panel and the canvas switcher the same way', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    const manage = screen.getByRole('button', { name: /管理分类/ })
+    fireEvent.click(manage)
+    expect(manage.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.pointerDown(document.body)
+    expect(manage.getAttribute('aria-expanded')).toBe('false')
+    const switcher = screen.getByRole('button', { name: '画布' })
+    fireEvent.click(switcher)
+    expect(switcher.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(switcher.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('offers 撤销 after archiving a kept card, and the undo restores it', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: '归档' }))
+    fireEvent.click(await screen.findByText('撤销'))
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenLastCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', status: 'kept' })
+    })
+  })
+
+  it('shows an archived canvas read-only under a banner that restores it', async () => {
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')], { archivedAt: NOW })] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    const banner = screen.getByRole('status')
+    expect(banner.textContent).toContain('已归档')
+    expect(screen.queryByRole('button', { name: /新卡/ })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: '选择' })).toBeNull()
+    fireEvent.click(within(banner).getByRole('button', { name: '恢复' }))
+    await waitFor(() => {
+      expect(mocks.archiveCanvas).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, archived: false })
+    })
   })
 })
