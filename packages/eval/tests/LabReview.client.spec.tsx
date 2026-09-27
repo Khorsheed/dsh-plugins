@@ -898,6 +898,80 @@ describe('the design page asks its question and edits its numbers in place (T74)
   })
 })
 
+describe('用哪些题 and 规模与花费 read the pinned dataset and past answers (T83 · phase 4)', () => {
+  const FACTS: EvalPlanReview = {
+    ...REVIEW,
+    items: {
+      items: [
+        {
+          id: 'p0-001', title: 'count files by extension', level: 'P0', stages: 2, container: true,
+          criteria: { total: 13, objective: 8, judge: 4, human: 1 }, probes: 0, fullScore: 100,
+          task: '# P0 task\n\ncount the files', taskPath: 'task.md',
+        },
+        {
+          id: 'p0-002', title: null, level: null, stages: 0, container: false,
+          criteria: null, probes: 2, fullScore: null, task: null, taskPath: null,
+        },
+      ],
+      notes: ['item p0-002 ships no rubric in its grading layer'],
+    },
+    estimate: {
+      perRep: { activeMs: 270_000, outputTokens: 28_050 },
+      samples: [
+        { runId: 'r1', condition: 'dsh-exec', task: 'p0-001', activeMs: 254_000, outputTokens: 25_100 },
+        { runId: 'r1', condition: 'codex-exec', task: 'p0-001', activeMs: 274_000, outputTokens: 31_000 },
+      ],
+    },
+  }
+
+  it('each item says what it tests, how it is judged, its full score, and opens its task text', async () => {
+    const h = makeHarness({ review: FACTS })
+    renderView(h)
+    await openPage(h, 'page.design')
+    expect(await screen.findByText('count files by extension')).toBeTruthy()
+    expect(screen.getByText('design.itemsCol.what')).toBeTruthy()
+    expect(screen.getByText('P0 · design.item.stages {"n":2} · design.item.container')).toBeTruthy()
+    const how = screen.getByTitle('design.item.kinds {"objective":8,"judge":4,"human":1}')
+    expect(how.textContent).toBe('design.item.criteria {"n":13} · design.item.human {"n":1} · design.item.noProbes')
+    // Objective criteria and no script to judge them: v5's warning.
+    expect(screen.getByText('design.item.noProbes').className).toMatch(/warnInk/)
+    expect(screen.getByText(/design\.item\.noRubric/).parentElement?.textContent).toBe('design.item.noRubric · design.item.probes {"n":2}')
+    expect(screen.getByText('100')).toBeTruthy()
+    expect(screen.getByText(/item p0-002 ships no rubric/)).toBeTruthy()
+    // Only the item with a task text offers one.
+    const open = screen.getAllByRole('button', { name: 'design.item.task' })
+    expect(open).toHaveLength(1)
+    fireEvent.click(open[0] as HTMLElement)
+    expect(await screen.findByText('count the files')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'design.item.taskClose' }))
+    expect(screen.queryByText('count the files')).toBeNull()
+  })
+
+  it('the estimate is one rep scaled by 每组次数, with the answers it came from', async () => {
+    const h = makeHarness({ review: FACTS })
+    renderView(h)
+    await openPage(h, 'page.design')
+    // reps 2: 4.5 min × 2 → 9 min; 28 050 × 2 → 56.1k.
+    expect(await screen.findByText('design.scale.approxMinutes {"m":9}')).toBeTruthy()
+    expect(screen.getByText('design.scale.approx {"value":"56.1k"}')).toBeTruthy()
+    const note = screen.getByText(/^design\.scale\.fromDetail/)
+    expect(note.textContent).toContain('design.scale.fromMany')
+    expect(note.textContent).toMatch(/dur\.ms .*"m\\*":4,\\*"s\\*":14.* \/ dur\.ms .*"s\\*":34/)
+    expect(note.textContent).toContain('25.1k / 31k')
+    expect(screen.queryByText('design.scale.none')).toBeNull()
+  })
+
+  it('no past answers is 无估算, and no items face keeps the two columns the digest can fill', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openPage(h, 'page.design')
+    expect(await screen.findAllByText('design.scale.none')).toHaveLength(2)
+    expect(screen.getByText('design.scale.noneNote')).toBeTruthy()
+    expect(screen.queryByText('design.itemsCol.what')).toBeNull()
+    expect(screen.getAllByText('p0-001').length).toBeGreaterThan(0)
+  })
+})
+
 describe('after 批准并启动, the detail waits for the run itself (I5·T39 · G11)', () => {
   afterEach(() => { vi.useRealTimers() })
 

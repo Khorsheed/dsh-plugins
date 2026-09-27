@@ -34,18 +34,19 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
   EvalExperimentDetail, EvalExperimentRow, EvalPlanCheck, EvalPlanCondition, EvalPlanNumbersResult,
-  EvalPlanQuestion, EvalPlanReview, EvalRunOutputView,
+  EvalPlanEstimate, EvalPlanItemFacts, EvalPlanItemsView, EvalPlanQuestion, EvalPlanReview, EvalRunOutputView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { ConditionsTable } from './ConditionsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
+import { MarkdownDoc } from './MarkdownDoc.tsx'
 import { RunGrid, plannedRows, type GridColumn } from './Grid.tsx'
 import {
   Chip, Detail, Field, Fold, Seg, StartedRun, Word,
   listOrDash, severityKey, severityTone, snapshotCell,
 } from './parts.tsx'
-import { factorPhrase, preferredColumn } from './vocab.ts'
+import { compactCount, durationParts, factorPhrase, preferredColumn } from './vocab.ts'
 import {
   fixLabel, readinessFix, readinessSentence, reminderConsequenceKey, splitReadiness, type ReadinessFix,
 } from './journey.ts'
@@ -352,35 +353,139 @@ const VERDICT_SOURCE: Readonly<Record<string, EvalKey>> = {
 }
 
 /**
- * 用哪些题 (T80d · P2-5): one row per item, and how it is judged.
+ * 用哪些题 (T80d · P2-5, T83 · phase 4): one row per item — v5's 题 / 考什么 /
+ * 怎么判 / 满分 / 看题面.
  *
- * The plan review carries the item ids and the verdict sources it expects —
- * nothing per item about what an item tests, its full score or a link to its
- * text. Those columns are absent rather than invented; they need a data face
- * of their own (the T80d report lists them).
+ * The per-item columns come from the review's `items` face (the pinned
+ * dataset, read host-side). Without it — a legacy plan path, or a composition
+ * with no datasets service — the table keeps the two columns the digest alone
+ * can fill, rather than inventing the rest.
  */
-function ItemsTable(props: { items: readonly string[]; expectedNs: readonly string[]; t: LabViewProps['t'] }) {
-  const { items, expectedNs, t } = props
+function ItemsTable(props: {
+  items: readonly string[]
+  expectedNs: readonly string[]
+  facts: EvalPlanItemsView | null
+  t: LabViewProps['t']
+}) {
+  const { items, expectedNs, facts, t } = props
+  const [open, setOpen] = useState<string | null>(null)
   const how = expectedNs.map(ns => (VERDICT_SOURCE[ns] === undefined ? ns : t(VERDICT_SOURCE[ns]))).join(' · ') || '—'
+  if (facts === null || facts.items.length === 0) {
+    return (
+      <div className={css.tableScroll}>
+        <table className={css.table}>
+          <thead>
+            <tr>
+              <th>{t('design.itemsCol.item')}</th>
+              <th>{t('design.itemsCol.how')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(item => (
+              <tr key={item}>
+                <td className={css.itemName}>{item}</td>
+                <td className={css.dim}>{how}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {facts !== null && facts.notes.length > 0 && <div className={css.scaleNote}>{facts.notes.join(' · ')}</div>}
+      </div>
+    )
+  }
   return (
     <div className={css.tableScroll}>
       <table className={css.table}>
         <thead>
           <tr>
             <th>{t('design.itemsCol.item')}</th>
+            <th>{t('design.itemsCol.what')}</th>
             <th>{t('design.itemsCol.how')}</th>
+            <th>{t('design.itemsCol.full')}</th>
+            <th><span className={css.srOnly}>{t('design.itemsCol.task')}</span></th>
           </tr>
         </thead>
         <tbody>
-          {items.map(item => (
-            <tr key={item}>
-              <td className={css.itemName}>{item}</td>
-              <td className={css.dim}>{how}</td>
-            </tr>
+          {facts.items.map(item => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              open={open === item.id}
+              onToggle={() => setOpen(open === item.id ? null : item.id)}
+              t={t}
+            />
           ))}
         </tbody>
       </table>
+      {facts.notes.length > 0 && <div className={css.scaleNote}>{facts.notes.join(' · ')}</div>}
     </div>
+  )
+}
+
+/** v5's sub line under an item id: level · stages · container. */
+function itemShape(item: EvalPlanItemFacts, t: LabViewProps['t']): string {
+  return [
+    item.level,
+    item.stages > 0 ? t('design.item.stages', { n: item.stages }) : null,
+    item.container ? t('design.item.container') : null,
+  ].filter((part): part is string => part !== null).join(' · ')
+}
+
+/**
+ * One item's 怎么判: how many criteria, how many of them are a person's, and
+ * whether a check script will run. «没有检查脚本» is the warning v5 raises —
+ * but only when there are objective criteria that a script would have judged.
+ */
+function ItemHow(props: { item: EvalPlanItemFacts; t: LabViewProps['t'] }) {
+  const { item, t } = props
+  const criteria = item.criteria
+  const probesWarn = item.probes === 0 && (criteria === null || criteria.objective > 0)
+  const breakdown = criteria === null
+    ? undefined
+    : t('design.item.kinds', { objective: criteria.objective, judge: criteria.judge, human: criteria.human })
+  return (
+    <span title={breakdown}>
+      {criteria === null
+        ? <span className={css.dim}>{t('design.item.noRubric')}</span>
+        : t('design.item.criteria', { n: criteria.total })}
+      {criteria !== null && criteria.human > 0 && <>{' · '}{t('design.item.human', { n: criteria.human })}</>}
+      {' · '}
+      {item.probes > 0
+        ? t('design.item.probes', { n: item.probes })
+        : <span className={probesWarn ? css.warnInk : css.dim}>{t('design.item.noProbes')}</span>}
+    </span>
+  )
+}
+
+function ItemRow(props: { item: EvalPlanItemFacts; open: boolean; onToggle: () => void; t: LabViewProps['t'] }) {
+  const { item, open, onToggle, t } = props
+  const shape = itemShape(item, t)
+  return (
+    <>
+      <tr>
+        <td>
+          <span className={css.itemName}>{item.id}</span>
+          {shape !== '' && <span className={css.itemSub}>{shape}</span>}
+        </td>
+        <td>{item.title ?? <span className={css.dim}>—</span>}</td>
+        <td><ItemHow item={item} t={t} /></td>
+        <td className={css.num}>{item.fullScore ?? <span className={css.dim}>—</span>}</td>
+        <td className={css.rowAction}>
+          {item.task !== null && (
+            <Button variant="ghost" size="sm" className={css.smButton} aria-expanded={open} onClick={onToggle}>
+              {open ? t('design.item.taskClose') : t('design.item.task')}
+            </Button>
+          )}
+        </td>
+      </tr>
+      {open && item.task !== null && (
+        <tr>
+          <td colSpan={5} className={css.taskCell}>
+            <MarkdownDoc text={item.task} {...(item.taskPath === null ? {} : { banner: item.taskPath })} t={t} />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -561,11 +666,13 @@ function labelOf(field: EvalPlanNumbersResult['changes'][number]['field']): Eval
 function ScaleSection(props: {
   row: EvalExperimentRow
   numbers: PlanNumbersNow | null
+  /** The review's estimate; null (or absent) is «无估算». */
+  estimate: EvalPlanEstimate | null
   frozen: boolean
   onSetNumbers: (numbers: PlanNumbersDraft) => Promise<PlanNumbersAnswer>
   t: LabViewProps['t']
 }) {
-  const { row, numbers, frozen, onSetNumbers, t } = props
+  const { row, numbers, estimate, frozen, onSetNumbers, t } = props
   const [repsBusy, setRepsBusy] = useState(false)
   const [repsNote, setRepsNote] = useState<{ kind: 'receipt' | 'failure'; text: string } | null>(null)
   // A STARTED experiment knows how many cells it really has; the product is
@@ -607,10 +714,10 @@ function ScaleSection(props: {
         <div className={repsNote.kind === 'failure' ? css.warning : css.dim} role="status">{repsNote.text}</div>
       )}
       {/* v5 · plan: one row, label over value — 每组次数 (a 1 / 3 / 5 seg while
-          the plan is editable), then the three numbers. Only the first is known
-          before a run: time and tokens need comparable runs to estimate from,
-          so they say 无估算 rather than a guess (T83 · the estimate face is
-          phase 4). */}
+          the plan is editable), then the three numbers. Time and tokens are
+          the same groups' past answers to the same items, scaled by 每组次数
+          here so they follow the seg; with no such history they say 无估算
+          rather than a guess (T83 · phase 4). */}
       <div className={css.bigNums}>
         {repsEditable && (
           <div className={css.bigNum}>
@@ -625,12 +732,56 @@ function ScaleSection(props: {
           </div>
         )}
         <div className={css.bigNum}><span>{t('design.scale.answers')}</span><b>{cells}</b></div>
-        <div className={css.bigNum}><span>{t('design.scale.duration')}</span><b data-none="">{t('design.scale.none')}</b></div>
-        <div className={css.bigNum}><span>{t('design.scale.tokens')}</span><b data-none="">{t('design.scale.none')}</b></div>
+        <div className={css.bigNum}>
+          <span>{t('design.scale.duration')}</span>
+          {estimate?.perRep.activeMs == null
+            ? <b data-none="">{t('design.scale.none')}</b>
+            : <b>{approxDuration(estimate.perRep.activeMs * (reps ?? row.reps), t)}</b>}
+        </div>
+        <div className={css.bigNum}>
+          <span>{t('design.scale.tokens')}</span>
+          {estimate?.perRep.outputTokens == null
+            ? <b data-none="">{t('design.scale.none')}</b>
+            : <b>{t('design.scale.approx', { value: compactCount(Math.round(estimate.perRep.outputTokens * (reps ?? row.reps))) })}</b>}
+        </div>
       </div>
-      <div className={css.scaleNote}>{t('design.scale.noneNote')}</div>
+      <div className={css.scaleNote}>{estimate == null ? t('design.scale.noneNote') : estimateSource(estimate, t)}</div>
     </Block>
   )
+}
+
+/** 「≈ 10 分钟」: whole minutes under an hour, the two-unit phrase past it. */
+function approxDuration(ms: number, t: LabViewProps['t']): string {
+  const minutes = Math.max(1, Math.round(ms / 60_000))
+  if (minutes < 60) return t('design.scale.approxMinutes', { m: minutes })
+  const parts = durationParts(minutes * 60_000)
+  return t('design.scale.approx', { value: parts === null ? String(minutes) : t(parts.key, parts.params) })
+}
+
+/** How many past answers are listed one by one before the line only counts them. */
+const SAMPLES_LISTED = 4
+
+/**
+ * v5's footnote: 「估算来自这两个对比组过去在 P0 上的 2 次作答（4 分 14 秒 /
+ * 4 分 34 秒，25.1k / 31.0k）」 — which groups, which items, how many answers,
+ * and the answers themselves while there are few enough to read.
+ */
+function estimateSource(estimate: EvalPlanEstimate, t: LabViewProps['t']): string {
+  const groups = new Set(estimate.samples.map(sample => sample.condition)).size
+  const tasks = [...new Set(estimate.samples.map(sample => sample.task))]
+  const items = tasks.length <= 3 ? tasks.join(t('design.scale.itemJoin')) : t('design.scale.itemsCount', { n: tasks.length })
+  const lead = t('design.scale.from', {
+    who: groups === 1 ? t('design.scale.fromOne') : t('design.scale.fromMany', { n: groups }),
+    items,
+    n: estimate.samples.length,
+  })
+  if (estimate.samples.length > SAMPLES_LISTED) return lead
+  const times = estimate.samples.map((sample) => {
+    const parts = durationParts(sample.activeMs)
+    return parts === null ? '—' : t(parts.key, parts.params)
+  }).join(' / ')
+  const tokens = estimate.samples.map(sample => (sample.outputTokens === null ? '—' : compactCount(sample.outputTokens))).join(' / ')
+  return t('design.scale.fromDetail', { lead, times, tokens })
 }
 
 const REPS_ONLY: ReadonlySet<keyof PlanNumbersNow> = new Set(['reps'])
@@ -937,7 +1088,7 @@ export function DesignPage(props: {
       <Block title={t('design.items')} meta={<span className={css.mono}>{snapshotCell(row)}</span>}>
         {digest === null || digest.items.length === 0
           ? <div className={css.dim}>{t('new.itemsEmpty')}</div>
-          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} t={t} />}
+          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} facts={review?.items ?? null} t={t} />}
       </Block>
 
       {/* No plan review yet: the row still names its judges, and that is
@@ -951,7 +1102,7 @@ export function DesignPage(props: {
         />
       </Block>
 
-      <ScaleSection row={row} numbers={numbers} frozen={frozen} onSetNumbers={onSetNumbers} t={t} />
+      <ScaleSection row={row} numbers={numbers} estimate={review?.estimate ?? null} frozen={frozen} onSetNumbers={onSetNumbers} t={t} />
 
       <ReadinessChecklist
         blockers={blockers}

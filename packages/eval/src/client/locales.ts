@@ -914,6 +914,27 @@ export type EvalKey =
   | 'design.items'
   | 'design.itemsCol.item'
   | 'design.itemsCol.how'
+  | 'design.itemsCol.what'
+  | 'design.itemsCol.full'
+  | 'design.itemsCol.task'
+  | 'design.item.stages'
+  | 'design.item.container'
+  | 'design.item.kinds'
+  | 'design.item.noRubric'
+  | 'design.item.criteria'
+  | 'design.item.human'
+  | 'design.item.probes'
+  | 'design.item.noProbes'
+  | 'design.item.task'
+  | 'design.item.taskClose'
+  | 'design.scale.approx'
+  | 'design.scale.approxMinutes'
+  | 'design.scale.itemJoin'
+  | 'design.scale.itemsCount'
+  | 'design.scale.from'
+  | 'design.scale.fromOne'
+  | 'design.scale.fromMany'
+  | 'design.scale.fromDetail'
   | 'design.how'
   | 'design.how.judge'
   | 'design.how.human'
@@ -1909,6 +1930,27 @@ export const en: Record<EvalKey, string> = {
   'design.items': 'Which items',
   'design.itemsCol.item': 'Item',
   'design.itemsCol.how': 'Judged by',
+  'design.itemsCol.what': 'Tests',
+  'design.itemsCol.full': 'Full score',
+  'design.itemsCol.task': 'Task text',
+  'design.item.stages': '{n} stages',
+  'design.item.container': 'container',
+  'design.item.kinds': 'objective {objective} · judge {judge} · human {human}',
+  'design.item.noRubric': 'no rubric',
+  'design.item.criteria': '{n} criteria',
+  'design.item.human': '{n} by a person',
+  'design.item.probes': '{n} check scripts',
+  'design.item.noProbes': 'no check script',
+  'design.item.task': 'Task text',
+  'design.item.taskClose': 'Hide task',
+  'design.scale.approx': '≈ {value}',
+  'design.scale.approxMinutes': '≈ {m} min',
+  'design.scale.itemJoin': ', ',
+  'design.scale.itemsCount': '{n} items',
+  'design.scale.from': 'Estimated from {n} past answers by {who} on {items}',
+  'design.scale.fromOne': 'this group',
+  'design.scale.fromMany': 'these {n} groups',
+  'design.scale.fromDetail': '{lead} ({times}; {tokens})',
   'design.how': 'How it is judged',
   'design.how.judge': 'Judge',
   'design.how.human': 'Final verdict',
@@ -1932,7 +1974,7 @@ export const en: Record<EvalKey, string> = {
   'design.scale.duration': 'Est. time',
   'design.scale.tokens': 'Est. output tokens',
   'design.scale.none': 'No estimate',
-  'design.scale.noneNote': 'Time and token estimates come once comparable runs exist; nothing is guessed now.',
+  'design.scale.noneNote': 'No past answer by these groups to these items yet, so time and tokens are not guessed.',
   'readiness.then.COMMIT_UNRESOLVED': 'The start pins the latest commit; later dataset edits do not touch this run.',
   'readiness.then.EXPECTED_NS_NO_PROBE': 'These items get no script verdict; only the judge and a person score them.',
   'readiness.then.EXPECTED_NS_NO_RUBRIC': 'Items without a rubric are scored only by the other sources.',
@@ -2894,6 +2936,27 @@ export const zh: Record<EvalKey, string> = {
   'design.items': '用哪些题',
   'design.itemsCol.item': '题',
   'design.itemsCol.how': '怎么判',
+  'design.itemsCol.what': '考什么',
+  'design.itemsCol.full': '满分',
+  'design.itemsCol.task': '题面',
+  'design.item.stages': '{n} 个阶段',
+  'design.item.container': '容器',
+  'design.item.kinds': '客观 {objective} · 判官 {judge} · 人工 {human}',
+  'design.item.noRubric': '没有评分标准',
+  'design.item.criteria': '{n} 条判据',
+  'design.item.human': '人工 {n} 条',
+  'design.item.probes': '检查脚本 {n} 个',
+  'design.item.noProbes': '没有检查脚本',
+  'design.item.task': '看题面',
+  'design.item.taskClose': '收起题面',
+  'design.scale.approx': '≈ {value}',
+  'design.scale.approxMinutes': '≈ {m} 分钟',
+  'design.scale.itemJoin': '、',
+  'design.scale.itemsCount': '{n} 道题',
+  'design.scale.from': '估算来自{who}过去在 {items} 上的 {n} 次作答',
+  'design.scale.fromOne': '这个对比组',
+  'design.scale.fromMany': '这 {n} 个对比组',
+  'design.scale.fromDetail': '{lead}（{times}，{tokens}）',
   'design.how': '怎么判',
   'design.how.judge': '判官',
   'design.how.human': '人工终评',
@@ -2917,7 +2980,7 @@ export const zh: Record<EvalKey, string> = {
   'design.scale.duration': '预计时长',
   'design.scale.tokens': '预计输出 token',
   'design.scale.none': '无估算',
-  'design.scale.noneNote': '时长和 token 要等有同类运行记录后才能估；现在不猜。',
+  'design.scale.noneNote': '这些对比组还没在这些题上作答过，时长和 token 不猜。',
   'readiness.then.COMMIT_UNRESOLVED': '启动时钉住当时的最新提交，之后题库再改不影响这次。',
   'readiness.then.EXPECTED_NS_NO_PROBE': '这些题拿不到脚本判定，只有判官和人会给分。',
   'readiness.then.EXPECTED_NS_NO_RUBRIC': '没有量表的题只能靠其他来源判分。',

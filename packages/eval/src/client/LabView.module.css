@@ -3290,3 +3290,42 @@ tr:last-child > .reportTd {
   font-weight: 400;
   line-height: 16px;
 }
+
+/* T83 · phase 4 — 用哪些题 (v5 · plan): the id bold with its shape under it,
+   the full score right-aligned, 看题面 at the row's end, and the task text
+   opening in a row of its own below. */
+.itemSub {
+  display: block;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.warnInk {
+  color: var(--dsh-eval-warn-ink);
+}
+
+.table td.num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.table td.rowAction {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table td.taskCell {
+  padding: 0 10px 12px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

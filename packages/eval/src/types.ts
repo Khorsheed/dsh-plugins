@@ -463,6 +463,69 @@ export interface EvalPlanReview {
   checks: EvalPlanCheck[]
   /** Every condition the plan names, players first, then judges. */
   conditions: EvalPlanCondition[]
+  /**
+   * 用哪些题, per item: what it tests, how it is judged, its full score and
+   * its text (T83 · phase 4). OPTIONAL: only an experiment's review reads the
+   * pinned dataset, and a composition without the datasets reads answers
+   * null — the table then keeps the columns the digest alone can fill.
+   */
+  items?: EvalPlanItemsView | null
+  /**
+   * 预计时长 / 预计输出 token, from the same groups' past answers to the same
+   * items. OPTIONAL for the same reason; null means «无估算», never zero.
+   */
+  estimate?: EvalPlanEstimate | null
+}
+
+/** One item of the plan as the design page's 用哪些题 table reads it. */
+export interface EvalPlanItemFacts {
+  id: string
+  /** item.json's `title` — the 考什么 column; null when the item declares none. */
+  title: string | null
+  /** item.json's `taxonomy.level`, e.g. `P0` / `L4`. */
+  level: string | null
+  /** How many stages the item uses (`phasesUsed`); 0 when it names none. */
+  stages: number
+  /** Whether some stage runs in a container (`runIn` non-empty). */
+  container: boolean
+  /** Rubric leaves by kind; null when the grading layer has no readable rubric. */
+  criteria: { total: number; objective: number; judge: number; human: number } | null
+  /** Check scripts that would run for this item (its own plus the dataset's shared ones). */
+  probes: number
+  /** Σ of the rubric's positive weights; null when no leaf carries a weight. */
+  fullScore: number | null
+  /** The player's task text (visible layer, capped); null when none could be read. */
+  task: string | null
+  /** The file the task text came from, item-relative. */
+  taskPath: string | null
+}
+
+/** The per-item facts, and why any are missing. */
+export interface EvalPlanItemsView {
+  items: EvalPlanItemFacts[]
+  /** Why a column is blank — one sentence per cause, deduplicated. */
+  notes: string[]
+}
+
+/** One past answer the estimate is taken from. */
+export interface EvalPlanEstimateSample {
+  runId: string
+  condition: string
+  task: string
+  /** Active time: the delegations' own durations summed. */
+  activeMs: number | null
+  outputTokens: number | null
+}
+
+/**
+ * What ONE rep of the plan costs, from the samples: each (group, item) pair is
+ * the mean of that pair's past answers, or the group's mean over the plan's
+ * items when the pair itself was never answered. Scaling by 每组次数 is the
+ * page's arithmetic, so the number follows the seg without a round trip.
+ */
+export interface EvalPlanEstimate {
+  perRep: { activeMs: number | null; outputTokens: number | null }
+  samples: EvalPlanEstimateSample[]
 }
 
 /** Which plan the review verb answers about. */
