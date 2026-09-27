@@ -6,7 +6,7 @@
 
 「模式可见性」的混乱大多源于混用了两个概念：
 
-- **profile（部署级）**：`web-basic` / `web-dev` / `web-eval` 是部署组合，决定插件**装不装、挂不挂**。一个实例只跑一个 profile。**运行时拿不到 profile 名**——host 和 client 的 ctx 上都没有 profile 标志，profile-boot 也不设环境变量。所以不存在「运行时判断当前 profile」这条路。
+- **profile（部署级）**：`basic` / `web-dev` / `web-eval` 是部署组合，决定插件**装不装、挂不挂**。一个实例只跑一个 profile。**运行时拿不到 profile 名**——host 和 client 的 ctx 上都没有 profile 标志，profile-boot 也不设环境变量。所以不存在「运行时判断当前 profile」这条路。
 - **preset（会话级）**：agent preset 是同实例内按会话授予的能力组合，**建会话时绑定并锁定**（存量会话永远保持创建时的 preset）；preset 的唯一选择点是建会话时的官方 chip——**不发起会话就不存在 preset 输入**。判据可读：会话的 preset id 从 `ctx.sessions.list` 投影读，preset 组合从官方 `pluginInventory` Remote 读。
 
 推论：**「按模式自隐」= 按会话 preset 自隐，且只对内容或配套能力绑定会话的 surface 成立**（见「判据轴」）。
@@ -38,7 +38,7 @@ canvas 2026-09-16 的 3080 事故：当时 canvas 是纯 UI 包，任何 preset 
 
 两类问题归安装层（那个 profile 装不装这个包，dependencies 决定，`dsh.profile.bundles` 随之）：
 
-1. **部署意图**：这个部署要不要这个插件。web-basic 与 web-dev 的差异就是这么来的。真的不想让某类部署看到，就从那个 profile 移除依赖。
+1. **部署意图**：这个部署要不要这个插件。basic 与 web-dev 的差异就是这么来的。真的不想让某类部署看到，就从那个 profile 移除依赖。
 2. **内容跨会话且无会话级能力语义的 surface**（全局状态面板、部署级工作区这类）：preset 判据对它无定义（见「判据轴」），可见性只有安装层一个正确答案。注意 canvas 右栏 tab **不在**此类——它的入口语义是「触达画布工具」，能力按会话授予，判据有定义（双查样板，见第二层）。
 
 host 没有声明式可见性：右栏 tab 注册表（harness `packages/client/ui-sidebar-right/src/client/tab-registry.ts:87-128`）只有 `id/kind/patterns/priority/canOpen/title/guide`，头注释明写「purely static … no runtime hook」；slot 注册（`ui-slots`）同样无任何 visibility 谓词（0.1.5 已复核）。`cordis.patch.yml` 的 `disabled: !!js` 表达式作用域读不到会话/preset 身份，只能做平台门。声明式 `visibleWhen` 是上游增强，见「上游边界」。
@@ -79,7 +79,7 @@ host 没有声明式可见性：右栏 tab 注册表（harness `packages/client/
 - **会话级 UI**：按第二节执行。已有样板：eval「实验室」tab（`packages/eval/src/client/index.ts:93-148`）。
 - **sidebar（右栏 tab / 左栏面板）**：按「判据轴」分流，不看座位——内容绑定会话且伴生行被某 preset 引用（worktrees 右栏 tab 是样板）→ 第二层判据 + 注册级 toggle；内容跨会话（canvas 空间）→ 安装层，不要加判据。「开发插件的 sidebar 在别的 profile 可见」的第一动作仍是检查那个 profile 的 dependencies。
 - **slash 命令**：注册**搬进伴生工具行**（`ctx.inject(['commands'], …)`），落进 preset 的 scope 层，只对该 preset 会话可见——官方 `/goal` `/plan` 的条件显隐同款机制，client 补全按会话拉取、preset 切换自动刷新，client 侧零接线。handler 里用 `agentPresets.composedPreset` + `compositionInventory()` 做兜底守卫（读不到一律放行）。不要在 profile 根注册模式专属 slash。样板：eval / datasets / mission（2026-09-17 搬家）。
-- **设置卡**：内容绑定**实例**（provider 凭据、实例开关），不是会话——preset 判据对它无定义，且设置页是全局页（无当前会话 → fail-open 恒显示）。常驻是刻意形态（local-agent 家族 4 张 provider 卡）；「这个部署不该有它」由 profile 装不装表达（web-basic 未装家族）。
+- **设置卡**：内容绑定**实例**（provider 凭据、实例开关），不是会话——preset 判据对它无定义，且设置页是全局页（无当前会话 → fail-open 恒显示）。常驻是刻意形态（local-agent 家族 4 张 provider 卡）；「这个部署不该有它」由 profile 装不装表达（basic 未装家族）。
 
 ## 反模式清单
 

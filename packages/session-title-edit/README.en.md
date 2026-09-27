@@ -6,7 +6,7 @@ Rename a session whenever you like: click the little pencil by the title, hit En
 
 Auto-generated session titles are often off the mark, and finding a session again two days later is pure luck. This plugin puts a pencil next to the title in the chat header: one click and the title becomes an input in place, prefilled and fully selected. Enter saves, Escape cancels, and a draft that's too long gets a warning instead of silent truncation. Renames go through the official `session.rename` RPC, and the title never enters the model context — the model knows nothing about it.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit1.png" width="640" alt="the pencil button beside the title in the chat header, with a rename-session tooltip on hover">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit1.png" width="640" alt="the pencil button beside the title in the chat header, with a rename-session tooltip on hover">
 
 ## Features
 
@@ -16,7 +16,7 @@ Auto-generated session titles are often off the mark, and finding a session agai
 - **Budget-aware** — drafts past the host's 80-UTF-8-byte title budget are blocked with a warning, never silently truncated.
 - **Zero footprint** — rides the official `session.rename` RPC; the title never enters model context (no token or KV-cache effect).
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit2.png" width="640" alt="after clicking the pencil the title becomes an input in place — edit and press Enter to save">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit2.png" width="640" alt="after clicking the pencil the title becomes an input in place — edit and press Enter to save">
 
 ## Install
 

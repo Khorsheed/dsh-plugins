@@ -6,7 +6,7 @@ agent 碰过的文件一页看全：改了什么、现在长什么样。
 
 这是文件预览的宿主半。装上它和配套的界面包，web GUI 会多一个「产物」tab：会话里 agent 读过、写过、改过的每个文件都列在里面，每次 write/edit 改动附 diff，点开任一文件就能看到当前内容。agent 用 bash 顺手写的文件（heredoc、重定向之类）也一样收进来。整个服务只读——它只看文件，从不动文件。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="640" alt="「产物」tab 的文件预览：文件列表与内联 markdown 预览">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview1.png" width="640" alt="「产物」tab 的文件预览：文件列表与内联 markdown 预览">
 
 ## 功能
 
@@ -16,9 +16,9 @@ agent 碰过的文件一页看全：改了什么、现在长什么样。
 - **在文件夹中打开**——在宿主文件管理器中打开所在文件夹并选中文件，支持 macOS、Windows、WSL、桌面 Linux。
 - **只读设计**——无会话状态、无写入；宿主重启不丢任何东西。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="640" alt="每个产物的改动记录：逐轮 diff 可翻页回看">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview2.png" width="640" alt="每个产物的改动记录：逐轮 diff 可翻页回看">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="640" alt="「产物」tab：会话写过的全部文件一览">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview3.png" width="640" alt="「产物」tab：会话写过的全部文件一览">
 
 ## 安装
 

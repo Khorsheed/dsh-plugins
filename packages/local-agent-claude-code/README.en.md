@@ -6,7 +6,7 @@ Delegate coding tasks to the Claude Code on this machine — thinking, tool call
 
 Any dsh agent preset can delegate: the family tool mounts once at the profile root, the child session is visible end to end — abortable, resumable — and every round's accounting (the actual model, token usage, tool-call count) reads back for real. Login is scope-isolated: the plugin only ever manages the one directory `$DSH_HOME/local-agent/claude-code`, so your personal installation and credentials stay out of it from start to finish. The Claude Code harness of the [local-agent family](../local-agent/README.md).
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent family cards under Settings → Plugins → plugin configuration, the Claude Code row's status dot showing its auth state">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent family cards under Settings → Plugins → plugin configuration, the Claude Code row's status dot showing its auth state">
 
 ## Features
 
@@ -17,7 +17,7 @@ Any dsh agent preset can delegate: the family tool mounts once at the profile ro
 - **Live stream mirror** — the child session mirrors Claude's thinking, tool calls, and replies live; aborting keeps the partial transcript and real token usage.
 - **Model readback and per-cell working directory** — every settled round reads back the model from stream-json's system/init into the delegation record; orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="640" alt="the expanded Local Agent · Claude Code settings card: the authentication block, the default-model picker, and the resident-mode (live) switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="640" alt="the expanded Local Agent · Claude Code settings card: the authentication block, the default-model picker, and the resident-mode (live) switch">
 
 ## Install
 

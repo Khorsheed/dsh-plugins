@@ -6,7 +6,7 @@
 
 dsh 的 agent 已经能干活,但有些任务你就是想交给本机的 Codex CLI:它的账号、它的模型、你熟悉的工具链。这个插件把 Codex 接成 dsh 的本地子代理——任意 agent preset 都能经 `subagent_codex` 工具一句话委派;委派跑在插件隔离的作用域目录(`$DSH_HOME/local-agent/codex`)里,你的个人 config、凭据、会话完全不被触碰;过程细节(推理、工具调用、文件改动)实时镜像在子会话里,最终回答回到父会话。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置 → 插件配置页里的 Local Agent · Codex 卡片,卡头状态点一眼可见授权状态">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置 → 插件配置页里的 Local Agent · Codex 卡片,卡头状态点一眼可见授权状态">
 
 ## 特性
 
@@ -19,7 +19,7 @@ dsh 的 agent 已经能干活,但有些任务你就是想交给本机的 Codex C
 - **自定义端点**——经作用域 `config.toml` 的自定义 provider 把 Codex 的 LLM 请求路由到你自己的路由端点。
 - **回读与独立工作目录**——每轮从本轮 rollout 回读实际模型、CLI 版本与用量写进委派记录;定位按 threadId + cwd + 时间窗,并发跑也读的是自己那一轮。编排器可用 `cwd` 选项给每格独立目录,resume 换目录即拒绝。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="展开的 Codex 设置卡:认证状态与登录/退出、默认模型、常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="展开的 Codex 设置卡:认证状态与登录/退出、默认模型、常驻模式开关">
 
 ## 安装
 

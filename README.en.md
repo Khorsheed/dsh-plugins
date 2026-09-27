@@ -12,7 +12,7 @@ The default install unit is a complete profile (a pack), not a single package. I
 
 | Pack | What it is | Members |
 | --- | --- | --- |
-| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | **Everyday mode**: message control, artifact preview, the capability catalog, mobile presentation, task status, shortcuts, and the ops guard | 13 |
+| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **Everyday mode**: message control, artifact preview, the capability catalog, mobile presentation, task status, shortcuts, and the ops guard | 13 |
 | [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | **Development**: everything in basic, plus delegation to local coding agents, live worktree state, and room multi-agent collaboration — ships the "dev mode" preset | 23 |
 | [web-eval](profiles/web-eval) (in this repo) | **Evaluation**: a factorial experiment bench — datasets, conditions, and plans reviewed in git, deterministic orchestration — ships the "eval mode" preset | 26 |
 
@@ -182,7 +182,7 @@ A standalone pnpm monorepo; every package publishes as `@khorsheed/dsh-*`.
 
 ```
 packages/   one directory per publishable plugin
-profiles/   the packs (web-basic / web-dev / web-eval and the production web)
+profiles/   the packs (basic / web-dev / web-eval and the production web)
 build/      shared build/test presets (tsdown client bundle, vitest source-plane config)
 scripts/    repo tooling (pack-dist, gen-typert, mirror sync, gate checkers)
 ```

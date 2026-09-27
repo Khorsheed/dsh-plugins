@@ -6,7 +6,7 @@
 
 多 worktree 并行开发时，「当前会话对着哪个分支、有多少未提交内容」以前要去终端敲 git 才知道。这个插件把答案放进会话头部：一个分支胶囊徽标（带合并 diff 行数，有改动时变警告色），点开是右栏的 worktrees 页面——待提交改动带 diff、IDE 风格提交记录、仓库全量文件浏览。一切展示都是只读的 git 事实，插件自己不写仓库；唯一能改仓库的能力（建/删 worktree）收在按会话授予的伴生工具包里，且删除永远要先确认。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/pilot-badge-standard.png" width="640" alt="会话头部右上角的 worktrees 徽标：分支胶囊（分支名 + 合并 diff 行数 +175 −34）与仓库名胶囊">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-standard.png" width="640" alt="会话头部右上角的 worktrees 徽标：分支胶囊（分支名 + 合并 diff 行数 +175 −34）与仓库名胶囊">
 
 ## 特性
 
@@ -21,9 +21,9 @@
 - **按 preset 自隐**——徽标与右栏 tab 类型默认读官方 `pluginInventory` 组合判据：当前会话的 preset 组合授予了伴生工具行 `@khorsheed/dsh-worktrees-tool` 才显示；组合数据读不到一律保持显示（fail-open）。tab 类型是注册级自隐（guide 枚举注册表，隐藏即注销；已打开的 tab 按会话存储，未授予会话的布局里本就没有它）。
 - 树默认只展开第一层，随时「展开全部 / 收起全部」；所有文件列表一次拿全（客户端 trie），仅单文件 diff 按需拉取。文件预览与「文件列表」插件共用同一个内容面板 `@khorsheed/dsh-client-ui-content-preview`。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/worktrees-tab.png" width="640" alt="右栏 worktrees tab 的「工作树待提交」档：左侧改动文件树带 A/M/D 徽标与行数，右侧详情面板显示选中文件的彩色 diff">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="640" alt="右栏 worktrees tab 的「工作树待提交」档：左侧改动文件树带 A/M/D 徽标与行数，右侧详情面板显示选中文件的彩色 diff">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/pilot-badge-other-preset.png" width="640" alt="未授予伴生工具行的 preset（极简模式）下徽标与右栏 tab 类型自隐，会话头部只剩官方按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-other-preset.png" width="640" alt="未授予伴生工具行的 preset（极简模式）下徽标与右栏 tab 类型自隐，会话头部只剩官方按钮">
 
 ## 安装
 

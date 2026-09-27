@@ -6,7 +6,7 @@ One session, a whole team of agents — invite DSH, Kimi, Codex or Claude Code m
 
 Getting several agents onto one piece of work today means copy-pasting between windows, or one-shot subagent calls that forget everything on return. Room makes the session itself the shared place: inviting the first member promotes the current session into a Room and seats the native DSH agent as the initial coordinator, and every member keeps its own native conversation across turns and restarts.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/room-1.png" width="640" alt="an active Room: member receipts and run rows in the chat flow, with the @-member menu open above the composer">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="640" alt="an active Room: member receipts and run rows in the chat flow, with the @-member menu open above the composer">
 
 ## Features
 
@@ -20,9 +20,9 @@ Getting several agents onto one piece of work today means copy-pasting between w
 - **Live output, targeted stop** — members stream native text and reasoning into both their own conversation and the Room; final messages and tool records stay authoritative. Stopping a member interrupts only that member and preserves non-empty partial output with an explicit stopped/failed label, duration and session link; long replies expand from a compact preview.
 - **Preset-gated chrome, fail-open** — the **Invite agent** header chip and the **Members** tab appear exactly when the session's preset composition grants the `@khorsheed/dsh-room-tool` row, fail open when the composition cannot be read, and always stay visible inside an existing Room.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/room-invite.png" width="640" alt="the Members tab: the empty state that turns the session into a multi-agent collaboration room, and the session header's Invite agent entry">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="the Members tab: the empty state that turns the session into a multi-agent collaboration room, and the session header's Invite agent entry">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/room-2.png" width="640" alt="the Members tab: member cards with name, provider, role and model, plus the Set-as-coordinator action">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="640" alt="the Members tab: member cards with name, provider, role and model, plus the Set-as-coordinator action">
 
 ## Install
 

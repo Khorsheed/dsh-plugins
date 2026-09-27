@@ -6,9 +6,9 @@
 
 官方 Web 客户端是桌面形态：侧栏吃掉半个屏幕、输入区密密麻麻、触控目标按鼠标设计。这个插件把同一套客户端重新呈现给窄屏触控设备——带分组和搜索的会话首页、可换行且够得着的输入工具栏、在手机上选电脑目录的面板——再配上一个可选的 [iOS 薄壳](../../apps/ios/README.zh.md)：嵌入同一套官方 Web 客户端，扫码登录即用。一切都可以干净移除：卸载即精确还原官方桌面界面，绝不写入宿主或兄弟插件的状态。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-library.png" width="640" alt="移动端会话首页:时间与工作区分组、底部搜索框与扫码入口">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-library.png" width="640" alt="移动端会话首页:时间与工作区分组、底部搜索框与扫码入口">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/mobile-conversation.png" width="640" alt="移动布局下的会话页:会话头部与成员 tab、消息流、底部输入工具栏">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-conversation.png" width="640" alt="移动布局下的会话页:会话头部与成员 tab、消息流、底部输入工具栏">
 
 ## 特性
 

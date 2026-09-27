@@ -359,7 +359,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 | 整合包 | 定位 |
 |---|---|
-| [dsh-web-basic](../web-basic/README.md) | 日常模式：只含基础体验 |
+| [dsh-basic](../basic/README.md) | 日常模式：只含基础体验 |
 | [dsh-web-dev](../web-dev/README.md) | 开发模式：基础体验 + 本地 Agent 家族 + worktrees + room |
 
 ## 许可

@@ -8,7 +8,7 @@ The file list, the worktree tab, and the session-products page all need the same
 
 **This is not a plugin.** It registers no slot, service or locale, owns no loader row and ships no client bundle of its own — it is consumed at the **source plane**: each plugin declares it as a dependency and imports `@khorsheed/dsh-client-ui-content-preview/src/client/…` directly, so each plugin's tsdown client bundle inlines it into its own `lib/client.js`. Zero runtime coupling, every plugin stays independently installable and uninstallable, and installing this package into a profile mounts nothing.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="the shared content pane as it actually appears inside the local-files plugin: rendered markdown, content search, and the preview/source toggle">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="the shared content pane as it actually appears inside the local-files plugin: rendered markdown, content search, and the preview/source toggle">
 
 ## Features
 

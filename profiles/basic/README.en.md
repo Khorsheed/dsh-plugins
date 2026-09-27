@@ -1,10 +1,10 @@
-# dsh-web-basic
+# dsh-basic
 
 [中文](README.md) | English
 
-**A set of everyday, high-frequency experience plugins that make the dsh web GUI feel finished.** Edit or withdraw sent messages, jump through long conversations, preview every file the agent touched, watch background jobs at a glance, get nudged before context runs out — the quality-of-life layer most users reach for first, installed in one go.
+**A set of everyday, high-frequency experience plugins that make your DSH nicer — and freer.** Edit or withdraw messages you already sent; rename a session title in one click; background jobs at a glance and stoppable at will; a context-compaction reminder you configure yourself; mid-chat, have the agent sketch a preview card so you agree on the UI before it builds — no more rework loops; manage every skill and tool freely and assign them to different presets; a chime when a task completes; mobile access in a snap; safe restarts for plugin development — never again fear the little whale taking itself down…… The quality-of-life layer most users want first, installed in one go.
 
-<img src="docs/screenshots/file-preview1.png" width="840" alt="dsh-web-basic at a glance: the session Artifacts tab and the file-preview drawer">
+<img src="docs/screenshots/file-preview1.png" width="840" alt="dsh-basic at a glance: the session Artifacts tab and the file-preview drawer">
 
 Don't want the whole pack? Every member below is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) to install it alone. The pack just installs them all for you at once.
 
@@ -266,24 +266,24 @@ dsh --version    # or read the host version from the running instance's process 
 
 - Host `0.1.5` or newer (any rc included) → use the main line (clone the default branch).
 - Host `0.1.2-rc.*` ~ `0.1.4` → stay with the pre-update archive (the `host-0.1.2-line` tag).
-- Host `0.1.0-rc.*` / `0.1.1-rc.*` → use the legacy line: after cloning, `git -C /tmp/dsh-web-basic checkout host-0.1.1-line`; members stay on 0.1.x (no further updates).
+- Host `0.1.0-rc.*` / `0.1.1-rc.*` → use the legacy line: after cloning, `git -C /tmp/dsh-basic checkout host-0.1.1-line`; members stay on 0.1.x (no further updates).
 
 **1. Install and self-check offline (do not touch the running instance)**
 
 ```sh
-git clone https://github.com/Khorsheed/dsh-web-basic.git /tmp/dsh-web-basic
-sh /tmp/dsh-web-basic/scripts/install.sh
+git clone https://github.com/Khorsheed/dsh-basic.git /tmp/dsh-basic
+sh /tmp/dsh-basic/scripts/install.sh
 ```
 
-The installer prints the composed row count. To double-check: `dsh --profile web-basic --dump-config | grep -c "@khorsheed"` should print 13 (ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
+The installer prints the composed row count. To double-check: `dsh --profile basic --dump-config | grep -c "@khorsheed"` should print 13 (ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
 
 **2. Hand over on the same port (the critical step)**
 
 ```sh
-sh /tmp/dsh-web-basic/scripts/restart-into-web-basic.sh [port, default 3080]
+sh /tmp/dsh-basic/scripts/restart-into-basic.sh [port, default 3080]
 ```
 
-The script drives the pack's own ankh-guard watchdog: environment probe → record a credential → adopt the current instance → watchdog stops the old one and boots the pack with a canary. **You will disconnect with the host — that is expected**: the watchdog brings web-basic up on the original port. The script deliberately omits `--initiator` so the guard reads `$DSH_SESSION_ID` from your environment — that is how the restart report finds your session: when the user reopens it, you receive the "restart complete" followup and continue. Note: snapshot-based continuation of interrupted turns needs the guard already mounted in the old instance (absent on a first install); that part exists from the second restart onward.
+The script drives the pack's own ankh-guard watchdog: environment probe → record a credential → adopt the current instance → watchdog stops the old one and boots the pack with a canary. **You will disconnect with the host — that is expected**: the watchdog brings basic up on the original port. The script deliberately omits `--initiator` so the guard reads `$DSH_SESSION_ID` from your environment — that is how the restart report finds your session: when the user reopens it, you receive the "restart complete" followup and continue. Note: snapshot-based continuation of interrupted turns needs the guard already mounted in the old instance (absent on a first install); that part exists from the second restart onward.
 
 Two prerequisites — the script refuses early with a reason if either is missing:
 

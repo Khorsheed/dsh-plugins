@@ -6,7 +6,7 @@
 
 想把助手回复里的一段话、文件预览里的一段内容拿来追问，以前只能手动复制、切换、粘贴。这个插件在应用内任何选区旁浮出动作菜单：**引用到当前会话**（选中文本作为带来源标注的引用块进 composer，待编辑，绝不替你发送）、**引用到侧边对话**（排成 side-chat 的待发送 ref）、**复制**；其他插件可经 `ctx.quoteActions` 注册表往菜单里加自己的动作行（见[向菜单贡献动作](#向菜单贡献动作其他插件)）。引用 = 选中的纯文本 + 来源标签，是不透明文本块：本插件不认识任何具体插件的类型，side-chat 缺席时对应菜单项自动隐藏，插件独立可装卸。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-1.png" width="640" alt="选中助手回复中的一段文本后，选区旁浮出的动作菜单：引用到当前会话、引用到侧边对话、复制">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-1.png" width="640" alt="选中助手回复中的一段文本后，选区旁浮出的动作菜单：引用到当前会话、引用到侧边对话、复制">
 
 ## 特性
 
@@ -17,7 +17,7 @@
 - **菜单行可扩展**——其他插件经 `ctx.quoteActions` 注册表注册自己的动作行（比如画布插件注册「存为画布卡片」），收到同样的 `{ text, label, sessionId }` 不透明载荷；菜单不知道任何动作把内容投递到哪里。
 - **全程探测降级**——overlay 座位、当前会话、side-chat、两个 Remote 命名空间逐项探测：缺席即隐藏对应菜单项（或整体不出现），任何组合都能正常启动。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-2.png" width="640" alt="文件预览面板里选中一段内容后浮出的同一动作菜单：引用到当前会话、引用到侧边对话、复制">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-2.png" width="640" alt="文件预览面板里选中一段内容后浮出的同一动作菜单：引用到当前会话、引用到侧边对话、复制">
 
 ## 选区浮层
 

@@ -6,7 +6,7 @@
 
 这是 local-agent 家族的核心包：每家 CLI 注册成一家 harness，得到共享 homes 根下一份 0700 的隔离作用域目录（你机器上原装的 CLI 安装绝不被动到）、一族 `/<harness> login|sessions|status|logout` 斜杠命令、设置里的一张认证卡片；家族的委派能力——把会话工作交给本机 CLI、之后跨宿主重启也能续跑——同样挂在这份注册表上。各家 harness 的实现在独立包里（`@khorsheed/dsh-local-agent-kimi` 等），本包自己一家都不含。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置 → 插件 → 可配置插件里的 Local Agent 卡片，卡头状态点一眼可见各 provider 授权状态">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置 → 插件 → 可配置插件里的 Local Agent 卡片，卡头状态点一眼可见各 provider 授权状态">
 
 ## 特性
 
@@ -18,7 +18,7 @@
 - **成员会话侧栏续写（宿主 0.1.6 起）**——官方 subagent 目录每行新增「在侧边栏打开」入口：成员会话本就是 one-shot subagent，侧栏内本家族 MemberComposer 自动当选为可写 composer，本包零改动受益；0.1.5 宿主没有该入口，行为不变。
 - **一家多份登录（命名 scope）**——`/<harness> login --scope <名>` 在 `<homesRoot>/<家名>@<名>` 里另开一份作用域目录：各自登录、各自会话记录、各自 `delegations.jsonl`，凭证不复制。评测因此能在同一次 run 里比较同一家的两个账号。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-member.png" width="640" alt="委派给本机 CLI 的成员会话：实时输出流式呈现，底部成员输入栏可继续对话并切换模型">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="640" alt="委派给本机 CLI 的成员会话：实时输出流式呈现，底部成员输入栏可继续对话并切换模型">
 
 ## 安装
 

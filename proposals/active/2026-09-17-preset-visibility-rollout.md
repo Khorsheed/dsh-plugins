@@ -47,7 +47,7 @@ host 复核（0.1.5 线）：`CommandDefinition` 无任何可见性谓词，clie
 
 矩阵轮把 4 张 provider 设置卡 + member composer 标为缺口，按判据轴复核后**修正为刻意常驻**：
 
-- 设置卡内容 = 实例级 provider 凭据/开关，**绑定实例而非会话**；设置页是全局页，打开时无当前会话 → fail-open 恒显示 → preset 判据对它既无定义也无效果。装不装家族由 profile 决定（web-basic 未装），这是正确且唯一的层。
+- 设置卡内容 = 实例级 provider 凭据/开关，**绑定实例而非会话**；设置页是全局页，打开时无当前会话 → fail-open 恒显示 → preset 判据对它既无定义也无效果。装不装家族由 profile 决定（basic 未装），这是正确且唯一的层。
 - member composer / dock 已有**内容门**：select 只命中家族委派会话，standard 会话里本就不接管。
 
 结论：不动代码，规范文档的「slash 命令与设置卡」行随本次实施更新为此定性。

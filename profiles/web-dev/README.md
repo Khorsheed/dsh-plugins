@@ -85,7 +85,7 @@ sh scripts/restart-into-web-dev.sh 3090     # 指定端口
 
 23 个成员，四层：
 
-**基础体验**（9 个，与 dsh-web-basic 相同）：消息编辑/撤回/恢复（message-tools）、历史消息时间轴（message-timeline）、会话标题内联编辑（session-title-edit）、文件预览（file-preview + ui-file-preview）、后台任务胶囊（taskpilot）、上下文压缩提醒（context-guard）、自定义快捷键（ui-shortcuts）、任务氛围（whalesong）。逐个介绍见[基础成员说明](https://github.com/Khorsheed/dsh-web-basic#功能展示)。
+**基础体验**（9 个，与 dsh-basic 相同）：消息编辑/撤回/恢复（message-tools）、历史消息时间轴（message-timeline）、会话标题内联编辑（session-title-edit）、文件预览（file-preview + ui-file-preview）、后台任务胶囊（taskpilot）、上下文压缩提醒（context-guard）、自定义快捷键（ui-shortcuts）、任务氛围（whalesong）。逐个介绍见[基础成员说明](https://github.com/Khorsheed/dsh-basic#功能展示)。
 
 **运维守护**（1 个）：`ankh-guard` —— 同端口交接与自修改重启的安全门禁，上面的切换脚本就走它。
 
@@ -150,7 +150,7 @@ rm -rf "$DSH_HOME/profiles/web-dev"
 
 | 整合包 | 定位 |
 |---|---|
-| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | 日常模式：只含基础体验，不带开发能力 |
+| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | 日常模式：只含基础体验，不带开发能力 |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | 插件 monorepo 主仓：全部插件的能力地图、preset 设计与开发文档 |
 
 ## 许可

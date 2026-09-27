@@ -8,7 +8,7 @@
 
 **这不是插件。** 它不注册 slot、service、locale，没有自己的 loader row 和 client bundle——它在**源码面**被消费：各插件把它声明为依赖，直接 `import '@khorsheed/dsh-client-ui-content-preview/src/client/…'`，各自的 tsdown client bundle 把它内联进自己的 `lib/client.js`。零运行时耦合，各插件仍然各自可独立安装、独立卸载；把它自己装进 profile 不会挂载任何东西。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="共享内容面板在 local-files 插件里的实际样子:markdown 渲染态、内容搜索、预览/源码切换">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="共享内容面板在 local-files 插件里的实际样子:markdown 渲染态、内容搜索、预览/源码切换">
 
 ## 特性
 

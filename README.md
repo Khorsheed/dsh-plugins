@@ -12,7 +12,7 @@
 
 | 整合包 | 定位 | 成员 |
 | --- | --- | --- |
-| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | **日常模式**:消息控制、产物预览、能力目录、移动端呈现、任务状态、快捷键与运维守护 | 13 |
+| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **日常模式**:消息控制、产物预览、能力目录、移动端呈现、任务状态、快捷键与运维守护 | 13 |
 | [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | **开发协作**:basic 全部体验,再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作,自带「开发模式」preset | 23 |
 | [web-eval](profiles/web-eval)(仓内) | **评测工作**:因子设计实验台——题库、条件、计划进 git 评审,确定性编排执行,自带「评测模式」preset | 26 |
 
@@ -182,7 +182,7 @@ dsh plugin --profile web remove @khorsheed/dsh-<name>
 
 ```
 packages/   一个目录一个可发布插件
-profiles/   整合包(web-basic / web-dev / web-eval 与生产 web)
+profiles/   整合包(basic / web-dev / web-eval 与生产 web)
 build/      共享构建/测试预设(tsdown client bundle、vitest 源码面配置)
 scripts/    仓库工具(pack-dist、gen-typert、镜像同步、门禁检查器)
 ```

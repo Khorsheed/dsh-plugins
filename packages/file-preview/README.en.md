@@ -6,7 +6,7 @@ Every file the agent touched, on one page: what changed, and what it looks like 
 
 This package is the host half of file preview. Install it together with the companion client, and the web GUI gains a Produced-files tab: every file the session read, wrote, or edited is listed there, each write/edit change comes with its diff, and clicking any file shows its current content. Files the agent happened to write through bash (heredocs, redirects, and the like) are collected too. The whole service is read-only — it looks at files, never touches them.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="640" alt="the Produced tab's file preview: file list and inline markdown preview">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview1.png" width="640" alt="the Produced tab's file preview: file list and inline markdown preview">
 
 ## Features
 
@@ -16,9 +16,9 @@ This package is the host half of file preview. Install it together with the comp
 - **Reveal in folder** — opens the file's folder with the file selected, on macOS, Windows, WSL, and desktop Linux.
 - **Read-only by design** — no session state, no writes; a restarted host loses nothing.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="640" alt="per-artifact change history: pageable per-turn diffs">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview2.png" width="640" alt="per-artifact change history: pageable per-turn diffs">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="640" alt="the Produced tab: every file the session wrote, at a glance">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview3.png" width="640" alt="the Produced tab: every file the session wrote, at a glance">
 
 ## Install
 

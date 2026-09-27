@@ -6,7 +6,7 @@
 
 agent 改完代码想重启的时候，这个插件会先问一句：这次改动，构建和测试都过了吗？过了才放行，没过就拦下来——免得改坏的代码把整个服务、连同正在进行的对话一起带走。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/ankh-guard.JPG" width="640" alt="一次受守护的重启:重启前告知验证项,重启后金丝雀自动激活会话并注入上下文继续验证">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/ankh-guard.JPG" width="640" alt="一次受守护的重启:重启前告知验证项,重启后金丝雀自动激活会话并注入上下文继续验证">
 
 ## 工作原理
 

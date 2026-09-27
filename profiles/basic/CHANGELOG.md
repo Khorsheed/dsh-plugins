@@ -1,5 +1,10 @@
 # 变更记录
 
+## 2026-09-27 —— 更名为 dsh-basic
+
+- 整合包仓与 profile 名从 dsh-web-basic / web-basic 改为 **dsh-basic / basic**：clone 地址、脚本名（`restart-into-basic.sh`）、profile 目录（`$DSH_HOME/profiles/basic`）随之变化；GitHub 上的旧名字保留重定向
+- 插件包名（`@khorsheed/dsh-*`）不变，已安装的成员不受影响
+
 ## 2026-09-27 —— 新增三名成员，成员区间对齐最新发布线
 
 - 新成员：capability-catalog（能力目录）、inline-html-render（内联 HTML 卡片）、mobile（移动端呈现）——成员数 10 → 13

@@ -85,7 +85,7 @@ Sessions live in `$DSH_HOME/sessions/`, and credentials and shortcuts live under
 
 23 members across four layers:
 
-**Baseline experience** (9, the same as dsh-web-basic): message edit/withdraw/restore (message-tools), history timeline (message-timeline), inline session-title editing (session-title-edit), file preview (file-preview + ui-file-preview), background task capsules (taskpilot), context-compaction reminder (context-guard), rebindable shortcuts (ui-shortcuts), ambient task feedback (whalesong). Each is introduced in the [baseline member notes](https://github.com/Khorsheed/dsh-web-basic#功能展示).
+**Baseline experience** (9, the same as dsh-basic): message edit/withdraw/restore (message-tools), history timeline (message-timeline), inline session-title editing (session-title-edit), file preview (file-preview + ui-file-preview), background task capsules (taskpilot), context-compaction reminder (context-guard), rebindable shortcuts (ui-shortcuts), ambient task feedback (whalesong). Each is introduced in the [baseline member notes](https://github.com/Khorsheed/dsh-basic#功能展示).
 
 **Operational guard** (1): `ankh-guard` — the safety gate for same-port handover and self-modifying restarts, which the switch scripts above run through.
 
@@ -150,7 +150,7 @@ Session data lives in `$DSH_HOME/sessions/` and does not go with the profile.
 
 | Pack | Role |
 |---|---|
-| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | Everyday mode: the baseline experience only, without the development capabilities |
+| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | Everyday mode: the baseline experience only, without the development capabilities |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | The plugin monorepo: the capability map of every package, the preset designs, and the development docs |
 
 ## License

@@ -6,7 +6,7 @@ Delegate a task from any dsh session to the Kimi Code CLI on your machine — it
 
 Getting the model to hand a whole chunk of work to another coding agent used to mean opening a terminal yourself, copy-pasting, and carrying the result back. This plugin gives every agent preset a `subagent_kimi` delegation tool and a `/kimi` command family: delegations run as child sessions in the session's workspace, their transcripts and progress show up in the subagent surface, results come back with real usage and timing, and the same handle resumes the conversation later.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="640" alt="the Kimi settings card: auth status, login/logout, default model, and the resident-mode toggle">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="640" alt="the Kimi settings card: auth status, login/logout, default model, and the resident-mode toggle">
 
 ## Features
 

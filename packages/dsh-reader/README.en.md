@@ -6,7 +6,7 @@ RSS subscriptions and pasted article links on one wall — click a card and read
 
 Interesting papers and articles pile up as browser tabs, and feeding one to the agent means copy-pasting. This plugin adds a page-type tab to the right sidebar — the inspiration space: feeds refresh on a daily schedule, a pasted link becomes a card, and the body renders as readable text inside dsh (selectable for quoting, translatable on-device by the browser's own model). A body the host could not fetch whole, or a site that refuses bots, says so honestly — the wall never looks fine while being hollow.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/reader-1.png" width="640" alt="the inspiration space wall: a card feed of subscriptions and saved links, with filter, sort, wall translation, refresh, settings and add in the header row and the search field on its own row">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="640" alt="the inspiration space wall: a card feed of subscriptions and saved links, with filter, sort, wall translation, refresh, settings and add in the header row and the search field on its own row">
 
 ## Features
 
@@ -20,7 +20,7 @@ Interesting papers and articles pile up as browser tabs, and feeding one to the 
 - **Subscription page and recently read** — one row per source with in-place name and address editing, per-source refresh, pause/resume and remove, plus the cache policy (body retention, translation budget, clear translation cache) and storage readouts on the same page; **recently read** persists 100 rows, survives a restart, and can reopen an entry that has rolled out of its feed's window.
 - **Leave and carry on** — the open article, the reading position anchored by content (the Nth block, this character of its text), the wall's narrowing and the translation are remembered by the whole page across dsh sessions; the place is also written to `sessionStorage`, so a reloaded page finds the reader where they were.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/reader-2.png" width="640" alt="the detail view: the body rendered as DOM text, the globe lit with sentence-aligned translation, clicking one sentence revealing its original">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="640" alt="the detail view: the body rendered as DOM text, the globe lit with sentence-aligned translation, clicking one sentence revealing its original">
 
 ## Install
 

@@ -6,7 +6,7 @@ Quote anything you see — select any text and the little menu floating beside t
 
 To follow up on a passage from an assistant reply or a file preview, you used to copy, switch, and paste by hand. This plugin floats an action menu beside any selection in the app: **Quote to current chat** (the selected text lands in the composer as a quote block with a source label — editable, never auto-sent), **Quote to side chat** (queued as a pending side-chat ref), **Copy**; other plugins add their own rows through the `ctx.quoteActions` registry (see [Contributing menu actions](#contributing-menu-actions-other-plugins)). A quote is the selected plain text plus a short source label — an opaque chunk: the plugin knows nothing about any other plugin's types, items hide when side-chat is absent, and the plugin installs and uninstalls alone.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-1.png" width="640" alt="the floating action menu beside a selection in an assistant reply: quote to current chat, quote to side chat, copy">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-1.png" width="640" alt="the floating action menu beside a selection in an assistant reply: quote to current chat, quote to side chat, copy">
 
 ## Features
 
@@ -17,7 +17,7 @@ To follow up on a passage from an assistant reply or a file preview, you used to
 - **Extensible menu rows** — other plugins register their own action rows through the `ctx.quoteActions` registry (the canvas package, say, registering "Save as canvas card"), receiving the same opaque `{ text, label, sessionId }` payload; the menu never learns where an action delivers to.
 - **Probe-and-degrade everywhere** — the overlay seat, the current session, side-chat, and both Remote namespaces are probed one by one: whatever is absent hides its menu item (or the whole menu), and every composition boots.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/quote-2.png" width="640" alt="the same action menu floating over a selection inside the file preview panel: quote to current chat, quote to side chat, copy">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-2.png" width="640" alt="the same action menu floating over a selection inside the file preview panel: quote to current chat, quote to side chat, copy">
 
 ## The selection overlay
 

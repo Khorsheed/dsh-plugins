@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-plugin-upgrade-skill.md
-.agents/notes/implemented/feature/2026-08-30-plugin-upgrade-skill.md: 22ed4ad6394576780da6650d842ad1a27f07a76a
-.agents/notes/implemented/feature/2026-08-30-plugin-upgrade-skill.zh.md: f39bee4ae63319fca869a9d6aad0f4b5e1beded6
+.agents/notes/implemented/feature/2026-08-30-plugin-upgrade-skill.md: 7b85a4eb6f8c12d9ed898b02c9f1a52204e0ec98
+.agents/notes/implemented/feature/2026-08-30-plugin-upgrade-skill.zh.md: 907343c9f10effbf232e64e30a5d944d46c2e1bf

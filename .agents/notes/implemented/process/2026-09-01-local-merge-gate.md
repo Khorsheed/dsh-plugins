@@ -10,7 +10,7 @@ On 2026-09-01 the cost came due. A week of work (378 commits, last push 2026-08-
 
 1. `cc31c1a` retired taskpilot's `tsconfig.paths.json` mechanism and deleted `scripts/sync-harness-paths.mjs`, but left the CI step invoking it — `MODULE_NOT_FOUND`.
 2. `room` merged on 08-29 pulled `koffi` in transitively; pnpm ≥ 11 hard-fails a cold install on an unreviewed dependency build script — `ERR_PNPM_IGNORED_BUILDS`.
-3. The `dsh-web-basic` mirror had drifted from `profiles/web-basic`.
+3. The `dsh-basic` mirror had drifted from `profiles/basic`.
 
 None of the three was findable locally. The first lives only in the workflow file, which no local command reads. The second only reproduces on a cold `pnpm install`; a warm `node_modules` never re-raises it. The third needs network and mirror push rights.
 

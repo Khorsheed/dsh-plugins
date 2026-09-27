@@ -14,7 +14,7 @@ dsh-web-eval 继承了同一个文件、同一条规则，而它的评测 pin �
 
 ## Decision
 
-**只对 dsh-web-eval**：`cordis.patch.yml` 归 pack。它随包发出评测 pin，两个安装脚本都覆盖它——它本来就在 `install.sh` 的 `PROFILE_FILES` 里，现在也进了 `update.sh` 的 `UPDATE_FILES`。个人覆盖去 preset 层，pack 不碰那里。dsh-web-dev 与 dsh-web-basic 不变——在那里这一层仍归用户，因为一个开发整合包没有需要保护的装置。
+**只对 dsh-web-eval**：`cordis.patch.yml` 归 pack。它随包发出评测 pin，两个安装脚本都覆盖它——它本来就在 `install.sh` 的 `PROFILE_FILES` 里，现在也进了 `update.sh` 的 `UPDATE_FILES`。个人覆盖去 preset 层，pack 不碰那里。dsh-web-dev 与 dsh-basic 不变——在那里这一层仍归用户，因为一个开发整合包没有需要保护的装置。
 
 文件本身逐条写着理由，好让只翻 profile 目录的操作者也知道为什么这里的用户层不是用户层。它发出的七行：
 

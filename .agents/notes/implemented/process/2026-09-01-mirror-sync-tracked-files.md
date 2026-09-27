@@ -38,4 +38,4 @@ The script exports `main(argv)` and self-invokes only when it is the entry modul
 
 ## Testing
 
-`scripts/sync-mirror.spec.ts` runs against the real tree, like the other checker specs. It pins the boundary directly — every emitted path must be tracked (`git ls-files --error-unmatch`), `lib/`, `node_modules/` and `*.tgz` never appear, the skill's `tests/` stays home, and `profiles/web-basic`'s force-added screenshots still ship. A regression to a disk walk fails the first assertion immediately, because `lib/` is untracked.
+`scripts/sync-mirror.spec.ts` runs against the real tree, like the other checker specs. It pins the boundary directly — every emitted path must be tracked (`git ls-files --error-unmatch`), `lib/`, `node_modules/` and `*.tgz` never appear, the skill's `tests/` stays home, and `profiles/basic`'s force-added screenshots still ship. A regression to a disk walk fails the first assertion immediately, because `lib/` is untracked.

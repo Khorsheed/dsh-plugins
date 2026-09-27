@@ -12,7 +12,7 @@ owner 报告:AGENTS.md 的 build contract 让 agent 在干净 worktree 里以 `p
 
 - **Ops**:「Restarts are gated by `dsh preflight --profile web`」——`dsh` CLI 没有 `preflight` 子命令(`apps/cli/src` 零命中,`--help` 里没有)。真正的闸是 ankh-guard CLI 的 `preflight` 动词(`bin: dsh-ankh-guard → lib/cli.js`),`deploy:3080` 在闸⑤会自动跑它。
 - **Build contract**:「the other nine invocations」——typert 包的数量早已漂到 15 个。
-- **Repo hygiene**:截图规则只覆盖了文档页(`docs/screenshots/`),没覆盖包 README 的图——后者由 dsh-web-basic 镜像仓的 raw URL 承载,不跟踪进 `profiles/web-basic/docs/screenshots/` 就会被镜像 sync 抹掉(见[README 截图托管](2026-09-27-readme-screenshot-hosting.zh.md))。
+- **Repo hygiene**:截图规则只覆盖了文档页(`docs/screenshots/`),没覆盖包 README 的图——后者由 dsh-basic 镜像仓的 raw URL 承载,不跟踪进 `profiles/basic/docs/screenshots/` 就会被镜像 sync 抹掉(见[README 截图托管](2026-09-27-readme-screenshot-hosting.zh.md))。
 
 其余引用——全部 `check:*`/`test:*`/`deploy:3080`/`hooks:install` 脚本、`scripts/gen-typert.mts`(含 `GEN_TYPERT_FORCE`/`GEN_TYPERT_ONLY` 与 `$DSH_HOME/scratch/typert-cache.json` 路径)、`build/tsdown.client.ts` 的 `clientBundle`、`build/vitest.ts`、`.githooks/pre-commit`、`docs/{development,ops,publishing,plugin-visibility,upstream-seam-registry}.md`、ops.md 的「构建卫生」节——逐一核实存在且准确。
 
@@ -23,7 +23,7 @@ owner 报告:AGENTS.md 的 build contract 让 agent 在干净 worktree 里以 `p
 1. 干净 worktree 首命令改为 `pnpm install && pnpm run build`——递归工作区构建按依赖序执行,每个包的 `gen-typert → tsc → tsdown` 先落 host 产物再轮到依赖它的 client tsc,这句话要给的顺序保证不变。
 2. 重启闸改写为:ankh-guard 的组合 preflight 由 `deploy:3080` 在闸⑤自动执行;手工形态是 ankh-guard CLI 的 `preflight` 动词,并明确警示「不存在 `dsh preflight` 子命令」。
 3.「the other nine invocations」改为「every later invocation」,句子不再随 typert 包增加而腐烂。
-4. 截图规则补上 README 分支:包 README 的图跟踪进 `profiles/web-basic/docs/screenshots/`(`git add -f`),因为镜像 sync 会抹掉此外的一切。
+4. 截图规则补上 README 分支:包 README 的图跟踪进 `profiles/basic/docs/screenshots/`(`git add -f`),因为镜像 sync 会抹掉此外的一切。
 
 ## 备选
 
@@ -41,5 +41,5 @@ AGENTS.md 点名的每条命令现在都在本仓真实存在;两个幽灵命令
 
 ## 相关
 
-- [README 截图托管在 profiles/web-basic](2026-09-27-readme-screenshot-hosting.zh.md)——第 4 处修改背后的镜像 sync 机制。
+- [README 截图托管在 profiles/basic](2026-09-27-readme-screenshot-hosting.zh.md)——第 4 处修改背后的镜像 sync 机制。
 - [ankh-guard 自部署 reconfigure](2026-09-26-ankh-guard-self-deploy-reconfigure.zh.md)——真实 preflight 调用所在的 runbook。

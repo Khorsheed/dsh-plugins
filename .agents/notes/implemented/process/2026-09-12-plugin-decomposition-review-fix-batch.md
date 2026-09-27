@@ -55,7 +55,7 @@ branch had also made. Two mechanisms for one fact cannot both live in the tree.
 - **The package map is generated.** `pnpm map:packages` writes `docs/packages.md`
   from the manifests (counts, form, component, browser half, `minHost`, profile
   membership) and `pnpm check:packages` is a gate step, so hand-maintained counts
-  cannot rot again. `release-status.ts` reads this repo's own `profiles/web-basic`.
+  cannot rot again. `release-status.ts` reads this repo's own `profiles/basic`.
 - **Ownership of the HTML skills.** The `3d-artifact` skill moved from
   file-preview to inline-html-render, its actual subject; both skills are
   registered by that package with `provider: 'inline-html-render'`.

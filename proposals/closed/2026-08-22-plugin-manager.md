@@ -1,6 +1,6 @@
 # 插件开关管理器(dsh-plugin-manager):组合内插件的运行时开关
 
-- **分类**：plugin(基础层;计划进 dsh-web-basic 整合包)
+- **分类**：plugin(基础层;计划进 dsh-basic 整合包)
 - **状态**：closed（放弃：唯一消费方 mode-switcher 已转向 agent preset 路线，不再需要行-overlay 写入器；官方 0.1.2 的 Plugin list 与 Plugin configuration 两个 tab 已覆盖「查看组合与改配置」，剩余的 loader 级开关价值不足以单独立项）
 - **最后更新**：2026-08-22
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`——无同意图提案。关联:[package-management](../active/2026-08-21-package-management.md)(整合包成员)、[docs/ops.md](../../docs/ops.md)(验收期组合测试需求)。

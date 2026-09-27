@@ -156,7 +156,7 @@ is only in devDependencies. Consumers need it for the host contract.
   min + latest-verified matrix in one place.
 - Package description says "withdraw and resend" but it's in-place
   replace+regeneration — update. README screenshots hosted from another repo
-  (`dsh-web-basic`) — move into this repo.
+  (`dsh-basic`) — move into this repo.
 - Changelog notes internal dev reached 0.4.x then reset to 0.1.0 — explain the
   public-version reset in the English changelog too.
 

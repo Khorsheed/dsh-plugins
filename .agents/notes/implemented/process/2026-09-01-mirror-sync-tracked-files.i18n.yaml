@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-01-mirror-sync-tracked-files.md
-.agents/notes/implemented/process/2026-09-01-mirror-sync-tracked-files.md: 361b439abfd6c6b3e605b47cc27a3f9f76db748a
-.agents/notes/implemented/process/2026-09-01-mirror-sync-tracked-files.zh.md: 9dde5600d92121c5b46688c5b1c35448d8d164f6
+.agents/notes/implemented/process/2026-09-01-mirror-sync-tracked-files.md: 7c4ccc8085f37cb243abe21f194742d85339e960
+.agents/notes/implemented/process/2026-09-01-mirror-sync-tracked-files.zh.md: b9f2be155148f0a46bdc88c5943d047d6790bb88

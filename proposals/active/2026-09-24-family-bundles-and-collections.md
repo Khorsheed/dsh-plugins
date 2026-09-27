@@ -67,13 +67,13 @@ package(能力单元)
 ## 集合与镜像仓
 
 - 主仓 dsh-plugins 唯一事实源,全量发布 npm。
-- 镜像到**集合粒度**:`dsh-web-basic`(已有,改造)、`dsh-web-eval`、`dsh-web-dev`(新开)。主仓 push main 后 action 只读同步;镜像仓 = 集合门面(定制 README + 成员目录快照),不追求独立可构建(安装走 npm),issue 指回主仓。**例外:dsh-ankh-guard 保留单包镜像**(仓主判断这个插件社区单独有需要)——同步 action 多一条单包规则,其余单插件仓不再维护(archive + 指向主仓/npm,或直接删除,仓主已授权)。
+- 镜像到**集合粒度**:`dsh-basic`(已有,改造)、`dsh-web-eval`、`dsh-web-dev`(新开)。主仓 push main 后 action 只读同步;镜像仓 = 集合门面(定制 README + 成员目录快照),不追求独立可构建(安装走 npm),issue 指回主仓。**例外:dsh-ankh-guard 保留单包镜像**(仓主判断这个插件社区单独有需要)——同步 action 多一条单包规则,其余单插件仓不再维护(archive + 指向主仓/npm,或直接删除,仓主已授权)。
 - 集合一键安装:先走「一行命令装 N 个 bundle」+ catalog 分组(PerryLink dsh-kit 形态);集合元包(patch 由构建期从成员 bundle patch 合并生成)作为波 3 候选,不阻塞前两波。
 
 ## 实施波次
 
 1. **波 1(形态验证)**:check-plugin-independence 扩展 sanction 词表 `dsh.bundle.kind: 'family'`(参照 preset-declarations 先例)+ 样例 bundle-local-agent、bundle-conversation-toolbox(原「bundle-messages」,按 v3 归属说明的定稿名)+ 3093 验收(卡面分组、行开关、成员独立安装不破)。**已落地(v4)**:sanction 与两个样例元包入库(commit 即引入「实现记录」本条的提交);3093 验收不在本次范围,待另行安排。
-2. **波 2(全量)**:全部 bundle 落地 + preset-dsh-eval 挪入 bundle-eval + npm 发布 + 3080 profile 换引元包(deploy:3080)+ profiles/web-basic|web-dev|web-eval 退役拆解(模式已归 preset,包集已归 bundle)。
+2. **波 2(全量)**:全部 bundle 落地 + preset-dsh-eval 挪入 bundle-eval + npm 发布 + 3080 profile 换引元包(deploy:3080)+ profiles/basic|web-dev|web-eval 退役拆解(模式已归 preset,包集已归 bundle)。
 3. **波 3(发现层)**:catalog source + 镜像同步 action + 集合安装命令。
 
 ## 开放问题(评审点)

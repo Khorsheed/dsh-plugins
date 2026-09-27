@@ -6,7 +6,7 @@ Drive the coding-agent CLIs installed on this machine — Kimi Code, Codex, Clau
 
 This is the local-agent family core: each CLI registers as one harness and gets an isolated scoped home under the shared homes root (created 0700 — your native CLI installation is never touched), a `/<harness> login|sessions|status|logout` slash-command family, and an auth card in Settings; the family's delegation ability — handing session work to a local CLI and resuming it later, even across host restarts — hangs off the same registry. The harnesses themselves ship as separate packages (`@khorsheed/dsh-local-agent-kimi` and friends); this package contains none.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent cards under Settings → Plugins, header dots showing each provider's auth state">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent cards under Settings → Plugins, header dots showing each provider's auth state">
 
 ## Features
 
@@ -18,7 +18,7 @@ This is the local-agent family core: each CLI registers as one harness and gets 
 - **Member sessions continue in the sidebar (host 0.1.6+)** — the official subagent directory gained an "Open in sidebar" row action: member sessions are one-shot subagents, so opened aside, this family's MemberComposer is elected as the writable composer — a zero-change benefit of this package; 0.1.5 hosts have no such entry and behave as before.
 - **Several logins per harness (named scopes)** — `/<harness> login --scope <name>` opens a second scoped home at `<homesRoot>/<harness>@<name>`: its own login, its own session records, its own `delegations.jsonl`, and nothing copied from the default one. An evaluation can therefore compare two accounts of one harness in a single run.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-member.png" width="640" alt="a member session delegated to a local CLI: live output streaming in, with the writable member composer and its model picker at the bottom">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="640" alt="a member session delegated to a local CLI: live output streaming in, with the writable member composer and its model picker at the bottom">
 
 ## Install
 

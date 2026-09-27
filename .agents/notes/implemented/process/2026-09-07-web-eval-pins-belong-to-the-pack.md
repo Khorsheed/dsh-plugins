@@ -14,7 +14,7 @@ The open question was left explicitly to I1 in the README ("I1 决定它们进 p
 
 ## Decision
 
-For **dsh-web-eval only**, `cordis.patch.yml` belongs to the pack. It ships the evaluation pins, and both installers overwrite it: it was already in `install.sh`'s `PROFILE_FILES`, and it is now also in `update.sh`'s `UPDATE_FILES`. Personal overrides go in a preset layer, which the pack does not touch. dsh-web-dev and dsh-web-basic are unchanged — there the layer is still the user's, because a development pack has no apparatus to protect.
+For **dsh-web-eval only**, `cordis.patch.yml` belongs to the pack. It ships the evaluation pins, and both installers overwrite it: it was already in `install.sh`'s `PROFILE_FILES`, and it is now also in `update.sh`'s `UPDATE_FILES`. Personal overrides go in a preset layer, which the pack does not touch. dsh-web-dev and dsh-basic are unchanged — there the layer is still the user's, because a development pack has no apparatus to protect.
 
 The file itself carries the reasoning, decision by decision, so an operator reading only the profile directory learns why an ordinary user layer is not one here. The seven rows it ships:
 

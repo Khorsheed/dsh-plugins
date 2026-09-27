@@ -6,7 +6,7 @@
 
 没有它的时候,agent 想让你**看到**一个效果,只能贴段代码让你脑补,或者写个 HTML 文件等你去预览里打开。这个插件把 info string 为 `dsh-card` 的 fenced block 在消息流中间替换成一个沙箱 iframe,直接运行其中的 HTML——内联在段落之间、真正可交互,而不是 ASCII 图或一句描述。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="agent 回复中间的 dsh-card 代码块被渲染成一张带 tab 的数据观测卡片，与上下文文字自然衔接">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="agent 回复中间的 dsh-card 代码块被渲染成一张带 tab 的数据观测卡片，与上下文文字自然衔接">
 
 ```dsh-card
 <div style="font:14px system-ui;padding:16px;background:#1e1e1e;border-radius:10px;color:#eee">

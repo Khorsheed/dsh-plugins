@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-07-web-eval-pins-belong-to-the-pack.md
-.agents/notes/implemented/process/2026-09-07-web-eval-pins-belong-to-the-pack.md: 57d469bd8af3e4deaa9d852c1c0089b146829f0d
-.agents/notes/implemented/process/2026-09-07-web-eval-pins-belong-to-the-pack.zh.md: 2ca14279234f2b86652bc5201a893b7ff0cd6d56
+.agents/notes/implemented/process/2026-09-07-web-eval-pins-belong-to-the-pack.md: 544e76c5d1794d6d78ce25113dc3b2b0f5b8471c
+.agents/notes/implemented/process/2026-09-07-web-eval-pins-belong-to-the-pack.zh.md: cf8c87bf84b4501767a9eddac831e439e9846530

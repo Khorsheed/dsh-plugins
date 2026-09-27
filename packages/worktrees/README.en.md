@@ -6,7 +6,7 @@ Which worktree is this session working in, and does it have uncommitted changes?
 
 In multi-worktree development, "which branch is this session on and how much is uncommitted" used to mean a trip to the terminal to run git. This plugin puts the answer in the session header: a branch capsule badge (with combined diff line counts, tinted when dirty) that opens a right-sidebar worktrees page — pending changes with diffs, an IDE-style commit log, and a full repository browse. Every surface is a read-only git fact; the plugin itself never writes to the repository. The one capability that does (creating/removing worktrees) lives in a session-granted companion tool package, and removal always asks for confirmation first.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/pilot-badge-standard.png" width="640" alt="the worktrees badge in the session header: a branch capsule (branch name + combined diff counts +175 −34) next to the repository-name capsule">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-standard.png" width="640" alt="the worktrees badge in the session header: a branch capsule (branch name + combined diff counts +175 −34) next to the repository-name capsule">
 
 ## Features
 
@@ -21,9 +21,9 @@ In multi-worktree development, "which branch is this session on and how much is 
 - **Preset-gated self-hide** — by default both the badge and the right-sidebar tab type read the official `pluginInventory` composition criterion: visible exactly when the current session's preset composition grants the companion tool row `@khorsheed/dsh-worktrees-tool`; every unreadable path fails open (stays visible). The tab type self-hides at the REGISTRATION level (the guide enumerates registrations, so hidden means unregistered; opened tabs are stored per session, so an ungranted session's layout never held one).
 - Trees default to the first level with expand-all / collapse-all; every file list is fetched once (client-side trie) and only per-file diffs load on demand. File preview shares one content pane with the Files plugin, `@khorsheed/dsh-client-ui-content-preview`.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/worktrees-tab.png" width="640" alt="the worktrees tab in Worktree-pending mode: a changes file tree with A/M/D badges and line counts on the left, and the selected file's colored diff in the right detail pane">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="640" alt="the worktrees tab in Worktree-pending mode: a changes file tree with A/M/D badges and line counts on the left, and the selected file's colored diff in the right detail pane">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/pilot-badge-other-preset.png" width="640" alt="on a preset that does not grant the companion tool row (minimal mode), the badge and the right-sidebar tab type self-hide, leaving only the official header buttons">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-other-preset.png" width="640" alt="on a preset that does not grant the companion tool row (minimal mode), the badge and the right-sidebar tab type self-hide, leaving only the official header buttons">
 
 ## Install
 

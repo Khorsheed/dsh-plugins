@@ -6,7 +6,7 @@
 
 自动起的会话标题常常词不达意，过两天想找回某个会话全靠运气。这个插件在聊天区顶部的标题旁放了一支铅笔：点一下，标题就地变成输入框，预填好当前名字并全选；Enter 保存、Escape 取消，名字起得太长会先被警告拦下，绝不悄悄截断。改名走的是官方 `session.rename` 接口，标题永远不会进入模型上下文，模型对此一无所知。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit1.png" width="640" alt="聊天区头部标题旁的铅笔按钮，悬停显示「重命名会话」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit1.png" width="640" alt="聊天区头部标题旁的铅笔按钮，悬停显示「重命名会话」">
 
 ## 特性
 
@@ -16,7 +16,7 @@
 - **预算把关**——超过宿主 80 UTF-8 字节标题预算的草稿被警告拦下，绝不静默截断。
 - **零足迹**——走官方 `session.rename` RPC；标题永远不会进入模型上下文（无 token 或 KV 缓存影响）。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit2.png" width="640" alt="点击铅笔后标题就地变成输入框，直接修改后回车保存">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit2.png" width="640" alt="点击铅笔后标题就地变成输入框，直接修改后回车保存">
 
 ## 安装
 

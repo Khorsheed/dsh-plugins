@@ -1,10 +1,10 @@
-# dsh-web-basic
+# dsh-basic
 
 中文 | [English](README.en.md)
 
-**一组日常高频的体验插件，让 dsh web GUI 变得完整。** 发出去的消息可以改、可以撤；长对话一键跳转；agent 写过的文件随手预览；后台任务一目了然；上下文快满时有人提醒——大多数用户最先想要的那层体验，一次装齐。
+**一组日常高频的体验插件，让你的 DSH 变得更好用、更自由。** 发出去的消息可以改、可以撤；会话标题一键修改；后台任务一目了然、自由中止；上下文压缩提醒自由配置；聊天过程中随时让 Agent 帮你画预览卡片，明确 UI 效果再动手，避免重复返工；自由管理所有的 Skill 和工具，并配置到不同的 preset；任务完成有提示音；移动端快速接入；开发插件安全重启，从此不怕小鲸鱼自杀……——大多数用户最先想要的那层体验，一次装齐。
 
-<img src="docs/screenshots/file-preview1.png" width="840" alt="dsh-web-basic 一览:会话「产物」tab 与文件预览抽屉">
+<img src="docs/screenshots/file-preview1.png" width="840" alt="dsh-basic 一览:会话「产物」tab 与文件预览抽屉">
 
 不想装整个整合包？下面每个成员都是独立插件，复制包名到宿主的「添加插件」对话框（0.1.7-rc.2 起：设置 → 插件）就能单独安装——整合包只是替你一次装齐。
 
@@ -266,24 +266,24 @@ dsh --version    # 或从运行中实例的启动命令/进程信息里确认宿
 
 - 宿主是 `0.1.5` 或更新（含各 rc）→ 用主线（clone 默认分支即可）。
 - 宿主是 `0.1.2-rc.*` ~ `0.1.4` → 停留在本次更新前的档案（`host-0.1.2-line` tag）。
-- 宿主是 `0.1.0-rc.*` / `0.1.1-rc.*` → 用旧线：clone 后 `git -C /tmp/dsh-web-basic checkout host-0.1.1-line`，成员插件停在 0.1.x（功能不再更新）。
+- 宿主是 `0.1.0-rc.*` / `0.1.1-rc.*` → 用旧线：clone 后 `git -C /tmp/dsh-basic checkout host-0.1.1-line`，成员插件停在 0.1.x（功能不再更新）。
 
 **一、安装与离线自检（不碰运行中的实例）**
 
 ```sh
-git clone https://github.com/Khorsheed/dsh-web-basic.git /tmp/dsh-web-basic
-sh /tmp/dsh-web-basic/scripts/install.sh
+git clone https://github.com/Khorsheed/dsh-basic.git /tmp/dsh-basic
+sh /tmp/dsh-basic/scripts/install.sh
 ```
 
-install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile web-basic --dump-config | grep -c "@khorsheed"` 应为 13（ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
+install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile basic --dump-config | grep -c "@khorsheed"` 应为 13（ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
 
 **二、同端口交接（关键一步）**
 
 ```sh
-sh /tmp/dsh-web-basic/scripts/restart-into-web-basic.sh [端口，默认 3080]
+sh /tmp/dsh-basic/scripts/restart-into-basic.sh [端口，默认 3080]
 ```
 
-脚本走整合包自带的 ankh-guard 守卫通道：环境探针 → 记录凭证 → 接管当前实例 → watchdog 停旧启新 + canary 验证。**你会随宿主实例一起断开，这是预期**——watchdog 会在原端口拉起 web-basic；脚本刻意不传 `--initiator`，守卫会从你的环境读取 `$DSH_SESSION_ID`，重启报告才能寻址到你的会话：用户重新打开这个会话时，你会收到「重启完成」的 followup 并继续。注意：中断回合的快照续跑依赖旧实例里已挂载 guard（首次交接不具备），从第二次重启起才完整。
+脚本走整合包自带的 ankh-guard 守卫通道：环境探针 → 记录凭证 → 接管当前实例 → watchdog 停旧启新 + canary 验证。**你会随宿主实例一起断开，这是预期**——watchdog 会在原端口拉起 basic；脚本刻意不传 `--initiator`，守卫会从你的环境读取 `$DSH_SESSION_ID`，重启报告才能寻址到你的会话：用户重新打开这个会话时，你会收到「重启完成」的 followup 并继续。注意：中断回合的快照续跑依赖旧实例里已挂载 guard（首次交接不具备），从第二次重启起才完整。
 
 两个前置，缺一会被脚本拒绝并给出原因：
 

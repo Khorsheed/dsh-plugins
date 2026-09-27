@@ -6,7 +6,7 @@
 
 一个纯氛围插件：不用死盯页面，也知道 agent 是不是还在干活。只要有会话在跑，标签页图标就变成吐泡泡的鲸鱼动画，侧边栏的鲸鱼也跟着喷起水滴；任务跑完、或者 agent 卡住等你回话时，它会播一小段提示音。不改任何官方文件，模型完全无感——装上，页面就活了。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong1.png" width="640" alt="任务运行时：侧边栏鲸鱼喷水，标签页图标同步变成吐泡动画">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong1.png" width="640" alt="任务运行时：侧边栏鲸鱼喷水，标签页图标同步变成吐泡动画">
 
 ## 特性
 
@@ -14,7 +14,7 @@
 - **侧边栏水滴**——工作进行中，三滴 DeepSeek 蓝的水滴从侧边栏鲸鱼的喷水孔升起。
 - **提示音**——完成与阻塞各有不同音调（WebAudio 合成，无音频资源）。尊重 `prefers-reduced-motion`：动画隐藏、提示音静默。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong2.png" width="640" alt="任务结束时播放提示音，标签页图标同步变化">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong2.png" width="640" alt="任务结束时播放提示音，标签页图标同步变化">
 
 ## 安装
 

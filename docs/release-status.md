@@ -1,8 +1,8 @@
 # 发布状态
 
-> 由 `pnpm release:status` 生成(2026-09-27)，请勿手改。数据源：各包 package.json(version、dsh.compat)+ 本仓 `profiles/web-basic` + npm registry。
+> 由 `pnpm release:status` 生成(2026-09-27)，请勿手改。数据源：各包 package.json(version、dsh.compat)+ 本仓 `profiles/basic` + npm registry。
 
-| 包 | npm 已发布 | 仓内版本 | minHost | verifiedHost | web-basic 成员 |
+| 包 | npm 已发布 | 仓内版本 | minHost | verifiedHost | basic 成员 |
 | --- | --- | --- | --- | --- | --- |
 | `@khorsheed/dsh-ankh-guard` | 0.3.2 | 0.3.2 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |

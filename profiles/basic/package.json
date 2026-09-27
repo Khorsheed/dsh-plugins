@@ -1,5 +1,5 @@
 {
-  "name": "dsh-profile-web-basic",
+  "name": "dsh-profile-basic",
   "private": true,
   "dependencies": {
     "@khorsheed/dsh-ankh-guard": "^0.3.2",

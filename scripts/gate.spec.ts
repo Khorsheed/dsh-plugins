@@ -102,7 +102,7 @@ describe('resolveScope', () => {
   })
 
   it("refuses to scope when a profile's scripts change — they build and pack every member", () => {
-    for (const path of ['profiles/web-eval/scripts/install.sh', 'profiles/web-basic/scripts/update.sh']) {
+    for (const path of ['profiles/web-eval/scripts/install.sh', 'profiles/basic/scripts/update.sh']) {
       const scope = resolveScope(stub({ 'git diff --name-only': ok(path), 'git status --porcelain': ok('') }), base)
       expect(scope.filter, `${path} must force a whole-repo run`).toBeUndefined()
       expect(scope.why).toContain(path)

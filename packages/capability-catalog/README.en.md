@@ -6,7 +6,7 @@ Every skill and tool the running instance actually has — who registered it, wh
 
 dsh composes each session from an agent preset, and plugins, skill roots, and MCP servers all register capabilities into it — but the host ships no surface that lists them, so "what can this agent do, and where did that tool come from?" had no answer short of reading logs. This plugin adds a standalone settings tab (工具与技能) that answers it for a human, and a `list_capabilities` tool that answers it for the model.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-1.png" width="640" alt="the 工具与技能 settings tab: a skill preview grid with source badges, search and sort, and the mode picker">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-1.png" width="640" alt="the 工具与技能 settings tab: a skill preview grid with source badges, search and sort, and the mode picker">
 
 ## Features
 
@@ -15,13 +15,13 @@ dsh composes each session from an agent preset, and plugins, skill roots, and MC
 
 - **Install a skill three ways** — one modal: upload (a `SKILL.md`, a `.zip` containing one, or a whole skill folder, read by a dependency-free `node:zlib` zip reader); install from source (an `owner/repo`, a git URL, or a whole pasted `npx skills add <repo> [--skill <name>]` command — GitHub in-repo paths and `tree/`/`blob/` URLs normalize to the same clone, and only `github.com` is split into owner/repo, so GitLab subgroups survive); or pick skills from a local directory. Each source chooses the target root (`$DSH_HOME/skills` or `.agents/skills`) and whether the skill enters the model catalog; the skill-filesystem watcher discovers the result on its own.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-2.png" width="640" alt="the Add Skill modal: three install paths — file upload, install from source, pick from a local directory — each with a choice of target root and whether the skill enters the model catalog">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-2.png" width="640" alt="the Add Skill modal: three install paths — file upload, install from source, pick from a local directory — each with a choice of target root and whether the skill enters the model catalog">
 
 - **The mode view** — every session is composed from an agent preset (「模式」), and each preset registers a different set of skills and tools. The mode control beside the search box reads one preset's face (`snapshotAt(presetId)`) — the grid is that mode's face and nothing else — and 全部模式（对比） reads every mode in one call (`modeFaces`) and tags each card with the modes that load it, so "which modes does this capability appear in?" is one click. A mode that cannot be read is reported as unavailable, never rendered as an empty face.
 - **Preset-scoped skills** — the plugin owns a managed root (`$DSH_HOME/capability-catalog/skills`) whose skills declare the presets they belong to in frontmatter `presetScope`; the detail modal edits it (save, adopt an installed skill into the managed root, release it back to the user root), and a diagnostic row keeps managed skills no mode loads reachable instead of hidden.
 - **MCP server management** — paste an `mcp.json` server entry and the dialog parses the transport and detects credentials (a credential-looking field becomes a `secretRef:` marker in the stored config, and the Remote only ever reports `configured` state — values never reach the browser). Connect to discover a server's tools, toggle a whole server or a single tool, and every enabled tool is registered on `ctx.tools` as `mcp__<server>__<tool>` so the model can call it. Configured servers survive restarts through the settings service.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="the Add MCP server modal: paste an mcp.json server entry and the transport and credentials are detected automatically">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="the Add MCP server modal: paste an mcp.json server entry and the transport and credentials are detected automatically">
 
 - **`list_capabilities` for the model** — a model-facing tool that lists the skills and tools visible in the caller's own agent scope, stamped with the capability fingerprint tag.
 - **A capability fingerprint** — `snapshotFor(presetId?)` loads every skill body and stamps a sha256 over the canonical capability face (names, sources, channels, parameters, body hashes — prose excluded), so two instances registering the same capabilities in a different order hash alike; `hashOf` / `capsTag` are exported for host-side readers.

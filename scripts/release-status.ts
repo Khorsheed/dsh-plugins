@@ -29,9 +29,9 @@ function publishedVersion(name) {
   }
 }
 
-/** Bundle membership from this repo's own web-basic integration profile. */
+/** Bundle membership from this repo's own basic integration profile. */
 function basicMembers() {
-  const profile = join(root, 'profiles', 'web-basic', 'package.json')
+  const profile = join(root, 'profiles', 'basic', 'package.json')
   if (!existsSync(profile)) return new Set()
   return new Set(Object.keys(JSON.parse(readFileSync(profile, 'utf8')).dependencies ?? {}))
 }
@@ -58,9 +58,9 @@ const date = new Date().toISOString().slice(0, 10)
 const lines = [
   '# 发布状态',
   '',
-  `> 由 \`pnpm release:status\` 生成(${date})，请勿手改。数据源：各包 package.json(version、dsh.compat)+ 本仓 \`profiles/web-basic\` + npm registry。`,
+  `> 由 \`pnpm release:status\` 生成(${date})，请勿手改。数据源：各包 package.json(version、dsh.compat)+ 本仓 \`profiles/basic\` + npm registry。`,
   '',
-  '| 包 | npm 已发布 | 仓内版本 | minHost | verifiedHost | web-basic 成员 |',
+  '| 包 | npm 已发布 | 仓内版本 | minHost | verifiedHost | basic 成员 |',
   '| --- | --- | --- | --- | --- | --- |',
   ...rows.map(r => `| \`${r.name}\` | ${r.published} | ${r.repo} | ${r.minHost} | ${r.verifiedHost} | ${r.basic ? '✓' : ''} |`),
   '',

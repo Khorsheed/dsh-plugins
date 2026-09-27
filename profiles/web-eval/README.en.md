@@ -383,7 +383,7 @@ Switching is a same-port handoff; `update.sh` overwrites the member list, the lo
 
 | Pack | Positioning |
 |---|---|
-| [dsh-web-basic](../web-basic/README.en.md) | daily mode: base experience only |
+| [dsh-basic](../basic/README.en.md) | daily mode: base experience only |
 | [dsh-web-dev](../web-dev/README.en.md) | dev mode: base experience + local-agent family + worktrees + room |
 
 ## License
