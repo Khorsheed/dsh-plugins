@@ -45,8 +45,13 @@
  * Usage: tsx scripts/gen-typert.mts
  *
  * With no filter, generates the full known set in one analysis batch. A
- * `GEN_TYPERT_ONLY` build copies and analyzes only the named plugin packages,
- * so an independently built plugin never reads an unrelated sibling's source.
+ * `GEN_TYPERT_ONLY` build scopes analysis to the named plugin packages plus
+ * the typert siblings they declare as dependencies/peerDependencies — an
+ * unselected sibling resolves from its built lib/types, which is not a
+ * registered face contributor, so a face reaching the sibling's merged
+ * declarations (room → local-agent's SessionEventMap augmentation) needs the
+ * sibling in the batch; unrelated packages stay unselected, so a broken
+ * neighbor still cannot block the batch.
  * Every selected set still runs as one batch because the generator's shared
  * type-declaration metadata depends on the analyzed set.
  */
@@ -190,14 +195,40 @@ const HARNESS_ENTRIES = [
   'tsconfig.host.json',
 ] as const
 
-/** Resolve the plugin packages included in one generation batch. */
+/**
+ * Resolve the plugin packages included in one generation batch.
+ *
+ * A scoped batch auto-expands over declared intra-repo edges (dependencies /
+ * peerDependencies naming another typert package): the scoped overlay maps an
+ * UNSELECTED sibling to its built `lib/types`, which is not a registered face
+ * contributor — a face that reaches the sibling's declarations then fails the
+ * analysis ("merged interface … outside this face": room's face hits
+ * local-agent's SessionEventMap augmentation) or crashes naming its exports.
+ * The declared edge is exactly what makes the sibling's types resolvable in
+ * the first place, so generating them together keeps scoped output identical
+ * to a full run's. Unrelated packages stay unselected — a neighbor's broken
+ * WIP still cannot block this batch.
+ */
 export function selectTypertPackages(only: string | undefined): readonly TypertPackage[] {
   const names = only?.split(',').map(name => name.trim()).filter(Boolean)
   const selected = names !== undefined && names.length > 0
     ? TYPERT_PACKAGES.filter(pkg => names.includes(pkg.name))
-    : TYPERT_PACKAGES
+    : [...TYPERT_PACKAGES]
   if (selected.length === 0) throw new Error('gen-typert: GEN_TYPERT_ONLY matched no registered package')
-  return selected
+  if (names === undefined || names.length === 0) return selected
+  const queue = [...selected]
+  for (let i = 0; i < queue.length; i++) {
+    const pkg = queue[i] as TypertPackage
+    let manifest: { dependencies?: Record<string, string>; peerDependencies?: Record<string, string> }
+    try {
+      manifest = JSON.parse(readFileSync(join(repoRoot, pkg.dir, 'package.json'), 'utf8')) as typeof manifest
+    } catch { continue }
+    for (const edge of Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies })) {
+      const sibling = TYPERT_PACKAGES.find(candidate => candidate.name === edge)
+      if (sibling !== undefined && !queue.includes(sibling)) queue.push(sibling)
+    }
+  }
+  return queue
 }
 
 /** Copy only the selected plugin sources and compiler inputs into an overlay. */
@@ -226,6 +257,14 @@ export function copyTypertPackageSources(
  * from the sibling's built `lib/types` instead. A sibling without a built
  * `lib/types` is skipped — an actual import of it fails with the plain
  * TS2307, which then means "build the sibling first".
+ *
+ * A copied sibling is NOT a registered face contributor (no package.json, no
+ * project reference lands in the overlay): its types resolve for identity,
+ * but face emission cannot name its exports. A selected package whose FACE
+ * reaches a sibling's declarations (room's SessionEventMap merge members
+ * typed with local-agent's stream checkpoint) must therefore name the sibling
+ * in GEN_TYPERT_ONLY — `selectTypertPackages` expands declared edges
+ * automatically, so this stays correct by construction.
  * @param selected - the packages whose sources ARE overlaid.
  * @param sourceRoot - this repo's root.
  * @param targetRoot - the overlay root.
