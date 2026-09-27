@@ -582,10 +582,23 @@ export interface CanvasDrawPoint {
  */
 export type CanvasStrokeColor = 'ink' | 'faint'
 
+/**
+ * How broad a pen a stroke was drawn with. `medium` is the default and is never
+ * stored, so a stroke from before widths existed reads as 中 (2026-09-28).
+ */
+export type CanvasStrokeSize = 'thin' | 'medium' | 'bold'
+
 /** One unbroken stroke: the sampled points, in the order they were drawn. */
 export interface CanvasStroke {
   readonly pts: readonly CanvasDrawPoint[]
   readonly color: CanvasStrokeColor
+  /** The pen width; absent means `medium`. */
+  readonly size?: CanvasStrokeSize
+}
+
+/** Whether a value is a pen width the renderer knows. */
+export function isCanvasStrokeSize(value: unknown): value is CanvasStrokeSize {
+  return value === 'thin' || value === 'medium' || value === 'bold'
 }
 
 /** Whether a value is a stroke colour the renderer knows how to ink. */
@@ -616,6 +629,7 @@ export function normalizeDraw(raw: unknown): CanvasStroke[] {
     if (typeof entry !== 'object' || entry === null) continue
     const points = (entry as Record<string, unknown>)['pts']
     const color = (entry as Record<string, unknown>)['color']
+    const size = (entry as Record<string, unknown>)['size']
     if (!Array.isArray(points)) continue
     const pts: CanvasDrawPoint[] = []
     for (const item of points as unknown[]) {
@@ -629,7 +643,11 @@ export function normalizeDraw(raw: unknown): CanvasStroke[] {
       pts.push({ x, y, w })
     }
     if (pts.length < 2) continue
-    strokes.push({ pts, color: isCanvasStrokeColor(color) ? color : 'ink' })
+    strokes.push({
+      pts,
+      color: isCanvasStrokeColor(color) ? color : 'ink',
+      ...(isCanvasStrokeSize(size) && size !== 'medium' ? { size } : {}),
+    })
   }
   return strokes
 }

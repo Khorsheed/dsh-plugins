@@ -6,7 +6,7 @@
  * outline a stroke becomes.
  */
 import { describe, expect, it } from 'vitest'
-import { DRAW_BOX, MAX_DRAW_POINTS, MAX_DRAW_STROKES, MAX_DRAW_WIDTH, type CanvasStroke } from '../src/types.ts'
+import { DRAW_BOX, MAX_DRAW_POINTS, MAX_DRAW_STROKES, MAX_DRAW_WIDTH, normalizeDraw, type CanvasStroke } from '../src/types.ts'
 import {
   appendStroke, boxPointOf, outlinePathOf, sampleWidth, samplesNext, strokeAt, strokePathOf,
   strokePathsOf, unitsPerPixel,
@@ -173,6 +173,41 @@ describe('strokePathOf', () => {
     // it rather than letting ink bleed over the card's border.
     expect(Math.max(...numbers)).toBeLessThanOrEqual(DRAW_BOX.width + MAX_DRAW_WIDTH)
     expect(Math.min(...numbers)).toBeGreaterThanOrEqual(-MAX_DRAW_WIDTH)
+  })
+})
+
+describe('normalizeDraw — pen widths', () => {
+  const pts = [{ x: 1, y: 1, w: 5 }, { x: 9, y: 9, w: 5 }]
+
+  it('keeps 细 and 粗, and reads 中, a missing width or an unknown one as no field at all', () => {
+    const read = normalizeDraw([
+      { pts, color: 'ink', size: 'thin' },
+      { pts, color: 'ink', size: 'bold' },
+      { pts, color: 'ink', size: 'medium' },
+      { pts, color: 'ink' },
+      { pts, color: 'ink', size: 'huge' },
+    ])
+    expect(read.map(stroke => stroke.size)).toEqual(['thin', 'bold', undefined, undefined, undefined])
+    expect(read.slice(2).every(stroke => !('size' in stroke))).toBe(true)
+  })
+})
+
+describe('strokePathOf — pen widths', () => {
+  /** The outline's spread across the line, a stand-in for how broad it inks. */
+  const spread = (size?: CanvasStroke['size']): number => {
+    const path = strokePathOf({
+      pts: [point(100, 200, 6), point(300, 200, 6), point(500, 200, 6)],
+      color: 'ink',
+      ...(size === undefined ? {} : { size }),
+    })
+    const ys = path.match(/-?\d+(\.\d+)?/g)!.map(Number).filter((_, index) => index % 2 === 1)
+    return Math.max(...ys) - Math.min(...ys)
+  }
+
+  it('inks 细 narrower and 粗 broader than 中, and a stroke with no width as 中', () => {
+    expect(spread('thin')).toBeLessThan(spread('medium'))
+    expect(spread('bold')).toBeGreaterThan(spread('medium'))
+    expect(spread()).toBe(spread('medium'))
   })
 })
 

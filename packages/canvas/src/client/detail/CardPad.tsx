@@ -22,7 +22,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconCloseOutlineMedium, IconEditOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
-import { MAX_DRAW_STROKES, type CanvasDrawPoint, type CanvasStroke } from '../../types.ts'
+import { MAX_DRAW_STROKES, type CanvasDrawPoint, type CanvasStroke, type CanvasStrokeSize } from '../../types.ts'
 import {
   appendStroke, boxPointOf, samplesNext, sampleWidth, strokeAt, unitsPerPixel,
   type PadTool,
@@ -63,6 +63,38 @@ function ToolSeg({ tool, hasInk, onTool, t }: {
     </span>
   )
 }
+
+const SIZES: readonly CanvasStrokeSize[] = ['thin', 'medium', 'bold']
+
+/**
+ * The pen's width, 细 / 中 / 粗 (2026-09-28). Stored per stroke, so one drawing
+ * mixes widths. Shown only while the pen is up, beside it: a width without a
+ * pen in hand is a setting with nothing to set.
+ */
+function SizeSeg({ size, onSize, t }: {
+  readonly size: CanvasStrokeSize
+  readonly onSize: (size: CanvasStrokeSize) => void
+  readonly t: CanvasDetailProps['t']
+}): ReactNode {
+  return (
+    <span className={css.seg} role="group" aria-label={t('draw.size')}>
+      {SIZES.map(each => (
+        <button
+          key={each}
+          type="button"
+          aria-pressed={size === each}
+          onClick={() => { onSize(each) }}
+        >
+          <span className={css.sizeDot} data-size={each} aria-hidden="true" />
+          {t(`draw.${each}`)}
+        </button>
+      ))}
+    </span>
+  )
+}
+
+/** The last width picked: the next pad opens with it, the way a real pen stays in hand. */
+let lastSize: CanvasStrokeSize = 'medium'
 
 /** How far from a stroke the eraser still counts as aimed, in SCREEN pixels. */
 const ERASE_TOLERANCE = 12
@@ -106,6 +138,11 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
   const stampRef = useRef(0)
   const [live, setLive] = useState<readonly CanvasDrawPoint[]>([])
   const [hover, setHover] = useState(-1)
+  const [size, setSize] = useState<CanvasStrokeSize>(lastSize)
+  const pickSize = (next: CanvasStrokeSize): void => {
+    lastSize = next
+    setSize(next)
+  }
 
   const drawing = editing && tool !== 'text'
   const hasInk = strokes.length > 0
@@ -201,7 +238,7 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
       notify(t('draw.full'))
       return
     }
-    onStrokes(appendStroke(strokes, { pts, color: 'ink' }))
+    onStrokes(appendStroke(strokes, { pts, color: 'ink', ...(size === 'medium' ? {} : { size }) }))
   }
 
   const undo = (): void => {
@@ -209,13 +246,14 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
     onStrokes(strokes.slice(0, Math.max(0, strokes.length - 1)))
   }
 
-  const figure = <DrawFigure strokes={strokes} hovered={hover} live={live} />
+  const figure = <DrawFigure strokes={strokes} hovered={hover} live={live} liveSize={size} />
 
   return (
     <div className={css.pad} data-tool={drawing ? tool : 'text'}>
       {editing && (
         <div className={css.bar} role="group" aria-label={t('draw.tools')}>
           <ToolSeg tool={tool} hasInk={hasInk} onTool={onTool} t={t} />
+          {drawing && tool === 'pen' && <SizeSeg size={size} onSize={pickSize} t={t} />}
           {hasInk && (
             <Button size="sm" icon={<IconUndoOutline16 size={12} />} onClick={undo}>
               {t('draw.undo')}

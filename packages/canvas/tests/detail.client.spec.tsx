@@ -649,6 +649,35 @@ describe('the card pad (§11.4)', () => {
     expect(draw[0]!.pts.length).toBe(3)
   })
 
+  it('stores the pen width on the stroke, 中 by leaving it out, and keeps the width for the next pad', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1', { text: PAGE })])
+    view.select('c_1')
+    const { container, unmount } = render(<CanvasDetailView {...props} />)
+    await screen.findByRole('button', { name: '铅笔' })
+    // The width only shows with the pen in hand.
+    expect(screen.queryByRole('group', { name: '笔触粗细' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    const widths = screen.getByRole('group', { name: '笔触粗细' })
+    expect(within(widths).getByRole('button', { name: '中' }).getAttribute('aria-pressed')).toBe('true')
+    drag(padBox(container), [[60, 40], [120, 80]])
+    await waitFor(() => { expect(mocks.patchCard).toHaveBeenCalled() })
+    expect(mocks.patchCard.mock.calls.at(-1)![1].drawings.main[0]).not.toHaveProperty('size')
+    fireEvent.click(within(widths).getByRole('button', { name: '粗' }))
+    drag(padBox(container), [[30, 30], [90, 90]])
+    await waitFor(() => {
+      expect(mocks.patchCard.mock.calls.at(-1)![1].drawings.main).toHaveLength(2)
+    })
+    expect(mocks.patchCard.mock.calls.at(-1)![1].drawings.main[1].size).toBe('bold')
+    unmount()
+    // A new pad opens with the pen last picked.
+    render(<CanvasDetailView {...props} />)
+    await screen.findByRole('button', { name: '铅笔' })
+    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    const again = screen.getByRole('group', { name: '笔触粗细' })
+    expect(within(again).getByRole('button', { name: '粗' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(within(again).getByRole('button', { name: '中' }))
+  })
+
   it('keeps finished ink on screen with the pen put down, and takes one stroke back per 撤一笔', async () => {
     const two: CanvasStroke[] = [
       { pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' },

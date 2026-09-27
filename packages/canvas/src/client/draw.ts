@@ -20,7 +20,7 @@
 import { getStroke, type Vec2 } from 'perfect-freehand'
 import {
   DRAW_BOX, MAX_DRAW_POINTS, MAX_DRAW_STROKES, MAX_DRAW_WIDTH,
-  type CanvasDrawPoint, type CanvasStroke,
+  type CanvasDrawPoint, type CanvasStroke, type CanvasStrokeSize,
 } from '../types.ts'
 
 /** The tool the pad answers to. `text` means the pad is not taking strokes. */
@@ -148,13 +148,16 @@ export function appendStroke(strokes: readonly CanvasStroke[], stroke: CanvasStr
   if (strokes.length >= STROKE_LIMIT) return [...strokes]
   const pts = stroke.pts.slice(0, POINT_LIMIT)
   if (pts.length < 2) return [...strokes]
-  return [...strokes, { pts, color: stroke.color }]
+  return [...strokes, { pts, color: stroke.color, ...(stroke.size === undefined || stroke.size === 'medium' ? {} : { size: stroke.size }) }]
 }
 
 /** One coordinate per decimal place: enough for a screen, short enough to store. */
 function placed(value: number): string {
   return (Math.round(value * 10) / 10).toFixed(1)
 }
+
+/** The outline's scale per pen width; `medium` is the width strokes always had. */
+const SIZE_SCALE: Readonly<Record<CanvasStrokeSize, number>> = { thin: 0.5, medium: 1, bold: 1.9 }
 
 /**
  * The filled outline of one stroke, as an SVG path in box units. perfect-freehand
@@ -170,7 +173,7 @@ export function strokePathOf(stroke: CanvasStroke): string {
       point.x, point.y, Math.min(1, Math.max(0.05, point.w / PEN_MAX)),
     ]),
     {
-      size: MAX_DRAW_WIDTH,
+      size: MAX_DRAW_WIDTH * SIZE_SCALE[stroke.size ?? 'medium'],
       thinning: 0.55,
       smoothing: 0.5,
       streamline: 0.35,

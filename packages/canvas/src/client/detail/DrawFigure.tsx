@@ -7,7 +7,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useMemo } from 'react'
-import { DRAW_BOX, type CanvasDrawPoint, type CanvasStroke } from '../../types.ts'
+import { DRAW_BOX, type CanvasDrawPoint, type CanvasStroke, type CanvasStrokeSize } from '../../types.ts'
 import { strokePathOf, strokePathsOf } from '../draw.ts'
 import css from './DrawFigure.module.css'
 
@@ -17,14 +17,16 @@ export interface DrawFigureProps {
   readonly hovered?: number
   /** The stroke still under construction, drawn over the saved ones. */
   readonly live?: readonly CanvasDrawPoint[]
+  /** The pen width the live stroke is being drawn with. */
+  readonly liveSize?: CanvasStrokeSize
 }
 
 /** The strokes of a card, as one SVG in the logical box's units. */
-export function DrawFigure({ strokes, hovered = -1, live }: DrawFigureProps) {
+export function DrawFigure({ strokes, hovered = -1, live, liveSize }: DrawFigureProps) {
   const paths = useMemo(() => strokePathsOf(strokes), [strokes])
   const livePath = useMemo(
-    () => (live !== undefined && live.length > 1 ? strokePathOf({ pts: live, color: 'ink' }) : ''),
-    [live],
+    () => (live !== undefined && live.length > 1 ? strokePathOf({ pts: live, color: 'ink', ...(liveSize === undefined ? {} : { size: liveSize }) }) : ''),
+    [live, liveSize],
   )
   return (
     <svg
