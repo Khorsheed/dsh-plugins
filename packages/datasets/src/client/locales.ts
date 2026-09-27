@@ -118,6 +118,8 @@ export type DatasetsKey =
   | 'detail.readAt'
   | 'detail.readAtCommit'
   | 'detail.usedBy'
+  | 'detail.usedByMore'
+  | 'detail.runsOlder'
   | 'detail.runs'
   | 'detail.runsEmpty'
   | 'detail.itemEmptyHint'
@@ -274,6 +276,8 @@ export const zh: Record<DatasetsKey, string> = {
   'detail.readAt': '看的是 {ref} @ {commit}',
   'detail.readAtCommit': '看的是 @ {commit}',
   'detail.usedBy': '用过这道题的实验：{names}',
+  'detail.usedByMore': ' 等 {count} 个',
+  'detail.runsOlder': '更早的作答记录 · {count}',
   'detail.runs': '作答记录',
   'detail.runsEmpty': '这道题还没有在任何实验里作答过',
   'detail.runsCell': '{condition} · 第 {rep} 次',
@@ -478,6 +482,8 @@ export const en: Record<DatasetsKey, string> = {
   'detail.readAt': 'read at {ref} @ {commit}',
   'detail.readAtCommit': 'read at @ {commit}',
   'detail.usedBy': 'Experiments that used this item: {names}',
+  'detail.usedByMore': ' and {count} more',
+  'detail.runsOlder': 'Earlier answer records · {count}',
   'detail.runs': 'Answer record',
   'detail.runsEmpty': 'This item has not been answered in any experiment yet',
   'detail.runsCell': '{condition} · take {rep}',

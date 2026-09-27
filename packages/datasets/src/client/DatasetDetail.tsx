@@ -222,12 +222,14 @@ function PlayerView(props: { brief: ItemBrief; t: DatasetsViewProps['t'] }) {
         {files.length === 0
           ? <div className={css.panelWarn}>{t('detail.playerEmpty')}</div>
           : (
-            <ul className={css.flowList}>
+            <ul className={css.fileRows}>
               {files.map(file => (
-                <li key={`${file.source}/${file.layer}/${file.path}`}>
-                  <span className={css.flowPath}>{file.path}</span>
-                  {file.source === 'dataset' && <span className={css.panelTag}>{t('detail.playerShared')}</span>}
-                  <span className={css.panelTag}>{bytes(file.bytes)}</span>
+                <li key={`${file.source}/${file.layer}/${file.path}`} className={css.fileRow}>
+                  <span className={css.fileRowPath} title={file.path}>{file.path}</span>
+                  <span className={css.fileRowNote}>
+                    {file.source === 'dataset' && `${t('detail.playerShared')} · `}
+                    {bytes(file.bytes)}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -290,24 +292,22 @@ function JudgeOnlyView(props: { brief: ItemBrief; files: readonly JudgeOnlyFile[
         {files.length === 0
           ? <div className={css.panelTag}>{t('detail.judgeOnlyEmpty')}</div>
           : (
-            <ul className={css.flowList}>
+            <ul className={css.fileRows}>
               {own.map(file => (
-                <li key={`item/${file.layer}/${file.path}`}>
-                  <span className={css.flowPath}>{`${file.layer}/${file.path}`}</span>
-                  {file.path === rubricPath && <span className={css.flowNote}>{t('detail.judgeLeaves', { leaves })}</span>}
+                <li key={`item/${file.layer}/${file.path}`} className={css.fileRow}>
+                  <span className={css.fileRowPath} title={`${file.layer}/${file.path}`}>{`${file.layer}/${file.path}`}</span>
+                  {file.path === rubricPath && <span className={css.fileRowNote}>{t('detail.judgeLeaves', { leaves })}</span>}
                 </li>
               ))}
               {[...shared].map(([layer, paths]) => (
-                <li key={`shared/${layer}`} title={paths.join('\n')}>
-                  <span className={css.flowPath}>{`${layer}/`}</span>
-                  <span className={css.panelTag}>{t('detail.playerShared')} · {t('tree.fileCount', { count: paths.length })}</span>
+                <li key={`shared/${layer}`} className={css.fileRow} title={paths.join('\n')}>
+                  <span className={css.fileRowPath}>{`${layer}/`}</span>
+                  <span className={css.fileRowNote}>{t('detail.playerShared')} · {t('tree.fileCount', { count: paths.length })}</span>
                 </li>
               ))}
-              {probes.length + sharedProbes.length === 0 && (
-                <li><span className={css.flowWarn}>{t('detail.noProbes')}</span></li>
-              )}
             </ul>
           )}
+        {probes.length + sharedProbes.length === 0 && <div className={css.flowWarn}>{t('detail.noProbes')}</div>}
         <div className={css.boxFoot}>
           <span className={css.panelTag}>{t('detail.judge')}</span>
           {t('detail.judgeRubric', { leaves })}
@@ -357,45 +357,85 @@ function ItemCrumb(props: {
   )
 }
 
-/** «作答记录»: the item's cells across every experiment that ran it. */
+/** How many experiments the answer record and the 用过 line show before folding (T83 ruling). */
+const RECENT_RUNS = 5
+
+/** One experiment's block in «作答记录». */
+function RunBlock(props: { run: ItemRunsView['runs'][number]; t: DatasetsViewProps['t'] }) {
+  const { run, t } = props
+  return (
+    <div className={css.runBlock}>
+      <div className={css.panelLine}>
+        <span className={css.panelPath}>{run.name}</span>
+        <span className={css.panelTag}>{stamp(run.startedAt)}</span>
+        {run.commit !== null && <span className={css.panelTag} title={run.commit}>@{run.commit.slice(0, 7)}</span>}
+      </div>
+      <ul className={css.panelList}>
+        {run.cells.map(cell => (
+          <li key={cell.missionId} className={css.panelRow}>
+            <span className={css.panelPath}>
+              {t('detail.runsCell', { condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
+            </span>
+            {/* The bucket and the stage are eval's projection of the same
+                ledger the 实验室 tab reads; ui-spec §九 makes them the same
+                two chips here as they are there. */}
+            <Chip tone={bucketTone(cell.bucket)} title={cell.bucket}>
+              <Word phrase={bucketPhrase(cell.bucket)} t={t} />
+            </Chip>
+            <Chip tone={stageTone(cell.state)} title={cell.state}>
+              <Word phrase={stagePhrase(cell.state)} t={t} />
+            </Chip>
+            <span className={css.panelNumber}>
+              {Object.entries(cell.verdicts).map(([ns, count]) => `${ns} ${count}`).join(' · ')}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * «作答记录»: the item's cells across every experiment that ran it — the
+ * newest {@link RECENT_RUNS} open, the rest behind one fold, so a much-run
+ * item does not stretch the page past its two cards.
+ */
 function AnswerRecord(props: { runs: ItemRunsView; t: DatasetsViewProps['t'] }) {
   const { runs, t } = props
+  const recent = runs.runs.slice(0, RECENT_RUNS)
+  const older = runs.runs.slice(RECENT_RUNS)
   return (
     <section className={css.panel}>
       <div className={css.panelTitle}>{t('detail.runs')}</div>
       {runs.runs.length === 0 && <EmptyState title={t('detail.runsEmpty')} hint={t('detail.runsEmptyHint')} />}
-      {runs.runs.map(run => (
-        <div key={run.runId} className={css.runBlock}>
-          <div className={css.panelLine}>
-            <span className={css.panelPath}>{run.name}</span>
-            <span className={css.panelTag}>{stamp(run.startedAt)}</span>
-            {run.commit !== null && <span className={css.panelTag} title={run.commit}>@{run.commit.slice(0, 7)}</span>}
-          </div>
-          <ul className={css.panelList}>
-            {run.cells.map(cell => (
-              <li key={cell.missionId} className={css.panelRow}>
-                <span className={css.panelPath}>
-                  {t('detail.runsCell', { condition: cell.condition ?? '—', rep: cell.rep ?? '—' })}
-                </span>
-                {/* The bucket and the stage are eval's projection of the same
-                    ledger the 实验室 tab reads; ui-spec §九 makes them the same
-                    two chips here as they are there. */}
-                <Chip tone={bucketTone(cell.bucket)} title={cell.bucket}>
-                  <Word phrase={bucketPhrase(cell.bucket)} t={t} />
-                </Chip>
-                <Chip tone={stageTone(cell.state)} title={cell.state}>
-                  <Word phrase={stagePhrase(cell.state)} t={t} />
-                </Chip>
-                <span className={css.panelNumber}>
-                  {Object.entries(cell.verdicts).map(([ns, count]) => `${ns} ${count}`).join(' · ')}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      {recent.map(run => <RunBlock key={run.runId} run={run} t={t} />)}
+      {older.length > 0 && (
+        <details className={css.olderRuns}>
+          <summary className={css.olderRunsSummary}>{t('detail.runsOlder', { count: older.length })}</summary>
+          {older.map(run => <RunBlock key={run.runId} run={run} t={t} />)}
+        </details>
+      )}
       {runs.notes.map(note => <div key={note} className={css.panelHint}>{note}</div>)}
     </section>
+  )
+}
+
+/** «用过这道题的实验»: the newest few by name, then 「等 N 个」 that expands in place. */
+function UsedBy(props: { runs: ItemRunsView; t: DatasetsViewProps['t'] }) {
+  const { runs, t } = props
+  const [all, setAll] = useState(false)
+  const names = [...new Set(runs.runs.map(run => run.name))]
+  const shown = all ? names : names.slice(0, RECENT_RUNS)
+  const rest = names.length - shown.length
+  return (
+    <div className={css.usedBy}>
+      {t('detail.usedBy', { names: shown.join(' · ') })}
+      {rest > 0 && (
+        <button type="button" className={css.usedByMore} onClick={() => { setAll(true) }}>
+          {t('detail.usedByMore', { count: rest })}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -585,9 +625,7 @@ export function DatasetDetail(props: DatasetDetailProps) {
               answer means no orchestrator is installed, so the area is absent
               rather than empty. */}
           {openItem !== null && brief !== undefined && runs != null && runs.runs.length > 0 && (
-            <div className={css.usedBy}>
-              {t('detail.usedBy', { names: [...new Set(runs.runs.map(run => run.name))].join(' · ') })}
-            </div>
+            <UsedBy runs={runs} t={t} />
           )}
           {openItem !== null && runs !== undefined && runs !== null && <AnswerRecord runs={runs} t={t} />}
           {selection !== null && (

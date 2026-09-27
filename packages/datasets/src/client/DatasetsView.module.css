@@ -829,8 +829,11 @@
 
 .boxBody {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
   padding: 12px 14px;
   font-size: 12px;
   line-height: 20px;
@@ -846,35 +849,40 @@
   margin-right: 6px;
 }
 
-/* The files of one card in one flowing line, «·» between them (v5's
-   «task.md · standards.yml»); a long list wraps rather than scrolls. */
-.flowList {
+/* One file per row (T83 ruling): the path in the code face, cut with an
+   ellipsis (the full path is the hover), and a small note right — its size,
+   「题集级」, the rubric's criteria count. */
+.fileRows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.fileRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fileRowPath {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   color: var(--dsw-alias-label-primary);
-  overflow-wrap: anywhere;
-}
-
-.flowList > li {
-  display: inline;
-}
-
-.flowList > li + li::before {
-  content: ' · ';
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.flowList .panelTag {
-  margin-left: 4px;
-}
-
-.flowPath {
   font-family: var(--ds-font-family-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.flowNote {
-  color: var(--dsw-alias-label-secondary);
+.fileRowNote {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .flowWarn {
@@ -920,6 +928,31 @@
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   font-weight: 400;
+}
+
+.usedByMore {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.usedByMore:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+}
+
+.olderRuns {
+  margin-top: 4px;
+}
+
+.olderRunsSummary {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
 }
 
 .usedBy {
