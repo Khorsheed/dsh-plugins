@@ -4,7 +4,8 @@
 
 **A set of everyday, high-frequency experience plugins that make your DSH nicer — and freer.** Edit or withdraw messages you already sent; rename a session title in one click; background jobs at a glance and stoppable at will; a context-compaction reminder you configure yourself; mid-chat, have the agent sketch a preview card so you agree on the UI before it builds — no more rework loops; manage every skill and tool freely and assign them to different presets; a chime when a task completes; mobile access in a snap; safe restarts for plugin development — never again fear the little whale taking itself down…… The quality-of-life layer most users want first, installed in one go.
 
-Every member is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) and install freely. If the official host later opens up custom-profile installation, this repo will support one-command install. The everyday conversation plugins also come as a meta package — `@khorsheed/dsh-bundle-conversation-toolbox` installs seven at once (see the end of [The tour](#the-tour)).
+Every member is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) and install freely. If the official host later opens up custom-profile installation, this repo will support one-command install.
+The everyday conversation plugins can also be installed straight as the `@khorsheed/dsh-bundle-conversation-toolbox` bundle — seven at once (see the end of [The tour](#the-tour)).
 
 ## The dsh-basic pack — plugin list
 
@@ -15,6 +16,7 @@ Every member is an independent plugin — copy its package name into the host's 
 | session-title-edit | `@khorsheed/dsh-client-session-title-edit` | Rename sessions inline in the chat header |
 | quote | `@khorsheed/dsh-quote` | Select any text for a floating quote menu: into the composer / side chat / copy |
 | file-preview | `@khorsheed/dsh-file-preview` | The Produced tab plus its host service in one package: preview every file the session touched, no IDE needed |
+| local-files | `@khorsheed/dsh-local-files` | A local file browser in the right sidebar: lazy file tree + structured preview, any directory within reach |
 | taskpilot | `@khorsheed/dsh-taskpilot` | Background jobs and sub-agents become pills above the composer — stop/interrupt in one click |
 | context-guard | `@khorsheed/dsh-context-guard` | A compact button shows up before context overflow starts rejecting requests |
 | inline-html-render | `@khorsheed/dsh-inline-html-render` | Agent-written HTML becomes sandboxed interactive cards in the conversation |
@@ -26,15 +28,13 @@ Every member is an independent plugin — copy its package name into the host's 
 
 ### Version compatibility
 
-Members iterate fast and older release lines get no updates — pick the line by your host version:
-
-**Host ≥ `0.1.5-rc.1`**: use the package names as-is; all 13 members' latest works.
+**Host ≥ `0.1.5-rc.1`**: use the package names as-is; all 14 members' latest works.
 
 **Host `0.1.2-rc.1` ~ `0.1.4`**:
 
 - **Installable at latest**: `@khorsheed/dsh-message-timeline`, `@khorsheed/dsh-client-session-title-edit`, `@khorsheed/dsh-context-guard`, `@khorsheed/dsh-ui-shortcuts`, `@khorsheed/dsh-whalesong`, `@khorsheed/dsh-inline-html-render`
 - **Pin the older line** (copy the full spec): `@khorsheed/dsh-client-message-tools@^0.2.0`, `@khorsheed/dsh-file-preview@^0.2.0`, `@khorsheed/dsh-client-ui-file-preview@^0.2.0`, `@khorsheed/dsh-taskpilot@^0.2.0`, `@khorsheed/dsh-ankh-guard@^0.2.0`
-- **Not available**: capability-catalog, mobile, quote (no release for this line)
+- **Not available**: capability-catalog, mobile, quote, local-files (no release for this line)
 
 ## The tour
 
@@ -70,7 +70,7 @@ Every user message carries a copy/edit/withdraw action row. Edits replace in pla
 | ≥ `0.1.2-rc.1` | `@khorsheed/dsh-message-timeline` |
 | `0.1.x` | `@khorsheed/dsh-message-timeline@^0.1.0` |
 
-A floating timeline along the chat's left edge, one row per user message. At rest it is a thin rail out of sight; hover to expand a preview, click to scroll straight to that message. Follows your reading position and pages older history at the top. A pure read of the session snapshot — zero model impact.
+The official timeline gets costly to navigate in long sessions; I personally prefer locating by user messages — you can scan across many at once instead of scrolling up and down. A floating timeline along the chat's left edge, one row per user message. At rest it is a thin rail out of sight; hover to expand a preview, click to scroll straight to that message. Follows your reading position and pages older history at the top.
 
 <details>
 <summary>View the screenshots (2)</summary>
@@ -125,16 +125,38 @@ Select any text and a floating action menu appears — quote into the current se
 | `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-file-preview@^0.2.0` + `@khorsheed/dsh-client-ui-file-preview@^0.2.0` (the old line is still the host/UI pair) |
 | `0.1.x` | `@khorsheed/dsh-file-preview@^0.1.0` + `@khorsheed/dsh-client-ui-file-preview@^0.1.0` |
 
-The Produced tab lists every file the session wrote or edited (most recent first); select one to preview its current content in-page, or step through every write/edit diff with content search.
+The Produced tab lists every file the session wrote or edited (most recent first) — especially handy in writing scenarios. Select one to preview its current content in-page, or step through every write/edit diff with content search.
 
 <details>
-<summary>View the screenshots (3)</summary>
+<summary>View the screenshots (5)</summary>
 
-<img src="docs/screenshots/file-preview1.png" width="840" alt="file-preview: file list and inline preview">
+<img src="docs/screenshots/file-preview-new1.png" width="840" alt="file-preview: file list and inline preview">
 
-<img src="docs/screenshots/file-preview2.png" width="840" alt="file-preview: per-turn change history">
+<img src="docs/screenshots/file-preview-new2.png" width="840" alt="file-preview: the persistent Produced-list entry">
 
-<img src="docs/screenshots/file-preview3.png" width="840" alt="file-preview: the Produced tab overview">
+<img src="docs/screenshots/file-preview-new3.png" width="840" alt="file-preview: the artifact list">
+
+<img src="docs/screenshots/file-preview-new4.png" width="840" alt="file-preview: artifact content detail">
+
+<img src="docs/screenshots/file-preview-new5.png" width="840" alt="file-preview: the per-edit diff">
+
+</details>
+
+### local-files — the local file browser
+
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-local-files` |
+| earlier | no release available |
+
+Browse local directories beyond the workspace from the right sidebar: a lazy file tree with structured previews (rendered HTML/Markdown/JSON/CSV, inline images), git-agnostic, rooted at the current session's workspace by default but never locked to it. It takes over the official Files tab — the guide page shows a single files card, and the official card returns on uninstall. (The split: local-files browses any local directory; file-preview is the current session's artifacts — different semantics, two packages.)
+
+<details>
+<summary>View the screenshots (2)</summary>
+
+<img src="docs/screenshots/local-files-1.png" width="840" alt="local-files: the files entry on the start page, defaulting to the session's working directory">
+
+<img src="docs/screenshots/local-files-2.png" width="840" alt="local-files: tree on the left, rendered Markdown preview with content search on the right">
 
 </details>
 
@@ -169,9 +191,9 @@ When context occupancy crosses your configured ratio, a compact button appears i
 <details>
 <summary>View the screenshots (2)</summary>
 
-<img src="docs/screenshots/context-guard-button.png" width="840" alt="context-guard: the compact button">
+<img src="docs/screenshots/context-guard-settings-2.png" width="840" alt="context-guard: the configurable ratio">
 
-<img src="docs/screenshots/context-guard-settings.png" width="840" alt="context-guard: the configurable ratio">
+<img src="docs/screenshots/context-guard-button.png" width="840" alt="context-guard: the compact button">
 
 </details>
 
@@ -185,9 +207,11 @@ When context occupancy crosses your configured ratio, a compact button appears i
 A ```` ```dsh-card ```` HTML block in the agent's reply renders as a sandboxed interactive card right in the conversation — sketch the UI first, agree on the details, then build it, instead of discovering the mismatch after everything is done. Sandboxed and isolated; animations settle down under `prefers-reduced-motion`.
 
 <details>
-<summary>View the screenshots (1)</summary>
+<summary>View the screenshots (2)</summary>
 
 <img src="docs/screenshots/inline-html-card-1.png" width="840" alt="inline-html-render: an interactive card in the conversation">
+
+<img src="docs/screenshots/inline-html-card-2.png" width="840" alt="inline-html-render: sketching design variants as cards before touching code">
 
 </details>
 
@@ -213,6 +237,8 @@ A new Tools & Skills entry in settings: every skill and tool in the running inst
 
 ### ui-shortcuts — rebindable keys
 
+Since 0.1.7-rc.2 the host ships its own shortcut settings — you can use the official capability directly.
+
 | Host version | Install spec (copy into the dialog) |
 |---|---|
 | ≥ `0.1.2-rc.1` | `@khorsheed/dsh-ui-shortcuts` |
@@ -234,7 +260,7 @@ Esc pauses the current task, Ctrl/Cmd+S steer-sends your draft, Ctrl/Cmd+O start
 | ≥ `0.1.2-rc.1` | `@khorsheed/dsh-whalesong` |
 | `0.1.x` | `@khorsheed/dsh-whalesong@^0.1.0` |
 
-While any session runs, the sidebar whale spouts and the tab icon moves; when a run finishes or stalls waiting for you, a short chime plays (synthesized WebAudio, silenced under `prefers-reduced-motion`). Read-only over the session list, zero model impact — install it and the page feels alive.
+While any session runs, the sidebar whale spouts and the tab icon moves; when a run finishes or stalls waiting for you, a short chime plays (synthesized WebAudio, silenced under `prefers-reduced-motion`).
 
 <details>
 <summary>View the screenshots (2)</summary>
@@ -245,14 +271,14 @@ While any session runs, the sidebar whale spouts and the tab icon moves; when a 
 
 </details>
 
-### mobile — mobile presentation
+### mobile — mobile access
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
 | ≥ `0.1.5-rc.1` | `@khorsheed/dsh-mobile` |
 | earlier | no release available |
 
-A mobile presentation of the web UI for phone browsers, plus the iOS bridge — check sessions, send messages, and handle approvals away from your desk.
+A mobile presentation of the web UI for phone browsers, plus the iOS bridge — check in on sessions, hand out tasks, and handle approvals away from your desk.
 
 <details>
 <summary>View the screenshots (2)</summary>
@@ -324,7 +350,7 @@ Plugins live in [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins
 
 ### 1. Installing the whole pack
 
-A whole-pack install requires host ≥ `0.1.5-rc.1` (capability-catalog, mobile, and the latest lines of five members all floor there); on the `0.1.2` line stay with the pre-rename archive (a `host-0.1.2-line` tag ships with the next publish wave), and on `0.1.0` / `0.1.1` hosts use the `host-0.1.1-line` tag.
+A whole-pack install requires host ≥ `0.1.5-rc.1` (capability-catalog, mobile, quote, local-files, and the latest lines of five members all floor there); on the `0.1.2` line stay with the pre-rename archive (a `host-0.1.2-line` tag ships with the next publish wave), and on `0.1.0` / `0.1.1` hosts use the `host-0.1.1-line` tag.
 
 **0. Pick the release line by host version first (skipping this can install plugins that won't boot)**
 
@@ -343,7 +369,7 @@ git clone https://github.com/Khorsheed/dsh-basic.git /tmp/dsh-basic
 sh /tmp/dsh-basic/scripts/install.sh
 ```
 
-The installer prints the composed row count. To double-check: `dsh --profile basic --dump-config | grep -c "@khorsheed"` should print 13 (ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
+The installer prints the composed row count. To double-check: `dsh --profile basic --dump-config | grep -c "@khorsheed"` should print 14 (ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / local-files / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
 
 **2. Hand over on the same port (the critical step)**
 

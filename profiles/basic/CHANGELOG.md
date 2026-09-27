@@ -1,5 +1,10 @@
 # 变更记录
 
+## 2026-09-28 —— local-files 加入，成员 14 个
+
+- 新成员：local-files（右栏本地文件浏览器：懒加载文件树 + 结构化预览，接管官方「文件」页签）——成员数 13 → 14；它没有 0.1.2 线版本，「不支持」清单随之点名
+- README 刷新：file-preview 换新版五张截图；context-guard / inline-html-render 换带标注的新图；ui-shortcuts 注明 0.1.7-rc.2 起官方自带快捷键设置；成员区间修正（file-preview `^0.4.0`、ankh-guard `^0.4.0`）
+
 ## 2026-09-27 —— 产物预览合并为单包
 
 - `file-preview` 与 `ui-file-preview` 合并为单个 `@khorsheed/dsh-file-preview`（0.4.0）：产物预览只需装一个包，成员数 14 → 13；旧宿主线的成对安装说明保留

@@ -4,17 +4,19 @@
 
 **一组日常高频的体验插件，让你的 DSH 变得更好用、更自由。** 发出去的消息可以改、可以撤；会话标题一键修改；后台任务一目了然、自由中止；上下文压缩提醒自由配置；聊天过程中随时让 Agent 帮你画预览卡片，明确 UI 效果再动手，避免重复返工；自由管理所有的 Skill 和工具，并配置到不同的 preset；任务完成有提示音；移动端快速接入；开发插件安全重启，从此不怕小鲸鱼自杀……——大多数用户最先想要的那层体验，一次装齐。
 
-每个成员都是独立插件，复制包名到宿主的「添加插件」对话框（0.1.7-rc.2 起：设置 → 插件）即可自由安装；后续如果官方开放自定义 profile 安装，本仓库会支持一行命令直接安装。常用的会话插件也可以装元包 `@khorsheed/dsh-bundle-conversation-toolbox` 一次打包七个（见[功能展示](#功能展示)末尾）。
+每个成员都是独立插件，复制包名到宿主的「添加插件」对话框（0.1.7-rc.2 起：设置 → 插件）即可自由安装；后续如果官方开放自定义 profile 安装，本仓库会支持一行命令直接安装。
+常用的会话插件也可以直接装整合包 `@khorsheed/dsh-bundle-conversation-toolbox` 一次打包七个（见[功能展示](#功能展示)末尾）。
 
 ## basic 整合包 - 插件列表
 
-| 插件 | 包名（复制即可安装） | 你得到 |
+| 插件 | 包名（复制即可安装） | 能力说明 |
 |---|---|---|
 | message-tools | `@khorsheed/dsh-client-message-tools` | 发出去的消息可以原位编辑、撤回、恢复 |
 | message-timeline | `@khorsheed/dsh-message-timeline` | 会话左缘一条安静的时间轴——悬停展开，点击跳转 |
 | session-title-edit | `@khorsheed/dsh-client-session-title-edit` | 聊天头部内联重命名会话 |
 | quote | `@khorsheed/dsh-quote` | 选中任意文本浮出引用动作菜单：引用进输入框 / 侧边对话 / 复制 |
 | file-preview | `@khorsheed/dsh-file-preview` | 「产物」tab + 宿主服务一体：会话写过的每个文件，不开 IDE 直接预览 |
+| local-files | `@khorsheed/dsh-local-files` | 右栏本地文件浏览器：懒加载文件树 + 结构化预览，任意目录随手翻 |
 | taskpilot | `@khorsheed/dsh-taskpilot` | 后台任务与子 agent 变成聊天框上方的胶囊，一键停止/中断 |
 | context-guard | `@khorsheed/dsh-context-guard` | 上下文溢出拒绝请求之前，压缩按钮先出现 |
 | inline-html-render | `@khorsheed/dsh-inline-html-render` | agent 写的 HTML 变成会话内的沙箱交互卡片 |
@@ -26,15 +28,13 @@
 
 ### 版本兼容
 
-成员迭代快、老版本线不再更新，按你的宿主版本选线：
-
-**宿主 ≥ `0.1.5-rc.1`**：直接填包名，全部 13 个成员的 latest 可用。
+**宿主 ≥ `0.1.5-rc.1`**：直接填包名，全部 14 个成员的 latest 可用。
 
 **宿主 `0.1.2-rc.1` ~ `0.1.4`**：
 
 - **可直接装 latest**：`@khorsheed/dsh-message-timeline`、`@khorsheed/dsh-client-session-title-edit`、`@khorsheed/dsh-context-guard`、`@khorsheed/dsh-ui-shortcuts`、`@khorsheed/dsh-whalesong`、`@khorsheed/dsh-inline-html-render`
 - **需指定旧线**（复制完整规格）：`@khorsheed/dsh-client-message-tools@^0.2.0`、`@khorsheed/dsh-file-preview@^0.2.0`、`@khorsheed/dsh-client-ui-file-preview@^0.2.0`、`@khorsheed/dsh-taskpilot@^0.2.0`、`@khorsheed/dsh-ankh-guard@^0.2.0`
-- **不支持**：capability-catalog、mobile、quote（没有这条线的版本）
+- **不支持**：capability-catalog、mobile、quote、local-files（没有这条线的版本）
 
 ## 功能展示
 
@@ -70,7 +70,7 @@
 | ≥ `0.1.2-rc.1` | `@khorsheed/dsh-message-timeline` |
 | `0.1.x` | `@khorsheed/dsh-message-timeline@^0.1.0` |
 
-会话左缘一条悬浮时间轴，一行一条用户消息。日常收成一条细线不占视线，悬停展开预览，点击直接把会话滚动到对应消息。跟随阅读位置，顶部翻页加载更早历史。纯读取会话快照，对模型零影响。
+官方的时间轴在长会话中定位成本会比较高，我个人更常用的方式是用用户消息定位，且能一次性在多条用户消息里找而非需要一直上下滑动。会话左缘一条悬浮时间轴，一行一条用户消息。日常收成一条细线不占视线，悬停展开预览，点击直接把会话滚动到对应消息。跟随阅读位置，顶部翻页加载更早历史。
 
 <details>
 <summary>展开查看功能示意（2 张）</summary>
@@ -125,16 +125,38 @@
 | `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-file-preview@^0.2.0` + `@khorsheed/dsh-client-ui-file-preview@^0.2.0`（旧线仍是宿主/界面两包成对） |
 | `0.1.x` | `@khorsheed/dsh-file-preview@^0.1.0` + `@khorsheed/dsh-client-ui-file-preview@^0.1.0` |
 
-「产物」tab 列出会话写入/编辑过的每个文件（按最近活动倒序），选中即在页面内预览当前内容；改动记录逐条步进每次 write/edit 的 diff，带内容搜索。
+「会话产物」 列出会话写入/编辑过的每个文件（按最近活动倒序），这对写作场景的帮助会比较大。选中即在页面内预览当前内容；改动记录逐条步进每次 write/edit 的 diff，带内容搜索。
 
 <details>
-<summary>展开查看功能示意（3 张）</summary>
+<summary>展开查看功能示意（5 张）</summary>
 
-<img src="docs/screenshots/file-preview1.png" width="840" alt="file-preview:文件列表与内联预览">
+<img src="docs/screenshots/file-preview-new1.png" width="840" alt="file-preview:文件列表与内联预览">
 
-<img src="docs/screenshots/file-preview2.png" width="840" alt="file-preview:每个产物的逐轮改动记录">
+<img src="docs/screenshots/file-preview-new2.png" width="840" alt="file-preview:持久化会话产物列表入口">
 
-<img src="docs/screenshots/file-preview3.png" width="840" alt="file-preview:产物 tab 总览">
+<img src="docs/screenshots/file-preview-new3.png" width="840" alt="file-preview:产物列表">
+
+<img src="docs/screenshots/file-preview-new4.png" width="840" alt="file-preview:产物内容详情">
+
+<img src="docs/screenshots/file-preview-new5.png" width="840" alt="file-preview:产物编辑 diff">
+
+</details>
+
+### local-files：本地文件浏览器
+
+| 宿主版本 | 安装规格（复制到对话框） |
+|---|---|
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-local-files` |
+| 更早 | 无可用版本 |
+
+工作区之外的本地目录，也能在右栏随手翻：懒加载文件树配结构化预览（HTML/Markdown/JSON/CSV 渲染、图片内联），git 无关，默认落在当前会话的工作区但不锁死。它接管官方「文件」页签——guide 页只出现一张文件卡片，卸载后官方卡片自动恢复。（细分：local-files 是「任意本地目录浏览」，file-preview 是「当前会话产物」，语义不同、各司其职。）
+
+<details>
+<summary>展开查看功能示意（2 张）</summary>
+
+<img src="docs/screenshots/local-files-1.png" width="840" alt="local-files:开始页的文件列表入口，默认打开本会话工作目录">
+
+<img src="docs/screenshots/local-files-2.png" width="840" alt="local-files:左树右预览，Markdown 渲染态带内容搜索">
 
 </details>
 
@@ -169,9 +191,11 @@
 <details>
 <summary>展开查看功能示意（2 张）</summary>
 
+
+<img src="docs/screenshots/context-guard-settings-2.png" width="840" alt="context-guard:提醒比例可配置">
+
 <img src="docs/screenshots/context-guard-button.png" width="840" alt="context-guard:输入框上的压缩按钮">
 
-<img src="docs/screenshots/context-guard-settings.png" width="840" alt="context-guard:提醒比例可配置">
 
 </details>
 
@@ -185,9 +209,11 @@
 agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的沙箱交互卡片——图表、小工具、可视化结果直接可玩，不必复制到别处打开。沙箱隔离，`prefers-reduced-motion` 下动画自动收敛。
 
 <details>
-<summary>展开查看功能示意（1 张）</summary>
+<summary>展开查看功能示意（2 张）</summary>
 
 <img src="docs/screenshots/inline-html-card-1.png" width="840" alt="inline-html-render:会话里的交互卡片">
+
+<img src="docs/screenshots/inline-html-card-2.png" width="840" alt="inline-html-render:会话里的交互卡片">
 
 </details>
 
@@ -213,12 +239,15 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 
 ### ui-shortcuts：可自定义键位的快捷键
 
+0.1.7-rc.2之后，官方支持自己的快捷键设置，可直接使用官方能力。
+
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
 | ≥ `0.1.2-rc.1` | `@khorsheed/dsh-ui-shortcuts` |
 | `0.1.x` | `@khorsheed/dsh-ui-shortcuts@^0.1.0` |
 
 Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话。设置里点击键帽即可改键，偏好持久保存。还附带一个动作注册表：任何插件都能注册自己的键盘动作，免费获得设置项与无冲突分发。
+
 
 <details>
 <summary>展开查看功能示意（1 张）</summary>
@@ -234,7 +263,7 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 | ≥ `0.1.2-rc.1` | `@khorsheed/dsh-whalesong` |
 | `0.1.x` | `@khorsheed/dsh-whalesong@^0.1.0` |
 
-只要有会话在跑，侧边栏的鲸鱼就喷水、标签页图标跟着动；任务完成或卡住等你时，播一小段提示音（WebAudio 合成，`prefers-reduced-motion` 下自动静音）。只读会话列表，对模型零影响——装上，页面就活了。
+只要有会话在跑，侧边栏的鲸鱼就喷水、标签页图标跟着动；任务完成或卡住等你时，播一小段提示音（WebAudio 合成，`prefers-reduced-motion` 下自动静音）。
 
 <details>
 <summary>展开查看功能示意（2 张）</summary>
@@ -245,14 +274,14 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 
 </details>
 
-### mobile：移动端呈现
+### mobile：移动端
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
 | ≥ `0.1.5-rc.1` | `@khorsheed/dsh-mobile` |
 | 更早 | 无可用版本 |
 
-手机浏览器上的移动版界面适配，外加 iOS 桥——出门在外也能看会话、发消息、处理审批。
+手机浏览器上的移动版界面适配，外加 iOS 桥——出门在外也能看会话、布置任务、处理审批。
 
 <details>
 <summary>展开查看功能示意（2 张）</summary>
@@ -306,7 +335,7 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 
 | 整合包 | 定位 |
 |---|---|
-| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | 开发模式：包含本包全部体验，再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作 |
+| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | 开发模式：方便开发场景的插件 |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | 插件 monorepo 主仓：全部插件的能力地图、preset 设计与开发文档 |
 
 ## 变更记录
@@ -324,7 +353,7 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 
 ### 一、整体安装整合包
 
-整合包整体安装要求宿主 ≥ `0.1.5-rc.1`（capability-catalog、mobile 与五个成员的最新线都以它为地板）；`0.1.2` 线宿主请停留在 2026-09-27 更名前的档案（`host-0.1.2-line` tag 随下一发布波提供），`0.1.0` / `0.1.1` 宿主用 `host-0.1.1-line` tag 的档案。
+整合包整体安装要求宿主 ≥ `0.1.5-rc.1`（capability-catalog、mobile、quote、local-files 与五个成员的最新线都以它为地板）；`0.1.2` 线宿主请停留在 2026-09-27 更名前的档案（`host-0.1.2-line` tag 随下一发布波提供），`0.1.0` / `0.1.1` 宿主用 `host-0.1.1-line` tag 的档案。
 
 **〇、先按宿主版本选线（跳过这步可能装出打不开的插件）**
 
@@ -343,7 +372,7 @@ git clone https://github.com/Khorsheed/dsh-basic.git /tmp/dsh-basic
 sh /tmp/dsh-basic/scripts/install.sh
 ```
 
-install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile basic --dump-config | grep -c "@khorsheed"` 应为 13（ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
+install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile basic --dump-config | grep -c "@khorsheed"` 应为 14（ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / local-files / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
 
 **二、同端口交接（关键一步）**
 
