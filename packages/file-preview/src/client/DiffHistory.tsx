@@ -33,9 +33,10 @@ function diffBlockChrome(t: TranslateNS<'filePreview'>): { labels: DiffBlockLabe
 /**
  * One file's change history: the recorded write/edit diffs with a stepper. The
  * step index counts from the LATEST change (0 = most recent, the default
- * position), matching "修改记录 2/2 · 最新" reading where ◀ walks older and ▶
+ * position), matching "修改记录 2/2 · 最新" reading where ‹ walks older and ›
  * walks newer. Keyed by the selection at the render site, so the position
- * resets per file.
+ * resets per file. The pane's diff face owns the inset and the scrollport
+ * (the kernel's .diffScroll), so this view draws no surface of its own.
  * @param props - the list entry carrying the diffs, and the locale seat.
  */
 export function DiffHistory(props: { entry: FilePreviewEntry; t: TranslateNS<'filePreview'> }): ReactNode {
@@ -67,7 +68,7 @@ export function DiffHistory(props: { entry: FilePreviewEntry; t: TranslateNS<'fi
           disabled={diffIndex >= diffs.length - 1}
           aria-label={t('history.step.older')}
         >
-          ◀
+          ‹
         </button>
         <span className={css.stepLabel}>
           {t('history.step.count', { current: diffs.length - diffIndex, total: diffs.length })}
@@ -81,7 +82,7 @@ export function DiffHistory(props: { entry: FilePreviewEntry; t: TranslateNS<'fi
           disabled={diffIndex <= 0}
           aria-label={t('history.step.newer')}
         >
-          ▶
+          ›
         </button>
       </div>
       <DiffBlock className={css.diffWrap} diffs={[{ path: entry.path, oldText: current.oldText, newText: current.newText }]} {...diffBlockChrome(t)} />
