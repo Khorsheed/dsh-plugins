@@ -28,8 +28,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: pulls ui-layout's ILayout (the wide-mode suggestion's face).
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
-  BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
-  BoardAttachImageOutcome, BoardAttachImageRequest, BoardChatStatusResult, BoardCreateRequest,
+  BoardAddCommentRequest, BoardArchiveRequest,
+  BoardAttachImageOutcome, BoardAttachImageRequest, BoardCreateRequest,
   BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardFocusRequest, BoardFocusResult,
   BoardListResult, BoardMutationResult,
@@ -46,21 +46,28 @@ import type { CanvasSelectionSource } from './space/selection.ts'
 export type CanvasRemote = TypertRemoteNamespaceMap['canvas']
 
 /**
- * The chat-seam face both seats share (M2): ask through the probed side-chat
- * service, probe its availability (every chat entry hides when absent), and
- * activate the side-chat tab on the primed context.
+ * The conversation face both seats share (2026-09-27 review): the canvas talks
+ * to the Agent through the session's OWN conversation, not a side chat. A
+ * gesture quotes the cards into the main input and leaves the sending to the
+ * user; the main session's canvas tools then land what the Agent makes on the
+ * focused canvas.
  */
-export interface CanvasChatInjected {
-  /** Prime the canvas's chat context (and send when there is a text to send). */
-  askAgent: (sessionId: SessionId, request: BoardAskAgentRequest) => Promise<RemoteResult<BoardAskAgentOutcome>>
-  /** Whether a sideChat-shaped service answered the host's probe. */
-  chatStatus: () => Promise<RemoteResult<BoardChatStatusResult>>
+export interface CanvasTalkInjected {
+  /** Whether the session has a conversation input to quote into (every talk entry hides without one). */
+  talkAvailable: (sessionId: SessionId) => boolean
   /**
-   * Activate the side-chat tab on one context through the official right-
-   * Sidebar navigation (its params mirrored structurally — the package is
-   * never imported); degrades to a no-op without a mounted session/sidebar.
+   * Append a block to the session's conversation draft (read-merge-write: the
+   * input's `setDraft` replaces the whole draft) and hand it the keyboard.
+   * @returns false when the session has no conversation input.
    */
-  openSideChat: (contextKey: string) => void
+  quoteToConversation: (sessionId: SessionId, block: string) => boolean
+  /**
+   * Nudge every board reader to re-read. The main session's Agent writes the
+   * board through its own tools, which this surface never sees, so the visible
+   * tab calls this on a slow beat and the readers skip a board whose version
+   * did not move.
+   */
+  refreshBoards: () => void
 }
 
 /**
@@ -82,7 +89,7 @@ export interface CanvasImageInjected {
  * session scope: its mutations name the tab's own session, which resolves
  * the fence mode the host stamps onto the write.
  */
-export interface CanvasTabInjected extends CanvasChatInjected, CanvasImageInjected {
+export interface CanvasTabInjected extends CanvasTalkInjected, CanvasImageInjected {
   /** List every canvas the deployment holds (archived included). */
   listCanvases: () => Promise<RemoteResult<BoardListResult>>
   /** Create one canvas (a topic, optionally with workspaces attached). */
@@ -193,7 +200,7 @@ export type CanvasTabTitleProps =
  * component touches. A structural subset of the tab face — both seats are
  * handed that one face, and this is what says which members the reader may use.
  */
-export interface CanvasDetailInjected extends CanvasChatInjected, CanvasImageInjected {
+export interface CanvasDetailInjected extends CanvasTalkInjected, CanvasImageInjected {
   /** Read one board with the freshness token a later mutation must present. */
   readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
   /** Edit one card: text, its drawing, a status transition, or a question state. */

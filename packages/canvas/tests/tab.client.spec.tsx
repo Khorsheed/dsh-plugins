@@ -5,7 +5,7 @@
  * injected Remote mocks over a multi-canvas fake host, and plain hook fakes.
  * Asserts the list → auto-open → board chain, the switcher (create / archive
  * / import), the board gestures (new card, ghost ✓/✗, checkbox multi-select,
- * lens bar, follow-up, their full-hide degrade), the drill (body click →
+ * talk quotes, follow-up, their full-hide degrade), the drill (body click →
  * detail page → back, the tri-state source save), the new-card draft (the
  * ⏎-or-⌘⏎ save that returns to the board, the one discard question), focus reporting, the
  * once-per-session wide-mode suggestion, and the read-only degrade.
@@ -20,7 +20,7 @@ import { CanvasTab } from '../src/client/tab/CanvasTab.tsx'
 import { zh } from '../src/client/locales.ts'
 import { defaultCategories } from '../src/types.ts'
 import type {
-  BoardAskAgentOutcome, BoardAttachImageOutcome, BoardChatStatusResult, BoardFocusResult,
+  BoardAttachImageOutcome, BoardFocusResult,
   BoardListResult, BoardMutationResult, BoardReadOutcome,
   BoardCategory, CanvasBoard, CanvasSummary,
 } from '../src/types.ts'
@@ -99,9 +99,9 @@ interface Harness {
     openCardDetail: ReturnType<typeof vi.fn>
     openCardDraft: ReturnType<typeof vi.fn>
     focusCanvas: ReturnType<typeof vi.fn>
-    askAgent: ReturnType<typeof vi.fn>
-    chatStatus: ReturnType<typeof vi.fn>
-    openSideChat: ReturnType<typeof vi.fn>
+    talkAvailable: ReturnType<typeof vi.fn>
+    quoteToConversation: ReturnType<typeof vi.fn>
+    refreshBoards: ReturnType<typeof vi.fn>
     suggestWideMode: ReturnType<typeof vi.fn>
     deleteCanvas: ReturnType<typeof vi.fn>
     deleteCard: ReturnType<typeof vi.fn>
@@ -208,11 +208,9 @@ function makeHarness(options: {
     closeTab: (id: string) => { store.close(id) },
     openCanvas: (canvasId: string) => { store.openCanvas(canvasId) },
     focusCanvas: vi.fn(async (): Promise<Result<BoardFocusResult>> => ok({ ok: true })),
-    askAgent: vi.fn(async (): Promise<Result<BoardAskAgentOutcome>> =>
-      ok({ ok: true, contextKey: `canvas:${CANVAS_ID}`, sent: true })),
-    chatStatus: vi.fn(async (): Promise<Result<BoardChatStatusResult>> =>
-      ok({ available: options.chatAvailable ?? true })),
-    openSideChat: vi.fn(),
+    talkAvailable: vi.fn((): boolean => options.chatAvailable ?? true),
+    quoteToConversation: vi.fn((): boolean => true),
+    refreshBoards: vi.fn(),
     suggestWideMode: vi.fn(),
     attachImage: vi.fn(async (): Promise<Result<BoardAttachImageOutcome>> =>
       ok({ ok: true, ref: { attachmentId: IMG_ID, mediaType: 'image/png', bytes: 3, width: 2, height: 1 } })),
@@ -364,11 +362,19 @@ describe('CanvasTab — list, switcher, board', () => {
     fireEvent.click(boxes[0]!)
     fireEvent.click(boxes[1]!)
     await screen.findByText('已选 2 张')
-    fireEvent.click(screen.getByRole('button', { name: '挑战假设' }))
-    await waitFor(() => {
-      expect(mocks.askAgent).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, lens: 'challenge', cardIds: ['c_1', 'c_2'] })
-    })
-    expect(mocks.openSideChat).toHaveBeenCalledWith(`canvas:${CANVAS_ID}`)
+    fireEvent.click(screen.getByRole('button', { name: '与 Agent 对谈' }))
+    expect(mocks.quoteToConversation).toHaveBeenCalledTimes(1)
+    const [sessionId, block] = mocks.quoteToConversation.mock.calls[0] as [string, string]
+    expect(sessionId).toBe('s1')
+    // Both picked cards, quoted in board order, each with its handle.
+    expect(block.indexOf('> 卡片 c_1')).toBeLessThan(block.indexOf('> 卡片 c_2'))
+    expect(block).toContain('c_1')
+    expect(block).toContain('c_2')
+    await screen.findByText('已放进对话输入框')
+    fireEvent.click(screen.getByRole('button', { name: '开始写作' }))
+    const written = mocks.quoteToConversation.mock.calls[1]?.[1] as string
+    expect(written.startsWith(block)).toBe(true)
+    expect(written.length).toBeGreaterThan(block.length)
     fireEvent.click(screen.getByRole('button', { name: /归档所选/ }))
     await waitFor(() => {
       expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', status: 'archived' })
@@ -397,7 +403,8 @@ describe('CanvasTab — list, switcher, board', () => {
     await screen.findByText('卡片 c_1')
     fireEvent.click(screen.getAllByRole('checkbox', { name: '选择' })[0]!)
     await screen.findByText('已选 1 张')
-    expect(screen.queryByRole('button', { name: '挑战假设' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '与 Agent 对谈' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '开始写作' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '1 条评论' }))
     await screen.findByText(/这里隐含一个假设/)
     expect(screen.queryByRole('button', { name: /追问/ })).toBeNull()
@@ -569,15 +576,34 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     expect(screen.queryByRole('button', { name: /返回画布/ })).toBeNull()
   })
 
-  it('is a reader on the board: the pencil opens the same address, and no editor sits on the card', async () => {
-    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+  it('is a reader on the board: no editor and no pencil sit on the card', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    // The card's text is never a textarea on the board.
+    // The card's text is never a textarea on the board, and the body click is
+    // the one way in (the pencil went with the slimmer card, 2026-09-27).
     expect(screen.queryByDisplayValue('卡片 c_1')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '打开' }))
-    expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_1', '卡片 c_1')
-    expect(screen.queryByDisplayValue('卡片 c_1')).toBeNull()
+    expect(screen.queryByRole('button', { name: '打开' })).toBeNull()
+  })
+
+  it('quotes an agent comment into the input for 追问', async () => {
+    const commented = card('c_1', {
+      comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
+    })
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [commented])] })
+    render(<CanvasTab {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: '1 条评论' }))
+    fireEvent.click(await screen.findByRole('button', { name: /追问/ }))
+    const block = mocks.quoteToConversation.mock.calls[0]?.[1] as string
+    expect(block.startsWith('> 这里隐含一个假设')).toBe(true)
+    expect(block).toContain('c_1')
+  })
+
+  it('shows no comment badge on a card nobody has commented on', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    expect(screen.queryByRole('button', { name: /写评论/ })).toBeNull()
   })
 
   it('titles the address with the card\'s display title, never its markup', async () => {
@@ -588,7 +614,7 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
       })])],
     })
     render(<CanvasTab {...props} />)
-    fireEvent.click(await screen.findByRole('button', { name: '打开' }))
+    fireEvent.click(await screen.findByText('大模型心理学'))
     expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_page', '大模型心理学')
   })
 
@@ -612,6 +638,28 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     // The draft is a TAB of the dock: this seat never turns into an editor.
     expect(screen.queryByPlaceholderText(/写点什么/)).toBeNull()
     await screen.findByText('卡片 c_1')
+  })
+})
+
+describe('CanvasTab — freshness from the main session', () => {
+  it('re-reads the open board every few seconds while the page is in view', async () => {
+    // Fake timers from the start (the interval is armed on mount), still
+    // advancing on their own so the async reads settle.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+      render(<CanvasTab {...props} />)
+      await screen.findByText('卡片 c_1')
+      mocks.refreshBoards.mockClear()
+      vi.advanceTimersByTime(4000)
+      expect(mocks.refreshBoards).toHaveBeenCalledTimes(1)
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      vi.advanceTimersByTime(4000)
+      expect(mocks.refreshBoards).toHaveBeenCalledTimes(1)
+      visibility.mockRestore()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

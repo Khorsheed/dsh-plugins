@@ -19,13 +19,13 @@
  */
 import { useRef, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconEditOutlineMedium, IconLightOutlineMedium, IconLinkOutlineMedium, IconNewChatOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconLightOutlineMedium, IconLinkOutlineMedium, IconNewChatOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  CANVAS_LENS_IDS, documentHeadingOf, enabledCategories, isBoardCardKind, isLongCardText,
+  documentHeadingOf, enabledCategories, isBoardCardKind, isLongCardText,
   makeBoardId, sanitizeCategoryLabel,
   type BoardCard, type BoardCardStatus, type BoardCategory,
-  type CanvasBoard, type CanvasLensId, type CardCategoryId,
+  type CanvasBoard, type CardCategoryId,
 } from '../../types.ts'
 import type {} from '../locales.ts'
 import { categoryLabelMap, kindIconOf } from '../category-label.ts'
@@ -75,16 +75,13 @@ export interface BoardViewProps {
    * and archived cards all take this route; the board itself never edits text.
    */
   readonly onOpenDetail: (cardId: string) => void
-  /** Whether the side-chat seam answered the probe (the lens bar and 追问 hide without it). */
-  readonly chatAvailable: boolean
-  /** Ask the canvas's agent through one lens over the current selection. */
-  readonly onAsk: (lens: CanvasLensId) => void
-  /**
-   * 「生成文章」 over the current selection (stage ⑥c): the same ask seam with a
-   * fixed instruction, so the page owns the send and this view only asks.
-   */
-  readonly onCompose: () => void
-  /** Follow up on one comment (card id + the comment's text). */
+  /** Whether the session has an input to quote into (与 Agent 对谈, 开始写作 and 追问 hide without it). */
+  readonly talkAvailable: boolean
+  /** Quote the current selection into the session's input. */
+  readonly onTalk: () => void
+  /** Quote the current selection plus the writing instruction (开始写作). */
+  readonly onWrite: () => void
+  /** Follow up on one comment (card id + the comment's text): quoted into the input too. */
   readonly onFollowUp: (cardId: string, commentText: string) => void
   readonly actions: BoardActions
   readonly showArchived: boolean
@@ -101,11 +98,11 @@ function newCategoryId(): string {
 }
 
 /** One comment thread under a card (badge toggle + list + the user's form). */
-function CommentThread({ t, card, readonly, chatAvailable, onComment, onFollowUp }: {
+function CommentThread({ t, card, readonly, talkAvailable, onComment, onFollowUp }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
   readonly readonly: boolean
-  readonly chatAvailable: boolean
+  readonly talkAvailable: boolean
   readonly onComment: (text: string) => void
   readonly onFollowUp: (commentText: string) => void
 }): ReactNode {
@@ -118,7 +115,7 @@ function CommentThread({ t, card, readonly, chatAvailable, onComment, onFollowUp
           </span>
           {'：'}
           {comment.text}
-          {comment.author === 'agent' && chatAvailable && (
+          {comment.author === 'agent' && talkAvailable && (
             <>
               {' '}
               <FollowUp t={t} className={css.followUp} onFollowUp={() => { onFollowUp(comment.text) }} />
@@ -188,7 +185,7 @@ function CardSummary({ t, card }: {
 }
 
 /** One board card: kept, ghost (proposed), or archived-in-the-well. */
-function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
+function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, talkAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
   /** The category's display text (the user's name for it, stage ⑤). */
@@ -197,7 +194,7 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
   readonly selected: boolean
   /** Rendered inside the archived well (open + restore are the only gestures). */
   readonly archivedWell?: boolean
-  readonly chatAvailable: boolean
+  readonly talkAvailable: boolean
   readonly onToggleSelect: () => void
   readonly onOpenDetail: () => void
   readonly onFollowUp: (commentText: string) => void
@@ -298,15 +295,6 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
         </div>
       ) : (
         <div className={css.cardActions}>
-          <button
-            type="button"
-            className={css.iconButton}
-            title={t('card.enterDetail')}
-            aria-label={t('card.enterDetail')}
-            onClick={event => { event.stopPropagation(); onOpenDetail() }}
-          >
-            <IconEditOutlineMedium size={13} />
-          </button>
           {card.kind === 'question' && card.question?.state !== 'answered' && (
             <button
               type="button"
@@ -333,10 +321,12 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
         </div>
       )}
 
-      {(words !== null || !archivedWell) && (
+      {/* No comments, no badge: writing the first one is the detail page's job
+          (the card opens on a click), so an empty 💬 is only noise. */}
+      {(words !== null || (!archivedWell && card.comments.length > 0)) && (
         <div className={css.cardFoot}>
           {words !== null && <span className={css.cardWords}>{words}</span>}
-          {!archivedWell && (
+          {!archivedWell && card.comments.length > 0 && (
             <button
               type="button"
               className={css.commentBadge}
@@ -344,21 +334,19 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, chatAv
               onClick={event => { event.stopPropagation(); setThreadOpen(open => !open) }}
             >
               <IconNewChatOutlineMedium size={11} />
-              {card.comments.length === 0
-                ? t('comment.write')
-                : card.comments.length === 1
+              {card.comments.length === 1
                   ? t('comment.one')
                   : t('comment.many', { count: String(card.comments.length) })}
             </button>
           )}
         </div>
       )}
-      {!archivedWell && threadOpen && (
+      {!archivedWell && threadOpen && card.comments.length > 0 && (
         <CommentThread
           t={t}
           card={card}
           readonly={readonly}
-          chatAvailable={chatAvailable}
+          talkAvailable={talkAvailable}
           onComment={text => { actions.comment(card.id, text) }}
           onFollowUp={onFollowUp}
         />
@@ -431,7 +419,7 @@ export function shownCardsOf(board: CanvasBoard, filter: 'all' | CardCategoryId)
 /** The board view. */
 export function BoardView({
   t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
-  chatAvailable, onAsk, onCompose, onFollowUp, actions, showArchived, onToggleArchived,
+  talkAvailable, onTalk, onWrite, onFollowUp, actions, showArchived, onToggleArchived,
 }: BoardViewProps): ReactNode {
   const [catPanel, setCatPanel] = useState(false)
   /** The batch bar's 「改分类」 row is open (it replaces the action row). */
@@ -531,6 +519,7 @@ export function BoardView({
                 type="button"
                 className={css.chip}
                 data-active={filter === category.id || undefined}
+                data-empty={(counts.get(category.id) ?? 0) === 0 || undefined}
                 onClick={() => { onFilter(category.id) }}
               >
                 {KindIcon !== undefined && <KindIcon size={12} />}
@@ -626,21 +615,16 @@ export function BoardView({
         {selection.size > 0 && (
           <div className={css.selBar} ref={selBarRef}>
             <span className={css.selCount}>{t('board.selected', { count: String(selection.size) })}</span>
-            {chatAvailable && !refile && CANVAS_LENS_IDS.map(lens => (
-              <button
-                key={lens}
-                type="button"
-                className={lens === 'ask' ? css.lensPrimary : css.lens}
-                onClick={() => { onAsk(lens) }}
-              >
-                {t(`lens.${lens}`)}
+            {/* The Agent gestures quote the picked cards into the session's
+                input; the user says what they want in their own words. */}
+            {talkAvailable && !refile && (
+              <button type="button" className={css.lensPrimary} onClick={onTalk}>
+                {t('talk.action')}
               </button>
-            ))}
-            {/* 成稿 is a batch gesture too, and it rides the same ask seam: the
-                selection is the material, so it appears wherever a selection does. */}
-            {chatAvailable && !refile && (
-              <button type="button" className={css.lens} onClick={onCompose}>
-                {t('compose.article')}
+            )}
+            {talkAvailable && !refile && (
+              <button type="button" className={css.lens} onClick={onWrite}>
+                {t('talk.write')}
               </button>
             )}
             {!readonly && !refile && (
@@ -712,7 +696,7 @@ export function BoardView({
                 kindLabel={labels.get(card.kind) ?? card.kind}
                 readonly={readonly}
                 selected={selection.has(card.id)}
-                chatAvailable={chatAvailable}
+                talkAvailable={talkAvailable}
                 onToggleSelect={() => { onToggleSelect(card.id) }}
                 onOpenDetail={() => { onOpenDetail(card.id) }}
                 onFollowUp={commentText => { onFollowUp(card.id, commentText) }}
@@ -739,7 +723,7 @@ export function BoardView({
                     readonly={readonly}
                     selected={false}
                     archivedWell
-                    chatAvailable={chatAvailable}
+                    talkAvailable={talkAvailable}
                     onToggleSelect={() => {}}
                     onOpenDetail={() => { onOpenDetail(card.id) }}
                     onFollowUp={() => {}}

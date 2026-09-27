@@ -28,7 +28,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { IconEditOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { COMPOSE_SEND_TEXT, GROUP_ASK_SEND_TEXT } from '../../prompt.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { makeBoardId, type BoardCard, type BoardLane, type BoardLink, type CanvasBoard } from '../../types.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
@@ -80,9 +79,12 @@ export interface LinkViewProps {
   readonly onAddSelection: (cardIds: readonly string[]) => void
   readonly onClearSelection: () => void
   readonly onOpenDetail: (cardId: string) => void
-  readonly chatAvailable: boolean
-  /** Ask the canvas's agent over an explicit card set (the compose gestures). */
-  readonly onAsk: (cardIds: readonly string[], text: string) => void
+  /** Whether the session has an input to quote into (the group gestures hide without it). */
+  readonly talkAvailable: boolean
+  /** Quote an explicit card set into the session's input (与 Agent 对谈 over a group). */
+  readonly onTalk: (cardIds: readonly string[]) => void
+  /** The same, plus the writing instruction (开始写作). */
+  readonly onWrite: (cardIds: readonly string[]) => void
   /** One write per gesture (see {@link LayoutPatch}). */
   readonly onLayout: (patch: LayoutPatch) => void
   /** A note for the gestures whose result has no other visible home. */
@@ -175,7 +177,7 @@ function runGesture(
 /** The link view. */
 export function LinkView({
   t, readonly, board, labels, selection, onToggleSelect, onAddSelection, onClearSelection,
-  onOpenDetail, chatAvailable, onAsk, onLayout, onToast, wire, onWire,
+  onOpenDetail, talkAvailable, onTalk, onWrite, onLayout, onToast, wire, onWire,
 }: LinkViewProps): ReactNode {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const [overlay, setOverlay] = useState<Overlay>(IDLE)
@@ -664,18 +666,14 @@ export function LinkView({
             {t('link.addLane')}
           </button>
         )}
-        {chatAvailable && send.length > 0 && (
-          <button
-            type="button"
-            className={css.barButton}
-            onClick={() => { onAsk(send, GROUP_ASK_SEND_TEXT) }}
-          >
-            {t('link.askGroup', { count: String(send.length) })}
+        {talkAvailable && send.length > 0 && (
+          <button type="button" className={css.barButton} onClick={() => { onTalk(send) }}>
+            {t('link.talkGroup', { count: String(send.length) })}
           </button>
         )}
-        {chatAvailable && send.length > 0 && (
-          <button type="button" className={css.barButton} onClick={() => { onAsk(send, COMPOSE_SEND_TEXT) }}>
-            {t('compose.article')}
+        {talkAvailable && send.length > 0 && (
+          <button type="button" className={css.barButton} onClick={() => { onWrite(send) }}>
+            {t('talk.write')}
           </button>
         )}
         {(selection.size > 0 || wireSel !== null || expand) && (

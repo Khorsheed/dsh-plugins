@@ -22,7 +22,7 @@ import { CanvasSelectionStore } from '../src/client/space/selection.ts'
 import { imageSrcOf } from '../src/image-token.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
-  BoardAskAgentOutcome, BoardAttachImageOutcome, BoardChatStatusResult, BoardMutationResult,
+  BoardAttachImageOutcome, BoardMutationResult,
   BoardReadOutcome, CanvasBoard, CanvasImageRef, CanvasStroke,
 } from '../src/types.ts'
 import { defaultCategories } from '../src/types.ts'
@@ -99,9 +99,9 @@ interface Harness {
     patchCard: ReturnType<typeof vi.fn>
     addComment: ReturnType<typeof vi.fn>
     openFile: ReturnType<typeof vi.fn>
-    askAgent: ReturnType<typeof vi.fn>
-    chatStatus: ReturnType<typeof vi.fn>
-    openSideChat: ReturnType<typeof vi.fn>
+    talkAvailable: ReturnType<typeof vi.fn>
+    quoteToConversation: ReturnType<typeof vi.fn>
+    refreshBoards: ReturnType<typeof vi.fn>
     attachImage: ReturnType<typeof vi.fn>
   }
   readonly props: CanvasDetailProps
@@ -165,11 +165,9 @@ function makeHarness(
       return ok({ ok: true, board: current.board, version: '2' })
     }),
     openFile: vi.fn(),
-    askAgent: vi.fn(async (): Promise<Result<BoardAskAgentOutcome>> =>
-      ok({ ok: true, contextKey: `canvas:${CANVAS_ID}`, sent: true })),
-    chatStatus: vi.fn(async (): Promise<Result<BoardChatStatusResult>> =>
-      ok({ available: options.chatAvailable ?? true })),
-    openSideChat: vi.fn(),
+    talkAvailable: vi.fn((): boolean => options.chatAvailable ?? true),
+    quoteToConversation: vi.fn((): boolean => true),
+    refreshBoards: vi.fn(),
     attachImage: vi.fn(async (): Promise<Result<BoardAttachImageOutcome>> => ok({ ok: true, ref: IMG_REF })),
   }
   const props = {
@@ -440,7 +438,7 @@ describe('CanvasDetailView', () => {
     expect(mocks.openFile).toHaveBeenCalledWith('s1', '/ws', '/ws/灵感画布/文章/第一章.md')
   })
 
-  it('follows up on an agent comment, and hides the chat entries when the seam is absent', async () => {
+  it('quotes an agent comment into the session input for 追问', async () => {
     const commented = card('c_1', {
       comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
     })
@@ -448,17 +446,38 @@ describe('CanvasDetailView', () => {
     view.select('c_1')
     render(<CanvasDetailView {...props} />)
     fireEvent.click(await screen.findByRole('button', { name: /追问/ }))
-    await waitFor(() => {
-      expect(mocks.askAgent).toHaveBeenCalledWith('s1', {
-        canvasId: CANVAS_ID,
-        lens: 'ask',
-        cardIds: ['c_1'],
-        text: '就这条评论继续追问：「这里隐含一个假设」',
-      })
-    })
+    expect(mocks.quoteToConversation).toHaveBeenCalledTimes(1)
+    const [sessionId, block] = mocks.quoteToConversation.mock.calls[0] as [string, string]
+    expect(sessionId).toBe('s1')
+    expect(block.startsWith('> 这里隐含一个假设')).toBe(true)
+    expect(block).toContain('c_1')
+    await screen.findByText('已放进对话输入框')
   })
 
-  it('hides 追问 and the selection offer when side-chat is absent', async () => {
+  it('quotes this one card for 与 Agent 对谈, and adds the writing ask for 开始写作', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: '与 Agent 对谈' }))
+    const block = mocks.quoteToConversation.mock.calls[0]?.[1] as string
+    expect(block.startsWith('> 卡片 c_1 的正文')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '开始写作' }))
+    const written = mocks.quoteToConversation.mock.calls[1]?.[1] as string
+    expect(written.startsWith(block)).toBe(true)
+    expect(written.length).toBeGreaterThan(block.length)
+  })
+
+  it('says so when the input refused the quote', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1')])
+    mocks.quoteToConversation.mockReturnValue(false)
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: '与 Agent 对谈' }))
+    await screen.findByText(/对话输入框/)
+    expect(screen.queryByText('已放进对话输入框')).toBeNull()
+  })
+
+  it('hides 追问 and the talk gestures when the session has no input', async () => {
     const commented = card('c_1', {
       comments: [{ id: 'm_1', author: 'agent', text: '这里隐含一个假设', createdAt: NOW }],
     })
@@ -467,7 +486,8 @@ describe('CanvasDetailView', () => {
     render(<CanvasDetailView {...props} />)
     await screen.findByText(/这里隐含一个假设/)
     expect(screen.queryByRole('button', { name: /追问/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /问 Agent/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: '与 Agent 对谈' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '开始写作' })).toBeNull()
   })
 
   it('renders an html card in the sandboxed frame (CSP inside) and keeps markdown on MarkdownText', async () => {

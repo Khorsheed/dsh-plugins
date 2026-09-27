@@ -43,7 +43,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import canvasRemote from '@khorsheed/dsh-canvas/remote'
-import type { CanvasChatInjected, CanvasRemote, CanvasTabInjected } from './contract.ts'
+import type { CanvasRemote, CanvasTabInjected, CanvasTalkInjected } from './contract.ts'
+import { mergedDraft } from './quote.ts'
 import { CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
 import { en, NS, zh } from './locales.ts'
 import { CanvasImageSrcs } from './images.ts'
@@ -62,8 +63,8 @@ export { CardTextarea } from './space/CardTextarea.tsx'
 export { CanvasTab } from './tab/CanvasTab.tsx'
 export { CanvasSwitcher } from './tab/CanvasSwitcher.tsx'
 export type {
-  CanvasChatInjected, CanvasDetailInjected, CanvasDetailProps, CanvasRemote,
-  CanvasTabInjected, CanvasTabProps,
+  CanvasDetailInjected, CanvasDetailProps, CanvasRemote,
+  CanvasTabInjected, CanvasTabProps, CanvasTalkInjected,
 } from './contract.ts'
 export * from './paste-table.ts'
 
@@ -83,6 +84,13 @@ type SessionListCurrent = SessionListState & {
 function mainSessionId(list: SessionListState): SessionId | undefined {
   const view = list as SessionListCurrent
   return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
+}
+
+/** The slice of ui-conversation's per-session input the quote gestures use (structural). */
+interface ConversationInput {
+  readonly state: { getSnapshot(): { draft: string } }
+  setDraft(value: string): void
+  focus?: () => void
 }
 
 /**
@@ -106,7 +114,6 @@ export const inject = ['slots', 'remote', 'locale', 'sidebarRight', 'sidebarRigh
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
-  const timers = new Set<ReturnType<typeof setTimeout>>()
   try {
     disposers.push(await ctx.remote.$mount(canvasRemote))
   } catch (error) {
@@ -151,69 +158,39 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
 
   /**
-   * Watch one sent turn: while the side-chat context runs, the agent's tool
-   * calls land on the host board, so the shared rev is touched per poll and
-   * every reader re-reads. The sidechat namespace is probed through
-   * `ctx.get` (never injected, never imported — a structural mirror of
-   * `getState`); without it the board simply refreshes on the next gesture.
+   * The session's conversation input, when the composition has one. The input
+   * is ui-conversation's per-session facade, reached structurally the way the
+   * reader package reaches it (never imported: a composition may omit it).
+   * `focus` is probed per call, because older host lines lack it.
    */
-  const watchTurn = (contextKey: string): void => {
-    const sidechat = ctx.get('remote.sidechat') as {
-      getState?: (key: string) => Promise<
-        | { ok: true; value: { ok: true; state: { status: string } } | { ok: false } }
-        | { ok: false }
-      >
-    } | undefined
-    if (sidechat?.getState === undefined) return
-    const getState = sidechat.getState.bind(sidechat)
-    let polls = 0
-    const tick = async (): Promise<void> => {
-      polls += 1
-      try {
-        const result = await getState(contextKey)
-        const status = result.ok && result.value.ok ? result.value.state.status : undefined
-        if (status === 'running' || status === 'idle') selection.touch()
-        if (status === 'running' && polls < 60) {
-          const timer = setTimeout(() => {
-            timers.delete(timer)
-            void tick()
-          }, 2000)
-          timers.add(timer)
-        }
-      } catch {
-        // A failed poll ends the watch silently; the next gesture refreshes.
-      }
+  const inputFor = (sessionId: SessionId): ConversationInput | undefined => {
+    try {
+      const scope = ctx.get('sessions')?.scope(sessionId)
+      const input = (scope?.get('conversation') as { input?: { for(actx: unknown): unknown } } | undefined)
+        ?.input?.for(scope)
+      const face = input as Partial<ConversationInput> | undefined
+      return typeof face?.setDraft === 'function' && typeof face.state?.getSnapshot === 'function'
+        ? face as ConversationInput
+        : undefined
+    } catch {
+      return undefined
     }
-    const first = setTimeout(() => {
-      timers.delete(first)
-      void tick()
-    }, 1500)
-    timers.add(first)
   }
 
-  const chatFace: CanvasChatInjected = {
-    askAgent: async (sessionId, request) => {
-      const result = touchOnSuccess(await requireRemote().askAgent(sessionId, request))
-      if (result.ok && result.value.ok && result.value.sent) watchTurn(result.value.contextKey)
-      return result
+  const talkFace: CanvasTalkInjected = {
+    talkAvailable: sessionId => inputFor(sessionId) !== undefined,
+    quoteToConversation: (sessionId, block) => {
+      const input = inputFor(sessionId)
+      if (input === undefined) return false
+      input.setDraft(mergedDraft(input.state.getSnapshot().draft, block))
+      if (typeof input.focus === 'function') input.focus()
+      return true
     },
-    chatStatus: () => requireRemote().chatStatus(),
-    openSideChat: contextKey => {
-      try {
-        // The side-chat kind's params are ITS contract; the call is mirrored
-        // structurally — the package is never imported (the one edge is the
-        // probed service, declared in dsh.references).
-        ;(ctx.sidebarRight as unknown as {
-          openTab(kind: string, options?: { params?: Record<string, unknown> }): void
-        }).openTab('sidechat', { params: { contextKey } })
-      } catch (error) {
-        ctx.logger.warn('canvas: openTab(sidechat) failed (no mounted session?)', error)
-      }
-    },
+    refreshBoards: () => { selection.touch() },
   }
 
   const tabFace = (): CanvasTabInjected => ({
-    ...chatFace,
+    ...talkFace,
     listCanvases: () => requireRemote().listCanvases(),
     readBoard: request => requireRemote().readBoard(request),
     openFile: (sessionId, cwd, path) => {
@@ -327,8 +304,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }, CanvasTabTitle)), 'canvas: tab chip title')
 
   return async () => {
-    for (const timer of timers) clearTimeout(timer)
-    timers.clear()
     await Promise.all(disposers.map(dispose => dispose()))
   }
 }

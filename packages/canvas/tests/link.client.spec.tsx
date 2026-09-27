@@ -4,10 +4,10 @@
  * every gesture on the stage — a click that picks, a drag that places, a band
  * that picks a batch, a port drag that links a pair, the line delete, the lanes
  * (add / rename / drag-carry / resize), 「顺线扩一圈」's send set and the two
- * compose sends — plus the read-only degrade. The pure geometry half is covered
+ * quote gestures — plus the read-only degrade. The pure geometry half is covered
  * by tests/layout-geometry.spec.ts; THIS file is the component, driven through
  * CanvasTab so the prop wiring (`onLayout` → the `setLayout` Remote verb,
- * `onToggleSelect`/`onAddSelection` → the tab's selection, `onAsk` → `askAgent`)
+ * `onToggleSelect`/`onAddSelection` → the tab's selection, `onTalk` → `quoteToConversation`)
  * is part of every assertion rather than a mock's word for it.
  *
  * jsdom reports 0 for every measurement, which would make each clamp collapse
@@ -24,10 +24,9 @@ import { CanvasImageSrcs } from '../src/client/images.ts'
 import { CanvasSelectionStore } from '../src/client/space/selection.ts'
 import { CanvasTab } from '../src/client/tab/CanvasTab.tsx'
 import { zh } from '../src/client/locales.ts'
-import { COMPOSE_SEND_TEXT, GROUP_ASK_SEND_TEXT } from '../src/prompt.ts'
 import { defaultCategories, makeBoardId } from '../src/types.ts'
 import type {
-  BoardAskAgentOutcome, BoardAttachImageOutcome, BoardCategory, BoardChatStatusResult, BoardFocusResult,
+  BoardAttachImageOutcome, BoardCategory, BoardFocusResult,
   BoardLane, BoardLink, BoardListResult, BoardMutationResult, BoardReadOutcome,
   CanvasBoard, CanvasSummary,
 } from '../src/types.ts'
@@ -190,9 +189,9 @@ interface Harness {
     openCardDetail: ReturnType<typeof vi.fn>
     openCardDraft: ReturnType<typeof vi.fn>
     focusCanvas: ReturnType<typeof vi.fn>
-    askAgent: ReturnType<typeof vi.fn>
-    chatStatus: ReturnType<typeof vi.fn>
-    openSideChat: ReturnType<typeof vi.fn>
+    talkAvailable: ReturnType<typeof vi.fn>
+    quoteToConversation: ReturnType<typeof vi.fn>
+    refreshBoards: ReturnType<typeof vi.fn>
     suggestWideMode: ReturnType<typeof vi.fn>
   }
   readonly props: CanvasTabProps
@@ -300,11 +299,9 @@ function makeHarness(options: {
     closeTab: (id: string) => { store.close(id) },
     openCanvas: (canvasId: string) => { store.openCanvas(canvasId) },
     focusCanvas: vi.fn(async (): Promise<Result<BoardFocusResult>> => ok({ ok: true })),
-    askAgent: vi.fn(async (): Promise<Result<BoardAskAgentOutcome>> =>
-      ok({ ok: true, contextKey: `canvas:${CANVAS_ID}`, sent: true })),
-    chatStatus: vi.fn(async (): Promise<Result<BoardChatStatusResult>> =>
-      ok({ available: options.chatAvailable ?? true })),
-    openSideChat: vi.fn(),
+    talkAvailable: vi.fn((): boolean => options.chatAvailable ?? true),
+    quoteToConversation: vi.fn((): boolean => true),
+    refreshBoards: vi.fn(),
     suggestWideMode: vi.fn(),
     attachImage: vi.fn(async (): Promise<Result<BoardAttachImageOutcome>> =>
       ok({ ok: true, ref: { attachmentId: IMG_ID, mediaType: 'image/png', bytes: 3, width: 2, height: 1 } })),
@@ -1041,8 +1038,8 @@ describe('LinkView — the send set', () => {
     // is on nothing at all, least of all the card that was clicked.
     expect(clusteredOf(container)).toEqual([])
     expect(nodeOf(container, 'c_1').hasAttribute('data-picked')).toBe(true)
-    expect(screen.queryByRole('button', { name: '就这一组提问 · 2 张' })).toBeNull()
-    expect(screen.getByRole('button', { name: '就这一组提问 · 1 张' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '与 Agent 对谈 · 2 张' })).toBeNull()
+    expect(screen.getByRole('button', { name: '与 Agent 对谈 · 1 张' })).toBeTruthy()
   })
 
   it('closes the cluster over lines, takes one hop of lane mates, and stops at a lane mate reached through a line', async () => {
@@ -1078,54 +1075,39 @@ describe('LinkView — the send set', () => {
       t('link.infoExpanded', { count: '4', seeds: '1', lines: '2', lanes: '1' }),
     )
     expect(screen.getByRole('button', { name: '顺线扩一圈 开' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '就这一组提问 · 4 张' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '与 Agent 对谈 · 4 张' })).toBeTruthy()
   })
 
-  it('sends the whole cluster as one group ask, over the cards the line joined', async () => {
+  /** The card ids a quote block names, in the order it names them. */
+  const quotedIds = (block: string): string[] => [...block.matchAll(/\bc_\d+\b/g)].map(match => match[0])
+
+  it('quotes the whole cluster into the input as one group, over the cards the line joined', async () => {
     const { bench } = await pickedPair()
     fireEvent.click(screen.getByRole('button', { name: '顺线扩一圈 关' }))
-    fireEvent.click(await screen.findByRole('button', { name: '就这一组提问 · 2 张' }))
-    await waitFor(() => {
-      expect(bench.mocks.askAgent).toHaveBeenCalledWith('s1', {
-        canvasId: CANVAS_ID,
-        lens: 'ask',
-        cardIds: ['c_1', 'c_2'],
-        text: GROUP_ASK_SEND_TEXT,
-      })
-    })
-    expect(bench.mocks.openSideChat).toHaveBeenCalledWith(`canvas:${CANVAS_ID}`)
+    fireEvent.click(await screen.findByRole('button', { name: '与 Agent 对谈 · 2 张' }))
+    const [sessionId, block] = bench.mocks.quoteToConversation.mock.calls[0] as [string, string]
+    expect(sessionId).toBe('s1')
+    expect(new Set(quotedIds(block))).toEqual(new Set(['c_1', 'c_2']))
     expect(bench.mocks.setLayout).not.toHaveBeenCalled()
   })
 
-  it('sends the compose text for 生成文章, over the same set the bar counted', async () => {
+  it('quotes the same set the bar counted for 开始写作, with the writing ask after it', async () => {
     const { bench, container } = await pickedPair()
     fireEvent.click(screen.getByRole('button', { name: '顺线扩一圈 关' }))
     await waitFor(() => {
       expect(clusteredOf(container)).toEqual(['c_2'])
     })
-    fireEvent.click(await screen.findByRole('button', { name: '生成文章' }))
-    await waitFor(() => {
-      expect(bench.mocks.askAgent).toHaveBeenCalledWith('s1', {
-        canvasId: CANVAS_ID,
-        lens: 'ask',
-        cardIds: ['c_1', 'c_2'],
-        text: COMPOSE_SEND_TEXT,
-      })
-    })
-    expect(GROUP_ASK_SEND_TEXT).not.toBe(COMPOSE_SEND_TEXT)
+    fireEvent.click(await screen.findByRole('button', { name: '开始写作' }))
+    const block = bench.mocks.quoteToConversation.mock.calls[0]?.[1] as string
+    expect(new Set(quotedIds(block))).toEqual(new Set(['c_1', 'c_2']))
+    expect(block).toContain(t('talk.writeText'))
   })
 
-  it('composes an article over exactly the clicked card, while the line stays out of it', async () => {
+  it('writes over exactly the clicked card, while the line stays out of it', async () => {
     const { bench } = await pickedPair()
-    fireEvent.click(await screen.findByRole('button', { name: '生成文章' }))
-    await waitFor(() => {
-      expect(bench.mocks.askAgent).toHaveBeenCalledWith('s1', {
-        canvasId: CANVAS_ID,
-        lens: 'ask',
-        cardIds: ['c_1'],
-        text: COMPOSE_SEND_TEXT,
-      })
-    })
+    fireEvent.click(await screen.findByRole('button', { name: '开始写作' }))
+    const block = bench.mocks.quoteToConversation.mock.calls[0]?.[1] as string
+    expect(new Set(quotedIds(block))).toEqual(new Set(['c_1']))
   })
 
   it('offers no send button with nothing picked, and none at all without the chat seam', async () => {
@@ -1133,12 +1115,12 @@ describe('LinkView — the send set', () => {
     const container = await face(bench, 1)
     // Nothing picked: the info line falls back to what the board itself holds.
     expect(await infoOf()).toContain('板上有')
-    expect(screen.queryByRole('button', { name: /生成文章/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /就这一组提问/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /开始写作/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /与 Agent 对谈/ })).toBeNull()
     // The cards still pick on a board with no chat to send them to.
     tap(nodeOf(container, 'c_1'))
     expect(pickedOf(container)).toEqual(['c_1'])
-    expect(screen.queryByRole('button', { name: /生成文章/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /开始写作/ })).toBeNull()
   })
 
   it('forgets the expansion with the selection, and retires the clear button with nothing left to clear', async () => {
@@ -1222,7 +1204,7 @@ describe('LinkView — read-only', () => {
     const bench = readOnly()
     const container = await face(bench, 2)
     // A card drag: no placement, and the stage hands the press to the pick —
-    // 「就这一组提问」 needs a selection even on a board that cannot be written.
+    // 「与 Agent 对谈」 needs a selection even on a board that cannot be written.
     drag(nodeOf(container, 'c_1'), { x: 10, y: 10 }, { x: 90, y: 90 })
     expect(pickedOf(container)).toEqual(['c_1'])
     drag(one(container, '[data-lane="lane_a"]'), { x: 20, y: 40 }, { x: 80, y: 120 })

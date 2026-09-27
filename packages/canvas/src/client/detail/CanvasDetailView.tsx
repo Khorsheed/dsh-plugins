@@ -36,11 +36,10 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { attachBridge } from '@khorsheed/dsh-inline-html-render/src/client/bridge.ts'
 import { buildCardSrcDoc } from '@khorsheed/dsh-inline-html-render/src/client/srcdoc.ts'
 import { cardTitleOf, detectCardFormat, htmlTitleOf } from '../../card-format.ts'
-import { COMPOSE_SEND_TEXT } from '../../prompt.ts'
 import { imageHtmlOf, imageMarkdownOf } from '../../image-token.ts'
 import {
   documentHeadingOf,
-  type BoardAskAgentRequest, type BoardCard, type BoardMutationResult, type CanvasBoard,
+  type BoardCard, type BoardMutationResult, type CanvasBoard,
   type CanvasError, type CanvasImageError,
 } from '../../types.ts'
 import type { CanvasDetailProps } from '../contract.ts'
@@ -53,6 +52,7 @@ import type { CanvasKey } from '../locales.ts'
 import { CardTextarea } from '../space/CardTextarea.tsx'
 import { agoOf, basenameOf, messageOf } from '../text.ts'
 import { FollowUp } from '../follow-up.tsx'
+import { cardQuoteOf, commentQuoteOf } from '../quote.ts'
 import type { PadTool } from '../draw.ts'
 import { CardPad } from './CardPad.tsx'
 import css from './CanvasDetailView.module.css'
@@ -130,7 +130,7 @@ function HtmlFrame({ html }: { html: string }): ReactNode {
 export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const {
     t, sessionId, canvasId, cardId, create, crumbs, readBoard, patchCard, addComment, deleteCard, openFile, useSelection,
-    askAgent, chatStatus, openSideChat, attachImage, images, pathImages,
+    talkAvailable, quoteToConversation, attachImage, images, pathImages,
   } = props
   // Only the rev is read from the shared store: which card this page shows came
   // in as a prop the moment the detail became its own tab (stage ⑧).
@@ -153,7 +153,6 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const [fatal, setFatal] = useState<string | null>(null)
   const [askDelete, setAskDelete] = useState(false)
   /** The chat seam's probe: null while probing, so entries never flash. */
-  const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
   const toastSeqRef = useRef(0)
 
   // The host's Toast owns its timer and reports back (v2.2: the hand-rolled
@@ -207,7 +206,11 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         return
       }
       setLoadError(null)
-      setOpen({ board: value.board, version: value.version })
+      // The tab's poll bumps the rev with nothing new most of the time: an
+      // unchanged version keeps the board object, so nothing re-renders.
+      setOpen(current => current !== null && current.board.id === value.board.id && current.version === value.version
+        ? current
+        : { board: value.board, version: value.version })
     })()
     return () => { cancelled = true }
   }, [canvasId, boardRev, readBoard, run, errorText])
@@ -243,35 +246,14 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     if (toastKey !== undefined) showToast(t(toastKey), undo)
   }, [sessionId, run, showToast, errorText, t])
 
-  // Probe the chat seam once per mount: 问 Agent / 追问 hide when absent
-  // (and a session-less pane never asks at all).
-  useEffect(() => {
-    if (noSession) return
-    let cancelled = false
-    void (async () => {
-      const value = await run(() => chatStatus())
-      if (cancelled || value === null) return
-      setChatAvailable(value.available)
-    })()
-    return () => { cancelled = true }
-  }, [noSession, chatStatus, run])
+  // 与 Agent 对谈 / 开始写作 / 追问 quote into the session's own input; they
+  // hide where the composition has none (and a session-less pane has none).
+  const canTalk = !noSession && talkAvailable(sessionId)
 
-  /** Ask through the seam and activate the side-chat tab (the ask flow's tail). */
-  const ask = useCallback(async (request: Omit<BoardAskAgentRequest, 'canvasId'>) => {
-    if (sessionId === undefined || canvasId === null) return
-    const value = await run(() => askAgent(sessionId, { canvasId, ...request }))
-    if (value === null) return
-    if (!value.ok) {
-      if (value.error === 'unavailable') {
-        setChatAvailable(false)
-        showToast(t('chat.unavailable'))
-        return
-      }
-      showToast(t('chat.askFailed', { message: errorText(value.error) }))
-      return
-    }
-    openSideChat(value.contextKey)
-  }, [sessionId, canvasId, askAgent, openSideChat, run, showToast, errorText, t])
+  const quote = useCallback((block: string) => {
+    if (sessionId === undefined) return
+    showToast(quoteToConversation(sessionId, block) ? t('talk.quoted') : t('talk.unavailable'))
+  }, [sessionId, quoteToConversation, showToast, t])
 
   /**
    * The image arm of a paste (§10.3): the clipboard's files go to the host's
@@ -555,15 +537,33 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           {!proposed && !archived && !readonly && (
             <ModeSeg mode={mode} onMode={setMode} t={t} />
           )}
-          {chatAvailable === true && !archived && (
-            // The detail page IS one card, so the compose gesture sends just it.
-            <button
-              type="button"
-              className={css.iconButton}
-              onClick={() => { void ask({ lens: 'ask', cardIds: [card.id], text: COMPOSE_SEND_TEXT }) }}
-            >
-              {t('detail.compose')}
-            </button>
+          {canTalk && !archived && (
+            // The detail page IS one card, so both gestures quote just it.
+            <>
+              <button
+                type="button"
+                className={css.iconButton}
+                onClick={() => {
+                  quote(cardQuoteOf(t, card, {
+                    canvasTitle: open.board.title, kindLabel: categoryLabels.get(card.kind) ?? card.kind,
+                  }))
+                }}
+              >
+                {t('talk.action')}
+              </button>
+              <button
+                type="button"
+                className={css.iconButton}
+                onClick={() => {
+                  const block = cardQuoteOf(t, card, {
+                    canvasTitle: open.board.title, kindLabel: categoryLabels.get(card.kind) ?? card.kind,
+                  })
+                  quote(`${block}\n\n${t('talk.writeText')}`)
+                }}
+              >
+                {t('talk.write')}
+              </button>
+            </>
           )}
           {archived && !readonly && (
             <button
@@ -700,19 +700,13 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             </span>
             {'：'}
             {comment.text}
-            {comment.author === 'agent' && chatAvailable === true && (
+            {comment.author === 'agent' && canTalk && (
               <>
                 {' '}
                 <FollowUp
                   t={t}
                   className={css.followUp}
-                  onFollowUp={() => {
-                    void ask({
-                      lens: 'ask',
-                      cardIds: [card.id],
-                      text: t('chat.followupText', { text: comment.text }),
-                    })
-                  }}
+                  onFollowUp={() => { quote(commentQuoteOf(t, comment.text, card, open.board.title)) }}
                 />
               </>
             )}

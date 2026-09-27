@@ -31,7 +31,7 @@ import { CanvasTabTitle } from '../src/client/tab/CanvasTabTitle.tsx'
 import { zh } from '../src/client/locales.ts'
 import { defaultCategories, type BoardCategory } from '../src/types.ts'
 import type {
-  BoardAskAgentOutcome, BoardAttachImageOutcome, BoardChatStatusResult, BoardFocusResult,
+  BoardAttachImageOutcome, BoardFocusResult,
   BoardListResult, BoardMutationResult, BoardReadOutcome,
   CanvasBoard, CanvasSummary,
 } from '../src/types.ts'
@@ -288,9 +288,9 @@ function makeBench(boards: CanvasBoard[] = [board()]): Bench {
     openFile: vi.fn(),
     attachImage: vi.fn(async (): Promise<Result<BoardAttachImageOutcome>> =>
       ok({ ok: true, ref: { attachmentId: 'x', mediaType: 'image/png', bytes: 3, width: 2, height: 1 } })),
-    askAgent: vi.fn(async (): Promise<Result<BoardAskAgentOutcome>> => ok({ ok: true, contextKey: 'k', sent: true })),
-    chatStatus: vi.fn(async (): Promise<Result<BoardChatStatusResult>> => ok({ available: false })),
-    openSideChat: vi.fn(),
+    talkAvailable: vi.fn((): boolean => false),
+    quoteToConversation: vi.fn((): boolean => true),
+    refreshBoards: vi.fn(),
     suggestWideMode: vi.fn(),
     images,
     // The production wiring, verb for verb (src/client/index.ts).

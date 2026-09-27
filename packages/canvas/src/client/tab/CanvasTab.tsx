@@ -37,12 +37,11 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasTabProps } from '../contract.ts'
 import {
   enabledCategories, summarizeBoard,
-  type BoardAskAgentRequest, type BoardCardStatus,
+  type BoardCardStatus,
   type BoardLink, type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasStroke,
   type CanvasSummary, type CardCategoryId,
 } from '../../types.ts'
 import { cardTitleOf } from '../../card-format.ts'
-import { COMPOSE_SEND_TEXT } from '../../prompt.ts'
 import { categoryLabelMap, categoryLabelOf, kindIconOf } from '../category-label.ts'
 import { canvasErrorText } from '../error-text.ts'
 import { BoardView, shownCardsOf, type BoardActions } from '../space/BoardView.tsx'
@@ -53,6 +52,7 @@ import { CanvasSwitcher } from './CanvasSwitcher.tsx'
 import { TabStrip, type StripTab } from './TabStrip.tsx'
 import { basenameOf, messageOf } from '../text.ts'
 import { useDismiss } from '../use-dismiss.ts'
+import { cardsQuoteOf, commentQuoteOf } from '../quote.ts'
 import { MoreMenu } from '../more-menu.tsx'
 import { ConfirmDelete, type DeleteAsk } from '../confirm-delete.tsx'
 import css from './CanvasTab.module.css'
@@ -63,6 +63,9 @@ import boardCss from '../space/board.module.css'
 /** Fallback for the workspaces hook a minimal composition may not provide. */
 const useNoWorkspaces = ((selector: (snapshot: { items: readonly [] }) => unknown) =>
   selector({ items: [] })) as unknown as CanvasTabProps['useWorkspaces']
+
+/** How often an in-view tab re-reads the open board (the main session's writes are unannounced). */
+const BOARD_POLL_MS = 4000
 
 /** One open draft's content, held by the row that owns it. */
 interface DraftContent {
@@ -104,7 +107,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
     archiveCanvas, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
     openCardDetail, openCardDraft, backToBoard, activateTab, closeTab, focusCanvas,
-    askAgent, chatStatus, openSideChat, suggestWideMode, images, useImageRev,
+    talkAvailable, quoteToConversation, refreshBoards, suggestWideMode, images, useImageRev,
     useSelection,
   } = props
   const sessionId = props.sessionId
@@ -126,7 +129,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
    */
   const [views, setViews] = useState<Readonly<Record<string, BoardViewMemory>>>({})
   const [newCardMenu, setNewCardMenu] = useState(false)
-  const [chatAvailable, setChatAvailable] = useState<boolean | null>(null)
   /** The one banner; `undo` makes it offer 撤销 (archiving is one click to take back). */
   const [toast, setToast] = useState<{ text: string; seq: number; undo?: () => void } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
@@ -321,17 +323,17 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   useEffect(() => { void reloadList() }, [reloadList])
 
-  // Probe the chat seam once per mount (entries hide when side-chat is absent).
+  // The main session's agent writes into the same boards through its canvas
+  // tools, and nothing announces those writes to this surface — so while the
+  // page is in view, re-read the open board every few seconds (the read effect
+  // below keeps the board it has when the version has not moved).
   useEffect(() => {
-    if (readonly) return
-    let cancelled = false
-    void (async () => {
-      const value = await run(() => chatStatus())
-      if (cancelled || value === null) return
-      setChatAvailable(value.available)
-    })()
-    return () => { cancelled = true }
-  }, [readonly, chatStatus, run])
+    if (openId === null) return
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshBoards()
+    }, BOARD_POLL_MS)
+    return () => { clearInterval(timer) }
+  }, [openId, refreshBoards])
 
   // Put a board on the strip when there is nothing to show yet (a fresh session,
   // or a stash that held nothing) — once, because after the user closes every
@@ -373,7 +375,11 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         return
       }
       setLoadError(null)
-      setOpenBoard({ board: value.board, version: value.version })
+      // An unchanged version is the same board: keep the object, so a poll
+      // that found nothing new re-renders nothing.
+      setOpenBoard(current => current !== null && current.board.id === value.board.id && current.version === value.version
+        ? current
+        : { board: value.board, version: value.version })
       const row = summarizeBoard(value.board)
       setCanvases(current => current === null
         ? current
@@ -622,23 +628,37 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     })()
   }, [sessionId, openId, writeLayout, run, showToast, errorText])
 
-  /* -------------------------------------------------------------- ask flow */
+  /* ------------------------------------------------------------- talk flow */
 
-  const ask = useCallback(async (request: Omit<BoardAskAgentRequest, 'canvasId'>) => {
-    if (sessionId === undefined || openId === null) return
-    const value = await run(() => askAgent(sessionId, { canvasId: openId, ...request }))
-    if (value === null) return
-    if (!value.ok) {
-      if (value.error === 'unavailable') {
-        setChatAvailable(false)
-        showToast(t('chat.unavailable'))
-        return
-      }
-      showToast(t('chat.askFailed', { message: errorText(value.error) }))
-      return
-    }
-    openSideChat(value.contextKey)
-  }, [sessionId, openId, askAgent, openSideChat, run, showToast, errorText, t])
+  // The Agent gestures quote into the session's own input (the 2026-09-27
+  // review): the words land in front of the user, who adds a question and
+  // sends — no side chat, no preset lens.
+  const canTalk = sessionId !== undefined && talkAvailable(sessionId)
+
+  const quote = useCallback((block: string) => {
+    if (sessionId === undefined) return
+    showToast(quoteToConversation(sessionId, block) ? t('talk.quoted') : t('talk.unavailable'))
+  }, [sessionId, quoteToConversation, showToast, t])
+
+  /** Quote cards in board order; `then` is appended after them (开始写作's instruction). */
+  const talk = useCallback((cardIds: Iterable<string>, then?: string) => {
+    if (openBoard === null) return
+    const board = openBoard.board
+    const wanted = new Set(cardIds)
+    const labels = categoryLabelMap(board.categories, t)
+    const cards = board.cards
+      .filter(card => wanted.has(card.id))
+      .map(card => ({ card, kindLabel: labels.get(card.kind) ?? card.kind }))
+    if (cards.length === 0) return
+    const block = cardsQuoteOf(t, cards, board.title)
+    quote(then === undefined ? block : `${block}\n\n${then}`)
+  }, [openBoard, quote, t])
+
+  const followUp = useCallback((cardId: string, commentText: string) => {
+    const card = openBoard?.board.cards.find(row => row.id === cardId)
+    if (openBoard === null || card === undefined) return
+    quote(commentQuoteOf(t, commentText, card, openBoard.board.title))
+  }, [openBoard, quote, t])
 
   /* -------------------------------------------------------------- rendering */
 
@@ -899,8 +919,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 onOpenDetail={openCard}
                 wire={wire}
                 onWire={setWire}
-                chatAvailable={chatAvailable === true}
-                onAsk={(cardIds, text) => { void ask({ lens: 'ask', cardIds: [...cardIds], text }) }}
+                talkAvailable={canTalk}
+                onTalk={cardIds => { talk(cardIds) }}
+                onWrite={cardIds => { talk(cardIds, t('talk.writeText')) }}
                 onLayout={layout}
                 onToast={showToast}
               />
@@ -922,12 +943,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 }}
                 onClearSelection={() => { setCardSelection(new Set()) }}
                 onOpenDetail={openCard}
-                chatAvailable={chatAvailable === true}
-                onAsk={lens => { void ask({ lens, cardIds: [...selection_] }) }}
-                onCompose={() => { void ask({ lens: 'ask', cardIds: [...selection_], text: COMPOSE_SEND_TEXT }) }}
-                onFollowUp={(cardId, commentText) => {
-                  void ask({ lens: 'ask', cardIds: [cardId], text: t('chat.followupText', { text: commentText }) })
-                }}
+                talkAvailable={canTalk}
+                onTalk={() => { talk(selection_) }}
+                onWrite={() => { talk(selection_, t('talk.writeText')) }}
+                onFollowUp={followUp}
                 actions={actions}
                 showArchived={showArchivedCards}
                 onToggleArchived={toggleShowArchived}

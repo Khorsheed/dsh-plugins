@@ -326,6 +326,12 @@
   color: var(--dsw-alias-label-caption);
 }
 
+/* A category nothing is filed under yet stays reachable (filter, drop target)
+   but steps back, so the row reads as where the cards are. */
+.chip[data-empty="true"]:not([data-active="true"]):not(:hover) {
+  opacity: 0.5;
+}
+
 /* The 管理分类 chip: dashed, so it reads as a tool and never as a sixth filter.
    Sticky because the strip scrolls sideways now — a manage entry that can be
    scrolled away is not an entry. It carries the board's own fill because
@@ -639,7 +645,8 @@
   transition: opacity 0.12s;
 }
 
-.card:hover .selectBox {
+.card:hover .selectBox,
+.card:focus-within .selectBox {
   opacity: 1;
 }
 
@@ -768,8 +775,20 @@
   gap: 2px;
 }
 
-.card:hover .cardActions {
+.card:hover .cardActions,
+.card:focus-within .cardActions {
   display: flex;
+}
+
+/* A touch screen has no hover to reveal them: the corner tools stay out. */
+@media (hover: none) {
+  .selectBox {
+    opacity: 1;
+  }
+
+  .cardActions {
+    display: flex;
+  }
 }
 
 /* The ghost proposal: dashed border on the base surface, never a fill. */
