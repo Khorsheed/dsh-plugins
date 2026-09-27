@@ -4166,6 +4166,24 @@ T79/T80 对齐的是信息层次，视觉组件层没有对齐，用户看了说
 
 已派子 agent 按设计稿 §五 分批开发，分支 `feat/t86-lab-sidebar`。验收要求：两条宿主线都截图，0.1.7 线验一次刷新恢复，另验一次无右栏降级。
 
+#### T86 合入（2026-09-27）
+
+**内容**：
+- 新增实验室查看面板 `InspectPane`，带返回栈，默认放在宿主右栏，按会话记住栈；没有右栏或 `openTab` 抛错时回落页内 Sheet。
+- 四页入口改为「一句结论 + 查看」。
+- 人工评估页加「题目材料」入口。
+- 修掉侧栏里原文块被截在约 320px 的问题。
+
+**验证**：
+- 协调者在 main 的 detached worktree 上试合并。冻结基线 build 绿；测试 eval 1192、datasets 252、eval-tool 6、datasets-tool 7 全过；hygiene 0 条；check:plugins 0 条。
+- 0.1.5 线：1440 宽 14/14 过。400 宽 13/14，「返回」场景因宿主全屏覆盖点不到 tab，属于预期。截图在 scratch 的 t86-shots。
+
+**欠账**：
+- 0.1.7 线的截图和刷新恢复未验：pack 自带的 `eval` preset 在 0.1.7 报 Unknown agent preset，列表整页失败，等 T82（preset 迁 bundle）后补验。临时 home 保留在 scratch 的 t86-home-017。
+- 无右栏降级组不出可用 profile：官方 ui-chat 依赖 sidebarRight，关掉就整页 Failed to load plugins。所以 Sheet 兜底只由单测覆盖（apply.client.spec.ts），实际环境里基本不会触发。
+
+合入提交 `a9001014`。**下一步**：用户在 3183 走查 T84–T86；通过后重装 3171。
+
 ## 四、验收规程
 
 实施 agent 回报四样：分支名与 commit、Agent Note 路径、`pnpm gate` 输出、一份脱敏的示例输出。协调者做的事：
