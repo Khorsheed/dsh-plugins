@@ -518,13 +518,21 @@ export interface EvalPlanEstimateSample {
 }
 
 /**
- * What ONE rep of the plan costs, from the samples: each (group, item) pair is
- * the mean of that pair's past answers, or the group's mean over the plan's
- * items when the pair itself was never answered. Scaling by 每组次数 is the
- * page's arithmetic, so the number follows the seg without a round trip.
+ * What ONE rep of the plan costs, from the samples — over the COVERED items
+ * only: an item counts when every group has answered it before, each (group,
+ * item) pair being the mean of that pair's past answers. Items nobody ran are
+ * never filled from other items' means (T83 · phase 4 ruling: no
+ * extrapolation), so a partial coverage is a floor and the page says «≥».
+ * Scaling by 每组次数 is the page's arithmetic, so the number follows the seg
+ * without a round trip.
  */
 export interface EvalPlanEstimate {
+  /** Σ over the covered items; null when that field covers none. */
   perRep: { activeMs: number | null; outputTokens: number | null }
+  /** Per field, the plan items the sum covers, in plan order. */
+  covered: { activeMs: string[]; outputTokens: string[] }
+  /** The plan's items, in plan order — covered.length === items.length is «≈». */
+  items: string[]
   samples: EvalPlanEstimateSample[]
 }
 

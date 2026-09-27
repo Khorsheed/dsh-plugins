@@ -917,6 +917,9 @@ describe('用哪些题 and 规模与花费 read the pinned dataset and past answ
     },
     estimate: {
       perRep: { activeMs: 270_000, outputTokens: 28_050 },
+      // Only p0-001 was answered before: the sum is a floor over it (T83 ruling).
+      covered: { activeMs: ['p0-001'], outputTokens: ['p0-001'] },
+      items: ['p0-001', 'p0-002'],
       samples: [
         { runId: 'r1', condition: 'dsh-exec', task: 'p0-001', activeMs: 254_000, outputTokens: 25_100 },
         { runId: 'r1', condition: 'codex-exec', task: 'p0-001', activeMs: 274_000, outputTokens: 31_000 },
@@ -948,7 +951,10 @@ describe('用哪些题 and 规模与花费 read the pinned dataset and past answ
   })
 
   it('the estimate is one rep scaled by 每组次数, with the answers it came from', async () => {
-    const h = makeHarness({ review: FACTS })
+    const both = ['p0-001', 'p0-002']
+    const h = makeHarness({
+      review: { ...FACTS, estimate: { ...FACTS.estimate, covered: { activeMs: both, outputTokens: both }, items: both } },
+    })
     renderView(h)
     await openPage(h, 'page.design')
     // reps 2: 4.5 min × 2 → 9 min; 28 050 × 2 → 56.1k.
@@ -959,6 +965,20 @@ describe('用哪些题 and 规模与花费 read the pinned dataset and past answ
     expect(note.textContent).toMatch(/dur\.ms .*"m\\*":4,\\*"s\\*":14.* \/ dur\.ms .*"s\\*":34/)
     expect(note.textContent).toContain('25.1k / 31k')
     expect(screen.queryByText('design.scale.none')).toBeNull()
+  })
+
+  it('a partial coverage is a floor over the answered items and names the rest — never extrapolated', async () => {
+    const h = makeHarness({ review: FACTS })
+    renderView(h)
+    await openPage(h, 'page.design')
+    // The same numbers as the full case, but «≥»: p0-002 is not in the sum.
+    expect(await screen.findByText('design.scale.atLeastMinutes {"m":9}')).toBeTruthy()
+    expect(screen.getByText('design.scale.atLeast {"value":"56.1k"}')).toBeTruthy()
+    expect(screen.queryByText(/^design\.scale\.approx/)).toBeNull()
+    const note = screen.getByText(/^design\.scale\.partial /)
+    expect(note.textContent).toContain('design.scale.coveredItem')
+    expect(note.textContent).toMatch(/p0-001.*"n\\*":2/)
+    expect(note.textContent).toContain('"missing":"p0-002"')
   })
 
   it('no past answers is 无估算, and no items face keeps the two columns the digest can fill', async () => {

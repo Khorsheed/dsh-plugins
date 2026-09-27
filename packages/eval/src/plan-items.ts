@@ -189,8 +189,8 @@ function mean(values: readonly number[]): number | null {
  * @param input.mission - the mission read face (listing runs is optional on it).
  * @param input.conditions - the plan's player groups.
  * @param input.items - the plan's items.
- * @returns the estimate, or null when some group has no past answer to any
- *   of the items (a partial sum would read as the whole cost).
+ * @returns the estimate over the items EVERY group answered before (and which
+ *   those are), or null when no item is covered — never an extrapolation.
  */
 export function planEstimate(input: {
   mission: MissionRunListFace | undefined
@@ -230,20 +230,30 @@ export function planEstimate(input: {
     }
   }
   // Per field, so a ledger that timed the rounds but never counted tokens
-  // still estimates the time.
-  const perRepOf = (field: 'activeMs' | 'outputTokens'): number | null => {
+  // still estimates the time. NO extrapolation: an item counts only when
+  // every group has answered it before — a small placeholder's mean says
+  // nothing about a four-stage container item, and filling the gap with it
+  // guesses low exactly where a reader approves on the number.
+  const perRepOf = (field: 'activeMs' | 'outputTokens'): { total: number | null; covered: string[] } => {
     let total = 0
-    for (const condition of conditions) {
-      const own = samples.filter(sample => sample.condition === condition && sample[field] !== null)
-      const fallback = mean(own.map(sample => sample[field] as number))
-      if (fallback === null) return null
-      for (const item of items) {
-        total += mean(own.filter(sample => sample.task === item).map(sample => sample[field] as number)) ?? fallback
-      }
+    const covered: string[] = []
+    for (const item of items) {
+      const means = conditions.map(condition => mean(samples
+        .filter(sample => sample.condition === condition && sample.task === item && sample[field] !== null)
+        .map(sample => sample[field] as number)))
+      if (means.some(value => value === null)) continue
+      covered.push(item)
+      total += means.reduce<number>((sum, value) => sum + (value ?? 0), 0)
     }
-    return total
+    return { total: covered.length === 0 ? null : total, covered }
   }
-  const perRep = { activeMs: perRepOf('activeMs'), outputTokens: perRepOf('outputTokens') }
-  if (perRep.activeMs === null && perRep.outputTokens === null) return null
-  return { perRep, samples }
+  const time = perRepOf('activeMs')
+  const tokens = perRepOf('outputTokens')
+  if (time.total === null && tokens.total === null) return null
+  return {
+    perRep: { activeMs: time.total, outputTokens: tokens.total },
+    covered: { activeMs: time.covered, outputTokens: tokens.covered },
+    items: [...items],
+    samples,
+  }
 }

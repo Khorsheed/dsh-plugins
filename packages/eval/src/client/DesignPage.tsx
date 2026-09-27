@@ -736,13 +736,19 @@ function ScaleSection(props: {
           <span>{t('design.scale.duration')}</span>
           {estimate?.perRep.activeMs == null
             ? <b data-none="">{t('design.scale.none')}</b>
-            : <b>{approxDuration(estimate.perRep.activeMs * (reps ?? row.reps), t)}</b>}
+            : <b>{approxDuration(estimate.perRep.activeMs * (reps ?? row.reps), isFloor(estimate, 'activeMs'), t)}</b>}
         </div>
         <div className={css.bigNum}>
           <span>{t('design.scale.tokens')}</span>
           {estimate?.perRep.outputTokens == null
             ? <b data-none="">{t('design.scale.none')}</b>
-            : <b>{t('design.scale.approx', { value: compactCount(Math.round(estimate.perRep.outputTokens * (reps ?? row.reps))) })}</b>}
+            : (
+              <b>
+                {t(isFloor(estimate, 'outputTokens') ? 'design.scale.atLeast' : 'design.scale.approx', {
+                  value: compactCount(Math.round(estimate.perRep.outputTokens * (reps ?? row.reps))),
+                })}
+              </b>
+            )}
         </div>
       </div>
       <div className={css.scaleNote}>{estimate == null ? t('design.scale.noneNote') : estimateSource(estimate, t)}</div>
@@ -750,12 +756,17 @@ function ScaleSection(props: {
   )
 }
 
-/** 「≈ 10 分钟」: whole minutes under an hour, the two-unit phrase past it. */
-function approxDuration(ms: number, t: LabViewProps['t']): string {
+/** A sum over only some of the plan's items is a floor: «≥», never «≈». */
+function isFloor(estimate: EvalPlanEstimate, field: 'activeMs' | 'outputTokens'): boolean {
+  return estimate.covered[field].length < estimate.items.length
+}
+
+/** 「≈ 10 分钟」 (or 「≥」 for a floor): whole minutes under an hour, the two-unit phrase past it. */
+function approxDuration(ms: number, floor: boolean, t: LabViewProps['t']): string {
   const minutes = Math.max(1, Math.round(ms / 60_000))
-  if (minutes < 60) return t('design.scale.approxMinutes', { m: minutes })
+  if (minutes < 60) return t(floor ? 'design.scale.atLeastMinutes' : 'design.scale.approxMinutes', { m: minutes })
   const parts = durationParts(minutes * 60_000)
-  return t('design.scale.approx', { value: parts === null ? String(minutes) : t(parts.key, parts.params) })
+  return t(floor ? 'design.scale.atLeast' : 'design.scale.approx', { value: parts === null ? String(minutes) : t(parts.key, parts.params) })
 }
 
 /** How many past answers are listed one by one before the line only counts them. */
@@ -767,6 +778,19 @@ const SAMPLES_LISTED = 4
  * and the answers themselves while there are few enough to read.
  */
 function estimateSource(estimate: EvalPlanEstimate, t: LabViewProps['t']): string {
+  // Partial coverage names what the floor covers and what it leaves out —
+  // 「只含 P0（2 次作答）；F2、F3 没有过往作答，无估算」.
+  const covered = estimate.covered.activeMs.length > 0 ? estimate.covered.activeMs : estimate.covered.outputTokens
+  if (covered.length < estimate.items.length) {
+    const missing = estimate.items.filter(item => !covered.includes(item))
+    const someAnswered = missing.some(item => estimate.samples.some(sample => sample.task === item))
+    return t(someAnswered ? 'design.scale.partialSome' : 'design.scale.partial', {
+      covered: covered.map(item => t('design.scale.coveredItem', {
+        item, n: estimate.samples.filter(sample => sample.task === item).length,
+      })).join(t('design.scale.itemJoin')),
+      missing: missing.join(t('design.scale.itemJoin')),
+    })
+  }
   const groups = new Set(estimate.samples.map(sample => sample.condition)).size
   const tasks = [...new Set(estimate.samples.map(sample => sample.task))]
   const items = tasks.length <= 3 ? tasks.join(t('design.scale.itemJoin')) : t('design.scale.itemsCount', { n: tasks.length })

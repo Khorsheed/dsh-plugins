@@ -128,7 +128,7 @@ function missionFace(runs: Record<string, {
 }
 
 describe('规模与花费 estimate', () => {
-  it('one rep = Σ over groups × items of the pair mean, the group mean filling an unanswered pair', () => {
+  it('one rep = Σ over the items every group answered, each pair its own mean', async () => {
     const mission = missionFace({
       r1: {
         meta: { evalVersion: 1 },
@@ -137,6 +137,8 @@ describe('规模与花费 estimate', () => {
           { id: 'm2', condition: 'b', task: 'P0', state: 'released', payload: [delegation(240_000, 4000)] },
           { id: 'm3', condition: 'a', task: 'P0', state: 'halted', payload: [delegation(9e9, 9e9)] },
           { id: 'm4', condition: 'z', task: 'P0', state: 'judged', payload: [delegation(9e9, 9e9)] },
+          { id: 'm7', condition: 'a', task: 'F3', state: 'judged', payload: [delegation(600_000, 9000)] },
+          { id: 'm8', condition: 'b', task: 'F3', state: 'judged', payload: [delegation(900_000, 11000)] },
         ],
       },
       r2: {
@@ -145,10 +147,31 @@ describe('规模与花费 estimate', () => {
       },
       foreign: { meta: {}, rows: [{ id: 'm6', condition: 'a', task: 'P0', state: 'judged', payload: [delegation(9e9, 9e9)] }] },
     })
-    const estimate = planEstimate({ mission, conditions: ['a', 'b'], items: ['P0', 'F2'] })
-    // a: P0 mean (120k, 360k) = 240k; F2 unanswered → a's mean 240k. b: 240k + 240k.
-    expect(estimate?.perRep).toEqual({ activeMs: 960_000, outputTokens: 16_000 })
-    expect(estimate?.samples.map(sample => `${sample.runId}/${sample.condition}`)).toEqual(['r1/a', 'r1/b', 'r2/a'])
+    const estimate = planEstimate({ mission, conditions: ['a', 'b'], items: ['P0', 'F3'] })
+    // P0: a mean (120k, 360k) = 240k + b 240k; F3: 600k + 900k.
+    expect(estimate?.perRep).toEqual({ activeMs: 1_980_000, outputTokens: 28_000 })
+    expect(estimate?.covered).toEqual({ activeMs: ['P0', 'F3'], outputTokens: ['P0', 'F3'] })
+    expect(estimate?.samples.map(sample => `${sample.runId}/${sample.condition}/${sample.task}`))
+      .toEqual(['r1/a/P0', 'r1/b/P0', 'r1/a/F3', 'r1/b/F3', 'r2/a/P0'])
+  })
+
+  it('a partial coverage is a floor: unanswered items are left out, never filled from other items', () => {
+    const mission = missionFace({
+      r1: {
+        meta: { evalVersion: 1 },
+        rows: [
+          { id: 'm1', condition: 'a', task: 'P0', state: 'judged', payload: [delegation(240_000, 4000)] },
+          { id: 'm2', condition: 'b', task: 'P0', state: 'judged', payload: [delegation(300_000, 5000)] },
+          // Only ONE group answered F2: the item is not covered either.
+          { id: 'm3', condition: 'a', task: 'F2', state: 'judged', payload: [delegation(1_200_000, 20000)] },
+        ],
+      },
+    })
+    const estimate = planEstimate({ mission, conditions: ['a', 'b'], items: ['P0', 'F2', 'F3'] })
+    // P0 alone — no 3 × P0 guess for F2 and F3, and a's F2 answer is not half an item.
+    expect(estimate?.perRep).toEqual({ activeMs: 540_000, outputTokens: 9000 })
+    expect(estimate?.covered).toEqual({ activeMs: ['P0'], outputTokens: ['P0'] })
+    expect(estimate?.items).toEqual(['P0', 'F2', 'F3'])
   })
 
   it('a group with no past answer means no estimate, never a partial sum', () => {

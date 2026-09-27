@@ -933,6 +933,11 @@ export type EvalKey =
   | 'design.item.taskClose'
   | 'design.scale.approx'
   | 'design.scale.approxMinutes'
+  | 'design.scale.atLeast'
+  | 'design.scale.atLeastMinutes'
+  | 'design.scale.partial'
+  | 'design.scale.partialSome'
+  | 'design.scale.coveredItem'
   | 'design.scale.itemJoin'
   | 'design.scale.itemsCount'
   | 'design.scale.from'
@@ -1953,6 +1958,11 @@ export const en: Record<EvalKey, string> = {
   'design.item.taskClose': 'Hide task',
   'design.scale.approx': '≈ {value}',
   'design.scale.approxMinutes': '≈ {m} min',
+  'design.scale.atLeast': '≥ {value}',
+  'design.scale.atLeastMinutes': '≥ {m} min',
+  'design.scale.partial': 'Covers only {covered}; {missing} have no past answers, so they are not estimated.',
+  'design.scale.partialSome': 'Covers only {covered}; {missing} have no past answers from every group, so they are not estimated.',
+  'design.scale.coveredItem': '{item} ({n} answers)',
   'design.scale.itemJoin': ', ',
   'design.scale.itemsCount': '{n} items',
   'design.scale.from': 'Estimated from {n} past answers by {who} on {items}',
@@ -2963,6 +2973,11 @@ export const zh: Record<EvalKey, string> = {
   'design.item.taskClose': '收起题面',
   'design.scale.approx': '≈ {value}',
   'design.scale.approxMinutes': '≈ {m} 分钟',
+  'design.scale.atLeast': '≥ {value}',
+  'design.scale.atLeastMinutes': '≥ {m} 分钟',
+  'design.scale.partial': '只含 {covered}；{missing} 没有过往作答，无估算',
+  'design.scale.partialSome': '只含 {covered}；{missing} 不是每个对比组都有过往作答，无估算',
+  'design.scale.coveredItem': '{item}（{n} 次作答）',
   'design.scale.itemJoin': '、',
   'design.scale.itemsCount': '{n} 道题',
   'design.scale.from': '估算来自{who}过去在 {items} 上的 {n} 次作答',
