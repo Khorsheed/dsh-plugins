@@ -56,11 +56,13 @@ describe('cardQuoteOf', () => {
   it('says a drawing is there, and carries only the newest comments', () => {
     const comments = Array.from({ length: MAX_QUOTE_COMMENTS + 2 }, (_, index) => comment(`m_${index}`, `评论${index}`))
     const block = cardQuoteOf(t, card('c_d', {
-      text: '',
-      draw: [{ tool: 'pen', color: '#000', width: 2, points: [[0, 0], [1, 1]] }] as unknown as BoardCard['draw'],
+      text: '看图\n\n![](draw://d1)',
+      drawings: { d1: [{ tool: 'pen', color: '#000', width: 2, points: [[0, 0], [1, 1]] }] } as unknown as BoardCard['drawings'],
       comments,
     }), where)
     expect(block).toContain(t('quote.draw', { strokes: '1' }))
+    expect(block).toContain('> 看图')
+    expect(block).not.toContain('draw://')
     expect(block).not.toContain('评论0')
     expect(block).not.toContain('评论1\n')
     expect(block).toContain(`评论${MAX_QUOTE_COMMENTS + 1}`)

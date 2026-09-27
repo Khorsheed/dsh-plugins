@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-27-canvas-block-editor.md
+.agents/notes/implemented/feature/2026-09-27-canvas-block-editor.md: 6b30abd84ee4a4fac167c53a31fcc33696fd8787
+.agents/notes/implemented/feature/2026-09-27-canvas-block-editor.zh.md: 277da3be2364518e8f7a4dc83137caf9ceaf1dce

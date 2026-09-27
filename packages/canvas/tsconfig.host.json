@@ -6,6 +6,7 @@
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
   "files": [
+    "src/blocks.ts",
     "src/card-format.ts",
     "src/agent.ts",
     "src/image-token.ts",

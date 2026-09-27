@@ -331,7 +331,7 @@ describe('CanvasTab — list, switcher, board', () => {
   it('shows a drawn card’s ink on the board, where an empty body would read as blank', async () => {
     const drawn = card('c_ink', {
       text: '',
-      draw: [{ pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' }],
+      drawings: { main: [{ pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' }] },
     })
     const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1'), drawn])] })
     const { container } = render(<CanvasTab {...props} />)

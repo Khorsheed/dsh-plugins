@@ -634,6 +634,50 @@ export function normalizeDraw(raw: unknown): CanvasStroke[] {
   return strokes
 }
 
+/** Most drawings one card holds (each is its own block in the card's flow). */
+export const MAX_CARD_DRAWINGS = 12
+
+/**
+ * The id the card's first drawing has always had: a card from before drawings
+ * could sit between paragraphs stored ONE drawing under `draw`, which the read
+ * files under this id. The body names no place for it, so it renders last,
+ * where it always was.
+ */
+export const LEGACY_DRAWING_ID = 'main'
+
+const DRAWING_ID = /^[a-z0-9]{1,16}$/
+
+/** Whether a string can name one drawing on a card (and so appear in a `draw://` pointer). */
+export function isDrawingId(value: unknown): value is string {
+  return typeof value === 'string' && DRAWING_ID.test(value)
+}
+
+/**
+ * Read an untrusted drawings map: a bad id or an inkless drawing drops out,
+ * the rest survive, in the order they were written.
+ * @param raw - a `drawings` value from a file or a wire request.
+ * @returns at most {@link MAX_CARD_DRAWINGS} drawings, each with ink.
+ */
+export function normalizeDrawings(raw: unknown): Record<string, CanvasStroke[]> {
+  const drawings: Record<string, CanvasStroke[]> = {}
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return drawings
+  let count = 0
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (count >= MAX_CARD_DRAWINGS) break
+    if (!isDrawingId(id)) continue
+    const strokes = normalizeDraw(value)
+    if (strokes.length === 0) continue
+    drawings[id] = strokes
+    count += 1
+  }
+  return drawings
+}
+
+/** Whether a drawings map holds any ink at all. */
+export function hasDrawings(drawings: Readonly<Record<string, readonly CanvasStroke[]>> | undefined): boolean {
+  return drawings !== undefined && Object.values(drawings).some(strokes => strokes.length > 0)
+}
+
 /* ------------------------------------------------------------- board layout (§11.3) */
 
 /**
@@ -812,8 +856,12 @@ export interface BoardCard {
   /** Present only on question cards. */
   question?: { state: QuestionState }
   comments: BoardComment[]
-  /** The card's drawing, absent when nothing was ever inked (§11.4's field). */
-  draw?: CanvasStroke[]
+  /**
+   * The card's drawings by id, absent when nothing was ever inked (§11.4's
+   * field, grown from one drawing to several). The text places each one with
+   * a `![](draw://<id>)` line; one the text does not place renders last.
+   */
+  drawings?: Record<string, CanvasStroke[]>
   /**
    * Where the card sits in the link view ({@link LAYOUT_BOX} units). Absent
    * until it is placed: the 卡板 flows cards by document order, so a board
@@ -942,8 +990,11 @@ function normalizeCard(raw: unknown, now: string): BoardCard | undefined {
     createdAt: typeof record['createdAt'] === 'string' ? record['createdAt'] : now,
     updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : now,
   }
-  const draw = normalizeDraw(record['draw'])
-  if (draw.length > 0) card.draw = draw
+  const drawings = normalizeDrawings(record['drawings'])
+  // A card from before drawings could interleave kept ONE, under `draw`.
+  const legacy = normalizeDraw(record['draw'])
+  if (legacy.length > 0 && drawings[LEGACY_DRAWING_ID] === undefined) drawings[LEGACY_DRAWING_ID] = legacy
+  if (Object.keys(drawings).length > 0) card.drawings = drawings
   const x = layoutNumber(record['x'])
   const y = layoutNumber(record['y'])
   if (x !== undefined && y !== undefined) {
@@ -1250,13 +1301,14 @@ export interface BoardPutCardRequest {
   readonly kind: CardCategoryId
   readonly text: string
   readonly source?: BoardCardSource
-  readonly draw?: readonly CanvasStroke[]
+  readonly drawings?: Readonly<Record<string, readonly CanvasStroke[]>>
 }
 
 /**
- * Edit one card: text, its drawing, a status transition, or a question-state
- * transition. A `draw` of `[]` clears the drawing (absent leaves it alone) —
- * the two must stay distinguishable, or 「清空」 could never be saved.
+ * Edit one card: text, its drawings, a status transition, or a question-state
+ * transition. `drawings` arrives WHOLE and replaces the card's map — `{}`
+ * clears every drawing, absent leaves them alone; the two must stay
+ * distinguishable, or 「清空」 could never be saved.
  */
 export interface BoardPatchCardRequest {
   readonly canvasId: string
@@ -1266,7 +1318,7 @@ export interface BoardPatchCardRequest {
   readonly text?: string
   readonly status?: BoardCardStatus
   readonly question?: { state: QuestionState }
-  readonly draw?: readonly CanvasStroke[]
+  readonly drawings?: Readonly<Record<string, readonly CanvasStroke[]>>
 }
 
 /** Comment on one card. */

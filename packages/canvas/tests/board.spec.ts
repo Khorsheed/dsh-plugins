@@ -19,7 +19,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { CanvasService } from '../src/service.ts'
 import { CanvasBoardService } from '../src/store.ts'
-import { DRAW_BOX, type CanvasBoard, type CanvasStroke } from '../src/types.ts'
+import { DRAW_BOX, MAX_CARD_DRAWINGS, normalizeBoard, type CanvasBoard, type CanvasStroke } from '../src/types.ts'
 
 type Entry = { kind: 'dir' } | { kind: 'file'; content: string; version: number }
 
@@ -300,14 +300,37 @@ describe('CanvasBoardService.putCard', () => {
     const { board } = harness()
     const created = await createBoard(board)
     const put = await board.putCard({
-      canvasId: created.id, kind: 'fragment', text: '', draw: [STROKE],
+      canvasId: created.id, kind: 'fragment', text: '', drawings: { main: [STROKE] },
     }, SESSION)
     if (!put.ok) throw new Error('expected the drawing to land')
     expect(put.board.cards[0]?.text).toBe('')
-    expect(put.board.cards[0]?.draw).toEqual([STROKE])
+    expect(put.board.cards[0]?.drawings).toEqual({ main: [STROKE] })
     // The round trip through canvas.json is where a field can be dropped.
     const reread = await readBoard(board, created.id)
-    expect(reread.cards[0]?.draw).toEqual([STROKE])
+    expect(reread.cards[0]?.drawings).toEqual({ main: [STROKE] })
+  })
+
+  it('reads a card from before drawings interleaved: its one `draw` is drawing `main`', () => {
+    const board = normalizeBoard({
+      id: 'c1', title: 't', cards: [{ id: 'c_1', kind: 'fragment', text: '旧', draw: [STROKE] }],
+    }, 'c1', '2026-09-27T00:00:00.000Z')
+    expect(board?.cards[0]?.drawings).toEqual({ main: [STROKE] })
+    expect(board?.cards[0]).not.toHaveProperty('draw')
+  })
+
+  it('keeps a card to its drawing cap and drops a bad id or an inkless drawing', async () => {
+    const { board } = harness()
+    const created = await createBoard(board)
+    const many = Object.fromEntries(Array.from({ length: MAX_CARD_DRAWINGS + 3 }, (_, n) => [`d${n}`, [STROKE]]))
+    const put = await board.putCard({
+      canvasId: created.id, kind: 'fragment', text: '多幅',
+      drawings: { ...many, 'Bad Id': [STROKE], empty: [] },
+    }, SESSION)
+    if (!put.ok) throw new Error('expected the card to land')
+    const ids = Object.keys(put.board.cards[0]?.drawings ?? {})
+    expect(ids).toHaveLength(MAX_CARD_DRAWINGS)
+    expect(ids).not.toContain('Bad Id')
+    expect(ids).not.toContain('empty')
   })
 
   it('normalizes the drawing on the way in: clamped, and malformed strokes dropped', async () => {
@@ -317,15 +340,15 @@ describe('CanvasBoardService.putCard', () => {
       canvasId: created.id,
       kind: 'fragment',
       text: '一张画',
-      draw: [
+      drawings: { main: [
         // Out of the box, out of the pen, and one value that is not a number.
         { pts: [{ x: -50, y: 900, w: 40 }, { x: Number.NaN, y: 12, w: 1 }, { x: 90, y: 20, w: 3 }], color: 'ink' },
         { pts: [{ x: 1, y: 1, w: 4 }], color: 'ink' },
         { pts: 'not points', color: 'faint' } as never,
-      ],
+      ] },
     }, SESSION)
     if (!put.ok) throw new Error('expected the card to land')
-    const draw = put.board.cards[0]?.draw ?? []
+    const draw = put.board.cards[0]?.drawings?.['main'] ?? []
     // The one-point stroke and the non-array both drop; the sloppiest survives, fixed.
     expect(draw).toHaveLength(1)
     expect(draw[0]).toEqual({
@@ -341,7 +364,7 @@ describe('CanvasBoardService.patchCard', () => {
     const { board } = harness()
     const created = await createBoard(board)
     const put = await board.putCard({
-      canvasId: created.id, kind: 'fragment', text: '初稿', draw: [STROKE],
+      canvasId: created.id, kind: 'fragment', text: '初稿', drawings: { main: [STROKE] },
     }, SESSION)
     if (!put.ok) throw new Error('expected the card to land')
     const cardId = put.board.cards[0]!.id
@@ -350,16 +373,17 @@ describe('CanvasBoardService.patchCard', () => {
     // content, but they arrive from different gestures).
     const words = await board.patchCard({ canvasId: created.id, cardId, text: '改过的' }, SESSION)
     if (!words.ok) throw new Error('expected the patch to land')
-    expect(words.board.cards[0]?.draw).toEqual([STROKE])
+    expect(words.board.cards[0]?.drawings).toEqual({ main: [STROKE] })
 
-    const redrawn = await board.patchCard({ canvasId: created.id, cardId, draw: [STROKE, STROKE] }, SESSION)
+    const redrawn = await board.patchCard({ canvasId: created.id, cardId, drawings: { main: [STROKE, STROKE], d1: [STROKE] } }, SESSION)
     if (!redrawn.ok) throw new Error('expected the drawing to land')
-    expect(redrawn.board.cards[0]?.draw).toHaveLength(2)
+    expect(redrawn.board.cards[0]?.drawings?.['main']).toHaveLength(2)
+    expect(Object.keys(redrawn.board.cards[0]?.drawings ?? {})).toEqual(['main', 'd1'])
 
     // The empty list is the eraser's 「清空」: the field, not just its contents.
-    const cleared = await board.patchCard({ canvasId: created.id, cardId, draw: [] }, SESSION)
+    const cleared = await board.patchCard({ canvasId: created.id, cardId, drawings: {} }, SESSION)
     if (!cleared.ok) throw new Error('expected the clear to land')
-    expect(cleared.board.cards[0]?.draw).toBeUndefined()
+    expect(cleared.board.cards[0]?.drawings).toBeUndefined()
     // And the card still has its words, so it survives the text-or-ink rule.
     expect(cleared.board.cards[0]?.text).toBe('改过的')
   })
@@ -368,16 +392,16 @@ describe('CanvasBoardService.patchCard', () => {
     const { board } = harness()
     const created = await createBoard(board)
     const put = await board.putCard({
-      canvasId: created.id, kind: 'fragment', text: '', draw: [STROKE],
+      canvasId: created.id, kind: 'fragment', text: '', drawings: { main: [STROKE] },
     }, SESSION)
     if (!put.ok) throw new Error('expected the drawing to land')
     const cardId = put.board.cards[0]!.id
-    const cleared = await board.patchCard({ canvasId: created.id, cardId, draw: [] }, SESSION)
+    const cleared = await board.patchCard({ canvasId: created.id, cardId, drawings: {} }, SESSION)
     if (!cleared.ok) throw new Error('expected the clear to land')
     // The card stays on the board, blank and editable — refusing here would
     // strand anyone who drew the wrong thing on an ink-only card.
     expect(cleared.board.cards[0]).toMatchObject({ text: '' })
-    expect(cleared.board.cards[0]?.draw).toBeUndefined()
+    expect(cleared.board.cards[0]?.drawings).toBeUndefined()
   })
 
 

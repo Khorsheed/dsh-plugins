@@ -70,3 +70,28 @@ export const IconUndoOutline16 = ({ size = 16, className }: LocalIconProps) => (
     <path d="M2.6 2.4 V6.6 H6.2" fill="none" />
   </svg>
 )
+
+/**
+ * Picture: a frame with a sun and a hill, the block editor's 「＋ 图片」.
+ * ui-primitives ships no image glyph, and the add bar's pair should match.
+ * @param props - size and className.
+ * @returns the icon element.
+ */
+export const IconImageOutline16 = ({ size = 16, className }: LocalIconProps) => (
+  <svg
+    width={size}
+    height={size}
+    className={className}
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.3}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <rect x="2" y="3" width="12" height="10" rx="1.5" />
+    <circle cx="5.8" cy="6.3" r="1.1" />
+    <path d="M2.5 11.5 L6.4 8.4 L9 10.4 L11 8.8 L13.6 11" />
+  </svg>
+)

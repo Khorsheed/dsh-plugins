@@ -31,6 +31,7 @@ import type {} from '../locales.ts'
 import { categoryLabelMap, kindIconOf } from '../category-label.ts'
 import { basenameOf } from '../text.ts'
 import { FollowUp } from '../follow-up.tsx'
+import { firstDrawingOf, withoutDrawLines } from '../../blocks.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
@@ -141,6 +142,14 @@ function CommentThread({ t, card, readonly, talkAvailable, onComment, onFollowUp
   )
 }
 
+/** A markdown image, anywhere in a line: `![alt](dest)`. */
+const IMAGE_MARKDOWN = /!\[[^\]\n]*\]\([^)\n]*\)/g
+
+/** The card's words for the summary: no drawing lines, each image one mark. */
+function summaryTextOf(text: string, imageMark: string): string {
+  return withoutDrawLines(text).replace(IMAGE_MARKDOWN, imageMark)
+}
+
 /** A card's summary: the drawing, the derived heading, the clamped text.
  *  The word count is NOT here — it belongs to the pinned footer, which is
  *  `CardItem`'s (an html card keeps its count inside the placeholder instead). */
@@ -150,7 +159,7 @@ function CardSummary({ t, card }: {
 }): ReactNode {
   // A drawing is content, so the board shows it (demand ④): a card whose body
   // is ink would otherwise read as a card with nothing in it.
-  const ink = card.draw ?? []
+  const ink = firstDrawingOf(card.text, card.drawings)
   const thumb = ink.length === 0 ? null : (
     <div className={css.cardDraw}><DrawFigure strokes={ink} /></div>
   )
@@ -172,13 +181,16 @@ function CardSummary({ t, card }: {
   }
   // Document cards lead with their derived heading (never the raw `#` opener)
   // and summarize the body that remains after it.
-  const heading = card.kind === 'document' ? documentHeadingOf(card.text) : undefined
+  // The thumbnail stands for the drawings, and an image pointer is not words:
+  // the summary reads the text with both said plainly.
+  const words = summaryTextOf(card.text, t('card.imageMark'))
+  const heading = card.kind === 'document' ? documentHeadingOf(words) : undefined
   return (
     <>
       {thumb}
       {heading !== undefined && <div className={css.docTitle}>{heading.title}</div>}
       <div className={css.cardTextWrap} data-clamped={isLongCardText(card.text) || undefined}>
-        <div className={css.cardText}>{heading?.body ?? card.text}</div>
+        <div className={css.cardText}>{heading?.body ?? words}</div>
       </div>
     </>
   )

@@ -17,6 +17,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
+import { withoutDrawLines } from '../blocks.ts'
 import { cardTitleOf, detectCardFormat } from '../card-format.ts'
 import type { BoardCard } from '../types.ts'
 import type {} from './locales.ts'
@@ -47,13 +48,13 @@ export function cardQuoteOf(
   const lines: string[] = []
   if (detectCardFormat(card.text) === 'html') {
     lines.push(t('quote.html', { title: cardTitleOf(card.text), count: String(card.text.length) }))
-  } else if (card.text.trim().length > 0) {
-    const text = card.text.trim()
+  } else if (withoutDrawLines(card.text).length > 0) {
+    const text = withoutDrawLines(card.text)
     lines.push(text.length > MAX_QUOTE_CARD_CHARS
       ? `${text.slice(0, MAX_QUOTE_CARD_CHARS)}…\n${t('quote.truncated', { count: String(text.length) })}`
       : text)
   }
-  const strokes = card.draw?.length ?? 0
+  const strokes = Object.values(card.drawings ?? {}).reduce((sum, ink) => sum + ink.length, 0)
   if (strokes > 0) lines.push(t('quote.draw', { strokes: String(strokes) }))
   const comments = card.comments.slice(-MAX_QUOTE_COMMENTS)
   for (const comment of comments) {

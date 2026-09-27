@@ -1,0 +1,121 @@
+/* The block editor: one sheet the blocks sit on, so the words, the pads and
+   the pictures read as one card being written, not a stack of forms. Theme
+   tokens only; the text boxes lose their own borders and take the sheet's. */
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+}
+
+.flow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--dsw-alias-bg-layer-1);
+  transition: border-color 120ms ease;
+}
+
+.flow:focus-within {
+  border-color: var(--dsw-alias-label-caption);
+}
+
+.text {
+  min-width: 0;
+}
+
+.words {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: none;
+  padding: 0;
+  font: var(--dsw-font-xs-13);
+  line-height: 1.75;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  outline: none;
+  resize: none;
+  overflow: hidden;
+}
+
+.words::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+/* A picture is a block of its own: it sits on the sheet with its remove
+   control in its corner, shown on hover or focus so it never covers the image
+   while you read it. */
+.image {
+  position: relative;
+  align-self: flex-start;
+  max-width: 100%;
+  margin: 0;
+  border-radius: 8px;
+}
+
+.image img {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.image:hover .remove,
+.remove:focus-visible {
+  opacity: 1;
+}
+
+.draw {
+  min-width: 0;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.add {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.file {
+  display: none;
+}
+
+.hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-caption);
+}
+
+.actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}

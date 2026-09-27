@@ -570,21 +570,23 @@ describe('CanvasTab — the draft row', () => {
     expect(store.source.getSnapshot().tabs[0]?.at).toEqual({ kind: 'board' })
   })
 
-  it('saves a draft that is only ink, with the strokes and an empty body', async () => {
+  it('saves a draft that is only ink, with the drawing placed by its pointer line', async () => {
     const { mocks, props } = makeBench([board(CANVAS_ID, [card('c_1')])])
     const { container } = render(<CanvasTab {...props} />)
     await pickCategory('灵感')
     await screen.findByPlaceholderText(/写点什么/)
-    fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
+    // 手绘 adds a drawing block with the pen already out.
+    const add = screen.getByRole('button', { name: '手绘' })
+    fireEvent.click(add)
     drawOneStroke(container)
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true })
+    fireEvent.keyDown(add, { key: 'Enter', metaKey: true })
     await waitFor(() => {
       expect(mocks.putCard).toHaveBeenCalledWith('s1', expect.objectContaining({
-        canvasId: CANVAS_ID, kind: 'fragment', text: '',
+        canvasId: CANVAS_ID, kind: 'fragment', text: '![](draw://d1)',
       }))
     })
-    const request = mocks.putCard.mock.calls[0]![1] as { draw?: readonly unknown[] }
-    expect(request.draw).toHaveLength(1)
+    const request = mocks.putCard.mock.calls[0]![1] as { drawings?: Record<string, readonly unknown[]> }
+    expect(request.drawings?.d1).toHaveLength(1)
   })
 
   it('leaves an untouched draft without a question, and asks once about a drafted one', async () => {

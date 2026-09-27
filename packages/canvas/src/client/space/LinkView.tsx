@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { IconEditOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
+import { firstDrawingOf, withoutDrawLines } from '../../blocks.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { makeBoardId, type BoardCard, type BoardLane, type BoardLink, type CanvasBoard } from '../../types.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
@@ -124,7 +125,7 @@ function newLaneId(): string {
 /** One node's preview: the most a placed card can show in a couple of lines. */
 function previewOf(card: BoardCard): string {
   if (detectCardFormat(card.text) === 'html') return htmlTitleOf(card.text) ?? ''
-  const first = card.text.split('\n').find(line => line.trim().length > 0) ?? ''
+  const first = withoutDrawLines(card.text).split('\n').find(line => line.trim().length > 0) ?? ''
   return first.replace(/^#+\s*/, '').trim()
 }
 
@@ -550,7 +551,7 @@ export function LinkView({
           {placed.map(node => {
             const card = cardById.get(node.id)
             if (card === undefined) return null
-            const ink = card.draw ?? []
+            const ink = firstDrawingOf(card.text, card.drawings)
             const lane = laneAt(lanes, node)
             const text = previewOf(card)
             // 「顺线扩一圈」 on: the neighbours the graph adds are marked, because a

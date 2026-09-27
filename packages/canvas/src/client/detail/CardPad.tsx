@@ -21,7 +21,7 @@
  */
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconEditOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconCloseOutlineMedium, IconEditOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { MAX_DRAW_STROKES, type CanvasDrawPoint, type CanvasStroke } from '../../types.ts'
 import {
   appendStroke, boxPointOf, samplesNext, sampleWidth, strokeAt, unitsPerPixel,
@@ -86,10 +86,20 @@ export interface CardPadProps {
    * because its strokes save themselves.
    */
   readonly onSave?: () => void
+  /**
+   * Take this drawing out of the card — the block editor's pads, where a card
+   * holds several drawings and each is its own block. Without it, 清空 is the
+   * pad's only way to let ink go.
+   */
+  readonly onRemove?: (() => void) | undefined
+  /** The remove button's words (the block editor names it per block). */
+  readonly removeLabel?: string | undefined
+  /** The pen-on hint when ⌘⏎ saves rather than adds a card (the default says 建卡). */
+  readonly saveHint?: string | undefined
 }
 
 /** The pad: the tool strip, and the field the strokes live on. */
-export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, onSave }: CardPadProps): ReactNode {
+export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, onSave, onRemove, removeLabel, saveHint }: CardPadProps): ReactNode {
   const boxRef = useRef<HTMLDivElement | null>(null)
   /** The stroke under construction. A ref, so a fast drag never waits on a render. */
   const liveRef = useRef<CanvasDrawPoint[]>([])
@@ -223,7 +233,12 @@ export function CardPad({ t, strokes, tool, onTool, onStrokes, notify, editing, 
               {t('draw.clear')}
             </Button>
           )}
-          {drawing && <span className={css.hint}>{t(onSave === undefined ? 'draw.hintOn' : 'draw.hintDraft')}</span>}
+          {onRemove !== undefined && (
+            <Button size="sm" icon={<IconCloseOutlineMedium size={12} />} onClick={onRemove}>
+              {removeLabel ?? t('block.remove')}
+            </Button>
+          )}
+          {drawing && <span className={css.hint}>{onSave === undefined ? t('draw.hintOn') : saveHint ?? t('draw.hintDraft')}</span>}
           {!drawing && !hasInk && <span className={css.hint}>{t('draw.hint')}</span>}
         </div>
       )}

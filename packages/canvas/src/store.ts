@@ -36,7 +36,7 @@ import {
   emptyStats, isBoardCardStatus, isCardCategoryId, isManuscriptId, isManuscriptStatus, isQuestionState, makeBoardId,
   manuscriptFileName, MANUSCRIPT_DIR_NAME, MAX_BOARD_MANUSCRIPTS, MAX_MANUSCRIPT_TEXT_LENGTH,
   MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId, normalizeManuscriptSources,
-  normalizeCategories, normalizeDraw, normalizeLanes, normalizeLinks, normalizePositions,
+  hasDrawings, normalizeCategories, normalizeDrawings, normalizeLanes, normalizeLinks, normalizePositions,
   reconcileCategories,
   sanitizeCanvasTitle, summarizeBoard,
   type BoardAddCommentRequest, type BoardArchiveRequest,
@@ -368,8 +368,8 @@ export class CanvasBoardService {
   async putCard(request: BoardPutCardRequest, session: Session): Promise<BoardMutationResult> {
     if (!isCardCategoryId(request.kind)) return { ok: false, error: 'invalid-name' }
     const text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
-    const draw = normalizeDraw(request.draw)
-    if (text.length === 0 && draw.length === 0) return { ok: false, error: 'invalid-name' }
+    const drawings = normalizeDrawings(request.drawings)
+    if (text.length === 0 && !hasDrawings(drawings)) return { ok: false, error: 'invalid-name' }
     return this.mutate(request.canvasId, session, (board, now) => {
       // The catalog is per canvas, so "is this a category" can only be asked of
       // the board the card is landing on — and a retired row refuses writes
@@ -386,7 +386,7 @@ export class CanvasBoardService {
         createdAt: now,
         updatedAt: now,
         ...(request.kind === 'question' ? { question: { state: 'open' as const } } : {}),
-        ...(draw.length === 0 ? {} : { draw }),
+        ...(hasDrawings(drawings) ? { drawings } : {}),
         ...(request.source === undefined ? {} : { source: request.source }),
       }
       board.cards.push(card)
@@ -395,12 +395,12 @@ export class CanvasBoardService {
   }
 
   /**
-   * Edit one card: text, its drawing, a status transition, or a question-state
+   * Edit one card: text, its drawings, a status transition, or a question-state
    * transition. The proposed → kept/archived transitions feed the acceptance
    * counters (the ghost's ✓/✗); archiving never deletes, exactly the pad's
-   * semantics. A drawing arrives whole (the pad owns the stroke list, so the
-   * fence covers a lost write the same way it covers a lost keystroke); `[]`
-   * clears it, `undefined` leaves it alone.
+   * semantics. Drawings arrive whole (the editor owns the stroke lists, so the
+   * fence covers a lost write the same way it covers a lost keystroke); `{}`
+   * clears them, `undefined` leaves them alone.
    * @param request - canvas id, card id, and the fields to change.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh board and token, or the failure code.
@@ -425,10 +425,10 @@ export class CanvasBoardService {
       if (request.text !== undefined) {
         card.text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
       }
-      if (request.draw !== undefined) {
-        const draw = normalizeDraw(request.draw)
-        if (draw.length === 0) delete card.draw
-        else card.draw = draw
+      if (request.drawings !== undefined) {
+        const drawings = normalizeDrawings(request.drawings)
+        if (hasDrawings(drawings)) card.drawings = drawings
+        else delete card.drawings
       }
       if (request.status !== undefined && request.status !== card.status) {
         if (card.status === 'proposed') {

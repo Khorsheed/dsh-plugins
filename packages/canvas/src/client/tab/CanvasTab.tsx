@@ -41,6 +41,7 @@ import {
   type BoardLink, type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasStroke,
   type CanvasSummary, type CardCategoryId,
 } from '../../types.ts'
+import { withoutDrawLines } from '../../blocks.ts'
 import { cardNameOf } from '../../card-format.ts'
 import { categoryLabelMap, categoryLabelOf, kindIconOf } from '../category-label.ts'
 import { canvasErrorText } from '../error-text.ts'
@@ -71,12 +72,17 @@ const BOARD_POLL_MS = 4000
 /** One open draft's content, held by the row that owns it. */
 interface DraftContent {
   readonly text: string
-  readonly draw: readonly CanvasStroke[]
+  readonly drawings: Readonly<Record<string, readonly CanvasStroke[]>>
+}
+
+/** How many strokes a draft's drawings hold, all told. */
+function strokesOf(draft: DraftContent | undefined): number {
+  return Object.values(draft?.drawings ?? {}).reduce((sum, ink) => sum + ink.length, 0)
 }
 
 /** Whether a draft holds anything worth asking about. */
 function dirtyOf(draft: DraftContent | undefined): boolean {
-  return draft !== undefined && (draft.text.trim().length > 0 || draft.draw.length > 0)
+  return draft !== undefined && (withoutDrawLines(draft.text).length > 0 || strokesOf(draft) > 0)
 }
 
 /** The faces of one board: 卡板, 连线, and 成稿. */
@@ -270,11 +276,11 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   /** Report one keystroke of a draft, keeping the half that did not change. */
   const setDraftText = useCallback((id: string, text: string) => {
-    setDrafts(current => ({ ...current, [id]: { text, draw: current[id]?.draw ?? [] } }))
+    setDrafts(current => ({ ...current, [id]: { text, drawings: current[id]?.drawings ?? {} } }))
   }, [])
 
-  const setDraftDraw = useCallback((id: string, draw: readonly CanvasStroke[]) => {
-    setDrafts(current => ({ ...current, [id]: { text: current[id]?.text ?? '', draw } }))
+  const setDraftDrawings = useCallback((id: string, drawings: DraftContent['drawings']) => {
+    setDrafts(current => ({ ...current, [id]: { text: current[id]?.text ?? '', drawings } }))
   }, [])
 
   /**
@@ -284,14 +290,15 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
    * reports on.
    */
   const saveDraft = useCallback(async (
-    canvasId: string, kind: CardCategoryId, text: string, draw: readonly CanvasStroke[],
+    canvasId: string, kind: CardCategoryId, text: string, drawings: DraftContent['drawings'],
   ): Promise<boolean> => {
     if (sessionId === undefined) return false
     const trimmed = text.trim()
-    if (trimmed.length === 0 && draw.length === 0) return false
+    const inked = strokesOf({ text, drawings }) > 0
+    if (trimmed.length === 0 && !inked) return false
     const result = await putCard(sessionId, {
       canvasId, kind, text: trimmed,
-      ...(draw.length === 0 ? {} : { draw }),
+      ...(inked ? { drawings } : {}),
     })
     if (!result.ok) {
       showToast(result.error.message)
@@ -777,10 +784,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           create={activeRow.at.kind === 'draft' ? {
             kind: activeRow.at.catKind,
             text: drafts[draftTabId(activeRow.canvasId)]?.text ?? '',
-            draw: drafts[draftTabId(activeRow.canvasId)]?.draw ?? [],
+            drawings: drafts[draftTabId(activeRow.canvasId)]?.drawings ?? {},
             onTextChange: text => { setDraftText(draftTabId(activeRow.canvasId), text) },
-            onDrawChange: draw => { setDraftDraw(draftTabId(activeRow.canvasId), draw) },
-            onSave: (kind, text, draw) => saveDraft(activeRow.canvasId, kind, text, draw),
+            onDrawingsChange: drawings => { setDraftDrawings(draftTabId(activeRow.canvasId), drawings) },
+            onSave: (kind, text, drawings) => saveDraft(activeRow.canvasId, kind, text, drawings),
             onLeave: () => { leaveRow(activeRow.id, 'back') },
             onKind: (kind, label) => { openCardDraft(activeRow.canvasId, kind, label) },
           } : undefined}
@@ -1061,11 +1068,11 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
 /** The discard question names what is actually in danger: words, ink, or both. */
 function discardBodyOf(draft: DraftContent | undefined, t: CanvasTabProps['t']): string {
-  const words = draft?.text.trim().length ?? 0
-  const strokes = String(draft?.draw.length ?? 0)
+  const words = withoutDrawLines(draft?.text ?? '').length
+  const strokes = String(strokesOf(draft))
   return words === 0
     ? t('confirm.discardBodyInk', { strokes })
-    : (draft?.draw.length ?? 0) > 0
+    : strokesOf(draft) > 0
       ? t('confirm.discardBodyBoth', { count: String(words), strokes })
       : t('confirm.discardBody', { count: String(words) })
 }

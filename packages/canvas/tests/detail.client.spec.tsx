@@ -143,15 +143,15 @@ function makeHarness(
   }))
   const mocks = {
     readBoard: vi.fn(async (): Promise<Result<BoardReadOutcome>> => ok({ ok: true, board: current.board, version: '1' })),
-    patchCard: vi.fn(async (_sessionId: string, request: { cardId: string; text?: string; status?: 'kept' | 'archived'; draw?: readonly CanvasStroke[] }): Promise<Result<BoardMutationResult>> => {
+    patchCard: vi.fn(async (_sessionId: string, request: { cardId: string; text?: string; status?: 'kept' | 'archived'; drawings?: Record<string, readonly CanvasStroke[]> }): Promise<Result<BoardMutationResult>> => {
       const target = current.board.cards.find(candidate => candidate.id === request.cardId)
       if (target !== undefined) {
         if (request.text !== undefined) target.text = request.text
         if (request.status !== undefined) target.status = request.status
-        // The fake mirrors the host: an empty list takes the field away.
-        if (request.draw !== undefined) {
-          if (request.draw.length === 0) delete target.draw
-          else target.draw = [...request.draw]
+        // The fake mirrors the host: an empty map takes the field away.
+        if (request.drawings !== undefined) {
+          if (Object.keys(request.drawings).length === 0) delete target.drawings
+          else target.drawings = { ...request.drawings }
         }
       }
       return ok({ ok: true, board: current.board, version: '2' })
@@ -627,20 +627,23 @@ function drag(box: HTMLElement, through: readonly (readonly [number, number])[])
   fireEvent.pointerUp(box, { pointerId: 1 })
 }
 
+/** An HTML card: a page, whose one drawing sits under it (§11.4). */
+const PAGE = '<!doctype html><html><body><p>页</p></body></html>'
+
 describe('the card pad (§11.4)', () => {
   it('sends a stroke to patchCard the moment it ends, in box units', async () => {
-    const { view, mocks, props } = makeHarness([card('c_1')])
+    const { view, mocks, props } = makeHarness([card('c_1', { text: PAGE })])
     view.select('c_1')
     const { container } = render(<CanvasDetailView {...props} />)
-    await screen.findByText('卡片 c_1 的正文')
+    await screen.findByRole('button', { name: '铅笔' })
     fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
     const box = padBox(container)
     // 60×40 px of a 300×200 box is 120×80 of the logical 600×400.
     drag(box, [[60, 40], [120, 80], [180, 60]])
     await waitFor(() => {
-      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', draw: expect.any(Array) })
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', drawings: { main: expect.any(Array) } })
     })
-    const draw = mocks.patchCard.mock.calls.at(-1)![1].draw as CanvasStroke[]
+    const draw = mocks.patchCard.mock.calls.at(-1)![1].drawings.main as CanvasStroke[]
     expect(draw).toHaveLength(1)
     expect(draw[0]!.pts[0]).toEqual({ x: 120, y: 80, w: 5 })
     expect(draw[0]!.pts.length).toBe(3)
@@ -651,16 +654,16 @@ describe('the card pad (§11.4)', () => {
       { pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' },
       { pts: [{ x: 200, y: 100, w: 5 }, { x: 400, y: 200, w: 4 }], color: 'ink' },
     ]
-    const { view, mocks, props } = makeHarness([card('c_1', { draw: two })])
+    const { view, mocks, props } = makeHarness([card('c_1', { text: PAGE, drawings: { main: two } })])
     view.select('c_1')
     const { container } = render(<CanvasDetailView {...props} />)
-    await screen.findByText('卡片 c_1 的正文')
+    await screen.findByRole('button', { name: '铅笔' })
     // The pad never waits for the pen: content that hides when you stop making
     // it reads as lost work.
     expect(padField(container)).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: '撤一笔' }))
     await waitFor(() => {
-      expect(mocks.patchCard).toHaveBeenLastCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', draw: [two[0]] })
+      expect(mocks.patchCard).toHaveBeenLastCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', drawings: { main: [two[0]] } })
     })
     expect(padField(container)).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: '撤一笔' }))
@@ -674,24 +677,24 @@ describe('the card pad (§11.4)', () => {
       { pts: [{ x: 60, y: 40, w: 5 }, { x: 120, y: 80, w: 5 }], color: 'ink' },
       { pts: [{ x: 400, y: 300, w: 5 }, { x: 460, y: 320, w: 5 }], color: 'ink' },
     ]
-    const { view, mocks, props } = makeHarness([card('c_1', { draw: two })])
+    const { view, mocks, props } = makeHarness([card('c_1', { text: PAGE, drawings: { main: two } })])
     view.select('c_1')
     const { container } = render(<CanvasDetailView {...props} />)
-    await screen.findByText('卡片 c_1 的正文')
+    await screen.findByRole('button', { name: '铅笔' })
     fireEvent.click(screen.getByRole('button', { name: '橡皮' }))
     const box = padBox(container)
     fireEvent.pointerDown(box, { pointerId: 1, clientX: 30, clientY: 20 })
     await waitFor(() => {
-      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', draw: [two[1]] })
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', drawings: { main: [two[1]] } })
     })
   })
 
   it('misses loudly: an eraser click on empty paper says so and changes nothing', async () => {
     const drawn: CanvasStroke[] = [{ pts: [{ x: 60, y: 40, w: 5 }, { x: 120, y: 80, w: 5 }], color: 'ink' }]
-    const { view, mocks, props } = makeHarness([card('c_1', { draw: drawn })])
+    const { view, mocks, props } = makeHarness([card('c_1', { text: PAGE, drawings: { main: drawn } })])
     view.select('c_1')
     const { container } = render(<CanvasDetailView {...props} />)
-    await screen.findByText('卡片 c_1 的正文')
+    await screen.findByRole('button', { name: '铅笔' })
     const before = mocks.patchCard.mock.calls.length
     fireEvent.click(screen.getByRole('button', { name: '橡皮' }))
     fireEvent.pointerDown(padBox(container), { pointerId: 1, clientX: 250, clientY: 180 })
@@ -700,10 +703,10 @@ describe('the card pad (§11.4)', () => {
   })
 
   it('puts the pen away on Esc, from the keyboard rather than the mouse', async () => {
-    const { view, props } = makeHarness([card('c_1')])
+    const { view, props } = makeHarness([card('c_1', { text: PAGE })])
     view.select('c_1')
     render(<CanvasDetailView {...props} />)
-    await screen.findByText('卡片 c_1 的正文')
+    await screen.findByRole('button', { name: '铅笔' })
     fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
     await screen.findByText('铅笔开着，直接在框里画')
     fireEvent.keyDown(window, { key: 'Escape' })
@@ -711,10 +714,10 @@ describe('the card pad (§11.4)', () => {
   })
 
   it('never lets a tap become a stored stroke', async () => {
-    const { view, mocks, props } = makeHarness([card('c_1')])
+    const { view, mocks, props } = makeHarness([card('c_1', { text: PAGE })])
     view.select('c_1')
     const { container } = render(<CanvasDetailView {...props} />)
-    await screen.findByText('卡片 c_1 的正文')
+    await screen.findByRole('button', { name: '铅笔' })
     fireEvent.click(screen.getByRole('button', { name: '铅笔' }))
     drag(padBox(container), [[60, 40]])
     expect(mocks.patchCard).not.toHaveBeenCalled()
@@ -726,5 +729,36 @@ describe('the card pad (§11.4)', () => {
     render(<CanvasDetailView {...props} />)
     await screen.findByText('AGENT 提议 · 待你确认')
     expect(screen.queryByRole('button', { name: '铅笔' })).toBeNull()
+  })
+})
+
+describe('a markdown card as a flow', () => {
+  const INK: CanvasStroke[] = [{ pts: [{ x: 100, y: 100, w: 5 }, { x: 300, y: 200, w: 4 }], color: 'ink' }]
+
+  it('reads its drawing in place, and saves the edited flow with its drawings', async () => {
+    const { view, mocks, props } = makeHarness([card('c_1', { text: '甲\n\n![](draw://d1)\n\n乙', drawings: { d1: INK } })])
+    view.select('c_1')
+    const { container } = render(<CanvasDetailView {...props} />)
+    await screen.findByText('甲')
+    const pads = () => Array.from(container.querySelectorAll('svg')).filter(svg => svg.getAttribute('viewBox') === '0 0 600 400')
+    expect(pads()).toHaveLength(1)
+    expect(container.textContent).not.toContain('draw://')
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    fireEvent.click(await screen.findByRole('button', { name: zh['block.removeDraw'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['block.save'] }))
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', {
+        canvasId: CANVAS_ID, cardId: 'c_1', text: '甲\n\n乙', drawings: {},
+      })
+    })
+  })
+
+  it('keeps an HTML card a page: render, source and split, never the flow editor', async () => {
+    const { view, props } = makeHarness([card('c_1', { text: PAGE })])
+    view.select('c_1')
+    render(<CanvasDetailView {...props} />)
+    await screen.findByRole('button', { name: '源码' })
+    expect(screen.queryByRole('button', { name: '编辑' })).toBeNull()
+    expect(screen.getByRole('button', { name: '并列' })).toBeDefined()
   })
 })

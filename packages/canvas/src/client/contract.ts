@@ -258,14 +258,16 @@ export interface CanvasDetailCreate {
   readonly kind: CardCategoryId
   /** The draft's current text (the owner's, reported by `onTextChange`). */
   readonly text: string
-  /** The draft's current drawing (the owner's too, reported by `onDrawChange`). */
-  readonly draw: readonly CanvasStroke[]
+  /** The draft's current drawings by id (the owner's too, reported by `onDrawingsChange`). */
+  readonly drawings: Readonly<Record<string, readonly CanvasStroke[]>>
   /** Reports every keystroke, so the owner's dirty flag can gate the discard confirm. */
   onTextChange: (text: string) => void
-  /** Reports a committed stroke list; a draft's ink costs nothing until the save. */
-  onDrawChange: (draw: readonly CanvasStroke[]) => void
+  /** Reports the drawings after each committed stroke; a draft's ink costs nothing until the save. */
+  onDrawingsChange: (drawings: Readonly<Record<string, readonly CanvasStroke[]>>) => void
   /** The first save; resolves true once the card is on the board. */
-  onSave: (kind: CardCategoryId, text: string, draw: readonly CanvasStroke[]) => Promise<boolean>
+  onSave: (
+    kind: CardCategoryId, text: string, drawings: Readonly<Record<string, readonly CanvasStroke[]>>,
+  ) => Promise<boolean>
   /**
    * The draft's ONE exit (Esc, the same gesture the crumb's ‹ fires): the
    * OWNER decides whether to ask first — it holds the draft's content.
