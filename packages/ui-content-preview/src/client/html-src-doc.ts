@@ -1,7 +1,7 @@
 /**
  * Sandboxed HTML srcDoc builder: wraps or annotates an untrusted HTML
  * document so it renders inside a sandboxed iframe, plus the Tier1 runtime
- * extras. Ported verbatim from ui-file-preview (this plugin stays
+ * extras. Ported verbatim from file-preview (this plugin stays
  * self-contained — the two surfaces render identically).
  *
  * The parent web shell has no Content-Security-Policy of its own and an

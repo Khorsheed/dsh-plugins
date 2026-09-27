@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "文件预览",
-    "description": "只读列出会话写过、改过的文件并提供当前文本。"
+    "title": "会话产物",
+    "description": "预览 agent 写过、改过的文件，步进每一次改动。"
   }
 }

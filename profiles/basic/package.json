@@ -1,0 +1,42 @@
+{
+  "name": "dsh-profile-basic",
+  "private": true,
+  "dependencies": {
+    "@khorsheed/dsh-ankh-guard": "^0.4.0",
+    "@khorsheed/dsh-capability-catalog": "^0.1.96",
+    "@khorsheed/dsh-client-message-tools": "^0.3.2",
+    "@khorsheed/dsh-client-session-title-edit": "^0.2.3",
+    "@khorsheed/dsh-context-guard": "^0.2.3",
+    "@khorsheed/dsh-file-preview": "^0.4.0",
+    "@khorsheed/dsh-inline-html-render": "^0.1.14",
+    "@khorsheed/dsh-local-files": "^0.1.1",
+    "@khorsheed/dsh-message-timeline": "^0.2.3",
+    "@khorsheed/dsh-mobile": "^0.1.1",
+    "@khorsheed/dsh-quote": "^0.1.1",
+    "@khorsheed/dsh-taskpilot": "^0.3.2",
+    "@khorsheed/dsh-ui-shortcuts": "^0.2.3",
+    "@khorsheed/dsh-whalesong": "^0.2.3"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@khorsheed/dsh-client-message-tools",
+        "@khorsheed/dsh-context-guard",
+        "@khorsheed/dsh-file-preview",
+        "@khorsheed/dsh-local-files",
+        "@khorsheed/dsh-message-timeline",
+        "@khorsheed/dsh-client-session-title-edit",
+        "@khorsheed/dsh-quote",
+        "@khorsheed/dsh-inline-html-render",
+        "@khorsheed/dsh-capability-catalog",
+        "@khorsheed/dsh-mobile",
+        "@khorsheed/dsh-taskpilot",
+        "@khorsheed/dsh-ui-shortcuts",
+        "@khorsheed/dsh-whalesong",
+        "@khorsheed/dsh-ankh-guard"
+      ]
+    }
+  }
+}

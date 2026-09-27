@@ -6,7 +6,7 @@
 
 会话一长，想找回三条消息前提过的那个要求，就只能一路往上滚。这个插件在对话左缘放了一条时间轴：你说过的每句话占一行，带单行预览；平时它收成一排压淡的刻度，不占视线，鼠标一悬停才展开，点哪一行就把会话滚到哪一句。它只读会话、不发任何消息，模型完全无感。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="对话左缘展开的消息时间轴：每行一条用户消息，点行即跳转到对应消息">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="对话左缘展开的消息时间轴：每行一条用户消息，点行即跳转到对应消息">
 
 ## 特性
 
@@ -17,7 +17,7 @@
 - **长历史友好**——列表短时垂直居中；长时隐形滚动并在顶部翻页加载更早历史，最底部贴着聊天输入框；目标/任务等 dock 卡片不会把时间轴顶上去。
 - **绝不遮住消息流**——面板宽度受滚动区左缘沟槽约束；沟槽放不下最小宽度时隐藏而不是盖住会话。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="时间轴的静止态：收成一排压淡的刻度条，不挡视线，悬停才展开">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="时间轴的静止态：收成一排压淡的刻度条，不挡视线，悬停才展开">
 
 ## 安装
 

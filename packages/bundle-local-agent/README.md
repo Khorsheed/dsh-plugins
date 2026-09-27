@@ -6,7 +6,7 @@
 
 一个会话,多种智能体:主线 agent 判断哪段任务适合谁,委派工具把任务连同要求交过去,被委派的 CLI 跑完把结果带回当前对话(过程在「子代理」面可见)。这个家族 bundle 把家族核与四个委派 provider 一次装齐,清单里只多一张「本地多Agent」卡片,不用逐包挑选。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置里的四张 Local Agent 卡片:Kimi、Codex、dsh、Claude Code,卡头状态点显示各 provider 授权状态">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置里的四张 Local Agent 卡片:Kimi、Codex、dsh、Claude Code,卡头状态点显示各 provider 授权状态">
 
 ## 特性
 
@@ -28,7 +28,7 @@
 
 无卡库(deps-only,进 `dependencies` 不进 patch 行):`@khorsheed/dsh-local-agent-tool-subagent`(委派工具实现,由 provider 行点名)、`@khorsheed/dsh-local-agent-dsh-headless`(子 dsh 被 provision 面)。它们在清单页不出现,随家族存亡。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/bundle-local-agent.png" width="640" alt="插件清单里「本地多Agent」家族卡的详情页:全部成员行逐行列出,带行级启停开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent.png" width="640" alt="插件清单里「本地多Agent」家族卡的详情页:全部成员行逐行列出,带行级启停开关">
 
 ## 安装
 

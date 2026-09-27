@@ -26,7 +26,7 @@ domain 落在两个平面而非一个。profile 平面承载插件集合；capab
 
 ## Alternatives considered
 
-**维持三层，把共享包归入 `base`。** 否决：`dsh-web-basic` 就是基础整合包，把 local-agent 家族加进去意味着入门整合包要求安装外部 CLI 并逐个登录。基础层的承诺和能力层的承诺，对用户是两种不同的承诺。
+**维持三层，把共享包归入 `base`。** 否决：`dsh-basic` 就是基础整合包，把 local-agent 家族加进去意味着入门整合包要求安装外部 CLI 并逐个登录。基础层的承诺和能力层的承诺，对用户是两种不同的承诺。
 
 **维持三层，只在文档里把 `base` 内部分组。** 否决：分类的用途正是让 domain 包据以组装。只活在 README 里的分组，仍然要求组装者逐包挑选，而那正是分类本该消除的工作。
 
@@ -42,9 +42,9 @@ domain 落在两个平面而非一个。profile 平面承载插件集合；capab
 
 domain 包不产生新代码，因此第四个 domain 只是一次组装练习。[mode-switcher](../../../../proposals/active/2026-08-26-mode-switcher.md) 由此获得确切含义：mode 就是 domain 的 UI 表达。
 
-package-management 的分类落点小节现已过时，需要为 `dsh.category` 增加 `capability` 取值；路线图头部登记了这个联动，提案本身尚未修改。`dsh-web-basic` 当前包含 `ankh-guard` 这个 `ops` 包，四层模型让这一矛盾显形；路线图把它挂为待决而非就地解决，因为改动已发布整合包的成员清单有真实代价。
+package-management 的分类落点小节现已过时，需要为 `dsh.category` 增加 `capability` 取值；路线图头部登记了这个联动，提案本身尚未修改。`dsh-basic` 当前包含 `ankh-guard` 这个 `ops` 包，四层模型让这一矛盾显形；路线图把它挂为待决而非就地解决，因为改动已发布整合包的成员清单有真实代价。
 
-路线图需要维护：新提案在包账本补一行，发布状态变化时更新标记。preset 的分发是新工作：profile 模板形态在 `dsh-web-basic` 已有先例，分发 preset 则没有，因此 `dsh-dev` 从一个最小 preset（工具子集加一段 prompt section）起步以跑通链路。两条官方约束限定其上的任何交互：会话只能在零产出时切换 preset，因此 mode 是新建会话时的选择而非会话内开关；子 agent 加入父级的组合，因此被委派的子会话与父会话同 preset。`capability-catalog` 按 agent preset 的 standing scope 读取注册表，因而正是「某个 domain 有哪些工具与 skill」的可见面。
+路线图需要维护：新提案在包账本补一行，发布状态变化时更新标记。preset 的分发是新工作：profile 模板形态在 `dsh-basic` 已有先例，分发 preset 则没有，因此 `dsh-dev` 从一个最小 preset（工具子集加一段 prompt section）起步以跑通链路。两条官方约束限定其上的任何交互：会话只能在零产出时切换 preset，因此 mode 是新建会话时的选择而非会话内开关；子 agent 加入父级的组合，因此被委派的子会话与父会话同 preset。`capability-catalog` 按 agent preset 的 standing scope 读取注册表，因而正是「某个 domain 有哪些工具与 skill」的可见面。
 
 preset 平面只承载 tools、prompt sections 与 skills；声明 `dsh.client` 的浏览器 UI 包挂在 profile 的 client 槽位上、为所有 domain 共享——这正是基础层之所以「基础」的原因。base 的十一个包里只有两个带 agent 侧成分：`inline-html-render` 注册拉取式的 `inline-html-card` skill，`capability-catalog` 注册 `list_capabilities`，因此 `daily` preset 即官方 `standard` 加这两样。由于 preset 的 skill 集合会改变 agent 的能力，评测必须钉住 preset，条件才可比。
 

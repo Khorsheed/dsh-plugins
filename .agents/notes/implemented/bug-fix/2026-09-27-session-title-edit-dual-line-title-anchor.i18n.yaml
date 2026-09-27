@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-27-session-title-edit-dual-line-title-anchor.md
+.agents/notes/implemented/bug-fix/2026-09-27-session-title-edit-dual-line-title-anchor.md: 134fb7553e9d81acfe3fa6c5cc1ccce848225572
+.agents/notes/implemented/bug-fix/2026-09-27-session-title-edit-dual-line-title-anchor.zh.md: e6cce3ba11f38c1be12f61d97bb769bcf5330690

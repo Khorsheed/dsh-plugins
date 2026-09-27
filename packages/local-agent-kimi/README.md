@@ -6,7 +6,7 @@
 
 想让模型把一整块活交给另一个编码 agent，以前只能自己开终端、复制粘贴、再把结果搬回来。这个插件给每个 agent preset 配上 `subagent_kimi` 委派工具和 `/kimi` 命令族：委派在会话工作区的子会话里执行，转写与进度直接出现在子代理界面，结果带着真实用量与耗时回来，还能用同一句柄续聊。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="640" alt="Kimi 设置卡：认证状态、登录/退出、默认模型与常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="640" alt="Kimi 设置卡：认证状态、登录/退出、默认模型与常驻模式开关">
 
 ## 特性
 

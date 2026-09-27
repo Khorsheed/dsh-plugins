@@ -82,7 +82,7 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
   {
     dir: 'packages/file-preview',
     name: '@khorsheed/dsh-file-preview',
-    hostConfigs: ['tsconfig.json'],
+    hostConfigs: ['tsconfig.host.json'],
   },
   {
     dir: 'packages/eval',

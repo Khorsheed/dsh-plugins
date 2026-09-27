@@ -232,6 +232,12 @@ export class DispatchEngine {
     const error = 'Execution outcome is unknown after restart; reconcile before retrying'
     return {
       ...state,
+      ...state.executions === undefined ? {} : { executions: state.executions.map(execution => {
+        const active = execution.runId === undefined
+          ? [...this.inFlight.values()].includes(`${sessionId} ${execution.memberId}`)
+          : this.scheduled.has(`${sessionId}:${execution.runId}`)
+        return execution.state === 'running' && !active ? { ...execution, state: 'failed' as const, error } : execution
+      }) },
       ...state.deliveries === undefined ? {} : { deliveries: state.deliveries.map(row => row.status === 'queued' && closedGoal(state, row.plan?.goalId)
         ? { ...row, status: 'cancelled' as const } : row.status === 'running' && !this.scheduled.has(`${sessionId}:${row.id}`)
           ? { ...row, status: 'uncertain' as const, error } : row) },
@@ -302,7 +308,9 @@ export class DispatchEngine {
       startedAt = Date.now()
       if (deliveryId !== undefined) room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: 'running' })
       memberName = replay(room.snapshotEvents()).members.find(entry => memberId(room.snapshotEvents(), entry) === identity)?.name ?? memberName
-      room.append('room/run-state', { member: memberName, state: 'running', startedAt, runId })
+      room.append('room/run-state', { member: memberName, state: 'running', startedAt, runId,
+        ...member.kind === 'main-agent' ? { childSessionId: room.id } : member.childSessionId === undefined ? {} : { childSessionId: member.childSessionId },
+      })
       await this.hooks.admitted?.(room, options.dispatchSeq)
       await this.ctx.sessions.flush(room)
       return startedAt
@@ -311,7 +319,7 @@ export class DispatchEngine {
     try {
       outcome = member.kind === 'main-agent'
         ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [])
-        : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted)
+        : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId)
     } catch (error: unknown) {
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
       outcome = { state: 'failed', error: faultMessage(error) }
@@ -385,7 +393,7 @@ export class DispatchEngine {
   /** CLI member turn: facade start (first round) or resume, then the speech mirror. */
   private async runCliMember(
     room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, admitted: () => Promise<number>, relayIds: readonly string[], submitted: () => void,
+    text: string, admitted: () => Promise<number>, relayIds: readonly string[], submitted: () => void, runId: string,
   ): Promise<RunOutcome> {
     const facade = probeLocalAgent(this.ctx)
     if (facade === undefined) {
@@ -398,7 +406,21 @@ export class DispatchEngine {
     // configuration admit the request. Persistence must finish before native work.
     let startedAt: number | undefined
     const controlled = facade.supportsMemberConfiguration?.(provider) === true
-    const admission = controlled ? { onAdmitted: async (): Promise<void> => { startedAt = await admitted() } } : {}
+    const admission = {
+      ...controlled ? { onAdmitted: async (): Promise<void> => { startedAt = await admitted() } } : {},
+      onProgress: (event: import('@khorsheed/dsh-local-agent/types').LocalAgentRunProgress): void => {
+        if (event.kind !== 'settled') return
+        const previous = room.snapshotEvents().filter(row => row.type === 'room/run-state' && row.data.runId === runId).at(-1)
+        if (previous?.type !== 'room/run-state') return
+        const total = event.usage?.totalTokens ?? (event.usage === undefined ? undefined : event.usage.inputTokens + event.usage.outputTokens)
+        room.append('room/execution-metadata', { runId,
+          ...event.observedModel === undefined ? {} : { model: event.observedModel },
+          ...event.observedEffort === undefined ? {} : { effort: event.observedEffort },
+          ...total === undefined || !Number.isFinite(total) || total < 0 ? {} : { tokens: total },
+        })
+        void this.ctx.sessions.flush(room).catch(error => this.ctx.logger.warn(`room: execution metadata flush failed: ${String(error)}`))
+      },
+    }
     if (!controlled) startedAt = await admitted()
     const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
     const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
@@ -409,8 +431,8 @@ export class DispatchEngine {
       // records it with the first start and every later resume re-requests it
       // (providers bind it at spawn for exec and live alike).
       ? facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }],
-          member.model === undefined && member.cwd === undefined && !controlled ? undefined : { ...admission, ...member.model === undefined ? {} : { model: member.model }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
-      : facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }], member.cwd === undefined && !controlled ? undefined : { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
+          { ...admission, ...member.model === undefined ? {} : { model: member.model }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
+      : facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }], { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
     // Existing members can enter core's queue immediately. A fresh/prepared
     // identity must publish its first handle before the next submission resumes it.
     if (controlled && member.childSessionId !== undefined && !prepared) submitted()

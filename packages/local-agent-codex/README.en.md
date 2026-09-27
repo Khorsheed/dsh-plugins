@@ -6,7 +6,7 @@ Hand coding tasks to the Codex CLI installed on your own machine — its own log
 
 dsh agents already get work done, but some tasks you simply want to give to your local Codex CLI: its account, its models, the toolchain you know. This plugin wires Codex in as a dsh local subagent — any agent preset can delegate with one call through the `subagent_codex` tool; delegations run inside a plugin-scoped home (`$DSH_HOME/local-agent/codex`), so your personal config, credentials and sessions are never touched; the process details (reasoning, tool calls, file changes) mirror live into the child session, and the final answer comes back to the parent.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent · Codex card on the Settings → plugin configuration page, its header status dot showing the auth state at a glance">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent · Codex card on the Settings → plugin configuration page, its header status dot showing the auth state at a glance">
 
 ## Features
 
@@ -19,7 +19,7 @@ dsh agents already get work done, but some tasks you simply want to give to your
 - **Custom endpoint** — route Codex's LLM requests through your own router via a scoped `config.toml` provider.
 - **Read-back and per-cell working directory** — every settled round reads the model, CLI version and usage back out of its own rollout into the delegation record; the file is located by thread id, cwd and time window, so concurrent runs each read their own round. Orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="the expanded Codex settings card: auth status with sign-in and sign-out, the default model, and the resident-mode switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="the expanded Codex settings card: auth status with sign-in and sign-out, the default model, and the resident-mode switch">
 
 ## Install
 

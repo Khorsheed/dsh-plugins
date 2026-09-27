@@ -191,6 +191,11 @@ export class RegistrationToggle {
     this.sync()
   }
 
+  /** Whether the entry is registered right now. */
+  get registered(): boolean {
+    return this.dispose !== undefined
+  }
+
   /** Re-evaluate: register while shown and ready, dispose otherwise. */
   sync(): void {
     if (!this.ready) return

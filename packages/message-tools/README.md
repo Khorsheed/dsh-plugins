@@ -6,7 +6,7 @@
 
 话说快了、方向跑偏了，以前只能再发一条往回找补。这个插件给你发出的每条消息配上一排小按钮：复制、编辑、撤回。编辑是原地改完重新发，模型按新内容重新回答；撤回会把这条消息和它后面的所有内容一起请出模型上下文，折叠成一条可以展开的「已撤回 N 条消息」分隔线，原话还会自动回填到输入框草稿（绝不替你发送）。后悔了，点分隔线上的「恢复到对话末尾」就能把内容原样放回去。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions1.png" width="640" alt="用户消息下方的复制、编辑、撤回操作按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions1.png" width="640" alt="用户消息下方的复制、编辑、撤回操作按钮">
 
 ## 特性
 
@@ -16,13 +16,13 @@
 - **草稿回填**——撤回成功后把原文回填到 composer 草稿，绝不自动发送。
 - **恢复到尾部**——「恢复到对话末尾」把用户消息逐字重放、助手文本重放为「已恢复」组；工具调用永不重放。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions2.png" width="640" alt="原位编辑：消息变成带模型选择的输入框，保存后以新消息重新发送，被编辑消息不再进入模型上下文">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions2.png" width="640" alt="原位编辑：消息变成带模型选择的输入框，保存后以新消息重新发送，被编辑消息不再进入模型上下文">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions3.png" width="640" alt="撤回前的确认弹窗：说明这条消息及其后内容将对模型隐藏、原文会回填到输入框">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions3.png" width="640" alt="撤回前的确认弹窗：说明这条消息及其后内容将对模型隐藏、原文会回填到输入框">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions4.png" width="640" alt="撤回后的内容折叠为可展开的分隔线，底部有「恢复到对话末尾」按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions4.png" width="640" alt="撤回后的内容折叠为可展开的分隔线，底部有「恢复到对话末尾」按钮">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions5.png" width="640" alt="恢复后消息原样回到对话末尾，归入「已恢复」分组">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions5.png" width="640" alt="恢复后消息原样回到对话末尾，归入「已恢复」分组">
 
 ## 安装
 

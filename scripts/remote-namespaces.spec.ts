@@ -31,7 +31,7 @@ describe('scan (real tree)', () => {
     // The two that broke the hand-built tables on 2026-09-01.
     expect(byPkg.get('local-files')).toMatchObject({ wire: 'localFiles', serviceKey: 'localFilesRemote' })
     expect(byPkg.get('worktrees')).toMatchObject({ wire: 'worktrees', serviceKey: 'worktreesRemote' })
-    // The two neither survey covered — they are not web-dev members.
+    // The two neither survey covered — they are not dev members.
     expect(byPkg.get('datasets')?.split).toBe(true)
     expect(byPkg.get('mission')?.split).toBe(true)
     // The coincident ones still resolve to a wire name.

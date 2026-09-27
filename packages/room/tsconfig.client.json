@@ -44,6 +44,9 @@
     "src/types.ts",
     "src/plan.ts",
     "src/deliveries.ts",
-    "src/client/icons.tsx"
+    "src/client/icons.tsx",
+    "src/client/RoomActivityDock.tsx",
+    "src/client/RoomPlanTab.tsx",
+    "src/client/executions.ts"
   ]
 }

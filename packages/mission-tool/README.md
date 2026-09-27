@@ -37,13 +37,13 @@ dsh plugin --profile web add @khorsheed/dsh-mission-tool
 # 然后在目标 preset 的 agent.cordis.yml 加上面那行
 ```
 
-web-dev 场景包的开发模式 preset（`profiles/web-dev/presets/dev`）已带此行（缺省 `all`）；评测包的 `eval` 预设（`profiles/web-eval`）以 `tools: read` 引用它——同一 profile 里其它预设的会话一个都拿不到。
+dev 场景包的开发模式 preset（`profiles/dev/presets/dev`）已带此行（缺省 `all`）；评测包的 `eval` 预设（`profiles/web-eval`）以 `tools: read` 引用它——同一 profile 里其它预设的会话一个都拿不到。
 
 ## Compatibility
 
 - **npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）**：✅ 完整——工具注册进宿主 tools 注册表并贡献提示词段；0.1.5 官方插件列表的「会话插件」组按 preset 组合呈现本行（短名标题、状态徽标、活挂载相位点）。core 缺席时组合照常挂载，该行保持 pending（注册表审计显示 `waiting for mission`），core 出现后行激活并注册工具。
 - **源码线（deepseek-harness master）**：✅（verifiedHost: 0.1.5-rc.1）。
-- 低于 0.1.5 的宿主：preset 组合与工具行机制在更早的线上已存在，但「会话插件」清单视图是 0.1.5 的呈现——与 worktrees-tool / room-tool 两条伴生行同一档，minHost 钉 0.1.5-rc.1。
+- 低于 0.1.5 的宿主：preset 组合与工具行机制在更早的线上已存在，但「会话插件」清单视图是 0.1.5 的呈现——与 room-tool 等伴生行同一档，minHost 钉 0.1.5-rc.1。
 - **发布顺序**：引用伴生行的 pack 必须先有伴生包被发布 / 安装；行解析失败会让该 preset 组合报 broken（实例 boot 不受影响），不是静默降级。
 
 **版本线对照**：`0.1.0` 起支持宿主 `0.1.5-rc.1` 及以后。

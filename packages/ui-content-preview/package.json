@@ -1,5 +1,6 @@
 {
   "name": "@khorsheed/dsh-client-ui-content-preview",
+  "private": true,
   "description": "Shared client-side content-preview kernel for community file surfaces: the kind-union content pane (markdown / JSON / CSV / image / code, plus the Tier0/Tier1 sandboxed HTML render with its capability bridge), rendered-content search, and the per-file host-open chrome. Consumed at the SOURCE plane — each surface's tsdown client bundle inlines it — never mounted as a plugin row.",
   "keywords": [
     "dsh",
@@ -61,7 +62,7 @@
     "compat": {
       "minHost": "0.1.5-rc.1",
       "verifiedHost": "0.1.5-rc.1",
-      "notes": "A source-plane library, not a plugin: it registers no slot, service, locale or row, and owns no client bundle of its own. Consumers (`@khorsheed/dsh-local-files`, `@khorsheed/dsh-worktrees`, `@khorsheed/dsh-client-ui-file-preview`) declare it as a workspace dependency and import `@khorsheed/dsh-client-ui-content-preview/src/client/*` directly, so tsdown inlines the kernel into each plugin's own `lib/client.js` — zero runtime coupling and nothing to install alongside them. Its official-host surface is exactly the peer set the consumers already carry (ui-primitives for MarkdownText/JsonTree/CodeBlock/icons, ui-slots for the label types), so the minHost floor is the consumers' own 0.1.5-rc.1 right-sidebar line. Retirement: the official `@deepseek-ai/dsh-client-ui-sidebar-documentpreview` already owns a document-preview registry plus markdown/code/html/image/pdf renderers, but exports no reusable component and its `sidebar.right.tab.document` slot is render-exclusive to its own entries — once the host exposes a reusable document renderer (or a render-authorized slot for third-party panes), this package degenerates to an adapter and is deleted (proposal preview-kernel §退休路径)."
+      "notes": "A source-plane library, not a plugin: it registers no slot, service, locale or row, and owns no client bundle of its own. Consumers (`@khorsheed/dsh-local-files`, `@khorsheed/dsh-worktrees`, `@khorsheed/dsh-file-preview`) declare it as a workspace dependency and import `@khorsheed/dsh-client-ui-content-preview/src/client/*` directly, so tsdown inlines the kernel into each plugin's own `lib/client.js` — zero runtime coupling and nothing to install alongside them. Its official-host surface is exactly the peer set the consumers already carry (ui-primitives for MarkdownText/JsonTree/CodeBlock/icons, ui-slots for the label types), so the minHost floor is the consumers' own 0.1.5-rc.1 right-sidebar line. Retirement: the official `@deepseek-ai/dsh-client-ui-sidebar-documentpreview` already owns a document-preview registry plus markdown/code/html/image/pdf renderers, but exports no reusable component and its `sidebar.right.tab.document` slot is render-exclusive to its own entries — once the host exposes a reusable document renderer (or a render-authorized slot for third-party panes), this package degenerates to an adapter and is deleted (proposal preview-kernel §退休路径)."
     }
   }
 }

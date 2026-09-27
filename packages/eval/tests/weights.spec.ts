@@ -41,10 +41,11 @@ describe('rubricWeightRows', () => {
   it('reduces a rubric to id/weight/negative/kind/axis and NOTHING else', () => {
     const rows = rubricWeightRows(RUBRIC)
     expect(rows.map(row => row.id)).toEqual(['A1-1', 'A1-2', 'A-N2', 'B-N3', 'X-open'])
-    expect(rows[0]).toEqual({ task: 'F2-multi-agent-room', id: 'A1-1', weight: 3, negative: false, kind: 'llm-draft', axis: 'A1' })
-    // Exactly the six declared fields — no criterion text, no evidence, no note.
+    expect(rows[0]).toEqual({ task: 'F2-multi-agent-room', id: 'A1-1', weight: 3, negative: false, kind: 'llm-draft', axis: 'A1', stages: ['stage1'] })
+    // Exactly the six declared fields plus the derived stage ids (T84) — no
+    // criterion text, no evidence, no note.
     for (const row of rows) {
-      expect(Object.keys(row).sort()).toEqual(['axis', 'id', 'kind', 'negative', 'task', 'weight'])
+      expect(Object.keys(row).sort()).toEqual(['axis', 'id', 'kind', 'negative', 'stages', 'task', 'weight'])
     }
   })
 
@@ -57,7 +58,7 @@ describe('rubricWeightRows', () => {
 
   it('keeps a leaf that declares no weight, kind or axis — polarity is the load-bearing fact', () => {
     const open = rubricWeightRows(RUBRIC).find(row => row.id === 'X-open')
-    expect(open).toEqual({ task: 'F2-multi-agent-room', id: 'X-open', weight: null, negative: false, kind: null, axis: 'D1' })
+    expect(open).toEqual({ task: 'F2-multi-agent-room', id: 'X-open', weight: null, negative: false, kind: null, axis: 'D1', stages: null })
   })
 
   it('stamps the caller’s task id over the document’s own', () => {

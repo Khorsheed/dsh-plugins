@@ -6,7 +6,7 @@
 
 agent 跑起后台任务、或者派出一串子 agent 之后，原来得翻标题栏的列表才知道进展。这个插件在聊天框上方放两枚小胶囊：一枚列出当前会话的全部后台任务，一枚列出完整的子 agent 谱系，各自带着计时和 token 消耗。想停哪个点哪个；想细看，点开右栏的详情 tab，命令、状态、执行轨迹都在里面。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot1.png" width="640" alt="子 agent 胶囊附着在聊天框上方，点开可看列表、随时中止">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot1.png" width="640" alt="子 agent 胶囊附着在聊天框上方，点开可看列表、随时中止">
 
 ## 功能
 
@@ -16,7 +16,7 @@ agent 跑起后台任务、或者派出一串子 agent 之后，原来得翻标�
 - **会话级显隐** — 切换会话即切换数据；每个胶囊只在自己的数据非空时出现。
 - **零产品改动** — 只走产品扩展点（插槽、commands、镜像、日志），不新增 RPC，不改产品文件。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot2.png" width="640" alt="后台任务胶囊与任务详情 tab">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot2.png" width="640" alt="后台任务胶囊与任务详情 tab">
 
 ## 安装
 

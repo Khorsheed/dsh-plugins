@@ -2,13 +2,15 @@
 
 [English](README.en.md) | 中文
 
+> **已并入内部库，不再发布（2026-09-27）。** 本包是源码面共享内核，从未在运行时单独存在；自 0.1.1 后标记 `private: true`，不再发布新版本，npm 上的旧名 `@khorsheed/dsh-client-ui-content-preview` 已 deprecate。消费方（local-files / worktrees / file-preview）照旧经 `./src/*` 源码面内联它，任何功能演进都随消费方的版本发布。
+
 三个文件预览面，一份「给我看文件内容」的实现——修一处，处处生效。
 
-文件列表、工作树、会话产物页都需要同一块面板：markdown 渲染、JSON 树、CSV 表格、HTML 沙箱、内容搜索、复制路径/打开文件夹/在 IDE 中打开。这个包把整块内容面板抽成共享内核：`@khorsheed/dsh-local-files`、`@khorsheed/dsh-worktrees` 与 `@khorsheed/dsh-client-ui-file-preview` 的预览区渲染的是同一份实现，一个 bug 只修一次。
+文件列表、工作树、会话产物页都需要同一块面板：markdown 渲染、JSON 树、CSV 表格、HTML 沙箱、内容搜索、复制路径/打开文件夹/在 IDE 中打开。这个包把整块内容面板抽成共享内核：`@khorsheed/dsh-local-files`、`@khorsheed/dsh-worktrees` 与 `@khorsheed/dsh-file-preview` 的预览区渲染的是同一份实现，一个 bug 只修一次。
 
 **这不是插件。** 它不注册 slot、service、locale，没有自己的 loader row 和 client bundle——它在**源码面**被消费：各插件把它声明为依赖，直接 `import '@khorsheed/dsh-client-ui-content-preview/src/client/…'`，各自的 tsdown client bundle 把它内联进自己的 `lib/client.js`。零运行时耦合，各插件仍然各自可独立安装、独立卸载；把它自己装进 profile 不会挂载任何东西。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="共享内容面板在 local-files 插件里的实际样子:markdown 渲染态、内容搜索、预览/源码切换">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="共享内容面板在 local-files 插件里的实际样子:markdown 渲染态、内容搜索、预览/源码切换">
 
 ## 特性
 
@@ -36,7 +38,7 @@ import { ContentPane, buildSrcDoc, attachBridge, structuredPreview, useRenderedS
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-local-files              # 工作区文件浏览
 dsh plugin --profile web add @khorsheed/dsh-worktrees                # 工作树右栏
-dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview   # 会话产物页
+dsh plugin --profile web add @khorsheed/dsh-file-preview              # 会话产物页
 ```
 
 重启 web 实例后生效。卸载其中任一个插件都不影响其余——内核已内联进各自的 bundle：
@@ -62,7 +64,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-files
 <details>
 <summary>内部结构（点击展开）</summary>
 
-**架构。** 源码面库：没有 loader row、没有自己的 client bundle；消费方（local-files / worktrees / ui-file-preview）把它声明为依赖，直接 import `@khorsheed/dsh-client-ui-content-preview/src/client/*`，tsdown 把内核内联进各自的 `lib/client.js`——运行时零耦合，装、卸任一面互不影响。包根入口（`src/index.ts`）只为类型检查与工具解析存在，host 进程从不运行它。内核不 import 任何消费方的 wire 类型：每个面把自己的读取结果适配进 `PreviewRead` 联合（local-files 直接折叠它的 kind 联合，worktrees 映射 `ReadFileResult` / `LocalImageResult`，已删除或不可读的文件经 `missing.reason` 上报）。
+**架构。** 源码面库：没有 loader row、没有自己的 client bundle；消费方（local-files / worktrees / file-preview）把它声明为依赖，直接 import `@khorsheed/dsh-client-ui-content-preview/src/client/*`，tsdown 把内核内联进各自的 `lib/client.js`——运行时零耦合，装、卸任一面互不影响。包根入口（`src/index.ts`）只为类型检查与工具解析存在，host 进程从不运行它。内核不 import 任何消费方的 wire 类型：每个面把自己的读取结果适配进 `PreviewRead` 联合（local-files 直接折叠它的 kind 联合，worktrees 映射 `ReadFileResult` / `LocalImageResult`，已删除或不可读的文件经 `missing.reason` 上报）。
 
 **契约面。** `ContentPane` 的 props 即全部交互：`read` / `loading` / `error` 数据面由调用方的 Remote 供；chrome 手势（`openFolder` / `openIDE` / `ideChoices`）与 `onCopyPath` / `onReload` / `onBack` 逐个可选，缺了就不渲染对应按钮；`diffView` + `view` + `onViewChange` 让调用方接入 diff/内容 切换；`imageView` 可替换图片体（worktrees 的缩放查看器）；`notice` 让调用方插自己的横幅（worktrees 的未跟踪文件提示）；`sessionId` 给滚动记忆分命名空间。读数固定在 commit 上的面（不会变陈旧）直接不传 `onReload`，重载按钮就不存在。
 

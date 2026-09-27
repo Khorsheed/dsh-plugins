@@ -6,7 +6,7 @@
 
 dsh 的每个会话都由一个 agent preset 组合而成，插件、技能目录、MCP server 都在往里注册能力——但宿主没有任何界面把它们列出来，「这个 agent 能干什么、那个工具从哪来的」以前只能翻日志回答。这个插件补上一个独立设置页（工具与技能）回答给人看，再注册一个 `list_capabilities` 工具回答给模型看。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-1.png" width="640" alt="「工具与技能」设置页：技能预览网格，带来源徽标、搜索排序与模式选择框">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-1.png" width="640" alt="「工具与技能」设置页：技能预览网格，带来源徽标、搜索排序与模式选择框">
 
 ## 特性
 
@@ -15,13 +15,13 @@ dsh 的每个会话都由一个 agent preset 组合而成，插件、技能目�
 
 - **三种方式装技能**——一个弹窗：上传（单个 `SKILL.md`、含 SKILL.md 的 `.zip`、或整个技能文件夹，零依赖 `node:zlib` 解压）；命令安装（`owner/repo`、git URL，或整条粘贴来的 `npx skills add <repo> [--skill <名字>]` 命令——GitHub 仓库内路径与 `tree/`/`blob/` URL 都归一到同一个克隆，只有 `github.com` 会拆成 owner/repo，GitLab 子组按原样存活）；或从本机目录勾选。每个来源都可选目标根（`$DSH_HOME/skills` 或 `.agents/skills`）与是否进模型 catalog；skill-filesystem watcher 会自动发现结果。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-2.png" width="640" alt="新增 Skill 弹窗：文件上传 / 命令安装 / 从本机目录三种安装方式，每个来源可选目标根与是否进模型 catalog">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-2.png" width="640" alt="新增 Skill 弹窗：文件上传 / 命令安装 / 从本机目录三种安装方式，每个来源可选目标根与是否进模型 catalog">
 
 - **模式视图**——每个会话都由一个 agent preset（「模式」）组合而成，不同模式注册的 skill 与 tool 各不相同。搜索框旁边的模式选择框按**该 preset 的 standing scope** 读（`snapshotAt(presetId)`）——网格就是那个模式的能力面，不再合并任何东西；「全部模式（对比）」一次调用读回每个模式的面（`modeFaces`），给每张卡片标上加载它的模式 chip，「这个能力出现在哪些模式」一点即达。读不到的模式标为「无法读取」，绝不渲染成空面。
 - **按 preset 投递的技能**——插件自管一个受管根（`$DSH_HOME/capability-catalog/skills`），其中技能用 frontmatter `presetScope` 声明属于哪些模式；详情弹窗直接编辑（保存、把已装技能收编进受管根、释放回用户技能目录），不在任何模式生效的受管技能由一条诊断行保持可达，而不是被过滤没了。
 - **MCP server 管理**——粘贴一段 `mcp.json` server 配置，弹窗自动解析传输、识别凭据（形似凭据的字段在存储的配置里变成 `secretRef:` 标记，Remote 只回 `configured` 状态——值永远到不了浏览器）。连接后发现该 server 的工具，整台 server 或单个工具都可开关，每个启用的工具都以 `mcp__<server>__<tool>` 注册到 `ctx.tools`，模型当场可调。配置的 server 经 settings 服务跨重启存活。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="新增 MCP 服务器弹窗:粘贴一段 mcp.json server 配置,自动解析传输与凭据">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="新增 MCP 服务器弹窗:粘贴一段 mcp.json server 配置,自动解析传输与凭据">
 
 - **给模型的 `list_capabilities`**——模型可调的工具，列出调用方自己 agent scope 里可见的 skill 与 tool，并盖上能力指纹标签。
 - **能力指纹**——`snapshotFor(presetId?)` 加载每个技能正文，对规范化能力面（名字、来源、渠道、参数、正文哈希——措辞不进）盖 sha256；同样的能力按不同顺序注册，哈希相同。`hashOf` / `capsTag` 导出给宿主侧读者。

@@ -2,13 +2,15 @@
 
 English | [中文](README.md)
 
+> **Folded into an internal library; no longer published (2026-09-27).** This package is a source-plane shared kernel that never existed at runtime on its own; since 0.1.1 it is marked `private: true` and no new versions are published, and the old npm name `@khorsheed/dsh-client-ui-content-preview` is deprecated. Consumers (local-files / worktrees / file-preview) keep inlining it through the `./src/*` source plane as before, and every functional change ships with the consuming plugin's own releases.
+
 Three file-preview surfaces, one "show me this file" implementation — fix it once, fixed everywhere.
 
-The file list, the worktree tab, and the session-products page all need the same pane: markdown rendering, a JSON tree, CSV tables, an HTML sandbox, content search, copy-path / open-folder / open-in-IDE. This package extracts that whole content pane into a shared kernel: `@khorsheed/dsh-local-files`, `@khorsheed/dsh-worktrees` and `@khorsheed/dsh-client-ui-file-preview` all render their preview areas through one implementation, so a bug gets fixed exactly once.
+The file list, the worktree tab, and the session-products page all need the same pane: markdown rendering, a JSON tree, CSV tables, an HTML sandbox, content search, copy-path / open-folder / open-in-IDE. This package extracts that whole content pane into a shared kernel: `@khorsheed/dsh-local-files`, `@khorsheed/dsh-worktrees` and `@khorsheed/dsh-file-preview` all render their preview areas through one implementation, so a bug gets fixed exactly once.
 
 **This is not a plugin.** It registers no slot, service or locale, owns no loader row and ships no client bundle of its own — it is consumed at the **source plane**: each plugin declares it as a dependency and imports `@khorsheed/dsh-client-ui-content-preview/src/client/…` directly, so each plugin's tsdown client bundle inlines it into its own `lib/client.js`. Zero runtime coupling, every plugin stays independently installable and uninstallable, and installing this package into a profile mounts nothing.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="the shared content pane as it actually appears inside the local-files plugin: rendered markdown, content search, and the preview/source toggle">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="the shared content pane as it actually appears inside the local-files plugin: rendered markdown, content search, and the preview/source toggle">
 
 ## Features
 
@@ -36,7 +38,7 @@ Localized copy belongs to the caller: the kernel holds no locale namespace — e
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-local-files              # workspace file browser
 dsh plugin --profile web add @khorsheed/dsh-worktrees                # worktrees right tab
-dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview   # session products page
+dsh plugin --profile web add @khorsheed/dsh-file-preview              # session products page
 ```
 
 Restart the web instance to activate. Removing any one plugin leaves the others intact — the kernel is inlined into each bundle:
@@ -62,7 +64,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-files
 <details>
 <summary>Internals (click to expand)</summary>
 
-**Architecture.** A source-plane library: no loader row, no client bundle of its own. The consumers (local-files / worktrees / ui-file-preview) declare it as a dependency and import `@khorsheed/dsh-client-ui-content-preview/src/client/*` directly, so tsdown inlines the kernel into each plugin's own `lib/client.js` — zero runtime coupling, and installing or removing one surface never touches the others. The package root entry (`src/index.ts`) exists only for type-checking and tooling resolution; no host process ever runs it. The kernel never imports a consumer's wire types: each surface maps its own read result into the `PreviewRead` union (local-files collapses its kind union directly, worktrees maps its `ReadFileResult` / `LocalImageResult`, and a deleted or unreadable file is reported through `missing.reason`).
+**Architecture.** A source-plane library: no loader row, no client bundle of its own. The consumers (local-files / worktrees / file-preview) declare it as a dependency and import `@khorsheed/dsh-client-ui-content-preview/src/client/*` directly, so tsdown inlines the kernel into each plugin's own `lib/client.js` — zero runtime coupling, and installing or removing one surface never touches the others. The package root entry (`src/index.ts`) exists only for type-checking and tooling resolution; no host process ever runs it. The kernel never imports a consumer's wire types: each surface maps its own read result into the `PreviewRead` union (local-files collapses its kind union directly, worktrees maps its `ReadFileResult` / `LocalImageResult`, and a deleted or unreadable file is reported through `missing.reason`).
 
 **The contract surface.** `ContentPane`'s props are the whole interaction: the `read` / `loading` / `error` data face is fed by the caller's Remote; the chrome gestures (`openFolder` / `openIDE` / `ideChoices`) and `onCopyPath` / `onReload` / `onBack` are each optional — omit one and its button does not render; `diffView` + `view` + `onViewChange` let the caller plug in a diff/content toggle; `imageView` replaces the image body (worktrees' zoom viewer); `notice` lets a caller slot its own banner (worktrees' untracked-file note); `sessionId` namespaces the scroll memory. A surface whose read is pinned at a commit — one that cannot go stale — simply omits `onReload`, and no reload button exists.
 

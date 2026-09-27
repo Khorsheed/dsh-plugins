@@ -6,7 +6,7 @@ While tasks run, the whale spouts; when they wrap up, you get a chime.
 
 A pure ambience plugin: you don't have to stare at the page to know whether the agent is still working. Whenever any session is running, the tab icon turns into an animated bubble-blowing whale and the sidebar whale spouts droplets too; when a task finishes — or the agent gets stuck waiting for you — a short chime plays. No patches to official files, nothing the model can see — install it and the page simply feels alive.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong1.png" width="640" alt="while tasks run: the sidebar whale spouts and the tab icon animates with bubbles">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong1.png" width="640" alt="while tasks run: the sidebar whale spouts and the tab icon animates with bubbles">
 
 ## Features
 
@@ -14,7 +14,7 @@ A pure ambience plugin: you don't have to stare at the page to know whether the 
 - **Sidebar droplets** — three DeepSeek-blue droplets rise from the sidebar whale's blowhole while work is in flight.
 - **Chimes** — completion and blocked get distinct synthesized tones (no audio assets). Honors `prefers-reduced-motion`: animation hidden, chimes silent.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong2.png" width="640" alt="a chime when the run finishes, and the tab icon changes with it">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong2.png" width="640" alt="a chime when the run finishes, and the tab icon changes with it">
 
 ## Install
 

@@ -6,7 +6,7 @@
 
 聊得越久，上下文占用越高，涨到头 provider 会直接拒收请求——这堵墙比进度环的 100% 来得更早（请求还要给输出留位置）。这个插件就是干这个的：占用一过你设的比例，输入框工具栏里就出现一枚琥珀色按钮，点一下等于亲手输入 `/compact`。它不替你自动压缩，只在你还来得及的时候提醒你。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-button.png" width="640" alt="上下文占用越过配置比例后，输入框工具栏里出现琥珀色的压缩按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-button.png" width="640" alt="上下文占用越过配置比例后，输入框工具栏里出现琥珀色的压缩按钮">
 
 ## 功能
 
@@ -15,7 +15,7 @@
 - **执行官方 `/compact`**——空闲门控、压缩锁和流程展示都由宿主负责，点击的效果和手打命令一模一样。
 - **一个实时可调项**——提醒阈值在设置里改，保存即生效，不用重启。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-settings.png" width="640" alt="提醒比例可在设置中按偏好调整（0.01–1）">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-settings.png" width="640" alt="提醒比例可在设置中按偏好调整（0.01–1）">
 
 ## 安装
 

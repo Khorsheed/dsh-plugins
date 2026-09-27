@@ -6,7 +6,7 @@ RSS 订阅和随手粘来的文章链接收在同一面墙上——点开就在 
 
 刷到的论文和文章散落在浏览器标签页里，想喂给 agent 还得复制粘贴。这个插件在右侧栏加一个页面型 tab「灵感空间」：订阅源每天按点自动刷新，链接粘进来就存成卡片；正文在 dsh 里直接渲染成可读文本（能划选引用、能用浏览器自己的端上模型翻成中文），抓不全或站点拒抓都如实标明，绝不给一堵看起来正常、实则空心的墙。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/reader-1.png" width="640" alt="灵感空间的墙:订阅与保存链接的卡片流,表头一行是筛选、排序、整墙翻译、刷新、设置与新增,搜索框独占一行">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="640" alt="灵感空间的墙:订阅与保存链接的卡片流,表头一行是筛选、排序、整墙翻译、刷新、设置与新增,搜索框独占一行">
 
 ## 特性
 
@@ -20,7 +20,7 @@ RSS 订阅和随手粘来的文章链接收在同一面墙上——点开就在 
 - **订阅管理与最近阅读**——管理页里每个源一行：名称与订阅地址就地编辑、单独刷新、暂停/恢复、删除，缓存策略（正文保留时长、译文预算、清空译文缓存）与存储读数同页；「最近阅读」落盘 100 条、重启还在，滚出 feed 窗口的条目也能接着读。
 - **离开再回来接着读**——打开的文章、按内容锚定的阅读位置（第几个块、块内第几个字符）、墙上的筛选与译文，跨 dsh 会话由整个页面记住；位置另写 `sessionStorage`，页面重启后仍在原处。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/reader-2.png" width="640" alt="详情页:正文以 DOM 文本渲染,地球开关点亮后按句对照翻译,点一句展开该句原文">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="640" alt="详情页:正文以 DOM 文本渲染,地球开关点亮后按句对照翻译,点一句展开该句原文">
 
 ## 安装
 

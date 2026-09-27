@@ -1873,6 +1873,12 @@
   line-height: 18px;
 }
 
+/* T84: a button in a section's meta line (重新检查方案) keeps a gap from the
+   text before it. */
+.sectionMeta > button {
+  margin-left: 8px;
+}
+
 /* One invariant: the verdict word, its title, and the facts under both — a
    status that carried no facts would be an opinion. */
 .invariantRow {
@@ -3425,4 +3431,551 @@ tr:last-child > .reportTd {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* T84 · 在哪些题上比: the stage-scope line under the items heading. */
+.stageScope {
+  margin: 0 0 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.stageScope[data-partial]::before {
+  margin-right: 4px;
+  color: var(--dsh-eval-warn-ink);
+  content: '⚠︎';
+}
+
+/* T84 · 原始文件: plan.json read in place. */
+.rawFileBar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.rawFile {
+  max-height: 480px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  line-height: 18px;
+  white-space: pre;
+}
+
+/* T84 · 退回给 agent…: the panel under the stage bar. */
+.sendBack {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  margin: -8px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  font-size: 13px;
+}
+
+.sendBackLabel {
+  font-weight: 600;
+}
+
+.sendBackText {
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  resize: vertical;
+}
+
+.sendBackChips,
+.sendBackTarget,
+.sendBackActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.sendBackTarget label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.sendBackActions {
+  justify-content: flex-end;
+}
+
+.sendBackKey {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.sendBackActions .sendBackKey {
+  margin-right: auto;
+}
+
+.sendBackChip {
+  padding: 2px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.sendBackChip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ── T84 · 看题 / 看判官: the side sheet, the item drawer, the judge prompt ── */
+.sheetLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sheetBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 28%);
+}
+
+.sheet {
+  position: relative;
+  width: min(760px, 92vw);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-base);
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+@media (max-width: 480px) {
+  .sheet {
+    width: 100vw;
+    border-left: 0;
+  }
+}
+
+/* The inspect pane (T86): the same column in the host sidebar and in the
+   fallback Sheet. Its own width decides the narrow forms (a 300px sidebar
+   on a 1440 screen is as narrow as a phone), hence a container. */
+.inspectPane {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  background: var(--dsw-alias-bg-base);
+}
+
+.sheetHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.sheetHead > button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.sheetTitles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sheetTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.sheetSub {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+
+.sheetBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 24px;
+}
+
+/* Children keep their height: a scrolling flex column would otherwise
+   squeeze the (overflow-x) tab strip to nothing under a long file. */
+.sheetBody > * {
+  flex: none;
+}
+
+.inspectTabs {
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.inspectWho {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.inspectWho[data-tab='reference'] {
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsh-eval-warn-ink);
+}
+
+.inspectSplit {
+  display: grid;
+  grid-template-columns: minmax(140px, 200px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+@container (max-width: 520px) {
+  .inspectSplit {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.inspectList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inspectFile {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.inspectFile:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.inspectFile[aria-current='true'] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.inspectTag {
+  padding: 0 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.inspectContent {
+  min-width: 0;
+}
+
+.inspectPre {
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inspectRubric {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inspectBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rubricGroupTitle {
+  margin: 0 0 4px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rubricGroup[data-kind='llm-draft'] .rubricGroupTitle {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.rubricTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.rubricTable td {
+  padding: 4px 6px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  vertical-align: top;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.rubricTable td:first-child {
+  white-space: nowrap;
+}
+
+.rubricTable tr[data-out] td {
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.6;
+}
+
+.rubricTable tr[data-out] td:last-child {
+  opacity: 1;
+}
+
+.rubricEvidence {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.rubricChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.judgeSees {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.judgeSeesLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.judgeSeesKey {
+  color: var(--dsw-alias-label-tertiary);
+  flex: 0 0 auto;
+}
+
+.promptBlocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.promptPart {
+  border-left: 3px solid var(--dsw-alias-border-l2);
+  padding-left: 8px;
+}
+
+.promptPart[data-kind='criteria'] {
+  border-left-color: var(--dsw-alias-state-business-primary);
+}
+
+.promptPart[data-kind='materials'] {
+  border-left-color: var(--dsh-eval-warn-ink);
+}
+
+.promptLabel {
+  margin-bottom: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* T85: where the player's material goes — a UI label, outside any code
+   fence, so nobody reads it as prompt text. */
+.promptSlot {
+  display: inline-block;
+  margin: 4px 0 8px;
+  padding: 2px 8px;
+  border: 1px dashed var(--dsw-alias-label-tertiary);
+  border-radius: 4px;
+  background: var(--dsh-eval-surface-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-style: italic;
+  line-height: 18px;
+}
+
+.promptPart .inspectPre {
+  max-height: 360px;
+}
+
+/* ── 准备好了没有: the 依据 column and each row's expansion (T84 §三) ── */
+
+.basisToggle {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.basisChevron {
+  width: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.basisShort {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.basisSelf {
+  color: var(--dsh-eval-warn-ink);
+}
+
+.basisOpen > td {
+  padding-top: 0;
+  background: var(--dsh-eval-surface-2);
+}
+
+.basisList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 0 8px 16px;
+  list-style: none;
+  font-size: 12px;
+}
+
+.basisLine {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.basisMark {
+  flex: none;
+  width: 14px;
+  text-align: center;
+}
+
+.basisLine[data-tone='ok'] .basisMark { color: var(--dsh-eval-ok-ink); }
+.basisLine[data-tone='warn'] .basisMark { color: var(--dsh-eval-warn-ink); }
+.basisLine[data-tone='danger'] .basisMark { color: var(--dsw-alias-state-error-primary); }
+.basisLine[data-tone='danger'] { color: var(--dsw-alias-label-primary); }
+
+.blockerCell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+/* 查看 entries (T86): one sentence and its button, where a fold used to be. */
+.inspectLines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inspectLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inspectExcerpt {
+  flex: 1 1 12em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* T86: the queue head's 题目材料 · 查看, pushed to the row's end. */
+.itemSwitchAside {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* T86: in 查看 a verbatim file is the whole page — the pane scrolls, the
+   block does not cap itself at the inline fold's height. */
+.inspectPane .pre,
+.inspectPane .rawFile {
+  max-height: none;
 }

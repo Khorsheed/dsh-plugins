@@ -738,7 +738,7 @@ profiles/web-eval/README.md 全文、docs/architecture.md、docs/iterations.md I
 dsh-plugins：从 main 开 worktree ../dsh-plugins-wt-web-eval-pins，分支 feat/web-eval-pins，只改 profiles/web-eval/。题库仓库：i1-walk 分支继续。
 
 ## 步骤
-0. 评测 pin 进 profile：把 mission tools read、datasets tools authoring、eval tools all、四家 live false、codex sandbox danger-full-access（宿主直跑阶段用 workspace-write 并在 methodology 里声明）、claude permissionMode skip、kimi thinkingEffort high 写进 profiles/web-eval/cordis.patch.yml；决定该文件归 pack（update.sh 也覆盖它），README 与 update.sh 同步，Agent Note 说明与 web-dev 的差异。
+0. 评测 pin 进 profile：把 mission tools read、datasets tools authoring、eval tools all、四家 live false、codex sandbox danger-full-access（宿主直跑阶段用 workspace-write 并在 methodology 里声明）、claude permissionMode skip、kimi thinkingEffort high 写进 profiles/web-eval/cordis.patch.yml；决定该文件归 pack（update.sh 也覆盖它），README 与 update.sh 同步，Agent Note 说明与 dev 的差异。
 1. 条件：conditions/ 下建 codex-exec、claude-exec、kimi-exec（dsh-exec 与判官条件 judge-dsh-v4-pro 已由 T8b / T9 建好），model.declared 与 harness.version 取自各家 /<harness> status 的 effectiveSettings；判官沿用 judge-dsh-v4-pro，要换模型就另建条件并在 plan 里声明。
 2. plan：plans/pilot-a.json，items [F2-multi-agent-room, F3-self-restart-report]，conditions 四个，reps 3，stages [stage1, stage2]，order.seed 记录，budget.activeMinutes 60，judge {conditions: [judge-dsh], samples: 2}，retry.infrastructure 1，expectedNs [script, llm-draft, human-final]。dsh-eval validate 通过。
 3. 运行：/eval run --concurrency 2（阶段一二 manifest 允许并发），过程中用 eval_run_status 观察；卡住的格子记录不手工干预，超时由编排器处理。
@@ -869,7 +869,7 @@ run-all 在三格真实样本上跑完无异常；至少一条判据在三格之
 冻结决策 12：销毁路径唯一——只有编排器持有 docker socket，评测实例的 agent preset 不挂 Bash 与 docker。I2 在宿主直跑，agent 用的还是 dev 域的默认预设。I3 编排器接 docker 之前，这个 preset 必须先存在并被 profile 装上，否则任何一次 agent 误操作都能绕过 lab 的 release 闸。
 
 ## 先读
-profiles/web-eval/README.md「工具按域开放」「冻结决策」「安装」；profiles/web-dev/README.md 里 agent 预设一节（自建预设在 $DSH_HOME/.agent-presets/）；dsh 宿主关于 agent preset 的文档（哪些字段能挑工具、能否禁掉 Bash 与 code-runtime 的执行类工具）；profiles/web-eval/scripts/install.sh 与 update.sh 的 PROFILE_FILES / UPDATE_FILES 机制。
+profiles/web-eval/README.md「工具按域开放」「冻结决策」「安装」；profiles/dev/README.md 里 agent 预设一节（自建预设在 $DSH_HOME/.agent-presets/）；dsh 宿主关于 agent preset 的文档（哪些字段能挑工具、能否禁掉 Bash 与 code-runtime 的执行类工具）；profiles/web-eval/scripts/install.sh 与 update.sh 的 PROFILE_FILES / UPDATE_FILES 机制。
 
 ## 分支
 从 main 开 worktree ../dsh-plugins-wt-web-eval-preset，分支 feat/web-eval-preset，只改 profiles/web-eval/。
@@ -3999,7 +3999,7 @@ main 上 capability-catalog 与 ankh-guard 在 0.1.5 宿主上起不来：两处
 用户 2026-09-25 定：不叫换线。0.1.5 跑通（T78）的前提下，web-eval 以 0.1.7-rc.1 为主宿主，同时向下兼容 0.1.5-rc.1；评测线（3171、题库 7 条 dsh 条件、已有 bundle）留在 0.1.5，不动。
 
 **前置核查结论（2026-09-25，拿旧 T81 文案的实施者先做了「开工前两件事」，记在这里给 T82 用）**：
-1. preset 迁移：host-016 线 799bb5cb 建了 packages/presets（@khorsheed/dsh-presets，preset-declarations，dev / dsh-eval / dsh-writing 三行一包，Note `2026-09-24-community-presets-declarative-bundle`），profiles/ 都还没切过去。它的 eval 条目不能直接用：id 是 dsh-eval；内容早于 T73 分支 3（persona 少 3 行、改 1 行，装置已变）；三个 preset 一包装，违背「只装评测装置、整份替换」。**协调者定 A**：profiles/web-eval 自带一个只含 preset-eval 一行的声明式 bundle，行形与 kind 约定跟 packages/presets 对齐，内容逐字取目录版；packages/presets 不动，dsh-eval 过期一事由协调者转它的 owner。web / web-dev 切 bundle 不归评测线。
+1. preset 迁移：host-016 线 799bb5cb 建了 packages/presets（@khorsheed/dsh-presets，preset-declarations，dev / dsh-eval / dsh-writing 三行一包，Note `2026-09-24-community-presets-declarative-bundle`），profiles/ 都还没切过去。它的 eval 条目不能直接用：id 是 dsh-eval；内容早于 T73 分支 3（persona 少 3 行、改 1 行，装置已变）；三个 preset 一包装，违背「只装评测装置、整份替换」。**协调者定 A**：profiles/web-eval 自带一个只含 preset-eval 一行的声明式 bundle，行形与 kind 约定跟 packages/presets 对齐，内容逐字取目录版；packages/presets 不动，dsh-eval 过期一事由协调者转它的 owner。web / dev 切 bundle 不归评测线。
 2. 0.1.5-rc.1 不认 preset bundle（工具链里没有 dsh-agent-preset、没有 install_bundle），两种形态都留：install.sh 0.1.5 走目录式整份替换、0.1.7 装 bundle、其他版本报错退出；加一个 spec 比对 bundle 的 plugins 块与目录版 agent.cordis.yml 逐字等价。
 3. 建 ~/.dsh-toolchains/rc-0.1.7-rc.1：T82 发出时放行，现在不建。
 
@@ -4023,7 +4023,7 @@ main 已合入 host-016（官方线钉 @deepseek-ai/*@0.1.7-rc.1），eval 家�
 proposals/active/2026-09-15-host-016-adaptation.md（只读，别人的工作流）：「遗留项放行结论」里 preset 迁移一条、「零消费复核项」一条；AGENTS.md「Package conventions」里 declarative preset bundle（dsh.bundle.kind: 'preset-declarations'）；profiles/web-eval/scripts/install.sh 的 preset 与 skills 两段注释（为什么整份替换：preset 是实验装置，不是偏好）；profiles/web-eval/presets/eval；packages/eval/src/effective.ts 的 provision 核对（harness.version 对 cliVersion）；交接文档 profiles/web-eval/docs/handoff-2026-09-25.md §0、§5。
 
 ## 开工前先核两件事，结论报协调者再动手
-1. preset 迁移有没有人在做：git log --oneline -5 -- profiles/ 与 .agents/notes/ 里 grep preset / install_bundle。host-016 线若已开了迁移（web / web-dev / web-eval 三个 profile 同一件事），跟它的形态对齐，不另起一套；只有它没覆盖 web-eval 时才由你做。
+1. preset 迁移有没有人在做：git log --oneline -5 -- profiles/ 与 .agents/notes/ 里 grep preset / install_bundle。host-016 线若已开了迁移（web / dev / web-eval 三个 profile 同一件事），跟它的形态对齐，不另起一套；只有它没覆盖 web-eval 时才由你做。
 2. 0.1.5-rc.1 认不认 preset bundle：认，就只保留 bundle 一种形态；不认，就两种都留，install.sh 按宿主版本装对应那种。
 
 ## 分支
@@ -4039,7 +4039,7 @@ proposals/active/2026-09-15-host-016-adaptation.md（只读，别人的工作流
 7. compat：dsh.compat 与两份 README 的 Compatibility 段写成两条线都「支持」，并写明各自验证过的项与降级项；minHost 保持 0.1.5-rc.1。
 
 ## 不做
-不动 3171、~/.dsh-lab、题库（不改条件、不重 provision、不写 lock）、镜像；不碰 3093 / 3080 / ~/.dsh-official / ~/.dsh；不迁 web / web-dev 的 preset（不归你；第 1 条核到没人做时，在回报里提出）；不自己合 main。
+不动 3171、~/.dsh-lab、题库（不改条件、不重 provision、不写 lock）、镜像；不碰 3093 / 3080 / ~/.dsh-official / ~/.dsh；不迁 web / dev 的 preset（不归你；第 1 条核到没人做时，在回报里提出）；不自己合 main。
 
 ## 完成判据
 两条线的临时实例上 a–e 全过；preset 在两条线上内容逐字等价、默认 preset 能落到 eval（或有明确提示）；install.sh 对不支持的版本报错退出；gate 绿；第 6 条有结论。
@@ -4123,6 +4123,66 @@ T79/T80 对齐的是信息层次，视觉组件层没有对齐，用户看了说
   - 时间线只画实际走过的阶段。
 - **估算口径**：只合计有过往作答的题。只覆盖了部分题时写「≥」，并列出哪些题没有估算；绝不外推。
 - **下一步**：请用户在临时实例上一起真机走查；走查通过后重装 3171，重装时 `DSH_HARNESS` 指向冻结的 0.1.7-rc.1 基线副本。
+
+#### T84 合入（2026-09-27）
+
+**起因**：用户走查 T83 时，对实验设计页提了 5 点：只有「看题面」；判官提示词看不到也配不了；检查项看不出查了什么；「stage1, stage2」很突兀，plan.json 只有路径；「让 agent 改…」是死路。总要求是：按「启动前检查这份实验」的视角重排。
+
+**过程**：先让子 agent 出设计稿（`profiles/web-eval/docs/t84-design-inspect.md`），协调者审过后请用户拍板四项，再分三批开发。
+- **拍板**：
+  - 判官提示词本轮只做可查看；plan 层追加说明（方案 B）记为后续。
+  - 满分只算本次阶段内的判据，设计页、报告、导出、判官四处一致。
+  - 退回的文字默认放进当前会话输入框，起草会话可选，不自动发送。
+  - 题目材料用右侧抽屉，分 5 个页签。
+- **落地**：
+  - 页面顺序：要回答的问题 → 比什么 → 用哪些题（加阶段范围行和「本次阶段」列）→ 怎么判（可看判官提示词）→ 规模与花费 → 准备好了没有（每行写依据，可展开看证据）→ 原始文件（plan.json 页内全文）。
+  - 「重新校验」改名「重新检查方案」，只做离线重校验、不花 token；真探仍在开跑时自动做一次。
+  - 「已退回」提示在 plan sha 变化或校验通过时清除。
+- **验证**（协调者在 main 的 detached worktree 上试合并）：
+  - 冻结基线（0.1.7-rc.1）上 build 通过；
+  - 测试：eval 1173、datasets 252、eval-tool 6、datasets-tool 7，全部通过；
+  - hygiene --all 0 条。
+
+  截图在 scratch 的 t84-shots/batch1–3，协调者已看过。合入提交是 `0b52a905`。
+- **下一步**：用户在 3183 上走查设计页；走查通过后，与 T83 一起重装 3171（DSH_HARNESS 指冻结副本，停实例那步由用户做）。
+
+#### T85 合入 · T86 派发（2026-09-27）
+
+**T85**：用户走查判官提示词预览时，以为真实提示词里就写着占位句。
+- **修复**：
+  - 预览改为结构化分段：选手材料位置在代码块外，显示为虚线标签；其余文字与 `buildJudgePrompt` 同源、逐字一致。
+  - 外层围栏长度 = max(3, 材料最长反引号串 + 1)，修掉选手 md 自带代码块时截断的问题。
+  - 普通材料的 promptSha 用 golden 锁住不变；含反引号的材料 promptSha 会变，已记入 Agent Note。
+- **侧栏设计稿**：`profiles/web-eval/docs/t85-lab-sidebar.md`。按用户偏好，默认用宿主右侧栏，页内抽屉兜底。
+- **验证**（main 上的 detached worktree）：冻结基线 build 绿；测试 eval 1178、datasets 252、eval-tool 6、datasets-tool 7 全过；hygiene --all 0 条。
+- 合入提交 `3330bc5f`。
+
+**T86 拍板**（用户 + 协调者）：
+- 默认宿主右栏，页内抽屉兜底；
+- 侧栏打开时实验室走窄版，不动宿主布局；
+- 并排看作答留在 tab；
+- 人工评估页加「题目材料」入口；
+- 参数持久化的上游提案等评测线用上 0.1.7 再提。
+
+已派子 agent 按设计稿 §五 分批开发，分支 `feat/t86-lab-sidebar`。验收要求：两条宿主线都截图，0.1.7 线验一次刷新恢复，另验一次无右栏降级。
+
+#### T86 合入（2026-09-27）
+
+**内容**：
+- 新增实验室查看面板 `InspectPane`，带返回栈，默认放在宿主右栏，按会话记住栈；没有右栏或 `openTab` 抛错时回落页内 Sheet。
+- 四页入口改为「一句结论 + 查看」。
+- 人工评估页加「题目材料」入口。
+- 修掉侧栏里原文块被截在约 320px 的问题。
+
+**验证**：
+- 协调者在 main 的 detached worktree 上试合并。冻结基线 build 绿；测试 eval 1192、datasets 252、eval-tool 6、datasets-tool 7 全过；hygiene 0 条；check:plugins 0 条。
+- 0.1.5 线：1440 宽 14/14 过。400 宽 13/14，「返回」场景因宿主全屏覆盖点不到 tab，属于预期。截图在 scratch 的 t86-shots。
+
+**欠账**：
+- 0.1.7 线的截图和刷新恢复未验：pack 自带的 `eval` preset 在 0.1.7 报 Unknown agent preset，列表整页失败，等 T82（preset 迁 bundle）后补验。临时 home 保留在 scratch 的 t86-home-017。
+- 无右栏降级组不出可用 profile：官方 ui-chat 依赖 sidebarRight，关掉就整页 Failed to load plugins。所以 Sheet 兜底只由单测覆盖（apply.client.spec.ts），实际环境里基本不会触发。
+
+合入提交 `a9001014`。**下一步**：用户在 3183 走查 T84–T86；通过后重装 3171。
 
 ## 四、验收规程
 

@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-按 dsh 各 profile 的惯例，`cordis.patch.yml` **是用户的层**：`install.sh` 铺一次，`update.sh` 此后再不碰它。dsh-web-dev 把这条写在明面上，对一个开发整合包也确实该如此——那一层装的是偏好，更新时覆盖别人的偏好是不礼貌的。
+按 dsh 各 profile 的惯例，`cordis.patch.yml` **是用户的层**：`install.sh` 铺一次，`update.sh` 此后再不碰它。dsh-dev 把这条写在明面上，对一个开发整合包也确实该如此——那一层装的是偏好，更新时覆盖别人的偏好是不礼貌的。
 
 dsh-web-eval 继承了同一个文件、同一条规则，而它的评测 pin 恰好只能住在这个文件里。这些 pin 不是偏好。它们是本 pack [冻结决策](../../../../profiles/web-eval/README.md#冻结决策)的执行点：驱动全 exec（决策 2）、四家沙箱档位一致（决策 3）、推理强度每家显式 pin（决策 4）、工具按域开放（决策 12）。每一条都决定「这两格只差一个因子」对一次 run 而言是不是一句真话。
 
@@ -14,7 +14,7 @@ dsh-web-eval 继承了同一个文件、同一条规则，而它的评测 pin �
 
 ## Decision
 
-**只对 dsh-web-eval**：`cordis.patch.yml` 归 pack。它随包发出评测 pin，两个安装脚本都覆盖它——它本来就在 `install.sh` 的 `PROFILE_FILES` 里，现在也进了 `update.sh` 的 `UPDATE_FILES`。个人覆盖去 preset 层，pack 不碰那里。dsh-web-dev 与 dsh-web-basic 不变——在那里这一层仍归用户，因为一个开发整合包没有需要保护的装置。
+**只对 dsh-web-eval**：`cordis.patch.yml` 归 pack。它随包发出评测 pin，两个安装脚本都覆盖它——它本来就在 `install.sh` 的 `PROFILE_FILES` 里，现在也进了 `update.sh` 的 `UPDATE_FILES`。个人覆盖去 preset 层，pack 不碰那里。dsh-dev 与 dsh-basic 不变——在那里这一层仍归用户，因为一个开发整合包没有需要保护的装置。
 
 文件本身逐条写着理由，好让只翻 profile 目录的操作者也知道为什么这里的用户层不是用户层。它发出的七行：
 
@@ -40,7 +40,7 @@ dsh-web-eval 继承了同一个文件、同一条规则，而它的评测 pin �
 
 ## Alternatives considered
 
-**pin 进 pack 自带的 bundle patch，`cordis.patch.yml` 仍归用户。** 这是 README 提出的问题的另一半，也是更常规的形状——每个成员包本来就靠自己的 `cordis.patch.yml` 自挂载。否决的理由是 profile 不是包：它没有自己的 `dsh.bundle.patch` 来承载一个 patch 层，所以这些 pin 只能被推进成员包里，而那样它们会作用于**每一个**挂这些成员的 profile，dsh-web-dev 也在内。pin 是一个 pack 的装置，不是一个插件的行为。
+**pin 进 pack 自带的 bundle patch，`cordis.patch.yml` 仍归用户。** 这是 README 提出的问题的另一半，也是更常规的形状——每个成员包本来就靠自己的 `cordis.patch.yml` 自挂载。否决的理由是 profile 不是包：它没有自己的 `dsh.bundle.patch` 来承载一个 patch 层，所以这些 pin 只能被推进成员包里，而那样它们会作用于**每一个**挂这些成员的 profile，dsh-dev 也在内。pin 是一个 pack 的装置，不是一个插件的行为。
 
 **层仍归用户，改在 run 时核对合成后的值。** 编排器可以读 provider 的有效配置，pin 与声明不符就拒绝这次 run。作为一道**校验**这严格更好、也值得做，但它替代不了本决定：它在一次 run 开始的那一刻发现漂移，而要防的失败是漂移**已经发生在**某次 run 上、只在一份没人重算的报告里可见。而且它还不存在，T15 现在就要这些 pin。这道检查的自然归宿是 I4 的 `provision`——那一步本来就负责把声明变成实物 scoped home 并哈希它；到那时 pin 折进 `home.sha`，被条件哈希覆盖，这才是耐久的修法。
 

@@ -38,4 +38,4 @@ Status: implemented
 
 ## Testing
 
-`scripts/sync-mirror.spec.ts` 与其他门禁 spec 一样对真实文件树运行，直接锁住这条边界——每个产出路径都必须被跟踪（`git ls-files --error-unmatch`），`lib/`、`node_modules/`、`*.tgz` 永不出现，skill 的 `tests/` 留在家里，`profiles/web-basic` 强制添加的截图仍然发得出去。一旦退回磁盘遍历，第一条断言立刻失败，因为 `lib/` 未被跟踪。
+`scripts/sync-mirror.spec.ts` 与其他门禁 spec 一样对真实文件树运行，直接锁住这条边界——每个产出路径都必须被跟踪（`git ls-files --error-unmatch`），`lib/`、`node_modules/`、`*.tgz` 永不出现，skill 的 `tests/` 留在家里，`profiles/basic` 强制添加的截图仍然发得出去。一旦退回磁盘遍历，第一条断言立刻失败，因为 `lib/` 未被跟踪。

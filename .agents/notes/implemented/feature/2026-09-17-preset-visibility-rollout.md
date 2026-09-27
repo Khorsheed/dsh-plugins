@@ -27,7 +27,7 @@ The 2026-09-17 convention doc (docs/plugin-visibility.md) drew the line and the 
 
 ## Consequences
 
-- Behavioral: in web-dev, standard-preset sessions no longer see the worktrees tab (the badge already hid); on 3080, only dsh-writing sessions see the canvas tab; in web-eval, `/eval` `/datasets` `/mission` appear only in eval-preset sessions. The no-session home state fails open everywhere (entries visible).
+- Behavioral: in dev, standard-preset sessions no longer see the worktrees tab (the badge already hid); on 3080, only dsh-writing sessions see the canvas tab; in web-eval, `/eval` `/datasets` `/mission` appear only in eval-preset sessions. The no-session home state fails open everywhere (entries visible).
 - Breaking: the slash commands leave the profile root — sessions without the grant lose the completion entries (the point) and direct invocation gets the guard's error text.
 - canvas's client `inject` regains `sessions`; `@deepseek-ai/dsh-api-session-controller` returns as a devDependency (the revert had dropped both).
 - docs/plugin-visibility.md: the cheat sheet gains the slash and settings-card rows; the criterion axis now reads "a verdict value on every grant path + a self-consistent hide semantics"; the anti-pattern list pins "not enumerating every grant path".

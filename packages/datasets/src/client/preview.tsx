@@ -1,7 +1,7 @@
 /**
  * The datasets tab's read-only preview: content rendering is delegated to the
  * official reader primitives, replicating the products tab's scheme over them
- * (that tab's pane is the community ui-file-preview package's private
+ * (that tab's pane is the community file-preview package's private
  * assembly — cross-plugin imports are forbidden, so this file re-assembles
  * the same visual family from the same official parts). Markdown renders
  * through the official `MarkdownText` pipeline (the chat's renderer), JSON

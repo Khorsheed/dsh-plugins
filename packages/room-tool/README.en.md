@@ -30,7 +30,7 @@ Restart the web instance, then name the row in the target preset's `agent.cordis
   name: '@khorsheed/dsh-room-tool'
 ```
 
-The web-dev pack's dev-mode preset (`profiles/web-dev/presets/dev`) already carries this row; its `install.sh`/`update.sh` drops the preset into `$DSH_HOME/.agent-presets/dev`.
+The dev pack's dev-mode preset (`profiles/dev/presets/dev`) already carries this row; its `install.sh`/`update.sh` drops the preset into `$DSH_HOME/.agent-presets/dev`.
 
 Remove:
 

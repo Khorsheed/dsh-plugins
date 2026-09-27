@@ -6,7 +6,7 @@
 
 任意 dsh agent preset 都能发起委派：家族工具在 profile 根只挂一次，子会话全程可见、可中止、可续聊，每轮的账目（实际模型、token 用量、工具调用数）都真实回读。登录是作用域隔离的——插件只管理 `$DSH_HOME/local-agent/claude-code` 这一份目录，你的个人安装与凭据自始至终置身事外。[local-agent 家族](../local-agent/README.md) 的 Claude Code harness。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置 → 插件 → 插件配置里的 Local Agent 家族卡片，Claude Code 一行的状态点显示授权状态">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置 → 插件 → 插件配置里的 Local Agent 家族卡片，Claude Code 一行的状态点显示授权状态">
 
 ## 特性
 
@@ -17,7 +17,7 @@
 - **实时流镜像**——子会话实时镜像 Claude 的思考、工具调用与回复；中止会保留部分转写与真实 token 用量。
 - **模型回读与独立工作目录**——每轮从 stream-json 的 system/init 回读实际模型，写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="640" alt="展开的「Local Agent · Claude Code」设置卡：认证块、默认模型选择与常驻模式（live）开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="640" alt="展开的「Local Agent · Claude Code」设置卡：认证块、默认模型选择与常驻模式（live）开关">
 
 ## 安装
 

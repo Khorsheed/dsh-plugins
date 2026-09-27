@@ -72,7 +72,7 @@ describe('cordis.patch.yml', () => {
       expect(dev).toContain(`            provider: ${provider}\n`)
     }
     expect(dev).toContain('          - id: worktrees-tool\n')
-    expect(dev).toContain("            name: '@khorsheed/dsh-worktrees-tool'\n")
+    expect(dev).toContain("            name: '@khorsheed/dsh-worktrees/tool'\n")
     expect(dev).toContain('          - id: room-tool\n')
     expect(dev).toContain('          - id: typesafe-tool\n')
     // The eval companion rows stay OUT of dev (their tabs self-hide by row presence).
@@ -108,8 +108,12 @@ describe('cordis.patch.yml', () => {
     const manifest = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8')) as {
       dsh: { references: string[] }
     }
+    // A row may name a package's subpath composition entry
+    // (`@khorsheed/dsh-canvas/agent`, `@khorsheed/dsh-worktrees/tool`): the
+    // reference is the BASE package that ships the entry.
     const named = new Set(
-      [...patch.matchAll(/^ {12}name: '(@khorsheed\/[a-z0-9-]+)'/gm)].map((m) => m[1]!),
+      [...patch.matchAll(/^ {12}name: '(@khorsheed\/[a-z0-9-]+(?:\/[a-z0-9-]+)?)'/gm)]
+        .map((m) => m[1]!.split('/').slice(0, 2).join('/')),
     )
     expect(named.size).toBeGreaterThan(0)
     for (const name of named) expect(manifest.dsh.references).toContain(name)

@@ -6,7 +6,7 @@ Sent messages can still be edited or withdrawn — and a withdrawal really delet
 
 Said something too fast, or the conversation went off the rails? Until now all you could do was send another message to correct course. This plugin puts a row of small buttons on every message you send: copy, edit, withdraw. Editing rewrites in place and re-sends, and the model answers the new text; withdrawing takes that message and everything after it out of the model context, folding it into an expandable "N messages withdrawn" divider — and the original text lands back in your composer draft (never auto-sent). Changed your mind? The divider's "restore to end of conversation" puts it all back.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions1.png" width="640" alt="copy, edit, and withdraw action buttons under a user message">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions1.png" width="640" alt="copy, edit, and withdraw action buttons under a user message">
 
 ## Features
 
@@ -16,13 +16,13 @@ Said something too fast, or the conversation went off the rails? Until now all y
 - **Draft backfill** — a landed withdrawal puts the original text back into the composer draft, never auto-sent.
 - **Restore to tail** — 「恢复到对话末尾」 replays user messages verbatim and assistant text as a 「已恢复」 group; tool calls never replay.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions2.png" width="640" alt="in-place editing: the message becomes an input with a model picker; saving re-sends it as a new message, and the edited original leaves the model context">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions2.png" width="640" alt="in-place editing: the message becomes an input with a model picker; saving re-sends it as a new message, and the edited original leaves the model context">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions3.png" width="640" alt="the confirmation dialog before withdrawing, explaining that the message and everything after it will be hidden from the model and the original text backfilled into the composer">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions3.png" width="640" alt="the confirmation dialog before withdrawing, explaining that the message and everything after it will be hidden from the model and the original text backfilled into the composer">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions4.png" width="640" alt="withdrawn content folds into an expandable divider with a restore-to-end-of-conversation button at the bottom">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions4.png" width="640" alt="withdrawn content folds into an expandable divider with a restore-to-end-of-conversation button at the bottom">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions5.png" width="640" alt="restored messages return to the tail of the conversation as they were, grouped under a Restored section">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions5.png" width="640" alt="restored messages return to the tail of the conversation as they were, grouped under a Restored section">
 
 ## Install
 

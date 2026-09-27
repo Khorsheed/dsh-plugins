@@ -36,7 +36,7 @@ Status: implemented
   `NO_OWN_PATCH` 降为交叉校验,二者不允许漂移。
 - **包地图改为生成。** `pnpm map:packages` 从 manifest 生成 `docs/packages.md`(计数、形态、组件、浏览器
   半边、`minHost`、profile 归属),`pnpm check:packages` 进 gate,手工计数不会再腐烂。
-  `release-status.ts` 改读本仓 `profiles/web-basic`。
+  `release-status.ts` 改读本仓 `profiles/basic`。
 - **HTML skill 的归属。** `3d-artifact` 从 file-preview 迁到 inline-html-render(它真正的主题),
   两个 skill 都由该包以 `provider: 'inline-html-render'` 注册。
 - **浏览器半边要有证据才安装。** `ui-file-preview` 只有在 host 半边回应零会话 `capabilities` 探测后

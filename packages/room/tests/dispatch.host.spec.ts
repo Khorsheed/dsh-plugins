@@ -129,9 +129,23 @@ describe('DispatchEngine (real composition)', () => {
 
     expect(bench.facade.start).toHaveBeenCalledTimes(2)
     // ada invited with a model: the facade start's `model` call option.
-    expect(bench.facade.start.mock.calls[0]![3]).toEqual({ model: 'kimi-k2' })
-    // bill invited without one: no options argument at all (harness default).
-    expect(bench.facade.start.mock.calls[1]![3]).toBeUndefined()
+    expect(bench.facade.start.mock.calls[0]![3]).toMatchObject({ model: 'kimi-k2', onProgress: expect.any(Function) })
+    // Usage observation does not select a model on behalf of the user.
+    expect(bench.facade.start.mock.calls[1]![3].model).toBeUndefined()
+  })
+
+  it('records late observed usage on its own completed execution', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-usage', 'done'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: 'Check output' })
+    await bench.service.engine.idle()
+    const session = bench.ctx.sessions.get(bench.sessionId)!
+    const lifecycleCount = session.snapshotEvents().filter(event => event.type === 'room/run-state').length
+    const progress = bench.facade.start.mock.calls[0]![3].onProgress
+    progress({ kind: 'settled', observedModel: 'observed-model', observedEffort: 'high', usage: { inputTokens: 30, outputTokens: 12 } })
+    expect(session.snapshotEvents().filter(event => event.type === 'room/run-state')).toHaveLength(lifecycleCount)
+    const result = await bench.service.getState({ sessionId: bench.sessionId })
+    expect(result).toMatchObject({ ok: true, value: { executions: [{ state: 'done', model: 'observed-model', effort: 'high', tokens: 42, childSessionId: 'child-usage' }] } })
   })
 
   it('the roster lists the other members with one-line roles; the prompt carries NO running log', async () => {
@@ -467,6 +481,9 @@ describe('DispatchEngine (real composition)', () => {
     await tick()
     await tick()
 
+    expect(await bench.service.cancel({ sessionId: bench.sessionId, name: 'ada', expectedRunId: 'an-earlier-round', expectedStartedAt: 0 }))
+      .toEqual({ ok: true, value: { cancelled: false } })
+    expect(bench.facade.cancel).not.toHaveBeenCalled()
     expect(await bench.service.cancel({ sessionId: bench.sessionId, name: 'ada' }))
       .toEqual({ ok: true, value: { cancelled: true } })
     expect(bench.facade.cancel).toHaveBeenCalledWith('child-1')

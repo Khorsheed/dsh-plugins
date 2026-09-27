@@ -40,7 +40,7 @@ Bought: the capsule stays while the model has background work; every row it list
 
 Cost: a foreground command is invisible in the capsule while it runs — it remains visible in the conversation's own tool card; a promoted job is invisible until its timeout; the dock reads one bounded session-log page per session open and per fresh unannounced `bash` id; promotion evidence is a single ack sentence, so a page split that loses it hides that row until the next read; and after a successful read a later unreadable one leaves the last verdict standing, which self-heals on the next `bash` call.
 
-Found alongside, deliberately not fixed here: the detail tab's trajectory fold (`job-trajectory.ts`) pairs a result through `message.content[0].toolCallId`, the pre-0.1.5 shape. The current host puts the call id on `message.toolCallId` and `message.source.callId`, so the fold returns no entries on real logs — verified by folding `session-70b25dac`'s own tool rows, which this change's parser reads correctly. Repairing it is a separate user-visible change with its own decision.
+Found alongside and repaired separately: the detail tab's trajectory fold (`job-trajectory.ts`) paired a result through `message.content[0].toolCallId`, the pre-0.1.5 shape, so it returned no entries on real logs. The readers this filter was verified against on real rows now live in `./src/client/session-wire.ts`, and the fold reads them too — [the trail-fold note](2026-09-27-taskpilot-trajectory-current-wire.md).
 
 ## Testing
 
@@ -50,4 +50,4 @@ Found alongside, deliberately not fixed here: the detail tab's trajectory fold (
 
 - [TaskPilot's job detail tab is a page-type right-sidebar tab](../architecture/2026-09-10-taskpilot-sidebar-tab.md) — the tab whose history channel this filter reuses.
 - [Host 0.1.7-rc.1 adaptation](../architecture/2026-09-24-host-017-rc1-adaptation.md) — the dual-channel roster read the filtered rows come from.
-- [TaskPilot trajectory rows carry the issued command line](../feature/2026-08-21-taskpilot-trajectory-command-lines.md) — the fold named in Consequences as still expecting the legacy wire shape.
+- [TaskPilot trajectory rows carry the issued command line](../feature/2026-08-21-taskpilot-trajectory-command-lines.md) — the row vocabulary the fold fills.

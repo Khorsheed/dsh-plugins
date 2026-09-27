@@ -18,6 +18,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import RoomService, { ROOM_EVENT_TYPES } from '../src/index.ts'
 import { ROOM_KIND, ROOM_PLUGIN, roomSource } from '../src/dispatch.ts'
+import { replay } from '../src/journal.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
 
@@ -25,6 +26,7 @@ import { createRoom } from './promote.ts'
 function roomLogFixture(): SessionEvent[] {
   const rows: Array<[string, unknown]> = [
     ['room/created', { version: 1 }],
+    ['room/execution-metadata', { runId: 'a', tokens: 42 }],
     ['room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }],
     ['room/member-updated', { name: 'ada', instructions: '后端' }],
     ['room/dispatch', { targets: ['ada'], text: '出方案' }],
@@ -121,7 +123,8 @@ describe('room journal persistence', () => {
       session.append('room/speech', { member: 'ada', text: '方案 A' })
       session.append('room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '接口定稿' })
       session.append('room/relay-resolved', { id: 'r1', state: 'sent' })
-      session.append('room/run-state', { member: 'ada', state: 'done', startedAt: 1, elapsedMs: 2 })
+      session.append('room/run-state', { member: 'ada', runId: 'a', state: 'done', startedAt: 1, elapsedMs: 2 })
+      session.append('room/execution-metadata', { runId: 'a', model: 'observed', tokens: 42 })
       session.append('room/member-removed', { name: 'ada' })
       session.append('room/goal', { text: '插件 API v2 上线' })
       expect(await service.planCommand({ sessionId, command: JSON.stringify({ action: 'create', requestId: 'persist-goal', expectedRevision: 0, id: 'goal', objective: 'Verify persistence', mode: 'draft', budget: { maxParallel: 1, maxAttempts: 3, maxAttemptsPerTask: 2, maxActiveMs: 60000 } }) })).toEqual({ ok: true })
@@ -138,6 +141,7 @@ describe('room journal persistence', () => {
       }
       const types = new Set(loadedEvents.map(event => event.type as string))
       for (const type of ROOM_EVENT_TYPES) expect(types.has(type)).toBe(true)
+      expect(replay(loadedEvents).executions).toMatchObject([{ id: 'a', model: 'observed', tokens: 42 }])
     } finally {
       await fix.cleanup()
     }

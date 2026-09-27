@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-worktrees",
-  "description": "Worktree status visibility: a per-session repo/worktree badge in the session header plus a right-sidebar worktrees tab (the selected worktree's pending changes with diffs, IDE-style repository commit log, full repo browse) and a local-files browser, over a Typert Remote data face",
-  "version": "0.2.1",
+  "description": "Worktree status visibility: a per-session repo/worktree badge in the session header plus a right-sidebar worktrees tab (the selected worktree's pending changes with diffs, IDE-style repository commit log, full repo browse) and a local-files browser, over a Typert Remote data face; the session-granted `worktrees` model tool ships as the package's `./tool` composition entry",
+  "version": "0.3.0",
   "publishConfig": {
     "access": "public"
   },
@@ -142,9 +142,6 @@
     "status"
   ],
   "dsh": {
-    "references": [
-      "@khorsheed/dsh-worktrees-tool"
-    ],
     "bundle": {
       "patch": "./cordis.patch.yml"
     },

@@ -6,7 +6,7 @@ Esc to stop, Cmd+S to steer-send your draft, Cmd+O for a new session, Cmd+Shift+
 
 Want to halt a runaway turn? No hunting for the tiny stop button — Esc does it. A finished draft that shouldn't wait in line goes out with Cmd/Ctrl+S; Cmd/Ctrl+O starts a new session from anywhere; when the context fills up, Cmd/Ctrl+Shift+X compacts it in place; when you are done with the right column (previews, files, whatever a tool row opened), **middle-click** tucks it away (rebind it to a chord if that doesn't suit). Don't like the defaults? Click a binding in Settings → Plugins → Keyboard shortcuts and record your own. These shortcuts call the same actions the on-screen buttons and slash commands do — they never send anything extra to the model.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/07-ui-shortcuts.png" width="640" alt="the keyboard-shortcuts card in Settings: one row per action, click a binding to re-record it">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/07-ui-shortcuts.png" width="640" alt="the keyboard-shortcuts card in Settings: one row per action, click a binding to re-record it">
 
 ## Features
 

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write profiles/web-eval/README.en.md
-profiles/web-eval/README.en.md: 985e1398bc15674e2767ca9de3487f8960d1960f
-profiles/web-eval/README.md: 27142a1779744bd8e3607b98d4ccc525f66ad171
+profiles/web-eval/README.en.md: 79de8787b553adca95cd6f82178f11fdb052f1ad
+profiles/web-eval/README.md: 3837fe1dad0b3c6b059041caf0e3d5b18f45f9d1

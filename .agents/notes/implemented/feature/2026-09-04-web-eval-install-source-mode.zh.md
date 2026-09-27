@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-按 web-eval 自己的模板安装 profile（I1 走通；题库 i1-walk 日志的 G5/G6）在两处失败。其一，模板 package.json 以 npm 范围引用全部 22 个成员，其中 12 个未上架——README 只警告了 `datasets` / `mission` / `lab` 与本地 Agent 家族，而 `capability-catalog`、`inline-html-render`、`local-files` 其实也未发布（release-status.md 一直是权威）——`pnpm install` 撞 registry 404。其二，即便 tarball 正确，pack-dist 会把被打包包的 `workspace:*` 家族边改写成 `^version` registry 范围（kimi/codex/claude-code → local-agent + tool-subagent；local-agent-dsh → headless），同样 404。T1 只能全程手工：构建、打 13 个 tarball、改清单、写 pnpm overrides——而 deploy-3080 为 prod 自动化的正是这套流程。web-dev 模板同病；本笔记与改动只覆盖 web-eval。
+按 web-eval 自己的模板安装 profile（I1 走通；题库 i1-walk 日志的 G5/G6）在两处失败。其一，模板 package.json 以 npm 范围引用全部 22 个成员，其中 12 个未上架——README 只警告了 `datasets` / `mission` / `lab` 与本地 Agent 家族，而 `capability-catalog`、`inline-html-render`、`local-files` 其实也未发布（release-status.md 一直是权威）——`pnpm install` 撞 registry 404。其二，即便 tarball 正确，pack-dist 会把被打包包的 `workspace:*` 家族边改写成 `^version` registry 范围（kimi/codex/claude-code → local-agent + tool-subagent；local-agent-dsh → headless），同样 404。T1 只能全程手工：构建、打 13 个 tarball、改清单、写 pnpm overrides——而 deploy-3080 为 prod 自动化的正是这套流程。dev 模板同病；本笔记与改动只覆盖 web-eval。
 
 ## Decision
 

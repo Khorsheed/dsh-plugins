@@ -6,7 +6,7 @@ See every background job and subagent at a glance above the composer — and sto
 
 Once the agent starts background jobs or fans out a tree of subagents, you used to dig through the header list to follow along. This plugin puts two small capsules above the composer: one lists the current session's background jobs, the other the full subagent lineage, each with live timing and token spend. Stop any of them with one click; for a closer look, open the detail tab in the right sidebar — command, status, and the execution trail are all in there.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot1.png" width="640" alt="the subagent pill rides above the composer — open it to inspect or interrupt runs">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot1.png" width="640" alt="the subagent pill rides above the composer — open it to inspect or interrupt runs">
 
 ## Features
 
@@ -16,7 +16,7 @@ Once the agent starts background jobs or fans out a tree of subagents, you used 
 - **Session-scoped visibility** — switching sessions switches data; each capsule renders only when its own data is non-empty.
 - **Zero intrusion** — product extension points only (slots, commands, mirrors, session log); no new RPC, no product files touched.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot2.png" width="640" alt="background-job pills and the job detail tab">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot2.png" width="640" alt="background-job pills and the job detail tab">
 
 ## Install
 

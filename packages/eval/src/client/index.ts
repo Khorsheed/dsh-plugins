@@ -39,17 +39,21 @@ import type {
   EvalApproveRequest, EvalArchiveRunRequest, EvalCellArtifactRequest, EvalCloseRunRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
   EvalConditionEndpointRequest, EvalConditionProvisionRequest,
   EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
-  EvalExperimentArtifactRequest, EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
+  EvalExperimentArtifactRequest, EvalItemMaterialsRequest, EvalDatasetFileRequest, EvalJudgePromptPreviewRequest, EvalJudgePromptRequest,
+  EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
   EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest, EvalCellAnswersRequest,
   EvalMatrixRequest, EvalPlanNumbersRequest, EvalPlanRequest, EvalReexportRequest, EvalReportRequest, EvalRunUnitsRequest,
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { DraftCard, type DraftCardFace } from './DraftCard.tsx'
 import { createLabFocus } from './draft-card.ts'
+import { inspectReadsOf } from './InspectPane.tsx'
+import { INSPECT_KIND, INSPECT_TAB_ID, type InspectTarget } from './inspect-target.ts'
 import { LabView } from './LabView.tsx'
 import { en, NS, zh } from './locales.ts'
 import { EvalPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { createLabViewStore } from './store.ts'
+import { createInspectTitles, SidebarInspect, SidebarInspectTitle } from './SidebarInspect.tsx'
 
 export { LabView }
 
@@ -88,7 +92,7 @@ interface UiWorkspaceNav {
  * proxy only resolves services declared in `inject` or provided by an ancestor
  * fiber — declaring it would deadlock the loader. The mount is awaited and the
  * namespace is then read back from the global store with `ctx.get` (the
- * ui-file-preview precedent, which mission and datasets both follow). */
+ * file-preview precedent, which mission and datasets both follow). */
 export const inject = ['slots', 'remote', 'locale', 'sessions']
 
 /**
@@ -125,6 +129,145 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // host offers no tab switch, so the card asks and the lab view takes.
   const focus = createLabFocus()
 
+  // 查看 (T86): opened in the host's right sidebar while this package's tab
+  // type is registered there, otherwise answered false so the lab draws its
+  // own Sheet. Filled in by the deferred sidebar inject below.
+  const inspectHost: { open: ((target: InspectTarget) => boolean) | null } = { open: null }
+
+  // One face for the lab tab and the sidebar pane: the same reads, the same
+  // opener. The object is built once; the slot hands the same one to every session.
+  const injected: LabViewInjected = {
+    fetchExperiments: (sid: SessionId, request: EvalExperimentsRequest) => remote.runs(sid, request),
+    fetchExperiment: (sid: SessionId, request: EvalExperimentRequest) => remote.run(sid, request),
+    fetchPlanReview: (sid: SessionId, request: EvalPlanRequest) => remote.plan(sid, request),
+    fetchConditions: (sid: SessionId, request: EvalConditionsRequest) => remote.conditions(sid, request),
+    fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
+    provisionCondition: (sid: SessionId, request: EvalConditionProvisionRequest) => remote.provisionCondition(sid, request),
+    setConditionEndpoint: (sid: SessionId, request: EvalConditionEndpointRequest) => remote.setConditionEndpoint(sid, request),
+    setPlanNumbers: (sid: SessionId, request: EvalPlanNumbersRequest) => remote.setPlanNumbers(sid, request),
+    // ui-spec step 2. The same service verb `eval_plan_draft` reaches —
+    // a draft a person fills in and a draft an agent makes in one
+    // sentence are the same file in the same list.
+    fetchDraftOptions: (sid: SessionId, request: EvalDraftOptionsRequest) => remote.draftOptions(sid, request),
+    draftExperiment: (sid: SessionId, request: EvalDraftRequest) => remote.newExperiment(sid, request),
+    approvePlan: (sid: SessionId, request: EvalApproveRequest) => remote.approve(sid, request),
+    // The cursor is passed EXPLICITLY even though the verb defaults it:
+    // the gateway's client proxy enforces exact positional arity, so a
+    // call that leaves an optional parameter off throws
+    // "expected 2 argument(s), got 1" before it reaches the wire.
+    fetchRunOutput: (jobId: string) => remote.runOutput(jobId, 0),
+    fetchMatrix: (sid: SessionId, request: EvalMatrixRequest) => remote.matrix(sid, request),
+    fetchCells: (sid: SessionId, request: EvalCellsRequest) => remote.cells(sid, request),
+    fetchCell: (sid: SessionId, request: EvalCellRequest) => remote.cell(sid, request),
+    // The attachment a reader clicks: the bytes were always reachable
+    // (the judge bench reads the same directory), only the door was missing.
+    fetchCellArtifact: (sid: SessionId, request: EvalCellArtifactRequest) => remote.cellArtifact(sid, request),
+    // The analysis drafts an agent wrote into the experiment (T73).
+    fetchExperimentArtifact: (sid: SessionId, request: EvalExperimentArtifactRequest) => remote.experimentArtifact(sid, request),
+    // T84: the design page's item drawer and the judge's prompt.
+    fetchItemMaterials: (sid: SessionId, request: EvalItemMaterialsRequest) => remote.itemMaterials(sid, request),
+    fetchDatasetFile: (sid: SessionId, request: EvalDatasetFileRequest) => remote.datasetFile(sid, request),
+    fetchJudgePromptPreview: (sid: SessionId, request: EvalJudgePromptPreviewRequest) => remote.judgePromptPreview(sid, request),
+    fetchJudgePrompt: (sid: SessionId, request: EvalJudgePromptRequest) => remote.judgePrompt(sid, request),
+    retryCell: (sid: SessionId, request: EvalCellRetryRequest) => remote.retry(sid, request),
+    releaseCheck: (sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(sid, request),
+    planExport: (sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(sid, request),
+    exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(sid, request),
+    // The repeat of a recorded export — the answer to "the final verdicts
+    // are not in the bundle" being a command line nobody mentioned.
+    reexportRun: (sid: SessionId, request: EvalReexportRequest) => remote.reexport(sid, request),
+    fetchReport: (sid: SessionId, request: EvalReportRequest) => remote.report(sid, request),
+    finalizeRun: (sid: SessionId, request: EvalFinalizeRequest) => remote.finalize(sid, request),
+    fetchRunUnits: (sid: SessionId, request: EvalRunUnitsRequest) => remote.runUnits(sid, request),
+    fetchJudgeQueue: (sid: SessionId, request: EvalJudgeQueueRequest) => remote.judgeQueue(sid, request),
+    fetchCellAnswers: (sid: SessionId, request: EvalCellAnswersRequest) => remote.cellAnswers(sid, request),
+    // The one write with no model-facing twin anywhere in this family
+    // (ui-spec R1): the final verdict is a person's, and the toolset has
+    // no path to the verb on the other side of this line.
+    submitHumanFinal: (sid: SessionId, request: EvalHumanFinalRequest) => remote.humanFinal(sid, request),
+    // The host's own session controller: the drawer OPENS the player's (or
+    // a judge's) child session so a person can read the transcript; the
+    // member composer and dock there are local-agent's, not this tab's.
+    //
+    // Through the SUBAGENT address, because that is the only address the
+    // host will read one at. `openSession(childId)` selects the row and
+    // then fails to load its history — «subagent Sessions require their
+    // durable parent address (session/agent-busy)» — which is what pilot D
+    // did on every one of these buttons until this call learned the
+    // parent. The parent's catalog is refreshed first (a run finished days
+    // ago is not in any catalog this browser has loaded), and every way
+    // that can fail — no parent recorded, a refresh that throws, a child
+    // the catalog does not call healthy — falls back to selecting by id,
+    // which is strictly what this code did before.
+    //
+    // One call, two host lines: 0.1.5 reads the address through
+    // `ISessions.openSubagent`; 0.1.6-alpha.2 removed that method and
+    // widened `uiWorkspace.openSession`'s target to take the address
+    // (0.1.7-rc.1 renames the catalog refresh `refreshProjections`).
+    // Every opener is wrapped: alpha.2 throws synchronously on an unknown
+    // target, and the drawer stays put so the entry can be retried.
+    openSession: (childSessionId: SessionId, parentSessionId: SessionId | null) => {
+      const sessions = ctx.sessions as unknown as {
+        subagentAddress?(id: SessionId): unknown
+        openSubagent?(target: unknown): void
+        refreshSubagents?(id: SessionId): Promise<void>
+        refreshProjections?(id: SessionId): Promise<void>
+        open?(id: SessionId): void
+      }
+      const nav = ctx.get('uiWorkspace') as UiWorkspaceNav | undefined
+      const openTarget = (target: unknown): void => {
+        try {
+          if (sessions.openSubagent !== undefined) sessions.openSubagent(target)
+          else nav?.openSession(target as SessionId)
+        } catch { /* unknown target: the drawer stays put, the entry can be retried */ }
+      }
+      const byId = (): void => {
+        try {
+          if (nav !== undefined) nav.openSession(childSessionId)
+          else sessions.open?.(childSessionId)
+        } catch { /* same degrade */ }
+      }
+      const retained = sessions.subagentAddress?.(childSessionId)
+      if (retained !== undefined) {
+        openTarget(retained)
+        return
+      }
+      if (parentSessionId === null) {
+        byId()
+        return
+      }
+      const refresh = sessions.refreshSubagents?.bind(sessions) ?? sessions.refreshProjections?.bind(sessions)
+      if (refresh === undefined) {
+        // One-shot: an evaluation delegation is `{ mode: 'one-shot' }` on
+        // its own descriptor, which is the mode the catalog entry has to
+        // match for the host to accept the address.
+        openTarget({ parentSessionId, childSessionId, mode: 'one-shot' })
+        return
+      }
+      void refresh(parentSessionId).then(() => {
+        openTarget({ parentSessionId, childSessionId, mode: 'one-shot' })
+      }).catch(byId)
+    },
+    // T72's four exits and the archive flag: run-level annotations a
+    // person writes, through eval's own verbs.
+    closeRun: (sid: SessionId, request: EvalCloseRunRequest) => remote.closeRun(sid, request),
+    archiveRun: (sid: SessionId, request: EvalArchiveRunRequest) => remote.archiveRun(sid, request),
+    // 「让 agent 处理」: the quote plugin's backfill path — the session's
+    // conversation input, draft merged, NEVER sent. Every absence answers
+    // false so the button can fall back to the clipboard.
+    focus,
+    insertDraft: (sid: SessionId, text: string): boolean => {
+      const scope = ctx.sessions.scope(sid)
+      if (scope === undefined) return false
+      const input = scope.get('conversation')?.input.for(scope)
+      if (input === undefined) return false
+      const current = input.state.getSnapshot().draft
+      input.setDraft(current.trim() === '' ? text : `${current}\n\n${text}`)
+      return true
+    },
+    openInspect: (_sid: SessionId, target: InspectTarget) => inspectHost.open?.(target) ?? false,
+  }
+
   const chrome = new EvalPresetVisibility(ctx)
   const labToggle = new RegistrationToggle(
     () => ctx.slots.register({
@@ -134,131 +277,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       locale: NS,
       label: () => t('open'),
       store: createLabViewStore,
-      inject: (_sessionId: SessionId): LabViewInjected => ({
-        fetchExperiments: (sid: SessionId, request: EvalExperimentsRequest) => remote.runs(sid, request),
-        fetchExperiment: (sid: SessionId, request: EvalExperimentRequest) => remote.run(sid, request),
-        fetchPlanReview: (sid: SessionId, request: EvalPlanRequest) => remote.plan(sid, request),
-        fetchConditions: (sid: SessionId, request: EvalConditionsRequest) => remote.conditions(sid, request),
-        fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
-        provisionCondition: (sid: SessionId, request: EvalConditionProvisionRequest) => remote.provisionCondition(sid, request),
-        setConditionEndpoint: (sid: SessionId, request: EvalConditionEndpointRequest) => remote.setConditionEndpoint(sid, request),
-        setPlanNumbers: (sid: SessionId, request: EvalPlanNumbersRequest) => remote.setPlanNumbers(sid, request),
-        // ui-spec step 2. The same service verb `eval_plan_draft` reaches —
-        // a draft a person fills in and a draft an agent makes in one
-        // sentence are the same file in the same list.
-        fetchDraftOptions: (sid: SessionId, request: EvalDraftOptionsRequest) => remote.draftOptions(sid, request),
-        draftExperiment: (sid: SessionId, request: EvalDraftRequest) => remote.newExperiment(sid, request),
-        approvePlan: (sid: SessionId, request: EvalApproveRequest) => remote.approve(sid, request),
-        // The cursor is passed EXPLICITLY even though the verb defaults it:
-        // the gateway's client proxy enforces exact positional arity, so a
-        // call that leaves an optional parameter off throws
-        // "expected 2 argument(s), got 1" before it reaches the wire.
-        fetchRunOutput: (jobId: string) => remote.runOutput(jobId, 0),
-        fetchMatrix: (sid: SessionId, request: EvalMatrixRequest) => remote.matrix(sid, request),
-        fetchCells: (sid: SessionId, request: EvalCellsRequest) => remote.cells(sid, request),
-        fetchCell: (sid: SessionId, request: EvalCellRequest) => remote.cell(sid, request),
-        // The attachment a reader clicks: the bytes were always reachable
-        // (the judge bench reads the same directory), only the door was missing.
-        fetchCellArtifact: (sid: SessionId, request: EvalCellArtifactRequest) => remote.cellArtifact(sid, request),
-        // The analysis drafts an agent wrote into the experiment (T73).
-        fetchExperimentArtifact: (sid: SessionId, request: EvalExperimentArtifactRequest) => remote.experimentArtifact(sid, request),
-        retryCell: (sid: SessionId, request: EvalCellRetryRequest) => remote.retry(sid, request),
-        releaseCheck: (sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(sid, request),
-        planExport: (sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(sid, request),
-        exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(sid, request),
-        // The repeat of a recorded export — the answer to "the final verdicts
-        // are not in the bundle" being a command line nobody mentioned.
-        reexportRun: (sid: SessionId, request: EvalReexportRequest) => remote.reexport(sid, request),
-        fetchReport: (sid: SessionId, request: EvalReportRequest) => remote.report(sid, request),
-        finalizeRun: (sid: SessionId, request: EvalFinalizeRequest) => remote.finalize(sid, request),
-        fetchRunUnits: (sid: SessionId, request: EvalRunUnitsRequest) => remote.runUnits(sid, request),
-        fetchJudgeQueue: (sid: SessionId, request: EvalJudgeQueueRequest) => remote.judgeQueue(sid, request),
-        fetchCellAnswers: (sid: SessionId, request: EvalCellAnswersRequest) => remote.cellAnswers(sid, request),
-        // The one write with no model-facing twin anywhere in this family
-        // (ui-spec R1): the final verdict is a person's, and the toolset has
-        // no path to the verb on the other side of this line.
-        submitHumanFinal: (sid: SessionId, request: EvalHumanFinalRequest) => remote.humanFinal(sid, request),
-        // The host's own session controller: the drawer OPENS the player's (or
-        // a judge's) child session so a person can read the transcript; the
-        // member composer and dock there are local-agent's, not this tab's.
-        //
-        // Through the SUBAGENT address, because that is the only address the
-        // host will read one at. `openSession(childId)` selects the row and
-        // then fails to load its history — «subagent Sessions require their
-        // durable parent address (session/agent-busy)» — which is what pilot D
-        // did on every one of these buttons until this call learned the
-        // parent. The parent's catalog is refreshed first (a run finished days
-        // ago is not in any catalog this browser has loaded), and every way
-        // that can fail — no parent recorded, a refresh that throws, a child
-        // the catalog does not call healthy — falls back to selecting by id,
-        // which is strictly what this code did before.
-        //
-        // One call, two host lines: 0.1.5 reads the address through
-        // `ISessions.openSubagent`; 0.1.6-alpha.2 removed that method and
-        // widened `uiWorkspace.openSession`'s target to take the address
-        // (0.1.7-rc.1 renames the catalog refresh `refreshProjections`).
-        // Every opener is wrapped: alpha.2 throws synchronously on an unknown
-        // target, and the drawer stays put so the entry can be retried.
-        openSession: (childSessionId: SessionId, parentSessionId: SessionId | null) => {
-          const sessions = ctx.sessions as unknown as {
-            subagentAddress?(id: SessionId): unknown
-            openSubagent?(target: unknown): void
-            refreshSubagents?(id: SessionId): Promise<void>
-            refreshProjections?(id: SessionId): Promise<void>
-            open?(id: SessionId): void
-          }
-          const nav = ctx.get('uiWorkspace') as UiWorkspaceNav | undefined
-          const openTarget = (target: unknown): void => {
-            try {
-              if (sessions.openSubagent !== undefined) sessions.openSubagent(target)
-              else nav?.openSession(target as SessionId)
-            } catch { /* unknown target: the drawer stays put, the entry can be retried */ }
-          }
-          const byId = (): void => {
-            try {
-              if (nav !== undefined) nav.openSession(childSessionId)
-              else sessions.open?.(childSessionId)
-            } catch { /* same degrade */ }
-          }
-          const retained = sessions.subagentAddress?.(childSessionId)
-          if (retained !== undefined) {
-            openTarget(retained)
-            return
-          }
-          if (parentSessionId === null) {
-            byId()
-            return
-          }
-          const refresh = sessions.refreshSubagents?.bind(sessions) ?? sessions.refreshProjections?.bind(sessions)
-          if (refresh === undefined) {
-            // One-shot: an evaluation delegation is `{ mode: 'one-shot' }` on
-            // its own descriptor, which is the mode the catalog entry has to
-            // match for the host to accept the address.
-            openTarget({ parentSessionId, childSessionId, mode: 'one-shot' })
-            return
-          }
-          void refresh(parentSessionId).then(() => {
-            openTarget({ parentSessionId, childSessionId, mode: 'one-shot' })
-          }).catch(byId)
-        },
-        // T72's four exits and the archive flag: run-level annotations a
-        // person writes, through eval's own verbs.
-        closeRun: (sid: SessionId, request: EvalCloseRunRequest) => remote.closeRun(sid, request),
-        archiveRun: (sid: SessionId, request: EvalArchiveRunRequest) => remote.archiveRun(sid, request),
-        // 「让 agent 处理」: the quote plugin's backfill path — the session's
-        // conversation input, draft merged, NEVER sent. Every absence answers
-        // false so the button can fall back to the clipboard.
-        focus,
-        insertDraft: (sid: SessionId, text: string): boolean => {
-          const scope = ctx.sessions.scope(sid)
-          if (scope === undefined) return false
-          const input = scope.get('conversation')?.input.for(scope)
-          if (input === undefined) return false
-          const current = input.state.getSnapshot().draft
-          input.setDraft(current.trim() === '' ? text : `${current}\n\n${text}`)
-          return true
-        },
-      }),
+      inject: (_sessionId: SessionId): LabViewInjected => injected,
     }, LabView),
     () => chrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
   )
@@ -292,6 +311,56 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       openExperiment: (experimentId: string) => { focus.request(sessionId, experimentId) },
     }),
   }, DraftCard))
+
+  // 查看 in the host's right sidebar (T85 §三, T86 step 2). The two services are
+  // a DEFERRED inject, never the inject list: a profile without the right
+  // sidebar must still load the lab (the pane then opens in the page's own
+  // Sheet), and a one-shot `ctx.get` at apply would misread a sidebar that
+  // mounts after this plugin as absent. The tab type follows the lab tab's own
+  // preset criterion, so a session that hides the lab has no 查看 either.
+  ctx.inject(['sidebarRight', 'sidebarRightTabs'], (sub: Context) => {
+    const host = sub as unknown as {
+      sidebarRight: { openTab: (kind: string, options: { params: { target: InspectTarget } }) => void }
+      sidebarRightTabs: { register: (definition: { id: string; kind: string; title: () => string }) => () => void }
+    }
+    const tabType = new RegistrationToggle(
+      () => host.sidebarRightTabs.register({ id: INSPECT_TAB_ID, kind: INSPECT_KIND, title: () => t('inspect.paneTitle') }),
+      () => chrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
+    )
+    tabType.setReady(true)
+    const unsubscribe = chrome.subscribe(() => { tabType.sync() })
+    // Answered true only when the host took the open: an unregistered kind or
+    // a session without a sidebar seat throws, and the lab falls back.
+    inspectHost.open = (target) => {
+      if (!tabType.registered) return false
+      try {
+        host.sidebarRight.openTab(INSPECT_KIND, { params: { target } })
+        return true
+      } catch {
+        return false
+      }
+    }
+    sub.effect(() => () => {
+      inspectHost.open = null
+      unsubscribe()
+      tabType.setReady(false)
+    }, 'eval: inspect tab type')
+  })
+  // The body and the chip title. Keyed under the type's id; without the
+  // sidebar package neither slot is declared and neither inject fires.
+  const titles = createInspectTitles()
+  const reads = inspectReadsOf(injected)
+  slots.inject('sidebar.right.pane.tab', () => slots.register({
+    name: 'sidebar.right.pane.tab',
+    key: INSPECT_TAB_ID,
+    locale: NS,
+    inject: () => ({ reads, titles }),
+  }, SidebarInspect))
+  slots.inject('sidebar.right.pane.tab.title', () => slots.register({
+    name: 'sidebar.right.pane.tab.title',
+    key: INSPECT_TAB_ID,
+    inject: () => ({ titles }),
+  }, SidebarInspectTitle))
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

@@ -6,7 +6,7 @@ Every message you sent in a long conversation — visible at a glance, one click
 
 Once a session gets long, finding that requirement you mentioned three messages ago means scrolling up forever. This plugin parks a timeline on the chat's left edge: one row per message you sent, with a one-line preview. At rest it's just a strip of dimmed ticks that stays out of the way; hover to expand it, and clicking a row scrolls the transcript straight to that message. It only reads the session and never sends anything — the model doesn't notice it at all.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="the expanded message timeline on the chat's left edge: one row per user message, click a row to jump to it">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="the expanded message timeline on the chat's left edge: one row per user message, click a row to jump to it">
 
 ## Features
 
@@ -17,7 +17,7 @@ Once a session gets long, finding that requirement you mentioned three messages 
 - **Long-history friendly** — a short list centers vertically; a long one scrolls and pages older history at its top, its bottom-most row flush with the chat input box; goal/todo dock cards never push the timeline up.
 - **Never covers the message flow** — the panel's width is capped by the scrollport's left gutter; a gutter too small for the minimum width hides it rather than overlapping the transcript.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="the timeline at rest: a strip of dimmed ticks that stays out of the way, expanding on hover">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="the timeline at rest: a strip of dimmed ticks that stays out of the way, expanding on hover">
 
 ## Install
 

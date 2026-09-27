@@ -6,14 +6,14 @@
 
 想看一眼工作区旁边的素材目录、仓库外的一份数据文件，以前得切去系统文件管理器。这个插件在右栏注册一个**文件列表**页型 tab（guide 页「文件列表」卡片进入）：左侧是按层懒加载的文件树，右侧详情区把 HTML/Markdown/JSON/CSV 渲染成结构化视图、图片直接内联。它浏览任意绝对本地路径——未跟踪的、被 ignore 的、仓库外的一视同仁；数据面走自带的 Typert Remote，和 worktrees 插件的 git 徽标互不相识：那边只做 git 状态，这边只做纯粹的本地文件浏览。（细分：本插件是「任意本地目录浏览」，file-preview 是「当前会话产物」——语义不同，故为两个独立包。）
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-files-1.png" width="640" alt="开始页的应用入口卡片:文件列表(默认打开本会话所属工作目录)">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="640" alt="开始页的应用入口卡片:文件列表(默认打开本会话所属工作目录)">
 
 ## 特性
 
 - **文件列表 tab**——右栏 page-type tab，guide 页「文件列表」卡片进入。注册以 extension 档接管官方 `files` 页型（注册表内建的 kind 级遮蔽）：guide 页只出现一张文件卡片，官方「工作区文件」卡片在本插件卸载时自动恢复，绝不双卡并存。
 - **左树右预览**——文件树按层懒加载、隐藏文件一键显隐、面板可拖拽调宽；详情区结构化渲染 HTML/Markdown/JSON/CSV、内联图片；标题行「重新加载」手势重读当前文件——磁盘上的改动不必重选即得，重读失败保留旧内容并经既有错误槽呈现。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/local-files-2.png" width="640" alt="文件列表 tab:左侧按层懒加载的文件树,右侧结构化预览(markdown 渲染态、内容搜索框、预览/源码切换)">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-2.png" width="640" alt="文件列表 tab:左侧按层懒加载的文件树,右侧结构化预览(markdown 渲染态、内容搜索框、预览/源码切换)">
 
 - **默认根 = 本会话工作区**——与官方文件树同一数据源（会话行 `cwd` 响应式读取，行未加载时晚到即补）；手动切换的目录按会话记住（localStorage `dsh-local-files-root:<sessionId>`），重开 tab / 重载页面恢复；工具行的「退回原始工作区」一键回到当前会话工作区根（已在工作区时隐藏）。
 - **面包屑 + 动作行**——面包屑逐级导航；动作按钮为「选择工作区」（系统目录选择器）、「退回原始工作区」、「在文件夹中显示」（宿主 open-in-app 解析出文件管理器时显示）、「刷新文件」。

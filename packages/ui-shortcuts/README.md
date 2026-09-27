@@ -6,7 +6,7 @@ Esc 喊停、Cmd+S 插队发草稿、Cmd+O 开新会话、Cmd+Shift+X 压上下�
 
 对话跑到一半想停，不用去找那个小小的停止按钮，Esc 就行；写好的草稿不想排队，Cmd/Ctrl+S 直接插队发出去；Cmd/Ctrl+O 随时开新会话；上下文快满了，Cmd/Ctrl+Shift+X 就地压一次；右栏（预览、文件、工具行打开的内容都落在那儿）看完了想收起来，**鼠标中键**一按即可（不合手就改绑回键盘组合键）。五个动作都不合手的话，到 设置 → 插件 → 快捷键 里点一下就能重新录制。这些快捷键调用的就是界面上按钮/命令本身的动作，不会给模型多发任何消息。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/07-ui-shortcuts.png" width="640" alt="设置里的快捷键卡片：每个动作一行，点击键位即可重录">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/07-ui-shortcuts.png" width="640" alt="设置里的快捷键卡片：每个动作一行，点击键位即可重录">
 
 ## 特性
 

@@ -10,7 +10,7 @@ CI 在推 main 时触发，而推送由 human 协调、不自动化。这是刻�
 
 1. `cc31c1a` 退役了 taskpilot 的 `tsconfig.paths.json` 机制并删掉 `scripts/sync-harness-paths.mjs`，却留下了调用它的 CI 步骤——`MODULE_NOT_FOUND`。
 2. 08-29 合入的 `room` 传递引入了 `koffi`；pnpm ≥ 11 在冷装遇到未经审阅的依赖构建脚本时硬失败——`ERR_PNPM_IGNORED_BUILDS`。
-3. `dsh-web-basic` 镜像已经落后于 `profiles/web-basic`。
+3. `dsh-basic` 镜像已经落后于 `profiles/basic`。
 
 三个都不是本地能发现的。第一个只活在 workflow 文件里，没有任何本地命令读它。第二个只在冷装 `pnpm install` 时复现，热的 `node_modules` 永远不会再报。第三个需要联网和镜像仓的推送权。
 

@@ -1,6 +1,14 @@
 # file-preview bundle patch: inserts the plugin row into the composing
-# profile. Host half only (the session file-fold Remote service); the browser
-# side ships in the companion @khorsheed/dsh-client-ui-file-preview package.
+# profile. Since 0.4.0 this ONE row carries both halves — the host half
+# provides the `filePreview` Remote service and the browser half (the
+# right-sidebar 会话产物 tab, the per-turn change cards, the detail view) is
+# discovered through the package.json `dsh.client` block (the message-tools /
+# taskpilot single-package shape). Before 0.4.0 the two halves shipped as two
+# packages and mounted as two rows (`file-preview` + `ui-file-preview`); the
+# merged row keeps the `file-preview` id, so a composition upgrade only drops
+# the `ui-file-preview` row — a `disabled` override pinned to that old row id
+# no longer matches anything (one-time migration: retarget it to
+# `file-preview`).
 # Note: the @-prefixed name must stay quoted — it is a YAML reserved character.
 - insert:
     - id: file-preview

@@ -34,7 +34,7 @@ function tracked(): Set<string> {
 
 describe('mirrorFiles', () => {
   it('emits only files git tracks — no gitignored local state', () => {
-    const fixtures = [['package', 'ankh-guard'], ['profile', 'web-basic'], ['skill', 'self-upgrade']] as const
+    const fixtures = [['package', 'ankh-guard'], ['profile', 'basic'], ['skill', 'self-upgrade']] as const
     for (const [kind, name] of fixtures.filter(([, name]) => name !== 'self-upgrade' || skillFixturePresent)) {
       const untracked = mirrorFiles(kind, name).filter((f: string) => !tracked().has(`${kind}s/${name}/${f}`))
       expect(untracked, `${kind}s/${name} would ship untracked files`).toEqual([])
@@ -55,7 +55,7 @@ describe('mirrorFiles', () => {
   })
 
   it('ships nested tracked files, including force-added screenshots', () => {
-    const files = mirrorFiles('profile', 'web-basic')
+    const files = mirrorFiles('profile', 'basic')
     expect(files).toContain('package.json')
     expect(files).toContain('scripts/install.sh')
     expect(files.some((f: string) => f.startsWith('docs/screenshots/'))).toBe(true)

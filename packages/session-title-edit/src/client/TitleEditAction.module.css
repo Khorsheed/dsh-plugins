@@ -127,10 +127,12 @@
   color: var(--dsw-alias-state-warn-primary);
 }
 
-/* Hide the official current-title crumb while the in-place editor is open
-   (DOM layer: attribute set by the entry, removed on close). visibility keeps
-   the crumb's layout box so its rect stays measurable for the overlay and for
-   resize re-measurement, and so the surrounding actions row never shifts. */
-header nav button[data-ste-inplace] {
+/* Hide the official current-title node while the in-place editor is open (DOM
+   layer: attribute set by the entry, removed on close). The selector is
+   element-agnostic on purpose — up to host 0.1.6 that node is a disabled
+   `button`, from 0.1.7-alpha.1 a plain `span.crumbCurrent`. visibility keeps
+   its layout box so the rect stays measurable for the overlay and for resize
+   re-measurement, and so the surrounding actions row never shifts. */
+header nav [data-ste-inplace] {
   visibility: hidden !important;
 }

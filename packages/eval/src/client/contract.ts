@@ -11,6 +11,8 @@ import type {} from '@khorsheed/dsh-eval/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   EvalApproveRequest, EvalApproveResult, EvalArchiveRunRequest, EvalArchiveWrite, EvalCellArtifactRequest, EvalCellArtifactView, EvalExperimentArtifactRequest, EvalExperimentArtifactView,
+  EvalItemMaterialsRequest, EvalItemMaterialsView, EvalDatasetFileRequest, EvalDatasetFileView,
+  EvalJudgePromptPreviewRequest, EvalJudgePromptPreviewView, EvalJudgePromptRequest, EvalJudgePromptView,
   EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
   EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCloseRunRequest, EvalClosureWrite, EvalCellsResult, EvalConditionDiffRequest,
   EvalConditionDiffView, EvalConditionEndpointRequest, EvalConditionEndpointView,
@@ -26,6 +28,8 @@ import type { LabFocus } from './draft-card.ts'
 import type { createLabViewStore } from './store.ts'
 
 /** The eval Remote namespace, mounted by this plugin. */
+import type { InspectTarget } from './inspect-target.ts'
+
 export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
 
 /**
@@ -114,6 +118,14 @@ export interface LabViewInjected {
    * directory or nowhere, text only, cut above 256 KB and said so.
    */
   fetchExperimentArtifact: (sessionId: SessionId, request: EvalExperimentArtifactRequest) => Promise<RemoteResult<EvalExperimentArtifactView>>
+  /** 题目抽屉 (T84): an item's materials at the pinned commit. Optional — without it 查看 opens the task text alone. */
+  fetchItemMaterials?: (sessionId: SessionId, request: EvalItemMaterialsRequest) => Promise<RemoteResult<EvalItemMaterialsView>>
+  /** One file of the pinned dataset (T84). */
+  fetchDatasetFile?: (sessionId: SessionId, request: EvalDatasetFileRequest) => Promise<RemoteResult<EvalDatasetFileView>>
+  /** The judge's prompt before the run (T84). */
+  fetchJudgePromptPreview?: (sessionId: SessionId, request: EvalJudgePromptPreviewRequest) => Promise<RemoteResult<EvalJudgePromptPreviewView>>
+  /** The prompt.md a cell's judging wrote (T84). */
+  fetchJudgePrompt?: (sessionId: SessionId, request: EvalJudgePromptRequest) => Promise<RemoteResult<EvalJudgePromptView>>
   /** Re-run one cell: a fresh attempt against an auditable reason. */
   retryCell: (sessionId: SessionId, request: EvalCellRetryRequest) => Promise<RemoteResult<EvalCellRetryResult>>
   /** The release check: may this cell's resources be destroyed? */
@@ -185,6 +197,13 @@ export interface LabViewInjected {
    * run recorded without an originSession allows.
    */
   openSession: (sessionId: SessionId, parentSessionId: SessionId | null) => void
+  /**
+   * 查看 in the host's right sidebar (T86). True when the sidebar took the
+   * target; false (or absent — a composition without ui-sidebar-right, a
+   * session whose preset hides the lab, a host that threw) and the tab opens
+   * the same pane in its own Sheet.
+   */
+  openInspect?: (sessionId: SessionId, target: InspectTarget) => boolean
   /**
    * CLOSE human review by one of the four exits (T72): 提交终评, 带标记提交,
    * 不做终评直接收尾, 放弃终评. A human's click and nothing else's — the

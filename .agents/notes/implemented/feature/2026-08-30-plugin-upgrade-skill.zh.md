@@ -14,7 +14,7 @@ Status: implemented
 
 - **skill-only,无 client 面。** host 侧只做一件事——从包内 `skills/plugin-upgrade/` 读取并注册 `plugin-upgrade` skill(`source: 'runtime'`、`provider: 'plugin-upgrade'`、`resourceBase: { kind: 'directory', path: skillDir }` 让 catalog 能列出 bundle,即 a6afaf6 落地的模式)。注册经 `ctx.inject(['skills'], …)` 等待 registry(inline-html-render 的修法);bundle 缺失/不可读降级为 warning——发现辅助绝不能拖垮启动。与 ankh-guard 不同,不落状态文件:本包不拥有任何状态。
 - **SKILL.md 是产品本体。** 英文、祈使、分阶段:铁律(绝不改运行中的检出;特性探测而非版本号;typecheck 绿 ≠ 运行时干净)→ 基线 → 新宿主拉到旧宿主旁边(worktree/npm staging)→ 断裂面盘点 → 双线修复纪律 → 验证阶梯(包级 → 组合级 → 全新 HOME 活体验收且浏览器 console 零插件错误 → 按 README 从零交付)→ 自我重启(有 ankh-guard 走守卫路径,否则交接便签 + 分离 supervisor)→ 失败兜底。
-- **深度放 bundle,不进正文。** `reference/breakage-checklist.md`(十二个检查面 + 编译期盲区)与 `reference/dual-host-fix-patterns.md`(命名空间导入探测、品牌类型锚定、自包含则内联、双 seat 读取器)承载 SKILL.md 概述的细节;`assets/restart-resume.sh` 是泛化后的分离 supervisor(等旧进程死 → 起新宿主 → 健康检查 → 失败回滚旧启动命令),全部由环境变量参数化,从 web-basic 的重启脚本泛化而来、剔除了一切 profile 专有逻辑。
+- **深度放 bundle,不进正文。** `reference/breakage-checklist.md`(十二个检查面 + 编译期盲区)与 `reference/dual-host-fix-patterns.md`(命名空间导入探测、品牌类型锚定、自包含则内联、双 seat 读取器)承载 SKILL.md 概述的细节;`assets/restart-resume.sh` 是泛化后的分离 supervisor(等旧进程死 → 起新宿主 → 健康检查 → 失败回滚旧启动命令),全部由环境变量参数化,从 basic 的重启脚本泛化而来、剔除了一切 profile 专有逻辑。
 - 全部内容已脱敏:无仓库路径、无机器路径、无实例专有信息——skill 假设读者对本 monorepo 一无所知。
 
 ## Alternatives considered

@@ -21,7 +21,7 @@
  */
 import { collectProbes, pickRubricPath, registerEntriesOf } from './judge.ts'
 import type { DatasetsFace, MissionRunListFace } from './faces.ts'
-import { rubricWeightRows } from './weights.ts'
+import { inStageScope, rubricWeightRows } from './weights.ts'
 import type { EvalPlanEstimate, EvalPlanEstimateSample, EvalPlanItemFacts, EvalPlanItemsView } from './types.ts'
 
 /** The task text crosses the wire whole up to this many characters. */
@@ -54,13 +54,32 @@ export function pickTaskPath(visiblePaths: readonly string[]): string | null {
   return visiblePaths.filter(path => /\.md$/i.test(path)).sort(byLength)[0] ?? null
 }
 
-/** Rubric leaves by kind, and Σ positive weights. */
-export function rubricFacts(rubricText: string, task: string): {
+function positiveSum(rows: ReadonlyArray<{ weight: number | null; negative: boolean }>): number | null {
+  const weighted = rows.filter(row => row.weight !== null && !row.negative)
+  return weighted.length === 0 ? null : weighted.reduce((sum, row) => sum + (row.weight ?? 0), 0)
+}
+
+/**
+ * Rubric leaves by kind, and Σ positive weights — both over the leaves in the
+ * run's stage scope (T84). A leaf outside it is neither judged nor scored,
+ * so it is not in the full score either; `fullScoreAll` keeps the
+ * full-stage denominator for the page's «65/100».
+ * @param rubricText - the rubric YAML.
+ * @param task - the item id.
+ * @param scope - the item's `runIn` (binds `verify.json` evidence to a stage)
+ *   and the plan's `stages` (null/empty: every leaf is in scope).
+ */
+export function rubricFacts(rubricText: string, task: string, scope?: {
+  runIn?: readonly string[] | null
+  planStages?: readonly string[] | null
+}): {
   criteria: NonNullable<EvalPlanItemFacts['criteria']>
   fullScore: number | null
+  fullScoreAll: number | null
+  outOfScope: number
 } {
-  const rows = rubricWeightRows(rubricText, task)
-  const weighted = rows.filter(row => row.weight !== null && !row.negative)
+  const all = rubricWeightRows(rubricText, task, { runIn: scope?.runIn ?? null })
+  const rows = all.filter(row => inStageScope(row.stages, scope?.planStages))
   return {
     criteria: {
       total: rows.length,
@@ -68,8 +87,14 @@ export function rubricFacts(rubricText: string, task: string): {
       judge: rows.filter(row => row.kind === 'llm-draft').length,
       human: rows.filter(row => row.kind === 'human').length,
     },
-    fullScore: weighted.length === 0 ? null : weighted.reduce((sum, row) => sum + (row.weight ?? 0), 0),
+    fullScore: positiveSum(rows),
+    fullScoreAll: positiveSum(all),
+    outOfScope: all.length - rows.length,
   }
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v !== '') : []
 }
 
 /**
@@ -79,6 +104,8 @@ export function rubricFacts(rubricText: string, task: string): {
  * @param input.datasetId - the set the experiment pins.
  * @param input.commit - the pinned commit.
  * @param input.items - the plan's item ids, in plan order.
+ * @param input.planStages - the plan's `stages`: the full score and the
+ *   criterion counts cover only the leaves in that scope.
  * @returns one row per item (blank cells where a read failed) plus why.
  */
 export async function planItemFacts(input: {
@@ -87,8 +114,12 @@ export async function planItemFacts(input: {
   datasetId: string
   commit: string
   items: readonly string[]
+  /** The plan's `stages`; null/empty when it names none (every stage runs). */
+  planStages?: readonly string[] | null
 }): Promise<EvalPlanItemsView> {
   const { datasets, repo, datasetId, commit, items } = input
+  const planStages = input.planStages === undefined || input.planStages === null || input.planStages.length === 0
+    ? null : input.planStages
   const notes = new Set<string>()
   const blank = (id: string): EvalPlanItemFacts => ({
     id, title: null, level: null, stages: 0, container: false, criteria: null, probes: 0, fullScore: null, task: null, taskPath: null,
@@ -114,11 +145,15 @@ export async function planItemFacts(input: {
     }
     const meta = isPlainObject(item.metadata) ? item.metadata : {}
     const taxonomy = isPlainObject(meta['taxonomy']) ? meta['taxonomy'] : {}
+    const phases = stringList(meta['phasesUsed'])
+    const runIn = stringList(meta['runIn'])
     const row: EvalPlanItemFacts = {
       ...blank(id),
       title: str(meta['title']),
       level: str(taxonomy['level']),
       stages: Array.isArray(meta['phasesUsed']) ? meta['phasesUsed'].length : 0,
+      phases,
+      runStages: planStages === null ? null : phases.filter(phase => planStages.includes(phase)),
       container: Array.isArray(meta['runIn']) && meta['runIn'].length > 0,
       probes: collectProbes({
         taskId: id,
@@ -132,9 +167,11 @@ export async function planItemFacts(input: {
     else {
       try {
         const rubric = await datasets.read(scope, { dataset: datasetId, item: id, layer: 'grading', path: rubricPath, commit })
-        const facts = rubricFacts(rubric.content, id)
+        const facts = rubricFacts(rubric.content, id, { runIn, planStages })
         row.criteria = facts.criteria
         row.fullScore = facts.fullScore
+        row.fullScoreAll = facts.fullScoreAll
+        row.criteriaOutOfScope = facts.outOfScope
       } catch (error) {
         notes.add(`the rubric of ${id} could not be read: ${message(error)}`)
       }

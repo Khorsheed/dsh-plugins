@@ -452,6 +452,12 @@ export interface EvalPlanQuestion {
 export interface EvalPlanReview {
   /** The plan document (absolute). */
   planPath: string
+  /**
+   * sha256 of the plan document's bytes as read for this review (T84); null
+   * when it could not be read. The page compares it across reviews to tell
+   * «the agent changed the plan» from «nothing moved yet».
+   */
+  planSha?: string | null
   schema: string
   /** True when validate found no ERROR. Warnings never block approval. */
   ok: boolean
@@ -486,14 +492,32 @@ export interface EvalPlanItemFacts {
   level: string | null
   /** How many stages the item uses (`phasesUsed`); 0 when it names none. */
   stages: number
+  /** The item's stage names (`phasesUsed`), in item order (T84). */
+  phases?: string[]
+  /**
+   * The item's stages this run executes — `phases` ∩ the plan's `stages`, in
+   * item order; null when the plan names no stages (every stage runs).
+   */
+  runStages?: string[] | null
   /** Whether some stage runs in a container (`runIn` non-empty). */
   container: boolean
-  /** Rubric leaves by kind; null when the grading layer has no readable rubric. */
+  /**
+   * Rubric leaves by kind, counting only the leaves in this run's stage scope
+   * (T84); null when the grading layer has no readable rubric.
+   */
   criteria: { total: number; objective: number; judge: number; human: number } | null
+  /** Leaves outside this run's stages — neither judged nor counted (T84). */
+  criteriaOutOfScope?: number
   /** Check scripts that would run for this item (its own plus the dataset's shared ones). */
   probes: number
-  /** Σ of the rubric's positive weights; null when no leaf carries a weight. */
+  /**
+   * Σ of the positive weights of the leaves in this run's stage scope (T84:
+   * out-of-scope leaves are not scored, so they are not in the full score
+   * either); null when no in-scope leaf carries a weight.
+   */
   fullScore: number | null
+  /** Σ of ALL the rubric's positive weights — the denominator a full-stage run would use. */
+  fullScoreAll?: number | null
   /** The player's task text (visible layer, capped); null when none could be read. */
   task: string | null
   /** The file the task text came from, item-relative. */
@@ -2015,4 +2039,130 @@ export interface EvalHumanFinalResult {
   by: string
   /** mission's annotate is a no-op on an identical repeat; this says it was one. */
   duplicate: boolean
+}
+
+// ── T84 · 题目抽屉 and the judge's prompt ─────────────────────────────────
+
+/** Which item of which experiment the drawer opens. */
+export interface EvalItemMaterialsRequest {
+  experimentId: string
+  item: string
+}
+
+/** The drawer's five tabs. */
+export type EvalItemMaterialTab = 'task' | 'stages' | 'rubric' | 'probes' | 'reference'
+
+/** One file the drawer lists, and how `datasetFile` reaches it. */
+export interface EvalItemMaterialFile {
+  tab: EvalItemMaterialTab
+  /** `item` — the item's own layer; `dataset` — the set's shared layer; `passthrough` — a set-root file outside every layer (`schemas/`). */
+  source: 'item' | 'dataset' | 'passthrough'
+  /** The layer (`visible` / `verify` / `grading`); the top directory for a passthrough file. */
+  layer: string
+  /** Layer-relative (passthrough: set-relative) path — what `datasetFile` takes. */
+  path: string
+}
+
+/** One rubric leaf, as the 判据 tab lists it. */
+export interface EvalItemRubricRow {
+  id: string
+  kind: string | null
+  weight: number | null
+  negative: boolean
+  veto: boolean
+  criterion: string | null
+  evidence: string | null
+  /** The stages this leaf judges; null — it always applies. */
+  stages: string[] | null
+  /** False when this run does not execute one of those stages: 本次不计. */
+  inScope: boolean
+}
+
+/** The drawer's listing for one item, at the experiment's pinned commit. */
+export interface EvalItemMaterialsView {
+  experimentId: string
+  item: string
+  dataset: string
+  commit: string
+  title: string | null
+  /** The item's stages (`phasesUsed`), and the ones this plan runs (null: every stage). */
+  phases: string[]
+  runStages: string[] | null
+  files: EvalItemMaterialFile[]
+  /** The rubric's leaves in document order; null when the item ships none or it did not parse. */
+  rubric: { path: string; rows: EvalItemRubricRow[] } | null
+  notes: string[]
+}
+
+/** One file of the pinned dataset. */
+export interface EvalDatasetFileRequest {
+  experimentId: string
+  /** The item; null for a set-level (shared or passthrough) file. */
+  item: string | null
+  source: 'item' | 'dataset' | 'passthrough'
+  layer: string
+  path: string
+}
+
+/** One dataset file, read at the pinned commit. */
+export interface EvalDatasetFileView {
+  experimentId: string
+  item: string | null
+  layer: string
+  path: string
+  commit: string
+  kind: 'text' | 'binary'
+  truncated: boolean
+  bytes: number
+  text: string | null
+  note: string | null
+}
+
+/** Which item (and judge) the prompt preview is built for. */
+export interface EvalJudgePromptPreviewRequest {
+  experimentId: string
+  item: string
+  /** A judge condition of the plan; the first one when omitted. */
+  judge?: string
+}
+
+/** The prompt a judge will receive, with the player's material replaced by placeholders. */
+export interface EvalJudgePromptPreviewView {
+  experimentId: string
+  item: string
+  judge: string
+  commit: string
+  /**
+   * The prompt as the run's template: text segments are the real prompt's
+   * bytes; a `material` segment is where the player's de-identified file goes
+   * (the page labels it — it is not prompt text).
+   */
+  segments: Array<{ kind: 'text'; text: string } | { kind: 'material'; path: string }>
+  /** llm-draft criteria put to the judge, and the ones this run's stages leave out. */
+  criteria: string[]
+  outOfScope: string[]
+  note: string | null
+}
+
+/** Which cell's judge prompt to read after the run. */
+export interface EvalJudgePromptRequest {
+  runId: string
+  missionId: string
+  attempt: number
+  judge?: string
+  sample?: string
+}
+
+/** One prompt.md a cell's judging wrote, read in place. */
+export interface EvalJudgePromptView {
+  runId: string
+  missionId: string
+  attempt: number
+  /** Every `<judge>/<sample>` directory that holds a prompt.md. */
+  samples: Array<{ judge: string; sample: string }>
+  judge: string | null
+  sample: string | null
+  text: string | null
+  truncated: boolean
+  note: string | null
 }

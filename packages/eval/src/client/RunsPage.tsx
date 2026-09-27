@@ -41,8 +41,9 @@
  */
 
 import type { ReactNode } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { isJudgedOrBeyond } from '../cell-states.ts'
 import type {
   EvalCellArtifactView, EvalCellDetail, EvalCellRow, EvalCellsResult, EvalMatrixView,
@@ -59,6 +60,8 @@ import {
   verdictSourcesOf,
 } from './vocab.ts'
 import { RUN_FILTERS, type RunFilter } from './store.ts'
+import { useInspect } from './inspect-context.ts'
+import { flat, registerInspectPage, type InspectPageProps } from './InspectPane.tsx'
 import css from './LabView.module.css'
 
 /**
@@ -272,71 +275,21 @@ function Param(props: { label: string; children: ReactNode }) {
 }
 
 /**
- * ONE run record in full (ui-spec §五 v2): the verdict at the top, how long
- * each stage took, the parameters it ran under, its artifacts, and the three
- * human gestures.
- *
- * v1 put the mission id, the raw `kind` of every artifact and a JSON receipt
- * on the page and left a reader to reconstruct the rest. What a person opens
- * this for is three questions — did it work, where did the time go, and what
- * did it actually run with — so those are the first three blocks, and the
- * receipts (attempts, annotation namespaces, the verify output) stay below
- * them, the verify output still verbatim because an exit code nobody
- * translated is the whole reason the panel is opened.
+ * The head of a record: the verdict this record carries, big, with where it
+ * came from — and what the ledger says became of the cell. The drawer's top
+ * and the 查看 record page's.
  */
-function RecordDetail(props: {
-  cell: EvalCellDetail | null
-  loading: boolean
-  error: string | null
-  onClose: () => void
-  onRetry: (reason: string, category: string) => void
-  onRelease: () => void
-  onExport: () => void
-  onOpenSession: (sessionId: string, parentSessionId: string | null) => void
-  /** 看作答 (I5·T75): this cell in the answer view. */
-  onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
-  /** Which attachment is expanded, and what the read answered with. */
-  artifactPath: string | null
-  artifact: EvalCellArtifactView | null
-  artifactLoading: boolean
-  artifactError: string | null
-  onOpenArtifact: (path: string | null) => void
-  /** Under the cards, full width, rather than the list's side drawer. */
-  inline?: boolean
-  t: LabViewProps['t']
-}) {
-  const {
-    cell, loading, error, onClose, onRetry, onRelease, onExport, onOpenSession, onOpenAnswers,
-    artifactPath, artifact, artifactLoading, artifactError, onOpenArtifact, t,
-  } = props
-  const [reason, setReason] = useState('')
-  const [category, setCategory] = useState<string>(RETRY_CATEGORIES[0] as string)
-  const attempt = cell === null
-    ? undefined
-    : cell.attempts.find(entry => entry.attempt === cell.attempt)
-  const verdict = cell === null ? null : verdictSourceOf(annotationCounts(cell))
+export function RecordHead(props: { cell: EvalCellDetail; t: LabViewProps['t'] }) {
+  const { cell, t } = props
+  const verdict = verdictSourceOf(annotationCounts(cell))
   // Every layer this record carries, not just the most authoritative one: the
   // report merges per criterion, so a record with both is scored from both.
-  const verdictSources = cell === null ? [] : verdictSourcesOf(annotationCounts(cell))
+  const verdictSources = verdictSourcesOf(annotationCounts(cell))
   // 成功 / 异常 is the ledger's, not a judgement: `halted` is the one state
   // that says this cell stopped rather than finished.
-  const halted = cell?.state === 'halted'
-  const segments = timelineOf(attempt?.history ?? [])
-  // The scale the timeline bars are drawn against: this record's own longest
-  // segment. Across records the units are the same but the runs are not, so a
-  // shared scale would say something about other cells that this panel is not
-  // showing.
-  const longest = Math.max(0, ...segments.map(segment => segment.ms ?? 0))
-  // The last state of a cell still moving has no length YET — 进行中, which
-  // is what a reader wants to know about it, not a dash.
-  const moving = cell !== null && !isJudgedOrBeyond(cell.state)
-
-  // The pieces, once: the drawer lays them out as one column, the inline
-  // record (a small run, T83 · phase 4) as v5's timeline + actions box with
-  // the receipts folded under it.
-  const parts = cell === null ? null : {
-    head: (
-      <>
+  const halted = cell.state === 'halted'
+  return (
+    <>
             {/* The head: the verdict this record carries, big, with where it
                 came from — and what the ledger says became of the cell. The
                 NUMBER is not here and says so; see `verdictSourceOf`. */}
@@ -365,44 +318,33 @@ function RecordDetail(props: {
               </div>
             )}
             {verdict !== null && <div className={css.dim}>{t('record.scoreWhere')}</div>}
-      </>
-    ),
-    timeline: (
-            <Field label={t('record.timeline')}>
-              {segments.length === 0
-                ? <span className={css.dim}>{t('record.timelineNone')}</span>
-                : (
-                  <div className={css.timeline}>
-                    {segments.map((segment, index) => (
-                      <div key={`${segment.state}:${String(index)}`} className={css.timelineRow}>
-                        <Chip tone={stageTone(segment.state)} title={segment.state} className={css.timelineChip}>
-                          <Word phrase={stagePhrase(segment.state)} t={t} />
-                        </Chip>
-                        {/* As long as the state lasted, against the longest
-                            state of THIS record. A segment the ledger did not
-                            time draws no bar at all — an unmeasured state and
-                            an instant one must not look the same. */}
-                        <span className={css.timelineTrack}>
-                          {segment.ms !== null && longest > 0 && (
-                            <span
-                              className={css.timelineBar}
-                              style={{ width: `${String(Math.round((segment.ms / longest) * 100))}%` }}
-                            />
-                          )}
-                        </span>
-                        <span className={css.dim}>
-                          {segment.ms !== null
-                            ? <Duration ms={segment.ms} t={t} />
-                            : index === segments.length - 1 && moving ? t('runs.card.now') : '—'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-            </Field>
-    ),
-    receipts: (
-      <>
+    </>
+  )
+}
+
+/** How one attachment row opens: in place (the drawer) or one level down (查看). */
+export interface AttachmentRow {
+  expanded: boolean
+  onClick: () => void
+  pane: ReactNode
+}
+
+/**
+ * A record's receipts: the parameters it ran under, its attachments, the
+ * judge's rounds, the attempts and the probes — verify verbatim. The drawer's
+ * body and the 查看 record page's.
+ */
+export function RecordReceipts(props: {
+  cell: EvalCellDetail
+  attachment: (path: string) => AttachmentRow
+  onOpenSession: (sessionId: string, parentSessionId: string | null) => void
+  t: LabViewProps['t']
+}) {
+  const { cell, attachment, onOpenSession, t } = props
+  const attempt = cell.attempts.find(entry => entry.attempt === cell.attempt)
+  const verdict = verdictSourceOf(annotationCounts(cell))
+  return (
+    <>
             <Field label={t('record.params')}>
               <div className={css.paramTable}>
                 <Param label={t('record.param.task')}>{cell.task ?? '—'}</Param>
@@ -431,32 +373,24 @@ function RecordDetail(props: {
                 ? <span className={css.dim}>{t('record.attachmentsNone')}</span>
                 : (attempt?.artifacts ?? []).map((entry) => {
                   const phrase = artifactPhrase(entry.kind)
-                  const open = artifactPath === entry.path
+                  const row = attachment(entry.path)
                   return (
                     <div key={entry.path}>
                       {/* The PATH is the hover, the name is the row (§九) —
-                          and the row is now the thing that opens it. A second
-                          click closes: the panel shows ONE attachment, so
-                          「点开」 and 「收起」 are the same gesture. */}
+                          and the row is the thing that opens it: in place in
+                          the drawer (a second click closes), one level down
+                          in 查看. */}
                       <button
                         type="button"
                         className={css.artifactRow}
-                        aria-expanded={open}
+                        aria-expanded={row.expanded}
                         title={entry.path}
-                        onClick={() => { onOpenArtifact(open ? null : entry.path) }}
+                        onClick={row.onClick}
                       >
                         <span>{phrase.params === undefined ? t(phrase.key) : t(phrase.key, phrase.params)}</span>
                         <span className={css.dim}>{entry.path.split('/').pop() ?? entry.path}</span>
                       </button>
-                      {open && (
-                        <ArtifactPane
-                          view={artifact}
-                          loading={artifactLoading}
-                          error={artifactError}
-                          onOpenArtifact={onOpenArtifact}
-                          t={t}
-                        />
-                      )}
+                      {row.pane}
                     </div>
                   )
                 })}
@@ -551,7 +485,121 @@ function RecordDetail(props: {
                   </div>
                 ))}
             </Field>
-      </>
+    </>
+  )
+}
+
+/**
+ * ONE run record in full (ui-spec §五 v2): the verdict at the top, how long
+ * each stage took, the parameters it ran under, its artifacts, and the three
+ * human gestures.
+ *
+ * v1 put the mission id, the raw `kind` of every artifact and a JSON receipt
+ * on the page and left a reader to reconstruct the rest. What a person opens
+ * this for is three questions — did it work, where did the time go, and what
+ * did it actually run with — so those are the first three blocks, and the
+ * receipts (attempts, annotation namespaces, the verify output) stay below
+ * them, the verify output still verbatim because an exit code nobody
+ * translated is the whole reason the panel is opened.
+ */
+function RecordDetail(props: {
+  cell: EvalCellDetail | null
+  loading: boolean
+  error: string | null
+  onClose: () => void
+  onRetry: (reason: string, category: string) => void
+  onRelease: () => void
+  onExport: () => void
+  onOpenSession: (sessionId: string, parentSessionId: string | null) => void
+  /** 看作答 (I5·T75): this cell in the answer view. */
+  onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
+  /** Which attachment is expanded, and what the read answered with. */
+  artifactPath: string | null
+  artifact: EvalCellArtifactView | null
+  artifactLoading: boolean
+  artifactError: string | null
+  onOpenArtifact: (path: string | null) => void
+  /** Under the cards, full width, rather than the list's side drawer. */
+  inline?: boolean
+  t: LabViewProps['t']
+}) {
+  const {
+    cell, loading, error, onClose, onRetry, onRelease, onExport, onOpenSession, onOpenAnswers,
+    artifactPath, artifact, artifactLoading, artifactError, onOpenArtifact, t,
+  } = props
+  const [reason, setReason] = useState('')
+  const [category, setCategory] = useState<string>(RETRY_CATEGORIES[0] as string)
+  // T86: in a lab tab the receipts are read in 查看 — one level for the
+  // record, one more for an attachment; outside one they stay in place.
+  const open = useInspect()
+  const attempt = cell === null
+    ? undefined
+    : cell.attempts.find(entry => entry.attempt === cell.attempt)
+  const segments = timelineOf(attempt?.history ?? [])
+  // The scale the timeline bars are drawn against: this record's own longest
+  // segment. Across records the units are the same but the runs are not, so a
+  // shared scale would say something about other cells that this panel is not
+  // showing.
+  const longest = Math.max(0, ...segments.map(segment => segment.ms ?? 0))
+  // The last state of a cell still moving has no length YET — 进行中, which
+  // is what a reader wants to know about it, not a dash.
+  const moving = cell !== null && !isJudgedOrBeyond(cell.state)
+
+  // The pieces, once: the drawer lays them out as one column, the inline
+  // record (a small run, T83 · phase 4) as v5's timeline + actions box with
+  // the receipts folded under it.
+  const parts = cell === null ? null : {
+    head: <RecordHead cell={cell} t={t} />,
+    timeline: (
+            <Field label={t('record.timeline')}>
+              {segments.length === 0
+                ? <span className={css.dim}>{t('record.timelineNone')}</span>
+                : (
+                  <div className={css.timeline}>
+                    {segments.map((segment, index) => (
+                      <div key={`${segment.state}:${String(index)}`} className={css.timelineRow}>
+                        <Chip tone={stageTone(segment.state)} title={segment.state} className={css.timelineChip}>
+                          <Word phrase={stagePhrase(segment.state)} t={t} />
+                        </Chip>
+                        {/* As long as the state lasted, against the longest
+                            state of THIS record. A segment the ledger did not
+                            time draws no bar at all — an unmeasured state and
+                            an instant one must not look the same. */}
+                        <span className={css.timelineTrack}>
+                          {segment.ms !== null && longest > 0 && (
+                            <span
+                              className={css.timelineBar}
+                              style={{ width: `${String(Math.round((segment.ms / longest) * 100))}%` }}
+                            />
+                          )}
+                        </span>
+                        <span className={css.dim}>
+                          {segment.ms !== null
+                            ? <Duration ms={segment.ms} t={t} />
+                            : index === segments.length - 1 && moving ? t('runs.card.now') : '—'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+            </Field>
+    ),
+    receipts: (
+      <RecordReceipts
+        cell={cell}
+        attachment={(path) => {
+          const open = artifactPath === path
+          return {
+            expanded: open,
+            onClick: () => { onOpenArtifact(open ? null : path) },
+            pane: open
+              ? <ArtifactPane view={artifact} loading={artifactLoading} error={artifactError} onOpenArtifact={onOpenArtifact} t={t} />
+              : null,
+          }
+        }}
+        onOpenSession={onOpenSession}
+        t={t}
+      />
     ),
     session: (
               <Button variant="outline"
@@ -614,6 +662,14 @@ function RecordDetail(props: {
       </>
     ),
     noSession: cell.childSessionId === null && <div className={css.dim}>{t('drawer.noSession')}</div>,
+    viewRecord: open !== null && (
+      <Button variant="outline"
+        size="sm"
+        onClick={() => { open({ page: 'record', runId: cell.runId, missionId: cell.missionId, label: recordLabel(cell) }) }}
+      >
+        {t('record.view')}
+      </Button>
+    ),
   }
 
   if (props.inline === true) {
@@ -647,8 +703,9 @@ function RecordDetail(props: {
           <>
             {parts.head}
             {parts.timeline}
-            {parts.receipts}
+            {parts.viewRecord === false && parts.receipts}
             <div className={css.drawerActions}>
+              {parts.viewRecord}
               {parts.session}
               {parts.answer}
               {parts.retry}
@@ -662,7 +719,7 @@ function RecordDetail(props: {
   )
 }
 
-type RecordParts = Record<'head' | 'timeline' | 'receipts' | 'session' | 'answer' | 'retry' | 'releaseExport' | 'noSession', ReactNode>
+type RecordParts = Record<'head' | 'timeline' | 'receipts' | 'session' | 'answer' | 'retry' | 'releaseExport' | 'noSession' | 'viewRecord', ReactNode>
 
 /**
  * One record under a small run's cards, the way v5 draws it (T83 · phase 4):
@@ -749,11 +806,22 @@ function RecordInline(props: {
               {parts.noSession}
             </div>
           </div>
-          <Fold title={t('record.allDetails')}>
-            {parts.head}
-            {parts.receipts}
-            <div className={css.drawerActions}>{parts.releaseExport}</div>
-          </Fold>
+          {parts.viewRecord === false
+            ? (
+              <Fold title={t('record.allDetails')}>
+                {parts.head}
+                {parts.receipts}
+                <div className={css.drawerActions}>{parts.releaseExport}</div>
+              </Fold>
+            )
+            : (
+              // T86: the receipts are one 查看 away; release and export are
+              // gestures, so they join the others.
+              <div className={css.drawerActions}>
+                {parts.viewRecord}
+                {parts.releaseExport}
+              </div>
+            )}
         </>
       )}
     </section>
@@ -1020,3 +1088,80 @@ export function RunsPage(props: {
     </div>
   )
 }
+
+/** A record's name in the lab's words: 题目 × 对比组 × 第几次. */
+function recordLabel(cell: { task: string | null; condition: string | null; rep: number | null; missionId: string }): string {
+  if (cell.task === null && cell.condition === null) return cell.missionId
+  return `${cell.task ?? '—'} × ${cell.condition ?? '—'} × ${cell.rep === null ? '—' : String(cell.rep)}`
+}
+
+/**
+ * 查看 · one run record (T86): the head and every receipt, read by id; an
+ * attachment opens one level down.
+ * @param props - the page props.
+ */
+function RecordPage(props: InspectPageProps<'record'>) {
+  const { target, reads, sessionId, onPush, setSub, t } = props
+  const { runId, missionId } = target
+  const [read, setRead] = useState<{ ok: true; cell: EvalCellDetail } | { ok: false; message: string } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void reads.fetchCell(sessionId, { runId, missionId }).then(flat).then((answer) => {
+      if (!cancelled) setRead(answer.ok ? { ok: true, cell: answer.value } : answer)
+    })
+    return () => { cancelled = true }
+  }, [reads, sessionId, runId, missionId])
+  const attempt = read?.ok === true ? read.cell.attempt : null
+  useEffect(() => {
+    setSub(attempt === null ? runId : `${runId} · ${t('drawer.attemptNo', { attempt })}`)
+  }, [runId, attempt, setSub, t])
+  if (read === null) return <div className={css.dim}>{t('drawer.loading')}</div>
+  if (!read.ok) return <ErrorState what={t('drawer.error')} message={read.message} compact t={t} />
+  const { cell } = read
+  return (
+    <div className={css.drawerBody}>
+      <RecordHead cell={cell} t={t} />
+      <RecordReceipts
+        cell={cell}
+        attachment={path => ({
+          expanded: false,
+          onClick: () => { onPush({ page: 'artifact', runId, missionId, attempt: cell.attempt, path }) },
+          pane: null,
+        })}
+        onOpenSession={(child, parent) => { reads.openSession(child as SessionId, parent as SessionId | null) }}
+        t={t}
+      />
+    </div>
+  )
+}
+
+/**
+ * 查看 · one attachment of a record (T86): text verbatim, a directory as its
+ * entries (each one level further down), a refused binary by its size.
+ * @param props - the page props.
+ */
+function ArtifactPage(props: InspectPageProps<'artifact'>) {
+  const { target, reads, sessionId, onPush, setSub, t } = props
+  const { runId, missionId, attempt, path } = target
+  const [read, setRead] = useState<{ view: EvalCellArtifactView | null; error: string | null } | null>(null)
+  useEffect(() => { setSub(`${runId} · ${path}`) }, [runId, path, setSub])
+  useEffect(() => {
+    let cancelled = false
+    void reads.fetchCellArtifact(sessionId, { runId, missionId, attempt, path }).then(flat).then((answer) => {
+      if (!cancelled) setRead(answer.ok ? { view: answer.value, error: null } : { view: null, error: answer.message })
+    })
+    return () => { cancelled = true }
+  }, [reads, sessionId, runId, missionId, attempt, path])
+  return (
+    <ArtifactPane
+      view={read?.view ?? null}
+      loading={read === null}
+      error={read?.error ?? null}
+      onOpenArtifact={(next) => { onPush({ page: 'artifact', runId, missionId, attempt, path: next }) }}
+      t={t}
+    />
+  )
+}
+
+registerInspectPage('record', RecordPage)
+registerInspectPage('artifact', ArtifactPage)

@@ -122,7 +122,7 @@ export function WorktreesBadge({ sessionId, summary, fetchBadgeConfig, fetchComp
   //    hand-maintained list gates, exactly the pilot semantics.
   // 2. Otherwise the OFFICIAL composition data decides: the badge shows
   //    exactly when the session's preset composition names the
-  //    `@khorsheed/dsh-worktrees-tool` row. A preset group that is missing
+  //    `@khorsheed/dsh-worktrees/tool` row. A preset group that is missing
   //    from the snapshot or answered `broken` is unreadable data, not an
   //    answer — fail-open; so is a pending/failed inventory fetch.
   if (preset !== undefined) {

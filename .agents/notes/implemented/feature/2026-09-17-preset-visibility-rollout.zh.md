@@ -27,7 +27,7 @@ Status: implemented
 
 ## 影响
 
-- 行为：web-dev 里 standard preset 会话不再见 worktrees tab（徽标早已隐）；3080 上只有 dsh-writing 会话见 canvas tab；web-eval 里 `/eval` `/datasets` `/mission` 只在 eval preset 会话出现。无会话首页一律 fail-open（入口可见）。
+- 行为：dev 里 standard preset 会话不再见 worktrees tab（徽标早已隐）；3080 上只有 dsh-writing 会话见 canvas tab；web-eval 里 `/eval` `/datasets` `/mission` 只在 eval preset 会话出现。无会话首页一律 fail-open（入口可见）。
 - breaking：slash 离开 profile 根——未授予会话失去补全项（目的本身），直接执行得到守卫的错误文案。
 - canvas client 的 `inject` 加回 `sessions`；`@deepseek-ai/dsh-api-session-controller` 回到 devDependencies（回滚时摘掉的两样）。
 - docs/plugin-visibility.md：速查表增 slash/设置卡行；判据轴改「每条授予路径都有真值 + 隐藏语义自洽」；反模式钉死「不枚举全部授予路径」。

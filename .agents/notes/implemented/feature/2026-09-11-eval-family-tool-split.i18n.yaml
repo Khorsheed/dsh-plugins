@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-11-eval-family-tool-split.md
-.agents/notes/implemented/feature/2026-09-11-eval-family-tool-split.md: 2759d52b39e85bdd9afb08fd46e8394c574eff4a
-.agents/notes/implemented/feature/2026-09-11-eval-family-tool-split.zh.md: cb47893f5bde61c34a633c6473c273f05fc4da92
+.agents/notes/implemented/feature/2026-09-11-eval-family-tool-split.md: 97eeabbca080b5d3f529640412218510f69d6514
+.agents/notes/implemented/feature/2026-09-11-eval-family-tool-split.zh.md: 4bdf892856999eff31e11bab25bf82e90039b20e

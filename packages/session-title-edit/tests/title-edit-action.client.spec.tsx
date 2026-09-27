@@ -12,7 +12,7 @@ import { isRenameFailure, type RenameFailure } from '../src/client/slots.ts'
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  // Drop any in-place crumb fixture mounted by a spec.
+  // Drop any header fixture mounted by a spec.
   document.body.innerHTML = ''
 })
 
@@ -59,7 +59,10 @@ const OPEN = { name: '重命名会话' }
 const SAVE = { name: '保存' }
 const CANCEL = { name: '取消' }
 
-/** Mutable rect the fixture crumb reports, so specs can prove re-measurement. */
+/** The two host DOM lines the in-place probe supports. */
+type HostLine = 'legacy' | 'current'
+
+/** Mutable rect the fixture's current-title node reports, so specs can prove re-measurement. */
 interface RectState {
   left: number
   top: number
@@ -67,15 +70,51 @@ interface RectState {
   height: number
 }
 
+/** The rect a freshly mounted fixture reports. */
+const FIXTURE_RECT: RectState = { left: 10, top: 20, width: 100, height: 28 }
+
+/** Knobs for {@link mountHeader}. */
+interface HeaderOptions {
+  /** Ancestor crumb text — set it equal to the title to prove the probe stays on the last segment. */
+  ancestor?: string
+  /** Extra sibling after the title node (the official lineage slot's seat). */
+  lineage?: string
+  /** Viewport rect the current-title node reports. */
+  rect?: RectState
+}
+
 /**
- * Mount a fake official header crumb (a disabled button inside `header nav`)
- * so the in-place probe locates it; jsdom's default rect is all zeros, so the
- * fixture supplies one.
+ * Mount an official-header stand-in with the shape both supported host lines
+ * draw (host `ConversationSession.tsx` + the renderer's slot anchor):
+ * titleCluster > nav (one `crumbSeg` per breadcrumb, a `'/'` separator, the
+ * current title node LAST) plus the headerActions row this entry is mounted in,
+ * which holds the slot's own `[data-slot=…]` anchor (`display: contents`). The
+ * lines differ in that node alone:
+ *  - `legacy` (host ≤ 0.1.6): `<button type="button" disabled>`, the current
+ *    crumb being the header's only disabled crumb button;
+ *  - `current` (host ≥ 0.1.7-alpha.1, upstream 92101e1a5b): plain
+ *    `<span class="crumbCurrent">` text, because a disabled button was
+ *    subtracted from the darwin window-drag band.
+ * jsdom reports zero rects, so the fixture supplies the measured one.
+ * @param line - which host DOM line to mirror.
+ * @param title - the current session title, as the crumb renders it.
+ * @param options - ancestor text, trailing lineage content, and the rect.
+ * @returns the slot anchor container to render the entry into.
  */
-function mountCrumb(title: string, rect: RectState = { left: 10, top: 20, width: 100, height: 28 }): HTMLButtonElement {
-  document.body.innerHTML = `<header><nav aria-label="Session hierarchy"><span><button disabled>${title}</button></span></nav></header>`
-  const crumb = document.querySelector('header nav button:disabled') as HTMLButtonElement
-  crumb.getBoundingClientRect = () => ({
+function mountHeader(line: HostLine, title: string, options: HeaderOptions = {}): HTMLElement {
+  const rect = options.rect ?? { ...FIXTURE_RECT }
+  const current = line === 'legacy'
+    ? `<button type="button" class="crumb crumbCurrent" disabled>${title}</button>`
+    : `<span class="crumb crumbCurrent">${title}</span>`
+  const lineage = options.lineage === undefined ? '' : `<span class="lineage">${options.lineage}</span>`
+  document.body.innerHTML = '<header><div class="titleCluster"><nav aria-label="会话层级">'
+    + `<span class="crumbSeg"><button type="button" class="crumb">${options.ancestor ?? 'Ancestor'}</button></span>`
+    + `<span class="crumbSeg"><span class="crumbSep">/</span>${current}${lineage}</span>`
+    + '</nav><div class="headerActions">'
+    + '<div data-slot="conversation.session.header.actions" style="display:contents"></div>'
+    + '</div></div><div class="headerUtilities"></div></header>'
+  const title$ = fixtureTitle()
+  title$.getBoundingClientRect = () => ({
     left: rect.left,
     top: rect.top,
     width: rect.width,
@@ -86,12 +125,22 @@ function mountCrumb(title: string, rect: RectState = { left: 10, top: 20, width:
     y: rect.top,
     toJSON: () => ({}),
   })
-  return crumb
+  return document.querySelector('[data-slot="conversation.session.header.actions"]') as HTMLElement
 }
 
-/** The fixture crumb element, or null when no in-place fixture is mounted. */
-function fixtureCrumb(): HTMLButtonElement | null {
-  return document.querySelector('header nav button:disabled') as HTMLButtonElement | null
+/** The fixture's current-title node (`.crumbCurrent` on both host lines). */
+function fixtureTitle(): HTMLElement {
+  return document.querySelector('header nav .crumbCurrent') as HTMLElement
+}
+
+/** The fixture's ancestor crumb (navigation, never the title). */
+function fixtureAncestor(): HTMLElement {
+  return document.querySelector('header nav .crumbSeg:first-child .crumb') as HTMLElement
+}
+
+/** Render the entry inside a mounted fixture header's actions row. */
+function renderInHeader(container: HTMLElement, over: Parameters<typeof props>[0] = {}) {
+  return render(<TitleEditAction {...props(over)} />, { container })
 }
 
 describe('TitleEditAction open and prefill', () => {
@@ -257,10 +306,9 @@ describe('TitleEditAction failures', () => {
   })
 })
 
-describe('TitleEditAction in-place editing (crumb fixture mounted)', () => {
-  it('opens in place: hides the official crumb and overlays the input at its rect', () => {
-    mountCrumb('Current title')
-    render(<TitleEditAction {...props({ title: 'Current title' })} />)
+describe.each(['legacy', 'current'] as const)('TitleEditAction in-place editing (%s host line)', (line) => {
+  it('opens in place: hides the official title and overlays the input at its rect', () => {
+    renderInHeader(mountHeader(line, 'Current title'), { title: 'Current title' })
     fireEvent.click(screen.getByRole('button', OPEN))
     const input = screen.getByRole('textbox') as HTMLInputElement
     expect(input.className).toBeTruthy()
@@ -269,13 +317,14 @@ describe('TitleEditAction in-place editing (crumb fixture mounted)', () => {
     expect(input.style.width).toBe('100px')
     expect(input.value).toBe('Current title')
     expect(input.selectionStart).toBe(0)
-    expect(fixtureCrumb()?.getAttribute('data-ste-inplace')).toBe('')
+    expect(fixtureTitle().getAttribute('data-ste-inplace')).toBe('')
+    // The ancestor crumb navigates, so it is never the title: it stays visible.
+    expect(fixtureAncestor().hasAttribute('data-ste-inplace')).toBe(false)
   })
 
-  it('commits on Enter and restores the crumb', async () => {
+  it('commits on Enter and restores the title', async () => {
     const rename = vi.fn(async () => {})
-    mountCrumb('Old')
-    render(<TitleEditAction {...props({ title: 'Old', rename })} />)
+    renderInHeader(mountHeader(line, 'Old'), { title: 'Old', rename })
     fireEvent.click(screen.getByRole('button', OPEN))
     const input = screen.getByRole('textbox')
     fireEvent.change(input, { target: { value: '  New  ' } })
@@ -283,35 +332,32 @@ describe('TitleEditAction in-place editing (crumb fixture mounted)', () => {
     expect(rename).toHaveBeenCalledWith('New')
     await act(async () => {})
     expect(screen.queryByRole('textbox')).toBeNull()
-    expect(fixtureCrumb()?.hasAttribute('data-ste-inplace')).toBe(false)
+    expect(fixtureTitle().hasAttribute('data-ste-inplace')).toBe(false)
   })
 
-  it('cancels on Escape and restores the crumb', () => {
+  it('cancels on Escape and restores the title', () => {
     const rename = vi.fn(async () => {})
-    mountCrumb('Old')
-    render(<TitleEditAction {...props({ title: 'Old', rename })} />)
+    renderInHeader(mountHeader(line, 'Old'), { title: 'Old', rename })
     fireEvent.click(screen.getByRole('button', OPEN))
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
     expect(rename).not.toHaveBeenCalled()
     expect(screen.queryByRole('textbox')).toBeNull()
-    expect(fixtureCrumb()?.hasAttribute('data-ste-inplace')).toBe(false)
+    expect(fixtureTitle().hasAttribute('data-ste-inplace')).toBe(false)
   })
 
-  it('cancels on blur and restores the crumb', () => {
+  it('cancels on blur and restores the title', () => {
     const rename = vi.fn(async () => {})
-    mountCrumb('Old')
-    render(<TitleEditAction {...props({ title: 'Old', rename })} />)
+    renderInHeader(mountHeader(line, 'Old'), { title: 'Old', rename })
     fireEvent.click(screen.getByRole('button', OPEN))
     fireEvent.blur(screen.getByRole('textbox'))
     expect(rename).not.toHaveBeenCalled()
     expect(screen.queryByRole('textbox')).toBeNull()
-    expect(fixtureCrumb()?.hasAttribute('data-ste-inplace')).toBe(false)
+    expect(fixtureTitle().hasAttribute('data-ste-inplace')).toBe(false)
   })
 
-  it('shows the rejection in the actions row and keeps the crumb hidden', async () => {
+  it('shows the rejection in the actions row and keeps the title hidden', async () => {
     const rename = vi.fn(async () => { throw renameFailure('title-invalid') })
-    mountCrumb('Old')
-    render(<TitleEditAction {...props({ title: 'Old', rename })} />)
+    renderInHeader(mountHeader(line, 'Old'), { title: 'Old', rename })
     fireEvent.click(screen.getByRole('button', OPEN))
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'New' } })
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
@@ -319,22 +365,20 @@ describe('TitleEditAction in-place editing (crumb fixture mounted)', () => {
     // In-flow (actions row), never fixed: it cannot overlap the title area.
     expect(screen.getByRole('alert').style.position).toBe('')
     expect(screen.getByRole('textbox')).toBeTruthy()
-    expect(fixtureCrumb()?.getAttribute('data-ste-inplace')).toBe('')
+    expect(fixtureTitle().getAttribute('data-ste-inplace')).toBe('')
   })
 
-  it('restores the crumb when it unmounts mid-edit', () => {
-    mountCrumb('Old')
-    const { unmount } = render(<TitleEditAction {...props({ title: 'Old' })} />)
+  it('restores the title when it unmounts mid-edit', () => {
+    const { unmount } = renderInHeader(mountHeader(line, 'Old'), { title: 'Old' })
     fireEvent.click(screen.getByRole('button', OPEN))
-    expect(fixtureCrumb()?.getAttribute('data-ste-inplace')).toBe('')
+    expect(fixtureTitle().getAttribute('data-ste-inplace')).toBe('')
     unmount()
-    expect(fixtureCrumb()?.hasAttribute('data-ste-inplace')).toBe(false)
+    expect(fixtureTitle().hasAttribute('data-ste-inplace')).toBe(false)
   })
 
   it('re-measures the overlay when the window resizes', () => {
     const rect: RectState = { left: 10, top: 20, width: 100, height: 28 }
-    mountCrumb('Old', rect)
-    render(<TitleEditAction {...props({ title: 'Old' })} />)
+    renderInHeader(mountHeader(line, 'Old', { rect }), { title: 'Old' })
     fireEvent.click(screen.getByRole('button', OPEN))
     expect(screen.getByRole<HTMLInputElement>('textbox').style.left).toBe('10px')
     rect.left = 50
@@ -345,8 +389,7 @@ describe('TitleEditAction in-place editing (crumb fixture mounted)', () => {
   it('keeps the editor open while the rename is in flight: blur does not cancel', async () => {
     let settle!: () => void
     const rename = vi.fn(() => new Promise<void>((resolve) => { settle = resolve }))
-    mountCrumb('Old')
-    render(<TitleEditAction {...props({ title: 'Old', rename })} />)
+    renderInHeader(mountHeader(line, 'Old'), { title: 'Old', rename })
     fireEvent.click(screen.getByRole('button', OPEN))
     const input = screen.getByRole('textbox')
     fireEvent.change(input, { target: { value: 'Busy' } })
@@ -354,10 +397,40 @@ describe('TitleEditAction in-place editing (crumb fixture mounted)', () => {
     expect(rename).toHaveBeenCalledWith('Busy')
     fireEvent.blur(input)
     expect(screen.getByRole('textbox')).toBeTruthy()
-    expect(fixtureCrumb()?.getAttribute('data-ste-inplace')).toBe('')
+    expect(fixtureTitle().getAttribute('data-ste-inplace')).toBe('')
     await act(async () => { settle() })
     expect(screen.queryByRole('textbox')).toBeNull()
-    expect(fixtureCrumb()?.hasAttribute('data-ste-inplace')).toBe(false)
+    expect(fixtureTitle().hasAttribute('data-ste-inplace')).toBe(false)
+  })
+
+  it('stays on the current crumb when an ancestor carries the same title', () => {
+    renderInHeader(mountHeader(line, 'Same title', { ancestor: 'Same title' }), { title: 'Same title' })
+    fireEvent.click(screen.getByRole('button', OPEN))
+    expect(fixtureAncestor().hasAttribute('data-ste-inplace')).toBe(false)
+    expect(fixtureTitle().getAttribute('data-ste-inplace')).toBe('')
+  })
+
+  it('leaves slot-rendered lineage content after the title untouched', () => {
+    renderInHeader(mountHeader(line, 'Parent session', { lineage: '3' }), { title: 'Parent session' })
+    fireEvent.click(screen.getByRole('button', OPEN))
+    const lineage = document.querySelector('header nav .lineage') as HTMLElement
+    expect(lineage.hasAttribute('data-ste-inplace')).toBe(false)
+    expect(fixtureTitle().getAttribute('data-ste-inplace')).toBe('')
+  })
+
+  it('probes by projected title text, with the disabled-button shape as the ≤0.1.6 fallback', () => {
+    // The store still shows the previous title while the crumb already renders
+    // the new one. The legacy line locates the crumb by its disabled-button
+    // shape; the current line has no such marker and degrades to the row editor.
+    renderInHeader(mountHeader(line, 'Rendered title'), { title: 'Projected title' })
+    fireEvent.click(screen.getByRole('button', OPEN))
+    if (line === 'legacy') {
+      expect(fixtureTitle().getAttribute('data-ste-inplace')).toBe('')
+      expect(screen.queryByRole('button', SAVE)).toBeNull()
+    } else {
+      expect(document.querySelector('header nav [data-ste-inplace]')).toBeNull()
+      expect(screen.getByRole<HTMLButtonElement>('button', SAVE)).toBeTruthy()
+    }
   })
 })
 
@@ -400,13 +473,12 @@ describe('TitleEditAction length gate (row editor)', () => {
   })
 })
 
-describe('TitleEditAction in-place auto-fit', () => {
+describe.each(['legacy', 'current'] as const)('TitleEditAction in-place auto-fit (%s host line)', (line) => {
   it('grows the overlay with the draft text and clamps at the official 220px crumb cap', () => {
-    mountCrumb('Short')
-    render(<TitleEditAction {...props({ title: 'Short' })} />)
+    renderInHeader(mountHeader(line, 'Short'), { title: 'Short' })
     fireEvent.click(screen.getByRole('button', OPEN))
     const input = screen.getByRole<HTMLInputElement>('textbox')
-    // Open floors the fitted width at the crumb's measured width (100px fixture).
+    // Open floors the fitted width at the title node's measured width (100px fixture).
     expect(input.style.width).toBe('100px')
     const mirror = document.querySelector('[aria-hidden="true"]') as HTMLSpanElement
     expect(mirror).toBeTruthy()
@@ -420,27 +492,25 @@ describe('TitleEditAction in-place auto-fit', () => {
     expect(input.style.width).toBe('220px')
   })
 
-  it('never shrinks the overlay below the crumb width while deleting', () => {
-    mountCrumb('A fairly long original title')
-    render(<TitleEditAction {...props({ title: 'A fairly long original title' })} />)
+  it('never shrinks the overlay below the title width while deleting', () => {
+    renderInHeader(mountHeader(line, 'A fairly long original title'), { title: 'A fairly long original title' })
     fireEvent.click(screen.getByRole('button', OPEN))
     const input = screen.getByRole<HTMLInputElement>('textbox')
-    expect(input.style.width).toBe('100px') // fixture crumb width 100
+    expect(input.style.width).toBe('100px') // fixture title width 100
     fireEvent.change(input, { target: { value: 'x' } })
-    // Mirror measures 0 in jsdom; the crumb-width floor keeps the box stable.
+    // Mirror measures 0 in jsdom; the title-width floor keeps the box stable.
     expect(input.style.width).toBe('100px')
   })
 
   it('shows the over-limit hint in place and blocks Enter commit', () => {
     const rename = vi.fn(async () => {})
-    mountCrumb('Old')
-    render(<TitleEditAction {...props({ title: 'Old', rename })} />)
+    renderInHeader(mountHeader(line, 'Old'), { title: 'Old', rename })
     fireEvent.click(screen.getByRole('button', OPEN))
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '汉'.repeat(27) } })
     expect(screen.getByRole('alert').textContent).toContain('最多 80 字节')
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
     expect(rename).not.toHaveBeenCalled()
     expect(screen.getByRole('textbox')).toBeTruthy()
-    expect(fixtureCrumb()?.getAttribute('data-ste-inplace')).toBe('')
+    expect(fixtureTitle().getAttribute('data-ste-inplace')).toBe('')
   })
 })

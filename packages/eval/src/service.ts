@@ -48,6 +48,8 @@ import {
   type ExperimentRecord,
 } from './experiment-store.ts'
 import { listAnalysisFiles, readExperimentArtifact } from './experiment-artifact.ts'
+import { listItemMaterials, previewJudgePrompt, readDatasetFile, readJudgePrompt, type PinnedDataset } from './item-materials.ts'
+import { readFile as readTextFile } from 'node:fs/promises'
 import { composeExperimentGet, type EvalExperimentGetView } from './experiment-get.ts'
 import { importExperiments, type ImportReport } from './import.ts'
 import { recordArchive, recordClosure } from './closure.ts'
@@ -77,6 +79,8 @@ import type {
   EvalConditionEndpointRequest, EvalConditionEndpointView,
   EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
   EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult, EvalExperimentArtifactRequest, EvalExperimentArtifactView, EvalImportRequest,
+  EvalItemMaterialsRequest, EvalItemMaterialsView, EvalDatasetFileRequest, EvalDatasetFileView,
+  EvalJudgePromptPreviewRequest, EvalJudgePromptPreviewView, EvalJudgePromptRequest, EvalJudgePromptView,
   EvalExperimentDetail, EvalExperimentsResult, EvalExportPlanRequest, EvalExportPlanView, EvalExportResultView,
   EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView, EvalAnswerSheet, EvalCellAnswersRequest,
   EvalJudgeVerdictInput, EvalMatrixView, EvalPlanItemsView, EvalPlanNumbersRequest, EvalPlanNumbersResult, EvalPlanRequest, EvalPlanReview, EvalReexportRequest, EvalRunReportView, EvalRunUnitsView,
@@ -341,6 +345,73 @@ export class EvalService {
   async experimentArtifact(request: EvalExperimentArtifactRequest): Promise<EvalExperimentArtifactView> {
     const record = await this.experimentRecord(request.experimentId)
     return readExperimentArtifact(record, request.path)
+  }
+
+  /**
+   * The experiment's dataset pin and the two plan fields the item drawer and
+   * the judge preview need (T84). The plan is read as the page reads it: the
+   * experiment's own `plan.json`, never re-derived.
+   */
+  private async experimentPin(experimentId: string): Promise<{ pin: PinnedDataset; stages: string[] | null; judges: string[] }> {
+    const record = await this.experimentRecord(experimentId)
+    const registration = await this.registryFace().registration(record.meta.dataset.registry)
+    let stages: string[] | null = null
+    let judges: string[] = []
+    try {
+      const plan = JSON.parse(await readTextFile(record.planPath, 'utf8')) as Record<string, unknown>
+      if (Array.isArray(plan['stages'])) stages = plan['stages'].filter((s): s is string => typeof s === 'string')
+      const judge = plan['judge']
+      if (typeof judge === 'object' && judge !== null && Array.isArray((judge as Record<string, unknown>)['conditions'])) {
+        judges = ((judge as Record<string, unknown>)['conditions'] as unknown[]).filter((s): s is string => typeof s === 'string')
+      }
+    } catch { /* an unreadable plan: every stage, no named judge */ }
+    return {
+      pin: {
+        datasets: this.hosts?.get('datasets') as DatasetsFace | undefined,
+        repo: registration.commonDir,
+        datasetId: record.meta.dataset.set,
+        commit: record.meta.dataset.commit,
+      },
+      stages,
+      judges,
+    }
+  }
+
+  /**
+   * 题目抽屉 (T84): one item's files sorted into the five tabs, and its
+   * rubric as rows — at the commit the experiment pins.
+   * @throws {@link EvalReadRefused} when the experiment, the registration or the item cannot be read.
+   */
+  async itemMaterials(request: EvalItemMaterialsRequest): Promise<EvalItemMaterialsView> {
+    const { pin, stages } = await this.experimentPin(request.experimentId)
+    return listItemMaterials(pin, { experimentId: request.experimentId, item: request.item, planStages: stages })
+  }
+
+  /**
+   * One file of the pinned dataset — the drawer's right pane. Text only, cut
+   * past the size limit and said so.
+   */
+  async datasetFile(request: EvalDatasetFileRequest): Promise<EvalDatasetFileView> {
+    const { pin } = await this.experimentPin(request.experimentId)
+    return readDatasetFile(pin, request)
+  }
+
+  /**
+   * 判官提示词 before the run (T84 §四.2): the real prompt builder over the
+   * in-scope llm-draft criteria, the player's material as placeholders.
+   */
+  async judgePromptPreview(request: EvalJudgePromptPreviewRequest): Promise<EvalJudgePromptPreviewView> {
+    const { pin, stages, judges } = await this.experimentPin(request.experimentId)
+    const judge = request.judge ?? judges[0] ?? 'judge'
+    return previewJudgePrompt(pin, { experimentId: request.experimentId, item: request.item, judge, planStages: stages })
+  }
+
+  /**
+   * 判官提示词 after the run: the prompt.md one cell's judging wrote,
+   * confined to that run's judge directory.
+   */
+  async judgePrompt(request: EvalJudgePromptRequest): Promise<EvalJudgePromptView> {
+    return readJudgePrompt(this.stateRoot(), request)
   }
 
   /**
@@ -739,6 +810,7 @@ export class EvalService {
         datasetId: pin.set,
         commit: pin.commit,
         items: digest.items,
+        planStages: digest.stages,
       })
     } catch (error) {
       items = { items: [], notes: [`the dataset registration could not be read: ${error instanceof Error ? error.message : String(error)}`] }

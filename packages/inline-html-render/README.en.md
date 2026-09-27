@@ -6,7 +6,7 @@ English | [中文](README.md)
 
 Without it, an agent that wants you to *see* a result can only paste code for you to imagine, or write an HTML file you have to open in a preview. This plugin swaps the fenced block whose info string is `dsh-card` for a sandboxed iframe — mid-message — that runs the authored HTML: inline between paragraphs and genuinely interactive, not ASCII art or a prose description.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="a dsh-card block in the agent's reply rendered as a tabbed data-observation card, flowing with the surrounding text">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="a dsh-card block in the agent's reply rendered as a tabbed data-observation card, flowing with the surrounding text">
 
 ```dsh-card
 <div style="font:14px system-ui;padding:16px;background:#1e1e1e;border-radius:10px;color:#eee">

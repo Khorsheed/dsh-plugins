@@ -34,7 +34,7 @@
 
 **两层的生命周期预期不同，直接影响投入。** base 是替官方补课，因此**不该过度投资**——够用即可，官方补上就按 [AGENTS.md 的 Compatibility labeling](../AGENTS.md) 退役该路径，提案按「官方吸收」转 `closed`。feature 是自己的领域资产，官方不会替你做 mission / lab / room，值得深耕。
 
-**domain 整合包可以包含 `ops` 层的包，当该包是它的安装或运维通道时。** `dsh-web-basic` 含 `ankh-guard` 即属此例：`restart-into-web-basic.sh` 走的正是它的守卫通道（环境探针 → 凭证 → preflight → watchdog 停旧启新 + canary），没有它就没有「同端口交接、不用记新端口」的安装体验，而那是 README 的核心卖点、也是 B9 判据 1–3 的执行基础。为分类整洁移出它，是拿用户体验换纯粹性。
+**domain 整合包可以包含 `ops` 层的包，当该包是它的安装或运维通道时。** `dsh-basic` 含 `ankh-guard` 即属此例：`restart-into-basic.sh` 走的正是它的守卫通道（环境探针 → 凭证 → preflight → watchdog 停旧启新 + canary），没有它就没有「同端口交接、不用记新端口」的安装体验，而那是 README 的核心卖点、也是 B9 判据 1–3 的执行基础。为分类整洁移出它，是拿用户体验换纯粹性。
 
 `feature` 层独立的理由：local-agent 家族、mission、lab 这批包不是每个 domain 都要（写小说不需要委派编码 CLI，也不需要实验单元），塞进 base 会让基础整合包变重；但它们也不专属某个 domain（mission 归 eval 还是 dev？两边都要）。强行按「主标签唯一」归类会产生归属冲突。
 
@@ -50,7 +50,7 @@ domain 是 **workflow 的组装单位**，运行时就是**一个 profile**；�
 
 | domain | 组成 | 状态 |
 |---|---|---|
-| **`daily`** 日常 | base 全体 | 即现有 `dsh-web-basic` profile。preset 用官方 `standard` 即可——base 的 skill 与 tool 落在 global 层，本就全局可见 |
+| **`daily`** 日常 | base 全体 | 即现有 `dsh-basic` profile。preset 用官方 `standard` 即可——base 的 skill 与 tool 落在 global 层，本就全局可见 |
 | **`dev`** 开发工作台 | base + local-agent + worktrees + mission + room | **首发目标**。日常管理 catmem 这类项目的形态 |
 | `eval` 评测对比 | base + local-agent + mission + datasets + lab | 组成初稿见 package-management |
 | `novel` 小说创作 | base + ? | 未展开 |
@@ -62,7 +62,7 @@ domain 是 **workflow 的组装单位**，运行时就是**一个 profile**；�
 一个 domain 就是**一个 profile**。切换工作模式的动作是：`ankh-guard restart` 换到另一个 profile，同端口交接，浏览器刷新原地址。
 
 ```sh
-# 形态即 dsh-web-basic 的 restart-into-web-basic.sh 那一行
+# 形态即 dsh-basic 的 restart-into-basic.sh 那一行
 ankh-guard restart --port 3080 \
   --start "DSH_HOME=… dsh --profile dsh-dev --port 3080 --no-open" \
   --profile dsh-dev --state-dir "$DSH_HOME/state"
@@ -165,7 +165,7 @@ dsh-dev/
 
 | 整合包 | 状态 | 组成 |
 |---|---|---|
-| `dsh-web-basic` | ✅ 10 成员已发 npm 0.1.0 | base 全体 + `ankh-guard`（见「待决」）|
+| `dsh-basic` | ✅ 10 成员已发 npm 0.1.0 | base 全体 + `ankh-guard`（见「待决」）|
 | `dsh-dev` | ⬜ | **首发目标**：base + local-agent 家族 + worktrees + mission + room |
 | `dsh-web-eval` | ⬜ 规划中（I0） | base + local-agent 家族 + mission + datasets + lab + `dsh-eval` 编排器（待建）。目标架构、成员改动、冻结决策与迭代计划 I0–I6 见 [profiles/web-eval](../profiles/web-eval/README.md) |
 | `dsh-novel` | ⬜ | 未展开 |
@@ -215,26 +215,26 @@ dsh-dev/
 
 ## 七、本期迭代：两个整合包上 GitHub
 
-**目标**：`dsh-web-basic` 更新、`dsh-web-dev` 新建，两者都上 GitHub，并由我们自己充分测试。**本期不发 npm**——推社区是下一期的事。
+**目标**：`dsh-basic` 更新、`dsh-dev` 新建，两者都上 GitHub，并由我们自己充分测试。**本期不发 npm**——推社区是下一期的事。
 
-**形态**：沿用 `dsh-web-basic` 的形态 B（profile 目录模板 + `install.sh` + 守卫重启脚本）。尚未上 npm 的成员按 dsh-plugins README 现有做法处理：README 标注「从源码安装」，本地用 tarball 装配。
+**形态**：沿用 `dsh-basic` 的形态 B（profile 目录模板 + `install.sh` + 守卫重启脚本）。尚未上 npm 的成员按 dsh-plugins README 现有做法处理：README 标注「从源码安装」，本地用 tarball 装配。
 
 三条线可并行：**A 轻、先跑通流程为 B 探路**；**B 是主体**；**C 是前置修复，不阻塞 A/B 的文件工作**。
 
-### A 线：镜像化 + dsh-web-basic 更新
+### A 线：镜像化 + dsh-basic 更新
 
-整合包源迁进 monorepo 的 `profiles/` 目录，用同步脚本推镜像仓——**monorepo 是单一事实源，镜像仓是「clone 即装」的门面**。web-basic 这次正好要加成员，当第一个验证案例。
+整合包源迁进 monorepo 的 `profiles/` 目录，用同步脚本推镜像仓——**monorepo 是单一事实源，镜像仓是「clone 即装」的门面**。basic 这次正好要加成员，当第一个验证案例。
 
-> **定位**：整合包 = **一个可分发的 profile**（不是「插件集合」）。`dsh-plugins/profiles/web-basic/` 对应用户机器上的 `~/.dsh/profiles/web-basic/`——同名是对应关系而非撞车。由此得到三个原生语义：
+> **定位**：整合包 = **一个可分发的 profile**（不是「插件集合」）。`dsh-plugins/profiles/basic/` 对应用户机器上的 `~/.dsh/profiles/basic/`——同名是对应关系而非撞车。由此得到三个原生语义：
 >
-> - **自由装卸载是官方动词**：`dsh --profile web-basic plugin rm @khorsheed/dsh-taskpilot` 即卸载。不需要自造开关（`plugin-manager` 因此废得更彻底），且是宿主背书的方式。
-> - **会话跨 profile 共享**：会话存 `$DSH_HOME/sessions/`，home 级、不属任何 profile。在纯净 `web` 与 `web-basic` 之间切换，历史会话都在。
+> - **自由装卸载是官方动词**：`dsh --profile basic plugin rm @khorsheed/dsh-taskpilot` 即卸载。不需要自造开关（`plugin-manager` 因此废得更彻底），且是宿主背书的方式。
+> - **会话跨 profile 共享**：会话存 `$DSH_HOME/sessions/`，home 级、不属任何 profile。在纯净 `web` 与 `basic` 之间切换，历史会话都在。
 > - **与官方方向一致**：0.1.2 把 Python SDK / ACP 等启动模式都收敛到 `dsh --profile`，profile 是官方押注的分发单元。
 
 | # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
 | A1 | **`capability-catalog` 功能冻结**：停止高频迭代、定下版本线 | — | 版本号一个工作日内不变 |
-| A2 | 建 `profiles/web-basic/`：**拉平结构**——仓库根即 profile（`package.json` / `cordis.patch.yml` / `pnpm-*.yaml`）+ `scripts/` + 双语 README + CHANGELOG + `docs/screenshots/` | — | monorepo 的 `packages/*` 够不着它，workspace 不吸收 |
+| A2 | 建 `profiles/basic/`：**拉平结构**——仓库根即 profile（`package.json` / `cordis.patch.yml` / `pnpm-*.yaml`）+ `scripts/` + 双语 README + CHANGELOG + `docs/screenshots/` | — | monorepo 的 `packages/*` 够不着它，workspace 不吸收 |
 | A3 | **逐字节搬**现有 README 双指南与 restart 脚本 | A2 | 与镜像仓 diff 为空——**不许动行为**：watchdog 交接、`$DSH_SESSION_ID` 寻址、不硬编码 `--initiator` 都是事故换来的。（`install.sh` 的 `SRC` 一行属路径适配，已批准） |
 | A3b | **拷贝语义改显式白名单**：`cp package.json cordis.patch.yml pnpm-workspace.yaml pnpm-lock.yaml presets/ …`，新增模板文件必须显式加入 | A3 | **不是「全拷减排除」**——结构拉平后配套与 profile 文件同居，全拷的失败模式是新文件无声泄进用户 `$DSH_HOME`；白名单的失败模式是不生效、当场被 `--dump-config` 行数抓到。选响亮的 |
 | A3c | `.gitignore` 截图例外注释扩成「`docs/screenshots/` 与 `profiles/*/docs/screenshots/`」 | A2 | 整合包截图同样 `git add -f` |
@@ -249,21 +249,21 @@ dsh-dev/
 | A12 | A11 的验收步骤（测试或手写清单） | A11 | 全新安装、旧实例升级两条路径都过 |
 | A13 | 全新 `$DSH_HOME` 装一遍 | A8·A11 | 一次通过 |
 | A14 | **agent 照指南装**：把 README 那句话原样发给一个 agent，看它能否独立装成 | A13 | **README 的终极验证**——指南是写给 agent 读的，读完做不对就是指南的 bug。隔离环境跑，不碰 3080 |
-| A15 | **自由装卸载实测**：每个成员 `dsh --profile web-basic plugin rm <pkg>` → 重启 → 功能消失且其余不受影响 → `plugin add` 回来恢复 | A13 | 兑现「卸载即精确还原」的承诺；这是 README 的卖点，写进去就得验 |
+| A15 | **自由装卸载实测**：每个成员 `dsh --profile basic plugin rm <pkg>` → 重启 → 功能消失且其余不受影响 → `plugin add` 回来恢复 | A13 | 兑现「卸载即精确还原」的承诺；这是 README 的卖点，写进去就得验 |
 | A16 | 同步推镜像仓 | A6·A14·A15 | 镜像仓 clone 能照 README 装上 |
 
-### B 线：dsh-web-dev 新建
+### B 线：dsh-dev 新建
 
 成员清单以**「已合 main 且 3080 验收过」**为准，在途包不写进整合包。截至 2026-08-30，3080 上 21 个成员均已就位（`room` 08-29 18:55 上线，观察期刚起算）。
 
 | # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
 | B1 | 确认成员清单与各包版本线 | A 线机制就位 | **21 个成员**（= 3080 现有全集）。`mission` 不在 3080，按标准排除在首版之外 |
-| B2 | 建 `profiles/web-dev/`：`package.json` + `cordis.patch.yml` + `pnpm-workspace.yaml` + `pnpm-lock.yaml` | B1·A2 | 自带 hoisted linker |
+| B2 | 建 `profiles/dev/`：`package.json` + `cordis.patch.yml` + `pnpm-workspace.yaml` + `pnpm-lock.yaml` | B1·A2 | 自带 hoisted linker |
 | B3 | `dsh.profile.bundles` 挂 base + dev 的 feature | B2 | `--dump-config` 组合完整 |
 | B4 | ~~自带 preset~~ **首版不做**：用官方 `standard`，README 给出自建路径 | B3 | preset **无 patch 语义**，复制即快照、官方演进后不跟（官方 README：*A copy is a snapshot that drifts*）。官方自定义路径是 GUI 复制 + 「创造模式」辅助创作，用户随时可自建，存 `$DSH_HOME/.agent-presets/`，不受 profile 更新影响——**我们不分发，也不挡路** |
 | B5 | 写 `scripts/install.sh`（复用 A11 的升级策略） | B2·A11 | 全新与升级两条路径 |
-| B6 | 写 `scripts/restart-into-web-dev.sh` | B5 | 同端口交接成功 |
+| B6 | 写 `scripts/restart-into-dev.sh` | B5 | 同端口交接成功 |
 | B7 | 写双语 README + sidecar + CHANGELOG | B4·B6 | 门禁绿 |
 | B8 | 全新 `$DSH_HOME` 装一遍 | B5 | 一次通过 |
 | B9 | **五条切换判据实测** | B6·B8 | 见下方判据表 |
@@ -338,13 +338,13 @@ super(ctx, 'localFilesRemote', { namespace: 'localFiles' })
 
 | # | 判据 | 验证什么 | 判定方式 |
 |---|---|---|---|
-| 1 | **切得过去**：web-basic → web-dev 同端口交接，刷新后 **worktrees 徽标出现**在会话标题栏右上 | 切换成立，UI 随 profile 走 | 肉眼 + `--dump-config` 行数 |
-| 2 | **切得回来**：再切回 web-basic，徽标消失，**无残留组件、无报错空槽** | 可逆——敢日常使用的前提 | 肉眼 + 浏览器控制台无错误 |
-| 3 | **切不过去不伤当前实例**：故意改坏 web-dev 的一行 patch YAML 再切，**preflight 拒绝且当前实例继续服务** | 安全网真的在 | 实例仍响应 + 失败原因可读 |
+| 1 | **切得过去**：basic → dev 同端口交接，刷新后 **worktrees 徽标出现**在会话标题栏右上 | 切换成立，UI 随 profile 走 | 肉眼 + `--dump-config` 行数 |
+| 2 | **切得回来**：再切回 basic，徽标消失，**无残留组件、无报错空槽** | 可逆——敢日常使用的前提 | 肉眼 + 浏览器控制台无错误 |
+| 3 | **切不过去不伤当前实例**：故意改坏 dev 的一行 patch YAML 再切，**preflight 拒绝且当前实例继续服务** | 安全网真的在 | 实例仍响应 + 失败原因可读 |
 | 4 | **数据跨切换存活**：切过去开一个会话 → 切回 → 再切过去，会话仍在且能打开 | 切的是组合不是数据（sessions 在 `$DSH_HOME` home 级） | 会话列表 |
-| 5 | **隔离真的成立**：`--dump-config` 中 web-dev 比 web-basic **多 11 行**，且多出的正是 local-agent 家族 6 + worktrees + room + base 增量 | profile 层隔离有效 | 纯机器可判 |
+| 5 | **隔离真的成立**：`--dump-config` 中 dev 比 basic **多 11 行**，且多出的正是 local-agent 家族 6 + worktrees + room + base 增量 | profile 层隔离有效 | 纯机器可判 |
 
-第 2、3 条是核心：**可逆 + 失败不伤当前实例**，这两条成立才敢把切换当日常操作。第 5 条刻意用 `--dump-config` 而非 capability-catalog 的界面——catalog 尚未进 web-basic（等 A8），用它做判据会连带被 A1 卡住。
+第 2、3 条是核心：**可逆 + 失败不伤当前实例**，这两条成立才敢把切换当日常操作。第 5 条刻意用 `--dump-config` 而非 capability-catalog 的界面——catalog 尚未进 basic（等 A8），用它做判据会连带被 A1 卡住。
 
 ### C 线：前置修复（可并行，不阻塞 A/B 的文件工作）
 
@@ -402,7 +402,7 @@ super(ctx, 'localFilesRemote', { namespace: 'localFiles' })
 
 ## 八、待决
 
-- ~~**`dsh-web-basic` 含 `ankh-guard`**~~ **已裁决**：保留。分类规则补上「domain 整合包可含 ops 包，当它是安装/运维通道时」（见第二节），规则本身容纳该情形，不必逐次解释。
+- ~~**`dsh-basic` 含 `ankh-guard`**~~ **已裁决**：保留。分类规则补上「domain 整合包可含 ops 包，当它是安装/运维通道时」（见第二节），规则本身容纳该情形，不必逐次解释。
 - **eval 的重复实验建模**：N 次重复是 N 个 attempt 还是 N 个 mission（`retry` 不幂等）。pilot 时定死，影响后续能否算方差。
 - **attest key 的人机边界**：若要求某些转移必须人来，需在模板层约定该 key 只由 CLI/slash 登记，或排除出模型工具可写范围。
 
@@ -411,7 +411,7 @@ super(ctx, 'localFilesRemote', { namespace: 'localFiles' })
 
 - **0.1.2 基线迁移未在本文件占位，但已在进行**：`ankh-guard` 的 preset 探测双宿主面（`22e3a4a`）与 local-agent 的 dual-line CallId（`3a405aa`，从 0.1.2 wave cherry-pick）都已落地。发布前置里的「build + test 全绿」需明确针对哪条宿主线，否则阶段一的验收基准是浮动的。相关评估见 `.agents/notes/proposed/architecture/2026-08-28-host-0.1.2-alpha1-assessment.md`。
 
-- **多 domain pack 的 base 成员重复**：base 层 12 个包在每个 domain pack 里各列一份。**不是「dev 引用 basic」**——`web-basic` 只是「恰好只含 base 层的那个 domain」，它不拥有那些包；装 dev 的用户不该感知 basic 存在。要减少重复，正确形态是 **base 层的薄元包**，两个 domain pack 都引用它，这需要上游 `reconcilePlugins` 支持依赖闭包（[upstream-meta-pack-reconcile](../proposals/active/2026-08-21-upstream-meta-pack-reconcile.md)）。在那之前重复不可规避，代价是：更新要每个 profile 各跑一次；磁盘上 tarball 安装不走 pnpm store 共享（实测 19M/profile，链接数=1），npm 语义版本才共享。
+- **多 domain pack 的 base 成员重复**：base 层 12 个包在每个 domain pack 里各列一份。**不是「dev 引用 basic」**——`basic` 只是「恰好只含 base 层的那个 domain」，它不拥有那些包；装 dev 的用户不该感知 basic 存在。要减少重复，正确形态是 **base 层的薄元包**，两个 domain pack 都引用它，这需要上游 `reconcilePlugins` 支持依赖闭包（[upstream-meta-pack-reconcile](../proposals/active/2026-08-21-upstream-meta-pack-reconcile.md)）。在那之前重复不可规避，代价是：更新要每个 profile 各跑一次；磁盘上 tarball 安装不走 pnpm store 共享（实测 19M/profile，链接数=1），npm 语义版本才共享。
 - ~~**并存运行有并发风险**~~ **已裁决**（2026-08-30，`docs/ops.md` 环境拓扑，commit `1c9829f`）：测试 profile 一律住 `~/.dsh-lab`，`~/.dsh-official` 只留 `profiles/web`；`~/.dsh-acceptance` 并入 lab 的 `web-candidate`；一次性纯净测试走 `mktemp` + `~/.dsh-toolchains/stable`。**遗留风险一条**：lab 的 `local-agent` 软链回 official，并发刷 token 有写竞争——**凭据刷新失败先查这里**。
 
 ## 九、维护规则

@@ -103,7 +103,7 @@ interface ConversationInput {
  * property proxy only resolves services declared in `inject` or provided by
  * an ancestor fiber — declaring it would deadlock the loader. The mount is
  * awaited and the namespace is then read back from the global store with
- * `ctx.get` (the ui-file-preview precedent).
+ * `ctx.get` (the file-preview precedent).
  */
 export const inject = ['slots', 'remote', 'locale', 'sidebarRight', 'sidebarRightTabs', 'sessions']
 

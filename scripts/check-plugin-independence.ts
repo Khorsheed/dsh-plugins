@@ -27,7 +27,7 @@
  *   4. cross-plugin deps source imports and package.json dependency edges onto
  *                        `@khorsheed/*` are limited to ALLOWED_EDGES (the
  *                        sanctioned local-agent core/companion family and the
- *                        ui-file-preview client/host pair); intra-repo specs
+ *                        source-plane kernel consumers); intra-repo specs
  *                        are always `workspace:*`
  *   5. inject discipline nothing injects a `@khorsheed/*` package; injecting a
  *                        community-provided service (`localAgent`, …) is
@@ -136,15 +136,12 @@ export const FAMILY_REGISTRATION_RE = /ctx\.tools\.register|ctx\.commands\.regis
 export const NO_OWN_PATCH: ReadonlyArray<string> = [
   'local-agent-tool-subagent',
   'local-agent-dsh-headless',
-  // worktrees-tool is the worktrees core's preset-composed companion row:
-  // it only makes the tool module resolvable; agent presets name the row
-  // (a `dsh.bundle` declaration would auto-mount the tool at the profile
-  // root — exactly what the split removes).
-  'worktrees-tool',
-  // room-tool is the room core's preset-composed companion row (same shape as
-  // worktrees-tool): it only makes the tool module resolvable; agent presets
-  // name the row — a dsh.bundle declaration would auto-mount the tools at
-  // the profile root, exactly what the split removes.
+  // room-tool is the room core's preset-composed companion row: it only makes
+  // the tool module resolvable; agent presets name the row — a dsh.bundle
+  // declaration would auto-mount the tools at the profile root, exactly what
+  // the split removes. (worktrees-tool used to be this shape for the
+  // worktrees core; 0.3.0 folded it back into the core package as the
+  // `./tool` composition entry — the canvas ./agent precedent.)
   'room-tool',
   // mission-tool / datasets-tool / eval-tool are the same shape for the
   // mission / datasets / eval cores (M4'③): each only makes its tool module
@@ -170,10 +167,10 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
 
 /**
  * Sanctioned cross-package edges (AGENTS.md: the local-agent core/companion
- * family, and the ui-file-preview client/host pair). Keyed by package
- * directory; values are the allowed `@khorsheed/*` targets. Any new
- * cross-package need must follow the same declare-and-degrade pattern and be
- * added here deliberately.
+ * family, the *-tool core/companion pairs, and the source-plane kernel
+ * consumers). Keyed by package directory; values are the allowed
+ * `@khorsheed/*` targets. Any new cross-package need must follow the same
+ * declare-and-degrade pattern and be added here deliberately.
  */
 export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'local-agent-claude-code': ['@khorsheed/dsh-local-agent', '@khorsheed/dsh-local-agent-tool-subagent'],
@@ -190,18 +187,11 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // covers only the family's DEPS-ONLY libraries it also installs (card-less,
   // no patch rows of their own beyond what the members' canonical rows name).
   'bundle-local-agent': ['@khorsheed/dsh-local-agent-tool-subagent', '@khorsheed/dsh-local-agent-dsh-headless'],
-  // The worktrees core/companion pair: the companion consumes the core's
-  // tool-definition factory and probes its global service (declare-and-degrade
-  // — the probe is `ctx.get`, the peer dep keeps the module resolvable).
-  'worktrees-tool': ['@khorsheed/dsh-worktrees'],
-  // The core's reverse mention is DATA, not an edge: the badge lights up when
-  // the preset names the companion row (its module name rides the gate
-  // constant in the client bundle) and is invisible without it. It is declared
-  // in the core manifest's `dsh.references` (pack-dist's family-edge check
-  // honors it) — never in a dependency field: a core↔companion pair declared
-  // in both directions forms a cycle that pnpm's run sequencer schedules into
-  // one concurrent chunk, which raced cold builds (the companion's tsc started
-  // before the core's lib existed).
+  // The worktrees tool row folded back into the core package at 0.3.0 as the
+  // `./tool` composition entry (the canvas ./agent pattern) — no cross-package
+  // edge remains. The core used to carry a reverse DATA mention of the
+  // companion (its preset-visibility probe's row constant); the constant now
+  // names the package's own subpath, so no dsh.references entry is needed.
   // The room core/companion pair (same declare-and-degrade pattern).
   'room-tool': ['@khorsheed/dsh-room'],
   // The mission / datasets / eval core/companion pairs (M4'③, same pattern,
@@ -210,7 +200,6 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'mission-tool': ['@khorsheed/dsh-mission'],
   'datasets-tool': ['@khorsheed/dsh-datasets'],
   'eval-tool': ['@khorsheed/dsh-eval'],
-  'ui-file-preview': ['@khorsheed/dsh-file-preview', '@khorsheed/dsh-client-ui-content-preview'],
   // canvas → inline-html-render: the card detail renders HTML cards through
   // inline-html-render's SOURCE-plane helpers (buildCardSrcDoc/attachBridge),
   // bundled by tsdown — a compile-time edge with zero runtime coupling (the
@@ -224,6 +213,10 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // independently installable and uninstallable.
   'local-files': ['@khorsheed/dsh-client-ui-content-preview'],
   'worktrees': ['@khorsheed/dsh-client-ui-content-preview'],
+  // file-preview → ui-content-preview: same source-plane kernel edge (the
+  // ui-file-preview client half folded into the file-preview package at
+  // 0.4.0, bringing its kernel import along).
+  'file-preview': ['@khorsheed/dsh-client-ui-content-preview'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent
@@ -244,9 +237,11 @@ export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   // The preset-composed tool companions inject their owning core: a one-shot
   // apply-time probe lost the rc.1 boot-order race (the standing scope mounts
   // before the profile's later bundle rows provide the core), so the row
-  // pends on the core instead (2026-09-27 3080 incident).
+  // pends on the core instead (2026-09-27 3080 incident). The worktrees tool
+  // row folded back into the core package at 0.3.0 as the `./tool` entry, so
+  // the core package itself is the allowed injector there.
   typesafe: /^typesafe-tool$/,
-  worktrees: /^worktrees-tool$/,
+  worktrees: /^worktrees$/,
   room: /^room-tool$/,
   datasets: /^datasets-tool$/,
   dshEval: /^eval-tool$/,

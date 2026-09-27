@@ -4,7 +4,7 @@
 
 - `presets/dsh-writing/`——写作模式 preset 的**唯一事实源**（3080 私有：canvas `./agent` 行 + 标准工具底）。改它 = 改 3080 的写作模式，走正常 PR 评审。
 - `presets/` 里**没有** dsh-eval：评测模式的组合正本是 `profiles/web-eval/presets/eval/agent.cordis.yml`（web-eval pack 的 eval preset），3080 名册里的 dsh-eval 是它的部署副本。
-- `presets/` 里也没有 dev：它归 web-dev pack 的 `install.sh` / `update.sh` 管（整目录覆盖）。
+- `presets/` 里也没有 dev：它归 dev pack 的 `install.sh` / `update.sh` 管（整目录覆盖）。
 
 ## 同步到 3080
 
@@ -18,4 +18,4 @@ DSH_HOME=~/.dsh-official sh profiles/web/scripts/sync-presets.sh
 
 - 3080 的 preset 改动**只允许两条路**：改 git 正本后跑 sync 脚本，或临时手改名册后**立即**把改动回流正本（否则下次 sync 覆盖回来）。
 - 新 preset 进 3080 = 在本目录（或对应 pack 的 `presets/`）建正本 + 在 sync 脚本登记一行。
-- 本地实验 preset 用别的 id（web-dev 的 install.sh 注释：同名 id 会被 pack 覆盖）。
+- 本地实验 preset 用别的 id（dev 的 install.sh 注释：同名 id 会被 pack 覆盖）。

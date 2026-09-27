@@ -333,15 +333,18 @@ describe('the plan-review page', () => {
     expect(screen.getByText(/conditions\.differsWarn .*conditions\.factorHover \{\\"field\\":\\"factor\.home\.sha\\"\}/)).toBeTruthy()
     expect(screen.queryByText(/factorHover \{\\"field\\":\\"factor\.(model|harness)/)).toBeNull()
     expect(screen.getByText((_, el) => el?.tagName === 'DD' && /^judge-a · overview.judgeSamples/.test(el.textContent ?? ''))).toBeTruthy()
-    // Seed, stages, budget, items and the author's note are settings a reader
-    // needs once: ui-spec §五 v2 folds them under 高级设置 rather than smearing
-    // them across the page (the note kept its line breaks on the way).
+    // T84 §一: 高级设置 is split up — the stage scope went to 在哪些题上比,
+    // 每格预算 and 判官采样 to 规模与花费; what is left (seed, the author's
+    // note with its line breaks, the receipts) sits under 原始文件（核对用）.
+    expect(screen.getByText('design.raw')).toBeTruthy()
+    // T86: each is one line on the page, read in full in 查看.
     expect(screen.getByText('design.advanced')).toBeTruthy()
-    expect(screen.getByText('review.orderValue {"seed":7}')).toBeTruthy()
-    expect(screen.getByText('stage-1, stage-2')).toBeTruthy()
-    expect(screen.getByText('review.budgetValue {"minutes":30,"turns":40}')).toBeTruthy()
-    expect(screen.getByText('p0-001, p0-002, f2-001, f3-001')).toBeTruthy()
+    expect(screen.queryByText('review.orderValue {"seed":7}')).toBeNull()
+    expect(screen.queryByText('stage-1, stage-2')).toBeNull()
     expect(screen.getByText('first effort sweep')).toBeTruthy()
+    fireEvent.click(within(screen.getByText('design.advanced').parentElement as HTMLElement).getByRole('button', { name: 'inspect.view' }))
+    expect(await screen.findByText('review.orderValue {"seed":7}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'inspect.close' }))
 
     // validate, one line per diagnostic, each carrying its severity and code.
     // Only the lines that need READING are on the page; a clean check is not
@@ -349,10 +352,17 @@ describe('the plan-review page', () => {
     // T72 §4: the lines that need reading form the readiness checklist —
     // blockers and reminders — each in a human sentence; the passing ones sit
     // under the fold.
-    expect(screen.getByText('readiness.reminders {"count":1}')).toBeTruthy()
+    // T84 §三: the dataset's warning goes under the dataset's row (opened,
+    // since it has something to act on), not into 提醒 at the bottom.
+    expect(screen.queryByText(/^readiness\.reminders /)).toBeNull()
+    expect(screen.getByText('basis.row.dataset {"label":"ds @ c0ffee00"}')).toBeTruthy()
     expect(screen.getByText('readiness.COMMIT_UNRESOLVED {"condition":""}')).toBeTruthy()
-    expect(screen.getAllByText('severity.ok')).toHaveLength(2)
-    expect(screen.getByText('review.checks')).toBeTruthy()
+    // The passing lines: a count on the page, the lines in 查看 (T86).
+    expect(screen.queryByText('severity.ok')).toBeNull()
+    expect(screen.getByText('inspect.checksCount {"n":2}')).toBeTruthy()
+    fireEvent.click(within(screen.getByText('review.checks').parentElement as HTMLElement).getByRole('button', { name: 'inspect.view' }))
+    expect(await screen.findAllByText('severity.ok')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'inspect.close' }))
     // The diagnostic code is the host's handle on the check, not a word:
     // ui-spec §九 keeps it on the row's title and the sentence on the page.
     expect(screen.getByTitle(/^COMMIT_UNRESOLVED · /)).toBeTruthy()
@@ -468,20 +478,41 @@ describe('the plan-review page', () => {
     expect(h.approvePlan).not.toHaveBeenCalled()
   })
 
-  it('退回修改 is a note on the page: the status reads 草稿 and no verb is called', async () => {
-    const h = makeHarness()
+  it('退回给 agent… asks what to change, pre-fills the composer, and the note clears once the plan moves', async () => {
+    const h = makeHarness({ review: { ...REVIEW, planSha: 'sha-a' } })
     renderView(h)
     await openPage(h, 'page.design')
-    // T83 · design: 让 agent 改… sits in the stage bar, beside the primary.
+    // T83 · design: the send-back sits in the stage bar, beside the primary.
     await screen.findByRole('button', { name: 'cta.askAgent' })
     expect(screen.queryByRole('button', { name: 'review.sendBack' })).toBeNull()
     expect(screen.getByText('status.pending-approval')).toBeTruthy()
 
+    // T84 §五: the button opens the panel — nothing is marked yet.
     fireEvent.click(screen.getByRole('button', { name: 'cta.askAgent' }))
+    expect(screen.queryByText('review.sentBack')).toBeNull()
+    const submit = screen.getByRole('button', { name: 'sendBack.submit' })
+    expect((submit as HTMLButtonElement).disabled).toBe(true)
+    // The drafting session is this one, so there is no 放到 choice.
+    expect(screen.queryByRole('radiogroup', { name: 'sendBack.target' })).toBeNull()
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'align the scopes' } })
+    fireEvent.click(submit)
 
+    // Pre-filled in THIS session's composer, the experiment named — never sent.
+    await waitFor(() => {
+      expect(h.insertDraft).toHaveBeenCalledWith('s1', `sendBack.template ${JSON.stringify({ name: 'effort-sweep', id: EXPERIMENT_ID, text: 'align the scopes' })}`)
+    })
     expect(screen.getByText('review.sentBack')).toBeTruthy()
     expect(screen.getByText('status.draft')).toBeTruthy()
     expect(h.approvePlan).not.toHaveBeenCalled()
+
+    // The same plan re-read keeps the note; a changed plan clears it (§六.3).
+    fireEvent.click(screen.getByRole('button', { name: 'ready.recheck' }))
+    await waitFor(() => { expect(h.fetchPlanReview).toHaveBeenCalledTimes(2) })
+    expect(screen.getByText('review.sentBack')).toBeTruthy()
+    h.fetchPlanReview.mockResolvedValue({ ok: true, value: { ...REVIEW, planSha: 'sha-b' } })
+    fireEvent.click(screen.getByRole('button', { name: 'ready.recheck' }))
+    await waitFor(() => { expect(screen.queryByText('review.sentBack')).toBeNull() })
+    expect(screen.getByText('status.pending-approval')).toBeTruthy()
   })
 
   it('a run that records no plan document says so instead of reviewing a file nobody can name', async () => {
@@ -524,7 +555,8 @@ describe('the readiness badge names every subject, and why each one is not ready
     // do not depend on parsing a host sentence (W15) — the cross used to carry
     // a name and nothing else, with the reasons loose in validate's English
     // warnings below it.
-    expect(screen.getByText('why.homeSha · why.lock')).toBeTruthy()
+    // T84 §三: the 依据 column says what was checked, in the order checked.
+    expect(screen.getByText('basis.subject.noLockShort · basis.subject.homeMissingShort')).toBeTruthy()
   })
 
   it('a judge the registry listing does not carry stays out of the compare table, and in the checklist', async () => {
@@ -542,7 +574,7 @@ describe('the readiness badge names every subject, and why each one is not ready
     // A JUDGE is not a row of the compare table (T83 · design): it is named
     // in 怎么判, and its readiness is the checklist's line.
     expect(row).toBeUndefined()
-    expect(screen.getAllByText('judge-a').some(node => node.closest('table') !== null)).toBe(true)
+    expect(screen.getByText('basis.row.judge {"id":"judge-a"}').closest('table')).not.toBeNull()
   })
 
   it('a plan whose file is gone gets the three-part seat, not its English sentence', async () => {
@@ -1074,7 +1106,11 @@ describe('the readiness checklist (T72 §4)', () => {
     await openPage(h, 'page.design')
 
     expect(await screen.findByText('readiness.blockers {"count":2}')).toBeTruthy()
-    expect(screen.getByText('readiness.reminders {"count":2}')).toBeTruthy()
+    // The dataset's warning sits under the dataset's row (T84 §三); only the
+    // one no row owns stays in 提醒.
+    expect(screen.getByText('readiness.reminders {"count":1}')).toBeTruthy()
+    expect(screen.getByTitle(/^DATASET_ROOT_UNRESOLVABLE · /).closest('table')).not.toBeNull()
+    expect(screen.getByTitle(/^SOMETHING_NEW · /).closest('table')).toBeNull()
     expect(screen.getByText('readiness.LOCK_MISSING {"condition":"codex-exec"}')).toBeTruthy()
     // An unknown code falls back to validate's own words, never a blank line.
     expect(screen.getByText('a code this build has no sentence for')).toBeTruthy()
@@ -1103,6 +1139,12 @@ describe('the readiness checklist (T72 §4)', () => {
     expect(await screen.findByText('review.checks')).toBeTruthy()
     expect(screen.queryByText('readiness.blockers {"count":2}')).toBeNull()
     expect(screen.queryByText('readiness.forRerun')).toBeNull()
+    // A row's own warning still explains its chip after the start — opened
+    // by hand, read-only: no fix button.
+    expect(screen.queryByTitle(/^DATASET_ROOT_UNRESOLVABLE · /)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^basis\.expand .*basis\.row\.dataset/ }))
+    expect(screen.getByTitle(/^DATASET_ROOT_UNRESOLVABLE · /).closest('table')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: 'fix.agent' })).toBeNull()
   })
 
   it('provision runs the condition verb, and nothing offers a binding', async () => {

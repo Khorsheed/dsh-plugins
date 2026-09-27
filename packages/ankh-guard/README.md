@@ -6,7 +6,7 @@
 
 agent 改完代码想重启的时候，这个插件会先问一句：这次改动，构建和测试都过了吗？过了才放行，没过就拦下来——免得改坏的代码把整个服务、连同正在进行的对话一起带走。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/ankh-guard.JPG" width="640" alt="一次受守护的重启:重启前告知验证项,重启后金丝雀自动激活会话并注入上下文继续验证">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/ankh-guard.JPG" width="640" alt="一次受守护的重启:重启前告知验证项,重启后金丝雀自动激活会话并注入上下文继续验证">
 
 ## 工作原理
 
@@ -79,7 +79,7 @@ dsh-ankh-guard reconfigure --start "NEW CMD" --repo "<credential repo>" \
 
 ### preflight: the composition gate
 
-`preflight` 对重启将要 boot 的组合做完全一致的深度干跑：走与真实 launcher 相同的路径组装 profile 的全部 patch 层（bundle 层、用户层、overlay），在子进程里用同一个引擎 boot **整棵插件树**——每个插件的 apply 都真实执行，因为 apply 即激活——同时用 overlay 把 webserver 端口钉到 0（操作系统分配，绝不与在跑实例抢端口），检查每个已注册 client bundle 产物存在，然后 dispose（注册即 effect，dispose 即回滚这次干跑）。退出码即契约：
+`preflight` 对重启将要 boot 的组合做完全一致的深度干跑：走与真实 launcher 相同的路径组装 profile 的全部 patch 层（bundle 层、用户层、overlay），在子进程里用同一个引擎 boot **整棵插件树**——每个插件的 apply 都真实执行，因为 apply 即激活——同时用 overlay 把 webserver 端口钉到 0（操作系统分配，绝不与在跑实例抢端口），检查每个已注册 client bundle 产物存在，并回读 agent preset 注册表的 `broken` 诊断（preset 行挂在注册表的 standing scope 上而不是 profile 根，**boot 干净不代表 preset 可用**：坏 preset 的选择器卡片显示「加载失败」、其会话 resume 报 `never started`——3080 在 2026-09-28 撞过一次，干跑一路全绿），然后 dispose（注册即 effect，dispose 即回滚这次干跑）。退出码即契约：
 
 - `0`——组合干净通过。
 - `1`——组合结论：重启将要 boot 的树是坏的；输出会指明坏在哪一层。
@@ -139,7 +139,7 @@ dsh-ankh-guard reconfigure \
 
 candidate 无法读取旧宿主留下的可重建投影或缓存时，`--transition-file` 可以提交一份经过评审的 schema-v1 隔离计划。计划只接受 `home` 下互不重叠、没有符号链接且不包含 guard state 的相对路径，以及显式的 `quarantine` 操作；它不内置任何宿主版本或文件名知识。示例：`{"schemaVersion":1,"home":"/absolute/dsh-home","operations":[{"kind":"quarantine","path":"storages/<可重建缓存>","expect":"present"}]}`。每项 `expect` 必须是 `present` 或 `absent`，副本 preflight 与 live apply 都必须观察到相同状态，否则在停 previous 前或启动 target 前拒绝。计划既要覆盖 target 启动前必须移开的旧路径，也要覆盖 target 失败后 previous 启动前必须清走的新输出路径；后者即使准备时不存在也必须用 `expect: "absent"` 显式列出。权威日志、凭据或不可重建数据不得借此移出；需要内容转换的格式应使用独立、可逆且另行评审的迁移工具。
 
-guard 先以 copy-on-write 优先方式复制 live home 的物理文件，再把 pnpm/Cordis 链接重建为只指向 snapshot 内副本的相对链接；合法的内部依赖循环保留。外部目标进入 snapshot 自己的哈希命名去重物化区，`node_modules` 目标连同其祖先解析层一次复制，避免破坏 Node 模块查找语义。复制后逐链接 `realpath` 审计，任何可写目标都必须仍在 snapshot 根内；无可复制语义的运行时条目（socket、FIFO 及指向它们的链接）跳过并计数，顶层 `scratch/` 不进复制；悬空或不可解析链接、其余特殊文件、可写逃逸及读取/复制失败都会让 `reconfigure` 在运行 candidate、创建 cutover 或停止 previous 前 fail closed。在安全副本中执行相同隔离后才运行 target composition preflight；副本无法准备或 target 无法 boot 时，previous 继续运行且 live home 不变。successor 取得监督所有权、停止并复核 previous 进程树以后，才按照哈希绑定的耐久计划用同文件系统 rename 隔离原路径。target 被拒绝时，watchdog 必须先停止其已证明的进程，再把它在同路径产生的替代内容保留到 `launch-transitions/<cutover>/rejected-target/`，恢复 previous 原字节并写入回执，最后才允许 previous 启动；任一步无法证明完成都会停在 `awaiting-user`，不会让旧宿主读取混合状态。target 成功后，旧内容仍保存在 cutover 目录，等待 operator 后续处置，不会自动删除。
+guard 先以 copy-on-write 优先方式复制 live home 的启动输入——白名单为 `profiles/`、home 级 `cordis.patch.yml`、`settings.yaml`、`.credentials.yaml`、`.anonymous-user-id`；插件数据目录（sessions、state、local-agent 子 home、tarballs、scratch 等）默认不进复制，新插件的数据目录不会悄悄扩大快照，名单只在宿主启动读取范围变化时才需要更新（漏项会以预检 FAIL 显形，而不是慢慢变大）。再把 pnpm/Cordis 链接重建为只指向 snapshot 内副本的相对链接；合法的内部依赖循环保留。外部目标进入 snapshot 自己的哈希命名去重物化区，`node_modules` 目标锚定在包自身的父 `node_modules`（保留 Node 祖先查找语义的最小范围），而不是整个 store 根。复制后逐链接 `realpath` 审计，任何可写目标都必须仍在 snapshot 根内；无可复制语义的运行时条目（socket、FIFO 及指向它们的链接）跳过并计数；悬空或不可解析链接、其余特殊文件、可写逃逸及读取/复制失败都会让 `reconfigure` 在运行 candidate、创建 cutover 或停止 previous 前 fail closed。在安全副本中执行相同隔离后才运行 target composition preflight；副本无法准备或 target 无法 boot 时，previous 继续运行且 live home 不变。successor 取得监督所有权、停止并复核 previous 进程树以后，才按照哈希绑定的耐久计划用同文件系统 rename 隔离原路径。target 被拒绝时，watchdog 必须先停止其已证明的进程，再把它在同路径产生的替代内容保留到 `launch-transitions/<cutover>/rejected-target/`，恢复 previous 原字节并写入回执，最后才允许 previous 启动；任一步无法证明完成都会停在 `awaiting-user`，不会让旧宿主读取混合状态。target 成功后，旧内容仍保存在 cutover 目录，等待 operator 后续处置，不会自动删除。
 
 **重启报告自动到达模型——并只等它的主人。** 计划重启后（存在未确认的 `last-restart.json` 记录），插件通过 `agent.followup` 把报告排入下一回合，agent 无需任何用户消息即可回报重启结果。重启后的会话恢复是 lazy 的（只有 UI 或 RPC 碰到某个会话，它的 agent 才会被创建），所以完整报告只发给发起重启的会话（`schedule-exit` 把 `$DSH_SESSION_ID` 记为 initiator），等它何时恢复何时送达——其他会话永远不会为了报告被唤醒；记录保持未确认，直到发起会话恢复或下一次重启替换它（新 `exitAt`）。没有 initiator 的记录由首个创建的根 agent 领走。仅根 agent、仅一次（送达即确认）。配置 `reportRestartContext`：`followup`（默认，自主）、`step`（骑在下一次回合的第一步上）、或 `off`。
 

@@ -1,0 +1,291 @@
+/* Right-Sidebar file-preview tab: the filter row over a full-height file
+   list; the change-history view (DiffHistory) reuses the stepper/diff/scroll
+   classes below. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.filterRow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 0;
+}
+
+/* The search box shares the filter row, taking the leftover width. */
+.search {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.search:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.search::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The matched substring inside a file name. */
+.match {
+  border-radius: 3px;
+  background: var(--dsw-static-deepseek-500);
+  color: var(--dsw-static-neutral-00);
+  padding: 0 1px;
+}
+
+.list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 8px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowSelected {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.rowName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  grid-column: 1 / -1;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowDir {
+  overflow: hidden;
+  grid-column: 1;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowStep {
+  overflow: hidden;
+  grid-column: 2;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Outside-workspace marker on a row name: the official document tab cannot
+   render these, so the click only selects (change history stays ours). */
+.rowOutside {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+
+
+/* The change-history step control: one quiet line grouping ‹ position › (the
+   arrows never separate — a lone trailing arrow reads as decoration, not a
+   button), clamped at both ends of the change chain. The pane's diff face now
+   supplies the inset and the scrollport (the kernel's .diffScroll), so the
+   control carries no surface of its own — the diff card below is the face's
+   only card, and a second bordered pill above it read as double chrome. */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: fit-content;
+  margin: 0 0 8px;
+}
+
+.stepButton {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stepButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.stepButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.stepLabel {
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Soft-wrap the diff lines to the surface width without touching the shared
+   DiffBlock. The `className` prop and the stable `data-diff` root land on the
+   SAME element (DiffBlock does `clsx(css.block, className)` + `data-diff`), so
+   this must be a compound same-element selector — a descendant selector never
+   matches. The body div follows the root, then the line divs (structural,
+   since line classes are css-module-hashed). */
+.diffWrap[data-diff] > div > div {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+
+.empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+
+/* Borderless icon-only tool button (the ui-sidebar-files header `.tool`
+   shape): transparent at rest, hover tint, 28px hit area. */
+.tool {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 28px;
+  cursor: pointer;
+}
+
+.tool:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Detail view: back + breadcrumb + actions in one header row, pane below. */
+.detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.detailHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.detailPath {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.detailActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+
+/* Segmented breadcrumb: directory segments dimmed with a ' / ' separator and
+   breathing room (the official files header reads "Users / me / code / x"),
+   each segment ellipsizing on its own; the file name stays whole and solid. */
+.detailSegWrap {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+}
+
+.detailSeg {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detailSep {
+  flex: none;
+  padding: 0 5px;
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.55;
+}
+
+.detailName {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* The IDE split button: two quiet icon tools read as one control (the header's
+   own button shape, not the official pill). */
+.split {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+.split .tool {
+  width: 24px;
+  padding: 6px 4px;
+}

@@ -9,7 +9,7 @@
 
 2026-09-17。状态：A1/A2/A3 已实施并部署 3080（merge `197a5af4`，deploy-3080 OK，canary PASS），验收观察中；A5 已落地（2026-09-18，见下）。
 
-**3080 preset 治理（2026-09-18，协调者拍板）**：3080 的「开发模式」preset 曾本地补挂 mission/datasets/eval 三行（与本仓 web-dev 的 dev preset 漂移），导致评测 UI 出现在开发会话。处置：新建 `dsh-eval`（评测模式）preset（`~/.dsh-official/.agent-presets/dsh-eval/`，配方 = web-eval pack 的 eval preset：datasets-tool `authoring` + eval-tool，不挂 mission-tool 即 R6），dev preset 摘掉三行。名册 discovery 无缓存（`list()` 每次重读文件系统），立即生效无需重启；preset 建会话时锁定，存量会话不受影响。效果：开发模式新会话失去题集 chip / 任务 tab / 实验室 tab / 三个 slash，评测模式新会话全部获得。
+**3080 preset 治理（2026-09-18，协调者拍板）**：3080 的「开发模式」preset 曾本地补挂 mission/datasets/eval 三行（与本仓 dev 的 dev preset 漂移），导致评测 UI 出现在开发会话。处置：新建 `dsh-eval`（评测模式）preset（`~/.dsh-official/.agent-presets/dsh-eval/`，配方 = web-eval pack 的 eval preset：datasets-tool `authoring` + eval-tool，不挂 mission-tool 即 R6），dev preset 摘掉三行。名册 discovery 无缓存（`list()` 每次重读文件系统），立即生效无需重启；preset 建会话时锁定，存量会话不受影响。效果：开发模式新会话失去题集 chip / 任务 tab / 实验室 tab / 三个 slash，评测模式新会话全部获得。
 
 ## 背景
 
@@ -47,18 +47,18 @@ host 复核（0.1.5 线）：`CommandDefinition` 无任何可见性谓词，clie
 
 矩阵轮把 4 张 provider 设置卡 + member composer 标为缺口，按判据轴复核后**修正为刻意常驻**：
 
-- 设置卡内容 = 实例级 provider 凭据/开关，**绑定实例而非会话**；设置页是全局页，打开时无当前会话 → fail-open 恒显示 → preset 判据对它既无定义也无效果。装不装家族由 profile 决定（web-basic 未装），这是正确且唯一的层。
+- 设置卡内容 = 实例级 provider 凭据/开关，**绑定实例而非会话**；设置页是全局页，打开时无当前会话 → fail-open 恒显示 → preset 判据对它既无定义也无效果。装不装家族由 profile 决定（basic 未装），这是正确且唯一的层。
 - member composer / dock 已有**内容门**：select 只命中家族委派会话，standard 会话里本就不接管。
 
 结论：不动代码，规范文档的「slash 命令与设置卡」行随本次实施更新为此定性。
 
 ### A5. writing preset 版本化（已落地，2026-09-18）
 
-~~`dsh-writing` preset 本体是 3080 user root 资产，不在任何 git 仓~~ 已正本化：3080 名册里 prod 拥有的 preset 全部有 git 正本——`dsh-writing` 在 `profiles/web/presets/dsh-writing/`；`dsh-eval` 组合跟随 web-eval pack 的 eval preset；`dev` 归 web-dev pack 的 install/update 脚本。同步走 `profiles/web/scripts/sync-presets.sh`（幂等、备份、名册无缓存即时生效），规则写进 `profiles/web/README.md` 与 `docs/ops.md`「3080 的 preset 名册」节。提案原设想是 canvas 包自带 preset + install 脚本；落地时选了 3080 部署正本区（`profiles/web/`），因为 dsh-writing 是部署资产而非 canvas 包的资产。
+~~`dsh-writing` preset 本体是 3080 user root 资产，不在任何 git 仓~~ 已正本化：3080 名册里 prod 拥有的 preset 全部有 git 正本——`dsh-writing` 在 `profiles/web/presets/dsh-writing/`；`dsh-eval` 组合跟随 web-eval pack 的 eval preset；`dev` 归 dev pack 的 install/update 脚本。同步走 `profiles/web/scripts/sync-presets.sh`（幂等、备份、名册无缓存即时生效），规则写进 `profiles/web/README.md` 与 `docs/ops.md`「3080 的 preset 名册」节。提案原设想是 canvas 包自带 preset + install 脚本；落地时选了 3080 部署正本区（`profiles/web/`），因为 dsh-writing 是部署资产而非 canvas 包的资产。
 
 ## 验收标准
 
-- A1/A2：web-dev 实例里，standard preset 会话不见 worktrees 右栏 tab（guide 页也无），dev preset 会话可见可开；无会话首页 fail-open 可见。canvas 在 3080：非 writing 会话不见入口，writing 会话可见；**根挂形态的部署（社区默认）入口常驻**——双查判据的回归要点。
+- A1/A2：dev 实例里，standard preset 会话不见 worktrees 右栏 tab（guide 页也无），dev preset 会话可见可开；无会话首页 fail-open 可见。canvas 在 3080：非 writing 会话不见入口，writing 会话可见；**根挂形态的部署（社区默认）入口常驻**——双查判据的回归要点。
 - A3：standard 会话的 slash 补全无 `/eval` `/datasets` `/mission`，eval/dev preset 会话有；切换 preset 后补全自动刷新；未授予会话里直接执行（绕过补全）返回守卫文案。
 - 各包 `pnpm run build && pnpm run test` 绿；`pnpm check:plugins`、`pnpm check:hygiene` 绿；新增判据带单测（fail-open 各路径 + 双查真值表）。
 - `docs/plugin-visibility.md` 的「各维度细则」slash/设置卡行更新为实施后的现状。

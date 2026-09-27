@@ -68,7 +68,7 @@ describe('formal goal controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open member session' }))
     fireEvent.click(screen.getByRole('button', { name: 'Stop generating' }))
     expect(openSession).toHaveBeenCalledWith('child')
-    expect(stopMember).toHaveBeenCalledWith('Worker')
+    expect(stopMember).toHaveBeenCalledWith('Worker', 'delivery:a')
   })
 
   it('records an uncertain outcome with evidence without silently resuming the goal', async () => {

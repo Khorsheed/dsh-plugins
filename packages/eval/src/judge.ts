@@ -34,6 +34,7 @@ import yaml from 'js-yaml'
 import type { DatasetsFace, LocalAgentFace, MissionFace } from './faces.ts'
 import { discardDir, hostProbeExecutor, type ProbeExecution, type ProbeExecutor } from './probe-exec.ts'
 import { validateJson, VERDICT_SCHEMA, VERDICT_SCHEMA_ID } from './schema.ts'
+import { inStageScope, rubricWeightRows } from './weights.ts'
 
 /** The four material files handed to the judge, in prompt order. */
 export const JUDGE_MATERIAL_FILES: readonly string[] = ['stage1.json', 'stage1.md', 'stage2.json', 'stage2.md']
@@ -218,6 +219,36 @@ export function rubricCriteria(rubricText: string, kind: string): RubricCriterio
  */
 export function llmDraftCriteria(rubricText: string): RubricCriterion[] {
   return rubricCriteria(rubricText, 'llm-draft')
+}
+
+/**
+ * The llm-draft criteria a run's judge is actually asked — the ones inside the
+ * plan's stage scope (T84). A leaf that judges a stage this run never executes
+ * is neither scored nor put to the judge: asking it would only collect
+ * "material missing → false" verdicts the report then has to drop. The stage
+ * rule is the one the full score uses ({@link rubricWeightRows}), so the page's
+ * 满分, the report's score and the judge's prompt can never disagree.
+ * @param rubricText - the rubric YAML.
+ * @param scope.task - the item id (the weight rows need it).
+ * @param scope.runIn - the item's `runIn` stages (binds `verify.json` evidence).
+ * @param scope.planStages - the plan's `stages`; null/empty keeps every criterion.
+ * @returns the in-scope criteria in document order and the ids left out.
+ * @throws Error when the document does not parse as YAML.
+ */
+export function judgedCriteria(rubricText: string, scope: {
+  task: string
+  runIn?: readonly string[] | null
+  planStages?: readonly string[] | null
+}): { criteria: RubricCriterion[]; outOfScope: string[] } {
+  const all = llmDraftCriteria(rubricText)
+  const stagesOf = new Map(rubricWeightRows(rubricText, scope.task, { runIn: scope.runIn ?? null }).map(row => [row.id, row.stages]))
+  const criteria: RubricCriterion[] = []
+  const outOfScope: string[] = []
+  for (const criterion of all) {
+    if (inStageScope(stagesOf.get(criterion.id) ?? null, scope.planStages)) criteria.push(criterion)
+    else outOfScope.push(criterion.id)
+  }
+  return { criteria, outOfScope }
 }
 
 /**
@@ -460,15 +491,50 @@ export function collectProbes(input: {
   ]
 }
 
-/** Build the judge prompt (the byte source of `promptSha`). */
-export function buildJudgePrompt(input: {
+/**
+ * One piece of a judge prompt: literal text, or the slot one material file's
+ * fenced block fills. The pre-run preview renders the slots as UI labels; the
+ * run fills them with {@link fencedMaterial}.
+ */
+export type JudgePromptSegment = { kind: 'text'; text: string } | { kind: 'material'; path: string }
+
+/**
+ * The fence around one material: `max(3, longest backtick run + 1)`
+ * backticks, so a ``` inside the material cannot close the block early.
+ * Material with no run of 3+ keeps the plain ``` (its promptSha unchanged).
+ * @param body - the material text as it goes into the prompt.
+ */
+export function materialFence(body: string): string {
+  let longest = 0
+  for (const run of body.matchAll(/`+/g)) longest = Math.max(longest, run[0].length)
+  return '`'.repeat(Math.max(3, longest + 1))
+}
+
+/** The fenced block one material file becomes in the prompt. */
+export function fencedMaterial(path: string, text: string): string {
+  const body = text.replace(/\s+$/, '')
+  const fence = materialFence(body)
+  return [`${fence}${path.endsWith('.json') ? 'json' : 'markdown'}`, body, fence].join('\n')
+}
+
+/**
+ * The judge prompt as segments, material left as slots — the ONE template:
+ * {@link buildJudgePrompt} fills it for the run, the preview shows it with
+ * its slots labelled.
+ * @param input.materialPaths - material file paths, in {@link JUDGE_MATERIAL_FILES} order.
+ */
+export function judgePromptSegments(input: {
   taskId: string
   judgeConditionId: string
   criteria: readonly RubricCriterion[]
-  /** De-identified material, in {@link JUDGE_MATERIAL_FILES} order. */
-  materials: ReadonlyArray<{ path: string; text: string }>
-}): string {
-  const lines: string[] = []
+  materialPaths: readonly string[]
+}): JudgePromptSegment[] {
+  const segments: JudgePromptSegment[] = []
+  let lines: string[] = []
+  const flush = (): void => {
+    if (lines.length > 0) segments.push({ kind: 'text', text: lines.join('\n') })
+    lines = []
+  }
   lines.push('# 盲评任务')
   lines.push('')
   lines.push('你是本次评测的判官。下面给出一份评分细则与一份选手产出材料，逐条判定并写出结论。')
@@ -491,12 +557,13 @@ export function buildJudgePrompt(input: {
   }
   lines.push('## 材料')
   lines.push('')
-  for (const material of input.materials) {
-    lines.push(`### ${material.path}`)
+  for (const path of input.materialPaths) {
+    lines.push(`### ${path}`)
     lines.push('')
-    lines.push(material.path.endsWith('.json') ? '```json' : '```markdown')
-    lines.push(material.text.replace(/\s+$/, ''))
-    lines.push('```')
+    flush()
+    segments.push({ kind: 'material', path })
+    // The blank line after the block opens the next text segment: segments
+    // join with '\n', so '' + '\n' + next reproduces the blank line.
     lines.push('')
   }
   lines.push('## 输出要求')
@@ -520,7 +587,26 @@ export function buildJudgePrompt(input: {
   lines.push('- `evidence` 必须引用材料原文（可截取原句），写可查证的事实，不写主观评价。')
   lines.push('- `pass` 只有 true / false，没有中间档。负分项的 `pass: true` 表示「该错误确实出现了」。')
   lines.push('- 只写 `verdicts.json` 这一个文件；不要修改材料，不要新建其他文件。')
-  return `${lines.join('\n')}\n`
+  lines.push('')
+  flush()
+  return segments
+}
+
+/** Build the judge prompt (the byte source of `promptSha`). */
+export function buildJudgePrompt(input: {
+  taskId: string
+  judgeConditionId: string
+  criteria: readonly RubricCriterion[]
+  /** De-identified material, in {@link JUDGE_MATERIAL_FILES} order. */
+  materials: ReadonlyArray<{ path: string; text: string }>
+}): string {
+  const segments = judgePromptSegments({ ...input, materialPaths: input.materials.map(material => material.path) })
+  let next = 0
+  return segments.map((segment) => {
+    if (segment.kind === 'text') return segment.text
+    const material = input.materials[next++] as { path: string; text: string }
+    return fencedMaterial(material.path, material.text)
+  }).join('\n')
 }
 
 /** sha256 hex of a utf8 string. */

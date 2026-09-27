@@ -1007,6 +1007,59 @@ describe('report — S9 negative criteria score as defects (T24)', () => {
   })
 })
 
+// --- T84 · stage scope: out-of-stage criteria are neither scored nor counted --
+
+describe('report — stage scope (T84)', () => {
+  const scopedBundle = (root: string, stages: string[] | null): string => {
+    const cell = (condition: string, rep: number): FixtureMission => ({
+      id: `F2-${condition}-rep${rep}`,
+      attempts: [{
+        attempt: 1, state: 'released', refs: goodRefs(),
+        ...matArtifact(sha('m2')),
+        // C1 is a stage3/4 criterion: a probe wrote a verdict on it anyway.
+        annotations: [scriptNote('F2', [['A1-1', true], ['C1', condition === 'claude-exec']]), orchestratorNote('stage1', 1, 60_000, 900)],
+      }],
+    })
+    return writeBundle(root, {
+      runId: 'scoped',
+      meta: {
+        expectedNs: ['script'],
+        ...(stages === null ? {} : { stages }),
+        conditions: [
+          conditionEntry('codex-exec', baseConditionDoc(), 'aa'),
+          conditionEntry('claude-exec', baseConditionDoc({ preset: 'thorough' }), 'bb'),
+        ],
+      },
+      missions: [1, 2, 3].flatMap(rep => [cell('codex-exec', rep), cell('claude-exec', rep)]),
+      weightsTable: {
+        ...NEGATIVE_WEIGHTS_TABLE,
+        criteria: [
+          { task: 'F2', id: 'A1-1', weight: 3, negative: false, kind: 'llm-draft', axis: 'A1', stages: ['stage1'] },
+          { task: 'F2', id: 'C1', weight: 18, negative: false, kind: 'objective', axis: 'C4', stages: ['stage3', 'stage4'] },
+        ],
+      },
+    })
+  }
+
+  it('drops the verdicts of criteria outside run.meta.stages, and says so', async () => {
+    const report = await analyzeBundle(scopedBundle(tmpTree(), ['stage1', 'stage2']))
+    expect(report.polarity).toMatchObject({ criteria: 1, planStages: ['stage1', 'stage2'], outOfScope: 1 })
+    expect(report.rows.some(row => row.criterion === 'C1')).toBe(false)
+    const f2 = report.comparisons[0]?.perTask.find(task => task.task === 'F2')
+    expect(f2?.aWeighted).toBe(3)
+    expect(f2?.bWeighted).toBe(3)
+    expect(report.notes.some(note => note.includes('本次只跑 stage1、stage2') && note.includes('1 条判据属于其他阶段'))).toBe(true)
+  })
+
+  it('scores every criterion for a bundle that recorded no stages (old runs)', async () => {
+    const report = await analyzeBundle(scopedBundle(tmpTree(), null))
+    expect(report.polarity.planStages).toBeUndefined()
+    const f2 = report.comparisons[0]?.perTask.find(task => task.task === 'F2')
+    expect(f2?.bWeighted).toBe(21)
+    expect(report.notes.some(note => note.includes('按全部判据计分'))).toBe(true)
+  })
+})
+
 // --- S10 · proportional criteria (T19b/T24 contract) --------------------------
 
 /**

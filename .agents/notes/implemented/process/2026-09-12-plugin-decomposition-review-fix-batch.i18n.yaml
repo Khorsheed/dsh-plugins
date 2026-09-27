@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-12-plugin-decomposition-review-fix-batch.md
-.agents/notes/implemented/process/2026-09-12-plugin-decomposition-review-fix-batch.md: c1d99af0dde5e2b3a51aa56f8fe7545fe272013d
-.agents/notes/implemented/process/2026-09-12-plugin-decomposition-review-fix-batch.zh.md: fa8d6a623ee2af740486d188a68bb07eced49b3c
+.agents/notes/implemented/process/2026-09-12-plugin-decomposition-review-fix-batch.md: 91fc69d1d9adb5d54299e272e59a0a35b14c6f21
+.agents/notes/implemented/process/2026-09-12-plugin-decomposition-review-fix-batch.zh.md: 99503d8594652ae9e16246630c20eadf151197c0

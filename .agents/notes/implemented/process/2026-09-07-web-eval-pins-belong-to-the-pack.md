@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-`cordis.patch.yml` is, by convention across the dsh profiles, **the user's layer**: `install.sh` seeds it once and `update.sh` never touches it again. dsh-web-dev states that plainly, and for a development pack it is right — the layer holds preferences, and overwriting a person's preferences on update is hostile.
+`cordis.patch.yml` is, by convention across the dsh profiles, **the user's layer**: `install.sh` seeds it once and `update.sh` never touches it again. dsh-dev states that plainly, and for a development pack it is right — the layer holds preferences, and overwriting a person's preferences on update is hostile.
 
 dsh-web-eval inherited the same file with the same rule, and the same file is where its evaluation pins have to live. Those pins are not preferences. They are the execution points of the pack's [frozen decisions](../../../../profiles/web-eval/README.md#冻结决策): the drive is exec-only (decision 2), the sandbox tier is uniform across the four harnesses (decision 3), the reasoning effort is explicitly pinned per harness (decision 4), and the model tools are open by domain (decision 12). Every one of them decides whether "these two cells differ in exactly one factor" is a true statement about a run.
 
@@ -14,7 +14,7 @@ The open question was left explicitly to I1 in the README ("I1 决定它们进 p
 
 ## Decision
 
-For **dsh-web-eval only**, `cordis.patch.yml` belongs to the pack. It ships the evaluation pins, and both installers overwrite it: it was already in `install.sh`'s `PROFILE_FILES`, and it is now also in `update.sh`'s `UPDATE_FILES`. Personal overrides go in a preset layer, which the pack does not touch. dsh-web-dev and dsh-web-basic are unchanged — there the layer is still the user's, because a development pack has no apparatus to protect.
+For **dsh-web-eval only**, `cordis.patch.yml` belongs to the pack. It ships the evaluation pins, and both installers overwrite it: it was already in `install.sh`'s `PROFILE_FILES`, and it is now also in `update.sh`'s `UPDATE_FILES`. Personal overrides go in a preset layer, which the pack does not touch. dsh-dev and dsh-basic are unchanged — there the layer is still the user's, because a development pack has no apparatus to protect.
 
 The file itself carries the reasoning, decision by decision, so an operator reading only the profile directory learns why an ordinary user layer is not one here. The seven rows it ships:
 
@@ -40,7 +40,7 @@ The *value* is the official endpoint plus `proxyUrl` for egress, matching the 30
 
 ## Alternatives considered
 
-**Ship the pins in the pack's own bundle patch and leave `cordis.patch.yml` to the user.** This is the other half of the question the README posed, and it is the more conventional shape — every member package already self-mounts through its own `cordis.patch.yml`. It was rejected because the profile is not a package: it has no `dsh.bundle.patch` of its own to carry a patch layer, so the pins would have to be pushed down into the member packages, where they would apply to *every* profile that mounts those members — dsh-web-dev included. The pins are apparatus for one pack, not behavior for a plugin.
+**Ship the pins in the pack's own bundle patch and leave `cordis.patch.yml` to the user.** This is the other half of the question the README posed, and it is the more conventional shape — every member package already self-mounts through its own `cordis.patch.yml`. It was rejected because the profile is not a package: it has no `dsh.bundle.patch` of its own to carry a patch layer, so the pins would have to be pushed down into the member packages, where they would apply to *every* profile that mounts those members — dsh-dev included. The pins are apparatus for one pack, not behavior for a plugin.
 
 **Leave the layer to the user and check the composed values at run time.** The orchestrator could read the effective provider configuration and refuse a run whose pins do not match a declaration. That is strictly better as a *verification* and worth building, but it is not a substitute: it detects drift at the moment of a run, while the failure it must prevent is drift that has already happened to a run and is only visible in a report nobody re-derives. It also does not exist yet, and the pins were needed for T15. The natural home for the check is I4's `provision`, which is already the step that turns a declaration into a real scoped home and hashes it — at that point the pins fold into `home.sha` and are covered by the condition hash, which is the durable fix.
 

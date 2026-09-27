@@ -87,7 +87,7 @@ jobs:
         run: pnpm run test:scripts
 
       - name: Profile mirror check
-        run: pnpm run sync:profile web-basic --check
+        run: pnpm run sync:profile basic --check
 
       - name: Doc gates
         run: |

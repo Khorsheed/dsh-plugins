@@ -2,6 +2,8 @@
 
 Status: implemented
 
+> 2026-09-27:该拆分已回合并入 worktrees `./tool` 子路径(即本 note 当时暂缓的 canvas `./agent` 形态),见 .agents/notes/implemented/process/2026-09-27-public-readme-catalog-layer.md 的后续记录。
+
 [English](2026-09-11-worktrees-tool-split.md) | 中文
 
 ## 问题
@@ -15,11 +17,11 @@ Status: implemented
 - 伴生包不发布任何服务（唯一能进 preset 的形态），只注册一个模型工具，委派给主插件仍在 profile 根提供的全局 `ctx.worktrees` 服务核——官方工具行形态（出厂 `tool-bash` 行同样消费宿主服务）。
 - 伴生包不声明 `dsh.bundle`：作为依赖安装只让模块可解析（`@khorsheed/dsh-local-agent-dsh-headless` 的 plain-dependency 先例）；授予入口是 preset 的 `agent.cordis.yml` 按名引用。`static inject = []`——worktrees 服务在 apply 时 `ctx.get` 探测，core 缺席则静默不注册（引用该行的 preset 照常挂载）；tools 注册表走 `ctx.inject` 延迟注入（沿用包内注册时代的挂载序竞态教训）。
 - 工具定义工厂（`defineWorktreesTool(service)`）由 core 的 `./tool` 导出，业务实现零复制；origin tag 由伴生包自己打——归因跟随挂载包。
-- core **停止在 profile 根注册该工具（BREAKING）**；UI/服务/Remote 不动。迁移：安装伴生包并在目标 preset 引用该行（web-dev 的 dev preset 已带）。
+- core **停止在 profile 根注册该工具（BREAKING）**；UI/服务/Remote 不动。迁移：安装伴生包并在目标 preset 引用该行（dev 的 dev preset 已带）。
 
 **徽标显隐默认判据改读官方组合数据**：client 探测 `ctx.get('remote.pluginInventory')`（绝不 inject——无 namespace 的宿主不能因此 pend 整个 client），每次挂载拉一次 `pluginInventory.list()`，当前会话的 preset 组里有 `@khorsheed/dsh-worktrees-tool` 行则显示。`visiblePresets` 保留为手动 override（非空名单按试点语义门控）。所有读不到的路径都 fail-open：无 namespace、RPC 失败、preset 组缺席或 `broken`、无 preset 的会话，一律保持显示。
 
-**dev 模式 preset**（`profiles/web-dev/presets/dev`）是落地的消费方：官方 `standard` 组合（0.1.5-rc.1）+ 三家 local-agent 委派工具行（web-eval patch 的行形、去掉 `tools: none`）+ `worktrees-tool` 行；`profiles/web-dev/scripts/install.sh`/`update.sh` 把它卸进 `$DSH_HOME/.agent-presets/dev`（web-eval 形态——preset 是 pack 装置、整体替换；名册按 HOME 计、比 profile 长寿）。pack 的 patch 层仍是用户的，那里不钉 default。
+**dev 模式 preset**（`profiles/dev/presets/dev`）是落地的消费方：官方 `standard` 组合（0.1.5-rc.1）+ 三家 local-agent 委派工具行（web-eval patch 的行形、去掉 `tools: none`）+ `worktrees-tool` 行；`profiles/dev/scripts/install.sh`/`update.sh` 把它卸进 `$DSH_HOME/.agent-presets/dev`（web-eval 形态——preset 是 pack 装置、整体替换；名册按 HOME 计、比 profile 长寿）。pack 的 patch 层仍是用户的，那里不钉 default。
 
 ## 放弃的方案
 

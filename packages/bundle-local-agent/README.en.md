@@ -6,7 +6,7 @@ Let dsh hand work to the other CLI agents on this machine — Kimi, Codex, Claud
 
 One conversation, many agents: the mainline agent judges which task fits which harness, a delegation tool passes the task over with its requirements, and the finished CLI run brings the result back into the current dialogue (the run is visible in the 子代理 surface). This family bundle installs the local-agent core plus all four delegation providers at once, adding a single 「本地多Agent」 card to the inventory instead of making you pick packages one by one.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="The four Local Agent cards under Settings: Kimi, Codex, dsh, Claude Code — header dots showing each provider's auth state">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="The four Local Agent cards under Settings: Kimi, Codex, dsh, Claude Code — header dots showing each provider's auth state">
 
 ## Features
 
@@ -28,7 +28,7 @@ One conversation, many agents: the mainline agent judges which task fits which h
 
 Card-less libraries (deps-only: in `dependencies`, no patch rows of their own): `@khorsheed/dsh-local-agent-tool-subagent` (the delegation tool implementation the provider rows name) and `@khorsheed/dsh-local-agent-dsh-headless` (the provisioned sub-dsh face). They never appear on the inventory page and live or die with the family.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/bundle-local-agent.png" width="640" alt="The 「本地多Agent」 family card's detail page in the plugin inventory: every member row listed with its own enable switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent.png" width="640" alt="The 「本地多Agent」 family card's detail page in the plugin inventory: every member row listed with its own enable switch">
 
 ## Install
 

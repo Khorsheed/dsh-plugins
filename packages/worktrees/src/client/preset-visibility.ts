@@ -12,7 +12,7 @@
  * The criterion itself is the badge's, verbatim: a configured
  * `visiblePresets` (non-empty) is the OVERRIDE; otherwise the OFFICIAL
  * composition data decides — the tab shows exactly when the current session's
- * preset composition names the `@khorsheed/dsh-worktrees-tool` row (the
+ * preset composition names the `@khorsheed/dsh-worktrees/tool` row (the
  * mode-switcher proposal's "组合里有我的行": the preset composition file is
  * the single source of truth, no registry to maintain). Every unreadable
  * path fails OPEN (visible): no pluginInventory namespace, a pending/failed
@@ -30,11 +30,13 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { BadgeConfig, PluginInventorySnapshot } from '../types.ts'
 
 /**
- * The composition criterion's row: the companion package whose presence in
- * the current session's preset composition keeps the tab (and the badge)
- * visible.
+ * The composition criterion's row: this package's `./tool` composition
+ * entry, whose presence in the current session's preset composition keeps
+ * the tab (and the badge) visible. (Until 0.2.x the row shipped as the
+ * standalone companion package `@khorsheed/dsh-worktrees-tool`; 0.3.0 folded
+ * it into this subpath.)
  */
-export const WORKTREES_TOOL_ROW_MODULE = '@khorsheed/dsh-worktrees-tool'
+export const WORKTREES_TOOL_ROW_MODULE = '@khorsheed/dsh-worktrees/tool'
 
 /** The current session's agent preset, the dual read per host line. */
 function presetOf(row: unknown): string | undefined {
