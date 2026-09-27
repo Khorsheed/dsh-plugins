@@ -108,16 +108,18 @@ describe('judge prompt, before and after (T84 §四)', () => {
     expect(judgedCriteria(RUBRIC, { task: 'F2', runIn: RUN_IN }).criteria.map(c => c.id)).toEqual(['A1', 'B1', 'D1'])
   })
 
-  it('previews the prompt with placeholders for the player material', async () => {
+  it('previews the prompt with a slot for each player material file', async () => {
     const view = await previewJudgePrompt(pin(), { experimentId: 'e', item: 'F2', judge: 'judge-a', planStages: ['stage1'] })
     expect(view.criteria).toEqual(['A1'])
     expect(view.outOfScope).toEqual(['B1', 'D1'])
-    const lines = view.prompt.split('\n')
-    expect(lines[view.sections.criteria]).toMatch(/^## 判据/)
-    expect(lines[view.sections.materials]).toMatch(/^## 材料/)
-    expect(lines[view.sections.output]).toMatch(/^## 输出要求/)
-    expect(view.prompt).toContain('选手提交的 stage1.md')
-    expect(view.prompt).not.toContain('stage2.md')
+    const text = view.segments.map(segment => (segment.kind === 'text' ? segment.text : '')).join('\n')
+    expect(text).toMatch(/^## 判据/m)
+    expect(text).toMatch(/^## 材料/m)
+    expect(text).toMatch(/^## 输出要求/m)
+    // The player's material is a slot, not placeholder text in a fence (T85).
+    expect(view.segments.filter(segment => segment.kind === 'material')).toEqual([{ kind: 'material', path: 'stage1.json' }, { kind: 'material', path: 'stage1.md' }])
+    expect(text).not.toContain('选手提交')
+    expect(text).not.toContain('stage2.md')
   })
 
   describe('reading the prompt.md a cell received', () => {

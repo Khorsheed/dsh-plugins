@@ -1065,6 +1065,7 @@ export type EvalKey =
   | 'judgePrompt.part.output'
   | 'judgePrompt.outOfScope'
   | 'judgePrompt.previewNote'
+  | 'judgePrompt.slot'
   | 'judgePrompt.actual'
   | 'judgePrompt.actualTitle'
   | 'judgePrompt.sample'
@@ -2228,6 +2229,7 @@ export const en: Record<EvalKey, string> = {
   'judgePrompt.part.output': 'Built into eval',
   'judgePrompt.outOfScope': '{n} judge criteria outside this run\'s stages are not sent: {ids}',
   'judgePrompt.previewNote': 'Preview: only the player\'s material differs from what the judge will receive.',
+  'judgePrompt.slot': 'The player\'s full {path} goes here (de-identified)',
   'judgePrompt.actual': 'Judge prompt actually sent',
   'judgePrompt.actualTitle': 'Judge prompt · {cell}',
   'judgePrompt.sample': 'Sample',
@@ -3381,6 +3383,7 @@ export const zh: Record<EvalKey, string> = {
   'judgePrompt.part.output': 'eval 内置',
   'judgePrompt.outOfScope': '本次阶段外的 {n} 条判官判据不发给判官：{ids}',
   'judgePrompt.previewNote': '预览：只有选手材料一段与判官实际收到的不同',
+  'judgePrompt.slot': '此处放入选手的 {path} 全文（去指纹后）',
   'judgePrompt.actual': '判官实际收到的提示词',
   'judgePrompt.actualTitle': '判官提示词 · {cell}',
   'judgePrompt.sample': '样本',

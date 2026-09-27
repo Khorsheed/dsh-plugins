@@ -4,10 +4,14 @@
  * sampling, probe exit codes, the retry, the archive gate) lives in
  * run.spec.ts against the fakes; here only the pure functions are pinned.
  */
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
   buildDeidentifyRules,
   buildJudgePrompt,
+  fencedMaterial,
+  judgePromptSegments,
+  materialFence,
   deidentify,
   llmDraftCriteria,
   mergeReplacements,
@@ -185,5 +189,51 @@ describe('the judge prompt', () => {
       ],
     })
     expect(again).toBe(prompt)
+  })
+})
+
+describe('the judge prompt fence (T85)', () => {
+  const criteria = [{ id: 'A1-1', criterion: '存在共享上下文', kind: 'llm-draft' as const, evidence: 'stage1.md' }]
+  const build = (text: string): string => buildJudgePrompt({
+    taskId: 'F2', judgeConditionId: 'judge-r1', criteria, materials: [{ path: 'stage1.md', text }],
+  })
+
+  it('plain material keeps the ``` fence, byte for byte as before (promptSha unchanged)', () => {
+    const prompt = buildJudgePrompt({
+      taskId: 'F2-multi-agent-room',
+      judgeConditionId: 'judge-r1',
+      criteria: [
+        { id: 'A1-1', criterion: '存在共享上下文', kind: 'llm-draft', evidence: 'stage1.md' },
+        { id: 'A-N1', criterion: '未列入风险', kind: 'llm-draft', negative: true },
+      ],
+      materials: [
+        { path: 'stage1.json', text: '{ "design_decisions": [] }' },
+        { path: 'stage1.md', text: '# design\n\nuse `x` and ``y``\n' },
+      ],
+    })
+    // Recorded from the builder before T85 changed it.
+    expect(createHash('sha256').update(prompt, 'utf8').digest('hex')).toBe('2adb71d8cf18109f5ddaf81a1ac78f714b1635337e3458772a7b0104e22b307d')
+    expect(prompt).toContain('```markdown\n# design\n\nuse `x` and ``y``\n```\n')
+  })
+
+  it('material holding ``` gets a four-backtick fence that the inner fence cannot close', () => {
+    const text = '# design\n\n```ts\nconst a = 1\n```\n\nafter the block'
+    expect(materialFence(text)).toBe('````')
+    expect(build(text)).toContain(`\`\`\`\`markdown\n${text}\n\`\`\`\`\n`)
+  })
+
+  it('material holding ```` gets a five-backtick fence', () => {
+    const text = 'quoting a fence:\n````md\n```\n````'
+    expect(materialFence(text)).toBe('`````')
+    expect(fencedMaterial('stage1.json', text)).toBe(`\`\`\`\`\`json\n${text}\n\`\`\`\`\``)
+  })
+
+  it('the segments are the same template: filling the slots gives the prompt', () => {
+    const materials = [{ path: 'stage1.json', text: '{}' }, { path: 'stage1.md', text: '```x```' }]
+    const segments = judgePromptSegments({ taskId: 'F2', judgeConditionId: 'j', criteria, materialPaths: materials.map(m => m.path) })
+    expect(segments.filter(segment => segment.kind === 'material')).toEqual([{ kind: 'material', path: 'stage1.json' }, { kind: 'material', path: 'stage1.md' }])
+    let next = 0
+    const filled = segments.map(segment => (segment.kind === 'text' ? segment.text : fencedMaterial(materials[next]!.path, materials[next++]!.text))).join('\n')
+    expect(filled).toBe(buildJudgePrompt({ taskId: 'F2', judgeConditionId: 'j', criteria, materials }))
   })
 })

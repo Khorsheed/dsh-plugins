@@ -72,8 +72,21 @@ describe('judge prompt parts (T84 §四)', () => {
   it('splits on the headings the judge prompt builder writes', () => {
     const parts = promptParts('# 盲评任务\nfixed\n\n## 判据（共 1 条）\n- A1\n\n## 材料\nx\n\n## 输出要求\njson')
     expect(parts.map(p => p.kind)).toEqual(['fixed', 'criteria', 'materials', 'output'])
-    expect(parts[1]?.text).toBe('## 判据（共 1 条）\n- A1')
+    expect(parts[1]?.pieces).toEqual([{ kind: 'text', text: '## 判据（共 1 条）\n- A1' }])
     expect(promptParts('no headings').map(p => p.kind)).toEqual(['fixed'])
+  })
+
+  it('keeps the preview\'s material slots as slots, outside any text (T85)', () => {
+    const parts = promptParts([
+      { kind: 'text', text: '# 盲评任务\n\n## 材料\n\n### stage1.md\n' },
+      { kind: 'material', path: 'stage1.md' },
+      { kind: 'text', text: '\n## 输出要求\njson\n' },
+    ])
+    expect(parts.map(p => p.kind)).toEqual(['fixed', 'materials', 'output'])
+    expect(parts[1]?.pieces).toEqual([
+      { kind: 'text', text: '## 材料\n\n### stage1.md' },
+      { kind: 'material', path: 'stage1.md' },
+    ])
   })
 })
 

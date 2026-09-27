@@ -3836,6 +3836,21 @@ tr:last-child > .reportTd {
   line-height: 16px;
 }
 
+/* T85: where the player's material goes — a UI label, outside any code
+   fence, so nobody reads it as prompt text. */
+.promptSlot {
+  display: inline-block;
+  margin: 4px 0 8px;
+  padding: 2px 8px;
+  border: 1px dashed var(--dsw-alias-label-tertiary);
+  border-radius: 4px;
+  background: var(--dsh-eval-surface-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-style: italic;
+  line-height: 18px;
+}
+
 .promptPart .inspectPre {
   max-height: 360px;
 }

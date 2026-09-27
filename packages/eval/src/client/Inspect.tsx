@@ -283,45 +283,74 @@ export function ItemDrawer(props: { item: string; faces: ItemInspectFaces; onClo
   )
 }
 
-/** The three parts of a judge prompt, split on its own headings. */
+/** A piece of prompt: literal text, or the slot a material file fills at run time. */
+export type PromptPiece = { kind: 'text'; text: string } | { kind: 'material'; path: string }
+
+/** The parts of a judge prompt, split on its own headings. */
 export interface PromptPart {
   kind: 'fixed' | 'criteria' | 'materials' | 'output'
-  text: string
+  pieces: PromptPiece[]
 }
+
+const PART_HEADINGS: ReadonlyArray<[PromptPart['kind'], string]> = [['criteria', '## 判据'], ['materials', '## 材料'], ['output', '## 输出要求']]
 
 /**
  * Split a judge prompt into what eval fixes, what the rubric brings, what the
  * run fills in, and the output rules — by the headings `buildJudgePrompt`
- * writes. A prompt without them stays one fixed block.
- * @param text - the prompt.
+ * writes. A prompt without them stays one fixed block. Material slots (the
+ * pre-run preview's segments) stay slots, never text.
+ * @param prompt - the prompt text, or the preview's segments.
  */
-export function promptParts(text: string): PromptPart[] {
-  const lines = text.split('\n')
-  const at = (prefix: string): number => lines.findIndex(line => line.startsWith(prefix))
-  const marks: Array<{ kind: PromptPart['kind']; line: number }> = [
-    { kind: 'fixed' as const, line: 0 },
-    { kind: 'criteria' as const, line: at('## 判据') },
-    { kind: 'materials' as const, line: at('## 材料') },
-    { kind: 'output' as const, line: at('## 输出要求') },
-  ].filter(mark => mark.line >= 0).sort((a, b) => a.line - b.line)
-  return marks.map((mark, index) => ({
-    kind: mark.kind,
-    text: lines.slice(mark.line, marks[index + 1]?.line ?? lines.length).join('\n').replace(/\n+$/, ''),
-  })).filter(part => part.text.trim() !== '')
+export function promptParts(prompt: string | readonly PromptPiece[]): PromptPart[] {
+  const pieces: readonly PromptPiece[] = typeof prompt === 'string' ? [{ kind: 'text', text: prompt }] : prompt
+  // One entry per line; a slot is one entry of its own.
+  const lines: PromptPiece[] = pieces.flatMap((piece): PromptPiece[] => piece.kind === 'material'
+    ? [piece]
+    : piece.text.split('\n').map(line => ({ kind: 'text', text: line })))
+  const parts: PromptPart[] = []
+  let current: PromptPart = { kind: 'fixed', pieces: [] }
+  const close = (): void => {
+    const merged: PromptPiece[] = []
+    for (const line of current.pieces) {
+      const last = merged.at(-1)
+      if (line.kind === 'text' && last?.kind === 'text') last.text = `${last.text}\n${line.text}`
+      else merged.push(line.kind === 'text' ? { ...line } : line)
+    }
+    const kept = merged
+      .map(piece => (piece.kind === 'text' ? { ...piece, text: piece.text.replace(/^\n+|\n+$/g, '') } : piece))
+      .filter(piece => piece.kind === 'material' || piece.text.trim() !== '')
+    if (kept.length > 0) parts.push({ kind: current.kind, pieces: kept })
+  }
+  for (const line of lines) {
+    const heading = line.kind === 'text' ? PART_HEADINGS.find(([, prefix]) => line.text.startsWith(prefix)) : undefined
+    if (heading !== undefined) {
+      close()
+      current = { kind: heading[0], pieces: [] }
+    }
+    current.pieces.push(line)
+  }
+  close()
+  return parts
 }
 
-/** The prompt in labelled blocks. */
-function PromptBlocks(props: { text: string; criteriaLabel: string; t: LabViewProps['t'] }) {
-  const { text, criteriaLabel, t } = props
+/** The prompt in labelled blocks; a material slot is a label, outside any fence. */
+function PromptBlocks(props: { prompt: string | readonly PromptPiece[]; criteriaLabel: string; t: LabViewProps['t'] }) {
+  const { prompt, criteriaLabel, t } = props
   const label = (kind: PromptPart['kind']): string => kind === 'criteria'
     ? criteriaLabel
     : kind === 'materials' ? t('judgePrompt.part.materials') : kind === 'output' ? t('judgePrompt.part.output') : t('judgePrompt.part.fixed')
   return (
     <div className={css.promptBlocks}>
-      {promptParts(text).map(part => (
+      {promptParts(prompt).map(part => (
         <section key={part.kind} className={css.promptPart} data-kind={part.kind}>
           <div className={css.promptLabel}>{label(part.kind)}</div>
-          <pre className={css.inspectPre}>{part.text}</pre>
+          {part.pieces.map((piece, index) => (piece.kind === 'text'
+            ? <pre key={index} className={css.inspectPre}>{piece.text}</pre>
+            : (
+                <div key={index} className={css.promptSlot} data-material={piece.path}>
+                  {t('judgePrompt.slot', { path: piece.path })}
+                </div>
+              )))}
         </section>
       ))}
     </div>
@@ -391,7 +420,7 @@ export function JudgePromptPreview(props: {
             </div>
           )}
           <PromptBlocks
-            text={value.prompt}
+            prompt={value.segments}
             criteriaLabel={t('judgePrompt.part.criteria', { path: 'rubric.yml', dataset: '', commit: value.commit.slice(0, 8) })}
             t={t}
           />
@@ -444,7 +473,7 @@ export function JudgePromptSheet(props: {
             ? <div className={css.dim}>{value.note ?? t('inspect.empty')}</div>
             : (
                 <>
-                  <PromptBlocks text={value.text} criteriaLabel={t('judgePrompt.part.criteriaRun')} t={t} />
+                  <PromptBlocks prompt={value.text} criteriaLabel={t('judgePrompt.part.criteriaRun')} t={t} />
                   {value.truncated && <div className={css.dim}>{value.note}</div>}
                 </>
               )}
