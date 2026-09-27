@@ -550,3 +550,7 @@
   gap: 12px;
   min-width: 0;
 }
+
+.flow img {
+  cursor: zoom-in;
+}

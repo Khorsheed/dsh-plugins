@@ -14,13 +14,19 @@
  * splits there, the new block goes between the halves, and the words after it
  * keep a box of their own. A pasted image does the same at the paste point;
  * everything else a paste can carry goes to the page's paste arm unchanged.
+ * A dragged-in image lands in the gap between blocks the drop line shows.
+ *
+ * The editor is one sheet with its bar on top (2026-09-28 review: 手绘/图片
+ * under a long card were out of sight). The bar sticks while the flow scrolls:
+ * the insert tools on the left — one list, so a new block kind (a table) is
+ * one more entry — and 取消/保存 on the right. A picture opens large on a click.
  *
  * @module @khorsheed/dsh-canvas/client
  */
 import {
   useCallback, useEffect, useRef, useState,
-  type ChangeEvent, type ClipboardEvent as ReactClipboardEvent, type FocusEvent as ReactFocusEvent,
-  type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
+  type ChangeEvent, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent,
+  type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
 } from 'react'
 import { Button, MarkdownText, type MarkdownLabels, type MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
 import { blocksOf, cardBlocksOf, freshDrawingId, textOfBlocks, type CardBlock } from '../../blocks.ts'
@@ -32,6 +38,7 @@ import { IconImageOutline16 } from '../icons-local.tsx'
 import { imageFilesOf, type CanvasImageFile } from '../images.ts'
 import { CardTextarea } from '../space/CardTextarea.tsx'
 import { CardPad } from './CardPad.tsx'
+import { useImageLightbox } from './image-lightbox.tsx'
 import css from './BlockEditor.module.css'
 
 /** A drawings map as the editor holds it. */
@@ -42,6 +49,21 @@ type Item =
   | { readonly key: string; readonly kind: 'text'; readonly initial: string }
   | { readonly key: string; readonly kind: 'draw'; readonly id: string }
   | { readonly key: string; readonly kind: 'image'; readonly line: string; readonly src: string }
+
+/** One insert tool of the bar. A new block kind joins here and nowhere else in the bar. */
+interface InsertTool {
+  readonly id: string
+  readonly label: string
+  readonly icon: ReactNode
+  readonly run: () => void
+}
+
+/** Where a drop would land: before the block with this key, or at the end (null). */
+interface DropGap {
+  readonly before: string | null
+  /** The line's offset from the top of the flow, in pixels. */
+  readonly y: number
+}
 
 /** What the editor needs from its page. */
 export interface BlockEditorProps {
@@ -116,6 +138,10 @@ export function BlockEditor(props: BlockEditorProps): ReactNode {
   /** The text block that takes the focus when it mounts (the words after an insert). */
   const [focusKey, setFocusKey] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const flowRef = useRef<HTMLDivElement | null>(null)
+  /** The drop line while images are dragged over the flow. */
+  const [dropGap, setDropGap] = useState<DropGap | null>(null)
+  const { onClick: openImage, lightbox } = useImageLightbox(t)
 
   /** The flow as the card will store it: inkless drawings drop, placed ones stay. */
   const snapshot = useCallback((): { text: string; drawings: CardDrawings } => {
@@ -188,6 +214,20 @@ export function BlockEditor(props: BlockEditorProps): ReactNode {
     commit([...current.slice(0, index), ...head, ...blocks, after, ...current.slice(index + 1)])
   }
 
+  /** Put blocks in the gap before the block `before` (the end when null or gone). */
+  const insertAtGap = (blocks: readonly Item[], before: string | null): void => {
+    const current = itemsRef.current
+    const index = before === null ? -1 : current.findIndex(item => item.key === before)
+    if (index < 0) {
+      // The end is the words after the last block: the drop goes above an
+      // empty tail box, as the bar's insert does.
+      insert(blocks, undefined)
+      return
+    }
+    caretRef.current = null
+    commit([...current.slice(0, index), ...blocks, ...current.slice(index)])
+  }
+
   /** Take one block out; the words on either side become one box again. */
   const remove = (key: string): void => {
     const current = itemsRef.current
@@ -233,11 +273,61 @@ export function BlockEditor(props: BlockEditorProps): ReactNode {
 
   /** Upload, then place each image that landed as its own block. */
   const placeImages = async (
-    files: readonly CanvasImageFile[], at?: { key: string; from: number; to: number },
+    files: readonly CanvasImageFile[],
+    at?: { key: string; from: number; to: number } | { gap: string | null },
   ): Promise<void> => {
     const lines = await uploadImages(files)
     const blocks = lines.flatMap(line => blocksOf(line, { images: true }).map(itemOf))
-    if (blocks.length > 0) insert(blocks, at)
+    if (blocks.length === 0) return
+    if (at !== undefined && 'gap' in at) insertAtGap(blocks, at.gap)
+    else insert(blocks, at)
+  }
+
+  /** The gap nearest the pointer: above a block's middle is before it. */
+  const gapAt = (clientY: number): DropGap | null => {
+    const flow = flowRef.current
+    if (flow === null) return null
+    const top = flow.getBoundingClientRect().top
+    const slots = [...flow.querySelectorAll<HTMLElement>(':scope > [data-slot]')]
+    for (const slot of slots) {
+      const rect = slot.getBoundingClientRect()
+      if (clientY < rect.top + rect.height / 2) {
+        return { before: slot.dataset['slot'] ?? null, y: rect.top - top - 5 }
+      }
+    }
+    const last = slots.at(-1)?.getBoundingClientRect()
+    return { before: null, y: last === undefined ? 0 : last.bottom - top + 5 }
+  }
+
+  const carriesFiles = (event: ReactDragEvent<HTMLElement>): boolean =>
+    [...event.dataTransfer.types].includes('Files')
+
+  const onDragOver = (event: ReactDragEvent<HTMLDivElement>): void => {
+    if (!carriesFiles(event)) return
+    // Claimed on the flow, so a drop on a text box is ours, never its path text.
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    const next = gapAt(event.clientY)
+    setDropGap(held => (held?.before === next?.before && held?.y === next?.y ? held : next))
+  }
+
+  const onDragLeave = (event: ReactDragEvent<HTMLDivElement>): void => {
+    const into = event.relatedTarget
+    if (into instanceof Node && event.currentTarget.contains(into)) return
+    setDropGap(null)
+  }
+
+  const onDrop = (event: ReactDragEvent<HTMLDivElement>): void => {
+    if (!carriesFiles(event)) return
+    event.preventDefault()
+    const gap = dropGap ?? gapAt(event.clientY)
+    setDropGap(null)
+    const files = imageFilesOf(event.dataTransfer.files)
+    if (files.length === 0) {
+      notify(t('block.dropImagesOnly'))
+      return
+    }
+    void placeImages(files, { gap: gap?.before ?? null })
   }
 
   const pasteInto = (key: string) => (event: ReactClipboardEvent<HTMLTextAreaElement>): void => {
@@ -289,91 +379,121 @@ export function BlockEditor(props: BlockEditorProps): ReactNode {
 
   const lastText = [...items].reverse().find(item => item.kind === 'text')?.key
 
+  const tools: readonly InsertTool[] = [
+    { id: 'draw', label: t('block.addDraw'), icon: <IconEditOutlineMedium size={14} />, run: addDrawing },
+    {
+      id: 'image', label: t('block.addImage'), icon: <IconImageOutline16 size={14} />,
+      run: () => { fileRef.current?.click() },
+    },
+  ]
+
   return (
-    <div className={css.editor} onBlurCapture={onBlurCapture} onKeyDown={onKeyDown}>
-      <div className={css.flow}>
-        {items.map((item, index) => {
-          if (item.kind === 'text') {
+    <>
+      <div className={css.editor} onBlurCapture={onBlurCapture} onKeyDown={onKeyDown}>
+        <div className={css.bar}>
+          <span className={css.tools} role="toolbar" aria-label={t('block.insert')}>
+            {tools.map(tool => (
+              <button
+                key={tool.id}
+                type="button"
+                className={css.tool}
+                onClick={tool.run}
+              >
+                {tool.icon}
+                {tool.label}
+              </button>
+            ))}
+            <input
+              ref={fileRef}
+              className={css.file}
+              type="file"
+              accept="image/*"
+              multiple
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={onPickFiles}
+            />
+          </span>
+          <span className={css.hint}>{hint}</span>
+          <span className={css.actions}>
+            <Button size="sm" variant="ghost" onClick={onCancel}>{t('block.cancel')}</Button>
+            <Button size="sm" variant="primary" onClick={save}>{saveLabel}</Button>
+          </span>
+        </div>
+        <div
+          ref={flowRef}
+          className={css.flow}
+          data-dropping={dropGap === null ? undefined : ''}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+        >
+          {items.map((item, index) => {
+            if (item.kind === 'text') {
+              return (
+                <div key={item.key} className={css.text} data-block={item.key} data-slot={item.key}>
+                  <CardTextarea
+                    className={css.words}
+                    defaultValue={item.initial}
+                    placeholder={index === 0 ? placeholder : item.key === lastText ? t('block.placeholder') : ''}
+                    submitOn={submitOn}
+                    blurSubmits={false}
+                    autoFocus={item.key === focusKey || (autoFocus === true && index === 0)}
+                    onPaste={pasteInto(item.key)}
+                    onTextChange={value => {
+                      textsRef.current.set(item.key, value)
+                      report()
+                    }}
+                    onSubmit={save}
+                    onCancel={onCancel}
+                  />
+                </div>
+              )
+            }
+            if (item.kind === 'image') {
+              return (
+                <figure key={item.key} className={css.image} data-slot={item.key} onClick={openImage}>
+                  <MarkdownText text={item.line} labels={markdownLabels} pathImages={pathImages} />
+                  <button
+                    type="button"
+                    className={css.remove}
+                    aria-label={t('block.removeImage')}
+                    title={t('block.removeImage')}
+                    onClick={() => { remove(item.key) }}
+                  >
+                    <IconCloseOutlineMedium size={12} />
+                  </button>
+                </figure>
+              )
+            }
             return (
-              <div key={item.key} className={css.text} data-block={item.key}>
-                <CardTextarea
-                  className={css.words}
-                  defaultValue={item.initial}
-                  placeholder={index === 0 ? placeholder : item.key === lastText ? t('block.placeholder') : ''}
-                  submitOn={submitOn}
-                  blurSubmits={false}
-                  autoFocus={item.key === focusKey || (autoFocus === true && index === 0)}
-                  onPaste={pasteInto(item.key)}
-                  onTextChange={value => {
-                    textsRef.current.set(item.key, value)
-                    report()
-                  }}
-                  onSubmit={save}
-                  onCancel={onCancel}
+              <div key={item.key} className={css.draw} data-slot={item.key}>
+                <CardPad
+                  t={t}
+                  strokes={drawings[item.id] ?? []}
+                  tool={pen?.key === item.key ? pen.tool : 'text'}
+                  onTool={next => { setPen(next === 'text' ? null : { key: item.key, tool: next }) }}
+                  onStrokes={next => { setDrawings(held => ({ ...held, [item.id]: next })) }}
+                  notify={notify}
+                  editing
+                  onSave={save}
+                  onRemove={() => { remove(item.key) }}
+                  removeLabel={t('block.removeDraw')}
+                  saveHint={submitOn === 'mod-enter' ? t('block.drawHint') : undefined}
                 />
               </div>
             )
-          }
-          if (item.kind === 'image') {
-            return (
-              <figure key={item.key} className={css.image}>
-                <MarkdownText text={item.line} labels={markdownLabels} pathImages={pathImages} />
-                <button
-                  type="button"
-                  className={css.remove}
-                  aria-label={t('block.removeImage')}
-                  title={t('block.removeImage')}
-                  onClick={() => { remove(item.key) }}
-                >
-                  <IconCloseOutlineMedium size={12} />
-                </button>
-              </figure>
-            )
-          }
-          return (
-            <div key={item.key} className={css.draw}>
-              <CardPad
-                t={t}
-                strokes={drawings[item.id] ?? []}
-                tool={pen?.key === item.key ? pen.tool : 'text'}
-                onTool={next => { setPen(next === 'text' ? null : { key: item.key, tool: next }) }}
-                onStrokes={next => { setDrawings(held => ({ ...held, [item.id]: next })) }}
-                notify={notify}
-                editing
-                onSave={save}
-                onRemove={() => { remove(item.key) }}
-                removeLabel={t('block.removeDraw')}
-                saveHint={submitOn === 'mod-enter' ? t('block.drawHint') : undefined}
-              />
+          })}
+          {dropGap !== null && (
+            <div className={css.dropLine} style={{ top: dropGap.y }} aria-hidden="true">
+              <span>{t('block.dropHere')}</span>
             </div>
-          )
-        })}
+          )}
+        </div>
       </div>
-      <div className={css.bar}>
-        <span className={css.add}>
-          <Button size="sm" icon={<IconEditOutlineMedium size={12} />} onClick={addDrawing}>
-            {t('block.addDraw')}
-          </Button>
-          <Button size="sm" icon={<IconImageOutline16 size={12} />} onClick={() => { fileRef.current?.click() }}>
-            {t('block.addImage')}
-          </Button>
-          <input
-            ref={fileRef}
-            className={css.file}
-            type="file"
-            accept="image/*"
-            multiple
-            tabIndex={-1}
-            aria-hidden="true"
-            onChange={onPickFiles}
-          />
-        </span>
-        <span className={css.hint}>{hint}</span>
-        <span className={css.actions}>
-          <Button size="sm" variant="ghost" onClick={onCancel}>{t('block.cancel')}</Button>
-          <Button size="sm" variant="primary" onClick={save}>{saveLabel}</Button>
-        </span>
-      </div>
-    </div>
+      {/* Outside the editor's key handler: Esc in the lightbox closes the
+          picture, never the edit. */}
+      {lightbox}
+    </>
   )
 }

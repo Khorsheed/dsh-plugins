@@ -58,6 +58,7 @@ import { FollowUp } from '../follow-up.tsx'
 import { cardQuoteOf, commentQuoteOf } from '../quote.ts'
 import type { PadTool } from '../draw.ts'
 import { CardPad } from './CardPad.tsx'
+import { useImageLightbox } from './image-lightbox.tsx'
 import { BlockEditor, type CardDrawings } from './BlockEditor.tsx'
 import css from './CanvasDetailView.module.css'
 
@@ -128,7 +129,8 @@ function ModeSeg({ modes, mode, onMode, t }: {
 /**
  * A markdown card read as its flow: each run of words through the shared
  * renderer (images inline, as markdown draws them), each drawing where the
- * text places it — or after the words, when the text does not.
+ * text places it — or after the words, when the text does not. A picture
+ * opens large on a click.
  */
 function CardFlow({ t, text, drawings, labels, pathImages }: {
   readonly t: CanvasDetailProps['t']
@@ -137,10 +139,12 @@ function CardFlow({ t, text, drawings, labels, pathImages }: {
   readonly labels: MarkdownLabels
   readonly pathImages: CanvasDetailProps['pathImages']
 }): ReactNode {
+  const { onClick, lightbox } = useImageLightbox(t)
   const blocks = cardBlocksOf(text, drawings)
   if (blocks.length === 0) return <div className={css.notice}>{t('detail.nothingToRender')}</div>
   return (
-    <div className={css.flow}>
+    <div className={css.flow} onClick={onClick}>
+      {lightbox}
       {blocks.map((block, index) => block.kind === 'draw' ? (
         <CardPad
           key={`d:${block.id}`}

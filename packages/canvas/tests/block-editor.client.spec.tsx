@@ -3,10 +3,12 @@
  * The block editor on its own: a card's flow opens as its blocks, a pasted
  * image splits the words at the caret, a paste without images goes to the
  * page's arm, removing a block joins the words around it, an inkless drawing
- * never reaches the card, and every keystroke reaches the draft owner.
+ * never reaches the card, every keystroke reaches the draft owner, the bar
+ * sits on top of the flow, a dropped image lands in the gap the drop line
+ * shows, and a picture opens large on a click.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { CanvasDetailProps } from '../src/client/contract.ts'
 import { BlockEditor, type BlockEditorProps } from '../src/client/detail/BlockEditor.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -100,5 +102,60 @@ describe('BlockEditor', () => {
     const { props } = mount({ text: '' })
     fireEvent.input(boxes()[0]!, { target: { value: '新的想法' } })
     expect(props.onChange).toHaveBeenLastCalledWith('新的想法', {})
+  })
+
+  it('puts the bar above the flow, with the insert tools and 保存 in it', () => {
+    mount({ text: '字' })
+    const bar = screen.getByRole('toolbar', { name: '插入' })
+    expect(bar.textContent).toContain('手绘')
+    expect(bar.textContent).toContain('图片')
+    const save = screen.getByRole('button', { name: '保存' })
+    // Before the first text box in document order: the bar leads the sheet.
+    expect(save.compareDocumentPosition(boxes()[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('drops an image into the gap the drop line shows', async () => {
+    const { props, container } = mount({ text: '甲\n\n![](draw://d1)\n\n乙', drawings: { d1: INK } })
+    const slots = [...container.querySelectorAll<HTMLElement>('[data-slot]')]
+    expect(slots).toHaveLength(3)
+    const rects = [[0, 40], [50, 100], [160, 40]] as const
+    slots.forEach((slot, index) => {
+      const [top, height] = rects[index]!
+      slot.getBoundingClientRect = () => ({ top, height, bottom: top + height, left: 0, right: 100, width: 100, x: 0, y: top, toJSON: () => ({}) })
+    })
+    const flow = slots[0]!.parentElement!
+    const file = new File(['x'], 'drop.png', { type: 'image/png' })
+    const dataTransfer = { types: ['Files'], files: [file], dropEffect: 'none' }
+    // jsdom's drag events carry no pointer: set the height by hand.
+    const at = (event: Event): Event => Object.defineProperty(event, 'clientY', { value: 60 })
+    // Above the drawing's middle: the gap before it.
+    fireEvent(flow, at(createEvent.dragOver(flow, { dataTransfer })))
+    expect(await screen.findByText('放到这里')).toBeTruthy()
+    fireEvent(flow, at(createEvent.drop(flow, { dataTransfer })))
+    await waitFor(() => { expect(container.querySelector('figure')).not.toBeNull() })
+    expect(screen.queryByText('放到这里')).toBeNull()
+    expect(props.onPaste).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(props.onSave).toHaveBeenCalledWith('甲\n\n![](attachment://abc.png)\n\n![](draw://d1)\n\n乙', { d1: INK })
+  })
+
+  it('says so when what was dropped holds no image', () => {
+    const { props, container } = mount({ text: '字' })
+    const flow = container.querySelector<HTMLElement>('[data-slot]')!.parentElement!
+    const dataTransfer = { types: ['Files'], files: [new File(['x'], 'a.txt', { type: 'text/plain' })] }
+    fireEvent.drop(flow, { clientY: 0, dataTransfer })
+    expect(props.notify).toHaveBeenCalledWith('只能拖入图片')
+    expect(props.uploadImages).not.toHaveBeenCalled()
+  })
+
+  it('opens a picture large on a click', async () => {
+    const { container } = mount({
+      text: '![图](attachment://x.png)',
+      pathImages: { resolve: () => 'https://example.test/x.png' },
+    })
+    const image = container.querySelector('figure img')
+    expect(image).not.toBeNull()
+    fireEvent.click(image!)
+    expect(await screen.findByRole('dialog', { name: '图片预览' })).toBeTruthy()
   })
 })

@@ -5,23 +5,98 @@
 .editor {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   flex: none;
-}
-
-.flow {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
-  padding: 12px 14px;
   background: var(--dsw-alias-bg-layer-1);
   transition: border-color 120ms ease;
 }
 
-.flow:focus-within {
+.editor:focus-within {
   border-color: var(--dsw-alias-label-caption);
+}
+
+/* The bar rides the top of the sheet and sticks while a long card scrolls
+   under it: the tools and 保存 are always one glance away. No overflow on the
+   sheet above, or the stickiness has nothing to stick in. */
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px 10px 0 0;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.tool:hover {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tool:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-l2);
+  outline-offset: 1px;
+}
+
+.flow {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+
+/* Dragging images over the flow: the sheet says it will take them, and one
+   line shows the gap they land in. */
+.flow[data-dropping] {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 4%, transparent);
+}
+
+.dropLine {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--dsw-alias-brand-primary);
+  pointer-events: none;
+}
+
+.dropLine span {
+  position: absolute;
+  top: -9px;
+  right: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-bg-base);
+  font: var(--dsw-font-xxxs-11);
 }
 
 .text {
@@ -60,6 +135,7 @@
 
 .image img {
   display: block;
+  cursor: zoom-in;
   max-width: 100%;
   border-radius: 6px;
 }
@@ -91,18 +167,6 @@
   min-width: 0;
 }
 
-.bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.add {
-  display: inline-flex;
-  gap: 6px;
-}
-
 .file {
   display: none;
 }
@@ -110,6 +174,10 @@
 .hint {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
   font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-caption);
 }
@@ -117,5 +185,4 @@
 .actions {
   display: inline-flex;
   gap: 6px;
-  margin-left: auto;
 }

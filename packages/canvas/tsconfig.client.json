@@ -40,6 +40,7 @@
     "src/client/manuscript/ManuscriptView.tsx",
     "src/client/detail/DetailCrumbs.tsx",
     "src/client/detail/DrawFigure.tsx",
+    "src/client/detail/image-lightbox.tsx",
     "src/client/space/BoardView.tsx",
     "src/client/space/CardTextarea.tsx",
     "src/client/space/DraftTile.tsx",
