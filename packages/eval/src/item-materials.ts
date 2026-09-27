@@ -15,7 +15,7 @@ import { join, resolve } from 'node:path'
 import yaml from 'js-yaml'
 import { ARTIFACT_MAX_BYTES, extensionOf, isInside } from './cell-artifact.ts'
 import type { DatasetsFace } from './faces.ts'
-import { buildJudgePrompt, JUDGE_MATERIAL_FILES, judgedCriteria, pickRubricPath } from './judge.ts'
+import { JUDGE_MATERIAL_FILES, judgedCriteria, judgePromptSegments, pickRubricPath } from './judge.ts'
 import { EvalReadRefused } from './read.ts'
 import { inStageScope, leafStages } from './weights.ts'
 import type {
@@ -220,16 +220,12 @@ export async function readDatasetFile(pin: PinnedDataset, request: EvalDatasetFi
   }
 }
 
-/** The placeholder a material file gets in the preview. */
-export function materialPlaceholder(path: string): string {
-  return `（开跑后这里是选手提交的 ${path}，经全 run 统一去指纹后原样放入）`
-}
-
 /**
  * The prompt a judge will receive for one item, before anything ran: the
- * same {@link buildJudgePrompt} and the same in-scope criteria the run loop
- * uses, with each material file replaced by a placeholder. Fixed text,
- * criteria and output rules match the real prompt byte for byte.
+ * same template ({@link judgePromptSegments}, which {@link buildJudgePrompt}
+ * fills for the run) and the same in-scope criteria the run loop uses. The
+ * text segments match the real prompt byte for byte; each material file is a
+ * slot the page labels, never placeholder text inside a code fence.
  * @param pin - the experiment's dataset pin and the face.
  * @param input.judge - the judge condition id the prompt names.
  * @param input.planStages - the plan's `stages`: only those stages' criteria and material.
@@ -250,19 +246,15 @@ export async function previewJudgePrompt(
   if (rubricPath === null) throw new EvalReadRefused(`item ${input.item} ships no rubric: the judge would not be asked anything`)
   const rubric = await face.read(scope, { dataset: pin.datasetId, item: input.item, layer: 'grading', path: rubricPath, commit: pin.commit })
   const judged = judgedCriteria(rubric.content, { task: input.item, runIn, planStages })
-  const materials = JUDGE_MATERIAL_FILES
+  const materialPaths = JUDGE_MATERIAL_FILES
     .filter(path => planStages === null || planStages.includes(path.replace(/\.(json|md)$/, '')))
-    .map(path => ({ path, text: materialPlaceholder(path) }))
-  const prompt = buildJudgePrompt({ taskId: input.item, judgeConditionId: input.judge, criteria: judged.criteria, materials })
-  const lines = prompt.split('\n')
-  const find = (prefix: string): number => lines.findIndex(line => line.startsWith(prefix))
+  const segments = judgePromptSegments({ taskId: input.item, judgeConditionId: input.judge, criteria: judged.criteria, materialPaths })
   return {
     experimentId: input.experimentId,
     item: input.item,
     judge: input.judge,
     commit: rubric.commit,
-    prompt,
-    sections: { criteria: find('## 判据'), materials: find('## 材料'), output: find('## 输出要求') },
+    segments,
     criteria: judged.criteria.map(criterion => criterion.id),
     outOfScope: judged.outOfScope,
     note: judged.criteria.length === 0 ? '这道题在本次阶段里没有 llm-draft 判据：判官不会被调用' : null,

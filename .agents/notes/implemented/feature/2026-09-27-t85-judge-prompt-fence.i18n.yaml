@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-27-t85-judge-prompt-fence.md
+.agents/notes/implemented/feature/2026-09-27-t85-judge-prompt-fence.md: 5c0ede665c6af6a4b25c9d79c887e31c06e7b424
+.agents/notes/implemented/feature/2026-09-27-t85-judge-prompt-fence.zh.md: 73e93b62c12308abea8586d34e41a321ae3d80b6

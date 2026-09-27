@@ -2132,9 +2132,12 @@ export interface EvalJudgePromptPreviewView {
   item: string
   judge: string
   commit: string
-  prompt: string
-  /** 0-based line where each of the three parts starts: fixed text, criteria, material, output rules. */
-  sections: { criteria: number; materials: number; output: number }
+  /**
+   * The prompt as the run's template: text segments are the real prompt's
+   * bytes; a `material` segment is where the player's de-identified file goes
+   * (the page labels it — it is not prompt text).
+   */
+  segments: Array<{ kind: 'text'; text: string } | { kind: 'material'; path: string }>
   /** llm-draft criteria put to the judge, and the ones this run's stages leave out. */
   criteria: string[]
   outOfScope: string[]
