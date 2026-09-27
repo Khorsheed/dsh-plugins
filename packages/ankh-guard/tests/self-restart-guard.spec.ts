@@ -863,7 +863,10 @@ describe('CLI', () => {
       scope: 'target build+test', revision: currentHead(repo)!, command: 'pnpm test',
     }, Date.now())
     markLiveWatchdog(stateDir)
-    symlinkSync('missing-target', join(home, 'dangling'))
+    // A dangling link only reaches the snapshot when it lives inside the
+    // copied boot inputs — profiles/ is on the default allowlist.
+    mkdirSync(join(home, 'profiles'), { recursive: true })
+    symlinkSync('missing-target', join(home, 'profiles', 'dangling'))
     stubSandboxProbe(false)
 
     const result = io()

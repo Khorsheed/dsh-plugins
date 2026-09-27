@@ -51,7 +51,7 @@ import {
 } from './launch-spec.ts'
 import {
   applyTransition, createPreflightSnapshot, createTransitionPreflightSnapshot, prepareTransition, rollbackTransition,
-  validateTransitionPlan, type TransitionPlan,
+  validateTransitionPlan, type SnapshotProgress, type TransitionPlan,
 } from './transition.ts'
 import {
   appendTestLifecycleEvent, appendTestLifecycleEventForProcess, registerCurrentTestProcess, registerTestProcess,
@@ -1925,21 +1925,34 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return refuseQuiet('sandbox', 'reconfigure refused: the environment is sandboxed, so the detached replacement supervisor would be reaped mid-flight')
       }
       const snapshotStartedAt = Date.now()
-      let snapshot: { home: string; cleanup(): void }
+      let snapshot: { home: string; copiedFiles: number; copiedBytes: number; cleanup(): void }
       try {
+        // The copy runs synchronously before any stop; without progress output
+        // a multi-GB prepare looked exactly like a hang (2026-09-27: 848 s of
+        // silence dragging the host checkout's node_modules into the snapshot).
+        let lastProgressAt = 0
+        const onProgress = (progress: SnapshotProgress): void => {
+          const now = Date.now()
+          if (now - lastProgressAt < 2000) return
+          lastProgressAt = now
+          io.stdout(`preflight snapshot: ${progress.files} files / ${Math.round(progress.bytes / 1024 / 1024)} MB copied…\n`)
+        }
         snapshot = transitionPlan === undefined
-          ? createPreflightSnapshot(target.home)
-          : createTransitionPreflightSnapshot(transitionPlan)
+          ? createPreflightSnapshot(target.home, { onProgress })
+          : createTransitionPreflightSnapshot(transitionPlan, { onProgress })
       } catch (error) {
         return refuse('preflight-snapshot', `reconfigure refused: could not prepare an isolated${transitionPlan === undefined ? '' : ' transitioned'} home: ${String(error)}\n`)
       }
       // A large home copy eats the credential's freshness window: the post-boot
       // canary revalidates the same credential, so a slow prepare can expire it
-      // mid-cutover and force a restore (observed with a 24 GB scratch tree —
-      // scratch/ is now excluded; warn early when the remaining copy is slow).
+      // mid-cutover and force a restore (observed with a 24 GB scratch tree).
+      // The snapshot copies only the composition's boot inputs
+      // (SNAPSHOT_INCLUDED_TOP_LEVEL), so size tracks the host's boot surface —
+      // warn when it still comes in slow.
       const snapshotMs = Date.now() - snapshotStartedAt
+      io.stdout(`isolated home snapshot ready: ${snapshot.copiedFiles} files / ${Math.round(snapshot.copiedBytes / 1024 / 1024)} MB in ${Math.round(snapshotMs / 1000)}s\n`)
       if (snapshotMs > options.maxAgeMinutes * 60_000 / 2) {
-        io.stdout(`note: the isolated-home snapshot took ${Math.round(snapshotMs / 1000)}s — over half the ${options.maxAgeMinutes}min credential window; re-record the credential immediately before reconfigure, and keep the home slim (top-level scratch/ is excluded from the copy)\n`)
+        io.stdout(`note: the isolated-home snapshot took ${Math.round(snapshotMs / 1000)}s — over half the ${options.maxAgeMinutes}min credential window; re-record the credential immediately before reconfigure\n`)
       }
       try {
         const timeout = options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS
