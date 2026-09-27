@@ -18,6 +18,8 @@ The fold's `bash` branch no longer requires `run_in_background: true` to enter t
 
 The fold also takes an optional registration time. A job id is unique only within one host process: a restart restarts the `<kind>-N` ordinal, so one long session's log holds several different jobs under one id — visible in the same session, where `bash-4` and `bash-19` each name two different commands, one on either side of a host restart. The detail tab passes the roster row's `startedAt`, and the fold keeps rows at or after it minus `REGISTRATION_SLACK_MS` (2 s, the call row being written one parse before the job registers). A job whose roster row is gone — one that predates the last restart — folds the whole page, as before.
 
+Every id mention is matched as a whole token (`mentionsJobId` in `./src/client/session-wire.ts`), because the kinds prefix one another: `bash-1` is a prefix of `bash-12` and `bash-19`, so `text.includes(jobId)` credited the shorter id with the longer id's ack and its completion notice. Seen on the live session log, where `bash-1`'s trail opened with `bash-19`'s notice and a start row whose ack read `started background job bash-12`. The announcement filter never had this defect: it compares a captured id with `===`.
+
 ## Alternatives considered
 
 **Fold the trail from the job controller's `job.follow` stream (`ctx.jobs.observe`).** The natural-looking move now that the tab's job metadata already comes from that channel, and it carries retained output the log fold has to reconstruct. Rejected because it answers a different question: the stream delivers one job's output and terminal status, not the trail — the issued command, the reads, the kills, the completion notices — and the registry has no record at all of a settled foreground call, which is exactly the row someone is looking at when they open this tab. It remains the right source for a live output panel.
@@ -36,7 +38,9 @@ Cost: the fold skips rows older than the roster row's registration minus the sla
 
 ## Testing
 
-`tests/job-trajectory.spec.ts` adds five cases on the current wire shape: pairing through `message.toolCallId` with flat text (start, read, kill, notice, and the detail upgrades the results perform), pairing through the mirrored `source.callId`, the promotion start row, the plain-foreground and foreign-producer negatives, and the registration floor. The package's 85 tests pass, and the fold was re-run against the real tool rows of `session-70b25dac`, where `bash-31`, `bash-4`, `bash-19`, and `bash-40` now yield their command, output, and kill rows.
+`tests/job-trajectory.spec.ts` adds eight cases: on the current wire shape, pairing through `message.toolCallId` with flat text (start, read, kill, notice, and the detail upgrades the results perform), pairing through the mirrored `source.callId`, the promotion start row, the plain-foreground and foreign-producer negatives, and the registration floor; and on id matching, the longer-id ack and notice negatives plus the accepted boundary forms. The package's 88 tests pass.
+
+The fold was then run against real logs. On the captured tool rows of `session-70b25dac`, `bash-31`, `bash-4`, `bash-19`, and `bash-40` yield their command, output, and kill rows where they previously yielded a lone kill row or nothing. On the same session's live log, taken after the deployed build started a background job and read it with `job_output`, `bash-1` yields exactly two entries — the start row carrying the issued command and the `job_output` row carrying `alpha-line\nbeta-line\ngamma\t42\n[status: completed, exit code: 0]` — with and without the registration floor. That live fold is what surfaced the substring match: without the boundary rule the same trail opened with `bash-19`'s notice and a start row whose ack named `bash-12`.
 
 ## Related
 

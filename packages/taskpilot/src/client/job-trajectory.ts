@@ -20,7 +20,7 @@
 
 import type { TrajectoryEntry } from '../types.ts'
 import {
-  PROMOTED_JOB_ACK, asRecord, isJobsNotice, parseArgs, resultCallId, rowText,
+  PROMOTED_JOB_ACK, asRecord, isJobsNotice, mentionsJobId, parseArgs, resultCallId, rowText,
 } from './session-wire.ts'
 import type { SessionLogRow } from './session-wire.ts'
 
@@ -94,7 +94,7 @@ interface PendingCall {
  * foreground call counts only the promotion that renamed it into a job.
  */
 function startOfJob(text: string, args: Record<string, unknown> | undefined, jobId: string): boolean {
-  if (args?.['run_in_background'] === true) return text.length === 0 || text.includes(jobId)
+  if (args?.['run_in_background'] === true) return text.length === 0 || mentionsJobId(text, jobId)
   return PROMOTED_JOB_ACK.exec(text)?.[1] === jobId
 }
 
@@ -191,7 +191,7 @@ export function buildJobTrajectory(
 
     if (raw.type === 'user/message' && isJobsNotice(asRecord(data['source']))) {
       const text = rowText(data)
-      if (text.includes(jobId)) {
+      if (mentionsJobId(text, jobId)) {
         entries.push({
           seq: raw.seq,
           time: raw.time,

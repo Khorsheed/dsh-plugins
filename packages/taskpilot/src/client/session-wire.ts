@@ -36,6 +36,34 @@ export const PROMOTED_JOB_ACK = /moved to background job ([A-Za-z0-9][A-Za-z0-9.
 /** The producer family that writes a job's completion notice. */
 const JOBS_PRODUCER = 'tool-jobs'
 
+/**
+ * One id character. A job id is `<kind>-N`, and the kinds are prefixes of one
+ * another (`bash-1` is a prefix of `bash-19`), so a mention must be checked
+ * against the whole id: a substring test credits `bash-1` with every line
+ * about `bash-12` and `bash-19`, and a foreground job's ack then rides into
+ * another job's trail.
+ */
+const ID_CHARACTER = /[A-Za-z0-9_-]/
+
+/**
+ * Whether a text mentions exactly this job id, bounded on both sides by a
+ * non-id character (`bash-1`, `bash-1:`, `(bash-1)` match; `bash-12` does not).
+ * @param text - the text to search (an ack, a notice).
+ * @param jobId - the id that must appear whole.
+ * @returns true when the id appears as a whole token.
+ */
+export function mentionsJobId(text: string, jobId: string): boolean {
+  if (jobId === '') return false
+  for (let from = 0; ;) {
+    const at = text.indexOf(jobId, from)
+    if (at < 0) return false
+    const before = at === 0 ? '' : text[at - 1] as string
+    const after = text[at + jobId.length] ?? ''
+    if (!ID_CHARACTER.test(before) && !ID_CHARACTER.test(after)) return true
+    from = at + 1
+  }
+}
+
 /** Narrow an unknown value to a plain record, or undefined. */
 export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined

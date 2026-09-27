@@ -237,3 +237,48 @@ describe('buildJobTrajectory on the current wire shape', () => {
     expect(buildJobTrajectory(foreground, 'bash-9')).toEqual([])
   })
 })
+
+// `bash-1` is a prefix of `bash-12` and `bash-19`, so an id mentioned anywhere
+// in a row has to be read as a whole token. A substring test credited the
+// shorter id with the longer one's ack and completion notice — seen on a real
+// session log, where `bash-1`'s trail opened with `bash-19`'s notice and a
+// start row whose ack read `started background job bash-12`.
+describe('buildJobTrajectory job id matching', () => {
+  it('does not credit the shorter id with a longer id\'s background ack', () => {
+    const page = [
+      event('tool/call', 1, 1000, {
+        callId: 'c1', name: 'bash', arguments: JSON.stringify({ command: 'sleep 30', run_in_background: true }),
+      }),
+      event('tool/result', 2, 1000, {
+        message: { toolCallId: 'c1', content: [{ type: 'text', text: 'started background job bash-12' }] },
+      }),
+    ]
+    expect(buildJobTrajectory(page, 'bash-1')).toEqual([])
+    expect(buildJobTrajectory(page, 'bash-12')).toHaveLength(1)
+  })
+
+  it('does not credit the shorter id with a longer id\'s completion notice', () => {
+    const notice = [
+      event('user/message', 1, 2000, {
+        content: [{ type: 'text', text: 'background job bash-19 (bash: grep foo) finished [status: completed, exit code: 0]' }],
+        source: { kind: 'tool-jobs', form: 'notice' },
+      }),
+    ]
+    expect(buildJobTrajectory(notice, 'bash-1')).toEqual([])
+    expect(buildJobTrajectory(notice, 'bash-19')).toHaveLength(1)
+  })
+
+  it('accepts an id bounded by non-id characters', () => {
+    for (const text of ['started background job bash-1', 'started background job bash-1.', 'bash-1: done', '(bash-1) done']) {
+      const page = [
+        event('tool/call', 1, 1000, {
+          callId: 'c1', name: 'bash', arguments: JSON.stringify({ command: 'sleep 30', run_in_background: true }),
+        }),
+        event('tool/result', 2, 1000, {
+          message: { toolCallId: 'c1', content: [{ type: 'text', text }] },
+        }),
+      ]
+      expect(buildJobTrajectory(page, 'bash-1'), text).toHaveLength(1)
+    }
+  })
+})
