@@ -4,7 +4,7 @@
 
 **灵感画布** —— **右栏里的写作工作台**：右栏一个「画布」tab，普通右栏宽度自调（拖拽把手 + 一次性收会话列表建议）；画布自己带一排标签，一块画布一行；点卡是在这块画布里就地展开全文，顶上一行面包屑带你回卡板，不借宿主的 dock。一块画布 = 一个主题 = 部署级实体，上面积累灵感、问题、共识、来源、文档五种卡；模型的提议以幽灵卡落板，你 ✓/✗ 决定它的去留。
 
-**对话双入口**（M2–M3）：**当前会话**——两个画布工具（`canvas_propose_card` / `canvas_comment`）注册到主会话 Agent，你直接让 Agent 改当前打开的画布；**引用进主输入框**——选中卡后「与 Agent 对谈」/「开始写作」、Agent 评论旁「追问」，把卡片原文（引用块 + 「画布 · 分类 · 卡片 id」出处行）追加进当前会话的输入框，由你补一句再发（读-合并，不覆盖你已打的字；会话输入不可用时这些入口隐藏）。文本选区交互由引用插件（@khorsheed/dsh-quote）在应用级统一承接（引用到当前会话 / 引用到侧边对话 / 复制）。
+**对话双入口**（M2–M3）：**当前会话**——四个画布工具（`canvas_propose_card` / `canvas_comment` / `canvas_read_manuscript` / `canvas_write_manuscript`）注册到主会话 Agent，你直接让 Agent 改当前打开的画布、把成稿写到板上；**引用进主输入框**——选中卡后「与 Agent 对谈」/「开始写作」、Agent 评论旁「追问」，把卡片原文（引用块 + 「画布 · 分类 · 卡片 id」出处行）追加进当前会话的输入框，由你补一句再发（读-合并，不覆盖你已打的字；会话输入不可用时这些入口隐藏）。文本选区交互由引用插件（@khorsheed/dsh-quote）在应用级统一承接（引用到当前会话 / 引用到侧边对话 / 复制）。
 
 v1 的工作区级灵感稿纸**存储原样保留**（编辑器已退役）——原文件仍在磁盘上，任何编辑器都能打开；v1 五个 Remote 动词在线上不动。
 
@@ -28,6 +28,8 @@ v1 的工作区级灵感稿纸**存储原样保留**（编辑器已退役）—�
 - **筛选、多选、归档**：按 kind 的筛选 chips（这块画布当前启用的分类）；勾选框多选，选择条上可批量归档、批量「改分类」；已归档的卡进「归档井」，随时恢复。
 - **分类是每块画布自己的**（0.4.5）：五种内置卡是起点，不是上限。板上右上角「管理分类」开这块画布的面板：**改名**、**加一个**（新分类 id 是 `cat_…`）、**停用**。卡上存的是分类 **id**，不是名字——所以改名不动任何一张卡。停用 = 这个分类退出筛选条 + 拒绝新卡，已经挂在它下面的卡一张都不消失；停用一个还有卡在用的分类会弹**一次**确认，确认就把那几张一起进归档（正文保留、随时恢复）。想把卡留在板上，用勾选批量选中后的「改分类」——面板里刻意没有「挑个去处」的选择器。整套目录写在这块画布的 `canvas.json → categories`，旧文件没有这个字段，读的时候按默认五种补齐（零迁移）。对模型：`canvas_propose_card` 的 `kind` enum 就是这块画布的启用分类；没改过名的内置分类在提示词里仍是裸 id（`fragment`），改过名或自定义的写作 `id（名称）`。
 - **卡板与连线，一块画布的两张面**（0.4.5，阶段 ⑥）：顶栏右侧一个「卡板 / 连线」切换——卡板是改一张卡的地方，连线是把卡连成一组的地方，切的是同一块板。连线面把每张卡画成一个节点（有画的带着笔迹），拖它就是改它的位置；从节点右缘的圆点拉一条线落到另一个节点，两张卡就连上了（**线没有方向**，`{a,b}` 与 `{b,a}` 是同一条）；「新分区」拖出一个带标题的框，卡的心落进框里就属于这个框——**归属是几何算出来的，不是存的字段**，所以拖分区会带着里面的卡一起走，把框缩到卡心露出去，那张卡就自动离开框。点节点只选中、不编辑（要编辑点那支笔，或在卡板上点进去）；框选一片是一次追加选中，八像素以内的抖动算点击、只把手上的线取消掉。底栏跟着给出「顺线扩一圈」（沿线取闭包，再补一跳同分区的卡；默认关，且从不落盘）、「与 Agent 对谈」、「开始写作」、「删掉这条线」、「取消选择」。位置、线、分区都写进这块画布的 `canvas.json`（`cards[].x`/`y` 成对出现、`links[]`、`lanes[]`），一个 `setLayout` 动词一次落一盘并带版本守卫；旧文件三个字段都没有，读的时候按「没摆过」补齐，零迁移。
+- **成稿，一块画布的第三张面**（2026-09-27）：卡是素材，成稿是这些素材要写成的那篇东西，所以它不是一张卡，是画布上的独立实体——标题、状态（写作中 / 定稿）、版本号、谁最后写的、用了哪些卡、看过但没用哪些卡；正文单独存成一个 `.md`。顶栏切换多了「成稿 n」，列出这块画布的成稿（最近动过的在前），点开是一页阅读栏：正文、元信息、底部的**素材账**（用到的卡 / 没用上的卡，点一下进那张卡；卡删了就划掉）。**写作走主会话**：「让 Agent 改」把成稿的 id 和当前版本号引进输入框，Agent 用 `canvas_read_manuscript` 读全文、`canvas_write_manuscript` 写回（改写时 `baseVersion` 必填）；自己改点「编辑」，源码和实时预览并排，⌘⏎ 保存，能直接粘贴图片。**每次保存都带着它起步的版本号**：中间有人（包括 Agent）写过，存储拒绝这次保存，页面亮出黄条，两条路都给——「载入最新」丢掉自己的改动，「用我的覆盖」按对方的版本号再存一次；从不替你选。⋯ 里是「复制 Markdown」、「保存到「工作区」」（每个挂载的工作区一项）、重命名、标记定稿 / 重新打开、删除（确认后真删，正文目录一起删掉）。文档卡的 ⋯ 里有「转为成稿」：卡原样留作素材，成稿从它的正文起步、把它记为第一张用到的卡（HTML 卡不能转）。
+- **保存到工作区**：写成 `<工作区>/<标题>.md`，图片落在旁边的 `<标题>.assets/`（文件名取摘要前 16 位，同一张图只写一次），正文里的 `attachment://` 指针改写成相对链接。记住这次存到哪（路径 + 文件版本），下次「再次保存」写回同一个文件；那个文件在外面被改过就停下来问（`changed`），第一次保存撞上一个不是画布写的同名文件也问（`exists`），确认才覆盖，覆盖本身仍按刚看到的文件版本加守卫。只能存进这块画布**挂载的**工作区，只读模式的会话拒绝。
 - **评论挂卡上**：角标展开线程，评论即数据（Agent 的评论会把 open 问题卡自动推进到 exploring）。
 - **编辑器三件套沿用 v1**：非受控 textarea（光标不跳）、输入法组合期间硬停（候选窗绝不被打断）、单滚动容器。
 - **暗色自动跟随**：所有颜色都走官方 `--dsw-*` 主题 token，kind 只靠图标 + 文字区分，不用彩色。
@@ -50,7 +52,7 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 
 ## 按 preset 收敛会话工具（0.4.2+）
 
-两个画布工具（`canvas_propose_card` / `canvas_comment`）与它们的英文提示词引导段注册在独立的 composition 入口 `./agent` 里，不再钉死在 profile 根。出厂的 `cordis.patch.yml` 把它作为第二行默认挂载——**所有 preset 的所有会话都有工具**（与 0.4.1 及以前一致）。想只给某个模式（如 `dsh-writing`）授予时：
+四个画布工具（`canvas_propose_card` / `canvas_comment` / `canvas_read_manuscript` / `canvas_write_manuscript`）与它们的英文提示词引导段注册在独立的 composition 入口 `./agent` 里，不再钉死在 profile 根。出厂的 `cordis.patch.yml` 把它作为第二行默认挂载——**所有 preset 的所有会话都有工具**（与 0.4.1 及以前一致）。想只给某个模式（如 `dsh-writing`）授予时：
 
 ```yaml
 # <profile>/cordis.patch.yml：关掉根级行
@@ -95,7 +97,8 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 - **线没有方向、没有标签、没有样式**。`{from,to}` 就是一个无序对，板面上双向读；要给线加箭头或名字是后面阶段的问题，现在也不替你猜。
 - **两个分区重叠时，卡的归属取先到的那个**（列表顺序），不取「更贴合」的那个。重叠是这块板要自己收的口子，不是几何层要猜的题。
 - **「顺线扩一圈」是临时的**：它只改这一次要发出去哪几张，默认关，永不落盘——线画在板上是内容，扩圈是手势。
-- **仍不做**（后续里程碑）：stats 自适应规则、web 搜索接线（M3 后段）；`assets/` 大文件落盘、html 卡的源码编辑高亮、会话侧检索工具（M4）。也没有画布标题改名。**长文那一档已于 2026-09-22 整体删除**：它从来没有模型侧工具（`canvas_propose_draft` 与候选 diff 接受流只存在于提案里，`exportDraftToWorkspace` 从未实现），那份稿关在 state 目录里出不去；要长文就在会话里让 Agent 写工作区文件，官方文件预览器已经能看。
+- **仍不做**（后续里程碑）：stats 自适应规则、web 搜索接线（M3 后段）；`assets/` 大文件落盘、html 卡的源码编辑高亮、会话侧检索工具（M4）。也没有画布标题改名。**长文那一档已于 2026-09-22 整体删除**：它从来没有模型侧工具（`canvas_propose_draft` 与候选 diff 接受流只存在于提案里，`exportDraftToWorkspace` 从未实现），那份稿关在 state 目录里出不去。2026-09-27 的成稿把这一档接了回来，但换了形状：有模型侧工具、有版本冲突检测、能存进工作区。
+- **保存到工作区的图片**从宿主附件库读出、按字节写盘；宿主 `ctx.fs` 只有文本写入，二进制是本包在 `ctx.fs.resolve`/`contains` 围栏之内自己写的（上游缺口，见 Agent Note）。附件库不在或某张图读不出来时，那张图的指针原样留在正文里，保存结果报有几张图没带上。
 - **Agent 改板的可见性**靠标签页可见时每 4 秒一次的轻量刷新（共享 rev `touch()`，版本没变就保留原对象、不重绘）；标签页隐藏时不轮询，回来时下一拍补上。
 - **收列表是一次性建议**：tab 首次可见时每会话建议一次收起会话列表（`toggleSidebar()`，DOM 探测 gated），此后布局由你接管；fullscreen 不作建议（宿主 fullscreen 隐藏右栏拖拽把手，per-tab presentation seam 是上游候选）。
 
@@ -108,14 +111,15 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 
 ```
 $DSH_HOME/state/canvas/<canvasId>/
-  canvas.json      # { id, title, attachedWorkspaces, chat, cards[], categories[], links[], lanes[], stats, archivedAt, … }
+  canvas.json      # { id, title, attachedWorkspaces, chat, cards[], categories[], links[], lanes[], manuscripts[], stats, archivedAt, … }
+  manuscripts/<ms_…>/   # 每篇成稿一个目录，正文一个 .md（元信息在 canvas.json 的 manuscripts[] 里）
 ```
 
 `cards[]` 每张卡：`{ id, kind, text, source?, status: proposed|kept|archived, question?, comments[], draw?, x?, y?, createdBy, createdAt, updatedAt }`。`draw` 是 `[{ pts: [{x,y,w}], color }]`——逻辑框（600×400）单位下的点列。`x`/`y` 成对出现或一对都没有（只有坐标没有尺寸：尺寸归渲染，不归存储）。`links[]` 是 `{ from, to }`，`lanes[]` 是 `{ id, label, x, y, w, h }`。`stats` 记提议接受/拒绝计数、各 kind 可见卡计数、最后活跃时间（列表排序与后续自调整规则的数据源）。文件损坏或 id 对不上目录时：**列表跳过、读写报错**，绝不重写一个读不懂的文件。
 
 **板服务**：`CanvasBoardService`（`ctx.canvasBoard`）整板版本围栏读写——读取 → 应用纯函数修改 → `replaceIfVersion` 写回；版本冲突**重读重放一次**再报 `stale`（两个浏览器标签页同时操作不丢卡）。写入围栏见 Compatibility 的「重定界」条。
 
-**Remote**：namespace `canvas` 在 v1 五动词（`list` / `read` / `create` / `write` / `setArchived`）之外的空间动词：`listCanvases` / `createCanvas` / `readBoard` / `putCard` / `patchCard` / `addComment` / `archiveCanvas` / `deleteCanvas` / `deleteCard` / `setCategories` / `setLayout` / `focusCanvas`，加上图片那两条不带会话的 `attachImage` / `imageBytes`。变更类全部 agent 优先（调用会话供电围栏），读取类不带 agent——v1 的线上约定原样延续。`setLayout` 是连线面唯一的写动词：一次拖动可能同时动一张分区和它里面五张卡，逐张 `patchCard` 会各自撞自己的版本守卫，所以位置/分区/线三样合在一个动词里一盘落定。**「没带这个字段」和「带了一个空数组」是两件事**：省略 = 这一盘不动，`[]` = 清空。
+**Remote**：namespace `canvas` 在 v1 五动词（`list` / `read` / `create` / `write` / `setArchived`）之外的空间动词：`listCanvases` / `createCanvas` / `readBoard` / `putCard` / `patchCard` / `addComment` / `archiveCanvas` / `deleteCanvas` / `deleteCard` / `setCategories` / `setLayout` / `focusCanvas`，成稿五条 `readManuscript` / `writeManuscript` / `patchManuscript` / `deleteManuscript` / `exportManuscript`（写入带 `baseVersion`，版本对不上回 `stale` + `currentVersion`），加上图片那两条不带会话的 `attachImage` / `imageBytes`。变更类全部 agent 优先（调用会话供电围栏），读取类不带 agent——v1 的线上约定原样延续。`setLayout` 是连线面唯一的写动词：一次拖动可能同时动一张分区和它里面五张卡，逐张 `patchCard` 会各自撞自己的版本守卫，所以位置/分区/线三样合在一个动词里一盘落定。**「没带这个字段」和「带了一个空数组」是两件事**：省略 = 这一盘不动，`[]` = 清空。
 
 **右栏只有一个 tab 类型**（M3 注册一次；0.4.5 一度注册两次，0.4.6 把第二次收回来了）：`ctx.sidebarRightTabs.register` 一次，body 挂在 keyed `sidebar.right.pane.tab` 上，注册级开关一处管显隐。`canvas` 是**页面类型**（不认领地址，按 kind 打开），而 `tab/CanvasTab.tsx` 现在是一台路由器：`tab/TabStrip.tsx` 是那一排标签（一块画布一行），下面的正文看「显示中那一行站在哪」——卡板 = 顶栏 + `space/BoardView.tsx`（或 `space/LinkView.tsx`），卡 / 草稿 = 面包屑（`detail/DetailCrumbs.tsx`）+ `detail/CanvasDetailView.tsx`，并且按卡带 `key`（一个不受控 textarea 的值不能从你刚看的那张卡带进这张卡，上一张/下一张也一样）。每块画布的视图记忆（筛选、勾选、视图、选中的线）和各滚动容器的偏移由 `CanvasTab` 按画布 id 记在内存里，不进 `sessionStorage`。切换器（`tab/CanvasSwitcher.tsx`）挂在标签条行尾，只负责往这排里加行（新建 / 挑一块已有的 / 归档）。
 

@@ -14,6 +14,7 @@
  *
  * @module @khorsheed/dsh-canvas
  */
+import { documentHeadingOf } from './types.ts'
 
 /** The content formats a card can render as. */
 export type CardFormat = 'markdown' | 'html'
@@ -117,4 +118,19 @@ export function plainTitleOf(text: string): string {
  */
 export function cardTitleOf(text: string): string {
   return htmlTitleOf(text) ?? plainTitleOf(text).slice(0, MAX_PLAIN_TITLE_LENGTH)
+}
+
+/**
+ * The name a person sees for a card — a tab, a crumb, a source chip. A
+ * markdown document is named by its heading, never by its raw `#` line (the
+ * board face already does this); anything else by {@link cardTitleOf}.
+ * @param card - the card's kind and text.
+ * @returns a single-line name ('' for an empty card).
+ */
+export function cardNameOf(card: { readonly kind: string; readonly text: string }): string {
+  if (card.kind === 'document' && detectCardFormat(card.text) !== 'html') {
+    const heading = documentHeadingOf(card.text)?.title
+    if (heading !== undefined && heading !== '') return heading
+  }
+  return cardTitleOf(card.text)
 }

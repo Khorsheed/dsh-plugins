@@ -35,6 +35,7 @@
     "src/client/confirm-delete.tsx",
     "src/client/detail/CardPad.tsx",
     "src/client/detail/CanvasDetailView.tsx",
+    "src/client/manuscript/ManuscriptView.tsx",
     "src/client/detail/DetailCrumbs.tsx",
     "src/client/detail/DrawFigure.tsx",
     "src/client/space/BoardView.tsx",

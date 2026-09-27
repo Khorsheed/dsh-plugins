@@ -49,13 +49,15 @@ function bench(options: { withBoard?: boolean } = {}) {
 }
 
 describe('the ./agent composition entry', () => {
-  it('registers both canvas tools (origin-tagged) and the English guidance into the mounting scope', async () => {
+  it('registers the canvas tools (origin-tagged) and the English guidance into the mounting scope', async () => {
     const { ctx, tools, prompts } = bench()
     agentApply(ctx)
     ctx.provide('tools', tools)
     ctx.provide('systemPrompt', prompts)
     await new Promise(resolve => { setTimeout(resolve, 0) })
-    expect(tools.registered.map(def => def.name)).toEqual(['canvas_propose_card', 'canvas_comment'])
+    expect(tools.registered.map(def => def.name)).toEqual([
+      'canvas_propose_card', 'canvas_comment', 'canvas_read_manuscript', 'canvas_write_manuscript',
+    ])
     for (const def of tools.registered) {
       expect((def as unknown as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')]).toEqual({
         channel: 'plugin', owner: '@khorsheed/dsh-canvas',
@@ -69,6 +71,8 @@ describe('the ./agent composition entry', () => {
     expect(section.text).toContain('right-Sidebar Canvas tab')
     expect(section.text).toContain('canvas_propose_card')
     expect(section.text).toContain('canvas_comment')
+    expect(section.text).toContain('canvas_write_manuscript')
+    expect(section.text).toContain('baseVersion')
     expect(section.text).toContain('never paste card text')
     expect(section.text).toContain('one sharp question')
     expect(section.text).not.toMatch(/[一-鿿]/)

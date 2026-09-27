@@ -8,8 +8,10 @@
   "files": [
     "src/card-format.ts",
     "src/agent.ts",
+    "src/image-token.ts",
     "src/index.ts",
     "src/invariant.ts",
+    "src/manuscript.ts",
     "src/remote.ts",
     "src/service.ts",
     "src/store.ts",

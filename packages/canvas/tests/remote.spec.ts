@@ -83,6 +83,11 @@ async function bench(): Promise<{ seen: Seen[]; remote: CanvasRemoteService; dis
     deleteCanvas: async (_request: { canvasId: string }, session: Session) => { seen.push({ method: 'deleteCanvas', session }); return { ok: true as const } },
     deleteCard: async (_request: { canvasId: string; cardId: string }, session: Session) => { seen.push({ method: 'deleteCard', session }); return boardReceipt() },
     focusCanvas: async (_request: { canvasId: string }, session: Session) => { seen.push({ method: 'focusCanvas', session }); return { ok: true as const } },
+    readManuscript: async () => ({ ok: false as const, error: 'missing' as const }),
+    writeManuscript: async (_request: unknown, session: Session, author: string) => { seen.push({ method: `writeManuscript:${author}`, session }); return { ok: false as const, error: 'stale' as const, currentVersion: 2 } },
+    patchManuscript: async (_request: unknown, session: Session) => { seen.push({ method: 'patchManuscript', session }); return boardReceipt() },
+    deleteManuscript: async (_request: unknown, session: Session) => { seen.push({ method: 'deleteManuscript', session }); return boardReceipt() },
+    exportManuscript: async (_request: unknown, session: Session) => { seen.push({ method: 'exportManuscript', session }); return { ok: false as const, error: 'changed' as const, path: `${WS}/x.md` } },
   }
   const ctx = new Context()
   ctx.provide('canvasStore', store as unknown as CanvasService)
@@ -148,6 +153,26 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
     const { remote, dispose } = await bench()
     expect(await remote.listCanvases()).toEqual({ items: [] })
     expect(await remote.readBoard({ canvasId: CANVAS_ID })).toEqual({ ok: false, error: 'missing' })
+    await dispose()
+  })
+})
+
+describe('CanvasRemoteService — the manuscript verbs', () => {
+  it('forwards the session, and writes from the browser as the user', async () => {
+    const { remote, seen, dispose } = await bench()
+    const agent = { session: SESSION } as unknown as Agent
+    const ids = { canvasId: CANVAS_ID, manuscriptId: 'ms_abcdefgh' }
+    expect(await remote.writeManuscript(agent, { ...ids, body: 'x', baseVersion: 1 })).toEqual({ ok: false, error: 'stale', currentVersion: 2 })
+    expect(await remote.patchManuscript(agent, { ...ids, status: 'final' })).toMatchObject({ ok: true })
+    expect(await remote.exportManuscript(agent, { ...ids, workspace: WS })).toEqual({ ok: false, error: 'changed', path: `${WS}/x.md` })
+    expect(await remote.deleteManuscript(agent, ids)).toMatchObject({ ok: true })
+    expect(seen).toEqual([
+      { method: 'writeManuscript:user', session: SESSION },
+      { method: 'patchManuscript', session: SESSION },
+      { method: 'exportManuscript', session: SESSION },
+      { method: 'deleteManuscript', session: SESSION },
+    ])
+    expect(await remote.readManuscript(ids)).toEqual({ ok: false, error: 'missing' })
     await dispose()
   })
 })

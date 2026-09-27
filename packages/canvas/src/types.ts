@@ -521,12 +521,12 @@ export function sanitizeCanvasTitle(raw: string): string | undefined {
  * the caller supplies the time and the randomness so this module stays pure.
  * @param prefix - `canvas`, `c` (card), `m` (comment), `cat` (category row) or
  * `lane` (a link-view container — only the client ever creates one, so it mints
- * the id the rename gesture later refers back to).
+ * the id the rename gesture later refers back to) or `ms` (a manuscript).
  * @param timeMs - milliseconds since the epoch.
  * @param random - lowercase base36 randomness (host supplies `node:crypto`).
  * @returns the id.
  */
-export function makeBoardId(prefix: 'canvas' | 'c' | 'm' | 'cat' | 'lane', timeMs: number, random: string): string {
+export function makeBoardId(prefix: 'canvas' | 'c' | 'm' | 'cat' | 'lane' | 'ms', timeMs: number, random: string): string {
   return `${prefix}_${timeMs.toString(36).padStart(9, '0')}${random.toLowerCase().replace(/[^a-z0-9]/g, '')}`
 }
 
@@ -857,6 +857,11 @@ export interface CanvasBoard {
   links: BoardLink[]
   /** This canvas's lanes (stage ⑥), same rule: absent in the file, empty here. */
   lanes: BoardLane[]
+  /**
+   * The canvas's manuscripts (成稿): metadata only — each body is its own
+   * markdown file beside `canvas.json`. Same rule: absent in the file, empty here.
+   */
+  manuscripts: BoardManuscript[]
   stats: CanvasStats
   /** Set when the canvas is archived from the list (hide, restorable; deleting is its own verb). */
   archivedAt: string | null
@@ -1028,6 +1033,7 @@ export function normalizeBoard(raw: unknown, expectedId: string, now: string): C
     categories,
     links: normalizeLinks(record['links'], cards.map(card => card.id)),
     lanes: normalizeLanes(record['lanes']),
+    manuscripts: normalizeManuscripts(record['manuscripts'], cards.map(card => card.id)),
     stats: {
       proposed: {
         accepted: count(proposedRaw?.['accepted']),
@@ -1040,6 +1046,168 @@ export function normalizeBoard(raw: unknown, expectedId: string, now: string): C
     createdAt: typeof record['createdAt'] === 'string' ? record['createdAt'] : now,
     updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : now,
   }
+}
+
+/* ------------------------------------------------------------ manuscripts (成稿) */
+
+/**
+ * A manuscript's two states: still being written, or declared done by the
+ * user. An agent write to a finished manuscript reopens it — a rewrite is
+ * writing, whatever the label said.
+ */
+export const MANUSCRIPT_STATUSES = ['writing', 'final'] as const
+
+/** One manuscript state. */
+export type ManuscriptStatus = (typeof MANUSCRIPT_STATUSES)[number]
+
+/** Whether a value is one of the two states. */
+export function isManuscriptStatus(value: unknown): value is ManuscriptStatus {
+  return typeof value === 'string' && (MANUSCRIPT_STATUSES as readonly string[]).includes(value)
+}
+
+/** The directory under one canvas's own directory that holds manuscript bodies. */
+export const MANUSCRIPT_DIR_NAME = 'manuscripts'
+
+/** Longest manuscript body, in code units (a book chapter fits; a dump does not). */
+export const MAX_MANUSCRIPT_TEXT_LENGTH = 512_000
+
+/** Most manuscripts one canvas holds (the board is read whole; metadata stays small). */
+export const MAX_BOARD_MANUSCRIPTS = 100
+
+/** Most card ids one manuscript's source lists carry, per list. */
+export const MAX_MANUSCRIPT_SOURCES = 400
+
+/**
+ * Which of the canvas's cards a manuscript drew on (`used`) and which the
+ * writer looked at and left out (`unused`) — the second list is the point:
+ * material that did not make it is the next draft's starting place.
+ */
+export interface ManuscriptSources {
+  used: string[]
+  unused: string[]
+}
+
+/** Where a manuscript was last saved into a workspace, and what that file was then. */
+export interface ManuscriptExport {
+  /** The attached workspace it went to (absolute). */
+  readonly workspace: string
+  /** The markdown file's absolute path. */
+  readonly path: string
+  /** The file's freshness token right after the save: a different one means someone edited it since. */
+  readonly version: string
+  readonly savedAt: string
+}
+
+/**
+ * One manuscript's metadata (成稿, the 2026-09-27 decision): an entity of its
+ * own, not a card. The body lives in its own markdown file (`file`, under the
+ * canvas's `manuscripts/` directory) so a long text never rides every board
+ * read; `version` is the writer-facing counter a write must present as its
+ * base — a mismatch is a conflict, never a silent overwrite.
+ */
+export interface BoardManuscript {
+  readonly id: string
+  title: string
+  status: ManuscriptStatus
+  /** Starts at 1; every body write adds one. */
+  version: number
+  /** The body file's name inside `manuscripts/<id>/` (one fresh file per version). */
+  file: string
+  sources: ManuscriptSources
+  /** The card this manuscript was turned from (「转为成稿」), when it was. */
+  fromCardId?: string
+  exported?: ManuscriptExport
+  readonly createdBy: 'user' | 'agent'
+  lastWrittenBy: 'user' | 'agent'
+  readonly createdAt: string
+  updatedAt: string
+}
+
+/** One manuscript body file name: the version, then randomness so two racing writers never share one. */
+export function manuscriptFileName(version: number, random: string): string {
+  return `v${version}-${random.toLowerCase().replace(/[^a-z0-9]/g, '')}.md`
+}
+
+/** Whether a stored body file name is one this module could have minted (the traversal guard). */
+export function isManuscriptFileName(value: unknown): value is string {
+  return typeof value === 'string' && /^v[1-9][0-9]{0,8}-[a-z0-9]{1,40}\.md$/.test(value)
+}
+
+/** Whether a manuscript id has the shape `makeBoardId('ms', …)` mints (checked before any path is joined). */
+export function isManuscriptId(value: unknown): value is string {
+  return typeof value === 'string' && /^ms_[a-z0-9]{8,40}$/.test(value)
+}
+
+/**
+ * Tidy one pair of source lists: only cards the board holds, each id once, and
+ * an id in both lists counts as used (the writer drew on it after all).
+ * @param raw - the untrusted `{ used, unused }` value.
+ * @param cardIds - the board's card ids.
+ * @returns the two lists.
+ */
+export function normalizeManuscriptSources(raw: unknown, cardIds: Iterable<string>): ManuscriptSources {
+  const known = new Set(cardIds)
+  const record = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {}
+  const pick = (value: unknown, skip: ReadonlySet<string>): string[] => {
+    if (!Array.isArray(value)) return []
+    const out: string[] = []
+    for (const id of value as unknown[]) {
+      if (typeof id !== 'string' || !known.has(id) || skip.has(id) || out.includes(id)) continue
+      out.push(id)
+      if (out.length >= MAX_MANUSCRIPT_SOURCES) break
+    }
+    return out
+  }
+  const used = pick(record['used'], new Set())
+  return { used, unused: pick(record['unused'], new Set(used)) }
+}
+
+/**
+ * Read the untrusted `manuscripts[]` value: a bad entry drops out, the rest
+ * load (the card rule). Source lists lose ids the board no longer holds.
+ * @param raw - the parsed `manuscripts` field.
+ * @param cardIds - the board's card ids.
+ * @returns at most {@link MAX_BOARD_MANUSCRIPTS} well-formed, id-unique manuscripts.
+ */
+export function normalizeManuscripts(raw: unknown, cardIds: readonly string[]): BoardManuscript[] {
+  if (!Array.isArray(raw)) return []
+  const out: BoardManuscript[] = []
+  for (const entry of raw as unknown[]) {
+    if (out.length >= MAX_BOARD_MANUSCRIPTS) break
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as Record<string, unknown>
+    if (!isManuscriptId(record['id']) || out.some(other => other.id === record['id'])) continue
+    if (!isManuscriptFileName(record['file'])) continue
+    const title = typeof record['title'] === 'string' ? sanitizeCanvasTitle(record['title']) : undefined
+    const version = record['version']
+    if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) continue
+    const now = typeof record['createdAt'] === 'string' ? record['createdAt'] : new Date(0).toISOString()
+    const manuscript: BoardManuscript = {
+      id: record['id'],
+      title: title ?? record['id'],
+      status: isManuscriptStatus(record['status']) ? record['status'] : 'writing',
+      version,
+      file: record['file'],
+      sources: normalizeManuscriptSources(record['sources'], cardIds),
+      createdBy: record['createdBy'] === 'agent' ? 'agent' : 'user',
+      lastWrittenBy: record['lastWrittenBy'] === 'agent' ? 'agent' : 'user',
+      createdAt: now,
+      updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : now,
+    }
+    if (typeof record['fromCardId'] === 'string' && record['fromCardId'].length > 0) {
+      manuscript.fromCardId = record['fromCardId']
+    }
+    const exported = record['exported']
+    if (typeof exported === 'object' && exported !== null) {
+      const e = exported as Record<string, unknown>
+      if (typeof e['workspace'] === 'string' && typeof e['path'] === 'string'
+        && typeof e['version'] === 'string' && typeof e['savedAt'] === 'string') {
+        manuscript.exported = { workspace: e['workspace'], path: e['path'], version: e['version'], savedAt: e['savedAt'] }
+      }
+    }
+    out.push(manuscript)
+  }
+  return out
 }
 
 /* ---------------------------------------------------- board wire payloads */
@@ -1332,3 +1500,81 @@ export interface BoardFocusRequest {
 export type BoardFocusResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: CanvasError }
+
+/* --------------------------------------------------------- manuscripts (wire) */
+
+/** Read one manuscript: its metadata and its body. */
+export interface ManuscriptReadRequest {
+  readonly canvasId: string
+  readonly manuscriptId: string
+}
+
+/** A manuscript read either returns both halves, or one shared code. */
+export type ManuscriptReadOutcome =
+  | { readonly ok: true; readonly manuscript: BoardManuscript; readonly body: string }
+  | { readonly ok: false; readonly error: CanvasError }
+
+/**
+ * Write one manuscript's body — the one verb for create and rewrite. Without a
+ * `manuscriptId` it creates (a title is then required); with one it rewrites,
+ * and `baseVersion` must equal the manuscript's current version or the write
+ * is refused as `stale` (the answer carries the current version). `sources`,
+ * when present, replaces both lists; absent leaves them alone.
+ */
+export interface ManuscriptWriteRequest {
+  readonly canvasId: string
+  readonly manuscriptId?: string | undefined
+  readonly title?: string | undefined
+  readonly body: string
+  readonly baseVersion?: number | undefined
+  readonly sources?: { readonly used?: readonly string[]; readonly unused?: readonly string[] } | undefined
+  /** 「转为成稿」: the card the new manuscript starts from (create only). */
+  readonly fromCardId?: string | undefined
+}
+
+/** A manuscript write: the fresh board and the written manuscript, or a code (plus the version a stale write lost to). */
+export type ManuscriptWriteResult =
+  | ({ readonly ok: true; readonly manuscript: BoardManuscript } & BoardReadResult)
+  | { readonly ok: false; readonly error: CanvasError; readonly currentVersion?: number | undefined }
+
+/** Rename a manuscript or move it between writing and final (no body change, no version bump). */
+export interface ManuscriptPatchRequest {
+  readonly canvasId: string
+  readonly manuscriptId: string
+  readonly title?: string | undefined
+  readonly status?: ManuscriptStatus | undefined
+}
+
+/** Delete one manuscript for good: its metadata and every body file. Operator-only. */
+export interface ManuscriptDeleteRequest {
+  readonly canvasId: string
+  readonly manuscriptId: string
+}
+
+/**
+ * Save one manuscript into an attached workspace as `<title>.md`, its images
+ * beside it in `<title>.assets/`. The path is remembered: the next save goes
+ * to the same file, and when that file changed since (or a foreign file sits
+ * where a first save would land), the save stops and says so unless
+ * `overwrite` is set — the user confirms, the store never guesses.
+ */
+export interface ManuscriptExportRequest {
+  readonly canvasId: string
+  readonly manuscriptId: string
+  /** One of the canvas's attached workspaces. */
+  readonly workspace: string
+  readonly overwrite?: boolean | undefined
+}
+
+/** Why a save stopped: a shared code, or `changed` (the remembered file was edited since the last save). */
+export type ManuscriptExportError = CanvasError | 'changed'
+
+/** A save's receipt: where it went, how many images came along, and how many could not. */
+export type ManuscriptExportResult =
+  | ({
+    readonly ok: true
+    readonly path: string
+    readonly images: number
+    readonly missingImages: number
+  } & BoardReadResult)
+  | { readonly ok: false; readonly error: ManuscriptExportError; readonly path?: string | undefined }

@@ -59,6 +59,7 @@ function board(id = CANVAS_ID, cards: CanvasBoard['cards'] = []): CanvasBoard {
     categories: [...defaultCategories(), custom],
     links: [],
     lanes: [],
+    manuscripts: [],
     stats: { proposed: { accepted: 0, rejected: 0 }, kindCounts: {}, lastActiveAt: NOW },
     archivedAt: null,
     createdAt: NOW,

@@ -104,9 +104,11 @@ const WS = '/ws'
 const STATE = '/state'
 const FALLBACK = { id: 's-main', header: { cwd: WS } } as unknown as Session
 
+type ToolName = 'canvas_propose_card' | 'canvas_comment' | 'canvas_read_manuscript' | 'canvas_write_manuscript'
+
 interface Bench {
   canvasId: string
-  execute: (name: 'canvas_propose_card' | 'canvas_comment', args: Record<string, unknown>) => Promise<unknown>
+  execute: (name: ToolName, args: Record<string, unknown>) => Promise<unknown>
   readCurrent: () => Promise<CanvasBoard>
 }
 
@@ -123,7 +125,7 @@ async function harness(): Promise<Bench> {
   expect(await board.focusCanvas({ canvasId }, FALLBACK)).toEqual({ ok: true })
   const tools = canvasMainSessionToolDefinitions(board)
   const agent = { session: FALLBACK } as unknown as Agent
-  const execute = async (name: 'canvas_propose_card' | 'canvas_comment', args: Record<string, unknown>): Promise<unknown> => {
+  const execute = async (name: ToolName, args: Record<string, unknown>): Promise<unknown> => {
     const tool = tools.find(def => def.name === name)
     if (tool === undefined) throw new Error(`no tool ${name}`)
     return tool.execute(args, { agent } as never)
@@ -167,6 +169,37 @@ describe('the canvas tools on the open canvas', () => {
   })
 })
 
+describe('the manuscript tools on the open canvas', () => {
+  it('writes a manuscript, lists it, reads it back with version and sources', async () => {
+    const { execute, readCurrent } = await harness()
+    await execute('canvas_propose_card', { kind: 'fragment', text: '雨夜\n正文' })
+    await execute('canvas_propose_card', { kind: 'fragment', text: '晴天' })
+    const [used, unused] = (await readCurrent()).cards
+    expect(await execute('canvas_read_manuscript', {})).toBe('这块画布还没有成稿。')
+    const answer = await execute('canvas_write_manuscript', {
+      body: '# 第一章\n\n正文', sources: { used: [used!.id], unused: [unused!.id] },
+    }) as string
+    const manuscript = (await readCurrent()).manuscripts[0]!
+    expect(answer).toBe(`完成：${manuscript.id} v1`)
+    expect(manuscript).toMatchObject({ title: '第一章', createdBy: 'agent', status: 'writing' })
+    expect(await execute('canvas_read_manuscript', {})).toBe(`${manuscript.id}　第一章　v1　写作中`)
+    const read = await execute('canvas_read_manuscript', { manuscriptId: manuscript.id }) as string
+    expect(read).toContain(`用到的素材：${used!.id}（雨夜）`)
+    expect(read).toContain(`没用到的素材：${unused!.id}（晴天）`)
+    expect(read.endsWith('---\n# 第一章\n\n正文')).toBe(true)
+  })
+
+  it('answers a conflict with the current version instead of overwriting', async () => {
+    const { execute, readCurrent } = await harness()
+    await execute('canvas_write_manuscript', { body: '# 稿\n\n一' })
+    const id = (await readCurrent()).manuscripts[0]!.id
+    expect(await execute('canvas_write_manuscript', { manuscriptId: id, body: '二', baseVersion: 1 })).toBe(`完成：${id} v2`)
+    expect(await execute('canvas_write_manuscript', { manuscriptId: id, body: '三', baseVersion: 1 }))
+      .toBe('冲突：这篇成稿当前是 v2，已被改过。先用 canvas_read_manuscript 读最新版，再在它上面改。')
+    expect(await execute('canvas_read_manuscript', { manuscriptId: 'ms_nopenope' })).toBe('失败：missing')
+  })
+})
+
 describe('the main-session canvas tools (M3 second entrance)', () => {
   it('answers the no-canvas message instead of failing when nothing is open', async () => {
     const fs = new FakeFs()
@@ -175,7 +208,9 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
     ;(ctx as { canvasStore?: CanvasService }).canvasStore = pad
     const board = new CanvasBoardService(ctx, { stateRoot: STATE })
     const tools = canvasMainSessionToolDefinitions(board)
-    expect(tools.map(def => def.name)).toEqual(['canvas_propose_card', 'canvas_comment'])
+    expect(tools.map(def => def.name)).toEqual([
+      'canvas_propose_card', 'canvas_comment', 'canvas_read_manuscript', 'canvas_write_manuscript',
+    ])
     for (const def of tools) {
       expect((def as unknown as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')]).toEqual({
         channel: 'plugin', owner: '@khorsheed/dsh-canvas',

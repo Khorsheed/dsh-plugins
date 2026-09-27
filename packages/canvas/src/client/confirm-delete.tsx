@@ -1,5 +1,5 @@
 /**
- * The delete confirmation, shared by the canvas and the card gestures. A plain
+ * The delete confirmation, shared by the canvas, card and manuscript gestures. A plain
  * two-button question — deleting is rare and the words say what goes, so
  * typing the canvas's name back would be ceremony, not safety. Archive stays
  * the everyday gesture (with its undo); this is the one door with no way back.
@@ -16,6 +16,7 @@ import css from './confirm-delete.module.css'
 export type DeleteAsk =
   | { readonly kind: 'canvas'; readonly canvasId: string; readonly title: string }
   | { readonly kind: 'card'; readonly canvasId: string; readonly cardId: string }
+  | { readonly kind: 'manuscript'; readonly canvasId: string; readonly manuscriptId: string; readonly title: string }
 
 /**
  * The confirmation dialog; closed while `ask` is null.
@@ -36,9 +37,13 @@ export function ConfirmDelete({ t, ask, onCancel, onConfirm }: {
       onClose={onCancel}
       title={ask?.kind === 'canvas'
         ? t('confirm.deleteCanvasTitle', { title: ask.title })
-        : t('confirm.deleteCardTitle')}
+        : ask?.kind === 'manuscript'
+          ? t('confirm.deleteManuscriptTitle', { title: ask.title })
+          : t('confirm.deleteCardTitle')}
       closeLabel={t('confirm.close')}
-      description={ask?.kind === 'canvas' ? t('confirm.deleteCanvasBody') : t('confirm.deleteCardBody')}
+      description={ask?.kind === 'canvas'
+        ? t('confirm.deleteCanvasBody')
+        : ask?.kind === 'manuscript' ? t('confirm.deleteManuscriptBody') : t('confirm.deleteCardBody')}
       footer={(
         <>
           <Button size="sm" onClick={onCancel}>{t('confirm.cancel')}</Button>

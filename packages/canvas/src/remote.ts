@@ -30,6 +30,9 @@ import type {
   CanvasArchiveRequest, CanvasArchiveResult, CanvasCreateRequest,
   CanvasListRequest, CanvasListResult, CanvasReadOutcome, CanvasReadRequest,
   CanvasWriteRequest, CanvasWriteResult,
+  ManuscriptDeleteRequest, ManuscriptExportRequest, ManuscriptExportResult,
+  ManuscriptPatchRequest, ManuscriptReadOutcome, ManuscriptReadRequest,
+  ManuscriptWriteRequest, ManuscriptWriteResult,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -234,6 +237,61 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('focusCanvas')
   focusCanvas(agent: Agent, request: BoardFocusRequest): Promise<BoardFocusResult> {
     return this.board.focusCanvas(request, agent.session)
+  }
+
+  /* ---------------------------------------------------------------- manuscripts */
+
+  /** One manuscript's metadata and body (a body file gone missing reads as empty). */
+  @Remote('readManuscript')
+  readManuscript(request: ManuscriptReadRequest): Promise<ManuscriptReadOutcome> {
+    return this.board.readManuscript(request)
+  }
+
+  /**
+   * Create a manuscript, or rewrite one at the version the editor loaded
+   * (`stale` with the current version when someone wrote in between).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - the body, and for a rewrite the id and base version.
+   * @returns the manuscript, the fresh board and token, or the failure code.
+   */
+  @Remote('writeManuscript')
+  writeManuscript(agent: Agent, request: ManuscriptWriteRequest): Promise<ManuscriptWriteResult> {
+    return this.board.writeManuscript(request, agent.session, 'user')
+  }
+
+  /**
+   * Rename a manuscript or move it between 「写作中」 and 「定稿」.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, manuscript id, the fields that changed.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('patchManuscript')
+  patchManuscript(agent: Agent, request: ManuscriptPatchRequest): Promise<BoardMutationResult> {
+    return this.board.patchManuscript(request, agent.session)
+  }
+
+  /**
+   * Delete a manuscript and its body files for good.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id and manuscript id.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('deleteManuscript')
+  deleteManuscript(agent: Agent, request: ManuscriptDeleteRequest): Promise<BoardMutationResult> {
+    return this.board.deleteManuscript(request, agent.session)
+  }
+
+  /**
+   * Save a manuscript into an attached workspace as `<title>.md` plus
+   * `<title>.assets/`; `exists` / `changed` ask the caller to confirm with
+   * `overwrite`.
+   * @param agent - the calling session's agent; its session names the attached workspaces.
+   * @param request - canvas id, manuscript id, the workspace, the overwrite flag.
+   * @returns the saved path and image counts, or the failure code.
+   */
+  @Remote('exportManuscript')
+  exportManuscript(agent: Agent, request: ManuscriptExportRequest): Promise<ManuscriptExportResult> {
+    return this.board.exportManuscript(request, agent.session)
   }
 
   /* ---------------------------------------------------------------- images (§10.3) */

@@ -21,19 +21,21 @@
  * @module @khorsheed/dsh-canvas
  */
 import { randomBytes } from 'node:crypto'
-import { rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AttachmentIdType, AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { FsError, FsVersion } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
+import { exportBaseNameOf, rewriteImagesForExport } from './manuscript.ts'
 import { canvasErrorOf } from './service.ts'
 import {
-  CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, defaultCategories,
-  emptyStats, isBoardCardStatus, isCardCategoryId, isQuestionState, makeBoardId,
-  MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId,
+  CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, defaultCategories, documentHeadingOf,
+  emptyStats, isBoardCardStatus, isCardCategoryId, isManuscriptId, isManuscriptStatus, isQuestionState, makeBoardId,
+  manuscriptFileName, MANUSCRIPT_DIR_NAME, MAX_BOARD_MANUSCRIPTS, MAX_MANUSCRIPT_TEXT_LENGTH,
+  MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId, normalizeManuscriptSources,
   normalizeCategories, normalizeDraw, normalizeLanes, normalizeLinks, normalizePositions,
   reconcileCategories,
   sanitizeCanvasTitle, summarizeBoard,
@@ -47,7 +49,10 @@ import {
   type BoardPatchCardRequest, type BoardProposeCardRequest, type BoardPutCardRequest,
   type BoardReadOutcome, type BoardReadRequest, type BoardSetCategoriesRequest,
   type BoardSetLayoutRequest,
-  type CanvasBoard, type CanvasError, type CanvasImageError, type CanvasSummary,
+  type BoardManuscript, type CanvasBoard, type CanvasError, type CanvasImageError, type CanvasSummary,
+  type ManuscriptDeleteRequest, type ManuscriptExportRequest, type ManuscriptExportResult,
+  type ManuscriptPatchRequest, type ManuscriptReadOutcome, type ManuscriptReadRequest,
+  type ManuscriptWriteRequest, type ManuscriptWriteResult,
 } from './types.ts'
 
 /**
@@ -123,6 +128,21 @@ export type RemoveTree = (path: string) => Promise<void>
 const removeTreeOnDisk: RemoveTree = path => rm(path, { recursive: true, force: true })
 
 /**
+ * Write one binary file, creating its directory. `ctx.fs` writes text only, so
+ * 「保存到工作区」 puts a manuscript's images beside it through node — behind the
+ * store's own checks (the calling session's mode is not read-only, the path
+ * sits inside an attached workspace), which is the fence the host would apply
+ * if it had a binary write. The seam exists so the specs can stand in for the disk.
+ */
+export type WriteBytes = (path: string, data: Uint8Array) => Promise<void>
+
+/** The default binary writer. */
+const writeBytesOnDisk: WriteBytes = async (path, data) => {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, data)
+}
+
+/**
  * The canvas space's service core. Stateless apart from the context it
  * borrows for `ctx.fs`/`ctx.canvasStore` and the policy home it resolves each
  * caller's mode through.
@@ -144,11 +164,13 @@ export class CanvasBoardService {
    * @param ctx - host context carrying the mounted filesystem and the pad core.
    * @param config - optional state-root override.
    * @param removeTree - the directory remover the canvas delete uses (specs swap it).
+   * @param writeBytes - the binary writer a manuscript save's images use (specs swap it).
    */
   constructor(
     private readonly ctx: Context,
     config: CanvasBoardConfig = {},
     private readonly removeTree: RemoveTree = removeTreeOnDisk,
+    private readonly writeBytes: WriteBytes = writeBytesOnDisk,
   ) {
     this.stateRoot = resolveCanvasStateRoot(config.stateRoot)
     this.sandboxPolicy = ctx.fs.sandboxMode === undefined ? undefined : ctx.get('sandboxPolicy')
@@ -311,6 +333,7 @@ export class CanvasBoardService {
       cards: [],
       links: [],
       lanes: [],
+      manuscripts: [],
       stats: emptyStats(now),
       archivedAt: null,
       createdAt: now,
@@ -504,6 +527,10 @@ export class CanvasBoardService {
       if (index < 0) return 'missing'
       board.cards.splice(index, 1)
       board.links = board.links.filter(link => link.from !== request.cardId && link.to !== request.cardId)
+      for (const manuscript of board.manuscripts) {
+        manuscript.sources.used = manuscript.sources.used.filter(id => id !== request.cardId)
+        manuscript.sources.unused = manuscript.sources.unused.filter(id => id !== request.cardId)
+      }
       return board
     })
   }
@@ -633,6 +660,296 @@ export class CanvasBoardService {
    */
   focusedCanvasId(session: Session): string | undefined {
     return this.focused.get(String(session.id))
+  }
+
+  /* ------------------------------------------------------------ manuscripts (成稿) */
+
+  /** One manuscript's body directory (every version file it has lives here). */
+  private manuscriptDir(canvasId: string, manuscriptId: string): string {
+    return join(this.canvasDir(canvasId), MANUSCRIPT_DIR_NAME, manuscriptId)
+  }
+
+  /** One body file's target. */
+  private async bodyTarget(canvasId: string, manuscriptId: string, file: string) {
+    return this.fs.resolve(file, { cwd: this.manuscriptDir(canvasId, manuscriptId) })
+  }
+
+  /**
+   * Read one manuscript: its metadata off the board and its body file. A body
+   * file that has gone missing reads as an empty body — the metadata is still
+   * the user's to rename, rewrite or delete, so the entry must stay openable.
+   * @param request - canvas id and manuscript id (both shape-checked before any path).
+   * @returns both halves, or the failure code.
+   */
+  async readManuscript(request: ManuscriptReadRequest): Promise<ManuscriptReadOutcome> {
+    const id = normalizeCanvasId(request.canvasId)
+    if (id === undefined || !isManuscriptId(request.manuscriptId)) return { ok: false, error: 'invalid-name' }
+    const raw = await this.readRaw(id)
+    if (raw === 'missing') return { ok: false, error: 'missing' }
+    if (raw === 'corrupt') return { ok: false, error: 'io' }
+    const manuscript = raw.board.manuscripts.find(candidate => candidate.id === request.manuscriptId)
+    if (manuscript === undefined) return { ok: false, error: 'missing' }
+    let body = ''
+    try {
+      body = await this.fs.readText(await this.bodyTarget(id, manuscript.id, manuscript.file))
+    } catch {
+      body = ''
+    }
+    return { ok: true, manuscript, body }
+  }
+
+  /**
+   * Write one manuscript's body: create it (no id), or rewrite it (an id plus
+   * the version the writer read). The body goes to a FRESH file first — its
+   * name carries the new version and randomness, so it is created, never
+   * overwritten — and only then does the board's metadata move to it, under
+   * the board's own version guard, re-checking the base version inside the
+   * guarded change. Two writers racing from the same base therefore both write
+   * a file, and exactly one of them becomes the manuscript; the loser's file
+   * is removed and it is told `stale` with the version it lost to. The
+   * superseded body file goes once the new one is in.
+   * @param request - the canvas, the manuscript (or a title to create one), the body, the base version, sources.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @param author - who wrote this version (an agent write reopens a final manuscript).
+   * @returns the fresh board plus the written manuscript, or the failure code.
+   */
+  async writeManuscript(
+    request: ManuscriptWriteRequest,
+    session: Session,
+    author: 'user' | 'agent' = 'user',
+  ): Promise<ManuscriptWriteResult> {
+    const id = normalizeCanvasId(request.canvasId)
+    if (id === undefined) return { ok: false, error: 'invalid-name' }
+    const creating = request.manuscriptId === undefined
+    if (!creating && !isManuscriptId(request.manuscriptId)) return { ok: false, error: 'invalid-name' }
+    const body = request.body.slice(0, MAX_MANUSCRIPT_TEXT_LENGTH)
+    if (creating && body.trim().length === 0) return { ok: false, error: 'invalid-name' }
+    const title = request.title === undefined ? undefined : sanitizeCanvasTitle(request.title)
+    if (request.title !== undefined && title === undefined) return { ok: false, error: 'invalid-name' }
+
+    const raw = await this.readRaw(id)
+    if (raw === 'missing') return { ok: false, error: 'missing' }
+    if (raw === 'corrupt') return { ok: false, error: 'io' }
+    const existing = creating ? undefined : raw.board.manuscripts.find(candidate => candidate.id === request.manuscriptId)
+    if (!creating && existing === undefined) return { ok: false, error: 'missing' }
+    if (existing !== undefined && request.baseVersion !== existing.version) {
+      return { ok: false, error: 'stale', currentVersion: existing.version }
+    }
+    if (creating && raw.board.manuscripts.length >= MAX_BOARD_MANUSCRIPTS) return { ok: false, error: 'invalid-name' }
+
+    const manuscriptId = existing?.id ?? makeBoardId('ms', Date.now(), randomSuffix())
+    const version = existing === undefined ? 1 : existing.version + 1
+    const file = manuscriptFileName(version, randomSuffix())
+    const policy = this.policyOf(session)
+    try {
+      await this.fs.writeText(
+        await this.bodyTarget(id, manuscriptId, file), body, { kind: 'createIfAbsent' }, undefined, policy,
+      )
+    } catch (error) {
+      return { ok: false, error: canvasErrorOf(error) }
+    }
+
+    let lostTo: number | undefined
+    let superseded: string | undefined
+    const result = await this.mutate(id, session, (board, now) => {
+      if (existing === undefined) {
+        if (board.manuscripts.length >= MAX_BOARD_MANUSCRIPTS) return 'invalid-name'
+        const fromCard = request.fromCardId === undefined
+          ? undefined
+          : board.cards.find(card => card.id === request.fromCardId)
+        const derived = title ?? documentHeadingOf(body)?.title
+        const named = derived === undefined ? undefined : sanitizeCanvasTitle(derived)
+        if (named === undefined) return 'invalid-name'
+        const created: BoardManuscript = {
+          id: manuscriptId,
+          title: named,
+          status: 'writing',
+          version,
+          file,
+          sources: normalizeManuscriptSources({
+            used: [...(request.sources?.used ?? []), ...(fromCard === undefined ? [] : [fromCard.id])],
+            unused: request.sources?.unused ?? [],
+          }, board.cards.map(card => card.id)),
+          createdBy: author,
+          lastWrittenBy: author,
+          createdAt: now,
+          updatedAt: now,
+          ...(fromCard === undefined ? {} : { fromCardId: fromCard.id }),
+        }
+        board.manuscripts.push(created)
+        return board
+      }
+      const manuscript = board.manuscripts.find(candidate => candidate.id === manuscriptId)
+      if (manuscript === undefined) return 'missing'
+      if (manuscript.version !== existing.version) {
+        lostTo = manuscript.version
+        return 'stale'
+      }
+      superseded = manuscript.file
+      manuscript.version = version
+      manuscript.file = file
+      manuscript.lastWrittenBy = author
+      manuscript.updatedAt = now
+      if (author === 'agent') manuscript.status = 'writing'
+      if (title !== undefined) manuscript.title = title
+      if (request.sources !== undefined) {
+        manuscript.sources = normalizeManuscriptSources(
+          { used: request.sources.used ?? [], unused: request.sources.unused ?? [] },
+          board.cards.map(card => card.id),
+        )
+      }
+      return board
+    })
+
+    if (!result.ok) {
+      await this.removeTree(join(this.manuscriptDir(id, manuscriptId), file)).catch(() => undefined)
+      if (creating) await this.removeTree(this.manuscriptDir(id, manuscriptId)).catch(() => undefined)
+      return { ok: false, error: result.error, ...(lostTo === undefined ? {} : { currentVersion: lostTo }) }
+    }
+    if (superseded !== undefined && superseded !== file) {
+      await this.removeTree(join(this.manuscriptDir(id, manuscriptId), superseded)).catch(() => undefined)
+    }
+    const written = result.board.manuscripts.find(candidate => candidate.id === manuscriptId)!
+    return { ok: true, board: result.board, version: result.version, manuscript: written }
+  }
+
+  /**
+   * Rename a manuscript, or move it between writing and final. The body and
+   * its version are untouched — a label is not a new draft.
+   * @param request - canvas id, manuscript id, and the fields to change.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async patchManuscript(request: ManuscriptPatchRequest, session: Session): Promise<BoardMutationResult> {
+    if (!isManuscriptId(request.manuscriptId)) return { ok: false, error: 'invalid-name' }
+    if (request.status !== undefined && !isManuscriptStatus(request.status)) return { ok: false, error: 'invalid-name' }
+    const title = request.title === undefined ? undefined : sanitizeCanvasTitle(request.title)
+    if (request.title !== undefined && title === undefined) return { ok: false, error: 'invalid-name' }
+    return this.mutate(request.canvasId, session, (board, now) => {
+      const manuscript = board.manuscripts.find(candidate => candidate.id === request.manuscriptId)
+      if (manuscript === undefined) return 'missing'
+      if (title !== undefined) manuscript.title = title
+      if (request.status !== undefined) manuscript.status = request.status
+      manuscript.updatedAt = now
+      return board
+    })
+  }
+
+  /**
+   * Delete one manuscript for good: the metadata leaves the board, then its
+   * body directory goes. Operator-only, like every delete; a file saved into a
+   * workspace is the user's and stays.
+   * @param request - canvas id and manuscript id.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async deleteManuscript(request: ManuscriptDeleteRequest, session: Session): Promise<BoardMutationResult> {
+    if (!isManuscriptId(request.manuscriptId)) return { ok: false, error: 'invalid-name' }
+    const result = await this.mutate(request.canvasId, session, board => {
+      const index = board.manuscripts.findIndex(candidate => candidate.id === request.manuscriptId)
+      if (index < 0) return 'missing'
+      board.manuscripts.splice(index, 1)
+      return board
+    })
+    if (result.ok) {
+      await this.removeTree(this.manuscriptDir(result.board.id, request.manuscriptId)).catch(() => undefined)
+    }
+    return result
+  }
+
+  /**
+   * Save one manuscript into an attached workspace: `<title>.md`, its images
+   * as files in `<title>.assets/` beside it, the pointers rewritten into
+   * relative links. The path is remembered with the file's token, so the next
+   * save goes to the same file — and stops with `changed` when that file was
+   * edited since, or `exists` when a first save would land on a file the
+   * canvas never wrote, until the user confirms (`overwrite`). Even then the
+   * write stays version-guarded against the file as just observed.
+   *
+   * The fence: the calling session resolves the MODE (read-only refuses), and
+   * the writable boundary is the workspace the user attached to this canvas —
+   * a directory the operator put in front of it on purpose, never one a
+   * request names on its own (an unattached path is `denied`).
+   * @param request - canvas, manuscript, the target workspace, and the overwrite confirmation.
+   * @param session - the session that owns the gesture; supplies the mode.
+   * @returns where the file went and how the images fared, or why it stopped.
+   */
+  async exportManuscript(request: ManuscriptExportRequest, session: Session): Promise<ManuscriptExportResult> {
+    const read = await this.readManuscript(request)
+    if (!read.ok) return read
+    const { manuscript, body } = read
+    const raw = await this.readRaw(request.canvasId)
+    if (typeof raw !== 'object') return { ok: false, error: raw === 'missing' ? 'missing' : 'io' }
+    if (!raw.board.attachedWorkspaces.includes(request.workspace)) return { ok: false, error: 'denied' }
+    const resolved = this.sandboxPolicy?.resolve({ session })
+    if (resolved?.mode === 'read-only') return { ok: false, error: 'denied' }
+    const policy = resolved === undefined ? undefined : { ...resolved, workspaceRoot: request.workspace }
+
+    const remembered = manuscript.exported?.workspace === request.workspace ? manuscript.exported : undefined
+    const mdPath = remembered?.path ?? join(request.workspace, `${exportBaseNameOf(manuscript.title)}.md`)
+    const root = await this.fs.resolve(request.workspace)
+    const target = await this.fs.resolve(mdPath)
+    if (!this.fs.contains(root, target)) return { ok: false, error: 'denied' }
+    const assetsName = `${basename(mdPath, '.md')}.assets`
+    const assetsPath = join(dirname(mdPath), assetsName)
+
+    let info: Awaited<ReturnType<Context['fs']['stat']>>
+    try {
+      info = await this.fs.stat(target)
+    } catch (error) {
+      return { ok: false, error: canvasErrorOf(error), path: mdPath }
+    }
+    if (info !== undefined && request.overwrite !== true && remembered?.version !== info.version) {
+      return { ok: false, error: remembered === undefined ? 'exists' : 'changed', path: mdPath }
+    }
+
+    // Images first: the markdown must never point at a file that is not there.
+    const planned = rewriteImagesForExport(body, assetsName)
+    const written = new Set<string>()
+    const attachments = this.attachments
+    for (const image of planned.images) {
+      const path = join(assetsPath, image.file)
+      if (attachments === undefined || !this.fs.contains(root, await this.fs.resolve(path))) continue
+      try {
+        const stored = await attachments.readImage({
+          attachmentId: image.ref.attachmentId as AttachmentIdType,
+          mediaType: image.ref.mediaType,
+          bytes: image.ref.bytes,
+          width: image.ref.width,
+          height: image.ref.height,
+        } satisfies ImageAttachmentRef)
+        await this.writeBytes(path, stored.data)
+        written.add(image.file)
+      } catch {
+        // Counted below: the pointer stays in the text as it was.
+      }
+    }
+    const text = rewriteImagesForExport(body, assetsName, file => written.has(file)).text
+
+    let savedVersion: string
+    try {
+      const outcome = await this.fs.writeText(
+        target, text,
+        info === undefined ? { kind: 'createIfAbsent' } : { kind: 'replaceIfVersion', version: FsVersion(info.version) },
+        undefined, policy,
+      )
+      savedVersion = outcome.version
+    } catch (error) {
+      const code = canvasErrorOf(error)
+      return { ok: false, error: code === 'stale' ? 'changed' : code, path: mdPath }
+    }
+
+    const saved = await this.mutate(request.canvasId, session, (board, now) => {
+      const current = board.manuscripts.find(candidate => candidate.id === manuscript.id)
+      if (current === undefined) return 'missing'
+      current.exported = { workspace: request.workspace, path: mdPath, version: savedVersion, savedAt: now }
+      return board
+    })
+    if (!saved.ok) return { ok: false, error: saved.error, path: mdPath }
+    return {
+      ok: true, board: saved.board, version: saved.version, path: mdPath,
+      images: written.size, missingImages: planned.images.length - written.size,
+    }
   }
 
   /* ---------------------------------------------------------------- images (§10.3) */

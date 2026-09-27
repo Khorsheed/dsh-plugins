@@ -50,7 +50,10 @@ const CANVAS_TOOLS_GUIDANCE =
   + 'Propose new cards only through canvas_propose_card — a proposal lands as a ghost card the user '
   + 'must accept or reject; never paste card text into your reply as a substitute for proposing. '
   + 'Comment through canvas_comment: name one hidden assumption or tension and end with one sharp '
-  + 'question. When no canvas is open, the tool says so — ask the user to open one instead of guessing.'
+  + 'question. Write drafts through canvas_write_manuscript so they land on the canvas as a manuscript, '
+  + 'marking which cards you used and which you left out; to revise one, read it with canvas_read_manuscript '
+  + 'first and pass its version as baseVersion — on a conflict, re-read instead of overwriting. '
+  + 'When no canvas is open, the tool says so — ask the user to open one instead of guessing.'
 
 /**
  * Composition entry body: register the two canvas tools and their guidance

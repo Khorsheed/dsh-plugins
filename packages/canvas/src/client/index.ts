@@ -219,6 +219,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       if (result.ok && result.value.ok) selection.forget(request.canvasId, request.cardId)
       return result
     },
+    // Manuscripts (成稿): a body write bumps the board's version too (the
+    // metadata rides the board), so every reader re-reads the list.
+    readManuscript: request => requireRemote().readManuscript(request),
+    writeManuscript: async (sessionId, request) => touchOnSuccess(await requireRemote().writeManuscript(sessionId, request)),
+    patchManuscript: async (sessionId, request) => touchOnSuccess(await requireRemote().patchManuscript(sessionId, request)),
+    deleteManuscript: async (sessionId, request) => {
+      const result = touchOnSuccess(await requireRemote().deleteManuscript(sessionId, request))
+      if (result.ok && result.value.ok) selection.forget(request.canvasId, undefined, request.manuscriptId)
+      return result
+    },
+    exportManuscript: async (sessionId, request) => touchOnSuccess(await requireRemote().exportManuscript(sessionId, request)),
+    openManuscript: (canvasId, manuscriptId, heading) => { selection.openManuscriptTab(canvasId, manuscriptId, heading) },
     // The category catalog (stage ⑤): one write for rename / add / retire, so a
     // retired row and the cards under it can never disagree between two calls.
     setCategories: async (sessionId, request) => touchOnSuccess(await requireRemote().setCategories(sessionId, request)),

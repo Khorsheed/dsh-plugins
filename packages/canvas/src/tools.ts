@@ -1,7 +1,8 @@
 /**
- * The canvas's two main-session tools (`canvas_propose_card` / `canvas_comment`),
- * registered by the `./agent` composition entry. They act on the canvas the
- * session's right-Sidebar tab has open.
+ * The canvas's main-session tools, registered by the `./agent` composition
+ * entry: the card pair (`canvas_propose_card` / `canvas_comment`) and the
+ * manuscript pair (`canvas_read_manuscript` / `canvas_write_manuscript`). They
+ * act on the canvas the session's right-Sidebar tab has open.
  *
  * Both definitions are origin-tagged the way the community convention
  * documents: the tag is the `Symbol.for('dsh.tool.origin')`-keyed property
@@ -15,9 +16,10 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { CanvasBoardService } from './store.ts'
+import { cardTitleOf } from './card-format.ts'
 import {
   BOARD_CARD_KINDS,
-  type BoardCardSource, type CardCategoryId,
+  type BoardCard, type BoardCardSource, type CardCategoryId,
 } from './types.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
@@ -136,5 +138,104 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     },
   })
 
-  return [tagOrigin(propose), tagOrigin(comment)]
+  const readManuscript = defineTool({
+    name: 'canvas_read_manuscript',
+    description:
+      '读当前打开画布上的成稿。不带 manuscriptId：列出这块画布的全部成稿（id、标题、版本、状态）。'
+      + '带 manuscriptId：返回正文全文、当前版本号和它用到 / 没用到的素材卡。'
+      + '改写一篇成稿前必须先读，拿到版本号作为 canvas_write_manuscript 的 baseVersion。',
+    parameters: {
+      manuscriptId: { type: 'string', description: '成稿 id（ms_…）；省略则列出全部。' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (args: { manuscriptId?: string }, exec: { agent?: Agent }): Promise<string> => {
+      const resolved = target(exec)
+      if ('message' in resolved) return resolved.message
+      if (args.manuscriptId === undefined) {
+        const read = await board.readBoard({ canvasId: resolved.canvasId })
+        if (!read.ok) return renderOutcome({ ok: false, error: read.error })
+        if (read.board.manuscripts.length === 0) return '这块画布还没有成稿。'
+        return read.board.manuscripts
+          .map(manuscript => `${manuscript.id}　${manuscript.title}　v${manuscript.version}　${manuscript.status === 'final' ? '定稿' : '写作中'}`)
+          .join('\n')
+      }
+      const outcome = await board.readManuscript({ canvasId: resolved.canvasId, manuscriptId: args.manuscriptId })
+      if (!outcome.ok) return renderOutcome({ ok: false, error: outcome.error })
+      const read = await board.readBoard({ canvasId: resolved.canvasId })
+      const cards = read.ok ? read.board.cards : []
+      const { manuscript, body } = outcome
+      return [
+        `${manuscript.id}　${manuscript.title}　v${manuscript.version}　${manuscript.status === 'final' ? '定稿' : '写作中'}`,
+        `用到的素材：${sourceList(manuscript.sources.used, cards)}`,
+        `没用到的素材：${sourceList(manuscript.sources.unused, cards)}`,
+        '---',
+        body,
+      ].join('\n')
+    },
+  })
+
+  const writeManuscript = defineTool({
+    name: 'canvas_write_manuscript',
+    description:
+      '把成稿直接落到当前打开的画布上（「成稿」面，用户可读、可改、可导出），而不是贴在回复正文里。'
+      + '新写一篇：省略 manuscriptId，给 body（Markdown，首个标题会作为成稿标题，也可显式给 title）。'
+      + '改写一篇：给 manuscriptId 和 baseVersion（先 canvas_read_manuscript 读到的版本号），body 是改后的全文。'
+      + '版本不符说明用户或别人刚改过——不要硬写，先重新读再改。'
+      + 'sources 标出这一版用到（used）和刻意没用（unused）的素材卡 id；改写时给了就整体替换，省略则沿用。'
+      + '作用于右栏「画布详情」tab 当前打开的画布；没打开任何画布时会告诉你，不要自己猜一块。',
+    parameters: {
+      manuscriptId: { type: 'string', description: '要改写的成稿 id；新写一篇时省略。' },
+      title: { type: 'string', description: '成稿标题；省略时取正文的首个标题。' },
+      body: { type: 'string', required: true, description: '成稿全文（Markdown）。' },
+      baseVersion: { type: 'number', description: '改写所依据的版本号（canvas_read_manuscript 返回）；改写时必填。' },
+      sources: {
+        type: 'object',
+        properties: {
+          used: { type: 'array', items: { type: 'string' }, description: '这一版用到的素材卡 id。' },
+          unused: { type: 'array', items: { type: 'string' }, description: '看过但刻意没用的素材卡 id。' },
+        },
+        additionalProperties: false,
+        description: '素材取舍。',
+      },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (
+      args: { manuscriptId?: string; title?: string; body: string; baseVersion?: number; sources?: { used?: string[]; unused?: string[] } },
+      exec: { agent?: Agent },
+    ): Promise<string> => {
+      const resolved = target(exec)
+      if ('message' in resolved) return resolved.message
+      const outcome = await board.writeManuscript({
+        canvasId: resolved.canvasId,
+        body: args.body,
+        ...(args.manuscriptId === undefined ? {} : { manuscriptId: args.manuscriptId }),
+        ...(args.title === undefined ? {} : { title: args.title }),
+        ...(args.baseVersion === undefined ? {} : { baseVersion: args.baseVersion }),
+        ...(args.sources === undefined ? {} : { sources: args.sources }),
+      }, resolved.session, 'agent')
+      if (outcome.ok) return `完成：${outcome.manuscript.id} v${outcome.manuscript.version}`
+      if (outcome.error === 'stale' && outcome.currentVersion !== undefined) {
+        return `冲突：这篇成稿当前是 v${outcome.currentVersion}，已被改过。先用 canvas_read_manuscript 读最新版，再在它上面改。`
+      }
+      return renderOutcome({ ok: false, error: outcome.error })
+    },
+  })
+
+  return [tagOrigin(propose), tagOrigin(comment), tagOrigin(readManuscript), tagOrigin(writeManuscript)]
+}
+
+/** A manuscript's source ids as `id（标题）` handles, so the model sees what each one was. */
+function sourceList(ids: readonly string[], cards: readonly BoardCard[]): string {
+  if (ids.length === 0) return '（无）'
+  return ids.map((id) => {
+    const card = cards.find(candidate => candidate.id === id)
+    const title = card === undefined ? '' : cardTitleOf(card.text)
+    return title.length === 0 ? id : `${id}（${title}）`
+  }).join('、')
 }

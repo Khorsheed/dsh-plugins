@@ -41,13 +41,14 @@ import {
   type BoardLink, type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasStroke,
   type CanvasSummary, type CardCategoryId,
 } from '../../types.ts'
-import { cardTitleOf } from '../../card-format.ts'
+import { cardNameOf } from '../../card-format.ts'
 import { categoryLabelMap, categoryLabelOf, kindIconOf } from '../category-label.ts'
 import { canvasErrorText } from '../error-text.ts'
 import { BoardView, shownCardsOf, type BoardActions } from '../space/BoardView.tsx'
 import { LinkView, type LayoutPatch } from '../space/LinkView.tsx'
 import { cardTabId, draftTabId } from '../space/selection.ts'
 import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
+import { ManuscriptList, ManuscriptView } from '../manuscript/ManuscriptView.tsx'
 import { CanvasSwitcher } from './CanvasSwitcher.tsx'
 import { TabStrip, type StripTab } from './TabStrip.tsx'
 import { basenameOf, messageOf } from '../text.ts'
@@ -78,12 +79,15 @@ function dirtyOf(draft: DraftContent | undefined): boolean {
   return draft !== undefined && (draft.text.trim().length > 0 || draft.draw.length > 0)
 }
 
+/** The faces of one board: 卡板, 连线, and 成稿. */
+type BoardFace = 'board' | 'link' | 'manuscripts'
+
 /** One canvas's board view, as it was when the user last left it. */
 interface BoardViewMemory {
   readonly filter: 'all' | CardCategoryId
   readonly picked: ReadonlySet<string>
-  /** Which face of the board (stage ⑥): edit, or group. */
-  readonly face: 'board' | 'link'
+  /** Which face of the board (stage ⑥): edit, group, or the manuscripts written from it. */
+  readonly face: BoardFace
   readonly showArchived: boolean
   /** The wire picked on the 连线 face. */
   readonly wire: BoardLink | null
@@ -106,7 +110,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
     archiveCanvas, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
-    openCardDetail, openCardDraft, backToBoard, activateTab, closeTab, focusCanvas,
+    openCardDetail, openCardDraft, openManuscript, backToBoard, activateTab, closeTab, focusCanvas,
     talkAvailable, quoteToConversation, refreshBoards, suggestWideMode, images, useImageRev,
     useSelection,
   } = props
@@ -164,7 +168,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   ) => {
     patchView(was => ({ picked: typeof next === 'function' ? next(was.picked) : next }))
   }, [patchView])
-  const setView = useCallback((face: 'board' | 'link') => { patchView(() => ({ face })) }, [patchView])
+  const setView = useCallback((face: BoardFace) => { patchView(() => ({ face })) }, [patchView])
   const toggleShowArchived = useCallback(() => { patchView(was => ({ showArchived: !was.showArchived })) }, [patchView])
   const setWire = useCallback((next: BoardLink | null) => { patchView(() => ({ wire: next })) }, [patchView])
 
@@ -585,6 +589,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const confirmDelete = useCallback((ask: DeleteAsk) => {
     setDeleteAsk(null)
     if (sessionId === undefined) return
+    // The manuscript page asks and deletes on its own; this surface never
+    // raises that ask.
+    if (ask.kind === 'manuscript') return
     if (ask.kind === 'card') {
       setCardSelection(current => {
         if (!current.has(ask.cardId)) return current
@@ -679,7 +686,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const openCard = useCallback((cardId: string) => {
     if (openId === null) return
     const card = boardRef.current?.board.cards.find(candidate => candidate.id === cardId)
-    openCardDetail(openId, cardId, card === undefined ? cardId : cardTitleOf(card.text))
+    openCardDetail(openId, cardId, card === undefined ? cardId : cardNameOf(card))
   }, [openId, openCardDetail])
 
   const openTitle = activeRow === undefined
@@ -726,6 +733,24 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             : canvases.length === 0 ? t('space.empty')
             : t('strip.none')}
         </div>
+      ) : activeRow.at.kind === 'manuscript' ? (
+        // A manuscript inside its canvas's row: the crumb goes back to the
+        // board (its 成稿 face, where the user came from); there is no stepper.
+        <ManuscriptView
+          {...props}
+          key={`${activeRow.canvasId}#manuscript:${activeRow.at.manuscriptId}`}
+          sessionId={sessionId}
+          canvasId={activeRow.canvasId}
+          manuscriptId={activeRow.at.manuscriptId}
+          pathImages={pathImages}
+          crumbs={{
+            canvasTitle: openTitle,
+            heading: activeRow.at.heading,
+            siblings: [],
+            onBack: () => { leaveRow(activeRow.id, 'back') },
+            onStep: openCard,
+          }}
+        />
       ) : activeRow.at.kind !== 'board' ? (
         // A card, or the canvas's draft, inside the canvas's own row. The crumb
         // row is the way back, and the stepper walks the board's current order
@@ -824,8 +849,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
               </span>
             ))}
             <span className={css.spacer} />
-            {/* The board's two faces (stage ⑥): 卡板 is where a card gets edited,
-                连线 is where cards get grouped. Both are the same board, so the
+            {/* The board's faces (stage ⑥): 卡板 is where a card gets edited,
+                连线 is where cards get grouped, 成稿 is what they were for. Both are the same board, so the
                 switch sits beside it and not inside either view. */}
             {openBoard !== null && loadError === null && (
               <span className={css.viewSwitch}>
@@ -846,6 +871,18 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                   onClick={() => { setView('link') }}
                 >
                   {t('view.link')}
+                </button>
+                <button
+                  type="button"
+                  className={css.viewButton}
+                  data-on={view === 'manuscripts' || undefined}
+                  aria-pressed={view === 'manuscripts'}
+                  onClick={() => { setView('manuscripts') }}
+                >
+                  {t('view.manuscripts')}
+                  {openBoard.board.manuscripts.length > 0 && (
+                    <span className={css.viewCount}>{openBoard.board.manuscripts.length}</span>
+                  )}
                 </button>
               </span>
             )}
@@ -893,7 +930,13 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           )}
 
           {openBoard !== null && loadError === null ? (
-            view === 'link' ? (
+            view === 'manuscripts' ? (
+              <ManuscriptList
+                t={t}
+                board={openBoard.board}
+                onOpen={manuscript => { openManuscript(openBoard.board.id, manuscript.id, manuscript.title) }}
+              />
+            ) : view === 'link' ? (
               <LinkView
                 t={t}
                 readonly={boardReadonly}

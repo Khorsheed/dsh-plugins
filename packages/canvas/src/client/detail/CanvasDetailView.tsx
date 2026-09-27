@@ -28,18 +28,18 @@ import {
   type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
 import { MarkdownText, Toast, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium, IconLinkOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { MoreMenu } from '../more-menu.tsx'
 import { ConfirmDelete } from '../confirm-delete.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { attachBridge } from '@khorsheed/dsh-inline-html-render/src/client/bridge.ts'
 import { buildCardSrcDoc } from '@khorsheed/dsh-inline-html-render/src/client/srcdoc.ts'
-import { cardTitleOf, detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { cardNameOf, cardTitleOf, detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { imageHtmlOf, imageMarkdownOf } from '../../image-token.ts'
 import {
   documentHeadingOf,
-  type BoardCard, type BoardMutationResult, type CanvasBoard,
+  type BoardCard, type BoardManuscript, type BoardMutationResult, type CanvasBoard,
   type CanvasError, type CanvasImageError,
 } from '../../types.ts'
 import type { CanvasDetailProps } from '../contract.ts'
@@ -130,7 +130,7 @@ function HtmlFrame({ html }: { html: string }): ReactNode {
 export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const {
     t, sessionId, canvasId, cardId, create, crumbs, readBoard, patchCard, addComment, deleteCard, openFile, useSelection,
-    talkAvailable, quoteToConversation, attachImage, images, pathImages,
+    talkAvailable, quoteToConversation, attachImage, images, pathImages, writeManuscript, openManuscript,
   } = props
   // Only the rev is read from the shared store: which card this page shows came
   // in as a prop the moment the detail became its own tab (stage ⑧).
@@ -461,16 +461,51 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   // The page you read a card on is where you decide it is done, so its fate
   // lives here too: archive (undoable) for a kept card, and a true delete
   // behind a confirmation for any settled one. It ends the crumb row.
+  // Turning the same card twice would only fork the piece: once it has a
+  // manuscript, the entry opens the newest one instead.
+  const turned = open.board.manuscripts
+    .filter(row => row.fromCardId === card.id)
+    .reduce<BoardManuscript | undefined>((newest, row) => newest === undefined || row.updatedAt > newest.updatedAt ? row : newest, undefined)
+  const turnIntoManuscript = async (): Promise<void> => {
+    if (turned !== undefined) {
+      openManuscript(open.board.id, turned.id, turned.title)
+      return
+    }
+    if (sessionId === undefined) return
+    // A document's heading is its name; the markdown `#` is not part of it.
+    const title = heading?.title || cardTitleOf(card.text) || card.id
+    const value = await run(() => writeManuscript(sessionId, {
+      canvasId: open.board.id, title, body: card.text, fromCardId: card.id, sources: { used: [card.id] },
+    }))
+    if (value === null) return
+    if (!value.ok) {
+      showToast(errorText(value.error))
+      return
+    }
+    showToast(t('ms.turned'))
+    openManuscript(open.board.id, value.manuscript.id, value.manuscript.title)
+  }
   const moreMenu = !proposed && !readonly ? (
     <MoreMenu
       label={t('action.more')}
       className={css.tool}
       items={[
+        // A document card that became the piece is turned into a manuscript
+        // by hand (the 2026-09-27 decision): the card stays as material, the
+        // manuscript starts from its text and names it as its first source.
+        // An HTML page is not markdown, so it cannot be turned.
+        ...(card.kind === 'document' ? [{
+          id: 'manuscript',
+          label: t(turned !== undefined ? 'ms.openTurned' : format === 'html' ? 'ms.toManuscriptHtml' : 'ms.toManuscript'),
+          icon: <IconListPenOutlineMedium size={14} />,
+          disabled: turned === undefined && format === 'html',
+        }] : []),
         ...(archived ? [] : [{ id: 'archive', label: t('card.archive'), icon: <IconArchiveOutlineMedium size={14} /> }]),
         { id: 'delete', label: t('action.delete'), icon: <IconTrashOutlineMedium size={14} />, danger: true },
       ]}
       onSelect={id => {
         if (id === 'delete') { setAskDelete(true); return }
+        if (id === 'manuscript') { void turnIntoManuscript(); return }
         void mutate(sid => patchCard(sid, {
           canvasId: open.board.id, cardId: card.id, status: 'archived',
         }), 'toast.cardArchived', () => void mutate(sid => patchCard(sid, {
@@ -487,7 +522,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           <DetailCrumbs
             t={t}
             crumbs={crumbs}
-            here={cardTitleOf(card.text) || crumbs.heading}
+            here={cardNameOf(card) || crumbs.heading}
             cardId={card.id}
             trailing={moreMenu}
           />

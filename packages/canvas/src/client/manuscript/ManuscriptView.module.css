@@ -1,0 +1,230 @@
+/* The manuscript page and the board's 成稿 face. The page borrows the card
+   reader's frame (CanvasDetailView.module.css: root, header, crumbs, meta,
+   body); this file holds only what a manuscript has and a card does not —
+   a reading column, the source ledger, the conflict banner, the list rows.
+   Every colour is a `--dsw-*` token, so light and dark are the theme's. */
+
+/* A manuscript is read, not scanned: one column at a reading measure, set a
+   step larger than a card body. */
+.prose {
+  max-width: 44em;
+  font: var(--dsw-font-s-14);
+  line-height: 1.85;
+}
+
+.titleInput {
+  font: inherit;
+  font-weight: 600;
+  width: 100%;
+  padding: 2px 6px;
+  margin-left: -7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.titleInput:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.version {
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.savedPath {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--dsw-alias-label-caption);
+  cursor: pointer;
+}
+
+.savedPath span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.savedPath:hover {
+  color: var(--dsw-alias-brand-primary);
+}
+
+/* The primary button in the meta row: the one gesture this page is for. */
+.primary {
+  border-color: transparent;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.primary:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-brand-primary);
+}
+
+/* ── Banners (a newer version arrived; a save lost the race) ─────────── */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: var(--dsw-font-xxs-12);
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
+}
+
+.banner[data-tone="warning"] {
+  border-color: var(--dsw-alias-state-warn-secondary);
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.bannerText {
+  flex: 1;
+  min-width: 12em;
+}
+
+.editActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── The source ledger: used, and — the point — what was left out ───── */
+
+.ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.ledgerRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ledgerLabel {
+  flex: none;
+  width: 6.5em;
+  font: var(--dsw-font-xxxs-11);
+  letter-spacing: 0.02em;
+  color: var(--dsw-alias-label-caption);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.chip {
+  max-width: 220px;
+  padding: 2px 9px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chip[data-unused] {
+  border-style: dashed;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.chip:disabled {
+  cursor: default;
+  text-decoration: line-through;
+}
+
+.none {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-caption);
+}
+
+/* ── The board's 成稿 face: a list, newest first ─────────────────────── */
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: center;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  text-align: left;
+  font-family: var(--dsw-font-family);
+  cursor: pointer;
+}
+
+.row:hover {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowTitle {
+  font: var(--dsw-font-xs-13);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-caption);
+}
+
+.empty {
+  max-width: 30em;
+  margin: 48px auto 0;
+  font: var(--dsw-font-xs-13);
+  line-height: 1.8;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+}

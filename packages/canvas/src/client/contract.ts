@@ -37,6 +37,9 @@ import type {
   BoardReadOutcome, BoardReadRequest, BoardSetCategoriesRequest, BoardSetLayoutRequest,
   CardCategoryId,
   CanvasStroke,
+  ManuscriptDeleteRequest, ManuscriptExportRequest, ManuscriptExportResult,
+  ManuscriptPatchRequest, ManuscriptReadOutcome, ManuscriptReadRequest,
+  ManuscriptWriteRequest, ManuscriptWriteResult,
 } from '../types.ts'
 import type {} from './locales.ts'
 import type { CanvasImageRevSource, CanvasImageSrcs } from './images.ts'
@@ -85,11 +88,32 @@ export interface CanvasImageInjected {
 }
 
 /**
+ * The manuscript face (成稿, the 2026-09-27 decision). A manuscript is an
+ * entity beside the cards: its body is read and written on its own, every
+ * rewrite presents the version it started from, and it opens in the canvas's
+ * own strip row like a card does.
+ */
+export interface CanvasManuscriptInjected {
+  /** Read one manuscript: metadata and body. */
+  readManuscript: (request: ManuscriptReadRequest) => Promise<RemoteResult<ManuscriptReadOutcome>>
+  /** Create one (no id), or rewrite one from `baseVersion` — a lost race answers `stale`. */
+  writeManuscript: (sessionId: SessionId, request: ManuscriptWriteRequest) => Promise<RemoteResult<ManuscriptWriteResult>>
+  /** Rename one, or move it between writing and final. */
+  patchManuscript: (sessionId: SessionId, request: ManuscriptPatchRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Delete one for good; a landed delete sends its strip row back to the board. */
+  deleteManuscript: (sessionId: SessionId, request: ManuscriptDeleteRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Save one into an attached workspace as markdown (「保存到工作区」). */
+  exportManuscript: (sessionId: SessionId, request: ManuscriptExportRequest) => Promise<RemoteResult<ManuscriptExportResult>>
+  /** Open one manuscript inside its canvas's strip row. */
+  openManuscript: (canvasId: string, manuscriptId: string, heading: string) => void
+}
+
+/**
  * Business face injected into the canvas tab (M3's single seat). The tab is
  * session scope: its mutations name the tab's own session, which resolves
  * the fence mode the host stamps onto the write.
  */
-export interface CanvasTabInjected extends CanvasTalkInjected, CanvasImageInjected {
+export interface CanvasTabInjected extends CanvasTalkInjected, CanvasImageInjected, CanvasManuscriptInjected {
   /** List every canvas the deployment holds (archived included). */
   listCanvases: () => Promise<RemoteResult<BoardListResult>>
   /** Create one canvas (a topic, optionally with workspaces attached). */
@@ -209,6 +233,10 @@ export interface CanvasDetailInjected extends CanvasTalkInjected, CanvasImageInj
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Delete one card for good (behind the page's own confirmation). */
   deleteCard: (sessionId: SessionId, request: BoardDeleteCardRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** 「转为成稿」: start a manuscript from a document card. */
+  writeManuscript: CanvasManuscriptInjected['writeManuscript']
+  /** Show the manuscript a card was just turned into. */
+  openManuscript: CanvasManuscriptInjected['openManuscript']
   /** Open a file attachment in the official document preview. */
   openFile: (sessionId: SessionId, cwd: string | undefined, path: string) => void
   hooks: {
@@ -297,4 +325,38 @@ export type CanvasDetailProps =
   }
   & GlobalStandardProps
   & InjectFace<CanvasDetailInjected>
+  & PropsLocale<'canvas'>
+
+/**
+ * The injected subset the manuscript page consumes (成稿): the manuscript verbs,
+ * the board read (its metadata, source cards and attached workspaces ride the
+ * board), and the doors out — a source card, a saved file, the conversation.
+ */
+export interface CanvasManuscriptViewInjected extends CanvasTalkInjected, CanvasImageInjected, CanvasManuscriptInjected {
+  /** Read one board with the freshness token a later mutation must present. */
+  readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
+  /** Open a source card inside the canvas's row. */
+  openCardDetail: (canvasId: string, cardId: string, heading: string) => void
+  /** Open the file a save wrote, in the official document preview. */
+  openFile: (sessionId: SessionId, cwd: string | undefined, path: string) => void
+  hooks: {
+    /** The freshness feed, bound by the slot renderer. */
+    selection: CanvasSelectionSource
+  }
+}
+
+/**
+ * Full props of the manuscript page. Like the card reader it is told what to
+ * show by the active strip row, and with no session it reads only.
+ */
+export type CanvasManuscriptViewProps =
+  & {
+    sessionId: SessionId | undefined
+    readonly canvasId: string
+    readonly manuscriptId: string
+    /** The crumb row (no stepper: manuscripts are not in the board's order). */
+    readonly crumbs: CanvasDetailCrumbs
+    readonly pathImages?: MarkdownPathImages | undefined
+  }
+  & InjectFace<CanvasManuscriptViewInjected>
   & PropsLocale<'canvas'>

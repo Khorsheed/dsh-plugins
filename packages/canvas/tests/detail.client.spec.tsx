@@ -51,6 +51,7 @@ function board(cards: CanvasBoard['cards'] = []): CanvasBoard {
     cards,
     links: [],
     lanes: [],
+    manuscripts: [],
     categories: defaultCategories(),
     stats: { proposed: { accepted: 0, rejected: 0 }, kindCounts: {}, lastActiveAt: NOW },
     archivedAt: null,
@@ -169,6 +170,13 @@ function makeHarness(
     quoteToConversation: vi.fn((): boolean => true),
     refreshBoards: vi.fn(),
     attachImage: vi.fn(async (): Promise<Result<BoardAttachImageOutcome>> => ok({ ok: true, ref: IMG_REF })),
+    writeManuscript: vi.fn(async (_sessionId: string, request: { title?: string }) => ok({
+      ok: true,
+      manuscript: { id: 'ms_new', title: request.title ?? '' },
+      board: current.board,
+      version: '2',
+    })),
+    openManuscript: vi.fn(),
   }
   const props = {
     t,
@@ -541,6 +549,44 @@ describe('CanvasDetailView', () => {
     await waitFor(() => {
       expect(mocks.deleteCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1' })
     })
+  })
+
+  it('turns a document card into a manuscript by hand, and opens it; an html page cannot be turned', async () => {
+    const { view, mocks, props } = makeHarness([
+      card('c_doc', { kind: 'document', text: '# 异议的代价\n\n正文。' }),
+      card('c_page', { kind: 'document', text: '<!doctype html><title>页</title>' }),
+    ])
+    view.select('c_doc')
+    const { rerender } = render(<CanvasDetailView {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: '更多' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '转为成稿' }))
+    await waitFor(() => { expect(mocks.openManuscript).toHaveBeenCalledWith(CANVAS_ID, 'ms_new', '异议的代价') })
+    expect(mocks.writeManuscript).toHaveBeenCalledWith('s1', {
+      canvasId: CANVAS_ID, title: '异议的代价', body: '# 异议的代价\n\n正文。', fromCardId: 'c_doc', sources: { used: ['c_doc'] },
+    })
+    view.select('c_page')
+    rerender(<CanvasDetailView {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: '更多' }))
+    const item = await screen.findByRole('menuitem', { name: zh['ms.toManuscriptHtml'] })
+    expect(item.getAttribute('aria-disabled') === 'true' || (item as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('opens the manuscript a card was already turned into, instead of forking a second one', async () => {
+    const { view, mocks, props, current } = makeHarness([
+      card('c_doc', { kind: 'document', text: '# 异议的代价\n\n正文。' }),
+    ])
+    const turned = (id: string, updatedAt: string) => ({
+      id, title: '异议的代价', status: 'writing' as const, version: 1, file: 'v1.md',
+      sources: { used: ['c_doc'], unused: [] }, fromCardId: 'c_doc',
+      createdBy: 'user' as const, lastWrittenBy: 'user' as const, createdAt: NOW, updatedAt,
+    })
+    current.board = { ...current.board, manuscripts: [turned('ms_old', NOW), turned('ms_new', '2026-09-17T08:00:00.000Z')] }
+    view.select('c_doc')
+    render(<CanvasDetailView {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: '更多' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: zh['ms.openTurned'] }))
+    expect(mocks.openManuscript).toHaveBeenCalledWith(CANVAS_ID, 'ms_new', '异议的代价')
+    expect(mocks.writeManuscript).not.toHaveBeenCalled()
   })
 })
 
