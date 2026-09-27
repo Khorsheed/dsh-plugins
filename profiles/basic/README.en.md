@@ -4,9 +4,7 @@
 
 **A set of everyday, high-frequency experience plugins that make your DSH nicer — and freer.** Edit or withdraw messages you already sent; rename a session title in one click; background jobs at a glance and stoppable at will; a context-compaction reminder you configure yourself; mid-chat, have the agent sketch a preview card so you agree on the UI before it builds — no more rework loops; manage every skill and tool freely and assign them to different presets; a chime when a task completes; mobile access in a snap; safe restarts for plugin development — never again fear the little whale taking itself down…… The quality-of-life layer most users want first, installed in one go.
 
-<img src="docs/screenshots/file-preview1.png" width="840" alt="dsh-basic at a glance: the session Artifacts tab and the file-preview drawer">
-
-Every member is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) and install freely. If the official host later opens up custom-profile installation, this repo will support one-command install. The everyday conversation plugins also come as a meta package: `@khorsheed/dsh-bundle-conversation-toolbox` installs seven at once (message-tools / message-timeline / session-title-edit / quote / inline-html-render / context-guard / taskpilot).
+Every member is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) and install freely. If the official host later opens up custom-profile installation, this repo will support one-command install. The everyday conversation plugins also come as a meta package — `@khorsheed/dsh-bundle-conversation-toolbox` installs seven at once (see the end of [The tour](#the-tour)).
 
 ## The dsh-basic pack — plugin list
 
@@ -43,7 +41,11 @@ Members iterate fast and older release lines get no updates — pick the line by
 
 ### message-tools — edit, withdraw, restore
 
-`@khorsheed/dsh-client-message-tools` · host ≥ `0.1.5-rc.1` (older hosts: `@^0.2.0` on the 0.1.2 line, `@^0.1.0` on 0.1.x)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-client-message-tools` |
+| `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-client-message-tools@^0.2.0` |
+| `0.1.x` | `@khorsheed/dsh-client-message-tools@^0.1.0` |
 
 Every user message carries a copy/edit/withdraw action row. Edits replace in place and re-send as a new message; a withdraw is real — the message and everything after it leaves the model's context, folding into an expandable divider with the original text refilled into your draft; one click restores them to the end of the conversation. No official package is touched.
 
@@ -64,7 +66,10 @@ Every user message carries a copy/edit/withdraw action row. Edits replace in pla
 
 ### message-timeline — history at a glance
 
-`@khorsheed/dsh-message-timeline` · host ≥ `0.1.2-rc.1` (`@^0.1.0` line on 0.1.x hosts)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-message-timeline` |
+| `0.1.x` | `@khorsheed/dsh-message-timeline@^0.1.0` |
 
 A floating timeline along the chat's left edge, one row per user message. At rest it is a thin rail out of sight; hover to expand a preview, click to scroll straight to that message. Follows your reading position and pages older history at the top. A pure read of the session snapshot — zero model impact.
 
@@ -79,7 +84,10 @@ A floating timeline along the chat's left edge, one row per user message. At res
 
 ### session-title-edit — rename inline
 
-`@khorsheed/dsh-client-session-title-edit` · host ≥ `0.1.2-rc.1` (`@^0.1.0` line on 0.1.x hosts)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-client-session-title-edit` |
+| `0.1.x` | `@khorsheed/dsh-client-session-title-edit@^0.1.0` |
 
 Click the pencil beside the title in the chat header and the title itself becomes an input — Enter saves, Escape cancels. A user-set title is pinned and never overwritten by auto-generation. Rides the official rename channel; the model never notices.
 
@@ -94,7 +102,10 @@ Click the pencil beside the title in the chat header and the title itself become
 
 ### quote — quote anything
 
-`@khorsheed/dsh-quote` · host ≥ `0.1.5-rc.1` (no release for older hosts)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-quote` |
+| earlier | no release available |
 
 Select any text and a floating action menu appears — quote into the current session (lands in the composer), quote into a side chat, or copy. Other plugins can register their own action rows into the same menu.
 
@@ -109,7 +120,11 @@ Select any text and a floating action menu appears — quote into the current se
 
 ### file-preview + ui-file-preview — session artifacts
 
-`@khorsheed/dsh-file-preview` + `@khorsheed/dsh-client-ui-file-preview` · host ≥ `0.1.5-rc.1` (older hosts: `@^0.2.0` on the 0.1.2 line, `@^0.1.0` on 0.1.x) · installed as a pair
+| Host version | Install specs (copy into the dialog; install the pair) |
+|---|---|
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-file-preview` + `@khorsheed/dsh-client-ui-file-preview` |
+| `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-file-preview@^0.2.0` + `@khorsheed/dsh-client-ui-file-preview@^0.2.0` |
+| `0.1.x` | `@khorsheed/dsh-file-preview@^0.1.0` + `@khorsheed/dsh-client-ui-file-preview@^0.1.0` |
 
 The Produced tab lists every file the session wrote or edited (most recent first); select one to preview its current content in-page, or step through every write/edit diff with content search.
 
@@ -126,7 +141,11 @@ The Produced tab lists every file the session wrote or edited (most recent first
 
 ### taskpilot — pills for background work
 
-`@khorsheed/dsh-taskpilot` · host ≥ `0.1.5-rc.1` (older hosts: `@^0.2.0` on the 0.1.2 line, `@^0.1.0` on 0.1.x)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-taskpilot` |
+| `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-taskpilot@^0.2.0` |
+| `0.1.x` | `@khorsheed/dsh-taskpilot@^0.1.0` |
 
 Two pills above the composer — background jobs and sub-agents — each appearing only when there is something to show. Running jobs tick every second with a stop button; sub-agents show the full lineage with token cost and can be interrupted; click a row for the detail drawer with a replayed execution trace. All data comes from mirrors the product already keeps — zero model impact.
 
@@ -141,7 +160,10 @@ Two pills above the composer — background jobs and sub-agents — each appeari
 
 ### context-guard — compact before you run out
 
-`@khorsheed/dsh-context-guard` · host ≥ `0.1.2-rc.1` (`@^0.1.0` line on 0.1.x hosts)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-context-guard` |
+| `0.1.x` | `@khorsheed/dsh-context-guard@^0.1.0` |
 
 When context occupancy crosses your configured ratio, a compact button appears in the composer toolbar — one click runs the official /compact, before overflow starts rejecting requests. Tune the ratio to your taste (0.01–1); lower means earlier.
 
@@ -156,9 +178,12 @@ When context occupancy crosses your configured ratio, a compact button appears i
 
 ### inline-html-render — inline HTML cards
 
-`@khorsheed/dsh-inline-html-render` · host ≥ `0.1.2-rc.1` (no release for 0.1.x hosts)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-inline-html-render` |
+| earlier | no release available |
 
-A ```` ```dsh-card ```` HTML block in the agent's reply renders as a sandboxed interactive card right in the conversation — charts, little tools, and visualizations you can play with instead of copying elsewhere. Sandboxed and isolated; animations settle down under `prefers-reduced-motion`.
+A ```` ```dsh-card ```` HTML block in the agent's reply renders as a sandboxed interactive card right in the conversation — sketch the UI first, agree on the details, then build it, instead of discovering the mismatch after everything is done. Sandboxed and isolated; animations settle down under `prefers-reduced-motion`.
 
 <details>
 <summary>View the screenshots (1)</summary>
@@ -169,7 +194,10 @@ A ```` ```dsh-card ```` HTML block in the agent's reply renders as a sandboxed i
 
 ### capability-catalog — the capability catalog
 
-`@khorsheed/dsh-capability-catalog` · host ≥ `0.1.5-rc.1` (no release for older hosts)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-capability-catalog` |
+| earlier | no release available |
 
 A new Tools & Skills entry in settings: every skill and tool in the running instance, each labeled with its registration channel (official built-in / project / user / plugin); a three-column card grid, a detail modal with the full SKILL.md, metadata and credential config, and an add-skill modal that installs from an uploaded zip or a pasted SKILL.md.
 
@@ -186,7 +214,10 @@ A new Tools & Skills entry in settings: every skill and tool in the running inst
 
 ### ui-shortcuts — rebindable keys
 
-`@khorsheed/dsh-ui-shortcuts` · host ≥ `0.1.2-rc.1` (`@^0.1.0` line on 0.1.x hosts)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-ui-shortcuts` |
+| `0.1.x` | `@khorsheed/dsh-ui-shortcuts@^0.1.0` |
 
 Esc pauses the current task, Ctrl/Cmd+S steer-sends your draft, Ctrl/Cmd+O starts a new session. Click a keycap in settings to rebind; preferences persist. It also ships an action registry: any plugin can register its own keyboard action and gets a settings entry plus conflict-free dispatch for free.
 
@@ -199,7 +230,10 @@ Esc pauses the current task, Ctrl/Cmd+S steer-sends your draft, Ctrl/Cmd+O start
 
 ### whalesong — ambient status
 
-`@khorsheed/dsh-whalesong` · host ≥ `0.1.2-rc.1` (`@^0.1.0` line on 0.1.x hosts)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-whalesong` |
+| `0.1.x` | `@khorsheed/dsh-whalesong@^0.1.0` |
 
 While any session runs, the sidebar whale spouts and the tab icon moves; when a run finishes or stalls waiting for you, a short chime plays (synthesized WebAudio, silenced under `prefers-reduced-motion`). Read-only over the session list, zero model impact — install it and the page feels alive.
 
@@ -214,7 +248,10 @@ While any session runs, the sidebar whale spouts and the tab icon moves; when a 
 
 ### mobile — mobile presentation
 
-`@khorsheed/dsh-mobile` · host ≥ `0.1.5-rc.1` (no release for older hosts)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-mobile` |
+| earlier | no release available |
 
 A mobile presentation of the web UI for phone browsers, plus the iOS bridge — check sessions, send messages, and handle approvals away from your desk.
 
@@ -229,7 +266,11 @@ A mobile presentation of the web UI for phone browsers, plus the iOS bridge — 
 
 ### ankh-guard — ops guard
 
-`@khorsheed/dsh-ankh-guard` · host ≥ `0.1.5-rc.1` (older hosts: `@^0.2.0` on the 0.1.2 line, `@^0.1.0` on 0.1.x)
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-ankh-guard` |
+| `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-ankh-guard@^0.2.0` |
+| `0.1.x` | `@khorsheed/dsh-ankh-guard@^0.1.0` |
 
 Let the agent change its own code and restart its own service without taking it down: restarts require a green build+test credential (bound to the git HEAD, time-boxed) and are refused without one; after the restart a canary reactivates the session to keep verifying; repeated boot failures roll back to the last known-good version. A must for self-hosted, AI-driven setups.
 
@@ -240,13 +281,29 @@ Let the agent change its own code and restart its own service without taking it 
 
 </details>
 
+### Bundle install: bundle-conversation-toolbox (the seven-piece conversation toolbox)
+
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-conversation-toolbox` |
+| earlier | no release available (install members individually per the tables above) |
+
+Don't want to pick one by one? This single meta package installs the seven conversation tools at once: message-tools, message-timeline, session-title-edit, quote, inline-html-render, context-guard, taskpilot. Members arrive as npm dependencies, and the bundle's patch re-mounts each member's canonical rows verbatim; afterwards every component stays individually disable-able under Settings → Plugins — the bundle packages the install, not your choices.
+
+<details>
+<summary>View the screenshots (1)</summary>
+
+<img src="docs/screenshots/bundle-conversation-toolbox.png" width="840" alt="bundle-conversation-toolbox: the detail page listing seven components, each individually switchable">
+
+</details>
+
 ## Make it yours
 
 - **Remove a member**: disable/uninstall in Settings → Plugins, or `dsh plugin --profile <your profile> remove <package name>` — the rest keep working. The bundle is a starting point, not a lock-in.
 - **Add more**: any `@khorsheed/dsh-*` plugin installs the same way — copy the package name.
 - **Update**: from Settings → Plugins, or `dsh plugin --profile <your profile> update` to pull the newest versions in range.
 
-## Related packs
+## Other packs
 
 | Pack | What it is |
 |---|---|

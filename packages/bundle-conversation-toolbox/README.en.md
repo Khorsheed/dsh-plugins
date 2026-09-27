@@ -6,6 +6,8 @@ One command, seven session-experience plugins installed — message edit/withdra
 
 Each member installs fine on its own — but then the plugin list scatters them across seven cards. This family bundle folds their canonical rows into one "Conversation Toolbox" card: a single `dsh plugin add` installs the whole family, and the plugin list manages them as one card. A thin meta package — a patch inserting the members' canonical rows, npm dependencies that bring the members along, and locale card metadata — with **no runtime code and no client half of its own** (pure composition: it registers no service, tool, slot, or command).
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-conversation-toolbox.png" width="640" alt="the bundle detail page: seven components listed row by row, each individually switchable">
+
 ## Features
 
 - **One command installs all seven** — every member is an npm `dependency`, so installing this bundle brings the whole family along; no per-package installs.
