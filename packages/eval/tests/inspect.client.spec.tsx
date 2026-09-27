@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { ItemDrawer, promptParts, tabFiles, type ItemInspectFaces } from '../src/client/Inspect.tsx'
+import { useState } from 'react'
+import { ItemMaterials, SheetFrame, promptParts, tabFiles, type ItemInspectFaces } from '../src/client/Inspect.tsx'
+import type { EvalItemMaterialTab } from '../src/types.ts'
 import type { EvalItemMaterialsView } from '../src/types.ts'
 
 afterEach(() => { cleanup() })
@@ -43,10 +45,22 @@ function faces(): ItemInspectFaces {
   }
 }
 
-describe('item drawer (T84 §三)', () => {
+/** The materials with the tab held the way a container holds it. */
+function Materials(props: { faces: ItemInspectFaces; onSub?: (sub: string | null) => void }) {
+  const [tab, setTab] = useState<EvalItemMaterialTab>('task')
+  const [sub, setSub] = useState<string | null>(null)
+  return (
+    <>
+      <div>{sub}</div>
+      <ItemMaterials item="F2" faces={props.faces} tab={tab} onTab={setTab} onSub={(next) => { setSub(next); props.onSub?.(next) }} t={t} />
+    </>
+  )
+}
+
+describe('item materials (T84 §三)', () => {
   it('opens on 题面, names the pinned commit, and greys the leaves this run does not score', async () => {
     const f = faces()
-    render(<ItemDrawer item="F2" faces={f} onClose={() => {}} t={t} />)
+    render(<Materials faces={f} />)
     expect(await screen.findByText(/inspect\.pinned.*abcdef01/)).toBeTruthy()
     expect(await screen.findByText(/inspect\.who\.task/)).toBeTruthy()
     fireEvent.click(screen.getByRole('radio', { name: /inspect\.tab\.stages/ }))
@@ -60,9 +74,9 @@ describe('item drawer (T84 §三)', () => {
     expect(await screen.findByText('inspect.who.reference')).toBeTruthy()
   })
 
-  it('closes on Escape', () => {
+  it('the fallback Sheet closes on Escape', () => {
     const onClose = vi.fn()
-    render(<ItemDrawer item="F2" faces={faces()} onClose={onClose} t={t} />)
+    render(<SheetFrame label="x" onClose={onClose}><Materials faces={faces()} /></SheetFrame>)
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onClose).toHaveBeenCalled()
   })

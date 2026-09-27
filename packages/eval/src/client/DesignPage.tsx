@@ -41,7 +41,7 @@ import type { EvalKey } from './locales.ts'
 import { ConditionsTable } from './ConditionsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import { MarkdownDoc } from './MarkdownDoc.tsx'
-import { ItemDrawer, JudgePromptPreview, type ItemInspectFaces } from './Inspect.tsx'
+import { JudgePromptPreview, type ItemInspectFaces } from './Inspect.tsx'
 import { readinessTable, type BasisLine, type ReadinessRowModel } from './readiness-basis.ts'
 import { RunGrid, plannedRows, type GridColumn } from './Grid.tsx'
 import {
@@ -397,13 +397,12 @@ function ItemsTable(props: {
   facts: EvalPlanItemsView | null
   /** The plan's `stages` — the same for every cell; empty when it names none. */
   planStages: readonly string[]
-  /** The pinned-dataset reads: with them 查看 opens the drawer; without, the inline 看题面. */
-  inspect: ItemInspectFaces | null
+  /** 查看 one item's materials (sidebar, or the Sheet); null keeps the inline 看题面. */
+  onInspect: ((item: string) => void) | null
   t: LabViewProps['t']
 }) {
-  const { items, expectedNs, facts, planStages, inspect, t } = props
+  const { items, expectedNs, facts, planStages, onInspect, t } = props
   const [open, setOpen] = useState<string | null>(null)
-  const [drawer, setDrawer] = useState<string | null>(null)
   const how = expectedNs.map(ns => (VERDICT_SOURCE[ns] === undefined ? ns : t(VERDICT_SOURCE[ns]))).join(' · ') || '—'
   if (facts === null || facts.items.length === 0) {
     return (
@@ -451,7 +450,7 @@ function ItemsTable(props: {
               item={item}
               open={open === item.id}
               onToggle={() => setOpen(open === item.id ? null : item.id)}
-              onInspect={inspect === null ? null : () => { setDrawer(item.id) }}
+              onInspect={onInspect === null ? null : () => { onInspect(item.id) }}
               stagesColumn={anyPhases}
               t={t}
             />
@@ -459,9 +458,6 @@ function ItemsTable(props: {
         </tbody>
       </table>
       {facts.notes.length > 0 && <div className={css.scaleNote}>{facts.notes.join(' · ')}</div>}
-      {drawer !== null && inspect !== null && (
-        <ItemDrawer item={drawer} faces={inspect} onClose={() => { setDrawer(null) }} t={t} />
-      )}
     </div>
   )
 }
@@ -1202,12 +1198,14 @@ export function DesignPage(props: {
   onCopy: (text: string) => void
   /** The pinned-dataset reads (T84 §三/§四); absent — the inline 看题面 stays. */
   inspect?: ItemInspectFaces | null
+  /** 查看 one item (T86: the sidebar, or the fallback Sheet); absent — the inline 看题面 stays. */
+  onInspectItem?: ((item: string) => void) | null
   /** Opens a readiness probe's child session (T84 §三); absent — no button. */
   onOpenSession?: ((child: string) => void) | null
   t: LabViewProps['t']
 }) {
   const {
-    readPlan, onCopy, inspect = null, onOpenSession = null,
+    readPlan, onCopy, inspect = null, onInspectItem = null, onOpenSession = null,
     row, detail, review, reviewLoading, reviewError,
     conditions, conditionsLoading, conditionsError, conditionBusy, provision, conditionAction, endpointEditing,
     pair, diff, diffError, sentBack, started, output, outputError, refusal, approveError,
@@ -1343,7 +1341,7 @@ export function DesignPage(props: {
       <Block title={t('design.items')} meta={<span className={css.mono}>{snapshotCell(row)}</span>}>
         {digest === null || digest.items.length === 0
           ? <div className={css.dim}>{t('new.itemsEmpty')}</div>
-          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} facts={review?.items ?? null} planStages={digest.stages} inspect={inspect} t={t} />}
+          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} facts={review?.items ?? null} planStages={digest.stages} onInspect={onInspectItem} t={t} />}
       </Block>
 
       {/* No plan review yet: the row still names its judges, and that is
