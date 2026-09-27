@@ -348,7 +348,10 @@ describe('the plan-review page', () => {
     // T72 §4: the lines that need reading form the readiness checklist —
     // blockers and reminders — each in a human sentence; the passing ones sit
     // under the fold.
-    expect(screen.getByText('readiness.reminders {"count":1}')).toBeTruthy()
+    // T84 §三: the dataset's warning goes under the dataset's row (opened,
+    // since it has something to act on), not into 提醒 at the bottom.
+    expect(screen.queryByText(/^readiness\.reminders /)).toBeNull()
+    expect(screen.getByText('basis.row.dataset {"label":"ds @ c0ffee00"}')).toBeTruthy()
     expect(screen.getByText('readiness.COMMIT_UNRESOLVED {"condition":""}')).toBeTruthy()
     expect(screen.getAllByText('severity.ok')).toHaveLength(2)
     expect(screen.getByText('review.checks')).toBeTruthy()
@@ -544,7 +547,8 @@ describe('the readiness badge names every subject, and why each one is not ready
     // do not depend on parsing a host sentence (W15) — the cross used to carry
     // a name and nothing else, with the reasons loose in validate's English
     // warnings below it.
-    expect(screen.getByText('why.homeSha · why.lock')).toBeTruthy()
+    // T84 §三: the 依据 column says what was checked, in the order checked.
+    expect(screen.getByText('basis.subject.noLockShort · basis.subject.homeMissingShort')).toBeTruthy()
   })
 
   it('a judge the registry listing does not carry stays out of the compare table, and in the checklist', async () => {
@@ -562,7 +566,7 @@ describe('the readiness badge names every subject, and why each one is not ready
     // A JUDGE is not a row of the compare table (T83 · design): it is named
     // in 怎么判, and its readiness is the checklist's line.
     expect(row).toBeUndefined()
-    expect(screen.getAllByText('judge-a').some(node => node.closest('table') !== null)).toBe(true)
+    expect(screen.getByText('basis.row.judge {"id":"judge-a"}').closest('table')).not.toBeNull()
   })
 
   it('a plan whose file is gone gets the three-part seat, not its English sentence', async () => {
@@ -1094,7 +1098,11 @@ describe('the readiness checklist (T72 §4)', () => {
     await openPage(h, 'page.design')
 
     expect(await screen.findByText('readiness.blockers {"count":2}')).toBeTruthy()
-    expect(screen.getByText('readiness.reminders {"count":2}')).toBeTruthy()
+    // The dataset's warning sits under the dataset's row (T84 §三); only the
+    // one no row owns stays in 提醒.
+    expect(screen.getByText('readiness.reminders {"count":1}')).toBeTruthy()
+    expect(screen.getByTitle(/^DATASET_ROOT_UNRESOLVABLE · /).closest('table')).not.toBeNull()
+    expect(screen.getByTitle(/^SOMETHING_NEW · /).closest('table')).toBeNull()
     expect(screen.getByText('readiness.LOCK_MISSING {"condition":"codex-exec"}')).toBeTruthy()
     // An unknown code falls back to validate's own words, never a blank line.
     expect(screen.getByText('a code this build has no sentence for')).toBeTruthy()

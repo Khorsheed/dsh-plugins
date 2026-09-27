@@ -3580,6 +3580,11 @@ tr:last-child > .reportTd {
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
+.sheetHead > button {
+  flex: none;
+  white-space: nowrap;
+}
+
 .sheetTitles {
   flex: 1 1 auto;
   min-width: 0;
@@ -3827,4 +3832,76 @@ tr:last-child > .reportTd {
 
 .promptPart .inspectPre {
   max-height: 360px;
+}
+
+/* ── 准备好了没有: the 依据 column and each row's expansion (T84 §三) ── */
+
+.basisToggle {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.basisChevron {
+  width: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.basisShort {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.basisSelf {
+  color: var(--dsh-eval-warn-ink);
+}
+
+.basisOpen > td {
+  padding-top: 0;
+  background: var(--dsh-eval-surface-2);
+}
+
+.basisList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 0 8px 16px;
+  list-style: none;
+  font-size: 12px;
+}
+
+.basisLine {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.basisMark {
+  flex: none;
+  width: 14px;
+  text-align: center;
+}
+
+.basisLine[data-tone='ok'] .basisMark { color: var(--dsh-eval-ok-ink); }
+.basisLine[data-tone='warn'] .basisMark { color: var(--dsh-eval-warn-ink); }
+.basisLine[data-tone='danger'] .basisMark { color: var(--dsw-alias-state-error-primary); }
+.basisLine[data-tone='danger'] { color: var(--dsw-alias-label-primary); }
+
+.blockerCell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }

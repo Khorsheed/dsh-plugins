@@ -33,7 +33,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
-  EvalExperimentDetail, EvalExperimentRow, EvalPlanCheck, EvalPlanCondition, EvalPlanNumbersResult,
+  EvalExperimentDetail, EvalExperimentRow, EvalPlanCheck, EvalPlanNumbersResult,
   EvalPlanEstimate, EvalPlanItemFacts, EvalPlanItemsView, EvalPlanQuestion, EvalPlanReview, EvalRunOutputView,
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
@@ -42,6 +42,7 @@ import { ConditionsTable } from './ConditionsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import { MarkdownDoc } from './MarkdownDoc.tsx'
 import { ItemDrawer, JudgePromptPreview, type ItemInspectFaces } from './Inspect.tsx'
+import { readinessTable, type BasisLine, type ReadinessRowModel } from './readiness-basis.ts'
 import { RunGrid, plannedRows, type GridColumn } from './Grid.tsx'
 import {
   Chip, Detail, Field, Fold, Seg, StartedRun, Word,
@@ -53,77 +54,6 @@ import {
 } from './journey.ts'
 import type { ConditionActionNote, LabStartedRun } from './store.ts'
 import css from './LabView.module.css'
-
-/**
- * Why ONE comparison group is not ready, in words, for the badge's cross row.
- *
- * The cross used to carry a name and nothing else, and the reasons sat below
- * it inside validate's English warnings — so the page said 「5 个对比组里有 5
- * 个未就绪」 and made a reader go hunting for five separate explanations
- * (I5·T67 · W15).
- *
- * Read from the review's STRUCTURE wherever it can be: `status`, whether a
- * lock is beside the declaration, whether it still matches, whether a scoped
- * home was ever hashed. Only the unresolved endpoint has no structural field
- * to read, so that one is recovered from the check list — by the `condition
- * <id>: ` prefix validate itself writes. Nothing here parses a sentence for
- * its MEANING: the code decides the word, the message only decides which
- * group the check belongs to.
- * @param entry - the review's row for this group.
- * @param checks - validate's flat list, for the one field structure omits.
- * @returns the reasons, most specific first; empty when it IS ready.
- */
-function whyNotReady(entry: EvalPlanCondition, checks: readonly EvalPlanCheck[]): EvalKey[] {
-  if (entry.status === 'ready') return []
-  // No file is the whole answer — the other three cannot even be asked.
-  if (entry.status === 'missing') return ['why.file']
-  const why: EvalKey[] = []
-  const mine = checks.filter(check => check.message.includes(`condition ${entry.id}: `))
-  if (mine.some(check => check.code === 'UNRESOLVED_FIELD' && check.message.includes('model.endpoint'))) {
-    why.push('why.endpoint')
-  }
-  if (entry.lock.homeSha === null) why.push('why.homeSha')
-  if (!entry.lock.present) why.push('why.lock')
-  else if (!entry.lock.matches) why.push('conditions.lockStale')
-  return why.length > 0 ? why : ['why.other']
-}
-
-/**
- * Every subject this experiment names, with whether it is ready and why not.
- *
- * The UNION is the fix for a badge that read 「✓ 环境就绪」 over an experiment
- * whose two players were not in the repository at all (I5·T67 · W12): the
- * readiness records only cover what the run actually PROBED, so a group that
- * never got that far was not a red cross — it was absent, and absent counted
- * as nothing rather than as a problem. Walking the plan's own subject list
- * means a group can no longer disappear out of the count.
- * @param subjects - the group ids the plan names, players then judges.
- * @param detail - the started run's readiness records, when there are any.
- * @param review - the plan review, when it has loaded.
- * @param t - the locale seat.
- * @returns one row per subject, in plan order.
- */
-function readinessRows(
-  subjects: readonly string[],
-  detail: EvalExperimentDetail | null,
-  review: EvalPlanReview | null,
-  t: LabViewProps['t'],
-): Array<{ id: string; ok: boolean; note?: string | undefined }> {
-  const probed = new Map((detail?.readiness ?? []).map(line => [line.condition, line]))
-  const reviewed = new Map((review?.conditions ?? []).map(entry => [entry.id, entry]))
-  return subjects.map((id) => {
-    const line = probed.get(id)
-    if (line !== undefined) return { id, ok: line.ok, note: line.reason ?? undefined }
-    const entry = reviewed.get(id)
-    if (entry !== undefined) {
-      const why = whyNotReady(entry, review?.checks ?? [])
-      return { id, ok: why.length === 0, note: why.length === 0 ? undefined : why.map(key => t(key)).join(' · ') }
-    }
-    // Named by the plan, and neither probed nor resolved: nothing knows about
-    // this group, which is a state the badge must show rather than skip.
-    return { id, ok: false, note: t('conditions.missing') }
-  })
-}
 
 /**
  * The value of the experiment's primary comparison variable for one group —
@@ -184,17 +114,23 @@ const CHECKLIST_STAGES: ReadonlySet<EvalExperimentRow['status']> = new Set(['dra
 function ReadinessChecklist(props: {
   blockers: readonly EvalPlanCheck[]
   reminders: readonly EvalPlanCheck[]
-  /** Each group's readiness verdict — the table's first rows (v5 · ready). */
-  ready: ReadonlyArray<{ id: string; ok: boolean; note?: string | undefined }>
+  /** The table (T84 §三): the dataset, each group, each judge, the verdict sources. */
+  table: readonly ReadinessRowModel[]
+  /** The warnings shown under their row — they leave 提醒. */
+  attached: ReadonlySet<EvalPlanCheck>
+  /** A run started, so the group rows carry the real probe, not the offline check. */
+  probed: boolean
   /** Whether the checklist lines are shown at all (the stage asks for a start). */
   lines: boolean
   /** A stalled run's checklist is about the NEXT run; the lead line says so. */
   forRerun: boolean
   onFix: (fix: ReadinessFix, check: EvalPlanCheck, k: number) => void
   onRecheck: () => void
+  /** Opens the child session a probe ran in; null when the host cannot. */
+  onOpenProbe: ((child: string) => void) | null
   t: LabViewProps['t']
 }) {
-  const { blockers, reminders, ready, lines, forRerun, onFix, onRecheck, t } = props
+  const { blockers, reminders, table, attached, probed, lines, forRerun, onFix, onRecheck, onOpenProbe, t } = props
   const said = (check: EvalPlanCheck): string => {
     const sentence = readinessSentence(check)
     return sentence === null ? check.message : t(sentence.key, sentence.params)
@@ -210,8 +146,33 @@ function ReadinessChecklist(props: {
     )
   }
   const shownBlockers = lines ? blockers : []
-  const shownReminders = lines ? reminders : []
-  const anyFailed = ready.some(row => !row.ok)
+  const shownReminders = lines ? reminders.filter(check => !attached.has(check)) : []
+  // Numbered across the whole block in display order — a row's own warnings
+  // first (the rows are on top), then the blockers, then 提醒 — so 「第 k 条」
+  // in the sentence handed to the agent names the line the reader sees.
+  const number = new Map<EvalPlanCheck, number>()
+  if (lines) for (const row of table) for (const check of row.warns) number.set(check, number.size + 1)
+  for (const check of [...shownBlockers, ...shownReminders]) number.set(check, number.size + 1)
+  // A row with something to act on opens by itself; the rest on a click.
+  // The state holds the rows the reader FLIPPED, so a row whose warnings
+  // arrive with the review still opens by itself.
+  const [flipped, setFlipped] = useState<ReadonlySet<string>>(() => new Set())
+  const isOpen = (row: ReadinessRowModel): boolean => (lines && row.warns.length > 0) !== flipped.has(row.key)
+  const toggle = (key: string): void => {
+    setFlipped((was) => {
+      const next = new Set(was)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  const label = (row: ReadinessRowModel): string => (
+    row.kind === 'dataset' ? t('basis.row.dataset', { label: row.label })
+      : row.kind === 'judge' ? t('basis.row.judge', { id: row.label })
+        : row.kind === 'sources' ? t('basis.row.sources') : row.label
+  )
+  const subjects = table.filter(row => row.kind === 'player' || row.kind === 'judge')
+  const failed = subjects.filter(row => row.state === 'danger').length
   return (
     <>
       <Block
@@ -219,7 +180,7 @@ function ReadinessChecklist(props: {
         meta={(
           <>
             {shownBlockers.length > 0 && <span>{t('readiness.blockers', { count: shownBlockers.length })}</span>}
-            <span className={css.dim}>{t('ready.offline')}</span>
+            <span className={css.dim}>{t(probed ? 'ready.probed' : 'ready.offline')}</span>
             {/* 重新检查方案 (T84 §六.2): re-reads plan.json and re-runs validate's
                 offline checks — schema, the dataset commit, the stage
                 schemas, the verdict sources, each group's lock. It does NOT
@@ -232,7 +193,7 @@ function ReadinessChecklist(props: {
         )}
       >
         {forRerun && lines && <div className={css.dim}>{t('readiness.forRerun')}</div>}
-        {ready.length === 0 && shownBlockers.length === 0
+        {table.length === 0 && shownBlockers.length === 0
           ? <div className={css.dim}>{t('ready.pending')}</div>
           : (
             <div className={css.tableScroll}>
@@ -240,43 +201,94 @@ function ReadinessChecklist(props: {
                 <thead>
                   <tr>
                     <th>{t('design.checkCol.item')}</th>
+                    <th>{t('design.checkCol.basis')}</th>
                     <th>{t('design.checkCol.state')}</th>
-                    <th aria-label={t('design.checkCol.state')} />
                   </tr>
                 </thead>
                 <tbody>
-                  {ready.map(row => (
-                    <tr key={`ready:${row.id}`}>
-                      <td>
-                        <span className={css.checkName}>{row.id}</span>
-                        {row.note !== undefined && row.note !== '' && <span className={css.readinessThen}>{row.note}</span>}
-                      </td>
-                      <td>
-                        <Chip dot tone={row.ok ? 'ok' : 'danger'}>{t(row.ok ? 'design.checkReady' : 'design.checkNotReady')}</Chip>
-                      </td>
-                      <td />
-                    </tr>
-                  ))}
+                  {table.map((row) => {
+                    const expanded = isOpen(row)
+                    const warns = lines ? row.warns : []
+                    return [
+                      <tr key={row.key} data-state={row.state}>
+                        <td>
+                          <button
+                            type="button"
+                            className={css.basisToggle}
+                            aria-expanded={expanded}
+                            aria-label={t('basis.expand', { label: label(row) })}
+                            onClick={() => { toggle(row.key) }}
+                          >
+                            <span className={css.basisChevron} aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                            <span className={css.checkName}>{label(row)}</span>
+                          </button>
+                        </td>
+                        <td className={css.basisShort}>
+                          {row.basis.map(part => (part.params === undefined ? t(part.key) : t(part.key, part.params))).join(' · ')}
+                          {row.selfJudge && <> · <span className={css.basisSelf}>{t('basis.judge.selfShort')}</span></>}
+                        </td>
+                        <td>
+                          <Chip dot tone={row.state === 'ok' ? 'ok' : row.state === 'warn' ? 'warn' : 'danger'}>
+                            {t(row.state === 'ok' ? 'design.checkReady' : row.state === 'warn' ? 'design.checkWarn' : 'design.checkNotReady')}
+                          </Chip>
+                        </td>
+                      </tr>,
+                      expanded && (
+                        <tr key={`${row.key}:open`} className={css.basisOpen}>
+                          <td colSpan={3}>
+                            <ul className={css.basisList}>
+                              {row.lines.map((line, index) => (
+                                <li key={`${line.key}:${String(index)}`} className={css.basisLine} data-tone={line.tone} title={line.code ?? undefined}>
+                                  <span className={css.basisMark} aria-hidden="true">{BASIS_MARK[line.tone]}</span>
+                                  <span>{line.params === undefined ? t(line.key) : t(line.key, line.params)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            {row.probe !== null && row.probe.childSessionId !== null && onOpenProbe !== null && (
+                              <Button variant="outline" size="sm" className={css.smButton} onClick={() => { onOpenProbe(row.probe?.childSessionId as string) }}>
+                                {t('basis.openProbe')}
+                              </Button>
+                            )}
+                            {warns.map((check, index) => (
+                              <div key={`${check.code}:${String(index)}`} className={`${css.remindRow} ${css.readinessLine}`}>
+                                <span className={css.readinessNo}>{number.get(check)}</span>
+                                <Chip tone="warn">{t('design.checkRemind')}</Chip>
+                                <span className={css.remindText} title={`${check.code} · ${check.message}`}>
+                                  {said(check)}
+                                  {reminderConsequenceKey(check.code) !== null && <span className={css.readinessThen}>{t(reminderConsequenceKey(check.code) as EvalKey)}</span>}
+                                </span>
+                                {fixButton(check, number.get(check) ?? 0)}
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      ),
+                    ]
+                  })}
                   {shownBlockers.map((check, index) => (
                     <tr key={`block:${check.code}:${String(index)}`} className={css.readinessLine}>
-                      <td title={`${check.code} · ${check.message}`}>
-                        <span className={css.readinessNo}>{index + 1}</span>
+                      <td colSpan={2} title={`${check.code} · ${check.message}`}>
+                        <span className={css.readinessNo}>{number.get(check)}</span>
                         {said(check)}
                       </td>
-                      <td><Chip dot tone="danger">{t('design.checkBlocked')}</Chip></td>
-                      <td>{fixButton(check, index + 1)}</td>
+                      <td>
+                        <div className={css.blockerCell}>
+                          <Chip dot tone="danger">{t('design.checkBlocked')}</Chip>
+                          {fixButton(check, number.get(check) ?? 0)}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-        {anyFailed && shownBlockers.length === 0 && (
+        {failed > 0 && shownBlockers.length === 0 && (
           // One count for the failing rows; the re-check is the title line's
           // single button — one offline re-read covers every group.
           <div className={css.tableFoot}>
             <span className={css.tableFootText}>
-              {t('ready.failedCount', { count: ready.filter(row => !row.ok).length, total: ready.length })}
+              {t('ready.failedCount', { count: failed, total: subjects.length })}
             </span>
           </div>
         )}
@@ -285,7 +297,7 @@ function ReadinessChecklist(props: {
         <Block title={t('readiness.reminders', { count: shownReminders.length })} meta={t('readiness.remindersNote')}>
           <div className={css.box}>
             {shownReminders.map((check, index) => {
-              const k = shownBlockers.length + index + 1
+              const k = number.get(check) ?? 0
               // A reminder says what it will cost, so 「不影响启动」 is not read
               // as 「不重要」 (T80d · P2-7).
               const then = reminderConsequenceKey(check.code)
@@ -306,6 +318,9 @@ function ReadinessChecklist(props: {
     </>
   )
 }
+
+/** The mark before one expanded line. */
+const BASIS_MARK: Record<BasisLine['tone'], string> = { ok: '✓', warn: '⚠︎', danger: '✕', neutral: '·' }
 
 /**
  * ⓪ The question block (plan v1-rev14). Rendered only when the plan has one.
@@ -1185,10 +1200,12 @@ export function DesignPage(props: {
   onCopy: (text: string) => void
   /** The pinned-dataset reads (T84 §三/§四); absent — the inline 看题面 stays. */
   inspect?: ItemInspectFaces | null
+  /** Opens a readiness probe's child session (T84 §三); absent — no button. */
+  onOpenSession?: ((child: string) => void) | null
   t: LabViewProps['t']
 }) {
   const {
-    readPlan, onCopy, inspect = null,
+    readPlan, onCopy, inspect = null, onOpenSession = null,
     row, detail, review, reviewLoading, reviewError,
     conditions, conditionsLoading, conditionsError, conditionBusy, provision, conditionAction, endpointEditing,
     pair, diff, diffError, sentBack, started, output, outputError, refusal, approveError,
@@ -1215,7 +1232,21 @@ export function DesignPage(props: {
   // The readiness verdict, from whichever half of the payload has one: a
   // started run recorded probes, an unstarted plan only has what validate
   // resolved. Same badge either way (ui-spec §九: one component).
-  const readyRows = readinessRows(subjects, detail, review, t)
+  const probes = detail?.readiness ?? []
+  const readiness = review === null && probes.length === 0
+    ? { rows: [], attached: new Set<EvalPlanCheck>() }
+    : readinessTable({
+        reviewed: review !== null,
+        dataset: digest === null ? null : { id: digest.dataset.id, commit: digest.dataset.commit },
+        stages: digest?.stages ?? [],
+        expectedNs: digest?.expectedNs ?? [],
+        players: groups,
+        judges: digest?.judge.conditions ?? row.judges,
+        conditions: review?.conditions ?? [],
+        checks: review?.checks ?? [],
+        probes,
+        registry: conditions?.rows ?? [],
+      })
   // Only the lines that need reading: a clean plan renders as no list at all
   // rather than as a wall of green, and the passing ones stay under the fold.
   // PLAN_UNREADABLE is pulled out of the list entirely — it is not a line
@@ -1348,11 +1379,14 @@ export function DesignPage(props: {
       <ReadinessChecklist
         blockers={blockers}
         reminders={reminders}
-        ready={readyRows}
+        table={readiness.rows}
+        attached={readiness.attached}
+        probed={probes.length > 0}
         lines={checklistShown}
         forRerun={row.status === 'stalled'}
         onFix={onFix}
         onRecheck={onRecheck}
+        onOpenProbe={onOpenSession ?? null}
         t={t}
       />
       {/* The list row already carries validate's COUNTS, so the page can

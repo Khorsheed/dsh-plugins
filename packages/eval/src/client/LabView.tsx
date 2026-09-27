@@ -1363,6 +1363,7 @@ export function LabView(props: LabViewProps) {
                     readPlan={openExperimentId === null ? null : readPlan}
                     onCopy={copyText}
                     inspect={inspect}
+                    onOpenSession={(childId) => { openSession(childId as SessionId, null) }}
                     t={t}
                   />
                 </>
