@@ -1027,6 +1027,11 @@ export type EvalKey =
   | 'inspect.view'
   | 'inspect.recordTitle'
   | 'judgePrompt.previewTitle'
+  | 'judgePrompt.sees'
+  | 'inspect.viewAll'
+  | 'inspect.checksCount'
+  | 'record.view'
+  | 'judge.materials'
   | 'inspect.title'
   | 'inspect.pinned'
   | 'inspect.close'
@@ -2199,6 +2204,11 @@ export const en: Record<EvalKey, string> = {
   'inspect.view': "View",
   'inspect.recordTitle': "{record} · record",
   'judgePrompt.previewTitle': "Judge prompt (preview)",
+  'judgePrompt.sees': "The judge reads the task, the rubric and the answer, framed by one prompt.",
+  'inspect.viewAll': "View all",
+  'inspect.checksCount': "{n} passing",
+  'record.view': "View record",
+  'judge.materials': "Item materials",
   'inspect.title': '{item} · item materials',
   'inspect.pinned': '{dataset} @ {commit} — the version this experiment pins',
   'inspect.close': 'Close',
@@ -3361,6 +3371,11 @@ export const zh: Record<EvalKey, string> = {
   'inspect.view': "查看",
   'inspect.recordTitle': "{record} · 记录",
   'judgePrompt.previewTitle': "判官提示词（预览）",
+  'judgePrompt.sees': "判官读到的是题面、评分细则和作答，外面套一份提示词。",
+  'inspect.viewAll': "查看全文",
+  'inspect.checksCount': "通过 {n} 条",
+  'record.view': "查看记录",
+  'judge.materials': "题目材料",
   'inspect.title': '{item} · 题目材料',
   'inspect.pinned': '{dataset} @ {commit} · 本实验钉住的版本',
   'inspect.close': '关闭',

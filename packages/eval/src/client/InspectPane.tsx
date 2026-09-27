@@ -21,7 +21,8 @@ type T = LabViewProps['t']
 
 /** The reads the pane's pages use: the lab tab's own injected face, a subset. */
 export type InspectReads =
-  & Pick<LabViewInjected, 'fetchExperimentArtifact' | 'fetchCell' | 'fetchCellArtifact' | 'fetchReport' | 'fetchRunUnits' | 'openSession'>
+  & Pick<LabViewInjected, 'fetchExperimentArtifact' | 'fetchCell' | 'fetchCellArtifact' | 'fetchReport' | 'fetchRunUnits' | 'openSession'
+    | 'fetchPlanReview' | 'fetchExperiment' | 'fetchExperiments'>
   & { [K in 'fetchItemMaterials' | 'fetchDatasetFile' | 'fetchJudgePromptPreview' | 'fetchJudgePrompt']: LabViewInjected[K] | undefined }
 
 /**
@@ -30,10 +31,12 @@ export type InspectReads =
  */
 export function inspectReadsOf(face: LabViewInjected): InspectReads {
   const { fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
-    fetchExperimentArtifact, fetchCell, fetchCellArtifact, fetchReport, fetchRunUnits, openSession } = face
+    fetchExperimentArtifact, fetchCell, fetchCellArtifact, fetchReport, fetchRunUnits, openSession,
+    fetchPlanReview, fetchExperiment, fetchExperiments } = face
   return {
     fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
     fetchExperimentArtifact, fetchCell, fetchCellArtifact, fetchReport, fetchRunUnits, openSession,
+    fetchPlanReview, fetchExperiment, fetchExperiments,
   }
 }
 
@@ -72,6 +75,7 @@ export function inspectTitle(target: InspectTarget | undefined, t: T): string {
     case 'judge-prompt': return t('judgePrompt.previewTitle')
     case 'judge-prompt-actual': return t('judgePrompt.actualTitle', { cell: target.label })
     case 'plan-file': return 'plan.json'
+    case 'design-part': return t(target.part === 'notes' ? 'design.notes' : target.part === 'checks' ? 'review.checks' : 'design.advanced')
     case 'record': return t('inspect.recordTitle', { record: target.label })
     case 'artifact': return target.path.split('/').pop() ?? target.path
     case 'analysis': return target.name

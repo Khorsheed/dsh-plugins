@@ -39,7 +39,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
-import { DesignPage, type PlanFileAnswer, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
+import { DesignPage, planFileAnswer, type PlanFileAnswer, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
 import {
   Chip, EmptyState, Fold, Seg2, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
 } from './parts.tsx'
@@ -646,11 +646,7 @@ export function LabView(props: LabViewProps) {
   // own file through the same bounded read the report's 分析初稿 uses.
   const readPlan = useCallback((): Promise<PlanFileAnswer> => {
     if (openExperimentId === null) return Promise.resolve({ ok: false, message: t('design.raw.noExperiment') })
-    return fetchExperimentArtifact(sessionId, { experimentId: openExperimentId, path: 'plan.json' }).then((result): PlanFileAnswer => {
-      if (!result.ok) return { ok: false, message: result.error.message }
-      if (result.value.text === null) return { ok: false, message: result.value.note ?? t('design.raw.planBinary') }
-      return { ok: true, text: result.value.text, note: result.value.truncated ? (result.value.note ?? t('design.raw.truncated')) : null }
-    })
+    return fetchExperimentArtifact(sessionId, { experimentId: openExperimentId, path: 'plan.json' }).then(result => planFileAnswer(result, t))
   }, [sessionId, openExperimentId, fetchExperimentArtifact, t])
   // 查看 (T85 §二 / T86): every inspect target goes to the host's right
   // sidebar when this composition has one, else to the page's own Sheet —
@@ -659,8 +655,10 @@ export function LabView(props: LabViewProps) {
   const inspectReads = useMemo((): InspectReads => ({
     fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
     fetchExperimentArtifact, fetchCell, fetchCellArtifact, fetchReport, fetchRunUnits, openSession,
+    fetchPlanReview, fetchExperiment, fetchExperiments,
   }), [fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
-    fetchExperimentArtifact, fetchCell, fetchCellArtifact, fetchReport, fetchRunUnits, openSession])
+    fetchExperimentArtifact, fetchCell, fetchCellArtifact, fetchReport, fetchRunUnits, openSession,
+    fetchPlanReview, fetchExperiment, fetchExperiments])
   const [sheet, setSheet] = useState<{ stack: InspectTarget[]; recent: InspectTarget[] }>({ stack: [], recent: [] })
   const openInspect = useCallback((target: InspectTarget): void => {
     if (openInHost?.(sessionId, target) === true) return
@@ -1287,6 +1285,7 @@ export function LabView(props: LabViewProps) {
                       // start from what THIS door named.
                       key={`${answers.task}|${answers.condition ?? ''}|${String(answers.rep)}`}
                       task={answerSheet.task}
+                      runId={answerSheet.runId}
                       rows={rowsOfSheet(answerSheet, { condition: answers.condition, rep: null })}
                       criteria={answerSheet.criteria}
                       criteriaNote={answerSheet.criteriaNote}
@@ -1466,6 +1465,7 @@ export function LabView(props: LabViewProps) {
                       onRejudge={(cellNos) => {
                         handToAgent(t('judge.rejudgeAsk', { name: openRow.name, cells: cellNos.join('、') }))
                       }}
+                      experimentId={openRow.experimentId}
                       t={t}
                     />
                   )

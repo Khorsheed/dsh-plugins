@@ -38,6 +38,8 @@ import { compactCount, durationParts, sourceOf, sourceShares, stagePhrase, verdi
 import { conclusionSourceKey } from './journey.ts'
 import type { EvalKey } from './locales.ts'
 import { MarkdownDoc } from './MarkdownDoc.tsx'
+import { useInspect } from './inspect-context.ts'
+import { flat, registerInspectPage, type InspectPageProps } from './InspectPane.tsx'
 import css from './LabView.module.css'
 
 const DASH = '—'
@@ -164,11 +166,13 @@ function PairBlock(props: {
    * pair and lets the record list resolve how many that is — one rep opens
    * its detail, several leave the list standing under a chip (I5·T69).
    */
-  onOpenRecords: (task: string, condition: string) => void
+  onOpenRecords?: (task: string, condition: string) => void
   /** 看作答 (I5·T75): the 题's answers, both groups side by side, every rep. */
-  onOpenAnswers: (focus: { task: string; condition: string | null; rep: number | null }) => void
+  onOpenAnswers?: (focus: { task: string; condition: string | null; rep: number | null }) => void
   t: LabViewProps['t']
 }) {
+  // Both jumps are absent in 查看 (T86): the pane cannot move the lab tab,
+  // so the table is read-only there.
   const { pair, onOpenRecords, onOpenAnswers, t } = props
   // The weighted columns appear only when the rubric carried weights for both
   // sides — an empty pair of columns would read as "weight zero".
@@ -197,38 +201,50 @@ function PairBlock(props: {
                 <tr key={row.task}>
                   <th className={css.reportRowHead}>
                     {row.task}
-                    {' '}
-                    <button
-                      type="button"
-                      className={css.reportJump}
-                      onClick={() => { onOpenAnswers({ task: row.task, condition: null, rep: null }) }}
-                    >
-                      {t('answer.open')}
-                    </button>
+                    {onOpenAnswers !== undefined && (
+                      <>
+                        {' '}
+                        <button
+                          type="button"
+                          className={css.reportJump}
+                          onClick={() => { onOpenAnswers({ task: row.task, condition: null, rep: null }) }}
+                        >
+                          {t('answer.open')}
+                        </button>
+                      </>
+                    )}
                   </th>
                   {/* Each side's number opens the records it was computed
                       from. A mean nobody can get behind is a number a reader
                       has to take on faith, and this table is exactly where
                       「为什么是这个数」 gets asked. */}
                   <td className={css.reportTd}>
-                    <button
-                      type="button"
-                      className={css.reportJump}
-                      title={t('report.openRecords', { task: row.task, condition: pair.a })}
-                      onClick={() => { onOpenRecords(row.task, pair.a) }}
-                    >
-                      {fmtNum(row.aMean)}
-                    </button>
+                    {onOpenRecords === undefined
+                      ? fmtNum(row.aMean)
+                      : (
+                        <button
+                          type="button"
+                          className={css.reportJump}
+                          title={t('report.openRecords', { task: row.task, condition: pair.a })}
+                          onClick={() => { onOpenRecords(row.task, pair.a) }}
+                        >
+                          {fmtNum(row.aMean)}
+                        </button>
+                      )}
                   </td>
                   <td className={css.reportTd}>
-                    <button
-                      type="button"
-                      className={css.reportJump}
-                      title={t('report.openRecords', { task: row.task, condition: pair.b })}
-                      onClick={() => { onOpenRecords(row.task, pair.b) }}
-                    >
-                      {fmtNum(row.bMean)}
-                    </button>
+                    {onOpenRecords === undefined
+                      ? fmtNum(row.bMean)
+                      : (
+                        <button
+                          type="button"
+                          className={css.reportJump}
+                          title={t('report.openRecords', { task: row.task, condition: pair.b })}
+                          onClick={() => { onOpenRecords(row.task, pair.b) }}
+                        >
+                          {fmtNum(row.bMean)}
+                        </button>
+                      )}
                   </td>
                   <td className={css.reportTd}>{fmtNum(row.delta)}</td>
                   {weighted && (
@@ -1147,9 +1163,11 @@ export type ReadAnalysis = (path: string) => Promise<
 export function AnalysisBlock(props: {
   files: readonly EvalAnalysisFile[]
   read: ReadAnalysis
+  /** 查看 one file (T86); null keeps the fold with the files read in place. */
+  onView?: ((file: EvalAnalysisFile) => void) | null
   t: LabViewProps['t']
 }) {
-  const { files, read, t } = props
+  const { files, read, onView = null, t } = props
   const newest = files[0]?.path ?? null
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(newest === null ? [] : [newest]))
@@ -1170,6 +1188,24 @@ export function AnalysisBlock(props: {
   }, [open, expanded, bodies, read])
 
   if (files.length === 0) return null
+  if (onView !== null) {
+    // T86: the drafts as a list, each read in 查看.
+    return (
+      <Section title={t('report.analysis', { n: files.length })} meta={stamp(files[0]?.modifiedAt ?? null)}>
+        <div className={css.inspectLines} id="eval-report-analysis">
+          {files.map(file => (
+            <div key={file.path} className={css.inspectLine}>
+              <span>{file.name}</span>
+              <span className={css.dim}>{stamp(file.modifiedAt)}</span>
+              <Button variant="outline" size="sm" className={css.smButton} onClick={() => { onView(file) }}>
+                {t('inspect.view')}
+              </Button>
+            </div>
+          ))}
+        </div>
+      </Section>
+    )
+  }
   const toggle = (path: string, next: boolean): void => {
     setExpanded((prev) => {
       const copy = new Set(prev)
@@ -1258,6 +1294,11 @@ export function ReportPage(props: {
   // still have meant it.
   const [confirming, setConfirming] = useState(false)
   const [dir, setDir] = useState('')
+  const open = useInspect()
+  const experimentId = report?.experimentId ?? null
+  const viewAnalysis = open === null || experimentId === null
+    ? null
+    : (file: EvalAnalysisFile) => { open({ page: 'analysis', experimentId, path: file.path, name: file.name }) }
 
   if (error !== null) return <ErrorState what={t('report.error')} message={error} t={t} />
   if (report === null) return <div className={css.empty}>{t('report.loading')}</div>
@@ -1355,7 +1396,7 @@ export function ReportPage(props: {
             </Button>
           </div>
         </div>
-        <AnalysisBlock key={report.runId} files={report.analysis} read={readAnalysis} t={t} />
+        <AnalysisBlock key={report.runId} files={report.analysis} read={readAnalysis} onView={viewAnalysis} t={t} />
         {units !== null && units.available && units.units.length > 0 && <UnitsSection units={units} t={t} />}
         {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}
       </div>
@@ -1423,92 +1464,226 @@ export function ReportPage(props: {
       <Efficiency report={report} t={t} />
 
       <div className={css.reportFolds}>
-        {/* 实验有效性校验: everything the card was computed from, folded, with
-            each check's ✓ / ✗ on the summary line so a reader learns whether
-            to open it without opening it. */}
-        <Fold
-          summary={t('report.audit')}
-          aside={<ValidityAside report={report} t={t} />}
-          id="eval-report-audit"
-        >
-          <Section title={t('report.invariants')}>
-            {report.invariants.map((check) => {
-              // The hover says why this check affects the COMPARISON — the
-              // one thing the title and the facts under it never said, and
-              // the reason a reader can act on a ⚠ instead of shrugging.
-              const why = invariantWhy(check.id)
-              return (
-                <div key={check.id} className={css.invariantRow} title={why === null ? check.id : t(why)}>
-                  <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
-                  <span className={css.invariantTitle}>{check.title}</span>
-                  {check.details.map(detail => <div key={detail} className={css.invariantDetail}>{detail}</div>)}
-                </div>
-              )
-            })}
-          </Section>
-
-          {report.comparisonAllowed && !report.singleCondition && report.pairs.map(pair => (
-            <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} onOpenRecords={onOpenRecords} onOpenAnswers={onOpenAnswers} t={t} />
-          ))}
-
-          <JudgeConsistency report={report} t={t} />
-
-          {report.notes.length > 0 && (
-            <Section title={t('report.notes')}>
-              {report.notes.map(note => <div key={note} className={css.dim}>{note}</div>)}
-            </Section>
-          )}
-        </Fold>
-
-        {/* 导出与来源: the run-wide writes (收尾、导出、重新导出、回收) and
-            which bundle this is. Held containers ride the summary line — a
-            leak must not hide behind a closed fold (T57). */}
-        <Fold
-          summary={t('report.exportFold')}
-          aside={(
+        {open !== null
+          ? (
+            // T86: in a lab tab each block is one line, read in full in 查看;
+            // the run-wide writes stay here, since they are gestures.
+            <div className={css.inspectLines}>
+              <div className={css.inspectLine} id="eval-report-audit">
+                <span>{t('report.audit')}</span>
+                <span className={css.dim}><ValidityAside report={report} t={t} /></span>
+                <Button variant="outline" size="sm" className={css.smButton}
+                  onClick={() => { open({ page: 'report-part', runId: report.runId, part: 'audit', ...outDirOf(report) }) }}
+                >
+                  {t('inspect.view')}
+                </Button>
+              </div>
+              <div className={css.inspectLine}>
+                <span>{t('report.exportFold')}</span>
+                <span className={css.dim}>
+                  {exportAside}
+                  {held > 0 && <span className={css.warning}> · {t('report.unitsHeld', { count: held })}</span>}
+                </span>
+                <Button variant="outline" size="sm" className={css.smButton}
+                  onClick={() => { open({ page: 'report-part', runId: report.runId, part: 'export', ...outDirOf(report) }) }}
+                >
+                  {t('inspect.view')}
+                </Button>
+              </div>
+              {bar}
+              {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}
+            </div>
+          )
+          : (
             <>
-              {exportAside}
-              {held > 0 && <span className={css.warning}> · {t('report.unitsHeld', { count: held })}</span>}
+            {/* 实验有效性校验: everything the card was computed from, folded, with
+                each check's ✓ / ✗ on the summary line so a reader learns whether
+                to open it without opening it. */}
+            <Fold
+              summary={t('report.audit')}
+              aside={<ValidityAside report={report} t={t} />}
+              id="eval-report-audit"
+            >
+              <AuditBody report={report} jumps={{ onOpenRecords, onOpenAnswers }} t={t} />
+            </Fold>
+
+            {/* 导出与来源: the run-wide writes (收尾、导出、重新导出、回收) and
+                which bundle this is. Held containers ride the summary line — a
+                leak must not hide behind a closed fold (T57). */}
+            <Fold
+              summary={t('report.exportFold')}
+              aside={(
+                <>
+                  {exportAside}
+                  {held > 0 && <span className={css.warning}> · {t('report.unitsHeld', { count: held })}</span>}
+                </>
+              )}
+            >
+              {bar}
+              <ExportInfo report={{ ...report, bundleDir: report.bundleDir }} units={units} t={t} />
+              {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}
+            </Fold>
             </>
           )}
-        >
-          {bar}
-          <div className={css.dim}>
-            {/* The bundle's own name, not the path it happens to sit at. */}
-            <span className={css.mono} title={report.bundleDir}>
-              {report.bundleDir.split('/').filter(Boolean).pop() ?? ''}
-            </span>
-            {' · '}
-            {t('report.counts', {
-              rows: report.counts.rows, missions: report.counts.missions,
-              attempts: report.counts.attempts, retries: report.counts.retries,
-            })}
-          </div>
-          <div className={css.dim}>
-            {report.exportedAt === null
-              ? t('report.exportedAtUnknown')
-              : t('report.exportedAt', { at: stamp(report.exportedAt) })}
-            {report.lastHumanFinalAt !== null && <> · {t('report.lastFinalAt', { at: stamp(report.lastHumanFinalAt) })}</>}
-            {report.summaryWritten && <> · {t('report.summaryIn')}</>}
-          </div>
-          {!report.summaryWritten && !report.staleAfterFinal && (
-            <div className={css.dim}>{t('report.summaryMissing')}</div>
-          )}
-          {units !== null && units.available && units.units.length > 0 && <UnitsSection units={units} t={t} />}
-          {finalizeResult !== null && <FinalizeResult result={finalizeResult} t={t} />}
-          {/* The path and the shell line that reproduces this page belong to
-              whoever is at a terminal; §九 keeps both out of the page body. */}
-          <Detail summary={t('report.whereFold')}>
-            <div className={css.errorDetailLine}>{report.bundleDir}</div>
-            {report.cliHint !== null && (
-              <div className={css.errorDetailLine}>{t('report.cliHint')}: {report.cliHint}</div>
-            )}
-          </Detail>
-        </Fold>
 
         {/* ⑤ 分析初稿: a draft about the numbers above, so it reads after them. */}
-        <AnalysisBlock key={report.runId} files={report.analysis} read={readAnalysis} t={t} />
+        <AnalysisBlock key={report.runId} files={report.analysis} read={readAnalysis} onView={viewAnalysis} t={t} />
       </div>
     </div>
   )
 }
+
+/** Where the report's bundle was found, as the read's `outDir` (its parent directory). */
+function outDirOf(report: EvalRunReportView): { outDir?: string } {
+  if (report.bundleDir === null) return {}
+  const parent = report.bundleDir.replace(/\/+$/, '').split('/').slice(0, -1).join('/')
+  return parent === '' ? {} : { outDir: parent }
+}
+
+/** The record jumps the audit's pair tables offer; absent in 查看. */
+interface AuditJumps {
+  onOpenRecords?: (task: string, condition: string) => void
+  onOpenAnswers?: (focus: { task: string; condition: string | null; rep: number | null }) => void
+}
+
+/**
+ * 实验有效性校验's body: the invariants, the per-pair tables, the judge
+ * consistency and the notes. The fold's body in a spec, the 查看 page in a lab tab.
+ */
+function AuditBody(props: { report: EvalRunReportView; jumps: AuditJumps; t: LabViewProps['t'] }) {
+  const { report, jumps, t } = props
+  return (
+    <>
+      <Section title={t('report.invariants')}>
+        {report.invariants.map((check) => {
+          // The hover says why this check affects the COMPARISON — the
+          // one thing the title and the facts under it never said, and
+          // the reason a reader can act on a ⚠ instead of shrugging.
+          const why = invariantWhy(check.id)
+          return (
+            <div key={check.id} className={css.invariantRow} title={why === null ? check.id : t(why)}>
+              <Chip tone={invariantTone(check.status)}>{t(`invariant.${check.status}`)}</Chip>
+              <span className={css.invariantTitle}>{check.title}</span>
+              {check.details.map(detail => <div key={detail} className={css.invariantDetail}>{detail}</div>)}
+            </div>
+          )
+        })}
+      </Section>
+
+      {report.comparisonAllowed && !report.singleCondition && report.pairs.map(pair => (
+        <PairBlock key={`${pair.a}|${pair.b}`} pair={pair} {...jumps} t={t} />
+      ))}
+
+      <JudgeConsistency report={report} t={t} />
+
+      {report.notes.length > 0 && (
+        <Section title={t('report.notes')}>
+          {report.notes.map(note => <div key={note} className={css.dim}>{note}</div>)}
+        </Section>
+      )}
+    </>
+  )
+}
+
+/**
+ * 导出与来源's facts: which bundle, what it counts, when it was exported, the
+ * containers still held, and where it sits. The gestures (收尾、导出、重新
+ * 导出、回收) are not here — they stay on the page.
+ */
+function ExportInfo(props: { report: EvalRunReportView & { bundleDir: string }; units: EvalRunUnitsView | null; t: LabViewProps['t'] }) {
+  const { report, units, t } = props
+  return (
+    <>
+      <div className={css.dim}>
+        {/* The bundle's own name, not the path it happens to sit at. */}
+        <span className={css.mono} title={report.bundleDir}>
+          {report.bundleDir.split('/').filter(Boolean).pop() ?? ''}
+        </span>
+        {' · '}
+        {t('report.counts', {
+          rows: report.counts.rows, missions: report.counts.missions,
+          attempts: report.counts.attempts, retries: report.counts.retries,
+        })}
+      </div>
+      <div className={css.dim}>
+        {report.exportedAt === null
+          ? t('report.exportedAtUnknown')
+          : t('report.exportedAt', { at: stamp(report.exportedAt) })}
+        {report.lastHumanFinalAt !== null && <> · {t('report.lastFinalAt', { at: stamp(report.lastHumanFinalAt) })}</>}
+        {report.summaryWritten && <> · {t('report.summaryIn')}</>}
+      </div>
+      {!report.summaryWritten && !report.staleAfterFinal && (
+        <div className={css.dim}>{t('report.summaryMissing')}</div>
+      )}
+      {units !== null && units.available && units.units.length > 0 && <UnitsSection units={units} t={t} />}
+      {/* The path and the shell line that reproduces this page belong to
+          whoever is at a terminal; §九 keeps both out of the page body. */}
+      <Detail summary={t('report.whereFold')}>
+        <div className={css.errorDetailLine}>{report.bundleDir}</div>
+        {report.cliHint !== null && (
+          <div className={css.errorDetailLine}>{t('report.cliHint')}: {report.cliHint}</div>
+        )}
+      </Detail>
+    </>
+  )
+}
+
+/** What a report-part page read. */
+type ReportRead = { ok: true; report: EvalRunReportView; units: EvalRunUnitsView | null } | { ok: false; message: string }
+
+/**
+ * 查看 · a report block in full (T86): the validity audit, or where the
+ * bundle came from — read again by run id.
+ * @param props - the page props.
+ */
+function ReportPartPage(props: InspectPageProps<'report-part'>) {
+  const { target, reads, sessionId, setSub, t } = props
+  const { runId, part, outDir } = target
+  const [read, setRead] = useState<ReportRead | null>(null)
+  useEffect(() => { setSub(runId) }, [runId, setSub])
+  useEffect(() => {
+    let cancelled = false
+    const report = reads.fetchReport(sessionId, { runId, ...(outDir === undefined ? {} : { outDir }) }).then(flat)
+    const units = part === 'export' ? reads.fetchRunUnits(sessionId, { runId }).then(flat) : Promise.resolve(null)
+    void Promise.all([report, units]).then(([report, units]) => {
+      if (cancelled) return
+      setRead(report.ok ? { ok: true, report: report.value, units: units !== null && units.ok ? units.value : null } : report)
+    })
+    return () => { cancelled = true }
+  }, [reads, sessionId, runId, part, outDir])
+  if (read === null) return <div className={css.dim}>{t('report.loading')}</div>
+  if (!read.ok) return <ErrorState what={t('report.error')} message={read.message} compact t={t} />
+  const { report } = read
+  if (part === 'audit') return <AuditBody report={report} jumps={{}} t={t} />
+  if (report.bundleDir === null) return <div className={css.dim}>{t('report.noBundle')}</div>
+  return <ExportInfo report={{ ...report, bundleDir: report.bundleDir }} units={read.units} t={t} />
+}
+
+/**
+ * 查看 · one analysis draft (T73 / T86), rendered as the document it is.
+ * @param props - the page props.
+ */
+function AnalysisPage(props: InspectPageProps<'analysis'>) {
+  const { target, reads, sessionId, setSub, t } = props
+  const { experimentId, path, name } = target
+  const [read, setRead] = useState<AnalysisBody>({ state: 'loading' })
+  useEffect(() => { setSub(experimentId) }, [experimentId, setSub])
+  useEffect(() => {
+    let cancelled = false
+    void reads.fetchExperimentArtifact(sessionId, { experimentId, path }).then(flat).then((answer) => {
+      if (!cancelled) setRead(answer.ok ? { state: 'ok', view: answer.value } : { state: 'error', message: answer.message })
+    })
+    return () => { cancelled = true }
+  }, [reads, sessionId, experimentId, path])
+  if (read.state === 'loading') return <div className={css.dim}>{t('report.analysisLoading')}</div>
+  if (read.state === 'error') return <div className={css.errorDetailLine}>{read.message}</div>
+  return (
+    <>
+      {read.view.note !== null && <div className={css.warning}>{read.view.note}</div>}
+      {read.view.text !== null && <MarkdownDoc text={read.view.text} banner={name} t={t} />}
+    </>
+  )
+}
+
+registerInspectPage('report-part', ReportPartPage)
+registerInspectPage('analysis', AnalysisPage)

@@ -23,6 +23,9 @@ export const INSPECT_RECENT_CAP = 8
 /** The five tabs of an item's materials. */
 export type InspectItemTab = 'task' | 'stages' | 'rubric' | 'probes' | 'reference'
 
+/** Which of the design page's checking material the pane shows. */
+export type InspectDesignPart = 'notes' | 'checks' | 'receipts'
+
 /** Which report block the pane shows in full. */
 export type InspectReportPart = 'audit' | 'export'
 
@@ -36,6 +39,8 @@ export type InspectTarget =
   | { page: 'judge-prompt-actual'; runId: string; missionId: string; attempt: number; label: string }
   /** plan.json, verbatim. */
   | { page: 'plan-file'; experimentId: string }
+  /** The design page's author note, passing checks, or remaining settings and receipts. */
+  | { page: 'design-part'; experimentId: string; runId: string | null; part: InspectDesignPart }
   /** One run record's receipts: parameters, attachments, judge rounds, attempts, probes. */
   | { page: 'record'; runId: string; missionId: string; label: string }
   /** One attachment of a record. */
@@ -48,7 +53,7 @@ export type InspectTarget =
   | { page: 'answer-file'; runId: string; column: string; name: string; text: string; replacements: number | null }
 
 /** The pane's pages, as a list, for the validator. */
-const PAGES = ['item', 'judge-prompt', 'judge-prompt-actual', 'plan-file', 'record', 'artifact', 'analysis', 'report-part', 'answer-file'] as const
+const PAGES = ['item', 'judge-prompt', 'judge-prompt-actual', 'plan-file', 'design-part', 'record', 'artifact', 'analysis', 'report-part', 'answer-file'] as const
 
 const isString = (value: unknown): value is string => typeof value === 'string' && value !== ''
 const isStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every(each => typeof each === 'string')
@@ -74,6 +79,9 @@ export function isInspectTarget(value: unknown): value is InspectTarget {
       return isString(v.runId) && isString(v.missionId) && typeof v.attempt === 'number' && typeof v.label === 'string'
     case 'plan-file':
       return isString(v.experimentId)
+    case 'design-part':
+      return isString(v.experimentId) && (v.runId === null || isString(v.runId))
+        && ['notes', 'checks', 'receipts'].includes(v.part as string)
     case 'record':
       return isString(v.runId) && isString(v.missionId) && typeof v.label === 'string'
     case 'artifact':
@@ -112,6 +120,7 @@ export function targetKey(target: InspectTarget): string {
     case 'judge-prompt': return `judge-prompt:${target.experimentId}`
     case 'judge-prompt-actual': return `judge-prompt-actual:${target.runId}:${target.missionId}:${String(target.attempt)}`
     case 'plan-file': return `plan-file:${target.experimentId}`
+    case 'design-part': return `design-part:${target.experimentId}:${target.part}`
     case 'record': return `record:${target.runId}:${target.missionId}`
     case 'artifact': return `artifact:${target.runId}:${target.missionId}:${String(target.attempt)}:${target.path}`
     case 'analysis': return `analysis:${target.experimentId}:${target.path}`

@@ -3940,3 +3940,35 @@ tr:last-child > .reportTd {
   gap: 6px;
   align-items: center;
 }
+
+/* 查看 entries (T86): one sentence and its button, where a fold used to be. */
+.inspectLines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inspectLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inspectExcerpt {
+  flex: 1 1 12em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* T86: the queue head's 题目材料 · 查看, pushed to the row's end. */
+.itemSwitchAside {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
