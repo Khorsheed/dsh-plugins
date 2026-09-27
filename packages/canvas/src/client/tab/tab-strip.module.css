@@ -1,6 +1,7 @@
-/* The canvas surface's own tab strip: browser-tab chrome, one step quieter
-   than the topbar under it. Colours are all `--dsw-*` tokens, so light and
-   dark stay the theme's business. */
+/* The canvas surface's own tab strip: underlined text rows, a level quieter
+   than the host dock's filled chips right above it — two rows of filled tabs
+   read as tabs stacked on tabs (2026-09-28 review). Colours are all `--dsw-*`
+   tokens, so light and dark stay the theme's business. */
 
 /* The FRAME owns the fill and the bottom rule, and clips nothing: the tail's
    dropdown mounts inside it, and a scroll box's overflow would cut that menu
@@ -8,23 +9,21 @@
 .stripFrame {
   display: flex;
   align-items: flex-end;
-  min-height: 32px;
-  padding: 0 8px;
+  min-height: 34px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
-  background: var(--dsw-alias-bg-layer-1);
+  background: var(--dsw-alias-bg-base);
   flex-shrink: 0;
 }
 
 .strip {
   display: flex;
   align-items: flex-end;
-  gap: 1px;
+  gap: 14px;
   flex: 1 1 auto;
   min-width: 0;
-  /* The padding is the active row's cover room: overflow clips at the padding
-     edge, so the cover lands INSIDE the box, and the strip's own −1px rides it
-     over the frame's rule. */
-  padding-bottom: 1px;
+  /* The strip rides −1px over the frame's rule, so the active row's underline
+     sits ON the rule instead of floating above it. */
   margin-bottom: -1px;
   /* Rows keep their reading width and the strip gives up ground sideways: a
      tab squeezed to four characters identifies nothing. */
@@ -36,27 +35,21 @@
 .tab {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
+  gap: 2px;
   flex: 0 1 auto;
   min-width: 0;
   max-width: 190px;
-  margin-bottom: -1px;
-  border: 1px solid transparent;
-  border-radius: 8px 8px 0 0;
-  transition: background 0.12s;
+  border-bottom: 2px solid transparent;
+  transition: border-color 0.12s;
 }
 
 .tab:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  border-bottom-color: var(--dsw-alias-border-l2);
 }
 
-/* The active row is the page continuing into the strip: same fill as the body
-   below, and its own bottom border (carried the −1px into the strip's padding)
-   paints over the frame's rule so the two read as one surface. */
+/* The showing canvas: its underline in the text's own colour, over the rule. */
 .tab[data-active="true"] {
-  border-color: var(--dsw-alias-border-l1);
-  border-bottom-color: var(--dsw-alias-bg-base);
-  background: var(--dsw-alias-bg-base);
+  border-bottom-color: var(--dsw-alias-label-primary);
 }
 
 .label {
@@ -65,17 +58,12 @@
   gap: 5px;
   min-width: 0;
   border: none;
-  border-radius: 8px 0 0 0;
   background: transparent;
-  padding: 6px 2px 5px 9px;
+  padding: 8px 0 6px;
   font: var(--dsw-font-xxs-12);
   line-height: 1.4;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
-}
-
-.label svg {
-  flex: none;
 }
 
 .labelText {
@@ -83,6 +71,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tab:hover .label {
+  color: var(--dsw-alias-label-secondary);
 }
 
 .tab[data-active="true"] .label {
@@ -99,9 +91,9 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-right: 5px;
+  width: 20px;
+  height: 20px;
+  margin-right: -4px;
   border: none;
   border-radius: 5px;
   background: transparent;

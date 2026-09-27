@@ -1,6 +1,6 @@
 /**
  * The quote blocks the canvas writes into the main conversation's input
- * (「与 Agent 对谈」, 「开始写作」, 「追问」): the card's words as a blockquote,
+ * (「与 Agent 对谈」, 「让 Agent 写成稿」, 「整张卡引用到会话」, 「追问」): the card's words as a blockquote,
  * the attribution line that names the card's handle, the html pointer, the
  * length cut, the comment window, and the read-merge with a draft the user
  * already typed.

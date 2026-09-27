@@ -597,6 +597,14 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       label={t('action.more')}
       className={css.tool}
       items={[
+        // Quoting a passage is the quote plugin's selection menu; the whole
+        // card goes from here, so the header keeps only the view switch
+        // (2026-09-28 review).
+        ...(canTalk && !archived ? [{
+          id: 'quote',
+          label: t('card.quoteWhole'),
+          icon: <IconRightUpOutlineMedium size={14} />,
+        }] : []),
         // A document card that became the piece is turned into a manuscript
         // by hand (the 2026-09-27 decision): the card stays as material, the
         // manuscript starts from its text and names it as its first source.
@@ -612,6 +620,12 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       ]}
       onSelect={id => {
         if (id === 'delete') { setAskDelete(true); return }
+        if (id === 'quote') {
+          quote(cardQuoteOf(t, card, {
+            canvasTitle: open.board.title, kindLabel: categoryLabels.get(card.kind) ?? card.kind,
+          }))
+          return
+        }
         if (id === 'manuscript') { void turnIntoManuscript(); return }
         void mutate(sid => patchCard(sid, {
           canvasId: open.board.id, cardId: card.id, status: 'archived',
@@ -678,34 +692,6 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           <span className={css.spacer} />
           {!proposed && !archived && !readonly && (
             <ModeSeg modes={html ? PAGE_MODES : FLOW_MODES} mode={view} onMode={setMode} t={t} />
-          )}
-          {canTalk && !archived && (
-            // The detail page IS one card, so both gestures quote just it.
-            <>
-              <button
-                type="button"
-                className={css.iconButton}
-                onClick={() => {
-                  quote(cardQuoteOf(t, card, {
-                    canvasTitle: open.board.title, kindLabel: categoryLabels.get(card.kind) ?? card.kind,
-                  }))
-                }}
-              >
-                {t('talk.action')}
-              </button>
-              <button
-                type="button"
-                className={css.iconButton}
-                onClick={() => {
-                  const block = cardQuoteOf(t, card, {
-                    canvasTitle: open.board.title, kindLabel: categoryLabels.get(card.kind) ?? card.kind,
-                  })
-                  quote(`${block}\n\n${t('talk.writeText')}`)
-                }}
-              >
-                {t('talk.write')}
-              </button>
-            </>
           )}
           {archived && !readonly && (
             <button

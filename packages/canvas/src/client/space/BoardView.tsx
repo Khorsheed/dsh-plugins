@@ -19,7 +19,7 @@
  */
 import { useRef, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconLightOutlineMedium, IconLinkOutlineMedium, IconNewChatOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconNewChatOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
   documentHeadingOf, enabledCategories, isBoardCardKind, isLongCardText,
@@ -688,7 +688,7 @@ export function BoardView({
           <div className={css.notice}>
             {visible.length === 0 ? (
               <>
-                <IconLightOutlineMedium size={16} />
+                <IconListPenOutlineMedium size={16} />
                 <br />
                 {t('board.empty')}
                 <br />

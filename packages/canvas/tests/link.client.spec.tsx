@@ -3,7 +3,7 @@
  * The link view (stage ⑥): the 卡板/连线 switch, the stored-vs-auto grid, and
  * every gesture on the stage — a click that picks, a drag that places, a band
  * that picks a batch, a port drag that links a pair, the line delete, the lanes
- * (add / rename / drag-carry / resize), 「顺线扩一圈」's send set and the two
+ * (add / rename / drag-carry / resize), the send set and the two
  * quote gestures — plus the read-only degrade. The pure geometry half is covered
  * by tests/layout-geometry.spec.ts; THIS file is the component, driven through
  * CanvasTab so the prop wiring (`onLayout` → the `setLayout` Remote verb,
@@ -348,9 +348,6 @@ const wiresOf = (container: HTMLElement): number => container.querySelectorAll('
 const lanesOf = (container: HTMLElement): Element[] => [...container.querySelectorAll('[data-lane]')]
 const pickedOf = (container: HTMLElement): string[] =>
   nodesOf(container).filter(row => row.hasAttribute('data-picked')).map(row => row.dataset.node ?? '')
-/** The nodes marked as an ADDITION (never the ones the user clicked). */
-const clusteredOf = (container: HTMLElement): string[] =>
-  nodesOf(container).filter(row => row.hasAttribute('data-cluster')).map(row => row.dataset.node ?? '')
 /** A node's kind line: its category, plus the lane it sits in. */
 const kindOf = (container: HTMLElement, id: string): string => nodeOf(container, id).querySelector('span')!.textContent ?? ''
 /** The scroll host: `stageRef` is the stage div that wraps the world div. */
@@ -1030,83 +1027,34 @@ describe('LinkView — the send set', () => {
     return { bench, container }
   }
 
-  it('sends what was clicked while 顺线扩一圈 is off, and marks nobody as an addition', async () => {
+  it('sends exactly what was clicked, the line adding nobody', async () => {
     const { container } = await pickedPair()
     // The whole info line, so a count landing in the wrong slot fails it.
     expect(await infoOf()).toBe(t('link.infoPlain', { count: '1' }))
-    // Off means OFF: the graph adds nothing to the send set, and the cluster
-    // marker — which exists to make an addition the user did not click visible —
-    // is on nothing at all, least of all the card that was clicked.
-    expect(clusteredOf(container)).toEqual([])
     expect(nodeOf(container, 'c_1').hasAttribute('data-picked')).toBe(true)
+    expect(nodeOf(container, 'c_2').hasAttribute('data-picked')).toBe(false)
     expect(screen.queryByRole('button', { name: '与 Agent 对谈 · 2 张' })).toBeNull()
     expect(screen.getByRole('button', { name: '与 Agent 对谈 · 1 张' })).toBeTruthy()
-  })
-
-  it('closes the cluster over lines, takes one hop of lane mates, and stops at a lane mate reached through a line', async () => {
-    const bench = makeHarness({
-      boards: [board(CANVAS_ID, [
-        card('c_1', { x: 10, y: 10 }), card('c_2', { x: 300, y: 10 }), card('c_3', { x: 30, y: 20 }),
-        card('c_4', { x: 500, y: 10 }), card('c_5', { x: 700, y: 10 }),
-      ], {
-        // c_1 — c_2 — c_5: two lines, so the closure has to travel to reach c_5.
-        links: [link('c_1', 'c_2'), link('c_2', 'c_5')],
-        lanes: [
-          lane('lane_a', { x: 0, y: 0, w: 250, h: 120 }, '甲'),
-          lane('lane_b', { x: 250, y: 0, w: 400, h: 120 }, '乙'),
-        ],
-      })],
-    })
-    const { container } = await openLinkFace(bench, 5)
-    tap(nodeOf(container, 'c_1'))
-    expect(clusteredOf(container)).toEqual([])
-    expect(await infoOf()).toBe(t('link.infoPlain', { count: '1' }))
-    fireEvent.click(screen.getByRole('button', { name: '顺线扩一圈 关' }))
-    // c_2 and c_5 join along the chain (c_5 only transitively) and c_3 joins as
-    // the SEED's lane mate. c_4 — a lane mate of c_2, i.e. reachable only THROUGH
-    // a line — does not: the one lane hop is counted from what the user clicked,
-    // never from what the lines brought in, or one line would swallow a chapter.
-    await waitFor(() => {
-      expect(clusteredOf(container)).toEqual(['c_2', 'c_3', 'c_5'])
-    })
-    expect(nodeOf(container, 'c_1').hasAttribute('data-cluster')).toBe(false)
-    expect(nodeOf(container, 'c_4').hasAttribute('data-cluster')).toBe(false)
-    expect(nodeOf(container, 'c_4').hasAttribute('data-picked')).toBe(false)
-    expect(await infoOf()).toBe(
-      t('link.infoExpanded', { count: '4', seeds: '1', lines: '2', lanes: '1' }),
-    )
-    expect(screen.getByRole('button', { name: '顺线扩一圈 开' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '与 Agent 对谈 · 4 张' })).toBeTruthy()
+    // The old expansion toggle is gone for good.
+    expect(screen.queryByRole('button', { name: /顺线/ })).toBeNull()
   })
 
   /** The card ids a quote block names, in the order it names them. */
   const quotedIds = (block: string): string[] => [...block.matchAll(/\bc_\d+\b/g)].map(match => match[0])
 
-  it('quotes the whole cluster into the input as one group, over the cards the line joined', async () => {
-    const { bench } = await pickedPair()
-    fireEvent.click(screen.getByRole('button', { name: '顺线扩一圈 关' }))
-    fireEvent.click(await screen.findByRole('button', { name: '与 Agent 对谈 · 2 张' }))
-    const [sessionId, block] = bench.mocks.quoteToConversation.mock.calls[0] as [string, string]
-    expect(sessionId).toBe('s1')
-    expect(new Set(quotedIds(block))).toEqual(new Set(['c_1', 'c_2']))
-    expect(bench.mocks.setLayout).not.toHaveBeenCalled()
-  })
-
-  it('quotes the same set the bar counted for 开始写作, with the writing ask after it', async () => {
+  it('quotes the picked pair as one group for 让 Agent 写成稿, with the writing ask after it', async () => {
     const { bench, container } = await pickedPair()
-    fireEvent.click(screen.getByRole('button', { name: '顺线扩一圈 关' }))
-    await waitFor(() => {
-      expect(clusteredOf(container)).toEqual(['c_2'])
-    })
-    fireEvent.click(await screen.findByRole('button', { name: '开始写作' }))
+    tap(nodeOf(container, 'c_2'))
+    fireEvent.click(await screen.findByRole('button', { name: '让 Agent 写成稿' }))
     const block = bench.mocks.quoteToConversation.mock.calls[0]?.[1] as string
     expect(new Set(quotedIds(block))).toEqual(new Set(['c_1', 'c_2']))
     expect(block).toContain(t('talk.writeText'))
+    expect(bench.mocks.setLayout).not.toHaveBeenCalled()
   })
 
   it('writes over exactly the clicked card, while the line stays out of it', async () => {
     const { bench } = await pickedPair()
-    fireEvent.click(await screen.findByRole('button', { name: '开始写作' }))
+    fireEvent.click(await screen.findByRole('button', { name: '让 Agent 写成稿' }))
     const block = bench.mocks.quoteToConversation.mock.calls[0]?.[1] as string
     expect(new Set(quotedIds(block))).toEqual(new Set(['c_1']))
   })
@@ -1116,27 +1064,21 @@ describe('LinkView — the send set', () => {
     const container = await face(bench, 1)
     // Nothing picked: the info line falls back to what the board itself holds.
     expect(await infoOf()).toContain('板上有')
-    expect(screen.queryByRole('button', { name: /开始写作/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /让 Agent 写成稿/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /与 Agent 对谈/ })).toBeNull()
     // The cards still pick on a board with no chat to send them to.
     tap(nodeOf(container, 'c_1'))
     expect(pickedOf(container)).toEqual(['c_1'])
-    expect(screen.queryByRole('button', { name: /开始写作/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /让 Agent 写成稿/ })).toBeNull()
   })
 
-  it('forgets the expansion with the selection, and retires the clear button with nothing left to clear', async () => {
+  it('retires the clear button with nothing left to clear', async () => {
     const { container } = await pickedPair()
-    fireEvent.click(screen.getByRole('button', { name: '顺线扩一圈 关' }))
-    await waitFor(() => {
-      expect(clusteredOf(container)).toEqual(['c_2'])
-    })
     fireEvent.click(screen.getByRole('button', { name: '取消选择' }))
-    // The highlight went, nothing else: the line is still on the board, the
-    // info line falls back to the board's own totals, and with nothing left to
-    // clear the button itself is gone.
+    // The highlight went, nothing else: the line is still on the board, and the
+    // info line falls back to the board's own totals.
     expect(await infoOf()).toContain('板上有')
-    expect(screen.getByRole('button', { name: '顺线扩一圈 关' })).toBeTruthy()
-    expect(clusteredOf(container)).toEqual([])
+    expect(pickedOf(container)).toEqual([])
     expect(wiresOf(container)).toBe(1)
     expect(screen.queryByRole('button', { name: '取消选择' })).toBeNull()
   })

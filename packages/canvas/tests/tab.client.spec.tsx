@@ -372,7 +372,7 @@ describe('CanvasTab — list, switcher, board', () => {
     expect(block).toContain('c_1')
     expect(block).toContain('c_2')
     await screen.findByText('已放进对话输入框')
-    fireEvent.click(screen.getByRole('button', { name: '开始写作' }))
+    fireEvent.click(screen.getByRole('button', { name: '让 Agent 写成稿' }))
     const written = mocks.quoteToConversation.mock.calls[1]?.[1] as string
     expect(written.startsWith(block)).toBe(true)
     expect(written.length).toBeGreaterThan(block.length)
@@ -405,7 +405,7 @@ describe('CanvasTab — list, switcher, board', () => {
     fireEvent.click(screen.getAllByRole('checkbox', { name: '选择' })[0]!)
     await screen.findByText('已选 1 张')
     expect(screen.queryByRole('button', { name: '与 Agent 对谈' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '开始写作' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '让 Agent 写成稿' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '1 条评论' }))
     await screen.findByText(/这里隐含一个假设/)
     expect(screen.queryByRole('button', { name: /追问/ })).toBeNull()

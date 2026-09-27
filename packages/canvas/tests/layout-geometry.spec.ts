@@ -14,7 +14,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   LANE_MIN_Y, MARQUEE_CLICK_THRESHOLD, MIN_LANE,
-  clampInside, dragLane, groupOf, isLinked, isMarqueeClick, laneAt, laneHolds, marqueeHits,
+  clampInside, dragLane, isLinked, isMarqueeClick, laneAt, laneHolds, marqueeHits,
   marqueeRect, rectsOverlap, resizeLane, wireAnchorsOf, wirePathOf,
   type LaneRect, type LinkPair, type PlacedCard, type Rect, type Size,
 } from '../src/client/space/layout-geometry.ts'
@@ -30,19 +30,7 @@ const card = (id: string, x: number, y: number): PlacedCard => ({ id, x, y, w: C
 /** A box by its four edges, so the expected numbers read like the assertion's name. */
 const rect = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h })
 
-/* ── 「顺线扩一圈」的那块板 ─────────────────────────────────── */
-const CHAIN: Record<string, PlacedCard> = {
-  p1: card('p1', 0, 0), // 中心 76,30
-  p2: card('p2', 0, 200), // 中心 76,230
-  p3: card('p3', 0, 400), // 中心 76,430
-  q1: card('q1', 200, 0), // p1 的同区邻居，一条线都没有
-  q2: card('q2', 200, 200), // p2 的同区邻居，而 p2 只是被线带进来的
-  r1: card('r1', 400, 0), // p1 的另一位邻居，但它自己有条线通向场外
-  s1: card('s1', 400, 400), // 只跟 r1 连着，落在任何分区之外
-}
-const LOOKUP = (id: string): PlacedCard | undefined => CHAIN[id]
-/** 板上每一张卡的 id，就是视图该传给 pool 的那一份。 */
-const POOL: string[] = ['p1', 'p2', 'p3', 'q1', 'q2', 'r1', 's1']
+/* ── 一块有线、有分区的板 ─────────────────────────────────── */
 const LANES: LaneRect[] = [
   { id: 'LA', x: 0, y: 0, w: 600, h: 100 }, // 装 p1 / q1 / r1
   { id: 'LB', x: 0, y: 200, w: 600, h: 100 }, // 装 p2 / q2
@@ -322,63 +310,5 @@ describe('resizeLane', () => {
     const out = resizeLane(LANE, [card('a', 120, 120)], 10, 10, STAGE)
     expect(Object.keys(out).sort()).toEqual(['h', 'id', 'w', 'x', 'y'])
     expect(out).toEqual({ id: 'L', x: 10, y: 100, w: 210, h: 210 })
-  })
-})
-
-describe('groupOf', () => {
-  it('顺线是可传递的：两条线以外的邻居照样带进来', () => {
-    const group = groupOf(['p1'], LINKS, LANES, LOOKUP)
-    expect(group.seeds).toEqual(['p1'])
-    expect(group.viaLine).toEqual(['p2', 'p3'])
-  })
-
-  it('同分区只走一跳：种子的邻居进来，被线带进来的那位不配带人', () => {
-    const group = groupOf(['p1'], LINKS, LANES, LOOKUP, POOL)
-    expect(group.viaLane).toEqual(['q1', 'r1'])
-    expect(group.viaLane).not.toContain('q2')
-    expect(group.ids).toEqual(['p1', 'p2', 'p3', 'q1', 'r1'])
-  })
-
-  it('不给候选池时，只能从线已经点过名的 id 里找邻居', () => {
-    const group = groupOf(['p1'], LINKS, LANES, LOOKUP)
-    expect(group.viaLane).toEqual(['r1'])
-  })
-
-  it('认不出的种子丢掉，跟归档卡一个待遇', () => {
-    const group = groupOf(['ghost', 'p1'], LINKS, LANES, LOOKUP, POOL)
-    expect(group.seeds).toEqual(['p1'])
-  })
-
-  it('重复点同一张只算一个种子', () => {
-    const group = groupOf(['p1', 'p1'], LINKS, LANES, LOOKUP, POOL)
-    expect(group.seeds).toEqual(['p1'])
-    expect(new Set(group.ids).size).toBe(group.ids.length)
-  })
-
-  it('已经是种子的邻居不会被当成带进来的', () => {
-    const group = groupOf(['p1', 'q1'], LINKS, LANES, LOOKUP, POOL)
-    expect(group.viaLane).toEqual(['r1'])
-    expect(group.ids).toEqual(['p1', 'q1', 'p2', 'p3', 'r1'])
-  })
-
-  it('种子不在任何分区里时，一条 lane 边都不长', () => {
-    const group = groupOf(['p3'], LINKS, LANES, LOOKUP, POOL)
-    expect(group.viaLane).toEqual([])
-    // 逆着线的方向也是可传递的：先 p2（挨着 p3 的那头），再 p1。
-    expect(group.viaLine).toEqual(['p2', 'p1'])
-  })
-
-  it('线指向一张不存在的卡时，那半条线作废，也接不通后面', () => {
-    const ghosts: LinkPair[] = [{ from: 'p1', to: 'ghost' }, { from: 'ghost', to: 'p3' }]
-    const group = groupOf(['p1'], ghosts, LANES, LOOKUP, POOL)
-    expect(group.viaLine).toEqual([])
-    expect(group.viaLane).toEqual(['q1', 'r1'])
-    expect(group.ids).toEqual(['p1', 'q1', 'r1'])
-  })
-
-  it('一个种子都不剩时交回空组，不抛', () => {
-    expect(groupOf([], LINKS, LANES, LOOKUP, POOL)).toEqual({
-      seeds: [], viaLine: [], viaLane: [], ids: [],
-    })
   })
 })

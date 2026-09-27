@@ -12,10 +12,9 @@
  *   must not send a card away every time you reach for it. The 卡板 keeps the
  *   opposite rule (a body click opens the detail tab), and the pair is spelled
  *   out under the stage so nobody has to guess which face they are on.
- * - **A line never picks for you.** The send set is what you clicked;
- *   「顺线扩一圈」 is the one explicit gesture that lets the graph add neighbours,
- *   and it is off by default and never remembered — the scope of a request is
- *   not a preference.
+ * - **A line never picks for you.** The send set is exactly what you clicked.
+ *   The old 「顺线扩一圈」 toggle, which let the lines add neighbours, read as
+ *   noise and went in the 2026-09-28 review: to send a group, pick the group.
  *
  * The stage's numbers are the same 600-unit frame the pen draws in
  * (`LAYOUT_BOX`), used as a COORDINATE SPACE rather than a magnification: cards
@@ -33,7 +32,7 @@ import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { makeBoardId, type BoardCard, type BoardLane, type BoardLink, type CanvasBoard } from '../../types.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import {
-  dragLane, groupOf, isLinked, isMarqueeClick, laneAt, marqueeHits, marqueeRect, resizeLane,
+  dragLane, isLinked, isMarqueeClick, laneAt, marqueeHits, marqueeRect, resizeLane,
   wirePathOf,
   type LaneRect, type PlacedCard, type Rect, type Size,
 } from './layout-geometry.ts'
@@ -190,7 +189,6 @@ export function LinkView({
     setOwnWire(next)
     onWire?.(next)
   }, [onWire])
-  const [expand, setExpand] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [draftLabel, setDraftLabel] = useState('')
 
@@ -281,11 +279,8 @@ export function LinkView({
     })
   }, [placed, lanes])
 
-  const group = useMemo(
-    () => groupOf([...selection], visibleLinks, lanes, id => byId.get(id), [...byId.keys()]),
-    [selection, visibleLinks, lanes, byId],
-  )
-  const send = expand ? group.ids : group.seeds
+  // A pick the board no longer resolves (an archived card) drops out.
+  const send = useMemo(() => [...selection].filter(id => byId.has(id)), [selection, byId])
 
   /** Finish a gesture: the move is written once, the live overlay is dropped. */
   const commit = (patch: LayoutPatch, note?: string): void => {
@@ -554,16 +549,12 @@ export function LinkView({
             const ink = firstDrawingOf(card.text, card.drawings)
             const lane = laneAt(lanes, node)
             const text = previewOf(card)
-            // 「顺线扩一圈」 on: the neighbours the graph adds are marked, because a
-            // send set the user did not click has to be visible to be honest.
-            const inCluster = expand && !selection.has(node.id) && group.ids.includes(node.id)
             return (
               <div
                 key={node.id}
                 className={css.node}
                 data-node={node.id}
                 data-picked={selection.has(node.id) || undefined}
-                data-cluster={inCluster || undefined}
                 data-ghost={card.status === 'proposed' || undefined}
                 style={{ left: `${node.x}px`, top: `${node.y}px` }}
                 onPointerDown={event => { onNodeDown(event, node) }}
@@ -624,14 +615,7 @@ export function LinkView({
         <span className={css.barInfo}>
           {send.length === 0
             ? t('link.boardTotals', { links: String(visibleLinks.length), lanes: String(lanes.length) })
-            : expand
-              ? t('link.infoExpanded', {
-                count: String(send.length),
-                seeds: String(group.seeds.length),
-                lines: String(group.viaLine.length),
-                lanes: String(group.viaLane.length),
-              })
-              : t('link.infoPlain', { count: String(send.length) })}
+            : t('link.infoPlain', { count: String(send.length) })}
         </span>
         <span className={css.spacer} />
         {wireSel !== null && !readonly && (
@@ -652,15 +636,6 @@ export function LinkView({
             {t('link.delWire')}
           </button>
         )}
-        <button
-          type="button"
-          className={css.barButton}
-          data-on={expand || undefined}
-          title={t('link.expandTitle')}
-          onClick={() => { setExpand(value => !value) }}
-        >
-          {`${t('link.expand')} ${expand ? t('link.on') : t('link.off')}`}
-        </button>
         {!readonly && (
           <button type="button" className={css.barButton} onClick={addLane}>
             <IconPlusOutlineMedium size={12} />
@@ -677,14 +652,13 @@ export function LinkView({
             {t('talk.write')}
           </button>
         )}
-        {(selection.size > 0 || wireSel !== null || expand) && (
+        {(selection.size > 0 || wireSel !== null) && (
           <button
             type="button"
             className={css.barGhost}
             onClick={() => {
               onClearSelection()
               setWireSel(null)
-              setExpand(false)
             }}
           >
             {t('board.clearSelection')}

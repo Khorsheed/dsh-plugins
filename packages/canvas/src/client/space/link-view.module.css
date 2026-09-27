@@ -189,13 +189,6 @@
   box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary);
 }
 
-/* A card the expansion will send although nobody clicked it: marked, not picked. */
-.node[data-cluster] {
-  border-style: dashed;
-  border-color: var(--dsw-alias-brand-primary);
-  opacity: 0.75;
-}
-
 .node[data-ghost] {
   border-style: dashed;
   opacity: 0.7;

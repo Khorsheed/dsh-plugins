@@ -14,6 +14,13 @@
  * callbacks out. The 画布 ▾ tail is passed as a node because it is the canvas
  * switcher's own dropdown, not this strip's business.
  *
+ * The rows are underlined, not tabbed: the host's dock chips sit right above
+ * this strip, and a second row of filled tabs read as tabs stacked on tabs
+ * (2026-09-28 review). An underline marks the showing canvas one level
+ * quieter than the dock, and the rows carry no glyph — the dock chip already
+ * says 画布, and the sun that used to lead each row is the host's light-theme
+ * icon, not a canvas.
+ *
  * The strip scrolls sideways instead of shrinking rows: a tab whose title is
  * squeezed to four characters identifies nothing. The menu sits OUTSIDE the
  * scroll box, not sticky inside it — a control that can be scrolled away is
@@ -25,7 +32,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import type { ReactNode } from 'react'
-import { IconCloseFillRegular, IconLightOutlineMedium } from '../icons.tsx'
+import { IconCloseOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
 import css from './tab-strip.module.css'
@@ -64,7 +71,6 @@ export function TabStrip({ t, rows, active, onSelect, onClose, tail }: TabStripP
               title={row.label}
               onClick={() => { onSelect(row.id) }}
             >
-              <IconLightOutlineMedium size={12} />
               <span className={css.labelText}>{row.label}</span>
             </button>
             <button
@@ -74,11 +80,10 @@ export function TabStrip({ t, rows, active, onSelect, onClose, tail }: TabStripP
               aria-label={t('strip.close')}
               onClick={() => { onClose(row.id) }}
             >
-              {/* The host dock's own close: Regular weight at 14 (TabPanel.tsx).
-                The Fill artwork's cross spans only 9/16 of its box, so at the
-                rows' 12px it read smaller than every outline glyph beside it —
-                14 is the size the host chose for the same glyph. */}
-            <IconCloseFillRegular size={14} />
+              {/* The Outline cross spans 11/16 of its box — the Fill one only
+                9/16, which read as a speck beside the row's text (2026-09-28
+                review). Outline is the close the host uses almost everywhere. */}
+              <IconCloseOutlineMedium size={14} />
             </button>
           </span>
         ))}

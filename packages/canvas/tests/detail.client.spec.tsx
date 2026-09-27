@@ -462,17 +462,16 @@ describe('CanvasDetailView', () => {
     await screen.findByText('已放进对话输入框')
   })
 
-  it('quotes this one card for 与 Agent 对谈, and adds the writing ask for 开始写作', async () => {
+  it('quotes this one card from ⋯ 整张卡引用到会话, and keeps the header to the view switch', async () => {
     const { view, mocks, props } = makeHarness([card('c_1')])
     view.select('c_1')
     render(<CanvasDetailView {...props} />)
-    fireEvent.click(await screen.findByRole('button', { name: '与 Agent 对谈' }))
+    fireEvent.click(await screen.findByRole('button', { name: '更多' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '整张卡引用到会话' }))
     const block = mocks.quoteToConversation.mock.calls[0]?.[1] as string
     expect(block.startsWith('> 卡片 c_1 的正文')).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: '开始写作' }))
-    const written = mocks.quoteToConversation.mock.calls[1]?.[1] as string
-    expect(written.startsWith(block)).toBe(true)
-    expect(written.length).toBeGreaterThan(block.length)
+    expect(screen.queryByRole('button', { name: '与 Agent 对谈' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '让 Agent 写成稿' })).toBeNull()
   })
 
   it('says so when the input refused the quote', async () => {
@@ -480,7 +479,8 @@ describe('CanvasDetailView', () => {
     mocks.quoteToConversation.mockReturnValue(false)
     view.select('c_1')
     render(<CanvasDetailView {...props} />)
-    fireEvent.click(await screen.findByRole('button', { name: '与 Agent 对谈' }))
+    fireEvent.click(await screen.findByRole('button', { name: '更多' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '整张卡引用到会话' }))
     await screen.findByText(/对话输入框/)
     expect(screen.queryByText('已放进对话输入框')).toBeNull()
   })
@@ -494,8 +494,8 @@ describe('CanvasDetailView', () => {
     render(<CanvasDetailView {...props} />)
     await screen.findByText(/这里隐含一个假设/)
     expect(screen.queryByRole('button', { name: /追问/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: '与 Agent 对谈' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '开始写作' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '更多' }))
+    expect(screen.queryByRole('menuitem', { name: '整张卡引用到会话' })).toBeNull()
   })
 
   it('renders an html card in the sandboxed frame (CSP inside) and keeps markdown on MarkdownText', async () => {
