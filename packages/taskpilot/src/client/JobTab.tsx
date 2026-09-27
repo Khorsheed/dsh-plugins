@@ -164,7 +164,12 @@ export function JobTab(props: JobTabProps): React.ReactElement {
 
   // Load the newest history page whenever the selection moves; re-navigating
   // the tab (another job picked from the dock) bumps the revision even when
-  // the params read the same.
+  // the params read the same. `startedAt` is a dependency because the fold
+  // keeps only the trail of the job registered then — an id is unique per host
+  // process, so a page can hold an earlier job that reused it (see
+  // `./job-trajectory.ts`), and the roster row that dates this one may arrive
+  // a frame after the tab opened.
+  const registeredAt = job?.startedAt
   useEffect(() => {
     if (jobId === null) return
     let cancelled = false
@@ -180,13 +185,13 @@ export function JobTab(props: JobTabProps): React.ReactElement {
         return
       }
       const rows = page.events
-      const folded = buildJobTrajectory(rows, jobId)
+      const folded = buildJobTrajectory(rows, jobId, registeredAt)
       setEntries(folded)
       setHasMore(page.hasMore)
       setBeforeSeq(minSeq(rows))
     })
     return () => { cancelled = true }
-  }, [sessionId, jobId, revision, loadHistory])
+  }, [sessionId, jobId, revision, registeredAt, loadHistory])
 
   const loadOlder = async (): Promise<void> => {
     if (jobId === null || beforeSeq === undefined || loading) return
@@ -195,7 +200,7 @@ export function JobTab(props: JobTabProps): React.ReactElement {
     setLoading(false)
     if (page === undefined) return
     const rows = page.events
-    const older = buildJobTrajectory(rows, jobId)
+    const older = buildJobTrajectory(rows, jobId, registeredAt)
     setEntries(current => [...older, ...current])
     setHasMore(page.hasMore)
     setBeforeSeq(minSeq(rows))

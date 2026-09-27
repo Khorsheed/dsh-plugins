@@ -28,7 +28,8 @@
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { JobView } from '@deepseek-ai/dsh-jobs/view'
 import type { LoadHistory } from './history-loader.ts'
-import type { SessionLogRow } from './job-trajectory.ts'
+import { BACKGROUND_JOB_ACK, PROMOTED_JOB_ACK, asRecord, parseArgs, resultCallId, rowText } from './session-wire.ts'
+import type { SessionLogRow } from './session-wire.ts'
 
 /** Default tail depth of one announcement read, in session events. */
 export const ANNOUNCED_TAIL_MESSAGES = 200
@@ -60,74 +61,9 @@ export interface AnnouncedBashWindow {
 /** The dock's announcement read; `undefined` means the log could not be read. */
 export type LoadAnnouncedBashJobs = (sessionId: SessionId) => Promise<AnnouncedBashWindow | undefined>
 
-/**
- * Background acknowledgment: the id is only credited when the paired call was
- * a registered background call, so a command that merely printed this sentence
- * cannot whitelist a job.
- */
-const BACKGROUND_ACK = /started background job ([A-Za-z0-9][A-Za-z0-9._-]*)/
-
-/** Promotion acknowledgment: a foreground call that timed out became a background job. */
-const PROMOTED_ACK = /moved to background job ([A-Za-z0-9][A-Za-z0-9._-]*)/
-
 /** Whether a job is still live in the registry (its duration ticks). */
 export function isLiveJob(job: JobView): boolean {
   return job.status === 'running' || job.status === 'stopping'
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined
-}
-
-function asArray(value: unknown): readonly unknown[] {
-  return Array.isArray(value) ? value : []
-}
-
-/** Safe JSON parse of the model-produced arguments string. */
-function parseArgs(raw: unknown): Record<string, unknown> | undefined {
-  if (typeof raw !== 'string') return undefined
-  try {
-    return asRecord(JSON.parse(raw))
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * The call a result answers. The current wire puts it on the message
- * (`toolCallId`, mirrored at `source.callId`); older pages nest it in the
- * first content block, so both are read.
- */
-function resultCallId(data: Record<string, unknown>): string | undefined {
-  const message = asRecord(data['message'])
-  if (message === undefined) return undefined
-  if (typeof message['toolCallId'] === 'string') return message['toolCallId']
-  const source = asRecord(message['source'])
-  if (source !== undefined && typeof source['callId'] === 'string') return source['callId']
-  for (const block of asArray(message['content'])) {
-    const record = asRecord(block)
-    if (record !== undefined && typeof record['toolCallId'] === 'string') return record['toolCallId']
-  }
-  return undefined
-}
-
-/** Concatenated text of a result's content blocks, flat or nested. */
-function resultText(data: Record<string, unknown>): string {
-  const parts: string[] = []
-  const push = (blocks: unknown): void => {
-    for (const block of asArray(blocks)) {
-      const record = asRecord(block)
-      if (record === undefined) continue
-      if (typeof record['text'] === 'string') parts.push(record['text'])
-      for (const inner of asArray(record['content'])) {
-        const innerRecord = asRecord(inner)
-        if (innerRecord !== undefined && typeof innerRecord['text'] === 'string') parts.push(innerRecord['text'])
-      }
-    }
-  }
-  push(asRecord(data['message'])?.['content'])
-  push(data['content'])
-  return parts.join('')
 }
 
 /**
@@ -156,7 +92,7 @@ export function collectAnnouncedBashWindow(events: readonly SessionLogRow[]): An
       continue
     }
     if (row.type === 'tool/result') {
-      results.push({ callId: resultCallId(data), text: resultText(data) })
+      results.push({ callId: resultCallId(data), text: rowText(data) })
     }
   }
 
@@ -168,7 +104,7 @@ export function collectAnnouncedBashWindow(events: readonly SessionLogRow[]): An
 
   for (const result of results) {
     const call = result.callId === undefined ? undefined : calls.get(result.callId)
-    const background = BACKGROUND_ACK.exec(result.text)
+    const background = BACKGROUND_JOB_ACK.exec(result.text)
     if (background !== null && call !== undefined) {
       call.resolved = true
       ids.add(background[1] as string)
@@ -176,7 +112,7 @@ export function collectAnnouncedBashWindow(events: readonly SessionLogRow[]): An
     // A promotion renames a foreground call into a background job, so its ack
     // is tool-authored under a call this fold never marked; it counts unpaired
     // (a false positive only shows a row).
-    const promoted = PROMOTED_ACK.exec(result.text)
+    const promoted = PROMOTED_JOB_ACK.exec(result.text)
     if (promoted !== null) ids.add(promoted[1] as string)
   }
   for (const call of calls.values()) {

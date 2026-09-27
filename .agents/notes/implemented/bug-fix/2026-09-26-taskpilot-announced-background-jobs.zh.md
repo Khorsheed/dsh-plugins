@@ -40,7 +40,7 @@ Status: implemented
 
 代价：前台命令运行期间在胶囊里不可见——它在会话自己的工具卡片里仍然可见；被提升的 job 在超时前不可见；dock 在每次会话打开、以及每出现一个新的未宣告 `bash` id 时读取一页有界的会话日志；提升的证据只有一句 ack，因此一次把它弄丢的分页会让那一行隐藏到下一次读取；而一次成功读取之后的读取失败会保留上一次判定，这个问题会在下一次 `bash` 调用时自愈。
 
-顺带发现、本次刻意不修：详情页的执行轨迹折叠（`job-trajectory.ts`）通过 `message.content[0].toolCallId` 配对结果，那是 0.1.5 之前的形状。当前宿主把 call id 放在 `message.toolCallId` 与 `message.source.callId` 上，因此该折叠在真实日志上返回空——已用 `session-70b25dac` 自己的工具行验证，而本次改动的解析器能正确读出它们。修它是一次独立的、用户可见的改动，该有它自己的决策。
+顺带发现、另案修复：详情页的执行轨迹折叠（`job-trajectory.ts`）通过 `message.content[0].toolCallId` 配对结果，那是 0.1.5 之前的形状，因此该折叠在真实日志上返回空。本过滤器据以在真实行上验证的那些读取器现在归 `./src/client/session-wire.ts` 所有，折叠也改为读它们——见[轨迹折叠那份记录](2026-09-27-taskpilot-trajectory-current-wire.md)。
 
 ## Testing
 
@@ -50,4 +50,4 @@ Status: implemented
 
 - [TaskPilot's job detail tab is a page-type right-sidebar tab](../architecture/2026-09-10-taskpilot-sidebar-tab.md) —— 本次过滤器复用其历史通道的那个 tab。
 - [Host 0.1.7-rc.1 adaptation](../architecture/2026-09-24-host-017-rc1-adaptation.md) —— 被过滤的行所来自的那条双通道花名册读取。
-- [TaskPilot trajectory rows carry the issued command line](../feature/2026-08-21-taskpilot-trajectory-command-lines.md) —— Consequences 中点名的、仍在期待 legacy 线缆形状的那次折叠。
+- [TaskPilot trajectory rows carry the issued command line](../feature/2026-08-21-taskpilot-trajectory-command-lines.md) —— 本折叠所填充的行词汇。
