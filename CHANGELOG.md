@@ -9,6 +9,8 @@ monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGE
 - **`check:profiles` 三条新规则 + 退役登记处**：`scripts/retired-packages.ts` 统一登记退役名（worktrees-tool / ui-file-preview / ui-content-preview）；规则 5b（子路径行要求基础包导出该条目——事故的精确签名）、6（退役名不得再进任何组合）、7（caret 区间必须容纳工作区版本——上线即抓到并修复五处错位：basic/dev 的 file-preview `^0.4.0` 与 ankh-guard `^0.4.0`、dev 的 worktrees `^0.3.0`）；包自身 bundle patch（含 presets 的声明式 preset 行）纳入扫描
 - **deploy-3080**：开工前扫描生产 profile 的退役名残留并打印清理配方；各阶段打印 `[deploy-3080 +Ns]` 耗时；头部注明调用方预算纪律（后台默认 600s 超时会把它杀在全新安装中途 → profile 半写，修复 = 原命令重跑）；docs/ops.md 新增「部署卡在中途 / 退役包清理」处置手册
 - **room 0.2.0（BREAKING 边界移动）**：`@khorsheed/dsh-room-tool` 折回核心包为 `./tool` 组合条目（canvas `./agent`、worktrees 0.3.0 同模式）；preset 行 id `room-tool` 不变、组合状态无损，引用改为 `@khorsheed/dsh-room/tool`；工具 origin 标签 owner 归核心包；已发布 npm 名 30 → 29，旧名的 `npm deprecate` 留待发布波。presets 包与 dev pack 的 preset 正本同步改指
+- **gen-typert 修复（本次部署拦出来的潜伏缺陷）**：scoped `GEN_TYPERT_ONLY` 生成把未选中 sibling 映射到其 lib/types（非注册贡献者），选中包的 face 触及 sibling 的合并声明（room → local-agent 的 SessionEventMap 增强）即报「declaration outside this face」——房间 0.2.0 的首次部署就死在这。现在 scoped 批次沿声明的依赖/peer 边自动扩展（类型可解析性本来就靠这条边声明），scoped 输出与全量生成逐字节一致；无关包依然不选中，邻居 WIP 仍不连坐
+- **3080 已前滚**：room 0.2.0 + presets 0.1.1 + ankh-guard 0.4.0 经 reconfigure 路径上线（runner 漂移自动重绑，双份 preflight 含新 preset 审计全过，canary PASS）；生产 profile 的 room-tool 残留（依赖 + overrides 钉）已三清，目录式 dev preset 卸出物同步改指
 
 ## Unreleased —— 0.1.7-rc.2 发布波：33 个已发布包带 rc.2 验证标注重发（2026-09-27 版本治理）
 
