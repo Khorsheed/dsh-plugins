@@ -4,11 +4,11 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import RoomService from '../src/index.ts'
-import { roomInviteTool, roomMessageTool, roomTaskTool, roomReadTool } from '../src/tool.ts'
+import { roomInviteTool, roomMessageTool, roomTaskTool, roomReadTool } from '../src/tool-definition.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
 
-/** The REAL composition; tools come from the factories (registration moved to the companion). */
+/** The REAL composition; tools come from the factories (registration moved to the `./tool` row). */
 async function boot() {
   const ctx = new Context()
   stubAgents(ctx)
@@ -32,8 +32,8 @@ async function boot() {
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
   // The split, pinned: mounting the core registers NO model tool — the
-  // companion `@khorsheed/dsh-room-tool` owns registration now (its own spec
-  // covers registration and the origin tag).
+  // package's own `./tool` composition entry (src/tool.ts) owns registration
+  // now (its own spec covers registration and the origin tag).
   expect(tools.register).not.toHaveBeenCalled()
   const tool = roomInviteTool(service)
   const taskTool = roomTaskTool(service)

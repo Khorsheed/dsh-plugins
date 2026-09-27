@@ -2,7 +2,7 @@
  * The preset-composition visibility of room's SESSION chrome (M3' self-hide,
  * the mode-switcher proposal's "组合里有我的行"): the invite chip and the
  * members tab show exactly when the CURRENT session's preset composition
- * names the `@khorsheed/dsh-room-tool` row — the preset composition file is
+ * names the `@khorsheed/dsh-room/tool` row — the preset composition file is
  * the single source of truth, read from the official `pluginInventory`
  * Remote (the same criterion the worktrees badge implements; inlined here
  * rather than extracted into a helper package, per the proposal's M3'
@@ -19,8 +19,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the ctx.sessions service merge (ISessions).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 
-/** The composition criterion's row: room's companion tool package. */
-export const ROOM_TOOL_ROW_MODULE = '@khorsheed/dsh-room-tool'
+/** The composition criterion's row: this package's own `./tool` composition entry. */
+export const ROOM_TOOL_ROW_MODULE = '@khorsheed/dsh-room/tool'
 
 /**
  * Minimal structural mirror of the official pluginInventory snapshot — only

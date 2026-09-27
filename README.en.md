@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The community plugin monorepo for the **dsh** (DeepSeek Harness) ecosystem: **41 purely additive plugin packages, 30 of them published on npm**. Every package integrates through official extension points only — slots, commands, Remote services, session projections. No official package is modified, no official UI slot is replaced, no core service is hacked; when an optional capability is absent the plugin degrades silently instead of failing the boot. The whole set is designed for coexistence: install, uninstall, or toggle any combination without interference, and the production instance runs the full stack long-term.
+The community plugin monorepo for the **dsh** (DeepSeek Harness) ecosystem: **40 purely additive plugin packages, 29 of them published on npm**. Every package integrates through official extension points only — slots, commands, Remote services, session projections. No official package is modified, no official UI slot is replaced, no core service is hacked; when an optional capability is absent the plugin degrades silently instead of failing the boot. The whole set is designed for coexistence: install, uninstall, or toggle any combination without interference, and the production instance runs the full stack long-term.
 
 > This page lists only **published** packages. Package counts, shapes, and profile membership follow the machine-generated [authoritative package map](docs/packages.md); per-package versions and the host-compatibility matrix follow the [release status](docs/release-status.md) (regenerated after every publish wave). The repository is also the development workspace — see [Development](#development).
 
@@ -12,8 +12,8 @@ The default install unit is a complete profile (a pack), not a single package. I
 
 | Pack | What it is | Members |
 | --- | --- | --- |
-| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **Everyday mode**: message control, artifact preview, the capability catalog, mobile presentation, task status, shortcuts, and the ops guard | 13 |
-| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | **Development**: everything in basic, plus delegation to local coding agents, live worktree state, and room multi-agent collaboration — ships the "dev mode" preset | 23 |
+| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **Everyday mode**: message control, artifact preview, local file browsing, the capability catalog, mobile presentation, task status, shortcuts, and the ops guard | 14 |
+| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | **Development**: everything in basic, plus delegation to local coding agents, live worktree state, and room multi-agent collaboration — ships the "dev mode" preset | 22 |
 | [web-eval](profiles/web-eval) (in this repo) | **Evaluation**: a factorial experiment bench — datasets, conditions, and plans reviewed in git, deterministic orchestration — ships the "eval mode" preset | 25 |
 
 The first two are standalone repositories: clone, run two scripts, and the running instance hands over on the same port — see their READMEs. Single-package install is the advanced path; see [Install](#install).
@@ -36,7 +36,7 @@ Each package's full feature list, configuration, and screenshots live in its own
 | Package | What you get | Ships with |
 | --- | --- | --- |
 | [`file-preview`](packages/file-preview) | The session "**Artifacts**" tab plus its host service in one package: the products tab, per-turn change cards, the detail-view preview drawer, and the read-only file-preview Remote service (two rows merged into one since 0.4.0) | basic + dev |
-| [`local-files`](packages/local-files) | A **local file browser** in the right sidebar: lazy file tree plus structured HTML/Markdown/JSON/CSV/image previews | dev |
+| [`local-files`](packages/local-files) | A **local file browser** in the right sidebar: lazy file tree plus structured HTML/Markdown/JSON/CSV/image previews | basic + dev |
 
 ### Development collaboration
 
@@ -62,8 +62,7 @@ Delegate subtasks to coding-agent CLIs installed on your machine — each with i
 
 | Package | What you get | Ships with |
 | --- | --- | --- |
-| [`room`](packages/room) | **Room conversations**: invite several agents into one session — member roster tab, @ dispatch, task board, notification gate | dev |
-| [`room-tool`](packages/room-tool) | (companion tool row) `room_invite / room_task / room_message`, granted per session by a preset | dev |
+| [`room`](packages/room) | **Room conversations**: invite several agents into one session — member roster tab, @ dispatch, task board, notification gate; the model tools ride the package's `./tool` subpath row, granted per session by a preset | dev |
 
 ### Tasks and ambience
 

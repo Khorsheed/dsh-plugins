@@ -3,7 +3,7 @@
  * The M3' self-hide spec: room's session chrome (the invite chip at the
  * component level, the members tab at the REGISTRATION level) shows exactly
  * when the current session's preset composition names the
- * `@khorsheed/dsh-room-tool` row. Pinned here: the criterion's three states
+ * `@khorsheed/dsh-room/tool` row. Pinned here: the criterion's three states
  * per path (granted / not granted / every fail-open), the actual-room
  * escape (E1), the legacy top-level preset key, the tab's
  * register-while-shown / dispose-while-hidden toggle, and the chip's own

@@ -8,7 +8,7 @@ Every member is an independent plugin — copy its package name into the host's 
 
 ## The dsh-dev pack — plugin list
 
-Thirteen members are shared with [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, task pills, compaction reminder, inline cards, capability catalog, shortcuts, ambience, mobile, ops guard) — see basic's plugin list for their intros and screenshots. The 10 unique to this pack:
+Thirteen members are shared with [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, task pills, compaction reminder, inline cards, capability catalog, shortcuts, ambience, mobile, ops guard) — see basic's plugin list for their intros and screenshots. The 9 unique to this pack:
 
 | Plugin | Package name (copy to install) | What you get |
 |---|---|---|
@@ -19,8 +19,7 @@ Thirteen members are shared with [dsh-basic](https://github.com/Khorsheed/dsh-ba
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | dsh self-delegation: use dsh itself as a local CLI |
 | local-agent-tool-subagent | `@khorsheed/dsh-local-agent-tool-subagent` | The family's shared delegation tool row with a `resume` parameter (mounted by providers) |
 | worktrees | `@khorsheed/dsh-worktrees` | A per-session repo/worktree badge plus a change drawer (read-only git facts); the model tool ships as the package's `@khorsheed/dsh-worktrees/tool` subpath row, granted per session by the dev-mode preset |
-| room | `@khorsheed/dsh-room` | Multi-agent collaboration in one session: member roster, @ dispatch, task board |
-| room-tool | `@khorsheed/dsh-room-tool` | `room_invite / room_task / room_message`, granted per session by a preset |
+| room | `@khorsheed/dsh-room` | Multi-agent collaboration in one session: member roster, @ dispatch, task board; the model tools `room_invite / room_task / room_message` ride the package's `./tool` subpath row, granted per session by the dev-mode preset |
 | local-files | `@khorsheed/dsh-local-files` | A local file browser in the right sidebar: lazy tree plus structured previews |
 
 ### Version compatibility
@@ -57,11 +56,11 @@ A repo/worktree badge sits at the top right of every session, showing the curren
 
 <img src="docs/screenshots/worktrees-drawer.png" width="840" alt="worktrees: the session-header badge and the change drawer">
 
-### room (2 packages): several agents inside one session
+### room (1 package): several agents inside one session
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-room` (the model tool row `@khorsheed/dsh-room-tool` activates with a preset — no separate install needed) |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-room` (the model tool row is the package's `./tool` subpath entry, activated by the dev-mode preset — no separate install needed) |
 
 Invite an agent into any session and that session becomes a room: member tab, @-dispatch, multi-member capsules, a task board, and a notification gate. Members can summon each other, and progress stays visible on one conversation thread.
 

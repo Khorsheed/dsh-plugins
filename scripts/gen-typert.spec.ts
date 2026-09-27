@@ -58,6 +58,20 @@ describe('selectTypertPackages', () => {
   it('rejects a filter with no registered package', () => {
     expect(() => selectTypertPackages('@khorsheed/dsh-missing')).toThrow(/matched no registered package/)
   })
+
+  it('expands a scoped batch over declared typert-family edges', () => {
+    // room's face reaches local-agent's SessionEventMap augmentation; an
+    // unselected sibling resolves from its built lib/types, which is not a
+    // registered face contributor, so the merge analysis fails unless the
+    // sibling generates in the same batch (2026-09-28, room 0.2.0 deploy).
+    const selected = selectTypertPackages('@khorsheed/dsh-room').map(pkg => pkg.name)
+    expect(selected).toContain('@khorsheed/dsh-room')
+    expect(selected).toContain('@khorsheed/dsh-local-agent')
+  })
+
+  it('leaves full (unscoped) selection covering every registered package', () => {
+    expect(selectTypertPackages(undefined).length).toBe(TYPERT_PACKAGES.length)
+  })
 })
 
 describe('copyTypertPackageSources', () => {
@@ -94,12 +108,14 @@ describe('unselected sibling type resolution', () => {
 
   it('maps unselected siblings with a built lib/types to their declarations, never the selected package', () => {
     const source = sourceWithSiblingTypes()
-    const selected = selectTypertPackages('@khorsheed/dsh-room')
+    // capability-catalog declares no typert-family edge, so its scoped batch
+    // leaves local-agent unselected (room would auto-expand to include it).
+    const selected = selectTypertPackages('@khorsheed/dsh-capability-catalog')
     const paths = typertSiblingTypePaths(selected, source)
     expect(paths['@khorsheed/dsh-local-agent']).toEqual(['./packages/local-agent/lib/types/index.d.ts'])
     expect(paths['@khorsheed/dsh-local-agent/*']).toEqual(['./packages/local-agent/lib/types/*'])
     // The selected package keeps its source-plane mapping and is absent here.
-    expect(paths['@khorsheed/dsh-room']).toBeUndefined()
+    expect(paths['@khorsheed/dsh-capability-catalog']).toBeUndefined()
     // A sibling without a built lib/types is skipped.
     expect(paths['@khorsheed/dsh-mission']).toBeUndefined()
   })
@@ -115,7 +131,7 @@ describe('unselected sibling type resolution', () => {
 
     const overlay2 = mkdtempSync(join(tmpdir(), 'dsh-gen-typert-overlay-'))
     temporaryRoots.push(overlay2)
-    copyTypertSiblingTypes(selectTypertPackages('@khorsheed/dsh-room'), source, overlay2)
+    copyTypertSiblingTypes(selectTypertPackages('@khorsheed/dsh-capability-catalog'), source, overlay2)
     expect(existsSync(join(overlay2, 'packages', 'local-agent', 'lib', 'types', 'index.d.ts'))).toBe(true)
     expect(existsSync(join(overlay2, 'packages', 'local-agent', 'src'))).toBe(false)
   })

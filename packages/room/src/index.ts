@@ -2,8 +2,8 @@
  * room host half: the `room` Typert Remote service. (The `room_invite` /
  * `room_task` / `room_message` model tools left this package's profile-root
  * registration in the M4' tool-row split — their definition factories live
- * in ./tool.ts and the companion `@khorsheed/dsh-room-tool` mounts them
- * inside agent-preset compositions.) The room's entire state is the session's `room/*` custom-event
+ * in ./tool-definition.ts and the package's own `./tool` composition entry
+ * mounts them inside agent-preset compositions.) The room's entire state is the session's `room/*` custom-event
  * journal (log-only events — persistence and reload-replay come free, the
  * model never sees them, and harnesses without this plugin replay the session
  * safely); every read folds the journal through the pure replay, and every
@@ -184,9 +184,10 @@ export class RoomService extends TypertRemoteService {
       return { kind: 'enter', messages: [] }
     })
     // The model-facing room tools are deliberately NOT registered here: they
-    // moved to the companion `@khorsheed/dsh-room-tool`, which mounts the
-    // tool row inside agent-preset compositions (session-granted). The
-    // definition factories stay exported from ./tool.ts for that companion.
+    // belong to this package's `./tool` composition entry (src/tool.ts),
+    // which mounts the tool row inside agent-preset compositions
+    // (session-granted). The definition factories live in
+    // ./tool-definition.ts for that row.
   }
 
   /** Resolve a LIVE session as a room: presence, marker, replayed state. */

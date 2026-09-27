@@ -8,7 +8,7 @@
 
 ## dev 整合包 - 插件列表
 
-与 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 共享的 13 个成员（消息编辑/撤回、时间轴、标题编辑、引用、产物预览、任务胶囊、压缩提醒、内联卡片、能力目录、快捷键、提示音、移动端、运维守护），逐插件介绍与截图见 basic 的插件列表。本包独有 10 个：
+与 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 共享的 13 个成员（消息编辑/撤回、时间轴、标题编辑、引用、产物预览、任务胶囊、压缩提醒、内联卡片、能力目录、快捷键、提示音、移动端、运维守护），逐插件介绍与截图见 basic 的插件列表。本包独有 9 个：
 
 | 插件 | 包名（复制即可安装） | 你得到 |
 |---|---|---|
@@ -19,8 +19,7 @@
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | dsh 自委派：把 dsh 自己当本地 CLI 用 |
 | local-agent-tool-subagent | `@khorsheed/dsh-local-agent-tool-subagent` | 家族共享委派工具行（带 `resume` 续聊参数，随 provider 挂载） |
 | worktrees | `@khorsheed/dsh-worktrees` | 会话头部 repo/worktree 徽标 + 改动抽屉（只读 git 事实）；模型工具随 `@khorsheed/dsh-worktrees/tool` 子路径行由开发模式 preset 按会话授予 |
-| room | `@khorsheed/dsh-room` | 多 agent 同会话协作：成员名册、@ 派发、任务板 |
-| room-tool | `@khorsheed/dsh-room-tool` | `room_invite / room_task / room_message`，随 preset 按会话授予 |
+| room | `@khorsheed/dsh-room` | 多 agent 同会话协作：成员名册、@ 派发、任务板；模型工具 `room_invite / room_task / room_message` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
 | local-files | `@khorsheed/dsh-local-files` | 右栏本地文件浏览器：懒加载树 + 结构化预览 |
 
 ### 版本兼容
@@ -57,11 +56,11 @@
 
 <img src="docs/screenshots/worktrees-drawer.png" width="840" alt="worktrees:会话头部徽标与改动抽屉">
 
-### room（2 个包）：多 agent 在同一个会话里协作
+### room（1 个包）：多 agent 在同一个会话里协作
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-room`（模型工具行 `@khorsheed/dsh-room-tool` 随 preset 生效，无需单装） |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-room`（模型工具行是包内 `./tool` 子路径入口，随开发模式 preset 生效，无需单装） |
 
 在任意会话里邀请一个 agent，这个会话就成为 room：成员 tab、@ 分发、多成员胶囊、任务板、通知闸门。成员之间可以互相召唤，进度在同一条会话线上可见。
 

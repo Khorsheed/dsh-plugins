@@ -13,8 +13,13 @@ export default defineConfig({
     // default made both flap red on any loaded machine while passing
     // standalone; 30s covers the inner spawn timeout with headroom.
     testTimeout: 30_000,
-    // Same memory discipline as the package preset (build/vitest.ts): the
-    // subprocess-heavy specs already multiply node processes per worker.
+    // Known flake signature under heavy multi-agent load (2026-09-28):
+    // `[vitest-worker]: Timeout calling "onTaskUpdate"` with every assertion
+    // green. deploy-3080.spec.ts blocks its worker's event loop with
+    // spawnSync; birpc's RPC timeout is a hardcoded 60s with no vitest config
+    // knob, so a process starved past that (swap pressure, several builds at
+    // once) fails the run after the assertions already passed. A red run with
+    // that message means "rerun on a quieter machine", not a regression.
     maxWorkers: 4,
   },
 })

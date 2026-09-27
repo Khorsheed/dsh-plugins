@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**41 个纯增量插件包,其中 30 个已发布 npm**。所有包只走官方扩展点(slots、commands、Remote 服务、会话镜像)接入——不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;探测不到可选能力时静默降级,绝不拖垮启动。整套插件按共存设计:任意组合安装、卸载、开关,互不干扰,生产环境长期全量叠装运行。
+**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**40 个纯增量插件包,其中 29 个已发布 npm**。所有包只走官方扩展点(slots、commands、Remote 服务、会话镜像)接入——不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;探测不到可选能力时静默降级,绝不拖垮启动。整套插件按共存设计:任意组合安装、卸载、开关,互不干扰,生产环境长期全量叠装运行。
 
 > 本文只收录**已发布**的包;包总数、形态与 profile 归属以机器生成的[权威包地图](docs/packages.md)为准,各包版本与宿主兼容矩阵以[发布状态](docs/release-status.md)为准(每次发版后重新生成)。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
 
@@ -12,8 +12,8 @@
 
 | 整合包 | 定位 | 成员 |
 | --- | --- | --- |
-| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **日常模式**:消息控制、产物预览、能力目录、移动端呈现、任务状态、快捷键与运维守护 | 13 |
-| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | **开发协作**:basic 全部体验,再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作,自带「开发模式」preset | 23 |
+| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **日常模式**:消息控制、产物预览、本地文件浏览、能力目录、移动端呈现、任务状态、快捷键与运维守护 | 14 |
+| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | **开发协作**:basic 全部体验,再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作,自带「开发模式」preset | 22 |
 | [web-eval](profiles/web-eval)(仓内) | **评测工作**:因子设计实验台——题库、条件、计划进 git 评审,确定性编排执行,自带「评测模式」preset | 25 |
 
 前两个是独立仓库,clone 后两条脚本完成安装与同端口交接,详见各自 README。单包安装是高级路径,见[安装](#安装)。
@@ -36,7 +36,7 @@
 | 包 | 你得到 | 随整合包 |
 | --- | --- | --- |
 | [`file-preview`](packages/file-preview) | 会话「**产物**」tab + 宿主服务一体:产物 tab、回合变更卡片、详情页预览抽屉,与只读文件预览 Remote 服务同包(0.4.0 起两行合一) | basic + dev |
-| [`local-files`](packages/local-files) | 右栏**本地文件浏览器**:懒加载文件树 + HTML/Markdown/JSON/CSV/图片结构化预览 | dev |
+| [`local-files`](packages/local-files) | 右栏**本地文件浏览器**:懒加载文件树 + HTML/Markdown/JSON/CSV/图片结构化预览 | basic + dev |
 
 ### 开发协作
 
@@ -62,8 +62,7 @@
 
 | 包 | 你得到 | 随整合包 |
 | --- | --- | --- |
-| [`room`](packages/room) | **room 会话**:邀请多个 agent 进同一条会话——成员名册 tab、@ 派发、任务板、通知闸门 | dev |
-| [`room-tool`](packages/room-tool) | (伴生工具行)`room_invite / room_task / room_message`,由 preset 按会话授予 | dev |
+| [`room`](packages/room) | **room 会话**:邀请多个 agent 进同一条会话——成员名册 tab、@ 派发、任务板、通知闸门;模型工具经包内 `./tool` 子路径行由 preset 按会话授予 | dev |
 
 ### 任务与氛围
 

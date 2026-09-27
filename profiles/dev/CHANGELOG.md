@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-28 —— room-tool 回并 room 的 `./tool` 子路径
+
+- room-tool 并入 room 的 `./tool` 组合入口（0.2.0，preset 行 id `room-tool` 不变、组合状态不受影响；worktrees 0.3.0 同款回并）。成员计数 22（13 共享 + 9 独有）；安装自检的行数口径不变（room-tool 从不挂 profile 根行）。
+
 ## 2026-09-27 —— 更名 dsh-dev；quote / mobile 加入；预览与工具面合并
 
 - 整合包仓与 profile 名 dsh-web-dev / web-dev → **dsh-dev / dev**（脚本 `restart-into-dev.sh`，profile 目录 `$DSH_HOME/profiles/dev`）；GitHub 旧名保留重定向

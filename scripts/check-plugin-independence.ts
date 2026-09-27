@@ -136,13 +136,9 @@ export const FAMILY_REGISTRATION_RE = /ctx\.tools\.register|ctx\.commands\.regis
 export const NO_OWN_PATCH: ReadonlyArray<string> = [
   'local-agent-tool-subagent',
   'local-agent-dsh-headless',
-  // room-tool is the room core's preset-composed companion row: it only makes
-  // the tool module resolvable; agent presets name the row — a dsh.bundle
-  // declaration would auto-mount the tools at the profile root, exactly what
-  // the split removes. (worktrees-tool used to be this shape for the
-  // worktrees core; 0.3.0 folded it back into the core package as the
-  // `./tool` composition entry — the canvas ./agent precedent.)
-  'room-tool',
+  // worktrees-tool and room-tool used to be this shape for their cores;
+  // worktrees 0.3.0 and room 0.2.0 folded each back into the core package as
+  // the `./tool` composition entry — the canvas ./agent precedent.
   // mission-tool / datasets-tool / eval-tool are the same shape for the
   // mission / datasets / eval cores (M4'③): each only makes its tool module
   // resolvable, and an agent preset names its row — a dsh.bundle declaration
@@ -187,13 +183,12 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // covers only the family's DEPS-ONLY libraries it also installs (card-less,
   // no patch rows of their own beyond what the members' canonical rows name).
   'bundle-local-agent': ['@khorsheed/dsh-local-agent-tool-subagent', '@khorsheed/dsh-local-agent-dsh-headless'],
-  // The worktrees tool row folded back into the core package at 0.3.0 as the
-  // `./tool` composition entry (the canvas ./agent pattern) — no cross-package
-  // edge remains. The core used to carry a reverse DATA mention of the
-  // companion (its preset-visibility probe's row constant); the constant now
-  // names the package's own subpath, so no dsh.references entry is needed.
-  // The room core/companion pair (same declare-and-degrade pattern).
-  'room-tool': ['@khorsheed/dsh-room'],
+  // The worktrees and room tool rows folded back into their core packages
+  // (worktrees 0.3.0, room 0.2.0) as the `./tool` composition entry (the
+  // canvas ./agent pattern) — no cross-package edge remains. Each core used
+  // to carry a reverse DATA mention of its companion (the preset-visibility
+  // probe's row constant); the constant now names the package's own subpath,
+  // so no dsh.references entry is needed.
   // The mission / datasets / eval core/companion pairs (M4'③, same pattern,
   // zero deviations): each companion consumes its core's `./tool` definition
   // factory and probes the core's global service.
@@ -221,8 +216,6 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent
   // as its only member). Sanctioned per the declare-and-degrade pattern.
-  // ...plus the same data-only reverse mention as worktrees (the self-hide
-  // criterion names the companion — declared via `dsh.references`, see above).
   'room': ['@khorsheed/dsh-local-agent'],
 }
 
@@ -237,12 +230,13 @@ export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   // The preset-composed tool companions inject their owning core: a one-shot
   // apply-time probe lost the rc.1 boot-order race (the standing scope mounts
   // before the profile's later bundle rows provide the core), so the row
-  // pends on the core instead (2026-09-27 3080 incident). The worktrees tool
-  // row folded back into the core package at 0.3.0 as the `./tool` entry, so
-  // the core package itself is the allowed injector there.
+  // pends on the core instead (2026-09-27 3080 incident). The worktrees and
+  // room tool rows folded back into their core packages (worktrees 0.3.0,
+  // room 0.2.0) as the `./tool` entry, so the core package itself is the
+  // allowed injector there.
   typesafe: /^typesafe-tool$/,
   worktrees: /^worktrees$/,
-  room: /^room-tool$/,
+  room: /^room$/,
   datasets: /^datasets-tool$/,
   dshEval: /^eval-tool$/,
   mission: /^mission-tool$/,

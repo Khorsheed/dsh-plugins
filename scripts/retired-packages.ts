@@ -30,6 +30,11 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
     note: 'folded back into the core package at 0.3.0; the npm name is deprecated',
   },
   {
+    name: '@khorsheed/dsh-room-tool',
+    replacement: "@khorsheed/dsh-room's ./tool composition entry (>= 0.2.0; preset row id `room-tool` is unchanged)",
+    note: 'folded back into the core package at 0.2.0; the npm name is deprecated',
+  },
+  {
     name: '@khorsheed/dsh-client-ui-file-preview',
     replacement: '@khorsheed/dsh-file-preview (>= 0.4.0, the single-row host+client package)',
     note: 'merged into the host package at 0.4.0; the npm name is deprecated',
