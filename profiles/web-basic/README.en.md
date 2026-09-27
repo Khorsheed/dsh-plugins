@@ -6,6 +6,8 @@
 
 **Version fit**: the current line requires host ≥ `0.1.2-rc.1` (all member plugins 0.2.0+ support only this host line). On host `0.1.0-rc.6` ~ `0.1.1-rc.2`, use the `host-0.1.1-line` tag instead (members stay on the 0.1.x line; no further updates).
 
+<img src="docs/screenshots/file-preview1.png" width="840" alt="dsh-web-basic at a glance: the session Artifacts tab and the file-preview drawer">
+
 ## Install
 
 **With an agent (recommended)**: once you have [dsh](https://github.com/deepseek-ai/deepseek-harness), just tell it:
@@ -250,6 +252,13 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard
 - **Remove a member**: `dsh plugin --profile web-basic remove @khorsheed/dsh-<name>` — the rest keep working. The bundle is a starting point, not a lock-in.
 - **Add more**: any `@khorsheed/dsh-*` plugin installs with the same `add` command.
 - **Update**: `dsh plugin --profile web-basic update` pulls the newest versions in range.
+
+## Related packs
+
+| Pack | What it is |
+|---|---|
+| [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | Development mode: everything in this pack, plus local coding-agent delegation, live worktree state, and room multi-agent collaboration |
+| [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | The plugin monorepo: the capability map of every package, the preset designs, and the development docs |
 
 ## Changelog
 

@@ -6,6 +6,8 @@
 
 **版本适配**：当前线要求宿主 ≥ `0.1.2-rc.1`（全部成员插件 0.2.0 起只支持这条宿主线）。宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 请改用 `host-0.1.1-line` tag 的档案（成员停留在 0.1.x 线，功能不再更新）。
 
+<img src="docs/screenshots/file-preview1.png" width="840" alt="dsh-web-basic 一览:会话「产物」tab 与文件预览抽屉">
+
 ## 安装
 
 **有 Agent（推荐）**：装好 [dsh](https://github.com/deepseek-ai/deepseek-harness) 后，对你的 Agent 说一句：
@@ -250,6 +252,13 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard
 - **去掉某个成员**:`dsh plugin --profile web-basic remove @khorsheed/dsh-<名字>`——其余照常工作。整合包是起点，不是绑定
 - **加装**:任何 `@khorsheed/dsh-*` 插件同样一条 `add` 命令
 - **更新**:`dsh plugin --profile web-basic update` 拉取范围内最新版本
+
+## 相关整合包
+
+| 整合包 | 定位 |
+|---|---|
+| [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | 开发模式：包含本包全部体验，再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作 |
+| [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | 插件 monorepo 主仓：全部插件的能力地图、preset 设计与开发文档 |
 
 ## 变更记录
 
