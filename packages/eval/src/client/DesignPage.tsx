@@ -208,7 +208,9 @@ function ReadinessChecklist(props: {
                 <tbody>
                   {table.map((row) => {
                     const expanded = isOpen(row)
-                    const warns = lines ? row.warns : []
+                    // After a start the row's warnings still explain its
+                    // 有提醒 chip — read-only there: no number, no fix.
+                    const warns = row.warns
                     return [
                       <tr key={row.key} data-state={row.state}>
                         <td>
@@ -251,13 +253,13 @@ function ReadinessChecklist(props: {
                             )}
                             {warns.map((check, index) => (
                               <div key={`${check.code}:${String(index)}`} className={`${css.remindRow} ${css.readinessLine}`}>
-                                <span className={css.readinessNo}>{number.get(check)}</span>
+                                {lines && <span className={css.readinessNo}>{number.get(check)}</span>}
                                 <Chip tone="warn">{t('design.checkRemind')}</Chip>
                                 <span className={css.remindText} title={`${check.code} · ${check.message}`}>
                                   {said(check)}
                                   {reminderConsequenceKey(check.code) !== null && <span className={css.readinessThen}>{t(reminderConsequenceKey(check.code) as EvalKey)}</span>}
                                 </span>
-                                {fixButton(check, number.get(check) ?? 0)}
+                                {lines && fixButton(check, number.get(check) ?? 0)}
                               </div>
                             ))}
                           </td>

@@ -1131,6 +1131,12 @@ describe('the readiness checklist (T72 §4)', () => {
     expect(await screen.findByText('review.checks')).toBeTruthy()
     expect(screen.queryByText('readiness.blockers {"count":2}')).toBeNull()
     expect(screen.queryByText('readiness.forRerun')).toBeNull()
+    // A row's own warning still explains its chip after the start — opened
+    // by hand, read-only: no fix button.
+    expect(screen.queryByTitle(/^DATASET_ROOT_UNRESOLVABLE · /)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^basis\.expand .*basis\.row\.dataset/ }))
+    expect(screen.getByTitle(/^DATASET_ROOT_UNRESOLVABLE · /).closest('table')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: 'fix.agent' })).toBeNull()
   })
 
   it('provision runs the condition verb, and nothing offers a binding', async () => {
