@@ -146,6 +146,8 @@ On the npm release line every package is fully functional, with one exception: a
 
 Prerequisite: a dsh host (per-package version requirements are in each package README's Compatibility section). **The recommended path is a profile pack** (see [Profile packs](#profile-packs-three-ready-to-run-experiences) above); single-package install is the advanced path for trimming or debugging.
 
+On host ≥ 0.1.7-rc.2, single-package install needs no command line: **Settings → Plugins → Add plugin**, enter the npm package name (e.g. `@khorsheed/dsh-whalesong`), then enable/restart as prompted. Note that this entry installs **single plugin packages only** — pasting this monorepo's or a pack repo's GitHub URL is rejected and rolled back (the official installer only takes the package at a repository root and does not reach into subdirectories); for a pack, use its repo's install scripts.
+
 ```sh
 # Install one package by npm name (self-mounting packages mount their own loader row — no hand-editing of cordis.yml)
 dsh plugin --profile web add @khorsheed/dsh-whalesong

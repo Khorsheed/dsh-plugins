@@ -10,6 +10,8 @@
 
 ## 安装
 
+> 本仓是一个 **profile 整合包**，不是单个插件——宿主的「添加插件」对话框（0.1.7-rc.2+）装不了它（安装器只认仓库根的单个插件包），请用下面的方式安装。装好之后再加装/卸载单个成员，就可以直接在 **设置 → 插件** 页面里做了。
+
 **有 Agent（推荐）**：装好 [dsh](https://github.com/deepseek-ai/deepseek-harness) 后，对你的 Agent 说一句：
 
 > **帮我装一下这个：https://github.com/Khorsheed/dsh-web-basic**
@@ -250,7 +252,7 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard
 ## 按你的方式调整
 
 - **去掉某个成员**:`dsh plugin --profile web-basic remove @khorsheed/dsh-<名字>`——其余照常工作。整合包是起点，不是绑定
-- **加装**:任何 `@khorsheed/dsh-*` 插件同样一条 `add` 命令
+- **加装**:任何 `@khorsheed/dsh-*` 插件同样一条 `add` 命令；宿主 ≥ 0.1.7-rc.2 时也可以直接在 **设置 → 插件 → 添加插件** 里填包名
 - **更新**:`dsh plugin --profile web-basic update` 拉取范围内最新版本
 
 ## 相关整合包

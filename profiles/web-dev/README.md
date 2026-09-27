@@ -10,6 +10,8 @@
 
 ## 安装
 
+> 本仓是一个 **profile 整合包**，不是单个插件——宿主的「添加插件」对话框（0.1.7-rc.2+）装不了它（安装器只认仓库根的单个插件包），请用下面的方式安装。装好之后再加装/卸载单个成员，就可以直接在 **设置 → 插件** 页面里做了。
+
 **有 Agent（推荐）**：装好 [dsh](https://github.com/deepseek-ai/deepseek-harness) 后，对你的 Agent 说一句：
 
 > **帮我装一下这个：https://github.com/Khorsheed/dsh-web-dev**
@@ -125,6 +127,8 @@ dsh --profile web-dev plugin rm  @khorsheed/dsh-whalesong   # 卸载
 dsh --profile web-dev plugin add @khorsheed/dsh-whalesong   # 装回来
 sh scripts/restart-into-web-dev.sh                          # 重启生效
 ```
+
+宿主 ≥ 0.1.7-rc.2 时，也可以在 **设置 → 插件** 页面直接加装/卸载单个成员（填 npm 包名），不必敲命令。
 
 ## 自带 Agent 预设：开发模式（dev）
 

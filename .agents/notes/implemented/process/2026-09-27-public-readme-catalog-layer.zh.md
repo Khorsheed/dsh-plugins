@@ -22,6 +22,8 @@ Status: implemented
 
 **整合包 README 是展示层。** web-basic 只加了首屏图(`file-preview1.png`,原本就有跟踪)和相关整合包表,其余不动。web-dev 围绕修正后的成员清单重写(23 个包分四层:9 个基础体验 + ankh-guard + 3 个体验增强 + 10 个开发能力),四个截图占位符用现有素材池填满:`web-dev-overview.png` ← room-1、`local-agent-delegation.png` ← 08-local-agent、`local-agent-member.png` ← local-agent-member、`worktrees-drawer.png` ← worktrees-tab、`room-members.png` ← room-2。按[截图托管 note](2026-09-27-readme-screenshot-hosting.md),图片以 `git add -f` 跟踪在 `profiles/web-dev/docs/screenshots/` 下,镜像同步才会把它们带进 dsh-web-dev;它们是 web-basic 素材池的字节副本,素材池仍是包 README 嵌入图的规范宿主。
 
+**安装指引跟随宿主 0.1.7-rc.2 的「添加插件」对话框,并明说它的边界。** 已对 harness 检出的 `packages/boot/plugin-manager` 核实:对话框与 `dsh plugin add` 共享同一 pnpm 后端;git URL 只装仓库根的包(没有 monorepo 子路径语法,没有 workspace 探测),根不是 `dsh.bundle` 插件的仓库——本 monorepo、整合包的 profile 模板仓——会被 `not-bundle` 拒绝并回滚;也不存在任何安装整个 profile 整合包的官方入口。因此 README 让整合包继续走 clone + `install.sh`(并显式注明「对话框装不了本仓」),单包安装与成员装卸则在宿主 ≥ 0.1.7-rc.2 时指向 **设置 → 插件 → 添加插件** 填包名的免命令行路径。
+
 ## Alternatives considered
 
 **在根 README 保留深潜长文。** 否决:它们与各包 README 是同一内容的两处屋檐,而文件的腐烂(32 对 43 的包数、待发布对已上架的家族)恰恰集中在转述别处事实的散文里。目录形态让每行只有一个可写事实。

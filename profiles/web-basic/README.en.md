@@ -10,6 +10,8 @@
 
 ## Install
 
+> This repo is a **profile pack**, not a single plugin — the host's "Add plugin" dialog (0.1.7-rc.2+) cannot install it (the installer only takes a single plugin package at a repository root), so use one of the paths below. Once the pack is in, adding or removing individual members can be done right in **Settings → Plugins**.
+
 **With an agent (recommended)**: once you have [dsh](https://github.com/deepseek-ai/deepseek-harness), just tell it:
 
 > **Install this for me: https://github.com/Khorsheed/dsh-web-basic**
@@ -250,7 +252,7 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard
 ## Make it yours
 
 - **Remove a member**: `dsh plugin --profile web-basic remove @khorsheed/dsh-<name>` — the rest keep working. The bundle is a starting point, not a lock-in.
-- **Add more**: any `@khorsheed/dsh-*` plugin installs with the same `add` command.
+- **Add more**: any `@khorsheed/dsh-*` plugin installs with the same `add` command — and on host ≥ 0.1.7-rc.2 you can also just type the package name in **Settings → Plugins → Add plugin**.
 - **Update**: `dsh plugin --profile web-basic update` pulls the newest versions in range.
 
 ## Related packs

@@ -10,6 +10,8 @@
 
 ## Install
 
+> This repo is a **profile pack**, not a single plugin — the host's "Add plugin" dialog (0.1.7-rc.2+) cannot install it (the installer only takes a single plugin package at a repository root), so use one of the paths below. Once the pack is in, adding or removing individual members can be done right in **Settings → Plugins**.
+
 **With an Agent (recommended)**: after installing [dsh](https://github.com/deepseek-ai/deepseek-harness), tell your agent:
 
 > **Install this for me: https://github.com/Khorsheed/dsh-web-dev**
@@ -125,6 +127,8 @@ dsh --profile web-dev plugin rm  @khorsheed/dsh-whalesong   # remove
 dsh --profile web-dev plugin add @khorsheed/dsh-whalesong   # add back
 sh scripts/restart-into-web-dev.sh                          # restart to apply
 ```
+
+On host ≥ 0.1.7-rc.2 you can also add or remove individual members right in **Settings → Plugins** (type the npm package name) — no command line needed.
 
 ## Bundled agent preset: the dev mode (dev)
 

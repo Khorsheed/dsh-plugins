@@ -146,6 +146,8 @@ npm 发布线上各包全部功能完整,唯一例外是 ankh-guard 的组合 pr
 
 前置:dsh 宿主(版本要求见各包 README 的 Compatibility 节)。**推荐路径是整合包**(见上文[整合包](#整合包三种开箱体验));单包安装是高级用户按需裁剪或调试的路径。
 
+宿主 ≥ 0.1.7-rc.2 时,单包安装不用碰命令行:**设置 → 插件 → 添加插件**,填 npm 包名(如 `@khorsheed/dsh-whalesong`),按提示启用/重启即可。注意这个入口只认**单个插件包**——本仓是 monorepo、整合包仓是 profile 模板,把它们的 GitHub 地址贴进去会被拒绝并回滚(官方安装器只装仓库根的插件包,不支持子目录);整合包请走各自仓库的安装脚本。
+
 ```sh
 # 按 npm 名装单个(自挂载包自动挂载自身 loader 行,无需手改 cordis.yml)
 dsh plugin --profile web add @khorsheed/dsh-whalesong
