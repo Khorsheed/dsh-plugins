@@ -36,17 +36,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalJudgePromptView, EvalPlanCheck } from '../types.ts'
+import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
-import { DesignPage, type PlanFileAnswer, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
+import { DesignPage, planFileAnswer, type PlanFileAnswer, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
 import {
   Chip, EmptyState, Fold, Seg2, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
 } from './parts.tsx'
 import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS, type LabPage, type RunFilter } from './store.ts'
 import { RunsPage } from './RunsPage.tsx'
 import { AnswerView } from './AnswerView.tsx'
-import { JudgePromptSheet, type Answer, type ItemInspectFaces } from './Inspect.tsx'
+import { SheetFrame, type ItemInspectFaces } from './Inspect.tsx'
+import { InspectPane, inspectTitle, itemFaces, type InspectReads } from './InspectPane.tsx'
+import { pushTarget, rememberTarget, type InspectTarget } from './inspect-target.ts'
+import { InspectContext } from './inspect-context.ts'
 import { rowsOfSheet } from './answer-view.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
@@ -77,7 +80,7 @@ export function LabView(props: LabViewProps) {
     fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, fetchCellAnswers, submitHumanFinal, fetchExperimentArtifact,
     closeRun, archiveRun, insertDraft, focus,
-    fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
+    fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt, openInspect: openInHost,
   } = props
   const list = useStore(s => s.list)
   const loading = useStore(s => s.loading)
@@ -643,38 +646,30 @@ export function LabView(props: LabViewProps) {
   // own file through the same bounded read the report's 分析初稿 uses.
   const readPlan = useCallback((): Promise<PlanFileAnswer> => {
     if (openExperimentId === null) return Promise.resolve({ ok: false, message: t('design.raw.noExperiment') })
-    return fetchExperimentArtifact(sessionId, { experimentId: openExperimentId, path: 'plan.json' }).then((result): PlanFileAnswer => {
-      if (!result.ok) return { ok: false, message: result.error.message }
-      if (result.value.text === null) return { ok: false, message: result.value.note ?? t('design.raw.planBinary') }
-      return { ok: true, text: result.value.text, note: result.value.truncated ? (result.value.note ?? t('design.raw.truncated')) : null }
-    })
+    return fetchExperimentArtifact(sessionId, { experimentId: openExperimentId, path: 'plan.json' }).then(result => planFileAnswer(result, t))
   }, [sessionId, openExperimentId, fetchExperimentArtifact, t])
-  // 看题 / 看判官 (T84 §三/§四): the pinned dataset and the judge prompt,
-  // through reads an older host half may not have — then the page keeps its
-  // inline 看题面 and shows no prompt button.
-  const inspect = useMemo((): ItemInspectFaces | null => {
-    if (openExperimentId === null || fetchItemMaterials === undefined || fetchDatasetFile === undefined) return null
-    const flat = <V,>(result: { ok: true; value: V } | { ok: false; error: { message: string } }): Answer<V> => (
-      result.ok ? { ok: true, value: result.value } : { ok: false, message: result.error.message }
-    )
-    return {
-      materials: item => fetchItemMaterials(sessionId, { experimentId: openExperimentId, item }).then(flat),
-      file: request => fetchDatasetFile(sessionId, { experimentId: openExperimentId, ...request }).then(flat),
-      preview: fetchJudgePromptPreview === undefined
-        ? null
-        : (item, judge) => fetchJudgePromptPreview(sessionId, {
-          experimentId: openExperimentId, item, ...(judge === null ? {} : { judge }),
-        }).then(flat),
-    }
-  }, [sessionId, openExperimentId, fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview])
-  const [promptCell, setPromptCell] = useState<{ runId: string; missionId: string; attempt: number; label: string } | null>(null)
-  const readJudgePrompt = useCallback((judge: string | null, sample: string | null): Promise<Answer<EvalJudgePromptView>> => {
-    if (promptCell === null || fetchJudgePrompt === undefined) return Promise.resolve({ ok: false, message: '—' })
-    return fetchJudgePrompt(sessionId, {
-      runId: promptCell.runId, missionId: promptCell.missionId, attempt: promptCell.attempt,
-      ...(judge === null ? {} : { judge }), ...(sample === null ? {} : { sample }),
-    }).then(result => (result.ok ? { ok: true, value: result.value } : { ok: false, message: result.error.message }))
-  }, [sessionId, promptCell, fetchJudgePrompt])
+  // 查看 (T85 §二 / T86): every inspect target goes to the host's right
+  // sidebar when this composition has one, else to the page's own Sheet —
+  // the same pane either way. The Sheet's stack is this tab's; the
+  // sidebar's is the sidebar tab's own.
+  const inspectReads = useMemo((): InspectReads => ({
+    fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
+    fetchExperimentArtifact, fetchCell, fetchCellArtifact, fetchReport, fetchRunUnits, openSession,
+    fetchPlanReview, fetchExperiment, fetchExperiments,
+  }), [fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
+    fetchExperimentArtifact, fetchCell, fetchCellArtifact, fetchReport, fetchRunUnits, openSession,
+    fetchPlanReview, fetchExperiment, fetchExperiments])
+  const [sheet, setSheet] = useState<{ stack: InspectTarget[]; recent: InspectTarget[] }>({ stack: [], recent: [] })
+  const openInspect = useCallback((target: InspectTarget): void => {
+    if (openInHost?.(sessionId, target) === true) return
+    setSheet(prev => ({ stack: pushTarget(prev.stack, target), recent: rememberTarget(prev.recent, target) }))
+  }, [openInHost, sessionId])
+  const closeSheet = useCallback(() => { setSheet(prev => ({ stack: [], recent: prev.recent })) }, [])
+  // 看题 / 看判官 (T84 §三/§四): through reads an older host half may not
+  // have — then the page keeps its inline 看题面 and shows no prompt button.
+  const inspect = useMemo((): ItemInspectFaces | null => (
+    openExperimentId === null ? null : itemFaces(inspectReads, sessionId, openExperimentId)
+  ), [inspectReads, sessionId, openExperimentId])
   const copyText = (text: string): void => {
     void writeClipboard(text).then((ok) => { actions.setNotice(t(ok ? 'design.raw.copied' : 'design.raw.copyFailed')) })
   }
@@ -1105,6 +1100,7 @@ export function LabView(props: LabViewProps) {
   }
 
   return (
+    <InspectContext.Provider value={openInspect}>
     <div className={css.view} data-conversation-composer-overlay="">
       {/* T83 · E1: one scroller, one reading column on the composer's axis;
           the head, the stage strip and the next-step band ride in its flow
@@ -1289,6 +1285,7 @@ export function LabView(props: LabViewProps) {
                       // start from what THIS door named.
                       key={`${answers.task}|${answers.condition ?? ''}|${String(answers.rep)}`}
                       task={answerSheet.task}
+                      runId={answerSheet.runId}
                       rows={rowsOfSheet(answerSheet, { condition: answers.condition, rep: null })}
                       criteria={answerSheet.criteria}
                       criteriaNote={answerSheet.criteriaNote}
@@ -1307,17 +1304,14 @@ export function LabView(props: LabViewProps) {
                         : (column) => {
                           const cell = answerSheet.cells.find(each => each.missionId === column.key)
                           if (cell === undefined) return
-                          setPromptCell({
-                            runId: answerSheet.runId, missionId: cell.missionId, attempt: cell.attempt,
+                          openInspect({
+                            page: 'judge-prompt-actual', runId: answerSheet.runId, missionId: cell.missionId, attempt: cell.attempt,
                             label: `${answerSheet.task} · ${column.condition ?? column.letter} · ${t('judgePrompt.sample')} ${String(column.rep ?? 1)}`,
                           })
                         }}
                       t={t}
                     />
                   )
-              )}
-              {promptCell !== null && answers !== null && (
-                <JudgePromptSheet cell={promptCell} read={readJudgePrompt} onClose={() => { setPromptCell(null) }} t={t} />
               )}
               {/* The stage stays mounted under the answer view, so 返回 lands
                   on the table exactly as it was left (an expanded criteria
@@ -1363,6 +1357,9 @@ export function LabView(props: LabViewProps) {
                     readPlan={openExperimentId === null ? null : readPlan}
                     onCopy={copyText}
                     inspect={inspect}
+                    onInspectItem={inspect === null || openExperimentId === null
+                      ? null
+                      : (item: string) => { openInspect({ page: 'item', experimentId: openExperimentId, item }) }}
                     onOpenSession={(childId) => { openSession(childId as SessionId, null) }}
                     t={t}
                   />
@@ -1468,6 +1465,7 @@ export function LabView(props: LabViewProps) {
                       onRejudge={(cellNos) => {
                         handToAgent(t('judge.rejudgeAsk', { name: openRow.name, cells: cellNos.join('、') }))
                       }}
+                      experimentId={openRow.experimentId}
                       t={t}
                     />
                   )
@@ -1508,7 +1506,23 @@ export function LabView(props: LabViewProps) {
         sessionId={sessionId}
         t={t}
       />
+      {sheet.stack.length > 0 && (
+        <SheetFrame label={inspectTitle(sheet.stack.at(-1), t)} onClose={closeSheet}>
+          <InspectPane
+            stack={sheet.stack}
+            recent={sheet.recent}
+            reads={inspectReads}
+            sessionId={sessionId}
+            onPush={openInspect}
+            onReplace={(target) => { setSheet(prev => ({ ...prev, stack: [...prev.stack.slice(0, -1), target] })) }}
+            onBack={() => { setSheet(prev => ({ ...prev, stack: prev.stack.slice(0, -1) })) }}
+            onClose={closeSheet}
+            t={t}
+          />
+        </SheetFrame>
+      )}
     </div>
+    </InspectContext.Provider>
   )
 }
 

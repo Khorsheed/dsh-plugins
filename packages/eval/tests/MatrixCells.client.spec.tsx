@@ -276,6 +276,16 @@ async function openPage(h: Harness, tab: string) {
 }
 
 /**
+ * 查看记录 on the open record (T86): the receipts are one 查看 away, in the
+ * inspect pane (the page's own Sheet here — no host sidebar in these specs).
+ */
+async function openRecordPane(): Promise<HTMLElement> {
+  fireEvent.click(await screen.findByRole('button', { name: 'record.view' }))
+  const title = await screen.findByText(/^inspect\.recordTitle /)
+  return title.closest('[data-page]') as HTMLElement
+}
+
+/**
  * Open the matrix's arrangement disclosure. It is CLOSED by default (ui-spec
  * §九) — the matrix is what the page is for, and choosing the column is a rare
  * act — so a test that reaches a chip has to open it the way a reader does.
@@ -451,10 +461,11 @@ describe('a small run is its cards (T80c P1-7)', () => {
     expect(screen.queryByLabelText('retry.reason')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'record.retryOpen' }))
     expect(screen.getByLabelText('retry.reason')).toBeTruthy()
-    // The receipts are in the fold, closed.
-    const fold = screen.getByText('record.allDetails').closest('details') as HTMLDetailsElement
-    expect(fold.open).toBe(false)
-    expect(within(fold).getByText('record.param.material')).toBeTruthy()
+    // The receipts are one 查看 away (T86), not a fold on the page.
+    expect(screen.queryByText('record.allDetails')).toBeNull()
+    expect(screen.queryByText('record.param.material')).toBeNull()
+    const pane = await openRecordPane()
+    expect(await within(pane).findByText('record.param.material')).toBeTruthy()
   })
 
   it('a stopped record ends on a failed step (T83 · phase 4 ruling)', async () => {
@@ -549,7 +560,7 @@ describe('the cells page and its drawer', () => {
     expect(await screen.findByText('record.ok')).toBeTruthy()
     // The verdict SOURCE, in the head and in the parameter table; the number
     // is on the results page and the panel says so.
-    expect(screen.getAllByText('verdict.script').length).toBe(2)
+    expect(screen.getAllByText('verdict.script').length).toBe(1)
     expect(screen.getByText('record.scoreWhere')).toBeTruthy()
     // One layer on this record, so no mixed-source line: the sentence appears
     // only when the merge actually has more than one layer to merge.
@@ -558,6 +569,11 @@ describe('the cells page and its drawer', () => {
     // The timeline, from the ledger's own transition times.
     expect(screen.getByText('record.timeline')).toBeTruthy()
     expect(screen.getAllByText('stage.judged').length).toBeGreaterThan(0)
+
+    // The receipts, in 查看 (T86): the head again, then the parameter table.
+    const pane = await openRecordPane()
+    await within(pane).findByText('record.param.material')
+    expect(within(pane).getAllByText('verdict.script').length).toBe(2)
 
     // A key-value table, not a JSON dump.
     expect(screen.getByText('record.param.material')).toBeTruthy()
@@ -586,10 +602,11 @@ describe('the cells page and its drawer', () => {
     expect(screen.getByText(/the container died mid-round/)).toBeTruthy()
   })
 
-  it('opens an attachment in place: the submission is read where it is listed, and a second click closes it', async () => {
+  it('opens an attachment one level down in 查看, and 返回 goes back to the record', async () => {
     const h = makeHarness()
     await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
+    await openRecordPane()
     await screen.findByText('record.attachments')
     // Nothing is expanded on arrival: the panel is a record, not a browser.
     expect(h.fetchCellArtifact).not.toHaveBeenCalled()
@@ -604,10 +621,10 @@ describe('the cells page and its drawer', () => {
     })
     expect(await screen.findByText(/交了这些。/)).toBeTruthy()
 
-    // The same row closes it — one attachment is shown at a time, so 点开 and
-    // 收起 are one gesture.
-    fireEvent.click(screen.getByText('stage1.md'))
+    // 返回 is the way back: the attachment was one level, not a replacement.
+    fireEvent.click(screen.getByRole('button', { name: 'inspect.back' }))
     await waitFor(() => { expect(screen.queryByText(/交了这些。/)).toBeNull() })
+    expect(await screen.findByText('record.attachments')).toBeTruthy()
   })
 
   it('a directory artifact lists its entries, and an entry opens through the same door', async () => {
@@ -622,6 +639,7 @@ describe('the cells page and its drawer', () => {
     })
     await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
+    await openRecordPane()
     fireEvent.click(await screen.findByText('archive'))
     expect(await screen.findByText('workspace')).toBeTruthy()
 
@@ -645,6 +663,7 @@ describe('the cells page and its drawer', () => {
     })
     await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
+    await openRecordPane()
     fireEvent.click(await screen.findByText('stage1.md'))
     expect(await screen.findByText(/不内联 \.png 产物/)).toBeTruthy()
     expect(screen.getByText(/record\.artifactBytes.*4096/)).toBeTruthy()
@@ -654,6 +673,7 @@ describe('the cells page and its drawer', () => {
     const h = makeHarness()
     await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
+    await openRecordPane()
     expect(await screen.findByText('record.judgeRounds')).toBeTruthy()
     // Un-blinded on purpose: this page already names the comparison group in
     // its own header. The blind panel is the judge bench's.
@@ -675,7 +695,7 @@ describe('the cells page and its drawer', () => {
     const h = makeHarness()
     await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
-    await screen.findByText('unit-b')
+    await screen.findByRole('button', { name: 'record.view' })
 
     const retry = screen.getByRole('button', { name: 'action.retry' })
     // A blank reason is not sendable — mission demands one and so does the tab.
@@ -700,7 +720,7 @@ describe('the cells page and its drawer', () => {
     const h = makeHarness()
     await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
-    await screen.findByText('unit-b')
+    await screen.findByRole('button', { name: 'record.view' })
     fireEvent.click(screen.getByRole('button', { name: 'action.release' }))
     await waitFor(() => {
       expect(h.releaseCheck).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'p0-codex-a-rep1' })
@@ -712,7 +732,7 @@ describe('the cells page and its drawer', () => {
     const h = makeHarness()
     await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
-    await screen.findByText('unit-b')
+    await screen.findByRole('button', { name: 'record.view' })
     fireEvent.click(screen.getByRole('button', { name: 'drawer.openSession' }))
     expect(h.openSession).toHaveBeenCalledWith('child-c', 'session-parent-1')
 
@@ -731,7 +751,7 @@ describe('the export dialog', () => {
     const h = makeHarness()
     await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
-    await screen.findByText('unit-b')
+    await screen.findByRole('button', { name: 'record.view' })
     fireEvent.click(screen.getByRole('button', { name: 'action.export' }))
 
     const confirm = await screen.findByRole('button', { name: 'export.confirm' })
@@ -765,7 +785,7 @@ describe('the export dialog', () => {
     const h = makeHarness()
     await openPage(h, 'page.runs')
     fireEvent.click(await screen.findByText('P0 × codex-a × 1'))
-    await screen.findByText('unit-b')
+    await screen.findByRole('button', { name: 'record.view' })
     fireEvent.click(screen.getByRole('button', { name: 'action.export' }))
     fireEvent.change(await screen.findByLabelText('export.outDir'), { target: { value: '/out' } })
     fireEvent.click(screen.getByRole('button', { name: 'export.plan' }))

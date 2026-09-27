@@ -28,6 +28,8 @@ import type { LabFocus } from './draft-card.ts'
 import type { createLabViewStore } from './store.ts'
 
 /** The eval Remote namespace, mounted by this plugin. */
+import type { InspectTarget } from './inspect-target.ts'
+
 export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
 
 /**
@@ -195,6 +197,13 @@ export interface LabViewInjected {
    * run recorded without an originSession allows.
    */
   openSession: (sessionId: SessionId, parentSessionId: SessionId | null) => void
+  /**
+   * 查看 in the host's right sidebar (T86). True when the sidebar took the
+   * target; false (or absent — a composition without ui-sidebar-right, a
+   * session whose preset hides the lab, a host that threw) and the tab opens
+   * the same pane in its own Sheet.
+   */
+  openInspect?: (sessionId: SessionId, target: InspectTarget) => boolean
   /**
    * CLOSE human review by one of the four exits (T72): 提交终评, 带标记提交,
    * 不做终评直接收尾, 放弃终评. A human's click and nothing else's — the

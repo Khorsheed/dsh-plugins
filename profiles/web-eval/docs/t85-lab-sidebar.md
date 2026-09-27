@@ -324,3 +324,33 @@ eval 现在的 client 只 inject `slots/remote/locale/sessions`，完全没用�
 3. **并排看作答留在 tab、只把单列的附属内容放进侧栏（§一），这样可以吗？**
 4. **人工评估页新增「题目材料」入口（§一末），这次一起做吗？**
 5. **参数持久化的上游提案（§3.3），现在提，还是等 0.1.7 线真正上线再说？**
+
+**拍板结果（09-27，T86 文案）**：1 默认宿主右栏、页内 Sheet 兜底；2 侧栏打开时 tab 走窄版，不动宿主布局；3 并排看作答留在 tab，只有单列附属内容进侧栏；4 人工评估页的「题目材料」入口本次一起做；5 参数持久化的上游提案先不提，等评测线真正用上 0.1.7 再说——记为后续项（见 §七）。
+
+## 七、落地记录（T86，分支 `feat/t86-lab-sidebar`）
+
+按 §五 分四个代码提交：`0aeab97e`（第 1 步：`InspectPane` + `InspectTarget` 栈，Sheet 退为容器）、`488cf894`（第 2 步：宿主右栏接入）、`756554b3`（第 3 步：四页入口替换 + 题目材料入口）、`1f124a75`（第 4 步截图自查修掉的一处：原文块在侧栏里不再按页内折叠高度截断）。eval 包 69 个文件 1192 条测试全绿（冻结基线 `~/code/deepseek-harness-0.1.7-rc.1`）。设计与 Agent Note：`.agents/notes/implemented/feature/2026-09-27-t86-eval-lab-sidebar.md`。
+
+**与设计稿的出入**（都是有意的）：
+
+1. **注册走延迟 inject。** tab type 与 body 在 `ctx.inject(['sidebarRight','sidebarRightTabs'])` 里注册，挂在实验室 tab 的 preset 判据 toggle 下；宿主右栏晚到也能补上，缺席时实验室照常加载、查看落到页内 Sheet。
+2. **会话记忆多记一个 `applied`。** §3.3 只写了 `{tabId, revision, stack}`；实测刷新后宿主的 `revision` 从头计，单看数字会把新打开的内容误判成「已应用过」，所以同时记上一次应用的目标键。
+3. **「怎么读这张表」留在 tab 里。** 它是读表的前提，不是附属材料。
+4. **配对表在侧栏里只读。** 判据格仍保留跳转到题目材料的入口（会在侧栏里推一层）。
+5. **运行记录的时间线留在 tab**，侧栏只放单条记录的回执、附件、判官轮次、各次尝试与探针。
+6. **暂缓三项**：运行日志、效率明细、终审原始输出，仍在原位折叠，等用户走查后再定是否迁。
+7. **作答文件目标自带正文。** `answer-file` 目标里直接放去指纹后的文本与替换次数（盲评时列名用 `nameOf(column)`，不泄露组名），侧栏不必再按列回读。
+8. **题目材料入口放在评估队列头的右端**（「题目材料 查看」），打开当前题的判据页签。
+9. **400 宽下「返回」只能在侧栏内部产生**：宿主窄屏把侧栏全屏覆盖在 tab 上，tab 里的「查看」点不到，所以 400 宽的栈只由侧栏内的下钻叠起来。
+
+**验收（第 4 步）：**
+
+- **0.1.5 线（临时实例 3183，rc-0.1.5-rc.1 工具链）**：1440 与 400 两档各 14 个场景，1440 全过、400 除「返回」场景外全过（原因见第 9 条），浏览器 console 0 错误。截图在 `~/.dsh/scratch/t86-shots/step4-0.1.5-1440/`、`step4-0.1.5-400/`。
+- **0.1.7 线（临时实例 3184，冻结检出的 0.1.7-rc.1 CLI 只读启动）**：实例能起、实验室 tab 能出，但所有会话都挂着 pack 自带的 `eval` preset，0.1.7 报 `Unknown agent preset: eval`，实验列表整页加载失败——这正是 T82（preset 迁 bundle）要做的事。按文案「起不来就停下报告，不要绕」停在这里：0.1.7 的 1440 / 400 截图与刷新后恢复**未验**，等 T82 之后补。刷新恢复的逻辑由单测覆盖：`packages/eval/tests/sidebar-inspect.client.spec.tsx`「redraws the remembered stack when a reload restores the tab without params」与 `inspect-target.spec.ts` 的还原 / 保持 / 推入 / 重开四种情形。
+- **降级（无右栏包）**：在 0.1.5 临时实例上用 `--patch` 关掉 `ui-sidebar-right`（连带 documentpreview / files 两个右栏 tab 包）启动，宿主整页「Failed to load plugins」：官方 `dsh-client-ui-chat` 以及 file-preview、taskpilot、local-files 三个社区包都在等 `sidebarRight` 服务。**eval 不在等待名单里**，即 eval 自身不阻塞启动；但在两条宿主线上（0.1.7 的 ui-chat 同样依赖 `sidebarRight`）都组不出一个「没有右栏、其余正常」的 profile，Sheet 兜底只能由单测验证：`packages/eval/tests/apply.client.spec.ts` 里没有右栏、以及宿主 `openTab` 抛错时 `openInspect` 都答 false，实验室落回页内 Sheet。
+
+**后续项：**
+
+- **参数持久化的上游提案**：0.1.7 把右栏布局按会话存进 `localStorage`，但不存 tab 的 `navigation.params`。eval 用自己的会话记忆（`dsh-eval.inspect.<sessionId>`）补上了；等评测线真正用上 0.1.7，再向上游提「页型 tab 的参数随布局持久化（或给插件一个可序列化的参数钩子）」，届时 eval 的会话记忆可退为只记返回栈。
+- **0.1.7 线验收**：T82 完成后，在 0.1.7 临时实例上补 1440 / 400 截图与一次刷新恢复。
+- **暂缓三项**（上面第 6 条）等用户走查。

@@ -617,3 +617,60 @@ describe('landing (T80c P1-6)', () => {
     expect(landingItem([])).toBeNull()
   })
 })
+
+describe('查看 on the grading page (T86)', () => {
+  it('the queue head opens the open item\'s materials in 查看, rubric first', async () => {
+    const h = makeHarness(QUEUE, WRITTEN, { experimentId: 'exp-1' } as Partial<EvalExperimentsResult['rows'][number]>)
+    await openBench(h)
+    await screen.findByText('judge.queue')
+    pickItem('P0', 2)
+    const queue = screen.getByRole('group', { name: 'judge.queue' })
+    expect(within(queue).getByText('judge.materials')).toBeTruthy()
+    fireEvent.click(within(queue).getByRole('button', { name: 'inspect.view' }))
+    const pane = await waitFor(() => {
+      const found = document.querySelector('[data-page="item"]')
+      expect(found).not.toBeNull()
+      return found as HTMLElement
+    })
+    expect(within(pane).getByText('inspect.title {"item":"P0"}')).toBeTruthy()
+  })
+
+  it('no experiment id, no entry', async () => {
+    const h = makeHarness()
+    await openBench(h)
+    await screen.findByText('judge.queue')
+    pickItem('P0', 2)
+    expect(screen.queryByText('judge.materials')).toBeNull()
+  })
+
+  it('a column\'s non-markdown file is one line; 查看 shows it verbatim under the blind name', async () => {
+    const first = QUEUE.cells[0]
+    if (first === undefined) throw new Error('fixture')
+    const queue: EvalJudgeQueueView = {
+      ...QUEUE,
+      cells: [
+        { ...first, materials: [...first.materials, { path: 'stage1.json', text: '{"plan":"<harness>"}', replacements: 1 }] },
+        ...QUEUE.cells.slice(1),
+      ],
+    }
+    const h = makeHarness(queue)
+    await openBench(h)
+    await screen.findByText('judge.queue')
+    pickItem('P0', 2)
+    const name = screen.getByText('stage1.json')
+    // Not a fold of its own (the column's 看作答 fold is the only one around it).
+    expect(name.closest('summary')).toBeNull()
+    expect(screen.queryByText('{"plan":"<harness>"}')).toBeNull()
+    const line = name.parentElement as HTMLElement
+    fireEvent.click(within(line).getByRole('button', { name: 'inspect.view' }))
+    const pane = await waitFor(() => {
+      const found = document.querySelector('[data-page="answer-file"]')
+      expect(found).not.toBeNull()
+      return found as HTMLElement
+    })
+    expect(within(pane).getByText('{"plan":"<harness>"}')).toBeTruthy()
+    expect(pane.textContent).toContain('run-1')
+    expect(pane.textContent).toContain('judge.scrubbed {"count":1}')
+    expect(pane.textContent).not.toContain('codex')
+  })
+})

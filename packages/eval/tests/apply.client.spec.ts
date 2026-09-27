@@ -308,4 +308,76 @@ describe('eval client apply', () => {
 
     expect(slots.entries('conversation.view')).toHaveLength(0)
   })
+
+  // T86 step 2: 查看 in the host's right sidebar, through a deferred inject.
+  describe('the inspect sidebar', () => {
+    const target = { page: 'item' as const, experimentId: 'x-1', item: 'F1' }
+
+    /** The two host services, as ui-sidebar-right provides them. */
+    function sidebar(ctx: Context, openTab: (kind: string, options: unknown) => void = () => {}) {
+      const types: Array<{ id: string; kind: string; title: () => string }> = []
+      const tabs = {
+        register: vi.fn((def: { id: string; kind: string; title: () => string }) => {
+          types.push(def)
+          return () => { types.splice(types.indexOf(def), 1) }
+        }),
+      }
+      const right = { openTab: vi.fn(openTab) }
+      ctx.provide('sidebarRightTabs', tabs as never)
+      ctx.provide('sidebarRight', right as never)
+      return { types, right }
+    }
+
+    const faceOf = (slots: SlotRegistry) =>
+      (slots.entries('conversation.view')[0]!.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
+
+    it('answers false without the sidebar, so the lab keeps its own Sheet', async () => {
+      const { ctx, slots } = await bench()
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      expect(faceOf(slots).openInspect?.('s1' as SessionId, target)).toBe(false)
+    })
+
+    it('registers the tab type and opens targets there when the sidebar is present', async () => {
+      const { ctx, slots } = await bench()
+      const { types, right } = sidebar(ctx)
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      expect(types).toHaveLength(1)
+      expect(types[0]).toMatchObject({ id: '@khorsheed/dsh-eval:inspect', kind: 'eval-inspect' })
+      expect(faceOf(slots).openInspect?.('s1' as SessionId, target)).toBe(true)
+      expect(right.openTab).toHaveBeenCalledWith('eval-inspect', { params: { target } })
+    })
+
+    it('answers false when the host refuses the open (no seat)', async () => {
+      const { ctx, slots } = await bench()
+      sidebar(ctx, () => { throw new Error('no seat') })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      expect(faceOf(slots).openInspect?.('s1' as SessionId, target)).toBe(false)
+    })
+
+    it('follows the lab tab\'s preset criterion', async () => {
+      const { ctx } = await bench({ preset: 'standard', composition: PRESETS })
+      const { types } = sidebar(ctx)
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      await settled()
+      expect(types).toHaveLength(0)
+    })
+
+    it('registers the body and the chip title once the sidebar declares them', async () => {
+      const { ctx, slots } = await bench()
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      slots.register({
+        name: 'conversation.view',
+        id: 'chat',
+        children: {
+          'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
+          'sidebar.right.pane.tab.title': { kind: 'keyed', scope: 'session' },
+        },
+      } as never, () => null)
+      for (const name of ['sidebar.right.pane.tab', 'sidebar.right.pane.tab.title']) {
+        const entries = slots.entries(name as never)
+        expect(entries).toHaveLength(1)
+        expect(entries[0]!.options).toMatchObject({ key: '@khorsheed/dsh-eval:inspect' })
+      }
+    })
+  })
 })

@@ -441,12 +441,27 @@ async function openReport(h: Harness) {
   await waitFor(() => { expect(h.fetchReport).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
 }
 
+/**
+ * 查看 on one of the report's one-line blocks (T86): its body opens in the
+ * inspect pane (the page's own Sheet here — no host sidebar in these specs).
+ */
+async function viewPart(label: 'report.audit' | 'report.exportFold'): Promise<HTMLElement> {
+  const line = (await screen.findByText(label)).parentElement as HTMLElement
+  fireEvent.click(within(line).getByRole('button', { name: 'inspect.view' }))
+  return await waitFor(() => {
+    const pane = document.querySelector('[data-page="report-part"]')
+    if (pane === null) throw new Error('no report-part pane yet')
+    return pane as HTMLElement
+  })
+}
+
 afterEach(() => { cleanup() })
 
 describe('the four invariants', () => {
   it('renders one row per invariant with its status word and its facts', async () => {
     const h = makeHarness(BLOCKED)
     await openReport(h)
+    await viewPart('report.audit')
     await screen.findByText('report.invariants')
 
     expect(screen.getByText('题面一致')).toBeTruthy()
@@ -474,6 +489,7 @@ describe('the four invariants', () => {
   it('all four ok opens the comparison section', async () => {
     const h = makeHarness()
     await openReport(h)
+    await viewPart('report.audit')
     // The audit's pair table; a card holding ONE pair does not name it again
     // (T80d — the headline and the two scores already say which two).
     expect(await screen.findAllByText('report.pairTitle {"a":"cond-a","b":"cond-b"}')).toHaveLength(1)
@@ -574,21 +590,18 @@ describe('⑤ 分析初稿 (T73)', () => {
     expect(h.fetchExperimentArtifact).not.toHaveBeenCalled()
   })
 
-  it('is folded by default, lists files by name only, and opens the newest once unfolded', async () => {
+  it('is a list of names, and each draft is read in 查看 (T86)', async () => {
     const h = makeHarness(WITH_ANALYSIS)
     await openReport(h)
-    const summary = await screen.findByText('report.analysis {"n":2}')
-    // Folded: nothing is read until the reader asks for it.
+    await screen.findByText('report.analysis {"n":2}')
+    // A list: nothing is read until the reader asks for it.
     expect(h.fetchExperimentArtifact).not.toHaveBeenCalled()
-    const block = summary.closest('details') as HTMLDetailsElement
-    expect(block.open).toBe(false)
     // Names, never paths.
-    expect(screen.getByText(/^round-2\.md · /)).toBeTruthy()
-    expect(screen.getByText(/^round-1\.md · /)).toBeTruthy()
+    const newest = screen.getByText('round-2.md')
+    expect(screen.getByText('round-1.md')).toBeTruthy()
     expect(screen.queryByText(/analysis\/round/)).toBeNull()
 
-    block.open = true
-    fireEvent(block, new Event('toggle'))
+    fireEvent.click(within(newest.parentElement as HTMLElement).getByRole('button', { name: 'inspect.view' }))
     await waitFor(() => {
       expect(h.fetchExperimentArtifact).toHaveBeenCalledWith('s1', {
         experimentId: 'pilot-d-20260924-ab12', path: 'analysis/round-2.md',
@@ -597,7 +610,7 @@ describe('⑤ 分析初稿 (T73)', () => {
     // Rendered as markdown (T74), not printed: the `#` line is a heading.
     expect(await screen.findByRole('heading', { name: 'body of analysis/round-2.md' })).toBeTruthy()
     expect(screen.queryByText('# body of analysis/round-2.md')).toBeNull()
-    // Only the newest is expanded — the older one is read when opened.
+    // Only the one asked for is read.
     expect(h.fetchExperimentArtifact).toHaveBeenCalledTimes(1)
   })
 })
@@ -616,7 +629,8 @@ describe('the comparison gate', () => {
     expect(screen.queryByText(/report\.ci/)).toBeNull()
     // The facts DO stay — a closed comparison is still a report.
     expect(screen.getByText('report.efficiency')).toBeTruthy()
-    expect(screen.getByText('report.judge')).toBeTruthy()
+    await viewPart('report.audit')
+    expect(await screen.findByText('report.judge')).toBeTruthy()
   })
 
   it('carries the red flag when an expectedNs namespace was written only by tools', async () => {
@@ -630,6 +644,7 @@ describe('the pair table', () => {
   it('shows the item, both sides, the delta, n and the judges — with the self-judged mark', async () => {
     const h = makeHarness()
     await openReport(h)
+    await viewPart('report.audit')
     await screen.findByText('report.col.task')
 
     expect(screen.getByText('report.factorSingle {"factor":"model.declared","detail":"deepseek-v4 vs gpt-5.6-sol"}')).toBeTruthy()
@@ -760,6 +775,7 @@ describe('the judge numbers', () => {
   it('reports the same judge resampled and the panel separately', async () => {
     const h = makeHarness()
     await openReport(h)
+    await viewPart('report.audit')
     await screen.findByText('report.judge')
 
     // ui-spec §九: the WORD a reader acts on, κ beside it. κ 0.64 is 中,
@@ -870,7 +886,9 @@ describe('unreclaimed units', () => {
     await waitFor(() => { expect(h.fetchRunUnits).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
 
     expect(await screen.findByText('report.unitsHeld {"count":2}')).toBeTruthy()
-    expect(screen.getByText('dsh-lab-u2')).toBeTruthy()
+    // Which ones, in 查看 · 导出与来源 (T86).
+    await viewPart('report.exportFold')
+    expect(await screen.findByText('dsh-lab-u2')).toBeTruthy()
     expect(screen.getByText('dsh-lab-u3')).toBeTruthy()
     // The field the reader acts on: 已归档 is one 回收 can still take,
     // 已释放 is past every gate. Both through the word table (§九).
@@ -916,6 +934,7 @@ describe('how old the bundle is (I5·T39 · G17 / T60)', () => {
     const h = makeHarness()
     await openReport(h)
     // One line: when it was written, and that the report went in with it.
+    await viewPart('report.exportFold')
     const line = await screen.findByText(/report\.exportedAt /)
     expect(line.textContent).toContain('report.summaryIn')
     expect(screen.queryByText(/report\.staleAfterFinal/)).toBeNull()
@@ -942,6 +961,7 @@ describe('how old the bundle is (I5·T39 · G17 / T60)', () => {
   it('a bundle written before the export action wrote reports offers to get one', async () => {
     const h = makeHarness({ ...REPORT, summaryWritten: false })
     await openReport(h)
+    await viewPart('report.exportFold')
     expect(await screen.findByText('report.summaryMissing')).toBeTruthy()
   })
 
@@ -977,35 +997,15 @@ describe('how old the bundle is (I5·T39 · G17 / T60)', () => {
  * says so and can be cleared.
  */
 describe('from a report number to the records behind it', () => {
-  it('a side with several reps lands on the record list, narrowed and labelled', async () => {
+  it('in 查看 the pair table is read-only — the criteria cells keep the jump (T86)', async () => {
     const h = makeHarness()
     await openReport(h)
-    // The cell is addressed by what it promises on hover, not by the digit
-    // it prints — a mean of 3 is not a unique string on a report page.
-    fireEvent.click(await screen.findByTitle(/report\.openRecords.*"condition":"cond-a"/))
-
-    await waitFor(() => { expect(h.fetchCells).toHaveBeenCalledWith('s1', { runId: 'run-1' }) })
-    // The chip says what was narrowed and how much is left; without it the
-    // list would be lying about how many records the run has.
-    expect(await screen.findByText(/runs\.focus.*"task":"P0".*"condition":"cond-a".*"matched":2/)).toBeTruthy()
-    expect(screen.getByText('P0 × cond-a × 1')).toBeTruthy()
-    expect(screen.getByText('P0 × cond-a × 2')).toBeTruthy()
-    expect(screen.queryByText('P0 × cond-b × 1')).toBeNull()
-    // Two records match, so none was opened FOR the reader.
-    expect(h.fetchCell).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'runs.focusClear' }))
-    expect(await screen.findByText('P0 × cond-b × 1')).toBeTruthy()
-  })
-
-  it('a side with exactly one rep opens that record — which is what «跳到那条记录» means when there is one', async () => {
-    const h = makeHarness()
-    await openReport(h)
-    // cond-b's column, and the run holds a single rep of it.
-    fireEvent.click(await screen.findByTitle(/report\.openRecords.*"condition":"cond-b"/))
-    await waitFor(() => {
-      expect(h.fetchCell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'p0-cond-b-rep1' })
-    })
+    // The pane cannot move the lab tab (it may be the host's sidebar), so the
+    // audit's pair numbers are plain there; the tests below walk the road.
+    const pane = await viewPart('report.audit')
+    expect(await within(pane).findByText('report.pairTitle {"a":"cond-a","b":"cond-b"}')).toBeTruthy()
+    expect(within(pane).queryByTitle(/report\.openRecords/)).toBeNull()
+    expect(within(pane).queryByRole('button', { name: 'answer.open' })).toBeNull()
   })
 
   it('a criteria cell takes the SAME road, and names the record when it knows it', async () => {
@@ -1094,8 +1094,9 @@ describe('the conclusion card (T72 §6)', () => {
     await openReport(h)
     const card = await screen.findByRole('region', { name: 'report.conclusion' })
     expect(within(card).queryByRole('button', { name: /report\.validity/ })).toBeNull()
-    const audit = document.getElementById('eval-report-audit') as HTMLDetailsElement
-    expect(audit.open).toBe(false)
-    expect(audit.querySelector('summary [data-bad]')).not.toBeNull()
+    // T86: the audit is one line with each check's mark, read in 查看.
+    const audit = document.getElementById('eval-report-audit') as HTMLElement
+    expect(audit.tagName).not.toBe('DETAILS')
+    expect(audit.querySelector('[data-bad]')).not.toBeNull()
   })
 })

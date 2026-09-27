@@ -29,8 +29,8 @@
  * document would make the reviewer the author.
  */
 
-import { useEffect, useState, type ReactNode } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   EvalConditionDiffView, EvalConditionProvisionView, EvalConditionRow, EvalConditionsView,
   EvalExperimentDetail, EvalExperimentRow, EvalPlanCheck, EvalPlanNumbersResult,
@@ -41,7 +41,10 @@ import type { EvalKey } from './locales.ts'
 import { ConditionsTable } from './ConditionsPage.tsx'
 import { ErrorState } from './ErrorState.tsx'
 import { MarkdownDoc } from './MarkdownDoc.tsx'
-import { ItemDrawer, JudgePromptPreview, type ItemInspectFaces } from './Inspect.tsx'
+import { JudgePromptPreview, type ItemInspectFaces } from './Inspect.tsx'
+import { useInspect } from './inspect-context.ts'
+import { flat, registerInspectPage, type InspectPageProps } from './InspectPane.tsx'
+import type { InspectDesignPart } from './inspect-target.ts'
 import { readinessTable, type BasisLine, type ReadinessRowModel } from './readiness-basis.ts'
 import { RunGrid, plannedRows, type GridColumn } from './Grid.tsx'
 import {
@@ -397,13 +400,12 @@ function ItemsTable(props: {
   facts: EvalPlanItemsView | null
   /** The plan's `stages` — the same for every cell; empty when it names none. */
   planStages: readonly string[]
-  /** The pinned-dataset reads: with them 查看 opens the drawer; without, the inline 看题面. */
-  inspect: ItemInspectFaces | null
+  /** 查看 one item's materials (sidebar, or the Sheet); null keeps the inline 看题面. */
+  onInspect: ((item: string) => void) | null
   t: LabViewProps['t']
 }) {
-  const { items, expectedNs, facts, planStages, inspect, t } = props
+  const { items, expectedNs, facts, planStages, onInspect, t } = props
   const [open, setOpen] = useState<string | null>(null)
-  const [drawer, setDrawer] = useState<string | null>(null)
   const how = expectedNs.map(ns => (VERDICT_SOURCE[ns] === undefined ? ns : t(VERDICT_SOURCE[ns]))).join(' · ') || '—'
   if (facts === null || facts.items.length === 0) {
     return (
@@ -451,7 +453,7 @@ function ItemsTable(props: {
               item={item}
               open={open === item.id}
               onToggle={() => setOpen(open === item.id ? null : item.id)}
-              onInspect={inspect === null ? null : () => { setDrawer(item.id) }}
+              onInspect={onInspect === null ? null : () => { onInspect(item.id) }}
               stagesColumn={anyPhases}
               t={t}
             />
@@ -459,9 +461,6 @@ function ItemsTable(props: {
         </tbody>
       </table>
       {facts.notes.length > 0 && <div className={css.scaleNote}>{facts.notes.join(' · ')}</div>}
-      {drawer !== null && inspect !== null && (
-        <ItemDrawer item={drawer} faces={inspect} onClose={() => { setDrawer(null) }} t={t} />
-      )}
     </div>
   )
 }
@@ -622,9 +621,12 @@ function HowJudged(props: {
   /** The plan's items and the preview read, for 看判官提示词 (T84 §四). */
   items: readonly string[]
   preview: ItemInspectFaces['preview']
+  /** The experiment the preview reads from; null for a plan named by path. */
+  experimentId: string | null
   t: LabViewProps['t']
 }) {
-  const { judges, samples, expectedNs, items, preview, t } = props
+  const { judges, samples, expectedNs, items, preview, experimentId, t } = props
+  const open = useInspect()
   const on = (ns: string) => expectedNs === null || expectedNs.includes(ns)
   const judged = judges.length > 0 && on('llm-draft')
   return (
@@ -644,7 +646,19 @@ function HowJudged(props: {
       </>}
     </dl>
     {judged && preview !== null && items.length > 0 && (
-      <JudgePromptPreview items={items} judges={judges} preview={preview} t={t} />
+      open !== null && experimentId !== null
+        ? (
+          // T86: one sentence here, the prompt itself in 查看.
+          <div className={css.inspectLine}>
+            <span className={css.dim}>{t('judgePrompt.sees')}</span>
+            <Button variant="outline" size="sm" className={css.smButton}
+              onClick={() => { open({ page: 'judge-prompt', experimentId, items: [...items], judges: [...judges] }) }}
+            >
+              {t('judgePrompt.open')}
+            </Button>
+          </div>
+        )
+        : <JudgePromptPreview items={items} judges={judges} preview={preview} t={t} />
     )}
     </>
   )
@@ -988,6 +1002,17 @@ function PlanFileFold(props: {
         <span className={css.reportFoldAside} title={path ?? undefined}>{t('design.raw.planAside')}</span>
       </summary>
       <div className={css.reportFoldBody}>
+        <PlanFileText fileName={fileName} value={value} onCopy={onCopy} t={t} />
+      </div>
+    </details>
+  )
+}
+
+/** The text of plan.json with its copy button — the fold's body and the 查看 page's. */
+function PlanFileText(props: { fileName: string; value: PlanFileAnswer | null; onCopy: (text: string) => void; t: LabViewProps['t'] }) {
+  const { fileName, value, onCopy, t } = props
+  return (
+    <>
         {value === null
           ? <div className={css.dim}>{t('design.raw.planLoading')}</div>
           : value.ok
@@ -1003,9 +1028,27 @@ function PlanFileFold(props: {
               </>
             )
             : <div className={css.warning}>{t('design.raw.planError', { message: value.message })}</div>}
-      </div>
-    </details>
+    </>
   )
+}
+
+/**
+ * What reading plan.json answered, in the viewer's shape.
+ * @param result - the bounded experiment-artifact read.
+ * @param t - translate.
+ */
+export function planFileAnswer(
+  result: { ok: true; value: { text: string | null; truncated: boolean; note: string | null } } | { ok: false; error: { message: string } },
+  t: LabViewProps['t'],
+): PlanFileAnswer {
+  if (!result.ok) return { ok: false, message: result.error.message }
+  if (result.value.text === null) return { ok: false, message: result.value.note ?? t('design.raw.planBinary') }
+  return { ok: true, text: result.value.text, note: result.value.truncated ? (result.value.note ?? t('design.raw.truncated')) : null }
+}
+
+/** The first line of a note, for the one-line entry that opens the rest. */
+function firstLine(text: string): string {
+  return text.split('\n').find(line => line.trim() !== '')?.trim() ?? ''
 }
 
 /**
@@ -1028,10 +1071,66 @@ function RawFilesSection(props: {
   t: LabViewProps['t']
 }) {
   const { row, review, detail, passing, readPlan, onCopy, keepUnits, t } = props
+  const open = useInspect()
   const digest = review?.digest ?? null
-  const meta = detail?.meta ?? null
   const planPath = review?.planPath ?? row.planPath
   const fileName = planPath === null ? 'plan.json' : (planPath.split('/').pop() ?? 'plan.json')
+  const notes = digest?.notes != null && digest.notes !== '' ? digest.notes : null
+  const keepSwitch = keepUnits !== null && (
+    <>
+      <label className={css.guardedItem}>
+        <input type="checkbox" checked={keepUnits.on} onChange={(e) => { keepUnits.set(e.target.checked) }} />
+        <span>{t('review.keepUnits')}</span>
+      </label>
+      {keepUnits.on && <div className={css.notice}>{t('review.keepUnitsHint')}</div>}
+    </>
+  )
+  // T86: in a lab tab the checking material is one line each, read in 查看;
+  // the debugging switch is a decision and stays here.
+  const experimentId = row.experimentId
+  if (open !== null && experimentId !== null) {
+    const part = (which: InspectDesignPart) => { open({ page: 'design-part', experimentId, runId: row.runId, part: which }) }
+    return (
+      <Block title={t('design.raw')} meta={t('design.rawHint')}>
+        <div className={css.inspectLines}>
+          {readPlan !== null && (
+            <div className={css.inspectLine}>
+              <span className={css.mono} title={planPath ?? undefined}>{fileName}</span>
+              {review?.planSha != null && <span className={css.dim}>sha {review.planSha.slice(0, 8)}</span>}
+              <Button variant="outline" size="sm" className={css.smButton} onClick={() => { open({ page: 'plan-file', experimentId }) }}>
+                {t('inspect.view')}
+              </Button>
+            </div>
+          )}
+          {notes !== null && (
+            <div className={css.inspectLine}>
+              <span>{t('design.notes')}</span>
+              <span className={css.inspectExcerpt}>{firstLine(notes)}</span>
+              <Button variant="outline" size="sm" className={css.smButton} onClick={() => { part('notes') }}>
+                {t('inspect.viewAll')}
+              </Button>
+            </div>
+          )}
+          {passing.length > 0 && (
+            <div className={css.inspectLine}>
+              <span>{t('review.checks')}</span>
+              <span className={css.dim}>{t('inspect.checksCount', { n: passing.length })}</span>
+              <Button variant="outline" size="sm" className={css.smButton} onClick={() => { part('checks') }}>
+                {t('inspect.view')}
+              </Button>
+            </div>
+          )}
+          <div className={css.inspectLine}>
+            <span>{t('design.advanced')}</span>
+            <Button variant="outline" size="sm" className={css.smButton} onClick={() => { part('receipts') }}>
+              {t('inspect.view')}
+            </Button>
+          </div>
+          {keepSwitch}
+        </div>
+      </Block>
+    )
+  }
   return (
     <Block title={t('design.raw')} meta={t('design.rawHint')}>
       {readPlan !== null && (
@@ -1046,9 +1145,9 @@ function RawFilesSection(props: {
       )}
       {/* The author's note, with its line breaks kept: an aside, so it is a
           fold of its own rather than a paragraph across the page. */}
-      {digest?.notes != null && digest.notes !== '' && (
+      {notes !== null && (
         <Fold title={t('design.notes')}>
-          <div className={css.notesBlock}>{digest.notes}</div>
+          <div className={css.notesBlock}>{notes}</div>
         </Fold>
       )}
       {/* v5 · ready: 校验原文 — the passing lines, which a clean plan never
@@ -1066,92 +1165,105 @@ function RawFilesSection(props: {
           {/* The debugging switch, and it is OFF unless someone ticks it. Left
               on by default it would be T33b's shape again: every cell's
               container survives the run. The hint under it says what it costs. */}
-          {keepUnits !== null && (
-            <>
-              <label className={css.guardedItem}>
-                <input type="checkbox" checked={keepUnits.on} onChange={(e) => { keepUnits.set(e.target.checked) }} />
-                <span>{t('review.keepUnits')}</span>
-              </label>
-              {keepUnits.on && <div className={css.notice}>{t('review.keepUnitsHint')}</div>}
-            </>
-          )}
-          {digest !== null && (
-            <>
-              <Field label={t('review.order')}>
-                {digest.order.seed === null ? '—' : t('review.orderValue', { seed: digest.order.seed })}
-                <span className={css.dim}> · {digest.order.interleave === false ? t('review.orderSequential') : t('review.orderInterleaved')}</span>
-              </Field>
-              <Field label={t('design.verdictSources')}>{listOrDash(digest.expectedNs)}</Field>
-              <Field label={t('review.retry')}>
-                {digest.retryInfrastructure === null ? t('review.retryDefault') : String(digest.retryInfrastructure)}
-              </Field>
-              <Field label={t('review.exports')}>
-                <span className={css.mono}>{digest.exports ?? t('review.exportsDefault')}</span>
-              </Field>
-            </>
-          )}
-          <Field label={t('overview.environment')}>
-            {row.unit === null
-              ? t('overview.environmentHost')
-              : (
-                <span className={css.mono}>
-                  {row.unit.image}
-                  {row.unit.network !== null && ` · network ${row.unit.network}`}
-                  {row.unit.user !== null && ` · user ${row.unit.user}`}
-                </span>
-              )}
-          </Field>
-          {review !== null && (
-            <Field label={t('review.planPath')}>
-              {/* An absolute path is not page text (ui-spec §九); the file name
-                  is what a reviewer says out loud, the path is for the person
-                  who is about to open an editor. */}
-              <span className={css.mono} title={review.planPath}>
-                {review.planPath.split('/').pop() ?? review.planPath}
-              </span>
-              <Detail summary={t('error.details')}>
-                <div className={css.errorDetailLine}>{review.planPath}</div>
-              </Detail>
-            </Field>
-          )}
-          {detail !== null && detail.readiness.length > 0 && (
-            <Field label={t('overview.readiness')}>
-              {/* The refusal sentence and the records verbatim: written by the
-                  host for whoever debugs it, and the only place a refused run's
-                  reason exists (the ledger never saw it). */}
-              <Detail summary={t('ready.rawFold')}>
-                {detail.readiness.filter(line => line.reason !== null).map(line => (
-                  <div key={`why:${line.condition}:${line.startedAt}`} className={css.errorDetailLine}>
-                    {line.condition}: {line.reason}
-                  </div>
-                ))}
-                <pre className={css.errorRaw}>{JSON.stringify(detail.readiness, null, 2)}</pre>
-              </Detail>
-            </Field>
-          )}
-          {detail?.job != null && (
-            <Field label={t('overview.job')}>
-              <span>{detail.job.jobId}</span>
-              <span className={css.dim}> · {detail.job.status}</span>
-              {detail.job.detail !== null && (
-                <Detail summary={t('error.details')}>
-                  <pre className={css.errorRaw}>{detail.job.detail}</pre>
-                </Detail>
-              )}
-            </Field>
-          )}
-          {meta !== null && (
-            <Field label={t('overview.meta')}>
-              {/* A JSON document is not a page (ui-spec §九). The facts a reader
-                  needs are the fields above; this is the receipt. */}
-              <Detail summary={t('overview.metaRaw')}>
-                <pre className={css.errorRaw}>{JSON.stringify(meta, null, 2)}</pre>
-              </Detail>
-            </Field>
-          )}
+          {keepSwitch}
+          <DesignReceipts row={row} review={review} detail={detail} t={t} />
         </div>
       </Fold>
     </Block>
+  )
+}
+
+/**
+ * 其余设置与回执: the order, the verdict sources, the environment, the plan's
+ * path, the readiness records and the run meta — what the page summarised,
+ * for checking. The fold's body in a spec, the 查看 page in a lab tab.
+ */
+function DesignReceipts(props: {
+  row: EvalExperimentRow
+  review: EvalPlanReview | null
+  detail: EvalExperimentDetail | null
+  t: LabViewProps['t']
+}) {
+  const { row, review, detail, t } = props
+  const digest = review?.digest ?? null
+  const meta = detail?.meta ?? null
+  return (
+    <>
+      {digest !== null && (
+        <>
+          <Field label={t('review.order')}>
+            {digest.order.seed === null ? '—' : t('review.orderValue', { seed: digest.order.seed })}
+            <span className={css.dim}> · {digest.order.interleave === false ? t('review.orderSequential') : t('review.orderInterleaved')}</span>
+          </Field>
+          <Field label={t('design.verdictSources')}>{listOrDash(digest.expectedNs)}</Field>
+          <Field label={t('review.retry')}>
+            {digest.retryInfrastructure === null ? t('review.retryDefault') : String(digest.retryInfrastructure)}
+          </Field>
+          <Field label={t('review.exports')}>
+            <span className={css.mono}>{digest.exports ?? t('review.exportsDefault')}</span>
+          </Field>
+        </>
+      )}
+      <Field label={t('overview.environment')}>
+        {row.unit === null
+          ? t('overview.environmentHost')
+          : (
+            <span className={css.mono}>
+              {row.unit.image}
+              {row.unit.network !== null && ` · network ${row.unit.network}`}
+              {row.unit.user !== null && ` · user ${row.unit.user}`}
+            </span>
+          )}
+      </Field>
+      {review !== null && (
+        <Field label={t('review.planPath')}>
+          {/* An absolute path is not page text (ui-spec §九); the file name
+              is what a reviewer says out loud, the path is for the person
+              who is about to open an editor. */}
+          <span className={css.mono} title={review.planPath}>
+            {review.planPath.split('/').pop() ?? review.planPath}
+          </span>
+          <Detail summary={t('error.details')}>
+            <div className={css.errorDetailLine}>{review.planPath}</div>
+          </Detail>
+        </Field>
+      )}
+      {detail !== null && detail.readiness.length > 0 && (
+        <Field label={t('overview.readiness')}>
+          {/* The refusal sentence and the records verbatim: written by the
+              host for whoever debugs it, and the only place a refused run's
+              reason exists (the ledger never saw it). */}
+          <Detail summary={t('ready.rawFold')}>
+            {detail.readiness.filter(line => line.reason !== null).map(line => (
+              <div key={`why:${line.condition}:${line.startedAt}`} className={css.errorDetailLine}>
+                {line.condition}: {line.reason}
+              </div>
+            ))}
+            <pre className={css.errorRaw}>{JSON.stringify(detail.readiness, null, 2)}</pre>
+          </Detail>
+        </Field>
+      )}
+      {detail?.job != null && (
+        <Field label={t('overview.job')}>
+          <span>{detail.job.jobId}</span>
+          <span className={css.dim}> · {detail.job.status}</span>
+          {detail.job.detail !== null && (
+            <Detail summary={t('error.details')}>
+              <pre className={css.errorRaw}>{detail.job.detail}</pre>
+            </Detail>
+          )}
+        </Field>
+      )}
+      {meta !== null && (
+        <Field label={t('overview.meta')}>
+          {/* A JSON document is not a page (ui-spec §九). The facts a reader
+              needs are the fields above; this is the receipt. */}
+          <Detail summary={t('overview.metaRaw')}>
+            <pre className={css.errorRaw}>{JSON.stringify(meta, null, 2)}</pre>
+          </Detail>
+        </Field>
+      )}
+    </>
   )
 }
 
@@ -1202,12 +1314,14 @@ export function DesignPage(props: {
   onCopy: (text: string) => void
   /** The pinned-dataset reads (T84 §三/§四); absent — the inline 看题面 stays. */
   inspect?: ItemInspectFaces | null
+  /** 查看 one item (T86: the sidebar, or the fallback Sheet); absent — the inline 看题面 stays. */
+  onInspectItem?: ((item: string) => void) | null
   /** Opens a readiness probe's child session (T84 §三); absent — no button. */
   onOpenSession?: ((child: string) => void) | null
   t: LabViewProps['t']
 }) {
   const {
-    readPlan, onCopy, inspect = null, onOpenSession = null,
+    readPlan, onCopy, inspect = null, onInspectItem = null, onOpenSession = null,
     row, detail, review, reviewLoading, reviewError,
     conditions, conditionsLoading, conditionsError, conditionBusy, provision, conditionAction, endpointEditing,
     pair, diff, diffError, sentBack, started, output, outputError, refusal, approveError,
@@ -1343,7 +1457,7 @@ export function DesignPage(props: {
       <Block title={t('design.items')} meta={<span className={css.mono}>{snapshotCell(row)}</span>}>
         {digest === null || digest.items.length === 0
           ? <div className={css.dim}>{t('new.itemsEmpty')}</div>
-          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} facts={review?.items ?? null} planStages={digest.stages} inspect={inspect} t={t} />}
+          : <ItemsTable items={digest.items} expectedNs={digest.expectedNs} facts={review?.items ?? null} planStages={digest.stages} onInspect={onInspectItem} t={t} />}
       </Block>
 
       {/* No plan review yet: the row still names its judges, and that is
@@ -1355,6 +1469,7 @@ export function DesignPage(props: {
           expectedNs={digest?.expectedNs ?? null}
           items={digest?.items ?? []}
           preview={inspect?.preview ?? null}
+          experimentId={row.experimentId}
           t={t}
         />
       </Block>
@@ -1434,3 +1549,88 @@ export function DesignPage(props: {
     </div>
   )
 }
+
+/**
+ * 查看 · plan.json (T86): the file, verbatim, with its copy button.
+ * @param props - the page props.
+ */
+function PlanFilePage(props: InspectPageProps<'plan-file'>) {
+  const { target, reads, sessionId, setSub, t } = props
+  const { experimentId } = target
+  const [value, setValue] = useState<PlanFileAnswer | null>(null)
+  const [copied, setCopied] = useState<boolean | null>(null)
+  useEffect(() => { setSub(experimentId) }, [experimentId, setSub])
+  useEffect(() => {
+    let cancelled = false
+    void reads.fetchExperimentArtifact(sessionId, { experimentId, path: 'plan.json' })
+      .then((result) => { if (!cancelled) setValue(planFileAnswer(result, t)) })
+    return () => { cancelled = true }
+  }, [reads, sessionId, experimentId, t])
+  const onCopy = (text: string): void => { void writeClipboard(text).then(setCopied) }
+  return (
+    <>
+      <PlanFileText fileName="plan.json" value={value} onCopy={onCopy} t={t} />
+      {copied !== null && <div className={css.dim}>{t(copied ? 'design.raw.copied' : 'design.raw.copyFailed')}</div>}
+    </>
+  )
+}
+
+/** What the design-part page read: the row, its review and (once run) its detail. */
+interface DesignPartRead {
+  row: EvalExperimentRow | null
+  review: EvalPlanReview | null
+  detail: EvalExperimentDetail | null
+  error: string | null
+}
+
+/**
+ * 查看 · the design page's checking material (T86): the author's note, the
+ * passing checks, or the remaining settings and receipts — read again by id,
+ * so the page redraws after a reload.
+ * @param props - the page props.
+ */
+function DesignPartPage(props: InspectPageProps<'design-part'>) {
+  const { target, reads, sessionId, setSub, t } = props
+  const { experimentId, runId, part } = target
+  const [read, setRead] = useState<DesignPartRead | null>(null)
+  useEffect(() => { setSub(experimentId) }, [experimentId, setSub])
+  useEffect(() => {
+    let cancelled = false
+    const rows = reads.fetchExperiments(sessionId, {}).then(flat)
+    const review = reads.fetchPlanReview(sessionId, { experimentId }).then(flat)
+    const detail = runId === null ? Promise.resolve(null) : reads.fetchExperiment(sessionId, { runId }).then(flat)
+    void Promise.all([rows, review, detail]).then(([rows, review, detail]) => {
+      if (cancelled) return
+      const row = rows.ok ? (rows.value.rows.find(each => each.experimentId === experimentId) ?? null) : null
+      setRead({
+        row,
+        review: review.ok ? review.value : null,
+        detail: detail !== null && detail.ok ? detail.value : null,
+        error: review.ok ? null : review.message,
+      })
+    })
+    return () => { cancelled = true }
+  }, [reads, sessionId, experimentId, runId])
+  const passing = useMemo(() => read?.review?.checks.filter(check => check.severity === 'ok') ?? [], [read])
+  if (read === null) return <div className={css.dim}>{t('inspect.loading')}</div>
+  if (read.review === null && read.row === null) {
+    return <div className={css.warning}>{read.error ?? experimentId}</div>
+  }
+  switch (part) {
+    case 'notes': {
+      const notes = read.review?.digest?.notes ?? ''
+      return notes === '' ? <div className={css.dim}>{t('inspect.nothing')}</div> : <div className={css.notesBlock}>{notes}</div>
+    }
+    case 'checks':
+      return passing.length === 0
+        ? <div className={css.dim}>{t('inspect.nothing')}</div>
+        : <>{passing.map((check, index) => <CheckLine key={`ok:${check.code}:${String(index)}`} check={check} t={t} />)}</>
+    case 'receipts':
+      return read.row === null
+        ? <div className={css.dim}>{t('inspect.nothing')}</div>
+        : <div className={css.arrangeBody}><DesignReceipts row={read.row} review={read.review} detail={read.detail} t={t} /></div>
+  }
+}
+
+registerInspectPage('plan-file', PlanFilePage)
+registerInspectPage('design-part', DesignPartPage)

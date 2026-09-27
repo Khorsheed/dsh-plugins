@@ -20,7 +20,7 @@
  * component rather than beside it).
  */
 
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Button, MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalAnswerVerdict, EvalJudgeCriterionRow } from '../types.ts'
 import {
@@ -29,6 +29,8 @@ import {
 } from './answer-view.ts'
 import type { LabViewProps } from './contract.ts'
 import { Chip, Seg2, type Tone } from './parts.tsx'
+import { useInspect } from './inspect-context.ts'
+import { registerInspectPage, type InspectPageProps } from './InspectPane.tsx'
 import base from './LabView.module.css'
 import css from './AnswerView.module.css'
 
@@ -122,9 +124,23 @@ function MarkdownWithVerdicts(props: {
   )
 }
 
-/** A non-markdown file (the structured stage json), folded, verbatim. */
-function FoldedFile(props: { file: AnswerFile; t: T }) {
-  const { file, t } = props
+/**
+ * A non-markdown file (the structured stage json), verbatim. In the lab it
+ * is one line — name · 查看 — and the text opens in the sidebar (T86): a
+ * column of a side-by-side has no width to unfold a json into. Elsewhere it
+ * stays a fold.
+ */
+function FoldedFile(props: { file: AnswerFile; onView: (() => void) | null; t: T }) {
+  const { file, onView, t } = props
+  if (onView !== null) {
+    return (
+      <div className={base.inspectLine}>
+        <span className={base.mono}>{file.name}</span>
+        {file.replacements !== null && <span className={base.dim}>{t('judge.scrubbed', { count: file.replacements })}</span>}
+        <Button variant="ghost" size="sm" onClick={onView}>{t('inspect.view')}</Button>
+      </div>
+    )
+  }
   return (
     <details className={base.errorDetails}>
       <summary className={base.errorSummary}>
@@ -200,8 +216,16 @@ function Clamp(props: { open: boolean; onToggle: () => void; children: ReactNode
 }
 
 /** One column's cell of one stage row in 提交的报告. */
-function StageCell(props: { column: AnswerColumnModel; stem: string; hangs: Map<number, HungAt>; bare: boolean; t: T }) {
-  const { column, stem, hangs, bare, t } = props
+function StageCell(props: {
+  column: AnswerColumnModel
+  stem: string
+  hangs: Map<number, HungAt>
+  bare: boolean
+  /** Open one of the column's other files in 查看; null keeps them folded inline. */
+  onViewFile: ((file: AnswerFile) => void) | null
+  t: T
+}) {
+  const { column, stem, hangs, bare, onViewFile, t } = props
   const stage = stagesOf(column.files, [stem])[0]
   if (stage === undefined || (stage.markdown === null && stage.others.length === 0)) {
     return <div className={base.dim}>{t('answer.stageMissing', { stage: stageLabel(stem, t) })}</div>
@@ -218,7 +242,9 @@ function StageCell(props: { column: AnswerColumnModel; stem: string; hangs: Map<
   return (
     <>
       {stage.markdown !== null && <MarkdownWithVerdicts file={stage.markdown} hung={hung} bare={bare} t={t} />}
-      {stage.others.map(file => <FoldedFile key={file.name} file={file} t={t} />)}
+      {stage.others.map(file => (
+        <FoldedFile key={file.name} file={file} onView={onViewFile === null ? null : () => { onViewFile(file) }} t={t} />
+      ))}
       {cut.map(file => (
         <div key={file.name} className={base.note}>{t('answer.truncated', { name: file.name, bytes: file.bytes ?? 0 })}</div>
       ))}
@@ -249,6 +275,8 @@ export interface AnswerViewProps {
   headAside?: ((column: AnswerColumnModel) => ReactNode) | undefined
   /** Open the prompt.md this column's judge actually received (T84 §四); absent hides the button. */
   onJudgePrompt?: ((column: AnswerColumnModel) => void) | null | undefined
+  /** The run the answers belong to: with it (and a lab around), a column's other files open in 查看. */
+  runId?: string | null | undefined
   t: T
 }
 
@@ -262,7 +290,8 @@ const TABS: ReadonlyArray<[Tab, 'answer.viewReport' | 'answer.viewDiff' | 'answe
  * @param props - the rows of one 题 and the face they came from.
  */
 export function AnswerView(props: AnswerViewProps) {
-  const { task, rows, criteria, criteriaNote, notes, scoring, onOpenSession, onBack, onRejudge, headAside, onJudgePrompt, t } = props
+  const { task, rows, criteria, criteriaNote, notes, scoring, onOpenSession, onBack, onRejudge, headAside, onJudgePrompt, runId, t } = props
+  const openInspect = useInspect()
   const locked = scoring !== null
   const [blindChoice, setBlind] = useState(false)
   const blind = locked || blindChoice
@@ -299,6 +328,18 @@ export function AnswerView(props: AnswerViewProps) {
   const rubric = new Map(criteria.map(row => [row.id, row]))
   const nameOf = (column: AnswerColumnModel): string => (
     blind || column.condition === null ? t('answer.blindName', { letter: column.letter }) : column.condition
+  )
+  // 查看 (T86): the file travels in the target — the pane shows exactly the
+  // (scrubbed, on the blind face) text this column holds, under the column's
+  // shown name, so the sidebar never names a group the page keeps blind.
+  const viewFile = (column: AnswerColumnModel): ((file: AnswerFile) => void) | null => (
+    openInspect === null || runId == null
+      ? null
+      : (file) => {
+        openInspect({
+          page: 'answer-file', runId, column: nameOf(column), name: file.name, text: file.text, replacements: file.replacements,
+        })
+      }
   )
 
   return (
@@ -391,7 +432,7 @@ export function AnswerView(props: AnswerViewProps) {
         const stages = (column: AnswerColumnModel): ReactNode => stems.map(stem => (
           <div key={stem} className={css.stage}>
             {!bare && <div className={css.stageTitle}>{stageLabel(stem, t)}</div>}
-            <StageCell column={column} stem={stem} hangs={hangs.get(column.key) ?? new Map()} bare={bare} t={t} />
+            <StageCell column={column} stem={stem} hangs={hangs.get(column.key) ?? new Map()} bare={bare} onViewFile={viewFile(column)} t={t} />
           </div>
         ))
         const filesOf = (column: AnswerColumnModel): string | null => {
@@ -548,3 +589,15 @@ export function AnswerView(props: AnswerViewProps) {
     </div>
   )
 }
+
+/** 查看 · one answer file (T86): the text verbatim, the redaction count on its source line. */
+function AnswerFilePage(props: InspectPageProps<'answer-file'>) {
+  const { target, setSub, t } = props
+  const { runId, column, replacements } = target
+  useEffect(() => {
+    setSub([runId, column, replacements === null ? null : t('judge.scrubbed', { count: replacements })].filter(Boolean).join(' · '))
+  }, [runId, column, replacements, setSub, t])
+  return <pre className={base.pre}>{target.text}</pre>
+}
+
+registerInspectPage('answer-file', AnswerFilePage)

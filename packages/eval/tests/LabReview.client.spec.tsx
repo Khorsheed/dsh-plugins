@@ -337,10 +337,14 @@ describe('the plan-review page', () => {
     // 每格预算 and 判官采样 to 规模与花费; what is left (seed, the author's
     // note with its line breaks, the receipts) sits under 原始文件（核对用）.
     expect(screen.getByText('design.raw')).toBeTruthy()
+    // T86: each is one line on the page, read in full in 查看.
     expect(screen.getByText('design.advanced')).toBeTruthy()
-    expect(screen.getByText('review.orderValue {"seed":7}')).toBeTruthy()
+    expect(screen.queryByText('review.orderValue {"seed":7}')).toBeNull()
     expect(screen.queryByText('stage-1, stage-2')).toBeNull()
     expect(screen.getByText('first effort sweep')).toBeTruthy()
+    fireEvent.click(within(screen.getByText('design.advanced').parentElement as HTMLElement).getByRole('button', { name: 'inspect.view' }))
+    expect(await screen.findByText('review.orderValue {"seed":7}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'inspect.close' }))
 
     // validate, one line per diagnostic, each carrying its severity and code.
     // Only the lines that need READING are on the page; a clean check is not
@@ -353,8 +357,12 @@ describe('the plan-review page', () => {
     expect(screen.queryByText(/^readiness\.reminders /)).toBeNull()
     expect(screen.getByText('basis.row.dataset {"label":"ds @ c0ffee00"}')).toBeTruthy()
     expect(screen.getByText('readiness.COMMIT_UNRESOLVED {"condition":""}')).toBeTruthy()
-    expect(screen.getAllByText('severity.ok')).toHaveLength(2)
-    expect(screen.getByText('review.checks')).toBeTruthy()
+    // The passing lines: a count on the page, the lines in 查看 (T86).
+    expect(screen.queryByText('severity.ok')).toBeNull()
+    expect(screen.getByText('inspect.checksCount {"n":2}')).toBeTruthy()
+    fireEvent.click(within(screen.getByText('review.checks').parentElement as HTMLElement).getByRole('button', { name: 'inspect.view' }))
+    expect(await screen.findAllByText('severity.ok')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'inspect.close' }))
     // The diagnostic code is the host's handle on the check, not a word:
     // ui-spec §九 keeps it on the row's title and the sentence on the page.
     expect(screen.getByTitle(/^COMMIT_UNRESOLVED · /)).toBeTruthy()

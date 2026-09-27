@@ -1019,6 +1019,19 @@ export type EvalKey =
   | 'design.item.noProbes'
   | 'design.item.task'
   | 'design.item.inspect'
+  | 'inspect.paneTitle'
+  | 'inspect.back'
+  | 'inspect.nothing'
+  | 'inspect.recent'
+  | 'inspect.unsupported'
+  | 'inspect.view'
+  | 'inspect.recordTitle'
+  | 'judgePrompt.previewTitle'
+  | 'judgePrompt.sees'
+  | 'inspect.viewAll'
+  | 'inspect.checksCount'
+  | 'record.view'
+  | 'judge.materials'
   | 'inspect.title'
   | 'inspect.pinned'
   | 'inspect.close'
@@ -2183,6 +2196,19 @@ export const en: Record<EvalKey, string> = {
   'design.item.noProbes': 'no check script',
   'design.item.task': 'Task text',
   'design.item.inspect': 'Inspect',
+  'inspect.paneTitle': "Lab · View",
+  'inspect.back': "Back",
+  'inspect.nothing': "Nothing open yet. Click View anywhere in the lab and it opens here.",
+  'inspect.recent': "Recently viewed",
+  'inspect.unsupported': "The host half cannot read this yet",
+  'inspect.view': "View",
+  'inspect.recordTitle': "{record} · record",
+  'judgePrompt.previewTitle': "Judge prompt (preview)",
+  'judgePrompt.sees': "The judge reads the task, the rubric and the answer, framed by one prompt.",
+  'inspect.viewAll': "View all",
+  'inspect.checksCount': "{n} passing",
+  'record.view': "View record",
+  'judge.materials': "Item materials",
   'inspect.title': '{item} · item materials',
   'inspect.pinned': '{dataset} @ {commit} — the version this experiment pins',
   'inspect.close': 'Close',
@@ -3337,6 +3363,19 @@ export const zh: Record<EvalKey, string> = {
   'design.item.noProbes': '没有检查脚本',
   'design.item.task': '看题面',
   'design.item.inspect': '查看',
+  'inspect.paneTitle': "实验室 · 查看",
+  'inspect.back': "返回",
+  'inspect.nothing': "还没有打开的内容。在实验室里点「查看」，内容会出现在这里。",
+  'inspect.recent': "最近看过",
+  'inspect.unsupported': "当前宿主侧还读不了这项内容",
+  'inspect.view': "查看",
+  'inspect.recordTitle': "{record} · 记录",
+  'judgePrompt.previewTitle': "判官提示词（预览）",
+  'judgePrompt.sees': "判官读到的是题面、评分细则和作答，外面套一份提示词。",
+  'inspect.viewAll': "查看全文",
+  'inspect.checksCount': "通过 {n} 条",
+  'record.view': "查看记录",
+  'judge.materials': "题目材料",
   'inspect.title': '{item} · 题目材料',
   'inspect.pinned': '{dataset} @ {commit} · 本实验钉住的版本',
   'inspect.close': '关闭',

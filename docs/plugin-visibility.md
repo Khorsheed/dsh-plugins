@@ -41,7 +41,7 @@ canvas 2026-09-16 的 3080 事故：当时 canvas 是纯 UI 包，任何 preset 
 1. **部署意图**：这个部署要不要这个插件。basic 与 dev 的差异就是这么来的。真的不想让某类部署看到，就从那个 profile 移除依赖。
 2. **内容跨会话且无会话级能力语义的 surface**（全局状态面板、部署级工作区这类）：preset 判据对它无定义（见「判据轴」），可见性只有安装层一个正确答案。注意 canvas 右栏 tab **不在**此类——它的入口语义是「触达画布工具」，能力按会话授予，判据有定义（双查样板，见第二层）。
 
-host 没有声明式可见性：右栏 tab 注册表（harness `packages/client/ui-sidebar-right/src/client/tab-registry.ts:87-128`）只有 `id/kind/patterns/priority/canOpen/title/guide`，头注释明写「purely static … no runtime hook」；slot 注册（`ui-slots`）同样无任何 visibility 谓词（0.1.5 已复核）。`cordis.patch.yml` 的 `disabled: !!js` 表达式作用域读不到会话/preset 身份，只能做平台门。声明式 `visibleWhen` 是上游增强，见「上游边界」。
+host 没有声明式可见性：右栏 tab 注册表只有静态字段——0.1.5 是 `id/kind/patterns/priority/canOpen/title/guide`，0.1.7-rc.1（harness `packages/client/ui-sidebar-right/src/client/tab-registry.ts` 的 `SidebarRightTabDefinition`）多了 `multiple`（同类开多份）与 `keepMounted`（隐藏时保留 body），两者都不是可见性；头注释明写「purely static … Nothing here is per-tab, per-session, or a runtime hook」；slot 注册（`ui-slots`）同样无任何 visibility 谓词（0.1.5 与 0.1.7-rc.1 均已复核，T86）。`cordis.patch.yml` 的 `disabled: !!js` 表达式作用域读不到会话/preset 身份，只能做平台门。声明式 `visibleWhen` 是上游增强，见「上游边界」。
 
 ## 第二层：会话级 preset 自隐——内容或配套能力绑定会话的 surface
 
@@ -59,6 +59,7 @@ host 没有声明式可见性：右栏 tab 注册表（harness `packages/client/
 - 会话 preset 的读取 key 跨宿主线不同（0.1.2 在 `projectionValues.agentPreset`，0.1.1 在顶层 `agentPreset`），**双读兜底**。
 - keyed tab 槽（`conversation.view`）的按钮枚举的是**注册**而非组件，隐藏 = 不注册：用 `RegistrationToggle` 随判据注册/注销；组件 `return null` 会留一个空壳按钮。list 槽（如 `conversation.session.header.utilities`）组件级 `return null` 即可。
 - **右栏 tab 类型同款 toggle**，host 语义天然适配（harness `ui-sidebar-right` 复核，0.1.5）：guide 页枚举注册表，注销即从类型选择页消失、`openTab` 不再解析；已打开的 tab **按会话存储**（`closeTab(sessionId, …)`），未授予会话的布局里本就没有它，切会话不残留；万一残留（类型已注销的打开 tab），body 渲染 `tab.unavailable` fallback——host 注释明写「a kind with no registrant is a real state, not a defect」，不崩溃不留空壳。
+  - **0.1.7-rc.1 的差别**（T86 复核）：布局改为按会话落 `localStorage`（`persistence.ts`，键 `<sidebarPersistence>.<sessionId>`），刷新后已打开的 tab 还在，但 **tab 的 `navigation.params` 不随布局保存**——带参打开的页型 tab 刷新后拿到空参数。需要刷新后还原内容的插件自己按会话记住（eval 的 `dsh-eval.inspect.<sessionId>` 是样板，见 `.agents/notes/implemented/feature/2026-09-27-t86-eval-lab-sidebar.md`）；参数持久化的上游提案记为后续项。注销语义与 `tab.unavailable` fallback 不变。
 - 判据驱动重评估：订阅 `ctx.sessions.list`（会话切换）+ 自己的 inventory 应答。
 - 逃生门：若 surface 对应的真实对象存在（如 room 会话本身），永远显示——判据只过滤「没授予却展示入口」的情形。
 - 纯 UI 包在组合里没有任何行可 keyed 时：放一个工具行进 preset，或退回手配 `visiblePresets` 名单（config 须经 host → Remote 送达 client，worktrees `badgeConfig` 先例）。

@@ -38,6 +38,7 @@ import type {
 } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import { AnswerView } from './AnswerView.tsx'
+import { useInspect } from './inspect-context.ts'
 import { rowsOfQueue } from './answer-view.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { Chip, EmptyState, Section, Seg } from './parts.tsx'
@@ -470,12 +471,19 @@ export function JudgingPage(props: {
    * their blind numbers, so nothing here learns what they are.
    */
   onRejudge: (cellNos: readonly number[]) => void
+  /**
+   * The experiment the run belongs to: the queue head's 题目材料 opens the
+   * open item's rubric and references at its pinned commit (T86). Absent
+   * hides the entry.
+   */
+  experimentId?: string | null | undefined
   t: LabViewProps['t']
 }) {
   const {
     view, loading, error, selection, draft, submitting, reexporting,
-    onPick, onAnswer, onSubmit, onReexport, closure, closing, onClose, onRejudge, t,
+    onPick, onAnswer, onSubmit, onReexport, closure, closing, onClose, onRejudge, experimentId, t,
   } = props
+  const openInspect = useInspect()
   // The queue's own filter — view-local, because it narrows what THIS grader
   // is looking at and nothing else on the page (or in the ledger) depends on
   // it. Filtering never reorders: the seeded order IS part of the blind.
@@ -584,6 +592,21 @@ export function JudgingPage(props: {
                   </button>
                 ))}
               </div>
+              {/* 题目材料 (T86): the grader reads the rubric and the references
+                  of the item on screen — the design page's own view, in the
+                  sidebar, rubric first. The blind holds: materials name no group. */}
+              {open !== null && openInspect !== null && experimentId != null && (
+                <span className={css.itemSwitchAside}>
+                  <span className={css.dim}>{t('judge.materials')}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { openInspect({ page: 'item', experimentId, item: open.task, tab: 'rubric' }) }}
+                  >
+                    {t('inspect.view')}
+                  </Button>
+                </span>
+              )}
             </div>
 
             {open === null
@@ -596,6 +619,7 @@ export function JudgingPage(props: {
                   <AnswerView
                     key={open.task}
                     task={open.task}
+                    runId={view.runId}
                     rows={rowsOfQueue(open.cells)}
                     criteria={open.cells[0]?.criteria ?? []}
                     criteriaNote={open.cells[0]?.criteriaNote ?? null}

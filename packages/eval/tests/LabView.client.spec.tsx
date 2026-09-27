@@ -346,12 +346,15 @@ describe('LabView detail', () => {
     expect(screen.getByText('ready.failedCount {"count":3,"total":3}')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'ready.recheck' })).toBeTruthy()
 
-    // ③ everything a reader needs once: folded, and still verbatim inside.
-    expect(screen.getByText('design.advanced')).toBeTruthy()
-    expect(screen.getByText(/dataseek\/bench:1/)).toBeTruthy()
+    // ③ everything a reader needs once: one line on the page, and still
+    // verbatim in 查看 (T86).
+    expect(screen.queryByText('overview.metaRaw')).toBeNull()
+    fireEvent.click(within(screen.getByText('design.advanced').parentElement as HTMLElement).getByRole('button', { name: 'inspect.view' }))
+    expect(await screen.findByText(/dataseek\/bench:1/)).toBeTruthy()
     expect(screen.getByText('ready.rawFold')).toBeTruthy()
     expect(screen.getAllByText(/the scoped home holds no credential/).length).toBeGreaterThan(0)
     expect(screen.getByText('overview.metaRaw')).toBeTruthy()
+    expect(h.fetchExperiment).toHaveBeenCalled()
   })
 
   it('a draft opens its design stage from the row alone — no RPC for the run', async () => {
@@ -363,9 +366,11 @@ describe('LabView detail', () => {
     // the page body, and it comes with the action that changes it.
     expect(await screen.findByText('cta.editableHint')).toBeTruthy()
     expect(screen.getByText('overview.shapeValue {"items":4,"conditions":2,"reps":1,"cells":8}')).toBeTruthy()
-    expect(screen.getByText('overview.environmentHost')).toBeTruthy()
     // validate's verdict off the LIST row, before the review walk lands.
     expect(screen.getByText('overview.validationOk')).toBeTruthy()
+    // The receipts read by id in 查看 — and a draft has no run to read (T86).
+    fireEvent.click(within(screen.getByText('design.advanced').parentElement as HTMLElement).getByRole('button', { name: 'inspect.view' }))
+    expect(await screen.findByText('overview.environmentHost')).toBeTruthy()
     expect(h.fetchExperiment).not.toHaveBeenCalled()
   })
 

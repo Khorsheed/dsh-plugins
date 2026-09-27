@@ -54,12 +54,14 @@ export function tabFiles(files: readonly EvalItemMaterialFile[], tab: EvalItemMa
 }
 
 /**
- * The side sheet: a fixed right overlay over a dimmed page; Escape and the
- * backdrop close it; a phone-width screen gets the whole page.
- * @param props - the title, the quiet line under it, the body, the close.
+ * The fallback container (T85 §2.7): a fixed right overlay over a dimmed
+ * page; Escape and the backdrop close it; a phone-width screen gets the
+ * whole page. The pane inside draws its own header, as it does in the host
+ * sidebar.
+ * @param props - the accessible name, the body, the close.
  */
-export function Sheet(props: { title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; t: LabViewProps['t'] }) {
-  const { title, sub, onClose, children, t } = props
+export function SheetFrame(props: { label: string; onClose: () => void; children: ReactNode }) {
+  const { label, onClose, children } = props
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -68,15 +70,8 @@ export function Sheet(props: { title: ReactNode; sub?: ReactNode; onClose: () =>
   return (
     <div className={css.sheetLayer}>
       <div className={css.sheetBackdrop} onClick={onClose} aria-hidden="true" />
-      <aside className={css.sheet} role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
-        <header className={css.sheetHead}>
-          <div className={css.sheetTitles}>
-            <div className={css.sheetTitle}>{title}</div>
-            {sub !== undefined && <div className={css.sheetSub}>{sub}</div>}
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>{t('inspect.close')}</Button>
-        </header>
-        <div className={css.sheetBody}>{children}</div>
+      <aside className={css.sheet} role="dialog" aria-modal="true" aria-label={label}>
+        {children}
       </aside>
     </div>
   )
@@ -222,12 +217,19 @@ function RubricTab(props: {
 }
 
 /**
- * The item drawer: five tabs over the pinned dataset.
- * @param props - the item, the faces, the close.
+ * An item's materials: five tabs over the pinned dataset. The tab is the
+ * container's (a sidebar keeps it in its stack across reloads).
+ * @param props - the item, the faces, the open tab, and where the source line goes.
  */
-export function ItemDrawer(props: { item: string; faces: ItemInspectFaces; onClose: () => void; t: LabViewProps['t'] }) {
-  const { item, faces, onClose, t } = props
-  const [tab, setTab] = useState<EvalItemMaterialTab>('task')
+export function ItemMaterials(props: {
+  item: string
+  faces: ItemInspectFaces
+  tab: EvalItemMaterialTab
+  onTab: (tab: EvalItemMaterialTab) => void
+  onSub: (sub: string | null) => void
+  t: LabViewProps['t']
+}) {
+  const { item, faces, tab, onTab: setTab, onSub, t } = props
   const [view, setView] = useState<Answer<EvalItemMaterialsView> | null>(null)
   useEffect(() => {
     let live = true
@@ -237,7 +239,8 @@ export function ItemDrawer(props: { item: string; faces: ItemInspectFaces; onClo
   }, [item, faces])
   const value = view?.ok === true ? view.value : null
   const shownFiles = useMemo(() => (value === null ? [] : tabFiles(value.files, tab)), [value, tab])
-  const sub = value === null ? undefined : t('inspect.pinned', { dataset: value.dataset, commit: value.commit.slice(0, 8) })
+  const sub = value === null ? null : t('inspect.pinned', { dataset: value.dataset, commit: value.commit.slice(0, 8) })
+  useEffect(() => { onSub(sub) }, [sub, onSub])
   const counts = (key: EvalItemMaterialTab): number => key === 'rubric'
     ? (value?.rubric?.rows.length ?? 0)
     : (value?.files.filter(file => file.tab === key).length ?? 0)
@@ -254,7 +257,7 @@ export function ItemDrawer(props: { item: string; faces: ItemInspectFaces; onClo
     reference: t('inspect.who.reference'),
   }
   return (
-    <Sheet title={t('inspect.title', { item })} sub={sub} onClose={onClose} t={t}>
+    <>
       {view === null && <div className={css.dim}>{t('inspect.loading')}</div>}
       {view !== null && !view.ok && <div className={css.dim}>{`${t('inspect.error')}：${view.message}`}</div>}
       {value !== null && (
@@ -279,7 +282,7 @@ export function ItemDrawer(props: { item: string; faces: ItemInspectFaces; onClo
           {value.notes.length > 0 && <div className={css.scaleNote}>{value.notes.join(' · ')}</div>}
         </>
       )}
-    </Sheet>
+    </>
   )
 }
 
@@ -358,7 +361,8 @@ function PromptBlocks(props: { prompt: string | readonly PromptPiece[]; criteria
 }
 
 /**
- * 判官看到什么 and the pre-run prompt preview, under 怎么判.
+ * 判官看到什么 and the pre-run prompt preview, under 怎么判 — inline, the
+ * T84 form (kept for a host half without the sidebar pages' reads).
  * @param props - the items and judges to choose from, and the preview face.
  */
 export function JudgePromptPreview(props: {
@@ -371,15 +375,6 @@ export function JudgePromptPreview(props: {
   const [open, setOpen] = useState(false)
   const [item, setItem] = useState(items[0] ?? '')
   const [judge, setJudge] = useState<string | null>(judges[0] ?? null)
-  const [view, setView] = useState<Answer<EvalJudgePromptPreviewView> | null>(null)
-  useEffect(() => {
-    if (!open || item === '') return
-    let live = true
-    setView(null)
-    void preview(item, judge).then((answer) => { if (live) setView(answer) })
-    return () => { live = false }
-  }, [open, item, judge, preview])
-  const value = view?.ok === true ? view.value : null
   return (
     <div className={css.judgeSees}>
       <div className={css.judgeSeesLine}>
@@ -390,28 +385,67 @@ export function JudgePromptPreview(props: {
         <Button variant="outline" size="sm" aria-expanded={open} onClick={() => { setOpen(!open) }} disabled={items.length === 0}>
           {open ? t('judgePrompt.close') : t('judgePrompt.open')}
         </Button>
-        {open && (
-          <>
-            <label className={css.dim}>
-              {t('judgePrompt.item')}{' '}
-              <select className={css.select} value={item} onChange={(e) => { setItem(e.target.value) }}>
-                {items.map(each => <option key={each} value={each}>{each}</option>)}
-              </select>
-            </label>
-            {judges.length > 1 && (
-              <label className={css.dim}>
-                {t('judgePrompt.judge')}{' '}
-                <select className={css.select} value={judge ?? ''} onChange={(e) => { setJudge(e.target.value) }}>
-                  {judges.map(each => <option key={each} value={each}>{each}</option>)}
-                </select>
-              </label>
-            )}
-          </>
+      </div>
+      {open && (
+        <JudgePromptPreviewBody
+          items={items}
+          judges={judges}
+          item={item}
+          judge={judge}
+          onPick={(nextItem, nextJudge) => { setItem(nextItem); setJudge(nextJudge) }}
+          preview={preview}
+          t={t}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * The pre-run prompt with its item / judge pickers — the sidebar page's body
+ * and the inline preview's. The choice is the container's.
+ * @param props - what to choose from, the choice, and the preview face.
+ */
+export function JudgePromptPreviewBody(props: {
+  items: readonly string[]
+  judges: readonly string[]
+  item: string
+  judge: string | null
+  onPick: (item: string, judge: string | null) => void
+  preview: NonNullable<ItemInspectFaces['preview']>
+  t: LabViewProps['t']
+}) {
+  const { items, judges, item, judge, onPick, preview, t } = props
+  const [view, setView] = useState<Answer<EvalJudgePromptPreviewView> | null>(null)
+  useEffect(() => {
+    if (item === '') return
+    let live = true
+    setView(null)
+    void preview(item, judge).then((answer) => { if (live) setView(answer) })
+    return () => { live = false }
+  }, [item, judge, preview])
+  const value = view?.ok === true ? view.value : null
+  return (
+    <>
+      <div className={css.drawerActions}>
+        <label className={css.dim}>
+          {t('judgePrompt.item')}{' '}
+          <select className={css.select} value={item} onChange={(e) => { onPick(e.target.value, judge) }}>
+            {items.map(each => <option key={each} value={each}>{each}</option>)}
+          </select>
+        </label>
+        {judges.length > 1 && (
+          <label className={css.dim}>
+            {t('judgePrompt.judge')}{' '}
+            <select className={css.select} value={judge ?? ''} onChange={(e) => { onPick(item, e.target.value) }}>
+              {judges.map(each => <option key={each} value={each}>{each}</option>)}
+            </select>
+          </label>
         )}
       </div>
-      {open && view === null && <div className={css.dim}>{t('inspect.loading')}</div>}
-      {open && view !== null && !view.ok && <div className={css.dim}>{`${t('inspect.error')}：${view.message}`}</div>}
-      {open && value !== null && (
+      {view === null && <div className={css.dim}>{t('inspect.loading')}</div>}
+      {view !== null && !view.ok && <div className={css.dim}>{`${t('inspect.error')}：${view.message}`}</div>}
+      {value !== null && (
         <>
           <div className={css.dim}>{value.note ?? t('judgePrompt.previewNote')}</div>
           {value.outOfScope.length > 0 && (
@@ -426,21 +460,19 @@ export function JudgePromptPreview(props: {
           />
         </>
       )}
-    </div>
+    </>
   )
 }
 
 /**
  * The prompt.md a cell's judge actually received, with a judge/sample picker.
- * @param props - the cell, the read, the close.
+ * @param props - the read.
  */
-export function JudgePromptSheet(props: {
-  cell: { runId: string; missionId: string; attempt: number; label: string }
+export function JudgePromptActual(props: {
   read: (judge: string | null, sample: string | null) => Promise<Answer<EvalJudgePromptView>>
-  onClose: () => void
   t: LabViewProps['t']
 }) {
-  const { cell, read, onClose, t } = props
+  const { read, t } = props
   const [pick, setPick] = useState<{ judge: string; sample: string } | null>(null)
   const [view, setView] = useState<Answer<EvalJudgePromptView> | null>(null)
   useEffect(() => {
@@ -452,7 +484,7 @@ export function JudgePromptSheet(props: {
   const value = view?.ok === true ? view.value : null
   const key = (s: { judge: string; sample: string }): string => `${s.judge}/${s.sample}`
   return (
-    <Sheet title={t('judgePrompt.actualTitle', { cell: cell.label })} sub={`${cell.runId} · ${cell.missionId} · attempt ${String(cell.attempt)}`} onClose={onClose} t={t}>
+    <>
       {view === null && <div className={css.dim}>{t('inspect.loading')}</div>}
       {view !== null && !view.ok && <div className={css.dim}>{`${t('inspect.error')}：${view.message}`}</div>}
       {value !== null && (
@@ -479,6 +511,6 @@ export function JudgePromptSheet(props: {
               )}
         </>
       )}
-    </Sheet>
+    </>
   )
 }
