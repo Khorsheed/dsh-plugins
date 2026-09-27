@@ -6,21 +6,16 @@
 
 <img src="docs/screenshots/file-preview1.png" width="840" alt="dsh-basic at a glance: the session Artifacts tab and the file-preview drawer">
 
-Don't want the whole pack? Every member below is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) to install it alone. The pack just installs them all for you at once.
+Every member is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) and install freely. If the official host later opens up custom-profile installation, this repo will support one-command install. The everyday conversation plugins also come as a meta package: `@khorsheed/dsh-bundle-conversation-toolbox` installs seven at once (message-tools / message-timeline / session-title-edit / quote / inline-html-render / context-guard / taskpilot).
 
-## Why this pack exists
-
-- **Only everyday, high-frequency experience plugins**: message control, history jumping, artifact preview, task status, context reminder, shortcuts… None of them touches model behavior or adds learning cost.
-- **Built for ourselves, open to the community**: our own production instance runs the full stack long-term. Every member is published and removable independently — the pack is a starting point, not a lock-in.
-- **The endgame is being replaced by the official product**: most of these capabilities are gaps the official GUI will close sooner or later. The day a feature lands natively is the day the corresponding member retires — until then, you don't have to wait.
-
-## What's inside
+## The dsh-basic pack — plugin list
 
 | Plugin | Package name (copy to install) | What you get |
 |---|---|---|
 | message-tools | `@khorsheed/dsh-client-message-tools` | Edit, withdraw, and restore messages you already sent |
 | message-timeline | `@khorsheed/dsh-message-timeline` | A quiet timeline on the chat's left edge — hover to expand, click to jump |
 | session-title-edit | `@khorsheed/dsh-client-session-title-edit` | Rename sessions inline in the chat header |
+| quote | `@khorsheed/dsh-quote` | Select any text for a floating quote menu: into the composer / side chat / copy |
 | file-preview | `@khorsheed/dsh-file-preview` | The host-side file-preview service (pairs with the next row) |
 | ui-file-preview | `@khorsheed/dsh-client-ui-file-preview` | A Produced tab: preview every file the session touched, no IDE needed |
 | taskpilot | `@khorsheed/dsh-taskpilot` | Background jobs and sub-agents become pills above the composer — stop/interrupt in one click |
@@ -36,13 +31,13 @@ Don't want the whole pack? Every member below is an independent plugin — copy 
 
 Members iterate fast and older release lines get no updates — pick the line by your host version:
 
-| Host line | How to install |
-|---|---|
-| ≥ `0.1.5-rc.1` | Use the package names as-is; all 13 members' latest works — the whole-pack install also tracks this line |
-| `0.1.2-rc.1` ~ `0.1.4` | 11 members are installable: message-tools, file-preview, ui-file-preview, taskpilot, ankh-guard need the older line (append `@^0.2.0`); message-timeline, session-title-edit, context-guard, ui-shortcuts, whalesong, inline-html-render install fine at latest; capability-catalog and mobile have no release for this line |
-| `0.1.0-rc.6` ~ `0.1.1-rc.2` | Only the ten founding members have a 0.1.x line (`@^0.1.0`), no longer updated; members added later never shipped for it |
+**Host ≥ `0.1.5-rc.1`**: use the package names as-is; all 14 members' latest works.
 
-A whole-pack install (see the install guide at the end) requires host ≥ `0.1.5-rc.1` as of this update (capability-catalog, mobile, and the latest lines of five members all floor there); on the `0.1.2` line stay with the pre-update archive (a `host-0.1.2-line` tag ships with the next publish wave), and on `0.1.0` / `0.1.1` hosts use the `host-0.1.1-line` tag.
+**Host `0.1.2-rc.1` ~ `0.1.4`**:
+
+- **Installable at latest**: `@khorsheed/dsh-message-timeline`, `@khorsheed/dsh-client-session-title-edit`, `@khorsheed/dsh-context-guard`, `@khorsheed/dsh-ui-shortcuts`, `@khorsheed/dsh-whalesong`, `@khorsheed/dsh-inline-html-render`
+- **Pin the older line** (copy the full spec): `@khorsheed/dsh-client-message-tools@^0.2.0`, `@khorsheed/dsh-file-preview@^0.2.0`, `@khorsheed/dsh-client-ui-file-preview@^0.2.0`, `@khorsheed/dsh-taskpilot@^0.2.0`, `@khorsheed/dsh-ankh-guard@^0.2.0`
+- **Not available**: capability-catalog, mobile, quote (no release for this line)
 
 ## The tour
 
@@ -94,6 +89,21 @@ Click the pencil beside the title in the chat header and the title itself become
 <img src="docs/screenshots/session-title-edit1.png" width="840" alt="session-title-edit: the inline edit entry">
 
 <img src="docs/screenshots/session-title-edit2.png" width="840" alt="session-title-edit: type and hit Enter">
+
+</details>
+
+### quote — quote anything
+
+`@khorsheed/dsh-quote` · host ≥ `0.1.5-rc.1` (no release for older hosts)
+
+Select any text and a floating action menu appears — quote into the current session (lands in the composer), quote into a side chat, or copy. Other plugins can register their own action rows into the same menu.
+
+<details>
+<summary>View the screenshots (2)</summary>
+
+<img src="docs/screenshots/quote-1.png" width="840" alt="quote: the floating menu over selected text">
+
+<img src="docs/screenshots/quote-2.png" width="840" alt="quote: the quote lands in the composer">
 
 </details>
 
@@ -258,6 +268,8 @@ Plugins live in [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins
 
 ### 1. Installing the whole pack
 
+A whole-pack install requires host ≥ `0.1.5-rc.1` (capability-catalog, mobile, and the latest lines of five members all floor there); on the `0.1.2` line stay with the pre-rename archive (a `host-0.1.2-line` tag ships with the next publish wave), and on `0.1.0` / `0.1.1` hosts use the `host-0.1.1-line` tag.
+
 **0. Pick the release line by host version first (skipping this can install plugins that won't boot)**
 
 ```sh
@@ -265,7 +277,7 @@ dsh --version    # or read the host version from the running instance's process 
 ```
 
 - Host `0.1.5` or newer (any rc included) → use the main line (clone the default branch).
-- Host `0.1.2-rc.*` ~ `0.1.4` → stay with the pre-update archive (the `host-0.1.2-line` tag).
+- Host `0.1.2-rc.*` ~ `0.1.4` → stay with the older archive (the `host-0.1.2-line` tag).
 - Host `0.1.0-rc.*` / `0.1.1-rc.*` → use the legacy line: after cloning, `git -C /tmp/dsh-basic checkout host-0.1.1-line`; members stay on 0.1.x (no further updates).
 
 **1. Install and self-check offline (do not touch the running instance)**
@@ -275,7 +287,7 @@ git clone https://github.com/Khorsheed/dsh-basic.git /tmp/dsh-basic
 sh /tmp/dsh-basic/scripts/install.sh
 ```
 
-The installer prints the composed row count. To double-check: `dsh --profile basic --dump-config | grep -c "@khorsheed"` should print 13 (ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
+The installer prints the composed row count. To double-check: `dsh --profile basic --dump-config | grep -c "@khorsheed"` should print 14 (ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
 
 **2. Hand over on the same port (the critical step)**
 
@@ -292,11 +304,12 @@ Two prerequisites — the script refuses early with a reason if either is missin
 
 **3. Deliver**
 
-Once `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` returns 200, ask the user to **hard-refresh** (Cmd/Ctrl+Shift+R) — the new client bundles (the Produced tab, the dock pills, …) only load on a hard refresh; a plain reload may keep serving the cached shell. Then present the feature list (the README "What's inside" table). Known boundary: on a pure-npm deployment ankh-guard's composition preflight runs degraded (it warns and proceeds); everything else is fully functional.
+Once `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` returns 200, ask the user to **hard-refresh** (Cmd/Ctrl+Shift+R) — the new client bundles (the Produced tab, the dock pills, …) only load on a hard refresh; a plain reload may keep serving the cached shell. Then present the feature list (the README plugin-list table). Known boundary: on a pure-npm deployment ankh-guard's composition preflight runs degraded (it warns and proceeds); everything else is fully functional.
 
 ### 2. Installing a single plugin
 
 - **Dialog (0.1.7-rc.2+, recommended)**: Settings → Plugins → Add plugin, enter the package name (e.g. `@khorsheed/dsh-whalesong`), enable as prompted. On older hosts remember the release-line suffix (see "Version compatibility" above).
 - **CLI**: `dsh plugin --profile <profile> add <package name>`; `remove` to uninstall, `update` to upgrade.
+- **Bundle install**: the seven everyday conversation plugins also install in one shot via the meta package — `dsh plugin --profile <profile> add @khorsheed/dsh-bundle-conversation-toolbox`; member rows stay individually disable-able under Settings → Plugins.
 
 </details>

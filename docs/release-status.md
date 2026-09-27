@@ -33,7 +33,7 @@
 | `@khorsheed/dsh-mission-tool` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-mobile` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | — | ✓ |
 | `@khorsheed/dsh-presets` | 未发布 | 0.1.0 | 0.1.7-rc.1 | 0.1.7-rc.1 |  |
-| `@khorsheed/dsh-quote` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
+| `@khorsheed/dsh-quote` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |
 | `@khorsheed/dsh-room` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-room-tool` | 0.1.1 | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-client-session-title-edit` | 0.2.3 | 0.2.3 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |

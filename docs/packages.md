@@ -46,7 +46,7 @@
 | `@khorsheed/dsh-mission-tool` | `packages/mission-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-presets` | `packages/presets` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
-| `@khorsheed/dsh-quote` | `packages/quote` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-quote` | `packages/quote` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-room` | `packages/room` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-room-tool` | `packages/room-tool` | 0.1.1 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.3 | bundle | — | web | 0.1.2-rc.1 | basic, web-dev, web-eval |
@@ -65,7 +65,7 @@
 
 | profile | 直接依赖 | bundles |
 | --- | --- | --- |
-| `profiles/basic` | 13 | 15 |
+| `profiles/basic` | 14 | 16 |
 | `profiles/web-dev` | 23 | 22 |
 | `profiles/web-eval` | 26 | 24 |
 

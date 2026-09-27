@@ -12,7 +12,7 @@
 
 | 整合包 | 定位 | 成员 |
 | --- | --- | --- |
-| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **日常模式**:消息控制、产物预览、能力目录、移动端呈现、任务状态、快捷键与运维守护 | 13 |
+| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **日常模式**:消息控制、产物预览、能力目录、移动端呈现、任务状态、快捷键与运维守护 | 14 |
 | [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | **开发协作**:basic 全部体验,再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作,自带「开发模式」preset | 23 |
 | [web-eval](profiles/web-eval)(仓内) | **评测工作**:因子设计实验台——题库、条件、计划进 git 评审,确定性编排执行,自带「评测模式」preset | 26 |
 
@@ -29,7 +29,7 @@
 | [`message-tools`](packages/message-tools) | 用户消息**原位编辑 / 真撤回 / 恢复重放**——全家桶里唯一改变模型所见的插件,用的是与官方 compaction 同一套机制 | basic + dev |
 | [`message-timeline`](packages/message-timeline) | 会话左缘悬浮**历史消息时间轴**,点击跳转任意用户消息 | basic + dev |
 | [`session-title-edit`](packages/session-title-edit) | 聊天区标题**内联重命名**,用户改过的标题不再被自动生成覆盖 | basic + dev |
-| [`quote`](packages/quote) | 选中任意文本浮出**引用动作菜单**(引用进 composer / 侧边对话 / 复制),其他插件可注册自己的动作 | 单包 |
+| [`quote`](packages/quote) | 选中任意文本浮出**引用动作菜单**(引用进 composer / 侧边对话 / 复制),其他插件可注册自己的动作 | basic |
 
 ### 文件与产物
 

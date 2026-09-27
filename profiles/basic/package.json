@@ -12,6 +12,7 @@
     "@khorsheed/dsh-inline-html-render": "^0.1.14",
     "@khorsheed/dsh-message-timeline": "^0.2.3",
     "@khorsheed/dsh-mobile": "^0.1.1",
+    "@khorsheed/dsh-quote": "^0.1.1",
     "@khorsheed/dsh-taskpilot": "^0.3.2",
     "@khorsheed/dsh-ui-shortcuts": "^0.2.3",
     "@khorsheed/dsh-whalesong": "^0.2.3"
@@ -26,6 +27,7 @@
         "@khorsheed/dsh-file-preview",
         "@khorsheed/dsh-message-timeline",
         "@khorsheed/dsh-client-session-title-edit",
+        "@khorsheed/dsh-quote",
         "@khorsheed/dsh-client-ui-file-preview",
         "@khorsheed/dsh-inline-html-render",
         "@khorsheed/dsh-capability-catalog",

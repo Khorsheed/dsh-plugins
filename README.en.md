@@ -12,7 +12,7 @@ The default install unit is a complete profile (a pack), not a single package. I
 
 | Pack | What it is | Members |
 | --- | --- | --- |
-| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **Everyday mode**: message control, artifact preview, the capability catalog, mobile presentation, task status, shortcuts, and the ops guard | 13 |
+| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **Everyday mode**: message control, artifact preview, the capability catalog, mobile presentation, task status, shortcuts, and the ops guard | 14 |
 | [dsh-web-dev](https://github.com/Khorsheed/dsh-web-dev) | **Development**: everything in basic, plus delegation to local coding agents, live worktree state, and room multi-agent collaboration — ships the "dev mode" preset | 23 |
 | [web-eval](profiles/web-eval) (in this repo) | **Evaluation**: a factorial experiment bench — datasets, conditions, and plans reviewed in git, deterministic orchestration — ships the "eval mode" preset | 26 |
 
@@ -29,7 +29,7 @@ Each package's full feature list, configuration, and screenshots live in its own
 | [`message-tools`](packages/message-tools) | **In-place edit / true withdraw / restore** for user messages — the only plugin here that changes what the model sees, using the same mechanism as official compaction | basic + dev |
 | [`message-timeline`](packages/message-timeline) | A floating **message timeline** on the conversation's left edge; click to jump to any user message | basic + dev |
 | [`session-title-edit`](packages/session-title-edit) | **Inline rename** of the session title in the chat header; user-set titles are pinned against auto-generation | basic + dev |
-| [`quote`](packages/quote) | Select any text for a floating **quote action menu** (quote into the composer / side chat / copy); other plugins can register their own actions | standalone |
+| [`quote`](packages/quote) | Select any text for a floating **quote action menu** (quote into the composer / side chat / copy); other plugins can register their own actions | basic |
 
 ### Files and artifacts
 

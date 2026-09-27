@@ -1,5 +1,10 @@
 # 变更记录
 
+## 2026-09-27 —— quote 加入，成员 14 个
+
+- 新成员：quote（选中任意文本浮出引用动作菜单）——成员数 13 → 14
+- README 重排：正文聚焦「目标 → 插件列表（含可复制包名与版本兼容）→ 功能展示」，安装指南整体折叠到文末；单包安装推荐官方「添加插件」对话框，打包装可用元包 `@khorsheed/dsh-bundle-conversation-toolbox`
+
 ## 2026-09-27 —— 更名为 dsh-basic
 
 - 整合包仓与 profile 名从 dsh-web-basic / web-basic 改为 **dsh-basic / basic**：clone 地址、脚本名（`restart-into-basic.sh`）、profile 目录（`$DSH_HOME/profiles/basic`）随之变化；GitHub 上的旧名字保留重定向

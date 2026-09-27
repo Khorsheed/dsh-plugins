@@ -6,21 +6,16 @@
 
 <img src="docs/screenshots/file-preview1.png" width="840" alt="dsh-basic 一览:会话「产物」tab 与文件预览抽屉">
 
-不想装整个整合包？下面每个成员都是独立插件，复制包名到宿主的「添加插件」对话框（0.1.7-rc.2 起：设置 → 插件）就能单独安装——整合包只是替你一次装齐。
+每个成员都是独立插件，复制包名到宿主的「添加插件」对话框（0.1.7-rc.2 起：设置 → 插件）即可自由安装；后续如果官方开放自定义 profile 安装，本仓库会支持一行命令直接安装。常用的会话插件也可以装元包 `@khorsheed/dsh-bundle-conversation-toolbox` 一次打包七个（message-tools / message-timeline / session-title-edit / quote / inline-html-render / context-guard / taskpilot）。
 
-## 为什么有这个整合包
-
-- **只收日常高频的体验插件**：消息控制、历史跳转、产物预览、任务状态、上下文提醒、快捷键……不碰模型行为，不加学习成本。
-- **自用，同时开放给社区**：我们自己的生产实例长期全量叠装运行；每个成员独立发布、独立可卸，整合包是起点，不是绑定。
-- **终态是被官方替代**：这些能力大多是官方 GUI 迟早会补上的缺口。官方原生实现之日，就是对应成员退役之时——在那之前，你不用等。
-
-## 包含什么
+## basic 整合包 - 插件列表
 
 | 插件 | 包名（复制即可安装） | 你得到 |
 |---|---|---|
 | message-tools | `@khorsheed/dsh-client-message-tools` | 发出去的消息可以原位编辑、撤回、恢复 |
 | message-timeline | `@khorsheed/dsh-message-timeline` | 会话左缘一条安静的时间轴——悬停展开，点击跳转 |
 | session-title-edit | `@khorsheed/dsh-client-session-title-edit` | 聊天头部内联重命名会话 |
+| quote | `@khorsheed/dsh-quote` | 选中任意文本浮出引用动作菜单：引用进输入框 / 侧边对话 / 复制 |
 | file-preview | `@khorsheed/dsh-file-preview` | 宿主侧文件预览服务（与下一行成对） |
 | ui-file-preview | `@khorsheed/dsh-client-ui-file-preview` | 「产物」tab：会话写过的每个文件，不开 IDE 直接预览 |
 | taskpilot | `@khorsheed/dsh-taskpilot` | 后台任务与子 agent 变成聊天框上方的胶囊，一键停止/中断 |
@@ -36,13 +31,13 @@
 
 成员迭代快、老版本线不再更新，按你的宿主版本选线：
 
-| 宿主线 | 怎么装 |
-|---|---|
-| ≥ `0.1.5-rc.1` | 直接填包名，全部 13 个成员的 latest 可用；整合包整体安装也走这条线 |
-| `0.1.2-rc.1` ~ `0.1.4` | 11 个成员可装：message-tools、file-preview、ui-file-preview、taskpilot、ankh-guard 需指定旧线（包名后加 `@^0.2.0`），message-timeline、session-title-edit、context-guard、ui-shortcuts、whalesong、inline-html-render 直装 latest；capability-catalog 与 mobile 没有这条线的版本 |
-| `0.1.0-rc.6` ~ `0.1.1-rc.2` | 只有 10 个创始成员的 0.1.x 旧线（`@^0.1.0`），功能不再更新；后来加入的成员不在旧线 |
+**宿主 ≥ `0.1.5-rc.1`**：直接填包名，全部 14 个成员的 latest 可用。
 
-整合包整体安装（见文末安装指南）自本次更新起要求宿主 ≥ `0.1.5-rc.1`（capability-catalog、mobile 与五个成员的最新线都以它为地板）；`0.1.2` 线宿主请停留在本次更新前的档案（`host-0.1.2-line` tag 随下一发布波提供），`0.1.0` / `0.1.1` 宿主用 `host-0.1.1-line` tag 的档案。
+**宿主 `0.1.2-rc.1` ~ `0.1.4`**：
+
+- **可直接装 latest**：`@khorsheed/dsh-message-timeline`、`@khorsheed/dsh-client-session-title-edit`、`@khorsheed/dsh-context-guard`、`@khorsheed/dsh-ui-shortcuts`、`@khorsheed/dsh-whalesong`、`@khorsheed/dsh-inline-html-render`
+- **需指定旧线**（复制完整规格）：`@khorsheed/dsh-client-message-tools@^0.2.0`、`@khorsheed/dsh-file-preview@^0.2.0`、`@khorsheed/dsh-client-ui-file-preview@^0.2.0`、`@khorsheed/dsh-taskpilot@^0.2.0`、`@khorsheed/dsh-ankh-guard@^0.2.0`
+- **不支持**：capability-catalog、mobile、quote（没有这条线的版本）
 
 ## 功能展示
 
@@ -94,6 +89,21 @@
 <img src="docs/screenshots/session-title-edit1.png" width="840" alt="session-title-edit:标题旁的内联编辑入口">
 
 <img src="docs/screenshots/session-title-edit2.png" width="840" alt="session-title-edit:直接修改标题，回车保存">
+
+</details>
+
+### quote：引用任意内容
+
+`@khorsheed/dsh-quote` · 宿主 ≥ `0.1.5-rc.1`（更老宿主无可用版本）
+
+选中任意文本浮出动作菜单——引用到当前会话（进输入框）、引用到侧边对话、复制；其他插件还可以往这个菜单里注册自己的动作行。
+
+<details>
+<summary>展开查看功能示意（2 张）</summary>
+
+<img src="docs/screenshots/quote-1.png" width="840" alt="quote:选中文本浮出的引用菜单">
+
+<img src="docs/screenshots/quote-2.png" width="840" alt="quote:引用进入输入框">
 
 </details>
 
@@ -258,6 +268,8 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 
 ### 一、整体安装整合包
 
+整合包整体安装要求宿主 ≥ `0.1.5-rc.1`（capability-catalog、mobile 与五个成员的最新线都以它为地板）；`0.1.2` 线宿主请停留在 2026-09-27 更名前的档案（`host-0.1.2-line` tag 随下一发布波提供），`0.1.0` / `0.1.1` 宿主用 `host-0.1.1-line` tag 的档案。
+
 **〇、先按宿主版本选线（跳过这步可能装出打不开的插件）**
 
 ```sh
@@ -265,7 +277,7 @@ dsh --version    # 或从运行中实例的启动命令/进程信息里确认宿
 ```
 
 - 宿主是 `0.1.5` 或更新（含各 rc）→ 用主线（clone 默认分支即可）。
-- 宿主是 `0.1.2-rc.*` ~ `0.1.4` → 停留在本次更新前的档案（`host-0.1.2-line` tag）。
+- 宿主是 `0.1.2-rc.*` ~ `0.1.4` → 停留在旧档案（`host-0.1.2-line` tag）。
 - 宿主是 `0.1.0-rc.*` / `0.1.1-rc.*` → 用旧线：clone 后 `git -C /tmp/dsh-basic checkout host-0.1.1-line`，成员插件停在 0.1.x（功能不再更新）。
 
 **一、安装与离线自检（不碰运行中的实例）**
@@ -275,7 +287,7 @@ git clone https://github.com/Khorsheed/dsh-basic.git /tmp/dsh-basic
 sh /tmp/dsh-basic/scripts/install.sh
 ```
 
-install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile basic --dump-config | grep -c "@khorsheed"` 应为 13（ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
+install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile basic --dump-config | grep -c "@khorsheed"` 应为 14（ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-file-preview / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
 
 **二、同端口交接（关键一步）**
 
@@ -292,11 +304,12 @@ sh /tmp/dsh-basic/scripts/restart-into-basic.sh [端口，默认 3080]
 
 **三、交付**
 
-`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<端口>/` 为 200 后，让用户**硬刷**页面（Cmd/Ctrl+Shift+R)——产物 tab、任务胶囊等新的 client bundle 要强刷才会加载，普通刷新可能继续跑缓存的旧壳。然后呈上功能清单（即 README「包含什么」一表）。已知边界：纯净 npm 部署里 ankh-guard 的组合 preflight 门禁为降级运行（提示后放行），其余能力完整。
+`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<端口>/` 为 200 后，让用户**硬刷**页面（Cmd/Ctrl+Shift+R)——产物 tab、任务胶囊等新的 client bundle 要强刷才会加载，普通刷新可能继续跑缓存的旧壳。然后呈上功能清单（即 README「插件列表」一表）。已知边界：纯净 npm 部署里 ankh-guard 的组合 preflight 门禁为降级运行（提示后放行），其余能力完整。
 
 ### 二、安装单个插件
 
 - **对话框（0.1.7-rc.2 起，推荐）**：设置 → 插件 → 添加插件，填包名（如 `@khorsheed/dsh-whalesong`），按提示启用。旧宿主记得带版本线后缀（见上文「版本兼容」）。
 - **命令行**：`dsh plugin --profile <profile> add <包名>`；卸载 `remove`，更新 `update`。
+- **打包装**：常用会话插件七件套用元包 `dsh plugin --profile <profile> add @khorsheed/dsh-bundle-conversation-toolbox` 一次装齐，成员行仍可在 设置 → 插件 里单独禁用。
 
 </details>
