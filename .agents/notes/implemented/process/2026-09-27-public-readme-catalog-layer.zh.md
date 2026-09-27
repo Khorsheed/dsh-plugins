@@ -49,6 +49,8 @@ Status: implemented
 - 两份整合包 README 的配对记录已重录(`verify-translation-pairing --write`);根 README 这一对按设计没有 sidecar(配对 glob 只覆盖 `packages/`、`profiles/`、`.agents/`、`docs/`)。
 - ~~**本次改动之外的已知后续:**~~ **同日已解决**:两个整合包的依赖区间都已对齐到成员最新发布线(basic 按成员分别钉 `^0.3.2` / `^0.2.3` / `^0.1.x`;dev 的 local-agent 家族钉 `^0.1.0-rc.1` 以容纳预发布线)。dev 的 README 也已改成与 basic 相同的列表优先形态(可复制包名的插件列表 → 带元包详情页截图的功能展示 → preset → 折叠后置的安装指南),家族安装路径写明 `@khorsheed/dsh-bundle-local-agent`——已对官方 `dsh-experimental-agent-team-profile` 核实过同一薄元包形态(bundle 依赖把成员传递带入;每个组件行仍可单独禁用)。
 
+- **3080 事故,当夜闭环**:dev preset 的崩坏来自合并边界的版本错位——preset 行指向一个解析不了的模块时,行连 fiber 都拿不到(会话 resume 时报 `never started`,见宿主 agent-preset-registry 的 `auditRows`);boot preflight 看不到它,因为 preset 是按会话组合的,行级崩坏会拖垮整个 preset 而不只是该行。从 prod 退役一个包需要流程不会替你做的三步:`dsh plugin remove`(清依赖与 bundles 名册)、删掉 profile `pnpm-workspace.yaml` 里的孤儿 overrides、同步目录式 preset——然后一次前滚部署(worktrees 0.3.0 + file-preview 0.4.0 + 新打的 presets,canary PASS)。一个搭进去一轮的小教训:BSD sed 没有 `\|` 交替——静默空操作的清理比不清理更糟。
+
 ## Testing
 
 纯文档改动:暂存集上 `pnpm check:hygiene` 通过;两份整合包配对的 `verify-translation-pairing` 已重录并全绿;三份 README 引用的每张图都在对应 profile 的 `docs/screenshots/` 下有跟踪文件。
