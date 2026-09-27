@@ -4,9 +4,9 @@
 
 **Direct a team of agents to write code, and see exactly what they changed.** Delegate tasks to the coding agents installed on your machine — Kimi Code, Codex, Claude Code, or dsh itself — each with its own context and accounting; which branch a change landed on, which files moved, what each commit did, all visible inside the session; and several agents can collaborate in one conversation. The full baseline experience (message editing, artifact preview, task capsules) is included.
 
-<!-- screenshot placeholder: docs/screenshots/web-dev-overview.png (pending) -->
+<img src="docs/screenshots/web-dev-overview.png" width="840" alt="dsh-web-dev at a glance: the dev-mode preset, member capsules, and a room session">
 
-> **Status**: pre-release. 13 of the 21 members are not on npm yet, so installation currently builds from [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) source (see [Install](#install)).
+> **Status**: all 23 member plugins are live on npm. The current line requires host ≥ `0.1.5-rc.1`.
 
 ## Install
 
@@ -36,7 +36,7 @@ git clone https://github.com/Khorsheed/dsh-web-dev.git /tmp/dsh-web-dev
 sh /tmp/dsh-web-dev/scripts/install.sh
 ```
 
-`install.sh` prints the composed row count. To verify by hand: `dsh --profile web-dev --dump-config | grep -c "@khorsheed"` should be 21. When `dsh` is not on PATH, use its full path (readable from the running instance's launch command via `ps`).
+`install.sh` prints the composed row count. To verify by hand: `dsh --profile web-dev --dump-config | grep -c "@khorsheed"` should be 23 (the member list is under "What is included"). When `dsh` is not on PATH, use its full path (readable from the running instance's launch command via `ps`).
 
 **2. Same-port handover (the critical step)**
 
@@ -81,17 +81,19 @@ Sessions live in `$DSH_HOME/sessions/`, and credentials and shortcuts live under
 
 ## What is included
 
-21 members across three layers:
+23 members across four layers:
 
-**Baseline experience** (the same 12 as dsh-web-basic): message edit/withdraw/restore, history timeline, inline session-title editing, file preview (service + UI), local file browser, background task capsules, context-compaction reminder, inline HTML cards, capability catalog, shortcuts, ambient task feedback. Each is introduced in the [baseline member notes](https://github.com/Khorsheed/dsh-web-basic#功能展示).
+**Baseline experience** (9, the same as dsh-web-basic): message edit/withdraw/restore (message-tools), history timeline (message-timeline), inline session-title editing (session-title-edit), file preview (file-preview + ui-file-preview), background task capsules (taskpilot), context-compaction reminder (context-guard), rebindable shortcuts (ui-shortcuts), ambient task feedback (whalesong). Each is introduced in the [baseline member notes](https://github.com/Khorsheed/dsh-web-basic#功能展示).
 
-**Development capabilities** (the 8 unique to this profile): see [Features](#features).
+**Operational guard** (1): `ankh-guard` — the safety gate for same-port handover and self-modifying restarts, which the switch scripts above run through.
 
-**Operational guard**: `ankh-guard` — the safety gate for same-port handover and self-modifying restarts, which the switch scripts above run through.
+**Experience extras** (3, unique to this profile): the capability catalog (capability-catalog — a settings page enumerating every skill and tool in the instance with its registration channel), inline HTML cards (inline-html-render — agent-authored `dsh-card` HTML rendered as sandboxed interactive cards in the conversation), and the local file browser (local-files — a lazy file tree in the right sidebar with structured previews).
+
+**Development capabilities** (10, unique to this profile): the local-agent family of 6, plus 2 worktrees packages and 2 room packages — see [Features](#features) below.
 
 ## Features
 
-### Local agent family: delegate to other coding agents
+### Local agent family (6 packages): delegate to other coding agents
 
 Delegate subtasks to the coding agent CLIs on your machine — Kimi Code, Codex, Claude Code, and dsh itself. Each harness runs under its own scoped home (`$DSH_HOME/local-agent/<name>`, mode 0700), and **never touches the private configuration and credentials in your user directory**.
 
@@ -100,19 +102,21 @@ Delegate subtasks to the coding agent CLIs on your machine — Kimi Code, Codex,
 - **Live mode**: output streams into the member session, cancelling does not kill the process, and a crash resumes the session.
 - **Two-way member channel**: open a member's sub-session to continue it directly; members can also notify each other.
 
-<!-- screenshot placeholder: docs/screenshots/local-agent-delegation.png (pending) -->
+<img src="docs/screenshots/local-agent-delegation.png" width="840" alt="The local-agent family: provider cards in settings, auth status at a glance">
 
-### worktrees: live git state
+<img src="docs/screenshots/local-agent-member.png" width="840" alt="The two-way member channel: open a member's sub-session and continue it directly">
+
+### worktrees (2 packages): live git state
 
 A repo/worktree badge sits at the top right of every session, showing the current repository, branch, and combined diff size (green = clean, yellow = dirty). Opening it reveals the change drawer: uncommitted and committed file trees with diffs, an IDE-style commit log, and full repository file browsing. It displays git facts read-only and never writes to the repository.
 
-<!-- screenshot placeholder: docs/screenshots/worktrees-drawer.png (pending) -->
+<img src="docs/screenshots/worktrees-drawer.png" width="840" alt="worktrees: the session-header badge and the change drawer">
 
-### room: several agents inside one session
+### room (2 packages): several agents inside one session
 
 Invite an agent into any session and that session becomes a room: member tab, @-dispatch, multi-member capsules, a task board, and a notification gate. Members can summon each other, and progress stays visible on one conversation thread.
 
-<!-- screenshot placeholder: docs/screenshots/room-members.png (pending) -->
+<img src="docs/screenshots/room-members.png" width="840" alt="room: the member roster tab with coordinator and member cards">
 
 ## Adding and removing single members
 
@@ -143,6 +147,7 @@ Session data lives in `$DSH_HOME/sessions/` and does not go with the profile.
 | Pack | Role |
 |---|---|
 | [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | Everyday mode: the baseline experience only, without the development capabilities |
+| [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | The plugin monorepo: the capability map of every package, the preset designs, and the development docs |
 
 ## License
 

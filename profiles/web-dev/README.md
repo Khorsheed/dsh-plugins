@@ -4,9 +4,9 @@
 
 **调度一组 agent 写代码，并看清他们改了什么。** 把任务派给你本机装的 Kimi Code、Codex、Claude Code 或 dsh 自己，各自独立上下文与记账；改动落在哪个分支、动了哪些文件、每次提交做了什么，都在会话里一眼可见；多个 agent 可以在同一个会话里协作。基础体验（消息编辑、产物预览、任务胶囊等）全部内含。
 
-<!-- screenshot placeholder: docs/screenshots/web-dev-overview.png (pending) -->
+<img src="docs/screenshots/web-dev-overview.png" width="840" alt="dsh-web-dev 一览:开发模式 preset、成员胶囊与 room 会话">
 
-> **状态**：pre-release。21 个成员里有 13 个尚未上架 npm，当前需从 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) 源码构建安装（见[安装](#安装)）。
+> **状态**：23 个成员插件全部已上架 npm。当前线要求宿主 ≥ `0.1.5-rc.1`。
 
 ## 安装
 
@@ -36,7 +36,7 @@ git clone https://github.com/Khorsheed/dsh-web-dev.git /tmp/dsh-web-dev
 sh /tmp/dsh-web-dev/scripts/install.sh
 ```
 
-`install.sh` 末尾会打印组合的行数。如需手动复核：`dsh --profile web-dev --dump-config | grep -c "@khorsheed"` 应为 21。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
+`install.sh` 末尾会打印组合的行数。如需手动复核：`dsh --profile web-dev --dump-config | grep -c "@khorsheed"` 应为 23（成员清单见下方「包含什么」）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
 
 **二、同端口交接（关键一步）**
 
@@ -81,17 +81,19 @@ sh scripts/restart-into-web-dev.sh 3090     # 指定端口
 
 ## 包含什么
 
-21 个成员，三层：
+23 个成员，四层：
 
-**基础体验**（与 dsh-web-basic 相同的 12 个）：消息编辑/撤回/恢复、历史消息时间轴、会话标题内联编辑、文件预览（服务 + 界面）、本地文件浏览器、后台任务胶囊、上下文压缩提醒、内联 HTML 卡片、能力目录、快捷键、任务氛围。逐个介绍见[基础成员说明](https://github.com/Khorsheed/dsh-web-basic#功能展示)。
+**基础体验**（9 个，与 dsh-web-basic 相同）：消息编辑/撤回/恢复（message-tools）、历史消息时间轴（message-timeline）、会话标题内联编辑（session-title-edit）、文件预览（file-preview + ui-file-preview）、后台任务胶囊（taskpilot）、上下文压缩提醒（context-guard）、自定义快捷键（ui-shortcuts）、任务氛围（whalesong）。逐个介绍见[基础成员说明](https://github.com/Khorsheed/dsh-web-basic#功能展示)。
 
-**开发能力**（本 profile 独有的 8 个）：见下方[功能展示](#功能展示)。
+**运维守护**（1 个）：`ankh-guard` —— 同端口交接与自修改重启的安全门禁，上面的切换脚本就走它。
 
-**运维守护**：`ankh-guard` —— 同端口交接与自修改重启的安全门禁，上面的切换脚本就走它。
+**体验增强**（3 个，本 profile 独有）：能力目录（capability-catalog，设置页枚举实例全部 skill/工具及注册渠道）、内联 HTML 卡片（inline-html-render，agent 写的 `dsh-card` 渲染成会话内沙箱交互卡）、本地文件浏览器（local-files，右栏懒加载文件树 + 结构化预览）。
+
+**开发能力**（10 个，本 profile 独有）：本地 Agent 家族 6 个 + worktrees 2 个 + room 2 个，见下方[功能展示](#功能展示)。
 
 ## 功能展示
 
-### 本地 Agent 家族：把任务派给别的编码 agent
+### 本地 Agent 家族（6 个包）：把任务派给别的编码 agent
 
 把子任务委派给你本机装的编码 Agent CLI——Kimi Code、Codex、Claude Code、以及 dsh 自己。每个 harness 在自己独立的作用域目录下运行（`$DSH_HOME/local-agent/<name>`，0700 权限），**绝不触碰你用户目录里的私人配置与凭据**。
 
@@ -100,19 +102,21 @@ sh scripts/restart-into-web-dev.sh 3090     # 指定端口
 - **常驻模式**：输出实时流入成员会话、取消不杀进程、崩溃自动续会话。
 - **成员双向通道**：打开成员子会话即可直接对它续一轮；成员之间也能互相通知。
 
-<!-- screenshot placeholder: docs/screenshots/local-agent-delegation.png (pending) -->
+<img src="docs/screenshots/local-agent-delegation.png" width="840" alt="本地 Agent 家族:设置页的 provider 卡片,认证状态一眼可见">
 
-### worktrees：git 状态实况
+<img src="docs/screenshots/local-agent-member.png" width="840" alt="成员双向通道:打开成员子会话直接续聊">
+
+### worktrees（2 个包）：git 状态实况
 
 每个会话右上角一个 repo/worktree 徽标，显示当前仓库、分支与合并 diff 行数（绿 = 无改动，黄 = 有改动）。点开是改动抽屉：未提交/已提交文件树 + diff、IDE 风格提交记录、仓库全量文件浏览。只读展示 git 事实，不写仓库。
 
-<!-- screenshot placeholder: docs/screenshots/worktrees-drawer.png (pending) -->
+<img src="docs/screenshots/worktrees-drawer.png" width="840" alt="worktrees:会话头部徽标与改动抽屉">
 
-### room：多 agent 在同一个会话里协作
+### room（2 个包）：多 agent 在同一个会话里协作
 
 在任意会话里邀请一个 agent，这个会话就成为 room：成员 tab、@ 分发、多成员胶囊、任务板、通知闸门。成员之间可以互相召唤，进度在同一条会话线上可见。
 
-<!-- screenshot placeholder: docs/screenshots/room-members.png (pending) -->
+<img src="docs/screenshots/room-members.png" width="840" alt="room:成员名册 tab,协调者与成员卡片">
 
 ## 装卸单个成员
 
@@ -143,6 +147,7 @@ rm -rf "$DSH_HOME/profiles/web-dev"
 | 整合包 | 定位 |
 |---|---|
 | [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | 日常模式：只含基础体验，不带开发能力 |
+| [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | 插件 monorepo 主仓：全部插件的能力地图、preset 设计与开发文档 |
 
 ## 许可
 
