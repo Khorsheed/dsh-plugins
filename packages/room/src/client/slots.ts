@@ -179,12 +179,17 @@ export interface RoomModelDirectory {
  * ui-model-selection — the picker simply does not render.
  */
 export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjected {
+  readonly backgroundSessions?: import('./executions.ts').BackgroundSessionsStore | undefined
+  readonly activeChildren?: (() => Promise<readonly string[] | undefined>) | undefined
+  readonly stopChild?: ((childSessionId: string) => Promise<RoomMutationOutcome>) | undefined
+  readonly openPlan?: (() => void) | undefined
+  readonly stopExecution?: ((name: string, run: import('../types.ts').RoomMemberRun) => Promise<RoomMutationOutcome>) | undefined
   readonly reconcileDelivery?: ((deliveryId: string, outcome: 'done' | 'cancelled', evidence: string) => Promise<RoomMutationOutcome>) | undefined
   readonly planCommand?: ((command: string) => Promise<RoomMutationOutcome>) | undefined
   readonly openPlanSession?: ((sessionId: string) => void) | undefined
   readonly renderMemberInbox?: LocalAgentUi['renderMemberInbox'] | undefined
   readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
-  readonly stopMember?: ((name: string) => void) | undefined
+  readonly stopMember?: ((name: string, expectedRunId?: string) => void) | undefined
   /**
    * Dispatch an @-message into the room and refresh the store on success.
    * Bare messages never reach here — the composer releases them to the

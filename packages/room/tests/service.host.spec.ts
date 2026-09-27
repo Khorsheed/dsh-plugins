@@ -610,6 +610,19 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { runs: [] } })
   })
 
+  it('only cancels descendants of the displayed room, including grandchildren', async () => {
+    const { ctx, service, sessionId, facade } = await bootRoom()
+    const child = ctx.sessions.create(SessionId('native-child'), { meta: { parentSession: sessionId } })
+    const grandchild = ctx.sessions.create(SessionId('native-grandchild'), { meta: { parentSession: child.id } })
+    const foreign = ctx.sessions.create(SessionId('foreign-child'), { meta: { parentSession: SessionId('elsewhere') } })
+    vi.mocked(facade.cancel).mockReturnValue(true)
+    expect(await service.cancelChild({ sessionId, childSessionId: foreign.id })).toEqual({ ok: true, value: { cancelled: false } })
+    expect(await service.cancelChild({ sessionId, childSessionId: sessionId })).toEqual({ ok: true, value: { cancelled: false } })
+    expect(facade.cancel).not.toHaveBeenCalled()
+    expect(await service.cancelChild({ sessionId, childSessionId: grandchild.id })).toEqual({ ok: true, value: { cancelled: true } })
+    expect(facade.cancel).toHaveBeenCalledWith(grandchild.id)
+  })
+
   it('listProviders reflects the roster, auth state, and delegation capability', async () => {
     const localAgent = {
       start: vi.fn(), resume: vi.fn(), cancel: vi.fn(() => false),

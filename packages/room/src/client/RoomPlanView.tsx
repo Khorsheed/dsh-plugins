@@ -7,19 +7,19 @@ import css from './RoomPlanView.module.css'
 
 type PlanView = Omit<RoomPlan, 'requests'>
 export interface RoomPlanViewProps {
+  expanded?: boolean
   plan?: PlanView | undefined
   members: readonly RoomMember[]
   command: (json: string) => Promise<RoomMutationOutcome>
   openSession?: ((id: string) => void) | undefined
-  stopMember?: ((name: string) => void) | undefined
+  stopMember?: ((name: string, expectedRunId?: string) => void) | undefined
   t: RoomComposerProps['t']
 }
 
 /** Goal review is optional room chrome; ordinary chat never opens this form. */
-export function RoomPlanView({ plan, members, command, openSession, stopMember, t }: RoomPlanViewProps): ReactNode {
+export function RoomPlanView({ plan, members, command, openSession, stopMember, expanded = false, t }: RoomPlanViewProps): ReactNode {
   const [creating, setCreating] = useState(false)
   const [objective, setObjective] = useState('')
-  const [execute, setExecute] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reason, setReason] = useState('')
@@ -95,7 +95,7 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
       {task.dependsOn.length > 0 && <div>{t('plan.dependencies')}: {task.dependsOn.map(id => <a key={id} className={css.dependency} href={`#room-plan-task-${id}`}>{plan?.tasks.find(task => task.id === id)?.title ?? id}</a>)}</div>}
       <div className={css.actions}>
         {owner?.childSessionId && openSession && <button type="button" onClick={() => openSession(owner.childSessionId!)}>{t('plan.session')}</button>}
-        {owner && stopMember && attempt?.startedAt !== undefined && attempt.settledAt === undefined && ['running', 'submitted'].includes(attempt.status) && <button type="button" onClick={() => stopMember(owner.name)}>{t('composer.stop')}</button>}
+        {owner && stopMember && attempt?.startedAt !== undefined && attempt.settledAt === undefined && ['running', 'submitted'].includes(attempt.status) && <button type="button" onClick={() => stopMember(owner.name, attempt.deliveryId)}>{t('composer.stop')}</button>}
         {(uncertain || (!closed && (reviewable || task.status === 'failed'))) && <button type="button" onClick={() => { setReviewTask(task.id); setGoalControls(false); setReason(''); setReferences(''); setArtifacts('') }}>{t(uncertain ? 'plan.reconcile' : reviewable ? 'plan.review' : 'plan.retry')}</button>}
       </div>
       {reviewTask === task.id && attempt && <div className={css.review}>
@@ -120,15 +120,16 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
   const closed = plan !== undefined && ['completed', 'cancelled'].includes(plan.status)
   const createForm = <div className={css.fields}>
     <label>{t('plan.objective')}<textarea value={objective} onChange={event => setObjective(event.target.value)} /></label>
-    <label><input type="checkbox" checked={execute} onChange={event => setExecute(event.target.checked)} />{t('plan.execute')}</label>
-    {budgetFields}
-    <button type="button" disabled={busy || objective.trim() === ''} onClick={() => { void run({ action: 'create', objective: objective.trim(), mode: execute ? 'execute' : 'draft', budget }) }}>{t(execute ? 'plan.start' : 'plan.saveDraft')}</button>
+    <details><summary>{t('activity.limits')}</summary>{budgetFields}</details>
+    <div className={css.actions}>
+      <button type="button" disabled={busy || objective.trim() === ''} onClick={() => { void run({ action: 'create', objective: objective.trim(), mode: 'execute', budget }) }}>{t('plan.start')}</button>
+      <button type="button" disabled={busy || objective.trim() === ''} onClick={() => { void run({ action: 'create', objective: objective.trim(), mode: 'draft', budget }) }}>{t('plan.saveDraft')}</button>
+    </div>
   </div>
-  return <details className={css.root} data-testid="room-plan">
+  return <details className={expanded ? `${css.root} ${css.expanded}` : css.root} data-testid="room-plan" open={expanded || undefined}>
     <summary>{plan === undefined ? t('plan.create') : `${plan.objective} · ${status(plan.status)} · ${t('plan.acceptedCount', { done: accepted, total: leaf.length })}`}</summary>
     {error && <p role="alert">{error}</p>}
     {plan === undefined ? createForm : <>
-      <p>{t('plan.revision')}: {plan.revision} · {t('plan.attempts')}: {plan.tasks.reduce((count, task) => count + task.attempts.length, 0)}/{plan.budget.maxAttempts} · {t('plan.parallel')}: {plan.budget.maxParallel}</p>
       {plan.reason && <p role="status">{plan.reason}</p>}
       {!closed && <div className={css.actions}>
         {plan.status === 'running' ? <button type="button" disabled={busy} onClick={() => { void run({ action: 'pause', goalId: plan.id, reason: t('plan.humanPause') }) }}>{t('plan.pause')}</button>
@@ -140,7 +141,7 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
       {plan.completion && <><p>{plan.completion.summary}</p>{list(plan.completion.references)}{list(plan.completion.artifacts)}</>}
       {!closed && <details className={css.review} open={goalControls} onToggle={event => { const open = event.currentTarget.open; setGoalControls(open); if (open) setReviewTask(null) }}>
         <summary>{t('plan.goalControls')}</summary>
-        {goalControls && <>{budgetFields}<button type="button" disabled={busy} onClick={() => { void run({ action: 'budget', budget }) }}>{t('plan.updateBudget')}</button>
+        {goalControls && <><details><summary>{t('activity.limits')}</summary>{budgetFields}<button type="button" disabled={busy} onClick={() => { void run({ action: 'budget', budget }) }}>{t('plan.updateBudget')}</button></details>
         {evidenceFields}
         <div className={css.actions}>
           <button type="button" disabled={busy || !hasEvidence || leaf.length === 0 || accepted !== leaf.length} onClick={() => { void run({ action: 'complete', evidence }) }}>{t('plan.complete')}</button>

@@ -37,6 +37,7 @@ import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
 import { RoomComposer, selectRoomComposer } from './RoomComposer.tsx'
+import { ROOM_PLAN_KIND, ROOM_PLAN_TAB_ID, RoomPlanTab } from './RoomPlanTab.tsx'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
@@ -382,6 +383,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // main-agent turn Stop: the takeover renders the dock
   // surfaces and the Stop button itself, because their seats hide with the
   // official fallback.
+  const sidebar = ctx.get('sidebarRight')
+  const sidebarTabs = ctx.get('sidebarRightTabs')
   const composerEntry = {
     name: 'conversation.composer',
     priority: -10,
@@ -402,10 +405,26 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: result?.ok && !result.value.ok ? result.value.message : t('composer.error.generic') }
       },
       openPlanSession: id => openSession(id as SessionId),
+      backgroundSessions: ctx.sessions.list,
+      activeChildren: async () => {
+        const gateway = ctx.get('remote.localAgentGateway') as { activeDelegations?: () => Promise<{ ok: boolean; value?: readonly string[] }> } | undefined
+        const result = await gateway?.activeDelegations?.()
+        return result?.ok ? result.value : undefined
+      },
+      stopChild: async childSessionId => {
+        const result = await remote?.cancelChild({ sessionId, childSessionId: childSessionId as SessionId })
+        return result?.ok && result.value.ok && result.value.value.cancelled ? { ok: true } : { ok: false, message: t('activity.stopChanged') }
+      },
+      ...sidebar === undefined || sidebarTabs === undefined ? {} : { openPlan: () => { sidebar.openTab(ROOM_PLAN_KIND, { params: {} }) } },
+      stopExecution: async (name, run) => {
+        const result = await remote?.cancel({ sessionId, name, expectedStartedAt: run.startedAt, ...run.runId === undefined ? {} : { expectedRunId: run.runId } })
+        await roomStore.refresh(sessionId)
+        return result?.ok && result.value.ok && result.value.value.cancelled ? { ok: true } : { ok: false, message: t('activity.stopChanged') }
+      },
       submit,
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
-      stopMember: name => { void remote?.cancel({ sessionId, name }).then(() => roomStore.refresh(sessionId)) },
+      stopMember: (name, expectedRunId) => { void remote?.cancel({ sessionId, name, ...expectedRunId === undefined ? {} : { expectedRunId } }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
       // The hidden official bar's Stop: the runtime session face's cancel
       // (the same verb ui-conversation's own Stop injects). A torn-down
@@ -417,6 +436,22 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       },
     }),
   } as const
+  if (sidebar !== undefined && sidebarTabs !== undefined) {
+    const planToggle = new RegistrationToggle(
+      () => sidebarTabs.register({ id: ROOM_PLAN_TAB_ID, kind: ROOM_PLAN_KIND, title: () => t('activity.plan') }),
+      () => roomChrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
+    )
+    planToggle.setReady(true)
+    const unsubscribe = roomChrome.subscribe(() => planToggle.sync())
+    disposers.push(async () => { unsubscribe(); planToggle.setReady(false) })
+    ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+      name: 'sidebar.right.pane.tab', key: ROOM_PLAN_TAB_ID, locale: NS,
+      inject: (sessionId: SessionId) => {
+        const { roomStore, planCommand, openPlanSession, stopMember } = composerEntry.inject(sessionId)
+        return { roomStore, planCommand, openPlanSession, stopMember }
+      },
+    }, RoomPlanTab))
+  }
   let composerDispose: (() => void) | undefined
   ctx.slots.inject('conversation.composer', () => {
     composerDispose = ctx.slots.register(composerEntry, RoomComposer)

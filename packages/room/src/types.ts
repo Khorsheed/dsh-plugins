@@ -139,8 +139,21 @@ export interface RoomSpeechEvent {
   readonly durationMs?: number
 }
 
+/** Observed execution metadata; separate from lifecycle edges to avoid restarting chat nodes. */
+export interface RoomExecutionMetadataEvent {
+  readonly runId: string
+  readonly model?: string
+  readonly effort?: string
+  readonly tokens?: number
+}
+
 /** A member run's lifecycle edge. */
 export interface RoomRunStateEvent {
+  readonly childSessionId?: SessionId
+  /** Observed round metadata, never a requested-model guess or session total. */
+  readonly model?: string
+  readonly effort?: string
+  readonly tokens?: number
   /** Stable execution identity; legacy journals use startedAt. */
   readonly runId?: string
   readonly member: string
@@ -255,6 +268,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/speech': RoomSpeechEvent
     /** Member run lifecycle. */
     'room/run-state': RoomRunStateEvent
+    /** Log-only observed metadata for a single execution. */
+    'room/execution-metadata': RoomExecutionMetadataEvent
     /** Notification gate: a member-to-member relay arrived (pending). */
     'room/relay': RoomRelayEvent
     /** Notification gate: a relay was confirmed, dismissed, or delivered. */
@@ -324,6 +339,17 @@ export interface RoomMemberRun {
   readonly error?: string
 }
 
+/** Durable per-execution history; unlike runs this retains earlier member rounds. */
+export interface RoomExecution extends RoomMemberRun {
+  readonly id: string
+  readonly memberId?: string
+  readonly childSessionId?: SessionId
+  readonly provider?: string
+  readonly model?: string
+  readonly effort?: string
+  readonly tokens?: number
+}
+
 /**
  * The replayed room state: roster, notification relays, the task board, run
  * states, and the current goal. There is deliberately NO blackboard/log
@@ -331,6 +357,7 @@ export interface RoomMemberRun {
  * design note).
  */
 export interface RoomState {
+  readonly executions?: readonly RoomExecution[]
   readonly plan?: Omit<RoomPlan, 'requests'>
   readonly deliveries?: readonly RoomDelivery[]
   readonly coordinator?: RoomCoordinatorEvent
@@ -564,6 +591,9 @@ export type RoomPostMessageResult =
 
 /** cancel request: interrupt a member's in-flight run. */
 export interface RoomCancelRequest {
+  /** Optional fencing for an execution card; a stale card must never stop a successor. */
+  readonly expectedRunId?: string
+  readonly expectedStartedAt?: number
   /** Room session. */
   readonly sessionId: SessionId
   /** Member whose run should be cancelled. */

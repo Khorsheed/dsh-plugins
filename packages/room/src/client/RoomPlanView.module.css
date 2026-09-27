@@ -17,3 +17,4 @@
 .text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .reference { font-family: monospace; overflow-wrap: anywhere; }
 .dependency { margin-right: 8px; }
+.expanded { max-height:none; overflow:visible; border:0; margin:0; padding:16px; font-size:13px; }

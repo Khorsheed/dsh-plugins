@@ -28,6 +28,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context (create/resume
 // are consumed through the registry, not the agent-loop package).
 import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-subagent'
 // The persistence read path refuses logs carrying event types outside the
 // KNOWN_SESSION_EVENT_TYPES catalog; registering the room vocabulary declares
 // that a room-mounted build understands them (see ROOM_EVENT_TYPES in
@@ -1053,15 +1054,23 @@ export class RoomService extends TypertRemoteService {
     if (!loaded.ok) return { ok: false, error: loaded.error }
     const member = loaded.state.members.find(entry => entry.name === request.name)
     if (member === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    const expected = loaded.state.runs.find(entry => entry.member === request.name && entry.state === 'running')
+    if ((request.expectedRunId !== undefined && expected?.runId !== request.expectedRunId)
+      || (request.expectedStartedAt !== undefined && expected?.startedAt !== request.expectedStartedAt)) {
+      return { ok: true, value: { cancelled: false } }
+    }
     const facade = probeLocalAgent(this.ctx)
-    const hit = facade !== undefined && member.childSessionId !== undefined
+    const native = member.kind === 'main-agent' && expected !== undefined ? this.ctx.agents.get(loaded.session.id) : undefined
+    if (native !== undefined) native.cancel({ kind: 'user' })
+    const hit = native !== undefined || (facade !== undefined && member.childSessionId !== undefined
       ? facade.cancel(member.childSessionId)
-      : false
+      : false)
     if (hit) {
       const running = loaded.state.runs.find(entry => entry.member === request.name && entry.state === 'running')
       if (running === undefined) return { ok: true, value: { cancelled: true } }
       loaded.session.append('room/run-state', {
         member: request.name, state: 'cancelled', startedAt: running.startedAt,
+        elapsedMs: Math.max(0, Date.now() - running.startedAt),
         ...running.runId === undefined ? {} : { runId: running.runId },
       })
       // The engine's settle no-ops behind this edge, so the task closing the
@@ -1076,6 +1085,28 @@ export class RoomService extends TypertRemoteService {
       return { ok: true, value: { cancelled: true } }
     }
     return { ok: true, value: { cancelled: false } }
+  }
+
+  /** Native descendant controls share the host's continuation and cancellation channels. */
+  @Remote('cancelChild')
+  async cancelChild(request: { sessionId: SessionId; childSessionId: SessionId }): Promise<RoomCancelResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const target = this.ctx.sessions.get(request.childSessionId)
+    const seen = new Set<string>([request.childSessionId])
+    let parent = target?.header.parentSession
+    while (parent !== undefined && parent !== request.sessionId && !seen.has(parent)) {
+      seen.add(parent)
+      parent = this.ctx.sessions.get(parent)?.header.parentSession
+    }
+    if (!target || target.id === request.sessionId || parent !== request.sessionId) return { ok: true, value: { cancelled: false } }
+    const facadeHit = probeLocalAgent(this.ctx)?.cancel(target.id) ?? false
+    const agent = this.ctx.agents.get(target.id)
+    if (agent) {
+      this.ctx.get('subagents')?.interrupt(target.id, { kind: 'user', parentSessionId: target.header.parentSession! })
+      agent.cancel({ kind: 'user' })
+    }
+    return { ok: true, value: { cancelled: facadeHit || agent !== undefined } }
   }
 }
 

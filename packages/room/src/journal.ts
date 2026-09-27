@@ -13,7 +13,7 @@
 import { replayDeliveries } from './deliveries.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  RoomMember, RoomMemberRun, RoomRelay, RoomState, RoomTask, RoomTaskProgress,
+  RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomState, RoomTask, RoomTaskProgress,
 } from './types.ts'
 
 /**
@@ -46,6 +46,7 @@ export const ROOM_EVENT_TYPES = [
   'room/dispatch',
   'room/speech',
   'room/run-state',
+  'room/execution-metadata',
   'room/relay',
   'room/relay-resolved',
   'room/task-added',
@@ -120,6 +121,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const tasks: RoomTask[] = []
   const taskById = new Map<string, RoomTask>()
   const runs = new Map<string, RoomMemberRun>()
+  const executions = new Map<string, RoomExecution>()
   let goal: string | undefined
   let coordinator: RoomState['coordinator']
   for (const event of events) {
@@ -162,6 +164,12 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         const patched: RoomMember = {
           ...withoutModel,
           ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
+        }
+        // First admission can precede publication of the native child handle.
+        for (const [id, execution] of executions) {
+          if (execution.memberId === member.id && execution.childSessionId === undefined && patched.childSessionId !== undefined) {
+            executions.set(id, { ...execution, childSessionId: patched.childSessionId })
+          }
         }
         // A rename migrates every name-keyed projection: the roster key, the
         // tasks' member (and blockedBy), the relays' from/to, and the runs
@@ -283,7 +291,24 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         goal = text === '' ? undefined : text
         break
       }
+      case 'room/execution-metadata': {
+        const previous = executions.get(event.data.runId)
+        if (previous) executions.set(previous.id, { ...previous, ...event.data })
+        break
+      }
       case 'room/run-state': {
+        const member = byName.get(event.data.member)
+        const id = event.data.runId ?? `legacy:${member?.id ?? event.data.member}:${event.data.startedAt}`
+        const previous = executions.get(id)
+        executions.set(id, {
+          id,
+          ...member?.id === undefined ? {} : { memberId: member.id },
+          ...member?.childSessionId === undefined ? {} : { childSessionId: member.childSessionId },
+          ...member?.provider === undefined ? {} : { provider: member.provider },
+          ...previous,
+          ...event.data,
+          ...event.data.state === 'running' || event.data.elapsedMs !== undefined ? {} : { elapsedMs: Math.max(0, event.time - event.data.startedAt) },
+        })
         const current = runs.get(event.data.member)
         // An older turn may finish journaling after core admits its successor.
         // Its delivery outcome remains durable, but it cannot replace that successor.
@@ -305,7 +330,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const planEvent = events.filter(event => event.type === 'room/plan-state').at(-1)
   const plan = planEvent?.type === 'room/plan-state' ? (({ requests: _requests, ...view }) => view)(planEvent.data) : undefined
   const deliveries = replayDeliveries(events)
-  return { members, relays, tasks, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal } }
+  return { members, relays, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal } }
 }
 
 /**

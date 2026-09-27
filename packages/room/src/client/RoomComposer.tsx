@@ -47,7 +47,7 @@ import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
 import { RoomDockCapsules } from './RoomDockCapsules.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
-import { RoomPlanView } from './RoomPlanView.tsx'
+import { RoomActivityDock } from './RoomActivityDock.tsx'
 import { RoomQueueStrip, type RoomQueueItem } from './RoomQueueStrip.tsx'
 import { RoomRecoveryView } from './RoomRecoveryView.tsx'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
@@ -118,7 +118,7 @@ export function selectRoomComposer(
 
 /** The room composer takeover component. */
 export function RoomComposer({
-  sessionId, roomStore, submit, stop, addTask, closeTask, setGoal, planCommand, openPlanSession, reconcileDelivery,
+  sessionId, roomStore, submit, stop, addTask, closeTask, setGoal, planCommand, openPlanSession, openPlan, stopExecution, backgroundSessions, activeChildren, stopChild, reconcileDelivery,
   roomCwd, invite, listProviders, listNames, browseDirectory, modelSurface, renderHarnessModelPicker, roomChrome,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, useSession, useProjection, t,
 }: RoomComposerProps): ReactNode {
@@ -242,7 +242,7 @@ export function RoomComposer({
           official QueueDock, read-only). */}
       <div className={css.dock}>
         {!external && useProjection !== undefined && <RoomTodoStrip useProjection={useProjection} t={t} />}
-        <RoomDockCapsules
+        {(state === undefined || (state.plan === undefined && (state.executions?.length ?? 0) === 0)) && <RoomDockCapsules
           sessionId={sessionId}
           roomStore={roomStore}
           addTask={addTask}
@@ -258,13 +258,13 @@ export function RoomComposer({
           renderHarnessModelPicker={renderHarnessModelPicker}
           roomChrome={roomChrome}
           t={t}
-        />
-        {state !== undefined && planCommand !== undefined && <RoomPlanView plan={state.plan} members={state.members} command={planCommand} openSession={openPlanSession} stopMember={stopMember} t={t} />}
+        />}
         {state !== undefined && reconcileDelivery !== undefined && <RoomRecoveryView deliveries={state.deliveries ?? []} members={state.members} reconcile={reconcileDelivery} openSession={openPlanSession} t={t} />}
         <RoomQueueStrip
           items={[...external ? [] : queued, ...(state?.deliveries ?? []).filter(row => row.memberId === coordinator?.id && (row.status === 'queued' || row.status === 'uncertain')).map(row => ({ id: row.id, preview: row.status === 'uncertain' ? `${row.error ?? 'Outcome unknown'}: ${row.text}` : row.text }))]}
           t={t}
         />
+        {state !== undefined && <RoomActivityDock key={sessionId} sessionId={sessionId} state={state} backgroundSessions={backgroundSessions} activeChildren={activeChildren} stopChild={stopChild} openSession={openPlanSession} stopExecution={stopExecution} planCommand={planCommand} openPlan={openPlan} stopMember={stopMember} t={t} />}
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}

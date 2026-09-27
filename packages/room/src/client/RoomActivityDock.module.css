@@ -1,0 +1,34 @@
+.root { width:100%; min-width:0; color:var(--dsw-alias-label-primary,#1f2329); font-size:13px; }
+.capsules { display:flex; flex-wrap:wrap; gap:6px; padding:0 var(--dsh-composer-dock-inset,8px) 6px; }
+.capsule { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border:1px solid transparent; border-radius:12px; background:var(--dsw-alias-bg-layer-2,#f3f4f6); color:inherit; font:inherit; cursor:pointer; }
+.capsule:hover,.capsule[aria-expanded=true] { background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.15)); }
+.icon { display:grid; place-items:center; width:16px; height:16px; flex:none; }
+.runningDot { width:8px; height:8px; border-radius:50%; background:var(--dsw-alias-state-success-primary,#34a853); }
+.panel { box-sizing:border-box; width:100%; max-height:min(48vh,440px); overflow:auto; margin-bottom:8px; padding:16px; border:1px solid var(--dsw-alias-border-l2-darkmode-thin,rgba(127,127,127,.2)); border-radius:18px; background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-1,#fff)); box-shadow:var(--dsw-shadow-lv2,0 4px 16px rgba(0,0,0,.05)); }
+.heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px; overflow-wrap:anywhere; }
+.heading strong { font-weight:500; }
+.filters { display:flex; flex-wrap:wrap; gap:2px; }
+.filters button,.footer button { border:0; background:transparent; color:inherit; font:inherit; font-size:12px; border-radius:7px; padding:5px 8px; cursor:pointer; }
+.filters button[aria-pressed=true],.filters button:hover,.footer button:hover { background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12)); }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); gap:10px; }
+.card { min-width:0; background:var(--dsw-alias-bg-layer-2,#f5f6f8); border-radius:12px; padding:5px; }
+.cardMain { display:block; box-sizing:border-box; width:100%; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; padding:9px; font:inherit; cursor:pointer; }
+.cardMain:hover { background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.08)); }
+.cardMain:disabled { cursor:default; }
+.meta { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px; color:var(--dsw-alias-label-tertiary,#737982); font-size:12px; }
+.title { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; margin:6px 0; font-weight:500; }
+.secondary { color:var(--dsw-alias-label-tertiary,#737982); font-size:12px; overflow-wrap:anywhere; }
+.footer { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px; padding:0 6px 4px; font-size:12px; color:var(--dsw-alias-label-tertiary,#737982); }
+.footer button { display:inline-flex; align-items:center; gap:5px; }
+.footer button:disabled { opacity:.5; cursor:default; }
+.error { font-size:12px; overflow-wrap:anywhere; margin:6px 9px; color:var(--dsw-alias-state-error-primary,#b33); }
+.empty { color:var(--dsw-alias-label-tertiary,#737982); text-align:center; padding:14px; }
+.planList { display:grid; }
+.planRow { width:100%; display:grid; grid-template-columns:14px minmax(0,1fr) auto; gap:9px; align-items:center; padding:10px 0; background:transparent; color:inherit; border:0; font:inherit; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.planRow:hover { background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.08)); }
+.taskDot { width:9px; height:9px; border:1px solid currentColor; border-radius:50%; color:var(--dsw-alias-label-tertiary,#737982); }
+.taskDot[data-status=accepted] { background:var(--dsw-alias-state-success-primary,#34a853); border-color:transparent; }
+.meta [data-status=running],.taskDot[data-status=running] { color:var(--dsw-alias-state-business-primary,#4176e6); }
+.meta [data-status=failed],.meta [data-status=uncertain] { color:var(--dsw-alias-state-error-primary,#b33); }
+.meta [data-status=submitted] { color:var(--dsw-alias-state-warning-primary,#a67018); }
+@media(max-width:500px) { .planRow { grid-template-columns:14px minmax(0,1fr); } .planRow .secondary { grid-column:2; } .panel { padding:12px; } }

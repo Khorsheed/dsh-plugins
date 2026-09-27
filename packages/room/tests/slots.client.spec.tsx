@@ -77,6 +77,7 @@ async function bench(options: {
       'conversation.view': { kind: 'list', scope: 'session' },
       'conversation.chat.node': { kind: 'keyed', scope: 'session' },
       'conversation.input.dock': { kind: 'list', scope: 'session' },
+      'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
     },
   } as never, () => null)
   return { ctx, slots, remote, remoteService, sessions, conversationEvents, uiWorkspace }
@@ -172,6 +173,25 @@ describe('room client apply', () => {
     const entry = slots.entries('conversation.chat.node').find(node => node.options.key === 'room-speech')!
     const face = (entry.inject as unknown as () => RoomSpeechInjected)()
     expect(() => { face.openSession('child-1' as never) }).not.toThrow()
+  })
+
+  it('opens plan details in the optional host sidebar and disposes its registration', async () => {
+    const { ctx, slots } = await bench({ current: { id: 'room-1' } })
+    const openTab = vi.fn()
+    const unregister = vi.fn()
+    const register = vi.fn(() => unregister)
+    ctx.provide('sidebarRight', { openTab } as never)
+    ctx.provide('sidebarRightTabs', { register } as never)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ id: '@khorsheed/dsh-room/plan', kind: 'room-plan' }))
+    expect(slots.entries('sidebar.right.pane.tab').map(entry => entry.options.key)).toContain('@khorsheed/dsh-room/plan')
+    const composer = slots.entries('conversation.composer')[0]!
+    const face = (composer.inject as unknown as (sessionId: string) => RoomComposerInjected)('room-1')
+    face.openPlan?.()
+    expect(openTab).toHaveBeenCalledWith('room-plan', { params: {} })
+    await fiber.dispose()
+    expect(unregister).toHaveBeenCalled()
   })
 
   it('sends a stable retry ID through the Remote and retires it after acknowledgement', async () => {

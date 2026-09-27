@@ -10,6 +10,7 @@ Getting several agents onto one piece of work today means copy-pasting between w
 
 ## Features
 
+- **Collapsible execution and plan capsules** — Background agents sits above the input, showing only its label and a green dot while work runs. Expand for execution state, duration, reported round tokens, targeted Stop and real conversation links; native descendant totals are explicitly labeled as session totals. Plans start with a compact progress list; full review and limits open in the optional host sidebar, with inline fallback.
 - **Inviting promotes the session** — no separate "create room" step: invite the first member into any session and it becomes a Room; the native DSH agent joins as the initial coordinator (named `dsh` in new rooms; existing rooms keep their recorded addressing names).
 - **@-addressing with fan-out** — leading `@name` tokens address existing members, and several names fan out at once; a mention picked from the completion menu addresses explicitly even mid-sentence, while a hand-typed mention inside prose does not (the menu never creates members). Same-member turns share one queue, different members run concurrently, and durable request identities keep retries from duplicating accepted work.
 - **Coordinator handoff** — any prepared member (DSH, Codex, Claude Code, Kimi) can take over via **Set as coordinator** in the Members tab; the handoff record carries the goal, the plan state, open tasks and recent context. A running coordinator cannot be replaced until its current turn settles.
