@@ -5,9 +5,7 @@
  * `reconcileCategories` files an orphan card's row back rather than drop the
  * card). The store: the per-canvas write, and the fact that every card write
  * now asks THIS board whether the kind is usable — retired means "no new
- * cards", never "hide the old ones". The model face: the `kind` enum and the
- * menu it is spelled from come off the same list, and the count line spells a
- * category with the same token the card lines do.
+ * cards", never "hide the old ones".
  */
 import { dirname, join, normalize } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -16,8 +14,6 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { CanvasService } from '../src/service.ts'
 import { CanvasBoardService } from '../src/store.ts'
-import { categoryMenuOf, categoryTagOf, renderCanvasPrompt } from '../src/prompt.ts'
-import { canvasToolDefinitions } from '../src/tools.ts'
 import type { CanvasBoardService as BoardService } from '../src/store.ts'
 import {
   BOARD_CARD_KINDS, MAX_CATEGORY_LABEL_LENGTH, defaultCategories, enabledCategories,
@@ -471,71 +467,5 @@ describe('the store: every card write asks THIS board', () => {
     expect(JSON.parse(fs.text(file))['categories']).toEqual(
       expect.not.arrayContaining([expect.objectContaining({ id: CAT })]),
     )
-  })
-})
-
-describe('the model face of the catalog', () => {
-  it('spells an untouched built-in as the bare id, and anything named as id（名称）', () => {
-    expect(categoryTagOf(undefined, 'fragment')).toBe('fragment')
-    expect(categoryTagOf({ id: 'fragment', label: '', order: 10, enabled: true }, 'fragment')).toBe('fragment')
-    expect(categoryTagOf({ id: 'fragment', label: '闪念', order: 10, enabled: true }, 'fragment')).toBe('fragment（闪念）')
-    expect(categoryTagOf({ id: CAT, label: CAT, order: 60, enabled: true }, CAT)).toBe(`${CAT}（${CAT}）`)
-  })
-
-  it('menus the enabled rows, and falls back to the five when all are retired', () => {
-    expect(categoryMenuOf(defaultCategories())).toBe(
-      'fragment（灵感）、question（问题）、grounding（共识）、reference（来源）、document（文档）',
-    )
-    expect(categoryMenuOf([
-      { id: 'fragment', label: '闪念', order: 10, enabled: true },
-      { id: 'question', label: '', order: 20, enabled: false },
-      { id: CAT, label: '反方观点', order: 60, enabled: true },
-    ])).toBe(`fragment（闪念）、${CAT}（反方观点）`)
-    expect(categoryMenuOf(defaultCategories().map(row => ({ ...row, enabled: false }))))
-      .toBe('fragment（灵感）、question（问题）、grounding（共识）、reference（来源）、document（文档）')
-  })
-
-  it('counts the board with the same token the card lines use', () => {
-    const renamed = defaultCategories().map(row => (row.id === 'fragment' ? { ...row, label: '闪念' } : row))
-    const prompt = renderCanvasPrompt(boardOf([card('fragment', '沉默并不总是因为恐惧')], renamed))
-    expect(prompt).toContain('板上现有 1 张可见卡（fragment（闪念） 1）')
-    expect(prompt).toContain('- [fragment（闪念）] 沉默并不总是因为恐惧')
-    // Untouched: the count line is the bare id, exactly as before the catalog.
-    expect(renderCanvasPrompt(boardOf([card('fragment', '一条灵感')], defaultCategories())))
-      .toContain('板上现有 1 张可见卡（fragment 1）')
-  })
-
-  it('names the grounding guardrail after the row the user gave it', () => {
-    const renamed = defaultCategories().map(row => (row.id === 'grounding' ? { ...row, label: '我们的共识' } : row))
-    const prompt = renderCanvasPrompt(boardOf([card('grounding', '先问，再下结论')], renamed))
-    expect(prompt).toContain('以下「我们的共识」是用户确认过的既定立场')
-    expect(renderCanvasPrompt(boardOf([card('grounding', '先问，再下结论')], defaultCategories())))
-      .toContain('以下「共识」是用户确认过的既定立场')
-  })
-
-  it('hands the side-chat tools THIS canvas enum, on the same floor as the menu', async () => {
-    const { board } = harness()
-    const created = await createBoard(board)
-    const catalog = [
-      ...created.categories.map(row => ({ ...row })),
-      { id: CAT, label: '反方观点', order: 60, enabled: true },
-      { id: CAT2, label: '已停用', order: 70, enabled: false },
-    ]
-    // `defineTool` compiles the declarative parameters into a JSON Schema, so
-    // the enum the model sees lives under `properties.kind`, and the spelled
-    // menu lives in the tool's own description.
-    const proposeOf = (categories: readonly BoardCategory[]): { enum?: string[]; description: string } => {
-      const def = canvasToolDefinitions(board, created.id, SESSION, categories)
-        .find(row => row.name === 'canvas_propose_card')!
-      const schema = def.parameters as unknown as { properties: Record<string, { enum?: string[] }> }
-      return { enum: schema.properties['kind']?.enum, description: def.description }
-    }
-    expect(proposeOf(catalog).enum).toEqual([...BOARD_CARD_KINDS, CAT])
-    expect(proposeOf(catalog).description).toContain(`${CAT}（反方观点）`)
-    expect(proposeOf(catalog).description).not.toContain(`${CAT2}（已停用）`)
-    // Retired-everything: still a wire-legal enum, and the menu says the same.
-    const allOff = defaultCategories().map(row => ({ ...row, enabled: false }))
-    expect(proposeOf(allOff).enum).toEqual([...BOARD_CARD_KINDS])
-    expect(proposeOf(allOff).description).toContain('fragment（灵感）')
   })
 })

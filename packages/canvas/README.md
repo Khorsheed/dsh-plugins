@@ -8,7 +8,7 @@
 
 v1 的工作区级灵感稿纸**存储原样保留**（编辑器已退役）——原文件仍在磁盘上，任何编辑器都能打开；v1 五个 Remote 动词在线上不动。
 
-> 路线注记：M1–M2.5 曾走过 main 面板空间路线，已退役——宿主 `RightbarRoot` 只在会话面板渲染右栏，自定义 main 面板让一切右栏承接按构造失效；回到右栏是与宿主布局同构的答案。数据模型、Remote、板面/详情组件、side-chat 集成全部沿用。
+> 路线注记：M1–M2.5 曾走过 main 面板空间路线，已退役——宿主 `RightbarRoot` 只在会话面板渲染右栏，自定义 main 面板让一切右栏承接按构造失效；回到右栏是与宿主布局同构的答案。数据模型、Remote、板面/详情组件全部沿用（side-chat 集成后来在 2026-09-27 退役，见下）。
 
 ## 功能
 
@@ -71,7 +71,7 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——右栏页型 tab（`ctx.sidebarRightTabs` + keyed `sidebar.right.pane.tab`）自 0.1.5 起存在，`minHost` 随之抬到 0.1.5-rc.1；旧宿主没有右栏面，请停留在旧发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
 - **web 面插件**：headless profile 没有浏览器消费者，本插件在那里不贡献任何东西。
-- **主会话画布工具**注册在独立 composition 入口 `./agent`（出厂 patch 根级默认全会话可见，可按 preset 收敛——见上节；origin tag 自带）；目标画布按会话 focus 解析（右栏 tab 当前打开的画布），无打开画布时工具返回明确说明文本。**聊天依赖 side-chat 插件但缺席不致命**：探测 `ctx.get('sideChat')`（单向边，manifest `dsh.references` 登记），缺席时聊天入口全部隐藏、板面完整可用。
+- **主会话画布工具**注册在独立 composition 入口 `./agent`（出厂 patch 根级默认全会话可见，可按 preset 收敛——见上节；origin tag 自带）；目标画布按会话 focus 解析（右栏 tab 当前打开的画布），无打开画布时工具返回明确说明文本。画布不依赖任何其他社区插件（2026-09-27 起不再探测 side-chat，manifest 也不再登记 `dsh.references`）。
 - **v1 写入按「发起这次点击的会话」围栏**。三个写接口（新建/保存/归档）都先取调用会话的沙箱策略再写：围栏挂在会话自己的工作区上，不是宿主的进程目录。所以会话是只读模式时，画布会明确拒绝写入（`这个位置不可写`），而不是悄悄写进去。
 - **v2 板写入围栏重定界到 state 目录**。画布是部署级状态，任何会话的工作区都装不下它：写入沿用挂载的 `ctx.fs`（版本守卫、原子写、观测轨迹），会话解析出**模式**与 session id（只读部署照样拒绝），但可写边界重定界为插件自己的 `$DSH_HOME/state/canvas`——一个正好围住 state 目录的 workspace-write 围栏，绝不用裸 `node:fs` 绕。`DSH_HOME` 未设置时 state 根退回 `process.cwd()`（datasets 先例）。画布工具的写入走同一条围栏（优先执行 Agent 自己的会话）。
 - **粘贴图片走宿主附件库**：探测 `ctx.get('attachments')`（`@deepseek-ai/dsh-attachment`，peer 声明为 optional）。像素进宿主的内容寻址库，卡里只留一行 `attachment://…` 指针（五个字段都是宿主读回时要比对的）；没挂附件库的部署里图片入口自己降级——贴一次说一次「这个部署没有装图片存储」，文字粘贴照常。渲染侧只认这一个 scheme：卡片里手写的本地路径永远不会变成一次文件请求（风险 ⑬）。
@@ -96,7 +96,6 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 - **两个分区重叠时，卡的归属取先到的那个**（列表顺序），不取「更贴合」的那个。重叠是这块板要自己收的口子，不是几何层要猜的题。
 - **「顺线扩一圈」是临时的**：它只改这一次要发出去哪几张，默认关，永不落盘——线画在板上是内容，扩圈是手势。
 - **仍不做**（后续里程碑）：stats 自适应规则、web 搜索接线（M3 后段）；`assets/` 大文件落盘、html 卡的源码编辑高亮、会话侧检索工具（M4）。也没有画布标题改名。**长文那一档已于 2026-09-22 整体删除**：它从来没有模型侧工具（`canvas_propose_draft` 与候选 diff 接受流只存在于提案里，`exportDraftToWorkspace` 从未实现），那份稿关在 state 目录里出不去；要长文就在会话里让 Agent 写工作区文件，官方文件预览器已经能看。
-- **画布 Agent 的 cwd 由 side-chat 的继承规则决定**（调用会话的 cwd），不是提案 §6 设想的「首个挂载工作区或画布目录」——那是 side-chat 包的契约，画布不越界修改。
 - **Agent 改板的可见性**靠标签页可见时每 4 秒一次的轻量刷新（共享 rev `touch()`，版本没变就保留原对象、不重绘）；标签页隐藏时不轮询，回来时下一拍补上。
 - **收列表是一次性建议**：tab 首次可见时每会话建议一次收起会话列表（`toggleSidebar()`，DOM 探测 gated），此后布局由你接管；fullscreen 不作建议（宿主 fullscreen 隐藏右栏拖拽把手，per-tab presentation seam 是上游候选）。
 
@@ -116,7 +115,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 **板服务**：`CanvasBoardService`（`ctx.canvasBoard`）整板版本围栏读写——读取 → 应用纯函数修改 → `replaceIfVersion` 写回；版本冲突**重读重放一次**再报 `stale`（两个浏览器标签页同时操作不丢卡）。写入围栏见 Compatibility 的「重定界」条。
 
-**Remote**：namespace `canvas` 在 v1 五动词（`list` / `read` / `create` / `write` / `setArchived`）之外的空间动词：`listCanvases` / `createCanvas` / `readBoard` / `putCard` / `patchCard` / `addComment` / `archiveCanvas` / `deleteCanvas` / `deleteCard` / `setCategories` / `setLayout` / `askAgent` / `chatStatus` / `focusCanvas`，加上图片那两条不带会话的 `attachImage` / `imageBytes`。变更类全部 agent 优先（调用会话供电围栏），读取类不带 agent——v1 的线上约定原样延续。`setLayout` 是连线面唯一的写动词：一次拖动可能同时动一张分区和它里面五张卡，逐张 `patchCard` 会各自撞自己的版本守卫，所以位置/分区/线三样合在一个动词里一盘落定。**「没带这个字段」和「带了一个空数组」是两件事**：省略 = 这一盘不动，`[]` = 清空。
+**Remote**：namespace `canvas` 在 v1 五动词（`list` / `read` / `create` / `write` / `setArchived`）之外的空间动词：`listCanvases` / `createCanvas` / `readBoard` / `putCard` / `patchCard` / `addComment` / `archiveCanvas` / `deleteCanvas` / `deleteCard` / `setCategories` / `setLayout` / `focusCanvas`，加上图片那两条不带会话的 `attachImage` / `imageBytes`。变更类全部 agent 优先（调用会话供电围栏），读取类不带 agent——v1 的线上约定原样延续。`setLayout` 是连线面唯一的写动词：一次拖动可能同时动一张分区和它里面五张卡，逐张 `patchCard` 会各自撞自己的版本守卫，所以位置/分区/线三样合在一个动词里一盘落定。**「没带这个字段」和「带了一个空数组」是两件事**：省略 = 这一盘不动，`[]` = 清空。
 
 **右栏只有一个 tab 类型**（M3 注册一次；0.4.5 一度注册两次，0.4.6 把第二次收回来了）：`ctx.sidebarRightTabs.register` 一次，body 挂在 keyed `sidebar.right.pane.tab` 上，注册级开关一处管显隐。`canvas` 是**页面类型**（不认领地址，按 kind 打开），而 `tab/CanvasTab.tsx` 现在是一台路由器：`tab/TabStrip.tsx` 是那一排标签（一块画布一行），下面的正文看「显示中那一行站在哪」——卡板 = 顶栏 + `space/BoardView.tsx`（或 `space/LinkView.tsx`），卡 / 草稿 = 面包屑（`detail/DetailCrumbs.tsx`）+ `detail/CanvasDetailView.tsx`，并且按卡带 `key`（一个不受控 textarea 的值不能从你刚看的那张卡带进这张卡，上一张/下一张也一样）。每块画布的视图记忆（筛选、勾选、视图、选中的线）和各滚动容器的偏移由 `CanvasTab` 按画布 id 记在内存里，不进 `sessionStorage`。切换器（`tab/CanvasSwitcher.tsx`）挂在标签条行尾，只负责往这排里加行（新建 / 挑一块已有的 / 归档）。
 
@@ -124,7 +123,7 @@ $DSH_HOME/state/canvas/<canvasId>/
 
 **连线面的两层切分（0.4.5，阶段 ⑥）**：`space/layout-geometry.ts` 是纯函数层——无 DOM、无 store，每个盒子进来都是四个数，所以同一批问题（谁在这个分区里、这条线该怎么弯、框选抓到了谁、分区能被拖到哪）能在 node 测试里回答；`space/LinkView.tsx` 只剩手势与渲染。每个手势各挂各的 `window` 指针监听，落点**从松开那一刻的事件重新算一遍**，不读记忆里的那一刻——所以拖拽中途的旧帧不可能被提交，也不需要一条靠依赖数组撑着的 `useEffect`。三个决定管住所有形状：分区归属看**卡心**不看面积（贴边压线的卡不会被两像素的缩放甩出去）；线的控制点沿**主轴**推、推力带符号（这对卡不管朝哪个方向存，线尾都从邻居那一侧出去，也不会自己打结）；两个维度都不到 8px 的抖动是点击，不是框选。为什么**手写而不是 `@xyflow/react`**：客户端 bundle 只允许内联 `.module.css`（`build/tsdown.client.ts` 用 lightningcss 把类名编译成哈希再注入），一个第三方**全局**样式表没有干净的挂载位；加上解包 1.2 MB、主题要整张重上色、原型本来就是手写的。
 
-**聊天集成（M2）**：`askAgent` 动词（agent 优先）探测 `ctx.get('sideChat')`，命中则 `openWith({ contextKey: canvas:<id>, label: 主题, systemPrompt, tools, refs })`——`prompt.ts` 纯函数渲染系统提示段（主题与目标 / 板摘要 / grounding 护栏 / 工具契约 / 透镜语义 / stats 回授段），`tools.ts` 出两个 `defineTool` 定义（origin tag 走 `Symbol.for('dsh.tool.origin')` 免导入路径）。发送规则：自由文本优先，否则非 `ask` 透镜的模板文本，都没有则只 prime。客户端两处发起（透镜条 / 评论「追问」；选区交互归引用插件），`chatStatus` 探测门控制全部聊天入口的显隐；发送成功后监听 `remote.sidechat.getState`（结构镜像），running 期间定期 `touch()` 共享 rev，幽灵卡随工具调用落板即现。
+**对谈（2026-09-27 起）**：纯客户端，不经 Remote。`src/client/quote.ts` 把卡片渲染成 Markdown 引用块（原文 + 「画布 · 分类 · 卡片 id」出处行；HTML 卡只给指针，长卡截断并注明全长，评论取最新 8 条），客户端按结构取宿主会话的 `conversation.input`，先读现有草稿再 `setDraft` 合并写入（不覆盖用户已打的字）。拿不到输入框时入口隐藏。Agent 改板靠标签页可见时每 4 秒一次的 `touch()` 共享 rev 浮现，版本不变时保留原对象不重绘。M2 的 side-chat 路径（`askAgent` / `chatStatus` 动词、`prompt.ts` 系统提示段、透镜模板、按 `openWith` 构建的上下文工具）已整体删除，主会话的两个 `canvas_*` 工具不受影响。
 
 **主会话工具（M3；0.4.2 起经 `./agent` 入口）**：`tools.ts` 的 `canvasMainSessionToolDefinitions` 由 `src/agent.ts` 的 composition 入口经 `ctx.inject(['tools'])` 注册（deferred，datasets-tool 先例；出厂 patch 挂在根级、可挪进 preset 的 agent.cordis.yml），附英文 `canvas:tools` 系统提示段；目标画布 = `ctx.canvasBoard.focusedCanvasId(session)`（tab 经 `focusCanvas` 上报），无 focus 返回「没有打开的画布」说明文本。origin tag 同免导入路径。右栏 tab 类型按「当前会话能否触达画布工具」做注册级自隐（双查判据：profile 根挂的 enabled `@khorsheed/dsh-canvas/agent` 行 = 全会话可见；否则当前会话 preset 组合含该行才可见——preset 挂载形态如 3080 的 dsh-writing 配方；一切读不到的路径 fail-open）。2026-09-16 事故的教训不在「入口按 preset 自隐」而在「判据只查 preset 组」：根挂形态下组合里没有任何行可 keyed，单查即永隐。
 

@@ -523,7 +523,7 @@
   font-weight: 500;
 }
 
-/* The lens bar lives inside the selection bar (storyboard: pill buttons). */
+/* The selection bar's pill buttons (talk / write / re-file). */
 .lens {
   border: 1px solid var(--dsw-alias-border-l1);
   background: transparent;

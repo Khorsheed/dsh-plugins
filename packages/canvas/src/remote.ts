@@ -19,10 +19,10 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasService } from './service.ts'
 import type { CanvasBoardService } from './store.ts'
 import type {
-  BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentOutcome, BoardAskAgentRequest,
+  BoardAddCommentRequest, BoardArchiveRequest,
   BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardAttachImageOutcome, BoardAttachImageRequest,
-  BoardChatStatusResult, BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
+  BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
   BoardImageBytesOutcome, BoardImageBytesRequest,
   BoardListResult, BoardMutationResult, BoardPatchCardRequest,
   BoardPutCardRequest, BoardReadOutcome,
@@ -223,24 +223,6 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('setLayout')
   setLayout(agent: Agent, request: BoardSetLayoutRequest): Promise<BoardMutationResult> {
     return this.board.setLayout(request, agent.session)
-  }
-
-  /**
-   * Ask the canvas's agent through the side-chat seam (prime the context, and
-   * send when there is a text to send).
-   * @param agent - the calling session's agent; its session primes the context.
-   * @param request - canvas id, optional lens, selected card ids, free text, extra refs.
-   * @returns the contextKey and whether a message was sent, or the failure code.
-   */
-  @Remote('askAgent')
-  askAgent(agent: Agent, request: BoardAskAgentRequest): Promise<BoardAskAgentOutcome> {
-    return this.board.askAgent(request, agent.session)
-  }
-
-  /** The chat seam's availability probe (the client's chat-entry gate). */
-  @Remote('chatStatus')
-  chatStatus(): Promise<BoardChatStatusResult> {
-    return Promise.resolve(this.board.chatAvailable())
   }
 
   /**

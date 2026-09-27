@@ -7,9 +7,8 @@
  * reaches any model, so it is written for both readers: a markdown blockquote
  * of the card's words, then an attribution line naming the canvas, the
  * category and the card id, which is the handle the main session's canvas
- * tools take. An HTML card is a pointer, never the document (the §8 boundary
- * `promptFormOf` keeps for the model), and a long card is cut with its full
- * length stated rather than dropped silently.
+ * tools take. An HTML card is a pointer, never the document, and a long card
+ * is cut with its full length stated rather than dropped silently.
  *
  * The conversation input's `setDraft` REPLACES the whole draft, so the writer
  * read-merges first ({@link mergedDraft}, the same rule the reader and quote

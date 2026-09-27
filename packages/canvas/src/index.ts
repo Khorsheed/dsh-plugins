@@ -24,9 +24,9 @@ import { CanvasRemoteService } from './remote.ts'
 
 export { CanvasService, canvasErrorOf } from './service.ts'
 export { CanvasBoardService, resolveCanvasStateRoot } from './store.ts'
-export type { CanvasBoardConfig, SideChatMirror } from './store.ts'
+export type { CanvasBoardConfig } from './store.ts'
 export { CanvasRemoteService } from './remote.ts'
-export { canvasMainSessionToolDefinitions, canvasToolDefinitions } from './tools.ts'
+export { canvasMainSessionToolDefinitions } from './tools.ts'
 export * from './types.ts'
 
 declare module '@deepseek-ai/cordis' {

@@ -31,7 +31,14 @@ The user chose one path in place of all these: put the card's words into the mai
 - The card pencil is gone: opening the card is editing it.
 - A zero-count category chip fades to half opacity unless it is active or hovered.
 
-**The side-chat server path is left in place for this commit.** The client simply stops calling it. The `askAgent`/`chatStatus` verbs, the side-chat tool definitions and the lens prompt constants are retired in the next commit, so this one stays a pure UI change that can be reviewed on its own.
+**The side-chat server path is retired in a follow-up commit.** The UI change landed first and can be reviewed on its own. The follow-up deletes:
+
+- the `askAgent`/`chatStatus` verbs;
+- `prompt.ts` (the system-prompt segment, the lens and compose templates, the ref builder);
+- the per-`openWith` `canvasToolDefinitions`;
+- the `sideChat` probe and the manifest's `dsh.references`.
+
+The tool specs moved onto the main-session definitions. The canvas now has no edge to any other community plugin.
 
 ## Alternatives considered
 

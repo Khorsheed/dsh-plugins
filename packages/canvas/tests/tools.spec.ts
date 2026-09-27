@@ -1,10 +1,9 @@
 /**
- * The two canvas tools handed to side-chat: both definitions carry the
- * community origin tag (the `Symbol.for('dsh.tool.origin')` property, the
- * documented no-import path), delegate to the board service's propose/comment
- * paths (the SAME fence as every other write), and fence with the executing
- * agent's own session when the run context carries one — falling back to the
- * session whose ask primed the context.
+ * The two main-session canvas tools: both definitions carry the community
+ * origin tag (the `Symbol.for('dsh.tool.origin')` property, the documented
+ * no-import path), target the canvas the session's tab has open, and delegate
+ * to the board service's propose/comment paths (the SAME fence as every other
+ * write).
  */
 import { dirname, join, normalize } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -14,8 +13,8 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { CanvasService } from '../src/service.ts'
 import { CanvasBoardService } from '../src/store.ts'
-import { canvasMainSessionToolDefinitions, canvasToolDefinitions } from '../src/tools.ts'
-import { defaultCategories, type CanvasBoard } from '../src/types.ts'
+import { canvasMainSessionToolDefinitions } from '../src/tools.ts'
+import type { CanvasBoard } from '../src/types.ts'
 
 type Entry = { kind: 'dir' } | { kind: 'file'; content: string; version: number }
 
@@ -103,16 +102,15 @@ class FakeFs {
 
 const WS = '/ws'
 const STATE = '/state'
-const FALLBACK = { id: 's-ask', header: { cwd: WS } } as unknown as Session
-const CANVAS_AGENT_SESSION = { id: 's-canvas-agent', header: { cwd: WS } } as unknown as Session
+const FALLBACK = { id: 's-main', header: { cwd: WS } } as unknown as Session
 
 interface Bench {
   canvasId: string
-  execute: (name: 'canvas_propose_card' | 'canvas_comment', args: Record<string, unknown>, agent?: Agent) => Promise<unknown>
+  execute: (name: 'canvas_propose_card' | 'canvas_comment', args: Record<string, unknown>) => Promise<unknown>
   readCurrent: () => Promise<CanvasBoard>
 }
 
-/** One board with the two tools built over it, plus an execute helper. */
+/** One board the main session has open, the two tools built over it, plus an execute helper. */
 async function harness(): Promise<Bench> {
   const fs = new FakeFs()
   const ctx = { fs, get: () => undefined } as unknown as Context
@@ -122,8 +120,10 @@ async function harness(): Promise<Bench> {
   const created = await board.createCanvas({ title: '主题' }, FALLBACK)
   if (!created.ok) throw new Error('expected a created canvas')
   const canvasId = created.board.id
-  const tools = canvasToolDefinitions(board, canvasId, FALLBACK, created.board.categories)
-  const execute = async (name: 'canvas_propose_card' | 'canvas_comment', args: Record<string, unknown>, agent?: Agent): Promise<unknown> => {
+  expect(await board.focusCanvas({ canvasId }, FALLBACK)).toEqual({ ok: true })
+  const tools = canvasMainSessionToolDefinitions(board)
+  const agent = { session: FALLBACK } as unknown as Agent
+  const execute = async (name: 'canvas_propose_card' | 'canvas_comment', args: Record<string, unknown>): Promise<unknown> => {
     const tool = tools.find(def => def.name === name)
     if (tool === undefined) throw new Error(`no tool ${name}`)
     return tool.execute(args, { agent } as never)
@@ -136,24 +136,8 @@ async function harness(): Promise<Bench> {
   return { canvasId, execute, readCurrent }
 }
 
-describe('the canvas tools', () => {
-  it('are named, described, and origin-tagged the documented no-import way', async () => {
-    const fs = new FakeFs()
-    const ctx = { fs, get: () => undefined } as unknown as Context
-    const pad = new CanvasService(ctx)
-    ;(ctx as { canvasStore?: CanvasService }).canvasStore = pad
-    const board = new CanvasBoardService(ctx, { stateRoot: STATE })
-    const tools = canvasToolDefinitions(board, 'canvas_01234567abcdefgh', FALLBACK, defaultCategories())
-    expect(tools.map(def => def.name)).toEqual(['canvas_propose_card', 'canvas_comment'])
-    for (const def of tools) {
-      expect(def.description.length).toBeGreaterThan(0)
-      expect((def as unknown as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')]).toEqual({
-        channel: 'plugin', owner: '@khorsheed/dsh-canvas',
-      })
-    }
-  })
-
-  it('canvas_propose_card lands a proposed agent card and answers its id', async () => {
+describe('the canvas tools on the open canvas', () => {
+  it('canvas_propose_card lands a proposed agent card with its source and rationale', async () => {
     const { execute, readCurrent } = await harness()
     const answer = await execute('canvas_propose_card', {
       kind: 'reference', text: '效能假说综述',
@@ -169,51 +153,17 @@ describe('the canvas tools', () => {
     expect(answer).toBe(`完成：${current.cards[0]!.id}`)
   })
 
-  it('canvas_comment hangs an agent comment and moves an open question to exploring', async () => {
+  it('canvas_comment moves an open question to exploring', async () => {
     const { execute, readCurrent } = await harness()
     await execute('canvas_propose_card', { kind: 'question', text: '效能感被忽视了吗？' })
-    const withQuestion = await readCurrent()
-    const cardId = withQuestion.cards[0]!.id
-    expect(await execute('canvas_comment', { cardId, text: '这里隐含一个假设：效能感比恐惧解释力更强。有数据吗？' })).toBe('完成')
-    const current = await readCurrent()
-    expect(current.cards[0]?.comments[0]).toMatchObject({ author: 'agent', text: '这里隐含一个假设：效能感比恐惧解释力更强。有数据吗？' })
-    expect(current.cards[0]?.question).toEqual({ state: 'exploring' })
+    const cardId = (await readCurrent()).cards[0]!.id
+    expect(await execute('canvas_comment', { cardId, text: '有数据吗？' })).toBe('完成')
+    expect((await readCurrent()).cards[0]?.question).toEqual({ state: 'exploring' })
   })
 
   it('answers the failure code instead of throwing on a bad card reference', async () => {
     const { execute } = await harness()
     expect(await execute('canvas_comment', { cardId: 'c_nope', text: 'x' })).toBe('失败：missing')
-  })
-
-  it('fences with the executing agent\'s own session when the run context carries one', async () => {
-    const seen: Session[] = []
-    const fs = new FakeFs()
-    const ctx = { fs, get: () => undefined } as unknown as Context
-    const pad = new CanvasService(ctx)
-    ;(ctx as { canvasStore?: CanvasService }).canvasStore = pad
-    const board = new CanvasBoardService(ctx, { stateRoot: STATE })
-    const spy = new Proxy(board, {
-      get(target, prop, receiver) {
-        if (prop === 'proposeCard') {
-          return async (request: unknown, session: Session) => {
-            seen.push(session)
-            return Reflect.get(target, prop, receiver).call(target, request, session)
-          }
-        }
-        return Reflect.get(target, prop, receiver)
-      },
-    })
-    const created = await board.createCanvas({ title: '主题' }, FALLBACK)
-    if (!created.ok) throw new Error('expected a created canvas')
-    const tools = canvasToolDefinitions(spy, created.board.id, FALLBACK, created.board.categories)
-    const propose = tools.find(def => def.name === 'canvas_propose_card')!
-    // No agent in the run context: the ask's session fences.
-    await propose.execute({ kind: 'fragment', text: 'a' }, {} as never)
-    expect(seen).toEqual([FALLBACK])
-    // With one: the canvas agent's own session fences.
-    const agent = { session: CANVAS_AGENT_SESSION } as unknown as Agent
-    await propose.execute({ kind: 'fragment', text: 'b' }, { agent } as never)
-    expect(seen).toEqual([FALLBACK, CANVAS_AGENT_SESSION])
   })
 })
 

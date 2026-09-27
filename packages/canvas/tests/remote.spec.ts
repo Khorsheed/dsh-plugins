@@ -17,7 +17,7 @@ import { CanvasRemoteService } from '../src/remote.ts'
 import type { CanvasService } from '../src/service.ts'
 import type { CanvasBoardService } from '../src/store.ts'
 import type {
-  BoardAddCommentRequest, BoardArchiveRequest, BoardAskAgentRequest, BoardCreateRequest,
+  BoardAddCommentRequest, BoardArchiveRequest, BoardCreateRequest,
   BoardPatchCardRequest, BoardPutCardRequest,
   CanvasArchiveRequest, CanvasCreateRequest, CanvasWriteRequest,
 } from '../src/types.ts'
@@ -82,8 +82,6 @@ async function bench(): Promise<{ seen: Seen[]; remote: CanvasRemoteService; dis
     archiveCanvas: async (_request: BoardArchiveRequest, session: Session) => { seen.push({ method: 'archiveCanvas', session }); return boardReceipt() },
     deleteCanvas: async (_request: { canvasId: string }, session: Session) => { seen.push({ method: 'deleteCanvas', session }); return { ok: true as const } },
     deleteCard: async (_request: { canvasId: string; cardId: string }, session: Session) => { seen.push({ method: 'deleteCard', session }); return boardReceipt() },
-    askAgent: async (_request: BoardAskAgentRequest, session: Session) => { seen.push({ method: 'askAgent', session }); return { ok: true as const, contextKey: `canvas:${CANVAS_ID}`, sent: true } },
-    chatAvailable: () => ({ available: true }),
     focusCanvas: async (_request: { canvasId: string }, session: Session) => { seen.push({ method: 'focusCanvas', session }); return { ok: true as const } },
   }
   const ctx = new Context()
@@ -132,7 +130,6 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
     expect(await remote.archiveCanvas(agent, { canvasId: CANVAS_ID, archived: true })).toMatchObject({ ok: true })
     expect(await remote.deleteCard(agent, { canvasId: CANVAS_ID, cardId: 'c_1' })).toMatchObject({ ok: true })
     expect(await remote.deleteCanvas(agent, { canvasId: CANVAS_ID })).toEqual({ ok: true })
-    expect(await remote.askAgent(agent, { canvasId: CANVAS_ID, lens: 'challenge' })).toMatchObject({ ok: true, sent: true })
     expect(await remote.focusCanvas(agent, { canvasId: CANVAS_ID })).toEqual({ ok: true })
     expect(seen).toEqual([
       { method: 'createCanvas', session: SESSION },
@@ -142,7 +139,6 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
       { method: 'archiveCanvas', session: SESSION },
       { method: 'deleteCard', session: SESSION },
       { method: 'deleteCanvas', session: SESSION },
-      { method: 'askAgent', session: SESSION },
       { method: 'focusCanvas', session: SESSION },
     ])
     await dispose()
@@ -152,7 +148,6 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
     const { remote, dispose } = await bench()
     expect(await remote.listCanvases()).toEqual({ items: [] })
     expect(await remote.readBoard({ canvasId: CANVAS_ID })).toEqual({ ok: false, error: 'missing' })
-    expect(await remote.chatStatus()).toEqual({ available: true })
     await dispose()
   })
 })

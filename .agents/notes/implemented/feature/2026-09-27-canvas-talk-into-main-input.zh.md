@@ -31,7 +31,14 @@ Status: implemented
 - 卡片上的铅笔去掉了：点开卡片就是编辑。
 - 数量为 0 的分类 chip 降到半透明，激活或悬停时除外。
 
-**side-chat 的服务端路径这次提交先保留。** 客户端只是不再调用它。`askAgent`/`chatStatus` 动词、side-chat 工具定义和透镜提示常量在下一个提交里退役，这样这次提交是一个可以单独审阅的纯 UI 改动。
+**side-chat 的服务端路径在紧随的提交里退役。** UI 改动先落地，可以单独审阅。随后那个提交删掉：
+
+- `askAgent`/`chatStatus` 动词；
+- `prompt.ts`（系统提示段、透镜和成稿模板、ref 构造）；
+- 按 `openWith` 构建的 `canvasToolDefinitions`；
+- `sideChat` 探测和 manifest 的 `dsh.references`。
+
+工具测试改挂到主会话那组定义上。画布现在和任何其他社区插件都没有边。
 
 ## Alternatives considered
 
