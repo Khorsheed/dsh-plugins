@@ -2877,6 +2877,7 @@ tr:last-child > .reportTd {
 }
 
 .stageStep {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2892,12 +2893,29 @@ tr:last-child > .reportTd {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-state-success-primary);
+}
+
+/* The hairline joining this dot to the one above (v5): rows are one 20px
+   line with an 8px gap, so it runs from the previous dot's bottom edge
+   (13px up) to this dot's top edge. */
+.stageStep + .stageStep::before {
+  position: absolute;
+  top: -13px;
+  left: 4.5px;
+  width: 1px;
+  height: 18px;
+  background: var(--dsw-alias-border-l2);
+  content: '';
 }
 
 .stageStep[data-step='current'] .stageStepDot {
   border: 2px solid var(--dsw-alias-state-business-primary);
   background: var(--dsw-alias-bg-base);
+}
+
+.stageStep[data-step='failed'] .stageStepDot {
+  background: var(--dsw-alias-state-error-primary);
 }
 
 .stageStepLabel {

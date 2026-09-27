@@ -720,7 +720,7 @@ function RecordInline(props: {
                         <li
                           key={`${segment.state}:${String(index)}`}
                           className={css.stageStep}
-                          data-step={current ? 'current' : 'done'}
+                          data-step={segment.state === 'halted' ? 'failed' : current ? 'current' : 'done'}
                           title={segment.state}
                         >
                           <span className={css.stageStepDot} aria-hidden />
