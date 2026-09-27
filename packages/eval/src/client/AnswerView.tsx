@@ -247,6 +247,8 @@ export interface AnswerViewProps {
   onRejudge: ((column: AnswerColumnModel) => void) | null
   /** Scoring face: a quiet word beside each column's name (its run-wide number). */
   headAside?: ((column: AnswerColumnModel) => ReactNode) | undefined
+  /** Open the prompt.md this column's judge actually received (T84 §四); absent hides the button. */
+  onJudgePrompt?: ((column: AnswerColumnModel) => void) | null | undefined
   t: T
 }
 
@@ -260,7 +262,7 @@ const TABS: ReadonlyArray<[Tab, 'answer.viewReport' | 'answer.viewDiff' | 'answe
  * @param props - the rows of one 题 and the face they came from.
  */
 export function AnswerView(props: AnswerViewProps) {
-  const { task, rows, criteria, criteriaNote, notes, scoring, onOpenSession, onBack, onRejudge, headAside, t } = props
+  const { task, rows, criteria, criteriaNote, notes, scoring, onOpenSession, onBack, onRejudge, headAside, onJudgePrompt, t } = props
   const locked = scoring !== null
   const [blindChoice, setBlind] = useState(false)
   const blind = locked || blindChoice
@@ -527,6 +529,11 @@ export function AnswerView(props: AnswerViewProps) {
                     ? <div className={base.dim}>{t('answer.noScripts')}</div>
                     // The script's output VERBATIM: the drawer's own read.
                     : column.scripts.map(run => <pre key={run.at} className={base.pre}>{run.raw}</pre>)}
+                  {onJudgePrompt != null && column.source !== 'script' && (
+                    <div>
+                      <Button variant="outline" size="sm" onClick={() => { onJudgePrompt(column) }}>{t('judgePrompt.actual')}</Button>
+                    </div>
+                  )}
                 </div>
               ))}
               {/* T83 · answer: each column closes as a card (v5), so the

@@ -16,6 +16,7 @@
  * problems shows a clean plan as an empty page.
  * @module @khorsheed/dsh-eval
  */
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { canonicalJson } from './hash.ts'
@@ -155,8 +156,11 @@ export async function reviewPlan(
   const planAbs = resolve(expandHome(planPath))
   const validation = options.validation ?? await validatePlan(planAbs)
   let document: unknown
+  let planSha: string | null = null
   try {
-    document = JSON.parse(await readFile(planAbs, 'utf8')) as unknown
+    const text = await readFile(planAbs, 'utf8')
+    planSha = createHash('sha256').update(text).digest('hex')
+    document = JSON.parse(text) as unknown
   } catch {
     // validate already reported PLAN_UNREADABLE / PLAN_MALFORMED as an error;
     // a second sentence about the same file would only add noise.
@@ -170,6 +174,7 @@ export async function reviewPlan(
   ]
   return {
     planPath: validation.planPath,
+    planSha,
     schema: validation.schema,
     ok: validation.ok,
     errors: validation.errors.length,

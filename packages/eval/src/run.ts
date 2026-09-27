@@ -54,7 +54,7 @@ import {
   type ReadinessRecord, type ReadinessSubject, type ReadinessUnit,
 } from './readiness.ts'
 import {
-  buildDeidentifyRules, deidentify, llmDraftCriteria, mergeReplacements,
+  buildDeidentifyRules, deidentify, judgedCriteria, mergeReplacements,
   pickRubricPath, runJudgeSamples, runProbes,
   DEFAULT_JUDGE_SAMPLES, JUDGE_MATERIAL_FILES,
   type DeidentifyRule, type ReplacementCount, type ResolvedJudge, type RubricCriterion,
@@ -625,6 +625,8 @@ async function judgeCell(
     parentSessionId: string
     /** The cell's own condition — the judging side needs it to mark a self-judged sample. */
     condition: { id: string; declaredModel: string | null }
+    /** The plan's `stages`: the judge is asked only the llm-draft criteria in that scope (T84). */
+    planStages: readonly string[]
     judge: JudgeEnv
     /** Set on the container path: the probes run inside this cell's unit. */
     unit?: { lab: LabFace; unitId: string }
@@ -636,9 +638,15 @@ async function judgeCell(
   // The grading layer is read with an EXPLICIT single-layer scope and never
   // reaches the cell: this listing is how both sources find the rubric.
   let rubricPath: string | null = null
+  let runIn: string[] | null = null
   try {
     const graded = await faces.datasets.show({ repo: env.repo, layers: ['grading'] }, env.datasetId, env.taskId, env.commit)
-    rubricPath = pickRubricPath(graded.items.find(item => item.id === env.taskId)?.layers['grading'] ?? [])
+    const gradedItem = graded.items.find(item => item.id === env.taskId)
+    rubricPath = pickRubricPath(gradedItem?.layers['grading'] ?? [])
+    const meta = gradedItem?.metadata
+    if (typeof meta === 'object' && meta !== null && Array.isArray((meta as Record<string, unknown>)['runIn'])) {
+      runIn = ((meta as Record<string, unknown>)['runIn'] as unknown[]).filter((s): s is string => typeof s === 'string')
+    }
   } catch (error) {
     await faces.mission.annotate(env.missionId, 'orchestrator', {
       kind: 'judge-skipped',
@@ -735,7 +743,11 @@ async function judgeCell(
     const rubric = await faces.datasets.read({ repo: env.repo, layers: ['grading'] }, {
       dataset: env.datasetId, item: env.taskId, layer: 'grading', path: rubricPath, commit: env.commit,
     })
-    criteria = llmDraftCriteria(rubric.content)
+    const judged = judgedCriteria(rubric.content, { task: env.taskId, runIn, planStages: env.planStages })
+    criteria = judged.criteria
+    if (judged.outOfScope.length > 0) {
+      env.log(`cell ${env.missionId}: ${judged.outOfScope.length} llm-draft criterion(s) outside the plan's stages are not put to the judge (${judged.outOfScope.join(', ')})`)
+    }
   } catch (error) {
     await faces.mission.annotate(env.missionId, 'orchestrator', {
       kind: 'judge-skipped',
@@ -746,7 +758,7 @@ async function judgeCell(
   if (criteria.length === 0) {
     await faces.mission.annotate(env.missionId, 'orchestrator', {
       kind: 'judge-skipped',
-      reason: `rubric ${rubricPath} declares no kind: llm-draft criteria — the LLM judge has nothing to answer`,
+      reason: `rubric ${rubricPath} declares no kind: llm-draft criteria inside the plan's stages — the LLM judge has nothing to answer`,
     }, { runId: env.runId, by: env.by }).catch(() => {})
     return counts
   }
@@ -1330,6 +1342,7 @@ async function runCellOnce(
     attempt: current.mission.currentAttempt,
     parentSessionId: env.parentSessionId,
     condition: { id: env.condition.id, declaredModel: env.condition.declaredModel },
+    planStages: env.planStages,
     judge: env.judge,
     ...(unit !== undefined ? { unit: { lab: (env.unit as CellUnitBinding).lab, unitId: unit.id } } : {}),
   })
@@ -1559,25 +1572,34 @@ async function exportRubricWeights(
     datasetId: string
     commit: string
     tasks: readonly string[]
+    /** The plan's `stages` — recorded on the table as the scope the report scores against (T84). */
+    planStages?: readonly string[] | null
     log: (message: string) => void
   },
 ): Promise<string | null> {
   const scope = { repo: input.repo, layers: ['grading'] }
-  const rubrics: Array<{ task: string; rubricText: string }> = []
+  const rubrics: Array<{ task: string; rubricText: string; runIn: string[] | null }> = []
   for (const task of [...new Set(input.tasks)]) {
     try {
       const graded = await faces.datasets.show(scope, input.datasetId, task, input.commit)
-      const rubricPath = pickRubricPath(graded.items.find(item => item.id === task)?.layers['grading'] ?? [])
+      const item = graded.items.find(candidate => candidate.id === task)
+      const rubricPath = pickRubricPath(item?.layers['grading'] ?? [])
       if (rubricPath === null) continue
       const rubric = await faces.datasets.read(scope, {
         dataset: input.datasetId, item: task, layer: 'grading', path: rubricPath, commit: input.commit,
       })
-      rubrics.push({ task, rubricText: rubric.content })
+      const meta = item?.metadata
+      const runIn = typeof meta === 'object' && meta !== null && Array.isArray((meta as Record<string, unknown>)['runIn'])
+        ? ((meta as Record<string, unknown>)['runIn'] as unknown[]).filter((s): s is string => typeof s === 'string')
+        : null
+      rubrics.push({ task, rubricText: rubric.content, runIn })
     } catch (error) {
       input.log(`rubric weights: task ${task} skipped — ${error instanceof Error ? error.message : String(error)}`)
     }
   }
-  const table = buildRubricWeightTable({ dataset: input.datasetId, commit: input.commit, rubrics })
+  const table = buildRubricWeightTable({
+    dataset: input.datasetId, commit: input.commit, rubrics, planStages: input.planStages ?? null,
+  })
   const written = await writeRubricWeightTable(input.bundleDir, table)
   if (written === null) input.log('rubric weights: no rubric yielded a row — no table written')
   else input.log(`rubric weights: ${table.criteria.length} criteria over ${table.tasks.length} task(s) → ${written}`)
@@ -2173,6 +2195,9 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     // `archived` should say that it was ASKED to, rather than read as a run
     // that broke off halfway.
     finalize: passGate,
+    // The stage scope this run executes (T84): the report scores and totals
+    // only the rubric leaves inside it. A bundle without it scores every leaf.
+    stages: plan.stages,
     budget: { activeMinutes: plan.budget.activeMinutes, turns: plan.budget.turns },
     judge: { conditions: judges.map(judge => ({ id: judge.id, sha: judge.sha })), samples: judgeSamples },
     ...(plan.expectedNs !== undefined ? { expectedNs: plan.expectedNs } : {}),
@@ -2357,6 +2382,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       datasetId: plan.dataset.id,
       commit: snapshot.commit,
       tasks: plan.dataset.items,
+      planStages: plan.stages,
       log,
     })
     // The REPORT, into the bundle, by the same function `dsh-eval report`

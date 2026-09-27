@@ -33,19 +33,20 @@
  * hairline separators, tokenized colors, official primitives throughout.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
+import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalJudgePromptView, EvalPlanCheck } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
-import { DesignPage, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
+import { DesignPage, type PlanFileAnswer, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
 import {
   Chip, EmptyState, Fold, Seg2, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
 } from './parts.tsx'
 import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS, type LabPage, type RunFilter } from './store.ts'
 import { RunsPage } from './RunsPage.tsx'
 import { AnswerView } from './AnswerView.tsx'
+import { JudgePromptSheet, type Answer, type ItemInspectFaces } from './Inspect.tsx'
 import { rowsOfSheet } from './answer-view.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { ExportDialog } from './ExportDialog.tsx'
@@ -58,6 +59,10 @@ import {
   splitReadiness, stageDots, writeListScope, type ListScope, type ReadinessFix, type RowVerb,
 } from './journey.ts'
 import css from './LabView.module.css'
+import { SendBackPanel, deliverSendBack, type SendBackOutcome } from './SendBack.tsx'
+
+/** How often a sent-back plan is re-read while it waits for the agent (T84). */
+const SEND_BACK_POLL_MS = 8000
 
 /**
  * The lab tab body.
@@ -72,6 +77,7 @@ export function LabView(props: LabViewProps) {
     fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, fetchCellAnswers, submitHumanFinal, fetchExperimentArtifact,
     closeRun, archiveRun, insertDraft, focus,
+    fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt,
   } = props
   const list = useStore(s => s.list)
   const loading = useStore(s => s.loading)
@@ -85,6 +91,9 @@ export function LabView(props: LabViewProps) {
   const reviewLoading = useStore(s => s.reviewLoading)
   const reviewError = useStore(s => s.reviewError)
   const sentBack = useStore(s => s.sentBack)
+  // 退回给 agent… (T84 §五): the panel under the stage bar is this visit's
+  // own, so it lives here rather than in the store.
+  const [sendBackOpen, setSendBackOpen] = useState(false)
   const approving = useStore(s => s.approving)
   const approveRefusal = useStore(s => s.approveRefusal)
   const approveError = useStore(s => s.approveError)
@@ -290,6 +299,16 @@ export function LabView(props: LabViewProps) {
     })
     return () => { cancelled = true }
   }, [sessionId, page, planPath, openExperimentId, refreshRev, actions, fetchPlanReview])
+
+  // While a send-back waits for the agent, re-read the plan now and then: the
+  // review answers the plan's sha, and a new sha (or a now-passing validate)
+  // is what clears 已交给 agent (store · setReview). An offline re-read — no
+  // delegation, no tokens — so a slow poll costs nothing but a file walk.
+  useEffect(() => {
+    if (!sentBack || page !== 'design') return
+    const timer = setInterval(() => { actions.refresh() }, SEND_BACK_POLL_MS)
+    return () => { clearInterval(timer) }
+  }, [sentBack, page, actions])
 
   // The comparison-group registry, likewise — it is the REPOSITORY's, so it is
   // not re-read when the open experiment changes, only when the design stage
@@ -594,6 +613,70 @@ export function LabView(props: LabViewProps) {
     void writeClipboard(text).then((ok) => {
       actions.setNotice(t(ok ? 'agent.copied' : 'agent.copyFailed', { text }))
     })
+  }
+
+  /**
+   * 放进输入框 on the send-back panel: run the degrade chain, say where the
+   * text went, and mark the plan as waiting for the agent against what it
+   * looks like now.
+   * @param text - the composer text.
+   * @param target - the composer the reviewer picked.
+   */
+  function submitSendBack(text: string, target: 'here' | 'origin'): void {
+    const origin = openRow?.originSession ?? null
+    const chainTarget = target === 'origin' && origin !== null
+      ? { kind: 'origin' as const, sessionId, origin }
+      : { kind: 'here' as const, sessionId }
+    void deliverSendBack(chainTarget, text, { openSession, insertDraft, writeClipboard }).then((outcome: SendBackOutcome) => {
+      const notice = outcome === 'origin' || outcome === 'here'
+        ? t('agent.inserted')
+        : outcome === 'hereFallback'
+          ? t('sendBack.fellBack')
+          : outcome === 'copied' ? t('sendBack.copied') : t('agent.copyFailed', { text })
+      actions.setNotice(notice)
+    })
+    setSendBackOpen(false)
+    actions.sendBack({ planSha: review?.planSha ?? null, ok: review?.ok ?? false })
+  }
+
+  // plan.json for the design page's 原始文件 block (T84): the experiment's
+  // own file through the same bounded read the report's 分析初稿 uses.
+  const readPlan = useCallback((): Promise<PlanFileAnswer> => {
+    if (openExperimentId === null) return Promise.resolve({ ok: false, message: t('design.raw.noExperiment') })
+    return fetchExperimentArtifact(sessionId, { experimentId: openExperimentId, path: 'plan.json' }).then((result): PlanFileAnswer => {
+      if (!result.ok) return { ok: false, message: result.error.message }
+      if (result.value.text === null) return { ok: false, message: result.value.note ?? t('design.raw.planBinary') }
+      return { ok: true, text: result.value.text, note: result.value.truncated ? (result.value.note ?? t('design.raw.truncated')) : null }
+    })
+  }, [sessionId, openExperimentId, fetchExperimentArtifact, t])
+  // 看题 / 看判官 (T84 §三/§四): the pinned dataset and the judge prompt,
+  // through reads an older host half may not have — then the page keeps its
+  // inline 看题面 and shows no prompt button.
+  const inspect = useMemo((): ItemInspectFaces | null => {
+    if (openExperimentId === null || fetchItemMaterials === undefined || fetchDatasetFile === undefined) return null
+    const flat = <V,>(result: { ok: true; value: V } | { ok: false; error: { message: string } }): Answer<V> => (
+      result.ok ? { ok: true, value: result.value } : { ok: false, message: result.error.message }
+    )
+    return {
+      materials: item => fetchItemMaterials(sessionId, { experimentId: openExperimentId, item }).then(flat),
+      file: request => fetchDatasetFile(sessionId, { experimentId: openExperimentId, ...request }).then(flat),
+      preview: fetchJudgePromptPreview === undefined
+        ? null
+        : (item, judge) => fetchJudgePromptPreview(sessionId, {
+          experimentId: openExperimentId, item, ...(judge === null ? {} : { judge }),
+        }).then(flat),
+    }
+  }, [sessionId, openExperimentId, fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview])
+  const [promptCell, setPromptCell] = useState<{ runId: string; missionId: string; attempt: number; label: string } | null>(null)
+  const readJudgePrompt = useCallback((judge: string | null, sample: string | null): Promise<Answer<EvalJudgePromptView>> => {
+    if (promptCell === null || fetchJudgePrompt === undefined) return Promise.resolve({ ok: false, message: '—' })
+    return fetchJudgePrompt(sessionId, {
+      runId: promptCell.runId, missionId: promptCell.missionId, attempt: promptCell.attempt,
+      ...(judge === null ? {} : { judge }), ...(sample === null ? {} : { sample }),
+    }).then(result => (result.ok ? { ok: true, value: result.value } : { ok: false, message: result.error.message }))
+  }, [sessionId, promptCell, fetchJudgePrompt])
+  const copyText = (text: string): void => {
+    void writeClipboard(text).then((ok) => { actions.setNotice(t(ok ? 'design.raw.copied' : 'design.raw.copyFailed')) })
   }
 
   const fixText = (fix: ReadinessFix): string => {
@@ -1153,7 +1236,12 @@ export function LabView(props: LabViewProps) {
                 {/* 让 agent 改… (T83 · design): the send-back gesture, beside the
                     primary while the plan is still the agent's to edit. */}
                 {planEditable && page === 'design' && (
-                  <Button size="sm" variant="outline" onClick={() => { actions.sendBack() }}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-expanded={sendBackOpen}
+                    onClick={() => { setSendBackOpen(open => !open) }}
+                  >
                     {t('cta.askAgent')}
                   </Button>
                 )}
@@ -1173,6 +1261,17 @@ export function LabView(props: LabViewProps) {
                 )}
               </span>
             </div>
+            {sendBackOpen && planEditable && page === 'design' && openRow !== undefined && (
+              <SendBackPanel
+                sessionId={sessionId}
+                row={openRow}
+                review={review}
+                reminders={review === null ? [] : splitReadiness(review.checks, review.conditions).reminders}
+                onCancel={() => { setSendBackOpen(false) }}
+                onSubmit={submitSendBack}
+                t={t}
+              />
+            )}
             <div>
               {answers !== null && openRunId !== null && (
                 answerSheet === null
@@ -1203,9 +1302,22 @@ export function LabView(props: LabViewProps) {
                           name: openRow?.name ?? openRunId, condition: column.condition ?? '—', rep: column.rep ?? 1,
                         }))
                       }}
+                      onJudgePrompt={fetchJudgePrompt === undefined
+                        ? null
+                        : (column) => {
+                          const cell = answerSheet.cells.find(each => each.missionId === column.key)
+                          if (cell === undefined) return
+                          setPromptCell({
+                            runId: answerSheet.runId, missionId: cell.missionId, attempt: cell.attempt,
+                            label: `${answerSheet.task} · ${column.condition ?? column.letter} · ${t('judgePrompt.sample')} ${String(column.rep ?? 1)}`,
+                          })
+                        }}
                       t={t}
                     />
                   )
+              )}
+              {promptCell !== null && answers !== null && (
+                <JudgePromptSheet cell={promptCell} read={readJudgePrompt} onClose={() => { setPromptCell(null) }} t={t} />
               )}
               {/* The stage stays mounted under the answer view, so 返回 lands
                   on the table exactly as it was left (an expanded criteria
@@ -1248,6 +1360,10 @@ export function LabView(props: LabViewProps) {
                     onAddGroup={() => { setNewOpen(true) }}
                     onSetNumbers={setNumbers}
                     onFix={applyFix}
+                    readPlan={openExperimentId === null ? null : readPlan}
+                    onCopy={copyText}
+                    inspect={inspect}
+                    onOpenSession={(childId) => { openSession(childId as SessionId, null) }}
                     t={t}
                   />
                 </>

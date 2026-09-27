@@ -11,6 +11,8 @@ import type {} from '@khorsheed/dsh-eval/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   EvalApproveRequest, EvalApproveResult, EvalArchiveRunRequest, EvalArchiveWrite, EvalCellArtifactRequest, EvalCellArtifactView, EvalExperimentArtifactRequest, EvalExperimentArtifactView,
+  EvalItemMaterialsRequest, EvalItemMaterialsView, EvalDatasetFileRequest, EvalDatasetFileView,
+  EvalJudgePromptPreviewRequest, EvalJudgePromptPreviewView, EvalJudgePromptRequest, EvalJudgePromptView,
   EvalCellDetail, EvalCellReleaseResult, EvalCellRequest,
   EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCloseRunRequest, EvalClosureWrite, EvalCellsResult, EvalConditionDiffRequest,
   EvalConditionDiffView, EvalConditionEndpointRequest, EvalConditionEndpointView,
@@ -114,6 +116,14 @@ export interface LabViewInjected {
    * directory or nowhere, text only, cut above 256 KB and said so.
    */
   fetchExperimentArtifact: (sessionId: SessionId, request: EvalExperimentArtifactRequest) => Promise<RemoteResult<EvalExperimentArtifactView>>
+  /** 题目抽屉 (T84): an item's materials at the pinned commit. Optional — without it 查看 opens the task text alone. */
+  fetchItemMaterials?: (sessionId: SessionId, request: EvalItemMaterialsRequest) => Promise<RemoteResult<EvalItemMaterialsView>>
+  /** One file of the pinned dataset (T84). */
+  fetchDatasetFile?: (sessionId: SessionId, request: EvalDatasetFileRequest) => Promise<RemoteResult<EvalDatasetFileView>>
+  /** The judge's prompt before the run (T84). */
+  fetchJudgePromptPreview?: (sessionId: SessionId, request: EvalJudgePromptPreviewRequest) => Promise<RemoteResult<EvalJudgePromptPreviewView>>
+  /** The prompt.md a cell's judging wrote (T84). */
+  fetchJudgePrompt?: (sessionId: SessionId, request: EvalJudgePromptRequest) => Promise<RemoteResult<EvalJudgePromptView>>
   /** Re-run one cell: a fresh attempt against an auditable reason. */
   retryCell: (sessionId: SessionId, request: EvalCellRetryRequest) => Promise<RemoteResult<EvalCellRetryResult>>
   /** The release check: may this cell's resources be destroyed? */

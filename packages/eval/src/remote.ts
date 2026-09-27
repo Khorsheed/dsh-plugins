@@ -101,6 +101,14 @@ import type {
   EvalExperimentRequest,
   EvalExperimentArtifactRequest,
   EvalExperimentArtifactView,
+  EvalItemMaterialsRequest,
+  EvalItemMaterialsView,
+  EvalDatasetFileRequest,
+  EvalDatasetFileView,
+  EvalJudgePromptPreviewRequest,
+  EvalJudgePromptPreviewView,
+  EvalJudgePromptRequest,
+  EvalJudgePromptView,
   EvalExperimentsRequest,
   EvalImportRequest,
   EvalImportResult,
@@ -403,6 +411,52 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   experimentArtifact(agent: Agent, request: EvalExperimentArtifactRequest): Promise<EvalExperimentArtifactView> {
     void agent
     return this.service.experimentArtifact(request)
+  }
+
+  /**
+   * 题目抽屉 (T84): one item's files in five tabs and its rubric rows, at the
+   * commit the experiment pins.
+   * @param agent - owning live agent.
+   * @param request - the experiment and the item.
+   */
+  @Remote('itemMaterials')
+  itemMaterials(agent: Agent, request: EvalItemMaterialsRequest): Promise<EvalItemMaterialsView> {
+    void agent
+    return this.service.itemMaterials(request)
+  }
+
+  /**
+   * One file of the pinned dataset, text only and capped (T84).
+   * @param agent - owning live agent.
+   * @param request - the experiment, the item (null: set level), the layer and the path.
+   */
+  @Remote('datasetFile')
+  datasetFile(agent: Agent, request: EvalDatasetFileRequest): Promise<EvalDatasetFileView> {
+    void agent
+    return this.service.datasetFile(request)
+  }
+
+  /**
+   * The judge's prompt for one item before the run, material as placeholders (T84).
+   * @param agent - owning live agent.
+   * @param request - the experiment, the item and optionally the judge condition.
+   */
+  @Remote('judgePromptPreview')
+  judgePromptPreview(agent: Agent, request: EvalJudgePromptPreviewRequest): Promise<EvalJudgePromptPreviewView> {
+    void agent
+    return this.service.judgePromptPreview(request)
+  }
+
+  /**
+   * The prompt.md one cell's judging actually wrote (T84), confined to the
+   * run's judge directory.
+   * @param agent - owning live agent.
+   * @param request - the run, the cell, the attempt and optionally the judge/sample.
+   */
+  @Remote('judgePrompt')
+  judgePrompt(agent: Agent, request: EvalJudgePromptRequest): Promise<EvalJudgePromptView> {
+    void agent
+    return this.service.judgePrompt(request)
   }
 
   /**
