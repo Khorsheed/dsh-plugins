@@ -55,6 +55,15 @@ DSH_MOBILE_PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com dsh web --no-open -
 
 Different physical networks need an independently configured HTTPS/WSS ingress to the loopback Host port, valid official authentication, an awake/online Mac and a reachable phone — starting the Host alone does not establish remote access, and the App does not configure networking or credentials for you. Debug simulator builds allow HTTP on loopback only; Release requires HTTPS.
 
+
+### Desktop Quick Tunnel recovery
+
+The connection page anonymously probes the configured public root before offering or generating a QR. An unavailable origin returns an actionable state without issuing a login URL. A displayed QR is checked every 15 seconds and hidden if the endpoint fails or changes. This is a computer-side reachability check, not a guarantee about the phone's network.
+
+For this repository's supervised 3080 deployment, `pnpm mobile:tunnel` runs an opt-in desktop recovery manager; `--repair-now` skips the initial three-check delay. It checks every 30 seconds, waits through a local host outage, and rebuilds only after three consecutive public failures. Recovery attempts have a ten-minute cooldown. It starts an exact-origin loopback ingress and a new Quick Tunnel, then calls `pnpm deploy:3080 --package packages/mobile --mobile-origin https://new-link.trycloudflare.com`. This runs the normal build/test and guarded `reconfigure` path, updating the existing public-origin/trusted-host bindings and preserving other launch settings. It restarts the host; failure retains the guard's restore-previous behavior. Changed mobile/deployment source files block automated deployment.
+
+Keep the manager running under the computer's service manager (for example, a per-user macOS LaunchAgent). It is separate from the host process and is not installed by the plugin. `DSH_HOME` selects the existing supervised deployment; `CLOUDFLARED_BIN` optionally supplies the installed cloudflared binary. State and diagnostic logs live under `$DSH_HOME/state/mobile-tunnel/`; they contain no login tokens. Only an existing explicit Quick Tunnel binding is supported: no wildcard trusted hosts, account provisioning, or automatic changes to the phone. After rotation, reopen **Connect phone** and scan its new QR.
+
 ## Optional: a Quick Tunnel preview
 
 Networking is deployment configuration, not a plugin dependency — bring your own HTTPS reverse tunnel/server or private networking; the plugin embeds no domain, server or Cloudflare account. For temporary previews, [Cloudflare Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/) mint a temporary HTTPS address without an account or domain: no uptime guarantee, 200 concurrent requests, no SSE (the tested conversation transport uses WebSocket).

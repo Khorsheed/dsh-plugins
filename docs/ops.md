@@ -141,3 +141,12 @@ pnpm deploy:check-links
 - 凭证与门禁:harness 检出 HEAD 有绿色凭证;preflight 可用
 - 版本漂移:官产品线更新时复核各包 `dsh.compat.minHost` 与 peer 范围(升线三件套:lockfile、`minimumReleaseAgeExclude`、幻影目录清理)
 - 社区标准跟踪:oh-my-dsh/dsh-community-standard 定案后评估 manifest 映射
+
+
+## 移动端公网入口恢复
+
+`pnpm mobile:tunnel` 是独立于宿主的电脑端 Quick Tunnel 管理进程。应从已合并的部署 checkout 运行，并由系统服务管理器保持在线。它不修改手机配置；公网域名切换后，用户从 Web「设置 → 连接手机」重新扫码。
+
+管理器只在本地 3080 健康且公网连续三次失败时重建，重试间隔十分钟。新域名通过 `pnpm deploy:3080 --package packages/mobile --mobile-origin https://new-link.trycloudflare.com` 进入标准构建、测试及 `reconfigure` 流程，会重启宿主。配置形态不受支持、代码未提交或部署锁被占用时拒绝操作，诊断写入 `$DSH_HOME/state/mobile-tunnel/`。`--repair-now` 用于已确认公网故障的首次恢复，可跳过初始检测等待。
+
+Web 生成二维码前匿名检查公网入口，并定期撤下已失效的二维码。更多配置和限制见 [mobile README](../packages/mobile/README.md#电脑端-quick-tunnel-自动恢复)。

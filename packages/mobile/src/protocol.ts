@@ -4,7 +4,7 @@ export const BRIDGE_VERSION = 1
 export const HANDSHAKE_PATH = '/api/mobile/handshake'
 export const CONNECT_PATH = '/api/mobile/connect'
 export interface MobileConnectInfo {
-  state: 'ready' | 'not-configured' | 'invalid-origin' | 'untrusted-origin' | 'unsupported'
+  state: 'ready' | 'not-configured' | 'invalid-origin' | 'untrusted-origin' | 'unsupported' | 'unreachable'
   origin: string | null
 }
 

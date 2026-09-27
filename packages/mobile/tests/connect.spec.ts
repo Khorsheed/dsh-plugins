@@ -7,7 +7,7 @@ function fixture(rejection: number | undefined = 401) {
   const issue = vi.fn((base: string) => `${base}/?token=official-launch`)
   const check = vi.fn(() => rejection)
   const connection = { authenticatedUrl: issue, requestRejection: check } as unknown as HostConnectionHandle
-  return { issue, check, connection, response: connectResponse(connection, origin) }
+  return { issue, check, connection, response: connectResponse(connection, origin, async () => true) }
 }
 const post = (originHeader = 'http://localhost:3080', contentType = 'application/json') => new Request('http://dsh.internal/api/mobile/connect', { method: 'POST', headers: { host: 'localhost:3080', origin: originHeader, 'content-type': contentType }, body: '{}' })
 
@@ -60,4 +60,14 @@ describe('official mobile login link', () => {
     expect((await f.response(req)).status).toBe(200)
     expect(f.issue).toHaveBeenCalledExactlyOnceWith(origin)
   })
+})
+
+it('refuses to issue a QR when the configured public origin is unreachable', async () => {
+  const f = fixture(), reachable = vi.fn(async () => false)
+  const response = connectResponse(f.connection, origin, reachable)
+  expect(await (await response(new Request('http://localhost/api/mobile/connect'))).json()).toEqual({ state: 'unreachable', origin })
+  expect((await response(post())).status).toBe(503)
+  expect(f.issue).not.toHaveBeenCalled()
+  reachable.mockResolvedValue(true)
+  expect((await response(post())).status).toBe(200)
 })

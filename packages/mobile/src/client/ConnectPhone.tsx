@@ -26,8 +26,12 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
     try {
       const response = await fetch(CONNECT_PATH, { method: generate ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
         ...(generate ? { headers: { 'content-type': 'application/json' }, body: '{}' } : {}) })
-      if (!response.ok) throw new Error('unavailable')
       const result = await response.json()
+      if (controller.signal.aborted) return
+      if (!response.ok) {
+        if (result.state === 'unreachable') { setInfo(result); return }
+        throw new Error('unavailable')
+      }
       if (controller.signal.aborted) return
       if (generate) {
         const url = new URL(result.loginUrl)
@@ -43,11 +47,30 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
     document.addEventListener('visibilitychange', conceal); window.addEventListener('pagehide', hide)
     return () => { request.current?.abort(); clearTimeout(timer.current); document.removeEventListener('visibilitychange', conceal); window.removeEventListener('pagehide', hide) }
   }, [])
+  useEffect(() => {
+    if (!login) return
+    const controller = new AbortController()
+    let checking = false
+    const poll = setInterval(async () => {
+      if (checking) return
+      checking = true
+      try {
+        const response = await fetch(CONNECT_PATH, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+        if (!response.ok) throw new Error('unavailable')
+        const next: MobileConnectInfo = await response.json()
+        if (controller.signal.aborted) return
+        setInfo(next)
+        if (next.state !== 'ready' || next.origin !== new URL(login).origin) hide()
+      } catch { if (!controller.signal.aborted) { hide(); setFailed(true) } }
+      finally { checking = false }
+    }, 15_000)
+    return () => { controller.abort(); clearInterval(poll) }
+  }, [login])
   return <section data-mobile-connect>
     <style>{styles}</style>
     <h2>{t('connectPhone')}</h2><p>{t('connectIntro')}</p>
     {info?.origin && <div data-connect-host><span>{t('server')}</span><strong>{new URL(info.origin).host}</strong></div>}
-    {info && info.state !== 'ready' && <div role="status"><p>{t(info.state === 'untrusted-origin' ? 'connectUntrusted' : info.state === 'unsupported' ? 'connectUnsupported' : 'connectSetup')}</p></div>}
+    {info && info.state !== 'ready' && <div role="status"><p>{t(info.state === 'unreachable' ? 'connectUnreachable' : info.state === 'untrusted-origin' ? 'connectUntrusted' : info.state === 'unsupported' ? 'connectUnsupported' : 'connectSetup')}</p></div>}
     {failed && <p role="alert">{t('connectError')}</p>}
     {busy && <p role="status">{t('connectLoading')}</p>}
     {login ? <div data-connect-code><LoginQR value={login} label={t('connectQR')}/><p>{t('connectConceal')}</p><button type="button" onClick={hide}>{t('connectHide')}</button></div>

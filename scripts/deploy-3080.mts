@@ -37,6 +37,7 @@
  *      the report to a session that will never exist: it stays pending until
  *      the next restart overwrites it (silently lost).
  *   --no-restart    install/refresh + diagnostic preflight; do not restart
+ *   --mobile-origin HTTPS  rotate an existing Quick Tunnel binding through reconfigure
  * @module scripts/deploy-3080
  */
 
@@ -46,6 +47,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpat
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { quickTunnelOrigin, rotateMobileCommand, rotateMobileProbe } from './mobile-tunnel-config.mts'
 import { checkDeploymentLinks } from './dependency-links.mts'
 import { familySpecsFor, formatFamilySpecs, loadWorkspaceVersions } from './pack-dist.ts'
 
@@ -76,6 +78,7 @@ let versionOverride
 // orphaning it until the next restart overwrote the record.
 let initiator
 let noRestart = false
+let mobileOrigin
 for (let i = 0; i < args.length; i++) {
   const a = args[i]
   if (a === '--package') packages.push(args[++i])
@@ -83,8 +86,10 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--version') versionOverride = args[++i]
   else if (a === '--initiator') initiator = args[++i]
   else if (a === '--no-restart') noRestart = true
+  else if (a === '--mobile-origin') mobileOrigin = quickTunnelOrigin(args[++i])
   else usage(`unknown argument ${a}`)
 }
+if (mobileOrigin && (noRestart || !packages.includes('packages/mobile'))) usage('--mobile-origin requires packages/mobile and a guarded restart')
 if (packages.length === 0) usage('--package <dir> is required (repeatable)')
 if (versionOverride !== undefined && packages.length > 1) usage('--version only makes sense with a single package')
 
@@ -116,19 +121,21 @@ function sha256(path) {
 function restartVerb() {
   const scheduleExit = ['schedule-exit', '--port', PORT, '--delay-ms', '5000', '--profile', 'web', '--repo', HARNESS, '--preflight-timeout-ms', '300000', ...(initiator === undefined ? [] : ['--initiator', initiator])]
   const specPath = join(DSH_HOME, 'state', 'launch-spec.json')
-  if (!existsSync(specPath)) return scheduleExit
+  if (!existsSync(specPath)) { if (mobileOrigin) throw new Error('Mobile rotation requires a supervised launch spec'); return scheduleExit }
   let active
-  try { active = JSON.parse(readFileSync(specPath, 'utf8')).active } catch { return scheduleExit }
+  try { active = JSON.parse(readFileSync(specPath, 'utf8')).active } catch { if (mobileOrigin) throw new Error('Cannot read mobile launch spec'); return scheduleExit }
   const pf = active?.preflight
-  if (typeof pf?.runnerPath !== 'string' || typeof pf?.runnerSha256 !== 'string' || !existsSync(pf.runnerPath)) return scheduleExit
+  if (typeof pf?.runnerPath !== 'string' || typeof pf?.runnerSha256 !== 'string' || !existsSync(pf.runnerPath)) { if (mobileOrigin) throw new Error('Mobile rotation requires a bound preflight runner'); return scheduleExit }
   const runnerDrift = sha256(pf.runnerPath) !== pf.runnerSha256
   const anchorDrift = typeof pf.installAnchor === 'string' && typeof pf.installAnchorSha256 === 'string'
     && existsSync(pf.installAnchor) && sha256(pf.installAnchor) !== pf.installAnchorSha256
-  if (!runnerDrift && !anchorDrift) return scheduleExit
+  const nextCommand = mobileOrigin ? rotateMobileCommand(active.command, mobileOrigin) : active.command
+  const originDrift = nextCommand !== active.command
+  if (!runnerDrift && !anchorDrift && !originDrift) return scheduleExit
   if (typeof active?.command !== 'string' || typeof pf.installAnchor !== 'string' || typeof pf.candidateProbeCommand !== 'string') {
     throw new Error('the bound preflight runner or install anchor changed on disk and launch-spec.json lacks a field reconfigure needs (command / installAnchor / candidateProbeCommand) — rebind by hand per .agents/notes/implemented/process/2026-09-26-ankh-guard-self-deploy-reconfigure.md')
   }
-  const drift = [runnerDrift ? 'preflight runner' : '', anchorDrift ? 'install anchor' : ''].filter(Boolean).join(' and ')
+  const drift = [runnerDrift ? 'preflight runner' : '', anchorDrift ? 'install anchor' : '', originDrift ? 'mobile public origin' : ''].filter(Boolean).join(' and ')
   process.stdout.write(`\ndeploy-3080: bound ${drift} changed on disk — rebinding the launch spec through reconfigure (the transactional cutover path)\n`)
   if (initiator !== undefined) process.stdout.write('deploy-3080: note — --initiator report routing is schedule-exit-only; the reconfigure receipt lives in state/launch-cutover.json\n')
   // Re-record the green credential: reconfigure runs its composition preflight
@@ -137,7 +144,7 @@ function restartVerb() {
   runGuard(['record', 'build', '--trust-command', '--command', 'pnpm deploy:3080 (build+test green)', '--repo', HARNESS])
   return [
     'reconfigure',
-    '--start', active.command,
+    '--start', nextCommand,
     '--on-failure', 'restore-previous',
     '--port', String(active.port ?? PORT),
     '--home', active.home ?? DSH_HOME,
@@ -147,7 +154,7 @@ function restartVerb() {
     '--preflight-surface', pf.surface ?? 'built',
     '--preflight-runner', pf.runnerPath,
     '--preflight-install-anchor', pf.installAnchor,
-    '--candidate-probe-command', pf.candidateProbeCommand,
+    '--candidate-probe-command', mobileOrigin ? rotateMobileProbe(pf.candidateProbeCommand, active.command, mobileOrigin) : pf.candidateProbeCommand,
     '--preflight-timeout-ms', '300000',
   ]
 }
@@ -204,6 +211,11 @@ function verifyRetreatedMember(installed, ownerName, member, expectedVersion) {
 
 // Diagnose existing damage before build work or any deployment writes.
 checkDeploymentLinks(DSH_HOME, HARNESS)
+
+if (mobileOrigin) {
+  const active = JSON.parse(readFileSync(join(DSH_HOME, 'state', 'launch-spec.json'), 'utf8')).active
+  rotateMobileCommand(active.command, mobileOrigin)
+}
 
 // Multi-agent deploy lock: two concurrent deploys would race the profile and
 // the restart. A live pidfile holder wins; stale locks are reclaimed.

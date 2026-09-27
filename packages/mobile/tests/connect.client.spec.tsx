@@ -52,3 +52,21 @@ it('shows setup and retry states without requesting a login link automatically',
   fetcher.mockResolvedValue({ ok: false }); fireEvent.click(screen.getByRole('button', { name: en.directoryRetry }))
   await waitFor(() => expect(screen.getByRole('alert').textContent).toBe(en.connectError))
 })
+
+it('checks an exposed QR again and removes it when the public path fails', async () => {
+  const f = fixture(); await screen.findByRole('button', { name: en.connectGenerate })
+  vi.useFakeTimers()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.connectGenerate })) })
+  expect(screen.getByRole('img')).toBeTruthy()
+  f.fetcher.mockResolvedValue({ ok: true, json: async () => ({ state: 'unreachable', origin: 'https://phone.example.test' }) })
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+  expect(screen.queryByRole('img')).toBeNull()
+  expect(screen.getByText(en.connectUnreachable)).toBeTruthy()
+})
+it('explains a failed reachability check at generation time without rendering a QR', async () => {
+  const f = fixture(); await screen.findByRole('button', { name: en.connectGenerate })
+  f.fetcher.mockResolvedValue({ ok: false, json: async () => ({ state: 'unreachable', origin: 'https://phone.example.test' }) })
+  fireEvent.click(screen.getByRole('button', { name: en.connectGenerate }))
+  await screen.findByText(en.connectUnreachable)
+  expect(screen.queryByRole('img')).toBeNull()
+})

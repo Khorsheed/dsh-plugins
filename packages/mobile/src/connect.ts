@@ -1,5 +1,6 @@
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
 import type { MobileConnectInfo } from './protocol.ts'
+import { publicOriginReachable } from './reachability.ts'
 
 const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }
 
@@ -24,10 +25,12 @@ export function connectInfo(connection: HostConnectionHandle, configured?: strin
 }
 
 /** Called only behind the official authenticated Fetch registry. */
-export function connectResponse(connection: HostConnectionHandle, configured?: string) {
+export function connectResponse(connection: HostConnectionHandle, configured?: string, reachable: (origin: string) => Promise<boolean> = publicOriginReachable) {
   return async (request: Request): Promise<Response> => {
     const info = connectInfo(connection, configured)
-    if (request.method === 'GET') return Response.json(info, { headers })
+    const checked = async (): Promise<MobileConnectInfo> => info.state === 'ready' && info.origin && !await reachable(info.origin)
+      ? { ...info, state: 'unreachable' } : info
+    if (request.method === 'GET') return Response.json(await checked(), { headers })
     // Explicit same-origin action; a navigation/form must never reveal a login URL.
     // The official HTTP bridge uses an internal Request URL. Compare the
     // preserved Host/Origin headers, as the official trust fence does, so an
@@ -43,6 +46,8 @@ export function connectResponse(connection: HostConnectionHandle, configured?: s
       return Response.json({ error: 'forbidden' }, { status: 403, headers })
     }
     if (info.state !== 'ready' || !info.origin) return Response.json(info, { status: 409, headers })
+    const live = await checked()
+    if (live.state !== 'ready') return Response.json(live, { status: 503, headers })
     try {
       const login = new URL(connection.authenticatedUrl(info.origin))
       if (login.origin !== info.origin || login.pathname !== '/' || login.username || login.password || login.hash

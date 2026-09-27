@@ -145,6 +145,24 @@ describe('deploy 3080 flow', () => {
     } }))
     return runner
   }
+  it('rotates mobile authority via guarded reconfigure and updates the candidate probe', () => {
+    const f = fixture()
+    writeLaunchSpec(f, '// runner', createHash('sha256').update('// runner').digest('hex'))
+    const path = join(f.home, 'state/launch-spec.json'), spec = JSON.parse(readFileSync(path, 'utf8'))
+    spec.active.command = 'DSH_MOBILE_PUBLIC_ORIGIN=https://old-link.trycloudflare.com node cli.js web --trusted-host old-link.trycloudflare.com'
+    spec.active.preflight.candidateProbeCommand = 'DSH_MOBILE_PUBLIC_ORIGIN=https://old-link.trycloudflare.com node cli.js web --dump-config'
+    writeFileSync(path, JSON.stringify(spec))
+    mkdirSync(join(f.root, 'packages/mobile'))
+    writeFileSync(join(f.root, 'packages/mobile/package.json'), JSON.stringify({ name: '@khorsheed/dsh-mobile', version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml' } } }))
+    const r = f.run(false, ['--package', 'packages/mobile', '--mobile-origin', 'https://new-link.trycloudflare.com'])
+    expect(r.status, r.output).toBe(0)
+    const cutover = r.calls.find(c => c[2] === 'reconfigure')!
+    expect(cutover).toBeDefined()
+    expect(cutover[cutover.indexOf('--start') + 1]).toBe(spec.active.command.replaceAll('old-link', 'new-link'))
+    expect(cutover[cutover.indexOf('--candidate-probe-command') + 1]).toBe(spec.active.preflight.candidateProbeCommand.replaceAll('old-link', 'new-link'))
+    expect(cutover).toContain('restore-previous')
+    expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(false)
+  })
   it('keeps schedule-exit when the bound runner is unchanged', () => {
     const f = fixture()
     writeLaunchSpec(f, '// runner', createHash('sha256').update('// runner').digest('hex'))

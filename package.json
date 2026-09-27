@@ -25,6 +25,7 @@
     "check:builds": "tsx scripts/check-build-scripts-declared.ts",
     "gate": "tsx scripts/gate.mts",
     "hooks:install": "node scripts/setup-hooks.mjs",
+    "mobile:tunnel": "tsx scripts/mobile-tunnel.mts",
     "deploy:3080": "tsx scripts/deploy-3080.mts",
     "deploy:check-links": "tsx scripts/check-deployment-links.mts",
     "compat:report": "tsx scripts/compat-report.ts",
