@@ -351,7 +351,7 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 ## 给 Agent 的安装指南
 
 <details>
-<summary><strong>展开：整合包整体安装 + 单包命令行安装</strong>（用户说"帮我装一下"时照此执行；没有 agent 的用户也可以照着手动跑）</summary>
+<summary><strong>展开：整合包整体安装 + 单包命令行安装</strong>（用户说"帮我装一下"时照此执行）</summary>
 
 ### 一、整体安装整合包
 

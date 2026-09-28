@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-28 —— dev 瘦身为纯开发模式：基础体验插件归 dsh-basic
+
+- **成员结构调整**：13 个基础体验成员（message-tools、message-timeline、session-title-edit、quote、file-preview、local-files、taskpilot、context-guard、inline-html-render、capability-catalog、ui-shortcuts、whalesong、mobile）移出本包——dev 从此只含开发模式专属的 8 个插件（local-agent 家族 6 + worktrees + room），成员计数 22 → 9（8 开发 + ankh-guard 运维装置，restart 脚本的守卫通道依赖它）。基础体验插件按需从 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 单独安装（或 `@khorsheed/dsh-bundle-conversation-toolbox` 元包一次装齐常用会话组件）。
+- 老成员更新路径：已在用的实例跑 `update.sh` 后，被移除的成员不再随包更新——继续用的请逐个 `dsh plugin --profile dev add <包名>` 钉住（或装 conversation-toolbox 元包），之后随各包自己的发布线走。
+- README 同步：preset 节改为「宿主版本 × 安装规格」表（≥ 0.1.7-rc.2 推荐 `@khorsheed/dsh-presets` preset-as-a-bundle；0.1.5 线仍由脚本目录式安装），更新/卸载/自定义预设节并入文末 Agent 指南或删除。
+
 ## 2026-09-28 —— room-tool 回并 room 的 `./tool` 子路径
 
 - room-tool 并入 room 的 `./tool` 组合入口（0.2.0，preset 行 id `room-tool` 不变、组合状态不受影响；worktrees 0.3.0 同款回并）。成员计数 22（13 共享 + 9 独有）；安装自检的行数口径不变（room-tool 从不挂 profile 根行）。

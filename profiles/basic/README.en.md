@@ -348,7 +348,7 @@ Plugins live in [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins
 ## Install guide for agents
 
 <details>
-<summary><strong>Expand: whole-pack install + single-package CLI install</strong> (follow this when the user says "install this for me"; users without an agent can run the same commands by hand)</summary>
+<summary><strong>Expand: whole-pack install + single-package CLI install</strong> (follow this when the user says "install this for me")</summary>
 
 ### 1. Installing the whole pack
 

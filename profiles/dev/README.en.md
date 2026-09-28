@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-**Direct a team of agents to write code, and see exactly what they changed.** Delegate tasks to the coding agents installed on your machine — Kimi Code, Codex, Claude Code, or dsh itself — each with its own context and accounting; which branch a change landed on, which files moved, what each commit did, all visible inside the session; and several agents can collaborate in one conversation. The full baseline experience (message editing, artifact preview, task capsules) is included.
+**Direct a team of agents to write code, and see exactly what they changed.** Delegate tasks to the coding agents installed on your machine — Kimi Code, Codex, Claude Code, or dsh itself — each with its own context and accounting; which branch a change landed on, which files moved, what each commit did, all visible inside the session; and several agents can collaborate in one conversation.
 
 Every member is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) and install freely. If the official host later opens up custom-profile installation, this repo will support one-command install. The local-agent family also comes as a meta package — `@khorsheed/dsh-bundle-local-agent` installs it all at once (see the end of [Features](#features)).
 
@@ -10,7 +10,7 @@ Every member is an independent plugin — copy its package name into the host's 
 
 ## The dsh-dev pack — plugin list
 
-This pack adds 9 plugins specifically for dev mode (see the table below). On top of that it ships the same everyday-experience plugins as [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, task pills, compaction reminder, inline cards, capability catalog, shortcuts, ambience, mobile, ops guard) — disable or uninstall any you don't need under Settings → Plugins; they can also be installed individually on demand, with per-plugin intros and screenshots in dsh-basic.
+This pack contains the 8 plugins specific to dev mode (see the table below). Beyond that, we also recommend installing the everyday-experience plugins from [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, local file browsing, task pills, compaction reminder, inline cards, capability catalog, shortcuts, ambience, mobile) — copy the package names one by one, or install the common conversation pieces in one shot with the `@khorsheed/dsh-bundle-conversation-toolbox` meta package; per-plugin intros and screenshots live in dsh-basic.
 
 | Plugin | Package name (copy to install) | What you get |
 |---|---|---|
@@ -22,7 +22,6 @@ This pack adds 9 plugins specifically for dev mode (see the table below). On top
 | local-agent-tool-subagent | `@khorsheed/dsh-local-agent-tool-subagent` | The family's shared delegation tool row with a `resume` parameter (mounted by providers) |
 | worktrees | `@khorsheed/dsh-worktrees` | A per-session repo/worktree badge plus a change drawer (read-only git facts); the model tool ships as the package's `@khorsheed/dsh-worktrees/tool` subpath row, granted per session by the dev-mode preset |
 | room | `@khorsheed/dsh-room` | Multi-agent collaboration in one session: member roster, @ dispatch, task board; the model tools `room_invite / room_task / room_message` ride the package's `./tool` subpath row, granted per session by the dev-mode preset |
-| local-files | `@khorsheed/dsh-local-files` | A local file browser in the right sidebar: lazy tree plus structured previews |
 
 ### Version compatibility
 
@@ -95,19 +94,12 @@ The pack ships a **dev mode** preset (`presets/dev`). It exists so that dev mode
 
 The composition re-bases verbatim on the official "Standard mode" and only appends community tool rows at the end: the three local-agent delegation tools (`subagent_kimi` / `subagent_codex` / `subagent_claude_code`), the worktrees model tool, and the room tool trio (`room_invite` / `room_task` / `room_message`), all **granted per session**; with a companion's core absent the row stays pending and never crashes the host.
 
-`install.sh` / `update.sh` drops it into `$DSH_HOME/.agent-presets/dev` (replaced whole — it is pack apparatus, not preference; a same-id preset of yours would be overwritten, so author your own under a different id). Pick the dev preset in the preset chip when creating a session; the default preset stays Standard — change it under **Settings → Agent presets** (the patch layer is yours, the pack pins nothing). The mission / datasets / eval companion tool rows are **deliberately absent here**: the three cores are not members of this pack (unpublished incubation) and a companion imports its core's `./tool` factory at runtime, so a missing row would mark the whole dev preset `broken` — they join once they are published and listed in `profiles/dev/package.json` (see CHANGELOG).
+| Host version | Install spec (copy into the dialog) |
+|---|---|
+| ≥ `0.1.7-rc.2` (recommended) | `@khorsheed/dsh-presets` |
+| `0.1.5-rc.1` ~ `0.1.7-rc.1` | Installed directory-style by the pack scripts (see the guide at the end) |
 
-## Update
-
-When the member list changes, pull and run the updater:
-
-```sh
-cd dsh-dev && git pull
-sh scripts/update.sh
-sh scripts/restart-into-dev.sh
-```
-
-`update.sh` overwrites `package.json` and the lockfile only — it **never touches your `cordis.patch.yml`**, which is your layer.
+Since 0.1.7-rc.2 the official host supports preset-as-a-bundle — a preset ships as an ordinary package and installs by copying its name, no manual directory placement; upgrading is recommended for the smoother path. Once installed, dev mode's UI and tools take effect only in dev-mode sessions and never disturb the other modes.
 
 ## Other packs
 
@@ -120,18 +112,10 @@ sh scripts/restart-into-dev.sh
 
 See [CHANGELOG.md](CHANGELOG.md).
 
-## Removing the whole profile
-
-```sh
-rm -rf "$DSH_HOME/profiles/dev"
-```
-
-Session data lives in `$DSH_HOME/sessions/` and does not go with the profile.
-
 ## Install guide for agents
 
 <details>
-<summary><strong>Expand: whole-pack install + single-package CLI install</strong> (follow this when the user says "install this for me"; users without an agent can run the same commands by hand)</summary>
+<summary><strong>Expand: whole-pack install + single-package CLI install</strong> (follow this when the user says "install this for me")</summary>
 
 ### 1. Installing the whole pack
 
@@ -144,7 +128,7 @@ git clone https://github.com/Khorsheed/dsh-dev.git /tmp/dsh-dev
 sh /tmp/dsh-dev/scripts/install.sh
 ```
 
-`install.sh` prints the composed row count. To verify by hand: `dsh --profile dev --dump-config | grep -c "@khorsheed"` should be 23 (the member list is in the plugin list above). When `dsh` is not on PATH, use its full path (readable from the running instance's launch command via `ps`).
+`install.sh` prints the composed row count at the end — cross-check against the script's own output (the member list is in the plugin list above). When `dsh` is not on PATH, use its full path (readable from the running instance's launch command via `ps`).
 
 **2. Same-port handover (the critical step)**
 

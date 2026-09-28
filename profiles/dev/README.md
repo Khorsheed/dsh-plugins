@@ -2,7 +2,7 @@
 
 中文 | [English](README.en.md)
 
-**调度一组 agent 写代码，并看清他们改了什么。** 把任务派给你本机装的 Kimi Code、Codex、Claude Code 或 dsh 自己，各自独立上下文与记账；改动落在哪个分支、动了哪些文件、每次提交做了什么，都在会话里一眼可见；多个 agent 可以在同一个会话里协作。基础体验（消息编辑、产物预览、任务胶囊等）全部内含。
+**调度一组 agent 写代码，并看清他们改了什么。** 把任务派给你本机装的 Kimi Code、Codex、Claude Code 或 dsh 自己，各自独立上下文与记账；改动落在哪个分支、动了哪些文件、每次提交做了什么，都在会话里一眼可见；多个 agent 可以在同一个会话里协作。
 
 每个成员都是独立插件，复制包名到宿主的「添加插件」对话框（0.1.7-rc.2 起：设置 → 插件）即可自由安装；后续如果官方开放自定义 profile 安装，本仓库会支持一行命令直接安装。本地 Agent 家族也可以装元包 `@khorsheed/dsh-bundle-local-agent` 一次装齐（见[功能展示](#功能展示)末尾）。
 
@@ -10,7 +10,7 @@
 
 ## dev 整合包 - 插件列表
 
-本整合包包含开发模式单独追加的 9 个插件（见下表）。除此之外还随包装好与 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 同源的基础体验优化插件（消息编辑/撤回、时间轴、标题编辑、引用、产物预览、任务胶囊、压缩提醒、内联卡片、能力目录、快捷键、提示音、移动端、运维守护）——不需要的在 设置 → 插件 里禁用或卸载即可；它们也可按需单独安装，逐插件介绍与截图见 dsh-basic。
+本整合包包含开发模式单独的 8 个插件（见下表）。除此之外，也推荐安装 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 的基础体验优化插件（消息编辑/撤回、时间轴、标题编辑、引用、产物预览、本地文件浏览、任务胶囊、压缩提醒、内联卡片、能力目录、快捷键、提示音、移动端）——复制包名逐个装，或用元包 `@khorsheed/dsh-bundle-conversation-toolbox` 一次装齐常用会话组件；逐插件介绍与截图见 dsh-basic。
 
 | 插件 | 包名（复制即可安装） | 你得到 |
 |---|---|---|
@@ -22,7 +22,6 @@
 | local-agent-tool-subagent | `@khorsheed/dsh-local-agent-tool-subagent` | 家族共享委派工具行（带 `resume` 续聊参数，随 provider 挂载） |
 | worktrees | `@khorsheed/dsh-worktrees` | 会话头部 repo/worktree 徽标 + 改动抽屉（只读 git 事实）；模型工具随 `@khorsheed/dsh-worktrees/tool` 子路径行由开发模式 preset 按会话授予 |
 | room | `@khorsheed/dsh-room` | 多 agent 同会话协作：成员名册、@ 派发、任务板；模型工具 `room_invite / room_task / room_message` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
-| local-files | `@khorsheed/dsh-local-files` | 右栏本地文件浏览器：懒加载树 + 结构化预览 |
 
 ### 版本兼容
 
@@ -95,19 +94,12 @@ pack 自带一个**开发模式** preset（`presets/dev`）。它存在的意义
 
 组合以官方「标准模式」逐字重基，只在末尾追加社区工具行：三家 local-agent 委派工具（`subagent_kimi` / `subagent_codex` / `subagent_claude_code`）、worktrees 模型工具与 room 工具三件套（`room_invite` / `room_task` / `room_message`），全部**按会话授予**；伴生 core 缺席时该行 pending，不炸宿主。
 
-`install.sh` / `update.sh` 把它卸进 `$DSH_HOME/.agent-presets/dev`（整体替换——它是 pack 装置，不是个人偏好；同名自建会被覆盖，自己的预设请用别的 id）。建会话时在 preset chip 选「开发模式」即可；默认 preset 仍是「标准模式」，要改默认在**设置 → Agent 预设**里选（patch 层是你的，pack 不钉）。mission / datasets / eval 的伴生工具行**刻意不在这里**：三个 core 不在本 pack 的成员清单里（孵化中），而伴生包运行时要 import core 的 `./tool` 工厂，缺行会让整个 dev preset 报 broken——等它们上架、并加进 `profiles/dev/package.json` 之后再补（见 CHANGELOG）。
+| 宿主版本 | 安装规格（复制到对话框） |
+|---|---|
+| ≥ `0.1.7-rc.2`（推荐） | `@khorsheed/dsh-presets` |
+| `0.1.5-rc.1` ~ `0.1.7-rc.1` | 随整合包脚本以目录式安装（见文末指南） |
 
-## 更新
-
-成员清单变化后（新增或移除插件），拉最新再跑一次 update：
-
-```sh
-cd dsh-dev && git pull
-sh scripts/update.sh
-sh scripts/restart-into-dev.sh
-```
-
-`update.sh` 只覆盖 `package.json` 与 lockfile，**不动你的 `cordis.patch.yml`**——那一层的改动是你的。
+0.1.7-rc.2 起官方支持 preset as a bundle——preset 像普通插件一样打包成包，复制包名即可安装，不再需要手动放置目录；建议升级到该版本，装起来更丝滑。安装后开发模式的 UI 与工具仅在开发模式会话生效，不干扰其它模式。
 
 ## 其他整合包
 
@@ -120,18 +112,10 @@ sh scripts/restart-into-dev.sh
 
 见 [CHANGELOG.md](CHANGELOG.md)。
 
-## 卸载整个 profile
-
-```sh
-rm -rf "$DSH_HOME/profiles/dev"
-```
-
-会话数据在 `$DSH_HOME/sessions/`，不随 profile 删除。
-
 ## 给 Agent 的安装指南
 
 <details>
-<summary><strong>展开：整合包整体安装 + 单包命令行安装</strong>（用户说"帮我装一下"时照此执行；没有 agent 的用户也可以照着手动跑）</summary>
+<summary><strong>展开：整合包整体安装 + 单包命令行安装</strong>（用户说"帮我装一下"时照此执行）</summary>
 
 ### 一、整体安装整合包
 
@@ -144,7 +128,7 @@ git clone https://github.com/Khorsheed/dsh-dev.git /tmp/dsh-dev
 sh /tmp/dsh-dev/scripts/install.sh
 ```
 
-`install.sh` 末尾会打印组合的行数。如需手动复核：`dsh --profile dev --dump-config | grep -c "@khorsheed"` 应为 23（成员清单见上方「插件列表」）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
+`install.sh` 末尾会打印组合的行数，可与脚本输出对照复核（成员清单见上方「插件列表」）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
 
 **二、同端口交接（关键一步）**
 
