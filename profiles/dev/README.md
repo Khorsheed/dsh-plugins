@@ -6,6 +6,8 @@
 
 每个成员都是独立插件，复制包名到宿主的「添加插件」对话框（0.1.7-rc.2 起：设置 → 插件）即可自由安装；后续如果官方开放自定义 profile 安装，本仓库会支持一行命令直接安装。本地 Agent 家族也可以装元包 `@khorsheed/dsh-bundle-local-agent` 一次装齐（见[功能展示](#功能展示)末尾）。
 
+<img src="docs/screenshots/dev-mode.png" width="1000" alt="dsh-dev 开发模式全景:room 邀请成员、worktree 徽标与改动抽屉、子 agent 任务胶囊">
+
 ## dev 整合包 - 插件列表
 
 与 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 共享的 13 个成员（消息编辑/撤回、时间轴、标题编辑、引用、产物预览、任务胶囊、压缩提醒、内联卡片、能力目录、快捷键、提示音、移动端、运维守护），逐插件介绍与截图见 basic 的插件列表。本包独有 9 个：

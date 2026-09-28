@@ -6,6 +6,8 @@
 
 Every member is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) and install freely. If the official host later opens up custom-profile installation, this repo will support one-command install. The local-agent family also comes as a meta package — `@khorsheed/dsh-bundle-local-agent` installs it all at once (see the end of [Features](#features)).
 
+<img src="docs/screenshots/dev-mode.png" width="1000" alt="dsh-dev dev mode at a glance: the room invite dialog, the worktree badge and change drawer, and sub-agent task pills">
+
 ## The dsh-dev pack — plugin list
 
 Thirteen members are shared with [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, task pills, compaction reminder, inline cards, capability catalog, shortcuts, ambience, mobile, ops guard) — see basic's plugin list for their intros and screenshots. The 9 unique to this pack:

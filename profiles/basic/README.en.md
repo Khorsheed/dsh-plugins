@@ -7,6 +7,8 @@
 Every member is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) and install freely. If the official host later opens up custom-profile installation, this repo will support one-command install.
 The everyday conversation plugins can also be installed straight as the `@khorsheed/dsh-bundle-conversation-toolbox` bundle — seven at once (see the end of [The tour](#the-tour)).
 
+<img src="docs/screenshots/basic-mode.png" width="1000" alt="dsh-basic everyday mode at a glance: edit and withdraw messages, quote actions, session artifacts, the file list, the ideas space, and the compaction-reminder timing">
+
 ## The dsh-basic pack — plugin list
 
 | Plugin | Package name (copy to install) | What you get |
