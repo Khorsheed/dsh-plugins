@@ -2,6 +2,8 @@
 
 Status: implemented
 
+**Update (2026-09-28):** The manager described below was removed by [Remove automatic mobile tunnel deployment](2026-09-28-remove-mobile-tunnel-manager.md). Its lifecycle description is historical. Anonymous QR checks and explicitly invoked manual origin rotation remain supported.
+
 ## Problem
 
 A Quick Tunnel process can remain alive while its remote registration and DNS disappear. The Web connection page only checked configured authority and host trust, so it continued issuing QR codes for a dead address. Host deploy restarts and network failures were indistinguishable to the user.

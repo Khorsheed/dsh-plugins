@@ -153,8 +153,10 @@ pnpm deploy:check-links
 
 ## 移动端公网入口恢复
 
-`pnpm mobile:tunnel` 是独立于宿主的电脑端 Quick Tunnel 管理进程。应从已合并的部署 checkout 运行，并由系统服务管理器保持在线。它不修改手机配置；公网域名切换后，用户从 Web「设置 → 连接手机」重新扫码。
+公网连通性检查只提供状态和二维码可用性反馈，不能触发隧道重建、部署或 3080 重启。电脑端恢复可用地址后，用户从 Web「设置 → 连接手机」重新扫码。
 
-管理器只在本地 3080 健康且公网连续三次失败时重建，重试间隔十分钟。新域名通过 `pnpm deploy:3080 --package packages/mobile --mobile-origin https://new-link.trycloudflare.com` 进入标准构建、测试及 `reconfigure` 流程，会重启宿主。配置形态不受支持、代码未提交或部署锁被占用时拒绝操作，诊断写入 `$DSH_HOME/state/mobile-tunnel/`。`--repair-now` 用于已确认公网故障的首次恢复，可跳过初始检测等待。
+需要手动轮换已配置的 Quick Tunnel 时，部署者在明确安排重启后使用 `pnpm deploy:3080 --package packages/mobile --mobile-origin https://new-link.trycloudflare.com`，沿用构建、测试及受控 `reconfigure` 流程。该命令会重启宿主，不能由后台健康检查调用。
 
-Web 生成二维码前匿名检查公网入口，并定期撤下已失效的二维码。更多配置和限制见 [mobile README](../packages/mobile/README.md#电脑端-quick-tunnel-自动恢复)。
+已移除 `mobile:tunnel` 常驻管理器。曾安装的机器须卸载 `com.dsh.mobile-tunnel` LaunchAgent 并删除其 plist，检查并停止遗留管理器及其部署子进程。管理器持有的公网隧道和转发也可能随停用而停止，必须核对电脑入口与公网入口各自的状态；不得为了恢复扫码擅自重启宿主。诊断日志可保留供排查。
+
+Web 生成二维码前匿名检查公网入口，并定期撤下已失效的二维码。更多配置和限制见 [mobile README](../packages/mobile/README.md#公网入口检查与重新扫码)。

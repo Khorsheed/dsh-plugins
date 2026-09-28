@@ -56,13 +56,11 @@ DSH_MOBILE_PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com dsh web --no-open -
 跨物理网络需要独立配置的 HTTPS/WSS 入口转发到 loopback Host 端口、有效官方认证、保持唤醒联网的 Mac 和网络可达的手机——仅启动 Host 不等于远程可用，App 也不会替你配置网络或凭据。Debug 模拟器构建仅允许 loopback HTTP，Release 要求 HTTPS。
 
 
-### 电脑端 Quick Tunnel 自动恢复
+### 公网入口检查与重新扫码
 
 连接手机页面在提供或生成二维码前，会匿名检查已配置的公网入口。不可达时返回明确状态，不签发登录链接。正在展示的二维码每 15 秒复查一次，入口失效或变化时收起。这是电脑侧连通性检查，不能保证手机所处网络同样可达。
 
-本仓库受监督的 3080 部署可选择运行 `pnpm mobile:tunnel`，`--repair-now` 可跳过初始三次检测的等待。管理进程每 30 秒检测一次，本地宿主不可用时等待；公网连续三次失败才重建，恢复尝试之间至少间隔十分钟。它启动严格绑定新域名的 loopback 转发和新 Quick Tunnel，再调用 `pnpm deploy:3080 --package packages/mobile --mobile-origin https://new-link.trycloudflare.com`，通过正常构建、测试及受控 `reconfigure` 更新原有公网地址和信任域名，其余启动设置不变。此过程会重启宿主，失败保留守护进程的回退机制。移动包或部署代码存在未提交修改时，自动部署会被阻止。
-
-通过电脑的服务管理器保持运行，例如 macOS 的用户级 LaunchAgent。它独立于宿主进程，不由插件自动安装。`DSH_HOME` 指向现有受监督部署，`CLOUDFLARED_BIN` 可指定已安装的 cloudflared。状态和诊断日志位于 `$DSH_HOME/state/mobile-tunnel/`，不包含登录 token。仅支持已明确配置的 Quick Tunnel：不增加通配信任、不注册账号、不自动修改手机地址。域名切换后重新打开「连接手机」，扫描新二维码即可。
+检查只报告连接状态，不重建隧道、不部署插件、不重启宿主。公网入口失效时，由部署者手动恢复入口；需要变更宿主地址或信任域名的操作应先明确安排重启。电脑端地址可用后，重新打开「连接手机」，手机扫描新二维码即可。不会自动更新手机地址。
 
 ## 可选：Quick Tunnel 预览
 

@@ -44,13 +44,13 @@
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.2 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-mission` | `packages/mission` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
 | `@khorsheed/dsh-mission-tool` | `packages/mission-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
-| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | basic |
+| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-presets` | `packages/presets` | 0.1.1 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-room` | `packages/room` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev |
-| `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.3 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
+| `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.2 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
+| `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.3 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-typesafe` | `packages/typesafe` | 0.1.1 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-typesafe-tool` | `packages/typesafe-tool` | 0.1.1 | composition | preset-composed-row | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/ui-content-preview` | 0.1.1 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
