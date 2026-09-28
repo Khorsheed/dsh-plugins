@@ -24,12 +24,13 @@ import {
   useCallback, useEffect, useMemo, useRef, useState,
   type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
-import { Button, MarkdownText, Modal, Tag, Toast, type MarkdownLabels, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal, Tag, Toast, type MarkdownLabels, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { cardNameOf } from '../../card-format.ts'
 import { imageMarkdownOf } from '../../image-token.ts'
+import { CardMarkdown } from '../detail/CardMarkdown.tsx'
 import { documentHeadingOf } from '../../types.ts'
 import type {
   BoardManuscript, BoardMutationResult, CanvasBoard, CanvasError, ManuscriptExportError,
@@ -499,14 +500,14 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
             </div>
           </div>
           <div className={`${detailCss.renderPane} ${css.prose}`}>
-            <MarkdownText text={editing.text} labels={markdownLabels} pathImages={pathImages} />
+            <CardMarkdown text={editing.text} labels={markdownLabels} pathImages={pathImages} />
           </div>
         </div>
       ) : (
         <div className={`${detailCss.body} ${css.prose}`}>
           {body === null
             ? <div className={detailCss.notice}>{t('state.loading')}</div>
-            : <MarkdownText text={reading(body.text)} labels={markdownLabels} pathImages={pathImages} />}
+            : <CardMarkdown text={reading(body.text)} labels={markdownLabels} pathImages={pathImages} />}
         </div>
       )}
 

@@ -47,6 +47,15 @@ Status: implemented
 - **删掉顶栏的「＋新卡」菜单。** 它和虚线格重复，也显得突兀。分类在虚线格自带的下拉里选。
 - **虚线格文案改为「新增{分类}卡片」**，按它要新建的分类命名，例如「新增灵感卡片」。
 
+**同日第三轮（0.4.11）：Markdown 里的整块 HTML。** Agent 在成稿里画了一个 `<div style=…>` 图示，页面上显示的却是源码。原因是宿主的 `MarkdownText` 有意把原始 HTML 当文字显示，也没有扩展口。
+
+- `splitHtmlBlocks`（`src/html-blocks.ts`）在渲染前切出整块。切块条件是行首（最多三个空格）为块级标签，且这个标签在后文闭合；嵌套、跨行、跨空行都按同名标签的深度配平。
+- 行内 HTML、代码围栏里的标签、没闭合的标签都保持 Markdown，不会吞掉后文。没有块的文本原样返回，仍由一个 `MarkdownText` 渲染。
+- 每个块用和 HTML 卡片相同的沙箱渲染（`CardMarkdown`，复用 inline-html-render 的 `buildCardSrcDoc` + `attachBridge`）：严格的卡片 CSP、不联网、脚本关在不透明源里，高度由桥接回报。卡片详情的文字块、成稿的阅读视图和编辑预览都走它。
+- **深色主题**：作者写的块自带浅色。宿主 body 带 `data-ds-dark-theme` 时，从外面给 iframe 加 `invert(0.88) hue-rotate(180deg)`：白底变深、文字变浅、色相不变，切换主题不用重载。
+- iframe 元素和它的文档都固定为 `color-scheme: light`。两边的配色方案不一致时，浏览器会给 iframe 画不透明底，反色后就成了一圈灰带（截图对照时发现）。
+- 卡板摘要把每个块记为「[图示]」，不露源码。
+
 ## Alternatives considered
 
 - **编辑器工具栏放在底部，或做成浮动工具栏。** 不采用：用户选了顶部吸顶栏。长卡片上它一直可见，也有空间容纳更多插入类型。
@@ -70,4 +79,6 @@ Status: implemented
   - 新画板沿用上次选的粗细。
 - `tests/block-editor.client.spec.tsx`：工具栏顺序、拖入到缝隙、非图片拖入、图片预览。
 - `tests/tab.client.spec.tsx`、`tests/strip.client.spec.tsx`：虚线格就地草稿、展开、⏎ 建卡、空卡板的虚线格。
-- 507 个测试通过。
+- `tests/html-blocks.spec.ts`：切块、跨行配平、自闭合 svg、未闭合、围栏、缩进与行中标签、摘要标记。
+- `tests/manuscript.client.spec.tsx`：成稿里的整块 HTML 进沙箱 iframe（带 CSP），不显示源码。
+- 516 个测试通过。

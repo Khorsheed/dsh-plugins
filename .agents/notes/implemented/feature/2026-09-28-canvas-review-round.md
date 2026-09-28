@@ -47,6 +47,15 @@ The user walked canvas 0.4.8 on 3080 and raised six points:
 - **The topbar ＋新卡 menu is removed.** It duplicated the tile and read as abrupt. The kind is picked in the tile's own select.
 - **The tile reads 「新增{kind}卡片」**, named for the kind it starts, for example 新增灵感卡片.
 
+**Third pass, same day (0.4.11): whole HTML blocks in markdown.** An agent drew a `<div style=…>` diagram in a manuscript, and the page showed its source. The host's `MarkdownText` keeps raw HTML literal by design and has no extension point.
+
+- `splitHtmlBlocks` (`src/html-blocks.ts`) cuts whole blocks out before rendering. A block opens on a line that starts (after at most three spaces) with a block-level tag, and only when that tag closes further on. Nesting, several lines and blank lines are balanced by the depth of that same tag.
+- Inline HTML, tags inside a code fence and an unclosed tag stay markdown, and nothing after them is swallowed. A text with no block comes back unchanged and still renders as one `MarkdownText`.
+- Each block renders in the same sandbox as an HTML card (`CardMarkdown`, reusing inline-html-render's `buildCardSrcDoc` + `attachBridge`): the strict card CSP, no network, scripts confined to an opaque origin, height reported by the bridge. The card detail's text blocks and the manuscript's reading view and edit preview all use it.
+- **Dark theme:** authored blocks carry light colors. When the host body carries `data-ds-dark-theme`, the iframe gets `invert(0.88) hue-rotate(180deg)` from outside: the white ground turns dark, the text turns light, hues stay, and a theme switch needs no reload.
+- The iframe element and its document are both pinned to `color-scheme: light`. When the two schemes differ, the browser paints the iframe an opaque backdrop, which the inversion showed as a grey band (caught in a screenshot check).
+- The board summary shows each block as 「[图示]」, never its source.
+
 ## Alternatives considered
 
 - **A bottom toolbar or a floating toolbar for the editor.** Rejected: the user picked the sticky top bar, which stays in view on a long card and has room for more insert kinds.
@@ -67,4 +76,6 @@ The user walked canvas 0.4.8 on 3080 and raised six points:
   - a new pad opens with the last width.
 - `tests/block-editor.client.spec.tsx`: the bar order, a drop into a gap, a non-image drop, the lightbox.
 - `tests/tab.client.spec.tsx` and `tests/strip.client.spec.tsx`: the inline tile draft, 展开, ⏎ filing, the empty-board tile.
-- 507 tests pass.
+- `tests/html-blocks.spec.ts`: splitting, balancing across lines, a self-closing svg, an unclosed tag, fences, indented and mid-line tags, the summary mark.
+- `tests/manuscript.client.spec.tsx`: a whole HTML block in a manuscript renders in a sandboxed iframe (with the CSP), not as source.
+- 516 tests pass.

@@ -29,7 +29,7 @@ import {
   useCallback, useEffect, useMemo, useRef, useState,
   type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
-import { MarkdownText, Toast, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Toast, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { MoreMenu } from '../more-menu.tsx'
 import { ConfirmDelete } from '../confirm-delete.tsx'
@@ -40,6 +40,7 @@ import { buildCardSrcDoc } from '@khorsheed/dsh-inline-html-render/src/client/sr
 import { cardNameOf, cardTitleOf, detectCardFormat, htmlTitleOf } from '../../card-format.ts'
 import { cardBlocksOf, withoutDrawLines } from '../../blocks.ts'
 import { imageHtmlOf, imageMarkdownOf } from '../../image-token.ts'
+import { CardMarkdown } from './CardMarkdown.tsx'
 import {
   documentHeadingOf, hasDrawings, LEGACY_DRAWING_ID,
   type BoardCard, type BoardManuscript, type BoardMutationResult, type CanvasBoard,
@@ -157,7 +158,7 @@ function CardFlow({ t, text, drawings, labels, pathImages }: {
           editing={false}
         />
       ) : (
-        <MarkdownText
+        <CardMarkdown
           key={`t:${index}`}
           text={block.kind === 'text' ? block.text : block.line}
           labels={labels}

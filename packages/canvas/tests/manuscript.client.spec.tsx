@@ -131,6 +131,18 @@ describe('ManuscriptView', () => {
     expect((screen.getByTitle(zh['ms.cardGone']) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('renders a whole HTML block in a sandboxed frame, not as its source', async () => {
+    const { props, current } = harness()
+    current.body = '# 异议的代价\n\n正文第一段。\n\n<div style="border:1px solid #e2e5ea"><div>行为层</div></div>\n\n结尾一段。'
+    render(<ManuscriptView {...props} />)
+    expect(await screen.findByText('结尾一段。')).toBeTruthy()
+    const frame = document.querySelector('iframe[data-html-block]') as HTMLIFrameElement
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(frame.getAttribute('srcdoc')).toContain('<div>行为层</div>')
+    expect(frame.getAttribute('srcdoc')).toContain('Content-Security-Policy')
+    expect(screen.queryByText(/border:1px solid/)).toBeNull()
+  })
+
   it('saves an edit with ⌘⏎, presenting the version the edit started from', async () => {
     const { props, mocks } = harness()
     render(<ManuscriptView {...props} />)

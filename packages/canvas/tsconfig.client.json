@@ -14,6 +14,7 @@
   "files": [
     "src/css-modules.d.ts",
     "src/card-format.ts",
+    "src/html-blocks.ts",
     "src/image-token.ts",
     "src/types.ts",
     "src/blocks.ts",
@@ -36,6 +37,7 @@
     "src/client/confirm-delete.tsx",
     "src/client/detail/CardPad.tsx",
     "src/client/detail/BlockEditor.tsx",
+    "src/client/detail/CardMarkdown.tsx",
     "src/client/detail/CanvasDetailView.tsx",
     "src/client/manuscript/ManuscriptView.tsx",
     "src/client/detail/DetailCrumbs.tsx",

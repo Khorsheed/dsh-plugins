@@ -34,6 +34,7 @@ import { basenameOf } from '../text.ts'
 import { FollowUp } from '../follow-up.tsx'
 import { firstDrawingOf, withoutDrawLines } from '../../blocks.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { withHtmlBlocksMarked } from '../../html-blocks.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
 import { DraftTile, type NewCardSlot } from './DraftTile.tsx'
@@ -149,9 +150,9 @@ function CommentThread({ t, card, readonly, talkAvailable, onComment, onFollowUp
 /** A markdown image, anywhere in a line: `![alt](dest)`. */
 const IMAGE_MARKDOWN = /!\[[^\]\n]*\]\([^)\n]*\)/g
 
-/** The card's words for the summary: no drawing lines, each image one mark. */
-function summaryTextOf(text: string, imageMark: string): string {
-  return withoutDrawLines(text).replace(IMAGE_MARKDOWN, imageMark)
+/** The card's words for the summary: no drawing lines, each image and each HTML block one mark. */
+function summaryTextOf(text: string, imageMark: string, htmlMark: string): string {
+  return withHtmlBlocksMarked(withoutDrawLines(text), htmlMark).replace(IMAGE_MARKDOWN, imageMark)
 }
 
 /** A card's summary: the drawing, the derived heading, the clamped text.
@@ -187,7 +188,7 @@ function CardSummary({ t, card }: {
   // and summarize the body that remains after it.
   // The thumbnail stands for the drawings, and an image pointer is not words:
   // the summary reads the text with both said plainly.
-  const words = summaryTextOf(card.text, t('card.imageMark'))
+  const words = summaryTextOf(card.text, t('card.imageMark'), t('card.htmlMark'))
   const heading = card.kind === 'document' ? documentHeadingOf(words) : undefined
   return (
     <>

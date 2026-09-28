@@ -1,0 +1,18 @@
+/* An HTML block inside markdown: full width, no chrome of its own (the block
+   draws its own box), sized by the height the frame reports. */
+.frame {
+  /* Matches the document inside: differing schemes paint an opaque backdrop. */
+  color-scheme: light;
+  display: block;
+  width: 100%;
+  height: 48px;
+  border: none;
+  background: transparent;
+}
+
+/* The host's dark theme: authored blocks are light, so the frame is inverted
+   and hue-rotated back — a white box becomes a dark one, dark text light, and
+   each color keeps its hue. */
+:global(body[data-ds-dark-theme]) .frame {
+  filter: invert(0.88) hue-rotate(180deg);
+}
