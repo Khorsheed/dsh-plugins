@@ -25,48 +25,48 @@
 
 ## 能力地图
 
-每个包的功能详情、配置与截图见各自目录的 README(点目录进包即达)。「随整合包」一列表示它默认随哪个整合包装好;标「单包」的用 `dsh plugin add` 单独安装。
+每个包的功能详情、配置与截图见各自目录的 README(点目录进包即达)。「安装包名」列复制即可装;「随整合包」一列表示它随哪个模式的整合包装好(basic / dev / writing / eval 互不重叠);标「单包」的不随任何整合包,用「添加插件」对话框或 `dsh plugin add` 单独安装。
 
 ### 对话控制
 
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`message-tools`](packages/message-tools) | 用户消息**原位编辑 / 真撤回 / 恢复重放**——全家桶里唯一改变模型所见的插件,用的是与官方 compaction 同一套机制 | basic + dev |
-| [`message-timeline`](packages/message-timeline) | 会话左缘悬浮**历史消息时间轴**,点击跳转任意用户消息 | basic + dev |
-| [`session-title-edit`](packages/session-title-edit) | 聊天区标题**内联重命名**,用户改过的标题不再被自动生成覆盖 | basic + dev |
-| [`quote`](packages/quote) | 选中任意文本浮出**引用动作菜单**(引用进 composer / 侧边对话 / 复制),其他插件可注册自己的动作 | basic |
+| 包 | 插件能力 | 安装包名 | 宿主要求 | 随整合包 |
+| --- | --- | --- | --- | --- |
+| [`message-tools`](packages/message-tools) | 用户消息**原位编辑 / 真撤回 / 恢复重放**——全家桶里唯一改变模型所见的插件,用的是与官方 compaction 同一套机制 | `@khorsheed/dsh-client-message-tools` | ≥ 0.1.5-rc.1 | basic |
+| [`message-timeline`](packages/message-timeline) | 会话左缘悬浮**历史消息时间轴**,点击跳转任意用户消息 | `@khorsheed/dsh-message-timeline` | ≥ 0.1.2-rc.1 | basic |
+| [`session-title-edit`](packages/session-title-edit) | 聊天区标题**内联重命名**,用户改过的标题不再被自动生成覆盖 | `@khorsheed/dsh-client-session-title-edit` | ≥ 0.1.2-rc.1 | basic |
+| [`quote`](packages/quote) | 选中任意文本浮出**引用动作菜单**(引用进 composer / 侧边对话 / 复制),其他插件可注册自己的动作 | `@khorsheed/dsh-quote` | ≥ 0.1.5-rc.1 | basic |
 
 ### 文件与产物
 
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`file-preview`](packages/file-preview) | 会话「**产物**」tab + 宿主服务一体:产物 tab、回合变更卡片、详情页预览抽屉,与只读文件预览 Remote 服务同包(0.4.0 起两行合一) | basic + dev |
-| [`local-files`](packages/local-files) | 右栏**本地文件浏览器**:懒加载文件树 + HTML/Markdown/JSON/CSV/图片结构化预览 | basic + dev |
+| 包 | 插件能力 | 安装包名 | 宿主要求 | 随整合包 |
+| --- | --- | --- | --- | --- |
+| [`file-preview`](packages/file-preview) | 会话「**产物**」tab + 宿主服务一体:产物 tab、回合变更卡片、详情页预览抽屉,与只读文件预览 Remote 服务同包(0.4.0 起两行合一) | `@khorsheed/dsh-file-preview` | ≥ 0.1.5-rc.1 | basic |
+| [`local-files`](packages/local-files) | 右栏**本地文件浏览器**:懒加载文件树 + HTML/Markdown/JSON/CSV/图片结构化预览 | `@khorsheed/dsh-local-files` | ≥ 0.1.5-rc.1 | basic |
 
 ### 任务与氛围
 
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`taskpilot`](packages/taskpilot) | 聊天框上方**后台任务 / 子 Agent 胶囊**:运行计时、停止/中断、详情抽屉回放执行轨迹 | basic + dev |
-| [`context-guard`](packages/context-guard) | 上下文占用越过可配阈值时,聊天框上出现**一键 compact 提醒** | basic + dev |
-| [`whalesong`](packages/whalesong) | 任务氛围:鲸鱼喷水、favicon 动画、完成/阻塞提示音(`prefers-reduced-motion` 自动静音) | basic + dev |
+| 包 | 插件能力 | 安装包名 | 宿主要求 | 随整合包 |
+| --- | --- | --- | --- | --- |
+| [`taskpilot`](packages/taskpilot) | 聊天框上方**后台任务 / 子 Agent 胶囊**:运行计时、停止/中断、详情抽屉回放执行轨迹 | `@khorsheed/dsh-taskpilot` | ≥ 0.1.5-rc.1 | basic |
+| [`context-guard`](packages/context-guard) | 上下文占用越过可配阈值时,聊天框上出现**一键 compact 提醒** | `@khorsheed/dsh-context-guard` | ≥ 0.1.2-rc.1 | basic |
+| [`whalesong`](packages/whalesong) | 任务氛围:鲸鱼喷水、favicon 动画、完成/阻塞提示音(`prefers-reduced-motion` 自动静音) | `@khorsheed/dsh-whalesong` | ≥ 0.1.2-rc.1 | basic |
 
 > **常用对话组件打包安装**:「对话控制」「任务与氛围」的常用组件再加 inline-html-render,可用元包 [`bundle-conversation-toolbox`](packages/bundle-conversation-toolbox) 一条命令装齐——`dsh plugin add @khorsheed/dsh-bundle-conversation-toolbox`,含 message-tools、message-timeline、session-title-edit、quote、context-guard、taskpilot、inline-html-render 共 7 个包。
 
 ### 体验与效率
 
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`ui-shortcuts`](packages/ui-shortcuts) | **可自定义键位的快捷键**(暂停 / 插队发送 / 新建会话)+ `ctx.shortcuts` 动作注册表;0.1.7-rc.2 起官方内置快捷键,本包预计逐步退役 | basic + dev |
-| [`inline-html-render`](packages/inline-html-render) | 把 agent 写的 ```` ```dsh-card ```` HTML 渲染成会话内**沙箱交互卡片** | basic + dev |
-| [`dsh-reader`](packages/dsh-reader) | **链接阅读器** tab:RSS/Atom 订阅 + 粘贴文章链接,卡片流 + 可读详情视图 | 单包 |
-| [`mobile`](packages/mobile) | **移动端呈现**与 iOS 桥 | basic + dev |
+| 包 | 插件能力 | 安装包名 | 宿主要求 | 随整合包 |
+| --- | --- | --- | --- | --- |
+| [`ui-shortcuts`](packages/ui-shortcuts) | **可自定义键位的快捷键**(暂停 / 插队发送 / 新建会话)+ `ctx.shortcuts` 动作注册表;0.1.7-rc.2 起官方内置快捷键,本包预计逐步退役 | `@khorsheed/dsh-ui-shortcuts` | ≥ 0.1.2-rc.1 | basic |
+| [`inline-html-render`](packages/inline-html-render) | 把 agent 写的 ```` ```dsh-card ```` HTML 渲染成会话内**沙箱交互卡片** | `@khorsheed/dsh-inline-html-render` | ≥ 0.1.2-rc.1 | basic |
+| [`dsh-reader`](packages/dsh-reader) | **链接阅读器** tab:RSS/Atom 订阅 + 粘贴文章链接,卡片流 + 可读详情视图 | `@khorsheed/dsh-reader` | ≥ 0.1.5-rc.1 | writing |
+| [`mobile`](packages/mobile) | **移动端呈现**与 iOS 桥 | `@khorsheed/dsh-mobile` | ≥ 0.1.5-rc.1 | basic |
 
 ### 开发协作
 
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`worktrees`](packages/worktrees) | 会话头部 **repo/worktree 徽标** + 改动抽屉:待提交/已提交文件树、diff、提交记录;模型工具经包内 `./tool` 子路径行由 preset 按会话授予 | dev |
+| 包 | 插件能力 | 安装包名 | 宿主要求 | 随整合包 |
+| --- | --- | --- | --- | --- |
+| [`worktrees`](packages/worktrees) | 会话头部 **repo/worktree 徽标** + 改动抽屉:待提交/已提交文件树、diff、提交记录;模型工具经包内 `./tool` 子路径行由 preset 按会话授予 | `@khorsheed/dsh-worktrees` | ≥ 0.1.5-rc.1 | dev |
 
 ### 本地多 Agent
 
@@ -74,38 +74,38 @@
 
 与官方版本的差异:支持开发者指定主 Agent 邀请自定义的任意 Harness 完成目标任务——开发者可以根据自己的使用体感编排,比如建议主 Agent 在目标任务中邀请 Kimi 做前端任务,邀请 Codex / Claude Code 做整体任务编排,邀请 DSH 做具体的编码任务等等。
 
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`local-agent`](packages/local-agent) | 家族**核心**:harness 注册表、作用域目录供给、`/<harness> login|sessions|status|logout` 命令族 | dev |
-| [`local-agent-kimi`](packages/local-agent-kimi) | **Kimi Code** harness:`kimi -p` 委派、续聊、记账 | dev |
-| [`local-agent-codex`](packages/local-agent-codex) | **Codex** harness:`codex exec` 委派、续聊、记账 | dev |
-| [`local-agent-claude-code`](packages/local-agent-claude-code) | **Claude Code** harness:`claude -p` 委派、续聊、记账 | dev |
-| [`local-agent-dsh`](packages/local-agent-dsh) | **dsh 自委派** harness:把 dsh 自己当本地 CLI 用 | dev |
-| [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (组合组件)dsh 委派的 **headless 子 profile** patch | 随 provider |
-| [`local-agent-tool-subagent`](packages/local-agent-tool-subagent) | (组合组件)家族共享**委派工具行**,带 `resume` 续聊参数 | dev |
+| 包 | 插件能力 | 安装包名 | 宿主要求 | 随整合包 |
+| --- | --- | --- | --- | --- |
+| [`local-agent`](packages/local-agent) | 家族**核心**:harness 注册表、作用域目录供给、`/<harness> login|sessions|status|logout` 命令族 | `@khorsheed/dsh-local-agent` | ≥ 0.1.5-rc.1 | dev |
+| [`local-agent-kimi`](packages/local-agent-kimi) | **Kimi Code** harness:`kimi -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-kimi` | ≥ 0.1.5-rc.1 | dev |
+| [`local-agent-codex`](packages/local-agent-codex) | **Codex** harness:`codex exec` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-codex` | ≥ 0.1.5-rc.1 | dev |
+| [`local-agent-claude-code`](packages/local-agent-claude-code) | **Claude Code** harness:`claude -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev |
+| [`local-agent-dsh`](packages/local-agent-dsh) | **dsh 自委派** harness:把 dsh 自己当本地 CLI 用 | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev |
+| [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (组合组件)dsh 委派的 **headless 子 profile** patch | `@khorsheed/dsh-local-agent-dsh-headless` | ≥ 0.1.5-rc.1 | 随 provider |
+| [`local-agent-tool-subagent`](packages/local-agent-tool-subagent) | (组合组件)家族共享**委派工具行**,带 `resume` 续聊参数 | `@khorsheed/dsh-local-agent-tool-subagent` | ≥ 0.1.2-rc.1 | dev |
 
 > **本地多 Agent 打包安装**:核心 + 四个 provider 用元包 [`bundle-local-agent`](packages/bundle-local-agent) 一条命令装齐——`dsh plugin add @khorsheed/dsh-bundle-local-agent`。
 
 ### 多 Agent 协作
 
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`room`](packages/room) | **room 会话**:邀请多个 agent 进同一条会话——成员名册 tab、@ 派发、任务板、通知闸门;模型工具经包内 `./tool` 子路径行由 preset 按会话授予 | dev |
+| 包 | 插件能力 | 安装包名 | 宿主要求 | 随整合包 |
+| --- | --- | --- | --- | --- |
+| [`room`](packages/room) | **room 会话**:邀请多个 agent 进同一条会话——成员名册 tab、@ 派发、任务板、通知闸门;模型工具经包内 `./tool` 子路径行由 preset 按会话授予 | `@khorsheed/dsh-room` | ≥ 0.1.5-rc.1 | dev |
 
 ### 能力与基础设施
 
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`capability-catalog`](packages/capability-catalog) | **能力目录**:枚举运行实例的全部 skill 与工具及其注册渠道,设置页三列预览 + 详情弹窗 | basic + dev |
-| [`typesafe`](packages/typesafe) | (实验性)**TypeSafe 判定原语**宿主服务:接入 TypeSafe System One 模型(旗舰 Jev)支持模型快速决策场景调用,类型化 noul/choice/score 判定,带熔断、缓存与决策日志 | 单包 |
-| [`typesafe-tool`](packages/typesafe-tool) | (实验性,伴生工具行)typesafe 的模型工具,由 preset 按会话授予 | 单包 |
-| [`capture`](packages/capture) | **渲染抓取** Remote:托管 headless Chrome 渲染 URL,返回内联样式的序列化页面 | 单包 |
+| 包 | 插件能力 | 安装包名 | 宿主要求 | 随整合包 |
+| --- | --- | --- | --- | --- |
+| [`capability-catalog`](packages/capability-catalog) | **能力目录**:枚举运行实例的全部 skill 与工具及其注册渠道,设置页三列预览 + 详情弹窗 | `@khorsheed/dsh-capability-catalog` | ≥ 0.1.5-rc.1 | basic |
+| [`typesafe`](packages/typesafe) | (实验性)**TypeSafe 判定原语**宿主服务:接入 TypeSafe System One 模型(旗舰 Jev)支持模型快速决策场景调用,类型化 noul/choice/score 判定,带熔断、缓存与决策日志 | `@khorsheed/dsh-typesafe` | ≥ 0.1.5-rc.1 | 单包 |
+| [`typesafe-tool`](packages/typesafe-tool) | (实验性,伴生工具行)typesafe 的模型工具,由 preset 按会话授予 | `@khorsheed/dsh-typesafe-tool` | ≥ 0.1.5-rc.1 | 单包 |
+| [`capture`](packages/capture) | **渲染抓取** Remote:托管 headless Chrome 渲染 URL,返回内联样式的序列化页面 | `@khorsheed/dsh-capture` | ≥ 0.1.5-rc.1 | 单包 |
 
 ### 运维守护
 
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`ankh-guard`](packages/ankh-guard) | 自修改重启的**安全门禁**:绿色凭证(绑定 git HEAD)+ 组合 preflight + watchdog 回滚——让 AI 自己改代码、自己重启,还不把服务搞挂 | basic + dev |
+| 包 | 插件能力 | 安装包名 | 宿主要求 | 随整合包 |
+| --- | --- | --- | --- | --- |
+| [`ankh-guard`](packages/ankh-guard) | 自修改重启的**安全门禁**:绿色凭证(绑定 git HEAD)+ 组合 preflight + watchdog 回滚——让 AI 自己改代码、自己重启,还不把服务搞挂 | `@khorsheed/dsh-ankh-guard` | ≥ 0.1.5-rc.1 | basic |
 
 ## Agent preset 设计
 
@@ -117,26 +117,13 @@
 
 三个社区 preset:
 
-| preset | 定位 | 授予的社区工具 | 交付方式 |
-| --- | --- | --- | --- |
-| **开发模式**(dev) | 官方标准模式全部能力 + 本地委派 + git 实况 + room 协作 | `subagent_kimi / subagent_codex / subagent_claude_code`、`worktrees`、`room_invite / room_task / room_message` | 随 [dsh-dev](https://github.com/Khorsheed/dsh-dev) 安装 |
-| **评测模式**(dsh-eval) | 无 Shell/无工作流的只读 + 委派评测组合 | datasets 出题工具、eval 执行工具 | 随仓内 [profiles/web-eval](profiles/web-eval) |
-| **写作模式**(dsh-writing) | 写作流,含画布 agent 行 | `canvas/agent` | 随仓内 [profiles/web](profiles/web) |
+| preset | 定位 | 授予的社区工具 | 安装包名 | 宿主要求 |
+| --- | --- | --- | --- | --- |
+| **开发模式**(dev) | 官方标准模式全部能力 + 本地委派 + git 实况 + room 协作 | `subagent_kimi / subagent_codex / subagent_claude_code`、`worktrees`、`room_invite / room_task / room_message`、`typesafe_judge` | `@khorsheed/dsh-presets`(随下一发布波上架;0.1.5 线宿主由 [dsh-dev](https://github.com/Khorsheed/dsh-dev) 脚本以目录式安装) | ≥ 0.1.5-rc.1 |
+| **评测模式**(dsh-eval) | 无 Shell/无工作流的只读 + 委派评测组合 | datasets 出题工具、eval 执行工具 | 体验优化中待上线 | 体验优化中待上线 |
+| **写作模式**(dsh-writing) | 写作流,含画布 agent 行 | `canvas/agent` | 体验优化中待上线 | 体验优化中待上线 |
 
-> preset 交付机制随宿主线演进:0.1.5 线由整合包脚本安装目录式 preset(`$DSH_HOME/.agent-presets/<id>/`);0.1.7-rc.1 起改为声明式 bundle 行(本仓 [`packages/presets`](packages/presets),随下一发布波上架)。引用装不上的伴生模块时,该 preset 带诊断留在名册,不影响其它 preset。
-
-## 兼容性承诺
-
-整套插件按共存设计:行 id、UI 席位、事件与命名空间全部互不重叠。唯一的例外说明:已自带 `ankh-guard` 行的镜像(历史 fork)不要再重复添加该包——重复行 id 会导致启动失败,详见 [ankh-guard 的说明](packages/ankh-guard/README.md)。
-
-npm 发布线上各包全部功能完整,唯一例外是 ankh-guard 的组合 preflight 门禁在纯 npm 部署(无 harness 检出)下降级为提示后放行,其余能力完整;源码线(deepseek-harness master)全部完整。
-
-| 宿主版本 | 目标插件 | 安装包名(带版本) |
-| --- | --- | --- |
-| **0.1.7-rc.1 ~ rc.2**(推荐) | 全部已发布插件;preset 另由 `@khorsheed/dsh-presets` 声明式交付(随下一发布波上架) | npm 最新线,如 `@khorsheed/dsh-whalesong@0.2.3` |
-| **0.1.5-rc.1 起** | 全部已发布插件;preset 由整合包脚本以目录式安装 | npm 最新线,如 `@khorsheed/dsh-whalesong@0.2.3` |
-
-逐包版本与 `minHost` 矩阵见[发布状态](docs/release-status.md)(每次发版后重新生成)。
+> preset 交付机制随宿主线演进:0.1.5 线由整合包脚本安装目录式 preset(`$DSH_HOME/.agent-presets/<id>/`);0.1.7-rc.1 起改为声明式 bundle 行(本仓 [`packages/presets`](packages/presets)——一个包声明三个 preset,随下一发布波上架)。引用装不上的伴生模块时,该 preset 带诊断留在名册,不影响其它 preset。
 
 ## 模型影响总表
 
@@ -153,7 +140,7 @@ npm 发布线上各包全部功能完整,唯一例外是 ankh-guard 的组合 pr
 
 ### 安装
 
-前置:dsh 宿主(版本要求见[兼容性承诺](#兼容性承诺)与各包 README 的 Compatibility 节)。**推荐路径是整合包**(见上文[整合包](#整合包四种开箱体验));单包安装是高级用户按需裁剪或调试的路径。
+前置:dsh 宿主(各包的版本要求见能力地图各表的「宿主要求」列与包 README 的 Compatibility 节;共存设计与 ankh-guard 的重复行例外见[运维守护](#运维守护)与 [ankh-guard 的说明](packages/ankh-guard/README.md))。**推荐路径是整合包**(见上文[整合包](#整合包四种开箱体验));单包安装是高级用户按需裁剪或调试的路径。
 
 宿主 ≥ 0.1.7-rc.2 时,单包安装不用碰命令行:**设置 → 插件 → 添加插件**,填 npm 包名(如 `@khorsheed/dsh-whalesong`),按提示启用/重启即可。注意这个入口只认**单个插件包**——本仓是 monorepo、整合包仓是 profile 模板,把它们的 GitHub 地址贴进去会被拒绝并回滚(官方安装器只装仓库根的插件包,不支持子目录);整合包请走各自仓库的安装脚本。
 
