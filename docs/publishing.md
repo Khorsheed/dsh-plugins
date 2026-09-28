@@ -32,6 +32,19 @@ T=$(mktemp -d) && cd "$T" && npm init -y && npm install --legacy-peer-deps <包�
   && ls node_modules/<包名>/lib node_modules/<包名>/cordis.patch.yml
 ```
 
+**新包首发（stage 不收）**：`npm stage publish` 官方要求「package must exist」，对从没发布过的包名报 404。首发只能走 `npm publish` 的 device flow——EOTP 时 CLI 给出浏览器认证链接（security key / Touch ID 在浏览器里完成），认证后从 doneUrl 取一次性 token 当 `--otp` 重跑：
+
+```sh
+# --json 下错误详情带真 URL（非 TTY 的明文输出会把 URL 打码成 ***）
+npx npm@12 publish /tmp/dist/<新包>.tgz --access public --json | jq -r '.error.authUrl'
+# → 把链接发给维护者，浏览器打开、Touch ID 认证（链接有时效，几分钟；过期就重跑再要一个）
+# → 认证后立刻取 token 并重跑（token 一次性，间隔越短越好）
+curl -s "<doneUrl>"                                            # {"token":"<16 位数字>"}
+npx npm@12 publish /tmp/dist/<新包>.tgz --access public --otp=<token>
+# 回执 `+ <包>@<版本>` 后 registry 可能还有几分钟的 404 缓存，别急着重发——
+# 重发报 "cannot publish over previously published versions" 反而证明已上线
+```
+
 消费者验证注意：**纯 `npm install` 现在解析不动官方 peer**——官方包在 registry 上的最旧版本是 0.1.2-rc.1，且按 npm 的 prerelease 规则 `^0.1.0-rc.6` 不匹配 0.1.5-rc.x（prerelease 只匹配同版本三元组），所以消费者验证一律 `--legacy-peer-deps` 跳过 peer + 结构/入口检查；真实安装路径（`dsh plugin add`）由宿主解析官方依赖，不经 registry。peer 区间的修订（对齐上游实际发布线）留作下一波统一处理。
 
 **下一步：trusted publishing（GitHub Actions OIDC）**。方向是"推 tag → CI 出包并 stage → 网页审批"，token 彻底退出流程。配置 trusted publisher 属于账号管理动作，只能由维护者在网页上做（security key 挑战），见 [Trusted publishing for npm packages](https://docs.npmjs.com/trusted-publishers)。
