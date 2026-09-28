@@ -31,7 +31,14 @@
      tab squeezed to four characters identifies nothing. */
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  /* No scrollbar: rows are few and short, and a content-wide box can overflow
+     by a sub-pixel, which always-show-scrollbars painted as a bar under two
+     tabs. Wheel and swipe still scroll; the showing row scrolls into view. */
+  scrollbar-width: none;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {

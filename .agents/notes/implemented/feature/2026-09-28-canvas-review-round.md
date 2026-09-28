@@ -69,6 +69,8 @@ The user walked canvas 0.4.8 on 3080 and raised six points:
   - The two rules are a short list under a divider: renaming changes only the display, and retiring a category archives its cards (with the way to keep them).
   - A built-in's default name shows as the placeholder, so it is tinted as the name itself. The UA grey was too faint on dark (caught in a screenshot check).
 
+**Follow-up (0.4.13): the strip draws no scrollbar.** With the strip content-wide, a sub-pixel overflow showed as a bar under two short tabs when macOS always shows scrollbars. The strip hides its scrollbar (`scrollbar-width: none`) but still scrolls: a vertical wheel turns sideways (native non-passive listener, only while the rows overflow), trackpad swipes work as before, and the showing row scrolls into view whenever it changes.
+
 ## Alternatives considered
 
 - **A bottom toolbar or a floating toolbar for the editor.** Rejected: the user picked the sticky top bar, which stays in view on a long card and has room for more insert kinds.

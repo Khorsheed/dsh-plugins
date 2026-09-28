@@ -30,9 +30,15 @@
  * one time the menu was asked for (the 新画布 "dead click"). The frame owns
  * the bottom rule instead, so the active row still paints its cover over it.
  *
+ * The scroll box draws NO scrollbar (2026-09-28 review: a bar showed under two
+ * short tabs, a sub-pixel overflow of the content-wide box made visible by
+ * macOS's always-show-scrollbars setting). It still scrolls: a vertical wheel
+ * turns sideways, a trackpad swipes as it always did, and the showing row is
+ * scrolled into view whenever it changes.
+ *
  * @module @khorsheed/dsh-canvas/client
  */
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { IconCloseOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
@@ -59,9 +65,36 @@ export interface TabStripProps {
 
 /** The canvas surface's tab strip. */
 export function TabStrip({ t, rows, active, onSelect, onClose, tail }: TabStripProps): ReactNode {
+  const stripRef = useRef<HTMLDivElement | null>(null)
+
+  // A mouse wheel only scrolls vertically; the strip has nothing to scroll that
+  // way, so its vertical delta moves the rows sideways. Native listener: React's
+  // wheel handler is passive and cannot keep the page from scrolling too.
+  useEffect(() => {
+    const strip = stripRef.current
+    if (strip === null) return
+    const onWheel = (event: WheelEvent): void => {
+      if (strip.scrollWidth <= strip.clientWidth) return
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+      strip.scrollLeft += event.deltaY
+      event.preventDefault()
+    }
+    strip.addEventListener('wheel', onWheel, { passive: false })
+    return () => { strip.removeEventListener('wheel', onWheel) }
+  }, [])
+
+  // With no scrollbar to hint at hidden rows, the showing one is always brought
+  // into view (an ＋ opened far right, a tab picked from the menu).
+  useEffect(() => {
+    const row = stripRef.current?.querySelector('[data-active]')
+    if (row instanceof HTMLElement && typeof row.scrollIntoView === 'function') {
+      row.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
+  }, [active, rows.length])
+
   return (
     <div className={css.stripFrame}>
-      <div className={css.strip} role="tablist">
+      <div ref={stripRef} className={css.strip} role="tablist">
         {rows.map(row => (
           <span key={row.id} className={css.tab} data-active={row.id === active || undefined}>
             <button

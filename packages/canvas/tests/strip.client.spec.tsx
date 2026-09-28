@@ -696,3 +696,23 @@ describe('CanvasTabTitle — the dock chip', () => {
     })
   })
 })
+
+describe('TabStrip — the scroll box', () => {
+  it('turns a vertical wheel sideways only while the rows overflow', async () => {
+    const { TabStrip } = await import('../src/client/tab/TabStrip.tsx')
+    render(<TabStrip t={t} rows={[{ id: 'a', label: '甲' }, { id: 'b', label: '乙' }]} active="a" onSelect={() => {}} onClose={() => {}} />)
+    const strip = screen.getByRole('tablist')
+    const size = (scroll: number, client: number): void => {
+      Object.defineProperty(strip, 'scrollWidth', { configurable: true, value: scroll })
+      Object.defineProperty(strip, 'clientWidth', { configurable: true, value: client })
+    }
+    size(200, 200)
+    fireEvent.wheel(strip, { deltaY: 40 })
+    expect(strip.scrollLeft).toBe(0)
+    size(400, 200)
+    const wheel = new WheelEvent('wheel', { deltaY: 40, cancelable: true, bubbles: true })
+    strip.dispatchEvent(wheel)
+    expect(strip.scrollLeft).toBe(40)
+    expect(wheel.defaultPrevented).toBe(true)
+  })
+})
