@@ -4,8 +4,6 @@ English | [中文](README.md)
 
 The community plugin monorepo for the **dsh** (DeepSeek Harness) ecosystem: **40 purely additive plugin packages, 29 of them published on npm**. Every package integrates through official extension points only — slots, commands, Remote services, session projections. No official package is modified, no official UI slot is replaced, no core service is hacked; when an optional capability is absent the plugin degrades silently instead of failing the boot. The whole set is designed for coexistence: install, uninstall, or toggle any combination without interference, and the production instance runs the full stack long-term.
 
-> This page lists only **published** packages. Package counts, shapes, and profile membership follow the machine-generated [authoritative package map](docs/packages.md); per-package versions and the host-compatibility matrix follow the [release status](docs/release-status.md) (regenerated after every publish wave). The repository is also the development workspace — see the [install & development guide for agents](#install-dev-guide) at the end.
-
 ## Profile packs: four ready-to-run experiences
 
 The default install unit is a complete profile (a pack), not a single package. Its `dependencies` decide which packages get installed and its `dsh.profile.bundles` decides which self-mounting rows get activated. Four packs, one per mode:
