@@ -40,3 +40,11 @@ scratch-*
 # Work-in-progress skill (integration/dsh-self-upgrade-rc1-next); kept out of the
 # published tree until it is ready — the branch re-adds it on merge.
 skills/self-upgrade/
+
+# Local design workspace — kept on disk, not published to GitHub (2026-09-28).
+# Roadmap, proposals, acceptance records and upstream-facing drafts are our own
+# design process; the public tree carries only shipped-capability docs.
+/proposals/
+/docs/roadmap.md
+/docs/acceptance/
+/docs/upstream-proposals/

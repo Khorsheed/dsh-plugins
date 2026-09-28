@@ -21,7 +21,6 @@ This directory is the repository's documentation layer, in four groups:
 | --- | --- |
 | [dataset-authoring-protocol.md](dataset-authoring-protocol.md) | The dataset authoring protocol (the eval line's dataset/condition/plan formats) |
 | [upstream-seam-registry.md](upstream-seam-registry.md) | The upstream seam registry: every host seam the plugins depend on, numbered for host-API audits |
-| [roadmap.md](roadmap.md) | The product roadmap (the meta document): the layering model, domains and priorities; new proposals find their slot here first |
 
 ## Machine-generated (do not hand-edit)
 
@@ -30,10 +29,12 @@ This directory is the repository's documentation layer, in four groups:
 | [packages.md](packages.md) | `pnpm map:packages` — the authoritative package map (counts, shapes, profile membership) |
 | [release-status.md](release-status.md) | `pnpm release:status` — per-package npm/repo versions and the host-compatibility matrix |
 
-## Working subdirectories
+## Local workspace (not published)
+
+The product roadmap (roadmap.md), design proposals (proposals/), acceptance records (acceptance/), and upstream-facing drafts (upstream-proposals/) are the maintainers' local design process — kept on disk, out of the public tree.
+
+## Assets
 
 | Dir | Contents |
 | --- | --- |
-| [acceptance/](acceptance/) | Acceptance records, filed by date (live verification before each ship) |
-| [upstream-proposals/](upstream-proposals/) | Proposals and design notes addressed upstream (deepseek-harness), including HTML prototypes |
 | [screenshots/](screenshots/) | The screenshot pool referenced by docs (tracked via git add -f) |

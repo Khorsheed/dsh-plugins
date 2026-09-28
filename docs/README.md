@@ -21,7 +21,6 @@
 | --- | --- |
 | [dataset-authoring-protocol.md](dataset-authoring-protocol.md) | 数据集出题协议（eval 线的题库/条件/计划格式） |
 | [upstream-seam-registry.md](upstream-seam-registry.md) | 上游接缝登记处：插件依赖的宿主接缝逐条编号，宿主审计按此走查 |
-| [roadmap.md](roadmap.md) | 产品路线图（上位文档）：分层模型、domain 与优先级；proposal 立项先在这里找落点 |
 
 ## 机器生成（勿手改）
 
@@ -30,10 +29,12 @@
 | [packages.md](packages.md) | `pnpm map:packages`——权威包地图（包数、形态、profile 归属） |
 | [release-status.md](release-status.md) | `pnpm release:status`——各包 npm/仓内版本与宿主兼容矩阵 |
 
-## 工作区子目录
+## 本地工作区（不随公开仓发布）
+
+产品路线图（roadmap.md)、设计提案（proposals/)、验收记录（acceptance/）与上游提案草稿（upstream-proposals/）是维护者本地的设计过程文档，保留在磁盘、不进公开树。
+
+## 素材
 
 | 目录 | 内容 |
 | --- | --- |
-| [acceptance/](acceptance/) | 功能验收记录（按日期归档，各次上线前的活体验证） |
-| [upstream-proposals/](upstream-proposals/) | 给上游（deepseek-harness）的提案与设计稿，含 HTML 原型 |
 | [screenshots/](screenshots/) | 文档引用的截图素材池（git add -f 跟踪） |
