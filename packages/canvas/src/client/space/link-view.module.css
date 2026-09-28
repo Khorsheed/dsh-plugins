@@ -2,12 +2,14 @@
    layer. Every colour comes from a `--dsw-*` token, and the kind of a card is
    told by words and an icon, never by a hue — the same rule the 卡板 keeps. */
 
+/* The frame the floating tools hang in: the stage fills it, and the corner
+   pill and the selection bar sit over the stage rather than under it. */
 .wrap {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1;
-  gap: 6px;
 }
 
 /* The viewport. It scrolls rather than scales: a card carries real text, so a
@@ -18,7 +20,7 @@
   min-height: 260px;
   overflow: auto;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
   /* A dot grid reads as "a place you may put things", which the bare box does not. */
   background-image: radial-gradient(circle at 1px 1px, var(--dsw-alias-border-l2) 1px, transparent 0);
@@ -83,11 +85,13 @@
 
 /* ── lanes ─────────────────────────────────────────────────────────────── */
 
+/* A lane is a region, not an object: a dashed edge and the faintest wash, so
+   the cards inside stay the loudest thing on it. */
 .lane {
   position: absolute;
   border: 1px dashed var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 55%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 2.5%, transparent);
   cursor: grab;
 }
 
@@ -95,51 +99,103 @@
   cursor: grabbing;
 }
 
-.laneTitle {
+.lane[data-editing] {
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent);
+}
+
+/* The name, set on the top edge like a legend. The chip and the field that
+   replaces it share one box — same place, padding and type — so renaming is
+   the caret and a brand ring appearing, never a second widget jumping in. */
+.laneHead {
   position: absolute;
-  left: 2px;
-  top: -9px;
-  max-width: calc(100% - 4px);
+  left: 10px;
+  top: -11px;
+  display: flex;
+  max-width: calc(100% - 44px);
+}
+
+.laneTitle,
+.laneInput {
+  box-sizing: border-box;
+  height: 22px;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font: var(--dsw-font-xxs-strong-12);
+  line-height: 20px;
+}
+
+.laneTitle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border: 0;
-  border-radius: 4px;
-  padding: 1px 6px;
-  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxxs-strong-11);
-  line-height: 1.5;
   cursor: text;
 }
 
+.laneTitle[data-unnamed] {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: normal;
+}
+
 .laneTitle:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l1);
   color: var(--dsw-alias-label-primary);
 }
 
 .laneInput {
-  position: absolute;
-  left: 2px;
-  top: -19px;
-  box-sizing: border-box;
-  width: min(180px, calc(100% - 4px));
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 6px;
-  padding: 1px 6px;
-  background: var(--dsw-alias-bg-layer-2);
+  width: 11em;
+  border-color: var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent);
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xxxs-11);
-  line-height: 1.5;
-  /* The title it replaces is a button; this is a real input, and an input left
-     to the browser paints a focus ring thick enough to read as a selection box
-     around the whole lane. The border carries the focus instead, as it does in
-     the category panel's rows. */
+  /* The ring above is the focus mark; the browser's own would double it. */
   outline: none;
 }
 
-.laneInput:focus {
-  border-color: var(--dsw-alias-state-business-primary);
+.laneInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: normal;
+}
+
+/* Where the engine can, the field is exactly as wide as what is typed. */
+@supports (field-sizing: content) {
+  .laneInput {
+    field-sizing: content;
+    width: auto;
+    min-width: 6em;
+  }
+}
+
+/* Delete sits on the same edge, opposite the name, and only shows on hover. */
+.laneDel {
+  position: absolute;
+  right: 10px;
+  top: -11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  padding: 0;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.lane:hover .laneDel,
+.laneDel:focus-visible {
+  opacity: 1;
+}
+
+.laneDel:hover {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .laneSize {
@@ -293,65 +349,117 @@
   pointer-events: none;
 }
 
-/* ── bottom bar ────────────────────────────────────────────────────────── */
+/* ── floating tools ─────────────────────────────────────────────────────── */
 
-.bar {
+/* The board's own corner: what it holds, and the one thing you add to it. */
+.dock {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px 3px 3px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 8%, transparent);
 }
 
-.barInfo {
+.dockInfo {
+  padding-right: 6px;
   font: var(--dsw-font-xxs-12);
   line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
-  min-width: 120px;
-  flex: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.spacer {
-  flex: 0 0 4px;
-}
-
-.barButton {
+.dockButton {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  padding: 3px 8px;
+  height: 24px;
+  border: none;
+  border-left: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 0 6px 6px 0;
+  padding: 0 8px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxs-12);
-  line-height: 1.5;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.barButton:hover:not(:disabled) {
+.dockButton:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.barButton[data-on] {
-  border-color: var(--dsw-alias-brand-primary);
-  color: var(--dsw-alias-brand-primary);
+/* The group verbs rise only while something is picked, centred at the foot of
+   the stage — the selection is the subject, so its bar is the one that comes
+   and goes. */
+.bar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 2;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 24px);
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 4px 14px color-mix(in srgb, #000 12%, transparent);
+  overflow-x: auto;
 }
 
-.barGhost {
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 3px 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font: var(--dsw-font-xxs-12);
+.barInfo {
+  padding: 0 8px 0 6px;
+  font: var(--dsw-font-xxs-strong-12);
   line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.barButton,
+.barGhost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  border: none;
+  border-radius: 7px;
+  padding: 0 10px;
+  background: transparent;
+  font: var(--dsw-font-xxs-12);
   cursor: pointer;
   white-space: nowrap;
 }
 
+.barButton {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.barGhost {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.barButton:hover,
 .barGhost:hover {
   background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.barRule {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--dsw-alias-border-l1);
 }

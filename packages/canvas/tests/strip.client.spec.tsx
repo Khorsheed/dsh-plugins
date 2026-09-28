@@ -646,7 +646,7 @@ describe('CanvasTab — the draft row', () => {
     render(<CanvasTab {...props} />)
     await pickCategory('问题')
     typeInto(await screen.findByPlaceholderText(/写点什么/), '甲块的草稿')
-    fireEvent.click(screen.getByRole('button', { name: '画布' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开或新建画布' }))
     fireEvent.click(await screen.findByText('第二块画布'))
     await pickCategory('共识', '卡片 c_9')
     // Two canvas rows, each standing on its own draft with its own words.
@@ -671,7 +671,7 @@ describe('CanvasTab — an empty strip', () => {
     // does not put the row back.
     await new Promise(resolve => { setTimeout(resolve, 20) })
     expect(store.source.getSnapshot().tabs).toHaveLength(0)
-    expect(screen.getByText('没有打开的画布了，点上面的「画布」挑一块或新建一块')).toBeTruthy()
+    expect(screen.getByText('没有打开的画布了，点上面的 ＋ 挑一块或新建一块')).toBeTruthy()
   })
 
   it('still says 还没有画布 when the account genuinely has none', async () => {

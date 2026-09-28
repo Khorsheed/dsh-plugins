@@ -11,8 +11,9 @@
  *
  * The rows are resolved by the caller (`labelOf` has to read the canvas list),
  * so this component holds no state and fetches nothing: `rows` in, two
- * callbacks out. The 画布 ▾ tail is passed as a node because it is the canvas
- * switcher's own dropdown, not this strip's business.
+ * callbacks out. The ＋ tail is passed as a node because it is the canvas
+ * switcher's own dropdown, not this strip's business. The scroll box is only
+ * as wide as its rows, so the ＋ follows the last one like the dock's ＋ does.
  *
  * The rows are underlined, not tabbed: the host's dock chips sit right above
  * this strip, and a second row of filled tabs read as tabs stacked on tabs
@@ -52,7 +53,7 @@ export interface TabStripProps {
   readonly active: string
   onSelect: (id: string) => void
   onClose: (id: string) => void
-  /** The row's tail: the 画布 ▾ menu that puts new rows on the strip. */
+  /** The row's tail: the ＋ menu that puts new rows on the strip. */
   readonly tail?: ReactNode
 }
 

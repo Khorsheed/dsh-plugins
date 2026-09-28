@@ -408,8 +408,8 @@ function CategoryRow({ t, category, count, onRename, onToggle }: {
         }}
       />
       <span className={css.catCount}>
-        {isBoardCardKind(category.id) ? `${t('cat.builtin')} · ` : ''}
         {t('cat.count', { count: String(count) })}
+        {isBoardCardKind(category.id) && <span className={css.catBuiltin}>{t('cat.builtin')}</span>}
       </span>
       <button
         type="button"
@@ -563,13 +563,11 @@ export function BoardView({
 
         {catPanel && !readonly && (
           <div className={css.catPanel}>
-            <div className={css.catHead}>
+            {/* Where the list lives is a tooltip, not a line: the head says
+                only what matters while editing — it is this board's own. */}
+            <div className={css.catHead} title={t('cat.stored')}>
               <b>{t('cat.title')}</b>
-              <span>
-                {t('cat.scope')}
-                {' · '}
-                <code className={css.catCode}>{t('cat.stored')}</code>
-              </span>
+              <span>{t('cat.scope')}</span>
             </div>
             {chips.length === 0 && <div className={css.catEmpty}>{t('cat.allRetired')}</div>}
             {chips.map(category => (
@@ -624,10 +622,13 @@ export function BoardView({
                 {t('cat.add')}
               </button>
             </div>
-            {/* The three rules the panel acts on, spelled where they apply:
-                a rename touches no card, retiring files the cards away, and
-                there is deliberately no "move them somewhere" picker. */}
-            <p className={css.catTip}>{t('cat.tip')}</p>
+            {/* The two rules the panel acts on, one line each: a rename
+                touches no card, and retiring files the cards away (there is
+                deliberately no "move them somewhere" picker — 改分类 is). */}
+            <ul className={css.catTip}>
+              <li>{t('cat.tipRename')}</li>
+              <li>{t('cat.tipRetire')}</li>
+            </ul>
           </div>
         )}
         </div>

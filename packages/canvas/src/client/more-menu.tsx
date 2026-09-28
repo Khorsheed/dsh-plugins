@@ -17,7 +17,9 @@ import { IconEllipsisOutlineMedium } from './icons.tsx'
  * @param props.label - the trigger's accessible name and tooltip.
  * @param props.items - the rows (a `danger` row renders in the error colour).
  * @param props.onSelect - called with the picked row's id; the menu closes itself.
- * @param props.className - the trigger's class (each seat sizes its own).
+ * @param props.className - the trigger's class (each seat sizes its own box,
+ *   matched to its neighbours; the glyph is the host's 16px default, as on its
+ *   own ⋯ triggers — at 13px the three dots read as a smudge, 2026-09-28).
  */
 export function MoreMenu({ label, items, onSelect, className }: {
   readonly label: string
@@ -49,7 +51,7 @@ export function MoreMenu({ label, items, onSelect, className }: {
             aria-expanded={open}
             onClick={() => { setOpen(value => !value) }}
           >
-            <IconEllipsisOutlineMedium size={13} />
+            <IconEllipsisOutlineMedium size={16} />
           </button>
         )}
       />

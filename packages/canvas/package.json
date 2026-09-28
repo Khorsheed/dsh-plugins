@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-canvas",
   "description": "灵感画布：与工作区平级的主题画布空间（左导轨整页卡板：碎片/问题/依据/资料/文档卡、幽灵提议、归档不删除），另含工作区级灵感稿纸右栏 tab",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "publishConfig": {
     "access": "public"
   },

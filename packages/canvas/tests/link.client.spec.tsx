@@ -352,8 +352,14 @@ const pickedOf = (container: HTMLElement): string[] =>
 const kindOf = (container: HTMLElement, id: string): string => nodeOf(container, id).querySelector('span')!.textContent ?? ''
 /** The scroll host: `stageRef` is the stage div that wraps the world div. */
 const stageOf = (container: HTMLElement): HTMLElement => worldOf(container).parentElement as HTMLElement
-/** The info line under the stage — the one element that spells out the send set. */
-const infoOf = async (): Promise<string> => (await screen.findByText(/要发出去|板上有/)).textContent ?? ''
+/**
+ * What the board says about itself: the selection bar's count while cards are
+ * picked (the one element that spells out the send set), else the corner totals.
+ */
+const infoOf = async (): Promise<string> => {
+  const totals = await screen.findByText(/个分区/)
+  return (screen.queryByText(/^已选/) ?? totals).textContent ?? ''
+}
 /**
  * The ink inside a node. jsdom's selector engine lowercases attribute NAMES, so
  * an SVG element's `viewBox` can only be read back by hand — and a node always
@@ -916,6 +922,39 @@ describe('LinkView — lanes', () => {
     expect(bench.mocks.setLayout.mock.calls).toHaveLength(1)
   })
 
+  it('deletes a lane as a lanes patch that leaves every card where it sits', async () => {
+    const bench = makeHarness({
+      boards: [board(CANVAS_ID, [card('c_1')], {
+        lanes: [lane('lane_a', { x: 10, y: 30, w: 200, h: 200 }, '论点'), lane('lane_b', { x: 240, y: 30, w: 200, h: 200 }, '反方')],
+      })],
+    })
+    const container = await face(bench, 1)
+    fireEvent.click(one(container, '[data-lane-del="lane_a"]'))
+    await waitFor(() => {
+      expect(bench.mocks.setLayout).toHaveBeenCalledWith('s1', {
+        canvasId: CANVAS_ID,
+        lanes: [lane('lane_b', { x: 240, y: 30, w: 200, h: 200 }, '反方')],
+      })
+    })
+    expect(writeAt(bench.mocks, 0).positions).toBeUndefined()
+    expect(bench.mocks.patchCard).not.toHaveBeenCalled()
+    expect(await screen.findByText('分区删了，卡还在原处')).toBeTruthy()
+  })
+
+  it('keeps an Escape in the lane name as a cancel, with nothing written', async () => {
+    const bench = makeHarness({
+      boards: [board(CANVAS_ID, [card('c_1')], { lanes: [lane('lane_a', { x: 10, y: 30, w: 200, h: 200 }, '论点')] })],
+    })
+    const container = await face(bench, 1)
+    fireEvent.click(one(container, '[data-lane-title="lane_a"]'))
+    const input = screen.getByRole('textbox', { name: '点标题改名' }) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '不要了' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByRole('textbox', { name: '点标题改名' })).toBeNull()
+    expect(one(container, '[data-lane-title="lane_a"]').textContent).toBe('论点')
+    expect(bench.mocks.setLayout).not.toHaveBeenCalled()
+  })
+
   it('drags a lane and carries the cards it holds in the same write', async () => {
     const bench = makeHarness({
       boards: [board(CANVAS_ID, [card('c_1', { x: 60, y: 60 }), card('c_out', { x: 400, y: 300 })], {
@@ -1063,7 +1102,7 @@ describe('LinkView — the send set', () => {
     const bench = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])], chatAvailable: false })
     const container = await face(bench, 1)
     // Nothing picked: the info line falls back to what the board itself holds.
-    expect(await infoOf()).toContain('板上有')
+    expect(await infoOf()).toContain('个分区')
     expect(screen.queryByRole('button', { name: /让 Agent 写成稿/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /与 Agent 对谈/ })).toBeNull()
     // The cards still pick on a board with no chat to send them to.
@@ -1077,7 +1116,7 @@ describe('LinkView — the send set', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消选择' }))
     // The highlight went, nothing else: the line is still on the board, and the
     // info line falls back to the board's own totals.
-    expect(await infoOf()).toContain('板上有')
+    expect(await infoOf()).toContain('个分区')
     expect(pickedOf(container)).toEqual([])
     expect(wiresOf(container)).toBe(1)
     expect(screen.queryByRole('button', { name: '取消选择' })).toBeNull()
@@ -1131,6 +1170,7 @@ describe('LinkView — read-only', () => {
     // reads, lane words and all.
     expect(container.querySelectorAll('[data-port]')).toHaveLength(0)
     expect(container.querySelectorAll('[data-lane-size]')).toHaveLength(0)
+    expect(container.querySelectorAll('[data-lane-del]')).toHaveLength(0)
     expect(screen.queryByRole('button', { name: '新分区' })).toBeNull()
     expect(kindOf(container, 'c_1')).toBe('灵感 · 论点')
     // A line can still be looked at, but there is no delete button to press, so

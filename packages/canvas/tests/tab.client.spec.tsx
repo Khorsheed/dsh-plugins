@@ -286,7 +286,7 @@ describe('CanvasTab — list, switcher, board', () => {
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')]), other] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: '画布' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开或新建画布' }))
     fireEvent.click(await screen.findByText('第二块画布'))
     await screen.findByText('卡片 c_x')
     await waitFor(() => {
@@ -299,8 +299,8 @@ describe('CanvasTab — list, switcher, board', () => {
       workspaces: [{ workspaceId: 'w1', path: '/ws/report', title: 'report' }],
     })
     render(<CanvasTab {...props} />)
-    await screen.findByRole('button', { name: '画布' })
-    fireEvent.click(screen.getByRole('button', { name: '画布' }))
+    await screen.findByRole('button', { name: '打开或新建画布' })
+    fireEvent.click(screen.getByRole('button', { name: '打开或新建画布' }))
     fireEvent.click(screen.getByRole('button', { name: /新画布/ }))
     fireEvent.change(screen.getByPlaceholderText('这块画布思考什么主题？'), { target: { value: '远程团队的书面沟通礼仪' } })
     fireEvent.click(screen.getByRole('checkbox', { name: 'report' }))
@@ -317,7 +317,7 @@ describe('CanvasTab — list, switcher, board', () => {
   it('archives a canvas row from the switcher and restores it from the well', async () => {
     const { mocks, props, boards } = makeHarness()
     render(<CanvasTab {...props} />)
-    fireEvent.click(await screen.findByRole('button', { name: '画布' }))
+    fireEvent.click(await screen.findByRole('button', { name: '打开或新建画布' }))
     fireEvent.click(screen.getByRole('button', { name: '归档' }))
     await waitFor(() => {
       expect(mocks.archiveCanvas).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, archived: true })
@@ -432,7 +432,7 @@ describe('CanvasTab — the category catalog (stage ⑤)', () => {
     render(<CanvasTab {...bench.props} />)
     await screen.findByRole('button', { name: /管理分类/ })
     fireEvent.click(screen.getByRole('button', { name: /管理分类/ }))
-    await screen.findByText('canvas.json → categories')
+    await screen.findByText('只作用于这块画板')
     return bench
   }
 
@@ -719,7 +719,7 @@ describe('CanvasTab — wide mode and read-only', () => {
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
     expect(screen.queryByRole('button', { name: NEW_TILE })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '画布' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开或新建画布' }))
     // Read-only: the 新画布 row is not even offered.
     expect(screen.queryByRole('button', { name: /新画布/ })).toBeNull()
   })
@@ -735,7 +735,7 @@ describe('CanvasTab — round-4 dismissal, undo and the archived canvas', () => 
     expect(manage.getAttribute('aria-expanded')).toBe('true')
     fireEvent.pointerDown(document.body)
     expect(manage.getAttribute('aria-expanded')).toBe('false')
-    const switcher = screen.getByRole('button', { name: '画布' })
+    const switcher = screen.getByRole('button', { name: '打开或新建画布' })
     fireEvent.click(switcher)
     expect(switcher.getAttribute('aria-expanded')).toBe('true')
     fireEvent.keyDown(document, { key: 'Escape' })

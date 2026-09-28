@@ -16,6 +16,11 @@
  *   The old 「顺线扩一圈」 toggle, which let the lines add neighbours, read as
  *   noise and went in the 2026-09-28 review: to send a group, pick the group.
  *
+ * The board's own tools float INSIDE it (2026-09-28 review): its totals and
+ * 新分区 sit in a corner pill, and the group verbs rise in a bar at the bottom
+ * only while something is picked — a strip under the stage read as a footer
+ * nobody owned, and 新分区 belongs to the ground it adds a lane to.
+ *
  * The stage's numbers are the same 600-unit frame the pen draws in
  * (`LAYOUT_BOX`), used as a COORDINATE SPACE rather than a magnification: cards
  * carry real text, so scaling the board with the panel's width would scale the
@@ -25,7 +30,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { IconEditOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
+import { IconCloseOutlineMedium, IconEditOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { firstDrawingOf, withoutDrawLines } from '../../blocks.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
@@ -344,7 +349,8 @@ export function LinkView({
 
   const onLaneDown = (event: ReactPointerEvent<Element>, lane: LaneBox, mode: 'move' | 'resize'): void => {
     if (readonly || event.button !== 0) return
-    if ((event.target as HTMLElement).closest('[data-lane-title]') !== null) return
+    const target = event.target as HTMLElement
+    if (target.closest('[data-lane-head]') !== null || target.closest('[data-lane-del]') !== null) return
     event.stopPropagation()
     const stage = stageBox()
     const cardsAtStart = placed
@@ -450,6 +456,13 @@ export function LinkView({
     setDraftLabel('')
   }
 
+  /** A lane goes; the cards it held stay exactly where they sit. */
+  const dropLane = (id: string): void => {
+    if (readonly) return
+    if (renaming === id) setRenaming(null)
+    commit({ lanes: board.lanes.filter(lane => lane.id !== id) }, t('link.laneDropped'))
+  }
+
   const commitLaneLabel = (): void => {
     if (renaming === null) return
     const target = renaming
@@ -499,37 +512,61 @@ export function LinkView({
               key={lane.id}
               className={css.lane}
               data-lane={lane.id}
+              data-editing={renaming === lane.id || undefined}
               style={{ left: `${lane.x}px`, top: `${lane.y}px`, width: `${lane.w}px`, height: `${lane.h}px` }}
               onPointerDown={event => { onLaneDown(event, lane, 'move') }}
             >
-              {renaming === lane.id ? (
-                <input
-                  className={css.laneInput}
-                  autoFocus
-                  value={draftLabel}
-                  aria-label={t('link.laneRename')}
-                  onChange={event => { setDraftLabel(event.target.value) }}
-                  onBlur={commitLaneLabel}
-                  onKeyDown={event => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      commitLaneLabel()
-                    }
-                  }}
-                />
-              ) : (
+              {/* The name rides the lane's top edge like a legend, and editing it
+                  keeps that exact chip — same place, same type — with the caret
+                  and a brand ring as the only change, so the lane never jumps. */}
+              <span className={css.laneHead} data-lane-head={lane.id}>
+                {renaming === lane.id ? (
+                  <input
+                    className={css.laneInput}
+                    autoFocus
+                    value={draftLabel}
+                    placeholder={t('link.laneUnnamed')}
+                    aria-label={t('link.laneRename')}
+                    onChange={event => { setDraftLabel(event.target.value) }}
+                    onBlur={commitLaneLabel}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        commitLaneLabel()
+                      } else if (event.key === 'Escape') {
+                        event.preventDefault()
+                        setDraftLabel(lane.label)
+                        setRenaming(null)
+                      }
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className={css.laneTitle}
+                    data-lane-title={lane.id}
+                    data-unnamed={lane.label === '' || undefined}
+                    title={t('link.laneRename')}
+                    onClick={() => {
+                      if (readonly) return
+                      setRenaming(lane.id)
+                      setDraftLabel(lane.label)
+                    }}
+                  >
+                    {laneName(lane, t)}
+                  </button>
+                )}
+              </span>
+              {!readonly && (
                 <button
                   type="button"
-                  className={css.laneTitle}
-                  data-lane-title={lane.id}
-                  title={t('link.laneRename')}
-                  onClick={() => {
-                    if (readonly) return
-                    setRenaming(lane.id)
-                    setDraftLabel(lane.label)
-                  }}
+                  className={css.laneDel}
+                  data-lane-del={lane.id}
+                  title={t('link.laneDelete')}
+                  aria-label={t('link.laneDelete')}
+                  onClick={() => { dropLane(lane.id) }}
                 >
-                  {laneName(lane, t)}
+                  <IconCloseOutlineMedium size={12} />
                 </button>
               )}
               {!readonly && (
@@ -611,48 +648,52 @@ export function LinkView({
         </div>
       </div>
 
-      <div className={css.bar}>
-        <span className={css.barInfo}>
-          {send.length === 0
-            ? t('link.boardTotals', { links: String(visibleLinks.length), lanes: String(lanes.length) })
-            : t('link.infoPlain', { count: String(send.length) })}
+      <div className={css.dock}>
+        <span className={css.dockInfo}>
+          {t('link.boardTotals', { links: String(visibleLinks.length), lanes: String(lanes.length) })}
         </span>
-        <span className={css.spacer} />
-        {wireSel !== null && !readonly && (
-          <button
-            type="button"
-            className={css.barButton}
-            onClick={() => {
-              const gone = wireSel
-              setWireSel(null)
-              // A wire is its endpoints — matching by identity would silently
-              // no-op the moment the board re-reads and the object is fresh.
-              // And a deletion reports itself: the line is 1.6px of feedback.
-              commit({
-                links: board.links.filter(link => !(link.from === gone.from && link.to === gone.to)),
-              }, t('link.wireDropped'))
-            }}
-          >
-            {t('link.delWire')}
-          </button>
-        )}
         {!readonly && (
-          <button type="button" className={css.barButton} onClick={addLane}>
-            <IconPlusOutlineMedium size={12} />
+          <button type="button" className={css.dockButton} onClick={addLane}>
+            <IconPlusOutlineMedium size={14} />
             {t('link.addLane')}
           </button>
         )}
-        {talkAvailable && send.length > 0 && (
-          <button type="button" className={css.barButton} onClick={() => { onTalk(send) }}>
-            {t('link.talkGroup', { count: String(send.length) })}
-          </button>
-        )}
-        {talkAvailable && send.length > 0 && (
-          <button type="button" className={css.barButton} onClick={() => { onWrite(send) }}>
-            {t('talk.write')}
-          </button>
-        )}
-        {(selection.size > 0 || wireSel !== null) && (
+      </div>
+
+      {(selection.size > 0 || wireSel !== null) && (
+        <div className={css.bar} role="toolbar" aria-label={t('link.barLabel')}>
+          {send.length > 0 && (
+            <span className={css.barInfo}>{t('link.infoPlain', { count: String(send.length) })}</span>
+          )}
+          {wireSel !== null && !readonly && (
+            <button
+              type="button"
+              className={css.barButton}
+              onClick={() => {
+                const gone = wireSel
+                setWireSel(null)
+                // A wire is its endpoints — matching by identity would silently
+                // no-op the moment the board re-reads and the object is fresh.
+                // And a deletion reports itself: the line is 1.6px of feedback.
+                commit({
+                  links: board.links.filter(link => !(link.from === gone.from && link.to === gone.to)),
+                }, t('link.wireDropped'))
+              }}
+            >
+              {t('link.delWire')}
+            </button>
+          )}
+          {talkAvailable && send.length > 0 && (
+            <button type="button" className={css.barButton} onClick={() => { onTalk(send) }}>
+              {t('link.talkGroup', { count: String(send.length) })}
+            </button>
+          )}
+          {talkAvailable && send.length > 0 && (
+            <button type="button" className={css.barButton} onClick={() => { onWrite(send) }}>
+              {t('talk.write')}
+            </button>
+          )}
+          <span className={css.barRule} aria-hidden="true" />
           <button
             type="button"
             className={css.barGhost}
@@ -663,8 +704,8 @@ export function LinkView({
           >
             {t('board.clearSelection')}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

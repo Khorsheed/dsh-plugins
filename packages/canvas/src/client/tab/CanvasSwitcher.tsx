@@ -1,5 +1,5 @@
 /**
- * The canvas switcher: the 「画布 ▾」 dropdown at the end of the tab strip.
+ * The canvas switcher: the ＋ right after the last tab, and its dropdown.
  * One hierarchy, no redundant headers: a leading "+ 新画布" row that unfolds
  * the inline create form (topic input + attach multi-select + create/cancel),
  * then the active rows (open on click, archive on hover) and the archived well
@@ -8,8 +8,12 @@
  * It used to hang off the canvas NAME in the topbar, which was the only way to
  * reach another canvas; the strip now carries one row per open canvas, so this
  * panel's job is putting rows ON the strip and the archive housekeeping. Its
- * trigger names what it lists — 画布 with a chevron (scheme B) — and the panel
- * opens leftwards, so it cannot hang past the strip's right edge.
+ * trigger is a ＋ right after the last row, like the host dock's own ＋ (the
+ * 2026-09-28 review: a 画布 ▾ pill at the far end read as detached from the
+ * rows it adds to). A ＋ that opens a menu, not a blank canvas, because the
+ * common move is reopening one the strip closed; 新画布 leads that menu. The
+ * panel opens rightwards from the ＋ and flips left when that would run past
+ * the viewport's edge.
  *
  * The dropdown floats above the row (absolute — its styles live in `../space/
  * board.module.css`, the module this file imports; a copy elsewhere would be
@@ -18,7 +22,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import {
-  useCallback, useRef, useState, type FormEvent, type ReactNode,
+  useCallback, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode,
 } from 'react'
 import { IconArchiveOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
@@ -69,6 +73,20 @@ export function CanvasSwitcher({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  /** The panel hangs left of the ＋ when hanging right would pass the viewport's edge. */
+  const [flip, setFlip] = useState(false)
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setFlip(false)
+      return
+    }
+    const root = rootRef.current
+    const menu = menuRef.current
+    if (root === null || menu === null) return
+    setFlip(root.getBoundingClientRect().left + menu.offsetWidth > window.innerWidth - 8)
+  }, [open])
 
   // Escape and an outside pointer down both close it (the shared rule). The
   // create form's own Escape still folds just the form: it stops there.
@@ -104,17 +122,17 @@ export function CanvasSwitcher({
       <button
         type="button"
         className={css.switchTrigger}
-        title={t('strip.canvases')}
+        title={t('strip.add')}
+        aria-label={t('strip.add')}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => { setOpen(value => !value) }}
       >
-        {t('strip.canvases')}
-        <IconChevronDownOutlineMedium size={12} />
+        <IconPlusOutlineMedium size={16} />
       </button>
 
       {open && (
-        <div className={css.switcherMenu} style={{ left: 'auto', right: 0 }}>
+        <div ref={menuRef} className={css.switcherMenu} style={flip ? { left: 'auto', right: 0 } : undefined}>
           {/* 新画布 leads the menu (scheme B): making a canvas is the one verb
               the menu has besides picking one, so it sits where the eye lands. */}
           {!readonly && (

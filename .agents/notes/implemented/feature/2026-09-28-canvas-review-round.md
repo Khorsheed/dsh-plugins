@@ -56,6 +56,19 @@ The user walked canvas 0.4.8 on 3080 and raised six points:
 - The iframe element and its document are both pinned to `color-scheme: light`. When the two schemes differ, the browser paints the iframe an opaque backdrop, which the inversion showed as a grey band (caught in a screenshot check).
 - The board summary shows each block as 「[图示]」, never its source.
 
+**Fourth pass, same day (0.4.12).** From a second look on 3080:
+
+- **The canvas picker is a ＋ after the last tab**, like the sidebar's ＋. The strip no longer stretches (`flex: 0 1 auto`), so the ＋ follows the tabs. The trigger is icon-only (「打开或新建画布」 as its name) and still opens the same list of boards plus 新画布. Near the right edge the list flips to open leftward (measured on open).
+- **Lanes can be deleted.** A × on the lane's top-right corner appears on hover. It removes only the lane (a `lanes` patch); every card stays where it sits, and a toast says so.
+- **The link view's tools float inside the board.** A dock at the top right always holds the totals (「2 个分区 · 1 条线」) and ＋新分区. The selection actions (对谈, 写成稿, 删掉这条线, 取消选择) move to a floating bar at the bottom centre that shows only while something is selected. The old full-width bar below the board is gone.
+- **The lane title is a chip.** It is the same box whether shown or edited (22px, the layer-1 ground, radius 6). Editing adds a brand border and a soft ring and outlines the lane. Escape cancels, and an unnamed lane shows 未命名分区 as a placeholder.
+- **The ⋯ icons are the host's own** `IconEllipsisOutlineMedium`. They were drawn at 13px against the host default 16. Only the glyph grows to 16; the buttons keep their 22/24px boxes, so the hover square still matches the selected box (the user's call).
+- **The category panel copy and layout are reworked.**
+  - The head reads 「分类 只作用于这块画板」, and the storage path moves into its tooltip.
+  - Each row shows the count, a small 内置 tag and a ghost 停用 button.
+  - The two rules are a short list under a divider: renaming changes only the display, and retiring a category archives its cards (with the way to keep them).
+  - A built-in's default name shows as the placeholder, so it is tinted as the name itself. The UA grey was too faint on dark (caught in a screenshot check).
+
 ## Alternatives considered
 
 - **A bottom toolbar or a floating toolbar for the editor.** Rejected: the user picked the sticky top bar, which stays in view on a long card and has room for more insert kinds.
@@ -79,3 +92,4 @@ The user walked canvas 0.4.8 on 3080 and raised six points:
 - `tests/html-blocks.spec.ts`: splitting, balancing across lines, a self-closing svg, an unclosed tag, fences, indented and mid-line tags, the summary mark.
 - `tests/manuscript.client.spec.tsx`: a whole HTML block in a manuscript renders in a sandboxed iframe (with the CSP), not as source.
 - 516 tests pass.
+- `tests/link.client.spec.tsx`: deleting a lane is a `lanes` patch that leaves every card where it sits; Escape in the lane name cancels; a readonly board shows no lane delete; the totals read from the dock.
