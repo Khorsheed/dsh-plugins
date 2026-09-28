@@ -4,19 +4,24 @@
 
 **dsh**(DeepSeek Harness)生态的社区插件 monorepo:**40 个纯增量插件包,其中 29 个已发布 npm**。所有包只走官方扩展点(slots、commands、Remote 服务、会话镜像)接入——不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;探测不到可选能力时静默降级,绝不拖垮启动。整套插件按共存设计:任意组合安装、卸载、开关,互不干扰,生产环境长期全量叠装运行。
 
-> 本文只收录**已发布**的包;包总数、形态与 profile 归属以机器生成的[权威包地图](docs/packages.md)为准,各包版本与宿主兼容矩阵以[发布状态](docs/release-status.md)为准(每次发版后重新生成)。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
+> 本文只收录**已发布**的包;包总数、形态与 profile 归属以机器生成的[权威包地图](docs/packages.md)为准,各包版本与宿主兼容矩阵以[发布状态](docs/release-status.md)为准(每次发版后重新生成)。仓库同时是开发工作区,开发相关内容见文末[给 Agent 的安装及开发指南](#install-dev-guide)。
 
-## 整合包:三种开箱体验
+## 整合包:四种开箱体验
 
-默认安装单元是一个完整 profile(整合包),不是单包。它的 `dependencies` 决定装哪些包,`dsh.profile.bundles` 决定激活哪些自挂载行:
+默认安装单元是一个完整 profile(整合包),不是单包。它的 `dependencies` 决定装哪些包,`dsh.profile.bundles` 决定激活哪些自挂载行。四个整合包对应四种模式:
 
-| 整合包 | 定位 | 成员 |
-| --- | --- | --- |
-| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | **日常模式**:消息控制、产物预览、本地文件浏览、能力目录、移动端呈现、任务状态、快捷键与运维守护 | 14 |
-| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | **开发协作**:basic 全部体验,再加本地编码 agent 委派、worktree 实况与 room 多 agent 协作,自带「开发模式」preset | 22 |
-| [web-eval](profiles/web-eval)(仓内) | **评测工作**:因子设计实验台——题库、条件、计划进 git 评审,确定性编排执行,自带「评测模式」preset | 25 |
+| 整合包 | 模式 | 包含什么 | GitHub |
+| --- | --- | --- | --- |
+| **dsh-basic** | 日常模式 | 官方 dsh-web 的体验补充:发出去的消息可以改、可以撤,会话标题一键修改,产物预览与本地文件浏览,能力目录,移动端呈现,后台任务状态,完成提示音,快捷键,运维守护 | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
+| **dsh-dev** | 开发模式 | 开发 workflow 常用组件:basic 全部体验,再加本地编码 agent 委派(Kimi / Codex / Claude Code / DSH)、worktree 改动实况、room 多 agent 协作,自带「开发模式」preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
+| **dsh-eval** | 评测模式 | 评测 workflow 常用组件:题库、条件、计划进 git 评审,确定性编排执行,自带「评测模式」preset | 打磨中待上线 |
+| **dsh-writing** | 写作模式 | 写作 workflow 常用组件:画布协作写作、链接阅读器、会话内卡片渲染,自带「写作模式」preset | 打磨中待上线 |
 
-前两个是独立仓库,clone 后两条脚本完成安装与同端口交接,详见各自 README。单包安装是高级路径,见[安装](#安装)。
+![dsh-basic 日常模式:消息编辑与撤回、引用动作、会话产物、文件列表、灵感空间一屏装齐](docs/screenshots/basic-mode.png)
+
+![dsh-dev 开发模式:room 多 agent 邀请、worktree 实况徽标、子 agent 任务胶囊](docs/screenshots/dev-mode.png)
+
+前两个是独立仓库,clone 后两条脚本完成安装与同端口交接,详见各自 README;评测与写作模式目前随仓内 [profiles/web-eval](profiles/web-eval) / [profiles/web](profiles/web) 维护,独立 GitHub 仓打磨中待上线。单包安装是高级路径,见文末[给 Agent 的安装及开发指南](#install-dev-guide)。
 
 ## 能力地图
 
@@ -38,6 +43,25 @@
 | [`file-preview`](packages/file-preview) | 会话「**产物**」tab + 宿主服务一体:产物 tab、回合变更卡片、详情页预览抽屉,与只读文件预览 Remote 服务同包(0.4.0 起两行合一) | basic + dev |
 | [`local-files`](packages/local-files) | 右栏**本地文件浏览器**:懒加载文件树 + HTML/Markdown/JSON/CSV/图片结构化预览 | basic + dev |
 
+### 任务与氛围
+
+| 包 | 你得到 | 随整合包 |
+| --- | --- | --- |
+| [`taskpilot`](packages/taskpilot) | 聊天框上方**后台任务 / 子 Agent 胶囊**:运行计时、停止/中断、详情抽屉回放执行轨迹 | basic + dev |
+| [`context-guard`](packages/context-guard) | 上下文占用越过可配阈值时,聊天框上出现**一键 compact 提醒** | basic + dev |
+| [`whalesong`](packages/whalesong) | 任务氛围:鲸鱼喷水、favicon 动画、完成/阻塞提示音(`prefers-reduced-motion` 自动静音) | basic + dev |
+
+> **常用对话组件打包安装**:「对话控制」「任务与氛围」的常用组件再加 inline-html-render,可用元包 [`bundle-conversation-toolbox`](packages/bundle-conversation-toolbox) 一条命令装齐——`dsh plugin add @khorsheed/dsh-bundle-conversation-toolbox`,含 message-tools、message-timeline、session-title-edit、quote、context-guard、taskpilot、inline-html-render 共 7 个包。
+
+### 体验与效率
+
+| 包 | 你得到 | 随整合包 |
+| --- | --- | --- |
+| [`ui-shortcuts`](packages/ui-shortcuts) | **可自定义键位的快捷键**(暂停 / 插队发送 / 新建会话)+ `ctx.shortcuts` 动作注册表;0.1.7-rc.2 起官方内置快捷键,本包预计逐步退役 | basic + dev |
+| [`inline-html-render`](packages/inline-html-render) | 把 agent 写的 ```` ```dsh-card ```` HTML 渲染成会话内**沙箱交互卡片** | basic + dev |
+| [`dsh-reader`](packages/dsh-reader) | **链接阅读器** tab:RSS/Atom 订阅 + 粘贴文章链接,卡片流 + 可读详情视图 | 单包 |
+| [`mobile`](packages/mobile) | **移动端呈现**与 iOS 桥 | basic + dev |
+
 ### 开发协作
 
 | 包 | 你得到 | 随整合包 |
@@ -47,6 +71,8 @@
 ### 本地多 Agent
 
 把子任务委派给你本机装的编码 Agent CLI,各自独立上下文、独立记账、跨轮续聊;每个 harness 在自己独立的作用域 home 下运行(`$DSH_HOME/local-agent/<name>`,0700),**绝不触碰你用户目录里的私人配置与凭据**。
+
+与官方版本的差异:支持开发者指定主 Agent 邀请自定义的任意 Harness 完成目标任务——开发者可以根据自己的使用体感编排,比如建议主 Agent 在目标任务中邀请 Kimi 做前端任务,邀请 Codex / Claude Code 做整体任务编排,邀请 DSH 做具体的编码任务等等。
 
 | 包 | 你得到 | 随整合包 |
 | --- | --- | --- |
@@ -58,36 +84,21 @@
 | [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (组合组件)dsh 委派的 **headless 子 profile** patch | 随 provider |
 | [`local-agent-tool-subagent`](packages/local-agent-tool-subagent) | (组合组件)家族共享**委派工具行**,带 `resume` 续聊参数 | dev |
 
+> **本地多 Agent 打包安装**:核心 + 四个 provider 用元包 [`bundle-local-agent`](packages/bundle-local-agent) 一条命令装齐——`dsh plugin add @khorsheed/dsh-bundle-local-agent`。
+
 ### 多 Agent 协作
 
 | 包 | 你得到 | 随整合包 |
 | --- | --- | --- |
 | [`room`](packages/room) | **room 会话**:邀请多个 agent 进同一条会话——成员名册 tab、@ 派发、任务板、通知闸门;模型工具经包内 `./tool` 子路径行由 preset 按会话授予 | dev |
 
-### 任务与氛围
-
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`taskpilot`](packages/taskpilot) | 聊天框上方**后台任务 / 子 Agent 胶囊**:运行计时、停止/中断、详情抽屉回放执行轨迹 | basic + dev |
-| [`context-guard`](packages/context-guard) | 上下文占用越过可配阈值时,聊天框上出现**一键 compact 提醒** | basic + dev |
-| [`whalesong`](packages/whalesong) | 任务氛围:鲸鱼喷水、favicon 动画、完成/阻塞提示音(`prefers-reduced-motion` 自动静音) | basic + dev |
-
-### 体验与效率
-
-| 包 | 你得到 | 随整合包 |
-| --- | --- | --- |
-| [`ui-shortcuts`](packages/ui-shortcuts) | **可自定义键位的快捷键**(暂停 / 插队发送 / 新建会话)+ `ctx.shortcuts` 动作注册表 | basic + dev |
-| [`inline-html-render`](packages/inline-html-render) | 把 agent 写的 ```` ```dsh-card ```` HTML 渲染成会话内**沙箱交互卡片** | basic + dev |
-| [`dsh-reader`](packages/dsh-reader) | **链接阅读器** tab:RSS/Atom 订阅 + 粘贴文章链接,卡片流 + 可读详情视图 | 单包 |
-| [`mobile`](packages/mobile) | **移动端呈现**与 iOS 桥 | basic + dev |
-
 ### 能力与基础设施
 
 | 包 | 你得到 | 随整合包 |
 | --- | --- | --- |
 | [`capability-catalog`](packages/capability-catalog) | **能力目录**:枚举运行实例的全部 skill 与工具及其注册渠道,设置页三列预览 + 详情弹窗 | basic + dev |
-| [`typesafe`](packages/typesafe) | **TypeSafe 判定原语**宿主服务:类型化 noul/choice/score 判定,带熔断、缓存与决策日志 | 单包 |
-| [`typesafe-tool`](packages/typesafe-tool) | (伴生工具行)typesafe 的模型工具,由 preset 按会话授予 | 单包 |
+| [`typesafe`](packages/typesafe) | (实验性)**TypeSafe 判定原语**宿主服务:接入 TypeSafe System One 模型(旗舰 Jev)支持模型快速决策场景调用,类型化 noul/choice/score 判定,带熔断、缓存与决策日志 | 单包 |
+| [`typesafe-tool`](packages/typesafe-tool) | (实验性,伴生工具行)typesafe 的模型工具,由 preset 按会话授予 | 单包 |
 | [`capture`](packages/capture) | **渲染抓取** Remote:托管 headless Chrome 渲染 URL,返回内联样式的序列化页面 | 单包 |
 
 ### 运维守护
@@ -95,15 +106,6 @@
 | 包 | 你得到 | 随整合包 |
 | --- | --- | --- |
 | [`ankh-guard`](packages/ankh-guard) | 自修改重启的**安全门禁**:绿色凭证(绑定 git HEAD)+ 组合 preflight + watchdog 回滚——让 AI 自己改代码、自己重启,还不把服务搞挂 | basic + dev |
-
-### 一键元包
-
-不想逐个挑,按家族一条命令装齐:
-
-| 包 | 内容 |
-| --- | --- |
-| [`bundle-conversation-toolbox`](packages/bundle-conversation-toolbox) | 会话工具箱:message-tools、message-timeline、session-title-edit、quote、inline-html-render、context-guard、taskpilot |
-| [`bundle-local-agent`](packages/bundle-local-agent) | 本地多 Agent:local-agent 核心 + kimi / codex / claude-code / dsh 四个 provider |
 
 ## Agent preset 设计
 
@@ -127,7 +129,14 @@
 
 整套插件按共存设计:行 id、UI 席位、事件与命名空间全部互不重叠。唯一的例外说明:已自带 `ankh-guard` 行的镜像(历史 fork)不要再重复添加该包——重复行 id 会导致启动失败,详见 [ankh-guard 的说明](packages/ankh-guard/README.md)。
 
-npm 发布线上各包全部功能完整,唯一例外是 ankh-guard 的组合 preflight 门禁在纯 npm 部署(无 harness 检出)下降级为提示后放行,其余能力完整;源码线(deepseek-harness master)全部完整。各包 `minHost` 从 0.1.2-rc.1 到 0.1.5-rc.1 不等,逐包矩阵见[发布状态](docs/release-status.md);宿主 ≤ 0.1.1-rc.2 的用户请停留在各包 0.1.x 发布线。
+npm 发布线上各包全部功能完整,唯一例外是 ankh-guard 的组合 preflight 门禁在纯 npm 部署(无 harness 检出)下降级为提示后放行,其余能力完整;源码线(deepseek-harness master)全部完整。
+
+| 宿主版本 | 目标插件 | 安装包名(带版本) |
+| --- | --- | --- |
+| **0.1.7-rc.1 ~ rc.2**(推荐) | 全部已发布插件;preset 另由 `@khorsheed/dsh-presets` 声明式交付(随下一发布波上架) | npm 最新线,如 `@khorsheed/dsh-whalesong@0.2.3` |
+| **0.1.5-rc.1 起** | 全部已发布插件;preset 由整合包脚本以目录式安装 | npm 最新线,如 `@khorsheed/dsh-whalesong@0.2.3` |
+
+逐包版本与 `minHost` 矩阵见[发布状态](docs/release-status.md)(每次发版后重新生成)。
 
 ## 模型影响总表
 
@@ -138,9 +147,13 @@ npm 发布线上各包全部功能完整,唯一例外是 ankh-guard 的组合 pr
 | local-agent 委派(子会话) | 独立子上下文 | 子会话独立付费,不进父级 | 与父级相互独立 |
 | 其余全部插件 | 无 | 无 | 无 |
 
-## 安装
+<a id="install-dev-guide"></a>
+<details>
+<summary><b>给 Agent 的安装及开发指南</b>(单包安装、卸载、在本仓开发插件——点击展开)</summary>
 
-前置:dsh 宿主(版本要求见各包 README 的 Compatibility 节)。**推荐路径是整合包**(见上文[整合包](#整合包三种开箱体验));单包安装是高级用户按需裁剪或调试的路径。
+### 安装
+
+前置:dsh 宿主(版本要求见[兼容性承诺](#兼容性承诺)与各包 README 的 Compatibility 节)。**推荐路径是整合包**(见上文[整合包](#整合包四种开箱体验));单包安装是高级用户按需裁剪或调试的路径。
 
 宿主 ≥ 0.1.7-rc.2 时,单包安装不用碰命令行:**设置 → 插件 → 添加插件**,填 npm 包名(如 `@khorsheed/dsh-whalesong`),按提示启用/重启即可。注意这个入口只认**单个插件包**——本仓是 monorepo、整合包仓是 profile 模板,把它们的 GitHub 地址贴进去会被拒绝并回滚(官方安装器只装仓库根的插件包,不支持子目录);整合包请走各自仓库的安装脚本。
 
@@ -159,7 +172,7 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # 或 -codex / -c
 
 装完重启对应 web 实例生效。组合组件包(`*-tool`、`local-agent-dsh-headless`、`ui-content-preview`)不由 `dsh plugin add` 挂载——它们由 profile 的 preset 行或 provider patch 落位,完整关系见[权威包地图](docs/packages.md)。
 
-## 卸载
+### 卸载
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-<name>
@@ -172,7 +185,7 @@ dsh plugin --profile web remove @khorsheed/dsh-<name>
 - **家族行随行。** 先卸 local-agent 核心而 harness 还在时,harness 行保持 **pending,不会崩溃**——重装核心即恢复。
 - **`enabled: false`** 可以禁用某行而不卸载——这是部署层操作,不是代码改动。
 
-## 开发
+### 开发
 
 独立 pnpm monorepo;每个包以 `@khorsheed/dsh-*` 发布。
 
@@ -198,3 +211,5 @@ pnpm run typecheck  # pnpm -r --if-present run typecheck
 - `build/vitest.ts`(共享 vitest 预设)把平台 import 映射到 harness 的 `tsconfig.base.json` 路径——发布的包不携带 `src/`,其 `/client` 入口是 loader 包裹的浏览器 bundle,裸 import 会炸。
 
 CI 注意:先在本仓库旁 clone deepseek-harness 并设 `DSH_HARNESS` 再 `pnpm test`;harness checkout 过期意味着被测 API 面可能落后于生产宿主。发布走 `scripts/pack-dist.ts`(`--family` 重写 peer 依赖的 scope),`npm publish` 前先验证 tarball。完整仓库纪律见 [AGENTS.md](AGENTS.md)。
+
+</details>
