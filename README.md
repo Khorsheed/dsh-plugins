@@ -21,8 +21,6 @@
 
 ![dsh-dev 开发模式:room 多 agent 邀请、worktree 实况徽标、子 agent 任务胶囊](docs/screenshots/dev-mode.png)
 
-前两个是独立仓库,clone 后两条脚本完成安装与同端口交接,详见各自 README;评测与写作模式目前随仓内 [profiles/web-eval](profiles/web-eval) / [profiles/web](profiles/web) 维护,独立 GitHub 仓打磨中待上线。单包安装是高级路径,见文末[给 Agent 的安装及开发指南](#install-dev-guide)。
-
 ## 能力地图
 
 每个包的功能详情、配置与截图见各自目录的 README(点目录进包即达)。「安装包名」列复制即可装;「随整合包」一列表示它随哪个模式的整合包装好(basic / dev / writing / eval 互不重叠);标「单包」的不随任何整合包,用「添加插件」对话框或 `dsh plugin add` 单独安装。

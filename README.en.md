@@ -21,8 +21,6 @@ The default install unit is a complete profile (a pack), not a single package. I
 
 ![dsh-dev dev mode: room multi-agent invite, the live worktree badge, and sub-agent task pills](docs/screenshots/dev-mode.png)
 
-The first two are standalone repositories: clone, run two scripts, and the running instance hands over on the same port — see their READMEs. The eval and writing modes are currently maintained in this repo as [profiles/web-eval](profiles/web-eval) / [profiles/web](profiles/web), with standalone GitHub repos being polished and coming soon. Single-package install is the advanced path; see the [install & development guide for agents](#install-dev-guide) at the end.
-
 ## Capability map
 
 Each package's full feature list, configuration, and screenshots live in its own directory README (follow the directory link). Copy the "Install spec" cell straight into the host's Add-plugin dialog; the "Ships with" column says which mode's pack installs it by default (basic / dev / writing / eval never overlap); packages marked "standalone" ship with no pack and install individually with `dsh plugin add`.
