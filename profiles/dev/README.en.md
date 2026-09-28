@@ -10,7 +10,7 @@ Every member is an independent plugin — copy its package name into the host's 
 
 ## The dsh-dev pack — plugin list
 
-Thirteen members are shared with [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, task pills, compaction reminder, inline cards, capability catalog, shortcuts, ambience, mobile, ops guard) — see basic's plugin list for their intros and screenshots. The 9 unique to this pack:
+This pack adds 9 plugins specifically for dev mode (see the table below). On top of that it ships the same everyday-experience plugins as [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, task pills, compaction reminder, inline cards, capability catalog, shortcuts, ambience, mobile, ops guard) — disable or uninstall any you don't need under Settings → Plugins; they can also be installed individually on demand, with per-plugin intros and screenshots in dsh-basic.
 
 | Plugin | Package name (copy to install) | What you get |
 |---|---|---|
@@ -26,7 +26,7 @@ Thirteen members are shared with [dsh-basic](https://github.com/Khorsheed/dsh-ba
 
 ### Version compatibility
 
-The whole pack requires host ≥ `0.1.5-rc.1` (the floor of most members; six of the members shared with basic floor lower and install individually on the 0.1.2 line too). The local-agent family publishes as `0.1.0-rc` prereleases — a bare package name in the dialog resolves to the latest. The per-member per-host-line matrix lives in [dsh-plugins' release status](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md).
+Host ≥ `0.1.5-rc.1`.
 
 ## Features
 
@@ -45,6 +45,12 @@ Delegate subtasks to the coding agent CLIs on your machine — Kimi Code, Codex,
 - **Two-way member channel**: open a member's sub-session to continue it directly; members can also notify each other.
 
 <img src="docs/screenshots/local-agent-delegation.png" width="840" alt="The local-agent family: provider cards in settings, auth status at a glance">
+
+<img src="docs/screenshots/local-agent-kimi-settings.png" width="840" alt="Provider detail card (Kimi): logged in, default model switchable, live-mode toggle">
+
+<img src="docs/screenshots/local-agent-codex-card.png" width="840" alt="Provider detail card (Codex): logged in, default model switchable">
+
+<img src="docs/screenshots/local-agent-claude-code-card.png" width="840" alt="Provider detail card (Claude Code): logged-out state with one-click web login">
 
 <img src="docs/screenshots/local-agent-member.png" width="840" alt="The two-way member channel: open a member's sub-session and continue it directly">
 
@@ -85,11 +91,11 @@ One meta package installs the local-agent core plus all four providers (kimi / c
 
 ## Bundled agent preset: the dev mode (dev)
 
-The pack ships a **dev mode** preset (`presets/dev`, built on the official Standard composition): it adds the three local-agent delegation tools (`subagent_kimi` / `subagent_codex` / `subagent_claude_code`), the worktrees model tool, and the room tool trio (`room_invite` / `room_task` / `room_message`), all **granted per session** — the tool rows live in this preset's composition only, never at the profile root. `install.sh` / `update.sh` drops it into `$DSH_HOME/.agent-presets/dev` (replaced whole — it is pack apparatus, not preference; a same-id preset of yours would be overwritten, so author your own under a different id). Pick the dev preset in the preset chip when creating a session; the default preset stays Standard — change it under **Settings → Agent presets** (the patch layer is yours, the pack pins nothing). The mission / datasets / eval companion tool rows are **deliberately absent here**: the three cores are not members of this pack (unpublished incubation) and a companion imports its core's `./tool` factory at runtime, so a missing row would mark the whole dev preset `broken` — they join once they are published and listed in `profiles/dev/package.json` (see CHANGELOG).
+The pack ships a **dev mode** preset (`presets/dev`). It exists so that dev mode's tools and UI never leak into other modes: the model tool rows live in this preset's composition only, never at the profile root, and session-bound UI (the worktree badge, the room roster, …) shows or hides with the preset grant — a session gets the tools and the entry points exactly when it runs on this preset. So one instance can move back and forth between modes: pick dev mode for coding sessions, stay on Standard for everyday ones, and neither pollutes the other.
 
-## Custom agent presets
+The composition re-bases verbatim on the official "Standard mode" and only appends community tool rows at the end: the three local-agent delegation tools (`subagent_kimi` / `subagent_codex` / `subagent_claude_code`), the worktrees model tool, and the room tool trio (`room_invite` / `room_task` / `room_message`), all **granted per session**; with a companion's core absent the row stays pending and never crashes the host.
 
-This profile runs the official Standard preset. To build your own: **Settings → Agent presets** → copy a built-in preset and edit it, or use "create with Creation mode" at the bottom to have an agent build it with you. Your presets live in `$DSH_HOME/.agent-presets/` and are unaffected by updates to this profile.
+`install.sh` / `update.sh` drops it into `$DSH_HOME/.agent-presets/dev` (replaced whole — it is pack apparatus, not preference; a same-id preset of yours would be overwritten, so author your own under a different id). Pick the dev preset in the preset chip when creating a session; the default preset stays Standard — change it under **Settings → Agent presets** (the patch layer is yours, the pack pins nothing). The mission / datasets / eval companion tool rows are **deliberately absent here**: the three cores are not members of this pack (unpublished incubation) and a companion imports its core's `./tool` factory at runtime, so a missing row would mark the whole dev preset `broken` — they join once they are published and listed in `profiles/dev/package.json` (see CHANGELOG).
 
 ## Update
 
@@ -102,21 +108,6 @@ sh scripts/restart-into-dev.sh
 ```
 
 `update.sh` overwrites `package.json` and the lockfile only — it **never touches your `cordis.patch.yml`**, which is your layer.
-
-## Switching modes
-
-```sh
-sh scripts/restart-into-dev.sh          # switch to this profile, port 3080 by default
-sh scripts/restart-into-dev.sh 3090     # pick a port
-```
-
-To switch to another profile, run the matching script in its own repo. The switch is a same-port handover: refresh the original address.
-
-Installing several profiles: clone each and run its own `install.sh` — they do not interfere; **switch on the same port with each pack's restart script**, so there is no port to remember. With several installed, a membership update runs `update.sh` once per profile.
-
-Sessions live in `$DSH_HOME/sessions/`, and credentials and shortcuts live under `$DSH_HOME` — **all shared across profiles**: log into Kimi under one and the next already has it.
-
-> Running two instances over one `$DSH_HOME` is not recommended: they share session data and there is no cross-process write protection. Give a long-lived isolated instance (an evaluation one, say) its own `$DSH_HOME`.
 
 ## Other packs
 

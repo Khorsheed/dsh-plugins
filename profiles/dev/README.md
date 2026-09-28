@@ -10,7 +10,7 @@
 
 ## dev 整合包 - 插件列表
 
-与 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 共享的 13 个成员（消息编辑/撤回、时间轴、标题编辑、引用、产物预览、任务胶囊、压缩提醒、内联卡片、能力目录、快捷键、提示音、移动端、运维守护），逐插件介绍与截图见 basic 的插件列表。本包独有 9 个：
+本整合包包含开发模式单独追加的 9 个插件（见下表）。除此之外还随包装好与 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 同源的基础体验优化插件（消息编辑/撤回、时间轴、标题编辑、引用、产物预览、任务胶囊、压缩提醒、内联卡片、能力目录、快捷键、提示音、移动端、运维守护）——不需要的在 设置 → 插件 里禁用或卸载即可；它们也可按需单独安装，逐插件介绍与截图见 dsh-basic。
 
 | 插件 | 包名（复制即可安装） | 你得到 |
 |---|---|---|
@@ -26,7 +26,7 @@
 
 ### 版本兼容
 
-整合包整体要求宿主 ≥ `0.1.5-rc.1`（多数成员的地板；basic 共享成员里 floor 更低的六个在 0.1.2 线宿主上也能单装）。local-agent 家族以 `0.1.0-rc` 预发布线发布，对话框填裸包名即得最新。各成员逐宿主线的矩阵见 [dsh-plugins 的发布状态](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md)。
+宿主 ≥ `0.1.5-rc.1`。
 
 ## 功能展示
 
@@ -45,6 +45,12 @@
 - **成员双向通道**：打开成员子会话即可直接对它续一轮；成员之间也能互相通知。
 
 <img src="docs/screenshots/local-agent-delegation.png" width="840" alt="本地 Agent 家族:设置页的 provider 卡片,认证状态一眼可见">
+
+<img src="docs/screenshots/local-agent-kimi-settings.png" width="840" alt="provider 详情卡(Kimi):已登录态,默认模型可切换,常驻模式开关">
+
+<img src="docs/screenshots/local-agent-codex-card.png" width="840" alt="provider 详情卡(Codex):已登录态,默认可换 GPT-5.6-Sol">
+
+<img src="docs/screenshots/local-agent-claude-code-card.png" width="840" alt="provider 详情卡(Claude Code):未登录态,一键网页登录">
 
 <img src="docs/screenshots/local-agent-member.png" width="840" alt="成员双向通道:打开成员子会话直接续聊">
 
@@ -85,11 +91,11 @@
 
 ## 自带 Agent 预设：开发模式（dev）
 
-pack 自带一个**开发模式** preset（`presets/dev`，官方「标准模式」组合为底）：外加三家 local-agent 委派工具（`subagent_kimi` / `subagent_codex` / `subagent_claude_code`）、worktrees 模型工具与 room 工具三件套（`room_invite` / `room_task` / `room_message`），全部**按会话授予**——工具行只在本 preset 的组合里，不进 profile 根。`install.sh` / `update.sh` 把它卸进 `$DSH_HOME/.agent-presets/dev`（整体替换——它是 pack 装置，不是个人偏好；同名自建会被覆盖，自己的预设请用别的 id）。建会话时在 preset chip 选「开发模式」即可；默认 preset 仍是「标准模式」，要改默认在**设置 → Agent 预设**里选（patch 层是你的，pack 不钉）。mission / datasets / eval 的伴生工具行**刻意不在这里**：三个 core 不在本 pack 的成员清单里（孵化中），而伴生包运行时要 import core 的 `./tool` 工厂，缺行会让整个 dev preset 报 broken——等它们上架、并加进 `profiles/dev/package.json` 之后再补（见 CHANGELOG）。
+pack 自带一个**开发模式** preset（`presets/dev`）。它存在的意义是让开发模式的工具与 UI 不污染其它模式：模型工具行只挂在本 preset 的组合里、不进 profile 根；会话绑定的 UI（worktree 徽标、room 成员名册等）跟随 preset 授予显隐——选了这个 preset 的会话才拿得到工具、才看得见入口。于是同一个实例可以在多个模式之间来回切换：写代码的会话选「开发模式」，日常会话留在「标准模式」，互不干扰。
 
-## 自定义 Agent 预设
+组合以官方「标准模式」逐字重基，只在末尾追加社区工具行：三家 local-agent 委派工具（`subagent_kimi` / `subagent_codex` / `subagent_claude_code`）、worktrees 模型工具与 room 工具三件套（`room_invite` / `room_task` / `room_message`），全部**按会话授予**；伴生 core 缺席时该行 pending，不炸宿主。
 
-本 profile 使用官方「标准模式」。要做自己的预设：**设置 → Agent 预设** → 复制一份内置预设改，或点底部「用『创造模式』创作自定义预设」让 Agent 帮你做。自建的预设存在 `$DSH_HOME/.agent-presets/`，与本 profile 的更新互不影响。
+`install.sh` / `update.sh` 把它卸进 `$DSH_HOME/.agent-presets/dev`（整体替换——它是 pack 装置，不是个人偏好；同名自建会被覆盖，自己的预设请用别的 id）。建会话时在 preset chip 选「开发模式」即可；默认 preset 仍是「标准模式」，要改默认在**设置 → Agent 预设**里选（patch 层是你的，pack 不钉）。mission / datasets / eval 的伴生工具行**刻意不在这里**：三个 core 不在本 pack 的成员清单里（孵化中），而伴生包运行时要 import core 的 `./tool` 工厂，缺行会让整个 dev preset 报 broken——等它们上架、并加进 `profiles/dev/package.json` 之后再补（见 CHANGELOG）。
 
 ## 更新
 
@@ -102,21 +108,6 @@ sh scripts/restart-into-dev.sh
 ```
 
 `update.sh` 只覆盖 `package.json` 与 lockfile，**不动你的 `cordis.patch.yml`**——那一层的改动是你的。
-
-## 切换模式
-
-```sh
-sh scripts/restart-into-dev.sh          # 切到本 profile，默认 3080
-sh scripts/restart-into-dev.sh 3090     # 指定端口
-```
-
-切回其它 profile，用它自己仓库里的同名脚本。切换是同端口交接，浏览器刷新原地址即可。
-
-同时装多个 profile：各自 clone、各自 `install.sh`，互不干扰；**用各自的 restart 脚本在同一端口切换**，不用记端口。装了多个时，成员更新要在每个 profile 各跑一次 `update.sh`。
-
-会话数据在 `$DSH_HOME/sessions/`、凭据与快捷键在 `$DSH_HOME` 下，**所有 profile 共享**——在一个 profile 里登录过 Kimi，切到另一个不用再登。
-
-> 不建议在同一个 `$DSH_HOME` 上并行跑两个实例：会话数据共享且跨进程无写保护。需要长期隔离的实例（例如评测）请给它独立的 `$DSH_HOME`。
 
 ## 其他整合包
 
