@@ -40,6 +40,13 @@ The user walked canvas 0.4.8 on 3080 and raised six points:
 - `CanvasStroke.size?: 'thin' | 'medium' | 'bold'` is stored only when it is not medium. `normalizeDraw` and `appendStroke` drop medium and unknown values, so every older stroke reads as 中.
 - `strokePathOf` scales perfect-freehand's `size` by 0.5 / 1 / 1.9, and the live stroke previews at the chosen width.
 
+**Second pass, same day (0.4.10).** After a look on 3080:
+
+- **The editor fills the page.** The sheet takes the page's remaining height (`flex: 1 0 auto`, 320px floor). Its words sit in a centred reading column of about 760px (`padding-inline: max(18px, (100% - 760px) / 2)`) at 14px/1.8. The last words block runs to the sheet's foot, so a click in the empty lower half lands in it.
+- **The tile draft fills its cell** (180px floor, and the words take the room between head and foot).
+- **The topbar ＋新卡 menu is removed.** It duplicated the tile and read as abrupt. The kind is picked in the tile's own select.
+- **The tile reads 「新增{kind}卡片」**, named for the kind it starts, for example 新增灵感卡片.
+
 ## Alternatives considered
 
 - **A bottom toolbar or a floating toolbar for the editor.** Rejected: the user picked the sticky top bar, which stays in view on a long card and has room for more insert kinds.

@@ -7,7 +7,7 @@
  * 2026-09-27 review (scheme B) made the strip hold canvases only, with a card or
  * the draft standing INSIDE its canvas's row. What these specs lock: one row per
  * canvas that remembers where in it you stood, the crumb row as the way back
- * (and its ‹n/m› through the board's order), the ＋新卡 menu re-categorizing
+ * (and its ‹n/m› through the board's order), the ＋ tile's kind re-categorizing
  * the one draft, the discard question on both × and ‹, the per-canvas view
  * memory, the eviction order when the strip fills up, and the stash that
  * survives a reload — including one written by the older card-row strip.
@@ -331,6 +331,9 @@ function makeBench(boards: CanvasBoard[] = [board()]): Bench {
 }
 
 /** The registry's own kind string (the chip's fallback text lives there). */
+/** The board's dashed new-card tile, named for the kind it starts (新增灵感卡片). */
+const NEW_TILE = /^新增.*卡片$/
+
 const CANVAS_KIND_PAGE = 'canvas'
 
 /** One drag: press, sweep, release, in the pad's screen box. */
@@ -404,11 +407,11 @@ describe('CanvasTab — the strip routes its rows', () => {
     // The canvas's name in the crumb is a way back too.
     fireEvent.click(within(screen.getByRole('navigation', { name: '所在位置' }))
       .getByRole('button', { name: '为什么人们不愿表达异议' }))
-    await screen.findByRole('button', { name: /新卡/, expanded: false })
+    await screen.findByRole('button', { name: NEW_TILE })
     expect(store.source.getSnapshot().tabs[0]?.at).toEqual({ kind: 'board' })
     await clickCard('会上没人开口')
     backToBoard()
-    await screen.findByRole('button', { name: /新卡/, expanded: false })
+    await screen.findByRole('button', { name: NEW_TILE })
   })
 
   it('steps through the board’s shown order, and hides the stepper for a lone card', async () => {
@@ -497,8 +500,10 @@ describe('CanvasTab — the draft row', () => {
    */
   async function pickCategory(label: string, cardText = '卡片 c_1'): Promise<void> {
     await screen.findByText(cardText)
-    fireEvent.click(screen.getByRole('button', { name: /新卡/, expanded: false }))
-    fireEvent.click(await screen.findByRole('button', { name: label }))
+    fireEvent.click(screen.getByRole('button', { name: NEW_TILE }))
+    const kind = await screen.findByRole('combobox', { name: '新卡的分类' })
+    const option = within(kind).getByRole('option', { name: label }) as HTMLOptionElement
+    fireEvent.change(kind, { target: { value: option.value } })
     fireEvent.click(await screen.findByRole('button', { name: '展开' }))
   }
 

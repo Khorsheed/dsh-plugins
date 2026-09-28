@@ -476,7 +476,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             <ModeSeg modes={FLOW_MODES} mode={draftMode} onMode={setMode} t={t} />
           </div>
         </div>
-        <div className={css.body}>
+        <div className={css.body} data-mode={draftMode === 'edit' ? 'edit' : undefined}>
           {draftMode === 'edit' ? (
             <BlockEditor
               t={t}

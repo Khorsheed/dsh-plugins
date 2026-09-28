@@ -38,6 +38,9 @@ const IMG_SRC = `attachment://${IMG_ID}?mediaType=image/png&bytes=3&width=2&heig
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
   zh[key].replace(/\{(\w+)\}/g, (match, name: string) => params?.[name] ?? match)) as CanvasTabProps['t']
 
+/** The board's dashed new-card tile, named for the kind it starts (新增灵感卡片). */
+const NEW_TILE = /^新增.*卡片$/
+
 /** One board fixture; cards land in array order. */
 function board(id = CANVAS_ID, cards: CanvasBoard['cards'] = [], overrides: Partial<CanvasBoard> = {}): CanvasBoard {
   return {
@@ -551,20 +554,19 @@ describe('CanvasTab — the category catalog (stage ⑤)', () => {
     })
   })
 
-  it('offers this board\'s own categories in the ＋新卡 menu', async () => {
+  it('offers this board\'s own categories in the new-card draft', async () => {
     const { mocks, props } = makeHarness({
       boards: [board(CANVAS_ID, [card('c_1')], { categories: catalog() })],
     })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: /新卡/, expanded: false }))
-    fireEvent.click(await screen.findByRole('button', { name: '反方观点' }))
-    // The pick opens the draft in place, already of that kind.
+    fireEvent.click(screen.getByRole('button', { name: NEW_TILE }))
+    // The draft opens in place; its kind picker holds this board's own rows.
     const kind = await screen.findByRole('combobox', { name: '新卡的分类' })
+    fireEvent.change(kind, { target: { value: custom.id } })
     expect(kind).toHaveProperty('value', custom.id)
     expect(mocks.openCardDraft).not.toHaveBeenCalled()
-    // The retired row appears neither in the menu nor in the draft's kinds.
-    expect(screen.queryByRole('button', { name: '文档' })).toBeNull()
+    // The retired row is not among the draft's kinds.
     expect(within(kind).queryByRole('option', { name: '文档' })).toBeNull()
   })
 })
@@ -577,8 +579,8 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     fireEvent.click(screen.getByText('卡片 c_1'))
     // The heading travels with it: the host freezes a chip's title at open time.
     expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_1', '卡片 c_1')
-    // Opening a tab is not a drill — the board is still here, ＋新卡 included.
-    await screen.findByRole('button', { name: /新卡/, expanded: false })
+    // Opening a tab is not a drill — the board is still here, ＋ tile included.
+    await screen.findByRole('button', { name: NEW_TILE })
     expect(screen.queryByRole('button', { name: /返回画布/ })).toBeNull()
   })
 
@@ -634,12 +636,12 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_old', '归档掉的旧卡')
   })
 
-  it('opens the ＋新卡 menu\'s pick as a draft in place, and 展开 hands it to the draft tab', async () => {
+  it('opens the ＋ tile as a draft in place, and 展开 hands it to the draft tab', async () => {
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: /新卡/, expanded: false }))
-    fireEvent.click(await screen.findByRole('button', { name: '问题' }))
+    fireEvent.click(screen.getByRole('button', { name: NEW_TILE }))
+    fireEvent.change(await screen.findByRole('combobox', { name: '新卡的分类' }), { target: { value: 'question' } })
     // The draft sits on the board beside the cards, not on a page of its own.
     const words = await screen.findByPlaceholderText(/写点什么/)
     screen.getByText('卡片 c_1')
@@ -653,7 +655,7 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     const { props } = makeHarness({ boards: [board(CANVAS_ID, [])] })
     render(<CanvasTab {...props} />)
     const tile = await screen.findByText('记下一条灵感、问题、共识或来源')
-    expect(tile.closest('button')?.textContent).toContain('新卡')
+    expect(tile.closest('button')?.textContent).toContain('新增灵感卡片')
     fireEvent.click(tile)
     await screen.findByPlaceholderText(/写点什么/)
   })
@@ -663,7 +665,7 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
     // The dashed tile at the end of the grid starts a card of the default kind.
-    fireEvent.click(screen.getAllByRole('button', { name: /新卡/ }).find(b => !b.hasAttribute('aria-expanded'))!)
+    fireEvent.click(screen.getByRole('button', { name: NEW_TILE }))
     const words = await screen.findByPlaceholderText(/写点什么/)
     // Esc leaves words alone; it only drops an empty draft.
     fireEvent.input(words, { target: { value: '会上其实有人想反对' } })
@@ -716,7 +718,7 @@ describe('CanvasTab — wide mode and read-only', () => {
     const { props } = makeHarness({ sessionId: 'none', boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    expect(screen.queryByRole('button', { name: /新卡/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: NEW_TILE })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '画布' }))
     // Read-only: the 新画布 row is not even offered.
     expect(screen.queryByRole('button', { name: /新画布/ })).toBeNull()
@@ -724,20 +726,6 @@ describe('CanvasTab — wide mode and read-only', () => {
 })
 
 describe('CanvasTab — round-4 dismissal, undo and the archived canvas', () => {
-  it('closes the ＋新卡 menu on Escape and on a pointer down outside it', async () => {
-    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
-    render(<CanvasTab {...props} />)
-    await screen.findByText('卡片 c_1')
-    const trigger = screen.getByRole('button', { name: /新卡/, expanded: false })
-    fireEvent.click(trigger)
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
-    fireEvent.click(trigger)
-    fireEvent.pointerDown(screen.getByText('卡片 c_1'))
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
-  })
-
   it('closes the category panel and the canvas switcher the same way', async () => {
     const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
@@ -772,7 +760,7 @@ describe('CanvasTab — round-4 dismissal, undo and the archived canvas', () => 
     await screen.findByText('卡片 c_1')
     const banner = screen.getByRole('status')
     expect(banner.textContent).toContain('已归档')
-    expect(screen.queryByRole('button', { name: /新卡/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: NEW_TILE })).toBeNull()
     expect(screen.queryByRole('checkbox', { name: '选择' })).toBeNull()
     fireEvent.click(within(banner).getByRole('button', { name: '恢复' }))
     await waitFor(() => {

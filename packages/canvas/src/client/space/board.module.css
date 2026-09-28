@@ -1021,7 +1021,7 @@
 
 /* The first cell of an empty board: a little taller, it is the whole page. */
 .newTile[data-empty] {
-  min-height: 120px;
+  min-height: 180px;
 }
 
 .newTileLabel {
@@ -1040,8 +1040,8 @@
 .draftTile {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  min-height: 84px;
+  gap: 8px;
+  min-height: 180px;
   border: 1px dashed var(--dsw-alias-label-caption);
   border-radius: 8px;
   padding: 9px 12px 10px;
@@ -1089,9 +1089,12 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* The words take whatever the cell has: a draft as tall as the cards around it,
+   not a one-line box floating at the top of an empty tile. */
 .draftWords {
+  flex: 1 1 auto;
   width: 100%;
-  min-height: 40px;
+  min-height: 96px;
   box-sizing: border-box;
   border: none;
   padding: 0;

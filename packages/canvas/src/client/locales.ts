@@ -55,6 +55,7 @@ export const zh = {
 
 
   'board.newCard': '新卡',
+  'board.newCardOf': '新增{kind}卡片',
   'board.newCardPlaceholder': '写点什么…',
   'board.filter.all': '全部',
   'board.empty': '空画布——从第一张卡开始',
@@ -369,6 +370,7 @@ export const en: Record<keyof typeof zh, string> = {
 
 
   'board.newCard': 'New card',
+  'board.newCardOf': 'New {kind} card',
   'board.newCardPlaceholder': 'Write something…',
   'board.filter.all': 'All',
   'board.empty': 'An empty board — start with the first card',

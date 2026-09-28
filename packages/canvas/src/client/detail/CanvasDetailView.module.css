@@ -326,6 +326,13 @@
   min-height: 60px;
 }
 
+/* The editor's column: the body passes the page's remaining height on to it. */
+.body[data-mode="edit"] {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .body[data-mode="split"] {
   display: grid;
   grid-template-columns: 1fr 1fr;

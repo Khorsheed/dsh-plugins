@@ -5,7 +5,11 @@
 .editor {
   display: flex;
   flex-direction: column;
-  flex: none;
+  /* The sheet takes the page's remaining height: writing a card is the page's
+     one job while it is open, and a strip-high box on a wide page read as an
+     afterthought (2026-09-28 review). */
+  flex: 1 0 auto;
+  min-height: 320px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
@@ -66,10 +70,26 @@
 
 .flow {
   position: relative;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px 16px;
+  gap: 12px;
+  /* A reading column on a wide page: the lines stop near 760px and the sheet
+     keeps its margins around them; a narrow dock just gets its gutter. */
+  padding-block: 20px 28px;
+  padding-inline: max(18px, calc((100% - 760px) / 2));
+}
+
+/* The last words block runs to the sheet's foot, so a click anywhere below the
+   content lands in it, the way a document's empty lower half does. */
+.flow > .text:last-child {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.flow > .text:last-child .words {
+  flex: 1 0 auto;
 }
 
 /* Dragging images over the flow: the sheet says it will take them, and one
@@ -109,8 +129,8 @@
   box-sizing: border-box;
   border: none;
   padding: 0;
-  font: var(--dsw-font-xs-13);
-  line-height: 1.75;
+  font: var(--dsw-font-s-14);
+  line-height: 1.8;
   background: transparent;
   color: var(--dsw-alias-label-primary);
   outline: none;

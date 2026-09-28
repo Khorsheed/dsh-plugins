@@ -54,7 +54,7 @@ export function DraftTile({ t, slot, kinds, labels, defaultKind, empty }: {
       >
         <span className={css.newTileLabel}>
           <IconPlusOutlineMedium size={14} />
-          {t('board.newCard')}
+          {t('board.newCardOf', { kind: labels.get(defaultKind) ?? defaultKind })}
         </span>
         {empty && <span className={css.newTileHint}>{t('board.empty')}</span>}
         {empty && <span className={css.newTileHint}>{t('board.emptyHint')}</span>}

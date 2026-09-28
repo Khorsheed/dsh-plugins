@@ -32,18 +32,18 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react'
 import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconArchiveOutlineMedium, IconFolderOpenOutlineMedium, IconPlusOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconFolderOpenOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasTabProps } from '../contract.ts'
 import {
-  enabledCategories, summarizeBoard,
+  summarizeBoard,
   type BoardCardStatus,
   type BoardLink, type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasStroke,
   type CanvasSummary, type CardCategoryId,
 } from '../../types.ts'
 import { withoutDrawLines } from '../../blocks.ts'
 import { cardNameOf } from '../../card-format.ts'
-import { categoryLabelMap, categoryLabelOf, kindIconOf } from '../category-label.ts'
+import { categoryLabelMap, categoryLabelOf } from '../category-label.ts'
 import { canvasErrorText } from '../error-text.ts'
 import { BoardView, shownCardsOf, type BoardActions } from '../space/BoardView.tsx'
 import type { NewCardSlot } from '../space/DraftTile.tsx'
@@ -54,14 +54,10 @@ import { ManuscriptList, ManuscriptView } from '../manuscript/ManuscriptView.tsx
 import { CanvasSwitcher } from './CanvasSwitcher.tsx'
 import { TabStrip, type StripTab } from './TabStrip.tsx'
 import { basenameOf, messageOf } from '../text.ts'
-import { useDismiss } from '../use-dismiss.ts'
 import { cardsQuoteOf, commentQuoteOf } from '../quote.ts'
 import { MoreMenu } from '../more-menu.tsx'
 import { ConfirmDelete, type DeleteAsk } from '../confirm-delete.tsx'
 import css from './CanvasTab.module.css'
-// The dropdown panel primitive lives with the board styles (the switcher's
-// own module — a copy here was dead CSS and the M3.1 topbar bug's source).
-import boardCss from '../space/board.module.css'
 
 /** Fallback for the workspaces hook a minimal composition may not provide. */
 const useNoWorkspaces = ((selector: (snapshot: { items: readonly [] }) => unknown) =>
@@ -139,7 +135,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
    * filter, the picked cards, the face and the picked wire as they were.
    */
   const [views, setViews] = useState<Readonly<Record<string, BoardViewMemory>>>({})
-  const [newCardMenu, setNewCardMenu] = useState(false)
   /** The board's in-place draft (the dashed tile turned card): which canvas, which kind. */
   const [inlineDraft, setInlineDraft] = useState<{ canvasId: string; kind: CardCategoryId } | null>(null)
   /** The one banner; `undo` makes it offer 撤销 (archiving is one click to take back). */
@@ -153,8 +148,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const [deleteAsk, setDeleteAsk] = useState<DeleteAsk | null>(null)
 
   const toastSeqRef = useRef(0)
-  const newCardRef = useRef<HTMLSpanElement | null>(null)
-  useDismiss(newCardRef, newCardMenu, () => { setNewCardMenu(false) })
   const openIdRef = useRef(openId)
   openIdRef.current = openId
 
@@ -818,62 +811,13 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         />
       ) : (
         <>
-          {/* The board row's own header: its name and counts, the ＋新卡 menu,
-              what is attached to it, and which face of it to look at. The NAME
+          {/* The board row's own header: its name and counts, what is attached to it, and which face of it to look at. The NAME
               is no longer a door — the strip above is where you move between
               canvases now — so it is text, not a pill. */}
           <header className={css.topbar}>
             <span className={css.boardTitle} title={openTitle}>{openTitle}</span>
             {openCount !== null && (
               <span className={css.boardCount}>{t('space.metaCards', { count: String(openCount) })}</span>
-            )}
-            {/* Gated on an OPEN canvas: a new card has nowhere to be saved with
-                none, and a silent dead button is worse than an absent one.
-                It sits beside the canvas's NAME because it acts on that canvas:
-                pinned to the far end of the row, on a wide dock it lands a
-                thousand pixels from the thing it adds to, and the first question
-                a newcomer asks here is exactly this one. */}
-            {!boardReadonly && openId !== null && (
-              <span className={css.newCardWrap} ref={newCardRef}>
-                <button
-                  type="button"
-                  className={css.actionButton}
-                  aria-expanded={newCardMenu}
-                  onClick={() => { setNewCardMenu(open => !open) }}
-                >
-                  <IconPlusOutlineMedium size={12} />
-                  {t('board.newCard')}
-                </button>
-                {newCardMenu && (
-                  <div className={boardCss.switcherMenu} style={{ width: 160, left: 0, right: 'auto', padding: 4 }}>
-                    {(openBoard === null ? [] : enabledCategories(openBoard.board.categories)).map(category => {
-                      const KindIcon = kindIconOf(category.id)
-                      const label = categoryLabelOf(category, t)
-                      return (
-                        <button
-                          key={category.id}
-                          type="button"
-                          className={css.menuRow}
-                          onClick={() => {
-                            setNewCardMenu(false)
-                            // The new card opens in place on the board, as the
-                            // dashed tile does: back to the 卡板 face, the draft
-                            // already of the picked kind.
-                            backToBoard(openId)
-                            setView('board')
-                            setInlineDraft({ canvasId: openId, kind: category.id })
-                          }}
-                        >
-                          {KindIcon === undefined
-                            ? <span className={css.menuIconSlot} aria-hidden="true" />
-                            : <KindIcon size={12} />}
-                          {label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </span>
             )}
             {openBoard?.board.attachedWorkspaces.map(workspace => (
               <span key={workspace} className={css.attachChip} title={workspace}>
