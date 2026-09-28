@@ -3,7 +3,7 @@
 ## 2026-09-28 —— dev 瘦身为纯开发模式：基础体验插件归 dsh-basic
 
 - **成员结构调整**：13 个基础体验成员（message-tools、message-timeline、session-title-edit、quote、file-preview、local-files、taskpilot、context-guard、inline-html-render、capability-catalog、ui-shortcuts、whalesong、mobile）移出本包——dev 从此只含开发模式专属的 8 个插件（local-agent 家族 6 + worktrees + room），成员计数 22 → 9（8 开发 + ankh-guard 运维装置，restart 脚本的守卫通道依赖它）。基础体验插件按需从 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 单独安装（或 `@khorsheed/dsh-bundle-conversation-toolbox` 元包一次装齐常用会话组件）。
-- README 同步：preset 节改为「宿主版本 × 安装规格」表（≥ 0.1.7-rc.2 推荐 `@khorsheed/dsh-presets` preset-as-a-bundle；0.1.5 线仍由脚本目录式安装），更新/卸载/自定义预设节并入文末 Agent 指南或删除。
+- README 同步：preset 节改为「宿主版本 × 安装规格」表（≥ 0.1.7-rc.2 推荐 `@khorsheed/dsh-presets` preset-as-a-bundle——本波随 npm 首上架 0.1.1;0.1.5 线仍由脚本目录式安装），更新/卸载/自定义预设节并入文末 Agent 指南或删除。
 
 ## 2026-09-28 —— room-tool 回并 room 的 `./tool` 子路径
 

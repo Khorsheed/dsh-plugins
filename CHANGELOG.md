@@ -2,6 +2,13 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— 2026-09-28 发布波：presets 首上架 + 合并四包 + 三个 fix 包
+
+- **新发**：`@khorsheed/dsh-presets` 0.1.1——三个社区 preset(开发/评测/写作）的声明式 bundle 包（preset as a bundle,宿主 ≥ 0.1.7-rc.1;dsh-dev 的 preset 安装表已指向它)
+- **合并包发出**:room 0.2.0(room-tool 折入 `./tool`)、file-preview 0.4.0(ui-file-preview 折入)、worktrees 0.3.0(worktrees-tool 折入 `./tool`)、ankh-guard 0.4.0(preset 可用性审计)——四个退役旧名(dsh-room-tool / dsh-client-ui-file-preview / dsh-worktrees-tool / dsh-client-ui-content-preview)随本波 `npm deprecate`
+- **fix 包**:taskpilot 0.3.3(job id 整词匹配 + 轨迹折叠线缆)、session-title-edit 0.2.4(双 DOM 线标题定位)、mobile 0.1.2(public tunnel 恢复 + QR 可达性门禁)——三个在 rc.2 波后合入但未 bump 的修复
+- **dev pack 瘦身**(profiles/dev,非 npm 包):移除 13 个 basic 体验成员,只含 8 个开发插件 + ankh-guard 装置;基础体验插件归 dsh-basic 按需安装
+
 ## Unreleased —— 2026-09-28 preset 错位事故收尾：四层防错位闸 + room 工具行折回核心包
 
 - **背景**：3080 的 dev preset 因合并边界的版本错位崩坏（preset 行 `@khorsheed/dsh-worktrees/tool` 指向尚未提供该子路径的旧安装；boot 全绿但 preset 坏、会话 resume 报 `never started`）——preset 行挂在注册表 standing scope 上，boot 干净从不等于 preset 可用
