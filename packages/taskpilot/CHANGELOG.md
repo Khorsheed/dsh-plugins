@@ -1,5 +1,10 @@
 # 变更记录
 
+## 0.3.3（2026-09-28）
+
+- **job id 按整词匹配**：bash-1 不再认领 bash-19/bash-12 的 ack 与通知
+- **轨迹折叠改读当前会话日志线缆**：后台任务的起始行与输出不再丢失
+
 ## 0.3.2（2026-09-27）
 
 - **胶囊只列模型知道的后台作业，前台 bash 记录不再闪烁或漏显**：宿主 tool-bash 把每次调用（含前台）都注册成 job、settle 即移除，JobSpec/JobView 又没有前后台标记——前台 bash 的胶囊随命令结束一起闪没，在 job controller 100ms 合并窗口内完成的命令一帧都没显示过。新增 announced-jobs 折叠：从一页会话历史折出 background/promote ack 的 id 集合（后台 ack 只在配对调用带 `run_in_background: true` 时计入，防命令输出冒充；promote ack 无配对也计入，假阳性只多显示一行），只有被判为前台且无宣告的 bash 行被隐藏；缺 window 一律 fail-open，dock 挂载先武装判定、出现未宣告 id 时重读，最多 5s 宽限
