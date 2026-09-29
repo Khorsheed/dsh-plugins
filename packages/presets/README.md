@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | `dev` | 开发模式 | 10 | 官方部分以 rc.1 `standard.patch.yml` 全文重基（0.1.5 复制件已漂移：`workflow-worker-thread` 改名 `workflow-ptc`、`tool-ralph` 上游默认停用、新增停用的 `tool-plugin-manager` 行），末尾逐字追加现行 dev 的六条社区工具行（3× local-agent 委派 + worktrees/room/typesafe）。 |
 | `dsh-eval` | 评测模式 | 0 | `profiles/web-eval/presets/eval` 逐行迁移：无 Shell/无工作流的只读+委派组合（冻结决策 12），官方包名对照 rc.1 名册**零改名**；附 `datasets-tool`（`tools: authoring`）与 `eval-tool`（`tools: all`）两条伴生行。 |
-| `dsh-writing` | 写作模式 | — | `profiles/web/presets/dsh-writing` 逐行迁移（`tool-ralph` 保持启用是本预设自己的决定）；唯一改名 `workflow-worker-thread` → `workflow-ptc`；附 `canvas/agent` 行。2026-09-29 写作场景调优：中文写作者 persona（平实文风 + 全角标点规则）、移除 goal 两行、plan-mode 段中译——本文件持有的提示词段全部单一中文。 |
+| `dsh-writing` | 写作模式 | — | `profiles/web/presets/dsh-writing` 逐行迁移（`tool-ralph` 保持启用是本预设自己的决定）；唯一改名 `workflow-worker-thread` → `workflow-ptc`；附 `canvas/agent` 行。2026-09-29 写作场景调优：作家 persona（平实文风 + 标点随输出语言规则，覆盖中英文写作）、移除 goal 两行——本文件持有的提示词段全部单一英文（宿主提示词本身的语言）。 |
 
 展示字段（`name`/`description`/`order`）来自各旧 `preset.yml`，描述文字保持中文原文。
 

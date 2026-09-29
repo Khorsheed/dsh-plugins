@@ -44,12 +44,12 @@ interface PromptSections {
  * behavioral rule (ghost-card flow, the no-substitution rule, comment style,
  * manuscript baseVersion, the no-canvas fallback) lives in the tool
  * descriptions themselves, which the model reads with the catalog — repeating
- * them here just spends prompt tokens twice (2026-09-29 slimming). Chinese,
- * matching the tool descriptions' own voice; the canvas is a writing-domain
- * surface (on prod its tools mount only in the dsh-writing preset).
+ * them here just spends prompt tokens twice (2026-09-29 slimming). English,
+ * the host prompt's own voice; the tool descriptions stay Chinese (the
+ * canvas's writing-domain voice) — sections and catalogs are separate layers.
  */
 const CANVAS_TOOLS_GUIDANCE =
-  '画布相关的操作用 canvas_* 工具，作用于右栏当前打开的画布；没打开画布时工具会说明，按它的指引请用户打开即可。'
+  'The canvas_* tools act on the canvas currently open in the right-sidebar tab; when no canvas is open the tool says so — ask the user to open one.'
 
 /**
  * Composition entry body: register the two canvas tools and their guidance

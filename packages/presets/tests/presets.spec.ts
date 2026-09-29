@@ -104,11 +104,12 @@ describe('cordis.patch.yml', () => {
     expect(block).toContain('          - id: canvas-agent\n')
     expect(block).toContain("            name: '@khorsheed/dsh-canvas/agent'\n")
     // 2026-09-29 writing-scene tuning: goal mode is a coding workflow and stays
-    // out; the persona is the Chinese writer identity with the punctuation rule.
+    // out; the persona is the writer identity with the punctuation rule, in
+    // single-language English (the host prompt's own voice).
     expect(block).not.toContain('command-goal')
     expect(block).not.toContain('tool-goal')
-    expect(block).toContain('你是一名中文写作者')
-    expect(block).toContain('标点跟着输出语言走')
+    expect(block).toContain('You are a writer')
+    expect(block).toContain('Punctuation follows the output language')
     expect(block).not.toContain('coding agent powered by')
   })
 

@@ -13,10 +13,10 @@
 #                       all still exist, zero renames.
 #   preset-dsh-writing  写作模式  profiles/web/presets/dsh-writing migrated; the
 #                       only rename is workflow-worker-thread → workflow-ptc.
-#                       Tuned for the writing scene 2026-09-29: Chinese writer
-#                       persona + style/punctuation rules, goal rows removed,
-#                       plan-mode section rendered in Chinese — every prompt
-#                       section this file owns is single-language Chinese.
+#                       Tuned for the writing scene 2026-09-29: writer persona
+#                       + style/punctuation rules, goal rows removed — every
+#                       prompt section this file owns is single-language
+#                       English (the host prompt's own voice).
 #
 # The display fields (name/description/order) come from each legacy preset.yml.
 # Every `name:` value is quoted (@ is YAML-reserved; 'cordis:group' follows the
@@ -430,18 +430,19 @@
             config:
               tools: all            # 本包只注册四个读工具，all 即四个读工具
 
-    # The `dsh-writing` agent preset: the Chinese-writing workbench, mounted once
-    # per process. Migrated from profiles/web/presets/dsh-writing (the 0.1.5
+    # The `dsh-writing` agent preset: the writing workbench, mounted once per
+    # process. Migrated from profiles/web/presets/dsh-writing (the 0.1.5
     # directory preset; the only rename was workflow-worker-thread →
     # workflow-ptc), then tuned for the writing scene on 2026-09-29:
-    #   - the persona is a Chinese writer identity carrying the plain-language
-    #     style rules and the punctuation rule, replacing the coding-agent one;
+    #   - the persona is a writer identity carrying the plain-language style
+    #     rules and the punctuation rule, replacing the coding-agent one;
     #   - the goal rows are gone (autonomous goal-pursuit is a coding workflow
     #     the writing scene never drives);
-    #   - every prompt section this file owns is single-language Chinese —
-    #     mixed-language prose measurably hurts the model's output voice, and
-    #     the residual English (tool catalogs, official sections this file does
-    #     not own) is outside our reach here.
+    #   - every prompt section this file owns is single-language ENGLISH, the
+    #     host prompt's own voice (official sections and tool catalogs are
+    #     English regardless); the identity is "writer", not "Chinese writer" —
+    #     English pieces are in scope, and the style/punctuation rules are
+    #     written relative to the output language.
     #
     # This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
     # standing scope; every session naming it joins by scope parentage, so the
@@ -456,25 +457,27 @@
       config:
         id: dsh-writing
         name: '写作模式'
-        description: 中文写作工作台：写作身份与文风约束、文件与网页检索、Skills、计划模式、子代理，以及按会话授予的画布协作工具。
+        description: 写作工作台：作家身份与文风约束、文件与网页检索、Skills、计划模式、子代理，以及按会话授予的画布协作工具。
         plugins:
           # ── identity ────────────────────────────────────────────────────────────────
 
           # The preset's own persona, shadowing the deployment default for this agent.
           # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
-          # The prefix carries the writing-scene rules: plain modern Chinese for a
-          # general reader (no coined words), and punctuation following the output
-          # language (full-width in Chinese sentences, never a half-width comma there).
+          # The prefix carries the writing-scene rules: a plain, restrained style for a
+          # general reader (never coin words; the common vocabulary OF THE OUTPUT
+          # LANGUAGE), and punctuation following that language (full-width marks in
+          # Chinese text, never a half-width comma or period there). "Writer", not
+          # "Chinese writer": English pieces are in scope.
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: 你的工作目录是 {{cwd}}。
+              suffix: Your working directory is {{cwd}}.
               prefix: >-
-                你是一名中文写作者，由 {{model}} 模型驱动。
+                You are a writer, powered by the {{model}} model.
 
-                默认面向没有行业背景的普通读者，目标是让内容清楚、自然、好懂。风格平实、具体、直接、克制：清楚优先于高级感。使用现代汉语常用词，优先选择日常对话、正规新闻、教科书里常见的表达；禁止生造词。
+                Write for general readers with no industry background; the goal is text that is clear, natural, and easy to follow. Keep the style plain, specific, direct, and restrained — clarity over cleverness. Use the common vocabulary of the language you are writing in — the words of everyday conversation, journalism, and textbooks — and never coin words.
 
-                标点跟着输出语言走：写中文用全角标点（，。；：？！“”‘’（）——……），写英文用半角标点；中文句子里不要出现英文逗号、句号。
+                Punctuation follows the output language: full-width marks (，。；：？！“”‘’（）——……) in Chinese text, half-width marks in English text; a Chinese sentence never takes a half-width comma or period.
 
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
@@ -545,10 +548,10 @@
           # ── plan mode ───────────────────────────────────────────────────────────────
 
           # Plan state is per-agent by nature, so an entry-local realm is not a
-          # workaround here — it is the correct lifetime. The section text is the
-          # faithful Chinese rendering of the official plan-mode rules (this preset
-          # keeps every prompt section it owns single-language Chinese, 2026-09-29);
-          # tool identifiers stay verbatim.
+          # workaround here — it is the correct lifetime. The section text stays the
+          # official English: this preset's sections are single-language English (the
+          # host prompt's own voice), and tracking the official text verbatim keeps
+          # upstream improvements flowing.
           - id: planning
             name: 'cordis:group'
             group: true
@@ -559,17 +562,17 @@
                 name: '@deepseek-ai/dsh-plan-mode'
                 config:
                   section: |
-                        你正处于计划模式。在 exit_plan_mode 成功、或用户切换会话模式之前，一直留在计划模式。「去实现什么」的祈使句意味着规划这个实现，而不是执行它。用户在对话里的同意——包括回答你提出的问题——不构成批准，也不会结束计划模式；把确认的决定并入计划，通过 exit_plan_mode 提交。
+                        You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
 
-                        先探索。用非修改性的读取、搜索、静态分析和检查，让计划扎根于真实的仓库。不要编辑或写入文件、不要改配置、不要运行会改写已跟踪文件的格式化或代码生成、不要提交，也不要以任何其他方式执行计划。优先复用现有函数与模式，不造新机制。
+                        Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
 
-                        工具目录跨模式保持不变，以保证请求缓存稳定。这些计划模式规则覆盖后续任何暗示可以使用修改类工具的工具描述或指引；那些工具仍然列在目录里，只为保持目录不变。不要用 todo_write 跟踪这个规划阶段：它跟踪的是计划获批后的实现，而计划本身属于 exit_plan_mode。
+                        The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
 
-                        能查证的事实就自己查证。ask_user_question 只用于只能由用户决定的选择、或查证无法回答的实质歧义。能自己找到答案时，不要问用户代码在哪里、现状如何运作。
+                        Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
 
-                        让计划决策完备：写明目标与成功标准；按子系统分组实现改动；指出公开 API、schema 与数据流的变化；覆盖边界情况、失败模式、测试、验收标准和显式假设。简洁到可以审阅，详细到另一个工程师无需再做设计决策即可实现。
+                        Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
 
-                        准备好后，调用 exit_plan_mode，附上以 # 标题开头的完整计划 markdown。让 exit_plan_mode 成为该回复中唯一且最后的工具调用：它把计划呈交批准，实现在获批后的后续步骤才开始。不要把最终计划作为普通回复贴出，也不要用散文或 ask_user_question 问「我可以开始吗」。审阅驳回时，吸收反馈后再次提交。如果审阅通道不可用或已中止，留在计划模式，请用户手动切换模式；不要自行开始实现。
+                        When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
 
           # ── compaction ──────────────────────────────────────────────────────────────
 

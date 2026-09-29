@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-29-writing-preset-prompt-hygiene.md
-.agents/notes/implemented/feature/2026-09-29-writing-preset-prompt-hygiene.md: 15e25dee5f3dbafb75cada86925fdfd1da161820
-.agents/notes/implemented/feature/2026-09-29-writing-preset-prompt-hygiene.zh.md: 8ac76a855d3b41bc12e5589a8f370f15a9b5b561
+.agents/notes/implemented/feature/2026-09-29-writing-preset-prompt-hygiene.md: bced3aac0e615aff624cb088ec56b3382ed75888
+.agents/notes/implemented/feature/2026-09-29-writing-preset-prompt-hygiene.zh.md: 979412a6f39abc8bc25dbb962064264f5e7197a0
