@@ -39,14 +39,13 @@
 
 3080 只收 tarball 的理由:profile 是共享状态,`link:` 会让任何开发者构建进 `lib/` 的在制品随下一次重启悄悄上线(真实事故)。"大致稳定"是进 3080 的门槛,"跑得顺"是上 npm 的门槛。
 
-### 3080 的 preset 名册:正本在 git,名册是卸出物
+### 3080 的 preset 名册：正本是 packages/presets 的声明式 bundle 行
 
-`$DSH_HOME/.agent-presets` 的名册**无缓存**(每次 `list()` 重读文件系统,改完即生效不用重启),也因此是谁都能手改的部署资产——2026-09-17 dev preset 本地补挂评测三行、漂移进生产。规则:
+0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是 `@khorsheed/dsh-presets` bundle patch 里的声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。三个 preset（dev / dsh-eval / dsh-writing）的唯一事实源是 `packages/presets/cordis.patch.yml`；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/presets` 部署（重启生效；存量会话的 preset 在建会话时已锁定，不受影响）。
 
-- 3080 名册里 prod 拥有的 preset 以 git 正本为准:`dsh-writing` 正本在 `profiles/web/presets/`;`dsh-eval` 的组合跟随 web-eval pack 的 eval preset;`dev` 归 dev pack 的 install/update 脚本。
-- 同步动作只有一个:`DSH_HOME=~/.dsh-official sh profiles/web/scripts/sync-presets.sh`(幂等、先备份、名册即时生效;存量会话的 preset 建会话时锁定,不受影响)。
-- 手改名册是允许的调试手段,但改动必须立即回流正本,否则下次 sync 覆盖回来。
-- 插件 UI 的 preset 自隐判据读的就是名册组合——名册漂移 = 可见性漂移,见 [plugin-visibility.md](plugin-visibility.md)。
+历史：目录正本 + `sync-presets.sh` 的同步制已于 2026-09-24 迁移进 bundle(见 note `2026-09-24-community-presets-declarative-bundle`),`profiles/web/` 目录已于 2026-09-30 删除。
+
+- 插件 UI 的 preset 自隐判据读的是组合里的行——组合漂移 = 可见性漂移，见 [plugin-visibility.md](plugin-visibility.md)。
 
 ## 进 3080 的门禁清单(每次交付必过)
 
