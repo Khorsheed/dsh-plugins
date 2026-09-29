@@ -94,7 +94,7 @@ describe('cordis.patch.yml', () => {
     expect(block).toContain('            tools: all')
   })
 
-  it('dsh-writing keeps its 0.1.5 composition with only the workflow-ptc rename', () => {
+  it('dsh-writing keeps the 0.1.5 composition minus the goal rows, with the 2026-09-29 writing-scene tuning', () => {
     const block = presetBlock(patch, 'dsh-writing')
     expect(block).toContain('          - id: workflow-ptc\n')
     expect(block).toContain("            name: '@deepseek-ai/dsh-workflow-ptc'\n")
@@ -103,6 +103,13 @@ describe('cordis.patch.yml', () => {
     expect(block).toMatch(/ {14}- id: tool-ralph\n {16}name: '@deepseek-ai\/dsh-tool-ralph'\n {16}config:/)
     expect(block).toContain('          - id: canvas-agent\n')
     expect(block).toContain("            name: '@khorsheed/dsh-canvas/agent'\n")
+    // 2026-09-29 writing-scene tuning: goal mode is a coding workflow and stays
+    // out; the persona is the Chinese writer identity with the punctuation rule.
+    expect(block).not.toContain('command-goal')
+    expect(block).not.toContain('tool-goal')
+    expect(block).toContain('你是一名中文写作者')
+    expect(block).toContain('标点跟着输出语言走')
+    expect(block).not.toContain('coding agent powered by')
   })
 
   it('references no community package outside dsh.references', () => {
