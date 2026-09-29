@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-bundle-conversation-toolbox",
   "description": "Family bundle 会话工具箱: message-tools, message-timeline, session-title-edit, quote, inline-html-render, context-guard and taskpilot in one install. Thin meta package: a patch carrying the members' canonical rows, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publishConfig": {
     "access": "public"
   },

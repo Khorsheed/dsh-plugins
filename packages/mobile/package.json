@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-mobile",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Removable mobile presentation and iOS bridge for DeepSeek Harness.",
   "type": "module",
   "license": "MIT",

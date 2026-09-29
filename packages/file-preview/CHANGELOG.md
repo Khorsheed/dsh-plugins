@@ -1,5 +1,10 @@
 # 变更记录
 
+## 0.4.1（2026-09-30）
+
+- **适配宿主 0.2.0 的 `runNativeCommand` 第四参**（`'hidden' | 'visible'`，Windows 启动可见性，其余平台忽略——0.2.0 起必填）：GUI 启动器（`open -a`、`open -R`、`explorer /select`、nautilus/dolphin/nemo `--select`）传 `'visible'`，wslpath 翻译工具传 `'hidden'`
+- 加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0
+
 ## 0.4.0（2026-09-27）
 
 - **BREAKING（包结构）**：`@khorsheed/dsh-client-ui-file-preview` 并入本包——宿主 Remote 与浏览器半（「会话产物」右栏 tab、回合变更卡片、详情页）合并为一个包、一条 loader 行（id 仍为 `file-preview`，浏览器半经 `dsh.client` 发现，message-tools / taskpilot 同形态）。迁移：卸载旧界面包并删除组合里的 `ui-file-preview` 行；针对旧行 id 的 `disabled` 覆盖不再匹配，需要的话改写为 `file-preview`。旧包名已在 npm deprecate。

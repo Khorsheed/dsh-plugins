@@ -1,5 +1,14 @@
 # 变更记录
 
+## 0.4.1（2026-09-30）
+
+修复 2026-09-29/30 的 0.2.0-rc.2 切换事故暴露的三个缺口：
+
+- **guardInvocation() 改用绝对 execPath**：build/source 两种形态均用绝对 `process.execPath`——裸 `node` 在 launcher 的 PATH 下找不到
+- **awaiting-user 收据上的裸 supervise 改为泊驻**：占用 pidfile、不拉起进程、消费 abort/restore 控制标记——不再直接退出把事务楔死在没有活体消费者的状态；`supervise --cutover-id` 释放泊驻并恢复；拒绝消息打印确切可执行的命令
+- **失败 boot 即使日志为空也镜像 attempt 日志**（「produced no output」本身就是信号）；`reconfigure`/`schedule-exit`/`supervise` 新增 `--boot-timeout-ms`（穿到 `WD_BOOT_TIMEOUT`）
+- 加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0
+
 ## 0.3.2（2026-09-27）
 
 适配宿主 0.1.7-rc.2 线：verifiedHost 前移至 0.1.7-rc.2（3080 生产实证线随宿主基线切到 rc.2）；rc.1→rc.2 对本包无破坏性变更（逐类清点见 [Agent Note](../../.agents/notes/implemented/architecture/2026-09-27-host-017-rc2-breaking-changes.md)），全量构建+测试双绿。

@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-bundle-local-agent",
   "description": "Family bundle 本地多Agent: the local-agent core plus the four delegation providers (kimi / codex / claude-code / dsh) in one install. Thin meta package: a patch carrying the members' canonical rows, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publishConfig": {
     "access": "public"
   },

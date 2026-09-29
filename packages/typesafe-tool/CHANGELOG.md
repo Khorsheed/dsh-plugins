@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.1.2（2026-09-30）
+
+无功能变更。加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0（0.2.0 的兼容闸会禁用 peer 区间不覆盖宿主版本的已装插件）。
+
 ## 0.1.1（2026-09-27）
 
 - **修复 rc.1 挂载顺序下工具行静默惰死**：rc.1 的 preset registry 在自身 apply 时激活 standing scope，早于 profile 靠后 bundle 行的 core 提供；apply 里的一次性 `ctx.get('typesafe')` 探测看到 ABSENT 后提前返回，行已完成、再不会重跑——`typesafe_judge` 在所有 preset 里静默失效（官方插件清单仍显示已启用）。改为包级 `inject` 声明（`@khorsheed/dsh-typesafe` 核心服务）：行 pending 至 core 提供再激活（registry 审计展示 waiting 状态）；apply 内 `ctx.get` 守卫留作防御性直调路径

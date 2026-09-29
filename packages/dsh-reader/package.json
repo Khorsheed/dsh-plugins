@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-reader",
   "description": "Link reader tab: RSS/Atom subscriptions plus pasted article links, a card feed with a readable detail view, host-side fetch and daily refresh over a Typert Remote data face",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publishConfig": {
     "access": "public"
   },

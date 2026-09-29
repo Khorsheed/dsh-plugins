@@ -1,5 +1,10 @@
 # 变更记录
 
+## 0.2.4（2026-09-30）
+
+- **设置面直接调用 schemastery 的类型化 `.volatile()`**：0.2.0 开发线解析到 schemastery 3.18.4，其 `Schema` 已声明 `volatile()`——手写的 `VolatileCapable` 强转探测不再类型重叠（TS2352）。运行期双线行为不变：探测在 0.1.5 的 schemastery 3.18.2（无 `volatile` 方法）上仍回落到普通字段
+- 加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0
+
 ## 0.2.3（2026-09-27）
 
 适配宿主 0.1.7-rc.2:官方自带快捷键系统(`dsh-client-shortcuts` + 面板 bundle)与本包在三个名字平面上撞车,改为按组合环境分双臂运行。

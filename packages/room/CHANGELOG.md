@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.2.1（2026-09-30）
+
+无功能变更。加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0（0.2.0 的兼容闸会禁用 peer 区间不覆盖宿主版本的已装插件）。
+
 ## 0.2.0（2026-09-28）
 
 - **BREAKING（包结构）**：伴生包 `@khorsheed/dsh-room-tool` 回并进本包——模型工具行改由本包的 `./tool` 子路径导出承载（preset 引 `name: '@khorsheed/dsh-room/tool'`，行 id 仍为 `room-tool`，preset 组合状态不受影响；worktrees 0.3.0 同款回并，canvas `./agent` 先例）。迁移：preset 的 `agent.cordis.yml` 里把 `name: '@khorsheed/dsh-room-tool'` 改为 `name: '@khorsheed/dsh-room/tool'`，并卸载旧伴生包（旧 npm 名将在发布波 deprecate）。`./tool` 的导出内容从工具定义工厂变为可直接挂载的组合行（`name` / `inject = ['room']` / `apply`）；工厂退到内部模块 `./tool-definition.ts`（不进 exports 面）。

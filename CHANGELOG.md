@@ -2,6 +2,13 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— 2026-09-30 发布波：宿主 0.2.0 兼容闸适配，28 包暂存 + ankh-guard 打包待发
+
+- **背景**：宿主 0.2.0 带兼容闸——peer 区间不覆盖宿主版本的已装插件会被禁用；全仓 `@deepseek-ai/dsh-*` peer 区间已加宽（`|| ^0.2.0-rc.1`），本波把 29 个已发布包的版本线全部前移（28 包暂存；ankh-guard 因 3080 部署验收在途只打包不暂存，待验收后单独补发）
+- **实质变更七包**：presets 0.2.0（dsh-writing preset 写作场景重调——写作者 persona、文风/标点规则随身、goal 行移出、提示段落统一英文书写）、dsh-reader 0.3.0（CORP 拦截图经宿主侧 `fetchImage` 救回）、ankh-guard 0.4.1（guardInvocation 绝对 execPath、awaiting-user 泊驻、`--boot-timeout-ms`）、file-preview 0.4.1（`runNativeCommand` 显式 window 参数适配 0.2.0）、context-guard 0.2.4 / ui-shortcuts 0.2.4 / capability-catalog 0.1.97（设置面直接调用类型化 schemastery `.volatile()`）
+- **纯区间重发（15 包 patch，无行为变更）**：bundle-conversation-toolbox 0.1.2、bundle-local-agent 0.1.2、capture 0.1.2、inline-html-render 0.1.15、local-files 0.1.2、message-timeline 0.2.4、client-message-tools 0.3.3、mobile 0.1.3、quote 0.1.2、room 0.2.1、client-session-title-edit 0.2.5、taskpilot 0.3.4、typesafe 0.1.2、typesafe-tool 0.1.2、whalesong 0.2.4
+- **local-agent 家族七包同版 0.1.0-rc.8**：按依赖序暂存 core → tool-subagent / dsh-headless → providers（kimi / codex / claude-code / dsh）
+
 ## Unreleased —— 2026-09-28 发布波：presets 首上架 + 合并四包 + 三个 fix 包
 
 - **新发**：`@khorsheed/dsh-presets` 0.1.1——三个社区 preset(开发/评测/写作）的声明式 bundle 包（preset as a bundle,宿主 ≥ 0.1.7-rc.1;dsh-dev 的 preset 安装表已指向它)
