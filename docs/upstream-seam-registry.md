@@ -45,7 +45,7 @@
 - **需求**：社区仓库能独立生成 `lib/typert.*`(Remote 客户端/宿主产物）。
 - **现状绕行**：构建放在官方 checkout 测试位跑（dsh-plugins 的 `build/vitest.ts` 与 gen-typert 已按此搭好）;file-preview 迁移提案里的决策点。
 - **退役条件**：官方把生成器作为可独立运行的包发布。
-- **状态**：绕行中。
+- **状态**：绕行中。**2026-09-29 补充**：`@deepseek-ai/dsh-typert-generator` 已上 npm（0.1.7-rc.2 起 publishConfig public，0.2.0-rc.1 在线，无 bin、库/tsdown 插件形态）——但发布 ≠ 可独立运行：分析器仍 monorepo 耦合（Remote 标记识别与 merged-interface 归属要求所有贡献包是生成器 root 下注册的 workspace 源码包，npm 安装副本不满足，见 `scripts/gen-typert.mts` 头注）。退役条件按"可独立运行"解读，不成立，overlay 绕行保留。
 
 ### S6. 官方包 scope 不可发布 → 打包改名的正确姿势
 
@@ -92,7 +92,8 @@
   3. 验证必须用 harness 自己的 `scanZstdFrames`/`decompressZstdFrame`(`packages/session/session-persistence-jsonl/src/zstd.ts`)跑一遍，只验明文 seq 连续性不够(第一版修复就栽在这:内容对了、帧结构错了);
   4. `session.list` 是每请求现扫，修复文件**不需要重启实例**即可生效。
 - **退役条件**:官方恢复逻辑在写伪中断块前检测 seq 冲突并和解(或不写);`sessionPersistence` 的 list/read 对单文件损坏降级为跳过 + 警告。落地后删除本条绕行说明， quarantine 目录里的坏文件样本可留作回归素材。
-- **状态**:绕行中(未上报;修复手法已在本条固化)。另:ankh-guard 的重启只是 SIGTERM 触发器，官方关机路径(`fiber.dispose()`,5s 宽限)不在途 turn 结算——任何重启方式在工具调用进行中都会产生同样的撕裂,与 guard 无关;guard 侧可选增强是重启前查"静默窗口"(无活跃 turn 才 schedule-exit),已转 guard owner 评估。
+- **官方落地（≤0.1.7-rc.2，两臂都已就位，2026-09-29 核对）**：(a) 恢复由写句柄持有、closers 对着物理有效的持久化前缀计算（`packages/core/agent-loop/src/index.ts:855`），撕裂尾帧由写路径在首次新 append 前落盘重写（session-persistence README:61）；(b) `listArtifacts` 对 `SessionFormatUnsupportedError`/`SessionPersistenceCorruptionError` 逐文件 `continue`（session-persistence-jsonl/src/index.ts:1070）。0.1.7-rc.2 与 0.2.0-rc.1 之间这些文件零 diff——落地早于本波。手工修复 runbook 留作事故参考，quarantine 样本留作回归素材。
+- **状态**:已退役（≤0.1.7-rc.2）。另:ankh-guard 的重启只是 SIGTERM 触发器，官方关机路径(`fiber.dispose()`,5s 宽限)不在途 turn 结算——任何重启方式在工具调用进行中都会产生同样的撕裂,与 guard 无关;guard 侧可选增强是重启前查"静默窗口"(无活跃 turn 才 schedule-exit),已转 guard owner 评估。0.2.0-rc.1 新增 `ToolCallRecovery`（session/src/repair.ts）：失败 step 在 `step/end` 前补合成错误 `tool/result`——事件流消费方（file-preview fold / message-tools / taskpilot）需实测容忍。
 
 ### S12. 恢复被撤回的助手文本无法保持 assistant role（@khorsheed/dsh-client-message-tools）
 
@@ -161,3 +162,4 @@
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。
 - 每次官方升级：逐条核对"退役条件"是否已满足（S1 的核对清单可以直接抄进升级 checklist)。
 - 2026-09-15 全量核对（`0.1.5-rc.1 → 0.1.6-alpha.1`，区间约 804 commits）：S12 部分落地（`registerMessageProjection`），转待实施；S2/S3/S4/S8/S10/S11/S13/S14/S15 均未落地，绕行保留；S5 维持（npm 生成器 exports 无变化，monorepo 耦合结论不变）。适配波次见提案 `proposals/active/2026-09-15-host-016-adaptation.md`。
+- 2026-09-29 全量核对（`0.1.7-rc.2 → 0.2.0-rc.1`，区间 261 commits）：**S11 已退役**（两臂落地均早于 0.1.7-rc.2，见条目）；S5 生成器已上 npm 但仍 monorepo 耦合，不退役；S2/S3/S4/S8/S10/S12/S13/S14/S15/S17/S18 与 meta-pack reconcile、browser-auth（cookie 仍无 `Secure`、`--host 0.0.0.0` 仍拒）均未落地，绕行保留。S3/S4 注意：事件已在此之前改名 `tool/ptc-dispatch`（payload 未变）。0.2.0-rc.1 无插件面 API 删改（唯一硬 break：`runNativeCommand` 新增必填第 4 参 `window`）；新能力：`ctx.otel` 共享 OTel 服务、`Volatile<T>` 配置模式、`ISessions.fork` 的 `onCreated`、schedule 转为可选 bundle（web 默认组合不再含 `time-context`/`schedule`/`ui-schedule` 三行）。
