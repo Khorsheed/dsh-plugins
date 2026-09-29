@@ -22,11 +22,10 @@ import z from '@deepseek-ai/schemastery'
 export const MCP_SETTINGS_KEY = 'mcp'
 
 const mcpField = z.any().default({})
-type VolatileCapable = { volatile?: () => typeof mcpField }
 
 /** Section shape: the MCP management state block (permissive) + nothing else. */
 export const CapabilityCatalogSettingsSchema = z.object({
-  [MCP_SETTINGS_KEY]: typeof (mcpField as VolatileCapable).volatile === 'function'
-    ? (mcpField as Required<VolatileCapable>).volatile()
+  [MCP_SETTINGS_KEY]: typeof mcpField.volatile === 'function'
+    ? mcpField.volatile()
     : mcpField,
 })

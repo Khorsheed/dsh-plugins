@@ -16,7 +16,6 @@
 import z from '@deepseek-ai/schemastery'
 
 const thresholdField = z.number().min(0.01).max(1).default(0.8)
-type VolatileCapable = { volatile?: () => typeof thresholdField }
 
 /**
  * Section shape: the context-occupancy fraction at which the button appears.
@@ -24,11 +23,12 @@ type VolatileCapable = { volatile?: () => typeof thresholdField }
  * (3.18.4, host rc.1 — SettingsForms serves and edits ONLY volatile fields);
  * 0.1.5's schemastery (3.18.2) has no such method, the probe leaves the field
  * plain, and the legacy register path carries the section (the marker is
- * inert there). The inline probe (not a helper) keeps the emitted type
- * nameable under pnpm's layout.
+ * inert there). The probe reads the typed method directly (3.18.4 declares
+ * `Schema.prototype.volatile`); the dev line resolves 3.18.4, older floors
+ * keep the runtime fallback.
  */
 export const ContextGuardSettingsSchema: z = z.object({
-  thresholdRatio: typeof (thresholdField as VolatileCapable).volatile === 'function'
-    ? (thresholdField as Required<VolatileCapable>).volatile()
+  thresholdRatio: typeof thresholdField.volatile === 'function'
+    ? thresholdField.volatile()
     : thresholdField,
 })
