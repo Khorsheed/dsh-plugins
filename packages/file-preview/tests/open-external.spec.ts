@@ -51,7 +51,7 @@ describe('openExternalNative', () => {
     const run = vi.fn(async () => ({ stdout: '' }))
     const signal = new AbortController().signal
     await openExternalNative('/work/notes.md', 'cursor', signal, { platform: 'darwin', run })
-    expect(run).toHaveBeenCalledWith('open', ['-a', 'Cursor', '/work/notes.md'], signal)
+    expect(run).toHaveBeenCalledWith('open', ['-a', 'Cursor', '/work/notes.md'], signal, 'visible')
   })
 
   it('rejects non-macOS platforms and unknown app ids', async () => {

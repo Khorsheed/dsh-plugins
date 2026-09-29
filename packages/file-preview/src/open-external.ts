@@ -71,5 +71,5 @@ export async function openExternalNative(
   const app = macAppName(appId)
   if (app === undefined) throw new Error(`unknown application id "${appId}"`)
   const run = internals.run ?? runNativeCommand
-  await run('open', ['-a', app, path], signal)
+  await run('open', ['-a', app, path], signal, 'visible')
 }

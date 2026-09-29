@@ -60,26 +60,26 @@ export async function revealNativePath(
   const run = internals.run ?? runNativeCommand
 
   if (platform === 'linux' && isWsl(internals)) {
-    const translated = await run('wslpath', ['-w', path], signal)
+    const translated = await run('wslpath', ['-w', path], signal, 'hidden')
     signal.throwIfAborted()
     const windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
     if (windowsPath === '') throw new Error('wslpath returned no Windows path')
-    await run('explorer.exe', [`/select,${windowsPath}`], signal)
+    await run('explorer.exe', [`/select,${windowsPath}`], signal, 'visible')
     return
   }
   if (platform === 'darwin') {
-    await run('open', ['-R', path], signal)
+    await run('open', ['-R', path], signal, 'visible')
     return
   }
   if (platform === 'win32') {
-    await run('explorer.exe', [`/select,${path}`], signal)
+    await run('explorer.exe', [`/select,${path}`], signal, 'visible')
     return
   }
   if (platform === 'linux') {
     let lastError: unknown
     for (const manager of SELECT_FILE_MANAGERS) {
       try {
-        await run(manager, ['--select', path], signal)
+        await run(manager, ['--select', path], signal, 'visible')
         return
       } catch (error) {
         // A missing manager (ENOENT) or a failed launch: try the next one.
