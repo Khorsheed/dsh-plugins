@@ -56,7 +56,7 @@ describe('the ./agent composition entry', () => {
     ctx.provide('systemPrompt', prompts)
     await new Promise(resolve => { setTimeout(resolve, 0) })
     expect(tools.registered.map(def => def.name)).toEqual([
-      'canvas_propose_card', 'canvas_comment', 'canvas_read_manuscript', 'canvas_write_manuscript',
+      'canvas_read_board', 'canvas_propose_card', 'canvas_comment', 'canvas_read_manuscript', 'canvas_write_manuscript',
     ])
     for (const def of tools.registered) {
       expect((def as unknown as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')]).toEqual({

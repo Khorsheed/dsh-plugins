@@ -37,7 +37,7 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { attachBridge } from '@khorsheed/dsh-inline-html-render/src/client/bridge.ts'
 import { buildCardSrcDoc } from '@khorsheed/dsh-inline-html-render/src/client/srcdoc.ts'
-import { cardNameOf, cardTitleOf, detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { cardNameOf, cardTitleOf, detectCardFormat, htmlTitleOf, plainInline } from '../../card-format.ts'
 import { cardBlocksOf, withoutDrawLines } from '../../blocks.ts'
 import { imageHtmlOf, imageMarkdownOf } from '../../image-token.ts'
 import { CardMarkdown } from './CardMarkdown.tsx'
@@ -585,7 +585,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     }
     if (sessionId === undefined) return
     // A document's heading is its name; the markdown `#` is not part of it.
-    const title = heading?.title || cardTitleOf(card.text) || card.id
+    const title = (heading === undefined ? '' : plainInline(heading.title)) || cardTitleOf(card.text) || card.id
     const value = await run(() => writeManuscript(sessionId, {
       canvasId: open.board.id, title, body: withoutDrawLines(card.text), fromCardId: card.id, sources: { used: [card.id] },
     }))
@@ -653,7 +653,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             trailing={moreMenu}
           />
         )}
-        {heading !== undefined && <div className={css.title}>{heading.title}</div>}
+        {heading !== undefined && <div className={css.title}>{plainInline(heading.title)}</div>}
         <div className={css.meta}>
           <KindTag
             t={t}

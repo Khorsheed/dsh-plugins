@@ -5,7 +5,7 @@
  * markdown. The title extractor pulls `<title>` with entities decoded.
  */
 import { describe, expect, it } from 'vitest'
-import { cardNameOf, detectCardFormat, htmlTitleOf, MAX_HTML_TITLE_LENGTH } from '../src/card-format.ts'
+import { cardNameOf, cardTitleOf, detectCardFormat, htmlTitleOf, MAX_HTML_TITLE_LENGTH } from '../src/card-format.ts'
 
 describe('detectCardFormat', () => {
   it('detects a whole document by its doctype or html/head/body opener', () => {
@@ -68,5 +68,12 @@ describe('cardNameOf', () => {
     expect(cardNameOf({ kind: 'document', text: '<!doctype html><title>页</title>' })).toBe('页')
     expect(cardNameOf({ kind: 'fragment', text: '# 不是文档\n正文' })).toBe('# 不是文档')
     expect(cardNameOf({ kind: 'document', text: '' })).toBe('')
+  })
+
+  it('names a card in plain text, without inline markdown marks', () => {
+    expect(cardTitleOf('**雨夜**：她没回头\n正文')).toBe('雨夜：她没回头')
+    expect(cardTitleOf('见 [论文](https://example.org) 与 `x` 和 *斜体* ~~删~~')).toBe('见 论文 与 x 和 斜体 删')
+    expect(cardTitleOf('2 * 3 * 4')).toBe('2 * 3 * 4')
+    expect(cardNameOf({ kind: 'document', text: '# **异议**的代价' })).toBe('异议的代价')
   })
 })

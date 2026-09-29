@@ -104,12 +104,13 @@ const WS = '/ws'
 const STATE = '/state'
 const FALLBACK = { id: 's-main', header: { cwd: WS } } as unknown as Session
 
-type ToolName = 'canvas_propose_card' | 'canvas_comment' | 'canvas_read_manuscript' | 'canvas_write_manuscript'
+type ToolName = 'canvas_read_board' | 'canvas_propose_card' | 'canvas_comment' | 'canvas_read_manuscript' | 'canvas_write_manuscript'
 
 interface Bench {
   canvasId: string
   execute: (name: ToolName, args: Record<string, unknown>) => Promise<unknown>
   readCurrent: () => Promise<CanvasBoard>
+  board: CanvasBoardService
 }
 
 /** One board the main session has open, the two tools built over it, plus an execute helper. */
@@ -135,7 +136,7 @@ async function harness(): Promise<Bench> {
     if (!outcome.ok) throw new Error('expected a readable board')
     return outcome.board
   }
-  return { canvasId, execute, readCurrent }
+  return { canvasId, execute, readCurrent, board }
 }
 
 describe('the canvas tools on the open canvas', () => {
@@ -166,6 +167,33 @@ describe('the canvas tools on the open canvas', () => {
   it('answers the failure code instead of throwing on a bad card reference', async () => {
     const { execute } = await harness()
     expect(await execute('canvas_comment', { cardId: 'c_nope', text: 'x' })).toBe('失败：missing')
+  })
+})
+
+describe('the board read and custom categories', () => {
+  it('canvas_read_board lists the catalog with names and counts, and the cards', async () => {
+    const { canvasId, execute, readCurrent, board } = await harness()
+    const person = { id: 'cat_person0001', label: '人物', order: 60, enabled: true }
+    const categories = [...(await readCurrent()).categories, person]
+    expect(await board.setCategories({ canvasId, categories }, FALLBACK)).toMatchObject({ ok: true })
+    expect(await execute('canvas_propose_card', { kind: person.id, text: '**林默**：退役刑警' })).toMatch(/^完成：c_/)
+    await execute('canvas_propose_card', { kind: 'fragment', text: '雨夜' })
+    const [, rain] = (await readCurrent()).cards
+    await board.patchCard({ canvasId, cardId: rain!.id, status: 'archived' }, FALLBACK)
+    const read = await execute('canvas_read_board', {}) as string
+    expect(read).toContain('- fragment　灵感　0 张')
+    expect(read).toContain(`- ${person.id}　人物　1 张`)
+    expect(read).toContain('卡片（1 张，另有 1 张已归档未列出）：')
+    expect(read).toMatch(/- c_\S+　\[人物\]　待确认　林默：退役刑警/)
+    expect(await execute('canvas_read_board', { kind: 'fragment', includeArchived: true })).toMatch(/\[灵感\]　已归档　雨夜/)
+  })
+
+  it('answers an unknown kind with the valid ids instead of a bare code', async () => {
+    const { execute } = await harness()
+    const answer = await execute('canvas_propose_card', { kind: '人物', text: '林默' }) as string
+    expect(answer).toContain('失败：这块画布没有 id 为「人物」的分类')
+    expect(answer).toContain('fragment（灵感）、question（问题）')
+    expect(answer).toContain('从这里挑对应的 id')
   })
 })
 
@@ -209,7 +237,7 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
     const board = new CanvasBoardService(ctx, { stateRoot: STATE })
     const tools = canvasMainSessionToolDefinitions(board)
     expect(tools.map(def => def.name)).toEqual([
-      'canvas_propose_card', 'canvas_comment', 'canvas_read_manuscript', 'canvas_write_manuscript',
+      'canvas_read_board', 'canvas_propose_card', 'canvas_comment', 'canvas_read_manuscript', 'canvas_write_manuscript',
     ])
     for (const def of tools) {
       expect((def as unknown as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')]).toEqual({
@@ -217,9 +245,11 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
       })
     }
     const agent = { session: FALLBACK } as unknown as Agent
-    expect(await tools[0]!.execute({ kind: 'fragment', text: 'x' }, { agent } as never))
+    expect(await tools[0]!.execute({}, { agent } as never))
       .toBe('没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。')
-    expect(await tools[1]!.execute({ cardId: 'c_1', text: 'x' }, { agent } as never))
+    expect(await tools[1]!.execute({ kind: 'fragment', text: 'x' }, { agent } as never))
+      .toBe('没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。')
+    expect(await tools[2]!.execute({ cardId: 'c_1', text: 'x' }, { agent } as never))
       .toBe('没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。')
     // And nothing was written.
     expect(await board.listCanvases()).toEqual({ items: [] })
@@ -236,13 +266,13 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
     expect(await board.focusCanvas({ canvasId: created.board.id }, FALLBACK)).toEqual({ ok: true })
     const tools = canvasMainSessionToolDefinitions(board)
     const agent = { session: FALLBACK } as unknown as Agent
-    const answer = await tools[0]!.execute({ kind: 'reference', text: '效能假说综述' }, { agent } as never)
+    const answer = await tools[1]!.execute({ kind: 'reference', text: '效能假说综述' }, { agent } as never)
     const read = await board.readBoard({ canvasId: created.board.id })
     if (!read.ok) throw new Error('expected a readable board')
     expect(read.board.cards).toHaveLength(1)
     expect(read.board.cards[0]).toMatchObject({ kind: 'reference', status: 'proposed', createdBy: 'agent' })
     expect(answer).toBe(`完成：${read.board.cards[0]!.id}`)
-    expect(await tools[1]!.execute({ cardId: read.board.cards[0]!.id, text: '这里隐含一个假设。有数据吗？' }, { agent } as never)).toBe('完成')
+    expect(await tools[2]!.execute({ cardId: read.board.cards[0]!.id, text: '这里隐含一个假设。有数据吗？' }, { agent } as never)).toBe('完成')
     const after = await board.readBoard({ canvasId: created.board.id })
     if (!after.ok) throw new Error('expected a readable board')
     expect(after.board.cards[0]?.comments[0]).toMatchObject({ author: 'agent', text: '这里隐含一个假设。有数据吗？' })
@@ -255,7 +285,7 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
     ;(ctx as { canvasStore?: CanvasService }).canvasStore = pad
     const board = new CanvasBoardService(ctx, { stateRoot: STATE })
     const tools = canvasMainSessionToolDefinitions(board)
-    expect(await tools[0]!.execute({ kind: 'fragment', text: 'x' }, {} as never))
+    expect(await tools[1]!.execute({ kind: 'fragment', text: 'x' }, {} as never))
       .toBe('没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。')
   })
 })

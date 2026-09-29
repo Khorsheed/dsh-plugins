@@ -102,8 +102,25 @@ export const MAX_PLAIN_TITLE_LENGTH = 36
  */
 export function plainTitleOf(text: string): string {
   const firstLine = text.split('\n').find(line => line.trim().length > 0) ?? ''
-  const stripped = firstLine.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+  const stripped = plainInline(firstLine.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim()
   return stripped === '' ? firstLine : stripped
+}
+
+/**
+ * One line with its inline markdown marks dropped: emphasis, strikethrough,
+ * code spans, links and images keep their words and lose their syntax. A name
+ * is plain text (a crumb, a tab, a chip, the model's card list), so `**雨夜**`
+ * must read 雨夜 there. Line-level markers (`#`, `-`, `>`) are left alone: they
+ * are part of what a non-document card literally says.
+ * @param line - one line of markdown.
+ * @returns the same line as plain text.
+ */
+export function plainInline(line: string): string {
+  return line
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__|~~)(?=\S)(.+?)(?<=\S)\1/g, '$2')
+    .replace(/\*(?=\S)([^*]+?)(?<=\S)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
 }
 
 /**
@@ -130,7 +147,7 @@ export function cardTitleOf(text: string): string {
 export function cardNameOf(card: { readonly kind: string; readonly text: string }): string {
   if (card.kind === 'document' && detectCardFormat(card.text) !== 'html') {
     const heading = documentHeadingOf(card.text)?.title
-    if (heading !== undefined && heading !== '') return heading
+    if (heading !== undefined && heading !== '') return plainInline(heading)
   }
   return cardTitleOf(card.text)
 }
