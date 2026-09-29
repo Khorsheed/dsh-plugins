@@ -298,6 +298,28 @@ describe('lazy-loaded images are recovered', () => {
     expect(real).toBe('<p><img src="https://example.com/img/shown.png" referrerpolicy="no-referrer"></p>')
   })
 
+  it('absolutizes a plain relative src — the claude.dev figure shape', () => {
+    // The 2026-09-29 broken-figure report: claude.dev's blog serves every
+    // figure as a plain relative-src `<img>` with a sentence-long alt, and the
+    // pane showed the broken-image icon over that alt. The extraction was
+    // never the broken layer — the src absolutizes against the page URL and
+    // the alt survives, exactly as here; the failure was the BROWSER refusing
+    // the CDN's `Cross-Origin-Resource-Policy: same-origin` responses, which
+    // is why the fix lives in the pane's host-side rescue (image-fetch.ts).
+    // This case pins the extraction half of that story.
+    const out = normalizeRichText(
+      '<p><img class="fg" src="/media/abc123.png" '
+      + 'alt="Score against action tokens per attempt for a smaller, a mid-size and the most capable model at low, medium and high effort." '
+      + 'loading="lazy" decoding="async" width="2400" height="1560" style="display:block;width:100%"></p>',
+      'https://claude.dev/blog/automating-eval-design-and-hillclimbing/',
+    )
+    expect(out).toBe(
+      '<p><img src="https://claude.dev/media/abc123.png" '
+      + 'alt="Score against action tokens per attempt for a smaller, a mid-size and the most capable model at low, medium and high effort." '
+      + 'referrerpolicy="no-referrer"></p>',
+    )
+  })
+
   it('picks the largest candidate of a srcset, reading both descriptor kinds', () => {
     expect(normalizeRichText('<p><img srcset="/a-400.png 400w, /a-800.png 800w, /a-200.png 200w"></p>', 'https://example.com/'))
       .toBe('<p><img src="https://example.com/a-800.png" referrerpolicy="no-referrer"></p>')

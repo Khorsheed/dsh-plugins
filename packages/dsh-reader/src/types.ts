@@ -806,3 +806,23 @@ export interface ReaderEntryBodyView {
   /** Why a fetch could not produce a body, when one was attempted. */
   readonly error?: string
 }
+
+/**
+ * One image the pane could not load cross-origin, fetched host-side.
+ *
+ * The browser-side block is CORP/hotlink protection: the origin answers the
+ * bytes (a direct fetch gets a 200) but withholds them from a cross-origin
+ * page. The rescue hands the bytes over the wire base64-encoded — the pane
+ * re-points the failed `<img>` at a `data:` URI built from them. A failed
+ * rescue carries `error` instead; the pane leaves the broken image alone.
+ */
+export interface ReaderImageResult {
+  /** The URL the pane asked about (echoed, so a late answer can be matched). */
+  readonly url: string
+  /** The image's declared content type, when the fetch produced bytes. */
+  readonly mime?: string
+  /** The image bytes, base64-encoded, when the fetch produced them. */
+  readonly base64?: string
+  /** Why the rescue failed, when it did. */
+  readonly error?: string
+}

@@ -763,6 +763,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [tipDismissed, setTipDismissed] = useState(false)
   /** The rendered article, so the segmentation can be applied to it. */
   const articleRef = useRef<HTMLDivElement | null>(null)
+  /** Images already rescued through the host, original URL → data URI (this mount's). */
+  const rescuedImagesRef = useRef(new Map<string, string>())
   /** The detail view's scroller, which is where a reading position lives. */
   const detailRef = useRef<HTMLDivElement | null>(null)
   /** The live segmentation, or null while the article is untouched. */
@@ -1648,6 +1650,42 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (segment === null) return
     toggleSegment(built, segment, translateClasses)
   }, [translateClasses, translatePhase])
+
+  /**
+   * The CORP rescue. The extractor already emits absolute URLs with
+   * `referrerpolicy="no-referrer"`, which covers referer-gated CDNs — but a
+   * response headed `Cross-Origin-Resource-Policy: same-origin` (claude.dev's
+   * `/media/*` figures, measured 2026-09-29) is withheld from this page no
+   * matter what the tag asks for: the request answers 200 and the browser
+   * still refuses to hand the pixels over, leaving the broken-image icon over
+   * the alt text. A no-cors browser fetch cannot read those bytes either; the
+   * host process can, so the failed image is re-pointed at what the host
+   * fetched. Only images that ALREADY failed come here — a healthy image never
+   * pays the proxy — and each `<img>` tries once: the marker doubles as the
+   * loop guard should the data URI itself fail.
+   */
+  const onArticleImageError = useCallback((event: { target: EventTarget | null }) => {
+    const target = event.target
+    if (!(target instanceof HTMLImageElement)) return
+    if (target.dataset['readerRescued'] !== undefined) return
+    const url = target.getAttribute('src') ?? ''
+    // Only a remote URL can be rescued; a data: failure is a broken payload.
+    if (!/^https?:\/\//i.test(url)) return
+    target.dataset['readerRescued'] = '1'
+    const known = rescuedImagesRef.current.get(url)
+    if (known !== undefined) {
+      target.src = known
+      return
+    }
+    void props.fetchImage(url).then(result => {
+      if (!result.ok) return
+      const { mime, base64 } = result.value
+      if (mime === undefined || base64 === undefined) return
+      const dataUri = `data:${mime};base64,${base64}`
+      rescuedImagesRef.current.set(url, dataUri)
+      target.src = dataUri
+    }, () => undefined)
+  }, [props])
 
 
   /* ---------------------------------------------------- the wall's own pass */
@@ -3561,6 +3599,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               onClick={onArticleClick}
               onMouseOver={onArticleHover}
               onMouseOut={onArticleHover}
+              // Image error events do not bubble; the capture phase is the
+              // only way one handler sees every failed figure in the body.
+              onErrorCapture={onArticleImageError}
               className={`${css.article} ${isCjk(articleHtml) ? css.articleZh : css.articleEn}`}
               dangerouslySetInnerHTML={{ __html: articleHtml }}
             />

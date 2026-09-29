@@ -68,6 +68,7 @@ import {
   type ReaderEntryTranslationView,
   type ReaderPreviewFailure,
   type ReaderPreviewFailureCode,
+  type ReaderImageResult,
   type ReaderRecentEntry,
   type ReaderRefreshResult,
   type ReaderSentenceLearn,
@@ -81,6 +82,7 @@ import {
 } from './types.ts'
 import { delayUntilNext, isCatchUpDue } from './schedule.ts'
 import { arxivHtmlUrl } from './arxiv.ts'
+import { fetchImageBytes, ImageFetchCache } from './image-fetch.ts'
 import { resolveLink, type LinkResolution, type ResolverFetch } from './link-resolvers.ts'
 
 /**
@@ -196,6 +198,8 @@ export class ReaderService {
   private disposed = false
   /** The document of record when no filesystem is mounted. */
   private memoryDoc: ReaderStateDoc | undefined
+  /** Rescued images, by URL — a pane remount re-fails every blocked image, and this is what keeps that a memory read. */
+  private readonly imageCache = new ImageFetchCache()
 
   /**
    * @param ctx - owning context.
@@ -698,6 +702,41 @@ export class ReaderService {
       await this.recordFetchFailure(request.entryId, failure.message, failure.code)
       return { entryId: request.entryId, error: failure.message }
     }
+  }
+
+  /**
+   * One image the browser could not load cross-origin, fetched host-side.
+   *
+   * The pane calls this only for an `<img>` that already FAILED: the page's
+   * bytes arrived fine (a direct fetch gets a 200) but the origin answers them
+   * with `Cross-Origin-Resource-Policy: same-origin`, so the browser withholds
+   * them from this page no matter what the tag asks — measured on claude.dev's
+   * `/media/*` figures (2026-09-29), which broke with the alt text showing.
+   * CORP is an embedder-side check, so a host-process fetch is the way through.
+   *
+   * This deliberately does NOT ride `ctx.web.fetch`: the seam's decoded body is
+   * a closed html|text union and its provider refuses binary content types
+   * outright. The image fetch re-implements the seam's hardening at image
+   * scope instead (public-address validation with the connection pinned to the
+   * validated answers, a byte cap, a timeout, per-hop re-validation, and an
+   * image/* content-type gate) — see `image-fetch.ts`.
+   *
+   * Rescued bytes are kept in an in-memory LRU under a byte budget: the
+   * sidebar unmounts wholesale when another panel takes over, and a remount
+   * re-fails every blocked image before this cache can answer it.
+   *
+   * @param request - the image URL the pane failed on.
+   * @returns the bytes and their declared type, or why there are none.
+   */
+  async fetchImage(request: { url: string }): Promise<ReaderImageResult> {
+    const url = normalizeUrl(request.url)
+    if (url === undefined) return { url: request.url, error: 'invalid-url' }
+    const cached = this.imageCache.get(url)
+    if (cached !== undefined) return { url, mime: cached.mime, base64: cached.base64 }
+    const fetched = await fetchImageBytes(url)
+    if (!fetched.ok) return { url, error: fetched.error }
+    this.imageCache.set(url, fetched.mime, fetched.base64)
+    return { url, mime: fetched.mime, base64: fetched.base64 }
   }
 
   /**

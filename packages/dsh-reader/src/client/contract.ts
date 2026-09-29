@@ -27,6 +27,7 @@ import type {
   ReaderBody,
   ReaderCapabilities,
   ReaderEntryTranslationView,
+  ReaderImageResult,
   ReaderMutationOutcome,
   ReaderRefreshResult,
   ReaderRecentEntry,
@@ -155,6 +156,14 @@ export interface ReaderPaneInjected {
    * extracted title/excerpt ride along for the card upgrade.
    */
   fetchEntryBody: (entryId: string, url: string) => Promise<ReaderEntryBodyView & ReaderExtractedMeta>
+  /**
+   * Fetch one image through the host, for an `<img>` the browser already
+   * failed on (CORP/hotlink protection — the bytes answer 200 to a direct
+   * fetch but are withheld from a cross-origin page). The pane re-points the
+   * image at a `data:` URI built from the answer; a host without the verb (or
+   * an origin that refuses the host too) leaves the broken image alone.
+   */
+  fetchImage: (url: string) => Promise<RemoteResult<ReaderImageResult>>
   /** The tags on one entry. */
   entryTags: (entryId: string) => Promise<RemoteResult<{ tags: ReaderTag[] }>>
   /** The tag vocabulary, with per-tag usage counts. */

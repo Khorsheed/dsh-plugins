@@ -137,6 +137,8 @@ interface BenchOptions {
   readonly capture?: boolean
   /** The captured title/excerpt the host joins onto a link source's payload answer. */
   readonly linkMeta?: Readonly<Record<string, { title?: string; excerpt?: string }>>
+  /** What `fetchImage` answers per URL (default: a tiny image/png payload). */
+  readonly imageAnswers?: Readonly<Record<string, { mime?: string; base64?: string; error?: string }>>
 }
 
 /** Render the pane over a real store handle and a scripted host face. */
@@ -258,6 +260,14 @@ function bench(options: BenchOptions = {}) {
     })),
     rememberSentences: vi.fn(async () => ({ ok: true as const, value: { stored: 0 } })),
     fetchEntryBody: vi.fn(async (entryId: string) => ({ entryId, cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' })),
+    // The CORP rescue: the host answers bytes by default; `imageAnswers` scripts per-URL outcomes.
+    fetchImage: vi.fn(async (url: string) => {
+      const answer = options.imageAnswers?.[url]
+      return {
+        ok: true as const,
+        value: { url, ...(answer ?? { mime: 'image/png', base64: 'aGVsbG8gd29ybGQ=' }) },
+      }
+    }),
     getEntryBody: vi.fn(async (request: { entryId: string; url: string; feedHtml?: string }) => {
       const sourceId = request.entryId.startsWith('link:') ? request.entryId.slice('link:'.length) : undefined
       if (options.getEntryBodyError !== undefined) {
@@ -320,6 +330,7 @@ function bench(options: BenchOptions = {}) {
     clearTranslations: mocks.clearTranslations,
     getEntryBody: mocks.getEntryBody,
     fetchEntryBody: mocks.fetchEntryBody,
+    fetchImage: mocks.fetchImage,
     readDraft: () => '',
     setDraft: mocks.setDraft,
     copyText: mocks.copyText,
@@ -1804,6 +1815,87 @@ describe('an article that is already fetched is not fetched again', () => {
     await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
     expect(ui.mocks.fetchEntryBody.mock.calls[0]?.[0]).toBe('g:https://example.com/paper')
     expect(await screen.findByText('fetched')).toBeTruthy()
+  })
+})
+
+describe('an image the browser was refused is rescued through the host', () => {
+  /** The CORP report's shape: a body whose figures carry absolute CDN URLs. */
+  const figureFeed = (id: string): string =>
+    `<feed xmlns="http://www.w3.org/2005/Atom"><title>${id}</title>`
+    + `<entry><title>被拦图的论文</title><link href="https://example.com/paper"/>`
+    + `<id>https://example.com/paper</id>`
+    + `<summary>We find that Claude maintains a small set of representations.</summary>`
+    + '</entry></feed>'
+  const FIGURE_BODY = '<p>已经抓下来的正文。</p>'
+    + '<img src="https://claude.dev/media/abc123.png" alt="Score against action tokens per attempt." referrerpolicy="no-referrer">'
+
+  /** Open the one card into its detail view with the figure body on screen. */
+  const openArticle = async (ui: ReturnType<typeof bench>): Promise<void> => {
+    await ui.settle()
+    fireEvent.click((await screen.findAllByRole('button', { name: /被拦图的论文/ }))[0] as HTMLElement)
+    await screen.findByText('已经抓下来的正文。')
+  }
+
+  it('re-points a failed image at the bytes the host fetched', async () => {
+    // The 2026-09-29 report: claude.dev answers its /media images with
+    // `Cross-Origin-Resource-Policy: same-origin`, so the pane's page never
+    // receives the pixels (200 to curl, blocked in the browser). The failed
+    // `<img>` is re-pointed at what the host fetched.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: figureFeed('tc') },
+      cachedBodies: { 'g:https://example.com/paper': FIGURE_BODY },
+      fetchStates: { 'g:https://example.com/paper': { state: 'ready' } },
+    })
+    await openArticle(ui)
+    const img = ui.container.querySelector('img[src="https://claude.dev/media/abc123.png"]')
+    expect(img).not.toBeNull()
+    fireEvent.error(img as Element)
+    await waitFor(() => { expect(ui.mocks.fetchImage).toHaveBeenCalledWith('https://claude.dev/media/abc123.png') })
+    await waitFor(() => {
+      expect(ui.container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,aGVsbG8gd29ybGQ=')
+    })
+    // The rescued image failing AGAIN must not loop the rescue.
+    fireEvent.error(ui.container.querySelector('img') as Element)
+    expect(ui.mocks.fetchImage).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the image alone when the host cannot have it either', async () => {
+    // An origin that refuses the host too: the broken image stays (the card
+    // still has its 「阅读原文」 way out) and one failure does not retry forever.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: figureFeed('tc') },
+      cachedBodies: { 'g:https://example.com/paper': FIGURE_BODY },
+      fetchStates: { 'g:https://example.com/paper': { state: 'ready' } },
+      imageAnswers: { 'https://claude.dev/media/abc123.png': { error: 'HTTP 403' } },
+    })
+    await openArticle(ui)
+    const img = ui.container.querySelector('img[src="https://claude.dev/media/abc123.png"]')
+    expect(img).not.toBeNull()
+    fireEvent.error(img as Element)
+    await waitFor(() => { expect(ui.mocks.fetchImage).toHaveBeenCalledTimes(1) })
+    expect(img?.getAttribute('src')).toBe('https://claude.dev/media/abc123.png')
+    fireEvent.error(img as Element)
+    expect(ui.mocks.fetchImage).toHaveBeenCalledTimes(1)
+  })
+
+  it('never asks the host about an image that is already inline', async () => {
+    // A data: URI that fails is a broken payload, not a fetchable URL.
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: { tc: figureFeed('tc') },
+      cachedBodies: {
+        'g:https://example.com/paper': '<p>已经抓下来的正文。</p><img src="data:image/png;base64,broken" alt="inline">',
+      },
+      fetchStates: { 'g:https://example.com/paper': { state: 'ready' } },
+    })
+    await openArticle(ui)
+    const img = ui.container.querySelector('img')
+    expect(img).not.toBeNull()
+    fireEvent.error(img as Element)
+    await Promise.resolve()
+    expect(ui.mocks.fetchImage).not.toHaveBeenCalled()
   })
 })
 

@@ -108,6 +108,17 @@ describe('the host half boots and provides its service', () => {
     expect(typeof viaRemote.nextRefreshAt).toBe(typeof viaCore.nextRefreshAt)
   })
 
+  it('wires the image-rescue verb through the Remote face, refusing a non-URL before any network', async () => {
+    // The CORP rescue (the pane re-points an image the browser was refused):
+    // the verb must exist on the wire face and validate its input without
+    // touching the network. `not a url` exercises exactly that edge.
+    const ctx = await boot()
+    const viaRemote = await (ctx.get('readerRemote') as ReaderRemoteService).fetchImage({ url: 'not a url' })
+    expect(viaRemote.error).toBe('invalid-url')
+    const viaCore = await (ctx.get('reader') as ReaderService).fetchImage({ url: 'not a url' })
+    expect(viaCore.error).toBe('invalid-url')
+  })
+
   it('persists state with native fs even when a SESSION-FENCED ctx.fs is mounted', async () => {
     // The acceptance-instance defect, as a regression test: `ctx.fs` is the
     // sandboxed filesystem and fences every mutation by the calling session's

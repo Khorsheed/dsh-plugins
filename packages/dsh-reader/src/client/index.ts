@@ -174,6 +174,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     listBackfillCandidates: entries => remote.listBackfillCandidates({ entries }),
     getEntryBody: request => remote.getEntryBody(request),
     fetchEntryBody,
+    fetchImage: url => remote.fetchImage({ url }),
     getEntryTranslation: entryId => remote.getEntryTranslation({ entryId }),
     getSentenceTranslations: request => remote.getSentenceTranslations(request),
     rememberSentences: request => remote.rememberSentences(request),

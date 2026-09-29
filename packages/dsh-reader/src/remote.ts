@@ -19,6 +19,7 @@ import type {
   ReaderAnnotationOutcome,
   ReaderBackfillCandidate,
   ReaderEntryBodyView,
+  ReaderImageResult,
   ReaderEntryFetchState,
   ReaderBody,
   ReaderCapabilities,
@@ -121,6 +122,16 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     error?: string
   }> {
     return this.core.fetchEntryBody(request)
+  }
+
+  /**
+   * Fetch one image the browser could not load cross-origin (CORP /
+   * hotlink-protected), so the pane can re-point the failed `<img>` at the
+   * bytes. Called per failed image, never for a healthy one.
+   */
+  @Remote('fetchImage')
+  fetchImage(request: { url: string }): Promise<ReaderImageResult> {
+    return this.core.fetchImage(request)
   }
 
   /** Cache the markup the browser extracted for one entry. */
