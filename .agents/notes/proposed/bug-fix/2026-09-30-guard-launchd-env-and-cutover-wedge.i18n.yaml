@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record: the git blob hash of each side as of the
-# last confirmed-consistent state. Both languages carry equal authority; after
-# editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/bug-fix/2026-09-30-guard-launchd-env-and-cutover-wedge.md
-.agents/notes/proposed/bug-fix/2026-09-30-guard-launchd-env-and-cutover-wedge.md: f92ff14dc56a6f8a2906c64b229bd75635a69c2a
-.agents/notes/proposed/bug-fix/2026-09-30-guard-launchd-env-and-cutover-wedge.zh.md: 4bade341c98add400cdf93994fda04097114d55a

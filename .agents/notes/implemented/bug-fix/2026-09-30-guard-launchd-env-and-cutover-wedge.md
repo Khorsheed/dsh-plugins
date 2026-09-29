@@ -1,0 +1,38 @@
+# Agent Note: guard gaps from the 0.2.0 cutover — launchd-env boot failure and the mid-cutover wedge
+
+Status: implemented
+
+English | [中文](2026-09-30-guard-launchd-env-and-cutover-wedge.zh.md)
+
+## Problem
+
+The 0.2.0-rc.2 cutover of prod 3080 (2026-09-29/30) surfaced three ankh-guard gaps, all observed live:
+
+1. **launchd-spawned chains cannot boot the instance.** Two launchd-driven chains (kickstart, then bootstrap) produced instance processes that burned CPU and died within ~60 s with a **zero-byte** `boot-attempt.log`, while the identical start command from an interactive shell boots in ~5 s. The spec's bare `node` was one cause (launchd PATH has no homebrew — fixed in the spec by rebinding with an absolute node path), but the zero-output boots persisted *after* the fix, so a second launchd-environment gap remains unidentified (env scrub? cwd? fd plumbing in `launch_instance`?).
+2. **A supervisor dying mid-cutover wedges the transaction.** The receipt stays in `restoring`/`awaiting-user`, operator markers (`abort-cutover`/`restore-previous`) are no longer consumed (the recovered loop has no in-memory transaction), and fresh `supervise` invocations refuse to start without an explicit `--cutover-id`. Tonight's recovery required killing the whole chain and resuming with `--cutover-id` — discoverable only by reading `cli.ts`.
+3. **Readiness observability and budget.** `WD_BOOT_TIMEOUT` (60 s) is env-only — not exposed on `reconfigure`/`schedule-exit` — and the failure path did not mirror the attempt log into the main log when it was empty, hiding "the instance never wrote a line" for an hour.
+
+## Decision
+
+Shipped in `@khorsheed/dsh-ankh-guard` (0.4.0 line). The proposal was amended during implementation: the environment item was dropped on a corrected root cause, and the wedge fix keeps a live consumer instead of resuming without the id.
+
+- **Gap 1 became the bare-`node` fix; environment capture was dropped.** Re-diagnosis before implementation disproved the "launchd environment gap": a faithful test launchd job on a test port booted the instance fine. Tonight's launchd-chain failures were operational, not environmental — a stale ankh-guard test-seam process holding port 3080 (`EADDRINUSE`) and racing supervision chains during manual recovery. The real latent bug found along the way: `guardInvocation()` (src/cli.ts) rendered the watchdog's guard prefix as a bare `node <cli.js>`, so under any PATH without node (launchd's minimal PATH) every guard invocation the watchdog issues — canary, verify-restart, record-proven-deployment, cutover events — failed with command-not-found. Both the built and the source (`--import tsx`) forms now prefix the absolute `process.execPath`.
+- **Gap 2: the parked hold.** A bare `supervise` that finds the receipt in `awaiting-user` no longer prints a refusal and exits. It spawns the watchdog in a parked hold (`WD_CUTOVER_PARKED=1`) that claims the pidfile, launches nothing (the rejected side never boots), and consumes the operator control markers — so `abort-cutover`/`restore-previous` work immediately instead of refusing with "no live watchdog". The hold logs once how to end it (the `watchdog-stop` marker) and how to resume fully (`supervise --cutover-id <id>`); a resume records `driver-started`, the flip out of `awaiting-user` is the hold's release signal, and the resuming CLI waits for that release (bounded at 15 s) before taking over. The same bounded wait applies after the foreground launchd/systemd waiter re-reads state mid-wait. The control verbs' no-live-watchdog refusal now prints the exact commands with the real cutover id. Every ownership/identity proof is exactly as strict as before — the hold never signals or boots anything, and resume still requires the explicit `--cutover-id`; the proposal's resume-without-id was not needed once the wedge (no consumer) was removed.
+- **Gap 3: readiness observability and budget.** A failed boot mirrors the attempt log into the main watchdog log even when it is empty — an explicit `attempt N produced no output` line, because the empty case is the dead-on-arrival signal. `--boot-timeout-ms` (whole seconds, ceiling) is accepted on `reconfigure`, `supervise`, and `schedule-exit`: `reconfigure`/`supervise` hand it to the spawned watchdog as `WD_BOOT_TIMEOUT` (reconfigure's value rides the supervisor driver's argv), while `schedule-exit` records `bootTimeoutMs` in the restart marker and the already-running watchdog honors it for boots attempted while that marker is pending.
+
+## Alternatives considered
+
+**Capture the operator shell's launch environment into the spec** (the proposal's environment item, incl. an install-time launchd self-test). Dropped before implementation: the re-diagnosis booted the instance fine under a faithful test launchd job, so there was no env gap to capture against — and capture carried a real secrecy risk (PATH-like keys only, never the whole env) for zero proven benefit. The absolute-`process.execPath` fix covers the failure that actually existed.
+
+**Resume an in-flight cutover without `--cutover-id` by proving the selected side's process identity from the receipt** (the proposal's wedge item). Not shipped: with the parked hold there is always a live consumer, so the operator verbs work without any resume magic, and an identity-proving implicit resume would add proof-surface risk (the refusal exists precisely to never act on an unproven process) for a path the explicit `--cutover-id` already covers — now discoverable from the refusal and hold messages themselves.
+
+**Hand-edit the receipt to `restored`.** Rejected: the receipt is the guard's proof record; fabricating a terminal state erases the failure history the design exists to keep.
+
+**Leave launchd off and run detached supervision.** Tonight's actual stopgap — acceptable for hours, not a posture: a dead detached watchdog leaves the instance without recovery, exactly what the guard exists to prevent.
+
+## Consequences
+
+- The proposal's acceptance criteria, restated as shipped and verified: a bare `supervise` on an awaiting-user receipt parks a live consumer instead of exiting (process-level test: fabricated awaiting-user receipt → bare `supervise` → no boot, no listener, `abort-cutover` settles the transaction through the pre-approved policy into `restored`); `supervise --cutover-id <id>` resumes the selected side through the hold's release with no chain-killing archaeology (test: parked hold → resume → target boots → `ready`); a failed boot's main-log entry always includes the attempt-log mirror, with the explicit empty-case line (wrapper test); `--boot-timeout-ms` lands in `WD_BOOT_TIMEOUT` and in the restart marker (CLI env/marker tests plus a wrapper boot-window test). The launchd bootstrap criterion from the proposal was retired with its item: the failure was port contention plus racing chains, not the launcher environment.
+- `supervise --cutover-id` against a live owner that is NOT the awaiting-user hold (e.g. a wrapper still parked on its crash page) now refuses loudly after the bounded 15 s wait instead of printing "already supervised" and silently doing nothing; the refusal names the settle verbs.
+- The hold consumes control markers on a ~1 s poll (scaled down in tests); the SIGUSR2 the verbs send is only a nudge. "Immediately" means within one poll.
+- The environment-capture risk (secrets in the spec) evaporated with the item. The remaining operational lesson stays documented rather than automated: a stale test-seam process holding the supervised port is an `EADDRINUSE` the cutover path deliberately refuses to clean up by port.
