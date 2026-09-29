@@ -40,6 +40,9 @@
    - **GEN_TYPERT_ONLY 作用域不含家族依赖会 TS2307**——deploy 列表必须带上家族 core（如 local-agent）。
    - 改动过源码结构的包先 `rm -rf lib` clean rebuild，否则 pack-dist 的 stale-types 门拦你。
    - 跨宿主版本后的第一次重启会被守卫以「install anchor 已变」拒绝——**先 `configure-launch` 重绑锚点**（installAnchor 是 `apps/cli/package.json` 的 sha256），再走标准闸。凭证有 10 分钟保鲜期，超时重录。
+   - **0.2.0 起官方有 peer 兼容闸**（2026-09-29 实踩）：宿主跨线（0.1.x→0.2.0）时，peer range 不覆盖新线的**已装**插件会被逐一禁用（boot 日志 `disabling profile plugin row`），组合残缺会让 canary 永远等不到全绿。两个合法出口：全量重部署（peer 已前移的包，首选）或 `dsh plugin --profile web allow-version <pkg>@<ver> --dsh-version <new> --accept-risk` 逐个豁免。**清单必须取整份启动日志的全量禁用行**，只看尾部会漏一半（本波 28 个里漏了 11 个，多烧一小时）。豁免按精确版本钉，后续重部署新版本自然脱离豁免。
+   - **宿主检出升级后 `deploy:check-links` 必报死链**：profile 的 node_modules 里指向 checkout 内部布局的符号链接随版本布局变化失效（ENOENT）。照检查器提示备份路径映射后删除即可（本波样本在 `$DSH_HOME/scratch/stale-links-*.txt`），删完复检再过。
+   - **浏览器交接需要开着的标签页**：cutover 的 canary 含页面 ACK；无人开着实例页面时 system-open 兜底只有约 9 秒窗口，ACK 不到就连 target 一起回滚（target 本身 readiness/canary 全过也照滚）。部署前让人把 3080 开在一个标签页里。
 4. 门禁后验收：check-env、canary、`dsh plugin add` 冒烟、以及用户活体点一遍。
 
 ## 阶段 4：发布与收尾

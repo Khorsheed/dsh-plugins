@@ -1,6 +1,6 @@
 # Bilingual-pair consistency record: the git blob hash of each side as of the
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write docs/host-migration-playbook.md
-docs/host-migration-playbook.md: a85f7ce45cb05dcda93aadfee9b02cc3894707e0
-docs/host-migration-playbook.en.md: 72ba03666d21c35d7ff61a6d67424189e7ceaf3f
+#   pnpm run verify-translation-pairing --write docs/host-migration-playbook.en.md
+docs/host-migration-playbook.en.md: 1f957f0cef64074f45065aba7c146594498812ae
+docs/host-migration-playbook.md: b3a0292d4bc11a5b0530df37279c1b3c1e79d5e7
