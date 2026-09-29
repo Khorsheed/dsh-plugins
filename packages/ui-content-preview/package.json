@@ -40,8 +40,8 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "react": "^18.2.0"
   },
   "devDependencies": {
