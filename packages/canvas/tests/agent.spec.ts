@@ -1,6 +1,6 @@
 /**
  * The `./agent` composition entry: registers the two canvas tools and their
- * English guidance section into the MOUNTING SCOPE (profile root or a
+ * pointer guidance section into the MOUNTING SCOPE (profile root or a
  * preset's agent-plane) when the core service is present, and degrades to a
  * no-op registration when it is not. Also pins the split: the root apply
  * (`src/index.ts`) registers NEITHER the tools NOR the section anymore.
@@ -49,7 +49,7 @@ function bench(options: { withBoard?: boolean } = {}) {
 }
 
 describe('the ./agent composition entry', () => {
-  it('registers the canvas tools (origin-tagged) and the English guidance into the mounting scope', async () => {
+  it('registers the canvas tools (origin-tagged) and the pointer guidance into the mounting scope', async () => {
     const { ctx, tools, prompts } = bench()
     agentApply(ctx)
     ctx.provide('tools', tools)
@@ -67,15 +67,12 @@ describe('the ./agent composition entry', () => {
     const section = prompts.sections[0]!
     expect(section.name).toBe('canvas:tools')
     expect(section.order).toBe(151)
-    // English text, the current tab name, and the three rules.
-    expect(section.text).toContain('right-Sidebar Canvas tab')
-    expect(section.text).toContain('canvas_propose_card')
-    expect(section.text).toContain('canvas_comment')
-    expect(section.text).toContain('canvas_write_manuscript')
-    expect(section.text).toContain('baseVersion')
-    expect(section.text).toContain('never paste card text')
-    expect(section.text).toContain('one sharp question')
-    expect(section.text).not.toMatch(/[一-鿿]/)
+    // One pointer sentence only: the per-tool rules live in the tool
+    // descriptions, so the section names no tool and repeats no mechanics.
+    expect(section.text).toContain('canvas_*')
+    expect(section.text).not.toContain('canvas_propose_card')
+    expect(section.text).not.toContain('baseVersion')
+    expect(section.text).not.toContain('\n')
   })
 
   it('registers nothing (and warns) when canvasBoard is absent — degrade, never explode', () => {

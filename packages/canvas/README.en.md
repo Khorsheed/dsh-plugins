@@ -52,7 +52,7 @@ Restart the host afterwards. Uninstalling does **not** delete `$DSH_HOME/state/c
 
 ## Scoping the session tools to a preset (0.4.2+)
 
-The four canvas tools (`canvas_propose_card` / `canvas_comment` / `canvas_read_manuscript` / `canvas_write_manuscript`) and their English guidance section live in a separate `./agent` composition entry instead of the profile root. The shipped `cordis.patch.yml` mounts it as a second row — **every session of every preset gets the tools** (the pre-0.4.2 status quo). To grant them to one mode only (e.g. `dsh-writing`):
+The four canvas tools (`canvas_propose_card` / `canvas_comment` / `canvas_read_manuscript` / `canvas_write_manuscript`) and their one-sentence pointer guidance section live in a separate `./agent` composition entry instead of the profile root (the per-tool rules ride the tool descriptions; the section only says the tools act on the open canvas tab). The shipped `cordis.patch.yml` mounts it as a second row — **every session of every preset gets the tools** (the pre-0.4.2 status quo). To grant them to one mode only (e.g. `dsh-writing`):
 
 ```yaml
 # <profile>/cordis.patch.yml: disable the root row

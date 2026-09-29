@@ -40,20 +40,16 @@ interface PromptSections {
 }
 
 /**
- * The guidance section's text (English, the host prompt's own voice). The
- * rules the model must not relearn per session: proposals land proposed
- * (never paste card text as a substitute), comments end with a question,
- * and an absent open canvas is a message, not a guess.
+ * The guidance section's text. Deliberately one pointer sentence: every
+ * behavioral rule (ghost-card flow, the no-substitution rule, comment style,
+ * manuscript baseVersion, the no-canvas fallback) lives in the tool
+ * descriptions themselves, which the model reads with the catalog — repeating
+ * them here just spends prompt tokens twice (2026-09-29 slimming). Chinese,
+ * matching the tool descriptions' own voice; the canvas is a writing-domain
+ * surface (on prod its tools mount only in the dsh-writing preset).
  */
 const CANVAS_TOOLS_GUIDANCE =
-  'Canvas tools (canvas_*) act on the canvas currently open in the right-Sidebar Canvas tab. '
-  + 'Propose new cards only through canvas_propose_card — a proposal lands as a ghost card the user '
-  + 'must accept or reject; never paste card text into your reply as a substitute for proposing. '
-  + 'Comment through canvas_comment: name one hidden assumption or tension and end with one sharp '
-  + 'question. Write drafts through canvas_write_manuscript so they land on the canvas as a manuscript, '
-  + 'marking which cards you used and which you left out; to revise one, read it with canvas_read_manuscript '
-  + 'first and pass its version as baseVersion — on a conflict, re-read instead of overwriting. '
-  + 'When no canvas is open, the tool says so — ask the user to open one instead of guessing.'
+  '画布相关的操作用 canvas_* 工具，作用于右栏当前打开的画布；没打开画布时工具会说明，按它的指引请用户打开即可。'
 
 /**
  * Composition entry body: register the two canvas tools and their guidance

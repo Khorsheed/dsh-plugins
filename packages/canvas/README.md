@@ -52,7 +52,7 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
 
 ## 按 preset 收敛会话工具（0.4.2+）
 
-四个画布工具（`canvas_propose_card` / `canvas_comment` / `canvas_read_manuscript` / `canvas_write_manuscript`）与它们的英文提示词引导段注册在独立的 composition 入口 `./agent` 里，不再钉死在 profile 根。出厂的 `cordis.patch.yml` 把它作为第二行默认挂载——**所有 preset 的所有会话都有工具**（与 0.4.1 及以前一致）。想只给某个模式（如 `dsh-writing`）授予时：
+四个画布工具（`canvas_propose_card` / `canvas_comment` / `canvas_read_manuscript` / `canvas_write_manuscript`）与它们的一句话指引段注册在独立的 composition 入口 `./agent` 里，不再钉死在 profile 根（逐工具的行为规则由工具描述自己携带，指引段只说明工具作用于当前打开的画布）。出厂的 `cordis.patch.yml` 把它作为第二行默认挂载——**所有 preset 的所有会话都有工具**（与 0.4.1 及以前一致）。想只给某个模式（如 `dsh-writing`）授予时：
 
 ```yaml
 # <profile>/cordis.patch.yml：关掉根级行
