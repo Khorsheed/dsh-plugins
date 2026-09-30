@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.1.0-rc.9（2026-09-30）
+
+- **修复同款跨实例 home 回退**：`defaultPresetRoot()` 的兜底从硬编码 `~/.dsh-official` 改为非空白 `$DSH_HOME` → `~/.dsh`（官方 `resolveDshHome` 优先级），桌面 app 上不再误读其他实例的 preset 根
+
 ## 0.1.0-rc.8（2026-09-30）
 
 家族同版联动：加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0（0.2.0 的兼容闸会禁用 peer 区间不覆盖宿主版本的已装插件）。无功能变更。

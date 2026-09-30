@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.1.98（2026-09-30）
+
+- **修复跨实例串读**：受管 skill 根目录的 home 解析兜底从硬编码的 `~/.dsh-official` 改为对齐官方 `resolveDshHome` 优先级（settings 服务的 home → 非空白 `$DSH_HOME` → `~/.dsh`）。旧兜底在桌面 app（settings 不报 home、环境无 `DSH_HOME`）上会把桌面实例指到另一实例的 home——桌面设置页因此列出 3080 的三个受管写作 skill 并挂出「未在任何模式生效」横幅
+
 ## 0.1.97（2026-09-30）
 
 - **设置面直接调用 schemastery 的类型化 `.volatile()`**：0.2.0 开发线解析到 schemastery 3.18.4，其 `Schema` 已声明 `volatile()`——手写的 `VolatileCapable` 强转探测不再类型重叠（TS2352）。运行期双线行为不变：探测在 0.1.5 的 schemastery 3.18.2（无 `volatile` 方法）上仍回落到普通字段
