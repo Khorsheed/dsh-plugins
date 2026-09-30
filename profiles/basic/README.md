@@ -30,7 +30,9 @@
 
 ### 版本兼容
 
-**宿主 ≥ `0.1.5-rc.1`**：直接填包名，全部 14 个成员的 latest 可用。
+**宿主 `0.2.0-rc.*`**：复制下表中带 `@^版本` 下限的规格。发版当天不要裸填包名——pnpm 11 默认启用 24 小时新版保护（`minimumReleaseAge`，供应链安全），裸名会把当天发布的新版藏起来、装到只支持 0.1.x 的旧线，再被宿主的兼容性检查拦下；带下限的规格会自动豁免保护期，装到兼容的新版。
+
+**宿主 `0.1.5-rc.1` ~ `0.1.7.*`**：直接填包名，全部 14 个成员的 latest 可用（旧插件线在 0.1.x 宿主上依然兼容，保护期回退不碍事）。
 
 **宿主 `0.1.2-rc.1` ~ `0.1.4`**：
 
@@ -44,14 +46,14 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-client-message-tools` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-client-message-tools@^0.3.3` |
 | `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-client-message-tools@^0.2.0` |
 | `0.1.x` | `@khorsheed/dsh-client-message-tools@^0.1.0` |
 
 每条用户消息带复制/编辑/撤回操作行。编辑是原位替换，保存后以新消息重新发送；撤回不是打标记——消息及其后内容彻底离开模型上下文，折叠成可展开的分隔线，原文自动回填草稿；还能一键恢复到对话末尾。全程不改动任何官方包。
 
-<details>
-<summary>展开查看功能示意（5 张）</summary>
+<details open>
+<summary>功能示意（5 张）</summary>
 
 <img src="docs/screenshots/message-actions1.png" width="840" alt="message-tools:用户消息上的操作行">
 
@@ -69,13 +71,13 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-message-timeline` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-message-timeline@^0.2.4` |
 | `0.1.x` | `@khorsheed/dsh-message-timeline@^0.1.0` |
 
 官方的时间轴在长会话中定位成本会比较高，我个人更常用的方式是用用户消息定位，且能一次性在多条用户消息里找而非需要一直上下滑动。会话左缘一条悬浮时间轴，一行一条用户消息。日常收成一条细线不占视线，悬停展开预览，点击直接把会话滚动到对应消息。跟随阅读位置，顶部翻页加载更早历史。
 
-<details>
-<summary>展开查看功能示意（2 张）</summary>
+<details open>
+<summary>功能示意（2 张）</summary>
 
 <img src="docs/screenshots/message-timeline1.png" width="840" alt="message-timeline:悬停展开的时间轴">
 
@@ -87,13 +89,13 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-client-session-title-edit` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-client-session-title-edit@^0.2.5` |
 | `0.1.x` | `@khorsheed/dsh-client-session-title-edit@^0.1.0` |
 
 点击聊天头部标题旁的铅笔，标题本身变成输入框，回车即保存、Escape 取消。用户改过的标题会被钉住，不再被自动生成覆盖。走官方 rename 通道，模型完全无感。
 
-<details>
-<summary>展开查看功能示意（2 张）</summary>
+<details open>
+<summary>功能示意（2 张）</summary>
 
 <img src="docs/screenshots/session-title-edit1.png" width="840" alt="session-title-edit:标题旁的内联编辑入口">
 
@@ -105,13 +107,13 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-quote` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-quote@^0.1.2` |
 | 更早 | 无可用版本 |
 
 选中任意文本浮出动作菜单——引用到当前会话（进输入框）、引用到侧边对话、复制；其他插件还可以往这个菜单里注册自己的动作行。
 
-<details>
-<summary>展开查看功能示意（2 张）</summary>
+<details open>
+<summary>功能示意（2 张）</summary>
 
 <img src="docs/screenshots/quote-1.png" width="840" alt="quote:选中文本浮出的引用菜单">
 
@@ -123,14 +125,14 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-file-preview`（0.4.0 起宿主服务与界面同包，一个规格即是全部） |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-file-preview@^0.4.1`（0.4.0 起宿主服务与界面同包，一个规格即是全部） |
 | `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-file-preview@^0.2.0` + `@khorsheed/dsh-client-ui-file-preview@^0.2.0`（旧线仍是宿主/界面两包成对） |
 | `0.1.x` | `@khorsheed/dsh-file-preview@^0.1.0` + `@khorsheed/dsh-client-ui-file-preview@^0.1.0` |
 
 「会话产物」 列出会话写入/编辑过的每个文件（按最近活动倒序），这对写作场景的帮助会比较大。选中即在页面内预览当前内容；改动记录逐条步进每次 write/edit 的 diff，带内容搜索。
 
-<details>
-<summary>展开查看功能示意（5 张）</summary>
+<details open>
+<summary>功能示意（5 张）</summary>
 
 <img src="docs/screenshots/file-preview-new1.png" width="840" alt="file-preview:文件列表与内联预览">
 
@@ -148,13 +150,13 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-local-files` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-local-files@^0.1.2` |
 | 更早 | 无可用版本 |
 
 工作区之外的本地目录，也能在右栏随手翻：懒加载文件树配结构化预览（HTML/Markdown/JSON/CSV 渲染、图片内联），git 无关，默认落在当前会话的工作区但不锁死。它接管官方「文件」页签——guide 页只出现一张文件卡片，卸载后官方卡片自动恢复。（细分：local-files 是「任意本地目录浏览」，file-preview 是「当前会话产物」，语义不同、各司其职。）
 
-<details>
-<summary>展开查看功能示意（2 张）</summary>
+<details open>
+<summary>功能示意（2 张）</summary>
 
 <img src="docs/screenshots/local-files-1.png" width="840" alt="local-files:开始页的文件列表入口，默认打开本会话工作目录">
 
@@ -166,14 +168,14 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-taskpilot` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-taskpilot@^0.3.4` |
 | `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-taskpilot@^0.2.0` |
 | `0.1.x` | `@khorsheed/dsh-taskpilot@^0.1.0` |
 
 聊天框上方两枚胶囊——「后台任务」和「子 agent」——各自独立显隐。运行中的任务每秒计时、带停止按钮；子 agent 展示完整谱系与 token 消耗、可中断；点击行打开详情抽屉，回放执行轨迹。数据全部来自产品已有镜像，对模型零影响。
 
-<details>
-<summary>展开查看功能示意（2 张）</summary>
+<details open>
+<summary>功能示意（2 张）</summary>
 
 <img src="docs/screenshots/taskpilot1.png" width="840" alt="taskpilot:子 agent 胶囊与展开的列表">
 
@@ -185,13 +187,13 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-context-guard` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-context-guard@^0.2.4` |
 | `0.1.x` | `@khorsheed/dsh-context-guard@^0.1.0` |
 
 上下文占用越过你配置的比例时，输入框工具栏自动出现压缩按钮，点击执行官方 /compact——在溢出拒绝请求之前提醒。提醒比例可在设置里按偏好调整（0.01–1），想早提醒就调低。
 
-<details>
-<summary>展开查看功能示意（2 张）</summary>
+<details open>
+<summary>功能示意（2 张）</summary>
 
 
 <img src="docs/screenshots/context-guard-settings-2.png" width="840" alt="context-guard:提醒比例可配置">
@@ -205,13 +207,13 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-inline-html-render` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-inline-html-render@^0.1.15` |
 | 更早 | 无可用版本 |
 
 agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的沙箱交互卡片——图表、小工具、可视化结果直接可玩，不必复制到别处打开。沙箱隔离，`prefers-reduced-motion` 下动画自动收敛。
 
-<details>
-<summary>展开查看功能示意（2 张）</summary>
+<details open>
+<summary>功能示意（2 张）</summary>
 
 <img src="docs/screenshots/inline-html-card-1.png" width="840" alt="inline-html-render:会话里的交互卡片">
 
@@ -223,13 +225,13 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-capability-catalog` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-capability-catalog@^0.1.97` |
 | 更早 | 无可用版本 |
 
 设置页新增「工具与技能」入口：枚举运行实例里的全部 skill 与工具，每一行标注注册渠道（官方内置 / 项目 / 用户 / 插件）；三列卡片预览，点开看 SKILL.md 全文、元数据与凭据配置；还能从上传的 zip 或粘贴的 SKILL.md 直接安装新 skill。
 
-<details>
-<summary>展开查看功能示意（3 张）</summary>
+<details open>
+<summary>功能示意（3 张）</summary>
 
 <img src="docs/screenshots/capability-catalog-1.png" width="840" alt="capability-catalog:能力目录三列预览">
 
@@ -245,14 +247,14 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-ui-shortcuts` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-ui-shortcuts@^0.2.4` |
 | `0.1.x` | `@khorsheed/dsh-ui-shortcuts@^0.1.0` |
 
 Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话。设置里点击键帽即可改键，偏好持久保存。还附带一个动作注册表：任何插件都能注册自己的键盘动作，免费获得设置项与无冲突分发。
 
 
-<details>
-<summary>展开查看功能示意（1 张）</summary>
+<details open>
+<summary>功能示意（1 张）</summary>
 
 <img src="docs/screenshots/07-ui-shortcuts.png" width="840" alt="ui-shortcuts:设置里的键位自定义">
 
@@ -262,13 +264,13 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-whalesong` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-whalesong@^0.2.4` |
 | `0.1.x` | `@khorsheed/dsh-whalesong@^0.1.0` |
 
 只要有会话在跑，侧边栏的鲸鱼就喷水、标签页图标跟着动；任务完成或卡住等你时，播一小段提示音（WebAudio 合成，`prefers-reduced-motion` 下自动静音）。
 
-<details>
-<summary>展开查看功能示意（2 张）</summary>
+<details open>
+<summary>功能示意（2 张）</summary>
 
 <img src="docs/screenshots/whalesong1.png" width="840" alt="whalesong:任务运行时鲸鱼喷水">
 
@@ -280,13 +282,13 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-mobile` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-mobile@^0.1.3` |
 | 更早 | 无可用版本 |
 
 手机浏览器上的移动版界面适配，外加 iOS 桥——出门在外也能看会话、布置任务、处理审批。
 
-<details>
-<summary>展开查看功能示意（2 张）</summary>
+<details open>
+<summary>功能示意（2 张）</summary>
 
 <img src="docs/screenshots/mobile-conversation.png" width="840" alt="mobile:手机上的会话界面">
 
@@ -298,14 +300,14 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-ankh-guard` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-ankh-guard@^0.4.1` |
 | `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-ankh-guard@^0.2.0` |
 | `0.1.x` | `@khorsheed/dsh-ankh-guard@^0.1.0` |
 
 让 agent 自己改代码、自己重启，还不把服务搞挂：重启前先验证构建与测试（凭证绑定 git HEAD、限时有效），验证不过就拦下；重启后金丝雀自动激活会话继续验证；连续起不来自动回滚到已知良好版本。自托管、让 AI 自主干活的场景必备。
 
-<details>
-<summary>展开查看功能示意（1 张）</summary>
+<details open>
+<summary>功能示意（1 张）</summary>
 
 <img src="docs/screenshots/ankh-guard.JPG" width="840" alt="ankh-guard:一次受守护的重启全过程">
 
@@ -315,13 +317,13 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-conversation-toolbox` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-conversation-toolbox@^0.1.2` |
 | 更早 | 无可用版本（成员可按上表逐线单装） |
 
 不想逐个挑？这一个元包把会话工具七件套一次装齐：message-tools、message-timeline、session-title-edit、quote、inline-html-render、context-guard、taskpilot。成员作为 npm 依赖自动带入，元包的 patch 逐字重挂各成员的标准行；装完后每个组件在 设置 → 插件 里仍可单独禁用——打包的是安装，不是绑定。
 
-<details>
-<summary>展开查看功能示意（1 张）</summary>
+<details open>
+<summary>功能示意（1 张）</summary>
 
 <img src="docs/screenshots/bundle-conversation-toolbox.png" width="840" alt="bundle-conversation-toolbox:详情页七个组件逐行显示、可独立开关">
 
@@ -395,7 +397,7 @@ sh /tmp/dsh-basic/scripts/restart-into-basic.sh [端口，默认 3080]
 
 ### 二、安装单个插件
 
-- **对话框（0.1.7-rc.2 起，推荐）**：设置 → 插件 → 添加插件，填包名（如 `@khorsheed/dsh-whalesong`），按提示启用。旧宿主记得带版本线后缀（见上文「版本兼容」）。
+- **对话框（0.1.7-rc.2 起，推荐）**：设置 → 插件 → 添加插件，填包名（如 `@khorsheed/dsh-whalesong`），按提示启用。旧宿主记得带版本线后缀（见上文「版本兼容」）；`0.2.0-rc.*` 宿主在发版当天也要带（下限见各表）。
 - **命令行**：`dsh plugin --profile <profile> add <包名>`；卸载 `remove`，更新 `update`。
 - **打包装**：常用会话插件七件套用元包 `dsh plugin --profile <profile> add @khorsheed/dsh-bundle-conversation-toolbox` 一次装齐，成员行仍可在 设置 → 插件 里单独禁用。
 

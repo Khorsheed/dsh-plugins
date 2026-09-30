@@ -30,7 +30,9 @@ The everyday conversation plugins can also be installed straight as the `@khorsh
 
 ### Version compatibility
 
-**Host ≥ `0.1.5-rc.1`**: use the package names as-is; all 14 members' latest works.
+**Host `0.2.0-rc.*`**: copy the specs with an `@^version` floor from the tables below. On release day do not paste a bare package name — pnpm 11 hides versions younger than 24 hours by default (`minimumReleaseAge`, a supply-chain guard), so a bare name resolves to the old 0.1.x-only line and the host compatibility check then rejects it; a floored spec auto-exempts the gate and installs the compatible new version.
+
+**Host `0.1.5-rc.1` ~ `0.1.7.*`**: bare package names are fine — every member's latest works (the old plugin lines remain compatible on 0.1.x hosts, so the age-gate fallback is harmless there).
 
 **Host `0.1.2-rc.1` ~ `0.1.4`**:
 
@@ -44,14 +46,14 @@ The everyday conversation plugins can also be installed straight as the `@khorsh
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-client-message-tools` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-client-message-tools@^0.3.3` |
 | `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-client-message-tools@^0.2.0` |
 | `0.1.x` | `@khorsheed/dsh-client-message-tools@^0.1.0` |
 
 Every user message carries a copy/edit/withdraw action row. Edits replace in place and re-send as a new message; a withdraw is real — the message and everything after it leaves the model's context, folding into an expandable divider with the original text refilled into your draft; one click restores them to the end of the conversation. No official package is touched.
 
-<details>
-<summary>View the screenshots (5)</summary>
+<details open>
+<summary>Screenshots (5)</summary>
 
 <img src="docs/screenshots/message-actions1.png" width="840" alt="message-tools: the action row on a user message">
 
@@ -69,13 +71,13 @@ Every user message carries a copy/edit/withdraw action row. Edits replace in pla
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-message-timeline` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-message-timeline@^0.2.4` |
 | `0.1.x` | `@khorsheed/dsh-message-timeline@^0.1.0` |
 
 The official timeline gets costly to navigate in long sessions; I personally prefer locating by user messages — you can scan across many at once instead of scrolling up and down. A floating timeline along the chat's left edge, one row per user message. At rest it is a thin rail out of sight; hover to expand a preview, click to scroll straight to that message. Follows your reading position and pages older history at the top.
 
-<details>
-<summary>View the screenshots (2)</summary>
+<details open>
+<summary>Screenshots (2)</summary>
 
 <img src="docs/screenshots/message-timeline1.png" width="840" alt="message-timeline: expanded on hover">
 
@@ -87,13 +89,13 @@ The official timeline gets costly to navigate in long sessions; I personally pre
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-client-session-title-edit` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-client-session-title-edit@^0.2.5` |
 | `0.1.x` | `@khorsheed/dsh-client-session-title-edit@^0.1.0` |
 
 Click the pencil beside the title in the chat header and the title itself becomes an input — Enter saves, Escape cancels. A user-set title is pinned and never overwritten by auto-generation. Rides the official rename channel; the model never notices.
 
-<details>
-<summary>View the screenshots (2)</summary>
+<details open>
+<summary>Screenshots (2)</summary>
 
 <img src="docs/screenshots/session-title-edit1.png" width="840" alt="session-title-edit: the inline edit entry">
 
@@ -105,13 +107,13 @@ Click the pencil beside the title in the chat header and the title itself become
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-quote` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-quote@^0.1.2` |
 | earlier | no release available |
 
 Select any text and a floating action menu appears — quote into the current session (lands in the composer), quote into a side chat, or copy. Other plugins can register their own action rows into the same menu.
 
-<details>
-<summary>View the screenshots (2)</summary>
+<details open>
+<summary>Screenshots (2)</summary>
 
 <img src="docs/screenshots/quote-1.png" width="840" alt="quote: the floating menu over selected text">
 
@@ -123,14 +125,14 @@ Select any text and a floating action menu appears — quote into the current se
 
 | Host version | Install specs (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-file-preview` (since 0.4.0 the host service and the UI ship as one package — one spec is everything) |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-file-preview@^0.4.1` (since 0.4.0 the host service and the UI ship as one package — one spec is everything) |
 | `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-file-preview@^0.2.0` + `@khorsheed/dsh-client-ui-file-preview@^0.2.0` (the old line is still the host/UI pair) |
 | `0.1.x` | `@khorsheed/dsh-file-preview@^0.1.0` + `@khorsheed/dsh-client-ui-file-preview@^0.1.0` |
 
 The Produced tab lists every file the session wrote or edited (most recent first) — especially handy in writing scenarios. Select one to preview its current content in-page, or step through every write/edit diff with content search.
 
-<details>
-<summary>View the screenshots (5)</summary>
+<details open>
+<summary>Screenshots (5)</summary>
 
 <img src="docs/screenshots/file-preview-new1.png" width="840" alt="file-preview: file list and inline preview">
 
@@ -148,13 +150,13 @@ The Produced tab lists every file the session wrote or edited (most recent first
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-local-files` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-local-files@^0.1.2` |
 | earlier | no release available |
 
 Browse local directories beyond the workspace from the right sidebar: a lazy file tree with structured previews (rendered HTML/Markdown/JSON/CSV, inline images), git-agnostic, rooted at the current session's workspace by default but never locked to it. It takes over the official Files tab — the guide page shows a single files card, and the official card returns on uninstall. (The split: local-files browses any local directory; file-preview is the current session's artifacts — different semantics, two packages.)
 
-<details>
-<summary>View the screenshots (2)</summary>
+<details open>
+<summary>Screenshots (2)</summary>
 
 <img src="docs/screenshots/local-files-1.png" width="840" alt="local-files: the files entry on the start page, defaulting to the session's working directory">
 
@@ -166,14 +168,14 @@ Browse local directories beyond the workspace from the right sidebar: a lazy fil
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-taskpilot` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-taskpilot@^0.3.4` |
 | `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-taskpilot@^0.2.0` |
 | `0.1.x` | `@khorsheed/dsh-taskpilot@^0.1.0` |
 
 Two pills above the composer — background jobs and sub-agents — each appearing only when there is something to show. Running jobs tick every second with a stop button; sub-agents show the full lineage with token cost and can be interrupted; click a row for the detail drawer with a replayed execution trace. All data comes from mirrors the product already keeps — zero model impact.
 
-<details>
-<summary>View the screenshots (2)</summary>
+<details open>
+<summary>Screenshots (2)</summary>
 
 <img src="docs/screenshots/taskpilot1.png" width="840" alt="taskpilot: the sub-agent pill, expanded">
 
@@ -185,13 +187,13 @@ Two pills above the composer — background jobs and sub-agents — each appeari
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-context-guard` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-context-guard@^0.2.4` |
 | `0.1.x` | `@khorsheed/dsh-context-guard@^0.1.0` |
 
 When context occupancy crosses your configured ratio, a compact button appears in the composer toolbar — one click runs the official /compact, before overflow starts rejecting requests. Tune the ratio to your taste (0.01–1); lower means earlier.
 
-<details>
-<summary>View the screenshots (2)</summary>
+<details open>
+<summary>Screenshots (2)</summary>
 
 <img src="docs/screenshots/context-guard-settings-2.png" width="840" alt="context-guard: the configurable ratio">
 
@@ -203,13 +205,13 @@ When context occupancy crosses your configured ratio, a compact button appears i
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-inline-html-render` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-inline-html-render@^0.1.15` |
 | earlier | no release available |
 
 A ```` ```dsh-card ```` HTML block in the agent's reply renders as a sandboxed interactive card right in the conversation — sketch the UI first, agree on the details, then build it, instead of discovering the mismatch after everything is done. Sandboxed and isolated; animations settle down under `prefers-reduced-motion`.
 
-<details>
-<summary>View the screenshots (2)</summary>
+<details open>
+<summary>Screenshots (2)</summary>
 
 <img src="docs/screenshots/inline-html-card-1.png" width="840" alt="inline-html-render: an interactive card in the conversation">
 
@@ -221,13 +223,13 @@ A ```` ```dsh-card ```` HTML block in the agent's reply renders as a sandboxed i
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-capability-catalog` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-capability-catalog@^0.1.97` |
 | earlier | no release available |
 
 A new Tools & Skills entry in settings: every skill and tool in the running instance, each labeled with its registration channel (official built-in / project / user / plugin); a three-column card grid, a detail modal with the full SKILL.md, metadata and credential config, and an add-skill modal that installs from an uploaded zip or a pasted SKILL.md.
 
-<details>
-<summary>View the screenshots (3)</summary>
+<details open>
+<summary>Screenshots (3)</summary>
 
 <img src="docs/screenshots/capability-catalog-1.png" width="840" alt="capability-catalog: the three-column grid">
 
@@ -243,13 +245,13 @@ Since 0.1.7-rc.2 the host ships its own shortcut settings — you can use the of
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-ui-shortcuts` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-ui-shortcuts@^0.2.4` |
 | `0.1.x` | `@khorsheed/dsh-ui-shortcuts@^0.1.0` |
 
 Esc pauses the current task, Ctrl/Cmd+S steer-sends your draft, Ctrl/Cmd+O starts a new session. Click a keycap in settings to rebind; preferences persist. It also ships an action registry: any plugin can register its own keyboard action and gets a settings entry plus conflict-free dispatch for free.
 
-<details>
-<summary>View the screenshots (1)</summary>
+<details open>
+<summary>Screenshots (1)</summary>
 
 <img src="docs/screenshots/07-ui-shortcuts.png" width="840" alt="ui-shortcuts: rebinding keys in settings">
 
@@ -259,13 +261,13 @@ Esc pauses the current task, Ctrl/Cmd+S steer-sends your draft, Ctrl/Cmd+O start
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-whalesong` |
+| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-whalesong@^0.2.4` |
 | `0.1.x` | `@khorsheed/dsh-whalesong@^0.1.0` |
 
 While any session runs, the sidebar whale spouts and the tab icon moves; when a run finishes or stalls waiting for you, a short chime plays (synthesized WebAudio, silenced under `prefers-reduced-motion`).
 
-<details>
-<summary>View the screenshots (2)</summary>
+<details open>
+<summary>Screenshots (2)</summary>
 
 <img src="docs/screenshots/whalesong1.png" width="840" alt="whalesong: spouting while tasks run">
 
@@ -277,13 +279,13 @@ While any session runs, the sidebar whale spouts and the tab icon moves; when a 
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-mobile` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-mobile@^0.1.3` |
 | earlier | no release available |
 
 A mobile presentation of the web UI for phone browsers, plus the iOS bridge — check in on sessions, hand out tasks, and handle approvals away from your desk.
 
-<details>
-<summary>View the screenshots (2)</summary>
+<details open>
+<summary>Screenshots (2)</summary>
 
 <img src="docs/screenshots/mobile-conversation.png" width="840" alt="mobile: the conversation view on a phone">
 
@@ -295,14 +297,14 @@ A mobile presentation of the web UI for phone browsers, plus the iOS bridge — 
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-ankh-guard` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-ankh-guard@^0.4.1` |
 | `0.1.2` ~ `0.1.4` | `@khorsheed/dsh-ankh-guard@^0.2.0` |
 | `0.1.x` | `@khorsheed/dsh-ankh-guard@^0.1.0` |
 
 Let the agent change its own code and restart its own service without taking it down: restarts require a green build+test credential (bound to the git HEAD, time-boxed) and are refused without one; after the restart a canary reactivates the session to keep verifying; repeated boot failures roll back to the last known-good version. A must for self-hosted, AI-driven setups.
 
-<details>
-<summary>View the screenshots (1)</summary>
+<details open>
+<summary>Screenshots (1)</summary>
 
 <img src="docs/screenshots/ankh-guard.JPG" width="840" alt="ankh-guard: a guarded restart, end to end">
 
@@ -312,13 +314,13 @@ Let the agent change its own code and restart its own service without taking it 
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-conversation-toolbox` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-conversation-toolbox@^0.1.2` |
 | earlier | no release available (install members individually per the tables above) |
 
 Don't want to pick one by one? This single meta package installs the seven conversation tools at once: message-tools, message-timeline, session-title-edit, quote, inline-html-render, context-guard, taskpilot. Members arrive as npm dependencies, and the bundle's patch re-mounts each member's canonical rows verbatim; afterwards every component stays individually disable-able under Settings → Plugins — the bundle packages the install, not your choices.
 
-<details>
-<summary>View the screenshots (1)</summary>
+<details open>
+<summary>Screenshots (1)</summary>
 
 <img src="docs/screenshots/bundle-conversation-toolbox.png" width="840" alt="bundle-conversation-toolbox: the detail page listing seven components, each individually switchable">
 
@@ -392,7 +394,7 @@ Once `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` returns 2
 
 ### 2. Installing a single plugin
 
-- **Dialog (0.1.7-rc.2+, recommended)**: Settings → Plugins → Add plugin, enter the package name (e.g. `@khorsheed/dsh-whalesong`), enable as prompted. On older hosts remember the release-line suffix (see "Version compatibility" above).
+- **Dialog (0.1.7-rc.2+, recommended)**: Settings → Plugins → Add plugin, enter the package name (e.g. `@khorsheed/dsh-whalesong`), enable as prompted. On older hosts remember the release-line suffix (see "Version compatibility" above); on `0.2.0-rc.*` hosts, add the floor on release day too (each table carries it).
 - **CLI**: `dsh plugin --profile <profile> add <package name>`; `remove` to uninstall, `update` to upgrade.
 - **Bundle install**: the seven everyday conversation plugins also install in one shot via the meta package — `dsh plugin --profile <profile> add @khorsheed/dsh-bundle-conversation-toolbox`; member rows stay individually disable-able under Settings → Plugins.
 

@@ -27,14 +27,16 @@
 
 宿主 ≥ `0.1.5-rc.1`。
 
+**宿主 `0.2.0-rc.*`**：复制下表中带 `@^版本` 下限的规格。发版当天不要裸填包名——pnpm 11 默认启用 24 小时新版保护（`minimumReleaseAge`，供应链安全），裸名会把当天发布的新版藏起来、装到只支持 0.1.x 的旧线，再被宿主的兼容性检查拦下；带下限的规格会自动豁免保护期，装到兼容的新版。
+
 ## 功能展示
 
 ### 本地 Agent 家族（6 个包）：把任务派给别的编码 agent
 
 | 装法 | 安装规格（复制到对话框） |
 |---|---|
-| 整族一次装齐（推荐） | `@khorsheed/dsh-bundle-local-agent` |
-| 单装：核心 + 任选 provider | `@khorsheed/dsh-local-agent` + `@khorsheed/dsh-local-agent-kimi`（或 `-codex` / `-claude-code` / `-dsh`） |
+| 整族一次装齐（推荐） | `@khorsheed/dsh-bundle-local-agent@^0.1.2` |
+| 单装：核心 + 任选 provider | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-kimi@^0.1.0-rc.8`（或 `-codex` / `-claude-code` / `-dsh`，同版本线） |
 
 把子任务委派给你本机装的编码 Agent CLI——Kimi Code、Codex、Claude Code、以及 dsh 自己。每个 harness 在自己独立的作用域目录下运行（`$DSH_HOME/local-agent/<name>`，0700 权限），**绝不触碰你用户目录里的私人配置与凭据**。
 
@@ -57,7 +59,7 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-worktrees`（模型工具行是包内 `./tool` 子路径入口，随开发模式 preset 生效，无需单装） |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-worktrees@^0.3.0`（模型工具行是包内 `./tool` 子路径入口，随开发模式 preset 生效，无需单装） |
 
 每个会话右上角一个 repo/worktree 徽标，显示当前仓库、分支与合并 diff 行数（绿 = 无改动，黄 = 有改动）。点开是改动抽屉：未提交/已提交文件树 + diff、IDE 风格提交记录、仓库全量文件浏览。只读展示 git 事实，不写仓库。
 
@@ -67,7 +69,7 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-room`（模型工具行是包内 `./tool` 子路径入口，随开发模式 preset 生效，无需单装） |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-room@^0.2.1`（模型工具行是包内 `./tool` 子路径入口，随开发模式 preset 生效，无需单装） |
 
 在任意会话里邀请一个 agent，这个会话就成为 room：成员 tab、@ 分发、多成员胶囊、任务板、通知闸门。成员之间可以互相召唤，进度在同一条会话线上可见。
 
@@ -77,7 +79,7 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent@^0.1.2` |
 
 一个元包装齐 local-agent 核心 + kimi / codex / claude-code / dsh 四个 provider：成员作为 npm 依赖自动带入，元包的 patch 逐字重挂各成员的规范行；装完后每个组件在 设置 → 插件 里仍可单独禁用——打包的是安装，不是绑定。
 
@@ -96,7 +98,7 @@ pack 自带一个**开发模式** preset（`presets/dev`）。它存在的意义
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.7-rc.2`（推荐） | `@khorsheed/dsh-presets` |
+| ≥ `0.1.7-rc.2`（推荐） | `@khorsheed/dsh-presets@^0.2.0` |
 | `0.1.5-rc.1` ~ `0.1.7-rc.1` | 随整合包脚本以目录式安装（见文末指南） |
 
 0.1.7-rc.2 起官方支持 preset as a bundle——preset 像普通插件一样打包成包，复制包名即可安装，不再需要手动放置目录；建议升级到该版本，装起来更丝滑。安装后开发模式的 UI 与工具仅在开发模式会话生效，不干扰其它模式。

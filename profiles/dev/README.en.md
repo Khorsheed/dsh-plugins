@@ -27,14 +27,16 @@ This pack contains the 8 plugins specific to dev mode (see the table below). Bey
 
 Host ≥ `0.1.5-rc.1`.
 
+**Host `0.2.0-rc.*`**: copy the specs with an `@^version` floor from the tables below. On release day do not paste a bare package name — pnpm 11 hides versions younger than 24 hours by default (`minimumReleaseAge`, a supply-chain guard), so a bare name resolves to the old 0.1.x-only line and the host compatibility check then rejects it; a floored spec auto-exempts the gate and installs the compatible new version.
+
 ## Features
 
 ### Local agent family (6 packages): delegate to other coding agents
 
 | How | Install spec (copy into the dialog) |
 |---|---|
-| The whole family at once (recommended) | `@khorsheed/dsh-bundle-local-agent` |
-| Individually: core + any provider | `@khorsheed/dsh-local-agent` + `@khorsheed/dsh-local-agent-kimi` (or `-codex` / `-claude-code` / `-dsh`) |
+| The whole family at once (recommended) | `@khorsheed/dsh-bundle-local-agent@^0.1.2` |
+| Individually: core + any provider | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-kimi@^0.1.0-rc.8` (or `-codex` / `-claude-code` / `-dsh`, same version line) |
 
 Delegate subtasks to the coding agent CLIs on your machine — Kimi Code, Codex, Claude Code, and dsh itself. Each harness runs under its own scoped home (`$DSH_HOME/local-agent/<name>`, mode 0700), and **never touches the private configuration and credentials in your user directory**.
 
@@ -57,7 +59,7 @@ Delegate subtasks to the coding agent CLIs on your machine — Kimi Code, Codex,
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-worktrees` (the model tool row is the package's `./tool` subpath entry, activated by the dev-mode preset — no separate install needed) |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-worktrees@^0.3.0` (the model tool row is the package's `./tool` subpath entry, activated by the dev-mode preset — no separate install needed) |
 
 A repo/worktree badge sits at the top right of every session, showing the current repository, branch, and combined diff size (green = clean, yellow = dirty). Opening it reveals the change drawer: uncommitted and committed file trees with diffs, an IDE-style commit log, and full repository file browsing. It displays git facts read-only and never writes to the repository.
 
@@ -67,7 +69,7 @@ A repo/worktree badge sits at the top right of every session, showing the curren
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-room` (the model tool row is the package's `./tool` subpath entry, activated by the dev-mode preset — no separate install needed) |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-room@^0.2.1` (the model tool row is the package's `./tool` subpath entry, activated by the dev-mode preset — no separate install needed) |
 
 Invite an agent into any session and that session becomes a room: member tab, @-dispatch, multi-member capsules, a task board, and a notification gate. Members can summon each other, and progress stays visible on one conversation thread.
 
@@ -77,7 +79,7 @@ Invite an agent into any session and that session becomes a room: member tab, @-
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent@^0.1.2` |
 
 One meta package installs the local-agent core plus all four providers (kimi / codex / claude-code / dsh): members arrive as npm dependencies and the bundle's patch re-mounts each member's canonical rows verbatim; afterwards every component stays individually disable-able under Settings → Plugins — the bundle packages the install, not your choices.
 
@@ -96,7 +98,7 @@ The composition re-bases verbatim on the official "Standard mode" and only appen
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.7-rc.2` (recommended) | `@khorsheed/dsh-presets` |
+| ≥ `0.1.7-rc.2` (recommended) | `@khorsheed/dsh-presets@^0.2.0` |
 | `0.1.5-rc.1` ~ `0.1.7-rc.1` | Installed directory-style by the pack scripts (see the guide at the end) |
 
 Since 0.1.7-rc.2 the official host supports preset-as-a-bundle — a preset ships as an ordinary package and installs by copying its name, no manual directory placement; upgrading is recommended for the smoother path. Once installed, dev mode's UI and tools take effect only in dev-mode sessions and never disturb the other modes.
