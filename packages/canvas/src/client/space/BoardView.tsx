@@ -32,7 +32,7 @@ import { categoryColorOf, categoryLabelMap, kindIconOf } from '../category-label
 import { basenameOf } from '../text.ts'
 import { FollowUp } from '../follow-up.tsx'
 import { firstDrawingOf, withoutDrawLines } from '../../blocks.ts'
-import { cardNameOf, detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { cardNameOf, detectCardFormat, htmlTitleOf, opensWithHeading } from '../../card-format.ts'
 import { typedTitleOf, type TypeDefinition } from '../../card-types.ts'
 import { TypedFace, type CardNameOf } from '../type/fields.tsx'
 import { withHtmlBlocksMarked } from '../../html-blocks.ts'
@@ -163,10 +163,6 @@ export function typedExcerptOf(t: TranslateNS<'canvas'>, card: BoardCard): strin
 }
 
 /** Whether the first non-empty line is a markdown heading (`# …` to `###### …`). */
-function opensWithHeading(text: string): boolean {
-  const first = text.split('\n').find(line => line.trim().length > 0)
-  return first !== undefined && /^#{1,6}\s+\S/.test(first.trim())
-}
 
 /** A card's summary: the drawing, the derived heading, the clamped text.
  *  The word count is NOT here — it belongs to the pinned footer, which is

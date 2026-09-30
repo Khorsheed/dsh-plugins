@@ -674,7 +674,10 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             trailing={moreMenu}
           />
         )}
-        {heading !== undefined && <div className={css.title}>{plainInline(heading.title)}</div>}
+        {/* Only an HTML page gets a title line: its <title> is not on the
+            page it renders. A markdown card's heading is already the body's
+            first line, and the crumb names the card — a line here drew it twice. */}
+        {html && heading !== undefined && <div className={css.title}>{plainInline(heading.title)}</div>}
         <div className={css.meta}>
           <KindTag
             t={t}

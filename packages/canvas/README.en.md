@@ -34,7 +34,7 @@ The v1 workspace pad's **storage is kept exactly as it is** (the editor retired)
 - **Comments hang on cards**: a badge unfolds the thread; comments are data (an agent comment moves an open question card to exploring automatically).
 - **The editor invariants carry over from v1**: uncontrolled textareas (the caret never jumps), a hard stop while an IME composes (the candidate window is never torn down), and one scroll container.
 - **Dark mode follows the theme**: the interface draws from official `--dsw-*` tokens. The one exception is the category dot (0.6.0): one of six hues by the category's place in the catalog, mixed with `label-primary` so it reads in both themes; the dot always sits beside the words, so a category is never told by colour alone.
-- **The board as a table** (0.6.0): the board sits on a faint ground and cards float on it — base fill, fine border, a light shadow; filter chips gain contrast and a dot each; a note that opens with a markdown heading shows that heading bold on its face, without the `#`.
+- **The board as a table** (0.6.0): the board uses the panel's own ground (no extra layer that would turn light in dark mode) and cards float on it — base fill, fine border, a light shadow; filter chips gain contrast and a dot each; a note that opens with a markdown heading shows that heading bold on its face, without the `#`; the card page draws a separate title line only for an HTML page card — a markdown card's title is its own heading, never shown twice.
 
 ## The v1 pad (storage kept, editor retired)
 

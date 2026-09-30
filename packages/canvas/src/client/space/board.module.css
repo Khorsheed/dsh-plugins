@@ -263,15 +263,16 @@
 
 /* ------------------------------------------------------------------ board */
 
-/* The ONE scroll container of the board: panes inside it never scroll. It
-   sits one layer down (layer-1) so the cards, on the base fill, read as
-   objects on a table rather than outlines on the page. */
+/* The ONE scroll container of the board: panes inside it never scroll. No
+   ground of its own: a layer-1 table under base cards reads as lifted in the
+   light theme but INVERTS in the dark one (layer-1 is the lighter there, so
+   the cards sank into holes), and it stopped at the content's height. The
+   cards carry their own edge instead. */
 .boardScroll {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
   padding: 14px 18px 40px;
-  background: var(--dsw-alias-bg-layer-1);
 }
 
 /* One row, scrolled sideways rather than wrapped: stage ⑤ lets a canvas add
@@ -457,8 +458,9 @@
 }
 
 /* Kind is told by icon + words first; the category dot is an added cue, never
-   the only one. The card is the object on the layer-1 table: base fill, l2
-   frame, a shadow just deep enough to lift it. */
+   the only one. The card is an object on the board: base fill, l2 frame,
+   a shadow just deep enough to lift it in the light theme (the dark one
+   leans on the frame). */
 .card {
   position: relative;
   display: flex;
@@ -576,10 +578,6 @@
   pointer-events: none;
 }
 
-.cardGhost .cardTextWrap[data-clamped="true"]::after {
-  background: linear-gradient(transparent, var(--dsw-alias-bg-layer-1));
-}
-
 .cardWords {
   font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-caption);
@@ -654,7 +652,7 @@
   }
 }
 
-/* The ghost proposal: dashed border straight on the table, never a fill or a
+/* The ghost proposal: dashed border straight on the board, never a fill or a
    lift — it is not a card until the user keeps it. */
 .cardGhost {
   background: transparent;

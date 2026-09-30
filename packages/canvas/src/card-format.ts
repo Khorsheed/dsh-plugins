@@ -140,12 +140,22 @@ export function cardTitleOf(text: string): string {
 /**
  * The name a person sees for a card — a tab, a crumb, a source chip. A
  * markdown document is named by its heading, never by its raw `#` line (the
- * board face already does this); anything else by {@link cardTitleOf}.
+ * board face already does this), and so is a card of any kind that OPENS with
+ * a heading; anything else by {@link cardTitleOf}.
  * @param card - the card's kind and text.
  * @returns a single-line name ('' for an empty card).
  */
+/**
+ * Whether a text's first non-empty line is a markdown heading.
+ * @param text - the card's text.
+ */
+export function opensWithHeading(text: string): boolean {
+  const first = text.split('\n').find(line => line.trim().length > 0)
+  return first !== undefined && /^#{1,6}\s+\S/.test(first.trim())
+}
+
 export function cardNameOf(card: { readonly kind: string; readonly text: string }): string {
-  if (card.kind === 'document' && detectCardFormat(card.text) !== 'html') {
+  if (detectCardFormat(card.text) !== 'html' && (card.kind === 'document' || opensWithHeading(card.text))) {
     const heading = documentHeadingOf(card.text)?.title
     if (heading !== undefined && heading !== '') return plainInline(heading)
   }

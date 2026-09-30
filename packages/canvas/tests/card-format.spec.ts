@@ -63,10 +63,11 @@ describe('htmlTitleOf', () => {
 })
 
 describe('cardNameOf', () => {
-  it('names a markdown document by its heading, an html page by its title, anything else by its first line', () => {
+  it('names a card that opens with a heading by that heading, an html page by its title, anything else by its first line', () => {
     expect(cardNameOf({ kind: 'document', text: '\n# 异议的代价\n\n正文' })).toBe('异议的代价')
     expect(cardNameOf({ kind: 'document', text: '<!doctype html><title>页</title>' })).toBe('页')
-    expect(cardNameOf({ kind: 'fragment', text: '# 不是文档\n正文' })).toBe('# 不是文档')
+    expect(cardNameOf({ kind: 'fragment', text: '# 不是文档\n正文' })).toBe('不是文档')
+    expect(cardNameOf({ kind: 'fragment', text: '#标签\n正文' })).toBe('#标签')
     expect(cardNameOf({ kind: 'document', text: '' })).toBe('')
   })
 
