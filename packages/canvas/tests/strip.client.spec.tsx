@@ -495,16 +495,17 @@ describe('CanvasTab — the strip routes its rows', () => {
 
 describe('CanvasTab — the draft row', () => {
   /**
-   * Open the ＋新卡 menu, pick one of its rows, and take the in-place draft to
-   * the full editor (展开) — the draft row these tests are about.
+   * Open a draft from the ＋ tile (it lands on the draft page as 灵感) and, for
+   * any other category, re-file it through the draft's category tag.
    */
   async function pickCategory(label: string, cardText = '卡片 c_1'): Promise<void> {
     await screen.findByText(cardText)
     fireEvent.click(screen.getByRole('button', { name: NEW_TILE }))
-    const kind = await screen.findByRole('combobox', { name: '新卡的分类' })
-    const option = within(kind).getByRole('option', { name: label }) as HTMLOptionElement
-    fireEvent.change(kind, { target: { value: option.value } })
-    fireEvent.click(await screen.findByRole('button', { name: '展开' }))
+    await screen.findByPlaceholderText(/写点什么/)
+    if (label === '灵感') return
+    fireEvent.click(screen.getByRole('button', { name: /灵感/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: label }))
+    await waitFor(() => { expect(screen.getByRole('button', { name: new RegExp(label) })).toBeTruthy() })
   }
 
   it('opens the menu’s pick inside the canvas row, and a second pick re-categorizes it', async () => {

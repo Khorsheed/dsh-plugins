@@ -567,20 +567,15 @@ describe('CanvasTab — the category catalog (stage ⑤)', () => {
     })
   })
 
-  it('offers this board\'s own categories in the new-card draft', async () => {
+  it('starts the new card in the filtered category, by this board\'s own name for it', async () => {
     const { mocks, props } = makeHarness({
-      boards: [board(CANVAS_ID, [card('c_1')], { categories: catalog() })],
+      boards: [board(CANVAS_ID, [card('c_1'), card('c_2', { kind: custom.id })], { categories: catalog() })],
     })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: NEW_TILE }))
-    // The draft opens in place; its kind picker holds this board's own rows.
-    const kind = await screen.findByRole('combobox', { name: '新卡的分类' })
-    fireEvent.change(kind, { target: { value: custom.id } })
-    expect(kind).toHaveProperty('value', custom.id)
-    expect(mocks.openCardDraft).not.toHaveBeenCalled()
-    // The retired row is not among the draft's kinds.
-    expect(within(kind).queryByRole('option', { name: '文档' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^反方观点/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '新增反方观点卡片' }))
+    expect(mocks.openCardDraft).toHaveBeenCalledWith(CANVAS_ID, custom.id, '反方观点')
   })
 })
 
@@ -649,48 +644,22 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_old', '归档掉的旧卡')
   })
 
-  it('opens the ＋ tile as a draft in place, and 展开 hands it to the draft tab', async () => {
+  it('opens the ＋ tile straight onto the draft page, never a draft on the board', async () => {
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
     fireEvent.click(screen.getByRole('button', { name: NEW_TILE }))
-    fireEvent.change(await screen.findByRole('combobox', { name: '新卡的分类' }), { target: { value: 'question' } })
-    // The draft sits on the board beside the cards, not on a page of its own.
-    const words = await screen.findByPlaceholderText(/写点什么/)
-    screen.getByText('卡片 c_1')
-    fireEvent.input(words, { target: { value: '为什么没人开口' } })
-    fireEvent.click(screen.getByRole('button', { name: '展开' }))
-    expect(mocks.openCardDraft).toHaveBeenCalledWith(CANVAS_ID, 'question', '问题')
-    await waitFor(() => { expect(screen.queryByPlaceholderText(/写点什么/)).toBeNull() })
+    expect(mocks.openCardDraft).toHaveBeenCalledWith(CANVAS_ID, 'fragment', '灵感')
+    expect(screen.queryByPlaceholderText(/写点什么/)).toBeNull()
   })
 
   it('makes the ＋ tile the first cell of an empty board, carrying the invitation', async () => {
-    const { props } = makeHarness({ boards: [board(CANVAS_ID, [])] })
+    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [])] })
     render(<CanvasTab {...props} />)
     const tile = await screen.findByText('记下一条灵感、问题、共识或来源')
     expect(tile.closest('button')?.textContent).toContain('新增灵感卡片')
     fireEvent.click(tile)
-    await screen.findByPlaceholderText(/写点什么/)
-  })
-
-  it('files the in-place draft on ⏎ and folds the tile back to ＋', async () => {
-    const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
-    render(<CanvasTab {...props} />)
-    await screen.findByText('卡片 c_1')
-    // The dashed tile at the end of the grid starts a card of the default kind.
-    fireEvent.click(screen.getByRole('button', { name: NEW_TILE }))
-    const words = await screen.findByPlaceholderText(/写点什么/)
-    // Esc leaves words alone; it only drops an empty draft.
-    fireEvent.input(words, { target: { value: '会上其实有人想反对' } })
-    fireEvent.keyDown(words, { key: 'Escape' })
-    screen.getByPlaceholderText(/写点什么/)
-    fireEvent.keyDown(words, { key: 'Enter' })
-    await waitFor(() => {
-      expect(mocks.putCard).toHaveBeenCalledWith('s1', {
-        canvasId: CANVAS_ID, kind: 'fragment', text: '会上其实有人想反对',
-      })
-    })
-    await waitFor(() => { expect(screen.queryByPlaceholderText(/写点什么/)).toBeNull() })
+    expect(mocks.openCardDraft).toHaveBeenCalledWith(CANVAS_ID, 'fragment', '灵感')
   })
 })
 

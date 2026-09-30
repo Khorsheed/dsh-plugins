@@ -137,8 +137,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
    * filter, the picked cards, the face and the picked wire as they were.
    */
   const [views, setViews] = useState<Readonly<Record<string, BoardViewMemory>>>({})
-  /** The board's in-place draft (the dashed tile turned card): which canvas, which kind. */
-  const [inlineDraft, setInlineDraft] = useState<{ canvasId: string; kind: CardCategoryId } | null>(null)
   /** The one banner; `undo` makes it offer 撤销 (archiving is one click to take back). */
   const [toast, setToast] = useState<{ text: string; seq: number; undo?: () => void } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
@@ -312,26 +310,16 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     return true
   }, [sessionId, putCard, showToast, t, dropDraft, backToBoard])
 
-  /** The board's new-card slot, bound to the open canvas. */
+  /** The board's new-card slot, bound to the open canvas: the ＋ tile opens the draft page. */
   const newCardSlot = useMemo<NewCardSlot | undefined>(() => {
     if (openId === null) return undefined
     return {
-      draft: inlineDraft?.canvasId === openId ? inlineDraft.kind : null,
-      onStart: kind => { setInlineDraft({ canvasId: openId, kind }) },
-      onSave: async (kind, text) => {
-        const ok = await saveDraft(openId, kind, text, {})
-        if (ok) setInlineDraft(current => (current?.canvasId === openId ? null : current))
-        return ok
-      },
-      onCancel: () => { setInlineDraft(null) },
-      onExpand: (kind, text) => {
-        setInlineDraft(null)
+      onStart: kind => {
         const category = openBoard?.board.categories.find(c => c.id === kind)
         openCardDraft(openId, kind, category === undefined ? kind : categoryLabelOf(category, t))
-        if (text.trim().length > 0) setDraftText(draftTabId(openId), text)
       },
     }
-  }, [openId, inlineDraft, saveDraft, openBoard, openCardDraft, setDraftText, t])
+  }, [openId, openBoard, openCardDraft, t])
 
   /* ---------------------------------------------------------------- wide mode */
 

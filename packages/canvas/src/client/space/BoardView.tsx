@@ -5,9 +5,8 @@
  *
  * v2.2 ②: the board is a READER. Every card body click — kept, ghost or
  * archived — opens the detail page, which is the only editor; the in-place
- * card textarea is gone. The one exception is the new card: it is drafted in
- * place, in a dashed tile at the end of the grid (`DraftTile`), and only a
- * drawing or a picture takes it to the detail page. Selection stays a hover
+ * card textarea is gone. A new card too: the dashed ＋ tile at the end of the
+ * grid (`DraftTile`) opens the draft page. Selection stays a hover
  * checkbox in the card's corner, so the two gestures never fight.
  *
  * The one editor left on the board is the comment box under a card, which
@@ -598,7 +597,6 @@ export function BoardView({
               <DraftTile
                 t={t}
                 slot={newCard}
-                kinds={chips}
                 labels={labels}
                 defaultKind={draftKind}
                 empty={visible.length === 0}
