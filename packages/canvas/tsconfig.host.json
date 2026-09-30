@@ -18,6 +18,7 @@
     "src/remote.ts",
     "src/service.ts",
     "src/store.ts",
+    "src/skill.ts",
     "src/tools.ts",
     "src/types.ts"
   ]

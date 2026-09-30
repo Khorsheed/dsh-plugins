@@ -1,6 +1,6 @@
 /**
- * The `./agent` composition entry: registers the two canvas tools and their
- * pointer guidance section into the MOUNTING SCOPE (profile root or a
+ * The `./agent` composition entry: registers the canvas tools, their pointer
+ * guidance section and the `canvas` skill into the MOUNTING SCOPE (profile root or a
  * preset's agent-plane) when the core service is present, and degrades to a
  * no-op registration when it is not. Also pins the split: the root apply
  * (`src/index.ts`) registers NEITHER the tools NOR the section anymore.
@@ -56,8 +56,7 @@ describe('the ./agent composition entry', () => {
     ctx.provide('systemPrompt', prompts)
     await new Promise(resolve => { setTimeout(resolve, 0) })
     expect(tools.registered.map(def => def.name)).toEqual([
-      'canvas_read_board', 'canvas_propose_card', 'canvas_comment', 'canvas_read_type', 'canvas_propose_type',
-      'canvas_read_manuscript', 'canvas_write_manuscript',
+      'canvas_read', 'canvas_write', 'canvas_propose_type',
     ])
     for (const def of tools.registered) {
       expect((def as unknown as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')]).toEqual({
@@ -68,12 +67,26 @@ describe('the ./agent composition entry', () => {
     const section = prompts.sections[0]!
     expect(section.name).toBe('canvas:tools')
     expect(section.order).toBe(151)
-    // One pointer sentence only: the per-tool rules live in the tool
-    // descriptions, so the section names no tool and repeats no mechanics.
+    // One pointer sentence only: the mechanics live in the canvas skill, so
+    // the section names no tool and repeats no mechanics.
     expect(section.text).toContain('canvas_*')
-    expect(section.text).not.toContain('canvas_propose_card')
+    expect(section.text).toContain('canvas skill')
+    expect(section.text).not.toContain('canvas_write')
     expect(section.text).not.toContain('baseVersion')
     expect(section.text).not.toContain('\n')
+  })
+
+  it('registers the canvas skill the tool descriptions point at', async () => {
+    const { ctx } = bench()
+    const skills: Array<{ name: string; description: string; content: string; source: string }> = []
+    agentApply(ctx)
+    ctx.provide('skills', { register: (skill: (typeof skills)[number]) => { skills.push(skill); return () => undefined } })
+    await new Promise(resolve => { setTimeout(resolve, 0) })
+    expect(skills).toHaveLength(1)
+    expect(skills[0]).toMatchObject({ name: 'canvas', source: 'runtime' })
+    // The mechanics the descriptions left out live here.
+    expect(skills[0]!.content).toContain('baseVersion')
+    expect(skills[0]!.content).toContain('refKind')
   })
 
   it('registers nothing (and warns) when canvasBoard is absent — degrade, never explode', () => {

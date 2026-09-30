@@ -475,7 +475,7 @@ export function removedFieldValues(
 }
 
 /**
- * The definition as the model reads it in `canvas_read_type`: one line per
+ * The definition as the model reads it in `canvas_read` (with a kind): one line per
  * field with its kind, marks and hint, then the layout, guide and example.
  */
 export function renderDefinition(definition: TypeDefinition): string {
@@ -486,7 +486,7 @@ export function renderDefinition(definition: TypeDefinition): string {
   return lines.join('\n')
 }
 
-/** One field as `key（名称）: 类型[选项] 必填 卡面` — the short form `canvas_read_board` lists. */
+/** One field as `key（名称）: 类型[选项] 必填 卡面` — the short form `canvas_read`'s catalog lists. */
 export function fieldSignature(field: FieldDef): string {
   const kind = field.type === 'select'
     ? `select[${(field.options ?? []).join('|')}]`

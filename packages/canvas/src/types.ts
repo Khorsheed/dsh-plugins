@@ -1601,10 +1601,10 @@ export function documentHeadingOf(text: string): DocumentHeading | undefined {
 }
 
 /* ============================================================================
- * The agent's card entrance (the main-session `canvas_propose_card`).
+ * The agent's card entrance (the main-session `canvas_write` op=card).
  * ========================================================================= */
 
-/** The agent's card entrance (`canvas_propose_card`): proposed, awaiting the user's ✓/✗. */
+/** The agent's card entrance (`canvas_write` op=card): proposed, awaiting the user's ✓/✗. */
 export interface BoardProposeCardRequest {
   readonly canvasId: string
   /** A category id from this canvas's catalog (the tool's dynamic enum). */

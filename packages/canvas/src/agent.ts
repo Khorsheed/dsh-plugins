@@ -20,6 +20,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { CanvasBoardService } from './store.ts'
+import { CANVAS_SKILL_CONTENT, CANVAS_SKILL_DESCRIPTION, CANVAS_SKILL_NAME } from './skill.ts'
 import { canvasMainSessionToolDefinitions } from './tools.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -39,21 +40,24 @@ interface PromptSections {
   section(section: { name: string; order: number; text: string }): () => void
 }
 
+/** The narrow skill-registry slice this entry registers into (the typesafe-tool precedent). */
+interface SkillRegistrySlice {
+  register(skill: { name: string; description: string; content: string; source: string; provider?: string }): () => void
+}
+
 /**
  * The guidance section's text. Deliberately one pointer sentence: every
  * behavioral rule (ghost-card flow, the no-substitution rule, comment style,
- * manuscript baseVersion, the no-canvas fallback) lives in the tool
- * descriptions themselves, which the model reads with the catalog — repeating
- * them here just spends prompt tokens twice (2026-09-29 slimming). English,
- * the host prompt's own voice; the tool descriptions stay Chinese (the
- * canvas's writing-domain voice) — sections and catalogs are separate layers.
+ * manuscript baseVersion, the type grammar) lives in the `canvas` skill,
+ * which the model loads when it works on the canvas — the writing preset's
+ * every turn should not carry it (2026-09-30 slimming).
  */
 const CANVAS_TOOLS_GUIDANCE =
-  'The canvas_* tools act on the canvas currently open in the right-sidebar tab; when no canvas is open the tool says so — ask the user to open one.'
+  'The canvas_* tools act on the canvas open in the right-sidebar tab (with none open, ask the user to open one); load the canvas skill before writing to it.'
 
 /**
- * Composition entry body: register the two canvas tools and their guidance
- * section, or nothing when the core service is absent.
+ * Composition entry body: register the canvas tools, their guidance section
+ * and the `canvas` skill, or nothing when the core service is absent.
  * @param ctx - the mounting scope's context (profile root or a preset's plane).
  */
 export function apply(ctx: Context): void {
@@ -84,5 +88,18 @@ export function apply(ctx: Context): void {
       order: 151,
       text: CANVAS_TOOLS_GUIDANCE,
     })
+  })
+  // The skill the descriptions point at rides the same door: registered from
+  // a preset's plane it lands in that preset's skill layer alone.
+  ctx.inject(['skills'], (skillCtx) => {
+    const skills = skillCtx.get('skills') as SkillRegistrySlice | undefined
+    if (skills === undefined) return
+    skillCtx.effect(() => skills.register({
+      name: CANVAS_SKILL_NAME,
+      description: CANVAS_SKILL_DESCRIPTION,
+      content: CANVAS_SKILL_CONTENT,
+      source: 'runtime',
+      provider: '@khorsheed/dsh-canvas',
+    }), `canvas-agent: ${CANVAS_SKILL_NAME} skill`)
   })
 }

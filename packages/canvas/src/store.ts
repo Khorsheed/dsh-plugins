@@ -639,7 +639,7 @@ export class CanvasBoardService {
   }
 
   /**
-   * The agent's card entrance (`canvas_propose_card`): proposed and awaiting
+   * The agent's card entrance (`canvas_write` op=card): proposed and awaiting
    * the user's ✓/✗, createdBy agent. A question card starts OPEN even when
    * the proposal carries a rationale comment — exploring means work the user
    * has seen, not the proposal's arrival (the §4 rule applies to comments on
@@ -808,7 +808,7 @@ export class CanvasBoardService {
 
   /**
    * Paint one drawing and commit it to the attachment store, so a tool result
-   * can carry it as an image (`canvas_read_type`). Content-addressed, so the
+   * can carry it as an image (`canvas_read` with a kind). Content-addressed, so the
    * same strokes land on the same object every time.
    * @param strokes - the drawing.
    * @returns the image reference, or undefined when no store takes it.

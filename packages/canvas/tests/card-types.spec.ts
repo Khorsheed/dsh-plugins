@@ -236,7 +236,7 @@ describe('the type tools', () => {
       canvasId, kind: 'fragment', brief: '人物卡要像档案\n\n![](draw://sketch1)',
       drawings: { sketch1: [{ color: 'ink', pts: [{ x: 1, y: 1, w: 1 }, { x: 50, y: 50, w: 1 }] }] },
     }, SESSION)
-    const read = await execute('canvas_read_type', { kind: 'fragment' }) as { text: string; images: CanvasImageRef[] }
+    const read = await execute('canvas_read', { kind: 'fragment' }) as { text: string; images: CanvasImageRef[] }
     expect(read.images).toEqual([])
     expect(read.text).toContain('人物卡要像档案')
     expect(read.text).toContain('[手绘：当前模型不支持看图]')
@@ -249,7 +249,7 @@ describe('the type tools', () => {
       canvasId, kind: 'fragment', brief: '![](draw://sketch1)',
       drawings: { sketch1: [{ color: 'ink', pts: [{ x: 1, y: 1, w: 1 }, { x: 50, y: 50, w: 1 }] }] },
     }, SESSION)
-    const read = await execute('canvas_read_type', { kind: 'fragment' }) as { text: string; images: CanvasImageRef[] }
+    const read = await execute('canvas_read', { kind: 'fragment' }) as { text: string; images: CanvasImageRef[] }
     expect(saveImage).toHaveBeenCalledOnce()
     expect(read.images).toHaveLength(1)
     expect(read.text).toContain('[手绘 1：见附图 1]')
@@ -268,15 +268,15 @@ describe('the type tools', () => {
     const kind = (await read()).categories.find(category => category.label === '人物')!.id
     await board.decideType({ canvasId, kind, decision: 'adopt' }, SESSION)
 
-    expect(await execute('canvas_read_board', {})).toContain('name（名字）: line 必填')
-    const refused = await execute('canvas_propose_card', { kind, fields: { role: '反派' } }) as string
+    expect((await execute('canvas_read', {}) as { text: string }).text).toContain('name（名字）: line 必填')
+    const refused = await execute('canvas_write', { op: 'card', kind, fields: { role: '反派' } }) as string
     expect(refused).toContain('缺必填字段 name')
     expect(refused).toContain('只能取：主角、配角')
-    const landed = await execute('canvas_propose_card', { kind, fields: { name: '林澈', role: '主角' } }) as string
+    const landed = await execute('canvas_write', { op: 'card', kind, fields: { name: '林澈', role: '主角' } }) as string
     expect(landed).toMatch(/^完成：/)
     expect((await read()).cards[0]).toMatchObject({ status: 'proposed', text: '', fields: { name: '林澈', role: '主角' } })
-    expect(await execute('canvas_read_board', {})).toContain('林澈')
-    expect(await execute('canvas_propose_card', { kind: 'fragment', fields: { x: 1 } }))
+    expect((await execute('canvas_read', {}) as { text: string }).text).toContain('林澈')
+    expect(await execute('canvas_write', { op: 'card', kind: 'fragment', fields: { x: 1 } }))
       .toBe('失败：分类「灵感」没有字段定义，不能填 fields——把内容写进 text。')
   })
 

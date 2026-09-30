@@ -9,9 +9,9 @@
 # a composition that already mounts the id by other means must NOT also add it
 # — a duplicate loader entry id fails boot.
 #
-# The second row mounts the `./agent` composition entry: the two main-session
-# canvas tools (canvas_propose_card / canvas_comment) and their guidance
-# section, live for EVERY session — the community default, and the pre-0.4.2
+# The second row mounts the `./agent` composition entry: the main-session
+# canvas tools (canvas_read / canvas_write / canvas_propose_type), their
+# guidance section and the `canvas` skill, live for EVERY session — the community default, and the pre-0.4.2
 # status quo. To scope the tools to one preset instead (e.g. writing mode
 # only): disable this row in the profile's cordis.patch.yml with
 # `- id: canvas-agent, disabled: true` and add a row named

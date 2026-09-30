@@ -8,7 +8,7 @@
  * with its source ledger — the cards it used, and the cards it left out, which
  * are the next draft's starting place. Writing happens in the main
  * conversation: 「让 Agent 改」 quotes the manuscript's handle and version into
- * the input, and the Agent writes back through `canvas_write_manuscript`.
+ * the input, and the Agent writes back through `canvas_write` (op=manuscript).
  *
  * The user's own edit is the card editor's pad (CardTextarea, uncontrolled,
  * ⌘⏎ saves) beside a live preview, and every save presents the version the

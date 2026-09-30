@@ -1,6 +1,6 @@
 /**
  * A drawing as pixels, host-side (card types, P1a): the agent reads a type's
- * brief through `canvas_read_type`, and a model sees an image, not a stroke
+ * brief through `canvas_read`, and a model sees an image, not a stroke
  * list. A drawing is stored as strokes (`CanvasStroke[]`), so the tool paints
  * it here — dark ink on white, the drawing's own logical box — and encodes a
  * grayscale PNG the host's attachment store admits like any pasted image.
