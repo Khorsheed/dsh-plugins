@@ -7,7 +7,7 @@
 | `@khorsheed/dsh-ankh-guard` | 0.4.2 | 0.4.2 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-bundle-local-agent` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
-| `@khorsheed/dsh-canvas` | 未发布 | 0.5.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
+| `@khorsheed/dsh-canvas` | 未发布 | 0.6.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-capability-catalog` | 0.1.97 | 0.1.97 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-capture` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-context-guard` | 0.2.4 | 0.2.4 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
@@ -43,7 +43,7 @@
 | `@khorsheed/dsh-client-ui-content-preview` | (private) | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-ui-shortcuts` | 0.2.4 | 0.2.4 | 0.1.2-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-whalesong` | 0.2.4 | 0.2.4 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
-| `@khorsheed/dsh-worktrees` | 0.3.0 | 0.3.0 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
+| `@khorsheed/dsh-worktrees` | 0.3.1 | 0.3.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 
 - **npm 已发布**：registry 上的最新版本；`未发布` = 第一波/第二波均未含此包
 - **仓内版本**：下一条发布线（发版时才 bump，见 docs/publishing.md)
