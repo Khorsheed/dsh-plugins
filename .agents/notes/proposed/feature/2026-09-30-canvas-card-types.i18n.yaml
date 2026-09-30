@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-09-30-canvas-card-types.md
+.agents/notes/proposed/feature/2026-09-30-canvas-card-types.md: 86f34bc4050ced61f28e519d452d93dd8b76f3b1
+.agents/notes/proposed/feature/2026-09-30-canvas-card-types.zh.md: e61c8d5a472a8ee08660ef6554a4f79dad26c0b2
