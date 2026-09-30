@@ -21,10 +21,11 @@
  * on things no file knows.
  *
  * Minting POINTS rather than forms. Choosing a model IS minting a comparison
- * group (ui-spec §五), so the place to do it is the 新建实验 wizard's step ②,
- * which mints the group and the plan that uses it in one write (I5·T34); the
- * grid section's 添加对比组 goes there. A second form here would be a second
- * way to write the same file, and the two would drift.
+ * group (ui-spec §五), so it is the planning agent's: `eval_plan_draft` mints
+ * the group and the plan that uses it in one write (I5·T34), and the grid
+ * section's 添加对比组 hands the ask to the agent in the chat box (T87 — the
+ * four-step wizard that used to take it is gone). A form here would be a
+ * second way to write the same file, and the two would drift.
  *
  * Two things this page DOES write, both added by I5·T58 and both a human's
  * click on one row. **provision** turns the declaration into a real scoped

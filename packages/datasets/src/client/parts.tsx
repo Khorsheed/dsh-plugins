@@ -158,16 +158,39 @@ export function Chip(props: { tone?: Tone; title?: string | undefined; dot?: boo
  * The empty seat, which always says what to do next (ui-spec §九): a sentence
  * about what is not here, a sentence about how to change that, and the action
  * itself when the page has one. The 实验室 tab's copy of this is identical.
- * @param props - the two sentences and any action buttons.
+ *
+ * `page` (T87) is the variant for a page with NOTHING yet — no repository
+ * registered: an icon, the two sentences, the action and at most one quiet
+ * secondary link, centred, no frame. In-panel seats keep the framed form.
+ * @param props - the two sentences, any action buttons, and the page variant's icon.
  */
-export function EmptyState(props: { title: string; hint?: string | undefined; children?: ReactNode }) {
-  const { title, hint, children } = props
+export function EmptyState(props: {
+  title: string
+  hint?: string | undefined
+  children?: ReactNode
+  page?: boolean | undefined
+  icon?: ReactNode
+}) {
+  const { title, hint, children, page = false, icon } = props
   return (
-    <div className={css.emptySeat}>
+    <div className={page ? css.emptyPage : css.emptySeat}>
+      {page && icon !== undefined && <div className={css.emptyIcon} aria-hidden="true">{icon}</div>}
       <div className={css.emptyTitle}>{title}</div>
       {hint !== undefined && hint !== '' && <div className={css.emptyHint}>{hint}</div>}
       {children !== undefined && <div className={css.emptyActions}>{children}</div>}
     </div>
+  )
+}
+
+/** The 题集 page-empty icon: books on a shelf, inline so it draws on every host line. */
+export function ShelfIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 4h3v15H5z" />
+      <path d="M10 6h3v13h-3z" />
+      <path d="M15.2 5.6l2.9-.8 3.3 13.6-2.9.8z" />
+      <path d="M3 21h18" />
+    </svg>
   )
 }
 

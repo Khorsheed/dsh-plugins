@@ -40,6 +40,7 @@
     "src/client/index.ts",
     "src/client/journey.ts",
     "src/client/locales.ts",
+    "src/client/organize.ts",
     "src/client/parts.tsx",
     "src/client/preset-visibility.ts",
     "src/client/store.ts",

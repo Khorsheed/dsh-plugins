@@ -229,7 +229,6 @@ interface Harness {
   approvePlan: ReturnType<typeof vi.fn>
   fetchRunOutput: ReturnType<typeof vi.fn>
   fetchDraftOptions: ReturnType<typeof vi.fn>
-  draftExperiment: ReturnType<typeof vi.fn>
   insertDraft: ReturnType<typeof vi.fn>
   setPlanNumbers: ReturnType<typeof vi.fn>
 }
@@ -248,7 +247,6 @@ function makeHarness(overrides: Partial<{ review: EvalPlanReview; composer: bool
     // here the two verbs only have to exist, because the dialog mounts with
     // the view and reads them when it is opened.
     fetchDraftOptions: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
-    draftExperiment: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     approvePlan: vi.fn(async (): Promise<Result<EvalApproveResult>> => ({ ok: true, value: STARTED })),
     fetchRunOutput: vi.fn(async (): Promise<Result<EvalRunOutputView>> => ({ ok: true, value: OUTPUT })),
     // 让 agent 处理 fills the composer and never sends; false = no composer here.
@@ -278,7 +276,6 @@ function renderView(h: Harness) {
     provisionCondition: h.provisionCondition,
     setConditionEndpoint: h.setConditionEndpoint,
     fetchDraftOptions: h.fetchDraftOptions,
-    draftExperiment: h.draftExperiment,
     approvePlan: h.approvePlan,
     fetchRunOutput: h.fetchRunOutput,
     insertDraft: h.insertDraft,
@@ -828,7 +825,7 @@ describe('the conditions page', () => {
     expect(await screen.findByText(/conditions.endpointLockStale/)).toBeTruthy()
   })
 
-  it('添加对比组 opens the wizard — choosing a model IS minting a comparison group', async () => {
+  it('添加对比组 hands the ask to the agent — the chat box, never sent (T87)', async () => {
     // A single-group experiment: the one that has nothing to compare, and the
     // one ui-spec §五 v2 puts the invitation on.
     const h = makeHarness({
@@ -839,9 +836,10 @@ describe('the conditions page', () => {
     expect(await screen.findByText('design.single')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'design.addGroup' }))
-    // The wizard, not a second form: minting a group and writing the plan that
-    // uses it is ONE write, and a form here would be a second way to make it.
-    expect(await screen.findByText('new.title')).toBeTruthy()
+    // The wizard that used to open here is gone: minting a group is the
+    // agent's, through the same eval_plan_draft that writes the plan.
+    expect(h.insertDraft).toHaveBeenCalledWith('s1', `design.addGroupAsk ${JSON.stringify({ name: 'effort-sweep' })}`)
+    expect(screen.queryByText('new.title')).toBeNull()
   })
 
   it('a refused listing names the cause and the fix, with the raw text folded away', async () => {

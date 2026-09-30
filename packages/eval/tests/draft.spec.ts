@@ -23,7 +23,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashConditionDocument } from '../src/hash.ts'
-import { EvalDraftRefused } from '../src/draft.ts'
+import { EvalDraftRefused, isPlaceholderItem } from '../src/draft.ts'
 import { DatasetVersionRefused } from '../src/dataset-version.ts'
 import { createExperiment } from '../src/experiment-store.ts'
 import { EvalService } from '../src/service.ts'
@@ -511,7 +511,35 @@ describe('draftOptions — what the form may offer', () => {
 
     const view = await service.draftOptions()
 
-    expect(view.datasets).toEqual([{ id: 'reg/ds', commit: LATEST, items: ['P0', 'P1'], stages: ['stage1', 'stage2'] }])
+    expect(view.datasets).toEqual([{
+      id: 'reg/ds',
+      commit: LATEST,
+      items: ['P0', 'P1'],
+      itemInfo: [
+        { id: 'P0', title: null, stages: null, placeholder: false },
+        { id: 'P1', title: null, stages: null, placeholder: false },
+      ],
+      stages: ['stage1', 'stage2'],
+    }])
+  })
+
+  it('reads each item\'s title and stage count, and marks the ones the dataset calls a fixture (T87)', async () => {
+    const { service, dataset } = fixture()
+    writeJson(dataset, 'items/P0/item.json', {
+      id: 'P0', title: '目录文件统计（链路测试夹具）', phasesUsed: [],
+      taxonomy: { category: 'fixture', tags: ['fixture', 'link-test'] },
+    })
+    writeJson(dataset, 'items/P1/item.json', {
+      id: 'P1', title: '多 agent 协作空间', phasesUsed: ['a', 'b', 'c', 'd'],
+      taxonomy: { category: 'collaboration', tags: [] },
+    })
+
+    const view = await service.draftOptions()
+
+    expect(view.datasets[0]?.itemInfo).toEqual([
+      { id: 'P0', title: '目录文件统计（链路测试夹具）', stages: 0, placeholder: true },
+      { id: 'P1', title: '多 agent 协作空间', stages: 4, placeholder: false },
+    ])
   })
 
   it('degrades with a sentence rather than refusing when a set cannot be read', async () => {
@@ -601,5 +629,22 @@ describe('draftExperiment — which commit it pins (T73)', () => {
 
     await expect(service.draftExperiment(request({ commit: stray })))
       .rejects.toThrow(new RegExp(`commit "${stray}" is not a candidate version for reg/ds[\\s\\S]*${LATEST.slice(0, 7)}`))
+  })
+})
+
+describe('isPlaceholderItem — the dataset says, the id only guesses (T87)', () => {
+  it('trusts item.json when there is one', () => {
+    expect(isPlaceholderItem('X1', { taxonomy: { category: 'fixture' } })).toBe(true)
+    expect(isPlaceholderItem('X1', { taxonomy: { category: 'ui', tags: ['placeholder'] } })).toBe(true)
+    // A real item that happens to carry the prefix is still real.
+    expect(isPlaceholderItem('P0-real', { taxonomy: { category: 'ui', tags: [] } })).toBe(false)
+    expect(isPlaceholderItem('P0-real', { id: 'P0-real' })).toBe(false)
+  })
+
+  it('falls back to the P0- / placeholder id convention only when item.json is unreadable', () => {
+    expect(isPlaceholderItem('P0-placeholder', null)).toBe(true)
+    expect(isPlaceholderItem('demo-placeholder', null)).toBe(true)
+    expect(isPlaceholderItem('p0-001', null)).toBe(false)
+    expect(isPlaceholderItem('F2-room', null)).toBe(false)
   })
 })

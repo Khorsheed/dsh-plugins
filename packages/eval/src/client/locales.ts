@@ -217,53 +217,46 @@ export type EvalKey =
   | 'new.name'
   | 'new.namePlaceholder'
   | 'new.dataset'
-  | 'new.datasetPick'
-  | 'new.commit'
-  | 'new.commitPlaceholder'
   | 'new.items'
   | 'new.itemsEmpty'
-  | 'new.conditions'
-  | 'new.conditionsEmpty'
-  | 'new.mintOpen'
-  | 'new.mintClose'
-  | 'new.mintTitle'
-  | 'new.mintId'
-  | 'new.mintIdPlaceholder'
-  | 'new.mintFrom'
-  | 'new.mintFromPick'
-  | 'new.mintUnchanged'
-  | 'new.mintOneFactor'
-  | 'new.mintFactors'
-  | 'new.mint.harness'
-  | 'new.mint.model'
-  | 'new.mint.scope'
-  | 'new.mint.preset'
-  | 'new.mint.permissions'
-  | 'new.mint.reasoning'
-  | 'new.judges'
-  | 'new.judgeSamples'
-  | 'new.stages'
-  | 'new.stagesEmpty'
-  | 'new.reps'
-  | 'new.seed'
-  | 'new.interleave'
-  | 'new.budget'
-  | 'new.activeMinutes'
-  | 'new.turns'
-  | 'new.unit'
-  | 'new.unitImage'
-  | 'new.unitNetwork'
-  | 'new.egress'
-  | 'new.notes'
-  | 'new.notesPlaceholder'
-  | 'new.notStarting'
-  | 'new.save'
-  | 'new.saving'
   | 'new.cancel'
-  | 'new.error'
   | 'new.optionsError'
-  | 'notice.drafted'
-  | 'notice.draftedWithErrors'
+  | 'new.required'
+  | 'new.optional'
+  | 'new.nameHelp'
+  | 'new.nameRequired'
+  | 'new.nameBadChars'
+  | 'new.nameSpace'
+  | 'new.nameBadStart'
+  | 'new.question'
+  | 'new.questionPlaceholder'
+  | 'new.datasetLater'
+  | 'new.datasetNone'
+  | 'new.itemsOptional'
+  | 'new.itemStages'
+  | 'new.placeholderTag'
+  | 'new.placeholdersShow'
+  | 'new.placeholdersHide'
+  | 'new.organize'
+  | 'new.handedOff'
+  | 'organize.intro'
+  | 'organize.settledHeading'
+  | 'organize.settled.name'
+  | 'organize.settled.question'
+  | 'organize.settled.dataset'
+  | 'organize.settled.items'
+  | 'organize.join'
+  | 'organize.openHeading'
+  | 'organize.open.question'
+  | 'organize.open.dataset'
+  | 'organize.open.items'
+  | 'organize.open.conditions'
+  | 'organize.open.judge'
+  | 'organize.open.reps'
+  | 'organize.open.budget'
+  | 'organize.defaults'
+  | 'organize.finish'
+  | 'design.addGroupAsk'
   | 'matrix.loading'
   | 'matrix.error'
   | 'matrix.empty'
@@ -650,14 +643,6 @@ export type EvalKey =
   | 'judge.itemCount'
   | 'judge.column'
   | 'judge.submitOne'
-  | 'new.step'
-  | 'new.step1'
-  | 'new.step2'
-  | 'new.step3'
-  | 'new.step4'
-  | 'new.back'
-  | 'new.next'
-  | 'new.stepBlocked'
   | 'runs.settled'
   | 'runs.cards'
   | 'runs.card.meta'
@@ -1275,57 +1260,50 @@ export const en: Record<EvalKey, string> = {
   'notice.humanFinal': 'human-final recorded on record {no}: {count} verdict(s), by {by}',
   'notice.humanFinalDuplicate': 'Record {no} already carried exactly these verdicts — the ledger is append-only and identical repeats are a no-op, so nothing was written.',
   'new.title': 'New experiment',
-  'new.description': 'Drafts plans/<name>.json (and any new condition file) into the bound repository working copy, then validates it. Nothing is committed and nothing is started — approving is the next page.',
-  'new.name': 'Name',
-  'new.namePlaceholder': 'The plan\'s file name, e.g. i5-walk',
+  'new.description': 'Nothing starts and no tokens are spent here. The agent helps you fill in the rest in chat, and you approve the start on the Design page.',
+  'new.name': 'Experiment name',
+  'new.namePlaceholder': 'e.g. sidebar-vs-inline',
   'new.dataset': 'Dataset set',
-  'new.datasetPick': 'Pick a set…',
-  'new.commit': 'Snapshot',
-  'new.commitPlaceholder': 'Commit to pin; empty lets the run pin it at start',
   'new.items': 'Items',
-  'new.itemsEmpty': 'Pick a dataset set first — its items fill this list',
-  'new.conditions': 'Conditions',
-  'new.conditionsEmpty': 'This set declares no conditions yet',
-  'new.mintOpen': 'New condition',
-  'new.mintClose': 'Drop the new condition',
-  'new.mintTitle': 'A new condition is a COPY: pick one that exists and change a field. Two conditions differing in ONE field are a single-factor pair — that is what makes the comparison answerable.',
-  'new.mintId': 'New id',
-  'new.mintIdPlaceholder': 'conditions/<id>.json',
-  'new.mintFrom': 'Copy from',
-  'new.mintFromPick': 'Pick the condition to copy…',
-  'new.mintUnchanged': 'unchanged',
-  'new.mintOneFactor': 'One field changes: {field}. That is a single-factor pair.',
-  'new.mintFactors': '{count} fields change — the comparison then cannot say which one moved the result.',
-  'new.mint.harness': 'harness',
-  'new.mint.model': 'model',
-  'new.mint.scope': 'scope',
-  'new.mint.preset': 'preset',
-  'new.mint.permissions': 'permissions',
-  'new.mint.reasoning': 'reasoning',
-  'new.judges': 'Judge',
-  'new.judgeSamples': 'samples per cell',
-  'new.stages': 'Stages',
-  'new.stagesEmpty': 'This set ships no stage schemas',
-  'new.reps': 'Reps',
-  'new.seed': 'Order seed',
-  'new.interleave': 'interleave (spread same-condition cells apart)',
-  'new.budget': 'Budget',
-  'new.activeMinutes': 'active minutes per cell',
-  'new.turns': 'turns per cell',
-  'new.unit': 'Environment',
-  'new.unitImage': 'image (empty = host path)',
-  'new.unitNetwork': 'network (undeclared bridge HAS egress)',
-  'new.egress': 'egress check argv, space separated',
-  'new.notes': 'Notes',
-  'new.notesPlaceholder': 'What this comparison is for, and what it cannot settle',
-  'new.notStarting': 'Saving drafts and validates. Starting is 批准并启动 on the Design stage; logging the harnesses in and provisioning their comparison groups come first, and both are yours.',
-  'new.save': 'Save draft and validate',
-  'new.saving': 'Saving…',
+  'new.itemsEmpty': 'This set has no items to pick yet.',
   'new.cancel': 'Cancel',
-  'new.error': 'The draft was not written',
   'new.optionsError': 'Could not read what this repository holds',
-  'notice.drafted': 'Drafted {name} — validate found no errors. Approving and starting is on this page.',
-  'notice.draftedWithErrors': 'Drafted {name} — validate found {errors} error(s), so it stays a draft. The list below says what.',
+  'new.required': 'required',
+  'new.optional': 'optional',
+  'new.nameHelp': 'Letters, digits, dot, dash or underscore; start with a letter or digit.',
+  'new.nameRequired': 'Give the experiment a name first.',
+  'new.nameBadChars': 'Not allowed: {chars}. Use letters, digits, dot, dash or underscore only.',
+  'new.nameSpace': 'a space',
+  'new.nameBadStart': 'Start with a letter or digit, not a dot, dash or underscore.',
+  'new.question': 'What do you want to find out?',
+  'new.questionPlaceholder': 'e.g. Does the sidebar layout help people finish the task faster?',
+  'new.datasetLater': 'Decide later with the agent',
+  'new.datasetNone': 'No dataset registered yet — the agent can help with that too.',
+  'new.itemsOptional': 'optional — leave empty to decide with the agent',
+  'new.itemStages': '{count} stage(s)',
+  'new.placeholderTag': 'placeholder',
+  'new.placeholdersShow': 'Show {count} placeholder item(s)',
+  'new.placeholdersHide': 'Hide placeholder items',
+  'new.organize': 'Let the agent organize',
+  'new.handedOff': 'Put in the chat box — press send to start.',
+  'organize.intro': 'Help me set up a new comparison experiment.',
+  'organize.settledHeading': 'Already decided:',
+  'organize.settled.name': 'Name: {name}',
+  'organize.settled.question': 'Question: {question}',
+  'organize.settled.dataset': 'Dataset set: {dataset}',
+  'organize.settled.items': 'Items: {items}',
+  'organize.join': ', ',
+  'organize.openHeading': 'Not decided yet — ask me one at a time, in this order:',
+  'organize.open.question': 'What question the experiment should answer',
+  'organize.open.dataset': 'Which dataset set to use',
+  'organize.open.items': 'Which items to run',
+  'organize.open.conditions': 'Comparison groups (suggest a pair that differs in one thing)',
+  'organize.open.judge': 'Judge',
+  'organize.open.reps': 'Reps (default 1)',
+  'organize.open.budget': 'Budget (active minutes and turns per cell)',
+  'organize.defaults': 'For comparison groups, judge, reps and budget, suggest a default and let me confirm it.',
+  'organize.finish': 'Once everything is settled, draft it with eval_plan_draft. Do not start it — I will approve the start on the Design page.',
+  'design.addGroupAsk': 'Add a comparison group to experiment {name}: suggest which existing group to copy and which one field to change, confirm with me, then update the draft with eval_plan_draft. Do not start it.',
   'matrix.loading': 'Arranging the grid…',
   'matrix.error': 'Failed to arrange the grid',
   'matrix.empty': 'This experiment expanded no run record',
@@ -1639,7 +1617,7 @@ export const en: Record<EvalKey, string> = {
   'factor.other': 'Other field',
   'factors.plusIncidental': '+{count} more',
   'list.emptyAction': 'Create the first experiment',
-  'list.emptyHint': 'Draft one here, or ask the agent in chat for one — either way it lands in this list as a draft, and starting it is still a click on the Design stage.',
+  'list.emptyHint': 'Fill in a name here and hand it to the agent, or just tell the agent in chat what you want to compare.',
   'draft.notStarted': 'Not started yet',
   'draft.notStartedHint': 'This page fills in once a human approves the plan and starts the run — go to Design.',
   // The same seat, for a run that HAS been started: the approval receipt named
@@ -1723,7 +1701,7 @@ export const en: Record<EvalKey, string> = {
   'design.planned': '{reps} planned',
   'design.single': 'Only one comparison group — add another to have anything to compare.',
   'design.addGroup': 'Add a comparison group',
-  'design.addGroupHint': 'Copy an existing group and change one field; the wizard writes both it and the plan.',
+  'design.addGroupHint': 'The agent adds it in chat: it copies an existing group and changes one field.',
   'design.notes': 'Author’s note',
   'design.verdictSources': 'Verdict sources',
   'design.question': 'The question',
@@ -1774,7 +1752,7 @@ export const en: Record<EvalKey, string> = {
   'verdict.hint': 'The most authoritative verdict layer this cell carries. The scores themselves are computed from the exported bundle, per criterion from the best layer that judged it — they are on the results page.',
 
   // ── the record detail, the validity hovers, the side-by-side
-  //    bench and the four-step wizard (ui-spec §五 v2, I5·T67) ────────────
+  //    bench (ui-spec §五 v2, I5·T67) ─────────────────────────────────────
   'record.head': '{task} × {condition} · rep {rep}',
   'record.ok': 'Finished',
   'record.failed': 'Stopped',
@@ -1826,14 +1804,6 @@ export const en: Record<EvalKey, string> = {
   'judge.itemCount': '{task} · {count} answer(s)',
   'judge.column': 'Answer {no}',
   'judge.submitOne': 'Record {count} verdict(s) for answer {no}',
-  'new.step': 'Step {step} of 4',
-  'new.step1': 'Dataset and items',
-  'new.step2': 'Comparison groups',
-  'new.step3': 'Judges, reps and budget',
-  'new.step4': 'Environment and confirm',
-  'new.back': 'Back',
-  'new.next': 'Next',
-  'new.stepBlocked': 'Fill this step in before going on.',
 
   // ── the walkthrough fixups (I5·T67 補, W4–W15) ─────────────────────────
   'runs.settled': 'This record is finished — nothing is elapsing here. How long it took is on its timeline.',
@@ -2445,57 +2415,50 @@ export const zh: Record<EvalKey, string> = {
   'notice.humanFinal': '第 {no} 条已记人工终评：{count} 条判定，by {by}',
   'notice.humanFinalDuplicate': '第 {no} 条已经带着完全相同的判定——账本只追加，重复即空操作，所以什么都没写。',
   'new.title': '新建实验',
-  'new.description': '把 plans/<名称>.json（以及新建的对比组文件）写进绑定题库的工作树并校验。不 commit，也不启动——批准在下一页。',
-  'new.name': '名称',
-  'new.namePlaceholder': '即 plan 的文件名，如 i5-walk',
+  'new.description': '这里不会启动任何东西，也不花 token。其余设置由 agent 在对话里带你补齐，启动在实验设计页批准。',
+  'new.name': '实验名称',
+  'new.namePlaceholder': '例如 sidebar-vs-inline',
   'new.dataset': '题集',
-  'new.datasetPick': '选一个题集…',
-  'new.commit': '题库版本',
-  'new.commitPlaceholder': '要钉的 commit；留空则由 run 启动时钉',
   'new.items': '题目',
-  'new.itemsEmpty': '先选题集——它的题目会填进这里',
-  'new.conditions': '对比组',
-  'new.conditionsEmpty': '这个题集还没有对比组',
-  'new.mintOpen': '新建对比组',
-  'new.mintClose': '不新建对比组',
-  'new.mintTitle': '新对比组一律是「复制」：选一个已有的，改一个字段。两个只差一个字段才是单变量配对——比较能回答问题靠的就是这个。',
-  'new.mintId': '新对比组 id',
-  'new.mintIdPlaceholder': 'conditions/<id>.json',
-  'new.mintFrom': '复制自',
-  'new.mintFromPick': '选要复制的对比组…',
-  'new.mintUnchanged': '不改',
-  'new.mintOneFactor': '只改了 {field} 一项，是单变量配对。',
-  'new.mintFactors': '改了 {count} 项——比较就说不清是哪一项让结果变了。',
-  'new.mint.harness': 'harness',
-  'new.mint.model': '模型',
-  'new.mint.scope': 'scope',
-  'new.mint.preset': 'preset',
-  'new.mint.permissions': '权限',
-  'new.mint.reasoning': '推理强度',
-  'new.judges': '判官',
-  'new.judgeSamples': '每格采样数',
-  'new.stages': '阶段',
-  'new.stagesEmpty': '这个题集没有阶段 schema',
-  'new.reps': '次数',
-  'new.seed': '顺序 seed',
-  'new.interleave': '交错（同一对比组的运行记录不连着排）',
-  'new.budget': '预算',
-  'new.activeMinutes': '每格活跃分钟',
-  'new.turns': '每格轮数',
-  'new.unit': '环境',
-  'new.unitImage': '镜像（留空即宿主路径）',
-  'new.unitNetwork': '网络（不声明就是默认桥接网，那是通外网的）',
-  'new.egress': '出网自检 argv，空格分隔',
-  'new.notes': '备注',
-  'new.notesPlaceholder': '这次比较是为了回答什么，又答不了什么',
-  'new.notStarting': '保存＝起草并校验。启动是实验设计页的「批准并启动」；在那之前还要人去登录各家、给对比组准备环境。',
-  'new.save': '保存草稿并校验',
-  'new.saving': '保存中…',
+  'new.itemsEmpty': '这个题集还没有可选的题目。',
   'new.cancel': '取消',
-  'new.error': '草稿没写成',
   'new.optionsError': '读不到这个题库里有什么',
-  'notice.drafted': '已起草 {name}——validate 没有 error。批准并启动就在本页。',
-  'notice.draftedWithErrors': '已起草 {name}——validate 报了 {errors} 条 error，所以它仍是草稿。下面的清单说了是哪些。',
+  'new.required': '必填',
+  'new.optional': '可选',
+  'new.nameHelp': '只能用英文字母、数字、点、短横线和下划线，并以字母或数字开头。',
+  'new.nameRequired': '先给实验起个名字。',
+  'new.nameBadChars': '不能用{chars}。只能用英文字母、数字、点、短横线和下划线。',
+  'new.nameSpace': '空格',
+  'new.nameBadStart': '要以字母或数字开头，不能以点、短横线或下划线开头。',
+  'new.question': '想回答什么问题',
+  'new.questionPlaceholder': '例如：侧栏布局能不能让人更快完成任务？',
+  'new.datasetLater': '稍后和 agent 一起选',
+  'new.datasetNone': '还没有登记题集，也可以交给 agent 处理。',
+  'new.itemsOptional': '可选，不选就和 agent 一起定',
+  'new.itemStages': '{count} 个阶段',
+  'new.placeholderTag': '占位',
+  'new.placeholdersShow': '显示 {count} 道占位题',
+  'new.placeholdersHide': '隐藏占位题',
+  'new.organize': '让 Agent 组织',
+  'new.handedOff': '已放进对话框，按发送开始',
+  'organize.intro': '帮我组织一个新的对比实验。',
+  'organize.settledHeading': '我已经定好的：',
+  'organize.settled.name': '实验名称：{name}',
+  'organize.settled.question': '想回答的问题：{question}',
+  'organize.settled.dataset': '题集：{dataset}',
+  'organize.settled.items': '题目：{items}',
+  'organize.join': '、',
+  'organize.openHeading': '还没定的，请按顺序一项一项问我：',
+  'organize.open.question': '这个实验想回答什么问题',
+  'organize.open.dataset': '用哪个题集',
+  'organize.open.items': '跑哪些题目',
+  'organize.open.conditions': '对比组（建议一组只差一处的对比）',
+  'organize.open.judge': '判官',
+  'organize.open.reps': '次数（默认 1 次）',
+  'organize.open.budget': '预算（每格的活跃分钟数和轮数）',
+  'organize.defaults': '对比组、判官、次数、预算请给出缺省建议，让我确认。',
+  'organize.finish': '都定下来后用 eval_plan_draft 起草，不要启动，我会在实验设计页批准启动。',
+  'design.addGroupAsk': '给实验「{name}」加一个对比组：建议从哪个已有对比组复制、改哪一个字段，跟我确认后用 eval_plan_draft 更新草稿，不要启动。',
   'matrix.loading': '排网格…',
   'matrix.error': '网格排布失败',
   'matrix.empty': '这次实验没有展开出运行记录',
@@ -2809,7 +2772,7 @@ export const zh: Record<EvalKey, string> = {
   'factor.other': '其它字段',
   'factors.plusIncidental': '另 {count} 项',
   'list.emptyAction': '新建第一个实验',
-  'list.emptyHint': '在这里起一个草稿，或者在会话里让 agent 起——两条路都落在这张列表里，都是草稿；启动仍是实验设计页上的一次点击。',
+  'list.emptyHint': '可以在这里填个名字交给 agent，也可以直接在对话里说想比什么。',
   'draft.notStarted': '还没启动',
   'draft.notStartedHint': '人在实验设计页批准并启动之后，这一页才有内容——去「实验设计」。',
   'draft.starting': '正在启动',
@@ -2890,7 +2853,7 @@ export const zh: Record<EvalKey, string> = {
   'design.planned': '计划 {reps} 次',
   'design.single': '只有一个对比组，添加对比组才能比较。',
   'design.addGroup': '添加对比组',
-  'design.addGroupHint': '从一个已有对比组复制，改一个字段；向导会把它和计划一起写出来。',
+  'design.addGroupHint': '交给 agent 在对话里加：从已有对比组复制一份，只改一个字段。',
   'design.notes': '作者备注',
   'design.verdictSources': '判定来源',
   'design.question': '要回答的问题',
@@ -2941,7 +2904,7 @@ export const zh: Record<EvalKey, string> = {
   'verdict.hint': '这格带的判定里最权威的那一层。分数本身是从导出的 bundle 里算的，逐条判据取判过它的最权威那一层，在结果对比页。',
 
   // ── the record detail, the validity hovers, the side-by-side
-  //    bench and the four-step wizard (ui-spec §五 v2, I5·T67) ────────────
+  //    bench (ui-spec §五 v2, I5·T67) ─────────────────────────────────────
   'record.head': '{task} × {condition} · 第 {rep} 次',
   'record.ok': '成功',
   'record.failed': '异常',
@@ -2993,14 +2956,6 @@ export const zh: Record<EvalKey, string> = {
   'judge.itemCount': '{task} · {count} 份作答',
   'judge.column': '第 {no} 份',
   'judge.submitOne': '记第 {no} 份的 {count} 条判定',
-  'new.step': '第 {step} 步 / 共 4 步',
-  'new.step1': '题库与题目',
-  'new.step2': '对比组',
-  'new.step3': '判官、次数与预算',
-  'new.step4': '环境与确认',
-  'new.back': '上一步',
-  'new.next': '下一步',
-  'new.stepBlocked': '这一步填完才能往下走。',
 
   // ── the walkthrough fixups (I5·T67 補, W4–W15) ─────────────────────────
   'runs.settled': '这条记录已经结束了，没有在走的时长。它花了多久看时间轴。',

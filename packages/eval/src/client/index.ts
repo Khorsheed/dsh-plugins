@@ -38,7 +38,7 @@ import evalRemote from '@khorsheed/dsh-eval/remote'
 import type {
   EvalApproveRequest, EvalArchiveRunRequest, EvalCellArtifactRequest, EvalCloseRunRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
   EvalConditionEndpointRequest, EvalConditionProvisionRequest,
-  EvalConditionsRequest, EvalDraftOptionsRequest, EvalDraftRequest,
+  EvalConditionsRequest, EvalDraftOptionsRequest,
   EvalExperimentArtifactRequest, EvalItemMaterialsRequest, EvalDatasetFileRequest, EvalJudgePromptPreviewRequest, EvalJudgePromptRequest,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExportPlanRequest,
   EvalExportRunRequest, EvalFinalizeRequest, EvalHumanFinalRequest, EvalJudgeQueueRequest, EvalCellAnswersRequest,
@@ -149,7 +149,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     // a draft a person fills in and a draft an agent makes in one
     // sentence are the same file in the same list.
     fetchDraftOptions: (sid: SessionId, request: EvalDraftOptionsRequest) => remote.draftOptions(sid, request),
-    draftExperiment: (sid: SessionId, request: EvalDraftRequest) => remote.newExperiment(sid, request),
     approvePlan: (sid: SessionId, request: EvalApproveRequest) => remote.approve(sid, request),
     // The cursor is passed EXPLICITLY even though the verb defaults it:
     // the gateway's client proxy enforces exact positional arity, so a
@@ -264,6 +263,28 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       const current = input.state.getSnapshot().draft
       input.setDraft(current.trim() === '' ? text : `${current}\n\n${text}`)
       return true
+    },
+    // Best effort, structurally: 0.1.7's input shell has `focus()` (the caret
+    // it last held); 0.1.5's exposes only its Lexical `editor`. Neither is on
+    // the frozen SessionInput face, so each is probed and an absence is quiet.
+    focusComposer: (sid: SessionId): void => {
+      const scope = ctx.sessions.scope(sid)
+      if (scope === undefined) return
+      const input = scope.get('conversation')?.input.for(scope) as unknown as {
+        focus?: () => void
+        editor?: { focus?: () => void; getRootElement?: () => HTMLElement | null }
+      } | undefined
+      try {
+        if (typeof input?.focus === 'function') {
+          input.focus()
+          return
+        }
+        input?.editor?.getRootElement?.()?.focus({ preventScroll: true })
+        input?.editor?.focus?.()
+      } catch {
+        // A composer that cannot take focus leaves the text in place; the
+        // notice already says where it went.
+      }
     },
     openInspect: (_sid: SessionId, target: InspectTarget) => inspectHost.open?.(target) ?? false,
   }

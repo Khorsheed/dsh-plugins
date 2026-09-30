@@ -380,6 +380,11 @@ describe('the list page', () => {
     const h = makeHarness([])
     renderView(h)
     expect(await screen.findByText('registry.empty')).toBeTruthy()
+    // T87: ONE register button and ONE import link on screen — the bar's own
+    // pair and the 「0 个」 count title step aside while the page is empty.
+    expect(screen.getAllByRole('button', { name: /^registry\.(register|emptyAction)$/ })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'registry.import' })).toHaveLength(1)
+    expect(screen.queryByText(/^registry\.title/)).toBeNull()
     fireEvent.click(screen.getByText('registry.emptyAction'))
     expect(await screen.findByText('register.title')).toBeTruthy()
   })

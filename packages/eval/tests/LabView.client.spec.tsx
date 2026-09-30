@@ -44,7 +44,6 @@ interface Harness {
   approvePlan: ReturnType<typeof vi.fn>
   fetchRunOutput: ReturnType<typeof vi.fn>
   fetchDraftOptions: ReturnType<typeof vi.fn>
-  draftExperiment: ReturnType<typeof vi.fn>
   fetchJudgeQueue: ReturnType<typeof vi.fn>
   archiveRun: ReturnType<typeof vi.fn>
 }
@@ -165,7 +164,6 @@ function makeHarness(overrides: { list?: EvalExperimentsResult } = {}): Harness 
     // here the two verbs only have to exist, because the dialog mounts with
     // the view and reads them when it is opened.
     fetchDraftOptions: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
-    draftExperiment: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     approvePlan: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     fetchRunOutput: vi.fn(async () => ({ ok: false, error: { code: 'X', message: 'not in this spec' } })),
     // The stage bar walks a reader to the stage their status asks for, so the
@@ -192,7 +190,6 @@ function renderView(h: Harness, extra: Record<string, unknown> = {}) {
     fetchConditions: h.fetchConditions,
     fetchConditionDiff: h.fetchConditionDiff,
     fetchDraftOptions: h.fetchDraftOptions,
-    draftExperiment: h.draftExperiment,
     approvePlan: h.approvePlan,
     fetchRunOutput: h.fetchRunOutput,
     fetchJudgeQueue: h.fetchJudgeQueue,
