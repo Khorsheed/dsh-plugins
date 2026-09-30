@@ -75,6 +75,8 @@ npx npm@12 publish /tmp/dist/<新包>.tgz --access public --otp=<token>
 
 每波发布后运行 `pnpm release:status` 重新生成 [release-status.md](release-status.md)(各包 npm 已发布版本 / 仓内版本 / minHost / verifiedHost / 整合包成员一览)并提交——发布状态以此为准,不手维护。
 
+发版波次的版本 bump 落地后跑 `pnpm check:install-specs`:整合包 README 的安装规格带 `@^下限`(为绕开 pnpm 11 默认的 24 小时 `minimumReleaseAge`——见失败对照表),下限只需包含当前版本即可,包跨 minor 线(0.3→0.4)时下限失效、检查报错;`--write` 把漂移下限对齐到当前版本,README 随同一发布提交一起走。
+
 ### 家族发布:同版、按依赖序、可恢复
 
 local-agent 家族七包(core → tool-subagent / dsh-headless → 各 provider)以**同一版本**成一波发布,顺序按依赖。理由不是洁癖:`pack-dist` 会把每条家族边按其**目标包自己的版本**改写成 `^<目标版本>`(发版时七包同版,结果才等价于"按同一个 dist 版本改写"),拆开就会发布出一个自己都满足不了的 range。
