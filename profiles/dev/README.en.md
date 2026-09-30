@@ -35,8 +35,10 @@ Host ≥ `0.1.5-rc.1`.
 
 | How | Install spec (copy into the dialog) |
 |---|---|
-| The whole family at once (recommended) | `@khorsheed/dsh-bundle-local-agent@^0.1.2` |
-| Individually: core + any provider | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-kimi@^0.1.0-rc.8` (or `-codex` / `-claude-code` / `-dsh`, same version line) |
+| Core + Kimi | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-kimi@^0.1.0-rc.8` |
+| Core + Codex | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-codex@^0.1.0-rc.8` |
+| Core + Claude Code | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-claude-code@^0.1.0-rc.8` |
+| Core + dsh | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-dsh@^0.1.0-rc.8` |
 
 Delegate subtasks to the coding agent CLIs on your machine — Kimi Code, Codex, Claude Code, and dsh itself. Each harness runs under its own scoped home (`$DSH_HOME/local-agent/<name>`, mode 0700), and **never touches the private configuration and credentials in your user directory**.
 
@@ -59,7 +61,7 @@ Delegate subtasks to the coding agent CLIs on your machine — Kimi Code, Codex,
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-worktrees@^0.3.0` (the model tool row is the package's `./tool` subpath entry, activated by the dev-mode preset — no separate install needed) |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-worktrees@^0.3.1` (the model tool row is the package's `./tool` subpath entry, activated by the dev-mode preset — no separate install needed) |
 
 A repo/worktree badge sits at the top right of every session, showing the current repository, branch, and combined diff size (green = clean, yellow = dirty). Opening it reveals the change drawer: uncommitted and committed file trees with diffs, an IDE-style commit log, and full repository file browsing. It displays git facts read-only and never writes to the repository.
 

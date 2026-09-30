@@ -35,8 +35,10 @@
 
 | 装法 | 安装规格（复制到对话框） |
 |---|---|
-| 整族一次装齐（推荐） | `@khorsheed/dsh-bundle-local-agent@^0.1.2` |
-| 单装：核心 + 任选 provider | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-kimi@^0.1.0-rc.8`（或 `-codex` / `-claude-code` / `-dsh`，同版本线） |
+| 核心 + Kimi | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-kimi@^0.1.0-rc.8` |
+| 核心 + Codex | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-codex@^0.1.0-rc.8` |
+| 核心 + Claude Code | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-claude-code@^0.1.0-rc.8` |
+| 核心 + dsh | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-dsh@^0.1.0-rc.8` |
 
 把子任务委派给你本机装的编码 Agent CLI——Kimi Code、Codex、Claude Code、以及 dsh 自己。每个 harness 在自己独立的作用域目录下运行（`$DSH_HOME/local-agent/<name>`，0700 权限），**绝不触碰你用户目录里的私人配置与凭据**。
 
@@ -59,7 +61,7 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-worktrees@^0.3.0`（模型工具行是包内 `./tool` 子路径入口，随开发模式 preset 生效，无需单装） |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-worktrees@^0.3.1`（模型工具行是包内 `./tool` 子路径入口，随开发模式 preset 生效，无需单装） |
 
 每个会话右上角一个 repo/worktree 徽标，显示当前仓库、分支与合并 diff 行数（绿 = 无改动，黄 = 有改动）。点开是改动抽屉：未提交/已提交文件树 + diff、IDE 风格提交记录、仓库全量文件浏览。只读展示 git 事实，不写仓库。
 
