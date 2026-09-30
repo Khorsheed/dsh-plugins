@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.2.0-rc.1（2026-09-30）
+
+- **家族折叠：`subagent_dsh` 改挂家族核的 `./tool-factory`**。开关 ON 时的动态挂载从已退役的 `@khorsheed/dsh-local-agent-tool-subagent` 包改为 `@khorsheed/dsh-local-agent/tool-factory` 的 `mountSubagentDelegationTool`（内联插件对象，owner 传本包包名），行为与生命周期不变（设置开关独占挂载/卸载）。依赖同步移除。
+
 ## 0.1.0-rc.9（2026-09-30）
 
 - **修复同款跨实例 home 回退**：`defaultPresetRoot()` 的兜底从硬编码 `~/.dsh-official` 改为非空白 `$DSH_HOME` → `~/.dsh`（官方 `resolveDshHome` 优先级），桌面 app 上不再误读其他实例的 preset 根

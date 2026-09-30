@@ -78,9 +78,8 @@
 | [`local-agent-claude-code`](packages/local-agent-claude-code) | **Claude Code** harness:`claude -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev |
 | [`local-agent-dsh`](packages/local-agent-dsh) | **dsh 自委派** harness:把 dsh 自己当本地 CLI 用 | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev |
 | [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (组合组件)dsh 委派的 **headless 子 profile** patch | `@khorsheed/dsh-local-agent-dsh-headless` | ≥ 0.1.5-rc.1 | 随 provider |
-| [`local-agent-tool-subagent`](packages/local-agent-tool-subagent) | (组合组件)家族共享**委派工具行**,带 `resume` 续聊参数 | `@khorsheed/dsh-local-agent-tool-subagent` | ≥ 0.1.2-rc.1 | dev |
 
-> **本地多 Agent 打包安装**:核心 + 四个 provider 用元包 [`bundle-local-agent`](packages/bundle-local-agent) 一条命令装齐——`dsh plugin add @khorsheed/dsh-bundle-local-agent`。
+> **本地多 Agent 打包安装**:核心 + 四个 provider 用元包 [`bundle-local-agent`](packages/bundle-local-agent) 一条命令装齐——`dsh plugin add @khorsheed/dsh-bundle-local-agent`。各 provider 的委派工具(`subagent_kimi` 等)是包内 `./tool` 组合入口,由 preset 按会话授予(家族折叠后不再有独立的工具包)。
 
 ### 多 Agent 协作
 

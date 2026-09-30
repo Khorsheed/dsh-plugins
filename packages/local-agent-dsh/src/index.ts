@@ -33,7 +33,7 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
-import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
+import { mountSubagentDelegationTool } from '@khorsheed/dsh-local-agent/tool-factory'
 import { CONTAINER_NODE_OPTIONS, DshCliProvider, dshCliVersion } from './dsh-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
@@ -189,6 +189,27 @@ export interface DshSettings {
 
 /** The delegation tool the toggle mounts while ON. */
 const DSH_TOOL_NAME = 'subagent_dsh'
+
+/**
+ * This package's own name, passed to the family tool factory as the
+ * tool-origin owner (AGENTS.md § Tool origin tagging — a shared factory never
+ * hardcodes an owner). Duplicated from src/invariant.ts, the same pattern the
+ * worktrees/room `./tool` entries use.
+ */
+const PACKAGE_NAME = '@khorsheed/dsh-local-agent-dsh'
+
+/**
+ * The `subagent_dsh` mount, as a plugin object over the family factory: the
+ * toggle owns its lifecycle, so it mounts dynamically through `ctx.plugin`
+ * instead of shipping a `./tool` composition row like the CLI providers.
+ */
+const dshSubagentTool = {
+  name: 'local-agent-dsh-tool',
+  inject: ['tools', 'subagents', 'localAgent'],
+  apply: (toolCtx: Context): void => {
+    mountSubagentDelegationTool(toolCtx, { provider: 'dsh-cli', toolName: DSH_TOOL_NAME }, PACKAGE_NAME)
+  },
+}
 
 /** Resolve the sub-dsh credential or report unconfigured. */
 async function resolveApiKey(ctx: Context, config: LocalAgentDshConfig): Promise<ResolvedCredential | undefined> {
@@ -413,7 +434,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       })
       // The family delegation tool is mounted dynamically so the toggle owns
       // its lifecycle — while OFF the model never sees `subagent_dsh`.
-      void ctx.plugin(toolModule, { provider: 'dsh-cli', toolName: DSH_TOOL_NAME }).then(
+      void ctx.plugin(dshSubagentTool).then(
         (fiber) => {
           if (gen !== generation) {
             void fiber.dispose()

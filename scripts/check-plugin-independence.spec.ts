@@ -209,7 +209,7 @@ describe('preset-declarations bundles', () => {
       private: true,
       files: ['lib', 'cordis.patch.yml'],
       dsh: { bundle: { patch: './cordis.patch.yml' } },
-    }, `- insert:\n    - id: tool-subagent-kimi\n      name: '@khorsheed/dsh-local-agent-tool-subagent'\n`)
+    }, `- insert:\n    - id: local-agent-kimi\n      name: '@khorsheed/dsh-local-agent-kimi'\n`)
     write('presets', {
       name: '@khorsheed/dsh-presets',
       private: true,
@@ -222,15 +222,20 @@ describe('preset-declarations bundles', () => {
       '      config:',
       '        id: dev',
       '        plugins:',
+      // Since the family fold the delegation tool rows are nested preset rows
+      // naming the provider's own ./tool entry — two presets may share the row
+      // id, and a nested row may reuse another package's profile-root id.
       '          - id: tool-subagent-kimi',
-      "            name: '@khorsheed/dsh-local-agent-tool-subagent'",
+      "            name: '@khorsheed/dsh-local-agent-kimi/tool'",
+      '          - id: local-agent-kimi',
+      "            name: '@khorsheed/dsh-local-agent-kimi'",
       '    - id: preset-dsh-eval',
       "      name: '@deepseek-ai/dsh-agent-preset'",
       '      config:',
       '        id: dsh-eval',
       '        plugins:',
       '          - id: tool-subagent-kimi',
-      "            name: '@khorsheed/dsh-local-agent-tool-subagent'",
+      "            name: '@khorsheed/dsh-local-agent-kimi/tool'",
     ].join('\n'))
     try {
       const findings = scanTree(root).findings.filter((f) => f.kind === 'loader row id')
@@ -301,10 +306,11 @@ describe('family bundles', () => {
       dsh: { bundle: { patch: './cordis.patch.yml' } },
     },
     files: {
-      // The provider's canonical rows include one naming the family's DEPS-ONLY
-      // tool package (the local-agent shape: tool-subagent-kimi names
-      // dsh-local-agent-tool-subagent) — the bundle's allowlist is the union of
-      // member canonical rows, so this row must pass verbatim.
+      // The provider's canonical rows include one naming a package that does
+      // NOT self-mount (the pre-fold local-agent shape: a provider patch's
+      // tool row named the family's deps-only tool package) — the bundle's
+      // allowlist is the union of member canonical rows, so this row must
+      // pass verbatim.
       'cordis.patch.yml': `- insert:\n    - id: provider\n      name: '@khorsheed/dsh-provider'\n\n    - id: tool-subagent-demo\n      name: '@khorsheed/dsh-provider-tool'\n      config:\n        provider: demo\n`,
     },
   }
@@ -543,14 +549,14 @@ describe('findCrossImports', () => {
       `import type { X } from '@khorsheed/dsh-local-agent'`,
       `const a = require('@khorsheed/dsh-file-preview')`,
       `const b = require.resolve('@khorsheed/dsh-local-agent-dsh-headless')`,
-      `await import('@khorsheed/dsh-local-agent-tool-subagent')`,
+      `await import('@khorsheed/dsh-local-agent-kimi')`,
       `import('@khorsheed/dsh-local-agent')`, // duplicate dedupes
     ].join('\n')
     expect(findCrossImports(src).sort()).toEqual([
       '@khorsheed/dsh-file-preview',
       '@khorsheed/dsh-local-agent',
       '@khorsheed/dsh-local-agent-dsh-headless',
-      '@khorsheed/dsh-local-agent-tool-subagent',
+      '@khorsheed/dsh-local-agent-kimi',
     ])
   })
 

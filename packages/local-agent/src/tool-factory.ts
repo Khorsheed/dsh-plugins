@@ -1,12 +1,13 @@
 /**
- * Family-owned model-facing delegation over one configured `ctx.subagents`
- * provider, replacing the official tool-subagent rows in the harness bundles.
- * The schema is the official subset (`description`/`prompt`) plus an optional
- * `resume` handle: the dsh child session id returned by the first delegation's
- * result text. A resumed call continues the SAME CLI conversation instead of
- * starting a fresh one — the family providers spawn their CLI's resume command
- * (kimi `-S`, claude `--resume`, codex `exec resume`) under the harness scoped
- * home, appending the new round into the same dsh child session.
+ * The family-owned delegation-tool factory: the model-facing subagent tool
+ * over one configured `ctx.subagents` provider, replacing the official
+ * tool-subagent rows in the harness bundles. The schema is the official subset
+ * (`description`/`prompt`) plus an optional `resume` handle: the dsh child
+ * session id returned by the first delegation's result text. A resumed call
+ * continues the SAME CLI conversation instead of starting a fresh one — the
+ * family providers spawn their CLI's resume command (kimi `-S`, claude
+ * `--resume`, codex `exec resume`) under the harness scoped home, appending
+ * the new round into the same dsh child session.
  *
  * The resume target never travels inside the prompt: task text is untrusted,
  * and a forged handle embedded there would hijack another session's context.
@@ -16,7 +17,17 @@
  * Continuation rounds still go through `ctx.subagents.start()`, so lifecycle
  * events (`subagent/start`/`subagent/end`) and the standard 子代理 surface are
  * unchanged.
- * @module @khorsheed/dsh-local-agent-tool-subagent
+ *
+ * This module used to ship as the standalone companion package
+ * `@khorsheed/dsh-local-agent-tool-subagent` (0.1.x); the family fold moved it
+ * into the core package as the `./tool-factory` export (the worktrees 0.3.0 /
+ * room 0.2.0 pattern, one level down: the mountable row is each PROVIDER's own
+ * `./tool` composition entry, which binds its provider/toolName defaults and
+ * passes its package name as the tool-origin owner). `local-agent-dsh`
+ * consumes the same factory for its settings-driven dynamic `subagent_dsh`
+ * mount. The factory itself is never a loader row.
+ *
+ * @module @khorsheed/dsh-local-agent/tool-factory
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -25,24 +36,21 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
-import type {} from '@khorsheed/dsh-local-agent'
-import { PACKAGE_NAME } from './invariant.ts'
+// Type-only: this package's own `Context.localAgent` service augmentation.
+import type {} from './index.ts'
 
 /**
- * Tag model-visible tools with their origin (AGENTS.md § Tool origin tagging;
- * seam S12). This shared module registers on behalf of every family provider,
- * so the owner is self-derived from the identity triangle's PACKAGE_NAME —
- * never a hardcoded provider name.
+ * Tag the model-visible tool with its origin (AGENTS.md § Tool origin tagging;
+ * seam S12): the capability catalog reads this `Symbol.for`-keyed tag back
+ * through `ctx.tools.get()`. This factory registers on behalf of every family
+ * provider, so the owner arrives as a PARAMETER — the calling entry's own
+ * package identity — never a hardcoded package name. The tag is host-side
+ * only and never travels on the model wire.
  */
-const definePluginTool = <T extends object>(def: T): T =>
+const definePluginTool = <T extends object>(def: T, owner: string): T =>
   Object.assign(def, {
-    [Symbol.for('dsh.tool.origin')]: { channel: 'plugin', owner: PACKAGE_NAME },
+    [Symbol.for('dsh.tool.origin')]: { channel: 'plugin', owner },
   })
-
-export const name = 'local-agent-tool-subagent'
-
-/** Services required before the tool can mount. */
-export const inject = ['tools', 'subagents', 'localAgent']
 
 /**
  * Model-visible self-description appended to a FRESH delegation's result, so
@@ -51,42 +59,30 @@ export const inject = ['tools', 'subagents', 'localAgent']
  */
 export const RESUME_HINT_PREFIX = '追问请带 resume="'
 
-/** Config: which registered provider this tool delegates to, plus its name. */
-export interface Config {
+/** Resolved delegation-tool configuration (the `./tool` entry's Config post-defaults). */
+export interface SubagentToolConfig {
   /** The `ctx.subagents` provider name to start runs on (e.g. `kimi-cli`). */
   provider: string
-  /**
-   * Model-facing tool name (e.g. `subagent_kimi`). Each loaded instance must
-   * use a distinct name.
-   */
+  /** Model-facing tool name (e.g. `subagent_kimi`). */
   toolName?: string
-  /**
-   * Whether this row registers its model-visible tool. `all` (the default)
-   * registers it — byte-identical to the behavior before this option existed.
-   * `none` registers nothing model-visible; the delegation provider, its
-   * slash verbs (`/codex login`, `/kimi status`, …) and the localAgent
-   * service face all live in the provider package and are untouched, so a
-   * `none` row still leaves every non-model path to that CLI open.
-   *
-   * Two values, not a group list: each loaded row registers exactly ONE tool,
-   * so there is nothing to group — the knob is on/off (mission's and
-   * datasets' `tools` groups exist because those packages register a dozen).
-   *
-   * The switch has to live here rather than in an agent preset: this row
-   * mounts at the PROFILE ROOT, and a preset selects among registered tools
-   * without being able to subtract one.
-   */
-  tools?: 'all' | 'none'
 }
 
-// Bare `z` annotation: `z<Config>` fails schemastery 3.18.4's variance under
-// exactOptionalPropertyTypes (TS2375) and dropping the annotation trips
-// TS2742; the interface stays the apply signature's contract.
-export const Config: z = z.object({
-  provider: z.string().required(),
-  toolName: z.string().default('subagent'),
-  tools: z.union([z.const('all'), z.const('none')]).default('all'),
-})
+/**
+ * The Config schema of a provider's `./tool` composition entry: every field
+ * optional, defaulting to the CALLING provider's own values, so a preset row
+ * needs no config (`- id: tool-subagent-kimi / name:
+ * '@khorsheed/dsh-local-agent-kimi/tool'` mounts the kimi delegation tool).
+ *
+ * Bare `z` return annotation: `z<Config>` fails schemastery 3.18.4's variance
+ * under exactOptionalPropertyTypes (TS2375) and dropping the annotation trips
+ * TS2742; the interface stays the apply signature's contract.
+ */
+export function subagentToolConfigSchema(provider: string, toolName: string): z {
+  return z.object({
+    provider: z.string().default(provider),
+    toolName: z.string().default(toolName),
+  })
+}
 
 /** Render text blocks from the canonical JSON block array without trusting arbitrary values. */
 function outputValueText(values: JsonValue[]): string {
@@ -215,19 +211,20 @@ function familyWording(): { description: string; promptDescription: string; resu
   }
 }
 
-export function apply(ctx: Context, config: Config): void {
+/**
+ * Mount the family delegation tool on one provider: register the
+ * model-visible tool while the provider is registered, mirroring provider
+ * lifecycle (sibling load order and HMR replacement can change provider
+ * availability while the calling fiber stays active).
+ * @param ctx - the calling entry's plugin context (a preset-scope mount, or
+ * local-agent-dsh's toggle-owned dynamic plugin).
+ * @param config - resolved provider/toolName pair.
+ * @param owner - the calling package's own name, stamped as the tool-origin
+ * owner (never hardcoded here — this factory serves every family provider).
+ */
+export function mountSubagentDelegationTool(ctx: Context, config: SubagentToolConfig, owner: string): void {
   const toolName = config.toolName ?? 'subagent'
-  if ((config.tools ?? 'all') === 'none') {
-    // Nothing model-visible mounts, so there is no provider to watch either:
-    // the lifecycle listeners below exist only to mount and unmount the tool.
-    // The provider itself, its slash verbs, and the localAgent service face
-    // are registered by the provider package and keep working unchanged.
-    ctx.logger.info(`"${toolName}" is not registered (tools: none); the "${config.provider}" provider is unaffected`)
-    return
-  }
   const wording = familyWording()
-  // Mirror provider lifecycle because sibling load order and HMR replacement
-  // can change provider availability while this fiber remains active.
   let disposeTool: (() => void) | undefined
   const mount = (): void => {
     disposeTool = ctx.tools.register(definePluginTool(defineTool({
@@ -343,7 +340,7 @@ export function apply(ctx: Context, config: Config): void {
         }
         return settled
       },
-    })))
+    }), owner))
   }
 
   // Register listeners before checking presence so no synchronous change is missed.
@@ -360,6 +357,6 @@ export function apply(ctx: Context, config: Config): void {
     mount()
   } else {
     // A backend fiber may activate later; a misspelled provider remains visible in this log.
-    ctx.logger.info(`subagent provider "${config.provider}" not registered yet; the "${config.toolName ?? 'subagent'}" tool will register when it appears`)
+    ctx.logger.info(`subagent provider "${config.provider}" not registered yet; the "${toolName}" tool will register when it appears`)
   }
 }

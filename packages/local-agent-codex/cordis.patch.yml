@@ -8,25 +8,23 @@
 # alongside this bundle, or this provider stays pending. No other patch inserts
 # the core row id.
 #
-# Two rows are inserted:
-#   - local-agent-codex: this bundle's plugin registers the `codex` harness
-#     (CODEX_HOME scoped home, `codex login --device-auth`, rollout-file
-#     session records).
-#   - tool-subagent-codex-local: the family-owned delegation tool (schema
-#     description/prompt plus optional resume) over the `codex-local`
-#     provider. The toolName is `subagent_codex` — the family takes the
-#     model-facing name: the official preset row of that name ships
-#     `disabled: true`, and this patch disables it too (below) so a community
-#     install can never register two `subagent_codex` tools. A user who
-#     deliberately re-enables the official row in their own preset layer gets
-#     a loud duplicate-name conflict — by design, they must choose one. The
-#     family tool adds continuation: a later round may pass the dsh child
-#     session id returned by the first delegation to continue the same codex
-#     thread.
+# Exactly ONE row is inserted: the provider (this bundle's plugin registers the
+# `codex` harness — CODEX_HOME scoped home, `codex login --device-auth`,
+# rollout-file session records). The `subagent_codex` delegation tool is no
+# longer a profile-root row: since the family fold it ships as this package's
+# `./tool` composition entry (`name: '@khorsheed/dsh-local-agent-codex/tool'`
+# in an agent preset), granted per session — the dev preset's
+# `tool-subagent-codex-local` row is the grant point. The family keeps the
+# official model-facing name `subagent_codex`: the official preset row of that
+# name ships `disabled: true`, and this patch disables the profile-root row
+# too (below) so a community install can never register two `subagent_codex`
+# tools. A user who deliberately re-enables the official row in their own
+# preset layer gets a loud duplicate-name conflict — by design, they must
+# choose one. The family tool keeps its continuation parameter: a later round
+# may pass the dsh child session id returned by the first delegation to
+# continue the same codex thread.
 #
-# The tool mounts at the profile root, so every agent preset can delegate
-# without per-preset variants. The provider starts no codex process until a
-# tool call or /codex login.
+# The provider starts no codex process until a tool call or /codex login.
 
 - id: tool-subagent-codex
   disabled: true
@@ -34,9 +32,3 @@
 - insert:
     - id: local-agent-codex
       name: '@khorsheed/dsh-local-agent-codex'
-
-    - id: tool-subagent-codex-local
-      name: '@khorsheed/dsh-local-agent-tool-subagent'
-      config:
-        provider: codex-local
-        toolName: subagent_codex

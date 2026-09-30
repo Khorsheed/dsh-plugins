@@ -44,4 +44,9 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
     replacement: '@khorsheed/dsh-file-preview (>= 0.4.0) and the worktrees local-files browser',
     note: 'absorbed as the internal content-preview library of those packages; the npm name is deprecated',
   },
+  {
+    name: '@khorsheed/dsh-local-agent-tool-subagent',
+    replacement: "each provider's own ./tool composition entry (@khorsheed/dsh-local-agent-kimi/tool, -codex/tool, -claude-code/tool; family >= 0.2.0-rc.1), over the family core's ./tool-factory export — the dev-preset row ids (`tool-subagent-kimi` etc.) are unchanged",
+    note: 'folded into the provider packages at the family fold (2026-09-30); the npm name is deprecated',
+  },
 ]

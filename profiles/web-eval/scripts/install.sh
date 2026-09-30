@@ -77,11 +77,13 @@ SKILL_IDS="eval-planning"
 #      like group 1. Remove a member from this list the moment its
 #      host-aligned version is ON npm.
 #
-# Dependency order: the family core first, then tool-subagent, the headless
-# bundle (local-agent-dsh's own dependency — packed so the override can pin
-# it, never a direct profile dependency), then the providers, then the
-# independents, then the published-but-lagging members.
-UNPUBLISHED_DIRS="local-agent local-agent-tool-subagent local-agent-dsh-headless \
+# Dependency order: the family core first, then the headless bundle
+# (local-agent-dsh's own dependency — packed so the override can pin it, never
+# a direct profile dependency), then the providers, then the independents,
+# then the published-but-lagging members. (The family's shared tool package
+# local-agent-tool-subagent left this list at the 2026-09-30 fold: the
+# delegation tools moved into each provider's ./tool composition entry.)
+UNPUBLISHED_DIRS="local-agent local-agent-dsh-headless \
 local-agent-kimi local-agent-codex local-agent-claude-code local-agent-dsh \
 capability-catalog datasets eval inline-html-render lab local-files mission \
 ankh-guard context-guard file-preview message-timeline message-tools taskpilot \
@@ -382,20 +384,20 @@ fi
 dsh plugin --profile web-eval install
 DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 # Distinct @khorsheed names, not raw matches: the composed dump repeats each
-# member (layer header + entry row), so the raw count is nearly double (48 vs
-# 24 as this was written).
+# member (layer header + entry row), so the raw count is nearly double.
 #
 # Three counts, and they are deliberately different numbers — a drop in any of
 # them is the symptom this line exists to surface:
-#   27  tarballs packed above, one per UNPUBLISHED_DIRS entry;
-#   26  @khorsheed dependencies in the profile's own package.json — every
+#   26  tarballs packed above, one per UNPUBLISHED_DIRS entry;
+#   25  @khorsheed dependencies in the profile's own package.json — every
 #       tarball except local-agent-dsh-headless, which local-agent-dsh pulls
 #       in transitively and the overrides pin, never a direct dependency;
-#   24  distinct names in the dump: the 22 @khorsheed bundles, plus
-#       local-agent-tool-subagent (no bundle row of its own — it appears only
-#       through its three per-provider entries) and local-agent-dsh-headless
-#       (no row at all — it is the headlessBundleDir path). The three *-tool
-#       members are dependencies but are not composed into the dump.
+#   23  distinct names in the dump: the 22 @khorsheed bundles plus
+#       local-agent-dsh-headless (no row at all — it is the headlessBundleDir
+#       path). The three *-tool members are dependencies but are not composed
+#       into the dump. (The delegation tools left the dump at the 2026-09-30
+#       family fold: they are per-preset `./tool` rows now, granted by the
+#       presets that name them — this profile's eval preset names none.)
 MEMBERS=$(printf '%s\n' "$DUMP" | grep -o '@khorsheed/[a-z0-9-]*' | sort -u | wc -l | tr -d ' ')
 ROWS=$(printf '%s\n' "$DUMP" | grep -c '^- id: ' || true)
 trap - 0

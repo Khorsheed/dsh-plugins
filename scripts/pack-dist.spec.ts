@@ -198,24 +198,24 @@ describe('rescopePackageJson', () => {
         distName: '@khorsheed/dsh-local-agent',
         targetVersion: '0.1.0-rc.6',
       }],
-      ['@khorsheed/dsh-local-agent-tool-subagent', {
-        sourceName: '@khorsheed/dsh-local-agent-tool-subagent',
-        distName: '@khorsheed/dsh-local-agent-tool-subagent',
+      ['@khorsheed/dsh-local-agent-dsh-headless', {
+        sourceName: '@khorsheed/dsh-local-agent-dsh-headless',
+        distName: '@khorsheed/dsh-local-agent-dsh-headless',
         targetVersion: '0.1.0-rc.6',
       }],
     ])
     const out = rescopePackageJson({
-      name: '@khorsheed/dsh-local-agent-kimi',
+      name: '@khorsheed/dsh-local-agent-dsh',
       version: '0.1.0-rc.6',
       dependencies: {
         '@deepseek-ai/schemastery': '^3.18.1',
         '@khorsheed/dsh-local-agent': 'workspace:*',
-        '@khorsheed/dsh-local-agent-tool-subagent': 'workspace:*',
+        '@khorsheed/dsh-local-agent-dsh-headless': 'workspace:*',
       },
-    }, '@khorsheed/dsh-local-agent-kimi', '0.1.0-rc.6', family)
+    }, '@khorsheed/dsh-local-agent-dsh', '0.1.0-rc.6', family)
     expect(out.dependencies).toEqual({
       '@khorsheed/dsh-local-agent': '^0.1.0-rc.6',
-      '@khorsheed/dsh-local-agent-tool-subagent': '^0.1.0-rc.6',
+      '@khorsheed/dsh-local-agent-dsh-headless': '^0.1.0-rc.6',
     })
   })
 

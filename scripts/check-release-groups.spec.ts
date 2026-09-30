@@ -57,8 +57,9 @@ describe('release group declaration', () => {
     }
   })
 
-  it('covers the seven local-agent packages', () => {
-    expect(RELEASE_GROUPS.find(g => g.name === 'local-agent')?.dirs).toHaveLength(7)
+  it('covers the six local-agent packages', () => {
+    // Seven until the 2026-09-30 family fold retired local-agent-tool-subagent.
+    expect(RELEASE_GROUPS.find(g => g.name === 'local-agent')?.dirs).toHaveLength(6)
   })
 
   it('covers the three core/companion pairs', () => {

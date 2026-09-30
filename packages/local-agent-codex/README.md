@@ -10,7 +10,7 @@ dsh 的 agent 已经能干活,但有些任务你就是想交给本机的 Codex C
 
 ## 特性
 
-- **任意 preset 皆可委派**——`subagent_codex` 工具挂在 profile 根,无需逐 preset 配置。
+- **按会话授予的委派**——`subagent_codex` 工具是本包的 `./tool` 组合入口,由点名它的 agent 预设(如开发模式)授予该预设的会话,无需逐 preset 配置。
 - **作用域目录隔离**——Codex 的全部状态(config、凭据、rollout 会话记录)留在 `$DSH_HOME/local-agent/codex`,与你的 `~/.codex` 互不干扰。
 - **会话内登录**——`/codex login` 在伪终端里跑 `codex login`,授权页自动在浏览器打开;页面给出 code 时用 `/codex code <code>` 粘贴回来。设置卡片显示认证状态并提供退出登录。
 - **常驻模式(live)**——每成员常驻一个 `codex app-server` 进程,按轮发 turn:输出实时流入子会话、取消不杀进程、崩溃后自动续上原线程;关闭或通道起不来即回一次性 `codex exec`,热切换无需重载。
@@ -114,7 +114,7 @@ model_provider = "dsh-router"
 
 **命名 scope。** `/codex login --scope <名>` 会在 `<homesRoot>/codex@<名>` 里另开一份作用域目录:目录建立时自动跑同一份 `config.toml` provision(把凭据存储钉在文件而非 macOS keychain),因此该 scope 的登录落在它自己的 `auth.json` 里。带 scope 的委派用它跑 `codex exec`、把 rollout 写进它、从它回读;只走 exec——常驻 app-server 绑的是缺省作用域目录。
 
-**bundle 组成。** patch 注册 `codex` harness(`CODEX_HOME` 作用域目录、PTY 登录、rollout 文件会话记录),并把 `subagent_codex` 工具挂到 profile 根——官方 preset 的同名行本就 `disabled: true`,patch 再禁一次,社区安装永远不会注册出两个 `subagent_codex`;刻意在自有 preset 层重新启用官方行的用户会得到响亮的重名冲突,按设计必须二选一。`codex-local` provider 在该作用域目录下 spawn `codex exec`(live 未启用时的一次性驱动)。浏览器半部分随本包 `./client` 提供:Codex 设置卡组合家族 core 的共享 `ProviderAuthBlock`,独立安装落在 Plugins 页的包详情视图(`plugins.bundle.config`,按包名派发),作为家族 bundle 成员安装落在 bundle 详情页的行级配置入口(`plugins.row.config`),0.1.5 落在 设置 → 插件 → 插件配置(`settings.plugin.item`,按设置命名空间派发);卡片写入经绑定的 settingsScope 热生效,不用重载。core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
+**bundle 组成。** patch 注册 `codex` harness(`CODEX_HOME` 作用域目录、PTY 登录、rollout 文件会话记录)——恰好一行 provider 行;`subagent_codex` 工具自家族折叠起是本包的 `./tool` 组合入口,由点名它的 agent 预设按会话授予(dev 预设的 `tool-subagent-codex-local` 行),不再挂 profile 根。家族沿用官方模型名 `subagent_codex`:官方 preset 的同名行本就 `disabled: true`,patch 对 profile 根的同名行再禁一次,社区安装永远不会注册出两个 `subagent_codex`;刻意在自有 preset 层重新启用官方行的用户会得到响亮的重名冲突,按设计必须二选一。`codex-local` provider 在该作用域目录下 spawn `codex exec`(live 未启用时的一次性驱动)。浏览器半部分随本包 `./client` 提供:Codex 设置卡组合家族 core 的共享 `ProviderAuthBlock`,独立安装落在 Plugins 页的包详情视图(`plugins.bundle.config`,按包名派发),作为家族 bundle 成员安装落在 bundle 详情页的行级配置入口(`plugins.row.config`),0.1.5 落在 设置 → 插件 → 插件配置(`settings.plugin.item`,按设置命名空间派发);卡片写入经绑定的 settingsScope 热生效,不用重载。core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
 
 **登录与凭据。** `/codex login` 经宿主 subprocess seam 在伪终端里跑 `codex login`——CLI 自己起 localhost 回调服务并打开浏览器,这是第一类流程;命令回复附带从输出里抓取的授权 URL 作兜底链接,CLI 追问 code 时用户以 `/codex code <code>` 粘贴(写入子进程 stdin)。完成由监听作用域目录的凭证 watch 判定:`auth.json` 出现且时间戳新于 watch 起点——残留的旧凭证不会被误认成新登录。无浏览器的远程终端可以手动以 `CODEX_HOME` 指向作用域目录跑 `codex login --device-auth`,凭据落在同一份 `auth.json`。首次启动写入一份最小 `config.toml`,固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 会解析到 macOS keychain,把凭据泄漏到作用域目录之外并使本包的 `auth.json` 存在性检查失效;已存在的 config 保持不动。`/codex logout` 删除作用域 `auth.json`,之后重新登录即可换账号。
 
@@ -128,7 +128,7 @@ model_provider = "dsh-router"
 
 **容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`(`{ container, workdir, env? }`)让本轮跑在一个**已取得的容器**里:argv 变成 `docker exec -w <workdir> [-e NAME…] <container> codex exec …`,其余(流解析、settle、rollout 回读、记录)逐字节不变。`env` 必须给出容器内的 `CODEX_HOME`,且它应当是宿主作用域目录的 rw bind 挂载点——rollout 回读读的是宿主那份文件。容器轮固定走 exec 一次性驱动(长驻 app-server 是宿主进程),且不声明成员桥(宿主 unix socket 进不去容器)。实测:`eval-env:pinned` 单元里一次「回答 2+2」settle 为 `completed`,输出 `4`,`observedModel` 从容器写进宿主作用域目录的 rollout 里回读为 `gpt-5.6-sol`。
 
-**续聊(resume)。** 家族工具(`@khorsheed/dsh-local-agent-tool-subagent`)在官方 `description`/`prompt` 子集上增加可选 `resume` 参数。首次委派的结果文本自述句柄(`追问请带 resume="<childSessionId>"`);后续轮次传回它即在**同一个** dsh 子会话里继续**同一个** codex 线程(`codex exec --json resume <thread_id>`),按轮记账。句柄只从 `resume` 参数读取,localAgent registry 仅对记录该委派的同一 parent 会话与 provider 解析——伪造句柄在任何 CLI 进程启动前就被拒绝。
+**续聊(resume)。** 家族工具(本包的 `./tool` 组合入口,实现共享自家族 core 的 `./tool-factory`)在官方 `description`/`prompt` 子集上增加可选 `resume` 参数。首次委派的结果文本自述句柄(`追问请带 resume="<childSessionId>"`);后续轮次传回它即在**同一个** dsh 子会话里继续**同一个** codex 线程(`codex exec --json resume <thread_id>`),按轮记账。句柄只从 `resume` 参数读取,localAgent registry 仅对记录该委派的同一 parent 会话与 provider 解析——伪造句柄在任何 CLI 进程启动前就被拒绝。
 
 **事件流镜像。** 子代理会话按顺序镜像 `codex exec --json` 事件流:`reasoning` → 推理块、`agent_message` → 回复文本、`command_execution`/`web_search_call`/`function_call_output` → 工具行(`[工具 Bash] <command> → output`),`file_change` → `ApplyPatch` 卡(逐 change 列出 kind 与路径),`function_call`(如 multi-agent 的 `wait`)→ 同名工具卡、结果由 `function_call_output` 并入;最终 `agent_message` 作为运行输出,当轮用量挂在最后一条镜像的 assistant 消息上。续聊轮各自追加自己的 turn,不会重复。中止会让工具结果立即 settle,并保留已收到的事件与用量。
 

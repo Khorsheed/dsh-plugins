@@ -19,7 +19,6 @@
     "@khorsheed/dsh-local-agent-codex": "^0.1.0",
     "@khorsheed/dsh-local-agent-dsh": "^0.1.0",
     "@khorsheed/dsh-local-agent-kimi": "^0.1.0",
-    "@khorsheed/dsh-local-agent-tool-subagent": "^0.1.0",
     "@khorsheed/dsh-local-files": "^0.1.0",
     "@khorsheed/dsh-message-timeline": "^0.1.0",
     "@khorsheed/dsh-mission": "^0.1.0",

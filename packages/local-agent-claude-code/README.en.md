@@ -4,13 +4,13 @@ English | [中文](README.md)
 
 Delegate coding tasks to the Claude Code on this machine — thinking, tool calls, and replies stream back live, and your personal `~/.claude` is never touched.
 
-Any dsh agent preset can delegate: the family tool mounts once at the profile root, the child session is visible end to end — abortable, resumable — and every round's accounting (the actual model, token usage, tool-call count) reads back for real. Login is scope-isolated: the plugin only ever manages the one directory `$DSH_HOME/local-agent/claude-code`, so your personal installation and credentials stay out of it from start to finish. The Claude Code harness of the [local-agent family](../local-agent/README.md).
+Any dsh agent preset that names this package's `./tool` composition entry (e.g. dev mode) can delegate: the child session is visible end to end — abortable, resumable — and every round's accounting (the actual model, token usage, tool-call count) reads back for real. Login is scope-isolated: the plugin only ever manages the one directory `$DSH_HOME/local-agent/claude-code`, so your personal installation and credentials stay out of it from start to finish. The Claude Code harness of the [local-agent family](../local-agent/README.md).
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent family cards under Settings → Plugins → plugin configuration, the Claude Code row's status dot showing its auth state">
 
 ## Features
 
-- **Delegate from any preset** — the tool mounts once at the profile root; no per-preset variants.
+- **Per-session delegation grant** — the `subagent_claude_code` tool is this package's `./tool` composition entry, granted to the sessions of an agent preset that names it; no per-preset variants.
 - **Scoped home** — every Claude process runs with `CLAUDE_CONFIG_DIR` under `$DSH_HOME/local-agent/claude-code`; your personal `~/.claude` stays out of it.
 - **Guided login, one command** — `/claude-code login` answers with the exact command to run in your own terminal (claude ≥2.1 prints its OAuth URL only on a TTY, so the host no longer spawns and scrapes) and watches the scoped home for the credential; `sessions`/`status`/`logout` and a Settings → 本地 Agent panel complete the family.
 - **Resume a delegation** — pass back the result's `resume` handle to continue the same Claude session, with per-round accounting.
@@ -103,9 +103,10 @@ src/index.ts                harness registration, /claude-code command family, c
 src/claude-cli-provider.ts  one-shot provider: spawn, stream mirror, turn/token accounting
 src/provision.ts            scoped-home provisioning and file-based logout
 src/records.ts              auth probe and session-record listing from the scoped home
+src/tool.ts                 the `./tool` composition entry: the `subagent_claude_code` delegation tool (preset-granted)
 ```
 
-The bundle patch registers the `claude-code` harness into the family core (`@khorsheed/dsh-local-agent`, declared as a dependency — the claude bundle deliberately does not re-insert the core row, which would mount it twice) and mounts the `claude-local` provider, which spawns `claude -p --verbose --output-format stream-json` under the harness's scoped home. The `subagent_claude_code` tool is the family-owned tool (`@khorsheed/dsh-local-agent-tool-subagent`): the official subset (`description`/`prompt`) plus an optional `resume` parameter.
+The bundle patch registers the `claude-code` harness into the family core (`@khorsheed/dsh-local-agent`, declared as a dependency — the claude bundle deliberately does not re-insert the core row, which would mount it twice) and mounts the `claude-local` provider, which spawns `claude -p --verbose --output-format stream-json` under the harness's scoped home. The `subagent_claude_code` tool is the family-owned tool (this package's `./tool` composition entry, sharing the family core's `./tool-factory` implementation), granted per session by an agent preset that names the row: the official subset (`description`/`prompt`) plus an optional `resume` parameter.
 
 **Scope isolation.** On macOS the real credential lives in the OS keychain under a hashed entry (`Claude Code-credentials-<sha256(configDir)[:8]>`) keyed to the scoped home path — file-based logout cannot reach it, but a fresh login rewrites the same slot. Which store the CLI itself uses is VERSION-dependent and was measured, not assumed: 2.1.236 wrote the keychain and read the file (the split this mirror exists for), while 2.1.274 on macOS reads and writes the keychain, and 2.1.272 on Linux reads and writes the scoped file. The file therefore stays authoritative for this package's own probes and for a container round; the keychain is what a host CLI on current macOS actually uses. Auth detection is a light file check of the scoped `.claude.json`'s `oauthAccount` — the CLI is never spawned just to probe. The probe also reconciles the two stores, so it obeys the same newer-wins rule as the spawn sites: it runs on every status read and every readiness check, and an unconditional mirror there would undo a containerized round's refresh just as surely.
 

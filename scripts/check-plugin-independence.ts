@@ -126,15 +126,19 @@ export const FAMILY_REGISTRATION_RE = /ctx\.tools\.register|ctx\.commands\.regis
  * not by letting the two drift).
  *
  * Packages deliberately NOT self-mounting: family-internal row packages whose
- * composition is mounted on their behalf — provider patches mount
- * config-bearing rows (tool-subagent), and the local-agent-dsh provisioner
- * copies the headless patch into the provisioned sub-profile's own patch
- * layer (a `dsh.bundle` declaration there would hand the host's `dsh plugin`
- * reconcile a mount trigger for a sub-dsh-only composition; see AGENTS.md
- * "Package conventions" and the two packages' README "Install" sections).
+ * composition is mounted on their behalf — agent presets name the companion
+ * tool rows (mission-tool, datasets-tool, eval-tool, typesafe-tool), and the
+ * local-agent-dsh provisioner copies the headless patch into the provisioned
+ * sub-profile's own patch layer (a `dsh.bundle` declaration there would hand
+ * the host's `dsh plugin` reconcile a mount trigger for a sub-dsh-only
+ * composition; see AGENTS.md "Package conventions" and the two packages'
+ * README "Install" sections).
  */
 export const NO_OWN_PATCH: ReadonlyArray<string> = [
-  'local-agent-tool-subagent',
+  // local-agent-tool-subagent used to be this shape (provider patches mounted
+  // its config-bearing rows); the 2026-09-30 family fold moved the tool into
+  // each provider's own `./tool` composition entry and the factory into the
+  // core's `./tool-factory` export, then retired the package.
   'local-agent-dsh-headless',
   // worktrees-tool and room-tool used to be this shape for their cores;
   // worktrees 0.3.0 and room 0.2.0 folded each back into the core package as
@@ -169,20 +173,22 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
  * declare-and-degrade pattern and be added here deliberately.
  */
 export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
-  'local-agent-claude-code': ['@khorsheed/dsh-local-agent', '@khorsheed/dsh-local-agent-tool-subagent'],
-  'local-agent-codex': ['@khorsheed/dsh-local-agent', '@khorsheed/dsh-local-agent-tool-subagent'],
-  'local-agent-kimi': ['@khorsheed/dsh-local-agent', '@khorsheed/dsh-local-agent-tool-subagent'],
+  // The delegation tool folded into each provider as its `./tool` composition
+  // entry at the 2026-09-30 family fold (the retired shared
+  // local-agent-tool-subagent package); the factory lives in the core's
+  // `./tool-factory` export, so the provider → core edge is the only one left.
+  'local-agent-claude-code': ['@khorsheed/dsh-local-agent'],
+  'local-agent-codex': ['@khorsheed/dsh-local-agent'],
+  'local-agent-kimi': ['@khorsheed/dsh-local-agent'],
   'local-agent-dsh': [
     '@khorsheed/dsh-local-agent',
-    '@khorsheed/dsh-local-agent-tool-subagent',
     '@khorsheed/dsh-local-agent-dsh-headless',
   ],
-  'local-agent-tool-subagent': ['@khorsheed/dsh-local-agent'],
   // bundle-local-agent (family meta package): edges onto its declared
   // `dsh.bundle.members` are sanctioned by the manifest itself; this entry
-  // covers only the family's DEPS-ONLY libraries it also installs (card-less,
-  // no patch rows of their own beyond what the members' canonical rows name).
-  'bundle-local-agent': ['@khorsheed/dsh-local-agent-tool-subagent', '@khorsheed/dsh-local-agent-dsh-headless'],
+  // covers only the family's DEPS-ONLY library it also installs (card-less,
+  // no patch rows of its own beyond what the members' canonical rows name).
+  'bundle-local-agent': ['@khorsheed/dsh-local-agent-dsh-headless'],
   // The worktrees and room tool rows folded back into their core packages
   // (worktrees 0.3.0, room 0.2.0) as the `./tool` composition entry (the
   // canvas ./agent pattern) — no cross-package edge remains. Each core used
@@ -554,9 +560,8 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
       }
     } else if (bundleKind === 'family') {
       // The row whitelist itself is a TREE-level check: the exact allowlist is
-      // the union of the members' canonical patch rows (a provider's own row
-      // legitimately names the family's deps-only tool package), which this
-      // per-package scan cannot see. Here only the own-row rule is replaced.
+      // the union of the members' canonical patch rows, which this per-package
+      // scan cannot see. Here only the own-row rule is replaced.
       if (rows.length === 0) {
         add(patchRel, 'identity', 'declares dsh.bundle.kind family but mounts no rows')
       }
@@ -748,9 +753,8 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
   //
   // Sanctioned exception: a family bundle re-mounts its DECLARED members'
   // canonical rows — that is the kind's whole job. The exemption is exact: a
-  // row must BE one of those canonical rows (same id, same name when named;
-  // a provider's row naming the family's deps-only tool package rides along
-  // this way), so a bundle poaching a non-member row still fails here.
+  // row must BE one of those canonical rows (same id, same name when named),
+  // so a bundle poaching a non-member row still fails here.
   const byName = new Map(pkgs.map((p) => [p.json.name, p]))
   const ownRowsOf = (pkg: Pkg): PatchRow[] => {
     const patch = pkg.json.dsh?.bundle?.patch

@@ -15,10 +15,17 @@
 # tool names the family takes (subagent_codex / subagent_claude_code) — carried
 # verbatim from the codex / claude-code providers' own patches.
 #
-# The deps-only family libraries (@khorsheed/dsh-local-agent-tool-subagent,
-# @khorsheed/dsh-local-agent-dsh-headless) are npm dependencies of this bundle
-# but contribute NO row here beyond what the members' canonical rows already
-# name — card-less by design (see the family-bundles proposal).
+# The delegation TOOLS are not here by design: since the family fold each
+# provider ships its tool as its own `./tool` composition entry
+# (`@khorsheed/dsh-local-agent-kimi/tool` etc.), which an agent preset names to
+# grant the tool per session — a profile-root row would grant every session.
+# The dev preset's `tool-subagent-kimi` / `tool-subagent-codex-local` /
+# `tool-subagent-claude-code-local` rows are the grant points.
+#
+# The deps-only family library (@khorsheed/dsh-local-agent-dsh-headless) is an
+# npm dependency of this bundle but contributes NO row here beyond what the
+# members' canonical rows already name — card-less by design (see the
+# family-bundles proposal).
 
 - id: tool-subagent-codex
   disabled: true
@@ -33,35 +40,17 @@
       config:
         homesRoot: !!js dshHomePath('local-agent')
 
-    # Kimi harness + its delegation tool.
+    # Kimi harness (its `subagent_kimi` tool: the package's ./tool entry).
     - id: local-agent-kimi
       name: '@khorsheed/dsh-local-agent-kimi'
 
-    - id: tool-subagent-kimi
-      name: '@khorsheed/dsh-local-agent-tool-subagent'
-      config:
-        provider: kimi-cli
-        toolName: subagent_kimi
-
-    # Codex harness + its delegation tool.
+    # Codex harness (its `subagent_codex` tool: the package's ./tool entry).
     - id: local-agent-codex
       name: '@khorsheed/dsh-local-agent-codex'
 
-    - id: tool-subagent-codex-local
-      name: '@khorsheed/dsh-local-agent-tool-subagent'
-      config:
-        provider: codex-local
-        toolName: subagent_codex
-
-    # Claude Code harness + its delegation tool.
+    # Claude Code harness (its `subagent_claude_code` tool: the package's ./tool entry).
     - id: local-agent-claude-code
       name: '@khorsheed/dsh-local-agent-claude-code'
-
-    - id: tool-subagent-claude-code-local
-      name: '@khorsheed/dsh-local-agent-tool-subagent'
-      config:
-        provider: claude-local
-        toolName: subagent_claude_code
 
     # The dsh harness controller (Settings → 本地 Agent switch, default off).
     - id: local-agent-dsh

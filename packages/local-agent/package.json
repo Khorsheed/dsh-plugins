@@ -8,7 +8,7 @@
     "local-agent",
     "cli"
   ],
-  "version": "0.1.0-rc.8",
+  "version": "0.2.0-rc.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
@@ -28,6 +28,10 @@
     "./invariant": {
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
+    },
+    "./tool-factory": {
+      "types": "./lib/types/tool-factory.d.ts",
+      "default": "./lib/tool-factory.js"
     },
     "./types": {
       "types": "./lib/types/types.d.ts",
@@ -98,6 +102,7 @@
     "@deepseek-ai/dsh-subprocess": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-token-meter": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-tool-todo": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-chat": "^0.1.0-rc.6 || ^0.2.0-rc.1"
   },
@@ -135,9 +140,12 @@
     "@deepseek-ai/dsh-settings": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-subagent": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-subprocess": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-token-meter": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-tool-todo": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-util-values": "^0.2.0-rc.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^26.2.0",

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 2026-09-30 家族折叠：local-agent 家族的委派工具从共享包 `@khorsheed/dsh-local-agent-tool-subagent`（已退役）收进各 provider 包的 `./tool` 组合入口，工具行不再挂 profile 根，由 agent 预设点名授予。本 pack 的 eval 预设不点名任何 `local-agent-*/tool` 行，三个委派工具因此对评测会话天然缺席——`cordis.patch.yml` 撤掉原先三行 `tools: none` 覆盖（冻结决策 12 第三个执行点换机制：从「profile 层关掉」变「预设不点名即缺席」）；`package.json` 与 `install.sh` 的 `UNPUBLISHED_DIRS` 同步去掉该包（tarball 27 → 26、profile 依赖 26 → 25、dump 里不同名 24 → 23）。provider 行照挂，编排器经 local-agent 门面驱动选手的路不变；`subagent_dsh` 仍是开关驱动的动态挂载，默认 OFF。
 - I0 规划版本：22 个成员的评测模式 profile（基础体验 12 + 本地 Agent 家族 6 + 评测机制 3 + 运维守护 1）。编排器 `@khorsheed/dsh-eval` 尚未存在，随 I2 加入成员清单。
 - M4'③：mission / datasets / eval 拆成 core + companion。按域档位（`read` / `authoring` / `all`）从 profile 根的 core 行移到 `eval` 预设的三条伴生行（`mission-tool` / `datasets-tool` / `eval-tool`）；三个 core 行不再写 `tools`。此后本 profile 中非 `eval` 预设的会话不携带这三套模型工具（服务 / CLI / slash / tab 仍是全局的）。
 - I5 · T34：第 2 步「一句话起草」在界面与会话里走通。新增 `skills/eval-planning/`，两个脚本按 `SKILL_IDS` 整目录覆盖到 `$DSH_HOME/skills/eval-planning`（`dsh-skill-filesystem` 的 `user-dsh` 根；`eval` 预设里那行 `skill-filesystem` 把它带进评测会话的技能卡），与 `presets/eval` 同款——技能教的是 `eval_plan_draft` 这一个起草动词与「批准 / 登录 / provision / 终评都不是 agent 的」，属装置不属偏好。`@khorsheed/dsh-eval-tool` 的 `tools: all` 随之从四个工具变五个（加 `eval_plan_draft`）；「实验室 › 新建实验」从占位变成真表单，与工具走同一个服务面动词。顺带修了两个脚本收尾处的一个既有 bug：`[ -d "$X" ] && rm -rf "$X"` 在 `set -e` 下当 `$X` 不存在时会直接结束脚本，全新安装因此从不打印自己的成功行；改成 `if` 块。

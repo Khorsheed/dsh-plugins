@@ -4,19 +4,26 @@ import { describe, expect, it } from 'vitest'
 
 const patch = readFileSync(fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)), 'utf8')
 
+/** Composition lines only (comments stripped) — row content assertions read these. */
+const composition = patch.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n')
+
 describe('local-agent-codex bundle patch', () => {
-  it('mounts the family-owned tool at the profile root under the model-facing name', () => {
-    // The tool row sits at the profile root (top-level insert), so every
-    // agent preset — including minimal — delegates without per-preset
-    // variants. The family takes the official toolName: the official row
-    // ships disabled in the presets, and this patch disables it too.
-    expect(patch).toContain('- id: tool-subagent-codex-local')
-    expect(patch).toContain("name: '@khorsheed/dsh-local-agent-tool-subagent'")
-    expect(patch).toContain('provider: codex-local')
-    expect(patch).toContain('toolName: subagent_codex\n')
+  it('mounts exactly one inserted row: the provider itself', () => {
+    // Since the family fold, the `subagent_codex` delegation tool is no
+    // longer a profile-root row — it ships as this package's `./tool`
+    // composition entry, granted per session by an agent preset that names
+    // `@khorsheed/dsh-local-agent-codex/tool` (the dev preset's
+    // `tool-subagent-codex-local` row). One provider = one card.
+    expect(composition).toContain("- id: local-agent-codex\n      name: '@khorsheed/dsh-local-agent-codex'")
+    expect(composition).not.toContain('tool-subagent-codex-local')
+    expect(patch).not.toContain('local-agent-tool-subagent')
+    expect(composition).not.toContain('toolName')
   })
 
   it('disables the official tool row so a community install never collides', () => {
+    // The family keeps the official model-facing name `subagent_codex` for
+    // its `./tool` entry: the official preset row of that name ships
+    // disabled, and this bare override keeps the profile-root row off too.
     expect(patch).toContain('- id: tool-subagent-codex\n  disabled: true')
   })
 

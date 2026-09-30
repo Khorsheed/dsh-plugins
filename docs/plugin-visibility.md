@@ -70,7 +70,7 @@ host 没有声明式可见性：右栏 tab 注册表只有静态字段——0.1.
 
 「这个实例上完全关掉某能力」用 profile patch 行的 config，不用自隐判据：
 
-- host 侧 `apply(ctx, config)` 正常拿 config，注册任何东西之前可整体 return（`local-agent-tool-subagent` 的 `tools: all|none` 先例）；也可以设置驱动动态挂载（`local-agent-dsh` 先例）。
+- host 侧 `apply(ctx, config)` 正常拿 config，注册任何东西之前可整体 return（`datasets-tool` / `mission-tool` 的 `tools` 分组先例）；也可以设置驱动动态挂载（`local-agent-dsh` 先例）。
 - **web client 拿不到自己的 config**（boot 组合 client entries 不带 config），需要时经自己的 Remote 送下去（worktrees `badgeConfig` 先例）。
 
 ## 各维度细则

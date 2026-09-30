@@ -8,7 +8,7 @@ The three community agent presets — `dev` (开发模式), `dsh-eval` (评测�
 
 - **No runtime code, no client half**: one `- insert:` list in `cordis.patch.yml` carries all three declarations; `src/index.ts` exports only the `PRESET_IDS` constant so the package has a buildable `lib/` (a pack-dist requirement). The manifest declares this shape as `dsh.bundle.kind: 'preset-declarations'` — check:plugins then pins the preset-row convention (rows may only be named `@deepseek-ai/dsh-agent-preset` with `preset-<id>` ids) in place of the self-mounting identity triangle's own-runtime-row rule.
 - **Rows are interpreted by the official plugin**: activation, schema validation and session composition belong to the host's `@deepseek-ai/dsh-agent-preset` / `-registry` (shipped with the official web-app bundle since 0.1.7-rc.1; declared here as an optional peer).
-- **Community tool rows are named, deployment-resolved**: the `@khorsheed/dsh-local-agent-tool-subagent`, `-worktrees/tool`, `-room/tool`, `-typesafe-tool`, `-datasets-tool`, `-eval-tool` and `-canvas/agent` rows inside the preset compositions only name their modules — exactly like the legacy directory presets, those packages must be installed into the same profile to resolve. They are data references in the manifest's `dsh.references`, **not** npm dependency edges. A preset naming an unresolvable module stays on the roster with its diagnostic (the official mechanism) instead of breaking the host.
+- **Community tool rows are named, deployment-resolved**: the `@khorsheed/dsh-local-agent-kimi/tool`, `-local-agent-codex/tool`, `-local-agent-claude-code/tool`, `-worktrees/tool`, `-room/tool`, `-typesafe-tool`, `-datasets-tool`, `-eval-tool` and `-canvas/agent` rows inside the preset compositions only name their modules — exactly like the legacy directory presets, those packages must be installed into the same profile to resolve. They are data references in the manifest's `dsh.references`, **not** npm dependency edges. A preset naming an unresolvable module stays on the roster with its diagnostic (the official mechanism) instead of breaking the host.
 
 ## Migration provenance of the three presets
 
@@ -26,7 +26,7 @@ The display fields (`name`/`description`/`order`) come from each legacy `preset.
 dsh plugin --profile web add @khorsheed/dsh-presets
 ```
 
-Once mounted, the three presets appear in the session mode selection. Install the community companion packages a preset names as needed (e.g. dev mode's delegation tools require the local-agent family providers and `@khorsheed/dsh-local-agent-tool-subagent` in the same profile).
+Once mounted, the three presets appear in the session mode selection. Install the community companion packages a preset names as needed (e.g. dev mode's delegation tools require the three local-agent family provider packages in the same profile — each one's `./tool` composition entry resolves with the package).
 
 ## Compatibility
 

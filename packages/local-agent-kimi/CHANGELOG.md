@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.2.0-rc.1（2026-09-30）
+
+- **家族折叠：委派工具收进本包**。新增 `./tool` 组合入口（`src/tool.ts`）——`subagent_kimi` 委派工具由 agent 预设点名 `name: '@khorsheed/dsh-local-agent-kimi/tool'` 按会话授予，Config 两字段（`provider` / `toolName`）全部可选、默认即本包取值，预设行无需配置；行 id `tool-subagent-kimi` 不变。bundle patch 不再插 profile 根工具行，本包自挂载恰好一行（provider 行），插件清单一个 provider 一张卡。实现共享自家族核 `@khorsheed/dsh-local-agent` 的 `./tool-factory` 导出；对 `@khorsheed/dsh-local-agent-tool-subagent` 的依赖移除（该包退役）。
+
 ## 0.1.0-rc.8（2026-09-30）
 
 家族同版联动：加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0（0.2.0 的兼容闸会禁用 peer 区间不覆盖宿主版本的已装插件）。无功能变更。

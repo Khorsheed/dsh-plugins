@@ -63,14 +63,20 @@ describe('cordis.patch.yml', () => {
   it('dev appends the live community tool rows verbatim', () => {
     const dev = presetBlock(patch, 'dev')
     expect(dev).toContain('          # ── dev mode: community tool rows granted per session')
-    for (const [rowId, provider] of [
-      ['tool-subagent-kimi', 'kimi-cli'],
-      ['tool-subagent-codex-local', 'codex-local'],
-      ['tool-subagent-claude-code-local', 'claude-local'],
+    // Since the family fold, each delegation tool is its provider package's
+    // `./tool` composition entry with self-defaulting config — the row ids are
+    // unchanged and the rows carry NO config block.
+    for (const [rowId, entry] of [
+      ['tool-subagent-kimi', '@khorsheed/dsh-local-agent-kimi/tool'],
+      ['tool-subagent-codex-local', '@khorsheed/dsh-local-agent-codex/tool'],
+      ['tool-subagent-claude-code-local', '@khorsheed/dsh-local-agent-claude-code/tool'],
     ] as const) {
-      expect(dev).toContain(`          - id: ${rowId}\n`)
-      expect(dev).toContain(`            provider: ${provider}\n`)
+      expect(dev).toContain(`          - id: ${rowId}\n            name: '${entry}'\n`)
     }
+    // Composition lines only — the block comment names the retired shared
+    // package deliberately (provenance note).
+    const rows = dev.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n')
+    expect(rows).not.toContain('local-agent-tool-subagent')
     expect(dev).toContain('          - id: worktrees-tool\n')
     expect(dev).toContain("            name: '@khorsheed/dsh-worktrees/tool'\n")
     expect(dev).toContain('          - id: room-tool\n')

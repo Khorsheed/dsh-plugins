@@ -67,17 +67,18 @@ export interface ReleaseGroup {
 }
 
 /**
- * The local-agent family: core, the shared delegation tool, the sub-dsh
- * headless bundle, and the four harness providers. `pack-dist` ranges each
- * family edge on that edge's target version, so a release must ship the seven
- * at one version or the published set cannot satisfy its own ranges.
+ * The local-agent family: core, the sub-dsh headless bundle, and the four
+ * harness providers. `pack-dist` ranges each family edge on that edge's target
+ * version, so a release must ship the six at one version or the published set
+ * cannot satisfy its own ranges. (The shared delegation-tool package
+ * local-agent-tool-subagent was the seventh until the 2026-09-30 fold moved
+ * the tool into each provider's `./tool` composition entry and retired it.)
  */
 export const RELEASE_GROUPS: readonly ReleaseGroup[] = [
   {
     name: 'local-agent',
     dirs: [
       'local-agent',
-      'local-agent-tool-subagent',
       'local-agent-dsh-headless',
       'local-agent-kimi',
       'local-agent-codex',

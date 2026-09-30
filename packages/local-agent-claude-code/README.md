@@ -4,13 +4,13 @@
 
 把编码任务委派给本机的 Claude Code——思考、工具调用与回复实时流回，你的私人 `~/.claude` 分文不动。
 
-任意 dsh agent preset 都能发起委派：家族工具在 profile 根只挂一次，子会话全程可见、可中止、可续聊，每轮的账目（实际模型、token 用量、工具调用数）都真实回读。登录是作用域隔离的——插件只管理 `$DSH_HOME/local-agent/claude-code` 这一份目录，你的个人安装与凭据自始至终置身事外。[local-agent 家族](../local-agent/README.md) 的 Claude Code harness。
+点名本包 `./tool` 组合入口的 agent preset（如开发模式）即可发起委派：子会话全程可见、可中止、可续聊，每轮的账目（实际模型、token 用量、工具调用数）都真实回读。登录是作用域隔离的——插件只管理 `$DSH_HOME/local-agent/claude-code` 这一份目录，你的个人安装与凭据自始至终置身事外。[local-agent 家族](../local-agent/README.md) 的 Claude Code harness。
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置 → 插件 → 插件配置里的 Local Agent 家族卡片，Claude Code 一行的状态点显示授权状态">
 
 ## 特性
 
-- **任意 preset 都能委派**——工具只在 profile 根挂载一次，无需逐 preset 变体。
+- **按会话授予的委派**——`subagent_claude_code` 工具是本包的 `./tool` 组合入口，由点名它的 agent 预设授予该预设的会话，无需逐 preset 变体。
 - **作用域隔离**——每个 Claude 进程都以 `$DSH_HOME/local-agent/claude-code` 为 `CLAUDE_CONFIG_DIR` 运行；你的个人 `~/.claude` 置身事外。
 - **一条命令完成登录指引**——`/claude-code login` 在会话中给出需要在你自己终端运行的完整命令（claude ≥2.1 只在 TTY 打印 OAuth URL，宿主不再 spawn 抓取），并监听作用域目录识别登录完成；`sessions`/`status`/`logout` 与 设置 → 本地 Agent 面板构成完整一族。
 - **续聊委派**——把结果自述的 `resume` 句柄传回，即可继续同一个 Claude 会话，并按轮记账。
@@ -103,9 +103,10 @@ src/index.ts                harness 注册、/claude-code 命令族、config sch
 src/claude-cli-provider.ts  一次性 provider:spawn、流镜像、turn/token 记账
 src/provision.ts            作用域目录 provisioning 与基于文件的 logout
 src/records.ts              认证探测与作用域目录的会话记录列表
+src/tool.ts                 `./tool` 组合入口：`subagent_claude_code` 委派工具（预设点名授予）
 ```
 
-bundle patch 把 `claude-code` harness 注册进家族 core（`@khorsheed/dsh-local-agent`，声明为依赖——claude 包刻意不重复插入 core 行，重复会挂载两次），并挂载 `claude-local` provider，后者在 harness 作用域目录下 spawn `claude -p --verbose --output-format stream-json`。`subagent_claude_code` 工具是家族自有工具（`@khorsheed/dsh-local-agent-tool-subagent`）：官方子集（`description`/`prompt`）加一个可选 `resume` 参数。
+bundle patch 把 `claude-code` harness 注册进家族 core（`@khorsheed/dsh-local-agent`，声明为依赖——claude 包刻意不重复插入 core 行，重复会挂载两次），并挂载 `claude-local` provider，后者在 harness 作用域目录下 spawn `claude -p --verbose --output-format stream-json`。`subagent_claude_code` 工具是家族自有工具（本包的 `./tool` 组合入口，实现共享自家族 core 的 `./tool-factory`），由点名该行的 agent 预设按会话授予：官方子集（`description`/`prompt`）加一个可选 `resume` 参数。
 
 **作用域隔离。** macOS 上真实凭据在系统 keychain 的哈希条目里（`Claude Code-credentials-<sha256(configDir)[:8]>`，以作用域目录路径为键）——基于文件的 logout 够不到它，但下次登录会重写同一个槽位。**CLI 自己用哪个存储是随版本变的，且由实测而非假定确定**：2.1.236 写 keychain、读文件（这个镜像正是为那条分裂而存在），而 2.1.274 在 macOS 上读写 keychain，2.1.272 在 Linux 上读写作用域文件。因此文件对本包自己的探针与容器轮仍是权威；keychain 才是当前 macOS 上宿主 CLI 真正用的那个。认证探测只做轻量文件检查——看作用域 `.claude.json` 的 `oauthAccount`，绝不为了探测而 spawn CLI。该探测同样会协调两个存储，因此遵守与 spawn 点一致的新者胜规则：它在每次状态读与每次就绪检查时都会跑，那里若是无条件镜像，同样会把容器轮的续期抹掉。
 

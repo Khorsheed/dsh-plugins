@@ -7,11 +7,33 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
-import { LOCAL_AGENT_SERVICE, LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
-import * as tool from '../src/index.ts'
+import { LOCAL_AGENT_SERVICE, LocalAgentRegistry } from '../src/index.ts'
+import type { SubagentToolConfig } from '../src/tool-factory.ts'
+import { mountSubagentDelegationTool } from '../src/tool-factory.ts'
 import { mountScriptedProvider } from './scripted-provider.ts'
 
 const testToolSignal = new AbortController().signal
+
+/**
+ * The owner a calling entry passes for the tool-origin tag. A sentinel, not a
+ * real package: the suite pins that the owner is CALLER-supplied (each
+ * provider's `./tool` entry passes its own package name).
+ */
+const CALLER_OWNER = 'test-caller'
+
+/**
+ * Wrap the factory the way a provider's `./tool` composition entry does: a
+ * plugin whose apply mounts the delegation tool with the caller's owner. The
+ * declared inject mirrors the real entries (all three services are provided
+ * below before the plugin mounts).
+ */
+function toolPlugin(config: SubagentToolConfig) {
+  return {
+    name: 'subagent-tool-test',
+    inject: ['tools', 'subagents', 'localAgent'],
+    apply: (ctx: Context) => mountSubagentDelegationTool(ctx, config, CALLER_OWNER),
+  }
+}
 
 /** A minimal parent Agent passed through to the provider request. */
 function fakeAgent(id = 'parent-1'): Agent {
@@ -24,7 +46,7 @@ function fakeAgent(id = 'parent-1'): Agent {
  * through), then invoke the tool through `ctx.tools.execute`.
  */
 async function setup(
-  toolConfig: tool.Config,
+  toolConfig: SubagentToolConfig,
   over: { parentId?: string; deferred?: Array<(result: SubagentResult) => void> } = {},
 ) {
   const ctx = new Context()
@@ -57,7 +79,7 @@ async function setup(
   }
   ctx.provide('sessions', sessionsStub as never)
   ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
-  await ctx.plugin(tool, toolConfig)
+  await ctx.plugin(toolPlugin(toolConfig))
   return { ctx, started, taken, registry, sessionsStub }
 }
 
@@ -76,7 +98,7 @@ function text(result: { content: { type: string; text?: string }[] }): string {
   return result.content.filter(b => b.type === 'text').map(b => b.text).join('')
 }
 
-describe('dsh-local-agent-tool-subagent', () => {
+describe('dsh-local-agent tool-factory', () => {
   it('registers the tool with the official subset plus an optional resume parameter', async () => {
     const { ctx } = await setup({ provider: 'mock', toolName: 'subagent_test' })
     const toolDef = ctx.tools.get('subagent_test', fakeAgent())
@@ -104,12 +126,12 @@ describe('dsh-local-agent-tool-subagent', () => {
     expect(taken).toEqual([{ kind: 'fresh' }])
   })
 
-  it('tags the tool with its origin for the capability catalog (S12)', async () => {
+  it('tags the tool with the CALLING entry\'s origin for the capability catalog (S12)', async () => {
     const { ctx } = await setup({ provider: 'mock', toolName: 'subagent_test' })
     const def = ctx.tools.get('subagent_test') as Record<symbol, unknown>
     expect(def[Symbol.for('dsh.tool.origin')]).toEqual({
       channel: 'plugin',
-      owner: '@khorsheed/dsh-local-agent-tool-subagent',
+      owner: CALLER_OWNER,
     })
   })
 
@@ -266,7 +288,7 @@ describe('dsh-local-agent-tool-subagent', () => {
     const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
     ctx.provide(LOCAL_AGENT_SERVICE, registry)
     ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
-    await ctx.plugin(tool, { provider: 'mock', toolName: 'subagent_test' })
+    await ctx.plugin(toolPlugin({ provider: 'mock', toolName: 'subagent_test' }))
 
     expect(ctx.tools.get('subagent_test', fakeAgent())).toBeUndefined()
     const started: Array<{ label?: string; task: string }> = []
@@ -286,7 +308,7 @@ describe('dsh-local-agent-tool-subagent', () => {
     const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
     ctx.provide(LOCAL_AGENT_SERVICE, registry)
     ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
-    await ctx.plugin(tool, { provider: 'mock', toolName: 'subagent_test' })
+    await ctx.plugin(toolPlugin({ provider: 'mock', toolName: 'subagent_test' }))
     expect(ctx.tools.get('subagent_test', fakeAgent())).toBeDefined()
 
     disposer()
@@ -294,43 +316,6 @@ describe('dsh-local-agent-tool-subagent', () => {
     const result = await callTool(ctx, { description: 'x', prompt: 'y' }, agent)
     expect(result).toMatchObject({ isError: true })
     expect(text(result)).toContain('unknown tool "subagent_test"')
-  })
-
-  it('registers the tool under an explicit tools: all, exactly as the default does', async () => {
-    const { ctx } = await setup({ provider: 'mock', toolName: 'subagent_test', tools: 'all' })
-    expect(ctx.tools.get('subagent_test', fakeAgent())).toBeDefined()
-    const agent = fakeAgent()
-    const result = await callTool(ctx, { description: '建个文件', prompt: '创建 hello.txt' }, agent)
-    expect(text(result)).toContain('done: 创建 hello.txt')
-  })
-
-  it('registers nothing model-visible under tools: none, with the provider already present', async () => {
-    const { ctx } = await setup({ provider: 'mock', toolName: 'subagent_test', tools: 'none' })
-    expect(ctx.tools.get('subagent_test', fakeAgent())).toBeUndefined()
-    // Nothing model-visible from this row at all — not a renamed or disabled
-    // registration the registry would still list.
-    expect(ctx.tools.schemas(fakeAgent()).map(schema => schema.name)).not.toContain('subagent_test')
-    // The provider face is untouched: the row only ever owned the tool.
-    expect(ctx.subagents.getProvider('mock')).toBeDefined()
-  })
-
-  it('stays unregistered under tools: none when the provider appears after the mount', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(SubagentRuntime)
-    const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
-    ctx.provide(LOCAL_AGENT_SERVICE, registry)
-    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
-    await ctx.plugin(tool, { provider: 'mock', toolName: 'subagent_test', tools: 'none' })
-    expect(ctx.tools.get('subagent_test', fakeAgent())).toBeUndefined()
-
-    // The `all` mount registers on this very event (see the sibling case), so
-    // this pins that `none` does not re-open the tool through the late path.
-    const started: Array<{ label?: string; task: string }> = []
-    const taken: Array<{ kind: string; childSessionId?: string; cliSessionId?: string }> = []
-    mountScriptedProvider(ctx, { name: 'mock', started, taken })
-    expect(ctx.tools.get('subagent_test', fakeAgent())).toBeUndefined()
   })
 
   it('registers tool-started runs in the active-delegation registry so /local-agent stop can cancel them', async () => {

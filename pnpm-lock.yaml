@@ -229,9 +229,6 @@ importers:
       '@khorsheed/dsh-local-agent-kimi':
         specifier: workspace:*
         version: link:../local-agent-kimi
-      '@khorsheed/dsh-local-agent-tool-subagent':
-        specifier: workspace:*
-        version: link:../local-agent-tool-subagent
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -1065,13 +1062,22 @@ importers:
       '@deepseek-ai/dsh-subprocess':
         specifier: 0.2.0-rc.2
         version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-http-proxy@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4))
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: 0.2.0-rc.2
+        version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-llm@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-scope@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)))
       '@deepseek-ai/dsh-token-meter':
         specifier: 0.2.0-rc.2
         version: 0.2.0-rc.2(42d33da5a9a545c3948e11174b60d523)
       '@deepseek-ai/dsh-tool-todo':
         specifier: 0.2.0-rc.2
         version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-agent@0.2.0-rc.2(fee0e653b72a3883e0f0da2d9a46bb50))(@deepseek-ai/dsh-invariants@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-session-projection@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-session@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)))))(@deepseek-ai/dsh-session@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4))))(@deepseek-ai/dsh-tools@0.2.0-rc.2(52b5a8ab481be2b3d891c22a71641755))
+      '@deepseek-ai/dsh-tools':
+        specifier: 0.2.0-rc.2
+        version: 0.2.0-rc.2(52b5a8ab481be2b3d891c22a71641755)
       '@deepseek-ai/dsh-typert-protocol':
+        specifier: 0.2.0-rc.2
+        version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)
+      '@deepseek-ai/dsh-util-values':
         specifier: 0.2.0-rc.2
         version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)
       '@testing-library/dom':
@@ -1110,9 +1116,6 @@ importers:
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
         version: link:../local-agent
-      '@khorsheed/dsh-local-agent-tool-subagent':
-        specifier: workspace:*
-        version: link:../local-agent-tool-subagent
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -1204,9 +1207,6 @@ importers:
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
         version: link:../local-agent
-      '@khorsheed/dsh-local-agent-tool-subagent':
-        specifier: workspace:*
-        version: link:../local-agent-tool-subagent
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -1292,9 +1292,6 @@ importers:
       '@khorsheed/dsh-local-agent-dsh-headless':
         specifier: workspace:*
         version: link:../local-agent-dsh-headless
-      '@khorsheed/dsh-local-agent-tool-subagent':
-        specifier: workspace:*
-        version: link:../local-agent-tool-subagent
       js-yaml:
         specifier: ^4.3.1
         version: 4.3.2
@@ -1468,9 +1465,6 @@ importers:
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
         version: link:../local-agent
-      '@khorsheed/dsh-local-agent-tool-subagent':
-        specifier: workspace:*
-        version: link:../local-agent-tool-subagent
       smol-toml:
         specifier: ^1.8.0
         version: 1.9.0
@@ -1550,52 +1544,6 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
-      vitest:
-        specifier: ^4.1.10
-        version: 4.1.11(@types/node@26.6.3)(jsdom@29.1.1)(vite@7.3.6(@types/node@26.6.3)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1))
-
-  packages/local-agent-tool-subagent:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: ^3.18.1
-        version: 3.18.4
-      '@khorsheed/dsh-local-agent':
-        specifier: workspace:*
-        version: link:../local-agent
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: 4.0.4
-        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
-      '@deepseek-ai/cordis-plugin-loader':
-        specifier: 1.0.5
-        version: 1.0.5(@deepseek-ai/cordis@4.0.4)(node-addon-require-builtin@0.1.6)
-      '@deepseek-ai/dsh-agent':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2(fee0e653b72a3883e0f0da2d9a46bb50)
-      '@deepseek-ai/dsh-invariants':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)
-      '@deepseek-ai/dsh-llm':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)
-      '@deepseek-ai/dsh-session':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)))
-      '@deepseek-ai/dsh-subagent':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2(9c7a6ba3b59b7fdb55b130270a42f502)
-      '@deepseek-ai/dsh-system-prompt':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-llm@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-scope@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)))
-      '@deepseek-ai/dsh-tools':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2(52b5a8ab481be2b3d891c22a71641755)
-      '@deepseek-ai/dsh-util-values':
-        specifier: 0.2.0-rc.2
-        version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)
-      '@types/node':
-        specifier: ^26.2.0
-        version: 26.6.3
       vitest:
         specifier: ^4.1.10
         version: 4.1.11(@types/node@26.6.3)(jsdom@29.1.1)(vite@7.3.6(@types/node@26.6.3)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1))

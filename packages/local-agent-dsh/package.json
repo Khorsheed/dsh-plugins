@@ -8,7 +8,7 @@
     "local-agent",
     "subagent"
   ],
-  "version": "0.1.0-rc.9",
+  "version": "0.2.0-rc.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
@@ -80,7 +80,6 @@
     "@deepseek-ai/schemastery": "^3.18.1",
     "@khorsheed/dsh-local-agent": "workspace:*",
     "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
-    "@khorsheed/dsh-local-agent-tool-subagent": "workspace:*",
     "js-yaml": "^4.3.1"
   },
   "peerDependencies": {

@@ -15,11 +15,10 @@ This pack contains the 8 plugins specific to dev mode (see the table below). Bey
 | Plugin | Package name (copy to install) | What you get |
 |---|---|---|
 | local-agent | `@khorsheed/dsh-local-agent` | The local coding-agent family core: scoped homes, login/session command family, delegation registry |
-| local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Kimi Code delegation (`kimi -p`), resume, accounting |
-| local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Codex delegation (`codex exec`), resume, accounting |
-| local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Claude Code delegation (`claude -p`), resume, accounting |
+| local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Kimi Code delegation (`kimi -p`), resume, accounting; the `subagent_kimi` delegation tool rides the package's `./tool` subpath row, granted per session by the dev-mode preset |
+| local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Codex delegation (`codex exec`), resume, accounting; the `subagent_codex` delegation tool rides the package's `./tool` subpath row, granted per session by the dev-mode preset |
+| local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Claude Code delegation (`claude -p`), resume, accounting; the `subagent_claude_code` delegation tool rides the package's `./tool` subpath row, granted per session by the dev-mode preset |
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | dsh self-delegation: use dsh itself as a local CLI |
-| local-agent-tool-subagent | `@khorsheed/dsh-local-agent-tool-subagent` | The family's shared delegation tool row with a `resume` parameter (mounted by providers) |
 | worktrees | `@khorsheed/dsh-worktrees` | A per-session repo/worktree badge plus a change drawer (read-only git facts); the model tool ships as the package's `@khorsheed/dsh-worktrees/tool` subpath row, granted per session by the dev-mode preset |
 | room | `@khorsheed/dsh-room` | Multi-agent collaboration in one session: member roster, @ dispatch, task board; the model tools `room_invite / room_task / room_message` ride the package's `./tool` subpath row, granted per session by the dev-mode preset |
 
@@ -35,10 +34,10 @@ Host ≥ `0.1.5-rc.1`.
 
 | How | Install spec (copy into the dialog) |
 |---|---|
-| Core + Kimi | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-kimi@^0.1.0-rc.8` |
-| Core + Codex | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-codex@^0.1.0-rc.8` |
-| Core + Claude Code | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-claude-code@^0.1.0-rc.8` |
-| Core + dsh | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-dsh@^0.1.0-rc.8` |
+| Core + Kimi | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-kimi@^0.2.0-rc.1` |
+| Core + Codex | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-codex@^0.2.0-rc.1` |
+| Core + Claude Code | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-claude-code@^0.2.0-rc.1` |
+| Core + dsh | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-dsh@^0.2.0-rc.1` |
 
 Delegate subtasks to the coding agent CLIs on your machine — Kimi Code, Codex, Claude Code, and dsh itself. Each harness runs under its own scoped home (`$DSH_HOME/local-agent/<name>`, mode 0700), and **never touches the private configuration and credentials in your user directory**.
 
@@ -81,7 +80,7 @@ Invite an agent into any session and that session becomes a room: member tab, @-
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent@^0.1.2` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent@^0.2.0` |
 
 One meta package installs the local-agent core plus all four providers (kimi / codex / claude-code / dsh): members arrive as npm dependencies and the bundle's patch re-mounts each member's canonical rows verbatim; afterwards every component stays individually disable-able under Settings → Plugins — the bundle packages the install, not your choices.
 
@@ -100,7 +99,7 @@ The composition re-bases verbatim on the official "Standard mode" and only appen
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.7-rc.2` (recommended) | `@khorsheed/dsh-presets@^0.2.0` |
+| ≥ `0.1.7-rc.2` (recommended) | `@khorsheed/dsh-presets@^0.3.0` |
 | `0.1.5-rc.1` ~ `0.1.7-rc.1` | Installed directory-style by the pack scripts (see the guide at the end) |
 
 Since 0.1.7-rc.2 the official host supports preset-as-a-bundle — a preset ships as an ordinary package and installs by copying its name, no manual directory placement; upgrading is recommended for the smoother path. Once installed, dev mode's UI and tools take effect only in dev-mode sessions and never disturb the other modes.

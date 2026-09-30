@@ -4,27 +4,32 @@ import { describe, expect, it } from 'vitest'
 
 const patch = readFileSync(fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)), 'utf8')
 
+/** Composition lines only (comments stripped) — row content assertions read these. */
+const composition = patch.split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n')
+
 describe('local-agent-kimi bundle patch', () => {
-  it('mounts the family-owned subagent_kimi tool at the profile root', () => {
-    // The tool row sits beside the family rows (top-level insert), so every
-    // agent preset — including minimal — delegates without per-preset
-    // variants. The family tool replaces the official tool-subagent row with
-    // the same model-facing toolName, adding the optional resume parameter.
-    expect(patch).toContain('- id: tool-subagent-kimi')
-    expect(patch).toContain("name: '@khorsheed/dsh-local-agent-tool-subagent'")
-    expect(patch).toContain('provider: kimi-cli')
-    expect(patch).toContain('toolName: subagent_kimi')
+  it('mounts exactly one row: the provider itself', () => {
+    // Since the family fold, the `subagent_kimi` delegation tool is no longer
+    // a profile-root row — it ships as this package's `./tool` composition
+    // entry, granted per session by an agent preset that names
+    // `@khorsheed/dsh-local-agent-kimi/tool` (the dev preset's
+    // `tool-subagent-kimi` row). One provider = one card.
+    expect(composition).toContain("- id: local-agent-kimi\n      name: '@khorsheed/dsh-local-agent-kimi'")
+    expect(composition).not.toContain('tool-subagent')
+    expect(composition).not.toContain('toolName')
+  })
+
+  it('never names the retired shared tool package', () => {
+    // @khorsheed/dsh-local-agent-tool-subagent folded into the family core's
+    // ./tool-factory export; scripts/retired-packages.ts bars the name from
+    // every in-repo composition.
+    expect(patch).not.toContain('local-agent-tool-subagent')
   })
 
   it('no longer references the official tool-subagent row or its config keys', () => {
     expect(patch).not.toContain('@deepseek-ai/dsh-tool-subagent')
     expect(patch).not.toContain('enableRunInBackground')
     expect(patch).not.toContain('maxDepth')
-  })
-
-  it('no longer ships preset variants', () => {
-    expect(patch).not.toMatch(/<.*>-kimi/)
-    expect(patch).not.toContain('presets/kimi')
   })
 
   it('does not re-insert the family core row the framework bundle owns', () => {

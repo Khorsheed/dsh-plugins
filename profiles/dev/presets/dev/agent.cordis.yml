@@ -264,27 +264,21 @@
 # (the preset-mount isolate-realm rule) and only registers into the host
 # tools registry, so they compose bare, the official tool-row shape.
 
-# The three local-agent delegation tools, the web-eval patch layer's row
-# shape minus the `tools: none` pin (dormancy is the preset's own decision
-# here — naming the row grants the tool). Provider names match the family
-# rows the dev profile mounts at its root.
+# The three local-agent delegation tools. Since the family fold each one
+# ships as its PROVIDER package's `./tool` composition entry (the worktrees
+# 0.3.0 / room 0.2.0 pattern; the shared `@khorsheed/dsh-local-agent-tool-subagent`
+# companion is retired) — the entries carry their own provider/toolName
+# defaults, so the rows need no config. The row ids are unchanged, so
+# composition state is unaffected; the provider rows they delegate to mount
+# at the profile root from each provider package's own bundle patch.
 - id: tool-subagent-kimi
-  name: '@khorsheed/dsh-local-agent-tool-subagent'
-  config:
-    provider: kimi-cli
-    toolName: subagent_kimi
+  name: '@khorsheed/dsh-local-agent-kimi/tool'
 
 - id: tool-subagent-codex-local
-  name: '@khorsheed/dsh-local-agent-tool-subagent'
-  config:
-    provider: codex-local
-    toolName: subagent_codex
+  name: '@khorsheed/dsh-local-agent-codex/tool'
 
 - id: tool-subagent-claude-code-local
-  name: '@khorsheed/dsh-local-agent-tool-subagent'
-  config:
-    provider: claude-local
-    toolName: subagent_claude_code
+  name: '@khorsheed/dsh-local-agent-claude-code/tool'
 
 # The worktrees model tool: the core stays global (badge/tab/service), the
 # tool row is session-granted here. Since 0.3.0 the row ships inside the core

@@ -17,7 +17,6 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgentCore from '@khorsheed/dsh-local-agent'
-import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as localAgentDsh from '../src/index.ts'
 

@@ -17,10 +17,12 @@ export const FAMILY_MEMBERS = [
 ] as const
 
 /**
- * Card-less family libraries installed alongside (npm dependencies, no patch
- * rows of their own beyond what the members' canonical rows already name).
+ * Card-less family library installed alongside (npm dependency, no patch rows
+ * of its own beyond what the members' canonical rows already name). The
+ * delegation tool factory moved INTO the core at the family fold (each
+ * provider's `./tool` composition entry mounts it), so the retired
+ * `@khorsheed/dsh-local-agent-tool-subagent` is no longer installed at all.
  */
 export const FAMILY_DEPS_ONLY = [
-  '@khorsheed/dsh-local-agent-tool-subagent',
   '@khorsheed/dsh-local-agent-dsh-headless',
 ] as const

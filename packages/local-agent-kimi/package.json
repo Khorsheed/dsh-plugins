@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-local-agent-kimi",
-  "description": "Kimi Code harness for dsh-local-agent: scoped KIMI_CODE_HOME, one-shot kimi -p delegation visible in the 子代理 surface, session records and preset wiring",
+  "description": "Kimi Code harness for dsh-local-agent: scoped KIMI_CODE_HOME, one-shot kimi -p delegation visible in the 子代理 surface, session records and preset wiring; the session-granted `subagent_kimi` delegation tool ships as the package's `./tool` composition entry",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -8,7 +8,7 @@
     "local-agent",
     "kimi"
   ],
-  "version": "0.1.0-rc.8",
+  "version": "0.2.0-rc.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
@@ -29,6 +29,10 @@
     "./records": {
       "types": "./lib/types/records.d.ts",
       "default": "./lib/records.js"
+    },
+    "./tool": {
+      "types": "./lib/types/tool.d.ts",
+      "default": "./lib/tool.js"
     },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
@@ -71,7 +75,6 @@
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
     "@khorsheed/dsh-local-agent": "workspace:*",
-    "@khorsheed/dsh-local-agent-tool-subagent": "workspace:*",
     "smol-toml": "^1.8.0"
   },
   "peerDependencies": {
@@ -92,12 +95,24 @@
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-api-remotes": { "optional": true },
-    "@deepseek-ai/dsh-client-locale": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-primitives": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-settings": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
-    "react": { "optional": true }
+    "@deepseek-ai/dsh-api-remotes": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

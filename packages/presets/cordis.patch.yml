@@ -181,27 +181,22 @@
           # (the preset-mount isolate-realm rule) and only registers into the host
           # tools registry, so they compose bare, the official tool-row shape.
 
-          # The three local-agent delegation tools, the web-eval patch layer's row
-          # shape minus the `tools: none` pin (dormancy is the preset's own decision
-          # here — naming the row grants the tool). Provider names match the family
-          # rows the dev profile mounts at its root.
+          # The three local-agent delegation tools. Since the family fold each one
+          # ships as its PROVIDER package's `./tool` composition entry (the
+          # worktrees 0.3.0 / room 0.2.0 pattern; the shared
+          # `@khorsheed/dsh-local-agent-tool-subagent` companion is retired) — the
+          # entries carry their own provider/toolName defaults, so the rows need
+          # no config. The row ids are unchanged, so composition state is
+          # unaffected; the provider rows they delegate to mount at the profile
+          # root from each provider package's own bundle patch.
           - id: tool-subagent-kimi
-            name: '@khorsheed/dsh-local-agent-tool-subagent'
-            config:
-              provider: kimi-cli
-              toolName: subagent_kimi
+            name: '@khorsheed/dsh-local-agent-kimi/tool'
 
           - id: tool-subagent-codex-local
-            name: '@khorsheed/dsh-local-agent-tool-subagent'
-            config:
-              provider: codex-local
-              toolName: subagent_codex
+            name: '@khorsheed/dsh-local-agent-codex/tool'
 
           - id: tool-subagent-claude-code-local
-            name: '@khorsheed/dsh-local-agent-tool-subagent'
-            config:
-              provider: claude-local
-              toolName: subagent_claude_code
+            name: '@khorsheed/dsh-local-agent-claude-code/tool'
 
           # The worktrees model tool: the core stays global (badge/tab/service), the
           # tool row is session-granted here. Since worktrees 0.3.0 the row ships
@@ -260,12 +255,16 @@
     # subagent-in-process-driver/tests/preset-inheritance.spec.ts), so a delegation
     # cannot hand a child the shell this preset does not carry.
     #
-    # WHAT THIS PRESET CANNOT REACH: the family delegation tools `subagent_codex` /
-    # `subagent_claude_code` / `subagent_kimi` / `subagent_dsh` mount at the PROFILE
-    # ROOT (each provider's own bundle patch inserts them), and a preset filters
-    # nothing it does not mount. Those DO run host commands — that is their job, and
-    # it is how the orchestrator drives the players. See the README section
-    # 「冻结决策 12 的执行点」 for the gap and the options for closing it.
+    # The family delegation tools (`subagent_codex` / `subagent_claude_code` /
+    # `subagent_kimi`) no longer mount at the PROFILE ROOT: since the family
+    # fold each is its provider package's `./tool` composition entry, granted
+    # only by a preset that names the row — this preset does not, so its
+    # sessions never see them. That absence IS the eval deployment's seal (the
+    # README's 「冻结决策 12 的执行点」); those tools DO run host commands — that
+    # is their job, and how the orchestrator drives the players through the
+    # provider rows at the profile root. `subagent_dsh` remains the exception:
+    # the local-agent-dsh controller mounts it dynamically while its Settings
+    # toggle is ON (default OFF), outside any preset's reach.
     #
     # A service row here MUST sit inside a group carrying an `isolate` realm;
     # without one it publishes into the process-global root realm and

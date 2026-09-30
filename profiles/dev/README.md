@@ -15,11 +15,10 @@
 | 插件 | 包名（复制即可安装） | 你得到 |
 |---|---|---|
 | local-agent | `@khorsheed/dsh-local-agent` | 本地编码 agent 家族核心：作用域 home、登录/会话命令族、委派 registry |
-| local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Kimi Code 委派（`kimi -p`）、续聊、记账 |
-| local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Codex 委派（`codex exec`）、续聊、记账 |
-| local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Claude Code 委派（`claude -p`）、续聊、记账 |
+| local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Kimi Code 委派（`kimi -p`）、续聊、记账；委派工具 `subagent_kimi` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
+| local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Codex 委派（`codex exec`）、续聊、记账；委派工具 `subagent_codex` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
+| local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Claude Code 委派（`claude -p`）、续聊、记账；委派工具 `subagent_claude_code` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | dsh 自委派：把 dsh 自己当本地 CLI 用 |
-| local-agent-tool-subagent | `@khorsheed/dsh-local-agent-tool-subagent` | 家族共享委派工具行（带 `resume` 续聊参数，随 provider 挂载） |
 | worktrees | `@khorsheed/dsh-worktrees` | 会话头部 repo/worktree 徽标 + 改动抽屉（只读 git 事实）；模型工具随 `@khorsheed/dsh-worktrees/tool` 子路径行由开发模式 preset 按会话授予 |
 | room | `@khorsheed/dsh-room` | 多 agent 同会话协作：成员名册、@ 派发、任务板；模型工具 `room_invite / room_task / room_message` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
 
@@ -35,10 +34,10 @@
 
 | 装法 | 安装规格（复制到对话框） |
 |---|---|
-| 核心 + Kimi | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-kimi@^0.1.0-rc.8` |
-| 核心 + Codex | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-codex@^0.1.0-rc.8` |
-| 核心 + Claude Code | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-claude-code@^0.1.0-rc.8` |
-| 核心 + dsh | `@khorsheed/dsh-local-agent@^0.1.0-rc.8` + `@khorsheed/dsh-local-agent-dsh@^0.1.0-rc.8` |
+| 核心 + Kimi | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-kimi@^0.2.0-rc.1` |
+| 核心 + Codex | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-codex@^0.2.0-rc.1` |
+| 核心 + Claude Code | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-claude-code@^0.2.0-rc.1` |
+| 核心 + dsh | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-dsh@^0.2.0-rc.1` |
 
 把子任务委派给你本机装的编码 Agent CLI——Kimi Code、Codex、Claude Code、以及 dsh 自己。每个 harness 在自己独立的作用域目录下运行（`$DSH_HOME/local-agent/<name>`，0700 权限），**绝不触碰你用户目录里的私人配置与凭据**。
 
@@ -81,7 +80,7 @@
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent@^0.1.2` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent@^0.2.0` |
 
 一个元包装齐 local-agent 核心 + kimi / codex / claude-code / dsh 四个 provider：成员作为 npm 依赖自动带入，元包的 patch 逐字重挂各成员的规范行；装完后每个组件在 设置 → 插件 里仍可单独禁用——打包的是安装，不是绑定。
 
@@ -100,7 +99,7 @@ pack 自带一个**开发模式** preset（`presets/dev`）。它存在的意义
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|
-| ≥ `0.1.7-rc.2`（推荐） | `@khorsheed/dsh-presets@^0.2.0` |
+| ≥ `0.1.7-rc.2`（推荐） | `@khorsheed/dsh-presets@^0.3.0` |
 | `0.1.5-rc.1` ~ `0.1.7-rc.1` | 随整合包脚本以目录式安装（见文末指南） |
 
 0.1.7-rc.2 起官方支持 preset as a bundle——preset 像普通插件一样打包成包，复制包名即可安装，不再需要手动放置目录；建议升级到该版本，装起来更丝滑。安装后开发模式的 UI 与工具仅在开发模式会话生效，不干扰其它模式。

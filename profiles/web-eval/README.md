@@ -149,7 +149,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 | mission | **eval 预设不挂**（I5·T46）；账本与释放闸仍由 mission 提供 | 全部写方法 | export、retry、human-final |
 | lab | 不开 | 全部 | status、release |
 | eval | 四读 `eval_conditions` `eval_plan_validate` `eval_run_status` `eval_cells` + 两写 `eval_plan_draft`（部署内实验目录）`eval_analysis_write`（只写 `analysis/`）；不开 run | 内核 | 批准、run、report |
-| tool-subagent（四家委派工具） | 不开——三行 `tools: none`，第四家默认不挂（I3·T27 落地） | 经 local-agent 门面委派选手 | `/codex login`、`/kimi status` 等 provider 动词 |
+| 委派工具（`subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh`） | 不开——家族折叠后工具是各 provider 的 `./tool` 组合入口，按预设点名授予，eval 预设不点名即缺席；第四家 `subagent_dsh` 由控制器在开关 ON 时动态挂载，默认 OFF | 经 local-agent 门面委派选手 | `/codex login`、`/kimi status` 等 provider 动词 |
 
 **M4'③ 起这三个机制插件拆成 core + companion**：profile 根只挂 core（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归 companion，所以上表的按域 tier 由 pack 的 `eval` 预设的伴生行授予——`datasets-tool: authoring`、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，任务 / 数据集两个标签页另按同一组合判据自隐（判据读不到时 fail-open）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）；同一条自隐规则的另一半随之生效——任务 tab 判的就是预设里有没有这一行，所以它一走，评测会话的任务 tab 自己就不见了。包照装，谁要在自己的覆盖层预设里加回这一行都还在。三个伴生包随 pack 安装：`package.json` 的成员清单加依赖，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
 
@@ -177,19 +177,18 @@ ls "$DSH_HOME/.agent-presets/eval"                                     # → age
 grep -vE '^\s*#' "$DSH_HOME/.agent-presets/eval/agent.cordis.yml" \
   | grep -nE 'tool-bash|tool-pwsh|tool-workflow|tool-ralph|docker'     # → 无输出
 
-# 组成层（下一小节的三行）：三个委派工具行都是 tools: none
-dsh --profile web-eval --dump-config \
-  | grep -A5 -E '^- id: tool-subagent-(codex-local|claude-code-local|kimi)$' \
-  | grep -c 'tools: none'                                              # → 3
+# 组成层：eval 预设不点名任何委派工具行（家族折叠后工具按预设授予，不点名即缺席）
+grep -vE '^\s*#' "$DSH_HOME/.agent-presets/eval/agent.cordis.yml" \
+  | grep -nE 'local-agent-(kimi|codex|claude-code)/tool'              # → 无输出
 ```
 
 会话层要看界面：「设置 → Agent 预设」里当前默认应显示**评测模式**；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具，也没有任何 `subagent_<harness>`——一个默认会话看到的是 **35 个工具**（T21 时是 39，T27 关掉三个委派工具后是 36，I5·T46 摘掉 mission 的四个读工具、补上 `eval_cells` 后按增删算是 33；2026-09-17 3171 装到 `2c4476f8` 后实数 35 = 内建 21 + 插件 14：datasets 7、eval 5（含 T34 的 `eval_plan_draft`）、`subagent_dsh`、`list_capabilities`；没有 `mission_*`），进程内的 `subagent` 与 `subagent_fork` 仍在。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
 
 **这条钉的是默认值，不是可达集。** 随发行版的 标准 / 代码 / 极简 / cordis 四个预设仍在名册上：apps/cli 的 `composeProfile` 把随发行版的预设根作为最后一层 overlay 无条件写进 `roots`，profile 层删不掉它们。人在界面里给一个空白会话改选「标准模式」就拿回了 Bash。决策 12 针对的是 **agent 误操作**——agent 没有切换自身预设的工具，切换是人的动作。
 
-**这个预设够不到的执行类工具，已在插件层关上**（I3·T27）：四家选手的委派工具 `subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh` 由各 provider 的 bundle patch 装在 **profile 根**上，预设只能挑掉自己挂的行，所以够不到它们——而它们正是在宿主上起各家 CLI 的那批，沙箱按[冻结决策](#冻结决策) 3 放开。T21 记下的三条路径取了第一条：`@khorsheed/dsh-local-agent-tool-subagent` 加了 `tools: all | none` 注册开关，`cordis.patch.yml` 把 codex / claude-code / kimi 三行设成 `none`（取舍见 [eval 预设的 Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md)）。关掉的只是模型可见的工具：provider 行照挂，编排器经 local-agent 门面委派选手，`/codex login` 这类动词也照常。
+**这个预设够不到的执行类工具，已经不存在于 profile 根**（2026-09-30 家族折叠）：四家选手的委派工具 `subagent_codex` / `subagent_claude_code` / `subagent_kimi` 不再是 provider bundle patch 插在 profile 根的行，而是各 provider 包自己的 `./tool` 组合入口，只有点名它的 agent 预设才授予——本 pack 的 eval 预设不点名，所以这三个工具对评测会话天然缺席，patch 层连覆盖行都不用写。provider 行照挂：编排器经 local-agent 门面委派选手，`/codex login` 这类动词也照常。（折叠前的路径是 T27 给 `@khorsheed/dsh-local-agent-tool-subagent` 加 `tools: all | none` 开关、patch 把三行设成 `none`；取舍见 [eval 预设的 Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md)，该包已随折叠退役。）
 
-**第四家 `subagent_dsh` 仍是一条待关的路。** 它没有配置行——`local-agent-dsh` 的 DeepSeek 开关默认关，工具由控制器在开关 ON 时用写死的配置动态挂载，profile 层够不着。默认状态下它一个工具都不注册（所以上面那份 33 个工具的清单里没有它），但**人在「设置 → 本地 Agent」里打开那个开关，`subagent_dsh` 就会带默认 `tools: all` 出现**。要彻底关上得改 provider 包，记在 T27 的 Agent Note 里。与决策 12 的其余部分一样，这钉的是默认值，不是可达集。
+**第四家 `subagent_dsh` 仍是一条待关的路。** 它没有预设行——`local-agent-dsh` 的 DeepSeek 开关默认关，工具由控制器在开关 ON 时动态挂载，预设层够不着。默认状态下它一个工具都不注册（所以上面那份工具清单里没有它），但**人在「设置 → 本地 Agent」里打开那个开关，`subagent_dsh` 就会出现**。要彻底关上得改 provider 包，记在 T27 的 Agent Note 里。与决策 12 的其余部分一样，这钉的是默认值，不是可达集。
 
 ## 理想流程
 

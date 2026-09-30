@@ -169,8 +169,14 @@ describe('local-agent-dsh toggle controller', () => {
     })
     expect(providers).toHaveLength(1)
     expect(mountedTools).toHaveLength(1)
-    const tool = mountedTools[0] as { config: { provider: string; toolName: string } }
-    expect(tool.config).toEqual({ provider: 'dsh-cli', toolName: 'subagent_dsh' })
+    // Since the family fold the tool mounts as an inline plugin over the core's
+    // ./tool-factory with the provider/toolName bound in code (no row config);
+    // the real registration of `subagent_dsh` on `dsh-cli` is pinned by
+    // real-composition.host.spec.ts.
+    const tool = mountedTools[0] as { plugin: { name?: string; inject?: string[] }; config: unknown }
+    expect(tool.plugin.name).toBe('local-agent-dsh-tool')
+    expect(tool.plugin.inject).toEqual(['tools', 'subagents', 'localAgent'])
+    expect(tool.config).toBeUndefined()
 
     // Flip OFF through the settings watch: everything model-visible disposes.
     settings.set({ enabled: false })

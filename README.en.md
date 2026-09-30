@@ -78,9 +78,8 @@ How this differs from the official version: the developer can appoint the main a
 | [`local-agent-claude-code`](packages/local-agent-claude-code) | **Claude Code** harness: `claude -p` delegation, resume, accounting | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev |
 | [`local-agent-dsh`](packages/local-agent-dsh) | **dsh self-delegation** harness: use dsh itself as a local CLI | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev |
 | [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (composition component) The **headless sub-profile** patch for dsh delegation | `@khorsheed/dsh-local-agent-dsh-headless` | ≥ 0.1.5-rc.1 | mounted by its provider |
-| [`local-agent-tool-subagent`](packages/local-agent-tool-subagent) | (composition component) The family's shared **delegation tool row**, with a `resume` parameter | `@khorsheed/dsh-local-agent-tool-subagent` | ≥ 0.1.2-rc.1 | dev |
 
-> **One-command install for local multi-agent**: the core plus all four providers via the meta package [`bundle-local-agent`](packages/bundle-local-agent) — `dsh plugin add @khorsheed/dsh-bundle-local-agent`.
+> **One-command install for local multi-agent**: the core plus all four providers via the meta package [`bundle-local-agent`](packages/bundle-local-agent) — `dsh plugin add @khorsheed/dsh-bundle-local-agent`. Each provider's delegation tool (`subagent_kimi` etc.) is the package's own `./tool` composition entry, granted per session by a preset (the family fold retired the standalone tool package).
 
 ### Multi-agent collaboration
 

@@ -13,7 +13,7 @@
 - **一次装齐一族**——local-agent 核(共享 scoped-homes 根、`/<harness> login|sessions` 命令族、委派门面与 Remote)加四个委派 provider(kimi / codex / claude-code / dsh),连带家族工具库,一条 `dsh plugin add` 全部就位。
 - **委派工具原位替换**——`subagent_kimi` / `subagent_codex` / `subagent_claude_code` 与官方子代理工具同名(toolName 不变,preset 与 prompt 不受影响),另带可选 `resume` 参数:后续轮次继续同一个 CLI 会话,而不是每次冷启动。
 - **进程不常驻**——委派默认一次性进程;没有委派或登录动作时,本机不会多起任何 provider 进程。
-- **清单里只有一张卡**——locale 卡面元数据把整族归成一张「本地多Agent」卡;两个无卡工具库随家族存亡,不单独出现。
+- **清单里只有一张卡**——locale 卡面元数据把整族归成一张「本地多Agent」卡;无卡库随家族存亡,不单独出现。
 - **纯组合,零运行时**——本包不注册任何服务/工具/槽位/命令;patch 逐字复用成员的规范行,装我不双挂(机制见文末实现原理)。
 
 ## 成员
@@ -21,12 +21,12 @@
 | 成员包 | 行 id | 内容 |
 | --- | --- | --- |
 | `@khorsheed/dsh-local-agent` | `local-agent` | 家族核:共享 scoped-homes 根、委派门面与 Remote |
-| `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi`, `tool-subagent-kimi` | Kimi CLI harness + `subagent_kimi` 委派工具 |
-| `@khorsheed/dsh-local-agent-codex` | `local-agent-codex`, `tool-subagent-codex-local`(+ override `tool-subagent-codex`) | Codex CLI harness + `subagent_codex` 委派工具 |
-| `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code`, `tool-subagent-claude-code-local`(+ override `tool-subagent-claude-code`) | Claude Code harness + `subagent_claude_code` 委派工具 |
-| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | dsh harness 控制器(Settings → 本地 Agent 开关,默认关) |
+| `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi` | Kimi CLI harness;`subagent_kimi` 委派工具是包内 `./tool` 组合入口,由预设点名授予 |
+| `@khorsheed/dsh-local-agent-codex` | `local-agent-codex` (+ override `tool-subagent-codex`) | Codex CLI harness;`subagent_codex` 委派工具是包内 `./tool` 组合入口,由预设点名授予 |
+| `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code` (+ override `tool-subagent-claude-code`) | Claude Code harness;`subagent_claude_code` 委派工具是包内 `./tool` 组合入口,由预设点名授予 |
+| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | dsh harness 控制器(Settings → 本地 Agent 开关,默认关;ON 时动态挂载 `subagent_dsh`) |
 
-无卡库(deps-only,进 `dependencies` 不进 patch 行):`@khorsheed/dsh-local-agent-tool-subagent`(委派工具实现,由 provider 行点名)、`@khorsheed/dsh-local-agent-dsh-headless`(子 dsh 被 provision 面)。它们在清单页不出现,随家族存亡。
+无卡库(deps-only,进 `dependencies` 不进 patch 行):`@khorsheed/dsh-local-agent-dsh-headless`(子 dsh 被 provision 面)。它在清单页不出现,随家族存亡。(家族折叠前还有一个共享工具包 `@khorsheed/dsh-local-agent-tool-subagent`;已退役——委派工具实现收进家族核的 `./tool-factory` 导出,各 provider 以自己的 `./tool` 组合入口挂载。)
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent.png" width="640" alt="插件清单里「本地多Agent」家族卡的详情页:全部成员行逐行列出,带行级启停开关">
 
@@ -46,7 +46,7 @@ dsh plugin --profile web remove @khorsheed/dsh-bundle-local-agent
 
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.5-rc.1`):✅ 完整——纯组合,地板取成员最高者(minHost `0.1.5-rc.1`,即核与四个 provider 的地板;deps-only 库 local-agent-tool-subagent / local-agent-dsh-headless 地板更低)。地板之上各成员的个别行为差异(如 0.1.5 上 token 粒度的实时镜像)见各成员自己的 Compatibility 节。
+- npm 发布线(`@deepseek-ai/dsh@0.1.5-rc.1`):✅ 完整——纯组合,地板取成员最高者(minHost `0.1.5-rc.1`,即核与四个 provider 的地板;deps-only 库 local-agent-dsh-headless 地板更低)。地板之上各成员的个别行为差异(如 0.1.5 上 token 粒度的实时镜像)见各成员自己的 Compatibility 节。
 - 源码线(deepseek-harness master):✅ 完整(verifiedHost: 0.1.7-rc.2)。
 
 **版本线对照**:`0.1.0` 起要求宿主 `0.1.5-rc.1` 及以后。
