@@ -740,9 +740,9 @@ export function BoardView({
           </div>
         )}
 
-        {/* An empty board that can take a card says so in the ＋ tile itself,
-            the first cell of the grid; the notice is for the boards that cannot. */}
-        {shown.length === 0 && !(visible.length === 0 && newCard !== undefined) && (
+        {/* A board or filter that can take a card says so in the ＋ tile alone
+            (one empty style to keep); the notice is for the ones that cannot. */}
+        {shown.length === 0 && !(newCard !== undefined && chips.length > 0) && (
           <div className={css.notice}>
             {visible.length === 0 ? (
               <>
