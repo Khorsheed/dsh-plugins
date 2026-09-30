@@ -43,6 +43,7 @@
     "src/client/manuscript/ManuscriptView.tsx",
     "src/client/type/fields.tsx",
     "src/client/type/TypeView.tsx",
+    "src/client/type/CategoriesView.tsx",
     "src/client/detail/DetailCrumbs.tsx",
     "src/client/detail/DrawFigure.tsx",
     "src/client/detail/image-lightbox.tsx",

@@ -52,6 +52,7 @@ import { cardTabId, draftTabId } from '../space/selection.ts'
 import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { ManuscriptList, ManuscriptView } from '../manuscript/ManuscriptView.tsx'
 import { TypeView } from '../type/TypeView.tsx'
+import { CategoriesView } from '../type/CategoriesView.tsx'
 import { CanvasSwitcher } from './CanvasSwitcher.tsx'
 import { TabStrip, type StripTab } from './TabStrip.tsx'
 import { basenameOf, messageOf } from '../text.ts'
@@ -114,7 +115,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
     archiveCanvas, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
-    openCardDetail, openCardDraft, openManuscript, openTypePage, backToBoard, activateTab, closeTab, focusCanvas,
+    openCardDetail, openCardDraft, openManuscript, openTypePage, openCategoriesPage, backToBoard, activateTab, closeTab, focusCanvas,
     talkAvailable, quoteToConversation, refreshBoards, suggestWideMode, images, useImageRev,
     useSelection,
   } = props
@@ -574,10 +575,17 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         }),
         'toast.catsSaved',
       )
+      // A filter naming a category that is no longer on the strip would show
+      // an empty board with no chip lit: fall back to 全部.
+      if (filter !== 'all' && !categories.some(category => category.id === filter && category.enabled)) setFilter('all')
     },
     openType: (kind, heading) => {
       if (openId === null) return
       openTypePage(openId, kind, heading)
+    },
+    openCategories: () => {
+      if (openId === null) return
+      openCategoriesPage(openId, t('cat.title'))
     },
   }
 
@@ -798,6 +806,29 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             onStep: openCard,
           }}
         />
+      ) : activeRow.at.kind === 'categories' ? (
+        // The canvas's category page: drawn from the loaded board and writing
+        // through the board's own catalog verb, so the toast, the selection
+        // cleanup and the filter fallback are the board's too.
+        openBoard !== null && openBoard.board.id === activeRow.canvasId ? (
+          <CategoriesView
+            key={`${activeRow.canvasId}#categories`}
+            t={t}
+            board={openBoard.board}
+            readonly={boardReadonly}
+            crumbs={{
+              canvasTitle: openTitle,
+              heading: t('cat.title'),
+              siblings: [],
+              onBack: () => { leaveRow(activeRow.id, 'back') },
+              onStep: openCard,
+            }}
+            onWrite={actions.setCategories}
+            onDesign={actions.openType}
+          />
+        ) : (
+          <div className={css.notice}>{loadError ?? t('state.loading')}</div>
+        )
       ) : activeRow.at.kind !== 'board' ? (
         // A card, or the canvas's draft, inside the canvas's own row. The crumb
         // row is the way back, and the stepper walks the board's current order

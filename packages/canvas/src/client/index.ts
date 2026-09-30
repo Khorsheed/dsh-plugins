@@ -236,6 +236,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     setTypeBrief: async (sessionId, request) => touchOnSuccess(await requireRemote().setTypeBrief(sessionId, request)),
     decideType: async (sessionId, request) => touchOnSuccess(await requireRemote().decideType(sessionId, request)),
     openTypePage: (canvasId, kind, heading) => { selection.openTypeTab(canvasId, kind, heading) },
+    openCategoriesPage: (canvasId, heading) => { selection.openCategoriesTab(canvasId, heading) },
     // The category catalog (stage ⑤): one write for rename / add / retire, so a
     // retired row and the cards under it can never disagree between two calls.
     setCategories: async (sessionId, request) => touchOnSuccess(await requireRemote().setCategories(sessionId, request)),

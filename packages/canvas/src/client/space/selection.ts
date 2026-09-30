@@ -35,7 +35,8 @@ import type { CardCategoryId } from '../../types.ts'
 
 /**
  * Where one canvas row stands inside its canvas: the board, one card of it,
- * its unsaved new card, one of its manuscripts, or one category's type page. One draft per canvas, so the ＋新卡 menu
+ * its unsaved new card, one of its manuscripts, one category's type page, or
+ * its category list. One draft per canvas, so the ＋新卡 menu
  * re-categorizes the draft that is open instead of seating a second blank.
  */
 export type CanvasPlace =
@@ -44,6 +45,7 @@ export type CanvasPlace =
   | { readonly kind: 'draft'; readonly catKind: CardCategoryId; readonly heading: string }
   | { readonly kind: 'manuscript'; readonly manuscriptId: string; readonly heading: string }
   | { readonly kind: 'type'; readonly catKind: CardCategoryId; readonly heading: string }
+  | { readonly kind: 'categories'; readonly heading: string }
 
 /** One row of the canvas surface's tab strip: one canvas, and where in it. */
 export interface CanvasTabRow {
@@ -150,6 +152,11 @@ export class CanvasSelectionStore {
   /** Open one category's type page (its brief, definition and proposal) inside its canvas's row. */
   openTypeTab(canvasId: string, catKind: CardCategoryId, heading: string): void {
     this.ensure(canvasId, { kind: 'type', catKind, heading })
+  }
+
+  /** Open one canvas's category list (rename, add, retire) inside its row. */
+  openCategoriesTab(canvasId: string, heading: string): void {
+    this.ensure(canvasId, { kind: 'categories', heading })
   }
 
   /** Show a row that is already open. A row that is gone changes nothing. */
@@ -321,6 +328,7 @@ function storedRowOf(value: unknown): CanvasTabRow | null {
   if (at.kind === 'type' && typeof at.catKind === 'string' && typeof at.heading === 'string') {
     return { id, canvasId, at: { kind: 'type', catKind: at.catKind, heading: at.heading } }
   }
+  if (at.kind === 'categories' && typeof at.heading === 'string') return { id, canvasId, at: { kind: 'categories', heading: at.heading } }
   // A draft's words never rode the stash, so a reload stands on the board.
   if (at.kind === 'draft') return { id, canvasId, at: AT_BOARD }
   return null

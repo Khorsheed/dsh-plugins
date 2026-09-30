@@ -63,3 +63,26 @@ export function categoryLabelMap(
   for (const category of categories) map.set(category.id, categoryLabelOf(category, t))
   return map
 }
+
+/**
+ * The category hues, one per row in catalog order. Each is mixed with the
+ * theme's own label colour, so the dot darkens on a light ground and lifts
+ * on a dark one without the page knowing which theme it is in — the design
+ * system carries no palette tokens to borrow.
+ */
+const CATEGORY_HUES = ['#4d6bfe', '#1f9d74', '#d9822b', '#b25ad9', '#d94f6a', '#2a9bc2'] as const
+
+/**
+ * One category's dot colour: its place in the catalog's order (retired rows
+ * included, so retiring one never repaints the rest) picks the hue. The dot
+ * always sits beside the words — colour never names a kind on its own.
+ * @param categories - the board's catalog, any order.
+ * @param kind - the category to colour.
+ * @returns a CSS colour value.
+ */
+export function categoryColorOf(categories: readonly BoardCategory[], kind: CardCategoryId): string {
+  const ordered = [...categories].sort((a, b) => a.order - b.order)
+  const index = Math.max(0, ordered.findIndex(category => category.id === kind))
+  const hue = CATEGORY_HUES[index % CATEGORY_HUES.length]!
+  return `color-mix(in oklab, ${hue} 78%, var(--dsw-alias-label-primary))`
+}

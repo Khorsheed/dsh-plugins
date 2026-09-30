@@ -145,4 +145,11 @@ describe('CanvasSelectionStore — the type row', () => {
     expect(restored.tabs.map(row => row.id)).toEqual([boardTabId('canvas_t1abcdefgh')])
     expect(restored.tabs[0]?.at).toEqual({ kind: 'type', catKind: 'cat_person', heading: '人物' })
   })
+
+  it('brings the category page back after a reload too', () => {
+    const store = new CanvasSelectionStore()
+    store.openCategoriesTab('canvas_t1abcdefgh', '分类')
+    const restored = new CanvasSelectionStore().source.getSnapshot()
+    expect(restored.tabs[0]?.at).toEqual({ kind: 'categories', heading: '分类' })
+  })
 })

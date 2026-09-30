@@ -11,7 +11,7 @@
  * once-per-session wide-mode suggestion, and the read-only degrade.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { CanvasTabProps } from '../src/client/contract.ts'
 import { CanvasImageSrcs } from '../src/client/images.ts'
@@ -206,6 +206,9 @@ function makeHarness(options: {
     openCardDetail: vi.fn(),
     openCardDraft: vi.fn(),
     backToBoard: vi.fn(),
+    // The category page is a place in the canvas's row, so the harness seats it
+    // the way the production face does — these specs drive the page itself.
+    openCategoriesPage: (canvasId: string, heading: string) => { store.openCategoriesTab(canvasId, heading) },
     // The strip's own two verbs are the store's, exactly as the production face
     // wires them; the detail openings stay recorders, because these specs assert
     // what the gesture PASSES, not what the strip then renders.
@@ -418,7 +421,7 @@ describe('CanvasTab — list, switcher, board', () => {
 })
 
 describe('CanvasTab — the category catalog (stage ⑤)', () => {
-  /** One custom row, in the shape the panel mints. */
+  /** One custom row, in the shape the page mints. */
   const custom: BoardCategory = { id: 'cat_01234567abc', label: '反方观点', order: 60, enabled: true }
 
   /** The default five with `document` retired and `custom` appended. */
@@ -426,13 +429,15 @@ describe('CanvasTab — the category catalog (stage ⑤)', () => {
     return [...defaultCategories().map(row => (row.id === 'document' ? { ...row, enabled: false } : { ...row })), custom]
   }
 
-  /** Mount a board over that catalog and open the management panel. */
+  /** Mount a board over that catalog and open its category page. */
   async function mountCatalog(cards: CanvasBoard['cards'] = []): Promise<ReturnType<typeof makeHarness>> {
     const bench = makeHarness({ boards: [board(CANVAS_ID, cards, { categories: catalog() })] })
     render(<CanvasTab {...bench.props} />)
     await screen.findByRole('button', { name: /管理分类/ })
     fireEvent.click(screen.getByRole('button', { name: /管理分类/ }))
     await screen.findByText('只作用于这块画板')
+    // The retired rows sit behind their disclosure; open it so every row is live.
+    fireEvent.click(screen.getByRole('button', { name: /已停用/ }))
     return bench
   }
 
@@ -526,7 +531,7 @@ describe('CanvasTab — the category catalog (stage ⑤)', () => {
 
   it('brings a retired row back without touching its archived cards', async () => {
     const { mocks } = await mountCatalog([card('c_1', { kind: 'document', status: 'archived' })])
-    expect(screen.getByText(/已停用 1 个/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /已停用 1 个/ })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '重新启用' }))
     await waitFor(() => {
       expect(mocks.setCategories).toHaveBeenCalledWith('s1', expect.anything())
@@ -726,20 +731,33 @@ describe('CanvasTab — wide mode and read-only', () => {
 })
 
 describe('CanvasTab — round-4 dismissal, undo and the archived canvas', () => {
-  it('closes the category panel and the canvas switcher the same way', async () => {
+  it('closes the canvas switcher like every floating surface', async () => {
     const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)
     await screen.findByText('卡片 c_1')
-    const manage = screen.getByRole('button', { name: /管理分类/ })
-    fireEvent.click(manage)
-    expect(manage.getAttribute('aria-expanded')).toBe('true')
-    fireEvent.pointerDown(document.body)
-    expect(manage.getAttribute('aria-expanded')).toBe('false')
     const switcher = screen.getByRole('button', { name: '打开或新建画布' })
     fireEvent.click(switcher)
     expect(switcher.getAttribute('aria-expanded')).toBe('true')
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(switcher.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('opens 管理分类 as a page in the row, and retiring the filtered category falls back to 全部', async () => {
+    const { mocks, props, store } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('卡片 c_1')
+    // Filter the board to 问题 (empty), then retire it from the category page.
+    fireEvent.click(screen.getByRole('button', { name: /^问题/ }))
+    fireEvent.click(screen.getByRole('button', { name: /管理分类/ }))
+    await screen.findByText('只作用于这块画板')
+    expect(screen.queryByText('卡片 c_1')).toBeNull()
+    fireEvent.click(screen.getAllByRole('button', { name: '停用' })[1]!)
+    await waitFor(() => { expect(mocks.setCategories).toHaveBeenCalledTimes(1) })
+    // The crumb asks the host to go back; the board it lands on is on 全部 again.
+    fireEvent.click(screen.getByRole('button', { name: '回到卡板' }))
+    expect(mocks.backToBoard).toHaveBeenCalledWith(CANVAS_ID)
+    act(() => { store.backToBoard(CANVAS_ID) })
+    await screen.findByText('卡片 c_1')
   })
 
   it('offers 撤销 after archiving a kept card, and the undo restores it', async () => {

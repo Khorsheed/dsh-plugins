@@ -1,0 +1,220 @@
+/* The category page. It borrows the card reader's frame (CanvasDetailView.module.css:
+   root, header, crumbs, meta); this file holds the list — one framed object,
+   a row per category — the add row, the retired disclosure and the two rules.
+   Every colour is a `--dsw-*` token, so light and dark are the theme's. */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  overflow: hidden;
+}
+
+/* One line per category: dot, name (edited in place), count, style, toggle.
+   The name reads as text until pointed at — a column of full boxes read as a
+   form to fill in, not a list to glance over (2026-09-28 review). */
+.row {
+  display: grid;
+  grid-template-columns: 8px minmax(6em, 1fr) auto minmax(5em, auto) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 4px 10px 4px 14px;
+}
+
+.row + .row,
+.add {
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.row[data-off="true"] .dot {
+  opacity: 0.4;
+}
+
+.input {
+  min-width: 0;
+  height: 28px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 6px;
+  font: var(--dsw-font-xs-13);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  outline: none;
+}
+
+/* A built-in not yet renamed shows its default name as the placeholder: read
+   it as the name, not as a hint (the UA grey is too faint on dark). */
+.row .input::placeholder {
+  color: var(--dsw-alias-label-primary);
+  opacity: 1;
+}
+
+.input:hover {
+  border-color: var(--dsw-alias-border-l1);
+}
+
+.input:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* A retired row keeps its name readable but says "not on the strip". */
+.row[data-off="true"] .input {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.builtin {
+  padding: 0 5px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 4px;
+  font: var(--dsw-font-xxxs-11);
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* What the kind's cards look like: its layout and version, or plain notes. */
+.style {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+.style[data-pending="true"] {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.pendingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+.link {
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 8px;
+  font: var(--dsw-font-xxs-12);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toggle:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Bringing a category back is the row's only affirmative act, so it carries a
+   quiet brand outline; retiring one stays a ghost action. */
+.toggleOn {
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.toggleOn:hover:not(:disabled) {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.add {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.add .input {
+  flex: 1 1 auto;
+  border-style: dashed;
+  border-color: var(--dsw-alias-border-l2);
+}
+
+/* The add row's button is an affirmative act, so it carries a border and a
+   fill the retire/enable ghosts do not. */
+.add .toggle {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.empty {
+  padding: 12px 14px;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.disclosure {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.disclosure:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.tips {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0 0 0 16px;
+  font: var(--dsw-font-xxs-12);
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tips li::marker {
+  color: var(--dsw-alias-label-caption);
+}
