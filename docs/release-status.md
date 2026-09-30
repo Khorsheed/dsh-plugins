@@ -4,7 +4,7 @@
 
 | 包 | npm 已发布 | 仓内版本 | minHost | verifiedHost | basic 成员 |
 | --- | --- | --- | --- | --- | --- |
-| `@khorsheed/dsh-ankh-guard` | 0.4.1 | 0.4.2 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
+| `@khorsheed/dsh-ankh-guard` | 0.4.2 | 0.4.2 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-bundle-local-agent` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-canvas` | 未发布 | 0.5.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
@@ -32,7 +32,7 @@
 | `@khorsheed/dsh-mission` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-mission-tool` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-mobile` | 0.1.3 | 0.1.3 | 0.1.5-rc.1 | — | ✓ |
-| `@khorsheed/dsh-presets` | 0.2.0 | 0.2.1 | 0.1.7-rc.1 | 0.1.7-rc.1 |  |
+| `@khorsheed/dsh-presets` | 0.2.1 | 0.2.1 | 0.1.7-rc.1 | 0.1.7-rc.1 |  |
 | `@khorsheed/dsh-quote` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |
 | `@khorsheed/dsh-room` | 0.2.1 | 0.2.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-client-session-title-edit` | 0.2.5 | 0.2.5 | 0.1.2-rc.1 | 0.1.7-rc.2 | ✓ |
