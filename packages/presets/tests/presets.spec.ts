@@ -94,26 +94,39 @@ describe('cordis.patch.yml', () => {
     expect(block).toContain('            tools: all')
   })
 
-  it('dsh-writing keeps the 0.1.5 composition minus the goal rows, with the 2026-09-29 writing-scene tuning', () => {
+  it('dsh-writing: writer persona plus the 2026-09-30 minimal-inspired tool diet', () => {
     const block = presetBlock(patch, 'dsh-writing')
-    expect(block).toContain('          - id: workflow-ptc\n')
-    expect(block).toContain("            name: '@deepseek-ai/dsh-workflow-ptc'\n")
-    // tool-ralph stays enabled here (the writing preset's own decision; rc.1
-    // standard disables it, but this preset was name-checked, not rebased).
-    expect(block).toMatch(/ {14}- id: tool-ralph\n {16}name: '@deepseek-ai\/dsh-tool-ralph'\n {16}config:/)
-    expect(block).toContain('          - id: canvas-agent\n')
-    expect(block).toContain("            name: '@khorsheed/dsh-canvas/agent'\n")
-    // 2026-09-29/30 writing-scene tuning: goal mode is a coding workflow and
-    // stays out; the persona is the writer identity carrying the full bilingual
-    // style contract, in single-language English (the host prompt's own voice).
-    expect(block).not.toContain('command-goal')
-    expect(block).not.toContain('tool-goal')
+    // The writer identity stays — the diet adopts minimal's minimalism, never
+    // its software-engineer persona.
     expect(block).toContain('You are a writer')
     expect(block).toContain('A Chinese sentence never takes a half-width comma or period')
+    expect(block).not.toContain('coding agent powered by')
+    // The writing surface that stays: shell, fs, skills, compaction, ask-user,
+    // todo, web, canvas.
+    for (const kept of [
+      'tool-bash', 'tool-fs', 'skill-filesystem', 'tool-skill',
+      'compaction-basic', 'tool-ask-user', 'tool-todo', 'tool-web',
+    ]) {
+      expect(block).toContain(`- id: ${kept}\n`)
+    }
+    expect(block).toContain('          - id: canvas-agent\n')
+    expect(block).toContain("            name: '@khorsheed/dsh-canvas/agent'\n")
+    // The diet removals (row ids, not prose): the goal rows went 2026-09-29;
+    // plan-mode, the delegation/workflow group, fs-search, jobs, present and
+    // agent-instructions went 2026-09-30.
+    for (const gone of [
+      'command-goal', 'tool-goal', 'agent-instructions', 'tool-fs-search',
+      'tool-jobs', 'plan-mode', 'delegation', 'tool-subagent-control',
+      'tool-subagent', 'tool-subagent-fork', 'tool-subagent-codex',
+      'tool-subagent-claude-code', 'workflow-ptc', 'tool-workflow',
+      'tool-ralph', 'present',
+    ]) {
+      expect(block).not.toMatch(new RegExp(`- id: ${gone}\\n`))
+    }
+    // The canvas contract points at canvas_write + the canvas skill.
     expect(block).toContain('canvas_write')
     expect(block).toContain('Load the canvas skill')
     expect(block).not.toContain('canvas_propose_card')
-    expect(block).not.toContain('coding agent powered by')
   })
 
   it('references no community package outside dsh.references', () => {

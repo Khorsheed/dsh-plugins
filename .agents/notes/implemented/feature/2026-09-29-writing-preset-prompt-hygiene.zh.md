@@ -26,7 +26,7 @@ Status: implemented
 
 **保持双语段落。** 否决——维护者明确指出揉杂伤害输出语感。
 
-**从写作 preset 里删掉 plan mode。** 否决——列大纲是写作工作流；问题只在文本编码腔，而官方英文原文本身是场景中性的。
+**从写作 preset 里删掉 plan mode。** 当时否决——列大纲是写作工作流；问题只在文本编码腔，而官方英文原文本身是场景中性的。**2026-09-30 被推翻**,见[minimal 式工具精简](../simplification/2026-09-30-writing-preset-minimal-tool-diet.md)：维护者 A/B 实测官方 `minimal` 优于全量组合，plan mode 随 delegation/workflow 组一并移出。
 
 **把 canvas 指引段整个删掉。** 否决——一句指引（工具存在、作用于当前打开的画布）成本几乎为零，能在模型读目录之前定向；超出指引的部分才是重复。
 

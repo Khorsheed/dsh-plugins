@@ -18,7 +18,11 @@
 #                       style contract (task modes, banned jargon and filler,
 #                       voice rules, canvas workflow) since 2026-09-30 — every
 #                       prompt section this file owns is single-language
-#                       English (the host prompt's own voice).
+#                       English (the host prompt's own voice). Tool diet later
+#                       the same day (the official minimal preset won the
+#                       comparison): plan-mode, delegation/workflow, fs-search,
+#                       jobs, present, agent-instructions removed; shell, fs,
+#                       skills, compaction, ask-user, todo, web, canvas stay.
 #
 # The display fields (name/description/order) come from each legacy preset.yml.
 # Every `name:` value is quoted (@ is YAML-reserved; 'cordis:group' follows the
@@ -446,6 +450,17 @@
     #     repeat;
     #   - the goal rows are gone (autonomous goal-pursuit is a coding workflow
     #     the writing scene never drives);
+    #   - 2026-09-30 minimal-inspired tool diet: the official `minimal` preset
+    #     (one shell, one line of persona) outperformed this full composition
+    #     on writing, so plan mode, the delegation/workflow group (subagent,
+    #     fork, ptc, ralph), fs-search, jobs, present and agent-instructions
+    #     are all gone — the writing scene drives none of them. What stays is
+    #     the writing surface: shell, file read/write, skills, compaction,
+    #     ask-user, todo, web, and the per-session canvas tools. The shell is
+    #     on probation (writing skills like md-to-wechat shell out to scripts;
+    #     drop it if that proves dispensable); agent-instructions is a
+    #     deliberate subtraction — re-add it if a writing workspace needs
+    #     repo-level rules;
     #   - every prompt section this file owns is single-language ENGLISH, the
     #     host prompt's own voice (official sections and tool catalogs are
     #     English regardless); the identity is "writer", not "Chinese writer" —
@@ -465,7 +480,7 @@
       config:
         id: dsh-writing
         name: '写作模式'
-        description: 写作工作台：作家身份与文风约束、文件与网页检索、Skills、计划模式、子代理，以及按会话授予的画布协作工具。
+        description: 写作工作台：作家身份与文风约束、文件读写与网页检索、Skills，以及按会话授予的画布协作工具。
         plugins:
           # ── identity ────────────────────────────────────────────────────────────────
 
@@ -577,10 +592,11 @@
                 - Cards, comments and drafts go on the canvas through canvas_write — a card lands as a proposal the user keeps or rejects, a draft as a manuscript marking the cards it used and left out. Never paste them into your reply instead.
                 - Load the canvas skill before your first canvas write; it holds the card, comment and revision rules.
 
-          - id: agent-instructions
-            name: '@deepseek-ai/dsh-agent-instructions'
-            config:
-              maxBytes: 65536
+          # ── agent-instructions: NOT here ────────────────────────────────────────────
+
+          # Dropped in the 2026-09-30 diet: the writing workspace carries no
+          # repo-level instructions worth injecting every turn. Re-add the row
+          # (`@deepseek-ai/dsh-agent-instructions`, maxBytes 65536) if one does.
 
           # ── shell ───────────────────────────────────────────────────────────────────
 
@@ -590,7 +606,8 @@
           # exists, so there is no agent to key by. Behind a preset realm those variables
           # never reached the model's shell at all. Both shell tools consume the host
           # registry from here; their executors (`bash-sandbox`/`pwsh-sandbox`) are
-          # host-plane too.
+          # host-plane too. Kept in the 2026-09-30 diet on probation: writing skills
+          # like md-to-wechat shell out to converter scripts.
           - id: tool-bash
             name: '@deepseek-ai/dsh-tool-bash'
             disabled: !!js process.platform === 'win32'
@@ -601,27 +618,12 @@
 
           # ── filesystem ──────────────────────────────────────────────────────────────
 
-          # Both register into the host `tools` registry and provide nothing, so
-          # they need no realm. The `fs` service and its policy stay in the host.
+          # Registers into the host `tools` registry and provides nothing, so it needs
+          # no realm; the `fs` service and its policy stay in the host. `tool-fs-search`
+          # (glob/grep) left in the 2026-09-30 diet — writing sessions reach files
+          # through attachments, the canvas and explicit paths, not repo scans.
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
-
-          - id: tool-fs-search
-            name: '@deepseek-ai/dsh-tool-fs-search'
-            config:
-              sampleOverCapGlobResults: false
-
-          # ── background jobs ────────────────────────────────────────────────────────
-
-          # Only the model-facing controls. The task REGISTRY stays on the host plane:
-          # its producers sit outside any realm this file could put it in — `tool-bash`
-          # above resolves it with `ctx.get`, and an entry-local realm here is invisible
-          # to every sibling row, so `run_in_background` would answer "background jobs
-          # unavailable" while these controls sat in the catalog. The registry is keyed by
-          # owning agent anyway, so one host instance serves every session. What a preset
-          # chooses is whether its agent can collect and stop background work at all.
-          - id: tool-jobs
-            name: '@deepseek-ai/dsh-tool-jobs'
 
           # ── skills ──────────────────────────────────────────────────────────────────
 
@@ -643,34 +645,13 @@
           # preset (2026-09-29 writing-scene tuning). The host-plane goal service is
           # untouched; the dev and dsh-eval presets keep their rows.
 
-          # ── plan mode ───────────────────────────────────────────────────────────────
+          # ── plan mode / delegation / jobs / present: NOT here ───────────────────────
 
-          # Plan state is per-agent by nature, so an entry-local realm is not a
-          # workaround here — it is the correct lifetime. The section text stays the
-          # official English: this preset's sections are single-language English (the
-          # host prompt's own voice), and tracking the official text verbatim keeps
-          # upstream improvements flowing.
-          - id: planning
-            name: 'cordis:group'
-            group: true
-            isolate:
-              planMode: true
-            config:
-              - id: plan-mode
-                name: '@deepseek-ai/dsh-plan-mode'
-                config:
-                  section: |
-                        You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
-
-                        Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
-
-                        The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
-
-                        Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
-
-                        Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
-
-                        When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+          # 2026-09-30 diet: plan mode's section is implementation-shaped (exit_plan_mode,
+          # "do not edit"), delegation and workflows are coding apparatus, and with no
+          # subagent or workflow producer left there is nothing for `tool-jobs` to
+          # collect. `present` delivered files to the deliverables view — the writing
+          # deliverable is the text itself or the canvas.
 
           # ── compaction ──────────────────────────────────────────────────────────────
 
@@ -703,84 +684,6 @@
                   headChars: 4096
                   tailChars: 1024
 
-          # ── delegation and workflows ────────────────────────────────────────────────
-
-          # The `subagents` registry and its spawn/fork backends live in the HOST
-          # composition: the registry is a process singleton whose cross-session queries
-          # the api-proxy serves to the browser, and a provider name may only be
-          # registered once. This preset contributes the delegation TOOLS, which resolve
-          # that host registry.
-          #
-          # `workflows` is different — nothing outside an agent reads it — so every row
-          # that reaches it shares one entry-local realm here, and a consumer left
-          # outside would resolve a host registry this preset does not populate.
-          - id: delegation
-            name: 'cordis:group'
-            group: true
-            isolate:
-              workflowEngine: true
-            config:
-              - id: tool-subagent-control
-                name: '@deepseek-ai/dsh-tool-subagent-control'
-
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
-
-              - id: tool-subagent
-                name: '@deepseek-ai/dsh-tool-subagent'
-                config:
-                  provider: spawn
-                  toolName: subagent
-                  modelSelectionSettings: true
-                  backgroundMode: continuable
-
-              # Fork omits model selection so provider/model stay equal to the parent and
-              # the inherited history remains eligible for KV Cache reuse. This preset
-              # keeps fork continuable; parent and child inherit the same messaging tool,
-              # while the parent id and return guidance follow the inherited history.
-              - id: tool-subagent-fork
-                name: '@deepseek-ai/dsh-tool-subagent'
-                config:
-                  provider: fork
-                  toolName: subagent_fork
-                  backgroundMode: continuable
-
-              # Production dsh does not install these optional providers. Install the
-              # matching Bundle in this Profile and restart the Host, then copy this
-              # preset and remove `disabled` from the matching tool row. Host availability
-              # alone grants no tool.
-              - id: tool-subagent-codex
-                name: '@deepseek-ai/dsh-tool-subagent'
-                disabled: true
-                config:
-                  provider: codex
-                  toolName: subagent_codex
-                  backgroundMode: one-shot
-                  maxDepth: provider-managed
-
-              - id: tool-subagent-claude-code
-                name: '@deepseek-ai/dsh-tool-subagent'
-                disabled: true
-                config:
-                  provider: claude-code
-                  toolName: subagent_claude_code
-                  backgroundMode: one-shot
-                  maxDepth: provider-managed
-
-              - id: workflow-ptc
-                name: '@deepseek-ai/dsh-workflow-ptc'
-                config:
-                  provider: spawn
-
-              - id: tool-workflow
-                name: '@deepseek-ai/dsh-tool-workflow'
-
-              - id: tool-ralph
-                name: '@deepseek-ai/dsh-tool-ralph'
-                config:
-                  subagentProvider: spawn
-                  maxRounds: 64
-
           # ── remaining model-facing rows ─────────────────────────────────────────────
 
           - id: tool-ask-user
@@ -798,9 +701,6 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
-
-          - id: present
-            name: '@deepseek-ai/dsh-tool-present'
 
           # ── inspiration canvas ──────────────────────────────────────────────────────
 

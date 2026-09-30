@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.3.0（未发布）
+
+- **写作 preset 参考官方 `minimal` 做工具精简**（实测 minimal 效果优于全量组合）：plan-mode、delegation/workflow 整组（subagent/fork/ptc/ralph）、fs-search、jobs、present、agent-instructions 移出 preset；保留 shell（写作 skill 会调转换脚本，观察期）、fs 读写、Skills、compaction、ask-user、todo、web 与按会话授予的画布工具。persona 保持作家身份与完整双语写作契约不变；preset 描述同步去掉「计划模式、子代理」
+
 ## 0.2.1（2026-09-30）
 
 - **写作 preset persona 升级为完整双语写作契约**：任务模式分流（写作/分析/改稿——分析类问题直接回答，不再被写成小说）；中英双语禁用词表（黑话、生造词、含糊填充）与句法规则（保留连接词、禁警句式收尾、禁短句连击）；抽象句必跟例子；语气规则（不评价自己的文字、不评价用户措辞、不推销观点）；开放问题给 2–3 个方向并标注不确定处；输出前自检清单；中英正反例。canvas 段只保留工具层没有的三条协作约定（提案/评论/稿件版本流），不再重复包内的一行机制指引

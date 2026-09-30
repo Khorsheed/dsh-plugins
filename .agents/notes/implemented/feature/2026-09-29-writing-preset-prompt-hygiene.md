@@ -26,7 +26,7 @@ Retune the writing preset's prompt (2026-09-29), in `packages/presets/cordis.pat
 
 **Keep the sections bilingual.** Rejected — mixed-language prose was named as a performance concern by the maintainer.
 
-**Drop plan mode from the writing preset.** Rejected — outlining is a writing workflow; only the text was coding-flavored, and the official English text is scene-neutral.
+**Drop plan mode from the writing preset.** Rejected at the time — outlining is a writing workflow; only the text was coding-flavored, and the official English text is scene-neutral. **Superseded 2026-09-30** by [the minimal tool diet](../simplification/2026-09-30-writing-preset-minimal-tool-diet.md): the official `minimal` preset beat the full composition in the maintainer's A/B use, and plan mode left with the delegation/workflow group.
 
 **Delete the canvas guidance section outright.** Rejected — a one-line pointer (tools exist, they act on the open tab) costs almost nothing and orients the model before it reads the catalog; everything beyond the pointer was duplication.
 

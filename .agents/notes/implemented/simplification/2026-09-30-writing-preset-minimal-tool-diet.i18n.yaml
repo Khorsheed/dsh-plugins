@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-09-30-writing-preset-minimal-tool-diet.md
+.agents/notes/implemented/simplification/2026-09-30-writing-preset-minimal-tool-diet.md: 5a58a36160e57a3da4332c2385c36c88e6b222eb
+.agents/notes/implemented/simplification/2026-09-30-writing-preset-minimal-tool-diet.zh.md: 865deb87f7acd13e594165f7badd9c5901774dac
