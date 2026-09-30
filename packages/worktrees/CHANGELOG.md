@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.3.1（2026-09-30）
+
+- 补发以带齐宿主 0.2.0 兼容：npm 上的 `0.3.0` tarball 早于 peer 区间加宽（`|| ^0.2.0-rc.1`），宿主 0.2.0-rc.* 的兼容性检查会拒绝它。无功能变更。
+
 ## 0.3.0（2026-09-27）
 
 - **BREAKING（包结构）**：伴生包 `@khorsheed/dsh-worktrees-tool` 回并进本包——模型工具行改由本包的 `./tool` 子路径导出承载（`name: '@khorsheed/dsh-worktrees/tool'`，行 id 仍为 `worktrees-tool`，preset 组合里的行 id 不变、组合状态不受影响）。迁移：preset 的 `agent.cordis.yml` 里把 `name: '@khorsheed/dsh-worktrees-tool'` 改为 `name: '@khorsheed/dsh-worktrees/tool'`，并卸载旧伴生包（旧包名已在 npm deprecate）。工具定义工厂 `defineWorktreesTool` 从 `./tool` 出口退到内部模块 `./tool-definition.ts`——`./tool` 现在是可直接挂载的行模块（`name` / `inject = ['worktrees']` / `apply`），这是 2026-09-11 拆分记录里标记为「loader 支持子路径行后即可回并」的既定终点（canvas `./agent` 先例已验证该形态）。
