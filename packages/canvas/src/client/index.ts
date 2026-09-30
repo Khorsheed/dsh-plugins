@@ -254,6 +254,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     // canvas (`selection.ts`), so "open it twice, you get one row" needs no
     // cooperation from the caller.
     openCardDetail: (canvasId, cardId, heading) => { selection.openCardTab(canvasId, cardId, heading) },
+    // Probed per click, never injected: ui-workspace's `openSession` is the
+    // session-navigation entry on both host lines, and a composition without
+    // it leaves the link inert.
+    openSession: (sessionId) => {
+      try {
+        (ctx.get('uiWorkspace') as { openSession?: (id: SessionId) => void } | undefined)?.openSession?.(sessionId)
+      } catch {
+        // An unknown target throws on some host lines; the link can be retried.
+      }
+    },
     openCardDraft: (canvasId, kind, heading) => { selection.openDraftTab(canvasId, kind, heading) },
     activateTab: id => { selection.activate(id) },
     closeTab: id => { selection.close(id) },

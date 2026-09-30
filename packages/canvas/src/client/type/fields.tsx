@@ -63,12 +63,14 @@ function valueLine(t: T, value: FieldValue, nameOf: CardNameOf): string {
  * line under the title; `note` is the entry form too — the board only asks
  * for it when a note-layout type still marks face fields.
  */
-export function TypedFace({ t, definition, values, nameOf, fallbackTitle }: {
+export function TypedFace({ t, definition, values, nameOf, fallbackTitle, excerpt }: {
   readonly t: T
   readonly definition: TypeDefinition
   readonly values: FieldValues | undefined
   readonly nameOf: CardNameOf
   readonly fallbackTitle: string
+  /** The body's words, standing in when no face field is filled yet. */
+  readonly excerpt?: string
 }): ReactNode {
   const titleField = titleFieldOf(definition)
   const titleValue = titleField === undefined ? undefined : values?.[titleField.key]
@@ -95,6 +97,7 @@ export function TypedFace({ t, definition, values, nameOf, fallbackTitle }: {
           ))}
         </div>
       ))}
+      {rows.length === 0 && excerpt !== undefined && excerpt !== '' && <div className={css.faceExcerpt}>{excerpt}</div>}
     </div>
   )
 }

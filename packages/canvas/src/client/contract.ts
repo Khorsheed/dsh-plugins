@@ -122,6 +122,12 @@ export interface CanvasTypeInjected {
   decideType: (sessionId: SessionId, request: BoardDecideTypeRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Open one category's type page inside its canvas's strip row. */
   openTypePage: (canvasId: string, kind: CardCategoryId, heading: string) => void
+  /**
+   * Switch to the conversation a revision was proposed in (the revision
+   * log's 「对话 ↗」). Session-level only: the host cannot scroll to a
+   * message. A no-op where the composition has no ui-workspace.
+   */
+  openSession: (sessionId: SessionId) => void
 }
 
 /**

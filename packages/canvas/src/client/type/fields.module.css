@@ -55,6 +55,17 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+.faceExcerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font: var(--dsw-font-xxs-12);
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
 .faceLine span + span::before {
   content: '·';
   padding: 0 6px;

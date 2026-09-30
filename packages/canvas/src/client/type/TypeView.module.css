@@ -1,7 +1,8 @@
 /* The type page. It borrows the card reader's frame (CanvasDetailView.module.css:
-   root, header, crumbs, meta); this file holds the three numbered sections —
-   brief, proposal, definition — and the sample list. Every colour is a
-   `--dsw-*` token, so light and dark are the theme's. */
+   root, header, crumbs, meta); this file holds its sections — the pending
+   proposal, the current look, the request box with its revision log — and
+   the sample grid. Every colour is a `--dsw-*` token, so light and dark are
+   the theme's. */
 
 .section {
   display: flex;
@@ -24,17 +25,6 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.step {
-  display: inline-grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  font: var(--dsw-font-xxxs-11);
-  color: var(--dsw-alias-label-secondary);
-  background: var(--dsw-alias-bg-layer-2);
 }
 
 .sectionTitle {
@@ -158,4 +148,93 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* This round's request, as the Agent read it off the conversation. */
+.request {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--dsw-alias-state-warn-secondary);
+  font: var(--dsw-font-xs-13);
+  line-height: 1.7;
+  color: var(--dsw-alias-label-primary);
+}
+
+.decide {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* The request box: the brief, the ask, the revision log — one framed object. */
+.briefBox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px dashed var(--dsw-alias-border-l1);
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--dsw-alias-border-l1);
+}
+
+.revisions {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.revision {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.revision + .revision {
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.revisionBody {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.revisionSummary {
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-primary);
+}
+
+.link {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
 }

@@ -1,17 +1,19 @@
 /**
- * The type page (card types, P1a): one category's brief, its adopted
- * definition, and the Agent's pending proposal — the one place a kind of card
- * is designed.
+ * The type page (card types, P1a): one category's card style — the Agent's
+ * pending proposal, how the kind looks now, the user's request and the
+ * revision log, and the cards of the kind.
  *
- * The flow the proposal settled on reads top to bottom. The user says what
- * they want in the brief — the card editor's own block flow, so a paragraph,
- * a sketch and a pasted picture all fit — and 「交给 Agent 设计」 quotes the
- * request into the conversation input without sending it. The Agent reads the
- * brief (drawings arrive as pictures when its model sees images) and files a
- * proposal; the page shows it the way it would land — a card face filled with
- * the proposal's example, then the field table — with 采用 / 不采用 right
- * under it. Adopting makes the definition live; the definition below is what
- * every card of the kind is written against now.
+ * First visit and after an adoption are the ONE page: the only difference is
+ * whether the revision log has rows. It reads top to bottom as the user meets
+ * it. A pending proposal leads (it is the one thing waiting for them): what
+ * this round asked for — a line the Agent wrote off the conversation — the
+ * face it would draw, the field table, what adopting does to the cards there
+ * are, then 采用 / 不采用. 「现在的样子」 is the adopted definition. 「卡片样式需求」
+ * holds the standing brief (the card editor's block flow, so a sketch fits),
+ * the button that quotes a design request into the conversation input
+ * without sending it, and the log — one row per adoption, linking back to the
+ * conversation it came from. There is no rollback: going back is a new
+ * request. The card grid draws every card with the kind's one face.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -20,9 +22,10 @@ import {
   type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
 import { Button, Tag, Toast, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { cardNameOf } from '../../card-format.ts'
-import { typedTitleOf, type TypeDefinition } from '../../card-types.ts'
+import { typedTitleOf, type TypeDefinition, type TypeRevision } from '../../card-types.ts'
 import { imageMarkdownOf } from '../../image-token.ts'
 import { hasDrawings, type BoardMutationResult, type CanvasBoard, type CanvasError } from '../../types.ts'
 import type { CanvasTypeViewProps } from '../contract.ts'
@@ -34,6 +37,7 @@ import { BlockEditor } from '../detail/BlockEditor.tsx'
 import { CardFlow } from '../detail/CanvasDetailView.tsx'
 import { DetailCrumbs } from '../detail/DetailCrumbs.tsx'
 import { IconEditOutlineMedium, IconSparkleMedium } from '../icons.tsx'
+import { typedExcerptOf } from '../space/BoardView.tsx'
 import type {} from '../locales.ts'
 import { FieldTable, TypedFace } from './fields.tsx'
 import detailCss from '../detail/CanvasDetailView.module.css'
@@ -46,7 +50,7 @@ const MAX_SAMPLES = 12
 export function TypeView(props: CanvasTypeViewProps): ReactNode {
   const {
     t, sessionId, canvasId, kind, crumbs, pathImages, useSelection,
-    readBoard, setTypeBrief, decideType, openCardDetail, talkAvailable, quoteToConversation, attachImage,
+    readBoard, setTypeBrief, decideType, openCardDetail, openSession, talkAvailable, quoteToConversation, attachImage,
   } = props
   const boardRev = useSelection(current => current.rev)
   const [open, setOpen] = useState<{ board: CanvasBoard; version: string } | null>(null)
@@ -173,9 +177,12 @@ export function TypeView(props: CanvasTypeViewProps): ReactNode {
   const briefDrawings = category.briefDrawings ?? {}
   const hasBrief = brief.trim() !== '' || hasDrawings(briefDrawings)
 
+  const redesign = definition !== undefined
+  const history = category.history ?? []
+
   const askAgent = (): void => {
     if (sessionId === undefined) return
-    const block = t('type.quote', { canvas: board.title, label, kind })
+    const block = t(redesign ? 'type.quoteRedesign' : 'type.quote', { canvas: board.title, label, kind })
     showToast(quoteToConversation(sessionId, block) ? t('talk.quoted') : t('talk.unavailable'))
   }
 
@@ -189,16 +196,43 @@ export function TypeView(props: CanvasTypeViewProps): ReactNode {
     })
   }
 
-  const definitionBlock = (def: TypeDefinition): ReactNode => (
-    <>
-      <FieldTable t={t} definition={def} labelOf={labelOf} />
-      {def.guide !== undefined && (
-        <p className={css.guide}><span className={css.guideLabel}>{t('type.guide')}</span>{def.guide}</p>
-      )}
-    </>
-  )
   const layoutText = (def: TypeDefinition): string =>
     t('type.layoutLabel', { layout: t(`type.layout.${def.layout}` as const) })
+  /** The example face beside the text that explains it — a proposal's rationale, or the definition's guide. */
+  const faceAndTable = (def: TypeDefinition, aside: ReactNode): ReactNode => (
+    <>
+      <div className={css.previewRow}>
+        <div className={css.preview}>
+          <span className={css.previewLabel}>{t('type.preview')}</span>
+          <div className={css.previewCard}>
+            <TypedFace t={t} definition={def} values={def.example} nameOf={nameOf} fallbackTitle={label} />
+          </div>
+        </div>
+        {aside}
+      </div>
+      <FieldTable t={t} definition={def} labelOf={labelOf} />
+    </>
+  )
+  const revisionRow = (row: TypeRevision): ReactNode => (
+    <li key={`${row.version}:${row.adoptedAt}`} className={css.revision}>
+      <span className={css.version}>{t('type.version', { version: String(row.version) })}</span>
+      <div className={css.revisionBody}>
+        <span className={css.revisionSummary}>{row.summary}</span>
+        {row.request !== undefined && <span className={css.meta}>{t('type.historyRequest', { request: row.request })}</span>}
+      </div>
+      <span className={css.meta}>{row.adoptedAt.slice(0, 10)}</span>
+      {row.sessionId !== undefined && (
+        <button
+          type="button"
+          className={css.link}
+          title={t('type.historyOpenTip')}
+          onClick={() => { openSession(row.sessionId as SessionId) }}
+        >
+          {t('type.historyOpen')}
+        </button>
+      )}
+    </li>
+  )
 
   return (
     <div className={detailCss.root}>
@@ -214,127 +248,136 @@ export function TypeView(props: CanvasTypeViewProps): ReactNode {
             </>
           )}
           <span>{t('cat.count', { count: String(cards.length) })}</span>
-          <span className={detailCss.spacer} />
-          {canTalk && (
-            <button type="button" className={`${detailCss.iconButton} ${css.primary}`} title={t('type.askAgentTip')} onClick={askAgent}>
-              <IconSparkleMedium size={12} />
-              {t('type.askAgent')}
-            </button>
-          )}
         </div>
       </div>
 
-      <section className={css.section}>
-        <div className={css.sectionHead}>
-          <span className={css.step}>1</span>
-          <span className={css.sectionTitle}>{t('type.briefTitle')}</span>
-          <span className={detailCss.spacer} />
-          {!editing && !readonly && (
-            <button type="button" className={detailCss.iconButton} onClick={() => { setEditing(true) }}>
-              <IconEditOutlineMedium size={12} />
-              {hasBrief ? t('type.briefEdit') : t('type.briefWrite')}
-            </button>
-          )}
-        </div>
-        {editing ? (
-          <div className={css.briefEditor}>
-            <BlockEditor
-              t={t}
-              text={brief}
-              drawings={briefDrawings}
-              submitOn="mod-enter"
-              placeholder={t('type.briefPlaceholder')}
-              autoFocus
-              hint={t('type.briefHint')}
-              saveLabel={t('block.save')}
-              markdownLabels={markdownLabels}
-              pathImages={pathImages}
-              notify={showToast}
-              uploadImages={uploadImages}
-              onPaste={onPaste}
-              onSave={(text, drawings) => {
-                setEditing(false)
-                const trimmed = text.trim()
-                if (trimmed === brief && JSON.stringify(drawings) === JSON.stringify(briefDrawings)) return
-                if (sessionId === undefined) return
-                void run(() => setTypeBrief(sessionId, { canvasId, kind, brief: trimmed, drawings }))
-                  .then(value => landed(value, 'type.briefSaved'))
-              }}
-              onCancel={() => { setEditing(false) }}
-            />
+      {proposal !== undefined && (
+        <section className={css.section} data-pending>
+          <div className={css.sectionHead}>
+            <span className={css.sectionTitle}>{t('type.proposalTitle')}</span>
+            <Tag tone="warning">{t('type.pending')}</Tag>
+            <span className={css.version}>{t('type.proposalVersion', { version: String(proposal.definition.version) })}</span>
+            <span className={css.meta}>{layoutText(proposal.definition)}</span>
           </div>
-        ) : hasBrief ? (
-          <div className={css.brief}>
-            <CardFlow t={t} text={brief} drawings={briefDrawings} labels={markdownLabels} pathImages={pathImages} />
-          </div>
-        ) : (
-          <p className={css.none}>{t('type.briefEmpty')}</p>
-        )}
-      </section>
-
-      <section className={css.section} data-pending={proposal !== undefined || undefined}>
-        <div className={css.sectionHead}>
-          <span className={css.step}>2</span>
-          <span className={css.sectionTitle}>{t('type.proposalTitle')}</span>
-          {proposal !== undefined && (
-            <>
-              <Tag tone="warning">{t('type.pending')}</Tag>
-              <span className={css.version}>{t('type.proposalVersion', { version: String(proposal.definition.version) })}</span>
-              <span className={css.meta}>{layoutText(proposal.definition)}</span>
-            </>
+          {proposal.request !== undefined && (
+            <p className={css.request}>
+              <span className={css.guideLabel}>{t('type.request')}</span>
+              {proposal.request}
+            </p>
           )}
-        </div>
-        {proposal === undefined ? (
-          <p className={css.none}>{t('type.proposalNone')}</p>
-        ) : (
-          <>
-            <div className={css.previewRow}>
-              <div className={css.preview}>
-                <span className={css.previewLabel}>{t('type.preview')}</span>
-                <div className={css.previewCard}>
-                  <TypedFace
-                    t={t}
-                    definition={proposal.definition}
-                    values={proposal.definition.example}
-                    nameOf={nameOf}
-                    fallbackTitle={label}
-                  />
-                </div>
-              </div>
-              {proposal.rationale !== '' && (
-                <p className={css.rationale}>
-                  <span className={css.guideLabel}>{t('type.rationale')}</span>
-                  {proposal.rationale}
-                </p>
-              )}
+          {faceAndTable(proposal.definition, proposal.rationale !== '' && (
+            <p className={css.rationale}>
+              <span className={css.guideLabel}>{t('type.rationale')}</span>
+              {proposal.rationale}
+            </p>
+          ))}
+          {proposal.renames !== undefined && Object.keys(proposal.renames).length > 0 && (
+            <p className={css.meta}>
+              {t('type.renames', {
+                list: Object.entries(proposal.renames).map(([from, to]) => `${from} → ${to}`).join('，'),
+              })}
+            </p>
+          )}
+          <p className={css.meta}>
+            {cards.length > 0 ? t('type.impact', { count: String(cards.length) }) : t('type.impactNone')}
+          </p>
+          {!readonly && (
+            <div className={css.decide}>
+              <Button size="sm" variant="primary" onClick={() => { decide('adopt') }}>{t('type.adopt')}</Button>
+              <Button size="sm" onClick={() => { decide('reject') }}>{t('type.reject')}</Button>
+              <span className={css.meta}>{t('type.proposalHint')}</span>
             </div>
-            {proposal.renames !== undefined && Object.keys(proposal.renames).length > 0 && (
-              <p className={css.meta}>
-                {t('type.renames', {
-                  list: Object.entries(proposal.renames).map(([from, to]) => `${from} → ${to}`).join('，'),
-                })}
-              </p>
+          )}
+        </section>
+      )}
+
+      {definition !== undefined ? (
+        <section className={css.section}>
+          <div className={css.sectionHead}>
+            <span className={css.sectionTitle}>{t('type.currentTitle')}</span>
+            <span className={css.version}>{t('type.version', { version: String(definition.version) })}</span>
+          </div>
+          {faceAndTable(definition, definition.guide !== undefined && (
+            <p className={css.guide}><span className={css.guideLabel}>{t('type.guide')}</span>{definition.guide}</p>
+          ))}
+        </section>
+      ) : proposal === undefined && (
+        <section className={css.section}>
+          <div className={css.sectionHead}>
+            <span className={css.sectionTitle}>{t('type.currentTitle')}</span>
+          </div>
+          <p className={css.none}>{t('type.definitionNone')}</p>
+        </section>
+      )}
+
+      {/* The request box steps aside while a first design is on the table:
+          the proposal above is the whole conversation then. */}
+      {!(proposal !== undefined && definition === undefined) && (
+        <section className={css.section}>
+          <div className={css.sectionHead}>
+            <span className={css.sectionTitle}>{t('type.briefTitle')}</span>
+            <span className={detailCss.spacer} />
+            {!editing && !readonly && (
+              <button type="button" className={detailCss.iconButton} onClick={() => { setEditing(true) }}>
+                <IconEditOutlineMedium size={12} />
+                {hasBrief ? t('type.briefEdit') : t('type.briefWrite')}
+              </button>
             )}
-            {definitionBlock(proposal.definition)}
-            {!readonly && (
-              <div className={css.decide}>
-                <Button size="sm" variant="primary" onClick={() => { decide('adopt') }}>{t('type.adopt')}</Button>
-                <Button size="sm" onClick={() => { decide('reject') }}>{t('type.reject')}</Button>
+          </div>
+          <div className={css.briefBox}>
+            {editing ? (
+              <div className={css.briefEditor}>
+                <BlockEditor
+                  t={t}
+                  text={brief}
+                  drawings={briefDrawings}
+                  submitOn="mod-enter"
+                  placeholder={t('type.briefPlaceholder')}
+                  autoFocus
+                  hint={t('type.briefHint')}
+                  saveLabel={t('block.save')}
+                  markdownLabels={markdownLabels}
+                  pathImages={pathImages}
+                  notify={showToast}
+                  uploadImages={uploadImages}
+                  onPaste={onPaste}
+                  onSave={(text, drawings) => {
+                    setEditing(false)
+                    const trimmed = text.trim()
+                    if (trimmed === brief && JSON.stringify(drawings) === JSON.stringify(briefDrawings)) return
+                    if (sessionId === undefined) return
+                    void run(() => setTypeBrief(sessionId, { canvasId, kind, brief: trimmed, drawings }))
+                      .then(value => landed(value, 'type.briefSaved'))
+                  }}
+                  onCancel={() => { setEditing(false) }}
+                />
+              </div>
+            ) : hasBrief ? (
+              <div className={css.brief}>
+                <CardFlow t={t} text={brief} drawings={briefDrawings} labels={markdownLabels} pathImages={pathImages} />
+              </div>
+            ) : (
+              <p className={css.none}>{t('type.briefEmpty')}</p>
+            )}
+            {canTalk && (
+              <div className={css.ask}>
+                <span className={css.meta}>{t('type.askHint')}</span>
+                <span className={detailCss.spacer} />
+                <button type="button" className={`${detailCss.iconButton} ${css.primary}`} title={t('type.askAgentTip')} onClick={askAgent}>
+                  <IconSparkleMedium size={12} />
+                  {t(redesign ? 'type.askRedesign' : 'type.askAgent')}
+                </button>
               </div>
             )}
-          </>
-        )}
-      </section>
-
-      <section className={css.section}>
-        <div className={css.sectionHead}>
-          <span className={css.step}>3</span>
-          <span className={css.sectionTitle}>{t('type.definitionTitle')}</span>
-        </div>
-        {definition === undefined
-          ? <p className={css.none}>{t('type.definitionNone')}</p>
-          : definitionBlock(definition)}
-      </section>
+            {history.length > 0 && (
+              <div className={css.history}>
+                <span className={css.previewLabel}>{t('type.historyTitle')}</span>
+                <ol className={css.revisions}>{[...history].reverse().map(revisionRow)}</ol>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {cards.length > 0 && (
         <section className={css.section}>
@@ -352,7 +395,14 @@ export function TypeView(props: CanvasTypeViewProps): ReactNode {
                   onClick={() => { openCardDetail(canvasId, card.id, name) }}
                 >
                   {definition !== undefined && definition.layout !== 'note' ? (
-                    <TypedFace t={t} definition={definition} values={card.fields} nameOf={nameOf} fallbackTitle={name} />
+                    <TypedFace
+                      t={t}
+                      definition={definition}
+                      values={card.fields ?? {}}
+                      nameOf={nameOf}
+                      fallbackTitle={cardNameOf(card)}
+                      excerpt={typedExcerptOf(t, card)}
+                    />
                   ) : (
                     <span className={css.sampleName}>{name}</span>
                   )}

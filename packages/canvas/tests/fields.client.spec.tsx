@@ -58,6 +58,15 @@ describe('TypedFace', () => {
     const { container } = render(<TypedFace t={t} definition={PERSON} values={{}} nameOf={nameOf} fallbackTitle="无名卡" />)
     expect(container.textContent).toContain('无名卡')
   })
+
+  it('lets the body stand in while no face field is filled, and only then', () => {
+    const { container, rerender } = render(
+      <TypedFace t={t} definition={PERSON} values={{}} nameOf={nameOf} fallbackTitle="林澈" excerpt="倔，话少，心里软" />,
+    )
+    expect(container.textContent).toContain('倔，话少，心里软')
+    rerender(<TypedFace t={t} definition={PERSON} values={{ traits: ['倔'] }} nameOf={nameOf} fallbackTitle="林澈" excerpt="倔，话少，心里软" />)
+    expect(container.textContent).not.toContain('心里软')
+  })
 })
 
 describe('FieldList', () => {

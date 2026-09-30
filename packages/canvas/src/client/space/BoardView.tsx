@@ -159,6 +159,17 @@ function summaryTextOf(text: string, imageMark: string, htmlMark: string): strin
   return withHtmlBlocksMarked(withoutDrawLines(text), htmlMark).replace(IMAGE_MARKDOWN, imageMark)
 }
 
+/**
+ * What a typed face shows under its title while the card's fields are still
+ * empty: the body, minus the name the title already says. Shared with the
+ * type page's card grid, so the two draw one face.
+ */
+export function typedExcerptOf(t: TranslateNS<'canvas'>, card: BoardCard): string {
+  const words = summaryTextOf(card.text, t('card.imageMark'), t('card.htmlMark'))
+  const name = cardNameOf(card)
+  return words.startsWith(name) ? words.slice(name.length).trim() : words
+}
+
 /** A card's summary: the drawing, the derived heading, the clamped text.
  *  The word count is NOT here — it belongs to the pinned footer, which is
  *  `CardItem`'s (an html card keeps its count inside the placeholder instead). */
@@ -191,23 +202,24 @@ function CardSummary({ t, card, definition, nameOf }: {
       </>
     )
   }
-  // A profile or entry card with fields shows its face — the fields are the
-  // point of the kind; a note keeps the text, with the typed title over it.
+  // Every card of a profile or entry kind draws the one face — a card whose
+  // fields are still empty (filed before the type) lets its body stand in, so
+  // a kind never shows two looks at once.
   const values = card.fields ?? {}
-  if (definition !== undefined && definition.layout !== 'note' && Object.keys(values).length > 0) {
+  if (definition !== undefined && definition.layout !== 'note') {
     return (
       <>
         {thumb}
-        <TypedFace t={t} definition={definition} values={values} nameOf={nameOf} fallbackTitle={cardNameOf(card)} />
+        <TypedFace t={t} definition={definition} values={values} nameOf={nameOf} fallbackTitle={cardNameOf(card)} excerpt={typedExcerptOf(t, card)} />
       </>
     )
   }
   const typedTitle = typedTitleOf(definition, values)
-  // Document cards lead with their derived heading (never the raw `#` opener)
-  // and summarize the body that remains after it.
   // The thumbnail stands for the drawings, and an image pointer is not words:
   // the summary reads the text with both said plainly.
   const words = summaryTextOf(card.text, t('card.imageMark'), t('card.htmlMark'))
+  // Document cards lead with their derived heading (never the raw `#` opener)
+  // and summarize the body that remains after it.
   const heading = card.kind === 'document' ? documentHeadingOf(words) : undefined
   return (
     <>
