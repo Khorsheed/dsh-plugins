@@ -237,7 +237,8 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
     const board = new CanvasBoardService(ctx, { stateRoot: STATE })
     const tools = canvasMainSessionToolDefinitions(board)
     expect(tools.map(def => def.name)).toEqual([
-      'canvas_read_board', 'canvas_propose_card', 'canvas_comment', 'canvas_read_manuscript', 'canvas_write_manuscript',
+      'canvas_read_board', 'canvas_propose_card', 'canvas_comment', 'canvas_read_type', 'canvas_propose_type',
+      'canvas_read_manuscript', 'canvas_write_manuscript',
     ])
     for (const def of tools) {
       expect((def as unknown as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')]).toEqual({

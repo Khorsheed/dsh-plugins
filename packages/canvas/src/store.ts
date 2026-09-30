@@ -29,7 +29,9 @@ import { FsError, FsVersion } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
+import { applyRenames, MAX_TYPE_BRIEF_LENGTH, MAX_TYPE_RATIONALE_LENGTH, normalizeDefinition, normalizeFieldValues, normalizeRenames } from './card-types.ts'
 import { exportBaseNameOf, rewriteImagesForExport } from './manuscript.ts'
+import { rasterizeDrawing } from './raster.ts'
 import { canvasErrorOf } from './service.ts'
 import {
   CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, defaultCategories, documentHeadingOf,
@@ -37,11 +39,13 @@ import {
   manuscriptFileName, MANUSCRIPT_DIR_NAME, MAX_BOARD_MANUSCRIPTS, MAX_MANUSCRIPT_TEXT_LENGTH,
   MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId, normalizeManuscriptSources,
   hasDrawings, normalizeCategories, normalizeDrawings, normalizeLanes, normalizeLinks, normalizePositions,
-  reconcileCategories,
+  reconcileCategories, sanitizeCategoryLabel,
   sanitizeCanvasTitle, summarizeBoard,
   type BoardAddCommentRequest, type BoardArchiveRequest,
   type BoardAttachImageOutcome, type BoardAttachImageRequest,
-  type BoardCard, type BoardCreateRequest,
+  type BoardCard, type BoardCategory, type BoardCreateRequest, type BoardDecideTypeRequest,
+  type BoardProposeTypeRequest, type BoardProposeTypeResult, type BoardSetTypeBriefRequest,
+  type CanvasImageRef, type CanvasStroke,
   type BoardDeleteCanvasRequest, type BoardDeleteCanvasResult, type BoardDeleteCardRequest,
   type BoardFocusRequest, type BoardFocusResult,
   type BoardImageBytesOutcome, type BoardImageBytesRequest,
@@ -72,6 +76,17 @@ export function resolveCanvasStateRoot(configured: string | undefined): string {
 /** Lowercase base36 randomness for one id (time already orders the prefix). */
 function randomSuffix(): string {
   return randomBytes(8).readBigUInt64BE().toString(36).slice(0, 10).padStart(10, '0')
+}
+
+/** A category row's type half, as stored (the catalog verb carries it over untouched). */
+function typePartOf(category: BoardCategory): Partial<BoardCategory> {
+  return {
+    ...(category.brief === undefined ? {} : { brief: category.brief }),
+    ...(category.briefDrawings === undefined ? {} : { briefDrawings: category.briefDrawings }),
+    ...(category.definition === undefined ? {} : { definition: category.definition }),
+    ...(category.proposal === undefined ? {} : { proposal: category.proposal }),
+    ...(category.draft === undefined ? {} : { draft: category.draft }),
+  }
 }
 
 /** The board as one JSON document (the pad index's trailing-newline shape). */
@@ -369,7 +384,9 @@ export class CanvasBoardService {
     if (!isCardCategoryId(request.kind)) return { ok: false, error: 'invalid-name' }
     const text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
     const drawings = normalizeDrawings(request.drawings)
-    if (text.length === 0 && !hasDrawings(drawings)) return { ok: false, error: 'invalid-name' }
+    const fields = normalizeFieldValues(request.fields)
+    const hasFields = Object.keys(fields).length > 0
+    if (text.length === 0 && !hasDrawings(drawings) && !hasFields) return { ok: false, error: 'invalid-name' }
     return this.mutate(request.canvasId, session, (board, now) => {
       // The catalog is per canvas, so "is this a category" can only be asked of
       // the board the card is landing on — and a retired row refuses writes
@@ -387,6 +404,7 @@ export class CanvasBoardService {
         updatedAt: now,
         ...(request.kind === 'question' ? { question: { state: 'open' as const } } : {}),
         ...(hasDrawings(drawings) ? { drawings } : {}),
+        ...(hasFields ? { fields } : {}),
         ...(request.source === undefined ? {} : { source: request.source }),
       }
       board.cards.push(card)
@@ -408,10 +426,16 @@ export class CanvasBoardService {
   async patchCard(request: BoardPatchCardRequest, session: Session): Promise<BoardMutationResult> {
     if (request.status !== undefined && !isBoardCardStatus(request.status)) return { ok: false, error: 'invalid-name' }
     if (request.question !== undefined && !isQuestionState(request.question.state)) return { ok: false, error: 'invalid-name' }
-    if (request.text !== undefined && request.text.trim().length === 0) return { ok: false, error: 'invalid-name' }
     return this.mutate(request.canvasId, session, (board, now) => {
       const card = board.cards.find(candidate => candidate.id === request.cardId)
       if (card === undefined) return 'missing'
+      // An empty body is fine on a card that still says something through its
+      // drawings or its fields; a card left with nothing at all is refused.
+      if (request.text !== undefined && request.text.trim().length === 0) {
+        const drawings = request.drawings === undefined ? card.drawings : normalizeDrawings(request.drawings)
+        const fields = request.fields === undefined ? card.fields : normalizeFieldValues(request.fields)
+        if (!hasDrawings(drawings) && Object.keys(fields ?? {}).length === 0) return 'invalid-name'
+      }
       if (request.kind !== undefined) {
         const category = board.categories.find(candidate => candidate.id === request.kind)
         if (category === undefined || !category.enabled) return 'invalid-name'
@@ -429,6 +453,11 @@ export class CanvasBoardService {
         const drawings = normalizeDrawings(request.drawings)
         if (hasDrawings(drawings)) card.drawings = drawings
         else delete card.drawings
+      }
+      if (request.fields !== undefined) {
+        const fields = normalizeFieldValues(request.fields)
+        if (Object.keys(fields).length > 0) card.fields = fields
+        else delete card.fields
       }
       if (request.status !== undefined && request.status !== card.status) {
         if (card.status === 'proposed') {
@@ -551,7 +580,16 @@ export class CanvasBoardService {
   async setCategories(request: BoardSetCategoriesRequest, session: Session): Promise<BoardMutationResult> {
     const wanted = normalizeCategories(request.categories)
     return this.mutate(request.canvasId, session, (board, now) => {
-      board.categories = reconcileCategories(wanted, board.cards.map(card => card.kind))
+      // The catalog verb owns names, order and on/off only. A row's type half
+      // (brief, definition, proposal) has its own verbs, so it is carried over
+      // from the board as stored — a client holding an older read must never
+      // wipe a definition adopted since by sending its whole catalog back.
+      const stored = new Map(board.categories.map(category => [category.id, category]))
+      const rows = wanted.map(({ brief: _brief, briefDrawings: _drawings, definition: _definition, proposal: _proposal, draft: _draft, ...row }) => {
+        const previous = stored.get(row.id)
+        return previous === undefined ? row : { ...row, ...typePartOf(previous) }
+      })
+      board.categories = reconcileCategories(rows, board.cards.map(card => card.kind))
       const retiring = new Set(request.archiveCardIds ?? [])
       for (const card of board.cards) {
         if (!retiring.has(card.id) || card.status === 'archived') continue
@@ -609,7 +647,9 @@ export class CanvasBoardService {
   async proposeCard(request: BoardProposeCardRequest, session: Session): Promise<BoardMutationResult> {
     if (!isCardCategoryId(request.kind)) return { ok: false, error: 'invalid-name' }
     const text = request.text.trim().slice(0, MAX_CARD_TEXT_LENGTH)
-    if (text.length === 0) return { ok: false, error: 'invalid-name' }
+    const fields = normalizeFieldValues(request.fields)
+    const hasFields = Object.keys(fields).length > 0
+    if (text.length === 0 && !hasFields) return { ok: false, error: 'invalid-name' }
     const comment = request.comment?.trim().slice(0, MAX_COMMENT_TEXT_LENGTH)
     return this.mutate(request.canvasId, session, (board, now) => {
       const category = board.categories.find(candidate => candidate.id === request.kind)
@@ -624,6 +664,7 @@ export class CanvasBoardService {
         createdAt: now,
         updatedAt: now,
         ...(request.kind === 'question' ? { question: { state: 'open' as const } } : {}),
+        ...(hasFields ? { fields } : {}),
         ...(request.source === undefined ? {} : { source: request.source }),
       }
       if (comment !== undefined && comment.length > 0) {
@@ -632,6 +673,159 @@ export class CanvasBoardService {
       board.cards.push(card)
       return board
     })
+  }
+
+  /* ------------------------------------------------------------ card types (P1a) */
+
+  /**
+   * Write one type's brief (the type page's ① 参考稿): markdown and drawings,
+   * whole. An empty brief with no drawings clears it.
+   * @param request - canvas id, category id, the brief and its drawings.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async setTypeBrief(request: BoardSetTypeBriefRequest, session: Session): Promise<BoardMutationResult> {
+    const brief = typeof request.brief === 'string' ? request.brief.trim().slice(0, MAX_TYPE_BRIEF_LENGTH) : ''
+    const drawings = normalizeDrawings(request.drawings)
+    return this.mutate(request.canvasId, session, (board) => {
+      const category = board.categories.find(candidate => candidate.id === request.kind)
+      if (category === undefined) return 'missing'
+      if (brief === '') delete category.brief
+      else category.brief = brief
+      if (hasDrawings(drawings)) category.briefDrawings = drawings
+      else delete category.briefDrawings
+      return board
+    })
+  }
+
+  /**
+   * The agent's type draft (`canvas_propose_type`). It REPLACES any pending
+   * draft — one proposal waits at a time, and the conversation is the version
+   * trail. With no `kind` the agent is starting a type: an existing category
+   * of that exact name is reused (a model that forgot the id), otherwise a new
+   * one is added retired and marked `draft`, so nothing can be filed under it
+   * until the user adopts.
+   * @param request - the target (kind, or a label for a new type) and the draft.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board with the category id, or the failure code.
+   */
+  async proposeType(request: BoardProposeTypeRequest, session: Session): Promise<BoardProposeTypeResult> {
+    const definition = normalizeDefinition(request.definition)
+    if (definition === undefined) return { ok: false, error: 'invalid-name' }
+    if (request.kind !== undefined && !isCardCategoryId(request.kind)) return { ok: false, error: 'missing' }
+    const label = request.kind === undefined ? sanitizeCategoryLabel(request.label ?? '') : undefined
+    if (request.kind === undefined && label === undefined) return { ok: false, error: 'invalid-name' }
+    const rationale = typeof request.rationale === 'string' ? request.rationale.trim().slice(0, MAX_TYPE_RATIONALE_LENGTH) : ''
+    const renames = normalizeRenames(request.renames)
+    let kind: string | undefined
+    const outcome = await this.mutate(request.canvasId, session, (board, now) => {
+      let category = request.kind === undefined
+        ? board.categories.find(candidate => candidate.label === label)
+        : board.categories.find(candidate => candidate.id === request.kind)
+      if (category === undefined) {
+        if (request.kind !== undefined || label === undefined) return 'missing'
+        const created: BoardCategory = {
+          id: makeBoardId('cat', Date.now(), randomSuffix()),
+          label,
+          order: Math.max(0, ...board.categories.map(row => row.order)) + 10,
+          enabled: false,
+          draft: true,
+        }
+        board.categories.push(created)
+        category = created
+      }
+      category.proposal = {
+        definition: { ...definition, version: (category.definition?.version ?? 0) + 1 },
+        rationale,
+        ...(Object.keys(renames).length === 0 ? {} : { renames }),
+        createdAt: now,
+      }
+      kind = category.id
+      return board
+    })
+    if (!outcome.ok || kind === undefined) return outcome.ok ? { ok: false, error: 'io' } : outcome
+    return { ...outcome, kind }
+  }
+
+  /**
+   * The user's answer to a type proposal (the type page's 采用 / 不采用).
+   * Adopting moves every card's values along the draft's renames — values of
+   * fields the new definition dropped stay on the card — and enables a
+   * category the agent started. Rejecting drops the draft; an agent-started
+   * category goes with it unless cards were filed under it meanwhile.
+   * @param request - canvas id, category id, the decision.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async decideType(request: BoardDecideTypeRequest, session: Session): Promise<BoardMutationResult> {
+    if (request.decision !== 'adopt' && request.decision !== 'reject') return { ok: false, error: 'invalid-name' }
+    return this.mutate(request.canvasId, session, (board, now) => {
+      const category = board.categories.find(candidate => candidate.id === request.kind)
+      if (category === undefined || category.proposal === undefined) return 'missing'
+      const proposal = category.proposal
+      delete category.proposal
+      if (request.decision === 'reject') {
+        if (category.draft === true && !board.cards.some(card => card.kind === category.id)) {
+          board.categories = board.categories.filter(row => row !== category)
+        }
+        return board
+      }
+      category.definition = proposal.definition
+      if (category.draft === true) {
+        delete category.draft
+        category.enabled = true
+      }
+      if (proposal.renames !== undefined) {
+        for (const card of board.cards) {
+          if (card.kind !== category.id || card.fields === undefined) continue
+          card.fields = applyRenames(card.fields, proposal.renames)
+          card.updatedAt = now
+        }
+      }
+      return board
+    })
+  }
+
+  /**
+   * Paint one drawing and commit it to the attachment store, so a tool result
+   * can carry it as an image (`canvas_read_type`). Content-addressed, so the
+   * same strokes land on the same object every time.
+   * @param strokes - the drawing.
+   * @returns the image reference, or undefined when no store takes it.
+   */
+  async drawingImage(strokes: readonly CanvasStroke[]): Promise<CanvasImageRef | undefined> {
+    const png = rasterizeDrawing(strokes)
+    const stored = await this.attachImage({ data: Buffer.from(png).toString('base64'), mediaType: 'image/png', name: 'drawing.png' })
+    return stored.ok ? stored.ref : undefined
+  }
+
+  /**
+   * Whether the model route the agent is calling through declares image
+   * input — the gate the host's own image tools apply before returning one.
+   * Read structurally: the `llm` service is optional here, and an unresolved
+   * route answers no (images then reach the model as a line of text).
+   * @param agent - the calling agent (its session's routed model, else its own).
+   * @param signal - the tool call's abort signal.
+   */
+  async routeSeesImages(agent: unknown, signal?: AbortSignal): Promise<boolean> {
+    type Route = { provider?: string; model?: string }
+    const caller = agent as {
+      session?: { requestHeader?: () => { config?: Route } | undefined }
+      options?: Route
+    } | undefined
+    const routed = caller?.session?.requestHeader?.()?.config
+    const provider = routed?.provider ?? caller?.options?.provider
+    const model = routed?.model ?? caller?.options?.model
+    const llm = (this.ctx as unknown as { get: (name: string) => unknown }).get('llm') as {
+      resolveModelInfo?: (provider: string, model: string, signal?: AbortSignal) => Promise<{ inputModalities?: readonly string[] }>
+    } | undefined
+    if (provider === undefined || model === undefined || llm?.resolveModelInfo === undefined) return false
+    try {
+      const info = await llm.resolveModelInfo(provider, model, signal)
+      return info.inputModalities?.includes('image') === true
+    } catch {
+      return false
+    }
   }
 
   /**

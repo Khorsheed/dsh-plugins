@@ -22,7 +22,7 @@ import type {
   BoardAddCommentRequest, BoardArchiveRequest,
   BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardAttachImageOutcome, BoardAttachImageRequest,
-  BoardCreateRequest, BoardFocusRequest, BoardFocusResult,
+  BoardCreateRequest, BoardDecideTypeRequest, BoardFocusRequest, BoardFocusResult, BoardSetTypeBriefRequest,
   BoardImageBytesOutcome, BoardImageBytesRequest,
   BoardListResult, BoardMutationResult, BoardPatchCardRequest,
   BoardPutCardRequest, BoardReadOutcome,
@@ -214,6 +214,28 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('setCategories')
   setCategories(agent: Agent, request: BoardSetCategoriesRequest): Promise<BoardMutationResult> {
     return this.board.setCategories(request, agent.session)
+  }
+
+  /**
+   * Write one type's brief — the type page's reference draft, text and drawings.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, category id, the brief and its drawings.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('setTypeBrief')
+  setTypeBrief(agent: Agent, request: BoardSetTypeBriefRequest): Promise<BoardMutationResult> {
+    return this.board.setTypeBrief(request, agent.session)
+  }
+
+  /**
+   * Adopt or reject the agent's pending type proposal.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id, category id, the decision.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('decideType')
+  decideType(agent: Agent, request: BoardDecideTypeRequest): Promise<BoardMutationResult> {
+    return this.board.decideType(request, agent.session)
   }
 
   /**

@@ -11,6 +11,10 @@
  *
  * @module @khorsheed/dsh-canvas/types
  */
+import {
+  MAX_TYPE_BRIEF_LENGTH, normalizeDefinition, normalizeFieldValues, normalizeTypeProposal,
+  type FieldValue, type TypeDefinition, type TypeProposal,
+} from './card-types.ts'
 
 /** The pad directory created inside the workspace root (visible, Chinese). */
 export const PAD_DIR_NAME = '灵感画布'
@@ -386,6 +390,23 @@ export interface BoardCategory {
    * reversible act (the alternative was dropping a card's whole row).
    */
   enabled: boolean
+  /**
+   * The type's brief (card types, P1a): what the user wants this kind of card
+   * to hold and look like, written for the agent in the card editor — the same
+   * markdown, `draw://` lines naming {@link briefDrawings}. Constrains nothing.
+   */
+  brief?: string
+  /** The brief's drawings, by id — the same shape a card's `drawings` has. */
+  briefDrawings?: Record<string, CanvasStroke[]>
+  /** The adopted definition; absent means a plain note card, as before. */
+  definition?: TypeDefinition
+  /** The agent's pending draft (one at a time; a new draft replaces it). */
+  proposal?: TypeProposal
+  /**
+   * Set on a category the AGENT started (`canvas_propose_type` with no kind):
+   * retired until its first proposal is adopted, and deleted if rejected.
+   */
+  draft?: true
 }
 
 /** The catalog a canvas starts with: the five built-ins, unrenamed, all on. */
@@ -436,6 +457,7 @@ export function normalizeCategories(raw: unknown): BoardCategory[] {
         ? Math.floor(record['order'])
         : (slot += 1) * 10,
       enabled: record['enabled'] !== false,
+      ...categoryTypeOf(record),
     })
   }
   for (const kind of BOARD_CARD_KINDS) {
@@ -448,6 +470,25 @@ export function normalizeCategories(raw: unknown): BoardCategory[] {
   const merged = [...byId.values()]
   merged.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
   return merged
+}
+
+/**
+ * The type half of one untrusted category row (brief, definition, proposal,
+ * draft mark), each read tolerantly: a bad part drops out alone.
+ * @param record - one parsed `categories[]` entry.
+ * @returns only the parts that survived.
+ */
+export function categoryTypeOf(record: Readonly<Record<string, unknown>>): Pick<BoardCategory, 'brief' | 'briefDrawings' | 'definition' | 'proposal' | 'draft'> {
+  const part: { brief?: string; briefDrawings?: Record<string, CanvasStroke[]>; definition?: TypeDefinition; proposal?: TypeProposal; draft?: true } = {}
+  if (typeof record['brief'] === 'string' && record['brief'].trim() !== '') part.brief = record['brief'].slice(0, MAX_TYPE_BRIEF_LENGTH)
+  const drawings = normalizeDrawings(record['briefDrawings'])
+  if (hasDrawings(drawings)) part.briefDrawings = drawings
+  const definition = normalizeDefinition(record['definition'])
+  if (definition !== undefined) part.definition = definition
+  const proposal = normalizeTypeProposal(record['proposal'])
+  if (proposal !== undefined) part.proposal = proposal
+  if (record['draft'] === true) part.draft = true
+  return part
 }
 
 /**
@@ -881,6 +922,11 @@ export interface BoardCard {
    */
   drawings?: Record<string, CanvasStroke[]>
   /**
+   * The card's field values under its category's definition (card types,
+   * P1a), by field key. A value whose field the definition dropped stays.
+   */
+  fields?: Record<string, FieldValue>
+  /**
    * Where the card sits in the link view ({@link LAYOUT_BOX} units). Absent
    * until it is placed: the 卡板 flows cards by document order, so a board
    * nobody has arranged yet carries no numbers here at all. Stored as a PAIR —
@@ -1013,6 +1059,8 @@ function normalizeCard(raw: unknown, now: string): BoardCard | undefined {
   const legacy = normalizeDraw(record['draw'])
   if (legacy.length > 0 && drawings[LEGACY_DRAWING_ID] === undefined) drawings[LEGACY_DRAWING_ID] = legacy
   if (Object.keys(drawings).length > 0) card.drawings = drawings
+  const fields = normalizeFieldValues(record['fields'])
+  if (Object.keys(fields).length > 0) card.fields = fields
   const x = layoutNumber(record['x'])
   const y = layoutNumber(record['y'])
   if (x !== undefined && y !== undefined) {
@@ -1320,6 +1368,8 @@ export interface BoardPutCardRequest {
   readonly text: string
   readonly source?: BoardCardSource
   readonly drawings?: Readonly<Record<string, readonly CanvasStroke[]>>
+  /** Field values under the category's definition (tolerantly read, never refused). */
+  readonly fields?: Readonly<Record<string, FieldValue>>
 }
 
 /**
@@ -1337,6 +1387,8 @@ export interface BoardPatchCardRequest {
   readonly status?: BoardCardStatus
   readonly question?: { state: QuestionState }
   readonly drawings?: Readonly<Record<string, readonly CanvasStroke[]>>
+  /** The card's field values, WHOLE (`{}` clears them, absent leaves them alone). */
+  readonly fields?: Readonly<Record<string, FieldValue>>
 }
 
 /** Comment on one card. */
@@ -1557,7 +1609,48 @@ export interface BoardProposeCardRequest {
   readonly source?: BoardCardSource
   /** The proposal's rationale, hung on the card as an agent comment. */
   readonly comment?: string
+  /** Field values, already checked against the definition by the tool. */
+  readonly fields?: Readonly<Record<string, FieldValue>>
 }
+
+/* ------------------------------------------------------------- card types (P1a) */
+
+/**
+ * Write one type's brief: the markdown and its drawings, whole (the editor
+ * owns both, like a card's text and drawings). An empty brief clears it.
+ */
+export interface BoardSetTypeBriefRequest {
+  readonly canvasId: string
+  readonly kind: CardCategoryId
+  readonly brief: string
+  readonly drawings?: Readonly<Record<string, readonly CanvasStroke[]>>
+}
+
+/**
+ * The user's answer to a type proposal. Adopt makes the definition live (and
+ * enables an agent-started category); reject drops the draft — and the whole
+ * category when the agent started it and no card is filed under it.
+ */
+export interface BoardDecideTypeRequest {
+  readonly canvasId: string
+  readonly kind: CardCategoryId
+  readonly decision: 'adopt' | 'reject'
+}
+
+/** The agent's type draft (`canvas_propose_type`). No `kind` starts a new, pending category named `label`. */
+export interface BoardProposeTypeRequest {
+  readonly canvasId: string
+  readonly kind?: CardCategoryId
+  readonly label?: string
+  readonly definition: unknown
+  readonly rationale: string
+  readonly renames?: unknown
+}
+
+/** A type proposal lands with the category id it was filed under. */
+export type BoardProposeTypeResult =
+  | ({ readonly ok: true; readonly kind: CardCategoryId } & BoardReadResult)
+  | { readonly ok: false; readonly error: CanvasError }
 
 /* --------------------------------------------------------------- focus */
 

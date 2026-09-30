@@ -1,8 +1,10 @@
 /**
  * The canvas's main-session tools, registered by the `./agent` composition
  * entry: the board read (`canvas_read_board`), the card pair
- * (`canvas_propose_card` / `canvas_comment`) and the manuscript pair (`canvas_read_manuscript` / `canvas_write_manuscript`). They
- * act on the canvas the session's right-Sidebar tab has open.
+ * (`canvas_propose_card` / `canvas_comment`), the type pair
+ * (`canvas_read_type` / `canvas_propose_type`) and the manuscript pair
+ * (`canvas_read_manuscript` / `canvas_write_manuscript`). They act on the
+ * canvas the session's right-Sidebar tab has open.
  *
  * Both definitions are origin-tagged the way the community convention
  * documents: the tag is the `Symbol.for('dsh.tool.origin')`-keyed property
@@ -16,10 +18,16 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { CanvasBoardService } from './store.ts'
+import { cardBlocksOf } from './blocks.ts'
 import { cardTitleOf } from './card-format.ts'
 import {
+  checkFieldValues, fieldSignature, fieldValueText, renderDefinition, typedTitleOf,
+  type FieldValue, type RefResolver, type TypeDefinition,
+} from './card-types.ts'
+import { imageRefOf } from './image-token.ts'
+import {
   isBoardCardKind,
-  type BoardCard, type BoardCardSource, type BoardCategory, type CanvasBoard, type CardCategoryId,
+  type BoardCard, type BoardCardSource, type BoardCategory, type CanvasBoard, type CanvasImageRef, type CardCategoryId,
 } from './types.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
@@ -63,6 +71,35 @@ function enabledKinds(board: CanvasBoard): string {
     .join('、')
 }
 
+/** A card's name as the model reads it: its typed title field, else its body's first line. */
+function cardNameOf(card: BoardCard, definition: TypeDefinition | undefined): string {
+  return typedTitleOf(definition, card.fields) || cardTitleOf(card.text)
+}
+
+/**
+ * The reference resolver `canvas_propose_card` checks `ref` fields with: a
+ * card id on the board, else a card whose name matches exactly — within the
+ * field's `refKind` when it names one. Archived cards never match by name.
+ */
+function refResolverOf(board: CanvasBoard): RefResolver {
+  const definitions = new Map(board.categories.map(category => [category.id, category.definition]))
+  return (entry, refKind) => {
+    const byId = board.cards.find(card => card.id === entry)
+    if (byId !== undefined) return byId.id
+    const named = board.cards.filter(card =>
+      card.status !== 'archived'
+      && (refKind === undefined || card.kind === refKind)
+      && cardNameOf(card, definitions.get(card.kind)) === entry)
+    return named.length === 1 ? named[0]!.id : undefined
+  }
+}
+
+/** Most sample cards one `canvas_read_type` answer shows. */
+const MAX_TYPE_SAMPLES = 3
+
+/** Most images one `canvas_read_type` answer carries. */
+const MAX_TYPE_IMAGES = 8
+
 /** What each card status reads as to the model. */
 const STATUS_NAMES: Readonly<Record<string, string>> = { proposed: '待确认', kept: '已收下', archived: '已归档' }
 
@@ -75,10 +112,15 @@ function renderBoard(board: CanvasBoard, options: { kind?: string; includeArchiv
   const lines = [`画布：${board.title}（${board.id}）`, '分类（落卡时 kind 填 id）：']
   for (const category of board.categories) {
     const count = board.cards.filter(card => card.kind === category.id && card.status !== 'archived').length
-    const retired = category.enabled ? '' : '　已停用（不能再落新卡）'
+    const retired = category.draft === true ? '　草拟中（等用户采用）' : category.enabled ? '' : '　已停用（不能再落新卡）'
     lines.push(`- ${category.id}　${categoryNameOf(category)}　${count} 张${retired}`)
+    if (category.definition !== undefined) {
+      lines.push(`  字段（落卡时 fields 按这些 key 填）：${category.definition.fields.map(fieldSignature).join('；')}`)
+    }
+    if (category.proposal !== undefined) lines.push('  有一版类型提议等用户确认（canvas_read_type 查看）')
   }
   const names = new Map(board.categories.map(category => [category.id, categoryNameOf(category)]))
+  const definitions = new Map(board.categories.map(category => [category.id, category.definition]))
   const cards = board.cards.filter(card =>
     (options.includeArchived || card.status !== 'archived')
     && (options.kind === undefined || card.kind === options.kind))
@@ -87,7 +129,7 @@ function renderBoard(board: CanvasBoard, options: { kind?: string; includeArchiv
     : board.cards.filter(card => card.status === 'archived' && (options.kind === undefined || card.kind === options.kind)).length
   lines.push(`卡片（${cards.length} 张${archived > 0 ? `，另有 ${archived} 张已归档未列出` : ''}）：`)
   for (const card of cards.slice(0, MAX_BOARD_READ_CARDS)) {
-    const title = cardTitleOf(card.text) || '（无文字）'
+    const title = cardNameOf(card, definitions.get(card.kind)) || '（无文字）'
     lines.push(`- ${card.id}　[${names.get(card.kind) ?? card.kind}]　${STATUS_NAMES[card.status] ?? card.status}　${title}`)
   }
   if (cards.length > MAX_BOARD_READ_CARDS) lines.push(`……还有 ${cards.length - MAX_BOARD_READ_CARDS} 张未列出（用 kind 缩小范围）。`)
@@ -152,6 +194,8 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       + 'reference（来源，务必带 source 出处）、document（文档）——这是内置的五个。'
       + '画布常有用户改过名或自建的分类（id 形如 cat_…，比如「人物」「世界观」）：'
       + '用户说的分类名不是上面五个之一时，先用 canvas_read_board 读出它的 id 再落卡，别把它塞进 fragment。'
+      + '分类有字段定义时（canvas_read_board 会列出字段），用 fields 按 key 填结构化内容，text 写正文；'
+      + 'ref 类字段填卡片 id 或那张卡的准确名字。字段不合定义时会逐条告诉你哪里不对。'
       + 'comment 写一句提议理由，会作为你的评论挂在卡上。'
       + '作用于右栏「画布详情」tab 当前打开的画布；没打开任何画布时会告诉你，不要自己猜一块。',
     parameters: {
@@ -165,7 +209,12 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         required: true,
         description: '分类 id：内置五个之一，或 canvas_read_board 读到的自建分类 id（cat_…）。',
       },
-      text: { type: 'string', required: true, description: '卡片正文（保持小而具体）。' },
+      text: { type: 'string', description: '卡片正文（保持小而具体）；有 fields 时可省略。' },
+      fields: {
+        type: 'object',
+        additionalProperties: true,
+        description: '结构化字段（key → 值），只用于有字段定义的分类；key 与类型见 canvas_read_board。',
+      },
       source: {
         type: 'object',
         properties: {
@@ -182,17 +231,35 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
-    execute: async (args: { kind: string; text: string; source?: BoardCardSource; comment?: string }, exec: { agent?: Agent }): Promise<string> => {
+    execute: async (
+      args: { kind: string; text?: string; fields?: Record<string, unknown>; source?: BoardCardSource; comment?: string },
+      exec: { agent?: Agent },
+    ): Promise<string> => {
       const resolved = target(exec)
       if ('message' in resolved) return resolved.message
+      const text = args.text ?? ''
+      let fields: Record<string, FieldValue> | undefined
+      if (args.fields !== undefined && Object.keys(args.fields).length > 0) {
+        const read = await board.readBoard({ canvasId: resolved.canvasId })
+        if (!read.ok) return renderOutcome({ ok: false, error: read.error })
+        const category = read.board.categories.find(candidate => candidate.id === args.kind)
+        if (category?.definition === undefined) {
+          return `失败：分类「${category === undefined ? args.kind : categoryNameOf(category)}」没有字段定义，不能填 fields——把内容写进 text。`
+        }
+        const check = checkFieldValues(category.definition, args.fields, refResolverOf(read.board))
+        if (!check.ok) return `失败：字段不合「${categoryNameOf(category)}」的定义——\n${check.problems.map(problem => `- ${problem}`).join('\n')}`
+        fields = check.values
+      }
+      if (text.trim().length === 0 && fields === undefined) return '失败：text 和 fields 至少要有一样。'
       const outcome = await board.proposeCard({
         canvasId: resolved.canvasId,
         kind: args.kind as CardCategoryId,
-        text: args.text,
+        text,
+        ...(fields === undefined ? {} : { fields }),
         ...(args.source === undefined ? {} : { source: args.source }),
         ...(args.comment === undefined ? {} : { comment: args.comment }),
       }, resolved.session)
-      if (!outcome.ok && outcome.error === 'invalid-name' && args.text.trim().length > 0) {
+      if (!outcome.ok && outcome.error === 'invalid-name') {
         const read = await board.readBoard({ canvasId: resolved.canvasId })
         if (read.ok) {
           const category = read.board.categories.find(candidate => candidate.id === args.kind)
@@ -231,6 +298,151 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         canvasId: resolved.canvasId, cardId: args.cardId, text: args.text, author: 'agent',
       }, resolved.session)
       return renderOutcome({ ok: outcome.ok, ...(outcome.ok ? {} : { error: outcome.error }) })
+    },
+  })
+
+  const readType = defineTool({
+    name: 'canvas_read_type',
+    description:
+      '读当前打开画布上一个分类的「类型」：用户写的参考稿（文字，以及手绘草图和贴图——模型能看图时随结果附上）、'
+      + '已采用的字段定义、等用户确认的提议，和这个分类下的几张样例卡。'
+      + '用户让你设计、调整某类卡片（比如「人物卡要有哪些字段」）时，先读它，再用 canvas_propose_type 交一版定义。',
+    parameters: {
+      kind: { type: 'string', required: true, description: '分类 id（canvas_read_board 读到的）。' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          text: { type: 'string', required: true },
+          images: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                attachmentId: { type: 'string', required: true },
+                mediaType: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'], required: true },
+                bytes: { type: 'integer', required: true },
+                width: { type: 'integer', required: true },
+                height: { type: 'integer', required: true },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [
+        { type: 'text', text: value.text },
+        // The id is the attachment store's own (branded host-side); the canvas
+        // takes no dependency on the attachments package just to re-brand it.
+        ...value.images.map(image => ({ type: 'image' as const, attachment: { ...image, attachmentId: image.attachmentId as never } })),
+      ],
+    },
+    isConcurrencySafe: () => true,
+    execute: async (
+      args: { kind: string },
+      exec: { agent?: Agent; signal?: AbortSignal },
+    ): Promise<{ text: string; images: CanvasImageRef[] }> => {
+      const resolved = target(exec)
+      if ('message' in resolved) return { text: resolved.message, images: [] }
+      const read = await board.readBoard({ canvasId: resolved.canvasId })
+      if (!read.ok) return { text: renderOutcome({ ok: false, error: read.error }), images: [] }
+      const category = read.board.categories.find(candidate => candidate.id === args.kind)
+      if (category === undefined) {
+        return { text: `失败：这块画布没有 id 为「${args.kind}」的分类。可用的：${read.board.categories.map(row => `${row.id}（${categoryNameOf(row)}）`).join('、')}。`, images: [] }
+      }
+      const seesImages = await board.routeSeesImages(exec.agent, exec.signal)
+      const images: CanvasImageRef[] = []
+      const brief: string[] = []
+      for (const block of cardBlocksOf(category.brief ?? '', category.briefDrawings, { images: true })) {
+        if (block.kind === 'text') { brief.push(block.text); continue }
+        const label = block.kind === 'draw' ? '手绘' : '贴图'
+        if (!seesImages) { brief.push(`[${label}：当前模型不支持看图]`); continue }
+        if (images.length >= MAX_TYPE_IMAGES) { brief.push(`[${label}：图太多，未附上]`); continue }
+        const strokes = block.kind === 'draw' ? category.briefDrawings?.[block.id] : undefined
+        const ref = block.kind === 'image' ? imageRefOf(block.src) : strokes === undefined ? undefined : await board.drawingImage(strokes)
+        if (ref === undefined) { brief.push(`[${label}：读不出来]`); continue }
+        images.push(ref)
+        brief.push(`[${label} ${images.length}：见附图 ${images.length}]`)
+      }
+      const lines = [`分类：${category.id}（${categoryNameOf(category)}）${category.draft === true ? '　草拟中，等用户采用' : ''}`, '', '参考稿：']
+      lines.push(brief.length === 0 ? '（用户还没写参考稿）' : brief.join('\n\n'))
+      lines.push('', '已采用的定义：', category.definition === undefined ? '（还没有——这个分类的卡只有正文）' : renderDefinition(category.definition))
+      if (category.proposal !== undefined) {
+        lines.push('', `等用户确认的提议（v${category.proposal.definition.version}）：`, renderDefinition(category.proposal.definition))
+        if (category.proposal.rationale !== '') lines.push(`理由：${category.proposal.rationale}`)
+      }
+      const samples = read.board.cards.filter(card => card.kind === category.id && card.status !== 'archived').slice(0, MAX_TYPE_SAMPLES)
+      lines.push('', `样例卡（${samples.length} 张）：`)
+      const definitions = new Map(read.board.categories.map(row => [row.id, row.definition]))
+      const nameOf = (id: string): string => {
+        const card = read.board.cards.find(candidate => candidate.id === id)
+        return card === undefined ? id : cardNameOf(card, definitions.get(card.kind)) || id
+      }
+      for (const card of samples) {
+        lines.push(`- ${card.id}　${cardNameOf(card, category.definition) || '（无文字）'}`)
+        for (const [key, value] of Object.entries(card.fields ?? {})) lines.push(`    ${key}: ${fieldValueText(value, nameOf)}`)
+      }
+      return { text: lines.join('\n'), images }
+    },
+  })
+
+  const proposeType = defineTool({
+    name: 'canvas_propose_type',
+    description:
+      '给当前打开画布上的一个分类交一版「类型定义」：它有哪些字段、卡面用什么版式。'
+      + '它不会直接生效——会出现在分类的类型页上，用户看过预览点「采用」才算数；再交一版会替换还没确认的那版。'
+      + '先用 canvas_read_type 读用户的参考稿和现有卡片。改已有分类给 kind；新建一类给 label（不给 kind）。'
+      + 'definition.fields 每项：key（小写字母开头，a-z0-9_）、label（显示名）、type（line 单行 / text 多行 / select 单选须给 options / '
+      + 'tags 标签 / ref 引用别的卡，可给 refKind 限定分类 / number）、hint（这个字段写什么，一句话，必填）、'
+      + 'required、face（显示在卡面上，最多 3 个）。第一个必填的 line 字段就是卡片名。'
+      + 'definition.layout：note（便签，默认）/ profile（档案：名字 + 卡面字段）/ entry（词条：名字 + 一行摘要）。'
+      + 'definition.example 给一张示例卡的字段值，用户在预览里看到的就是它。'
+      + '改名已有字段时用 renames（旧 key → 新 key），采用后已有卡片的值会跟着搬过去。rationale 用一两句说清这版为什么这样设计。',
+    parameters: {
+      kind: { type: 'string', description: '要改的分类 id；新建一类时省略，改给 label。' },
+      label: { type: 'string', description: '新建分类的名称（如「人物」）；给了 kind 时忽略。' },
+      definition: {
+        type: 'object',
+        required: true,
+        additionalProperties: true,
+        description: '类型定义：{ fields: [...], layout, guide?, example }。',
+      },
+      rationale: { type: 'string', required: true, description: '这版设计的理由（一两句）。' },
+      renames: { type: 'object', additionalProperties: true, description: '字段改名：旧 key → 新 key。' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (
+      args: { kind?: string; label?: string; definition: unknown; rationale: string; renames?: unknown },
+      exec: { agent?: Agent },
+    ): Promise<string> => {
+      const resolved = target(exec)
+      if ('message' in resolved) return resolved.message
+      const outcome = await board.proposeType({
+        canvasId: resolved.canvasId,
+        ...(args.kind === undefined ? {} : { kind: args.kind as CardCategoryId }),
+        ...(args.label === undefined ? {} : { label: args.label }),
+        definition: args.definition,
+        rationale: args.rationale,
+        ...(args.renames === undefined ? {} : { renames: args.renames }),
+      }, resolved.session)
+      if (outcome.ok) {
+        const category = outcome.board.categories.find(row => row.id === outcome.kind)
+        const fields = category?.proposal?.definition.fields.length ?? 0
+        return `完成：${outcome.kind}（${category === undefined ? '' : categoryNameOf(category)}）的类型提议已放到类型页，${fields} 个字段，等用户采用。`
+      }
+      if (outcome.error === 'invalid-name') {
+        return args.kind === undefined && (args.label ?? '').trim() === ''
+          ? '失败：新建一类要给 label；改已有分类要给 kind。'
+          : '失败：definition 里没有一个合格的字段——每个字段要有合法的 key（小写字母开头）、label、type 和 hint。'
+      }
+      if (outcome.error === 'missing') return `失败：这块画布没有 id 为「${args.kind ?? ''}」的分类。先用 canvas_read_board 读出 id。`
+      return renderOutcome({ ok: false, error: outcome.error })
     },
   })
 
@@ -323,7 +535,11 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     },
   })
 
-  return [tagOrigin(readBoard), tagOrigin(propose), tagOrigin(comment), tagOrigin(readManuscript), tagOrigin(writeManuscript)]
+  return [
+    tagOrigin(readBoard), tagOrigin(propose), tagOrigin(comment),
+    tagOrigin(readType), tagOrigin(proposeType),
+    tagOrigin(readManuscript), tagOrigin(writeManuscript),
+  ]
 }
 
 /** A manuscript's source ids as `id（标题）` handles, so the model sees what each one was. */
