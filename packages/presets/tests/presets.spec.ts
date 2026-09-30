@@ -103,13 +103,14 @@ describe('cordis.patch.yml', () => {
     expect(block).toMatch(/ {14}- id: tool-ralph\n {16}name: '@deepseek-ai\/dsh-tool-ralph'\n {16}config:/)
     expect(block).toContain('          - id: canvas-agent\n')
     expect(block).toContain("            name: '@khorsheed/dsh-canvas/agent'\n")
-    // 2026-09-29 writing-scene tuning: goal mode is a coding workflow and stays
-    // out; the persona is the writer identity with the punctuation rule, in
-    // single-language English (the host prompt's own voice).
+    // 2026-09-29/30 writing-scene tuning: goal mode is a coding workflow and
+    // stays out; the persona is the writer identity carrying the full bilingual
+    // style contract, in single-language English (the host prompt's own voice).
     expect(block).not.toContain('command-goal')
     expect(block).not.toContain('tool-goal')
     expect(block).toContain('You are a writer')
-    expect(block).toContain('Punctuation follows the output language')
+    expect(block).toContain('A Chinese sentence never takes a half-width comma or period')
+    expect(block).toContain('canvas_propose_card')
     expect(block).not.toContain('coding agent powered by')
   })
 

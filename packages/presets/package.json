@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-presets",
   "description": "The three community agent presets (dev / dsh-eval / dsh-writing) as declarative `@deepseek-ai/dsh-agent-preset` bundle rows — the 0.1.5 directory presets migrated to the host 0.1.7-rc.1 preset mechanism. Data only: no runtime code, no client half.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publishConfig": {
     "access": "public"
   },

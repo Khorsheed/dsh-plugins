@@ -18,6 +18,8 @@ Retune the writing preset's prompt (2026-09-29), in `packages/presets/cordis.pat
 - **Canvas guidance slimmed to one English pointer sentence** (`packages/canvas/src/agent.ts`) — every behavioral rule (ghost-card flow, never paste card text as a substitute, comment style, manuscript `baseVersion`, no-canvas fallback) already lives in the tool descriptions; the system-prompt section now only says the `canvas_*` tools act on the canvas currently open in the right-sidebar tab. The canvas's tool descriptions stay Chinese (the package's writing-domain voice) — sections and catalogs are separate layers.
 - **Preset description fixed** — it previously read as the coding agent's ("功能完整的编码 Agent…").
 
+**2026-09-30 revision**: the persona grew from the three-paragraph identity into the full bilingual writing contract — task-mode routing (writing / analysis / editing, so analysis questions stop becoming fiction), banned jargon and filler lists in both languages, sentence-rhythm rules, concreteness (every abstract statement takes an example), voice rules (no self-evaluation, no judging the user's wording), open-question handling (two or three directions with uncertainty stated), a pre-output self-check, and paired good/bad examples. The canvas workflow contracts (propose-via-tool, comment style, manuscript `baseVersion` flow) returned to the persona as three bullets: they must hold BEFORE the first tool call, which a tool description cannot guarantee; the one-line mechanics pointer stays with the `canvas-agent` row and is not repeated. The model name stays templated (`{{model}}`). Shipped as presets 0.2.1.
+
 ## Alternatives considered
 
 **Single-language Chinese sections.** Implemented first, then revised the same day: the host's official sections and the tool catalogs are English no matter what, so Chinese sections only move the seam — English is the one language the prompt can be uniform in. Chinese also tempted the identity into "Chinese writer", which wrongly narrows the scene.
@@ -30,7 +32,7 @@ Retune the writing preset's prompt (2026-09-29), in `packages/presets/cordis.pat
 
 ## Consequences
 
-Writing-mode sessions get a writer identity, style constraints, and a punctuation rule that covers Chinese and English output; goal UI/tools disappear from the preset; the canvas section costs one sentence instead of six. The `presets.spec.ts` composition pins and canvas's `agent.spec.ts` guidance pins were updated to the new contract (no goal rows, English writer-persona markers, pointer-only section). The canvas package's own profile-root `./agent` row inherits the same slimmer section — acceptable because its tool descriptions carry the rules.
+Writing-mode sessions get a writer identity, style constraints, and a punctuation rule that covers Chinese and English output; goal UI/tools disappear from the preset; the canvas guidance is the package's one-line mechanics pointer plus (since 0.2.1) the persona's three workflow contracts. The `presets.spec.ts` composition pins and canvas's `agent.spec.ts` guidance pins were updated to the new contract (no goal rows, English writer-persona markers, pointer-only package section). The canvas package's own profile-root `./agent` row inherits the same slimmer section — acceptable because its tool descriptions carry the rules.
 
 ## Testing
 
