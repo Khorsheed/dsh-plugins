@@ -110,7 +110,9 @@ describe('cordis.patch.yml', () => {
     expect(block).not.toContain('tool-goal')
     expect(block).toContain('You are a writer')
     expect(block).toContain('A Chinese sentence never takes a half-width comma or period')
-    expect(block).toContain('canvas_propose_card')
+    expect(block).toContain('canvas_write')
+    expect(block).toContain('Load the canvas skill')
+    expect(block).not.toContain('canvas_propose_card')
     expect(block).not.toContain('coding agent powered by')
   })
 

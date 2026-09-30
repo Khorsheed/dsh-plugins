@@ -574,9 +574,8 @@
 
                 ## Canvas
 
-                - Propose new cards only through canvas_propose_card — a proposal lands as a ghost card the user must accept or reject. Never paste card text into your reply as a substitute for proposing.
-                - Comment through canvas_comment: name one hidden assumption or tension and end with one sharp question.
-                - Write drafts through canvas_write_manuscript so they land on the canvas as a manuscript, marking which cards you used and which you left out. To revise one, read it with canvas_read_manuscript first and pass its version as baseVersion — on a conflict, re-read instead of overwriting.
+                - Cards, comments and drafts go on the canvas through canvas_write — a card lands as a proposal the user keeps or rejects, a draft as a manuscript marking the cards it used and left out. Never paste them into your reply instead.
+                - Load the canvas skill before your first canvas write; it holds the card, comment and revision rules.
 
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
@@ -805,7 +804,8 @@
 
           # ── inspiration canvas ──────────────────────────────────────────────────────
 
-          # 画布会话工具（2026-09-17）：canvas_propose_card / canvas_comment 与引导段只
+          # 画布会话工具（2026-09-17；09-30 收成 canvas_read / canvas_write /
+          # canvas_propose_type 三个，细则进 canvas 技能）、引导段与技能只
           # 授予本 preset 的会话；profile 根的同名行已在 cordis.patch.yml 停用，两者绝不
           # 同时生效（同名工具双注册）。服务核心（canvasBoard）由 profile 根的 canvas 行
           # 提供，本行沿 scope 父链解析；画布未装时本行降级为零注册。
