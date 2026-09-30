@@ -48,7 +48,8 @@ function renderOutcome(outcome: { ok: boolean; error?: string | undefined; cardI
 /**
  * The built-in categories' names as the model reads them. A built-in's stored
  * label is '' (the client localizes it), so the host names it here, in the
- * tool descriptions' language.
+ * language the tool answers speak (the descriptions are English, like every
+ * other plugin's; the answers stay Chinese, and the propose-type row parses them).
  */
 const BUILTIN_KIND_NAMES: Readonly<Record<string, string>> = {
   fragment: '灵感', question: '问题', grounding: '共识', reference: '来源', document: '文档',
@@ -160,14 +161,13 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   const readBoard = defineTool({
     name: 'canvas_read_board',
     description:
-      '读当前打开的画布：它的分类目录（每个分类的 id、名称、卡数、是否停用）和卡片清单（id、分类、状态、标题）。'
-      + '分类是每块画布自己的——用户可能改过名、自建了「人物」「世界观」这类分类，所以落卡前、'
-      + '或用户提到某个分类名时，先读一次拿到它的 id。'
-      + '可用 kind 只看一个分类；归档卡默认只计数不列出。要看某张卡全文时，卡片标题不够就请用户引用它。'
-      + '作用于右栏「画布详情」tab 当前打开的画布；没打开任何画布时会告诉你，不要自己猜一块。',
+      'Read the open canvas: its category catalog (each category\'s id, name, card count, retired or not) and its card list (id, category, status, title). '
+      + 'Categories belong to each canvas — the user may have renamed them or made their own ("Character", "World"), so read once before filing a card or whenever the user names a category, to get its id. '
+      + 'kind narrows the list to one category; archived cards are counted, not listed, by default. When a title is not enough to go on, ask the user to quote the card. '
+      + 'Acts on the canvas open in the right sidebar\'s Canvas tab; with none open it says so — never guess one.',
     parameters: {
-      kind: { type: 'string', description: '只列这个分类 id 下的卡；省略则列全部。' },
-      includeArchived: { type: 'boolean', description: '是否连已归档的卡一起列出；默认否。' },
+      kind: { type: 'string', description: 'List only this category id\'s cards; omit for all.' },
+      includeArchived: { type: 'boolean', description: 'Also list archived cards; default false.' },
     },
     output: {
       schema: { type: 'string' },
@@ -188,16 +188,13 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   const propose = defineTool({
     name: 'canvas_propose_card',
     description:
-      '提议一张新卡落到当前打开的画布上：它以 proposed（待确认）状态出现在板上，用户 ✓ 收下才转为正式卡、✗ 归档。'
-      + '找来源、提问题、归纳共识、给反例或例子都走这里——绝不在回复正文里贴卡片全文冒充落卡。'
-      + 'kind 取值：fragment（灵感）、question（问题）、grounding（共识，只能提议，用户复述确认才算数）、'
-      + 'reference（来源，务必带 source 出处）、document（文档）——这是内置的五个。'
-      + '画布常有用户改过名或自建的分类（id 形如 cat_…，比如「人物」「世界观」）：'
-      + '用户说的分类名不是上面五个之一时，先用 canvas_read_board 读出它的 id 再落卡，别把它塞进 fragment。'
-      + '分类有字段定义时（canvas_read_board 会列出字段），用 fields 按 key 填结构化内容，text 写正文；'
-      + 'ref 类字段填卡片 id 或那张卡的准确名字。字段不合定义时会逐条告诉你哪里不对。'
-      + 'comment 写一句提议理由，会作为你的评论挂在卡上。'
-      + '作用于右栏「画布详情」tab 当前打开的画布；没打开任何画布时会告诉你，不要自己猜一块。',
+      'Propose a new card on the open canvas: it lands as proposed, and only the user\'s ✓ keeps it (✗ archives it). '
+      + 'Sources, questions, shared understandings, counter-examples and examples all go here — never paste a card\'s text into the reply as if it were on the board. '
+      + 'Built-in kinds: fragment, question, grounding (proposal only; it counts once the user restates it), reference (always with source), document. '
+      + 'Canvases often carry renamed or user-made categories (ids like cat_…): when the user names a category that is not one of the five, read its id with canvas_read_board first instead of filing it under fragment. '
+      + 'For a category with a field definition (canvas_read_board lists it), put structured values in fields by key and the prose in text; a ref field takes card ids or a card\'s exact name. A value that breaks the definition is reported field by field. '
+      + 'comment is one line on why, attached to the card as your comment. '
+      + 'Acts on the canvas open in the right sidebar\'s Canvas tab; with none open it says so — never guess one.',
     parameters: {
       kind: {
         type: 'string',
@@ -207,25 +204,25 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         // just read off the board. The store checks the id against the focused
         // board, and a miss answers with that board's valid ids.
         required: true,
-        description: '分类 id：内置五个之一，或 canvas_read_board 读到的自建分类 id（cat_…）。',
+        description: 'Category id: one of the five built-ins, or a user-made id (cat_…) read with canvas_read_board.',
       },
-      text: { type: 'string', description: '卡片正文（保持小而具体）；有 fields 时可省略。' },
+      text: { type: 'string', description: 'Card text (small and concrete); may be omitted when fields are given.' },
       fields: {
         type: 'object',
         additionalProperties: true,
-        description: '结构化字段（key → 值），只用于有字段定义的分类；key 与类型见 canvas_read_board。',
+        description: 'Structured values (key → value), only for a category with a field definition; keys and types are in canvas_read_board.',
       },
       source: {
         type: 'object',
         properties: {
-          type: { type: 'string', enum: ['url', 'file', 'paste'], required: true, description: '出处类型。' },
-          ref: { type: 'string', required: true, description: '出处引用（url、绝对路径或粘贴说明）。' },
-          title: { type: 'string', description: '出处标题（页面标题、文件名）。' },
+          type: { type: 'string', enum: ['url', 'file', 'paste'], required: true, description: 'Source type.' },
+          ref: { type: 'string', required: true, description: 'Source reference (url, absolute path, or a note on the paste).' },
+          title: { type: 'string', description: 'Source title (page title, file name).' },
         },
         additionalProperties: false,
-        description: '来源卡的出处；reference 卡必填。',
+        description: 'Where the card comes from; required for reference cards.',
       },
-      comment: { type: 'string', description: '提议理由（作为你的评论挂在卡上）。' },
+      comment: { type: 'string', description: 'Why you propose it (attached to the card as your comment).' },
     },
     output: {
       schema: { type: 'string' },
@@ -279,13 +276,13 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   const comment = defineTool({
     name: 'canvas_comment',
     description:
-      '给当前打开画布上的一张卡挂一条你的评论：指出一个隐含假设或张力，并以一个尖锐问题收尾。'
-      + '评论挂在卡上（板上与详情里都可见）；对问题卡评论会把它从「待探索」推进到「探索中」。'
-      + 'cardId 来自板上卡片或 canvas_propose_card 的返回。'
-      + '作用于右栏「画布详情」tab 当前打开的画布；没打开任何画布时会告诉你，不要自己猜一块。',
+      'Attach your comment to one card on the open canvas: name a hidden assumption or tension and end on one pointed question. '
+      + 'It shows on the board and in the card page; commenting on a question card moves it from open to exploring. '
+      + 'cardId comes from the board or from canvas_propose_card\'s answer. '
+      + 'Acts on the canvas open in the right sidebar\'s Canvas tab; with none open it says so — never guess one.',
     parameters: {
-      cardId: { type: 'string', required: true, description: '目标卡的 id。' },
-      text: { type: 'string', required: true, description: '评论正文（指出假设/张力 + 追问收尾）。' },
+      cardId: { type: 'string', required: true, description: 'The card\'s id.' },
+      text: { type: 'string', required: true, description: 'Comment text (an assumption or tension, ending on a question).' },
     },
     output: {
       schema: { type: 'string' },
@@ -304,11 +301,10 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   const readType = defineTool({
     name: 'canvas_read_type',
     description:
-      '读当前打开画布上一个分类的「类型」：用户写的参考稿（文字，以及手绘草图和贴图——模型能看图时随结果附上）、'
-      + '已采用的字段定义、等用户确认的提议，和这个分类下的几张样例卡。'
-      + '用户让你设计、调整某类卡片（比如「人物卡要有哪些字段」）时，先读它，再用 canvas_propose_type 交一版定义。',
+      'Read one category\'s type on the open canvas: the user\'s brief (words, plus sketches and pasted images — attached when the model can see images), the adopted field definition, any proposal awaiting the user, and a few sample cards. '
+      + 'When the user asks you to design or adjust a kind of card ("what fields should a character card have"), read this first, then submit a definition with canvas_propose_type.',
     parameters: {
-      kind: { type: 'string', required: true, description: '分类 id（canvas_read_board 读到的）。' },
+      kind: { type: 'string', required: true, description: 'Category id (from canvas_read_board).' },
     },
     output: {
       schema: {
@@ -396,30 +392,28 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   const proposeType = defineTool({
     name: 'canvas_propose_type',
     description:
-      '给当前打开画布上的一个分类交一版「类型定义」：它有哪些字段、卡面用什么版式。'
-      + '它不会直接生效——会出现在分类的类型页上，用户看过预览点「采用」才算数；再交一版会替换还没确认的那版。'
-      + '先用 canvas_read_type 读用户的参考稿和现有卡片。改已有分类给 kind；新建一类给 label（不给 kind）。'
-      + 'definition.fields 每项：key（小写字母开头，a-z0-9_）、label（显示名）、type（line 单行 / text 多行 / select 单选须给 options / '
-      + 'tags 标签 / ref 引用别的卡，可给 refKind 限定分类 / number）、hint（这个字段写什么，一句话，必填）、'
-      + 'required、face（显示在卡面上，最多 3 个）。第一个必填的 line 字段就是卡片名。'
-      + 'definition.layout：note（便签，默认）/ profile（档案：名字 + 卡面字段）/ entry（词条：名字 + 一行摘要）。'
-      + 'definition.example 给一张示例卡的字段值，用户在预览里看到的就是它。'
-      + '改名已有字段时用 renames（旧 key → 新 key），采用后已有卡片的值会跟着搬过去。rationale 用一两句说清这版为什么这样设计。'
-      + 'summary 用一句话说这版改了什么（首版就概括版式和字段），request 用一句话复述用户这一轮在对话里提的要求（没提就写「按参考稿」）——'
-      + '两者会先给用户看，采用后记进类型页的改版记录。',
+      'Submit a type definition for one category on the open canvas: its fields and the face its cards wear. '
+      + 'It does not take effect by itself — it waits on the category\'s type page until the user previews it and adopts it; submitting again replaces the one still pending. '
+      + 'Read the brief and the existing cards with canvas_read_type first. Give kind to change an existing category; give label (and no kind) to create one. '
+      + 'Each definition.fields item: key (starts lowercase, a-z0-9_), label (display name), type (line / text / select with options / tags / ref to other cards, optionally limited by refKind / number), hint (what goes in the field, one sentence, required), '
+      + 'required, face (shown on the card face, at most 3). The first required line field is the card\'s name. '
+      + 'definition.layout: note (default) / profile (name + face fields) / entry (name + a one-line summary). definition.example holds one sample card\'s values — it is what the user sees in the preview. '
+      + 'To rename existing fields use renames (old key → new key); on adoption existing cards\' values move with them. rationale says in a sentence or two why this design. '
+      + 'summary says in one sentence what this version changes (for a first version, the layout and fields); request restates in one sentence what the user asked for this round ("per the brief" when nothing was asked) — '
+      + 'both are shown to the user first and recorded in the type page\'s revision log on adoption.',
     parameters: {
-      kind: { type: 'string', description: '要改的分类 id；新建一类时省略，改给 label。' },
-      label: { type: 'string', description: '新建分类的名称（如「人物」）；给了 kind 时忽略。' },
+      kind: { type: 'string', description: 'Category id to change; omit when creating one, and give label instead.' },
+      label: { type: 'string', description: 'Name of a new category (e.g. "Character"); ignored when kind is given.' },
       definition: {
         type: 'object',
         required: true,
         additionalProperties: true,
-        description: '类型定义：{ fields: [...], layout, guide?, example }。',
+        description: 'Type definition: { fields: [...], layout, guide?, example }.',
       },
-      rationale: { type: 'string', required: true, description: '这版设计的理由（一两句）。' },
-      renames: { type: 'object', additionalProperties: true, description: '字段改名：旧 key → 新 key。' },
-      summary: { type: 'string', description: '这版改了什么，一句话（如「加了危险度，放上卡面」）。' },
-      request: { type: 'string', description: '用户这一轮提的要求，一句话复述。' },
+      rationale: { type: 'string', required: true, description: 'Why this design (a sentence or two).' },
+      renames: { type: 'object', additionalProperties: true, description: 'Field renames: old key → new key.' },
+      summary: { type: 'string', description: 'What this version changes, one sentence (e.g. "added danger level, shown on the face").' },
+      request: { type: 'string', description: 'What the user asked for this round, restated in one sentence.' },
     },
     output: {
       schema: { type: 'string' },
@@ -461,11 +455,11 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   const readManuscript = defineTool({
     name: 'canvas_read_manuscript',
     description:
-      '读当前打开画布上的成稿。不带 manuscriptId：列出这块画布的全部成稿（id、标题、版本、状态）。'
-      + '带 manuscriptId：返回正文全文、当前版本号和它用到 / 没用到的素材卡。'
-      + '改写一篇成稿前必须先读，拿到版本号作为 canvas_write_manuscript 的 baseVersion。',
+      'Read the open canvas\'s manuscripts. Without manuscriptId: list them all (id, title, version, status). '
+      + 'With manuscriptId: the full body, its current version, and the cards it used / left out. '
+      + 'Always read before revising, and pass the version as canvas_write_manuscript\'s baseVersion.',
     parameters: {
-      manuscriptId: { type: 'string', description: '成稿 id（ms_…）；省略则列出全部。' },
+      manuscriptId: { type: 'string', description: 'Manuscript id (ms_…); omit to list them all.' },
     },
     output: {
       schema: { type: 'string' },
@@ -500,25 +494,25 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   const writeManuscript = defineTool({
     name: 'canvas_write_manuscript',
     description:
-      '把成稿直接落到当前打开的画布上（「成稿」面，用户可读、可改、可导出），而不是贴在回复正文里。'
-      + '新写一篇：省略 manuscriptId，给 body（Markdown，首个标题会作为成稿标题，也可显式给 title）。'
-      + '改写一篇：给 manuscriptId 和 baseVersion（先 canvas_read_manuscript 读到的版本号），body 是改后的全文。'
-      + '版本不符说明用户或别人刚改过——不要硬写，先重新读再改。'
-      + 'sources 标出这一版用到（used）和刻意没用（unused）的素材卡 id；改写时给了就整体替换，省略则沿用。'
-      + '作用于右栏「画布详情」tab 当前打开的画布；没打开任何画布时会告诉你，不要自己猜一块。',
+      'Put a manuscript on the open canvas (its Manuscripts face: the user reads, edits and exports it there) instead of pasting it into the reply. '
+      + 'New: omit manuscriptId and give body (Markdown; the first heading becomes the title, or give title). '
+      + 'Revise: give manuscriptId and baseVersion (the version canvas_read_manuscript returned); body is the whole revised text. '
+      + 'A version mismatch means the user or someone else just edited it — do not force it; re-read and revise again. '
+      + 'sources marks the card ids this version used and deliberately left unused; on a revision, given replaces them whole, omitted keeps them. '
+      + 'Acts on the canvas open in the right sidebar\'s Canvas tab; with none open it says so — never guess one.',
     parameters: {
-      manuscriptId: { type: 'string', description: '要改写的成稿 id；新写一篇时省略。' },
-      title: { type: 'string', description: '成稿标题；省略时取正文的首个标题。' },
-      body: { type: 'string', required: true, description: '成稿全文（Markdown）。' },
-      baseVersion: { type: 'number', description: '改写所依据的版本号（canvas_read_manuscript 返回）；改写时必填。' },
+      manuscriptId: { type: 'string', description: 'Manuscript id to revise; omit for a new one.' },
+      title: { type: 'string', description: 'Title; defaults to the body\'s first heading.' },
+      body: { type: 'string', required: true, description: 'The whole manuscript (Markdown).' },
+      baseVersion: { type: 'number', description: 'The version this revision is based on (from canvas_read_manuscript); required when revising.' },
       sources: {
         type: 'object',
         properties: {
-          used: { type: 'array', items: { type: 'string' }, description: '这一版用到的素材卡 id。' },
-          unused: { type: 'array', items: { type: 'string' }, description: '看过但刻意没用的素材卡 id。' },
+          used: { type: 'array', items: { type: 'string' }, description: 'Card ids this version used.' },
+          unused: { type: 'array', items: { type: 'string' }, description: 'Card ids read but deliberately left out.' },
         },
         additionalProperties: false,
-        description: '素材取舍。',
+        description: 'Which cards were used and which left out.',
       },
     },
     output: {
