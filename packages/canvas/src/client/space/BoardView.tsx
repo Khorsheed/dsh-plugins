@@ -14,7 +14,8 @@
  * follows the pad's invariants through CardTextarea (uncontrolled text, IME
  * composition as a hard stop, `.boardScroll` as the one scroll container).
  *
- * Kind is told by icon + words only, never by colour (the storyboard rule).
+ * Kind is told by icon + words first; each category also carries a colour dot,
+ * an added cue that never names a kind on its own.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -27,7 +28,7 @@ import {
   type CanvasBoard, type CardCategoryId,
 } from '../../types.ts'
 import type {} from '../locales.ts'
-import { categoryLabelMap, kindIconOf } from '../category-label.ts'
+import { categoryColorOf, categoryLabelMap, kindIconOf } from '../category-label.ts'
 import { basenameOf } from '../text.ts'
 import { FollowUp } from '../follow-up.tsx'
 import { firstDrawingOf, withoutDrawLines } from '../../blocks.ts'
@@ -161,6 +162,12 @@ export function typedExcerptOf(t: TranslateNS<'canvas'>, card: BoardCard): strin
   return words.startsWith(name) ? words.slice(name.length).trim() : words
 }
 
+/** Whether the first non-empty line is a markdown heading (`# …` to `###### …`). */
+function opensWithHeading(text: string): boolean {
+  const first = text.split('\n').find(line => line.trim().length > 0)
+  return first !== undefined && /^#{1,6}\s+\S/.test(first.trim())
+}
+
 /** A card's summary: the drawing, the derived heading, the clamped text.
  *  The word count is NOT here — it belongs to the pinned footer, which is
  *  `CardItem`'s (an html card keeps its count inside the placeholder instead). */
@@ -210,8 +217,9 @@ function CardSummary({ t, card, definition, nameOf }: {
   // the summary reads the text with both said plainly.
   const words = summaryTextOf(card.text, t('card.imageMark'), t('card.htmlMark'))
   // Document cards lead with their derived heading (never the raw `#` opener)
-  // and summarize the body that remains after it.
-  const heading = card.kind === 'document' ? documentHeadingOf(words) : undefined
+  // and summarize the body that remains after it; any other card does the
+  // same when it OPENS with a markdown heading, so a note never shows `# `.
+  const heading = card.kind === 'document' || opensWithHeading(words) ? documentHeadingOf(words) : undefined
   return (
     <>
       {thumb}
@@ -225,13 +233,15 @@ function CardSummary({ t, card, definition, nameOf }: {
 }
 
 /** One board card: kept, ghost (proposed), or archived-in-the-well. */
-function CardItem({ t, card, definition, nameOf, kindLabel, readonly, selected, archivedWell, talkAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
+function CardItem({ t, card, definition, nameOf, kindLabel, kindColor, readonly, selected, archivedWell, talkAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
   readonly definition?: TypeDefinition | undefined
   readonly nameOf: CardNameOf
   /** The category's display text (the user's name for it, stage ⑤). */
   readonly kindLabel: string
+  /** The category's dot colour (`categoryColorOf`). */
+  readonly kindColor: string
   readonly readonly: boolean
   readonly selected: boolean
   /** Rendered inside the archived well (open + restore are the only gestures). */
@@ -277,6 +287,7 @@ function CardItem({ t, card, definition, nameOf, kindLabel, readonly, selected, 
         </span>
       )}
       <span className={css.kindTag}>
+        <span className={css.catDot} style={{ background: kindColor }} />
         {KindIcon !== undefined && <KindIcon size={12} />}
         {kindLabel}
         {card.createdBy === 'agent' && !proposed ? ` · ${t('card.fromAgent')}` : ''}
@@ -469,6 +480,7 @@ export function BoardView({
                 data-empty={(counts.get(category.id) ?? 0) === 0 || undefined}
                 onClick={() => { onFilter(category.id) }}
               >
+                <span className={css.catDot} style={{ background: categoryColorOf(board.categories, category.id) }} />
                 {KindIcon !== undefined && <KindIcon size={12} />}
                 {labels.get(category.id) ?? category.id}{' '}
                 <span className={css.chipCount}>{counts.get(category.id) ?? 0}</span>
@@ -529,6 +541,7 @@ export function BoardView({
                       actions.refileSelected(category.id)
                     }}
                   >
+                    <span className={css.catDot} style={{ background: categoryColorOf(board.categories, category.id) }} />
                     {labels.get(category.id) ?? category.id}
                   </button>
                 ))}
@@ -575,6 +588,7 @@ export function BoardView({
                 definition={definitionOf(card.kind)}
                 nameOf={nameOf}
                 kindLabel={labels.get(card.kind) ?? card.kind}
+                kindColor={categoryColorOf(board.categories, card.kind)}
                 readonly={readonly}
                 selected={selection.has(card.id)}
                 talkAvailable={talkAvailable}
@@ -613,6 +627,7 @@ export function BoardView({
                     definition={definitionOf(card.kind)}
                     nameOf={nameOf}
                     kindLabel={labels.get(card.kind) ?? card.kind}
+                    kindColor={categoryColorOf(board.categories, card.kind)}
                     readonly={readonly}
                     selected={false}
                     archivedWell

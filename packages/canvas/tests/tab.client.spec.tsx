@@ -246,6 +246,14 @@ function makeHarness(options: {
 afterEach(() => { cleanup() })
 
 describe('CanvasTab — list, switcher, board', () => {
+  it('leads a note that opens with a markdown heading with the heading, never its #', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_h', { text: '## 雨夜的车站\n她没有回头' })])] })
+    render(<CanvasTab {...props} />)
+    await screen.findByText('雨夜的车站')
+    expect(screen.queryByText(/##/)).toBeNull()
+    expect(screen.getByText('她没有回头')).toBeTruthy()
+  })
+
   it('loads the list, auto-opens the first canvas, and renders its board', async () => {
     const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
     render(<CanvasTab {...props} />)

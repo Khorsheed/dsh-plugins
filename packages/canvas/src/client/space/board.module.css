@@ -263,12 +263,15 @@
 
 /* ------------------------------------------------------------------ board */
 
-/* The ONE scroll container of the board: panes inside it never scroll. */
+/* The ONE scroll container of the board: panes inside it never scroll. It
+   sits one layer down (layer-1) so the cards, on the base fill, read as
+   objects on a table rather than outlines on the page. */
 .boardScroll {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
   padding: 14px 18px 40px;
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 /* One row, scrolled sideways rather than wrapped: stage ⑤ lets a canvas add
@@ -293,17 +296,17 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
   border-radius: 999px;
   font: var(--dsw-font-xxs-12);
   padding: 4px 11px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }
 
 .chip:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-label-caption);
 }
 
 /* The one place hue is spent: the wash and the frame, never the label (blue
@@ -319,16 +322,25 @@
   color: var(--dsw-alias-label-caption);
 }
 
-/* A category nothing is filed under yet stays reachable (filter, drop target)
-   but steps back, so the row reads as where the cards are. */
-.chip[data-empty="true"]:not([data-active="true"]):not(:hover) {
+/* A category nothing is filed under yet stays reachable (filter, drop target);
+   only its 0 steps back — dimming the whole chip made the label unreadable. */
+.chip[data-empty="true"]:not([data-active="true"]) .chipCount {
   opacity: 0.5;
+}
+
+/* The category's dot (chips, card tags, the category page): an ADDED cue —
+   the icon and the words still carry the kind on their own. */
+.catDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
 }
 
 /* The 管理分类 chip: dashed, so it reads as a tool and never as a sixth filter.
    Sticky because the strip scrolls sideways now — a manage entry that can be
-   scrolled away is not an entry. It carries the board's own fill because
-   `.chip` is transparent and the row would otherwise slide out from under it. */
+   scrolled away is not an entry. The base fill every chip carries keeps the
+   row from showing through as it slides under. */
 .chipMgr {
   border-style: dashed;
   color: var(--dsw-alias-label-caption);
@@ -339,7 +351,7 @@
 }
 
 .chipMgr:hover {
-  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
 }
 
 /* The batch bar's 「改分类」 row: the targets ride the filter chips' own shape,
@@ -356,7 +368,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--dsw-alias-bg-layer-1);
+  background: var(--dsw-alias-bg-base);
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   padding: 7px 10px;
@@ -444,23 +456,27 @@
   gap: 10px;
 }
 
-/* kind is told by icon + words only — never by colour (the storyboard rule). */
+/* Kind is told by icon + words first; the category dot is an added cue, never
+   the only one. The card is the object on the layer-1 table: base fill, l2
+   frame, a shadow just deep enough to lift it. */
 .card {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 7px;
-  background: var(--dsw-alias-bg-layer-1);
-  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   padding: 11px 12px;
   cursor: pointer;
   min-height: 84px;
-  transition: border-color 0.15s, background 0.15s;
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 6%, transparent);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
 .card:hover {
-  border-color: var(--dsw-alias-border-l2);
+  border-color: var(--dsw-alias-label-caption);
+  box-shadow: 0 2px 8px color-mix(in srgb, #000 8%, transparent);
 }
 
 /* Selection owns the border channel; brand-primary is the one neutral that
@@ -556,12 +572,12 @@
   right: 0;
   bottom: 0;
   height: 22px;
-  background: linear-gradient(transparent, var(--dsw-alias-bg-layer-1));
+  background: linear-gradient(transparent, var(--dsw-alias-bg-base));
   pointer-events: none;
 }
 
 .cardGhost .cardTextWrap[data-clamped="true"]::after {
-  background: linear-gradient(transparent, var(--dsw-alias-bg-base));
+  background: linear-gradient(transparent, var(--dsw-alias-bg-layer-1));
 }
 
 .cardWords {
@@ -638,9 +654,11 @@
   }
 }
 
-/* The ghost proposal: dashed border on the base surface, never a fill. */
+/* The ghost proposal: dashed border straight on the table, never a fill or a
+   lift — it is not a card until the user keeps it. */
 .cardGhost {
   background: transparent;
+  box-shadow: none;
   border-style: dashed;
   border-color: var(--dsw-alias-border-l2);
 }
@@ -850,20 +868,21 @@
   justify-content: center;
   gap: 4px;
   min-height: 84px;
-  border: 1px dashed var(--dsw-alias-border-l2);
+  border: 1.5px dashed var(--dsw-alias-border-l2);
   border-radius: 8px;
   padding: 11px 12px;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-caption);
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 
+/* Lighter than a card at rest (no fill, no frame weight), it takes the brand
+   ink only when reached for. */
 .newTile:hover,
 .newTile:focus-visible {
-  border-color: var(--dsw-alias-label-caption);
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-layer-1);
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-brand-primary);
 }
 
 /* The first cell of an empty board: a little taller, it is the whole page. */
@@ -892,7 +911,7 @@
   border: 1px dashed var(--dsw-alias-label-caption);
   border-radius: 8px;
   padding: 9px 12px 10px;
-  background: var(--dsw-alias-bg-layer-1);
+  background: var(--dsw-alias-bg-base);
 }
 
 .draftHead {
