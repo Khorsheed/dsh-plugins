@@ -61,6 +61,7 @@ npx npm@12 publish /tmp/dist/<新包>.tgz --access public --otp=<token>
 | 装上了但入口缺失/404 | `files` 字段没收产物 | pack 后先 `tar -tzf`;库文件、patch 文件、脚本都要在 files 里 |
 | git 源安装后没有 lib/ | 缺 `prepare` 脚本 | package.json 加 `"prepare": "npm run build"`(git 依赖安装时会执行) |
 | 消费者侧 `ERR_MODULE_NOT_FOUND` | tarball 内相对导入指向未包含的文件 | 跑 pack smoke:包内每个相对导入都必须可解析 |
+| 发版当天下游裸名安装仍拿到旧版（不是缓存） | pnpm 11 起 `minimumReleaseAge` 默认 1440 分钟：发布不足 24h 的版本对裸名安装不可见，静默回退到旧版；`view` 不受此限，所以 `pnpm view` 看到的是新版、`add` 装的是旧版（2026-09-30 桌面端实测：0.3.3 上线 3.5h 后裸名仍解析 0.3.2） | 下游三选一：等满 24h；显式带版本装（`pkg@x.y.z`,pnpm 会把该版本写进 `minimumReleaseAgeExclude`);或在该 profile 的 `pnpm-workspace.yaml` 里给信任 scope 加豁免条目（裸包名豁免该包全部版本）。发布侧无动作——这是设计行为，发版后 24h 内不要慌着"修" |
 
 ## 变更记录与发版标记
 
