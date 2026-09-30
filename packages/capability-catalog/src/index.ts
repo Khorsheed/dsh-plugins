@@ -415,11 +415,19 @@ export class CapabilityCatalogService extends TypertRemoteService {
     }
   }
 
-  /** The managed skills root under `$DSH_HOME`. */
+  /**
+   * The managed skills root under the harness home. Mirrors the official
+   * precedence (`resolveDshHome` in `@deepseek-ai/dsh-home-paths`):
+   * the settings service's home, then a non-blank `$DSH_HOME`, then the
+   * `~/.dsh` installation default. The fallback was once hardcoded to
+   * `.dsh-official`, which silently pointed a desktop instance (no settings
+   * home, no env) at ANOTHER instance's managed skills (2026-09-30).
+   */
   private dshHome(): string {
     const settings = this.ctx.get?.('settings') as DshHomeSlice | undefined
-    const home = settings?.home
-    return home ?? process.env.DSH_HOME ?? join(homedir(), '.dsh-official')
+    const fromEnv = process.env.DSH_HOME
+    const envHome = fromEnv !== undefined && fromEnv.trim().length > 0 ? fromEnv : undefined
+    return settings?.home ?? envHome ?? join(homedir(), '.dsh')
   }
 
   /**

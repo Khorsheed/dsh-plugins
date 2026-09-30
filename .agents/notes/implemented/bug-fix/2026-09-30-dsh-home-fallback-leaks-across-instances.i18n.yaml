@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-30-dsh-home-fallback-leaks-across-instances.md
+.agents/notes/implemented/bug-fix/2026-09-30-dsh-home-fallback-leaks-across-instances.md: d82573fcdef4b735af2120fe3096a052e2d4ec3b
+.agents/notes/implemented/bug-fix/2026-09-30-dsh-home-fallback-leaks-across-instances.zh.md: b63b81214d2754d2586b16f94015795f4cda3bdc

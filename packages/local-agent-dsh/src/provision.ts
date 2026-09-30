@@ -701,11 +701,15 @@ export function snapshotScopePreset(
  *
  * The roster's own derivation, repeated here because the provisioning paths
  * that heal a scope (a host round, a live runtime) have no settings service
- * in reach: the harness home from the environment, else the installation
- * default.
+ * in reach: a non-blank `$DSH_HOME`, else the `~/.dsh` installation default
+ * (the precedence of `resolveDshHome` in `@deepseek-ai/dsh-home-paths` —
+ * the default was once hardcoded to `.dsh-official`, pointing a desktop
+ * instance at another instance's home; 2026-09-30).
  */
 export function defaultPresetRoot(): string {
-  return join(process.env['DSH_HOME'] ?? join(homedir(), '.dsh-official'), USER_PRESET_DIR)
+  const fromEnv = process.env['DSH_HOME']
+  const home = fromEnv !== undefined && fromEnv.trim().length > 0 ? fromEnv : join(homedir(), '.dsh')
+  return join(home, USER_PRESET_DIR)
 }
 
 /** Per-scope inputs {@link provisionDshScope} takes. */
