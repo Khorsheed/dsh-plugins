@@ -157,6 +157,15 @@
 - **退役条件**：官方提供该入口后，eval 在三个节点往 `originSession` 投通知；tab 计数降为辅助（可留可拆），`eval_run_status` 不变。
 - **状态**：待实施（@khorsheed/dsh-eval；绕行随 I5 收口批 T72 / T76 落地）。
 
+### S19. 自定义 preset 无法携带「模式说明 / 如何使用」（guide 文案写死在内置 id 上）
+
+- **需求**：插件声明的 preset（开发/评测/写作）想给和内置 preset 一样的「模式说明 / 如何使用」文档 tab。
+- **现状**：guide 文案硬编码在 `packages/client/ui-agent-preset/src/client/PresetGuideDialog.tsx:19-34` 的 `guides` Map（键为 standard/ptc/minimal/cordis 四个内置 id），`presetGuide(id, trust)` 仅在 `trust === 'system'` 时返回；`PresetDefinition`（`packages/preset/agent-preset-registry/src/definition.ts:5-11`）没有任何文档字段，声明式 preset 行无处携带。
+- **现状绕行**：无——信息只能塞进 `description` 卡片短文或包 README，设置页看不到。
+- **建议的官方改动**：`PresetDefinition` 增加可选 `guide` 字段，`presetGuide` 先读 declaration 再回落硬编码表。详见 `docs/upstream-proposals/2026-09-30-preset-guide-declaration.md`。
+- **退役条件**：官方落地后，presets 包在三个声明上补 `guide` 字段。
+- **状态**：提案待上游评审（@khorsheed/dsh-presets）。
+
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。
