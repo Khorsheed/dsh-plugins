@@ -45,12 +45,15 @@ function ItemLine(props: { item: EvalDraftItemOption; checked: boolean; onToggle
   return (
     <label className={css.orgItem} data-placeholder={item.placeholder ? '' : undefined}>
       <input type="checkbox" checked={checked} onChange={onToggle} />
-      <span className={css.orgItemId}>{item.id}</span>
-      {item.title !== null && <span className={css.orgItemTitle}>{item.title}</span>}
-      {item.stages !== null && item.stages > 0 && (
-        <span className={css.orgItemMeta}>{t('new.itemStages', { count: item.stages })}</span>
-      )}
-      {item.placeholder && <span className={css.orgItemTag}>{t('new.placeholderTag')}</span>}
+      <span className={css.orgItemText}>
+        <span className={css.orgItemId}>{item.id}</span>
+        {item.title !== null && <span className={css.orgItemTitle}>{item.title}</span>}
+      </span>
+      <span className={css.orgItemMeta}>
+        {item.placeholder
+          ? <span className={css.orgItemTag}>{t('new.placeholderTag')}</span>
+          : (item.stages !== null && item.stages > 0 ? t('new.itemStages', { count: item.stages }) : null)}
+      </span>
     </label>
   )
 }

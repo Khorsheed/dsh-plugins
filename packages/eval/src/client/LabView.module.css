@@ -2249,12 +2249,11 @@ tr:last-child > .reportTd {
 }
 
 .orgItem {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 8px;
-  align-items: baseline;
-  min-width: 0;
-  padding: 4px 6px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 6px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
@@ -2266,28 +2265,40 @@ tr:last-child > .reportTd {
 }
 
 .orgItem > input {
-  align-self: center;
-  margin: 0;
+  margin: 3px 0 0;
 }
 
 .orgItem[data-placeholder] {
   color: var(--dsw-alias-label-tertiary);
 }
 
+.orgItemText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .orgItemId {
+  color: var(--dsw-alias-label-secondary);
   font-family: var(--dsh-font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.orgItem[data-placeholder] .orgItemId {
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .orgItemTitle {
-  flex: 1 1 160px;
-  min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .orgItemMeta {
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
 }
 
 .orgItemTag {
