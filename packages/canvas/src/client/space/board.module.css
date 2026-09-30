@@ -1184,3 +1184,19 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* A category with a type proposal waiting for the user (card types, P1a). */
+.catPending {
+  padding: 0 5px;
+  border-radius: 4px;
+  line-height: 16px;
+  color: var(--dsw-alias-state-warn-primary);
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+
+.chipPending {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-warn-primary);
+}

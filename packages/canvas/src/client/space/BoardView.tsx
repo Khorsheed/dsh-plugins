@@ -33,7 +33,9 @@ import { categoryLabelMap, kindIconOf } from '../category-label.ts'
 import { basenameOf } from '../text.ts'
 import { FollowUp } from '../follow-up.tsx'
 import { firstDrawingOf, withoutDrawLines } from '../../blocks.ts'
-import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { cardNameOf, detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { typedTitleOf, type TypeDefinition } from '../../card-types.ts'
+import { TypedFace, type CardNameOf } from '../type/fields.tsx'
 import { withHtmlBlocksMarked } from '../../html-blocks.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
@@ -61,6 +63,8 @@ export interface BoardActions {
    * retiring a category costs: its cards go to the archive in the same write.
    */
   setCategories: (categories: readonly BoardCategory[], archiveCardIds: readonly string[]) => void
+  /** Open one category's type page (card types, P1a): its brief, proposal and definition. */
+  openType: (kind: CardCategoryId, heading: string) => void
 }
 
 /** The board view's props: the loaded board plus the page-held UI state. */
@@ -158,9 +162,12 @@ function summaryTextOf(text: string, imageMark: string, htmlMark: string): strin
 /** A card's summary: the drawing, the derived heading, the clamped text.
  *  The word count is NOT here — it belongs to the pinned footer, which is
  *  `CardItem`'s (an html card keeps its count inside the placeholder instead). */
-function CardSummary({ t, card }: {
+function CardSummary({ t, card, definition, nameOf }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
+  /** The card's type, when its category has an adopted one. */
+  readonly definition?: TypeDefinition | undefined
+  readonly nameOf: CardNameOf
 }): ReactNode {
   // A drawing is content, so the board shows it (demand ④): a card whose body
   // is ink would otherwise read as a card with nothing in it.
@@ -184,6 +191,18 @@ function CardSummary({ t, card }: {
       </>
     )
   }
+  // A profile or entry card with fields shows its face — the fields are the
+  // point of the kind; a note keeps the text, with the typed title over it.
+  const values = card.fields ?? {}
+  if (definition !== undefined && definition.layout !== 'note' && Object.keys(values).length > 0) {
+    return (
+      <>
+        {thumb}
+        <TypedFace t={t} definition={definition} values={values} nameOf={nameOf} fallbackTitle={cardNameOf(card)} />
+      </>
+    )
+  }
+  const typedTitle = typedTitleOf(definition, values)
   // Document cards lead with their derived heading (never the raw `#` opener)
   // and summarize the body that remains after it.
   // The thumbnail stands for the drawings, and an image pointer is not words:
@@ -193,7 +212,8 @@ function CardSummary({ t, card }: {
   return (
     <>
       {thumb}
-      {heading !== undefined && <div className={css.docTitle}>{heading.title}</div>}
+      {typedTitle !== '' ? <div className={css.docTitle}>{typedTitle}</div>
+        : heading !== undefined && <div className={css.docTitle}>{heading.title}</div>}
       <div className={css.cardTextWrap} data-clamped={isLongCardText(card.text) || undefined}>
         <div className={css.cardText}>{heading?.body ?? words}</div>
       </div>
@@ -202,9 +222,11 @@ function CardSummary({ t, card }: {
 }
 
 /** One board card: kept, ghost (proposed), or archived-in-the-well. */
-function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, talkAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
+function CardItem({ t, card, definition, nameOf, kindLabel, readonly, selected, archivedWell, talkAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
   readonly t: TranslateNS<'canvas'>
   readonly card: BoardCard
+  readonly definition?: TypeDefinition | undefined
+  readonly nameOf: CardNameOf
   /** The category's display text (the user's name for it, stage ⑤). */
   readonly kindLabel: string
   readonly readonly: boolean
@@ -257,7 +279,7 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, talkAv
         {card.createdBy === 'agent' && !proposed ? ` · ${t('card.fromAgent')}` : ''}
       </span>
 
-      <CardSummary t={t} card={card} />
+      <CardSummary t={t} card={card} definition={definition} nameOf={nameOf} />
 
       {card.source !== undefined && (
         <div className={css.cardSrc}>
@@ -377,12 +399,14 @@ function CardItem({ t, card, kindLabel, readonly, selected, archivedWell, talkAv
  * parent keys this by id AND label, so a committed rename remounts the input
  * with the stored text and no local state ever disagrees with the board.
  */
-function CategoryRow({ t, category, count, onRename, onToggle }: {
+function CategoryRow({ t, category, count, onRename, onToggle, onDesign }: {
   readonly t: TranslateNS<'canvas'>
   readonly category: BoardCategory
   readonly count: number
   readonly onRename: (label: string) => void
   readonly onToggle: () => void
+  /** Open the category's type page. */
+  readonly onDesign: () => void
 }): ReactNode {
   const [text, setText] = useState(category.label)
   const commit = (): void => {
@@ -410,7 +434,13 @@ function CategoryRow({ t, category, count, onRename, onToggle }: {
       <span className={css.catCount}>
         {t('cat.count', { count: String(count) })}
         {isBoardCardKind(category.id) && <span className={css.catBuiltin}>{t('cat.builtin')}</span>}
+        {(category.proposal !== undefined || category.draft === true) && (
+          <span className={css.catPending}>{t('type.pending')}</span>
+        )}
       </span>
+      <button type="button" className={css.catToggle} title={t('type.designTip')} onClick={onDesign}>
+        {t('type.design')}
+      </button>
       <button
         type="button"
         className={category.enabled ? css.catToggle : `${css.catToggle} ${css.catToggleOn}`}
@@ -505,6 +535,18 @@ export function BoardView({
     writeCats(board.categories.map(row => (row.id === category.id ? { ...row, enabled: !row.enabled } : row)))
   }
 
+  const design = (id: CardCategoryId): void => {
+    setCatPanel(false)
+    actions.openType(id, labels.get(id) ?? id)
+  }
+  const definitionOf = (kind: CardCategoryId): TypeDefinition | undefined =>
+    board.categories.find(category => category.id === kind)?.definition
+  const nameOf: CardNameOf = cardId => {
+    const card = board.cards.find(row => row.id === cardId)
+    if (card === undefined) return undefined
+    return typedTitleOf(definitionOf(card.kind), card.fields) || cardNameOf(card) || card.id
+  }
+
   const confirmRetire = (): void => {
     if (retireAsk === null) return
     const id = retireAsk.id
@@ -545,6 +587,9 @@ export function BoardView({
                 {KindIcon !== undefined && <KindIcon size={12} />}
                 {labels.get(category.id) ?? category.id}{' '}
                 <span className={css.chipCount}>{counts.get(category.id) ?? 0}</span>
+                {(category.proposal !== undefined || category.draft === true) && (
+                  <span className={css.chipPending} title={t('type.pending')} />
+                )}
               </button>
             )
           })}
@@ -580,6 +625,7 @@ export function BoardView({
                 count={counts.get(category.id) ?? 0}
                 onRename={label => { renameCat(category.id, label) }}
                 onToggle={() => { toggleCat(category) }}
+                onDesign={() => { design(category.id) }}
               />
             ))}
             {retired.length > 0 && (
@@ -595,6 +641,7 @@ export function BoardView({
                 count={counts.get(category.id) ?? 0}
                 onRename={label => { renameCat(category.id, label) }}
                 onToggle={() => { toggleCat(category) }}
+                onDesign={() => { design(category.id) }}
               />
             ))}
             <div className={css.catAdd}>
@@ -715,6 +762,8 @@ export function BoardView({
                 key={card.id}
                 t={t}
                 card={card}
+                definition={definitionOf(card.kind)}
+                nameOf={nameOf}
                 kindLabel={labels.get(card.kind) ?? card.kind}
                 readonly={readonly}
                 selected={selection.has(card.id)}
@@ -751,6 +800,8 @@ export function BoardView({
                     key={card.id}
                     t={t}
                     card={card}
+                    definition={definitionOf(card.kind)}
+                    nameOf={nameOf}
                     kindLabel={labels.get(card.kind) ?? card.kind}
                     readonly={readonly}
                     selected={false}

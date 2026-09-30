@@ -61,6 +61,8 @@ import type { PadTool } from '../draw.ts'
 import { CardPad } from './CardPad.tsx'
 import { useImageLightbox } from './image-lightbox.tsx'
 import { BlockEditor, type CardDrawings } from './BlockEditor.tsx'
+import { typedTitleOf } from '../../card-types.ts'
+import { FieldForm, FieldList, type RefCandidate } from '../type/fields.tsx'
 import css from './CanvasDetailView.module.css'
 
 /** What each paste arm reports about itself (the toast's whole copy). */
@@ -133,7 +135,7 @@ function ModeSeg({ modes, mode, onMode, t }: {
  * text places it — or after the words, when the text does not. A picture
  * opens large on a click.
  */
-function CardFlow({ t, text, drawings, labels, pathImages }: {
+export function CardFlow({ t, text, drawings, labels, pathImages }: {
   readonly t: CanvasDetailProps['t']
   readonly text: string
   readonly drawings: CardDrawings | undefined
@@ -222,6 +224,8 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const [toast, setToast] = useState<{ text: string; seq: number; undo?: () => void } | null>(null)
   const [fatal, setFatal] = useState<string | null>(null)
   const [askDelete, setAskDelete] = useState(false)
+  /** The typed card's field form is open (card types, P1a). */
+  const [editingFields, setEditingFields] = useState(false)
   /** The chat seam's probe: null while probing, so entries never flash. */
   const toastSeqRef = useRef(0)
 
@@ -429,6 +433,21 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     [open?.board.categories, t],
   )
 
+  // A typed card's names come from its fields: the title field when filled,
+  // the text's own name otherwise. Refs read other cards the same way.
+  const nameOf = useCallback((id: string): string | undefined => {
+    const row = open?.board.cards.find(candidate => candidate.id === id)
+    if (row === undefined) return undefined
+    const definition = open?.board.categories.find(category => category.id === row.kind)?.definition
+    return typedTitleOf(definition, row.fields) || cardNameOf(row) || row.id
+  }, [open])
+  const refCandidates = useMemo<readonly RefCandidate[]>(
+    () => (open?.board.cards ?? [])
+      .filter(row => row.status !== 'archived')
+      .map(row => ({ id: row.id, name: nameOf(row.id) ?? row.id, kind: row.kind })),
+    [open, nameOf],
+  )
+
   /* ------------------------------------------------------------ create mode */
 
   // The detail page is the ONLY card editor (v2.2 ②), so ＋新卡 opens THIS
@@ -556,6 +575,8 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
 
   const proposed = card.status === 'proposed'
   const archived = card.status === 'archived'
+  /** The card's type, when its category has an adopted one: the fields show above the body. */
+  const definition = open.board.categories.find(category => category.id === card.kind)?.definition
   const format = detectCardFormat(card.text)
   // An html document's heading is its <title>, never the doctype opener.
   const heading = card.kind === 'document'
@@ -648,7 +669,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           <DetailCrumbs
             t={t}
             crumbs={crumbs}
-            here={cardNameOf(card) || crumbs.heading}
+            here={nameOf(card.id) || crumbs.heading}
             cardId={card.id}
             trailing={moreMenu}
           />
@@ -736,6 +757,44 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             <IconCloseOutlineMedium size={12} />
             {t('card.reject')}
           </button>
+        </div>
+      )}
+
+      {definition !== undefined && (
+        <div className={css.fields}>
+          {editingFields ? (
+            <FieldForm
+              key={card.id}
+              t={t}
+              definition={definition}
+              values={card.fields}
+              candidates={refCandidates}
+              selfId={card.id}
+              onSave={fields => {
+                setEditingFields(false)
+                void mutate(sid => patchCard(sid, {
+                  canvasId: open.board.id, cardId: card.id, fields,
+                }), 'field.saved')
+              }}
+              onCancel={() => { setEditingFields(false) }}
+            />
+          ) : (
+            <>
+              <FieldList
+                t={t}
+                definition={definition}
+                values={card.fields}
+                nameOf={nameOf}
+                onOpenRef={id => { crumbs?.onStep(id) }}
+              />
+              {!readonly && !proposed && !archived && (
+                <button type="button" className={css.fieldsEdit} onClick={() => { setEditingFields(true) }}>
+                  <IconListPenOutlineMedium size={12} />
+                  {t('field.edit')}
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
 

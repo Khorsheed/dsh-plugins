@@ -35,7 +35,7 @@ import type { CardCategoryId } from '../../types.ts'
 
 /**
  * Where one canvas row stands inside its canvas: the board, one card of it,
- * its unsaved new card, or one of its manuscripts. One draft per canvas, so the ＋新卡 menu
+ * its unsaved new card, one of its manuscripts, or one category's type page. One draft per canvas, so the ＋新卡 menu
  * re-categorizes the draft that is open instead of seating a second blank.
  */
 export type CanvasPlace =
@@ -43,6 +43,7 @@ export type CanvasPlace =
   | { readonly kind: 'card'; readonly cardId: string; readonly heading: string }
   | { readonly kind: 'draft'; readonly catKind: CardCategoryId; readonly heading: string }
   | { readonly kind: 'manuscript'; readonly manuscriptId: string; readonly heading: string }
+  | { readonly kind: 'type'; readonly catKind: CardCategoryId; readonly heading: string }
 
 /** One row of the canvas surface's tab strip: one canvas, and where in it. */
 export interface CanvasTabRow {
@@ -146,6 +147,11 @@ export class CanvasSelectionStore {
     this.ensure(canvasId, { kind: 'manuscript', manuscriptId, heading })
   }
 
+  /** Open one category's type page (its brief, definition and proposal) inside its canvas's row. */
+  openTypeTab(canvasId: string, catKind: CardCategoryId, heading: string): void {
+    this.ensure(canvasId, { kind: 'type', catKind, heading })
+  }
+
   /** Show a row that is already open. A row that is gone changes nothing. */
   activate(id: string): void {
     const current = this.source.getSnapshot()
@@ -243,6 +249,7 @@ function samePlace(a: CanvasPlace, b: CanvasPlace): boolean {
   if (a.kind === 'draft' && b.kind === 'draft') return a.catKind === b.catKind && a.heading === b.heading
   if (a.kind === 'card' && b.kind === 'card') return a.cardId === b.cardId && a.heading === b.heading
   if (a.kind === 'manuscript' && b.kind === 'manuscript') return a.manuscriptId === b.manuscriptId && a.heading === b.heading
+  if (a.kind === 'type' && b.kind === 'type') return a.catKind === b.catKind && a.heading === b.heading
   return a.kind === b.kind
 }
 
@@ -310,6 +317,9 @@ function storedRowOf(value: unknown): CanvasTabRow | null {
   }
   if (at.kind === 'manuscript' && typeof at.manuscriptId === 'string' && typeof at.heading === 'string') {
     return { id, canvasId, at: { kind: 'manuscript', manuscriptId: at.manuscriptId, heading: at.heading } }
+  }
+  if (at.kind === 'type' && typeof at.catKind === 'string' && typeof at.heading === 'string') {
+    return { id, canvasId, at: { kind: 'type', catKind: at.catKind, heading: at.heading } }
   }
   // A draft's words never rode the stash, so a reload stands on the board.
   if (at.kind === 'draft') return { id, canvasId, at: AT_BOARD }

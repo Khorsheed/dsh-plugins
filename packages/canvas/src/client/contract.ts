@@ -34,7 +34,8 @@ import type {
   BoardFocusRequest, BoardFocusResult,
   BoardListResult, BoardMutationResult,
   BoardPatchCardRequest, BoardPutCardRequest,
-  BoardReadOutcome, BoardReadRequest, BoardSetCategoriesRequest, BoardSetLayoutRequest,
+  BoardDecideTypeRequest, BoardReadOutcome, BoardReadRequest, BoardSetCategoriesRequest, BoardSetLayoutRequest,
+  BoardSetTypeBriefRequest,
   CardCategoryId,
   CanvasStroke,
   ManuscriptDeleteRequest, ManuscriptExportRequest, ManuscriptExportResult,
@@ -109,11 +110,26 @@ export interface CanvasManuscriptInjected {
 }
 
 /**
+ * The card-type face (P1a): a category's type page — the user's brief, the
+ * adopted definition, the Agent's pending proposal — and the one answer to it.
+ * Designing is the Agent's job: the page only quotes the brief into the
+ * conversation, and the Agent drafts through `canvas_propose_type`.
+ */
+export interface CanvasTypeInjected {
+  /** Write one type's brief (markdown and drawings, whole). */
+  setTypeBrief: (sessionId: SessionId, request: BoardSetTypeBriefRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Adopt or reject the pending proposal. */
+  decideType: (sessionId: SessionId, request: BoardDecideTypeRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Open one category's type page inside its canvas's strip row. */
+  openTypePage: (canvasId: string, kind: CardCategoryId, heading: string) => void
+}
+
+/**
  * Business face injected into the canvas tab (M3's single seat). The tab is
  * session scope: its mutations name the tab's own session, which resolves
  * the fence mode the host stamps onto the write.
  */
-export interface CanvasTabInjected extends CanvasTalkInjected, CanvasImageInjected, CanvasManuscriptInjected {
+export interface CanvasTabInjected extends CanvasTalkInjected, CanvasImageInjected, CanvasManuscriptInjected, CanvasTypeInjected {
   /** List every canvas the deployment holds (archived included). */
   listCanvases: () => Promise<RemoteResult<BoardListResult>>
   /** Create one canvas (a topic, optionally with workspaces attached). */
@@ -361,4 +377,33 @@ export type CanvasManuscriptViewProps =
     readonly pathImages?: MarkdownPathImages | undefined
   }
   & InjectFace<CanvasManuscriptViewInjected>
+  & PropsLocale<'canvas'>
+
+/**
+ * The injected subset the type page consumes (P1a): the type verbs, the board
+ * read (the whole type rides its category row), the image arm for the brief's
+ * pasted pictures, and the doors out — a sample card, the conversation.
+ */
+export interface CanvasTypeViewInjected extends CanvasTalkInjected, CanvasImageInjected, CanvasTypeInjected {
+  /** Read one board with the freshness token a later mutation must present. */
+  readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
+  /** Open a card of this type inside the canvas's row. */
+  openCardDetail: (canvasId: string, cardId: string, heading: string) => void
+  hooks: {
+    /** The freshness feed, bound by the slot renderer. */
+    selection: CanvasSelectionSource
+  }
+}
+
+/** Full props of the type page: which category, told by the active strip row. */
+export type CanvasTypeViewProps =
+  & {
+    sessionId: SessionId | undefined
+    readonly canvasId: string
+    readonly kind: CardCategoryId
+    /** The crumb row (no stepper: a type page is not in the board's order). */
+    readonly crumbs: CanvasDetailCrumbs
+    readonly pathImages?: MarkdownPathImages | undefined
+  }
+  & InjectFace<CanvasTypeViewInjected>
   & PropsLocale<'canvas'>

@@ -231,6 +231,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     exportManuscript: async (sessionId, request) => touchOnSuccess(await requireRemote().exportManuscript(sessionId, request)),
     openManuscript: (canvasId, manuscriptId, heading) => { selection.openManuscriptTab(canvasId, manuscriptId, heading) },
+    // Card types (P1a): the type rides its category row, so both writes move
+    // the board's version and every reader re-reads.
+    setTypeBrief: async (sessionId, request) => touchOnSuccess(await requireRemote().setTypeBrief(sessionId, request)),
+    decideType: async (sessionId, request) => touchOnSuccess(await requireRemote().decideType(sessionId, request)),
+    openTypePage: (canvasId, kind, heading) => { selection.openTypeTab(canvasId, kind, heading) },
     // The category catalog (stage ⑤): one write for rename / add / retire, so a
     // retired row and the cards under it can never disagree between two calls.
     setCategories: async (sessionId, request) => touchOnSuccess(await requireRemote().setCategories(sessionId, request)),

@@ -51,6 +51,7 @@ import { LinkView, type LayoutPatch } from '../space/LinkView.tsx'
 import { cardTabId, draftTabId } from '../space/selection.ts'
 import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { ManuscriptList, ManuscriptView } from '../manuscript/ManuscriptView.tsx'
+import { TypeView } from '../type/TypeView.tsx'
 import { CanvasSwitcher } from './CanvasSwitcher.tsx'
 import { TabStrip, type StripTab } from './TabStrip.tsx'
 import { basenameOf, messageOf } from '../text.ts'
@@ -113,7 +114,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
     archiveCanvas, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
-    openCardDetail, openCardDraft, openManuscript, backToBoard, activateTab, closeTab, focusCanvas,
+    openCardDetail, openCardDraft, openManuscript, openTypePage, backToBoard, activateTab, closeTab, focusCanvas,
     talkAvailable, quoteToConversation, refreshBoards, suggestWideMode, images, useImageRev,
     useSelection,
   } = props
@@ -574,6 +575,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         'toast.catsSaved',
       )
     },
+    openType: (kind, heading) => {
+      if (openId === null) return
+      openTypePage(openId, kind, heading)
+    },
   }
 
   /* --------------------------------------------------------- canvas gestures */
@@ -766,6 +771,24 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           sessionId={sessionId}
           canvasId={activeRow.canvasId}
           manuscriptId={activeRow.at.manuscriptId}
+          pathImages={pathImages}
+          crumbs={{
+            canvasTitle: openTitle,
+            heading: activeRow.at.heading,
+            siblings: [],
+            onBack: () => { leaveRow(activeRow.id, 'back') },
+            onStep: openCard,
+          }}
+        />
+      ) : activeRow.at.kind === 'type' ? (
+        // A card type's page (card types, P1a): the crumb goes back to the
+        // board, where its category row is; there is no stepper.
+        <TypeView
+          {...props}
+          key={`${activeRow.canvasId}#type:${activeRow.at.catKind}`}
+          sessionId={sessionId}
+          canvasId={activeRow.canvasId}
+          kind={activeRow.at.catKind}
           pathImages={pathImages}
           crumbs={{
             canvasTitle: openTitle,
