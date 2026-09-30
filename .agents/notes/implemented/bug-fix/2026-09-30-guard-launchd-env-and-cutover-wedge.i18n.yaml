@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-30-guard-launchd-env-and-cutover-wedge.md
-.agents/notes/implemented/bug-fix/2026-09-30-guard-launchd-env-and-cutover-wedge.md: 675069a98f3ef15a03039faf51d8ceafc51b7402
-.agents/notes/implemented/bug-fix/2026-09-30-guard-launchd-env-and-cutover-wedge.zh.md: 158e59b756eac9a260d73578d5cde2347887046c
+.agents/notes/implemented/bug-fix/2026-09-30-guard-launchd-env-and-cutover-wedge.md: 52bfdbe6b094c5771ec80693317b36099185f7fc
+.agents/notes/implemented/bug-fix/2026-09-30-guard-launchd-env-and-cutover-wedge.zh.md: 2421454792bce9ed70dd7ab914064bcc38ec41a3

@@ -60,7 +60,7 @@ const tasks = lane === 'unit' ? unitTasks : lane === 'integration' ? integration
 // the expected count follows the same shared probes instead of hardcoding a
 // deployment-machine count.
 const lifecycleDriftExpected = 14 + (driftTripwireRunnable() ? 1 : 0) + (driftBuiltCliAvailable() ? 1 : 0)
-const inventory = { pure: 70, 'self-unit': 21, 'supervise-1-of-4': 17, 'supervise-2-of-4': 10,
+const inventory = { pure: 71, 'self-unit': 21, 'supervise-1-of-4': 17, 'supervise-2-of-4': 10,
   'supervise-3-of-4': 17, 'supervise-4-of-4': 13, 'self-process': 71, 'lifecycle-drift': lifecycleDriftExpected }
 for (const task of tasks) task.expected = inventory[task.name]
 const artifacts = mkdtempSync(join(tmpdir(), 'ankh-test-results-'))

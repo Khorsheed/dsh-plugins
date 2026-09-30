@@ -32,6 +32,8 @@ Status: implemented
 
 ## Consequences
 
+同一事故的后续修复（随 0.4.2 发布）：带着 pending handoff 的标签页，在 cutover 不经由它收口时「正在重启」浮层会永久卡住（服务端对已死的 cutoverId 永远回 409 waiting/stale）。现在每 8 次失败 ACK 花一次 poll——idle 即证明无在途事务，丢弃 pending 并收起浮层。
+
 - 提案的验收标准按「已发布且已验证」重述：裸 `supervise` 遇到 awaiting-user 回执会停泊一个活消费者而不是退出（进程级测试：构造 awaiting-user 回执 → 裸 `supervise` → 不 boot、不监听，`abort-cutover` 按事前批准的策略把事务结算为 `restored`）；`supervise --cutover-id <id>` 经停泊态释放恢复选中侧，无需杀链考古（测试：停泊 → resume → target 拉起 → `ready`）；失败启动的主日志条目永远带 attempt log 镜像（含空日志的显式行，wrapper 测试）；`--boot-timeout-ms` 落进 `WD_BOOT_TIMEOUT` 与 restart marker（CLI 的 env/marker 测试加 wrapper 启动窗口测试）。提案中 launchd bootstrap 那条验收随其项目退役：失败的真身是端口占用加多链竞争，不是 launcher 环境。
 - `supervise --cutover-id` 遇到并非停泊保有的存活拥有者（例如仍泊在崩溃页上的 wrapper）时，在有界 15 秒等待后响亮拒绝，不再打印「already supervised」然后悄悄什么都不做；拒绝文案点名结算动词。
 - 停泊态按约 1 秒轮询消费控制 marker（测试中按比例缩小）；动词发来的 SIGUSR2 只是提醒。「立即」指一个轮询周期内。
