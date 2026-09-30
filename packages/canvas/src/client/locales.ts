@@ -392,6 +392,11 @@ export const zh = {
   'field.removedTip': '类型改版后这些字段不在定义里了；值还留在卡上，不会丢。',
   'field.refGone': '（已删除）',
   'field.selectNone': '（不选）',
+  'toolview.kind': '类型提议',
+  'toolview.ready': '「{name}」的卡片样式，等你在类型页确认',
+  'toolview.running': '正在提交类型提议…',
+  'toolview.failed': '类型提议没有提交成功',
+  'toolview.open': '去类型页看看 →',
 }
 
 /** English dictionary (same key set). */
@@ -786,6 +791,11 @@ export const en: Record<keyof typeof zh, string> = {
   'field.removedTip': 'A type revision dropped these fields; their values stay on the card.',
   'field.refGone': ' (deleted)',
   'field.selectNone': '(none)',
+  'toolview.kind': 'Type proposal',
+  'toolview.ready': 'Card style for “{name}”, waiting for you on the type page',
+  'toolview.running': 'Submitting the type proposal…',
+  'toolview.failed': 'The type proposal did not go through',
+  'toolview.open': 'Open the type page →',
 }
 
 /** The dictionary namespace this view binds. */

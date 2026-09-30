@@ -1,0 +1,61 @@
+/* The canvas_propose_type row in the turn: one compact bordered line, the
+   same tokens as the eval draft card, so a tool that hands work to a page
+   looks the same whichever plugin made it. */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 560px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.kind {
+  flex: none;
+  font-size: 12px;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.name,
+.note,
+.warn {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name {
+  font-weight: 500;
+}
+
+.note {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.warn {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.open {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-brand-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.open:hover {
+  border-color: var(--dsw-alias-brand-primary);
+}

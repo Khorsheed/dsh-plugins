@@ -45,13 +45,14 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import canvasRemote from '@khorsheed/dsh-canvas/remote'
 import type { CanvasRemote, CanvasTabInjected, CanvasTalkInjected } from './contract.ts'
 import { mergedDraft } from './quote.ts'
-import { CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
+import { CANVAS_KIND, CANVAS_TAB_ID, canvasDefinition } from './definition.ts'
 import { en, NS, zh } from './locales.ts'
 import { CanvasImageSrcs } from './images.ts'
 import {
   CanvasTabVisibility, RegistrationToggle, type CanvasPluginInventorySnapshot,
 } from './preset-visibility.ts'
 import { CanvasSelectionStore } from './space/selection.ts'
+import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
 import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
 
@@ -330,6 +331,36 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     key: CANVAS_TAB_ID,
     inject: () => ({ hooks: { selection: selection.source } }),
   }, CanvasTabTitle)), 'canvas: tab chip title')
+
+  // The canvas_propose_type row in the conversation: 去类型页看看 → opens the
+  // canvas tab and puts its row on the proposed kind's type page. The slot is
+  // declared by @deepseek-ai/dsh-client-ui-tool, which this package does not
+  // depend on — its SlotMap entry is not in this type graph, so the one
+  // registration goes through a structural view of the registry (the eval
+  // draft card's precedent). Without that package the inject never fires and
+  // the call keeps the host's generic row.
+  const toolSlots = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (options: Record<string, unknown>, component: unknown) => () => void
+  }
+  const proposeFace: ProposeTypeRowFace = {
+    openType: (canvasId, kind, heading) => {
+      try {
+        ctx.sidebarRight.openTab(CANVAS_KIND)
+      } catch (error) {
+        // A session whose preset hides the canvas has no tab type to open;
+        // the row's store write below still lands for the next time it shows.
+        ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
+      }
+      selection.openTypeTab(canvasId, kind, heading)
+    },
+  }
+  ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
+    name: 'tool.call.toolview',
+    key: 'canvas_propose_type',
+    locale: NS,
+    inject: () => proposeFace,
+  }, ProposeTypeRow)), 'canvas: propose-type tool row')
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

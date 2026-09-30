@@ -444,7 +444,9 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       if (outcome.ok) {
         const category = outcome.board.categories.find(row => row.id === outcome.kind)
         const fields = category?.proposal?.definition.fields.length ?? 0
-        return `完成：${outcome.kind}（${category === undefined ? '' : categoryNameOf(category)}）的类型提议已放到类型页，${fields} 个字段，等用户采用。`
+        // The canvas id rides the answer so the conversation's tool row can
+        // open THIS canvas's type page later, whatever canvas is open by then.
+        return `完成：${outcome.kind}（${category === undefined ? '' : categoryNameOf(category)}）的类型提议已放到类型页（画布 ${resolved.canvasId}），${fields} 个字段，等用户采用。`
       }
       if (outcome.error === 'invalid-name') {
         return args.kind === undefined && (args.label ?? '').trim() === ''
