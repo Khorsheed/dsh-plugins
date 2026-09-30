@@ -374,6 +374,10 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         lines.push('', `等用户确认的提议（v${category.proposal.definition.version}）：`, renderDefinition(category.proposal.definition))
         if (category.proposal.rationale !== '') lines.push(`理由：${category.proposal.rationale}`)
       }
+      if (category.history !== undefined && category.history.length > 0) {
+        lines.push('', '改版记录：')
+        for (const row of category.history.slice(-8)) lines.push(`- v${row.version}　${row.summary}${row.request === undefined ? '' : `（用户要的：${row.request}）`}`)
+      }
       const samples = read.board.cards.filter(card => card.kind === category.id && card.status !== 'archived').slice(0, MAX_TYPE_SAMPLES)
       lines.push('', `样例卡（${samples.length} 张）：`)
       const definitions = new Map(read.board.categories.map(row => [row.id, row.definition]))
@@ -400,7 +404,9 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       + 'required、face（显示在卡面上，最多 3 个）。第一个必填的 line 字段就是卡片名。'
       + 'definition.layout：note（便签，默认）/ profile（档案：名字 + 卡面字段）/ entry（词条：名字 + 一行摘要）。'
       + 'definition.example 给一张示例卡的字段值，用户在预览里看到的就是它。'
-      + '改名已有字段时用 renames（旧 key → 新 key），采用后已有卡片的值会跟着搬过去。rationale 用一两句说清这版为什么这样设计。',
+      + '改名已有字段时用 renames（旧 key → 新 key），采用后已有卡片的值会跟着搬过去。rationale 用一两句说清这版为什么这样设计。'
+      + 'summary 用一句话说这版改了什么（首版就概括版式和字段），request 用一句话复述用户这一轮在对话里提的要求（没提就写「按参考稿」）——'
+      + '两者会先给用户看，采用后记进类型页的改版记录。',
     parameters: {
       kind: { type: 'string', description: '要改的分类 id；新建一类时省略，改给 label。' },
       label: { type: 'string', description: '新建分类的名称（如「人物」）；给了 kind 时忽略。' },
@@ -412,13 +418,15 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       },
       rationale: { type: 'string', required: true, description: '这版设计的理由（一两句）。' },
       renames: { type: 'object', additionalProperties: true, description: '字段改名：旧 key → 新 key。' },
+      summary: { type: 'string', description: '这版改了什么，一句话（如「加了危险度，放上卡面」）。' },
+      request: { type: 'string', description: '用户这一轮提的要求，一句话复述。' },
     },
     output: {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
     execute: async (
-      args: { kind?: string; label?: string; definition: unknown; rationale: string; renames?: unknown },
+      args: { kind?: string; label?: string; definition: unknown; rationale: string; renames?: unknown; summary?: string; request?: string },
       exec: { agent?: Agent },
     ): Promise<string> => {
       const resolved = target(exec)
@@ -430,6 +438,8 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         definition: args.definition,
         rationale: args.rationale,
         ...(args.renames === undefined ? {} : { renames: args.renames }),
+        ...(args.summary === undefined ? {} : { summary: args.summary }),
+        ...(args.request === undefined ? {} : { request: args.request }),
       }, resolved.session)
       if (outcome.ok) {
         const category = outcome.board.categories.find(row => row.id === outcome.kind)

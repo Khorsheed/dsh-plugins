@@ -29,7 +29,10 @@ import { FsError, FsVersion } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { applyRenames, MAX_TYPE_BRIEF_LENGTH, MAX_TYPE_RATIONALE_LENGTH, normalizeDefinition, normalizeFieldValues, normalizeRenames } from './card-types.ts'
+import {
+  applyRenames, MAX_TYPE_BRIEF_LENGTH, MAX_TYPE_HISTORY, MAX_TYPE_NOTE_LENGTH, MAX_TYPE_RATIONALE_LENGTH,
+  normalizeDefinition, normalizeFieldValues, normalizeRenames,
+} from './card-types.ts'
 import { exportBaseNameOf, rewriteImagesForExport } from './manuscript.ts'
 import { rasterizeDrawing } from './raster.ts'
 import { canvasErrorOf } from './service.ts'
@@ -85,6 +88,7 @@ function typePartOf(category: BoardCategory): Partial<BoardCategory> {
     ...(category.briefDrawings === undefined ? {} : { briefDrawings: category.briefDrawings }),
     ...(category.definition === undefined ? {} : { definition: category.definition }),
     ...(category.proposal === undefined ? {} : { proposal: category.proposal }),
+    ...(category.history === undefined ? {} : { history: category.history }),
     ...(category.draft === undefined ? {} : { draft: category.draft }),
   }
 }
@@ -585,7 +589,7 @@ export class CanvasBoardService {
       // from the board as stored — a client holding an older read must never
       // wipe a definition adopted since by sending its whole catalog back.
       const stored = new Map(board.categories.map(category => [category.id, category]))
-      const rows = wanted.map(({ brief: _brief, briefDrawings: _drawings, definition: _definition, proposal: _proposal, draft: _draft, ...row }) => {
+      const rows = wanted.map(({ brief: _brief, briefDrawings: _drawings, definition: _definition, proposal: _proposal, history: _history, draft: _draft, ...row }) => {
         const previous = stored.get(row.id)
         return previous === undefined ? row : { ...row, ...typePartOf(previous) }
       })
@@ -717,6 +721,9 @@ export class CanvasBoardService {
     if (request.kind === undefined && label === undefined) return { ok: false, error: 'invalid-name' }
     const rationale = typeof request.rationale === 'string' ? request.rationale.trim().slice(0, MAX_TYPE_RATIONALE_LENGTH) : ''
     const renames = normalizeRenames(request.renames)
+    const note = (raw: unknown): string => typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim().slice(0, MAX_TYPE_NOTE_LENGTH) : ''
+    const summary = note(request.summary)
+    const asked = note(request.request)
     let kind: string | undefined
     const outcome = await this.mutate(request.canvasId, session, (board, now) => {
       let category = request.kind === undefined
@@ -738,6 +745,9 @@ export class CanvasBoardService {
         definition: { ...definition, version: (category.definition?.version ?? 0) + 1 },
         rationale,
         ...(Object.keys(renames).length === 0 ? {} : { renames }),
+        ...(summary === '' ? {} : { summary }),
+        ...(asked === '' ? {} : { request: asked }),
+        sessionId: String(session.id),
         createdAt: now,
       }
       kind = category.id
@@ -771,6 +781,16 @@ export class CanvasBoardService {
         return board
       }
       category.definition = proposal.definition
+      // The log keeps what changed and why, never the definition itself: a
+      // way back is a new request, not a rollback.
+      const summary = proposal.summary ?? proposal.rationale.split(/[。！？!?\n]/)[0]?.trim().slice(0, MAX_TYPE_NOTE_LENGTH) ?? ''
+      category.history = [...(category.history ?? []), {
+        version: proposal.definition.version,
+        summary,
+        ...(proposal.request === undefined ? {} : { request: proposal.request }),
+        ...(proposal.sessionId === undefined ? {} : { sessionId: proposal.sessionId }),
+        adoptedAt: now,
+      }].slice(-MAX_TYPE_HISTORY)
       if (category.draft === true) {
         delete category.draft
         category.enabled = true

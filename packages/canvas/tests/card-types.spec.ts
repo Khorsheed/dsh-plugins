@@ -182,6 +182,25 @@ describe('the store type verbs', () => {
     expect((await read()).cards[0]?.fields).toEqual({ name: '林澈', part: '主角' })
   })
 
+  it('logs each adoption with its summary, the request and the proposing session — a rejection logs nothing', async () => {
+    const { board, canvasId, read } = await bench()
+    const first = await board.proposeType({ canvasId, label: '人物', definition: PERSON, rationale: '先够用。再说。' }, SESSION)
+    if (!first.ok) throw new Error('expected a draft')
+    const kind = first.kind as never
+    await board.decideType({ canvasId, kind, decision: 'adopt' }, SESSION)
+    await board.proposeType({ canvasId, kind, definition: PERSON, rationale: '', summary: '加了危险度', request: '要能看出危险' }, SESSION)
+    expect((await read()).categories.find(row => row.id === first.kind)?.proposal).toMatchObject({ summary: '加了危险度', request: '要能看出危险', sessionId: 's1' })
+    await board.decideType({ canvasId, kind, decision: 'reject' }, SESSION)
+    await board.proposeType({ canvasId, kind, definition: PERSON, rationale: '', summary: '加了危险度', request: '要能看出危险' }, SESSION)
+    await board.decideType({ canvasId, kind, decision: 'adopt' }, SESSION)
+    const history = (await read()).categories.find(row => row.id === first.kind)?.history
+    // Without a summary the rationale's first sentence stands in.
+    expect(history?.map(({ adoptedAt: _at, ...row }) => row)).toEqual([
+      { version: 1, summary: '先够用', sessionId: 's1' },
+      { version: 2, summary: '加了危险度', request: '要能看出危险', sessionId: 's1' },
+    ])
+  })
+
   it('keeps a type through a catalog rewrite that carries none of it', async () => {
     const { board, canvasId, read } = await bench()
     const first = await board.proposeType({ canvasId, kind: 'fragment', definition: PERSON, rationale: '' }, SESSION)
@@ -193,6 +212,9 @@ describe('the store type verbs', () => {
     expect(row.label).toBe('人物')
     expect(row.brief).toBe('要有名字')
     expect(row.proposal).toBeDefined()
+    await board.decideType({ canvasId, kind: 'fragment', decision: 'adopt' }, SESSION)
+    await board.setCategories({ canvasId, categories: stale }, SESSION)
+    expect((await read()).categories.find(category => category.id === 'fragment')?.history).toHaveLength(1)
   })
 
   it('lets a card with fields but no body stand, and refuses a card emptied of both', async () => {

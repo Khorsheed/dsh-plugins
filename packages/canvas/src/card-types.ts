@@ -71,7 +71,25 @@ export interface TypeProposal {
   readonly rationale: string
   /** Old field key → new, when a revision renames keys. */
   readonly renames?: Readonly<Record<string, string>>
+  /** What this draft changes, in one line — the revision log's entry once adopted. */
+  readonly summary?: string
+  /** What the user asked for this round, as the agent read it off the conversation. */
+  readonly request?: string
+  /** The session that filed it: the one the revision log links back to. */
+  readonly sessionId?: string
   readonly createdAt: string
+}
+
+/**
+ * One adoption in a type's revision log. Only the summary is kept, never the
+ * definition: going back to an old version is a new request to the agent.
+ */
+export interface TypeRevision {
+  readonly version: number
+  readonly summary: string
+  readonly request?: string
+  readonly sessionId?: string
+  readonly adoptedAt: string
 }
 
 /** Most fields one definition holds. */
@@ -97,6 +115,12 @@ export const MAX_TYPE_GUIDE_LENGTH = 2000
 
 /** Longest proposal rationale. */
 export const MAX_TYPE_RATIONALE_LENGTH = 2000
+
+/** Longest revision summary or request line. */
+export const MAX_TYPE_NOTE_LENGTH = 300
+
+/** Most revisions a type's log keeps (the oldest drop off). */
+export const MAX_TYPE_HISTORY = 50
 
 /** Longest brief (the same markdown a card body holds, but a brief is a note to the agent). */
 export const MAX_TYPE_BRIEF_LENGTH = 20_000
@@ -206,8 +230,40 @@ export function normalizeTypeProposal(raw: unknown): TypeProposal | undefined {
     definition,
     rationale: cleanText(record['rationale'], MAX_TYPE_RATIONALE_LENGTH),
     ...(Object.keys(renames).length === 0 ? {} : { renames }),
+    ...optionalNotes(record),
     createdAt: typeof record['createdAt'] === 'string' ? record['createdAt'] : new Date(0).toISOString(),
   }
+}
+
+/** The optional one-line notes a proposal and a revision share. */
+function optionalNotes(record: Readonly<Record<string, unknown>>): { summary?: string; request?: string; sessionId?: string } {
+  const notes: { summary?: string; request?: string; sessionId?: string } = {}
+  const summary = cleanText(record['summary'], MAX_TYPE_NOTE_LENGTH)
+  if (summary !== '') notes.summary = summary
+  const request = cleanText(record['request'], MAX_TYPE_NOTE_LENGTH)
+  if (request !== '') notes.request = request
+  if (typeof record['sessionId'] === 'string' && record['sessionId'] !== '') notes.sessionId = record['sessionId']
+  return notes
+}
+
+/** Read an untrusted revision log; bad rows drop out alone, oldest first. */
+export function normalizeTypeHistory(raw: unknown): TypeRevision[] {
+  if (!Array.isArray(raw)) return []
+  const rows: TypeRevision[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as Record<string, unknown>
+    const version = record['version']
+    if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) continue
+    const { summary, ...rest } = optionalNotes(record)
+    rows.push({
+      version,
+      summary: summary ?? '',
+      ...rest,
+      adoptedAt: typeof record['adoptedAt'] === 'string' ? record['adoptedAt'] : new Date(0).toISOString(),
+    })
+  }
+  return rows.slice(-MAX_TYPE_HISTORY)
 }
 
 /** Read an untrusted `renames` map: key → key, both well-formed, no self-maps. */

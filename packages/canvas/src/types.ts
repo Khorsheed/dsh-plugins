@@ -12,8 +12,8 @@
  * @module @khorsheed/dsh-canvas/types
  */
 import {
-  MAX_TYPE_BRIEF_LENGTH, normalizeDefinition, normalizeFieldValues, normalizeTypeProposal,
-  type FieldValue, type TypeDefinition, type TypeProposal,
+  MAX_TYPE_BRIEF_LENGTH, normalizeDefinition, normalizeFieldValues, normalizeTypeHistory, normalizeTypeProposal,
+  type FieldValue, type TypeDefinition, type TypeProposal, type TypeRevision,
 } from './card-types.ts'
 
 /** The pad directory created inside the workspace root (visible, Chinese). */
@@ -402,6 +402,8 @@ export interface BoardCategory {
   definition?: TypeDefinition
   /** The agent's pending draft (one at a time; a new draft replaces it). */
   proposal?: TypeProposal
+  /** Every adoption so far, oldest first (summaries only — no rollback). */
+  history?: TypeRevision[]
   /**
    * Set on a category the AGENT started (`canvas_propose_type` with no kind):
    * retired until its first proposal is adopted, and deleted if rejected.
@@ -478,8 +480,8 @@ export function normalizeCategories(raw: unknown): BoardCategory[] {
  * @param record - one parsed `categories[]` entry.
  * @returns only the parts that survived.
  */
-export function categoryTypeOf(record: Readonly<Record<string, unknown>>): Pick<BoardCategory, 'brief' | 'briefDrawings' | 'definition' | 'proposal' | 'draft'> {
-  const part: { brief?: string; briefDrawings?: Record<string, CanvasStroke[]>; definition?: TypeDefinition; proposal?: TypeProposal; draft?: true } = {}
+export function categoryTypeOf(record: Readonly<Record<string, unknown>>): Pick<BoardCategory, 'brief' | 'briefDrawings' | 'definition' | 'proposal' | 'history' | 'draft'> {
+  const part: { brief?: string; briefDrawings?: Record<string, CanvasStroke[]>; definition?: TypeDefinition; proposal?: TypeProposal; history?: TypeRevision[]; draft?: true } = {}
   if (typeof record['brief'] === 'string' && record['brief'].trim() !== '') part.brief = record['brief'].slice(0, MAX_TYPE_BRIEF_LENGTH)
   const drawings = normalizeDrawings(record['briefDrawings'])
   if (hasDrawings(drawings)) part.briefDrawings = drawings
@@ -487,6 +489,8 @@ export function categoryTypeOf(record: Readonly<Record<string, unknown>>): Pick<
   if (definition !== undefined) part.definition = definition
   const proposal = normalizeTypeProposal(record['proposal'])
   if (proposal !== undefined) part.proposal = proposal
+  const history = normalizeTypeHistory(record['history'])
+  if (history.length > 0) part.history = history
   if (record['draft'] === true) part.draft = true
   return part
 }
@@ -1645,6 +1649,10 @@ export interface BoardProposeTypeRequest {
   readonly definition: unknown
   readonly rationale: string
   readonly renames?: unknown
+  /** What the draft changes, in one line (the revision log's entry). */
+  readonly summary?: string
+  /** What the user asked for this round, as the agent read it. */
+  readonly request?: string
 }
 
 /** A type proposal lands with the category id it was filed under. */
