@@ -410,7 +410,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T79 | ✅ 清单已合（`bc34de1d`，2026-09-26：P0 1 / P1 12 / P2 16，见 `profiles/web-eval/docs/t79-closeout-walkthrough.md`） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
 | T80 | ✅ 四条已合（2026-09-26：T80a `0f59af27`；T80b `b028f906`；T80d `23cd336a`；T80c `edb7e313`） | 收口补充一轮：按 T79 清单改，P0 + 全部 P1 + 协调者提升的 12 条 P2。文案见 §三「T80」 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
 | T81 | ✅ 收口（2026-09-26）：阶段一 main 在 0.1.5-rc.1 上 a–e 全过；阶段二被 main 的 `d49f29af` 取代，不合 | 评测线在 0.1.5 上恢复。typert 双形态 codec（`00cfa1d6`）、preset 双名探测（`380a469c`）、图标自带（`d49f29af`：`scripts/sync-icon-artwork.mts` 给每个包生成 `src/client/icons.tsx`，0.1.5 与 0.1.7 都不再按名字取宿主图标）都由各包负责人在 main 上做了。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；datasets 图标面由 T76 补拍一并看 |
-| T82 | 代码（2026-10-01 改向并派发） | **web-eval 只支持宿主 0.2.0 及以后**（用户 10-01 定，取代原「0.1.7 + 0.1.5 双宿主」）：preset 只走 bundle、install.sh 只认 ≥ 0.2.0、0.2.0 工具链、临时实例冒烟、受试 dsh 版本是否跟实例走、3171 数据试迁、compat 提到 0.2.0。文案见 §三「T82（改）」 | T87 | 0.2.0 临时实例 a–e 与 T86/T87 欠账全过；3171 副本迁过去核对一致 |
+| T82 | ✅ 代码（2026-10-01 改向，同日合入 `0b61ca67`，题库 `cc45dc5`） | **web-eval 只支持宿主 0.2.0 及以后**（用户 10-01 定，取代原「0.1.7 + 0.1.5 双宿主」）：preset 只走 bundle、install.sh 只认 ≥ 0.2.0、0.2.0 工具链、临时实例冒烟、受试 dsh 版本是否跟实例走、3171 数据试迁、compat 提到 0.2.0。文案见 §三「T82（改）」 | T87 | 0.2.0 临时实例 a–e 与 T86/T87 欠账全过；3171 副本迁过去核对一致 |
 | T88 | 代码（2026-10-01 定，排在 T82 合入之后派发） | 评测家族照 local-agent 形态整理：三个 *-tool 折进核心包的 `./tool` 入口并退役旧包；datasets / mission / lab / eval 保持独立包；新增 family bundle `@khorsheed/dsh-bundle-eval`，web-eval 改依赖它。mission 不退役。文案见 §三「T88」 | T82 | |
 | T89 | 代码（2026-10-01 定，排在 T88 合入之后派发） | 评测家族衔接收紧：mission 提供单元格数据目录动词、list/get 出 JSON、两份判分规则加跨包契约测试、eval 包内目录化并拆 run.ts；协调者评估后一并做 run 级 annotation 与 export 走服务面，./report 入口暂缓。文案见 §三「T89」 | T88 | |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
@@ -4314,6 +4314,17 @@ build/test 用 DSH_HARNESS=~/code/deepseek-harness-0.2.0（tag dsh-v0.2.0-rc.2�
 ## 回报
 分支与 commit；题库分支（如有）；a–e 和补拍逐项结果与截图路径；第 7、8 条的结论；compat 写法；Note 路径；实例端口和 home，等配凭据。
 ```
+
+#### T82 合入（2026-10-01）
+
+- 插件仓 `0b61ca67`（分支 feat/t82-host020：b50bd6b4 preset 改为 profile 内声明式 bundle + 0.2.0 闸；3ff8a5d8 compat、README 切换八步、Note；98234ec3 合 main 解 README 冲突）。题库 i1-walk `cc45dc5`（dsh-lean / dsh-full 的 0.2.0-rc.2 复本）。
+- 实测：0.2.0 新 home `install.sh --source --fresh` 为 25 个 @khorsheed 成员、205 行；main 原写的 23 是 0.1.5 目录式 preset 时代的数，已统一成 25。低于 0.2.0 的宿主 install.sh 退出 2、home 不落。截图 a/b/c/e 过，d 已知缺口；T86/T87 欠账补齐。3171 副本试迁 23 行一致。
+- 门禁：四包 test 1202/6/252/7，test:scripts 276，check:plugins 0，hygiene 0。
+- 步骤 9（3185，有凭据）：「让 Agent 组织」一轮跑通（起草 plan、validate 0 error、未启动）。**dsh 条件在 0.2.0 上跑不起来**，三个原因：
+  1. 题库的 eval-lean / eval-full 是目录式 preset，0.2.0 注册表不认（`Unknown agent preset: eval-lean`），lock 没有能力指纹，就绪门拒（`CAPABILITIES_UNMEASURED`）；
+  2. local-agent-dsh provision 仍往 scope 写 `@deepseek-ai/dsh-agent-presets` roster 行，0.2.0 没这个包，静默缺失；
+  3. 本机 `/opt/dsh-headless` 软链指向 3171 的 headless 0.1.0-rc.6，0.2.0 子 dsh 直接禁用 runner 行（换 profile 自带的 0.2.0-rc.1 headless 可起）。
+  另：`/eval conditions provision` 不再认 `--repo`；codex / claude-code 两个 provider 的 patch 在 0.2.0 上报 `tool-subagent-* not found`（不致命，归包负责人）。待用户定修法后另立任务；3171 正式切换要等它。
 
 #### T88 · 评测家族照 local-agent 形态整理：tool 折进核心包 + family bundle（2026-10-01 定，T82 合入后派发）
 
