@@ -4,6 +4,7 @@
  * registry, and the legacy session bindings live. Managed state must survive a restart, so it anchors
  * to DSH_HOME rather than any process-lifetime directory.
  */
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /**
@@ -31,4 +32,19 @@ export function resolveStateRoot(configured?: string): string {
   const home = process.env.DSH_HOME
   if (home !== undefined && home !== '') return join(home, 'state', 'datasets')
   return join(process.cwd(), '.dsh-datasets')
+}
+
+/**
+ * Where a new dataset repository goes by default (T90 decision C): an
+ * explicit value wins, then `$DSH_HOME/datasets`, then `~/.dsh/datasets` —
+ * the dsh data directory's `datasets/` subdirectory, so a person never has to
+ * pick a path to get started (`~/.dsh/datasets/gsm8k`).
+ * @param configured - plugin-provided override, or ''/undefined.
+ * @returns the directory new dataset repositories are created under.
+ */
+export function resolveDatasetsHome(configured?: string): string {
+  if (configured !== undefined && configured !== '') return configured
+  const home = process.env.DSH_HOME
+  if (home !== undefined && home !== '') return join(home, 'datasets')
+  return join(homedir(), '.dsh', 'datasets')
 }

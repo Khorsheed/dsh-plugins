@@ -1,5 +1,5 @@
 /** CLI: parse, exit-code semantics, the read verbs, materialization, and the registry verbs. */
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -134,5 +134,30 @@ describe('registry verbs (human-only writes)', () => {
     expect(bind.err).toContain('dsh-datasets register')
     expect((await run(['binding', '--session', 's1', '--state-root', root])).code).toBe(2)
     expect((await run(['unbind', '--session', 's1', '--state-root', root])).code).toBe(2)
+  })
+})
+
+describe('propose / proposals (T90 — files a proposal, never a registration)', () => {
+  it('--check yes is a dry run with exit 1 on problems; a clean file is filed and listed', async () => {
+    repo = makeFixtureRepo()
+    const file = join(scratchDir(), 'proposal.json')
+    const base = {
+      repo: repo.dir,
+      source: { kind: 'protocol', label: 'fixture' },
+      mapping: { outputs: [{ path: 'datasets/', origin: 'new' }] },
+    }
+    writeFileSync(file, JSON.stringify({ ...base, mapping: { outputs: [] } }))
+    const broken = await run(['propose', '--file', file, '--check', 'yes'])
+    expect(broken.code).toBe(1)
+    expect(broken.out).toContain('OUTPUT_UNCOVERED')
+    expect(JSON.parse((await run(['proposals'])).out)).toEqual([])
+
+    writeFileSync(file, JSON.stringify(base))
+    const filed = await run(['propose', '--file', file])
+    expect(filed.code).toBe(0)
+    const id = JSON.parse(filed.out).filed as string
+    const listed = JSON.parse((await run(['proposals'])).out) as Array<{ id: string; status: string }>
+    expect(listed.map(row => [row.id, row.status])).toEqual([[id, 'pending']])
+    expect(JSON.parse((await run(['registry'])).out ?? '[]')).toEqual([])
   })
 })

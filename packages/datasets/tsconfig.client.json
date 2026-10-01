@@ -26,6 +26,8 @@
     "src/types.ts",
     "src/materialize.ts",
     "src/registry.ts",
+    "src/zones.ts",
+    "src/proposal.ts",
     "src/client/index.ts",
     "src/client/contract.ts",
     "src/client/store.ts",

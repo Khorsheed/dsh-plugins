@@ -23,6 +23,9 @@
  *   registry / register / update / unregister / import-bindings — the
  *     deployment's dataset registry (human-only writes; agents resolve
  *     `<id>/<set>` through it)
+ *   propose / proposals — file a registration proposal (T90; the person
+ *     confirms it on the Datasets tab — this never writes the registry) and
+ *     list the stored proposals
  *   bind             — retired: prints how to register instead
  *
  * `--repo` takes a registry id or a path; without it the only registration
@@ -35,6 +38,7 @@ import { DatasetsError } from './dataset.ts'
 import { resolveMaterializedRoot, resolveStateRoot } from './defaults.ts'
 import { formatList, formatShow, formatValidate, formatWarnings } from './format.ts'
 import { createDatasetsService, resolveOperatorScope, type DatasetScope } from './service.ts'
+import { readProposalFile } from './proposal.ts'
 import { registryPathOf, type RegistrySet } from './registry.ts'
 
 /** stdout/stderr sink (injected so tests capture output). */
@@ -57,6 +61,8 @@ commands:
   update --id ID [--tracked-ref B] [--set-layers set=a+b,…] [--authoring-checkout P|none] [--state-root DIR]
   unregister --id ID [--state-root DIR]
   import-bindings [--state-root DIR]
+  propose --file F [--check yes] [--state-root DIR]
+  proposals [--state-root DIR]
 flags:
   --repo R           registry id or repository path (default: the only registration)
   --commit C         pinned commit (default: the registration's latest, else HEAD)
@@ -73,6 +79,8 @@ flags:
                      (update: none clears it)
   --materialized-root DIR  materialized-layer root (default: $DSH_HOME/state/datasets/materialized)
   --state-root DIR     plugin state root (default: $DSH_HOME/state/datasets)
+  --file F           a registration proposal JSON (the datasets_propose_registration input)
+  --check yes        check the proposal against the repository without filing it
 `
 
 /** Parsed CLI invocation. */
@@ -263,6 +271,26 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       case 'import-bindings': {
         const result = await service.registry.importBindings(bindingsRoot)
         io.stdout(`${JSON.stringify(result, null, 2)}\n`)
+        return 0
+      }
+      case 'propose': {
+        const file = flags['file']
+        if (file === undefined) return usageError(io, 'propose requires --file F')
+        const input = await readProposalFile(file)
+        if (flags['check'] === 'yes') {
+          const { problems, warnings } = await service.proposals.check(input)
+          io.stdout(`${JSON.stringify({ ok: problems.length === 0, problems, warnings }, null, 2)}\n`)
+          return problems.length === 0 ? 0 : 1
+        }
+        const { proposal, warnings } = await service.proposals.propose(input)
+        io.stdout(`${JSON.stringify({ filed: proposal.id, kind: proposal.kind, commit: proposal.commit, warnings }, null, 2)}\n`)
+        return 0
+      }
+      case 'proposals': {
+        io.stdout(`${JSON.stringify(service.proposals.list().map(proposal => ({
+          id: proposal.id, status: proposal.status, kind: proposal.kind, registryId: proposal.registryId,
+          commit: proposal.commit, createdAt: proposal.createdAt,
+        })), null, 2)}\n`)
         return 0
       }
       case 'bind': {

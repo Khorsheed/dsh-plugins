@@ -62,6 +62,7 @@
     "lib/typert.remote-client.d.ts",
     "lib/typert.remote-client.js",
     "cordis.patch.yml",
+    "skills/**/*.md",
     "locale/*.json"
   ],
   "license": "MIT",

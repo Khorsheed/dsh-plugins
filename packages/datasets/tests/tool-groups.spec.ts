@@ -74,7 +74,9 @@ describe('the datasets core faces', () => {
     // The command registry was the slash face's hard inject; with the
     // registration in the companion row the core mounts unconditionally.
     expect(inject).toEqual([])
-    expect(new Config({} as never)).toEqual({ materializedRoot: '' })
+    // T90 added the organizing setup (the preset the 「让 Agent 整理」 session
+    // selects and the new-repository home) — still no tool-group key.
+    expect(new Config({} as never)).toEqual({ materializedRoot: '', authoringPreset: 'dataset-authoring', datasetsHome: '' })
   })
 })
 
@@ -87,6 +89,13 @@ describe('the tool groups the companion grants', () => {
     expect(datasetToolDefinitions({} as never, { group: 'authoring' }).map(d => d.name).sort())
       .toEqual([...READ, 'datasets_put_item'].sort())
     expect(datasetToolDefinitions({} as never, { group: 'none' })).toEqual([])
+  })
+
+  it('organize (T90) is the read verbs plus the registration proposal, and never writes items', () => {
+    expect(datasetToolDefinitions({} as never, { group: 'organize' }).map(d => d.name).sort())
+      .toEqual([...READ, 'datasets_propose_registration'].sort())
+    expect(toolsOfGroup('all')).not.toContain('datasets_propose_registration')
+    expect(toolsOfGroup('organize')).not.toContain('datasets_put_item')
   })
 
   it('every group is a subset chain: none ⊂ read ⊂ authoring ⊂ all', () => {

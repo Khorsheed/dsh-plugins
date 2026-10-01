@@ -19,7 +19,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
-import { resolveMaterializedRoot, resolveStateRoot } from './defaults.ts'
+import { resolveDatasetsHome, resolveMaterializedRoot, resolveStateRoot } from './defaults.ts'
 import { registryPathOf } from './registry.ts'
 import { createDatasetsService, type DatasetsService } from './service.ts'
 import { DatasetsRemoteService } from './remote.ts'
@@ -28,10 +28,16 @@ import { DatasetsRemoteService } from './remote.ts'
 export interface DatasetsPluginConfig {
   /** Materialized-layer root override ('' = the three-stage default). */
   materializedRoot?: string
+  /** T90: the agent preset a 「题集整理」 session selects ('' = keep the session default). */
+  authoringPreset?: string
+  /** T90: where new dataset repositories go ('' = `$DSH_HOME/datasets`). */
+  datasetsHome?: string
 }
 
 export const Config: z = z.object({
   materializedRoot: z.string().default(''),
+  authoringPreset: z.string().default('dataset-authoring'),
+  datasetsHome: z.string().default(''),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -66,6 +72,10 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
     materializedRoot: resolveMaterializedRoot(config.materializedRoot),
     bindingsRoot: join(resolveStateRoot(undefined), 'bindings'),
     registryPath: registryPathOf(resolveStateRoot(undefined)),
+    organizing: {
+      preset: config.authoringPreset ?? 'dataset-authoring',
+      datasetsHome: resolveDatasetsHome(config.datasetsHome),
+    },
   })
   ctx.provide('datasets', service)
   // The web session tab's data face: the same service core behind a Typert

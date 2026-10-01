@@ -14,9 +14,14 @@ export type {
   DanglingBinding, ImportBindingsResult, ImportedBinding, LatestCommit, RegisteredSet, RegisterInput,
   RegisterPreview, RegistryEntry, RegistryRow, RegistrySet, RepoSelector, UpdateInput,
 } from './registry.ts'
+export type {
+  OutputMapping, Proposal, ProposalInput, ProposalLayer, ProposalProblem, ProposalReview, ProposalSample, ProposalSource,
+  ReviewChange, ReviewFiles, ReviewItem, ReviewItemFile, ReviewOutput, ReviewSet, ReviewSource, SourceFieldDisposition,
+  SourceMapping,
+} from './proposal.ts'
 export type { SkeletonResult } from './scaffold.ts'
 export type {
-  ImportItemInput, ItemBriefRequest,
+  ImportItemInput, ItemBriefRequest, OrganizingSetup,
   ListDatasetsResult, ListItemsResult, ListRequest, PreviewRepoRequest,
   ReadPassthroughRequest, ReadQuery, ReadResult, ScaffoldDatasetInput, ScaffoldItemInput,
   ShowRequest, ShowResult, ValidateDatasetResult, ValidateError, ValidateRequest, ValidateResult,

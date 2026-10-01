@@ -26,6 +26,8 @@
     "src/tool.ts",
     "src/types.ts",
     "src/materialize.ts",
-    "src/registry.ts"
+    "src/registry.ts",
+    "src/zones.ts",
+    "src/proposal.ts"
   ]
 }
