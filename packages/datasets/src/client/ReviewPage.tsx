@@ -431,6 +431,13 @@ export function ReviewPage(props: ReviewPageProps) {
             <div>{proposal.notes}</div>
           </div>
         )}
+        {/* The held version (`pendingReview`'s synthetic `pending-<id>`): no agent wrote an account. */}
+        {proposal.id.startsWith('pending-') && (
+          <div className={css.notes}>
+            <div className={css.findingTitle}>{t('review.heldTitle')}</div>
+            <div>{t('review.heldBody')}</div>
+          </div>
+        )}
 
         <Findings problems={problems} warnings={warnings} t={t} />
 

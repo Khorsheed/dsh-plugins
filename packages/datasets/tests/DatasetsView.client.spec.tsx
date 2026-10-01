@@ -1056,6 +1056,8 @@ describe('等你确认登记 (T90)', () => {
     expect(screen.getByText('registry.pending')).toBeTruthy()
     fireEvent.click(await screen.findByText('banner.reviewUpdate'))
     expect(await screen.findByText('review.versionStep {"from":3,"to":5,"date":"2026-09-30"}')).toBeTruthy()
+    // No agent account for a held version: the page says so itself.
+    expect(screen.getByText('review.heldBody')).toBeTruthy()
     expect(screen.getByText('review.deletions {"count":1}')).toBeTruthy()
     expect(screen.getByText('datasets/bench/items/R9/visible/task.md')).toBeTruthy()
     expect(screen.getByText('review.sum.modified {"count":1}')).toBeTruthy()

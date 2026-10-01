@@ -1083,8 +1083,10 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       registryId: entry.id,
       registeredAs: entry.id,
       source: { kind: 'protocol', label: entry.id },
-      // No proposal names origins: every changed file reads as written in the repository.
-      mapping: { outputs: [{ path: `${DATASETS_DIR}/`, origin: 'new', note: 'committed without a proposal' }] },
+      // No proposal names origins: every changed file reads as written in the
+      // repository. The page explains the held version itself (it keys on the
+      // `pending-` id), so no English note rides along.
+      mapping: { outputs: [{ path: `${DATASETS_DIR}/`, origin: 'new' }] },
     }
     return await build(synthetic)
   }

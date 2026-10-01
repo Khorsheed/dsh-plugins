@@ -325,6 +325,8 @@ export type DatasetsKey =
   | 'review.confirming'
   | 'review.done'
   | 'review.cancel'
+  | 'review.heldTitle'
+  | 'review.heldBody'
   | 'review.finding.COMMIT_NOT_TIP.gone'
   | 'review.finding.COMMIT_NOT_TIP.moved'
   | 'review.finding.UNCOMMITTED'
@@ -679,6 +681,8 @@ export const zh: Record<DatasetsKey, string> = {
   'review.confirming': '登记中…',
   'review.done': '已登记「{name}」',
   'review.cancel': '取消',
+  'review.heldTitle': '这个版本没有整理提案',
+  'review.heldBody': '它是直接提交进仓库的，Agent 没有附说明；改动清单就是它和已登记版本之间的全部差别。确认前选手仍然看到已登记版本。',
   'review.finding.COMMIT_NOT_TIP.gone': '跟踪分支 {ref} 已经不在了',
   'review.finding.COMMIT_NOT_TIP.moved': '提案之后分支 {ref} 又往前走了（现在 {now}，提案是 {commit}），请 Agent 重新提一次',
   'review.finding.UNCOMMITTED': '检出里 datasets/ 下有没提交的改动，它们不算在这个版本里',
@@ -1028,6 +1032,8 @@ export const en: Record<DatasetsKey, string> = {
   'review.confirming': 'Registering…',
   'review.done': 'Registered 「{name}」',
   'review.cancel': 'Cancel',
+  'review.heldTitle': 'No organizing proposal for this version',
+  'review.heldBody': 'It was committed straight into the repository with no account from the agent; the change list is everything that differs from the registered version. Until you confirm, agents keep reading the registered one.',
   'review.finding.COMMIT_NOT_TIP.gone': 'The tracked branch {ref} no longer exists',
   'review.finding.COMMIT_NOT_TIP.moved': 'Branch {ref} moved on after this proposal (now {now}, proposal {commit}); ask the agent to file a new one',
   'review.finding.UNCOMMITTED': 'The checkout has uncommitted changes under datasets/; they are not part of this version',
