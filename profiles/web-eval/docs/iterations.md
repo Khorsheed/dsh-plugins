@@ -413,10 +413,10 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T82 | ✅ 代码（2026-10-01 改向，同日合入 `0b61ca67`，题库 `cc45dc5`） | **web-eval 只支持宿主 0.2.0 及以后**（用户 10-01 定，取代原「0.1.7 + 0.1.5 双宿主」）：preset 只走 bundle、install.sh 只认 ≥ 0.2.0、0.2.0 工具链、临时实例冒烟、受试 dsh 版本是否跟实例走、3171 数据试迁、compat 提到 0.2.0。文案见 §三「T82（改）」 | T87 | 0.2.0 临时实例 a–e 与 T86/T87 欠账全过；3171 副本迁过去核对一致 |
 | T88 | ✅ 代码（2026-10-01 定，同日合入 `a242b711`） | 评测家族照 local-agent 形态整理：三个 *-tool 折进核心包的 `./tool` 入口并退役旧包；datasets / mission / lab / eval 保持独立包；新增 family bundle `@khorsheed/dsh-bundle-eval`，web-eval 改依赖它。mission 不退役。文案见 §三「T88」 | T82 | |
 | T89 | 代码（2026-10-01 定，排在 T88 合入之后派发） | 评测家族衔接收紧：mission 提供单元格数据目录动词、list/get 出 JSON、两份判分规则加跨包契约测试、eval 包内目录化并拆 run.ts；协调者评估后一并做 run 级 annotation 与 export 走服务面，./report 入口暂缓。文案见 §三「T89」 | T88 | ✅ 合入 `898f701f`——|
-| T90 | 代码（2026-10-01 定；第一段即派，第二段排在 T89 合入后） | **数据集接入只走一条路：交给 Agent 整理，人确认登记**。datasets 带 skill；「添加题集」弹窗只填数据在哪 / 名称 / 想测什么；Agent 看数据、对齐方案、改造提交校验后提交登记申请；人在「原目录 → 题集」对照视图里核对并确认。抽题移到 eval 新建实验（第二段）。交互参照 `docs/t90-dataset-journey.html`，视觉沿用宿主。文案见 §三「T90」 | T88 | 第一段 ✅ 合入 `8d9c7e12`；第二段与 T92/T93 已派——本地目录、公开数据集、已是协议仓库三种来源各走通一次；对照视图截图过协调者与用户 |
+| T90 | 代码（2026-10-01 定；第一段即派，第二段排在 T89 合入后） | **数据集接入只走一条路：交给 Agent 整理，人确认登记**。datasets 带 skill；「添加题集」弹窗只填数据在哪 / 名称 / 想测什么；Agent 看数据、对齐方案、改造提交校验后提交登记申请；人在「原目录 → 题集」对照视图里核对并确认。抽题移到 eval 新建实验（第二段）。交互参照 `docs/t90-dataset-journey.html`，视觉沿用宿主。文案见 §三「T90」 | T88 | 第一段 ✅ 合入 `8d9c7e12`；第二段 ✅ 合入 `c2698b1c`（建实验时选题：全部 / 随机 N 固定种子 / 手选）；真机走查待 3185 重装——本地目录、公开数据集、已是协议仓库三种来源各走通一次；对照视图截图过协调者与用户 |
 | T91 | 代码（2026-10-01 定，与 T88 并行） | **dsh 条件在 0.2.0 上跑起来**：宿主轮 headless 改用实例自带的 0.2.0 版（共享 `/opt` 软链不动）；local-agent-dsh 往受试环境塞预设改走 0.2.0 机制；题库 eval-lean / eval-full 改声明式。local-agent 家族已同意由评测线改。文案见 §三「T91」 | T82 | ✅ 合入 `230dc5b7`（题库 i1-walk `dc6a6db`）——3185 上一条带预设的 0.2.0 dsh 条件 provision 带能力指纹、就绪过、跑完 1 格 |
-| T92 | 代码（2026-10-01 记，排在 T89 合入后） | **生成的 mission 模板在部署库里找不到 schema**：模板用 `../schemas/…` 引用，部署库布局（T73）下解析到 `state/eval/experiments/schemas/`，不存在，run 被模板 lint 拒；临时放进去又会被实验列表当成一个叫 schemas 的实验报错。T91 在 3185 上手工绕过后发现。T89 已确认目录化解决不了：前缀在 `contract/template.ts` 写死默认 `../schemas`，相对数据集 `plans/` 解析 | T89 | 新建实验 → 运行不需要任何手工放文件；实验列表里不出现 schemas |
-| T93 | 代码（2026-10-01 记） | **一个坏实验拖垮整个实验列表**：部署库里某个实验引用了未登记的题集（3171 的 `dataseek-eval`），整个列表报 “Failed to load the experiments”。应改成该实验单独标错、其余照常列出。T89 在临时实例上发现 | — | 构造一个引用未登记题集的实验，列表其余实验照常显示，坏的那条有可读的错误说明 |
+| T92 | 代码（2026-10-01 记，排在 T89 合入后） | **生成的 mission 模板在部署库里找不到 schema**：模板用 `../schemas/…` 引用，部署库布局（T73）下解析到 `state/eval/experiments/schemas/`，不存在，run 被模板 lint 拒；临时放进去又会被实验列表当成一个叫 schemas 的实验报错。T91 在 3185 上手工绕过后发现。T89 已确认目录化解决不了：前缀在 `contract/template.ts` 写死默认 `../schemas`，相对数据集 `plans/` 解析 | T89 | ✅ 随 T90 第二段合入 `c2698b1c`（run 把 schema 前缀指向物化出来的题集版本里的 `schemas/`）——新建实验 → 运行不需要任何手工放文件；实验列表里不出现 schemas |
+| T93 | 代码（2026-10-01 记） | **一个坏实验拖垮整个实验列表**：部署库里某个实验引用了未登记的题集（3171 的 `dataseek-eval`），整个列表报 “Failed to load the experiments”。应改成该实验单独标错、其余照常列出。T89 在临时实例上发现 | — | ✅ 随 T90 第二段合入 `c2698b1c`——构造一个引用未登记题集的实验，列表其余实验照常显示，坏的那条有可读的错误说明 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -4528,6 +4528,13 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0。
 - 临时实例 3243：三类来源走到确认登记、版本 3 → 5 的更新确认、待确认版本确认；1440 / 640 / 390 三种宽度截图，无横向滚动。
 - **未做**：需要模型的真整理（无凭据），排到 3185 走查时补。小噪声两处未修：更新模式下未改动的不分层 README 仍弹选手可见提醒；待确认版本评审里 `datasets/` 那行显示「新写」。
 - 打包前先删 datasets 的 `lib/`（删掉的 SkeletonForm 旧产物会残留）。
+
+#### T90 第二段合入（2026-10-01）
+
+- 合入 `c2698b1c`（含 T92、T93）。新建实验弹窗加「怎么选题」：全部 / 随机 N（种子固定可换，`hash-rank/1`，同版本同种子同题数必抽同一批）/ 手选；选题结果钉成 plan 的 `items`，来历记在 `dataset.selection`（协议 v1-rev15）。占位题默认不选。
+- T93：坏实验在列表里单独标错并给出可读原因，其余照常列出。T92：run 的 schema 前缀改成物化题集版本下的 `schemas/` 绝对路径。
+- 协调者门禁：干净构建；datasets 292、eval 1259、mission 161、lab 134、bundle-eval 7、presets 8、local-agent-dsh 230、test:scripts 297 全过；check:plugins / hygiene --all / check:profiles 绿。合并冲突只有协议 i18n 哈希（main 仍是 rev14，rev15 不用挪），重录。
+- 小瑕疵（记账，不阻塞）：手选模式窄屏下「3 of 14 picked」计数被裁掉半行。另：install.sh --source 装出的实例里 datasets 报找不到 `js-yaml`，待查依赖声明。
 
 ## 四、验收规程
 
