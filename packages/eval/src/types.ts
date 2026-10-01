@@ -10,6 +10,8 @@
  * @module @khorsheed/dsh-eval/types
  */
 
+import type { ItemSelection, PlanSelection } from './contract/item-selection.ts'
+
 /** What one Remote-started run answers with, before any cell has run. */
 export interface EvalRunStarted {
   /** The job registry's id (`eval-run-N`) — the handle for output and kill. */
@@ -852,8 +854,17 @@ export interface EvalDraftRequest {
    * branch's latest when that is unambiguous, or refuses with the candidates.
    */
   commit?: string | null
-  /** The dataset items the matrix runs over. */
-  items: string[]
+  /**
+   * The dataset items the matrix runs over, listed explicitly. Give this OR
+   * `selection`, never both.
+   */
+  items?: string[]
+  /**
+   * 选题 (T90): how to choose the items — all, a seeded random draw, or a
+   * hand pick. Resolved against the pinned commit, written into the plan as
+   * the explicit item list plus a `dataset.selection` provenance block.
+   */
+  selection?: ItemSelection
   /** Player condition ids; a minted condition not named here is appended. */
   conditions: string[]
   /** Conditions to mint, each a copy of an existing declaration. */
@@ -908,6 +919,10 @@ export interface EvalDraftResult {
   experimentId: string
   /** The pinned dataset. */
   dataset: { registry: string; set: string; commit: string }
+  /** The item list the plan pins, as written. */
+  items: string[]
+  /** The selection provenance written beside it; null when the items were listed explicitly. */
+  selection: PlanSelection | null
   /** The plan document (absolute). */
   planPath: string
   /** The condition declarations minted into the library, in mint order (absolute); empty when none were. */

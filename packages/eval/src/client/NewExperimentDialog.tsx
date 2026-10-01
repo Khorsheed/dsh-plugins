@@ -19,14 +19,26 @@
  * Its one read is `draftOptions` (the sets, each item with its title, stage
  * count and whether the dataset marks it a placeholder), paid for when the
  * dialog opens.
+ *
+ * 选题 (T90 · second segment): once a set is chosen, its items are chosen ONE
+ * of three ways — 全部, 随机 N 题 (a seed shown and editable, minted fresh
+ * when the person has none), or 手选. The random draw is previewed here with
+ * the very function `eval_plan_draft` runs against the pinned commit
+ * (contract/item-selection.ts), so what the person sees is what the plan pins;
+ * the request quotes the `selection` argument for the agent to pass verbatim.
  */
 
 import { useEffect, useId, useState } from 'react'
-import { Button, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, Checkbox, IconRefreshOutlineRegular, IconSearchOutlineRegular, Input, Modal, SegmentedControl, Tag,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EvalDraftItemOption, EvalDraftOptionsView } from '../types.ts'
+import { mintSeed, resolveSelection, selectionPool } from '../contract/item-selection.ts'
 import type { LabViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
-import { buildOrganizeRequest, checkExperimentName, visibleItems, type NameCheck } from './organize.ts'
+import {
+  buildOrganizeRequest, checkExperimentName, visibleItems, type NameCheck, type OrganizeSelection,
+} from './organize.ts'
 import css from './LabView.module.css'
 
 /** The name rule, said in place: which part is broken, and the whole rule once. */
@@ -58,6 +70,27 @@ function ItemLine(props: { item: EvalDraftItemOption; checked: boolean; onToggle
   )
 }
 
+/** The three ways to choose items (T90). */
+type SelectionMode = 'all' | 'random' | 'pick'
+
+/** A count box's value as a whole number, or null while it is not one. */
+function wholeNumber(text: string): number | null {
+  const trimmed = text.trim()
+  return /^\d+$/.test(trimmed) && Number.isSafeInteger(Number(trimmed)) ? Number(trimmed) : null
+}
+
+/** The default draw size: a handful, never more than the pool. */
+function defaultCount(pool: number): number {
+  return Math.max(1, Math.min(5, pool))
+}
+
+/** Whether an item matches the pick filter (ID or title, case-folded). */
+function matchesFilter(item: EvalDraftItemOption, filter: string): boolean {
+  const needle = filter.trim().toLowerCase()
+  if (needle === '') return true
+  return item.id.toLowerCase().includes(needle) || (item.title ?? '').toLowerCase().includes(needle)
+}
+
 /**
  * The 新建实验 dialog.
  * @param props - the read that fills it, and the sink 「让 Agent 组织」 hands
@@ -80,6 +113,10 @@ export function NewExperimentDialog(props: {
   const [dataset, setDataset] = useState('')
   const [items, setItems] = useState<readonly string[]>([])
   const [showPlaceholders, setShowPlaceholders] = useState(false)
+  const [mode, setMode] = useState<SelectionMode>('all')
+  const [countText, setCountText] = useState('')
+  const [seedText, setSeedText] = useState(() => String(mintSeed()))
+  const [filter, setFilter] = useState('')
   const ids = useId()
 
   // The read is paid for when the dialog OPENS, not on every visit to the
@@ -108,14 +145,38 @@ export function NewExperimentDialog(props: {
   // on a fresh dialog is not a mistake yet.
   const message = touched || name !== '' ? nameMessage(check, t) : null
 
+  // ── 选题: the pool all/random draw from, and the random draw's preview ──
+  const pool = selectionPool(allItems, showPlaceholders)
+  const count = countText === '' ? defaultCount(pool.length) : wholeNumber(countText)
+  const seed = wholeNumber(seedText)
+  const countOk = count !== null && count >= 1 && count <= pool.length
+  const seedOk = seed !== null
+  let drawn: string[] = []
+  if (mode === 'random' && countOk && seedOk && pool.length > 0) {
+    drawn = resolveSelection(allItems, { mode: 'random', count, seed, includePlaceholders: showPlaceholders }).items
+  }
+  // A random draw the person mistyped holds the action back (the message is in
+  // place); an empty pool does not — the items simply stay open for the agent.
+  const selectionBlocked = chosen !== undefined && mode === 'random' && pool.length > 0 && (!countOk || !seedOk)
+  const selection: OrganizeSelection | undefined = chosen === undefined || selectionBlocked
+    || (mode !== 'pick' && pool.length === 0)
+    ? undefined
+    : mode === 'all'
+      ? { mode: 'all', pool: pool.length, includePlaceholders: showPlaceholders }
+      : mode === 'random'
+        ? { mode: 'random', count: count ?? 0, seed: seed ?? 0, pool: pool.length, includePlaceholders: showPlaceholders }
+        : { mode: 'pick', items }
+  const filtered = shown.filter(item => matchesFilter(item, filter))
+
   const reset = (): void => {
     setName(''); setTouched(false); setQuestion(''); setDataset(''); setItems([]); setShowPlaceholders(false)
+    setMode('all'); setCountText(''); setSeedText(String(mintSeed())); setFilter('')
   }
 
   const organize = (): void => {
     setTouched(true)
-    if (!check.ok) return
-    onOrganize(buildOrganizeRequest({ name, question, dataset, items }, t))
+    if (!check.ok || selectionBlocked) return
+    onOrganize(buildOrganizeRequest({ name, question, dataset, items, selection }, t))
     reset()
   }
 
@@ -136,7 +197,7 @@ export function NewExperimentDialog(props: {
       footer={(
         <>
           <Button variant="outline" size="sm" onClick={onClose}>{t('new.cancel')}</Button>
-          <Button size="sm" variant="primary" disabled={!check.ok} onClick={organize}>{t('new.organize')}</Button>
+          <Button size="sm" variant="primary" disabled={!check.ok || selectionBlocked} onClick={organize}>{t('new.organize')}</Button>
         </>
       )}
     >
@@ -191,6 +252,8 @@ export function NewExperimentDialog(props: {
               // The items belonged to the previous set.
               setItems([])
               setShowPlaceholders(false)
+              setCountText('')
+              setFilter('')
             }}
           >
             <option value="">{t('new.datasetLater')}</option>
@@ -203,31 +266,131 @@ export function NewExperimentDialog(props: {
 
         {chosen !== undefined && (
           <div className={css.formRow}>
-            <span className={css.formLabel}>
-              {t('new.items')}<span className={css.orgOptional}>{t('new.itemsOptional')}</span>
-            </span>
-            {shown.length === 0
-              ? <div className={css.orgHelp}>{t('new.itemsEmpty')}</div>
-              : (
-                <div className={css.orgItems} role="group" aria-label={t('new.items')}>
-                  {shown.map(item => (
-                    <ItemLine
-                      key={item.id}
-                      item={item}
-                      checked={items.includes(item.id)}
-                      onToggle={() => {
-                        setItems(items.includes(item.id) ? items.filter(id => id !== item.id) : [...items, item.id])
-                      }}
-                      t={t}
-                    />
-                  ))}
-                </div>
+            <span className={css.formLabel} id={`${ids}-selection`}>{t('new.selection')}</span>
+            <SegmentedControl<SelectionMode>
+              id={`${ids}-mode`}
+              value={mode}
+              label={t('new.selection')}
+              className={css.selMode}
+              options={[
+                { value: 'all', label: t('new.mode.all') },
+                { value: 'random', label: t('new.mode.random') },
+                { value: 'pick', label: t('new.mode.pick') },
+              ]}
+              onChange={setMode}
+            />
+            <div className={css.selPanel} id={`${ids}-mode-${mode}-panel`} role="tabpanel" aria-labelledby={`${ids}-mode-${mode}`}>
+              {mode === 'all' && (
+                pool.length === 0
+                  ? <div className={css.orgHelp}>{t('new.itemsEmpty')}</div>
+                  : <div className={css.orgHelp}>{t('new.allHelp', { count: pool.length })}</div>
               )}
-            {placeholders > 0 && (
-              <button type="button" className={css.orgLink} onClick={togglePlaceholders}>
-                {showPlaceholders ? t('new.placeholdersHide') : t('new.placeholdersShow', { count: placeholders })}
-              </button>
-            )}
+
+              {mode === 'random' && (pool.length === 0
+                ? <div className={css.orgHelp}>{t('new.itemsEmpty')}</div>
+                : (
+                  <>
+                    <div className={css.selRandomRow}>
+                      <label className={css.selField}>
+                        <span className={css.selFieldLabel}>{t('new.randomCount')}</span>
+                        <span className={css.selFieldBox}>
+                          <Input
+                            className={css.selNumber ?? ''}
+                            inputMode="numeric"
+                            value={countText === '' ? String(defaultCount(pool.length)) : countText}
+                            onChange={(e) => { setCountText(e.target.value) }}
+                            aria-label={t('new.randomCount')}
+                            aria-invalid={!countOk}
+                          />
+                          <span className={css.selFieldHint}>{t('new.randomPool', { pool: pool.length })}</span>
+                        </span>
+                      </label>
+                      <label className={css.selField}>
+                        <span className={css.selFieldLabel}>{t('new.seed')}</span>
+                        <span className={css.selFieldBox}>
+                          <Input
+                            className={css.selSeed ?? ''}
+                            inputMode="numeric"
+                            value={seedText}
+                            onChange={(e) => { setSeedText(e.target.value) }}
+                            aria-label={t('new.seed')}
+                            aria-invalid={!seedOk}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={<IconRefreshOutlineRegular size={14} />}
+                            onClick={() => { setSeedText(String(mintSeed())) }}
+                            aria-label={t('new.seedMint')}
+                            title={t('new.seedMint')}
+                          />
+                        </span>
+                      </label>
+                    </div>
+                    {!countOk && <div className={css.orgError} role="alert">{t('new.randomBadCount', { pool: pool.length })}</div>}
+                    {countOk && !seedOk && <div className={css.orgError} role="alert">{t('new.randomBadSeed')}</div>}
+                    {drawn.length > 0 && (
+                      <div className={css.selPreview} aria-label={t('new.randomPreview', { commit: chosen.commit.slice(0, 7) })}>
+                        <span className={css.selPreviewLabel}>{t('new.randomPreview', { commit: chosen.commit.slice(0, 7) })}</span>
+                        <span className={css.selPreviewTags}>
+                          {drawn.map(id => <Tag key={id} tone="quiet" className={css.selPreviewTag}>{id}</Tag>)}
+                        </span>
+                      </div>
+                    )}
+                    <div className={css.orgHelp}>{t('new.randomHelp')}</div>
+                  </>
+                ))}
+
+              {mode === 'pick' && (shown.length === 0
+                ? <div className={css.orgHelp}>{t('new.itemsEmpty')}</div>
+                : (
+                  <>
+                    {shown.length > 6 && (
+                      <Input
+                        icon={<IconSearchOutlineRegular size={14} />}
+                        value={filter}
+                        onChange={(e) => { setFilter(e.target.value) }}
+                        placeholder={t('new.pickFilter')}
+                        aria-label={t('new.pickFilter')}
+                      />
+                    )}
+                    {filtered.length === 0
+                      ? <div className={css.orgHelp}>{t('new.pickNoMatch')}</div>
+                      : (
+                        <div className={css.orgItems} role="group" aria-label={t('new.items')}>
+                          {filtered.map(item => (
+                            <ItemLine
+                              key={item.id}
+                              item={item}
+                              checked={items.includes(item.id)}
+                              onToggle={() => {
+                                setItems(items.includes(item.id) ? items.filter(id => id !== item.id) : [...items, item.id])
+                              }}
+                              t={t}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    <div className={css.orgHelp}>
+                      {items.length === 0 ? t('new.pickEmptyHelp') : t('new.pickCount', { count: items.length, total: shown.length })}
+                    </div>
+                  </>
+                ))}
+            </div>
+            {placeholders > 0 && (mode === 'pick'
+              ? (
+                <button type="button" className={css.orgLink} onClick={togglePlaceholders}>
+                  {showPlaceholders ? t('new.placeholdersHide') : t('new.placeholdersShow', { count: placeholders })}
+                </button>
+              )
+              : (
+                <Checkbox
+                  className={css.selPlaceholders}
+                  checked={showPlaceholders}
+                  onChange={(next) => { if (!next) togglePlaceholders(); else setShowPlaceholders(true) }}
+                  label={t('new.includePlaceholders', { count: placeholders })}
+                />
+              ))}
           </div>
         )}
       </div>

@@ -24,6 +24,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashConditionDocument } from '../src/contract/hash.ts'
 import { EvalDraftRefused, isPlaceholderItem } from '../src/design/draft.ts'
+import { drawItems, SELECTION_ALGORITHM } from '../src/contract/item-selection.ts'
 import { DatasetVersionRefused } from '../src/design/dataset-version.ts'
 import { createExperiment } from '../src/design/experiment-store.ts'
 import { EvalService } from '../src/service.ts'
@@ -500,6 +501,79 @@ describe('draftExperiment — the refusals, and the one thing it never does', ()
     const { face } = fixture()
     delete process.env['DSH_HOME']
     await expect(new EvalService(hostsWith(face)).draftExperiment(request())).rejects.toThrow(/set DSH_HOME/)
+  })
+})
+
+describe('draftExperiment — 选题 (T90 · second segment)', () => {
+  /** Ten real items and one fixture, so a draw has room to differ. */
+  function bigFixture() {
+    const fx = fixture()
+    for (let i = 2; i <= 10; i++) writeJson(fx.dataset, `items/Q${i}/item.json`, { id: `Q${i}` })
+    writeJson(fx.dataset, 'items/P0/item.json', { id: 'P0', taxonomy: { category: 'fixture', tags: ['fixture'] } })
+    return fx
+  }
+  const realIds = ['P1', 'Q10', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9']
+
+  it('all: pins every real item and records the pool, placeholders left out', async () => {
+    const { service } = bigFixture()
+    const drafted = await service.draftExperiment(request({ items: undefined, selection: { mode: 'all' } }))
+    const plan = read(drafted.planPath)
+    expect(plan['dataset']).toMatchObject({ items: realIds, selection: { mode: 'all', pool: 10 } })
+    expect(drafted.items).toEqual(realIds)
+    expect(drafted.selection).toEqual({ mode: 'all', pool: 10 })
+    expect(drafted.review.errors).toBe(0)
+  })
+
+  it('random: the same seed on the same commit pins the same items, and the plan says how to redo the draw', async () => {
+    const { service } = bigFixture()
+    const one = await service.draftExperiment(request({ name: 'a', items: undefined, selection: { mode: 'random', count: 4, seed: 7 } }))
+    const two = await service.draftExperiment(request({ name: 'b', items: undefined, selection: { mode: 'random', count: 4, seed: 7 } }))
+    expect(one.items).toHaveLength(4)
+    expect(two.items).toEqual(one.items)
+    expect(one.items).toEqual(drawItems(realIds, 4, 7))
+    expect(read(one.planPath)['dataset']).toMatchObject({
+      items: one.items,
+      selection: { mode: 'random', count: 4, seed: 7, pool: 10, algorithm: SELECTION_ALGORITHM },
+    })
+    expect(one.review.errors).toBe(0)
+  })
+
+  it('different experiments on one set may select different items', async () => {
+    const { service } = bigFixture()
+    const draws = new Set<string>()
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const drafted = await service.draftExperiment(request({ name: `s${seed}`, items: undefined, selection: { mode: 'random', count: 3, seed } }))
+      draws.add(drafted.items.join(','))
+    }
+    expect(draws.size).toBeGreaterThan(1)
+  })
+
+  it('pick: keeps the person\'s order and records the mode; an unknown id is refused naming the set', async () => {
+    const { service } = bigFixture()
+    const drafted = await service.draftExperiment(request({ items: undefined, selection: { mode: 'pick', items: ['Q3', 'P1'] } }))
+    expect(read(drafted.planPath)['dataset']).toMatchObject({ items: ['Q3', 'P1'], selection: { mode: 'pick', pool: 11 } })
+    await expect(service.draftExperiment(request({ items: undefined, selection: { mode: 'pick', items: ['Z9'] } })))
+      .rejects.toThrow(/"ds" of reg at c{7}: the set declares no item\(s\) "Z9"/)
+  })
+
+  it('refuses a count larger than the pool, with the pool size, and nothing is written', async () => {
+    const { service, stateRoot } = bigFixture()
+    await expect(service.draftExperiment(request({ items: undefined, selection: { mode: 'random', count: 11, seed: 1 } })))
+      .rejects.toThrow(/cannot draw 11 items from a pool of 10/)
+    expect(() => readdirSync(join(stateRoot, 'experiments'))).toThrow()
+  })
+
+  it('refuses both items and selection, and neither', async () => {
+    const { service } = bigFixture()
+    await expect(service.draftExperiment(request({ selection: { mode: 'all' } }))).rejects.toThrow(/items OR selection/)
+    await expect(service.draftExperiment(request({ items: undefined }))).rejects.toThrow(/no items selected/)
+  })
+
+  it('an explicit item list writes no selection block — the plan is exactly what it was before rev15', async () => {
+    const { service } = bigFixture()
+    const drafted = await service.draftExperiment(request())
+    expect(read(drafted.planPath)['dataset']).not.toHaveProperty('selection')
+    expect(drafted.selection).toBeNull()
   })
 })
 

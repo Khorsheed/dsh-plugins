@@ -308,6 +308,27 @@ describe('eval_plan_draft — the row\'s one write, and the form\'s own verb', (
     expect(draft.mock.calls[0]?.[1]).toEqual({ session: { id: 's1' } })
   })
 
+  it('takes a 选题 selection in place of items and passes the seed through verbatim (T90)', async () => {
+    const { service } = draftable()
+    const draft = vi.spyOn(service, 'draftExperiment')
+    const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool
+    const { items: _items, ...rest } = DRAFT_ARGS
+
+    const result = await tool.execute({ ...rest, selection: { mode: 'random', count: 1, seed: 31337 } }, BOUND) as {
+      items: string[]
+      selection: Record<string, unknown>
+    }
+    expect(draft.mock.calls[0]?.[0]).toMatchObject({ selection: { mode: 'random', count: 1, seed: 31337 } })
+    expect(draft.mock.calls[0]?.[0]).not.toHaveProperty('items')
+    expect(result.items).toEqual(['P0'])
+    expect(result.selection).toMatchObject({ mode: 'random', seed: 31337, pool: 1, algorithm: 'hash-rank/1' })
+
+    await expect(tool.execute({ ...rest, name: 'x2', selection: { mode: 'random', count: 1 } }, BOUND))
+      .rejects.toThrow(/needs seed/)
+    await expect(tool.execute({ ...rest, name: 'x3', selection: { mode: 'some' } }, BOUND))
+      .rejects.toThrow(/selection\.mode/)
+  })
+
   it('mints a condition as a copy, and refuses one with no source to copy', async () => {
     const { service } = draftable()
     const tool = toolsOver(service).get('eval_plan_draft') as RegisteredTool

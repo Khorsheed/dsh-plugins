@@ -51,6 +51,38 @@ describe('buildOrganizeRequest', () => {
     expect(text).toContain('4. organize.open.budget')
   })
 
+  it('选题 (T90): all / random settle the items and quote the selection argument verbatim', () => {
+    const all = buildOrganizeRequest(
+      { name: 'r', dataset: 'reg/ds', selection: { mode: 'all', pool: 12, includePlaceholders: false } }, echo,
+    )
+    expect(all).toContain(`- organize.settled.all ${JSON.stringify({ count: 12, arg: '{"mode":"all"}' })}`)
+    expect(all).not.toContain('organize.open.items')
+
+    const random = buildOrganizeRequest({
+      name: 'r', dataset: 'reg/ds', selection: { mode: 'random', count: 3, seed: 42, pool: 12, includePlaceholders: true },
+    }, echo)
+    expect(random).toContain(`- organize.settled.randomWithPlaceholders ${JSON.stringify({
+      count: 3, seed: 42, pool: 12, arg: '{"mode":"random","count":3,"seed":42,"include_placeholders":true}',
+    })}`)
+
+    // A pick of nothing is not a choice: the items stay open for the agent.
+    const none = buildOrganizeRequest({ name: 'r', dataset: 'reg/ds', selection: { mode: 'pick', items: [] } }, echo)
+    expect(none).toContain('organize.open.items')
+    // Without a set, a selection means nothing.
+    expect(buildOrganizeRequest({ name: 'r', selection: { mode: 'all', pool: 1, includePlaceholders: false } }, echo))
+      .toContain('organize.open.items')
+  })
+
+  it('选题 lines read cleanly in both languages and carry the tool argument', () => {
+    for (const table of [zh, en]) {
+      const text = buildOrganizeRequest({
+        name: 'x1', dataset: 'reg/ds', selection: { mode: 'random', count: 2, seed: 9, pool: 5, includePlaceholders: false },
+      }, dictionary(table as Record<EvalKey, string>))
+      expect(text).toContain('{"mode":"random","count":2,"seed":9}')
+      expect(text).not.toMatch(/\{\w+\}/)
+    }
+  })
+
   it('reads as a request in both languages, drafts with eval_plan_draft and says not to start', () => {
     for (const table of [zh, en]) {
       const text = buildOrganizeRequest({ name: 'x1' }, dictionary(table as Record<EvalKey, string>))

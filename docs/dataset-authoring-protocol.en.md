@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev14** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev15** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator and the bind form's prefill derive from it. The `dataset-authoring` skill is also planned to derive from this protocol, but remains planned and is not yet distributed with `@khorsheed/dsh-datasets`. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -649,6 +649,53 @@ A sub-dsh condition carries a few more lines — `provisioned.preset` is read ba
             "type": "string"
           }
         },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "pool"
+          ],
+          "description": "Optional (v1-rev15). How items was chosen: provenance only, never re-applied (a run reads items). mode all = every eligible item; random = count items drawn by seed with algorithm (hash-rank/1: the count ids with the smallest cyrb53 hash of \"<seed>\\u0000<id>\", listed in id order), so the same seed on the same commit always draws the same items; pick = ticked by hand. pool = how many items were eligible (placeholder items only when placeholders is true). Absent when the items were listed explicitly.",
+          "properties": {
+            "mode": {
+              "enum": [
+                "all",
+                "random",
+                "pick"
+              ]
+            },
+            "pool": {
+              "type": "integer"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "seed": {
+              "type": "integer"
+            },
+            "algorithm": {
+              "type": "string"
+            },
+            "placeholders": {
+              "type": "boolean"
+            }
+          },
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "random"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "count",
+              "seed",
+              "algorithm"
+            ]
+          }
+        },
         "repo": {
           "type": "string",
           "description": "Legacy, read-only: a repository path."
@@ -836,6 +883,7 @@ A sub-dsh condition carries a few more lines — `provisioned.preset` is read ba
 - `retry.infrastructure` and `exports` are both optional: the first is the per-cell infrastructure-retry budget (spawn failures, facade errors, timeouts), default 1, `0` disabling retries; the second is the bundle export directory (`~/…` allowed), default the experiment directory's `exports/`. Both are **reviewed defaults** — the run call options (`retryInfrastructure` / `exportsDir`) override them, so the plan is what review reads and the options are what a one-off run bends.
 - A plan carries **no template field**: the run template is a deterministic function of the dataset manifest, generated and linted at validate time and reviewed alongside the plan (I2).
 - `dataset` is `{registry, set, commit}` (v1-rev13): `registry` is the dataset registration id, `set` the dataset set in that repository, and `commit` is **required** and a full hash — every contract file the plan uses is read at that commit. Drafting without a commit, `eval_plan_draft` takes the tracked branch's latest, and refuses with the candidates listed when that disagrees in content (the `items/` and `schemas/` tree hashes) with the version pinned by existing experiments on the same set and conditions. The legacy `{repo, id, commit}` form (`commit` may be `null`, meaning pinned at run start) is **read-only**: old plans still validate and import, and no tool writes it any more.
+- `dataset.selection` is optional (v1-rev15): how `items` was chosen — **provenance only, never re-applied**; a run reads `items` and nothing else. `mode` is one of `all` (every eligible item), `random` (`count` items drawn by `seed` with the rule named in `algorithm` — `hash-rank/1`: hash every item id as cyrb53(`"<seed>\u0000<id>"`), take the `count` smallest, list them in id order — so **the same set version (commit) + seed + count always draws the same items**, and whether an item is drawn depends only on its own hash, so adding or removing other items does not reshuffle it), or `pick` (ticked by hand). `pool` is how many items were eligible (placeholder items excluded unless `placeholders: true`). Different experiments on the same set may select different items. Plans drafted from an explicit item list carry no selection.
 - `name` is optional: the experiment's display name, from which the experiment id `<slug>-<yyyymmdd>-<4hex>` is minted; an imported legacy plan without one takes its file stem.
 - `question` / `expectation` / `answeredWhen` are optional (v1-rev14): the **question** this experiment is run to answer (one sentence, in the person's own words), the **expectation** (what the person thinks the answer is before anything runs; omitted when there is none), and **what counts as answered** (one sentence: which result would answer the question). They are the plan as a person reads it and drive no orchestration: the experiment-design page shows the three as the first block of its upper half, and the comparison page's conclusion card opens with `question` verbatim and carries `answeredWhen` as one small line. Plans from rev13 and earlier have none of the three; the page shows no block and validate does not warn about the absence. Like every other field they enter planSha — changing the question changes the plan, and a started experiment no longer changes it.
 - `unit` may be omitted. Omitted, the run takes the **host path**: per-cell directories under `$DSH_HOME/state/eval`, no containers, byte for byte what it was before this field existed. Present, it takes the **container path**: every cell of the run goes acquire → populate → one delegation round and one checkpoint per stage → probes (inside the unit, through `lab.verify`) → archive → release, in one lab unit built from `image`. An undeclared `network` is docker's default bridge, which HAS egress — a sealed run must name its internal network; an undeclared `user` is the image's own `USER`; `resources` is both applied to the container and hashed into the environment fingerprint.

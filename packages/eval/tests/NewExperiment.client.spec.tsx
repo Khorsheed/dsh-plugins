@@ -14,6 +14,8 @@
  * 3. 「让 Agent 组织」 writes the request into the chat box through insertDraft,
  *    NEVER sends, focuses the composer, closes the dialog and says so.
  * 4. With no chat box, the request goes to the clipboard, and the notice says so.
+ * 5. 选题 (T90): 全部 by default; 随机 N 题 previews eval_plan_draft's own draw
+ *    under a seed that is shown and editable; 手选 filters a large set.
  *
  * The request's own wording is organize.spec.ts's.
  */
@@ -25,6 +27,7 @@ import type { EvalDraftOptionsView, EvalExperimentsResult } from '../src/types.t
 import type { LabViewProps } from '../src/client/contract.ts'
 import { LabView } from '../src/client/LabView.tsx'
 import { createLabViewStore } from '../src/client/store.ts'
+import { drawItems } from '../src/contract/item-selection.ts'
 
 function hookOf(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => unknown }) {
   return function useSelector<S>(sel: (s: unknown) => S): S {
@@ -50,6 +53,22 @@ const OPTIONS: EvalDraftOptionsView = {
   notes: [],
 }
 
+/** A set big enough for the filter box: twelve real items and one placeholder. */
+const BIG_IDS = Array.from({ length: 12 }, (_, i) => `I${String(i + 1).padStart(2, '0')}`).sort()
+const BIG_OPTIONS: EvalDraftOptionsView = {
+  datasets: [{
+    id: 'reg/ds',
+    commit: COMMIT,
+    items: ['P0-placeholder', ...BIG_IDS],
+    itemInfo: [
+      { id: 'P0-placeholder', title: '链路测试夹具', stages: null, placeholder: true },
+      ...BIG_IDS.map((id, i) => ({ id, title: `title ${i + 1}`, stages: 2, placeholder: false })),
+    ],
+    stages: ['stage1', 'stage2'],
+  }],
+  notes: [],
+}
+
 const EMPTY_LIST: EvalExperimentsResult = { rows: [], notes: [], session: 's1' }
 
 /** The echo dictionary: a key, then its params as JSON — so a test reads what was said. */
@@ -57,12 +76,12 @@ const t = (key: string, params?: Record<string, unknown>) => (
   params === undefined ? key : `${key} ${JSON.stringify(params)}`
 )
 
-function makeHarness(opts: { composer?: boolean } = {}) {
+function makeHarness(opts: { composer?: boolean; options?: EvalDraftOptionsView } = {}) {
   const instance = createLabViewStore().create()
   return {
     instance,
     fetchExperiments: vi.fn(async (): Promise<Result<EvalExperimentsResult>> => ({ ok: true, value: EMPTY_LIST })),
-    fetchDraftOptions: vi.fn(async (): Promise<Result<EvalDraftOptionsView>> => ({ ok: true, value: OPTIONS })),
+    fetchDraftOptions: vi.fn(async (): Promise<Result<EvalDraftOptionsView>> => ({ ok: true, value: opts.options ?? OPTIONS })),
     fetchConditions: vi.fn(async () => ({ ok: true as const, value: { rows: [], notes: [] } })),
     insertDraft: vi.fn((_sid: SessionId, _text: string) => opts.composer ?? true),
     focusComposer: vi.fn(),
@@ -140,6 +159,7 @@ describe('新建实验 dialog (T87)', () => {
     const h = makeHarness()
     await openDialog(h)
     fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'reg/ds' } })
+    fireEvent.click(await screen.findByRole('tab', { name: 'new.mode.pick' }))
 
     expect(await screen.findByText('F2-room')).toBeTruthy()
     expect(screen.getByText('多 agent 协作空间')).toBeTruthy()
@@ -182,16 +202,101 @@ describe('新建实验 dialog (T87)', () => {
     fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'room-walk' } })
     fireEvent.change(screen.getByLabelText('new.question'), { target: { value: '协作空间\n好不好用' } })
     fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'reg/ds' } })
+    fireEvent.click(await screen.findByRole('tab', { name: 'new.mode.pick' }))
     fireEvent.click((await screen.findByText('F2-room')).closest('label')!.querySelector('input')!)
     fireEvent.click(organizeButton())
 
     const text = h.insertDraft.mock.calls[0]?.[1] as string
     expect(text).toContain('organize.settled.question {"question":"协作空间 好不好用"}')
     expect(text).toContain('organize.settled.dataset {"dataset":"reg/ds"}')
-    expect(text).toContain('organize.settled.items {"items":"F2-room"}')
+    expect(text).toContain(`organize.settled.pick ${JSON.stringify({ items: 'F2-room', arg: '{"mode":"pick","items":["F2-room"]}' })}`)
     expect(text).not.toContain('organize.open.question')
     expect(text).not.toContain('organize.open.dataset')
     expect(text).not.toContain('organize.open.items')
+  })
+
+  it('选题 defaults to 全部 over the real items, and says so in the request (T90)', async () => {
+    const h = makeHarness({ options: BIG_OPTIONS })
+    await openDialog(h)
+    fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'all-of-it' } })
+    fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'reg/ds' } })
+    const allTab = await screen.findByRole('tab', { name: 'new.mode.all' })
+    expect(allTab.getAttribute('aria-selected')).toBe('true')
+    // The placeholder is not in the pool unless asked for.
+    expect(screen.getByText('new.allHelp {"count":12}')).toBeTruthy()
+    fireEvent.click(organizeButton())
+    const text = h.insertDraft.mock.calls[0]?.[1] as string
+    expect(text).toContain(`organize.settled.all ${JSON.stringify({ count: 12, arg: '{"mode":"all"}' })}`)
+    expect(text).not.toContain('organize.open.items')
+  })
+
+  it('随机 N 题 previews the very draw eval_plan_draft makes, with a visible, editable seed (T90)', async () => {
+    const h = makeHarness({ options: BIG_OPTIONS })
+    await openDialog(h)
+    fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'sample' } })
+    fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'reg/ds' } })
+    fireEvent.click(await screen.findByRole('tab', { name: 'new.mode.random' }))
+
+    const seedBox = screen.getByLabelText('new.seed') as HTMLInputElement
+    expect(seedBox.value).toMatch(/^\d+$/) // minted, shown
+    fireEvent.change(screen.getByLabelText('new.randomCount'), { target: { value: '3' } })
+    fireEvent.change(seedBox, { target: { value: '42' } })
+
+    const expected = drawItems(BIG_IDS, 3, 42)
+    const preview = screen.getByLabelText(`new.randomPreview {"commit":"${COMMIT.slice(0, 7)}"}`)
+    expect([...preview.querySelectorAll('span')].map(el => el.textContent).filter(text => BIG_IDS.includes(text ?? ''))).toEqual(expected)
+
+    // 换一个种子 mints another one into the box.
+    const before = seedBox.value
+    let changed = false
+    for (let i = 0; i < 5 && !changed; i++) {
+      fireEvent.click(screen.getByRole('button', { name: 'new.seedMint' }))
+      changed = (screen.getByLabelText('new.seed') as HTMLInputElement).value !== before
+    }
+    expect(changed).toBe(true)
+    fireEvent.change(screen.getByLabelText('new.seed'), { target: { value: '42' } })
+
+    fireEvent.click(organizeButton())
+    const text = h.insertDraft.mock.calls[0]?.[1] as string
+    expect(text).toContain(`organize.settled.random ${JSON.stringify({
+      count: 3, seed: 42, pool: 12, arg: '{"mode":"random","count":3,"seed":42}',
+    })}`)
+  })
+
+  it('a count outside the pool, or a seed that is not a whole number, is said in place and holds the action (T90)', async () => {
+    const h = makeHarness({ options: BIG_OPTIONS })
+    await openDialog(h)
+    fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'sample' } })
+    fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'reg/ds' } })
+    fireEvent.click(await screen.findByRole('tab', { name: 'new.mode.random' }))
+
+    fireEvent.change(screen.getByLabelText('new.randomCount'), { target: { value: '13' } })
+    expect(screen.getByRole('alert').textContent).toBe('new.randomBadCount {"pool":12}')
+    expect(organizeButton().disabled).toBe(true)
+
+    fireEvent.change(screen.getByLabelText('new.randomCount'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('new.seed'), { target: { value: '-1' } })
+    expect(screen.getByRole('alert').textContent).toBe('new.randomBadSeed')
+    expect(organizeButton().disabled).toBe(true)
+
+    fireEvent.change(screen.getByLabelText('new.seed'), { target: { value: '7' } })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(organizeButton().disabled).toBe(false)
+  })
+
+  it('手选 filters a large set by ID or title and counts the pick (T90)', async () => {
+    const h = makeHarness({ options: BIG_OPTIONS })
+    await openDialog(h)
+    fireEvent.change(screen.getByLabelText('new.dataset'), { target: { value: 'reg/ds' } })
+    fireEvent.click(await screen.findByRole('tab', { name: 'new.mode.pick' }))
+    expect(screen.getByText('new.pickEmptyHelp')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('new.pickFilter'), { target: { value: 'title 1' } })
+    // "title 1", "title 10", "title 11", "title 12"
+    expect(screen.getAllByRole('checkbox')).toHaveLength(4)
+    fireEvent.click(screen.getByText('I10').closest('label')!.querySelector('input')!)
+    expect(screen.getByText('new.pickCount {"count":1,"total":12}')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('new.pickFilter'), { target: { value: 'nothing-like-it' } })
+    expect(screen.getByText('new.pickNoMatch')).toBeTruthy()
   })
 
   it('without a chat box, copies the request and says so', async () => {

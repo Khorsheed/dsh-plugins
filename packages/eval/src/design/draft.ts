@@ -54,6 +54,7 @@ import {
 } from './experiment-store.ts'
 import type { DatasetsRegistryFace } from '../faces.ts'
 import { CONDITION_ID_RE, PLAN_SCHEMA_ID } from '../contract/schema.ts'
+import { ItemSelectionRefused, resolveSelection, type ItemSelection, type PlanSelection } from '../contract/item-selection.ts'
 import { conditionUnitOf, defaultConditionUnit } from '../run/unit.ts'
 
 /**
@@ -117,8 +118,17 @@ export interface DraftExperimentInput {
   commit?: string | null
   /** The session drafting it, recorded in meta.json; absent for the CLI. */
   originSession?: string | null
-  /** The dataset items the matrix runs over. */
-  items: readonly string[]
+  /**
+   * The dataset item ids the matrix runs over, as given. Pass this OR
+   * `selection`: an explicit list with no selection writes no provenance.
+   */
+  items?: readonly string[]
+  /**
+   * 选题 (T90): all / random N by seed / hand-picked, resolved against the
+   * PINNED commit's items and written as the plan's `dataset.items` plus a
+   * `dataset.selection` provenance block (item-selection.ts).
+   */
+  selection?: ItemSelection
   /** Player condition ids; minted conditions are appended when not already named. */
   conditions: readonly string[]
   /** Conditions to mint, each a copy of an existing declaration in the library. */
@@ -162,6 +172,10 @@ export interface DraftWrite {
   planPath: string
   /** The pinned dataset. */
   dataset: ExperimentDataset
+  /** The item ids the plan pins, in plan order. */
+  items: string[]
+  /** How they were chosen; null when the caller passed an explicit list. */
+  selection: PlanSelection | null
   /** The condition declarations minted into the library, in mint order (absolute). */
   conditionPaths: string[]
   /** The plan's player condition ids as written, minted ones included. */
@@ -433,8 +447,16 @@ export async function draftExperiment(input: DraftExperimentInput): Promise<Draf
   if (name === '') throw new EvalDraftRefused('no experiment name — every experiment carries one')
   checkName(name, 'experiment name')
 
-  const items = input.items.map(item => item.trim()).filter(item => item !== '')
-  if (items.length === 0) throw new EvalDraftRefused('no items selected — a matrix with no rows runs nothing')
+  const listed = (input.items ?? []).map(item => item.trim()).filter(item => item !== '')
+  if (input.selection !== undefined && listed.length > 0) {
+    throw new EvalDraftRefused(
+      'pass items OR selection, not both — a hand-picked list is selection {mode: "pick", items}, '
+      + 'and an all / random selection writes the item list itself',
+    )
+  }
+  if (input.selection === undefined && listed.length === 0) {
+    throw new EvalDraftRefused('no items selected — a matrix with no rows runs nothing (pass items, or a selection: all / random / pick)')
+  }
   if (!Number.isInteger(input.reps) || input.reps < 1) {
     throw new EvalDraftRefused(`reps must be a positive integer, got ${JSON.stringify(input.reps)}`)
   }
@@ -474,6 +496,24 @@ export async function draftExperiment(input: DraftExperimentInput): Promise<Draf
   const known = await itemIdsOf(datasetRoot)
   if (known.length === 0) {
     throw new EvalDraftRefused(`dataset set ${JSON.stringify(set)} of ${registry} holds no items at ${decision.commit.slice(0, 7)}`)
+  }
+  // ── the items: resolved against the PINNED commit, so the same seed on the
+  // same version always writes the same list (item-selection.ts) ───────────
+  let items: string[] = listed
+  let selection: PlanSelection | null = null
+  if (input.selection !== undefined) {
+    const pool = await Promise.all(known.map(async id => ({ id, placeholder: (await itemOptionOf(datasetRoot, id)).placeholder })))
+    try {
+      const resolved = resolveSelection(pool, input.selection)
+      items = resolved.items
+      selection = resolved.record
+    } catch (error) {
+      if (error instanceof ItemSelectionRefused) {
+        const reason = (error as Error).message
+        throw new EvalDraftRefused(`dataset set ${JSON.stringify(set)} of ${registry} at ${decision.commit.slice(0, 7)}: ${reason}`)
+      }
+      throw error
+    }
   }
   // A WARNING's job, not a refusal's — except that nothing downstream warns:
   // validate checks the items against the rubric, not against the tree, and a
@@ -530,7 +570,7 @@ export async function draftExperiment(input: DraftExperimentInput): Promise<Draf
     ...textField('question', input.question),
     ...textField('expectation', input.expectation),
     ...textField('answeredWhen', input.answeredWhen),
-    dataset: { registry, set, commit: decision.commit, items },
+    dataset: { registry, set, commit: decision.commit, items, ...(selection === null ? {} : { selection }) },
     conditions,
     reps: input.reps,
     stages,
@@ -565,6 +605,8 @@ export async function draftExperiment(input: DraftExperimentInput): Promise<Draf
     experimentDir: record.dir,
     planPath: record.planPath,
     dataset,
+    items,
+    selection,
     conditionPaths,
     conditions,
     judges: judgeIds,
