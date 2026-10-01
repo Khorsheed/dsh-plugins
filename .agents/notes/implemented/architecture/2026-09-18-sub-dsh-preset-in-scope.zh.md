@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-09-18-sub-dsh-preset-in-scope.md) | 中文
 
+> 宿主 0.2.0 上部分被[宿主 0.2.0 上子 dsh 的 preset 是一个拷进 scope 的包](2026-10-01-sub-dsh-preset-package-host-020.zh.md)取代：`.agent-presets/<id>` 下的目录 preset、`@deepseek-ai/dsh-agent-presets` roster 行与 `defaultPresetRoot` 都已去掉；scope 现在在 `preset-packages/<id>` 下留一份 preset 包副本，patch 带的是 `@deepseek-ai/dsh-agent-preset-registry` 行。下文的解析顺序、刷新/保留规则与「不得写绝对路径」仍然成立。
+
 ## Problem
 
 条件里的 `preset` 在 T32 成为可核对的因子、在 T32b 拿到测量，而 pilot D——那场「两个受试对象只差一个因子，而这个因子就是能力面」的 run——仍然跑不起来。T33c 停在就绪闸上，一个 token 都没花，因为两条要求正面顶住。

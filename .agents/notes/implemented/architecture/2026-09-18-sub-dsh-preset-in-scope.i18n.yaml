@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-18-sub-dsh-preset-in-scope.md
-.agents/notes/implemented/architecture/2026-09-18-sub-dsh-preset-in-scope.md: 8debabc97f3455cf6687ab0d9ea34e09befc766b
-.agents/notes/implemented/architecture/2026-09-18-sub-dsh-preset-in-scope.zh.md: 239195c95ea194b3d7419a626759c2cf18d12c3a
+.agents/notes/implemented/architecture/2026-09-18-sub-dsh-preset-in-scope.md: 31348537448c4b8aa43a414ac83a5334cf6e709c
+.agents/notes/implemented/architecture/2026-09-18-sub-dsh-preset-in-scope.zh.md: 7f124329d8265e3ebe1f1ff7cac4053186af927d

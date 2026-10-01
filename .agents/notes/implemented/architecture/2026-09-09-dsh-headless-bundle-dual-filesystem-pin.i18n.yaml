@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-dsh-headless-bundle-dual-filesystem-pin.md
-.agents/notes/implemented/architecture/2026-09-09-dsh-headless-bundle-dual-filesystem-pin.md: f118d1a3cd5850eb45d770da29f01cf087803134
-.agents/notes/implemented/architecture/2026-09-09-dsh-headless-bundle-dual-filesystem-pin.zh.md: 1c0e45ef8759359f5a253a856b682f12fffcce1c
+.agents/notes/implemented/architecture/2026-09-09-dsh-headless-bundle-dual-filesystem-pin.md: f0b80d4121113cabe2380adbd441d8e4ee8c79b5
+.agents/notes/implemented/architecture/2026-09-09-dsh-headless-bundle-dual-filesystem-pin.zh.md: dd7086fde5eb215032416b197b9b7bfc0c82ed4f

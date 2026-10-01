@@ -36,13 +36,19 @@ function stageHome(): { home: string; marker: string } {
   return { home, marker }
 }
 
-/** A copy of the profile whose patch pins a headless bundle that does not exist. */
+/**
+ * A copy of the profile whose patch pins a shared (host + unit) headless bundle
+ * that does not exist. Since T91 the shipped patch pins only the in-unit path
+ * (`unitHeadlessBundleDir`, no host requirement), so the stage swaps that line
+ * for the shared `headlessBundleDir` form the preflight still guards.
+ */
 function stageProfileWithMissingPin(): string {
   const src = mkdtempSync(join(tmpdir(), 'web-eval-src-'))
   cpSync(PROFILE, src, { recursive: true })
   const patchPath = join(src, 'cordis.patch.yml')
   const patch = readFileSync(patchPath, 'utf8')
-    .replace(/headlessBundleDir: .*/, 'headlessBundleDir: /nonexistent/dsh-headless/bundle')
+    .replace(/unitHeadlessBundleDir: .*/, 'headlessBundleDir: /nonexistent/dsh-headless/bundle')
+  if (!patch.includes('headlessBundleDir: /nonexistent/dsh-headless/bundle')) throw new Error('stage: no headless pin to swap')
   writeFileSync(patchPath, patch, 'utf8')
   return src
 }

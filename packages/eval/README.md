@@ -136,8 +136,8 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 
 条件文档里的 `preset` 一直是一句**没有对应物**的话。它进条件哈希，所以两条只差 preset 的条件在账面上是两个受试对象；但从来没有任何东西把 preset 写到哪里去过，也就没有任何东西能与它不符。T32 给了它对应物：
 
-- **谁可以声明。** 只有 `dsh`。它的作用域目录里那份子 profile 是评测实例自己写的，preset roster 是那份 patch 的一层。三家外部 CLI 跑厂商自己的编排，本家族组不了——给它们写 preset 由 validate 报 error（`PRESET_NOT_FOR_HARNESS`），只能写 `null`。它们那侧的等价物是 `skills.pack`，同样尚未落地（I6）。
-- **provision 先把 preset 组进 scope。** 条件声明了 preset 时，`conditions provision` 在哈希作用域目录**之前**调 `localAgent.provisionScope(harness, scope, { preset })`：preset 是**受试对象**的属性，做主的该是条件文档，而不是一个实例只有一份的插件设置（pilot D 之前只能手工把 roster 层追进每个 scope 的 patch，而那一层会被下一次重启静默抹掉）。顺序不是随意的——scope 自带的那份 preset 副本就在作用域目录里面，先哈希再组进去会锁下一个描述不存在目录的 `home.sha`。门面没有这个动词就退回从前：有什么读什么。
+- **谁可以声明。** 只有 `dsh`。它的作用域目录里那份子 profile 是评测实例自己写的，preset 是那份 patch 的一层（宿主 0.2.0：一条 `@deepseek-ai/dsh-agent-preset-registry` 行，`default` 写 preset id）。三家外部 CLI 跑厂商自己的编排，本家族组不了——给它们写 preset 由 validate 报 error（`PRESET_NOT_FOR_HARNESS`），只能写 `null`。它们那侧的等价物是 `skills.pack`，同样尚未落地（I6）。
+- **provision 先把 preset 组进 scope。** 条件声明了 preset 时，`conditions provision` 在哈希作用域目录**之前**调 `localAgent.provisionScope(harness, scope, { preset })`：preset 是**受试对象**的属性，做主的该是条件文档，而不是一个实例只有一份的插件设置（pilot D 之前只能手工把 preset 层追进每个 scope 的 patch，而那一层会被下一次重启静默抹掉）。顺序不是随意的——scope 自带的那份 preset 副本就在作用域目录里面，先哈希再组进去会锁下一个描述不存在目录的 `home.sha`。门面没有这个动词就退回从前：有什么读什么。
 - **provision 写下实物。** `conditions provision`（T31）在 `provisioned` 里多记两项：`preset` 从写出去的子 profile 回读，`capabilities.sha` 是 capability-catalog 对那份已配好的环境算出的**能力哈希**（规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters——描述措辞不进，改一次文案不该换一个受试对象）。测量由**实例内的探针**做（T32b，见下）；没有 catalog 的组合里探针不在，条件照样落 lock 但不带能力记录，并按名报 `CAPABILITIES_UNMEASURED`——之后就绪检查再拒一次。
 - **就绪检查还比新鲜度。** lock 记的是 provision 当时的哈希；run 起来时就绪检查**再量一次**，两者不等即判该条件不就绪、点名「preset 在 provision 之后变了」。少了这一步，lock 会永远读作「已核对」而它量的那个 preset 在底下被改——而改技能**正文**不会动任何别的已记哈希（`home.sha` 只哈希配置类文件，不含 SKILL.md），只有这一步看得见。量不出来（catalog 不在、preset 挂不起来）时，原记录照旧算数：测不到是关于 catalog 的证据，不是关于受试对象的。改的若是 scope 自带那份副本，还有第二道、且不需要 catalog 的检查：重算 `capabilities.snapshot.sha`，不等即拒。**`validate` 与 `conditions list` 也核这一条**（在实例里跑、拿得到作用域目录解析器时）——T32b 记下的「离线读到 ready、run 起来才被拒」就此对上；能力面本身仍然要活的 catalog 才量得到，纯 CLI 的 validate 因此仍看不见它。
 - **就绪检查核对。** 声明了 preset 而 lock 里没有能力记录，或记录取自另一个 preset——在花掉任何一次委派**之前**就判该条件不就绪。preset 进哈希却没人量过，等于两个纸面上的受试对象、事实上的一个。
@@ -182,15 +182,15 @@ validate 用**同一个函数**复核 lock 里的 `provisioned.effective`：两�
 
 第 5 步之前还有一步，只对 `preset` 非 null 的条件跑：
 
-1. **回读 roster** —— 扫作用域目录下每个 `profiles/*/cordis.patch.yml`，找挂 `@deepseek-ai/dsh-agent-presets` 的 insert 行，取它的 `default`。认的是**包名**，不是生成的注释横幅、也不是 profile 目录名——子 profile 名字可配，改了名照样读得到。读不到就不测量：把声明抄进 `provisioned.preset` 正是唯一会让这个字段失去意义的做法。
-2. **确认两边读的是同一份 preset 目录** —— catalog 按**评测实例自己**的 roster 根解析 preset id，子 dsh 按作用域目录的根解析。两种形态：
-   - 作用域目录**不自带** preset（`source: "instance-root"`）：两边读的就是部署的 preset 根，照测。但单元 bind 挂进去的只有作用域目录，所以这种条件**只在宿主轮解析得到 preset**，探针会把这句话记进日志。
-   - 作用域目录**自带**一份 `<scope>/.agent-presets/<id>`（`source: "scope-snapshot"`，容器轮唯一可行的形态）：只有当**做出这份副本的 provisioning**（`localAgent.provisionScope`）报告它与部署那份**逐字节相同**时才测。凭什么转移得过去：规范化的能力面里**没有任何文件系统路径**（技能只进 name/source/正文 sha，工具只进 name/channel/parameters），所以两份逐字节相同的目录哈希必然相同——T32 的真机轮从另一头测到过这件事（同样内容换个 preset id，哈希一字不差）。没人担保、或副本的组合里有**绝对路径**、或它不是一棵纯文件树（有软链，过不了 bind mount），一律拒测并说出是哪一条。
+1. **回读 preset 层** —— 扫作用域目录下每个 `profiles/*/cordis.patch.yml`，找挂 `@deepseek-ai/dsh-agent-preset-registry` 的 insert 行，取它的 `default`（T91 起；0.1.5 的 `@deepseek-ai/dsh-agent-presets` roster 不再认）。认的是**包名**，不是生成的注释横幅、也不是 profile 目录名——子 profile 名字可配，改了名照样读得到。读不到就不测量：把声明抄进 `provisioned.preset` 正是唯一会让这个字段失去意义的做法。
+2. **确认两边读的是同一份 preset** —— catalog 按**评测实例自己**的 registry 解析 preset id（实例 profile 里装的 preset 包），子 dsh 按作用域目录里的副本解析。两种形态：
+   - 作用域目录**不自带** preset（`source: "instance-root"`）：两边读的就是实例里装的那个 preset 包，照测。但单元 bind 挂进去的只有作用域目录，所以这种条件**只在宿主轮解析得到 preset**，探针会把这句话记进日志。
+   - 作用域目录**自带**一份 preset 包副本 `<scope>/preset-packages/<id>`（`source: "scope-snapshot"`，容器轮唯一可行的形态；它得是一个声明了 `dsh.bundle.patch`、patch 里有 `@deepseek-ai/dsh-agent-preset` 行的包）：只有当**做出这份副本的 provisioning**（`localAgent.provisionScope`）报告它与部署那份**逐字节相同**时才测。凭什么转移得过去：规范化的能力面里**没有任何文件系统路径**（技能只进 name/source/正文 sha，工具只进 name/channel/parameters），所以两份逐字节相同的目录哈希必然相同——T32 的真机轮从另一头测到过这件事（同样内容换个 preset id，哈希一字不差）。没人担保、或副本的组合里有**绝对路径**、或它不是一棵纯文件树（有软链，过不了 bind mount），一律拒测并说出是哪一条。
 3. **量** —— `ctx.capabilityCatalog.snapshotFor(<回读到的 id>)`，取快照自带的 `sha`。preset 挂不起来时 catalog 是**抛错**而不是退回全局层（T32 的决定），那句拒绝就是这里的答案。
 
 探针还顺手把那份副本**整棵哈希**（每个文件都算，`SKILL.md` 也算）记进 `capabilities.snapshot.sha`。这不是对能力面的第二种说法，而是**离线**判断「受试对象还是被量过的那一个」的唯一凭据：`home.sha` 按设计只哈希配置后缀的文件，改技能正文它不动；能力面要有活的 catalog 才量得到。就绪检查与 `validate` 都核它——**T32b 记下的那个缺口（「validate 把过期的 lock 报成 ready」）就此关上**，至少对改正文这一类；validate 拿到作用域目录解析器（实例里跑时有，纯 CLI 里没有）才做这件事，拿不到就与从前逐字节一样。
 
-**它量的是什么**：该 preset 的能力面**在评测实例这份 composition 里**的样子，不是子 dsh 自己那份（dsh-base + headless patch + roster）。作为因子它是真的——两个 preset 两个哈希，改技能正文哈希就变——但它不是子 dsh 的整张面。要量后者得把子 profile 启起来、问挂在里面的 catalog，那条启动路留给后续；到那天为止写下的 lock 会在新的量法下读作过期，而这正是上面那条新鲜度比对会说的话（「去重新 provision」），不是一次无声的错比。
+**它量的是什么**：该 preset 的能力面**在评测实例这份 composition 里**的样子，不是子 dsh 自己那份（dsh-base + headless patch + preset 层）。作为因子它是真的——两个 preset 两个哈希，改技能正文哈希就变——但它不是子 dsh 的整张面。要量后者得把子 profile 启起来、问挂在里面的 catalog，那条启动路留给后续；到那天为止写下的 lock 会在新的量法下读作过期，而这正是上面那条新鲜度比对会说的话（「去重新 provision」），不是一次无声的错比。
 
 provision 需要 local-agent 服务（作用域目录、凭证等级、effectiveSettings 都在那儿）与——为了探针——capability-catalog 服务，所以它和 `/eval run` 一样从活会话起：`/eval conditions provision <条件 id> [--no-write-back]`。CLI 进程外没有服务面，照旧拒绝。部署的条件库（`$DSH_HOME/state/eval/conditions`）是它唯一能写的地方；题库仓库从不被写。
 

@@ -47,7 +47,7 @@ import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/ds
 import type { LocalAgentDshConfig } from './index.ts'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { DshLiveDriver } from './live-driver.ts'
-import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope } from './provision.ts'
+import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope, unitSubProfileName } from './provision.ts'
 import { mirrorDshSession } from './session-mirror.ts'
 
 /**
@@ -631,7 +631,10 @@ export async function startDshCliRun(
   if (request.signal.aborted) {
     throw new Error('subagent-dsh: request was aborted before the CLI started')
   }
-  const profileName = config.profileName ?? DEFAULT_SUB_PROFILE_NAME
+  // A container round launches the `-unit` twin when one is configured: its
+  // headless link names the image's own install, while the host profile
+  // links this instance's (`unitHeadlessBundleDir`).
+  const profileName = spec.exec === undefined ? config.profileName ?? DEFAULT_SUB_PROFILE_NAME : unitSubProfileName(config)
   // Provisioning is idempotent and cheap; re-running heals a deleted or
   // drifted sub-profile before every round. A CONTAINER round skips it: the
   // sub-profile's node_modules symlink points at the host installation of the

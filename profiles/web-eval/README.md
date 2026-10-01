@@ -317,7 +317,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 
 源码模式的前置检查另有两条。**成员宿主线核对**：脚本读每个待打包成员 `package.json` 的 `dsh.compat.minHost`，与 `dsh --version` 比一次，低于任一成员就逐行列出谁要求什么版本（评测家族 eval / eval-tool / datasets / datasets-tool 的 `minHost` 与 `verifiedHost` 自 T82 起都是 0.2.0-rc.2）。**typert 宿主核对**：typert 生成读 `DSH_HARNESS`（默认 `~/code/deepseek-harness`）指的检出，它低于 0.2.0-rc.2 时同样退出。这些检查挡的是一种到不了安装期的失败：宿主偏低不会在装的时候报错，而是在**起实例时**从某个插件的 import 里抛一个缺失导出，或者更晚——装完能起、跑到 resume 轮才报错。
 
-`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 25（去重名字数——dump 里每个成员出现多次：层头加条目行。25 = 22 个 bundle（含本 profile 的 preset bundle）+ `local-agent-dsh-headless`（没有行，只是 headlessBundleDir 路径）+ eval 预设行点名的 `datasets-tool` 与 `eval-tool`）。T82 在 0.2.0-rc.2 临时实例上实装：25 个名字、205 行、默认预设 eval；合入 main 后再在新临时 home 上 `--source --fresh` 重装，实测仍是 25 个名字、205 行。家族折叠后各 provider 的 `./tool` 委派入口不进 dump：它们是按预设点名的行，本 profile 的 eval 预设不点名。
+`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 25（去重名字数——dump 里每个成员出现多次：层头加条目行。25 = 22 个 bundle（含本 profile 的 preset bundle）+ `local-agent-dsh-headless`（没有行，只是子 dsh 的 headless bundle）+ eval 预设行点名的 `datasets-tool` 与 `eval-tool`）。T82 在 0.2.0-rc.2 临时实例上实装：25 个名字、205 行、默认预设 eval；合入 main 后再在新临时 home 上 `--source --fresh` 重装，实测仍是 25 个名字、205 行。家族折叠后各 provider 的 `./tool` 委派入口不进 dump：它们是按预设点名的行，本 profile 的 eval 预设不点名。
 
 **npm 模式**——成员全部从 npm registry 解析。成员全部上架后（I6）开箱即用；在此之前，未上架成员会在安装时报 registry 404（权威清单见 dsh-plugins 的 [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md)）：
 
@@ -342,7 +342,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 同理由**归 pack** 的还有 agent 预设与技能：预设是 profile 目录里的声明式 bundle `presets/`，随 profile 文件一起覆盖，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）；`skills/eval-planning/` 整目录覆盖到 `$DSH_HOME/skills/eval-planning`——那是 `dsh-skill-filesystem` 扫的 `user-dsh` 根，eval 预设里的 `skill-filesystem` 行把它带进评测会话的技能卡。技能也是装置：它教的是 `eval_plan_draft` 这一个起草动词，以及批准 / 登录 / provision / 终评都不是 agent 的——这条线歪了，草稿就会变成没人批的 run。技能落在 profile 目录**之外**（技能名册按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它；预设 bundle 在 profile 目录里，随 profile 一起走——见[卸载](#更新切换装卸单个成员卸载)。
 
-当前 pin（I2·T15 写入，I3·T27 补三行；M4'③ 起这几条的授予点在 pack 的 `eval` 预设的伴生行上，I5·T46 起 `mission-tool` 那一行不再挂）：`datasets-tool: authoring`、`eval-tool: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `headlessBundleDir` 与 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的路径——provider 写进作用域目录的是指向宿主安装的绝对符号链接，单元里悬空；这是机器级前置条件，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
+当前 pin（I2·T15 写入，I3·T27 补三行；M4'③ 起这几条的授予点在 pack 的 `eval` 预设的伴生行上，I5·T46 起 `mission-tool` 那一行不再挂）：`datasets-tool: authoring`、`eval-tool: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的 `[dsh]`；headless bundle 的 pin 自 T91 起是 **`unitHeadlessBundleDir`**（原为 `headlessBundleDir`）：它只管容器轮的 `-unit` 子 profile，宿主轮链向实例自己装的那份 headless，不再经过宿主上的 `/opt/dsh-headless` 软链。容器轮的路径由镜像定死，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
 
 ## 更新、切换、装卸单个成员、卸载
 
@@ -358,7 +358,14 @@ dsh 条件的受试 CLI 不是条件自己选的：`local-agent-dsh` 的 `cliLau
 - **版本不符只是警告。** provision 的顺序是解析作用域 → 凭据 → 有效配置核对 → 预设组装 → home 摘要 → 能力清单 → 锁；`harness.version` 与实际 CLI 不符在核对那一步报警告不报错，并且排在凭据之后——没配凭据时 provision 停在 `CREDENTIAL_ABSENT`，看不到这条警告。
 - **旧锁看起来仍「就绪」。** 条件页读的是旧锁（记的 CLI 是 0.1.5-rc.1），不重探；run 报告只记录委派实际的 cliVersion，不与条件比对。换宿主后要对新条件重新 provision，别拿旧锁直接开跑。
 
-已知缺口（记在 T82 的 Agent Note 里作后续）：`local-agent-dsh` 组装带预设的作用域时插入的是 `@deepseek-ai/dsh-agent-presets`（0.1.5 的目录式预设模块），0.2.0 工具链里没有这个包，带预设的 dsh 条件在 0.2.0 上预计组不出来，要等 provider 改成声明式 `@deepseek-ai/dsh-agent-preset` 行。另外，provision 或运行 dsh 条件前必须先在插件页打开「DeepSeek 委派」（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）。
+**带预设的 dsh 条件在 0.2.0 上组得出来（T91）。** 0.2.0 的预设是包：题库的 `env/presets-0.2.0/{eval-lean,eval-full}` 各是一个声明式 bundle（包名 `@dataseek-eval/preset-<id>`）。provision 在**本实例 profile 的直接依赖**里找声明该 id 的包，逐字节拷进作用域的 `preset-packages/<id>`，子 profile 用一条 `agent-preset-registry` 行把它设成默认预设、用相对软链挂上这份副本——宿主轮与容器轮读到的是同一份。为此实例要先装上这两个包（部署步骤，不是 pack 成员：预设归题库）：
+
+1. 在 `$DSH_HOME/profiles/web-eval/package.json` 的 `dependencies` 里加 `"@dataseek-eval/preset-eval-lean": "file:<题库检出>/datasets/harness-comparison/env/presets-0.2.0/eval-lean"`（`eval-full` 同理），并把两个包名追加到 `dsh.profile.bundles` 末尾；
+2. 在该目录跑 `pnpm install`，再重启实例。
+
+`install.sh` 与 `update.sh` 会覆盖这份 `package.json`，重装后要重做这一步。没装时 provision 报找不到声明该 id 的包，作用域里什么都不写。宿主轮的 headless 跟着实例走（见上文的 `unitHeadlessBundleDir`）。委派工具的封口对这两个预设不改变任何东西：它们只点名 `persona`、`skill-filesystem`、`tool-skill`，工具来自 dsh-base 的根行，口径仍是「同工具、不同技能」。取舍见 [T91 的 Agent Note](../../.agents/notes/implemented/architecture/2026-10-01-sub-dsh-preset-package-host-020.zh.md)。T82 的临时实例 3185 上两条 `*-0.2.0-rc.2` 条件都 provision 出带 `provisioned.capabilities` 的锁，条件页显示就绪。
+
+provision 或运行 dsh 条件前必须先在插件页打开「DeepSeek 委派」（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）；`install.sh --fresh` 会把它重置成关。
 
 ## 把 0.1.5 实例切到 0.2.0
 
@@ -376,7 +383,7 @@ dsh 条件的受试 CLI 不是条件自己选的：`local-agent-dsh` 的 `cliLau
 4. **打开 DeepSeek 委派**：0.1.5 把这个开关存在旧版设置文件里，0.2.0 首次启动只会把 `$DSH_HOME/settings.yaml` 一次性导入行配置（导入后改名 `.imported`）。原地重装时预计会自动导入（T82 未实测，切换后在插件页核一眼）；装到新 home 时，由人在插件页「DSH 委派」卡片里打开「DeepSeek 委派」，或自己把旧设置文件放进新 home 让它导入。
 5. **起实例**：`PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/restart-into-web-eval.sh <端口>`。
 6. **核对**：结果列表 23 行；数据集注册表与老 home 一致；pilot-d 的报告仍是「暂时不能下结论」、4 比 0；「设置 → Agent 预设」默认是评测模式；`dsh --version` 为 0.2.0-rc.2。
-7. **dsh 条件**：导入题库里的 `*-0.2.0-rc.2` 条件并重新 provision；旧条件的锁保留作历史，不再用于新 run。
+7. **dsh 条件**：按[受试 dsh 的版本跟着实例走](#受试-dsh-的版本跟着实例走)装上题库的两个预设包，导入题库里的 `*-0.2.0-rc.2` 条件并重新 provision；旧条件的锁保留作历史，不再用于新 run。宿主上的 `/opt/dsh-headless` 软链只剩 0.1.5 线的 profile 在用；要改指它们，由用户手跑。
 8. **可选清理**：`~/.dsh-lab/.agent-presets/eval` 是 0.1.5 的目录预设，0.2.0 不读，可删。
 
 **会话不迁。** 试迁时会话目录没有复制（含个人数据），所以切到新 home 的话历史会话不跟过来；原地重装不受影响。
@@ -385,7 +392,6 @@ dsh 条件的受试 CLI 不是条件自己选的：`local-agent-dsh` 的 `cliLau
 
 - npm release line（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅ —— T82 起本 profile 只支持宿主 0.2.0 及以后（`dsh` ≥ 0.2.0-rc.2，用户 2026-10-01 定，不做双线）；低于这条线 `install.sh` / `update.sh` 在动文件前退出码 2。评测家族 eval / eval-tool / datasets / datasets-tool 的 `dsh.compat` 同为 `minHost` / `verifiedHost` 0.2.0-rc.2。0.1.x 宿主请停在旧发布线，迁移见[把 0.1.5 实例切到 0.2.0](#把-015-实例切到-020)。
 - source line（deepseek-harness master）：✅ —— 同上（verifiedHost: 0.2.0-rc.2，临时实例真机冒烟：安装 25 名 / 205 行、默认预设 eval、1440 与 400 宽走查）。
-- 降级项：带预设的 dsh 条件在 0.2.0 上预计组不出来（`local-agent-dsh` 仍插入 0.1.5 的 `@deepseek-ai/dsh-agent-presets`），见[受试 dsh 的版本跟着实例走](#受试-dsh-的版本跟着实例走)。
 
 ## 相关文档
 
