@@ -14,11 +14,12 @@
  *
  * This module owns the fetches and the page switch; the pages own their
  * layout, and `parts.tsx` owns the vocabulary they share. Every write here is
- * a HUMAN gesture with a form in front of it (registration, dataset skeleton,
- * item skeleton, item import); skeleton writes land in the registration's
- * authoring checkout only — the commit stays the human's, and the tab says so
- * on each form. Reads show the tracked branch, so a fresh skeleton appears
- * here once it is committed there.
+ * a HUMAN gesture with a page in front of it (T90): 「添加题集」 hands the
+ * organizing to an Agent in a new 「题集整理」 session (the tab writes no
+ * dataset files itself), the Agent files a proposal, and the person reads the
+ * review and confirms — the only proposal → registry path (decision A). The
+ * register form stays, under the dialog's 「高级」, for a repository that is
+ * already in shape; a registered dataset changes through 「交给 Agent 修改」.
  *
  * The tab shows what the OPERATOR may see: the registration's layers
  * constrain agents, never the human reading their own repository (protocol
@@ -29,16 +30,23 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DatasetOverviewRow, ListDatasetsResult, ListItemsResult, RegisterInput, UpdateInput } from '../types.ts'
+import type {
+  DatasetOverviewRow, ListDatasetsResult, ListItemsResult, OrganizingSetup, RegisterInput, RegistryEntry, UpdateInput,
+} from '../types.ts'
+import { AddDatasetDialog } from './AddDatasetDialog.tsx'
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetDetail } from './DatasetDetail.tsx'
 import { classifyError, ErrorState } from './ErrorState.tsx'
 import { Chip, EmptyState, LayersEdit, LayersWordView, ShelfIcon, shortCommit } from './parts.tsx'
 import { RegisterForm } from './RegisterForm.tsx'
 import { RegistryList } from './RegistryList.tsx'
-import { SkeletonForm } from './SkeletonForm.tsx'
-import { itemKey, type DatasetsForm } from './store.ts'
+import { ReviewPage } from './ReviewPage.tsx'
+import {
+  buildAddRequest, buildReturnRequest, buildUpdateRequest, type AddDatasetFields, type OrganizeOutcome,
+} from './organize.ts'
+import { itemKey } from './store.ts'
 import css from './DatasetsView.module.css'
+import org from './Organize.module.css'
 
 /** A path's own name — its last segment (ui-spec §九 keeps the rest on a title). */
 function lastSegment(path: string): string {
@@ -54,6 +62,34 @@ function rowOf(rows: readonly DatasetOverviewRow[] | undefined, id: string): Dat
 /** Which registration form is open: none, a new registration, or one registration's edit. */
 type RegisterOpen = null | { mode: 'new' } | { mode: 'edit'; id: string }
 
+/** The last hand-off to an organizing session, and which gesture made it. */
+type OrganizeNotice = { outcome: OrganizeOutcome; returned: boolean }
+
+/** The organizing hand-off's one-line verdict and, when nothing landed, the text to paste. */
+function OrganizeNoticeView(props: { notice: OrganizeNotice; onDismiss: () => void; t: DatasetsViewProps['t'] }) {
+  const { notice: { outcome, returned }, onDismiss, t } = props
+  if (outcome.kind === 'failed') {
+    return (
+      <div className={org.organizeNotice}>
+        <ErrorState what={t('organize.failed')} message={outcome.message} compact t={t} />
+        <span><Button variant="outline" size="sm" onClick={onDismiss}>{t('organize.dismiss')}</Button></span>
+      </div>
+    )
+  }
+  const line = outcome.kind === 'drafted'
+    ? t(returned ? 'organize.returned' : 'organize.drafted')
+    : outcome.kind === 'copied'
+      ? t(returned && outcome.sessionId === undefined ? 'review.returnNoSession' : 'organize.copied')
+      : t('organize.manual')
+  return (
+    <div className={org.organizeNotice} role="status">
+      <div>{line}</div>
+      {outcome.kind === 'manual' && <pre className={org.manualText}>{outcome.text}</pre>}
+      <span><Button variant="outline" size="sm" onClick={onDismiss}>{t('organize.dismiss')}</Button></span>
+    </div>
+  )
+}
+
 /**
  * The 题集 tab body.
  * @param props - composed props (runtime + store + injected + locale shares).
@@ -63,7 +99,9 @@ export function DatasetsView(props: DatasetsViewProps) {
     sessionId, useStore, actions, t,
     fetchRegistry, previewRepo, register, updateRegistration, unregister, importBindings,
     listDatasets, readFile, readPassthroughFile,
-    overview, itemBrief, validateDataset, scaffoldDataset, scaffoldItem, importItem,
+    overview, itemBrief, validateDataset,
+    organizingSetup, proposals: fetchProposals, proposalReview, reviewItem, reviewFiles,
+    confirmProposal, returnProposal, pendingReview, confirmPending, startOrganizing, draftInSession,
     itemRuns, datasetExperiments,
     isLoopback, pickDirectory,
   } = props
@@ -91,17 +129,21 @@ export function DatasetsView(props: DatasetsViewProps) {
   const itemCounts = useStore(s => s.itemCounts)
   const validated = useStore(s => s.validated)
   const validating = useStore(s => s.validating)
-  const form = useStore(s => s.form)
-  const skeleton = useStore(s => s.skeleton)
+  const proposals = useStore(s => s.proposals)
+  const review = useStore(s => s.review)
   const selection = useStore(s => s.selection)
   const preview = useStore(s => s.preview)
   const previewLoading = useStore(s => s.previewLoading)
   const previewError = useStore(s => s.previewError)
-  // Component-private view state: which registration form is open, which
-  // registration a «新建题集» form writes into, and the import in flight.
+  // Component-private view state: which registration form is open, the
+  // import in flight, the 「添加题集」 dialog, the organizing setup, the last
+  // hand-off's verdict, and the registration a confirm just wrote.
   const [registerOpen, setRegisterOpen] = useState<RegisterOpen>(null)
-  const [formRepo, setFormRepo] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [setup, setSetup] = useState<OrganizingSetup | null>(null)
+  const [organized, setOrganized] = useState<OrganizeNotice | null>(null)
+  const [done, setDone] = useState<string | null>(null)
   // Which item briefs have been asked for. A REF, not store state: the request
   // sets a loading flag, the flag re-renders, and a re-render that re-ran the
   // effect would cancel the very request it just started (the effect's cleanup
@@ -122,6 +164,25 @@ export function DatasetsView(props: DatasetsViewProps) {
     })
     return () => { cancelled = true }
   }, [sessionId, refreshRev, actions, fetchRegistry])
+
+  // T90: the proposals waiting for a person, with every registry read.
+  useEffect(() => {
+    let cancelled = false
+    void fetchProposals(sessionId).then((result) => {
+      if (!cancelled && result.ok) actions.setProposals(result.value)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, refreshRev, actions, fetchProposals])
+
+  // The organizing preset and the datasets home, once (a host without the
+  // verb leaves both empty: the request still names the skill).
+  useEffect(() => {
+    let cancelled = false
+    void organizingSetup(sessionId).then((result) => {
+      if (!cancelled && result.ok) setSetup(result.value)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, organizingSetup])
 
   // The open registration's rows (item counts, slot mapping, validate) for the detail page.
   useEffect(() => {
@@ -254,37 +315,59 @@ export function DatasetsView(props: DatasetsViewProps) {
     })
   }
 
-  // The registration a write form targets: the open one on the detail page,
-  // the heading's own on the list page.
-  const writeRepo = page === 'detail' ? openRepo : formRepo
-
-  /** Run one write gesture, then refresh what it could have changed. */
-  const submitForm = (values: Record<string, string>): void => {
-    const dataset = openDataset
-    const repo = writeRepo
-    if (repo === null) return
-    const call = form === 'newDataset'
-      ? scaffoldDataset(sessionId, repo, {
-        id: values['id'] ?? '',
-        ...(values['name'] !== undefined && values['name'] !== '' ? { name: values['name'] } : {}),
-      })
-      : form === 'newItem' && dataset !== null
-        ? scaffoldItem(sessionId, repo, { dataset, item: values['item'] ?? '' })
-        : form === 'importItem' && dataset !== null
-          ? importItem(sessionId, repo, {
-            dataset, item: values['item'] ?? '', sourceDir: values['sourceDir'] ?? '',
-          })
-          : null
-    if (call === null) return
-    void call.then((result) => {
+  // ── T90: the organizing hand-off ─────────────────────────────────────
+  const preset = setup?.preset ?? ''
+  /** Open a new 题集整理 session with `text` drafted into it. */
+  const organize = (name: string, text: string): void => {
+    setDone(null)
+    void startOrganizing(sessionId, t('organize.sessionTitle', { name }), text, preset).then((outcome) => {
+      setOrganized({ outcome, returned: false })
+    })
+  }
+  const submitAdd = (fields: AddDatasetFields): void => {
+    setAddOpen(false)
+    organize(fields.name.trim(), buildAddRequest(fields, setup?.datasetsHome ?? '', t))
+  }
+  /** 「交给 Agent 修改」 on a registered dataset. */
+  const askAgent = (repo: string): void => {
+    const entry = registry?.find(row => row.entry.id === repo)?.entry
+    if (entry === undefined) return
+    organize(entry.id, buildUpdateRequest({ name: entry.id, checkout: entry.authoringCheckout ?? null, ref: entry.trackedRef }, t))
+  }
+  /** After a confirm: back to the list, re-read, say what was registered. */
+  const confirmed = (entry: RegistryEntry): void => {
+    actions.openReview(null)
+    setOrganized(null)
+    setDone(entry.id)
+    actions.refresh()
+  }
+  const reviewOf = review === null
+    ? null
+    : review.kind === 'proposal'
+      ? proposals?.find(proposal => proposal.id === review.id) ?? null
+      : null
+  /** 「退回给 Agent」 on a proposal: mark it returned, then write the note into its session. */
+  const sendBackProposal = (id: string, note: string): void => {
+    const proposal = proposals?.find(entry => entry.id === id)
+    void returnProposal(sessionId, id, note).then((result) => {
       if (!result.ok) {
         actions.setNotice(result.error.message)
         return
       }
-      actions.setNotice(null)
-      actions.setSkeleton(result.value)
+      actions.openReview(null)
       actions.refresh()
+      const text = buildReturnRequest(proposal?.registryId ?? id, note, t)
+      void draftInSession(proposal?.sessionId ?? '', text).then((outcome) => {
+        setOrganized({ outcome, returned: true })
+      })
     })
+  }
+  /** 「退回给 Agent」 on a held version: no organizing session holds it, so open one. */
+  const sendBackPending = (repo: string, note: string): void => {
+    const entry = registry?.find(row => row.entry.id === repo)?.entry
+    if (entry === undefined) return
+    actions.openReview(null)
+    organize(repo, `${buildUpdateRequest({ name: repo, checkout: entry.authoringCheckout ?? null, ref: entry.trackedRef }, t)}${note.trim()}`)
   }
 
   const runValidate = (): void => {
@@ -321,13 +404,44 @@ export function DatasetsView(props: DatasetsViewProps) {
     setRegisterOpen({ mode: 'edit', id: repo })
   }
 
-  const openForm = (next: Exclude<DatasetsForm, null>, repo?: string): void => {
-    actions.setNotice(null)
-    if (repo !== undefined) setFormRepo(repo)
-    actions.setForm(next)
-  }
-
   const registryEmpty = page === 'list' && registry !== null && registry.length === 0
+  const waiting = (proposals ?? []).filter(proposal => proposal.status === 'pending')
+  const held = (registry ?? []).filter(row => row.latest?.pending !== undefined)
+
+  if (review !== null) {
+    const target = review
+    return (
+      <div className={css.view} data-conversation-composer-overlay="">
+        {target.kind === 'proposal'
+          ? (
+            <ReviewPage
+              loadKey={`proposal:${target.id}:${refreshRev}`}
+              load={() => proposalReview(sessionId, target.id)}
+              reviewItem={(set, item) => reviewItem(sessionId, target.id, set, item)}
+              reviewFiles={() => reviewFiles(sessionId, target.id)}
+              confirm={(registryId, sets) => confirmProposal(sessionId, target.id, registryId, sets)}
+              sendBack={reviewOf === null ? null : (note) => { sendBackProposal(target.id, note) }}
+              onBack={() => { actions.openReview(null) }}
+              onDone={confirmed}
+              t={t}
+            />
+          )
+          : (
+            <ReviewPage
+              loadKey={`pending:${target.repo}:${refreshRev}`}
+              load={() => pendingReview(sessionId, target.repo)}
+              reviewItem={null}
+              reviewFiles={null}
+              confirm={(_registryId, sets, loaded) => confirmPending(sessionId, target.repo, loaded.facts.version.commit, sets)}
+              sendBack={(note) => { sendBackPending(target.repo, note) }}
+              onBack={() => { actions.openReview(null) }}
+              onDone={confirmed}
+              t={t}
+            />
+          )}
+      </div>
+    )
+  }
 
   return (
     <div className={css.view} data-conversation-composer-overlay="">
@@ -371,19 +485,16 @@ export function DatasetsView(props: DatasetsViewProps) {
             )}
           {page === 'list' && !registryEmpty && (
             <>
-              <Button size="sm" variant="outline" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
-                {t('registry.register')}
+              <Button size="sm" variant="outline" onClick={() => { setAddOpen(true) }}>
+                {t('registry.add')}
               </Button>
               <Button variant="ghost" size="sm" onClick={runImport} disabled={importing}>
                 {importing ? t('registry.importing') : t('registry.import')}
               </Button>
             </>
           )}
-          {page === 'detail' && openRow?.entry.authoringCheckout != null && (
-            <>
-              <Button variant="outline" size="sm" onClick={() => { openForm('newItem') }}>{t('detail.newItem')}</Button>
-              <Button variant="outline" size="sm" onClick={() => { openForm('importItem') }}>{t('detail.importItem')}</Button>
-            </>
+          {page === 'detail' && openRow !== undefined && (
+            <Button variant="outline" size="sm" onClick={() => { askAgent(openRow.entry.id) }}>{t('registry.askAgent')}</Button>
           )}
           {page === 'detail' && (
             <Button variant="outline" size="sm" onClick={runValidate} disabled={validating}>
@@ -391,8 +502,38 @@ export function DatasetsView(props: DatasetsViewProps) {
             </Button>
           )}
         </div>
-        {notice !== null && registerOpen === null && form === null && (
+        {notice !== null && registerOpen === null && (
           <ErrorState what={t('notice.failed')} message={notice} compact t={t} />
+        )}
+        {organized !== null && <OrganizeNoticeView notice={organized} onDismiss={() => { setOrganized(null) }} t={t} />}
+        {done !== null && (
+          <div className={css.notice} role="status">
+            <span>{t('review.done', { name: done })}</span>
+          </div>
+        )}
+        {page === 'list' && (waiting.length > 0 || held.length > 0) && (
+          <div className={org.banners}>
+            {waiting.map(proposal => (
+              <div key={proposal.id} className={org.banner} data-kind={proposal.kind}>
+                <span className={org.bannerText}>
+                  {proposal.kind === 'update'
+                    ? t('banner.proposalUpdate', { name: proposal.registryId })
+                    : t('banner.proposal', { name: proposal.registryId })}
+                </span>
+                <Button size="sm" variant="primary" onClick={() => { setDone(null); actions.openReview({ kind: 'proposal', id: proposal.id }) }}>
+                  {proposal.kind === 'update' ? t('banner.reviewUpdate') : t('banner.review')}
+                </Button>
+              </div>
+            ))}
+            {held.map(row => (
+              <div key={row.entry.id} className={org.banner} data-kind="pending">
+                <span className={org.bannerText}>{t('banner.pending', { name: row.entry.id })}</span>
+                <Button size="sm" variant="primary" onClick={() => { setDone(null); actions.openReview({ kind: 'pending', repo: row.entry.id }) }}>
+                  {t('banner.reviewUpdate')}
+                </Button>
+              </div>
+            ))}
+          </div>
         )}
         {imported !== null && (
           <div className={css.notice}>
@@ -447,27 +588,6 @@ export function DatasetsView(props: DatasetsViewProps) {
             ))}
           </div>
         )}
-        {skeleton !== null && (
-          <div className={css.notice}>
-            <div>
-              {t('skeleton.written', { count: skeleton.written.length })}
-              {skeleton.skipped.length > 0 && ` · ${t('skeleton.skipped', { count: skeleton.skipped.length })}`}
-            </div>
-            {skeleton.written.map(path => <div key={path} className={css.noticeLine}>{path}</div>)}
-            {skeleton.notes.map(note => <div key={note} className={css.noticeLine}>{note}</div>)}
-            <div className={css.noticeLine}>{t('skeleton.commitHint')}</div>
-            <Button variant="outline" size="sm" onClick={() => { actions.setSkeleton(null) }}>{t('skeleton.dismiss')}</Button>
-          </div>
-        )}
-        {form !== null && (
-          <SkeletonForm
-            form={form}
-            onSubmit={submitForm}
-            onCancel={() => { actions.setForm(null) }}
-            notice={notice}
-            t={t}
-          />
-        )}
         {registerOpen !== null && (
           <RegisterForm
             key={registerOpen.mode === 'edit' ? registerOpen.id : '(new)'}
@@ -496,7 +616,7 @@ export function DatasetsView(props: DatasetsViewProps) {
               secondary link under it. */}
           {registryEmpty && (
             <EmptyState page icon={<ShelfIcon />} title={t('registry.empty')} hint={t('registry.emptyHint')}>
-              <Button size="sm" variant="primary" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
+              <Button size="sm" variant="primary" onClick={() => { setAddOpen(true) }}>
                 {t('registry.emptyAction')}
               </Button>
               <button type="button" className={css.emptyLink} onClick={runImport} disabled={importing}>
@@ -514,7 +634,8 @@ export function DatasetsView(props: DatasetsViewProps) {
               experiments={experiments}
               itemCounts={itemCounts}
               onOpen={(repo, dataset) => { actions.openDataset({ repo, dataset }) }}
-              onNewDataset={(repo) => { openForm('newDataset', repo) }}
+              onAskAgent={askAgent}
+              onReview={(repo) => { setDone(null); actions.openReview({ kind: 'pending', repo }) }}
               onEdit={editRegistration}
               onRemove={removeRegistration}
               t={t}
@@ -549,6 +670,18 @@ export function DatasetsView(props: DatasetsViewProps) {
           t={t}
         />
       )}
+      <AddDatasetDialog
+        open={addOpen}
+        datasetsHome={setup?.datasetsHome ?? ''}
+        onClose={() => { setAddOpen(false) }}
+        onOrganize={submitAdd}
+        onAdvanced={() => {
+          setAddOpen(false)
+          actions.setNotice(null)
+          setRegisterOpen({ mode: 'new' })
+        }}
+        t={t}
+      />
     </div>
   )
 }

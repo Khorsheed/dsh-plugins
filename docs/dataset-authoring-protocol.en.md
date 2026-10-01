@@ -2,7 +2,7 @@
 
 **Version: v1-rev14** · [中文](dataset-authoring-protocol.md)
 
-This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator and the bind form's prefill derive from it. The `dataset-authoring` skill is also planned to derive from this protocol, but remains planned and is not yet distributed with `@khorsheed/dsh-datasets`. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
+This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator and the bind form's prefill derive from it. The `dataset-authoring` skill derives from it too and ships with `@khorsheed/dsh-datasets` (`skills/dataset-authoring/SKILL.md`, registered by the datasets tool's `organize` tier): a 「题集整理」 (dataset organizing) session uses it to turn data into a repository in this layout and file a registration proposal. Where the two disagree, this protocol wins. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
 ## 0. Mental model
 

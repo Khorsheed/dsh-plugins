@@ -28,6 +28,8 @@ import {
   planDatasetSkeleton, planItemSkeleton, type SkeletonResult,
 } from './scaffold.ts'
 import { layerPaths, materializePaths, type ManagedWorktree } from './materialize.ts'
+import { resolveDatasetsHome } from './defaults.ts'
+import { openProposals, type ProposalStore } from './proposal.ts'
 import { notRegistered, openRegistry, type LatestCommit, type RegistryEntry, type RepoRegistry } from './registry.ts'
 import { normalizeRepoPath } from './repo-path.ts'
 
@@ -360,6 +362,13 @@ export interface DatasetsService {
   importItem(scope: DatasetScope, input: ImportItemInput): Promise<SkeletonResult>
   /** The deployment's dataset registry (human-written; agents resolve `<id>/<set>` through it). */
   readonly registry: RepoRegistry
+  /**
+   * T90 registration proposals (`<stateRoot>/proposals`): the organizing
+   * agent files one, a person confirms it into the registry.
+   */
+  readonly proposals: ProposalStore
+  /** T90: the organizing session's preset and the new-repository home. */
+  readonly organizing: OrganizingSetup
   /** Fail loud unless `repo` is inside a git work tree; resolves to the canonical toplevel. */
   assertRepository(repo: string): Promise<string>
   /**
@@ -415,6 +424,18 @@ export interface DatasetsServiceOptions {
   registryPath: string
   /** The legacy binding store root (`<stateRoot>/bindings`), read only by the registry's import. */
   bindingsRoot: string
+  /** T90 proposal store root; default `proposals/` next to the registry file. */
+  proposalsRoot?: string
+  /** T90: the organizing session's preset and the default home of new dataset repositories. */
+  organizing?: OrganizingSetup
+}
+
+/** What the 「让 Agent 整理」 gesture needs from the host side (T90). */
+export interface OrganizingSetup {
+  /** The agent preset a 「题集整理」 session selects ('' = none; the session keeps the default). */
+  preset: string
+  /** Where new dataset repositories go (`$DSH_HOME/datasets`). */
+  datasetsHome: string
 }
 
 /**
@@ -637,9 +658,18 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     return entry
   }
 
+  let proposalStore: ProposalStore | undefined
   const service: DatasetsService = {
     bindingsRoot: options.bindingsRoot,
     registry: openRegistry(options.registryPath),
+    organizing: options.organizing ?? { preset: 'dataset-authoring', datasetsHome: resolveDatasetsHome(undefined) },
+    get proposals(): ProposalStore {
+      proposalStore ??= openProposals(options.proposalsRoot ?? join(dirname(options.registryPath), 'proposals'), {
+        registry: service.registry,
+        validate: async (repo, commit) => await service.validate({ repo, ref: commit, operator: true }),
+      })
+      return proposalStore
+    },
     async list(scope, datasetId, commit) {
       const { repo, sha } = await resolveCommitAt(scope, commit)
       if (datasetId !== undefined) {

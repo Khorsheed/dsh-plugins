@@ -1,0 +1,588 @@
+/* T90 · the dataset journey: the 「添加题集」 dialog, the 「等你确认登记」
+   banner, and the registration review. Host tokens only (no palette of its
+   own); the review's comparison is two columns while the view is wide and
+   one column when it is narrow — keyed off the review page's own container
+   (`review-page`), not the window. CSS modules scope container names per
+   file, so this file cannot query DatasetsView.module.css's `datasets-view`
+   (the scoped names differ and the query silently never matches). */
+
+/* ── the dialog ─────────────────────────────────────────────────────────── */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.formLabel {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.required {
+  margin-left: 2px;
+  color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-secondary));
+}
+
+.optional {
+  margin-left: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  resize: vertical;
+}
+
+.textarea:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-focus, var(--dsw-alias-border-l3));
+  outline-offset: -1px;
+}
+
+.help {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.error {
+  color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-secondary));
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.gitNote {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+}
+
+.link:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+}
+
+/* ── the banner ─────────────────────────────────────────────────────────── */
+
+.banners {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.bannerText {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.organizeNotice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.manualText {
+  max-height: 160px;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: pre-wrap;
+}
+
+/* ── the review ─────────────────────────────────────────────────────────── */
+
+.page {
+  flex: 1;
+  min-height: 0;
+  container: review-page / inline-size;
+  padding: 10px 12px calc(16px + var(--dsh-datasets-bottom-clearance, 0px));
+  overflow: auto;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(100%, 960px);
+  min-width: 0;
+  margin-inline: auto;
+}
+
+.pageHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.pageTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.mono {
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.warnLine {
+  color: var(--dsh-datasets-warn-ink, var(--dsw-alias-label-secondary));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* The four facts: a row of cards wide, a 2×2 grid narrow. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.fact {
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.fact dt {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.fact dd {
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.factNumber {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.factSub {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes {
+  padding: 8px 12px;
+  border-left: 2px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+}
+
+.findings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.findingGroup {
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.findingGroup[data-tone='danger'] {
+  border-color: var(--dsw-alias-state-error-primary, var(--dsw-alias-border-l2));
+}
+
+.findingGroup ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
+.findingTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.twoCol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.colBox {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.colHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.colBox > .warnLine,
+.colBox > .muted {
+  padding: 6px 12px 0;
+}
+
+.cmpList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cmpRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, var(--dsw-alias-border-l2));
+}
+
+.cmpRow:last-child {
+  border-bottom: 0;
+}
+
+.cmpHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cmpPath {
+  flex: 1;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.cmpOrigin {
+  flex: none;
+  max-width: 50%;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.cmpNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.fieldList {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.drillLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.drill {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.itemCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.itemTitle {
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.excerpt {
+  max-height: 200px;
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--dsh-datasets-surface-2, var(--dsw-alias-interactive-bg-hover));
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.colBox > .excerpt {
+  margin: 8px 12px;
+}
+
+.fullList {
+  max-height: 360px;
+  margin: 0;
+  padding: 6px 12px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  list-style: none;
+}
+
+.fullList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 2px 0;
+}
+
+.layerSet {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.layerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, var(--dsw-alias-border-l2));
+}
+
+.layerRow:last-child {
+  border-bottom: 0;
+}
+
+.layerName {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.layerName > .mono {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.layerToggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.layerWordOn {
+  color: var(--dsh-datasets-warn-ink, var(--dsw-alias-label-primary));
+}
+
+.layerWordOff {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.advanced summary {
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.advList {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.advList dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.advList dd {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+@container review-page (max-width: 699px) {
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .twoCol {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .colBox {
+    max-height: 320px;
+  }
+
+  .cmpHead {
+    flex-wrap: wrap;
+  }
+
+  .cmpOrigin {
+    max-width: 100%;
+    text-align: left;
+  }
+}

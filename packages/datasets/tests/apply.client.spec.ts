@@ -36,7 +36,10 @@ function remoteStub() {
     show: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
     read: vi.fn(async () => ({ ok: true as const, value: { content: 'x', commit: 'abc' } })),
     overview: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
-    scaffoldItem: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    proposalReview: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    reviewItem: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    confirmProposal: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    confirmPending: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
   }
 }
 
@@ -225,8 +228,16 @@ describe('datasets client apply', () => {
     expect(remote.list).toHaveBeenCalledWith('s1', { repo: 'lib', dataset: 'alpha' })
     await face.overview('s1', 'lib')
     expect(remote.overview).toHaveBeenCalledWith('s1', { repo: 'lib' })
-    await face.scaffoldItem('s1', 'lib', { dataset: 'alpha', item: 'i9' } as never)
-    expect(remote.scaffoldItem).toHaveBeenCalledWith('s1', { dataset: 'alpha', item: 'i9', repo: 'lib' })
+    // T90: the review verbs name a proposal (or a registration's held version).
+    await face.proposalReview('s1', 'p1')
+    expect(remote.proposalReview).toHaveBeenCalledWith('s1', { id: 'p1' })
+    await face.reviewItem('s1', 'p1', 'alpha', 'i9')
+    expect(remote.reviewItem).toHaveBeenCalledWith('s1', { id: 'p1', set: 'alpha', item: 'i9' })
+    const sets = { alpha: { layers: ['visible'] } }
+    await face.confirmProposal('s1', 'p1', 'lib', sets)
+    expect(remote.confirmProposal).toHaveBeenCalledWith('s1', { id: 'p1', registryId: 'lib', sets })
+    await face.confirmPending('s1', 'lib', 'abc', sets)
+    expect(remote.confirmPending).toHaveBeenCalledWith('s1', { repo: 'lib', commit: 'abc', sets })
 
     const query = { dataset: 'alpha', item: 'i1', layer: 'visible', path: 'task.md' }
     await face.readFile('s1', 'lib', query)

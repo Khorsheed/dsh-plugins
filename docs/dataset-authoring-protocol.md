@@ -2,7 +2,7 @@
 
 **Version: v1-rev14** · [English](dataset-authoring-protocol.en.md)
 
-本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器与绑定表单预填从本协议派生；`dataset-authoring` skill 也计划从本协议派生，但目前仍处于 planned，尚未随 `@khorsheed/dsh-datasets` 包分发。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
+本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器与绑定表单预填从本协议派生；`dataset-authoring` skill 同样从本协议派生，随 `@khorsheed/dsh-datasets` 包分发（`skills/dataset-authoring/SKILL.md`，由 datasets 工具的 `organize` 档注册），供「题集整理」会话把数据整理成本协议的仓库并提交登记申请；二者不一致时以本协议为准。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
 ## 0. 心智模型
 

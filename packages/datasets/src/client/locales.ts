@@ -87,13 +87,10 @@ export type DatasetsKey =
   | 'list.error'
   | 'notice.failed'
   | 'list.experimentsNone'
-  | 'list.newDataset'
   | 'detail.back'
   | 'detail.filterAll'
   | 'detail.filterEmpty'
   | 'detail.itemsLabel'
-  | 'detail.newItem'
-  | 'detail.importItem'
   | 'detail.validate'
   | 'detail.validating'
   | 'detail.validateOk'
@@ -149,19 +146,6 @@ export type DatasetsKey =
   | 'detail.runsCell'
   | 'detail.briefLoading'
   | 'detail.briefError'
-  | 'form.newDatasetTitle'
-  | 'form.datasetId'
-  | 'form.datasetName'
-  | 'form.newItemTitle'
-  | 'form.itemId'
-  | 'form.importItemTitle'
-  | 'form.sourceDir'
-  | 'form.submit'
-  | 'form.cancel'
-  | 'skeleton.written'
-  | 'skeleton.skipped'
-  | 'skeleton.commitHint'
-  | 'skeleton.dismiss'
   | 'preview.empty'
   | 'preview.loading'
   | 'preview.error'
@@ -203,6 +187,167 @@ export type DatasetsKey =
   | 'error.unknownFix'
   | 'error.details'
   | 'error.detailsPath'
+  | 'add.title'
+  | 'add.description'
+  | 'add.source'
+  | 'add.sourcePlaceholder'
+  | 'add.sourceHelp'
+  | 'add.name'
+  | 'add.namePlaceholder'
+  | 'add.nameHelp'
+  | 'add.nameBad'
+  | 'add.purpose'
+  | 'add.purposePlaceholder'
+  | 'add.required'
+  | 'add.optional'
+  | 'add.git'
+  | 'add.gitNeeded'
+  | 'add.repoAt'
+  | 'add.organize'
+  | 'add.cancel'
+  | 'add.close'
+  | 'add.advanced'
+  | 'organize.sessionTitle'
+  | 'organize.request'
+  | 'organize.lineSource'
+  | 'organize.lineName'
+  | 'organize.linePurpose'
+  | 'organize.lineRepo'
+  | 'organize.updateRequest'
+  | 'organize.lineCheckout'
+  | 'organize.lineRef'
+  | 'organize.lineWant'
+  | 'organize.returnRequest'
+  | 'organize.drafted'
+  | 'organize.returned'
+  | 'organize.copied'
+  | 'organize.manual'
+  | 'organize.failed'
+  | 'organize.dismiss'
+  | 'registry.add'
+  | 'registry.askAgent'
+  | 'registry.version'
+  | 'registry.pending'
+  | 'registry.advancedTitle'
+  | 'banner.proposal'
+  | 'banner.proposalUpdate'
+  | 'banner.pending'
+  | 'banner.review'
+  | 'banner.reviewUpdate'
+  | 'review.back'
+  | 'review.titleNew'
+  | 'review.titleUpdate'
+  | 'review.loading'
+  | 'review.error'
+  | 'review.factSource'
+  | 'review.factItems'
+  | 'review.factValidate'
+  | 'review.factVersion'
+  | 'review.factName'
+  | 'review.sourceKind.local'
+  | 'review.sourceKind.public'
+  | 'review.sourceKind.protocol'
+  | 'review.validateOk'
+  | 'review.validateWarn'
+  | 'review.validateFail'
+  | 'review.versionOne'
+  | 'review.versionStep'
+  | 'review.sets'
+  | 'review.compareNew'
+  | 'review.compareUpdate'
+  | 'review.sum.split'
+  | 'review.sum.copy'
+  | 'review.sum.new'
+  | 'review.sum.unused'
+  | 'review.sum.added'
+  | 'review.sum.modified'
+  | 'review.sum.deleted'
+  | 'review.sum.outside'
+  | 'review.untouched'
+  | 'review.sourceUnread'
+  | 'review.sources'
+  | 'review.outputs'
+  | 'review.noSources'
+  | 'review.disp.split'
+  | 'review.disp.copy'
+  | 'review.disp.unused'
+  | 'review.originSplit'
+  | 'review.originFrom'
+  | 'review.originNew'
+  | 'review.originUnexplained'
+  | 'review.rowFiles'
+  | 'review.rowRecords'
+  | 'review.rowItems'
+  | 'review.fieldTo'
+  | 'review.fieldDropped'
+  | 'review.unlayered'
+  | 'review.unlayeredCount'
+  | 'review.layerTag'
+  | 'review.itemOne'
+  | 'review.itemRandom'
+  | 'review.fullList'
+  | 'review.itemSource'
+  | 'review.itemLine'
+  | 'review.itemFiles'
+  | 'review.itemNoSource'
+  | 'review.itemPick'
+  | 'review.close'
+  | 'review.listTruncated'
+  | 'review.layersTitle'
+  | 'review.layerVisible'
+  | 'review.layerHidden'
+  | 'review.layerSuggest'
+  | 'review.layerNow'
+  | 'review.keepOne'
+  | 'review.nameHelp'
+  | 'review.notes'
+  | 'review.problems'
+  | 'review.warnings'
+  | 'review.changes'
+  | 'review.change.A'
+  | 'review.change.M'
+  | 'review.change.D'
+  | 'review.changeVisible'
+  | 'review.changeHidden'
+  | 'review.deletions'
+  | 'review.advanced'
+  | 'review.advRepo'
+  | 'review.advRef'
+  | 'review.advCheckout'
+  | 'review.advCommit'
+  | 'review.advNone'
+  | 'review.return'
+  | 'review.returnNote'
+  | 'review.returnSend'
+  | 'review.returnNoSession'
+  | 'review.confirm'
+  | 'review.confirmUpdate'
+  | 'review.confirming'
+  | 'review.done'
+  | 'review.cancel'
+  | 'review.heldTitle'
+  | 'review.heldBody'
+  | 'review.finding.COMMIT_NOT_TIP.gone'
+  | 'review.finding.COMMIT_NOT_TIP.moved'
+  | 'review.finding.UNCOMMITTED'
+  | 'review.finding.NO_SETS'
+  | 'review.finding.HISTORY_REWRITTEN'
+  | 'review.finding.OUTPUT_UNCOVERED'
+  | 'review.finding.OUTPUT_MISSING'
+  | 'review.finding.OUTPUT_COUNT'
+  | 'review.finding.UNLAYERED_VISIBLE'
+  | 'review.finding.SOURCE_UNREAD'
+  | 'review.finding.DISPOSITION_INCOMPLETE.empty'
+  | 'review.finding.DISPOSITION_INCOMPLETE.noReason'
+  | 'review.finding.DISPOSITION_INCOMPLETE.noTarget'
+  | 'review.finding.DISPOSITION_INCOMPLETE.field'
+  | 'review.finding.SOURCE_MISSING'
+  | 'review.finding.SOURCE_COUNT'
+  | 'review.finding.FIELD_UNACCOUNTED'
+  | 'review.finding.SOURCE_UNLISTED'
+  | 'review.finding.SAMPLE_MISSING'
+  | 'review.finding.LAYER_UNKNOWN'
+  | 'review.finding.VALIDATE_FAILED'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -245,13 +390,10 @@ export const zh: Record<DatasetsKey, string> = {
   'list.error': '题集列表加载失败',
   'notice.failed': '这次操作没做成',
   'list.experimentsNone': '尚未用于任何实验',
-  'list.newDataset': '新建题集',
   'detail.back': '← 题集列表',
   'detail.filterAll': '全部',
   'detail.filterEmpty': '这个筛选下没有文件',
   'detail.itemsLabel': '题目',
-  'detail.newItem': '题目骨架',
-  'detail.importItem': '导入题目',
   'detail.validate': '校验',
   'detail.validating': '校验中…',
   'detail.validateOk': '校验通过（{warnings} 个提示）',
@@ -283,19 +425,6 @@ export const zh: Record<DatasetsKey, string> = {
   'detail.runsCell': '{condition} · 第 {rep} 次',
   'detail.briefLoading': '读取题面与可判性…',
   'detail.briefError': '这道题的题面与可判性没读出来',
-  'form.newDatasetTitle': '新建题集（写 dataset.json 骨架、prompts/、schemas/、items/）',
-  'form.datasetId': '题集 id（也是目录名）',
-  'form.datasetName': '显示名（可选）',
-  'form.newItemTitle': '题目骨架（按本题集的层与 register 落位）',
-  'form.itemId': '题目 id（也是目录名）',
-  'form.importItemTitle': '导入题目（把一个已有的题目目录原样拷入）',
-  'form.sourceDir': '源目录的绝对路径',
-  'form.submit': '写入工作区',
-  'form.cancel': '取消',
-  'skeleton.written': '已写入 {count} 个文件',
-  'skeleton.skipped': '{count} 个文件已存在，未覆盖',
-  'skeleton.commitHint': '文件只写进工作区。commit 仍是你的——树与 validate 读的是 HEAD，提交后才会看到它们。',
-  'skeleton.dismiss': '知道了',
   'preview.empty': '在左侧选择一个文件查看内容',
   'preview.loading': '加载中…',
   'preview.error': '这个文件没读出来',
@@ -356,7 +485,7 @@ export const zh: Record<DatasetsKey, string> = {
   'registry.remove': '移除登记',
   'registry.removeConfirm': '确认移除（只删登记，仓库不动）',
   'registry.tracking': '跟踪 {ref}',
-  'registry.authoring': '新建题集、题目写进登记的检出',
+  'registry.authoring': '有写入检出',
   'registry.noAuthoring': '只读登记（没有写入检出）',
   'registry.colSet': '仓库 · 题集',
   'registry.colLatest': '最新版本',
@@ -378,9 +507,9 @@ export const zh: Record<DatasetsKey, string> = {
   'registry.problem': '这条登记现在读不出来',
   'registry.problemFix': '点「编辑登记」换一个存在的跟踪分支，或移除这条登记',
   'registry.noSets': '{ref} 上没有题集（datasets/ 为空）',
-  'registry.empty': '还没有登记题库仓库',
-  'registry.emptyHint': '登记一个存放题目的 git 仓库，它里面的题集就会列在这里，实验室和 agent 都能直接用。',
-  'registry.emptyAction': '登记仓库',
+  'registry.empty': '还没有题集',
+  'registry.emptyHint': '本地数据、下载好的文件或公开数据集，都从这里交给 Agent 整理；整理好由你确认登记，实验室和 agent 就能直接用。',
+  'registry.emptyAction': '添加题集',
   'import.done': '旧绑定处理完：新登记 {created} 个仓库，并入已有登记 {merged} 个',
   'import.nothing': '没有找到旧绑定',
   'import.created': '{id}：合并了 {sessions} 个会话的绑定（{paths} 个路径），新登记',
@@ -402,7 +531,7 @@ export const zh: Record<DatasetsKey, string> = {
   'register.preview.loading': '检查仓库…',
   'register.preview.ok': '{count} 个题集 · {ref}@{short} · {date}',
   'register.preview.empty': 'git 仓库有效，但 {ref} 上没有题集',
-  'register.preview.noRef': '这个仓库没有分支 {ref}，换一个跟踪分支',
+  'register.preview.noRef': '这个仓库没有分支 {ref}：换一个跟踪分支；还没有提交的仓库，用「让 Agent 整理」',
   'register.preview.failed': '这个路径没法登记',
   'register.keepOne': '每个题集至少保留一层',
   'register.submit': '登记',
@@ -414,6 +543,167 @@ export const zh: Record<DatasetsKey, string> = {
   'error.notRegistered.fix': '先在题集页点「登记仓库」登记它',
   'error.refMissing': '登记跟踪的分支不存在',
   'error.refMissing.fix': '点「编辑登记」换一个存在的分支',
+  'add.title': '添加题集',
+  'add.description': '告诉 Agent 数据在哪，它会在一个新的「题集整理」会话里把数据整理成题集；整理好后回到这里，由你核对并确认登记。',
+  'add.source': '数据在哪',
+  'add.sourcePlaceholder': '本地目录、下载好的文件，或公开数据集的名字 / 链接',
+  'add.sourceHelp': '原始数据只读，Agent 不会改动它。',
+  'add.name': '题集名称',
+  'add.namePlaceholder': '例如 gsm8k',
+  'add.nameHelp': '登记名，agent 用它引用题集：字母、数字和 . _ -',
+  'add.nameBad': '只能用字母、数字和 . _ -，且以字母或数字开头',
+  'add.purpose': '想拿它测什么',
+  'add.purposePlaceholder': '例如：比较两个模型的数学推理',
+  'add.required': '必填',
+  'add.optional': '可选',
+  'add.git': '题集用 git 保存：每个版本都留着，任何版本都能找回，每次实验都能在它用的那个版本上原样重跑。你不需要会 git。',
+  'add.gitNeeded': '需要 git：机器上没有时，Agent 会先说明并征得你同意再安装。',
+  'add.repoAt': '新仓库放在 {path}',
+  'add.organize': '让 Agent 整理',
+  'add.cancel': '取消',
+  'add.close': '关闭',
+  'add.advanced': '高级：已经是题库仓库？直接登记',
+  'organize.sessionTitle': '题集整理 · {name}',
+  'organize.request': '请用 dataset-authoring 技能把这份数据整理成题集，整理好后提交登记提案，我在「题集」页核对并确认登记。',
+  'organize.lineSource': '数据在哪：{value}',
+  'organize.lineName': '题集名称：{value}',
+  'organize.linePurpose': '想拿它测什么：{value}',
+  'organize.lineRepo': '新仓库放在：{value}',
+  'organize.updateRequest': '请用 dataset-authoring 技能修改已登记的题集「{name}」，改完提交，再提一次登记提案。',
+  'organize.lineCheckout': '仓库检出：{value}',
+  'organize.lineRef': '跟踪分支：{value}',
+  'organize.lineWant': '要改的是：',
+  'organize.returnRequest': '我把登记提案「{name}」退回了，请按下面的意见修改，提交后再提一次：',
+  'organize.drafted': '已新开「题集整理」会话，请求写进了对话框，看一眼再发送。',
+  'organize.returned': '已回到整理会话，意见写进了对话框，看一眼再发送。',
+  'organize.copied': '没能写进对话框，请求已复制到剪贴板，粘贴进会话再发送。',
+  'organize.manual': '没能写进对话框，也没能复制。把下面这段粘贴进会话：',
+  'organize.failed': '没能新开整理会话',
+  'organize.dismiss': '收起',
+  'registry.add': '添加题集',
+  'registry.askAgent': '交给 Agent 修改',
+  'registry.version': '版本 {number} · {date}',
+  'registry.pending': '新版本待确认',
+  'registry.advancedTitle': '仓库 {path}\n跟踪分支 {ref}\n写入检出 {checkout}',
+  'banner.proposal': 'Agent 整理好了「{name}」，等你确认登记',
+  'banner.proposalUpdate': 'Agent 改好了「{name}」，等你确认新版本',
+  'banner.pending': '「{name}」有新版本，改到了选手能看到的内容，等你确认',
+  'banner.review': '核对并登记',
+  'banner.reviewUpdate': '核对新版本',
+  'review.back': '返回题集列表',
+  'review.titleNew': '核对并登记「{name}」',
+  'review.titleUpdate': '核对「{name}」的新版本',
+  'review.loading': '正在核对…',
+  'review.error': '提案读不出来',
+  'review.factSource': '来源',
+  'review.factItems': '题数',
+  'review.factValidate': '校验',
+  'review.factVersion': '版本',
+  'review.factName': '登记名',
+  'review.sourceKind.local': '本地目录',
+  'review.sourceKind.public': '公开数据集',
+  'review.sourceKind.protocol': '已是题集格式',
+  'review.validateOk': '通过',
+  'review.validateWarn': '通过 · {count} 条提醒',
+  'review.validateFail': '{count} 处错误',
+  'review.versionOne': '版本 {number} · {date}',
+  'review.versionStep': '版本 {from} → 版本 {to} · {date}',
+  'review.sets': '{count} 个题集：{names}',
+  'review.compareNew': '原目录 → 题集',
+  'review.compareUpdate': '已登记版本 → 新版本',
+  'review.sum.split': '拆分 {count}',
+  'review.sum.copy': '原样复制 {count}',
+  'review.sum.new': '新写 {count}',
+  'review.sum.unused': '未使用 {count}',
+  'review.sum.added': '新增 {count}',
+  'review.sum.modified': '修改 {count}',
+  'review.sum.deleted': '删除 {count}',
+  'review.sum.outside': '题集外 {count}',
+  'review.untouched': '原目录 {files} 个文件，一个没改；题集共 {outputs} 个文件',
+  'review.sourceUnread': '原目录在这台机器上读不到，左栏是 Agent 的说明，没法逐个核对。',
+  'review.sources': '原目录',
+  'review.outputs': '题集',
+  'review.noSources': '这份提案没有原目录（仓库本身就是来源）。',
+  'review.disp.split': '拆分',
+  'review.disp.copy': '原样复制',
+  'review.disp.unused': '未使用',
+  'review.originSplit': '← {from} · {field}',
+  'review.originFrom': '← {from}',
+  'review.originNew': '新写',
+  'review.originUnexplained': '没有说明',
+  'review.rowFiles': '{count} 个文件',
+  'review.rowRecords': '{count} 条记录',
+  'review.rowItems': '{count} 题',
+  'review.fieldTo': '{name} → {to}',
+  'review.fieldDropped': '{name}：没用（{reason}）',
+  'review.unlayered': '不分层 · 选手可见',
+  'review.unlayeredCount': '{count} 个文件不在任何层里，选手能看到',
+  'review.layerTag': '{layer} 层',
+  'review.itemOne': '逐条对照一题',
+  'review.itemRandom': '随机抽看 3 题',
+  'review.fullList': '完整清单',
+  'review.itemSource': '原始记录 · {file}',
+  'review.itemLine': '第 {line} 行',
+  'review.itemFiles': '拆出来的 {count} 个文件',
+  'review.itemNoSource': '这题没有可对照的原始记录',
+  'review.itemPick': '换一题',
+  'review.close': '收起',
+  'review.listTruncated': '清单太长，只列出前面一部分',
+  'review.layersTitle': '各层谁能看',
+  'review.layerVisible': '选手可见',
+  'review.layerHidden': '仅判题用',
+  'review.layerSuggest': 'Agent 建议：{word}',
+  'review.layerNow': '现在：{word}',
+  'review.keepOne': '每个题集至少留一层给选手',
+  'review.nameHelp': 'agent 用「登记名/题集」引用它',
+  'review.notes': 'Agent 的说明',
+  'review.problems': '这些问题解决前不能登记',
+  'review.warnings': '登记前请看一眼',
+  'review.changes': '改动清单',
+  'review.change.A': '新增',
+  'review.change.M': '修改',
+  'review.change.D': '删除',
+  'review.changeVisible': '选手可见',
+  'review.changeHidden': '选手看不到',
+  'review.deletions': '删除了 {count} 个文件（全部列出）',
+  'review.advanced': '高级：仓库路径 · 跟踪分支 · 写入检出',
+  'review.advRepo': '仓库',
+  'review.advRef': '跟踪分支',
+  'review.advCheckout': '写入检出',
+  'review.advCommit': '提交',
+  'review.advNone': '没有',
+  'review.return': '退回给 Agent',
+  'review.returnNote': '告诉 Agent 哪里要改',
+  'review.returnSend': '退回',
+  'review.returnNoSession': '这份提案没记下整理会话，意见已复制，粘贴到整理会话里。',
+  'review.confirm': '确认登记',
+  'review.confirmUpdate': '确认新版本',
+  'review.confirming': '登记中…',
+  'review.done': '已登记「{name}」',
+  'review.cancel': '取消',
+  'review.heldTitle': '这个版本没有整理提案',
+  'review.heldBody': '它是直接提交进仓库的，Agent 没有附说明；改动清单就是它和已登记版本之间的全部差别。确认前选手仍然看到已登记版本。',
+  'review.finding.COMMIT_NOT_TIP.gone': '跟踪分支 {ref} 已经不在了',
+  'review.finding.COMMIT_NOT_TIP.moved': '提案之后分支 {ref} 又往前走了（现在 {now}，提案是 {commit}），请 Agent 重新提一次',
+  'review.finding.UNCOMMITTED': '检出里 datasets/ 下有没提交的改动，它们不算在这个版本里',
+  'review.finding.NO_SETS': '这个版本里没有任何题集（找不到 datasets/<题集>/dataset.json）',
+  'review.finding.HISTORY_REWRITTEN': '这个版本不是接着已登记版本改的（分支被改写过），所有文件都按改动计',
+  'review.finding.OUTPUT_UNCOVERED': '{path} 没有说明从哪来',
+  'review.finding.OUTPUT_MISSING': '说明里的 {path} 在这个版本里一个文件也没有',
+  'review.finding.OUTPUT_COUNT': '{path}：说明里是 {expected} 个文件，实际 {count} 个',
+  'review.finding.UNLAYERED_VISIBLE': '{count} 个文件不在任何层里，选手能看到',
+  'review.finding.SOURCE_UNREAD': '原目录 {path} 在这台机器上读不到，原目录一栏是 Agent 的说明，没法逐个核对',
+  'review.finding.DISPOSITION_INCOMPLETE.empty': '没说明原数据的每个文件怎么处理的',
+  'review.finding.DISPOSITION_INCOMPLETE.noReason': '{path} 标成未使用，但没说为什么',
+  'review.finding.DISPOSITION_INCOMPLETE.noTarget': '{path} 没说放到了题集的哪里',
+  'review.finding.DISPOSITION_INCOMPLETE.field': '{path} 的字段 {field} 既没去处也没理由',
+  'review.finding.SOURCE_MISSING': '说明里的 {path} 在原目录里找不到',
+  'review.finding.SOURCE_COUNT': '{path}：Agent 数的是 {expected} 条记录，文件里有 {count} 条',
+  'review.finding.FIELD_UNACCOUNTED': '{path} 的字段 {fields} 没说明去处',
+  'review.finding.SOURCE_UNLISTED': '原目录里的 {path} 没说明怎么处理的',
+  'review.finding.SAMPLE_MISSING': '抽样题 {item} 在这个版本里不存在',
+  'review.finding.LAYER_UNKNOWN': '层 {layer} 在这个版本里没有声明',
+  'review.finding.VALIDATE_FAILED': '校验报了 {count} 处错误，第一处：{first}',
 }
 
 /** English dictionary. */
@@ -451,13 +741,10 @@ export const en: Record<DatasetsKey, string> = {
   'list.error': 'Failed to load the dataset list',
   'notice.failed': 'That action did not go through',
   'list.experimentsNone': 'no experiment yet',
-  'list.newDataset': 'New dataset',
   'detail.back': '← All datasets',
   'detail.filterAll': 'All',
   'detail.filterEmpty': 'No file under this filter',
   'detail.itemsLabel': 'Items',
-  'detail.newItem': 'Item skeleton',
-  'detail.importItem': 'Import an item',
   'detail.validate': 'Validate',
   'detail.validating': 'Validating…',
   'detail.validateOk': 'Validation passes ({warnings} warnings)',
@@ -489,19 +776,6 @@ export const en: Record<DatasetsKey, string> = {
   'detail.runsCell': '{condition} · take {rep}',
   'detail.briefLoading': 'Reading the task face and judgeability…',
   'detail.briefError': 'Could not read this item’s task face and judgeability',
-  'form.newDatasetTitle': 'New dataset (writes the dataset.json skeleton, prompts/, schemas/, items/)',
-  'form.datasetId': 'Dataset id (also its directory name)',
-  'form.datasetName': 'Display name (optional)',
-  'form.newItemTitle': 'Item skeleton (homed by this dataset’s layers and register)',
-  'form.itemId': 'Item id (also its directory name)',
-  'form.importItemTitle': 'Import an item (copies an existing item directory in verbatim)',
-  'form.sourceDir': 'Absolute path of the source directory',
-  'form.submit': 'Write into the working tree',
-  'form.cancel': 'Cancel',
-  'skeleton.written': '{count} files written',
-  'skeleton.skipped': '{count} files already existed and were left alone',
-  'skeleton.commitHint': 'The files land in the working tree only. The commit stays yours — the tree and validate read HEAD, so they appear once you commit.',
-  'skeleton.dismiss': 'Got it',
   'preview.empty': 'Select a file on the left to preview it',
   'preview.loading': 'Loading…',
   'preview.error': 'Could not read this file',
@@ -562,7 +836,7 @@ export const en: Record<DatasetsKey, string> = {
   'registry.remove': 'Remove registration',
   'registry.removeConfirm': 'Confirm removal (the repository is untouched)',
   'registry.tracking': 'tracking {ref}',
-  'registry.authoring': 'new datasets and items are written to the registered checkout',
+  'registry.authoring': 'has a checkout',
   'registry.noAuthoring': 'read-only registration (no authoring checkout)',
   'registry.colSet': 'Repository · set',
   'registry.colLatest': 'Latest version',
@@ -584,9 +858,9 @@ export const en: Record<DatasetsKey, string> = {
   'registry.problem': 'This registration cannot be read right now',
   'registry.problemFix': 'Edit the registration to pick an existing tracked branch, or remove it',
   'registry.noSets': 'No datasets on {ref} (empty datasets/)',
-  'registry.empty': 'No dataset repository is registered yet',
-  'registry.emptyHint': 'Register a git repository that holds your test items, and its datasets show up here for the lab and the agent to use.',
-  'registry.emptyAction': 'Register a repository',
+  'registry.empty': 'No datasets yet',
+  'registry.emptyHint': 'Local data, downloaded files or a public dataset: hand it to the Agent from here. Once you confirm the registration, the lab and agents can use it.',
+  'registry.emptyAction': 'Add a dataset',
   'import.done': 'Old bindings processed: {created} repositories newly registered, {merged} folded into existing registrations',
   'import.nothing': 'No old bindings found',
   'import.created': '{id}: merged {sessions} session bindings ({paths} paths) into a new registration',
@@ -608,7 +882,7 @@ export const en: Record<DatasetsKey, string> = {
   'register.preview.loading': 'Checking the repository…',
   'register.preview.ok': '{count} sets · {ref}@{short} · {date}',
   'register.preview.empty': 'Valid git repository, but no datasets on {ref}',
-  'register.preview.noRef': 'This repository has no branch {ref}; pick another tracked branch',
+  'register.preview.noRef': 'This repository has no branch {ref}: pick another tracked branch; for a repository with no commits yet, use Let the Agent organize it',
   'register.preview.failed': 'That path cannot be registered',
   'register.keepOne': 'Keep at least one layer per set',
   'register.submit': 'Register',
@@ -620,4 +894,165 @@ export const en: Record<DatasetsKey, string> = {
   'error.notRegistered.fix': 'Register it first: Datasets tab → Register repository',
   'error.refMissing': 'The registration’s tracked branch does not exist',
   'error.refMissing.fix': 'Edit the registration and pick an existing branch',
+  'add.title': 'Add a dataset',
+  'add.description': 'Tell the Agent where the data is. It organizes it into a dataset in a new 「题集整理」 session; when it is done you check it here and confirm the registration.',
+  'add.source': 'Where the data is',
+  'add.sourcePlaceholder': 'A local directory, downloaded files, or a public dataset’s name / link',
+  'add.sourceHelp': 'The original data is read only; the Agent never changes it.',
+  'add.name': 'Dataset name',
+  'add.namePlaceholder': 'e.g. gsm8k',
+  'add.nameHelp': 'The registration name agents use: letters, digits and . _ -',
+  'add.nameBad': 'Use letters, digits and . _ - only, starting with a letter or digit',
+  'add.purpose': 'What you want to test with it',
+  'add.purposePlaceholder': 'e.g. compare two models on math reasoning',
+  'add.required': 'required',
+  'add.optional': 'optional',
+  'add.git': 'Datasets are kept in git: every version is kept and can be restored, and every experiment reruns exactly on the version it used. You do not need to know git.',
+  'add.gitNeeded': 'Needs git: if this machine has none, the Agent explains and asks before installing it.',
+  'add.repoAt': 'The new repository goes to {path}',
+  'add.organize': 'Let the Agent organize it',
+  'add.cancel': 'Cancel',
+  'add.close': 'Close',
+  'add.advanced': 'Advanced: already a dataset repository? Register it directly',
+  'organize.sessionTitle': '题集整理 · {name}',
+  'organize.request': 'Use the dataset-authoring skill to organize this data into a dataset, then file a registration proposal; I will check and confirm it on the Datasets tab.',
+  'organize.lineSource': 'Where the data is: {value}',
+  'organize.lineName': 'Dataset name: {value}',
+  'organize.linePurpose': 'What I want to test with it: {value}',
+  'organize.lineRepo': 'Put the new repository at: {value}',
+  'organize.updateRequest': 'Use the dataset-authoring skill to change the registered dataset 「{name}」; commit, then file a registration proposal again.',
+  'organize.lineCheckout': 'Repository checkout: {value}',
+  'organize.lineRef': 'Tracked branch: {value}',
+  'organize.lineWant': 'What to change:',
+  'organize.returnRequest': 'I sent the registration proposal 「{name}」 back. Please fix it as below, commit, and propose again:',
+  'organize.drafted': 'A new 「题集整理」 session is open with the request in its chat box. Read it, then send.',
+  'organize.returned': 'Back in the organizing session with your note in its chat box. Read it, then send.',
+  'organize.copied': 'Could not write into the chat box; the request is on the clipboard. Paste it into the session and send.',
+  'organize.manual': 'Could not write into the chat box or copy. Paste this into the session:',
+  'organize.failed': 'Could not open an organizing session',
+  'organize.dismiss': 'Dismiss',
+  'registry.add': 'Add a dataset',
+  'registry.askAgent': 'Ask the Agent to change it',
+  'registry.version': 'version {number} · {date}',
+  'registry.pending': 'new version to confirm',
+  'registry.advancedTitle': 'repository {path}\ntracked branch {ref}\ncheckout {checkout}',
+  'banner.proposal': 'The Agent has organized 「{name}」; it is waiting for you to confirm the registration',
+  'banner.proposalUpdate': 'The Agent has changed 「{name}」; the new version is waiting for you to confirm',
+  'banner.pending': '「{name}」 has a new version that changes what agents can see; it is waiting for you to confirm',
+  'banner.review': 'Check and register',
+  'banner.reviewUpdate': 'Check the new version',
+  'review.back': 'Back to datasets',
+  'review.titleNew': 'Check and register 「{name}」',
+  'review.titleUpdate': 'Check the new version of 「{name}」',
+  'review.loading': 'Checking…',
+  'review.error': 'The proposal cannot be read',
+  'review.factSource': 'Source',
+  'review.factItems': 'Items',
+  'review.factValidate': 'Validation',
+  'review.factVersion': 'Version',
+  'review.factName': 'Registration name',
+  'review.sourceKind.local': 'local directory',
+  'review.sourceKind.public': 'public dataset',
+  'review.sourceKind.protocol': 'already in the dataset layout',
+  'review.validateOk': 'passed',
+  'review.validateWarn': 'passed · {count} warnings',
+  'review.validateFail': '{count} errors',
+  'review.versionOne': 'version {number} · {date}',
+  'review.versionStep': 'version {from} → version {to} · {date}',
+  'review.sets': '{count} sets: {names}',
+  'review.compareNew': 'Original → dataset',
+  'review.compareUpdate': 'Registered version → new version',
+  'review.sum.split': 'split {count}',
+  'review.sum.copy': 'copied {count}',
+  'review.sum.new': 'new {count}',
+  'review.sum.unused': 'unused {count}',
+  'review.sum.added': 'added {count}',
+  'review.sum.modified': 'modified {count}',
+  'review.sum.deleted': 'deleted {count}',
+  'review.sum.outside': 'outside datasets {count}',
+  'review.untouched': '{files} original files, none changed; the dataset has {outputs} files',
+  'review.sourceUnread': 'The original directory cannot be read on this machine; the left column is the Agent’s account and cannot be checked file by file.',
+  'review.sources': 'Original',
+  'review.outputs': 'Dataset',
+  'review.noSources': 'This proposal has no original directory (the repository is the source).',
+  'review.disp.split': 'split',
+  'review.disp.copy': 'copied',
+  'review.disp.unused': 'unused',
+  'review.originSplit': '← {from} · {field}',
+  'review.originFrom': '← {from}',
+  'review.originNew': 'new',
+  'review.originUnexplained': 'unexplained',
+  'review.rowFiles': '{count} files',
+  'review.rowRecords': '{count} records',
+  'review.rowItems': '{count} items',
+  'review.fieldTo': '{name} → {to}',
+  'review.fieldDropped': '{name}: dropped ({reason})',
+  'review.unlayered': 'in no layer · agents see it',
+  'review.unlayeredCount': '{count} files sit in no layer; agents can see them',
+  'review.layerTag': 'layer {layer}',
+  'review.itemOne': 'Compare one item',
+  'review.itemRandom': 'Spot-check 3 random items',
+  'review.fullList': 'Full file list',
+  'review.itemSource': 'Source record · {file}',
+  'review.itemLine': 'line {line}',
+  'review.itemFiles': '{count} files it became',
+  'review.itemNoSource': 'No source record to compare for this item',
+  'review.itemPick': 'Another item',
+  'review.close': 'Close',
+  'review.listTruncated': 'The list is long; only the first part is shown',
+  'review.layersTitle': 'Who sees each layer',
+  'review.layerVisible': 'agents see it',
+  'review.layerHidden': 'grading only',
+  'review.layerSuggest': 'Agent suggests: {word}',
+  'review.layerNow': 'now: {word}',
+  'review.keepOne': 'Leave agents at least one layer per set',
+  'review.nameHelp': 'Agents reference it as <name>/<set>',
+  'review.notes': 'The Agent’s notes',
+  'review.problems': 'These must be fixed before registering',
+  'review.warnings': 'Worth a look before registering',
+  'review.changes': 'Changes',
+  'review.change.A': 'added',
+  'review.change.M': 'modified',
+  'review.change.D': 'deleted',
+  'review.changeVisible': 'agents see it',
+  'review.changeHidden': 'agents do not see it',
+  'review.deletions': '{count} files deleted (all listed)',
+  'review.advanced': 'Advanced: repository path · tracked branch · checkout',
+  'review.advRepo': 'Repository',
+  'review.advRef': 'Tracked branch',
+  'review.advCheckout': 'Checkout',
+  'review.advCommit': 'Commit',
+  'review.advNone': 'none',
+  'review.return': 'Send back to the Agent',
+  'review.returnNote': 'Tell the Agent what to change',
+  'review.returnSend': 'Send back',
+  'review.returnNoSession': 'This proposal recorded no organizing session; the note is copied — paste it into that session.',
+  'review.confirm': 'Confirm registration',
+  'review.confirmUpdate': 'Confirm the new version',
+  'review.confirming': 'Registering…',
+  'review.done': 'Registered 「{name}」',
+  'review.cancel': 'Cancel',
+  'review.heldTitle': 'No organizing proposal for this version',
+  'review.heldBody': 'It was committed straight into the repository with no account from the agent; the change list is everything that differs from the registered version. Until you confirm, agents keep reading the registered one.',
+  'review.finding.COMMIT_NOT_TIP.gone': 'The tracked branch {ref} no longer exists',
+  'review.finding.COMMIT_NOT_TIP.moved': 'Branch {ref} moved on after this proposal (now {now}, proposal {commit}); ask the agent to file a new one',
+  'review.finding.UNCOMMITTED': 'The checkout has uncommitted changes under datasets/; they are not part of this version',
+  'review.finding.NO_SETS': 'This version holds no dataset (no datasets/<set>/dataset.json)',
+  'review.finding.HISTORY_REWRITTEN': 'This version does not continue the registered one (the branch was rewritten); every file counts as changed',
+  'review.finding.OUTPUT_UNCOVERED': '{path} has no account of where it came from',
+  'review.finding.OUTPUT_MISSING': '{path} from the account matches no file in this version',
+  'review.finding.OUTPUT_COUNT': '{path}: the account says {expected} files, the version has {count}',
+  'review.finding.UNLAYERED_VISIBLE': '{count} files sit in no layer; agents can see them',
+  'review.finding.SOURCE_UNREAD': 'The original directory {path} cannot be read here; the source rows are the agent’s account, unchecked',
+  'review.finding.DISPOSITION_INCOMPLETE.empty': 'No account of what happened to each file of the original data',
+  'review.finding.DISPOSITION_INCOMPLETE.noReason': '{path} is marked unused with no reason',
+  'review.finding.DISPOSITION_INCOMPLETE.noTarget': '{path} names no place in the dataset',
+  'review.finding.DISPOSITION_INCOMPLETE.field': '{path}: field {field} has neither a target nor a reason',
+  'review.finding.SOURCE_MISSING': '{path} from the account is not in the original directory',
+  'review.finding.SOURCE_COUNT': '{path}: the agent counted {expected} records, the file has {count}',
+  'review.finding.FIELD_UNACCOUNTED': '{path}: fields {fields} are not accounted for',
+  'review.finding.SOURCE_UNLISTED': '{path} of the original directory is not accounted for',
+  'review.finding.SAMPLE_MISSING': 'Sample {item} is not an item in this version',
+  'review.finding.LAYER_UNKNOWN': 'Layer {layer} is not declared in this version',
+  'review.finding.VALIDATE_FAILED': 'Validation reports {count} error(s); the first: {first}',
 }

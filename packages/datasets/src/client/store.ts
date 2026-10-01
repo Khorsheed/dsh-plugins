@@ -17,7 +17,7 @@ import { defineStore } from '@deepseek-ai/dsh-client-store'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
   DatasetOverview, DatasetSlot, ImportBindingsResult, ItemBrief, ItemRecord, ListItemsResult,
-  ReadResult, RegistryRow, SkeletonResult, ValidateDatasetResult,
+  Proposal, ReadResult, RegistryRow, ValidateDatasetResult,
 } from '../types.ts'
 import type { DatasetExperimentRow, ItemRunsView } from './contract.ts'
 
@@ -44,8 +44,13 @@ export type DatasetSelection =
 /** Which page the tab is on. */
 export type DatasetsPage = 'list' | 'detail'
 
-/** Which inline form is open, if any (the tab writes nothing without one). */
-export type DatasetsForm = 'newDataset' | 'newItem' | 'importItem' | null
+/**
+ * What the review page is about (T90): a filed proposal, or a registration's
+ * version the update gate holds. The review replaces the list while open.
+ */
+export type ReviewTarget =
+  | { readonly kind: 'proposal'; readonly id: string }
+  | { readonly kind: 'pending'; readonly repo: string }
 
 /** The key one item's fetched values are filed under. */
 export function itemKey(dataset: string, item: string): string {
@@ -107,10 +112,10 @@ export interface DatasetsViewState {
   validated: Record<string, ValidateDatasetResult>
   /** Whether a validate call is in flight. */
   validating: boolean
-  /** Which inline write form is open. */
-  form: DatasetsForm
-  /** The last skeleton/import result, shown until dismissed. */
-  skeleton: SkeletonResult | null
+  /** The proposals waiting for a person (the 「等你确认登记」 banner), or null before they load. */
+  proposals: readonly Proposal[] | null
+  /** The open review, or null when the list / detail page shows. */
+  review: ReviewTarget | null
   /** The selected file's coordinates, or null when nothing is selected. */
   selection: DatasetSelection | null
   /** The selected file's content, or null before one completes. */
@@ -142,8 +147,8 @@ export type DatasetsViewActions = {
   setExperiments: (draft: DatasetsViewState, rows: readonly DatasetExperimentRow[] | null) => void
   setValidated: (draft: DatasetsViewState, dataset: string, result: ValidateDatasetResult) => void
   setValidating: (draft: DatasetsViewState, running: boolean) => void
-  setForm: (draft: DatasetsViewState, form: DatasetsForm) => void
-  setSkeleton: (draft: DatasetsViewState, result: SkeletonResult | null) => void
+  setProposals: (draft: DatasetsViewState, proposals: readonly Proposal[] | null) => void
+  openReview: (draft: DatasetsViewState, target: ReviewTarget | null) => void
   select: (draft: DatasetsViewState, selection: DatasetSelection | null) => void
   setPreview: (draft: DatasetsViewState, preview: ReadResult) => void
   setPreviewLoading: (draft: DatasetsViewState, loading: boolean) => void
@@ -174,8 +179,8 @@ const INITIAL: DatasetsViewState = {
   experiments: null,
   validated: {},
   validating: false,
-  form: null,
-  skeleton: null,
+  proposals: null,
+  review: null,
   selection: null,
   preview: null,
   previewLoading: false,
@@ -230,8 +235,7 @@ export function createDatasetsViewStore(): EngineStoreHandle<DatasetsViewState, 
         d.preview = null
         d.previewError = null
         d.slotFilter = null
-        d.form = null
-        d.skeleton = null
+        d.review = null
       },
       openItem: (d, item: string | null) => {
         d.openItem = item
@@ -260,14 +264,8 @@ export function createDatasetsViewStore(): EngineStoreHandle<DatasetsViewState, 
       setExperiments: (d, rows: readonly DatasetExperimentRow[] | null) => { d.experiments = rows },
       setValidated: (d, dataset: string, result: ValidateDatasetResult) => { d.validated[dataset] = result },
       setValidating: (d, running: boolean) => { d.validating = running },
-      setForm: (d, form: DatasetsForm) => {
-        d.form = form
-        if (form !== null) d.skeleton = null
-      },
-      setSkeleton: (d, result: SkeletonResult | null) => {
-        d.skeleton = result
-        if (result !== null) d.form = null
-      },
+      setProposals: (d, proposals: readonly Proposal[] | null) => { d.proposals = proposals },
+      openReview: (d, target: ReviewTarget | null) => { d.review = target },
       select: (d, selection: DatasetSelection | null) => {
         d.selection = selection
         d.preview = null

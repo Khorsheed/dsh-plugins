@@ -28,6 +28,9 @@
  *
  * @module @khorsheed/dsh-datasets/tool
  */
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 // Type-only: pulls this package's `Context.datasets` service augmentation.
@@ -55,7 +58,9 @@ export interface DatasetsToolConfig {
    * Which group of model tools this row grants: `read` (the six read verbs),
    * `authoring` (read plus `datasets_put_item` — the drafting domain an eval
    * agent wants), `all` (authoring plus `datasets_worktree_path`; the
-   * default), or `none` (no model tools and no guidance section). The
+   * default), `organize` (read plus `datasets_propose_registration`, and the
+   * shipped `dataset-authoring` skill — the 「题集整理」 session's tier, T90),
+   * or `none` (no model tools and no guidance section). The
    * service, the CLI, and the session tab are the core's own faces; the
    * `/datasets` slash command is THIS row's and registers at every tier —
    * the `tools` key gates only the model face.
@@ -64,7 +69,7 @@ export interface DatasetsToolConfig {
 }
 
 export const Config: z = z.object({
-  tools: z.union([z.const('all'), z.const('read'), z.const('authoring'), z.const('none')]).default('all'),
+  tools: z.union([z.const('all'), z.const('read'), z.const('authoring'), z.const('organize'), z.const('none')]).default('all'),
 })
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -82,6 +87,56 @@ export const name = 'datasets-tool'
  * registrations.
  */
 export const inject = ['datasets']
+
+/** The narrow skill registry surface the `organize` tier registers its skill into. */
+interface SkillRegistrySlice {
+  register(skill: {
+    name: string
+    description: string
+    content: string
+    source: string
+    provider?: string
+  }): () => void
+}
+
+/** The shipped skill, parsed from its SKILL.md frontmatter. */
+interface SkillFile {
+  readonly name: string
+  readonly description: string
+  readonly content: string
+}
+
+/**
+ * Load the shipped `dataset-authoring` skill (`skills/dataset-authoring/SKILL.md`,
+ * listed in package.json `files`). A missing or malformed file is a warning,
+ * never a boot failure.
+ * @returns the parsed skill, or undefined when it cannot be read.
+ */
+export function loadAuthoringSkill(): SkillFile | undefined {
+  const file = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'dataset-authoring', 'SKILL.md')
+  let raw: string
+  try {
+    raw = readFileSync(file, 'utf8')
+  } catch {
+    return undefined
+  }
+  const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
+  const frontmatter = match?.[1] ?? ''
+  const skillName = /^name:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim()
+  const description = /^description:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim()
+  const content = match?.[2]
+  if (skillName === undefined || description === undefined || content === undefined) return undefined
+  return { name: skillName, description, content }
+}
+
+/** The 「题集整理」 session's guidance (the `organize` tier). */
+const ORGANIZE_GUIDANCE =
+  'This session organizes a dataset into a git repository for the person and files a registration proposal. '
+  + 'Load the dataset-authoring skill first and follow it step by step: check git, look at the data, ask every '
+  + 'key question in one go, never modify the original data, convert the whole dataset (no sampling), give every '
+  + 'file and field a disposition, commit per batch, and check with datasets_propose_registration {dryRun: true} '
+  + 'until it passes. Then file the proposal with datasets_propose_registration and stop: only the person '
+  + 'registers, on the Datasets tab. Registered datasets are read through the datasets_* tools as `<id>/<set>`.'
 
 /** The narrow prompt-section registry surface this plugin opportunistically uses. */
 interface PromptSections {
@@ -137,6 +192,33 @@ export function apply(ctx: Context, config: DatasetsToolConfig = {}): void {
   // The guidance describes those tools, so it rides with them — and through
   // the same deferred door, for the same reason. The section names only the
   // verbs this group actually granted.
+  if (config.tools === 'organize') {
+    // The organizing tier: its own guidance (the generic one forbids reading
+    // directories, which is exactly this session's job on the ORIGINAL data)
+    // and the shipped skill — both only here, so the evaluation tiers'
+    // prompts and skill lists stay byte-identical.
+    ctx.inject(['systemPrompt'], (promptCtx) => {
+      const sections = promptCtx.get('systemPrompt') as PromptSections | undefined
+      sections?.section({ name: 'datasets:organize', order: 150, text: ORGANIZE_GUIDANCE })
+    })
+    ctx.inject(['skills'], (skillCtx) => {
+      const skills = skillCtx.get('skills') as SkillRegistrySlice | undefined
+      if (skills === undefined) return
+      const skill = loadAuthoringSkill()
+      if (skill === undefined) {
+        ctx.logger.warn(`${PACKAGE_NAME}: the shipped dataset-authoring skill could not be read — not registered`)
+        return
+      }
+      skillCtx.effect(() => skills.register({
+        name: skill.name,
+        description: skill.description,
+        content: skill.content,
+        source: 'runtime',
+        provider: PACKAGE_NAME,
+      }), `${PACKAGE_NAME}: ${skill.name} skill`)
+    })
+    return
+  }
   ctx.inject(['systemPrompt'], (promptCtx) => {
     const sections = promptCtx.get('systemPrompt') as PromptSections | undefined
     sections?.section({

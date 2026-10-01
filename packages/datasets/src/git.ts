@@ -163,3 +163,52 @@ export async function currentBranch(checkout: string): Promise<string | undefine
 export async function archiveTo(repo: string, commit: string, paths: readonly string[], output: string): Promise<void> {
   await git(repo, ['archive', '--format=tar', `--output=${output}`, commit, '--', ...paths])
 }
+
+/**
+ * The paths that differ between two commits, with their status letter
+ * (`A` added, `M` modified, `D` deleted; renames are reported as a delete
+ * plus an add — `--no-renames` — so every path a reader sees is literal).
+ * @param repo - repository (or git dir) path.
+ * @param from - the older commit.
+ * @param to - the newer commit.
+ * @returns one entry per changed path, in git's order.
+ */
+export async function diffPaths(repo: string, from: string, to: string): Promise<Array<{ status: 'A' | 'M' | 'D'; path: string }>> {
+  const out = await git(repo, ['diff', '--no-renames', '--name-status', '-z', from, to])
+  const parts = out.split('\0').filter(part => part !== '')
+  const changes: Array<{ status: 'A' | 'M' | 'D'; path: string }> = []
+  for (let index = 0; index + 1 < parts.length; index += 2) {
+    const letter = parts[index]!.charAt(0)
+    const status = letter === 'A' ? 'A' : letter === 'D' ? 'D' : 'M'
+    changes.push({ status, path: parts[index + 1]! })
+  }
+  return changes
+}
+
+/**
+ * Whether `ancestor` is reachable from `descendant` (`git merge-base --is-ancestor`).
+ * @param repo - repository (or git dir) path.
+ * @param ancestor - the candidate ancestor commit.
+ * @param descendant - the candidate descendant commit.
+ * @returns true when the history is linear between the two.
+ */
+export async function isAncestor(repo: string, ancestor: string, descendant: string): Promise<boolean> {
+  try {
+    await git(repo, ['merge-base', '--is-ancestor', ancestor, descendant])
+    return true
+  } catch (error) {
+    if (error instanceof GitError && error.exitCode === 1) return false
+    throw error
+  }
+}
+
+/**
+ * How many commits a commit's history holds (`git rev-list --count`) — the
+ * plain «版本 N» a person reads instead of a sha.
+ * @param repo - repository (or git dir) path.
+ * @param commit - a resolved commit sha.
+ * @returns the commit count (1 for a root commit).
+ */
+export async function commitCount(repo: string, commit: string): Promise<number> {
+  return Number.parseInt((await git(repo, ['rev-list', '--count', commit])).trim(), 10)
+}

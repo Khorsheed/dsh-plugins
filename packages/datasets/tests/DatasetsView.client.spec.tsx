@@ -11,8 +11,10 @@
  * they show; «从旧绑定登记» reports each folded registration and marks a
  * dangling binding in red; the DETAIL tree marks each file with its slot AND
  * who sees it; «作答记录» is ABSENT — not empty — on an instance with no eval
- * plugin; write gestures exist only on a registration with an authoring
- * checkout.
+ * plugin. T90: 「添加题集」 hands the request to a new 题集整理 session (no
+ * dataset write from the tab), proposals and held versions surface as
+ * 「等你确认登记」 banners, and the review confirms exactly the layer choice
+ * it shows — blocked while the host reports a problem.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -20,7 +22,7 @@ import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   DatasetOverview, ImportBindingsResult, ItemBrief, ListDatasetsResult, ListItemsResult,
-  ReadResult, RegisterPreview, RegistryEntry, RegistryRow, SkeletonResult, ValidateResult,
+  Proposal, ProposalReview, ReadResult, RegisterPreview, RegistryEntry, RegistryRow, ValidateResult,
 } from '../src/types.ts'
 import type { DatasetsViewProps, ItemRunsView } from '../src/client/contract.ts'
 import { DatasetsView } from '../src/client/DatasetsView.tsx'
@@ -57,9 +59,17 @@ interface Harness {
   overview: Mock
   itemBrief: Mock
   validateDataset: Mock
-  scaffoldDataset: Mock
-  scaffoldItem: Mock
-  importItem: Mock
+  organizingSetup: Mock
+  proposals: Mock
+  proposalReview: Mock
+  reviewItem: Mock
+  reviewFiles: Mock
+  confirmProposal: Mock
+  returnProposal: Mock
+  pendingReview: Mock
+  confirmPending: Mock
+  startOrganizing: Mock
+  draftInSession: Mock
   itemRuns: Mock
   datasetExperiments: Mock
 }
@@ -179,10 +189,57 @@ const RUNS: ItemRunsView = {
   notes: [],
 }
 
-const SKELETON: SkeletonResult = {
-  written: ['datasets/bench/items/C2/visible/task.md'],
-  skipped: [],
-  notes: [],
+const PROPOSAL: Proposal = {
+  id: 'p1',
+  createdAt: '2026-09-30T08:00:00.000Z',
+  updatedAt: '2026-09-30T08:00:00.000Z',
+  status: 'pending',
+  kind: 'new',
+  repo: '/home/user/.dsh/datasets/gsm8k',
+  commonDir: '/home/user/.dsh/datasets/gsm8k/.git',
+  checkout: '/home/user/.dsh/datasets/gsm8k',
+  trackedRef: 'main',
+  commit: TIP,
+  registryId: 'gsm8k',
+  sessionId: 'organizer-1',
+  source: { kind: 'public', label: 'GSM8K', path: '/home/user/Downloads/gsm8k', license: 'MIT' },
+  mapping: { outputs: [] },
+  samples: [{ set: 'gsm8k', item: 'test-0001' }],
+  notes: 'Both splits in one set.',
+}
+
+const REVIEW: ProposalReview = {
+  proposal: PROPOSAL,
+  facts: {
+    itemCount: 3,
+    sets: [{
+      set: 'gsm8k', title: 'GSM8K', itemCount: 3,
+      layers: [
+        { name: 'prompt', modelFacing: true, suggested: true, reason: 'the question' },
+        { name: 'grading', modelFacing: false, suggested: false, reason: 'the answer' },
+      ],
+    }],
+    validate: { ok: true, errors: [], warnings: 0 },
+    version: { number: 4, date: '2026-09-30T08:00:00+08:00', commit: TIP, trackedRef: 'main', commonDir: '/home/user/.dsh/datasets/gsm8k/.git', checkout: '/home/user/.dsh/datasets/gsm8k' },
+  },
+  compare: {
+    mode: 'new',
+    summary: { split: 1, copy: 0, new: 2, unused: 1, added: 0, modified: 0, deleted: 0, outside: 0 },
+    sources: [
+      { path: 'test.jsonl', disposition: 'split', target: 'datasets/gsm8k/items/', count: 3, files: 1, counted: 3, fields: [{ name: 'question', to: 'prompt/question.md' }, { name: 'answer', to: 'grading/answer.md' }] },
+      { path: 'README.md', disposition: 'unused', reason: 'dataset card', files: 1 },
+    ],
+    sourceRead: true,
+    outputs: [
+      { path: 'datasets/gsm8k/dataset.json', origin: 'new', files: 1, items: 0, zone: 'descriptor', set: 'gsm8k' },
+      { path: 'datasets/gsm8k/items/*/prompt/question.md', origin: 'split', from: 'test.jsonl', field: 'question', files: 3, items: 3, zone: 'layer', set: 'gsm8k', layer: 'prompt' },
+      { path: 'datasets/gsm8k/notes.md', origin: 'new', files: 1, items: 0, zone: 'passthrough', set: 'gsm8k' },
+    ],
+    unlayered: ['datasets/gsm8k/notes.md'],
+  },
+  problems: [],
+  warnings: [],
+  items: [{ set: 'gsm8k', item: 'test-0001' }, { set: 'gsm8k', item: 'test-0002' }, { set: 'gsm8k', item: 'test-0003' }],
 }
 
 const VALIDATED: ValidateResult = {
@@ -232,9 +289,24 @@ function makeHarness(rows: RegistryRow[] = [rowOf()]): Harness {
     overview: vi.fn(async (): Promise<Result<DatasetOverview>> => ({ ok: true, value: OVERVIEW })),
     itemBrief: vi.fn(async (): Promise<Result<ItemBrief>> => ({ ok: true, value: BRIEF })),
     validateDataset: vi.fn(async (): Promise<Result<ValidateResult>> => ({ ok: true, value: VALIDATED })),
-    scaffoldDataset: vi.fn(async (): Promise<Result<SkeletonResult>> => ({ ok: true, value: SKELETON })),
-    scaffoldItem: vi.fn(async (): Promise<Result<SkeletonResult>> => ({ ok: true, value: SKELETON })),
-    importItem: vi.fn(async (): Promise<Result<SkeletonResult>> => ({ ok: true, value: SKELETON })),
+    organizingSetup: vi.fn(async () => ({ ok: true, value: { preset: 'dataset-authoring', datasetsHome: '/home/user/.dsh/datasets' } })),
+    proposals: vi.fn(async (): Promise<Result<Proposal[]>> => ({ ok: true, value: [] })),
+    proposalReview: vi.fn(async (): Promise<Result<ProposalReview>> => ({ ok: true, value: REVIEW })),
+    reviewItem: vi.fn(async (_sid: string, _id: string, set: string, item: string) => ({
+      ok: true,
+      value: {
+        set, item,
+        files: [{ path: `datasets/${set}/items/${item}/prompt/question.md`, zone: 'layer', layer: 'prompt', origin: 'split', from: 'test.jsonl', field: 'question', bytes: 9, excerpt: 'What is 2+2?' }],
+        source: { file: 'test.jsonl', line: 1, record: '{"question":"What is 2+2?"}' },
+      },
+    })),
+    reviewFiles: vi.fn(async () => ({ ok: true, value: { outputs: [{ path: 'datasets/gsm8k/dataset.json', zone: 'descriptor', origin: 'new' }], sources: [], truncated: false } })),
+    confirmProposal: vi.fn(async (_sid: string, _id: string, registryId: string) => ({ ok: true, value: { ...ENTRY, id: registryId } })),
+    returnProposal: vi.fn(async () => ({ ok: true, value: { ...PROPOSAL, status: 'returned' } })),
+    pendingReview: vi.fn(async () => ({ ok: true, value: null })),
+    confirmPending: vi.fn(async () => ({ ok: true, value: ENTRY })),
+    startOrganizing: vi.fn(async (): Promise<unknown> => ({ kind: 'drafted', sessionId: 'organizer-2' })),
+    draftInSession: vi.fn(async (target: string): Promise<unknown> => ({ kind: 'drafted', sessionId: target })),
     // The default instance carries NO eval plugin: null is «not installed».
     itemRuns: vi.fn(async (): Promise<ItemRunsView | null> => null),
     datasetExperiments: vi.fn(async () => null),
@@ -267,9 +339,17 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
     overview: h.overview,
     itemBrief: h.itemBrief,
     validateDataset: h.validateDataset,
-    scaffoldDataset: h.scaffoldDataset,
-    scaffoldItem: h.scaffoldItem,
-    importItem: h.importItem,
+    organizingSetup: h.organizingSetup,
+    proposals: h.proposals,
+    proposalReview: h.proposalReview,
+    reviewItem: h.reviewItem,
+    reviewFiles: h.reviewFiles,
+    confirmProposal: h.confirmProposal,
+    returnProposal: h.returnProposal,
+    pendingReview: h.pendingReview,
+    confirmPending: h.confirmPending,
+    startOrganizing: h.startOrganizing,
+    draftInSession: h.draftInSession,
     itemRuns: h.itemRuns,
     datasetExperiments: h.datasetExperiments,
     isLoopback: canPick,
@@ -280,6 +360,12 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
     ),
   } as unknown as DatasetsViewProps
   return render(<DatasetsView {...props} />)
+}
+
+/** The register form now sits under 「添加题集」's 「高级」. */
+async function openRegisterForm(): Promise<void> {
+  fireEvent.click(await screen.findByText('registry.add'))
+  fireEvent.click(await screen.findByText('add.advanced'))
 }
 
 /** Open the detail page of the only set, and its only item. */
@@ -313,6 +399,8 @@ describe('the list page', () => {
     // «latest» is the tracked branch's tip, named as such.
     expect(screen.getByText('i1-walk@a4f9c2e')).toBeTruthy()
     expect(screen.getByText('2026-09-21')).toBeTruthy()
+    // Decision D: path, branch and checkout ride on the heading's title.
+    expect(screen.getByTitle(/registry\.advancedTitle .*"ref":"i1-walk"/)).toBeTruthy()
     // The layer word, not the layer name — which rides on the title.
     expect(screen.getByText('layers.faceOnly')).toBeTruthy()
     expect(screen.getByTitle(/layers\.title .*"layers":"visible"/)).toBeTruthy()
@@ -359,7 +447,7 @@ describe('the list page', () => {
     const { container } = renderView(h)
     expect(await screen.findByText('bench')).toBeTruthy()
     expect(container.textContent).not.toContain('/work/')
-    expect(screen.getByTitle('/work/dataseek-eval/.git')).toBeTruthy()
+    expect(screen.getByTitle(/\/work\/dataseek-eval\/\.git/)).toBeTruthy()
   })
 
   it('a registration whose tracked branch is gone keeps its group with the host\'s sentence', async () => {
@@ -382,11 +470,11 @@ describe('the list page', () => {
     expect(await screen.findByText('registry.empty')).toBeTruthy()
     // T87: ONE register button and ONE import link on screen — the bar's own
     // pair and the 「0 个」 count title step aside while the page is empty.
-    expect(screen.getAllByRole('button', { name: /^registry\.(register|emptyAction)$/ })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /^registry\.(add|emptyAction)$/ })).toHaveLength(1)
     expect(screen.getAllByRole('button', { name: 'registry.import' })).toHaveLength(1)
     expect(screen.queryByText(/^registry\.title/)).toBeNull()
     fireEvent.click(screen.getByText('registry.emptyAction'))
-    expect(await screen.findByText('register.title')).toBeTruthy()
+    expect(await screen.findByText('add.title')).toBeTruthy()
   })
 
   it('a failed registry fetch settles instead of loading forever', async () => {
@@ -457,7 +545,7 @@ describe('the register form', () => {
   it('the live preview drives the per-set chips; confirm sends exactly what they show', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('registry.register'))
+    await openRegisterForm()
     fireEvent.change(screen.getByLabelText('register.path'), { target: { value: '/repo/' } })
     expect(await screen.findByText(/register\.preview\.ok .*"count":2.*"ref":"main"/)).toBeTruthy()
     expect(h.previewRepo).toHaveBeenCalledWith('s1', '/repo', undefined)
@@ -482,7 +570,7 @@ describe('the register form', () => {
   it('the branch dropdown re-previews at the picked branch', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('registry.register'))
+    await openRegisterForm()
     fireEvent.change(screen.getByLabelText('register.path'), { target: { value: '/repo' } })
     expect(await screen.findByText(/register\.preview\.ok/)).toBeTruthy()
     fireEvent.change(screen.getByLabelText('register.branch'), { target: { value: 'i1-walk' } })
@@ -492,7 +580,7 @@ describe('the register form', () => {
   it('a set with no layer picked blocks confirm with a hint', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('registry.register'))
+    await openRegisterForm()
     fireEvent.change(screen.getByLabelText('register.path'), { target: { value: '/repo' } })
     expect(await screen.findByText(/register\.preview\.ok/)).toBeTruthy()
     // alpha's only chip.
@@ -505,7 +593,7 @@ describe('the register form', () => {
     const h = makeHarness()
     h.previewRepo.mockResolvedValue({ ok: true, value: { ...PREVIEW, registeredAs: 'dataseek-eval' } })
     renderView(h)
-    fireEvent.click(await screen.findByText('registry.register'))
+    await openRegisterForm()
     fireEvent.change(screen.getByLabelText('register.path'), { target: { value: '/repo' } })
     expect(await screen.findByText(/registered already as "dataseek-eval"/)).toBeTruthy()
     expect((screen.getByText('register.submit') as HTMLButtonElement).disabled).toBe(true)
@@ -515,7 +603,7 @@ describe('the register form', () => {
     const h = makeHarness()
     h.previewRepo.mockResolvedValue({ ok: false, error: { code: 'NOT_A_REPO', message: '/nowhere is not a git repository' } })
     renderView(h)
-    fireEvent.click(await screen.findByText('registry.register'))
+    await openRegisterForm()
     fireEvent.change(screen.getByLabelText('register.path'), { target: { value: '/nowhere' } })
     expect(await screen.findByText(/not a git repository/)).toBeTruthy()
   })
@@ -523,13 +611,13 @@ describe('the register form', () => {
   it('the browse button hides when the host cannot show a native chooser', async () => {
     const h = makeHarness()
     renderView(h, { canPick: false })
-    fireEvent.click(await screen.findByText('registry.register'))
+    await openRegisterForm()
     expect(screen.queryByText('register.browse')).toBeNull()
     cleanup()
 
     const picking = makeHarness()
     renderView(picking)
-    fireEvent.click(await screen.findByText('registry.register'))
+    await openRegisterForm()
     fireEvent.click(screen.getByText('register.browse'))
     await waitFor(() => { expect(picking.previewRepo).toHaveBeenCalledWith('s1', '/picked-repo', undefined) })
   })
@@ -775,60 +863,12 @@ describe('the detail page', () => {
     fireEvent.click(await screen.findByText('bench'))
     expect(await screen.findByText('detail.itemsLabel')).toBeTruthy()
     fireEvent.click(screen.getByText('detail.back'))
-    expect(await screen.findByText('registry.register')).toBeTruthy()
+    expect(await screen.findByText('registry.add')).toBeTruthy()
     expect(screen.getByText('i1-walk@a4f9c2e')).toBeTruthy()
   })
 })
 
-describe('the write gestures', () => {
-  it('exist only on a registration with an authoring checkout', async () => {
-    const h = makeHarness([rowOf({ ...ENTRY, authoringCheckout: null })])
-    renderView(h)
-    expect(await screen.findByText('registry.noAuthoring')).toBeTruthy()
-    expect(screen.queryByText('list.newDataset')).toBeNull()
-    fireEvent.click(await screen.findByText('bench'))
-    expect(await screen.findByText('detail.validate')).toBeTruthy()
-    expect(screen.queryByText('detail.newItem')).toBeNull()
-    expect(screen.queryByText('detail.importItem')).toBeNull()
-  })
-
-  it('the item skeleton writes into the authoring checkout and says the commit is the human\u2019s', async () => {
-    const h = makeHarness()
-    renderView(h)
-    fireEvent.click(await screen.findByText('bench'))
-    fireEvent.click(await screen.findByText('detail.newItem'))
-    fireEvent.change(screen.getByLabelText('form.itemId'), { target: { value: 'C2' } })
-    fireEvent.click(screen.getByText('form.submit'))
-    await waitFor(() => {
-      expect(h.scaffoldItem).toHaveBeenCalledWith('s1', 'dataseek-eval', { dataset: 'bench', item: 'C2' })
-    })
-    expect(await screen.findByText('datasets/bench/items/C2/visible/task.md')).toBeTruthy()
-    expect(screen.getByText('skeleton.commitHint')).toBeTruthy()
-  })
-
-  it('the dataset skeleton targets the heading\'s registration and takes an id', async () => {
-    const h = makeHarness()
-    renderView(h)
-    fireEvent.click(await screen.findByText('list.newDataset'))
-    expect((screen.getByText('form.submit') as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText('form.datasetId'), { target: { value: 'fresh' } })
-    fireEvent.click(screen.getByText('form.submit'))
-    await waitFor(() => { expect(h.scaffoldDataset).toHaveBeenCalledWith('s1', 'dataseek-eval', { id: 'fresh' }) })
-  })
-
-  it('importing an item asks for the source directory', async () => {
-    const h = makeHarness()
-    renderView(h)
-    fireEvent.click(await screen.findByText('bench'))
-    fireEvent.click(await screen.findByText('detail.importItem'))
-    fireEvent.change(screen.getByLabelText('form.itemId'), { target: { value: 'IM1' } })
-    fireEvent.change(screen.getByLabelText('form.sourceDir'), { target: { value: '/tmp/item' } })
-    fireEvent.click(screen.getByText('form.submit'))
-    await waitFor(() => {
-      expect(h.importItem).toHaveBeenCalledWith('s1', 'dataseek-eval', { dataset: 'bench', item: 'IM1', sourceDir: '/tmp/item' })
-    })
-  })
-
+describe('the detail page tools', () => {
   it('validate reports what it found, error codes included', async () => {
     const h = makeHarness()
     renderView(h)
@@ -839,13 +879,193 @@ describe('the write gestures', () => {
     expect(screen.getByTitle('RUBRIC_NO_ITEMS')).toBeTruthy()
   })
 
-  it('a refused write surfaces the host\u2019s message instead of a silent no-op', async () => {
+})
+
+describe('添加题集 (T90)', () => {
+  it('the dialog asks three things and drafts the request into a NEW 题集整理 session', async () => {
     const h = makeHarness()
-    h.scaffoldDataset.mockResolvedValue({ ok: false, error: { code: 'SHAPE_INVALID', message: 'dataset "fresh" already exists' } })
     renderView(h)
-    fireEvent.click(await screen.findByText('list.newDataset'))
-    fireEvent.change(screen.getByLabelText('form.datasetId'), { target: { value: 'fresh' } })
-    fireEvent.click(screen.getByText('form.submit'))
-    expect(await screen.findByText('dataset "fresh" already exists')).toBeTruthy()
+    fireEvent.click(await screen.findByText('registry.add'))
+    expect(await screen.findByText('add.title')).toBeTruthy()
+    expect(screen.getByText('add.git')).toBeTruthy()
+    const go = screen.getByText('add.organize') as HTMLButtonElement
+    expect(go.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('add.source', { selector: 'textarea' }), { target: { value: '~/Downloads/gsm8k' } })
+    fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: 'bad name' } })
+    expect(screen.getByText('add.nameBad')).toBeTruthy()
+    expect(go.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: 'gsm8k' } })
+    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('add.purpose', { selector: 'textarea' }), { target: { value: 'math reasoning' } })
+    fireEvent.click(go)
+    await waitFor(() => { expect(h.startOrganizing).toHaveBeenCalledTimes(1) })
+    const [sid, title, text, preset] = h.startOrganizing.mock.calls[0]!
+    expect(sid).toBe('s1')
+    expect(title).toBe('organize.sessionTitle {"name":"gsm8k"}')
+    expect(preset).toBe('dataset-authoring')
+    expect(text).toContain('~/Downloads/gsm8k')
+    expect(text).toContain('math reasoning')
+    expect(text).toContain('/home/user/.dsh/datasets/gsm8k')
+    expect(await screen.findByText('organize.drafted')).toBeTruthy()
+    // The tab itself writes nothing.
+    expect(h.register).not.toHaveBeenCalled()
+  })
+
+  it('nothing landed in a chat box: the request is shown to paste', async () => {
+    const h = makeHarness()
+    h.startOrganizing.mockResolvedValue({ kind: 'manual', text: 'THE REQUEST' })
+    renderView(h)
+    fireEvent.click(await screen.findByText('registry.askAgent'))
+    expect(await screen.findByText('organize.manual')).toBeTruthy()
+    expect(screen.getByText('THE REQUEST')).toBeTruthy()
+    expect(h.startOrganizing.mock.calls[0]![2]).toContain('/work/dataseek-eval')
+  })
+
+  it('交给 Agent 修改 on a registration names its checkout and branch', async () => {
+    const h = makeHarness()
+    renderView(h)
+    fireEvent.click(await screen.findByText('registry.askAgent'))
+    await waitFor(() => { expect(h.startOrganizing).toHaveBeenCalledTimes(1) })
+    const text = h.startOrganizing.mock.calls[0]![2] as string
+    expect(text).toContain('organize.updateRequest {"name":"dataseek-eval"}')
+    expect(text).toContain('/work/dataseek-eval')
+    expect(text).toContain('i1-walk')
+  })
+})
+
+describe('等你确认登记 (T90)', () => {
+  it('a pending proposal shows a banner; the review confirms exactly the layer choice it shows', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL, { ...PROPOSAL, id: 'p0', status: 'returned' }] })
+    renderView(h)
+    expect(await screen.findByText('banner.proposal {"name":"gsm8k"}')).toBeTruthy()
+    expect(screen.getAllByText('banner.review')).toHaveLength(1)
+    fireEvent.click(screen.getByText('banner.review'))
+    expect(await screen.findByText('review.titleNew {"name":"gsm8k"}')).toBeTruthy()
+    expect(h.proposalReview).toHaveBeenCalledWith('s1', 'p1')
+    // Facts, comparison, the unlayered flag.
+    expect(screen.getByText('GSM8K')).toBeTruthy()
+    expect(screen.getByText('review.versionOne {"number":4,"date":"2026-09-30"}')).toBeTruthy()
+    expect(screen.getByText('test.jsonl')).toBeTruthy()
+    expect(screen.getByText('README.md')).toBeTruthy()
+    expect(screen.getByText('dataset card')).toBeTruthy()
+    expect(screen.getByText('review.unlayeredCount {"count":1}')).toBeTruthy()
+    expect(screen.getAllByText('review.unlayered').length).toBeGreaterThan(0)
+    expect(screen.getByText('review.sum.unused {"count":1}')).toBeTruthy()
+    // Flip grading to visible, then confirm.
+    const grading = screen.getByRole('switch', { name: 'gsm8k/grading · review.layerVisible' })
+    expect(grading.getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByText('review.layerSuggest {"word":"review.layerHidden"}')).toBeTruthy()
+    fireEvent.click(grading)
+    fireEvent.click(screen.getByText('review.confirm'))
+    await waitFor(() => {
+      expect(h.confirmProposal).toHaveBeenCalledWith('s1', 'p1', 'gsm8k', { gsm8k: { layers: ['prompt', 'grading'] } })
+    })
+    expect(await screen.findByText('review.done {"name":"gsm8k"}')).toBeTruthy()
+  })
+
+  it('a blocking problem disables 确认登记', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    h.proposalReview.mockResolvedValue({
+      ok: true,
+      value: {
+        ...REVIEW,
+        problems: [
+          { code: 'SOURCE_UNLISTED', message: 'extra.csv has no disposition', path: 'extra.csv' },
+          { code: 'DISPOSITION_INCOMPLETE', message: 'a.csv is unused but gives no reason', path: 'a.csv', params: { kind: 'noReason', path: 'a.csv' } },
+        ],
+      },
+    })
+    renderView(h)
+    fireEvent.click(await screen.findByText('banner.review'))
+    // No params (an older host): the server's own sentence stays.
+    expect(await screen.findByText('extra.csv has no disposition')).toBeTruthy()
+    // With params: the reader's language, keyed by code and kind.
+    expect(screen.getByText('review.finding.DISPOSITION_INCOMPLETE.noReason {"kind":"noReason","path":"a.csv"}')).toBeTruthy()
+    expect((screen.getByText('review.confirm') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('hiding every layer of a set is refused', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    renderView(h)
+    fireEvent.click(await screen.findByText('banner.review'))
+    await screen.findByText('review.titleNew {"name":"gsm8k"}')
+    fireEvent.click(screen.getByRole('switch', { name: 'gsm8k/prompt · review.layerVisible' }))
+    expect(screen.getByText('review.keepOne')).toBeTruthy()
+    expect((screen.getByText('review.confirm') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('逐条对照 shows the source record beside the files it became', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    renderView(h)
+    fireEvent.click(await screen.findByText('banner.review'))
+    fireEvent.click(await screen.findByText(/review\.itemOne/))
+    expect(await screen.findByText('{"question":"What is 2+2?"}')).toBeTruthy()
+    expect(h.reviewItem).toHaveBeenCalledWith('s1', 'p1', 'gsm8k', 'test-0001')
+    fireEvent.click(screen.getByText('review.itemRandom'))
+    await waitFor(() => { expect(h.reviewItem).toHaveBeenCalledTimes(4) })
+  })
+
+  it('退回给 Agent marks the proposal returned and writes the note into its organizing session', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    renderView(h)
+    fireEvent.click(await screen.findByText('banner.review'))
+    fireEvent.click(await screen.findByText('review.return'))
+    fireEvent.change(screen.getByLabelText('review.returnNote'), { target: { value: 'keep the train split apart' } })
+    fireEvent.click(screen.getByText('review.returnSend'))
+    await waitFor(() => { expect(h.returnProposal).toHaveBeenCalledWith('s1', 'p1', 'keep the train split apart') })
+    await waitFor(() => { expect(h.draftInSession).toHaveBeenCalledTimes(1) })
+    expect(h.draftInSession.mock.calls[0]![0]).toBe('organizer-1')
+    expect(h.draftInSession.mock.calls[0]![1]).toContain('keep the train split apart')
+    expect(await screen.findByText('organize.returned')).toBeTruthy()
+  })
+
+  it('a held version: banner, 已登记版本 → 新版本 with every deletion listed, confirm pins the reviewed commit', async () => {
+    const pendingCommit = 'b'.repeat(40)
+    const row = rowOf()
+    const h = makeHarness([{ ...row, latest: { ...row.latest!, version: 3, pending: { commit: pendingCommit, date: '2026-09-30T09:00:00+08:00', version: 5 } } }])
+    h.pendingReview.mockResolvedValue({
+      ok: true,
+      value: {
+        ...REVIEW,
+        proposal: { ...PROPOSAL, id: 'pending-dataseek-eval', kind: 'update', registryId: 'dataseek-eval' },
+        facts: {
+          ...REVIEW.facts,
+          version: { ...REVIEW.facts.version, number: 5, commit: pendingCommit },
+          registered: { number: 3, date: '2026-09-21T10:00:00+08:00', commit: TIP },
+        },
+        compare: {
+          ...REVIEW.compare,
+          mode: 'update',
+          summary: { split: 0, copy: 0, new: 0, unused: 0, added: 1, modified: 1, deleted: 1, outside: 0 },
+          sources: [],
+          changes: [
+            { status: 'D', path: 'datasets/bench/items/R9/visible/task.md', zone: 'layer', set: 'bench', item: 'R9', layer: 'visible', visible: true },
+            { status: 'M', path: 'datasets/bench/items/R1/visible/task.md', zone: 'layer', set: 'bench', item: 'R1', layer: 'visible', visible: true },
+            { status: 'A', path: 'datasets/bench/items/R1/grading/answer.md', zone: 'layer', set: 'bench', item: 'R1', layer: 'grading', visible: false },
+          ],
+        },
+      },
+    })
+    renderView(h)
+    expect(await screen.findByText('registry.version {"number":3,"date":"2026-09-21"}')).toBeTruthy()
+    expect(screen.getByText('registry.pending')).toBeTruthy()
+    fireEvent.click(await screen.findByText('banner.reviewUpdate'))
+    expect(await screen.findByText('review.versionStep {"from":3,"to":5,"date":"2026-09-30"}')).toBeTruthy()
+    // No agent account for a held version: the page says so itself.
+    expect(screen.getByText('review.heldBody')).toBeTruthy()
+    expect(screen.getByText('review.deletions {"count":1}')).toBeTruthy()
+    expect(screen.getByText('datasets/bench/items/R9/visible/task.md')).toBeTruthy()
+    expect(screen.getByText('review.sum.modified {"count":1}')).toBeTruthy()
+    // A held version has no proposal to drill into.
+    expect(screen.queryByText(/review\.itemOne/)).toBeNull()
+    fireEvent.click(screen.getByText('review.confirmUpdate'))
+    await waitFor(() => {
+      expect(h.confirmPending).toHaveBeenCalledWith('s1', 'dataseek-eval', pendingCommit, { gsm8k: { layers: ['prompt'] } })
+    })
   })
 })

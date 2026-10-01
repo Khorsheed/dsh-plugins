@@ -24,8 +24,9 @@ import {
   assertValidName, DATASET_DESCRIPTOR, datasetDir, DatasetsError, validateDescriptor,
   type DatasetDescriptor,
 } from './dataset.ts'
-import { commitDate, currentBranch, gitCommonDir, listFiles, localBranches, repoToplevel, resolveCommit, showFile } from './git.ts'
+import { commitCount, commitDate, currentBranch, gitCommonDir, listFiles, localBranches, repoToplevel, resolveCommit, showFile } from './git.ts'
 import { normalizeRepoPath } from './repo-path.ts'
+import { classifyChanges } from './zones.ts'
 
 /** One set's registered visibility. */
 export interface RegistrySet {
@@ -49,6 +50,15 @@ export interface RegistryEntry {
   sets: Record<string, RegistrySet>
   /** The one working tree write verbs may touch (shares the common dir), or null. */
   authoringCheckout: string | null
+  /**
+   * T90: the commit a person last confirmed in the registration review. When
+   * present, «latest» follows the tracked branch only while the changes since
+   * this commit stay out of every agent-visible place (non-granted layers,
+   * files outside `datasets/`); a change an agent would see holds «latest»
+   * here and surfaces as `pending` until a person confirms the new version.
+   * Absent (registrations made before T90, or by hand): the branch tip, as before.
+   */
+  confirmedCommit?: string
 }
 
 /** The durable file. */
@@ -62,6 +72,14 @@ export interface LatestCommit {
   commit: string
   /** Committer date, ISO 8601. */
   date: string
+  /** «版本 N»: the commit count of `commit`'s history (absent on preview-only reads). */
+  version?: number
+  /**
+   * A newer tip waiting for a person's confirmation (T90 update gate): the
+   * changes since `commit` touch something agents can see. `commit` stays
+   * the confirmed one until then.
+   */
+  pending?: { commit: string; date: string; version: number }
 }
 
 /** One set as a registration exposes it. */
@@ -91,6 +109,8 @@ export interface RegisterInput {
   sets?: Record<string, RegistrySet>
   /** A working tree of the same repository for write verbs. */
   authoringCheckout?: string | null
+  /** T90: the commit the person confirmed in the review (opts the registration into the update gate). */
+  confirmedCommit?: string
 }
 
 /** A registration edit. */
@@ -99,6 +119,8 @@ export interface UpdateInput {
   trackedRef?: string
   sets?: Record<string, RegistrySet>
   authoringCheckout?: string | null
+  /** T90: the commit the person confirmed in the review. */
+  confirmedCommit?: string
 }
 
 /** What a candidate path would register as — the form's live verdict. */
@@ -249,8 +271,48 @@ async function latestAt(commonDir: string, trackedRef: string, id: string): Prom
   return { commit, date: await commitDate(commonDir, commit) }
 }
 
+/** Gate verdicts by (common dir, confirmed, tip, layers): true when nothing visible changed. */
+const gateVerdicts = new Map<string, boolean>()
+
+/**
+ * A registration's «latest» under the T90 update gate: the tracked tip, unless
+ * the registration carries a confirmed commit and something agents can see
+ * changed since — then the confirmed commit, with the tip as `pending`.
+ */
+async function gatedLatest(entry: RegistryEntry): Promise<LatestCommit> {
+  const tip = await latestAt(entry.commonDir, entry.trackedRef, entry.id)
+  tip.version = await commitCount(entry.commonDir, tip.commit)
+  const confirmed = entry.confirmedCommit
+  if (confirmed === undefined || confirmed === tip.commit) return tip
+  const key = `${entry.commonDir}\0${confirmed}\0${tip.commit}\0${JSON.stringify(entry.sets)}`
+  let invisible = gateVerdicts.get(key)
+  if (invisible === undefined) {
+    const { linear, changes } = await classifyChanges(entry.commonDir, confirmed, tip.commit, entry.sets)
+    invisible = linear && !changes.some(change => change.visible)
+    // Commits are immutable, so a verdict keyed by both shas and the layers never goes stale.
+    if (gateVerdicts.size > 256) gateVerdicts.clear()
+    gateVerdicts.set(key, invisible)
+  }
+  if (invisible) return tip
+  let date: string
+  let version: number
+  try {
+    date = await commitDate(entry.commonDir, confirmed)
+    version = await commitCount(entry.commonDir, confirmed)
+  } catch {
+    // The confirmed commit no longer exists: nothing to hold on to, and
+    // answering the tip would serve unconfirmed content. Refuse loud.
+    throw new DatasetsError(
+      `the confirmed version of ${JSON.stringify(entry.id)} is gone from the repository — confirm the current `
+      + 'version on the Datasets tab',
+      'REF_NOT_FOUND',
+    )
+  }
+  return { commit: confirmed, date, version, pending: { commit: tip.commit, date: tip.date, version: tip.version } }
+}
+
 /** The sets of a repository at a commit, with each descriptor (unreadable descriptors are skipped). */
-async function setsAt(commonDir: string, commit: string): Promise<Array<{ id: string; descriptor: DatasetDescriptor }>> {
+export async function setsAt(commonDir: string, commit: string): Promise<Array<{ id: string; descriptor: DatasetDescriptor }>> {
   const files = await listFiles(commonDir, commit, 'datasets')
   const ids = new Set<string>()
   for (const file of files) {
@@ -447,6 +509,7 @@ export function openRegistry(path: string): RepoRegistry {
         registeredCommit: latest.commit,
         sets,
         authoringCheckout: await assertAuthoringCheckout(input.authoringCheckout, commonDir),
+        ...(input.confirmedCommit !== undefined ? { confirmedCommit: input.confirmedCommit } : {}),
       }
       writeRegistry(path, [...entries, entry])
       return entry
@@ -466,6 +529,7 @@ export function openRegistry(path: string): RepoRegistry {
         authoringCheckout: input.authoringCheckout !== undefined
           ? await assertAuthoringCheckout(input.authoringCheckout, current.commonDir)
           : current.authoringCheckout,
+        ...(input.confirmedCommit !== undefined ? { confirmedCommit: input.confirmedCommit } : {}),
       }
       const updated = [...entries]
       updated[index] = next
@@ -482,11 +546,11 @@ export function openRegistry(path: string): RepoRegistry {
     },
 
     async latest(entry) {
-      return await latestAt(entry.commonDir, entry.trackedRef, entry.id)
+      return await gatedLatest(entry)
     },
 
     async sets(entry, latest) {
-      const tip = latest ?? await latestAt(entry.commonDir, entry.trackedRef, entry.id)
+      const tip = latest ?? await gatedLatest(entry)
       return (await setsAt(entry.commonDir, tip.commit)).map(({ id: set, descriptor }) =>
         setView(entry.id, set, descriptor, entry.sets[set]))
     },
@@ -495,7 +559,7 @@ export function openRegistry(path: string): RepoRegistry {
       const out: RegistryRow[] = []
       for (const entry of load()) {
         try {
-          const latest = await latestAt(entry.commonDir, entry.trackedRef, entry.id)
+          const latest = await gatedLatest(entry)
           out.push({ entry, latest, sets: await registry.sets(entry, latest) })
         } catch (error) {
           out.push({ entry, sets: [], problem: error instanceof Error ? error.message : String(error) })
@@ -525,7 +589,7 @@ export function openRegistry(path: string): RepoRegistry {
         const entry = entries.find(candidate => candidate.id === raw.slice(0, slash))
         if (entry !== undefined) {
           const set = raw.slice(slash + 1)
-          const latest = await latestAt(entry.commonDir, entry.trackedRef, entry.id)
+          const latest = await gatedLatest(entry)
           const sets = await registry.sets(entry, latest)
           const found = sets.find(candidate => candidate.set === set)
           if (found === undefined) {
@@ -544,7 +608,7 @@ export function openRegistry(path: string): RepoRegistry {
       for (const entry of entries) {
         let latest: LatestCommit
         try {
-          latest = await latestAt(entry.commonDir, entry.trackedRef, entry.id)
+          latest = await gatedLatest(entry)
         } catch {
           continue
         }

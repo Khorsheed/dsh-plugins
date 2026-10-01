@@ -32,7 +32,8 @@ DEST="$DSH_HOME/profiles/web-eval"
 # template files HERE.
 #
 # `presets` is a DIRECTORY: the profile-local declarative preset bundle
-# (@khorsheed/dsh-web-eval-preset, one `preset-eval` row), which package.json
+# (@khorsheed/dsh-web-eval-preset: `preset-eval` and, since T90,
+# `preset-dataset-authoring`), which package.json
 # depends on as `file:presets`. It is copied with the profile so that relative
 # spec resolves inside $DEST, and it is replaced whole (rm first — `cp -R dir
 # existing-dir` would nest it as presets/presets).
@@ -486,5 +487,14 @@ else
 fi
 if [ -d "$DSH_HOME/.agent-presets/eval" ]; then
   echo "dsh-web-eval: note — $DSH_HOME/.agent-presets/eval is the 0.1.5-era directory preset; host 0.2.0 never reads it. Remove it when convenient (rm -rf \"$DSH_HOME/.agent-presets/eval\")."
+fi
+# Datasets (T90): every dataset is a git repository the 「题集整理」 agent
+# builds and a person confirms on the 题集 tab. git is not an install
+# precondition — the organizing agent checks for it and offers to install it
+# with consent — so a missing git is a note, never a failure.
+if command -v git >/dev/null 2>&1; then
+  echo "dsh-web-eval: datasets — open the 题集 tab and use 添加题集; an Agent organizes the data and you confirm the registration"
+else
+  echo "dsh-web-eval: datasets need git (every dataset version is kept in a git repository); it is not installed here — the 题集整理 agent will offer to install it, or install it yourself first"
 fi
 echo "next: sh $(cd "$(dirname "$0")/.." && pwd)/scripts/restart-into-web-eval.sh   # hand the running instance over to web-eval on the same port"

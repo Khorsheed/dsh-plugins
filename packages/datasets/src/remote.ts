@@ -15,9 +15,10 @@ import type {
   ImportBindingsResult, RegisterInput, RegisterPreview, RegistryEntry, RegistryRow, RepoSelector, UpdateInput,
 } from './registry.ts'
 import type { DatasetOverview, ItemBrief } from './brief.ts'
+import type { Proposal, ProposalReview, ReviewFiles, ReviewItem } from './proposal.ts'
 import type { SkeletonResult } from './scaffold.ts'
 import {
-  type DatasetScope, type DatasetsService,
+  type DatasetScope, type DatasetsService, type OrganizingSetup,
   type ImportItemInput, type ItemBriefRequest,
   type ListDatasetsResult, type ListItemsResult, type ListRequest,
   type PreviewRepoRequest,
@@ -313,5 +314,126 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
     void agent
     const { repo, ...rest } = query
     return await this.datasets.read(await this.scope({ repo }), rest)
+  }
+
+  // ── T90: the organizing hand-off ─────────────────────────────────────────
+
+  /**
+   * What 「让 Agent 整理」 needs: the 「题集整理」 preset and where new
+   * repositories go by default (decision C).
+   * @param agent - owning live agent (lookup convention).
+   * @returns the organizing setup.
+   */
+  @Remote('organizingSetup')
+  organizingSetup(agent: Agent): OrganizingSetup {
+    void agent
+    return this.datasets.organizing
+  }
+
+  /**
+   * Every proposal still waiting for a person (pending, or returned and not
+   * yet re-filed), newest first — the tab's 「等你确认登记」 banner.
+   * @param agent - owning live agent (lookup convention).
+   * @returns the open proposals.
+   */
+  @Remote('proposals')
+  proposals(agent: Agent): Proposal[] {
+    void agent
+    return this.datasets.proposals.list().filter(proposal => proposal.status === 'pending')
+  }
+
+  /**
+   * One proposal's review: facts, the 「原目录 → 题集」 comparison, and the
+   * mapping check (blocking problems refuse confirmation).
+   * @param agent - owning live agent (lookup convention).
+   * @param request - the proposal id.
+   * @returns the review.
+   */
+  @Remote('proposalReview')
+  async proposalReview(agent: Agent, request: { id: string }): Promise<ProposalReview> {
+    void agent
+    return await this.datasets.proposals.review(request.id)
+  }
+
+  /**
+   * 「逐条对照一题」: one item's files with their origin, beside its source record.
+   * @param agent - owning live agent (lookup convention).
+   * @param request - the proposal, the set, the item.
+   * @returns the item comparison.
+   */
+  @Remote('reviewItem')
+  async reviewItem(agent: Agent, request: { id: string; set: string; item: string }): Promise<ReviewItem> {
+    void agent
+    return await this.datasets.proposals.reviewItem(request.id, request.set, request.item)
+  }
+
+  /**
+   * 「完整清单」: every repository file with its origin, and every source row.
+   * @param agent - owning live agent (lookup convention).
+   * @param request - the proposal id.
+   * @returns the full list.
+   */
+  @Remote('reviewFiles')
+  async reviewFiles(agent: Agent, request: { id: string }): Promise<ReviewFiles> {
+    void agent
+    return await this.datasets.proposals.reviewFiles(request.id)
+  }
+
+  /**
+   * 「确认登记」: the person registers (or updates) from a proposal — the
+   * only path from a proposal into the registry (decision A).
+   * @param agent - owning live agent (lookup convention).
+   * @param request - the proposal, the registration name, the per-set layers.
+   * @returns the registration.
+   */
+  @Remote('confirmProposal')
+  async confirmProposal(
+    agent: Agent,
+    request: { id: string; registryId: string; sets: Record<string, { layers: string[] }> },
+  ): Promise<RegistryEntry> {
+    void agent
+    return await this.datasets.proposals.confirm(request.id, request.registryId, request.sets)
+  }
+
+  /**
+   * 「退回给 Agent」: mark the proposal returned; the tab then opens the
+   * organizing session and drafts the note into its composer.
+   * @param agent - owning live agent (lookup convention).
+   * @param request - the proposal and the person's note.
+   * @returns the returned proposal (its `sessionId` says where to go).
+   */
+  @Remote('returnProposal')
+  returnProposal(agent: Agent, request: { id: string; note: string }): Proposal {
+    void agent
+    return this.datasets.proposals.giveBack(request.id, request.note)
+  }
+
+  /**
+   * A registration's version held by the update gate (something agents see
+   * changed since the confirmed one), reviewed without a proposal. Undefined
+   * when nothing is waiting.
+   * @param agent - owning live agent (lookup convention).
+   * @param request - the registration id.
+   * @returns the update review, or undefined.
+   */
+  @Remote('pendingReview')
+  async pendingReview(agent: Agent, request: RepoSelector): Promise<ProposalReview | undefined> {
+    void agent
+    return await this.datasets.proposals.reviewPending(this.entry(request))
+  }
+
+  /**
+   * Confirm a registration's held version.
+   * @param agent - owning live agent (lookup convention).
+   * @param request - the registration, the version being confirmed, the per-set layers.
+   * @returns the updated registration.
+   */
+  @Remote('confirmPending')
+  async confirmPending(
+    agent: Agent,
+    request: RepoSelector & { commit: string; sets: Record<string, { layers: string[] }> },
+  ): Promise<RegistryEntry> {
+    void agent
+    return await this.datasets.proposals.confirmPending(this.entry(request), request.commit, request.sets)
   }
 }

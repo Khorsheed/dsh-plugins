@@ -10,10 +10,11 @@ import type {} from '@khorsheed/dsh-datasets/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  DatasetOverview, ImportBindingsResult, ImportItemInput, ItemBrief, ListDatasetsResult, ListItemsResult,
-  ReadPassthroughRequest, ReadQuery, ReadResult, RegisterInput, RegisterPreview, RegistryEntry, RegistryRow,
-  ScaffoldDatasetInput, ScaffoldItemInput, SkeletonResult, UpdateInput, ValidateResult,
+  DatasetOverview, ImportBindingsResult, ItemBrief, ListDatasetsResult, ListItemsResult, OrganizingSetup,
+  Proposal, ProposalReview, ReadPassthroughRequest, ReadQuery, ReadResult, RegisterInput, RegisterPreview,
+  RegistryEntry, RegistryRow, ReviewFiles, ReviewItem, UpdateInput, ValidateResult,
 } from '../types.ts'
+import type { OrganizeOutcome } from './organize.ts'
 import type { createDatasetsViewStore } from './store.ts'
 
 /**
@@ -116,12 +117,38 @@ export interface DatasetsViewInjected {
   itemBrief: (sessionId: SessionId, repo: string, dataset: string, item: string) => Promise<RemoteResult<ItemBrief>>
   /** Validate one dataset (the detail page's button). */
   validateDataset: (sessionId: SessionId, repo: string, dataset: string) => Promise<RemoteResult<ValidateResult>>
-  /** «新建题集»: write a dataset skeleton into the registration's authoring checkout. */
-  scaffoldDataset: (sessionId: SessionId, repo: string, input: ScaffoldDatasetInput) => Promise<RemoteResult<SkeletonResult>>
-  /** «题目骨架»: write one item's placeholders into the authoring checkout. */
-  scaffoldItem: (sessionId: SessionId, repo: string, input: ScaffoldItemInput) => Promise<RemoteResult<SkeletonResult>>
-  /** «导入题目»: copy an existing item directory in verbatim. */
-  importItem: (sessionId: SessionId, repo: string, input: ImportItemInput) => Promise<RemoteResult<SkeletonResult>>
+  // ── T90: the organizing hand-off and the registration review ──────────
+  /** The 题集整理 preset and the datasets home (decision C). */
+  organizingSetup: (sessionId: SessionId) => Promise<RemoteResult<OrganizingSetup>>
+  /** Proposals waiting for a person (the 「等你确认登记」 banner). */
+  proposals: (sessionId: SessionId) => Promise<RemoteResult<Proposal[]>>
+  /** One proposal's review. */
+  proposalReview: (sessionId: SessionId, id: string) => Promise<RemoteResult<ProposalReview>>
+  /** 「逐条对照」: one item beside its source record. */
+  reviewItem: (sessionId: SessionId, id: string, set: string, item: string) => Promise<RemoteResult<ReviewItem>>
+  /** 「完整清单」. */
+  reviewFiles: (sessionId: SessionId, id: string) => Promise<RemoteResult<ReviewFiles>>
+  /** 「确认登记」 from a proposal — the only proposal → registry path (decision A). */
+  confirmProposal: (
+    sessionId: SessionId, id: string, registryId: string, sets: Record<string, { layers: string[] }>,
+  ) => Promise<RemoteResult<RegistryEntry>>
+  /** 「退回给 Agent」: mark it returned (the proposal names its organizing session). */
+  returnProposal: (sessionId: SessionId, id: string, note: string) => Promise<RemoteResult<Proposal>>
+  /** A registration's version held by the update gate, or nothing when none waits. */
+  pendingReview: (sessionId: SessionId, repo: string) => Promise<RemoteResult<ProposalReview | undefined | null>>
+  /** Confirm a held version. */
+  confirmPending: (
+    sessionId: SessionId, repo: string, commit: string, sets: Record<string, { layers: string[] }>,
+  ) => Promise<RemoteResult<RegistryEntry>>
+  /**
+   * Open a NEW 「题集整理」 session (in the current session's workspace, on
+   * the organizing preset when this host lists it, titled `title`) and write
+   * `text` into its chat box without sending; the clipboard when there is no
+   * chat box to write into.
+   */
+  startOrganizing: (sessionId: SessionId, title: string, text: string, preset: string) => Promise<OrganizeOutcome>
+  /** Open an existing session and write `text` into its chat box (the same degrade chain). */
+  draftInSession: (target: string, text: string) => Promise<OrganizeOutcome>
   /**
    * The «作答记录» projection, or null when this instance carries no eval
    * plugin — the section hides rather than showing an empty promise. Probed at

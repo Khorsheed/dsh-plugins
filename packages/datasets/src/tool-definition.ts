@@ -12,6 +12,7 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { DatasetsError } from './dataset.ts'
 import type { ResolvedDatasetRef } from './registry.ts'
+import type { ProposalInput } from './proposal.ts'
 import type { DatasetScope, DatasetsService } from './service.ts'
 
 /**
@@ -23,10 +24,15 @@ import type { DatasetScope, DatasetsService } from './service.ts'
  * - `read` — the read verbs (list / show / describe / read / snapshot / validate);
  * - `authoring` — read plus `datasets_put_item` (drafting items into the working tree);
  * - `all` — authoring plus `datasets_worktree_path` (whole-layer materialization). The default;
+ * - `organize` — read plus `datasets_propose_registration` (T90): the 「题集整理」
+ *   session's group. It converts with ordinary shell/file tools and files ONE
+ *   registration proposal; it never writes the registry and needs no
+ *   authoring checkout. Kept apart from `authoring`/`all` so the frozen
+ *   evaluation preset (which mounts `authoring`) does not change;
  * - `none` — no model tools at all. The service, the CLI, `/datasets` and the
  *   session tab are unaffected by every setting: they are the human's faces.
  */
-export type DatasetsToolGroup = 'all' | 'read' | 'authoring' | 'none'
+export type DatasetsToolGroup = 'all' | 'read' | 'authoring' | 'organize' | 'none'
 
 /** The read verbs — every tool that only reads the repository. */
 const READ_TOOLS = [
@@ -39,6 +45,9 @@ const AUTHORING_TOOLS = [...READ_TOOLS, 'datasets_put_item'] as const
 /** `all` adds whole-layer materialization (it extracts a read-only cache directory). */
 const ALL_TOOLS = [...AUTHORING_TOOLS, 'datasets_worktree_path'] as const
 
+/** `organize` adds the registration proposal (T90) to the read verbs. */
+const ORGANIZE_TOOLS = [...READ_TOOLS, 'datasets_propose_registration'] as const
+
 /**
  * The tools one group grants.
  * @param group - the configured group.
@@ -49,6 +58,7 @@ export function toolsOfGroup(group: DatasetsToolGroup): readonly string[] {
     case 'none': return []
     case 'read': return READ_TOOLS
     case 'authoring': return AUTHORING_TOOLS
+    case 'organize': return ORGANIZE_TOOLS
     default: return ALL_TOOLS
   }
 }
@@ -387,6 +397,92 @@ export function datasetToolDefinitions(
       try {
         const { resolved, scope } = await resolve(args.dataset)
         return (await service.validate(scope, resolved.set)) as unknown as JsonValue
+      } catch (error) {
+        throw toToolError(error)
+      }
+    },
+  }))
+
+  admissable(defineTool({
+    name: 'datasets_propose_registration',
+    description:
+      'File the registration proposal for a dataset repository you have converted and committed (the last '
+      + 'step of the dataset-authoring skill). It writes a proposal ONLY — never the registry: the person '
+      + 'reviews it on the Datasets tab and confirms. The plugin checks your mapping against the repository '
+      + 'at the commit (every file under datasets/ explained by mapping.outputs, every file of the original '
+      + 'directory by mapping.sources, record counts and record fields of split sources, samples, declared '
+      + 'layers, and the protocol\'s validate). Any mismatch refuses the proposal with the list to fix. Pass '
+      + '`dryRun: true` to run the same checks without filing — use it as your validate while converting '
+      + '(datasets_validate only reads registered datasets). Re-proposing the same repository replaces the '
+      + 'open proposal.',
+    parameters: {
+      repo: { type: 'string', required: true, description: 'The repository you committed to (its checkout path).' },
+      trackedRef: { type: 'string', description: 'The branch to register (default: the checkout\'s current branch, else main).' },
+      registryId: { type: 'string', description: 'The registration name you suggest (default: the repository directory name).' },
+      purpose: { type: 'string', description: 'What the person said they want to test with it.' },
+      source: {
+        type: 'json',
+        required: true,
+        description: '{kind: "local"|"public"|"protocol", label, path?, url?, license?} — where the original data came '
+          + 'from. `path` is the original directory on this machine (read-only to you); give it whenever there is one.',
+      },
+      mapping: {
+        type: 'json',
+        required: true,
+        description: '{sources: [{path, disposition: "split"|"copy"|"unused", target?, reason?, count?, key?, '
+          + 'fields?: [{name, to?, reason?}]}], outputs: [{path, origin: "split"|"copy"|"new", from?, field?, note?, count?}]}. '
+          + 'sources paths are relative to source.path (trailing "/" = a whole directory, "*" = within one segment); '
+          + 'every original file must be covered; "unused" needs a reason; a split record file lists every field '
+          + '(to = where it went, or reason = why dropped) and its record count; `key` names the record field whose '
+          + 'value is the item id. outputs paths are repo-relative patterns; every file under datasets/ must match one.',
+      },
+      layers: {
+        type: 'json',
+        description: '[{set, layer, visible, reason}] — your suggestion of which layers agents under evaluation see, '
+          + 'one entry per declared layer, with a one-line reason a person can judge.',
+      },
+      samples: {
+        type: 'json',
+        description: '[{set, item, from?: {file, line?}}] — two or three worked examples for the side-by-side check.',
+      },
+      notes: { type: 'string', description: 'Anything the person should read before confirming (plain language).' },
+      dryRun: { type: 'boolean', description: 'Check only; file nothing.' },
+    },
+    output: jsonOutput(),
+    async execute(args, exec) {
+      try {
+        const sessionId = (exec as { agent?: { session?: { id?: string } } }).agent?.session?.id
+        const input = {
+          repo: args.repo,
+          ...(args.trackedRef !== undefined ? { trackedRef: args.trackedRef } : {}),
+          ...(args.registryId !== undefined ? { registryId: args.registryId } : {}),
+          ...(args.purpose !== undefined ? { purpose: args.purpose } : {}),
+          source: args.source,
+          mapping: args.mapping,
+          ...(args.layers !== undefined ? { layers: args.layers } : {}),
+          ...(args.samples !== undefined ? { samples: args.samples } : {}),
+          ...(args.notes !== undefined ? { notes: args.notes } : {}),
+          ...(sessionId !== undefined ? { sessionId } : {}),
+        } as unknown as ProposalInput
+        if (args.dryRun === true) {
+          const { proposal, problems, warnings } = await service.proposals.check(input)
+          return {
+            ok: problems.length === 0,
+            kind: proposal.kind,
+            commit: proposal.commit,
+            problems,
+            warnings,
+          } as unknown as JsonValue
+        }
+        const { proposal, warnings } = await service.proposals.propose(input)
+        return {
+          filed: proposal.id,
+          kind: proposal.kind,
+          commit: proposal.commit,
+          warnings,
+          next: 'Tell the person the proposal is waiting on the Datasets tab (banner 「等你确认登记」) and stop. '
+            + 'Do not register anything yourself.',
+        } as unknown as JsonValue
       } catch (error) {
         throw toToolError(error)
       }
