@@ -164,7 +164,9 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 留下的是读、起草，以及委派给**跑在同一个预设上**的 agent：进程内子 agent 继承父 agent 的预设（宿主的 `subagent-in-process-driver/tests/preset-inheritance.spec.ts` 就是这条的证明），所以委派递不出这个预设本身没有的 shell。docker 从来不在这张表上——`lab` 一个模型可见工具都不注册，容器动作全在编排器的服务面。
 
-**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个只挂 `preset-eval` 一行的声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（T82 迁移时按 sha256 核过；`scripts/web-eval-preset-bundle.spec.ts` 钉住这个摘要——改组成就是换装置，要有意改摘要并开新 run）。个人偏好另起一个预设 id，别改这个。
+**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（T82 迁移时按 sha256 核过；`scripts/web-eval-preset-bundle.spec.ts` 钉住这个摘要——改组成就是换装置，要有意改摘要并开新 run）。个人偏好另起一个预设 id，别改这个。
+
+同一个 bundle 的第二行是 `preset-dataset-authoring`（「题集整理」，T90）：题集 tab 的「添加题集 → 让 Agent 整理」新开会话时选它。它**挂 shell**（整理要跑 git 和转换脚本），配 datasets 工具行的 `tools: organize`（读 + 只写申请的 `datasets_propose_registration`，并注册随包分发的 `dataset-authoring` skill），不挂 eval 工具、不挂委派。冻结决策 12 约束的是评测（规划与分析）Agent：评测会话不继承这个预设，`preset-eval` 一块不动、摘要照旧；整理 Agent 能跑宿主命令这一点是有意的取舍，登记仍只归人写。
 
 **怎样确认实例正在用它**，三层，从便宜到贵——组成层、文件层、会话层：
 
@@ -241,7 +243,7 @@ pending → ws-ready → stage-1 → stage-2 → iterating ⇄ checkpoint-N → 
 
 | 面 | 作用 | 状态 |
 |---|---|---|
-| **题集 › 列表** | 一行一个题集：id、快照（分支 @ commit）、题目数、槽位与层的对应、canary 是否设置、validate 结果、用于哪些实验。动作：新建题集（生成带 `dataset.json` 的骨架）、导入题集（指一个已按协议组织的目录或仓库 + commit，validate 后入列——本质是登记） | ✅ I5·T47 |
+| **题集 › 列表** | 一行一个题集：id、快照（分支 @ commit）、题目数、槽位与层的对应、canary 是否设置、validate 结果、用于哪些实验。动作：添加题集（T90 起：三个字段 + 「让 Agent 整理」，Agent 整理成协议仓库后提交登记申请，人在「等你确认登记」页确认；手动登记在「高级」里） | ✅ I5·T47 |
 | **题集 › 详情**（题集 › 题目） | 文件树 + 预览：树上每个文件标槽位与「谁看得到」，槽位可筛选；「选手将看到」把这道题在单元里的样子原样列出（防泄题自查）；可判性一行（评估标准几条、探针几个、阶段 schema 几个）；「作答记录」按题目投影各实验的格子。动作：题目骨架、导入题目、validate | ✅ I5·T47 |
 | **实验室 › 列表** | 一行一个实验：名称、题库快照、条件数（+ 判官）、题数、rep、因子（由条件 diff 自动推出）、状态、进度、开始时间；草稿与 run 同列。状态：草稿 → 待批准 → 运行中 → 评估中 → 已完成，另有被拒、已取消 | ✅ I5·T35a |
 | **实验室 › 新建实验** | 名称、题库快照、题目多选、条件（选已有或新建：harness、模型、scope、preset、权限、推理强度）、判官与采样数、rep、阶段、顺序 seed、环境（镜像、网络、出网自检）、预算。产出是 `plans/<name>.json` 与新条件文件，进题库工作树的透传区；动作只有「保存草稿并 validate」——**启动不在这张表单上**。agent 起草的草稿与人建的落在同一个列表：两条路走同一个服务面动词（`draftExperiment`），所以是同一份文件 | ✅ I5·T34 |
