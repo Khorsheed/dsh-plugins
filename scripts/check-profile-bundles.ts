@@ -28,10 +28,18 @@
  *                       into the profile's direct dependencies *and* bundles
  *                       (the local-agent providers → core case; optional
  *                       peerDependency integrations are deliberately exempt —
- *                       declare-and-degrade stays optional)
+ *                       declare-and-degrade stays optional). A family bundle
+ *                       (`dsh.bundle.kind: 'family'`) is the sanctioned
+ *                       exception for its own members: its patch carries the
+ *                       members' canonical rows verbatim (check:plugins pins
+ *                       that), so installing the bundle mounts them and the
+ *                       members must NOT be layered again (that would mount
+ *                       every row twice)
  *   5. resolvable rows  every package named by a profile preset row
  *                       (a preset's `agent.cordis.yml`) is a direct dependency
- *                       of that profile — otherwise the preset names a module
+ *                       of that profile, or a member of a direct-dependency
+ *                       family bundle (installed as its hard dependency) —
+ *                       otherwise the preset names a module
  *                       the profile cannot resolve; a row naming a subpath
  *                       composition entry (`@khorsheed/dsh-worktrees/tool`)
  *                       additionally requires the workspace base package to
@@ -89,6 +97,11 @@ export interface PackageIndexEntry {
   readonly version: string | undefined
   /** `exports` map keys (`.`, `./tool`, …) — rule 5b's subpath check. */
   readonly exportKeys: readonly string[]
+  /**
+   * `dsh.bundle.members` of a family bundle (`dsh.bundle.kind: 'family'`) —
+   * the packages whose canonical rows its own patch mounts (rules 4 and 5).
+   */
+  readonly familyMembers?: readonly string[]
 }
 
 /** A profile manifest plus every package name its presets name. */
@@ -122,7 +135,7 @@ export function loadPackageIndex(repoRoot: string): PackageIndex {
       version?: string
       dependencies?: Record<string, string>
       exports?: Record<string, unknown>
-      dsh?: { bundle?: { patch?: string } }
+      dsh?: { bundle?: { patch?: string, kind?: string, members?: string[] } }
     }
     if (manifest.name === undefined) continue
     index.set(manifest.name, {
@@ -131,6 +144,7 @@ export function loadPackageIndex(repoRoot: string): PackageIndex {
       selfMounting: manifest.dsh?.bundle?.patch !== undefined,
       version: manifest.version,
       exportKeys: Object.keys(manifest.exports ?? {}),
+      ...(manifest.dsh?.bundle?.kind === 'family' ? { familyMembers: manifest.dsh.bundle.members ?? [] } : {}),
     })
   }
   return index
@@ -339,6 +353,9 @@ export function checkProfile(profile: ProfileShape, index: PackageIndex): Findin
     if (entry === undefined) continue
     for (const needed of entry.dependencies) {
       if (!needed.startsWith(COMMUNITY_SCOPE)) continue
+      // A family bundle's own patch mounts its members' rows — layering the
+      // member as well would mount each row twice.
+      if (entry.familyMembers?.includes(needed) === true) continue
       const neededEntry = index.get(needed)
       if (neededEntry === undefined || !neededEntry.selfMounting) continue
       if (!dependencies.has(needed)) {
@@ -358,9 +375,17 @@ export function checkProfile(profile: ProfileShape, index: PackageIndex): Findin
   // resolves through the BASE package — that is where the module ships.
   // Rules 5b/6 (subpath exported, not retired) are profile-independent and
   // shared with the package-patch scan via rowHealthFinding.
+  // A family bundle's members arrive as its hard dependencies, so a row they
+  // ship resolves through the bundle.
+  const viaFamily = new Set<string>()
+  for (const name of profile.dependencies) {
+    for (const member of index.get(name)?.familyMembers ?? []) {
+      if (index.get(name)?.dependencies.includes(member) === true) viaFamily.add(member)
+    }
+  }
   for (const name of profile.rows) {
     const base = name.split('/').slice(0, 2).join('/')
-    if (!dependencies.has(name) && !dependencies.has(base)) {
+    if (!dependencies.has(name) && !dependencies.has(base) && !viaFamily.has(base)) {
       add('preset-row-unresolvable', `a preset mounts ${name}, which is not a dependency of this profile`)
     }
     const health = rowHealthFinding(name, index)

@@ -19,6 +19,7 @@
     "src/slash.ts",
     "src/store.ts",
     "src/template.ts",
+    "src/tool-definition.ts",
     "src/tool.ts",
     "src/types.ts"
   ]

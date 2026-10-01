@@ -312,7 +312,7 @@ describe('/eval run — --creds-root is gone (T20c)', () => {
 })
 
 describe('/eval grant backstop (A3)', () => {
-  const ROW = '@khorsheed/dsh-eval-tool'
+  const ROW = '@khorsheed/dsh-eval/tool'
 
   /** Invoke `help` with an agent-scope ctx whose probe answers as given. */
   function helpWith(presets: unknown): Promise<CommandResult> {

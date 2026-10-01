@@ -19,8 +19,15 @@ import { describe, expect, it } from 'vitest'
 const PROFILE = join(import.meta.dirname, '..', 'profiles', 'web-eval')
 const BUNDLE_DIR = join(PROFILE, 'presets')
 
-/** sha256 of `presets/eval/agent.cordis.yml` at 8fe63e72 (the last directory version). */
-const DIRECTORY_COMPOSITION_SHA = 'ee5e6f48a183215fd89a95a8d102d5da943d07fc6294668786191de907a6aa72'
+/**
+ * sha256 of the `plugins:` block. Was `presets/eval/agent.cordis.yml` at
+ * 8fe63e72 (the last directory version, ee5e6f48…); T88 (the evaluation-family
+ * fold) repointed the two tool rows' `name` from the retired companion packages
+ * to `@khorsheed/dsh-datasets/tool` / `@khorsheed/dsh-eval/tool` — row ids,
+ * config and the registered tools are unchanged, so only module resolution
+ * moved (plus the two comment lines naming the mission row).
+ */
+const DIRECTORY_COMPOSITION_SHA = 'fbd218b890b65422edf221dc7e084458917b2928783076cd028b024772d9d81b'
 
 /** The `plugins:` block, de-indented back to the directory file it came from. */
 function pluginsBlock(patch: string): string {
@@ -60,7 +67,7 @@ describe('web-eval preset bundle', () => {
     expect(patch).toContain('        order: 0\n')
   })
 
-  it('keeps the composition byte-identical to the last directory version', () => {
+  it('keeps the composition byte-identical to the pinned version', () => {
     const sha = createHash('sha256').update(pluginsBlock(patch)).digest('hex')
     expect(sha).toBe(DIRECTORY_COMPOSITION_SHA)
   })
@@ -70,8 +77,8 @@ describe('web-eval preset bundle', () => {
     for (const forbidden of ['@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-pwsh', '@deepseek-ai/dsh-tool-workflow', '@deepseek-ai/dsh-workflow-ptc', '@deepseek-ai/dsh-tool-ralph', '@deepseek-ai/dsh-plan-mode']) {
       expect(names).not.toContain(forbidden)
     }
-    expect(names).toContain('@khorsheed/dsh-datasets-tool')
-    expect(names).toContain('@khorsheed/dsh-eval-tool')
+    expect(names).toContain('@khorsheed/dsh-datasets/tool')
+    expect(names).toContain('@khorsheed/dsh-eval/tool')
   })
 
   it('is the deployment default through the profile pin layer', () => {

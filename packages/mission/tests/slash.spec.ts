@@ -254,7 +254,7 @@ describe('/mission retry', () => {
 })
 
 describe('/mission grant backstop (A3)', () => {
-  const ROW = '@khorsheed/dsh-mission-tool'
+  const ROW = '@khorsheed/dsh-mission/tool'
 
   /** Invoke the handler with an agent-scope ctx whose probe answers as given. */
   function runAs(presets: unknown): Promise<CommandResult> {

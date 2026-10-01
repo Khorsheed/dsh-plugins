@@ -56,7 +56,7 @@
  * `humanFinal` (I5·T37) is the sharpest case of that rule. R1 says 终评是人的,
  * and it holds because the only code path that writes the `human-final`
  * namespace is this verb, reached from the judge bench, tagged with the
- * clicking session. `@khorsheed/dsh-eval-tool` registers no twin of it, and
+ * clicking session. `@khorsheed/dsh-eval/tool` registers no twin of it, and
  * the reason it never will is structural rather than editorial: a model with
  * a door to the final verdict would make every run's conclusion its own.
  * @module @khorsheed/dsh-eval/remote

@@ -21,8 +21,8 @@
       "kind": "preset-declarations"
     },
     "references": [
-      "@khorsheed/dsh-datasets-tool",
-      "@khorsheed/dsh-eval-tool"
+      "@khorsheed/dsh-datasets",
+      "@khorsheed/dsh-eval"
     ],
     "compat": {
       "minHost": "0.2.0-rc.2",

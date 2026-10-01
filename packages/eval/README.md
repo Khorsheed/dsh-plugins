@@ -322,11 +322,11 @@ Ask the person which version this experiment should pin with ask_user_question, 
 
 ## 模型工具（五读、一草、一份分析，七个）
 
-**本包不再注册任何模型工具（BREAKING）**：下面这七个工具与 `tool:eval` 提示词段归伴生行 `@khorsheed/dsh-eval-tool`，由 agent preset 按会话授予。迁移两步：把伴生包作为依赖安装，并在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: eval-tool` 与 `  name: '@khorsheed/dsh-eval-tool'`（该行可带 `config: { tools: none }`）。下面的清单、配置与行为描述自此描述的是**伴生行**的工具面；服务面与 CLI 仍归本包，而 `/eval` slash 的**注册**自 preset 可见性收口（A3）起也归伴生行——落进 preset 的 scope 层，只有授予会话的补全列表可见（官方 `/goal` `/plan` 同款机制）；handler 与定义仍在本包 `src/slash.ts`，由伴生行带它的 scoped ctx 调 `registerEvalSlash` 接入，handler 内另有 roster 兜底守卫（读不到一律放行）。
+**核心行不注册任何模型工具**：下面这七个工具与 `tool:eval` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-eval/tool`），由 agent preset 按会话授予。授予方式：在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: eval-tool` 与 `  name: '@khorsheed/dsh-eval/tool'`（该行可带 `config: { tools: none }`）。下面的清单、配置与行为描述自此描述的是**工具行**的工具面；服务面与 CLI 仍归本包，而 `/eval` slash 的**注册**自 preset 可见性收口（A3）起也归工具行——落进 preset 的 scope 层，只有授予会话的补全列表可见（官方 `/goal` `/plan` 同款机制）；handler 与定义仍在本包 `src/slash.ts`，由工具行带它的 scoped ctx 调 `registerEvalSlash` 接入，handler 内另有 roster 兜底守卫（读不到一律放行）。
 
 agent 在一次实验里只出现两次：规划期起草、分析期读结论。规划期要写的是一个实验（plan 与它引用的新条件）；分析期要写的只有一份初稿，落在那个实验的 `analysis/`。所以模型工具是**五个读、一个起草、一扇分析的门**，并且刻意没有起跑的那一个：能起 run 的 agent 就能起一次人没批准的 run，而起草与写初稿都起不动任何东西。
 
-第四个 `eval_cells` 是 I5·T46 加的：评测预设自那以后不再挂 mission 的伴生行（界面规格 R6「评测模式下 mission 这个词不出现」），原先用 `mission_list` / `mission_get` 读逐格细节的路没了，这个工具用 eval 自己的投影答同一个问题——数据仍经 `ctx.mission` 的结构面算，但算在服务端，模型侧与前端都不碰 mission。
+第四个 `eval_cells` 是 I5·T46 加的：评测预设自那以后不再挂 mission 的工具行（界面规格 R6「评测模式下 mission 这个词不出现」），原先用 `mission_list` / `mission_get` 读逐格细节的路没了，这个工具用 eval 自己的投影答同一个问题——数据仍经 `ctx.mission` 的结构面算，但算在服务端，模型侧与前端都不碰 mission。
 
 | 工具 | 答什么 |
 |---|---|
@@ -344,7 +344,7 @@ agent 在一次实验里只出现两次：规划期起草、分析期读结论�
 
 T58 把工具的 `repo` 参数收窄成「只能复述本会话的 datasets 绑定」，起因是 agent 被告知没有绑定之后用 glob 搜磁盘、在一个多 agent 共用的检出里改了别人正在跑的 pilot 计划（走查缺口 G1）。T73 把这条路整个拆了：工具不再有 `repo` 参数，评测也不再读任何绑定——题库只以 `<登记 id>/<题集> @ commit` 的形式被读（`git show` / 物化视图），评测自己的东西写进部署的状态目录。agent 没有「指一个路径」的余地，也就没有绕行道。
 
-配置项 `tools: 'all' | 'none'`（缺省 `all`）随之搬到**伴生行**，本行不再有这个键。没有更细的分组，因为没有可分的：模型工具面一个写工具都不注册。`none`（或没有引用这一行）时模型看不到这七个工具；本包的服务面与 CLI 照常，`/eval` slash 随伴生行的 preset 授予显隐（`tools: none` 只关模型面，人类面不分层——行在 preset 里，命令就在）。
+配置项 `tools: 'all' | 'none'`（缺省 `all`）随之搬到**工具行**，本行不再有这个键。没有更细的分组，因为没有可分的：模型工具面一个写工具都不注册。`none`（或没有引用这一行）时模型看不到这七个工具；本包的服务面与 CLI 照常，`/eval` slash 随工具行的 preset 授予显隐（`tools: none` 只关模型面，人类面不分层——行在 preset 里，命令就在）。
 
 工具注册走**延迟注入**（`ctx.inject(['tools'], …)`）而不是 apply 期的 `ctx.get('tools')` 探测：探测会和工具注册表自己的挂载顺序赛跑并且输，工具静默地一个都注册不上，还没有任何东西会说（room 与 worktrees 都踩过并修过同一处）。延迟注入在注册表出现时才触发，在没有注册表的组合里永不触发——那样的组合保留 slash、CLI 与服务面，绝不炸启动。`tool:eval` 提示词段同理走 `systemPrompt` 的延迟注入。
 
@@ -405,7 +405,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 
 本包自此有 client 半边：会话的 `conversation.view` tab 环里多一个**实验室 / Experiments**（order 40）。插件 id 仍是 `eval`——仓库里的 `lab` 是容器单元插件，两个名字不撞（界面规格 R5）。
 
-- **自隐**：当前会话的 preset 组合里点了 `@khorsheed/dsh-eval-tool` 行才注册这个 tab，没点就**不注册**——tab 条的按钮是按注册枚举的，返回 null 的组件只会在条上留一个空壳按钮。判据读官方 `pluginInventory` Remote，**每条读不到的路都失败开放**（可见）：宿主没有这个命名空间、RPC 还没回来或失败、preset 组不存在或标了 `broken`、会话根本没有 preset。判据是那一行**在不在**，不另设逃生口：隐掉一个只读视图不会弄坏任何已有的 run。**「当前会话的 preset」自 I5·T60 起是沿父链取到的第一个**（I5·T39 · G13）：成员子会话（选手那次委派的会话）自己没有 preset（条件里 `"preset": null` 是常态），单看它就走失败开放那一支，于是父会话正确隐掉的 tab 全部出现在选手的对话里。走到父那里才是这条判据的诚实读法——子会话继承的是父的组合，答案自然也该继承；既没 preset 也没有父的会话照旧失败开放。
+- **自隐**：当前会话的 preset 组合里点了 `@khorsheed/dsh-eval/tool` 行才注册这个 tab，没点就**不注册**——tab 条的按钮是按注册枚举的，返回 null 的组件只会在条上留一个空壳按钮。判据读官方 `pluginInventory` Remote，**每条读不到的路都失败开放**（可见）：宿主没有这个命名空间、RPC 还没回来或失败、preset 组不存在或标了 `broken`、会话根本没有 preset。判据是那一行**在不在**，不另设逃生口：隐掉一个只读视图不会弄坏任何已有的 run。**「当前会话的 preset」自 I5·T60 起是沿父链取到的第一个**（I5·T39 · G13）：成员子会话（选手那次委派的会话）自己没有 preset（条件里 `"preset": null` 是常态），单看它就走失败开放那一支，于是父会话正确隐掉的 tab 全部出现在选手的对话里。走到父那里才是这条判据的诚实读法——子会话继承的是父的组合，答案自然也该继承；既没 preset 也没有父的会话照旧失败开放。
 - **列表**：一行一个实验，**草稿与 run 同列**——对着手要规划下一次比较的人来说它们是同一类东西（界面规格 §五）。列：名称、题库快照、条件数（+ 判官）、题数、rep、因子、状态、进度、开始时间。动作只有「新建实验」，本轮是占位（归 T36）。
 - **状态**由纯函数 `deriveExperimentStatus` 从四处推出——plan 的 validate 结果、账本里每格的阶段、后台 job 的结局、人留下的**收尾标记**（T72）：草稿 → 待批准 → 运行中 → 评估中（所有格子到了 `judged` 或更后）→ 已完成（人走了人工评估四个出口里的前三个）；另有被拒（job 以 failed 落地）、已取消（job 被 kill）、**评估不成立**（第四个出口，灰）与**停滞**（橙）。**已完成只有人能给**：全格 `released` 而没人收尾的 run 仍是评估中——「判官做完了」与「人说了结果是什么」是两件事。**停滞是算出来的、从不写账**：非终态、本实例没有活 job、账本（格子进入当前阶段的时刻、注解）超过 `STALL_THRESHOLD_MS`（`src/experiments.ts`，10 分钟）没动；全格已判的 run 等的是人，等人不叫停滞。粗糙的边写在函数注释里，不抹平：job 层把「就绪检查拒绝」和「跑到一半抛错」记成同一种 `failed`；一格都没有的 run 读作运行中（过了阈值读作停滞）；实例重启后 job 记录没了，被拒与已取消够不着；另一个进程里健康的 CLI run 在单个阶段待满 10 分钟也会读成停滞——账本记的是转移，不是心跳。
 - **详情**是**四个阶段**的壳（实验设计 · 运行记录 · 结果对比 · 人工评估，按界面规格 §五 v2；v1 的七个子页见 git 历史，T67 改的就是这一层）。每个阶段页顶一条**状态 + 一个主动作**，动作由状态机定：草稿 →「去校验」，待批准 →「批准并启动」，运行中 →「看运行记录」，评估中 →「去人工评估」，已完成 →「看结果」，被拒 →「重新检查」。改的理由是规格缺口而不是执行缺口——§五 v1 只定了每页装什么，没定人在每页做什么，于是七页长成了七堆标签正确的字段（概览与计划审阅几乎同一份定义列表，两页都没有动作）。本轮**批准并启动**也挪到了这条 bar 上：它是人的动作（R1），该在人站的地方按，而不是翻到某个子页去找。批准之后页面**留在实验设计**——就绪检查拒绝只写在下面那段运行日志里，把人带去空网格等于把他要找的原因留在身后；状态一转，bar 自己变成「看运行记录」。
@@ -469,7 +469,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 - **`by` 是会话**：注解的 `by` 记 `tab:<sessionId>`，与格子抽屉的 retry、报告页的 finalize 同一套口径；verdict 文档自己的 `by` 记 `judge-bench`（协议给这个来源的词）。报告顶部那条红字警告盯的是 `tool:` 前缀——从这里写出去的终评**不可能**触发它，因为这条路上根本没有模型。
 - **每条判定都要证据**：`dataseek.verdict/1` 的 `evidence` 是「可核对的事实，不是观感」，空白的会被服务端拒绝，页面也在按钮上先拦一道——判官当时的依据一旦丢了，这条判定就永远无法复核了。没答的判据**不发**：没碰过的判据不是一条「不成立」。
 - **一致性用账本实时算**（T80c 起折叠在页底，见「对齐交互稿 v5」）：同判官 κ、跨判官、llm-draft 对 human-final，走的是报告页那同一个 `judgeConsistencyOf`（这次为它加了一个结构化的入参，不是抄一份）。区别只在数据源：报告读 bundle，判官台读**活账本**——判官刚打的那一条必须立刻反映在他自己看得见的数字上，而不是等一次重新导出。
-- **没有模型工具，将来也不会有**：`@khorsheed/dsh-eval-tool` 不注册 `humanFinal` 的任何孪生动词。R1 的「终评是人的」在这里成立，靠的是工具面**根本没有通往这段代码的路**，不是靠一个检查把模型挡回去。
+- **没有模型工具，将来也不会有**：`@khorsheed/dsh-eval/tool` 不注册 `humanFinal` 的任何孪生动词。R1 的「终评是人的」在这里成立，靠的是工具面**根本没有通往这段代码的路**，不是靠一个检查把模型挡回去。
 
 ## 作答视图（I5·T75）
 
@@ -580,7 +580,7 @@ agent 在会话里起草了一个实验之后，这件事在会话里只剩一�
 
 降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：
 
-- 七个工具（T73 起 `eval_repo_write` 改名 `eval_analysis_write`）与 `tool:eval` 提示词段归伴生行 `@khorsheed/dsh-eval-tool`，走延迟注入：组合里没有工具注册表 / systemPrompt 时它们不注册，CLI 与服务面照常，不炸启动；`tools: 'none'`（或没有引用这一行）只是让模型看不到这七个工具。发布顺序有约束：引用伴生行的 pack 必须先有伴生包被发布 / 安装——行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。浏览器半边（I5·T35a）的实验室 tab 按同一行自隐，判据读不到时失败开放；没有 `conversation.view` slot 的组合（TUI、headless）不注册它，服务面与 CLI 照常。矩阵的物化哈希要 mission 面报得出 `dataDir`，报不出就记「无法核验」；导出的两步要 mission 的 Remote 在场（没有 Typert 网关的组合就没有），不在场即整体拒绝——泄题闸绝不在 eval 这边重写一遍。
+- 七个工具（T73 起 `eval_repo_write` 改名 `eval_analysis_write`）与 `tool:eval` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-eval/tool`），走延迟注入：组合里没有工具注册表 / systemPrompt 时它们不注册，CLI 与服务面照常，不炸启动；`tools: 'none'`（或没有引用这一行）只是让模型看不到这七个工具。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-eval-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。浏览器半边（I5·T35a）的实验室 tab 按同一行自隐，判据读不到时失败开放；没有 `conversation.view` slot 的组合（TUI、headless）不注册它，服务面与 CLI 照常。矩阵的物化哈希要 mission 面报得出 `dataDir`，报不出就记「无法核验」；导出的两步要 mission 的 Remote 在场（没有 Typert 网关的组合就没有），不在场即整体拒绝——泄题闸绝不在 eval 这边重写一遍。
 - 面向早于 T11 的 local-agent：委派 `cwd` 被忽略、子代理继承父会话 cwd，格子因收不到产出文件而如实拒绝（submission-rejected），不会错记；`delegationOf` 与 settled 回读均缺席时 `usage` 与 `model.observed` 记 null，「受试对象一致」在报告里降为不可核验，而不是假定成立。判官同样靠 `cwd` 收 `verdicts.json`，没有 cwd 时该样本按解析失败记，不会误判。
 - `human-final` 不由本包写：它只从判官台或 `dsh-mission annotate --ns human-final` 进来（I5）。
 - 没有 `ctx.lab` 的组合照常跑宿主路径；只有带 `unit` 段的 plan 会因为缺 lab 而被拒绝，并在拒绝语里点名。
@@ -588,7 +588,7 @@ agent 在会话里起草了一个实验之后，这件事在会话里只剩一�
 
 ## 状态
 
-I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。T20 落地容器路径：plan 的 `unit` 段一格一单元（acquire → populate → 逐阶段委派与 checkpoint → 探针经 `lab.verify` 在单元内 → archive → 过闸 release），`refs.fingerprint` 由编排器写入，四条不变量之二从此可核验。provision（I4）、并发单元（I4）、界面（I5）按 web-eval 迭代计划推进。I5：T46 加第四个只读工具 `eval_cells` 与它背后的服务面 `cells(runId)`，评测预设同时摘掉 mission 的伴生行；T35a 从零搭起 client 半边——实验室 tab 的列表与详情壳（只填概览页）、服务面 `experiments` / `experiment` 与它们的 Remote 读动词 `runs` / `run`、七态状态推导，`eval_cells` 同时补上「不给 run_id 就列实验」的模式；T36 填上计划审阅页与条件页，并加上人的那一个写动词 `approve`——validate 过闸、以批准会话为父，背后不配任何模型工具；T35b 填上矩阵页与格子页：`matrix` / `cells` / `cell` 三个读面、`retry` / `releaseCheck` 两个动作转发、`exportPlan` / `exportRun` 转发 mission 的导出闸（闸仍在 mission 侧），外加给题集 tab 用的 `runsForItem`。T38 填上报告页：`report` / `finalize` 两个 Remote 动词与服务面的 `runReport` / `finalizeView`——四条不变量、配对差值、效率表、判官一致性都由同一个 `analyzeBundle` 算出后投影，比较闸在服务端合上；T37 填上判官台，七个子页至此填满：`judgeQueue` 出盲队列（序号 + ticket、去指纹产物、`kind: human` 判据、各判官各样本的 llm-draft、已有 human-final），`humanFinal` 是 `human-final` 这个 ns 的唯一写入口（转发 mission 的 annotate，只追加，`by` 记会话），rubric 解析与判官一致性各自收归一份实现。T34 补上第 2 步「一句话起草」：服务面 `draftExperiment` 一次写下 plan 与它引用的新条件（新条件一律从现有条件复制再改点名字段）并 validate，Remote 的 `newExperiment` / `draftOptions` 给「新建实验」表单用，`eval_plan_draft` 给 agent 用，两个面同一个动词；随 pack 装的 `eval-planning` 技能教 agent 走这条路，并点名批准、登录、provision、终评都不是它的。T57 把释放闸从一个旗标变成 run 的缺省，并把容器交给这条路：每格跑完当场过闸、单元在那里销毁（`--keep-units` 与批准对话框的「保留单元」可退出），`finalize` 也会销毁过闸格子的单元——事后回收的 run 这才真的被回收；`acquire` 撞上 `maxConcurrentUnits` 时点名占着名额的 run 与单元；报告页数出 lab 还持有多少，并给一个走同一条闸的「回收」。
+I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。T20 落地容器路径：plan 的 `unit` 段一格一单元（acquire → populate → 逐阶段委派与 checkpoint → 探针经 `lab.verify` 在单元内 → archive → 过闸 release），`refs.fingerprint` 由编排器写入，四条不变量之二从此可核验。provision（I4）、并发单元（I4）、界面（I5）按 web-eval 迭代计划推进。I5：T46 加第四个只读工具 `eval_cells` 与它背后的服务面 `cells(runId)`，评测预设同时摘掉 mission 的工具行；T35a 从零搭起 client 半边——实验室 tab 的列表与详情壳（只填概览页）、服务面 `experiments` / `experiment` 与它们的 Remote 读动词 `runs` / `run`、七态状态推导，`eval_cells` 同时补上「不给 run_id 就列实验」的模式；T36 填上计划审阅页与条件页，并加上人的那一个写动词 `approve`——validate 过闸、以批准会话为父，背后不配任何模型工具；T35b 填上矩阵页与格子页：`matrix` / `cells` / `cell` 三个读面、`retry` / `releaseCheck` 两个动作转发、`exportPlan` / `exportRun` 转发 mission 的导出闸（闸仍在 mission 侧），外加给题集 tab 用的 `runsForItem`。T38 填上报告页：`report` / `finalize` 两个 Remote 动词与服务面的 `runReport` / `finalizeView`——四条不变量、配对差值、效率表、判官一致性都由同一个 `analyzeBundle` 算出后投影，比较闸在服务端合上；T37 填上判官台，七个子页至此填满：`judgeQueue` 出盲队列（序号 + ticket、去指纹产物、`kind: human` 判据、各判官各样本的 llm-draft、已有 human-final），`humanFinal` 是 `human-final` 这个 ns 的唯一写入口（转发 mission 的 annotate，只追加，`by` 记会话），rubric 解析与判官一致性各自收归一份实现。T34 补上第 2 步「一句话起草」：服务面 `draftExperiment` 一次写下 plan 与它引用的新条件（新条件一律从现有条件复制再改点名字段）并 validate，Remote 的 `newExperiment` / `draftOptions` 给「新建实验」表单用，`eval_plan_draft` 给 agent 用，两个面同一个动词；随 pack 装的 `eval-planning` 技能教 agent 走这条路，并点名批准、登录、provision、终评都不是它的。T57 把释放闸从一个旗标变成 run 的缺省，并把容器交给这条路：每格跑完当场过闸、单元在那里销毁（`--keep-units` 与批准对话框的「保留单元」可退出），`finalize` 也会销毁过闸格子的单元——事后回收的 run 这才真的被回收；`acquire` 撞上 `maxConcurrentUnits` 时点名占着名额的 run 与单元；报告页数出 lab 还持有多少，并给一个走同一条闸的「回收」。
 
 ## 许可
 

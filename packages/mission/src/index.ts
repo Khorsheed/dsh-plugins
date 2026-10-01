@@ -12,7 +12,7 @@
  * the `dsh-mission` CLI (scripts), the `/mission` slash command (humans),
  * and the Typert Remote data face behind the web session tab — of which only
  * the service, the CLI and the Remote face mount HERE: the slash command's
- * registration moved to the companion `@khorsheed/dsh-mission-tool`
+ * registration moved to the `./tool` composition row `@khorsheed/dsh-mission/tool`
  * (preset-visibility rollout A3), which an agent preset mounts per session so
  * only granted sessions see it; the handler and definition stay in
  * `./slash.ts` for the companion to register. The model-tool
@@ -48,7 +48,7 @@ export const name = 'mission'
 
 /**
  * No required services: the `/mission` slash face moved to the companion
- * `@khorsheed/dsh-mission-tool` row (its registration is what needed the
+ * `@khorsheed/dsh-mission/tool` row (its registration is what needed the
  * command registry), and everything still here — the service, the Remote
  * face — mounts unconditionally.
  */
@@ -57,7 +57,7 @@ export const inject = []
 /**
  * Mount the mission service and the Remote data face. The `/mission` slash
  * command and the model tools are deliberately NOT registered here: both
- * moved to the companion `@khorsheed/dsh-mission-tool`, which an agent preset
+ * moved to the `./tool` composition row `@khorsheed/dsh-mission/tool`, which an agent preset
  * composes per session — the companion also carries the tool-guidance prompt
  * section.
  * @param ctx - plugin context.
@@ -78,7 +78,7 @@ export { resolveCliDataDir, resolveDataDir } from './defaults.ts'
 export { lintTemplate, loadTemplateFile, parseTemplate, deriveShape, SIMPLE_TEMPLATE } from './template.ts'
 export { bucketOf, viewOf, currentAttempt, releasableClosure } from './projection.ts'
 export { validateJson, assertSchemaSubset, schemaSubsetProblems, jsonEquals } from './schema.ts'
-export { missionToolDefinitions, MISSION_READ_TOOLS, type MissionToolsTier } from './tool.ts'
+export { missionToolDefinitions, MISSION_READ_TOOLS, type MissionToolsTier } from './tool-definition.ts'
 export type * from './types.ts'
 export type { LintResult, LoadedTemplate, MachineShape } from './template.ts'
 export type {

@@ -140,8 +140,8 @@ The CLI is the same `LabService` kernel over a `child_process` runner, with the 
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ — the service face and docker provider work on the published host. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master, fork or upstream): ✅ — same (verifiedHost: 0.1.2-rc.1).
+- npm release line (`@deepseek-ai/dsh@0.2.0-rc.2`): ✅ — the service face and docker provider work on the published host. Since T88 the evaluation family moves minHost up to 0.2.0-rc.2 together — 0.1.x hosts stay on the previous release line.
+- source line (deepseek-harness master, fork or upstream): ✅ — same (verifiedHost: 0.2.0-rc.2).
 
 Degraded / absent items (mirrors `dsh.compat` in package.json): without the `@khorsheed/dsh-mission` plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning. The `lab_*` model tools (M3) do not exist in this line yet.
 

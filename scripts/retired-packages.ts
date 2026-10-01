@@ -49,4 +49,19 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
     replacement: "each provider's own ./tool composition entry (@khorsheed/dsh-local-agent-kimi/tool, -codex/tool, -claude-code/tool; family >= 0.2.0-rc.1), over the family core's ./tool-factory export — the dev-preset row ids (`tool-subagent-kimi` etc.) are unchanged",
     note: 'folded into the provider packages at the family fold (2026-09-30); the npm name is deprecated',
   },
+  {
+    name: '@khorsheed/dsh-datasets-tool',
+    replacement: "@khorsheed/dsh-datasets' ./tool composition entry (>= 0.2.0-rc.1; preset row id `datasets-tool` is unchanged)",
+    note: 'folded into the core package at the evaluation-family fold (T88, 2026-10-01); npm deprecation rides the next publish wave',
+  },
+  {
+    name: '@khorsheed/dsh-mission-tool',
+    replacement: "@khorsheed/dsh-mission's ./tool composition entry (>= 0.2.0-rc.1; preset row id `mission-tool` is unchanged)",
+    note: 'folded into the core package at the evaluation-family fold (T88, 2026-10-01); npm deprecation rides the next publish wave',
+  },
+  {
+    name: '@khorsheed/dsh-eval-tool',
+    replacement: "@khorsheed/dsh-eval's ./tool composition entry (>= 0.2.0-rc.1; preset row id `eval-tool` is unchanged)",
+    note: 'folded into the core package at the evaluation-family fold (T88, 2026-10-01); npm deprecation rides the next publish wave',
+  },
 ]

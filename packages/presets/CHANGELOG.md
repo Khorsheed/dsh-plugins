@@ -2,6 +2,7 @@
 
 ## 0.3.0（未发布）
 
+- **dsh-eval preset 的两条评测工具行改指核心包的 `./tool` 组合入口**（评测家族折叠，T88）：`datasets-tool` / `eval-tool` 的 `name` 从已退役的 `@khorsheed/dsh-datasets-tool` / `@khorsheed/dsh-eval-tool` 改为 `@khorsheed/dsh-datasets/tool` / `@khorsheed/dsh-eval/tool`；行 id 与 config 不变，组合状态不受影响。`dsh.references` 同步换成 `@khorsheed/dsh-datasets` / `@khorsheed/dsh-eval`
 - **dev preset 的三条 local-agent 委派工具行改指各 provider 的 `./tool` 组合入口**（家族折叠）：`name` 从已退役的 `@khorsheed/dsh-local-agent-tool-subagent`（带 `provider`/`toolName` config）改为 `@khorsheed/dsh-local-agent-kimi/tool`、`-codex/tool`、`-claude-code/tool` 且不带 config（入口自带默认值）；行 id（`tool-subagent-kimi` 等）不变，组合状态不受影响。`dsh.references` 同步换成三个 provider 包
 - **写作 preset 参考官方 `minimal` 做工具精简**（实测 minimal 效果优于全量组合）：plan-mode、delegation/workflow 整组（subagent/fork/ptc/ralph）、fs-search、jobs、present、agent-instructions 移出 preset；保留 shell（写作 skill 会调转换脚本，观察期）、fs 读写、Skills、compaction、ask-user、todo、web 与按会话授予的画布工具。persona 保持作家身份与完整双语写作契约不变；preset 描述同步去掉「计划模式、子代理」
 

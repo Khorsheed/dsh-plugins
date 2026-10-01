@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createDatasetsService, type DatasetsService } from '../src/service.ts'
-import { datasetToolDefinitions } from '../src/tool.ts'
+import { datasetToolDefinitions } from '../src/tool-definition.ts'
 import { cleanup, makeFixtureRepo, type FixtureRepo } from './helpers.ts'
 
 let repo: FixtureRepo

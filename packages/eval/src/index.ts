@@ -8,7 +8,7 @@
  * command in the web-eval instance — the invoking session becomes the
  * originSession and every delegation's parent. There is deliberately no
  * run-class model tool. The three READ tools are not registered here either:
- * they live in the companion `@khorsheed/dsh-eval-tool`, which an agent preset
+ * they live in the `./tool` composition row `@khorsheed/dsh-eval/tool`, which an agent preset
  * composes per session (its own config grants them or not) — and since the
  * preset-visibility rollout (A3) the `/eval` slash REGISTRATION lives there
  * too: only a preset naming the companion row shows the command to its
@@ -32,7 +32,7 @@ export const name = 'eval'
 
 /**
  * No required services: the `/eval` slash face moved to the companion
- * `@khorsheed/dsh-eval-tool` row (its registration is what needed the
+ * `@khorsheed/dsh-eval/tool` row (its registration is what needed the
  * command registry), the run-job controller attaches through deferred
  * injection, and the upstream evaluation services are probed per call.
  */
@@ -50,7 +50,7 @@ declare module '@deepseek-ai/cordis' {
 /**
  * Mount the eval service, its Remote face, and the run-job controller. The
  * `/eval` slash command and the model tools are deliberately NOT registered
- * here: both moved to the companion `@khorsheed/dsh-eval-tool`, which an
+ * here: both moved to the `./tool` composition row `@khorsheed/dsh-eval/tool`, which an
  * agent preset composes per session.
  * @param ctx - plugin context.
  */
@@ -119,7 +119,7 @@ export { attemptDataDir, materializationShaOf, probeRunsOf, runCellDetail, summa
 export { DEFAULT_STUCK_MS, pivotMatrix, repDot } from './matrix-view.ts'
 export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
 export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
-export { evalToolDefinitions, EVAL_TOOL_NAMES } from './tool.ts'
+export { evalToolDefinitions, EVAL_TOOL_NAMES } from './tool-definition.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
 export type { HomeHash } from './hash.ts'
 export { EvalProvisionRefused, loginCommandFor, provisionCondition } from './provision.ts'

@@ -2,7 +2,7 @@
  * The preset-composition visibility of datasets' SESSION chrome (the 数据集
  * tab; the room self-hide pattern, M3'④): the tab shows exactly when the
  * CURRENT session's preset composition names the
- * `@khorsheed/dsh-datasets-tool` row —
+ * `@khorsheed/dsh-datasets/tool` row —
  * the preset composition file is the single source of truth, read from the
  * official `pluginInventory` Remote (the same criterion the worktrees badge
  * and the room chrome implement; inlined here rather than extracted into a
@@ -29,8 +29,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the ctx.sessions service merge (ISessions).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 
-/** The composition criterion's row: mission's companion tool package. */
-export const DATASETS_TOOL_ROW_MODULE = '@khorsheed/dsh-datasets-tool'
+/** The composition criterion's row: this package's `./tool` composition entry. */
+export const DATASETS_TOOL_ROW_MODULE = '@khorsheed/dsh-datasets/tool'
 
 /**
  * Minimal structural mirror of the official pluginInventory snapshot — only

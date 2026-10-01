@@ -2,7 +2,7 @@
  * The preset-composition visibility of eval's SESSION chrome (the 实验室 tab;
  * the room self-hide pattern, M3'②, as mission and datasets implement it):
  * the tab shows exactly when the CURRENT session's preset composition names
- * the `@khorsheed/dsh-eval-tool` row — the preset composition file is the
+ * the `@khorsheed/dsh-eval/tool` row — the preset composition file is the
  * single source of truth, read from the official `pluginInventory` Remote.
  * Inlined here rather than extracted into a helper package, per the proposal's
  * M3' deferral. Every unreadable path fails OPEN (visible): a host without the
@@ -27,7 +27,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 
 /** The composition criterion's row: eval's companion tool package. */
-export const EVAL_TOOL_ROW_MODULE = '@khorsheed/dsh-eval-tool'
+export const EVAL_TOOL_ROW_MODULE = '@khorsheed/dsh-eval/tool'
 
 /**
  * Minimal structural mirror of the official pluginInventory snapshot — only

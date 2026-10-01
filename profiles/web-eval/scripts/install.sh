@@ -89,15 +89,21 @@ SKILL_IDS="eval-planning"
 # Dependency order: the family core first, then the headless bundle
 # (local-agent-dsh's own dependency — packed so the override can pin it, never
 # a direct profile dependency), then the providers, then the independents,
-# then the published-but-lagging members. (The family's shared tool package
+# then the published-but-lagging members, then the evaluation family bundle
+# after its four members. (The family's shared tool package
 # local-agent-tool-subagent left this list at the 2026-09-30 fold: the
-# delegation tools moved into each provider's ./tool composition entry.)
+# delegation tools moved into each provider's ./tool composition entry. The
+# three evaluation companions mission-tool / datasets-tool / eval-tool left it
+# at the T88 fold the same way: each is its core's ./tool entry now. The four
+# evaluation members stay listed although the profile depends only on
+# bundle-eval — they reach the profile transitively, and the overrides pin
+# them to these tarballs, like local-agent-dsh-headless.)
 UNPUBLISHED_DIRS="local-agent local-agent-dsh-headless \
 local-agent-kimi local-agent-codex local-agent-claude-code local-agent-dsh \
 capability-catalog datasets eval inline-html-render lab local-files mission \
 ankh-guard context-guard file-preview message-timeline message-tools taskpilot \
 ui-shortcuts session-title-edit whalesong \
-mission-tool datasets-tool eval-tool"
+bundle-eval"
 
 SOURCE=""
 FRESH=""
@@ -439,22 +445,25 @@ DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 # Distinct @khorsheed names, not raw matches: the composed dump repeats each
 # member (layer header + entry row), so the raw count is nearly double.
 #
-# Three counts, each composed differently (on the 0.2.0 composition they
-# happen to coincide at 25, measured after the T82 merge of main) — a drop in
+# Three counts, each composed differently (measured on a 0.2.0-rc.2 temp
+# instance after T88 switched the evaluation family to its bundle) — a drop in
 # any of them is the symptom this line exists to surface:
-#   25  tarballs packed above, one per UNPUBLISHED_DIRS entry;
-#   25  @khorsheed dependencies in the profile's own package.json — every
+#   23  tarballs packed above, one per UNPUBLISHED_DIRS entry (the four
+#       evaluation members AND bundle-eval each pack one);
+#   19  @khorsheed dependencies in the profile's own package.json — every
 #       tarball except local-agent-dsh-headless (local-agent-dsh pulls it in
-#       transitively and the overrides pin it, never a direct dependency),
-#       plus the profile-local preset bundle (`file:presets`, T82);
-#   25  distinct names in the dump: the 22 @khorsheed bundles (the preset
-#       bundle among them), local-agent-dsh-headless (no row at all — it is
-#       the headlessBundleDir path), and datasets-tool + eval-tool, which the
-#       eval preset row names in its composition. mission-tool is a dependency
-#       the preset does not name, so it never reaches the dump. (The
-#       delegation tools left the dump at the 2026-09-30 family fold: they are
-#       per-preset `./tool` rows now, granted by the presets that name them —
-#       this profile's eval preset names none.)
+#       transitively and the overrides pin it, never a direct dependency) and
+#       the four evaluation members (bundle-eval hard-depends on them), plus
+#       the profile-local preset bundle (`file:presets`, T82);
+#   24  distinct names in the dump: the 19 @khorsheed bundles (bundle-eval and
+#       the preset bundle among them), the four evaluation members whose rows
+#       bundle-eval's patch carries verbatim, and local-agent-dsh-headless (no
+#       row at all — it is the headlessBundleDir path). The eval preset row
+#       names `@khorsheed/dsh-datasets/tool` and `@khorsheed/dsh-eval/tool`;
+#       this grep stops at the slash, so they merge into their cores' names.
+#       (The delegation tools left the dump at the 2026-09-30 family fold:
+#       they are per-preset `./tool` rows now, granted by the presets that
+#       name them — this profile's eval preset names none.)
 MEMBERS=$(printf '%s\n' "$DUMP" | grep -o '@khorsheed/[a-z0-9-]*' | sort -u | wc -l | tr -d ' ')
 ROWS=$(printf '%s\n' "$DUMP" | grep -c '^- id: ' || true)
 # The default preset. cordis.patch.yml pins the registry's deployment default

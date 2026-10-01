@@ -3,7 +3,7 @@
  * and the preset-visibility rollout (A3): the service and the Remote data
  * face stay here; the model tools, the `datasets:tools` prompt section, and
  * the `/datasets` slash registration moved to the companion
- * `@khorsheed/dsh-datasets-tool`. Mounting this core must touch NEITHER the
+ * `@khorsheed/dsh-datasets/tool`. Mounting this core must touch NEITHER the
  * tool registry NOR the system-prompt assembly NOR the command registry —
  * the ctx below supplies none of them, so a stray registration would throw
  * instead of passing silently. What remains testable here is the pure group
@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest'
 import { apply, Config, inject, toolsOfGroup } from '../src/index.ts'
 import { formatBindReceipt } from '../src/format.ts'
-import { datasetToolDefinitions } from '../src/tool.ts'
+import { datasetToolDefinitions } from '../src/tool-definition.ts'
 
 const READ = [
   'datasets_list', 'datasets_show', 'datasets_describe', 'datasets_read', 'datasets_snapshot', 'datasets_validate',

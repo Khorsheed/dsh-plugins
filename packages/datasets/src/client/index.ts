@@ -7,7 +7,7 @@
  * delegated to the official reader primitives (MarkdownText / CodeBlock), the
  * tab only navigates the tree and hands the selected file's content over. The
  * tab self-hides (M3'④) unless the current session's preset composition names
- * the `@khorsheed/dsh-datasets-tool` row — the tools it exercises are granted
+ * the `@khorsheed/dsh-datasets/tool` row — the tools it exercises are granted
  * there, and a viewer over a toolset the session never got is an empty shell.
  * Composing this plugin out of cordis.yml removes the tab.
  * @module @khorsheed/dsh-datasets/client

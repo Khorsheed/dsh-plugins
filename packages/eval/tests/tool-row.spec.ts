@@ -1,10 +1,11 @@
-/** The companion row: the seven tools (five reads plus the two writes), the
+/** The `./tool` composition row (folded from the retired
+ * `@khorsheed/dsh-eval-tool` companion at T88): the seven tools (five reads plus the two writes), the
  * origin tag (this package, not the core), the `tool:eval` guidance section,
  * the `none` grant, the `/eval` slash registration (preset-visibility
  * rollout A3 — registered at every tier, delegated to the core's handler),
  * and the silent degrade when the core service is absent. */
 import { describe, expect, it } from 'vitest'
-import { apply, type EvalToolConfig } from '../src/index.ts'
+import { apply, type EvalToolConfig } from '../src/tool.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 const EVAL_TOOLS = [
@@ -62,12 +63,12 @@ function mount(service: unknown, config?: EvalToolConfig): {
   return { tools, sections, commands, infos }
 }
 
-describe('eval-tool companion row', () => {
+describe('eval-tool row (@khorsheed/dsh-eval/tool)', () => {
   it('grants the seven tools, tags them by this package, and adds the guidance section', () => {
     const { tools, sections } = mount({})
     expect(tools.map(tool => tool.name).sort()).toEqual([...EVAL_TOOLS].sort())
     for (const tool of tools) {
-      expect(tool[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-eval-tool' })
+      expect(tool[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-eval' })
     }
     expect(sections.map(section => section.name)).toEqual(['tool:eval'])
     expect(sections[0]?.order).toBe(114)

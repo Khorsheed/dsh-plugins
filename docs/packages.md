@@ -4,9 +4,9 @@
 
 ## 概览
 
-- 包总数:**39**
-- 自挂载 bundle(`dsh.bundle.patch`):**33**
-- 组合组件(不自挂载,`dsh.composition.component`):**6** — `preset-composed-row` 4、`source-plane-library` 1、`sub-profile-patch` 1
+- 包总数:**37**
+- 自挂载 bundle(`dsh.bundle.patch`):**34**
+- 组合组件(不自挂载,`dsh.composition.component`):**3** — `preset-composed-row` 1、`source-plane-library` 1、`sub-profile-patch` 1
 - 带浏览器半边(`dsh.client`):**28**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
 
@@ -19,19 +19,18 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.4.2 | bundle | — | web | 0.1.5-rc.1 | basic, dev, web-eval |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | `packages/bundle-conversation-toolbox` | 0.1.2 | bundle | — | — | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-bundle-eval` | `packages/bundle-eval` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | web-eval |
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.2.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.6.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.98 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
-| `@khorsheed/dsh-datasets` | `packages/datasets` | 0.1.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | web-eval |
-| `@khorsheed/dsh-datasets-tool` | `packages/datasets-tool` | 0.1.0 | composition | preset-composed-row | — | 0.2.0-rc.2 | web-eval |
+| `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-eval` | `packages/eval` | 0.1.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | web-eval |
-| `@khorsheed/dsh-eval-tool` | `packages/eval-tool` | 0.1.0 | composition | preset-composed-row | — | 0.2.0-rc.2 | web-eval |
+| `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.1 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.15 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
-| `@khorsheed/dsh-lab` | `packages/lab` | 0.1.0-rc.1 | bundle | — | — | 0.1.5-rc.1 | web-eval |
+| `@khorsheed/dsh-lab` | `packages/lab` | 0.2.0-rc.1 | bundle | — | — | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | dev, web-eval |
 | `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | dev, web-eval |
 | `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.2.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | dev, web-eval |
@@ -41,8 +40,7 @@
 | `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.3 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
-| `@khorsheed/dsh-mission` | `packages/mission` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
-| `@khorsheed/dsh-mission-tool` | `packages/mission-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
+| `@khorsheed/dsh-mission` | `packages/mission` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-presets` | `packages/presets` | 0.3.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | basic |
@@ -63,7 +61,7 @@
 | --- | --- | --- |
 | `profiles/basic` | 14 | 16 |
 | `profiles/dev` | 8 | 10 |
-| `profiles/web-eval` | 25 | 24 |
+| `profiles/web-eval` | 19 | 21 |
 
 ## 形态的含义
 

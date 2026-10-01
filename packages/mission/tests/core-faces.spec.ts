@@ -1,7 +1,7 @@
 /** The core's remaining faces after the tool-row split (M4'③) and the
  * preset-visibility rollout (A3): the service and the Remote data face. The
  * model tools, the `tool:mission` prompt section, and the `/mission` slash
- * registration moved to the companion `@khorsheed/dsh-mission-tool`, so
+ * registration moved to the `./tool` composition row `@khorsheed/dsh-mission/tool`, so
  * mounting this core must touch NEITHER the tool registry NOR the
  * system-prompt assembly NOR the command registry — the ctx below supplies
  * none of them, so a stray registration would throw instead of passing

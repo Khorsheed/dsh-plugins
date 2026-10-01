@@ -57,10 +57,12 @@
 # ── 工具按域开放（README「工具按域开放」）────────────────────────────
 # 执行期没有 agent，写类动词归编排器服务面与人的 CLI。
 #
-# M4'③ 起这三个机制包拆成 core + companion：profile 根只挂 core（服务 / CLI /
-# slash / 标签页），模型工具行与工具提示词段落归 companion，授予点是 eval 预设
-# （presets/cordis.patch.yml 里 preset-eval 的 mission-tool / datasets-tool / eval-tool
-# 三行，tools tier 原样跟随）。本层不再给 core 写 tools——那已不是 core 的字段。
+# M4'③ 起这三个机制包拆成 core + 工具行：profile 根只挂 core（服务 / CLI /
+# slash / 标签页；T88 起由家族 bundle @khorsheed/dsh-bundle-eval 一次挂齐），
+# 模型工具行与工具提示词段落归各 core 包自己的 `./tool` 组合入口（T88 前是
+# 独立的 -tool 伴生包），授予点是 eval 预设（presets/cordis.patch.yml 里
+# preset-eval 的 datasets-tool / eval-tool 两行，tools tier 原样跟随）。
+# 本层不再给 core 写 tools——那已不是 core 的字段。
 
 # ── 委派工具不注册（冻结决策 12 的第三个执行点）──────────────────────
 # 前两个执行点在上面：「工具按域开放」（三个机制插件按域注册）与 agent-preset-registry

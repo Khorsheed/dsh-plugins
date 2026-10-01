@@ -4,14 +4,14 @@
  * against fake service faces: a temp dataset tree for the contract tools, a
  * fake mission ledger for the two run projections. Registration, origin
  * tagging, and the `tools: 'none'` switch belong to
- * `@khorsheed/dsh-eval-tool` and are pinned in its own spec.
+ * `@khorsheed/dsh-eval/tool` and are pinned in its own spec.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashConditionDocument } from '../src/hash.ts'
 import { EvalService } from '../src/service.ts'
-import { evalToolDefinitions } from '../src/tool.ts'
+import { evalToolDefinitions } from '../src/tool-definition.ts'
 import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson } from './helpers.ts'
 
 afterEach(cleanupTmp)

@@ -90,12 +90,11 @@ export const RELEASE_GROUPS: readonly ReleaseGroup[] = [
 
 /** core/companion pairs whose emitted edge must resolve the core. */
 export const COMPANION_PAIRS: ReadonlyArray<{ core: string; companion: string }> = [
-  { core: 'datasets', companion: 'datasets-tool' },
-  { core: 'eval', companion: 'eval-tool' },
-  { core: 'mission', companion: 'mission-tool' },
   // worktrees-tool and room-tool folded back into their core packages (the
-  // ./tool composition entry; worktrees 0.3.0, room 0.2.0) — neither has a
-  // separate companion package any more.
+  // ./tool composition entry; worktrees 0.3.0, room 0.2.0), and datasets-tool /
+  // eval-tool / mission-tool at the evaluation-family fold (T88, 2026-10-01,
+  // datasets / eval / mission 0.2.0-rc.1) — none has a separate companion
+  // package any more. The roster stays as the hook for a future pair.
 ]
 
 interface Loaded {

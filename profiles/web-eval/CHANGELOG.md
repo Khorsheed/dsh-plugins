@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- T88 评测家族整理：profile 不再直接依赖 datasets / mission / lab / eval 四个成员与三个伴生包，改依赖家族整合包 `@khorsheed/dsh-bundle-eval`（patch 逐字携带四个成员的行，205 行组合不变）。三个伴生包退役，工具行是核心包的 `./tool` 入口：`eval` 预设的 `datasets-tool` / `eval-tool` 两行 `name` 改为 `@khorsheed/dsh-datasets/tool` / `@khorsheed/dsh-eval/tool`，行 id 与 `tools:` 档位不变；任务 tab 的自隐判据随之改按 `@khorsheed/dsh-mission/tool` 判，评测会话照旧看不见它。`install.sh` 的 `UNPUBLISHED_DIRS` 去掉三个伴生包、加上 `bundle-eval`；组合统计变为 23 个 tarball / 19 个直接依赖 / dump 里 24 个去重名字。
 - 2026-09-30 家族折叠：local-agent 家族的委派工具从共享包 `@khorsheed/dsh-local-agent-tool-subagent`（已退役）收进各 provider 包的 `./tool` 组合入口，工具行不再挂 profile 根，由 agent 预设点名授予。本 pack 的 eval 预设不点名任何 `local-agent-*/tool` 行，三个委派工具因此对评测会话天然缺席——`cordis.patch.yml` 撤掉原先三行 `tools: none` 覆盖（冻结决策 12 第三个执行点换机制：从「profile 层关掉」变「预设不点名即缺席」）；`package.json` 与 `install.sh` 的 `UNPUBLISHED_DIRS` 同步去掉该包（tarball 27 → 26、profile 依赖 26 → 25、dump 里不同名 24 → 23）。provider 行照挂，编排器经 local-agent 门面驱动选手的路不变；`subagent_dsh` 仍是开关驱动的动态挂载，默认 OFF。
 - I0 规划版本：22 个成员的评测模式 profile（基础体验 12 + 本地 Agent 家族 6 + 评测机制 3 + 运维守护 1）。编排器 `@khorsheed/dsh-eval` 尚未存在，随 I2 加入成员清单。
 - M4'③：mission / datasets / eval 拆成 core + companion。按域档位（`read` / `authoring` / `all`）从 profile 根的 core 行移到 `eval` 预设的三条伴生行（`mission-tool` / `datasets-tool` / `eval-tool`）；三个 core 行不再写 `tools`。此后本 profile 中非 `eval` 预设的会话不携带这三套模型工具（服务 / CLI / slash / tab 仍是全局的）。

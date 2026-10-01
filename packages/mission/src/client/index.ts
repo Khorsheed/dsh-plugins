@@ -5,7 +5,7 @@
  * `ctx.remote.$mount` channel, so the plugin distributes as an independent
  * package with no edits to core packages. The tab self-hides (M3'③) unless
  * the current session's preset composition names the
- * `@khorsheed/dsh-mission-tool` row — the tools it views are granted there,
+ * `@khorsheed/dsh-mission/tool` row — the tools it views are granted there,
  * and a viewer over a toolset the session never got is an empty shell.
  * Composing this plugin out of cordis.yml removes the tab.
  * @module @khorsheed/dsh-mission/client

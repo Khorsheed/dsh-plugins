@@ -4,7 +4,7 @@
 
 dsh 生态的通用任务管理：**mission** 是一个工作项——状态、标签、计划数据（依赖 / 一次性定时）、attempt、不透明资源引用、产物索引、append-only 命名空间注解；**run** 是从模板批量创建的一批 mission。模板声明状态机，run 创建时冻结它，每个 mission 强制它：声明即强制——未声明的转移一律 fail loud，guard 是确定性的，且任何代码路径都不做自动转移。
 
-M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI；**那十二个工具自 M4'③ 起不由本包注册**——定义仍在本包（`src/tool.ts`），注册与 `tool:mission` 提示词段归伴生行 `@khorsheed/dsh-mission-tool`，由 agent preset 按会话授予（见[模型工具](#模型工具)）；M2 补上 `/mission` slash 面与带闸的 bundle 导出（slash 的**注册**自 preset 可见性收口起归伴生行——落进 preset scope 层，只有授予会话可见；handler 与定义留在本包）；M4 补上 Typert Remote 数据面驱动的 web 会话 tab。
+M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI；**那十二个工具自 M4'③ 起不由核心行注册**——定义仍在本包（`src/tool.ts`），注册与 `tool:mission` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-mission/tool`），由 agent preset 按会话授予（见[模型工具](#模型工具)）；M2 补上 `/mission` slash 面与带闸的 bundle 导出（slash 的**注册**自 preset 可见性收口起归工具行——落进 preset scope 层，只有授予会话可见；handler 与定义留在本包）；M4 补上 Typert Remote 数据面驱动的 web 会话 tab。
 
 ## 工作方式
 
@@ -37,7 +37,7 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # 本插件
 
 包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（裸 `mission` 挂载）合入 profile 的 bundles 层——无需手改 cordis.yml。一个 composition 只能挂载 `mission` 行 id 一次；向可能已挂载该 id 的 composition 添加前，先 `dsh --profile web --dump-config | grep mission` 确认。源码方式：clone monorepo，包在 `packages/mission`（`pnpm install && pnpm run build`）。
 
-配置（全部可选）：`dataDir`——宿主实例的数据根（默认 `$DSH_HOME/state/mission`，否则 `<cwd>/.dsh-mission`）。`tools` 不再是本行的键：模型工具的分组配置搬到了伴生行 `@khorsheed/dsh-mission-tool`，见[模型工具](#模型工具)。
+配置（全部可选）：`dataDir`——宿主实例的数据根（默认 `$DSH_HOME/state/mission`，否则 `<cwd>/.dsh-mission`）。`tools` 不再是本行的键：模型工具的分组配置搬到了本包的工具行 `@khorsheed/dsh-mission/tool`，见[模型工具](#模型工具)。
 
 ## 存储与并发
 
@@ -73,7 +73,7 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # 本插件
 
 ## 模型工具
 
-**本包不再注册任何模型工具（BREAKING）**：工具与 `tool:mission` 提示词段归伴生行 `@khorsheed/dsh-mission-tool`，由 agent preset 按会话授予。迁移两步：把伴生包作为依赖安装，并在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: mission-tool` 与 `  name: '@khorsheed/dsh-mission-tool'`（该行可带 `config: { tools: read }`）。下面的清单、分组表与行为描述自此描述的是**伴生行**的工具面；服务面、CLI、slash 与 tab 仍归本包。
+**核心行不注册任何模型工具**：工具与 `tool:mission` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-mission/tool`），由 agent preset 按会话授予。授予方式：在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: mission-tool` 与 `  name: '@khorsheed/dsh-mission/tool'`（该行可带 `config: { tools: read }`）。下面的清单、分组表与行为描述自此描述的是**工具行**的工具面；服务面、CLI、slash 与 tab 仍归本包。
 
 `mission_run_create` / `mission_run_list` / `mission_run_status` / `mission_create` / `mission_list` / `mission_get` / `mission_transition` / `mission_submit` / `mission_annotate` / `mission_attest` / `mission_retry` / `mission_is_releasable`。`mission_submit.to` 与服务面的意向边语义一致；`mission_retry` 必须带 `reason` 与 `category`。写工具走标准 `tools/pre-execute` 审批管线；调用方会话 id 以 `tool:<sessionId>` 记入 history。配套系统提示词段（`tool:mission`）向模型简述用法。**export 刻意不做成工具**——分享 run bundle 是发起类人决定（仅 CLI/slash/tab，带泄题闸）。
 
@@ -144,10 +144,10 @@ dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --sn
 
 ## Compatibility
 
-- npm release line（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅——store、状态机与 guard、lint、五桶投影、服务面、CLI、slash 命令在发布版宿主上全部可用（模型工具经伴生行 `@khorsheed/dsh-mission-tool` 提供，见下）。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- source line（deepseek-harness master，fork 或 upstream）：✅——同上（verifiedHost: 0.1.2-rc.1）。
+- npm release line（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅——store、状态机与 guard、lint、五桶投影、服务面、CLI、slash 命令在发布版宿主上全部可用（模型工具经本包的工具行 `@khorsheed/dsh-mission/tool` 提供，见下）。T88 起评测家族一起把 minHost 抬到 0.2.0-rc.2，0.1.x 宿主请停留在旧发布线。
+- source line（deepseek-harness master，fork 或 upstream）：✅——同上（verifiedHost: 0.2.0-rc.2）。
 
-降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：slash 命令需要交互式 UI adapter（web/TUI）——headless profile 没有 command adapter，`/mission` 在那里不可用，工具、服务面、CLI 不受影响。模型工具的分组（`tools: 'read'` / `'none'`）现在是**伴生行** `@khorsheed/dsh-mission-tool` 上的选择，不是本行的配置——按上表裁掉模型工具不是宿主能力缺失，而是挂载方的选择；服务面、CLI、slash、tab 照常。任务 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-mission-tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是评测会话里 mission 明明该隐身，任务 tab 却出现在选手的子会话里。发布顺序有约束：引用伴生行的 pack 必须先有伴生包被发布 / 安装——行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 面；TUI 没有 tab 机制，headless profile 只提供 Remote 数据面而没有浏览器消费者。tab 已在 `0.1.0-rc.8` web profile 做 live smoke；更早发布线共享同一 gateway 约定，但未做 smoke。
+降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：slash 命令需要交互式 UI adapter（web/TUI）——headless profile 没有 command adapter，`/mission` 在那里不可用，工具、服务面、CLI 不受影响。模型工具的分组（`tools: 'read'` / `'none'`）现在是**工具行** `@khorsheed/dsh-mission/tool` 上的选择，不是本行的配置——按上表裁掉模型工具不是宿主能力缺失，而是挂载方的选择；服务面、CLI、slash、tab 照常。任务 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-mission/tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是评测会话里 mission 明明该隐身，任务 tab 却出现在选手的子会话里。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-mission-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 面；TUI 没有 tab 机制，headless profile 只提供 Remote 数据面而没有浏览器消费者。tab 已在 `0.1.0-rc.8` web profile 做 live smoke；更早发布线共享同一 gateway 约定，但未做 smoke。
 
 ## Known Limitations and Deferred Work
 

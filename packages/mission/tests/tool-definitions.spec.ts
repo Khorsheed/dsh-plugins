@@ -2,7 +2,7 @@
  * absence of an origin tag (that follows the MOUNTING package), and the
  * adapters' argument forwarding. */
 import { describe, expect, it } from 'vitest'
-import { MISSION_READ_TOOLS, missionToolDefinitions } from '../src/tool.ts'
+import { MISSION_READ_TOOLS, missionToolDefinitions } from '../src/tool-definition.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 

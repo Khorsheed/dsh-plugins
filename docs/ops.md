@@ -103,7 +103,8 @@ pnpm deploy:check-links
 
 - **独立线,不齐步走。** 每个插件按自己的成熟度验收、发布(semver 独立);四段式(`0.1.0-rc.8.x`)是线内补丁的既有记法。唯一硬约束:新版本必须超过 npm 已发布版本。
 - **家族同发,按依赖序。** local-agent 家族(core → tool-subagent → 各 provider)作为一批发布,版本线先对齐;pack-dist 会把 `workspace:*` 改写成 **`^<目标包自己的版本>`**(`--family name=version`,不是被打包者的版本——否则 `0.1.0` 的伴生包会声明出 `^0.1.0`,而 core 是 `0.1.0-rc.1`,干净机器直接解析失败),顺序错了干净机器装不上。
-- **整合包**：当前 CLI 的 `reconcilePlugins` 只调和 profile 的**直接依赖**,npm 薄元包的子插件是传递依赖、不会被挂载——所以薄元包需要上游 seam(见提案 `proposals/active/2026-08-21-package-management.md` 的形态 C 与 upstream-meta-pack-reconcile)。今天可交付的整合形态是**形态 A(add 清单)与形态 B(profile 目录模板)**,成员都是 profile 直接依赖,任一 bundle 单独装卸互不影响。整合包版本只在成员增删或跨大版本线时 bump(caret 范围下子包 patch 发布不需要动 pack)。
+- **整合包**：家族整合包今天就可用——`@khorsheed/dsh-bundle-local-agent`（本地 agent 家族）与 `@khorsheed/dsh-bundle-eval`（评测家族：datasets / mission / lab / eval）。形态是 `dsh.bundle.kind: 'family'`：成员是整合包的硬依赖（随它一起装进 node_modules），整合包自己的 `cordis.patch.yml` 逐字携带成员的规范行（`check:plugins` 钉住逐字一致），所以 profile 只需直接依赖整合包、**不再**把成员列为直接依赖（否则同一行挂两次；`check:profiles` 规则 4/5 认得家族整合包）。整合包版本只在成员增删或跨大版本线时 bump（caret 范围下子包 patch 发布不需要动整合包）。
+  - 历史：此前的设想是 npm「薄元包」——子插件是传递依赖、当前 `reconcilePlugins` 只调和 profile 直接依赖、不会挂载，所以需要上游 seam（提案 `proposals/active/2026-08-21-package-management.md` 的形态 C 与 upstream-meta-pack-reconcile），过渡期交付形态 A（add 清单）与形态 B（profile 目录模板）。家族整合包把成员行收进自己的 patch，绕开了这条 seam 依赖；薄元包接口保留为历史记录。
 - **首发包没有顺序问题**(除家族外),npm 上都不存在,无 403/409 风险。
 
 ## 迁移/升级验收清单(任何 agent 做完宿主迁移或重打包后执行)

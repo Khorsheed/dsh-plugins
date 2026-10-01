@@ -67,9 +67,9 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（裸 `datasets` 挂载）调和进 profile 的 bundles 层——不需要手改 cordis.yml。一个 composition 只能挂载 `datasets` 行 id 一次；`dsh --profile web --dump-config | grep datasets` 无输出即说明可以安全 add。
 
-配置（可选）：`materializedRoot`（物化根覆盖；缺省 `$DSH_HOME/state/datasets/materialized`，否则 `<cwd>/.dsh-datasets/materialized`）。登记文件固定在状态根下：`$DSH_HOME/state/datasets/registry.json`。`tools` 不再是本行的键：模型工具的分组配置搬到了伴生行 `@khorsheed/dsh-datasets-tool`，见[模型工具](#模型工具)。
+配置（可选）：`materializedRoot`（物化根覆盖；缺省 `$DSH_HOME/state/datasets/materialized`，否则 `<cwd>/.dsh-datasets/materialized`）。登记文件固定在状态根下：`$DSH_HOME/state/datasets/registry.json`。`tools` 不再是本行的键：模型工具的分组配置搬到了本包的工具行 `@khorsheed/dsh-datasets/tool`，见[模型工具](#模型工具)。
 
-插件提供 `ctx.datasets` 服务供其他插件可选消费，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查物化根的结构完整性。`/datasets` slash 命令的**注册**自 preset 可见性收口（A3）起归伴生行——落进 preset 的 scope 层，只有授予会话可见；handler 与定义仍在本包，由伴生行调 `registerDatasetsSlash` 接入。`datasets_*` 模型工具与 `datasets:tools` 提示词段归伴生行 `@khorsheed/dsh-datasets-tool`，由 agent preset 按会话授予——见[模型工具](#模型工具)。
+插件提供 `ctx.datasets` 服务供其他插件可选消费，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查物化根的结构完整性。`/datasets` slash 命令的**注册**自 preset 可见性收口（A3）起归工具行——落进 preset 的 scope 层，只有授予会话可见；handler 与定义仍在本包，由工具行调 `registerDatasetsSlash` 接入。`datasets_*` 模型工具与 `datasets:tools` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-datasets/tool`），由 agent preset 按会话授予——见[模型工具](#模型工具)。
 
 ## 题库登记（T73）
 
@@ -106,7 +106,7 @@ T73 之前每个会话绑一个仓库（`$DSH_HOME/state/datasets/bindings/<sess
 
 ## 模型工具
 
-**本包不再注册任何模型工具（BREAKING）**：下面这八个工具与 `datasets:tools` 提示词段归伴生行 `@khorsheed/dsh-datasets-tool`，由 agent preset 按会话授予。迁移两步：把伴生包作为依赖安装，并在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: datasets-tool` 与 `  name: '@khorsheed/dsh-datasets-tool'`（该行可带 `config: { tools: authoring }`）。下面的清单、分组与行为描述自此描述的是**伴生行**的工具面；服务、CLI、`/datasets` 与会话 tab 仍归本包。
+**核心行不注册任何模型工具**：下面这八个工具与 `datasets:tools` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-datasets/tool`），由 agent preset 按会话授予。授予方式：在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: datasets-tool` 与 `  name: '@khorsheed/dsh-datasets/tool'`（该行可带 `config: { tools: authoring }`）。下面的清单、分组与行为描述自此描述的是**工具行**的工具面；服务、CLI、`/datasets` 与会话 tab 仍归本包。
 
 | 工具 | 写? | 作用 |
 |---|---|---|
@@ -181,9 +181,9 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 
 - npm release 线（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件、Typert Remote 通道、`conversation.view`）在该线上稳定。T82 起只支持宿主 0.2.0 及以后（minHost 0.2.0-rc.2），0.1.x 宿主请停留在旧发布线。
 - source 线（deepseek-harness master）：✅（verifiedHost: 0.2.0-rc.2，题集 tab 在 web-eval 临时实例上真机冒烟）。
-- 金丝雀校验与可判性校验都在本插件内部完成（只读 git 对象），不依赖任何新的宿主能力；`tools` 分组随模型工具面搬到伴生行 `@khorsheed/dsh-datasets-tool`（`read` / `authoring` / `all` / `none`），本行不再有这个配置键。
+- 金丝雀校验与可判性校验都在本插件内部完成（只读 git 对象），不依赖任何新的宿主能力；`tools` 分组随模型工具面搬到本包的工具行 `@khorsheed/dsh-datasets/tool`（`read` / `authoring` / `all` / `none`），本行不再有这个配置键。
 - 题库登记与只读物化（T73）同样是插件内部的：登记是状态根下一个 JSON 文件，物化只用 `git archive` + `tar`，不需要新的宿主能力；原生目录选择器沿用已有的宿主探测，探不到就只留路径输入。
-- ⚠️ 降级：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由伴生行提供）。题集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets-tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是每个受判据管的 tab 都出现在选手的子会话里。发布顺序有约束：引用伴生行的 pack 必须先有伴生包被发布 / 安装——行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
+- ⚠️ 降级：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由工具行提供）。题集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets/tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是每个受判据管的 tab 都出现在选手的子会话里。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-datasets-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
 
 本节与 package.json 的 `dsh.compat` 字段互为镜像，同步更新。
 
