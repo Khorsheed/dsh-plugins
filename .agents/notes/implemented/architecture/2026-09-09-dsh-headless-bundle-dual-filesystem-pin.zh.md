@@ -4,6 +4,8 @@
 
 [English](2026-09-09-dsh-headless-bundle-dual-filesystem-pin.md) | 中文
 
+> 宿主 0.2.0 上部分被[宿主 0.2.0 上子 dsh 的 preset 是一个拷进 scope 的包](2026-10-01-sub-dsh-preset-package-host-020.zh.md)取代：web-eval profile 改以 `unitHeadlessBundleDir` pin 这条路径，只有容器轮（`<profileName>-unit` 孪生子 profile）链向它，宿主轮链向实例自己的安装。单元一侧仍按下文的理由定。
+
 ## 问题
 
 `provisionDshSubProfile` 把 `<scoped home>/profiles/<name>/node_modules/@khorsheed/dsh-local-agent-dsh-headless` 写成指向宿主安装的绝对符号链接。纯宿主世界里这是对的。T20c「一个主人，一个目录」布局下同一份 scoped home 被 bind 进容器单元，绝对目标在单元里悬空——子 dsh 的 profile 直接加载失败（`failed to apply loader entry include`）。README 里容器轮跳过 provisioning 只防住写**新**坏链接，防不住已经写在那里的；而宿主侧就绪重探会重新 provision，把宿主专用路径写回去——恰好赶在容器轮挂载同一目录之前。同一份目录现在被两个文件系统解析，而两边的依赖闭包不在同一处（宿主：profile 所在安装；单元：镜像的 `/opt/dsh-headless/node_modules`）。

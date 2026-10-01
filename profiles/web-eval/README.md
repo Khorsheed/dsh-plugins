@@ -385,7 +385,6 @@ dsh 条件的受试 CLI 不是条件自己选的：`local-agent-dsh` 的 `cliLau
 
 - npm release line（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅ —— T82 起本 profile 只支持宿主 0.2.0 及以后（`dsh` ≥ 0.2.0-rc.2，用户 2026-10-01 定，不做双线）；低于这条线 `install.sh` / `update.sh` 在动文件前退出码 2。评测家族 datasets / mission / lab / eval 与整合包 bundle-eval 的 `dsh.compat` 同为 `minHost` / `verifiedHost` 0.2.0-rc.2（T88 起）。0.1.x 宿主请停在旧发布线，迁移见[把 0.1.5 实例切到 0.2.0](#把-015-实例切到-020)。
 - source line（deepseek-harness master）：✅ —— 同上（verifiedHost: 0.2.0-rc.2，临时实例真机冒烟：T82 安装 25 名 / 205 行、默认预设 eval、1440 与 400 宽走查；T88 改依赖 `bundle-eval` 后 24 名 / 205 行）。
-- 降级项：带预设的 dsh 条件在 0.2.0 上预计组不出来（`local-agent-dsh` 仍插入 0.1.5 的 `@deepseek-ai/dsh-agent-presets`），见[受试 dsh 的版本跟着实例走](#受试-dsh-的版本跟着实例走)。
 
 ## 相关文档
 

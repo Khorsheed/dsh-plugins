@@ -15,10 +15,13 @@
  * The copy is how both are satisfied at once, and this module is what makes
  * it checkable:
  *
- * - **Where.** `<scoped home>/.agent-presets/<id>` — the roster's own derived
- *   user root, which is `<scope>/…` on the host and `/creds/dsh/…` inside the
- *   unit. One directory, because the unit binds the scope; one resolution
- *   rule instead of two.
+ * - **Where.** `<scoped home>/preset-packages/<id>` — the scope's copy of the
+ *   bundle package that declares the preset (host 0.2.0's declarative
+ *   `@deepseek-ai/dsh-agent-preset` row), which the sub-profile resolves
+ *   through a relative link: `<scope>/…` on the host and `/creds/dsh/…`
+ *   inside the unit. One directory, because the unit binds the scope; one
+ *   resolution rule instead of two. (0.1.x kept `<scoped home>/.agent-presets/<id>`,
+ *   the directory roster's user root; 0.2.0 has neither.)
  * - **Why a measurement taken elsewhere still describes it.** The canonical
  *   capability face carries no filesystem path — a skill enters as name,
  *   source channel and body digest, a tool as name, channel and parameter
@@ -45,11 +48,11 @@ import { readdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import yaml from 'js-yaml'
 
-/** The preset root a harness home derives (the agent-preset roster's rule). */
-export const USER_PRESET_DIR = '.agent-presets'
+/** Where a scoped home keeps its preset package copies (written by `@khorsheed/dsh-local-agent-dsh`). */
+export const SCOPE_PRESET_PACKAGES_DIR = 'preset-packages'
 
-/** The file that makes a directory a preset (the roster's rule). */
-export const PRESET_COMPOSITION_FILE = 'agent.cordis.yml'
+/** The declarative preset row a preset bundle package's patch carries. */
+export const PRESET_ROW_MODULE = '@deepseek-ai/dsh-agent-preset'
 
 /**
  * Where one scope keeps its own copy of a preset.
@@ -58,7 +61,7 @@ export const PRESET_COMPOSITION_FILE = 'agent.cordis.yml'
  * @returns the directory, whether or not it exists.
  */
 export function scopePresetDir(homeDir: string, preset: string): string {
-  return join(homeDir, USER_PRESET_DIR, preset)
+  return join(homeDir, SCOPE_PRESET_PACKAGES_DIR, preset)
 }
 
 /** The digest of one preset directory, and how many files it covered. */
@@ -130,25 +133,25 @@ const EXPRESSION_SCHEMA = yaml.DEFAULT_SCHEMA.extend(
 const QUOTED_ABSOLUTE_RE = /(['"])(\/[^'"\n]*)\1/g
 
 /**
- * Every absolute filesystem path a preset composition names.
+ * Every absolute filesystem path a preset bundle patch names.
  *
- * The form that travels is the loader's own expression, which the shipped
- * `cordis` preset uses for exactly this reason:
+ * The form that travels resolves the package's own directory through the
+ * loader's `baseUrl` (the declaring profile's root), the form the official
+ * web-app presets use:
  *
  * ```yaml
  * customSkillDirs:
- *   - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+ *   - !!js "process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('<pkg>/package.json')), 'skills')"
  * ```
  *
- * `baseUrl` is the composition's own directory, so the root resolves wherever
- * the preset is installed — the deployment's root, a scope's copy, or the
- * unit's mount point.
+ * so the root resolves wherever the package is installed — the instance's
+ * profile, a scope's copy, or the unit's mount point.
  *
  * Unparsable YAML reports NO findings. The loader decides whether a
  * composition loads; refusing a preset because this reader could not parse it
  * would be this module overruling it, and a preset that will not load is
  * already refused by `snapshotFor`.
- * @param text - the `agent.cordis.yml` content.
+ * @param text - the bundle patch content.
  * @returns the offending literals, in document order, deduplicated.
  */
 export function compositionAbsolutePaths(text: string): string[] {
@@ -199,18 +202,30 @@ export function compositionAbsolutePaths(text: string): string[] {
  * @returns the refusal reason, or undefined when the copy is usable.
  */
 export async function scopePresetProblem(dir: string): Promise<string | undefined> {
-  let composition: string
+  let manifest: unknown
   try {
-    composition = await readFile(join(dir, PRESET_COMPOSITION_FILE), 'utf8')
+    manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
   } catch {
-    return `${dir} holds no ${PRESET_COMPOSITION_FILE}, so it is not a preset the sub-dsh can compose`
+    return `${dir} holds no readable package.json, so it is not a preset package the sub-dsh can bundle`
   }
-  const offenders = compositionAbsolutePaths(composition)
-  if (offenders.length > 0) {
-    return `the preset composition names absolute path(s) ${offenders.map(path => JSON.stringify(path)).join(', ')}`
-      + ' — this copy is read from a different directory on the host and inside a unit, so an absolute path is wrong in at least one of them.'
-      + ' Use the loader expression the shipped `cordis` preset uses:'
-      + ' !!js "process.getBuiltinModule(\'node:url\').fileURLToPath(new URL(\'skills/\', baseUrl))"'
+  const patch = (manifest as { dsh?: { bundle?: { patch?: unknown } } } | null)?.dsh?.bundle?.patch
+  const files = typeof patch === 'string' ? [patch] : Array.isArray(patch) ? patch.filter((item): item is string => typeof item === 'string') : []
+  if (files.length === 0) return `${dir}/package.json declares no dsh.bundle.patch, so the sub-dsh would mount no preset from it`
+  let declaresPreset = false
+  for (const file of files) {
+    let text: string
+    try {
+      text = await readFile(join(dir, file), 'utf8')
+    } catch {
+      return `${dir} declares bundle patch ${file}, which is missing`
+    }
+    const offenders = compositionAbsolutePaths(text)
+    if (offenders.length > 0) {
+      return `the preset package's ${file} names absolute path(s) ${offenders.map(path => JSON.stringify(path)).join(', ')}`
+        + ' — this copy is read from a different directory on the host and inside a unit, so an absolute path is wrong in at least one of them.'
+        + ' Resolve the package\'s own directory through baseUrl instead (createRequire(baseUrl).resolve(\'<pkg>/package.json\'))'
+    }
+    if (text.includes(PRESET_ROW_MODULE)) declaresPreset = true
   }
-  return undefined
+  return declaresPreset ? undefined : `${dir} declares no ${PRESET_ROW_MODULE} row, so it is not a preset package`
 }

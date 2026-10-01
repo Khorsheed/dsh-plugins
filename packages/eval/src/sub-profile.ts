@@ -9,9 +9,9 @@
  * It reads a FILE rather than calling a service, and that needs saying. The
  * sub-profile is written by `@khorsheed/dsh-local-agent-dsh`, which eval may
  * not import (community plugins never depend on siblings), and no service
- * face reports the roster. What is stable enough to read directly is the pair
- * of published contracts the file is made of: the loader's patch format (a
- * YAML list of operations, `insert` carrying plugin rows) and the roster
+ * face reports it. What is stable enough to read directly is the pair of
+ * published contracts the file is made of: the loader's patch format (a YAML
+ * list of operations, `insert` carrying plugin rows) and the preset registry
  * package's own name. Neither the generated comment banner nor the profile's
  * directory name is trusted — every profile under the scoped home is scanned,
  * so a deployment that renamed its sub-profile still reads correctly.
@@ -27,8 +27,12 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import yaml from 'js-yaml'
 
-/** The roster package a sub-profile's preset layer mounts. */
-export const PRESET_ROSTER_MODULE = '@deepseek-ai/dsh-agent-presets'
+/**
+ * The registry package a sub-profile's preset layer mounts (host 0.2.0; its
+ * `default` names the preset). The 0.1.x roster package
+ * `@deepseek-ai/dsh-agent-presets` is not read: 0.2.0 ships no such module.
+ */
+export const PRESET_REGISTRY_MODULE = '@deepseek-ai/dsh-agent-preset-registry'
 
 /** Profiles live under `<scoped home>/profiles/<name>/`. */
 const PROFILES_DIR = 'profiles'
@@ -74,7 +78,7 @@ export function presetFromPatch(text: string): string | undefined {
   for (const operation of document) {
     if (!isPlainObject(operation) || !Array.isArray(operation['insert'])) continue
     for (const row of operation['insert']) {
-      if (!isPlainObject(row) || row['name'] !== PRESET_ROSTER_MODULE) continue
+      if (!isPlainObject(row) || row['name'] !== PRESET_REGISTRY_MODULE) continue
       const config = row['config']
       if (!isPlainObject(config)) continue
       const preset = config['default']

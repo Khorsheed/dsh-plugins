@@ -267,6 +267,9 @@ fi
 # precondition (the dataset repo's env/README documents how to stage it):
 # the same path has to resolve on the host and inside an evaluation unit, or
 # the dsh harness's rounds fail with a loader error nothing else explains.
+# Since T91 this profile pins `unitHeadlessBundleDir` instead: the in-unit path
+# only, which needs nothing on the host (host rounds link to the instance's own
+# headless), so the check below guards only a patch pinning the shared form.
 HEADLESS_PIN=$(sed -n 's/^[[:space:]]*headlessBundleDir:[[:space:]]*//p' "$SRC/cordis.patch.yml" | head -1)
 if [ -n "$HEADLESS_PIN" ] && [ ! -e "$HEADLESS_PIN" ]; then
   preflight_fail "  missing: $HEADLESS_PIN
@@ -458,7 +461,7 @@ DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 #   24  distinct names in the dump: the 19 @khorsheed bundles (bundle-eval and
 #       the preset bundle among them), the four evaluation members whose rows
 #       bundle-eval's patch carries verbatim, and local-agent-dsh-headless (no
-#       row at all — it is the headlessBundleDir path). The eval preset row
+#       row at all — it is the sub-dsh's headless bundle). The eval preset row
 #       names `@khorsheed/dsh-datasets/tool` and `@khorsheed/dsh-eval/tool`;
 #       this grep stops at the slash, so they merge into their cores' names.
 #       (The delegation tools left the dump at the 2026-09-30 family fold:

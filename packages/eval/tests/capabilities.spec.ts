@@ -203,9 +203,9 @@ describe('conditions provision — the capability face it records', () => {
     // afterwards read `ready` here while the run refused it. The face still
     // needs a live catalog; the scope's own COPY needs only the directory.
     const { repo, homesRoot, conditionPath, datasetRoot } = tree(conditionDoc({ preset: 'eval-lean', home: { sha: null } }))
-    const presetDir = join(homesRoot, 'dsh', '.agent-presets', 'eval-lean')
+    const presetDir = join(homesRoot, 'dsh', 'preset-packages', 'eval-lean')
     mkdirSync(join(presetDir, 'skills'), { recursive: true })
-    writeFileSync(join(presetDir, 'agent.cordis.yml'), '- id: skill-filesystem\n')
+    writeFileSync(join(presetDir, 'cordis.patch.yml'), '- id: skill-filesystem\n')
     writeFileSync(join(presetDir, 'skills', 'SKILL.md'), 'Draft the plan. One stage.\n')
     const snapshot = await hashPresetTree(presetDir)
     const report = await provisionCondition(conditionPath, {

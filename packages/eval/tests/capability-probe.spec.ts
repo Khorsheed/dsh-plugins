@@ -47,10 +47,10 @@ function generatedPatch(preset: string): string {
         env:
           DSH_MEMBER_SOCKET: !!js process.env.DSH_MEMBER_SOCKET ?? ''
 
-# --- preset roster (written by local-agent-dsh provisioning) ---
+# --- agent preset (written by local-agent-dsh provisioning) ---
 - insert:
-    - id: agent-presets
-      name: '@deepseek-ai/dsh-agent-presets'
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
       config:
         default: ${JSON.stringify(preset)}
 `
@@ -63,21 +63,28 @@ function scopeHome(preset?: string, options: { profileName?: string; ownPresetDi
   mkdirSync(profile, { recursive: true })
   writeFileSync(join(profile, 'cordis.patch.yml'), preset === undefined ? '- id: tools\n' : generatedPatch(preset))
   if (options.ownPresetDir !== undefined) {
-    const dir = join(home, '.agent-presets', options.ownPresetDir)
+    const dir = join(home, 'preset-packages', options.ownPresetDir)
     mkdirSync(join(dir, 'skills', 'eval-planning'), { recursive: true })
-    writeFileSync(join(dir, 'agent.cordis.yml'), options.composition ?? RELOCATABLE_COMPOSITION)
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@dataseek-eval/preset-eval-lean', version: '0.0.0', private: true, dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+    writeFileSync(join(dir, 'cordis.patch.yml'), options.composition ?? RELOCATABLE_COMPOSITION)
     writeFileSync(join(dir, 'skills', 'eval-planning', 'SKILL.md'), 'Draft the plan. One stage, then stop and report.\n')
   }
   return home
 }
 
 /** The composition shape a preset must have to be a factor: no absolute path. */
-const RELOCATABLE_COMPOSITION = `- id: skill-filesystem
-  name: '@deepseek-ai/dsh-skill-filesystem'
-  config:
-    includeDefaultRoots: false
-    customSkillDirs:
-      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+const RELOCATABLE_COMPOSITION = `- insert:
+    - id: preset-eval-lean
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: eval-lean
+        plugins:
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              includeDefaultRoots: false
+              customSkillDirs:
+                - !!js "process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@dataseek-eval/preset-eval-lean/package.json')), 'skills')"
 `
 
 /** The shape pilot D shipped first: a skills root pinned to one machine's path. */
@@ -119,13 +126,15 @@ describe('presetFromPatch — the roster read-back', () => {
     expect(presetFromPatch('')).toBeUndefined()
     expect(presetFromPatch('not: [a, list')).toBeUndefined()
     // A roster row with no default names no preset.
-    expect(presetFromPatch("- insert:\n    - id: agent-presets\n      name: '@deepseek-ai/dsh-agent-presets'\n")).toBeUndefined()
+    expect(presetFromPatch("- insert:\n    - id: agent-preset-registry\n      name: '@deepseek-ai/dsh-agent-preset-registry'\n")).toBeUndefined()
+    // The 0.1.x roster module is not read: 0.2.0 ships no such package.
+    expect(presetFromPatch("- insert:\n    - id: agent-presets\n      name: '@deepseek-ai/dsh-agent-presets'\n      config:\n        default: eval-lean\n")).toBeUndefined()
   })
 
-  it('keys on the roster PACKAGE, not on the generated comment or the row id', () => {
+  it('keys on the registry PACKAGE, not on the generated comment or the row id', () => {
     const renamed = generatedPatch('eval-lean')
-      .replace('# --- preset roster (written by local-agent-dsh provisioning) ---', '# hand-written')
-      .replace('- id: agent-presets', '- id: presets-of-mine')
+      .replace('# --- agent preset (written by local-agent-dsh provisioning) ---', '# hand-written')
+      .replace('- id: agent-preset-registry', '- id: presets-of-mine')
     expect(presetFromPatch(renamed)).toBe('eval-lean')
   })
 })
@@ -339,9 +348,9 @@ describe('checkReadiness — the re-measure runs before any delegation', () => {
 
   it('fails a condition whose scope copy changed, without starting a delegation and without a catalog', async () => {
     const homesRoot = mkdtempSync(join(tmpdir(), 'eval-homes-'))
-    const dir = join(homesRoot, 'dsh', '.agent-presets', 'eval-lean')
+    const dir = join(homesRoot, 'dsh', 'preset-packages', 'eval-lean')
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'agent.cordis.yml'), RELOCATABLE_COMPOSITION)
+    writeFileSync(join(dir, 'cordis.patch.yml'), RELOCATABLE_COMPOSITION)
     const records = await checkReadiness({
       localAgent: { ...localAgent, homeDir: (harness: string) => join(homesRoot, harness) } as never,
       conditions: [{ ...subject, capabilities: { sha: LEAN_SHA, preset: 'eval-lean', snapshot: { sha: SNAPSHOT_SHA } } }],
@@ -494,9 +503,10 @@ describe('EvalService.provision — the instance supplies the probe', () => {
     const composer = {
       composed: [] as Array<{ harness: string; scope?: string; preset?: string }>,
       answer: (dir: string, preset?: string) => {
-        const target = join(dir, '.agent-presets', preset ?? '')
+        const target = join(dir, 'preset-packages', preset ?? '')
         mkdirSync(join(target, 'skills'), { recursive: true })
-        writeFileSync(join(target, 'agent.cordis.yml'), RELOCATABLE_COMPOSITION)
+        writeFileSync(join(target, 'package.json'), JSON.stringify({ name: '@dataseek-eval/preset-eval-lean', version: '0.0.0', private: true, dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+        writeFileSync(join(target, 'cordis.patch.yml'), RELOCATABLE_COMPOSITION)
         writeFileSync(join(target, 'skills', 'SKILL.md'), 'Draft the plan.\n')
         return { preset, presetSnapshot: { matchesSource: true } }
       },
@@ -510,7 +520,7 @@ describe('EvalService.provision — the instance supplies the probe', () => {
     const capabilities = provisioned['capabilities'] as Record<string, unknown>
     expect(capabilities['source']).toBe('scope-snapshot')
     expect(capabilities['snapshot']).toEqual({
-      sha: (await hashPresetTree(join(homesRoot, 'dsh', '.agent-presets', 'eval-lean')))?.sha,
+      sha: (await hashPresetTree(join(homesRoot, 'dsh', 'preset-packages', 'eval-lean')))?.sha,
     })
     // The copy is inside the scoped home, so the home hash covers its config
     // files — and the write-back corrected the declaration to match.
