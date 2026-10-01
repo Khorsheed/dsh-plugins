@@ -410,7 +410,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T79 | ✅ 清单已合（`bc34de1d`，2026-09-26：P0 1 / P1 12 / P2 16，见 `profiles/web-eval/docs/t79-closeout-walkthrough.md`） | I5 收口前的联合走查：交互稿作者 + 协调者在 0.1.5-rc.1 临时实例上装合完 T75 / T76 的 main，对照交互稿 v5 的 13 个场景逐个看，与 T72 补充（一）、T74–T76 补充清单合成一份收口补充清单。**用户 2026-09-25 定顺序**：先联合走查、补完，再重装 3171 请用户走查。文案见 §三「T79」 | T75 T76 T78 | 一份收口补充清单（场景 × 差距 × 修法 × 归谁），即 T80 的文案底稿 |
 | T80 | ✅ 四条已合（2026-09-26：T80a `0f59af27`；T80b `b028f906`；T80d `23cd336a`；T80c `edb7e313`） | 收口补充一轮：按 T79 清单改，P0 + 全部 P1 + 协调者提升的 12 条 P2。文案见 §三「T80」 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
 | T81 | ✅ 收口（2026-09-26）：阶段一 main 在 0.1.5-rc.1 上 a–e 全过；阶段二被 main 的 `d49f29af` 取代，不合 | 评测线在 0.1.5 上恢复。typert 双形态 codec（`00cfa1d6`）、preset 双名探测（`380a469c`）、图标自带（`d49f29af`：`scripts/sync-icon-artwork.mts` 给每个包生成 `src/client/icons.tsx`，0.1.5 与 0.1.7 都不再按名字取宿主图标）都由各包负责人在 main 上做了。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；datasets 图标面由 T76 补拍一并看 |
-| T82 | 代码（待排，T81 之后） | web-eval 在 0.1.7-rc.1 上：preset 迁 bundle、install.sh 0.1.7 分支、0.1.7 临时实例冒烟、受试对象版本与宿主版本是否解耦（原 T81 文案，改号） | T81 | 0.1.7 临时实例上 a–e 全过，0.1.5 照旧 |
+| T82 | 代码（2026-10-01 改向并派发） | **web-eval 只支持宿主 0.2.0 及以后**（用户 10-01 定，取代原「0.1.7 + 0.1.5 双宿主」）：preset 只走 bundle、install.sh 只认 ≥ 0.2.0、0.2.0 工具链、临时实例冒烟、受试 dsh 版本是否跟实例走、3171 数据试迁、compat 提到 0.2.0。文案见 §三「T82（改）」 | T87 | 0.2.0 临时实例 a–e 与 T86/T87 欠账全过；3171 副本迁过去核对一致 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -4250,6 +4250,68 @@ T79/T80 对齐的是信息层次，视觉组件层没有对齐，用户看了说
 - agent 逐项引导、最后起草这一段没验到。等用户在有凭据的实例上发一次，协调者再只读核对会话记录。
 
 合入提交 `47b26d17`。
+
+#### T82（改）· web-eval 迁到宿主 0.2.0，只支持 0.2.0 及以后（2026-10-01 派发）
+
+**用户 10-01 的决定**：
+- web-eval 推出时只支持宿主 0.2.0 及以后，不再维护目录式 preset，也不做 0.1.5 和 0.1.7 的双线。
+- 3171 上已有的实验和运行记录要迁到 0.2.0 新实例：先在临时实例上试迁一份副本并核对，用户走查通过后再正式切换 3171，旧 home 留作备份不删。
+- 受试 dsh 的版本如果查实跟着实例走，就新增声明 0.2.0 的 dsh 条件，旧条件和引用它们的实验原样保留。
+
+原「T82 · web-eval 在 0.1.7-rc.1 上」一节作废，只保留它的前置核查结论作背景：preset 的行形与 kind 对齐 packages/presets，profiles/web-eval 自带一个只含 preset-eval 一行的声明式 bundle。
+
+**现状**（协调者 10-01 核过）：main 在 0.2.0-rc.2 harness 上清缓存后，四包 build 绿，测试 eval 1202、datasets 252、eval-tool 6、datasets-tool 7 全过。缺口全在安装和运行侧。
+
+```text
+# 任务 T82：web-eval 迁到宿主 0.2.0（只支持 0.2.0 及以后）
+
+## 分支
+从本地 main 开 worktree ../dsh-plugins-wt-t82-host020，分支 feat/t82-host020。
+build/test 用 DSH_HARNESS=~/code/deepseek-harness-0.2.0（tag dsh-v0.2.0-rc.2）。跨宿主版本，先删 tsbuildinfo。
+
+## 步骤
+1. 先读：
+   - .agents/notes/implemented/process/2026-09-29-host-020-rc2-adaptation.zh.md
+   - profiles/basic 或 profiles/dev 在 0.2.0 上的安装写法（f4aead6b：pnpm 11 的发布时长门槛、@^floor 安装写法）
+   - packages/presets（preset-declarations 的行形）
+   - profiles/web-eval/scripts/install.sh 的 preset 与 skills 两段注释：整份替换的理由是「preset 是实验装置」。
+2. 工具链：建 ~/.dsh-toolchains/rc-0.2.0-rc.2（@deepseek-ai/dsh@0.2.0-rc.2，官方包不受 @khorsheed 风控限制）。已放行，已有就复用，不覆盖。
+3. preset：profiles/web-eval 改为自带一个只含 preset-eval 一行的声明式 bundle。id 仍是 eval，内容与现目录版逐字等价（它是实验装置，内容变了就是换装置）。目录版和对应的安装分支删掉。装完默认 preset 要落到 eval：能用官方接口设就设，设不了就在 install.sh 输出里打一行明确提示。
+4. install.sh：探测宿主版本，低于 0.2.0 就明确报错退出，并提示需要的工具链；preflight、备份、回滚照旧。typert 跟 DSH_HARNESS 走，脚本里不要写死 0.1.7 的冻结副本。
+5. compat：eval、eval-tool、datasets、datasets-tool 和 web-eval 的 dsh.compat 与双语 README 的 Compatibility 段，minHost / verifiedHost 改为 0.2.0-rc.2。原来为旧宿主留的降级说明，凡是已经不可能出现的就删，代码里的旧宿主分支本轮不强求清理；要清的列进 Note 的后续项。
+6. 临时实例冒烟：独立 DSH_HOME（realpath）、空闲端口（先 lsof 查）、PATH 用 rc-0.2.0-rc.2，install.sh --source <worktree> --fresh。
+   - 做 T78 的 a–e：两个 tab、题集登记、实验室四阶段、pilot-d bundle 报告页。
+   - 补 T86 欠账：侧栏截图、刷新后恢复。
+   - 补 T87 截图：弹窗、空态、「让 Agent 组织」后的对话框。
+   - 1440 和 400 两种宽度，截图放 ~/.dsh/scratch/t82-shots/。
+7. 受试 dsh 版本（先查后改）：在 0.2.0 实例上导入 pilot-d 所用题库版本，看 harness.version = 0.1.5-rc.1 的 dsh 条件 provision 核对判成什么，回答受试 CLI 版本从哪来（实例 PATH，还是条件能指定工具链）。
+   - 跟着实例走：在题库的独立 worktree（不要动共享检出 ~/.dsh/scratch/dataseek-eval，那里只读）开分支，复制出声明 0.2.0-rc.2 的同组新条件，命名用版本后缀区分，旧条件不动。提交在该分支，不合并，报协调者。
+   - 不跟着实例走：写清楚怎么指定，不新增条件。
+   - 结论写进 Note 和 web-eval README。
+8. 3171 数据试迁（只读源）：
+   - 把 3171 的 home（~/.dsh-lab）里 eval、datasets、mission 的 state 复制进上面的临时 home，不要动源。
+   - 在 0.2.0 实例上核对：实验列表条数、每个实验的设计页与结果页、pilot-d 报告页、题集登记，都与 3171 一致；有差异就记原文。
+   - 写出正式切换 3171 的步骤：备份旧 home → 用 0.2.0 工具链重装 → 迁数据 → 核对；停实例那一步由用户手跑。只写，不执行。
+9. 让 Agent 组织那一轮：实例需要模型凭据，你不配、不拷。装好后报协调者，由用户在实例设置里配，然后你在同一会话里走完一轮（只验机制，控制花费）。
+
+## 不做
+- 不动 3171 实例和 ~/.dsh-lab（只读复制）、题库共享检出、镜像。
+- 不碰 3080 / 3093 / ~/.dsh-official / ~/.dsh。
+- 不从 npm 装 @khorsheed 包。
+- 不迁 profiles/web、dev、basic。
+- 不自己合 main。
+
+## 完成判据
+- 0.2.0 临时实例上 a–e、T86/T87 补拍全过。
+- 低于 0.2.0 的宿主上 install.sh 报错退出（用 rc-0.1.5-rc.1 工具链跑一次证明）。
+- 第 7 条有结论（需要时有题库分支）。
+- 第 8 条核对一致，或差异有原文，并写出切换步骤。
+- 四包 build/test 绿，hygiene 和 check:plugins 都是 0 条。
+- Agent Note 的 Alternatives considered 至少比较「只支持 0.2.0」与「双线」，写明用户的决定。
+
+## 回报
+分支与 commit；题库分支（如有）；a–e 和补拍逐项结果与截图路径；第 7、8 条的结论；compat 写法；Note 路径；实例端口和 home，等配凭据。
+```
 
 ## 四、验收规程
 
