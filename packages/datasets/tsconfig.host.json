@@ -22,6 +22,7 @@
     "src/service.ts",
     "src/slash.ts",
     "src/slots.ts",
+    "src/tool-definition.ts",
     "src/tool.ts",
     "src/types.ts",
     "src/materialize.ts",

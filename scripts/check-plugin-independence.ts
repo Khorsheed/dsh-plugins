@@ -127,7 +127,7 @@ export const FAMILY_REGISTRATION_RE = /ctx\.tools\.register|ctx\.commands\.regis
  *
  * Packages deliberately NOT self-mounting: family-internal row packages whose
  * composition is mounted on their behalf — agent presets name the companion
- * tool rows (mission-tool, datasets-tool, eval-tool, typesafe-tool), and the
+ * tool row (typesafe-tool), and the
  * local-agent-dsh provisioner copies the headless patch into the provisioned
  * sub-profile's own patch layer (a `dsh.bundle` declaration there would hand
  * the host's `dsh plugin` reconcile a mount trigger for a sub-dsh-only
@@ -143,14 +143,9 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
   // worktrees-tool and room-tool used to be this shape for their cores;
   // worktrees 0.3.0 and room 0.2.0 folded each back into the core package as
   // the `./tool` composition entry — the canvas ./agent precedent.
-  // mission-tool / datasets-tool / eval-tool are the same shape for the
-  // mission / datasets / eval cores (M4'③): each only makes its tool module
-  // resolvable, and an agent preset names its row — a dsh.bundle declaration
-  // would auto-mount the tools (and their guidance sections) at the profile
-  // root, exactly what the split removes.
-  'mission-tool',
-  'datasets-tool',
-  'eval-tool',
+  // mission-tool / datasets-tool / eval-tool were the same shape for the
+  // mission / datasets / eval cores (M4'③) until the evaluation-family fold
+  // (T88, 2026-10-01) moved each into its core's `./tool` entry the same way.
   // typesafe-tool is the same shape for the typesafe core: the core publishes
   // the `ctx.typesafe` service at the profile root and stays surface-free; this
   // row only makes the tool module resolvable, and an agent preset names the
@@ -195,12 +190,8 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // to carry a reverse DATA mention of its companion (the preset-visibility
   // probe's row constant); the constant now names the package's own subpath,
   // so no dsh.references entry is needed.
-  // The mission / datasets / eval core/companion pairs (M4'③, same pattern,
-  // zero deviations): each companion consumes its core's `./tool` definition
-  // factory and probes the core's global service.
-  'mission-tool': ['@khorsheed/dsh-mission'],
-  'datasets-tool': ['@khorsheed/dsh-datasets'],
-  'eval-tool': ['@khorsheed/dsh-eval'],
+  // The mission / datasets / eval core/companion pairs (M4'③) folded the same
+  // way at the evaluation-family fold (T88, 2026-10-01): no edge remains.
   // canvas → inline-html-render: the card detail renders HTML cards through
   // inline-html-render's SOURCE-plane helpers (buildCardSrcDoc/attachBridge),
   // bundled by tsdown — a compile-time edge with zero runtime coupling (the
@@ -238,14 +229,15 @@ export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   // before the profile's later bundle rows provide the core), so the row
   // pends on the core instead (2026-09-27 3080 incident). The worktrees and
   // room tool rows folded back into their core packages (worktrees 0.3.0,
-  // room 0.2.0) as the `./tool` entry, so the core package itself is the
-  // allowed injector there.
+  // room 0.2.0) as the `./tool` entry, and the datasets / eval / mission tool
+  // rows at the evaluation-family fold (T88), so the core package itself is
+  // the allowed injector there.
   typesafe: /^typesafe-tool$/,
   worktrees: /^worktrees$/,
   room: /^room$/,
-  datasets: /^datasets-tool$/,
-  dshEval: /^eval-tool$/,
-  mission: /^mission-tool$/,
+  datasets: /^datasets$/,
+  dshEval: /^eval$/,
+  mission: /^mission$/,
 }
 
 const MONOREPO_URL = 'git+https://github.com/Khorsheed/dsh-plugins.git'

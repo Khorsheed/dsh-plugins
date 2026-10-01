@@ -37,7 +37,7 @@ describe('the plugin surface', () => {
     entry.apply(ctx as never)
     const service = ctx.provided.get('dshEval')
     expect(service).toBeInstanceOf(EvalService)
-    // `/eval` is registered by the companion `@khorsheed/dsh-eval-tool` row
+    // `/eval` is registered by the `./tool` composition row `@khorsheed/dsh-eval/tool` row
     // under its preset's scope — the core row touches no registry at all.
     expect(registered).toEqual([])
     // The slash face was the ONLY reason a host service was STATICALLY

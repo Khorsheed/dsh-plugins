@@ -1,10 +1,11 @@
-/** The companion row: which tools each granted group registers, the origin tag
+/** The `./tool` composition row (folded from the retired
+ * `@khorsheed/dsh-datasets-tool` companion at T88): which tools each granted group registers, the origin tag
  * (this package, not the core), the `datasets:tools` guidance section, the
  * `/datasets` slash registration (preset-visibility rollout A3 — registered at
  * every tier, delegated to the core's handler), and the silent degrade when
  * the core service is absent. */
 import { describe, expect, it } from 'vitest'
-import { apply, type DatasetsToolConfig } from '../src/index.ts'
+import { apply, type DatasetsToolConfig } from '../src/tool.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 
@@ -62,13 +63,13 @@ function mount(service: unknown, config?: DatasetsToolConfig): {
   return { tools, sections, commands, infos }
 }
 
-describe('datasets-tool companion row', () => {
+describe('datasets-tool row (@khorsheed/dsh-datasets/tool)', () => {
   it('grants all eight tools, tags them by this package, and names both write verbs', () => {
     const { tools, sections } = mount({})
     expect(tools.map(tool => tool.name).sort())
       .toEqual([...READ, 'datasets_put_item', 'datasets_worktree_path'].sort())
     for (const tool of tools) {
-      expect(tool[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-datasets-tool' })
+      expect(tool[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-datasets' })
     }
     expect(sections.map(section => section.name)).toEqual(['datasets:tools'])
     expect(sections[0]?.order).toBe(150)

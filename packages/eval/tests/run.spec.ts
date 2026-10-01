@@ -776,7 +776,9 @@ describe('runPlan — one cell, happy path (P0 × dsh × rep1, stages one-two)',
     expect(report.meta['datasetId']).toBe('harness-comparison')
     expect(report.meta['commit']).toBe(FAKE_COMMIT)
     expect(report.meta['planSha']).toBe(createHash('sha256').update(Buffer.from(canonicalJson(planDoc), 'utf8')).digest('hex'))
-    expect(report.meta['evalVersion']).toMatch(/^0\.1\.0-rc\.1/)
+    // The package's own version line (read, not pinned: the T88 fold moved it).
+    const ownVersion = (JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { version: string }).version
+    expect(String(report.meta['evalVersion']).startsWith(ownVersion)).toBe(true)
     // T8b: the full condition document rides the entry, so the report's
     // factor diff needs nothing beyond the bundle.
     const conditionDoc = JSON.parse(readFileSync(join(root, 'datasets', 'harness-comparison', 'conditions', 'dsh-exec.json'), 'utf8'))

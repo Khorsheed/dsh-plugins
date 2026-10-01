@@ -8,7 +8,7 @@
  * The tab is labelled 实验室 / Experiments while the plugin id stays `eval`
  * (ui-spec R5 — `lab` in this repository is the container-unit plugin, and
  * the two must not be confused). It self-hides unless the current session's
- * preset composition names the `@khorsheed/dsh-eval-tool` row — the tools it
+ * preset composition names the `@khorsheed/dsh-eval/tool` row — the tools it
  * views are granted there, and a viewer over a toolset the session never got
  * is an empty shell. Composing this plugin out of cordis.yml removes the tab.
  *

@@ -6,7 +6,7 @@
  * lives).
  *
  * The REGISTRATION no longer happens in this core: it moved to the companion
- * `@khorsheed/dsh-datasets-tool` row (preset-visibility rollout A3), which an
+ * `@khorsheed/dsh-datasets/tool` row (preset-visibility rollout A3), which an
  * agent preset mounts per session — registering from the preset's mount lands
  * the command in that preset's scope layer, so only granted sessions see it
  * (the official `/goal` `/plan` `/compact` shape). This module keeps the
@@ -19,7 +19,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { DatasetsError } from './dataset.ts'
 import { formatList, formatShow, formatWarnings } from './format.ts'
 import type { DatasetsService } from './service.ts'
-import { registryScope } from './tool.ts'
+import { registryScope } from './tool-definition.ts'
 
 const USAGE = 'usage: /datasets list [<id>/<set>] | show <id>/<set> [item]'
 
@@ -29,7 +29,7 @@ export const BIND_RETIRED = '/datasets bind is retired: dataset repositories are
   + 'address each set as <id>/<set>.'
 
 /** The companion row whose preset grant admits this command. */
-const TOOL_ROW_MODULE = '@khorsheed/dsh-datasets-tool'
+const TOOL_ROW_MODULE = '@khorsheed/dsh-datasets/tool'
 
 /** The agentPresets slice the grant backstop reads (duck-typed; probed, never injected). */
 interface AgentPresetsProbe {

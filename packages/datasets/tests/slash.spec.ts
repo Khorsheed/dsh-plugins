@@ -2,7 +2,7 @@
  * The `/datasets` slash face after the preset-visibility rollout (A3): the
  * handler itself (usage, the retired bind, registry-backed list) plus the
  * grant backstop — refuse only when the session's preset composition is
- * readable and names no `@khorsheed/dsh-datasets-tool` row; every unreadable
+ * readable and names no `@khorsheed/dsh-datasets/tool` row; every unreadable
  * path fails open.
  */
 import { mkdtempSync } from 'node:fs'
@@ -47,7 +47,7 @@ function roster(presetId: string | undefined, groups: unknown): unknown {
   }
 }
 
-const ROW = '@khorsheed/dsh-datasets-tool'
+const ROW = '@khorsheed/dsh-datasets/tool'
 
 describe('/datasets handler', () => {
   it('a bare invocation answers with the usage line', async () => {

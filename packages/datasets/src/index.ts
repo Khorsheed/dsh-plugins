@@ -7,7 +7,7 @@
  * Typert Remote data face behind the web session tab (wire namespace
  * `datasets`) — of which only the CLI and the Remote face mount HERE: the
  * slash command's registration moved to the companion
- * `@khorsheed/dsh-datasets-tool` (preset-visibility rollout A3), which an
+ * `@khorsheed/dsh-datasets/tool` (preset-visibility rollout A3), which an
  * agent preset mounts per session so only granted sessions see it; the
  * handler and definition stay in `./slash.ts` for the companion to register.
  * The model-tool face lives in the same companion.
@@ -45,7 +45,7 @@ export const name = 'datasets'
 
 /**
  * No required services: the `/datasets` slash face moved to the companion
- * `@khorsheed/dsh-datasets-tool` row (its registration is what needed the
+ * `@khorsheed/dsh-datasets/tool` row (its registration is what needed the
  * command registry), and everything still here — the service, the Remote
  * face — mounts unconditionally.
  */
@@ -54,7 +54,7 @@ export const inject = []
 /**
  * Mount the dataset service and the Remote data face. The `/datasets` slash
  * command and the model tools are deliberately NOT registered here: both
- * moved to the companion `@khorsheed/dsh-datasets-tool`, which an agent
+ * moved to the `./tool` composition row `@khorsheed/dsh-datasets/tool`, which an agent
  * preset composes per session — the companion also carries the tool-guidance
  * prompt section. There is no configured default repository: every face
  * resolves datasets through the deployment's registry.
@@ -74,4 +74,4 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
 }
 
 export { handleDatasetsCommand, registerDatasetsSlash } from './slash.ts'
-export { datasetToolDefinitions, toolsOfGroup, type DatasetsToolGroup } from './tool.ts'
+export { datasetToolDefinitions, toolsOfGroup, type DatasetsToolGroup } from './tool-definition.ts'

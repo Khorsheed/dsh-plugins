@@ -1,512 +1,158 @@
 /**
- * The model-tool face of the orchestrator — four reads and two writes.
+ * The session-granted eval tools AND the `/eval` slash face — this
+ * package's `./tool` composition entry for agent-preset compositions. The row
+ * provides NO service (the preset-mount isolate-realm rule forbids service
+ * rows); it registers the seven model tools into the host tools registry,
+ * contributes their guidance section, and registers the `/eval` slash
+ * command into the preset's scope layer (preset-visibility rollout A3 — the
+ * official `/goal` `/plan` `/compact` shape: only the sessions of a preset
+ * naming this row see the command), all delegating to the global
+ * `ctx.dshEval` service core the core row provides at the profile root —
+ * the official tool-row shape (the shipped `tool-bash` rows work the same
+ * way). Granting is therefore per-session: a preset names the row, its
+ * sessions get the tools and the slash command; every other preset's
+ * sessions get neither.
  *
- * The agent appears twice in an evaluation: while a plan is being drafted and
- * while a bundle is being analysed. The second needs nothing but reads. The
- * first writes exactly two kinds of file — a `dataseek.plan/1` and the
- * conditions it names — and it wrote them with the `write` tool until I5·T34,
- * one `JSON.stringify` at a time, then validated and hoped. `eval_plan_draft`
- * is that same pair of files through the service verb the 新建实验 form uses,
- * validated in the same call.
+ * This entry used to ship as the standalone companion package
+ * `@khorsheed/dsh-eval-tool`; the T88 evaluation-family fold (2026-10-01,
+ * the room 0.2.0 / local-agent precedent) moved it into the core package as
+ * this subpath row, and the old package name is retired. An agent preset's
+ * `agent.cordis.yml` references the row by name:
+ * `- id: eval-tool / name: '@khorsheed/dsh-eval/tool'` (the row id is
+ * unchanged). The package's own bundle patch mounts ONLY the core row — a
+ * profile-root tool row would grant every session, exactly what the split
+ * removed.
  *
- * It is a write, and starting a run is not: `/eval run` and the 实验设计
- * page's 批准并启动 are a human act, and every other write-class verb —
- * materialize, delegate, submit, transition, annotate, archive, export,
- * finalize — belongs to the orchestrator's service face or to the human's CLI.
- * Drafting is safe to hand a model for the reason the others are not: a draft
- * is a file and a 草稿 row, it starts nothing, and a person still has to read
- * it and press the button.
- *
- * `eval_analysis_write` is the second write (I5·T60, renamed from
- * `eval_repo_write` in T73), and the same shape of safe: one text file, into
- * one experiment's `analysis/` and nowhere else. It exists because the agent's
- * OTHER product — the analysis it writes after reading a bundle — belongs
- * with the experiment, and the session's workspace is not there. The `write`
- * tool reaching there asked a person to escalate the sandbox to
- * `danger-full-access`: the whole machine, once per markdown file (I5·T39 ·
- * G16). A narrow verb is the grant that matches the act.
- *
- * `eval_cells` is the fourth (T46). An evaluation session no longer composes
- * the mission tool row, so the four mission read tools it used to carry for
- * per-cell detail are gone from that preset; this tool answers the same
- * question through eval's own projection, and the model side of an
- * evaluation never names mission again. Since I5·T35a it also answers WITHOUT
- * a run id, listing the experiments themselves — the gap `mission_run_list`
- * used to fill, now through the same projection the 实验室 tab reads, so the
- * two surfaces cannot disagree about what exists.
- *
- * No tool takes a repository path any more (T73). Experiments and the
- * condition library belong to the deployment, and a dataset is named by its
- * registration (`<id>/<set>`) and pinned at a commit — there is no path for an
- * agent to pick, which is the end state of the I5·T39 · G1 lesson: an agent
- * told to ask a person searched the disk, found a shared checkout, and wrote
- * onto another branch of it.
- *
- * Every tool is a thin adapter over {@link EvalService} — the service is the
- * body, the adapters only translate (the mission precedent). This module is
- * the core's `./tool` export: it BUILDS the definitions and registers
- * nothing — creating them is the companion `@khorsheed/dsh-eval-tool`'s job.
- * @module @khorsheed/dsh-eval
+ * @module @khorsheed/dsh-eval/tool
  */
-import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
-import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import type { EvalService } from './service.ts'
-import type { DraftConditionEdit } from './draft.ts'
-import { expandHome } from './validate.ts'
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+// Type-only: pulls this package's `Context.dshEval` service augmentation.
+import type {} from './index.ts'
+import { registerEvalSlash } from './slash.ts'
+import { evalToolDefinitions } from './tool-definition.ts'
 
-/** The names this module registers, in registration order. */
-export const EVAL_TOOL_NAMES: readonly string[] =
-  [
-    'eval_conditions', 'eval_plan_validate', 'eval_plan_draft', 'eval_analysis_write', 'eval_run_status', 'eval_cells',
-    'eval_experiment_get',
-  ]
+const PACKAGE_NAME = '@khorsheed/dsh-eval'
 
 /**
- * JSON pass-through output. The rendering is the whole document, pretty —
- * what the render emits IS what the model reads, and every field these
- * tools return is one the caller asked for: a condition's sha and unresolved
- * list, a plan's diagnostics, a draft's paths and verdict, a run's meta
- * digest, a cell's stage and refs.
- * A one-line summary here
- * would be a second, lossier answer to the question the tool was called with
- * (the datasets read tools and `mission_get` render the same way).
+ * Tag the model-visible tools with their origin (AGENTS.md § Tool origin
+ * tagging; seam S12): the capability catalog reads this `Symbol.for`-keyed
+ * tag back through `ctx.tools.get()`, so the eval tools attribute to THIS
+ * package (the row the preset mounts), not to the service core. The tag is
+ * host-side only and never travels on the model wire.
  */
-function jsonOutput() {
-  return {
-    schema: { type: 'json' } as const,
-    render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
-  }
+const definePluginTool = <T extends object>(def: T): T =>
+  Object.assign(def, {
+    [Symbol.for('dsh.tool.origin')]: { channel: 'plugin', owner: PACKAGE_NAME },
+  })
+
+/** Plugin configuration. */
+export interface EvalToolConfig {
+  /**
+   * Whether this row grants the eval tools: `all` (the default) or `none`
+   * (no tools and no guidance section — a deployment where the model must
+   * not even read conditions and runs). The eval service and the CLI are the
+   * core's own and stay mounted either way; the `/eval` slash command is
+   * THIS row's human face and registers at every tier — the `tools` key
+   * gates only the model face.
+   *
+   * `all` became FOUR tools with T46: an evaluation preset no longer
+   * composes the mission tool row, and `eval_cells` is where the per-cell
+   * detail its four read tools used to answer now comes from. It became FIVE
+   * with I5·T34: `eval_plan_draft` is the row's first write — drafting a plan
+   * starts nothing, which is exactly what every write-class verb in this row
+   * has in common. It became SIX with I5·T60: a narrow write puts the
+   * agent's analysis draft where it belongs, which is what the `write` tool
+   * could only do by having a person open the whole machine (I5·T39 · G16).
+   * T73 renamed it `eval_analysis_write` and narrowed its door to one
+   * experiment's `analysis/` — the dataset repository is read-only input.
+   * It became SEVEN with I5·T76: `eval_experiment_get` reads one experiment
+   * the way the lab tab does, with an answer index the analysis cites by
+   * name — before it, citing an answer meant asking the person for a path.
+   */
+  tools?: 'all' | 'none'
 }
 
-/** The session identity a tool call carries, when it has one. */
-function sessionOf(exec: { agent?: { session: { id: string } } | undefined }): { id: string } | undefined {
-  const id = exec.agent?.session.id
-  return id === undefined ? undefined : { id }
-}
+export const Config: z = z.object({
+  tools: z.union([z.const('all'), z.const('none')]).default('all'),
+})
+
+/** Cordis plugin name used by loader diagnostics. */
+export const name = 'eval-tool'
 
 /**
- * One `new_conditions` entry, checked.
- *
- * The parameter subset carries `required` at the argument ROOT only, so a
- * nested record's keys are all optional to the schema however the description
- * reads. `id` and `from` are the two a mint cannot proceed without — `from`
- * especially, because a condition is always a copy — so they are checked here
- * and named in the refusal rather than surfacing later as an empty file name.
- * @param entry - the model's record.
- * @param index - its position, for a refusal that says which one.
+ * The `dshEval` core is a declared inject (the owning-family companion
+ * exception to the community-service probe rule): a preset's standing scope
+ * mounts at registry-activation time, BEFORE the profile's later bundle rows
+ * provide the core, so a one-shot ctx.get probe at apply saw ABSENT there and
+ * nothing re-ran the row (rc.1 boot order; 3080 production 2026-09-27). The
+ * declared inject pends the row until the core provides, then the body
+ * applies. The tools registry and the system-prompt assembly still join
+ * through deferred injection so their mount order cannot strand the
+ * registrations.
  */
-function mintArgument(entry: {
-  id?: string
-  from?: string
-  harness?: string
-  model?: string
-  endpoint?: string
-  scope?: string
-  preset?: string
-  permissions?: string
-  reasoning?: string
-}, index: number): DraftConditionEdit {
-  if (entry.id === undefined || entry.id === '') throw new Error(`new_conditions[${index}] has no id — the id is the condition's file name`)
-  if (entry.from === undefined || entry.from === '') {
-    throw new Error(
-      `new_conditions[${index}] (${entry.id}) has no "from" — a new condition is always a COPY of one that exists, `
-      + 'because a declaration written from scratch differs in however many fields its author forgot to think about. '
-      + 'Call eval_conditions to see what there is to copy.',
-    )
-  }
-  return {
-    id: entry.id,
-    from: entry.from,
-    ...(entry.harness === undefined ? {} : { harness: entry.harness }),
-    ...(entry.model === undefined ? {} : { model: entry.model }),
-    ...(entry.endpoint === undefined ? {} : { endpoint: entry.endpoint }),
-    ...(entry.scope === undefined ? {} : { scope: entry.scope }),
-    ...(entry.preset === undefined ? {} : { preset: entry.preset }),
-    ...(entry.permissions === undefined ? {} : { permissions: entry.permissions }),
-    ...(entry.reasoning === undefined ? {} : { reasoning: entry.reasoning }),
-  }
+export const inject = ['dshEval']
+
+/** The narrow prompt-section registry surface this plugin opportunistically uses. */
+interface PromptSections {
+  section(section: { name: string; order: number; text: string }): () => void
 }
+
+/** Cross-call guidance, registered beside the tools it describes. */
+const EVAL_PROMPT = `The eval_* tools are five reads and two writes. An experiment is a deployment-level object: an id, a plan pinned to a dataset as {registry, set, commit}, and an analysis/ directory — it does not live in any dataset repository, and the dataset repository is read-only input you never write. eval_conditions lists the deployment's condition library (the subjects under test), each with its hash and readiness — a lock that exists and still matches, and which contract fields are still null; pass diff to compare two field by field. eval_plan_validate checks an experiment (by id) against the dataset commit it pins, and reports errors (the plan cannot run) and warnings (not resolved yet). eval_plan_draft is the first of the two that write: it drafts an experiment against dataset "<registration id>/<set>" — a new experiment directory holding the plan, plus any new condition in the library — validates what it wrote, and reads it back, in one call. Put the person's question into its question field verbatim (and their expectation, and what would count as answered, when they said so) — the conclusion card answers that sentence. Use it instead of hand-writing those files; a new condition is always a COPY of one that exists with named fields changed, because two conditions differing in ONE field are a single-factor pair and a declaration written from scratch differs in however many fields its author forgot. The draft pins a dataset commit. When the tracked branch's latest commit and the commits other experiments with the same conditions pin hold different items/ or schemas/, the draft is refused as "version is ambiguous" with the candidates listed: ask the person which one with ask_user_question and draft again with that commit; if they skip the question, stop — never pick one yourself. eval_analysis_write is the second write: ONE text file into an experiment's analysis/<path>, and nowhere else. That is where the analysis you write after reading a bundle belongs — the person reads it on the experiment's 结果对比 page — and it is why you do not need the write tool for it and must not ask for a sandbox escalation. Anything outside analysis/ is refused with the path and the allowed prefix quoted back, and nothing is written. eval_run_status projects one run: the run.meta digest and a row per cell with its state, bucket, and what the orchestrator last did to it, plus the run's status word — the same one the 实验室 list shows: draft 草稿, pending-approval 待批准, running 运行中, stalled 停滞 (nothing is driving unfinished cells and the ledger has not moved for over 10 minutes; stalledMinutes says how long — tell the person to 重跑 it from the lab, do not try to restart it), judging 评估中 (the judge's and the human's part is left), done 已完成, void 评估不成立, refused 被拒, cancelled 已取消 — and the human's closure exit if one was taken. Use those words when you tell the person where a run stands; do not invent a finer one. eval_cells goes cell by cell instead — bucket, stage and time in it, attempt, the unit's resource and environment fingerprint, checkpoint names, annotation counts per namespace, and the delegation's child session — filterable by bucket / task / condition; called with NO run_id it lists the experiments themselves (every run plus every unstarted experiment, with its id, snapshot, matrix size, factors, status and progress), which is how you find an experiment or run id in the first place. eval_experiment_get reads ONE experiment the way the 实验室 tab shows it — its list row, the newest run's digest and bucket counts, the analysis files already written, and an answer index: one entry per task × condition × rep ("P0 × high × #1") with the names of the files that attempt handed in. Read it before you write an analysis, and cite answers by that handle and those names — never ask the person for a path. Those seven are the whole eval surface of this session: it grants no mission tools, so do not look for mission_run_list / mission_run_status / mission_list / mission_get — the experiment list and the cells are both eval_cells, and the run digest is eval_run_status. DRAFTING IS NOT STARTING. Starting a run is a HUMAN act: the person approves the experiment in the 实验室 tab (实验设计 › 批准并启动) or runs /eval run <experimentId> in this session, and that session becomes the parent of every delegation — there is no run tool and you must not look for one. Logging each harness in and provisioning its condition are theirs too, and so is the final verdict. Your part is drafting, reading and writing the analysis: draft experiments with eval_plan_draft, write the analysis with eval_analysis_write, report the experiment id and the validate result back, and stop there; the orchestrator does the executing, and the write verbs (materialize, submit, transition, annotate, archive, export) are its service face, not yours.`
+
 
 /**
- * Build the five tools. This module is the core's `./tool` export: it
- * BUILDS the definitions and registers nothing — creating them is the
- * companion `@khorsheed/dsh-eval-tool`'s job, and that row applies its own
- * origin tag (attribution follows the mounting package, not this core).
- * @param service - the eval service the adapters translate to.
- * @returns the five definitions, untagged and unregistered.
+ * Plugin body: register the seven tools and their guidance section. The
+ * declared `dshEval` inject pends the row until the core provides, so mount
+ * order can no longer strand it; the in-body guard stays as the defensive
+ * direct-call path.
+ * @param ctx - Cordis context (the preset's agent-plane mount).
+ * @param config - validated plugin config.
  */
-export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
-  const definitions: ToolDefinition[] = []
-  definitions.push(defineTool({
-    name: 'eval_conditions',
-    description:
-      'List the evaluation conditions (the subjects under test) in this deployment\'s condition library, with their '
-      + 'harness, declared model, condition hash, and READINESS: whether conditions/<id>.lock.json exists and '
-      + 'still matches the declaration, and which contract fields are still null. A condition is a data file — '
-      + 'draft a new one by copying an existing one and changing ONE field, then have the human provision and '
-      + 'lock it (/eval conditions provision — a human act, and the only writer of a lock). Each lock also '
-      + 'reports the `provisioned` snapshot: what the scoped home actually read back when it was provisioned. '
-      + 'With `diff` set to two conditions instead, answers which FIELDS the two declarations differ on and '
-      + 'what each side says — facts only, no recommendation about whether the pair is worth running. '
-      + 'The library is the deployment\'s ($DSH_HOME/state/eval/conditions), shared by every experiment.',
-    parameters: {
-      diff: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Exactly two conditions (a condition id, or a path to a declaration) to compare field by field '
-          + 'instead of listing. Two conditions differing in exactly one field are a single-factor pair — the '
-          + 'shape an experiment wants — but this only SHOWS the difference; it never recommends one.',
-      },
-    },
-    output: jsonOutput(),
-    isConcurrencySafe: () => true,
-    async execute(args) {
-      const diff = args.diff
-      if (diff === undefined) return (await service.conditions()) as unknown as JsonValue
-      if (diff.length !== 2) {
-        throw new Error(`diff wants exactly two conditions, got ${diff.length} — a diff is between two declarations`)
-      }
-      return (await service.conditionDiff({ a: diff[0] as string, b: diff[1] as string })) as unknown as JsonValue
-    },
-  }))
-
-  definitions.push(defineTool({
-    name: 'eval_plan_validate',
-    description:
-      'Validate a dataseek.plan/1 document: schema, cross-field semantics (the judge must not be a player, '
-      + 'expectedNs must match the judge, budgets must be positive), the referenced conditions (declaration, '
-      + 'lock, resolved sha), and the stage schemas. Data problems come back as `errors` (the plan cannot run) '
-      + 'and `warnings` (not resolved yet). Validating never starts anything — a human starts the run with '
-      + '/eval run <experimentId> once they approve the plan. eval_plan_draft already validates what it writes; '
-      + 'use this to re-check an experiment later (a condition may have been provisioned since). An experiment is '
-      + 'checked against the dataset commit it pins and the deployment\'s condition library.',
-    parameters: {
-      experiment: {
-        type: 'string',
-        description: 'The experiment id (eval_plan_draft returns it; eval_cells without run_id lists them).',
-      },
-      plan: {
-        type: 'string',
-        description: 'Legacy only: a path to an old plan JSON that is not an experiment yet. Pass experiment instead.',
-      },
-    },
-    output: jsonOutput(),
-    isConcurrencySafe: () => true,
-    async execute(args) {
-      if (args.experiment !== undefined && args.experiment !== '') {
-        return (await service.validateExperiment(args.experiment)) as unknown as JsonValue
-      }
-      if (args.plan !== undefined && args.plan !== '') {
-        return (await service.validatePlan(expandHome(args.plan))) as unknown as JsonValue
-      }
-      throw new Error('pass experiment (the experiment id) — or, for an old plan file, plan')
-    },
-  }))
-
-  definitions.push(defineTool({
-    name: 'eval_plan_draft',
-    description:
-      'DRAFT an experiment: create the experiment (its plan, pinned to a dataset commit) and mint any new conditions '
-      + 'into the deployment\'s condition library, then validate what was written and answer with the experiment id '
-      + 'and the verdict. One call instead of '
-      + 'hand-writing each file and validating afterwards — and the same verb the 新建实验 form uses, so a draft you '
-      + 'make and a draft a person makes are the same file and land in the same list. '
-      + 'DRAFTING IS NOT STARTING: nothing here runs a cell, and there is no run tool to look for. The person '
-      + 'approves the plan and starts it (实验室 › 实验设计 › 批准并启动, or /eval run <experimentId>); logging the '
-      + 'harnesses in and provisioning their conditions is theirs too. Report the paths and the validate result back '
-      + 'and stop there. '
-      + 'A plan validate REJECTS is still written — it lands as a 草稿 with its errors named, which is the honest '
-      + 'thing to hand a person. The dataset repository is never written: it is read-only input, pinned at a commit. '
-      + 'If the answer says the version is ambiguous, do what it says — ask the person which commit with '
-      + 'ask_user_question and draft again with that commit; if they skip the question, stop. Nothing is ever '
-      + 'overwritten: a condition id already taken is refused, so pick another. '
-      + 'A new condition is always a COPY: `new_conditions` names an existing condition with `from` and changes some '
-      + 'of seven fields (harness, model, endpoint, scope, preset, permissions, reasoning). That is the whole discipline of the '
-      + 'comparison — two conditions differing in ONE field are a single-factor pair, and a declaration written from '
-      + 'scratch differs in however many fields its author forgot to think about. A copy that changes nothing is '
-      + 'refused; home.sha is nulled on every copy (the scoped home is not provisioned yet) and the notes record '
-      + 'what was copied from what. On a plan that declares a unit_image, a copy whose source has no container segment '
-      + 'gets one filled in from its harness\'s default credential mount, recorded in the notes. '
-      + 'Call eval_conditions first to see what there is to copy. '
-      + '起草时把人的问题原样写进 question: the plan carries what the experiment is FOR, and the conclusion card '
-      + 'answers that sentence, so do not paraphrase it.',
-    parameters: {
-      name: {
-        type: 'string',
-        required: true,
-        description: 'The experiment name — shown in the lab list, and the stem of the experiment id.',
-      },
-      question: {
-        type: 'string',
-        description: 'The question this experiment answers — the person\'s own sentence, verbatim. The design page shows it first and the conclusion card answers it.',
-      },
-      expectation: {
-        type: 'string',
-        description: 'What the person expects the answer to be, in their words. Omit when they have no expectation.',
-      },
-      answered_when: {
-        type: 'string',
-        description: 'One sentence: what result would count as having answered the question.',
-      },
-      dataset: {
-        type: 'string',
-        required: true,
-        description: 'The dataset as <registration id>/<set>, e.g. dataseek-eval/core (the datasets read tools list registrations).',
-      },
-      commit: {
-        type: 'string',
-        description: 'The dataset commit to pin. Omit it: the draft pins the tracked branch\'s latest commit when that is '
-          + 'unambiguous. Pass it only after a person chose one from the candidates an ambiguous-version answer listed.',
-      },
-      items: {
-        type: 'array',
-        items: { type: 'string' },
-        required: true,
-        description: 'The dataset item ids the matrix runs over (the rows). An id the set does not declare is refused with the list of the ones it does.',
-      },
-      conditions: {
-        type: 'array',
-        items: { type: 'string' },
-        required: true,
-        description: 'Player condition ids, in plan order. A condition minted by new_conditions is appended automatically when it is not named here.',
-      },
-      new_conditions: {
-        type: 'array',
-        description: 'Conditions to MINT, each a copy of one that exists with named fields changed.',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            id: { type: 'string', description: 'The new condition id; it doubles as its library file name (conditions/<id>.json).' },
-            from: { type: 'string', description: 'The existing library condition to copy, by id.' },
-            harness: { type: 'string', description: 'New harness.name. Changing it nulls harness.version — that version was the other CLI\'s.' },
-            model: { type: 'string', description: 'New model.declared.' },
-            endpoint: {
-              type: 'string',
-              description: 'New model.endpoint — the upstream route. "default" means the harness\'s own endpoint with no '
-                + 'base URL in force, which is what a condition on this instance usually wants; any other value is compared '
-                + 'against the scope\'s endpoint hostname when the human provisions it. Leaving it null makes the pre-run '
-                + 'readiness gate refuse the condition, and two conditions of one experiment must declare the SAME value or '
-                + 'the comparison has a second factor.',
-            },
-            scope: { type: 'string', description: 'New scoped-home name. Two conditions differing only in scope are two subjects: they log in as two accounts.' },
-            preset: { type: 'string', description: 'New agent-preset roster (only the dsh harness can be given one).' },
-            permissions: { type: 'string', description: 'New permission word; each harness accepts its own subset.' },
-            reasoning: { type: 'string', description: 'New reasoning.effort.' },
-          },
-        },
-      },
-      judge_conditions: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Judge condition ids. Omitted (or empty) writes NO judge block, and a plan expecting llm-draft then warns that nobody produces it. A judge is a condition but never a contestant — it needs its own id.',
-      },
-      judge_samples: { type: 'integer', description: 'How many judge samples each cell draws; ignored without judge_conditions. Default 1.' },
-      reps: { type: 'integer', required: true, description: 'Independent samples per cell; each rep is its own mission.' },
-      stages: {
-        type: 'array',
-        items: { type: 'string' },
-        required: true,
-        description: 'Stage names, each backed by schemas/<stage>.json in the set. A stage with no schema is a warning, not a refusal.',
-      },
-      seed: { type: 'integer', required: true, description: 'The execution-order seed, recorded with the run (frozen decision 11) so the order is reproducible.' },
-      interleave: { type: 'boolean', description: 'Spread same-condition cells apart rather than running them back to back. Default true.' },
-      active_minutes: { type: 'number', required: true, description: 'Per-cell budget in ACTIVE delegation minutes — not wall clock.' },
-      turns: { type: 'integer', required: true, description: 'Per-cell delegation turn budget.' },
-      expected_ns: {
-        type: 'array',
-        items: { type: 'string', enum: ['script', 'llm-draft', 'human-final'] },
-        description: 'Verdict sources this run expects; the report marks the missing ones honestly. Default: all three.',
-      },
-      retry_infrastructure: { type: 'integer', description: 'Per-cell infrastructure-retry budget (spawn failures, facade errors, timeouts); 0 disables. Omit to leave the default.' },
-      unit_image: { type: 'string', description: 'Run every cell inside a container unit built from this image. Omit for the host path.' },
-      unit_network: { type: 'string', description: 'The docker network the units join. Undeclared is docker\'s default bridge, which HAS egress — a sealed run must name its internal network.' },
-      unit_user: { type: 'string', description: 'In-container user (uid[:gid]); undeclared is the image\'s own USER.' },
-      egress_command: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'argv of a probe run inside each fresh unit before any delegation; a non-zero exit refuses the whole run. Declare one on any run whose units sit on an internal network — a unit that cannot reach its proxy answers NOTHING, which reads exactly like a subject with nothing to say.',
-      },
-      egress_timeout_ms: { type: 'number', description: 'Budget for that probe, in ms; default 30000.' },
-      exports: { type: 'string', description: 'Bundle export directory. Omit for the experiment\'s own exports/.' },
-      notes: { type: 'string', description: 'Review commentary written into the plan verbatim — say what the comparison is FOR and what it cannot settle.' },
-    },
-    output: jsonOutput(),
-    // Two drafts at once would race on minting the same library condition, and
-    // the second would be refused on an id the first had just taken — a
-    // confusing way to learn that the tool is fine and the concurrency is not.
-    isConcurrencySafe: () => false,
-    async execute(args, exec) {
-      const session = sessionOf(exec)
-      return (await service.draftExperiment({
-        name: args.name,
-        ...(args.question === undefined ? {} : { question: args.question }),
-        ...(args.expectation === undefined ? {} : { expectation: args.expectation }),
-        ...(args.answered_when === undefined ? {} : { answeredWhen: args.answered_when }),
-        dataset: args.dataset,
-        ...(args.commit === undefined ? {} : { commit: args.commit }),
-        items: [...args.items],
-        conditions: [...args.conditions],
-        ...(args.new_conditions === undefined ? {} : { newConditions: args.new_conditions.map(mintArgument) }),
-        ...(args.judge_conditions === undefined ? {} : { judgeConditions: [...args.judge_conditions] }),
-        ...(args.judge_samples === undefined ? {} : { judgeSamples: args.judge_samples }),
-        reps: args.reps,
-        stages: [...args.stages],
-        seed: args.seed,
-        ...(args.interleave === undefined ? {} : { interleave: args.interleave }),
-        activeMinutes: args.active_minutes,
-        turns: args.turns,
-        ...(args.expected_ns === undefined ? {} : { expectedNs: [...args.expected_ns] }),
-        ...(args.retry_infrastructure === undefined ? {} : { retryInfrastructure: args.retry_infrastructure }),
-        ...(args.unit_image === undefined
-          ? {}
-          : {
-            unit: {
-              image: args.unit_image,
-              ...(args.unit_network === undefined ? {} : { network: args.unit_network }),
-              ...(args.unit_user === undefined ? {} : { user: args.unit_user }),
-              ...(args.egress_command === undefined ? {} : { egressCommand: [...args.egress_command] }),
-              ...(args.egress_timeout_ms === undefined ? {} : { egressTimeoutMs: args.egress_timeout_ms }),
-            },
-          }),
-        ...(args.exports === undefined ? {} : { exports: args.exports }),
-        ...(args.notes === undefined ? {} : { notes: args.notes }),
-      }, session === undefined ? {} : { session })) as unknown as JsonValue
-    },
-  }))
-
-  definitions.push(defineTool({
-    name: 'eval_analysis_write',
-    description:
-      'WRITE one text file into an experiment\'s analysis/ directory — the analysis draft\'s door. Use it for the '
-      + 'analysis you write after reading a bundle (step 8). The path is RELATIVE to the experiment directory and '
-      + 'only analysis/<path> is writable; anything else — and the dataset repository always — is refused with the '
-      + 'path and the allowed prefix quoted back, and nothing is written. Nothing is overwritten unless you pass '
-      + 'overwrite, and an empty body is refused. The answer\'s `confirmation` is what to tell the person: the file '
-      + 'shows on the experiment\'s report page (结果对比), in the 分析初稿 block.',
-    parameters: {
-      experiment: {
-        type: 'string',
-        required: true,
-        description: 'The experiment id (eval_cells without run_id lists experiments; a run row names its experimentId).',
-      },
-      path: {
-        type: 'string',
-        required: true,
-        description: 'Experiment-relative path under analysis/, e.g. analysis/<name>.md. Absolute paths, "~" and ".." are refused.',
-      },
-      content: { type: 'string', required: true, description: 'The file\'s full text (UTF-8). An empty body is refused.' },
-      overwrite: { type: 'boolean', description: 'Replace the file when it already exists. Default false — an existing path is refused instead.' },
-    },
-    output: jsonOutput(),
-    // Two writes at once may create the same parent directory and land in
-    // either order; the door is per-file, so serializing is the cheap answer.
-    isConcurrencySafe: () => false,
-    async execute(args) {
-      return (await service.writeAnalysis({
-        experimentId: args.experiment,
-        path: args.path,
-        content: args.content,
-        ...(args.overwrite === undefined ? {} : { overwrite: args.overwrite }),
-      })) as unknown as JsonValue
-    },
-  }))
-
-  definitions.push(defineTool({
-    name: 'eval_run_status',
-    description:
-      'Where one evaluation run stands: the run.meta digest (plan sha, pinned commit, conditions, seeded '
-      + 'execution order, start time) and one row per cell — task, condition, rep, attempt, state, projection '
-      + 'bucket, what the orchestrator last did to it, and how often a submission was rejected. `status` is the '
-      + 'same word the lab list shows (draft / pending-approval / running / stalled / judging / done / void / '
-      + 'refused / cancelled — derived, never stored; `stalled` means nothing is driving unfinished cells and the '
-      + 'ledger has not moved for over 10 minutes, with `stalledMinutes` saying how long), `progress` as the list '
-      + 'counts it (cells judged or past it / all cells — `judging` is exactly done = total), plus the human\'s '
-      + '`closure` exit if one was taken and whether the run is `archived`. Read-only: '
-      + 'nothing here advances, retries, or annotates a cell.',
-    parameters: {
-      run_id: { type: 'string', required: true, description: 'The run id — the /eval run reply names it, and so does the run bundle\'s run.json.' },
-    },
-    output: jsonOutput(),
-    isConcurrencySafe: () => true,
-    execute(args) {
-      return Promise.resolve(service.runStatus(args.run_id) as unknown as JsonValue)
-    },
-  }))
-
-  definitions.push(defineTool({
-    name: 'eval_cells',
-    description:
-      'One run CELL BY CELL — the detail eval_run_status leaves out because it answers about the run. Each row: '
-      + 'the matrix coordinates (task, condition, rep) and every other label, the projection bucket, the stage the '
-      + 'cell is in and how long it has been there, the attempt number, the unit the attempt holds (resource and '
-      + 'environment fingerprint), the checkpoint names it reached, how many annotations each namespace carries, '
-      + 'and the child session the delegation ran in when it started one — open that session to READ the player\'s '
-      + 'transcript, never to steer it mid-run. Narrow with bucket / task / condition (exact matches). '
-      + 'WITHOUT run_id it answers the other question instead: WHICH experiments exist — every evaluation run this '
-      + 'instance holds plus every experiment nobody has started yet, each with its experiment id, dataset pin, condition count, '
-      + 'matrix size, the factors a condition diff derived, status and progress. That is the same listing the '
-      + '实验室 tab shows, so the two can never disagree; call it with no arguments to find a run id, then call it '
-      + 'again with one. This is the whole per-cell view: an evaluation session grants no mission tools, so there is '
-      + 'no mission_run_list, mission_list or mission_get to look for — the experiments are listed here, the run '
-      + 'digest is eval_run_status, and the cells are here too. Read-only: nothing here starts, reruns, releases, '
-      + 'annotates, or advances anything.',
-    parameters: {
-      run_id: {
-        type: 'string',
-        description: 'The run id — the /eval run reply names it, and so does the run bundle\'s run.json. '
-          + 'Omit it to list the experiments instead of one run\'s cells.',
-      },
-      bucket: {
-        type: 'string',
-        description: 'Keep only cells in this projection bucket: ready / scheduled / blocked / active / done. Ignored without run_id.',
-      },
-      task: { type: 'string', description: 'Keep only cells of this task (the dataset item id, e.g. P0). Ignored without run_id.' },
-      condition: { type: 'string', description: 'Keep only cells of this condition id. Ignored without run_id.' },
-    },
-    output: jsonOutput(),
-    isConcurrencySafe: () => true,
-    async execute(args, exec) {
-      if (args.run_id === undefined) {
-        // The listing mode reads the SAME projection the lab tab's `runs`
-        // Remote verb does — one implementation, so the tab and the model can
-        // never report different experiments.
-        const session = sessionOf(exec)
-        return (await service.experiments(session === undefined ? {} : { session })) as unknown as JsonValue
-      }
-      return service.cells(args.run_id, {
-        ...(args.bucket !== undefined ? { bucket: args.bucket } : {}),
-        ...(args.task !== undefined ? { task: args.task } : {}),
-        ...(args.condition !== undefined ? { condition: args.condition } : {}),
-      }) as unknown as JsonValue
-    },
-  }))
-
-  definitions.push(defineTool({
-    name: 'eval_experiment_get',
-    description:
-      'ONE experiment the way the 实验室 tab shows it, in one read: its list row (name, status word, dataset pin, '
-      + 'conditions, judges, matrix size, progress, validation), the newest run\'s digest (state, bucket counts, '
-      + 'unreleased units, readiness warnings), every run id it has, the analysis files already written into it, '
-      + 'and the ANSWER INDEX — one entry per task × condition × rep ("P0 × high × #1") with the stage, the '
-      + 'checkpoints it reached, and the NAMES of the files its attempt handed in. Cite answers in an analysis by '
-      + 'that handle and those names; the index carries no paths, and none are needed. Read-only: nothing here '
-      + 'starts, finalizes, provisions, retries, or scores anything — approving a plan and the human evaluation '
-      + 'stay on the 实验室 pages.',
-    parameters: {
-      experiment: {
-        type: 'string',
-        required: true,
-        description: 'The experiment id (eval_cells without run_id lists them), or one of its run ids.',
-      },
-    },
-    output: jsonOutput(),
-    isConcurrencySafe: () => true,
-    async execute(args, exec) {
-      const session = sessionOf(exec)
-      return (await service.experimentGet(args.experiment, session === undefined ? {} : { session })) as unknown as JsonValue
-    },
-  }))
-
-  return definitions
+export function apply(ctx: Context, config: EvalToolConfig = {}): void {
+  // NOT named `eval`: a ctx property of that name shadows the global `eval`
+  // inside the loader's `with (ctx) { return eval(expr) }` !!js evaluation.
+  const service = ctx.get('dshEval')
+  if (service === undefined) {
+    // Degrade, don't explode: the core plugin is not mounted in this profile,
+    // so there is nothing to delegate to. The service and CLI faces are the
+    // core's own concern and unaffected; only the model tools and the slash
+    // command stay absent.
+    ctx.logger.info(`${PACKAGE_NAME}: the global eval service is absent — the eval tools and /eval are not registered`)
+    return
+  }
+  // The `/eval` slash face moved here from the core (preset-visibility
+  // rollout A3): registering from this preset mount lands the command in the
+  // preset's scope layer, so exactly the granted sessions see it. The human
+  // face is NOT tiered — the `tools` key gates the model face only — so this
+  // registration stands ahead of the tier gate, through the same deferred
+  // door as the tools below (an apply-time probe would race the registry's
+  // own mount order and lose).
+  ctx.inject(['commands'], (commandCtx) => {
+    registerEvalSlash(commandCtx, service)
+  })
+  // `none` grants nothing at all: no tools and no section (guidance about an
+  // absent tool is a wrong instruction, not a harmless one).
+  if ((config.tools ?? 'all') === 'none') return
+  // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the
+  // tools registry's own mount order on the real composition tree and loses,
+  // silently never registering the tools. `ctx.inject` fires when the registry
+  // appears and never fires in a composition without one.
+  ctx.inject(['tools'], (toolsCtx) => {
+    for (const definition of evalToolDefinitions(service)) {
+      toolsCtx.effect(
+        () => toolsCtx.tools.register(definePluginTool(definition)),
+        `${PACKAGE_NAME}: ${definition.name} tool`,
+      )
+    }
+  })
+  // The guidance describes those tools, so it rides with them — and through
+  // the same deferred door, for the same reason.
+  ctx.inject(['systemPrompt'], (promptCtx) => {
+    const sections = promptCtx.get('systemPrompt') as PromptSections | undefined
+    sections?.section({ name: 'tool:eval', order: 114, text: EVAL_PROMPT })
+  })
 }
+
+export { evalToolDefinitions, EVAL_TOOL_NAMES } from './tool-definition.ts'

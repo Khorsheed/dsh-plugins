@@ -6,7 +6,7 @@
  * the same kernel the CLI's dry-run prints.
  *
  * The REGISTRATION no longer happens in this core: it moved to the companion
- * `@khorsheed/dsh-eval-tool` row (preset-visibility rollout A3), which an
+ * `@khorsheed/dsh-eval/tool` row (preset-visibility rollout A3), which an
  * agent preset mounts per session — registering from the preset's mount lands
  * the command in that preset's scope layer, so only granted sessions see it
  * (the official `/goal` `/plan` `/compact` shape). This module keeps the
@@ -453,7 +453,7 @@ async function handleFinalize(service: EvalService, args: SlashArgs): Promise<Co
 }
 
 /** The companion row whose preset grant admits this command. */
-const TOOL_ROW_MODULE = '@khorsheed/dsh-eval-tool'
+const TOOL_ROW_MODULE = '@khorsheed/dsh-eval/tool'
 
 /** The agentPresets slice the grant backstop reads (duck-typed; probed, never injected). */
 interface AgentPresetsProbe {

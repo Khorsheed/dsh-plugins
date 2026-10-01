@@ -772,7 +772,7 @@ describe('composition metadata and the NO_OWN_PATCH cross-check', () => {
 
   it('flags a NO_OWN_PATCH entry that declares no metadata', () => {
     const { root, cleanup } = packagesRoot([
-      { dir: 'mission-tool', json: { name: '@khorsheed/dsh-mission-tool', private: true } },
+      { dir: 'typesafe-tool', json: { name: '@khorsheed/dsh-typesafe-tool', private: true } },
     ])
     try {
       const findings = scanTree(root).findings.filter((f) => f.kind === 'composition component')
@@ -784,7 +784,7 @@ describe('composition metadata and the NO_OWN_PATCH cross-check', () => {
 
   it('rejects a component value outside the declared vocabulary', () => {
     const { root, cleanup } = packagesRoot([
-      { dir: 'mission-tool', json: { name: '@khorsheed/dsh-mission-tool', private: true, dsh: { composition: { component: 'whatever' } } } },
+      { dir: 'typesafe-tool', json: { name: '@khorsheed/dsh-typesafe-tool', private: true, dsh: { composition: { component: 'whatever' } } } },
     ])
     try {
       const findings = scanTree(root).findings.filter((f) => f.kind === 'composition component')

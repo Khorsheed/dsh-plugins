@@ -93,10 +93,10 @@ describe('cordis.patch.yml', () => {
     expect(block).not.toContain('tool-workflow')
     expect(block).not.toContain('plan-mode')
     expect(block).toContain('          - id: datasets-tool\n')
-    expect(block).toContain("            name: '@khorsheed/dsh-datasets-tool'\n")
+    expect(block).toContain("            name: '@khorsheed/dsh-datasets/tool'\n")
     expect(block).toContain('            tools: authoring')
     expect(block).toContain('          - id: eval-tool\n')
-    expect(block).toContain("            name: '@khorsheed/dsh-eval-tool'\n")
+    expect(block).toContain("            name: '@khorsheed/dsh-eval/tool'\n")
     expect(block).toContain('            tools: all')
   })
 

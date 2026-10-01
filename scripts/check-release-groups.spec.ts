@@ -62,8 +62,10 @@ describe('release group declaration', () => {
     expect(RELEASE_GROUPS.find(g => g.name === 'local-agent')?.dirs).toHaveLength(6)
   })
 
-  it('covers the three core/companion pairs', () => {
-    expect(COMPANION_PAIRS).toHaveLength(3)
+  it('lists no core/companion pair after the evaluation-family fold', () => {
+    // Three (datasets / eval / mission) until T88 folded each companion into
+    // its core's ./tool composition entry.
+    expect(COMPANION_PAIRS).toHaveLength(0)
   })
 })
 

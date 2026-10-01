@@ -421,17 +421,17 @@
           # 账本与释放闸，但那是编排器服务面的事，模型侧读进度走 eval 自己的投影
           # （`eval_cells`，见下一行的 eval-tool）。摘掉这一行还有第二个效果，是同一条
           # 规则的另一半：宿主的任务 tab 按「当前会话的预设组合里有没有
-          # @khorsheed/dsh-mission-tool 行」自隐（mission 的 preset-visibility），所以
+          # @khorsheed/dsh-mission/tool 行」自隐（mission 的 preset-visibility），所以
           # 这一行一走，评测会话的任务 tab 自己就不见了，不必再关一次。
-          # 包本身仍随 pack 安装（package.json 的成员清单里），谁要在自己的覆盖层预设里
+          # 这一行如今是 mission 包自己的 `./tool` 组合入口（T88 起），随 mission 安装，谁要在自己的覆盖层预设里
           # 加回这一行都还装得上——钉的是默认值，不是可达集。
           - id: datasets-tool
-            name: '@khorsheed/dsh-datasets-tool'
+            name: '@khorsheed/dsh-datasets/tool'
             config:
               tools: authoring      # 读类全开 + put_item（出题）；worktree_path 留给服务面
 
           - id: eval-tool
-            name: '@khorsheed/dsh-eval-tool'
+            name: '@khorsheed/dsh-eval/tool'
             config:
               tools: all            # 本包只注册四个读工具，all 即四个读工具
 
