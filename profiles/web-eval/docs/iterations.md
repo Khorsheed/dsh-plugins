@@ -4230,6 +4230,27 @@ T79/T80 对齐的是信息层次，视觉组件层没有对齐，用户看了说
 - 四包 build/test 绿，hygiene 0 条，并附 Agent Note。
 - 通用提醒见本节开头：合并归协调者；只在自己的 worktree 开发；不从 npm 装包；DSH_HARNESS 指冻结副本。
 
+#### T87 合入（2026-10-01）
+
+**内容**：
+- 新建实验弹窗只留四项：名称必填，问题、题集、题目可选。题库版本一栏去掉。
+- 题目行显示「ID、标题、阶段数」；占位题默认收起，展开后置灰并标「占位」。
+- 主按钮「让 Agent 组织」会把整理好的请求写进对话框，不代发；写不了对话框时复制到剪贴板。
+- SKILL 新增「When the form hands it over」一节，preset 加了对应的例外句。
+- 题集空态、实验室整页空态、「本会话发起」筛选空态，三处统一成居中样式。
+- 实验列表 = eval 草稿 + mission 账本，两者都为空才显示整页空态。
+
+**验证**：
+- 协调者在 main 的 detached worktree 上试合并：冻结基线（0.1.7-rc.1）build 绿，测试 eval 1202、datasets 252、eval-tool 6、datasets-tool 7 全过，hygiene 0 条，check:plugins 0 条。
+- 截图在 scratch 的 t87-shots，1440 和 400 两种宽度、8 个场景，协调者已看图。
+- 构建注意：main 已跟到宿主 0.2.0-rc.2。在冻结基线上全量跑 gen-typert，会在 file-preview（`088506c7`，宿主 0.2.0 的 runNativeCommand 签名）处失败，所以评测线 build 要设 `GEN_TYPERT_ONLY=@khorsheed/dsh-eval,@khorsheed/dsh-datasets`。临时实例用 `install.sh --source` 安装时，子 agent 改用 0.2.0 harness 做 typert，运行时仍是 0.1.5 工具链。
+
+**欠账**：
+- 「只填名称的请求实发一轮」只验到请求逐字节发出：临时实例没配模型 provider，这一轮停在 MISSING_CREDENTIAL，零 token。
+- agent 逐项引导、最后起草这一段没验到。等用户在有凭据的实例上发一次，协调者再只读核对会话记录。
+
+合入提交 `47b26d17`。
+
 ## 四、验收规程
 
 实施 agent 回报四样：分支名与 commit、Agent Note 路径、`pnpm gate` 输出、一份脱敏的示例输出。协调者做的事：
