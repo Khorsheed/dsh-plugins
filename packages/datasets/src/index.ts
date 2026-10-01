@@ -1,5 +1,5 @@
 /**
- * Generic versioned dataset storage over git repositories: layered items,
+ * Versioned dataset storage over git repositories: layered items,
  * commit-pinned reads straight from git objects, content-addressed read-only
  * whole-layer views extracted by `git archive`, and a human-written registry of
  * dataset repositories whose per-set layers are enforced on every agent read. Three faces share one
@@ -12,7 +12,10 @@
  * handler and definition stay in `./slash.ts` for the companion to register.
  * The model-tool face lives in the same companion.
  * The plugin never interprets descriptor
- * semantics and never copies content out of the repository.
+ * semantics and never copies content out of the repository. The one
+ * convention-bound part is `validate`'s judgeability check (rubric.ts): it
+ * reads the evaluation judging convention's `grading` / `verify` layers and
+ * runs only on items whose grading layer carries a rubric.
  *
  * @module @khorsheed/dsh-datasets
  */

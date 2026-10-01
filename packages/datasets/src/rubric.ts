@@ -111,7 +111,9 @@ function hasLeafField(row: Record<string, unknown>, field: string): boolean {
  * convention form (`rubric.yml`) and the register form (`answers/rubric.yml`).
  * This is the same selection rule the orchestrator applies when it assembles
  * a judge prompt; the two must agree or the check would validate a file the
- * run never reads.
+ * run never reads. The agreement is pinned by the repo-level contract spec
+ * `scripts/judge-rule-contract.spec.ts` (this rule, `probePaths`, and leaf
+ * reading in `checkRubric`).
  * @param gradingPaths - display paths of the item's grading layer.
  * @returns the chosen display path, or undefined when the item ships no rubric.
  */

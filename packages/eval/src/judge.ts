@@ -271,6 +271,9 @@ export function humanCriteria(rubricText: string): RubricCriterion[] {
  * layouts are covered: the convention form (`rubric.yml` at the layer root)
  * and the register form (a re-homed `answers/rubric.yml`). Shortest path wins
  * when several match, so a nested variant never shadows the canonical one.
+ * datasets' judgeability check implements the same rule (and `probePaths`,
+ * and the leaf reading of `rubricCriteria`); the repo-level contract spec
+ * `scripts/judge-rule-contract.spec.ts` keeps the two copies in agreement.
  * @param gradingPaths - display paths of the item's grading layer.
  * @returns the chosen display path, or null when the item ships no rubric.
  */
