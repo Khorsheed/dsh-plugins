@@ -24,11 +24,11 @@
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.98 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
-| `@khorsheed/dsh-datasets` | `packages/datasets` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
-| `@khorsheed/dsh-datasets-tool` | `packages/datasets-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
+| `@khorsheed/dsh-datasets` | `packages/datasets` | 0.1.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | web-eval |
+| `@khorsheed/dsh-datasets-tool` | `packages/datasets-tool` | 0.1.0 | composition | preset-composed-row | — | 0.2.0-rc.2 | web-eval |
 | `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-eval` | `packages/eval` | 0.1.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | web-eval |
-| `@khorsheed/dsh-eval-tool` | `packages/eval-tool` | 0.1.0 | composition | preset-composed-row | — | 0.1.5-rc.1 | web-eval |
+| `@khorsheed/dsh-eval` | `packages/eval` | 0.1.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | web-eval |
+| `@khorsheed/dsh-eval-tool` | `packages/eval-tool` | 0.1.0 | composition | preset-composed-row | — | 0.2.0-rc.2 | web-eval |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.1 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.15 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.1.0-rc.1 | bundle | — | — | 0.1.5-rc.1 | web-eval |
@@ -63,7 +63,7 @@
 | --- | --- | --- |
 | `profiles/basic` | 14 | 16 |
 | `profiles/dev` | 8 | 10 |
-| `profiles/web-eval` | 24 | 23 |
+| `profiles/web-eval` | 25 | 24 |
 
 ## 形态的含义
 

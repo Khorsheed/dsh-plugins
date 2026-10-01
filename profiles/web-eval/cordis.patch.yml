@@ -33,22 +33,24 @@
 # methodology 里重新声明那条不对称，而不是带着满权限直跑宿主。
 
 # ── 默认预设（冻结决策 12）──────────────────────────────────────────
-# 评测实例的 agent 走 pack 自带的 `eval` 预设：presets/eval/ 随 install.sh 与
-# update.sh 落到 $DSH_HOME/.agent-presets/eval（dsh-agent-presets 默认追加的
-# 可写根），组成里没有 Bash / pwsh，也没有任何能执行宿主命令的行。预设归 pack
-# 的理由与本文件同：它是装置，不是偏好。
+# 评测实例的 agent 走 pack 自带的 `eval` 预设：它是 presets/ 这个 profile 内
+# 声明式 bundle（@khorsheed/dsh-web-eval-preset，只有 preset-eval 一行）里的一条
+# `@deepseek-ai/dsh-agent-preset` 声明，随 profile 的 file: 依赖装进来，组成里没有
+# Bash / pwsh，也没有任何能执行宿主命令的行。预设归 pack 的理由与本文件同：它是
+# 装置，不是偏好。（宿主 0.2.0 起只有这一种形态；0.1.5 时代的 presets/eval/ 目录
+# 与 $DSH_HOME/.agent-presets 安装分支在 T82 删除。）
 #
-# 这一行只钉默认值。patch 的 config 覆盖是整块**替换**而不是深合并（见
-# vendor/include 的 applyEntryPatches：`target[key] = value`），这里替换掉的是
-# web-app bundle 写的 `{default: standard}`，不含别的键，所以什么都没丢；
-# `roots`（随发行版的系统预设根）由 apps/cli 的 composeProfile 在本层之后作为
-# 最后一层 overlay 追加，`includeUserRoot` 保持 schema 默认 true。
+# 这一行只钉部署默认值：web-app bundle 的 `agent-preset-registry` 行写的是
+# `{default: standard}`，patch 的 config 覆盖是整块替换，这里替换后只剩
+# `default: eval`——该行 schema 只有 `default` 与 volatile 的 `selectedDefault`
+# 两个键，后者不在 patch 里，所以什么都没丢。registry 取默认的顺序是
+# `selectedDefault ?? default`：人在「设置 → Agent 预设」里另选过默认值，新会话
+# 就跟那个选择走——本层钉的是**部署默认**，不覆盖人的显式选择。
 #
-# 随发行版的 标准/代码/极简/cordis 四个预设仍在名册上、仍可被人在「设置 →
-# Agent 预设」里选中，本层删不掉它们（composeProfile 无条件写 roots）。这条
-# 钉的是**新会话默认拿到什么**，不是**人能够到什么**——决策 12 针对的是
-# 「agent 误操作」，而 agent 没有切换自身预设的工具，切换是人的动作。
-- id: agent-presets
+# 随发行版的 standard / code / minimal 等预设仍在名册上、仍可被人选中，本层删不
+# 掉它们。这条钉的是**新会话默认拿到什么**，不是**人能够到什么**——决策 12 针对
+# 的是「agent 误操作」，而 agent 没有切换自身预设的工具，切换是人的动作。
+- id: agent-preset-registry
   config:
     default: eval
 
@@ -57,11 +59,11 @@
 #
 # M4'③ 起这三个机制包拆成 core + companion：profile 根只挂 core（服务 / CLI /
 # slash / 标签页），模型工具行与工具提示词段落归 companion，授予点是 eval 预设
-# （presets/eval/agent.cordis.yml 的 mission-tool / datasets-tool / eval-tool 三
-# 行，tools tier 原样跟随）。本层不再给 core 写 tools——那已不是 core 的字段。
+# （presets/cordis.patch.yml 里 preset-eval 的 mission-tool / datasets-tool / eval-tool
+# 三行，tools tier 原样跟随）。本层不再给 core 写 tools——那已不是 core 的字段。
 
 # ── 委派工具不注册（冻结决策 12 的第三个执行点）──────────────────────
-# 前两个执行点在上面：「工具按域开放」（三个机制插件按域注册）与 agent-presets
+# 前两个执行点在上面：「工具按域开放」（三个机制插件按域注册）与 agent-preset-registry
 # 钉成 `eval`（预设组成里没有执行类行）。第三个是家族委派工具——家族折叠
 # （2026-09-30）之后这里一行都不需要：`subagent_codex` / `subagent_claude_code`
 # / `subagent_kimi` 不再由 provider patch 挂在 profile 根，而是各 provider 包

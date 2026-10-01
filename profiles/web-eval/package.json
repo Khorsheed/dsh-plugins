@@ -25,6 +25,7 @@
     "@khorsheed/dsh-mission-tool": "^0.1.0",
     "@khorsheed/dsh-taskpilot": "^0.1.0",
     "@khorsheed/dsh-ui-shortcuts": "^0.1.0",
+    "@khorsheed/dsh-web-eval-preset": "file:presets",
     "@khorsheed/dsh-whalesong": "^0.1.0"
   },
   "dsh": {
@@ -52,7 +53,8 @@
         "@khorsheed/dsh-mission",
         "@khorsheed/dsh-lab",
         "@khorsheed/dsh-eval",
-        "@khorsheed/dsh-ankh-guard"
+        "@khorsheed/dsh-ankh-guard",
+        "@khorsheed/dsh-web-eval-preset"
       ]
     }
   }

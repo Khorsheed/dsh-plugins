@@ -157,39 +157,40 @@ The full capability map, the step-by-step trace from natural language to executi
 
 ### Frozen decision 12's execution point: the `eval` preset
 
-Tool exposure by domain bounds what the *profile layer* registers; the **preset** bounds the other half. An evaluation instance's agent runs on the pack's own `eval` preset (`presets/eval/`), whose composition is the shipped `standard` preset minus two classes of row:
+Tool exposure by domain bounds what the *profile layer* registers; the **preset** bounds the other half. An evaluation instance's agent runs on the pack's own `eval` preset (the declarative bundle in `presets/`, one `preset-eval` row), whose composition is the shipped `standard` preset minus two classes of row:
 
 - **Anything that can run a host command**: `tool-bash` / `tool-pwsh`; `tool-workflow` and the `workflow-ptc` engine it needs — a workflow script is **model-authored JavaScript** executed as an async function body inside a Node worker thread, so it reaches `node:child_process` with no shell anywhere in the path; `tool-ralph` drives the same engine and goes with it.
 - **Anything whose vocabulary collides with this line's own**: `plan-mode`. Its prompt plans an *implementation* and forbids writing files, while this agent's whole output is a `dataseek.plan/1` written to disk and approved by a person. Two things called "plan" in one session is the confusion, not the missing capability.
 
 What stays is reading, drafting, and delegation to an agent **running on this same preset**: an in-process child runs on its parent's preset (the harness proves it in `subagent-in-process-driver/tests/preset-inheritance.spec.ts`), so a delegation cannot hand a child the shell this preset does not carry. Docker was never on the table: `lab` registers no model-facing tool at all, and every container verb lives on the orchestrator's service face.
 
-**The preset belongs to the pack**, for the same reason `cordis.patch.yml` does (see [Install](#install)): `install.sh` and `update.sh` both replace `$DSH_HOME/.agent-presets/eval` with `presets/eval/` whole, and `cordis.patch.yml` pins `agent-presets`' `default` to `eval`. Keep personal preferences under a different preset id, not in this one.
+**The preset belongs to the pack**, for the same reason `cordis.patch.yml` does (see [Install](#install)). This profile runs on host 0.2.0 and later only (T82), where presets are declarative `@deepseek-ai/dsh-agent-preset` rows rather than scanned directories: the pack ships a declarative bundle that mounts exactly one row, `preset-eval` (`presets/`, package `@khorsheed/dsh-web-eval-preset`, `dsh.bundle.kind: 'preset-declarations'`, a `file:presets` dependency of the profile), and `cordis.patch.yml` pins `agent-preset-registry`'s `default` to `eval`. The composition is byte-identical to the 0.1.5-era directory version `presets/eval/agent.cordis.yml` (sha256-checked during the T82 migration; `scripts/web-eval-preset-bundle.spec.ts` pins that digest — changing the composition changes the apparatus, so update the digest on purpose and open a new run). Keep personal preferences under a different preset id, not in this one.
 
 **How to confirm an instance is running it** — three layers, cheapest first: composition, files, session.
 
 ```sh
-# composition: the default preset is eval, and the preset directory is in place
-dsh --profile web-eval --dump-config | grep -A3 'id: agent-presets'   # → default: eval
-ls "$DSH_HOME/.agent-presets/eval"                                     # → agent.cordis.yml  preset.yml
+# composition: the default preset is eval, and the preset-eval row is composed
+dsh --profile web-eval --dump-config | grep -A3 'id: agent-preset-registry'   # → default: eval
+dsh --profile web-eval --dump-config | grep -n 'id: preset-eval'
 
 # files: with the comments stripped, no execution row is left in the composition
-grep -vE '^\s*#' "$DSH_HOME/.agent-presets/eval/agent.cordis.yml" \
-  | grep -nE 'tool-bash|tool-pwsh|tool-workflow|tool-ralph|docker'     # → no output
+P="$DSH_HOME/profiles/web-eval/presets/cordis.patch.yml"
+grep -vE '^\s*#' "$P" | grep -nE 'tool-bash|tool-pwsh|tool-workflow|tool-ralph|docker'   # → no output
 
 # composition: the eval preset names no delegation-tool row (since the family
 # fold the tools are per-preset grants — unnamed means absent)
-grep -vE '^\s*#' "$DSH_HOME/.agent-presets/eval/agent.cordis.yml" \
-  | grep -nE 'local-agent-(kimi|codex|claude-code)/tool'              # → no output
+grep -vE '^\s*#' "$P" | grep -nE 'local-agent-(kimi|codex|claude-code)/tool'              # → no output
 ```
 
-The session layer needs the UI: Settings → Agent presets should show **评测模式** as the default, and a fresh session's Settings → Tools and skills should list no `bash`, no container tool, and no `subagent_<harness>` — a default session sees **35 tools** (39 at T21; 36 once T27 closed the three delegation tools; 33 by arithmetic once I5 · T46 dropped mission's four read tools and added `eval_cells`; counted live on 2026-09-17 with 3171 on `2c4476f8`: 35 = 21 built-in + 14 plugin — datasets 7, eval 5 including T34's `eval_plan_draft`, `subagent_dsh`, `list_capabilities`; no `mission_*`), with the in-process `subagent` and `subagent_fork` still there. A session header records the preset it was created with, and a session that switched carries an `agent-preset/selected` event in its log.
+A home carried over from the 0.1.5 era may still hold `$DSH_HOME/.agent-presets/eval`; 0.2.0 never reads it, and `install.sh` only notes that it can be removed.
 
-**This pins the default, not the reachable set.** The shipped standard / code / minimal / cordis presets stay on the roster: `apps/cli`'s `composeProfile` writes the shipped preset root into `roots` as the last overlay unconditionally, and no profile layer can remove them. A person who picks 标准模式 for a blank session gets Bash back. Decision 12 is aimed at **agent misoperation** — an agent has no tool for switching its own preset; switching is a human act.
+The session layer needs the UI: Settings → Agent presets should list **评测模式** in its custom group, marked as the new-task default (photographed by T82 on a 0.2.0-rc.2 temp instance), and a fresh session's Settings → Tools and skills should list no `bash`, no container tool, and no `subagent_<harness>` — a default session sees **35 tools** (39 at T21; 36 once T27 closed the three delegation tools; 33 by arithmetic once I5 · T46 dropped mission's four read tools and added `eval_cells`; counted live on 2026-09-17 with 3171 on `2c4476f8`: 35 = 21 built-in + 14 plugin — datasets 7, eval 5 including T34's `eval_plan_draft`, `subagent_dsh`, `list_capabilities`; no `mission_*`), with the in-process `subagent` and `subagent_fork` still there. A session header records the preset it was created with, and a session that switched carries an `agent-preset/selected` event in its log.
+
+**This pins the default, not the reachable set.** The four built-in presets (standard / PTC / minimal / cordis) stay on the roster: since 0.2.0 they are preset rows in the `@deepseek-ai/dsh-web-app` bundle, and no profile layer can remove them. A person who picks 标准模式 for a blank session gets Bash back. Decision 12 is aimed at **agent misoperation** — an agent has no tool for switching its own preset; switching is a human act.
 
 **The execution-class tools this preset cannot reach no longer exist at the profile root at all** (the 2026-09-30 family fold): the players' delegation tools `subagent_codex` / `subagent_claude_code` / `subagent_kimi` are no longer profile-root rows inserted by each provider's bundle patch — each is its provider package's own `./tool` composition entry, granted only by an agent preset that names the row. This pack's eval preset names none, so the three tools are absent from evaluation sessions by construction, and the patch layer no longer needs override rows. The provider rows still mount: the orchestrator still delegates the players through the local-agent face, and `/codex login` and its siblings still work. (The pre-fold path was T27's `tools: all | none` switch on `@khorsheed/dsh-local-agent-tool-subagent` with the three rows set to `none`; the trade-offs are in the [eval-preset Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.md), and that package retired with the fold.)
 
-**The fourth, `subagent_dsh`, is still an open path.** It has no preset row — `local-agent-dsh`'s DeepSeek switch is off by default, and while ON the controller mounts the tool dynamically, beyond any preset's reach. By default it registers nothing (which is why it is absent from the tool count above), but **a person who turns that switch on in 设置 → 本地 Agent gets `subagent_dsh`**. Closing it for good means changing the provider package; the T27 Agent Note records it. As with the rest of decision 12, this pins the default, not the reachable set.
+**The fourth, `subagent_dsh`, is still an open path.** It has no preset row — `local-agent-dsh`'s DeepSeek switch is off by default, and while ON the controller mounts the tool dynamically, beyond any preset's reach. By default it registers nothing (which is why it is absent from the tool count above), but **a person who turns on 「DeepSeek 委派」 in the plugin page's DSH 委派 card gets `subagent_dsh`** — and provisioning or running a dsh condition needs exactly that: with the switch off the local-agent roster has no dsh and provision reports `unknown harness dsh` (see [The tested dsh follows the instance](#the-tested-dsh-follows-the-instance)). Closing it for good means changing the provider package; the T27 Agent Note records it. As with the rest of decision 12, this pins the default, not the reachable set.
 
 ## Target flow
 
@@ -312,34 +313,37 @@ Explicitly out of scope for this period (I0 through I2): new surfaces, lab's mod
 The eval instance needs its own `$DSH_HOME`, sharing neither sessions nor credentials with the dev instance (environment isolation is a basic evaluation requirement; see the environment topology in `docs/ops.md`). I1 through I2 run the four CLIs directly on the host and need only node, git, and the CLIs themselves; from I3 on docker is required, and the checklist for the suite-level image, the local package mirror, the allowlist proxy, and credential volumes is in the "runtime environment" section of [docs/architecture.md](docs/architecture.md).
 
 **Both scripts begin with a machine-level preflight, before anything is
-written**: `dsh` on PATH, `dsh --version` runs, and the headless-bundle path
-`cordis.patch.yml` pins exists (read out of that file, not hardcoded). Any of
-them missing prints what is missing and exits 2, with `$DSH_HOME` and
-`$DSH_HOME/.agent-presets/eval` untouched — before this the first `dsh` call
-was at the BOTTOM of the script, so a machine without it replaced the preset
-directory whole and (in source mode) built and packed every member before
-failing on the last line. The preset directory is backed up to
-`$DSH_HOME/.agent-presets/.web-eval-backup.<pid>` before it is replaced, and
-the trap says where it is; `update.sh` backs up the pinned files it
-overwrites the same way, and had no trap at all until now.
+written**: `dsh` on PATH, `dsh --version` runs and is at least 0.2.0-rc.2, and
+the headless-bundle path `cordis.patch.yml` pins exists (read out of that file,
+not hardcoded). Any of them failing prints what is missing and exits 2 with
+`$DSH_HOME` untouched. The skill directory is backed up to
+`$DSH_HOME/skills/.web-eval-backup.<pid>` before it is replaced, and the trap
+says where it is; `update.sh` backs up the files it overwrites the same way.
 
-**Host line: this profile needs `dsh` >= 0.1.5-rc.1.** The evaluation family's
-six packages carry that line in `dsh.compat.minHost` / `verifiedHost` as of
-2026-09-11; the local-agent family has since the baseline commit `bb04c84`.
-Source mode's preflight therefore carries one more check: it reads
-`dsh.compat.minHost` out of every member it is about to pack, compares it
-against `dsh --version` once, and exits 2 before touching a file when the host
-is older than any of them, listing who needs what. The check exists in source
-mode only — npm mode resolves its members from the registry, so there is no
-local `package.json` to read. What it catches is a failure that never reaches
-install time: too old a host does not fail while installing, it throws a
-missing export out of some plugin's import AT BOOT (measured twice on this
-machine: `@deepseek-ai/dsh-settings` has no `settingsNamespace` on 0.1.5, and
-the 0.2.0 context-guard / ui-shortcuts on npm import it) — or later still, on
-an instance that boots fine and only reports
-`childSession.snapshotEvents is not a function` on a resume round.
+**Host line: this profile supports host 0.2.0 and later only (`dsh` >=
+0.2.0-rc.2; the user's decision of 2026-10-01, T82).** On 0.2.0 presets are
+declarative `@deepseek-ai/dsh-agent-preset` rows with the default on
+`agent-preset-registry`, while 0.1.5 knows only directory presets, so there is
+no dual line: below the floor both `install.sh` and `update.sh` exit 2 before
+touching a file and name a toolchain that works
+(`PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH sh install.sh …`).
+T82 ran it once on the rc-0.1.5-rc.1 toolchain: exit 2, empty home. Migrating
+an instance still on 0.1.x is covered in
+[Switching a 0.1.5 instance to 0.2.0](#switching-a-015-instance-to-020).
 
-`install.sh` has two paths; both print the composed composition stats at the end, and `dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` should be 23 (the 22 @khorsheed bundles plus `local-agent-dsh-headless` — it has no row and appears as the headlessBundleDir path value; the dump repeats each member as a layer header plus entry rows). Since the family fold the providers' `./tool` delegation entries stay out of the dump: they are rows a preset must name, and this profile's eval preset names none.
+Source mode's preflight carries two more checks. **Member host lines**: it
+reads `dsh.compat.minHost` out of every member it is about to pack, compares
+it against `dsh --version` once, and lists who needs what when the host is
+older than any of them (the evaluation family — eval / eval-tool / datasets /
+datasets-tool — carries 0.2.0-rc.2 as both `minHost` and `verifiedHost` since
+T82). **The typert host**: typert generation reads the checkout `DSH_HARNESS`
+names (default `~/code/deepseek-harness`), and a checkout below 0.2.0-rc.2
+exits the same way. What these catch is a failure that never reaches install
+time: too old a host does not fail while installing, it throws a missing
+export out of some plugin's import AT BOOT — or later still, on an instance
+that boots fine and only fails on a resume round.
+
+`install.sh` has two paths; both print the composed composition stats at the end, and `dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` should be 25 (distinct names — the dump repeats each member as a layer header plus entry rows; 25 = the 22 bundles, this profile's preset bundle among them, + `local-agent-dsh-headless`, which has no row and appears only as the headlessBundleDir path, + `datasets-tool` and `eval-tool`, which the eval preset row names). T82's install on a 0.2.0-rc.2 temp instance: 25 names, 205 rows, default preset eval; after merging main, a `--source --fresh` reinstall into a new temp home measured the same 25 names and 205 rows. Since the family fold the providers' `./tool` delegation entries stay out of the dump: they are rows a preset must name, and this profile's eval preset names none.
 
 **npm mode** (no arguments) — every member resolves from the npm registry. It works as-is once every member is published (I6); until then, the unpublished members fail with a registry 404 at install time (the authoritative list is [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md) in dsh-plugins):
 
@@ -362,13 +366,52 @@ Source-mode tarballs live inside the profile directory: uninstalling (`rm -rf "$
 
 The evaluation pins (frozen decisions 2 through 4) belong to the apparatus, not to personal preference, so they **belong to the pack**: they live in this profile's `cordis.patch.yml`, and both `install.sh` and `update.sh` overwrite that file — the one patch-layer difference from [dsh-dev](../dev/README.en.md). Leaving it to the user means an update can silently change the sandbox tier or the reasoning effort while run.meta still records the old one, and the report's "the subject under test is the same" stops meaning anything. Personal preferences go in a preset layer, not here.
 
-The agent preset and the skills **belong to the pack** for the same reason: both scripts replace `$DSH_HOME/.agent-presets/eval` with `presets/eval/` whole, and `cordis.patch.yml` pins it as the default preset ([frozen decision 12's execution point](#frozen-decision-12s-execution-point-the-eval-preset)); `skills/eval-planning/` is likewise replaced whole into `$DSH_HOME/skills/eval-planning` — the `user-dsh` root `dsh-skill-filesystem` scans, which the eval preset's own `skill-filesystem` row surfaces in an evaluation session's skill catalog. The skill is apparatus too: it teaches the one drafting verb (`eval_plan_draft`) and names what is not the agent's — approving, logging in, provisioning, the final verdict. Let that drift and a draft turns into a run nobody approved. Both land *outside* the profile directory (preset and skill rosters are organized per `$DSH_HOME`, not per profile), so the uninstall `rm -rf` does not take them with it; see [Uninstall](#update-switch-add-or-remove-a-member-uninstall).
+The agent preset and the skills **belong to the pack** for the same reason: the preset is the declarative bundle `presets/` inside the profile directory, overwritten along with the other profile files, and `cordis.patch.yml` pins it as the default preset ([frozen decision 12's execution point](#frozen-decision-12s-execution-point-the-eval-preset)); `skills/eval-planning/` is replaced whole into `$DSH_HOME/skills/eval-planning` — the `user-dsh` root `dsh-skill-filesystem` scans, which the eval preset's own `skill-filesystem` row surfaces in an evaluation session's skill catalog. The skill is apparatus too: it teaches the one drafting verb (`eval_plan_draft`) and names what is not the agent's — approving, logging in, provisioning, the final verdict. Let that drift and a draft turns into a run nobody approved. The skill lands *outside* the profile directory (the skill roster is organized per `$DSH_HOME`, not per profile), so the uninstall `rm -rf` does not take it with it, while the preset bundle lives inside the profile and goes with it; see [Uninstall](#update-switch-add-or-remove-a-member-uninstall).
 
 The current pins (written by I2 · T15, three rows added by I3 · T27; since M4'③ these are granted by companion rows of the pack's `eval` preset, and since I5 · T46 the `mission-tool` row is no longer composed): `datasets-tool: authoring`, `eval-tool: all`, plus `tools: none` on the three delegation-tool rows (tools by domain); `live: false` for all four harnesses (decision 2); codex `sandbox`, claude `permissionMode: skip`, kimi `thinkingEffort: high` (decisions 3 and 4); claude `baseUrl` (decision 5 — the endpoint is part of the subject under test, and without the pin the provider falls back to the host process environment, so restarting from another terminal silently swaps the upstream; the value matches the 3080 production profile, the official endpoint, because the third-party address the host environment exports authenticates by API key, and `delegationEnv` strips that key). **claude's `proxyUrl` is no longer pinned since I3 · T22**: the provider writes it into the scoped home's settings.json env block, and since T20c a container round mounts that very scoped home, so the host address fails inside the unit with Connection refused; the unit's egress comes from the whitelist proxy baked into the image, and anyone driving claude on the host adds the line back in their own overlay, not in the pack. **dsh's `headlessBundleDir` and `cliLaunch` are pinned since I3 · T22** to paths that resolve on the host and inside the unit alike — what the provider writes into the scoped home is an absolute symlink to the host installation, dangling inside the unit; this is a machine-level prerequisite, prepared as the task repo's env/README describes. **Since I3 · T22 codex's `sandbox` is `danger-full-access`**, as frozen decision 3 says. On the host-direct stage (I2) it took `workspace-write`: there was no container boundary then, and full access there puts the evaluation's side effects into a real home, so the asymmetry was declared in each run's methodology. With the container path in place the boundary comes from the unit — no egress but the whitelist proxy, non-root, one unit per cell and destroyed after it — so full access is scoped to that disposable unit, the four do sit on the same tier, and the methodology no longer has to declare the asymmetry. **This pin and the container path are a pair**: anyone running stages one and two on the host again must first set it back to `workspace-write` and re-declare the asymmetry, rather than driving a real home with full access.
 
 ## Update, switch, add or remove a member, uninstall
 
-Switching is a same-port handoff; `update.sh` overwrites the member list, the lockfile, **`cordis.patch.yml`, `presets/eval/` and `skills/eval-planning/`** — the evaluation pins, the agent preset and the skill all belong to the pack (see [Install](#install)), the one difference from [dsh-dev](../dev/README.en.md#update); `dsh --profile web-eval plugin rm/add <pkg>` adds or removes one member; `rm -rf "$DSH_HOME/profiles/web-eval"` uninstalls the whole profile — neither the pack's agent preset nor its skills are under that directory, so add `rm -rf "$DSH_HOME/.agent-presets/eval" "$DSH_HOME/skills/eval-planning"` to clear them too (leaving them is harmless: with no profile pinning the preset as the default it is just one more roster entry, and so is the skill). Until I6, do not run `update.sh` on a source-mode install — it overwrites the member list back to npm ranges and the unpublished members start 404-ing; re-run `install.sh --source` instead.
+Switching is a same-port handoff; `update.sh` overwrites the member list, the lockfile, **`cordis.patch.yml`, `presets/` and `skills/eval-planning/`** — the evaluation pins, the agent preset and the skill all belong to the pack (see [Install](#install)), the one difference from [dsh-dev](../dev/README.en.md#update); `dsh --profile web-eval plugin rm/add <pkg>` adds or removes one member; `rm -rf "$DSH_HOME/profiles/web-eval"` uninstalls the whole profile (the preset bundle is inside it and goes too) — the pack's skill is not under that directory, so add `rm -rf "$DSH_HOME/skills/eval-planning"` to clear it too (leaving it is harmless: it is just one more roster entry). A home carried over from 0.1.5 may still hold `$DSH_HOME/.agent-presets/eval`; 0.2.0 never reads it, so remove it along with the rest. Until I6, do not run `update.sh` on a source-mode install — it overwrites the member list back to npm ranges and the unpublished members start 404-ing; re-run `install.sh --source` instead.
+
+## The tested dsh follows the instance
+
+A dsh condition does not pick its own CLI: `local-agent-dsh`'s `cliLaunch` is pinned to `[dsh]`, so a host round resolves `dsh` on the **instance process's PATH**, and a container round uses the image's `/opt/dsh-headless`; no condition schema field selects a toolchain. An instance moved onto the 0.2.0 toolchain therefore tests dsh 0.2.0 on host rounds (T82 temp instance: `~/.dsh-toolchains/rc-0.2.0-rc.2` first on the process PATH, `dsh --version` 0.2.0-rc.2).
+
+Three consequences (T82, 2026-10-01):
+
+- **Old conditions stay; new ones are added.** The dataset's `dsh-lean` / `dsh-full` with `harness.version: 0.1.5-rc.1`, and the experiments that use them, stay as they are; the 0.2.0 conditions `dsh-lean-0.2.0-rc.2` / `dsh-full-0.2.0-rc.2` (scopes `d-*-020rc2`, `home.sha` to be filled by provision) are on dataset branch `t82-host020`, for the coordinator to merge.
+- **A version mismatch is only a warning.** Provision resolves the scope → credential → effective-config check → preset composition → home digest → capabilities → lock; a `harness.version` that differs from the real CLI is a warning at the check step, not an error, and that step comes after the credential — without credentials provision stops at `CREDENTIAL_ABSENT` before the warning can show.
+- **Old locks still look "ready".** The conditions page reads the old locks (CLI 0.1.5-rc.1) without re-probing, and a run report only records the delegation's actual cliVersion without comparing it to the condition. After a host switch, provision the new conditions again rather than running on the old locks.
+
+Known gap (a follow-up in T82's Agent Note): when `local-agent-dsh` composes a preset-bearing scope it inserts `@deepseek-ai/dsh-agent-presets` — 0.1.5's directory-preset module, absent from the 0.2.0 toolchain — so preset-bearing dsh conditions are expected not to compose on 0.2.0 until the provider moves to declarative `@deepseek-ai/dsh-agent-preset` rows. Also, turn on 「DeepSeek 委派」 in the plugin page before provisioning or running any dsh condition (see [frozen decision 12's execution point](#frozen-decision-12s-execution-point-the-eval-preset)).
+
+## Switching a 0.1.5 instance to 0.2.0
+
+For an old instance on the 0.1.5 toolchain (3171 on `~/.dsh-lab`, for example). T82 already trial-migrated 3171's data into a temp home and checked it item by item (the 23 result rows, the dataset registry, and a `diff -rq` of the data directories all match). The formal switch, **with the stop done by a person by hand**:
+
+1. **Stop the instance** by hand in a terminal (a watchdog-guarded instance stops through ankh-guard's flow).
+2. **Back up the old home** as a whole copy, e.g. `cp -Rp ~/.dsh-lab ~/.dsh-lab.bak-0.1.5`. Copy, never delete; rolling back means booting that copy on the 0.1.5 toolchain.
+3. **Reinstall on the 0.2.0 toolchain**:
+   ```sh
+   PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH \
+   DSH_HARNESS=<a harness checkout at 0.2.0-rc.2 or later> \
+   DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/install.sh --source <dsh-plugins checkout> --fresh
+   ```
+   An in-place reinstall leaves `state/` alone; for a new home, copy the old home's `state/eval`, `state/datasets` and `state/mission` across (excluding tokens, cookies, credentials and logs).
+4. **Turn on DeepSeek delegation.** 0.1.5 kept that switch in the legacy settings file; 0.2.0 does a one-shot import of `$DSH_HOME/settings.yaml` into row config on first boot (renaming it `.imported`). In place this is expected to happen on its own (not measured by T82 — glance at the plugin page after the switch); for a new home, a person turns on 「DeepSeek 委派」 in the plugin page's DSH 委派 card, or places the old settings file in the new home to have it imported.
+5. **Boot**: `PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/restart-into-web-eval.sh <port>`.
+6. **Verify**: 23 result rows; the dataset registry matches the old home; pilot-d's report still reads 「暂时不能下结论」, 4 to 0; Settings → Agent presets defaults to 评测模式; `dsh --version` is 0.2.0-rc.2.
+7. **dsh conditions**: import the dataset's `*-0.2.0-rc.2` conditions and provision them again; the old conditions' locks stay as history and are not used for new runs.
+8. **Optional cleanup**: `~/.dsh-lab/.agent-presets/eval` is the 0.1.5 directory preset; 0.2.0 never reads it.
+
+**Sessions are not migrated.** The trial migration did not copy the sessions directory (it holds personal data), so a switch to a new home leaves past sessions behind; an in-place reinstall is unaffected.
+
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.2.0-rc.2`): ✅ — since T82 this profile supports host 0.2.0 and later only (`dsh` >= 0.2.0-rc.2; the user's decision of 2026-10-01, no dual line); below the floor `install.sh` / `update.sh` exit 2 before touching a file. The evaluation family's eval / eval-tool / datasets / datasets-tool carry `minHost` / `verifiedHost` 0.2.0-rc.2 in `dsh.compat`. Stay on the old release line on a 0.1.x host; migrating is covered in [Switching a 0.1.5 instance to 0.2.0](#switching-a-015-instance-to-020).
+- source line (deepseek-harness master): ✅ — same (verifiedHost: 0.2.0-rc.2, live-smoked on a temp instance: install 25 names / 205 rows, default preset eval, walk-through at widths 1440 and 400).
+- Degraded: preset-bearing dsh conditions are expected not to compose on 0.2.0 (`local-agent-dsh` still inserts 0.1.5's `@deepseek-ai/dsh-agent-presets`); see [The tested dsh follows the instance](#the-tested-dsh-follows-the-instance).
 
 ## Related documents
 
