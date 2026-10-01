@@ -30,28 +30,37 @@ DEST="$DSH_HOME/profiles/web-eval"
 # without a sound. A whitelist fails the other way: a new template file simply
 # does not arrive, and the loader-row count printed below drops. Add new
 # template files HERE.
-PROFILE_FILES="package.json cordis.patch.yml pnpm-workspace.yaml pnpm-lock.yaml"
-
-# The pack's agent presets, by preset id; each is a directory under presets/
-# holding `agent.cordis.yml` (+ optional `preset.yml`). They do NOT live under
-# the profile directory: `dsh-agent-presets` scans `$DSH_HOME/.agent-presets`,
-# and the roster is per-HOME, not per-profile. Each listed id is replaced whole
-# on install and on update, for the same reason cordis.patch.yml is (see
-# update.sh): the eval preset is frozen decision 12's execution point —
-# apparatus, not preference. A locally authored preset of the same id is
-# overwritten; author your own under a different id.
 #
-# Because they sit outside $DSH_HOME/profiles/web-eval, uninstalling the
-# profile does NOT remove them — the README says so beside the `rm -rf`.
-PRESET_IDS="eval"
+# `presets` is a DIRECTORY: the profile-local declarative preset bundle
+# (@khorsheed/dsh-web-eval-preset, one `preset-eval` row), which package.json
+# depends on as `file:presets`. It is copied with the profile so that relative
+# spec resolves inside $DEST, and it is replaced whole (rm first — `cp -R dir
+# existing-dir` would nest it as presets/presets).
+PROFILE_FILES="package.json cordis.patch.yml pnpm-workspace.yaml pnpm-lock.yaml presets"
+
+# The host line this pack supports: 0.2.0 and later ONLY (user decision
+# 2026-10-01, T82). The agent preset is a declarative `@deepseek-ai/dsh-agent-
+# preset` row, a row type older hosts either lack (0.1.5: directory presets) or
+# carry under a different composition contract (0.1.7); the members' compat
+# floors say the same. There is no older-host branch left in this script.
+MIN_HOST="0.2.0-rc.2"
+MIN_HOST_TOOLCHAIN="~/.dsh-toolchains/rc-0.2.0-rc.2"
+
+# The pack's agent preset is NOT a directory any more. Host 0.2.0's
+# agent-preset-registry neither scans directories nor accepts preset paths: a
+# preset is a `@deepseek-ai/dsh-agent-preset` loader row. The `eval` preset
+# therefore ships in the profile-local bundle `presets/` (see PROFILE_FILES)
+# and becomes the default through cordis.patch.yml's `agent-preset-registry`
+# pin. The 0.1.5-era branch that replaced $DSH_HOME/.agent-presets/eval whole
+# was removed with the directory version (T82).
 
 # The pack's SKILLS, by skill name; each is a directory under skills/ holding
-# `SKILL.md`. Like the presets they do NOT live under the profile directory:
+# `SKILL.md`. They do NOT live under the profile directory:
 # `dsh-skill-filesystem` scans `$DSH_HOME/skills` (its `user-dsh` root), so the
 # roster is per-HOME, and the eval preset's own `skill-filesystem` row is what
 # surfaces them in an evaluation session's skill catalog.
 #
-# Replaced WHOLE on install and on update, for the same reason the presets are:
+# Replaced WHOLE on install and on update, for the same reason the eval preset is:
 # `eval-planning` teaches the one drafting verb (eval_plan_draft) and where the
 # line between drafting and starting is — apparatus, not preference. A locally
 # authored skill of the same name is overwritten; author your own under a
@@ -135,13 +144,55 @@ command -v dsh >/dev/null 2>&1 || preflight_fail "  missing: \`dsh\` on PATH.
 dsh --version >/dev/null 2>&1 || preflight_fail "  \`dsh\` is on PATH but \`dsh --version\` failed.
   Run it by hand and fix what it reports before installing."
 
+# The host LINE, in every mode: this pack supports 0.2.0 and later only.
+# Below that the profile cannot even express its own agent preset, so the
+# install would "succeed" and the instance would boot without `eval` — the
+# T86 symptom on 0.1.7 was "Unknown agent preset: eval" and a lab page that
+# failed whole. Fail here instead, naming the toolchain that works.
+HOST_VERSION=$(dsh --version 2>/dev/null | tr -d '[:space:]')
+semver_cmp() {
+  # Print -1 / 0 / 1 for $1 vs $2 (dotted core plus optional -alpha/-beta/-rc.N
+  # tail; a release outranks its prereleases), or "?" when either is
+  # unparseable.
+  A="$1" B="$2" node <<'NODE'
+const parse = (v) => {
+  const [core, tail] = String(v).split('-')
+  const nums = core.split('.').map(Number)
+  const kinds = { alpha: 1, beta: 2, rc: 3 }
+  const [kind, seq] = tail === undefined ? ['release', 0] : tail.split('.')
+  return { nums, rank: tail === undefined ? 9 : (kinds[kind] ?? 0), seq: Number(seq ?? 0) }
+}
+const x = parse(process.env.A), y = parse(process.env.B)
+let out = 0
+if (x.nums.length < 2 || y.nums.length < 2 || x.nums.some(Number.isNaN) || y.nums.some(Number.isNaN)) out = '?'
+else {
+  for (let i = 0; i < Math.max(x.nums.length, y.nums.length) && out === 0; i += 1) {
+    const d = (x.nums[i] ?? 0) - (y.nums[i] ?? 0)
+    if (d !== 0) out = d < 0 ? -1 : 1
+  }
+  if (out === 0 && x.rank !== y.rank) out = x.rank < y.rank ? -1 : 1
+  if (out === 0 && x.seq !== y.seq) out = x.seq < y.seq ? -1 : 1
+}
+process.stdout.write(String(out))
+NODE
+}
+case "$(semver_cmp "$HOST_VERSION" "$MIN_HOST")" in
+  0|1) ;;
+  -1) preflight_fail "  the \`dsh\` on PATH is $HOST_VERSION; dsh-web-eval supports host $MIN_HOST and later only.
+  Older hosts cannot load this pack's agent preset (a declarative bundle row since
+  0.2.0), so the instance would boot without its \`eval\` preset. Put a matching
+  toolchain first on PATH and re-run, e.g.:
+    PATH=$MIN_HOST_TOOLCHAIN/node_modules/.bin:\$PATH sh $0 ..." ;;
+  *) preflight_fail "  could not read a host version from \`dsh --version\` (got: \"$HOST_VERSION\").
+  dsh-web-eval supports host $MIN_HOST and later only; run \`dsh --version\` by hand." ;;
+esac
+
 # The host LINE, checked against what the members declare they need. A host
 # older than a member's `dsh.compat.minHost` does not fail at install — it
 # fails at boot, as a missing export inside a plugin import, which reads like
 # a plugin bug and is not one (measured on this profile twice). Source mode
 # knows exactly which members it is about to pack, so it can say so first.
 if [ -n "$SOURCE" ]; then
-  HOST_VERSION=$(dsh --version 2>/dev/null | tr -d '[:space:]')
   MINHOST_FAIL=$(SOURCE_CHECKOUT="$SOURCE" UNPUBLISHED_DIRS="$UNPUBLISHED_DIRS" HOST_VERSION="$HOST_VERSION" node <<'NODE'
 const fs = require('node:fs')
 /** Compare two dotted versions with an optional -rc.N / -alpha.N tail. */
@@ -186,6 +237,26 @@ $(printf '%s\n' "$MINHOST_FAIL" | sed 's/^/    /')
   fi
 fi
 
+# Source mode builds every member here, and the typert generator (gen-typert)
+# reads the HARNESS CHECKOUT named by DSH_HARNESS (default
+# ~/code/deepseek-harness) — not the toolchain on PATH. A checkout from an older
+# host line generates remote types for an API the running host no longer has
+# (the T78 failure on 0.1.5: generator on the 0.1.7 checkout). Nothing is
+# hard-coded here: name the checkout, and it must be on the supported line.
+if [ -n "$SOURCE" ]; then
+  HARNESS_DIR="${DSH_HARNESS:-$HOME/code/deepseek-harness}"
+  [ -f "$HARNESS_DIR/apps/cli/package.json" ] || preflight_fail "  missing: a deepseek-harness checkout at $HARNESS_DIR (DSH_HARNESS).
+  Source mode's typert generation reads it. Point DSH_HARNESS at a checkout of
+  host $MIN_HOST or later (e.g. a dsh-v$MIN_HOST worktree) and re-run."
+  HARNESS_VERSION=$(node -p "require('$HARNESS_DIR/apps/cli/package.json').version" 2>/dev/null || true)
+  case "$(semver_cmp "$HARNESS_VERSION" "$MIN_HOST")" in
+    0|1) echo "dsh-web-eval: host $HOST_VERSION; typert generated from DSH_HARNESS=$HARNESS_DIR ($HARNESS_VERSION)" ;;
+    *) preflight_fail "  DSH_HARNESS=$HARNESS_DIR is host $HARNESS_VERSION, below $MIN_HOST.
+  Its generated remote types would target an older API than the host you install
+  on. Point DSH_HARNESS at a checkout of $MIN_HOST or later and re-run." ;;
+  esac
+fi
+
 # The headless bundle path the profile PINS. It is a machine-level
 # precondition (the dataset repo's env/README documents how to stage it):
 # the same path has to resolve on the host and inside an evaluation unit, or
@@ -215,36 +286,18 @@ if [ -d "$DEST" ]; then
 fi
 
 mkdir -p "$DEST"
-# The presets are replaced WHOLE (they are apparatus, not preference), so the
+# The skills are replaced WHOLE (they are apparatus, not preference), so the
 # previous copy is kept beside them until the install succeeds: a failure
-# halfway through must not be the moment a person discovers their preset
+# halfway through must not be the moment a person discovers their skill
 # directory is gone.
-PRESET_BACKUP="$DSH_HOME/.agent-presets/.web-eval-backup.$$"
 SKILL_BACKUP="$DSH_HOME/skills/.web-eval-backup.$$"
 trap 'echo "dsh-web-eval: install failed — $DEST is half-installed; remove it before re-running" >&2
-  if [ -d "$PRESET_BACKUP" ]; then
-    echo "  the agent preset(s) were replaced; the previous copy is at $PRESET_BACKUP" >&2
-    echo "  restore with: rm -rf $DSH_HOME/.agent-presets/<id> && mv $PRESET_BACKUP/<id> $DSH_HOME/.agent-presets/" >&2
-  fi
   if [ -d "$SKILL_BACKUP" ]; then
     echo "  the skill(s) were replaced; the previous copy is at $SKILL_BACKUP" >&2
     echo "  restore with: rm -rf $DSH_HOME/skills/<id> && mv $SKILL_BACKUP/<id> $DSH_HOME/skills/" >&2
   fi' 0
 for f in $PROFILE_FILES; do
-  [ -e "$SRC/$f" ] && cp -R "$SRC/$f" "$DEST/$f"
-done
-
-PRESET_ROOT="$DSH_HOME/.agent-presets"
-for id in $PRESET_IDS; do
-  [ -d "$SRC/presets/$id" ] || { echo "dsh-web-eval: presets/$id missing from the clone" >&2; exit 1; }
-  mkdir -p "$PRESET_ROOT"
-  if [ -d "$PRESET_ROOT/$id" ]; then
-    mkdir -p "$PRESET_BACKUP"
-    cp -R "$PRESET_ROOT/$id" "$PRESET_BACKUP/$id"
-  fi
-  rm -rf "$PRESET_ROOT/$id"
-  cp -R "$SRC/presets/$id" "$PRESET_ROOT/$id"
-  echo "dsh-web-eval: installed agent preset \"$id\" into $PRESET_ROOT/$id"
+  if [ -e "$SRC/$f" ]; then rm -rf "$DEST/$f"; cp -R "$SRC/$f" "$DEST/$f"; fi
 done
 
 SKILL_ROOT="$DSH_HOME/skills"
@@ -400,8 +453,22 @@ DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 #       presets that name them — this profile's eval preset names none.)
 MEMBERS=$(printf '%s\n' "$DUMP" | grep -o '@khorsheed/[a-z0-9-]*' | sort -u | wc -l | tr -d ' ')
 ROWS=$(printf '%s\n' "$DUMP" | grep -c '^- id: ' || true)
+# The default preset. cordis.patch.yml pins the registry's deployment default
+# to `eval`; the composed dump is the proof it landed. A per-home choice made in
+# 设置 → Agent 预设 (the registry's volatile `selectedDefault`) still wins for
+# new sessions — that is the person's explicit act, so it is reported, not
+# overwritten.
+DEFAULT_PRESET=$(printf '%s\n' "$DUMP" | awk '/^- id: agent-preset-registry$/{f=1;next} f&&/^- id: /{f=0} f&&/^[[:space:]]+default:/{print $2; exit}')
 trap - 0
-if [ -d "$PRESET_BACKUP" ]; then rm -rf "$PRESET_BACKUP"; fi
 if [ -d "$SKILL_BACKUP" ]; then rm -rf "$SKILL_BACKUP"; fi
 echo "dsh-web-eval: installed into $DEST — $MEMBERS @khorsheed members, $ROWS patch rows composed"
+if [ "$DEFAULT_PRESET" = "eval" ]; then
+  echo "dsh-web-eval: default agent preset: eval (pinned by cordis.patch.yml; a default chosen in 设置 → Agent 预设 overrides it for new sessions)"
+else
+  echo "dsh-web-eval: WARNING — the composed default agent preset is \"${DEFAULT_PRESET:-unknown}\", not eval." >&2
+  echo "  Open 设置 → Agent 预设 and set 评测模式 (eval) as the default before starting a session." >&2
+fi
+if [ -d "$DSH_HOME/.agent-presets/eval" ]; then
+  echo "dsh-web-eval: note — $DSH_HOME/.agent-presets/eval is the 0.1.5-era directory preset; host 0.2.0 never reads it. Remove it when convenient (rm -rf \"$DSH_HOME/.agent-presets/eval\")."
+fi
 echo "next: sh $(cd "$(dirname "$0")/.." && pwd)/scripts/restart-into-web-eval.sh   # hand the running instance over to web-eval on the same port"
