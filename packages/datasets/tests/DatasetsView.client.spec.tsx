@@ -969,11 +969,20 @@ describe('等你确认登记 (T90)', () => {
     h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
     h.proposalReview.mockResolvedValue({
       ok: true,
-      value: { ...REVIEW, problems: [{ code: 'SOURCE_UNLISTED', message: 'extra.csv has no disposition', path: 'extra.csv' }] },
+      value: {
+        ...REVIEW,
+        problems: [
+          { code: 'SOURCE_UNLISTED', message: 'extra.csv has no disposition', path: 'extra.csv' },
+          { code: 'DISPOSITION_INCOMPLETE', message: 'a.csv is unused but gives no reason', path: 'a.csv', params: { kind: 'noReason', path: 'a.csv' } },
+        ],
+      },
     })
     renderView(h)
     fireEvent.click(await screen.findByText('banner.review'))
+    // No params (an older host): the server's own sentence stays.
     expect(await screen.findByText('extra.csv has no disposition')).toBeTruthy()
+    // With params: the reader's language, keyed by code and kind.
+    expect(screen.getByText('review.finding.DISPOSITION_INCOMPLETE.noReason {"kind":"noReason","path":"a.csv"}')).toBeTruthy()
     expect((screen.getByText('review.confirm') as HTMLButtonElement).disabled).toBe(true)
   })
 

@@ -96,6 +96,8 @@ describe('the proposal check', () => {
     const { problems, warnings, proposal } = await service.proposals.check(fullInput())
     expect(problems).toEqual([])
     expect(warnings.map(warning => warning.code)).toContain('UNLAYERED_VISIBLE')
+    // The page says findings in the reader's language from these params.
+    expect(warnings.find(warning => warning.code === 'UNLAYERED_VISIBLE')!.params).toEqual({ count: expect.any(Number) })
     expect(proposal).toMatchObject({ kind: 'new', trackedRef: 'main', commit: repo.commit, registryId: 'fixture' })
   })
 

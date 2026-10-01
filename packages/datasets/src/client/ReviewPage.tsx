@@ -223,6 +223,20 @@ function ItemCompare(props: { view: ReviewItem; t: T }) {
   )
 }
 
+/**
+ * One finding in the reader's language: `review.finding.<code>[.<kind>]`
+ * filled from the server's params. A finding without params (an older host)
+ * or an unknown code keeps the server's English message — never a raw key.
+ */
+function findingText(finding: ProposalProblem, t: T): string {
+  if (finding.params === undefined && !PARAMLESS.has(finding.code)) return finding.message
+  const kind = finding.params?.kind
+  const key = `review.finding.${finding.code}${typeof kind === 'string' ? `.${kind}` : ''}`
+  const text = t(key as Parameters<T>[0], finding.params ?? {})
+  return text === key ? finding.message : text
+}
+const PARAMLESS = new Set<ProposalProblem['code']>(['UNCOMMITTED', 'NO_SETS', 'HISTORY_REWRITTEN'])
+
 /** The findings block: blocking problems first, then warnings. */
 function Findings(props: { problems: readonly ProposalProblem[]; warnings: readonly ProposalProblem[]; t: T }) {
   const { problems, warnings, t } = props
@@ -232,13 +246,13 @@ function Findings(props: { problems: readonly ProposalProblem[]; warnings: reado
       {problems.length > 0 && (
         <div className={css.findingGroup} data-tone="danger" role="alert">
           <div className={css.findingTitle}>{t('review.problems')}</div>
-          <ul>{problems.map(problem => <li key={`${problem.code}:${problem.path ?? ''}:${problem.message}`} title={problem.code}>{problem.message}</li>)}</ul>
+          <ul>{problems.map(problem => <li key={`${problem.code}:${problem.path ?? ''}:${problem.message}`} title={`${problem.code} · ${problem.message}`}>{findingText(problem, t)}</li>)}</ul>
         </div>
       )}
       {warnings.length > 0 && (
         <div className={css.findingGroup} data-tone="warn">
           <div className={css.findingTitle}>{t('review.warnings')}</div>
-          <ul>{warnings.map(warning => <li key={`${warning.code}:${warning.path ?? ''}:${warning.message}`} title={warning.code}>{warning.message}</li>)}</ul>
+          <ul>{warnings.map(warning => <li key={`${warning.code}:${warning.path ?? ''}:${warning.message}`} title={`${warning.code} · ${warning.message}`}>{findingText(warning, t)}</li>)}</ul>
         </div>
       )}
     </div>

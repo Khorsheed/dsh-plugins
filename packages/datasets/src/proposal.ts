@@ -145,6 +145,12 @@ export interface ProposalProblem {
     | 'UNLAYERED_VISIBLE' | 'UNCOMMITTED' | 'HISTORY_REWRITTEN'
   message: string
   path?: string
+  /**
+   * The message's variable parts, so the page can say it in the reader's
+   * language (`review.finding.<code>[.<params.kind>]`); `message` stays the
+   * English account the CLI and the agent read.
+   */
+  params?: Record<string, string | number>
 }
 
 /** One set as the review shows it. */
@@ -635,6 +641,9 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
     if (tip !== commit) {
       problems.push({
         code: 'COMMIT_NOT_TIP',
+        params: tip === undefined
+          ? { kind: 'gone', ref: proposal.trackedRef }
+          : { kind: 'moved', ref: proposal.trackedRef, now: tip.slice(0, 12), commit: commit.slice(0, 12) },
         message: tip === undefined
           ? `branch ${proposal.trackedRef} does not exist any more`
           : `branch ${proposal.trackedRef} moved on after this proposal (now ${tip.slice(0, 12)}, proposal ${commit.slice(0, 12)}) — the agent should file a new proposal`,
@@ -685,7 +694,7 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       const mapping = outputFor(outputs, file)
       if (mapping !== undefined) matched.set(mapping, (matched.get(mapping) ?? 0) + 1)
       if (mapping === undefined && relevant) {
-        problems.push({ code: 'OUTPUT_UNCOVERED', message: `${file} is not explained by any mapping.outputs entry`, path: file })
+        problems.push({ code: 'OUTPUT_UNCOVERED', message: `${file} is not explained by any mapping.outputs entry`, path: file, params: { path: file } })
       }
       if (!relevant && mapping === undefined) continue
       const key = mapping?.path ?? unexplained.path
@@ -717,9 +726,9 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
     for (const output of outputs) {
       const count = matched.get(output) ?? 0
       if (count === 0 && changedPaths === undefined) {
-        problems.push({ code: 'OUTPUT_MISSING', message: `mapping.outputs ${output.path} matches no file at this commit`, path: output.path })
+        problems.push({ code: 'OUTPUT_MISSING', message: `mapping.outputs ${output.path} matches no file at this commit`, path: output.path, params: { path: output.path } })
       } else if (output.count !== undefined && output.count !== count) {
-        problems.push({ code: 'OUTPUT_COUNT', message: `mapping.outputs ${output.path} expects ${output.count} files, the commit has ${count}`, path: output.path })
+        problems.push({ code: 'OUTPUT_COUNT', message: `mapping.outputs ${output.path} expects ${output.count} files, the commit has ${count}`, path: output.path, params: { path: output.path, expected: output.count, count } })
       }
     }
     const outputRows: ReviewOutput[] = [...groups.values()].map(({ itemSet, zones, sets, layerSet, ...row }) => ({
@@ -734,6 +743,7 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
         code: 'UNLAYERED_VISIBLE',
         message: `${unlayered.length} file(s) sit in no layer — every agent sees them`,
         path: unlayered[0]!,
+        params: { count: unlayered.length },
       })
     }
 
@@ -744,29 +754,29 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       ? walkSource(normalizeRepoPath(proposal.source.path))
       : undefined
     if (proposal.source.path !== undefined && proposal.source.path !== '' && walked === undefined) {
-      warnings.push({ code: 'SOURCE_UNREAD', message: `the original directory ${proposal.source.path} cannot be read here — the source rows are the agent's account, not checked` })
+      warnings.push({ code: 'SOURCE_UNREAD', message: `the original directory ${proposal.source.path} cannot be read here — the source rows are the agent's account, not checked`, params: { path: proposal.source.path } })
     }
     if (proposal.kind === 'new' && sourceRows.length === 0 && proposal.source.kind !== 'protocol') {
-      problems.push({ code: 'DISPOSITION_INCOMPLETE', message: 'mapping.sources is empty — say what happened to every file of the original data' })
+      problems.push({ code: 'DISPOSITION_INCOMPLETE', message: 'mapping.sources is empty — say what happened to every file of the original data', params: { kind: 'empty' } })
     }
     for (const row of sourceRows) {
       const review: ReviewSource = { ...row }
       if (row.disposition === 'unused' && (row.reason === undefined || row.reason.trim() === '')) {
-        problems.push({ code: 'DISPOSITION_INCOMPLETE', message: `${row.path} is unused but gives no reason`, path: row.path })
+        problems.push({ code: 'DISPOSITION_INCOMPLETE', message: `${row.path} is unused but gives no reason`, path: row.path, params: { kind: 'noReason', path: row.path } })
       }
       if (row.disposition !== 'unused' && (row.target === undefined || row.target.trim() === '')) {
-        problems.push({ code: 'DISPOSITION_INCOMPLETE', message: `${row.path} is ${row.disposition} but names no target`, path: row.path })
+        problems.push({ code: 'DISPOSITION_INCOMPLETE', message: `${row.path} is ${row.disposition} but names no target`, path: row.path, params: { kind: 'noTarget', path: row.path } })
       }
       for (const field of row.fields ?? []) {
         if ((field.to === undefined || field.to === '') && (field.reason === undefined || field.reason === '')) {
-          problems.push({ code: 'DISPOSITION_INCOMPLETE', message: `${row.path}: field ${field.name} has neither a target nor a reason`, path: row.path })
+          problems.push({ code: 'DISPOSITION_INCOMPLETE', message: `${row.path}: field ${field.name} has neither a target nor a reason`, path: row.path, params: { kind: 'field', path: row.path, field: field.name } })
         }
       }
       if (walked !== undefined) {
         const covered = walked.files.filter(file => mappingMatches(row.path, file))
         review.files = covered.length
         if (covered.length === 0) {
-          problems.push({ code: 'SOURCE_MISSING', message: `mapping.sources ${row.path} matches no file of the original directory`, path: row.path })
+          problems.push({ code: 'SOURCE_MISSING', message: `mapping.sources ${row.path} matches no file of the original directory`, path: row.path, params: { path: row.path } })
         }
         if (covered.length === 1 && covered[0] === row.path && row.disposition !== 'unused') {
           const file = sourceFile(proposal.source, row.path)
@@ -774,13 +784,13 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
           if (shape !== undefined) {
             review.counted = shape.count
             if (row.count !== undefined && row.count !== shape.count) {
-              problems.push({ code: 'SOURCE_COUNT', message: `${row.path}: the agent counted ${row.count} records, the file has ${shape.count}`, path: row.path })
+              problems.push({ code: 'SOURCE_COUNT', message: `${row.path}: the agent counted ${row.count} records, the file has ${shape.count}`, path: row.path, params: { path: row.path, expected: row.count, count: shape.count } })
             }
             if (row.disposition === 'split' && shape.fields !== undefined) {
               const named = new Set((row.fields ?? []).map(field => field.name))
               const missing = shape.fields.filter(field => !named.has(field))
               if (missing.length > 0) {
-                problems.push({ code: 'FIELD_UNACCOUNTED', message: `${row.path}: fields ${missing.join(', ')} are not accounted for`, path: row.path })
+                problems.push({ code: 'FIELD_UNACCOUNTED', message: `${row.path}: fields ${missing.join(', ')} are not accounted for`, path: row.path, params: { path: row.path, fields: missing.join(', ') } })
               }
             }
           }
@@ -791,7 +801,7 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
     if (walked !== undefined) {
       for (const file of walked.files) {
         if (!sourceRows.some(row => mappingMatches(row.path, file))) {
-          problems.push({ code: 'SOURCE_UNLISTED', message: `${file} of the original directory is not accounted for in mapping.sources`, path: file })
+          problems.push({ code: 'SOURCE_UNLISTED', message: `${file} of the original directory is not accounted for in mapping.sources`, path: file, params: { path: file } })
         }
       }
     }
@@ -799,13 +809,13 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
     // Samples point at real items; layers name declared ones.
     for (const sample of proposal.samples ?? []) {
       if (!snap.items.get(sample.set)?.has(sample.item)) {
-        problems.push({ code: 'SAMPLE_MISSING', message: `sample ${sample.set}/${sample.item} is not an item at this commit` })
+        problems.push({ code: 'SAMPLE_MISSING', message: `sample ${sample.set}/${sample.item} is not an item at this commit`, params: { item: `${sample.set}/${sample.item}` } })
       }
     }
     for (const layer of proposal.layers ?? []) {
       const set = snap.descriptors.find(candidate => candidate.id === layer.set)
       if (set === undefined || !set.descriptor.layers.some(decl => decl.name === layer.layer)) {
-        problems.push({ code: 'LAYER_UNKNOWN', message: `layers: ${layer.set}/${layer.layer} is not declared at this commit` })
+        problems.push({ code: 'LAYER_UNKNOWN', message: `layers: ${layer.set}/${layer.layer} is not declared at this commit`, params: { layer: `${layer.set}/${layer.layer}` } })
       }
     }
 
@@ -822,7 +832,7 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       validateErrors.push({ set: '', message: String(error instanceof Error ? error.message : error) })
     }
     if (validateErrors.length > 0) {
-      problems.push({ code: 'VALIDATE_FAILED', message: `validate reports ${validateErrors.length} error(s): ${validateErrors[0]!.message}` })
+      problems.push({ code: 'VALIDATE_FAILED', message: `validate reports ${validateErrors.length} error(s): ${validateErrors[0]!.message}`, params: { count: validateErrors.length, first: validateErrors[0]!.message } })
     }
 
     const sets: ReviewSet[] = snap.descriptors.map(({ id, descriptor }) => {

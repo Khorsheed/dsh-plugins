@@ -325,6 +325,27 @@ export type DatasetsKey =
   | 'review.confirming'
   | 'review.done'
   | 'review.cancel'
+  | 'review.finding.COMMIT_NOT_TIP.gone'
+  | 'review.finding.COMMIT_NOT_TIP.moved'
+  | 'review.finding.UNCOMMITTED'
+  | 'review.finding.NO_SETS'
+  | 'review.finding.HISTORY_REWRITTEN'
+  | 'review.finding.OUTPUT_UNCOVERED'
+  | 'review.finding.OUTPUT_MISSING'
+  | 'review.finding.OUTPUT_COUNT'
+  | 'review.finding.UNLAYERED_VISIBLE'
+  | 'review.finding.SOURCE_UNREAD'
+  | 'review.finding.DISPOSITION_INCOMPLETE.empty'
+  | 'review.finding.DISPOSITION_INCOMPLETE.noReason'
+  | 'review.finding.DISPOSITION_INCOMPLETE.noTarget'
+  | 'review.finding.DISPOSITION_INCOMPLETE.field'
+  | 'review.finding.SOURCE_MISSING'
+  | 'review.finding.SOURCE_COUNT'
+  | 'review.finding.FIELD_UNACCOUNTED'
+  | 'review.finding.SOURCE_UNLISTED'
+  | 'review.finding.SAMPLE_MISSING'
+  | 'review.finding.LAYER_UNKNOWN'
+  | 'review.finding.VALIDATE_FAILED'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -658,6 +679,27 @@ export const zh: Record<DatasetsKey, string> = {
   'review.confirming': '登记中…',
   'review.done': '已登记「{name}」',
   'review.cancel': '取消',
+  'review.finding.COMMIT_NOT_TIP.gone': '跟踪分支 {ref} 已经不在了',
+  'review.finding.COMMIT_NOT_TIP.moved': '提案之后分支 {ref} 又往前走了（现在 {now}，提案是 {commit}），请 Agent 重新提一次',
+  'review.finding.UNCOMMITTED': '检出里 datasets/ 下有没提交的改动，它们不算在这个版本里',
+  'review.finding.NO_SETS': '这个版本里没有任何题集（找不到 datasets/<题集>/dataset.json）',
+  'review.finding.HISTORY_REWRITTEN': '这个版本不是接着已登记版本改的（分支被改写过），所有文件都按改动计',
+  'review.finding.OUTPUT_UNCOVERED': '{path} 没有说明从哪来',
+  'review.finding.OUTPUT_MISSING': '说明里的 {path} 在这个版本里一个文件也没有',
+  'review.finding.OUTPUT_COUNT': '{path}：说明里是 {expected} 个文件，实际 {count} 个',
+  'review.finding.UNLAYERED_VISIBLE': '{count} 个文件不在任何层里，选手能看到',
+  'review.finding.SOURCE_UNREAD': '原目录 {path} 在这台机器上读不到，原目录一栏是 Agent 的说明，没法逐个核对',
+  'review.finding.DISPOSITION_INCOMPLETE.empty': '没说明原数据的每个文件怎么处理的',
+  'review.finding.DISPOSITION_INCOMPLETE.noReason': '{path} 标成未使用，但没说为什么',
+  'review.finding.DISPOSITION_INCOMPLETE.noTarget': '{path} 没说放到了题集的哪里',
+  'review.finding.DISPOSITION_INCOMPLETE.field': '{path} 的字段 {field} 既没去处也没理由',
+  'review.finding.SOURCE_MISSING': '说明里的 {path} 在原目录里找不到',
+  'review.finding.SOURCE_COUNT': '{path}：Agent 数的是 {expected} 条记录，文件里有 {count} 条',
+  'review.finding.FIELD_UNACCOUNTED': '{path} 的字段 {fields} 没说明去处',
+  'review.finding.SOURCE_UNLISTED': '原目录里的 {path} 没说明怎么处理的',
+  'review.finding.SAMPLE_MISSING': '抽样题 {item} 在这个版本里不存在',
+  'review.finding.LAYER_UNKNOWN': '层 {layer} 在这个版本里没有声明',
+  'review.finding.VALIDATE_FAILED': '校验报了 {count} 处错误，第一处：{first}',
 }
 
 /** English dictionary. */
@@ -986,4 +1028,25 @@ export const en: Record<DatasetsKey, string> = {
   'review.confirming': 'Registering…',
   'review.done': 'Registered 「{name}」',
   'review.cancel': 'Cancel',
+  'review.finding.COMMIT_NOT_TIP.gone': 'The tracked branch {ref} no longer exists',
+  'review.finding.COMMIT_NOT_TIP.moved': 'Branch {ref} moved on after this proposal (now {now}, proposal {commit}); ask the agent to file a new one',
+  'review.finding.UNCOMMITTED': 'The checkout has uncommitted changes under datasets/; they are not part of this version',
+  'review.finding.NO_SETS': 'This version holds no dataset (no datasets/<set>/dataset.json)',
+  'review.finding.HISTORY_REWRITTEN': 'This version does not continue the registered one (the branch was rewritten); every file counts as changed',
+  'review.finding.OUTPUT_UNCOVERED': '{path} has no account of where it came from',
+  'review.finding.OUTPUT_MISSING': '{path} from the account matches no file in this version',
+  'review.finding.OUTPUT_COUNT': '{path}: the account says {expected} files, the version has {count}',
+  'review.finding.UNLAYERED_VISIBLE': '{count} files sit in no layer; agents can see them',
+  'review.finding.SOURCE_UNREAD': 'The original directory {path} cannot be read here; the source rows are the agent’s account, unchecked',
+  'review.finding.DISPOSITION_INCOMPLETE.empty': 'No account of what happened to each file of the original data',
+  'review.finding.DISPOSITION_INCOMPLETE.noReason': '{path} is marked unused with no reason',
+  'review.finding.DISPOSITION_INCOMPLETE.noTarget': '{path} names no place in the dataset',
+  'review.finding.DISPOSITION_INCOMPLETE.field': '{path}: field {field} has neither a target nor a reason',
+  'review.finding.SOURCE_MISSING': '{path} from the account is not in the original directory',
+  'review.finding.SOURCE_COUNT': '{path}: the agent counted {expected} records, the file has {count}',
+  'review.finding.FIELD_UNACCOUNTED': '{path}: fields {fields} are not accounted for',
+  'review.finding.SOURCE_UNLISTED': '{path} of the original directory is not accounted for',
+  'review.finding.SAMPLE_MISSING': 'Sample {item} is not an item in this version',
+  'review.finding.LAYER_UNKNOWN': 'Layer {layer} is not declared in this version',
+  'review.finding.VALIDATE_FAILED': 'Validation reports {count} error(s); the first: {first}',
 }
