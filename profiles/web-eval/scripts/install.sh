@@ -439,8 +439,9 @@ DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 # Distinct @khorsheed names, not raw matches: the composed dump repeats each
 # member (layer header + entry row), so the raw count is nearly double.
 #
-# Three counts, and they are deliberately different numbers — a drop in any of
-# them is the symptom this line exists to surface:
+# Three counts, each composed differently (on the 0.2.0 composition they
+# happen to coincide at 25, measured after the T82 merge of main) — a drop in
+# any of them is the symptom this line exists to surface:
 #   25  tarballs packed above, one per UNPUBLISHED_DIRS entry;
 #   25  @khorsheed dependencies in the profile's own package.json — every
 #       tarball except local-agent-dsh-headless (local-agent-dsh pulls it in

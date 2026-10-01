@@ -17,7 +17,7 @@ web-eval pack 是在宿主 0.1.5-rc.1 上建起来、验收过的。它的 `eval
 - **安装闸门。** `dsh --version` 低于 0.2.0-rc.2 时，`install.sh` 和 `update.sh` 在写任何东西之前就以退出码 2 退出，并给出 `~/.dsh-toolchains/rc-0.2.0-rc.2`。
   - 源码模式还拒绝低于这条线的 `DSH_HARNESS` 检出，因为 typert 生成读的是它。
   - 往 `.agent-presets` 复制预设及其备份的逻辑都删掉了。遗留的 `$DSH_HOME/.agent-presets/eval` 只打一行可删提示，脚本从不替人删。
-- **兼容性。** eval、eval-tool、datasets、datasets-tool 的 `dsh.compat` 中 `minHost` 与 `verifiedHost` 都是 0.2.0-rc.2，两份 README 的「兼容性」节写的同一件事。web-eval 的两份 README 新增「兼容性」节，「安装」里写明 0.2.0 宿主线，dump 计数改为 25 个名字（22 个 bundle、`local-agent-dsh-headless`，以及预设点名的两个伴生工具行）。
+- **兼容性。** eval、eval-tool、datasets、datasets-tool 的 `dsh.compat` 中 `minHost` 与 `verifiedHost` 都是 0.2.0-rc.2，两份 README 的「兼容性」节写的同一件事。web-eval 的两份 README 新增「兼容性」节，「安装」里写明 0.2.0 宿主线，dump 计数改为 25 个名字（22 个 bundle、`local-agent-dsh-headless`，以及预设点名的两个伴生工具行）。main 的 README 写的是 23（按 0.1.5 时代目录式预设的组成数的）。合入 main 后，用合并后的源码在新临时 home 上 `--source --fresh` 重装，实测是 25 个名字、205 行。合并前后两边的 `UNPUBLISHED_DIRS` 完全一致，文档里写的是实测值。
 
 ### 受试 dsh 跟着实例走
 

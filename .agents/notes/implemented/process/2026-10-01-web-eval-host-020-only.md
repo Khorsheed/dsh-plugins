@@ -17,7 +17,7 @@ The user decided on 2026-10-01 (T82): **web-eval supports host 0.2.0 and later o
 - **Install gate.** `install.sh` and `update.sh` exit 2 before writing anything when `dsh --version` is below 0.2.0-rc.2, and name `~/.dsh-toolchains/rc-0.2.0-rc.2`.
   - Source mode also refuses a `DSH_HARNESS` checkout below that line, because typert generation reads it.
   - The `.agent-presets` copy and its backup are gone. A leftover `$DSH_HOME/.agent-presets/eval` gets a removal note; the scripts never delete it.
-- **Compatibility.** eval, eval-tool, datasets and datasets-tool carry `dsh.compat` `minHost` and `verifiedHost` 0.2.0-rc.2. Both of their READMEs state the same in `Compatibility`. The web-eval READMEs gain a Compatibility section, the 0.2.0 host line in Install, and a dump count of 25 names (22 bundles, `local-agent-dsh-headless`, and the two companion tool rows the preset names).
+- **Compatibility.** eval, eval-tool, datasets and datasets-tool carry `dsh.compat` `minHost` and `verifiedHost` 0.2.0-rc.2. Both of their READMEs state the same in `Compatibility`. The web-eval READMEs gain a Compatibility section, the 0.2.0 host line in Install, and a dump count of 25 names (22 bundles, `local-agent-dsh-headless`, and the two companion tool rows the preset names). After merging main, whose README said 23 (counted on the 0.1.5-era composition with the directory preset), a `--source --fresh` reinstall of the merged tree into a new temp home measured 25 names and 205 rows. The merge left `UNPUBLISHED_DIRS` identical on both sides, and the measured figures are the ones the docs carry.
 
 ### The tested dsh follows the instance
 
