@@ -411,6 +411,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T80 | ✅ 四条已合（2026-09-26：T80a `0f59af27`；T80b `b028f906`；T80d `23cd336a`；T80c `edb7e313`） | 收口补充一轮：按 T79 清单改，P0 + 全部 P1 + 协调者提升的 12 条 P2。文案见 §三「T80」 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
 | T81 | ✅ 收口（2026-09-26）：阶段一 main 在 0.1.5-rc.1 上 a–e 全过；阶段二被 main 的 `d49f29af` 取代，不合 | 评测线在 0.1.5 上恢复。typert 双形态 codec（`00cfa1d6`）、preset 双名探测（`380a469c`）、图标自带（`d49f29af`：`scripts/sync-icon-artwork.mts` 给每个包生成 `src/client/icons.tsx`，0.1.5 与 0.1.7 都不再按名字取宿主图标）都由各包负责人在 main 上做了。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；datasets 图标面由 T76 补拍一并看 |
 | T82 | 代码（2026-10-01 改向并派发） | **web-eval 只支持宿主 0.2.0 及以后**（用户 10-01 定，取代原「0.1.7 + 0.1.5 双宿主」）：preset 只走 bundle、install.sh 只认 ≥ 0.2.0、0.2.0 工具链、临时实例冒烟、受试 dsh 版本是否跟实例走、3171 数据试迁、compat 提到 0.2.0。文案见 §三「T82（改）」 | T87 | 0.2.0 临时实例 a–e 与 T86/T87 欠账全过；3171 副本迁过去核对一致 |
+| T88 | 代码（2026-10-01 定，排在 T82 合入之后派发） | 评测家族照 local-agent 形态整理：三个 *-tool 折进核心包的 `./tool` 入口并退役旧包；datasets / mission / lab / eval 保持独立包；新增 family bundle `@khorsheed/dsh-bundle-eval`，web-eval 改依赖它。mission 不退役。文案见 §三「T88」 | T82 | |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -4311,6 +4312,75 @@ build/test 用 DSH_HARNESS=~/code/deepseek-harness-0.2.0（tag dsh-v0.2.0-rc.2�
 
 ## 回报
 分支与 commit；题库分支（如有）；a–e 和补拍逐项结果与截图路径；第 7、8 条的结论；compat 写法；Note 路径；实例端口和 home，等配凭据。
+```
+
+#### T88 · 评测家族照 local-agent 形态整理：tool 折进核心包 + family bundle（2026-10-01 定，T82 合入后派发）
+
+**用户 10-01 的决定**：
+- mission 不退役，作为家族成员进 bundle。
+- 三个 *-tool 包折进各自核心包。
+- datasets / mission / lab / eval 各自保持独立的包，能单装。
+- 能力在包之间怎么分（哪些能力该挪包）另行评估讨论，不并进本任务；有结论后另开任务。
+
+**背景**：
+- 之前以为「一次装齐」要等上游的薄元包接口，这是误判。bundle-local-agent 已经证明 family bundle 今天就能用：bundle 的 patch 逐字复挂成员的规范行，成员作为传递依赖装进来，它们自己的 patch 不生效，所以不会双挂。
+- docs/ops.md「整合包」一条的说法已经过时，本任务顺手改掉。
+
+**为什么排在 T82 之后**：T82 改的正是 web-eval 的 preset、profile 依赖和 install.sh，两边并行会互相冲突。
+
+```text
+# 任务 T88：评测家族照 local-agent 形态整理
+
+## 分支
+等 T82 合入 main 后，从本地 main 开 worktree ../dsh-plugins-wt-t88-family，分支 feat/t88-eval-family。
+DSH_HARNESS=~/code/deepseek-harness-0.2.0；跨宿主版本先删 tsbuildinfo。
+
+## 先读
+- .agents/notes/implemented/architecture/2026-09-30-local-agent-tool-fold.zh.md（折叠的决定、版本、门禁改动、测试迁移）
+- packages/bundle-local-agent（patch 头注释、README「实现原理」、tests/bundle.spec.ts）
+- .agents/notes 里 2026-09-24-family-bundle-meta-packages
+- worktrees 0.3.0、room 0.2.0 的 ./tool 折叠提交（先例）
+- profiles/web-eval/presets/eval/agent.cordis.yml 里 datasets-tool、eval-tool 两行，以及 mission-tool 被摘掉的那段注释（任务 tab 按 mission-tool 行自隐）
+
+## 步骤
+1. tool 折叠：eval-tool → @khorsheed/dsh-eval/tool，datasets-tool → @khorsheed/dsh-datasets/tool，mission-tool → @khorsheed/dsh-mission/tool。
+   - 定义和注册都进核心包的 ./tool 子路径入口；inject 写法照 preset 工具行的约定。
+   - `tools:` 分组配置保留：一行注册十几个工具，与 local-agent 的单工具情况不同。
+   - 工具来源 owner 改成核心包名。
+   - 测试随代码迁进核心包。
+2. 改指：所有组合（web-eval 的 eval preset、packages/presets、profiles 下任何点名旧包的地方）行 id 不变，name 改指新入口。
+   - mission 任务 tab 的 preset-visibility 原来按 mission-tool 行判，要改成按新入口判，行为不变：评测会话照旧看不见任务 tab。
+3. 旧包退役：删除 packages/{eval,datasets,mission}-tool 目录，名字进 scripts/retired-packages.ts。
+   - check-plugin-independence 的白名单、allowed edges、community-service injectors 删退役名、加新入口。
+   - check-release-groups 的家族名册同步。
+   - 各 spec 夹具改到折叠后的形态。
+4. family bundle：新增 packages/bundle-eval（@khorsheed/dsh-bundle-eval，kind: family）。
+   - 成员：datasets、mission、lab、eval。patch 逐字复用四个成员的规范行，不发明行 id。
+   - locale 卡面元数据把整族归成一张卡「评测」。
+   - README 双语照 bundle-local-agent 的结构写，lab 需要 Docker 这一点写进已知限制。
+   - tests/bundle.spec.ts 从成员并集推导。
+5. web-eval profile：依赖与成员清单改成 bundle-eval，不再逐个列四个成员；install.sh 的同族包推导跟着改。
+   - 用临时实例证明：装完四个成员的行都挂上且只挂一次（dump-config 里每个行 id 出现一次），eval 会话里工具照旧可用，任务 tab 照旧不出现。
+6. 版本与 compat：
+   - 家族版本线照 local-agent 折叠的做法一起推进；bundle-eval 从 0.1.0 起。
+   - minHost 统一 0.2.0-rc.2（T82 已定），双语 README 的 Compatibility 段同步。
+   - 退役包的 npm 弃用标记留给发布波，不在本任务做。
+7. docs/ops.md「整合包」一条改成现状：family bundle 已可用，指向 bundle-local-agent 与 bundle-eval；薄元包上游接口那段降为历史说明。
+
+## 不做
+- 不在包之间搬能力（另行评估）。
+- 不动 3171、~/.dsh-lab、题库共享检出、3080 / 3093 / ~/.dsh-official / ~/.dsh。
+- 不从 npm 装 @khorsheed 包，不发布。
+- 不自己合 main。
+
+## 完成判据
+- 家族各包 build/test 绿；pnpm test:scripts、check:hygiene --all、check:plugins 都过。
+- 仓内没有任何组合再引用三个退役名（check-profile-bundles 会拒）。
+- 第 5 条临时实例上的三项证明有输出原文，eval 会话至少调一次 eval 读工具、一次 datasets 读工具。
+- Agent Note（Alternatives considered 至少比较「保持独立 tool 包」「折进核心包」「整族并成一个包」三种，写明用户的决定）。
+
+## 回报
+分支与各 commit；退役清单；bundle 行清单；临时实例的端口、home 与证明原文；Note 路径。
 ```
 
 ## 四、验收规程
