@@ -29,12 +29,21 @@ const BUNDLE_DIR = join(PROFILE, 'presets')
  */
 const DIRECTORY_COMPOSITION_SHA = 'fbd218b890b65422edf221dc7e084458917b2928783076cd028b024772d9d81b'
 
-/** The `plugins:` block, de-indented back to the directory file it came from. */
-function pluginsBlock(patch: string): string {
+/**
+ * The preset-eval row's `plugins:` block, de-indented back to the directory
+ * file it came from. It ends where the next top-level row (or its leading
+ * comment) begins — T90 appended `preset-dataset-authoring` after it, and the
+ * blank separator line keeps the bytes identical to the end-of-file slice.
+ */
+function pluginsBlock(patch: string, row = 'preset-eval'): string {
   const lines = patch.split('\n')
-  const at = lines.indexOf('        plugins:')
-  expect(at, 'the preset-eval row carries a `plugins:` key at row-config depth').toBeGreaterThan(0)
-  return lines.slice(at + 1).map(line => (line === '' ? '' : line.replace(/^ {10}/, ''))).join('\n')
+  const start = lines.indexOf(`    - id: ${row}`)
+  expect(start, `the bundle carries a ${row} row`).toBeGreaterThanOrEqual(0)
+  const at = lines.indexOf('        plugins:', start)
+  expect(at, `the ${row} row carries a \`plugins:\` key at row-config depth`).toBeGreaterThan(0)
+  const next = lines.findIndex((line, index) => index > at && /^ {4}[-#]/.test(line))
+  const end = next === -1 ? lines.length : next
+  return lines.slice(at + 1, end).map(line => (line === '' ? '' : line.replace(/^ {10}/, ''))).join('\n')
 }
 
 describe('web-eval preset bundle', () => {
@@ -58,9 +67,9 @@ describe('web-eval preset bundle', () => {
     expect(profile.dsh.profile.bundles).toContain(manifest.name)
   })
 
-  it('mounts exactly one top-level row: preset-eval, id eval, with the directory version\'s display fields', () => {
+  it('mounts two top-level rows: preset-eval (id eval, the directory version\'s display fields) and preset-dataset-authoring', () => {
     const topRows = patch.split('\n').filter(line => /^ {4}- id: /.test(line))
-    expect(topRows).toEqual(['    - id: preset-eval'])
+    expect(topRows).toEqual(['    - id: preset-eval', '    - id: preset-dataset-authoring'])
     expect(patch).toContain("      name: '@deepseek-ai/dsh-agent-preset'\n      config:\n        id: eval\n")
     expect(patch).toContain('        name: 评测模式\n')
     expect(patch).toContain('        description: 评测实例的规划与分析 Agent：读题库、起草 plan 与 condition、读 bundle 写分析初稿；不挂 Bash，不挂容器控制。\n')
@@ -79,6 +88,16 @@ describe('web-eval preset bundle', () => {
     }
     expect(names).toContain('@khorsheed/dsh-datasets/tool')
     expect(names).toContain('@khorsheed/dsh-eval/tool')
+  })
+
+  it('gives the 题集整理 session its own preset: the organize tier, a shell, no eval tools (T90, decision B)', () => {
+    const block = pluginsBlock(patch, 'preset-dataset-authoring')
+    expect(patch).toContain("      name: '@deepseek-ai/dsh-agent-preset'\n      config:\n        id: dataset-authoring\n")
+    const names = [...block.matchAll(/^\s*name: '([^']+)'/gm)].map(m => m[1])
+    expect(names).toContain('@deepseek-ai/dsh-tool-bash')
+    expect(names).toContain('@deepseek-ai/dsh-tool-skill')
+    expect(names).not.toContain('@khorsheed/dsh-eval/tool')
+    expect(block).toMatch(/name: '@khorsheed\/dsh-datasets\/tool'\n {2}config:\n {4}tools: organize\b/)
   })
 
   it('is the deployment default through the profile pin layer', () => {

@@ -1,4 +1,4 @@
-# dsh-web-eval 自带的声明式 preset bundle：只有 preset-eval 这一行（T82，2026-10-01）。
+# dsh-web-eval 自带的声明式 preset bundle：preset-eval（T82，2026-10-01）与 preset-dataset-authoring（T90）。
 #
 # 宿主 0.2.0 起 agent preset 只有一种形态：`@deepseek-ai/dsh-agent-preset` 的
 # loader 行（agent-preset-registry 不扫目录、不收路径）。0.1.5 时代 install.sh /
@@ -227,3 +227,97 @@
             name: '@khorsheed/dsh-eval/tool'
             config:
               tools: all            # 四读两写：写只有 eval_plan_draft（部署内实验目录）与 eval_analysis_write（analysis/ 内）
+
+    # ── 题集整理（T90，2026-10-01）────────────────────────────────────────────────
+    # 「添加题集」弹窗的「让 Agent 整理」新开一个会话并选这个预设（datasets 的
+    # Config.authoringPreset 默认 `dataset-authoring`）。它和 eval 是两个不同的 Agent：
+    # 决定 B——整理会看到答案，不复用评测会话；评测会话永远不继承本预设。
+    # 与冻结决策 12 的关系：整理要跑 git 和转换脚本，所以这里挂 shell；冻结决策 12
+    # 约束的是评测（规划与分析）Agent，上面 preset-eval 一块不动（sha 照旧钉住）。
+    # 登记表仍只归人写（决定 A）：datasets-tool 的 `organize` 档只多一个
+    # datasets_propose_registration（只写申请），并随档注册随包分发的
+    # dataset-authoring skill。没有 eval-tool，没有委派。
+    - id: preset-dataset-authoring
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: dataset-authoring
+        name: 题集整理
+        description: 把本地数据、下载的数据或公开数据集整理成协议格式的 git 仓库，并提交登记申请等人确认；会看到答案，不用于评测。
+        order: 1
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the dataset organizing agent of a dsh evaluation instance, powered by the {{model}} model. Your working directory is {{cwd}}.
+                Load the dataset-authoring skill before anything else and follow it: check git, look at the data, ask every key question in one go, never modify the original data, convert everything, give every file and field a disposition, commit per batch, dry-run until it passes, then file the proposal and stop.
+                You never register a dataset; the person confirms your proposal on the 题集 tab.
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+          - id: datasets-tool
+            name: '@khorsheed/dsh-datasets/tool'
+            config:
+              tools: organize       # 读类 + datasets_propose_registration（只写申请）；挂 dataset-authoring skill
