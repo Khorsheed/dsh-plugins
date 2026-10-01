@@ -22,7 +22,7 @@ import {
 } from '../src/export-note.ts'
 import { exportDirCandidates } from '../src/report-view.ts'
 import { EvalService } from '../src/service.ts'
-import { cleanupTmp, tmpTree } from './helpers.ts'
+import { cleanupTmp, tmpTree, attemptDirsOf } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -47,7 +47,7 @@ function ledger(options: { meta?: Record<string, unknown>; rows?: string[] } = {
     annotations,
     base,
     face: {
-      dataDir: '/nowhere',
+      ...attemptDirsOf('/nowhere'),
       runStatus: (runId: string) => {
         if (runId !== RUN) throw new Error(`unknown run ${runId}`)
         return {
@@ -241,20 +241,22 @@ describe('the report page reads how old the bundle is', () => {
 })
 
 describe('one export action writes the bundle, the report and the note', () => {
-  /** mission's Remote, writing a real bundle so the report has something to render. */
+  /** mission's gated export verbs, writing a real bundle so the report has something to render. */
   function exportRemote(out: string) {
     return {
-      exportPlan: vi.fn(async () => ({ bundleDir: join(out, `${RUN}-bundle`), guardedLayers: [], expectedNs: ['script'], missions: 1, attempts: 1 })),
-      exportRun: vi.fn(async (_agent: unknown, request: { outDir: string }) => {
+      exportPlanGated: vi.fn(async () => ({ bundleDir: join(out, `${RUN}-bundle`), guardedLayers: [], expectedNs: ['script'], missions: 1, attempts: 1 })),
+      exportRunGated: vi.fn(async (request: { outDir: string }) => {
         mkdirSync(request.outDir, { recursive: true })
         return { bundleDir: writeBundle(request.outDir, RUN, 1_700_000_000_000), files: 4 }
       }),
     }
   }
 
-  function service(face: unknown, remote: unknown) {
+  /** Since T89 the gated verbs ride mission's service face, so they join the ledger face. */
+  function service(face: object, remote: object) {
+    const mission = Object.assign(face, remote)
     return new EvalService({
-      get: (name: string) => (name === 'mission' ? face : name === 'missionRemote' ? remote : undefined),
+      get: (name: string) => (name === 'mission' ? mission : undefined),
     })
   }
 
@@ -292,7 +294,7 @@ describe('one export action writes the bundle, the report and the note', () => {
     expect(existsSync(first.bundleDir)).toBe(true)
     expect(existsSync(again.bundleDir)).toBe(true)
     // Repeats, never widens: the same layers and snapshot, nothing confirmed.
-    const repeated = remote.exportRun.mock.calls[1]?.[1] as Record<string, unknown>
+    const repeated = remote.exportRunGated.mock.calls[1]?.[0] as Record<string, unknown>
     expect(repeated).toMatchObject({
       runId: RUN, layers: ['visible'], snapshotDir: '/snap',
       snapshot: { repo: '/repo', commit: 'c0ffee', dataset: 'ds' }, confirmed: [],

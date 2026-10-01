@@ -11,14 +11,13 @@
  * the dialog's, and a re-export after the final verdicts — writes one, and the
  * report page reads the newest.
  *
- * It is a run-level fact recorded through a per-cell door, because that is the
- * only door the ledger has: mission's `annotate` takes a mission id, and a
- * run's `meta` is frozen at `runCreate`. So the note is written on ONE cell of
- * the run (the first, deterministically) in the `orchestrator` namespace, and
- * read by scanning every cell — written narrow, read wide, so a note that
- * landed on any cell of the run is still found. A run with no cell at all
- * records nothing and the page falls back to the directory candidates, which
- * is exactly the behaviour that existed before.
+ * It is a run-level fact and, since T89, recorded as one: a RUN-LEVEL
+ * annotation in the `orchestrator` namespace (mission's `annotateRun`; see
+ * {@link ./run-notes.ts}). Before T89 the ledger had only a per-cell door, so
+ * the note went on the run's FIRST cell; an older mission still gets exactly
+ * that, and the reader scans the run-level list plus every cell, so a note an
+ * older run left on any cell is still found. A run with no note at all makes
+ * the page fall back to the directory candidates, as it always did.
  *
  * The second half is G17. The bundle is exported when the run ends; the final
  * verdicts are written afterwards, from the judge bench, and they do not
@@ -29,6 +28,7 @@
  * @module @khorsheed/dsh-eval
  */
 import type { MissionAnnotateFace, MissionReadFace } from './faces.ts'
+import { runLevelAnnotations, writeRunNote } from './run-notes.ts'
 
 /** The `orchestrator` annotation kind this module writes and reads. */
 export const EXPORT_NOTE_KIND = 'export'
@@ -117,8 +117,8 @@ export function exportNotePayload(note: EvalExportNote): Record<string, unknown>
 /**
  * Record one export against the run.
  *
- * Written on the run's FIRST cell — an arbitrary cell would do, and the first
- * one is the choice that is the same on every call. The write is best-effort:
+ * Written at run level (or, against a mission predating that, on the run's
+ * FIRST cell — the choice that is the same on every call). Best-effort:
  * a composition whose ledger refuses the annotation still exported a bundle,
  * and losing the breadcrumb must not lose the artifact. What comes back says
  * which it was, so a caller can report the difference rather than imply one.
@@ -136,24 +136,27 @@ export async function recordExportNote(
   note: EvalExportNote,
   by?: string,
 ): Promise<{ recorded: boolean; reason: string | null }> {
-  let missionId: string | undefined
-  try {
-    missionId = mission.runStatus(runId).rows[0]?.id
-  } catch (error) {
-    return { recorded: false, reason: error instanceof Error ? error.message : String(error) }
+  return outcome(await writeRunNote(
+    annotate, runId, 'orchestrator', exportNotePayload(note), by, () => mission.runStatus(runId).rows[0]?.id,
+  ), runId)
+}
+
+function outcome(written: Awaited<ReturnType<typeof writeRunNote>>, runId: string): { recorded: boolean; reason: string | null } {
+  if (written.ok) return { recorded: true, reason: null }
+  return {
+    recorded: false,
+    reason: written.refusal === 'no-cell' ? `run ${runId} holds no cell to record the export against` : written.detail,
   }
-  if (missionId === undefined) {
-    return { recorded: false, reason: `run ${runId} holds no cell to record the export against` }
-  }
-  return await recordExportNoteOn(annotate, missionId, runId, note, by)
 }
 
 /**
- * {@link recordExportNote} for a caller that already knows which cell to write
- * on — the run loop, which is holding its own ordered cell list at the moment
- * it exports and has no reason to ask the ledger for it again.
+ * {@link recordExportNote} for a caller that already knows the run's first
+ * cell — the run loop, which is holding its own ordered cell list at the
+ * moment it exports and has no reason to ask the ledger for it again. The
+ * cell is only the legacy fallback: a mission with `annotateRun` gets the
+ * note at run level.
  * @param annotate - mission's annotate face.
- * @param missionId - the cell the note is recorded against.
+ * @param missionId - the cell the note falls back to on an older mission.
  * @param runId - the run the export belongs to.
  * @param note - what was exported and where.
  * @param by - caller tag recorded against the annotation.
@@ -161,26 +164,19 @@ export async function recordExportNote(
  */
 export async function recordExportNoteOn(
   annotate: MissionAnnotateFace,
-  missionId: string,
+  missionId: string | undefined,
   runId: string,
   note: EvalExportNote,
   by?: string,
 ): Promise<{ recorded: boolean; reason: string | null }> {
-  try {
-    await annotate.annotate(missionId, 'orchestrator', exportNotePayload(note), {
-      runId,
-      ...(by === undefined ? {} : { by }),
-    })
-    return { recorded: true, reason: null }
-  } catch (error) {
-    return { recorded: false, reason: error instanceof Error ? error.message : String(error) }
-  }
+  return outcome(await writeRunNote(annotate, runId, 'orchestrator', exportNotePayload(note), by, () => missionId), runId)
 }
 
 /**
  * Read the run's newest export note and its newest human-final timestamp.
  *
- * ONE pass over the cells for both: they are read together on every report
+ * ONE pass for both — the run-level list (where the note lives since T89),
+ * then every cell (the pre-T89 note, and every human-final): they are read together on every report
  * render, and the pair is what the staleness sentence is made of. Every cell
  * the ledger cannot resolve contributes nothing rather than failing the read —
  * a report page is not the place to discover that one mission record is
@@ -190,21 +186,21 @@ export async function recordExportNoteOn(
  * @returns the newest note (null when none) and the newest human-final time.
  */
 export function readExportState(mission: MissionReadFace, runId: string): EvalExportState {
-  let rows: ReadonlyArray<{ id: string }>
-  try {
-    rows = mission.runStatus(runId).rows
-  } catch {
-    return { note: null, lastHumanFinalAt: null }
-  }
   let note: EvalExportNote | null = null
   let lastHumanFinalAt: number | null = null
-  for (const row of rows) {
-    let annotations: ReadonlyArray<{ ns: string; payload: unknown; createdAt: number }> = []
-    try {
-      annotations = mission.get(row.id, runId).mission.annotations
-    } catch {
-      continue
+  const lists: Array<ReadonlyArray<{ ns: string; payload: unknown; createdAt: number }>> = [runLevelAnnotations(mission, runId)]
+  try {
+    for (const row of mission.runStatus(runId).rows) {
+      try {
+        lists.push(mission.get(row.id, runId).mission.annotations)
+      } catch {
+        // an unreadable cell contributes nothing
+      }
     }
+  } catch {
+    // no cell list: the run-level list alone
+  }
+  for (const annotations of lists) {
     for (const annotation of annotations) {
       if (annotation.ns === 'human-final') {
         if (lastHumanFinalAt === null || annotation.createdAt > lastHumanFinalAt) lastHumanFinalAt = annotation.createdAt

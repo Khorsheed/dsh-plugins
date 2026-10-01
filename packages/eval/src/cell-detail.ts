@@ -40,14 +40,35 @@ function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' ? value : null
 }
 
+/** The one mission verb a reader needs to find an attempt's run data. */
+export interface AttemptDirFace {
+  attemptDataDir?(runId: string, missionId: string, attempt: number): string
+}
+
 /**
- * Where the orchestrator wrote one attempt's run data. The layout is mission's
- * store's and eval's run loop writes into exactly this path, so this is a
- * shared convention rather than a guess — but it is still only read on a face
- * that reports `dataDir`, and the absence degrades to "hash unknown".
+ * Where one attempt's run data lives, ASKED of mission (`attemptDataDir`) —
+ * the layout is mission's store's, so eval never rebuilds the path. Null when
+ * the face lacks the verb (mission absent, or a mission older than the verb)
+ * or refuses the ids: every caller degrades on null ("hash unknown", no
+ * materials) rather than guessing a path.
+ * @param mission - mission's face, or undefined when mission is not mounted.
+ * @param runId - the run.
+ * @param missionId - the cell.
+ * @param attempt - the attempt.
+ * @returns the absolute directory, or null.
  */
-export function attemptDataDir(dataDir: string, runId: string, missionId: string, attempt: number): string {
-  return join(dataDir, 'runs', runId, 'data', missionId, `attempt-${attempt}`)
+export function attemptDirOf(
+  mission: AttemptDirFace | undefined,
+  runId: string,
+  missionId: string,
+  attempt: number,
+): string | null {
+  if (typeof mission?.attemptDataDir !== 'function') return null
+  try {
+    return mission.attemptDataDir(runId, missionId, attempt)
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -55,21 +76,22 @@ export function attemptDataDir(dataDir: string, runId: string, missionId: string
  * `materialization.json` the run loop wrote beside the cell. Null for every
  * reason a file can be missing — a run that predates the record, a ledger root
  * this composition cannot see, a half-written attempt. Never guessed.
- * @param dataDir - the mission data root, or undefined on a face without one.
+ * @param mission - mission's face (its `attemptDataDir` verb), or undefined.
  * @param runId - the run.
  * @param missionId - the cell.
  * @param attempt - the attempt whose material is wanted.
  * @returns the digest, or null.
  */
 export async function materializationShaOf(
-  dataDir: string | undefined,
+  mission: AttemptDirFace | undefined,
   runId: string,
   missionId: string,
   attempt: number,
 ): Promise<string | null> {
-  if (dataDir === undefined) return null
+  const dir = attemptDirOf(mission, runId, missionId, attempt)
+  if (dir === null) return null
   try {
-    const text = await readFile(join(attemptDataDir(dataDir, runId, missionId, attempt), 'materialization.json'), 'utf8')
+    const text = await readFile(join(dir, 'materialization.json'), 'utf8')
     const parsed: unknown = JSON.parse(text)
     return isPlainObject(parsed) ? stringOrNull(parsed['sha256']) : null
   } catch {
@@ -337,7 +359,7 @@ export async function runCellDetail(
       resource: current?.refs?.resource ?? null,
       fingerprint: current?.refs?.fingerprint ?? null,
     },
-    materializationSha: await materializationShaOf(mission.dataDir, runId, missionId, row.currentAttempt),
+    materializationSha: await materializationShaOf(mission, runId, missionId, row.currentAttempt),
     childSessionId: playerSessionOf(current, annotations),
     // Every session on this page — the player's and each judge round's — is a
     // SUBAGENT of this one, and the host's reader refuses a subagent session

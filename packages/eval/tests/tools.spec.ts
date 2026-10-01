@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashConditionDocument } from '../src/hash.ts'
 import { EvalService } from '../src/service.ts'
 import { evalToolDefinitions } from '../src/tool-definition.ts'
-import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson } from './helpers.ts'
+import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson, attemptDirsOf } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -622,7 +622,7 @@ describe('eval_experiment_get', () => {
     const attemptDir = `${dataDir}/runs/run-1/data/p0-dsh-exec-rep1/attempt-2`
     const mission = {
       ...base,
-      dataDir,
+      ...attemptDirsOf(dataDir),
       get: (missionId: string, runId?: string) => {
         const record = base.get(missionId, runId) as { mission: { attempts: Array<Record<string, unknown>> } }
         if (missionId !== 'p0-dsh-exec-rep1') return record

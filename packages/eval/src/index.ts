@@ -79,7 +79,7 @@ export { EvalService, EvalContractError } from './service.ts'
 export { EvalRunRefused } from './service.ts'
 export { EvalFinalizeRefused, finalizeRun, skipCategoryOf, FINALIZE_FROM_STATE } from './finalize.ts'
 export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
-export { missionCliFace, MissionCliError, parseMissionRow } from './mission-cli.ts'
+export { MISSION_LIST_SCHEMA, missionCliFace, MissionCliError, oldMissionCliHint, parseMissionList } from './mission-cli.ts'
 export type { MissionCliOptions } from './mission-cli.ts'
 export { checkReadiness, READINESS_PROMPT, DEFAULT_READINESS_TIMEOUT_MS } from './readiness.ts'
 export type { ReadinessRecord, ReadinessSubject, ReadinessInput, ReadinessUnit } from './readiness.ts'
@@ -115,7 +115,7 @@ export type {
 } from './read.ts'
 export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './experiments.ts'
 export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
-export { attemptDataDir, materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
+export { attemptDirOf, materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
 export { DEFAULT_STUCK_MS, pivotMatrix, repDot } from './matrix-view.ts'
 export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
 export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
@@ -179,7 +179,7 @@ export { discardDir, hostProbeExecutor, unitProbeExecutor } from './probe-exec.t
 export type { ProbeExecution, ProbeExecResult, ProbeExecutor } from './probe-exec.ts'
 export type { RunSubset as RunSubsetRecord } from './run.ts'
 export type {
-  DatasetsFace, DatasetsRegistryFace, MissionActionFace, MissionAnnotateFace, MissionExportRemoteFace,
+  DatasetsFace, DatasetsRegistryFace, MissionActionFace, MissionAnnotateFace, MissionExportFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, MissionStatusRow,
   LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile,
   LabFace, LabAcquireSpec, LabFingerprintComponents, LabMountSpec, LabPopulateResult, LabResourceLimits,

@@ -32,7 +32,7 @@ import { humanCriteria, llmDraftCriteria, rubricCriteria } from '../src/judge.ts
 import { EvalRemoteService } from '../src/remote.ts'
 import { analyzeBundle } from '../src/report.ts'
 import { EvalService } from '../src/service.ts'
-import { cleanupTmp, tmpTree } from './helpers.ts'
+import { cleanupTmp, tmpTree, attemptDirsOf } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -119,7 +119,7 @@ function missionFace(options: { dataDir?: string; repo?: string; annotations?: R
   }
   const annotations = { ...base, ...(options.annotations ?? {}) }
   const face = {
-    ...(options.dataDir === undefined ? {} : { dataDir: options.dataDir }),
+    ...(options.dataDir === undefined ? {} : attemptDirsOf(options.dataDir)),
     annotations,
     runStatus: (runId: string) => {
       if (runId !== RUN) throw new Error(`unknown run: ${runId}`)

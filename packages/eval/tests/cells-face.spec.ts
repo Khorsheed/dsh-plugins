@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EvalService } from '../src/service.ts'
 import { probeRunsOf, summarizeAnnotations } from '../src/cell-detail.ts'
-import { cleanupTmp, tmpTree } from './helpers.ts'
+import { cleanupTmp, tmpTree, attemptDirsOf } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -64,7 +64,7 @@ function missionFace(options: { dataDir?: string; releasable?: boolean } = {}) {
     },
   ]
   return {
-    ...(options.dataDir === undefined ? {} : { dataDir: options.dataDir }),
+    ...(options.dataDir === undefined ? {} : attemptDirsOf(options.dataDir)),
     runList: () => [{ id: 'run-1' }],
     runStatus: (runId: string) => {
       if (runId !== 'run-1') throw new Error(`unknown run: ${runId}`)
@@ -97,13 +97,12 @@ function missionFace(options: { dataDir?: string; releasable?: boolean } = {}) {
   }
 }
 
-/** A service over that face, plus an optional mission Remote for the export pair. */
-function service(options: { dataDir?: string; releasable?: boolean; exportRemote?: unknown } = {}): EvalService {
-  const mission = missionFace(options)
+/** A service over that face, plus mission's optional gated export verbs (T89: on the service face). */
+function service(options: { dataDir?: string; releasable?: boolean; exportVerbs?: object } = {}): EvalService {
+  const mission = { ...missionFace(options), ...options.exportVerbs }
   return new EvalService({
     get: (name) => {
       if (name === 'mission') return mission
-      if (name === 'missionRemote') return options.exportRemote
       return undefined
     },
   })
@@ -248,12 +247,12 @@ describe('EvalService.releaseCheck', () => {
 })
 
 describe('EvalService export forwarding', () => {
-  /** A stand-in for mission's Remote, with its own fail-closed gate. */
-  function exportRemote() {
+  /** A stand-in for mission's gated export verbs, with their own fail-closed gate. */
+  function exportVerbs() {
     const guarded = ['grading']
     return {
-      exportPlan: vi.fn(async () => ({ bundleDir: '/out/run-1-bundle', guardedLayers: guarded, expectedNs: ['script'], missions: 2, attempts: 3 })),
-      exportRun: vi.fn(async (_agent: unknown, request: { confirmed: string[] }) => {
+      exportPlanGated: vi.fn(async () => ({ bundleDir: '/out/run-1-bundle', guardedLayers: guarded, expectedNs: ['script'], missions: 2, attempts: 3 })),
+      exportRunGated: vi.fn(async (request: { confirmed: string[] }) => {
         const unconfirmed = guarded.filter(layer => !request.confirmed.includes(layer))
         if (unconfirmed.length > 0) throw new Error(`mission: export refused — guarded (modelFacing: false) layer(s) not confirmed: ${unconfirmed.join(', ')}`)
         return { bundleDir: '/out/run-1-bundle', files: 9 }
@@ -262,17 +261,17 @@ describe('EvalService export forwarding', () => {
   }
 
   it('relays the plan step verbatim — the guarded set is mission\'s to decide', async () => {
-    const remote = exportRemote()
-    const plan = await service({ exportRemote: remote }).exportPlan({ id: 'agent' }, {
+    const verbs = exportVerbs()
+    const plan = await service({ exportVerbs: verbs }).exportPlan({ id: 'agent' }, {
       runId: 'run-1', outDir: '/out', layers: ['visible', 'grading'],
     })
     expect(plan.guardedLayers).toEqual(['grading'])
-    expect(remote.exportPlan).toHaveBeenCalledWith({ id: 'agent' }, { runId: 'run-1', outDir: '/out', layers: ['visible', 'grading'] })
+    // No agent crosses the seam any more: the service face needs none.
+    expect(verbs.exportPlanGated).toHaveBeenCalledWith({ runId: 'run-1', outDir: '/out', layers: ['visible', 'grading'] })
   })
 
   it('cannot widen the gate: an unconfirmed guarded layer is still refused through eval', async () => {
-    const remote = exportRemote()
-    const svc = service({ exportRemote: remote })
+    const svc = service({ exportVerbs: exportVerbs() })
     await expect(svc.exportRun({ id: 'agent' }, { runId: 'run-1', outDir: '/out', layers: ['grading'], confirmed: [] }))
       .rejects.toThrow(/export refused — guarded/)
     // The bundle mission wrote, plus what eval adds around it (I5·T60): the
@@ -283,10 +282,19 @@ describe('EvalService export forwarding', () => {
       .resolves.toMatchObject({ bundleDir: '/out/run-1-bundle', files: 9, reportRows: 0, noteRecorded: false })
   })
 
-  it('refuses both steps when mission\'s Remote is not mounted', async () => {
+  it('refuses both steps when mission (or its gated verbs) is absent', async () => {
     const svc = service()
-    await expect(svc.exportPlan({}, { runId: 'run-1', outDir: '/out' })).rejects.toThrow(/no mission Remote face/)
-    await expect(svc.exportRun({}, { runId: 'run-1', outDir: '/out', confirmed: [] })).rejects.toThrow(/no mission Remote face/)
+    await expect(svc.exportPlan({}, { runId: 'run-1', outDir: '/out' })).rejects.toThrow(/no mission export face/)
+    await expect(svc.exportRun({}, { runId: 'run-1', outDir: '/out', confirmed: [] })).rejects.toThrow(/no mission export face/)
+    const bare = new EvalService({ get: () => undefined })
+    await expect(bare.exportPlan({}, { runId: 'run-1', outDir: '/out' })).rejects.toThrow(/needs upgrading/)
+  })
+
+  it('never reaches for mission\'s Remote, even when one is mounted', async () => {
+    const remote = { exportPlan: vi.fn(), exportRun: vi.fn() }
+    const svc = new EvalService({ get: name => (name === 'missionRemote' ? remote : undefined) })
+    await expect(svc.exportPlan({}, { runId: 'run-1', outDir: '/out' })).rejects.toThrow(/no mission export face/)
+    expect(remote.exportPlan).not.toHaveBeenCalled()
   })
 })
 

@@ -8,10 +8,12 @@
  * seam a person uses by hand — which is precisely what pilot A had to do, one
  * `dsh-mission transition` at a time.
  *
- * The projection is parsed from `dsh-mission list --run`, whose row format is
- * `id bucket state labels plan`, space-separated with padding. Only the first
- * three columns are read, and a line that does not start with three tokens is
- * ignored (the header and the trailing count).
+ * The projection is read from `dsh-mission list --run <id> --json` — one
+ * JSON document carrying a schema version (`dsh-mission.list/1`, T89). Until
+ * T89 this module parsed the human table's padded columns, which any column
+ * change would have silently broken; the table is for people now and nothing
+ * here reads it. A mission CLI predating `--json` refuses the flag, and that
+ * refusal is turned into a sentence naming the upgrade.
  * @module @khorsheed/dsh-eval
  */
 import { execFile, execFileSync } from 'node:child_process'
@@ -39,17 +41,44 @@ function notFoundHint(bin: string, error: unknown): string {
   return `cannot run ${JSON.stringify(bin)} — install the dsh-mission CLI, or point DSH_MISSION_CLI at it`
 }
 
+/** The `dsh-mission list --json` document version this module reads. */
+export const MISSION_LIST_SCHEMA = 'dsh-mission.list/1'
+
+/** What an older `dsh-mission` (no `list --json`) says when handed the flag. */
+const OLD_CLI_REFUSAL = '--json requires a value'
+
 /**
- * One row of `dsh-mission list`: `id bucket state …`. Returns null for the
- * header line, the `(N mission(s))` tail, and anything else unparseable.
+ * The sentence for a mission CLI older than `list --json`.
+ * @param bin - the binary that refused.
  */
-export function parseMissionRow(line: string): { id: string; state: string } | null {
-  const match = /^(\S+)\s+(\S+)\s+(\S+)(?:\s|$)/.exec(line)
-  if (match === null) return null
-  const [, id, , state] = match
-  if (id === undefined || state === undefined) return null
-  if (id === 'id') return null // the column header
-  return { id, state }
+export function oldMissionCliHint(bin: string): string {
+  return `${JSON.stringify(bin)} predates \`dsh-mission list --json\` (dsh-mission T89) — `
+    + 'upgrade the dsh-mission CLI; eval no longer reads the human-readable table'
+}
+
+/**
+ * Parse `dsh-mission list --json` into the rows finalize needs.
+ * @param stdout - the CLI's output.
+ * @returns each mission's id and state, in the CLI's order.
+ * @throws {@link MissionCliError} when the output is not a `dsh-mission.list/1` document.
+ */
+export function parseMissionList(stdout: string): Array<{ id: string; state: string }> {
+  let document: unknown
+  try {
+    document = JSON.parse(stdout)
+  } catch {
+    throw new MissionCliError('dsh-mission list --json did not print JSON — is the CLI older than T89?')
+  }
+  const doc = document as { schema?: unknown; missions?: unknown }
+  if (typeof document !== 'object' || document === null || doc.schema !== MISSION_LIST_SCHEMA || !Array.isArray(doc.missions)) {
+    throw new MissionCliError(
+      `dsh-mission list --json printed schema ${JSON.stringify(doc?.schema ?? null)}; this eval reads ${MISSION_LIST_SCHEMA}`,
+    )
+  }
+  return doc.missions.flatMap((row: unknown) => {
+    const r = row as { id?: unknown; state?: unknown } | null
+    return typeof r?.id === 'string' && typeof r.state === 'string' ? [{ id: r.id, state: r.state }] : []
+  })
 }
 
 /**
@@ -76,19 +105,21 @@ export function missionCliFace(options: MissionCliOptions = {}): MissionFinalize
     runStatus(runId: string): { rows: ReadonlyArray<{ id: string; state: string }> } {
       let stdout: string
       try {
-        stdout = execFileSync(bin, ['list', '--run', runId, ...dataDirArgs], {
+        // `--json` LAST: an older CLI then fails on it as a value-less flag,
+        // which is the signal the hint below turns into a sentence.
+        stdout = execFileSync(bin, ['list', '--run', runId, ...dataDirArgs, '--json'], {
           encoding: 'utf8',
           maxBuffer: 16 * 1024 * 1024,
           stdio: ['ignore', 'pipe', 'pipe'],
         })
       } catch (error) {
         const stderr = (error as { stderr?: string }).stderr
+        if (stderr?.includes(OLD_CLI_REFUSAL) === true) throw new MissionCliError(oldMissionCliHint(bin))
         throw new MissionCliError(
           stderr !== undefined && stderr.trim() !== '' ? stderr.trim() : notFoundHint(bin, error),
         )
       }
-      const rows = stdout.split('\n').map(parseMissionRow).filter((row): row is { id: string; state: string } => row !== null)
-      return { rows }
+      return { rows: parseMissionList(stdout) }
     },
     // `by` is accepted for face compatibility and dropped: the mission CLI
     // records every write as `cli`, which is the honest author here.

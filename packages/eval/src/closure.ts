@@ -2,10 +2,11 @@
  * The two run-level MARKS a human leaves on an experiment after it ran: the
  * CLOSURE (how human review ended — one of four exits) and the ARCHIVE flag.
  *
- * Both follow the export note's pattern ({@link ./export-note.ts}): a run has
- * no writable record of its own (`run.meta` is frozen at `runCreate`), so a
- * mark is written as an annotation on the run's FIRST cell and read by
- * scanning every cell for the newest. Written narrow, read wide.
+ * Both follow the export note's pattern ({@link ./export-note.ts}) and go
+ * through the same door ({@link ./run-notes.ts}): written as a RUN-LEVEL
+ * annotation (mission T89; an older mission without the verb gets the run's
+ * first cell, the pre-T89 layout), read across the run's own list plus every
+ * cell's, so a mark an older run left on a cell is still found.
  *
  * The closure is what moves an experiment from 评估中 to 已完成 (exits ①②③)
  * or to 评估不成立 (exit ④). Nothing else does: a run whose every cell was
@@ -24,6 +25,7 @@
  * @module @khorsheed/dsh-eval
  */
 import type { MissionAnnotateFace, MissionReadFace } from './faces.ts'
+import { runLevelAnnotations, writeRunNote } from './run-notes.ts'
 import type {
   EvalArchiveMark, EvalArchiveWrite, EvalClosure, EvalClosureExit, EvalClosureWrite, EvalRunMarks,
 } from './types.ts'
@@ -77,8 +79,8 @@ function newer(a: { createdAt: number; at: string }, b: { createdAt: number; at:
 type Annotated = ReadonlyArray<{ ns: string; payload: unknown; createdAt: number }>
 
 /**
- * Fold annotations (from any number of cells) into the run's marks.
- * @param lists - each cell's annotations.
+ * Fold annotations (the run's own list and any number of cells') into the run's marks.
+ * @param lists - each annotation list (run level, then cells).
  * @returns the newest closure, the newest archive mark, and the newest annotation time.
  */
 export function foldRunMarks(lists: Iterable<Annotated>): EvalRunMarks {
@@ -105,8 +107,9 @@ export function foldRunMarks(lists: Iterable<Annotated>): EvalRunMarks {
 }
 
 /**
- * Read a run's marks by scanning every cell. A cell the ledger cannot resolve
- * contributes nothing rather than failing the read.
+ * Read a run's marks: the run-level list plus every cell's (the pre-T89
+ * first-cell marks). A cell the ledger cannot resolve contributes nothing
+ * rather than failing the read.
  * @param mission - mission's read face.
  * @param runId - the run.
  * @param rows - the run's rows when the caller already holds them.
@@ -117,15 +120,15 @@ export function readRunMarks(
   runId: string,
   rows?: ReadonlyArray<{ id: string }>,
 ): EvalRunMarks {
+  const lists: Annotated[] = [runLevelAnnotations(mission, runId)]
   let cells = rows
   if (cells === undefined) {
     try {
       cells = mission.runStatus(runId).rows
     } catch {
-      return { closure: null, archive: null, lastAnnotationAt: null }
+      return foldRunMarks(lists)
     }
   }
-  const lists: Annotated[] = []
   for (const row of cells) {
     try {
       lists.push(mission.get(row.id, runId).mission.annotations)
@@ -136,27 +139,15 @@ export function readRunMarks(
   return foldRunMarks(lists)
 }
 
-async function writeOnFirstCell(
+function writeMark(
   annotate: MissionAnnotateFace,
   mission: MissionReadFace,
   runId: string,
   ns: string,
   payload: Record<string, unknown>,
   by: string | undefined,
-): Promise<{ ok: true } | { ok: false; refusal: 'no-cell' | 'ledger'; detail: string }> {
-  let missionId: string | undefined
-  try {
-    missionId = mission.runStatus(runId).rows[0]?.id
-  } catch (error) {
-    return { ok: false, refusal: 'ledger', detail: error instanceof Error ? error.message : String(error) }
-  }
-  if (missionId === undefined) return { ok: false, refusal: 'no-cell', detail: `run ${runId} holds no cell` }
-  try {
-    await annotate.annotate(missionId, ns, payload, { runId, ...(by === undefined ? {} : { by }) })
-    return { ok: true }
-  } catch (error) {
-    return { ok: false, refusal: 'ledger', detail: error instanceof Error ? error.message : String(error) }
-  }
+): ReturnType<typeof writeRunNote> {
+  return writeRunNote(annotate, runId, ns, payload, by, () => mission.runStatus(runId).rows[0]?.id)
 }
 
 /**
@@ -188,7 +179,7 @@ export async function recordClosure(
     at: (request.now ?? new Date()).toISOString(),
     by: request.by ?? null,
   }
-  const written = await writeOnFirstCell(annotate, mission, runId, CLOSURE_NS, {
+  const written = await writeMark(annotate, mission, runId, CLOSURE_NS, {
     kind: 'closure', exit: closure.exit, reason: closure.reason, at: closure.at, by: closure.by,
   }, request.by)
   if (!written.ok) return { recorded: false, refusal: written.refusal, detail: written.detail, closure: standing }
@@ -214,7 +205,7 @@ export async function recordArchive(
     at: (request.now ?? new Date()).toISOString(),
     by: request.by ?? null,
   }
-  const written = await writeOnFirstCell(annotate, mission, runId, ARCHIVE_NS, {
+  const written = await writeMark(annotate, mission, runId, ARCHIVE_NS, {
     kind: 'archive', archived: mark.archived, at: mark.at, by: mark.by,
   }, request.by)
   if (!written.ok) return { recorded: false, detail: written.detail, archive: readRunMarks(mission, runId).archive }

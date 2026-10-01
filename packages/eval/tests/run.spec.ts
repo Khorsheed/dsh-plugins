@@ -237,6 +237,10 @@ class FakeMission implements MissionFace {
     return { run, mission }
   }
 
+  attemptDataDir(runId: string, missionId: string, attempt: number): string {
+    return this.attemptDir(runId, missionId, attempt)
+  }
+
   private attemptDir(runId: string, missionId: string, attempt: number): string {
     return join(this.dataDir, 'runs', runId, 'data', missionId, `attempt-${attempt}`)
   }

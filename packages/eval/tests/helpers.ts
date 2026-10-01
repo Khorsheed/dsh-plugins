@@ -160,3 +160,12 @@ export function fakeRegistry(options: FakeRegistryOptions): DatasetsRegistryFace
 export function hostsWith(datasets: unknown, extra: Record<string, unknown> = {}): { get(name: string): unknown } {
   return { get: (name: string) => (name === 'datasets' ? datasets : extra[name]) }
 }
+
+/**
+ * A fake mission face's `attemptDataDir` verb over a data root — the layout
+ * mission's store uses (`<root>/runs/<run>/data/<mission>/attempt-<n>`). Test
+ * fixtures write files there; eval's code only ever ASKS the verb.
+ */
+export function attemptDirsOf(dataDir: string): { attemptDataDir: (runId: string, missionId: string, attempt: number) => string } {
+  return { attemptDataDir: (runId, missionId, attempt) => join(dataDir, 'runs', runId, 'data', missionId, `attempt-${attempt}`) }
+}

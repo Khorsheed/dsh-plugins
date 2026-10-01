@@ -70,7 +70,7 @@ import {
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsFace, DatasetsRegistryFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
-  MissionAnnotateFace, MissionExportRemoteFace,
+  MissionAnnotateFace, MissionExportFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
 } from './faces.ts'
 import { isDatasetsRegistryFace } from './faces.ts'
@@ -90,13 +90,14 @@ import type {
 export class EvalContractError extends Error {}
 
 /**
- * The export verbs' refusal. mission's Remote is where the leak gate lives, so
- * a composition without it gets no export at all — not an export with the gate
- * re-implemented on this side.
+ * The export verbs' refusal. mission's service face is where the leak gate
+ * lives (its gated export verbs, T89), so a composition without them gets no
+ * export at all — not an export with the gate re-implemented on this side.
  */
 const MISSION_EXPORT_ABSENT = new EvalReadRefused(
-  'no mission Remote face: the bundle export and its guarded-layer gate live there, so this composition cannot export '
-  + '— mount the dsh-mission plugin on a host with the Typert gateway, or export with the dsh-mission CLI',
+  'no mission export face: the bundle export and its guarded-layer gate live in the dsh-mission plugin '
+  + '(its exportPlanGated / exportRunGated verbs), so this composition cannot export '
+  + '— mount dsh-mission (an older one without those verbs needs upgrading), or export with the dsh-mission CLI',
 )
 
 /**
@@ -1057,7 +1058,7 @@ export class EvalService {
    *
    * The digest read is why this verb is async: the hash the「题面一致」
    * invariant compares lives in `materialization.json` beside each attempt,
-   * not in the ledger. A composition whose mission face reports no `dataDir`
+   * not in the ledger. A composition whose mission face lacks `attemptDataDir`
    * simply gets `unverifiable` — the matrix never invents a hash.
    * @param runId - the run to arrange.
    * @param options - which factor is the column, what is banded, what is pinned.
@@ -1082,7 +1083,7 @@ export class EvalService {
       state: cell.state,
       bucket: cell.bucket,
       inStateMs: cell.inStateMs,
-      materializationSha: await materializationShaOf(mission.dataDir, runId, cell.missionId, cell.attempt),
+      materializationSha: await materializationShaOf(mission, runId, cell.missionId, cell.attempt),
       fingerprint: cell.refs.fingerprint,
     })))
     return pivotMatrix({
@@ -1225,7 +1226,7 @@ export class EvalService {
   }
 
   /**
-   * The export dialog's first step, forwarded to mission's own Remote:
+   * The export dialog's first step, forwarded to mission's gated export verb:
    * which layers would be written and which of them are GUARDED
    * (`modelFacing: false`, resolved through the datasets probe).
    *
@@ -1233,14 +1234,15 @@ export class EvalService {
    * fail-closed gate are mission's, and a second implementation of a leak gate
    * is a second place for it to be wrong — eval relays the caller's
    * confirmations and can neither narrow nor widen them.
-   * @param agent - the calling agent, passed through unchanged.
+   * @param _agent - the calling agent; unused since T89 (the service face
+   *   needs none), kept so the Remote signature does not move.
    * @param request - run, output directory, layers, snapshot reference.
-   * @throws {@link EvalReadRefused} when mission's Remote is not mounted.
+   * @throws {@link EvalReadRefused} when mission's export face is absent.
    */
-  exportPlan(agent: unknown, request: EvalExportPlanRequest): Promise<EvalExportPlanView> {
-    const remote = this.missionExport()
-    if (remote === undefined) return Promise.reject(MISSION_EXPORT_ABSENT)
-    return remote.exportPlan(agent, request)
+  exportPlan(_agent: unknown, request: EvalExportPlanRequest): Promise<EvalExportPlanView> {
+    const mission = this.missionExport()
+    if (mission === undefined) return Promise.reject(MISSION_EXPORT_ABSENT)
+    return mission.exportPlanGated(request)
   }
 
   /**
@@ -1256,15 +1258,15 @@ export class EvalService {
    * which is how a walkthrough with every surface on screen still ended at a
    * terminal (I5·T39 · G15). Where the bundle went is recorded as a run-level
    * note in the same breath, because `run.meta` cannot say (I5·T53).
-   * @param agent - the calling agent, passed through unchanged.
+   * @param _agent - unused since T89, see {@link exportPlan}.
    * @param request - the export plus the confirmed guarded layers.
    * @param by - caller tag recorded against the run's export note.
-   * @throws {@link EvalReadRefused} when mission's Remote is not mounted.
+   * @throws {@link EvalReadRefused} when mission's export face is absent.
    */
-  async exportRun(agent: unknown, request: EvalExportRunRequest, by?: string): Promise<EvalExportResultView> {
-    const remote = this.missionExport()
-    if (remote === undefined) throw MISSION_EXPORT_ABSENT
-    const exported = await remote.exportRun(agent, request)
+  async exportRun(_agent: unknown, request: EvalExportRunRequest, by?: string): Promise<EvalExportResultView> {
+    const mission = this.missionExport()
+    if (mission === undefined) throw MISSION_EXPORT_ABSENT
+    const exported = await mission.exportRunGated(request)
     return await this.completeExport(exported, request, by)
   }
 
@@ -1285,15 +1287,15 @@ export class EvalService {
    * reader goes through the dialog, which is the only place a guarded layer is
    * ever confirmed. The old directory is left exactly as it was — somebody may
    * have quoted from it.
-   * @param agent - the calling agent, passed through to mission unchanged.
+   * @param _agent - unused since T89, see {@link exportPlan}.
    * @param request - the run to export again.
    * @param by - caller tag recorded against the new export note.
-   * @throws {@link EvalReadRefused} when mission's Remote is absent, or when
-   *   this run has no recorded export to repeat.
+   * @throws {@link EvalReadRefused} when mission's export face is absent, or
+   *   when this run has no recorded export to repeat.
    */
-  async reexportRun(agent: unknown, request: EvalReexportRequest, by?: string): Promise<EvalExportResultView> {
-    const remote = this.missionExport()
-    if (remote === undefined) throw MISSION_EXPORT_ABSENT
+  async reexportRun(_agent: unknown, request: EvalReexportRequest, by?: string): Promise<EvalExportResultView> {
+    const exporter = this.missionExport()
+    if (exporter === undefined) throw MISSION_EXPORT_ABSENT
     const mission = this.requireMissionRead('export a run again')
     const note = readExportState(mission, request.runId).note
     if (note === null) {
@@ -1321,7 +1323,7 @@ export class EvalService {
       // FRESH plan. A layer that became guarded meanwhile refuses the call.
       confirmed: [],
     }
-    const exported = await remote.exportRun(agent, repeated)
+    const exported = await exporter.exportRunGated(repeated)
     return await this.completeExport(exported, repeated, by)
   }
 
@@ -1544,11 +1546,11 @@ export class EvalService {
     return typeof mission?.annotate === 'function' ? (mission as MissionAnnotateFace) : undefined
   }
 
-  /** mission's own Remote service — the leak gate's one home. */
-  private missionExport(): MissionExportRemoteFace | undefined {
-    const remote = this.hosts?.get('missionRemote') as Partial<MissionExportRemoteFace> | undefined
-    return typeof remote?.exportPlan === 'function' && typeof remote.exportRun === 'function'
-      ? (remote as MissionExportRemoteFace)
+  /** mission's gated export verbs on its service face — the leak gate's one home. */
+  private missionExport(): MissionExportFace | undefined {
+    const mission = this.hosts?.get('mission') as Partial<MissionExportFace> | undefined
+    return typeof mission?.exportPlanGated === 'function' && typeof mission.exportRunGated === 'function'
+      ? (mission as MissionExportFace)
       : undefined
   }
 
@@ -1599,6 +1601,15 @@ export class EvalService {
     // into run.meta and is never compared. Absent catalog, absent line.
     const capabilityCatalog = this.hosts.get('capabilityCatalog') as CapabilityCatalogFace | undefined
     const deps: Partial<RunDeps> & { stateRoot?: string } = {}
+    if (mission !== undefined && typeof (mission as Partial<MissionFace>).attemptDataDir !== 'function') {
+      // A mission older than the attemptDataDir verb (T89). The run loop
+      // writes into the attempt's run-data directory, and the layout is
+      // mission's to say — refuse by name instead of guessing a path.
+      return Promise.reject(new EvalRunRefused(
+        'the mounted dsh-mission has no attemptDataDir verb (older than its 0.2.0 line): '
+        + 'the run loop asks mission where an attempt\'s run data goes — upgrade dsh-mission alongside dsh-eval',
+      ))
+    }
     if (datasets !== undefined) deps.datasets = datasets
     if (mission !== undefined) deps.mission = mission
     if (localAgent !== undefined) deps.localAgent = localAgent

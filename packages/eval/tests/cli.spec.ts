@@ -329,18 +329,22 @@ describe('dsh-eval template', () => {
  * imports nothing from mission and calls a CHILD PROCESS instead, so the test
  * exercises exactly that seam: argv in, mission's own row format out. Using
  * the real binary here would couple eval's tests to a sibling package for no
- * extra coverage — mission's own suite owns its output.
+ * extra coverage — mission's own suite owns its output. Since T89 eval reads
+ * `list --json` (schema `dsh-mission.list/1`), so that is what the stub prints.
  */
 function stubMissionCli(root: string, rows: Array<[id: string, state: string]>): { bin: string; calls: string } {
   const bin = join(root, 'stub-dsh-mission.mjs')
   const calls = join(root, 'calls.log')
-  const table = rows.map(([id, state]) => `${id.padEnd(16)} active     ${state.padEnd(12)} task=T,rep=1       -`).join('\n')
+  const doc = JSON.stringify({
+    schema: 'dsh-mission.list/1',
+    missions: rows.map(([id, state]) => ({ id, state, bucket: 'active', labels: { task: 'T', rep: '1' } })),
+  })
   writeFileSync(bin, `#!/usr/bin/env node
 import { appendFileSync } from 'node:fs'
 const argv = process.argv.slice(2)
 appendFileSync(${JSON.stringify(calls)}, argv.join(' ') + '\\n')
 if (argv[0] === 'list') {
-  process.stdout.write(\`id              bucket    state       labels             plan\n${table}\n(${rows.length} mission(s))\n\`)
+  process.stdout.write(${JSON.stringify(doc)} + '\\n')
   process.exit(0)
 }
 if (argv[0] === 'transition') {
@@ -388,7 +392,7 @@ describe('dsh-eval finalize', () => {
     // Both edges were driven through the child process, and the run id and
     // data dir rode every call.
     const log = readFileSync(calls, 'utf8').trim().split('\n')
-    expect(log[0]).toBe(`list --run run-x --data-dir ${root}`)
+    expect(log[0]).toBe(`list --run run-x --data-dir ${root} --json`)
     expect(log[1]).toBe(`transition cell-a releasable --run run-x --data-dir ${root}`)
     expect(log[2]).toBe(`transition cell-a released --run run-x --data-dir ${root}`)
     expect(log).toHaveLength(3)

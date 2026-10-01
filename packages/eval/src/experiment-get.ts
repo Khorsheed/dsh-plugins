@@ -21,7 +21,7 @@
  * @module @khorsheed/dsh-eval
  */
 import { basename, isAbsolute, relative } from 'node:path'
-import { attemptDataDir } from './cell-detail.ts'
+import { attemptDirOf } from './cell-detail.ts'
 import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
 import type { RunCellsReport, RunStatusReport } from './read.ts'
 import type { EvalClosure, EvalExperimentRow, EvalExperimentSnapshot, EvalExperimentStatus } from './types.ts'
@@ -171,7 +171,6 @@ export function composeExperimentGet(input: ExperimentGetInput): EvalExperimentG
   if (newest === undefined) throw new Error('composeExperimentGet: no row')
   const runs = input.rows.flatMap(row => (row.runId === null ? [] : [row.runId]))
   const { status, cells } = input
-  const dataDir = input.mission?.dataDir
   const answers: EvalAnswerEntry[] = (cells?.cells ?? []).map((cell) => {
     let attempts: readonly MissionAttemptFace[] = []
     try {
@@ -181,9 +180,9 @@ export function composeExperimentGet(input: ExperimentGetInput): EvalExperimentG
       attempts = []
     }
     const attempt = attempts.find(entry => entry.attempt === cell.attempt) ?? attempts[attempts.length - 1]
-    const attemptDir = dataDir === undefined || cells === undefined
+    const attemptDir = cells === undefined
       ? undefined
-      : attemptDataDir(dataDir, cells.runId, cell.missionId, attempt?.attempt ?? cell.attempt)
+      : attemptDirOf(input.mission, cells.runId, cell.missionId, attempt?.attempt ?? cell.attempt) ?? undefined
     return {
       cell: answerHandle(cell.task, cell.condition, cell.rep),
       missionId: cell.missionId,

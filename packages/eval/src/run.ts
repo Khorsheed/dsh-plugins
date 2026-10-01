@@ -892,7 +892,8 @@ async function runCellOnce(
     materialized.push({ path: rel, sha256: sha256(bytes) })
   }
   materialized.sort((a, b) => (a.path < b.path ? -1 : 1))
-  const attemptDataDir = join(faces.mission.dataDir, 'runs', env.runId, 'data', missionId, `attempt-${env.attempt}`)
+  // The layout is mission's: ask, never rebuild (T89).
+  const attemptDataDir = faces.mission.attemptDataDir(env.runId, missionId, env.attempt)
   mkdirSync(attemptDataDir, { recursive: true })
 
   // The comparability invariant's input, computed the SAME way on both paths.
@@ -1324,7 +1325,7 @@ async function runCellOnce(
   // non-empty to leave `archived`, so the two mechanical sources run here,
   // before the workspace copy (architecture steps 16 and 19).
   const current = mission.get(missionId, env.runId)
-  const archiveDir = join(faces.mission.dataDir, 'runs', env.runId, 'data', missionId, `attempt-${current.mission.currentAttempt}`, 'archive')
+  const archiveDir = join(faces.mission.attemptDataDir(env.runId, missionId, current.mission.currentAttempt), 'archive')
   mkdirSync(join(archiveDir, 'verdicts'), { recursive: true })
   const verdictCounts = await judgeCell(faces, {
     runId: env.runId,
@@ -1461,7 +1462,7 @@ async function runCellWithRetry(
           held.unit,
           {
             cellDir: join(env.cellDirBase, env.cell.missionId, `attempt-${attempt}`),
-            archiveDir: join(mission.dataDir, 'runs', env.runId, 'data', env.cell.missionId, `attempt-${attempt}`, 'archive'),
+            archiveDir: join(mission.attemptDataDir(env.runId, env.cell.missionId, attempt), 'archive'),
           },
         )
         delete held.unit
@@ -2402,11 +2403,10 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     }
     // WHERE it went, on the run itself. `run.meta` names the plan and the
     // repository and the bundle is under neither, so a run started with
-    // `--out <dir>` left no way back to its own artifact (I5·T53). The first
-    // cell carries the note; the report page scans for the newest.
-    const noteCell = ordered[0]?.missionId
-    if (noteCell !== undefined) {
-      const recorded = await recordExportNoteOn(faces.mission, noteCell, runId, {
+    // `--out <dir>` left no way back to its own artifact (I5·T53). Since T89
+    // the note is run-level; the first cell is only the older-mission fallback.
+    {
+      const recorded = await recordExportNoteOn(faces.mission, ordered[0]?.missionId, runId, {
         outDir,
         bundleDir: exported.bundleDir,
         exportedAt,

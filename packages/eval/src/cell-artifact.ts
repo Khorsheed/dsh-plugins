@@ -35,7 +35,7 @@
  */
 import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { attemptDataDir } from './cell-detail.ts'
+import { attemptDirOf } from './cell-detail.ts'
 import type { MissionReadFace } from './faces.ts'
 import { EvalReadRefused } from './read.ts'
 import type { EvalCellArtifactView } from './types.ts'
@@ -105,7 +105,7 @@ export interface CellArtifactInput {
  */
 export async function readCellArtifact(input: CellArtifactInput): Promise<EvalCellArtifactView> {
   const { mission, runId, missionId, attempt, path } = input
-  if (mission.dataDir === undefined) {
+  if (typeof mission.attemptDataDir !== 'function') {
     throw new EvalReadRefused(
       '账本没有报出数据根目录：产物在磁盘上，这个组合读不到 — 挂上 dsh-mission 插件再看',
     )
@@ -115,7 +115,10 @@ export async function readCellArtifact(input: CellArtifactInput): Promise<EvalCe
     // make the containment check the ONLY guard. Refused by shape, first.
     throw new EvalReadRefused(`产物路径必须是格子账本里的相对路径：${JSON.stringify(path)}`)
   }
-  const dir = attemptDataDir(mission.dataDir, runId, missionId, attempt)
+  const dir = attemptDirOf(mission, runId, missionId, attempt)
+  if (dir === null) {
+    throw new EvalReadRefused(`账本不认这一格的坐标，读不到它的运行数据目录：${missionId} 第 ${attempt} 次`)
+  }
   // TWO containment checks, and both are load-bearing.
   //
   // The first is LEXICAL, and it runs before anything touches the disk: a

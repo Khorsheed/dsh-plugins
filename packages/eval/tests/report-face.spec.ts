@@ -20,7 +20,7 @@ import { EvalRemoteService } from '../src/remote.ts'
 import type { EvalReport } from '../src/report.ts'
 import { exportDirCandidates, projectFinalize, projectReport } from '../src/report-view.ts'
 import { EvalService } from '../src/service.ts'
-import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
+import { cleanupTmp, tmpTree, writeJson, attemptDirsOf } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -68,7 +68,7 @@ function missionOf(
   options: { rows?: Array<{ id: string; state: string }>; lab?: unknown } = {},
 ): { get(name: string): unknown } {
   const mission = {
-    dataDir: '/nowhere',
+    ...attemptDirsOf('/nowhere'),
     runStatus: (runId: string) => {
       if (runId !== RUN) throw new Error(`unknown run ${runId}`)
       return { run: { id: runId, state: 'closed', createdAt: 0, meta }, rows: options.rows ?? [], buckets: {}, unreleased: [] }

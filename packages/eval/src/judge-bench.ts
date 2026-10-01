@@ -46,7 +46,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { attemptDataDir } from './cell-detail.ts'
+import { attemptDirOf, type AttemptDirFace } from './cell-detail.ts'
 import { readExportState } from './export-note.ts'
 import type { DatasetsFace, MissionAnnotateFace, MissionReadFace } from './faces.ts'
 import {
@@ -186,14 +186,15 @@ export function verdictDocsOf(payload: unknown): Record<string, unknown>[] {
  * @returns one entry per material file that exists, in prompt order.
  */
 async function materialsOf(
-  dataDir: string | undefined,
+  mission: AttemptDirFace,
   runId: string,
   missionId: string,
   attempt: number,
   rules: readonly DeidentifyRule[],
 ): Promise<Array<{ path: string; text: string; replacements: number }>> {
-  if (dataDir === undefined) return []
-  const workspace = join(attemptDataDir(dataDir, runId, missionId, attempt), 'archive', 'workspace')
+  const dir = attemptDirOf(mission, runId, missionId, attempt)
+  if (dir === null) return []
+  const workspace = join(dir, 'archive', 'workspace')
   const out: Array<{ path: string; text: string; replacements: number }> = []
   for (const rel of JUDGE_MATERIAL_FILES) {
     let text: string
@@ -373,7 +374,7 @@ export async function judgeQueueView(input: JudgeQueueInput): Promise<EvalJudgeQ
       ? { criteria: [], note: '这个格子没有记题号，取不到 rubric' }
       : rubricCache.get(taskId) as { criteria: EvalJudgeCriterionRow[]; note: string | null }
 
-    const materials = await materialsOf(mission.dataDir, runId, missionId, attempt, meta.rules)
+    const materials = await materialsOf(mission, runId, missionId, attempt, meta.rules)
     cells.push({
       ticket: cellTicket(runId, missionId),
       // The ordinal IS the cell's name here. `task` rides along because the
@@ -406,7 +407,7 @@ export async function judgeQueueView(input: JudgeQueueInput): Promise<EvalJudgeQ
     consistencyCells.push({ missionId, isCurrent: true, verdicts: verdictsForStats })
   }
 
-  if (mission.dataDir === undefined) {
+  if (typeof mission.attemptDataDir !== 'function') {
     notes.push('账本没有报出数据根目录：去指纹产物读不到，只能看判据与已有判定')
   }
   if (meta.rules.length === 0) {
