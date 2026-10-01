@@ -34,7 +34,7 @@ import { expandHome, type PlanValidation } from '../contract/validate.ts'
 import type {
   EvalExperimentDetail, EvalExperimentJob, EvalExperimentMeta, EvalExperimentRow, EvalExperimentsResult,
   EvalExperimentSnapshot, EvalExperimentStatus, EvalExperimentUnit, EvalItemRunRow, EvalItemRunsResult,
-  EvalClosure, EvalReadinessLine,
+  EvalClosure, EvalReadinessLine, EvalExperimentBroken,
 } from '../types.ts'
 
 /** The template state a finalized cell rests in (the generated template's last one). */
@@ -238,7 +238,18 @@ async function draftRow(
   const dataset = isPlainObject(plan.document['dataset']) ? plan.document['dataset'] : undefined
   const conditions = stringArray(plan.document['conditions'])
   const judgeSegment = isPlainObject(plan.document['judge']) ? plan.document['judge'] : undefined
-  const validation = validate === undefined ? null : await validate(plan.record)
+  // One experiment whose dataset cannot be read must not take the whole list
+  // down (T93): its validate failure becomes the row's `broken` reason, and the
+  // row lists as an unchecked draft beside every other one.
+  let validation: PlanValidation | null = null
+  let broken: EvalExperimentBroken | undefined
+  if (validate !== undefined) {
+    try {
+      validation = await validate(plan.record)
+    } catch (error) {
+      broken = brokenReasonOf(plan.record, error)
+    }
+  }
   const documents = await planConditionDocuments(stateRoot, conditions)
   return {
     id: `experiment:${plan.record.id}`,
@@ -271,7 +282,32 @@ async function draftRow(
     closure: null,
     lastProgressAt: null,
     stalledMinutes: null,
+    ...(broken === undefined ? {} : { broken }),
   }
+}
+
+/**
+ * Markers of the datasets service's own refusals, in priority order. The
+ * sentences are the datasets package's (`notRegistered`, `datasetView`) and
+ * eval's own (`registryFace`); experiments.spec pins each against the text, so
+ * a reworded refusal fails a test rather than quietly degrading to
+ * `unreadable`.
+ */
+const BROKEN_MARKERS: ReadonlyArray<readonly [RegExp, EvalExperimentBroken['kind']]> = [
+  [/is not registered in this deployment's dataset registry/i, 'unregistered'],
+  [/has no set "[^"]*" at /i, 'setMissing'],
+  [/^no datasets registry\b/i, 'noRegistry'],
+]
+
+/**
+ * Classify one experiment's read failure for the list row (T93).
+ * @param record - the experiment whose validate threw.
+ * @param error - what it threw.
+ */
+export function brokenReasonOf(record: ExperimentRecord, error: unknown): EvalExperimentBroken {
+  const message = error instanceof Error ? error.message : String(error)
+  const kind = BROKEN_MARKERS.find(([marker]) => marker.test(message))?.[1] ?? 'unreadable'
+  return { kind, registry: record.meta.dataset.registry, message }
 }
 
 /** One run of the mission ledger, as this projection reads it. */

@@ -1,6 +1,6 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev14** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev15** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器与绑定表单预填从本协议派生；`dataset-authoring` skill 同样从本协议派生，随 `@khorsheed/dsh-datasets` 包分发（`skills/dataset-authoring/SKILL.md`，由 datasets 工具的 `organize` 档注册），供「题集整理」会话把数据整理成本协议的仓库并提交登记申请；二者不一致时以本协议为准。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
@@ -649,6 +649,53 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
             "type": "string"
           }
         },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "pool"
+          ],
+          "description": "Optional (v1-rev15). How items was chosen: provenance only, never re-applied (a run reads items). mode all = every eligible item; random = count items drawn by seed with algorithm (hash-rank/1: the count ids with the smallest cyrb53 hash of \"<seed>\\u0000<id>\", listed in id order), so the same seed on the same commit always draws the same items; pick = ticked by hand. pool = how many items were eligible (placeholder items only when placeholders is true). Absent when the items were listed explicitly.",
+          "properties": {
+            "mode": {
+              "enum": [
+                "all",
+                "random",
+                "pick"
+              ]
+            },
+            "pool": {
+              "type": "integer"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "seed": {
+              "type": "integer"
+            },
+            "algorithm": {
+              "type": "string"
+            },
+            "placeholders": {
+              "type": "boolean"
+            }
+          },
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "random"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "count",
+              "seed",
+              "algorithm"
+            ]
+          }
+        },
         "repo": {
           "type": "string",
           "description": "Legacy, read-only: a repository path."
@@ -836,6 +883,7 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
 - `retry.infrastructure` 与 `exports` 都可缺省：前者是每格的基础设施重试预算（spawn 失败、facade 报错、超时），缺省 1，`0` 表示不重试；后者是 bundle 导出目录（允许 `~/…`），缺省为实验目录的 `exports/`。两者都是**被审阅的默认值**，run 调用选项（`retryInfrastructure` / `exportsDir`）可覆盖——审阅看 plan，临时跑法看选项。
 - plan **不含 template 字段**：run 模板是题集 manifest 的确定性函数，validate 时生成、lint，随 plan 一起审阅（I2）。
 - `dataset` 写 `{registry, set, commit}`（v1-rev13）：`registry` 是题库登记 id，`set` 是仓库里的题集，`commit` **必填**且是完整哈希——plan 用到的每个契约文件都在这个 commit 上读。起草时不给 commit，`eval_plan_draft` 取跟踪分支最新，与同题集、同条件的既有实验所钉版本内容（`items/`、`schemas/` 树哈希）不一致时拒绝并列出候选。旧形态 `{repo, id, commit}`（`commit` 可为 `null`，表示 run 启动时钉入）**只读**：旧 plan 仍能校验与导入，任何工具都不再写它。
+- `dataset.selection` 可缺省（v1-rev15）：`items` 是怎么选出来的——**只记来历，不再执行**，run 只读 `items`。`mode` 三选一：`all` 全部可选题；`random` 按 `seed` 抽 `count` 题，算法写在 `algorithm`（`hash-rank/1`：对每个题 id 算 cyrb53(`"<seed>\u0000<id>"`)，取哈希最小的 `count` 个，按 id 排序列出），所以**同一题集版本（commit）+ 同一种子 + 同一题数永远抽出同一批题**，且某题是否入选只取决于它自己的哈希，题集增删别的题不会打乱它；`pick` 是人手选。`pool` 是可选题数（默认不含占位题，`placeholders: true` 表示含）。同一题集上的不同实验可以选不同的题。直接给题单起草的 plan 没有这个字段。
 - `name` 可缺省：实验的显示名，实验 id `<slug>-<yyyymmdd>-<4hex>` 由它生成；导入的旧 plan 缺省时取文件名。
 - `question` / `expectation` / `answeredWhen` 都可缺省（v1-rev14）：这次实验**要回答的问题**（一句，人的原话）、**预期**（跑之前人以为的答案，没有就不写）、**怎么算回答了**（一句：什么样的结果算回答了这个问题）。它们是给人看的方案，不进任何编排：实验设计页把三者放在上半段第一块，结果对比的结论卡用 question 原样开头、把 answeredWhen 放在卡上一行小字。rev13 及更早的 plan 没有这三个字段，页面不显示这一块，validate 也不因缺失报警。三者和其余字段一样进 planSha——改问题就是改方案，启动后的实验不再改它。
 - `unit` 可缺省。缺省即**宿主路径**：格子目录在 `$DSH_HOME/state/eval` 下，与容器无关，与本字段出现之前逐字节相同。在场即**容器路径**：本 run 的每一格都在一个由 `image` 建出的 lab 单元里跑完 acquire → populate → 逐阶段委派与 checkpoint → 探针（经 `lab.verify` 在单元内）→ archive → release。`network` 不声明就是 docker 默认网桥（**有外网**），封闭跑法必须点名内网；`user` 不声明就是镜像自带的 `USER`；`resources` 既真加到容器上，也进环境指纹。

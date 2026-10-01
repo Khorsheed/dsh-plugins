@@ -687,7 +687,8 @@ export class EvalService {
       ...(request.expectation === undefined ? {} : { expectation: request.expectation }),
       ...(request.answeredWhen === undefined ? {} : { answeredWhen: request.answeredWhen }),
       ...(request.commit === undefined ? {} : { commit: request.commit }),
-      items: request.items,
+      ...(request.items === undefined ? {} : { items: request.items }),
+      ...(request.selection === undefined ? {} : { selection: request.selection }),
       conditions: request.conditions,
       ...(request.newConditions === undefined ? {} : { newConditions: request.newConditions }),
       ...(request.judgeConditions === undefined || request.judgeConditions.length === 0
@@ -730,6 +731,8 @@ export class EvalService {
     return {
       experimentId: write.experimentId,
       dataset: write.dataset,
+      items: write.items,
+      selection: write.selection,
       planPath: write.planPath,
       conditionPaths: write.conditionPaths,
       conditions: write.conditions,

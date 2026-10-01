@@ -244,6 +244,32 @@ describe('LabView list', () => {
     expect(screen.getAllByText(/^list\.scale /).length).toBeGreaterThanOrEqual(1)
   })
 
+  it('T93: a broken experiment lists with its reason in three parts; the other rows are untouched', async () => {
+    const broken = {
+      ...LIST.rows[1]!,
+      id: 'experiment:orphaned-20260930-0e0f',
+      experimentId: 'orphaned-20260930-0e0f',
+      name: 'orphaned',
+      status: 'draft' as const,
+      validation: null,
+      broken: { kind: 'unregistered' as const, registry: 'gone', message: '"gone" is not registered in this deployment\'s dataset registry' },
+    }
+    const h = makeHarness({ list: { ...LIST, rows: [...LIST.rows, broken] } })
+    renderView(h)
+    const card = (name: string) => screen.getByText(name).closest('[role="button"]') as HTMLElement
+    await screen.findByText('orphaned')
+    const reason = within(card('orphaned')).getByRole('note')
+    expect(within(reason).getByText(/^list\.broken\.unregistered .*gone/)).toBeTruthy()
+    expect(within(reason).getByText(/^list\.broken\.unregistered\.fix/)).toBeTruthy()
+    // The raw message is folded under 详情, not printed as the sentence.
+    expect(within(reason).getByText('error.details').closest('details')!.hasAttribute('open')).toBe(false)
+    // Clicking inside the reason does not open the experiment.
+    fireEvent.click(reason)
+    expect(screen.getByText('harness-comparison')).toBeTruthy()
+    expect(within(card('effort-sweep')).queryByRole('note')).toBeNull()
+    expect(within(card('harness-comparison')).queryByRole('note')).toBeNull()
+  })
+
   it('renders each degraded-source note the host sent', async () => {
     const h = makeHarness({ list: { ...LIST, rows: [], notes: ['no mission service: only drafts are listed'] } })
     renderView(h)

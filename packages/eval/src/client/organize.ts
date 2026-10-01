@@ -65,14 +65,41 @@ export function visibleItems(items: readonly EvalDraftItemOption[], showPlacehol
   return items.filter(item => showPlaceholders || !item.placeholder)
 }
 
+/**
+ * 选题 as the dialog settled it (T90 · second segment): the mode, and what the
+ * request must carry for `eval_plan_draft` to redo it — the pool size is said
+ * to the person, the seed is passed verbatim.
+ */
+export type OrganizeSelection =
+  | { mode: 'all'; pool: number; includePlaceholders: boolean }
+  | { mode: 'random'; count: number; seed: number; pool: number; includePlaceholders: boolean }
+  | { mode: 'pick'; items: readonly string[] }
+
 /** What the dialog hands over. Everything but the name is optional. */
 export interface OrganizeInput {
   name: string
   question?: string | undefined
   /** `<registration id>/<set>`; empty/undefined = not chosen. */
   dataset?: string | undefined
-  /** Item ids, in pick order; empty = not chosen. */
+  /** Item ids, in pick order; empty = not chosen. Read only when `selection` is absent. */
   items?: readonly string[] | undefined
+  /** 选题; a pick with no items counts as not chosen. */
+  selection?: OrganizeSelection | undefined
+}
+
+/**
+ * The `selection` argument `eval_plan_draft` takes, spelled as the tool
+ * spells it — the request quotes it so the agent passes it verbatim rather
+ * than re-deriving a seed.
+ * @param selection - the dialog's settled selection.
+ */
+export function selectionArgument(selection: OrganizeSelection): string {
+  const placeholders = selection.mode !== 'pick' && selection.includePlaceholders ? { include_placeholders: true } : {}
+  if (selection.mode === 'all') return JSON.stringify({ mode: 'all', ...placeholders })
+  if (selection.mode === 'random') {
+    return JSON.stringify({ mode: 'random', count: selection.count, seed: selection.seed, ...placeholders })
+  }
+  return JSON.stringify({ mode: 'pick', items: selection.items })
 }
 
 type Translate = (key: EvalKey, params?: Record<string, unknown>) => string
@@ -92,12 +119,28 @@ type Translate = (key: EvalKey, params?: Record<string, unknown>) => string
 export function buildOrganizeRequest(input: OrganizeInput, t: Translate): string {
   const question = input.question?.trim() ?? ''
   const dataset = input.dataset?.trim() ?? ''
-  const items = (input.items ?? []).map(item => item.trim()).filter(item => item !== '')
+  const items = (input.selection?.mode === 'pick' ? input.selection.items : input.items ?? [])
+    .map(item => item.trim()).filter(item => item !== '')
+  // Items only mean something inside a chosen set.
+  const selection = dataset === '' ? undefined : input.selection
+  const itemsSettled = selection !== undefined && selection.mode !== 'pick' ? true : items.length > 0
 
   const settled: string[] = [t('organize.settled.name', { name: input.name.trim() })]
   if (question !== '') settled.push(t('organize.settled.question', { question: question.replace(/\s*\n\s*/g, ' ') }))
   if (dataset !== '') settled.push(t('organize.settled.dataset', { dataset }))
-  if (items.length > 0) settled.push(t('organize.settled.items', { items: items.join(t('organize.join')) }))
+  if (selection?.mode === 'all') {
+    settled.push(t(selection.includePlaceholders ? 'organize.settled.allWithPlaceholders' : 'organize.settled.all', {
+      count: selection.pool, arg: selectionArgument(selection),
+    }))
+  } else if (selection?.mode === 'random') {
+    settled.push(t(selection.includePlaceholders ? 'organize.settled.randomWithPlaceholders' : 'organize.settled.random', {
+      count: selection.count, seed: selection.seed, pool: selection.pool, arg: selectionArgument(selection),
+    }))
+  } else if (items.length > 0) {
+    settled.push(selection === undefined
+      ? t('organize.settled.items', { items: items.join(t('organize.join')) })
+      : t('organize.settled.pick', { items: items.join(t('organize.join')), arg: selectionArgument({ mode: 'pick', items }) }))
+  }
 
   // The open choices, in the order the agent should ask them: the question
   // first (it decides what is worth comparing), then the set, then its items,
@@ -105,7 +148,7 @@ export function buildOrganizeRequest(input: OrganizeInput, t: Translate): string
   const open: string[] = []
   if (question === '') open.push(t('organize.open.question'))
   if (dataset === '') open.push(t('organize.open.dataset'))
-  if (items.length === 0) open.push(t('organize.open.items'))
+  if (!itemsSettled) open.push(t('organize.open.items'))
   open.push(t('organize.open.conditions'), t('organize.open.judge'), t('organize.open.reps'), t('organize.open.budget'))
 
   return [

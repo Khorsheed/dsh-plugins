@@ -23,7 +23,8 @@ off"; offer to draft, and say what they will need to do next.
    count as an answer? Ask only when nobody named the factor — a comparison
    whose factor nobody named cannot be read afterwards. Everything else has a
    default; draft with it and do not ask:
-   - **items** — every item `datasets_show` lists for the set;
+   - **items** — every real item of the set: pass `selection: {mode: "all"}`
+     instead of listing them (placeholder / link-test items stay out);
    - **reps** — 1;
    - **judge** — a judge condition the library already holds (existing
      experiments name it in `judge_conditions`); if there is none, omit
@@ -41,6 +42,22 @@ off"; offer to draft, and say what they will need to do next.
    `<registration id>/<set>`; `datasets_show` lists a set's items, and
    `datasets_read` shows an item's 题干 and the stage prompts, which is how you
    find out whether the items can actually answer the question.
+
+   **选题 — which items, three ways.** `eval_plan_draft` takes `selection`
+   instead of `items`, and resolves it against the commit it pins:
+   - `{mode: "all"}` — every real item (the default above);
+   - `{mode: "random", count: N, seed: S}` — N items drawn by seed S. The
+     same seed on the same dataset version always draws the same items, so a
+     seed the person gave (or the form showed them) is passed **verbatim** —
+     never invent a different one. Asked for a sample with no seed named, pick
+     any non-negative integer and say which in the report;
+   - `{mode: "pick", items: [...]}` — the ids the person named, in their order.
+
+   Add `include_placeholders: true` to all / random only when the person asks
+   for the link-test items too. The plan pins the resulting item list and
+   records the selection beside it (`dataset.selection`), so different
+   experiments on one set may run different items, and the draw can be redone
+   by hand. Pass `items` OR `selection`, never both.
 3. **Draft it.** One `eval_plan_draft` call creates an experiment directory in
    the deployment holding the plan, adds any new condition to the library, then
    validates. Do not hand-write those files with `write`: the tool spells the
@@ -59,7 +76,10 @@ person pressed send because they want to be walked through the rest — so here,
 unlike the loop above, you ask:
 
 1. **Never re-ask what the request says is settled.** Use the name as the
-   experiment name, and the set and items as given.
+   experiment name, and the set and items as given. When the request quotes a
+   `selection` (全部 / 随机 N 题 with its seed / 手选), pass that argument to
+   `eval_plan_draft` exactly as quoted — the person saw that draw previewed,
+   and the same seed is what makes the plan draw the same items.
 2. **Ask the open choices one at a time, in the request's order**, each as an
    `ask_user_question` with concrete options read from the tools (sets from
    `datasets_list`, items from `datasets_show`, conditions from

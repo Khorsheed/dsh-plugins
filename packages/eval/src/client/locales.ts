@@ -237,6 +237,29 @@ export type EvalKey =
   | 'new.placeholderTag'
   | 'new.placeholdersShow'
   | 'new.placeholdersHide'
+  | 'new.selection'
+  | 'new.mode.all'
+  | 'new.mode.random'
+  | 'new.mode.pick'
+  | 'new.allHelp'
+  | 'new.randomCount'
+  | 'new.randomPool'
+  | 'new.seed'
+  | 'new.seedMint'
+  | 'new.randomHelp'
+  | 'new.randomPreview'
+  | 'new.randomBadCount'
+  | 'new.randomBadSeed'
+  | 'new.pickFilter'
+  | 'new.pickCount'
+  | 'new.pickNoMatch'
+  | 'new.pickEmptyHelp'
+  | 'new.includePlaceholders'
+  | 'organize.settled.all'
+  | 'organize.settled.allWithPlaceholders'
+  | 'organize.settled.random'
+  | 'organize.settled.randomWithPlaceholders'
+  | 'organize.settled.pick'
   | 'new.organize'
   | 'new.handedOff'
   | 'organize.intro'
@@ -745,6 +768,14 @@ export type EvalKey =
   | 'list.others'
   | 'list.scopeEmpty'
   | 'list.scopeEmptyHint'
+  | 'list.broken.unregistered'
+  | 'list.broken.unregistered.fix'
+  | 'list.broken.setMissing'
+  | 'list.broken.setMissing.fix'
+  | 'list.broken.noRegistry'
+  | 'list.broken.noRegistry.fix'
+  | 'list.broken.unreadable'
+  | 'list.broken.unreadable.fix'
   | 'list.group.attention'
   | 'list.group.running'
   | 'list.group.finished'
@@ -1284,6 +1315,24 @@ export const en: Record<EvalKey, string> = {
   'new.placeholderTag': 'placeholder',
   'new.placeholdersShow': 'Show {count} placeholder item(s)',
   'new.placeholdersHide': 'Hide placeholder items',
+  'new.selection': 'How to choose items',
+  'new.mode.all': 'All',
+  'new.mode.random': 'Random N',
+  'new.mode.pick': 'Pick by hand',
+  'new.allHelp': 'Runs all {count} items of this set.',
+  'new.randomCount': 'Items to draw',
+  'new.randomPool': 'of {pool}',
+  'new.seed': 'Seed',
+  'new.seedMint': 'New seed',
+  'new.randomHelp': 'The same set version and the same seed always draw the same items. The seed is written into the plan.',
+  'new.randomPreview': 'Drawn at version {commit}:',
+  'new.randomBadCount': 'Enter a whole number from 1 to {pool}.',
+  'new.randomBadSeed': 'Enter a whole number, 0 or more.',
+  'new.pickFilter': 'Filter by ID or title',
+  'new.pickCount': '{count} of {total} picked',
+  'new.pickNoMatch': 'No item matches.',
+  'new.pickEmptyHelp': 'Pick none to decide with the agent.',
+  'new.includePlaceholders': 'Include {count} placeholder item(s)',
   'new.organize': 'Let the agent organize',
   'new.handedOff': 'Put in the chat box — press send to start.',
   'organize.intro': 'Help me set up a new comparison experiment.',
@@ -1292,6 +1341,11 @@ export const en: Record<EvalKey, string> = {
   'organize.settled.question': 'Question: {question}',
   'organize.settled.dataset': 'Dataset set: {dataset}',
   'organize.settled.items': 'Items: {items}',
+  'organize.settled.all': 'Items: all {count} (pass selection {arg} to eval_plan_draft)',
+  'organize.settled.allWithPlaceholders': 'Items: all {count}, placeholder items included (pass selection {arg} to eval_plan_draft)',
+  'organize.settled.random': 'Items: {count} drawn at random from {pool}, seed {seed} (pass selection {arg} to eval_plan_draft verbatim; do not change the seed)',
+  'organize.settled.randomWithPlaceholders': 'Items: {count} drawn at random from {pool} including placeholder items, seed {seed} (pass selection {arg} to eval_plan_draft verbatim; do not change the seed)',
+  'organize.settled.pick': 'Items, picked by hand: {items} (pass selection {arg} to eval_plan_draft)',
   'organize.join': ', ',
   'organize.openHeading': 'Not decided yet — ask me one at a time, in this order:',
   'organize.open.question': 'What question the experiment should answer',
@@ -1907,6 +1961,14 @@ export const en: Record<EvalKey, string> = {
   'list.others': '{count} more not from this session',
   'list.scopeEmpty': 'No experiment in this session yet',
   'list.scopeEmptyHint': 'Fill in a name with \'New experiment\' and hand it to the agent, or tell the agent in chat what you want to compare. Experiments from other sessions are under All.',
+  'list.broken.unregistered': 'Its dataset repository “{registry}” is not registered here',
+  'list.broken.unregistered.fix': 'Register that repository on the Datasets tab, then reopen this experiment. The other experiments are unaffected.',
+  'list.broken.setMissing': 'Its dataset is missing at the pinned version',
+  'list.broken.setMissing.fix': 'The pinned commit of “{registry}” holds no such set — create a new experiment on a version that has it.',
+  'list.broken.noRegistry': 'This deployment mounts no datasets service',
+  'list.broken.noRegistry.fix': 'Install the dsh-datasets plugin, then reopen this experiment.',
+  'list.broken.unreadable': 'Its dataset could not be read',
+  'list.broken.unreadable.fix': 'Try again; if it persists, send the raw text under Details to the maintainer.',
   'list.group.attention': 'Needs you',
   'list.group.running': 'Running',
   'list.group.finished': 'Finished',
@@ -2439,6 +2501,24 @@ export const zh: Record<EvalKey, string> = {
   'new.placeholderTag': '占位',
   'new.placeholdersShow': '显示 {count} 道占位题',
   'new.placeholdersHide': '隐藏占位题',
+  'new.selection': '选题',
+  'new.mode.all': '全部',
+  'new.mode.random': '随机 N 题',
+  'new.mode.pick': '手选',
+  'new.allHelp': '跑这个题集的全部 {count} 题。',
+  'new.randomCount': '抽几题',
+  'new.randomPool': '共 {pool} 题',
+  'new.seed': '种子',
+  'new.seedMint': '换一个种子',
+  'new.randomHelp': '同一题集版本、同一种子永远抽到同一批题。种子会写进方案。',
+  'new.randomPreview': '按版本 {commit} 抽到：',
+  'new.randomBadCount': '填 1 到 {pool} 之间的整数。',
+  'new.randomBadSeed': '填 0 或更大的整数。',
+  'new.pickFilter': '按 ID 或标题筛选',
+  'new.pickCount': '已选 {count} / {total}',
+  'new.pickNoMatch': '没有匹配的题目。',
+  'new.pickEmptyHelp': '一题不选就和 agent 一起定。',
+  'new.includePlaceholders': '包含 {count} 道占位题',
   'new.organize': '让 Agent 组织',
   'new.handedOff': '已放进对话框，按发送开始',
   'organize.intro': '帮我组织一个新的对比实验。',
@@ -2447,6 +2527,11 @@ export const zh: Record<EvalKey, string> = {
   'organize.settled.question': '想回答的问题：{question}',
   'organize.settled.dataset': '题集：{dataset}',
   'organize.settled.items': '题目：{items}',
+  'organize.settled.all': '题目：全部 {count} 题（起草时给 eval_plan_draft 传 selection {arg}）',
+  'organize.settled.allWithPlaceholders': '题目：全部 {count} 题，含占位题（起草时给 eval_plan_draft 传 selection {arg}）',
+  'organize.settled.random': '题目：从 {pool} 题里随机抽 {count} 题，种子 {seed}（起草时给 eval_plan_draft 原样传 selection {arg}，不要换种子）',
+  'organize.settled.randomWithPlaceholders': '题目：从 {pool} 题（含占位题）里随机抽 {count} 题，种子 {seed}（起草时给 eval_plan_draft 原样传 selection {arg}，不要换种子）',
+  'organize.settled.pick': '题目：手选 {items}（起草时给 eval_plan_draft 传 selection {arg}）',
   'organize.join': '、',
   'organize.openHeading': '还没定的，请按顺序一项一项问我：',
   'organize.open.question': '这个实验想回答什么问题',
@@ -3059,6 +3144,14 @@ export const zh: Record<EvalKey, string> = {
   'list.others': '另有 {count} 个不属于本会话',
   'list.scopeEmpty': '本会话还没有实验',
   'list.scopeEmptyHint': '可以点「新建实验」填个名字交给 agent，也可以直接在对话里说想比什么。其他会话的实验在「全部」里。',
+  'list.broken.unregistered': '数据集仓库「{registry}」在这里没有登记',
+  'list.broken.unregistered.fix': '到「数据集」页登记这个仓库，再打开这个实验；其他实验不受影响。',
+  'list.broken.setMissing': '钉住的版本里没有这个数据集',
+  'list.broken.setMissing.fix': '「{registry}」在钉住的提交里没有这个数据集——换一个含有它的版本新建实验。',
+  'list.broken.noRegistry': '这个部署没有装数据集服务',
+  'list.broken.noRegistry.fix': '装上 dsh-datasets 插件，再打开这个实验。',
+  'list.broken.unreadable': '这个实验的数据集读不出来',
+  'list.broken.unreadable.fix': '再试一次；仍然不行就把「详情」里的原文发给维护者。',
   'list.group.attention': '需要你处理',
   'list.group.running': '运行中',
   'list.group.finished': '已完成',

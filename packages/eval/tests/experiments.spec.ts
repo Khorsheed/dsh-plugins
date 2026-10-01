@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { deriveExperimentStatus, experimentDetail, listExperiments, STALL_THRESHOLD_MS } from '../src/design/experiments.ts'
+import { brokenReasonOf, deriveExperimentStatus, experimentDetail, listExperiments, STALL_THRESHOLD_MS } from '../src/design/experiments.ts'
 import { conditionFactors } from '../src/read.ts'
 import type { MissionRunListFace } from '../src/faces.ts'
 import type { EvalRunStatus } from '../src/run/job.ts'
@@ -9,6 +9,7 @@ import { createExperiment, type ExperimentRecord } from '../src/design/experimen
 import { EvalService } from '../src/service.ts'
 import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson } from './helpers.ts'
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 
 afterEach(cleanupTmp)
 
@@ -376,6 +377,47 @@ describe('listExperiments', () => {
     expect(result.rows[0]!.validation?.errors).toBeGreaterThan(0)
   })
 
+  it('T93: one experiment whose dataset is unregistered lists with a reason; the others list normally', async () => {
+    const { stateRoot, record } = await experimentWithPlan()
+    const orphan = await createExperiment(stateRoot, {
+      name: 'orphaned',
+      dataset: { registry: 'gone', set: 'ds', commit: 'c0ffee1234567890c0ffee1234567890c0ffee12' },
+      plan: `${JSON.stringify({ ...PLAN, dataset: { ...PLAN.dataset, registry: 'gone' } }, null, 2)}\n`,
+    })
+    // The real refusal sentence (datasets' notRegistered), behind the fake face.
+    const base = fakeRegistry({ sets: { ds: join(tmpTree(), 'unused') }, latest: 'c0ffee1234567890c0ffee1234567890c0ffee12' })
+    const view = join(tmpTree(), 'view', 'ds')
+    writeJson(view, 'schemas/stage1.json', { type: 'object' })
+    writeJson(view, 'items/P0/item.json', { id: 'P0' })
+    writeJson(view, 'items/P1/item.json', { id: 'P1' })
+    const face = {
+      ...base,
+      datasetView: async (asked: string, set: string, commit: string) => {
+        if (asked === 'gone') {
+          throw new Error(`"gone" is not registered in this deployment's dataset registry; eval uses registered repositories only.`)
+        }
+        return { path: set === 'ds' ? view : '', commit }
+      },
+    }
+    const service = new EvalService(hostsWith(face))
+    const result = await listExperiments({ stateRoot, validate: entry => service.validateExperiment(entry.id) })
+    const byId = new Map(result.rows.map(row => [row.experimentId, row]))
+    expect(result.rows).toHaveLength(2)
+    expect(byId.get(record.id)).toMatchObject({ status: 'pending-approval' })
+    expect(byId.get(record.id)!.broken).toBeUndefined()
+    const broken = byId.get(orphan.id)!
+    expect(broken).toMatchObject({ status: 'draft', validation: null, name: 'orphaned', items: 2 })
+    expect(broken.broken).toMatchObject({ kind: 'unregistered', registry: 'gone' })
+    expect(broken.broken!.message).toContain('is not registered')
+  })
+
+  it('T93: a validate that throws anything else still lists the row, as unreadable', async () => {
+    const { stateRoot, record } = await experimentWithPlan()
+    const result = await listExperiments({ stateRoot, validate: async () => { throw new Error('EACCES: permission denied') } })
+    expect(result.rows).toHaveLength(1)
+    expect(result.rows[0]).toMatchObject({ experimentId: record.id, status: 'draft', broken: { kind: 'unreadable', registry: 'reg' } })
+  })
+
   it('an experiment with a run of its own is ONE row — the run, not a duplicate draft', async () => {
     const { stateRoot, record, planPath } = await experimentWithPlan()
     const mission = ledger([{
@@ -698,5 +740,24 @@ describe('experimentDetail', () => {
   it('a run without eval meta answers a null digest rather than inventing one', () => {
     const mission = ledger([{ id: 'session-s1', meta: {}, cells: [] }])
     expect(experimentDetail(mission, 'session-s1').meta).toBeNull()
+  })
+})
+
+describe('brokenReasonOf (T93)', () => {
+  const record = { meta: { dataset: { registry: 'reg' } } } as unknown as ExperimentRecord
+  const source = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8')
+
+  it('recognizes the datasets service\'s own refusals — pinned against its source text', () => {
+    // The sentences come from the datasets package; a rewording there must fail here.
+    expect(source('../../datasets/src/registry.ts')).toContain('is not registered in this deployment\'s dataset registry')
+    expect(source('../../datasets/src/service.ts')).toContain('has no set ${JSON.stringify(set)} at ')
+    expect(brokenReasonOf(record, new Error('experiment x: cannot read reg/ds at c0ffee1 — "reg" is not registered in this deployment\'s dataset registry; …')).kind).toBe('unregistered')
+    expect(brokenReasonOf(record, new Error('experiment x: cannot read reg/ds at c0ffee1 — "reg" has no set "ds" at c0ffee1')).kind).toBe('setMissing')
+  })
+
+  it('recognizes eval\'s own no-registry refusal, and falls back to unreadable', () => {
+    expect(source('../src/service.ts')).toContain("'no datasets registry: experiments pin")
+    expect(brokenReasonOf(record, new Error('no datasets registry: experiments pin a registered dataset')).kind).toBe('noRegistry')
+    expect(brokenReasonOf(record, 'boom')).toEqual({ kind: 'unreadable', registry: 'reg', message: 'boom' })
   })
 })

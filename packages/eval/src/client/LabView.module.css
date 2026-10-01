@@ -2321,6 +2321,100 @@ tr:last-child > .reportTd {
   line-height: 18px;
 }
 
+/* ── 选题 (T90 · second segment): mode switch, then the chosen mode's panel ──
+   The host SegmentedControl carries the switch; everything under it is host
+   inputs/tags laid out on tokens, so light and dark come from the theme. */
+.selMode {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.selPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.selRandomRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-end;
+}
+
+.selField {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.selFieldLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.selFieldBox {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.selFieldHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.selNumber {
+  width: 72px;
+  font-variant-numeric: tabular-nums;
+}
+
+.selSeed {
+  width: 104px;
+  font-family: var(--dsh-font-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The draw, as the plan will pin it: ids in set order, wrapped, capped so a
+   large draw scrolls instead of pushing the action off screen. */
+.selPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+}
+
+.selPreviewLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.selPreviewTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.selPreviewTag {
+  font-family: var(--dsh-font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+
+.selPlaceholders {
+  align-self: flex-start;
+}
+
 /* ── the three-part error seat (ui-spec §九) ─────────────────────────────────
    One human sentence, one fix, and the raw exception plus the path folded
    under «详情». Host tokens only, so light and dark come from the theme. */
@@ -2343,6 +2437,15 @@ tr:last-child > .reportTd {
 .errorSeatCompact {
   margin: 4px 0;
   padding: 6px 8px;
+}
+
+/* T93: a broken experiment's reason sits inside its list row, under the
+   question line — the seat's look, without its vertical margin, and allowed
+   to wrap at the row's width. */
+.rowBroken {
+  margin: 4px 0 0;
+  cursor: default;
+  white-space: normal;
 }
 
 .errorHead {

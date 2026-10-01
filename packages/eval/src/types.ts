@@ -10,6 +10,8 @@
  * @module @khorsheed/dsh-eval/types
  */
 
+import type { ItemSelection, PlanSelection } from './contract/item-selection.ts'
+
 /** What one Remote-started run answers with, before any cell has run. */
 export interface EvalRunStarted {
   /** The job registry's id (`eval-run-N`) — the handle for output and kill. */
@@ -274,6 +276,30 @@ export interface EvalExperimentRow {
   lastProgressAt: number | null
   /** Whole minutes since {@link lastProgressAt} when `status` is `stalled`; null otherwise. */
   stalledMinutes: number | null
+  /**
+   * Set when this experiment could not be read far enough to be checked (T93)
+   * — its dataset registration is gone, the pinned set is missing at that
+   * commit, or the read failed otherwise. The row still lists (status stays
+   * `draft`), and the page says why under its name; the other rows are
+   * unaffected. Absent on every readable row.
+   */
+  broken?: EvalExperimentBroken
+}
+
+/** Why one experiment row could not be checked — see {@link EvalExperimentRow.broken}. */
+export interface EvalExperimentBroken {
+  /**
+   * The cause, as far as the message lets the host tell:
+   * - `unregistered` — the pinned dataset repository is not in the registry;
+   * - `setMissing` — the repository holds no such set at the pinned commit;
+   * - `noRegistry` — this composition mounts no datasets service;
+   * - `unreadable` — anything else (the raw message says what).
+   */
+  kind: 'unregistered' | 'setMissing' | 'noRegistry' | 'unreadable'
+  /** The registration id the experiment pins, for the page's sentence. */
+  registry: string
+  /** The raw failure message, for the folded 详情. */
+  message: string
 }
 
 /** The lab list answer. */
@@ -852,8 +878,17 @@ export interface EvalDraftRequest {
    * branch's latest when that is unambiguous, or refuses with the candidates.
    */
   commit?: string | null
-  /** The dataset items the matrix runs over. */
-  items: string[]
+  /**
+   * The dataset items the matrix runs over, listed explicitly. Give this OR
+   * `selection`, never both.
+   */
+  items?: string[]
+  /**
+   * 选题 (T90): how to choose the items — all, a seeded random draw, or a
+   * hand pick. Resolved against the pinned commit, written into the plan as
+   * the explicit item list plus a `dataset.selection` provenance block.
+   */
+  selection?: ItemSelection
   /** Player condition ids; a minted condition not named here is appended. */
   conditions: string[]
   /** Conditions to mint, each a copy of an existing declaration. */
@@ -908,6 +943,10 @@ export interface EvalDraftResult {
   experimentId: string
   /** The pinned dataset. */
   dataset: { registry: string; set: string; commit: string }
+  /** The item list the plan pins, as written. */
+  items: string[]
+  /** The selection provenance written beside it; null when the items were listed explicitly. */
+  selection: PlanSelection | null
   /** The plan document (absolute). */
   planPath: string
   /** The condition declarations minted into the library, in mint order (absolute); empty when none were. */

@@ -36,7 +36,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { EvalClosureExit, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
+import type { EvalClosureExit, EvalExperimentBroken, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { DesignPage, planFileAnswer, type PlanFileAnswer, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
@@ -1554,6 +1554,32 @@ function RowMenu(props: { row: EvalExperimentRow; onArchive: (row: EvalExperimen
  * The columns the table used to carry (dataset version, arms, factors) are on
  * the experiment's own design stage; the snapshot stays on the card's hover.
  */
+/**
+ * Why one experiment could not be checked (T93), in the three-part shape of
+ * the error seat (ui-spec §九): what happened, how to fix it, the raw text
+ * folded under 详情. The cause comes classified from the host — the list read
+ * itself succeeded, so this is a row's sentence, not the page's.
+ */
+function BrokenReason(props: { broken: EvalExperimentBroken; t: LabViewProps['t'] }) {
+  const { broken, t } = props
+  const params = { registry: broken.registry }
+  return (
+    <span
+      className={`${css.errorSeat} ${css.errorSeatCompact} ${css.rowBroken}`}
+      role="note"
+      onClick={(event) => { event.stopPropagation() }}
+      onKeyDown={(event) => { event.stopPropagation() }}
+    >
+      <span className={css.errorHead}>{t(`list.broken.${broken.kind}`, params)}</span>
+      <span className={css.errorFix}>{t(`list.broken.${broken.kind}.fix`, params)}</span>
+      <details className={css.errorDetails}>
+        <summary className={css.errorSummary}>{t('error.details')}</summary>
+        <pre className={css.errorRaw}>{broken.message}</pre>
+      </details>
+    </span>
+  )
+}
+
 function ExperimentRowLine(props: {
   row: EvalExperimentRow
   marked: boolean
@@ -1605,6 +1631,7 @@ function ExperimentRowLine(props: {
         <span className={css.questionLine}>
           <span className={css.questionText} title={row.question ?? scale}>{row.question ?? scale}</span>
         </span>
+        {row.broken !== undefined && <BrokenReason broken={row.broken} t={t} />}
       </span>
       <span className={css.rowSlot} data-stalled={stalled ? 'true' : undefined}>{slot}</span>
       {/* v5 · list: the status pill has its own column (T83 · E13). */}

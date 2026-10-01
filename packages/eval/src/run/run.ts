@@ -470,6 +470,17 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     missions: cells.filter(cell => selectedIds.has(cell.missionId))
       .map(cell => ({ id: cell.missionId, title: cell.title, labels: { ...cell.labels } })),
     ...(manifest.suiteId !== undefined ? { name: `${manifest.suiteId}-v1` } : {}),
+    // ABSOLUTE schema paths into the dataset root this run validated (T92).
+    // The template is written beside the plan, and the plan no longer lives
+    // in the dataset's `plans/`: since T73 it is `experiments/<id>/plan.json`
+    // in the deployment's state root, where the default `../schemas` names
+    // `experiments/schemas/` — a directory that does not exist, so mission's
+    // template lint refused the run. The dataset root is the materialized,
+    // content-addressed view of the pinned commit (or, for an old in-repo
+    // plan, the set's own directory), so an absolute path pins exactly the
+    // schemas this run was validated against, whatever directory holds the
+    // plan. Mission resolves an absolute schemaPath as-is.
+    schemaPathPrefix: join(datasetRoot, 'schemas'),
   })
 
   // ── Conditions: fresh hash, lock integrity, model declaration. ────────
@@ -977,9 +988,9 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     ...(conditionWarnings.length > 0 ? { warnings: conditionWarnings } : {}),
   }
 
-  // The generated template lands beside the plan (architecture step 7):
-  // its relative schema paths (../schemas/…) resolve from there, exactly as
-  // the hand-written templates/bench-v1.json resolves them.
+  // The generated template lands beside the plan (architecture step 7). Its
+  // schema paths are absolute into the dataset root (T92, see the generation
+  // above), so the template's own directory no longer matters for them.
   const templatePath = join(dirname(planAbs), `${basename(planAbs).replace(/\.json$/, '')}.template.json`)
   mkdirSync(dirname(templatePath), { recursive: true })
   writeFileSync(templatePath, `${JSON.stringify(template, null, 2)}\n`, 'utf8')

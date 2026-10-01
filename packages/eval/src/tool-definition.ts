@@ -53,6 +53,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { EvalService } from './service.ts'
 import type { DraftConditionEdit } from './design/draft.ts'
 import { expandHome } from './contract/validate.ts'
+import type { ItemSelection } from './contract/item-selection.ts'
 
 /** The names this module registers, in registration order. */
 export const EVAL_TOOL_NAMES: readonly string[] =
@@ -95,6 +96,33 @@ function sessionOf(exec: { agent?: { session: { id: string } } | undefined }): {
  * @param entry - the model's record.
  * @param index - its position, for a refusal that says which one.
  */
+/**
+ * The tool's `selection` argument as the draft's {@link ItemSelection}:
+ * refused with the missing field named, so the agent can fix the call.
+ */
+function selectionArgument(arg: {
+  mode?: string
+  count?: number
+  seed?: number
+  items?: readonly string[]
+  include_placeholders?: boolean
+}): ItemSelection {
+  const placeholders = arg.include_placeholders === undefined ? {} : { includePlaceholders: arg.include_placeholders }
+  if (arg.mode === 'all') return { mode: 'all', ...placeholders }
+  if (arg.mode === 'random') {
+    if (arg.count === undefined) throw new Error('selection.mode "random" needs count — how many items to draw')
+    if (arg.seed === undefined) {
+      throw new Error('selection.mode "random" needs seed — pass the seed the person saw; when they gave none, pick any non-negative integer and report it')
+    }
+    return { mode: 'random', count: arg.count, seed: arg.seed, ...placeholders }
+  }
+  if (arg.mode === 'pick') {
+    if (arg.items === undefined) throw new Error('selection.mode "pick" needs items — the ids the person ticked')
+    return { mode: 'pick', items: [...arg.items] }
+  }
+  throw new Error(`selection.mode must be "all", "random" or "pick", got ${JSON.stringify(arg.mode)}`)
+}
+
 function mintArgument(entry: {
   id?: string
   from?: string
@@ -260,8 +288,25 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
       items: {
         type: 'array',
         items: { type: 'string' },
-        required: true,
-        description: 'The dataset item ids the matrix runs over (the rows). An id the set does not declare is refused with the list of the ones it does.',
+        description: 'The dataset item ids the matrix runs over (the rows), listed explicitly. An id the set does not declare '
+          + 'is refused with the list of the ones it does. Pass items OR selection, never both.',
+      },
+      selection: {
+        type: 'object',
+        description: '选题 — how to choose the rows, resolved against the pinned commit; pass this OR items. '
+          + '{mode:"all"} takes every item; {mode:"random", count, seed} draws count items by seed — the same seed on the '
+          + 'same dataset commit always draws the same items, so pass the seed the person saw verbatim and never invent '
+          + 'one when they gave one; {mode:"pick", items:[...]} takes the ids they ticked. Placeholder (link-test) items '
+          + 'are left out of all/random unless include_placeholders is true. The plan pins the resulting item list and '
+          + 'records the selection beside it (dataset.selection).',
+        additionalProperties: false,
+        properties: {
+          mode: { type: 'string', enum: ['all', 'random', 'pick'], description: 'all | random | pick.' },
+          count: { type: 'integer', description: 'random: how many items to draw (1 to the pool size).' },
+          seed: { type: 'integer', description: 'random: the draw seed, a non-negative integer.' },
+          items: { type: 'array', items: { type: 'string' }, description: 'pick: the item ids, in the order to list them.' },
+          include_placeholders: { type: 'boolean', description: 'all / random: also draw from placeholder items. Default false.' },
+        },
       },
       conditions: {
         type: 'array',
@@ -344,7 +389,8 @@ export function evalToolDefinitions(service: EvalService): ToolDefinition[] {
         ...(args.answered_when === undefined ? {} : { answeredWhen: args.answered_when }),
         dataset: args.dataset,
         ...(args.commit === undefined ? {} : { commit: args.commit }),
-        items: [...args.items],
+        ...(args.items === undefined ? {} : { items: [...args.items] }),
+        ...(args.selection === undefined ? {} : { selection: selectionArgument(args.selection) }),
         conditions: [...args.conditions],
         ...(args.new_conditions === undefined ? {} : { newConditions: args.new_conditions.map(mintArgument) }),
         ...(args.judge_conditions === undefined ? {} : { judgeConditions: [...args.judge_conditions] }),
