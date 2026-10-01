@@ -248,13 +248,16 @@ describe('the update gate (only a visible change waits for a person)', () => {
 
   it('an update proposal compares the registered version with the new one', async () => {
     await confirmed()
-    writeFiles(repo.dir, { 'datasets/alpha/items/i1/visible/task.md': 'task one v3\n' })
+    writeFiles(repo.dir, { 'datasets/alpha/items/i1/visible/task.md': 'task one v3\n', 'provenance/notes.md': 'why v3\n' })
     const tip = commitAll(repo.dir, 'visible edit')
     const { proposal } = await service.proposals.propose(fullInput())
     expect(proposal).toMatchObject({ kind: 'update', registeredAs: 'fixture', commit: tip })
     const review = await service.proposals.review(proposal.id)
     expect(review.compare.mode).toBe('update')
-    expect(review.compare.summary).toMatchObject({ modified: 1, added: 0, deleted: 0 })
+    // The chips are disjoint and sum to the change list: the provenance
+    // note counts as 题集外, not again as 新增.
+    expect(review.compare.summary).toMatchObject({ modified: 1, added: 0, deleted: 0, outside: 1 })
+    expect(review.compare.changes).toHaveLength(2)
     expect(review.facts.sets.find(set => set.set === 'alpha')?.layers.map(layer => [layer.name, layer.registered]))
       .toEqual([['visible', true], ['hidden', false]])
     const entry = await service.proposals.confirm(proposal.id, 'ignored', { alpha: { layers: ['visible'] } })

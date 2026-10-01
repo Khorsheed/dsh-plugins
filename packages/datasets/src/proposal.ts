@@ -858,6 +858,7 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
 
     const count = (origin: OutputMapping['origin']): number =>
       outputRows.filter(row => row.origin === origin).reduce((sum, row) => sum + row.files, 0)
+    const inside = (changes ?? []).filter(change => change.zone !== 'outside')
     return {
       proposal,
       facts: {
@@ -881,10 +882,13 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
           copy: count('copy'),
           new: count('new'),
           unused: sources.filter(row => row.disposition === 'unused').reduce((sum, row) => sum + (row.files ?? 1), 0),
-          added: changes?.filter(change => change.status === 'A').length ?? 0,
-          modified: changes?.filter(change => change.status === 'M').length ?? 0,
-          deleted: changes?.filter(change => change.status === 'D').length ?? 0,
-          outside,
+          // Update mode: the four chips are disjoint — dataset changes by
+          // status, plus the changed files outside datasets/ — so they sum
+          // to the change list. New mode: every file outside datasets/.
+          added: inside.filter(change => change.status === 'A').length,
+          modified: inside.filter(change => change.status === 'M').length,
+          deleted: inside.filter(change => change.status === 'D').length,
+          outside: changes !== undefined ? changes.length - inside.length : outside,
         },
         sources,
         sourceRead: walked !== undefined,
