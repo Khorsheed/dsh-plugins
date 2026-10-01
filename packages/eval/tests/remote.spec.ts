@@ -337,7 +337,11 @@ describe('draftOptions — what the form\'s pickers may offer', () => {
 
     const view = await remote.draftOptions(agentOf(), {})
 
-    expect(view.datasets).toEqual([{ id: 'reg/ds', commit: COMMIT, items: ['p0-001'], stages: ['stage-1'] }])
+    expect(view.datasets).toEqual([{
+      id: 'reg/ds', commit: COMMIT, items: ['p0-001'],
+      itemInfo: [{ id: 'p0-001', title: null, stages: null, placeholder: false }],
+      stages: ['stage-1'],
+    }])
     await fiber.dispose()
   })
 })

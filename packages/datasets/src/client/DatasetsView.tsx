@@ -33,7 +33,7 @@ import type { DatasetOverviewRow, ListDatasetsResult, ListItemsResult, RegisterI
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetDetail } from './DatasetDetail.tsx'
 import { classifyError, ErrorState } from './ErrorState.tsx'
-import { Chip, EmptyState, LayersEdit, LayersWordView, shortCommit } from './parts.tsx'
+import { Chip, EmptyState, LayersEdit, LayersWordView, ShelfIcon, shortCommit } from './parts.tsx'
 import { RegisterForm } from './RegisterForm.tsx'
 import { RegistryList } from './RegistryList.tsx'
 import { SkeletonForm } from './SkeletonForm.tsx'
@@ -327,6 +327,8 @@ export function DatasetsView(props: DatasetsViewProps) {
     actions.setForm(next)
   }
 
+  const registryEmpty = page === 'list' && registry !== null && registry.length === 0
+
   return (
     <div className={css.view} data-conversation-composer-overlay="">
       {/* T83 · datasets: on the list page the bar is the page's own header,
@@ -358,11 +360,16 @@ export function DatasetsView(props: DatasetsViewProps) {
               </>
             )
             : (
-              <span className={css.bindingNone}>
-                {registry === null ? t('list.loading') : t('registry.title', { count: registry.length })}
-              </span>
+              // No count title over an empty registry (T87): the centred
+              // empty block below says it, and a 「0 个」 heading beside it
+              // would say it twice, one indent apart.
+              !registryEmpty && (
+                <span className={css.bindingNone}>
+                  {registry === null ? t('list.loading') : t('registry.title', { count: registry.length })}
+                </span>
+              )
             )}
-          {page === 'list' && (
+          {page === 'list' && !registryEmpty && (
             <>
               <Button size="sm" variant="outline" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
                 {t('registry.register')}
@@ -483,11 +490,18 @@ export function DatasetsView(props: DatasetsViewProps) {
         <>
           {/* No registration is the tab's FIRST screen on a new deployment:
               ui-spec §九 wants the next step on it, and the button that takes it. */}
-          {registry !== null && registry.length === 0 && (
-            <EmptyState title={t('registry.empty')} hint={t('registry.emptyHint')}>
+          {/* T87: one centred block — icon, sentence, ONE primary action; the
+              bar's own two buttons are hidden meanwhile, so 「登记仓库」 is
+              never on screen twice, and the old-binding import is the quiet
+              secondary link under it. */}
+          {registryEmpty && (
+            <EmptyState page icon={<ShelfIcon />} title={t('registry.empty')} hint={t('registry.emptyHint')}>
               <Button size="sm" variant="primary" onClick={() => { setRegisterOpen({ mode: 'new' }) }}>
                 {t('registry.emptyAction')}
               </Button>
+              <button type="button" className={css.emptyLink} onClick={runImport} disabled={importing}>
+                {importing ? t('registry.importing') : t('registry.import')}
+              </button>
             </EmptyState>
           )}
           {listLoading && registry === null && <div className={css.empty}>{t('list.loading')}</div>}

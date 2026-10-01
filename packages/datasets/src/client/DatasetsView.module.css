@@ -1165,6 +1165,68 @@
   border-radius: 8px;
 }
 
+.emptyPage {
+  /* T87: the page with nothing yet — centred in the column, no frame. */
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: min(calc(100% - 24px), var(--dsh-chat-content-width, 720px));
+  min-height: 320px;
+  margin-inline: auto;
+  padding: 48px 0 var(--dsh-datasets-bottom-clearance);
+  text-align: center;
+}
+
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.emptyPage .emptyTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.emptyPage .emptyHint {
+  max-width: 360px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.emptyPage .emptyActions {
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  padding-top: 10px;
+}
+
+.emptyLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.emptyLink:hover:not(:disabled) {
+  color: var(--dsw-alias-label-secondary);
+  text-decoration: underline;
+}
+
 .emptyTitle {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;

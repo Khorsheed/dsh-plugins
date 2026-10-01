@@ -589,6 +589,20 @@ function unitOf(unit: DraftUnit): Record<string, unknown> {
   }
 }
 
+/** One item as the 新建实验 form lists it (T87): what a person can recognise it by. */
+export interface DraftItemOption {
+  id: string
+  /** `item.json`'s `title`; null when the item declares none (or has no item.json). */
+  title: string | null
+  /** How many stages the item runs (`item.json`'s `phasesUsed`); null when undeclared. */
+  stages: number | null
+  /**
+   * A link-test fixture rather than a real question — the form hides it by
+   * default. See {@link isPlaceholderItem} for what decides it.
+   */
+  placeholder: boolean
+}
+
 /** One dataset set as the 新建实验 form's pickers read it. */
 export interface DraftDatasetOption {
   /** `<registration id>/<set>` — what the draft's `dataset` takes. */
@@ -597,8 +611,51 @@ export interface DraftDatasetOption {
   commit: string
   /** Item ids the set declares, sorted. */
   items: string[]
+  /** The same items, in the same order, with what the form shows beside each id. */
+  itemInfo: DraftItemOption[]
   /** Stage names it ships a schema for, sorted (`run-meta` is not a stage). */
   stages: string[]
+}
+
+/**
+ * Whether an item is a placeholder — a link-test fixture whose results say
+ * nothing about any real question (T87).
+ *
+ * The dataset says so itself: `item.json`'s `taxonomy.category` is `fixture`
+ * (the harness-comparison set's P0 declares exactly that, and its plans cite
+ * that field when they explain why P0 answers nothing), or its
+ * `taxonomy.tags` carry `fixture` / `placeholder`. Only when there is no
+ * readable item.json at all does the id speak for it, and then conservatively:
+ * a `P0-` prefix or the word `placeholder` in the id. An item.json that
+ * declares a real category is believed over its id.
+ * @param id - the item id (its directory name).
+ * @param meta - the parsed item.json, or null when there is none.
+ */
+export function isPlaceholderItem(id: string, meta: unknown): boolean {
+  if (typeof meta === 'object' && meta !== null) {
+    const taxonomy = (meta as { taxonomy?: unknown }).taxonomy
+    if (typeof taxonomy === 'object' && taxonomy !== null) {
+      const { category, tags } = taxonomy as { category?: unknown; tags?: unknown }
+      if (category === 'fixture') return true
+      if (Array.isArray(tags) && tags.some(tag => tag === 'fixture' || tag === 'placeholder')) return true
+    }
+    return false
+  }
+  return /^P0-/.test(id) || /placeholder/i.test(id)
+}
+
+/** One item's form entry, read from its item.json (absent or unreadable degrades to the id alone). */
+async function itemOptionOf(datasetRoot: string, id: string): Promise<DraftItemOption> {
+  let meta: unknown = null
+  try {
+    meta = JSON.parse(await readFile(join(datasetRoot, 'items', id, 'item.json'), 'utf8')) as unknown
+  } catch {
+    meta = null
+  }
+  const record = typeof meta === 'object' && meta !== null ? meta as { title?: unknown; phasesUsed?: unknown } : {}
+  const title = typeof record.title === 'string' && record.title.trim() !== '' ? record.title.trim() : null
+  const stages = Array.isArray(record.phasesUsed) ? record.phasesUsed.length : null
+  return { id, title, stages, placeholder: isPlaceholderItem(id, meta) }
 }
 
 /** Everything the 新建实验 form needs to fill its pickers, in one read. */
@@ -650,7 +707,8 @@ export async function draftOptions(registry: DatasetsRegistryFace): Promise<Draf
         const view = await registry.datasetView(row.entry.id, set, row.latest.commit)
         const [items, stages] = await Promise.all([itemIdsOf(view.path), stageNamesOf(view.path)])
         if (items.length === 0 && stages.length === 0) continue
-        datasets.push({ id: ref, commit: row.latest.commit, items, stages })
+        const itemInfo = await Promise.all(items.map(id => itemOptionOf(view.path, id)))
+        datasets.push({ id: ref, commit: row.latest.commit, items, itemInfo, stages })
       } catch (error) {
         notes.push(`${ref}: ${error instanceof Error ? error.message : String(error)}`)
       }

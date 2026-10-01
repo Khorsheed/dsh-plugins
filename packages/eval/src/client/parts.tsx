@@ -151,16 +151,39 @@ export function Chip(props: {
  * The empty seat, which always says what to do next (ui-spec §九): a sentence
  * about what is not here, a sentence about how to change that, and the action
  * itself when the page has one.
- * @param props - the two sentences and any action buttons.
+ *
+ * `page` (T87) is the variant for a page that has NOTHING yet — the lab's
+ * list with no experiment: an icon, the two sentences and the action,
+ * centred in the page's height, no frame. In-panel seats keep the left-aligned
+ * form, which reads as part of the panel around it.
+ * @param props - the two sentences, any action buttons, and the page variant's icon.
  */
-export function EmptyState(props: { title: string; hint?: string | undefined; children?: ReactNode }) {
-  const { title, hint, children } = props
+export function EmptyState(props: {
+  title: string
+  hint?: string | undefined
+  children?: ReactNode
+  page?: boolean | undefined
+  icon?: ReactNode
+}) {
+  const { title, hint, children, page = false, icon } = props
   return (
-    <div className={css.emptySeat}>
+    <div className={page ? css.emptyPage : css.emptySeat}>
+      {page && icon !== undefined && <div className={css.emptyIcon} aria-hidden="true">{icon}</div>}
       <div className={css.emptyTitle}>{title}</div>
       {hint !== undefined && hint !== '' && <div className={css.emptyHint}>{hint}</div>}
       {children !== undefined && <div className={css.emptyActions}>{children}</div>}
     </div>
+  )
+}
+
+/** The lab's page-empty icon: a flask, inline so it draws on every host line. */
+export function FlaskIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 3h6" />
+      <path d="M10 3v6.2L4.6 18.4A1.7 1.7 0 0 0 6.1 21h11.8a1.7 1.7 0 0 0 1.5-2.6L14 9.2V3" />
+      <path d="M7.2 15h9.6" />
+    </svg>
   )
 }
 

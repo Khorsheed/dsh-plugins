@@ -17,7 +17,7 @@ import type {
   EvalCellRetryRequest, EvalCellRetryResult, EvalCellsRequest, EvalCloseRunRequest, EvalClosureWrite, EvalCellsResult, EvalConditionDiffRequest,
   EvalConditionDiffView, EvalConditionEndpointRequest, EvalConditionEndpointView,
   EvalConditionProvisionRequest, EvalConditionProvisionView, EvalConditionsRequest, EvalConditionsView,
-  EvalDraftOptionsRequest, EvalDraftOptionsView, EvalDraftRequest, EvalDraftResult, EvalExperimentDetail,
+  EvalDraftOptionsRequest, EvalDraftOptionsView, EvalExperimentDetail,
   EvalExperimentRequest, EvalExperimentsRequest, EvalExperimentsResult, EvalExportPlanRequest,
   EvalExportPlanView, EvalExportResultView, EvalExportRunRequest, EvalMatrixRequest, EvalMatrixView,
   EvalFinalizeRequest, EvalFinalizeView, EvalHumanFinalRequest, EvalHumanFinalResult,
@@ -39,10 +39,9 @@ export type EvalRemote = TypertRemoteNamespaceMap['dshEval']
  *
  * Eight of them WRITE, and every one is a human's click. `setPlanNumbers`
  * is the design page's in-place numbers (T74) — an unstarted plan's reps,
- * budget and judge samples, nothing structural. `draftExperiment` is
- * ui-spec step 2 — the 新建实验 form, and the ONE write this face shares with a
- * model tool (`eval_plan_draft` reaches the same service verb), because
- * drafting starts nothing. `approvePlan` is ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
+ * budget and judge samples, nothing structural. Drafting is NOT on this
+ * face since T87: the 新建实验 dialog hands a request to the agent, whose
+ * `eval_plan_draft` reaches the service's draft verb. `approvePlan` is ui-spec step 5. The drawer's three are `retryCell`, `releaseCheck` and the
  * two-step bundle export. `finalizeRun` is the report page's — the same
  * release gate, walked over every archived cell of the run, and the same call
  * behind its 回收 action. `submitHumanFinal`
@@ -84,13 +83,6 @@ export interface LabViewInjected {
    * can draft into, with the items and stage schemas each one holds.
    */
   fetchDraftOptions: (sessionId: SessionId, request: EvalDraftOptionsRequest) => Promise<RemoteResult<EvalDraftOptionsView>>
-  /**
-   * DRAFT an experiment: write the plan and any new condition into the bound
-   * repository's working copy and validate them. A write, not a start — the
-   * result carries the plan-review page's own payload, and the button that
-   * starts anything is on that page.
-   */
-  draftExperiment: (sessionId: SessionId, request: EvalDraftRequest) => Promise<RemoteResult<EvalDraftResult>>
   /** Approve a plan and start it (the one write that reaches `runStart`). */
   approvePlan: (sessionId: SessionId, request: EvalApproveRequest) => Promise<RemoteResult<EvalApproveResult>>
   /**
@@ -220,6 +212,12 @@ export interface LabViewInjected {
    * back to the clipboard.
    */
   insertDraft: (sessionId: SessionId, text: string) => boolean
+  /**
+   * Put the keyboard in the session's composer (T87: after 「让 Agent 组织」
+   * wrote into it). Best effort — the host's input face carries no focus verb
+   * on every line, so an unreachable composer is simply left alone.
+   */
+  focusComposer?: (sessionId: SessionId) => void
   /**
    * The 打开实验 requests from the eval_plan_draft tool-row card (T76). The
    * view takes its session's pending request on mount and on every new one:

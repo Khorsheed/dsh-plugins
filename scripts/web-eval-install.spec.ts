@@ -168,5 +168,10 @@ describe('what the web-eval pack ships outside the profile directory', () => {
     expect(body).toContain('Ask only when nobody named the factor')
     expect(body).toContain('这个路径在本部署没有登记')
     expect(body).toContain('onto a registered id because the names look alike')
+    // T87: the 新建实验 form's 「让 Agent 组织」 request is walked through one
+    // open choice at a time, and still ends in a draft, never a start.
+    expect(body).toContain('## When the form hands it over')
+    expect(body).toContain('Never re-ask what the request says is settled.')
+    expect(body).toContain('Ask the open choices one at a time')
   })
 })

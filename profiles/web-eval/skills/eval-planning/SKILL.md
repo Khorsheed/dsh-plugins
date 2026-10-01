@@ -31,6 +31,10 @@ off"; offer to draft, and say what they will need to do next.
 
    You draft, the person edits: when you report, say which of these are
    defaults and that they can change them on the 实验设计 page.
+
+   The one exception is a request from the 新建实验 form — see
+   **When the form hands it over** below: that person asked to be walked
+   through, so there you ask, one choice at a time.
 2. **Look at what exists.** `eval_conditions` lists the deployment's
    condition library — the subjects under test — with their readiness.
    `datasets_list` says which datasets this deployment has registered, as
@@ -41,10 +45,38 @@ off"; offer to draft, and say what they will need to do next.
    the deployment holding the plan, adds any new condition to the library, then
    validates. Do not hand-write those files with `write`: the tool spells the
    contract, refuses the mistakes, and writes into the same place the
-   interface's 新建实验 form does.
+   interface's 实验设计 page reads from.
 4. **Report.** Give the person the experiment id, the ids of any conditions you
    added, what validate said — errors and warnings, in its words — and which
    choices were defaults they can change on the 实验设计 page. Then stop.
+
+## When the form hands it over
+
+The lab's 新建实验 form has one button, 「让 Agent 组织」. It puts a request in
+the chat box that lists what the person already chose (always a name; maybe a
+question, a dataset set, some items) and what they left open, in order. The
+person pressed send because they want to be walked through the rest — so here,
+unlike the loop above, you ask:
+
+1. **Never re-ask what the request says is settled.** Use the name as the
+   experiment name, and the set and items as given.
+2. **Ask the open choices one at a time, in the request's order**, each as an
+   `ask_user_question` with concrete options read from the tools (sets from
+   `datasets_list`, items from `datasets_show`, conditions from
+   `eval_conditions`) and your suggestion marked as the recommended one. One
+   question per call; wait for the answer before the next.
+3. **对比组, 判官, 次数 and 预算 always come with a suggested default** for the
+   person to confirm or change: a pair of existing conditions that differ in
+   one field; the judge condition the library already holds (or none); reps 1;
+   a per-cell budget (`active_minutes`, `turns`) sized to the items. Asking
+   them together in one `ask_user_question` with several questions is fine.
+4. **The dataset version is still `eval_plan_draft`'s** (see «Datasets are
+   registered»): do not ask about it up front.
+5. **Then draft with `eval_plan_draft`, report as in step 4 of the loop, and
+   stop.** Never start anything — starting is approved on the 实验设计 page.
+
+If the person skips a question, take your suggested default for it and say so
+in the report — except the version question, which still stops the draft.
 
 ## Conditions are copies
 

@@ -931,8 +931,21 @@ export interface EvalDraftDatasetOption {
   commit: string
   /** Item ids the set declares, sorted — the 题目多选 list. */
   items: string[]
+  /** The same items with what the picker shows beside each id (T87). */
+  itemInfo: EvalDraftItemOption[]
   /** Stage names it ships a schema for, sorted. */
   stages: string[]
+}
+
+/** One item as the 新建实验 form lists it: id + title + stage count, and whether it is a placeholder. */
+export interface EvalDraftItemOption {
+  id: string
+  /** The item's own title; null when it declares none. */
+  title: string | null
+  /** How many stages the item runs; null when undeclared. */
+  stages: number | null
+  /** A link-test fixture (the dataset's own metadata says so) — hidden by default. */
+  placeholder: boolean
 }
 
 /** The form's vocabulary: which sets exist, and what each holds. */

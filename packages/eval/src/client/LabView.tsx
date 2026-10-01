@@ -36,12 +36,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { EvalClosureExit, EvalDraftResult, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
+import type { EvalClosureExit, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { DesignPage, planFileAnswer, type PlanFileAnswer, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
 import {
-  Chip, EmptyState, Fold, Seg2, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
+  Chip, EmptyState, FlaskIcon, Fold, Seg2, snapshotCell, stageAction, stalledFor, stamp, statusKey, statusTone,
 } from './parts.tsx'
 import { LAB_PAGES, START_FOLLOWUP_LIMIT, START_FOLLOWUP_MS, type LabPage, type RunFilter } from './store.ts'
 import { RunsPage } from './RunsPage.tsx'
@@ -76,10 +76,10 @@ export function LabView(props: LabViewProps) {
     sessionId, useStore, actions, t,
     fetchExperiments, fetchExperiment, fetchPlanReview, fetchConditions, fetchConditionDiff, approvePlan, fetchRunOutput,
     provisionCondition, setConditionEndpoint, setPlanNumbers,
-    fetchDraftOptions, draftExperiment,
+    fetchDraftOptions,
     fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, fetchCellAnswers, submitHumanFinal, fetchExperimentArtifact,
-    closeRun, archiveRun, insertDraft, focus,
+    closeRun, archiveRun, insertDraft, focusComposer, focus,
     fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt, openInspect: openInHost,
   } = props
   const list = useStore(s => s.list)
@@ -155,14 +155,10 @@ export function LabView(props: LabViewProps) {
   const startFollowUps = useStore(s => s.startFollowUps)
   const notice = useStore(s => s.notice)
   const noticeError = useStore(s => s.noticeError)
-  // A draft made in THIS visit, held until its row shows up in the refreshed
-  // list. The row does not exist client-side the moment the file lands, so
-  // opening it by id immediately would drop the reader back to the list; the
-  // effect below opens it when the list catches up, and the same sentence is
-  // shown over the list meanwhile.
+  // The 新建实验 dialog (T87). It drafts nothing itself: its one action puts a
+  // request in the chat box, and the agent drafts from the conversation.
   const [newOpen, setNewOpen] = useState(false)
-  const [drafted, setDrafted] = useState<EvalDraftResult | null>(null)
-  // The 保留单元 debugging switch. Visit-local like the two above: it is a
+  // The 保留单元 debugging switch. Visit-local like the one above: it is a
   // property of THIS approval, not of the plan on disk.
   const [keepUnits, setKeepUnits] = useState(false)
   // 本会话发起 / 全部 (T72 §1). A per-viewer convenience, so browser storage
@@ -233,40 +229,6 @@ export function LabView(props: LabViewProps) {
   const openRunId = openRow?.runId ?? null
   const planPath = openRow?.planPath ?? null
   const openExperimentId = openRow?.experimentId ?? null
-
-  // Until the list carries the new row, the list-level notice names the draft
-  // by its id's slug (the name, lower-cased) — the row's own name replaces it
-  // the moment the row lands.
-  const draftNotice = drafted === null
-    ? null
-    : (drafted.review.errors === 0
-      ? t('notice.drafted', { name: drafted.experimentId.replace(/-\d{8}-[0-9a-f]{4}$/, '') })
-      : t('notice.draftedWithErrors', { name: drafted.experimentId.replace(/-\d{8}-[0-9a-f]{4}$/, ''), errors: drafted.review.errors }))
-
-  // What the draft's own sentence says: the name, and whether validate found
-  // anything. A draft with errors is still a draft — it is on disk and in the
-  // list — so the notice reports rather than apologizes. The name is the
-  // experiment row's (its plan file is `plan.json` for every experiment since
-  // T73, so the file stem names nothing); the path is not in the sentence
-  // (ui-spec §九).
-  //
-  // Keyed on `list`, NOT on `rows`: `rows` is a fresh array on every render
-  // (`list?.rows ?? []`), which would re-run this on every render for nothing.
-  // The effect does write `drafted`, but it writes it to null and then early
-  // returns — it cancels no request, so this is not the self-cancelling shape
-  // T47 hit.
-  useEffect(() => {
-    if (drafted === null) return
-    const row = (list?.rows ?? []).find(entry => entry.experimentId === drafted.experimentId)
-    if (row === undefined) return
-    actions.open(row.id)
-    // `open` already lands on 实验设计 and clears the per-experiment notice, so
-    // the sentence is set after it, never before.
-    actions.setNotice(drafted.review.errors === 0
-      ? t('notice.drafted', { name: row.name })
-      : t('notice.draftedWithErrors', { name: row.name, errors: drafted.review.errors }))
-    setDrafted(null)
-  }, [list, drafted, actions, t])
 
   // Fetch the open experiment's detail. A DRAFT has no run: its overview is
   // the row, and spending an RPC on it would only produce a refusal.
@@ -615,6 +577,25 @@ export function LabView(props: LabViewProps) {
     }
     void writeClipboard(text).then((ok) => {
       actions.setNotice(t(ok ? 'agent.copied' : 'agent.copyFailed', { text }))
+    })
+  }
+
+  /**
+   * 「让 Agent 组织」 (T87): the dialog's request goes into the chat box — NEVER
+   * sent — and the caret follows it there, so the next key the person presses
+   * is send. No chat box (a detached lab): the clipboard, and the notice says
+   * so. The notice is the LIST's: the dialog only opens from the list.
+   * @param request - the text {@link buildOrganizeRequest} built.
+   */
+  function organize(request: string): void {
+    setNewOpen(false)
+    if (insertDraft(sessionId, request)) {
+      focusComposer?.(sessionId)
+      setListNotice(t('new.handedOff'))
+      return
+    }
+    void writeClipboard(request).then((ok) => {
+      setListNotice(t(ok ? 'agent.copied' : 'agent.copyFailed', { text: request }))
     })
   }
 
@@ -1148,7 +1129,6 @@ export function LabView(props: LabViewProps) {
           <span className={css.headQuestion}>{openRow.question}</span>
         )}
       </div>
-      {draftNotice !== null && openRow === undefined && <div className={css.notice}>{draftNotice}</div>}
       {listNotice !== null && openRow === undefined && <div className={css.notice}>{listNotice}</div>}
       {notice !== null && openRow !== undefined && <div className={css.notice}>{notice}</div>}
       {noticeError !== null && openRow !== undefined && (
@@ -1163,10 +1143,9 @@ export function LabView(props: LabViewProps) {
             )}
             {(list?.notes ?? []).map(note => <div key={note} className={css.note}>{note}</div>)}
             {list !== null && rows.length === 0 && (
-              // The seat's call to action says what it is FOR ("the first
-              // one"), so it reads as the next step rather than as a second
-              // copy of the toolbar button standing beside it.
-              <EmptyState title={t('list.empty')} hint={t('list.emptyHint')}>
+              // The page's one empty seat (T87): centred, one action — the
+              // dialog — and the sentence says the chat is just as good a door.
+              <EmptyState page icon={<FlaskIcon />} title={t('list.empty')} hint={t('list.emptyHint')}>
                 <Button size="sm" variant="primary" onClick={() => { setNewOpen(true) }}>
                   {t('list.emptyAction')}
                 </Button>
@@ -1351,7 +1330,7 @@ export function LabView(props: LabViewProps) {
                     onProvision={provisionRow}
                     onEditEndpoint={(id: string | null) => { actions.editEndpoint(id) }}
                     onSetEndpoint={setEndpoint}
-                    onAddGroup={() => { setNewOpen(true) }}
+                    onAddGroup={() => { handToAgent(t('design.addGroupAsk', { name: openRow.name })) }}
                     onSetNumbers={setNumbers}
                     onFix={applyFix}
                     readPlan={openExperimentId === null ? null : readPlan}
@@ -1398,7 +1377,7 @@ export function LabView(props: LabViewProps) {
                       onOpenArtifact={(path) => { actions.openArtifact(path) }}
                       focus={recordFocus}
                       onClearFocus={() => { actions.focusRecords(null) }}
-                      onAddGroup={() => { setNewOpen(true) }}
+                      onAddGroup={() => { handToAgent(t('design.addGroupAsk', { name: openRow.name })) }}
                       stalledMinutes={openRow.status === 'stalled' ? openRow.stalledMinutes : null}
                       onRerun={() => { rerun(openRow) }}
                       t={t}
@@ -1494,15 +1473,8 @@ export function LabView(props: LabViewProps) {
       <NewExperimentDialog
         open={newOpen}
         onClose={() => { setNewOpen(false) }}
-        onDrafted={(result) => {
-          setNewOpen(false)
-          setDrafted(result)
-          // The row is the LIST's; ask for it and let the effect above open it.
-          actions.refresh()
-        }}
+        onOrganize={organize}
         fetchDraftOptions={fetchDraftOptions}
-        fetchConditions={fetchConditions}
-        draftExperiment={draftExperiment}
         sessionId={sessionId}
         t={t}
       />
@@ -1733,7 +1705,9 @@ function ExperimentList(props: {
   return (
     <>
       {shown.length === 0
-        ? <EmptyState title={t('list.scopeEmpty')} hint={t('list.scopeEmptyHint')} />
+        // Same seat and look as the page's own empty state (T87): only the
+        // sentence differs — the other sessions' experiments sit under 全部.
+        ? <EmptyState page icon={<FlaskIcon />} title={t('list.scopeEmpty')} hint={t('list.scopeEmptyHint')} />
         : (
           <div className={css.listTable}>
             {LIST_GROUPS.filter(group => group !== 'archived' && groups[group].length > 0).map(group => (
