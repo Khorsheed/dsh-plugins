@@ -1,5 +1,5 @@
 /**
- * T65 — the scope's own copy of a preset, as the evaluation reads it: the
+ * T65/T91 — the scope's own copy of a preset package, as the evaluation reads it: the
  * digest that makes the subject checkable offline, and the composition shape
  * a factor may not have.
  */
@@ -9,17 +9,25 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { compositionAbsolutePaths, hashPresetTree, scopePresetDir, scopePresetProblem } from '../src/preset-snapshot.ts'
 
-const RELOCATABLE = `- id: skill-filesystem
-  name: '@deepseek-ai/dsh-skill-filesystem'
-  config:
-    customSkillDirs:
-      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+const RELOCATABLE = `- insert:
+    - id: preset-eval-lean
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: eval-lean
+        plugins:
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              includeDefaultRoots: false
+              customSkillDirs:
+                - !!js "process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@dataseek-eval/preset-eval-lean/package.json')), 'skills')"
 `
 
-/** One preset directory, written wherever the caller says. */
+/** One preset package directory, written wherever the caller says. */
 function preset(dir: string, options: { composition?: string; body?: string } = {}): string {
   mkdirSync(join(dir, 'skills', 'eval-planning'), { recursive: true })
-  writeFileSync(join(dir, 'agent.cordis.yml'), options.composition ?? RELOCATABLE)
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@dataseek-eval/preset-eval-lean', version: '0.0.0', private: true, dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  writeFileSync(join(dir, 'cordis.patch.yml'), options.composition ?? RELOCATABLE)
   writeFileSync(join(dir, 'skills', 'eval-planning', 'SKILL.md'), options.body ?? 'Draft the plan. One stage.\n')
   return dir
 }
@@ -44,12 +52,12 @@ describe('hashPresetTree', () => {
   })
 
   it('counts every file, not just the config-suffixed ones', async () => {
-    expect((await hashPresetTree(preset(join(temp(), 'eval-lean'))))?.files).toBe(2)
+    expect((await hashPresetTree(preset(join(temp(), 'eval-lean'))))?.files).toBe(3)
   })
 
   it('refuses a tree with a symlink in it — a link does not survive the bind mount', async () => {
     const dir = preset(join(temp(), 'eval-lean'))
-    symlinkSync(join(dir, 'agent.cordis.yml'), join(dir, 'alias.yml'))
+    symlinkSync(join(dir, 'cordis.patch.yml'), join(dir, 'alias.yml'))
     expect(await hashPresetTree(dir)).toBeUndefined()
   })
 
@@ -59,7 +67,7 @@ describe('hashPresetTree', () => {
 })
 
 describe('compositionAbsolutePaths', () => {
-  it('passes the loader expression the shipped cordis preset uses', () => {
+  it('passes the package-relative expression the official web-app presets use', () => {
     expect(compositionAbsolutePaths(RELOCATABLE)).toEqual([])
   })
 
@@ -76,12 +84,17 @@ describe('compositionAbsolutePaths', () => {
 })
 
 describe('scopePresetProblem', () => {
-  it('accepts a relocatable preset', async () => {
+  it('accepts a relocatable preset package', async () => {
     expect(await scopePresetProblem(preset(join(temp(), 'eval-lean')))).toBeUndefined()
   })
 
   it('refuses a directory that is not a preset at all', async () => {
-    expect(await scopePresetProblem(join(temp(), 'nothing'))).toMatch(/holds no agent\.cordis\.yml/)
+    expect(await scopePresetProblem(join(temp(), 'nothing'))).toMatch(/holds no readable package\.json/)
+  })
+
+  it('refuses a package whose patch declares no preset row', async () => {
+    const dir = preset(join(temp(), 'eval-lean'), { composition: '- id: tools\n' })
+    expect(await scopePresetProblem(dir)).toMatch(/declares no @deepseek-ai\/dsh-agent-preset row/)
   })
 
   it('refuses an absolute skills root and names the idiom that replaces it', async () => {
@@ -93,7 +106,7 @@ describe('scopePresetProblem', () => {
 })
 
 describe('scopePresetDir', () => {
-  it('is the roster\'s own derived user root inside the scoped home', () => {
-    expect(scopePresetDir('/creds/dsh', 'eval-lean')).toBe('/creds/dsh/.agent-presets/eval-lean')
+  it('is the scope\'s preset package copy inside the scoped home', () => {
+    expect(scopePresetDir('/creds/dsh', 'eval-lean')).toBe('/creds/dsh/preset-packages/eval-lean')
   })
 })

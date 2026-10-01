@@ -411,7 +411,6 @@ For an old instance on the 0.1.5 toolchain (3171 on `~/.dsh-lab`, for example). 
 
 - npm release line (`@deepseek-ai/dsh@0.2.0-rc.2`): ✅ — since T82 this profile supports host 0.2.0 and later only (`dsh` >= 0.2.0-rc.2; the user's decision of 2026-10-01, no dual line); below the floor `install.sh` / `update.sh` exit 2 before touching a file. The evaluation family's datasets / mission / lab / eval and the bundle-eval family bundle carry `minHost` / `verifiedHost` 0.2.0-rc.2 in `dsh.compat` (since T88). Stay on the old release line on a 0.1.x host; migrating is covered in [Switching a 0.1.5 instance to 0.2.0](#switching-a-015-instance-to-020).
 - source line (deepseek-harness master): ✅ — same (verifiedHost: 0.2.0-rc.2, live-smoked on a temp instance: T82 installed 25 names / 205 rows, default preset eval, walk-through at widths 1440 and 400; after T88 moved to `bundle-eval`, 24 names / 205 rows).
-- Degraded: preset-bearing dsh conditions are expected not to compose on 0.2.0 (`local-agent-dsh` still inserts 0.1.5's `@deepseek-ai/dsh-agent-presets`); see [The tested dsh follows the instance](#the-tested-dsh-follows-the-instance).
 
 ## Related documents
 

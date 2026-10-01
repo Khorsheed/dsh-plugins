@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-09-18-sub-dsh-preset-in-scope.zh.md)
 
+> Superseded in part on host 0.2.0 by [the sub-dsh's preset on host 0.2.0 is a package copied into the scope](2026-10-01-sub-dsh-preset-package-host-020.md): the directory preset under `.agent-presets/<id>`, the `@deepseek-ai/dsh-agent-presets` roster row and `defaultPresetRoot` are gone; the scope now keeps a preset-package copy under `preset-packages/<id>` and the patch carries an `@deepseek-ai/dsh-agent-preset-registry` row. The resolution order, the refresh/keep rules and the no-absolute-path rule below still hold.
+
 ## Problem
 
 A condition's `preset` became a checkable factor in T32 and got its measurement in T32b, and pilot D — the run that exists to prove "two subjects differing in exactly one factor, and that factor is the capability face" — still could not execute it. T33c stopped at the readiness gate with no token spent, because two requirements met head-on.

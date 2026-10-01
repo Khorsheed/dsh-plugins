@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-09-09-dsh-headless-bundle-dual-filesystem-pin.zh.md)
 
+> Superseded in part on host 0.2.0 by [the sub-dsh's preset on host 0.2.0 is a package copied into the scope](2026-10-01-sub-dsh-preset-package-host-020.md): the web-eval profile now pins the path as `unitHeadlessBundleDir`, so only container rounds (a `<profileName>-unit` twin sub-profile) link to it, and host rounds link to the instance's own installation. The reasoning below still decides the unit side.
+
 ## Problem
 
 `provisionDshSubProfile` writes `<scoped home>/profiles/<name>/node_modules/@khorsheed/dsh-local-agent-dsh-headless` as an absolute symlink into the host installation. Correct in a pure-host world. Under the T20c "one owner, one directory" layout the SAME scoped home is bind-mounted into container units, and the absolute target dangles there — the sub-dsh profile fails to boot (`failed to apply loader entry include`). The README's container-round provisioning skip only prevents writing a NEW bad link; it cannot fix the one already written, and a host-side readiness re-probe re-provisions and writes the host-only path back — right before a container round mounts the directory. One directory is now parsed by two filesystems whose dependency closures live in different places (host: the profile's installation; unit: the image's `/opt/dsh-headless/node_modules`).

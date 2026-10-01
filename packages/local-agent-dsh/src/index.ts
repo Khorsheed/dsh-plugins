@@ -23,7 +23,8 @@
  * @module @khorsheed/dsh-local-agent-dsh
  */
 
-import { join } from 'node:path'
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
@@ -40,7 +41,7 @@ import { LiveDriverSwitch } from './live-switch.ts'
 import { DshModelCatalog, type DshModelDirectoryFace } from './model-catalog.ts'
 import { DshModelBroker } from './model-broker.ts'
 import { listDshSessions } from './records.ts'
-import { defaultPresetRoot, DEFAULT_SUB_PROFILE_NAME, provisionDshScope, USER_PRESET_DIR } from './provision.ts'
+import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope } from './provision.ts'
 import type { DshSubProfilePermissions } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
@@ -62,6 +63,14 @@ export interface LocalAgentDshConfig {
   cliLaunch?: string[]
   /** Override the headless bundle directory the sub-profile symlinks to. */
   headlessBundleDir?: string
+  /**
+   * The headless bundle directory as an evaluation unit (container round)
+   * sees it — the image's own install. Present, provisioning also writes a
+   * `<profileName>-unit` sub-profile linking it, and container rounds launch
+   * that one, while host rounds keep `headlessBundleDir` (default: this
+   * instance's own headless). Absent, both share one sub-profile.
+   */
+  unitHeadlessBundleDir?: string
   /**
    * The sub-dsh's permission boundary: the sandbox mode every confined call
    * runs under, paired with the approval policy `dsh-base`'s own preset table
@@ -147,6 +156,7 @@ export const Config: z = z.object({
   apiKeyRef: z.string().default('DEEPSEEK_API_KEY'),
   cliLaunch: z.array(z.string()),
   headlessBundleDir: z.string(),
+  unitHeadlessBundleDir: z.string(),
   permissions: z.union([z.const('read-only'), z.const('workspace-write'), z.const('danger-full-access')]),
   model: volatilize(SETTINGS_FIELDS.model),
   live: volatilize(SETTINGS_FIELDS.live),
@@ -303,14 +313,26 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       retireRuntime: childSessionId => currentLiveSwitch?.retireRuntime(childSessionId) ?? Promise.resolve(),
     })
     /**
-     * This deployment's preset root — where a person or a pack installed the
-     * presets this instance offers, and the SOURCE every scope's own copy is
-     * taken from. Derived the way the roster derives it, from the settings
-     * service's harness home when there is one.
+     * This instance's own profile directory — the loader's `baseUrl`, which
+     * the host sets to the directory holding the profile's `cordis.yml`. Its
+     * direct dependencies are where an installed preset package is found, and
+     * the SOURCE every scope's own copy is taken from (the same package this
+     * instance's capability catalog measures). Undefined when the loader
+     * exposes no file URL, which leaves a scope able to keep the copy it has
+     * but unable to take a new one.
      */
-    const instancePresetRoot = (): string => {
-      const home = (ctx.get?.('settings') as { home?: string } | undefined)?.home
-      return home === undefined ? defaultPresetRoot() : join(home, USER_PRESET_DIR)
+    const instanceProfileDir = (): string | undefined => {
+      const baseUrl = (ctx as { baseUrl?: unknown }).baseUrl
+      if (typeof baseUrl !== 'string' || !baseUrl.startsWith('file:')) return undefined
+      try {
+        return dirname(fileURLToPath(new URL('./package.json', baseUrl)))
+      } catch {
+        return undefined
+      }
+    }
+    const profileDirOption = (): { instanceProfileDir?: string } => {
+      const dir = instanceProfileDir()
+      return dir === undefined ? {} : { instanceProfileDir: dir }
     }
     const harness: LocalAgentHarness = {
       prepareMember: async ({ binding, childSession, configuration, signal }) => {
@@ -337,7 +359,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       provision: (scopedHome, options) => {
         const provisioned = provisionDshScope(scopedHome, config, {
           ...(options?.preset === undefined ? {} : { preset: options.preset }),
-          presetRoot: instancePresetRoot(),
+          ...(profileDirOption()),
         })
         return {
           ...(provisioned.preset === undefined ? {} : { preset: provisioned.preset }),
@@ -410,7 +432,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       for (const dispose of disposers.splice(0)) dispose()
       if (!enabled) return
       // Idempotent: heals a deleted or drifted sub-profile before each round.
-      provisionDshScope(homeDir, config, { presetRoot: instancePresetRoot() })
+      provisionDshScope(homeDir, config, profileDirOption())
       disposers.push(ctx.localAgent.register(harness))
       // The live driver is settings-driven WITHIN this enabled generation:
       // the card's toggle (user layer over the YAML composition base) swaps

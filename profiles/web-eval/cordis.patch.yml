@@ -166,14 +166,18 @@
     #   宿主上  同名路径下两条符号链接，分别指向宿主 bundle 与宿主依赖闭包
     # 这是一条**机器级前置条件**，每台评测机都要有；备法写在题库 env/README。
     # 它是接缝不是答案——scoped home 该不该自足，交回 local-agent 定。
-    headlessBundleDir: /opt/dsh-headless/node_modules/@khorsheed/dsh-local-agent-dsh-headless
+    #
+    # 宿主 0.2.0 线（T91）：这条只给**容器轮**用（unitHeadlessBundleDir）。宿主轮
+    # 的子 profile 链向本 profile 自己装的 headless，实例换版本即跟上，不再经过
+    # 宿主上的 /opt 链接；容器轮用 `<子 profile>-unit` 孪生 profile 链向约定路径。
+    unitHeadlessBundleDir: /opt/dsh-headless/node_modules/@khorsheed/dsh-local-agent-dsh-headless
 
     # **入口同理**（I3·T22 第 5 步实测）。cliLaunch 不配时解析为
     # `[process.execPath, ...process.execArgv, process.argv[1]]`——**宿主的 node
     # 与宿主的 dsh 入口脚本的绝对路径**。容器轮把这串原样塞进 `docker exec`，
     # 而单元里那两个路径都不存在，于是委派以 stopReason "error" 收场，
     # 就绪检查只看得到「the delegation ended with stopReason "error"」。
-    # 这与上面 headlessBundleDir 是同一个结构性问题的第二处：dsh 的容器轮里
+    # 这与上面 unitHeadlessBundleDir 是同一个结构性问题的第二处：dsh 的容器轮里
     # 每一个「宿主绝对路径默认值」都要换成两个文件系统都成立的值。
     #
     # `dsh` 这个名字两边都成立：单元里是 /usr/local/bin/dsh（镜像自带），
