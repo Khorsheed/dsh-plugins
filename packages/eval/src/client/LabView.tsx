@@ -1705,7 +1705,9 @@ function ExperimentList(props: {
   return (
     <>
       {shown.length === 0
-        ? <EmptyState title={t('list.scopeEmpty')} hint={t('list.scopeEmptyHint')} />
+        // Same seat and look as the page's own empty state (T87): only the
+        // sentence differs — the other sessions' experiments sit under 全部.
+        ? <EmptyState page icon={<FlaskIcon />} title={t('list.scopeEmpty')} hint={t('list.scopeEmptyHint')} />
         : (
           <div className={css.listTable}>
             {LIST_GROUPS.filter(group => group !== 'archived' && groups[group].length > 0).map(group => (
