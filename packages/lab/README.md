@@ -143,7 +143,7 @@ CLI 是同一个 `LabService` 内核配 `child_process` 运行器，mission 面�
 - npm release line（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅ —— 服务面与 docker provider 在已发布宿主上完整可用。T88 起评测家族一起把 minHost 抬到 0.2.0-rc.2，0.1.x 宿主请停留在旧发布线。
 - source line（deepseek-harness master，fork 或 upstream）：✅ —— 同上（verifiedHost: 0.2.0-rc.2）。
 
-降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：未安装 `@khorsheed/dsh-mission` 时，release gate 降级为显式 force 标志加告警，refs / artifact / checkpoint / verify 登记 warn 跳过。`lab_*` 模型工具（M3）在本线尚不存在。
+降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：未安装 `@khorsheed/dsh-mission` 时，release gate 降级为显式 force 标志加告警，refs / artifact / checkpoint / verify 登记 warn 跳过。`dsh-lab` 读 mission 状态走 `dsh-mission get --json`（T89），对不认 `--json` 的旧版 mission CLI 给出升级提示并跳过该项状态。`lab_*` 模型工具（M3）在本线尚不存在。
 
 ## 失败恢复循环
 
