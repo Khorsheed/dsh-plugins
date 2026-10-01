@@ -412,6 +412,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T81 | ✅ 收口（2026-09-26）：阶段一 main 在 0.1.5-rc.1 上 a–e 全过；阶段二被 main 的 `d49f29af` 取代，不合 | 评测线在 0.1.5 上恢复。typert 双形态 codec（`00cfa1d6`）、preset 双名探测（`380a469c`）、图标自带（`d49f29af`：`scripts/sync-icon-artwork.mts` 给每个包生成 `src/client/icons.tsx`，0.1.5 与 0.1.7 都不再按名字取宿主图标）都由各包负责人在 main 上做了。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；datasets 图标面由 T76 补拍一并看 |
 | T82 | 代码（2026-10-01 改向并派发） | **web-eval 只支持宿主 0.2.0 及以后**（用户 10-01 定，取代原「0.1.7 + 0.1.5 双宿主」）：preset 只走 bundle、install.sh 只认 ≥ 0.2.0、0.2.0 工具链、临时实例冒烟、受试 dsh 版本是否跟实例走、3171 数据试迁、compat 提到 0.2.0。文案见 §三「T82（改）」 | T87 | 0.2.0 临时实例 a–e 与 T86/T87 欠账全过；3171 副本迁过去核对一致 |
 | T88 | 代码（2026-10-01 定，排在 T82 合入之后派发） | 评测家族照 local-agent 形态整理：三个 *-tool 折进核心包的 `./tool` 入口并退役旧包；datasets / mission / lab / eval 保持独立包；新增 family bundle `@khorsheed/dsh-bundle-eval`，web-eval 改依赖它。mission 不退役。文案见 §三「T88」 | T82 | |
+| T89 | 代码（2026-10-01 定，排在 T88 合入之后派发） | 评测家族衔接收紧：mission 提供单元格数据目录动词、list/get 出 JSON、两份判分规则加跨包契约测试、eval 包内目录化并拆 run.ts；协调者评估后一并做 run 级 annotation 与 export 走服务面，./report 入口暂缓。文案见 §三「T89」 | T88 | |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -4381,6 +4382,58 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0；跨宿主版本先删 tsbuildinfo。
 
 ## 回报
 分支与各 commit；退役清单；bundle 行清单；临时实例的端口、home 与证明原文；Note 路径。
+```
+
+#### T89 · 评测家族衔接收紧（2026-10-01 定，T88 合入后派发）
+
+**来源**：
+- 协调者 10-01 委托只读评估四个核心包的能力分解。结论是大分工合理（datasets 管内容与版本，mission 管账本与状态机，lab 管容器生命周期，eval 管编排、判分与报告），依赖只朝一个方向，不需要在包之间搬能力。
+- 问题出在衔接处：eval 直读 mission 的磁盘布局，CLI 适配器和判分规则各有两份，run 级标记借写在首个 cell 上。
+- 协调者抽查属实：`packages/eval/src/cell-detail.ts` 复刻了 mission `store.ts` 的 attemptDataDir；`packages/eval/src/mission-cli.ts` 按定宽列解析 `dsh-mission list` 的输出。
+
+**用户 10-01 的决定**：评估建议的 1–4 条合成本任务，排在 T88 后（两边都动 mission 和 eval）。5–7 条交协调者评估，必要就一起做。
+
+**协调者对 5–7 的评估**：
+- 5（run 级 annotation）做。理由：现在 closure、export-note 把 run 级标记写在首个 cell 上，语义错位，以后 cell 一重试或重排就会出错。
+- 6（export 改走服务面）做。理由：改动小，并且去掉 eval 对 mission Remote 的旁路。
+- 7（./report 子路径）暂缓。理由：目前没有离线或 CI 的消费者，等有了再开。
+
+```text
+# 任务 T89：评测家族衔接收紧
+
+## 分支
+等 T88 合入 main 后，从本地 main 开 worktree ../dsh-plugins-wt-t89-seams，分支 feat/t89-family-seams。
+DSH_HARNESS=~/code/deepseek-harness-0.2.0。
+
+## 原则
+- 不在包之间搬能力。四包仍各自能单装，降级行为不变。
+- 不新增 npm 依赖边，对接仍走运行时 ctx.get 探测。
+- 不改任何对外数据格式；新增的东西要读得懂旧数据。
+
+## 步骤
+1. mission 暴露 attemptDataDir 服务动词（服务面和 Remote 都要）。eval 里所有自己拼 `runs/<id>/data/...` 的地方（约 11 处，以 cell-detail.ts 为起点 grep dataDir）改为调用它。mission 不在时照旧降级（「hash 未知」等），不得变成报错。
+2. mission CLI 的 list 和 get 增加 --json，输出带 schema 版本字段。eval 的 mission-cli.ts 和 lab cli-core.ts 的 cliMissionFace 改为解析 JSON，删掉定宽列解析。旧版 mission 没有 --json 时，给出明确的降级提示。
+3. 判分规则契约测试：eval judge.ts 与 datasets rubric.ts 的同名规则（rubric、probe 路径解析）加一组跨包契约测试，用同一份夹具钉住两边结果一致，null 与 undefined 的差异要统一或在测试里写明。测试放在不引入跨包依赖的位置（例如 scripts 下的仓级 spec，或各包用同一份 fixtures 文件）。
+4. eval 包内目录化：按 contract（schema/validate/hash/template）、run（run/unit/probe-exec/finalize）、judge、report、design/experiments 分目录；run.ts 至少按 judgeCell、runCellOnce、单元生命周期拆成几个文件。只移动，不改行为；exports 和对外入口不变。分两个提交：先纯移动，再拆 run.ts，方便审查。
+5. run 级 annotation：mission 增加 run 级 annotation（与 cell 级同样 append-only、带命名空间）。closure.ts 和 export-note.ts 改写到 run 级。读侧兼容：旧 run 的首 cell 标记照常识别。3171 迁过来的旧数据要在临时实例上验证能读。
+6. eval 的 export 改走 ctx.mission.exportRun，不再经 missionRemote 带 agent 参数的旁路。泄题闸和 TTY 闸的行为不变（导出闸留在 mission，不迁）。
+7. 词汇中性化：mission export.ts、remote.ts、slash.ts 里 eval 专有的词（cell、expectedNs 等）改成中性说法或挪到注释说明来源，行为不变。datasets 里判题可行性检查的描述，把「generic」改成如实描述。
+
+## 不做
+- 不做 ./report 子路径入口。
+- 不迁移 mission 的导出和泄题闸，不把 rubric 可行性检查迁出 datasets，不把 eval 拆成多个 npm 包。
+- 不动 3171、~/.dsh-lab、题库共享检出、3080 / 3093 / ~/.dsh-official / ~/.dsh。
+- 不从 npm 装 @khorsheed 包。不自己合 main。
+
+## 完成判据
+- 家族各包 build/test 绿；test:scripts、check:hygiene --all、check:plugins 都过。
+- eval 里 grep 不到自己拼 mission 数据目录的代码；两个 CLI 适配器里没有定宽列解析。
+- 契约测试在两边规则故意改一处时会红（在回报里写明怎么证明的）。
+- 临时 0.2.0 实例上：一个旧 run（3171 迁来的副本）和一个新 run 的结果页、导出、收尾标记都正常；截图 1440 宽。
+- Agent Note：写明不搬能力的结论与理由，以及 5–7 的取舍。
+
+## 回报
+分支与各 commit（移动提交单列）；第 1 条改的调用点清单；契约测试的证明；临时实例的端口、home 与截图路径；Note 路径。
 ```
 
 ## 四、验收规程
