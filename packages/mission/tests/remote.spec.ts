@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { datasetsLayerProbe } from '../src/gate.ts'
 import { MissionRemoteService } from '../src/remote.ts'
 import { MissionService } from '../src/service.ts'
 
@@ -21,6 +22,8 @@ beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'mission-remote-'))
   ctx = new Context()
   service = new MissionService(dir)
+  // As the plugin's apply() does: the gated export consults datasets per call.
+  service.setLayerProbe(datasetsLayerProbe(() => ctx.get('datasets')))
   ctx.provide('mission', service)
   const fiber = ctx.plugin(MissionRemoteService)
   await fiber.await()

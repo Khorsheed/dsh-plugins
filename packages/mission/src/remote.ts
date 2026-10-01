@@ -16,17 +16,19 @@
  * computes the trigger list (guarded layers resolved through the datasets
  * probe when mounted, else the caller's declarations), `exportRun` re-checks
  * the caller's `confirmed` list against a FRESH plan — a dialog-stale
- * confirmation never authorizes a changed layer set.
+ * confirmation never authorizes a changed layer set. Both delegate to the
+ * service's gated verbs (`exportPlanGated` / `exportRunGated`, the gate itself
+ * in `gate.ts`), so an in-host plugin gets the same gate through `ctx.mission`
+ * without an agent.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import type { ExportLayer, ExportPlan, ExportResult, SnapshotRef } from './export.ts'
 import type { MissionService } from './service.ts'
 import type {
-  MissionDetail, MissionExportPlanRequest, MissionExportPlanView, MissionExportRequest,
+  MissionAttemptDataDirRequest, MissionDetail, MissionExportPlanRequest, MissionExportPlanView, MissionExportRequest,
   MissionExportResultView, MissionGetRequest, MissionQueueRequest, MissionQueueResult, MissionQueueRun,
-  MissionRefRequest, MissionRetryRequest, MissionView,
+  MissionRefRequest, MissionRetryRequest, MissionRunAnnotationsRequest, MissionRunAnnotationWire, MissionView,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -122,47 +124,6 @@ export class MissionRemoteService extends TypertRemoteService<never> {
     return { releasable: this.mission.isReleasable(request.missionId, request.runId) }
   }
 
-  /** Layer visibility through the datasets plugin when mounted (duck-typed; null = unavailable). */
-  private async probeNonModelFacing(snapshot: SnapshotRef): Promise<string[] | null> {
-    if (snapshot.dataset === undefined) return null
-    const datasets = this.ctx.get('datasets') as {
-      list?: (scope: { repo: string }, dataset?: string, commit?: string) => Promise<unknown>
-    } | undefined
-    if (typeof datasets?.list !== 'function') return null
-    try {
-      const result = await datasets.list(
-        { repo: snapshot.repo },
-        snapshot.dataset,
-        ...(snapshot.commit !== undefined ? [snapshot.commit] : []),
-      )
-      if (typeof result !== 'object' || result === null) return null
-      const layers = (result as { dataset?: { nonModelFacingLayers?: unknown } }).dataset?.nonModelFacingLayers
-      if (!Array.isArray(layers)) return null
-      return layers.filter((layer): layer is string => typeof layer === 'string')
-    } catch {
-      return null
-    }
-  }
-
-  private async resolveLayers(request: MissionExportPlanRequest): Promise<ExportLayer[]> {
-    const declared = new Set(request.guarded ?? [])
-    const probed = request.snapshot !== undefined ? await this.probeNonModelFacing(request.snapshot) : null
-    return (request.layers ?? []).map(name => ({
-      name,
-      guarded: declared.has(name) || (probed !== null && probed.includes(name)),
-    }))
-  }
-
-  private toRequest(request: MissionExportPlanRequest, layers: ExportLayer[]) {
-    return {
-      runId: request.runId,
-      outDir: request.outDir,
-      layers,
-      ...(request.snapshotDir !== undefined ? { snapshotDir: request.snapshotDir } : {}),
-      ...(request.snapshot !== undefined ? { snapshot: request.snapshot } : {}),
-    }
-  }
-
   /**
    * Plan an export for the dialog: the guarded layers (datasets-probed when
    * mounted) the human must confirm, the expected namespaces, the target path.
@@ -173,15 +134,7 @@ export class MissionRemoteService extends TypertRemoteService<never> {
   @Remote('exportPlan')
   async exportPlan(agent: Agent, request: MissionExportPlanRequest): Promise<MissionExportPlanView> {
     void agent
-    const layers = await this.resolveLayers(request)
-    const plan: ExportPlan = this.mission.planExport(this.toRequest(request, layers))
-    return {
-      bundleDir: plan.bundleDir,
-      guardedLayers: plan.guardedLayers,
-      expectedNs: plan.expectedNs,
-      missions: plan.missions,
-      attempts: plan.attempts,
-    }
+    return await this.mission.exportPlanGated(request)
   }
 
   /**
@@ -196,13 +149,30 @@ export class MissionRemoteService extends TypertRemoteService<never> {
   @Remote('exportRun')
   async exportRun(agent: Agent, request: MissionExportRequest): Promise<MissionExportResultView> {
     void agent
-    const layers = await this.resolveLayers(request)
-    const plan = this.mission.planExport(this.toRequest(request, layers))
-    const unconfirmed = plan.guardedLayers.filter(layer => !request.confirmed.includes(layer))
-    if (unconfirmed.length > 0) {
-      throw new Error(`mission: export refused — guarded (modelFacing: false) layer(s) not confirmed: ${unconfirmed.join(', ')}`)
-    }
-    const result: ExportResult = this.mission.exportRun(this.toRequest(request, layers))
-    return { bundleDir: result.bundleDir, files: result.files }
+    return await this.mission.exportRunGated(request)
+  }
+
+  /**
+   * One attempt's run-data directory — the layout stays mission's.
+   * @param agent - owning live agent.
+   * @param request - run, mission, attempt.
+   * @returns the absolute directory (may not exist yet).
+   */
+  @Remote('attemptDataDir')
+  attemptDataDir(agent: Agent, request: MissionAttemptDataDirRequest): { dir: string } {
+    void agent
+    return { dir: this.mission.attemptDataDir(request.runId, request.missionId, request.attempt) }
+  }
+
+  /**
+   * A run's own (run-level) annotations, optionally one namespace.
+   * @param agent - owning live agent.
+   * @param request - the run and an optional namespace.
+   * @returns the records in write order.
+   */
+  @Remote('runAnnotations')
+  runAnnotations(agent: Agent, request: MissionRunAnnotationsRequest): { annotations: MissionRunAnnotationWire[] } {
+    void agent
+    return { annotations: this.mission.runAnnotations(request.runId, request.ns) as MissionRunAnnotationWire[] }
   }
 }

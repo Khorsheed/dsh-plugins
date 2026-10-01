@@ -15,6 +15,7 @@
     "src/css-modules.d.ts",
     "src/defaults.ts",
     "src/export.ts",
+    "src/gate.ts",
     "src/projection.ts",
     "src/schema.ts",
     "src/service.ts",

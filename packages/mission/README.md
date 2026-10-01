@@ -89,7 +89,11 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # 本插件
 
 ## 服务面
 
-其他插件经 `ctx.get('mission')` 消费——进程内合约，绝不为子进程或手写 JSON 文件。除工具对应的全部方法外，细粒度方法有 `setRefs`（资源标识 / 环境指纹 / sessions）、`addArtifact`、`addCheckpoint`（`ref` 只由资源持有方填；它与 `submit` 登记的同名无 ref checkpoint **合并**——绝不产生重复条目）、`annotate`、`isReleasable`。
+其他插件经 `ctx.get('mission')` 消费——进程内合约，绝不为子进程或手写 JSON 文件。除工具对应的全部方法外，细粒度方法有 `setRefs`（资源标识 / 环境指纹 / sessions）、`addArtifact`、`addCheckpoint`（`ref` 只由资源持有方填；它与 `submit` 登记的同名无 ref checkpoint **合并**——绝不产生重复条目）、`annotate`、`isReleasable`。另有三组供其他插件衔接的动词：
+
+- `attemptDataDir(runId, missionId, attempt)`——某个 attempt 的运行数据目录路径（纯计算，不建目录）。消费方用它代替自己拼 `runs/<id>/data/...`，存储布局只在 mission 一处。Remote 面同名动词给浏览器侧。
+- `annotateRun(runId, ns, payload, { by? })` / `runAnnotations(runId, ns?)`——**run 级注解**：与 mission 级注解同样只追加、按 ns 隔离，同 ns 同 payload 重复写是 no-op；存在 run 文件的 `annotations` 字段里（旧 run 没有该字段，读作空），export 时随 `run.json` 带出。用于「整次运行」层面的记号（收口、导出记录等），不必再借第一个 mission 落脚。
+- `exportPlanGated(request)` / `exportRunGated(request)`——**带泄题闸的导出**，与 Remote 面导出对话框走同一套闸（`gate.ts`：datasets 探测 + 显式声明，确认清单须覆盖新鲜计划的全部 guarded 层，fail-closed）。其他插件要做确认式导出就调这两个，不必绕到 Remote 面伪造 `agent` 参数。不带闸的 `exportRun` 照旧供 CLI/slash 使用，它们各有自己的闸。
 
 ## CLI
 
@@ -101,11 +105,13 @@ dsh-mission run lint --template t.json        # error 拒绝；有 error 时退�
 dsh-mission run list
 dsh-mission run status RUN_ID                 # 五桶投影表
 dsh-mission create [--run ID] [--id ID] [--title T] [--label k=v]... [--depends-on a,b] [--scheduled-at MS]
-dsh-mission list [--run ID] [--bucket B] [--label k=v]...
-dsh-mission get MISSION_ID [--run ID]
+dsh-mission list [--run ID] [--bucket B] [--label k=v]... [--json]   # --json：{ schema: "dsh-mission.list/1", missions }
+dsh-mission get MISSION_ID [--run ID] [--json]                        # --json：{ schema: "dsh-mission.get/1", runId, mission }
 dsh-mission transition MISSION_ID TO [--note N] [--run ID]
 dsh-mission submit MISSION_ID [--file SRC[:DEST]]... [--json JSON | --json-file F] [--to TO] [--checkpoint NAME] [--run ID]
 dsh-mission annotate MISSION_ID --ns NS --payload JSON [--run ID]
+dsh-mission run annotate RUN_ID --ns NS --payload JSON   # run 级注解
+dsh-mission run annotations RUN_ID [--ns NS]             # 打印 run 级注解（JSON）
 dsh-mission attest MISSION_ID --key K [--note N] [--run ID]
 dsh-mission retry MISSION_ID --reason TEXT --category infrastructure|operator|outcome [--run ID]
 dsh-mission set-refs MISSION_ID [--resource R] [--fingerprint F] [--session S]... [--run ID]
@@ -115,6 +121,8 @@ dsh-mission is-releasable MISSION_ID [--run ID]   # 退出码 0/1，供销毁脚
 dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --snapshot-commit C [--snapshot-dataset ID]]
          [--layer NAME]... [--guarded NAME]...   # 自包含 bundle（泄题闸见下）
 ```
+
+脚本要读 `list` / `get` 的结果请加 `--json`：输出是带 `schema` 版本字段的单个 JSON 文档，字段增减会换 schema 名，不用再按列宽解析表格。旧版 CLI 不认 `--json`（把它当成缺值的 `submit --json`），会以「--json requires a value」退出码 2 拒绝——调用方可据此提示升级。
 
 ## slash 命令
 
@@ -136,7 +144,7 @@ dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --sn
 
 **泄题闸**：收录 guarded（`modelFacing: false`）层必须 TTY 交互确认——逐个列出、逐项确认。非 TTY 一律拒绝（fail-closed）：agent 经 Bash 调 CLI 没有 TTY，自然被闸住；任何 flag（含 `--include-guarded` 式）都不放行。slash 面没有确认通道，`/mission export` 对 guarded 层直接拒绝并指向 TTY CLI；挂载 datasets 插件时，slash 面从其元数据读层可见性（否则靠显式 `--guarded` 声明）。
 
-**expectedNs**：run meta 声明 `expectedNs` 时，`run status` 与 export 输出每格 ns 清单——缺失如实标缺失（绝不用其他 ns 顶替），全部注解都在 `expectedNs` 之外的格子在报告与 manifest 里标「只有未列 ns」。每个 ns 的 `writtenBy` 是其当前 attempt 全部注解写入者前缀的去重集合（例如 `tool:`、`cli`、`service`、`slash:`）；若某个 expected ns 只有 `tool:` 写入，报告只如实展示，不作质量判断。
+**expectedNs**：run meta 声明 `expectedNs` 时，`run status` 与 export 输出每个 attempt 的 ns 清单（键名来自评测编排方写入的 run meta，mission 只把它当不透明的 ns 列表）——缺失如实标缺失（绝不用其他 ns 顶替），全部注解都在 `expectedNs` 之外的 attempt 在报告与 manifest 里标「只有未列 ns」。每个 ns 的 `writtenBy` 是其当前 attempt 全部注解写入者前缀的去重集合（例如 `tool:`、`cli`、`service`、`slash:`）；若某个 expected ns 只有 `tool:` 写入，报告只如实展示，不作质量判断。
 
 ## 会话 tab
 
