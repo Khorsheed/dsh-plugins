@@ -31,7 +31,7 @@ $DSH_HOME/state/eval/
   conditions/<id>.lock.json
 ```
 
-`packages/eval/src/experiment-store.ts` owns the layout. The library sits at `<stateRoot>/conditions/` on purpose. Every condition reader already resolves `<root>/conditions/<id>.json`, so the state root is the library's root and readiness keeps a single implementation. `plan.exports` and the caller's `exportsDir` still override `exports/`. The state root is `$DSH_HOME/state/eval/`. An instance without `DSH_HOME` has no state root: the lab's list is empty and says so (`noStateRoot`), and it never falls back to a path of its own.
+`packages/eval/src/design/experiment-store.ts` owns the layout. The library sits at `<stateRoot>/conditions/` on purpose. Every condition reader already resolves `<root>/conditions/<id>.json`, so the state root is the library's root and readiness keeps a single implementation. `plan.exports` and the caller's `exportsDir` still override `exports/`. The state root is `$DSH_HOME/state/eval/`. An instance without `DSH_HOME` has no state root: the lab's list is empty and says so (`noStateRoot`), and it never falls back to a path of its own.
 
 **The id rule.** An experiment id is `<slug>-<yyyymmdd>-<4hex>`:
 

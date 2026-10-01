@@ -55,7 +55,7 @@ A harness the table has no line for gets **nothing**: validate's `UNIT_SCOPED_HO
 - a `repo` that is not that repository → refused, naming both;
 - a `repo` that is → accepted, and the binding is what resolves.
 
-Comparison is on normalized paths — `~` expanded, `resolve`d, realpath'd when the path exists, trailing separator dropped — because the two spellings reaching this check are written by different hands. That normalization lives in `packages/eval/src/validate.ts` and the new `packages/datasets/src/repo-path.ts`, deliberately **not** in the binding store: what the store records is T62's subject, and this check has to keep working whichever form T62 settles on.
+Comparison is on normalized paths — `~` expanded, `resolve`d, realpath'd when the path exists, trailing separator dropped — because the two spellings reaching this check are written by different hands. That normalization lives in `packages/eval/src/contract/validate.ts` and the new `packages/datasets/src/repo-path.ts`, deliberately **not** in the binding store: what the store records is T62's subject, and this check has to keep working whichever form T62 settles on.
 
 Every human face is untouched: the CLI's `--repo`, `/eval conditions --repo`, the datasets tab, and the lab tab's Remote all still name a repository.
 

@@ -41,5 +41,5 @@ Cost: small but complete experiments lose their interval — 2 items × 3 reps (
 
 ## Related
 
-- `packages/eval/src/report.ts` (`checkVerdictCoverage`, `coverageGapsOf`, `comparePair`)
+- `packages/eval/src/report/report.ts` (`checkVerdictCoverage`, `coverageGapsOf`, `comparePair`)
 - `packages/eval/README.md` / `README.en.md`, T71 paragraph

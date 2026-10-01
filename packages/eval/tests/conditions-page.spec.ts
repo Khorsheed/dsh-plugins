@@ -15,7 +15,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { hashConditionDocument } from '../src/hash.ts'
+import { hashConditionDocument } from '../src/contract/hash.ts'
 import { EvalService } from '../src/service.ts'
 import { EvalConditionEditRefused } from '../src/condition-edit.ts'
 import type { LocalAgentEffectiveSettingsFace, LocalAgentFace, LocalAgentScopeStatus } from '../src/faces.ts'

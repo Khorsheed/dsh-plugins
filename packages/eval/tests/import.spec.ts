@@ -8,8 +8,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { conditionLibraryDir, experimentsRoot, readExperiment } from '../src/experiment-store.ts'
-import { EvalImportRefused, importExperiments, parseImportSource } from '../src/import.ts'
+import { conditionLibraryDir, experimentsRoot, readExperiment } from '../src/design/experiment-store.ts'
+import { EvalImportRefused, importExperiments, parseImportSource } from '../src/design/import.ts'
 import { cleanupTmp, fakeRegistry, useDshHome } from './helpers.ts'
 
 afterEach(cleanupTmp)

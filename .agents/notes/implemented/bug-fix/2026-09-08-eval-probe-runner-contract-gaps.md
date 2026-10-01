@@ -16,7 +16,7 @@ T19 wrote the first real probes for the dataseek dataset and ran them against pi
 
 ## Decision
 
-`packages/eval/src/judge.ts` changes on all three points, and §6.7 is revised to match (protocol v1-rev5).
+`packages/eval/src/judge/judge.ts` changes on all three points, and §6.7 is revised to match (protocol v1-rev5).
 
 **Both verify layers are materialized, in the dataset's own relative layout.** The judging directory now mirrors the repository: the dataset-level layer at `<judging>/verify/…`, the item's at `<judging>/items/<item id>/verify/…`. That the layout matches is the whole mechanism — an item probe imports the shared library through `../../../../verify/helpers/lib/x.mjs`, the same relative path that resolves in the dataset repository, so one ruler serves every item and the per-item copies can go. The dataset layer is materialized whenever it is non-empty, probes or no probes: it is a library first and a probe source second.
 

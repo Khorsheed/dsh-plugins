@@ -10,11 +10,11 @@
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { EvalService } from './service.ts'
-import { CONDITION_ID_RE } from './schema.ts'
-import { finalizeRun } from './finalize.ts'
-import { missionCliFace } from './mission-cli.ts'
+import { CONDITION_ID_RE } from './contract/schema.ts'
+import { finalizeRun } from './run/finalize.ts'
+import { missionCliFace } from './run/mission-cli.ts'
 import { authenticateInstance, callInstance, runOnInstance } from './instance.ts'
-import { EXPERIMENT_ID_RE } from './experiment-store.ts'
+import { EXPERIMENT_ID_RE } from './design/experiment-store.ts'
 import type { EvalImportResult, EvalRunRequest } from './types.ts'
 
 /** Injected output channels. */

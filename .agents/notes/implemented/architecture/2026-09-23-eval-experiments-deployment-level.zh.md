@@ -31,7 +31,7 @@ $DSH_HOME/state/eval/
   conditions/<id>.lock.json
 ```
 
-布局归 `packages/eval/src/experiment-store.ts` 管。条件库放在 `<stateRoot>/conditions/` 是有意的：所有读条件的地方本来就解析 `<root>/conditions/<id>.json`，状态根就是条件库的根，就绪规则只需要一份实现。`plan.exports` 和调用方的 `exportsDir` 仍可覆盖 `exports/`。状态根是 `$DSH_HOME/state/eval/`；没有设 `DSH_HOME` 的实例没有状态根，实验室列表为空并说明原因（`noStateRoot`），不会退回某个自选的路径。
+布局归 `packages/eval/src/design/experiment-store.ts` 管。条件库放在 `<stateRoot>/conditions/` 是有意的：所有读条件的地方本来就解析 `<root>/conditions/<id>.json`，状态根就是条件库的根，就绪规则只需要一份实现。`plan.exports` 和调用方的 `exportsDir` 仍可覆盖 `exports/`。状态根是 `$DSH_HOME/state/eval/`；没有设 `DSH_HOME` 的实例没有状态根，实验室列表为空并说明原因（`noStateRoot`），不会退回某个自选的路径。
 
 **id 规则。** 实验 id 是 `<slug>-<yyyymmdd>-<4 位十六进制>`：
 

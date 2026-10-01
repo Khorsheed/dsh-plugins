@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildRubricWeightTable, readRubricWeightTable, rubricWeightRows, writeRubricWeightTable,
   RUBRIC_WEIGHTS_PATH, RUBRIC_WEIGHTS_SCHEMA,
-} from '../src/weights.ts'
+} from '../src/judge/weights.ts'
 import { cleanupTmp, tmpTree } from './helpers.ts'
 
 afterEach(cleanupTmp)

@@ -55,7 +55,7 @@ slash 的 `--no-write-back`（服务面的 `writeBack: false`、页面动词的 
 - `repo` 不是那个题库 → 拒绝，两边都点名；
 - `repo` 就是那个题库 → 接受，由绑定解析。
 
-比较按归一化路径做——展开 `~`、`resolve`、路径存在时取 realpath、去尾斜杠——因为走到这个检查前的两种写法出自不同的手。归一化放在 `packages/eval/src/validate.ts` 与新增的 `packages/datasets/src/repo-path.ts`，**刻意不放在绑定存储里**：存什么是 T62 的题目，而这个检查无论 T62 定成哪种形式都得照常工作。
+比较按归一化路径做——展开 `~`、`resolve`、路径存在时取 realpath、去尾斜杠——因为走到这个检查前的两种写法出自不同的手。归一化放在 `packages/eval/src/contract/validate.ts` 与新增的 `packages/datasets/src/repo-path.ts`，**刻意不放在绑定存储里**：存什么是 T62 的题目，而这个检查无论 T62 定成哪种形式都得照常工作。
 
 人的面一律不动：CLI 的 `--repo`、`/eval conditions --repo`、题集 tab、实验室 tab 的 Remote 都照旧可以指定题库。
 

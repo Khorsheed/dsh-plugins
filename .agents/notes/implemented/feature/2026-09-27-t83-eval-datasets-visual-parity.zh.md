@@ -45,7 +45,7 @@ Status: implemented
 
 ### 方案估算只给下限，不外推
 
-`planEstimate`（`packages/eval/src/plan-items.ts`）只对有过往作答的题累加每题均值。
+`planEstimate`（`packages/eval/src/design/plan-items.ts`）只对有过往作答的题累加每题均值。
 
 - **覆盖口径。** 一道题要在某个字段（活跃时长、输出 token）上算作覆盖，必须每个对比组都至少有一个样本。只有一个组答过的题按未覆盖处理。
 - **显示。**

@@ -3,7 +3,8 @@
  *
  * A bundle is SELF-CONTAINED: `<runId>-bundle/` carries the frozen state
  * machine, the run record, every mission attempt (history/refs/checkpoints/
- * plan data), all annotations of every namespace, the artifact bytes from the
+ * plan data), all annotations of every namespace (mission-level per attempt,
+ * run-level inside `run.json`), the artifact bytes from the
  * run-data tree, and the included dataset-snapshot layers — a reader needs
  * nothing from the source repositories.
  *
@@ -13,10 +14,17 @@
  *   reports which included layers are guarded (`modelFacing: false`); the
  *   calling face (CLI TTY prompt, slash refusal, web confirm dialog) owns the
  *   interaction. No flag anywhere bypasses the gate.
- * - The **ns completeness report** never substitutes: a cell missing an
- *   `expectedNs` namespace is reported missing, and a cell whose annotations
- *   are all OUTSIDE `expectedNs` (only unlisted ns present — e.g. a draft)
+ * - The **ns completeness report** never substitutes: a mission attempt
+ *   missing an expected namespace is reported missing, and an attempt whose
+ *   annotations are all OUTSIDE the expected set (only unlisted ns present)
  *   is flagged `onlyUnlisted`, never silently counted as covered.
+ *
+ * Where the expected set comes from: the run meta's `expectedNs` key. The key
+ * name is a data format (run files and bundles already carry it) and stays;
+ * mission treats it as an opaque list of namespace strings. Its origin is the
+ * evaluation orchestrator (dsh-eval writes the namespaces each matrix cell —
+ * one mission — must end up annotated with), which is also why the attempt
+ * report was called a "cell" report before T89.
  */
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -53,21 +61,24 @@ export interface ExportRequest {
   now?: number
 }
 
-/** Per-cell ns completeness against the run meta's `expectedNs`. */
-export interface NsCellReport {
+/** One mission attempt's ns completeness against the run meta's expected namespaces (`expectedNs`). */
+export interface NsAttemptReport {
   missionId: string
   attempt: number
-  /** Every namespace present in the cell's annotations (sorted). */
+  /** Every namespace present in the attempt's annotations (sorted). */
   present: string[]
-  /** expectedNs namespaces present. */
+  /** Expected namespaces present. */
   expectedPresent: string[]
-  /** expectedNs namespaces absent — reported as missing, never substituted. */
+  /** Expected namespaces absent — reported as missing, never substituted. */
   missing: string[]
-  /** Annotations exist but NONE from expectedNs — "only a draft" style cells. */
+  /** Annotations exist but NONE from the expected set (e.g. only a provisional namespace). */
   onlyUnlisted: boolean
   /** Namespace -> sorted set of writer origins (`tool:`, `cli`, `service`, `slash:`, ...). */
   writtenBy: Record<string, string[]>
 }
+
+/** @deprecated The pre-T89 name of {@link NsAttemptReport}; kept so importers do not break. */
+export type NsCellReport = NsAttemptReport
 
 /** The export plan: what a bundle would contain, before anything is written. */
 export interface ExportPlan {
@@ -77,9 +88,9 @@ export interface ExportPlan {
   layers: ExportLayer[]
   /** Included layers flagged guarded — the leak gate's trigger list. */
   guardedLayers: string[]
-  /** Per-cell ns completeness, or null when the run declares no expectedNs. */
-  nsReport: NsCellReport[] | null
-  /** The declared expected namespaces (null when undeclared). */
+  /** Per-attempt ns completeness, or null when the run declares no expected namespaces. */
+  nsReport: NsAttemptReport[] | null
+  /** The declared expected namespaces (run meta `expectedNs`; null when undeclared). */
   expectedNs: string[] | null
   /** Mission/attempt counts for the caller's summary line. */
   missions: number
@@ -90,7 +101,7 @@ export interface ExportPlan {
 export interface ExportResult {
   bundleDir: string
   files: number
-  nsReport: NsCellReport[] | null
+  nsReport: NsAttemptReport[] | null
 }
 
 /** The declared expected namespaces of a run meta object (scene data; absent → no report). */
@@ -106,13 +117,13 @@ export function expectedNsOf(run: RunRecord): string[] | null {
 }
 
 /**
- * Per-cell namespace completeness. `present` lists every ns the cell carries;
- * `missing` is expectedNs minus present — a missing ns is reported as missing
- * and NEVER substituted by another namespace. `onlyUnlisted` flags cells
- * whose annotations are all outside expectedNs (the "looks reviewed, actually
- * only a draft" case).
+ * Per-attempt namespace completeness. `present` lists every ns the attempt
+ * carries; `missing` is the expected set minus present — a missing ns is
+ * reported as missing and NEVER substituted by another namespace.
+ * `onlyUnlisted` flags attempts whose annotations are all outside the
+ * expected set (annotated, but by none of the namespaces that count).
  */
-export function nsCompleteness(run: RunRecord): NsCellReport[] | null {
+export function nsCompleteness(run: RunRecord): NsAttemptReport[] | null {
   const expected = expectedNsOfMeta(run.meta)
   if (expected === null) return null
   return run.missions.map((mission) => {
@@ -148,19 +159,19 @@ export function nsCompleteness(run: RunRecord): NsCellReport[] | null {
 }
 
 /** Render the ns completeness report as human lines (run status / CLI export summary). */
-export function renderNsReport(expected: string[], report: NsCellReport[]): string[] {
+export function renderNsReport(expected: string[], report: NsAttemptReport[]): string[] {
   const lines = [`ns completeness (expectedNs: ${expected.join(', ')}):`]
-  for (const cell of report) {
-    const head = `  ${cell.missionId} attempt ${cell.attempt}:`
-    const writers = Object.entries(cell.writtenBy)
+  for (const entry of report) {
+    const head = `  ${entry.missionId} attempt ${entry.attempt}:`
+    const writers = Object.entries(entry.writtenBy)
       .map(([ns, origins]) => `${ns}=[${origins.join(', ')}]`)
       .join(' ')
-    if (cell.missing.length === 0) {
-      lines.push(`${head} complete [${cell.present.join(', ')}]${writers === '' ? '' : ` — writtenBy: ${writers}`}`)
-    } else if (cell.onlyUnlisted) {
-      lines.push(`${head} only unlisted ns present [${cell.present.join(', ')}] — missing: ${cell.missing.join(', ')}${writers === '' ? '' : ` — writtenBy: ${writers}`}`)
+    if (entry.missing.length === 0) {
+      lines.push(`${head} complete [${entry.present.join(', ')}]${writers === '' ? '' : ` — writtenBy: ${writers}`}`)
+    } else if (entry.onlyUnlisted) {
+      lines.push(`${head} only unlisted ns present [${entry.present.join(', ')}] — missing: ${entry.missing.join(', ')}${writers === '' ? '' : ` — writtenBy: ${writers}`}`)
     } else {
-      lines.push(`${head} present [${cell.expectedPresent.join(', ') || '—'}] — missing: ${cell.missing.join(', ')}${writers === '' ? '' : ` — writtenBy: ${writers}`}`)
+      lines.push(`${head} present [${entry.expectedPresent.join(', ') || '—'}] — missing: ${entry.missing.join(', ')}${writers === '' ? '' : ` — writtenBy: ${writers}`}`)
     }
   }
   return lines
@@ -270,13 +281,13 @@ export function exportRun(store: MissionStore, request: ExportRequest): ExportRe
   const attemptHashes: Record<string, string> = {}
   for (const mission of run.missions) {
     for (const attempt of mission.attempts) {
-      const cell = join(bundle, 'missions', mission.id, `attempt-${attempt.attempt}`)
-      writeJson(join(cell, 'meta.json'), attempt)
+      const attemptDir = join(bundle, 'missions', mission.id, `attempt-${attempt.attempt}`)
+      writeJson(join(attemptDir, 'meta.json'), attempt)
       const annotations: AnnotationRecord[] = mission.annotations.filter(a => a.attempt === attempt.attempt)
-      writeJson(join(cell, 'annotations.json'), annotations)
+      writeJson(join(attemptDir, 'annotations.json'), annotations)
       const dataDir = store.attemptDataDir(run.id, mission.id, attempt.attempt)
       if (existsSync(dataDir)) {
-        const target = join(cell, 'artifacts')
+        const target = join(attemptDir, 'artifacts')
         cpSync(dataDir, target, { recursive: true })
         attemptHashes[`missions/${mission.id}/attempt-${attempt.attempt}`] = hashTree(target)
       }
@@ -291,6 +302,9 @@ export function exportRun(store: MissionStore, request: ExportRequest): ExportRe
     ...(run.originSession !== undefined ? { originSession: run.originSession } : {}),
     ...(run.templateName !== undefined ? { templateName: run.templateName } : {}),
     stateMachine: run.stateMachine,
+    // Run-level notes ride with the run record; absent when the run has none,
+    // so a bundle of a run that never used them is byte-identical to before.
+    ...(run.annotations !== undefined && run.annotations.length > 0 ? { annotations: run.annotations } : {}),
   })
 
   const manifest = {

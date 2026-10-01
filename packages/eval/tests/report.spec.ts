@@ -6,9 +6,9 @@ import { runCli } from '../src/cli-core.ts'
 import {
   analyzeBundle, parseMissionId, writeEvalReport,
   type EvalReport, type PairTaskDelta, type ReportRow,
-} from '../src/report.ts'
+} from '../src/report/report.ts'
 import { EvalService } from '../src/service.ts'
-import { RUBRIC_WEIGHTS_PATH, RUBRIC_WEIGHTS_SCHEMA } from '../src/weights.ts'
+import { RUBRIC_WEIGHTS_PATH, RUBRIC_WEIGHTS_SCHEMA } from '../src/judge/weights.ts'
 import { captureIo, cleanupTmp, tmpTree } from './helpers.ts'
 
 afterEach(cleanupTmp)

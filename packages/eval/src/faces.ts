@@ -140,8 +140,12 @@ export interface MissionSubmitFile {
 
 /** The mission verbs the run loop uses (the run's ledger). */
 export interface MissionFace {
-  /** The mission data root (`<root>/runs/<runId>/data/…` is the run-data tree). */
-  readonly dataDir: string
+  /**
+   * One attempt's run-data directory, as mission lays it out — the loop writes
+   * the materialization record, the populate manifest and the archive there.
+   * Asked of mission (T89) rather than rebuilt from mission's data root.
+   */
+  attemptDataDir(runId: string, missionId: string, attempt: number): string
   runCreate(options: {
     templatePath?: string
     template?: unknown
@@ -161,6 +165,8 @@ export interface MissionFace {
     checkpoint?: string
   }): Promise<{ written: string[]; artifacts: number; checkpoint: string }>
   annotate(missionId: string, ns: string, payload: unknown, options?: { runId?: string; by?: string }): Promise<{ added: boolean }>
+  /** Run-level annotation (mission T89); optional — see {@link MissionAnnotateFace.annotateRun}. */
+  annotateRun?(runId: string, ns: string, payload: unknown, options?: { by?: string }): Promise<{ added: boolean }>
   retry(missionId: string, options: { runId?: string; reason: string; category: string; by?: string }): Promise<{ attempt: number }>
   /**
    * Write the current attempt's refs. `sessions` is the delegation trail;
@@ -589,12 +595,19 @@ export interface MissionReadFace {
     }
   }
   /**
-   * The mission data root, so a reader can find the run-data tree
-   * (`<dataDir>/runs/<runId>/data/<missionId>/attempt-<n>/`) the orchestrator
-   * wrote `materialization.json` into. OPTIONAL: a face without it makes the
-   * matrix report the per-task hash as UNVERIFIABLE rather than guessing.
+   * One attempt's run-data directory — where the orchestrator wrote
+   * `materialization.json`, the archive, the probe verdicts. Mission's own
+   * verb (T89): the layout is mission's, eval never rebuilds the path.
+   * OPTIONAL: a face without it (mission absent or older) makes the matrix
+   * report the per-task hash as UNVERIFIABLE rather than guessing.
    */
-  readonly dataDir?: string
+  attemptDataDir?(runId: string, missionId: string, attempt: number): string
+  /**
+   * The run's own annotations (mission T89), read beside every cell's list so
+   * marks written on a cell before T89 stay found. OPTIONAL — absent reads as
+   * an empty list.
+   */
+  runAnnotations?(runId: string, ns?: string): ReadonlyArray<{ ns: string; payload: unknown; createdAt: number; by?: string }>
 }
 
 /**
@@ -630,25 +643,35 @@ export interface MissionActionFace {
  */
 export interface MissionAnnotateFace {
   annotate(missionId: string, ns: string, payload: unknown, options?: { runId?: string; by?: string }): Promise<{ added: boolean }>
+  /**
+   * Run-level annotation (mission T89): the export note, closure and archive
+   * marks land here. OPTIONAL — an older mission without it gets those marks
+   * on the run's first cell, the pre-T89 layout (see run-notes.ts).
+   */
+  annotateRun?(runId: string, ns: string, payload: unknown, options?: { by?: string }): Promise<{ added: boolean }>
 }
 
 /**
- * mission's own Remote service, host-side — the ONE place the bundle export's
- * leak gate lives.
+ * mission's GATED export verbs on its service face (`ctx.mission`, T89) — the
+ * ONE place the bundle export's leak gate lives.
  *
- * eval forwards `exportPlan` / `exportRun` to it rather than re-deriving the
- * guarded-layer set from mission's `planExport`, and that is the whole point:
- * the gate (every `modelFacing: false` layer confirmed against a FRESH plan,
- * fail-closed) plus the datasets probe that decides WHICH layers are guarded
- * are mission's, and a second implementation of a leak gate is a second place
- * for it to be wrong. eval only relays the caller's confirmations; it can
- * narrow nothing and widen nothing.
+ * eval forwards `exportPlanGated` / `exportRunGated` rather than re-deriving
+ * the guarded-layer set from mission's `planExport`, and that is the whole
+ * point: the gate (every `modelFacing: false` layer confirmed against a FRESH
+ * plan, fail-closed) plus the datasets probe that decides WHICH layers are
+ * guarded are mission's, and a second implementation of a leak gate is a
+ * second place for it to be wrong. eval only relays the caller's
+ * confirmations; it can narrow nothing and widen nothing.
  *
- * Structural and optional: a composition that mounts mission without a Typert
- * gateway has no Remote service, and the export verbs then refuse naming it.
+ * Until T89 these were reached through mission's Remote service with the
+ * calling `agent` threaded through; the service face needs no agent and does
+ * not depend on a Typert gateway being mounted.
+ *
+ * Structural and optional: a mission without the verbs (absent, or older than
+ * them) makes the export verbs refuse naming it.
  */
-export interface MissionExportRemoteFace {
-  exportPlan(agent: unknown, request: {
+export interface MissionExportFace {
+  exportPlanGated(request: {
     runId: string
     outDir: string
     layers?: string[]
@@ -656,7 +679,7 @@ export interface MissionExportRemoteFace {
     snapshot?: { repo: string; commit: string; dataset?: string }
     guarded?: string[]
   }): Promise<{ bundleDir: string; guardedLayers: string[]; expectedNs: string[] | null; missions: number; attempts: number }>
-  exportRun(agent: unknown, request: {
+  exportRunGated(request: {
     runId: string
     outDir: string
     layers?: string[]

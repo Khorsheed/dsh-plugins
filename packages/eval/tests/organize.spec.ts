@@ -1,6 +1,6 @@
 /** 「让 Agent 组织」's pure half (T87): the request, the name rule, the placeholder filter. */
 import { describe, expect, it } from 'vitest'
-import { CONDITION_ID_RE } from '../src/schema.ts'
+import { CONDITION_ID_RE } from '../src/contract/schema.ts'
 import { buildOrganizeRequest, checkExperimentName, EXPERIMENT_NAME_RE, visibleItems } from '../src/client/organize.ts'
 import { en, zh } from '../src/client/locales.ts'
 import type { EvalKey } from '../src/client/locales.ts'

@@ -18,8 +18,8 @@ import { readdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { attemptElapsedMs } from './cell-states.ts'
 import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
-import { canonicalJson, hashConditionDocument } from './hash.ts'
-import { CONDITION_ID_RE, jsonEquals } from './schema.ts'
+import { canonicalJson, hashConditionDocument } from './contract/hash.ts'
+import { CONDITION_ID_RE, jsonEquals } from './contract/schema.ts'
 import type { EvalClosure, EvalExperimentStatus } from './types.ts'
 import {
   conditionDiagnostics,
@@ -30,7 +30,7 @@ import {
   type ConditionResolution,
   type EvalDiagnostic,
   type LockProvisionRecord,
-} from './validate.ts'
+} from './contract/validate.ts'
 
 /** Thrown when a read verb cannot answer — a missing service, an unusable path. */
 export class EvalReadRefused extends Error {}

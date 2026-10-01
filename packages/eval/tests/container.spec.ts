@@ -17,9 +17,9 @@ import {
   acquireSpecFor, checkCredentialsDir, claudeScopeDiagnostics, conditionOwnedComponents, conditionUnitDiagnostics,
   describeAcquireSpec, environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
   UNIT_VERDICTS_DIR, UNIT_WORKSPACE,
-} from '../src/unit.ts'
-import { unitProbeExecutor } from '../src/probe-exec.ts'
-import { checkReadiness, READINESS_PROMPT, type ReadinessUnit } from '../src/readiness.ts'
+} from '../src/run/unit.ts'
+import { unitProbeExecutor } from '../src/run/probe-exec.ts'
+import { checkReadiness, READINESS_PROMPT, type ReadinessUnit } from '../src/run/readiness.ts'
 
 const tmpDirs: string[] = []
 function tmpTree(): string {

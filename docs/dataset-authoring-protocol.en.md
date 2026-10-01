@@ -77,7 +77,7 @@ When done, run `dsh-datasets validate` (or call the `datasets_validate` tool). S
 
 ## 6. Eval contracts (condition / plan / verdict)
 
-This chapter brings the web-eval contract schemas into the protocol, alongside `dataseek.verify/1` and `dataseek.rubric/2`. They are validated and hashed by `@khorsheed/dsh-eval` (`dsh-eval validate` / `dsh-eval conditions hash`); the execution semantics belong to web-eval's orchestrator, and `dsh-datasets` does not interpret them. Every JSON example here is a validator fixture, and the schema documents are pinned against the code constants (`packages/eval/src/schema.ts`) by tests — **editing a schema here is editing the contract**.
+This chapter brings the web-eval contract schemas into the protocol, alongside `dataseek.verify/1` and `dataseek.rubric/2`. They are validated and hashed by `@khorsheed/dsh-eval` (`dsh-eval validate` / `dsh-eval conditions hash`); the execution semantics belong to web-eval's orchestrator, and `dsh-datasets` does not interpret them. Every JSON example here is a validator fixture, and the schema documents are pinned against the code constants (`packages/eval/src/contract/schema.ts`) by tests — **editing a schema here is editing the contract**.
 
 ### 6.1 Location: the dataset repository is read-only; eval records live on the deployment (v1-rev13)
 

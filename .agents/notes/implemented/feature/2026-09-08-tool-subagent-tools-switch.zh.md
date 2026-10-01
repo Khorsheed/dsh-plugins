@@ -10,7 +10,7 @@ Status: implemented
 
 对日常开发的 profile 来说，这正是它的用处。对评测实例来说，这是个洞。`dsh-web-eval` 冻结了决策 12——装置的销毁路径唯一，所以实例的 agent 不挂 shell、不挂容器控制——[eval 预设](../process/2026-09-08-web-eval-agent-preset.zh.md)是这条决策的执行点，它带的组成里把执行类的行都删了。可这四个预设够不到：预设只过滤自己挂的行，而这四行挂在它上面，在 profile 根。于是预设拿走了 `bash`，却留下四个各自能在宿主上起一家 CLI 的工具，沙箱还是 `sandbox: workspace-write` 或 `permissionMode: skip`。
 
-编排器不需要它们。它经 local-agent 服务面驱动选手（`packages/eval/src/run.ts` 只用 `LocalAgentFace`，也就是注册在 `ctx.subagents` 上的 provider），`/codex login`、`/kimi status` 这些是 provider 自己的斜杠动词。评测流里没有一步经过这个模型可见的工具。
+编排器不需要它们。它经 local-agent 服务面驱动选手（`packages/eval/src/run/run.ts` 只用 `LocalAgentFace`，也就是注册在 `ctx.subagents` 上的 provider），`/codex login`、`/kimi status` 这些是 provider 自己的斜杠动词。评测流里没有一步经过这个模型可见的工具。
 
 ## Decision
 

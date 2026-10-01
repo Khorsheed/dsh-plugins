@@ -24,6 +24,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { resolveDataDir } from './defaults.ts'
+import { datasetsLayerProbe } from './gate.ts'
 import { MissionRemoteService } from './remote.ts'
 import { MissionService } from './service.ts'
 
@@ -65,6 +66,9 @@ export const inject = []
  */
 export function apply(ctx: Context, config: MissionConfig): void {
   const service = new MissionService(resolveDataDir(config.dataDir))
+  // The gated export's guarded-layer probe: the datasets plugin, looked up
+  // per call (duck-typed, optional — absent means explicit declarations only).
+  service.setLayerProbe(datasetsLayerProbe(() => ctx.get('datasets')))
   ctx.provide('mission', service)
   // The Typert Remote data face (wire namespace `mission`) behind the web tab.
   ctx.plugin(MissionRemoteService)
@@ -73,6 +77,7 @@ export function apply(ctx: Context, config: MissionConfig): void {
 export { MissionService } from './service.ts'
 export { MissionRemoteService } from './remote.ts'
 export { MissionStore } from './store.ts'
+export { assertConfirmed, datasetsLayerProbe, resolveLayers, type LayerProbe } from './gate.ts'
 export { handleMissionCommand, registerMissionSlash } from './slash.ts'
 export { resolveCliDataDir, resolveDataDir } from './defaults.ts'
 export { lintTemplate, loadTemplateFile, parseTemplate, deriveShape, SIMPLE_TEMPLATE } from './template.ts'

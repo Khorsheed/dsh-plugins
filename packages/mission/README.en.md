@@ -89,7 +89,11 @@ The `simple` template's `releasableStates` is deliberately empty: everyday work 
 
 ## Service face
 
-Other plugins consume `ctx.get('mission')` — an in-process contract, never a subprocess or a hand-written JSON file. Beyond everything the tools expose, the fine-grained methods are `setRefs` (resource handle / environment fingerprint / sessions), `addArtifact`, `addCheckpoint` (only the resource holder fills `ref`; it merges into `submit`'s ref-less checkpoint of the same name — never a duplicate entry), `annotate`, and `isReleasable`.
+Other plugins consume `ctx.get('mission')` — an in-process contract, never a subprocess or a hand-written JSON file. Beyond everything the tools expose, the fine-grained methods are `setRefs` (resource handle / environment fingerprint / sessions), `addArtifact`, `addCheckpoint` (only the resource holder fills `ref`; it merges into `submit`'s ref-less checkpoint of the same name — never a duplicate entry), `annotate`, and `isReleasable`. Three more verb groups exist for other plugins to build on:
+
+- `attemptDataDir(runId, missionId, attempt)` — the path of an attempt's run-data directory (pure; creates nothing). Consumers call it instead of assembling `runs/<id>/data/...` themselves, so the store layout lives in mission alone. The Remote face carries the same verb for the browser side.
+- `annotateRun(runId, ns, payload, { by? })` / `runAnnotations(runId, ns?)` — **run-level annotations**: append-only and namespace-isolated like mission annotations, an identical ns+payload write is a no-op. They live in the run file's `annotations` field (older runs have none and read as empty) and ride `run.json` on export. They hold marks about the run as a whole (closure, export records, …) without borrowing the first mission as a perch.
+- `exportPlanGated(request)` / `exportRunGated(request)` — **export with the leak gate**, the same gate the Remote face's export dialog uses (`gate.ts`: datasets probe plus explicit declarations; the confirmed list must cover every guarded layer of a fresh plan, fail-closed). A plugin that wants a confirmed export calls these instead of detouring through the Remote face with a fabricated `agent` argument. The ungated `exportRun` stays for the CLI and slash faces, which carry their own gates.
 
 ## CLI
 
@@ -101,11 +105,13 @@ dsh-mission run lint --template t.json        # errors refuse; exit 1 on errors
 dsh-mission run list
 dsh-mission run status RUN_ID                 # five-bucket projection table
 dsh-mission create [--run ID] [--id ID] [--title T] [--label k=v]... [--depends-on a,b] [--scheduled-at MS]
-dsh-mission list [--run ID] [--bucket B] [--label k=v]...
-dsh-mission get MISSION_ID [--run ID]
+dsh-mission list [--run ID] [--bucket B] [--label k=v]... [--json]   # --json: { schema: "dsh-mission.list/1", missions }
+dsh-mission get MISSION_ID [--run ID] [--json]                        # --json: { schema: "dsh-mission.get/1", runId, mission }
 dsh-mission transition MISSION_ID TO [--note N] [--run ID]
 dsh-mission submit MISSION_ID [--file SRC[:DEST]]... [--json JSON | --json-file F] [--to TO] [--checkpoint NAME] [--run ID]
 dsh-mission annotate MISSION_ID --ns NS --payload JSON [--run ID]
+dsh-mission run annotate RUN_ID --ns NS --payload JSON   # run-level annotation
+dsh-mission run annotations RUN_ID [--ns NS]             # print run-level annotations (JSON)
 dsh-mission attest MISSION_ID --key K [--note N] [--run ID]
 dsh-mission retry MISSION_ID --reason TEXT --category infrastructure|operator|outcome [--run ID]
 dsh-mission set-refs MISSION_ID [--resource R] [--fingerprint F] [--session S]... [--run ID]
@@ -115,6 +121,8 @@ dsh-mission is-releasable MISSION_ID [--run ID]   # exit 0/1, for teardown scrip
 dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --snapshot-commit C [--snapshot-dataset ID]]
          [--layer NAME]... [--guarded NAME]...   # self-contained bundle (leak gate below)
 ```
+
+Scripts reading `list` / `get` should pass `--json`: the output is one JSON document carrying a `schema` version field (a field change renames the schema), so nothing parses the fixed-width table any more. An older CLI does not know `--json` (it reads it as a value-less `submit --json`) and refuses with "--json requires a value", exit 2 — callers can turn that into an upgrade hint.
 
 ## Slash commands
 
@@ -136,7 +144,7 @@ One `/mission` command with subcommands, a thin adapter over the same service ke
 
 **The leak gate**: including a guarded (`modelFacing: false`) layer requires an interactive TTY confirmation — each guarded layer is listed and confirmed one by one. Non-TTY invocations are refused (fail-closed): an agent driving the CLI through Bash has no TTY and is stopped there, and no flag (including `--include-guarded`-style ones) bypasses the gate. The slash face has no confirmation channel at all, so `/mission export` refuses guarded layers and points at the TTY CLI; when the datasets plugin is mounted, the slash face resolves layer visibility from its metadata (explicit `--guarded` declarations otherwise).
 
-**expectedNs**: when run meta declares `expectedNs`, `run status` and export print the per-cell namespace report — a missing ns is reported missing (never substituted by another namespace), and a cell whose annotations are all outside `expectedNs` is marked "only unlisted ns present" in the report and the manifest. Each ns also has `writtenBy`, the deduplicated set of writer prefixes across its current-attempt annotations (for example `tool:`, `cli`, `service`, `slash:`). If an expected ns was written only through `tool:`, the report states that fact without judging it.
+**expectedNs**: when run meta declares `expectedNs`, `run status` and export print the per-attempt namespace report (the key comes from run meta written by the evaluation orchestrator; mission treats it as an opaque namespace list) — a missing ns is reported missing (never substituted by another namespace), and an attempt whose annotations are all outside `expectedNs` is marked "only unlisted ns present" in the report and the manifest. Each ns also has `writtenBy`, the deduplicated set of writer prefixes across its current-attempt annotations (for example `tool:`, `cli`, `service`, `slash:`). If an expected ns was written only through `tool:`, the report states that fact without judging it.
 
 ## Session tab
 

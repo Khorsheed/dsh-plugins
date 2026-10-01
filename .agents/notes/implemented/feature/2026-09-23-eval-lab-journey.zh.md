@@ -70,6 +70,6 @@ T67 之后，每个详情页都有了一个状态和一个主动作，但旅程�
 
 ## 相关
 
-- `packages/eval/src/closure.ts`、`src/experiments.ts`（`STALL_THRESHOLD_MS`、`deriveExperimentStatus`）、`src/client/journey.ts`
+- `packages/eval/src/report/closure.ts`、`src/experiments.ts`（`STALL_THRESHOLD_MS`、`deriveExperimentStatus`）、`src/client/journey.ts`
 - `packages/eval/src/client/LabView.tsx`、`JudgingPage.tsx`、`ReportPage.tsx`
 - `packages/eval/README.md` / `README.en.md` 的 T72 一节

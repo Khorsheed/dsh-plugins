@@ -35,6 +35,24 @@ describe('mission core faces', () => {
     expect(pluginMounts).toBe(1)
   })
 
+  it('installs the datasets-backed layer probe on the service (the gated export\'s input), looked up per call', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-mission-core-'))
+    roots.push(root)
+    let service: { exportPlanGated: (r: unknown) => Promise<{ guardedLayers: string[] }>; create: (o: unknown) => Promise<unknown> } | undefined
+    let datasets: unknown
+    const ctx = {
+      provide: (_name: string, value: never) => { service = value },
+      plugin: () => {},
+      get: (name: string) => (name === 'datasets' ? datasets : undefined),
+    }
+    apply(ctx as never, { dataDir: root })
+    await service!.create({ id: 'm' })
+    const request = { runId: 'default', outDir: join(root, 'o'), layers: ['answers'], snapshotDir: root, snapshot: { repo: '/r', commit: 'c', dataset: 'd' } }
+    expect((await service!.exportPlanGated(request)).guardedLayers).toEqual([])
+    datasets = { list: () => Promise.resolve({ dataset: { nonModelFacingLayers: ['answers'] } }) }
+    expect((await service!.exportPlanGated(request)).guardedLayers).toEqual(['answers'])
+  })
+
   it('injects nothing and takes no tool-group config', () => {
     // The command registry was the slash face's hard inject; with the
     // registration in the companion row the core mounts unconditionally.

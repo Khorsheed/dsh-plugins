@@ -13,7 +13,7 @@ import {
   VERDICT_SCHEMA_ID,
   jsonEquals,
   validateJson,
-} from '../src/schema.ts'
+} from '../src/contract/schema.ts'
 
 /**
  * The dataset-authoring protocol is the schema publication of record: its §6

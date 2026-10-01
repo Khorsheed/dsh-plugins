@@ -5,8 +5,8 @@
  * had nothing to say (which is what T29c actually saw for 230 seconds).
  */
 import { describe, expect, it } from 'vitest'
-import { checkUnitEgress, EgressUnavailable, EGRESS_UNAVAILABLE } from '../src/egress.ts'
-import { DEFAULT_EGRESS_CHECK_TIMEOUT_MS, egressCheckOf } from '../src/unit.ts'
+import { checkUnitEgress, EgressUnavailable, EGRESS_UNAVAILABLE } from '../src/run/egress.ts'
+import { DEFAULT_EGRESS_CHECK_TIMEOUT_MS, egressCheckOf } from '../src/run/unit.ts'
 import type { LabVerifyResult } from '../src/faces.ts'
 
 /** A lab whose `verify` answers with a scripted result (or throws). */

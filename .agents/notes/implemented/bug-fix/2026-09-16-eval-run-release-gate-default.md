@@ -66,8 +66,8 @@ Naming the holders is the orchestrator's job, not lab's. lab does not know what 
 
 ## What changed
 
-- `packages/eval/src/run.ts`: `RunOptions.keepUnits`; `finalize` documented as defaulting true; one `passGate` resolution; `run.meta.finalize` recorded so a bundle can tell "asked to stop at archived" from "broke off"; `acquireUnit` / `describeUnitHolders` and both acquire call sites.
-- `packages/eval/src/finalize.ts`: `FinalizeUnitsFace`, `releaseCellUnit` between the two transitions, `heldUnitsOf` / `heldReasonOf`, and `unitsReleased` / `unitsHeld` / `unitsKnown` on the report.
+- `packages/eval/src/run/run.ts`: `RunOptions.keepUnits`; `finalize` documented as defaulting true; one `passGate` resolution; `run.meta.finalize` recorded so a bundle can tell "asked to stop at archived" from "broke off"; `acquireUnit` / `describeUnitHolders` and both acquire call sites.
+- `packages/eval/src/run/finalize.ts`: `FinalizeUnitsFace`, `releaseCellUnit` between the two transitions, `heldUnitsOf` / `heldReasonOf`, and `unitsReleased` / `unitsHeld` / `unitsKnown` on the report.
 - `packages/eval/src/service.ts`: `finalize` wires lab when mounted; `runUnits(runId)`; `approve` carries `keepUnits`.
 - `packages/eval/src/remote.ts`: `runUnits`; `runStart` and `approve` carry the switch.
 - `packages/eval/src/slash.ts`, `src/cli-core.ts`: `--keep-units`, `--finalize` accepted as the default, the container lines rewritten, and the CLI's finalize saying every time that it touched no container.

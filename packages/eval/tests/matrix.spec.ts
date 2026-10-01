@@ -4,8 +4,8 @@
  * prefers not placing two cells of the same condition back to back.
  */
 import { describe, expect, it } from 'vitest'
-import { expandMatrix, missionIdFor, orderCells } from '../src/matrix.ts'
-import type { EvalCell } from '../src/matrix.ts'
+import { expandMatrix, missionIdFor, orderCells } from '../src/run/matrix.ts'
+import type { EvalCell } from '../src/run/matrix.ts'
 
 const PLAN = {
   dataset: { items: ['F2-multi-agent-room', 'F3-self-restart-report'] },

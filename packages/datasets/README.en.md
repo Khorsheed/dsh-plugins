@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-Generic versioned dataset storage over git repositories: layered items, commit-pinned reads straight from git objects, read-only materialized views for whole-layer consumption (`git archive`, content-addressed), and a deployment-level dataset registry — an agent reaches data only through a registered `<id>/<set>` reference, and the layer whitelist is enforced on every read path.
+Versioned dataset storage over git repositories: layered items, commit-pinned reads straight from git objects, read-only materialized views for whole-layer consumption (`git archive`, content-addressed), and a deployment-level dataset registry — an agent reaches data only through a registered `<id>/<set>` reference, and the layer whitelist is enforced on every read path. Storage, reads and the registry assume nothing about what a dataset is for; the one convention-bound part is `validate`'s [judgeability check](#validate-rule-table), which checks rubrics against the evaluation judging convention (the `grading` / `verify` layer names plus `rubric.yml`) and only on items whose grading layer carries a rubric — a dataset outside that convention is unaffected.
 
 The plugin exists for the three things a file browser does not have: a **semantic contract** (descriptor shape validation, layer visibility classes, a declared item-metadata schema), **version pinning** (snapshots, git-object reads, commit-addressed read-only materializations), and **access governance** (a human-written registry whose layer whitelist is a mechanism, not a convention). It never interprets a dataset's semantics, and it never copies content out of the repository.
 

@@ -14,7 +14,8 @@
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
-import { exportRun, nsCompleteness, planExport, type ExportPlan, type ExportRequest, type ExportResult, type NsCellReport } from './export.ts'
+import { exportRun, nsCompleteness, planExport, type ExportLayer, type ExportPlan, type ExportRequest, type ExportResult, type NsAttemptReport } from './export.ts'
+import { assertConfirmed, resolveLayers, type LayerProbe } from './gate.ts'
 import { currentAttempt, viewOf } from './projection.ts'
 import { assertSchemaSubset, jsonEquals, validateJson } from './schema.ts'
 import { MissionStore, resolveInside } from './store.ts'
@@ -23,8 +24,9 @@ import {
   type LintResult, type LoadedTemplate,
 } from './template.ts'
 import type {
-  AnnotationRecord, AttemptRecord, AttemptRefs, Guard, MissionRecord, MissionView, RetryCategory, RetryRecord,
-  RunRecord, TemplateMission, TransitionDecl,
+  AnnotationRecord, AttemptRecord, AttemptRefs, Guard, MissionExportPlanRequest, MissionExportPlanView, MissionExportRequest,
+  MissionExportResultView, MissionRecord, MissionView, RetryCategory, RetryRecord, RunAnnotationRecord, RunRecord,
+  TemplateMission, TransitionDecl,
 } from './types.ts'
 import { RETRY_CATEGORIES } from './types.ts'
 
@@ -97,8 +99,8 @@ export interface RunStatus {
   buckets: Record<string, string[]>
   /** Missions holding `refs.resource` while not releasable — the leak warning. */
   unreleased: string[]
-  /** Per-cell ns completeness when the run meta declares expectedNs, else null. */
-  nsReport: NsCellReport[] | null
+  /** Per-attempt ns completeness when the run meta declares expectedNs, else null. */
+  nsReport: NsAttemptReport[] | null
 }
 
 export interface TransitionResult {
@@ -176,9 +178,34 @@ export function implicitRunId(originSession: string | undefined): string {
  */
 export class MissionService {
   readonly store: MissionStore
+  /** The guarded-layer probe the gated export consults; installed by the cordis plugin, null elsewhere (CLI). */
+  private layerProbe: LayerProbe | null = null
 
   constructor(readonly dataDir: string) {
     this.store = new MissionStore(dataDir)
+  }
+
+  /**
+   * Install the probe that tells the gated export which layers are
+   * `modelFacing: false` (the cordis plugin installs the datasets-backed one).
+   * @param probe - the probe, or null to fall back to explicit declarations only.
+   */
+  setLayerProbe(probe: LayerProbe | null): void {
+    this.layerProbe = probe
+  }
+
+  /**
+   * One attempt's run-data directory (`<root>/runs/<runId>/data/<missionId>/attempt-<N>`).
+   * The layout is mission's: callers that need a file an attempt wrote ask
+   * for the directory instead of rebuilding the path. Pure: nothing is
+   * created and the directory may not exist.
+   * @param runId - the run.
+   * @param missionId - the mission inside it.
+   * @param attempt - the attempt number.
+   * @returns the absolute directory path.
+   */
+  attemptDataDir(runId: string, missionId: string, attempt: number): string {
+    return this.store.attemptDataDir(runId, missionId, attempt)
   }
 
   private now(options: CallOptions | undefined): number {
@@ -301,6 +328,54 @@ export class MissionService {
   /** Write the bundle — the caller has already passed the leak gate. */
   exportRun(request: ExportRequest): ExportResult {
     return exportRun(this.store, request)
+  }
+
+  private gatedRequest(request: MissionExportPlanRequest, layers: ExportLayer[], now?: number): ExportRequest {
+    return {
+      runId: request.runId,
+      outDir: request.outDir,
+      layers,
+      ...(request.snapshotDir !== undefined ? { snapshotDir: request.snapshotDir } : {}),
+      ...(request.snapshot !== undefined ? { snapshot: request.snapshot } : {}),
+      ...(now !== undefined ? { now } : {}),
+    }
+  }
+
+  /**
+   * Plan an export WITH the leak gate's inputs resolved: layer names become
+   * guarded or not through the installed probe plus the caller's explicit
+   * declarations. This is the plan a confirmation dialog renders.
+   * @param request - run, output directory, layer names, snapshot reference.
+   * @returns the plan view (guarded layers to confirm, expected namespaces, target).
+   */
+  async exportPlanGated(request: MissionExportPlanRequest): Promise<MissionExportPlanView> {
+    const layers = await resolveLayers(this.layerProbe, request)
+    const plan = this.planExport(this.gatedRequest(request, layers))
+    return {
+      bundleDir: plan.bundleDir,
+      guardedLayers: plan.guardedLayers,
+      expectedNs: plan.expectedNs,
+      missions: plan.missions,
+      attempts: plan.attempts,
+    }
+  }
+
+  /**
+   * The CONFIRMED export: the caller's `confirmed` list is checked against a
+   * FRESH plan and every guarded layer must be in it, or nothing is written
+   * (fail-closed). The in-host face for plugins that export on a human's
+   * behalf; the Remote face delegates here.
+   * @param request - the export plus the guarded layers the human confirmed.
+   * @param options - `now` stamp for the manifest (tests, or a caller that records the same instant elsewhere).
+   * @returns the bundle location and file count.
+   * @throws when a guarded layer is unconfirmed, or the bundle cannot be written.
+   */
+  async exportRunGated(request: MissionExportRequest, options?: { now?: number }): Promise<MissionExportResultView> {
+    const layers = await resolveLayers(this.layerProbe, request)
+    const plan = this.planExport(this.gatedRequest(request, layers))
+    assertConfirmed(plan.guardedLayers, request.confirmed)
+    const result = this.exportRun(this.gatedRequest(request, layers, options?.now))
+    return { bundleDir: result.bundleDir, files: result.files }
   }
 
   /**
@@ -566,6 +641,42 @@ export class MissionService {
       mission.annotations.push(annotation)
       return { run: stored, result: { added: true } }
     })
+  }
+
+  /**
+   * Append a namespace-isolated annotation to the RUN itself — for facts
+   * about the whole batch that no single mission owns. Same contract as
+   * {@link annotate}: append-only, identical (ns + payload) is a no-op.
+   * @param runId - the run.
+   * @param ns - the writer's namespace.
+   * @param payload - any JSON value.
+   * @param options - caller tag and clock.
+   * @returns whether a new record was appended.
+   */
+  async annotateRun(runId: string, ns: string, payload: unknown, options?: CallOptions): Promise<{ added: boolean }> {
+    if (ns === '') throw new Error('mission: annotation ns must be non-empty')
+    this.requireRun(runId)
+    const now = this.now(options)
+    return await this.store.update<{ added: boolean }>(runId, (stored) => {
+      const run = stored as RunRecord
+      const annotations = run.annotations ?? []
+      if (annotations.some(a => a.ns === ns && jsonEquals(a.payload, payload))) return { run: null, result: { added: false } }
+      const record: RunAnnotationRecord = { ns, payload, createdAt: now, by: this.by(options) }
+      run.annotations = [...annotations, record]
+      return { run, result: { added: true } }
+    })
+  }
+
+  /**
+   * A run's own annotations in write order (empty for runs written before
+   * run-level annotations existed).
+   * @param runId - the run.
+   * @param ns - only this namespace, when given.
+   * @returns the records.
+   */
+  runAnnotations(runId: string, ns?: string): RunAnnotationRecord[] {
+    const annotations = this.requireRun(runId).annotations ?? []
+    return ns === undefined ? [...annotations] : annotations.filter(a => a.ns === ns)
   }
 
   /** Register an `attested`-guard key for the current attempt (same key twice = no-op). */

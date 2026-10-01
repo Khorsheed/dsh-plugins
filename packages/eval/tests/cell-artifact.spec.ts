@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { EvalService } from '../src/service.ts'
 import { ARTIFACT_MAX_BYTES, extensionOf, isInside, readCellArtifact } from '../src/cell-artifact.ts'
 import { judgeSessionsOf } from '../src/cell-detail.ts'
-import { cleanupTmp, tmpTree } from './helpers.ts'
+import { cleanupTmp, tmpTree, attemptDirsOf } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -36,7 +36,7 @@ function attemptTree(files: Record<string, string>): { dataDir: string; attemptD
 /** The smallest mission read face `readCellArtifact` uses: its data root. */
 function missionFace(dataDir: string | undefined) {
   return {
-    ...(dataDir === undefined ? {} : { dataDir }),
+    ...(dataDir === undefined ? {} : attemptDirsOf(dataDir)),
     runList: () => [{ id: 'run-1' }],
     runStatus: () => ({ run: { id: 'run-1', state: 'active', createdAt: 1, meta: {} }, rows: [], buckets: {}, unreleased: [] }),
     get: () => ({ mission: { currentAttempt: 1, attempts: [], annotations: [] } }),

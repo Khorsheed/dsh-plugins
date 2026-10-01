@@ -32,7 +32,7 @@ The remaining lever is to stop sharing the grant.
 
 The evaluation enforces it rather than documenting it, because the failure costs a manual re-login and is invisible until the next host round:
 
-- `claudeScopeDiagnostics` in `packages/eval/src/unit.ts` takes the conditions that run in units and the conditions that run on the host, and returns `CLAUDE_CONTAINER_SCOPE_MISSING` for a containerized claude condition with no scope, `CLAUDE_CONTAINER_SCOPE_SHARED` when a host-side claude condition names a scope a containerized one already uses. Both messages say WHY — two stores, family invalidation — and the missing-scope one names the fix, `/claude-code login --scope <name>`.
+- `claudeScopeDiagnostics` in `packages/eval/src/run/unit.ts` takes the conditions that run in units and the conditions that run on the host, and returns `CLAUDE_CONTAINER_SCOPE_MISSING` for a containerized claude condition with no scope, `CLAUDE_CONTAINER_SCOPE_SHARED` when a host-side claude condition names a scope a containerized one already uses. Both messages say WHY — two stores, family invalidation — and the missing-scope one names the fix, `/claude-code login --scope <name>`.
 - It runs in `validate` (offline, before anyone approves the plan) and again in the run's pre-flight refusals (before any unit is acquired). A plan with no unit segment puts every condition on the host, so players count as host-side there.
 - An ABSENT scope is the instance's DEFAULT scope — the one `/claude-code` delegations and every status probe use — so it is the worst case, not a neutral one. That is why the rule is "must declare", not "should differ".
 

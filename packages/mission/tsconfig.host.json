@@ -10,6 +10,7 @@
     "src/cli.ts",
     "src/defaults.ts",
     "src/export.ts",
+    "src/gate.ts",
     "src/index.ts",
     "src/invariant.ts",
     "src/projection.ts",

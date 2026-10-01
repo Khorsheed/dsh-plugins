@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-27-t83-eval-datasets-visual-parity.md
-.agents/notes/implemented/feature/2026-09-27-t83-eval-datasets-visual-parity.md: 4b9694ff71dca14775228e6d2d41464c006e7741
-.agents/notes/implemented/feature/2026-09-27-t83-eval-datasets-visual-parity.zh.md: 631b6986c6841725ec4400d494d83442d352412c
+.agents/notes/implemented/feature/2026-09-27-t83-eval-datasets-visual-parity.md: 9aa7ff0b4f4100f8ff07773d012a0e359236f2b5
+.agents/notes/implemented/feature/2026-09-27-t83-eval-datasets-visual-parity.zh.md: 498d8bd8e3903a2151b18a877ffe0e6fdc4638ce

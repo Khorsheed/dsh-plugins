@@ -18,7 +18,7 @@ import {
   pickRubricPath,
   probePaths,
   HARNESS_ALIASES,
-} from '../src/judge.ts'
+} from '../src/judge/judge.ts'
 
 describe('de-fingerprinting (frozen decision 9)', () => {
   it('replaces harness, CLI and self-reported names with <harness>', () => {

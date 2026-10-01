@@ -6,9 +6,12 @@
  * re-entry point ever meets: an interrupted run holds released cells,
  * mid-stage cells and cells that never started, all at once.
  */
-import { describe, expect, it } from 'vitest'
-import { finalizeRun, EvalFinalizeRefused, skipCategoryOf, type FinalizeUnitsFace } from '../src/finalize.ts'
-import { parseMissionRow } from '../src/mission-cli.ts'
+import { chmodSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { finalizeRun, EvalFinalizeRefused, skipCategoryOf, type FinalizeUnitsFace } from '../src/run/finalize.ts'
+import { MISSION_LIST_SCHEMA, missionCliFace, parseMissionList } from '../src/run/mission-cli.ts'
+import { cleanupTmp, tmpTree } from './helpers.ts'
 import type { LabUnitRow, MissionFinalizeFace } from '../src/faces.ts'
 
 /** A ledger of `id → state`, with the release edges and the archive gate. */
@@ -334,12 +337,42 @@ describe('skipCategoryOf', () => {
   })
 })
 
-describe('parseMissionRow — the dsh-mission list row the CLI face reads', () => {
-  it('reads id and state from a padded row and ignores the header and the tail', () => {
-    expect(parseMissionRow('f2-multi-agent-room-dsh-exec-rep3 active     stage-2      task=F2,rep=3      -'))
-      .toEqual({ id: 'f2-multi-agent-room-dsh-exec-rep3', state: 'stage-2' })
-    expect(parseMissionRow('id              bucket    state       labels            plan')).toBeNull()
-    expect(parseMissionRow('(12 mission(s))')).toBeNull()
-    expect(parseMissionRow('')).toBeNull()
+describe('the dsh-mission CLI face reads `list --json`, never the table (T89)', () => {
+  afterEach(cleanupTmp)
+
+  /** A stand-in `dsh-mission` binary: prints `stdout`, or fails with `stderr`. */
+  function fakeCli(body: string): string {
+    const bin = join(tmpTree(), 'dsh-mission')
+    writeFileSync(bin, `#!/bin/sh\n${body}\n`)
+    chmodSync(bin, 0o755)
+    return bin
+  }
+
+  it('parses the schema-versioned document; labels with spaces cannot shift a column any more', () => {
+    const doc = JSON.stringify({
+      schema: MISSION_LIST_SCHEMA,
+      missions: [
+        { id: 'f2-rep3', state: 'stage-2', bucket: 'active', labels: { note: 'a b c' } },
+        { id: 'broken' },
+      ],
+    })
+    expect(parseMissionList(doc)).toEqual([{ id: 'f2-rep3', state: 'stage-2' }])
+  })
+
+  it('refuses the old table and an unknown schema, naming what it reads', () => {
+    expect(() => parseMissionList('id  bucket  state\n(0 mission(s))\n')).toThrow(/did not print JSON/)
+    expect(() => parseMissionList(JSON.stringify({ schema: 'dsh-mission.list/2', missions: [] })))
+      .toThrow(/this eval reads dsh-mission\.list\/1/)
+  })
+
+  it('passes --json last and reads the rows through a real child process', () => {
+    const doc = JSON.stringify({ schema: MISSION_LIST_SCHEMA, missions: [{ id: 'c1', state: 'released' }] })
+    const bin = fakeCli(`[ "$6" = "--json" ] || { echo "argv: $*" >&2; exit 3; }\ncat <<'JSON'\n${doc}\nJSON`)
+    expect(missionCliFace({ bin, dataDir: '/d' }).runStatus('r1').rows).toEqual([{ id: 'c1', state: 'released' }])
+  })
+
+  it('an older dsh-mission without --json gets a sentence naming the upgrade', () => {
+    const bin = fakeCli(`echo "--json requires a value" >&2\nexit 2`)
+    expect(() => missionCliFace({ bin }).runStatus('r1')).toThrow(/predates `dsh-mission list --json`.*upgrade the dsh-mission CLI/)
   })
 })

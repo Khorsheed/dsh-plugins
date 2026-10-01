@@ -26,14 +26,14 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ARTIFACT_MAX_BYTES } from './cell-artifact.ts'
-import { attemptDataDir, currentAttemptOf, playerSessionOf, probeRunsOf } from './cell-detail.ts'
+import { attemptDirOf, currentAttemptOf, playerSessionOf, probeRunsOf } from './cell-detail.ts'
 import type { DatasetsFace, MissionAttemptFace, MissionReadFace } from './faces.ts'
 import {
   benchMetaOf, humanCriteriaOf, judgeLabel, verdictDocsOf, type LedgerAnnotation,
-} from './judge-bench.ts'
-import { JUDGE_MATERIAL_FILES } from './judge.ts'
+} from './judge/judge-bench.ts'
+import { JUDGE_MATERIAL_FILES } from './judge/judge.ts'
 import { EvalReadRefused } from './read.ts'
-import { validateJson, VERDICT_SCHEMA } from './schema.ts'
+import { validateJson, VERDICT_SCHEMA } from './contract/schema.ts'
 import type { EvalAnswerCell, EvalAnswerReport, EvalAnswerSheet, EvalAnswerVerdict } from './types.ts'
 
 /** The three verdict layers, in the report's authority order (lowest first). */
@@ -138,8 +138,8 @@ export async function cellAnswersView(input: CellAnswersInput): Promise<EvalAnsw
     const current = currentAttemptOf(attempts, currentAttempt, row.currentAttempt)
     const attempt = current?.attempt ?? row.currentAttempt
     const reports: EvalAnswerReport[] = []
-    if (mission.dataDir !== undefined) {
-      const dir = attemptDataDir(mission.dataDir, runId, row.id, attempt)
+    const dir = attemptDirOf(mission, runId, row.id, attempt)
+    if (dir !== null) {
       for (const name of JUDGE_MATERIAL_FILES) {
         const report = await reportOf(dir, name)
         if (report !== null) reports.push(report)
@@ -164,7 +164,7 @@ export async function cellAnswersView(input: CellAnswersInput): Promise<EvalAnsw
   if (cells.length === 0) {
     throw new EvalReadRefused(`run ${JSON.stringify(runId)} 里没有题目 ${JSON.stringify(task)} 的格子`)
   }
-  if (mission.dataDir === undefined) {
+  if (typeof mission.attemptDataDir !== 'function') {
     notes.push('账本没有报出数据根目录：提交的报告读不到，只能看判定')
   }
   const rubric = await humanCriteriaOf(datasets, meta, task)

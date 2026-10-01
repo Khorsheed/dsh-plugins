@@ -1,7 +1,7 @@
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { canonicalJson, hashConditionDocument, hashHome } from '../src/hash.ts'
+import { canonicalJson, hashConditionDocument, hashHome } from '../src/contract/hash.ts'
 import { cleanupTmp, tmpTree } from './helpers.ts'
 
 afterEach(cleanupTmp)

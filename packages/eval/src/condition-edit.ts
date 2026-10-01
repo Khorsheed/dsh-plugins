@@ -23,9 +23,9 @@
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { hashConditionDocument } from './hash.ts'
-import { CONDITION_ID_RE, CONDITION_SCHEMA_ID } from './schema.ts'
-import { conditionDiagnostics, expandHome, type EvalDiagnostic } from './validate.ts'
+import { hashConditionDocument } from './contract/hash.ts'
+import { CONDITION_ID_RE, CONDITION_SCHEMA_ID } from './contract/schema.ts'
+import { conditionDiagnostics, expandHome, type EvalDiagnostic } from './contract/validate.ts'
 
 /** Thrown when the declaration cannot be edited at all. */
 export class EvalConditionEditRefused extends Error {

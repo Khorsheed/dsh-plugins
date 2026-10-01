@@ -170,6 +170,19 @@ export interface AnnotationRecord {
   by: string
 }
 
+/**
+ * A run-level note: the same append-only, namespace-isolated contract as
+ * {@link AnnotationRecord}, attached to the run itself rather than to one of
+ * its missions — for facts about the whole batch (where it was exported, how
+ * a human closed it). Absent on run files written before it existed.
+ */
+export interface RunAnnotationRecord {
+  ns: string
+  payload: unknown
+  createdAt: number
+  by: string
+}
+
 export interface MissionRecord {
   /** Unique within its run. */
   id: string
@@ -195,6 +208,8 @@ export interface RunRecord {
   templateDir?: string
   stateMachine: StateMachineDecl
   missions: MissionRecord[]
+  /** Run-level annotations (append-only); absent on older run files = none. */
+  annotations?: RunAnnotationRecord[]
 }
 
 /** The five-bucket projection bucket (derived from state-machine shape + plan data, never stored). */
@@ -262,6 +277,22 @@ export type MissionAttemptWire = Omit<AttemptRecord, 'submission'> & {
 
 /** AnnotationRecord on the wire: the Remote boundary constrains the payload to JSON. */
 export type MissionAnnotationWire = Omit<AnnotationRecord, 'payload'> & { payload: JsonValue }
+
+/** RunAnnotationRecord on the wire: the Remote boundary constrains the payload to JSON. */
+export type MissionRunAnnotationWire = Omit<RunAnnotationRecord, 'payload'> & { payload: JsonValue }
+
+/** `runAnnotations` request: one run's notes, optionally one namespace. */
+export interface MissionRunAnnotationsRequest {
+  runId: string
+  ns?: string
+}
+
+/** `attemptDataDir` request: which attempt's run-data directory. */
+export interface MissionAttemptDataDirRequest {
+  runId: string
+  missionId: string
+  attempt: number
+}
 
 /** One mission's detail for the tab's row panel. */
 export interface MissionDetail {

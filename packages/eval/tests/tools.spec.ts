@@ -9,10 +9,10 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { hashConditionDocument } from '../src/hash.ts'
+import { hashConditionDocument } from '../src/contract/hash.ts'
 import { EvalService } from '../src/service.ts'
 import { evalToolDefinitions } from '../src/tool-definition.ts'
-import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson } from './helpers.ts'
+import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson, attemptDirsOf } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -622,7 +622,7 @@ describe('eval_experiment_get', () => {
     const attemptDir = `${dataDir}/runs/run-1/data/p0-dsh-exec-rep1/attempt-2`
     const mission = {
       ...base,
-      dataDir,
+      ...attemptDirsOf(dataDir),
       get: (missionId: string, runId?: string) => {
         const record = base.get(missionId, runId) as { mission: { attempts: Array<Record<string, unknown>> } }
         if (missionId !== 'p0-dsh-exec-rep1') return record
@@ -694,7 +694,7 @@ describe('eval_experiment_get', () => {
   })
 
   it('answers a draft with its row and an empty index', async () => {
-    const { composeExperimentGet } = await import('../src/experiment-get.ts')
+    const { composeExperimentGet } = await import('../src/design/experiment-get.ts')
     const draft = {
       id: 'experiment:e1', experimentId: 'e1', legacy: false, name: 'draft', planPath: '/abs/plan.json', runId: null,
       status: 'draft', statusDetail: null, snapshot: { registry: 'reg', datasetId: 'set', commit: 'c'.repeat(40) },

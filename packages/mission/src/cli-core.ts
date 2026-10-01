@@ -21,15 +21,29 @@ export interface CliIo {
   stderr: (line: string) => void
 }
 
+/**
+ * Machine-readable output versions. A script parses `list --json` / `get
+ * --json` and checks `schema` instead of slicing padded columns; a breaking
+ * change to either document bumps the trailing number.
+ */
+export const LIST_SCHEMA = 'dsh-mission.list/1'
+export const GET_SCHEMA = 'dsh-mission.get/1'
+
+/** Value-less flags, per command (every other `--flag` takes a value — `submit --json JSON` included). */
+const BOOLEAN_FLAGS: Record<string, readonly string[]> = { list: ['--json'], get: ['--json'] }
+
 const USAGE = `usage: dsh-mission <command> [args] [--data-dir DIR]
 commands:
   run create --template FILE [--id ID] [--meta JSON]
   run lint --template FILE                      lint a template (errors refuse; exit 1 on errors)
   run list
   run status RUN_ID                             five-bucket projection table
+  run annotate RUN_ID --ns NS --payload JSON    append a run-level annotation (identical = no-op)
+  run annotations RUN_ID [--ns NS]              run-level annotations as JSON
   create [--run ID] [--id ID] [--title T] [--label k=v]... [--depends-on a,b] [--scheduled-at MS]
-  list [--run ID] [--bucket B] [--label k=v]...
-  get MISSION_ID [--run ID]
+  list [--run ID] [--bucket B] [--label k=v]... [--json]
+                                                --json: one JSON document {schema: "${LIST_SCHEMA}", missions: [...]}
+  get MISSION_ID [--run ID] [--json]            --json: adds {schema: "${GET_SCHEMA}"} to the detail document
   transition MISSION_ID TO [--note N] [--run ID]
   submit MISSION_ID [--file SRC[:DEST]]... [--json JSON | --json-file F] [--to TO] [--checkpoint NAME] [--run ID]
   annotate MISSION_ID --ns NS --payload JSON [--run ID]
@@ -56,14 +70,29 @@ interface Parsed {
   positionals: string[]
 }
 
+/** The command word: the first token that is neither a flag nor a flag's value. */
+function commandWord(argv: readonly string[]): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] as string
+    if (!arg.startsWith('--')) return arg
+    i++
+  }
+  return undefined
+}
+
 function parse(argv: readonly string[]): Parsed {
   const flags = new Map<string, string[]>()
   const positionals: string[] = []
   let dataDir = ''
   const command: string[] = []
+  const booleans = BOOLEAN_FLAGS[commandWord(argv) ?? ''] ?? []
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] as string
     if (arg === '--help' || arg === '-h') throw new Error(USAGE)
+    if (booleans.includes(arg)) {
+      flags.set(arg, ['true'])
+      continue
+    }
     if (arg.startsWith('--')) {
       const value = argv[i + 1]
       if (value === undefined || value.startsWith('--')) throw new Error(`${arg} requires a value\n\n${USAGE}`)
@@ -80,7 +109,7 @@ function parse(argv: readonly string[]): Parsed {
     // The first one or two positionals form the command path (e.g. `run lint`).
     if (command.length === 0 && (arg === 'run')) command.push(arg)
     else if (command.length === 1 && command[0] === 'run' && positionals.length === 0
-      && ['create', 'lint', 'list', 'status'].includes(arg)) command.push(arg)
+      && ['create', 'lint', 'list', 'status', 'annotate', 'annotations'].includes(arg)) command.push(arg)
     else positionals.push(arg)
   }
   if (command.length === 0) {
@@ -175,7 +204,7 @@ function printStatus(io: CliIo, service: MissionService, runId: string): void {
   io.stdout(`${renderStatus(service, runId)}\n`)
 }
 
-function missionDetail(run: RunRecord, missionId: string): unknown {
+function missionDetail(run: RunRecord, missionId: string): Record<string, unknown> {
   const mission = run.missions.find(m => m.id === missionId)
   return { runId: run.id, mission }
 }
@@ -258,6 +287,27 @@ export async function runCli(argv: readonly string[], io: CliIo, tty: CliTty = {
         printStatus(io, service, id)
         return 0
       }
+      case 'run annotate': {
+        const id = parsed.positionals[0]
+        if (id === undefined) {
+          io.stderr(`run annotate requires a RUN_ID\n\n${USAGE}`)
+          return 2
+        }
+        const ns = requireFlag(parsed, '--ns')
+        const payload = parseJson(requireFlag(parsed, '--payload'), '--payload')
+        const result = await service.annotateRun(id, ns, payload, { by: 'cli' })
+        io.stdout(result.added ? 'run annotation appended\n' : 'identical run annotation already present (no-op)\n')
+        return 0
+      }
+      case 'run annotations': {
+        const id = parsed.positionals[0]
+        if (id === undefined) {
+          io.stderr(`run annotations requires a RUN_ID\n\n${USAGE}`)
+          return 2
+        }
+        io.stdout(`${JSON.stringify(service.runAnnotations(id, flag(parsed, '--ns')), null, 2)}\n`)
+        return 0
+      }
       case 'create': {
         const labels = parseLabels(parsed)
         const dependsRaw = flag(parsed, '--depends-on')
@@ -290,6 +340,10 @@ export async function runCli(argv: readonly string[], io: CliIo, tty: CliTty = {
           ...(bucket !== undefined ? { bucket } : {}),
           ...(labels !== undefined ? { labels } : {}),
         })
+        if (flag(parsed, '--json') !== undefined) {
+          io.stdout(`${JSON.stringify({ schema: LIST_SCHEMA, missions: views }, null, 2)}\n`)
+          return 0
+        }
         for (const view of views) io.stdout(`${rowLine(view)}\n`)
         io.stdout(`(${views.length} mission(s))\n`)
         return 0
@@ -301,7 +355,9 @@ export async function runCli(argv: readonly string[], io: CliIo, tty: CliTty = {
           return 2
         }
         const { run, mission } = service.get(id, runId)
-        io.stdout(`${JSON.stringify(missionDetail(run, mission.id), null, 2)}\n`)
+        const detail = missionDetail(run, mission.id)
+        const document = flag(parsed, '--json') !== undefined ? { schema: GET_SCHEMA, ...detail } : detail
+        io.stdout(`${JSON.stringify(document, null, 2)}\n`)
         return 0
       }
       case 'transition': {

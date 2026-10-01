@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { declaredEffort, effortEvidence, frozenConfigurationOptions, parseEffortEvidence, requireEffortAdmission } from '../src/frozen-configuration.ts'
 import type { DelegationConfiguration, LocalAgentFace } from '../src/faces.ts'
-import { hashConditionDocument } from '../src/hash.ts'
+import { hashConditionDocument } from '../src/contract/hash.ts'
 
 const admitted: DelegationConfiguration = { revision: 4, selection: { model: { mode: 'inherit' }, effort: { mode: 'inherit' } }, resolved: { effort: 'high' } }
 describe('frozen configuration', () => {

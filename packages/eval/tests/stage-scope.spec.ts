@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { planItemFacts, rubricFacts } from '../src/plan-items.ts'
-import { buildRubricWeightTable, inStageScope, leafStages, rubricWeightRows } from '../src/weights.ts'
+import { planItemFacts, rubricFacts } from '../src/design/plan-items.ts'
+import { buildRubricWeightTable, inStageScope, leafStages, rubricWeightRows } from '../src/judge/weights.ts'
 import type { DatasetsFace } from '../src/faces.ts'
 
 /**

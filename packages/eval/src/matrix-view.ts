@@ -18,9 +18,9 @@
  * the only way "why is this cell red" ever gets a straight answer.
  * @module @khorsheed/dsh-eval
  */
-import { canonicalJson } from './hash.ts'
+import { canonicalJson } from './contract/hash.ts'
 import { conditionFactors, conditionLeaves } from './read.ts'
-import { isJudgedOrBeyond } from './experiments.ts'
+import { isJudgedOrBeyond } from './design/experiments.ts'
 import type {
   EvalMatrixCell, EvalMatrixColumn, EvalMatrixFactorValues, EvalMatrixGroup, EvalMatrixRep,
   EvalMatrixRow, EvalMatrixSummary, EvalMatrixView, EvalRepDot,

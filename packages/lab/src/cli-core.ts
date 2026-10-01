@@ -243,6 +243,33 @@ function childProcessExec(): Exec {
   })
 }
 
+/** The `dsh-mission get --json` document version this CLI reads (mission T89). */
+export const MISSION_GET_SCHEMA = 'dsh-mission.get/1'
+
+const OLD_MISSION_GET_HINT = 'dsh-mission on PATH predates `dsh-mission get --json` (dsh-mission T89) — '
+  + 'upgrade the dsh-mission CLI; lab reads only the schema-versioned document'
+
+/**
+ * Parse `dsh-mission get --json`.
+ * @param stdout - the CLI's output.
+ * @returns the mission snapshot.
+ * @throws when the output is not a `dsh-mission.get/1` document carrying a mission.
+ */
+export function parseMissionGet(stdout: string): { mission: MissionSnapshot } {
+  let document: unknown
+  try {
+    document = JSON.parse(stdout)
+  } catch {
+    throw new Error('dsh-mission get --json did not print JSON')
+  }
+  const doc = document as { schema?: unknown; mission?: unknown } | null
+  if (doc?.schema !== MISSION_GET_SCHEMA) {
+    throw new Error(`dsh-mission get --json printed schema ${JSON.stringify(doc?.schema ?? null)}; lab reads ${MISSION_GET_SCHEMA}`)
+  }
+  if (typeof doc.mission !== 'object' || doc.mission === null) throw new Error('dsh-mission get --json carried no mission')
+  return { mission: doc.mission as MissionSnapshot }
+}
+
 /**
  * The CLI's mission face over the `dsh-mission` bin. Every verb the mission
  * CLI exposes is wired: set-refs / add-artifact / add-checkpoint / annotate /
@@ -250,7 +277,7 @@ function childProcessExec(): Exec {
  * failure with readable stderr — thrown here so LabService's registration
  * discipline (warn and skip) applies uniformly.
  */
-function cliMissionFace(exec: Exec): MissionFace {
+export function cliMissionFace(exec: Exec): MissionFace {
   const checked = async (argv: string[], what: string): Promise<void> => {
     const result = await exec(argv)
     if (result.exitCode !== 0) {
@@ -295,11 +322,17 @@ function cliMissionFace(exec: Exec): MissionFace {
       throw new Error(`dsh-mission is-releasable failed (exit ${result.exitCode}): ${result.stderr.trim()}`)
     },
     async get(missionId, runId) {
+      // `--json` LAST (T89): the schema-versioned document, and on a mission
+      // CLI predating it a value-less-flag refusal the hint below names.
       const argv = ['dsh-mission', 'get', missionId]
       if (runId !== undefined) argv.push('--run', runId)
+      argv.push('--json')
       const result = await exec(argv)
-      if (result.exitCode !== 0) throw new Error(`dsh-mission get failed (exit ${result.exitCode}): ${result.stderr.trim()}`)
-      return JSON.parse(result.stdout) as { mission: MissionSnapshot }
+      if (result.exitCode !== 0) {
+        if (result.stderr.includes('--json requires a value')) throw new Error(OLD_MISSION_GET_HINT)
+        throw new Error(`dsh-mission get failed (exit ${result.exitCode}): ${result.stderr.trim()}`)
+      }
+      return parseMissionGet(result.stdout)
     },
   }
 }

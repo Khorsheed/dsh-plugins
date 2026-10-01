@@ -71,7 +71,7 @@
 # / `subagent_kimi` 不再由 provider patch 挂在 profile 根，而是各 provider 包
 # 自己的 `./tool` 组合入口，只有点名该行的 agent 预设才授予它——本实例的 eval
 # 预设不点名，工具因此天然缺席（此前的 `tools: none` 覆盖行随折叠一并撤掉）。
-# provider 行照挂：编排器驱动选手走 local-agent 门面（`packages/eval/src/run.ts`
+# provider 行照挂：编排器驱动选手走 local-agent 门面（`packages/eval/src/run/run.ts`
 # 只用 `LocalAgentFace`），`/codex login`、`/kimi status` 这些动词也在 provider
 # 上，两条路都不经这三个工具，评测流不变。
 #

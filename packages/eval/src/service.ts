@@ -9,24 +9,24 @@
  * @module @khorsheed/dsh-eval
  */
 import { resolve } from 'node:path'
-import { hashConditionDocument, hashHome, type HomeHash } from './hash.ts'
-import { writeEvalReport, type ReportWrite } from './report.ts'
-import { CONDITION_SCHEMA_ID } from './schema.ts'
+import { hashConditionDocument, hashHome, type HomeHash } from './contract/hash.ts'
+import { writeEvalReport, type ReportWrite } from './report/report.ts'
+import { CONDITION_SCHEMA_ID } from './contract/schema.ts'
 import {
   conditionDiagnostics, expandHome, validatePlan,
   type EvalDiagnostic, type PlanValidation, type ValidatePlanOptions,
-} from './validate.ts'
-import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions } from './template.ts'
+} from './contract/validate.ts'
+import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions } from './contract/template.ts'
 import {
   defaultStateRoot, runPlan, EvalRunRefused, type RunDeps, type RunExperiment, type RunOptions, type RunReport,
-} from './run.ts'
-import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport, type FinalizeUnitsFace } from './finalize.ts'
+} from './run/run.ts'
+import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport, type FinalizeUnitsFace } from './run/finalize.ts'
 import {
   EvalRunJobs,
   type EvalRunHandle,
   type EvalRunOutput,
   type EvalRunStatus,
-} from './job.ts'
+} from './run/job.ts'
 import {
   EvalReadRefused,
   diffConditions,
@@ -41,36 +41,36 @@ import {
 } from './read.ts'
 import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
 import { conditionPathIn, setConditionEndpoint as writeConditionEndpoint } from './condition-edit.ts'
-import { draftExperiment as writeDraft, draftOptions as readDraftOptions } from './draft.ts'
-import { writeAnalysisFile, type AnalysisWriteResult } from './analysis-write.ts'
+import { draftExperiment as writeDraft, draftOptions as readDraftOptions } from './design/draft.ts'
+import { writeAnalysisFile, type AnalysisWriteResult } from './design/analysis-write.ts'
 import {
   conditionLibraryDir, conditionLibraryRoot, EvalExperimentError, readExperiment,
   type ExperimentRecord,
-} from './experiment-store.ts'
-import { listAnalysisFiles, readExperimentArtifact } from './experiment-artifact.ts'
-import { listItemMaterials, previewJudgePrompt, readDatasetFile, readJudgePrompt, type PinnedDataset } from './item-materials.ts'
+} from './design/experiment-store.ts'
+import { listAnalysisFiles, readExperimentArtifact } from './design/experiment-artifact.ts'
+import { listItemMaterials, previewJudgePrompt, readDatasetFile, readJudgePrompt, type PinnedDataset } from './design/item-materials.ts'
 import { readFile as readTextFile } from 'node:fs/promises'
-import { composeExperimentGet, type EvalExperimentGetView } from './experiment-get.ts'
-import { importExperiments, type ImportReport } from './import.ts'
-import { recordArchive, recordClosure } from './closure.ts'
-import { experimentDetail, experimentRunIds, listExperiments, pairRun, readPlans, runsForItem } from './experiments.ts'
-import { EvalPlanEditRefused, writePlanNumbers } from './plan-numbers.ts'
-import { planEstimate, planItemFacts } from './plan-items.ts'
+import { composeExperimentGet, type EvalExperimentGetView } from './design/experiment-get.ts'
+import { importExperiments, type ImportReport } from './design/import.ts'
+import { recordArchive, recordClosure } from './report/closure.ts'
+import { experimentDetail, experimentRunIds, listExperiments, pairRun, readPlans, runsForItem } from './design/experiments.ts'
+import { EvalPlanEditRefused, writePlanNumbers } from './design/plan-numbers.ts'
+import { planEstimate, planItemFacts } from './design/plan-items.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
 import { readCellArtifact } from './cell-artifact.ts'
-import { judgeQueueView, writeHumanFinal } from './judge-bench.ts'
+import { judgeQueueView, writeHumanFinal } from './judge/judge-bench.ts'
 import { cellAnswersView } from './answers.ts'
 import { pivotMatrix, type MatrixInputCell } from './matrix-view.ts'
-import { conditionDiffView, conditionsView, provisionChecks, reviewPlan } from './review.ts'
-import { projectFinalize, runReportView } from './report-view.ts'
+import { conditionDiffView, conditionsView, provisionChecks, reviewPlan } from './design/review.ts'
+import { projectFinalize, runReportView } from './report/report-view.ts'
 import {
   readExportState, recordExportNote, reexportDirOf,
   type EvalExportNote,
-} from './export-note.ts'
+} from './report/export-note.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsFace, DatasetsRegistryFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
-  MissionAnnotateFace, MissionExportRemoteFace,
+  MissionAnnotateFace, MissionExportFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
 } from './faces.ts'
 import { isDatasetsRegistryFace } from './faces.ts'
@@ -90,13 +90,14 @@ import type {
 export class EvalContractError extends Error {}
 
 /**
- * The export verbs' refusal. mission's Remote is where the leak gate lives, so
- * a composition without it gets no export at all — not an export with the gate
- * re-implemented on this side.
+ * The export verbs' refusal. mission's service face is where the leak gate
+ * lives (its gated export verbs, T89), so a composition without them gets no
+ * export at all — not an export with the gate re-implemented on this side.
  */
 const MISSION_EXPORT_ABSENT = new EvalReadRefused(
-  'no mission Remote face: the bundle export and its guarded-layer gate live there, so this composition cannot export '
-  + '— mount the dsh-mission plugin on a host with the Typert gateway, or export with the dsh-mission CLI',
+  'no mission export face: the bundle export and its guarded-layer gate live in the dsh-mission plugin '
+  + '(its exportPlanGated / exportRunGated verbs), so this composition cannot export '
+  + '— mount dsh-mission (an older one without those verbs needs upgrading), or export with the dsh-mission CLI',
 )
 
 /**
@@ -1057,7 +1058,7 @@ export class EvalService {
    *
    * The digest read is why this verb is async: the hash the「题面一致」
    * invariant compares lives in `materialization.json` beside each attempt,
-   * not in the ledger. A composition whose mission face reports no `dataDir`
+   * not in the ledger. A composition whose mission face lacks `attemptDataDir`
    * simply gets `unverifiable` — the matrix never invents a hash.
    * @param runId - the run to arrange.
    * @param options - which factor is the column, what is banded, what is pinned.
@@ -1082,7 +1083,7 @@ export class EvalService {
       state: cell.state,
       bucket: cell.bucket,
       inStateMs: cell.inStateMs,
-      materializationSha: await materializationShaOf(mission.dataDir, runId, cell.missionId, cell.attempt),
+      materializationSha: await materializationShaOf(mission, runId, cell.missionId, cell.attempt),
       fingerprint: cell.refs.fingerprint,
     })))
     return pivotMatrix({
@@ -1225,7 +1226,7 @@ export class EvalService {
   }
 
   /**
-   * The export dialog's first step, forwarded to mission's own Remote:
+   * The export dialog's first step, forwarded to mission's gated export verb:
    * which layers would be written and which of them are GUARDED
    * (`modelFacing: false`, resolved through the datasets probe).
    *
@@ -1233,14 +1234,15 @@ export class EvalService {
    * fail-closed gate are mission's, and a second implementation of a leak gate
    * is a second place for it to be wrong — eval relays the caller's
    * confirmations and can neither narrow nor widen them.
-   * @param agent - the calling agent, passed through unchanged.
+   * @param _agent - the calling agent; unused since T89 (the service face
+   *   needs none), kept so the Remote signature does not move.
    * @param request - run, output directory, layers, snapshot reference.
-   * @throws {@link EvalReadRefused} when mission's Remote is not mounted.
+   * @throws {@link EvalReadRefused} when mission's export face is absent.
    */
-  exportPlan(agent: unknown, request: EvalExportPlanRequest): Promise<EvalExportPlanView> {
-    const remote = this.missionExport()
-    if (remote === undefined) return Promise.reject(MISSION_EXPORT_ABSENT)
-    return remote.exportPlan(agent, request)
+  exportPlan(_agent: unknown, request: EvalExportPlanRequest): Promise<EvalExportPlanView> {
+    const mission = this.missionExport()
+    if (mission === undefined) return Promise.reject(MISSION_EXPORT_ABSENT)
+    return mission.exportPlanGated(request)
   }
 
   /**
@@ -1256,15 +1258,15 @@ export class EvalService {
    * which is how a walkthrough with every surface on screen still ended at a
    * terminal (I5·T39 · G15). Where the bundle went is recorded as a run-level
    * note in the same breath, because `run.meta` cannot say (I5·T53).
-   * @param agent - the calling agent, passed through unchanged.
+   * @param _agent - unused since T89, see {@link exportPlan}.
    * @param request - the export plus the confirmed guarded layers.
    * @param by - caller tag recorded against the run's export note.
-   * @throws {@link EvalReadRefused} when mission's Remote is not mounted.
+   * @throws {@link EvalReadRefused} when mission's export face is absent.
    */
-  async exportRun(agent: unknown, request: EvalExportRunRequest, by?: string): Promise<EvalExportResultView> {
-    const remote = this.missionExport()
-    if (remote === undefined) throw MISSION_EXPORT_ABSENT
-    const exported = await remote.exportRun(agent, request)
+  async exportRun(_agent: unknown, request: EvalExportRunRequest, by?: string): Promise<EvalExportResultView> {
+    const mission = this.missionExport()
+    if (mission === undefined) throw MISSION_EXPORT_ABSENT
+    const exported = await mission.exportRunGated(request)
     return await this.completeExport(exported, request, by)
   }
 
@@ -1285,15 +1287,15 @@ export class EvalService {
    * reader goes through the dialog, which is the only place a guarded layer is
    * ever confirmed. The old directory is left exactly as it was — somebody may
    * have quoted from it.
-   * @param agent - the calling agent, passed through to mission unchanged.
+   * @param _agent - unused since T89, see {@link exportPlan}.
    * @param request - the run to export again.
    * @param by - caller tag recorded against the new export note.
-   * @throws {@link EvalReadRefused} when mission's Remote is absent, or when
-   *   this run has no recorded export to repeat.
+   * @throws {@link EvalReadRefused} when mission's export face is absent, or
+   *   when this run has no recorded export to repeat.
    */
-  async reexportRun(agent: unknown, request: EvalReexportRequest, by?: string): Promise<EvalExportResultView> {
-    const remote = this.missionExport()
-    if (remote === undefined) throw MISSION_EXPORT_ABSENT
+  async reexportRun(_agent: unknown, request: EvalReexportRequest, by?: string): Promise<EvalExportResultView> {
+    const exporter = this.missionExport()
+    if (exporter === undefined) throw MISSION_EXPORT_ABSENT
     const mission = this.requireMissionRead('export a run again')
     const note = readExportState(mission, request.runId).note
     if (note === null) {
@@ -1321,7 +1323,7 @@ export class EvalService {
       // FRESH plan. A layer that became guarded meanwhile refuses the call.
       confirmed: [],
     }
-    const exported = await remote.exportRun(agent, repeated)
+    const exported = await exporter.exportRunGated(repeated)
     return await this.completeExport(exported, repeated, by)
   }
 
@@ -1544,11 +1546,11 @@ export class EvalService {
     return typeof mission?.annotate === 'function' ? (mission as MissionAnnotateFace) : undefined
   }
 
-  /** mission's own Remote service — the leak gate's one home. */
-  private missionExport(): MissionExportRemoteFace | undefined {
-    const remote = this.hosts?.get('missionRemote') as Partial<MissionExportRemoteFace> | undefined
-    return typeof remote?.exportPlan === 'function' && typeof remote.exportRun === 'function'
-      ? (remote as MissionExportRemoteFace)
+  /** mission's gated export verbs on its service face — the leak gate's one home. */
+  private missionExport(): MissionExportFace | undefined {
+    const mission = this.hosts?.get('mission') as Partial<MissionExportFace> | undefined
+    return typeof mission?.exportPlanGated === 'function' && typeof mission.exportRunGated === 'function'
+      ? (mission as MissionExportFace)
       : undefined
   }
 
@@ -1599,6 +1601,15 @@ export class EvalService {
     // into run.meta and is never compared. Absent catalog, absent line.
     const capabilityCatalog = this.hosts.get('capabilityCatalog') as CapabilityCatalogFace | undefined
     const deps: Partial<RunDeps> & { stateRoot?: string } = {}
+    if (mission !== undefined && typeof (mission as Partial<MissionFace>).attemptDataDir !== 'function') {
+      // A mission older than the attemptDataDir verb (T89). The run loop
+      // writes into the attempt's run-data directory, and the layout is
+      // mission's to say — refuse by name instead of guessing a path.
+      return Promise.reject(new EvalRunRefused(
+        'the mounted dsh-mission has no attemptDataDir verb (older than its 0.2.0 line): '
+        + 'the run loop asks mission where an attempt\'s run data goes — upgrade dsh-mission alongside dsh-eval',
+      ))
+    }
     if (datasets !== undefined) deps.datasets = datasets
     if (mission !== undefined) deps.mission = mission
     if (localAgent !== undefined) deps.localAgent = localAgent
@@ -1850,37 +1861,37 @@ export class EvalService {
   }
 }
 
-export { EvalRunRefused } from './run.ts'
-export type { RunOptions, RunReport, RunCellReport, RunSubset } from './run.ts'
-export { EvalFinalizeRefused } from './finalize.ts'
-export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
+export { EvalRunRefused } from './run/run.ts'
+export type { RunOptions, RunReport, RunCellReport, RunSubset } from './run/run.ts'
+export { EvalFinalizeRefused } from './run/finalize.ts'
+export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './run/finalize.ts'
 export { EvalReadRefused } from './read.ts'
-export { ANALYSIS_WRITE_PREFIX, EvalWriteRefused, resolveAnalysisWrite, writeAnalysisFile } from './analysis-write.ts'
-export type { AnalysisWriteResult, AnalysisWriteTarget } from './analysis-write.ts'
-export { decideDatasetVersion, DatasetVersionRefused } from './dataset-version.ts'
-export type { DatasetVersionCandidate, DatasetVersionDecision, DatasetVersionFace } from './dataset-version.ts'
+export { ANALYSIS_WRITE_PREFIX, EvalWriteRefused, resolveAnalysisWrite, writeAnalysisFile } from './design/analysis-write.ts'
+export type { AnalysisWriteResult, AnalysisWriteTarget } from './design/analysis-write.ts'
+export { decideDatasetVersion, DatasetVersionRefused } from './design/dataset-version.ts'
+export type { DatasetVersionCandidate, DatasetVersionDecision, DatasetVersionFace } from './design/dataset-version.ts'
 export {
   conditionLibraryDir, conditionLibraryRoot, createExperiment, EvalExperimentError, EXPERIMENT_ID_RE, EXPERIMENT_META_SCHEMA,
   experimentIdOfPlanPath, experimentsRoot, experimentSlug, listExperimentRecords, mintExperimentId, readExperiment,
-} from './experiment-store.ts'
-export type { CreateExperimentInput, ExperimentDataset, ExperimentMeta, ExperimentRecord } from './experiment-store.ts'
-export { listAnalysisFiles, readExperimentArtifact } from './experiment-artifact.ts'
-export { EvalImportRefused, importExperiments, parseImportSource } from './import.ts'
-export type { ImportedExperiment, ImportRegistryFace, ImportReport } from './import.ts'
+} from './design/experiment-store.ts'
+export type { CreateExperimentInput, ExperimentDataset, ExperimentMeta, ExperimentRecord } from './design/experiment-store.ts'
+export { listAnalysisFiles, readExperimentArtifact } from './design/experiment-artifact.ts'
+export { EvalImportRefused, importExperiments, parseImportSource } from './design/import.ts'
+export type { ImportedExperiment, ImportRegistryFace, ImportReport } from './design/import.ts'
 export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunLedgerStatus, RunStatusReport } from './read.ts'
-export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, pairRun, readPlans, runsForItem } from './experiments.ts'
-export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
+export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, pairRun, readPlans, runsForItem } from './design/experiments.ts'
+export { conditionDiffView, conditionsView, reviewPlan } from './design/review.ts'
 export { judgeSessionsOf, materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
 export { ARTIFACT_MAX_BYTES, ARTIFACT_MAX_ENTRIES, TEXT_EXTENSIONS, extensionOf, isInside, readCellArtifact } from './cell-artifact.ts'
 export { DEFAULT_STUCK_MS, pivotMatrix, repDot } from './matrix-view.ts'
-export { bundleDirOf, exportDirCandidates, projectFinalize, projectReport, runReportView } from './report-view.ts'
+export { bundleDirOf, exportDirCandidates, projectFinalize, projectReport, runReportView } from './report/report-view.ts'
 export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
-export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
+export type { ExperimentsInput, ExperimentStatusInput } from './design/experiments.ts'
 export { EvalProvisionRefused } from './provision.ts'
-export { EvalDraftRefused, draftExperiment, draftOptions } from './draft.ts'
-export { EvalPlanEditRefused, writePlanNumbers } from './plan-numbers.ts'
-export type { PlanNumberChange, PlanNumberField, PlanNumbers, PlanNumbersReport } from './plan-numbers.ts'
-export { planQuestionOf } from './plan-question.ts'
-export type { DraftConditionEdit, DraftExperimentInput, DraftOptions, DraftWrite } from './draft.ts'
+export { EvalDraftRefused, draftExperiment, draftOptions } from './design/draft.ts'
+export { EvalPlanEditRefused, writePlanNumbers } from './design/plan-numbers.ts'
+export type { PlanNumberChange, PlanNumberField, PlanNumbers, PlanNumbersReport } from './design/plan-numbers.ts'
+export { planQuestionOf } from './design/plan-question.ts'
+export type { DraftConditionEdit, DraftExperimentInput, DraftOptions, DraftWrite } from './design/draft.ts'
 export type { ProvisionReport } from './provision.ts'
 export type { ProvisionCheck } from './effective.ts'

@@ -13,9 +13,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cellAnswersView } from '../src/answers.ts'
 import { ARTIFACT_MAX_BYTES } from '../src/cell-artifact.ts'
-import { attemptDataDir } from '../src/cell-detail.ts'
 import { EvalReadRefused } from '../src/read.ts'
-import { cleanupTmp, tmpTree } from './helpers.ts'
+import { cleanupTmp, tmpTree, attemptDirsOf } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -40,7 +39,7 @@ function face(dataDir: string | undefined) {
     'p0-full-rep1': [],
   }
   return {
-    ...(dataDir === undefined ? {} : { dataDir }),
+    ...(dataDir === undefined ? {} : attemptDirsOf(dataDir)),
     runStatus: (runId: string) => {
       if (runId !== RUN) throw new Error(`unknown run: ${runId}`)
       return {
@@ -70,7 +69,7 @@ function face(dataDir: string | undefined) {
 describe('cellAnswers', () => {
   it('reads one 题: every group, its stage files by name, every verdict layer, the script output', async () => {
     const dataDir = tmpTree()
-    const lean = attemptDataDir(dataDir, RUN, 'p1-lean-rep1', 1)
+    const lean = attemptDirsOf(dataDir).attemptDataDir(RUN, 'p1-lean-rep1', 1)
     mkdirSync(join(lean, 'archive', 'workspace'), { recursive: true })
     writeFileSync(join(lean, 'archive', 'workspace', 'stage1.md'), '# 方案\n\n结论是可以合并。')
     // The attempt directory's copy loses to the archive's.
