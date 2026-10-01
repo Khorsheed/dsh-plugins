@@ -46,9 +46,9 @@ dev 场景包的开发模式 preset（`profiles/dev/presets/dev`）已带此行�
 
 ## Compatibility
 
-- **npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）**：✅ 完整——工具注册进宿主 tools 注册表并贡献提示词段；0.1.5 官方插件列表的「会话插件」组按 preset 组合呈现本行（短名标题、状态徽标、活挂载相位点）。core 缺席时组合照常挂载，该行保持 pending（注册表审计显示 `waiting for datasets`），core 出现后行激活并注册工具。
-- **源码线（deepseek-harness master）**：✅（verifiedHost: 0.1.5-rc.1）。
-- 低于 0.1.5 的宿主：preset 组合与工具行机制在更早的线上已存在，但「会话插件」清单视图是 0.1.5 的呈现——与 typesafe-tool 等伴生行同一档，minHost 钉 0.1.5-rc.1。
+- **npm 发布线（`@deepseek-ai/dsh@0.2.0-rc.2`）**：✅ 完整——工具注册进宿主 tools 注册表并贡献提示词段；官方插件列表的「会话插件」组按 preset 组合呈现本行（短名标题、状态徽标、活挂载相位点）。core 缺席时组合照常挂载，该行保持 pending（注册表审计显示 `waiting for datasets`），core 出现后行激活并注册工具。
+- **源码线（deepseek-harness master）**：✅（verifiedHost: 0.2.0-rc.2）。
+- T82 起只支持宿主 0.2.0 及以后（minHost 0.2.0-rc.2）：0.2.0 的 preset 是声明式 `@deepseek-ai/dsh-agent-preset` 行，web-eval 的 `eval` 预设按这一形态声明本行；0.1.x 宿主请停留在旧发布线。
 - **发布顺序**：引用伴生行的 pack 必须先有伴生包被发布 / 安装；行解析失败会让该 preset 组合报 broken（实例 boot 不受影响），不是静默降级。
 
-**版本线对照**：`0.1.0` 起支持宿主 `0.1.5-rc.1` 及以后。
+**版本线对照**：`0.1.0` 支持宿主 `0.1.5-rc.1` 及以后；下一版起只支持宿主 `0.2.0-rc.2` 及以后。

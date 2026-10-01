@@ -157,38 +157,39 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 ### 冻结决策 12 的执行点：eval 预设
 
-「工具按域开放」限的是 profile 根上注册的那批工具；另一半由**预设**限。评测实例的 agent 走 pack 自带的 `eval` 预设（`presets/eval/`），它的组成表是随发行版的 `standard` 减去两类行：
+「工具按域开放」限的是 profile 根上注册的那批工具；另一半由**预设**限。评测实例的 agent 走 pack 自带的 `eval` 预设（`presets/` 里的声明式 bundle，一行 `preset-eval`），它的组成表是随发行版的 `standard` 减去两类行：
 
 - **能执行宿主命令的**：`tool-bash` / `tool-pwsh`；`tool-workflow` 与它依赖的 `workflow-ptc`——workflow 脚本是**模型写的 JavaScript**，在 Node worker 线程里当作 async 函数体执行，够得着 `node:child_process`，全程没有 shell；`tool-ralph` 驱动同一个引擎，一起去掉。
 - **词汇与本线冲突的**：`plan-mode`。它的提示词规划的是**实现**并明令不要写文件，而这个 agent 的产出恰恰是写到盘上、由人批准的 `dataseek.plan/1`。一个会话里两个「plan」是混淆，不是能力缺口。
 
 留下的是读、起草，以及委派给**跑在同一个预设上**的 agent：进程内子 agent 继承父 agent 的预设（宿主的 `subagent-in-process-driver/tests/preset-inheritance.spec.ts` 就是这条的证明），所以委派递不出这个预设本身没有的 shell。docker 从来不在这张表上——`lab` 一个模型可见工具都不注册，容器动作全在编排器的服务面。
 
-**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）：`install.sh` 与 `update.sh` 都把 `presets/eval/` 整目录覆盖到 `$DSH_HOME/.agent-presets/eval`，`cordis.patch.yml` 把 `agent-presets` 的 `default` 钉成 `eval`。个人偏好另起一个预设 id，别改这个。
+**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个只挂 `preset-eval` 一行的声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（T82 迁移时按 sha256 核过；`scripts/web-eval-preset-bundle.spec.ts` 钉住这个摘要——改组成就是换装置，要有意改摘要并开新 run）。个人偏好另起一个预设 id，别改这个。
 
 **怎样确认实例正在用它**，三层，从便宜到贵——组成层、文件层、会话层：
 
 ```sh
-# 组成层：默认预设是 eval，预设目录已就位
-dsh --profile web-eval --dump-config | grep -A3 'id: agent-presets'   # → default: eval
-ls "$DSH_HOME/.agent-presets/eval"                                     # → agent.cordis.yml  preset.yml
+# 组成层：默认预设是 eval，preset-eval 行在组成里
+dsh --profile web-eval --dump-config | grep -A3 'id: agent-preset-registry'   # → default: eval
+dsh --profile web-eval --dump-config | grep -n 'id: preset-eval'
 
 # 文件层：去掉注释后，组成里没有任何执行类行
-grep -vE '^\s*#' "$DSH_HOME/.agent-presets/eval/agent.cordis.yml" \
-  | grep -nE 'tool-bash|tool-pwsh|tool-workflow|tool-ralph|docker'     # → 无输出
+P="$DSH_HOME/profiles/web-eval/presets/cordis.patch.yml"
+grep -vE '^\s*#' "$P" | grep -nE 'tool-bash|tool-pwsh|tool-workflow|tool-ralph|docker'   # → 无输出
 
 # 组成层：eval 预设不点名任何委派工具行（家族折叠后工具按预设授予，不点名即缺席）
-grep -vE '^\s*#' "$DSH_HOME/.agent-presets/eval/agent.cordis.yml" \
-  | grep -nE 'local-agent-(kimi|codex|claude-code)/tool'              # → 无输出
+grep -vE '^\s*#' "$P" | grep -nE 'local-agent-(kimi|codex|claude-code)/tool'              # → 无输出
 ```
 
-会话层要看界面：「设置 → Agent 预设」里当前默认应显示**评测模式**；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具，也没有任何 `subagent_<harness>`——一个默认会话看到的是 **35 个工具**（T21 时是 39，T27 关掉三个委派工具后是 36，I5·T46 摘掉 mission 的四个读工具、补上 `eval_cells` 后按增删算是 33；2026-09-17 3171 装到 `2c4476f8` 后实数 35 = 内建 21 + 插件 14：datasets 7、eval 5（含 T34 的 `eval_plan_draft`）、`subagent_dsh`、`list_capabilities`；没有 `mission_*`），进程内的 `subagent` 与 `subagent_fork` 仍在。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
+0.1.5 时代迁过来的 home 里若还留着 `$DSH_HOME/.agent-presets/eval`，0.2.0 不读它；`install.sh` 只提示可删，不替你删。
 
-**这条钉的是默认值，不是可达集。** 随发行版的 标准 / 代码 / 极简 / cordis 四个预设仍在名册上：apps/cli 的 `composeProfile` 把随发行版的预设根作为最后一层 overlay 无条件写进 `roots`，profile 层删不掉它们。人在界面里给一个空白会话改选「标准模式」就拿回了 Bash。决策 12 针对的是 **agent 误操作**——agent 没有切换自身预设的工具，切换是人的动作。
+会话层要看界面：「设置 → Agent 预设」的「自定义」组里应有**评测模式**并标「新任务默认」（T82 在 0.2.0-rc.2 临时实例上实拍过）；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具，也没有任何 `subagent_<harness>`——一个默认会话看到的是 **35 个工具**（T21 时是 39，T27 关掉三个委派工具后是 36，I5·T46 摘掉 mission 的四个读工具、补上 `eval_cells` 后按增删算是 33；2026-09-17 3171 装到 `2c4476f8` 后实数 35 = 内建 21 + 插件 14：datasets 7、eval 5（含 T34 的 `eval_plan_draft`）、`subagent_dsh`、`list_capabilities`；没有 `mission_*`），进程内的 `subagent` 与 `subagent_fork` 仍在。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
+
+**这条钉的是默认值，不是可达集。** 随发行版的 标准 / PTC / 极简 / cordis 四个内置预设仍在名册上：0.2.0 起它们是 `@deepseek-ai/dsh-web-app` bundle 里的 preset 行，profile 层删不掉它们。人在界面里给一个空白会话改选「标准模式」就拿回了 Bash。决策 12 针对的是 **agent 误操作**——agent 没有切换自身预设的工具，切换是人的动作。
 
 **这个预设够不到的执行类工具，已经不存在于 profile 根**（2026-09-30 家族折叠）：四家选手的委派工具 `subagent_codex` / `subagent_claude_code` / `subagent_kimi` 不再是 provider bundle patch 插在 profile 根的行，而是各 provider 包自己的 `./tool` 组合入口，只有点名它的 agent 预设才授予——本 pack 的 eval 预设不点名，所以这三个工具对评测会话天然缺席，patch 层连覆盖行都不用写。provider 行照挂：编排器经 local-agent 门面委派选手，`/codex login` 这类动词也照常。（折叠前的路径是 T27 给 `@khorsheed/dsh-local-agent-tool-subagent` 加 `tools: all | none` 开关、patch 把三行设成 `none`；取舍见 [eval 预设的 Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md)，该包已随折叠退役。）
 
-**第四家 `subagent_dsh` 仍是一条待关的路。** 它没有预设行——`local-agent-dsh` 的 DeepSeek 开关默认关，工具由控制器在开关 ON 时动态挂载，预设层够不着。默认状态下它一个工具都不注册（所以上面那份工具清单里没有它），但**人在「设置 → 本地 Agent」里打开那个开关，`subagent_dsh` 就会出现**。要彻底关上得改 provider 包，记在 T27 的 Agent Note 里。与决策 12 的其余部分一样，这钉的是默认值，不是可达集。
+**第四家 `subagent_dsh` 仍是一条待关的路。** 它没有预设行——`local-agent-dsh` 的 DeepSeek 开关默认关，工具由控制器在开关 ON 时动态挂载，预设层够不着。默认状态下它一个工具都不注册（所以上面那份工具清单里没有它），但**人在插件页「DSH 委派」卡片里打开「DeepSeek 委派」开关，`subagent_dsh` 就会出现**——而要 provision 或运行 dsh 条件恰恰得打开它：开关关着时 local-agent 名册里没有 dsh，provision 报 `unknown harness dsh`（见[受试 dsh 的版本跟着实例走](#受试-dsh-的版本跟着实例走)）。要彻底关上得改 provider 包，记在 T27 的 Agent Note 里。与决策 12 的其余部分一样，这钉的是默认值，不是可达集。
 
 ## 理想流程
 
@@ -310,11 +311,13 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 
 评测实例要独立的 `$DSH_HOME`，不与开发实例共享会话与凭据（环境隔离是评测的基本要求，见 `docs/ops.md` 的环境拓扑）。I1 到 I2 在宿主上直跑四家 CLI，只需要 node、git 与各家 CLI；I3 起需要 docker，题集级镜像、本地包镜像、白名单代理与凭证卷的清单见 [docs/architecture.md](docs/architecture.md) 的「运行环境」一节。
 
-**两个脚本第一步都是机器级前置检查，在动任何文件之前**：`dsh` 在 PATH 上、`dsh --version` 能跑、以及 `cordis.patch.yml` 里 pin 的 headless bundle 路径存在（它从该文件里读，不写死）。任一条不满足就打印缺什么并以退出码 2 退出，`$DSH_HOME` 与 `$DSH_HOME/.agent-presets/eval` 一个字节都不动——此前第一次 `dsh` 调用在脚本末尾，缺 `dsh` 的机器要先整目录覆盖预设、（源码模式还要）把每个成员构建打包一遍，才在最后一行失败。预设目录在被整目录替换之前会备份到 `$DSH_HOME/.agent-presets/.web-eval-backup.<pid>`，失败时 trap 会告诉你它在哪；`update.sh` 同样备份它覆盖的 pin 文件，并且此前根本没有 trap。
+**两个脚本第一步都是机器级前置检查，在动任何文件之前**：`dsh` 在 PATH 上、`dsh --version` 能跑且不低于 0.2.0-rc.2、以及 `cordis.patch.yml` 里 pin 的 headless bundle 路径存在（它从该文件里读，不写死）。任一条不满足就打印缺什么并以退出码 2 退出，`$DSH_HOME` 一个字节都不动。技能目录在被整目录替换之前会备份到 `$DSH_HOME/skills/.web-eval-backup.<pid>`，失败时 trap 会告诉你它在哪；`update.sh` 同样备份它覆盖的文件。
 
-**宿主线：本 profile 要求 `dsh` ≥ 0.1.5-rc.1**（评测家族六个包的 `dsh.compat.minHost` 与 `verifiedHost` 自 2026-09-11 起都写这条线；local-agent 家族自基线提交 `bb04c84` 起已是）。源码模式的前置检查里因此多一条**宿主线核对**：脚本读每个待打包成员 `package.json` 的 `dsh.compat.minHost`，与 `dsh --version` 比一次，低于任一成员就在动文件前退出（退出码 2）并逐行列出谁要求什么版本。这条检查只在源码模式有——npm 模式的成员由 registry 解析，本地没有 `package.json` 可读。它挡的是一种到不了安装期的失败：宿主偏低不会在装的时候报错，而是在**起实例时**从某个插件的 import 里抛一个缺失导出（本机测到两次：`@deepseek-ai/dsh-settings` 在 0.1.5 上没有 `settingsNamespace`，而 npm 上 0.2.0 的 context-guard / ui-shortcuts 会 import 它），或者更晚——装完能起、跑到 resume 轮才报 `childSession.snapshotEvents is not a function`。
+**宿主线：本 profile 只支持宿主 0.2.0 及以后（`dsh` ≥ 0.2.0-rc.2；用户 2026-10-01 定，T82）。** 0.2.0 的预设是声明式 `@deepseek-ai/dsh-agent-preset` 行、默认值走 `agent-preset-registry`，0.1.5 只认目录式预设，所以不做双线：宿主低于这条线时 `install.sh` 与 `update.sh` 都在动文件前退出（退出码 2），并给出能用的工具链（`PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH sh install.sh …`）。T82 用 rc-0.1.5-rc.1 工具链实跑过一次：退出码 2，home 为空。0.1.x 上的旧实例迁移见[把 0.1.5 实例切到 0.2.0](#把-015-实例切到-020)。
 
-`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 22（去重成员数——dump 里每个成员出现多次：层头加条目行，tool-subagent 只经 provider 条目出现）。
+源码模式的前置检查另有两条。**成员宿主线核对**：脚本读每个待打包成员 `package.json` 的 `dsh.compat.minHost`，与 `dsh --version` 比一次，低于任一成员就逐行列出谁要求什么版本（评测家族 eval / eval-tool / datasets / datasets-tool 的 `minHost` 与 `verifiedHost` 自 T82 起都是 0.2.0-rc.2）。**typert 宿主核对**：typert 生成读 `DSH_HARNESS`（默认 `~/code/deepseek-harness`）指的检出，它低于 0.2.0-rc.2 时同样退出。这些检查挡的是一种到不了安装期的失败：宿主偏低不会在装的时候报错，而是在**起实例时**从某个插件的 import 里抛一个缺失导出，或者更晚——装完能起、跑到 resume 轮才报错。
+
+`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 25（去重名字数——dump 里每个成员出现多次：层头加条目行。25 = 22 个 bundle（含本 profile 的 preset bundle）+ `local-agent-dsh-headless`（没有行，只是 headlessBundleDir 路径）+ eval 预设行点名的 `datasets-tool` 与 `eval-tool`）。T82 在 0.2.0-rc.2 临时实例上实装：25 个名字、205 行、默认预设 eval。
 
 **npm 模式**——成员全部从 npm registry 解析。成员全部上架后（I6）开箱即用；在此之前，未上架成员会在安装时报 registry 404（权威清单见 dsh-plugins 的 [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md)）：
 
@@ -337,13 +340,52 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 评测 pin 配置（冻结决策 2 到 4）属于装置而非个人偏好，**归 pack**：它们写在本 profile 的 `cordis.patch.yml` 里，`install.sh` 与 `update.sh` 都覆盖该文件——这是与 [dsh-dev](../dev/README.md) 唯一的 patch 层差异。留给用户层的后果是一次 update 之后实例可能静默换了沙箱档位或推理强度，而 run.meta 里记的还是旧值，报告的「受试对象一致」失去意义。个人偏好放 preset 层，不放这里。
 
-同理由**归 pack** 的还有 agent 预设与技能：`presets/eval/` 由两个脚本整目录覆盖到 `$DSH_HOME/.agent-presets/eval`，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）；`skills/eval-planning/` 同样整目录覆盖到 `$DSH_HOME/skills/eval-planning`——那是 `dsh-skill-filesystem` 扫的 `user-dsh` 根，eval 预设里的 `skill-filesystem` 行把它带进评测会话的技能卡。技能也是装置：它教的是 `eval_plan_draft` 这一个起草动词，以及批准 / 登录 / provision / 终评都不是 agent 的——这条线歪了，草稿就会变成没人批的 run。两者都落在 profile 目录**之外**（预设与技能名册都按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它们——见[卸载](#更新切换装卸单个成员卸载)。
+同理由**归 pack** 的还有 agent 预设与技能：预设是 profile 目录里的声明式 bundle `presets/`，随 profile 文件一起覆盖，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）；`skills/eval-planning/` 整目录覆盖到 `$DSH_HOME/skills/eval-planning`——那是 `dsh-skill-filesystem` 扫的 `user-dsh` 根，eval 预设里的 `skill-filesystem` 行把它带进评测会话的技能卡。技能也是装置：它教的是 `eval_plan_draft` 这一个起草动词，以及批准 / 登录 / provision / 终评都不是 agent 的——这条线歪了，草稿就会变成没人批的 run。技能落在 profile 目录**之外**（技能名册按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它；预设 bundle 在 profile 目录里，随 profile 一起走——见[卸载](#更新切换装卸单个成员卸载)。
 
 当前 pin（I2·T15 写入，I3·T27 补三行；M4'③ 起这几条的授予点在 pack 的 `eval` 预设的伴生行上，I5·T46 起 `mission-tool` 那一行不再挂）：`datasets-tool: authoring`、`eval-tool: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `headlessBundleDir` 与 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的路径——provider 写进作用域目录的是指向宿主安装的绝对符号链接，单元里悬空；这是机器级前置条件，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
 
 ## 更新、切换、装卸单个成员、卸载
 
-切换是同端口交接；`update.sh` 覆盖成员清单、lockfile、**`cordis.patch.yml`、`presets/eval/` 与 `skills/eval-planning/`**——评测 pin、agent 预设与技能都归 pack（见[安装](#安装)），这是与 [dsh-dev](../dev/README.md#更新) 的唯一差异；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile——pack 的 agent 预设与技能都不在这个目录下，要一并清掉再加 `rm -rf "$DSH_HOME/.agent-presets/eval" "$DSH_HOME/skills/eval-planning"`（留着它们无害：没有 profile 把预设钉成默认，技能也只是名册上多一条）。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
+切换是同端口交接；`update.sh` 覆盖成员清单、lockfile、**`cordis.patch.yml`、`presets/` 与 `skills/eval-planning/`**——评测 pin、agent 预设与技能都归 pack（见[安装](#安装)），这是与 [dsh-dev](../dev/README.md#更新) 的唯一差异；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile（预设 bundle 在里面，一起走）——pack 的技能不在这个目录下，要一并清掉再加 `rm -rf "$DSH_HOME/skills/eval-planning"`（留着无害：技能只是名册上多一条）。0.1.5 时代迁来的 home 若还有 `$DSH_HOME/.agent-presets/eval`，0.2.0 不读它，可一并删。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
+
+## 受试 dsh 的版本跟着实例走
+
+dsh 条件的受试 CLI 不是条件自己选的：`local-agent-dsh` 的 `cliLaunch` pin 成 `[dsh]`，宿主轮在**实例进程的 PATH** 上解析 `dsh`，容器轮用镜像里的 `/opt/dsh-headless`；条件 schema 里没有字段能指定工具链。所以实例换到 0.2.0 工具链上，宿主轮受试的 dsh 就是 0.2.0（T82 临时实例：进程 PATH 首位是 `~/.dsh-toolchains/rc-0.2.0-rc.2`，`dsh --version` 为 0.2.0-rc.2）。
+
+由此带来三件事（T82，2026-10-01）：
+
+- **旧条件保留，新条件另起。** 题库里写 `harness.version: 0.1.5-rc.1` 的 `dsh-lean` / `dsh-full` 与用它们的实验原样保留；0.2.0 的 `dsh-lean-0.2.0-rc.2` / `dsh-full-0.2.0-rc.2`（作用域 `d-*-020rc2`，`home.sha` 待 provision 回填）在题库分支 `t82-host020` 上，由协调者合入。
+- **版本不符只是警告。** provision 的顺序是解析作用域 → 凭据 → 有效配置核对 → 预设组装 → home 摘要 → 能力清单 → 锁；`harness.version` 与实际 CLI 不符在核对那一步报警告不报错，并且排在凭据之后——没配凭据时 provision 停在 `CREDENTIAL_ABSENT`，看不到这条警告。
+- **旧锁看起来仍「就绪」。** 条件页读的是旧锁（记的 CLI 是 0.1.5-rc.1），不重探；run 报告只记录委派实际的 cliVersion，不与条件比对。换宿主后要对新条件重新 provision，别拿旧锁直接开跑。
+
+已知缺口（记在 T82 的 Agent Note 里作后续）：`local-agent-dsh` 组装带预设的作用域时插入的是 `@deepseek-ai/dsh-agent-presets`（0.1.5 的目录式预设模块），0.2.0 工具链里没有这个包，带预设的 dsh 条件在 0.2.0 上预计组不出来，要等 provider 改成声明式 `@deepseek-ai/dsh-agent-preset` 行。另外，provision 或运行 dsh 条件前必须先在插件页打开「DeepSeek 委派」（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）。
+
+## 把 0.1.5 实例切到 0.2.0
+
+适用于 0.1.5 工具链上的老实例（例如 `~/.dsh-lab` 上的 3171）。T82 已在临时 home 上把 3171 的数据试迁一遍并逐项核对（23 行结果、注册表、数据目录 `diff -rq` 都一致）。正式切换的步骤如下，**停实例那一步由人手动做**：
+
+1. **停实例**：人在终端里停掉老实例（看门狗守着的实例按 ankh-guard 的流程停）。
+2. **备份老 home**：整目录复制一份，例如 `cp -Rp ~/.dsh-lab ~/.dsh-lab.bak-0.1.5`。只复制，不删；回退就是用它起 0.1.5 工具链。
+3. **用 0.2.0 工具链重装**：
+   ```sh
+   PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH \
+   DSH_HARNESS=<0.2.0-rc.2 及以后的 harness 检出> \
+   DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/install.sh --source <dsh-plugins 检出> --fresh
+   ```
+   原地重装时 `state/` 保持不动；装到新 home 时，把老 home 的 `state/eval`、`state/datasets`、`state/mission` 复制过去（排除 token、cookie、凭据与日志）。
+4. **打开 DeepSeek 委派**：0.1.5 把这个开关存在旧版设置文件里，0.2.0 首次启动只会把 `$DSH_HOME/settings.yaml` 一次性导入行配置（导入后改名 `.imported`）。原地重装时预计会自动导入（T82 未实测，切换后在插件页核一眼）；装到新 home 时，由人在插件页「DSH 委派」卡片里打开「DeepSeek 委派」，或自己把旧设置文件放进新 home 让它导入。
+5. **起实例**：`PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/restart-into-web-eval.sh <端口>`。
+6. **核对**：结果列表 23 行；数据集注册表与老 home 一致；pilot-d 的报告仍是「暂时不能下结论」、4 比 0；「设置 → Agent 预设」默认是评测模式；`dsh --version` 为 0.2.0-rc.2。
+7. **dsh 条件**：导入题库里的 `*-0.2.0-rc.2` 条件并重新 provision；旧条件的锁保留作历史，不再用于新 run。
+8. **可选清理**：`~/.dsh-lab/.agent-presets/eval` 是 0.1.5 的目录预设，0.2.0 不读，可删。
+
+**会话不迁。** 试迁时会话目录没有复制（含个人数据），所以切到新 home 的话历史会话不跟过来；原地重装不受影响。
+
+## 兼容性
+
+- npm release line（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅ —— T82 起本 profile 只支持宿主 0.2.0 及以后（`dsh` ≥ 0.2.0-rc.2，用户 2026-10-01 定，不做双线）；低于这条线 `install.sh` / `update.sh` 在动文件前退出码 2。评测家族 eval / eval-tool / datasets / datasets-tool 的 `dsh.compat` 同为 `minHost` / `verifiedHost` 0.2.0-rc.2。0.1.x 宿主请停在旧发布线，迁移见[把 0.1.5 实例切到 0.2.0](#把-015-实例切到-020)。
+- source line（deepseek-harness master）：✅ —— 同上（verifiedHost: 0.2.0-rc.2，临时实例真机冒烟：安装 25 名 / 205 行、默认预设 eval、1440 与 400 宽走查）。
+- 降级项：带预设的 dsh 条件在 0.2.0 上预计组不出来（`local-agent-dsh` 仍插入 0.1.5 的 `@deepseek-ai/dsh-agent-presets`），见[受试 dsh 的版本跟着实例走](#受试-dsh-的版本跟着实例走)。
 
 ## 相关文档
 

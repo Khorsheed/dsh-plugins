@@ -575,8 +575,8 @@ agent 在会话里起草了一个实验之后，这件事在会话里只剩一�
 
 ## 兼容性
 
-- npm release line（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ —— 消费 `Context.provide` 与 `commands`；run 时探测三个兄弟服务，缺席即拒绝，不炸启动。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- source line（deepseek-harness master）：✅ —— 同上（verifiedHost: 0.1.2-rc.1）。
+- npm release line（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅ —— 消费 `Context.provide` 与 `commands`；run 时探测三个兄弟服务，缺席即拒绝，不炸启动。T82 起只支持宿主 0.2.0 及以后（minHost 0.2.0-rc.2），0.1.x 宿主请停留在旧发布线。
+- source line（deepseek-harness master）：✅ —— 同上（verifiedHost: 0.2.0-rc.2，web-eval 临时实例真机冒烟）。
 
 降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：
 

@@ -12,6 +12,8 @@ The preset is also the *only* place the decision can be executed. The web surfac
 
 ## Decision
 
+> **Host 0.2.0 form (T82, 2026-10-01).** The decision below stands; its delivery changed. On host 0.2.0 and later — the only line web-eval now supports — the preset is the profile-local declarative bundle `presets/` (one `preset-eval` row, byte-identical composition) and the pin is `agent-preset-registry.default: eval`; nothing is copied into `$DSH_HOME/.agent-presets` any more. The directory mechanics described below are the 0.1.5-era record. See [web-eval supports host 0.2.0 and later only](2026-10-01-web-eval-host-020-only.md).
+
 The pack ships `profiles/web-eval/presets/eval/` (`agent.cordis.yml` + `preset.yml`, display name 评测模式). Its composition is the shipped `standard` preset minus two classes of row:
 
 | Removed | Class | Why |

@@ -2,14 +2,16 @@
  * The web-eval profile scripts' preflight: it must run BEFORE anything is
  * written.
  *
- * Both scripts replace three things whole — the profile template, the agent
- * preset directory under `$DSH_HOME/.agent-presets`, and (since I5·T34) the
- * skill directories under `$DSH_HOME/skills` — and both used to reach their
- * first `dsh` call only after doing so (install.sh also after building and
- * packing every member). On a machine missing its preconditions that meant
+ * Both scripts replace things whole — the profile template and (since I5·T34)
+ * the skill directories under `$DSH_HOME/skills`; until T82 also the agent
+ * preset directory under `$DSH_HOME/.agent-presets` — and both used to reach
+ * their first `dsh` call only after doing so (install.sh also after building
+ * and packing every member). On a machine missing its preconditions that meant
  * minutes of work and a replaced preset before the failure. These fixtures run
- * each script against a temporary `$DSH_HOME` with a marker file in the preset
- * directory and assert the marker is still there.
+ * each script against a temporary `$DSH_HOME` with a marker file in the
+ * 0.1.5-era preset directory and assert the marker is still there — since T82
+ * the scripts never write there at all, so the marker doubles as proof of it.
+ * Since T82 the preflight also refuses a host below 0.2.0-rc.2.
  *
  * The second describe is not about preflight at all: it pins what the pack
  * SHIPS, because a skill that teaches the drafting verb is only apparatus if
@@ -18,7 +20,7 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const REPO = resolve(import.meta.dirname, '..')
@@ -64,8 +66,21 @@ function runScript(script: string, options: { home: string; path: string; src?: 
   }
 }
 
+/** A directory holding a `dsh` whose --version prints `version`. */
+function fakeDsh(version: string): string {
+  const binDir = mkdtempSync(join(tmpdir(), 'web-eval-bin-'))
+  writeFileSync(join(binDir, 'dsh'), `#!/bin/sh\necho ${version}\n`, { mode: 0o755 })
+  return binDir
+}
+
 /** A PATH with the ordinary tools but no `dsh`. */
 const NO_DSH_PATH = '/usr/bin:/bin:/usr/sbin:/sbin'
+
+/**
+ * A PATH with a fake `dsh` plus `node` — the host-line comparison runs in node,
+ * which any machine with a real `dsh` (a node CLI) already has.
+ */
+const withDsh = (binDir: string): string => `${binDir}:${dirname(process.execPath)}:${NO_DSH_PATH}`
 
 describe('web-eval install.sh preflight', () => {
   it('exits before writing anything when dsh is not on PATH', () => {
@@ -82,13 +97,22 @@ describe('web-eval install.sh preflight', () => {
   it('exits before writing anything when the pinned headless bundle is absent', () => {
     const { home, marker } = stageHome()
     const src = stageProfileWithMissingPin()
-    // A `dsh` that answers --version, so the failure is the pin and nothing else.
-    const binDir = mkdtempSync(join(tmpdir(), 'web-eval-bin-'))
-    writeFileSync(join(binDir, 'dsh'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
-    const result = runScript('install.sh', { home, path: `${binDir}:${NO_DSH_PATH}`, src })
+    // A `dsh` that answers --version with a supported host, so the failure is the pin and nothing else.
+    const binDir = fakeDsh('0.2.0-rc.2')
+    const result = runScript('install.sh', { home, path: withDsh(binDir), src })
     expect(result.status).toBe(2)
     expect(result.stderr).toContain('/nonexistent/dsh-headless/bundle')
     expect(result.stderr).toContain('preflight failed — nothing has been written')
+    expect(readFileSync(marker, 'utf8')).toContain("the operator's installed preset")
+    expect(existsSync(join(home, 'profiles/web-eval'))).toBe(false)
+  })
+
+  it('exits before writing anything on a host below 0.2.0-rc.2 (T82)', () => {
+    const { home, marker } = stageHome()
+    const result = runScript('install.sh', { home, path: withDsh(fakeDsh('0.1.5-rc.1')) })
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain('supports host 0.2.0-rc.2 and later only')
+    expect(result.stderr).toContain('rc-0.2.0-rc.2')
     expect(readFileSync(marker, 'utf8')).toContain("the operator's installed preset")
     expect(existsSync(join(home, 'profiles/web-eval'))).toBe(false)
   })

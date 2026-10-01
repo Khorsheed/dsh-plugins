@@ -698,8 +698,8 @@ both dictionaries».
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ — consumes `Context.provide` and `commands`; the three sibling services are probed at run time, a missing one is a refusal, never a boot failure. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ — same (verifiedHost: 0.1.2-rc.1).
+- npm release line (`@deepseek-ai/dsh@0.2.0-rc.2`): ✅ — consumes `Context.provide` and `commands`; the three sibling services are probed at run time, a missing one is a refusal, never a boot failure. Since T82 only host 0.2.0 and later are supported (minHost 0.2.0-rc.2) — 0.1.x hosts stay on the previous release line.
+- source line (deepseek-harness master): ✅ — same (verifiedHost: 0.2.0-rc.2, live-smoked on a web-eval temp instance).
 
 Degraded / absent items (kept in sync with `dsh.compat` in package.json):
 

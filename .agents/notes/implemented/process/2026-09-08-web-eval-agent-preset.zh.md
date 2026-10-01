@@ -12,6 +12,8 @@ I2 在宿主上直跑，没有容器边界，风险到此为止：顶多弄脏�
 
 ## Decision
 
+> **宿主 0.2.0 形态（T82，2026-10-01）。** 下面的决策不变，交付方式变了。在宿主 0.2.0 及以后（web-eval 现在只支持这条线），预设是 profile 内的声明式 bundle `presets/`（一行 `preset-eval`，组成逐字节相同），pin 是 `agent-preset-registry.default: eval`，不再往 `$DSH_HOME/.agent-presets` 复制任何东西。下文的目录机制是 0.1.5 时代的记录。见 [web-eval 只支持宿主 0.2.0 及以后](2026-10-01-web-eval-host-020-only.zh.md)。
+
 pack 自带 `profiles/web-eval/presets/eval/`（`agent.cordis.yml` + `preset.yml`，显示名「评测模式」）。它的组成表是随发行版 `standard` 减去两类行：
 
 | 去掉的行 | 类别 | 为什么 |

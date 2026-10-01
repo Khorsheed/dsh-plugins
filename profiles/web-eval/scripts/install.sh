@@ -77,14 +77,14 @@ SKILL_IDS="eval-planning"
 #   1. never published (the evaluation family: eval, lab, datasets, mission,
 #      the local-agent family, capability-catalog, …);
 #   2. published, but only against an OLDER host line. npm's newest is the
-#      0.2.0 wave (host 0.1.2-rc.1); this profile now boots on 0.1.5-rc.1, and
-#      a plugin built against the older line fails at import with a missing
-#      export (measured: `@deepseek-ai/dsh-settings` has no `settingsNamespace`
-#      on 0.1.5, and context-guard / ui-shortcuts 0.2.0 import it). Their
-#      0.1.5-aligned releases are cut in the repo but not on npm yet (the
-#      publish freeze), so until that wave lands they are packed from source
-#      like group 1. Remove a member from this list the moment its
-#      host-aligned version is ON npm.
+#      0.2.0 wave (host 0.1.2-rc.1); this profile boots on host 0.2.0-rc.2
+#      and later only (T82), and a plugin built against an older line fails
+#      at import with a missing export (measured on 0.1.5: `@deepseek-ai/
+#      dsh-settings` has no `settingsNamespace`, which context-guard /
+#      ui-shortcuts 0.2.0 import). Their host-aligned releases are cut in the
+#      repo but not on npm yet (the publish freeze), so until that wave lands
+#      they are packed from source like group 1. Remove a member from this
+#      list the moment its host-aligned version is ON npm.
 #
 # Dependency order: the family core first, then the headless bundle
 # (local-agent-dsh's own dependency — packed so the override can pin it, never
@@ -441,16 +441,19 @@ DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 #
 # Three counts, and they are deliberately different numbers — a drop in any of
 # them is the symptom this line exists to surface:
-#   26  tarballs packed above, one per UNPUBLISHED_DIRS entry;
+#   25  tarballs packed above, one per UNPUBLISHED_DIRS entry;
 #   25  @khorsheed dependencies in the profile's own package.json — every
-#       tarball except local-agent-dsh-headless, which local-agent-dsh pulls
-#       in transitively and the overrides pin, never a direct dependency;
-#   23  distinct names in the dump: the 22 @khorsheed bundles plus
-#       local-agent-dsh-headless (no row at all — it is the headlessBundleDir
-#       path). The three *-tool members are dependencies but are not composed
-#       into the dump. (The delegation tools left the dump at the 2026-09-30
-#       family fold: they are per-preset `./tool` rows now, granted by the
-#       presets that name them — this profile's eval preset names none.)
+#       tarball except local-agent-dsh-headless (local-agent-dsh pulls it in
+#       transitively and the overrides pin it, never a direct dependency),
+#       plus the profile-local preset bundle (`file:presets`, T82);
+#   25  distinct names in the dump: the 22 @khorsheed bundles (the preset
+#       bundle among them), local-agent-dsh-headless (no row at all — it is
+#       the headlessBundleDir path), and datasets-tool + eval-tool, which the
+#       eval preset row names in its composition. mission-tool is a dependency
+#       the preset does not name, so it never reaches the dump. (The
+#       delegation tools left the dump at the 2026-09-30 family fold: they are
+#       per-preset `./tool` rows now, granted by the presets that name them —
+#       this profile's eval preset names none.)
 MEMBERS=$(printf '%s\n' "$DUMP" | grep -o '@khorsheed/[a-z0-9-]*' | sort -u | wc -l | tr -d ' ')
 ROWS=$(printf '%s\n' "$DUMP" | grep -c '^- id: ' || true)
 # The default preset. cordis.patch.yml pins the registry's deployment default
