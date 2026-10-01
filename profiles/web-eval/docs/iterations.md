@@ -413,6 +413,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T82 | ✅ 代码（2026-10-01 改向，同日合入 `0b61ca67`，题库 `cc45dc5`） | **web-eval 只支持宿主 0.2.0 及以后**（用户 10-01 定，取代原「0.1.7 + 0.1.5 双宿主」）：preset 只走 bundle、install.sh 只认 ≥ 0.2.0、0.2.0 工具链、临时实例冒烟、受试 dsh 版本是否跟实例走、3171 数据试迁、compat 提到 0.2.0。文案见 §三「T82（改）」 | T87 | 0.2.0 临时实例 a–e 与 T86/T87 欠账全过；3171 副本迁过去核对一致 |
 | T88 | 代码（2026-10-01 定，排在 T82 合入之后派发） | 评测家族照 local-agent 形态整理：三个 *-tool 折进核心包的 `./tool` 入口并退役旧包；datasets / mission / lab / eval 保持独立包；新增 family bundle `@khorsheed/dsh-bundle-eval`，web-eval 改依赖它。mission 不退役。文案见 §三「T88」 | T82 | |
 | T89 | 代码（2026-10-01 定，排在 T88 合入之后派发） | 评测家族衔接收紧：mission 提供单元格数据目录动词、list/get 出 JSON、两份判分规则加跨包契约测试、eval 包内目录化并拆 run.ts；协调者评估后一并做 run 级 annotation 与 export 走服务面，./report 入口暂缓。文案见 §三「T89」 | T88 | |
+| T91 | 代码（2026-10-01 定，与 T88 并行） | **dsh 条件在 0.2.0 上跑起来**：宿主轮 headless 改用实例自带的 0.2.0 版（共享 `/opt` 软链不动）；local-agent-dsh 往受试环境塞预设改走 0.2.0 机制；题库 eval-lean / eval-full 改声明式。local-agent 家族已同意由评测线改。文案见 §三「T91」 | T82 | 3185 上一条带预设的 0.2.0 dsh 条件 provision 带能力指纹、就绪过、跑完 1 格 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -4446,6 +4447,27 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0。
 ## 回报
 分支与各 commit（移动提交单列）；第 1 条改的调用点清单；契约测试的证明；临时实例的端口、home 与截图路径；Note 路径。
 ```
+
+#### T91 · dsh 条件在 0.2.0 上跑起来
+
+背景见「T82 合入」步骤 9 的三个阻塞。local-agent 家族 10-01 同意由评测线改 `provision.ts`，并交接了下面「家族交接」四条。与 T88 并行；两边都可能碰 `profiles/web-eval/cordis.patch.yml`，冲突由协调者合并时处理。
+
+**家族交接（照做）**
+- 从最新 main 开始：家族折叠（50ea647b）已落地并发布 0.2.0-rc.1，`src/index.ts` 里 subagent_dsh 的动态挂载已改走 core 的 `./tool-factory`。build/test 红了，先查是不是没跟上折叠后的形状。
+- 动到 `defaultPresetRoot` 时保留优先级：settings home → 非空白 `DSH_HOME` → `~/.dsh`（跨实例串读修复，见 Agent Note `bug-fix/2026-09-30-dsh-home-fallback-leaks-across-instances`）。
+- 0.2.0 的 preset 是声明式行（`@deepseek-ai/dsh-agent-preset` 行类型；社区三个 preset 在 `@khorsheed/dsh-presets` 0.3.0）；`$DSH_HOME/.agent-presets/` 目录式是 0.1.x 遗产。往受试环境塞预设走「装 presets 包 + 在行里点名」或「直接写组合」，不再写目录。
+- 封印语义：评测环境的委派工具「预设不点名即缺席」；受试环境若要委派能力，由它的 eval 预设点名 provider 的 `./tool` 行。
+
+**步骤**
+1. **headless 路径**：0.2.0 实例在宿主轮用实例自己 profile 里的 0.2.0 headless；容器轮仍用镜像里的 `/opt/dsh-headless`。本机 `/opt/dsh-headless` 软链（root 建、3171 在用）不动；README 切换步骤补一条「切 3171 时改指软链（用户手跑）」。改法由实施者定，约束是宿主轮和容器轮都成立。
+2. **provision 的预设段**（`packages/local-agent-dsh/src/provision.ts`）：不再写 `@deepseek-ai/dsh-agent-presets` roster 行和目录式预设，改按上面的 0.2.0 机制。只动塞预设这条路径，普通委派不碰。带 Agent Note。
+3. **题库预设**：在题库 worktree（从 i1-walk 开分支）把 eval-lean / eval-full 改成 0.2.0 声明式形态，只给 `*-0.2.0-rc.2` 两条条件用；0.1.5 的旧条件和旧预设原样保留。按封印语义核对两个预设该不该点名委派工具，和原意不一致的地方回报。
+4. **能力指纹**：`capabilityCatalog/snapshotFor` 能算出 eval-lean / eval-full，provision 写出的 lock 带 `provisioned.capabilities`，就绪门通过。
+5. **`/eval conditions provision --repo`**：0.2.0 上报 unknown option。查清是有意去掉还是回归；回归就修，有意就把文档里的用法改掉。
+6. **实测**：在 3185（已有凭据）上 provision 两条 0.2.0 dsh 条件，跑 1 格（1 题 × dsh-lean-0.2.0-rc.2，最小成本），贴报告页截图。
+7. **门禁**：`pnpm --filter @khorsheed/dsh-local-agent-dsh build && test`，eval 四包 build/test，test:scripts，check:plugins，hygiene。
+
+**不做**：codex / claude-code 两个 provider 的 `tool-subagent-* not found` 警告（转家族）；不碰 3171、`/opt` 软链、凭据；不发布。
 
 ## 四、验收规程
 
