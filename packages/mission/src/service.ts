@@ -99,7 +99,7 @@ export interface RunStatus {
   buckets: Record<string, string[]>
   /** Missions holding `refs.resource` while not releasable — the leak warning. */
   unreleased: string[]
-  /** Per-cell ns completeness when the run meta declares expectedNs, else null. */
+  /** Per-attempt ns completeness when the run meta declares expectedNs, else null. */
   nsReport: NsAttemptReport[] | null
 }
 
