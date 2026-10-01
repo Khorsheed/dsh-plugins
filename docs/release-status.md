@@ -6,19 +6,18 @@
 | --- | --- | --- | --- | --- | --- |
 | `@khorsheed/dsh-ankh-guard` | 0.4.2 | 0.4.2 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
+| `@khorsheed/dsh-bundle-eval` | 未发布 | 0.1.0 | 0.2.0-rc.2 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-bundle-local-agent` | 0.2.0 | 0.2.0 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-canvas` | 未发布 | 0.6.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-capability-catalog` | 0.1.98 | 0.1.98 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-capture` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-context-guard` | 0.2.4 | 0.2.4 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
-| `@khorsheed/dsh-datasets` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
-| `@khorsheed/dsh-datasets-tool` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
+| `@khorsheed/dsh-datasets` | 未发布 | 0.2.0-rc.1 | 0.2.0-rc.2 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-reader` | 0.3.0 | 0.3.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
-| `@khorsheed/dsh-eval` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
-| `@khorsheed/dsh-eval-tool` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
+| `@khorsheed/dsh-eval` | 未发布 | 0.2.0-rc.1 | 0.2.0-rc.2 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-file-preview` | 0.4.1 | 0.4.1 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |
 | `@khorsheed/dsh-inline-html-render` | 0.1.15 | 0.1.15 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
-| `@khorsheed/dsh-lab` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
+| `@khorsheed/dsh-lab` | 未发布 | 0.2.0-rc.1 | 0.2.0-rc.2 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-local-agent` | 0.2.0-rc.1 | 0.2.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-local-agent-claude-code` | 0.2.0-rc.1 | 0.2.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-local-agent-codex` | 0.2.0-rc.1 | 0.2.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
@@ -28,8 +27,7 @@
 | `@khorsheed/dsh-local-files` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-message-timeline` | 0.2.4 | 0.2.4 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-client-message-tools` | 0.3.3 | 0.3.3 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
-| `@khorsheed/dsh-mission` | 未发布 | 0.1.0-rc.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
-| `@khorsheed/dsh-mission-tool` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
+| `@khorsheed/dsh-mission` | 未发布 | 0.2.0-rc.1 | 0.2.0-rc.2 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-mobile` | 0.1.3 | 0.1.3 | 0.1.5-rc.1 | — | ✓ |
 | `@khorsheed/dsh-presets` | 0.3.0 | 0.3.0 | 0.1.7-rc.1 | 0.1.7-rc.1 |  |
 | `@khorsheed/dsh-quote` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.5-rc.1 | ✓ |

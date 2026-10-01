@@ -1,0 +1,35 @@
+# @khorsheed/dsh-bundle-eval bundle patch: the evaluation family as one bundle
+# card — the datasets / mission / lab / eval rows, re-mounted VERBATIM from each
+# member package's own cordis.patch.yml (the canonical rows;
+# check-plugin-independence's `family` sanction pins this file to exactly that
+# union — no invented ids, no foreign rows).
+#
+# Why no double mount: `dsh plugin add` reconciles only the profile's DIRECT
+# dependencies into the bundles layer (apps/cli plugin.ts reconcilePlugins).
+# Installing this bundle applies THIS patch only; the member packages arrive as
+# transitive npm dependencies and their own patches stay inert. Installing a
+# member directly alongside still self-mounts that member — the official bundle
+# detail page's row-level switches resolve any overlap.
+#
+# The model TOOLS are not here by design: since the family fold each core
+# ships its tool row as its own `./tool` composition entry
+# (`@khorsheed/dsh-datasets/tool`, `@khorsheed/dsh-mission/tool`,
+# `@khorsheed/dsh-eval/tool`), which an agent preset names to grant the tools
+# per session — a profile-root row would grant every session. The eval preset's
+# `datasets-tool` / `eval-tool` rows are the grant points.
+- insert:
+    # Dataset registry, read-only materialization, the 题集 tab.
+    - id: datasets
+      name: '@khorsheed/dsh-datasets'
+
+    # The mission ledger: runs, templates, attempts, the release gate.
+    - id: mission
+      name: '@khorsheed/dsh-mission'
+
+    # Container units (Docker) for the container path.
+    - id: lab
+      name: '@khorsheed/dsh-lab'
+
+    # The orchestrator: experiments, conditions, runs, judging, the 实验室 tab.
+    - id: eval
+      name: '@khorsheed/dsh-eval'

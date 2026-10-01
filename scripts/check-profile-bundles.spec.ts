@@ -27,6 +27,18 @@ const index: PackageIndex = new Map([
   ['@khorsheed/dsh-row', { dir: 'packages/row', dependencies: ['@khorsheed/dsh-core'], selfMounting: false, version: '0.2.0', exportKeys: ['.'] }],
   ['@khorsheed/dsh-with-tool', { dir: 'packages/with-tool', dependencies: [], selfMounting: false, version: '0.2.0', exportKeys: ['.', './tool'] }],
   ['@khorsheed/dsh-optional', { dir: 'packages/optional', dependencies: [], selfMounting: true, version: '0.1.0', exportKeys: ['.'] }],
+  ['@khorsheed/dsh-member', { dir: 'packages/member', dependencies: [], selfMounting: true, version: '0.2.0', exportKeys: ['.', './tool'] }],
+  [
+    '@khorsheed/dsh-bundle-family',
+    {
+      dir: 'packages/bundle-family',
+      dependencies: ['@khorsheed/dsh-member'],
+      selfMounting: true,
+      version: '0.1.0',
+      exportKeys: ['.'],
+      familyMembers: ['@khorsheed/dsh-member'],
+    },
+  ],
 ])
 
 const profile = (over: Partial<ProfileShape> = {}): ProfileShape => ({
@@ -105,6 +117,17 @@ describe('checkProfile rules', () => {
     }))).toContain('closure-missing-bundle')
   })
 
+  it('rule 4: a family bundle mounts its own members, so they are not layered again', () => {
+    // The bundle's patch carries the members' canonical rows (check:plugins
+    // pins that); layering the member too would mount every row twice.
+    const family = profile({ dependencies: ['@khorsheed/dsh-bundle-family'], bundles: ['@khorsheed/dsh-bundle-family'] })
+    expect(kinds(family)).toEqual([])
+    // The exemption is the family's OWN members only — the provider → core
+    // closure still applies to an ordinary self-mounting package.
+    expect(kinds(profile({ dependencies: ['@khorsheed/dsh-provider'], bundles: ['@khorsheed/dsh-provider'] })))
+      .toContain('closure-missing-dependency')
+  })
+
   it('rule 4 ignores peerDependencies, so optional integrations stay optional', () => {
     // The exemption is structural: the index carries hard dependencies only.
     // A peer edge on a self-mounting bundle (room → local-agent is the live
@@ -132,6 +155,13 @@ describe('checkProfile rules', () => {
     expect(kinds(profile({ rows: ['@khorsheed/dsh-row/tool'] }))).toContain('preset-row-unresolvable')
     expect(kinds(profile({ dependencies: ['@khorsheed/dsh-with-tool'], rows: ['@khorsheed/dsh-with-tool/tool'] })))
       .not.toContain('preset-row-unresolvable')
+    // A family bundle's member arrives as its hard dependency, so the member's
+    // subpath row resolves through the bundle (the bundle-eval → eval/tool case).
+    expect(kinds(profile({
+      dependencies: ['@khorsheed/dsh-bundle-family'],
+      bundles: ['@khorsheed/dsh-bundle-family'],
+      rows: ['@khorsheed/dsh-member/tool'],
+    }))).toEqual([])
   })
 
   it('rule 5b: a subpath row requires the workspace base package to export the entry', () => {
