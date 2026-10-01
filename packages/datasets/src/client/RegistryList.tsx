@@ -19,6 +19,12 @@
  * version is a pinned commit — and a click unfolds the names. Twenty names
  * flat in a cell (T76 shot 10) answered a question nobody asked of a list.
  *
+ * T90 (decision D): the version cell says 「版本 N · 日期」 — the commit rides on
+ * its title, and the repository path, tracked branch and checkout on the
+ * group heading's title. A newer tip the update gate holds shows as a
+ * 「新版本待确认」 chip that opens its review; 「交给 Agent 修改」 opens a
+ * 题集整理 session for the registration.
+ *
  * A registration whose tracked branch is gone keeps its group with the one
  * sentence the host gave, so a person can see and fix it — the agents'
  * `datasets_list` simply skips it.
@@ -88,7 +94,10 @@ export interface RegistryListProps {
   /** «题数» per registration, then per set; absent = loading, null = the read failed. */
   itemCounts: Readonly<Record<string, Record<string, number> | null>>
   onOpen: (repo: string, dataset: string) => void
-  onNewDataset: (repo: string) => void
+  /** 「交给 Agent 修改」: a new 题集整理 session for this registration. */
+  onAskAgent: (repo: string) => void
+  /** Open the review of the version the update gate holds. */
+  onReview: (repo: string) => void
   onEdit: (repo: string) => void
   onRemove: (repo: string) => void
   t: DatasetsViewProps['t']
@@ -141,6 +150,7 @@ function SetRow(props: {
   t: DatasetsViewProps['t']
 }) {
   const { repo, trackedRef, latest, set, count, usage, onOpen, onEdit, t } = props
+  const date = latest.date.slice(0, 10)
   return (
     <tr className={css.tableRow}>
       <td className={css.setCell}>
@@ -156,8 +166,14 @@ function SetRow(props: {
         {set.title !== set.set && <div className={css.cellQuiet}>{set.title}</div>}
       </td>
       <td>
-        <div className={css.cellMono} title={latest.commit}>{`${trackedRef}@${shortCommit(latest.commit)}`}</div>
-        <div className={css.cellQuiet}>{latest.date.slice(0, 10)}</div>
+        {latest.version === undefined
+          ? (
+            <>
+              <div className={css.cellMono} title={latest.commit}>{`${trackedRef}@${shortCommit(latest.commit)}`}</div>
+              <div className={css.cellQuiet}>{date}</div>
+            </>
+          )
+          : <div title={`${trackedRef}@${latest.commit}`}>{t('registry.version', { number: latest.version, date })}</div>}
       </td>
       <td className={css.cellNumber} data-label={t('registry.colItems')}>{count ?? '—'}</td>
       <td>
@@ -176,7 +192,7 @@ function SetRow(props: {
  * @param props - see {@link RegistryListProps}.
  */
 export function RegistryList(props: RegistryListProps) {
-  const { rows, experiments, itemCounts, onOpen, onNewDataset, onEdit, onRemove, t } = props
+  const { rows, experiments, itemCounts, onOpen, onAskAgent, onReview, onEdit, onRemove, t } = props
   // Removal is a two-step gesture: the first click arms, the second removes.
   const [armed, setArmed] = useState<string | null>(null)
   const columns = experiments === null ? 4 : 5
@@ -200,15 +216,23 @@ export function RegistryList(props: RegistryListProps) {
             <tr className={css.repoRow}>
               <td colSpan={columns}>
                 <div className={css.repoHead}>
-                  <span className={css.repoName} title={entry.commonDir}>{entry.id}</span>
-                  <span className={css.cellQuiet}>{t('registry.tracking', { ref: entry.trackedRef })}</span>
-                  <span className={css.cellQuiet}>
-                    {entry.authoringCheckout === null ? t('registry.noAuthoring') : t('registry.authoring')}
+                  <span
+                    className={css.repoName}
+                    title={t('registry.advancedTitle', {
+                      path: entry.commonDir,
+                      ref: entry.trackedRef,
+                      checkout: entry.authoringCheckout ?? t('registry.noAuthoring'),
+                    })}
+                  >
+                    {entry.id}
                   </span>
+                  {latest?.pending !== undefined && (
+                    <button type="button" className={css.emptyLink} onClick={() => { onReview(entry.id) }}>
+                      <Chip tone="warn" title={latest.pending.commit}>{t('registry.pending')}</Chip>
+                    </button>
+                  )}
                   <span className={css.repoActions}>
-                    {entry.authoringCheckout !== null && (
-                      <Button variant="outline" size="sm" onClick={() => { onNewDataset(entry.id) }}>{t('list.newDataset')}</Button>
-                    )}
+                    <Button variant="outline" size="sm" onClick={() => { onAskAgent(entry.id) }}>{t('registry.askAgent')}</Button>
                     <Button variant="outline" size="sm" onClick={() => { onEdit(entry.id) }}>{t('registry.edit')}</Button>
                     {armed === entry.id
                       ? (

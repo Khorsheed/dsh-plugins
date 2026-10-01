@@ -27,12 +27,11 @@ import type {} from '@khorsheed/dsh-datasets/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import datasetsRemote from '@khorsheed/dsh-datasets/remote'
-import type {
-  ImportItemInput, ReadPassthroughRequest, ReadQuery, RegisterInput,
-  ScaffoldDatasetInput, ScaffoldItemInput, UpdateInput,
-} from '../types.ts'
+import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ReadPassthroughRequest, ReadQuery, RegisterInput, UpdateInput } from '../types.ts'
 import { DatasetsView } from './DatasetsView.tsx'
 import { en, NS, zh } from './locales.ts'
+import { draftWithRetries, type OrganizeOutcome } from './organize.ts'
 import { DatasetsPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { createDatasetsViewStore } from './store.ts'
 import type {
@@ -146,6 +145,111 @@ function evalRemoteOf(ctx: Context): EvalProjectionRemote | undefined {
   return ctx.get('remote.dshEval') as EvalProjectionRemote | undefined
 }
 
+/** The host doors the 「题集整理」 hand-off walks through, each probed (0.2.0 shapes; an absence degrades). */
+interface SessionsDoors {
+  create?: (options: { workspaceId?: string }) => Promise<SessionId>
+  using?: (
+    sessionId: SessionId,
+    options: { source: string },
+    body: (ref: { binding: { session: { rename(title: string): Promise<unknown> } } }) => Promise<unknown>,
+  ) => Promise<unknown>
+  open?: (sessionId: SessionId) => void
+}
+
+/**
+ * The 「让 Agent 整理」 doors: open a new organizing session or an existing
+ * one, and write a request into its chat box — never send it. Every host door
+ * is probed; what is missing degrades to the clipboard, then to showing the
+ * text (the outcome says which, and the tab shows the matching notice).
+ * @param ctx - client root context.
+ * @returns the two doors.
+ */
+function organizingDoors(ctx: Context): {
+  start: (current: SessionId, title: string, text: string, preset: string) => Promise<OrganizeOutcome>
+  draftIn: (target: SessionId, text: string) => Promise<OrganizeOutcome>
+} {
+  const getService = ctx.get.bind(ctx) as (name: string) => unknown
+  const sessions = ctx.sessions as unknown as SessionsDoors
+  const insert = (sid: SessionId, text: string): boolean => {
+    const scope = ctx.sessions.scope(sid)
+    if (scope === undefined) return false
+    const input = scope.get('conversation')?.input.for(scope)
+    if (input === undefined) return false
+    const current = input.state.getSnapshot().draft
+    input.setDraft(current.trim() === '' ? text : `${current}\n\n${text}`)
+    const probe = input as unknown as {
+      focus?: () => void
+      editor?: { focus?: () => void; getRootElement?: () => HTMLElement | null }
+    }
+    try {
+      if (typeof probe.focus === 'function') probe.focus()
+      else probe.editor?.getRootElement?.()?.focus({ preventScroll: true })
+    } catch { /* the text is in place; focus is a courtesy */ }
+    return true
+  }
+  const open = (sid: SessionId): boolean => {
+    const nav = getService('uiWorkspace') as { openSession?: (target: SessionId) => void } | undefined
+    try {
+      if (nav?.openSession !== undefined) nav.openSession(sid)
+      else if (sessions.open !== undefined) sessions.open(sid)
+      else return false
+      return true
+    } catch {
+      return false
+    }
+  }
+  const fallback = async (text: string, sessionId?: SessionId): Promise<OrganizeOutcome> => {
+    const at = sessionId === undefined || sessionId === '' ? {} : { sessionId }
+    return (await writeClipboard(text)) ? { kind: 'copied', ...at } : { kind: 'manual', text, ...at }
+  }
+  const draftIn = async (target: SessionId, text: string): Promise<OrganizeOutcome> => {
+    if (target !== '' && open(target) && await draftWithRetries(() => insert(target, text))) return { kind: 'drafted', sessionId: target }
+    return await fallback(text, target)
+  }
+  const workspaceOf = (sid: SessionId): string | undefined => {
+    try {
+      const list = (ctx.workspaces as unknown as {
+        list?: { getSnapshot(): { items: Array<{ workspaceId: string; sessionIds: readonly string[] }> } }
+      }).list
+      return list?.getSnapshot().items.find(item => item.sessionIds.includes(sid))?.workspaceId
+    } catch {
+      return undefined
+    }
+  }
+  const selectPreset = async (sid: SessionId, preset: string): Promise<void> => {
+    if (preset === '') return
+    const presets = getService('remote.agentPresets') as {
+      list?: () => Promise<{ ok: boolean; value?: { presets: Array<{ id: string; broken?: unknown }> } }>
+      select?: (sessionId: SessionId, presetId: string) => Promise<unknown>
+    } | undefined
+    if (presets?.list === undefined || presets.select === undefined) return
+    try {
+      const listed = await presets.list()
+      const row = listed.ok ? listed.value?.presets.find(entry => entry.id === preset) : undefined
+      // A preset this host does not list (or lists as broken) is not offered:
+      // the session keeps the default preset and the request names the skill.
+      if (row === undefined || (row.broken !== undefined && row.broken !== false)) return
+      await presets.select(sid, preset)
+    } catch { /* the default preset still works; the request names the skill */ }
+  }
+  const start = async (current: SessionId, title: string, text: string, preset: string): Promise<OrganizeOutcome> => {
+    if (sessions.create === undefined) return await fallback(text)
+    let created: SessionId
+    try {
+      const workspaceId = workspaceOf(current)
+      created = await sessions.create(workspaceId === undefined ? {} : { workspaceId })
+    } catch (error) {
+      return { kind: 'failed', message: error instanceof Error ? error.message : String(error) }
+    }
+    await selectPreset(created, preset)
+    try {
+      await sessions.using?.(created, { source: 'workspaceOperation' }, ref => ref.binding.session.rename(title))
+    } catch { /* an untitled session still works */ }
+    return await draftIn(created, text)
+  }
+  return { start, draftIn }
+}
+
 /**
  * Client plugin body: mount the Remote, register the dictionaries, and inject
  * the datasets view tab (registered exactly while the current session's preset
@@ -171,6 +275,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // spawned).
   const remote = ctx.get('remote.datasets') as DatasetsRemote
   const connection = ctx.get('connection') as ConnectionHandle
+
+  const organizing = organizingDoors(ctx)
 
   // The M3'④ self-hide criterion for the 题集 tab: the official preset
   // composition data, fail-open on every unreadable path. Hidden means NO
@@ -202,12 +308,20 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         itemBrief: (sid: SessionId, repo: string, dataset: string, item: string) =>
           remote.itemBrief(sid, { repo, dataset, item }),
         validateDataset: (sid: SessionId, repo: string, dataset: string) => remote.validate(sid, { repo, dataset }),
-        scaffoldDataset: (sid: SessionId, repo: string, input: ScaffoldDatasetInput) =>
-          remote.scaffoldDataset(sid, { ...input, repo }),
-        scaffoldItem: (sid: SessionId, repo: string, input: ScaffoldItemInput) =>
-          remote.scaffoldItem(sid, { ...input, repo }),
-        importItem: (sid: SessionId, repo: string, input: ImportItemInput) =>
-          remote.importItem(sid, { ...input, repo }),
+        organizingSetup: (sid: SessionId) => remote.organizingSetup(sid),
+        proposals: (sid: SessionId) => remote.proposals(sid),
+        proposalReview: (sid: SessionId, id: string) => remote.proposalReview(sid, { id }),
+        reviewItem: (sid: SessionId, id: string, set: string, item: string) => remote.reviewItem(sid, { id, set, item }),
+        reviewFiles: (sid: SessionId, id: string) => remote.reviewFiles(sid, { id }),
+        confirmProposal: (sid: SessionId, id: string, registryId: string, sets: Record<string, { layers: string[] }>) =>
+          remote.confirmProposal(sid, { id, registryId, sets }),
+        returnProposal: (sid: SessionId, id: string, note: string) => remote.returnProposal(sid, { id, note }),
+        pendingReview: (sid: SessionId, repo: string) => remote.pendingReview(sid, { repo }),
+        confirmPending: (sid: SessionId, repo: string, commit: string, sets: Record<string, { layers: string[] }>) =>
+          remote.confirmPending(sid, { repo, commit, sets }),
+        startOrganizing: (sid: SessionId, title: string, text: string, preset: string) =>
+          organizing.start(sid, title, text, preset),
+        draftInSession: (target: string, text: string) => organizing.draftIn(target as SessionId, text),
         itemRuns: async (sid: SessionId, dataset: string, item: string): Promise<ItemRunsView | null> => {
           const face = evalRemoteOf(ctx)?.runsForItem
           if (face === undefined) return null
