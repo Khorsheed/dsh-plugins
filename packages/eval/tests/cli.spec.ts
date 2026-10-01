@@ -162,7 +162,9 @@ describe('dsh-eval run --dry-run', () => {
 
   it('the dry-run report is a stable snapshot for the same plan', async () => {
     const { stdout } = await run(['run', T1_PLAN, '--dry-run'])
-    const out = JSON.parse(stdout) as Record<string, unknown>
+    // The template's schema paths are absolute into the dataset root (T92);
+    // the root is this checkout's fixture, so it is folded to a placeholder.
+    const out = JSON.parse(stdout.split(FIXTURE_DATASET).join('<datasetRoot>')) as Record<string, unknown>
     // Deterministic end to end: the plan sha, the condition hash, the seeded
     // order, and the generated template. Any drift shows here.
     expect(out).toMatchInlineSnapshot(`
@@ -219,7 +221,7 @@ describe('dsh-eval run --dry-run', () => {
               "from": "pending",
               "guard": {
                 "inputFrom": "run-meta",
-                "schemaPath": "../schemas/run-meta.json",
+                "schemaPath": "<datasetRoot>/schemas/run-meta.json",
                 "type": "schema-check",
               },
               "to": "ws-ready",
@@ -231,7 +233,7 @@ describe('dsh-eval run --dry-run', () => {
             {
               "from": "stage-1",
               "guard": {
-                "schemaPath": "../schemas/stage1.json",
+                "schemaPath": "<datasetRoot>/schemas/stage1.json",
                 "type": "schema-check",
               },
               "to": "stage-2",
@@ -239,7 +241,7 @@ describe('dsh-eval run --dry-run', () => {
             {
               "from": "stage-2",
               "guard": {
-                "schemaPath": "../schemas/stage2.json",
+                "schemaPath": "<datasetRoot>/schemas/stage2.json",
                 "type": "schema-check",
               },
               "to": "judged",
@@ -271,7 +273,7 @@ describe('dsh-eval run --dry-run', () => {
             {
               "from": "stage-2",
               "guard": {
-                "schemaPath": "../schemas/stage2-halted.json",
+                "schemaPath": "<datasetRoot>/schemas/stage2-halted.json",
                 "type": "schema-check",
               },
               "to": "halted",

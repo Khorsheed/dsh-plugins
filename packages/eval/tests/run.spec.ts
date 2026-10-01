@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runPlan, EvalRunRefused } from '../src/run/run.ts'
 import type { RunOptions, RunReport } from '../src/run/run.ts'
@@ -248,7 +248,7 @@ class FakeMission implements MissionFace {
   private runGuard(runId: string, missionId: string, record: FakeMissionRecord, guard: Record<string, unknown>): void {
     const attempt = record.attempts[record.currentAttempt - 1] as FakeAttempt
     if (guard['type'] === 'schema-check') {
-      const schema = JSON.parse(readFileSync(join(this.runs.get(runId)?.templateDir ?? '', guard['schemaPath'] as string), 'utf8'))
+      const schema = JSON.parse(readFileSync(resolve(this.runs.get(runId)?.templateDir ?? '', guard['schemaPath'] as string), 'utf8'))
       const value = guard['inputFrom'] === 'run-meta' ? this.runs.get(runId)?.meta : attempt.submission?.json
       if (guard['inputFrom'] !== 'run-meta' && attempt.submission === undefined) {
         throw new Error('mission: schema-check guard: no submission recorded (submit first)')
@@ -288,7 +288,7 @@ class FakeMission implements MissionFace {
       const edge = run.stateMachine.transitions.find(t => t.from === attempt.state && t.to === options.to)
       if (edge === undefined) throw new Error(`mission: submit --to ${options.to} is not an outgoing edge from ${attempt.state}`)
       if (edge.guard?.['type'] === 'schema-check' && edge.guard['inputFrom'] !== 'run-meta' && options.json !== undefined) {
-        const schema = JSON.parse(readFileSync(join(run.templateDir, edge.guard['schemaPath'] as string), 'utf8'))
+        const schema = JSON.parse(readFileSync(resolve(run.templateDir, edge.guard['schemaPath'] as string), 'utf8'))
         const violations = validateJson(schema, options.json)
         if (violations.length > 0) {
           throw new Error(`mission: submission violates the schema of the ${edge.from} → ${edge.to} guard — nothing was written:\n${violations.map(v => `  - ${v}`).join('\n')}`)
@@ -718,6 +718,56 @@ function expectDelegationAnnotations(
 function cellAnchors(mission: FakeMission, runId: string, missionId: string): Array<Record<string, unknown>> {
   return orchestratorNs(mission, runId, missionId).filter(e => e['kind'] === 'cell')
 }
+
+describe('runPlan — the generated template finds its schemas wherever the plan lives (T92)', () => {
+  /** Every schema-check guard's schemaPath in a template document, wherever the guard sits. */
+  function schemaPaths(value: unknown): string[] {
+    if (Array.isArray(value)) return value.flatMap(schemaPaths)
+    if (typeof value !== 'object' || value === null) return []
+    const record = value as Record<string, unknown>
+    const own = record['type'] === 'schema-check' && typeof record['schemaPath'] === 'string' ? [record['schemaPath']] : []
+    return [...own, ...Object.values(record).flatMap(schemaPaths)]
+  }
+
+  it('an experiment-layout plan (state/eval/experiments/<id>/plan.json) runs, its guards reading the dataset root\'s schemas', async () => {
+    const root = makeDatasetTree()
+    const datasetRoot = join(root, 'datasets', 'harness-comparison')
+    const inRepo = writePlan(root)
+    // The deployment layout since T73: the plan sits in the experiment's own
+    // directory, nowhere near the set's schemas/ — `../schemas` from here
+    // would be experiments/schemas/, which does not exist.
+    const dir = join(root, 'state', 'eval', 'experiments', 'exp-t92')
+    mkdirSync(dir, { recursive: true })
+    const planPath = join(dir, 'plan.json')
+    writeFileSync(planPath, readFileSync(inRepo, 'utf8'))
+    rmSync(inRepo)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION,
+      stateRoot: join(root, 'state'),
+      now: 1_700_000_000_000,
+      experiment: {
+        id: 'exp-t92',
+        dir,
+        dataset: { registry: 'reg', set: 'harness-comparison', commit: FAKE_COMMIT },
+        roots: { datasetRoot, conditionsRoot: datasetRoot },
+        repo: root,
+      },
+    }, { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent() })
+
+    expect(report.cells[0]?.finalState).toBe('archived')
+    const template = JSON.parse(readFileSync(join(dir, 'plan.template.json'), 'utf8'))
+    const paths = schemaPaths(template)
+    expect(paths.length).toBeGreaterThan(0)
+    for (const path of paths) {
+      expect(isAbsolute(path)).toBe(true)
+      expect(path.startsWith(join(datasetRoot, 'schemas') + sep)).toBe(true)
+      expect(existsSync(path)).toBe(true)
+    }
+    // Nothing was put next to the experiments to make it work.
+    expect(existsSync(join(root, 'state', 'eval', 'experiments', 'schemas'))).toBe(false)
+  })
+})
 
 describe('runPlan — one cell, happy path (P0 × dsh × rep1, stages one-two)', () => {
   it('drives the cell to archived with byte-exact prompts, per-cell cwd, and the bundle export', async () => {
