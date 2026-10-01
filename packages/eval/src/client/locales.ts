@@ -768,6 +768,14 @@ export type EvalKey =
   | 'list.others'
   | 'list.scopeEmpty'
   | 'list.scopeEmptyHint'
+  | 'list.broken.unregistered'
+  | 'list.broken.unregistered.fix'
+  | 'list.broken.setMissing'
+  | 'list.broken.setMissing.fix'
+  | 'list.broken.noRegistry'
+  | 'list.broken.noRegistry.fix'
+  | 'list.broken.unreadable'
+  | 'list.broken.unreadable.fix'
   | 'list.group.attention'
   | 'list.group.running'
   | 'list.group.finished'
@@ -1953,6 +1961,14 @@ export const en: Record<EvalKey, string> = {
   'list.others': '{count} more not from this session',
   'list.scopeEmpty': 'No experiment in this session yet',
   'list.scopeEmptyHint': 'Fill in a name with \'New experiment\' and hand it to the agent, or tell the agent in chat what you want to compare. Experiments from other sessions are under All.',
+  'list.broken.unregistered': 'Its dataset repository “{registry}” is not registered here',
+  'list.broken.unregistered.fix': 'Register that repository on the Datasets tab, then reopen this experiment. The other experiments are unaffected.',
+  'list.broken.setMissing': 'Its dataset is missing at the pinned version',
+  'list.broken.setMissing.fix': 'The pinned commit of “{registry}” holds no such set — create a new experiment on a version that has it.',
+  'list.broken.noRegistry': 'This deployment mounts no datasets service',
+  'list.broken.noRegistry.fix': 'Install the dsh-datasets plugin, then reopen this experiment.',
+  'list.broken.unreadable': 'Its dataset could not be read',
+  'list.broken.unreadable.fix': 'Try again; if it persists, send the raw text under Details to the maintainer.',
   'list.group.attention': 'Needs you',
   'list.group.running': 'Running',
   'list.group.finished': 'Finished',
@@ -3128,6 +3144,14 @@ export const zh: Record<EvalKey, string> = {
   'list.others': '另有 {count} 个不属于本会话',
   'list.scopeEmpty': '本会话还没有实验',
   'list.scopeEmptyHint': '可以点「新建实验」填个名字交给 agent，也可以直接在对话里说想比什么。其他会话的实验在「全部」里。',
+  'list.broken.unregistered': '数据集仓库「{registry}」在这里没有登记',
+  'list.broken.unregistered.fix': '到「数据集」页登记这个仓库，再打开这个实验；其他实验不受影响。',
+  'list.broken.setMissing': '钉住的版本里没有这个数据集',
+  'list.broken.setMissing.fix': '「{registry}」在钉住的提交里没有这个数据集——换一个含有它的版本新建实验。',
+  'list.broken.noRegistry': '这个部署没有装数据集服务',
+  'list.broken.noRegistry.fix': '装上 dsh-datasets 插件，再打开这个实验。',
+  'list.broken.unreadable': '这个实验的数据集读不出来',
+  'list.broken.unreadable.fix': '再试一次；仍然不行就把「详情」里的原文发给维护者。',
   'list.group.attention': '需要你处理',
   'list.group.running': '运行中',
   'list.group.finished': '已完成',

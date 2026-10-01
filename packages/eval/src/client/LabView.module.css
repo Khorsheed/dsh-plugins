@@ -2439,6 +2439,15 @@ tr:last-child > .reportTd {
   padding: 6px 8px;
 }
 
+/* T93: a broken experiment's reason sits inside its list row, under the
+   question line — the seat's look, without its vertical margin, and allowed
+   to wrap at the row's width. */
+.rowBroken {
+  margin: 4px 0 0;
+  cursor: default;
+  white-space: normal;
+}
+
 .errorHead {
   color: var(--dsw-alias-state-error-primary);
   font-size: 12px;
