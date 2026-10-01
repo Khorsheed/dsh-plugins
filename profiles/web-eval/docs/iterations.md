@@ -411,7 +411,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T80 | ✅ 四条已合（2026-09-26：T80a `0f59af27`；T80b `b028f906`；T80d `23cd336a`；T80c `edb7e313`） | 收口补充一轮：按 T79 清单改，P0 + 全部 P1 + 协调者提升的 12 条 P2。文案见 §三「T80」 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
 | T81 | ✅ 收口（2026-09-26）：阶段一 main 在 0.1.5-rc.1 上 a–e 全过；阶段二被 main 的 `d49f29af` 取代，不合 | 评测线在 0.1.5 上恢复。typert 双形态 codec（`00cfa1d6`）、preset 双名探测（`380a469c`）、图标自带（`d49f29af`：`scripts/sync-icon-artwork.mts` 给每个包生成 `src/client/icons.tsx`，0.1.5 与 0.1.7 都不再按名字取宿主图标）都由各包负责人在 main 上做了。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；datasets 图标面由 T76 补拍一并看 |
 | T82 | ✅ 代码（2026-10-01 改向，同日合入 `0b61ca67`，题库 `cc45dc5`） | **web-eval 只支持宿主 0.2.0 及以后**（用户 10-01 定，取代原「0.1.7 + 0.1.5 双宿主」）：preset 只走 bundle、install.sh 只认 ≥ 0.2.0、0.2.0 工具链、临时实例冒烟、受试 dsh 版本是否跟实例走、3171 数据试迁、compat 提到 0.2.0。文案见 §三「T82（改）」 | T87 | 0.2.0 临时实例 a–e 与 T86/T87 欠账全过；3171 副本迁过去核对一致 |
-| T88 | 代码（2026-10-01 定，排在 T82 合入之后派发） | 评测家族照 local-agent 形态整理：三个 *-tool 折进核心包的 `./tool` 入口并退役旧包；datasets / mission / lab / eval 保持独立包；新增 family bundle `@khorsheed/dsh-bundle-eval`，web-eval 改依赖它。mission 不退役。文案见 §三「T88」 | T82 | |
+| T88 | ✅ 代码（2026-10-01 定，同日合入 `a242b711`） | 评测家族照 local-agent 形态整理：三个 *-tool 折进核心包的 `./tool` 入口并退役旧包；datasets / mission / lab / eval 保持独立包；新增 family bundle `@khorsheed/dsh-bundle-eval`，web-eval 改依赖它。mission 不退役。文案见 §三「T88」 | T82 | |
 | T89 | 代码（2026-10-01 定，排在 T88 合入之后派发） | 评测家族衔接收紧：mission 提供单元格数据目录动词、list/get 出 JSON、两份判分规则加跨包契约测试、eval 包内目录化并拆 run.ts；协调者评估后一并做 run 级 annotation 与 export 走服务面，./report 入口暂缓。文案见 §三「T89」 | T88 | |
 | T91 | 代码（2026-10-01 定，与 T88 并行） | **dsh 条件在 0.2.0 上跑起来**：宿主轮 headless 改用实例自带的 0.2.0 版（共享 `/opt` 软链不动）；local-agent-dsh 往受试环境塞预设改走 0.2.0 机制；题库 eval-lean / eval-full 改声明式。local-agent 家族已同意由评测线改。文案见 §三「T91」 | T82 | 3185 上一条带预设的 0.2.0 dsh 条件 provision 带能力指纹、就绪过、跑完 1 格 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
@@ -4395,6 +4395,14 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0；跨宿主版本先删 tsbuildinfo。
 ## 回报
 分支与各 commit；退役清单；bundle 行清单；临时实例的端口、home 与证明原文；Note 路径。
 ```
+
+#### T88 合入（2026-10-01）
+
+- `a242b711`（e65a0328 三个 *-tool 折进核心包 `./tool`、退役进 retired-packages、预设 name 改指；73ebefe7 新建 `@khorsheed/dsh-bundle-eval` 0.1.0（kind family，四行与成员逐字相同），check-profile-bundles 认 family，web-eval 改依赖 bundle；1b17408c ops「整合包」改写、README/CHANGELOG、Agent Note `architecture/2026-10-01-eval-family-tool-fold-and-bundle`）。
+- 四个家族包 0.2.0-rc.1、presets 0.3.0；退役名的 npm 弃用标记留给发布波。
+- 临时实例（0.2.0-rc.2）：24 个 @khorsheed 成员、205 行，顶层行 id 205 个全不重；插件页一张「评测」卡；评测会话 tab 为对话 / 轨迹 / 题集 / 实验室，无任务 tab；工具目录里 datasets / eval 工具的 owner 已是核心包名，没有 mission 工具。
+- 门禁：check:plugins 37 包 0 条、profile-bundles、hygiene、release-groups、test:scripts 277，各包 test 全过。
+- 未覆盖：没有凭据，模型发起的工具调用没实测（留给 T91 在 3185 上顺带看）。
 
 #### T89 · 评测家族衔接收紧（2026-10-01 定，T88 合入后派发）
 
