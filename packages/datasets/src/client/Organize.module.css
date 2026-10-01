@@ -1,8 +1,10 @@
 /* T90 · the dataset journey: the 「添加题集」 dialog, the 「等你确认登记」
    banner, and the registration review. Host tokens only (no palette of its
    own); the review's comparison is two columns while the view is wide and
-   one column when it is narrow — keyed off the view's container
-   (`datasets-view`), not the window. */
+   one column when it is narrow — keyed off the review page's own container
+   (`review-page`), not the window. CSS modules scope container names per
+   file, so this file cannot query DatasetsView.module.css's `datasets-view`
+   (the scoped names differ and the query silently never matches). */
 
 /* ── the dialog ─────────────────────────────────────────────────────────── */
 
@@ -159,6 +161,7 @@
 .page {
   flex: 1;
   min-height: 0;
+  container: review-page / inline-size;
   padding: 10px 12px calc(16px + var(--dsh-datasets-bottom-clearance, 0px));
   overflow: auto;
 }
@@ -561,7 +564,7 @@
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
-@container datasets-view (max-width: 699px) {
+@container review-page (max-width: 699px) {
   .facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
