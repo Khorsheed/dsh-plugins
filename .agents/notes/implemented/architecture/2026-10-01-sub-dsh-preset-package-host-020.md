@@ -35,6 +35,13 @@ Two further facts of the 0.2.0 line bear on the same code path:
 - The provider picks the `-unit` profile exactly when the round carries `exec`.
 - The web-eval profile moved its pin from `headlessBundleDir` to `unitHeadlessBundleDir`. `headlessBundleDir` keeps its old meaning for deployments that still want one shared target.
 
+**The host profile copies the headless bundle instead of linking it.** Host 0.2.0's boot classifies each module path. A path under `$DSH_HOME/profiles/` is a *profile layer*, and its undeclared bare imports fall through to the installation's entries. A symlinked package whose realpath lies outside the profiles tree is a *linked root*, and only the names in its `peerDependencies` are routed. The packed headless bundle declares none of `commander`, `@deepseek-ai/schemastery` or `@deepseek-ai/dsh-cmdline`, because pack-dist strips `dependencies`. Linked from the scope into the instance's install, its startup and runner rows therefore fail to import, nothing calls `appExit`, and the sub-dsh hangs with no session. The first live readiness probe on 3185 hit exactly this and timed out at 420 s.
+- Provisioning now mirrors the bundle's own files into `<profile>/node_modules/@khorsheed/dsh-local-agent-dsh-headless`. An identical copy is left alone, a changed install is re-mirrored, and a symlink from the earlier scheme is replaced without touching its target.
+- No dependency closure is copied. `@deepseek-ai/*` still resolves from the installation running the sub-dsh, so the one-instance-per-package reason the dual-filesystem contract gave against copying still holds.
+- The `-unit` twin keeps its symlink to the image path. So does the lone `headlessBundleDir` pin with no twin, the 0.1.x shared-profile form, whose point is one path that both filesystems resolve.
+- Probe evidence: on the 0.2.0-rc.2 toolchain, the scope's full composition (headless patch, registry row, preset package, permission layer) hung with the link and exited with `MISSING_CREDENTIAL` (no key in the probe) with the copy. The same copy on the 0.1.5-rc.1 toolchain also reached `MISSING_CREDENTIAL`.
+- `home.sha` now covers the bundle copy's `package.json` and `cordis.patch.yml`. An upgraded headless install therefore surfaces as drift until the condition is re-provisioned, which is right: the subject changed.
+
 **Sealing changes nothing for the evaluation presets.** `eval-lean` and `eval-full` name only `persona`, `skill-filesystem` and `tool-skill`; their tools come from dsh-base's root rows, and they never named a delegation tool row. Their stated intent, "same tools, different skills", holds unchanged under 0.2.0's sealing. A preset that does want delegation names the provider's `./tool` row in its own composition.
 
 ## Alternatives considered
@@ -70,4 +77,5 @@ Two further facts of the 0.2.0 line bear on the same code path:
   - refusal of absolute paths, missing presets and symlinks;
   - resolution order, and the rule that a failed request persists nothing.
 - `packages/eval/tests/{preset-snapshot,capability-probe,capabilities}.spec.ts`: the package form, the registry readback, and the "no preset row" refusal.
-- Live: on the 0.2.0-rc.2 temp instance (port 3185), both `dsh-{lean,full}-0.2.0-rc.2` conditions provisioned with `provisioned.capabilities`, and one cell of `dsh-lean-0.2.0-rc.2` ran end to end.
+- `packages/local-agent-dsh/tests/provision.spec.ts` (bundle copy): refresh and drop, replacing an earlier symlink, refusing a non-plain tree, and the installation-resolved default.
+- Live: on the 0.2.0-rc.2 temp instance (port 3185), both `dsh-{lean,full}-0.2.0-rc.2` conditions provisioned with `provisioned.capabilities`. The first one-cell run of `dsh-lean-0.2.0-rc.2`, made with the link, failed its readiness probe (the 420 s hang above). The outcome with the copy is recorded in the T91 report.

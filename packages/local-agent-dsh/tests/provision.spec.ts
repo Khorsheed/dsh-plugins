@@ -3,7 +3,7 @@
  * bundle symlink under the harness scoped home, with no pnpm install.
  */
 
-import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -281,7 +281,10 @@ describe('evaluation-unit twin profile', () => {
     expect(unitSubProfileName(config)).toBe(`${DEFAULT_SUB_PROFILE_NAME}-unit`)
     const twin = join(home, 'profiles', unitSubProfileName(config))
     expect(readlinkSync(join(twin, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless'))).toBe(unitDir)
-    expect(readlinkSync(join(hostDir, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless'))).toBe(bundleDir)
+    // The host profile COPIES its bundle (host 0.2.0 linked-root routing).
+    const hostBundle = join(hostDir, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless')
+    expect(lstatSync(hostBundle).isDirectory()).toBe(true)
+    expect(readFileSync(join(hostBundle, 'cordis.patch.yml'), 'utf8')).toBe('- id: local-agent-dsh-headless-runner\n')
     expect(readFileSync(join(twin, 'cordis.patch.yml'), 'utf8')).toBe(readFileSync(join(hostDir, 'cordis.patch.yml'), 'utf8'))
     expect(readSubProfilePreset(home, unitSubProfileName(config))).toBe('eval-lean')
     expect(readlinkSync(join(twin, 'node_modules', '@dataseek-eval', 'preset-eval-lean'))).toBe('../../../../preset-packages/eval-lean')
@@ -293,5 +296,56 @@ describe('evaluation-unit twin profile', () => {
     provisionDshSubProfile(home, { headlessBundleDir: bundleDir, unitHeadlessBundleDir: unitDir })
     expect(readFileSync(join(home, 'profiles', `${DEFAULT_SUB_PROFILE_NAME}-unit`, 'cordis.patch.yml'), 'utf8'))
       .toBe('- id: local-agent-dsh-headless-runner\n  # image line\n')
+  })
+})
+
+describe('host profile headless bundle copy (host 0.2.0 linked-root routing)', () => {
+  const twinOf = (): string => join(mkdtempSync(join(tmpdir(), 'dsh-unit-')), 'absent')
+
+  it('refreshes the copy when the installed bundle changes, and drops files it no longer ships', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    mkdirSync(join(bundleDir, 'lib'))
+    writeFileSync(join(bundleDir, 'lib', 'index.js'), 'v1')
+    writeFileSync(join(bundleDir, 'lib', 'old.js'), 'gone soon')
+    const config = { headlessBundleDir: bundleDir, unitHeadlessBundleDir: twinOf() }
+    const profileDir = provisionDshSubProfile(home, config)
+    const copy = join(profileDir, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless')
+    expect(readFileSync(join(copy, 'lib', 'index.js'), 'utf8')).toBe('v1')
+    writeFileSync(join(bundleDir, 'lib', 'index.js'), 'v2')
+    rmSync(join(bundleDir, 'lib', 'old.js'))
+    provisionDshSubProfile(home, config)
+    expect(readFileSync(join(copy, 'lib', 'index.js'), 'utf8')).toBe('v2')
+    expect(existsSync(join(copy, 'lib', 'old.js'))).toBe(false)
+  })
+
+  it('replaces a symlink left by the earlier link scheme, without touching its target', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    const staleDir = makeBundleDir('- id: stale\n')
+    const link = join(home, 'profiles', DEFAULT_SUB_PROFILE_NAME, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless')
+    mkdirSync(join(link, '..'), { recursive: true })
+    symlinkSync(staleDir, link)
+    provisionDshSubProfile(home, { headlessBundleDir: bundleDir, unitHeadlessBundleDir: twinOf() })
+    expect(lstatSync(link).isDirectory()).toBe(true)
+    expect(readFileSync(join(link, 'cordis.patch.yml'), 'utf8')).toBe('- id: local-agent-dsh-headless-runner\n')
+    expect(readFileSync(join(staleDir, 'cordis.patch.yml'), 'utf8')).toBe('- id: stale\n')
+  })
+
+  it('refuses a bundle that is not a plain tree of files', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')
+    symlinkSync(tmpdir(), join(bundleDir, 'escape'))
+    expect(() => provisionDshSubProfile(home, { headlessBundleDir: bundleDir, unitHeadlessBundleDir: twinOf() }))
+      .toThrow(/not a plain tree of files/)
+  })
+
+  it('copies the installation-resolved bundle when nothing is pinned', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
+    const profileDir = provisionDshSubProfile(home)
+    const copy = join(profileDir, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless')
+    expect(lstatSync(copy).isDirectory()).toBe(true)
+    expect((JSON.parse(readFileSync(join(copy, 'package.json'), 'utf8')) as { name?: string }).name)
+      .toBe('@khorsheed/dsh-local-agent-dsh-headless')
   })
 })

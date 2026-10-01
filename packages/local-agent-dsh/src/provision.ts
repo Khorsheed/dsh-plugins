@@ -5,9 +5,11 @@
  * `<scoped home>/profiles/<name>` — a manifest listing the official
  * `@deepseek-ai/dsh-base` layer, the family headless composition as the
  * profile's own patch layer (copied verbatim from the headless bundle's
- * `cordis.patch.yml`), and a single symlink resolving
- * `@khorsheed/dsh-local-agent-dsh-headless` from the sub-profile's
- * node_modules (the loader resolves the patch's insert rows through it).
+ * `cordis.patch.yml`), and `@khorsheed/dsh-local-agent-dsh-headless` in
+ * the sub-profile's node_modules (the loader resolves the patch's insert
+ * rows through it) — a copy of the bundle for the host profile, a symlink
+ * for the `-unit` twin and for the pinned single-profile form (see
+ * `HeadlessBundleMount`).
  * Everything else the boot needs (dsh-base and its whole dependency graph,
  * cordis, the healed `profiles/node_modules` fallback) is resolved from the
  * dsh installation anchor automatically, so provisioning costs no pnpm
@@ -393,9 +395,53 @@ function writeIfChanged(path: string, content: string): void {
   if (!existsSync(path) || readFileSync(path, 'utf8') !== content) writeFileSync(path, content)
 }
 
+/**
+ * How a sub-profile reaches its headless bundle. `link` symlinks the bundle
+ * directory (the unit twin: the image's install, which a unit resolves on its
+ * own filesystem). `copy` mirrors it into the sub-profile's `node_modules`.
+ *
+ * The host profile copies because of host 0.2.0's module resolution. The
+ * boot classifies every module path. A path under `$DSH_HOME/profiles/` is a
+ * profile layer, and its undeclared bare imports fall through to the
+ * installation's own entries. A symlinked package whose realpath lies outside
+ * the profiles tree is a LINKED root, and only its declared
+ * `peerDependencies` are routed. The packed headless bundle declares none of
+ * `commander`, `@deepseek-ai/schemastery` or `@deepseek-ai/dsh-cmdline`
+ * (pack-dist strips `dependencies`). As a linked root its startup and runner
+ * rows therefore fail to import, nothing calls `appExit`, and the sub-dsh
+ * hangs with no session. The readiness probe met exactly that: a 420 s
+ * timeout. A copy under the scope's own profile is a profile layer and boots.
+ * Only the bundle's own files are copied, never a dependency closure: its
+ * `@deepseek-ai/*` imports still resolve from the installation running the
+ * sub-dsh, so cordis sees one instance of each (the reason the dual-
+ * filesystem contract rejected copying a closure still holds).
+ */
+type HeadlessBundleMount = 'link' | 'copy'
+
+/**
+ * Make `target` a byte-for-byte copy of the headless bundle `source`. A
+ * symlink left by an earlier scheme is replaced; an identical copy is left
+ * untouched, so re-provisioning before every round costs one comparison.
+ */
+function ensureBundleCopy(target: string, source: string): void {
+  let stat
+  try {
+    stat = lstatSync(target)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  if (stat?.isSymbolicLink() === true) rmSync(target, { force: true })
+  else if (stat !== undefined && presetTreesEqual(source, target)) return
+  if (presetTreeFiles(source) === undefined) {
+    throw new Error(`provision-dsh: headless bundle ${source} is missing or not a plain tree of files`)
+  }
+  mirrorPresetTree(source, target)
+}
+
 /** Provision one sub-profile directory against one headless bundle directory. */
 function provisionOneSubProfile(
   homeDir: string, profileName: string, bundleDir: string, patchSourceDir: string, config: DshSubProfileConfig,
+  mount: HeadlessBundleMount,
 ): string {
   const profileDir = join(homeDir, 'profiles', profileName)
   mkdirSync(profileDir, { recursive: true })
@@ -412,7 +458,8 @@ function provisionOneSubProfile(
   )
   const bundleLink = join(profileDir, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless')
   mkdirSync(dirname(bundleLink), { recursive: true })
-  ensureSymlink(bundleLink, bundleDir)
+  if (mount === 'copy') ensureBundleCopy(bundleLink, bundleDir)
+  else ensureSymlink(bundleLink, bundleDir)
   if (presetPackage !== undefined && config.preset !== undefined) {
     // RELATIVE, so the link resolves the same on the host and inside a unit
     // that bind-mounts the scope at a different absolute path.
@@ -426,7 +473,7 @@ function provisionOneSubProfile(
 /**
  * Provision (idempotently) the sub-dsh headless profile in the harness
  * scoped home: manifest, the headless patch as the profile's own patch
- * layer, and the bundle symlink — plus, when a preset package is composed,
+ * layer, and the headless bundle (a copy; a symlink in the `-unit` twin or under a lone `headlessBundleDir` pin) — plus, when a preset package is composed,
  * the relative link resolving it from the scope's own copy, and, when
  * `unitHeadlessBundleDir` is configured, the `-unit` twin a container round
  * launches. A file whose content already matches is left untouched, so
@@ -440,14 +487,18 @@ function provisionOneSubProfile(
 export function provisionDshSubProfile(homeDir: string, config: DshSubProfileConfig = {}): string {
   const profileName = config.profileName ?? DEFAULT_SUB_PROFILE_NAME
   const hostBundleDir = resolveHeadlessBundleDir(config)
-  const profileDir = provisionOneSubProfile(homeDir, profileName, hostBundleDir, hostBundleDir, config)
   const unitDir = config.unitHeadlessBundleDir
+  // The pinned single-profile form (a `headlessBundleDir` shared by host and
+  // unit, no twin) keeps its link: the pin's whole point is one path both
+  // filesystems resolve, and that form predates 0.2.0's linked-root routing.
+  const hostMount: HeadlessBundleMount = config.headlessBundleDir !== undefined && unitDir === undefined ? 'link' : 'copy'
+  const profileDir = provisionOneSubProfile(homeDir, profileName, hostBundleDir, hostBundleDir, config, hostMount)
   if (unitDir !== undefined) {
     // The twin's patch comes from the unit's bundle when this machine can
     // read it (a host-side mirror of the image's install, as `/opt` is on a
     // dataset machine), else from the host bundle — the link is what moves.
     const patchSource = existsSync(join(unitDir, HEADLESS_PATCH_FILENAME)) ? unitDir : hostBundleDir
-    provisionOneSubProfile(homeDir, unitSubProfileName(config), unitDir, patchSource, config)
+    provisionOneSubProfile(homeDir, unitSubProfileName(config), unitDir, patchSource, config, 'link')
   }
   return profileDir
 }

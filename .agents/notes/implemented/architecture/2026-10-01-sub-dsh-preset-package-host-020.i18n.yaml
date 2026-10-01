@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-01-sub-dsh-preset-package-host-020.md
-.agents/notes/implemented/architecture/2026-10-01-sub-dsh-preset-package-host-020.md: e43cd8facd14da566b2bb24a04e3cf476fc45c90
-.agents/notes/implemented/architecture/2026-10-01-sub-dsh-preset-package-host-020.zh.md: 325736cb1807b5c60bf1ea947a6dc70de036d519
+.agents/notes/implemented/architecture/2026-10-01-sub-dsh-preset-package-host-020.md: 3f76e83cee2399140f09e211fe89a10476ce23de
+.agents/notes/implemented/architecture/2026-10-01-sub-dsh-preset-package-host-020.zh.md: 9ff8301a5f6a80ab41ec883177d7167176755e16

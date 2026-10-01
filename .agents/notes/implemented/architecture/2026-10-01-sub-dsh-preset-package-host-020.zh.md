@@ -35,6 +35,13 @@ Status: implemented
 - 轮次带 `exec` 时 provider 选 `-unit` profile，否则不选。
 - web-eval profile 的 pin 从 `headlessBundleDir` 改成 `unitHeadlessBundleDir`。`headlessBundleDir` 保留原意，给仍想共用一个目标的部署用。
 
+**宿主 profile 拷贝 headless bundle，不再软链。** 宿主 0.2.0 启动时给每个模块路径分类。`$DSH_HOME/profiles/` 下的路径是 *profile 层*，未声明的裸导入落到安装的入口上。realpath 落在 profiles 树之外的软链包是 *linked root*，只路由它 `peerDependencies` 里的名字。pack-dist 剥掉了 `dependencies`，打包后的 headless bundle 没声明 `commander`、`@deepseek-ai/schemastery`、`@deepseek-ai/dsh-cmdline`。于是从 scope 软链到实例安装时，它的 startup 与 runner 两行导入失败，没有谁调 `appExit`，子 dsh 挂住、不出会话。3185 上第一次真机就绪探针正是这样，420 秒超时。
+- provisioning 现在把 bundle 自己的文件镜像到 `<profile>/node_modules/@khorsheed/dsh-local-agent-dsh-headless`：内容相同不动，安装变了重镜像，旧方案留下的软链直接替换、不碰其目标。
+- 依赖闭包不拷。`@deepseek-ai/*` 仍从运行子 dsh 的那份安装解析，双文件系统契约反对拷贝的理由（每个包只一份实例）照样成立。
+- `-unit` 孪生仍软链到镜像路径。只 pin `headlessBundleDir`、没有孪生的写法也仍软链：那是 0.1.x 共用一个子 profile 的形态，要的就是两个文件系统都解析得到的同一条路径。
+- 探针证据：0.2.0-rc.2 工具链上，scope 的完整组合（headless patch、registry 行、preset 包、权限层）软链时挂住，拷贝时以 `MISSING_CREDENTIAL` 退出（探针没有 key）。同一份拷贝在 0.1.5-rc.1 工具链上也走到 `MISSING_CREDENTIAL`。
+- `home.sha` 现在也覆盖拷贝里的 `package.json` 与 `cordis.patch.yml`。headless 安装升级后，在重新 provision 之前会表现为漂移；这是对的，受试对象变了。
+
 **封口对评测 preset 不改变任何东西。** `eval-lean` 与 `eval-full` 只点名 `persona`、`skill-filesystem`、`tool-skill`，工具来自 dsh-base 的根行，从来没点过委派工具行。它们写明的口径「同工具、不同技能」在 0.2.0 封口下原样成立。真要委派的 preset，在自己的组合里点名 provider 的 `./tool` 行。
 
 ## Alternatives considered
@@ -70,4 +77,5 @@ Status: implemented
   - 拒绝绝对路径、缺 preset 与软链；
   - 解析顺序，以及请求失败不持久化。
 - `packages/eval/tests/{preset-snapshot,capability-probe,capabilities}.spec.ts`：包形态、registry 回读、「没有 preset 行」的拒绝。
-- 真机：0.2.0-rc.2 临时实例（端口 3185）上两条 `dsh-{lean,full}-0.2.0-rc.2` 条件 provision 出带 `provisioned.capabilities` 的 lock，`dsh-lean-0.2.0-rc.2` 的一格端到端跑完。
+- `packages/local-agent-dsh/tests/provision.spec.ts`（bundle 拷贝）：刷新并删掉旧文件、替换旧软链、拒绝非纯文件树、默认从安装解析。
+- 真机：0.2.0-rc.2 临时实例（端口 3185）上两条 `dsh-{lean,full}-0.2.0-rc.2` 条件 provision 出带 `provisioned.capabilities` 的 lock。`dsh-lean-0.2.0-rc.2` 的第一次一格运行用的是软链，就绪探针失败（即上面的 420 秒挂住）；改拷贝后的结果见 T91 回报。

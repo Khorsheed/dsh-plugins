@@ -637,8 +637,9 @@ export async function startDshCliRun(
   const profileName = spec.exec === undefined ? config.profileName ?? DEFAULT_SUB_PROFILE_NAME : unitSubProfileName(config)
   // Provisioning is idempotent and cheap; re-running heals a deleted or
   // drifted sub-profile before every round. A CONTAINER round skips it: the
-  // sub-profile's node_modules symlink points at the host installation of the
-  // headless bundle, which resolves to nothing inside a unit — and the scoped
+  // sub-profile's node_modules carries the HOST installation's headless
+  // bundle (a copy of the host line's build, or a link that resolves to
+  // nothing inside a unit) — and the scoped
   // home is bind-mounted, so writing it would plant a broken profile in the
   // directory the unit actually reads. A containerized caller names the
   // unit's own profile through `profileName` (the image's in-box `headless`)
