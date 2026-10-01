@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-27-t85-judge-prompt-fence.md
-.agents/notes/implemented/feature/2026-09-27-t85-judge-prompt-fence.md: 5c0ede665c6af6a4b25c9d79c887e31c06e7b424
-.agents/notes/implemented/feature/2026-09-27-t85-judge-prompt-fence.zh.md: 73e93b62c12308abea8586d34e41a321ae3d80b6
+.agents/notes/implemented/feature/2026-09-27-t85-judge-prompt-fence.md: 9eecb5665d0b60d7b7d0d1f1bb31a152ee96f95a
+.agents/notes/implemented/feature/2026-09-27-t85-judge-prompt-fence.zh.md: 633c176ca717c33236cfd21346b649e3df3b0e16

@@ -12,9 +12,9 @@ import {
   jsonEquals,
   schemaSubsetProblems,
   validateJson,
-} from '../src/schema.ts'
-import { conditionDiagnostics } from '../src/validate.ts'
-import { hashConditionDocument } from '../src/hash.ts'
+} from '../src/contract/schema.ts'
+import { conditionDiagnostics } from '../src/contract/validate.ts'
+import { hashConditionDocument } from '../src/contract/hash.ts'
 
 const T1_CONDITION = JSON.parse(
   readFileSync(join(import.meta.dirname, 'fixtures/dataset/datasets/harness-comparison/conditions/dsh-exec.json'), 'utf8'),

@@ -6,9 +6,9 @@
  * mark over it lands at run level, and the newest wins across both.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { ARCHIVE_NS, CLOSURE_NS, readRunMarks, recordArchive, recordClosure } from '../src/closure.ts'
-import { readExportState, recordExportNote, recordExportNoteOn, type EvalExportNote } from '../src/export-note.ts'
-import { runLevelAnnotations, writeRunNote } from '../src/run-notes.ts'
+import { ARCHIVE_NS, CLOSURE_NS, readRunMarks, recordArchive, recordClosure } from '../src/report/closure.ts'
+import { readExportState, recordExportNote, recordExportNoteOn, type EvalExportNote } from '../src/report/export-note.ts'
+import { runLevelAnnotations, writeRunNote } from '../src/report/run-notes.ts'
 
 const RUN = 'run-20261001-t89'
 

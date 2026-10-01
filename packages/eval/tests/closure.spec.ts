@@ -8,8 +8,8 @@
  * status.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { ARCHIVE_NS, CLOSURE_NS, foldRunMarks, readRunMarks, recordArchive, recordClosure } from '../src/closure.ts'
-import { deriveExperimentStatus } from '../src/experiments.ts'
+import { ARCHIVE_NS, CLOSURE_NS, foldRunMarks, readRunMarks, recordArchive, recordClosure } from '../src/report/closure.ts'
+import { deriveExperimentStatus } from '../src/design/experiments.ts'
 
 const RUN = 'run-20260923-t72'
 

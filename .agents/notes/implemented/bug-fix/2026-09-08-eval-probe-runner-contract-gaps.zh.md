@@ -16,7 +16,7 @@ T19 为 dataseek 题集写了第一批真实探针，并拿 pilot A 的格子跑
 
 ## Decision
 
-`packages/eval/src/judge.ts` 三处都改，§6.7 随之修订（协议 v1-rev5）。
+`packages/eval/src/judge/judge.ts` 三处都改，§6.7 随之修订（协议 v1-rev5）。
 
 **两个 verify 层都物化，相对布局与题库一致。** 判定目录现在镜像仓库：题集级层在 `<judging>/verify/…`，该题的层在 `<judging>/items/<题 id>/verify/…`。布局一致就是全部机制——题内探针用 `../../../../verify/helpers/lib/x.mjs` import 共享库，这与题库里成立的是同一条相对路径，于是一把尺子服务所有题，每题的副本可以删掉。题集级层只要非空就物化，有没有探针都一样：它首先是库，其次才是探针来源。
 

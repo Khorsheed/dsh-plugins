@@ -24,13 +24,13 @@
  * The archive mark changes GROUPING only. It never enters the status rule.
  * @module @khorsheed/dsh-eval
  */
-import type { MissionAnnotateFace, MissionReadFace } from './faces.ts'
+import type { MissionAnnotateFace, MissionReadFace } from '../faces.ts'
 import { runLevelAnnotations, writeRunNote } from './run-notes.ts'
 import type {
   EvalArchiveMark, EvalArchiveWrite, EvalClosure, EvalClosureExit, EvalClosureWrite, EvalRunMarks,
-} from './types.ts'
+} from '../types.ts'
 
-export type { EvalArchiveMark, EvalClosure, EvalClosureExit, EvalClosureRefusal, EvalClosureWrite, EvalRunMarks } from './types.ts'
+export type { EvalArchiveMark, EvalClosure, EvalClosureExit, EvalClosureRefusal, EvalClosureWrite, EvalRunMarks } from '../types.ts'
 
 /** The annotation namespace closures are written in. */
 export const CLOSURE_NS = 'eval-closure'

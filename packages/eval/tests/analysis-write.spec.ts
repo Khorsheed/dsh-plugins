@@ -13,8 +13,8 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ANALYSIS_WRITE_PREFIX, resolveAnalysisWrite } from '../src/analysis-write.ts'
-import { createExperiment } from '../src/experiment-store.ts'
+import { ANALYSIS_WRITE_PREFIX, resolveAnalysisWrite } from '../src/design/analysis-write.ts'
+import { createExperiment } from '../src/design/experiment-store.ts'
 import { EvalService } from '../src/service.ts'
 import { cleanupTmp, tmpTree, useDshHome } from './helpers.ts'
 

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-17-eval-conditions-last-mile.md
-.agents/notes/implemented/bug-fix/2026-09-17-eval-conditions-last-mile.md: 105ca649b9deb3a643a3a579fd0c05bf65084939
-.agents/notes/implemented/bug-fix/2026-09-17-eval-conditions-last-mile.zh.md: 29d13f1e881a6f91948f5960ad00cec1ee83311b
+.agents/notes/implemented/bug-fix/2026-09-17-eval-conditions-last-mile.md: 0dc366301bb47202f1262b1c16f3b09633b54eaf
+.agents/notes/implemented/bug-fix/2026-09-17-eval-conditions-last-mile.zh.md: 341bc9fb85003cbfe9ce363d79727d317525beb8

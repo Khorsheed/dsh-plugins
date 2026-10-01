@@ -27,7 +27,7 @@
  * pass, so the report page can say the sentence instead of a reader finding it.
  * @module @khorsheed/dsh-eval
  */
-import type { MissionAnnotateFace, MissionReadFace } from './faces.ts'
+import type { MissionAnnotateFace, MissionReadFace } from '../faces.ts'
 import { runLevelAnnotations, writeRunNote } from './run-notes.ts'
 
 /** The `orchestrator` annotation kind this module writes and reads. */

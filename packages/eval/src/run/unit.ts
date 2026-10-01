@@ -19,8 +19,8 @@
  * @module @khorsheed/dsh-eval
  */
 import { readdirSync, statSync } from 'node:fs'
-import type { EvalDiagnostic } from './validate.ts'
-import type { LabAcquireSpec, LabFingerprintComponents } from './faces.ts'
+import type { EvalDiagnostic } from '../contract/validate.ts'
+import type { LabAcquireSpec, LabFingerprintComponents } from '../faces.ts'
 
 /** The in-unit working directory every cell's workspace is populated into. */
 export const UNIT_WORKSPACE = '/workspace'

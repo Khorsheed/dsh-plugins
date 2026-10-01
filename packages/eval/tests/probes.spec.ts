@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { DatasetsFace } from '../src/faces.ts'
-import { collectProbes, discardProbeDir, itemVerifyRoot, PROBE_EXIT_NOT_APPLICABLE, runProbes } from '../src/judge.ts'
+import { collectProbes, discardProbeDir, itemVerifyRoot, PROBE_EXIT_NOT_APPLICABLE, runProbes } from '../src/judge/judge.ts'
 
 const COMMIT = 'c0ffee'.repeat(6) + 'abcd'
 const roots: string[] = []

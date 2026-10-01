@@ -52,9 +52,9 @@ import {
   type ExperimentDataset,
   listExperimentRecords,
 } from './experiment-store.ts'
-import type { DatasetsRegistryFace } from './faces.ts'
-import { CONDITION_ID_RE, PLAN_SCHEMA_ID } from './schema.ts'
-import { conditionUnitOf, defaultConditionUnit } from './unit.ts'
+import type { DatasetsRegistryFace } from '../faces.ts'
+import { CONDITION_ID_RE, PLAN_SCHEMA_ID } from '../contract/schema.ts'
+import { conditionUnitOf, defaultConditionUnit } from '../run/unit.ts'
 
 /**
  * Thrown when a draft cannot be written at all: an unregistered dataset, a

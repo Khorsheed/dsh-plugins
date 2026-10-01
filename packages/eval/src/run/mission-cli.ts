@@ -17,7 +17,7 @@
  * @module @khorsheed/dsh-eval
  */
 import { execFile, execFileSync } from 'node:child_process'
-import type { MissionFinalizeFace } from './faces.ts'
+import type { MissionFinalizeFace } from '../faces.ts'
 
 /** How to reach the `dsh-mission` CLI and which ledger to drive. */
 export interface MissionCliOptions {

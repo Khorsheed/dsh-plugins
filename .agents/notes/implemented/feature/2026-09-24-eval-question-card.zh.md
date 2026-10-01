@@ -8,10 +8,10 @@ Status: implemented
 
 ## Decision
 
-- **协议 v1-rev14，单独一个提交**：plan 顶层三个可选字段 `question` / `expectation` / `answeredWhen`，自由文本。旧 plan 一个都没有，validate 不告警，页面不出这一块；空白字符串等于没写（`planQuestionOf`，`packages/eval/src/plan-question.ts`——三处页面共用这一个读法）。文案写的是 §6.5，但 plan schema 在 §6.4（§6.5 是判据 / 权重表），字段写在 §6.4。
+- **协议 v1-rev14，单独一个提交**：plan 顶层三个可选字段 `question` / `expectation` / `answeredWhen`，自由文本。旧 plan 一个都没有，validate 不告警，页面不出这一块；空白字符串等于没写（`planQuestionOf`，`packages/eval/src/design/plan-question.ts`——三处页面共用这一个读法）。文案写的是 §6.5，但 plan schema 在 §6.4（§6.5 是判据 / 权重表），字段写在 §6.4。
 - **`eval_plan_draft`** 收 `question` / `expectation` / `answered_when`；描述写「起草时把人的问题原样写进 question」，eval-tool 提示词段也写了一句。SKILL 不动。
 - **设计页 ⓪ 要回答的问题**，在 ① 之上，只在 plan 有这一块时出现。交互稿的标题就是「要回答的问题」；编号用 ⓪，让 T67 的 ①–③ 保持原编号。
-- **数字就地改**——次数、`budget.activeMinutes`、`budget.turns`、`judge.samples`，走新 Remote `setPlanNumbers` 与同名服务动词（`packages/eval/src/plan-numbers.ts`）。写是**文本级**的。plan.json 自 T73 起按字节保存（导入的 plan 靠哈希被旧 run 找回），所以扫描器定位每个值的 token，只替换那几段字节。写之前按规范化 JSON 与预期文档比对，写入走临时文件 + rename，写完读回核对。以下情况拒绝：
+- **数字就地改**——次数、`budget.activeMinutes`、`budget.turns`、`judge.samples`，走新 Remote `setPlanNumbers` 与同名服务动词（`packages/eval/src/design/plan-numbers.ts`）。写是**文本级**的。plan.json 自 T73 起按字节保存（导入的 plan 靠哈希被旧 run 找回），所以扫描器定位每个值的 token，只替换那几段字节。写之前按规范化 JSON 与预期文档比对，写入走临时文件 + rename，写完读回核对。以下情况拒绝：
   - 同一个键写了两次；
   - 缺字段；
   - plan 里没有判官——加判官是结构改动，拒绝理由写明请让 agent 起草。

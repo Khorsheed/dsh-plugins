@@ -12,9 +12,9 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { hashConditionDocument } from '../src/hash.ts'
-import { planQuestionOf } from '../src/plan-question.ts'
-import { EvalPlanEditRefused, writePlanNumbers } from '../src/plan-numbers.ts'
+import { hashConditionDocument } from '../src/contract/hash.ts'
+import { planQuestionOf } from '../src/design/plan-question.ts'
+import { EvalPlanEditRefused, writePlanNumbers } from '../src/design/plan-numbers.ts'
 import { EvalService } from '../src/service.ts'
 import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson } from './helpers.ts'
 

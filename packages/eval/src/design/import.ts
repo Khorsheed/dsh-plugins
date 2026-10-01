@@ -24,11 +24,11 @@
 import { access, readFile, writeFile, mkdir } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { createHash } from 'node:crypto'
-import { hashConditionDocument } from './hash.ts'
-import { diffConditionDocuments } from './read.ts'
-import { PLAN_SCHEMA_ID } from './schema.ts'
+import { hashConditionDocument } from '../contract/hash.ts'
+import { diffConditionDocuments } from '../read.ts'
+import { PLAN_SCHEMA_ID } from '../contract/schema.ts'
 import { conditionLibraryDir, createExperiment, listExperimentRecords } from './experiment-store.ts'
-import type { DatasetsRegistryFace } from './faces.ts'
+import type { DatasetsRegistryFace } from '../faces.ts'
 
 /** Thrown when an import cannot proceed; nothing was written. */
 export class EvalImportRefused extends Error {}

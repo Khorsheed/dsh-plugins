@@ -7,9 +7,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { generateTemplate, generateTemplateFromManifest, stageStateName } from '../src/template.ts'
-import { loadManifest } from '../src/manifest.ts'
-import { jsonEquals } from '../src/schema.ts'
+import { generateTemplate, generateTemplateFromManifest, stageStateName } from '../src/contract/template.ts'
+import { loadManifest } from '../src/contract/manifest.ts'
+import { jsonEquals } from '../src/contract/schema.ts'
 
 const DATASET_ROOT = join(import.meta.dirname, 'fixtures', 'dataset', 'datasets', 'harness-comparison')
 const MANIFEST_PATH = join(DATASET_ROOT, 'manifest.yml')

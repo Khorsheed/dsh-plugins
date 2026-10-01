@@ -57,11 +57,11 @@
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { hashConditionDocument, hashHome, type HomeHash } from './hash.ts'
-import { CONDITION_ID_RE, CONDITION_SCHEMA_ID, LOCK_SCHEMA, LOCK_SCHEMA_ID, validateJson } from './schema.ts'
+import { hashConditionDocument, hashHome, type HomeHash } from './contract/hash.ts'
+import { CONDITION_ID_RE, CONDITION_SCHEMA_ID, LOCK_SCHEMA, LOCK_SCHEMA_ID, validateJson } from './contract/schema.ts'
 import { checkAgainstEffective, flattenEffective, type ProvisionCheck } from './effective.ts'
 import type { LocalAgentEffectiveSettingsFace, LocalAgentFace, LocalAgentScopeStatus } from './faces.ts'
-import { conditionDiagnostics, expandHome, type EvalDiagnostic } from './validate.ts'
+import { conditionDiagnostics, expandHome, type EvalDiagnostic } from './contract/validate.ts'
 
 /** Thrown when provision cannot even begin — an unusable path, a facade that cannot answer. */
 export class EvalProvisionRefused extends Error {

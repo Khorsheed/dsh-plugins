@@ -13,15 +13,15 @@
 import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import yaml from 'js-yaml'
-import { ARTIFACT_MAX_BYTES, extensionOf, isInside } from './cell-artifact.ts'
-import type { DatasetsFace } from './faces.ts'
-import { JUDGE_MATERIAL_FILES, judgedCriteria, judgePromptSegments, pickRubricPath } from './judge.ts'
-import { EvalReadRefused } from './read.ts'
-import { inStageScope, leafStages } from './weights.ts'
+import { ARTIFACT_MAX_BYTES, extensionOf, isInside } from '../cell-artifact.ts'
+import type { DatasetsFace } from '../faces.ts'
+import { JUDGE_MATERIAL_FILES, judgedCriteria, judgePromptSegments, pickRubricPath } from '../judge/judge.ts'
+import { EvalReadRefused } from '../read.ts'
+import { inStageScope, leafStages } from '../judge/weights.ts'
 import type {
   EvalDatasetFileRequest, EvalDatasetFileView, EvalItemMaterialFile, EvalItemMaterialsView, EvalItemRubricRow,
   EvalJudgePromptPreviewView, EvalJudgePromptView,
-} from './types.ts'
+} from '../types.ts'
 
 /** What a dataset file may be read back as: the artifact list plus the probe languages. */
 export const DATASET_TEXT_EXTENSIONS: readonly string[] = [

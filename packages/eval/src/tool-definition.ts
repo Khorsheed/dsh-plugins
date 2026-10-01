@@ -51,8 +51,8 @@
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { EvalService } from './service.ts'
-import type { DraftConditionEdit } from './draft.ts'
-import { expandHome } from './validate.ts'
+import type { DraftConditionEdit } from './design/draft.ts'
+import { expandHome } from './contract/validate.ts'
 
 /** The names this module registers, in registration order. */
 export const EVAL_TOOL_NAMES: readonly string[] =

@@ -21,10 +21,10 @@
  * @module @khorsheed/dsh-eval
  */
 import { basename, isAbsolute, relative } from 'node:path'
-import { attemptDirOf } from './cell-detail.ts'
-import type { MissionAttemptFace, MissionReadFace } from './faces.ts'
-import type { RunCellsReport, RunStatusReport } from './read.ts'
-import type { EvalClosure, EvalExperimentRow, EvalExperimentSnapshot, EvalExperimentStatus } from './types.ts'
+import { attemptDirOf } from '../cell-detail.ts'
+import type { MissionAttemptFace, MissionReadFace } from '../faces.ts'
+import type { RunCellsReport, RunStatusReport } from '../read.ts'
+import type { EvalClosure, EvalExperimentRow, EvalExperimentSnapshot, EvalExperimentStatus } from '../types.ts'
 
 /** One file an attempt registered, by the name a citation uses. */
 export interface EvalAnswerFile {

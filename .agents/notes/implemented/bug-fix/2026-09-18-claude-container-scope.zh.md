@@ -32,7 +32,7 @@ T20c 起容器轮 bind 挂的就是实例自己那个作用域目录（读写）
 
 评测**强制**这条而不是只写进文档，因为它的失败代价是一次人工重登，而且在下一次宿主轮之前完全看不见：
 
-- `packages/eval/src/unit.ts` 里的 `claudeScopeDiagnostics` 接收「跑在单元里的条件」与「跑在宿主上的条件」两组，对没有 scope 的容器化 claude 条件返回 `CLAUDE_CONTAINER_SCOPE_MISSING`，对宿主侧 claude 条件占用了容器条件已用 scope 的情况返回 `CLAUDE_CONTAINER_SCOPE_SHARED`。两条消息都写明**为什么**（两个存储、family 连坐），缺 scope 那条还点名修法：`/claude-code login --scope <名>`。
+- `packages/eval/src/run/unit.ts` 里的 `claudeScopeDiagnostics` 接收「跑在单元里的条件」与「跑在宿主上的条件」两组，对没有 scope 的容器化 claude 条件返回 `CLAUDE_CONTAINER_SCOPE_MISSING`，对宿主侧 claude 条件占用了容器条件已用 scope 的情况返回 `CLAUDE_CONTAINER_SCOPE_SHARED`。两条消息都写明**为什么**（两个存储、family 连坐），缺 scope 那条还点名修法：`/claude-code login --scope <名>`。
 - 它在 `validate` 里跑（离线，在有人批准计划之前），也在 run 的开跑前拒绝里再跑一次（在取任何单元之前）。计划没有 unit 段时所有条件都在宿主上，那时选手也算宿主侧。
 - **缺省的 scope 就是实例的默认 scope**——`/claude-code` 委派与每次状态探针用的正是它——所以「不写」是最坏情况而不是中性情况。这就是规则写成「必须声明」而不是「应当不同」的原因。
 

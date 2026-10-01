@@ -57,7 +57,7 @@ It would be removed by the profile's own `rm -rf`, which is tidier. `dsh-skill-f
 
 ## Consequences
 
-- `packages/eval/src/draft.ts` (new): `draftExperiment` (mint, write, refuse) and `draftOptions` (the form's pickers). `EvalDraftRefused` is the refusal class — deliberately not the class a contract violation gets, because a plan with errors still lands.
+- `packages/eval/src/design/draft.ts` (new): `draftExperiment` (mint, write, refuse) and `draftOptions` (the form's pickers). `EvalDraftRefused` is the refusal class — deliberately not the class a contract violation gets, because a plan with errors still lands.
 - `packages/eval/src/service.ts`: `draftExperiment` / `draftOptions`, both resolving the repository through the same `resolveRepoScope` every read verb uses, so the session binding's dataset whitelist is honoured. (Since T73 branch 2 a draft names `<registration id>/<set>`, pins a commit and lands as an experiment under the state root; see [experiments as deployment-level objects](../architecture/2026-09-23-eval-experiments-deployment-level.md).)
 - `packages/eval/src/remote.ts`: `newExperiment` / `draftOptions`, both session-carrying.
 - `packages/eval/src/tool.ts`: `eval_plan_draft`, the fifth definition. `mintArgument` checks `id` / `from` by hand — the parameter subset carries `required` at the argument root only, so a nested record's keys are all optional to the schema however the description reads.

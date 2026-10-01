@@ -57,7 +57,7 @@ Status: implemented
 
 ## Consequences
 
-- `packages/eval/src/draft.ts`（新）：`draftExperiment`（复制、写、拒绝）与 `draftOptions`（表单的选择器）。`EvalDraftRefused` 是拒绝类——刻意不是违约用的那个类，因为有错的 plan 仍然要落盘。
+- `packages/eval/src/design/draft.ts`（新）：`draftExperiment`（复制、写、拒绝）与 `draftOptions`（表单的选择器）。`EvalDraftRefused` 是拒绝类——刻意不是违约用的那个类，因为有错的 plan 仍然要落盘。
 - `packages/eval/src/service.ts`：`draftExperiment` / `draftOptions`，都经每个读动词都在用的那个 `resolveRepoScope` 解析题库，所以会话绑定的题集白名单同样生效。（T73 分支 2 起，草稿写 `<登记 id>/<set>`、钉定 commit、落成状态根下的实验；见[实验成为部署级对象](../architecture/2026-09-23-eval-experiments-deployment-level.zh.md)。）
 - `packages/eval/src/remote.ts`：`newExperiment` / `draftOptions`，都带会话。
 - `packages/eval/src/tool.ts`：第五个定义 `eval_plan_draft`。`mintArgument` 手工检查 `id` / `from`——参数子集只在**参数根**上支持 `required`，嵌套记录的键对 schema 来说一律可选，无论描述怎么写。

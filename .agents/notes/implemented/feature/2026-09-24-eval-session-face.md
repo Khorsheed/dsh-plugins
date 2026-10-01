@@ -22,7 +22,7 @@ When an agent drafted an experiment in a session, the session kept only a generi
   - `dsh.client.inject` names `@deepseek-ai/dsh-client-ui-tool`.
   - In a composition without that package, the row stays the host's generic one.
   - The card does not self-hide on the preset: the row exists only because the session was granted `eval_plan_draft`.
-- **`eval_experiment_get({experiment})`** (`packages/eval/src/experiment-get.ts`, service method `experimentGet`).
+- **`eval_experiment_get({experiment})`** (`packages/eval/src/design/experiment-get.ts`, service method `experimentGet`).
   - Lookup: it finds the experiment by experimentId, list-row id, or run id, and throws `EvalReadRefused` when none matches.
   - It returns:
     - the list row, minus the plan path;

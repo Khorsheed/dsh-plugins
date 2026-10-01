@@ -9,24 +9,24 @@
  * @module @khorsheed/dsh-eval
  */
 import { resolve } from 'node:path'
-import { hashConditionDocument, hashHome, type HomeHash } from './hash.ts'
-import { writeEvalReport, type ReportWrite } from './report.ts'
-import { CONDITION_SCHEMA_ID } from './schema.ts'
+import { hashConditionDocument, hashHome, type HomeHash } from './contract/hash.ts'
+import { writeEvalReport, type ReportWrite } from './report/report.ts'
+import { CONDITION_SCHEMA_ID } from './contract/schema.ts'
 import {
   conditionDiagnostics, expandHome, validatePlan,
   type EvalDiagnostic, type PlanValidation, type ValidatePlanOptions,
-} from './validate.ts'
-import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions } from './template.ts'
+} from './contract/validate.ts'
+import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions } from './contract/template.ts'
 import {
   defaultStateRoot, runPlan, EvalRunRefused, type RunDeps, type RunExperiment, type RunOptions, type RunReport,
-} from './run.ts'
-import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport, type FinalizeUnitsFace } from './finalize.ts'
+} from './run/run.ts'
+import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport, type FinalizeUnitsFace } from './run/finalize.ts'
 import {
   EvalRunJobs,
   type EvalRunHandle,
   type EvalRunOutput,
   type EvalRunStatus,
-} from './job.ts'
+} from './run/job.ts'
 import {
   EvalReadRefused,
   diffConditions,
@@ -41,32 +41,32 @@ import {
 } from './read.ts'
 import { EvalProvisionRefused, provisionCondition, type ProvisionReport } from './provision.ts'
 import { conditionPathIn, setConditionEndpoint as writeConditionEndpoint } from './condition-edit.ts'
-import { draftExperiment as writeDraft, draftOptions as readDraftOptions } from './draft.ts'
-import { writeAnalysisFile, type AnalysisWriteResult } from './analysis-write.ts'
+import { draftExperiment as writeDraft, draftOptions as readDraftOptions } from './design/draft.ts'
+import { writeAnalysisFile, type AnalysisWriteResult } from './design/analysis-write.ts'
 import {
   conditionLibraryDir, conditionLibraryRoot, EvalExperimentError, readExperiment,
   type ExperimentRecord,
-} from './experiment-store.ts'
-import { listAnalysisFiles, readExperimentArtifact } from './experiment-artifact.ts'
-import { listItemMaterials, previewJudgePrompt, readDatasetFile, readJudgePrompt, type PinnedDataset } from './item-materials.ts'
+} from './design/experiment-store.ts'
+import { listAnalysisFiles, readExperimentArtifact } from './design/experiment-artifact.ts'
+import { listItemMaterials, previewJudgePrompt, readDatasetFile, readJudgePrompt, type PinnedDataset } from './design/item-materials.ts'
 import { readFile as readTextFile } from 'node:fs/promises'
-import { composeExperimentGet, type EvalExperimentGetView } from './experiment-get.ts'
-import { importExperiments, type ImportReport } from './import.ts'
-import { recordArchive, recordClosure } from './closure.ts'
-import { experimentDetail, experimentRunIds, listExperiments, pairRun, readPlans, runsForItem } from './experiments.ts'
-import { EvalPlanEditRefused, writePlanNumbers } from './plan-numbers.ts'
-import { planEstimate, planItemFacts } from './plan-items.ts'
+import { composeExperimentGet, type EvalExperimentGetView } from './design/experiment-get.ts'
+import { importExperiments, type ImportReport } from './design/import.ts'
+import { recordArchive, recordClosure } from './report/closure.ts'
+import { experimentDetail, experimentRunIds, listExperiments, pairRun, readPlans, runsForItem } from './design/experiments.ts'
+import { EvalPlanEditRefused, writePlanNumbers } from './design/plan-numbers.ts'
+import { planEstimate, planItemFacts } from './design/plan-items.ts'
 import { materializationShaOf, runCellDetail } from './cell-detail.ts'
 import { readCellArtifact } from './cell-artifact.ts'
-import { judgeQueueView, writeHumanFinal } from './judge-bench.ts'
+import { judgeQueueView, writeHumanFinal } from './judge/judge-bench.ts'
 import { cellAnswersView } from './answers.ts'
 import { pivotMatrix, type MatrixInputCell } from './matrix-view.ts'
-import { conditionDiffView, conditionsView, provisionChecks, reviewPlan } from './review.ts'
-import { projectFinalize, runReportView } from './report-view.ts'
+import { conditionDiffView, conditionsView, provisionChecks, reviewPlan } from './design/review.ts'
+import { projectFinalize, runReportView } from './report/report-view.ts'
 import {
   readExportState, recordExportNote, reexportDirOf,
   type EvalExportNote,
-} from './export-note.ts'
+} from './report/export-note.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsFace, DatasetsRegistryFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
@@ -1861,37 +1861,37 @@ export class EvalService {
   }
 }
 
-export { EvalRunRefused } from './run.ts'
-export type { RunOptions, RunReport, RunCellReport, RunSubset } from './run.ts'
-export { EvalFinalizeRefused } from './finalize.ts'
-export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
+export { EvalRunRefused } from './run/run.ts'
+export type { RunOptions, RunReport, RunCellReport, RunSubset } from './run/run.ts'
+export { EvalFinalizeRefused } from './run/finalize.ts'
+export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './run/finalize.ts'
 export { EvalReadRefused } from './read.ts'
-export { ANALYSIS_WRITE_PREFIX, EvalWriteRefused, resolveAnalysisWrite, writeAnalysisFile } from './analysis-write.ts'
-export type { AnalysisWriteResult, AnalysisWriteTarget } from './analysis-write.ts'
-export { decideDatasetVersion, DatasetVersionRefused } from './dataset-version.ts'
-export type { DatasetVersionCandidate, DatasetVersionDecision, DatasetVersionFace } from './dataset-version.ts'
+export { ANALYSIS_WRITE_PREFIX, EvalWriteRefused, resolveAnalysisWrite, writeAnalysisFile } from './design/analysis-write.ts'
+export type { AnalysisWriteResult, AnalysisWriteTarget } from './design/analysis-write.ts'
+export { decideDatasetVersion, DatasetVersionRefused } from './design/dataset-version.ts'
+export type { DatasetVersionCandidate, DatasetVersionDecision, DatasetVersionFace } from './design/dataset-version.ts'
 export {
   conditionLibraryDir, conditionLibraryRoot, createExperiment, EvalExperimentError, EXPERIMENT_ID_RE, EXPERIMENT_META_SCHEMA,
   experimentIdOfPlanPath, experimentsRoot, experimentSlug, listExperimentRecords, mintExperimentId, readExperiment,
-} from './experiment-store.ts'
-export type { CreateExperimentInput, ExperimentDataset, ExperimentMeta, ExperimentRecord } from './experiment-store.ts'
-export { listAnalysisFiles, readExperimentArtifact } from './experiment-artifact.ts'
-export { EvalImportRefused, importExperiments, parseImportSource } from './import.ts'
-export type { ImportedExperiment, ImportRegistryFace, ImportReport } from './import.ts'
+} from './design/experiment-store.ts'
+export type { CreateExperimentInput, ExperimentDataset, ExperimentMeta, ExperimentRecord } from './design/experiment-store.ts'
+export { listAnalysisFiles, readExperimentArtifact } from './design/experiment-artifact.ts'
+export { EvalImportRefused, importExperiments, parseImportSource } from './design/import.ts'
+export type { ImportedExperiment, ImportRegistryFace, ImportReport } from './design/import.ts'
 export type { ConditionDiff, ConditionFieldDiff, ConditionsReport, ConditionSummary, RunCellStatus, RunLedgerStatus, RunStatusReport } from './read.ts'
-export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, pairRun, readPlans, runsForItem } from './experiments.ts'
-export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
+export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, pairRun, readPlans, runsForItem } from './design/experiments.ts'
+export { conditionDiffView, conditionsView, reviewPlan } from './design/review.ts'
 export { judgeSessionsOf, materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
 export { ARTIFACT_MAX_BYTES, ARTIFACT_MAX_ENTRIES, TEXT_EXTENSIONS, extensionOf, isInside, readCellArtifact } from './cell-artifact.ts'
 export { DEFAULT_STUCK_MS, pivotMatrix, repDot } from './matrix-view.ts'
-export { bundleDirOf, exportDirCandidates, projectFinalize, projectReport, runReportView } from './report-view.ts'
+export { bundleDirOf, exportDirCandidates, projectFinalize, projectReport, runReportView } from './report/report-view.ts'
 export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
-export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
+export type { ExperimentsInput, ExperimentStatusInput } from './design/experiments.ts'
 export { EvalProvisionRefused } from './provision.ts'
-export { EvalDraftRefused, draftExperiment, draftOptions } from './draft.ts'
-export { EvalPlanEditRefused, writePlanNumbers } from './plan-numbers.ts'
-export type { PlanNumberChange, PlanNumberField, PlanNumbers, PlanNumbersReport } from './plan-numbers.ts'
-export { planQuestionOf } from './plan-question.ts'
-export type { DraftConditionEdit, DraftExperimentInput, DraftOptions, DraftWrite } from './draft.ts'
+export { EvalDraftRefused, draftExperiment, draftOptions } from './design/draft.ts'
+export { EvalPlanEditRefused, writePlanNumbers } from './design/plan-numbers.ts'
+export type { PlanNumberChange, PlanNumberField, PlanNumbers, PlanNumbersReport } from './design/plan-numbers.ts'
+export { planQuestionOf } from './design/plan-question.ts'
+export type { DraftConditionEdit, DraftExperimentInput, DraftOptions, DraftWrite } from './design/draft.ts'
 export type { ProvisionReport } from './provision.ts'
 export type { ProvisionCheck } from './effective.ts'

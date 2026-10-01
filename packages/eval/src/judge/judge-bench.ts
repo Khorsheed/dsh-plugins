@@ -46,20 +46,20 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { attemptDirOf, type AttemptDirFace } from './cell-detail.ts'
-import { readExportState } from './export-note.ts'
-import type { DatasetsFace, MissionAnnotateFace, MissionReadFace } from './faces.ts'
+import { attemptDirOf, type AttemptDirFace } from '../cell-detail.ts'
+import { readExportState } from '../report/export-note.ts'
+import type { DatasetsFace, MissionAnnotateFace, MissionReadFace } from '../faces.ts'
 import {
   buildDeidentifyRules, deidentify, humanCriteria, pickRubricPath,
   JUDGE_MATERIAL_FILES, type DeidentifyRule,
 } from './judge.ts'
-import { EvalReadRefused } from './read.ts'
-import { judgeConsistencyOf, type JudgeConsistencyCell } from './report.ts'
-import { validateJson, VERDICT_SCHEMA, VERDICT_SCHEMA_ID } from './schema.ts'
+import { EvalReadRefused } from '../read.ts'
+import { judgeConsistencyOf, type JudgeConsistencyCell } from '../report/report.ts'
+import { validateJson, VERDICT_SCHEMA, VERDICT_SCHEMA_ID } from '../contract/schema.ts'
 import type {
   EvalJudgeCriterionRow, EvalJudgeDraftSample, EvalJudgeQueueCell, EvalJudgeQueueView,
   EvalJudgeVerdictInput, EvalHumanFinalResult,
-} from './types.ts'
+} from '../types.ts'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

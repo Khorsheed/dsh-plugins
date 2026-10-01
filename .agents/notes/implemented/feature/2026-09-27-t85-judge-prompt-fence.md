@@ -12,7 +12,7 @@ A user walking through T84 raised two defects in the judge prompt:
 ## Decision
 
 - **Adaptive fence.** `materialFence` returns `max(3, longest backtick run in the material + 1)` backticks. `fencedMaterial` wraps one material file in it.
-- **One template, two consumers.** `judgePromptSegments` (`packages/eval/src/judge.ts`) returns the prompt as segments: literal text, and a `material` slot for each file. `buildJudgePrompt` fills the slots with `fencedMaterial` and joins the segments. Nothing else builds the prompt text.
+- **One template, two consumers.** `judgePromptSegments` (`packages/eval/src/judge/judge.ts`) returns the prompt as segments: literal text, and a `material` slot for each file. `buildJudgePrompt` fills the slots with `fencedMaterial` and joins the segments. Nothing else builds the prompt text.
 - **The preview returns segments.** `EvalJudgePromptPreviewView` now carries `segments` in place of `prompt` + `sections`. The page renders a slot as a dashed grey label, 「此处放入选手的 X 全文（去指纹后）」, after the file heading and outside any fence. Every text segment is the real prompt's bytes.
 - **Tests.** `tests/judge.spec.ts` covers plain material, material holding ```` ``` ```` and material holding ```` ```` ````. The plain case is pinned to the sha recorded from the builder before this change.
 

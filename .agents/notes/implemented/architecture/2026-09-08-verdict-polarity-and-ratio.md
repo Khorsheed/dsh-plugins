@@ -32,7 +32,7 @@ The schema subset the validator supports has no numeric bounds, so the report ch
 
 Multi-sample aggregation keeps the established rule and extends it: booleans are still the majority across samples, and a proportional criterion is the mean of the proportions its samples actually declared (samples without a usable ratio are not averaged in). With no `ratio` anywhere the arithmetic is bit-for-bit the boolean one it generalizes.
 
-Protocol version moves to **v1-rev4**. §6.5 gains the polarity rules, the `ratio` rules, and the derived table's shape; the verdict schema block gains `ratio` verbatim from `packages/eval/src/schema.ts`, and §6.5 now publishes two verdict examples (boolean and proportional), each pinned to its own fixture.
+Protocol version moves to **v1-rev4**. §6.5 gains the polarity rules, the `ratio` rules, and the derived table's shape; the verdict schema block gains `ratio` verbatim from `packages/eval/src/contract/schema.ts`, and §6.5 now publishes two verdict examples (boolean and proportional), each pinned to its own fixture.
 
 ## Alternatives considered
 

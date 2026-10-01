@@ -41,5 +41,5 @@ pilot-d-preset 的报告从每组各跑一次的一道题里印出了 `mean Δ =
 
 ## 相关
 
-- `packages/eval/src/report.ts`（`checkVerdictCoverage`、`coverageGapsOf`、`comparePair`）
+- `packages/eval/src/report/report.ts`（`checkVerdictCoverage`、`coverageGapsOf`、`comparePair`）
 - `packages/eval/README.md` / `README.en.md` 的 T71 段

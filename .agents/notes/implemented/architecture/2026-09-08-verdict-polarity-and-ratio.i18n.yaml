@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-08-verdict-polarity-and-ratio.md
-.agents/notes/implemented/architecture/2026-09-08-verdict-polarity-and-ratio.md: a31480922831794e40788a48f71c239f31ef0feb
-.agents/notes/implemented/architecture/2026-09-08-verdict-polarity-and-ratio.zh.md: 9e3248ce7d1f46917343ea8e566604e66052a52e
+.agents/notes/implemented/architecture/2026-09-08-verdict-polarity-and-ratio.md: 6a7ca0bacb1673475881d8f1834d6d7f55fb3ba2
+.agents/notes/implemented/architecture/2026-09-08-verdict-polarity-and-ratio.zh.md: 770d5cc20270bb2d27fa2281ba0f59916c20f2e9

@@ -63,6 +63,6 @@ After T67 each detail page had one status and one primary action, but the rest o
 
 ## Related
 
-- `packages/eval/src/closure.ts`, `src/experiments.ts` (`STALL_THRESHOLD_MS`, `deriveExperimentStatus`), `src/client/journey.ts`
+- `packages/eval/src/report/closure.ts`, `src/experiments.ts` (`STALL_THRESHOLD_MS`, `deriveExperimentStatus`), `src/client/journey.ts`
 - `packages/eval/src/client/LabView.tsx`, `JudgingPage.tsx`, `ReportPage.tsx`
 - `packages/eval/README.md` / `README.en.md`, the T72 section

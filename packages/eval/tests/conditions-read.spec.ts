@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { diffConditionDocuments, diffConditions, listConditions } from '../src/read.ts'
-import { hashConditionDocument } from '../src/hash.ts'
+import { hashConditionDocument } from '../src/contract/hash.ts'
 import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
 
 afterEach(cleanupTmp)

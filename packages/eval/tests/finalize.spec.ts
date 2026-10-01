@@ -9,8 +9,8 @@
 import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { finalizeRun, EvalFinalizeRefused, skipCategoryOf, type FinalizeUnitsFace } from '../src/finalize.ts'
-import { MISSION_LIST_SCHEMA, missionCliFace, parseMissionList } from '../src/mission-cli.ts'
+import { finalizeRun, EvalFinalizeRefused, skipCategoryOf, type FinalizeUnitsFace } from '../src/run/finalize.ts'
+import { MISSION_LIST_SCHEMA, missionCliFace, parseMissionList } from '../src/run/mission-cli.ts'
 import { cleanupTmp, tmpTree } from './helpers.ts'
 import type { LabUnitRow, MissionFinalizeFace } from '../src/faces.ts'
 

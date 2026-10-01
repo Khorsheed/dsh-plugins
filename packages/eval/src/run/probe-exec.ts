@@ -3,7 +3,7 @@
  * exit states, the verdict file, the backfill order — is the same wherever it
  * runs; the only thing that varies is whether the process is spawned on the
  * host or inside the cell's unit. So that difference is ONE interface with
- * two implementations, and {@link import('./judge.ts').runProbes} drives
+ * two implementations, and {@link import('../judge/judge.ts').runProbes} drives
  * either without knowing which it has.
  *
  * Both executors are handed the SAME host-side judging directory: the two
@@ -19,7 +19,7 @@
 import { execFile } from 'node:child_process'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import type { LabFace } from './faces.ts'
+import type { LabFace } from '../faces.ts'
 import { UNIT_VERDICTS_DIR, UNIT_WORKSPACE } from './unit.ts'
 
 /** One probe run, in coordinates RELATIVE to the judging directory. */

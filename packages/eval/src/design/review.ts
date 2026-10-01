@@ -19,18 +19,18 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { canonicalJson } from './hash.ts'
+import { canonicalJson } from '../contract/hash.ts'
 import { planQuestionOf } from './plan-question.ts'
-import type { ConditionDiff, ConditionsReport } from './read.ts'
-import type { ProvisionCheck } from './effective.ts'
-import type { ProvisionReport } from './provision.ts'
+import type { ConditionDiff, ConditionsReport } from '../read.ts'
+import type { ProvisionCheck } from '../effective.ts'
+import type { ProvisionReport } from '../provision.ts'
 import {
   expandHome, validatePlan, type ConditionResolution, type EvalDiagnostic, type PlanValidation,
-} from './validate.ts'
+} from '../contract/validate.ts'
 import type {
   EvalConditionDiffView, EvalConditionRow, EvalConditionsView, EvalExperimentUnit,
   EvalPlanCheck, EvalPlanCondition, EvalPlanDigest, EvalPlanReview,
-} from './types.ts'
+} from '../types.ts'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

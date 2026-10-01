@@ -11,7 +11,7 @@
  * @module @khorsheed/dsh-eval/plan-question
  */
 
-import type { EvalPlanQuestion } from './types.ts'
+import type { EvalPlanQuestion } from '../types.ts'
 
 function textOrNull(value: unknown): string | null {
   if (typeof value !== 'string') return null

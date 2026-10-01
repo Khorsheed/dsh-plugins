@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allEqualRate, bootstrapMeanCi, cohenKappa, fnv1a, mean, mulberry32 } from '../src/stats.ts'
+import { allEqualRate, bootstrapMeanCi, cohenKappa, fnv1a, mean, mulberry32 } from '../src/report/stats.ts'
 
 describe('cohenKappa', () => {
   it('matches the hand-computed table (po=.75, pe=.5 → κ=.5) and pins perfect agreement at 1', () => {

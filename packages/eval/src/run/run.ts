@@ -1,5 +1,5 @@
-import { declaredEffort, effortEvidence, frozenConfigurationOptions, requireEffortAdmission } from './frozen-configuration.ts'
-import type { DelegationConfiguration } from './faces.ts'
+import { declaredEffort, effortEvidence, frozenConfigurationOptions, requireEffortAdmission } from '../frozen-configuration.ts'
+import type { DelegationConfiguration } from '../faces.ts'
 /**
  * The run loop v0 — the executing half of the orchestrator, stages one and
  * two, host directories instead of containers. Reads a plan, snapshots the
@@ -33,20 +33,19 @@ import type { DelegationConfiguration } from './faces.ts'
  * @module @khorsheed/dsh-eval
  */
 import { createHash } from 'node:crypto'
-import { execFile } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { canonicalJson, hashConditionDocument } from './hash.ts'
+import { evalVersion } from '../eval-version.ts'
+import { canonicalJson, hashConditionDocument } from '../contract/hash.ts'
 import type {
   CapabilityCatalogFace,
   DelegationProgress, DelegationResult, DelegationToolCalls, DelegationUsage,
   DatasetsFace, LabAcquireSpec, LabFace, LabUnitInfo, LocalAgentFace, MissionFace,
-} from './faces.ts'
-import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type LockedCapabilities, type PlanValidation } from './validate.ts'
-import { generateTemplateFromManifest, stageStateName, type GeneratedTemplate } from './template.ts'
-import { loadManifest, type SuiteManifest } from './manifest.ts'
+} from '../faces.ts'
+import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type LockedCapabilities, type PlanValidation } from '../contract/validate.ts'
+import { generateTemplateFromManifest, stageStateName, type GeneratedTemplate } from '../contract/template.ts'
+import { loadManifest, type SuiteManifest } from '../contract/manifest.ts'
 import { expandMatrix, orderCells, type EvalCell } from './matrix.ts'
 import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 import {
@@ -58,7 +57,7 @@ import {
   pickRubricPath, runJudgeSamples, runProbes,
   DEFAULT_JUDGE_SAMPLES, JUDGE_MATERIAL_FILES,
   type DeidentifyRule, type ReplacementCount, type ResolvedJudge, type RubricCriterion,
-} from './judge.ts'
+} from '../judge/judge.ts'
 import { hostProbeExecutor, unitProbeExecutor, type ProbeExecutor } from './probe-exec.ts'
 import { checkUnitEgress } from './egress.ts'
 import type { EgressCheckDecl } from './unit.ts'
@@ -67,9 +66,9 @@ import {
   environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
   type CellUnitPlan, type CredentialsCheck,
 } from './unit.ts'
-import { buildRubricWeightTable, writeRubricWeightTable } from './weights.ts'
-import { recordExportNoteOn } from './export-note.ts'
-import { writeEvalReport } from './report.ts'
+import { buildRubricWeightTable, writeRubricWeightTable } from '../judge/weights.ts'
+import { recordExportNoteOn } from '../report/export-note.ts'
+import { writeEvalReport } from '../report/report.ts'
 
 /** Thrown when a run is REFUSED before anything executes (data problems, missing services). */
 export class EvalRunRefused extends Error {
@@ -344,22 +343,6 @@ export interface RunReport {
 /** sha256 hex of a buffer. */
 function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex')
-}
-
-let evalVersionCache: string | undefined
-
-/** `dsh-eval` version: package version + repo HEAD short sha (version only when git is unavailable). */
-export async function evalVersion(): Promise<string> {
-  if (evalVersionCache !== undefined) return evalVersionCache
-  const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string }
-  const version = typeof packageJson.version === 'string' ? packageJson.version : '0.0.0'
-  const shortSha = await new Promise<string>((resolvePromise) => {
-    execFile('git', ['rev-parse', '--short', 'HEAD'], { cwd: fileURLToPath(new URL('../..', import.meta.url)) }, (error, stdout) => {
-      resolvePromise(error === null ? stdout.trim() : '')
-    })
-  })
-  evalVersionCache = shortSha !== '' ? `${version}+${shortSha}` : version
-  return evalVersionCache
 }
 
 /** Default cell-directory root: `$DSH_HOME/state/eval` (decision 3). */

@@ -11,10 +11,10 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { EvalRunJobs } from '../src/job.ts'
+import { EvalRunJobs } from '../src/run/job.ts'
 import { callInstance, runOnInstance } from '../src/instance.ts'
 import { EvalService } from '../src/service.ts'
-import type { RunOptions, RunReport } from '../src/run.ts'
+import type { RunOptions, RunReport } from '../src/run/run.ts'
 
 /** A minimal job registry with the semantics this producer depends on. */
 function fakeJobs() {

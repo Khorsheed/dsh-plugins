@@ -12,7 +12,7 @@ Status: implemented
 ## Decision
 
 - **围栏随内容加长。** `materialFence` 返回 `max(3, 材料里最长的连续反引号串 + 1)` 个反引号。`fencedMaterial` 用它包一份材料。
-- **一个模板，两处使用。** `judgePromptSegments`（`packages/eval/src/judge.ts`）把提示词返回成分段：文字段，以及每份材料一个 `material` 占位段。`buildJudgePrompt` 用 `fencedMaterial` 填占位再拼接。提示词文字没有第二个构建处。
+- **一个模板，两处使用。** `judgePromptSegments`（`packages/eval/src/judge/judge.ts`）把提示词返回成分段：文字段，以及每份材料一个 `material` 占位段。`buildJudgePrompt` 用 `fencedMaterial` 填占位再拼接。提示词文字没有第二个构建处。
 - **预览返回分段。** `EvalJudgePromptPreviewView` 用 `segments` 取代 `prompt` + `sections`。页面把占位段画成灰色虚线标签「此处放入选手的 X 全文（去指纹后）」，放在文件小标题之后、任何围栏之外。每个文字段都是真实提示词的原始字节。
 - **测试。** `tests/judge.spec.ts` 覆盖普通材料、含 ```` ``` ```` 的材料、含 ```` ```` ```` 的材料。普通材料一例钉在改动前构建器输出的 sha 上。
 

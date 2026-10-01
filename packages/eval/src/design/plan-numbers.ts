@@ -21,7 +21,7 @@
  * @module @khorsheed/dsh-eval/plan-numbers
  */
 import { readFile, rename, writeFile } from 'node:fs/promises'
-import { canonicalJson } from './hash.ts'
+import { canonicalJson } from '../contract/hash.ts'
 
 /** Thrown when the numbers cannot be written; nothing was written. */
 export class EvalPlanEditRefused extends Error {}

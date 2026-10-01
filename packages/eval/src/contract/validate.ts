@@ -13,11 +13,11 @@ import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { statSync } from 'node:fs'
-import { checkAgainstEffective, type EffectiveSnapshot } from './effective.ts'
+import { checkAgainstEffective, type EffectiveSnapshot } from '../effective.ts'
 import { hashConditionDocument } from './hash.ts'
-import { llmDraftCriteria, pickRubricPath, probePaths } from './judge.ts'
-import { hashPresetTree, scopePresetDir } from './preset-snapshot.ts'
-import { claudeScopeDiagnostics, conditionUnitDiagnostics, planUnitOf, type ScopedConditionRef } from './unit.ts'
+import { llmDraftCriteria, pickRubricPath, probePaths } from '../judge/judge.ts'
+import { hashPresetTree, scopePresetDir } from '../preset-snapshot.ts'
+import { claudeScopeDiagnostics, conditionUnitDiagnostics, planUnitOf, type ScopedConditionRef } from '../run/unit.ts'
 import {
   CONDITION_ID_RE,
   CONDITION_SCHEMA,

@@ -13,9 +13,9 @@
  */
 import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import { ARTIFACT_MAX_BYTES, extensionOf, isInside, TEXT_EXTENSIONS } from './cell-artifact.ts'
-import { EvalReadRefused } from './read.ts'
-import type { EvalAnalysisFile, EvalExperimentArtifactView } from './types.ts'
+import { ARTIFACT_MAX_BYTES, extensionOf, isInside, TEXT_EXTENSIONS } from '../cell-artifact.ts'
+import { EvalReadRefused } from '../read.ts'
+import type { EvalAnalysisFile, EvalExperimentArtifactView } from '../types.ts'
 
 /**
  * Read one file of an experiment directory.

@@ -45,7 +45,7 @@ The judge table is a compact three-column table: criterion, judge verdict, and y
 
 ### The plan estimate is a floor, never an extrapolation
 
-`planEstimate` (`packages/eval/src/plan-items.ts`) sums per-item means only over items that have past answers.
+`planEstimate` (`packages/eval/src/design/plan-items.ts`) sums per-item means only over items that have past answers.
 
 - **Coverage.** An item counts for a field (active time, output tokens) only when every condition has at least one sample for it. An item answered by only one group is treated as uncovered.
 - **Display.**

@@ -18,7 +18,7 @@
  *   mark and a newer run-level one compose without a rule of their own.
  * @module @khorsheed/dsh-eval
  */
-import type { MissionAnnotateFace, MissionReadFace } from './faces.ts'
+import type { MissionAnnotateFace, MissionReadFace } from '../faces.ts'
 
 /** One annotation as the mark readers fold it. */
 export type RunNoteAnnotation = { ns: string; payload: unknown; createdAt: number }

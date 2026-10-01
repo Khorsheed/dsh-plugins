@@ -16,10 +16,10 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { hashConditionDocument } from '../src/hash.ts'
+import { hashConditionDocument } from '../src/contract/hash.ts'
 import { EvalRemoteService } from '../src/remote.ts'
 import { EvalService } from '../src/service.ts'
-import { createExperiment } from '../src/experiment-store.ts'
+import { createExperiment } from '../src/design/experiment-store.ts'
 import { cleanupTmp, fakeRegistry, tmpTree, useDshHome, writeJson } from './helpers.ts'
 
 afterEach(cleanupTmp)

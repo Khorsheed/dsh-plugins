@@ -32,7 +32,7 @@ rubric 的负分判据，criterion 写的就是缺陷：F2 的 `A-N2` 是「trad
 
 多样本聚合沿用既有规则并延伸：布尔仍按多数，比例判据取**其样本实际给出的**比例的均值（没给比例的样本不参与平均）。全无 `ratio` 时，这套算术与它所推广的布尔算术逐位相同。
 
-协议版本进到 **v1-rev4**。§6.5 增加极性规则、`ratio` 规则与派生表的形状；verdict schema 块逐字同步 `packages/eval/src/schema.ts` 的 `ratio`；§6.5 现在发布两个 verdict 示例（布尔与比例），各自钉住自己的夹具。
+协议版本进到 **v1-rev4**。§6.5 增加极性规则、`ratio` 规则与派生表的形状；verdict schema 块逐字同步 `packages/eval/src/contract/schema.ts` 的 `ratio`；§6.5 现在发布两个 verdict 示例（布尔与比例），各自钉住自己的夹具。
 
 ## Alternatives considered
 

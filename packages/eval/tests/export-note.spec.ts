@@ -19,8 +19,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   EXPORT_NOTE_KIND, readExportState, recordExportNote, recordExportNoteOn, reexportDirOf,
-} from '../src/export-note.ts'
-import { exportDirCandidates } from '../src/report-view.ts'
+} from '../src/report/export-note.ts'
+import { exportDirCandidates } from '../src/report/report-view.ts'
 import { EvalService } from '../src/service.ts'
 import { cleanupTmp, tmpTree, attemptDirsOf } from './helpers.ts'
 

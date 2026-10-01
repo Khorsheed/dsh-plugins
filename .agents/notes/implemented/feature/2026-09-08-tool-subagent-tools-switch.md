@@ -10,7 +10,7 @@ A profile that installs the local-agent family gets more than a delegation provi
 
 For the everyday development profile that is the point. For an evaluation instance it is a hole. `dsh-web-eval` freezes decision 12 — the apparatus has one destruction path, so the instance's agent gets no shell and no container control — and [the eval preset](../process/2026-09-08-web-eval-agent-preset.md) executes that decision by shipping a composition with the execution rows removed. A preset cannot reach these four: it filters what it mounts, and these mount above it, at the profile root. So the preset could take away `bash` while leaving four tools that each start a CLI on the host with `sandbox: workspace-write` or `permissionMode: skip`.
 
-The orchestrator does not need them. It drives the players through the local-agent service face (`packages/eval/src/run.ts` uses only `LocalAgentFace`, i.e. the provider registered in `ctx.subagents`), and `/codex login`, `/kimi status` and the rest are the provider's own slash verbs. Nothing in the evaluation flow passes through the model-visible tool.
+The orchestrator does not need them. It drives the players through the local-agent service face (`packages/eval/src/run/run.ts` uses only `LocalAgentFace`, i.e. the provider registered in `ctx.subagents`), and `/codex login`, `/kimi status` and the rest are the provider's own slash verbs. Nothing in the evaluation flow passes through the model-visible tool.
 
 ## Decision
 

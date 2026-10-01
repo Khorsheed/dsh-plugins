@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pickTaskPath, planEstimate, planItemFacts, rubricFacts, TASK_TEXT_CAP } from '../src/plan-items.ts'
+import { pickTaskPath, planEstimate, planItemFacts, rubricFacts, TASK_TEXT_CAP } from '../src/design/plan-items.ts'
 import type { DatasetsFace, MissionRunListFace } from '../src/faces.ts'
 
 const RUBRIC = `task_id: P0

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-23-eval-report-calibration.md
-.agents/notes/implemented/bug-fix/2026-09-23-eval-report-calibration.md: 6161cb08e8077c28566e2cea17f6a63c2d3d59a9
-.agents/notes/implemented/bug-fix/2026-09-23-eval-report-calibration.zh.md: 80040f95b7cccb9979c0f7372bcd4788910d1834
+.agents/notes/implemented/bug-fix/2026-09-23-eval-report-calibration.md: 04af2fdbc289603a4fb9cd1bfdebf2961bdbc5b3
+.agents/notes/implemented/bug-fix/2026-09-23-eval-report-calibration.zh.md: 51f12bc22e73a0aa29345f661c78656c95a5cdd5

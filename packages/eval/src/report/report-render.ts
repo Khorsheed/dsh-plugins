@@ -12,7 +12,7 @@
 import type {
   ConditionEfficiency, CriterionGroupResult, EvalReport, PairComparison, TaskCriteriaTable,
 } from './report.ts'
-import { RUBRIC_WEIGHTS_PATH } from './weights.ts'
+import { RUBRIC_WEIGHTS_PATH } from '../judge/weights.ts'
 
 const STATUS_MARK: Record<string, string> = { ok: '✅ 成立', violated: '❌ 不成立', unverifiable: '⚠️ 无法核验' }
 

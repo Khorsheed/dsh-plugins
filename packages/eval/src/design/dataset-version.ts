@@ -21,7 +21,7 @@
  * typo or a stray ref cannot slip past the same question.
  * @module
  */
-import type { DatasetsRegistryFace } from './faces.ts'
+import type { DatasetsRegistryFace } from '../faces.ts'
 import type { ExperimentRecord } from './experiment-store.ts'
 
 /** One commit a draft could pin, and why it is a candidate. */

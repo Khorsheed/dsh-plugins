@@ -42,7 +42,7 @@ import {
   pickRubricPath as evalPickRubric,
   probePaths as evalProbePaths,
   rubricCriteria,
-} from '../packages/eval/src/judge.ts'
+} from '../packages/eval/src/judge/judge.ts'
 
 /** Grading-layer display paths → the rubric both sides must pick (null = none). */
 const RUBRIC_CASES: ReadonlyArray<{ name: string; paths: string[]; rubric: string | null }> = [

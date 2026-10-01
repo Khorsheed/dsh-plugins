@@ -1,4 +1,4 @@
-import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission, type EffortEvidence } from './frozen-configuration.ts'
+import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission, type EffortEvidence } from '../frozen-configuration.ts'
 /**
  * The pre-run readiness check (pilot A · G4).
  *
@@ -23,8 +23,8 @@ import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission, typ
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import type { DelegationProgress, DelegationResult, LocalAgentFace } from './faces.ts'
-import { hashPresetTree, scopePresetDir } from './preset-snapshot.ts'
+import type { DelegationProgress, DelegationResult, LocalAgentFace } from '../faces.ts'
+import { hashPresetTree, scopePresetDir } from '../preset-snapshot.ts'
 import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 import { EGRESS_UNAVAILABLE } from './egress.ts'
 

@@ -22,20 +22,20 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
-import { isJudgedOrBeyond, JUDGED_OR_BEYOND } from './cell-states.ts'
-import { readRunMarks } from './closure.ts'
+import { isJudgedOrBeyond, JUDGED_OR_BEYOND } from '../cell-states.ts'
+import { readRunMarks } from '../report/closure.ts'
 import { conditionLibraryDir, type ExperimentRecord, listExperimentRecords } from './experiment-store.ts'
-import type { EvalRunStatus } from './job.ts'
-import type { MissionRunListFace } from './faces.ts'
-import { canonicalJson } from './hash.ts'
+import type { EvalRunStatus } from '../run/job.ts'
+import type { MissionRunListFace } from '../faces.ts'
+import { canonicalJson } from '../contract/hash.ts'
 import { planQuestionOf } from './plan-question.ts'
-import { conditionFactors } from './read.ts'
-import { expandHome, type PlanValidation } from './validate.ts'
+import { conditionFactors } from '../read.ts'
+import { expandHome, type PlanValidation } from '../contract/validate.ts'
 import type {
   EvalExperimentDetail, EvalExperimentJob, EvalExperimentMeta, EvalExperimentRow, EvalExperimentsResult,
   EvalExperimentSnapshot, EvalExperimentStatus, EvalExperimentUnit, EvalItemRunRow, EvalItemRunsResult,
   EvalClosure, EvalReadinessLine,
-} from './types.ts'
+} from '../types.ts'
 
 /** The template state a finalized cell rests in (the generated template's last one). */
 const RELEASED_STATE = 'released'

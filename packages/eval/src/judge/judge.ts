@@ -1,6 +1,6 @@
-import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
-import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission } from './frozen-configuration.ts'
-import type { DelegationProgress } from './faces.ts'
+import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from '../run/readback.ts'
+import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission } from '../frozen-configuration.ts'
+import type { DelegationProgress } from '../faces.ts'
 /**
  * The judging half of the orchestrator (I2·T9): the two MECHANICAL verdict
  * sources of the three the flow declares. `script` verdicts come from
@@ -31,9 +31,9 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import yaml from 'js-yaml'
-import type { DatasetsFace, LocalAgentFace, MissionFace } from './faces.ts'
-import { discardDir, hostProbeExecutor, type ProbeExecution, type ProbeExecutor } from './probe-exec.ts'
-import { validateJson, VERDICT_SCHEMA, VERDICT_SCHEMA_ID } from './schema.ts'
+import type { DatasetsFace, LocalAgentFace, MissionFace } from '../faces.ts'
+import { discardDir, hostProbeExecutor, type ProbeExecution, type ProbeExecutor } from '../run/probe-exec.ts'
+import { validateJson, VERDICT_SCHEMA, VERDICT_SCHEMA_ID } from '../contract/schema.ts'
 import { inStageScope, rubricWeightRows } from './weights.ts'
 
 /** The four material files handed to the judge, in prompt order. */

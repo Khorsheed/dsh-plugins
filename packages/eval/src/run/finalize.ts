@@ -26,7 +26,7 @@
  * report says so rather than implying the containers went away.
  * @module @khorsheed/dsh-eval
  */
-import type { LabUnitRow, MissionFinalizeFace } from './faces.ts'
+import type { LabUnitRow, MissionFinalizeFace } from '../faces.ts'
 
 /** Thrown when finalize cannot even look at the run (no service, unknown run). */
 export class EvalFinalizeRefused extends Error {

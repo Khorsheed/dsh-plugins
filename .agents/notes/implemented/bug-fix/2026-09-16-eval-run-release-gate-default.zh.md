@@ -66,8 +66,8 @@ mission 早就有 `runStatus().unreleased`：refs 说自己持有资源的那些
 
 ## What changed
 
-- `packages/eval/src/run.ts`：`RunOptions.keepUnits`；`finalize` 文档改为缺省为真；一处 `passGate` 收拢；记 `run.meta.finalize`，让 bundle 能分辨「被要求停在 archived」与「跑断了」；`acquireUnit` / `describeUnitHolders` 与两处 acquire 调用点。
-- `packages/eval/src/finalize.ts`：`FinalizeUnitsFace`、两次 transition 之间的 `releaseCellUnit`、`heldUnitsOf` / `heldReasonOf`，以及报告上的 `unitsReleased` / `unitsHeld` / `unitsKnown`。
+- `packages/eval/src/run/run.ts`：`RunOptions.keepUnits`；`finalize` 文档改为缺省为真；一处 `passGate` 收拢；记 `run.meta.finalize`，让 bundle 能分辨「被要求停在 archived」与「跑断了」；`acquireUnit` / `describeUnitHolders` 与两处 acquire 调用点。
+- `packages/eval/src/run/finalize.ts`：`FinalizeUnitsFace`、两次 transition 之间的 `releaseCellUnit`、`heldUnitsOf` / `heldReasonOf`，以及报告上的 `unitsReleased` / `unitsHeld` / `unitsKnown`。
 - `packages/eval/src/service.ts`：`finalize` 在挂了 lab 时把它接上；`runUnits(runId)`；`approve` 带上 `keepUnits`。
 - `packages/eval/src/remote.ts`：`runUnits`；`runStart` 与 `approve` 带上这个开关。
 - `packages/eval/src/slash.ts`、`src/cli-core.ts`：`--keep-units`、`--finalize` 作为缺省被接受、容器那几句重写，以及 CLI 的 finalize 每次都说明它没碰任何容器。

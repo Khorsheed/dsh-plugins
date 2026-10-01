@@ -14,7 +14,7 @@ import {
   listExperimentRecords,
   mintExperimentId,
   readExperiment,
-} from '../src/experiment-store.ts'
+} from '../src/design/experiment-store.ts'
 import { cleanupTmp, useDshHome } from './helpers.ts'
 
 afterEach(cleanupTmp)

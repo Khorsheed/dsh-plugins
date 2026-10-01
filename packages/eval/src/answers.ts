@@ -30,10 +30,10 @@ import { attemptDirOf, currentAttemptOf, playerSessionOf, probeRunsOf } from './
 import type { DatasetsFace, MissionAttemptFace, MissionReadFace } from './faces.ts'
 import {
   benchMetaOf, humanCriteriaOf, judgeLabel, verdictDocsOf, type LedgerAnnotation,
-} from './judge-bench.ts'
-import { JUDGE_MATERIAL_FILES } from './judge.ts'
+} from './judge/judge-bench.ts'
+import { JUDGE_MATERIAL_FILES } from './judge/judge.ts'
 import { EvalReadRefused } from './read.ts'
-import { validateJson, VERDICT_SCHEMA } from './schema.ts'
+import { validateJson, VERDICT_SCHEMA } from './contract/schema.ts'
 import type { EvalAnswerCell, EvalAnswerReport, EvalAnswerSheet, EvalAnswerVerdict } from './types.ts'
 
 /** The three verdict layers, in the report's authority order (lowest first). */

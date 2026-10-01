@@ -1,4 +1,4 @@
-import { parseEffortEvidence, type EffortEvidence } from './frozen-configuration.ts'
+import { parseEffortEvidence, type EffortEvidence } from '../frozen-configuration.ts'
 /**
  * The `report` verb: turn a self-contained mission export bundle into
  * `results.jsonl` (one line per verdict) and `summary.md` (the paired
@@ -56,8 +56,8 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { renderSummaryMd } from './report-render.ts'
 import { bootstrapMeanCi, cohenKappa, fnv1a, mean, type BootstrapCi } from './stats.ts'
-import { jsonEquals, VERDICT_SCHEMA, validateJson } from './schema.ts'
-import { inStageScope, readRubricWeightTable, rubricWeightRows, RUBRIC_WEIGHTS_PATH, type RubricWeightRow } from './weights.ts'
+import { jsonEquals, VERDICT_SCHEMA, validateJson } from '../contract/schema.ts'
+import { inStageScope, readRubricWeightTable, rubricWeightRows, RUBRIC_WEIGHTS_PATH, type RubricWeightRow } from '../judge/weights.ts'
 
 // --- public shapes -----------------------------------------------------------
 

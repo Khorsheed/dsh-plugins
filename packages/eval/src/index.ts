@@ -77,51 +77,51 @@ export function apply(ctx: Context): void {
 
 export { EvalService, EvalContractError } from './service.ts'
 export { EvalRunRefused } from './service.ts'
-export { EvalFinalizeRefused, finalizeRun, skipCategoryOf, FINALIZE_FROM_STATE } from './finalize.ts'
-export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
-export { MISSION_LIST_SCHEMA, missionCliFace, MissionCliError, oldMissionCliHint, parseMissionList } from './mission-cli.ts'
-export type { MissionCliOptions } from './mission-cli.ts'
-export { checkReadiness, READINESS_PROMPT, DEFAULT_READINESS_TIMEOUT_MS } from './readiness.ts'
-export type { ReadinessRecord, ReadinessSubject, ReadinessInput, ReadinessUnit } from './readiness.ts'
-export { capabilityRefusal } from './readiness.ts'
-export { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
+export { EvalFinalizeRefused, finalizeRun, skipCategoryOf, FINALIZE_FROM_STATE } from './run/finalize.ts'
+export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './run/finalize.ts'
+export { MISSION_LIST_SCHEMA, missionCliFace, MissionCliError, oldMissionCliHint, parseMissionList } from './run/mission-cli.ts'
+export type { MissionCliOptions } from './run/mission-cli.ts'
+export { checkReadiness, READINESS_PROMPT, DEFAULT_READINESS_TIMEOUT_MS } from './run/readiness.ts'
+export type { ReadinessRecord, ReadinessSubject, ReadinessInput, ReadinessUnit } from './run/readiness.ts'
+export { capabilityRefusal } from './run/readiness.ts'
+export { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './run/readback.ts'
 export { EvalReadRefused } from './read.ts'
 /** The narrow write into one experiment's analysis/ (the analysis draft's door; I5·T39 · G16, T73). */
-export { ANALYSIS_WRITE_PREFIX, EvalWriteRefused, resolveAnalysisWrite, writeAnalysisFile } from './analysis-write.ts'
-export type { AnalysisWriteResult, AnalysisWriteTarget } from './analysis-write.ts'
+export { ANALYSIS_WRITE_PREFIX, EvalWriteRefused, resolveAnalysisWrite, writeAnalysisFile } from './design/analysis-write.ts'
+export type { AnalysisWriteResult, AnalysisWriteTarget } from './design/analysis-write.ts'
 /** Experiments as deployment-level objects, and the condition library beside them (T73). */
 export {
   conditionLibraryDir, conditionLibraryRoot, createExperiment, EvalExperimentError, EXPERIMENT_ID_RE, EXPERIMENT_META_SCHEMA,
   experimentIdOfPlanPath, experimentsRoot, listExperimentRecords, mintExperimentId, readExperiment,
-} from './experiment-store.ts'
-export type { CreateExperimentInput, ExperimentDataset, ExperimentMeta, ExperimentRecord } from './experiment-store.ts'
-export { decideDatasetVersion, DatasetVersionRefused } from './dataset-version.ts'
-export type { DatasetVersionCandidate, DatasetVersionDecision, DatasetVersionFace } from './dataset-version.ts'
-export { EvalImportRefused, importExperiments, parseImportSource } from './import.ts'
-export type { ImportedExperiment, ImportRegistryFace, ImportReport } from './import.ts'
-export { listAnalysisFiles, readExperimentArtifact } from './experiment-artifact.ts'
-export { answerFileName, answerHandle, composeExperimentGet, isLocalPath } from './experiment-get.ts'
-export type { EvalAnswerEntry, EvalAnswerFile, EvalExperimentGetView, ExperimentGetInput } from './experiment-get.ts'
+} from './design/experiment-store.ts'
+export type { CreateExperimentInput, ExperimentDataset, ExperimentMeta, ExperimentRecord } from './design/experiment-store.ts'
+export { decideDatasetVersion, DatasetVersionRefused } from './design/dataset-version.ts'
+export type { DatasetVersionCandidate, DatasetVersionDecision, DatasetVersionFace } from './design/dataset-version.ts'
+export { EvalImportRefused, importExperiments, parseImportSource } from './design/import.ts'
+export type { ImportedExperiment, ImportRegistryFace, ImportReport } from './design/import.ts'
+export { listAnalysisFiles, readExperimentArtifact } from './design/experiment-artifact.ts'
+export { answerFileName, answerHandle, composeExperimentGet, isLocalPath } from './design/experiment-get.ts'
+export type { EvalAnswerEntry, EvalAnswerFile, EvalExperimentGetView, ExperimentGetInput } from './design/experiment-get.ts'
 /** The run-level export note: where a run's bundle went, and when (I5·T53 / G17). */
-export { EXPORT_NOTE_KIND, readExportState, recordExportNote, recordExportNoteOn, reexportDirOf } from './export-note.ts'
+export { EXPORT_NOTE_KIND, readExportState, recordExportNote, recordExportNoteOn, reexportDirOf } from './report/export-note.ts'
 export type { ConditionHash, RunOptions, RunReport, RunCellReport, RunSubset } from './service.ts'
 export type {
   PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiagnostics, ConditionReadiness, LockedCapabilities,
-} from './validate.ts'
-export { conditionDiagnostics, resolveConditionReadiness, unresolvedFields, validatePlan } from './validate.ts'
+} from './contract/validate.ts'
+export { conditionDiagnostics, resolveConditionReadiness, unresolvedFields, validatePlan } from './contract/validate.ts'
 export { conditionFactors, conditionLeaves, listConditions, runCells, runStatus } from './read.ts'
 export type {
   ConditionsReport, ConditionSummary, RunCellDetail, RunCellRefs, RunCellsQuery, RunCellsReport, RunCellStatus, RunLedgerStatus, RunStatusReport,
 } from './read.ts'
-export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './experiments.ts'
-export type { ExperimentsInput, ExperimentStatusInput } from './experiments.ts'
+export { deriveExperimentStatus, experimentDetail, isJudgedOrBeyond, isReleased, listExperiments, runsForItem } from './design/experiments.ts'
+export type { ExperimentsInput, ExperimentStatusInput } from './design/experiments.ts'
 export { attemptDirOf, materializationShaOf, probeRunsOf, runCellDetail, summarizeAnnotations } from './cell-detail.ts'
 export { DEFAULT_STUCK_MS, pivotMatrix, repDot } from './matrix-view.ts'
 export type { MatrixInput, MatrixInputCell } from './matrix-view.ts'
-export { conditionDiffView, conditionsView, reviewPlan } from './review.ts'
+export { conditionDiffView, conditionsView, reviewPlan } from './design/review.ts'
 export { evalToolDefinitions, EVAL_TOOL_NAMES } from './tool-definition.ts'
-export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
-export type { HomeHash } from './hash.ts'
+export { canonicalJson, hashConditionDocument, hashHome } from './contract/hash.ts'
+export type { HomeHash } from './contract/hash.ts'
 export { EvalProvisionRefused, loginCommandFor, provisionCondition } from './provision.ts'
 export type {
   CapabilityProbe, CapabilityProbeInput, ProvisionedCapabilities, ProvisionOptions, ProvisionReport,
@@ -132,14 +132,14 @@ export {
   registerEntriesOf, registerPatternMatches, rubricCriteria,
   DATASET_VERIFY_ROOT, DEFAULT_JUDGE_SAMPLES, HARNESS_ALIASES, JUDGE_MATERIAL_FILES,
   PROBE_EXIT_NOT_APPLICABLE,
-} from './judge.ts'
+} from './judge/judge.ts'
 export type {
   Deidentified, DeidentifyRule, JudgeSampleRecord, ProbeOutcome, ProbeRef, ProbeStatus,
   RegisterEntry, ReplacementCount, ResolvedJudge, RubricCriterion, VerdictAnchor,
-} from './judge.ts'
-export { cellTicket, judgeQueueView, resolveTicket, writeHumanFinal } from './judge-bench.ts'
-export type { HumanFinalInput, JudgeQueueInput } from './judge-bench.ts'
-export { analyzeBundle, judgeConsistencyOf, writeEvalReport, parseMissionId } from './report.ts'
+} from './judge/judge.ts'
+export { cellTicket, judgeQueueView, resolveTicket, writeHumanFinal } from './judge/judge-bench.ts'
+export type { HumanFinalInput, JudgeQueueInput } from './judge/judge-bench.ts'
+export { analyzeBundle, judgeConsistencyOf, writeEvalReport, parseMissionId } from './report/report.ts'
 export type {
   ConditionEfficiency,
   EvalReport,
@@ -155,29 +155,30 @@ export type {
   ReportWrite,
   RubricPolarity,
   VerdictRatio,
-} from './report.ts'
+} from './report/report.ts'
 export {
   buildRubricWeightTable, readRubricWeightTable, rubricWeightRows, writeRubricWeightTable,
   RUBRIC_WEIGHTS_PATH, RUBRIC_WEIGHTS_SCHEMA,
-} from './weights.ts'
-export type { RubricWeightRow, RubricWeightTable } from './weights.ts'
-export { bootstrapMeanCi, cohenKappa, fnv1a, mean, mulberry32, allEqualRate } from './stats.ts'
-export { generateTemplate, generateTemplateFromManifest, stageStateName, ARCHIVE_FILE_CHECK } from './template.ts'
-export type { GeneratedTemplate, GenerateTemplateOptions, TemplateMissionDoc, TemplateTransitionDoc, TemplateGuardDoc } from './template.ts'
-export { parseSuiteManifest, loadManifest } from './manifest.ts'
-export type { SuiteManifest, ManifestStage, ManifestOutputSchema } from './manifest.ts'
-export { expandMatrix, orderCells, missionIdFor } from './matrix.ts'
-export type { EvalCell } from './matrix.ts'
-export { runPlan, evalVersion, defaultStateRoot } from './run.ts'
+} from './judge/weights.ts'
+export type { RubricWeightRow, RubricWeightTable } from './judge/weights.ts'
+export { bootstrapMeanCi, cohenKappa, fnv1a, mean, mulberry32, allEqualRate } from './report/stats.ts'
+export { generateTemplate, generateTemplateFromManifest, stageStateName, ARCHIVE_FILE_CHECK } from './contract/template.ts'
+export type { GeneratedTemplate, GenerateTemplateOptions, TemplateMissionDoc, TemplateTransitionDoc, TemplateGuardDoc } from './contract/template.ts'
+export { parseSuiteManifest, loadManifest } from './contract/manifest.ts'
+export type { SuiteManifest, ManifestStage, ManifestOutputSchema } from './contract/manifest.ts'
+export { expandMatrix, orderCells, missionIdFor } from './run/matrix.ts'
+export type { EvalCell } from './run/matrix.ts'
+export { runPlan, defaultStateRoot } from './run/run.ts'
+export { evalVersion } from './eval-version.ts'
 export {
   acquireSpecFor, checkCredentialsDir, claudeScopeDiagnostics, conditionOwnedComponents, conditionUnitDiagnostics, conditionUnitOf,
   describeAcquireSpec, environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
   DSH_CONTAINER_NODE_OPTIONS, UNIT_VERDICTS_DIR, UNIT_WORKSPACE,
-} from './unit.ts'
-export type { CellUnitPlan, ConditionOwnedComponents, ConditionUnitDecl, CredentialsCheck, PlanUnitDecl, ScopedConditionRef } from './unit.ts'
-export { discardDir, hostProbeExecutor, unitProbeExecutor } from './probe-exec.ts'
-export type { ProbeExecution, ProbeExecResult, ProbeExecutor } from './probe-exec.ts'
-export type { RunSubset as RunSubsetRecord } from './run.ts'
+} from './run/unit.ts'
+export type { CellUnitPlan, ConditionOwnedComponents, ConditionUnitDecl, CredentialsCheck, PlanUnitDecl, ScopedConditionRef } from './run/unit.ts'
+export { discardDir, hostProbeExecutor, unitProbeExecutor } from './run/probe-exec.ts'
+export type { ProbeExecution, ProbeExecResult, ProbeExecutor } from './run/probe-exec.ts'
+export type { RunSubset as RunSubsetRecord } from './run/run.ts'
 export type {
   DatasetsFace, DatasetsRegistryFace, MissionActionFace, MissionAnnotateFace, MissionExportFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, MissionStatusRow,
@@ -201,4 +202,4 @@ export {
   jsonEquals,
   schemaSubsetProblems,
   validateJson,
-} from './schema.ts'
+} from './contract/schema.ts'

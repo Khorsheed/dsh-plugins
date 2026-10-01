@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { attemptElapsedMs, isJudgedOrBeyond } from '../src/cell-states.ts'
 import { recordPhrase } from '../src/client/vocab.ts'
-import { isJudgedOrBeyond as fromExperiments } from '../src/experiments.ts'
+import { isJudgedOrBeyond as fromExperiments } from '../src/design/experiments.ts'
 
 describe('the finished-cell set', () => {
   it('is ONE set: the status rule re-exports the module the browser reads', () => {

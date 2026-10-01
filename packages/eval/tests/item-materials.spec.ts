@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { DatasetsFace } from '../src/faces.ts'
 import {
   classifyMaterials, listItemMaterials, previewJudgePrompt, readDatasetFile, readJudgePrompt, rubricRows,
-} from '../src/item-materials.ts'
-import { judgedCriteria } from '../src/judge.ts'
+} from '../src/design/item-materials.ts'
+import { judgedCriteria } from '../src/judge/judge.ts'
 
 const RUBRIC = `schema_version: dataseek.rubric/2
 task_id: F2

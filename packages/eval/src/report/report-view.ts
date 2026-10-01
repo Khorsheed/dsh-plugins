@@ -30,12 +30,12 @@
  */
 import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import type { MissionReadFace } from './faces.ts'
+import type { MissionReadFace } from '../faces.ts'
 import { readRunMarks } from './closure.ts'
 import { readExportState, type EvalExportNote } from './export-note.ts'
-import { EvalReadRefused } from './read.ts'
-import { listAnalysisFiles } from './experiment-artifact.ts'
-import { planQuestionOf } from './plan-question.ts'
+import { EvalReadRefused } from '../read.ts'
+import { listAnalysisFiles } from '../design/experiment-artifact.ts'
+import { planQuestionOf } from '../design/plan-question.ts'
 import {
   analyzeBundle,
   type CoverageGap, type CriterionGroupResult, type CriterionSample, type EvalReport, type JudgeAssignment, type PairComparison,
@@ -43,9 +43,9 @@ import {
 import type {
   EvalFinalizeView, EvalReportCriterionCell, EvalReportCriterionSample, EvalReportEfficiencyRow,
   EvalPlanQuestion, EvalReportJudgeTag, EvalReportPair, EvalReportPairRow, EvalReportTaskCriteria, EvalRunReportView,
-} from './types.ts'
-import { expandHome } from './validate.ts'
-import type { FinalizeReport } from './finalize.ts'
+} from '../types.ts'
+import { expandHome } from '../contract/validate.ts'
+import type { FinalizeReport } from '../run/finalize.ts'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

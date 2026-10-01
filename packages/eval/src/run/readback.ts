@@ -6,7 +6,7 @@
  * must not depend on it.
  * @module @khorsheed/dsh-eval
  */
-import type { LocalAgentFace } from './faces.ts'
+import type { LocalAgentFace } from '../faces.ts'
 
 /** Poll interval of the post-settle read-back wait. */
 export const READBACK_POLL_MS = 50

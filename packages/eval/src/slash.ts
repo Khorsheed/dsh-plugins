@@ -19,9 +19,9 @@
  * transition, archive, export) are the orchestrator's service face, not
  * model surface.
  */
-import { EXPERIMENT_ID_RE } from './experiment-store.ts'
+import { EXPERIMENT_ID_RE } from './design/experiment-store.ts'
 import { EvalProvisionRefused } from './provision.ts'
-import { EvalRunRefused } from './run.ts'
+import { EvalRunRefused } from './run/run.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { EvalService } from './service.ts'

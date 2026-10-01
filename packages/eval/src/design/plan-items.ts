@@ -19,10 +19,10 @@
  * answer, never a zero.
  * @module @khorsheed/dsh-eval
  */
-import { collectProbes, pickRubricPath, registerEntriesOf } from './judge.ts'
-import type { DatasetsFace, MissionRunListFace } from './faces.ts'
-import { inStageScope, rubricWeightRows } from './weights.ts'
-import type { EvalPlanEstimate, EvalPlanEstimateSample, EvalPlanItemFacts, EvalPlanItemsView } from './types.ts'
+import { collectProbes, pickRubricPath, registerEntriesOf } from '../judge/judge.ts'
+import type { DatasetsFace, MissionRunListFace } from '../faces.ts'
+import { inStageScope, rubricWeightRows } from '../judge/weights.ts'
+import type { EvalPlanEstimate, EvalPlanEstimateSample, EvalPlanItemFacts, EvalPlanItemsView } from '../types.ts'
 
 /** The task text crosses the wire whole up to this many characters. */
 export const TASK_TEXT_CAP = 64 * 1024

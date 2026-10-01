@@ -17,7 +17,7 @@
  * @module @khorsheed/dsh-eval/egress
  */
 
-import type { LabVerifyResult } from './faces.ts'
+import type { LabVerifyResult } from '../faces.ts'
 import { DEFAULT_EGRESS_CHECK_TIMEOUT_MS, type EgressCheckDecl } from './unit.ts'
 
 /** The diagnostic code every egress refusal carries. */

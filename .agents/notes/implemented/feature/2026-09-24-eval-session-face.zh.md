@@ -22,7 +22,7 @@ agent 在会话里起草了一个实验，会话里留下的只是一行通用�
   - `dsh.client.inject` 声明了 `@deepseek-ai/dsh-client-ui-tool`。
   - 组合里没有这个包时，工具行保持宿主的通用行。
   - 卡片不做 preset 自隐：这一行能出现，就说明会话已被授予 `eval_plan_draft`。
-- **`eval_experiment_get({experiment})`**（`packages/eval/src/experiment-get.ts`，服务方法 `experimentGet`）。
+- **`eval_experiment_get({experiment})`**（`packages/eval/src/design/experiment-get.ts`，服务方法 `experimentGet`）。
   - 查找：按 experimentId、列表行 id 或 run id 找实验；都找不到时抛 `EvalReadRefused`。
   - 返回内容：
     - 列表那一行，去掉 plan 路径；
