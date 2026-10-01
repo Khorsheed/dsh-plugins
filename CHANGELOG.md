@@ -2,6 +2,13 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— 2026-10-01 评测家族整理（T88）：工具行折进核心包 + 家族整合包 bundle-eval
+
+- **工具行折进核心包**：`@khorsheed/dsh-eval-tool` / `@khorsheed/dsh-datasets-tool` / `@khorsheed/dsh-mission-tool` 三个伴生包退役（目录删除，登记进 `scripts/retired-packages.ts`；npm deprecate 随下一个发布波），工具行改为各核心包的 `./tool` 组合入口（`@khorsheed/dsh-eval/tool` 等）。preset 行 id（`eval-tool` / `datasets-tool` / `mission-tool`）与 `tools:` 配置不变，只改 `name`；工具的 origin owner 改为核心包名。不搬能力，只做形态整理
+- **新包 `@khorsheed/dsh-bundle-eval` 0.1.0**：`dsh.bundle.kind: 'family'`，成员 datasets / mission / lab / eval，patch 是成员行的逐字并集；插件页卡片标题「评测」。web-eval profile 改依赖它，不再直接依赖四个成员
+- **版本**：评测家族一起前移——datasets / mission / lab / eval 到 0.2.0-rc.1，minHost 与 verifiedHost 统一 0.2.0-rc.2；presets 的 dsh-eval preset 两条工具行改指新入口（随 0.3.0）
+- **检查器**：`check:plugins` 去掉三对 core/companion 的 NO_OWN_PATCH / ALLOWED_EDGES，`COMMUNITY_SERVICE_INJECTORS` 改为核心包自注；`check:release-groups` 的 COMPANION_PAIRS 清空；`check:profiles` 认得家族整合包（规则 4 不要求再直接依赖成员，规则 5 让成员的子路径行经整合包解析）
+
 ## Unreleased —— 2026-09-30 发布波：宿主 0.2.0 兼容闸适配，28 包暂存 + ankh-guard 打包待发
 
 - **背景**：宿主 0.2.0 带兼容闸——peer 区间不覆盖宿主版本的已装插件会被禁用；全仓 `@deepseek-ai/dsh-*` peer 区间已加宽（`|| ^0.2.0-rc.1`），本波把 29 个已发布包的版本线全部前移（28 包暂存；ankh-guard 因 3080 部署验收在途只打包不暂存，待验收后单独补发）
