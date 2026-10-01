@@ -53,7 +53,7 @@ npx npm@12 publish /tmp/dist/<新包>.tgz --access public --otp=<token>
 
 | 报错 | 原因 | 解法 |
 |---|---|---|
-| `requires a one-time password`（EOTP） | 账号开了 2FA 且 npm 已无 TOTP | 不要找 6 位码了——走 staged publishing（见上文）：`npx npm@12 stage publish` 暂存 + 网页审批 |
+| `requires a one-time password`（EOTP） | 账号开了 2FA 且 npm 已无 TOTP | 不要找 6 位码了——发布走 staged publishing（见上文）：`npx npm@12 stage publish` 暂存 + 网页审批；`deprecate` 等包管理动作走同一条 device flow（EOTP 报错里带 `auth/cli/...` 链接，浏览器 security key 认证后从 doneUrl 取一次性 token 当 `--otp` 重跑）。**链接只在真实终端可见**：npm 对管道/重定向输出打码成 `***`（伪终端也不行），必须在本人终端里跑（2026-10-01 deprecate 实测） |
 | 403 且账号页显示 "temporarily suspended due to a recent security-sensitive action" | npm 2026-06 起的防劫持冻结：**使用恢复码、换邮箱等敏感动作会触发 72 小时只读冻结**（安装/下载不受影响，发布/token 管理全停，到期自动解除） | 无捷径，等 72 小时；预防 = 恢复码只留作真正的账号恢复，日常发布走 staged + security key 审批 |
 | `403`(版本没变)/ `409` | 版本号 ≤ 线上已发布版本 | bump 版本再发;npm 不允许覆盖 |
 | `403`(包名从没发过) | 没有该 scope 的权限 | 只能发自己拥有的 scope(@khorsheed);@deepseek-ai 是官方 org,不要尝试 |
