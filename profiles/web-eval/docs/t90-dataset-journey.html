@@ -1,0 +1,422 @@
+<title>题集接入旅程</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#f3f4f1; --paper:#ffffff; --ink:#1d2421; --muted:#5e6a64; --line:#d9ddd8; --soft:#e9ece7;
+  --accent:#2f6b57; --accent-soft:#dcebe4; --agent:#6a4fa3; --agent-soft:#ebe5f5; --sys:#8a6a1f; --sys-soft:#f4ecd8;
+  --warn:#a5452b; --warn-soft:#f6e1da;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --serif:"Noto Serif SC","Songti SC",serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#151917; --paper:#1d2320; --ink:#e6ebe8; --muted:#9aa6a0; --line:#323a36; --soft:#252c29;
+    --accent:#7cc3a6; --accent-soft:#1f3a30; --agent:#b8a1e6; --agent-soft:#2c2540; --sys:#d9b765; --sys-soft:#3a3120;
+    --warn:#ec9a82; --warn-soft:#45261d;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#151917; --paper:#1d2320; --ink:#e6ebe8; --muted:#9aa6a0; --line:#323a36; --soft:#252c29;
+  --accent:#7cc3a6; --accent-soft:#1f3a30; --agent:#b8a1e6; --agent-soft:#2c2540; --sys:#d9b765; --sys-soft:#3a3120;
+  --warn:#ec9a82; --warn-soft:#45261d;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.7;padding-inline:16px;padding-block:32px 64px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:48px}
+h1,h2,h3{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(26px,4vw,36px)}
+h2{font-size:22px}
+h3{font-size:17px}
+p{margin:0}
+.lede{color:var(--muted);max-width:62ch;margin-top:12px}
+.mono{font-family:var(--mono);font-size:.88em}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted)}
+section{display:flex;flex-direction:column;gap:20px}
+
+/* who-chips */
+.who{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;padding:2px 10px;border-radius:999px;white-space:nowrap}
+.who.h{background:var(--accent-soft);color:var(--accent)}
+.who.a{background:var(--agent-soft);color:var(--agent)}
+.who.s{background:var(--sys-soft);color:var(--sys)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px;font-size:13px;color:var(--muted)}
+
+/* strip */
+.strip{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.strip a{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:10px;background:var(--paper);border:1px solid var(--line);color:inherit;text-decoration:none}
+.strip a:hover,.strip a:focus-visible{border-color:var(--accent);outline:none}
+.strip .n{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.strip .t{font-weight:500;font-size:14px;line-height:1.4}
+@media (max-width:860px){.strip{grid-template-columns:repeat(2,1fr)}}
+
+/* stage */
+.stage{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:28px;align-items:start;padding-top:28px;border-top:1px solid var(--line)}
+@media (max-width:860px){.stage{grid-template-columns:1fr}}
+.stage .head{display:flex;flex-direction:column;gap:10px}
+.stage .num{font-family:var(--mono);color:var(--muted);font-size:13px}
+.stage ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px}
+.note{font-size:13px;color:var(--muted);border-left:2px solid var(--line);padding-left:12px}
+.note.w{border-color:var(--warn);color:var(--ink)}
+
+/* mock surfaces */
+.mock{background:var(--paper);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 0 var(--line)}
+.mock .bar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);background:var(--soft)}
+.mock .bar b{color:var(--ink);font-weight:500}
+.mock .body{padding:18px;display:flex;flex-direction:column;gap:14px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;font-weight:500}
+.field label small{font-weight:400;color:var(--muted);margin-left:6px}
+.input{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;background:var(--ground);color:var(--ink);min-height:38px;overflow-wrap:anywhere}
+.input.ph{color:var(--muted)}
+.hint{font-size:12px;color:var(--muted)}
+.btns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.btn{font:inherit;font-size:13px;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--paper);color:var(--ink);cursor:pointer}
+.btn.p{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:28px 12px}
+.empty p{color:var(--muted);font-size:13px;max-width:36ch}
+
+/* chat */
+.chat{display:flex;flex-direction:column;gap:12px}
+.msg{max-width:92%;padding:10px 14px;border-radius:12px;font-size:14px;line-height:1.65}
+.msg.u{align-self:flex-end;background:var(--accent-soft)}
+.msg.a{align-self:flex-start;background:var(--soft)}
+.msg .tool{display:block;font-family:var(--mono);font-size:12px;color:var(--agent);margin-top:6px}
+.msg ul{margin:6px 0 0;padding-left:1.2em}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tabs button{font:inherit;font-size:13px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--paper);color:var(--muted);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.tabs button:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* banner + layers */
+.banner{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 14px;background:var(--agent-soft);border-bottom:1px solid var(--line);font-size:13px}
+.layers{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.layer{display:grid;grid-template-columns:110px 1fr auto;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--line);font-size:13px}
+.layer:first-child{border-top:0}
+.layer .why{color:var(--muted);font-size:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:12px}
+.seg span{padding:3px 8px;color:var(--muted)}
+.seg span.on{background:var(--accent);color:var(--paper)}
+.seg span.on.k{background:var(--sys);}
+@media (max-width:480px){.layer{grid-template-columns:1fr}}
+.xd{border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:13px}
+.xsum{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--soft)}
+.xnote{color:var(--muted);font-size:12px;margin-left:auto}
+.chip{font-size:12px;padding:1px 8px;border-radius:99px;font-variant-numeric:tabular-nums}
+.k-split .tag,.chip.k-split{background:var(--agent-soft);color:var(--agent)}
+.k-copy .tag,.chip.k-copy{background:var(--accent-soft);color:var(--accent)}
+.k-new .tag,.chip.k-new{background:var(--sys-soft);color:var(--sys)}
+.k-unused .tag,.chip.k-unused{background:var(--soft);color:var(--muted);border:1px dashed var(--line)}
+.chip.k-del{background:var(--warn-soft);color:var(--warn)}
+.xcols{display:grid;grid-template-columns:1fr 1fr}
+.xcol+.xcol{border-left:1px solid var(--line)}
+.xh{padding:6px 12px;font-weight:600;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
+.xt{list-style:none;margin:0;padding:4px 0}
+.xt li{display:grid;grid-template-columns:auto auto 1fr;gap:2px 8px;align-items:baseline;padding:4px 12px}
+.xt li>.to{grid-column:1/-1;color:var(--muted);font-size:12px;padding-left:2px}
+.xt .tag,.xt .lv{font-size:11px;padding:0 6px;border-radius:4px;justify-self:start}
+.xt .lv{background:var(--accent-soft);color:var(--accent)}
+.xt .lv.k{background:var(--sys-soft);color:var(--sys)}
+.xt .lv.warn{background:var(--warn-soft);color:var(--warn)}
+.xt li.k-unused>.mono{color:var(--muted);text-decoration:line-through}
+.xt.sub{grid-column:1/-1;margin:2px 0 0 4px;border-left:2px solid var(--line);padding:0}
+.xt.sub li{padding:3px 10px}
+.xfoot{display:flex;flex-wrap:wrap;gap:6px 16px;padding:8px 12px;border-top:1px solid var(--line)}
+@media (max-width:640px){.xcols{grid-template-columns:1fr}.xcol+.xcol{border-left:0;border-top:1px solid var(--line)}.xnote{margin-left:0}}
+.files{border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:13px}
+.files .sum{padding:8px 12px;background:var(--accent-soft);border-bottom:1px solid var(--line)}
+.files .sum b{font-variant-numeric:tabular-nums}
+.files .row{display:grid;grid-template-columns:7.5em 4.5em 1fr;gap:4px 10px;padding:8px 12px;border-bottom:1px solid var(--line);align-items:baseline}
+.files .row:last-child{border-bottom:0}
+.files .row .n{font-variant-numeric:tabular-nums;text-align:right;font-weight:600}
+.files .row .ex{color:var(--muted);overflow-wrap:anywhere}
+.files .row.warn{background:var(--sys-soft)} .files .row.warn .who{color:var(--sys)}
+.files .tree{grid-column:1/-1;margin:2px 0 0;padding:6px 8px;border-radius:6px;background:var(--line);font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre}
+.more{font-size:12px;color:var(--accent);text-decoration:underline}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;overflow-wrap:anywhere}
+.ok{color:var(--accent);font-weight:500}
+
+/* tables */
+.tbl{overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th,td{text-align:left;padding:10px 14px;border-top:1px solid var(--line);vertical-align:top}
+thead th{border-top:0;font-size:12px;letter-spacing:.06em;color:var(--muted);font-weight:500;background:var(--soft)}
+td:first-child{font-weight:500;white-space:nowrap}
+
+.decide{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px}
+.card .rec{font-size:12px;color:var(--accent);font-weight:500}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">dsh-datasets · 用户旅程草图 · 2026-10-01</div>
+  <h1>题集接入旅程</h1>
+  <p class="lede">首次使用和第 N 次使用都走同一条路：人说清楚「数据在哪、叫什么」，Agent 按 dataset-authoring skill 把它整理成符合协议的题库仓库并提交，最后由人确认一次登记。登记决定模型能看到哪些层，所以这一步必须由人点。</p>
+  <div class="legend">
+    <span class="who h">人</span>做的事
+    <span class="who a">Agent</span>按 skill 做的事
+    <span class="who s">插件</span>自动完成的事
+  </div>
+</header>
+
+<nav class="strip" aria-label="全流程">
+  <a href="#s1"><span class="n">1</span><span class="t">发起</span><span class="who h">人</span></a>
+  <a href="#s2"><span class="n">2</span><span class="t">看数据</span><span class="who a">Agent</span></a>
+  <a href="#s3"><span class="n">3</span><span class="t">对齐方案</span><span class="who a">Agent</span></a>
+  <a href="#s4"><span class="n">4</span><span class="t">改造、提交、校验</span><span class="who a">Agent</span></a>
+  <a href="#s5"><span class="n">5</span><span class="t">提交登记申请</span><span class="who a">Agent</span></a>
+  <a href="#s6"><span class="n">6</span><span class="t">确认登记</span><span class="who h">人</span></a>
+  <a href="#s7"><span class="n">7</span><span class="t">在实验里选用</span><span class="who s">插件</span></a>
+</nav>
+
+<!-- 1 -->
+<section class="stage" id="s1">
+  <div class="head">
+    <span class="num">1 · 发起</span>
+    <h2>人只填三项，然后交给 Agent</h2>
+    <p>题集 tab 的空态和「添加题集」按钮打开同一个弹窗。也可以不开弹窗，直接在对话里说一句。</p>
+    <ul>
+      <li><b>数据在哪</b>（必填）：本地目录或文件、下载链接，或公开数据集的名字。</li>
+      <li><b>题集名称</b>（必填）：以后在实验里选它时看到的名字。</li>
+      <li><b>想拿它测什么</b>（可选）：帮 Agent 决定怎么取舍字段、要多少题。</li>
+    </ul>
+    <p class="note">点「让 Agent 整理」会新开一个「题集整理」会话并把请求写进对话框，和 T87 新建实验同一种做法。整理会话会看到答案，所以不复用评测会话（见文末待定项 B）。</p>
+  </div>
+  <div class="mock" aria-label="弹窗示意">
+    <div class="bar"><b>题集</b> · 添加题集</div>
+    <div class="body">
+      <div class="field"><label>数据在哪</label><div class="input mono">~/Downloads/gsm8k/</div><span class="hint">本地路径、下载链接，或公开数据集名（如 SWE-bench Lite）</span></div>
+      <div class="field"><label>题集名称</label><div class="input">小学数学应用题</div></div>
+      <div class="field"><label>想拿它测什么<small>可选</small></label><div class="input">对比两个模型多步算术推理的准确率</div></div>
+      <p class="hint">题集会用 git 管理版本，以后任何一版都能找回来，已有实验也能按当时的版本复现。你不需要会用 git，Agent 会替你处理。</p>
+      <div class="btns"><span class="btn">取消</span><span class="btn p">让 Agent 整理</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 & 3 -->
+<section class="stage" id="s2">
+  <div class="head">
+    <span class="num">2 · 看数据　3 · 对齐方案</span>
+    <h2>Agent 先读懂数据，再把方案讲给人听</h2>
+    <ul>
+      <li>判断格式、条数、哪些字段是题面、哪些是标准答案、判分方式（精确匹配、rubric、可执行检查）。</li>
+      <li>公开数据集：先说明来源、许可、下载体积，人同意后才下载。</li>
+      <li>已经符合协议的仓库：只做校验，直接跳到第 5 步。</li>
+      <li>开工前先检查本机有没有 git。没有的话用大白话说明用途，征得同意后替人安装（macOS 用系统自带的命令行工具安装，Windows 用 winget）；人不同意就停在这里，不登记。</li>
+      <li>拿不准的地方只问关键问题，一次问完，给默认值。</li>
+    </ul>
+    <p class="note" id="s3">方案里写清三件事：题目怎么切、哪些内容选手可见、怎么判分。人回答「可以」之后才开始改造。</p>
+  </div>
+  <div class="mock" aria-label="对话示意">
+    <div class="bar"><b>题集整理</b> 会话 · <span class="tabs" role="tablist" aria-label="数据来源">
+      <button role="tab" aria-selected="true" data-src="local" id="tab-local">本地文件</button>
+      <button role="tab" aria-selected="false" data-src="public" id="tab-public">公开数据集</button>
+      <button role="tab" aria-selected="false" data-src="repo" id="tab-repo">已是协议仓库</button>
+    </span></div>
+    <div class="body chat" id="chat"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="stage" id="s4">
+  <div class="head">
+    <span class="num">4 · 改造、提交、校验</span>
+    <h2>Agent 建仓库、写题目、提交、跑校验</h2>
+    <ul>
+      <li>默认在 dsh 数据目录下新建题库仓库；人在第 3 步指定了位置就用指定的。</li>
+      <li>按协议生成每道题的目录，把题面、答案、判分规则放进对应的层。</li>
+      <li>写配置文件 <span class="mono">datasets/&lt;id&gt;/dataset.json</span>，声明有哪几层、每层选手能不能看到，例如 <span class="mono">visible</span>（选手可见，放题面）和 <span class="mono">grading</span>（仅判题，放答案和判分规则）。哪些文件归哪一层，是 Agent 读完题后按第 3 步对齐的方案定的。第 6 步人确认的就是这份声明。</li>
+      <li>每写完一批就提交一次，所以题集 tab 随时看得到进度，不再有「写了但看不见」。</li>
+      <li>跑协议校验，失败就自己修，修不了的告诉人原因。</li>
+    </ul>
+  </div>
+  <div class="mock" aria-label="进度示意">
+    <div class="bar"><b>题集整理</b> 会话 · 工具调用</div>
+    <div class="body chat">
+      <div class="msg a">开始整理：test.jsonl 共 1,319 条，整份转换；train.jsonl 不用。
+        <span class="tool">git init  ~/.dsh/datasets/gsm8k</span>
+        <span class="tool">写入 datasets/gsm8k/dataset.json</span>
+        <span class="tool">写入 items/q0001 … q1319（visible / grading）</span>
+        <span class="tool">git commit -m "gsm8k: 1319 题"</span>
+        <span class="tool">datasets_validate gsm8k → 通过，0 条问题</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 & 6 -->
+<section class="stage" id="s5">
+  <div class="head">
+    <span class="num">5 · 提交登记申请　6 · 确认登记</span>
+    <h2>Agent 只能申请，登记由人点确认</h2>
+    <p>登记表一直只允许人写，这是防泄题的闸：它决定模型能读到哪些层。Agent 提交一份预填好的申请，题集 tab 顶部出现提示，人打开核对后点确认。</p>
+    <ul id="s6">
+      <li><b>人先看到的</b>：原目录和题集左右对照。原目录里每个文件标明去向：拆分、原样复制、未使用，未使用的写明原因；题集里每个文件标明来源：从哪个文件、哪个字段来的，或者是 Agent 新写的。顶部汇总拆分、复制、新写、未使用、删除各有几个。不分层的文件（选手也能看到）标红。</li>
+      <li><b>改已有题集时</b>：同一个视图换成「已登记版本 → 新版本」，多出「修改」，删除的文件逐个列出。只有可见层有变化时才需要重新确认。</li>
+      <li><b>人要核对的</b>：登记名；每一层是「选手可见」还是「仅判题用」，重点看答案层没有被放成选手可见。拿不准可以点「随机抽看 3 道题」直接看内容。</li>
+      <li><b>人可以改的</b>：登记名、各层可见性。</li>
+      <li><b>插件自动填、默认收起的</b>：仓库路径、跟踪分支、写入检出。熟手可以在「高级」里改。</li>
+    </ul>
+    <p class="note w">Agent 对每一层给出建议和理由，但开关的最终状态以人点确认时为准。</p>
+  </div>
+  <div class="mock" aria-label="登记确认示意">
+    <div class="bar"><b>题集</b> tab</div>
+    <div class="banner"><span>Agent 整理好了「小学数学应用题」，等你确认登记</span><span class="btn p">核对并登记</span></div>
+    <div class="body">
+      <dl class="facts">
+        <dt>来源</dt><dd class="mono">~/Downloads/gsm8k/（MIT）</dd>
+        <dt>题数</dt><dd>1,319 题 · 1 个题集</dd>
+        <dt>校验</dt><dd class="ok">通过</dd>
+        <dt>版本</dt><dd class="mono">main @ 3e1a9c2</dd>
+      </dl>
+      <div class="field"><label>登记名</label><div class="input">gsm8k</div></div>
+      <div class="field"><label>整理结果：原目录 → 题集</label>
+        <div class="xd">
+          <div class="xsum">
+            <span class="chip k-split">拆分 1</span><span class="chip k-copy">原样复制 1</span><span class="chip k-new">新写 2</span><span class="chip k-unused">未使用 3</span><span class="chip k-del">删除 0</span>
+            <span class="xnote">原目录 5 个文件，一个没改；题集共 3,960 个文件</span>
+          </div>
+          <div class="xcols">
+            <div class="xcol">
+              <div class="xh">原目录 <span class="mono">~/Downloads/gsm8k/</span></div>
+              <ul class="xt">
+                <li class="k-split"><span class="mono">test.jsonl</span><span class="tag">拆分</span><span class="to">→ 1,319 道题，每题 3 个文件</span></li>
+                <li class="k-copy"><span class="mono">LICENSE</span><span class="tag">原样复制</span><span class="to">→ <span class="mono">LICENSE</span></span></li>
+                <li class="k-unused"><span class="mono">train.jsonl</span><span class="tag">未使用</span><span class="to">训练集，不进评测</span></li>
+                <li class="k-unused"><span class="mono">README.md</span><span class="tag">未使用</span><span class="to">来源和许可已记进 <span class="mono">dataset.json</span></span></li>
+                <li class="k-unused"><span class="mono">.DS_Store</span><span class="tag">未使用</span><span class="to">系统文件，忽略</span></li>
+              </ul>
+            </div>
+            <div class="xcol">
+              <div class="xh">题集 <span class="mono">datasets/gsm8k/</span></div>
+              <ul class="xt">
+                <li class="k-new"><span class="mono">dataset.json</span><span class="tag">新写</span><span class="to">声明两层，见下方</span></li>
+                <li class="k-copy"><span class="mono">LICENSE</span><span class="tag">原样复制</span><span class="to">← <span class="mono">LICENSE</span></span></li>
+                <li class="k-new"><span class="mono">grading/rubric.yml</span><span class="tag">新写</span><span class="to">判分规则：取最终数值精确匹配</span></li>
+                <li class="k-split"><span class="mono">items/q0001 … q1319/</span><span class="tag">拆分</span><span class="to">← test.jsonl 第 1 … 1,319 行</span>
+                  <ul class="xt sub">
+                    <li><span class="mono">item.json</span><span class="lv warn">不分层 · 选手可见</span><span class="to">题号、难度</span></li>
+                    <li><span class="mono">visible/task.md</span><span class="lv">选手可见</span><span class="to">← <span class="mono">question</span> 字段</span></li>
+                    <li><span class="mono">grading/answer.md</span><span class="lv k">仅判题用</span><span class="to">← <span class="mono">answer</span> 字段（含 <span class="mono">#### 72</span>）</span></li>
+                  </ul>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div class="xfoot"><span class="more">逐条看 q0001：原始那一行 ↔ 拆出来的 3 个文件</span><span class="more">随机抽看 3 道题</span><span class="more">完整文件清单</span></div>
+        </div>
+        <p class="hint">字段也算：原始数据里每个字段都要有去处。这份数据只有 <span class="mono">question</span> 和 <span class="mono">answer</span> 两个字段，都用上了；有没用上的字段会在「未使用」里逐个列出。</p>
+      </div>
+      <div class="field"><label>各层谁能看</label>
+        <div class="layers">
+          <div class="layer"><span class="mono">visible</span><span class="why">题面。Agent 建议：选手可见</span><span class="seg"><span class="on">选手可见</span><span>仅判题用</span></span></div>
+          <div class="layer"><span class="mono">grading</span><span class="why">标准答案与 rubric。Agent 建议：仅判题用</span><span class="seg"><span>选手可见</span><span class="on k">仅判题用</span></span></div>
+        </div>
+      </div>
+      <p class="hint">高级：仓库路径 · 跟踪分支 main · 写入检出（已自动填写）</p>
+      <div class="btns"><span class="btn">退回给 Agent</span><span class="btn p">确认登记</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="stage" id="s7">
+  <div class="head">
+    <span class="num">7 · 在实验里选用</span>
+    <h2>登记后马上能在新建实验里选到</h2>
+    <ul>
+      <li>新建实验弹窗的「题集」下拉里出现 gsm8k，实验会钉住当时的提交版本。<b>抽题在这里做</b>：选「全部 / 随机 N 题（固定种子）/ 手选」，结果作为实验计划的题目清单钉住；同一份题集可以被不同实验抽不同的题。</li>
+      <li>以后要加题或改题：还是走同一条路，对 Agent 说「gsm8k 有几道题答案标错了，改一下」。Agent 提交新版本，已登记的题集自动跟到新提交，已有实验仍钉在旧版本。</li>
+      <li>只有可见层发生变化时，才需要人重新确认一次登记。</li>
+    </ul>
+  </div>
+  <div class="mock" aria-label="题集列表示意">
+    <div class="bar"><b>题集</b> tab</div>
+    <div class="body">
+      <dl class="facts">
+        <dt>gsm8k</dt><dd>1,319 题 · 选手可见 visible · 最新 3e1a9c2 · 刚刚登记</dd>
+      </dl>
+      <div class="empty" style="padding:8px 0 0"><span class="btn">添加题集</span><p>本地数据、下载好的文件或公开数据集，都从这里交给 Agent 整理。</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>三种来源走的是同一条路</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>来源</th><th>第 2–3 步多做什么</th><th>第 4 步</th><th>人要额外决定的</th></tr></thead>
+    <tbody>
+      <tr><td>本地文件或目录</td><td>识别格式与字段对应</td><td>新建仓库并改造</td><td>哪列是答案</td></tr>
+      <tr><td>公开数据集</td><td>说明来源、许可、体积；同意后下载</td><td>同上；体积大的数据用外部源指针，不进 git（T40，第二批）</td><td>是否同意下载、用哪个官方版本（如 Lite / Verified）</td></tr>
+      <tr><td>已是协议仓库</td><td>只做校验</td><td>跳过，直接第 5 步</td><td>无</td></tr>
+      <tr><td>给已有题集加题或改题</td><td>读现有题集的结构</td><td>在原仓库里改并提交新版本</td><td>可见层变了才需要重新确认</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>和今天相比，去掉了什么</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>今天的卡点</th><th>新流程里</th></tr></thead>
+    <tbody>
+      <tr><td>要先自己 git init、照协议手写文件</td><td>Agent 按 skill 做</td></tr>
+      <tr><td>空仓库登记不了，新建题集又要求先登记</td><td>Agent 先建好并提交，登记时题集一定存在</td></tr>
+      <tr><td>界面写的题要人手 commit 才看得见</td><td>Agent 每批都提交</td></tr>
+      <tr><td>要理解层、modelFacing、写入检出、跟踪分支</td><td>人只看两档可见性，其余收进「高级」</td></tr>
+      <tr><td>公开数据集无路可走</td><td>skill 附 SWE-bench、Terminal-Bench、jsonl 问答等转换参考</td></tr>
+      <tr><td>装完不知道下一步</td><td>install.sh 结尾提示打开题集 tab</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>待你决定</h2>
+  <div class="decide">
+    <div class="card"><span class="eyebrow">A</span><h3>登记由人确认，Agent 只提交申请</h3><p>保住防泄题的闸，代价是人多点一次。</p><span class="rec">建议采用</span></div>
+    <div class="card"><span class="eyebrow">B</span><h3>在哪个会话里整理</h3><p>独立的「题集整理」会话（带文件与 shell 工具和这个 skill），还是就在当前会话里做。整理会话会看到答案，评测会话里不宜多出写文件和 shell 的能力。</p><span class="rec">建议独立会话</span></div>
+    <div class="card"><span class="eyebrow">C</span><h3>Agent 建的仓库默认放哪</h3><p>默认放在 dsh 数据目录下的 datasets 子目录，人在第 3 步可以指定别处。</p><span class="rec">建议默认 dsh 数据目录</span></div>
+  </div>
+</section>
+
+</div>
+
+<script>
+const scripts = {
+  local: `
+    <div class="msg u">帮我把 ~/Downloads/gsm8k/ 整理成题集「小学数学应用题」，想对比两个模型多步算术推理的准确率。</div>
+    <div class="msg a">看了一下：目录里有 <span class="mono">test.jsonl</span>（1,319 条）、<span class="mono">train.jsonl</span>（7,473 条）、<span class="mono">README.md</span>、<span class="mono">LICENSE</span>。题集只用 test.jsonl，train 是训练集，不进评测。每条有 <span class="mono">question</span> 和 <span class="mono">answer</span>，答案末尾 <span class="mono">#### 72</span> 是最终数值。我的方案：
+      <ul><li>每条一道题，1,319 条全部转换；抽多少题留到建实验时选</li>
+      <li>题面放进选手可见层；完整解答和最终数值放进仅判题层</li>
+      <li>判分：取答案里的最终数值做精确匹配</li></ul>
+      要改的话告诉我，没问题我就开始。</div>
+    <div class="msg u">可以</div>`,
+  public: `
+    <div class="msg u">想用 SWE-bench Lite 测一下修 bug 的能力，整理成题集。</div>
+    <div class="msg a">SWE-bench Lite：300 题，来源 Hugging Face，许可 MIT。题目元数据约 1.2 MB；每题还要拉对应仓库在 base_commit 的代码，这部分很大，会用外部源指针，不放进 git。
+      <ul><li>题面：问题描述 + 仓库与 base_commit（选手可见）</li>
+      <li>判分：FAIL_TO_PASS / PASS_TO_PASS 测试（仅判题，需要容器轮）</li>
+      <li>300 题全部登记；建实验时可以先选 20 题跑通</li></ul>
+      同意下载的话我开始。</div>
+    <div class="msg u">同意，先 20 题</div>`,
+  repo: `
+    <div class="msg u">~/work/my-evals 已经是按协议写好的题库，帮我登记。</div>
+    <div class="msg a">检查了：2 个题集、共 86 题，main 分支最新提交 a17f0d4，协议校验通过。不需要改造，我直接提交登记申请，请到题集 tab 确认。
+      <span class="tool">datasets_validate → 通过</span>
+      <span class="tool">datasets_propose_registration ~/work/my-evals</span></div>`
+};
+const chat = document.getElementById('chat');
+const tabs = document.querySelectorAll('[data-src]');
+function show(src){
+  chat.innerHTML = scripts[src];
+  tabs.forEach(t => t.setAttribute('aria-selected', String(t.dataset.src === src)));
+}
+tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.src)));
+show('local');
+</script>
