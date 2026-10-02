@@ -80,7 +80,9 @@ export function createLocalFilesStore(): EngineStoreHandle<LocalFilesState, Loca
         d.error = null
       },
       select: (d, path: string | null) => {
+        if (d.selectedPath === path) return
         d.selectedPath = path
+        d.error = null
         d.preview = null
       },
       setPreview: (d, preview: LocalFilesRead) => {

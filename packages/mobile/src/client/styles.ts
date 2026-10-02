@@ -451,13 +451,18 @@ html[data-dsh-mobile] [data-mobile-picker=preset] [data-mobile-picker-divider] {
 [data-mobile-directory] footer { flex:none; padding-top:10px; }
 [data-mobile-directory] [data-mobile-done] { margin-top:0; background:var(--mobile-accent); color:white; min-height:48px; }
 
+[data-mobile-message-menu] { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+
 /* Optional sidebar navigation: content stays in its official dock hosts. */
 [data-mobile-header-actions] { display:flex; flex:none; gap:4px; }
 html[data-dsh-mobile] [data-mobile-toolbar] [data-mobile-header-actions] button { box-shadow:none; background:transparent; }
 [data-mobile-panel-navigation] { position:absolute; inset:0 0 auto; height:var(--mobile-bar); display:flex; align-items:center; gap:4px; padding:8px 10px; box-sizing:border-box; background:var(--mobile-face); color:var(--dsw-alias-label-primary); pointer-events:auto; }
 [data-mobile-panel-navigation] button { display:grid; place-items:center; flex:none; width:44px; height:44px; padding:0; border:0; border-radius:12px; background:transparent; color:inherit; cursor:pointer; }
 [data-mobile-panel-navigation] button:disabled { opacity:.4; }
-[data-mobile-panel-navigation] select { flex:1; min-width:0; max-width:100%; height:44px; padding:0 8px; border:0; border-radius:10px; background:var(--mobile-soft); color:inherit; font:inherit; font-size:16px; text-overflow:ellipsis; }
+[data-mobile-panel-tabs] { display:flex; flex:1; min-width:0; gap:6px; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; touch-action:pan-x; }
+[data-mobile-panel-tabs]::-webkit-scrollbar { display:none; }
+[data-mobile-panel-navigation] [role=tab] { width:auto; max-width:200px; padding:0 14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:10px 10px 0 0; border-bottom:2px solid transparent; }
+[data-mobile-panel-navigation] [role=tab][aria-selected=true] { background:var(--mobile-soft); border-bottom-color:var(--mobile-accent); }
 [data-mobile-panel-error] { position:absolute; inset:100% 8px auto; padding:6px 10px; font-size:13px; background:var(--mobile-face); border:1px solid var(--mobile-edge); border-radius:8px; }
 html[data-mobile-panel-open] [data-mobile-toolbar] { visibility:hidden; }
 html[data-dsh-mobile][data-mobile-panel-open] [data-mobile-frame] > [data-shell-overlay] { z-index:65; }

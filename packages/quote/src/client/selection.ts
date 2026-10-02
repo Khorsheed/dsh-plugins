@@ -41,16 +41,16 @@ export interface SelectionSource {
   start(listener: SelectionListener): () => void
 }
 
-/** Whether one node sits inside an editable the selection gesture must not interrupt. */
-function isEditable(node: Node): boolean {
+/** Whether a node belongs to editing or UI controls rather than quotable content. */
+function isInteractive(node: Node): boolean {
   const element = node instanceof Element ? node : node.parentElement
-  return element?.closest('input, textarea, [contenteditable]:not([contenteditable="false"])') !== null
+  return element?.closest('input, textarea, button, [role=button], [role=menu], [role=toolbar], [contenteditable]:not([contenteditable="false"])') !== null
 }
 
 /**
  * Classify the live selection into a snapshot (or `null` to hide): only a
  * non-collapsed, non-blank selection whose anchor and focus both sit outside
- * editables and outside the menu's own root qualifies.
+ * editables/controls and outside the menu's own root qualifies.
  * @param selection - the window selection (may be null on non-browser hosts).
  * @param own - probe: is this node inside the menu's own root element.
  * @returns the snapshot, or null.
@@ -63,9 +63,9 @@ export function classifySelection(
   const text = selection.toString()
   if (text.trim() === '') return null
   const anchor = selection.anchorNode
-  if (anchor !== null && (own(anchor) || isEditable(anchor))) return null
+  if (anchor !== null && (own(anchor) || isInteractive(anchor))) return null
   const focus = selection.focusNode
-  if (focus !== null && (own(focus) || isEditable(focus))) return null
+  if (focus !== null && (own(focus) || isInteractive(focus))) return null
   const rect = selection.getRangeAt(0).getBoundingClientRect()
   return { text, rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } }
 }

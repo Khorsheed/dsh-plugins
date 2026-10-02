@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { MessageMenu } from '../src/client/messageMenu.ts'
 let menu: MessageMenu
-afterEach(() => { menu?.dispose(); document.body.innerHTML = ''; document.documentElement.removeAttribute('data-dsh-mobile') })
+afterEach(() => { menu?.dispose(); document.body.innerHTML = ''; document.documentElement.removeAttribute('data-dsh-mobile'); window.getSelection()?.removeAllRanges(); vi.useRealTimers() })
 it('invokes the original message-tools action exactly once, leaving confirmation to its owner', () => {
   HTMLDialogElement.prototype.showModal = function () { this.open = true }
   HTMLDialogElement.prototype.close = function () { this.open = false }
@@ -30,4 +30,28 @@ it('uses the matching assistant turn actions without borrowing user edit or with
   const dialog = document.querySelector('dialog')!
   expect([...dialog.querySelectorAll('button')].map(b => b.textContent)).toEqual(['复制', '好的回答', '在新对话中分支'])
   dialog.querySelector('button')!.click(); expect(action).toHaveBeenCalledOnce()
+})
+
+it('leaves touch long-press and native selection alone and closes an existing menu on selection', () => {
+  vi.useFakeTimers()
+  document.documentElement.setAttribute('data-dsh-mobile', '')
+  document.body.innerHTML = '<div data-conversation-scroll><div data-time-hover-root><p>Message text</p><div><button aria-label="复制">Copy</button></div></div></div>'
+  menu = new MessageMenu(document)
+  const paragraph = document.querySelector('p')!
+  const touch = new Event('pointerdown', { bubbles: true })
+  Object.defineProperty(touch, 'pointerType', { value: 'touch' })
+  paragraph.dispatchEvent(touch)
+  vi.advanceTimersByTime(1000)
+  const nativeMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+  paragraph.dispatchEvent(nativeMenu)
+  expect(nativeMenu.defaultPrevented).toBe(false)
+  expect(document.querySelector('dialog')).toBeNull()
+  const mouse = new Event('pointerdown', { bubbles: true })
+  Object.defineProperty(mouse, 'pointerType', { value: 'mouse' })
+  paragraph.dispatchEvent(mouse)
+  paragraph.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  expect(document.querySelector('dialog')).not.toBeNull()
+  window.getSelection()!.selectAllChildren(paragraph)
+  document.dispatchEvent(new Event('selectionchange'))
+  expect(document.querySelector('dialog')).toBeNull()
 })

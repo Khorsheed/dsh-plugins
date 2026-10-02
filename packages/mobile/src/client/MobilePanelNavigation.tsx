@@ -34,12 +34,27 @@ export function MobilePanelNavigation({ panels, active, prepareNavigation, t }: 
       }
     }
   }, [managed, state.expanded, panels])
+  useEffect(() => {
+    if (!managed || !state.expanded) return
+    navigation.current?.querySelector<HTMLElement>('[role=tab][aria-selected=true]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [managed, state.expanded, state.activeId])
   if (!managed || !state.expanded) return null
   return <nav ref={navigation} data-mobile-panel-navigation aria-label={t('panels')}>
     <button type="button" aria-label={t('backToChat')} onClick={() => { prepareNavigation(); panels.hide() }}><MobileIcon name="back"/></button>
-    <select aria-label={t('switchPanel')} value={state.activeId} onChange={event => panels.select(event.target.value)}>
-      {state.tabs.map(tab => <option key={tab.id} value={tab.id}>{tab.title || tab.kind}</option>)}
-    </select>
+    <div role="tablist" aria-label={t('switchPanel')} data-mobile-panel-tabs onKeyDown={event => {
+      const index = state.tabs.findIndex(tab => tab.id === state.activeId)
+      const next = event.key === 'ArrowRight' ? (index + 1) % state.tabs.length
+        : event.key === 'ArrowLeft' ? (index + state.tabs.length - 1) % state.tabs.length
+          : event.key === 'Home' ? 0 : event.key === 'End' ? state.tabs.length - 1 : -1
+      const target = state.tabs[next]
+      if (!target) return
+      event.preventDefault(); panels.select(target.id)
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]')[next]?.focus({ preventScroll: true })
+    }}>
+      {state.tabs.map(tab => <button key={tab.id} type="button" role="tab" title={tab.title || tab.kind}
+        aria-selected={tab.id === state.activeId} tabIndex={tab.id === state.activeId ? 0 : -1}
+        onClick={() => panels.select(tab.id)}>{tab.title || tab.kind}</button>)}
+    </div>
     <button type="button" aria-label={t('addPanel')} onClick={panels.add}><MobileIcon name="plus"/></button>
     <button type="button" aria-label={t('closePanel')} disabled={state.tabs.length === 1 && state.tabs[0]?.kind === 'guide'} onClick={panels.close}><MobileIcon name="close"/></button>
     {state.failed && <span role="alert" data-mobile-panel-error>{t('panelError')}</span>}

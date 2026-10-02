@@ -131,6 +131,7 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
       toggleTree: (d) => { d.treeCollapsed = !d.treeCollapsed },
       setTreeCollapsed: (d, collapsed: boolean) => { d.treeCollapsed = collapsed },
       select: (d, path: string, segment: 'uncommitted' | 'committed' | 'commit' | null) => {
+        if (d.selectedPath === path && d.selectedSegment === segment) return
         d.selectedPath = path
         d.selectedSegment = segment
         d.diff = null
@@ -139,6 +140,7 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
         d.error = null
       },
       setDetailView: (d, view: DetailView) => {
+        if (d.detailView === view) return
         d.detailView = view
         d.diff = null
         d.content = null
@@ -146,7 +148,10 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
         d.error = null
       },
       selectCommit: (d, sha: string | null) => {
+        if (d.selectedCommit === sha) return
         d.selectedCommit = sha
+        d.commitBody = null
+        d.error = null
         d.commitFiles = null
         d.selectedPath = null
         d.selectedSegment = null

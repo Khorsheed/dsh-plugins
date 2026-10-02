@@ -29,7 +29,7 @@ it('uses owner operations for open, switch, add, close and return, retaining the
   render(<><MobilePanelEntry panels={f.panels} beforeOpen={() => {}} t={t}/><MobilePanelNavigation panels={f.panels} active prepareNavigation={() => {}} t={t}/></>)
   fireEvent.click(screen.getByRole('button', { name: en.panels }))
   expect(document.documentElement.hasAttribute('data-mobile-panel-open')).toBe(true)
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'canvas' } })
+  fireEvent.click(screen.getByRole('tab', { name: 'Canvas' }))
   expect(f.service.focus).toHaveBeenCalledWith('canvas')
   fireEvent.click(screen.getByRole('button', { name: en.addPanel }))
   expect(f.service.openTab).toHaveBeenCalledWith('guide')
@@ -124,4 +124,18 @@ it('replaces only the native panel entry and removes the unused hero action spac
     style.remove()
     document.documentElement.removeAttribute('data-dsh-mobile')
   }
+})
+
+it('exposes all opened tabs and supports arrow-key selection without a dropdown', () => {
+  const f = fixture()
+  f.panels.toggle()
+  render(<MobilePanelNavigation panels={f.panels} active prepareNavigation={() => {}} t={t}/>)
+  expect(screen.queryByRole('combobox')).toBeNull()
+  expect(screen.getAllByRole('tab')).toHaveLength(2)
+  const files = screen.getByRole('tab', { name: 'Files' })
+  expect(files.getAttribute('aria-selected')).toBe('true')
+  fireEvent.keyDown(files, { key: 'ArrowRight' })
+  const canvas = screen.getByRole('tab', { name: 'Canvas' })
+  expect(canvas.getAttribute('aria-selected')).toBe('true')
+  expect(document.activeElement).toBe(canvas)
 })

@@ -278,7 +278,7 @@ export function WorkspaceView({
             path={selectedPath ?? ''}
             sessionId={currentSession}
             read={toPreviewRead(preview)}
-            loading={false}
+            loading={selectedPath !== null && preview === null && error === null}
             error={error}
             displayPath={selectedPath ?? undefined}
             // The open route accepts directories only, so both gestures receive

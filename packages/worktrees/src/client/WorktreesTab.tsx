@@ -207,14 +207,17 @@ export function WorktreesTab({
   useEffect(() => {
     if (mode !== 'commits' || selectedCommit === null) return
     let cancelled = false
+    actions.setError(null)
     void fetchCommitFiles(sessionId, selectedCommit).then(result => {
-      if (!cancelled && !tab.signal.aborted && result.ok) {
+      if (cancelled || tab.signal.aborted) return
+      if (result.ok) {
         actions.setCommitFiles(result.value.files)
         actions.setCommitBody(result.value.body)
-      }
+        actions.setError(null)
+      } else actions.setError(result.error.message)
     })
     return () => { cancelled = true }
-  }, [mode, selectedCommit, sessionId, fetchCommitFiles, actions, tab.signal])
+  }, [rev, mode, selectedCommit, sessionId, fetchCommitFiles, actions, tab.signal])
 
   // Selected file detail (diff / content), shared by the selection effect and
   // the pane's reload gesture. `dropped` is the caller's staleness guard; the
@@ -529,7 +532,7 @@ export function WorktreesTab({
               const commit = commits?.find(candidate => candidate.sha === selectedCommit)
               if (commit === undefined) return <Overview summary={summary} changes={changes === null ? null : { uncommitted: pending, committed: [] }} repoMode={false} t={t} />
               return (
-                <CommitDetails
+                commitFiles === null ? <div role="status" className={css.detailState}>{error === null ? t('state.loading') : t('state.error', { message: error })}</div> : <CommitDetails
                   commit={commit}
                   files={commitFiles ?? []}
                   body={commitBody}

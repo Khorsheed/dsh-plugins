@@ -5,7 +5,7 @@ import { MobilePanels } from '../../src/client/panels.ts'
 import { MobilePanelEntry, MobilePanelNavigation } from '../../src/client/MobilePanelNavigation.tsx'
 import { MOBILE_CSS } from '../../src/client/styles.ts'
 import { zh as mobileZh } from '../../src/client/locales.ts'
-import { AdaptiveSplit } from '../../../ui-content-preview/src/client/AdaptiveSplit.tsx'
+import { Files, Worktrees } from './file-fixtures.tsx'
 import { LinkView } from '../../../canvas/src/client/space/LinkView.tsx'
 import { zh as canvasZh } from '../../../canvas/src/client/locales.ts'
 import { defaultCategories } from '../../../canvas/src/types.ts'
@@ -16,7 +16,7 @@ const t = (key: string) => mobileZh[key] ?? key
 const ct = (key: string, params = {}) => (canvasZh[key] ?? key).replace(/\{(\w+)\}/g, (match, name) => params[name] ?? match)
 const seed = id => ({ id, kind: 'guide', contentId: 'guide', title: '面板首页' })
 const dock = new DockController({ makeInitialTab: seed, makePaneTab: seed })
-const names = { guide: '面板首页', files: '文件列表', canvas: '画布' }
+const names = { guide: '面板首页', files: '文件列表', worktrees: '工作树', canvas: '画布' }
 const open = kind => dock.openContent({ kind, contentId: kind, title: names[kind] })
 dock.setExpanded(true)
 const panels = new MobilePanels(document)
@@ -28,10 +28,6 @@ panels.set({ mounted: { getSnapshot: () => 'preview', subscribe: dock.subscribe 
 })
 const intents = Object.fromEntries(['focusTab','focusPane','splitPane','addTab','closeTab','duplicateTab','floatTab','unfloatPane','placeTab','dropTab','moveFloat','resizeFloat','resizeSplit'].map(key => [key, (...args) => dock[key](...args)]))
 const labels = { emptyPane:'空面板', splitPane:'拆分', splitPaneDisabled:'已达上限', splitPaneNarrow:'宽度不足', closeTab:'关闭', addTab:'添加', dockFloat:'停靠', closeFloat:'关闭浮窗', dropZone:{center:'移入',left:'左',right:'右',top:'上',bottom:'下'} }
-function Files() {
-  const [detail, setDetail] = useState(false), [file, setFile] = useState('README.md')
-  return <AdaptiveSplit master={<div className="fileList"><b>dsh-plugins</b>{['README.md','CHANGELOG.md','packages/mobile/','packages/canvas/'].map(name => <button key={name} onClick={() => {setFile(name);setDetail(true)}}>{name}</button>)}</div>} detailOpen={detail} onBack={() => setDetail(false)} backLabel="返回文件列表" detail={<article><h2>{file}</h2><p>这里使用真实的 AdaptiveSplit 组件，文件数据为预览样例。</p><label>保留草稿<textarea defaultValue="输入一些文字，切换画布后再回来。"/></label></article>}/>
-}
 const now = '2026-10-02T00:00:00Z'
 const initial = { id:'canvas_preview',title:'Mobile sidebar 设计',attachedWorkspaces:[],chat:{sessionId:null},categories:defaultCategories(),manuscripts:[],archivedAt:null,createdAt:now,updatedAt:now,stats:{proposed:{accepted:0,rejected:0},kindCounts:{},lastActiveAt:now},
  cards:[['c1','通用面板外壳',30,55],['c2','保留原插件内容',255,70],['c3','点选两张卡片连线',80,240]].map(([id,text,x,y]) => ({id,text,x,y,kind:'fragment',status:'kept',comments:[],createdBy:'user',createdAt:now,updatedAt:now})),
@@ -43,9 +39,9 @@ function Canvas() {
 function App() {
  const snapshot=useSyncExternalStore(dock.subscribe,dock.getSnapshot),[mobile,setMobile]=useState(true),[width,setWidth]=useState(390),[track,setTrack]=useState(false),[hero,setHero]=useState(true)
  useEffect(()=>{document.documentElement.toggleAttribute('data-dsh-mobile',mobile)},[mobile])
- return <><style>{MOBILE_CSS}</style><main className="review"><h1>移动端面板 · 组件预览</h1><p>真实面板导航、宿主 DockLayout、共享文件布局与画布连线组件。样例数据仅保留在当前页面，不连接生产实例。</p><div className="controls"><button onClick={()=>setMobile(!mobile)}>{mobile?'查看桌面布局':'查看移动布局'}</button><button onClick={()=>dock.floatTab(getPane(state(),state().activePaneId).activeTabId)}>浮动当前面板</button><label><input type="checkbox" checked={track} onChange={e=>setTrack(e.target.checked)}/>保留右侧栏宽度</label><label><input type="checkbox" checked={hero} onChange={e=>setHero(e.target.checked)}/>新建会话</label><label>宽度 {width}px <input type="range" min="320" max="960" value={width} onChange={event=>setWidth(+event.target.value)}/></label></div><div className={`device ${frameCss.frame}`} style={{width,'--mobile-height':'720px'} as React.CSSProperties} data-mobile-frame data-rightbar-collapsed={!track || !snapshot.state.expanded || undefined}>
+ return <><style>{MOBILE_CSS}</style><main className="review"><h1>移动端面板 · 组件预览</h1><p>真实面板导航、宿主 DockLayout、文件浏览器、工作树与画布连线组件。样例数据仅保留在当前页面，不连接生产实例。</p><div className="controls"><button onClick={()=>setMobile(!mobile)}>{mobile?'查看桌面布局':'查看移动布局'}</button><button onClick={()=>dock.floatTab(getPane(state(),state().activePaneId).activeTabId)}>浮动当前面板</button><label><input type="checkbox" checked={track} onChange={e=>setTrack(e.target.checked)}/>保留右侧栏宽度</label><label><input type="checkbox" checked={hero} onChange={e=>setHero(e.target.checked)}/>新建会话</label><label>宽度 {width}px <input type="range" min="320" max="960" value={width} onChange={event=>setWidth(+event.target.value)}/></label></div><div className={`device ${frameCss.frame}`} style={{width,'--mobile-height':'720px'} as React.CSSProperties} data-mobile-frame data-rightbar-collapsed={!track || !snapshot.state.expanded || undefined}>
  <div className={frameCss.centerCol}><div data-slot="main"><div data-phase={hero ? "hero" : "conversation"}><article><button data-sidebar-right-expand onClick={()=>dock.toggleExpanded()}>宿主面板入口</button><h2>聊天页面</h2><p>右上角面板按钮可返回工作面板。</p><textarea placeholder="聊天草稿也会保留"/></article></div></div></div>
- <div className={frameCss.rightbarCol} data-rightbar-col><div className={panelCss.session}><div className={panelCss.panel} style={{width:"100vw","--dsh-sidebar-width":"100vw"} as React.CSSProperties} data-sidebar-right-panel="fullscreen" data-sidebar-right-session="preview" data-sidebar-right-open={snapshot.state.expanded || undefined}><div className={panelCss.panelBody}><DockLayout state={snapshot.state} canSplit={snapshot.canSplit} intents={intents} labels={labels} active={snapshot.state.expanded} keepMounted={()=>true} renderTab={tab=>tab.kind==='files'?<Files/>:tab.kind==='canvas'?<Canvas/>:<article><h2>面板首页</h2>{['files','canvas'].map(kind=><button className="guide" key={kind} onClick={()=>open(kind)}>{names[kind]} →</button>)}</article>}/></div></div></div></div>
+ <div className={frameCss.rightbarCol} data-rightbar-col><div className={panelCss.session}><div className={panelCss.panel} style={{width:"100vw","--dsh-sidebar-width":"100vw"} as React.CSSProperties} data-sidebar-right-panel="fullscreen" data-sidebar-right-session="preview" data-sidebar-right-open={snapshot.state.expanded || undefined}><div className={panelCss.panelBody}><DockLayout state={snapshot.state} canSplit={snapshot.canSplit} intents={intents} labels={labels} active={snapshot.state.expanded} keepMounted={()=>true} renderTab={tab=>tab.kind==='files'?<Files/>:tab.kind==='worktrees'?<Worktrees/>:tab.kind==='canvas'?<Canvas/>:<article><h2>面板首页</h2>{['files','worktrees','canvas'].map(kind=><button className="guide" key={kind} onClick={()=>open(kind)}>{names[kind]} →</button>)}</article>}/></div></div></div></div>
  <div data-shell-overlay><nav data-mobile-toolbar data-library={false}><span>←</span><b>Mobile 适配讨论</b><div data-mobile-header-actions><MobilePanelEntry panels={panels} t={t} beforeOpen={()=>{}}/><button data-mobile-new="true" aria-label="新建会话">＋</button></div></nav><MobilePanelNavigation panels={panels} active={mobile} prepareNavigation={()=>{}} t={t}/></div></div><p>可体验：切换面板、＋打开首页、文件详情返回、画布平移/选卡/移动/连线、缩放和删除连线。桌面模式可拆分与浮动，再切回移动模式检查布局保留。</p></main></>
 }
 createRoot(document.getElementById('root')!).render(<App/> )

@@ -148,3 +148,10 @@ describe('createSelectionSource', () => {
     expect(emissions).toEqual([])
   })
 })
+
+it('does not turn another menu or button label into a new quote selection', () => {
+  document.body.innerHTML = '<div role="menu"><span id="menu-label">Copy</span></div><button id="button-label">Translate</button><p id="body">Article text</p>'
+  expect(classifySelection(selectAllOf(document.querySelector('#menu-label')!), () => false)).toBeNull()
+  expect(classifySelection(selectAllOf(document.querySelector('#button-label')!), () => false)).toBeNull()
+  expect(classifySelection(selectAllOf(document.querySelector('#body')!), () => false)?.text).toBe('Article text')
+})

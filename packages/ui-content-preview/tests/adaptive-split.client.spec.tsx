@@ -35,7 +35,7 @@ it('retains selection, draft, filter and element identity across navigation and 
   fireEvent.click(file)
   const draft = screen.getByRole('textbox', { name: 'Draft' })
   fireEvent.change(draft, { target: { value: 'Keep my edits' } })
-  const back = screen.getByRole('button', { name: '‹ Files' })
+  const back = screen.getByRole('button', { name: 'Files' })
   expect(document.activeElement).toBe(back)
   expect(screen.queryByRole('button', { name: 'README.md' })).toBeNull()
   resize(760)

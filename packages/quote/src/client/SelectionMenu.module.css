@@ -54,3 +54,17 @@
   flex: none;
   color: var(--dsw-alias-label-secondary);
 }
+
+/* Touch selection keeps the system callout beside the text. Quote actions get
+   a separate bottom dock instead of another overlapping selection popover. */
+@media (pointer: coarse) {
+  .root {
+    left:8px!important; right:8px; top:auto!important;
+    bottom:max(8px,env(safe-area-inset-bottom));
+    flex-direction:row; flex-wrap:wrap; gap:4px;
+    max-height:30dvh; overflow-y:auto; padding:8px;
+    background:var(--dsw-alias-bg-base);
+    -webkit-user-select:none; -webkit-touch-callout:none;
+  }
+  .item { flex:1 1 auto; width:auto; min-height:44px; justify-content:center; }
+}

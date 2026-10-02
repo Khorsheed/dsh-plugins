@@ -8,7 +8,7 @@
  * 工作树待提交 list follows the selected worktree.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { WorktreesTabProps } from '../src/client/contract.ts'
 import { WorktreesTab } from '../src/client/WorktreesTab.tsx'
@@ -258,9 +258,55 @@ it('opens a narrow detail and returns to the retained tree without clearing the 
     const split = container.querySelector('[data-adaptive-split]')!
     expect(split.getAttribute('data-adaptive-split')).toBe('narrow')
     expect((split.children[0] as HTMLElement).hidden).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: '‹ tree.expand' }))
+    fireEvent.click(screen.getByRole('button', { name: 'tree.expand' }))
     expect((split.children[0] as HTMLElement).hidden).toBe(false)
     expect(instance.getSnapshot().selectedPath).toBe('packages/room/src/index.ts')
     expect(region().getByRole('button', { name: /index\.ts/ })).toBe(row)
+    fireEvent.click(row)
+    await act(async () => {})
+    expect(instance.getSnapshot().diff).not.toBeNull()
+    expect(fetchFileDiff).toHaveBeenCalledOnce()
   } finally { measure.mockRestore() }
+})
+
+it('opens the preselected commit and reopens it without dropping its eight loaded files', async () => {
+  const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 390 } as DOMRect)
+  try {
+    const { props, instance } = makeHarness()
+    const commit = { sha: 'abc123', subject: 'Eight changed files', author: 'Author', time: 1, branches: '', files: 8 }
+    const files = Array.from({ length: 8 }, (_, index) => ({ path: `file-${index}.md`, status: 'M', additions: 1, deletions: 0 }))
+    props.fetchCommitLog = vi.fn().mockResolvedValue({ ok: true, value: [commit] })
+    props.fetchCommitFiles = vi.fn().mockResolvedValue({ ok: true, value: { sha: commit.sha, files, body: 'Commit body' } })
+    instance.actions.setMode('commits')
+    render(<WorktreesTab {...props}/>)
+    await waitFor(() => expect(instance.getSnapshot().commitFiles).toHaveLength(8))
+    const back = () => screen.queryByRole('button', { name: 'tree.expand' })
+    if (back()) fireEvent.click(back()!)
+    const row = screen.getByRole('button', { name: /Eight changed files/ })
+    fireEvent.click(row)
+    await act(async () => {})
+    expect(screen.getByRole('button', { name: /file-7.md/ })).toBeTruthy()
+    expect(instance.getSnapshot().commitFiles).toHaveLength(8)
+    fireEvent.click(back()!)
+    fireEvent.click(row)
+    await act(async () => {})
+    expect(screen.getByRole('button', { name: /file-7.md/ })).toBeTruthy()
+    expect(props.fetchCommitFiles).toHaveBeenCalledOnce()
+  } finally { measure.mockRestore() }
+})
+
+it('reports a failed commit read and retries its details through refresh', async () => {
+  const { props, instance } = makeHarness()
+  const commit = { sha: 'abc123', subject: 'Read retry', author: 'Author', time: 1, branches: '', files: 8 }
+  props.fetchCommitLog = vi.fn().mockResolvedValue({ ok: true, value: [commit] })
+  props.fetchCommitFiles = vi.fn()
+    .mockResolvedValueOnce({ ok: false, error: { code: 'io', message: 'retry me' } })
+    .mockResolvedValueOnce({ ok: true, value: { sha: commit.sha, files: [{ path: 'restored.md', status: 'M', additions: 1, deletions: 0 }], body: '' } })
+  instance.actions.setMode('commits')
+  render(<WorktreesTab {...props}/>)
+  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('retry me'))
+  expect(instance.getSnapshot().commitFiles).toBeNull()
+  act(() => instance.actions.refresh())
+  await waitFor(() => expect(screen.getByRole('button', { name: /restored.md/ })).toBeTruthy())
+  expect(props.fetchCommitFiles).toHaveBeenCalledTimes(2)
 })

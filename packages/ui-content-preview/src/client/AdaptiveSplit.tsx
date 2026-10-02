@@ -41,7 +41,7 @@ export function AdaptiveSplit({ master, detail, detailOpen, onBack, backLabel, m
     <div ref={masterRef} className={css.master} hidden={narrow && detailOpen} onFocusCapture={event => { previousFocus.current = event.target }}>{master}</div>
     <div className={css.divider} hidden={narrow || divider === undefined}>{divider}</div>
     <div ref={detailRef} className={css.detail} hidden={narrow && !detailOpen}>
-      <button ref={back} type="button" className={css.back} hidden={!narrow} onClick={onBack}>‹ {backLabel}</button>
+      <button ref={back} type="button" className={css.back} hidden={!narrow} onClick={onBack} aria-label={backLabel}><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m14 6-6 6 6 6"/></svg><span>{backLabel}</span></button>
       {detail}
     </div>
   </div>

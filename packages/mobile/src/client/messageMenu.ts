@@ -1,15 +1,12 @@
-/** A touch presentation of the rendered message's own actions. The source
+/** A pointer context-menu presentation of the rendered message's own actions. The source
  * button stays mounted; its plugin still owns edits, confirmations and errors. */
 export class MessageMenu {
-  private timer: ReturnType<typeof setTimeout> | undefined
-  private point: { x: number; y: number; row: HTMLElement } | undefined
+  private touch = false
   private menu: HTMLDialogElement | undefined
   constructor(private doc: Document) {
     doc.addEventListener('pointerdown', this.down, true)
-    doc.addEventListener('pointermove', this.move, true)
-    doc.addEventListener('pointerup', this.cancel, true)
-    doc.addEventListener('pointercancel', this.cancel, true)
-    doc.addEventListener('scroll', this.cancel, true)
+    doc.addEventListener('selectionchange', this.selectionChanged)
+    doc.addEventListener('scroll', this.close, true)
     doc.addEventListener('contextmenu', this.context, true)
   }
   private row(target: EventTarget | null) {
@@ -26,21 +23,19 @@ export class MessageMenu {
     return [...row.querySelectorAll<HTMLButtonElement>(row.hasAttribute('data-turn-tail') ? 'button[aria-label]' : ':scope > div > button[aria-label], :scope > div > span > button[aria-label]')]
       .filter(b => /^(复制|已复制|编辑|撤回|点赞|点踩|不喜欢|分支|好的回答|有问题的回答|在新对话中分支|Copy|Copied|Edit|Withdraw|Like|Dislike|Branch)/i.test(b.getAttribute('aria-label') ?? ''))
   }
-  private down = (e: PointerEvent) => {
-    this.cancel(); const row = this.row(e.target)
-    if (!row || e.pointerType === 'mouse' || !this.actions(row).length) return
-    this.point = { x: e.clientX, y: e.clientY, row }
-    this.timer = setTimeout(() => { if (this.point) this.open(row, e.clientX, e.clientY) }, 500)
-  }
-  private move = (e: PointerEvent) => { if (this.point && Math.hypot(e.clientX - this.point.x, e.clientY - this.point.y) > 10) this.cancel() }
-  private cancel = () => { clearTimeout(this.timer); this.timer = undefined; this.point = undefined }
+  // Touch long-press belongs to native text selection. Message actions remain
+  // on their original action row; an emulated contextmenu must not compete.
+  private down = (event: PointerEvent) => { this.touch = event.pointerType === 'touch' || event.pointerType === 'pen' }
+  private hasSelection = () => !!this.doc.getSelection()?.toString().trim()
+  private selectionChanged = () => { if (this.hasSelection()) this.close() }
   private context = (e: MouseEvent) => {
+    if (this.touch || this.hasSelection()) return
     const row = this.row(e.target)
     if (row && this.actions(row).length) { e.preventDefault(); this.open(row, e.clientX, e.clientY) }
   }
   private close = () => { this.menu?.close(); this.menu?.remove(); this.menu = undefined }
   private open(row: HTMLElement, x: number, y: number) {
-    this.cancel(); this.close()
+    this.close()
     const actions = this.actions(row); if (!actions.length) return
     const menu = this.doc.createElement('dialog'); this.menu = menu
     menu.dataset.mobileMessageMenu = ''; menu.setAttribute('aria-label', this.doc.documentElement.lang.startsWith('zh') ? '消息操作' : 'Message actions')
@@ -60,9 +55,10 @@ export class MessageMenu {
     menu.style.top = `${Math.max(12, Math.min(y + 12, height - bounds.height - 12))}px`
   }
   dispose() {
-    this.cancel(); this.close()
-    this.doc.removeEventListener('pointerdown', this.down, true); this.doc.removeEventListener('pointermove', this.move, true)
-    this.doc.removeEventListener('pointerup', this.cancel, true); this.doc.removeEventListener('pointercancel', this.cancel, true)
-    this.doc.removeEventListener('scroll', this.cancel, true); this.doc.removeEventListener('contextmenu', this.context, true)
+    this.close()
+    this.doc.removeEventListener('pointerdown', this.down, true)
+    this.doc.removeEventListener('selectionchange', this.selectionChanged)
+    this.doc.removeEventListener('scroll', this.close, true)
+    this.doc.removeEventListener('contextmenu', this.context, true)
   }
 }

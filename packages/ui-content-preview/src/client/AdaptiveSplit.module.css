@@ -4,4 +4,6 @@
 .detail { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; overflow:hidden; }
 .root[data-adaptive-split=narrow] > .master { flex:1; max-width:none; border-right:0; }
 .root > [hidden], .back[hidden] { display:none; }
-.back { flex:none; align-self:stretch; min-height:44px; padding:8px 14px; border:0; border-bottom:1px solid var(--dsw-alias-border-l2); text-align:left; font:inherit; color:var(--dsw-alias-label-primary); background:var(--dsw-alias-bg-base); cursor:pointer; }
+.back { display:flex; align-items:center; gap:10px; flex:none; align-self:stretch; min-height:48px; padding:10px 16px; border:0; border-bottom:1px solid var(--dsw-alias-border-l2); text-align:left; font:inherit; color:var(--dsw-alias-label-primary); background:var(--dsw-alias-bg-base); cursor:pointer; }
+
+.back svg { flex:none; }
