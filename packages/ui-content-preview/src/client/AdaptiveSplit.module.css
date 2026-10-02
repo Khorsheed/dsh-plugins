@@ -1,0 +1,7 @@
+.root { display:flex; flex:1; min-height:0; min-width:0; overflow:hidden; }
+.master { display:flex; flex-direction:column; flex:0 0 var(--adaptive-master-width,300px); max-width:45%; min-width:0; min-height:0; overflow:auto; border-right:1px solid var(--dsw-alias-border-l2); }
+.divider { display:flex; flex:none; }
+.detail { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; overflow:hidden; }
+.root[data-adaptive-split=narrow] > .master { flex:1; max-width:none; border-right:0; }
+.root > [hidden], .back[hidden] { display:none; }
+.back { flex:none; align-self:stretch; min-height:44px; padding:8px 14px; border:0; border-bottom:1px solid var(--dsw-alias-border-l2); text-align:left; font:inherit; color:var(--dsw-alias-label-primary); background:var(--dsw-alias-bg-base); cursor:pointer; }

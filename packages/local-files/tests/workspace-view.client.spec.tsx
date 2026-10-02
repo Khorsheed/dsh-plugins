@@ -49,7 +49,30 @@ function makeProps(sessions: SessionsSnapshot) {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   clearLocalRoot(SESSION)
+})
+
+it('opens a selected file at narrow width, keeps its read on back, and resets navigation on root change', async () => {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 390 } as DOMRect)
+  const { props, instance } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+  props.listDirectory = vi.fn().mockResolvedValue({ ok: true, value: { entries: [{ name: 'a.md', isDir: false }] } })
+  props.readFile = vi.fn().mockResolvedValue({ ok: true, value: { path: `${WORKSPACE}/a.md`, kind: 'text', content: 'Retained read' } })
+  render(<WorkspaceView {...props} />)
+  await act(async () => {})
+  const file = screen.getByRole('button', { name: 'a.md' })
+  fireEvent.click(file)
+  await act(async () => {})
+  expect(screen.queryByRole('button', { name: 'a.md' })).toBeNull()
+  expect(screen.getByText('Retained read')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '‹ detail.back' }))
+  expect(screen.getByRole('button', { name: 'a.md' })).toBe(file)
+  expect(instance.getSnapshot().preview).toMatchObject({ content: 'Retained read' })
+  fireEvent.click(file)
+  act(() => instance.actions.setRoot('/work/other'))
+  await act(async () => {})
+  expect(screen.queryByRole('button', { name: '‹ detail.back' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'a.md' })).toBeTruthy()
 })
 
 describe('WorkspaceView root defaulting', () => {

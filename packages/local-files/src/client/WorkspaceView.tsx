@@ -12,7 +12,7 @@ import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, type IconProps } from './icons.tsx'
 import type { ListLocalDirectoryResult } from '../types.ts'
 import {
-  ContentPane, basenameOf, dirnameOf, pickFileManager, pickIde,
+  AdaptiveSplit, ContentPane, basenameOf, dirnameOf, pickFileManager, pickIde,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import type { WorkspaceViewProps } from './contract.ts'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
@@ -90,6 +90,8 @@ export function WorkspaceView({
   // Whether hidden (dot-prefixed) entries are shown; default hides them.
   const [hideHidden, setHideHidden] = useState(true)
   const [treeWidth, setTreeWidth] = useState(300)
+  const [detailOpen, setDetailOpen] = useState(false)
+  useEffect(() => { setDetailOpen(false) }, [sessionId, root])
 
   // Bind the view to the session: a remembered root (the operator's manual
   // choice) always wins; otherwise the session's workspace root is the
@@ -234,8 +236,8 @@ export function WorkspaceView({
         </div>
       </div>
 
-      <div className={css.body}>
-        <div className={css.treeColumn} style={{ width: treeWidth }}>
+      <AdaptiveSplit masterWidth={treeWidth} detailOpen={detailOpen} onBack={() => { setDetailOpen(false) }} backLabel={t('detail.back')}
+        master={<>
           {root === null || root === '' ? (
             <div className={css.empty}>{t('tree.noWorkspace')}</div>
           ) : listing === null && error === null ? (
@@ -246,7 +248,7 @@ export function WorkspaceView({
             <FileTree
               groups={groups}
               selectedPath={treeSelectedPath}
-              onSelect={(path: string) => { actions.select(`${root ?? ''}/${path}`) }}
+              onSelect={(path: string) => { actions.select(`${root ?? ''}/${path}`); setDetailOpen(true) }}
               treeTitle={current === '' ? '' : basenameOf(current)}
               loadChildren={loadChildren}
               rootPath={root ?? ''}
@@ -256,8 +258,8 @@ export function WorkspaceView({
               t={t}
             />
           )}
-        </div>
-        <div
+        </>}
+        divider={<div
           className={css.treeResize}
           role="separator"
           aria-orientation="vertical"
@@ -270,8 +272,8 @@ export function WorkspaceView({
             window.addEventListener('pointermove', move)
             window.addEventListener('pointerup', up)
           }}
-        />
-        <div className={css.detailColumn}>
+        />}
+        detail={
           <ContentPane
             path={selectedPath ?? ''}
             sessionId={currentSession}
@@ -294,8 +296,8 @@ export function WorkspaceView({
             labels={structuredLabels(t)}
             t={previewTranslator(t)}
           />
-        </div>
-      </div>
+        }
+      />
     </div>
   )
 }

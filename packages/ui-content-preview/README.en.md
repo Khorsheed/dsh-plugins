@@ -25,6 +25,8 @@ Deliberately **not** here: the file tree, the data face (Remote / store / root s
 
 ## Usage
 
+`AdaptiveSplit` provides an optional master/detail layout: container width switches between narrow drill-down navigation and wide side-by-side panes, keeping both surfaces mounted. Local-files adopts it; other consumers must opt in explicitly, without changing their content rendering. From the repository root, run `node packages/ui-content-preview/examples/adaptive-split/serve.mjs` for a standalone preview using the real component with mock data.
+
 ```ts
 import { ContentPane, buildSrcDoc, attachBridge, structuredPreview, useRenderedSearch } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 ```

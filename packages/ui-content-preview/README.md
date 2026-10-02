@@ -25,6 +25,8 @@
 
 ## 使用
 
+`AdaptiveSplit` 提供可选的列表/详情布局：按容器宽度在窄屏逐层导航与宽屏并列间切换，两侧保留挂载。local-files 已接入；其他消费方需显式接入，内容渲染逻辑不变。可在仓库根运行 `node packages/ui-content-preview/examples/adaptive-split/serve.mjs` 查看真实组件配合模拟数据的独立预览。
+
 ```ts
 import { ContentPane, buildSrcDoc, attachBridge, structuredPreview, useRenderedSearch } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 ```
