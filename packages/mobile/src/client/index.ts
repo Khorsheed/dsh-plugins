@@ -16,6 +16,7 @@ import { openMobileCommands } from './commands.ts'
 import type { MobileCommandService } from './commands.ts'
 import { MobileTools, type MobileToolsInjected } from './MobileTools.tsx'
 import { MobileChrome } from './MobileChrome.tsx'
+import { MobilePanels } from './panels.ts'
 import type { MobileChromeInjected } from './MobileChrome.tsx'
 import { MobileQueue } from './MobileQueue.tsx'
 import { MobileRooms, type RoomRemoteFace } from './rooms.ts'
@@ -45,6 +46,12 @@ export function apply(ctx: Context): void {
   const messages = new MessageMenu(document)
   ctx.effect(() => () => messages.dispose(), 'mobile: message actions')
   const navigation = new MobileNavigation()
+  const panels = new MobilePanels(document)
+  ctx.effect(() => () => panels.dispose(), 'mobile: optional panels')
+  ctx.inject(['sidebarRight' as never], scoped => {
+    panels.set(scoped.get('sidebarRight' as never))
+    scoped.effect(() => () => panels.set(undefined), 'mobile: sidebar capability')
+  })
   const directory = new MobileDirectory()
   const presentation = new MobilePresentation(window, window.__DSH_MOBILE_SHELL__?.bridgeVersion === BRIDGE_VERSION)
   ctx.inject(['sessions', 'workspaces', 'uiWorkspace'], scoped => {
@@ -69,7 +76,7 @@ export function apply(ctx: Context): void {
   }, 'mobile: foreground reconnect')
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay', id: 'mobile-navigation', locale: NS,
-    inject: (): MobileChromeInjected => ({ presentation, connection, navigation, rooms, toggleSidebar: () => { ctx.layout.toggleSidebar() } }),
+    inject: (): MobileChromeInjected => ({ presentation, connection, navigation, rooms, panels, toggleSidebar: () => { ctx.layout.toggleSidebar() } }),
   }, MobileChrome))
   for (const name of ['conversation.input.dock', 'conversation.session.header.actions'] as const) {
     ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'mobile-send-focus' }, MobileSubmissionFocus))

@@ -2,6 +2,7 @@
    Every colour is a `--dsw-*` token, so light and dark are the theme's. */
 
 .root {
+  container: canvas-detail / inline-size;
   position: relative;
   height: 100%;
   overflow-y: auto;
@@ -349,6 +350,12 @@
 
 .renderPane {
   min-width: 0;
+}
+
+@container canvas-detail (max-width: 560px) {
+  .body[data-mode="split"] { grid-template-columns:minmax(0,1fr); }
+  .crumbs { flex-wrap:wrap; }
+  .sourcePane textarea { font-size:16px; }
 }
 
 /* The per-comment 追问 affordance (agent comments only): words plus the

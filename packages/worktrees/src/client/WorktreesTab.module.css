@@ -362,8 +362,9 @@ body[data-ds-dark-theme] {
 .treeColumn {
   display: flex;
   flex-direction: column;
-  flex: none;
-  border-right: 1px solid var(--dsw-alias-border-l2);
+  width: 100%;
+  min-height: 0;
+  flex: 1;
   overflow: auto;
   /* Same gutter reservation as the detail body — the tree's own scrollbar
      must not shift the split width either. */
@@ -456,4 +457,5 @@ body[data-ds-dark-theme] {
   display: flex;
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }

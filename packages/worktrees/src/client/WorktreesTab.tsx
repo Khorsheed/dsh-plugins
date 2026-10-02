@@ -25,7 +25,7 @@ import type { ChangedFile, FileDiffRequest, WorktreeInfo } from '../types.ts'
 import type { WorktreesTabProps } from './contract.ts'
 import type { WorktreesTabParams } from './definition.tsx'
 import {
-  ContentPane, dirnameOf, pickFileManager, pickIde,
+  AdaptiveSplit, ContentPane, dirnameOf, pickFileManager, pickIde,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import type { PreviewChrome } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import { CommitDetails } from './CommitDetails.tsx'
@@ -102,6 +102,9 @@ export function WorktreesTab({
   useEffect(() => { bumpVersionRef.current() }, [rev])
 
   const [copied, setCopied] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
+  useEffect(() => { setDetailOpen(selectedPath !== null || selectedCommit !== null) }, [selectedPath, selectedCommit])
+  useEffect(() => { setDetailOpen(false) }, [sessionId, mode, activeWorktreePath])
   const [worktreeOpen, setWorktreeOpen] = useState(false)
   const worktreeRef = useRef<HTMLDivElement | null>(null)
   const {
@@ -321,6 +324,7 @@ export function WorktreesTab({
       segment = 'uncommitted'
     }
     actions.select(path, segment)
+    setDetailOpen(true)
     // In a changes context lead with the diff; only untracked/repo-browse
     // files have no diff and fall back to the content view.
     actions.setDetailView(segment !== null && !untracked ? 'diff' : 'content')
@@ -367,14 +371,14 @@ export function WorktreesTab({
       )
     }
     return (
-      <div className={css.treeColumn} style={{ width: treeWidth }}>
+      <div className={css.treeColumn}>
         {mode === 'commits'
           ? <CommitList
             commits={commits}
             selectedCommit={selectedCommit}
             collapsed={treeCollapsed}
             onToggleCollapse={() => { actions.toggleTree() }}
-            onSelectCommit={actions.selectCommit}
+            onSelectCommit={sha => { actions.selectCommit(sha); setDetailOpen(true) }}
             t={t}
           />
           : <FileTree
@@ -506,9 +510,10 @@ export function WorktreesTab({
           )
         })}
       </div>
-      <div className={css.body}>
-        {leftColumn}
-        <div
+      <AdaptiveSplit master={leftColumn} masterWidth={treeCollapsed ? 36 : treeWidth}
+        detailOpen={detailOpen} backLabel={t('tree.expand')}
+        onBack={() => { setDetailOpen(false); actions.setTreeCollapsed(false) }}
+        divider={<div
           className={css.treeResize}
           role="separator"
           aria-orientation="vertical"
@@ -517,8 +522,8 @@ export function WorktreesTab({
           onPointerMove={onTreeMove}
           onPointerUp={onTreeUp}
           onPointerCancel={onTreeUp}
-        />
-        <div className={css.detailColumn}>
+        />}
+        detail={<div className={css.detailColumn}>
           {mode === 'commits' && selectedCommit !== null ? (
             (() => {
               const commit = commits?.find(candidate => candidate.sha === selectedCommit)
@@ -577,8 +582,8 @@ export function WorktreesTab({
           ) : (
             <Overview summary={summary} changes={changes === null ? null : { uncommitted: pending, committed: [] }} repoMode={mode === 'repo'} repoCount={repoFiles?.length ?? 0} t={t} />
           )}
-        </div>
-      </div>
+        </div>}
+      />
     </div>
   )
 }

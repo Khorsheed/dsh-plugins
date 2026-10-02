@@ -6,6 +6,8 @@ import { MobileRoomNavigation } from './MobileRooms.tsx'
 import type { MobileRooms } from './rooms.ts'
 import { SessionRename } from './SessionRename.tsx'
 import { MobileIcon } from './MobileIcon.tsx'
+import { MobilePanelEntry, MobilePanelNavigation } from './MobilePanelNavigation.tsx'
+import type { MobilePanels } from './panels.ts'
 import { MobileLibrary } from './MobileLibrary.tsx'
 import type { MobileNavigation, NavigationCapabilities } from './navigation.ts'
 import { mainSessionId } from './navigation.ts'
@@ -14,6 +16,7 @@ import type { MobileSurface } from './surface.ts'
 import { hasNativeAction, reportChrome, requestNativeAction } from './native.ts'
 
 export interface MobileChromeInjected {
+  panels?: MobilePanels
   rooms?: MobileRooms
   navigation: MobileNavigation
   presentation: MobilePresentation
@@ -37,7 +40,7 @@ function ConversationTitle({ navigation, fallback, prepareNavigation, surface, t
 }
 
 /** One visible navigation bar, with native connection sheets when supported. */
-export function MobileChrome({ presentation, toggleSidebar, connection, navigation, rooms, t }: MobileChromeInjected & PropsLocale<'mobile'>) {
+export function MobileChrome({ presentation, toggleSidebar, connection, navigation, rooms, panels, t }: MobileChromeInjected & PropsLocale<'mobile'>) {
   const state = useSyncExternalStore(presentation.subscribe, presentation.getSnapshot)
   const wire = useSyncExternalStore(connection.state.subscribe, connection.state.getSnapshot)
   const available = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot)
@@ -79,11 +82,13 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
     return installNavigationGestures(document, open => { if (available) setLibrary(open); else if (open !== state.drawer) toggleSidebar() }, toggleSidebar)
   }, [state.active, available, settings, state.drawer, toggleSidebar])
   const openLibrary = () => {
+    panels?.hide()
     if (!available) { toggleSidebar(); return }
     if (state.drawer) toggleSidebar()
     setLibrary(true)
   }
   const startSession = () => {
+    panels?.hide()
     presentation.prepareNavigation()
     available?.workspace.startSession()
     if (state.drawer) toggleSidebar()
@@ -117,9 +122,13 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
           <MobileIcon name="back"/>
         </button>
         <div data-mobile-nav-title>{(available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} surface={presentation.surface} fallback={t('newSession')} t={t} /> : <strong>{t('brand')}</strong>)}{wire !== 'connected' && !connectionExpanded && <small role="status">{t(wire ?? 'connecting')}</small>}</div>
-        <button data-mobile-new={!!available} aria-label={available ? t('newSession') : t('settings')} onClick={available ? startSession : openSettings}><MobileIcon name={available ? "compose" : "settings"}/></button>
+        <div data-mobile-header-actions>
+          {panels && <MobilePanelEntry panels={panels} t={t} beforeOpen={() => { presentation.prepareNavigation(); setLibrary(false); if (state.drawer) toggleSidebar() }}/>}
+          <button data-mobile-new={!!available} aria-label={available ? t('newSession') : t('settings')} onClick={available ? startSession : openSettings}><MobileIcon name={available ? "compose" : "settings"}/></button>
+        </div>
         {available && rooms && <MobileRoomNavigation rooms={rooms} navigation={available} prepareNavigation={presentation.prepareNavigation} t={t}/>}
       </nav>
+      {panels && <MobilePanelNavigation panels={panels} active={state.active} prepareNavigation={presentation.prepareNavigation} t={t}/>}
       {wire !== 'connected' && connectionExpanded && <div data-mobile-connection-status role="status"><span>{t(wire ?? 'connecting')}</span><button onClick={() => connection.reconnect()}>{t('reconnect')}</button></div>}
     </>}
     <dialog ref={dialog} data-mobile-dialog onClose={() => setSettings(false)} aria-label={t('settings')}>

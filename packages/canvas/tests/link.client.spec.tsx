@@ -351,7 +351,7 @@ const pickedOf = (container: HTMLElement): string[] =>
 /** A node's kind line: its category, plus the lane it sits in. */
 const kindOf = (container: HTMLElement, id: string): string => nodeOf(container, id).querySelector('span')!.textContent ?? ''
 /** The scroll host: `stageRef` is the stage div that wraps the world div. */
-const stageOf = (container: HTMLElement): HTMLElement => worldOf(container).parentElement as HTMLElement
+const stageOf = (container: HTMLElement): HTMLElement => one(container, '[data-canvas-scroll="link"]')
 /**
  * What the board says about itself: the selection bar's count while cards are
  * picked (the one element that spells out the send set), else the corner totals.
@@ -1210,5 +1210,50 @@ describe('LinkView — read-only', () => {
     await waitFor(() => {
       expect(bench.mocks.openCardDetail).toHaveBeenCalled()
     })
+  })
+})
+
+describe('LinkView — compact touch operations', () => {
+  beforeEach(() => {
+    Object.defineProperty(Element.prototype, 'clientWidth', { configurable: true, get: () => 390 })
+  })
+  it('connects two tapped cards and deletes the chosen relation without moving cards', async () => {
+    const bench = makeHarness({ boards: [board(CANVAS_ID, [card('c_1'), card('c_2')])] })
+    const container = await face(bench, 2)
+    fireEvent.click(screen.getByRole('button', { name: '连线', exact: true, pressed: false }))
+    tap(nodeOf(container, 'c_1'))
+    expect(nodeOf(container, 'c_1').hasAttribute('data-link-source')).toBe(true)
+    tap(nodeOf(container, 'c_2'))
+    await waitFor(() => expect(writeAt(bench.mocks, 0).links).toEqual([link('c_1', 'c_2')]))
+    expect(writeAt(bench.mocks, 0).positions).toBeUndefined()
+    fireEvent.change(screen.getByRole('combobox', { name: '选择连线' }), { target: { value: 'c_1:c_2' } })
+    fireEvent.click(await screen.findByRole('button', { name: '删掉这条线' }))
+    await waitFor(() => expect(writeAt(bench.mocks, 1).links).toEqual([]))
+  })
+  it('pans without writes, scales a deliberate move, and cancels interrupted moves', async () => {
+    const bench = makeHarness({ boards: [board(CANVAS_ID, [card('c_1', { x: 50, y: 50 }), card('c_2', { x: 450, y: 80 })])] })
+    const container = await face(bench, 2)
+    drag(nodeOf(container, 'c_1'), { x: 100, y: 100 }, { x: 50, y: 60 })
+    expect(stageOf(container).scrollLeft).toBe(50)
+    expect(bench.mocks.setLayout).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '移动', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: '放大画布' }))
+    drag(nodeOf(container, 'c_1'), { x: 100, y: 100 }, { x: 150, y: 125 })
+    await waitFor(() => expect(writeAt(bench.mocks, 0).positions).toEqual([{ id: 'c_1', x: 90, y: 70 }]))
+    fireEvent.pointerDown(nodeOf(container, 'c_1'), { pointerId: 1, clientX: 100, clientY: 100, button: 0 })
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 180, clientY: 180 })
+    fireEvent.pointerCancel(window, { pointerId: 1 })
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 180, clientY: 180 })
+    expect(bench.mocks.setLayout).toHaveBeenCalledTimes(1)
+    expect(nodeOf(container, 'c_1').style.left).toBe('90px')
+  })
+  it('keeps read-only boards navigable without enabling move or connect', async () => {
+    const bench = makeHarness({ sessionId: 'none', boards: [board(CANVAS_ID, [card('c_1')])] })
+    const container = await face(bench, 1)
+    expect((screen.getByRole('button', { name: '移动', exact: true }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '连线', exact: true, pressed: false }) as HTMLButtonElement).disabled).toBe(true)
+    tap(nodeOf(container, 'c_1'))
+    expect(pickedOf(container)).toEqual(['c_1'])
+    expect(bench.mocks.setLayout).not.toHaveBeenCalled()
   })
 })

@@ -111,6 +111,12 @@ message-tools、TaskPilot、Room 与 Local Agent 家族独立安装；移动端�
 
 </details>
 
+## 移动面板
+
+聊天顶部的新建会话旁提供面板入口。移动面板使用全宽内容、标签选择、添加和关闭操作，保留宿主原有内容与桌面分栏记录；可选 sidebar 能力或 DOM 锚点不匹配时保留官方界面。文件类插件可复用共享主从布局，画布继续由原组件处理连线和编辑。
+
+仓库内组件预览：在 `packages/mobile` 下运行 `pnpm exec tsx examples/panels/serve.ts`，打开 `http://127.0.0.1:8875/`。它使用真实导航、DockLayout、AdaptiveSplit 和 LinkView，但数据为内存样例；不是生产实例或手机验收。预览源码不进入 npm 包。iPhone 键盘、安全区、前后台恢复仍需真机检查；终端快捷键栏未实现。
+
 ## 开发
 
 隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/mobile`）。问题与贡献请移步该仓库。

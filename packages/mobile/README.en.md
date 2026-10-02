@@ -111,6 +111,12 @@ The library uses the optional official sessions/workspaces/uiWorkspace services,
 
 </details>
 
+## Mobile panels
+
+A panel action sits beside new conversation in the chat header. Mobile panels use full-width content, a tab selector, add and close actions, retaining the host content tree and saved desktop splits. Missing optional sidebar capabilities or checked DOM anchors preserve the official surface. File plugins can share the retained master/detail layout; canvas links and editing remain owned by the original component.
+
+Repository component preview: run `pnpm exec tsx examples/panels/serve.ts` from `packages/mobile`, then open `http://127.0.0.1:8875/`. It uses actual navigation, DockLayout, AdaptiveSplit and LinkView with in-memory sample data; it is not a production instance or phone acceptance test. Preview sources are excluded from the npm package. iPhone keyboard, safe-area and background/resume checks remain pending; a terminal key accessory is not implemented.
+
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/mobile`). Issues and contributions welcome there.

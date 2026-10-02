@@ -1,6 +1,7 @@
 /** Copy for controls owned by mobile; all conversation copy stays with its owner. */
 export const NS = 'mobile'
 export const en = {
+  panels: 'Panels', backToChat: 'Back to conversation', switchPanel: 'Switch panel', addPanel: 'Add panel', closePanel: 'Close current panel', panelError: 'Could not change this panel. Try again.',
   connectPhone: "Connect phone",
   connectIntro: "Continue your conversations in DSH Mobile.",
   connectQR: "Scan with DSH Mobile to sign in",
@@ -42,6 +43,7 @@ export const en = {
   workspace: 'Open workspace', hostPath: 'Computer directory', hostPathHelp: 'Enter an existing absolute directory on your computer. This does not select a folder on your phone.', openWorkspace: 'Open', cancel: 'Cancel',
 } as const
 export const zh: Record<keyof typeof en, string> = {
+  panels: '面板', backToChat: '返回聊天', switchPanel: '切换面板', addPanel: '添加面板', closePanel: '关闭当前面板', panelError: '暂时无法操作面板，请重试。',
   connectPhone: "连接手机",
   connectIntro: "在 DSH Mobile 中继续你的会话。",
   connectQR: "使用 DSH Mobile 扫码登录",

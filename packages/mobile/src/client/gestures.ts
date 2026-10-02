@@ -11,7 +11,7 @@ export function installNavigationGestures(doc: Document, change: (open: boolean)
     doc.documentElement.removeAttribute('data-mobile-gesture')
     doc.documentElement.style.removeProperty('--mobile-drag-offset')
   }
-  const blocked = 'input,textarea,[contenteditable],select,pre,code,[role=dialog],[role=menu],[role=slider],[role=switch],[role=checkbox],[data-mobile-tools-dialog],[data-mobile-dialog]'
+  const blocked = 'input,textarea,[contenteditable],select,pre,code,[role=dialog],[role=menu],[role=slider],[role=switch],[role=checkbox],[data-mobile-tools-dialog],[data-mobile-dialog],[data-mobile-gesture-owner],.xterm'
   const down = (event: TouchEvent) => {
     resetDrag(); start = undefined; suppressClickUntil = 0; suppressClickTarget = undefined
     if (animation || event.touches.length !== 1 || doc.querySelector('dialog[open],[role=dialog],[role=menu]')) return
@@ -26,6 +26,8 @@ export function installNavigationGestures(doc: Document, change: (open: boolean)
     const viewport = doc.documentElement.clientWidth || doc.defaultView!.innerWidth
     if (viewport >= 960) return // A pinned two-column layout is not a drawer.
     const right = target.closest<HTMLElement>('[data-sidebar-right-panel][data-sidebar-right-open]') ?? undefined
+    // Panel bodies own horizontal canvas/terminal/file gestures. Return is explicit.
+    if (right && doc.documentElement.hasAttribute('data-mobile-panel-managed')) return
     if (right && !right.querySelector('[data-sidebar-right-toggle]')) return
     const sidebar = closeSidebar ? target.closest<HTMLElement>('[data-slot=sidebar]')?.parentElement : undefined
     const panel = right ? { element: right, side: 'right' as const, close: () => right.querySelector<HTMLButtonElement>('[data-sidebar-right-toggle]')?.click() } : sidebar ? { element: sidebar, side: 'left' as const, close: closeSidebar! } : undefined

@@ -10,6 +10,8 @@
    per-element margin. */
 
 .root {
+  container-type: inline-size;
+  container-name: content-pane;
   /* The pane's horizontal inset: one line shared by the title row, the path
      row, the content-search row and the body, so no chrome row can drift off
      it. It also happens to be the back control's width — that coincidence is
@@ -544,6 +546,17 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--dsw-alias-label-secondary, #9fd4f0);
+}
+
+@container content-pane (max-width: 560px) {
+  .titleBar { --pane-inset:14px; }
+  .titleRow, .pathRow { flex-wrap:wrap; }
+  .pathLine { flex-basis:100%; }
+  .viewControls { flex-wrap:wrap; max-width:100%; }
+  .action, .stepButton, .back { min-width:40px; min-height:40px; }
+  .segButton, .viewButton { min-height:40px; }
+  .scriptConfirm { flex-wrap:wrap; }
+  .contentSearchInput { font-size:16px; }
 }
 
 .scriptConfirmRun,

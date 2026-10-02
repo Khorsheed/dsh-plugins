@@ -268,7 +268,7 @@ html[data-dsh-mobile] [data-composer-seat]:has([data-mobile-room-queue]) [data-t
 [data-mobile-message-menu] button:active { background:var(--mobile-soft); }
 [data-mobile-message-menu] svg { width:20px; height:20px; flex:none; }
 [data-mobile-message-menu] button:disabled { opacity:.45; }
-[data-mobile-toolbar]:has([data-mobile-members-open]) > [data-mobile-new] { display:none; }
+[data-mobile-toolbar]:has([data-mobile-members-open]) [data-mobile-new] { display:none; }
 [data-mobile-members-open] { position:relative; }
 [data-mobile-members-open] small { position:absolute; bottom:-3px; right:-2px; min-width:16px; border-radius:10px; font-size:10px; background:var(--mobile-soft); color:var(--dsw-alias-label-primary); }
 [data-mobile-room-dialog] { text-align:left; line-height:1.5; }
@@ -450,4 +450,28 @@ html[data-dsh-mobile] [data-mobile-picker=preset] [data-mobile-picker-divider] {
 [data-directory-location] input { width:18px; }
 [data-mobile-directory] footer { flex:none; padding-top:10px; }
 [data-mobile-directory] [data-mobile-done] { margin-top:0; background:var(--mobile-accent); color:white; min-height:48px; }
+
+/* Optional sidebar navigation: content stays in its official dock hosts. */
+[data-mobile-header-actions] { display:flex; flex:none; gap:4px; }
+html[data-dsh-mobile] [data-mobile-toolbar] [data-mobile-header-actions] button { box-shadow:none; background:transparent; }
+[data-mobile-panel-navigation] { position:absolute; inset:0 0 auto; height:var(--mobile-bar); display:flex; align-items:center; gap:4px; padding:8px 10px; box-sizing:border-box; background:var(--mobile-face); color:var(--dsw-alias-label-primary); pointer-events:auto; }
+[data-mobile-panel-navigation] button { display:grid; place-items:center; flex:none; width:44px; height:44px; padding:0; border:0; border-radius:12px; background:transparent; color:inherit; cursor:pointer; }
+[data-mobile-panel-navigation] button:disabled { opacity:.4; }
+[data-mobile-panel-navigation] select { flex:1; min-width:0; max-width:100%; height:44px; padding:0 8px; border:0; border-radius:10px; background:var(--mobile-soft); color:inherit; font:inherit; font-size:16px; text-overflow:ellipsis; }
+[data-mobile-panel-error] { position:absolute; inset:100% 8px auto; padding:6px 10px; font-size:13px; background:var(--mobile-face); border:1px solid var(--mobile-edge); border-radius:8px; }
+html[data-mobile-panel-open] [data-mobile-toolbar] { visibility:hidden; }
+html[data-dsh-mobile][data-mobile-panel-open] [data-mobile-frame] > [data-shell-overlay] { z-index:65; }
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] { top:var(--mobile-bar); width:100%!important; max-width:none!important; bottom:0; }
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-strip],
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-divider],
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-float-grip],
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-float-resize] { display:none!important; }
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-split] { grid-template-columns:minmax(0,1fr)!important; }
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-host] { grid-column:1!important; grid-row:1!important; min-width:0; }
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-host=float] { width:100%; height:100%; }
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-host]:not(:has([data-dockkit-pane-active],[data-dockkit-float-active])) { display:none!important; }
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-float] { position:relative!important; inset:0!important; width:100%!important; height:100%!important; min-width:0; border-radius:0; }
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel]:not([data-sidebar-right-open]) [data-dockkit-host=float] { visibility:hidden; pointer-events:none; }
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-content] { border-radius:0; min-width:0; }
+html[data-dsh-mobile][data-mobile-panel-open] [data-mobile-frame]:not([data-rightbar-collapsed]) > [data-rightbar-col] { top:0; }
 `

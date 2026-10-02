@@ -2,6 +2,7 @@
    drill back bar. Board/card styles live in board.module.css. */
 
 .root {
+  container: canvas-tab / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -28,6 +29,13 @@
   padding: 0 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   flex-shrink: 0;
+}
+
+@container canvas-tab (max-width: 560px) {
+  .topbar { flex-wrap: wrap; padding: 8px 12px; }
+  .boardTitle { flex: 1 1 60%; }
+  .viewButton { min-height: 40px; }
+  .attachChip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 }
 
 /* The board row's own header says which canvas it is and how full it is. The

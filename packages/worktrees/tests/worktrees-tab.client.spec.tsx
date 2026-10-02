@@ -244,3 +244,23 @@ describe('WorktreesTab', () => {
     expect(instance.getSnapshot().error).toBeNull()
   })
 })
+
+it('opens a narrow detail and returns to the retained tree without clearing the diff', async () => {
+  const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 390, height: 700, x: 0, y: 0, top: 0, left: 0, right: 390, bottom: 700, toJSON: () => ({}) })
+  try {
+    const { props, fetchFileDiff, instance } = makeHarness()
+    const { container } = render(<WorktreesTab {...props}/>)
+    const region = () => within(screen.getByRole('region'))
+    await drillToIndexTs(region)
+    const row = await region().findByRole('button', { name: /index\.ts/ })
+    fireEvent.click(row)
+    await waitFor(() => expect(fetchFileDiff).toHaveBeenCalledOnce())
+    const split = container.querySelector('[data-adaptive-split]')!
+    expect(split.getAttribute('data-adaptive-split')).toBe('narrow')
+    expect((split.children[0] as HTMLElement).hidden).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '‹ tree.expand' }))
+    expect((split.children[0] as HTMLElement).hidden).toBe(false)
+    expect(instance.getSnapshot().selectedPath).toBe('packages/room/src/index.ts')
+    expect(region().getByRole('button', { name: /index\.ts/ })).toBe(row)
+  } finally { measure.mockRestore() }
+})

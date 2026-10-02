@@ -1,46 +1,45 @@
-# Agent Note: Retained adaptive file panels
+# Agent Note: Retained adaptive panels
 
 Status: implemented
 
 ## Problem
 
-The local-files sidebar kept a 300-pixel tree beside its preview in phone-sized containers. The remaining preview became unreadably narrow. Repeating mobile-only copies of every plugin view would multiply maintenance and risk losing selection or drafts on layout changes.
+Desktop sidebars squeeze file previews beside a 300-pixel tree on phones. Desktop tab strips, split panes and floating windows also compete for that width. Duplicating every plugin in a mobile renderer would multiply maintenance and lose parity for canvas links, lanes and drafts.
 
 ## Decision
 
-The source-plane content-preview library exports `AdaptiveSplit`. It observes its own container, shows one retained surface below 560 pixels, and shows both surfaces above that threshold. Opening a detail on a narrow container focuses its back action; returning restores the originating control when available. Both surfaces stay mounted, so child state and scroll containers survive navigation and resizing. Zero-width observations from a hidden tab are ignored. Without ResizeObserver, the initial measurable width is used; if it cannot be measured, both surfaces remain available.
+The source-plane content-preview library exports `AdaptiveSplit`. It observes its container, shows one retained surface below 560 pixels and both above it. Opening detail focuses its back action; returning restores the originating control when available. Both surfaces stay mounted, preserving child state and scroll containers. Zero-width observations from hidden tabs are ignored. Without ResizeObserver the initial measurable width is used; an unmeasurable surface keeps both panes available.
 
-Local-files uses this component with its existing FileTree and ContentPane. File selection opens detail; the back action restores the tree. Session or root changes return to the tree. Wide mode retains the existing divider, with the master capped at 45% to reserve room for content. No runtime plugin dependency or host API is added.
+Local-files and worktrees adopt it with their existing trees and ContentPane. Selection opens detail; back returns to the retained tree without clearing the selection or fetched content. Session, root, mode or worktree changes reset the appropriate detail navigation. Wide mode retains its divider and caps the master at 45%. ContentPane uses a container query to wrap controls and enlarge touch targets. These are source imports, not new runtime plugin dependencies.
 
-The runnable fixture imports the actual shared component and uses mock file/content data. Start it from the repository root with `node packages/ui-content-preview/examples/adaptive-split/serve.mjs` after installation. It listens only on loopback at port 8873; `MOBILE_PREVIEW_PORT` overrides the port. The runner reuses Vite from the workspace's Vitest dependency. It does not connect to a host instance, change a profile, or represent full plugin integration acceptance.
+Mobile adds a panel action beside new conversation. An optional structural `sidebarRight` service probe supplies mounted-session inventory, focus, expand, close and guide-opening operations. Checked sidebar/dock anchors provide presentation notifications where the public feed does not report layout changes. The full-width mobile shell replaces the desktop tab strip with back, a tab selector, add and close. It presents only the active pane, including a floating pane, without rewriting the host's saved splits or floating geometry. Content stays in its original host; retention follows the host's policy. Missing capabilities or anchors leave the native chrome available. Failures retain selection and show a retryable error. Chat becomes inert while the replacement panel is open; keyboard focus returns to its entry. Managed panels and explicit gesture-owner surfaces do not trigger global navigation swipes.
 
-## Deferred
+Canvas keeps its existing board, link, lane, drawing and manuscript models. LinkView adds compact pan/select/move/connect modes, two-tap linking, a relation selector for deletion, and 50–200% zoom buttons. World coordinates are independent of zoom; each completed move still writes once. Pointer cancellation, a second pointer, blur and unmount cancel pending writes. Zoom is remembered per board alongside selection and scroll. Compact controls expose previously hover-only actions. The tab toolbar wraps, and detail split mode stacks source and preview on narrow containers. Pinch zoom is not implemented; buttons provide scaling. No canvas schema, Remote contract or host source changes are required.
 
-This branch is the first shared-layout slice, not a completed mobile migration. Remaining scope is grouped by owner:
+## Preview and acceptance boundary
 
-| Owner | Remaining work | Acceptance |
-| --- | --- | --- |
-| mobile chrome | Put a panel action beside new conversation; title rename remains discoverable; use an optional public sidebar service with a fallback | Both actions fit at 320 pixels; no missing-capability boot failure |
-| official sidebar shell | Full-width mobile panel page, compact tab switcher, add/close panels, return to chat | Preserve tab selection and nested navigation; host changes use the upstream pipeline |
-| shared file surfaces | Adopt retained master/detail in worktrees and other eligible surfaces; responsive content controls and overflow; touch-sized actions | Files, diffs, tables and preview controls remain readable; no duplicate mobile renderer |
-| canvas | Preserve board, links, lanes, drafts and manuscripts; use full-page detail, explicit selection/connect modes, touch pan/zoom | Creating/removing links and returning from draft editing preserve existing state; coordinate with in-flight canvas work |
-| terminal and embedded content | Fit terminal dimensions, keyboard accessory actions and viewport; full-width embedded content with existing sandbox boundaries | Keyboard and safe areas do not hide input; content security remains intact |
-| state and device acceptance | Distinguish first loading, stale cached content and actual disconnect; retain useful state while refreshing | Verify reconnect logs, background/resume, keyboard, scroll and gestures on iPhone/WebView |
+The original shared-layout fixture runs with `node packages/ui-content-preview/examples/adaptive-split/serve.mjs` at loopback port 8873. The integrated fixture runs from `packages/mobile` with `pnpm exec tsx examples/panels/serve.ts` at loopback port 8875. It imports actual MobilePanelNavigation, host DockLayout, AdaptiveSplit and LinkView, using in-memory sample data. Its file list and card editor are fixture controls, not full local-files or canvas-detail integration. The source-plane resolver is shared with tests. Only the existing ingress `.mjs` examples ship in the mobile package; the repo-only preview is excluded.
 
-Canvas visual sketches are mock interactions, not a claim that production canvas touch handling is complete. The existing canvas implementation remains untouched. Browser preview covers layout and interaction review without installing an app; real-device acceptance follows through a reachable test instance. Web-only changes normally require updating that instance, while native bridge changes require an app build.
+Terminal content benefits from the full-width owner container and existing viewport handling; global swipe interception excludes xterm. A terminal key accessory is not added: it needs an official input capability rather than synthetic DOM keystrokes. Embedded content retains existing sandbox boundaries. Real iPhone/WebView keyboard, safe-area, background/resume and terminal acceptance remains pending. The component fixture is not a deployed Host or a phone test.
+
+The reported first-load information disappearance has not been reproduced with connection logs. This change does not claim to fix its cause or change reconnect policy; initial loading and transport failure must be distinguished during instance acceptance. No deployment, profile change, native app rebuild or production restart is part of this branch.
 
 ## Alternatives considered
 
-**A separate mobile renderer for each plugin.** Rejected because it duplicates content behavior and makes mobile/desktop feature parity harder to maintain.
+**Separate mobile renderers per plugin.** Rejected because they duplicate content behavior and make feature parity harder to maintain.
 
-**Global CSS that hides arbitrary plugin children.** Rejected because the shell cannot infer each plugin's selection, navigation or draft ownership. A shared layout needs a small explicit master/detail contract.
+**Global CSS hiding arbitrary plugin children.** Rejected: the shell cannot infer plugin selection, navigation or draft ownership. Shell CSS only handles checked host containers; master/detail requires an explicit shared contract.
 
-**Unmount the inactive surface.** Rejected because filter, expanded tree, focus and unsaved local state would reset. Retention keeps the existing component owners responsible for their state.
+**Unmount or reparent inactive content.** Rejected because drafts, filters, scroll, iframe and terminal state may reset. Shared panes remain mounted, and shell adaptation preserves the host's content tree.
+
+**Rewrite saved docking state for phones.** Rejected because desktop splits and floating positions would be lost when switching devices. Mobile presentation changes neither.
+
+**Patch the upstream host or synthesize terminal input.** Rejected because host source is tracked read-only and terminal input belongs to its owner. Missing capability work follows the upstream pipeline.
 
 ## Testing
 
-The shared component tests cover narrow/wide transitions, retained element identity, draft/filter retention, focus return, zero-width observations, observer cleanup and missing-observer fallback. The existing local-files suite verifies its file/store behavior. Browser checks exercise the standalone fixture; no production deployment or phone acceptance is claimed.
+Shared-layout tests cover retained element identity, draft/filter retention, focus return, width transitions, zero-width observations, observer cleanup and fallback. Local-files and worktrees integration tests cover detail navigation and retained data. Mobile tests cover owner operations, missing capabilities/anchors, failed operations, listener cleanup and gesture ownership. Canvas tests cover desktop gestures plus two-tap link creation/deletion, pan without writes, scaled movement, cancellation and read-only behavior. Browser checks use the integrated fixture for actual DockLayout presentation and component interactions; phone and production acceptance are separate.
 
 ## Consequences
 
-One source implementation owns the layout transition and remains inlined into each consuming plugin. Retained surfaces continue their existing effects while hidden, which avoids remount churn but does not reduce their memory usage. Adoption is explicit; specialized canvas and terminal gestures remain module-specific. The demo runner depends on Vitest continuing to expose Vite as a dependency.
+One shared implementation owns the master/detail transition and is inlined into consumers. Specialized canvas gestures remain canvas-owned. Retained surfaces keep their effects and memory usage. The mobile shell uses checked host DOM anchors as a fallback notification seam; a future anchor change must withdraw replacement chrome rather than break native access. Preview tooling depends on the workspace's Vitest/Vite source resolver and the read-only harness checkout.

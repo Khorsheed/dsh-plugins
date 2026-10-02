@@ -69,3 +69,17 @@ it('closes the Host workspace sidebar through the existing navigation owner', ()
   expect(close).toHaveBeenCalledOnce(); expect(change).not.toHaveBeenCalled()
   dispose()
 })
+
+it('leaves managed panel bodies, canvas and terminal gestures with their content owner', () => {
+  document.body.innerHTML = '<aside data-sidebar-right-panel data-sidebar-right-open><button data-sidebar-right-toggle>Close</button><p>Content</p></aside><div data-mobile-gesture-owner>Canvas</div><div class="xterm">Terminal</div>'
+  document.documentElement.setAttribute('data-mobile-panel-managed', '')
+  const change = vi.fn(), close = vi.fn(), dispose = installNavigationGestures(document, change)
+  document.querySelector('button')!.addEventListener('click', close)
+  for (const node of document.querySelectorAll('p,[data-mobile-gesture-owner],.xterm')) {
+    fireEvent.touchStart(node, { touches: [{ clientX: 20, clientY: 100 }] })
+    fireEvent.touchMove(node, { touches: [{ clientX: 180, clientY: 104 }] })
+    fireEvent.touchEnd(node, { changedTouches: [{ clientX: 180, clientY: 104 }] })
+  }
+  expect(change).not.toHaveBeenCalled(); expect(close).not.toHaveBeenCalled()
+  dispose(); document.documentElement.removeAttribute('data-mobile-panel-managed')
+})

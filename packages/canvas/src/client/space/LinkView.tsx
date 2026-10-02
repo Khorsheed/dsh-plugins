@@ -29,7 +29,7 @@
  *
  * @module @khorsheed/dsh-canvas/client
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { IconCloseOutlineMedium, IconEditOutlineMedium, IconPlusOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { firstDrawingOf, withoutDrawLines } from '../../blocks.ts'
@@ -101,6 +101,8 @@ export interface LinkViewProps {
    */
   readonly wire?: BoardLink | null | undefined
   readonly onWire?: ((wire: BoardLink | null) => void) | undefined
+  readonly zoom?: number | undefined
+  readonly onZoom?: ((zoom: number) => void) | undefined
 }
 
 /** A node's size before it has been measured (jsdom never measures, so: there). */
@@ -164,27 +166,53 @@ function runGesture(
   event: ReactPointerEvent<Element>,
   onMove: (dx: number, dy: number, move: PointerEvent) => void,
   onEnd: (dx: number, dy: number, release: PointerEvent) => void,
-): void {
+  onCancel: () => void,
+): () => void {
   const startX = event.clientX
   const startY = event.clientY
   const move = (next: PointerEvent): void => {
+    if (next.pointerId !== event.pointerId) return
     onMove(next.clientX - startX, next.clientY - startY, next)
   }
   const release = (last: PointerEvent): void => {
+    if (last.pointerId !== event.pointerId) return
+    clear()
+    onEnd(last.clientX - startX, last.clientY - startY, last)
+  }
+  const cancel = (): void => { clear(); onCancel() }
+  const another = (next: PointerEvent): void => { if (next.pointerId !== event.pointerId) cancel() }
+  const clear = (): void => {
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', release)
-    onEnd(last.clientX - startX, last.clientY - startY, last)
+    window.removeEventListener('pointercancel', cancel)
+    window.removeEventListener('pointerdown', another)
+    window.removeEventListener('blur', cancel)
   }
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', release)
+  window.addEventListener('pointercancel', cancel)
+  window.addEventListener('pointerdown', another)
+  window.addEventListener('blur', cancel)
+  return cancel
 }
 
 /** The link view. */
 export function LinkView({
   t, readonly, board, labels, selection, onToggleSelect, onAddSelection, onClearSelection,
-  onOpenDetail, talkAvailable, onTalk, onWrite, onLayout, onToast, wire, onWire,
+  onOpenDetail, talkAvailable, onTalk, onWrite, onLayout, onToast, wire, onWire, zoom: controlledZoom, onZoom,
 }: LinkViewProps): ReactNode {
   const stageRef = useRef<HTMLDivElement | null>(null)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  const gesture = useRef<(() => void) | undefined>(undefined)
+  const [compact, setCompact] = useState(false)
+  const [touchMode, setTouchMode] = useState<'pan' | 'select' | 'move' | 'connect'>('pan')
+  const [source, setSource] = useState<string | null>(null)
+  const [ownZoom, setOwnZoom] = useState(1)
+  const zoom = controlledZoom ?? ownZoom
+  const setZoom = (next: number | ((current: number) => number)): void => {
+    const value = typeof next === 'function' ? next(zoom) : next
+    setOwnZoom(value); onZoom?.(value)
+  }
   const [overlay, setOverlay] = useState<Overlay>(IDLE)
   const [box, setBox] = useState<Rect | null>(null)
   const [temp, setTemp] = useState<{ readonly x1: number; readonly y1: number; readonly x2: number; readonly y2: number } | null>(null)
@@ -196,6 +224,24 @@ export function LinkView({
   }, [onWire])
   const [renaming, setRenaming] = useState<string | null>(null)
   const [draftLabel, setDraftLabel] = useState('')
+  useLayoutEffect(() => {
+    const element = wrapRef.current
+    if (!element) return
+    const media = window.matchMedia?.('(pointer: coarse)')
+    const update = () => { const width = element.clientWidth; if (width > 0 || media?.matches) setCompact(!!media?.matches || width < 560) }
+    update()
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update)
+    observer?.observe(element); media?.addEventListener('change', update)
+    return () => { observer?.disconnect(); media?.removeEventListener('change', update) }
+  }, [])
+  useEffect(() => { gesture.current?.(); setSource(null) }, [touchMode, compact, readonly, board.id])
+  useEffect(() => () => gesture.current?.(), [])
+  const beginGesture = (event: ReactPointerEvent<Element>, move: (dx: number, dy: number, next: PointerEvent) => void, end: (dx: number, dy: number, next: PointerEvent) => void) => {
+    gesture.current?.()
+    gesture.current = runGesture(event, (dx, dy, next) => move(dx / zoom, dy / zoom, next), (dx, dy, next) => {
+      gesture.current = undefined; end(dx / zoom, dy / zoom, next)
+    }, () => { setOverlay(IDLE); setBox(null); setTemp(null); gesture.current = undefined })
+  }
 
   const cards = useMemo(() => board.cards.filter(card => card.status !== 'archived'), [board.cards])
   const [sizes, setSizes] = useState<ReadonlyMap<string, Size>>(new Map())
@@ -247,7 +293,7 @@ export function LinkView({
   /** What a drag may clamp against: the visible stage, never the whole world. */
   const stageBox = (): Size => {
     const el = stageRef.current
-    return { w: el?.clientWidth ?? 0, h: el?.clientHeight ?? 0 }
+    return { w: Math.max(world.w, (el?.clientWidth ?? 0) / zoom), h: Math.max(world.h, (el?.clientHeight ?? 0) / zoom) }
   }
 
   /** A pointer position in world units (the stage scrolls; the world does not). */
@@ -255,8 +301,8 @@ export function LinkView({
     const el = stageRef.current
     const rect = el?.getBoundingClientRect()
     return {
-      x: clientX - (rect?.left ?? 0) + (el?.scrollLeft ?? 0),
-      y: clientY - (rect?.top ?? 0) + (el?.scrollTop ?? 0),
+      x: (clientX - (rect?.left ?? 0) + (el?.scrollLeft ?? 0)) / zoom,
+      y: (clientY - (rect?.top ?? 0) + (el?.scrollTop ?? 0)) / zoom,
     }
   }
 
@@ -310,11 +356,35 @@ export function LinkView({
     }))
   }
 
+  const pick = (id: string): void => {
+    if (touchMode !== 'connect' || readonly || !compact) { onToggleSelect(id); return }
+    if (!source) { setSource(id); return }
+    if (source === id || !byId.has(source)) return
+    if (!isLinked(board.links, source, id)) commit({ links: [...board.links, { from: source, to: id }] })
+    setSource(null); setTouchMode('pan')
+  }
+  const pan = (event: ReactPointerEvent<Element>, tapped?: string): void => {
+    const stage = stageRef.current
+    if (!stage) return
+    event.stopPropagation()
+    const left = stage.scrollLeft, top = stage.scrollTop
+    let moved = false
+    beginGesture(event, (dx, dy) => {
+      if (Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) moved = true
+      if (moved) { stage.scrollLeft = left - dx * zoom; stage.scrollTop = top - dy * zoom }
+    }, () => { if (!moved && tapped) pick(tapped) })
+  }
+
   const onNodeDown = (event: ReactPointerEvent<HTMLDivElement>, node: PlacedCard): void => {
     if (event.button !== 0) return
     const target = event.target as HTMLElement
     if (target.closest('[data-port]') !== null || target.closest('[data-open]') !== null) return
     event.stopPropagation()
+    if (compact && touchMode === 'pan') { pan(event, node.id); return }
+    if (compact && touchMode !== 'move') {
+      beginGesture(event, () => {}, (dx, dy) => { if (Math.abs(dx) + Math.abs(dy) <= DRAG_THRESHOLD) pick(node.id) })
+      return
+    }
     // Read-only closes the stage's WRITE half only. Picking a card costs the
     // board nothing, and 「就这一组提问」 needs a selection to ask about — a
     // read-only canvas that could not be selected would be a read-only canvas
@@ -325,7 +395,7 @@ export function LinkView({
     }
     const stage = stageBox()
     let moved = false
-    runGesture(event, (dx, dy) => {
+    beginGesture(event, (dx, dy) => {
       if (Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) moved = true
       if (!moved) return
       setSpot(node.id, {
@@ -348,9 +418,11 @@ export function LinkView({
   }
 
   const onLaneDown = (event: ReactPointerEvent<Element>, lane: LaneBox, mode: 'move' | 'resize'): void => {
-    if (readonly || event.button !== 0) return
+    if (event.button !== 0) return
     const target = event.target as HTMLElement
     if (target.closest('[data-lane-head]') !== null || target.closest('[data-lane-del]') !== null) return
+    if (compact && touchMode === 'pan') { pan(event); return }
+    if (readonly || (compact && touchMode !== 'move')) return
     event.stopPropagation()
     const stage = stageBox()
     const cardsAtStart = placed
@@ -359,7 +431,7 @@ export function LinkView({
       if (Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) moved = true
     }
     if (mode === 'resize') {
-      runGesture(event, (dx, dy) => {
+      beginGesture(event, (dx, dy) => {
         mark(dx, dy)
         setLaneBox(lane.id, rectOf(resizeLane(lane, cardsAtStart, dx, dy, stage)))
       }, (dx, dy) => {
@@ -368,7 +440,7 @@ export function LinkView({
       })
       return
     }
-    runGesture(event, (dx, dy) => {
+    beginGesture(event, (dx, dy) => {
       mark(dx, dy)
       const dragged = dragLane(lane, cardsAtStart, dx, dy, stage)
       const places = new Map(overlay.places)
@@ -387,8 +459,10 @@ export function LinkView({
 
   const onWorldDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
     if (event.target !== event.currentTarget || event.button !== 0) return
+    if (compact && touchMode === 'pan') { pan(event); return }
+    if (compact && touchMode !== 'select') return
     const begin = worldPoint(event.clientX, event.clientY)
-    runGesture(event, (_dx, _dy, move) => {
+    beginGesture(event, (_dx, _dy, move) => {
       const now = worldPoint(move.clientX, move.clientY)
       setBox(marqueeRect(begin.x, begin.y, now.x, now.y))
     }, (_dx, _dy, release) => {
@@ -424,7 +498,7 @@ export function LinkView({
     event.stopPropagation()
     const anchor = { x1: side === 'right' ? node.x + node.w : node.x, y1: node.y + node.h / 2 }
     setTemp({ ...anchor, x2: anchor.x1, y2: anchor.y1 })
-    runGesture(event, (_dx, _dy, move) => {
+    beginGesture(event, (_dx, _dy, move) => {
       const now = worldPoint(move.clientX, move.clientY)
       setTemp({ ...anchor, x2: now.x, y2: now.y })
     }, (_dx, _dy, release) => {
@@ -445,8 +519,8 @@ export function LinkView({
     const lane: BoardLane = {
       id: newLaneId(),
       label: '',
-      x: (el?.scrollLeft ?? 0) + 24,
-      y: (el?.scrollTop ?? 0) + 24,
+      x: (el?.scrollLeft ?? 0) / zoom + 24,
+      y: (el?.scrollTop ?? 0) / zoom + 24,
       ...NEW_LANE,
     }
     // The new lane appears with its name field already open — that focus is
@@ -474,12 +548,29 @@ export function LinkView({
   }
 
   return (
-    <div className={css.wrap}>
+    <div className={css.wrap} ref={wrapRef} data-mobile-gesture-owner data-compact={compact || undefined}>
+      <div className={css.viewportTools} role="toolbar" aria-label={t('link.viewport')}>
+        {compact && <div className={css.toolGroup}>{(['pan', 'select', 'move', 'connect'] as const).map(mode => <button type="button" key={mode}
+          aria-pressed={touchMode === mode} disabled={readonly && (mode === 'move' || mode === 'connect')}
+          onClick={() => setTouchMode(mode)}>{t(`link.${mode}`)}</button>)}</div>}
+        <div className={css.toolGroup}>
+        <button type="button" aria-label={t('link.zoomOut')} disabled={zoom <= .5} onClick={() => { gesture.current?.(); setZoom(value => Math.max(.5, value - .25)) }}>−</button>
+        <button type="button" aria-label={t('link.zoomReset')} onClick={() => { gesture.current?.(); setZoom(1) }}>{Math.round(zoom * 100)}%</button>
+        <button type="button" aria-label={t('link.zoomIn')} disabled={zoom >= 2} onClick={() => { gesture.current?.(); setZoom(value => Math.min(2, value + .25)) }}>+</button>
+        </div>
+        {compact && visibleLinks.length > 0 && <select aria-label={t('link.chooseWire')} value={wireSel ? `${wireSel.from}:${wireSel.to}` : ''}
+          onChange={event => setWireSel(visibleLinks.find(link => `${link.from}:${link.to}` === event.target.value) ?? null)}>
+          <option value="">{t('link.chooseWire')}</option>
+          {visibleLinks.map(link => <option key={`${link.from}:${link.to}`} value={`${link.from}:${link.to}`}>{previewOf(cardById.get(link.from)!)} → {previewOf(cardById.get(link.to)!)}</option>)}
+        </select>}
+      </div>
+      {compact && touchMode === 'connect' && <div className={css.touchHint} role="status">{t(source ? 'link.connectTarget' : 'link.connectStart')}</div>}
       <div className={css.stage} ref={stageRef} data-readonly={readonly || undefined} data-canvas-scroll="link">
+        <div style={{ width: world.w * zoom, height: world.h * zoom, minWidth: '100%', minHeight: '100%', overflow: 'hidden' }} onPointerDown={onWorldDown}>
         <div
           className={css.world}
           data-world
-          style={{ width: `${world.w}px`, height: `${world.h}px` }}
+          style={{ width: `${world.w}px`, height: `${world.h}px`, transform: `scale(${zoom})`, transformOrigin: 'top left' }}
           onPointerDown={onWorldDown}
         >
           <svg className={css.wires} width={world.w} height={world.h} aria-hidden="true" focusable="false">
@@ -592,6 +683,7 @@ export function LinkView({
                 className={css.node}
                 data-node={node.id}
                 data-picked={selection.has(node.id) || undefined}
+                data-link-source={source === node.id || undefined}
                 data-ghost={card.status === 'proposed' || undefined}
                 style={{ left: `${node.x}px`, top: `${node.y}px` }}
                 onPointerDown={event => { onNodeDown(event, node) }}
@@ -645,6 +737,7 @@ export function LinkView({
               }}
             />
           )}
+        </div>
         </div>
       </div>
 

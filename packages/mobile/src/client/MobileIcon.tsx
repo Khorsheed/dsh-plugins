@@ -1,5 +1,6 @@
-export type MobileIconName = 'edit' | 'members' | 'back' | 'settings' | 'compose' | 'folder' | 'search' | 'scan' | 'close' | 'down' | 'right' | 'plus' | 'attachment' | 'commands' | 'shield'
+export type MobileIconName = 'panel' | 'edit' | 'members' | 'back' | 'settings' | 'compose' | 'folder' | 'search' | 'scan' | 'close' | 'down' | 'right' | 'plus' | 'attachment' | 'commands' | 'shield'
 const paths: Record<MobileIconName, string> = {
+  panel: 'M4 4h16v16H4zM14 4v16',
   edit: 'm15 5 4 4M5 19l4-1L20 7a2 2 0 0 0-4-4L5 14l-1 6Z',
   members: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8m8 .13a4 4 0 0 1 0 7.75',
   plus: 'M12 5v14M5 12h14', commands: 'm16 4-8 16', shield: 'm12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Zm-4 9 3 3 5-6',

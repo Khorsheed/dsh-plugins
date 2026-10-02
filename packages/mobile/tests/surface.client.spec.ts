@@ -8,6 +8,7 @@ function fixture() {
   <div data-slot="conversation.session.header"><header><div data-test-row><div><nav><span><button disabled>Title</button><div data-slot="conversation.session.header.lineage"></div></span></nav><div data-slot="conversation.session.header.actions"><span title="Preset description"><svg><mask id="mask0_agent_preset_16"></mask></svg>Standard</span></div></div><div data-slot="conversation.session.header.utilities"><span><div><button><img src="/open-in-app/icon/finder"/></button><button>Apps</button></div></span><span><button aria-label="More actions" aria-haspopup="menu" aria-busy="false">More</button></span></div><div data-conversation-header-corner><button data-sidebar-right-expand>Panel</button></div></div><div role="tablist"><button role="tab" aria-selected="true">对话</button><button role="tab" aria-selected="false">轨迹</button></div></header></div>
   <div data-conversation-scroll><div data-composer-seat><div data-composer-card><textarea>Unsent draft</textarea></div><div data-composer-stats>51 tokens</div></div></div>
   </div></div></div>`
+  document.body.insertAdjacentHTML('beforeend', '<button data-mobile-panel-entry>Panels</button>')
   const frame = document.querySelector<HTMLElement>('[data-mobile-frame]')!
   const surface = new MobileSurface(document); instances.push(surface)
   return { frame, surface }
@@ -20,6 +21,12 @@ it('projects the real preset label, collapses only known chrome and restores the
   expect(document.querySelector('[data-test-row]')!.hasAttribute('data-mobile-header-hidden')).toBe(true)
   surface.sync(frame); expect(listener).toHaveBeenCalledOnce()
   surface.dispose(); expect(frame.innerHTML).toBe(original)
+})
+it('keeps the official panel entry when the optional mobile replacement is unavailable', () => {
+  const { frame, surface } = fixture()
+  document.querySelector('[data-mobile-panel-entry]')!.remove()
+  surface.sync(frame)
+  expect(document.querySelector('[data-sidebar-right-expand]')!.closest('[data-mobile-header-hidden]')).toBeNull()
 })
 it('retains unknown plugin controls, callback ownership and ancestor navigation', () => {
   const { frame, surface } = fixture()

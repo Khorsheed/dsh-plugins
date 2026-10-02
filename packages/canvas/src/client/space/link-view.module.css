@@ -12,8 +12,7 @@
   flex: 1;
 }
 
-/* The viewport. It scrolls rather than scales: a card carries real text, so a
-   zoomed-out board would zoom the type with it. */
+/* The viewport scrolls over the scaled world; persisted positions stay in world units. */
 .stage {
   position: relative;
   flex: 1;
@@ -36,8 +35,6 @@
 /* The scrollable content box: sized in layout units, anchored top-left. */
 .world {
   position: relative;
-  min-width: 100%;
-  min-height: 100%;
 }
 
 .wires {
@@ -463,3 +460,22 @@
   margin: 0 2px;
   background: var(--dsw-alias-border-l1);
 }
+
+.viewportTools { display:flex; flex-wrap:wrap; align-items:center; gap:4px; padding:4px 0 8px; flex:none; }
+.viewportTools button { min-width:36px; min-height:36px; border:0; padding:6px 9px; border-radius:8px; background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-secondary); font:inherit; cursor:pointer; }
+.viewportTools button[aria-pressed=true] { background:var(--dsw-alias-interactive-bg-active); color:var(--dsw-alias-brand-primary); }
+.viewportTools button:disabled { opacity:.4; }
+.viewportTools select { min-width:0; max-width:100%; flex:1 1 100%; min-height:44px; font:inherit; color:var(--dsw-alias-label-primary); background:var(--dsw-alias-bg-base); border:1px solid var(--dsw-alias-border-l2); border-radius:8px; }
+.touchHint { padding:0 4px 8px; font-size:13px; color:var(--dsw-alias-label-secondary); }
+.node[data-link-source] { outline:2px solid var(--dsw-alias-brand-primary); }
+.wrap[data-compact] .viewportTools button { min-height:44px; min-width:44px; }
+.wrap[data-compact] .port { display:none; }
+.wrap[data-compact] .nodeOpen { display:inline-flex; width:36px; height:36px; }
+.wrap[data-compact] .nodeText { font-size:13px; }
+.toolGroup { display:inline-flex; gap:4px; flex:none; }
+.wrap[data-compact] .laneDel { opacity:1; width:36px; }
+.wrap[data-compact] .node { padding-right:38px; }
+.wrap[data-compact] .bar, .wrap[data-compact] .dock { position:static; transform:none; width:auto; max-width:100%; margin-top:6px; flex-wrap:wrap; flex:none; }
+.wrap[data-compact] .bar button, .wrap[data-compact] .dock button { min-height:44px; }
+.wrap[data-compact] .stage { min-height:160px; }
+.wrap[data-compact] .laneDel, .wrap[data-compact] .laneTitle { min-height:36px; }

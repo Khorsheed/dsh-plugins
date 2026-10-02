@@ -45,7 +45,9 @@ export class MobileSurface {
         if (split && split.querySelectorAll('button').length === 2) this.mark(split, 'data-mobile-header-hidden')
       }
       for (const button of row.querySelectorAll<HTMLElement>('[data-sidebar-right-expand], [data-slot="conversation.session.header.utilities"] > span > button[aria-haspopup="menu"][aria-busy]')) {
-        if (button.hasAttribute('data-sidebar-right-expand') || /^(更多操作|More actions)$/i.test(button.getAttribute('aria-label') ?? '')) this.mark(button, 'data-mobile-header-hidden')
+        if (button.hasAttribute('data-sidebar-right-expand')
+          ? this.doc.querySelector('[data-mobile-panel-entry]') !== null
+          : /^(更多操作|More actions)$/i.test(button.getAttribute('aria-label') ?? '')) this.mark(button, 'data-mobile-header-hidden')
       }
       if (this.doc.querySelector('[data-mobile-members-open]:not([disabled])')) {
         for (const button of row.querySelectorAll<HTMLElement>('[data-slot="conversation.session.header.actions"] button')) {

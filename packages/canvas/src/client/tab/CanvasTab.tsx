@@ -96,11 +96,12 @@ interface BoardViewMemory {
   readonly showArchived: boolean
   /** The wire picked on the 连线 face. */
   readonly wire: BoardLink | null
+  readonly zoom: number
 }
 
 /** A canvas nobody has looked at yet: every card, the edit face, nothing picked. */
 const FRESH_VIEW: BoardViewMemory = {
-  filter: 'all', picked: new Set(), face: 'board', showArchived: false, wire: null,
+  filter: 'all', picked: new Set(), face: 'board', showArchived: false, wire: null, zoom: 1,
 }
 
 /** Leaving a draft that holds words: × closes the canvas row, ‹ goes back to its board. */
@@ -154,7 +155,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   /* ----------------------------------------------------- per-canvas views */
 
   const view_ = (openId === null ? undefined : views[openId]) ?? FRESH_VIEW
-  const { filter, picked: selection_, face: view, showArchived: showArchivedCards, wire } = view_
+  const { filter, picked: selection_, face: view, showArchived: showArchivedCards, wire, zoom } = view_
   /** Change the open canvas's view memory, keeping what the patch leaves alone. */
   const patchView = useCallback((patch: (was: BoardViewMemory) => Partial<BoardViewMemory>) => {
     const id = openIdRef.current
@@ -173,6 +174,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const setView = useCallback((face: BoardFace) => { patchView(() => ({ face })) }, [patchView])
   const toggleShowArchived = useCallback(() => { patchView(was => ({ showArchived: !was.showArchived })) }, [patchView])
   const setWire = useCallback((next: BoardLink | null) => { patchView(() => ({ wire: next })) }, [patchView])
+  const setZoom = useCallback((next: number) => { patchView(() => ({ zoom: next })) }, [patchView])
 
   /**
    * Scroll memory, per canvas and face. Each scroller of the board marks itself
@@ -727,7 +729,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     : summarizeBoard(openBoard.board).cardCount
 
   return (
-    <div className={css.root} ref={rootRef} onScrollCapture={onScrollCapture}>
+    <div className={css.root} ref={rootRef} onScrollCapture={onScrollCapture} data-mobile-gesture-owner>
       <TabStrip
         t={t}
         rows={stripRows}
@@ -981,6 +983,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 onOpenDetail={openCard}
                 wire={wire}
                 onWire={setWire}
+                zoom={zoom}
+                onZoom={setZoom}
                 talkAvailable={canTalk}
                 onTalk={cardIds => { talk(cardIds) }}
                 onWrite={cardIds => { talk(cardIds, t('talk.writeText')) }}
