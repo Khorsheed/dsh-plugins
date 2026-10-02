@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MobilePanels, type MobilePanelService, type MobilePanelTab } from '../src/client/panels.ts'
 import { MobilePanelEntry, MobilePanelNavigation } from '../src/client/MobilePanelNavigation.tsx'
+import { MOBILE_CSS } from '../src/client/styles.ts'
 import { en } from '../src/client/locales.ts'
 
 const t = ((key: keyof typeof en) => en[key]) as never
@@ -77,4 +78,50 @@ it('moves keyboard focus into the panel and restores chat access on Escape', () 
   fireEvent.keyDown(window, { key: 'Escape' })
   expect(document.querySelector<HTMLElement>('[data-mobile-frame] > div')!.inert).toBe(false)
   expect(document.activeElement).toBe(entry)
+})
+
+it('covers a collapsed host track while open and restores native geometry on return', () => {
+  const style = document.createElement('style')
+  style.textContent = '[data-rightbar-col] { position:relative; }' + MOBILE_CSS
+  document.head.append(style)
+  document.documentElement.setAttribute('data-dsh-mobile', '')
+  document.documentElement.setAttribute('data-mobile-panel-open', '')
+  document.body.innerHTML = '<div data-mobile-frame data-rightbar-collapsed><div data-rightbar-col></div></div>'
+  const column = document.querySelector<HTMLElement>('[data-rightbar-col]')!
+  try {
+    const opened = getComputedStyle(column)
+    expect(opened.position).toBe('absolute')
+    expect(opened.gridArea).toBe('auto')
+    expect(opened.width).toBe('100%')
+    expect(document.querySelector('[data-rightbar-collapsed]')).not.toBeNull()
+    document.documentElement.removeAttribute('data-mobile-panel-open')
+    expect(getComputedStyle(column).position).toBe('relative')
+  } finally {
+    style.remove()
+    document.documentElement.removeAttribute('data-dsh-mobile')
+    document.documentElement.removeAttribute('data-mobile-panel-open')
+  }
+})
+
+it('replaces only the native panel entry and removes the unused hero action space', () => {
+  const style = document.createElement('style')
+  style.textContent = MOBILE_CSS
+  document.head.append(style)
+  document.documentElement.setAttribute('data-dsh-mobile', '')
+  document.body.innerHTML = '<div data-phase="hero"></div><nav data-mobile-toolbar data-library="false"><button data-mobile-panel-entry>Panel</button><button data-mobile-new="true">New</button></nav><button data-sidebar-right-expand>Native panel</button>'
+  const native = document.querySelector<HTMLElement>('[data-sidebar-right-expand]')!
+  const newButton = document.querySelector<HTMLElement>('[data-mobile-new]')!
+  try {
+    expect(getComputedStyle(native).display).toBe('none')
+    expect(getComputedStyle(newButton).display).toBe('none')
+    document.querySelector('[data-mobile-panel-entry]')!.remove()
+    expect(getComputedStyle(native).display).not.toBe('none')
+    document.querySelector('[data-phase]')!.remove()
+    expect(getComputedStyle(newButton).display).not.toBe('none')
+    document.documentElement.removeAttribute('data-dsh-mobile')
+    expect(getComputedStyle(native).display).not.toBe('none')
+  } finally {
+    style.remove()
+    document.documentElement.removeAttribute('data-dsh-mobile')
+  }
 })

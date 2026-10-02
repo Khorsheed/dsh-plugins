@@ -199,7 +199,7 @@ html[data-dsh-mobile] [data-phase=hero] span:has(> [data-slot="conversation.hero
 [data-mobile-welcome] small { color:var(--mobile-accent); letter-spacing:3px; font-size:13px; }
 [data-mobile-welcome] h2 { font-size:25px; font-weight:500; line-height:1.4; margin:16px 0 9px; letter-spacing:-.6px; }
 [data-mobile-welcome] p { font-size:13px; line-height:1.6; margin:0; color:var(--dsw-alias-label-tertiary,#74767c); }
-html[data-dsh-mobile]:has([data-phase=hero]) [data-mobile-toolbar][data-library=false] [data-mobile-new=true] { visibility:hidden; }
+html[data-dsh-mobile]:has([data-phase=hero]) [data-mobile-toolbar][data-library=false] [data-mobile-new=true] { display:none; }
 html[data-dsh-mobile] [data-phase=hero] div:has(> [data-slot="conversation.hero.workspace"]) { gap:6px; padding:6px 18px; flex-wrap:wrap; }
 html[data-dsh-mobile] [data-phase=hero] div:has(> [data-slot="conversation.hero.workspace"]) > button, html[data-dsh-mobile] [data-slot="conversation.hero.agentPreset"] button[aria-haspopup] { border-radius:18px; min-height:40px; font-size:13px; background:var(--mobile-soft); }
 /* Quiet, read-only metadata below the mobile title. */
@@ -473,5 +473,12 @@ html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [dat
 html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-float] { position:relative!important; inset:0!important; width:100%!important; height:100%!important; min-width:0; border-radius:0; }
 html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel]:not([data-sidebar-right-open]) [data-dockkit-host=float] { visibility:hidden; pointer-events:none; }
 html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-content] { border-radius:0; min-width:0; }
-html[data-dsh-mobile][data-mobile-panel-open] [data-mobile-frame]:not([data-rightbar-collapsed]) > [data-rightbar-col] { top:0; }
+/* Fullscreen may be drawn from a collapsed, zero-width frame track. Anchor to
+   the whole frame rather than its third grid area; saved desktop tracks stay intact. */
+html[data-dsh-mobile][data-mobile-panel-open] [data-mobile-frame] > [data-rightbar-col] {
+  position:absolute; inset:0; grid-area:auto; z-index:24; width:100%; min-width:0;
+  background:var(--dsw-alias-bg-base,white);
+}
+/* Keep the host affordance as fallback whenever the mobile entry is unavailable. */
+html[data-dsh-mobile]:has([data-mobile-toolbar] [data-mobile-panel-entry]) [data-sidebar-right-expand] { display:none; }
 `
