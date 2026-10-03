@@ -680,6 +680,8 @@ export function DatasetsView(props: DatasetsViewProps) {
           actions.setNotice(null)
           setRegisterOpen({ mode: 'new' })
         }}
+        canPick={canPick}
+        pickDirectory={pickDirectory}
         t={t}
       />
     </div>

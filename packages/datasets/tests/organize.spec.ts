@@ -5,7 +5,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  buildAddRequest, buildReturnRequest, buildUpdateRequest, checkDatasetName, DRAFT_RETRIES_MS, draftWithRetries, repoPathFor,
+  buildAddRequest, buildReturnRequest, buildUpdateRequest, checkDatasetName, cleanPickedPath, DRAFT_RETRIES_MS, draftWithRetries,
+  repoParentOf, repoPathFor,
 } from '../src/client/organize.ts'
 import { pickRandom } from '../src/client/ReviewPage.tsx'
 
@@ -39,6 +40,28 @@ describe('organizing requests', () => {
     const bare = buildAddRequest({ source: 'x', name: 'n', purpose: '  ' }, '', t)
     expect(bare).not.toContain('organize.linePurpose')
     expect(bare).not.toContain('organize.lineRepo')
+  })
+
+  it('a picked directory is cleaned before it is shown or joined (T95)', () => {
+    expect(cleanPickedPath('/home/user/data/')).toBe('/home/user/data')
+    expect(cleanPickedPath('  /home/user/data  ')).toBe('/home/user/data')
+    expect(cleanPickedPath('/')).toBe('/')
+    expect(cleanPickedPath('   ')).toBe('')
+  })
+
+  it('a picked parent wins over the datasets home; none falls back to it (T95)', () => {
+    expect(repoParentOf('/home/user/.dsh/datasets', '/home/user/benchmarks/')).toBe('/home/user/benchmarks')
+    expect(repoParentOf('/home/user/.dsh/datasets', null)).toBe('/home/user/.dsh/datasets')
+    expect(repoParentOf('/home/user/.dsh/datasets', '')).toBe('/home/user/.dsh/datasets')
+    expect(repoPathFor(repoParentOf('/h', '/'), 'gsm8k')).toBe('/gsm8k')
+  })
+
+  it('the add request puts the repository under the picked parent (T95)', () => {
+    const picked = buildAddRequest({ source: 'x', name: 'gsm8k', purpose: '', repoParent: '/home/user/benchmarks/' }, '/h', t)
+    expect(picked).toContain('organize.lineRepo {"value":"/home/user/benchmarks/gsm8k"}')
+    expect(picked).not.toContain('/h/gsm8k')
+    // A picked parent names the repository even when the home is unknown.
+    expect(buildAddRequest({ source: 'x', name: 'n', purpose: '', repoParent: '/p' }, '', t)).toContain('organize.lineRepo {"value":"/p/n"}')
   })
 
   it('the update request names the checkout when there is one, and leaves room for the ask', () => {

@@ -203,6 +203,10 @@ export type DatasetsKey =
   | 'add.git'
   | 'add.gitNeeded'
   | 'add.repoAt'
+  | 'add.repoNameSlot'
+  | 'add.repoChange'
+  | 'add.repoReset'
+  | 'add.browse'
   | 'add.organize'
   | 'add.cancel'
   | 'add.close'
@@ -559,6 +563,10 @@ export const zh: Record<DatasetsKey, string> = {
   'add.git': '题集用 git 保存：每个版本都留着，任何版本都能找回，每次实验都能在它用的那个版本上原样重跑。你不需要会 git。',
   'add.gitNeeded': '需要 git：机器上没有时，Agent 会先说明并征得你同意再安装。',
   'add.repoAt': '新仓库放在 {path}',
+  'add.repoNameSlot': '<题集名称>',
+  'add.repoChange': '更改…',
+  'add.repoReset': '恢复默认位置',
+  'add.browse': '选择目录…',
   'add.organize': '让 Agent 整理',
   'add.cancel': '取消',
   'add.close': '关闭',
@@ -910,6 +918,10 @@ export const en: Record<DatasetsKey, string> = {
   'add.git': 'Datasets are kept in git: every version is kept and can be restored, and every experiment reruns exactly on the version it used. You do not need to know git.',
   'add.gitNeeded': 'Needs git: if this machine has none, the Agent explains and asks before installing it.',
   'add.repoAt': 'The new repository goes to {path}',
+  'add.repoNameSlot': '<dataset name>',
+  'add.repoChange': 'Change…',
+  'add.repoReset': 'Use the default location',
+  'add.browse': 'Choose a folder…',
   'add.organize': 'Let the Agent organize it',
   'add.cancel': 'Cancel',
   'add.close': 'Close',

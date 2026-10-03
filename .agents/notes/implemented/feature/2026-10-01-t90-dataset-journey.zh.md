@@ -19,7 +19,7 @@ Status: implemented
 
 - **A——登记表只归人写。** 整理 Agent 的工具档（`src/tool-definition.ts` 里的 `organize`）是读工具加上唯一一个写工具 `datasets_propose_registration`。它把申请写到 datasets 状态目录下，从不碰 `registry.json`。登记只经由 `confirmProposal` / `confirmPending`（`src/remote.ts` 里的 Remote 方法）发生，由题集 tab 在人按下「确认登记」/「确认新版本」时调用。
 - **B——整理是单独的会话。** 整理 Agent 会读到答案，所以它永远不是评测 Agent。「添加题集」弹窗（`src/client/AddDatasetDialog.tsx`）提供「让 Agent 整理」。这个操作用 `dataset-authoring` 预设（`Config.authoringPreset`）新开一个会话，把请求写进输入框但不发送。web-eval 的 presets 包在 `profiles/web-eval/presets/cordis.patch.yml` 里以 `preset-dataset-authoring` 一行提供这个预设。评测会话永远不继承它。
-- **C——新仓库默认放在 `$DSH_HOME/datasets/<名字>`**（`src/defaults.ts`；兜底 `~/.dsh/datasets`）。弹窗显示具体路径，开始之前不用先选位置。
+- **C——新仓库默认放在 `$DSH_HOME/datasets/<名字>`**（`src/defaults.ts`；兜底 `~/.dsh/datasets`）。弹窗显示具体路径，开始之前不用先选位置。宿主的目录选择器可用时，弹窗的「更改…」可以为这一次请求另选父目录（[T95](2026-10-03-t95-add-dataset-directory-picker.zh.md)）。
 - **D——人看到的是「版本 N · 更新时间」。** N 是所登记 commit 的提交数。commit 哈希、跟踪的 ref 和仓库路径放在评审页和详情页的「高级」里。
 
 ### 对照是核验过的，不是照抄的

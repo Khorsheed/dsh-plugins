@@ -933,6 +933,94 @@ describe('添加题集 (T90)', () => {
   })
 })
 
+describe('添加题集 picks directories (T95)', () => {
+  /** Open the dialog and fill the two required fields. */
+  async function openAdd(name = 'gsm8k'): Promise<void> {
+    fireEvent.click(await screen.findByText('registry.add'))
+    expect(await screen.findByText('add.title')).toBeTruthy()
+    if (name !== '') fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: name } })
+  }
+  const sourceBox = (): HTMLTextAreaElement => screen.getByLabelText('add.source', { selector: 'textarea' })
+
+  it('选择目录… writes the pick into 数据在哪, which stays editable', async () => {
+    const h = makeHarness()
+    h.pickDirectory.mockResolvedValueOnce('/home/user/raw/humaneval/')
+    renderView(h)
+    await openAdd()
+    fireEvent.click(screen.getByText('add.browse'))
+    await waitFor(() => { expect(sourceBox().value).toBe('/home/user/raw/humaneval') })
+    fireEvent.change(sourceBox(), { target: { value: '/home/user/raw/humaneval/data.jsonl' } })
+    expect(sourceBox().value).toBe('/home/user/raw/humaneval/data.jsonl')
+    fireEvent.click(screen.getByText('add.organize'))
+    await waitFor(() => { expect(h.startOrganizing).toHaveBeenCalledTimes(1) })
+    expect(h.startOrganizing.mock.calls[0]![2]).toContain('/home/user/raw/humaneval/data.jsonl')
+  })
+
+  it('a cancelled or failing pick leaves both fields as they were', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openAdd()
+    fireEvent.change(sourceBox(), { target: { value: '~/Downloads/gsm8k' } })
+    h.pickDirectory.mockResolvedValueOnce(null)
+    fireEvent.click(screen.getByText('add.browse'))
+    await waitFor(() => { expect(h.pickDirectory).toHaveBeenCalledTimes(1) })
+    h.pickDirectory.mockRejectedValueOnce(new Error('directory picker failed'))
+    fireEvent.click(screen.getByText('add.repoChange'))
+    await waitFor(() => { expect(h.pickDirectory).toHaveBeenCalledTimes(2) })
+    await Promise.resolve()
+    expect(sourceBox().value).toBe('~/Downloads/gsm8k')
+    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    expect(screen.queryByText('add.repoReset')).toBeNull()
+  })
+
+  it('without a chooser the buttons are hidden and the default location still shows', async () => {
+    const h = makeHarness()
+    renderView(h, { canPick: false })
+    await openAdd()
+    expect(screen.queryByText('add.browse')).toBeNull()
+    expect(screen.queryByText('add.repoChange')).toBeNull()
+    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+  })
+
+  it('更改… picks the parent; the request carries <parent>/<name>; 恢复默认位置 goes back', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openAdd('')
+    // Before a name: the location reads with a name slot.
+    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/add\.repoNameSlot/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: 'gsm8k' } })
+    h.pickDirectory.mockResolvedValueOnce('/home/user/benchmarks/')
+    fireEvent.click(screen.getByText('add.repoChange'))
+    expect(await screen.findByText(/add\.repoAt .*\/home\/user\/benchmarks\/gsm8k/)).toBeTruthy()
+    // Back to the default, and to the picked one again.
+    fireEvent.click(screen.getByText('add.repoReset'))
+    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    expect(screen.queryByText('add.repoReset')).toBeNull()
+    h.pickDirectory.mockResolvedValueOnce('/home/user/benchmarks')
+    fireEvent.click(screen.getByText('add.repoChange'))
+    expect(await screen.findByText('add.repoReset')).toBeTruthy()
+    fireEvent.change(sourceBox(), { target: { value: '/home/user/raw/gsm8k' } })
+    fireEvent.click(screen.getByText('add.organize'))
+    await waitFor(() => { expect(h.startOrganizing).toHaveBeenCalledTimes(1) })
+    const text = h.startOrganizing.mock.calls[0]![2] as string
+    expect(text).toContain('organize.lineRepo {"value":"/home/user/benchmarks/gsm8k"}')
+    expect(text).not.toContain('.dsh/datasets/gsm8k')
+  })
+
+  it('a reset location sends the default path', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openAdd()
+    h.pickDirectory.mockResolvedValueOnce('/home/user/benchmarks')
+    fireEvent.click(screen.getByText('add.repoChange'))
+    fireEvent.click(await screen.findByText('add.repoReset'))
+    fireEvent.change(sourceBox(), { target: { value: 'x' } })
+    fireEvent.click(screen.getByText('add.organize'))
+    await waitFor(() => { expect(h.startOrganizing).toHaveBeenCalledTimes(1) })
+    expect(h.startOrganizing.mock.calls[0]![2]).toContain('organize.lineRepo {"value":"/home/user/.dsh/datasets/gsm8k"}')
+  })
+})
+
 describe('等你确认登记 (T90)', () => {
   it('a pending proposal shows a banner; the review confirms exactly the layer choice it shows', async () => {
     const h = makeHarness()
