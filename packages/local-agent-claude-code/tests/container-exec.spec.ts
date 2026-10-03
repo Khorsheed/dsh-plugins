@@ -5,6 +5,7 @@
  * env forwarding, and the two things a containerized round deliberately gives
  * up (the member channel, and any chance of guessing the scoped home).
  */
+import { claudeKeychainEnv } from '../src/process-env.ts'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -102,6 +103,8 @@ describe('claude container exec target', () => {
     // scoped dir, so the caller points both at one bind-mounted directory.
     expect(specs[0]?.env?.['CLAUDE_CONFIG_DIR']).toBe('/creds/claude')
     expect(specs[0]?.argv).not.toContain(HOME)
+    expect(specs[0]?.argv).not.toContain('USER')
+    expect(specs[0]?.env?.['USER']).toBeUndefined()
     expect(specs[0]?.cwd).toBe('/tmp')
     // No member bridge across the boundary.
     expect(specs[0]?.argv).not.toContain('--mcp-config')
@@ -114,6 +117,7 @@ describe('claude container exec target', () => {
     await run.result
     expect(specs[0]?.argv?.[0]).toBe('claude')
     expect(specs[0]?.env?.['CLAUDE_CONFIG_DIR']).toBe(HOME)
+    expect(specs[0]?.env?.['USER']).toBe(claudeKeychainEnv().USER)
     await run.dispose()
   })
 

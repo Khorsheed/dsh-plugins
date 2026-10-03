@@ -92,6 +92,8 @@ bundle 行接受这些可选字段：
 
 **工具调用计数。** 每轮 settle 时，provider 顺带数出本轮的工具调用，随 `settled` 进度事件上报（`toolCalls: { count, byName }`）。计数就在流解析**已经走过**的 `tool_use` 分支里，`byName` 的键是该块自己的 `name`（`Bash`、`Read`、`TodoWrite`，MCP 工具则是 `mcp__server__tool` 全名），原样保留、不跨家归一。`TodoWrite` 也计——折叠逻辑把它挪去了 todo 快照、不进 transcript，但 CLI 确实调了它。本轮一份，绝不累计；一次都没调用就整个字段缺位（缺席 ≠ 0）。实测：一轮「先 Read 两个文件再 Bash 列目录」回读 `{count: 3, byName: {Read: 2, Bash: 1}}`，与镜像出的工具卡片逐个对得上。
 
+**macOS 钥匙串账号。** 登录、模型目录查询、版本探测和本地执行显式传入同一个 `USER`（优先宿主值，缺省取系统账号），避免环境清理后 Claude 读取另一条钥匙串凭据而误报 OAuth 过期。容器执行不注入宿主用户名；其独立 scope 与凭据规则不变。
+
 **命名 scope。** `/claude-code login --scope <名>` 在 `<homesRoot>/claude-code@<名>` 里另开一份 `CLAUDE_CONFIG_DIR`：登录的 argv 由**被登录的那份目录**现算（`env CLAUDE_CONFIG_DIR=… claude auth login` 的赋值压过 spawn env，写死缺省目录会让 `--scope` 登错地方）。claude 的 keychain 项按配置目录路径哈希，命名 scope 因此自动拿到自己的 keychain 项——四家里唯一天然按路径隔离的凭据。带 scope 的委派用该目录跑 `claude -p`、按它做 keychain↔文件协调、从它回读；只走 exec。
 
 **容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> claude -p …`，其余（stream-json 解析、settle、记录）逐字节不变。`env` 必须给出容器内的 `CLAUDE_CONFIG_DIR`，调用方把宿主作用域目录 rw bind 到那条路径上。实测评测镜像里的 claude 2.1.272：容器内的 CLI **读写 `<CLAUDE_CONFIG_DIR>/.credentials.json`**，它整棵状态树（`projects/`、`sessions/` 等）也落在那里；上游 #47661 那种「Linux 写作用域目录、读默认 home」的老行为不描述这个版本。每次 spawn 前的凭据协调照常在**宿主**作用域目录上跑，续期结果因此经挂载对容器可见——而且它是**新者胜，不是单向镜像**，因为单元是同一个文件的**第二个写者**。单元里的 CLI 没有 keychain，只能在挂进去的文件里就地轮换凭证；此时若无条件地把 keychain 盖到文件上，下一轮拿到的就是单元已经用掉的 refresh token，端点拒绝，CLI 随即**清空该文件**——整台实例随之登出，因为那个文件就是实例的凭据。所以协调只在 keychain 那份不比文件旧时才写（以 access token 过期时间为准；任一侧没有过期时间就仍由 keychain 写，不可用的文件永远不会赢）。挂载保持读写还有第二个理由：本轮的会话记录落在同一目录的 `projects/` 下，评测的模型回读正是从这条挂载的宿主侧解析它们。容器轮固定走 exec 一次性驱动，且不声明成员桥。

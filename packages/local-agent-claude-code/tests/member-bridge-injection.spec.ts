@@ -1,3 +1,4 @@
+import { userInfo } from 'node:os'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -166,14 +167,14 @@ describe('claude-cli-provider member bridge injection', () => {
       'claude', '-p', '--dangerously-skip-permissions', '--verbose', '--output-format', 'stream-json', 'do the task',
     ])
   })
-  it('tombstones USER in the child env (2.1.236 auth breaks with USER present)', async () => {
+  it('retains the macOS keychain account while leaving other platforms scrubbed', async () => {
     const registry = memberRegistry()
     const { ctx, envs } = mount(registry)
     const provider = new ClaudeCliProvider(ctx, 'skip')
     await provider.start(request())
     expect(envs).toHaveLength(1)
     expect('USER' in envs[0]!).toBe(true)
-    expect(envs[0]!['USER']).toBeUndefined()
+    expect(envs[0]!['USER']).toBe(process.platform === 'darwin' ? process.env.USER || userInfo().username : undefined)
     expect(envs[0]!['CLAUDE_CONFIG_DIR']).toBeTruthy()
   })
 })

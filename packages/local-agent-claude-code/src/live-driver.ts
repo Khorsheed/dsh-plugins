@@ -1,3 +1,4 @@
+import { claudeProcessEnv } from './process-env.ts'
 import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import { claudeDirectory } from './model-catalog.ts'
 /**
@@ -77,7 +78,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
+import { persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendClaudeTranscriptLine,
@@ -570,8 +571,8 @@ export class ClaudeLiveDriver {
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
       // The auth discipline: exactly the exec path's env — the scoped config
-      // dir, plus the configured base URL override only.
-      env: delegationEnv({
+      // dir, configured base URL and the macOS keychain account.
+      env: claudeProcessEnv({
         CLAUDE_CONFIG_DIR: spec.homeDir,
         ...spec.configuration === undefined ? {} : { CLAUDE_CODE_EFFORT_LEVEL: spec.configuration.effort ?? 'auto' },
         ...this.config.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.config.baseUrl },

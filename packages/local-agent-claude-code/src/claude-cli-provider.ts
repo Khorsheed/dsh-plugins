@@ -15,6 +15,7 @@
  * @module @khorsheed/dsh-local-agent-claude-code/claude-cli-provider
  */
 
+import { claudeProcessEnv } from './process-env.ts'
 import { randomUUID } from 'node:crypto'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -176,7 +177,7 @@ export function claudeCliVersion(ctx: Context, homeDir: string): Promise<string 
     argv: ['claude', '--version'],
     cwd: homeDir,
     spawn: spec => subprocess.spawn(spec),
-    env: delegationEnv({ CLAUDE_CONFIG_DIR: homeDir }),
+    env: claudeProcessEnv({ CLAUDE_CONFIG_DIR: homeDir }),
   })
 }
 
@@ -394,7 +395,7 @@ export class ClaudeCliProvider implements SubagentProvider {
     try {
       const run = await startClaudeCliRun(request, {
         cwd,
-        env: delegationEnv({
+        env: (exec === undefined ? claudeProcessEnv : delegationEnv)({
           CLAUDE_CONFIG_DIR: homeDir,
           ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
         }),
@@ -516,7 +517,7 @@ export class ClaudeCliProvider implements SubagentProvider {
       try {
         run = await startClaudeCliRun(request, {
           cwd,
-          env: delegationEnv({
+          env: (exec === undefined ? claudeProcessEnv : delegationEnv)({
             CLAUDE_CONFIG_DIR: homeDir,
             ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
           }),

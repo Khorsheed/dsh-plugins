@@ -1,3 +1,4 @@
+import { claudeKeychainEnv } from '../src/process-env.ts'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -108,6 +109,7 @@ describe('local-agent-claude-code apply', () => {
       const argv = typeof login.pty.args === 'function' ? login.pty.args(home) : login.pty.args
       expect(argv).toEqual([
         '-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL',
+        ...Object.entries(claudeKeychainEnv()).map(([key, value]) => `${key}=${value}`),
         `CLAUDE_CONFIG_DIR=${home}`, 'claude', 'auth', 'login',
       ])
       const scoped = typeof login.pty.args === 'function' ? login.pty.args(`${home}@eval-b`) : login.pty.args

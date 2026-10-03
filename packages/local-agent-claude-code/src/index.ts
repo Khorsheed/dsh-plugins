@@ -12,6 +12,7 @@
  * @module @khorsheed/dsh-local-agent-claude-code
  */
 
+import { claudeKeychainEnv } from './process-env.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
@@ -282,7 +283,7 @@ export function apply(ctx: Context, config: Config): void {
         // authorizes THAT scope, not the default one.
         pty: {
           command: 'env',
-          args: (scopedHome: string) => ['-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL', `CLAUDE_CONFIG_DIR=${scopedHome}`, 'claude', 'auth', 'login'],
+          args: (scopedHome: string) => ['-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL', ...Object.entries(claudeKeychainEnv()).map(([key, value]) => `${key}=${value}`), `CLAUDE_CONFIG_DIR=${scopedHome}`, 'claude', 'auth', 'login'],
         },
         // The watch syncs the keychain credential into the runtime-readable
         // file first (claude 2.1.236 writes keychain but reads the file),

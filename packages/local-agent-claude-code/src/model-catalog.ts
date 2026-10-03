@@ -1,7 +1,8 @@
+import { claudeProcessEnv } from './process-env.ts'
 import { dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { ModelDirectoryCache, delegationEnv, modelDirectoryContextKey } from '@khorsheed/dsh-local-agent'
+import { ModelDirectoryCache, modelDirectoryContextKey } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentModelDirectory, LocalAgentModelDirectoryData, LocalAgentModelEntry } from '@khorsheed/dsh-local-agent/types'
 import { ClaudeControlRequests } from './control-requests.ts'
 
@@ -71,7 +72,7 @@ export class ClaudeModelCatalog {
       argv: [this.deps.cli ?? 'claude', '-p', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
         '--no-session-persistence', '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--'],
       cwd, stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' }, graceMs: 2_000,
-      env: delegationEnv({ CLAUDE_CONFIG_DIR: homeDir, ...this.deps.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.deps.baseUrl } }),
+      env: claudeProcessEnv({ CLAUDE_CONFIG_DIR: homeDir, ...this.deps.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.deps.baseUrl } }),
     })
     const controls = new ClaudeControlRequests(frame => {
       if (child.stdin === undefined) throw new Error('Claude discovery stdin is unavailable')

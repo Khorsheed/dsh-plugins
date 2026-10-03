@@ -9,6 +9,7 @@
  * user's global home.
  */
 
+import { claudeKeychainEnv } from '../src/process-env.ts'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -387,7 +388,7 @@ describe('claude live driver rounds', () => {
       '--dangerously-skip-permissions',
     ])
     // The auth discipline: exactly the scoped config dir, nothing else.
-    expect(spawn.spec.env).toEqual({ CLAUDE_CONFIG_DIR: m.homeDir })
+    expect(spawn.spec.env).toEqual({ ...claudeKeychainEnv(), CLAUDE_CONFIG_DIR: m.homeDir })
     // Mirroring: prompt + folded lines, usage on the final line; the
     // tool_use folds to a native tool/call (+ tool/result) pair.
     expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
@@ -708,6 +709,7 @@ describe('claude live driver rounds', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     await run.result
     expect(m.spawns[0]!.spec.env).toEqual({
+      ...claudeKeychainEnv(),
       CLAUDE_CONFIG_DIR: m.homeDir,
       ANTHROPIC_BASE_URL: 'https://proxy.example.com/anthropic',
     })
