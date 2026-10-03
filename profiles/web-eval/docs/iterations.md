@@ -417,6 +417,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T91 | 代码（2026-10-01 定，与 T88 并行） | **dsh 条件在 0.2.0 上跑起来**：宿主轮 headless 改用实例自带的 0.2.0 版（共享 `/opt` 软链不动）；local-agent-dsh 往受试环境塞预设改走 0.2.0 机制；题库 eval-lean / eval-full 改声明式。local-agent 家族已同意由评测线改。文案见 §三「T91」 | T82 | ✅ 合入 `230dc5b7`（题库 i1-walk `dc6a6db`）——3185 上一条带预设的 0.2.0 dsh 条件 provision 带能力指纹、就绪过、跑完 1 格 |
 | T92 | 代码（2026-10-01 记，排在 T89 合入后） | **生成的 mission 模板在部署库里找不到 schema**：模板用 `../schemas/…` 引用，部署库布局（T73）下解析到 `state/eval/experiments/schemas/`，不存在，run 被模板 lint 拒；临时放进去又会被实验列表当成一个叫 schemas 的实验报错。T91 在 3185 上手工绕过后发现。T89 已确认目录化解决不了：前缀在 `contract/template.ts` 写死默认 `../schemas`，相对数据集 `plans/` 解析 | T89 | ✅ 随 T90 第二段合入 `c2698b1c`（run 把 schema 前缀指向物化出来的题集版本里的 `schemas/`）——新建实验 → 运行不需要任何手工放文件；实验列表里不出现 schemas |
 | T93 | 代码（2026-10-01 记） | **一个坏实验拖垮整个实验列表**：部署库里某个实验引用了未登记的题集（3171 的 `dataseek-eval`），整个列表报 “Failed to load the experiments”。应改成该实验单独标错、其余照常列出。T89 在临时实例上发现 | — | ✅ 随 T90 第二段合入 `c2698b1c`——构造一个引用未登记题集的实验，列表其余实验照常显示，坏的那条有可读的错误说明 |
+| T94 | 代码（2026-10-03 定，即派） | **题集整理 Agent 不再满盘找协议**：3185 真机走查（题集整理 · dsh-plugin-eval）里，skill 指向的 `docs/dataset-authoring-protocol.md` 不随包发布，Agent 全盘 `find /`、去读 3182 装的 datasets 源码反推校验规则，前 35 步没动一个文件；手头的 `datasets_validate` / propose `dryRun` 没用。协议随包、skill 写清「规则从工具拿、只读来源与目标」。顺带修 datasets 打包丢 `js-yaml`。文案见 §三「T94」 | T90 | 同一份数据重走一次：不出现搜盘、不读别的实例/插件源码；先 dryRun 拿问题清单；独立跑 datasets CLI 不再 ERR_MODULE_NOT_FOUND |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -4478,6 +4479,27 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0。
 **第二段（T89 合入后）**：eval 新建实验加「选题」——全部 / 随机 N 题（固定种子）/ 手选，结果钉成计划的题目清单；同一题集不同实验可以抽不同的题。
 
 **不做**：外部源指针（T40，下一批）；不碰 3171、凭据；不发布。
+
+#### T94 · 题集整理 Agent 不再满盘找协议（2026-10-03 定，即派）
+
+**背景**：用户在 3185（`/private/tmp/dsh-t82-home`，0.2.0-rc.2）走查 T90，让 Agent 把 `~/.dsh/scratch/dataseek-eval/datasets/harness-comparison`（已是协议格式）整理成 `dsh-plugin-eval`。会话记录（`sessions/--private-tmp-dsh-t82-home-ws--/session-f2dd49cf-…/session.v4.jsonl.zstd`，`zstd -dc` 只读）里：
+
+- SKILL.md 第 13 行以 `docs/dataset-authoring-protocol.md` 为准，但这份文档不在 datasets 包的 `files` 里，安装后不存在。Agent 先后 `find` 工具链、`find /` 全盘（60s / 120s 超时转后台再 job_kill），再去读 `~/.dsh/profiles/web/node_modules/@khorsheed/dsh-datasets/lib/*.js`（3182 实例、别的版本）反推校验规则，还看了 `~/.dsh/state/datasets/`；
+- 会话里有 `datasets_validate`、`datasets_snapshot`、`datasets_propose_registration`（`dryRun`），它没用，改用 python 自己重写 rubric 检查；
+- 前 35 步全是读，没开始整理。判断本身是对的（认出已是协议格式、不改原仓库、找出 F3 rubric.md 的悬空引用）。
+
+**要做**：
+
+1. **协议随包**：datasets 包把协议正文带上（中英两份都带，或至少英文），放在 skill 能用相对路径指到的位置（如 `skills/dataset-authoring/protocol.md` 由构建从 `docs/` 拷入，或 package `files` 直接收 `docs/dataset-authoring-protocol*.md`——选一个，在 Agent Note 里写理由）；SKILL.md 里的引用改成安装后真实存在的路径，并说明怎么读（`read` 工具 + 该路径）。加一条测试：打包产物里能找到 skill 引用的每个文件（pack-dist 或包内 spec 均可）。
+2. **SKILL.md 收紧**（中英一致，按 i18n 配对规则重录）：
+   - 校验规则只从工具拿：先 `datasets_validate` / `datasets_propose_registration dryRun: true` 拿问题清单，逐条处理；**不搜磁盘、不读任何插件的源码或 lib、不读别的 dsh 实例目录（`~/.dsh*`、其他 `profiles/`、`state/`）**；
+   - 只读三处：来源目录、目标仓库、协议正文；
+   - 「已是协议格式」这条路：第一步就对来源跑一次 validate（或 snapshot），用它的结果决定要改什么，而不是通读全部文件；
+   - 长命令守则：`find` 一律限定在来源/目标目录内并带 `-maxdepth`。
+3. **顺带修 js-yaml**：datasets（以及 eval，若同病）lib 里裸 `import 'js-yaml'`，pack-dist 按「运行时依赖要么打进 lib 要么宿主提供」把 `dependencies` 删掉了，独立跑 `lib/cli.js` 报 ERR_MODULE_NOT_FOUND（实例内经宿主解析不受影响）。二选一：tsdown 把 js-yaml 打进 lib，或在 package.json `dsh.runtimeDependencies` 声明保留；看 eval / local-agent-dsh 是否同样问题一起处理，理由写进 Agent Note。验收：`install.sh --source` 装出的 profile 里 `node <profile>/node_modules/@khorsheed/dsh-datasets/lib/cli.js --help` 正常。
+4. **验证**：临时实例（0.2.0-rc.2 工具链，新 home 新端口，不碰 3185——那台用户在用）只能做到无模型部分：确认 skill 引用的协议文件在安装后存在、CLI 能跑、SKILL 文本按上面改到。需要模型的重走由协调者在 3185 上安排。
+
+**不在范围**：不改 propose / validate 的判定逻辑；不改 T90 的 UI。
 
 #### T91 · dsh 条件在 0.2.0 上跑起来
 
