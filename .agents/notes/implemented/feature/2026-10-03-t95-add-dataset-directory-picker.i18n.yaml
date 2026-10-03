@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-03-t95-add-dataset-directory-picker.md
-.agents/notes/implemented/feature/2026-10-03-t95-add-dataset-directory-picker.md: 8429e7401f90ef6247e48c1f68b2036db80dd7fc
-.agents/notes/implemented/feature/2026-10-03-t95-add-dataset-directory-picker.zh.md: eedc29c9e9e59307a93fee51a64838f172ea15ca
+.agents/notes/implemented/feature/2026-10-03-t95-add-dataset-directory-picker.md: 63020dc2bbc8dd1efc3633cfd0623fa82a2ce762
+.agents/notes/implemented/feature/2026-10-03-t95-add-dataset-directory-picker.zh.md: 3444652502e46329d7d0198a461379316aea80fb

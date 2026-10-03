@@ -15,6 +15,12 @@ Status: implemented
 - **选中的位置随请求走。** `AddDatasetFields.repoParent` 带上它，`buildAddRequest` 在「新仓库放在」那一行写 `<父目录>/<名称>` 而不是默认值；请求的其他部分不变。
 - **同一套探测、同一种降级。** 弹窗从 `DatasetsView` 拿 `canPick` 与 `pickDirectory`——登记表单本来就在用这两个。`canPick` 为假时两个按钮都隐藏，弹窗就是 T90 的样子。选出来的路径过一遍 `cleanPickedPath`，因为 macOS 的选择器返回的路径带结尾斜杠。
 
+### 0.1.2 以后的宿主上探测一直是死的
+
+在 0.2.0 临时实例上，两个按钮都没出来，登记表单的「选择…」也没有。原因在 `canPick`，不在弹窗。0.1.2 起，客户端从连接 generation 的开场帧读宿主信息。开场帧里有 `home`，没有 `canOpenPath`：这项能力改成了 `session.canOpenWorkspacePath` 这个 RPC 探测。datasets 客户端从没调过这个探测，所以 `canOpenPath` 永远缺失，选择器永远隐藏。旧注释把这叫作「0.1.2 上预期的降级」。对「用外部应用打开路径」来说这话没错，可选择器也只靠 `canOpenPath` 来决定显不显示。0.2.0 的原生选择器本身没有可用性门槛。
+
+现在 `hostDescriptionSourceOf` 在第一个视图订阅时调一次这个探测，把结果并进快照。官方的 open-in-app 控件读的也是这个接口。每次挂载只建一个来源，所以各会话的视图共用同一个结果。合并后的快照按引用缓存，因为 hook 是按引用比较快照的。探测还没回、失败或者回 `false` 时，`canOpenPath` 仍然缺失，按钮照旧隐藏，降级不变。探测失败的话，下一次 generation 变化时会重试。`remote.session` 在调用时用 `ctx.get` 读取，不放进 inject。还暴露 `Connection.hostDescription` 的 rc 宿主行为不变。
+
 ### 下游有没有「必须在 datasets home 下」的假设？
 
 没有，动手前查过：

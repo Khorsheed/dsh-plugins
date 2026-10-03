@@ -43,6 +43,8 @@ function remoteStub() {
   }
 }
 
+const ALPHA_GENERATION = { host: { home: '/h' } }
+
 /** Real cordis composition with the slot registry, locale runtime, and stub remotes. */
 async function bench(options: {
   mountFails?: boolean
@@ -53,6 +55,8 @@ async function bench(options: {
   legacyCurrent?: boolean
   /** A whole session list, for the parent-chain cases; overrides `preset`. */
   rows?: Record<string, unknown>
+  /** The 0.1.2+ `session.canOpenWorkspacePath` probe; omitted = no `remote.session` namespace. */
+  canOpenWorkspacePath?: () => Promise<{ ok: boolean; value?: unknown }>
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -72,7 +76,8 @@ async function bench(options: {
     // (Connection.hostDescription removed, upstream e14d354e83).
     ? {
       isLoopback: true,
-      generation: { getSnapshot: () => ({ host: { home: '/h' } }), subscribe: () => () => {} },
+      // A live generation's snapshot is one stable object per generation.
+      generation: { getSnapshot: () => ALPHA_GENERATION, subscribe: () => () => {} },
     } as never
     : {
       isLoopback: true,
@@ -95,6 +100,9 @@ async function bench(options: {
         phase: 'ready', subagentsByParent: {}, jobsBySession: {},
       })
   ctx.provide('sessions', { list } as never)
+  if (options.canOpenWorkspacePath !== undefined) {
+    ctx.provide('remote.session', { canOpenWorkspacePath: options.canOpenWorkspacePath } as never)
+  }
   if (options.composition !== undefined) {
     ctx.provide('remote.pluginInventory', {
       list: async () => ({ ok: true as const, value: options.composition }),
@@ -261,6 +269,43 @@ describe('datasets client apply', () => {
     const entry = slots.entries('conversation.view')[0]!
     const face = (entry.inject as unknown as (sessionId: string) => DatasetsViewInjected)('s1')
     expect(face.hooks.hostDescription.getSnapshot()).toEqual({ home: '/h' })
+  })
+
+  it('folds the canOpenWorkspacePath probe into the 0.1.2+ host facts, once, with a stable snapshot (T95)', async () => {
+    const probe = vi.fn(async () => ({ ok: true, value: true }))
+    const { ctx, slots } = await bench({ connectionSeat: 'alpha', canOpenWorkspacePath: probe })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.view')[0]!
+    const source = (entry.inject as unknown as (sessionId: string) => DatasetsViewInjected)('s1').hooks.hostDescription
+    // Unasked until a view subscribes: the picker stays hidden meanwhile.
+    expect(source.getSnapshot()).toEqual({ home: '/h' })
+    const listener = vi.fn()
+    const stop = source.subscribe(listener)
+    source.subscribe(() => {})
+    await vi.waitFor(() => expect(listener).toHaveBeenCalled())
+    expect(source.getSnapshot()).toEqual({ home: '/h', canOpenPath: true })
+    expect(source.getSnapshot()).toBe(source.getSnapshot())
+    expect(probe).toHaveBeenCalledTimes(1)
+    // Every session's view shares the one answer.
+    const other = (entry.inject as unknown as (sessionId: string) => DatasetsViewInjected)('s1').hooks.hostDescription
+    expect(other.getSnapshot()).toEqual({ home: '/h', canOpenPath: true })
+    stop()
+  })
+
+  it('keeps canOpenPath missing when the probe fails or reports no desktop (T95)', async () => {
+    for (const answer of [
+      async () => ({ ok: false }),
+      async () => { throw new Error('offline') },
+      async () => ({ ok: true, value: false }),
+    ]) {
+      const { ctx, slots } = await bench({ connectionSeat: 'alpha', canOpenWorkspacePath: answer })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      const entry = slots.entries('conversation.view')[0]!
+      const source = (entry.inject as unknown as (sessionId: string) => DatasetsViewInjected)('s1').hooks.hostDescription
+      source.subscribe(() => {})
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(source.getSnapshot()?.canOpenPath === true).toBe(false)
+    }
   })
 
   it('collapses the view entry on teardown', async () => {

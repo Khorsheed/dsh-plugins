@@ -15,6 +15,12 @@ The plugin already reaches the host's directory chooser: `pickDirectory` in `src
 - **The pick travels with the request.** `AddDatasetFields.repoParent` carries it; `buildAddRequest` writes `<parent>/<name>` on the 新仓库放在 line instead of the default. Nothing else in the request changes.
 - **Same probe, same degradation.** The dialog takes `canPick` and `pickDirectory` from `DatasetsView`, which already computed them for the register form. When `canPick` is false both buttons are hidden and the dialog is the T90 dialog. Picked paths go through `cleanPickedPath`, because the macOS chooser answers with a trailing slash.
 
+### The probe was dead on 0.1.2 and later hosts
+
+On the temporary 0.2.0 instance neither button appeared, and neither did the register form's 选择… button. The cause was in `canPick`, not in the dialog. Since 0.1.2 the client reads host facts from the connection generation's opening frame. That frame carries `home` but not `canOpenPath`, which became the `session.canOpenWorkspacePath` RPC probe. The datasets client never asked that probe, so `canOpenPath` was always missing and the picker was always hidden. The old comment called this "the intended degrade on 0.1.2". That was true for opening paths in an external app, but `canOpenPath` is the only thing that gates the picker. The 0.2.0 native picker itself has no availability gate.
+
+`hostDescriptionSourceOf` now calls the probe once, when the first view subscribes, and folds the answer into the snapshot. It is the same verb the official open-in-app control reads. One source is created per mount, so every session's view shares the answer. The merged snapshot is cached by identity, because the hook compares snapshots by identity. While the probe is unanswered, or when it fails or reports `false`, `canOpenPath` stays missing and the buttons stay hidden, so the degrade still holds. A failed probe is retried on the next generation change. `remote.session` is read with `ctx.get` at call time, not injected. rc hosts that still expose `Connection.hostDescription` are unchanged.
+
 ### Does anything downstream assume the datasets home?
 
 No, checked before building:
