@@ -183,7 +183,7 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 题集接入只有一条路：人说出数据在哪，Agent 整理成协议仓库并**提交登记申请**，人在题集 tab 上确认。首次使用和以后每次加题、改题都走这一条。四项既定决定：**A** 登记表只归人写，Agent 只能申请；**B** 整理在独立的「题集整理」会话里做（它会看到答案，不复用评测会话）；**C** 新仓库默认放在 `$DSH_HOME/datasets/<名称>`（配置键 `datasetsHome`），人指定位置时用指定的；**D** 界面只显示「版本 N · 更新时间」，路径、分支、提交号收进「高级」与 title。
 
 - **「添加题集」弹窗**：三个字段——数据在哪 / 题集名称 / 想拿它测什么（可选）；主按钮「让 Agent 整理」新开一个「题集整理」会话（选 `authoringPreset` 指名的预设，默认 `dataset-authoring`；宿主没列出这个预设就留默认预设，请求里点名 skill），把请求写进对话框但**不发送**。宿主缺新建会话或写对话框的门时依次降级为剪贴板、再降级为页面上显示请求原文让人自己粘贴。弹窗底部一句告知题集用 git 管版本。原手动登记表单收在「高级」里。
-- **skill**：`skills/dataset-authoring/SKILL.md` 随包分发（`files` 收 `skills/**/*.md`），由工具行的 `organize` 档经宿主 `skills` 注册表注册——只装 datasets、在自己的预设里给工具行写 `tools: organize` 就能用，不需要往 `$DSH_HOME/skills` 拷文件。内容从 `docs/dataset-authoring-protocol.md` 派生，二者冲突以协议为准。
+- **skill**：`skills/dataset-authoring/SKILL.md` 随包分发（`files` 收 `skills/**/*.md`），由工具行的 `organize` 档经宿主 `skills` 注册表注册——只装 datasets、在自己的预设里给工具行写 `tools: organize` 就能用，不需要往 `$DSH_HOME/skills` 拷文件。内容从 `docs/dataset-authoring-protocol.md` 派生，二者冲突以协议为准。协议正文随包发：构建把 `docs/` 那一对拷成 skill 目录里的 `protocol.en.md` / `protocol.zh.md`（拷贝件不入库），skill 里写的是占位路径，加载时解析成安装后的绝对路径，Agent 用 `read` 直接读，不需要去找（T94）。skill 规定校验规则只从工具拿（`datasets_propose_registration` 的 `dryRun`、`datasets_validate`、包内 CLI 的 `validate --repo`），只读来源、目标、协议三处，不搜盘、不读插件源码或 lib、不读别的实例目录。
 - **申请**：`datasets_propose_registration` 只写申请（状态根下的提案库），附 `mapping`（原目录每个文件的去向、题集每个文件的来源）、各层可见性建议、样题。插件把 mapping 对照仓库的 git 对象与原目录逐项核对，跑协议的 validate；任何对不上都成为「问题」，有问题就不能确认。`dryRun: true` 跑同一套检查但不落提案。
 - **「等你确认登记」**：tab 顶部的提示条打开审阅页——来源、题数、校验、版本；「原目录 → 题集」左右对照（顶部汇总各类计数，删除数始终显示；不分层、选手可见的文件醒目标出）；逐条对照一题 / 随机抽看 3 题 / 完整清单；登记名；各层可见性开关（带 Agent 建议，至少留一层）；「高级」里是路径、分支、提交号。「退回给 Agent」把人的意见写进原整理会话的对话框；「确认登记」是申请变成登记的唯一路径。
 - **改已有题集**：详情页与列表上的「交给 Agent 修改」开整理会话；Agent 在登记的检出里提交后再申请，审阅页换成「已登记版本 → 新版本」，多出「修改」，删除逐个列出。确认过的登记带 `confirmedCommit`：跟踪分支前进时，**选手看不到的变化**（隐藏层、`datasets/` 之外的文件）自动跟上；**选手看得到的变化**停在 `pending`，列表上出现「新版本待确认」，确认之前 agent 读到的仍是已确认的版本。
@@ -202,7 +202,7 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 
 ## Known Limitations and Deferred Work
 
-- **descriptor 是 JSON 不是 YAML**——布局约定称之为 `dataset.yml`/`item.yml`，v1 读 `dataset.json`/`item.json`。可判性检查要读 rubric（题库侧写成 YAML，不是本包能改的形状），因而 `js-yaml` 自那时起在本包依赖链上；descriptor 继续读 JSON 是形状决定，不再是「没有解析器」。要让 descriptor 两者兼容只差一次自觉的改动，没人做是因为没人要。
+- **descriptor 是 JSON 不是 YAML**——布局约定称之为 `dataset.yml`/`item.yml`，v1 读 `dataset.json`/`item.json`。可判性检查要读 rubric（题库侧写成 YAML，不是本包能改的形状），因而 `js-yaml` 自那时起在本包依赖链上（lib 裸 import 它，所以在 `dsh.runtimeDependencies` 里声明保留，发布清单会带上它，独立跑 `lib/cli.js` 也能解析，T94）；descriptor 继续读 JSON 是形状决定，不再是「没有解析器」。要让 descriptor 两者兼容只差一次自觉的改动，没人做是因为没人要。
 - **item 元数据不按 `itemMetaSchema` 校验**——schema 仅声明、形状校验为对象并透传；对 item 元数据做完整 JSON-Schema 校验需要引入本包不接受的校验器依赖。
 - **会话 tab 的预览经 RPC 读整个文件**——`read` 返回完整文件内容、无字节上限（与工具同语义）；超大层文件更适合走 `worktree_path` 消费。
 - **金丝雀与可判性检查逐文件读内容**——`validate` 对每个可见层文本文件跑一次 `git show`（金丝雀），对每个带 rubric 的 item 再跑一到两次（rubric 与它的 `rubric.md`）；这是插件里仅有的两处读文件内容的校验，因此都只在 `validate` 上跑，`list`/`show` 的摘要警告仍然只有形状级的那条。

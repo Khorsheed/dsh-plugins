@@ -106,14 +106,34 @@ interface SkillFile {
   readonly content: string
 }
 
+/** This package's root (`src/` in the source plane, `lib/` once built — both one level down). */
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+/** The shipped skill's directory: SKILL.md plus the build-copied protocol (`protocol.en.md` / `protocol.zh.md`). */
+export const AUTHORING_SKILL_DIR = join(PACKAGE_ROOT, 'skills', 'dataset-authoring')
+
+/**
+ * Resolve the skill's install-relative placeholders to real absolute paths
+ * (T94): `{{skillDir}}` → the skill's directory (where the protocol ships),
+ * `{{packageDir}}` → this package's root (its `lib/cli.js`). The skill reaches
+ * the model as text through the host registry, so a relative path would mean
+ * nothing to it — and an unresolvable reference is what sent the organizing
+ * agent searching the whole disk.
+ * @param content - the SKILL.md body.
+ * @returns the body with every placeholder replaced.
+ */
+export function resolveSkillPaths(content: string): string {
+  return content.replaceAll('{{skillDir}}', AUTHORING_SKILL_DIR).replaceAll('{{packageDir}}', PACKAGE_ROOT)
+}
+
 /**
  * Load the shipped `dataset-authoring` skill (`skills/dataset-authoring/SKILL.md`,
- * listed in package.json `files`). A missing or malformed file is a warning,
- * never a boot failure.
+ * listed in package.json `files`), its install paths resolved. A missing or
+ * malformed file is a warning, never a boot failure.
  * @returns the parsed skill, or undefined when it cannot be read.
  */
 export function loadAuthoringSkill(): SkillFile | undefined {
-  const file = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'dataset-authoring', 'SKILL.md')
+  const file = join(AUTHORING_SKILL_DIR, 'SKILL.md')
   let raw: string
   try {
     raw = readFileSync(file, 'utf8')
@@ -126,7 +146,7 @@ export function loadAuthoringSkill(): SkillFile | undefined {
   const description = /^description:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim()
   const content = match?.[2]
   if (skillName === undefined || description === undefined || content === undefined) return undefined
-  return { name: skillName, description, content }
+  return { name: skillName, description, content: resolveSkillPaths(content) }
 }
 
 /** The 「题集整理」 session's guidance (the `organize` tier). */
@@ -135,7 +155,10 @@ const ORGANIZE_GUIDANCE =
   + 'Load the dataset-authoring skill first and follow it step by step: check git, look at the data, ask every '
   + 'key question in one go, never modify the original data, convert the whole dataset (no sampling), give every '
   + 'file and field a disposition, commit per batch, and check with datasets_propose_registration {dryRun: true} '
-  + 'until it passes. Then file the proposal with datasets_propose_registration and stop: only the person '
+  + 'until it passes. Validation rules come from those checks, and the protocol ships with the skill at the '
+  + 'paths it names: read only the original directory, the target repository, and that protocol — never search '
+  + 'the disk, read any plugin\'s source or lib, or read another dsh instance\'s directories. '
+  + 'Then file the proposal with datasets_propose_registration and stop: only the person '
   + 'registers, on the Datasets tab. Registered datasets are read through the datasets_* tools as `<id>/<set>`.'
 
 /** The narrow prompt-section registry surface this plugin opportunistically uses. */

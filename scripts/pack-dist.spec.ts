@@ -277,6 +277,18 @@ describe('rescopePackageJson', () => {
     } as Parameters<typeof rescopePackageJson>[0], '@khorsheed/dsh-x', '0.1.0')).toThrow(/typert face.*no zod dependency/)
   })
 
+  it('keeps js-yaml in the real datasets / eval / local-agent-dsh manifests — their lib imports it bare (T94)', () => {
+    // tsc emits `import … from 'js-yaml'` verbatim and nothing bundles it, so
+    // a dist manifest without it runs inside an instance (the host resolves
+    // it) but `node lib/cli.js` from the installed package dies with
+    // ERR_MODULE_NOT_FOUND — the T90 install.sh --source finding.
+    for (const dir of ['datasets', 'eval', 'local-agent-dsh']) {
+      const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'packages', dir, 'package.json'), 'utf8')) as Parameters<typeof rescopePackageJson>[0]
+      const out = rescopePackageJson(pkg, pkg.name, pkg.version)
+      expect(out.dependencies?.['js-yaml'], dir).toBe(pkg.dependencies?.['js-yaml'])
+    }
+  })
+
   it('fails loud when dsh.runtimeDependencies names a non-dependency', () => {
     expect(() => rescopePackageJson({
       name: '@khorsheed/dsh-x',

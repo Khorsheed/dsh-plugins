@@ -48,3 +48,9 @@ skills/self-upgrade/
 /docs/roadmap.md
 /docs/acceptance/
 /docs/upstream-proposals/
+
+# The dataset-authoring skill ships the Dataset Authoring Protocol beside it;
+# the build copies the docs/ pair in (packages/datasets/build/copy-protocol.mjs).
+# docs/ stays the single source of truth — the copies are build output.
+packages/datasets/skills/dataset-authoring/protocol.en.md
+packages/datasets/skills/dataset-authoring/protocol.zh.md

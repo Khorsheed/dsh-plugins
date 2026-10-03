@@ -130,7 +130,7 @@
     "zod": "^4.4.3"
   },
   "scripts": {
-    "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
+    "build": "node build/copy-protocol.mjs && tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
     "test": "vitest run",
     "typecheck": "tsc -b tsconfig.json --noEmit"
   },
@@ -160,6 +160,9 @@
       "minHost": "0.2.0-rc.2",
       "notes": "slash commands need an interactive UI adapter (web/TUI profile); on headless profiles they are unavailable while the service and the CLI stay fully functional. The model-tool face is NOT registered by this package any more: this package's `./tool` composition entry (`@khorsheed/dsh-datasets/tool`) owns it, and an agent preset grants it per session (`tools`: all / read / authoring / none on that row) — the core row's service, CLI, slash command, and tab are unaffected by that choice. The 题集 tab self-hides in sessions whose preset composition names no `@khorsheed/dsh-datasets/tool` row (fail-open on every unreadable path). The dataset registry and read-only materialization (T73) are plugin-internal (one JSON file under the state root; `git archive` + `tar`), so they need no host capability; the register form hides its native-picker button when the host cannot show one. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer. The tab is live-smoke-tested on the 0.2.0-rc.2 web-eval profile (T82). The session-granted tool row folded back from the standalone `@khorsheed/dsh-datasets-tool` companion into this package at 0.2.0-rc.1 (T88, the evaluation-family fold) as the `./tool` composition entry — the preset row id `datasets-tool` is unchanged, so a preset's composition state is unaffected once its row name points at `@khorsheed/dsh-datasets/tool`; the old package name is retired. T90: registration proposals, the mapping check and the update gate are plugin-internal; the tool row's `organize` tier adds `datasets_propose_registration` and registers the shipped dataset-authoring skill through the host `skills` registry. «让 Agent 整理» probes host 0.2.0 doors at call time (sessions.create/rename, remote.agentPresets list/select, uiWorkspace.openSession, the chat box setDraft) and degrades to the clipboard, then to showing the request text, when one is missing.",
       "verifiedHost": "0.2.0-rc.2"
-    }
+    },
+    "runtimeDependencies": [
+      "js-yaml"
+    ]
   }
 }
