@@ -130,7 +130,7 @@
     "zod": "^4.4.3"
   },
   "scripts": {
-    "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
+    "build": "node build/copy-protocol.mjs && tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
     "test": "vitest run",
     "typecheck": "tsc -b tsconfig.json --noEmit"
   },

@@ -10,7 +10,36 @@ read git or JSON; they confirm a proposal on the Datasets tab that shows where e
 ends at filing that proposal. **You never register anything yourself** — only the person writes the registry.
 
 Speak the person's language. Keep messages short and concrete. Derived from the Dataset Authoring Protocol
-(`docs/dataset-authoring-protocol.md`, §0–§5); where this skill and the protocol disagree, the protocol wins.
+(§0–§5); where this skill and the protocol disagree, the protocol wins.
+
+## The protocol ships with this skill
+
+The full protocol is installed next to this skill. Read it with the `read` tool at exactly these paths — they
+are the only copy you need, so never look for another:
+
+- `{{skillDir}}/protocol.en.md` — English
+- `{{skillDir}}/protocol.zh.md` — Chinese (same content)
+
+Read only the sections you need (§1 layout, §2 layers and `register`, §3 `item.json`, §5 validate).
+
+## Ground rules
+
+- **Read only three places**: the original (source) directory, the target repository, and the protocol at the
+  paths above. Nothing else on the machine is input to this job.
+- **Rules come from the tools, not from code.** To learn what is wrong, run the check and work through its list:
+  - `datasets_propose_registration` with `dryRun: true` — any repository you have committed to (registered or
+    not); returns `problems` and `warnings`, the same checks the person's confirmation runs.
+  - `datasets_validate` — a dataset that is already registered (`<id>/<set>`).
+  - `node {{packageDir}}/lib/cli.js validate --repo <target repository>` — the protocol's full validate report
+    (every error and warning, per item) for a repository that is not registered yet.
+
+  Fix what they report, one entry at a time, then run them again.
+- **Never search the disk**: no `find /`, `find ~`, `locate`, `mdfind`, or recursive `grep` outside the source
+  and target directories. **Never read any plugin's source code or `lib/`** (this one included) to reverse-engineer
+  a rule, and **never read another dsh instance's directories** (`~/.dsh*`, other `profiles/`, `state/`). When a
+  tool result is unclear, ask the person instead.
+- **Bounded commands**: `find` runs only inside the source or target directory and always with `-maxdepth`
+  (`find <source> -maxdepth 3 -type f | head -50`); prefer `ls`, `du -sh`, `wc -l` on named paths.
 
 ## The eight steps
 
@@ -32,7 +61,8 @@ Run `git --version`.
 
 Before asking anything, look — read only:
 
-- The tree: directories, file types, sizes, how many files (`find <dir> -type f | head`, `du -sh`, `wc -l`).
+- The tree: directories, file types, sizes, how many files (`find <source> -maxdepth 3 -type f | head -50`,
+  `du -sh <source>`, `wc -l`).
 - Record files (jsonl / json / csv / parquet): the record count and the fields of the first few records.
 - Readmes, licenses, dataset cards. For a public benchmark, find the canonical source and its license.
 
@@ -207,6 +237,16 @@ author fields, timeouts), `Dockerfile`, `docker-compose.yaml`, `run-tests.sh`, `
 
 ### Data already in the protocol layout
 
-Copy or clone it, run the dry-run check, fix what it reports (undeclared `modelFacing`, files in no layer,
-sensitive `item.json` fields), commit, propose. `source.kind` is `protocol`; `mapping.sources` may be empty
-when the repository is the source itself.
+Let the check decide what to change — do not read every file first.
+
+1. Look only at the top of the source (`ls`, `find <source> -maxdepth 2`) to confirm the layout
+   (`<set>/dataset.json`, `<set>/items/`).
+2. Put it in the target repository as is: copy the sets under `datasets/` (or clone, when the source is itself a
+   repository with `datasets/` at its root), and commit.
+3. **Right away**, before any edit: run `node {{packageDir}}/lib/cli.js validate --repo <target repository>` and
+   `datasets_propose_registration` with `dryRun: true` (`source.kind: "protocol"`, `source.path` = the original
+   directory, `mapping.sources` = one `copy` row per top-level entry with a trailing `/`, `mapping.outputs` =
+   `{ "path": "datasets/", "origin": "copy" }`). These two results are your work list.
+4. Fix exactly what they report (undeclared `modelFacing`, files in no layer, sensitive `item.json` fields,
+   a `rubric.md` naming a leaf its `rubric.yml` does not declare, …), reading only the files an entry names.
+   Commit, run both again, then propose.
