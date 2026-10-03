@@ -456,17 +456,29 @@ html[data-dsh-mobile] [data-mobile-picker=preset] [data-mobile-picker-divider] {
 /* Optional sidebar navigation: content stays in its official dock hosts. */
 [data-mobile-header-actions] { display:flex; flex:none; gap:4px; }
 html[data-dsh-mobile] [data-mobile-toolbar] [data-mobile-header-actions] button { box-shadow:none; background:transparent; }
-[data-mobile-panel-navigation] { position:absolute; inset:0 0 auto; height:var(--mobile-bar); display:flex; align-items:center; gap:4px; padding:8px 10px; box-sizing:border-box; background:var(--mobile-face); color:var(--dsw-alias-label-primary); pointer-events:auto; }
-[data-mobile-panel-navigation] button { display:grid; place-items:center; flex:none; width:44px; height:44px; padding:0; border:0; border-radius:12px; background:transparent; color:inherit; cursor:pointer; }
-[data-mobile-panel-navigation] button:disabled { opacity:.4; }
-[data-mobile-panel-tabs] { display:flex; flex:1; min-width:0; gap:6px; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; touch-action:pan-x; }
+/* Panel chrome has its own compact metric; a chat connection banner must not
+   stretch the tabs. Active tabs join the content surface along the bottom. */
+html[data-dsh-mobile] { --mobile-panel-bar:52px; --mobile-panel-offset:52px; }
+html[data-dsh-mobile]:has([data-mobile-connection-status]) { --mobile-panel-offset:92px; }
+html[data-dsh-mobile][data-mobile-panel-open] [data-mobile-connection-status] { top:var(--mobile-panel-bar); }
+[data-mobile-panel-navigation] { position:absolute; inset:0 0 auto; height:var(--mobile-panel-bar,52px); display:flex; align-items:center; gap:4px; padding:0 6px; box-sizing:border-box; background:var(--dsw-alias-bg-layer-1,var(--mobile-soft)); color:var(--dsw-alias-label-primary); box-shadow:inset 0 -1px var(--dsw-alias-border-l2); pointer-events:auto; }
+[data-mobile-panel-navigation] button { display:grid; place-items:center; flex:none; width:40px; height:44px; padding:0; border:0; border-radius:10px; background:transparent; color:inherit; cursor:pointer; }
+[data-mobile-panel-navigation] > button { color:var(--dsw-alias-label-secondary); }
+[data-mobile-panel-navigation] button:disabled { opacity:.35; }
+[data-mobile-panel-navigation] button:focus-visible { outline:2px solid var(--mobile-accent); outline-offset:-3px; }
+[data-mobile-panel-tabs] { display:flex; align-self:stretch; align-items:flex-end; flex:1; min-width:0; gap:3px; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; touch-action:pan-x; }
 [data-mobile-panel-tabs]::-webkit-scrollbar { display:none; }
-[data-mobile-panel-navigation] [role=tab] { width:auto; max-width:200px; padding:0 14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:10px 10px 0 0; border-bottom:2px solid transparent; }
-[data-mobile-panel-navigation] [role=tab][aria-selected=true] { background:var(--mobile-soft); border-bottom-color:var(--mobile-accent); }
+[data-mobile-panel-tab] { display:flex; flex:none; align-items:center; height:40px; max-width:220px; margin-bottom:1px; border:1px solid transparent; border-bottom:0; border-radius:12px 12px 0 0; color:var(--dsw-alias-label-secondary); }
+[data-mobile-panel-tab][data-active=true] { height:44px; margin-bottom:0; border-color:var(--dsw-alias-border-l2); background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); box-shadow:inset 0 2px color-mix(in srgb,var(--mobile-accent) 65%,transparent); }
+[data-mobile-panel-navigation] [role=tab] { flex:0 1 auto; min-width:0; width:auto; height:100%; padding:0 12px; font:inherit; font-size:14px; line-height:20px; border-radius:11px 11px 0 0; }
+[data-mobile-panel-navigation] [role=tab] span { display:block; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+[data-mobile-panel-navigation] [role=tab][aria-selected=true] { font-weight:600; padding-right:4px; }
+[data-mobile-panel-navigation] [data-mobile-panel-tab-close] { width:32px; height:42px; border-radius:8px; color:var(--dsw-alias-label-tertiary); }
+@media (hover:hover) { [data-mobile-panel-navigation] button:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); } }
 [data-mobile-panel-error] { position:absolute; inset:100% 8px auto; padding:6px 10px; font-size:13px; background:var(--mobile-face); border:1px solid var(--mobile-edge); border-radius:8px; }
 html[data-mobile-panel-open] [data-mobile-toolbar] { visibility:hidden; }
 html[data-dsh-mobile][data-mobile-panel-open] [data-mobile-frame] > [data-shell-overlay] { z-index:65; }
-html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] { top:var(--mobile-bar); width:100%!important; max-width:none!important; bottom:0; }
+html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] { top:var(--mobile-panel-offset,52px); width:100%!important; max-width:none!important; bottom:0; }
 html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-strip],
 html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-divider],
 html[data-dsh-mobile][data-mobile-panel-managed] [data-sidebar-right-panel] [data-dockkit-float-grip],

@@ -3,3 +3,7 @@
 html[data-dsh-mobile] .device[data-mobile-frame] {position:relative!important;inset:auto!important;padding-left:0!important;}
 /* The host plugin locks its page; this review page contains a framed demo. */
 html[data-dsh-mobile], html[data-dsh-mobile] body {height:auto!important;overflow:auto!important;}
+
+body[data-preview-theme=dark] { color:#e4e5e9; background:#1c1d21; --dsw-alias-bg-base:#141416; --dsw-alias-bg-layer-1:#222226; --dsw-alias-bg-layer-2:#2b2b30; --dsw-alias-bg-layer-3:#343439; --dsw-alias-label-primary:#efeff3; --dsw-alias-label-secondary:#b6b7bf; --dsw-alias-label-tertiary:#9596a0; --dsw-alias-label-caption:#858690; --dsw-alias-border-l1:#414249; --dsw-alias-border-l2:#35363d; --dsw-alias-border-l3:#303138; --dsw-alias-interactive-bg-hover:#34353c; --dsw-alias-interactive-bg-active:#3b3f51; --dsw-alias-button-floating-fill:#29292d; --dsw-alias-bg-module-platform:#303035; --dsw-alias-state-business-primary:#86a6ff; }
+body[data-preview-theme=dark] .review>p {color:#b6b7bf}
+body[data-preview-theme=dark] :is(.device,.guide,textarea) { background:var(--dsw-alias-bg-base); color:inherit; border-color:var(--dsw-alias-border-l2); }

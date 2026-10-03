@@ -16,7 +16,7 @@ const fileProps = {
   useSessions: selector => selector({ byId: { preview: { cwd: '/workspace/dsh-plugins' } } }),
   listDirectory: () => reply({ entries: [{ name: 'AGENTS.md', isDir: false }, { name: 'README.md', isDir: false }] }),
   readFile: ({ path }) => reply({ path, kind: 'text', content: '# Mobile 面板验收\n\n这里使用真实文件浏览器和状态仓库，内容为异步样例数据。\n\n返回文件列表后再次打开同一文件，正文应仍然存在。\n\n- 横向滑动切换标签\n- 读取期间显示加载状态\n- 返回按钮保留图标与文字间距' }),
-  pickWorkspace: async () => null, useOpenInApps: selector => selector([]), openFolder: noop, openIDE: noop,
+  pickWorkspace: async () => null, useOpenInApps: selector => selector(['finder','vscode']), openFolder: noop, openIDE: noop,
 }
 export function Files() { return <WorkspaceView {...fileProps as any}/> }
 const worktrees = createWorktreesStore().create()

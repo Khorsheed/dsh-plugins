@@ -554,6 +554,11 @@
   .pathLine { flex-basis:100%; }
   .viewControls { flex-wrap:wrap; max-width:100%; }
   .action, .stepButton, .back { min-width:40px; min-height:40px; }
+  /* Compact icon group: keep the vertical touch target without charging
+     every 14px glyph a 40px cell plus a separate 6px gap. */
+  .titleActions { gap:0; padding:0 2px; border-radius:10px; background:var(--dsw-alias-bg-layer-1); }
+  .titleActions:empty { display:none; }
+  .titleActions .action { min-width:32px; padding:0 6px; justify-content:center; }
   .segButton, .viewButton { min-height:40px; }
   .scriptConfirm { flex-wrap:wrap; }
   .contentSearchInput { font-size:16px; }

@@ -2,6 +2,7 @@
    left file tree + right detail preview), filling the sidebar pane. */
 
 .view {
+  container: file-workspace / inline-size;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -116,4 +117,10 @@
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   text-align: center;
+}
+
+@container file-workspace (max-width: 560px) {
+  .topbar { gap:6px; padding:4px 12px; }
+  .actions { gap:0; }
+  .action { padding:0; height:40px; }
 }

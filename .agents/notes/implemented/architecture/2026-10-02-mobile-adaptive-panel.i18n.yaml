@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-02-mobile-adaptive-panel.md
-.agents/notes/implemented/architecture/2026-10-02-mobile-adaptive-panel.md: 030abffae68060372243c9f6e649475d66bfad99
-.agents/notes/implemented/architecture/2026-10-02-mobile-adaptive-panel.zh.md: 24c48609a2582463c74a52798c09e06f55e95035
+.agents/notes/implemented/architecture/2026-10-02-mobile-adaptive-panel.md: 82a5304b9f4456a92791199123d656336131cde9
+.agents/notes/implemented/architecture/2026-10-02-mobile-adaptive-panel.zh.md: 31da7d149eae6f3b4631fc0628d0eed1c359a099
