@@ -417,7 +417,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T91 | 代码（2026-10-01 定，与 T88 并行） | **dsh 条件在 0.2.0 上跑起来**：宿主轮 headless 改用实例自带的 0.2.0 版（共享 `/opt` 软链不动）；local-agent-dsh 往受试环境塞预设改走 0.2.0 机制；题库 eval-lean / eval-full 改声明式。local-agent 家族已同意由评测线改。文案见 §三「T91」 | T82 | ✅ 合入 `230dc5b7`（题库 i1-walk `dc6a6db`）——3185 上一条带预设的 0.2.0 dsh 条件 provision 带能力指纹、就绪过、跑完 1 格 |
 | T92 | 代码（2026-10-01 记，排在 T89 合入后） | **生成的 mission 模板在部署库里找不到 schema**：模板用 `../schemas/…` 引用，部署库布局（T73）下解析到 `state/eval/experiments/schemas/`，不存在，run 被模板 lint 拒；临时放进去又会被实验列表当成一个叫 schemas 的实验报错。T91 在 3185 上手工绕过后发现。T89 已确认目录化解决不了：前缀在 `contract/template.ts` 写死默认 `../schemas`，相对数据集 `plans/` 解析 | T89 | ✅ 随 T90 第二段合入 `c2698b1c`（run 把 schema 前缀指向物化出来的题集版本里的 `schemas/`）——新建实验 → 运行不需要任何手工放文件；实验列表里不出现 schemas |
 | T93 | 代码（2026-10-01 记） | **一个坏实验拖垮整个实验列表**：部署库里某个实验引用了未登记的题集（3171 的 `dataseek-eval`），整个列表报 “Failed to load the experiments”。应改成该实验单独标错、其余照常列出。T89 在临时实例上发现 | — | ✅ 随 T90 第二段合入 `c2698b1c`——构造一个引用未登记题集的实验，列表其余实验照常显示，坏的那条有可读的错误说明 |
-| T94 | 代码（2026-10-03 定，即派） | **题集整理 Agent 不再满盘找协议**：3185 真机走查（题集整理 · dsh-plugin-eval）里，skill 指向的 `docs/dataset-authoring-protocol.md` 不随包发布，Agent 全盘 `find /`、去读 3182 装的 datasets 源码反推校验规则，前 35 步没动一个文件；手头的 `datasets_validate` / propose `dryRun` 没用。协议随包、skill 写清「规则从工具拿、只读来源与目标」。顺带修 datasets 打包丢 `js-yaml`。文案见 §三「T94」 | T90 | 同一份数据重走一次：不出现搜盘、不读别的实例/插件源码；先 dryRun 拿问题清单；独立跑 datasets CLI 不再 ERR_MODULE_NOT_FOUND |
+| T94 | 代码（2026-10-03 定，即派） | **题集整理 Agent 不再满盘找协议**：3185 真机走查（题集整理 · dsh-plugin-eval）里，skill 指向的 `docs/dataset-authoring-protocol.md` 不随包发布，Agent 全盘 `find /`、去读 3182 装的 datasets 源码反推校验规则，前 35 步没动一个文件；手头的 `datasets_validate` / propose `dryRun` 没用。协议随包、skill 写清「规则从工具拿、只读来源与目标」。顺带修 datasets 打包丢 `js-yaml`。文案见 §三「T94」 | T90 | ✅ 合入 `cd4efaa6`（非模型部分）；需要模型的重走在 3185 由用户做——同一份数据重走一次：不出现搜盘、不读别的实例/插件源码；先 dryRun 拿问题清单；独立跑 datasets CLI 不再 ERR_MODULE_NOT_FOUND |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -4557,6 +4557,14 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0。
 - T93：坏实验在列表里单独标错并给出可读原因，其余照常列出。T92：run 的 schema 前缀改成物化题集版本下的 `schemas/` 绝对路径。
 - 协调者门禁：干净构建；datasets 292、eval 1259、mission 161、lab 134、bundle-eval 7、presets 8、local-agent-dsh 230、test:scripts 297 全过；check:plugins / hygiene --all / check:profiles 绿。合并冲突只有协议 i18n 哈希（main 仍是 rev14，rev15 不用挪），重录。
 - 小瑕疵（记账，不阻塞）：手选模式窄屏下「3 of 14 picked」计数被裁掉半行。另：install.sh --source 装出的实例里 datasets 报找不到 `js-yaml`，待查依赖声明。
+
+#### T94 合入（2026-10-03）
+
+- 合入 `cd4efaa6`。协议随 skill 发布：构建时把 `docs/` 的中英两份拷进 `skills/dataset-authoring/`（拷贝不进 git，`docs/` 仍是唯一源头）；SKILL 里的路径用占位符，加载时换成安装后的绝对路径。
+- SKILL 加「Ground rules」：只读来源、目标、协议三处；规则只从 dryRun / datasets_validate / CLI `validate --repo` 拿；不搜盘、不读插件源码或 lib、不读别的实例目录；find 必须带 `-maxdepth`。「已是协议格式」改为拷入提交后先跑校验，按清单逐条改。
+- js-yaml：datasets、eval、local-agent-dsh 声明 `dsh.runtimeDependencies`，独立跑 `lib/cli.js` 不再 ERR_MODULE_NOT_FOUND（T90 第二段记的待查项结案）。
+- 协调者门禁：干净构建；datasets 297、eval 1259、local-agent-dsh 230、test:scripts 298 全过；check:plugins / hygiene --all 0 finding。实施者临时实例（0.2.0-rc.2）验证协议文件在位、CLI 能跑、boot 无错。
+- 仓里只有英文 SKILL.md（协议中英都随包）。用户已备好三份公开基准作来源（HumanEval / MMLU / SWE-bench Lite，放在用户主目录下 tmp 以外），重走按 HumanEval → MMLU 几个学科 → SWE-bench Lite；目的只看整理与分类，不跑分。
 
 ## 四、验收规程
 
