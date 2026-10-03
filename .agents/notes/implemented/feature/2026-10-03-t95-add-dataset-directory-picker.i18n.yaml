@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-03-t95-add-dataset-directory-picker.md
+.agents/notes/implemented/feature/2026-10-03-t95-add-dataset-directory-picker.md: 63020dc2bbc8dd1efc3633cfd0623fa82a2ce762
+.agents/notes/implemented/feature/2026-10-03-t95-add-dataset-directory-picker.zh.md: 3444652502e46329d7d0198a461379316aea80fb

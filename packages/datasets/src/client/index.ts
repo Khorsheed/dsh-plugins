@@ -35,7 +35,7 @@ import { draftWithRetries, type OrganizeOutcome } from './organize.ts'
 import { DatasetsPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { createDatasetsViewStore } from './store.ts'
 import type {
-  DatasetExperimentRow, DatasetsRemote, DatasetsViewInjected, HostDescriptionSource, ItemRunsView,
+  DatasetExperimentRow, DatasetsRemote, DatasetsViewInjected, HostDescriptionSource, HostFacts, ItemRunsView,
 } from './contract.ts'
 
 export { DatasetsView }
@@ -80,13 +80,22 @@ const ABSENT_HOST_DESCRIPTION: HostDescriptionSource = {
  * expose `Connection.hostDescription` directly; 0.1.2 folded the facts into
  * the connection generation's opening frame (upstream e14d354e83), so the
  * source is derived from `connection.generation` there. The derived snapshot
- * carries `home` but no `canOpenPath` (that capability became an RPC probe),
- * which reads as unavailable and hides the external-open affordances — the
- * intended degrade on 0.1.2.
+ * carries `home` but no `canOpenPath` — that capability became the
+ * `session.canOpenWorkspacePath` RPC probe (the official open-in-app control
+ * reads the same verb). The probe runs once on the first subscription and is
+ * folded into the snapshot; while it is unanswered, or when it fails or the
+ * verb is absent, `canOpenPath` stays missing and the native-picker buttons
+ * stay hidden (the degrade). A failed probe is retried on the next generation
+ * change (a reconnect). Before T95 the probe was never asked, so every
+ * 「选择…」 button was hidden on 0.1.2 and later hosts.
  * @param connection - the connection service handle.
+ * @param probeCanOpenPath - the RPC probe; resolves undefined when unavailable.
  * @returns an observable HostDescription source on either host line.
  */
-function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionSource {
+function hostDescriptionSourceOf(
+  connection: ConnectionHandle,
+  probeCanOpenPath: () => Promise<boolean | undefined> = async () => undefined,
+): HostDescriptionSource {
   const probe = connection as unknown as {
     hostDescription?: HostDescriptionSource
     generation?: {
@@ -97,10 +106,44 @@ function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionS
   if (probe.hostDescription !== undefined) return probe.hostDescription
   const generation = probe.generation
   if (generation === undefined) return ABSENT_HOST_DESCRIPTION
+  const listeners = new Set<() => void>()
+  let probed: boolean | undefined
+  let asking = false
+  // Stable merged snapshot per (host, probed) pair: the hook's external-store
+  // read compares snapshots by identity.
+  let merged: { host: unknown; probed: boolean; value: HostFacts } | undefined
+  const ask = () => {
+    if (asking || probed !== undefined) return
+    asking = true
+    void probeCanOpenPath().catch(() => undefined).then((answer) => {
+      asking = false
+      if (answer === undefined) return
+      probed = answer
+      for (const listener of listeners) listener()
+    })
+  }
   return {
-    getSnapshot: () => generation.getSnapshot()?.host,
-    subscribe: listener => generation.subscribe(listener),
-  } as HostDescriptionSource
+    getSnapshot: () => {
+      const host = generation.getSnapshot()?.host as HostFacts | undefined
+      if (probed === undefined || host === undefined || host.canOpenPath !== undefined) return host
+      if (merged?.host !== host || merged.probed !== probed) {
+        merged = { host, probed, value: { ...host, canOpenPath: probed } }
+      }
+      return merged.value
+    },
+    subscribe: (listener) => {
+      listeners.add(listener)
+      ask()
+      const stop = generation.subscribe(() => {
+        ask()
+        listener()
+      })
+      return () => {
+        listeners.delete(listener)
+        stop()
+      }
+    },
+  }
 }
 
 /**
@@ -275,6 +318,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // spawned).
   const remote = ctx.get('remote.datasets') as DatasetsRemote
   const connection = ctx.get('connection') as ConnectionHandle
+  // One host-facts source per mount (the probe's answer is shared by every
+  // session's view). `remote.session` is read at call time, never injected.
+  const hostDescription = hostDescriptionSourceOf(connection, async () => {
+    const session = (ctx.get.bind(ctx) as (name: string) => unknown)('remote.session') as {
+      canOpenWorkspacePath?: () => Promise<{ ok: boolean; value?: unknown }>
+    } | undefined
+    if (session?.canOpenWorkspacePath === undefined) return undefined
+    const result = await session.canOpenWorkspacePath()
+    return result.ok ? result.value === true : undefined
+  })
 
   const organizing = organizingDoors(ctx)
 
@@ -348,7 +401,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           }))
         },
         isLoopback: connection.isLoopback,
-        hooks: { hostDescription: hostDescriptionSourceOf(connection) },
+        hooks: { hostDescription },
         // rc hosts hang the native picker on the workspaces service; 0.1.2
         // moved it to uiWorkspace (ui-workspace) — probe both, resolve null
         // (the picker-cancel value) when neither exists.

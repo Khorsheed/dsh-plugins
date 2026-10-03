@@ -20,8 +20,9 @@ import type { createDatasetsViewStore } from './store.ts'
 /**
  * Host facts the view reads, probed per host line by the browser half: rc
  * hosts expose the full description (`home`, `canOpenPath`); 0.1.2's opening
- * frame carries `home` only (`canOpenPath` became an RPC probe, so the
- * external-open affordances degrade to hidden there).
+ * frame carries `home` only (`canOpenPath` became the
+ * `session.canOpenWorkspacePath` RPC probe, which the browser half asks and
+ * folds in; until it answers, the native-picker buttons stay hidden).
  */
 export interface HostFacts {
   readonly home?: string

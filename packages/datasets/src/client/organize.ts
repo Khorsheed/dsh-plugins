@@ -21,6 +21,12 @@ export interface AddDatasetFields {
   name: string
   /** 想拿它测什么 (optional). */
   purpose: string
+  /**
+   * The parent directory the person picked for the new repository (T95);
+   * absent or '' = the datasets home. The repository is `<parent>/<name>`,
+   * the same rule as the default.
+   */
+  repoParent?: string
 }
 
 /** The registration-name rule (the registry's own: letters, digits, `._-`, a letter or digit first). */
@@ -47,9 +53,36 @@ export function repoPathFor(home: string, name: string): string {
 }
 
 /**
+ * A directory as a picker returned it, ready to show and to join: trimmed,
+ * trailing separators dropped (the macOS chooser answers `/a/b/`), the root
+ * kept as `/`.
+ * @param path - the picked path.
+ * @returns the cleaned path ('' stays '').
+ */
+export function cleanPickedPath(path: string): string {
+  const trimmed = path.trim()
+  if (trimmed === '') return ''
+  const stripped = trimmed.replace(/\/+$/, '')
+  return stripped === '' ? '/' : stripped
+}
+
+/**
+ * Where the new repository's parent is: the person's pick when there is one,
+ * the datasets home otherwise.
+ * @param home - the datasets home ('' when unknown).
+ * @param picked - the picked parent, if any.
+ * @returns the parent directory ('' when neither is known).
+ */
+export function repoParentOf(home: string, picked?: string | null): string {
+  const chosen = cleanPickedPath(picked ?? '')
+  return chosen !== '' ? chosen : home
+}
+
+/**
  * The 添加题集 request.
- * @param fields - the dialog's three fields.
- * @param home - the datasets home (decision C), '' when unknown.
+ * @param fields - the dialog's three fields, plus the picked repository parent.
+ * @param home - the datasets home (decision C), '' when unknown; the
+ *   picked parent wins over it.
  * @param t - the tab's dictionary.
  * @returns the composer text.
  */
@@ -61,7 +94,7 @@ export function buildAddRequest(fields: AddDatasetFields, home: string, t: T): s
     `- ${t('organize.lineName', { value: fields.name.trim() })}`,
   ]
   if (fields.purpose.trim() !== '') lines.push(`- ${t('organize.linePurpose', { value: fields.purpose.trim() })}`)
-  const repo = repoPathFor(home, fields.name.trim())
+  const repo = repoPathFor(repoParentOf(home, fields.repoParent), fields.name.trim())
   if (repo !== '') lines.push(`- ${t('organize.lineRepo', { value: repo })}`)
   return lines.join('\n')
 }
