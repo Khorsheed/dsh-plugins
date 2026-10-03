@@ -418,6 +418,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T92 | 代码（2026-10-01 记，排在 T89 合入后） | **生成的 mission 模板在部署库里找不到 schema**：模板用 `../schemas/…` 引用，部署库布局（T73）下解析到 `state/eval/experiments/schemas/`，不存在，run 被模板 lint 拒；临时放进去又会被实验列表当成一个叫 schemas 的实验报错。T91 在 3185 上手工绕过后发现。T89 已确认目录化解决不了：前缀在 `contract/template.ts` 写死默认 `../schemas`，相对数据集 `plans/` 解析 | T89 | ✅ 随 T90 第二段合入 `c2698b1c`（run 把 schema 前缀指向物化出来的题集版本里的 `schemas/`）——新建实验 → 运行不需要任何手工放文件；实验列表里不出现 schemas |
 | T93 | 代码（2026-10-01 记） | **一个坏实验拖垮整个实验列表**：部署库里某个实验引用了未登记的题集（3171 的 `dataseek-eval`），整个列表报 “Failed to load the experiments”。应改成该实验单独标错、其余照常列出。T89 在临时实例上发现 | — | ✅ 随 T90 第二段合入 `c2698b1c`——构造一个引用未登记题集的实验，列表其余实验照常显示，坏的那条有可读的错误说明 |
 | T94 | 代码（2026-10-03 定，即派） | **题集整理 Agent 不再满盘找协议**：3185 真机走查（题集整理 · dsh-plugin-eval）里，skill 指向的 `docs/dataset-authoring-protocol.md` 不随包发布，Agent 全盘 `find /`、去读 3182 装的 datasets 源码反推校验规则，前 35 步没动一个文件；手头的 `datasets_validate` / propose `dryRun` 没用。协议随包、skill 写清「规则从工具拿、只读来源与目标」。顺带修 datasets 打包丢 `js-yaml`。文案见 §三「T94」 | T90 | ✅ 合入 `cd4efaa6`（非模型部分）；需要模型的重走在 3185 由用户做——同一份数据重走一次：不出现搜盘、不读别的实例/插件源码；先 dryRun 拿问题清单；独立跑 datasets CLI 不再 ERR_MODULE_NOT_FOUND |
+| T95 | 代码（2026-10-03 定，即派） | **添加题集弹窗能选目录**：「数据在哪」旁加「选择目录…」（输入框保留，仍可填文件 / 公开数据集名字或链接）；「新仓库放在 …」可用「更改…」另选，默认仍是 `datasetsHome` | T90、T94 | 3185 用户走查：两处都能弹系统目录选择器、取消不清空原值；改过的仓库位置写进给 Agent 的请求，Agent 在那里建仓并能提申请；宿主没有选择器时按钮隐藏，手填照常 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -4479,6 +4480,21 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0。
 **第二段（T89 合入后）**：eval 新建实验加「选题」——全部 / 随机 N 题（固定种子）/ 手选，结果钉成计划的题目清单；同一题集不同实验可以抽不同的题。
 
 **不做**：外部源指针（T40，下一批）；不碰 3171、凭据；不发布。
+
+#### T95 · 添加题集弹窗能选目录（2026-10-03 定，即派）
+
+**背景**：用户在 3185 走查「添加题集」（`packages/datasets/src/client/AddDatasetDialog.tsx`）时提出「数据在哪」应能选目录。现状：两栏都只能手打——「数据在哪」是 textarea；「新仓库放在 {path}」只是提示文字，路径由 `repoPathFor(datasetsHome, name)` 算出，`datasetsHome` 只能靠插件配置改（未配时落 `$DSH_HOME/datasets`）。3185 的 home 在 tmp 下，新仓库因此必然落在 tmp。系统目录选择器插件里已有：`contract.ts` 的 `pickDirectory`（`client/index.ts` 探测 `ctx.workspaces.pickDirectory` / `uiWorkspace.pickDirectory`，都没有时返回 null），「高级」里的 `RegisterForm` 在用（`canPick` 为假时隐藏按钮）。
+
+**要做**：
+
+1. **「数据在哪」加「选择目录…」**：输入框保留（还要能填单个文件、公开数据集名字或链接）；按钮放在输入框旁，选中后把路径写进输入框，之后可手改；取消选择不改原值。`canPick` 为假时隐藏按钮，沿用 RegisterForm 的探测与降级，不另写一套。
+2. **「新仓库放在 …」可改**：提示行旁加「更改…」，用同一个选择器选**父目录**，仓库路径 = 所选目录 / 题集名称（与 `repoPathFor` 同规则）；默认值仍由 `datasetsHome` 算出；改过后有办法恢复默认。选中的位置要一路带到给 Agent 的请求（`organize.ts` 生成的请求文本 / `AddDatasetFields`），Agent 在那里建仓。先查 `datasets_propose_registration` 和登记评审页对仓库位置有没有「必须在 datasetsHome 下」之类的假设：有就一并处理（放宽或明确提示），在 Agent Note 写清结论。
+3. **文案与 i18n**：中英文案同步（`locales.ts`），README 中英若描述了这个弹窗一并更新，按配对规则重录。
+4. **测试**：组件/纯函数测试覆盖——选目录写入、取消不改、无选择器时按钮隐藏、改仓库位置后请求文本里的路径、恢复默认。
+5. **验证**：自己的临时实例（0.2.0-rc.2 工具链，新 home 新端口，不碰 3185），按 §九 截图：1440 / 390 两种宽度下弹窗两栏的样子（含选完目录后的状态）。浏览器里系统选择器若弹不出，说明清楚并用测试兜底，不要伪造截图。
+
+**不在范围**：整理 Agent 的行为（T94 已改）；登记评审页的其他交互。
+
 
 #### T94 · 题集整理 Agent 不再满盘找协议（2026-10-03 定，即派）
 
