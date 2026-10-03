@@ -76,8 +76,8 @@ One message (use `ask_user_question` when it is available), each question with y
 person can just accept:
 
 1. **Name** — the registration name (`gsm8k`, `swe-bench-verified`); letters, digits, `._-`.
-2. **Where the repository goes** — default `<datasets home>/<name>` (the request names the datasets home,
-   normally `~/.dsh/datasets`). An existing repository is fine too.
+2. **Where the repository goes** — the request names the full repository path (`<datasets home>/<name>` by
+   default, or the folder the person chose in the dialog). Use it as given; an existing repository is fine too.
 3. **What the agent under test must not see** — your proposed split into visible / hidden layers, field by field.
 4. **Scope** — every split and every record is converted by default; ask only whether the splits become one set
    or several.
