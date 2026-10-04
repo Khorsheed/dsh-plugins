@@ -584,6 +584,21 @@ describe('a link that cannot be previewed is still a link', () => {
     expect((await service.listSources()).sources[0]?.url).toBe(requested)
   })
 
+  it('files a link once when two adds of it race their fetches', async () => {
+    // A second click on 「添加」 passes the up-front duplicate check while the
+    // first add is still fetching; the commit re-checks.
+    const ctx = await bootWithWeb(async () => {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      throw Object.assign(new Error('cross-origin redirect to https://idp.springer.com is not followed automatically; retry against that URL directly'), { code: 'WEB_REDIRECT_BLOCKED' })
+    })
+    const service = ctx.get('reader') as ReaderService
+    const url = 'https://link.springer.com/article/10.1140/epjds/s13688-025-00554-w'
+    const [first, second] = await Promise.all([service.addSource({ url }), service.addSource({ url })])
+    expect(first).toMatchObject({ outcome: 'saved-link', failure: { code: 'blocked' } })
+    expect(second).toMatchObject({ outcome: 'saved-link' })
+    expect((await service.listSources()).sources).toHaveLength(1)
+  })
+
   it('clears the recorded failure when a manual refresh finally works', async () => {
     // The reader's way out: the site may stop refusing us, or they may fix the
     // address. Saving the link is only useful if that path exists.

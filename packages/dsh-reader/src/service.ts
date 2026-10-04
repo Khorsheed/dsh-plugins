@@ -79,6 +79,7 @@ import {
   type ReaderTag,
   type ReaderTranslationMemoryEntry,
   type ReaderTranslationMemoryTable,
+  isCookieHandshake,
 } from './types.ts'
 import { delayUntilNext, isCatchUpDue } from './schedule.ts'
 import { arxivHtmlUrl } from './arxiv.ts'
@@ -345,7 +346,7 @@ export class ReaderService {
       ...(resolvedFrom === undefined ? {} : { resolvedFrom }),
       raw: fetched.raw,
     }
-    await this.commit(current => ({ ...current, sources: [source, ...current.sources] }))
+    await this.commit(current => withNewSource(current, source))
     return { outcome: feed ? 'subscribed' : 'saved-link', kind: source.kind, id: source.id, label }
   }
 
@@ -386,7 +387,7 @@ export class ReaderService {
       failure,
       ...(request.resolvedFrom === undefined ? {} : { resolvedFrom: request.resolvedFrom }),
     }
-    await this.commit(current => ({ ...current, sources: [source, ...current.sources] }))
+    await this.commit(current => withNewSource(current, source))
     await this.recordFetchFailure(linkEntryId(source.id), failure.message)
     return {
       outcome: 'saved-link',
@@ -1630,6 +1631,25 @@ export function normalizeUrl(input: string): string | undefined {
 }
 
 /** Whether two URLs point at the same target, ignoring a trailing slash. */
+/**
+ * The document with `source` added, unless an add that raced this one already
+ * filed it.
+ *
+ * `addSource` checks for a duplicate BEFORE its fetch, which takes long enough
+ * (hundreds of ms to seconds) for a second click on 「添加」 to pass the same
+ * check; both then committed, and the reader saw the card twice under one id
+ * (measured on 3080, 2026-10-04: two `link-1v6imqy` rows 0.7 s apart). The
+ * re-check inside the commit is what makes the add idempotent.
+ *
+ * @param doc - the current document.
+ * @param source - the source to file.
+ * @returns the document, with the source prepended when it is new.
+ */
+function withNewSource(doc: ReaderStateDoc, source: ReaderSource): ReaderStateDoc {
+  if (doc.sources.some(existing => existing.id === source.id || sameTarget(existing.url, source.url))) return doc
+  return { ...doc, sources: [source, ...doc.sources] }
+}
+
 function sameTarget(a: string, b: string): boolean {
   const strip = (value: string): string => value.replace(/\/+$/, '')
   return strip(a) === strip(b)
@@ -1763,6 +1783,9 @@ export function classifyFetchFailure(error: unknown, at: string): ReaderPreviewF
     return { code: 'unsupported-type', message, at }
   }
   if (code === 'WEB_REDIRECT_BLOCKED' || /cross-origin redirect/i.test(message)) {
+    // A cookie handshake (Springer Nature's idp bounce) is a wall a browser
+    // walks through, not a login: `blocked` lets the pane render it.
+    if (isCookieHandshake(message)) return { code: 'blocked', message, at }
     // A hop to a host whose name says "login" is a login wall, not merely a
     // move: the reader's next action differs (sign in elsewhere vs paste the
     // destination URL).

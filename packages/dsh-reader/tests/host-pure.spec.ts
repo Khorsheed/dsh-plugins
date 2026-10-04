@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import { ReaderStore, ReaderStoreError, boundAnnotations, boundPayloads, emptyStateDoc, normalizeStateDoc, serializeStateDoc } from '../src/store.ts'
 import { delayUntilNext, isCatchUpDue, nextOccurrence, parseTimeOfDay, previousOccurrence } from '../src/schedule.ts'
 import { formatReaderRef, mergedDraft, provenanceOf, relativeWhen, absoluteDate } from '../src/client/quote.ts'
-import { MAX_BODY_CHARS_PER_SOURCE } from '../src/types.ts'
+import { isCookieHandshake, MAX_BODY_CHARS_PER_SOURCE } from '../src/types.ts'
 
 describe('schedule', () => {
   it('parses HH:MM and falls back on anything unusable', () => {
@@ -117,6 +117,33 @@ describe('state document', () => {
     expect(doc.sources[1]).toMatchObject({ url: 'https://mp.weixin.qq.com/s/U5zH', label: '我起的名字' })
     // Feeds are not saved links: left alone.
     expect(doc.sources[2]?.url).toBe(landing)
+  })
+
+  it('keeps one source per id when an add race filed it twice', () => {
+    const doc = normalizeStateDoc({
+      version: 1,
+      sources: [
+        { id: 'link-x', url: 'https://example.com/a', kind: 'link', addedAt: '2026-10-04T08:21:30.734Z' },
+        { id: 'link-x', url: 'https://example.com/a', kind: 'link', addedAt: '2026-10-04T08:21:30.048Z' },
+      ],
+    })
+    expect(doc.sources.map(source => source.addedAt)).toEqual(['2026-10-04T08:21:30.734Z'])
+  })
+
+  it('re-files a cookie handshake saved as a login wall', () => {
+    const handshake = 'cross-origin redirect to https://idp.springer.com is not followed automatically; retry against that URL directly'
+    const doc = normalizeStateDoc({
+      version: 1,
+      sources: [
+        { id: 's', url: 'https://link.springer.com/article/10.1140/x', kind: 'link', addedAt: '2026-10-04T00:00:00.000Z', failure: { code: 'login', message: handshake, at: '2026-10-04T00:00:00.000Z' } },
+        { id: 'p', url: 'https://example.com/a', kind: 'link', addedAt: '2026-10-04T00:00:00.000Z', failure: { code: 'login', message: 'cross-origin redirect to https://login.example.com is not followed automatically', at: '2026-10-04T00:00:00.000Z' } },
+      ],
+      annotations: { e: { failureCode: 'login', error: handshake } },
+    })
+    expect(doc.sources[0]?.failure?.code).toBe('blocked')
+    // A real login hop stays a login wall.
+    expect(doc.sources[1]?.failure?.code).toBe('login')
+    expect(doc.annotations.e?.failureCode).toBe('blocked')
   })
 
   it('drops sources that are not identifiable, keeps the rest', () => {
@@ -447,6 +474,17 @@ describe('a saved link says why it has no preview', () => {
     const failure = classifyFetchFailure(seamError(REDIRECT_REFUSAL, 'WEB_REDIRECT_BLOCKED'), '2026-09-18T00:00:00.000Z')
     expect(failure.code).toBe('login')
     expect(failure.message).toBe(REDIRECT_REFUSAL)
+  })
+
+  it('classifies Springer Nature\'s cookie handshake as a wall a browser walks through, not a login', () => {
+    // link.springer.com → idp.springer.com/authorize?response_type=cookie →
+    // back to the article (measured 2026-10-04): the `idp` host name alone
+    // would read as a login wall, but a headless browser gets the full text.
+    for (const host of ['idp.springer.com', 'idp.nature.com']) {
+      const message = `cross-origin redirect to https://${host} is not followed automatically; retry against that URL directly`
+      expect(classifyFetchFailure(seamError(message, 'WEB_REDIRECT_BLOCKED'), 'now').code).toBe('blocked')
+    }
+    expect(isCookieHandshake('cross-origin redirect to https://idp.example.com is not followed automatically')).toBe(false)
   })
 
   it('classifies a cross-origin refusal to an ordinary host as a move', () => {

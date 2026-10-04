@@ -35,6 +35,7 @@ import {
   challengeTarget,
   DEFAULT_CACHE_POLICY,
   defaultSourceLabel,
+  isCookieHandshake,
   type ReaderCachePolicy,
   MAX_BODY_CHARS_PER_SOURCE,
   MAX_TOTAL_BODY_CHARS,
@@ -128,11 +129,16 @@ export function normalizeStateDoc(value: unknown): ReaderStateDoc {
   const refresh = typeof record.refresh === 'object' && record.refresh !== null
     ? record.refresh as Record<string, unknown>
     : {}
+  // One id, one source: an add race before 2026-10-04 could file a link twice
+  // under the same id. The first (newest) row wins.
+  const seenIds = new Set<string>()
   return {
     version: 1,
     sources: sources.flatMap(item => {
       const source = normalizeSource(item)
-      return source === undefined ? [] : [source]
+      if (source === undefined || seenIds.has(source.id)) return []
+      seenIds.add(source.id)
+      return [source]
     }),
     refresh: {
       enabled: refresh.enabled !== false,
@@ -314,9 +320,13 @@ function normalizeAnnotations(value: unknown): Record<string, ReaderEntryAnnotat
       : []
     const fetch = normalizeFetch(record.fetch)
     const translation = normalizeTranslation(record.translation)
-    const failureCode = PREVIEW_FAILURE_CODES.has(String(record.failureCode))
+    const storedFailureCode = PREVIEW_FAILURE_CODES.has(String(record.failureCode))
       ? (record.failureCode as ReaderPreviewFailureCode)
       : undefined
+    // The same login→blocked walk-back as normalizePreviewFailure.
+    const failureCode = storedFailureCode === 'login' && typeof record.error === 'string' && isCookieHandshake(record.error)
+      ? 'blocked'
+      : storedFailureCode
     const annotation: ReaderEntryAnnotation = {
       ...(body === undefined ? {} : { body }),
       ...(fetch === undefined ? {} : { fetch }),
@@ -450,9 +460,12 @@ function normalizePreviewFailure(value: unknown): ReaderPreviewFailure | undefin
   const record = value as Record<string, unknown>
   const code = record.code
   if (typeof code !== 'string' || !PREVIEW_FAILURE_CODES.has(code)) return undefined
+  const message = typeof record.message === 'string' ? record.message.slice(0, 500) : ''
   return {
-    code: code as ReaderPreviewFailureCode,
-    message: typeof record.message === 'string' ? record.message.slice(0, 500) : '',
+    // Builds before 2026-10-04 filed Springer Nature's cookie handshake as a
+    // login wall; it is a wall the rendered fetch walks through.
+    code: code === 'login' && isCookieHandshake(message) ? 'blocked' : code as ReaderPreviewFailureCode,
+    message,
     at: typeof record.at === 'string' ? record.at : new Date(0).toISOString(),
   }
 }
