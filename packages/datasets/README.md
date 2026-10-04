@@ -196,6 +196,7 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 - source 线（deepseek-harness master）：✅（verifiedHost: 0.2.0-rc.2，题集 tab 在 web-eval 临时实例上真机冒烟）。
 - 金丝雀校验与可判性校验都在本插件内部完成（只读 git 对象），不依赖任何新的宿主能力；`tools` 分组随模型工具面搬到本包的工具行 `@khorsheed/dsh-datasets/tool`（`read` / `authoring` / `all` / `none`），本行不再有这个配置键。
 - 登记申请、对照核对与更新闸（T90）同样是插件内部的（提案库是状态根下的 JSON，核对只读 git 对象与原目录）。「让 Agent 整理」用宿主 0.2.0 的门：`sessions.create` / `rename`、`remote.agentPresets` 的 list / select、`uiWorkspace.openSession`、会话输入框的 `setDraft`；每一扇门都在调用时探测，缺哪扇就依次降级为剪贴板、再降级为页面上显示请求原文，不会报错。
+- 「核对并登记」轮尾卡片（T96）用宿主 0.2.0 的 `conversation.chat.turnTail` 列表槽与 `uiConversation.events` 会话定义，两者都在该槽声明后才读取；缺了就不出卡片，申请照常在提示条后面等。切到题集 tab 没有公开调用，靠点 tab 条按钮（DOM 锚点），失效时卡片用一句话说去哪儿点。审阅页的校验事实按提交号缓存在状态根的提案库下（插件内部）。
 - 题库登记与只读物化（T73）同样是插件内部的：登记是状态根下一个 JSON 文件，物化只用 `git archive` + `tar`，不需要新的宿主能力；原生目录选择器沿用已有的宿主探测，探不到就只留路径输入。
 - ⚠️ 降级：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由工具行提供）。题集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets/tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是每个受判据管的 tab 都出现在选手的子会话里。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-datasets-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
 
