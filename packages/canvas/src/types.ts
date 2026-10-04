@@ -409,6 +409,12 @@ export interface BoardCategory {
    * retired until its first proposal is adopted, and deleted if rejected.
    */
   draft?: true
+  /**
+   * The genre role this row fills (创作体裁, 2026-10-04): set when a genre
+   * seeded it, so the genre still finds "its" category after the user renames
+   * the label. Owned by the genre verb — the catalog verb carries it over.
+   */
+  role?: string
 }
 
 /** The catalog a canvas starts with: the five built-ins, unrenamed, all on. */
@@ -419,6 +425,81 @@ export function defaultCategories(): BoardCategory[] {
     order: (index + 1) * 10,
     enabled: true,
   }))
+}
+
+/* ------------------------------------------------------------ genres (创作体裁) */
+
+/** A genre id: lowercase, the shape a package names itself by (`novel`, `thesis`). */
+export function isGenreId(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9-]{1,39}$/.test(value)
+}
+
+/** A category role a genre seeds (`character`, `foreshadow`). */
+export function isCategoryRole(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9-]{0,39}$/.test(value)
+}
+
+/** One category a genre seeds when a canvas selects it. */
+export interface GenreCategorySeed {
+  readonly role: string
+  readonly label: string
+  readonly brief?: string
+  readonly definition?: TypeDefinition
+}
+
+/**
+ * What a genre plugin registers with the canvas (`ctx.canvasBoard.registerGenre`).
+ * The canvas stays generic: it seeds the categories, records the choice on the
+ * board, and lets the genre's own plugin bring the tools and surfaces.
+ */
+export interface CanvasGenreDefinition {
+  readonly id: string
+  /** The name the genre menu shows (「长篇小说」). */
+  readonly label: string
+  /** This version's id; a user's own version names the one it came from in `base`. */
+  readonly version: string
+  readonly base?: string
+  /** One or two sentences under the label. */
+  readonly description: string
+  readonly categories: readonly GenreCategorySeed[]
+  /**
+   * The agent row that grants the genre's tools. A session whose preset carries
+   * no such row cannot use the genre, so the binding chip stays away there.
+   */
+  readonly agentRow?: string
+}
+
+/** One registered genre as the browser lists it. */
+export interface CanvasGenreSummary {
+  readonly id: string
+  readonly label: string
+  readonly version: string
+  readonly base?: string
+  readonly description: string
+  readonly roles: readonly { readonly role: string; readonly label: string }[]
+  readonly agentRow?: string
+}
+
+/** The genre one canvas selected (absent on a canvas without one — the default). */
+export interface BoardGenre {
+  readonly id: string
+  readonly version: string
+  readonly selectedAt: string
+}
+
+/** Read the untrusted `genre` field; anything unusable reads as no genre. */
+export function normalizeBoardGenre(raw: unknown): BoardGenre | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const record = raw as Record<string, unknown>
+  if (!isGenreId(record['id'])) return undefined
+  if (typeof record['version'] !== 'string' || record['version'].length === 0) return undefined
+  if (typeof record['selectedAt'] !== 'string') return undefined
+  return { id: record['id'], version: record['version'].slice(0, 80), selectedAt: record['selectedAt'] }
+}
+
+/** The category one canvas fills a role with, if it has one. */
+export function categoryOfRole(board: Pick<CanvasBoard, 'categories'>, role: string): BoardCategory | undefined {
+  return board.categories.find(category => category.role === role)
 }
 
 /**
@@ -460,6 +541,7 @@ export function normalizeCategories(raw: unknown): BoardCategory[] {
         : (slot += 1) * 10,
       enabled: record['enabled'] !== false,
       ...categoryTypeOf(record),
+      ...(isCategoryRole(record['role']) ? { role: record['role'] } : {}),
     })
   }
   for (const kind of BOARD_CARD_KINDS) {
@@ -981,6 +1063,8 @@ export interface CanvasBoard {
   stats: CanvasStats
   /** Set when the canvas is archived from the list (hide, restorable; deleting is its own verb). */
   archivedAt: string | null
+  /** The genre this canvas selected (创作体裁); absent — the default — means a plain canvas. */
+  genre?: BoardGenre
   readonly createdAt: string
   updatedAt: string
 }
@@ -1005,6 +1089,8 @@ export interface CanvasSummary {
   readonly openQuestions: number
   readonly archivedAt: string | null
   readonly lastActiveAt: string
+  /** The selected genre's id, when the canvas has one (the binding chip lists only these). */
+  readonly genre?: string
 }
 
 /** Project one board into its list row. */
@@ -1025,6 +1111,7 @@ export function summarizeBoard(board: CanvasBoard): CanvasSummary {
     openQuestions,
     archivedAt: board.archivedAt,
     lastActiveAt: board.stats.lastActiveAt,
+    ...(board.genre === undefined ? {} : { genre: board.genre.id }),
   }
 }
 
@@ -1139,6 +1226,7 @@ export function normalizeBoard(raw: unknown, expectedId: string, now: string): C
     normalizeCategories(record['categories']),
     cards.map(card => card.kind),
   )
+  const genre = normalizeBoardGenre(record['genre'])
   return {
     id: expectedId,
     title: record['title'].slice(0, MAX_CANVAS_TITLE_LENGTH),
@@ -1164,6 +1252,7 @@ export function normalizeBoard(raw: unknown, expectedId: string, now: string): C
       lastActiveAt: typeof statsRaw?.['lastActiveAt'] === 'string' ? statsRaw['lastActiveAt'] : now,
     },
     archivedAt: typeof record['archivedAt'] === 'string' ? record['archivedAt'] : null,
+    ...(genre === undefined ? {} : { genre }),
     createdAt: typeof record['createdAt'] === 'string' ? record['createdAt'] : now,
     updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : now,
   }
@@ -1671,6 +1760,27 @@ export interface BoardFocusRequest {
 export type BoardFocusResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: CanvasError }
+
+/* --------------------------------------------------------------- genres (wire) */
+
+/** Select a genre for one canvas, or clear it with `null`. */
+export interface BoardSelectGenreRequest {
+  readonly canvasId: string
+  readonly genreId: string | null
+}
+
+/** Bind the calling session to one canvas (`null` unbinds). */
+export interface BoardBindRequest {
+  readonly canvasId: string | null
+}
+
+/**
+ * The binding gesture's receipt. `no-genre` refuses a canvas without a genre:
+ * binding exists for genre work, a plain canvas keeps following the sidebar.
+ */
+export type BoardBindResult =
+  | { readonly ok: true; readonly canvasId: string | null }
+  | { readonly ok: false; readonly error: CanvasError | 'no-genre' }
 
 /* --------------------------------------------------------- manuscripts (wire) */
 

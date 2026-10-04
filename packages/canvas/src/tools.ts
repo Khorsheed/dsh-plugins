@@ -147,17 +147,17 @@ const NO_CANVAS_MESSAGE = '没有打开的画布：请先在右栏「画布详�
 /**
  * Build the canvas tools for the MAIN session (M3's second entrance): the
  * target canvas resolves per call
- * from the session's focused canvas — the one the right-sidebar canvas tab
- * last reported open. No open canvas is a plain answer, never an error.
+ * from the canvas the session is bound to (genre work), else its focused
+ * canvas — the one the right-sidebar canvas tab last reported open. No open canvas is a plain answer, never an error.
  * @param board - the board service the tools delegate to.
  * @returns the tagged definitions for the profile-root tools registry.
  */
 export function canvasMainSessionToolDefinitions(board: CanvasBoardService): ToolDefinition[] {
-  /** Resolve the call's target: the focused canvas plus the fencing session. */
-  const target = (exec: { agent?: Agent }): { canvasId: string; session: Session } | { message: string } => {
+  /** Resolve the call's target: the bound canvas, else the focused one, plus the fencing session. */
+  const target = async (exec: { agent?: Agent }): Promise<{ canvasId: string; session: Session } | { message: string }> => {
     const session = exec.agent?.session
     if (session === undefined) return { message: NO_CANVAS_MESSAGE }
-    const canvasId = board.focusedCanvasId(session)
+    const canvasId = await board.targetCanvasId(session)
     if (canvasId === undefined) return { message: NO_CANVAS_MESSAGE }
     return { canvasId, session }
   }
@@ -272,7 +272,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       args: { kind?: string; manuscriptId?: string; includeArchived?: boolean },
       exec: { agent?: Agent; signal?: AbortSignal },
     ): Promise<{ text: string; images: CanvasImageRef[] }> => {
-      const resolved = target(exec)
+      const resolved = await target(exec)
       if ('message' in resolved) return { text: resolved.message, images: [] }
       const loaded = await board.readBoard({ canvasId: resolved.canvasId })
       if (!loaded.ok) return { text: renderOutcome({ ok: false, error: loaded.error }), images: [] }
@@ -345,7 +345,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
     execute: async (args: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
-      const resolved = target(exec)
+      const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       if (args.op === 'comment') return writeComment(args, resolved)
       if (args.op === 'manuscript') return writeManuscript(args, resolved)
@@ -447,7 +447,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       args: { kind?: string; label?: string; definition: unknown; rationale: string; renames?: unknown; summary?: string; request?: string },
       exec: { agent?: Agent },
     ): Promise<string> => {
-      const resolved = target(exec)
+      const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       const outcome = await board.proposeType({
         canvasId: resolved.canvasId,

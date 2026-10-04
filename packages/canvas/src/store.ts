@@ -38,7 +38,7 @@ import { rasterizeDrawing } from './raster.ts'
 import { canvasErrorOf } from './service.ts'
 import {
   CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, defaultCategories, documentHeadingOf,
-  emptyStats, isBoardCardStatus, isCardCategoryId, isManuscriptId, isManuscriptStatus, isQuestionState, makeBoardId,
+  emptyStats, isBoardCardStatus, isCardCategoryId, isGenreId, isManuscriptId, isManuscriptStatus, isQuestionState, makeBoardId,
   manuscriptFileName, MANUSCRIPT_DIR_NAME, MAX_BOARD_MANUSCRIPTS, MAX_MANUSCRIPT_TEXT_LENGTH,
   MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId, normalizeManuscriptSources,
   hasDrawings, normalizeCategories, normalizeDrawings, normalizeLanes, normalizeLinks, normalizePositions,
@@ -51,6 +51,8 @@ import {
   type CanvasImageRef, type CanvasStroke,
   type BoardDeleteCanvasRequest, type BoardDeleteCanvasResult, type BoardDeleteCardRequest,
   type BoardFocusRequest, type BoardFocusResult,
+  type BoardBindRequest, type BoardBindResult, type BoardSelectGenreRequest,
+  type CanvasGenreDefinition, type CanvasGenreSummary,
   type BoardImageBytesOutcome, type BoardImageBytesRequest,
   type BoardListResult, type BoardMutationResult,
   type BoardPatchCardRequest, type BoardProposeCardRequest, type BoardPutCardRequest,
@@ -90,7 +92,41 @@ function typePartOf(category: BoardCategory): Partial<BoardCategory> {
     ...(category.proposal === undefined ? {} : { proposal: category.proposal }),
     ...(category.history === undefined ? {} : { history: category.history }),
     ...(category.draft === undefined ? {} : { draft: category.draft }),
+    ...(category.role === undefined ? {} : { role: category.role }),
   }
+}
+
+/** The file under the state root that remembers which canvas each session is bound to. */
+export const BINDINGS_FILE_NAME = 'bindings.json'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * A canvas selected a genre, switched it, or cleared it (`null`).
+     * @param canvasId - the canvas.
+     * @param genreId - the genre now selected, or null.
+     * @mode emit
+     */
+    'canvas/genre-changed'(canvasId: string, genreId: string | null): void
+    /**
+     * A session was bound to a canvas, or unbound (`null`).
+     * @param sessionId - the session.
+     * @param canvasId - the canvas it is now bound to, or null.
+     * @mode emit
+     */
+    'canvas/binding-changed'(sessionId: string, canvasId: string | null): void
+  }
+}
+
+/** Read the untrusted `bindings.json`: session id → canvas id, bad rows dropped. */
+function normalizeBindings(raw: unknown): Map<string, string> {
+  const out = new Map<string, string>()
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out
+  for (const [sessionId, canvasId] of Object.entries(raw as Record<string, unknown>)) {
+    const id = typeof canvasId === 'string' ? normalizeCanvasId(canvasId) : undefined
+    if (sessionId.length > 0 && id !== undefined) out.set(sessionId, id)
+  }
+  return out
 }
 
 /** The board as one JSON document (the pad index's trailing-newline shape). */
@@ -227,6 +263,9 @@ export class CanvasBoardService {
 
   /** The per-session focus map (which canvas each session's tab has open). */
   private readonly focused = new Map<string, string>()
+
+  /** The registered genres by id (创作体裁); in memory — each genre plugin re-registers on apply. */
+  private readonly genres = new Map<string, CanvasGenreDefinition>()
 
   /**
    * Read one canvas file: the board plus the freshness token, or which way it
@@ -543,6 +582,7 @@ export class CanvasBoardService {
     for (const [sessionId, focused] of this.focused) {
       if (focused === id) this.focused.delete(sessionId)
     }
+    await this.dropBindings(id, session)
     return { ok: true }
   }
 
@@ -585,11 +625,11 @@ export class CanvasBoardService {
     const wanted = normalizeCategories(request.categories)
     return this.mutate(request.canvasId, session, (board, now) => {
       // The catalog verb owns names, order and on/off only. A row's type half
-      // (brief, definition, proposal) has its own verbs, so it is carried over
+      // (brief, definition, proposal) and its genre role have their own verbs, so they are carried over
       // from the board as stored — a client holding an older read must never
       // wipe a definition adopted since by sending its whole catalog back.
       const stored = new Map(board.categories.map(category => [category.id, category]))
-      const rows = wanted.map(({ brief: _brief, briefDrawings: _drawings, definition: _definition, proposal: _proposal, history: _history, draft: _draft, ...row }) => {
+      const rows = wanted.map(({ brief: _brief, briefDrawings: _drawings, definition: _definition, proposal: _proposal, history: _history, draft: _draft, role: _role, ...row }) => {
         const previous = stored.get(row.id)
         return previous === undefined ? row : { ...row, ...typePartOf(previous) }
       })
@@ -874,6 +914,203 @@ export class CanvasBoardService {
    */
   focusedCanvasId(session: Session): string | undefined {
     return this.focused.get(String(session.id))
+  }
+
+  /**
+   * The canvas one session's canvas tools act on: the canvas it is bound to,
+   * else the one its sidebar tab has open. A plain canvas is never bound, so
+   * without a genre this is exactly the focus rule it always was.
+   * @param session - the calling session.
+   * @returns the canvas id, or undefined when there is neither.
+   */
+  async targetCanvasId(session: Session): Promise<string | undefined> {
+    return (await this.boundCanvasId(String(session.id))) ?? this.focusedCanvasId(session)
+  }
+
+  /* ------------------------------------------------------------ genres (创作体裁) */
+
+  /**
+   * Register a genre (a genre plugin calls this on apply). A second
+   * registration of the same id replaces the first; the returned disposer
+   * removes only the registration it belongs to.
+   * @param definition - the genre.
+   * @returns the disposer.
+   */
+  registerGenre(definition: CanvasGenreDefinition): () => void {
+    if (!isGenreId(definition.id)) throw new Error(`invalid canvas genre id: ${String(definition.id)}`)
+    this.genres.set(definition.id, definition)
+    return () => {
+      if (this.genres.get(definition.id) === definition) this.genres.delete(definition.id)
+    }
+  }
+
+  /** One registered genre, by id. */
+  genre(genreId: string): CanvasGenreDefinition | undefined {
+    return this.genres.get(genreId)
+  }
+
+  /** Every registered genre, as the browser lists it. */
+  listGenres(): CanvasGenreSummary[] {
+    return [...this.genres.values()].map(genre => ({
+      id: genre.id,
+      label: genre.label,
+      version: genre.version,
+      ...(genre.base === undefined ? {} : { base: genre.base }),
+      description: genre.description,
+      roles: genre.categories.map(seed => ({ role: seed.role, label: seed.label })),
+      ...(genre.agentRow === undefined ? {} : { agentRow: genre.agentRow }),
+    }))
+  }
+
+  /**
+   * Select a genre for one canvas, or clear it. Selecting seeds every role
+   * category the canvas does not have yet (matched by role, so a renamed
+   * category is still found); clearing keeps the categories and their cards
+   * and only unloads the genre — and unbinds the sessions bound to it.
+   * @param request - canvas id and the genre id, or null.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async selectGenre(request: BoardSelectGenreRequest, session: Session): Promise<BoardMutationResult> {
+    const genre = request.genreId === null ? undefined : this.genres.get(request.genreId)
+    if (request.genreId !== null && genre === undefined) return { ok: false, error: 'missing' }
+    const result = await this.mutate(request.canvasId, session, (board, now) => {
+      if (genre === undefined) {
+        delete board.genre
+        return board
+      }
+      let last = board.categories.reduce((max, category) => Math.max(max, category.order), 0)
+      for (const seed of genre.categories) {
+        if (board.categories.some(category => category.role === seed.role)) continue
+        last += 10
+        const definition = seed.definition === undefined ? undefined : normalizeDefinition(seed.definition)
+        board.categories.push({
+          id: makeBoardId('cat', Date.now(), randomSuffix()),
+          label: sanitizeCategoryLabel(seed.label) ?? seed.role,
+          order: last,
+          enabled: true,
+          ...(seed.brief === undefined ? {} : { brief: seed.brief }),
+          ...(definition === undefined ? {} : { definition }),
+          role: seed.role,
+        })
+      }
+      board.genre = { id: genre.id, version: genre.version, selectedAt: now }
+      return board
+    })
+    if (!result.ok) return result
+    if (genre === undefined) await this.dropBindings(result.board.id, session)
+    this.ctx.emit('canvas/genre-changed', result.board.id, genre?.id ?? null)
+    return result
+  }
+
+  /** The `bindings.json` target. */
+  private async bindingsTarget() {
+    return this.fs.resolve(BINDINGS_FILE_NAME, { cwd: this.stateRoot })
+  }
+
+  /** Read the bindings with the freshness token a rewrite must present (undefined: no file yet). */
+  private async readBindings(): Promise<{ map: Map<string, string>; version: string | undefined }> {
+    try {
+      const target = await this.bindingsTarget()
+      const info = await this.fs.stat(target)
+      if (info === undefined) return { map: new Map(), version: undefined }
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(await this.fs.readText(target))
+      } catch {
+        parsed = undefined
+      }
+      return { map: normalizeBindings(parsed), version: info.version }
+    } catch {
+      return { map: new Map(), version: undefined }
+    }
+  }
+
+  /**
+   * Rewrite the bindings under the version from the read; a stale write
+   * re-reads and re-applies once (the board's own rule).
+   */
+  private async changeBindings(
+    session: Session,
+    change: (map: Map<string, string>) => boolean,
+  ): Promise<CanvasError | undefined> {
+    const policy = this.policyOf(session)
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { map, version } = await this.readBindings()
+      if (!change(map)) return undefined
+      try {
+        const target = await this.bindingsTarget()
+        await this.fs.writeText(
+          target, `${JSON.stringify(Object.fromEntries(map), null, 2)}\n`,
+          version === undefined ? { kind: 'createIfAbsent' } : { kind: 'replaceIfVersion', version: FsVersion(version) },
+          undefined, policy,
+        )
+        return undefined
+      } catch (error) {
+        const code = canvasErrorOf(error)
+        if ((code === 'stale' || code === 'exists') && attempt === 0) continue
+        return code
+      }
+    }
+    /* v8 ignore next -- the loop's second iteration always returns */
+    return 'stale'
+  }
+
+  /** Unbind every session bound to one canvas (its genre was cleared, or it was deleted). */
+  private async dropBindings(canvasId: string, session: Session): Promise<void> {
+    const dropped: string[] = []
+    await this.changeBindings(session, map => {
+      for (const [sessionId, bound] of map) {
+        if (bound !== canvasId) continue
+        map.delete(sessionId)
+        dropped.push(sessionId)
+      }
+      return dropped.length > 0
+    })
+    for (const sessionId of dropped) this.ctx.emit('canvas/binding-changed', sessionId, null)
+  }
+
+  /**
+   * The canvas one session is bound to, if any. Restart-safe: the binding
+   * lives in the state root, not in memory.
+   * @param sessionId - the session.
+   * @returns the canvas id, or undefined.
+   */
+  async boundCanvasId(sessionId: string): Promise<string | undefined> {
+    return (await this.readBindings()).map.get(sessionId)
+  }
+
+  /**
+   * Bind the calling session to a canvas (or unbind with `null`). Only a
+   * canvas with a genre can be bound: binding exists for genre work, and a
+   * plain canvas keeps following the sidebar exactly as before.
+   * @param request - the canvas id, or null.
+   * @param session - the session being bound; also supplies the fence.
+   * @returns the canvas now bound, or the failure code.
+   */
+  async bindSession(request: BoardBindRequest, session: Session): Promise<BoardBindResult> {
+    const sessionId = String(session.id)
+    let canvasId: string | null = null
+    if (request.canvasId !== null) {
+      const id = normalizeCanvasId(request.canvasId)
+      if (id === undefined) return { ok: false, error: 'invalid-name' }
+      const raw = await this.readRaw(id)
+      if (raw === 'missing') return { ok: false, error: 'missing' }
+      if (raw === 'corrupt') return { ok: false, error: 'io' }
+      if (raw.board.genre === undefined) return { ok: false, error: 'no-genre' }
+      canvasId = id
+    }
+    let changed = false
+    const error = await this.changeBindings(session, map => {
+      changed = (map.get(sessionId) ?? null) !== canvasId
+      if (!changed) return false
+      if (canvasId === null) map.delete(sessionId)
+      else map.set(sessionId, canvasId)
+      return true
+    })
+    if (error !== undefined) return { ok: false, error }
+    if (changed) this.ctx.emit('canvas/binding-changed', sessionId, canvasId)
+    return { ok: true, canvasId }
   }
 
   /* ------------------------------------------------------------ manuscripts (成稿) */
