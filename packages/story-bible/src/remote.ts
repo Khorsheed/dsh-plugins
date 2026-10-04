@@ -19,8 +19,8 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { StoryBibleService } from './store.ts'
 import type {
   ChapterRecord, ChapterRow, CharacterRecord, EffectiveChapterPhase, ExperienceEntry, ExtractPayload,
-  ImportReport, LedgerResult, MemoryRecord, PendingItem, ReviewAction, StoryError,
-  WorkIndexEntry, WorkInfo, WorkMeta, WriteCharacterRequest, WriteMemoryRequest,
+  ForeshadowExitAction, ImportReport, LedgerResult, MemoryRecord, MentionEntry, PatchMemoryRequest, PendingItem,
+  ReviewAction, StoryError, WorkIndexEntry, WorkInfo, WorkMeta, WriteCharacterRequest, WriteMemoryRequest,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -177,6 +177,57 @@ export class StoryRemoteService extends TypertRemoteService<StoryRemoteConfig> {
   @Remote('decideMemory')
   decideMemory(agent: Agent, request: { workId: string; id: string; action: ReviewAction }): Promise<{ ok: boolean; error?: StoryError; memory?: MemoryRecord }> {
     return this.store.decideMemory(request, agent.session)
+  }
+
+  /**
+   * Edit one memory's fields (设定集/世界规则区): the derives_from revision
+   * protocol — the old row archives, the new one heads the chain.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - work id, memory id, the fields to change.
+   * @returns the NEW record, or the failure code.
+   */
+  @Remote('patchMemory')
+  patchMemory(agent: Agent, request: PatchMemoryRequest): Promise<{ ok: boolean; error?: StoryError; memory?: MemoryRecord }> {
+    return this.store.patchMemory(request, agent.session)
+  }
+
+  /**
+   * The foreshadow card's three exits (登记揭晓/弃置/转设定).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - work id, memory id, the action, and the answer/rule text.
+   * @returns the touched records, or the failure code.
+   */
+  @Remote('foreshadowExit')
+  foreshadowExit(agent: Agent, request: { workId: string; id: string; action: ForeshadowExitAction; answer?: string }): Promise<{ ok: boolean; error?: StoryError; memory?: MemoryRecord; promoted?: MemoryRecord }> {
+    return this.store.foreshadowExit(request, agent.session)
+  }
+
+  /** The mention journal (世界记忆卡的章节点轨). */
+  @Remote('listMentions')
+  listMentions(request: { workId: string; foreshadowId?: string }): Promise<MentionEntry[]> {
+    return this.store.listMentions(request)
+  }
+
+  /**
+   * Take one automatic experience back (自动·可撤销).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - work id and the entry id (`e<n>`).
+   * @returns the receipt, or the failure code.
+   */
+  @Remote('retractExperience')
+  retractExperience(agent: Agent, request: { workId: string; id: string }): Promise<{ ok: boolean; error?: StoryError }> {
+    return this.store.retractExperience(request, agent.session)
+  }
+
+  /**
+   * The user's ✓确认计划 gate (规划环).
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - work id and chapter number.
+   * @returns the fresh record, or the failure code.
+   */
+  @Remote('confirmChapterPlan')
+  confirmChapterPlan(agent: Agent, request: { workId: string; n: number }): Promise<{ ok: boolean; error?: StoryError; chapter?: ChapterRecord }> {
+    return this.store.confirmChapterPlan(request, agent.session)
   }
 
   /**

@@ -32,7 +32,8 @@ import {
   type ChapterRecord, type ChapterTable, type CharacterRecord, type CharacterTable,
   type EffectiveChapterPhase, type ExperienceEntry, type ExtractPayload, type ForeshadowOp, type ImportDrop,
   type ImportReport, type LedgerResult, type MemoryRecord, type MemoryTable,
-  type MentionEntry, type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type ReviewAction, type StoryError,
+  type MentionEntry, type PatchMemoryRequest, type PendingItem, type PendingKind, type PendingPayload, type PendingTable,
+  type ForeshadowExitAction, type ReviewAction, type StoryError,
   type WorkIndexEntry, type WorkInfo, type WorkMeta, type WriteChapterRequest, type WriteCharacterRequest,
   type WriteMemoryRequest,
 } from './types.ts'
@@ -825,6 +826,61 @@ export class StoryBibleService {
 
   /* -------------------------------------------------------------- ledger */
 
+  /**
+   * Edit one memory's fields (设定集/世界规则区的字段级可编辑). The revision
+   * protocol (proposal §3: 修订走 derives_from 链，旧条不删): the old row
+   * archives, a new row carries the patched content with
+   * `links.derivesFrom: [oldId]` — one guarded write, so the chain link and
+   * the retirement can never disagree.
+   * @param request - work id, memory id, the fields to change.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the NEW record (the chain's head), or the failure code.
+   */
+  async patchMemory(
+    request: PatchMemoryRequest,
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly memory?: MemoryRecord }> {
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    const content = request.content === undefined ? undefined : cleanText(request.content)
+    if (request.content !== undefined && content === undefined) return { ok: false, error: 'invalid-name' }
+    let memory: MemoryRecord | undefined
+    const outcome = await this.mutateJson(
+      await this.fileTarget(workId, WORK_FILES.memories), session,
+      raw => normalizeMemoryTable(raw),
+      undefined,
+      (table, now) => {
+        const old = table.memories.find(candidate => candidate.id === request.id)
+        if (old === undefined) return 'missing'
+        if (old.status === 'archived') return 'invalid-name'
+        const next = table.memories.reduce((max, row) => Math.max(max, memoryNumberOf(row.id)), 0) + 1
+        const { autoImported: _dropped, ...rest } = old
+        const revised: MemoryRecord = {
+          ...rest,
+          id: `m${next}`,
+          content: content ?? old.content,
+          reviewed: true,
+          extractedBy: 'user',
+          links: { derivesFrom: [old.id] },
+          createdAt: now,
+          updatedAt: now,
+          ...(request.kind === undefined ? {} : { kind: request.kind }),
+          ...(request.specifics === undefined ? {} : { specifics: request.specifics }),
+        }
+        const mutable = old as { -readonly [K in keyof MemoryRecord]: MemoryRecord[K] }
+        mutable.status = 'archived'
+        mutable.updatedAt = now
+        table.memories.push(revised)
+        memory = revised
+        return table
+      },
+    )
+    if (!outcome.ok || memory === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
+    return { ok: true, memory }
+  }
+
+  /* -------------------------------------------------------------- ledger */
+
   /** The foreshadow ledger rows (canon + prospective + reviewed + active — the 台账). */
   private async foreshadows(workId: string): Promise<MemoryRecord[]> {
     const memories = await this.readMemories(workId)
@@ -856,6 +912,180 @@ export class StoryBibleService {
       counts: { active: active.length, overdue: active.filter(memory => slept(memory) >= 3).length, resolved: resolved.length, abandoned: abandoned.length },
       currentChapter,
     }
+  }
+
+  /**
+   * The user's ✓确认计划 gate (规划环的确认闸门): stamps `planConfirmedAt`
+   * on a chapter that HAS a plan. Idempotent — a confirmed plan re-answers
+   * ok; a chapter with no plan refuses (there is nothing to confirm).
+   * @param request - work id and chapter number.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh record, or the failure code.
+   */
+  async confirmChapterPlan(
+    request: { readonly workId: string; readonly n: number },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly chapter?: ChapterRecord }> {
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    let chapter: ChapterRecord | undefined
+    const outcome = await this.mutateJson(
+      await this.fileTarget(workId, WORK_FILES.chapters), session,
+      raw => normalizeChapterTable(raw),
+      undefined,
+      (table, now) => {
+        const row = table.chapters.find(candidate => candidate.n === request.n)
+        if (row === undefined) return 'missing'
+        if (row.plan === undefined) return 'invalid-name'
+        if (row.planConfirmedAt === undefined) {
+          const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
+          mutable.planConfirmedAt = now
+          mutable.updatedAt = now
+        }
+        chapter = { ...row }
+        return table
+      },
+    )
+    if (!outcome.ok || chapter === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
+    return { ok: true, chapter }
+  }
+
+  /**
+   * The foreshadow card's three exits (世界记忆, proposal §6):
+   *   - resolve 登记揭晓: status → resolved with the answer (required — the
+   *     plan brief prints it so planning cannot contradict the reveal);
+   *   - abandon 弃置: status → abandoned (the 台账 stops warning);
+   *   - promote 转设定: the mystery graduates into a world rule — a canon
+   *     semantic memory (kind 世界, reviewed, user-sourced) is created from
+   *     the answer text (required), and the foreshadow resolves into it
+   *     (`links.resolvedBy` points at the new rule). One guarded write.
+   * @param request - work id, memory id, the action, and the answer/rule text.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the touched records, or the failure code.
+   */
+  async foreshadowExit(
+    request: { readonly workId: string; readonly id: string; readonly action: ForeshadowExitAction; readonly answer?: string },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly memory?: MemoryRecord; readonly promoted?: MemoryRecord }> {
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    const answer = cleanText(request.answer, 500)
+    if ((request.action === 'resolve' || request.action === 'promote') && answer === undefined) return { ok: false, error: 'invalid-name' }
+    let memory: MemoryRecord | undefined
+    let promoted: MemoryRecord | undefined
+    const outcome = await this.mutateJson(
+      await this.fileTarget(workId, WORK_FILES.memories), session,
+      raw => normalizeMemoryTable(raw),
+      undefined,
+      (table, now) => {
+        const row = table.memories.find(candidate => candidate.id === request.id)
+        if (row === undefined || row.type !== 'prospective') return 'missing'
+        if (row.specifics?.status === 'resolved' || row.specifics?.status === 'abandoned') return 'invalid-name'
+        const mutable = row as { -readonly [K in keyof MemoryRecord]: MemoryRecord[K] }
+        if (request.action === 'abandon') {
+          mutable.specifics = { ...row.specifics, status: 'abandoned' }
+        } else if (request.action === 'resolve') {
+          mutable.specifics = { ...row.specifics, status: 'resolved', ...(answer === undefined ? {} : { answer }) }
+        } else {
+          const next = table.memories.reduce((max, candidate) => Math.max(max, memoryNumberOf(candidate.id)), 0) + 1
+          promoted = {
+            id: `m${next}`,
+            owner: 'creator',
+            type: 'semantic',
+            layer: 'canon',
+            kind: '世界',
+            content: answer!,
+            status: 'active',
+            reviewed: true,
+            confidence: 'high',
+            extractedBy: 'user',
+            createdAt: now,
+            updatedAt: now,
+          }
+          table.memories.push(promoted)
+          mutable.specifics = { ...row.specifics, status: 'resolved', ...(answer === undefined ? {} : { answer }) }
+          mutable.links = { resolvedBy: promoted.id }
+        }
+        mutable.reviewed = true
+        mutable.updatedAt = now
+        memory = { ...row }
+        return table
+      },
+    )
+    if (!outcome.ok || memory === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
+    return { ok: true, memory, ...(promoted === undefined ? {} : { promoted }) }
+  }
+
+  /** The mention journal (世界记忆卡的章节点轨), optionally one foreshadow's, oldest first. */
+  async listMentions(request: { readonly workId: string; readonly foreshadowId?: string }): Promise<MentionEntry[]> {
+    const id = normalizeWorkId(request.workId)
+    if (id === undefined) return []
+    const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.mentions), raw => normalizeMention(raw))
+    return entries.filter(entry => request.foreshadowId === undefined || entry.foreshadowId === request.foreshadowId)
+  }
+
+  /**
+   * Take one automatic experience back (自动·可撤销, invariant 3): the line
+   * leaves the journal. The journal is append-only for the SYSTEM; the user's
+   * retract gesture is the one sanctioned exception, and it rides the same
+   * guarded rewrite the appends use, keeping every other line byte-identical.
+   * A line without an id (pre-M3) cannot be retracted by handle — the user
+   * edits the journal by hand for those.
+   * @param request - work id and the entry id (`e<n>`).
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the receipt, or the failure code.
+   */
+  async retractExperience(
+    request: { readonly workId: string; readonly id: string },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: StoryError }> {
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined || !/^e\d+$/.test(request.id)) return { ok: false, error: 'invalid-name' }
+    const target = await this.fileTarget(workId, WORK_FILES.experiences)
+    const policy = this.policyOf(session)
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      let text: string
+      let version: string
+      try {
+        const info = await this.fs.stat(target)
+        if (info === undefined) return { ok: false, error: 'missing' }
+        text = await this.fs.readText(target)
+        version = info.version
+      } catch (error) {
+        return { ok: false, error: storyErrorOf(error) }
+      }
+      const lines = text.split('\n')
+      const kept: string[] = []
+      let found = false
+      for (const line of lines) {
+        if (line.trim() === '') continue
+        try {
+          const row = JSON.parse(line) as Record<string, unknown>
+          if (row['id'] === request.id) {
+            found = true
+            continue
+          }
+        } catch {
+          // A corrupt line is not the retract target; it is kept verbatim.
+        }
+        kept.push(line)
+      }
+      if (!found) return { ok: false, error: 'missing' }
+      try {
+        await this.fs.writeText(
+          target, kept.length === 0 ? '' : `${kept.join('\n')}\n`,
+          { kind: 'replaceIfVersion', version: FsVersion(version) },
+          undefined, policy,
+        )
+        return { ok: true }
+      } catch (error) {
+        const code = storyErrorOf(error)
+        if (code === 'stale' && attempt === 0) continue
+        return { ok: false, error: code }
+      }
+    }
+    /* v8 ignore next -- the loop's second iteration always returns */
+    return { ok: false, error: 'stale' }
   }
 
   /* --------------------------------------------------------------- brief */
@@ -1114,7 +1344,12 @@ export class StoryBibleService {
     }
 
     // Experiences + current states: roster-checked, evidence-gated, high lands / medium-low pends.
+    // Automatic experience lines carry an id (the retract gesture's handle) and the 自动·可撤销 mark.
     const experienceLines: Record<string, unknown>[] = []
+    let experienceNext = (await this.listExperiences({ workId: id })).reduce((max, row) => {
+      const match = /^e(\d+)$/.exec(row.id ?? '')
+      return match === null ? max : Math.max(max, Number(match[1]))
+    }, 0) + 1
     const stateUpdates = new Map<string, CharacterRecord['currentState']>()
     for (const raw of payload.experiences ?? []) {
       const characterId = cleanText(raw['character_id'], 40)
@@ -1131,7 +1366,8 @@ export class StoryBibleService {
       }
       const confidence = raw['confidence'] === 'high' ? 'high' : raw['confidence'] === 'low' ? 'low' : 'medium'
       if (confidence === 'high') {
-        experienceLines.push({ characterId, chapter: chapter.n, entry, createdAt: now })
+        experienceLines.push({ id: `e${experienceNext}`, characterId, chapter: chapter.n, entry, autoImported: true, createdAt: now })
+        experienceNext += 1
       } else {
         pend({
           kind: 'experience', confidence, chapter: chapter.n, reason: `置信度 ${confidence}`,
@@ -1428,7 +1664,12 @@ export class StoryBibleService {
       const characterId = cleanText(item.payload['characterId'], 40)
       const entry = cleanText(item.payload['entry'], 500)
       if (characterId === undefined || entry === undefined) return 'invalid-name'
+      const experienceNext = (await this.listExperiences({ workId })).reduce((max, row) => {
+        const match = /^e(\d+)$/.exec(row.id ?? '')
+        return match === null ? max : Math.max(max, Number(match[1]))
+      }, 0) + 1
       const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.experiences), session, [{
+        id: `e${experienceNext}`,
         characterId,
         chapter: item.chapter ?? 0,
         entry,
@@ -1485,7 +1726,36 @@ function normalizeExperience(raw: unknown): ExperienceEntry | undefined {
   const chapter = typeof record['chapter'] === 'number' && Number.isFinite(record['chapter']) ? record['chapter'] : undefined
   const entry = cleanText(record['entry'], 500)
   if (characterId === undefined || chapter === undefined || entry === undefined) return undefined
-  return { characterId, chapter, entry, createdAt: cleanText(record['createdAt'], 40) ?? '' }
+  const id = cleanText(record['id'], 40)
+  return {
+    characterId,
+    chapter,
+    entry,
+    ...(id === undefined ? {} : { id }),
+    ...(record['autoImported'] === true ? { autoImported: true } : {}),
+    createdAt: cleanText(record['createdAt'], 40) ?? '',
+  }
+}
+
+/** Tolerant read of one mention journal line. */
+function normalizeMention(raw: unknown): MentionEntry | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const record = raw as Record<string, unknown>
+  const foreshadowId = cleanText(record['foreshadowId'], 40)
+  const chapter = typeof record['chapter'] === 'number' && Number.isFinite(record['chapter']) ? record['chapter'] : undefined
+  const kind = record['kind']
+  if (foreshadowId === undefined || chapter === undefined
+    || (kind !== 'planted' && kind !== 'advanced' && kind !== 'hinted' && kind !== 'resolved')) return undefined
+  const note = cleanText(record['note'], 200)
+  return {
+    foreshadowId,
+    chapter,
+    kind,
+    planned: record['planned'] === true,
+    reconciled: record['reconciled'] === true,
+    ...(note === undefined ? {} : { note }),
+    createdAt: cleanText(record['createdAt'], 40) ?? '',
+  }
 }
 
 export default StoryBibleService
