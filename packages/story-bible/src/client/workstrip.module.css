@@ -1,0 +1,129 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--dsw-font-family);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+}
+
+.notice {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxs-12);
+  line-height: 1.8;
+}
+
+/* ------------------------------------------------------------- 作品条 */
+.workstrip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.workSelect {
+  flex: 1;
+  min-width: 0;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  font: var(--dsw-font-xxs-12);
+  padding: 3px 6px;
+}
+
+.workCounts {
+  flex: 0 0 auto;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+.focusedDot {
+  color: var(--dsw-alias-brand-primary);
+  font: var(--dsw-font-xxxs-11);
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+.iconButton:hover {
+  color: var(--dsw-alias-brand-primary);
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.createForm {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.createForm input[type='text'], .createForm select {
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  font: var(--dsw-font-xxs-12);
+  padding: 4px 8px;
+}
+.formLabel {
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+}
+.formNote {
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-state-warn-primary);
+}
+.formActions {
+  display: flex;
+  gap: 6px;
+}
+.primaryButton {
+  border: 1px solid var(--dsw-alias-brand-primary);
+  border-radius: 6px;
+  background: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary));
+  color: var(--dsw-alias-label-primary-inverted, #fff);
+  font: var(--dsw-font-xxs-12);
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ghostButton {
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.ghostButton:hover {
+  color: var(--dsw-alias-brand-primary);
+  border-color: var(--dsw-alias-brand-primary);
+}

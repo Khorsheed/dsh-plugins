@@ -7,7 +7,7 @@
 - 包总数:**38**
 - 自挂载 bundle(`dsh.bundle.patch`):**35**
 - 组合组件(不自挂载,`dsh.composition.component`):**3** — `preset-composed-row` 1、`source-plane-library` 1、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**28**
+- 带浏览器半边(`dsh.client`):**29**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -47,7 +47,7 @@
 | `@khorsheed/dsh-room` | `packages/room` | 0.2.1 | bundle | — | web | 0.1.5-rc.1 | dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-story-bible` | `packages/story-bible` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | — |
+| `@khorsheed/dsh-story-bible` | `packages/story-bible` | 0.1.0 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.4 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-typesafe` | `packages/typesafe` | 0.1.2 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-typesafe-tool` | `packages/typesafe-tool` | 0.1.2 | composition | preset-composed-row | — | 0.1.5-rc.1 | — |

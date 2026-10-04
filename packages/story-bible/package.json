@@ -26,6 +26,10 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types.js"
@@ -43,6 +47,7 @@
   },
   "files": [
     "lib",
+    "lib/client.js",
     "lib/typert.host.d.ts",
     "lib/typert.host.js",
     "lib/typert.remote-client.d.ts",
@@ -51,7 +56,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@khorsheed/dsh-client-ui-content-preview": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -62,13 +68,41 @@
     "@deepseek-ai/dsh-sandbox-policy": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6 || ^0.2.0-rc.1"
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-workspace": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-util-workspace-path": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-invariants": {
       "optional": true
     },
     "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-sidebar-right": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-workspace": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-util-workspace-path": {
+      "optional": true
+    },
+    "react": {
       "optional": true
     }
   },
@@ -85,7 +119,21 @@
     "@types/node": "^22.0.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "@deepseek-ai/dsh-client-locale": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-store": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-session": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-workspace": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-util-workspace-path": "^0.2.0-rc.1",
+    "@khorsheed/dsh-client-ui-content-preview": "workspace:*",
+    "@types/react": "~18.3.1",
+    "jsdom": "^30.0.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "scripts": {
     "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
@@ -108,8 +156,20 @@
     },
     "compat": {
       "minHost": "0.2.0-rc.2",
-      "notes": "M1 is host-only by design: it declares no dsh.client browser half, so the 右栏两 tab land with M3 — the Remote data face `story` is mounted now and serves any consumer. State lives under $DSH_HOME/state/story (deployment-level, never a session workspace): every mutation goes through the mounted ctx.fs with the CALLING SESSION's resolved MODE and session id but the writable boundary re-rooted at the plugin's own state dir (the canvas store precedent), so a read-only deployment still denies. The per-session focus map (sessionId → workId) is in-memory only — a restart means 「nothing focused yet」, which the pointer section and the tools answer honestly (empty section / guidance text, never a throw). The light pointer is a FUNCTION prompt section (host §4.1's native contract) evaluated per assembly; with no focus it renders '' and costs nothing. 章节正文 reads (workspace markdown, the single source of truth) go through ctx.fs unfenced because a fence is a write fence. story_extract's subagent delegation is the main agent's own job (host-native subagent tool): the plugin never delegates, and a preset without the subagent tool degrades to the main agent running prepare/import itself (the five import gates are plugin service code either way).",
+      "notes": "M3 adds the browser half (dsh.client, web): two page-type right-Sidebar tab kinds (story-fragments / story-reader — the 0.1.5 sidebar.right.pane.tab + sidebarRightTabs seats, present on every shipped web line) registered through ctx.slots.inject, plus two keyed tool.call.toolview rows that degrade to the host's generic rows without ui-tool. Mode visibility follows the cross-session rule (the works store is deployment-level content: no runtime switch — the install layer decides). The story Remote face (mounted by the core row since M1) is consumed through ctx.remote.$mount; a composition mounting ONLY this client half still boots and reports the missing host half in the tab instead of throwing. State writes go through the mounted ctx.fs with the CALLING SESSION's resolved MODE and session id but the boundary re-rooted at the plugin's own state dir (a read-only deployment still denies). The per-session focus map is process-lifetime — a restart means 「nothing focused」, which the pointer, the tools and the work strip answer honestly. The 在编辑器打开 door prefers the open-in-app probe's IDE (the manuscript DIRECTORY) and falls back to the official document preview; with neither it hides. 场景/物品 boards render honestly empty: the kind axis files nothing into them yet.",
       "verifiedHost": "0.2.0-rc.2"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-tool",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ],
+      "platform": "web"
     }
   }
 }
