@@ -13,7 +13,6 @@
  */
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import type { ChapterRow, MemoryRecord, MentionEntry, PendingItem } from '../../types.ts'
-import { foreshadowRefOf } from '../../types.ts'
 import type { StoryTabProps } from '../contract.ts'
 import type { WorkShell } from '../data.ts'
 import css from '../fragments.module.css'
@@ -262,11 +261,3 @@ function dotClassOf(kind: MentionEntry['kind']): string | undefined {
   if (kind === 'advanced') return css.dotAdvanced
   return css.dotResolved
 }
-
-/** The pending item's chapter (the queue rows their card mentions). */
-export function pendingChapterOf(item: PendingItem): number | undefined {
-  return item.chapter
-}
-
-/** Re-exported so the toolview row can name a foreshadow the way the cards do. */
-export { foreshadowRefOf }

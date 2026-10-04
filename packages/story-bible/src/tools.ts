@@ -265,14 +265,14 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
         if (existing !== undefined) {
           const focused = await store.focusWork({ workId: existing.id }, session)
           return focused.ok
-            ? `已 focus《${existing.title}》（${existing.id}）。story_read(what=brief) 取写作约束。`
+            ? `已 focus《${existing.title}》（${existing.id}）。`
             : `失败：${focused.error ?? 'io'}`
         }
         if ((args.workspace ?? '').trim() === '') return `失败：没有名为《${title}》的作品。新建要给 workspace（挂载工作区的绝对路径）。`
         const created = await store.createWork({ title, workspace: args.workspace! }, session)
         if (!created.ok) return `失败：${created.error ?? 'io'}`
         await store.focusWork({ workId: created.work!.id }, session)
-        return `已创建并 focus《${created.work!.title}》（${created.work!.id}），正文目录 ${created.work!.workspace}/${created.work!.title}/。先聊设定落幽灵卡，或 story_write(what=chapter) 建第 1 章。`
+        return `已创建并 focus《${created.work!.title}》（${created.work!.id}），正文目录 ${created.work!.workspace}/${created.work!.title}/。`
       }
       const resolved = target(exec)
       if ('message' in resolved) return resolved.message
@@ -293,7 +293,7 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
         if (!outcome.ok) return `失败：${outcome.error ?? 'io'}`
         const memory = outcome.memory!
         return memory.layer === 'intent'
-          ? `已落幽灵卡 ${memory.id}（${memory.kind ?? '未分类'}）：「${memory.content.slice(0, 40)}」。用户 ✓ 采纳前不进 brief、不进正文。`
+          ? `已落卡 ${memory.id}（${memory.kind ?? '未分类'}·提议中）。`
           : `已登记 ${memory.id}（canon/${memory.type}，待用户审）：「${memory.content.slice(0, 40)}」。`
       }
       if (args.what === 'character') {
@@ -332,7 +332,7 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
         const chapter = outcome.chapter!
         const plan = chapter.plan as ChapterPlan | undefined
         return plan === undefined
-          ? `已建第 ${chapter.n} 章《${chapter.title}》（规划中，正文文件 ${chapter.file}，编号自动 max+1）。补 plan：story_write(what=chapter, chapter=${chapter.n}, plan=…)。`
+          ? `已建第 ${chapter.n} 章《${chapter.title}》（规划中 · ${chapter.file}）。`
           : `已登记第 ${chapter.n} 章《${chapter.title}》plan：POV ${plan.pov ?? '未定'} / 目标 ${plan.goal} / 伏笔操作 ${plan.foreshadowOps.length} 条 / 钩子 ${plan.hook ?? '无'}。用户确认后开写。`
       }
       if (args.what === 'review') {

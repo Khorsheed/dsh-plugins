@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-04-story-bible-m3-client.md
-.agents/notes/implemented/feature/2026-10-04-story-bible-m3-client.md: 1f67fef559a643b31f14d133adfb42d5b4cac5b2
-.agents/notes/implemented/feature/2026-10-04-story-bible-m3-client.zh.md: 47ced9825a0ab44a7df12d1933a5c691f1b1ab36
+.agents/notes/implemented/feature/2026-10-04-story-bible-m3-client.md: 5186531a020f04ad0f00b8ebb2dce22f966597d1
+.agents/notes/implemented/feature/2026-10-04-story-bible-m3-client.zh.md: 7925055bf228734e12358a986b79c190e55a90d7

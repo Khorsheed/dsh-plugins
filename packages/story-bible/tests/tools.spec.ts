@@ -62,8 +62,10 @@ describe('the story tools', () => {
   it('story_write(memory) lands a ghost card that stays out of the brief until accepted', async () => {
     const { store, write, read } = await bench({ focus: true })
     const answer = await call(write, { what: 'memory', content: '梦主可能是赵启明的妹妹。', kind: '伏笔点子' })
-    expect(answer).toContain('已落幽灵卡 m19')
-    expect(answer).toContain('不进 brief')
+    expect(answer).toContain('已落卡 m19')
+    expect(answer).toContain('提议中')
+    // 短事实行：界面自己会显示，模型不代为通知（降噪规则）。
+    expect(answer).not.toContain('不进 brief')
     const brief = await call(read, { what: 'brief', for: 'write' })
     expect(brief).not.toContain('梦主可能是')
     const accepted = await call(write, { what: 'review', target: 'memory', id: 'm19', action: 'accept' })

@@ -85,7 +85,7 @@ export class StoryUiStore {
     this.source.set({ ...current, cmCursor: n })
   }
 
-  /** Point the reader at one chapter (the toolview plan row's 「去确认」). */
+  /** Point the reader at one chapter (the plan chip's door). */
   openReaderAt(n: number | null): void {
     const current = this.source.getSnapshot()
     if (current.readerN === n) return

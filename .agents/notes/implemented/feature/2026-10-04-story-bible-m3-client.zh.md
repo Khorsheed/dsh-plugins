@@ -10,7 +10,7 @@ M1 把记忆核心以无头形态交付了：整个创作环（focus → 幽灵�
 
 ### 两个 tab type、两个注册 id、零运行时开关
 
-本包在右栏注册表上注册两个页型 type：`story-fragments` 用包自己的 id（identity 三角的 client 端），`story-reader` 用 `@khorsheed/dsh-story-bible/reader`——tab 注册表要求每个 type 的 `id` 唯一，一个 kind 的 body 按它 definition 的 id 注册进 keyed 的 `sidebar.right.pane.tab` 槽（经宿主 tab-registry 源码核实，不是猜测）。模式可见性按 docs/plugin-visibility.md 的跨会话分支：作品 store 是部署级内容，所以**没有**运行时开关——安装层决定；agent 行（工具/轻指引/skill）照旧随 cordis preset 授予，不动。两行 `tool.call.toolview`（story_write → plan 卡带「去确认」，story_extract → 对账汇总卡带「去处理」）走结构化槽视图注册（canvas propose-row 先例），没有 ui-tool 时降级为宿主通用行。
+本包在右栏注册表上注册两个页型 type：`story-fragments` 用包自己的 id（identity 三角的 client 端），`story-reader` 用 `@khorsheed/dsh-story-bible/reader`——tab 注册表要求每个 type 的 `id` 唯一，一个 kind 的 body 按它 definition 的 id 注册进 keyed 的 `sidebar.right.pane.tab` 槽（经宿主 tab-registry 源码核实，不是猜测）。模式可见性按 docs/plugin-visibility.md 的跨会话分支：作品 store 是部署级内容，所以**没有**运行时开关——安装层决定；agent 行（工具/轻指引/skill）照旧随 cordis preset 授予，不动。M3 交付的两行 `tool.call.toolview` 在 F1 后续撤回（用户实测觉得时间线里的定制卡突兀）：时间线回到宿主通用行，可操作入口全部收敛到 sidebar（plan 卡、待审队列）加会话头 chip。`src/client/rows.ts`、`toolview/` 与其测试已删。
 
 ### 视图层：一个共享 shell、按视图取切片、轮询 + 触碰
 
@@ -43,7 +43,7 @@ mockup 的手势需要 M1 没有提供的五个动词，全部按同一套围栏
 ## 后果
 
 - 完整旅程可以在 link 开发实例里跑通：新建作品 → 灵感落卡/采纳/归档 → 规划 → 写作 → 审过 → 对账 → 待审处理 → 多作品切换，全部打真实 store。
-- 工具行解析 M1 工具的结算答案文本（稳定行头已由测试冻结）；将来改动这些答案的措辞，必须在同一个 commit 里动行解析正则（`src/client/rows.ts`）。
+- 落卡/登记类答案是短事实行（降噪规则：界面自己显示，模型不代为通知）；只有决策点（plan 确认、待审、计划落空）说话。
 - `docs/packages.md` 的 story-bible 行有了 web 列；`scripts/check-plugin-independence.ts` 的 ALLOWED_EDGES 增加 story-bible → ui-content-preview 源码面边（local-files / worktrees 先例）。
 - 59 个 client+host spec 钉住：五视图同源渲染、幽灵卡流程、待审队列、plan/审过状态机、作品条、行解析、store 与 PREVIEW_KEYS 字典契约。
 - 已知遗留：「在编辑器打开」优先 open-in-app 的 IDE 探测（只接受目录——宿主路由拒绝文件），兜底官方文档预览；场景/物品两板在 kind 轴缝合之前按设计为空。
