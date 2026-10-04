@@ -1,6 +1,6 @@
-import { clientLibrary } from '../../build/tsdown.client.ts'
+import { clientBundle } from '../../build/tsdown.client.ts'
 
-// M1 is host-only (no dsh.client browser half), so the shared helper's
-// client-bundle arm does not apply; `clientLibrary` emits the node-half lib
-// artifacts and stamps the same package id the identity triangle checks.
-export default clientLibrary('@khorsheed/dsh-story-bible', ['lib/types/index.js', 'lib/types/invariant.js'])
+// The M3 browser half joins the identity triangle: the client bundle builds
+// through the shared helper with the package's own id (the cordis.patch.yml
+// row name and src/invariant.ts's PACKAGE_NAME say the same).
+export default clientBundle('@khorsheed/dsh-story-bible', ['lib/types/index.js', 'lib/types/invariant.js'])

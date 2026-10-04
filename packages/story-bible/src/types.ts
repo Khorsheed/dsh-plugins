@@ -272,9 +272,13 @@ export interface CharacterTable {
 
 /** One line of `experiences.jsonl`: what this character did and how their state moved in one chapter. */
 export interface ExperienceEntry {
+  /** `e<n>`, allocated at write time — the retract gesture's handle (absent on pre-M3 lines). */
+  readonly id?: string
   readonly characterId: string
   readonly chapter: number
   readonly entry: string
+  /** The extract import's high-confidence automatic write — 自动·可撤销. */
+  readonly autoImported?: boolean
   readonly createdAt: string
 }
 
@@ -390,6 +394,8 @@ export interface ChapterRecord {
   readonly file: string
   readonly phase: ChapterPhase
   readonly plan?: ChapterPlan
+  /** The user's ✓确认计划 timestamp (the plan gate's durable fact; absent = unconfirmed). */
+  readonly planConfirmedAt?: string
   /** 2-3 sentence summary, written by the extract import. */
   readonly recap?: string
   readonly wordCount?: number
@@ -476,6 +482,7 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
   const plan = normalizePlan(record['plan'])
   const recap = cleanText(record['recap'], 500)
   const wordCount = cleanNumber(record['wordCount'])
+  const planConfirmedAt = cleanText(record['planConfirmedAt'], 40)
   return {
     n,
     seq: cleanNumber(record['seq']) ?? n,
@@ -483,6 +490,7 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
     file,
     phase: record['phase'] === 'reviewed' || record['phase'] === 'extracted' ? record['phase'] : 'planning',
     ...(plan === undefined ? {} : { plan }),
+    ...(planConfirmedAt === undefined ? {} : { planConfirmedAt }),
     ...(recap === undefined ? {} : { recap }),
     ...(wordCount === undefined ? {} : { wordCount }),
     sessionIds: cleanStringList(record['sessionIds'], 40),
@@ -684,6 +692,18 @@ export interface ExtractCurrentStateInput {
   readonly concern?: string
   readonly confidence?: string
 }
+
+/** A field-level memory edit (设定集/世界规则区的修订): patch the named fields, leave the rest. */
+export interface PatchMemoryRequest {
+  readonly workId: string
+  readonly id: string
+  readonly content?: string
+  readonly kind?: MemoryKind
+  readonly specifics?: ForeshadowSpecifics
+}
+
+/** The foreshadow three exits (世界记忆卡的 登记揭晓/弃置/转设定). */
+export type ForeshadowExitAction = 'resolve' | 'abandon' | 'promote'
 
 /** The subagent's strict JSON, as `story_extract` import receives it (tolerant reads throughout). */
 export interface ExtractPayload {

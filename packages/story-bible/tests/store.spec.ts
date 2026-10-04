@@ -188,4 +188,90 @@ describe('the story store', () => {
     expect(chapterNumberOfFile('第6章.txt')).toBeUndefined()
     expect(chapterNumberOfFile('第六十章.md')).toBeUndefined()
   })
+
+  it('patchMemory revises through derives_from: the old row archives, the new one heads the chain', async () => {
+    const fs = new FakeFs()
+    seedDreamKeeper(fs)
+    const ctx = new Context()
+    ctx.provide('fs', fs as never)
+    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
+    const revised = await store.patchMemory({ workId: DREAM.workId, id: 'm2', content: '蓝色叶子是梦主意识碎片的载体，见光即醒。' }, SESSION)
+    expect(revised.ok).toBe(true)
+    expect(revised.memory).toMatchObject({ id: 'm19', reviewed: true, extractedBy: 'user', links: { derivesFrom: ['m2'] } })
+    const memories = await store.listMemories({ workId: DREAM.workId, includeArchived: true })
+    expect(memories.find(memory => memory.id === 'm2')?.status).toBe('archived')
+    expect(memories.find(memory => memory.id === 'm19')?.content).toBe('蓝色叶子是梦主意识碎片的载体，见光即醒。')
+    // The brief's canon set reads the new head, not the archived row.
+    const brief = await store.gatherBrief({ workId: DREAM.workId })
+    expect(brief.data?.canonRules.some(memory => memory.id === 'm19')).toBe(true)
+    expect(brief.data?.canonRules.some(memory => memory.id === 'm2')).toBe(false)
+    // An archived row refuses further edits.
+    expect((await store.patchMemory({ workId: DREAM.workId, id: 'm2', content: 'x' }, SESSION)).ok).toBe(false)
+  })
+
+  it('confirmChapterPlan stamps the gate and is idempotent; a planless chapter refuses', async () => {
+    const fs = new FakeFs()
+    seedDreamKeeper(fs)
+    const ctx = new Context()
+    ctx.provide('fs', fs as never)
+    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
+    expect((await store.confirmChapterPlan({ workId: DREAM.workId, n: 1 }, SESSION)).ok).toBe(false) // no plan
+    const confirmed = await store.confirmChapterPlan({ workId: DREAM.workId, n: 6 }, SESSION)
+    expect(confirmed.ok).toBe(true)
+    expect(confirmed.chapter?.planConfirmedAt).toBeDefined()
+    const again = await store.confirmChapterPlan({ workId: DREAM.workId, n: 6 }, SESSION)
+    expect(again.ok).toBe(true)
+    expect(again.chapter?.planConfirmedAt).toBe(confirmed.chapter?.planConfirmedAt)
+    expect((await store.confirmChapterPlan({ workId: DREAM.workId, n: 42 }, SESSION)).error).toBe('missing')
+  })
+
+  it('foreshadowExit runs the three exits: resolve with answer, abandon, promote into a rule', async () => {
+    const fs = new FakeFs()
+    seedDreamKeeper(fs)
+    const ctx = new Context()
+    ctx.provide('fs', fs as never)
+    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
+    // resolve needs an answer.
+    expect((await store.foreshadowExit({ workId: DREAM.workId, id: 'm18', action: 'resolve' }, SESSION)).ok).toBe(false)
+    const resolved = await store.foreshadowExit({ workId: DREAM.workId, id: 'm18', action: 'resolve', answer: '是艾文。' }, SESSION)
+    expect(resolved.memory?.specifics).toMatchObject({ status: 'resolved', answer: '是艾文。' })
+    // …and the plan brief now prints the reveal (防规划矛盾).
+    const brief = await store.gatherBrief({ workId: DREAM.workId })
+    expect(brief.data?.resolvedForeshadows.some(memory => memory.id === 'm18')).toBe(true)
+    expect(brief.data?.activeForeshadows.some(memory => memory.id === 'm18')).toBe(false)
+    // A settled card refuses further exits.
+    expect((await store.foreshadowExit({ workId: DREAM.workId, id: 'm18', action: 'abandon' }, SESSION)).ok).toBe(false)
+    const abandoned = await store.foreshadowExit({ workId: DREAM.workId, id: 'm15', action: 'abandon' }, SESSION)
+    expect(abandoned.memory?.specifics?.status).toBe('abandoned')
+    const promoted = await store.foreshadowExit({ workId: DREAM.workId, id: 'm12', action: 'promote', answer: '门后是梦主的童年场景。' }, SESSION)
+    expect(promoted.ok).toBe(true)
+    expect(promoted.promoted).toMatchObject({ type: 'semantic', layer: 'canon', kind: '世界', content: '门后是梦主的童年场景。', reviewed: true })
+    expect(promoted.memory?.links?.resolvedBy).toBe(promoted.promoted?.id)
+    const ledger = await store.ledger({ workId: DREAM.workId })
+    expect(ledger.counts).toEqual({ active: 0, overdue: 0, resolved: 3, abandoned: 1 })
+  })
+
+  it('lists the mention journal for the dot strip, and retracts an automatic experience by id', async () => {
+    const fs = new FakeFs()
+    seedDreamKeeper(fs, { ch5Phase: 'reviewed' })
+    const ctx = new Context()
+    ctx.provide('fs', fs as never)
+    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
+    const before = await store.listMentions({ workId: DREAM.workId, foreshadowId: 'm12' })
+    expect(before.map(entry => entry.kind)).toEqual(['planted', 'advanced'])
+    // Import lands an automatic experience WITH an id and the 自动 mark…
+    await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
+      experiences: [{ character_id: 'c1', entry: '推开了门缝', confidence: 'high', evidence_in_text: '指尖碰到门缝的边缘' }],
+      recap: 'r',
+    } }, SESSION)
+    const landed = (await store.listExperiences({ workId: DREAM.workId, characterId: 'c1' })).find(entry => entry.chapter === 5 && entry.entry === '推开了门缝')
+    expect(landed).toMatchObject({ id: 'e1', autoImported: true })
+    // …and the retract gesture takes it back, every other line byte-identical.
+    const retracted = await store.retractExperience({ workId: DREAM.workId, id: 'e1' }, SESSION)
+    expect(retracted.ok).toBe(true)
+    expect((await store.listExperiences({ workId: DREAM.workId })).some(entry => entry.id === 'e1')).toBe(false)
+    const raw = fs.read(`${DREAM.stateRoot}/${DREAM.workId}/experiences.jsonl`)
+    expect(raw.trim().split('\n')).toHaveLength(6)
+    expect((await store.retractExperience({ workId: DREAM.workId, id: 'e1' }, SESSION)).error).toBe('missing')
+  })
 })
