@@ -1,0 +1,42 @@
+# canvas-novel bundle patch: inserts the plugin rows into the composing
+# profile, so `dsh plugin --profile <name> add @khorsheed/dsh-canvas-novel`
+# reconciles it into the bundles layer. The first row is a bare mount — the
+# host half provides the `canvasNovel` service (the novel engine's state
+# under $DSH_HOME/state/novel). The genre has no browser half of its own:
+# its surfaces render inside the canvas.
+#
+# NOTE: a composition must mount this row id exactly once. Official images
+# mount no canvas-novel row, so plugin-adding this package is the install
+# path there; a composition that already mounts the id by other means must
+# NOT also add it — a duplicate loader entry id fails boot.
+#
+# The second row ships DISABLED at the profile root BY DESIGN: the agent
+# surface (novel_read / novel_write / novel_extract, the novel:pointer
+# prompt section, the `novel` skill) belongs to the writing scene, not to
+# every session — a profile-root mount would put three novel-writing tools
+# in every conversation's tool list (the tool-list pollution the preset
+# boundary exists to prevent). The ONLY supported grants:
+#
+#   - @khorsheed/dsh-bundle-writing (recommended): its `preset-writing`
+#     declaration mounts this very entry (`@khorsheed/dsh-canvas-novel/agent`)
+#     inside the writing preset's scope, so the pointer and the skill exist
+#     exactly for the sessions running that preset, and the tools for those
+#     of them bound (session-header chip) to a 长篇小说 canvas — and
+#     nowhere else. Installing bundle-writing alone is not enough (the
+#     preset row only declares composition); this package provides the
+#     service and the entry, bundle-writing provides the grant.
+#   - Another preset of your own: name `@khorsheed/dsh-canvas-novel/agent`
+#     in that preset's own agent.cordis.yml, exactly the way
+#     @khorsheed/dsh-presets' preset-dsh-writing grants
+#     `@khorsheed/dsh-canvas/agent`.
+#
+# Enabling this root row by hand (removing `disabled: true`) restores the
+# every-session behavior — do that ONLY when no preset grants the entry:
+# the two live at once register the same tool names twice and fail the
+# boot (the canvas cordis.patch.yml documents the same rule).
+- insert:
+    - id: canvas-novel
+      name: "@khorsheed/dsh-canvas-novel"
+    - id: canvas-novel-agent
+      name: "@khorsheed/dsh-canvas-novel/agent"
+      disabled: true

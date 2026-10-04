@@ -42,3 +42,7 @@ story-bible 的 `cordis.patch.yml` 保留核心行启用，把 `story-bible-agen
 - canvas 配方第一次有了第二个消费者，验证了这条约定：`./agent` 入口、根行禁用、preset 作用域授予。
 - `docs/packages.md` 已重新生成（39 个包）；没有其他仓库级登记（preset-declarations bundle 不带 typert 面、不带 client 面、不带 invariant）。
 - 刻意不变：轻指引仍是逐组装求值的函数段——即使在写作 preset 里，未 focus 的会话也是零 token；双活规则保持文档级（canvas 自己的立场），因为它的失败是响亮的 boot 错误，不是静默异常。
+
+## Related
+
+- 已被 [canvas-novel 引擎](2026-10-04-canvas-novel-engine.zh.md) 取代：包现在是 `@khorsheed/dsh-canvas-novel`，即画布上的「长篇小说」体裁。

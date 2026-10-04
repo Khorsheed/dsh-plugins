@@ -4,33 +4,33 @@
 #
 # What the preset IS: a named scope. Sessions switched to it compose with the
 # persona below and this tool list; every other session sees none of it. The
-# preset grants story-bible's AGENT surface by mounting the same
-# `@khorsheed/dsh-story-bible/agent` composition entry the package's own
+# preset grants canvas-novel's AGENT surface by mounting the same
+# `@khorsheed/dsh-canvas-novel/agent` composition entry the package's own
 # patch ships DISABLED at the profile root — the two must never be live at
-# once (the tools would register twice under the same names; the story-bible
-# cordis.patch.yml documents the same rule). The `storyBible` service core
-# comes from the story-bible core row at the profile root and resolves up the
-# scope parent chain; with story-bible not installed the grant stays inert
+# once (the tools would register twice under the same names; the canvas-novel
+# cordis.patch.yml documents the same rule). The `canvasNovel` service core
+# comes from the canvas-novel core row at the profile root and resolves up the
+# scope parent chain; with canvas-novel not installed the grant stays inert
 # (the tools simply never exist), nothing throws.
 #
 # The display fields (name/description) are this bundle's own. `name:` values
 # are quoted (@ is YAML-reserved). The persona follows the community preset
 # convention: single-language English (the host prompt's own voice) — the
-# story skill it points at carries the workflow, in the user's language.
+# novel skill it points at carries the workflow, in the user's language.
 - insert:
     - id: preset-writing
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: writing
         name: '写作'
-        description: 长篇小说写作模式：协作编辑身份、story-bible 的作品记忆（设定/伏笔台账/角色记忆/章节）与文件读写——只在选择此预设的会话里生效。
+        description: 长篇小说写作模式：协作编辑身份、canvas-novel 的作品记忆（设定/伏笔台账/角色记忆/章节）与文件读写——只在选择此预设的会话里生效。
         plugins:
           # ── identity ────────────────────────────────────────────────────────
 
           # The preset's own persona, shadowing the deployment default for this
           # agent. Light on purpose: the workflow (the three iron rules, the
           # intent routing, the ghost-card protocol, the reconcile loop) is the
-          # story skill's, loaded on demand — the persona names the stance and
+          # novel skill's, loaded on demand — the persona names the stance and
           # the one fact that must hold every turn (assets come from the
           # tools, never from conversation memory).
           - id: persona
@@ -44,9 +44,9 @@
                 - Writing: hold the canon and every character's consistency; a hard-constraint violation means rework.
                 - Reconciling: report plan hits and misses honestly, never paper over a missed plan.
 
-                The work's assets — canon, the foreshadow ledger, character memory, chapters — are what the
-                story_* tools return. Never cite setting from conversation memory. The story skill carries the
-                full workflow; follow it.
+                The work's assets — the setting cards on the bound canvas, the foreshadow ledger, character
+                memory, chapters — are what the novel_* tools return. Never cite setting from conversation
+                memory. The novel skill carries the full workflow; follow it.
 
           # ── filesystem ──────────────────────────────────────────────────────
 
@@ -61,7 +61,7 @@
           # The skill REGISTRY lives in the host composition, layered per scope:
           # these rows register into THIS preset's layer. `skill-filesystem`
           # contributes local-root discovery, `tool-skill` gives the catalog and
-          # the loader — the `story` skill (registered by the story-bible-agent
+          # the loader — the `novel` skill (registered by the canvas-novel-agent
           # row below) is reached through them.
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
@@ -102,12 +102,12 @@
                   headChars: 4096
                   tailChars: 1024
 
-          # ── the story-bible grant ───────────────────────────────────────────
+          # ── the canvas-novel grant ───────────────────────────────────────────
 
-          # story 三工具（story_read / story_write / story_extract）、focus 轻
-          # 指引函数段与 story skill 只授予本 preset 的会话；profile 根的同名行
+          # novel 三工具（novel_read / novel_write / novel_extract）、绑定轻
+          # 指引函数段与 novel skill 只授予本 preset 的会话；profile 根的同名行
           # 出厂即停用，两者绝不能同时生效（同名工具双注册）。服务核心
-          # （storyBible）由 profile 根的 story-bible 行提供，本行沿 scope 父链
-          # 解析；story-bible 未装时本行降级为零注册。
-          - id: story-bible-agent
-            name: '@khorsheed/dsh-story-bible/agent'
+          # （canvasNovel）由 profile 根的 canvas-novel 行提供，本行沿 scope 父链
+          # 解析；canvas-novel 未装时本行降级为零注册。
+          - id: canvas-novel-agent
+            name: '@khorsheed/dsh-canvas-novel/agent'

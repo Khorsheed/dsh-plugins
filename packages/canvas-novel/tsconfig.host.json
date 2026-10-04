@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/agent.ts",
+    "src/brief.ts",
+    "src/genre.ts",
+    "src/index.ts",
+    "src/invariant.ts",
+    "src/skill.ts",
+    "src/store.ts",
+    "src/tools.ts",
+    "src/types.ts"
+  ]
+}

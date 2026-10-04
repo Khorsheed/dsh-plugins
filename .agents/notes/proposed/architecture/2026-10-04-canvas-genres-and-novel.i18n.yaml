@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-10-04-canvas-genres-and-novel.md
-.agents/notes/proposed/architecture/2026-10-04-canvas-genres-and-novel.md: 4c9013ff5585f593406dcc6ce87ebb6cce36cc67
-.agents/notes/proposed/architecture/2026-10-04-canvas-genres-and-novel.zh.md: 8289a87ff3cd45cd2bf6571f48bbc759af3149a4
+.agents/notes/proposed/architecture/2026-10-04-canvas-genres-and-novel.md: 363d0a0c761297c9a24b234943a3b0fcfaf52d1c
+.agents/notes/proposed/architecture/2026-10-04-canvas-genres-and-novel.zh.md: 4bf4b80a506a79381b44703af7609869d213b29a

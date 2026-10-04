@@ -1,9 +1,9 @@
 /**
  * The bundle's declarative shape (the presets.spec.ts idiom): ONE
  * preset-declarations row named `@deepseek-ai/dsh-agent-preset` with the
- * loader id `preset-writing`; the grant names story-bible's `./agent` entry;
+ * loader id `preset-writing`; the grant names canvas-novel's `./agent` entry;
  * every community name rides in dsh.references; the persona stays light
- * (the workflow is the story skill's).
+ * (the workflow is the novel skill's).
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -33,9 +33,9 @@ describe('cordis.patch.yml', () => {
     expect(unquoted).toEqual([])
   })
 
-  it('grants the story-bible agent surface through the package subpath entry', () => {
-    expect(patch).toContain('          - id: story-bible-agent\n')
-    expect(patch).toContain("            name: '@khorsheed/dsh-story-bible/agent'\n")
+  it('grants the canvas-novel agent surface through the package subpath entry', () => {
+    expect(patch).toContain('          - id: canvas-novel-agent\n')
+    expect(patch).toContain("            name: '@khorsheed/dsh-canvas-novel/agent'\n")
     // The double-mount rule is documented (the shipped root row stays disabled).
     expect(patch).toContain('绝不能同时生效')
   })
@@ -52,10 +52,10 @@ describe('cordis.patch.yml', () => {
     }
   })
 
-  it('the persona names the assets rule and the story skill, and stays single-voice English', () => {
+  it('the persona names the assets rule and the novel skill, and stays single-voice English', () => {
     expect(patch).toContain('You are a collaborative editor for long-form fiction.')
-    expect(patch).toContain('story_* tools return')
-    expect(patch).toContain('The story skill carries the')
+    expect(patch).toContain('novel_* tools return')
+    expect(patch).toContain('The novel skill carries the')
     // Light by contract: the persona does not copy the skill's workflow sections.
     expect(patch).not.toContain('三条铁律')
     expect(patch).not.toContain('意图路由')
@@ -71,7 +71,7 @@ describe('cordis.patch.yml', () => {
     )
     expect(named.size).toBeGreaterThan(0)
     for (const name of named) expect(manifest.dsh.references).toContain(name)
-    expect(manifest.dsh.references).toEqual(['@khorsheed/dsh-story-bible'])
+    expect(manifest.dsh.references).toEqual(['@khorsheed/dsh-canvas-novel'])
   })
 
   it('declares the preset-declarations kind and no runtime of its own', () => {
@@ -81,8 +81,8 @@ describe('cordis.patch.yml', () => {
     }
     expect(manifest.dsh.bundle.kind).toBe('preset-declarations')
     expect(manifest.dsh.client).toBeUndefined()
-    // No npm edge onto story-bible: the entry resolves from the installing
+    // No npm edge onto canvas-novel: the entry resolves from the installing
     // profile's closure — installing this bundle alone must stay inert.
-    expect(Object.keys(manifest.dependencies ?? {})).not.toContain('@khorsheed/dsh-story-bible')
+    expect(Object.keys(manifest.dependencies ?? {})).not.toContain('@khorsheed/dsh-canvas-novel')
   })
 })

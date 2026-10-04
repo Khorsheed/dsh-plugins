@@ -58,3 +58,7 @@ The create form's workspace defaults to the SESSION's cwd (read structurally fro
 - The chips make the two human gates persistent without a new surface.
 - `story_write(chapter)` with content is the write path the skill now teaches; host-tool writes remain legal inside the registered workspace.
 - Tool descriptions, the skill, and both READMEs moved in the same commits; the M1/M3 notes' process descriptions stay historical.
+
+## Related
+
+- Superseded by [canvas-novel engine](2026-10-04-canvas-novel-engine.md): the package is now `@khorsheed/dsh-canvas-novel`, the genre 长篇小说 on the canvas.

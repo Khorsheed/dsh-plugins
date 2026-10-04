@@ -84,3 +84,7 @@ Each step merges on its own. Between steps 2 and 4 the novel genre has no full U
 - File-backed manuscripts introduce writes outside the canvas state root; the fence must root them at the declared workspace and honor read-only sessions.
 - The novel genre has no complete UI between steps 2 and 4.
 - Binding fork inheritance is deferred; a forked session starts unbound until the follow-up lands.
+
+## Related
+
+- Step 2 implemented: [canvas-novel engine](../../implemented/feature/2026-10-04-canvas-novel-engine.md) (records the deviations from this proposal).

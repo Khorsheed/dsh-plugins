@@ -47,3 +47,7 @@ mockup 的手势需要 M1 没有提供的五个动词，全部按同一套围栏
 - `docs/packages.md` 的 story-bible 行有了 web 列；`scripts/check-plugin-independence.ts` 的 ALLOWED_EDGES 增加 story-bible → ui-content-preview 源码面边（local-files / worktrees 先例）。
 - 59 个 client+host spec 钉住：五视图同源渲染、幽灵卡流程、待审队列、plan/审过状态机、作品条、行解析、store 与 PREVIEW_KEYS 字典契约。
 - 已知遗留：「在编辑器打开」优先 open-in-app 的 IDE 探测（只接受目录——宿主路由拒绝文件），兜底官方文档预览；场景/物品两板在 kind 轴缝合之前按设计为空。
+
+## Related
+
+- 已被 [canvas-novel 引擎](2026-10-04-canvas-novel-engine.zh.md) 取代：包现在是 `@khorsheed/dsh-canvas-novel`，即画布上的「长篇小说」体裁。

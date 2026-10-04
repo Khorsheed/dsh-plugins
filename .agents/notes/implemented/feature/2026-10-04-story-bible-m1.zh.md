@@ -50,3 +50,7 @@ focus 映射是 `Map<string, {workId, title}>`，键为 `String(session.id)`。�
 - token 估算是启发式，不是真 tokenizer；预算是带从略收据的护栏，种子 spec 钉住三个变体都在预算内，回归会响亮地红。
 - `story_read(what=works)` 比方案的 `what` 清单多一行——M1 没有 UI，模型没有别的途径发现可 focus 的作品。属增量，README 已写明。
 - `scripts/gen-typert.mts` 的 `TYPERT_PACKAGES` 加了 story-bible 条目（每个 `./typert` 包都要登记的注册表），`docs/packages.md` 已重新生成——新包躲不开的两处仓库级登记。
+
+## Related
+
+- 已被 [canvas-novel 引擎](2026-10-04-canvas-novel-engine.zh.md) 取代：包现在是 `@khorsheed/dsh-canvas-novel`，即画布上的「长篇小说」体裁。
