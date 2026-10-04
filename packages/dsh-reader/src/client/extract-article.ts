@@ -611,7 +611,7 @@ function normalizeNode(node: Node, baseUrl: string | undefined, inFigure = false
   // Capture-rendered pages carry their rescued figures as inline SVG with
   // styles inlined onto the elements; the subset walker below keeps the chart
   // and strips the injection-shaped members (script, foreignObject, SMIL).
-  if (tag === 'svg') return normalizeSvg(element)
+  if (tag === 'svg') return isResponsiveAlternate(element) ? '' : normalizeSvg(element)
   if (tag === 'br') return '<br>'
   if (tag === 'hr') return '<hr>'
 
@@ -768,9 +768,88 @@ function svgAttributes(element: Element): string {
   for (const name of SVG_ATTRIBUTES) {
     const value = element.getAttribute(name)
     if (value === null || !svgValueSafe(value)) continue
-    parts.push(` ${name}="${escapeAttribute(value)}"`)
+    parts.push(` ${name}="${escapeAttribute(resolveSvgVars(value))}"`)
   }
   return parts.join('')
+}
+
+/** Custom-property names that read as the page's own ground, not as ink. */
+const SVG_GROUND_VAR = /(^|-)(bg|background|ground|surface|paper|canvas|page)(-|$)/i
+
+/**
+ * Rewrite every `var(--…)` in a kept SVG value to something that paints here.
+ *
+ * A statically served chart colors itself through the PAGE's custom
+ * properties (`style="stroke:var(--line)"`), defined in a stylesheet the
+ * extraction never carries. Left as-is, each reference resolves against the
+ * reader's document instead: an undefined one drops the stroke (an axis-less
+ * scatter of black dots — claude.dev's Figure 1), and a name that collides
+ * with a host token paints in a color nobody chose. So no reference survives:
+ * a declared fallback wins, a ground-like name becomes `none` (callout discs
+ * stop hiding what lies under them), and every other one becomes
+ * `currentColor` — the article's ink, legible in both themes. A
+ * capture-rendered page never reaches this: its styles arrive computed.
+ *
+ * @param value - one attribute value.
+ * @returns the value with no custom-property reference left.
+ */
+export function resolveSvgVars(value: string): string {
+  let out = value
+  for (let guard = 0; guard < 32; guard++) {
+    const start = out.search(/var\(/i)
+    if (start < 0) return out
+    // The matching paren, and the first top-level comma inside it.
+    let depth = 0
+    let comma = -1
+    let end = -1
+    for (let index = start + 3; index < out.length; index++) {
+      const char = out[index]
+      if (char === '(') depth++
+      else if (char === ')') {
+        depth--
+        if (depth === 0) {
+          end = index
+          break
+        }
+      } else if (char === ',' && depth === 1 && comma < 0) comma = index
+    }
+    if (end < 0) return out.slice(0, start)
+    const name = out.slice(start + 4, comma < 0 ? end : comma).trim()
+    const fallback = comma < 0 ? '' : out.slice(comma + 1, end).trim()
+    const replacement = fallback.length > 0
+      ? fallback
+      : SVG_GROUND_VAR.test(name.replace(/^--/, '')) ? 'none' : 'currentColor'
+    out = `${out.slice(0, start)}${replacement}${out.slice(end + 1)}`
+  }
+  return out
+}
+
+/** Id/class tokens that mark an `<svg>` as the small-screen copy of a figure. */
+const SVG_ALTERNATE_TOKEN = /^(mobile|narrow|small|compact|sm|xs)$/i
+
+/** Whether an element's id or class names it a small-screen variant. */
+function namesAlternate(element: Element): boolean {
+  const names = `${element.getAttribute('id') ?? ''} ${element.getAttribute('class') ?? ''}`
+  return names.split(/[\s_-]+/).some(token => SVG_ALTERNATE_TOKEN.test(token))
+}
+
+/**
+ * Whether this `<svg>` is the small-screen duplicate of a sibling figure.
+ *
+ * Responsive pages ship one chart twice — a wide drawing and a narrow one —
+ * and let a media query show one. The extraction carries no stylesheet, so
+ * both would render back to back. The narrow copy drops only when a sibling
+ * `<svg>` NOT marked narrow is there to stand for the figure.
+ *
+ * @param element - a top-level `<svg>`.
+ * @returns true when the element is the duplicate to drop.
+ */
+function isResponsiveAlternate(element: Element): boolean {
+  if (!namesAlternate(element)) return false
+  const parent = element.parentElement
+  if (parent === null) return false
+  return Array.from(parent.children).some(sibling =>
+    sibling !== element && sibling.localName.toLowerCase() === 'svg' && !namesAlternate(sibling))
 }
 
 /** One SVG subtree → whitelisted markup (or empty). */

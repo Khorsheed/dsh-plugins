@@ -35,7 +35,7 @@ export type ReaderKey =
   | 'action.remove' | 'action.submit' | 'action.done' | 'action.cancel' | 'action.clearSearch'
   | 'add.title' | 'add.help' | 'add.placeholder'
   | 'verdict.subscribed' | 'verdict.savedLink' | 'verdict.savedLinkNoPreview' | 'verdict.duplicate'
-  | 'verdict.invalidUrl' | 'verdict.unsupportedContent' | 'verdict.fetchFailed'
+  | 'verdict.invalidUrl' | 'verdict.unsupportedContent' | 'verdict.fetchFailed' | 'verdict.willRender'
   | 'preview.blocked' | 'preview.login' | 'preview.unsupportedType' | 'preview.redirected'
   | 'preview.empty' | 'preview.unreachable' | 'preview.http' | 'preview.unreadable'
   | 'detail.linkOnlyBadge' | 'detail.removeLink' | 'detail.fetchingBody'
@@ -151,6 +151,7 @@ export const en = {
   'verdict.unsupportedContent': 'That address did not return a feed or an article.',
   'verdict.fetchFailed': 'Could not fetch that address.',
   'preview.blocked': 'this site refuses automatic fetches (it answers with a bot challenge)',
+  'verdict.willRender': 'Opening it retries through the rendered fetch (a headless browser).',
   'preview.login': 'this address is behind a login (an institutional proxy or single sign-on)',
   'preview.unsupportedType': 'this address is not a web page (a PDF or another file)',
   'preview.redirected': 'this address moves to another site, and the redirect cannot be followed here',
@@ -345,6 +346,7 @@ export const zh = {
   'verdict.unsupportedContent': '这个地址返回的既不是订阅源也不是网页。',
   'verdict.fetchFailed': '抓取失败。',
   'preview.blocked': '这个站点拒绝自动抓取（返回的是验证页）',
+  'verdict.willRender': '打开这条时会改用渲染抓取（无头浏览器）再试。',
   'preview.login': '这个地址需要登录（机构代理或单点登录），本插件取不到正文',
   'preview.unsupportedType': '这个地址不是网页（是 PDF 或其它文件）',
   'preview.redirected': '这个地址会跳到另一个站点，跨站跳转在本地无法跟随',

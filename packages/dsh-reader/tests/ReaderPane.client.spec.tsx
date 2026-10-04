@@ -2195,6 +2195,57 @@ describe('the detail view owns up to figures it cannot fetch', () => {
     expect(await screen.findByText(new RegExp('渲染抓到的正文'))).toBeTruthy()
   })
 
+  it('auto-renders on open when the plain fetch meets a bot wall (mp.weixin.qq.com)', async () => {
+    const ui = bench({
+      capture: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>公众号文章</title>'
+          + '<link>https://mp.weixin.qq.com/s/abc</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: false,
+      fresh: false,
+      fromFeed: false,
+      error: 'the site answered a bot challenge instead of the page (https://mp.weixin.qq.com/s/abc)',
+    }))
+    const cards = await screen.findAllByRole('button', { name: /公众号文章/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    // The wall refused the plain fetch; a headless browser is what it admits.
+    await waitFor(() => { expect(ui.mocks.captureRender).toHaveBeenCalledWith({ url: 'https://mp.weixin.qq.com/s/abc' }) })
+    await waitFor(() => {
+      expect(ui.mocks.storeEntryBody).toHaveBeenCalledWith(expect.objectContaining({
+        url: 'https://mp.weixin.qq.com/s/abc',
+        rendered: true,
+      }))
+    })
+  })
+
+  it('a bot wall without a rendered fetch mounted stays a plain refusal', async () => {
+    const ui = bench({
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>公众号文章</title>'
+          + '<link>https://mp.weixin.qq.com/s/abc</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: false,
+      fresh: false,
+      fromFeed: false,
+      error: 'HTTP 403: the site refuses non-browser requests',
+    }))
+    const cards = await screen.findAllByRole('button', { name: /公众号文章/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    await screen.findByText(new RegExp(zh['sources.blocked'].slice(0, 8)))
+    expect(screen.queryByText(zh['detail.renderFetch'])).toBeNull()
+  })
+
   it('a failed auto-render leaves the manual retry, and reopening does not refire it', async () => {
     const ui = bench({
       capture: true,

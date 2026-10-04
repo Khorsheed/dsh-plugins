@@ -24,6 +24,7 @@ import {
   extractArticle,
   normalizeInline,
   normalizeRichText,
+  resolveSvgVars,
 } from '../src/client/extract-article.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -616,6 +617,34 @@ describe('inline SVG figures survive (capture-rendered pages)', () => {
     expect(result.html).not.toContain('evil.example.com')
     expect(result.html).not.toContain('tracker.example.com')
     expect(result.html).toContain('<rect x="90" y="5" width="8" height="8" stroke="#000"></rect>')
+  })
+
+  it('leaves no page custom property behind: fallback, ground, or the article ink', () => {
+    expect(resolveSvgVars('stroke:var(--line)')).toBe('stroke:currentColor')
+    expect(resolveSvgVars('fill:var(--bg);stroke:var(--viz-m1)')).toBe('fill:none;stroke:currentColor')
+    expect(resolveSvgVars('fill:var(--a, rgb(1, 2, 3))')).toBe('fill:rgb(1, 2, 3)')
+    expect(resolveSvgVars('fill:var(--a, var(--b))')).toBe('fill:currentColor')
+    expect(resolveSvgVars('opacity: 0.95')).toBe('opacity: 0.95')
+  })
+
+  it('keeps one drawing of a responsive figure and paints a static chart in the article ink', () => {
+    // claude.dev's Figure 1 shape: a wide and a narrow copy side by side, each
+    // colored through the page's stylesheet variables.
+    const page = '<html><body><article><p>' + 'prose '.repeat(60) + '</p><figure><div class="fig-draw">'
+      + '<svg class="art-diagram-wide" id="f1" viewBox="0 0 10 10"><line x1="0" x2="10" y1="5" y2="5" style="stroke:var(--line)"/>'
+      + '<text x="1" y="4" style="fill:var(--viz-muted)">Perfect score</text></svg>'
+      + '<svg class="art-diagram-narrow" id="f1-mobile" viewBox="0 0 5 10"><text>narrow copy</text></svg>'
+      + '</div><figcaption>Fig 1</figcaption></figure></article></body></html>'
+    const result = extractArticle(page, 'https://claude.dev/blog/x')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('<line x1="0" x2="10" y1="5" y2="5" style="stroke:currentColor"></line>')
+    expect(result.html).toContain('style="fill:currentColor">Perfect score</text>')
+    expect(result.html).not.toContain('var(')
+    expect(result.html).not.toContain('narrow copy')
+    // A lone narrow-named svg has no sibling to stand for it: it stays.
+    const lone = normalizeRichText('<p>x</p><svg class="chart-mobile" viewBox="0 0 1 1"><circle r="1"/></svg>')
+    expect(lone).toContain('<svg viewBox="0 0 1 1">')
   })
 
   it('applies the same subset through the feed-body path and keeps summaries clean', () => {

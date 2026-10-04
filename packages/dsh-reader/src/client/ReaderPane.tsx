@@ -318,6 +318,19 @@ function describeFetchFailure(reason: string, t: ReaderPaneProps['t']): string {
   return t('detail.fetchFailed', { reason: reason.slice(0, 160) })
 }
 
+/**
+ * Whether a fetch failure is one a real browser gets past: a bot challenge,
+ * or a 401/403 that refuses non-browser requests. These are the reasons the
+ * rendered fetch (the capture package's headless Chrome) exists to answer; a
+ * login wall is not among them — a cookie-less browser meets it too.
+ *
+ * @param reason - the host's recorded message.
+ * @returns true when escalating to the rendered fetch is worth a try.
+ */
+export function browserSolvable(reason: string): boolean {
+  return /bot challenge|^HTTP 40[13]\b/i.test(reason)
+}
+
 /** How many entries the automatic backfill fetches at once. */
 const BACKFILL_CONCURRENCY = 2
 
@@ -1880,8 +1893,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    *
    * @param entryId - the entry whose body is wanted.
    * @param url - the article URL to fetch.
+   * @returns whether the answer wants the rendered fetch next: a body that
+   *   still counts script figures, or a refusal a real browser gets past.
    */
-  const fetchBody = useCallback(async (entryId: string, url: string): Promise<number | undefined> => {
+  const fetchBody = useCallback(async (entryId: string, url: string): Promise<boolean> => {
     actions.setFetching(entryId, true)
     try {
       const result = await props.fetchEntryBody(entryId, url)
@@ -1906,14 +1921,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         }
         // The caller escalates on a shell: a body that still counts script
         // figures wants the rendered fetch next.
-        return result.scriptFigures ?? 0
+        return (result.scriptFigures ?? 0) > 0
       } else if (result.error !== undefined && onScreen) {
         // Keep whatever is already rendered (a feed summary, say) and add the
         // reason: a failed fetch must not take the little text the reader has.
         // It also leaves the host's copy — and its stale marker — untouched.
         actions.setArticle(articleHtml ?? '', false, result.error)
       }
-      return undefined
+      // …and so does a bot wall: the plain fetch is what it refused.
+      return result.error !== undefined && browserSolvable(result.error)
     } finally {
       actions.setFetching(entryId, false)
       // The card reads the host's annotation through the mirror: re-read the
@@ -1982,13 +1998,15 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   /**
    * One gesture, the whole pipeline: an explicit per-entry ask (add a link,
    * the card's 「抓取」, opening an entry, the detail's 「重新抓取」) that lands
-   * on a script-figure shell continues into the rendered fetch on its own —
-   * the gesture already authorized capturing that URL. Fires once per entry
+   * on a script-figure shell — or on a bot wall that refuses the plain fetch
+   * (mp.weixin.qq.com answers 「环境异常」 to anything but a browser) —
+   * continues into the rendered fetch on its own: the gesture already
+   * authorized capturing that URL. Fires once per entry
    * per pane session (a failure leaves the manual「渲染抓取」retry); background
    * paths (scheduled feed refresh, backfill) never reach here.
    */
-  const maybeAutoRender = useCallback((entryId: string, link: string | undefined, count: number) => {
-    if (link === undefined || count <= 0) return
+  const maybeAutoRender = useCallback((entryId: string, link: string | undefined, wanted: boolean) => {
+    if (link === undefined || !wanted) return
     if (props.captureRemote() === undefined) return
     if (autoRenderTriedRef.current.has(entryId)) return
     autoRenderTriedRef.current.add(entryId)
@@ -1997,7 +2015,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   /** A plain fetch that escalates on a shell — the explicit-gesture fetch path. */
   const fetchThenMaybeRender = useCallback((entryId: string, link: string): void => {
-    void fetchBody(entryId, link).then(count => maybeAutoRender(entryId, link, count ?? 0))
+    void fetchBody(entryId, link).then(wanted => maybeAutoRender(entryId, link, wanted))
   }, [fetchBody, maybeAutoRender])
 
   /** Open one entry: mark it read and make sure a body is available. */
@@ -2069,7 +2087,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         // load-time extraction, whose count rides the entry instead.
         const knownCount = view.value.scriptFigures ?? row.entry.scriptFigures ?? 0
         setScriptFigures(knownCount)
-        maybeAutoRender(row.entry.id, row.entry.link, knownCount)
+        maybeAutoRender(row.entry.id, row.entry.link, knownCount > 0)
         actions.setStaleBody(row.entry.id, view.value.fresh === false)
         // `html` here is either the FEED's own payload or a body this plugin
         // already fetched and cached — a cached one is paid for already.
@@ -2114,6 +2132,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         if (row.sourceKind === 'rss' && view.value.error === undefined) {
           fetchThenMaybeRender(row.entry.id, row.entry.link as string)
         }
+        // A recorded bot wall (the add-time preview, or an earlier fetch) is
+        // the one recorded reason a gesture CAN change: opening the entry
+        // asks for its text, and a headless browser is what the wall admits.
+        maybeAutoRender(row.entry.id, row.entry.link, view.value.error !== undefined && browserSolvable(view.value.error))
       }
       return
     }
@@ -2142,7 +2164,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       // fetch paths set it from the host's answer, this one computes it locally.
       const count = extracted.scriptFigures ?? 0
       setScriptFigures(count)
-      maybeAutoRender(row.entry.id, row.entry.link, count)
+      maybeAutoRender(row.entry.id, row.entry.link, count > 0)
     } else actions.setArticle('', truncated, extracted.error)
   }, [actions, props, t, fetchThenMaybeRender, persistFeedBody, recent, fetchStates, syncFetchState, maybeAutoRender])
 
@@ -2702,10 +2724,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     // stores the payload first, so leaving the page does not cancel it. It also
     // re-reads this entry's state from the host when the fetch settles, so the
     // pill flips without a full-wall poll here.
-    const count = await fetchBody(entry.id, entry.link)
+    const wanted = await fetchBody(entry.id, entry.link)
     // One gesture, the whole pipeline: a shell answer continues into the
     // rendered fetch on its own (see maybeAutoRender).
-    maybeAutoRender(entry.id, entry.link, count ?? 0)
+    maybeAutoRender(entry.id, entry.link, wanted)
   }, [actions, fetchBody, maybeAutoRender])
 
   /** Reload the tags on one entry. */
@@ -3242,6 +3264,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             {verdict.reason !== undefined && verdict.kind === 'fetchFailed' && (
               <span className={css.verdictReason}>{verdict.reason}</span>
             )}
+            {/* A bot wall is not the last word while a rendered fetch is
+                mounted: opening the entry escalates (maybeAutoRender). */}
+            {verdict.code === 'blocked' && captureRemote !== undefined && (
+              <span className={css.verdictReason}>{t('verdict.willRender')}</span>
+            )}
             {/* The way out, when the cause has one: a bot wall, a login wall
                 and a non-web file all open fine where a human is driving. The
                 retryable and the final causes get no button — re-pressing 抓取
@@ -3563,6 +3590,26 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   fetch failed`). When the host classified the failure, its CODE
                   picks the sentence — the raw message stays for diagnosis only. */}
               {previewReason(t, sourceSummary?.failure?.code, articleError)}
+              {/* A bot wall is what the rendered fetch answers: the same slot
+                  as the script-figure notice — progress while it runs (the
+                  open gesture already escalated), the manual retry after. */}
+              {captureRemote !== undefined && openEntry.link !== undefined
+                && (browserSolvable(articleError) || sourceSummary?.failure?.code === 'blocked') && (
+                <>
+                  {' '}
+                  {captureBusy
+                    ? <span>{t('detail.rendering')}</span>
+                    : (
+                      <button
+                        type="button"
+                        className={css.incompleteLink}
+                        onClick={() => { void captureBody(openEntry.id, openEntry.link as string) }}
+                      >
+                        {t('detail.renderFetch')}
+                      </button>
+                    )}
+                </>
+              )}
               {openEntry.link !== undefined && (
                 <>
                   {' '}
