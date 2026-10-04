@@ -32,6 +32,16 @@ Two kinds of article failed in the reader (`packages/dsh-reader`):
 
 Verified by hand: the capture service (system Chrome) rendered the WeChat article in about 16s with `js_content` present, no challenge text, and loaded `mmbiz` images, which the extractor emits with `referrerpolicy="no-referrer"`.
 
+**Follow-ups after the first 3080 deploy.**
+
+- Bodies are cached as already-extracted HTML until their TTL, so the SVG rules above never reached a figure stored before the deploy (fig1 still showed dots). `repairStoredSvg` re-applies the `var()` resolution and the responsive-duplicate drop when a body is shown (`setArticle`). Old bodies are fixed without a refetch.
+- The add path saved `fetched.url`. For WeChat that was the challenge landing (`/wappoc_appmsgcaptcha?…&target_url=…`), so the card's title and link pointed at the captcha page. The add path now keeps the requested URL. `normalizeSource` walks an already-saved link back through `challengeTarget` (a captcha/challenge path that carries `target_url`/`return_url`/`redirect_url`), and relabels it only when the label was the landing's default.
+- The status was unclear: while the rendered fetch ran, the card mixed the refusal with the script-figure copy and a 「受限篇幅」 notice over an empty body. Now:
+  - a dedicated spinner line, `detail.renderingWall`, replaces the refusal while the render runs; busy is tracked per entry;
+  - a failed render says why (`detail.renderFailed`) and keeps the retry button;
+  - the truncation notice appears only over a body;
+  - a successful render updates the entry title from the extracted article.
+
 ## Alternatives considered
 
 **Inline the source site's stylesheet values for the custom properties.** The values live in external CSS that the host fetch does not retrieve, and they are theme-dependent. `currentColor` keeps the figure legible in both reader themes without a second fetch.
@@ -45,4 +55,4 @@ Verified by hand: the capture service (system Chrome) rendered the WeChat articl
 - A custom property that really is a fill color with no fallback now draws as the text color rather than its brand color. That is legible, though not faithful.
 - An SVG named `…-sm` that is not a responsive duplicate, but has a sibling SVG, is dropped.
 - WeChat (and any page behind a recognizable 200 challenge) needs the capture plugin. Without it, the reader now tells the truth ("blocked") instead of saving the challenge page as the body.
-- Tests: `tests/extract-article.spec.ts` (var resolution, responsive drop, lone narrow kept), `tests/boot.spec.ts` (200 challenge recorded as blocked), `tests/ReaderPane.client.spec.tsx` (auto-render on a WeChat wall; plain refusal without capture).
+- Tests: `tests/extract-article.spec.ts` (var resolution, responsive drop, lone narrow kept, display-time repair of a cached body), `tests/boot.spec.ts` (200 challenge recorded as blocked, requested URL kept), `tests/host-pure.spec.ts` (challenge-landing link migrated), `tests/ReaderPane.client.spec.tsx` (auto-render on a WeChat wall; plain refusal without capture; render progress line and failure reason).

@@ -617,6 +617,39 @@ export const MAX_TOTAL_BODY_CHARS = 12 * 1024 * 1024
 export const INLINE_BODY_MAX_CHARS = 256 * 1024
 
 /**
+ * The article a challenge page stands in front of, when its URL names it.
+ *
+ * A bot wall usually redirects to its own page and carries the original in a
+ * query parameter (mp.weixin.qq.com → `/mp/wappoc_appmsgcaptcha?…&target_url=`).
+ * Builds before 2026-10-04 saved that landing URL as the link itself, which
+ * then titled the card and was what every retry — the rendered fetch included
+ * — asked for; the state normalizer walks such a link back with this.
+ *
+ * @param url - a stored link.
+ * @returns the http(s) target, or `undefined` when the URL is not a challenge landing.
+ */
+export function challengeTarget(url: string): string | undefined {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return undefined
+  }
+  if (!/captcha|challenge/i.test(parsed.pathname)) return undefined
+  for (const key of ['target_url', 'targetUrl', 'return_url', 'redirect_url']) {
+    const value = parsed.searchParams.get(key)
+    if (value === null) continue
+    try {
+      const target = new URL(value)
+      if (target.protocol === 'https:' || target.protocol === 'http:') return target.toString()
+    } catch {
+      // Not a URL: try the next name.
+    }
+  }
+  return undefined
+}
+
+/**
  * Build a display label for a source from its URL: the registrable-ish host
  * plus the last meaningful path segment, which is what distinguishes several
  * feeds from one publisher.

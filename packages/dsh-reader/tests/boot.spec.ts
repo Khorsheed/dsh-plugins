@@ -580,6 +580,8 @@ describe('a link that cannot be previewed is still a link', () => {
       kind: 'link',
       failure: { code: 'blocked' },
     })
+    // The saved link points at the article, not the challenge it landed on.
+    expect((await service.listSources()).sources[0]?.url).toBe(requested)
   })
 
   it('clears the recorded failure when a manual refresh finally works', async () => {
