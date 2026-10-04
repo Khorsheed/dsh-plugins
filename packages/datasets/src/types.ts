@@ -15,7 +15,7 @@ export type {
   RegisterPreview, RegistryEntry, RegistryRow, RegistrySet, RepoSelector, UpdateInput,
 } from './registry.ts'
 export type {
-  OutputMapping, Proposal, ProposalInput, ProposalLayer, ProposalProblem, ProposalReview, ProposalSample, ProposalSource,
+  OutputMapping, Proposal, ProposalInput, ProposalLayer, ProposalProblem, ProposalReview, ProposalSample, ReviewHead, ProposalSource,
   ReviewChange, ReviewFiles, ReviewItem, ReviewItemFile, ReviewOutput, ReviewSet, ReviewSource, SourceFieldDisposition,
   SourceMapping,
 } from './proposal.ts'

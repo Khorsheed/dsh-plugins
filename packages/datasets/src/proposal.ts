@@ -268,6 +268,22 @@ export interface ReviewFiles {
   truncated: boolean
 }
 
+/**
+ * T96 · the review page's first screen: the page head and the four summary
+ * cards (来源 / 题数 / 校验 / 版本), read without the comparison. Everything
+ * here is either the stored proposal or a fact that depends on the commit
+ * alone, so it answers from the commit cache in a few milliseconds; `validate`
+ * is absent while the commit has never been checked (the card then shows a
+ * placeholder until the full review lands).
+ */
+export interface ReviewHead {
+  proposal: Proposal
+  itemCount: number
+  sets: string[]
+  version: { number: number; date: string; commit: string }
+  validate?: ProposalReview['facts']['validate']
+}
+
 /** What the store needs from the rest of the service. */
 export interface ProposalDeps {
   registry: RepoRegistry
@@ -285,6 +301,8 @@ export interface ProposalStore {
   list(): Proposal[]
   get(id: string): Proposal
   review(id: string): Promise<ProposalReview>
+  /** T96 · the page head and summary cards, from the stored proposal and the commit cache. */
+  head(id: string): Promise<ReviewHead>
   reviewItem(id: string, set: string, item: string): Promise<ReviewItem>
   reviewFiles(id: string): Promise<ReviewFiles>
   /** Register (or update) from a proposal — the person's gesture. */
@@ -529,6 +547,24 @@ interface RepoSnapshot {
   items: Map<string, Set<string>>
 }
 
+/**
+ * T96 · what one commit says, independently of any proposal: the protocol's
+ * validate verdict (the one expensive read — a few git reads per item, ~5 s
+ * for a HumanEval-sized set), the version number and date. A commit id names
+ * its content, so these never go stale; bump the version when the validate
+ * rules change what they report.
+ */
+interface CommitFacts {
+  v: number
+  /** At most 20 errors are kept (all the review shows); `errorCount` keeps the total. */
+  validate: ProposalReview['facts']['validate']
+  errorCount: number
+  number: number
+  date: string
+}
+const COMMIT_FACTS_VERSION = 1
+const SNAPSHOT_MEMO = 8
+
 async function snapshot(commonDir: string, commit: string): Promise<RepoSnapshot> {
   const files = await listFiles(commonDir, commit, '')
   const classifier = zoneClassifier(commonDir, commit)
@@ -581,6 +617,78 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
     const path = pathOf(id)
     if (!existsSync(path)) throw new DatasetsError(`no proposal ${JSON.stringify(id)}`, 'FILE_NOT_FOUND')
     return JSON.parse(readFileSync(path, 'utf8')) as Proposal
+  }
+
+  // T96 · commit-keyed caches. Facts persist under `<root>/cache/` (a restart
+  // keeps a filed proposal's review fast); the snapshot (zone classes per
+  // file) stays in memory for the last few commits.
+  const cacheDir = join(root, 'cache')
+  const factsMemo = new Map<string, CommitFacts>()
+  const snapMemo = new Map<string, Promise<RepoSnapshot>>()
+  const cachedFacts = (commit: string): CommitFacts | undefined => {
+    const memo = factsMemo.get(commit)
+    if (memo !== undefined) return memo
+    const path = join(cacheDir, `${commit}.json`)
+    if (!/^[0-9a-f]{7,64}$/.test(commit) || !existsSync(path)) return undefined
+    try {
+      const read = JSON.parse(readFileSync(path, 'utf8')) as CommitFacts
+      if (read.v !== COMMIT_FACTS_VERSION) return undefined
+      factsMemo.set(commit, read)
+      return read
+    } catch {
+      return undefined
+    }
+  }
+  const commitFacts = async (commonDir: string, commit: string): Promise<CommitFacts> => {
+    const hit = cachedFacts(commit)
+    if (hit !== undefined) return hit
+    const errors: Array<{ set: string; message: string }> = []
+    let warnings = 0
+    try {
+      const result = await deps.validate(commonDir, commit)
+      for (const set of result.datasets) {
+        for (const error of set.errors) errors.push({ set: set.id, message: error.message })
+        warnings += set.warnings.length
+      }
+    } catch (error) {
+      // A validate that could not run is not a fact about the commit: report it, never cache it.
+      return {
+        v: COMMIT_FACTS_VERSION,
+        validate: { ok: false, errors: [{ set: '', message: String(error instanceof Error ? error.message : error) }], warnings: 0 },
+        errorCount: 1,
+        number: await commitCount(commonDir, commit),
+        date: await commitDate(commonDir, commit),
+      }
+    }
+    const facts: CommitFacts = {
+      v: COMMIT_FACTS_VERSION,
+      validate: { ok: errors.length === 0, errors: errors.slice(0, 20), warnings },
+      errorCount: errors.length,
+      number: await commitCount(commonDir, commit),
+      date: await commitDate(commonDir, commit),
+    }
+    factsMemo.set(commit, facts)
+    try {
+      mkdirSync(cacheDir, { recursive: true })
+      const target = join(cacheDir, `${commit}.json`)
+      const temp = `${target}.${process.pid}.tmp`
+      writeFileSync(temp, `${JSON.stringify(facts)}\n`)
+      renameSync(temp, target)
+    } catch {
+      // An unwritable cache only costs the next open its recomputation.
+    }
+    return facts
+  }
+  const snapshotOf = (commonDir: string, commit: string): Promise<RepoSnapshot> => {
+    const key = `${commonDir}\0${commit}`
+    let found = snapMemo.get(key)
+    if (found === undefined) {
+      found = snapshot(commonDir, commit)
+      found.catch(() => { snapMemo.delete(key) })
+      snapMemo.set(key, found)
+      while (snapMemo.size > SNAPSHOT_MEMO) snapMemo.delete(snapMemo.keys().next().value!)
+    }
+    return found
   }
 
   /** Resolve the proposal's repository facts (no checks yet). */
@@ -653,7 +761,7 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       warnings.push({ code: 'UNCOMMITTED', message: 'the checkout has uncommitted changes under datasets/ — they are not part of this version' })
     }
 
-    const snap = await snapshot(commonDir, commit)
+    const snap = await snapshotOf(commonDir, commit)
     if (snap.descriptors.length === 0) problems.push({ code: 'NO_SETS', message: 'the commit has no datasets/<set>/dataset.json' })
 
     // Update reviews compare against the version agents read today.
@@ -819,20 +927,11 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       }
     }
 
-    // The protocol's own check.
-    const validateErrors: Array<{ set: string; message: string }> = []
-    let validateWarnings = 0
-    try {
-      const result = await deps.validate(commonDir, commit)
-      for (const set of result.datasets) {
-        for (const error of set.errors) validateErrors.push({ set: set.id, message: error.message })
-        validateWarnings += set.warnings.length
-      }
-    } catch (error) {
-      validateErrors.push({ set: '', message: String(error instanceof Error ? error.message : error) })
-    }
-    if (validateErrors.length > 0) {
-      problems.push({ code: 'VALIDATE_FAILED', message: `validate reports ${validateErrors.length} error(s): ${validateErrors[0]!.message}`, params: { count: validateErrors.length, first: validateErrors[0]!.message } })
+    // The protocol's own check (commit-keyed: computed once per commit).
+    const facts = await commitFacts(commonDir, commit)
+    const validateErrors = facts.validate.errors
+    if (facts.errorCount > 0) {
+      problems.push({ code: 'VALIDATE_FAILED', message: `validate reports ${facts.errorCount} error(s): ${validateErrors[0]!.message}`, params: { count: facts.errorCount, first: validateErrors[0]!.message } })
     }
 
     const sets: ReviewSet[] = snap.descriptors.map(({ id, descriptor }) => {
@@ -864,10 +963,10 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       facts: {
         itemCount: items.length,
         sets,
-        validate: { ok: validateErrors.length === 0, errors: validateErrors.slice(0, 20), warnings: validateWarnings },
+        validate: { ok: facts.errorCount === 0, errors: validateErrors, warnings: facts.validate.warnings },
         version: {
-          number: await commitCount(commonDir, commit),
-          date: await commitDate(commonDir, commit),
+          number: facts.number,
+          date: facts.date,
           commit,
           trackedRef: proposal.trackedRef,
           commonDir,
@@ -936,6 +1035,35 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       return await build(get(id))
     },
 
+    async head(id) {
+      const proposal = get(id)
+      const { commonDir, commit } = proposal
+      const cached = cachedFacts(commit)
+      // One ls-tree of datasets/ answers both counts; the classes are not needed here.
+      const files = await listFiles(commonDir, commit, DATASETS_DIR)
+      const sets = new Set<string>()
+      const items = new Set<string>()
+      for (const file of files) {
+        const parts = file.split('/')
+        if (parts.length === 3 && parts[2] === 'dataset.json') sets.add(parts[1]!)
+      }
+      for (const file of files) {
+        const parts = file.split('/')
+        if (parts.length >= 5 && parts[2] === 'items' && sets.has(parts[1]!)) items.add(`${parts[1]}/${parts[3]}`)
+      }
+      return {
+        proposal,
+        itemCount: items.size,
+        sets: [...sets].sort(),
+        version: {
+          number: cached?.number ?? await commitCount(commonDir, commit),
+          date: cached?.date ?? await commitDate(commonDir, commit),
+          commit,
+        },
+        ...(cached !== undefined ? { validate: cached.validate } : {}),
+      }
+    },
+
     async reviewItem(id, set, item) {
       const proposal = get(id)
       assertValidName('dataset id', set)
@@ -993,7 +1121,7 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
 
     async reviewFiles(id) {
       const proposal = get(id)
-      const snap = await snapshot(proposal.commonDir, proposal.commit)
+      const snap = await snapshotOf(proposal.commonDir, proposal.commit)
       const outputs: ReviewFiles['outputs'] = []
       for (const path of snap.files) {
         if (outputs.length >= LIST_LIMIT) break
