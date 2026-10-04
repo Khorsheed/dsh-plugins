@@ -50,3 +50,7 @@ The renderer is pure and synchronous over a `BriefData` the store gathers asynch
 - Token estimation is a heuristic, not a tokenizer; the budgets are guard rails with a 从略 receipt, and the seed specs pin the three variants under budget so regressions fail loudly.
 - `story_read(what=works)` extends the proposal's `what` list by one row — the model otherwise has no way to discover focusable works in the UI-less M1. It is additive and documented in the README.
 - `scripts/gen-typert.mts`'s `TYPERT_PACKAGES` gained the story-bible entry (the registry every `./typert` package joins), and `docs/packages.md` was regenerated — the two repo-level registrations a new package cannot avoid.
+
+## Related
+
+- Superseded by [canvas-novel engine](2026-10-04-canvas-novel-engine.md): the package is now `@khorsheed/dsh-canvas-novel`, the genre 长篇小说 on the canvas.

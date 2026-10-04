@@ -42,3 +42,7 @@ The reference is one-way data: `dsh.references: ['@khorsheed/dsh-story-bible']`,
 - The canvas-recipe documentation finally has a second consumer, which validates the convention: `./agent` entry, root-disabled row, preset-scoped grant.
 - `docs/packages.md` regenerated (39 packages); no other repo-level registration was needed (a preset-declarations bundle carries no typert face, no client half, no invariant).
 - Unchanged and deliberate: the pointer section stays a function section evaluated per assembly, so even inside the writing preset an unfocused session costs zero tokens; the double-mount rule remains documentation-level (canvas's own stance) because the failure mode is a loud boot error, not a silent one.
+
+## Related
+
+- Superseded by [canvas-novel engine](2026-10-04-canvas-novel-engine.md): the package is now `@khorsheed/dsh-canvas-novel`, the genre 长篇小说 on the canvas.

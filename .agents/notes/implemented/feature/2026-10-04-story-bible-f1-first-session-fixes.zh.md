@@ -58,3 +58,7 @@ Status: implemented
 - 两个 chip 让两个人工闸门常驻，不新增界面。
 - `story_write(chapter)` 带 content 是 skill 现在教的写路径；宿主文件工具写在登记的工作区内仍然合法。
 - 工具描述、skill、双语 README 随同一批提交更新；M1/M3 note 里的流程描述保持历史原样。
+
+## Related
+
+- 已被 [canvas-novel 引擎](2026-10-04-canvas-novel-engine.zh.md) 取代：包现在是 `@khorsheed/dsh-canvas-novel`，即画布上的「长篇小说」体裁。

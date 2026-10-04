@@ -47,3 +47,7 @@ The proposal's §6 设定集 names five boards (世界观/人物/场景/物品/�
 - `docs/packages.md` gained the story-bible web column; `scripts/check-plugin-independence.ts`'s ALLOWED_EDGES gained the story-bible → ui-content-preview source-plane edge (the local-files / worktrees precedent).
 - 59 client+host specs pin the five views' same-source rendering, the ghost-card flow, the pending queue, the plan/review state machines, the work strip, the row parsers, the store, and the PREVIEW_KEYS dictionary contract.
 - Known leftover: 在编辑器打开 prefers the open-in-app IDE probe (directories only — the host route refuses files) and falls back to the official document preview; the 场景/物品 boards are empty by design until the kind axis closes the seam.
+
+## Related
+
+- Superseded by [canvas-novel engine](2026-10-04-canvas-novel-engine.md): the package is now `@khorsheed/dsh-canvas-novel`, the genre 长篇小说 on the canvas.
