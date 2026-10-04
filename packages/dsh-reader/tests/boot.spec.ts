@@ -713,6 +713,22 @@ describe('a fetch the browser can walk away from', () => {
     expect(states.e1?.state).toBe('failed')
     expect(states.e1?.state === 'failed' ? states.e1.code : undefined).toBe('blocked')
   })
+
+  it('records a 200 bot challenge as blocked instead of handing it over as the article', async () => {
+    // mp.weixin.qq.com answers anything but a browser with this page, status 200.
+    const ctx = await bootWithWeb(async () => ({
+      url: 'https://mp.weixin.qq.com/s/abc',
+      statusCode: 200,
+      body: { kind: 'html' as const, content: '<html><body><div>环境异常</div><p>当前环境异常，完成验证后即可继续访问。</p><a>去验证</a></body></html>' },
+      truncated: false,
+    }))
+    const service = ctx.get('reader') as ReaderService
+    const fetched = await service.fetchEntryBody({ entryId: 'e1', url: 'https://mp.weixin.qq.com/s/abc' })
+    expect(fetched.raw).toBeUndefined()
+    expect(fetched.error).toMatch(/bot challenge/)
+    const states = (await service.entryFetchStates({ entryIds: ['e1'] })).states
+    expect(states.e1?.state === 'failed' ? states.e1.code : undefined).toBe('blocked')
+  })
 })
 
 describe('the recent list is the reader’s, and it outlives the process', () => {

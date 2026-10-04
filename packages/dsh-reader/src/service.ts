@@ -686,6 +686,15 @@ export class ReaderService {
     await this.markFetching(request.entryId)
     try {
       const fetched = await this.fetchFollowing(url)
+      // A bot challenge answers 200 with its own little page (mp.weixin.qq.com's
+      // 「环境异常」, for one): extracted, it would be stored as the article.
+      // Record it as the refusal it is, so the browser half can escalate to a
+      // rendered fetch instead of showing the challenge text as the body.
+      const wall = inspectPreview(fetched.raw, fetched.url, url)
+      if (wall?.code === 'blocked') {
+        await this.recordFetchFailure(request.entryId, wall.message, wall.code)
+        return { entryId: request.entryId, error: wall.message }
+      }
       // The raw payload is written to disk BEFORE the caller gets it, so a
       // browser that goes away mid-request does not cost the reader the
       // download: the next visit finds the stored payload and extracts it.
@@ -1680,7 +1689,7 @@ function errorCode(error: unknown): string | undefined {
 }
 
 /** Marker words a bot wall leaves on an otherwise empty page. */
-const BOT_WALL_PATTERN = /just a moment|checking your browser|cf-chl|cf_chl|attention required|unusual traffic|captcha|verifying you are human|enable javascript and cookies|access denied|are you a robot|验证码|人机验证|访问验证|安全验证/
+const BOT_WALL_PATTERN = /just a moment|checking your browser|cf-chl|cf_chl|attention required|unusual traffic|captcha|verifying you are human|enable javascript and cookies|access denied|are you a robot|验证码|人机验证|访问验证|安全验证|环境异常|完成验证后/
 
 /** Marker words an authentication interstitial leaves behind. */
 const LOGIN_WALL_PATTERN = /cookie required|requires? cookies|sign in|sign-in|log in|login|please log|single sign|sso|qurl=|ezproxy|shibboleth|访问权限|请登录|登录后/

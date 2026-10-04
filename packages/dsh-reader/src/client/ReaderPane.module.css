@@ -795,6 +795,14 @@
   border-radius: 8px;
 }
 
+/* An inline chart carries its page's fixed pixel width (634px on claude.dev);
+   its viewBox scales it down to the pane like an image. Only top-level SVGs —
+   a nested <svg> is a viewport inside the drawing, not a box in the column. */
+.article :not(svg) > svg {
+  max-width: 100%;
+  height: auto;
+}
+
 .article strong {
   color: var(--dsw-alias-label-primary);
   font-weight: 650;
