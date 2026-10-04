@@ -897,7 +897,7 @@ describe('添加题集 (T90)', () => {
     expect(screen.getByText('add.nameBad')).toBeTruthy()
     expect(go.disabled).toBe(true)
     fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: 'gsm8k' } })
-    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'add.repo' }).title).toBe('/home/user/.dsh/datasets/gsm8k')
     fireEvent.change(screen.getByLabelText('add.purpose', { selector: 'textarea' }), { target: { value: 'math reasoning' } })
     fireEvent.click(go)
     await waitFor(() => { expect(h.startOrganizing).toHaveBeenCalledTimes(1) })
@@ -943,6 +943,8 @@ describe('添加题集 picks directories (T95)', () => {
     if (name !== '') fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: name } })
   }
   const sourceBox = (): HTMLTextAreaElement => screen.getByLabelText('add.source', { selector: 'textarea' })
+  /** The 新仓库位置 field: a read-only box whose title is the full path (T96). */
+  const repoBox = (): HTMLElement => screen.getByRole('textbox', { name: 'add.repo' })
 
   it('选择目录… writes the pick into 数据在哪, which stays editable', async () => {
     const h = makeHarness()
@@ -971,7 +973,7 @@ describe('添加题集 picks directories (T95)', () => {
     await waitFor(() => { expect(h.pickDirectory).toHaveBeenCalledTimes(2) })
     await Promise.resolve()
     expect(sourceBox().value).toBe('~/Downloads/gsm8k')
-    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    expect(repoBox().title).toBe('/home/user/.dsh/datasets/gsm8k')
     expect(screen.queryByText('add.repoReset')).toBeNull()
   })
 
@@ -981,22 +983,22 @@ describe('添加题集 picks directories (T95)', () => {
     await openAdd()
     expect(screen.queryByText('add.browse')).toBeNull()
     expect(screen.queryByText('add.repoChange')).toBeNull()
-    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    expect(repoBox().title).toBe('/home/user/.dsh/datasets/gsm8k')
   })
 
-  it('更改… picks the parent; the request carries <parent>/<name>; 恢复默认位置 goes back', async () => {
+  it('更改… picks the parent; the request carries <parent>/<name>; 恢复默认 goes back', async () => {
     const h = makeHarness()
     renderView(h)
     await openAdd('')
     // Before a name: the location reads with a name slot.
-    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/add\.repoNameSlot/)).toBeTruthy()
+    expect(repoBox().title).toBe('/home/user/.dsh/datasets/add.repoNameSlot')
     fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: 'gsm8k' } })
     h.pickDirectory.mockResolvedValueOnce('/home/user/benchmarks/')
     fireEvent.click(screen.getByText('add.repoChange'))
-    expect(await screen.findByText(/add\.repoAt .*\/home\/user\/benchmarks\/gsm8k/)).toBeTruthy()
+    await waitFor(() => { expect(repoBox().title).toBe('/home/user/benchmarks/gsm8k') })
     // Back to the default, and to the picked one again.
     fireEvent.click(screen.getByText('add.repoReset'))
-    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    expect(repoBox().title).toBe('/home/user/.dsh/datasets/gsm8k')
     expect(screen.queryByText('add.repoReset')).toBeNull()
     h.pickDirectory.mockResolvedValueOnce('/home/user/benchmarks')
     fireEvent.click(screen.getByText('add.repoChange'))
@@ -1007,6 +1009,30 @@ describe('添加题集 picks directories (T95)', () => {
     const text = h.startOrganizing.mock.calls[0]![2] as string
     expect(text).toContain('organize.lineRepo {"value":"/home/user/benchmarks/gsm8k"}')
     expect(text).not.toContain('.dsh/datasets/gsm8k')
+  })
+
+  it('新仓库位置 is a field: label, a read-only path cut in the middle, 更改… in the 选择目录… column (T96)', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openAdd()
+    const box = repoBox()
+    expect(box.getAttribute('aria-readonly')).toBe('true')
+    // The middle gives way, the dataset's own folder always shows; together they are the full path.
+    const [head, tail] = [...box.children].map(part => part.textContent)
+    expect(tail).toBe('datasets/gsm8k')
+    expect(`${head}${tail}`).toBe(box.title)
+    expect(box.textContent).toBe('/home/user/.dsh/datasets/gsm8k')
+    // 选择目录… and 更改… sit in the same action column; 恢复默认 only after a change.
+    const browse = screen.getByRole('button', { name: 'add.browse' })
+    const change = screen.getByRole('button', { name: 'add.repoChange' })
+    expect(browse.parentElement!.className).toBe(change.parentElement!.className)
+    expect(screen.queryByRole('button', { name: 'add.repoReset' })).toBeNull()
+    expect(screen.getByText('add.repoHelp')).toBeTruthy()
+    h.pickDirectory.mockResolvedValueOnce('/home/user/benchmarks')
+    fireEvent.click(change)
+    const reset = await screen.findByRole('button', { name: 'add.repoReset' })
+    expect(reset.parentElement!.className).toBe(browse.parentElement!.className)
+    expect(screen.getByText('add.repoHelpPicked')).toBeTruthy()
   })
 
   it('a reset location sends the default path', async () => {

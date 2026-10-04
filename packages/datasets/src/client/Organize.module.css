@@ -100,37 +100,6 @@
   text-decoration: underline;
 }
 
-/* T95 · a field with the host's directory chooser beside it; the button
-   drops under the field when the dialog is narrow. */
-.fieldWithAction {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 6px 8px;
-}
-
-.fieldWithAction > .textarea {
-  flex: 1 1 220px;
-  width: auto;
-  min-width: 0;
-}
-
-/* Where the new repository goes, with 更改… / 恢复默认 after it. */
-.repoLine {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 12px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.repoPath {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 /* ── the banner ─────────────────────────────────────────────────────────── */
 
 .banners {
@@ -692,4 +661,87 @@
   .skel {
     animation: none;
   }
+}
+
+/* T96 · the 添加题集 dialog: the host form-dialog rhythm (12px labels,
+   12px between fields) and one action column shared by 「选择目录…」,
+   「更改…」 and 「恢复默认」, so the three line up at the same width. */
+.addForm {
+  gap: 12px;
+}
+
+.addForm .formLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.addForm .required {
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+.addForm .gitNote .help {
+  margin-top: 2px;
+}
+
+.pickRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pickRow > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pickActions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 88px;
+}
+
+.pickActions > button {
+  width: 100%;
+}
+
+.pathBox {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: text;
+  user-select: all;
+}
+
+.pathBox:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-focus, var(--dsw-alias-border-l2));
+  outline-offset: 1px;
+}
+
+.pathHead {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pathTail {
+  flex: 0 0 auto;
+  max-width: 75%;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
 }

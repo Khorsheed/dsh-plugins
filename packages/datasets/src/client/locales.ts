@@ -202,7 +202,9 @@ export type DatasetsKey =
   | 'add.optional'
   | 'add.git'
   | 'add.gitNeeded'
-  | 'add.repoAt'
+  | 'add.repo'
+  | 'add.repoHelp'
+  | 'add.repoHelpPicked'
   | 'add.repoNameSlot'
   | 'add.repoChange'
   | 'add.repoReset'
@@ -577,12 +579,14 @@ export const zh: Record<DatasetsKey, string> = {
   'add.purposePlaceholder': '例如：比较两个模型的数学推理',
   'add.required': '必填',
   'add.optional': '可选',
-  'add.git': '题集用 git 保存：每个版本都留着，任何版本都能找回，每次实验都能在它用的那个版本上原样重跑。你不需要会 git。',
-  'add.gitNeeded': '需要 git：机器上没有时，Agent 会先说明并征得你同意再安装。',
-  'add.repoAt': '新仓库放在 {path}',
+  'add.git': '题集用 git 保存：每个版本都留着，实验总能在它用过的版本上原样重跑。你不需要会 git。',
+  'add.gitNeeded': '机器上没有 git 时，Agent 会先征得你同意再安装。',
+  'add.repo': '新仓库位置',
+  'add.repoHelp': 'Agent 在这里新建题集仓库，默认放在题集目录下。',
+  'add.repoHelpPicked': '放在你选的目录下。',
   'add.repoNameSlot': '<题集名称>',
   'add.repoChange': '更改…',
-  'add.repoReset': '恢复默认位置',
+  'add.repoReset': '恢复默认',
   'add.browse': '选择目录…',
   'add.organize': '让 Agent 整理',
   'add.cancel': '取消',
@@ -949,12 +953,14 @@ export const en: Record<DatasetsKey, string> = {
   'add.purposePlaceholder': 'e.g. compare two models on math reasoning',
   'add.required': 'required',
   'add.optional': 'optional',
-  'add.git': 'Datasets are kept in git: every version is kept and can be restored, and every experiment reruns exactly on the version it used. You do not need to know git.',
-  'add.gitNeeded': 'Needs git: if this machine has none, the Agent explains and asks before installing it.',
-  'add.repoAt': 'The new repository goes to {path}',
+  'add.git': 'Datasets are kept in git: every version stays, and an experiment always reruns exactly on the version it used. You do not need to know git.',
+  'add.gitNeeded': 'If this machine has no git, the Agent asks before installing it.',
+  'add.repo': 'New repository',
+  'add.repoHelp': 'The Agent creates the dataset repository here; by default under the datasets folder.',
+  'add.repoHelpPicked': 'Under the folder you chose.',
   'add.repoNameSlot': '<dataset name>',
   'add.repoChange': 'Change…',
-  'add.repoReset': 'Use the default location',
+  'add.repoReset': 'Use default',
   'add.browse': 'Choose a folder…',
   'add.organize': 'Let the Agent organize it',
   'add.cancel': 'Cancel',
