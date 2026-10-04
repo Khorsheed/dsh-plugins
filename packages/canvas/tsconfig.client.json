@@ -37,6 +37,8 @@
     "src/client/more-menu.tsx",
     "src/client/slots.ts",
     "src/client/genre-seats.tsx",
+    "src/client/bind/gate.ts",
+    "src/client/bind/BindChip.tsx",
     "src/client/confirm-delete.tsx",
     "src/client/detail/CardPad.tsx",
     "src/client/detail/BlockEditor.tsx",

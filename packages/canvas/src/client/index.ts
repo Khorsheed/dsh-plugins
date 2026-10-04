@@ -56,6 +56,8 @@ import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.t
 import { CanvasTab } from './tab/CanvasTab.tsx'
 import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
 import { CANVAS_CHILD_SLOTS } from './slots.ts'
+import { CanvasBindChip, type CanvasBindInjected } from './bind/BindChip.tsx'
+import { GenreBindingGate } from './bind/gate.ts'
 
 export { CanvasDetailView } from './detail/CanvasDetailView.tsx'
 export { CANVAS_KIND, CANVAS_TAB_ID } from './definition.ts'
@@ -372,6 +374,37 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => proposeFace,
   }, ProposeTypeRow)), 'canvas: propose-type tool row')
+
+  // The binding chip (创作体裁) in the session header: which canvas this
+  // writing session works on. Offered only where a genre is installed and the
+  // session reaches its agent row (bind/gate.ts), so a deployment without a
+  // genre never sees it. The header seat is declared by ui-conversation, which
+  // this package does not depend on — the same structural registration as the
+  // tool row above; without that package the inject never fires.
+  const bindGate = new GenreBindingGate(async () => requireRemote().listGenres(), tabVisibility)
+  const bindFace = (sessionId: SessionId): CanvasBindInjected => ({
+    offered: () => bindGate.offered(sessionId),
+    subscribe: listener => bindGate.subscribe(listener),
+    boundCanvas: () => requireRemote().boundCanvas(sessionId),
+    bindCanvas: async canvasId => touchOnSuccess(await requireRemote().bindCanvas(sessionId, { canvasId })),
+    listCanvases: () => requireRemote().listCanvases(),
+    openCanvas: canvasId => {
+      try {
+        ctx.sidebarRight.openTab(CANVAS_KIND)
+      } catch (error) {
+        ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
+      }
+      selection.openCanvas(canvasId)
+    },
+  })
+  ctx.effect(() => toolSlots.inject('conversation.session.header.actions', () => toolSlots.register({
+    name: 'conversation.session.header.actions',
+    id: 'canvas-bind',
+    // After the static context (the preset label) and room's invite (30).
+    order: 40,
+    locale: NS,
+    inject: bindFace,
+  }, CanvasBindChip)), 'canvas: session binding chip')
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))
