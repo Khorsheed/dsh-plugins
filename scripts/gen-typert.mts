@@ -154,6 +154,11 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     name: '@khorsheed/dsh-capture',
     hostConfigs: ['tsconfig.host.json'],
   },
+  {
+    dir: 'packages/story-bible',
+    name: '@khorsheed/dsh-story-bible',
+    hostConfigs: ['tsconfig.host.json'],
+  },
 ]
 
 interface RemoteArtifact {

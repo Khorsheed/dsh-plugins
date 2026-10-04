@@ -1,0 +1,421 @@
+/**
+ * The story-bible's main-session tools, registered by the `./agent`
+ * composition entry: one read (`story_read`), one write (`story_write`) and
+ * the two-phase reconciliation (`story_extract`). They act on the work the
+ * session FOCUSES (the store's per-session map); with no focus every tool
+ * answers with guidance, never an error. Descriptions stay terse — the
+ * workflow is the `story` skill's, loaded on demand (the 2026-09-30 canvas
+ * slimming precedent).
+ *
+ * The definitions are origin-tagged the way the community convention
+ * documents: the tag is the `Symbol.for('dsh.tool.origin')`-keyed property
+ * (host-side only, never on the model wire), set directly — the
+ * `@khorsheed/dsh-capability-catalog` helper's own module documents this
+ * no-import path, so the package needs no dependency on the catalog.
+ *
+ * @module @khorsheed/dsh-story-bible
+ */
+import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Session } from '@deepseek-ai/dsh-session'
+import { renderPlanBrief, renderWriteBrief } from './brief.ts'
+import type { StoryBibleService } from './store.ts'
+import {
+  canonRefOf, foreshadowRefOf, type ChapterPlan, type ExtractPayload, type MemoryRecord, type PendingItem,
+} from './types.ts'
+
+/** The community tool-origin tag (the catalog's documented no-import path). */
+function tagOrigin<T extends object>(definition: T): T {
+  ;(definition as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')] = {
+    channel: 'plugin',
+    owner: '@khorsheed/dsh-story-bible',
+  }
+  return definition
+}
+
+/** What the tools answer when the session focuses no work (guidance, never a throw). */
+const NO_FOCUS_MESSAGE = '本会话还没有 focus 作品：用 story_write(what=work, title=…) 选中已有作品或新建一部，再进行读写。'
+
+/** The review gate's refusal (invariant 2: 不满意的正文不进记忆). */
+const NOT_REVIEWED_MESSAGE = '这章还没有被用户「审过」——不满意的正文不进记忆。请用户先确认这章可以定稿，再来对账。'
+
+/** One memory as the model reads it (one line). */
+function memoryLine(memory: MemoryRecord): string {
+  const ref = memory.type === 'prospective' ? foreshadowRefOf(memory.id) : canonRefOf(memory.id)
+  const layer = memory.layer === 'intent' ? `灵感·${memory.intentStatus ?? 'draft'}` : 'canon'
+  const flags = [
+    memory.reviewed ? '' : '未审',
+    memory.autoImported === true ? '自动·可撤销' : '',
+    memory.status === 'archived' ? '已归档' : '',
+  ].filter(flag => flag !== '').join('·')
+  return `- [${ref}] ${layer}/${memory.type}/${memory.confidence}${flags === '' ? '' : `（${flags}）`} ${memory.content}`
+}
+
+/** One pending item as the model reads it (one line, evidence attached). */
+function pendingLine(item: PendingItem): string {
+  return `- [${item.id}] ${item.kind}（${item.confidence}）${item.reason}${item.evidenceInText === undefined ? '' : `\n  原文：「${item.evidenceInText}」`}`
+}
+
+/** The chapter phase's display name. */
+const PHASE_NAMES: Readonly<Record<string, string>> = {
+  planning: '规划中', writing: '写作中', reviewed: '已审过', extracted: '已抽取',
+}
+
+/**
+ * Build the story tools for the MAIN session: the target work resolves per
+ * call from the session's focus (the store's map), the fencing session rides
+ * the agent. No focus is a plain guidance answer, never an error.
+ * @param store - the story service the tools delegate to.
+ * @returns the tagged definitions for the profile-root tools registry.
+ */
+export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolDefinition[] {
+  /** Resolve the call's target: the focused work plus the fencing session. */
+  const target = (exec: { agent?: Agent }): { workId: string; session: Session } | { message: string } => {
+    const session = exec.agent?.session
+    if (session === undefined) return { message: NO_FOCUS_MESSAGE }
+    const focused = store.focusedWorkOf(session)
+    if (focused === undefined) return { message: NO_FOCUS_MESSAGE }
+    return { workId: focused.workId, session }
+  }
+
+  const read = defineTool({
+    name: 'story_read',
+    description:
+      'Read the focused work. what=brief renders a material pack (for=write/plan/extract); works/memories/character/'
+      + 'chapters/ledger/pending/chapter read the store. Load the story skill for the workflow.',
+    parameters: {
+      what: {
+        type: 'string',
+        enum: ['brief', 'works', 'memories', 'character', 'chapters', 'ledger', 'pending', 'chapter'],
+        required: true,
+        description: 'What to read.',
+      },
+      for: { type: 'string', enum: ['write', 'plan', 'extract'], description: 'brief: the variant (default write).' },
+      chapter: { type: 'number', description: 'brief/chapter: the chapter number (default: the one being planned).' },
+      id: { type: 'string', description: 'character: character id or exact name.' },
+      layer: { type: 'string', enum: ['canon', 'intent'], description: 'memories: filter by layer.' },
+      type: { type: 'string', description: 'memories: filter by type (prospective = 伏笔).' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    isConcurrencySafe: () => true,
+    execute: async (args: {
+      what: string
+      for?: 'write' | 'plan' | 'extract'
+      chapter?: number
+      id?: string
+      layer?: 'canon' | 'intent'
+      type?: string
+    }, exec: { agent?: Agent }): Promise<string> => {
+      if (args.what === 'works') {
+        const works = await store.listWorks()
+        if (works.length === 0) return '还没有登记任何作品：story_write(what=work, title=…, workspace=…) 新建一部。'
+        const focused = exec.agent?.session === undefined ? undefined : store.focusedWorkOf(exec.agent.session)
+        return ['作品注册表：', ...works.map(work =>
+          `- ${work.id}　《${work.title}》　${work.workspace}${focused?.workId === work.id ? '　← 本会话 focus' : ''}`),
+        ].join('\n')
+      }
+      const resolved = target(exec)
+      if ('message' in resolved) return resolved.message
+      const { workId } = resolved
+      if (args.what === 'brief') {
+        const gathered = await store.gatherBrief({ workId, ...(args.chapter === undefined ? {} : { chapter: args.chapter }) })
+        if (!gathered.ok || gathered.data === undefined) {
+          return gathered.error === 'missing'
+            ? '还没有可定位的章节：先 story_write(what=chapter, title=…[, plan=…]) 建章，再取 brief。'
+            : `失败：${gathered.error ?? 'io'}`
+        }
+        if (args.for === 'plan') return renderPlanBrief(gathered.data)
+        if (args.for === 'extract') {
+          const chapter = gathered.data.target
+          if (chapter.phase !== 'reviewed') return NOT_REVIEWED_MESSAGE
+          const prepared = await store.extractPrepare({ workId, n: chapter.n })
+          return prepared.ok ? prepared.text! : `失败：${prepared.error ?? 'io'}`
+        }
+        return renderWriteBrief(gathered.data)
+      }
+      if (args.what === 'memories') {
+        const memories = await store.listMemories({
+          workId,
+          ...(args.layer === undefined ? {} : { layer: args.layer }),
+          ...(args.type === undefined ? {} : { type: args.type as MemoryRecord['type'] }),
+        })
+        if (memories.length === 0) return '还没有记忆：聊设定时 story_write(what=memory) 落幽灵卡，对账后记忆自动入库。'
+        return [`记忆（${memories.length} 条，灵感未采纳不进 brief）：`, ...memories.map(memoryLine)].join('\n')
+      }
+      if (args.what === 'character') {
+        if (args.id === undefined) {
+          const roster = await store.listCharacters({ workId })
+          return roster.length === 0
+            ? '还没有角色卡。'
+            : `角色花名册：${roster.map(character => `${character.id} ${character.name}（${character.identity}）`).join('；')}。用 id 或名字取单卡。`
+        }
+        const character = await store.readCharacter({ workId, idOrName: args.id })
+        if (character === undefined) return `失败：没有角色「${args.id}」。`
+        const experiences = await store.listExperiences({ workId, characterId: character.id })
+        const join = (items: readonly string[]): string => items.length === 0 ? '—' : items.join('、')
+        return [
+          `${character.id} ${character.name}（${character.identity}）`,
+          `档案：外貌 ${character.profile.appearance ?? '—'}；口癖 ${character.profile.voice ?? '—'}`,
+          `内核：想要 ${character.core.want ?? '—'}；缺失 ${character.core.lack ?? '—'}；伤口 ${character.core.wound ?? '—'}`,
+          `知道的事：${join(character.knowledge.knows)}`,
+          `不知道的事：${join(character.knowledge.unaware)}`,
+          `秘密：${join(character.knowledge.secrets)}`,
+          `当前态：${character.currentState.where ?? '—'} / ${character.currentState.state ?? '—'} / 牵挂 ${character.currentState.concern ?? '—'}`,
+          ...(character.relationships.length === 0 ? [] : [
+            '关系：',
+            ...character.relationships.map(rel =>
+              `- ${rel.target}：${rel.description}${rel.changes.length === 0 ? '' : `（${rel.changes.map(change => `▲第${change.chapter}章 ${change.note}`).join('；')}）`}`),
+          ]),
+          ...(experiences.length === 0 ? [] : ['经历：', ...experiences.slice(-8).map(entry => `- 第${entry.chapter}章 ${entry.entry}`)]),
+        ].join('\n')
+      }
+      if (args.what === 'chapters') {
+        const chapters = await store.listChapters({ workId })
+        if (chapters.length === 0) return '还没有章节：story_write(what=chapter, title=…[, plan=…]) 建第 1 章。'
+        return [
+          `章节（${chapters.length} 章，按 seq 排序）：`,
+          ...chapters.map(({ chapter, phase }) =>
+            `- 第${chapter.n}章 ${chapter.title}（${PHASE_NAMES[phase] ?? phase}）${chapter.recap ?? ''}`),
+        ].join('\n')
+      }
+      if (args.what === 'ledger') {
+        const ledger = await store.ledger({ workId })
+        if (!ledger.ok) return `失败：${ledger.error ?? 'io'}`
+        const lines = [
+          `伏笔健康度：活跃 ${ledger.counts.active} / 超期⚠ ${ledger.counts.overdue} / 已揭 ${ledger.counts.resolved} / 弃置 ${ledger.counts.abandoned}（当前第 ${ledger.currentChapter} 章）`,
+          '沉睡榜（最久未动在前）：',
+          ...(ledger.active.length === 0 ? ['（台账为空。）'] : ledger.active.map((memory) => {
+            const specifics = memory.specifics
+            const planted = specifics?.plantedAt ?? memory.firstChapter
+            const last = memory.lastActiveChapter ?? planted
+            const slept = ledger.currentChapter - (last ?? ledger.currentChapter)
+            return `- [${foreshadowRefOf(memory.id)}] ${specifics?.question ?? memory.content}（埋于第${planted ?? '?'}章 · 最后活跃第${last ?? '?'}章 · 已 ${slept} 章未动${slept >= 3 ? ' ⚠' : ''} · 势${specifics?.tension ?? '?'}）`
+          })),
+        ]
+        return lines.join('\n')
+      }
+      if (args.what === 'pending') {
+        const items = await store.listPending({ workId })
+        if (items.length === 0) return '待审队列为空。'
+        return [`待审队列（${items.length} 条，✓采纳/✗丢弃走 story_write(what=review, target=pending, id, action)）：`, ...items.map(pendingLine)].join('\n')
+      }
+      if (args.what === 'chapter') {
+        if (args.chapter === undefined) return '失败：what=chapter 要给 chapter（章号）。'
+        const outcome = await store.readChapter({ workId, n: args.chapter })
+        if (!outcome.ok) return `失败：没有第 ${args.chapter} 章。story_read(what=chapters) 看章节索引。`
+        return outcome.body === ''
+          ? `第 ${args.chapter} 章《${outcome.chapter!.title}》（${PHASE_NAMES[outcome.phase!] ?? outcome.phase}）：正文为空。`
+          : `第 ${args.chapter} 章《${outcome.chapter!.title}》（${PHASE_NAMES[outcome.phase!] ?? outcome.phase}）：\n\n${outcome.body}`
+      }
+      return '失败：what 只能是 brief/works/memories/character/chapters/ledger/pending/chapter。'
+    },
+  })
+
+  const write = defineTool({
+    name: 'story_write',
+    description:
+      'Write the focused work. what=work focuses or creates one (title; workspace for a new one); memory drops a ghost '
+      + 'card (layer=intent draft by default); character upserts a card; chapter creates (auto n=max+1) or re-plans; '
+      + 'review decides (target=memory|pending, action=accept|discard|archive|retract). Load the story skill first.',
+    parameters: {
+      what: { type: 'string', enum: ['work', 'memory', 'character', 'chapter', 'review'], required: true, description: 'What to write.' },
+      title: { type: 'string', description: 'work/chapter: the title.' },
+      workspace: { type: 'string', description: 'work: absolute path of the mounted workspace (new works only).' },
+      content: { type: 'string', description: 'memory: the content (one restatable sentence).' },
+      type: { type: 'string', description: 'memory: episodic|semantic|source|prospective|emotional|procedural|implicit.' },
+      layer: { type: 'string', enum: ['canon', 'intent'], description: 'memory: layer (default intent draft — the ghost card).' },
+      kind: { type: 'string', enum: ['世界', '人物', '章节', '伏笔点子', '原则'], description: 'memory: the filing route.' },
+      confidence: { type: 'string', enum: ['high', 'medium', 'low'], description: 'memory: confidence (unsure = medium/low).' },
+      specifics: { type: 'object', additionalProperties: true, description: 'memory: prospective ledger fields {question, status, tension, plantedAt, answer}.' },
+      owner: { type: 'string', description: 'memory: creator or a character id.' },
+      evidence: { type: 'string', description: 'memory: ≤50 chars quoted from the chapter.' },
+      id: { type: 'string', description: 'character: id to patch. review: memory id or pending id.' },
+      name: { type: 'string', description: 'character: the name.' },
+      identity: { type: 'string', description: 'character: 一句身份.' },
+      profile: { type: 'object', additionalProperties: true, description: 'character: {appearance, voice}.' },
+      core: { type: 'object', additionalProperties: true, description: 'character: {want, lack, wound}.' },
+      knowledge: { type: 'object', additionalProperties: true, description: 'character: {knows[], unaware[], secrets[]}.' },
+      currentState: { type: 'object', additionalProperties: true, description: 'character: {where, state, concern}.' },
+      chapter: { type: 'number', description: 'chapter: n to re-plan (omit to create).' },
+      plan: { type: 'object', additionalProperties: true, description: 'chapter: {pov, goal, foreshadowOps[], characters[], hook}.' },
+      target: { type: 'string', enum: ['memory', 'pending'], description: 'review: which queue.' },
+      action: { type: 'string', enum: ['accept', 'discard', 'archive', 'retract'], description: 'review: the decision.' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (args: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
+      const session = exec.agent?.session
+      if (session === undefined) return NO_FOCUS_MESSAGE
+      if (args.what === 'work') {
+        if ((args.title ?? '').trim() === '') return '失败：what=work 要给 title（选中已有作品或新建）。'
+        const title = args.title!.trim()
+        const existing = (await store.listWorks()).find(work => work.title === title)
+        if (existing !== undefined) {
+          const focused = await store.focusWork({ workId: existing.id }, session)
+          return focused.ok
+            ? `已 focus《${existing.title}》（${existing.id}）。story_read(what=brief) 取写作约束。`
+            : `失败：${focused.error ?? 'io'}`
+        }
+        if ((args.workspace ?? '').trim() === '') return `失败：没有名为《${title}》的作品。新建要给 workspace（挂载工作区的绝对路径）。`
+        const created = await store.createWork({ title, workspace: args.workspace! }, session)
+        if (!created.ok) return `失败：${created.error ?? 'io'}`
+        await store.focusWork({ workId: created.work!.id }, session)
+        return `已创建并 focus《${created.work!.title}》（${created.work!.id}），正文目录 ${created.work!.workspace}/${created.work!.title}/。先聊设定落幽灵卡，或 story_write(what=chapter) 建第 1 章。`
+      }
+      const resolved = target(exec)
+      if ('message' in resolved) return resolved.message
+      const { workId } = resolved
+      if (args.what === 'memory') {
+        if ((args.content ?? '').trim() === '') return '失败：what=memory 要给 content（一句话能复述、且影响后续创作的才落卡）。'
+        const outcome = await store.writeMemory({
+          workId,
+          content: args.content!,
+          ...(args.type === undefined ? {} : { type: args.type as MemoryRecord['type'] }),
+          ...(args.layer === undefined ? {} : { layer: args.layer }),
+          ...(args.kind === undefined ? {} : { kind: args.kind }),
+          ...(args.confidence === undefined ? {} : { confidence: args.confidence }),
+          ...(args.owner === undefined ? {} : { owner: args.owner }),
+          ...(args.evidence === undefined ? {} : { evidenceInText: args.evidence }),
+          ...(args.specifics === undefined ? {} : { specifics: args.specifics as MemoryRecord['specifics'] }),
+        }, resolved.session, 'agent')
+        if (!outcome.ok) return `失败：${outcome.error ?? 'io'}`
+        const memory = outcome.memory!
+        return memory.layer === 'intent'
+          ? `已落幽灵卡 ${memory.id}（${memory.kind ?? '未分类'}）：「${memory.content.slice(0, 40)}」。用户 ✓ 采纳前不进 brief、不进正文。`
+          : `已登记 ${memory.id}（canon/${memory.type}，待用户审）：「${memory.content.slice(0, 40)}」。`
+      }
+      if (args.what === 'character') {
+        if ((args.name ?? '').trim() === '') return '失败：what=character 要给 name。'
+        const outcome = await store.writeCharacter({
+          workId,
+          name: args.name!,
+          ...(args.id === undefined ? {} : { id: args.id }),
+          ...(args.identity === undefined ? {} : { identity: args.identity }),
+          ...(args.profile === undefined ? {} : { profile: args.profile as never }),
+          ...(args.core === undefined ? {} : { core: args.core as never }),
+          ...(args.knowledge === undefined ? {} : { knowledge: args.knowledge as never }),
+          ...(args.currentState === undefined ? {} : { currentState: args.currentState as never }),
+        }, resolved.session)
+        if (!outcome.ok) return `失败：${outcome.error ?? 'io'}`
+        return `${args.id === undefined ? '已建角色卡' : '已更新角色卡'} ${outcome.character!.id} ${outcome.character!.name}（${outcome.character!.identity || '一句身份未填'}）。`
+      }
+      if (args.what === 'chapter') {
+        if ((args.title ?? '').trim() === '') return '失败：what=chapter 要给 title。'
+        const outcome = await store.writeChapter({
+          workId,
+          title: args.title!,
+          ...(args.chapter === undefined ? {} : { n: args.chapter }),
+          ...(args.plan === undefined ? {} : { plan: args.plan }),
+        }, resolved.session)
+        if (!outcome.ok) {
+          return outcome.error === 'missing' && args.chapter !== undefined
+            ? `失败：没有第 ${args.chapter} 章。story_read(what=chapters) 看索引；新建不要传 chapter。`
+            : `失败：${outcome.error ?? 'io'}`
+        }
+        const chapter = outcome.chapter!
+        const plan = chapter.plan as ChapterPlan | undefined
+        return plan === undefined
+          ? `已建第 ${chapter.n} 章《${chapter.title}》（规划中，正文文件 ${chapter.file}，编号自动 max+1）。补 plan：story_write(what=chapter, chapter=${chapter.n}, plan=…)。`
+          : `已登记第 ${chapter.n} 章《${chapter.title}》plan：POV ${plan.pov ?? '未定'} / 目标 ${plan.goal} / 伏笔操作 ${plan.foreshadowOps.length} 条 / 钩子 ${plan.hook ?? '无'}。用户确认后开写。`
+      }
+      if (args.what === 'review') {
+        if (args.target === undefined || args.id === undefined || args.action === undefined) {
+          return '失败：what=review 要给 target（memory|pending）、id 和 action（accept|discard|archive|retract）。'
+        }
+        if (args.target === 'memory') {
+          const outcome = await store.decideMemory({ workId, id: args.id, action: args.action }, resolved.session)
+          if (!outcome.ok) return outcome.error === 'missing' ? `失败：没有记忆 ${args.id}。` : `失败：该记忆当前状态不接受 ${args.action}（${outcome.error ?? 'io'}）。`
+          const names: Readonly<Record<string, string>> = { accept: '已采纳（进 brief）', discard: '已丢弃', archive: '已归档', retract: '已撤销自动入库' }
+          return `${names[args.action] ?? '完成'}：${args.id}。`
+        }
+        const outcome = await store.decidePending({ workId, id: args.id, action: args.action === 'accept' ? 'accept' : 'discard' }, resolved.session)
+        if (!outcome.ok) return outcome.error === 'missing' ? `失败：没有待审项 ${args.id}。` : `失败：${outcome.error ?? 'io'}`
+        return args.action === 'accept' ? `已采纳并落库：${args.id}。` : `已丢弃：${args.id}。`
+      }
+      return '失败：what 只能是 work/memory/character/chapter/review。'
+    },
+  })
+
+  const extract = defineTool({
+    name: 'story_extract',
+    description:
+      'Reconcile a REVIEWED chapter. phase=prepare returns the material pack (delegate it to a fresh subagent, take '
+      + 'back strict JSON); phase=import runs the five store gates on payload and files the results. Load the story skill first.',
+    parameters: {
+      chapter: { type: 'number', required: true, description: 'The chapter number.' },
+      phase: { type: 'string', enum: ['prepare', 'import'], required: true, description: 'Which half.' },
+      payload: { type: 'object', additionalProperties: true, description: 'import: the subagent\'s strict JSON.' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (args: { chapter: number; phase: 'prepare' | 'import'; payload?: ExtractPayload }, exec: { agent?: Agent }): Promise<string> => {
+      const resolved = target(exec)
+      if ('message' in resolved) return resolved.message
+      if (args.phase === 'prepare') {
+        const prepared = await store.extractPrepare({ workId: resolved.workId, n: args.chapter })
+        if (!prepared.ok) {
+          if (prepared.error === 'not-reviewed') return NOT_REVIEWED_MESSAGE
+          return prepared.error === 'missing' ? `失败：没有第 ${args.chapter} 章。` : `失败：${prepared.error ?? 'io'}`
+        }
+        return prepared.text!
+      }
+      if (args.payload === undefined || typeof args.payload !== 'object') {
+        return '失败：phase=import 要给 payload（subagent 返回的严格 JSON）。'
+      }
+      const report = await store.extractImport({ workId: resolved.workId, n: args.chapter, payload: args.payload }, resolved.session)
+      if (!report.ok) {
+        if (report.error === 'not-reviewed') return NOT_REVIEWED_MESSAGE
+        return report.error === 'missing' ? `失败：没有第 ${args.chapter} 章。` : `失败：${report.error ?? 'io'}`
+      }
+      const lines = [
+        `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed} / 自动入库 ×${report.autoImported} / 待你确认 ×${report.pending}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
+      ]
+      if (report.pendingItems.length > 0) {
+        lines.push('待确认清单：', ...report.pendingItems.map(item => `- [${item.id}] ${item.reason}`))
+      }
+      if (report.dropped.length > 0) {
+        lines.push('丢弃（防编造闸）：', ...report.dropped.map(drop => {
+          const why = drop.reason === 'evidence-not-found' ? '原文引用在正文里 grep 不到'
+            : drop.reason === 'id-not-in-ledger' ? '伏笔 id 不在活跃榜单' : '角色不在花名册'
+          return `- ${drop.kind}「${drop.ref}」：${why}`
+        }))
+      }
+      return lines.join('\n')
+    },
+  })
+
+  return [tagOrigin(read), tagOrigin(write), tagOrigin(extract)]
+}
+
+/** `story_write`'s arguments; which ones matter depends on `what`. */
+interface WriteArgs {
+  what: string
+  title?: string
+  workspace?: string
+  content?: string
+  type?: string
+  layer?: 'canon' | 'intent'
+  kind?: MemoryRecord['kind']
+  confidence?: MemoryRecord['confidence']
+  specifics?: Record<string, unknown>
+  owner?: string
+  evidence?: string
+  id?: string
+  name?: string
+  identity?: string
+  profile?: Record<string, unknown>
+  core?: Record<string, unknown>
+  knowledge?: Record<string, unknown>
+  currentState?: Record<string, unknown>
+  chapter?: number
+  plan?: Record<string, unknown>
+  target?: 'memory' | 'pending'
+  action?: 'accept' | 'discard' | 'archive' | 'retract'
+}
