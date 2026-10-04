@@ -10,6 +10,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { BRIEF_BUDGETS, estimateTokens, renderExtractBrief, renderPlanBrief, renderWriteBrief, type BriefData } from '../src/brief.ts'
 import { StoryBibleService } from '../src/store.ts'
+import { provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { DREAM, CHAPTER_5_BODY, seedDreamKeeper } from './seed-dream.ts'
 
@@ -19,6 +20,7 @@ async function seededBrief(chapter?: number): Promise<BriefData> {
   seedDreamKeeper(fs)
   const ctx = new Context()
   ctx.provide('fs', fs as never)
+  provideCanvas(ctx)
   const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
   const gathered = await store.gatherBrief({ workId: DREAM.workId, ...(chapter === undefined ? {} : { chapter }) })
   if (!gathered.ok || gathered.data === undefined) throw new Error(`gatherBrief failed: ${gathered.error ?? 'io'}`)

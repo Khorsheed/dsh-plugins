@@ -8,6 +8,7 @@
   "files": [
     "src/agent.ts",
     "src/brief.ts",
+    "src/genre.ts",
     "src/index.ts",
     "src/invariant.ts",
     "src/skill.ts",

@@ -1,66 +1,45 @@
 /**
  * The canvas-novel's data vocabulary (the 2026-10-04 story-bible proposal §2):
- * the work registry (`index.json`), the per-work documents (`work.json`,
- * `memories.json`, `characters.json`, `chapters.json`, `pending.json`) and
+ * the per-work documents (`memories.json`, `characters.json`,
+ * `chapters.json`, `pending.json`, under the canvas id's directory) and
  * the two append-only journals (`experiences.jsonl`, `mentions.jsonl`), plus
  * the tolerant normalizers every read applies — a hand-edited or older file
  * reads as the closest valid document, and a document too broken to read is
  * refused by the store rather than rewritten blind (the canvas store rule).
  *
- * Id vocabulary: works are `work-<base36>`; memories `m<n>`, characters
- * `c<n>`, pending items `p<n>` — all allocated per work as max+1 over the
- * file that owns them, so id allocation is atomic with the write that needs
- * it and `work.json` carries no counters. Display refs add a sigil: canon
+ * Id vocabulary: a work is its canvas (`canvas_<base36>`); memories `m<n>`,
+ * characters `c<n>`, pending items `p<n>` — all allocated per work as max+1
+ * over the file that owns them, so id allocation is atomic with the write
+ * that needs it and no document carries counters. Display refs add a sigil: canon
  * rules render `[w<n>]`, foreshadows `[#<n>]`, and a plan's foreshadow op
  * accepts any of `m12` / `#12` / `12` (normalized by {@link foreshadowIdOf}).
  * Chapter files are named by the store alone: `第{n}章.md`.
  *
  * @module @khorsheed/dsh-canvas-novel
  */
-import { randomBytes } from 'node:crypto'
 
 /* ------------------------------------------------------------------ works */
 
-/** One row of the deployment's work registry (`index.json`, a top-level array). */
-export interface WorkIndexEntry {
-  readonly id: string
-  readonly title: string
-  /** Absolute path of the mounted workspace that holds this work's manuscript directory. */
-  readonly workspace: string
-  readonly createdAt: string
-}
-
-/** `work.json`: the work's own metadata. Counters are deliberately absent — ids derive max+1. */
+/**
+ * One work = one canvas whose genre is `novel` (the 2026-10-04 decision). The
+ * work's identity, title and workspace are the canvas's own — the engine
+ * keeps no registry of its own and derives this view per call.
+ */
 export interface WorkMeta {
+  /** The canvas id (also the engine's per-work state directory name). */
   readonly id: string
+  /** The canvas title (the chapter files' folder under the workspace). */
   readonly title: string
-  readonly workspace: string
-  readonly createdAt: string
-  readonly updatedAt: string
+  /** The canvas's first attached workspace, or undefined when none is attached yet. */
+  readonly workspace: string | undefined
 }
 
-/** Work ids: `work-` plus lowercase base36 (a directory name, so no path separators). */
-export const WORK_ID_RE = /^work-[a-z0-9]{6,24}$/
+/** The novel genre's id on the canvas. */
+export const NOVEL_GENRE_ID = 'novel'
 
-/** Lowercase base36 randomness for one id (time already orders the prefix). */
-function randomSuffix(): string {
-  return randomBytes(8).readBigUInt64BE().toString(36).slice(0, 10).padStart(10, '0')
-}
-
-/** Mint one work id. */
-export function makeWorkId(): string {
-  return `work-${Date.now().toString(36)}${randomSuffix().slice(0, 6)}`
-}
-
-/** A title usable as a directory name: trimmed, no separators or control characters. */
-export function sanitizeWorkTitle(title: string): string | undefined {
-  const clean = title.replace(/[/\\\u0000-\u001f]/g, '').trim().slice(0, 80)
-  return clean.length === 0 ? undefined : clean
-}
-
-/** A work id from untrusted input, or undefined. */
+/** A canvas id from untrusted input (the canvas's own id rule), or undefined. */
 export function normalizeWorkId(id: unknown): string | undefined {
-  return typeof id === 'string' && WORK_ID_RE.test(id) ? id : undefined
+  return typeof id === 'string' && /^canvas_[a-z0-9]{8,40}$/.test(id) ? id : undefined
 }
 
 /* --------------------------------------------------------------- memories */
@@ -598,7 +577,7 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type StoryError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'already-exists'
+export type StoryError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace'
 
 /** One mutation's receipt: the fresh document on success, the code on failure. */
 export interface StoryOutcome {
@@ -756,19 +735,6 @@ export interface LedgerResult {
   readonly counts: { readonly active: number; readonly overdue: number; readonly resolved: number; readonly abandoned: number }
   /** The newest chapter number — the sleeping baseline. */
   readonly currentChapter: number
-}
-
-/** A work's information page (counts 现算, proposal §6 信息 view). */
-export interface WorkInfo {
-  readonly meta: WorkMeta
-  readonly counts: {
-    readonly memories: number
-    readonly intentDrafts: number
-    readonly characters: number
-    readonly chapters: number
-    readonly pending: number
-  }
-  readonly stateDir: string
 }
 
 /** One chapter row for the wire: the record plus its effective (derived) phase. */

@@ -1,7 +1,7 @@
 /**
  * The store's core verbs on the《梦境监护者》seed and on a fresh work:
- * registry + numbering rules (n max+1, file from n, ids per table), the
- * focus map, the review gate, the ghost-card review flow, the ledger, the
+ * a work is a 长篇小说 canvas (served by the fake canvas), numbering rules
+ * (n max+1, file from n, ids per table), the session binding, the review gate, the ghost-card review flow, the ledger, the
  * JSONL journals, and the re-rooted fence (the canvas store's pattern).
  */
 import { Context } from '@deepseek-ai/cordis'
@@ -9,6 +9,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { resolveStoryStateRoot, StoryBibleService } from '../src/store.ts'
 import { chapterFileName, chapterNumberOfFile, effectiveChapterPhase } from '../src/types.ts'
+import { FakeCanvas, provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { DREAM, seedDreamKeeper } from './seed-dream.ts'
 
@@ -16,15 +17,22 @@ const SESSION = { id: 's-1' } as unknown as Session
 const OTHER = { id: 's-2' } as unknown as Session
 
 /** A store over a confining FakeFs (workspace-write) plus the fence ledger. */
-function confiningStore(stateRoot = '/dsh/state/story'): { store: StoryBibleService; fs: FakeFs } {
+function confiningStore(stateRoot = '/dsh/state/story'): { store: StoryBibleService; fs: FakeFs; canvas: FakeCanvas } {
   const fs = new FakeFs()
   fs.sandboxMode = 'workspace-write'
   const ctx = new Context()
   ctx.provide('fs', fs as never)
+  const canvas = provideCanvas(ctx, new FakeCanvas())
   ctx.provide('sandboxPolicy', {
     resolve: ({ session }: { session: Session }) => ({ mode: 'workspace-write', workspaceRoot: '/some/session/cwd', sessionId: String(session.id) }),
   } as never)
-  return { store: new StoryBibleService(ctx, { stateRoot }), fs }
+  return { store: new StoryBibleService(ctx, { stateRoot }), fs, canvas }
+}
+
+/** A fresh 长篇小说 canvas with the workspace attached; its id is the work id. */
+function freshWork(canvas: FakeCanvas, title: string, id = 'canvas_fresh0001'): string {
+  canvas.addBoard({ id, title, workspace: '/home/user/workspace' })
+  return id
 }
 
 describe('the story store', () => {
@@ -38,32 +46,36 @@ describe('the story store', () => {
     expect(resolveStoryStateRoot('')).toContain('.dsh-story')
   })
 
-  it('creates a work: registry row, work.json, focus — and lists it back', async () => {
-    const { store, fs } = confiningStore()
-    const created = await store.createWork({ title: '测试作品', workspace: '/home/user/workspace' }, SESSION)
-    expect(created.ok).toBe(true)
-    const works = await store.listWorks()
-    expect(works).toHaveLength(1)
-    expect(works[0]).toMatchObject({ title: '测试作品', workspace: '/home/user/workspace' })
-    // The index on disk is the proposal §2 shape.
-    const index = JSON.parse(fs.read('/dsh/state/story/index.json')) as unknown[]
-    expect(index).toHaveLength(1)
-    // Every write carried the re-rooted fence: the plugin's state dir, the caller's mode and id.
-    expect(fs.policies.every(policy => policy?.workspaceRoot === '/dsh/state/story' && policy.sessionId === 's-1')).toBe(true)
-    const focused = await store.focusWork({ workId: created.work!.id }, SESSION)
-    expect(focused.ok).toBe(true)
-    expect(store.focusedWorkOf(SESSION)?.workId).toBe(created.work!.id)
-    expect(store.focusedWorkOf(OTHER)).toBeUndefined()
-    // The information page computes counts live.
-    const info = await store.readWork({ workId: created.work!.id })
-    expect(info.info?.counts).toEqual({ memories: 0, intentDrafts: 0, characters: 0, chapters: 0, pending: 0 })
-    expect(info.info?.stateDir).toBe(`/dsh/state/story/${created.work!.id}`)
+  it('a work is a novel canvas; a session writes into the canvas it is bound to', async () => {
+    const { store, canvas } = confiningStore()
+    const workId = freshWork(canvas, '测试作品')
+    expect(await store.readWorkMeta(workId)).toEqual({ id: workId, title: '测试作品', workspace: '/home/user/workspace' })
+    // A plain canvas, an unknown id and a malformed id are not works.
+    canvas.addBoard({ id: 'canvas_plain0001', title: '杂记', genre: null })
+    expect(await store.readWorkMeta('canvas_plain0001')).toBeUndefined()
+    expect(await store.readWorkMeta('canvas_nothere01')).toBeUndefined()
+    expect(await store.readWorkMeta('work-abcdef')).toBeUndefined()
+    // The binding — never a focus — names the session's work.
+    expect(await store.boundWork('s-1')).toBeUndefined()
+    canvas.bind('s-1', workId)
+    expect((await store.boundWork('s-1'))?.title).toBe('测试作品')
+    expect(await store.boundWork('s-2')).toBeUndefined()
+    canvas.bind('s-2', 'canvas_plain0001')
+    expect(await store.boundWork('s-2')).toBeUndefined()
+  })
+
+  it('reads no work at all without the canvas (degrade, never explode)', async () => {
+    const ctx = new Context()
+    ctx.provide('fs', new FakeFs() as never)
+    const store = new StoryBibleService(ctx, { stateRoot: '/dsh/state/story' })
+    expect(await store.readWorkMeta(DREAM.workId)).toBeUndefined()
+    expect(await store.boundWork('s-1')).toBeUndefined()
+    expect((await store.writeMemory({ workId: DREAM.workId, content: '无处落库。' }, SESSION, 'agent')).error).toBe('missing')
   })
 
   it('allocates chapter numbers max+1, names files from n, keeps seq as the sort key', async () => {
-    const { store } = confiningStore()
-    const created = await store.createWork({ title: '编号', workspace: '/home/user/workspace' }, SESSION)
-    const workId = created.work!.id
+    const { store, canvas } = confiningStore()
+    const workId = freshWork(canvas, '编号')
     const first = await store.writeChapter({ workId, title: '第一章' }, SESSION)
     const second = await store.writeChapter({ workId, title: '第二章' }, SESSION)
     expect(first.chapter).toMatchObject({ n: 1, seq: 1, file: '第1章.md', phase: 'planning' })
@@ -84,6 +96,7 @@ describe('the story store', () => {
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
     const chapters = await store.listChapters({ workId: DREAM.workId })
     expect(chapters.find(row => row.chapter.n === 5)?.phase).toBe('extracted')
@@ -111,6 +124,7 @@ describe('the story store', () => {
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
     const written = await store.writeMemory({ workId: DREAM.workId, content: '钟楼是两层梦的接缝。', kind: '世界' }, SESSION, 'agent')
     expect(written.memory).toMatchObject({ id: 'm19', layer: 'intent', intentStatus: 'draft', reviewed: false, extractedBy: 'llm' })
@@ -132,6 +146,7 @@ describe('the story store', () => {
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
     const ledger = await store.ledger({ workId: DREAM.workId })
     expect(ledger.counts).toEqual({ active: 3, overdue: 3, resolved: 1, abandoned: 0 })
@@ -140,9 +155,8 @@ describe('the story store', () => {
   })
 
   it('appends to the JSONL journals without rewriting history (bad lines drop out of the view only)', async () => {
-    const { store, fs } = confiningStore()
-    const created = await store.createWork({ title: '流水', workspace: '/home/user/workspace' }, SESSION)
-    const workId = created.work!.id
+    const { store, fs, canvas } = confiningStore()
+    const workId = freshWork(canvas, '流水')
     await store.writeCharacter({ workId, name: '甲' }, SESSION)
     // A hand-corrupted line stays on disk but drops out of the view.
     fs.seed(`/dsh/state/story/${workId}/experiences.jsonl`, '{"characterId":"c1","chapter":1,"entry":"好行","createdAt":"t"}\nnot-json\n')
@@ -167,9 +181,8 @@ describe('the story store', () => {
   })
 
   it('refuses to write what it cannot read (corrupt files never get clobbered)', async () => {
-    const { store, fs } = confiningStore()
-    const created = await store.createWork({ title: '坏档', workspace: '/home/user/workspace' }, SESSION)
-    const workId = created.work!.id
+    const { store, fs, canvas } = confiningStore()
+    const workId = freshWork(canvas, '坏档')
     fs.seed(`/dsh/state/story/${workId}/memories.json`, '{broken json')
     const outcome = await store.writeMemory({ workId, content: '不该落库。' }, SESSION, 'agent')
     expect(outcome.ok).toBe(false)
@@ -182,17 +195,17 @@ describe('the story store', () => {
     fs.sandboxMode = 'read-only'
     const ctx = new Context()
     ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
     ctx.provide('sandboxPolicy', { resolve: () => ({ mode: 'read-only', workspaceRoot: '/x' }) } as never)
     const store = new StoryBibleService(ctx, { stateRoot: '/dsh/state/story' })
-    const created = await store.createWork({ title: '只读', workspace: '/home/user/workspace' }, SESSION)
-    expect(created.ok).toBe(false)
-    expect(created.error).toBe('denied')
+    const written = await store.writeMemory({ workId: DREAM.workId, content: '写不进去。' }, SESSION, 'user')
+    expect(written.ok).toBe(false)
+    expect(written.error).toBe('denied')
   })
 
   it('writeChapter with content writes the body fenced BEFORE registering — a denied write refuses the registration', async () => {
-    const { store, fs } = confiningStore()
-    const created = await store.createWork({ title: '落盘', workspace: '/home/user/workspace' }, SESSION)
-    const workId = created.work!.id
+    const { store, fs, canvas } = confiningStore()
+    const workId = freshWork(canvas, '落盘')
     // content given: the body lands at <workspace>/<title>/第1章.md and the chapter registers.
     const written = await store.writeChapter({ workId, title: '第一章', content: '开头三段。\n' }, SESSION)
     expect(written.ok).toBe(true)
@@ -207,31 +220,26 @@ describe('the story store', () => {
     // (a read-only deployment's policy refuses every write).
     const denied = new FakeFs()
     denied.sandboxMode = 'read-only'
-    denied.seed('/dsh/state/story/index.json', '[]\n')
     const ctxDenied = new Context()
     ctxDenied.provide('fs', denied as never)
+    provideCanvas(ctxDenied, new FakeCanvas().addBoard({ id: 'canvas_denied0001', title: '拒', workspace: '/outside' }))
     ctxDenied.provide('sandboxPolicy', {
       resolve: ({ session }: { session: Session }) => ({ mode: 'read-only', workspaceRoot: '/outside', sessionId: String(session.id) }),
     } as never)
     const deniedStore = new StoryBibleService(ctxDenied, { stateRoot: '/dsh/state/story' })
-    denied.seed('/dsh/state/story/index.json', `${JSON.stringify([{ id: 'work-denied0001', title: '拒', workspace: '/outside', createdAt: 't' }], null, 2)}\n`)
-    denied.seed('/dsh/state/story/work-denied0001/work.json', `${JSON.stringify({ id: 'work-denied0001', title: '拒', workspace: '/outside', createdAt: 't', updatedAt: 't' }, null, 2)}\n`)
-    const refused = await deniedStore.writeChapter({ workId: 'work-denied0001', title: '第一章', content: '写不进去。' }, SESSION)
+    const refused = await deniedStore.writeChapter({ workId: 'canvas_denied0001', title: '第一章', content: '写不进去。' }, SESSION)
     expect(refused.ok).toBe(false)
     expect(refused.error).toBe('denied')
-    expect((await deniedStore.listChapters({ workId: 'work-denied0001' })).length).toBe(0)
+    expect((await deniedStore.listChapters({ workId: 'canvas_denied0001' })).length).toBe(0)
   })
 
-  it('statWorkspace answers existence and directory-ness for the create form', async () => {
-    const fs = new FakeFs()
-    fs.seed('/home/user/workspace/note.md', 'x')
-    const ctx = new Context()
-    ctx.provide('fs', fs as never)
-    const store = new StoryBibleService(ctx, { stateRoot: '/dsh/state/story' })
-    expect(await store.statWorkspace({ path: '/home/user/workspace' })).toEqual({ ok: true, exists: true, directory: true })
-    expect(await store.statWorkspace({ path: '/home/user/workspace/note.md' })).toEqual({ ok: true, exists: true, directory: false })
-    expect(await store.statWorkspace({ path: '/nope' })).toEqual({ ok: true, exists: false, directory: false })
-    expect((await store.statWorkspace({ path: '' })).ok).toBe(false)
+  it('a canvas without a workspace keeps the plan but refuses a body (no-workspace)', async () => {
+    const { store, canvas } = confiningStore()
+    canvas.addBoard({ id: 'canvas_bare00001', title: '无处' })
+    const planned = await store.writeChapter({ workId: 'canvas_bare00001', title: '第一章' }, SESSION)
+    expect(planned.ok).toBe(true)
+    const refused = await store.writeChapter({ workId: 'canvas_bare00001', n: 1, title: '第一章', content: '没地方放。' }, SESSION)
+    expect(refused).toEqual({ ok: false, error: 'no-workspace' })
   })
 
   it('the chapter file vocabulary round-trips (the invariant probe shares it)', () => {
@@ -245,6 +253,7 @@ describe('the story store', () => {
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
     const revised = await store.patchMemory({ workId: DREAM.workId, id: 'm2', content: '蓝色叶子是梦主意识碎片的载体，见光即醒。' }, SESSION)
     expect(revised.ok).toBe(true)
@@ -265,6 +274,7 @@ describe('the story store', () => {
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
     expect((await store.confirmChapterPlan({ workId: DREAM.workId, n: 1 }, SESSION)).ok).toBe(false) // no plan
     const confirmed = await store.confirmChapterPlan({ workId: DREAM.workId, n: 6 }, SESSION)
@@ -281,6 +291,7 @@ describe('the story store', () => {
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
     // resolve needs an answer.
     expect((await store.foreshadowExit({ workId: DREAM.workId, id: 'm18', action: 'resolve' }, SESSION)).ok).toBe(false)
@@ -307,6 +318,7 @@ describe('the story store', () => {
     seedDreamKeeper(fs, { ch5Phase: 'planning' })
     const ctx = new Context()
     ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
     const before = await store.listMentions({ workId: DREAM.workId, foreshadowId: 'm12' })
     expect(before.map(entry => entry.kind)).toEqual(['planted', 'advanced'])

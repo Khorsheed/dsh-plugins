@@ -11,10 +11,10 @@
  * instead of clobbering (ctx.fs has no append verb; bare node:fs is never
  * used for state).
  *
- * The per-session focus map ({sessionId → workId, title}) is in-memory only:
- * a restart means "nothing focused yet", which the tools and the pointer
- * section answer honestly. The title rides the map entry (captured at focus
- * time) so the synchronous pointer section never touches the filesystem.
+ * A work is a canvas whose genre is `novel`: the engine keeps no registry
+ * and no focus of its own. Title and workspace are read off the board per
+ * call (the canvas service is probed — without it there are no works), and
+ * a session's work is the canvas it is bound to (the canvas binding chip).
  *
  * @module @khorsheed/dsh-canvas-novel
  */
@@ -25,28 +25,25 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { renderExtractBrief, type BriefData } from './brief.ts'
+import { canvasBoardOf } from './genre.ts'
 import {
-  chapterFileName, effectiveChapterPhase, foreshadowIdOf, makeWorkId, memoryNumberOf, normalizeChapter,
-  normalizeCharacter, normalizeMemory, normalizePendingItem, normalizePlan, normalizeWorkId, sanitizeWorkTitle,
-  cleanText,
+  chapterFileName, effectiveChapterPhase, foreshadowIdOf, memoryNumberOf, normalizeChapter,
+  normalizeCharacter, normalizeMemory, normalizePendingItem, normalizePlan, normalizeWorkId,
+  cleanText, NOVEL_GENRE_ID,
   type ChapterRecord, type ChapterTable, type CharacterRecord, type CharacterTable,
   type EffectiveChapterPhase, type ExperienceEntry, type ExtractPayload, type ForeshadowOp, type ImportDrop,
   type ImportReport, type LedgerResult, type MemoryRecord, type MemoryTable,
   type MentionEntry, type PatchMemoryRequest, type PendingItem, type PendingKind, type PendingPayload, type PendingTable,
   type ForeshadowExitAction, type ReviewAction, type StoryError,
-  type WorkIndexEntry, type WorkInfo, type WorkMeta, type WriteChapterRequest, type WriteCharacterRequest,
+  type WorkMeta, type WriteChapterRequest, type WriteCharacterRequest,
   type WriteMemoryRequest,
 } from './types.ts'
 
 /** The state directory name under `$DSH_HOME/state`. */
 export const STORY_STATE_DIR_NAME = 'story'
 
-/** The registry file at the state root. */
-export const WORK_INDEX_FILE = 'index.json'
-
-/** Per-work file names (proposal §2). */
+/** Per-work file names (proposal §2), under `<stateRoot>/<canvasId>/`. */
 export const WORK_FILES = {
-  meta: 'work.json',
   memories: 'memories.json',
   characters: 'characters.json',
   experiences: 'experiences.jsonl',
@@ -110,8 +107,8 @@ export function evidenceInBody(body: string, evidence: string | undefined): bool
 
 /**
  * The canvas-novel's service core. Stateless apart from the context it borrows
- * for `ctx.fs`, the policy home it resolves each caller's mode through, and
- * the process-lifetime focus map.
+ * for `ctx.fs` and the canvas, and the policy home it resolves each caller's
+ * mode through.
  */
 export class StoryBibleService {
   static inject = ['fs']
@@ -121,9 +118,6 @@ export class StoryBibleService {
 
   /** The per-session policy home, captured only when the mounted filesystem actually confines. */
   private readonly sandboxPolicy: SandboxPolicyService | undefined
-
-  /** The per-session focus map: which work this session writes into (title cached for the sync pointer). */
-  private readonly focused = new Map<string, { readonly workId: string; readonly title: string }>()
 
   /**
    * @param ctx - host context carrying the mounted filesystem.
@@ -166,14 +160,9 @@ export class StoryBibleService {
     return this.fs.resolve(file, { cwd: this.workDir(workId) })
   }
 
-  /** The registry's target. */
-  private async indexTarget(): Promise<FsTarget> {
-    return this.fs.resolve(WORK_INDEX_FILE, { cwd: this.stateRoot })
-  }
-
   /** The manuscript file one chapter record points at (`<workspace>/<title>/第{n}章.md`, the single source of truth). */
-  private bodyPath(work: WorkMeta, chapter: ChapterRecord): string {
-    return join(work.workspace, work.title, chapter.file)
+  private bodyPath(work: WorkMeta, chapter: ChapterRecord): string | undefined {
+    return work.workspace === undefined ? undefined : join(work.workspace, work.title, chapter.file)
   }
 
   /**
@@ -317,138 +306,36 @@ export class StoryBibleService {
     return out
   }
 
-  /* ------------------------------------------------------------ registry */
-
-  /** Tolerant read of the registry (a top-level array of work rows). */
-  private normalizeIndex(raw: unknown): WorkIndexEntry[] | undefined {
-    if (!Array.isArray(raw)) return undefined
-    const out: WorkIndexEntry[] = []
-    for (const row of raw) {
-      if (typeof row !== 'object' || row === null) continue
-      const record = row as Record<string, unknown>
-      const id = normalizeWorkId(record['id'])
-      const title = cleanText(record['title'], 80)
-      const workspace = cleanText(record['workspace'], 500)
-      const createdAt = cleanText(record['createdAt'], 40)
-      if (id === undefined || title === undefined || workspace === undefined || createdAt === undefined) continue
-      out.push({ id, title, workspace, createdAt })
-    }
-    return out
-  }
-
-  /** List every registered work (a missing registry is an empty list, not an error). */
-  async listWorks(): Promise<WorkIndexEntry[]> {
-    const read = await this.readJson(await this.indexTarget(), raw => this.normalizeIndex(raw))
-    return read === 'missing' || read === 'corrupt' ? [] : read.data
-  }
+  /* ---------------------------------------------------------------- works */
 
   /**
-   * Create one work: its directory, `work.json`, and the registry row. The
-   * other per-work documents are lazily created by their first write.
-   * @param request - title and the mounted workspace's absolute path.
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the new work's metadata, or the failure code.
+   * One work's view, read off its canvas: the gate every per-work verb passes
+   * first. A canvas that is missing, unreadable or not of the novel genre is
+   * no work (undefined), and so is every canvas when the canvas is absent.
+   * @param workId - the canvas id.
+   * @returns the work view, or undefined.
    */
-  async createWork(
-    request: { readonly title: string; readonly workspace: string },
-    session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly work?: WorkMeta }> {
-    const title = sanitizeWorkTitle(request.title)
-    const workspace = cleanText(request.workspace, 500)
-    if (title === undefined || workspace === undefined) return { ok: false, error: 'invalid-name' }
-    const id = makeWorkId()
-    const now = new Date().toISOString()
-    const meta: WorkMeta = { id, title, workspace, createdAt: now, updatedAt: now }
-    const written = await this.mutateJson(
-      await this.fileTarget(id, WORK_FILES.meta), session,
-      raw => this.normalizeWorkMeta(raw),
-      () => meta,
-      () => meta,
-    )
-    if (!written.ok) return { ok: false, error: written.error }
-    const indexed = await this.mutateJson(
-      await this.indexTarget(), session,
-      raw => this.normalizeIndex(raw),
-      () => [],
-      (rows) => [...rows, { id, title, workspace, createdAt: now }],
-    )
-    if (!indexed.ok) return { ok: false, error: indexed.error }
-    return { ok: true, work: meta }
-  }
-
-  /** Tolerant read of `work.json`. */
-  private normalizeWorkMeta(raw: unknown): WorkMeta | undefined {
-    if (typeof raw !== 'object' || raw === null) return undefined
-    const record = raw as Record<string, unknown>
-    const id = normalizeWorkId(record['id'])
-    const title = cleanText(record['title'], 80)
-    const workspace = cleanText(record['workspace'], 500)
-    const createdAt = cleanText(record['createdAt'], 40)
-    const updatedAt = cleanText(record['updatedAt'], 40)
-    if (id === undefined || title === undefined || workspace === undefined || createdAt === undefined) return undefined
-    return { id, title, workspace, createdAt, updatedAt: updatedAt ?? createdAt }
-  }
-
-  /** Read one work's metadata (the gate every per-work verb passes first). */
   async readWorkMeta(workId: string): Promise<WorkMeta | undefined> {
     const id = normalizeWorkId(workId)
-    if (id === undefined) return undefined
-    const read = await this.readJson(await this.fileTarget(id, WORK_FILES.meta), raw => this.normalizeWorkMeta(raw))
-    return typeof read === 'object' ? read.data : undefined
+    const canvas = canvasBoardOf(this.ctx)
+    if (id === undefined || canvas === undefined) return undefined
+    const read = await canvas.readBoard({ canvasId: id })
+    if (!read.ok || read.board.genre?.id !== NOVEL_GENRE_ID) return undefined
+    return { id, title: read.board.title, workspace: read.board.attachedWorkspaces[0] }
   }
-
-  /** The information page: metadata plus counts computed from the live tables (proposal §6 信息 view). */
-  async readWork(request: { readonly workId: string }): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly info?: WorkInfo }> {
-    const meta = await this.readWorkMeta(request.workId)
-    if (meta === undefined) return { ok: false, error: 'missing' }
-    const memories = await this.readMemories(meta.id)
-    const characters = await this.readCharacters(meta.id)
-    const chapters = await this.readChapters(meta.id)
-    const pending = await this.readPendingItems(meta.id)
-    return {
-      ok: true,
-      info: {
-        meta,
-        counts: {
-          memories: memories.filter(memory => memory.status === 'active').length,
-          intentDrafts: memories.filter(memory => memory.layer === 'intent' && memory.intentStatus === 'draft' && memory.status === 'active').length,
-          characters: characters.filter(character => character.status === 'active').length,
-          chapters: chapters.length,
-          pending: pending.filter(item => item.status === 'pending').length,
-        },
-        stateDir: this.workDir(meta.id),
-      },
-    }
-  }
-
-  /* -------------------------------------------------------------- focus */
 
   /**
-   * Mark the work one session focuses: every tool and the pointer section
-   * resolve through this map. In-memory only — a restart simply means
-   * "nothing focused yet" (the canvas focus precedent). The title is
-   * captured at focus time so the synchronous pointer never reads a file.
-   * @param request - the work id.
-   * @param session - the session focusing.
-   * @returns the receipt, or the failure code.
+   * The work one session writes into: the canvas it is bound to, when that
+   * canvas is a novel work. The sidebar's focus never counts — a writing
+   * session perceives only its bound canvas.
+   * @param sessionId - the session.
+   * @returns the work view, or undefined.
    */
-  async focusWork(request: { readonly workId: string }, session: Session): Promise<{ readonly ok: boolean; readonly error?: StoryError }> {
-    const id = normalizeWorkId(request.workId)
-    if (id === undefined) return { ok: false, error: 'invalid-name' }
-    const meta = await this.readWorkMeta(id)
-    if (meta === undefined) return { ok: false, error: 'missing' }
-    this.focused.set(String(session.id), { workId: id, title: meta.title })
-    return { ok: true }
-  }
-
-  /** The work one session focuses, or undefined (the pointer section's sync read). */
-  focusedWork(sessionId: string): { readonly workId: string; readonly title: string } | undefined {
-    return this.focused.get(sessionId)
-  }
-
-  /** The work one session's agent focuses (the tools' target resolution). */
-  focusedWorkOf(session: Session): { readonly workId: string; readonly title: string } | undefined {
-    return this.focused.get(String(session.id))
+  async boundWork(sessionId: string): Promise<WorkMeta | undefined> {
+    const canvas = canvasBoardOf(this.ctx)
+    if (canvas === undefined) return undefined
+    const canvasId = await canvas.boundCanvasId(sessionId)
+    return canvasId === undefined ? undefined : this.readWorkMeta(canvasId)
   }
 
   /* ------------------------------------------------------------ memories */
@@ -679,8 +566,10 @@ export class StoryBibleService {
 
   /** Whether the manuscript file has content (the 写作中 derivation). */
   private async hasBody(work: WorkMeta, chapter: ChapterRecord): Promise<boolean> {
+    const path = this.bodyPath(work, chapter)
+    if (path === undefined) return false
     try {
-      const info = await this.fs.stat(await this.fs.resolve(this.bodyPath(work, chapter)))
+      const info = await this.fs.stat(await this.fs.resolve(path))
       return info !== undefined && (info.size ?? 0) > 0
     } catch {
       return false
@@ -703,8 +592,10 @@ export class StoryBibleService {
 
   /** Read one chapter's manuscript (a missing body reads as empty — the metadata stays openable). */
   async readChapterBody(work: WorkMeta, chapter: ChapterRecord): Promise<string> {
+    const path = this.bodyPath(work, chapter)
+    if (path === undefined) return ''
     try {
-      return await this.fs.readText(await this.fs.resolve(this.bodyPath(work, chapter)))
+      return await this.fs.readText(await this.fs.resolve(path))
     } catch {
       return ''
     }
@@ -767,12 +658,14 @@ export class StoryBibleService {
     // refuses means NO chapter row — the 空槽登记 bug class is closed by
     // construction.
     if (content !== undefined) {
+      const workspace = meta.workspace
+      if (workspace === undefined) return { ok: false, error: 'no-workspace' }
       const chapters = await this.readChapters(workId)
       const n = request.n ?? chapters.reduce((max, row) => Math.max(max, row.n), 0) + 1
-      const target = await this.fs.resolve(join(meta.workspace, meta.title, chapterFileName(n)))
+      const target = await this.fs.resolve(join(workspace, meta.title, chapterFileName(n)))
       const resolved = this.sandboxPolicy?.resolve({ session })
       if (resolved?.mode === 'read-only') return { ok: false, error: 'denied' }
-      const policy = resolved === undefined ? undefined : { ...resolved, workspaceRoot: meta.workspace }
+      const policy = resolved === undefined ? undefined : { ...resolved, workspaceRoot: workspace }
       let version: string | undefined
       try {
         version = (await this.fs.stat(target))?.version
@@ -829,27 +722,6 @@ export class StoryBibleService {
     )
     if (!outcome.ok || chapter === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
     return { ok: true, chapter }
-  }
-
-  /**
-   * Whether a workspace path exists and is a directory (the create form's
-   * fallback-path validation; a read, so it is unfenced).
-   * @param request - the absolute path.
-   * @returns existence and directory-ness, or the failure code.
-   */
-  async statWorkspace(
-    request: { readonly path: string },
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly exists?: boolean; readonly directory?: boolean }> {
-    const path = cleanText(request.path, 500)
-    if (path === undefined) return { ok: false, error: 'invalid-name' }
-    try {
-      const info = await this.fs.stat(await this.fs.resolve(path))
-      if (info === undefined) return { ok: true, exists: false, directory: false }
-      return { ok: true, exists: true, directory: info.type !== 'file' }
-    } catch (error) {
-      if (error instanceof FsError && error.code === 'FS_NOT_FOUND') return { ok: true, exists: false, directory: false }
-      return { ok: false, error: storyErrorOf(error) }
-    }
   }
 
   /**

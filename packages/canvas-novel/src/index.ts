@@ -1,11 +1,14 @@
 /**
- * canvas-novel, host half: provides the work-registry and per-work memory
- * store (`ctx.storyBible`). The state lives at `$DSH_HOME/state/story/` —
+ * canvas-novel, host half: registers the 长篇小说 genre with the canvas
+ * (`ctx.canvasBoard`, joined through deferred injection — without the canvas
+ * there is no genre and no work, and nothing throws) and provides the per-work
+ * memory store (`ctx.storyBible`). A work IS a canvas whose genre is this one;
+ * the engine's own state lives at `$DSH_HOME/state/story/<canvasId>/` —
  * deployment-level state whose fence re-roots at the plugin's own directory
  * (see store.ts).
  *
- * The main-session tools, the focus pointer section and the `story` skill
- * are NOT registered here — they live in the `./agent` composition entry,
+ * The main-session tools, the pointer section and the `story` skill are NOT
+ * registered here — they live in the `./agent` composition entry,
  * so a deployment decides where the story tools exist (profile-wide by the
  * shipped patch, or one preset by its own `agent.cordis.yml` — never both).
  * The genre ships no browser half of its own: its surfaces render inside
@@ -17,6 +20,7 @@
  * @module @khorsheed/dsh-canvas-novel
  */
 import type { Context } from '@deepseek-ai/cordis'
+import { NOVEL_GENRE, type CanvasBoardSlice } from './genre.ts'
 import { StoryBibleService, type StoryBibleConfig } from './store.ts'
 
 export { StoryBibleService, resolveStoryStateRoot, storyErrorOf, evidenceInBody, tailOf } from './store.ts'
@@ -25,6 +29,8 @@ export { storyMainSessionToolDefinitions } from './tools.ts'
 export { renderWriteBrief, renderPlanBrief, renderExtractBrief, estimateTokens, BRIEF_BUDGETS } from './brief.ts'
 export type { BriefData } from './brief.ts'
 export * from './types.ts'
+export { NOVEL_GENRE, NOVEL_ROLES, NOVEL_AGENT_ROW, canvasBoardOf } from './genre.ts'
+export type { CanvasBoardSlice, NovelBoardView, NovelCategorySeed, NovelGenreDefinition } from './genre.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -40,10 +46,15 @@ export const name = 'canvas-novel'
 export const inject = ['fs']
 
 /**
- * Plugin body: provide the service core.
+ * Plugin body: provide the service core and register the genre once the
+ * canvas is there.
  * @param ctx - owning Cordis Context.
  * @param config - optional store config (state-root override).
  */
 export function apply(ctx: Context, config: StoryBibleConfig = {}): void {
   ctx.provide('storyBible', new StoryBibleService(ctx, config))
+  ctx.inject(['canvasBoard'], (canvasCtx) => {
+    const canvas = canvasCtx.get('canvasBoard') as CanvasBoardSlice
+    canvasCtx.effect(() => canvas.registerGenre(NOVEL_GENRE), 'canvas-novel: the 长篇小说 genre')
+  })
 }

@@ -1,7 +1,7 @@
 /**
- * The three story tools against the seeded store: the focus resolution
- * (guidance without a focus, never a throw), the work focus/create verb,
- * the ghost-card write, the review verb, and the extract two-phase with the
+ * The three story tools against the seeded store: the binding resolution
+ * (guidance without a bound novel canvas, never a throw), the no-workspace
+ * refusal, the ghost-card write, the review verb, and the extract two-phase with the
  * review gate held.
  */
 import { Context } from '@deepseek-ai/cordis'
@@ -9,6 +9,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { StoryBibleService } from '../src/store.ts'
 import { storyMainSessionToolDefinitions } from '../src/tools.ts'
+import { provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { DREAM, seedDreamKeeper } from './seed-dream.ts'
 
@@ -20,15 +21,16 @@ function exec(agent: boolean = true): { agent?: { session: Session; sessionId: s
 }
 
 /** A store over the seed plus its three tools. */
-async function bench(options: { ch5Phase?: 'extracted' | 'reviewed'; focus?: boolean } = {}) {
+async function bench(options: { ch5Phase?: 'extracted' | 'reviewed'; bound?: boolean } = {}) {
   const fs = new FakeFs()
   seedDreamKeeper(fs, { ...(options.ch5Phase === undefined ? {} : { ch5Phase: options.ch5Phase }) })
   const ctx = new Context()
   ctx.provide('fs', fs as never)
+  const canvas = provideCanvas(ctx)
   const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
-  if (options.focus === true) await store.focusWork({ workId: DREAM.workId }, SESSION)
+  if (options.bound === true) canvas.bind('s-tools', DREAM.workId)
   const [read, write, extract] = storyMainSessionToolDefinitions(store)
-  return { store, fs, read: read!, write: write!, extract: extract! }
+  return { store, fs, canvas, read: read!, write: write!, extract: extract! }
 }
 
 /** Run one tool call and return its text answer. */
@@ -38,29 +40,29 @@ async function call(tool: { execute: (args: never, exec: never) => Promise<unkno
 }
 
 describe('the story tools', () => {
-  it('answers guidance (never a throw) when the session focuses no work or no agent is there', async () => {
-    const { read, write, extract } = await bench()
-    expect(await call(read, { what: 'brief' })).toContain('还没有 focus 作品')
-    expect(await call(write, { what: 'memory', content: 'x' })).toContain('还没有 focus 作品')
-    expect(await call(extract, { chapter: 5, phase: 'prepare' })).toContain('还没有 focus 作品')
-    expect(await call(read, { what: 'brief' }, false)).toContain('还没有 focus 作品')
-    // …but the registry reads fine without a focus (it is not work-scoped).
-    expect(await call(read, { what: 'works' })).toContain('梦境监护者')
+  it('answers guidance (never a throw) when the session is bound to no novel canvas or no agent is there', async () => {
+    const { read, write, extract, canvas } = await bench()
+    expect(await call(read, { what: 'brief' })).toContain('还没有绑定「长篇小说」画布')
+    expect(await call(write, { what: 'memory', content: 'x' })).toContain('还没有绑定「长篇小说」画布')
+    expect(await call(extract, { chapter: 5, phase: 'prepare' })).toContain('还没有绑定「长篇小说」画布')
+    expect(await call(read, { what: 'brief' }, false)).toContain('还没有绑定「长篇小说」画布')
+    // A binding to a canvas whose genre is not 长篇小说 is no work either.
+    canvas.addBoard({ id: 'canvas_plain0001', title: '杂记', genre: null }).bind('s-tools', 'canvas_plain0001')
+    expect(await call(read, { what: 'brief' })).toContain('还没有绑定「长篇小说」画布')
+    // Bound to the novel canvas: the tools act on it.
+    canvas.bind('s-tools', DREAM.workId)
+    expect(await call(read, { what: 'brief' })).toContain('梦境监护者')
   })
 
-  it('story_write(work) focuses an existing work by title, and the pointer follows', async () => {
-    const { store, write } = await bench()
-    const answer = await call(write, { what: 'work', title: DREAM.title })
-    expect(answer).toContain('已 focus《梦境监护者》')
-    expect(store.focusedWorkOf(SESSION)?.workId).toBe(DREAM.workId)
-    // Creating needs a workspace, and then focuses too.
-    const created = await call(write, { what: 'work', title: '新书', workspace: '/home/user/workspace' })
-    expect(created).toContain('已创建并 focus《新书》')
-    expect((await store.listWorks()).some(work => work.title === '新书')).toBe(true)
+  it('refuses a chapter body on a canvas without a workspace, and says how to fix it', async () => {
+    const { write, canvas } = await bench()
+    canvas.addBoard({ id: 'canvas_bare00001', title: '无处' }).bind('s-tools', 'canvas_bare00001')
+    expect(await call(write, { what: 'chapter', title: '第一章' })).not.toContain('失败')
+    expect(await call(write, { what: 'chapter', chapter: 1, title: '第一章', content: '没地方放。' })).toContain('还没有挂工作区')
   })
 
   it('story_write(memory) lands a ghost card that stays out of the brief until accepted', async () => {
-    const { store, write, read } = await bench({ focus: true })
+    const { store, write, read } = await bench({ bound: true })
     const answer = await call(write, { what: 'memory', content: '梦主可能是赵启明的妹妹。', kind: '伏笔点子' })
     expect(answer).toContain('已落卡 m19')
     expect(answer).toContain('提议中')
@@ -75,7 +77,7 @@ describe('the story tools', () => {
   })
 
   it('story_write(chapter) numbers max+1 and stores the plan; re-planning keeps the number', async () => {
-    const { write } = await bench({ focus: true })
+    const { write } = await bench({ bound: true })
     const created = await call(write, { what: 'chapter', title: '回响', plan: { goal: '穿过第一层', foreshadowOps: [{ op: '推进', id: '#12' }], characters: ['c1'] } })
     expect(created).toContain('已登记第 7 章《回响》plan')
     const replanned = await call(write, { what: 'chapter', chapter: 7, title: '回响·改', plan: { goal: '退回门缝' } })
@@ -85,7 +87,7 @@ describe('the story tools', () => {
   })
 
   it('story_read(brief) needs a chapter to target; chapter/ledger/pending/chapters read back', async () => {
-    const { read } = await bench({ focus: true })
+    const { read } = await bench({ bound: true })
     const brief = await call(read, { what: 'brief', for: 'write' })
     expect(brief).toContain('写作约束 · 第6章 门后')
     const chapters = await call(read, { what: 'chapters' })
@@ -101,7 +103,7 @@ describe('the story tools', () => {
   })
 
   it('story_extract holds the extract gate, then prepares and imports (the two phases)', async () => {
-    const { extract } = await bench({ focus: true })
+    const { extract } = await bench({ bound: true })
     // Chapter 6 is planning with no body: the gate refuses with guidance, never a crash.
     expect(await call(extract, { chapter: 6, phase: 'prepare' })).toContain('没有什么可对账')
     const unseeded = await call(extract, { chapter: 42, phase: 'prepare' })
@@ -109,7 +111,7 @@ describe('the story tools', () => {
   })
 
   it('story_extract on a writing chapter returns the pack, then files the subagent JSON', async () => {
-    const { extract } = await bench({ focus: true, ch5Phase: 'planning' })
+    const { extract } = await bench({ bound: true, ch5Phase: 'planning' })
     const pack = await call(extract, { chapter: 5, phase: 'prepare' })
     expect(pack).toContain('你是长篇小说的记忆对账员。输入是第5章正文')
     expect(pack).toContain('[#12] 门缝里的东西')

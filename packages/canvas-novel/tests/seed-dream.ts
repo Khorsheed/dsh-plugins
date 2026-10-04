@@ -10,9 +10,9 @@
 import { join } from 'node:path'
 import type { FakeFs } from './fake-fs.ts'
 
-/** The seeded work's coordinates. */
+/** The seeded work's coordinates (the work is the canvas `workId`; tests/fake-canvas.ts serves its board). */
 export const DREAM = {
-  workId: 'work-dream0001',
+  workId: 'canvas_dream0001',
   title: '梦境监护者',
   workspace: '/home/user/workspace',
   stateRoot: '/dsh/state/story',
@@ -36,15 +36,6 @@ export const CHAPTER_5_BODY = `赵启明在档案室待到后半夜。
 export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 'reviewed' | 'planning' } = {}): void {
   const dir = join(DREAM.stateRoot, DREAM.workId)
   const stamp = (day: number): string => `2026-10-0${day}T20:00:00.000Z`
-
-  fs.seed(join(DREAM.stateRoot, 'index.json'), `${JSON.stringify([
-    { id: DREAM.workId, title: DREAM.title, workspace: DREAM.workspace, createdAt: DREAM.createdAt },
-  ], null, 2)}\n`)
-
-  fs.seed(join(dir, 'work.json'), `${JSON.stringify({
-    id: DREAM.workId, title: DREAM.title, workspace: DREAM.workspace,
-    createdAt: DREAM.createdAt, updatedAt: stamp(3),
-  }, null, 2)}\n`)
 
   const memories = [
     {

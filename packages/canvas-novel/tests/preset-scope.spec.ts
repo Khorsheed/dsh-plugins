@@ -4,17 +4,20 @@
  * with NO story trace — no story_* tool, no story:pointer section, no
  * story skill — while mounting the `./agent` entry inside a scope (the
  * writing preset's agent plane, simulated with dsh-scope's `createScope`,
- * the same mechanism the preset realm uses) puts all three into THAT
- * scope's layers and nowhere else.
+ * the same mechanism the preset realm uses) puts the pointer and the skill
+ * into THAT scope, and the tools onto the scope of each agent composed under
+ * it whose session is bound to a 长篇小说 canvas — and nowhere else.
  */
 import { Context } from '@deepseek-ai/cordis'
-import { createScope } from '@deepseek-ai/dsh-scope'
+import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply as agentApply } from '../src/agent.ts'
 import { apply as coreApply } from '../src/index.ts'
+import { FakeCanvas, provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
+import { DREAM } from './seed-dream.ts'
 
 const disposers: Array<() => Promise<void>> = []
 
@@ -35,7 +38,7 @@ function fakeSkills() {
 }
 
 /** Boot the real composition: prompt + tools registries, the skills stub, the story core (root row only). */
-async function bootRoot(): Promise<{ root: Context; skills: ReturnType<typeof fakeSkills>; fs: FakeFs }> {
+async function bootRoot(): Promise<{ root: Context; skills: ReturnType<typeof fakeSkills>; fs: FakeFs; canvas: FakeCanvas }> {
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
@@ -43,9 +46,10 @@ async function bootRoot(): Promise<{ root: Context; skills: ReturnType<typeof fa
   root.provide('skills', skills)
   const fs = new FakeFs()
   root.provide('fs', fs as never)
+  const canvas = provideCanvas(root)
   coreApply(root, { stateRoot: '/dsh/state/story' })
   disposers.push(async () => { await root.fiber.dispose() })
-  return { root, skills, fs }
+  return { root, skills, fs, canvas }
 }
 
 /** The story-* tool names of one assembly. */
@@ -63,44 +67,48 @@ describe('the preset-granted agent surface (composition level)', () => {
     expect(skills.registered).toEqual([])
   })
 
-  it('mounting ./agent inside a scope grants exactly that scope: tools, pointer, skill — root stays clean', async () => {
-    const { root, skills } = await bootRoot()
+  it('mounting ./agent inside a scope grants exactly that scope: pointer and skill there, tools only on its bound agents', async () => {
+    const { root, skills, canvas } = await bootRoot()
     const key = {}
     const writing = createScope(root, key)
     disposers.push(async () => { await writing.dispose() })
     agentApply(writing.ctx)
     await new Promise(resolve => { setTimeout(resolve, 0) })
 
-    const scoped = await root.systemPrompt.assemble({ scope: key })
-    expect(storyToolsOf(scoped).sort()).toEqual(['story_extract', 'story_read', 'story_write'])
-    const pointer = scoped.sections.find(section => section.name === 'story:pointer')
-    expect(pointer).toBeDefined()
-    // The pointer is a FUNCTION section, resolved per assembly: no focus yet → ''.
-    expect(pointer!.text).toBe('')
+    // Two agents: one composed under the writing scope, one outside it.
+    const inKey = {}
+    const outKey = {}
+    const inside = createScope(root, inKey, { parent: key })
+    const outside = createScope(root, outKey)
+    disposers.push(async () => { await inside.dispose(); await outside.dispose() })
+    canvas.bind('s-in', DREAM.workId).bind('s-out', DREAM.workId)
+    for (const [scopeKey, agent] of [
+      [inKey, { session: { id: 's-in' }, ctx: inside.ctx }],
+      [outKey, { session: { id: 's-out' }, ctx: outside.ctx }],
+    ] as const) {
+      await root.serial(scopeTarget({}, scopeKey) as never, 'agent/created' as never, { agent } as never)
+    }
+
+    const granted = await root.systemPrompt.assemble({ scope: inKey, agent: { sessionId: 's-in' } as never })
+    expect(storyToolsOf(granted).sort()).toEqual(['story_extract', 'story_read', 'story_write'])
+    expect(granted.sections.find(section => section.name === 'story:pointer')?.text).toContain('《梦境监护者》')
     expect(skills.registered.map(skill => skill.name)).toEqual(['story'])
 
-    // The root (an ordinary session) assembles without any of it.
-    const plain = await root.systemPrompt.assemble({})
-    expect(storyToolsOf(plain)).toEqual([])
-    expect(plain.sections.some(section => section.name === 'story:pointer')).toBe(false)
-  })
+    // The scope itself holds the pointer and the skill, but no tools: an unbound
+    // session there renders '' and sees no story tool.
+    const unbound = await root.systemPrompt.assemble({ scope: key, agent: { sessionId: 's-none' } as never })
+    expect(storyToolsOf(unbound)).toEqual([])
+    expect(unbound.sections.find(section => section.name === 'story:pointer')?.text).toBe('')
 
-  it('the scoped grant renders the focus pointer line once a work is focused', async () => {
-    const { root, fs } = await bootRoot()
-    fs.seed('/dsh/state/story/work-abcdef/work.json', `${JSON.stringify({
-      id: 'work-abcdef', title: '梦境监护者', workspace: '/home/user/workspace',
-      createdAt: '2026-10-01T09:00:00.000Z', updatedAt: '2026-10-01T09:00:00.000Z',
-    }, null, 2)}\n`)
-    const key = {}
-    const writing = createScope(root, key)
-    disposers.push(async () => { await writing.dispose() })
-    agentApply(writing.ctx)
+    // An agent outside the scope never hears of the entry, bound or not.
+    const foreign = await root.systemPrompt.assemble({ scope: outKey })
+    expect(storyToolsOf(foreign)).toEqual([])
+    expect(foreign.sections.some(section => section.name === 'story:pointer')).toBe(false)
+
+    // Unbinding the inside session takes the tools away again.
+    canvas.bind('s-in', null)
+    root.emit('canvas/binding-changed' as never, 's-in' as never, null as never)
     await new Promise(resolve => { setTimeout(resolve, 0) })
-    const store = root.get('storyBible') as import('../src/store.ts').StoryBibleService
-    await store.focusWork({ workId: 'work-abcdef' }, { id: 's-1' } as never)
-    const scoped = await root.systemPrompt.assemble({ scope: key, agent: { sessionId: 's-1' } as never })
-    const pointer = scoped.sections.find(section => section.name === 'story:pointer')
-    expect(pointer?.text).toContain('《梦境监护者》')
-    expect(pointer?.text).toContain('story_read(brief)')
+    expect(storyToolsOf(await root.systemPrompt.assemble({ scope: inKey }))).toEqual([])
   })
 })

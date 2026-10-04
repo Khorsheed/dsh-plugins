@@ -14,7 +14,7 @@ export const STORY_SKILL_NAME = 'story'
 
 /** The one catalog line the model sees before loading it (CP0 §1). */
 export const STORY_SKILL_DESCRIPTION =
-  '长篇小说写作工作流：灵感→规划→写作→对账→维护。会话 focus 作品后，涉及写作/设定/章节时使用。'
+  '长篇小说写作工作流：灵感→规划→写作→对账→维护。会话绑定「长篇小说」画布后，涉及写作/设定/章节时使用。'
 
 /** The skill body (CP0 §1, verbatim). */
 export const STORY_SKILL_CONTENT = `# story 技能（长篇小说写作工作流）

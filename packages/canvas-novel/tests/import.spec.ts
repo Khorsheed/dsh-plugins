@@ -10,6 +10,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import type { ExtractPayload } from '../src/store.ts'
 import { StoryBibleService } from '../src/store.ts'
+import { provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { DREAM, seedDreamKeeper } from './seed-dream.ts'
 
@@ -21,6 +22,7 @@ function seededStore(): { store: StoryBibleService; fs: FakeFs } {
   seedDreamKeeper(fs, { ch5Phase: 'planning' })
   const ctx = new Context()
   ctx.provide('fs', fs as never)
+  provideCanvas(ctx)
   return { store: new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot }), fs }
 }
 
@@ -142,6 +144,7 @@ describe('story_extract import — the five gates (proposal §5)', () => {
     seedDreamKeeper(fs) // chapter 5 seeds extracted; chapter 6 is planning with NO body
     const ctx = new Context()
     ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
     // 规划中且无正文：没有什么可对账的。
     const prepared = await store.extractPrepare({ workId: DREAM.workId, n: 6 })

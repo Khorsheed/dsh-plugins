@@ -1,9 +1,9 @@
 /**
  * The canvas-novel's main-session tools, registered by the `./agent`
  * composition entry: one read (`story_read`), one write (`story_write`) and
- * the two-phase reconciliation (`story_extract`). They act on the work the
- * session FOCUSES (the store's per-session map); with no focus every tool
- * answers with guidance, never an error. Descriptions stay terse — the
+ * the two-phase reconciliation (`story_extract`). They act on the novel
+ * canvas the session is BOUND to (the canvas binding chip); unbound, every
+ * tool answers with guidance, never an error. Descriptions stay terse — the
  * workflow is the `story` skill's, loaded on demand (the 2026-09-30 canvas
  * slimming precedent).
  *
@@ -33,8 +33,8 @@ function tagOrigin<T extends object>(definition: T): T {
   return definition
 }
 
-/** What the tools answer when the session focuses no work (guidance, never a throw). */
-const NO_FOCUS_MESSAGE = '本会话还没有 focus 作品：用 story_write(what=work, title=…) 选中已有作品或新建一部，再进行读写。'
+/** What the tools answer when the session is bound to no novel canvas (guidance, never a throw). */
+const NO_WORK_MESSAGE = '本会话还没有绑定「长篇小说」画布：请用户在会话头的画布 chip 里选一张体裁为「长篇小说」的画布，再进行读写。'
 
 /** The extract gate's refusal, phase-aware (对账只发生在写作后、审过收章前). */
 function extractGateMessage(phase: string | undefined): string {
@@ -69,30 +69,30 @@ const PHASE_NAMES: Readonly<Record<string, string>> = {
 
 /**
  * Build the story tools for the MAIN session: the target work resolves per
- * call from the session's focus (the store's map), the fencing session rides
- * the agent. No focus is a plain guidance answer, never an error.
+ * call from the session's bound canvas, the fencing session rides the agent.
+ * No binding is a plain guidance answer, never an error.
  * @param store - the story service the tools delegate to.
  * @returns the tagged definitions for the profile-root tools registry.
  */
 export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolDefinition[] {
-  /** Resolve the call's target: the focused work plus the fencing session. */
-  const target = (exec: { agent?: Agent }): { workId: string; session: Session } | { message: string } => {
+  /** Resolve the call's target: the bound work plus the fencing session. */
+  const target = async (exec: { agent?: Agent }): Promise<{ workId: string; session: Session } | { message: string }> => {
     const session = exec.agent?.session
-    if (session === undefined) return { message: NO_FOCUS_MESSAGE }
-    const focused = store.focusedWorkOf(session)
-    if (focused === undefined) return { message: NO_FOCUS_MESSAGE }
-    return { workId: focused.workId, session }
+    if (session === undefined) return { message: NO_WORK_MESSAGE }
+    const work = await store.boundWork(String(session.id))
+    if (work === undefined) return { message: NO_WORK_MESSAGE }
+    return { workId: work.id, session }
   }
 
   const read = defineTool({
     name: 'story_read',
     description:
-      'Read the focused work. what=brief renders a material pack (for=write/plan/extract); works/memories/character/'
+      'Read the bound novel canvas. what=brief renders a material pack (for=write/plan/extract); memories/character/'
       + 'chapters/ledger/pending/chapter read the store. Load the story skill for the workflow.',
     parameters: {
       what: {
         type: 'string',
-        enum: ['brief', 'works', 'memories', 'character', 'chapters', 'ledger', 'pending', 'chapter'],
+        enum: ['brief', 'memories', 'character', 'chapters', 'ledger', 'pending', 'chapter'],
         required: true,
         description: 'What to read.',
       },
@@ -115,15 +115,7 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
       layer?: 'canon' | 'intent'
       type?: string
     }, exec: { agent?: Agent }): Promise<string> => {
-      if (args.what === 'works') {
-        const works = await store.listWorks()
-        if (works.length === 0) return '还没有登记任何作品：story_write(what=work, title=…, workspace=…) 新建一部。'
-        const focused = exec.agent?.session === undefined ? undefined : store.focusedWorkOf(exec.agent.session)
-        return ['作品注册表：', ...works.map(work =>
-          `- ${work.id}　《${work.title}》　${work.workspace}${focused?.workId === work.id ? '　← 本会话 focus' : ''}`),
-        ].join('\n')
-      }
-      const resolved = target(exec)
+      const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       const { workId } = resolved
       if (args.what === 'brief') {
@@ -216,21 +208,20 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
           ? `第 ${args.chapter} 章《${outcome.chapter!.title}》（${PHASE_NAMES[outcome.phase!] ?? outcome.phase}）：正文为空。`
           : `第 ${args.chapter} 章《${outcome.chapter!.title}》（${PHASE_NAMES[outcome.phase!] ?? outcome.phase}）：\n\n${outcome.body}`
       }
-      return '失败：what 只能是 brief/works/memories/character/chapters/ledger/pending/chapter。'
+      return '失败：what 只能是 brief/memories/character/chapters/ledger/pending/chapter。'
     },
   })
 
   const write = defineTool({
     name: 'story_write',
     description:
-      'Write the focused work. what=work focuses or creates one (title; workspace for a new one); memory drops a ghost '
+      'Write the bound novel canvas. memory drops a ghost '
       + 'card (layer=intent draft by default); character upserts a card; chapter creates (auto n=max+1) or re-plans; '
       + 'review decides (target=memory|pending, action=accept|discard|archive|retract). chapter content writes the '
       + 'manuscript first and refuses the registration when the fence refuses the write. Load the story skill first.',
     parameters: {
-      what: { type: 'string', enum: ['work', 'memory', 'character', 'chapter', 'review'], required: true, description: 'What to write.' },
-      title: { type: 'string', description: 'work/chapter: the title.' },
-      workspace: { type: 'string', description: 'work: absolute path of the mounted workspace (new works only).' },
+      what: { type: 'string', enum: ['memory', 'character', 'chapter', 'review'], required: true, description: 'What to write.' },
+      title: { type: 'string', description: 'chapter: the title.' },
       content: { type: 'string', description: "memory: the content (one restatable sentence). chapter: the manuscript body — written to the mounted workspace before registering." },
       type: { type: 'string', description: 'memory: episodic|semantic|source|prospective|emotional|procedural|implicit.' },
       layer: { type: 'string', enum: ['canon', 'intent'], description: 'memory: layer (default intent draft — the ghost card).' },
@@ -256,25 +247,7 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
     execute: async (args: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
-      const session = exec.agent?.session
-      if (session === undefined) return NO_FOCUS_MESSAGE
-      if (args.what === 'work') {
-        if ((args.title ?? '').trim() === '') return '失败：what=work 要给 title（选中已有作品或新建）。'
-        const title = args.title!.trim()
-        const existing = (await store.listWorks()).find(work => work.title === title)
-        if (existing !== undefined) {
-          const focused = await store.focusWork({ workId: existing.id }, session)
-          return focused.ok
-            ? `已 focus《${existing.title}》（${existing.id}）。`
-            : `失败：${focused.error ?? 'io'}`
-        }
-        if ((args.workspace ?? '').trim() === '') return `失败：没有名为《${title}》的作品。新建要给 workspace（挂载工作区的绝对路径）。`
-        const created = await store.createWork({ title, workspace: args.workspace! }, session)
-        if (!created.ok) return `失败：${created.error ?? 'io'}`
-        await store.focusWork({ workId: created.work!.id }, session)
-        return `已创建并 focus《${created.work!.title}》（${created.work!.id}），正文目录 ${created.work!.workspace}/${created.work!.title}/。`
-      }
-      const resolved = target(exec)
+      const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       const { workId } = resolved
       if (args.what === 'memory') {
@@ -325,7 +298,10 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
             return `失败：没有第 ${args.chapter} 章。story_read(what=chapters) 看索引；新建不要传 chapter。`
           }
           if (outcome.error === 'denied') {
-            return '失败：正文写不进挂载工作区（会话沙箱围栏拒绝）。把作品的挂载工作区换到本会话工作区内（新建作品时换），或把正文贴给我用 story_write(what=chapter, content=…) 重写。'
+            return '失败：正文写不进画布挂载的工作区（会话沙箱围栏拒绝）。请用户给画布挂一个本会话可写的工作区，或把正文贴给我用 story_write(what=chapter, content=…) 重写。'
+          }
+          if (outcome.error === 'no-workspace') {
+            return '失败：这张画布还没有挂工作区，章节正文无处可写。请用户先在画布里挂一个工作区（正文写到 <工作区>/<画布标题>/第N章.md）。'
           }
           return `失败：${outcome.error ?? 'io'}`
         }
@@ -349,7 +325,7 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
         if (!outcome.ok) return outcome.error === 'missing' ? `失败：没有待审项 ${args.id}。` : `失败：${outcome.error ?? 'io'}`
         return args.action === 'accept' ? `已采纳并落库：${args.id}。` : `已丢弃：${args.id}。`
       }
-      return '失败：what 只能是 work/memory/character/chapter/review。'
+      return '失败：what 只能是 memory/character/chapter/review。'
     },
   })
 
@@ -368,7 +344,7 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
     execute: async (args: { chapter: number; phase: 'prepare' | 'import'; payload?: ExtractPayload }, exec: { agent?: Agent }): Promise<string> => {
-      const resolved = target(exec)
+      const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       if (args.phase === 'prepare') {
         const prepared = await store.extractPrepare({ workId: resolved.workId, n: args.chapter })
@@ -416,7 +392,6 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
 interface WriteArgs {
   what: string
   title?: string
-  workspace?: string
   content?: string
   type?: string
   layer?: 'canon' | 'intent'

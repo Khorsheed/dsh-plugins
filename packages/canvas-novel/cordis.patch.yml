@@ -19,8 +19,9 @@
 #
 #   - @khorsheed/dsh-bundle-writing (recommended): its `preset-writing`
 #     declaration mounts this very entry (`@khorsheed/dsh-canvas-novel/agent`)
-#     inside the writing preset's scope, so the tools, the pointer and the
-#     skill exist exactly for the sessions running that preset — and
+#     inside the writing preset's scope, so the pointer and the skill exist
+#     exactly for the sessions running that preset, and the tools for those
+#     of them bound (session-header chip) to a 长篇小说 canvas — and
 #     nowhere else. Installing bundle-writing alone is not enough (the
 #     preset row only declares composition); this package provides the
 #     service and the entry, bundle-writing provides the grant.

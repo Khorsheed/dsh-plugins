@@ -1,26 +1,36 @@
 /**
- * The `./agent` composition entry: registers the three story tools
- * (origin-tagged), the focus pointer FUNCTION section and the `story` skill
- * into the mounting scope when the core service is present, and degrades to
- * a warn-only no-op when it is not. The pointer's degrade paths (no agent,
- * no sessionId, no focus) all render '' — never a throw into assembly.
+ * The `./agent` composition entry: the story tools are granted per session —
+ * registered on an agent's own scope only while its session is bound to a
+ * 长篇小说 canvas, absent everywhere else — while the pointer FUNCTION
+ * section and the `story` skill register once. Without the core service the
+ * entry degrades to a warn-only no-op. The pointer's degrade paths (no
+ * agent, no sessionId, no binding) all render '' — never a throw into
+ * assembly.
  */
 import { Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { describe, expect, it, vi } from 'vitest'
-import { apply as agentApply, storyPointerText, STORY_POINTER_ORDER } from '../src/agent.ts'
+import { apply as agentApply, NovelToolGrant, storyPointerText, STORY_POINTER_ORDER, type NovelAgent } from '../src/agent.ts'
 import { StoryBibleService } from '../src/store.ts'
+import { storyMainSessionToolDefinitions } from '../src/tools.ts'
+import { FakeCanvas, provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
+import { DREAM } from './seed-dream.ts'
 
-/** A recording tools registry (only `register` is used). */
-function fakeToolsRegistry() {
-  const registered: ToolDefinition[] = []
+/** An agent whose own scope records the tools registered on it. */
+function fakeAgent(sessionId: string): NovelAgent & { live: () => string[] } {
+  const live = new Set<ToolDefinition>()
   return {
-    registered,
-    register: (def: ToolDefinition) => {
-      registered.push(def)
-      return () => undefined
-    },
+    session: { id: sessionId },
+    ctx: {
+      get: (name: string) => name !== 'tools' ? undefined : {
+        register: (def: ToolDefinition) => {
+          live.add(def)
+          return () => { live.delete(def) }
+        },
+      },
+    } as unknown as NovelAgent['ctx'],
+    live: () => [...live].map(def => def.name),
   }
 }
 
@@ -36,86 +46,122 @@ function fakePromptSections() {
   }
 }
 
-/** A bare context with the registries mountable; `get` answers the map. */
-function bench(options: { withStore?: boolean } = {}) {
-  const tools = fakeToolsRegistry()
-  const prompts = fakePromptSections()
+/** A store over the《梦境监护者》canvas (unbound until a test binds it). */
+function storeOver(canvas: FakeCanvas = new FakeCanvas().addBoard({ id: DREAM.workId, title: DREAM.title, workspace: DREAM.workspace })) {
   const ctx = new Context()
-  const storeCtx = new Context()
-  storeCtx.provide('fs', new FakeFs() as never)
-  const store = options.withStore === false ? undefined : new StoryBibleService(storeCtx, { stateRoot: '/dsh/state/story' })
-  const gets = new Map<string, unknown>(options.withStore === false ? [] : [['storyBible', store]])
-  const originalGet = ctx.get.bind(ctx)
-  ctx.get = ((key: string) => gets.has(key) ? gets.get(key) : originalGet(key)) as Context['get']
-  return { ctx, tools, prompts, store }
+  ctx.provide('fs', new FakeFs() as never)
+  provideCanvas(ctx, canvas)
+  return { store: new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot }), canvas }
 }
 
+const tick = () => new Promise(resolve => { setTimeout(resolve, 0) })
+
 describe('the ./agent composition entry', () => {
-  it('registers the three story tools (origin-tagged), the pointer section and the story skill', async () => {
-    const { ctx, tools, prompts } = bench()
-    const skills: Array<{ name: string; description: string; content: string; source: string; provider?: string }> = []
+  it('grants the tools to bound agents only, and follows binding and genre events', async () => {
+    const { store, canvas } = storeOver()
+    const ctx = new Context()
+    const gets = new Map<string, unknown>([['storyBible', store]])
+    const originalGet = ctx.get.bind(ctx)
+    ctx.get = ((key: string) => gets.has(key) ? gets.get(key) : originalGet(key)) as Context['get']
+    const prompts = fakePromptSections()
+    const skills: Array<{ name: string; content: string; source: string; provider?: string }> = []
+    // One agent already lives (and is bound) when the entry mounts: the seed path.
+    const early = fakeAgent('s-early')
+    canvas.bind('s-early', DREAM.workId)
+    ctx.provide('agents' as never, { list: () => [early] } as never)
     agentApply(ctx)
-    ctx.provide('tools', tools)
     ctx.provide('systemPrompt', prompts)
     ctx.provide('skills', { register: (skill: (typeof skills)[number]) => { skills.push(skill); return () => undefined } })
-    await new Promise(resolve => { setTimeout(resolve, 0) })
-    expect(tools.registered.map(def => def.name)).toEqual(['story_read', 'story_write', 'story_extract'])
-    for (const def of tools.registered) {
+    await tick()
+    expect(early.live()).toEqual(['story_read', 'story_write', 'story_extract'])
+
+    // A new, unbound agent gets nothing — absent, not denied.
+    const later = fakeAgent('s-later')
+    await ctx.serial('agent/created' as never, { agent: later } as never)
+    expect(later.live()).toEqual([])
+    // Bind it: the tools appear.
+    canvas.bind('s-later', DREAM.workId)
+    ctx.emit('canvas/binding-changed' as never, 's-later' as never, DREAM.workId as never)
+    await tick()
+    expect(later.live()).toHaveLength(3)
+    // The canvas's genre cleared: the re-check revokes every session on it.
+    canvas.addBoard({ id: DREAM.workId, title: DREAM.title, workspace: DREAM.workspace, genre: null })
+    ctx.emit('canvas/genre-changed' as never, DREAM.workId as never, null as never)
+    await tick()
+    expect(later.live()).toEqual([])
+    expect(early.live()).toEqual([])
+    // A disposed agent is forgotten: later events never touch it.
+    canvas.addBoard({ id: DREAM.workId, title: DREAM.title, workspace: DREAM.workspace })
+    ctx.emit('agent/disposed' as never, { agent: later } as never)
+    ctx.emit('canvas/genre-changed' as never, DREAM.workId as never, 'novel' as never)
+    await tick()
+    expect(later.live()).toEqual([])
+    expect(early.live()).toHaveLength(3)
+    for (const def of storyMainSessionToolDefinitions(store)) {
       expect((def as unknown as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')]).toEqual({
         channel: 'plugin', owner: '@khorsheed/dsh-canvas-novel',
       })
     }
+
     expect(prompts.sections).toHaveLength(1)
     const section = prompts.sections[0]!
     expect(section.name).toBe('story:pointer')
     expect(section.order).toBe(STORY_POINTER_ORDER)
-    // A FUNCTION section — the whole point (proposal §4.1): evaluated per assembly.
+    // A FUNCTION section: evaluated per assembly.
     expect(typeof section.text).toBe('function')
     expect(skills).toHaveLength(1)
     expect(skills[0]).toMatchObject({ name: 'story', source: 'runtime', provider: '@khorsheed/dsh-canvas-novel' })
-    // The skill carries the workflow, not any work content (第 6 章与第 60 章共用一份).
+    // The skill carries the workflow, not any work content.
     expect(skills[0]!.content).toContain('三条铁律')
-    expect(skills[0]!.content).toContain('门后不回答问题'.slice(0, 0)) // no work content — see below
     expect(skills[0]!.content).not.toContain('梦境监护者')
     expect(skills[0]!.content).not.toContain('赵启明')
   })
 
   it('registers nothing (and warns) when storyBible is absent — degrade, never explode', () => {
-    const { ctx, tools, prompts } = bench({ withStore: false })
+    const ctx = new Context()
+    const prompts = fakePromptSections()
     const warn = vi.fn()
     ;(ctx as { logger: { warn: typeof warn } }).logger = { ...ctx.logger, warn }
     agentApply(ctx)
-    expect(tools.registered).toEqual([])
+    ctx.provide('systemPrompt', prompts)
     expect(prompts.sections).toEqual([])
     expect(warn).toHaveBeenCalledOnce()
   })
 })
 
-describe('the focus pointer function section', () => {
-  it('renders one line with a focus, and \'\' on every unreadable path', async () => {
-    const fs = new FakeFs()
-    fs.seed('/dsh/state/story/work-abcdef/work.json', `${JSON.stringify({
-      id: 'work-abcdef', title: '梦境监护者', workspace: '/home/user/workspace',
-      createdAt: '2026-10-01T09:00:00.000Z', updatedAt: '2026-10-01T09:00:00.000Z',
-    }, null, 2)}\n`)
-    const ctx = new Context()
-    ctx.provide('fs', fs as never)
-    const store = new StoryBibleService(ctx, { stateRoot: '/dsh/state/story' })
-    await store.focusWork({ workId: 'work-abcdef' }, { id: 's-1' } as never)
-    const text = storyPointerText(store)
-    // With a focus: one guidance line naming the work and the two doors (brief / skill).
-    const focused = text({ agent: { sessionId: 's-1' } })
-    expect(focused).toContain('《梦境监护者》')
-    expect(focused).toContain('story_read(brief)')
-    expect(focused).toContain('story skill')
-    expect(focused).not.toContain('\n')
-    // Without a focus (another session): '' — the no-injection state costs nothing.
+describe('the pointer function section', () => {
+  it('renders one line in a bound session, and \'\' on every unreadable path', async () => {
+    const { store, canvas } = storeOver()
+    const grant = new NovelToolGrant(store, storyMainSessionToolDefinitions(store))
+    canvas.bind('s-1', DREAM.workId)
+    await grant.track(fakeAgent('s-1'))
+    await grant.track(fakeAgent('s-2'))
+    const text = storyPointerText(grant)
+    const bound = text({ agent: { sessionId: 's-1' } })
+    expect(bound).toContain('《梦境监护者》')
+    expect(bound).toContain('story_read(brief)')
+    expect(bound).toContain('story skill')
+    expect(bound).not.toContain('\n')
+    // Unbound (another session): '' — the no-injection state costs nothing.
     expect(text({ agent: { sessionId: 's-2' } })).toBe('')
     // No agent on the assemble context (a headless/odd assembly): ''.
     expect(text({})).toBe('')
     expect(text({ agent: {} })).toBe('')
-    // A store whose focus map threw (impossible in practice) still degrades to ''.
-    const broken = { focusedWork: () => { throw new Error('boom') } } as unknown as StoryBibleService
+    // A grant whose lookup threw (impossible in practice) still degrades to ''.
+    const broken = { titleOf: () => { throw new Error('boom') } }
     expect(storyPointerText(broken)({ agent: { sessionId: 's-1' } })).toBe('')
+  })
+
+  it('a superseded evaluation never lands (the newest binding wins)', async () => {
+    const { store, canvas } = storeOver()
+    const grant = new NovelToolGrant(store, storyMainSessionToolDefinitions(store))
+    const agent = fakeAgent('s-1')
+    canvas.bind('s-1', DREAM.workId)
+    const first = grant.track(agent)
+    canvas.bind('s-1', null)
+    const second = grant.evaluate('s-1')
+    await Promise.all([first, second])
+    expect(agent.live()).toEqual([])
+    expect(grant.titleOf('s-1')).toBeUndefined()
   })
 })
