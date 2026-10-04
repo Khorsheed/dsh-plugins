@@ -1,6 +1,6 @@
 # bundle-writing (the writing-mode preset)
 
-One line: **installing it makes canvas-novel's agent surface (story_read/write/extract, the story:pointer prompt section, the story skill) exist ONLY inside sessions running the writing preset** — ordinary sessions see no story tool in their list and no story trace in their prompt.
+One line: **installing it makes canvas-novel's agent surface (novel_read/write/extract, the novel:pointer prompt section, the novel skill) exist ONLY inside sessions running the writing preset** — ordinary sessions see no novel tool in their list and no novel trace in their prompt.
 
 This package is a **declarative preset bundle** (`dsh.bundle.kind: preset-declarations`, the AGENTS.md convention): its patch carries a single `@deepseek-ai/dsh-agent-preset` row (loader id `preset-writing`) and no runtime code of its own.
 
@@ -8,9 +8,9 @@ This package is a **declarative preset bundle** (`dsh.bundle.kind: preset-declar
 
 The writing preset is a named scope. Sessions switched to it compose with:
 
-- **persona**: a collaborative editor for long-form fiction (probe ideas, put the ledger and the cast on the table when planning, hold canon and character consistency when writing, report reconcile hits and misses honestly; the work's assets are what the story_* tools return, never conversation memory).
+- **persona**: a collaborative editor for long-form fiction (probe ideas, put the ledger and the cast on the table when planning, hold canon and character consistency when writing, report reconcile hits and misses honestly; the work's assets are what the novel_* tools return, never conversation memory).
 - **canvas-novel's agent surface**: mounts `@khorsheed/dsh-canvas-novel/agent` inside the scope — the same entry canvas-novel's shipped patch keeps DISABLED at the profile root. The two must never be live at once (the tools would register twice and fail the boot).
-- **The writing tool list**: tool-fs (manuscript read/write/edit), skill-filesystem + tool-skill (how the story skill loads), tool-ask-user (the confirmation gates), and the compaction group (long sessions fold context). No shell, no search, no delegation, no jobs — the writing flow needs none of them.
+- **The writing tool list**: tool-fs (manuscript read/write/edit), skill-filesystem + tool-skill (how the novel skill loads), tool-ask-user (the confirmation gates), and the compaction group (long sessions fold context). No shell, no search, no delegation, no jobs — the writing flow needs none of them.
 
 ## Install and enable
 

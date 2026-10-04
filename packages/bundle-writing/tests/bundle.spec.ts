@@ -3,7 +3,7 @@
  * preset-declarations row named `@deepseek-ai/dsh-agent-preset` with the
  * loader id `preset-writing`; the grant names canvas-novel's `./agent` entry;
  * every community name rides in dsh.references; the persona stays light
- * (the workflow is the story skill's).
+ * (the workflow is the novel skill's).
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -52,10 +52,10 @@ describe('cordis.patch.yml', () => {
     }
   })
 
-  it('the persona names the assets rule and the story skill, and stays single-voice English', () => {
+  it('the persona names the assets rule and the novel skill, and stays single-voice English', () => {
     expect(patch).toContain('You are a collaborative editor for long-form fiction.')
-    expect(patch).toContain('story_* tools return')
-    expect(patch).toContain('The story skill carries the')
+    expect(patch).toContain('novel_* tools return')
+    expect(patch).toContain('The novel skill carries the')
     // Light by contract: the persona does not copy the skill's workflow sections.
     expect(patch).not.toContain('三条铁律')
     expect(patch).not.toContain('意图路由')
