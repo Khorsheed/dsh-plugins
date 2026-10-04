@@ -162,10 +162,3 @@ export type StoryTabTitleProps =
   & GlobalStandardProps
   & InjectFace<{ hooks: { story: StoryUiSource } }>
 
-/** What a toolview row reaches outside its own block. */
-export interface StoryRowFace {
-  /** The plan row's door: reader tab at one chapter. */
-  openReaderAt: (n: number) => void
-  /** The extract row's door: fragments tab's pending queue. */
-  openPending: () => void
-}

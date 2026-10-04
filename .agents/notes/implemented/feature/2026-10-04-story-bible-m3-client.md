@@ -10,7 +10,7 @@ M1 shipped the memory core headless: the whole loop (focus → ghost card → pl
 
 ### Two tab types, two registration ids, zero runtime switches
 
-The package registers two page types on the right-Sidebar registry: `story-fragments` under the package's own id (the identity triangle's client end) and `story-reader` under `@khorsheed/dsh-story-bible/reader` — the tab registry requires a unique `id` per type, and a kind's body registers under its definition's id on the keyed `sidebar.right.pane.tab` seat (verified in the host's tab-registry source, not assumed). Mode visibility follows docs/plugin-visibility.md's cross-session branch: the works store is deployment-level content, so there is NO runtime switch — the install layer decides, and the agent row (tools/pointer/skill) keeps riding the cordis preset grant untouched. The two `tool.call.toolview` rows (`story_write` → plan card with 「去确认」, `story_extract` → reconcile summary with 「去处理」) go through the structural slot view (the canvas propose-row precedent) and degrade to the host's generic rows without ui-tool.
+The package registers two page types on the right-Sidebar registry: `story-fragments` under the package's own id (the identity triangle's client end) and `story-reader` under `@khorsheed/dsh-story-bible/reader` — the tab registry requires a unique `id` per type, and a kind's body registers under its definition's id on the keyed `sidebar.right.pane.tab` seat (verified in the host's tab-registry source, not assumed). Mode visibility follows docs/plugin-visibility.md's cross-session branch: the works store is deployment-level content, so there is NO runtime switch — the install layer decides, and the agent row (tools/pointer/skill) keeps riding the cordis preset grant untouched. The two `tool.call.toolview` rows shipped in M3 were retired in the F1-followup (the user found them visually foreign in the timeline): the conversation keeps the host's generic rows, and every actionable door lives in the sidebar (plan card, pending queue) plus the session-header chips. `src/client/rows.ts`, `toolview/` and their specs are gone.
 
 ### The view layer: one shared shell, per-view slices, poll + touch
 
@@ -43,7 +43,7 @@ The proposal's §6 设定集 names five boards (世界观/人物/场景/物品/�
 ## Consequences
 
 - The full journey is drivable in a link dev instance: 新建作品 → 灵感落卡/采纳/归档 → 规划 → 写作 → 审过 → 对账 → 待审处理 → 多作品切换, all against the real store.
-- The tool ROWS parse the M1 tools' settled answer text (stable heads frozen by tests); a future wording change to those answers must move the row regexes (`src/client/rows.ts`) in the same commit.
+- Filed/registration answers are short factual lines (the quieting rule: the surface shows them, the model does not re-narrate); only decision points (plan confirm, pending, missed plans) get words.
 - `docs/packages.md` gained the story-bible web column; `scripts/check-plugin-independence.ts`'s ALLOWED_EDGES gained the story-bible → ui-content-preview source-plane edge (the local-files / worktrees precedent).
 - 59 client+host specs pin the five views' same-source rendering, the ghost-card flow, the pending queue, the plan/review state machines, the work strip, the row parsers, the store, and the PREVIEW_KEYS dictionary contract.
 - Known leftover: 在编辑器打开 prefers the open-in-app IDE probe (directories only — the host route refuses files) and falls back to the official document preview; the 场景/物品 boards are empty by design until the kind axis closes the seam.

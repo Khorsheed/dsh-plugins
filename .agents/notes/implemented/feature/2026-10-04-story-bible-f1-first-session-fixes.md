@@ -26,7 +26,7 @@ The chapter machine is now 规划中 → 写作中(派生) → 已抽取 → 已
 
 ### F1-4: one host tab
 
-One tab kind `story` (写作), an internal 灵感碎片/章节阅读 switcher held in StoryUiStore, the M3 components kept as the two panes. The tool rows' doors (去确认/去处理) switch the pane and open the one tab. The retired kinds' open tabs render the host's `tab.unavailable` fallback (a designed state); the README says close-and-reopen.
+One tab kind `story` (写作), an internal 灵感碎片/章节阅读 switcher held in StoryUiStore, the M3 components kept as the two panes. The gate doors (去确认/去处理) live on the session-header chips (the tool rows were retired in the followup direction change): they switch the pane and open the one tab. The retired kinds' open tabs render the host's `tab.unavailable` fallback (a designed state); the README says close-and-reopen.
 
 ### F1-5: gate chips on the official seat
 

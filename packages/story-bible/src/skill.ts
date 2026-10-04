@@ -41,6 +41,8 @@ export const STORY_SKILL_CONTENT = `# story 技能（长篇小说写作工作流
 - kind 即归档路由：世界→设定集·世界观 / 人物→人物卡 / 章节→大纲草案 /
   伏笔点子→世界记忆台账 / 原则→设定集·创作原则。kind 拿不准就先问一句。
 - 用户没 ✓ 采纳之前，卡的内容不进 brief、不进正文。
+- 落卡/登记类工具结果不必在对话里逐条复述播报——界面（灵感墙/章节阅读）
+  自己会显示；只在需要用户决策时说话：plan 确认、待审处理、计划落空。
 
 ## 规划
 - story_read(brief, for=plan) → 产出 plan → story_write · chapter(plan)。

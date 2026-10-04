@@ -1,8 +1,12 @@
 /**
  * story-bible, browser half: ONE right-Sidebar tab type (`story`, 写作) over
  * the `story` Remote face — the work strip once, the internal 灵感碎片/章节
- * 阅读 switcher, both panes — plus the two keyed tool rows and the two
- * session-header gate chips (plan unconfirmed / pending count).
+ * 阅读 switcher, both panes — plus the two session-header gate chips (plan
+ * unconfirmed / pending count). The conversation's tool rows are the HOST's
+ * generic ones by design (F1-followup: the custom StoryWriteRow/StoryExtractRow
+ * toolviews are retired — every actionable door lives in the sidebar and the
+ * header chips, and the skill teaches the model not to narrate what the
+ * surface already shows).
  *
  * F1-4: the M3 two-kind shape (story-fragments / story-reader) retired into
  * the internal switcher — one plugin, one host tab; layouts holding the
@@ -36,15 +40,11 @@ import { en, zh } from './locales.ts'
 import { StoryUiStore } from './store.ts'
 import { StoryChipVisibility } from './preset-visibility.ts'
 import { StoryTab } from './StoryTab.tsx'
-import { StoryWriteRow } from './toolview/StoryWriteRow.tsx'
-import { StoryExtractRow } from './toolview/StoryExtractRow.tsx'
 import { StoryPendingChip, StoryPlanChip } from './chips.tsx'
 
 export { STORY_KIND } from './definition.ts'
 export { StoryUiStore } from './store.ts'
 export { StoryTab } from './StoryTab.tsx'
-export { StoryWriteRow } from './toolview/StoryWriteRow.tsx'
-export { StoryExtractRow } from './toolview/StoryExtractRow.tsx'
 export { StoryPlanChip, StoryPendingChip } from './chips.tsx'
 export type { StoryRemote, StoryTabInjected, StoryTabProps } from './contract.ts'
 
@@ -201,33 +201,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: tabFace,
   }, StoryTab)), 'story-bible: story tab body')
-
-  // The two tool rows in the conversation. The slot is declared by
-  // @deepseek-ai/dsh-client-ui-tool, which this package does not depend on —
-  // its SlotMap entry is not in this type graph, so the registrations go
-  // through a structural view of the registry (the canvas propose-row
-  // precedent). Without that package the injects never fire and the calls
-  // keep the host's generic rows.
-  const toolSlots = ctx.slots as unknown as {
-    inject: (key: string, callback: () => () => void) => () => void
-    register: (options: Record<string, unknown>, component: unknown) => () => void
-  }
-  const rowFace = {
-    openReaderAt: (n: number) => { tabFace().openReaderAt(n) },
-    openPending: () => { tabFace().openPending() },
-  }
-  ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
-    name: 'tool.call.toolview',
-    key: 'story_write',
-    locale: NS,
-    inject: () => rowFace,
-  }, StoryWriteRow)), 'story-bible: story_write tool row')
-  ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
-    name: 'tool.call.toolview',
-    key: 'story_extract',
-    locale: NS,
-    inject: () => rowFace,
-  }, StoryExtractRow)), 'story-bible: story_extract tool row')
 
   // The two gate chips on the official session-header utilities seat (F1-5):
   // a list slot, so a chip with nothing to show renders nothing. The seat is

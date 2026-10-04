@@ -26,7 +26,7 @@ Status: implemented
 
 ### F1-4：一个宿主 tab
 
-一个 tab kind `story`（写作），内部 灵感碎片/章节阅读 切换存进 StoryUiStore，M3 的两个组件保留为两个面板。工具行的门（去确认/去处理）切面板并打开这一个 tab。退役 kind 上已打开的旧 tab 渲染宿主设计的 `tab.unavailable` 回退，README 写明关掉重开。
+一个 tab kind `story`（写作），内部 灵感碎片/章节阅读 切换存进 StoryUiStore，M3 的两个组件保留为两个面板。闸门的门（去确认/去处理）落在会话头 chip 上（工具行已在后续方向调整中撤回）：切面板并打开这一个 tab。退役 kind 上已打开的旧 tab 渲染宿主设计的 `tab.unavailable` 回退，README 写明关掉重开。
 
 ### F1-5：官方槽位上的闸门 chip
 
