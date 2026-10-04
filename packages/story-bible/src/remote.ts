@@ -117,6 +117,12 @@ export class StoryRemoteService extends TypertRemoteService<StoryRemoteConfig> {
     return this.store.readChapter(request)
   }
 
+  /** Whether a workspace path exists and is a directory (the create form's fallback-path validation). */
+  @Remote('statWorkspace')
+  statWorkspace(request: { path: string }): Promise<{ ok: boolean; error?: StoryError; exists?: boolean; directory?: boolean }> {
+    return this.store.statWorkspace(request)
+  }
+
   /** The 伏笔沉睡榜 + 健康度 (世界记忆 view). */
   @Remote('ledger')
   ledger(request: { workId: string }): Promise<LedgerResult> {

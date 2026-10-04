@@ -24,6 +24,8 @@ export type FragmentsView = 'wall' | 'sets' | 'characters' | 'world' | 'info'
 export interface StoryUiState {
   /** Bumped on every work mutation from either seat (a re-read trigger). */
   readonly rev: number
+  /** The single story tab's active pane (F1-4: 内部切换). */
+  readonly tabView: 'fragments' | 'reader'
   /** The fragments tab's active view. */
   readonly fragmentsView: FragmentsView
   /** The 角色记忆 pane's selected character id. */
@@ -41,7 +43,7 @@ export type StoryUiSource = SnapshotStore<StoryUiState>
 
 /** The empty surface. */
 const EMPTY: StoryUiState = {
-  rev: 0, fragmentsView: 'wall', cmCharacterId: null, cmCursor: null, readerN: null, pendingPulse: 0,
+  rev: 0, tabView: 'fragments', fragmentsView: 'wall', cmCharacterId: null, cmCursor: null, readerN: null, pendingPulse: 0,
 }
 
 /** The shared store: `touch` notes a mutation; the rest are layout writes. */
@@ -53,6 +55,13 @@ export class StoryUiStore {
   touch(): void {
     const current = this.source.getSnapshot()
     this.source.set({ ...current, rev: current.rev + 1 })
+  }
+
+  /** Switch the story tab's pane (灵感碎片 / 章节阅读). */
+  setTabView(view: 'fragments' | 'reader'): void {
+    const current = this.source.getSnapshot()
+    if (current.tabView === view) return
+    this.source.set({ ...current, tabView: view })
   }
 
   /** Switch the fragments tab's view. */

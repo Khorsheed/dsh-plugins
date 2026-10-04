@@ -79,25 +79,31 @@ describe('the story store', () => {
     expect(replanned.chapter?.plan?.goal).toBe('新目标')
   })
 
-  it('derives 写作中 from the manuscript fact, and gates 审过 on the stored phase', async () => {
+  it('derives 写作中/文件丢失 from the manuscript fact, and 审过 closes only an extracted chapter', async () => {
     const fs = new FakeFs()
-    seedDreamKeeper(fs, { ch5Phase: 'reviewed' })
+    seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
     const chapters = await store.listChapters({ workId: DREAM.workId })
-    expect(chapters.find(row => row.chapter.n === 5)?.phase).toBe('reviewed')
+    expect(chapters.find(row => row.chapter.n === 5)?.phase).toBe('extracted')
     expect(chapters.find(row => row.chapter.n === 6)?.phase).toBe('planning')
     // A planning chapter with a manuscript on disk reads 写作中.
     fs.seed(`${DREAM.workspace}/${DREAM.title}/第6章.md`, '开头三段。\n')
     const after = await store.listChapters({ workId: DREAM.workId })
     expect(after.find(row => row.chapter.n === 6)?.phase).toBe('writing')
-    // The user's gate: planning → reviewed, idempotent past the gate.
-    const reviewed = await store.reviewChapter({ workId: DREAM.workId, n: 6 }, SESSION)
+    // 审过是人工闸门，永远最后: planning/writing refuse, extracted closes, idempotent past the gate.
+    const tooEarly = await store.reviewChapter({ workId: DREAM.workId, n: 6 }, SESSION)
+    expect(tooEarly.ok).toBe(false)
+    expect(tooEarly.error).toBe('not-extracted')
+    const reviewed = await store.reviewChapter({ workId: DREAM.workId, n: 5 }, SESSION)
     expect(reviewed.chapter?.phase).toBe('reviewed')
-    const again = await store.reviewChapter({ workId: DREAM.workId, n: 6 }, SESSION)
+    const again = await store.reviewChapter({ workId: DREAM.workId, n: 5 }, SESSION)
     expect(again.ok).toBe(true)
+    // A chapter past planning whose manuscript file vanished reads 文件丢失.
     expect(effectiveChapterPhase({ ...again.chapter!, phase: 'extracted' }, true)).toBe('extracted')
+    expect(effectiveChapterPhase({ ...again.chapter!, phase: 'extracted' }, false)).toBe('fileMissing')
+    expect(effectiveChapterPhase({ ...again.chapter!, phase: 'reviewed' }, false)).toBe('fileMissing')
   })
 
   it('runs the ghost-card review flow: draft → accept enters the brief, discard archives', async () => {
@@ -144,7 +150,7 @@ describe('the story store', () => {
     expect(before).toHaveLength(1)
     // …and an import's append keeps both the good line and the corrupt one.
     fs.seed(`/dsh/state/story/${workId}/chapters.json`, `${JSON.stringify({ version: 1, chapters: [
-      { n: 1, seq: 1, title: '一', file: '第1章.md', phase: 'reviewed', sessionIds: [], createdAt: 't', updatedAt: 't' },
+      { n: 1, seq: 1, title: '一', file: '第1章.md', phase: 'planning', sessionIds: [], createdAt: 't', updatedAt: 't' },
     ] }, null, 2)}\n`)
     fs.seed(`/dsh/state/story/${workId}/memories.json`, `${JSON.stringify({ version: 1, memories: [] }, null, 2)}\n`)
     fs.seed(`/dsh/state/story/${workId}/pending.json`, `${JSON.stringify({ version: 1, items: [] }, null, 2)}\n`)
@@ -181,6 +187,51 @@ describe('the story store', () => {
     const created = await store.createWork({ title: '只读', workspace: '/home/user/workspace' }, SESSION)
     expect(created.ok).toBe(false)
     expect(created.error).toBe('denied')
+  })
+
+  it('writeChapter with content writes the body fenced BEFORE registering — a denied write refuses the registration', async () => {
+    const { store, fs } = confiningStore()
+    const created = await store.createWork({ title: '落盘', workspace: '/home/user/workspace' }, SESSION)
+    const workId = created.work!.id
+    // content given: the body lands at <workspace>/<title>/第1章.md and the chapter registers.
+    const written = await store.writeChapter({ workId, title: '第一章', content: '开头三段。\n' }, SESSION)
+    expect(written.ok).toBe(true)
+    expect(fs.read('/home/user/workspace/落盘/第1章.md')).toBe('开头三段。\n')
+    expect(written.chapter).toMatchObject({ n: 1, file: '第1章.md' })
+    // The write carried the session's mode with the boundary re-rooted at the WORK's workspace.
+    expect(fs.policies.every(policy => policy?.workspaceRoot === '/home/user/workspace' || policy?.workspaceRoot === '/dsh/state/story')).toBe(true)
+    // The chapter reads back as 写作中 (planning + body).
+    const listed = await store.listChapters({ workId })
+    expect(listed[0]?.phase).toBe('writing')
+    // A denied body write refuses the registration: no chapter row appears
+    // (a read-only deployment's policy refuses every write).
+    const denied = new FakeFs()
+    denied.sandboxMode = 'read-only'
+    denied.seed('/dsh/state/story/index.json', '[]\n')
+    const ctxDenied = new Context()
+    ctxDenied.provide('fs', denied as never)
+    ctxDenied.provide('sandboxPolicy', {
+      resolve: ({ session }: { session: Session }) => ({ mode: 'read-only', workspaceRoot: '/outside', sessionId: String(session.id) }),
+    } as never)
+    const deniedStore = new StoryBibleService(ctxDenied, { stateRoot: '/dsh/state/story' })
+    denied.seed('/dsh/state/story/index.json', `${JSON.stringify([{ id: 'work-denied0001', title: '拒', workspace: '/outside', createdAt: 't' }], null, 2)}\n`)
+    denied.seed('/dsh/state/story/work-denied0001/work.json', `${JSON.stringify({ id: 'work-denied0001', title: '拒', workspace: '/outside', createdAt: 't', updatedAt: 't' }, null, 2)}\n`)
+    const refused = await deniedStore.writeChapter({ workId: 'work-denied0001', title: '第一章', content: '写不进去。' }, SESSION)
+    expect(refused.ok).toBe(false)
+    expect(refused.error).toBe('denied')
+    expect((await deniedStore.listChapters({ workId: 'work-denied0001' })).length).toBe(0)
+  })
+
+  it('statWorkspace answers existence and directory-ness for the create form', async () => {
+    const fs = new FakeFs()
+    fs.seed('/home/user/workspace/note.md', 'x')
+    const ctx = new Context()
+    ctx.provide('fs', fs as never)
+    const store = new StoryBibleService(ctx, { stateRoot: '/dsh/state/story' })
+    expect(await store.statWorkspace({ path: '/home/user/workspace' })).toEqual({ ok: true, exists: true, directory: true })
+    expect(await store.statWorkspace({ path: '/home/user/workspace/note.md' })).toEqual({ ok: true, exists: true, directory: false })
+    expect(await store.statWorkspace({ path: '/nope' })).toEqual({ ok: true, exists: false, directory: false })
+    expect((await store.statWorkspace({ path: '' })).ok).toBe(false)
   })
 
   it('the chapter file vocabulary round-trips (the invariant probe shares it)', () => {
@@ -253,7 +304,7 @@ describe('the story store', () => {
 
   it('lists the mention journal for the dot strip, and retracts an automatic experience by id', async () => {
     const fs = new FakeFs()
-    seedDreamKeeper(fs, { ch5Phase: 'reviewed' })
+    seedDreamKeeper(fs, { ch5Phase: 'planning' })
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })

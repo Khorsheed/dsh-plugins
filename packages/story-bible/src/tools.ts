@@ -36,8 +36,14 @@ function tagOrigin<T extends object>(definition: T): T {
 /** What the tools answer when the session focuses no work (guidance, never a throw). */
 const NO_FOCUS_MESSAGE = '本会话还没有 focus 作品：用 story_write(what=work, title=…) 选中已有作品或新建一部，再进行读写。'
 
-/** The review gate's refusal (invariant 2: 不满意的正文不进记忆). */
-const NOT_REVIEWED_MESSAGE = '这章还没有被用户「审过」——不满意的正文不进记忆。请用户先确认这章可以定稿，再来对账。'
+/** The extract gate's refusal, phase-aware (对账只发生在写作后、审过收章前). */
+function extractGateMessage(phase: string | undefined): string {
+  if (phase === 'planning') return '这章还没有正文——没有什么可对账的。先写完，再对账。'
+  if (phase === 'extracted') return '这章已对过账（已抽取）。要重新对账，先告诉我为什么。'
+  if (phase === 'reviewed') return '这章已审过收章，不再对账。'
+  if (phase === 'fileMissing') return '这章的正文文件丢了（登记在、文件不在）。先重新定位文件，再谈对账。'
+  return '对账只对「写作中」的章开放。'
+}
 
 /** One memory as the model reads it (one line). */
 function memoryLine(memory: MemoryRecord): string {
@@ -58,7 +64,7 @@ function pendingLine(item: PendingItem): string {
 
 /** The chapter phase's display name. */
 const PHASE_NAMES: Readonly<Record<string, string>> = {
-  planning: '规划中', writing: '写作中', reviewed: '已审过', extracted: '已抽取',
+  planning: '规划中', writing: '写作中', extracted: '已抽取', reviewed: '已审过', fileMissing: '文件丢失',
 }
 
 /**
@@ -130,7 +136,7 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
         if (args.for === 'plan') return renderPlanBrief(gathered.data)
         if (args.for === 'extract') {
           const chapter = gathered.data.target
-          if (chapter.phase !== 'reviewed') return NOT_REVIEWED_MESSAGE
+          if (chapter.phase !== 'planning') return extractGateMessage(chapter.phase)
           const prepared = await store.extractPrepare({ workId, n: chapter.n })
           return prepared.ok ? prepared.text! : `失败：${prepared.error ?? 'io'}`
         }
@@ -219,12 +225,13 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
     description:
       'Write the focused work. what=work focuses or creates one (title; workspace for a new one); memory drops a ghost '
       + 'card (layer=intent draft by default); character upserts a card; chapter creates (auto n=max+1) or re-plans; '
-      + 'review decides (target=memory|pending, action=accept|discard|archive|retract). Load the story skill first.',
+      + 'review decides (target=memory|pending, action=accept|discard|archive|retract). chapter content writes the '
+      + 'manuscript first and refuses the registration when the fence refuses the write. Load the story skill first.',
     parameters: {
       what: { type: 'string', enum: ['work', 'memory', 'character', 'chapter', 'review'], required: true, description: 'What to write.' },
       title: { type: 'string', description: 'work/chapter: the title.' },
       workspace: { type: 'string', description: 'work: absolute path of the mounted workspace (new works only).' },
-      content: { type: 'string', description: 'memory: the content (one restatable sentence).' },
+      content: { type: 'string', description: "memory: the content (one restatable sentence). chapter: the manuscript body — written to the mounted workspace before registering." },
       type: { type: 'string', description: 'memory: episodic|semantic|source|prospective|emotional|procedural|implicit.' },
       layer: { type: 'string', enum: ['canon', 'intent'], description: 'memory: layer (default intent draft — the ghost card).' },
       kind: { type: 'string', enum: ['世界', '人物', '章节', '伏笔点子', '原则'], description: 'memory: the filing route.' },
@@ -311,11 +318,16 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
           title: args.title!,
           ...(args.chapter === undefined ? {} : { n: args.chapter }),
           ...(args.plan === undefined ? {} : { plan: args.plan }),
+          ...(args.content === undefined ? {} : { content: args.content }),
         }, resolved.session)
         if (!outcome.ok) {
-          return outcome.error === 'missing' && args.chapter !== undefined
-            ? `失败：没有第 ${args.chapter} 章。story_read(what=chapters) 看索引；新建不要传 chapter。`
-            : `失败：${outcome.error ?? 'io'}`
+          if (outcome.error === 'missing' && args.chapter !== undefined) {
+            return `失败：没有第 ${args.chapter} 章。story_read(what=chapters) 看索引；新建不要传 chapter。`
+          }
+          if (outcome.error === 'denied') {
+            return '失败：正文写不进挂载工作区（会话沙箱围栏拒绝）。把作品的挂载工作区换到本会话工作区内（新建作品时换），或把正文贴给我用 story_write(what=chapter, content=…) 重写。'
+          }
+          return `失败：${outcome.error ?? 'io'}`
         }
         const chapter = outcome.chapter!
         const plan = chapter.plan as ChapterPlan | undefined
@@ -361,7 +373,10 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
       if (args.phase === 'prepare') {
         const prepared = await store.extractPrepare({ workId: resolved.workId, n: args.chapter })
         if (!prepared.ok) {
-          if (prepared.error === 'not-reviewed') return NOT_REVIEWED_MESSAGE
+          if (prepared.error === 'not-reviewed') {
+            const read = await store.readChapter({ workId: resolved.workId, n: args.chapter })
+            return extractGateMessage(read.ok ? read.phase : undefined)
+          }
           return prepared.error === 'missing' ? `失败：没有第 ${args.chapter} 章。` : `失败：${prepared.error ?? 'io'}`
         }
         return prepared.text!
@@ -371,7 +386,10 @@ export function storyMainSessionToolDefinitions(store: StoryBibleService): ToolD
       }
       const report = await store.extractImport({ workId: resolved.workId, n: args.chapter, payload: args.payload }, resolved.session)
       if (!report.ok) {
-        if (report.error === 'not-reviewed') return NOT_REVIEWED_MESSAGE
+        if (report.error === 'not-reviewed') {
+          const read = await store.readChapter({ workId: resolved.workId, n: args.chapter })
+          return extractGateMessage(read.ok ? read.phase : undefined)
+        }
         return report.error === 'missing' ? `失败：没有第 ${args.chapter} 章。` : `失败：${report.error ?? 'io'}`
       }
       const lines = [

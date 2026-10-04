@@ -1,75 +1,46 @@
 /**
- * The two right-Sidebar tab types this package owns: `story-fragments`
- * (灵感碎片) and `story-reader` (章节阅读). Both are pages: they claim no
- * address and open by kind, with the guide entry making each reachable by
+ * The ONE right-Sidebar tab type this package owns: `story` (写作). F1-4:
+ * the M3 two-kind shape (story-fragments / story-reader) retired into an
+ * internal switcher — one plugin, one host tab. A page type: it claims no
+ * address and opens by kind, with the guide entry making it reachable by
  * hand.
  *
  * Mode visibility follows the cross-session rule (docs/plugin-visibility.md):
  * the works store is deployment-level content shared by every session, so
- * there is NO runtime switch — the install layer decides (a profile that
- * should not show the surface does not list the package). The agent row
- * (tools/pointer/skill) rides the cordis preset grant, unchanged from M1.
+ * there is NO runtime switch — the install layer decides. The agent row
+ * (tools/pointer/skill) rides the cordis preset grant, unchanged. Open tabs
+ * of the retired kinds (`story-fragments`/`story-reader`, pre-0.2 layouts)
+ * render the host's designed `tab.unavailable` fallback — a real state, not
+ * a defect; close and reopen.
  *
  * @module @khorsheed/dsh-story-bible/client
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { IconBookOutlineMedium, IconBulbOutlineMedium } from './icons.tsx'
+import { IconBookOutlineMedium } from './icons.tsx'
 import type {} from './locales.ts'
 
-/** The fragments tab kind. */
-export const STORY_FRAGMENTS_KIND = 'story-fragments'
-/** The chapter reader tab kind. */
-export const STORY_READER_KIND = 'story-reader'
+/** The story tab kind. */
+export const STORY_KIND = 'story'
 
-/**
- * This implementation's identity in the tab system for the FRAGMENTS tab
- * (the identity triangle's client end — the keyed tab seats register under it).
- */
+/** This implementation's identity in the tab system (the identity triangle's client end). */
 export const STORY_TAB_ID = '@khorsheed/dsh-story-bible'
 
 /**
- * The reader tab's registration id. A tab-type id is unique across every
- * registration (the tab registry throws on a duplicate), so the package's
- * second type carries its own sub-id; the keyed tab seats register under it.
- */
-export const STORY_READER_TAB_ID = '@khorsheed/dsh-story-bible/reader'
-
-/**
- * The fragments tab's registry definition.
+ * The story tab's registry definition.
  * @param t - namespace-bound translate, read fresh on every label call.
  * @returns the definition to register.
  */
-export function storyFragmentsDefinition(t: TranslateNS<'story'>): SidebarRightTabDefinition {
+export function storyDefinition(t: TranslateNS<'story'>): SidebarRightTabDefinition {
   return {
     id: STORY_TAB_ID,
-    kind: STORY_FRAGMENTS_KIND,
-    title: () => t('tab.fragments'),
+    kind: STORY_KIND,
+    title: () => t('tab.story'),
     guide: [{
-      id: STORY_FRAGMENTS_KIND,
+      id: STORY_KIND,
       order: 51,
-      title: () => t('tab.fragments'),
-      description: () => t('guide.fragments'),
-      icon: IconBulbOutlineMedium,
-    }],
-  }
-}
-
-/**
- * The reader tab's registry definition.
- * @param t - namespace-bound translate, read fresh on every label call.
- * @returns the definition to register.
- */
-export function storyReaderDefinition(t: TranslateNS<'story'>): SidebarRightTabDefinition {
-  return {
-    id: STORY_READER_TAB_ID,
-    kind: STORY_READER_KIND,
-    title: () => t('tab.reader'),
-    guide: [{
-      id: STORY_READER_KIND,
-      order: 52,
-      title: () => t('tab.reader'),
-      description: () => t('guide.reader'),
+      title: () => t('tab.story'),
+      description: () => t('guide.story'),
       icon: IconBookOutlineMedium,
     }],
   }

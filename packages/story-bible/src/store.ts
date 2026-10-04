@@ -736,6 +736,16 @@ export class StoryBibleService {
    * Create one chapter (n allocates max+1, the file name derives from n —
    * free-form names are never stored) or update its title/plan. seq defaults
    * to n; an explicit seq inserts the chapter between its neighbors.
+   *
+   * `content` (the F1-2 rule): given, the manuscript body is written to
+   * `<workspace>/<title>/第{n}章.md` FIRST — through the calling session's
+   * resolved mode with the boundary re-rooted at the work's mounted workspace
+   * (the canvas exportManuscript fence) — and only then does the chapter
+   * register. A denied/failed write refuses the registration: a chapter never
+   * registers onto an empty slot again. An existing file is rewritten under
+   * the version from the stat just taken; a missing parent directory is
+   * created by the fs layer. The plan-only path (no content) registers as
+   * planning without touching the workspace.
    * @param request - the chapter data.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh record, or the failure code.
@@ -747,9 +757,41 @@ export class StoryBibleService {
     const workId = normalizeWorkId(request.workId)
     const title = cleanText(request.title, 200)
     if (workId === undefined || title === undefined) return { ok: false, error: 'invalid-name' }
-    if (await this.readWorkMeta(workId) === undefined) return { ok: false, error: 'missing' }
+    const meta = await this.readWorkMeta(workId)
+    if (meta === undefined) return { ok: false, error: 'missing' }
     const plan = request.plan === undefined ? undefined : normalizePlan(request.plan)
     if (request.plan !== undefined && plan === undefined) return { ok: false, error: 'invalid-name' }
+    const content = typeof request.content === 'string' && request.content.length > 0 ? request.content.slice(0, 2_000_000) : undefined
+
+    // The body lands before the registration (F1-2): a write that the fence
+    // refuses means NO chapter row — the 空槽登记 bug class is closed by
+    // construction.
+    if (content !== undefined) {
+      const chapters = await this.readChapters(workId)
+      const n = request.n ?? chapters.reduce((max, row) => Math.max(max, row.n), 0) + 1
+      const target = await this.fs.resolve(join(meta.workspace, meta.title, chapterFileName(n)))
+      const resolved = this.sandboxPolicy?.resolve({ session })
+      if (resolved?.mode === 'read-only') return { ok: false, error: 'denied' }
+      const policy = resolved === undefined ? undefined : { ...resolved, workspaceRoot: meta.workspace }
+      let version: string | undefined
+      try {
+        version = (await this.fs.stat(target))?.version
+      } catch {
+        version = undefined
+      }
+      try {
+        await this.fs.writeText(
+          target, content,
+          version === undefined
+            ? { kind: 'createIfAbsent' }
+            : { kind: 'replaceIfVersion', version: FsVersion(version) },
+          undefined, policy,
+        )
+      } catch (error) {
+        return { ok: false, error: storyErrorOf(error) }
+      }
+    }
+
     let chapter: ChapterRecord | undefined
     const outcome = await this.mutateJson(
       await this.fileTarget(workId, WORK_FILES.chapters), session,
@@ -790,9 +832,30 @@ export class StoryBibleService {
   }
 
   /**
-   * The user's ✓审过 gate (对账前置): planning → reviewed. Already past the
-   * gate (reviewed/extracted) is an idempotent ok, so a double-click never
-   * errors.
+   * Whether a workspace path exists and is a directory (the create form's
+   * fallback-path validation; a read, so it is unfenced).
+   * @param request - the absolute path.
+   * @returns existence and directory-ness, or the failure code.
+   */
+  async statWorkspace(
+    request: { readonly path: string },
+  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly exists?: boolean; readonly directory?: boolean }> {
+    const path = cleanText(request.path, 500)
+    if (path === undefined) return { ok: false, error: 'invalid-name' }
+    try {
+      const info = await this.fs.stat(await this.fs.resolve(path))
+      if (info === undefined) return { ok: true, exists: false, directory: false }
+      return { ok: true, exists: true, directory: info.type !== 'file' }
+    } catch (error) {
+      if (error instanceof FsError && error.code === 'FS_NOT_FOUND') return { ok: true, exists: false, directory: false }
+      return { ok: false, error: storyErrorOf(error) }
+    }
+  }
+
+  /**
+   * The user's ✓审过 gate — the chapter-CLOSING gesture (审过是人工闸门，永远
+   * 最后): extracted → reviewed. A chapter whose 对账 never ran cannot close
+   * (记忆里不能有没有对过账的章); a reviewed chapter re-answers ok.
    * @param request - work id and chapter number.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh record, or the failure code.
@@ -811,7 +874,8 @@ export class StoryBibleService {
       (table, now) => {
         const row = table.chapters.find(candidate => candidate.n === request.n)
         if (row === undefined) return 'missing'
-        if (row.phase === 'planning') {
+        if (row.phase === 'planning') return 'not-extracted'
+        if (row.phase === 'extracted') {
           const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
           mutable.phase = 'reviewed'
           mutable.updatedAt = now
@@ -1157,10 +1221,11 @@ export class StoryBibleService {
   /**
    * The prepare half of 对账: the C-variant material pack (chapter body in
    * full, plan, the active-foreshadow whitelist, the roster, the output
-   * schema). The user's ✓审过 is the hard gate — an unreviewed chapter is
-   * refused with `not-reviewed`, never extracted (invariant 2: 不满意的正文
-   * 不进记忆). Delegating the pack to the subagent is the main agent's job;
-   * the store never delegates.
+   * schema). The gate is the WRITING state (stored planning + a non-empty
+   * manuscript): nothing to reconcile without a body, already-extracted and
+   * reviewed chapters are refused (对账只发生在写作后、审过收章前 — 审过是人工
+   * 闸门，永远最后). Delegating the pack to the subagent is the main agent's
+   * job; the store never delegates.
    * @param request - work id and chapter number.
    * @returns the pack text plus the whitelist, or the failure code.
    */
@@ -1177,10 +1242,10 @@ export class StoryBibleService {
     if (meta === undefined) return { ok: false, error: 'missing' }
     const chapter = (await this.readChapters(id)).find(candidate => candidate.n === request.n)
     if (chapter === undefined) return { ok: false, error: 'missing' }
-    if (chapter.phase !== 'reviewed') return { ok: false, error: 'not-reviewed' }
+    const body = await this.readChapterBody(meta, chapter)
+    if (chapter.phase !== 'planning' || body.trim() === '') return { ok: false, error: 'not-reviewed' }
     const gathered = await this.gatherBrief({ workId: id, chapter: chapter.n })
     if (!gathered.ok || gathered.data === undefined) return { ok: false, error: gathered.error ?? 'io' }
-    const body = await this.readChapterBody(meta, chapter)
     return {
       ok: true,
       text: renderExtractBrief(gathered.data, body),
@@ -1216,8 +1281,8 @@ export class StoryBibleService {
     if (meta === undefined) return { ok: false, error: 'missing', ...empty }
     const chapter = (await this.readChapters(id)).find(candidate => candidate.n === request.n)
     if (chapter === undefined) return { ok: false, error: 'missing', ...empty }
-    if (chapter.phase !== 'reviewed') return { ok: false, error: 'not-reviewed', ...empty }
     const body = await this.readChapterBody(meta, chapter)
+    if (chapter.phase !== 'planning' || body.trim() === '') return { ok: false, error: 'not-reviewed', ...empty }
     const { payload } = request
     const dropped: ImportDrop[] = []
     const report = { verified: 0, missed: 0, autoImported: 0, pending: 0 }

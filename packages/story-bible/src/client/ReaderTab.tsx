@@ -1,35 +1,34 @@
 /**
- * The chapter reader tab: the plan card pinned at the current chapter's
- * head (POV/goal/foreshadow ops/hook + the ✓确认计划 gate), the numbered
- * chapter grid with prev/next by seq, the phase lamp (规划中→写作中→已审过
- * →已抽取, with the ✓审过本章 gate as the lamp's own verb), the recap
- * banner, and the manuscript body rendered through the shared content pane
- * (markdown, serif measure). A chapter still in planning shows the outline
- * draft view (its adopted wall ideas + its plan) instead of an empty body.
+ * The reader body: the plan card pinned at the current chapter's head
+ * (POV/goal/foreshadow ops/hook + the ✓确认计划 gate), the numbered chapter
+ * grid with prev/next by seq, the phase lamp (规划中→写作中→已抽取→已审过 —
+ * 审过是人工闸门，永远最后: the ✓审过本章 verb is armed only at 已抽取),
+ * the recap banner, and the manuscript body through the shared content pane.
+ * A planning chapter shows the outline-draft view; a chapter past planning
+ * whose file is gone shows 文件丢失.
+ *
+ * The work strip, the shell and the toast live in the enclosing StoryTab
+ * (F1-4: one host tab, internal switcher).
  *
  * @module @khorsheed/dsh-story-bible/client
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ContentPane } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import type { ChapterRow, ForeshadowOp, MemoryRecord } from '../types.ts'
 import { foreshadowRefOf, memoryNumberOf } from '../types.ts'
 import type { StoryTabProps } from './contract.ts'
-import { useWorkShell } from './data.ts'
+import type { WorkShell } from './data.ts'
 import { chapterPreviewRead, previewTranslator, structuredLabels } from './preview.ts'
-import { WorkStrip } from './WorkStrip.tsx'
 import { IconCheckOutlineMedium, IconExternalOutlineMedium } from './icons.tsx'
 import css from './reader.module.css'
-import rootCss from './workstrip.module.css'
 
-/** The lamp's four stations, in order (已审过 is the user's gate, before 已抽取). */
-const PHASES = ['planning', 'writing', 'reviewed', 'extracted'] as const
+/** The lamp's four stations, in order (审过是人工闸门，永远最后). */
+const PHASES = ['planning', 'writing', 'extracted', 'reviewed'] as const
 
-/** The reader tab body. */
-export function ReaderTab(props: StoryTabProps): ReactNode {
+/** The reader body. */
+export function ReaderBody({ props, shell }: { props: StoryTabProps; shell: WorkShell }): ReactNode {
   const { t } = props
   const sessionId = props.sessionId
-  const shell = useWorkShell(props)
   const focus = shell.focus
   const story = props.useStory(current => current)
   const [chapters, setChapters] = useState<readonly ChapterRow[] | null>(null)
@@ -66,140 +65,110 @@ export function ReaderTab(props: StoryTabProps): ReactNode {
     return chapters.find(row => row.phase === 'planning') ?? chapters[chapters.length - 1]!
   }, [chapters, story.readerN])
 
-  const seqAt = showing === null || chapters === null ? -1 : chapters.indexOf(showing)
+  if (focus === null) return null
+  if (chapters === null) return <div className={css.notice}>{t('state.loading')}</div>
+  if (showing === null) return <div className={css.notice}>{t('reader.empty')}</div>
+
+  const seqAt = chapters.indexOf(showing)
   const step = (delta: number): void => {
-    if (chapters === null || seqAt < 0) return
     const next = chapters[seqAt + delta]
     if (next !== undefined) props.openReaderAt(next.chapter.n)
   }
 
   return (
-    <div className={rootCss.root}>
-      <WorkStrip
+    <>
+      <PlanCard
         t={t}
+        row={showing}
         sessionId={sessionId}
-        works={shell.works}
-        focus={focus}
-        counts={shell.info === null ? null : { chapters: shell.info.counts.chapters, pending: shell.info.counts.pending }}
-        workspaces={[]}
-        onSwitch={shell.switchWork}
-        onCreate={shell.createWork}
+        onConfirm={() => {
+          if (sessionId === undefined) return
+          void (async () => {
+            const value = await shell.run(() => props.confirmChapterPlan(sessionId, { workId: focus.workId, n: showing.chapter.n }))
+            if (value === null) return
+            if (!value.ok) {
+              shell.showToast(shell.errorText(value.error))
+              return
+            }
+            props.refresh()
+            shell.showToast(t('toast.planConfirmed'))
+          })()
+        }}
       />
-      {shell.fatal !== null && (
-        <div className={rootCss.notice} onClick={() => { shell.setFatal(null) }}>{shell.fatal}</div>
-      )}
-      {focus === null ? (
-        <div className={rootCss.notice}>
-          {shell.works === null ? t('state.loading') : (
-            <>
-              <span>{t('state.noFocus')}</span>
-              <span>{t('state.noFocusHint')}</span>
-            </>
-          )}
-        </div>
-      ) : chapters === null ? (
-        <div className={rootCss.notice}>{t('state.loading')}</div>
-      ) : showing === null ? (
-        <div className={rootCss.notice}>{t('reader.empty')}</div>
-      ) : (
-        <div className={rootCss.root}>
-          <PlanCard
-            t={t}
-            row={showing}
-            sessionId={sessionId}
-            onConfirm={() => {
-              if (sessionId === undefined) return
-              void (async () => {
-                const value = await shell.run(() => props.confirmChapterPlan(sessionId, { workId: focus.workId, n: showing.chapter.n }))
-                if (value === null) return
-                if (!value.ok) {
-                  shell.showToast(shell.errorText(value.error))
-                  return
-                }
-                props.refresh()
-                shell.showToast(t('toast.planConfirmed'))
-              })()
-            }}
-          />
-          <div className={css.readHead}>
-            <button type="button" className={css.navButton} disabled={seqAt <= 0} onClick={() => { step(-1) }}>
-              {t('reader.prev')}
-            </button>
-            <span className={css.chapterTitle}>
-              <b>{t('reader.chapterN', { n: String(showing.chapter.n) })}</b> · {showing.chapter.title}
-            </span>
-            <button type="button" className={css.navButton} disabled={chapters === null || seqAt >= chapters.length - 1} onClick={() => { step(1) }}>
-              {t('reader.next')}
-            </button>
-          </div>
-          <div className={css.readNums}>
-            {(chapters ?? []).map(row => (
-              <button
-                key={row.chapter.n}
-                type="button"
-                className={css.rn}
-                data-on={row.chapter.n === showing.chapter.n || undefined}
-                data-plan={row.phase === 'planning' || undefined}
-                onClick={() => { props.openReaderAt(row.chapter.n) }}
-              >
-                {row.chapter.n}
-              </button>
-            ))}
-          </div>
-          <PhaseLamp
-            t={t}
-            phase={showing.phase}
-            sessionId={sessionId}
-            onApprove={() => {
-              if (sessionId === undefined) return
-              void (async () => {
-                const value = await shell.run(() => props.reviewChapter(sessionId, { workId: focus.workId, n: showing.chapter.n }))
-                if (value === null) return
-                if (!value.ok) {
-                  shell.showToast(shell.errorText(value.error))
-                  return
-                }
-                props.refresh()
-                void shell.reloadShell()
-                shell.showToast(t('toast.reviewed'))
-              })()
-            }}
-          />
-          {showing.chapter.recap !== undefined && (
-            <div className={css.recap}>
-              <span className={css.recapLabel}>{t('reader.recap')}</span>
-              {showing.chapter.recap}
-            </div>
-          )}
-          <ChapterBody
-            t={t}
-            props={props}
-            shell={shell}
-            workId={focus.workId}
-            row={showing}
-            outlines={outlines}
-            workspace={shell.info?.meta.workspace ?? ''}
-            workTitle={focus.title}
-          />
-          <div className={css.readFoot}>
-            <span>{t('reader.footmeta', { n: String(showing.chapter.n), seq: String(showing.chapter.seq) })}</span>
-            {sessionId !== undefined && showing.phase !== 'planning' && props.editorAvailable() && (
-              <button
-                type="button"
-                className={css.openEditor}
-                onClick={() => { props.openInEditor(sessionId, shell.info?.meta.workspace ?? '', focus.title, showing.chapter.file) }}
-              >
-                {t('reader.openEditor')}
-                <IconExternalOutlineMedium size={11} />
-              </button>
-            )}
-          </div>
+      <div className={css.readHead}>
+        <button type="button" className={css.navButton} disabled={seqAt <= 0} onClick={() => { step(-1) }}>
+          {t('reader.prev')}
+        </button>
+        <span className={css.chapterTitle}>
+          <b>{t('reader.chapterN', { n: String(showing.chapter.n) })}</b> · {showing.chapter.title}
+        </span>
+        <button type="button" className={css.navButton} disabled={seqAt >= chapters.length - 1} onClick={() => { step(1) }}>
+          {t('reader.next')}
+        </button>
+      </div>
+      <div className={css.readNums}>
+        {chapters.map(row => (
+          <button
+            key={row.chapter.n}
+            type="button"
+            className={css.rn}
+            data-on={row.chapter.n === showing.chapter.n || undefined}
+            data-plan={row.phase === 'planning' || undefined}
+            onClick={() => { props.openReaderAt(row.chapter.n) }}
+          >
+            {row.chapter.n}
+          </button>
+        ))}
+      </div>
+      <PhaseLamp
+        t={t}
+        phase={showing.phase}
+        sessionId={sessionId}
+        onApprove={() => {
+          if (sessionId === undefined) return
+          void (async () => {
+            const value = await shell.run(() => props.reviewChapter(sessionId, { workId: focus.workId, n: showing.chapter.n }))
+            if (value === null) return
+            if (!value.ok) {
+              shell.showToast(shell.errorText(value.error))
+              return
+            }
+            props.refresh()
+            void shell.reloadShell()
+            shell.showToast(t('toast.reviewed'))
+          })()
+        }}
+      />
+      {showing.chapter.recap !== undefined && (
+        <div className={css.recap}>
+          <span className={css.recapLabel}>{t('reader.recap')}</span>
+          {showing.chapter.recap}
         </div>
       )}
-      {shell.toast !== null && (
-        <Toast key={shell.toast.seq} text={shell.toast.text} onDone={shell.dismissToast} />
-      )}
-    </div>
+      <ChapterBody
+        t={t}
+        props={props}
+        shell={shell}
+        workId={focus.workId}
+        row={showing}
+        outlines={outlines}
+        workspace={shell.info?.meta.workspace ?? ''}
+        workTitle={focus.title}
+      />
+      <div className={css.readFoot}>
+        <span>{t('reader.footmeta', { n: String(showing.chapter.n), seq: String(showing.chapter.seq) })}</span>
+        {sessionId !== undefined && (showing.phase === 'writing' || showing.phase === 'extracted' || showing.phase === 'reviewed') && props.editorAvailable() && (
+          <button
+            type="button"
+            className={css.openEditor}
+            onClick={() => { props.openInEditor(sessionId, shell.info?.meta.workspace ?? '', focus.title, showing.chapter.file) }}
+          >
+            {t('reader.openEditor')}
+            <IconExternalOutlineMedium size={11} />
+          </button>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -275,42 +244,51 @@ function opTextOf(op: ForeshadowOp): string {
   return `${op.op} ${foreshadowRefOf(`m${num}`)}`
 }
 
-/** The phase lamp with the ✓审过 gate (clickable only before the gate). */
+/**
+ * The phase lamp (规划中→写作中→已抽取→已审过) with the ✓审过 gate: armed
+ * only at 已抽取 (审过是人工闸门，永远最后 — a chapter whose 对账 never ran
+ * cannot close); before that the button sits disabled with the reason.
+ */
 function PhaseLamp({ t, phase, sessionId, onApprove }: {
   t: StoryTabProps['t']
   phase: ChapterRow['phase']
   sessionId: StoryTabProps['sessionId']
   onApprove: () => void
 }): ReactNode {
-  const at = PHASES.indexOf(phase)
+  const at = phase === 'fileMissing' ? -1 : PHASES.indexOf(phase)
   return (
     <div className={css.phaseLamp}>
       {PHASES.map((station, index) => (
         <span key={station} style={{ display: 'inline-flex', alignItems: 'center' }}>
           {index > 0 && <span className={css.phaseLine} />}
-          <span className={css.phase} data-done={index < at || undefined} data-cur={index === at || undefined}>
-            {index < at ? '✓' : '·'} {t(`reader.phase.${station}`)}
+          <span className={css.phase} data-done={at >= 0 && index < at || undefined} data-cur={index === at || undefined}>
+            {at >= 0 && index < at ? '✓' : '·'} {t(`reader.phase.${station}`)}
           </span>
         </span>
       ))}
-      {sessionId !== undefined && (
-        phase === 'reviewed' || phase === 'extracted' ? (
-          <span className={css.approveButton} data-ok="true">{t('reader.approved')}</span>
-        ) : (
-          <button type="button" className={css.approveButton} title={t('reader.approveTitle')} onClick={onApprove}>
-            {t('reader.approve')}
-          </button>
-        )
+      {phase === 'fileMissing' && <span className={css.phase} data-cur="true">⚠ {t('reader.phase.fileMissing')}</span>}
+      {sessionId !== undefined && phase === 'extracted' && (
+        <button type="button" className={css.approveButton} title={t('reader.approveTitle')} onClick={onApprove}>
+          {t('reader.approve')}
+        </button>
+      )}
+      {sessionId !== undefined && phase === 'reviewed' && (
+        <span className={css.approveButton} data-ok="true">{t('reader.approved')}</span>
+      )}
+      {sessionId !== undefined && (phase === 'planning' || phase === 'writing') && (
+        <button type="button" className={css.approveButton} disabled title={t('reader.approveNeedExtract')}>
+          {t('reader.approve')}
+        </button>
       )}
     </div>
   )
 }
 
-/** The chapter body: the outline draft while planning, the manuscript through the content pane after. */
+/** The chapter body: the outline draft while planning, 文件丢失 when the file is gone, the manuscript through the pane after. */
 function ChapterBody({ t, props, shell, workId, row, outlines, workspace, workTitle }: {
   t: StoryTabProps['t']
   props: StoryTabProps
-  shell: ReturnType<typeof useWorkShell>
+  shell: WorkShell
   workId: string
   row: ChapterRow
   outlines: readonly MemoryRecord[]
@@ -320,6 +298,7 @@ function ChapterBody({ t, props, shell, workId, row, outlines, workspace, workTi
   const [body, setBody] = useState<string | undefined>(undefined)
   const rev = props.useStory(current => current.rev)
   const planning = row.phase === 'planning'
+  const missing = row.phase === 'fileMissing'
 
   useEffect(() => {
     if (planning) return
@@ -354,6 +333,19 @@ function ChapterBody({ t, props, shell, workId, row, outlines, workspace, workTi
           <div className={css.outline} style={{ opacity: 0.6 }}>
             <div className={css.outlineTag}>{t('reader.recap')}</div>
             {t('reader.noBody', { n: String(row.chapter.n) })}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (missing) {
+    return (
+      <div className={css.readBody}>
+        <div className={css.measure}>
+          <div className={css.outline}>
+            <div className={css.outlineTag}>{t('reader.phase.fileMissing')}</div>
+            {t('reader.missingHint')}
           </div>
         </div>
       </div>

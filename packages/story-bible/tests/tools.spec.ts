@@ -98,16 +98,16 @@ describe('the story tools', () => {
     expect(pending).toBe('待审队列为空。')
   })
 
-  it('story_extract holds the review gate, then prepares and imports (the two phases)', async () => {
+  it('story_extract holds the extract gate, then prepares and imports (the two phases)', async () => {
     const { extract } = await bench({ focus: true })
-    // Chapter 6 is planning: the gate refuses with guidance, never a crash.
-    expect(await call(extract, { chapter: 6, phase: 'prepare' })).toContain('还没有被用户「审过」')
+    // Chapter 6 is planning with no body: the gate refuses with guidance, never a crash.
+    expect(await call(extract, { chapter: 6, phase: 'prepare' })).toContain('没有什么可对账')
     const unseeded = await call(extract, { chapter: 42, phase: 'prepare' })
     expect(unseeded).toContain('没有第 42 章')
   })
 
-  it('story_extract on a reviewed chapter returns the pack, then files the subagent JSON', async () => {
-    const { extract } = await bench({ focus: true, ch5Phase: 'reviewed' })
+  it('story_extract on a writing chapter returns the pack, then files the subagent JSON', async () => {
+    const { extract } = await bench({ focus: true, ch5Phase: 'planning' })
     const pack = await call(extract, { chapter: 5, phase: 'prepare' })
     expect(pack).toContain('你是长篇小说的记忆对账员。输入是第5章正文')
     expect(pack).toContain('[#12] 门缝里的东西')
@@ -123,6 +123,6 @@ describe('the story tools', () => {
     expect(report).toContain('计划命中 ✓×1')
     expect(report).toContain('计划落空 ×1')
     const again = await call(extract, { chapter: 5, phase: 'import', payload: {} })
-    expect(again).toContain('还没有被用户「审过」')
+    expect(again).toContain('已对过账')
   })
 })

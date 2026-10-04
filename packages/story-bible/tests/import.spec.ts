@@ -15,10 +15,10 @@ import { DREAM, seedDreamKeeper } from './seed-dream.ts'
 
 const SESSION = { id: 's-import' } as unknown as Session
 
-/** A store over the seed, with chapter 5 left reviewed (the user's ✓ gate passed). */
+/** A store over the seed, with chapter 5 in the writing state (对账只对写作中的章开放). */
 function seededStore(): { store: StoryBibleService; fs: FakeFs } {
   const fs = new FakeFs()
-  seedDreamKeeper(fs, { ch5Phase: 'reviewed' })
+  seedDreamKeeper(fs, { ch5Phase: 'planning' })
   const ctx = new Context()
   ctx.provide('fs', fs as never)
   return { store: new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot }), fs }
@@ -137,19 +137,26 @@ describe('story_extract import — the five gates (proposal §5)', () => {
     expect(character?.currentState).toEqual({ where: '档案室门缝前', state: '下定决心', concern: '妹妹的下落' })
   })
 
-  it('the review gate is hard: unreviewed chapters refuse both halves (不满意的正文不进记忆)', async () => {
+  it('the extract gate is hard: only a writing chapter reconciles (审过收章永远最后)', async () => {
     const fs = new FakeFs()
-    seedDreamKeeper(fs) // chapter 5 seeds extracted; chapter 6 is planning
+    seedDreamKeeper(fs) // chapter 5 seeds extracted; chapter 6 is planning with NO body
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
+    // 规划中且无正文：没有什么可对账的。
     const prepared = await store.extractPrepare({ workId: DREAM.workId, n: 6 })
     expect(prepared).toMatchObject({ ok: false, error: 'not-reviewed' })
     const report = await store.extractImport({ workId: DREAM.workId, n: 6, payload: {} }, SESSION)
     expect(report).toMatchObject({ ok: false, error: 'not-reviewed' })
-    // An already-extracted chapter refuses a re-import (no double-filing).
+    // An already-extracted chapter refuses a re-import (no double-filing)…
     const again = await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
     expect(again).toMatchObject({ ok: false, error: 'not-reviewed' })
+    // …and a reviewed (closed) chapter refuses too.
+    fs.seed(`${DREAM.stateRoot}/${DREAM.workId}/chapters.json`, `${JSON.stringify({ version: 1, chapters: [
+      { n: 9, seq: 9, title: '收章的', file: '第9章.md', phase: 'reviewed', sessionIds: [], createdAt: 't', updatedAt: 't' },
+    ] }, null, 2)}\n`)
+    const closed = await store.extractImport({ workId: DREAM.workId, n: 9, payload: PAYLOAD }, SESSION)
+    expect(closed).toMatchObject({ ok: false, error: 'not-reviewed' })
   })
 
   it('decidePending accept materializes through the same doors (new-foreshadow → the ledger)', async () => {

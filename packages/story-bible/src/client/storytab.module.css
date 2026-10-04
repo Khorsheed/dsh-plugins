@@ -1,0 +1,53 @@
+/* 写作 tab：单 tab 内部切换（灵感碎片 / 章节阅读）。 */
+.paneSwitch {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.paneChip {
+  font: var(--dsw-font-xxs-12);
+  padding: 3px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.paneChip:hover {
+  color: var(--dsw-alias-label-primary);
+}
+.paneChip[data-on='true'] {
+  color: var(--dsw-alias-brand-primary);
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-interactive-bg-active);
+}
+.paneBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 会话头 chips（conversation.session.header.utilities，F1-5） */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 50%, transparent);
+  border-radius: 9px;
+  padding: 0 8px;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-state-warn-primary);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.chipPending {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 50%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+}

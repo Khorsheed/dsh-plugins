@@ -32,8 +32,8 @@ export const CHAPTER_5_BODY = `赵启明在档案室待到后半夜。
 
 门缝里飘出一片蓝色的叶子，落在赵启明掌心，微微发烫，像一句还没来得及说出口的回答。`
 
-/** The whole《梦境监护者》store, planted. @param ch5Phase - the review state chapter 5 seeds with. */
-export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 'reviewed' } = {}): void {
+/** The whole《梦境监护者》store, planted. @param ch5Phase - the state chapter 5 seeds with (planning + its manuscript file = the writing state). */
+export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 'reviewed' | 'planning' } = {}): void {
   const dir = join(DREAM.stateRoot, DREAM.workId)
   const stamp = (day: number): string => `2026-10-0${day}T20:00:00.000Z`
 

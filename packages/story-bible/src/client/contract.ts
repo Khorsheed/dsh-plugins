@@ -71,6 +71,8 @@ export interface StoryDataInjected {
   listMentions: (request: { workId: string; foreshadowId?: string }) => Promise<RemoteResult<MentionEntry[]>>
   /** The pending queue. */
   listPending: (request: { workId: string; includeResolved?: boolean }) => Promise<RemoteResult<PendingItem[]>>
+  /** Whether a workspace path exists and is a directory (the create form's fallback-path validation). */
+  statWorkspace: (request: { path: string }) => Promise<RemoteResult<{ ok: boolean; error?: StoryError; exists?: boolean; directory?: boolean }>>
 }
 
 /** The mutation slice: every wrapper touches the shared store on a landed write. */
@@ -116,6 +118,10 @@ export interface StoryDoorInjected {
   openPending: () => void
   /** Jump the 设定集's 「角色记忆 →」 link (fragments tab, characters view, that character). */
   openCharacter: (characterId: string) => void
+  /** Switch the story tab's pane (F1-4: 灵感碎片 / 章节阅读). */
+  setTabView: (view: 'fragments' | 'reader') => void
+  /** The host's directory picker (probed; null = the fallback text input shows). */
+  pickDirectory: (() => Promise<string | null>) | null
   /** Switch the fragments tab's view. */
   setFragmentsView: (view: FragmentsView) => void
   /** Select the 角色记忆 pane's character. */
