@@ -9,7 +9,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { BRIEF_BUDGETS, estimateTokens, renderExtractBrief, renderPlanBrief, renderWriteBrief, type BriefData } from '../src/brief.ts'
-import { StoryBibleService } from '../src/store.ts'
+import { NovelService } from '../src/store.ts'
 import { provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { DREAM, CHAPTER_5_BODY, seedDreamKeeper } from './seed-dream.ts'
@@ -21,7 +21,7 @@ async function seededBrief(chapter?: number): Promise<BriefData> {
   const ctx = new Context()
   ctx.provide('fs', fs as never)
   provideCanvas(ctx)
-  const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
+  const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
   const gathered = await store.gatherBrief({ workId: DREAM.workId, ...(chapter === undefined ? {} : { chapter }) })
   if (!gathered.ok || gathered.data === undefined) throw new Error(`gatherBrief failed: ${gathered.error ?? 'io'}`)
   return gathered.data
@@ -50,10 +50,8 @@ describe('the three brief variants on the《梦境监护者》seed (CP1)', () =>
     expect(text).toContain('## 上一章末段（原文）')
     expect(text).toContain('微微发烫，像一句还没来得及说出口的回答。')
     expect(text).not.toContain(CHAPTER_5_BODY.slice(0, 60))
-    // The ghost draft (未采纳) never leaks into the brief.
+    // The ghost card (未采纳) never leaks into the brief.
     expect(text).not.toContain('梦境有层数')
-    // The adopted outline (✓采纳) is plan material, not write material.
-    expect(text).not.toContain('大纲草案')
   })
 
   it('renders the plan brief with the whole live ledger and resolved answers', async () => {
@@ -65,8 +63,7 @@ describe('the three brief variants on the《梦境监护者》seed (CP1)', () =>
     // Sleeping rows show 已 n 章未动 with the ⚠ at 3+; resolved rows carry their answers.
     expect(text).toContain('[#18] 失踪的前任监护者是谁（埋于第1章 · 已 5 章未动 ⚠ · 势 5）')
     expect(text).toContain('[已揭 #9] 钟楼为什么没有影子 → 钟楼立在两层梦之间，影子落在了下一层。')
-    // The adopted outline draft joins the plan; the roster is one line each.
-    expect(text).toContain('第6–8章：门后空间三层递进')
+    // The roster is one line each.
     expect(text).toContain('- 赵启明：梦境监护者新人')
     expect(text).toContain('- 艾文：活了三百年的梦引者')
     // No character blocks and no previous tail here (proposal §4.2).

@@ -5,7 +5,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import { chapterFileName, chapterNumberOfFile, foreshadowIdOf, foreshadowRefOf, normalizeMemory } from './types.ts'
+import { chapterFileName, chapterNumberOfFile, normalizeAnnotations, parseRef, refOf } from './types.ts'
 
 const PACKAGE_NAME = '@khorsheed/dsh-canvas-novel'
 
@@ -17,9 +17,9 @@ export const inject = ['invariants']
 /**
  * Capability probe: the store's naming and id vocabulary must round-trip.
  * The chapter file name is the one naming rule every surface agrees on (the
- * index, the reader, the extract pack); the foreshadow ref spellings are
- * what the plan ops and the import whitelist share; and `normalizeMemory`
- * is the read gate every document passes. All three are checkable without
+ * index, the reader, the extract pack); the ref spellings are what the
+ * plan ops, the tools and the import whitelist share; and
+ * `normalizeAnnotations` is the read gate the sidecar passes. All three are checkable without
  * touching a filesystem, a workspace, or a session, so the probe can never
  * report a healthy deployment as broken.
  * @param _ctx - host context (unused; the probe is pure vocabulary).
@@ -32,18 +32,24 @@ export const install: InvariantInstaller = async (_ctx, fail) => {
       return
     }
   }
-  for (const spelling of ['m12', '#12', '12']) {
-    if (foreshadowIdOf(spelling) !== 'm12' || foreshadowRefOf('m12') !== '#12') {
-      fail(`canvas-novel: foreshadow ref ${spelling} does not normalize to m12 / #12`)
+  for (const spelling of ['#12', '12', 'w12']) {
+    const ref = parseRef(spelling)
+    if (ref?.group !== 'entry' || ref.n !== 12 || refOf('foreshadow', ref.n) !== '#12') {
+      fail(`canvas-novel: entry ref ${spelling} does not resolve to number 12`)
       return
     }
   }
-  if (normalizeMemory({ id: 'm1', layer: 'canon', content: '探针' }) === undefined) {
-    fail('canvas-novel: a minimal valid memory record fails the read gate')
+  const character = parseRef('c3')
+  if (character?.group !== 'character' || refOf('character', character.n) !== 'c3') {
+    fail('canvas-novel: character ref c3 does not round-trip')
     return
   }
-  if (normalizeMemory({ id: 'm1', layer: 'canon' }) !== undefined) {
-    fail('canvas-novel: a memory record without content passes the read gate')
+  if (normalizeAnnotations({ refs: {}, notes: {} }) === undefined) {
+    fail('canvas-novel: an empty sidecar fails the read gate')
+    return
+  }
+  if (normalizeAnnotations({}) !== undefined) {
+    fail('canvas-novel: a document without refs/notes passes the sidecar read gate')
     return
   }
 }

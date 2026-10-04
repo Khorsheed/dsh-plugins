@@ -17,32 +17,31 @@
  *
  * @module @khorsheed/dsh-canvas-novel
  */
-import {
-  canonRefOf, foreshadowRefOf, memoryNumberOf,
-  type ChapterRecord, type CharacterRecord, type ExperienceEntry, type ForeshadowOp, type MemoryRecord,
-} from './types.ts'
+import type { ChapterRecord, CharacterView, ExperienceEntry, ForeshadowOp, ForeshadowView, RuleView } from './types.ts'
 
-/** Everything one brief renders (assembled by the store's `gatherBrief`). */
+/** Everything one brief renders (assembled by the store's `gatherBrief`; kept cards only). */
 export interface BriefData {
   readonly workTitle: string
   /** The chapter being planned / written / reconciled. */
   readonly target: ChapterRecord
-  /** canon + active + reviewed, minus foreshadows and principles — the 硬约束. */
-  readonly canonRules: readonly MemoryRecord[]
-  /** canon + kind 原则 — the 创作原则. */
-  readonly principles: readonly MemoryRecord[]
-  /** The live ledger (planted/advanced/hinted), longest-slept first. */
-  readonly activeForeshadows: readonly MemoryRecord[]
+  /** 世界 cards — the 硬约束. */
+  readonly canonRules: readonly RuleView[]
+  /** 原则 cards — the 创作原则. */
+  readonly principles: readonly RuleView[]
+  /** The live ledger (已埋/推进中), longest-slept first. */
+  readonly activeForeshadows: readonly ForeshadowView[]
+  /** 未埋 foreshadows — questions the user set up but the text has not planted yet. */
+  readonly unplantedForeshadows: readonly ForeshadowView[]
   /** Resolved foreshadows, answers attached (the plan variant prints them). */
-  readonly resolvedForeshadows: readonly MemoryRecord[]
-  /** Adopted outline drafts (intent + active + kind 章节, from the inspiration wall). */
-  readonly outlineItems: readonly MemoryRecord[]
+  readonly resolvedForeshadows: readonly ForeshadowView[]
+  /** Every foreshadow card, any status (the plan line's op lookup). */
+  readonly allForeshadows: readonly ForeshadowView[]
   /** The newest chapter number — the sleeping baseline. */
   readonly currentChapter: number
   /** The in-scene characters with their last ≤3 experience entries. */
-  readonly inScene: readonly { readonly character: CharacterRecord; readonly recent: readonly ExperienceEntry[] }[]
-  /** Every active character (the plan roster and the extract roster). */
-  readonly roster: readonly CharacterRecord[]
+  readonly inScene: readonly { readonly character: CharacterView; readonly recent: readonly ExperienceEntry[] }[]
+  /** Every kept character (the plan roster and the extract roster). */
+  readonly roster: readonly CharacterView[]
   /** Earlier chapters carrying a recap, seq-ordered. */
   readonly previousRecaps: readonly ChapterRecord[]
   /** The previous chapter's last ~200 characters (write variant only). */
@@ -76,72 +75,68 @@ const WRITE_TIGHT: RenderLimits = { foreshadowTopK: 5, recapMax: 4, expPerChar: 
 const PLAN_LIMITS: RenderLimits = { foreshadowTopK: 20, recapMax: 5, expPerChar: 0 }
 const PLAN_TIGHT: RenderLimits = { foreshadowTopK: 10, recapMax: 3, expPerChar: 0 }
 
-/** Chapters a foreshadow has slept (against the newest chapter). */
-function sleptOf(memory: MemoryRecord, currentChapter: number): number {
-  return currentChapter - (memory.lastActiveChapter ?? memory.specifics?.plantedAt ?? currentChapter)
-}
-
 /** The write-variant ledger line: `- [#12] 门缝里的东西（埋于第1章 · 最后活跃第3章 · 势4）`. */
-function foreshadowLineWrite(memory: MemoryRecord): string {
-  const specifics = memory.specifics
-  const planted = specifics?.plantedAt ?? memory.firstChapter
-  const last = memory.lastActiveChapter ?? planted
-  const tension = specifics?.tension
+function foreshadowLineWrite(view: ForeshadowView): string {
+  const last = view.lastActiveChapter ?? view.plantedAt
   const parts = [
-    planted === undefined ? '' : `埋于第${planted}章`,
+    view.plantedAt === undefined ? '' : `埋于第${view.plantedAt}章`,
     last === undefined ? '' : `最后活跃第${last}章`,
-    tension === undefined ? '' : `势${tension}`,
+    view.tension === undefined ? '' : `势${view.tension}`,
   ].filter(part => part !== '')
-  return `- [${foreshadowRefOf(memory.id)}] ${specifics?.question ?? memory.content}（${parts.join(' · ')}）`
+  return `- [${view.ref}] ${view.question}${parts.length === 0 ? '' : `（${parts.join(' · ')}）`}`
 }
 
 /** The plan-variant ledger line: `- [#12] 门缝里的东西（埋于第1章 · 已 3 章未动 ⚠ / 势 4）`. */
-function foreshadowLinePlan(memory: MemoryRecord, currentChapter: number): string {
-  const specifics = memory.specifics
-  const planted = specifics?.plantedAt ?? memory.firstChapter
-  const slept = sleptOf(memory, currentChapter)
-  const tension = specifics?.tension
-  const sleeping = slept <= 0 ? '本章刚动过' : `已 ${slept} 章未动${slept >= 3 ? ' ⚠' : ''}`
+function foreshadowLinePlan(view: ForeshadowView): string {
+  const slept = view.slept
+  const sleeping = slept === undefined ? '' : slept <= 0 ? '本章刚动过' : `已 ${slept} 章未动${slept >= 3 ? ' ⚠' : ''}`
   const parts = [
-    planted === undefined ? '' : `埋于第${planted}章`,
+    view.plantedAt === undefined ? '' : `埋于第${view.plantedAt}章`,
     sleeping,
-    tension === undefined ? '' : `势 ${tension}`,
+    view.tension === undefined ? '' : `势 ${view.tension}`,
   ].filter(part => part !== '')
-  return `- [${foreshadowRefOf(memory.id)}] ${specifics?.question ?? memory.content}（${parts.join(' · ')}）`
+  return `- [${view.ref}] ${view.question}${parts.length === 0 ? '' : `（${parts.join(' · ')}）`}`
 }
 
 /** One planned op as the plan line reads it: `推进 [#12 门缝里的东西]` / `新埋 [蓝色叶子指向谁]`. */
-function foreshadowOpText(op: ForeshadowOp, foreshadows: readonly MemoryRecord[]): string {
-  if (op.op === '新埋' || op.id === undefined) return `${op.op} [${op.question ?? ''}]`
-  const num = memoryNumberOf(op.id.startsWith('m') ? op.id : `m${op.id.replace(/^#/, '')}`)
-  const question = foreshadows.find(memory => memory.id === `m${num}`)?.specifics?.question ?? ''
-  return `${op.op} [#${num}${question === '' ? '' : ` ${question}`}]`
+function foreshadowOpText(op: ForeshadowOp, foreshadows: readonly ForeshadowView[]): string {
+  if (op.op === '新埋' || op.id === undefined) return `${op.op} [${op.question ?? op.id ?? ''}]`
+  const view = foreshadows.find(candidate => candidate.cardId === op.id || candidate.ref === op.id)
+  return view === undefined ? `${op.op} [${op.id}]` : `${op.op} [${view.ref} ${view.question}]`
 }
 
 /** The 本章计划 block (write variant, and the extract pack's 【本章计划】). */
-function planLines(target: ChapterRecord, foreshadows: readonly MemoryRecord[]): string[] {
+function planLines(target: ChapterRecord, foreshadows: readonly ForeshadowView[], roster: readonly CharacterView[]): string[] {
   const plan = target.plan
-  if (plan === undefined) return ['（本章还没有计划——先 story_write(chapter) 写 plan，用户确认前不开写。）']
+  if (plan === undefined) return ['（本章还没有计划——先 novel_write(chapter) 写 plan，用户确认前不开写。）']
   const lines = [`POV：${plan.pov ?? '未定'}　目标：${plan.goal}`]
   if (plan.foreshadowOps.length > 0) {
     lines.push(`伏笔操作：${plan.foreshadowOps.map(op => foreshadowOpText(op, foreshadows)).join(' / ')}`)
   }
-  if (plan.characters.length > 0) lines.push(`出场角色：${plan.characters.join('、')}`)
+  if (plan.characters.length > 0) {
+    const nameOf = (token: string): string => roster.find(view => view.cardId === token)?.name ?? token
+    lines.push(`出场角色：${plan.characters.map(nameOf).join('、')}`)
+  }
   if (plan.hook !== undefined) lines.push(`章末钩子：${plan.hook}`)
   return lines
 }
 
+/** A character's one-line identity suffix: `（identity）`, or nothing. */
+function identityOf(character: CharacterView): string {
+  return character.identity === undefined ? '' : `（${character.identity}）`
+}
+
 /** The in-scene character block (~100字/人, CP0 §2.A 在场角色). */
-function characterBlock(entry: { readonly character: CharacterRecord; readonly recent: readonly ExperienceEntry[] }, expPerChar: number): string[] {
+function characterBlock(entry: { readonly character: CharacterView; readonly recent: readonly ExperienceEntry[] }, expPerChar: number): string[] {
   const { character, recent } = entry
-  const lines = [`### ${character.name}（${character.identity}）`]
-  const current = character.currentState
+  const lines = [`### ${character.name}${identityOf(character)}`]
+  const current = character.currentState ?? {}
   lines.push(`此刻：${current.where ?? '未定'} / ${current.state ?? '未定'} / 牵挂：${current.concern ?? '无'}`)
   if (recent.length > 0 && expPerChar > 0) {
     lines.push(`近来：${recent.slice(-expPerChar).map(row => `第${row.chapter}章 ${row.entry}`).join('；')}`)
   }
   const join = (items: readonly string[]): string => items.length === 0 ? '—' : items.join('、')
-  lines.push(`知道 ${join(character.knowledge.knows)}；不知道 ${join(character.knowledge.unaware)}；秘密 ${join(character.knowledge.secrets)}`)
+  lines.push(`知道 ${join(character.knows)}；不知道 ${join(character.unaware)}；秘密 ${join(character.secrets)}`)
   lines.push('（非 POV 角色只写可观察的外在言行。）')
   return lines
 }
@@ -152,7 +147,7 @@ function omissionNote(omittedForeshadows: number, omittedRecaps: number): string
     omittedForeshadows > 0 ? `${omittedForeshadows} 条活跃伏笔` : '',
     omittedRecaps > 0 ? `${omittedRecaps} 章摘要` : '',
   ].filter(part => part !== '')
-  return parts.length === 0 ? [] : ['', `（预算从略：${parts.join('、')}未列入，story_read 可取。）`]
+  return parts.length === 0 ? [] : ['', `（预算从略：${parts.join('、')}未列入，novel_read 可取。）`]
 }
 
 /**
@@ -160,7 +155,7 @@ function omissionNote(omittedForeshadows: number, omittedRecaps: number): string
  * principles, this chapter's plan, the active ledger topK, the in-scene
  * character blocks, earlier recaps, the previous chapter's tail. The
  * previous chapter's FULL TEXT is never injected — the model asks
- * story_read(chapter) when it needs it.
+ * novel_read(chapter) when it needs it.
  * @param data - the gathered render data.
  * @returns the rendered brief, within the write budget (tight caps + 从略 note when overshooting).
  */
@@ -177,20 +172,20 @@ function renderWriteWithin(data: BriefData, limits: RenderLimits, budget: number
     `# 《${data.workTitle}》写作约束 · 第${data.target.n}章 ${data.target.title}`,
     '',
     '## 硬约束（违反即返工）',
-    ...(data.canonRules.length === 0 ? ['（还没有固化约束。）'] : data.canonRules.map(memory => `- [${canonRefOf(memory.id)}] ${memory.content}`)),
+    ...(data.canonRules.length === 0 ? ['（还没有固化约束。）'] : data.canonRules.map(rule => `- [${rule.ref}] ${rule.text}`)),
     '',
     '## 创作原则',
-    ...(data.principles.length === 0 ? ['（还没有创作原则。）'] : data.principles.map(memory => `- ${memory.content}`)),
+    ...(data.principles.length === 0 ? ['（还没有创作原则。）'] : data.principles.map(rule => `- ${rule.text}`)),
     '',
     '## 本章计划',
-    ...planLines(data.target, data.activeForeshadows),
+    ...planLines(data.target, data.allForeshadows, data.roster),
     '',
     '## 伏笔台账（活跃）',
     ...(foreshadows.length === 0 ? ['（台账为空。）'] : foreshadows.map(foreshadowLineWrite)),
     '',
     '## 在场角色',
     ...(data.inScene.length === 0
-      ? ['（本章未登记出场角色——plan.characters 填角色 id 或名字。）']
+      ? ['（本章未登记出场角色——plan.characters 填角色 ref 或名字。）']
       : data.inScene.flatMap(entry => [...characterBlock(entry, limits.expPerChar), '']).slice(0, -1)),
     '',
     '## 此前脉络（摘要）',
@@ -212,7 +207,7 @@ function renderWriteWithin(data: BriefData, limits: RenderLimits, budget: number
  * The plan variant (`for=plan`, CP0 §2.B): hard constraints, the WHOLE live
  * ledger (active + sleeping — capped by budget with a 从略 note), resolved
  * foreshadows WITH their answers (planning must not contradict a reveal),
- * adopted outline drafts, recent recaps, the one-line roster. No character
+ * the 待埋 questions, recent recaps, the one-line roster. No character
  * blocks, no previous tail (proposal §4.2).
  * @param data - the gathered render data.
  * @returns the rendered brief, within the plan budget.
@@ -230,19 +225,18 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
     `# 《${data.workTitle}》第${data.target.n}章规划参考`,
     '',
     '## 硬约束',
-    ...(data.canonRules.length === 0 ? ['（还没有固化约束。）'] : data.canonRules.map(memory => `- [${canonRefOf(memory.id)}] ${memory.content}`)),
+    ...(data.canonRules.length === 0 ? ['（还没有固化约束。）'] : data.canonRules.map(rule => `- [${rule.ref}] ${rule.text}`)),
     '',
     '## 伏笔台账（全部活跃+沉睡；已揭带答案）',
     ...(foreshadows.length === 0 && data.resolvedForeshadows.length === 0
       ? ['（台账为空。）']
       : [
-          ...foreshadows.map(memory => foreshadowLinePlan(memory, data.currentChapter)),
-          ...data.resolvedForeshadows.map(memory =>
-            `- [已揭 ${foreshadowRefOf(memory.id)}] ${memory.specifics?.question ?? memory.content} → ${memory.specifics?.answer ?? '（未登记答案）'}`),
+          ...foreshadows.map(foreshadowLinePlan),
+          ...data.resolvedForeshadows.map(view => `- [已揭 ${view.ref}] ${view.question} → ${view.answer ?? '（未登记答案）'}`),
         ]),
   ]
-  if (data.outlineItems.length > 0) {
-    lines.push('', '## 大纲草案（若有，来自灵感墙采纳）', ...data.outlineItems.map(memory => `- ${memory.content}`))
+  if (data.unplantedForeshadows.length > 0) {
+    lines.push('', '## 待埋（立了还没写进正文的悬念）', ...data.unplantedForeshadows.map(view => `- [${view.ref}] ${view.question}`))
   }
   lines.push(
     '',
@@ -250,7 +244,7 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
     ...(recaps.length === 0 ? ['（还没有已摘要的章节。）'] : recaps.map(chapter => `- 第${chapter.n}章 ${chapter.recap ?? ''}`)),
     '',
     '## 可用角色（一句身份）',
-    ...(data.roster.length === 0 ? ['（还没有角色卡。）'] : data.roster.map(character => `- ${character.name}：${character.identity}`)),
+    ...(data.roster.length === 0 ? ['（还没有角色卡。）'] : data.roster.map(character => `- ${character.name}：${character.identity ?? '—'}`)),
   )
   lines.push(...omissionNote(
     data.activeForeshadows.length - foreshadows.length,
@@ -263,8 +257,8 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
 
 /** The extract pack's output schema (the subagent's strict JSON contract; the import gate reads these keys). */
 export const EXTRACT_OUTPUT_SCHEMA = `{
-  "memories": [{ "type": "semantic|episodic|source|emotional|procedural|implicit", "owner": "creator 或角色 id", "content": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
-  "foreshadow_mentions": [{ "foreshadow_id": "#12 或 m12", "kind": "planted|advanced|hinted|resolved", "answer": "仅 resolved 给", "note": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
+  "memories": [{ "kind": "世界|原则", "content": "一条能复述的设定或写作原则", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
+  "foreshadow_mentions": [{ "foreshadow_id": "#12", "kind": "planted|advanced|hinted|resolved", "answer": "仅 resolved 给", "note": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "new_foreshadows": [{ "question": "…", "tension": 1到5, "evidence_in_text": "≤50字原文" }],
   "new_characters": [{ "name": "…", "identity": "一句身份", "evidence_in_text": "≤50字原文" }],
   "experiences": [{ "character_id": "c1", "entry": "本章做了什么、状态怎么变，1-2句", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
@@ -301,13 +295,15 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     body.trim() === '' ? '（正文为空——没有什么可对账的。）' : body,
     '',
     '【本章计划】',
-    ...planLines(data.target, data.activeForeshadows),
+    ...planLines(data.target, data.allForeshadows, data.roster),
     '',
     '【活跃伏笔榜】',
-    ...(data.activeForeshadows.length === 0 ? ['（台账为空。）'] : data.activeForeshadows.map(foreshadowLineWrite)),
+    ...(data.activeForeshadows.length + data.unplantedForeshadows.length === 0
+      ? ['（台账为空。）']
+      : [...data.activeForeshadows, ...data.unplantedForeshadows].map(foreshadowLineWrite)),
     '',
     '【角色花名册】',
-    ...(data.roster.length === 0 ? ['（还没有角色卡。）'] : data.roster.map(character => `- [${character.id}] ${character.name}（${character.identity}）`)),
+    ...(data.roster.length === 0 ? ['（还没有角色卡。）'] : data.roster.map(character => `- [${character.ref}] ${character.name}${identityOf(character)}`)),
     '',
     '【输出 schema】',
     EXTRACT_OUTPUT_SCHEMA,

@@ -1,8 +1,8 @@
 # canvas-novel bundle patch: inserts the plugin rows into the composing
 # profile, so `dsh plugin --profile <name> add @khorsheed/dsh-canvas-novel`
 # reconciles it into the bundles layer. The first row is a bare mount — the
-# host half provides the `storyBible` service (the novel engine's state
-# under $DSH_HOME/state/story). The genre has no browser half of its own:
+# host half provides the `canvasNovel` service (the novel engine's state
+# under $DSH_HOME/state/novel). The genre has no browser half of its own:
 # its surfaces render inside the canvas.
 #
 # NOTE: a composition must mount this row id exactly once. Official images
@@ -11,8 +11,8 @@
 # NOT also add it — a duplicate loader entry id fails boot.
 #
 # The second row ships DISABLED at the profile root BY DESIGN: the agent
-# surface (story_read / story_write / story_extract, the story:pointer
-# prompt section, the `story` skill) belongs to the writing scene, not to
+# surface (novel_read / novel_write / novel_extract, the novel:pointer
+# prompt section, the `novel` skill) belongs to the writing scene, not to
 # every session — a profile-root mount would put three novel-writing tools
 # in every conversation's tool list (the tool-list pollution the preset
 # boundary exists to prevent). The ONLY supported grants:

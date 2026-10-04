@@ -1,58 +1,111 @@
-# story-bible (long-form novel writing · memory core)
+# canvas-novel (the canvas's 长篇小说 / long-novel genre)
 
-Turns dsh into a workbench for serialized long-form fiction: one work spans dozens of sessions and a hundred chapters, and the model must remember the canon, know where the last chapter ended, never let a foreshadow die, and never write a character wrong. This package is the work-level memory system that does those four things — the four things full-text injection cannot (proposal: `proposals/active/2026-10-04-story-bible.md` in this repo, deliberately gitignored).
+Turns dsh into a workbench for serialized long-form fiction. One work spans dozens of sessions and a hundred chapters, and the model has to do four things: remember the canon, know where the last chapter ended, never let a foreshadow die, and never write a character wrong. Full-text injection cannot do these; this package can.
 
-**Current version (M1+M3)**: the memory core, the injection surface, the two right-Sidebar page tabs (fragments' five views / chapter reader), and the keyed tool rows. The subagent-delegated reconciliation loop (M2) and the ledger meeting / archaeology layer (M4) come later.
+**A work is a canvas whose genre is 长篇小说**. The cards on that canvas are the single source of truth for the settings, organized in four categories: 人物 (characters), 世界 (world), 原则 (principles) and 伏笔 (foreshadows). This package registers the genre with the canvas and provides the work-memory engine: refs, reconciliation, the ledger and the briefs. It has no browser half of its own; its whole UI lives inside the canvas.
+
+It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_HOME/state/story/` is **not migrated**.
 
 ## What it provides
 
-- **Work registry + per-work memory store** (`ctx.storyBible`): `index.json` and one directory per work under `$DSH_HOME/state/story/` (`work.json` / `memories.json` / `characters.json` / `experiences.jsonl` / `mentions.jsonl` / `chapters.json` / `pending.json`). The single source of truth for manuscripts is `<workspace>/<title>/第{n}章.md` in the mounted workspace; the state directory holds derivatives only.
-- **Remote service `story`**: the UI data face (listWorks / createWork / readWork / listMemories / listCharacters / listExperiences / listChapters / readChapter / ledger / listPending / listMentions / focusWork / getFocus / reviewChapter / confirmChapterPlan / writeMemory / writeCharacter / decideMemory / decidePending / patchMemory / foreshadowExit / retractExperience / extractImport).
-- **ONE right-Sidebar 写作 tab (F1-4)**: an internal switcher between fragments (the five views + the pinned review queue) and the reader (plan card with ✓ confirm / numbered grid / phase lamp / the manuscript through the shared content pane / outline-draft view for planning chapters); the shared work strip (dropdown = focusWork, live counts, the create form — defaulting to the session's own workspace, with a browse door and a cross-workspace note); resident session-header gate chips (plan unconfirmed / pending count — preset-criterion gated, fail-open). The conversation timeline keeps the HOST's generic tool rows — every actionable door lives in the sidebar and the header chips; the skill carries a quieting rule (filing/registration results are not re-narrated). The two M3 kinds (story-fragments / story-reader) are retired: an old open tab renders the host's tab.unavailable fallback — close and reopen.
-- **Three model tools** (registered by the `./agent` composition entry, origin-tagged): `story_read` (brief in three variants / memories / character / chapters / ledger / pending / chapter), `story_write` (work / memory ghost cards / character / chapter with auto numbering / review), `story_extract` (prepare material pack / import with five validation gates).
-- **The focus pointer function section** (`story:pointer`, order 9500): driven by the per-session focus map — one guidance line with a focus, an empty string without; idle chat costs nothing.
-- **The `story` skill**: one standing operating manual, loaded on demand, carrying no work content.
+- **Genre registration** (joined through deferred injection on `ctx.canvasBoard`; no canvas, no genre):
+  - A canvas created as, or switched to, 长篇小说 is seeded with the four categories.
+  - Each category carries its card field definitions. For example, a character has name, identity, want, lack and wound; a foreshadow has question, status, planted-at and answer.
+- **Engine service `ctx.canvasNovel`**: the engine's own state lives in `$DSH_HOME/state/novel/<canvas id>/`, in five files:
 
-## Key designs
+  | File | Contents |
+  |---|---|
+  | `annotations.json` | The cards' display refs and engine notes: tension, current state, confidence, the auto-import mark |
+  | `experiences.jsonl` | The character experience journal, keyed by character card id |
+  | `mentions.jsonl` | The foreshadow mention journal, keyed by foreshadow card id |
+  | `chapters.json` | The chapter index and plans |
+  | `pending.json` | The pending review queue |
 
-- **Focus scope**: a process-lifetime `{sessionId → workId}` map owned by the story service. Every tool and the pointer resolve through it; a session with no focus gets zero injection, and the tools answer guidance instead of errors.
-- **Approval closes the chapter, always last**: write → reconcile (the five gates filter: evidence anti-fabrication / the ledger whitelist / new_* always pending / confidence splitting / missed-plan asks a person) → settle the queue → ✓审过. Unhappy with the text? Rewrite it; don't reconcile.
-- **Validation lives in plugin code**: the five import gates — evidence grep (anti-fabrication), the foreshadow-id whitelist, new_* always pending, high lands automatically (retractable) while medium/low pends, and missed plan ops pend separately. Delegating the judging to the host-native subagent is the main agent's job; the plugin never delegates.
-- **Briefs carry token budgets**: write ~2k / plan ~2.5k / extract rides the chapter body; no variant ever injects all previous chapters or the whole foreshadow history.
+  The single source of truth for manuscripts is `<workspace>/<canvas title>/第{n}章.md` in the canvas's mounted workspace.
+- **Three model tools**, registered by the `./agent` composition entry and origin-tagged:
+  - `novel_read`: the brief in three variants, cards, card, chapters, ledger, pending, chapter;
+  - `novel_write`: card proposes a ghost card or edits a card by ref, chapter numbers automatically, review accepts, discards, archives or retracts;
+  - `novel_extract`: prepare builds the material pack, import files the result through five validation gates.
+- **The `novel:pointer` function section** (order 9500): renders one line when the session is bound to a long-novel canvas, and an empty string otherwise, so small talk costs nothing.
+- **The `novel` skill**: an on-demand operating manual that carries no work content.
+
+## Key design
+
+- **The session binding decides scope**: the canvas chip in the session header binds a session to a canvas.
+  - Only sessions bound to a long-novel canvas get the three tools; they are granted and revoked on the session's own scope.
+  - Unbinding, or changing the canvas's genre, revokes them at once.
+  - In an unbound session the tools are absent, not denied.
+- **The cards are the single source of truth**:
+  - Every setting the model creates is a **ghost card** (the canvas's proposed status). It stays out of the brief until the user accepts it with ✓; ✗ discards it into the archive.
+  - Cards are never deleted; an archived card stays on the canvas, hidden.
+  - An edit merges fields into the card in place instead of starting a new one.
+- **Refs**:
+  - Characters use `c<n>`.
+  - World and principle cards use `w<n>`, and foreshadows use `#<n>`. These three share one number space, so `w19` and `#19` never coexist.
+  - A new card takes the max of its space plus one. Tools, plans and reconciliation can name a card by ref, card id, or (for characters) name.
+- **Review closes a chapter, always last**:
+  - A chapter goes: written → reconciled → pending items handled → the user's 「✓ 审过」 closes it.
+  - If the manuscript is not right yet, fix it first; do not reconcile it.
+  - All five reconciliation gates live in plugin code:
+    1. an evidence search of the manuscript, against fabrication;
+    2. the foreshadow whitelist;
+    3. new settings, foreshadows and characters always land as ghost cards;
+    4. high confidence imports automatically and can be retracted, while medium and low confidence go to the pending queue;
+    5. missed plans go to the pending queue on their own.
+  - Delegating the grading to the host's native subagent is the main agent's job; the plugin itself never delegates.
+- **Briefs have token budgets**: about 2k for write, about 2.5k for plan, and extract scales with the manuscript. No variant injects every previous chapter or every foreshadow.
 
 ## Install
 
 ```sh
-dsh plugin add @khorsheed/dsh-story-bible
+dsh plugin add @khorsheed/dsh-canvas-novel
 ```
 
-The patch mounts two rows: `story-bible` (core: store + Remote — **global**: every session can see and edit the works) and `story-bible-agent` (the tools, pointer and skill — **shipped DISABLED at the profile root**). The agent surface belongs to the writing scene, not to every conversation — a root mount would put three novel-writing tools in every session's tool list.
+This package needs the canvas (`@khorsheed/dsh-canvas`) installed alongside it. Without the canvas there are no works: every engine verb answers `missing`, and nothing throws.
 
-**The one correct way to enable it — a preset grant:**
+The patch mounts two rows:
+
+| Row | Contents | As shipped |
+|---|---|---|
+| `canvas-novel` | The core: genre plus engine | Available everywhere |
+| `canvas-novel-agent` | The three tools, the pointer and the skill | **Disabled** at the profile root |
+
+The agent surface belongs to the writing scene, not to every session.
+
+**The only supported way to enable the agent surface is a preset grant**:
 
 ```sh
 dsh plugin add @khorsheed/dsh-bundle-writing
 ```
 
-Its `preset-writing` declaration mounts the same entry (`@khorsheed/dsh-story-bible/agent`) inside the writing preset's scope: sessions switched to the 写作 preset get the three tools, the pointer and the story skill, and every other session sees no story trace. Your own preset works the same way — name `"@khorsheed/dsh-story-bible/agent"` in its `agent.cordis.yml` (exactly how `@khorsheed/dsh-presets`' preset-dsh-writing grants `@khorsheed/dsh-canvas/agent`).
+Its `preset-writing` mounts `@khorsheed/dsh-canvas-novel/agent` inside the writing preset's scope. A preset of your own works the same way: add a line `name: "@khorsheed/dsh-canvas-novel/agent"` to that preset's `agent.cordis.yml`.
 
-Enabling the root row by hand (removing `disabled: true`) restores the every-session behavior — do that ONLY when no preset grants the entry: live at both levels the tools register twice and the boot fails (the canvas cordis.patch.yml documents the same rule).
+Enabling the root row by hand (removing `disabled: true`) makes it apply to every session. **Do that only when no preset grants the entry**: with both live, the same names register twice and the boot fails.
 
 ## Quick start
 
-1. The work strip atop either tab (「灵感碎片」/「章节阅读」): ＋ creates a work (title + a mounted workspace), the dropdown focuses one — the session's focus follows.
-2. Talk setting → ghost cards land on the wall; ✓ routes them by kind (File → moves them into the sets).
-3. Plan → the plan card pins atop the reader; ✓ Confirm plan, then write; the manuscript lands through `story_write(chapter, content=…)` under the session's fence (a write the fence refuses refuses the registration — no empty-slot chapters, ever).
-4. Reconcile after writing (`story_extract(prepare)` → delegate to a subagent → `story_extract(import)`), settle the queue, then 「✓ 审过本章」 closes the chapter — approval is the human gate, always last (the lamp: planning → writing → extracted → reviewed).
-5. Switching works is the dropdown (focus, tools and the pointer follow). The same loop is drivable through the tools alone (story_write(work) focuses/creates).
+1. Create a canvas with the 长篇小说 genre and mount a workspace on it. Bind the session to it with the canvas chip in the session header.
+2. Talk through the settings. The model files them as ghost cards, and you accept them with ✓ or discard them with ✗ on the canvas.
+3. Plan. `novel_write(what=chapter, plan=…)` registers the plan; once confirmed, start writing.
+   - The manuscript lands in the canvas workspace through the session's fence.
+   - If it cannot land, the registration is refused, so an empty-slot chapter never appears.
+4. Reconcile once the chapter is written: run `novel_extract(prepare)`, delegate to a subagent, then run `novel_extract(import)`.
+   - Handle the pending items, then close the chapter with 「✓ 审过」.
+   - The phase lamp runs: planning → writing → extracted → reviewed.
+
+**UI status**: card faces, card sections, the board strip and the session-header binding chip ride the canvas's genre seams. The chapter reader, the foreshadow ledger page and the pending strip have no UI yet; use the tools for that part for now.
 
 ## Compatibility
 
 | Host line | Verdict |
 |---|---|
-| npm release 0.2.0-rc.2 | ✅ development baseline (verifiedHost): full build+test ran on this line |
-| deepseek-harness master | tracked; function prompt sections, Typert Remotes, the ctx.fs version guard and the page-type right-Sidebar tab seats are long-standing seams |
+| npm release 0.2.0-rc.2 | ✅ Development baseline (verifiedHost): the full build and test run on this line |
+| deepseek-harness master | Verified as it moves. Function prompt sections, the ctx.fs version guard and per-scope tool registration are long-term seams |
 
-Machine-readable labeling lives in package.json `dsh.compat` (minHost `0.2.0-rc.2`): state writes go through the mounted ctx.fs with the boundary re-rooted at the plugin's own state dir (a read-only deployment still denies); the focus map is process-lifetime — a restart means "nothing focused", which the pointer, the tools and the work strip answer honestly; a headless profile has no browser consumer and the agent row (tools/pointer/skill) works as before.
+The machine-readable label is `dsh.compat` in package.json (minHost `0.2.0-rc.2`):
 
-中文: [README.md](README.md)
+- State writes go through the ctx.fs fence, re-rooted at the plugin's own state directory; a read-only deployment still refuses them.
+- Chapter manuscripts land in the canvas workspace under the session's sandbox mode.
+- A headless profile has no browser, and the agent row works as usual.
+
+中文：[README.md](README.md)

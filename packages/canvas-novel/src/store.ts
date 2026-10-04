@@ -1,20 +1,27 @@
 /**
- * The canvas-novel's service core (`ctx.storyBible`): the work registry plus
- * every per-work document under `$DSH_HOME/state/story/`. The state root is
- * deployment-level state, NOT a session workspace, and the fence reflects
- * that — the canvas store's exact pattern: the CALLING session resolves the
- * MODE (a read-only deployment stays read-only) and lends its id to the
- * write, while the writable boundary re-roots at the plugin's own state dir.
- * Every document write goes through the mounted `ctx.fs` under a version
- * guard (read → apply → replaceIfVersion, one stale retry); the two JSONL
- * journals append by guarded read-concat-write, so a lost race retries
+ * The canvas-novel's service core (`ctx.canvasNovel`). A work is a canvas
+ * whose genre is `novel`: the engine keeps no registry and no focus of its
+ * own. Title and workspace are read off the board per call (the canvas
+ * service is probed — without it there are no works), and a session's work
+ * is the canvas it is bound to (the canvas binding chip).
+ *
+ * The board's cards are the single source of truth for what gets injected
+ * into writing: characters, world rules, principles and foreshadows are
+ * cards in the genre's role categories, written through the canvas service
+ * (`putCard` / `proposeCard` / `patchCard`) and never copied. The engine's
+ * own state lives under `$DSH_HOME/state/novel/<canvasId>/`: the sidecar
+ * (`annotations.json` — per-work refs and the audit notes, keyed by card id),
+ * the chapter index, the pending queue and the two journals.
+ *
+ * That state root is deployment-level state, NOT a session workspace, and the
+ * fence reflects that — the canvas store's exact pattern: the CALLING session
+ * resolves the MODE (a read-only deployment stays read-only) and lends its id
+ * to the write, while the writable boundary re-roots at the plugin's own
+ * state dir. Every document write goes through the mounted `ctx.fs` under a
+ * version guard (read → apply → replaceIfVersion, one stale retry); the two
+ * JSONL journals append by guarded read-concat-write, so a lost race retries
  * instead of clobbering (ctx.fs has no append verb; bare node:fs is never
  * used for state).
- *
- * A work is a canvas whose genre is `novel`: the engine keeps no registry
- * and no focus of its own. Title and workspace are read off the board per
- * call (the canvas service is probed — without it there are no works), and
- * a session's work is the canvas it is bound to (the canvas binding chip).
  *
  * @module @khorsheed/dsh-canvas-novel
  */
@@ -25,27 +32,28 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { renderExtractBrief, type BriefData } from './brief.ts'
-import { canvasBoardOf } from './genre.ts'
 import {
-  chapterFileName, effectiveChapterPhase, foreshadowIdOf, memoryNumberOf, normalizeChapter,
-  normalizeCharacter, normalizeMemory, normalizePendingItem, normalizePlan, normalizeWorkId,
-  cleanText, NOVEL_GENRE_ID,
-  type ChapterRecord, type ChapterTable, type CharacterRecord, type CharacterTable,
-  type EffectiveChapterPhase, type ExperienceEntry, type ExtractPayload, type ForeshadowOp, type ImportDrop,
-  type ImportReport, type LedgerResult, type MemoryRecord, type MemoryTable,
-  type MentionEntry, type PatchMemoryRequest, type PendingItem, type PendingKind, type PendingPayload, type PendingTable,
-  type ForeshadowExitAction, type ReviewAction, type StoryError,
-  type WorkMeta, type WriteChapterRequest, type WriteCharacterRequest,
-  type WriteMemoryRequest,
+  canvasBoardOf, NOVEL_GENRE, NOVEL_ROLES,
+  type CanvasBoardSlice, type NovelBoardMutation, type NovelBoardView, type NovelCardSource, type NovelCardView,
+  type NovelFieldValue,
+} from './genre.ts'
+import {
+  chapterFileName, cleanNumber, cleanText, effectiveChapterPhase, foreshadowStateOf, linesOf, MENTION_TO_STATE,
+  normalizeAnnotations, normalizeChapter, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
+  OP_TO_MENTION, parseRef, refGroupOf, refOf,
+  type Annotations, type CardNote, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
+  type CurrentState, type EffectiveChapterPhase, type EntryRole, type ExperienceEntry, type ExtractPayload,
+  type ForeshadowView, type ImportDrop, type ImportReport, type LedgerResult, type MentionEntry, type NovelError,
+  type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type ReviewAction, type RuleView,
+  type WorkMeta, type WriteChapterRequest,
 } from './types.ts'
 
 /** The state directory name under `$DSH_HOME/state`. */
-export const STORY_STATE_DIR_NAME = 'story'
+export const NOVEL_STATE_DIR_NAME = 'novel'
 
-/** Per-work file names (proposal §2), under `<stateRoot>/<canvasId>/`. */
+/** Per-work file names, under `<stateRoot>/<canvasId>/`. */
 export const WORK_FILES = {
-  memories: 'memories.json',
-  characters: 'characters.json',
+  annotations: 'annotations.json',
   experiences: 'experiences.jsonl',
   mentions: 'mentions.jsonl',
   chapters: 'chapters.json',
@@ -53,20 +61,20 @@ export const WORK_FILES = {
 } as const
 
 /**
- * Resolve the story state root (the canvas/datasets precedent): an explicit
- * value wins, then `$DSH_HOME/state/story`, then `<cwd>/.dsh-story`.
+ * Resolve the novel state root (the canvas/datasets precedent): an explicit
+ * value wins, then `$DSH_HOME/state/novel`, then `<cwd>/.dsh-novel`.
  * @param configured - plugin-provided override, or ''/undefined.
  * @returns the state root directory.
  */
-export function resolveStoryStateRoot(configured: string | undefined): string {
+export function resolveNovelStateRoot(configured: string | undefined): string {
   if (configured !== undefined && configured !== '') return configured
   const home = process.env.DSH_HOME
-  if (home !== undefined && home !== '') return join(home, 'state', STORY_STATE_DIR_NAME)
-  return join(process.cwd(), '.dsh-story')
+  if (home !== undefined && home !== '') return join(home, 'state', NOVEL_STATE_DIR_NAME)
+  return join(process.cwd(), '.dsh-novel')
 }
 
 /** Map one thrown fs value onto the store's failure codes. */
-export function storyErrorOf(error: unknown): StoryError {
+export function novelErrorOf(error: unknown): NovelError {
   if (error instanceof FsError) {
     if (error.code === 'FS_STALE_VERSION' || error.code === 'FS_NOT_OBSERVED') return 'stale'
     if (error.code === 'FS_SANDBOX_DENIED') return 'denied'
@@ -75,9 +83,14 @@ export function storyErrorOf(error: unknown): StoryError {
   return 'io'
 }
 
-/** Plugin config for the story service; every key is optional. */
-export interface StoryBibleConfig {
-  /** State root override (defaults to `$DSH_HOME/state/story`). */
+/** Map one canvas failure code onto the store's (the two vocabularies share their common codes). */
+function canvasErrorOf(error: string): NovelError {
+  return error === 'invalid-name' || error === 'missing' || error === 'stale' || error === 'denied' ? error : 'io'
+}
+
+/** Plugin config for the novel service; every key is optional. */
+export interface NovelConfig {
+  /** State root override (defaults to `$DSH_HOME/state/novel`). */
   stateRoot?: string
 }
 
@@ -85,15 +98,7 @@ export interface StoryBibleConfig {
 type DocumentRead<T> = { readonly data: T; readonly version: string } | 'missing' | 'corrupt'
 
 /** One mutation's receipt. */
-type Mutation<T> = { readonly ok: true; readonly data: T; readonly created: boolean } | { readonly ok: false; readonly error: StoryError }
-
-/** Foreshadow mentions: plan op verb → journal kind. */
-const OP_TO_MENTION: Readonly<Record<ForeshadowOp['op'], MentionEntry['kind']>> = {
-  '推进': 'advanced',
-  '暗示': 'hinted',
-  '新埋': 'planted',
-  '揭晓': 'resolved',
-}
+type Mutation<T> = { readonly ok: true; readonly data: T; readonly created: boolean } | { readonly ok: false; readonly error: NovelError }
 
 /** A mention's evidence grep: exact substring first, then a whitespace-tolerant pass (line wraps are not fabrication). */
 export function evidenceInBody(body: string, evidence: string | undefined): boolean {
@@ -105,12 +110,100 @@ export function evidenceInBody(body: string, evidence: string | undefined): bool
   return squash(body).includes(squash(needle))
 }
 
+/** The field that carries each role's main text (the card's face line). */
+export const MAIN_FIELD: Readonly<Record<EntryRole, string>> = {
+  character: 'name',
+  world: 'rule',
+  principle: 'principle',
+  foreshadow: 'question',
+}
+
+const ENTRY_ROLES = Object.values(NOVEL_ROLES) as EntryRole[]
+
+/** A foreshadow the ledger still owes the reader (not yet resolved or dropped). */
+function isLiveForeshadow(view: ForeshadowView): boolean {
+  return view.state === '已埋' || view.state === '推进中'
+}
+
+/** One card field read as display text (numbers stringify, lists join). */
+function fieldText(card: NovelCardView, key: string, max = 2000): string | undefined {
+  const value = card.fields?.[key]
+  if (typeof value === 'number') return String(value)
+  if (Array.isArray(value)) return cleanText(value.join('\n'), max)
+  return cleanText(value, max)
+}
+
+/** A card's main text: its role's main field, else the card's free text. */
+function mainTextOf(card: NovelCardView, role: EntryRole): string {
+  return fieldText(card, MAIN_FIELD[role]) ?? cleanText(card.text) ?? ''
+}
+
+/**
+ * Check agent-sent fields against the genre's seeded card type for a role:
+ * known keys only, select values from their options, numbers as numbers,
+ * lists joined one item per line (一行一件).
+ * @returns the accepted fields and the keys that were ignored.
+ */
+export function cleanFields(role: EntryRole, raw: unknown): { readonly fields: Record<string, NovelFieldValue>; readonly ignored: string[] } {
+  const defs = NOVEL_GENRE.categories.find(category => category.role === role)?.definition?.fields ?? []
+  const fields: Record<string, NovelFieldValue> = {}
+  const ignored: string[] = []
+  if (typeof raw !== 'object' || raw === null) return { fields, ignored }
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const def = defs.find(candidate => candidate.key === key)
+    if (def === undefined) {
+      ignored.push(key)
+      continue
+    }
+    if (def.type === 'number') {
+      const n = cleanNumber(typeof value === 'string' ? Number(value) : value)
+      if (n === undefined) ignored.push(key)
+      else fields[key] = n
+      continue
+    }
+    const text = Array.isArray(value) ? cleanText(value.map(String).join('\n')) : cleanText(typeof value === 'number' ? String(value) : value)
+    if (text === undefined || (def.options !== undefined && !def.options.includes(text))) {
+      ignored.push(key)
+      continue
+    }
+    fields[key] = text
+  }
+  return { fields, ignored }
+}
+
+/**
+ * One work's cards, read for the brief and the ledger: the four role views,
+ * plus what the engine needs to resolve refs (role by card id, the sidecar).
+ */
+export interface WorkEntries {
+  readonly board: NovelBoardView
+  readonly annotations: Annotations
+  /** The role of every card in one of the four role categories (any status). */
+  readonly roleOf: ReadonlyMap<string, EntryRole>
+  readonly rules: readonly RuleView[]
+  readonly foreshadows: readonly ForeshadowView[]
+  readonly characters: readonly CharacterView[]
+  /** The newest chapter number — the sleeping baseline. */
+  readonly currentChapter: number
+}
+
+/** A resolved card: its id and role. */
+export interface CardHandle {
+  readonly cardId: string
+  readonly role: EntryRole
+}
+
+/** The empty sidecar. */
+function emptyAnnotations(): Annotations {
+  return { version: 1, refs: {}, notes: {} }
+}
+
 /**
  * The canvas-novel's service core. Stateless apart from the context it borrows
  * for `ctx.fs` and the canvas, and the policy home it resolves each caller's
  * mode through.
  */
-export class StoryBibleService {
+export class NovelService {
   static inject = ['fs']
 
   /** The resolved state root (also the writable boundary of every fence). */
@@ -125,14 +218,19 @@ export class StoryBibleService {
    */
   constructor(
     private readonly ctx: Context,
-    config: StoryBibleConfig = {},
+    config: NovelConfig = {},
   ) {
-    this.stateRoot = resolveStoryStateRoot(config.stateRoot)
+    this.stateRoot = resolveNovelStateRoot(config.stateRoot)
     this.sandboxPolicy = ctx.fs.sandboxMode === undefined ? undefined : ctx.get('sandboxPolicy')
   }
 
   private get fs(): Context['fs'] {
     return this.ctx.fs
+  }
+
+  /** The canvas service, probed per call (absent → no works). */
+  private get canvas(): CanvasBoardSlice | undefined {
+    return canvasBoardOf(this.ctx)
   }
 
   /**
@@ -206,7 +304,7 @@ export class StoryBibleService {
     session: Session,
     normalize: (raw: unknown) => T | undefined,
     createDefault: (() => T) | undefined,
-    change: (data: T, now: string) => T | StoryError,
+    change: (data: T, now: string) => T | NovelError,
   ): Promise<Mutation<T>> {
     const policy = this.policyOf(session)
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -228,7 +326,7 @@ export class StoryBibleService {
         )
         return { ok: true, data: next, created: creating }
       } catch (error) {
-        const code = storyErrorOf(error)
+        const code = novelErrorOf(error)
         if (code === 'stale' && attempt === 0) continue
         return { ok: false, error: code }
       }
@@ -250,7 +348,7 @@ export class StoryBibleService {
     target: FsTarget,
     session: Session,
     lines: readonly Record<string, unknown>[],
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
     if (lines.length === 0) return { ok: true }
     const policy = this.policyOf(session)
     const addition = lines.map(line => `${JSON.stringify(line)}\n`).join('')
@@ -264,7 +362,7 @@ export class StoryBibleService {
           version = info.version
         }
       } catch (error) {
-        if (!(error instanceof FsError && error.code === 'FS_NOT_FOUND')) return { ok: false, error: storyErrorOf(error) }
+        if (!(error instanceof FsError && error.code === 'FS_NOT_FOUND')) return { ok: false, error: novelErrorOf(error) }
       }
       try {
         await this.fs.writeText(
@@ -276,7 +374,7 @@ export class StoryBibleService {
         )
         return { ok: true }
       } catch (error) {
-        const code = storyErrorOf(error)
+        const code = novelErrorOf(error)
         if (code === 'stale' && attempt === 0) continue
         return { ok: false, error: code }
       }
@@ -308,6 +406,16 @@ export class StoryBibleService {
 
   /* ---------------------------------------------------------------- works */
 
+  /** The board of a novel work, or undefined (no canvas, no board, not this genre). */
+  private async readNovelBoard(workId: string): Promise<NovelBoardView | undefined> {
+    const id = normalizeWorkId(workId)
+    const canvas = this.canvas
+    if (id === undefined || canvas === undefined) return undefined
+    const read = await canvas.readBoard({ canvasId: id })
+    if (!read.ok || read.board.genre?.id !== NOVEL_GENRE_ID) return undefined
+    return read.board
+  }
+
   /**
    * One work's view, read off its canvas: the gate every per-work verb passes
    * first. A canvas that is missing, unreadable or not of the novel genre is
@@ -316,12 +424,8 @@ export class StoryBibleService {
    * @returns the work view, or undefined.
    */
   async readWorkMeta(workId: string): Promise<WorkMeta | undefined> {
-    const id = normalizeWorkId(workId)
-    const canvas = canvasBoardOf(this.ctx)
-    if (id === undefined || canvas === undefined) return undefined
-    const read = await canvas.readBoard({ canvasId: id })
-    if (!read.ok || read.board.genre?.id !== NOVEL_GENRE_ID) return undefined
-    return { id, title: read.board.title, workspace: read.board.attachedWorkspaces[0] }
+    const board = await this.readNovelBoard(workId)
+    return board === undefined ? undefined : { id: board.id, title: board.title, workspace: board.attachedWorkspaces[0] }
   }
 
   /**
@@ -332,218 +436,196 @@ export class StoryBibleService {
    * @returns the work view, or undefined.
    */
   async boundWork(sessionId: string): Promise<WorkMeta | undefined> {
-    const canvas = canvasBoardOf(this.ctx)
+    const canvas = this.canvas
     if (canvas === undefined) return undefined
     const canvasId = await canvas.boundCanvasId(sessionId)
     return canvasId === undefined ? undefined : this.readWorkMeta(canvasId)
   }
 
-  /* ------------------------------------------------------------ memories */
+  /* -------------------------------------------------------------- entries */
 
-  /** Read the whole memory table (missing/corrupt reads as empty — mutations re-check through mutateJson). */
-  private async readMemories(workId: string): Promise<MemoryRecord[]> {
-    const read = await this.readJson(await this.fileTarget(workId, WORK_FILES.memories), raw => normalizeMemoryTable(raw))
-    return typeof read === 'object' ? read.data.memories : []
+  /** Read the sidecar (missing/corrupt reads as empty — mutations re-check through mutateJson). */
+  private async readAnnotations(workId: string): Promise<Annotations> {
+    const read = await this.readJson(await this.fileTarget(workId, WORK_FILES.annotations), normalizeAnnotations)
+    return typeof read === 'object' ? read.data : emptyAnnotations()
   }
 
   /**
-   * Add one memory. The agent's entrance lands as an intent-layer draft
-   * (reviewed=false — the ghost card); the user's entrance (Remote) lands
-   * reviewed. The id allocates max+1 over the table in the same guarded
-   * write, so two writers can never mint the same id.
-   * @param request - the memory content and axes.
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @param origin - who wrote it (reviewed/extractedBy follow).
-   * @returns the new record, or the failure code.
+   * One work's cards in the four role categories, as views: the main text off
+   * its field, the ref off the sidecar (the card id until one is allocated),
+   * a foreshadow's activity off the mention journal, a character's 当前态 off
+   * the sidecar note.
+   * @param workId - the canvas id.
+   * @returns the entries, or undefined when the canvas is no novel work.
    */
-  async writeMemory(
-    request: WriteMemoryRequest,
+  async readEntries(workId: string): Promise<WorkEntries | undefined> {
+    const board = await this.readNovelBoard(workId)
+    if (board === undefined) return undefined
+    const [annotations, mentions, chapters] = await Promise.all([
+      this.readAnnotations(board.id), this.listMentions({ workId: board.id }), this.readChapters(board.id),
+    ])
+    return entriesOf(board, annotations, mentions, chapters)
+  }
+
+  /**
+   * Give every role card on the board a display ref, and merge engine notes
+   * in, in one guarded sidecar write. A card keeps the number it has unless
+   * another card in its numbering space holds it already (first in board
+   * order wins); a card without one draws max+1. Nothing is written when
+   * nothing changes, so reads may call this freely.
+   * @param workId - the canvas id.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @param board - the board as just returned by a card mutation, or undefined to read it.
+   * @param notes - per-card note fields to merge (later fields win).
+   * @returns the fresh sidecar, or the failure code.
+   */
+  async ensureRefs(
+    workId: string,
     session: Session,
-    origin: 'user' | 'agent',
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly memory?: MemoryRecord }> {
-    const workId = normalizeWorkId(request.workId)
-    const content = cleanText(request.content)
-    if (workId === undefined || content === undefined) return { ok: false, error: 'invalid-name' }
-    if (await this.readWorkMeta(workId) === undefined) return { ok: false, error: 'missing' }
-    const layer = request.layer ?? 'intent'
-    let memory: MemoryRecord | undefined
+    board?: NovelBoardView,
+    notes: ReadonlyMap<string, CardNote> = new Map(),
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly annotations?: Annotations }> {
+    const current = board ?? await this.readNovelBoard(workId)
+    if (current === undefined) return { ok: false, error: 'missing' }
+    const roleOf = rolesOn(current)
+    const apply = (data: Annotations): Annotations | undefined => {
+      const used: Record<'character' | 'entry', Set<number>> = { character: new Set(), entry: new Set() }
+      const refs: Record<string, number> = { ...data.refs }
+      const waiting: { cardId: string; group: 'character' | 'entry' }[] = []
+      let changed = false
+      for (const card of current.cards) {
+        const role = roleOf.get(card.id)
+        if (role === undefined) continue
+        const group = refGroupOf(role)
+        const n = refs[card.id]
+        if (n !== undefined && !used[group].has(n)) used[group].add(n)
+        else waiting.push({ cardId: card.id, group })
+      }
+      for (const { cardId, group } of waiting) {
+        const n = Math.max(0, ...used[group]) + 1
+        used[group].add(n)
+        refs[cardId] = n
+        changed = true
+      }
+      const merged: Record<string, CardNote> = { ...data.notes }
+      for (const [cardId, note] of notes) {
+        merged[cardId] = { ...merged[cardId], ...note }
+        changed = true
+      }
+      return changed ? { version: 1, refs, notes: merged } : undefined
+    }
+    const snapshot = await this.readAnnotations(current.id)
+    if (apply(snapshot) === undefined) return { ok: true, annotations: snapshot }
     const outcome = await this.mutateJson(
-      await this.fileTarget(workId, WORK_FILES.memories), session,
-      raw => normalizeMemoryTable(raw),
-      () => ({ version: 1 as const, memories: [] }),
-      (table, now) => {
-        const next = table.memories.reduce((max, row) => Math.max(max, memoryNumberOf(row.id)), 0) + 1
-        memory = {
-          id: `m${next}`,
-          owner: cleanText(request.owner, 40) ?? 'creator',
-          type: request.type ?? 'semantic',
-          layer,
-          content,
-          status: 'active',
-          reviewed: origin === 'user',
-          confidence: request.confidence ?? (origin === 'user' ? 'high' : 'medium'),
-          extractedBy: origin === 'user' ? 'user' : 'llm',
-          createdAt: now,
-          updatedAt: now,
-          ...(layer === 'intent' ? { intentStatus: 'draft' as const } : {}),
-          ...(request.kind === undefined ? {} : { kind: request.kind }),
-          ...(request.specifics === undefined ? {} : { specifics: request.specifics }),
-          ...(cleanText(request.evidenceInText, 60) === undefined ? {} : { evidenceInText: cleanText(request.evidenceInText, 60)! }),
-          ...(request.chapter === undefined ? {} : { firstChapter: request.chapter, lastActiveChapter: request.chapter }),
-        }
-        table.memories.push(memory)
-        return table
-      },
+      await this.fileTarget(current.id, WORK_FILES.annotations), session,
+      normalizeAnnotations, emptyAnnotations,
+      data => apply(data) ?? data,
     )
-    if (!outcome.ok || memory === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
-    return { ok: true, memory }
-  }
-
-  /** List memories, newest last; filters are ANDed, archived rows excluded unless asked for. */
-  async listMemories(request: {
-    readonly workId: string
-    readonly layer?: MemoryRecord['layer']
-    readonly type?: MemoryRecord['type']
-    readonly kind?: MemoryRecord['kind']
-    readonly intentStatus?: MemoryRecord['intentStatus']
-    readonly includeArchived?: boolean
-  }): Promise<MemoryRecord[]> {
-    const id = normalizeWorkId(request.workId)
-    if (id === undefined) return []
-    const memories = await this.readMemories(id)
-    return memories.filter(memory =>
-      (request.includeArchived === true || memory.status === 'active')
-      && (request.layer === undefined || memory.layer === request.layer)
-      && (request.type === undefined || memory.type === request.type)
-      && (request.kind === undefined || memory.kind === request.kind)
-      && (request.intentStatus === undefined || memory.intentStatus === request.intentStatus))
+    return outcome.ok ? { ok: true, annotations: outcome.data } : { ok: false, error: outcome.error }
   }
 
   /**
-   * The review verb on one memory (采纳/丢弃/归档/撤销). accept promotes an
-   * intent draft to active (and stamps reviewed — the user's ✓); discard and
-   * archive both archive (discard is the draft's ✗, archive the settled
-   * row's exit — intent rows also retire); retract undoes an automatic
-   * import (archived, the 自动·可撤销 promise). Old rows are never deleted.
-   * @param request - work id, memory id, the action.
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the fresh record, or the failure code.
+   * Find one card from any handle the model or a plan may send: an exact
+   * card id, a ref (`c3`, `#12`, `w12`), a bare number (its numbering space
+   * picked by the role hint), or — characters — an exact name.
+   * @param entries - the work's entries.
+   * @param token - the handle.
+   * @param roleHint - the role the context expects (decides a bare number's space).
+   * @returns the card, or undefined.
    */
-  async decideMemory(
+  resolveCard(entries: WorkEntries, token: unknown, roleHint?: EntryRole): CardHandle | undefined {
+    const text = typeof token === 'number' ? String(token) : cleanText(token, 200)
+    if (text === undefined) return undefined
+    const direct = entries.roleOf.get(text)
+    if (direct !== undefined) return { cardId: text, role: direct }
+    const ref = parseRef(text)
+    if (ref !== undefined) {
+      const group = /^\d/.test(text) && roleHint !== undefined ? refGroupOf(roleHint) : ref.group
+      for (const [cardId, role] of entries.roleOf) {
+        if (refGroupOf(role) === group && entries.annotations.refs[cardId] === ref.n) return { cardId, role }
+      }
+      return undefined
+    }
+    if (roleHint === undefined || roleHint === 'character') {
+      const character = entries.characters.find(view => view.name === text)
+      if (character !== undefined) return { cardId: character.cardId, role: 'character' }
+    }
+    return undefined
+  }
+
+  /**
+   * The agent's card write. Without an id it proposes a new card in the
+   * role's category — a ghost the user keeps (✓) or archives (✗), never
+   * injected before then; with an id it merges the given fields into that
+   * card (absent fields keep). Fields are checked against the genre's card
+   * type; unknown keys are ignored and reported back.
+   * @param request - work id, role, optional card handle, fields, optional comment.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the card's id and ref, or the failure code.
+   */
+  async writeCard(
+    request: { readonly workId: string; readonly role: EntryRole; readonly id?: string; readonly fields: unknown; readonly comment?: string },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string; readonly ref?: string; readonly ignored?: readonly string[] }> {
+    const canvas = this.canvas
+    const entries = await this.readEntries(request.workId)
+    if (canvas === undefined || entries === undefined) return { ok: false, error: 'missing' }
+    const { fields, ignored } = cleanFields(request.role, request.fields)
+    let mutation: NovelBoardMutation
+    let cardId: string
+    if (request.id !== undefined) {
+      const handle = this.resolveCard(entries, request.id, request.role)
+      if (handle === undefined || handle.role !== request.role) return { ok: false, error: 'missing' }
+      if (Object.keys(fields).length === 0) return { ok: false, error: 'invalid-name', ignored }
+      const card = entries.board.cards.find(candidate => candidate.id === handle.cardId)!
+      cardId = handle.cardId
+      mutation = await canvas.patchCard({ canvasId: entries.board.id, cardId, fields: { ...card.fields, ...fields } }, session)
+    } else {
+      const category = categoryOf(entries.board, request.role)
+      if (category === undefined || fields[MAIN_FIELD[request.role]] === undefined) return { ok: false, error: 'invalid-name', ignored }
+      const comment = cleanText(request.comment, 500)
+      mutation = await canvas.proposeCard({
+        canvasId: entries.board.id, kind: category, text: '', fields,
+        ...(comment === undefined ? {} : { comment }),
+      }, session)
+      if (!mutation.ok) return { ok: false, error: canvasErrorOf(mutation.error) }
+      cardId = mutation.board.cards[mutation.board.cards.length - 1]!.id
+    }
+    if (!mutation.ok) return { ok: false, error: canvasErrorOf(mutation.error) }
+    const refs = await this.ensureRefs(entries.board.id, session, mutation.board)
+    const n = refs.annotations?.refs[cardId]
+    return { ok: true, cardId, ref: n === undefined ? cardId : refOf(request.role, n), ignored }
+  }
+
+  /**
+   * The review verb on one card (采纳/丢弃/归档/撤销), through the canvas's
+   * own status: accept keeps a ghost, discard archives it, archive retires a
+   * kept card, retract takes an automatic import back (自动·可撤销). Archived
+   * cards stay on the board, hidden — nothing is deleted.
+   * @param request - work id, card handle, the action.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the receipt, or the failure code.
+   */
+  async reviewCard(
     request: { readonly workId: string; readonly id: string; readonly action: ReviewAction },
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly memory?: MemoryRecord }> {
-    const workId = normalizeWorkId(request.workId)
-    if (workId === undefined) return { ok: false, error: 'invalid-name' }
-    let memory: MemoryRecord | undefined
-    const outcome = await this.mutateJson(
-      await this.fileTarget(workId, WORK_FILES.memories), session,
-      raw => normalizeMemoryTable(raw),
-      undefined,
-      (table, now) => {
-        const row = table.memories.find(candidate => candidate.id === request.id)
-        if (row === undefined) return 'missing'
-        const mutable = row as { -readonly [K in keyof MemoryRecord]: MemoryRecord[K] }
-        if (request.action === 'accept') {
-          if (row.layer === 'intent' && row.intentStatus !== 'draft') return 'invalid-name'
-          mutable.reviewed = true
-          if (row.layer === 'intent') mutable.intentStatus = 'active'
-        } else if (request.action === 'discard' || request.action === 'archive' || request.action === 'retract') {
-          if (request.action === 'retract' && row.autoImported !== true) return 'invalid-name'
-          mutable.status = 'archived'
-          if (row.layer === 'intent') mutable.intentStatus = 'retired'
-        }
-        mutable.updatedAt = now
-        memory = { ...row }
-        return table
-      },
-    )
-    if (!outcome.ok || memory === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
-    return { ok: true, memory }
-  }
-
-  /* ----------------------------------------------------------- characters */
-
-  /** Read the whole character table. */
-  private async readCharacters(workId: string): Promise<CharacterRecord[]> {
-    const read = await this.readJson(await this.fileTarget(workId, WORK_FILES.characters), raw => normalizeCharacterTable(raw))
-    return typeof read === 'object' ? read.data.characters : []
-  }
-
-  /** List characters (archived excluded unless asked for). */
-  async listCharacters(request: { readonly workId: string; readonly includeArchived?: boolean }): Promise<CharacterRecord[]> {
-    const id = normalizeWorkId(request.workId)
-    if (id === undefined) return []
-    const characters = await this.readCharacters(id)
-    return characters.filter(character => request.includeArchived === true || character.status === 'active')
-  }
-
-  /**
-   * Create one character (no id — `c<max+1>`) or patch its blocks (id
-   * present; provided blocks replace, absent blocks keep). The id allocates
-   * inside the same guarded write as the row.
-   * @param request - the character data.
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the fresh record, or the failure code.
-   */
-  async writeCharacter(
-    request: WriteCharacterRequest,
-    session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly character?: CharacterRecord }> {
-    const workId = normalizeWorkId(request.workId)
-    const name = cleanText(request.name, 80)
-    if (workId === undefined || name === undefined) return { ok: false, error: 'invalid-name' }
-    if (await this.readWorkMeta(workId) === undefined) return { ok: false, error: 'missing' }
-    let character: CharacterRecord | undefined
-    const outcome = await this.mutateJson(
-      await this.fileTarget(workId, WORK_FILES.characters), session,
-      raw => normalizeCharacterTable(raw),
-      () => ({ version: 1 as const, characters: [] }),
-      (table, now) => {
-        if (request.id !== undefined) {
-          const row = table.characters.find(candidate => candidate.id === request.id)
-          if (row === undefined) return 'missing'
-          const mutable = row as { -readonly [K in keyof CharacterRecord]: CharacterRecord[K] }
-          mutable.name = name
-          if (request.identity !== undefined) mutable.identity = request.identity
-          if (request.profile !== undefined) mutable.profile = request.profile
-          if (request.core !== undefined) mutable.core = request.core
-          if (request.knowledge !== undefined) mutable.knowledge = request.knowledge
-          if (request.currentState !== undefined) mutable.currentState = request.currentState
-          mutable.updatedAt = now
-          character = { ...row }
-          return table
-        }
-        const next = table.characters.reduce((max, row) => {
-          const match = /^c(\d+)$/.exec(row.id)
-          return match === null ? max : Math.max(max, Number(match[1]))
-        }, 0) + 1
-        const created: CharacterRecord = {
-          id: `c${next}`,
-          name,
-          identity: cleanText(request.identity, 200) ?? '',
-          profile: request.profile ?? {},
-          core: request.core ?? {},
-          knowledge: request.knowledge ?? { knows: [], unaware: [], secrets: [] },
-          relationships: [],
-          currentState: request.currentState ?? {},
-          status: 'active',
-          createdAt: now,
-          updatedAt: now,
-        }
-        table.characters.push(created)
-        character = created
-        return table
-      },
-    )
-    if (!outcome.ok || character === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
-    return { ok: true, character }
-  }
-
-  /** One character by id or exact name (the tools' and brief's resolution). */
-  async readCharacter(request: { readonly workId: string; readonly idOrName: string }): Promise<CharacterRecord | undefined> {
-    const characters = await this.listCharacters({ workId: request.workId, includeArchived: true })
-    return characters.find(character => character.id === request.idOrName || character.name === request.idOrName)
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string }> {
+    const canvas = this.canvas
+    const entries = await this.readEntries(request.workId)
+    if (canvas === undefined || entries === undefined) return { ok: false, error: 'missing' }
+    const handle = this.resolveCard(entries, request.id)
+    const card = handle === undefined ? undefined : entries.board.cards.find(candidate => candidate.id === handle.cardId)
+    if (card === undefined) return { ok: false, error: 'missing' }
+    const legal = request.action === 'accept' || request.action === 'discard'
+      ? card.status === 'proposed'
+      : request.action === 'archive'
+        ? card.status === 'kept'
+        : card.status === 'kept' && entries.annotations.notes[card.id]?.autoImported === true
+    if (!legal) return { ok: false, error: 'invalid-name' }
+    const mutation = await canvas.patchCard({
+      canvasId: entries.board.id, cardId: card.id, status: request.action === 'accept' ? 'kept' : 'archived',
+    }, session)
+    return mutation.ok ? { ok: true, cardId: card.id } : { ok: false, error: canvasErrorOf(mutation.error) }
   }
 
   /* ---------------------------------------------------------- experiences */
@@ -554,6 +636,78 @@ export class StoryBibleService {
     if (id === undefined) return []
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.experiences), raw => normalizeExperience(raw))
     return entries.filter(entry => request.characterId === undefined || entry.characterId === request.characterId)
+  }
+
+  /**
+   * Take one automatic experience back (自动·可撤销, invariant 3): the line
+   * leaves the journal. The journal is append-only for the SYSTEM; the user's
+   * retract gesture is the one sanctioned exception, and it rides the same
+   * guarded rewrite the appends use, keeping every other line byte-identical.
+   * A line without an id cannot be retracted by handle — the user edits the
+   * journal by hand for those.
+   * @param request - work id and the entry id (`e<n>`).
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the receipt, or the failure code.
+   */
+  async retractExperience(
+    request: { readonly workId: string; readonly id: string },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined || !/^e\d+$/.test(request.id)) return { ok: false, error: 'invalid-name' }
+    const target = await this.fileTarget(workId, WORK_FILES.experiences)
+    const policy = this.policyOf(session)
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      let text: string
+      let version: string
+      try {
+        const info = await this.fs.stat(target)
+        if (info === undefined) return { ok: false, error: 'missing' }
+        text = await this.fs.readText(target)
+        version = info.version
+      } catch (error) {
+        return { ok: false, error: novelErrorOf(error) }
+      }
+      const lines = text.split('\n')
+      const kept: string[] = []
+      let found = false
+      for (const line of lines) {
+        if (line.trim() === '') continue
+        try {
+          const row = JSON.parse(line) as Record<string, unknown>
+          if (row['id'] === request.id) {
+            found = true
+            continue
+          }
+        } catch {
+          // A corrupt line is not the retract target; it is kept verbatim.
+        }
+        kept.push(line)
+      }
+      if (!found) return { ok: false, error: 'missing' }
+      try {
+        await this.fs.writeText(
+          target, kept.length === 0 ? '' : `${kept.join('\n')}\n`,
+          { kind: 'replaceIfVersion', version: FsVersion(version) },
+          undefined, policy,
+        )
+        return { ok: true }
+      } catch (error) {
+        const code = novelErrorOf(error)
+        if (code === 'stale' && attempt === 0) continue
+        return { ok: false, error: code }
+      }
+    }
+    /* v8 ignore next -- the loop's second iteration always returns */
+    return { ok: false, error: 'stale' }
+  }
+
+  /** The mention journal (a foreshadow card's chapter track), optionally one card's, oldest first. */
+  async listMentions(request: { readonly workId: string; readonly foreshadowId?: string }): Promise<MentionEntry[]> {
+    const id = normalizeWorkId(request.workId)
+    if (id === undefined) return []
+    const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.mentions), raw => normalizeMention(raw))
+    return entries.filter(entry => request.foreshadowId === undefined || entry.foreshadowId === request.foreshadowId)
   }
 
   /* ------------------------------------------------------------- chapters */
@@ -577,7 +731,7 @@ export class StoryBibleService {
   }
 
   /** The chapter index, seq-ordered, with the effective phase derived per row. */
-  async listChapters(request: { readonly workId: string }): Promise<{ readonly chapter: ChapterRecord; readonly phase: EffectiveChapterPhase }[]> {
+  async listChapters(request: { readonly workId: string }): Promise<ChapterRow[]> {
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
     const meta = await this.readWorkMeta(id)
@@ -604,7 +758,7 @@ export class StoryBibleService {
   /** One chapter by number, with its body and effective phase. */
   async readChapter(request: { readonly workId: string; readonly n: number }): Promise<{
     readonly ok: boolean
-    readonly error?: StoryError
+    readonly error?: NovelError
     readonly chapter?: ChapterRecord
     readonly phase?: EffectiveChapterPhase
     readonly body?: string
@@ -626,7 +780,9 @@ export class StoryBibleService {
   /**
    * Create one chapter (n allocates max+1, the file name derives from n —
    * free-form names are never stored) or update its title/plan. seq defaults
-   * to n; an explicit seq inserts the chapter between its neighbors.
+   * to n; an explicit seq inserts the chapter between its neighbors. A plan's
+   * foreshadow ops and characters are stored as card ids when they resolve
+   * (a ref or a name the board does not know is kept as written).
    *
    * `content` (the F1-2 rule): given, the manuscript body is written to
    * `<workspace>/<title>/第{n}章.md` FIRST — through the calling session's
@@ -644,14 +800,29 @@ export class StoryBibleService {
   async writeChapter(
     request: WriteChapterRequest,
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly chapter?: ChapterRecord }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord }> {
     const workId = normalizeWorkId(request.workId)
     const title = cleanText(request.title, 200)
     if (workId === undefined || title === undefined) return { ok: false, error: 'invalid-name' }
     const meta = await this.readWorkMeta(workId)
     if (meta === undefined) return { ok: false, error: 'missing' }
-    const plan = request.plan === undefined ? undefined : normalizePlan(request.plan)
-    if (request.plan !== undefined && plan === undefined) return { ok: false, error: 'invalid-name' }
+    const rawPlan = request.plan === undefined ? undefined : normalizePlan(request.plan)
+    if (request.plan !== undefined && rawPlan === undefined) return { ok: false, error: 'invalid-name' }
+    let plan = rawPlan
+    if (rawPlan !== undefined) {
+      const entries = await this.readEntries(workId)
+      if (entries !== undefined) {
+        const toCard = (token: string, role: EntryRole): string => {
+          const handle = this.resolveCard(entries, token, role)
+          return handle?.role === role ? handle.cardId : token
+        }
+        plan = {
+          ...rawPlan,
+          foreshadowOps: rawPlan.foreshadowOps.map(op => op.id === undefined ? op : { ...op, id: toCard(op.id, 'foreshadow') }),
+          characters: rawPlan.characters.map(token => toCard(token, 'character')),
+        }
+      }
+    }
     const content = typeof request.content === 'string' && request.content.length > 0 ? request.content.slice(0, 2_000_000) : undefined
 
     // The body lands before the registration (F1-2): a write that the fence
@@ -681,7 +852,7 @@ export class StoryBibleService {
           undefined, policy,
         )
       } catch (error) {
-        return { ok: false, error: storyErrorOf(error) }
+        return { ok: false, error: novelErrorOf(error) }
       }
     }
 
@@ -735,7 +906,7 @@ export class StoryBibleService {
   async reviewChapter(
     request: { readonly workId: string; readonly n: number },
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly chapter?: ChapterRecord }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord }> {
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
     let chapter: ChapterRecord | undefined
@@ -760,96 +931,6 @@ export class StoryBibleService {
     return { ok: true, chapter }
   }
 
-  /* -------------------------------------------------------------- ledger */
-
-  /**
-   * Edit one memory's fields (设定集/世界规则区的字段级可编辑). The revision
-   * protocol (proposal §3: 修订走 derives_from 链，旧条不删): the old row
-   * archives, a new row carries the patched content with
-   * `links.derivesFrom: [oldId]` — one guarded write, so the chain link and
-   * the retirement can never disagree.
-   * @param request - work id, memory id, the fields to change.
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the NEW record (the chain's head), or the failure code.
-   */
-  async patchMemory(
-    request: PatchMemoryRequest,
-    session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly memory?: MemoryRecord }> {
-    const workId = normalizeWorkId(request.workId)
-    if (workId === undefined) return { ok: false, error: 'invalid-name' }
-    const content = request.content === undefined ? undefined : cleanText(request.content)
-    if (request.content !== undefined && content === undefined) return { ok: false, error: 'invalid-name' }
-    let memory: MemoryRecord | undefined
-    const outcome = await this.mutateJson(
-      await this.fileTarget(workId, WORK_FILES.memories), session,
-      raw => normalizeMemoryTable(raw),
-      undefined,
-      (table, now) => {
-        const old = table.memories.find(candidate => candidate.id === request.id)
-        if (old === undefined) return 'missing'
-        if (old.status === 'archived') return 'invalid-name'
-        const next = table.memories.reduce((max, row) => Math.max(max, memoryNumberOf(row.id)), 0) + 1
-        const { autoImported: _dropped, ...rest } = old
-        const revised: MemoryRecord = {
-          ...rest,
-          id: `m${next}`,
-          content: content ?? old.content,
-          reviewed: true,
-          extractedBy: 'user',
-          links: { derivesFrom: [old.id] },
-          createdAt: now,
-          updatedAt: now,
-          ...(request.kind === undefined ? {} : { kind: request.kind }),
-          ...(request.specifics === undefined ? {} : { specifics: request.specifics }),
-        }
-        const mutable = old as { -readonly [K in keyof MemoryRecord]: MemoryRecord[K] }
-        mutable.status = 'archived'
-        mutable.updatedAt = now
-        table.memories.push(revised)
-        memory = revised
-        return table
-      },
-    )
-    if (!outcome.ok || memory === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
-    return { ok: true, memory }
-  }
-
-  /* -------------------------------------------------------------- ledger */
-
-  /** The foreshadow ledger rows (canon + prospective + reviewed + active — the 台账). */
-  private async foreshadows(workId: string): Promise<MemoryRecord[]> {
-    const memories = await this.readMemories(workId)
-    return memories.filter(memory =>
-      memory.type === 'prospective' && memory.layer === 'canon' && memory.reviewed && memory.status === 'active')
-  }
-
-  /**
-   * The 伏笔沉睡榜 + 健康度: active foreshadows sorted longest-slept first
-   * (the maintenance meeting's agenda), resolved ones with answers, and the
-   * health counts (活跃/超期⚠/已揭/弃置). 超期 = 3+ chapters untouched.
-   * @param request - the work id.
-   * @returns the ledger rows and counts, or the failure code.
-   */
-  async ledger(request: { readonly workId: string }): Promise<LedgerResult> {
-    const id = normalizeWorkId(request.workId)
-    if (id === undefined) return { ok: false, error: 'invalid-name', active: [], resolved: [], counts: { active: 0, overdue: 0, resolved: 0, abandoned: 0 }, currentChapter: 0 }
-    const [all, chapters] = await Promise.all([this.foreshadows(id), this.readChapters(id)])
-    const currentChapter = chapters.reduce((max, chapter) => Math.max(max, chapter.n), 0)
-    const active = all.filter(memory => memory.specifics?.status !== 'resolved' && memory.specifics?.status !== 'abandoned')
-    const resolved = all.filter(memory => memory.specifics?.status === 'resolved')
-    const abandoned = all.filter(memory => memory.specifics?.status === 'abandoned')
-    const slept = (memory: MemoryRecord): number => currentChapter - (memory.lastActiveChapter ?? memory.specifics?.plantedAt ?? currentChapter)
-    active.sort((a, b) => slept(b) - slept(a))
-    return {
-      ok: true,
-      active,
-      resolved,
-      counts: { active: active.length, overdue: active.filter(memory => slept(memory) >= 3).length, resolved: resolved.length, abandoned: abandoned.length },
-      currentChapter,
-    }
-  }
-
   /**
    * The user's ✓确认计划 gate (规划环的确认闸门): stamps `planConfirmedAt`
    * on a chapter that HAS a plan. Idempotent — a confirmed plan re-answers
@@ -861,7 +942,7 @@ export class StoryBibleService {
   async confirmChapterPlan(
     request: { readonly workId: string; readonly n: number },
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly chapter?: ChapterRecord }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord }> {
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
     let chapter: ChapterRecord | undefined
@@ -886,183 +967,66 @@ export class StoryBibleService {
     return { ok: true, chapter }
   }
 
+  /* -------------------------------------------------------------- ledger */
+
   /**
-   * The foreshadow card's three exits (世界记忆, proposal §6):
-   *   - resolve 登记揭晓: status → resolved with the answer (required — the
-   *     plan brief prints it so planning cannot contradict the reveal);
-   *   - abandon 弃置: status → abandoned (the 台账 stops warning);
-   *   - promote 转设定: the mystery graduates into a world rule — a canon
-   *     semantic memory (kind 世界, reviewed, user-sourced) is created from
-   *     the answer text (required), and the foreshadow resolves into it
-   *     (`links.resolvedBy` points at the new rule). One guarded write.
-   * @param request - work id, memory id, the action, and the answer/rule text.
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the touched records, or the failure code.
+   * The 伏笔沉睡榜 + 健康度 over the kept foreshadow cards: live ones sorted
+   * longest-slept first (the maintenance meeting's agenda), resolved ones with
+   * answers, and the health counts (活跃/超期⚠/已揭/弃置). 超期 = 3+ chapters
+   * untouched.
+   * @param request - the work id.
+   * @returns the ledger rows and counts, or the failure code.
    */
-  async foreshadowExit(
-    request: { readonly workId: string; readonly id: string; readonly action: ForeshadowExitAction; readonly answer?: string },
-    session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError; readonly memory?: MemoryRecord; readonly promoted?: MemoryRecord }> {
-    const workId = normalizeWorkId(request.workId)
-    if (workId === undefined) return { ok: false, error: 'invalid-name' }
-    const answer = cleanText(request.answer, 500)
-    if ((request.action === 'resolve' || request.action === 'promote') && answer === undefined) return { ok: false, error: 'invalid-name' }
-    let memory: MemoryRecord | undefined
-    let promoted: MemoryRecord | undefined
-    const outcome = await this.mutateJson(
-      await this.fileTarget(workId, WORK_FILES.memories), session,
-      raw => normalizeMemoryTable(raw),
-      undefined,
-      (table, now) => {
-        const row = table.memories.find(candidate => candidate.id === request.id)
-        if (row === undefined || row.type !== 'prospective') return 'missing'
-        if (row.specifics?.status === 'resolved' || row.specifics?.status === 'abandoned') return 'invalid-name'
-        const mutable = row as { -readonly [K in keyof MemoryRecord]: MemoryRecord[K] }
-        if (request.action === 'abandon') {
-          mutable.specifics = { ...row.specifics, status: 'abandoned' }
-        } else if (request.action === 'resolve') {
-          mutable.specifics = { ...row.specifics, status: 'resolved', ...(answer === undefined ? {} : { answer }) }
-        } else {
-          const next = table.memories.reduce((max, candidate) => Math.max(max, memoryNumberOf(candidate.id)), 0) + 1
-          promoted = {
-            id: `m${next}`,
-            owner: 'creator',
-            type: 'semantic',
-            layer: 'canon',
-            kind: '世界',
-            content: answer!,
-            status: 'active',
-            reviewed: true,
-            confidence: 'high',
-            extractedBy: 'user',
-            createdAt: now,
-            updatedAt: now,
-          }
-          table.memories.push(promoted)
-          mutable.specifics = { ...row.specifics, status: 'resolved', ...(answer === undefined ? {} : { answer }) }
-          mutable.links = { resolvedBy: promoted.id }
-        }
-        mutable.reviewed = true
-        mutable.updatedAt = now
-        memory = { ...row }
-        return table
+  async ledger(request: { readonly workId: string }): Promise<LedgerResult> {
+    const entries = await this.readEntries(request.workId)
+    if (entries === undefined) return { ok: false, error: 'missing', active: [], resolved: [], counts: { active: 0, overdue: 0, resolved: 0, abandoned: 0 }, currentChapter: 0 }
+    const kept = entries.foreshadows.filter(view => view.cardStatus === 'kept')
+    const active = sortBySleep(kept.filter(isLiveForeshadow))
+    const resolved = kept.filter(view => view.state === '已揭晓')
+    return {
+      ok: true,
+      active,
+      resolved,
+      counts: {
+        active: active.length,
+        overdue: active.filter(view => (view.slept ?? 0) >= 3).length,
+        resolved: resolved.length,
+        abandoned: kept.filter(view => view.state === '已放弃').length,
       },
-    )
-    if (!outcome.ok || memory === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
-    return { ok: true, memory, ...(promoted === undefined ? {} : { promoted }) }
-  }
-
-  /** The mention journal (世界记忆卡的章节点轨), optionally one foreshadow's, oldest first. */
-  async listMentions(request: { readonly workId: string; readonly foreshadowId?: string }): Promise<MentionEntry[]> {
-    const id = normalizeWorkId(request.workId)
-    if (id === undefined) return []
-    const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.mentions), raw => normalizeMention(raw))
-    return entries.filter(entry => request.foreshadowId === undefined || entry.foreshadowId === request.foreshadowId)
-  }
-
-  /**
-   * Take one automatic experience back (自动·可撤销, invariant 3): the line
-   * leaves the journal. The journal is append-only for the SYSTEM; the user's
-   * retract gesture is the one sanctioned exception, and it rides the same
-   * guarded rewrite the appends use, keeping every other line byte-identical.
-   * A line without an id (pre-M3) cannot be retracted by handle — the user
-   * edits the journal by hand for those.
-   * @param request - work id and the entry id (`e<n>`).
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the receipt, or the failure code.
-   */
-  async retractExperience(
-    request: { readonly workId: string; readonly id: string },
-    session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError }> {
-    const workId = normalizeWorkId(request.workId)
-    if (workId === undefined || !/^e\d+$/.test(request.id)) return { ok: false, error: 'invalid-name' }
-    const target = await this.fileTarget(workId, WORK_FILES.experiences)
-    const policy = this.policyOf(session)
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      let text: string
-      let version: string
-      try {
-        const info = await this.fs.stat(target)
-        if (info === undefined) return { ok: false, error: 'missing' }
-        text = await this.fs.readText(target)
-        version = info.version
-      } catch (error) {
-        return { ok: false, error: storyErrorOf(error) }
-      }
-      const lines = text.split('\n')
-      const kept: string[] = []
-      let found = false
-      for (const line of lines) {
-        if (line.trim() === '') continue
-        try {
-          const row = JSON.parse(line) as Record<string, unknown>
-          if (row['id'] === request.id) {
-            found = true
-            continue
-          }
-        } catch {
-          // A corrupt line is not the retract target; it is kept verbatim.
-        }
-        kept.push(line)
-      }
-      if (!found) return { ok: false, error: 'missing' }
-      try {
-        await this.fs.writeText(
-          target, kept.length === 0 ? '' : `${kept.join('\n')}\n`,
-          { kind: 'replaceIfVersion', version: FsVersion(version) },
-          undefined, policy,
-        )
-        return { ok: true }
-      } catch (error) {
-        const code = storyErrorOf(error)
-        if (code === 'stale' && attempt === 0) continue
-        return { ok: false, error: code }
-      }
+      currentChapter: entries.currentChapter,
     }
-    /* v8 ignore next -- the loop's second iteration always returns */
-    return { ok: false, error: 'stale' }
   }
 
   /* --------------------------------------------------------------- brief */
 
   /**
    * Gather everything one brief renders (the async half; brief.ts renders
-   * synchronously from this). The target chapter: the explicit n, else the
-   * newest chapter still planning (the one being planned/written), else the
-   * newest chapter overall — none at all is a guidance error, never a throw.
+   * synchronously from this). Only kept cards feed it — a ghost card is not
+   * the user's yet. The target chapter: the explicit n, else the newest
+   * chapter still planning (the one being planned/written), else the newest
+   * chapter overall — none at all is a guidance error, never a throw.
    * @param request - work id and optional chapter number.
    * @returns the render data, or the failure code.
    */
   async gatherBrief(request: { readonly workId: string; readonly chapter?: number }): Promise<{
     readonly ok: boolean
-    readonly error?: StoryError
+    readonly error?: NovelError
     readonly data?: BriefData
   }> {
-    const id = normalizeWorkId(request.workId)
-    if (id === undefined) return { ok: false, error: 'invalid-name' }
-    const meta = await this.readWorkMeta(id)
-    if (meta === undefined) return { ok: false, error: 'missing' }
-    const chapters = [...await this.readChapters(id)].sort((a, b) => a.seq - b.seq || a.n - b.n)
+    const meta = await this.readWorkMeta(request.workId)
+    const entries = await this.readEntries(request.workId)
+    if (meta === undefined || entries === undefined) return { ok: false, error: 'missing' }
+    const chapters = [...await this.readChapters(meta.id)].sort((a, b) => a.seq - b.seq || a.n - b.n)
     const target = request.chapter !== undefined
       ? chapters.find(candidate => candidate.n === request.chapter)
       : [...chapters].reverse().find(candidate => candidate.phase === 'planning') ?? chapters[chapters.length - 1]
     if (target === undefined) return { ok: false, error: 'missing' }
-    const [memories, characters, experiences] = await Promise.all([
-      this.readMemories(id), this.readCharacters(id), this.listExperiences({ workId: id }),
-    ])
-    const live = memories.filter(memory => memory.status === 'active')
-    const canon = live.filter(memory => memory.layer === 'canon' && memory.reviewed)
-    const foreshadows = canon.filter(memory => memory.type === 'prospective')
-    const activeForeshadows = foreshadows.filter(memory => memory.specifics?.status !== 'resolved' && memory.specifics?.status !== 'abandoned')
-    const currentN = chapters.reduce((max, chapter) => Math.max(max, chapter.n), 0)
-    activeForeshadows.sort((a, b) => {
-      const slept = (memory: MemoryRecord): number => currentN - (memory.lastActiveChapter ?? memory.specifics?.plantedAt ?? currentN)
-      return slept(b) - slept(a)
-    })
+    const experiences = await this.listExperiences({ workId: meta.id })
+    const rules = entries.rules.filter(view => view.status === 'kept')
+    const foreshadows = entries.foreshadows.filter(view => view.cardStatus === 'kept')
+    const roster = entries.characters.filter(view => view.cardStatus === 'kept')
     const inSceneIds = new Set(target.plan?.characters ?? [])
-    const inScene = characters.filter(character =>
-      character.status === 'active' && (inSceneIds.has(character.id) || inSceneIds.has(character.name)))
+    const inScene = roster.filter(view => inSceneIds.has(view.cardId) || inSceneIds.has(view.name) || inSceneIds.has(view.ref))
     const previous = chapters.filter(candidate => candidate.seq < target.seq)
     const previousChapter = previous[previous.length - 1]
     const previousTail = previousChapter === undefined ? undefined : tailOf(await this.readChapterBody(meta, previousChapter))
@@ -1071,17 +1035,18 @@ export class StoryBibleService {
       data: {
         workTitle: meta.title,
         target,
-        canonRules: canon.filter(memory => memory.type !== 'prospective' && memory.kind !== '原则'),
-        principles: canon.filter(memory => memory.kind === '原则'),
-        activeForeshadows,
-        resolvedForeshadows: foreshadows.filter(memory => memory.specifics?.status === 'resolved'),
-        outlineItems: live.filter(memory => memory.layer === 'intent' && memory.intentStatus === 'active' && memory.kind === '章节'),
-        currentChapter: currentN,
+        canonRules: rules.filter(view => view.role === 'world'),
+        principles: rules.filter(view => view.role === 'principle'),
+        activeForeshadows: sortBySleep(foreshadows.filter(isLiveForeshadow)),
+        unplantedForeshadows: foreshadows.filter(view => view.state === '未埋'),
+        resolvedForeshadows: foreshadows.filter(view => view.state === '已揭晓'),
+        allForeshadows: entries.foreshadows,
+        currentChapter: entries.currentChapter,
         inScene: inScene.map(character => ({
           character,
-          recent: experiences.filter(entry => entry.characterId === character.id).slice(-3),
+          recent: experiences.filter(entry => entry.characterId === character.cardId).slice(-3),
         })),
-        roster: characters.filter(character => character.status === 'active'),
+        roster,
         previousRecaps: previous.filter(candidate => candidate.recap !== undefined),
         ...(previousTail === undefined ? {} : { previousTail }),
       },
@@ -1092,37 +1057,35 @@ export class StoryBibleService {
 
   /**
    * The prepare half of 对账: the C-variant material pack (chapter body in
-   * full, plan, the active-foreshadow whitelist, the roster, the output
+   * full, plan, the live-foreshadow whitelist, the roster, the output
    * schema). The gate is the WRITING state (stored planning + a non-empty
    * manuscript): nothing to reconcile without a body, already-extracted and
    * reviewed chapters are refused (对账只发生在写作后、审过收章前 — 审过是人工
    * 闸门，永远最后). Delegating the pack to the subagent is the main agent's
    * job; the store never delegates.
    * @param request - work id and chapter number.
-   * @returns the pack text plus the whitelist, or the failure code.
+   * @returns the pack text plus the whitelist (card ids), or the failure code.
    */
   async extractPrepare(request: { readonly workId: string; readonly n: number }): Promise<{
     readonly ok: boolean
-    readonly error?: StoryError
+    readonly error?: NovelError
     readonly text?: string
     readonly foreshadowIds?: readonly string[]
     readonly characterIds?: readonly string[]
   }> {
-    const id = normalizeWorkId(request.workId)
-    if (id === undefined) return { ok: false, error: 'invalid-name' }
-    const meta = await this.readWorkMeta(id)
+    const meta = await this.readWorkMeta(request.workId)
     if (meta === undefined) return { ok: false, error: 'missing' }
-    const chapter = (await this.readChapters(id)).find(candidate => candidate.n === request.n)
+    const chapter = (await this.readChapters(meta.id)).find(candidate => candidate.n === request.n)
     if (chapter === undefined) return { ok: false, error: 'missing' }
     const body = await this.readChapterBody(meta, chapter)
     if (chapter.phase !== 'planning' || body.trim() === '') return { ok: false, error: 'not-reviewed' }
-    const gathered = await this.gatherBrief({ workId: id, chapter: chapter.n })
+    const gathered = await this.gatherBrief({ workId: meta.id, chapter: chapter.n })
     if (!gathered.ok || gathered.data === undefined) return { ok: false, error: gathered.error ?? 'io' }
     return {
       ok: true,
       text: renderExtractBrief(gathered.data, body),
-      foreshadowIds: gathered.data.activeForeshadows.map(memory => memory.id),
-      characterIds: gathered.data.roster.map(character => character.id),
+      foreshadowIds: [...gathered.data.activeForeshadows, ...gathered.data.unplantedForeshadows].map(view => view.cardId),
+      characterIds: gathered.data.roster.map(view => view.cardId),
     }
   }
 
@@ -1131,10 +1094,13 @@ export class StoryBibleService {
    * five gates of proposal §5):
    *   1. evidence grep: every item's quote must appear in the chapter body,
    *      else dropped with a log entry (anti-fabrication);
-   *   2. foreshadow ids must sit in the active-ledger whitelist, else dropped;
-   *   3. new_* (new characters/foreshadows) ALWAYS waits for review;
-   *   4. high confidence lands automatically (reviewed, 自动·可撤销);
-   *      medium/low goes to the pending queue;
+   *   2. foreshadow refs must resolve to a kept, unsettled foreshadow card,
+   *      else dropped;
+   *   3. new rules, foreshadows and characters below high confidence — and
+   *      every new foreshadow and character — land as ghost cards the user
+   *      keeps or archives on the board;
+   *   4. high confidence lands automatically (a kept card or a journal line,
+   *      marked 自动·可撤销); medium/low journal lines go to the pending queue;
    *   5. plan operations verify against the recorded mentions; a planned op
    *      with no touch lands in pending as 计划落空 (「忘了还是改主意」是人答
    *      的题), and every journal mention carries planned/reconciled flags.
@@ -1146,11 +1112,16 @@ export class StoryBibleService {
     request: { readonly workId: string; readonly n: number; readonly payload: ExtractPayload },
     session: Session,
   ): Promise<ImportReport> {
-    const empty = { verified: 0, missed: 0, autoImported: 0, pending: 0, dropped: [] as ImportDrop[], pendingItems: [] as { id: string; kind: PendingKind; reason: string }[] }
-    const id = normalizeWorkId(request.workId)
-    if (id === undefined) return { ok: false, error: 'invalid-name', ...empty }
-    const meta = await this.readWorkMeta(id)
-    if (meta === undefined) return { ok: false, error: 'missing', ...empty }
+    const empty = {
+      verified: 0, missed: 0, autoImported: 0, pending: 0,
+      dropped: [] as ImportDrop[], pendingItems: [] as { id: string; kind: PendingKind; reason: string }[],
+      proposedCards: [] as { cardId: string; role: EntryRole; text: string }[],
+    }
+    const canvas = this.canvas
+    const meta = await this.readWorkMeta(request.workId)
+    const entries = await this.readEntries(request.workId)
+    if (canvas === undefined || meta === undefined || entries === undefined) return { ok: false, error: 'missing', ...empty }
+    const id = meta.id
     const chapter = (await this.readChapters(id)).find(candidate => candidate.n === request.n)
     if (chapter === undefined) return { ok: false, error: 'missing', ...empty }
     const body = await this.readChapterBody(meta, chapter)
@@ -1160,51 +1131,44 @@ export class StoryBibleService {
     const report = { verified: 0, missed: 0, autoImported: 0, pending: 0 }
     const toPending: { kind: PendingKind; confidence: 'medium' | 'low'; chapter?: number; reason: string; evidenceInText?: string; payload: PendingPayload }[] = []
     const pend = (item: (typeof toPending)[number]): void => { toPending.push(item); report.pending += 1 }
-    const whitelist = new Set((await this.foreshadows(id))
-      .filter(memory => memory.specifics?.status !== 'resolved' && memory.specifics?.status !== 'abandoned')
-      .map(memory => memory.id))
-    const roster = await this.listCharacters({ workId: id })
-    const rosterIds = new Set(roster.map(character => character.id))
+    const confidenceOf = (raw: unknown): Confidence => raw === 'high' ? 'high' : raw === 'low' ? 'low' : 'medium'
+    const foreshadowOf = new Map(entries.foreshadows.map(view => [view.cardId, view]))
+    const whitelist = new Set(entries.foreshadows
+      .filter(view => view.cardStatus === 'kept' && (isLiveForeshadow(view) || view.state === '未埋'))
+      .map(view => view.cardId))
+    const roster = new Set(entries.characters.filter(view => view.cardStatus === 'kept').map(view => view.cardId))
+    const asForeshadow = (token: unknown): string | undefined => {
+      const handle = this.resolveCard(entries, token, 'foreshadow')
+      return handle?.role === 'foreshadow' ? handle.cardId : undefined
+    }
+    const asCharacter = (token: unknown): string | undefined => {
+      const handle = this.resolveCard(entries, token, 'character')
+      return handle?.role === 'character' ? handle.cardId : undefined
+    }
     const now = new Date().toISOString()
+    const source: NovelCardSource = { type: 'file', ref: join(meta.workspace ?? '', meta.title, chapter.file), title: `第${chapter.n}章` }
 
-    // Gate 4 (high → auto): new memories, gated by evidence first (gate 1).
-    const autoMemories: MemoryRecord[] = []
-    const MEMORY_TYPE_INPUTS = ['episodic', 'semantic', 'source', 'prospective', 'emotional', 'procedural', 'implicit'] as const
+    // The card writes this import will make (gate 3/4), collected first and landed below.
+    const cardWrites: { role: EntryRole; fields: Record<string, NovelFieldValue>; auto: boolean; note: CardNote; comment?: string; ref: string }[] = []
+
+    // World rules and principles: evidence first (gate 1); high → a kept card, medium/low → a ghost.
     for (const raw of payload.memories ?? []) {
-      const content = cleanText(raw['content'])
-      const confidence = raw['confidence'] === 'high' ? 'high' : raw['confidence'] === 'low' ? 'low' : 'medium'
-      const evidence = cleanText(raw['evidence_in_text'], 60)
+      const content = cleanText(raw.content)
       if (content === undefined) continue
+      const evidence = cleanText(raw.evidence_in_text, 60)
       if (!evidenceInBody(body, evidence)) {
         dropped.push({ kind: 'memory', reason: 'evidence-not-found', ref: content.slice(0, 30) })
         continue
       }
-      const typeInput = cleanText(raw['type'], 20)
-      const type = MEMORY_TYPE_INPUTS.find(candidate => candidate === typeInput) ?? 'semantic'
+      const role: EntryRole = cleanText(raw.kind, 10) === '原则' ? 'principle' : 'world'
+      const confidence = confidenceOf(raw.confidence)
+      const note: CardNote = { extractedBy: 'llm', confidence, evidenceInText: evidence!, firstChapter: chapter.n }
       if (confidence === 'high') {
-        report.autoImported += 1
-        autoMemories.push({
-          id: '', // allocated in the table write below
-          owner: cleanText(raw['owner'], 40) ?? 'creator',
-          type,
-          layer: 'canon',
-          content,
-          status: 'active',
-          reviewed: true,
-          confidence: 'high',
-          extractedBy: 'llm',
-          autoImported: true,
-          evidenceInText: evidence!,
-          firstChapter: chapter.n,
-          lastActiveChapter: chapter.n,
-          createdAt: now,
-          updatedAt: now,
-        })
+        cardWrites.push({ role, fields: { [MAIN_FIELD[role]]: content }, auto: true, note: { ...note, autoImported: true }, ref: content.slice(0, 30) })
       } else {
-        pend({
-          kind: 'memory', confidence, chapter: chapter.n, reason: `置信度 ${confidence}`,
-          payload: { content, owner: cleanText(raw['owner'], 40) ?? 'creator', type, confidence },
-          ...(evidence === undefined ? {} : { evidenceInText: evidence }),
+        cardWrites.push({
+          role, fields: { [MAIN_FIELD[role]]: content }, auto: false, note,
+          comment: `置信度 ${confidence} · 第${chapter.n}章：「${evidence}」`, ref: content.slice(0, 30),
         })
       }
     }
@@ -1213,29 +1177,30 @@ export class StoryBibleService {
     const recordedMentions: { id: string; kind: MentionEntry['kind'] }[] = []
     const journalLines: Record<string, unknown>[] = []
     const touch = new Map<string, { readonly kind: MentionEntry['kind']; readonly answer?: string }>()
+    const plannedIds = new Set((chapter.plan?.foreshadowOps ?? []).map(op => asForeshadow(op.id)).filter(Boolean))
     for (const raw of payload.foreshadow_mentions ?? []) {
-      const foreshadowId = foreshadowIdOf(raw['foreshadow_id'])
-      const kind = cleanText(raw['kind'], 20)
+      const kind = cleanText(raw.kind, 20)
       const mentionKind = kind === 'planted' || kind === 'advanced' || kind === 'hinted' || kind === 'resolved' ? kind : undefined
-      if (foreshadowId === undefined || mentionKind === undefined) continue
-      if (!whitelist.has(foreshadowId)) {
-        dropped.push({ kind: 'mention', reason: 'id-not-in-ledger', ref: String(raw['foreshadow_id'] ?? '') })
+      if (raw.foreshadow_id === undefined || mentionKind === undefined) continue
+      const foreshadowId = asForeshadow(raw.foreshadow_id)
+      if (foreshadowId === undefined || !whitelist.has(foreshadowId)) {
+        dropped.push({ kind: 'mention', reason: 'id-not-in-ledger', ref: String(raw.foreshadow_id) })
         continue
       }
-      const evidence = cleanText(raw['evidence_in_text'], 60)
+      const evidence = cleanText(raw.evidence_in_text, 60)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'mention', reason: 'evidence-not-found', ref: foreshadowId })
+        dropped.push({ kind: 'mention', reason: 'evidence-not-found', ref: foreshadowOf.get(foreshadowId)?.ref ?? foreshadowId })
         continue
       }
-      const confidence = raw['confidence'] === 'high' ? 'high' : raw['confidence'] === 'low' ? 'low' : 'medium'
-      const note = cleanText(raw['note'], 200)
-      const answer = cleanText(raw['answer'], 500)
+      const confidence = confidenceOf(raw.confidence)
+      const note = cleanText(raw.note, 200)
+      const answer = cleanText(raw.answer, 500)
       if (confidence === 'high') {
         recordedMentions.push({ id: foreshadowId, kind: mentionKind })
         touch.set(foreshadowId, { kind: mentionKind, ...(answer === undefined ? {} : { answer }) })
         journalLines.push({
           foreshadowId, chapter: chapter.n, kind: mentionKind,
-          planned: (chapter.plan?.foreshadowOps ?? []).some(op => foreshadowIdOf(op.id) === foreshadowId),
+          planned: plannedIds.has(foreshadowId),
           reconciled: true,
           ...(note === undefined ? {} : { note }),
           createdAt: now,
@@ -1249,59 +1214,59 @@ export class StoryBibleService {
       }
     }
 
-    // Gate 3: new_* always pends (evidence still greps — gate 1).
+    // Gate 3: new foreshadows and characters are always ghosts (evidence still greps — gate 1).
+    let newForeshadows = 0
     for (const raw of payload.new_foreshadows ?? []) {
-      const question = cleanText(raw['question'], 200)
+      const question = cleanText(raw.question, 200)
       if (question === undefined) continue
-      const evidence = cleanText(raw['evidence_in_text'], 60)
+      const evidence = cleanText(raw.evidence_in_text, 60)
       if (!evidenceInBody(body, evidence)) {
         dropped.push({ kind: 'new-foreshadow', reason: 'evidence-not-found', ref: question.slice(0, 30) })
         continue
       }
-      const tension = typeof raw['tension'] === 'number' && Number.isFinite(raw['tension']) ? Math.min(5, Math.max(1, Math.round(raw['tension']))) : undefined
-      pend({
-        kind: 'new-foreshadow', confidence: 'medium', chapter: chapter.n, reason: '新伏笔必待审',
-        payload: { question, ...(tension === undefined ? {} : { tension }) },
-        ...(evidence === undefined ? {} : { evidenceInText: evidence }),
+      const tension = cleanNumber(raw.tension)
+      newForeshadows += 1
+      cardWrites.push({
+        role: 'foreshadow', fields: { question, status: '已埋', plantedAt: chapter.n }, auto: false,
+        note: { extractedBy: 'llm', evidenceInText: evidence!, firstChapter: chapter.n, ...(tension === undefined ? {} : { tension }) },
+        comment: `第${chapter.n}章新埋：「${evidence}」`, ref: question.slice(0, 30),
       })
     }
     for (const raw of payload.new_characters ?? []) {
-      const name = cleanText(raw['name'], 80)
+      const name = cleanText(raw.name, 80)
       if (name === undefined) continue
-      const evidence = cleanText(raw['evidence_in_text'], 60)
+      const evidence = cleanText(raw.evidence_in_text, 60)
       if (!evidenceInBody(body, evidence)) {
         dropped.push({ kind: 'new-character', reason: 'evidence-not-found', ref: name })
         continue
       }
-      pend({
-        kind: 'new-character', confidence: 'medium', chapter: chapter.n, reason: '新角色必进待审',
-        payload: { name, ...(cleanText(raw['identity'], 200) === undefined ? {} : { identity: cleanText(raw['identity'], 200)! }) },
-        ...(evidence === undefined ? {} : { evidenceInText: evidence }),
+      const identity = cleanText(raw.identity, 200)
+      cardWrites.push({
+        role: 'character', fields: { name, ...(identity === undefined ? {} : { identity }) }, auto: false,
+        note: { extractedBy: 'llm', evidenceInText: evidence!, firstChapter: chapter.n },
+        comment: `第${chapter.n}章登场：「${evidence}」`, ref: name,
       })
     }
 
     // Experiences + current states: roster-checked, evidence-gated, high lands / medium-low pends.
     // Automatic experience lines carry an id (the retract gesture's handle) and the 自动·可撤销 mark.
     const experienceLines: Record<string, unknown>[] = []
-    let experienceNext = (await this.listExperiences({ workId: id })).reduce((max, row) => {
-      const match = /^e(\d+)$/.exec(row.id ?? '')
-      return match === null ? max : Math.max(max, Number(match[1]))
-    }, 0) + 1
-    const stateUpdates = new Map<string, CharacterRecord['currentState']>()
+    let experienceNext = nextExperienceNumber(await this.listExperiences({ workId: id }))
+    const stateUpdates = new Map<string, CurrentState>()
     for (const raw of payload.experiences ?? []) {
-      const characterId = cleanText(raw['character_id'], 40)
-      const entry = cleanText(raw['entry'], 500)
-      if (characterId === undefined || entry === undefined) continue
-      if (!rosterIds.has(characterId)) {
-        dropped.push({ kind: 'experience', reason: 'character-not-in-roster', ref: characterId })
+      const entry = cleanText(raw.entry, 500)
+      if (raw.character_id === undefined || entry === undefined) continue
+      const characterId = asCharacter(raw.character_id)
+      if (characterId === undefined || !roster.has(characterId)) {
+        dropped.push({ kind: 'experience', reason: 'character-not-in-roster', ref: String(raw.character_id) })
         continue
       }
-      const evidence = cleanText(raw['evidence_in_text'], 60)
+      const evidence = cleanText(raw.evidence_in_text, 60)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'experience', reason: 'evidence-not-found', ref: characterId })
+        dropped.push({ kind: 'experience', reason: 'evidence-not-found', ref: String(raw.character_id) })
         continue
       }
-      const confidence = raw['confidence'] === 'high' ? 'high' : raw['confidence'] === 'low' ? 'low' : 'medium'
+      const confidence = confidenceOf(raw.confidence)
       if (confidence === 'high') {
         experienceLines.push({ id: `e${experienceNext}`, characterId, chapter: chapter.n, entry, autoImported: true, createdAt: now })
         experienceNext += 1
@@ -1314,87 +1279,78 @@ export class StoryBibleService {
       }
     }
     for (const raw of payload.current_states ?? []) {
-      const characterId = cleanText(raw['character_id'], 40)
-      if (characterId === undefined || !rosterIds.has(characterId)) continue
-      if (raw['confidence'] !== 'high') continue
+      const characterId = asCharacter(raw.character_id)
+      if (characterId === undefined || !roster.has(characterId) || raw.confidence !== 'high') continue
+      const where = cleanText(raw.where, 200)
+      const state = cleanText(raw.state, 200)
+      const concern = cleanText(raw.concern, 200)
       stateUpdates.set(characterId, {
-        ...(cleanText(raw['where'], 200) === undefined ? {} : { where: cleanText(raw['where'], 200)! }),
-        ...(cleanText(raw['state'], 200) === undefined ? {} : { state: cleanText(raw['state'], 200)! }),
-        ...(cleanText(raw['concern'], 200) === undefined ? {} : { concern: cleanText(raw['concern'], 200)! }),
+        ...(where === undefined ? {} : { where }),
+        ...(state === undefined ? {} : { state }),
+        ...(concern === undefined ? {} : { concern }),
       })
     }
 
     // Gate 5: plan verification against what the chapter actually touched.
-    const newForeshadowPending = toPending.filter(item => item.kind === 'new-foreshadow').length
     for (const op of chapter.plan?.foreshadowOps ?? []) {
       const wanted = OP_TO_MENTION[op.op]
-      const opId = foreshadowIdOf(op.id)
+      const opId = op.id === undefined ? undefined : asForeshadow(op.id)
       const touched = opId === undefined ? [] : recordedMentions.filter(mention => mention.id === opId)
       const exact = touched.some(mention => mention.kind === wanted)
-      const anyTouch = touched.length > 0 || (op.op === '新埋' && newForeshadowPending > 0)
+      const anyTouch = touched.length > 0 || (op.op === '新埋' && newForeshadows > 0)
       if (exact || anyTouch) {
         report.verified += 1
       } else {
         report.missed += 1
+        const label = opId !== undefined
+          ? ` [${foreshadowOf.get(opId)?.ref ?? opId}]`
+          : op.id !== undefined ? ` [${op.id}]` : op.question === undefined ? '' : ` [${op.question}]`
         pend({
           kind: 'plan-missed', confidence: 'medium', chapter: chapter.n,
-          reason: `计划落空：${op.op}${opId === undefined ? (op.question === undefined ? '' : ` [${op.question}]`) : ` [#${opId.slice(1)}]`} —— 忘了还是改主意？`,
-          payload: { op: op.op, ...(op.id === undefined ? {} : { id: op.id }), ...(op.question === undefined ? {} : { question: op.question }) },
+          reason: `计划落空：${op.op}${label} —— 忘了还是改主意？`,
+          payload: { op: op.op, ...(op.id === undefined ? {} : { id: opId ?? op.id }), ...(op.question === undefined ? {} : { question: op.question }) },
         })
       }
     }
 
-    // The guarded writes, one file at a time (ids allocate inside each).
-    if (autoMemories.length > 0 || touch.size > 0) {
-      const written = await this.mutateJson(
-        await this.fileTarget(id, WORK_FILES.memories), session,
-        raw => normalizeMemoryTable(raw),
-        () => ({ version: 1 as const, memories: [] }),
-        (table, timestamp) => {
-          let next = table.memories.reduce((max, row) => Math.max(max, memoryNumberOf(row.id)), 0) + 1
-          for (const memory of autoMemories) {
-            table.memories.push({ ...memory, id: `m${next}` })
-            next += 1
-          }
-          for (const [foreshadowId, mark] of touch) {
-            const row = table.memories.find(candidate => candidate.id === foreshadowId)
-            if (row === undefined) continue
-            const mutable = row as { -readonly [K in keyof MemoryRecord]: MemoryRecord[K] }
-            mutable.lastActiveChapter = chapter.n
-            if (mark.kind === 'resolved') {
-              mutable.specifics = { ...row.specifics, status: 'resolved', ...(mark.answer === undefined ? {} : { answer: mark.answer }) }
-            } else if (row.specifics !== undefined) {
-              mutable.specifics = { ...row.specifics, status: mark.kind }
-            }
-            mutable.updatedAt = timestamp
-          }
-          return table
-        },
-      )
-      if (!written.ok) return { ok: false, error: written.error, ...empty, dropped }
+    // The writes. Cards first (through the canvas), then the sidecar, the journals, the chapter, the queue.
+    const notes = new Map<string, CardNote>()
+    const proposedCards: { cardId: string; role: EntryRole; text: string }[] = []
+    let board = entries.board
+    for (const write of cardWrites) {
+      const category = categoryOf(board, write.role)
+      const mutation = category === undefined
+        ? undefined
+        : write.auto
+          ? await canvas.putCard({ canvasId: id, kind: category, text: '', fields: write.fields, source }, session)
+          : await canvas.proposeCard({ canvasId: id, kind: category, text: '', fields: write.fields, source, ...(write.comment === undefined ? {} : { comment: write.comment }) }, session)
+      if (mutation === undefined || !mutation.ok) {
+        dropped.push({ kind: write.role, reason: 'card-refused', ref: write.ref })
+        continue
+      }
+      board = mutation.board
+      const cardId = board.cards[board.cards.length - 1]!.id
+      notes.set(cardId, write.note)
+      if (write.auto) report.autoImported += 1
+      else proposedCards.push({ cardId, role: write.role, text: String(write.fields[MAIN_FIELD[write.role]]) })
     }
+    for (const [foreshadowId, mark] of touch) {
+      const card = board.cards.find(candidate => candidate.id === foreshadowId)
+      if (card === undefined) continue
+      const fields: Record<string, NovelFieldValue> = { ...card.fields, status: MENTION_TO_STATE[mark.kind] }
+      if (mark.kind === 'planted' && cleanNumber(card.fields?.['plantedAt']) === undefined) fields['plantedAt'] = chapter.n
+      if (mark.kind === 'resolved' && mark.answer !== undefined) fields['answer'] = mark.answer
+      const mutation = await canvas.patchCard({ canvasId: id, cardId: foreshadowId, fields }, session)
+      if (!mutation.ok) return { ok: false, error: canvasErrorOf(mutation.error), ...empty, dropped }
+      board = mutation.board
+    }
+    for (const [characterId, currentState] of stateUpdates) notes.set(characterId, { currentState })
+    const annotated = await this.ensureRefs(id, session, board, notes)
+    if (!annotated.ok) return { ok: false, error: annotated.error ?? 'io', ...empty, dropped }
     const appendedMentions = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.mentions), session, journalLines)
     if (!appendedMentions.ok) return { ok: false, error: appendedMentions.error ?? 'io', ...empty, dropped }
     const appendedExperiences = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.experiences), session, experienceLines)
     if (!appendedExperiences.ok) return { ok: false, error: appendedExperiences.error ?? 'io', ...empty, dropped }
-    if (stateUpdates.size > 0) {
-      const written = await this.mutateJson(
-        await this.fileTarget(id, WORK_FILES.characters), session,
-        raw => normalizeCharacterTable(raw),
-        undefined,
-        (table, timestamp) => {
-          for (const [characterId, currentState] of stateUpdates) {
-            const row = table.characters.find(candidate => candidate.id === characterId)
-            if (row === undefined) continue
-            const mutable = row as { -readonly [K in keyof CharacterRecord]: CharacterRecord[K] }
-            mutable.currentState = currentState
-            mutable.updatedAt = timestamp
-          }
-          return table
-        },
-      )
-      if (!written.ok) return { ok: false, error: written.error, ...empty, dropped }
-    }
     const recap = cleanText(payload.recap, 500)
     const chapterWritten = await this.mutateJson(
       await this.fileTarget(id, WORK_FILES.chapters), session,
@@ -1448,7 +1404,7 @@ export class StoryBibleService {
       )
       if (!written.ok) return { ok: false, error: written.error, ...empty, dropped }
     }
-    return { ok: true, ...report, dropped, pendingItems }
+    return { ok: true, ...report, dropped, pendingItems, proposedCards }
   }
 
   /* -------------------------------------------------------------- pending */
@@ -1469,11 +1425,10 @@ export class StoryBibleService {
 
   /**
    * The person's answer to one pending item. accept materializes the payload
-   * through the same doors the writes use (a memory, a mention journal line,
-   * a character, a foreshadow, an experience — plan-missed has nothing to
-   * materialize: the answer IS the resolution); discard just settles the
-   * item. Settled items stay in the table (the queue is a snapshot, and the
-   * trail matters).
+   * (a mention journal line plus its card's status, an experience line —
+   * plan-missed has nothing to materialize: the answer IS the resolution);
+   * discard just settles the item. Settled items stay in the table (the queue
+   * is a snapshot, and the trail matters).
    * @param request - work id, item id, the action.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the receipt, or the failure code.
@@ -1481,7 +1436,7 @@ export class StoryBibleService {
   async decidePending(
     request: { readonly workId: string; readonly id: string; readonly action: 'accept' | 'discard' },
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: StoryError }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
     const items = await this.readPendingItems(workId)
@@ -1509,104 +1464,37 @@ export class StoryBibleService {
   }
 
   /** Materialize one accepted pending item; undefined on success, the failure code otherwise. */
-  private async materializePending(workId: string, item: PendingItem, session: Session): Promise<StoryError | undefined> {
+  private async materializePending(workId: string, item: PendingItem, session: Session): Promise<NovelError | undefined> {
     const now = new Date().toISOString()
-    if (item.kind === 'memory') {
-      const outcome = await this.writeMemory({
-        workId,
-        content: cleanText(item.payload['content']) ?? item.reason,
-        ...(cleanText(item.payload['type'], 20) === undefined ? {} : { type: cleanText(item.payload['type'], 20) as MemoryRecord['type'] }),
-        ...(cleanText(item.payload['owner'], 40) === undefined ? {} : { owner: cleanText(item.payload['owner'], 40)! }),
-        layer: 'canon',
-        confidence: item.confidence,
-        ...(item.evidenceInText === undefined ? {} : { evidenceInText: item.evidenceInText }),
-        ...(item.chapter === undefined ? {} : { chapter: item.chapter }),
-      }, session, 'agent')
-      // Accepted by a person: stamp reviewed, whatever the origin wrote.
-      if (outcome.ok && outcome.memory !== undefined) {
-        const reviewed = await this.decideMemory({ workId, id: outcome.memory.id, action: 'accept' }, session)
-        return reviewed.ok ? undefined : reviewed.error
-      }
-      return outcome.ok ? 'io' : outcome.error
-    }
     if (item.kind === 'mention') {
-      const foreshadowId = foreshadowIdOf(item.payload['foreshadowId'])
-      const kind = cleanText(item.payload['kind'], 20)
+      const canvas = this.canvas
+      const foreshadowId = item.payload.foreshadowId
+      const kind = item.payload.kind
       if (foreshadowId === undefined || (kind !== 'planted' && kind !== 'advanced' && kind !== 'hinted' && kind !== 'resolved')) return 'invalid-name'
+      const board = await this.readNovelBoard(workId)
+      const card = board?.cards.find(candidate => candidate.id === foreshadowId)
+      if (canvas === undefined || card === undefined) return 'missing'
       const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.mentions), session, [{
         foreshadowId,
         chapter: item.chapter ?? 0,
         kind,
         planned: false,
         reconciled: true,
-        ...(cleanText(item.payload['note'], 200) === undefined ? {} : { note: cleanText(item.payload['note'], 200)! }),
+        ...(item.payload.note === undefined ? {} : { note: item.payload.note }),
         createdAt: now,
       }])
       if (!appended.ok) return appended.error
-      const touched = await this.mutateJson(
-        await this.fileTarget(workId, WORK_FILES.memories), session,
-        raw => normalizeMemoryTable(raw),
-        undefined,
-        (table, timestamp) => {
-          const row = table.memories.find(candidate => candidate.id === foreshadowId)
-          if (row === undefined) return 'missing'
-          const mutable = row as { -readonly [K in keyof MemoryRecord]: MemoryRecord[K] }
-          if (item.chapter !== undefined) mutable.lastActiveChapter = item.chapter
-          if (kind === 'resolved') {
-            mutable.specifics = {
-              ...row.specifics,
-              status: 'resolved',
-              ...(cleanText(item.payload['answer'], 500) === undefined ? {} : { answer: cleanText(item.payload['answer'], 500)! }),
-            }
-          } else if (row.specifics !== undefined) {
-            mutable.specifics = { ...row.specifics, status: kind }
-          }
-          mutable.updatedAt = timestamp
-          return table
-        },
-      )
-      return touched.ok ? undefined : touched.error
-    }
-    if (item.kind === 'new-foreshadow') {
-      const question = cleanText(item.payload['question'], 200)
-      if (question === undefined) return 'invalid-name'
-      const tension = typeof item.payload['tension'] === 'number' ? item.payload['tension'] : undefined
-      const outcome = await this.writeMemory({
-        workId,
-        content: question,
-        type: 'prospective',
-        layer: 'canon',
-        confidence: 'medium',
-        specifics: { question, status: 'planted', ...(tension === undefined ? {} : { tension }), ...(item.chapter === undefined ? {} : { plantedAt: item.chapter }) },
-        ...(item.evidenceInText === undefined ? {} : { evidenceInText: item.evidenceInText }),
-        ...(item.chapter === undefined ? {} : { chapter: item.chapter }),
-      }, session, 'agent')
-      if (outcome.ok && outcome.memory !== undefined) {
-        const reviewed = await this.decideMemory({ workId, id: outcome.memory.id, action: 'accept' }, session)
-        return reviewed.ok ? undefined : reviewed.error
-      }
-      return outcome.ok ? 'io' : outcome.error
-    }
-    if (item.kind === 'new-character') {
-      const name = cleanText(item.payload['name'], 80)
-      if (name === undefined) return 'invalid-name'
-      const outcome = await this.writeCharacter({
-        workId,
-        name,
-        ...(cleanText(item.payload['identity'], 200) === undefined ? {} : { identity: cleanText(item.payload['identity'], 200)! }),
-      }, session)
-      return outcome.ok ? undefined : outcome.error
+      const fields: Record<string, NovelFieldValue> = { ...card.fields, status: MENTION_TO_STATE[kind] }
+      if (kind === 'planted' && item.chapter !== undefined && cleanNumber(card.fields?.['plantedAt']) === undefined) fields['plantedAt'] = item.chapter
+      if (kind === 'resolved' && item.payload.answer !== undefined) fields['answer'] = item.payload.answer
+      const mutation = await canvas.patchCard({ canvasId: workId, cardId: foreshadowId, fields }, session)
+      return mutation.ok ? undefined : canvasErrorOf(mutation.error)
     }
     if (item.kind === 'experience') {
-      const characterId = cleanText(item.payload['characterId'], 40)
-      const entry = cleanText(item.payload['entry'], 500)
+      const { characterId, entry } = item.payload
       if (characterId === undefined || entry === undefined) return 'invalid-name'
-      const experienceNext = (await this.listExperiences({ workId })).reduce((max, row) => {
-        const match = /^e(\d+)$/.exec(row.id ?? '')
-        return match === null ? max : Math.max(max, Number(match[1]))
-      }, 0) + 1
       const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.experiences), session, [{
-        id: `e${experienceNext}`,
+        id: `e${nextExperienceNumber(await this.listExperiences({ workId }))}`,
         characterId,
         chapter: item.chapter ?? 0,
         entry,
@@ -1626,21 +1514,114 @@ export function tailOf(body: string, max = 200): string | undefined {
   return trimmed.length <= max ? trimmed : `……${trimmed.slice(-max)}`
 }
 
-/** Tolerant readers for the four JSON documents (the store's read gate). */
-function normalizeMemoryTable(raw: unknown): MemoryTable | undefined {
-  if (typeof raw !== 'object' || raw === null) return undefined
-  const rows = (raw as Record<string, unknown>)['memories']
-  if (!Array.isArray(rows)) return undefined
-  return { version: 1, memories: rows.map(normalizeMemory).filter((row): row is MemoryRecord => row !== undefined) }
+/** The category id holding a role's cards on this board, or undefined. */
+function categoryOf(board: NovelBoardView, role: EntryRole): string | undefined {
+  return board.categories.find(category => category.role === role)?.id
 }
 
-function normalizeCharacterTable(raw: unknown): CharacterTable | undefined {
-  if (typeof raw !== 'object' || raw === null) return undefined
-  const rows = (raw as Record<string, unknown>)['characters']
-  if (!Array.isArray(rows)) return undefined
-  return { version: 1, characters: rows.map(normalizeCharacter).filter((row): row is CharacterRecord => row !== undefined) }
+/** Every card in one of the four role categories, by id → role. */
+function rolesOn(board: NovelBoardView): Map<string, EntryRole> {
+  const roleOfCategory = new Map<string, EntryRole>()
+  for (const category of board.categories) {
+    const role = ENTRY_ROLES.find(candidate => candidate === category.role)
+    if (role !== undefined) roleOfCategory.set(category.id, role)
+  }
+  const out = new Map<string, EntryRole>()
+  for (const card of board.cards) {
+    const role = roleOfCategory.get(card.kind)
+    if (role !== undefined) out.set(card.id, role)
+  }
+  return out
 }
 
+/** Live foreshadows, longest-slept first (an unknown sleep sorts as just touched). */
+function sortBySleep(views: readonly ForeshadowView[]): ForeshadowView[] {
+  return [...views].sort((a, b) => (b.slept ?? 0) - (a.slept ?? 0))
+}
+
+/** The next free `e<n>` over an experience journal. */
+function nextExperienceNumber(entries: readonly ExperienceEntry[]): number {
+  return entries.reduce((max, row) => {
+    const match = /^e(\d+)$/.exec(row.id ?? '')
+    return match === null ? max : Math.max(max, Number(match[1]))
+  }, 0) + 1
+}
+
+/**
+ * Build the role views off one board read (pure: the store reads, this
+ * derives).
+ * @param board - the novel board.
+ * @param annotations - the sidecar.
+ * @param mentions - the mention journal.
+ * @param chapters - the chapter index.
+ * @returns the work's entries.
+ */
+export function entriesOf(
+  board: NovelBoardView,
+  annotations: Annotations,
+  mentions: readonly MentionEntry[],
+  chapters: readonly ChapterRecord[],
+): WorkEntries {
+  const roleOf = rolesOn(board)
+  const currentChapter = chapters.reduce((max, chapter) => Math.max(max, chapter.n), 0)
+  const lastActive = new Map<string, number>()
+  for (const mention of mentions) lastActive.set(mention.foreshadowId, Math.max(lastActive.get(mention.foreshadowId) ?? 0, mention.chapter))
+  const rules: RuleView[] = []
+  const foreshadows: ForeshadowView[] = []
+  const characters: CharacterView[] = []
+  for (const card of board.cards) {
+    const role = roleOf.get(card.id)
+    if (role === undefined) continue
+    const n = annotations.refs[card.id]
+    const ref = n === undefined ? card.id : refOf(role, n)
+    const note = annotations.notes[card.id]
+    if (role === 'world' || role === 'principle') {
+      rules.push({ cardId: card.id, ref, role, text: mainTextOf(card, role), status: card.status, autoImported: note?.autoImported === true })
+    } else if (role === 'foreshadow') {
+      const plantedAt = cleanNumber(card.fields?.['plantedAt'])
+      const active = lastActive.get(card.id)
+      const answer = fieldText(card, 'answer', 500)
+      const base = active ?? plantedAt
+      foreshadows.push({
+        cardId: card.id,
+        ref,
+        question: mainTextOf(card, role),
+        state: foreshadowStateOf(card.fields?.['status']),
+        cardStatus: card.status,
+        ...(plantedAt === undefined ? {} : { plantedAt }),
+        ...(answer === undefined ? {} : { answer }),
+        ...(note?.tension === undefined ? {} : { tension: note.tension }),
+        ...(active === undefined ? {} : { lastActiveChapter: active }),
+        ...(base === undefined ? {} : { slept: Math.max(0, currentChapter - base) }),
+      })
+    } else {
+      const optional = (key: 'identity' | 'want' | 'lack' | 'wound' | 'appearance' | 'voice') => {
+        const value = fieldText(card, key, 500)
+        return value === undefined ? {} : { [key]: value }
+      }
+      characters.push({
+        cardId: card.id,
+        ref,
+        name: mainTextOf(card, role),
+        ...optional('identity'),
+        ...optional('want'),
+        ...optional('lack'),
+        ...optional('wound'),
+        ...optional('appearance'),
+        ...optional('voice'),
+        knows: linesOf(card.fields?.['knows']),
+        unaware: linesOf(card.fields?.['unaware']),
+        secrets: linesOf(card.fields?.['secrets']),
+        relations: linesOf(card.fields?.['relations']),
+        ...(note?.currentState === undefined ? {} : { currentState: note.currentState }),
+        cardStatus: card.status,
+      })
+    }
+  }
+  return { board, annotations, roleOf, rules, foreshadows, characters, currentChapter }
+}
+
+/** Tolerant readers for the JSON documents (the store's read gate). */
 function normalizeChapterTable(raw: unknown): ChapterTable | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const rows = (raw as Record<string, unknown>)['chapters']
@@ -1695,4 +1676,4 @@ function normalizeMention(raw: unknown): MentionEntry | undefined {
   }
 }
 
-export default StoryBibleService
+export default NovelService

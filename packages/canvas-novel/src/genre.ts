@@ -46,20 +46,87 @@ export interface NovelGenreDefinition {
   readonly agentRow: string
 }
 
-/** The board as the engine reads it: identity, title, workspaces, genre. */
+/** A card field value (the canvas `FieldValue` shape). */
+export type NovelFieldValue = string | number | string[]
+
+/** The card statuses: proposed is the ghost, kept is on the board, archived is hidden. */
+export type NovelCardStatus = 'proposed' | 'kept' | 'archived'
+
+/** Where a card came from (the canvas `BoardCardSource` shape). */
+export interface NovelCardSource {
+  readonly type: 'url' | 'file' | 'paste'
+  readonly ref: string
+  readonly title?: string
+}
+
+/** One card as the engine reads it. */
+export interface NovelCardView {
+  readonly id: string
+  readonly kind: string
+  readonly text: string
+  readonly status: NovelCardStatus
+  readonly fields?: Readonly<Record<string, NovelFieldValue>>
+  readonly source?: NovelCardSource
+  readonly comments: readonly { readonly author: 'user' | 'agent'; readonly text: string }[]
+  readonly createdBy: 'user' | 'agent'
+}
+
+/** One category as the engine reads it: the role is how a genre row is found. */
+export interface NovelCategoryView {
+  readonly id: string
+  readonly role?: string
+}
+
+/** The board as the engine reads it: identity, title, workspaces, genre, cards. */
 export interface NovelBoardView {
   readonly id: string
   readonly title: string
   readonly attachedWorkspaces: readonly string[]
   readonly genre?: { readonly id: string }
+  readonly categories: readonly NovelCategoryView[]
+  readonly cards: readonly NovelCardView[]
 }
+
+/** A card mutation's outcome: the fresh board, or the canvas failure code. */
+export type NovelBoardMutation =
+  | { readonly ok: true; readonly board: NovelBoardView }
+  | { readonly ok: false; readonly error: string }
+
+/** The fencing session a mutation runs under (the canvas takes the host `Session`). */
+type FenceSession = object
 
 /** The slice of `ctx.canvasBoard` the engine uses. */
 export interface CanvasBoardSlice {
-  readBoard(request: { readonly canvasId: string }):
-    Promise<{ readonly ok: true; readonly board: NovelBoardView } | { readonly ok: false; readonly error: string }>
+  readBoard(request: { readonly canvasId: string }): Promise<NovelBoardMutation>
   boundCanvasId(sessionId: string): Promise<string | undefined>
   registerGenre(definition: NovelGenreDefinition): () => void
+  putCard(request: {
+    readonly canvasId: string
+    readonly kind: string
+    readonly text: string
+    readonly source?: NovelCardSource
+    readonly fields?: Readonly<Record<string, NovelFieldValue>>
+  }, session: FenceSession): Promise<NovelBoardMutation>
+  proposeCard(request: {
+    readonly canvasId: string
+    readonly kind: string
+    readonly text: string
+    readonly source?: NovelCardSource
+    readonly comment?: string
+    readonly fields?: Readonly<Record<string, NovelFieldValue>>
+  }, session: FenceSession): Promise<NovelBoardMutation>
+  patchCard(request: {
+    readonly canvasId: string
+    readonly cardId: string
+    readonly status?: NovelCardStatus
+    readonly fields?: Readonly<Record<string, NovelFieldValue>>
+  }, session: FenceSession): Promise<NovelBoardMutation>
+  addComment(request: {
+    readonly canvasId: string
+    readonly cardId: string
+    readonly text: string
+    readonly author?: 'user' | 'agent'
+  }, session: FenceSession): Promise<NovelBoardMutation>
 }
 
 /** The roles the engine looks its categories up by (a renamed label keeps its role). */
@@ -74,9 +141,11 @@ export const NOVEL_ROLES = {
 export const NOVEL_AGENT_ROW = '@khorsheed/dsh-canvas-novel/agent'
 
 /**
- * The cold-start version. A foreshadow card stores only first-hand facts —
- * question, status, planted chapter, answer; tension and dormancy are
- * computed from the mention journal, never stored on the card.
+ * The cold-start version. The cards are the single source of truth for what
+ * gets injected into writing. A foreshadow card stores only first-hand facts —
+ * question, status, planted chapter, answer; dormancy is computed from the
+ * mention journal, and tension, a character's where-and-now and the audit
+ * trail live in the engine's sidecar — never on the card.
  */
 export const NOVEL_GENRE: NovelGenreDefinition = {
   id: NOVEL_GENRE_ID,
@@ -92,14 +161,19 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
         version: 1,
         layout: 'profile',
         fields: [
-          { key: 'identity', label: '身份', type: 'line', hint: '一句话：他是谁', required: true, face: true },
+          { key: 'name', label: '名字', type: 'line', hint: '书里怎么称呼他', required: true, face: true },
+          { key: 'identity', label: '身份', type: 'line', hint: '一句话：他是谁', face: true },
           { key: 'want', label: '想要', type: 'line', hint: '他在追什么' },
           { key: 'lack', label: '缺失', type: 'line', hint: '他自己没看见的缺口' },
           { key: 'wound', label: '旧伤', type: 'line', hint: '让他成为现在这样的那件事' },
           { key: 'appearance', label: '外貌', type: 'text', hint: '读者第一眼看到的' },
           { key: 'voice', label: '说话方式', type: 'text', hint: '口头禅、语速、用词' },
+          { key: 'knows', label: '知道的事', type: 'text', hint: '他已经知道、写他时可以用的事，一行一件' },
+          { key: 'unaware', label: '不知道的事', type: 'text', hint: '读者知道而他还不知道的事，一行一件' },
+          { key: 'secrets', label: '秘密', type: 'text', hint: '他瞒着别人的事，一行一件' },
+          { key: 'relations', label: '关系', type: 'text', hint: '他和其他人物的关系，一行一个人' },
         ],
-        example: { identity: '镇上唯一的钟表匠，四十岁', want: '把父亲留下的怀表修好', wound: '十二岁那年父亲没回家' },
+        example: { name: '老周', identity: '镇上唯一的钟表匠，四十岁', want: '把父亲留下的怀表修好', wound: '十二岁那年父亲没回家' },
       },
     },
     {

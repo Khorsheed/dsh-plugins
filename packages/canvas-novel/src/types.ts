@@ -1,22 +1,25 @@
 /**
- * The canvas-novel's data vocabulary (the 2026-10-04 story-bible proposal §2):
- * the per-work documents (`memories.json`, `characters.json`,
- * `chapters.json`, `pending.json`, under the canvas id's directory) and
- * the two append-only journals (`experiences.jsonl`, `mentions.jsonl`), plus
- * the tolerant normalizers every read applies — a hand-edited or older file
- * reads as the closest valid document, and a document too broken to read is
- * refused by the store rather than rewritten blind (the canvas store rule).
+ * The canvas-novel's data vocabulary. The board's cards are the single source
+ * of truth for what gets injected into writing — characters, world rules,
+ * principles, foreshadows are canvas cards in the genre's role categories.
+ * The engine keeps, under the canvas id's directory, only what is not the
+ * user's to type: `annotations.json` (the sidecar — per-work display refs and
+ * the audit notes, keyed by card id), `chapters.json`, `pending.json`, and the
+ * two append-only journals (`experiences.jsonl`, `mentions.jsonl`, keyed by
+ * card id). Every read applies a tolerant normalizer — a hand-edited or older
+ * file reads as the closest valid document, and a document too broken to
+ * read is refused by the store rather than rewritten blind (the canvas store
+ * rule).
  *
- * Id vocabulary: a work is its canvas (`canvas_<base36>`); memories `m<n>`,
- * characters `c<n>`, pending items `p<n>` — all allocated per work as max+1
- * over the file that owns them, so id allocation is atomic with the write
- * that needs it and no document carries counters. Display refs add a sigil: canon
- * rules render `[w<n>]`, foreshadows `[#<n>]`, and a plan's foreshadow op
- * accepts any of `m12` / `#12` / `12` (normalized by {@link foreshadowIdOf}).
- * Chapter files are named by the store alone: `第{n}章.md`.
+ * Refs: world rules and principles render `w<n>`, foreshadows `#<n>`
+ * (one numbering space), characters `c<n>` (their own); pending items are
+ * `p<n>`, experiences `e<n>`. All are allocated per work as max+1. Chapter
+ * files are named by the store alone: `第{n}章.md`.
  *
  * @module @khorsheed/dsh-canvas-novel
  */
+
+import type { NovelCardStatus } from './genre.ts'
 
 /* ------------------------------------------------------------------ works */
 
@@ -42,71 +45,7 @@ export function normalizeWorkId(id: unknown): string | undefined {
   return typeof id === 'string' && /^canvas_[a-z0-9]{8,40}$/.test(id) ? id : undefined
 }
 
-/* --------------------------------------------------------------- memories */
-
-/** The catmem type axis, transplanted per proposal §2. */
-export type MemoryType = 'episodic' | 'semantic' | 'source' | 'prospective' | 'emotional' | 'procedural' | 'implicit'
-/** canon = settled constraint; intent = inspiration still awaiting the user's ✓. */
-export type MemoryLayer = 'canon' | 'intent'
-/** The ghost card's filing route (proposal §4.1: kind IS the archive route). */
-export type MemoryKind = '世界' | '人物' | '章节' | '伏笔点子' | '原则'
-export type Confidence = 'high' | 'medium' | 'low'
-export type IntentStatus = 'draft' | 'active' | 'retired'
-
-/** A foreshadow's lifecycle (埋/提/推/揭/弃), stored under `specifics` of a `prospective` memory. */
-export type ForeshadowStatus = 'planted' | 'advanced' | 'hinted' | 'resolved' | 'abandoned'
-
-/** The `prospective` memory's ledger fields (proposal §2: 伏笔 = question/status/tension/planted_at…). */
-export interface ForeshadowSpecifics {
-  readonly question?: string
-  readonly status?: ForeshadowStatus
-  /** Narrative tension 1–5 (the ledger's 势). */
-  readonly tension?: number
-  /** Chapter the foreshadow was planted in. */
-  readonly plantedAt?: number
-  /** The reveal, once resolved (the plan brief prints it so planning cannot contradict it). */
-  readonly answer?: string
-}
-
-/** One memory record (canon and intent share the table, per proposal §2). */
-export interface MemoryRecord {
-  readonly id: string
-  /** 'creator' or a character id — creators and characters share the schema. */
-  readonly owner: string
-  readonly type: MemoryType
-  readonly layer: MemoryLayer
-  readonly content: string
-  readonly specifics?: ForeshadowSpecifics
-  /** intent layer only: draft awaits the user's ✓, active entered the brief, retired left it. */
-  readonly intentStatus?: IntentStatus
-  readonly kind?: MemoryKind
-  readonly status: 'active' | 'archived'
-  readonly reviewed: boolean
-  readonly confidence: Confidence
-  readonly extractedBy: 'llm' | 'user'
-  /** ≤50 characters quoted verbatim from the chapter (the import gate greps for it). */
-  readonly evidenceInText?: string
-  /** The extract import's high-confidence automatic write — 自动·可撤销. */
-  readonly autoImported?: boolean
-  readonly links?: { readonly derivesFrom?: readonly string[]; readonly resolvedBy?: string }
-  readonly firstChapter?: number
-  readonly lastActiveChapter?: number
-  readonly createdAt: string
-  readonly updatedAt: string
-}
-
-/** `memories.json` as one document. */
-export interface MemoryTable {
-  readonly version: 1
-  readonly memories: MemoryRecord[]
-}
-
-const MEMORY_TYPES: readonly MemoryType[] = ['episodic', 'semantic', 'source', 'prospective', 'emotional', 'procedural', 'implicit']
-const MEMORY_LAYERS: readonly MemoryLayer[] = ['canon', 'intent']
-const MEMORY_KINDS: readonly MemoryKind[] = ['世界', '人物', '章节', '伏笔点子', '原则']
-const CONFIDENCES: readonly Confidence[] = ['high', 'medium', 'low']
-const INTENT_STATUSES: readonly IntentStatus[] = ['draft', 'active', 'retired']
-const FORESHADOW_STATUSES: readonly ForeshadowStatus[] = ['planted', 'advanced', 'hinted', 'resolved', 'abandoned']
+/* ------------------------------------------------------------ primitives */
 
 /** One pick from a closed vocabulary, or undefined (the tolerant-read primitive). */
 function pick<T>(raw: unknown, values: readonly T[]): T | undefined {
@@ -121,216 +60,159 @@ export function cleanText(raw: unknown, max = 2000): string | undefined {
 }
 
 /** A non-negative finite number from untrusted input, or undefined. */
-function cleanNumber(raw: unknown): number | undefined {
+export function cleanNumber(raw: unknown): number | undefined {
   return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : undefined
 }
 
-/** The memory id's numeric part (`m12` → 12), for max+1 allocation; 0 when the shape is foreign. */
-export function memoryNumberOf(id: string): number {
-  const match = /^m(\d+)$/.exec(id)
-  return match === null ? 0 : Number(match[1])
+/** A string list from untrusted input. */
+function cleanStringList(raw: unknown, max = 20): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(item => cleanText(item, 200)).filter((item): item is string => item !== undefined).slice(0, max)
 }
 
-/** The canon rule's display ref (`m12` → `w12`, the brief's `[w12]`). */
-export function canonRefOf(id: string): string {
-  return `w${memoryNumberOf(id)}`
-}
+/* ---------------------------------------------------------- card entries */
 
-/** The foreshadow's display ref (`m12` → `#12`, the ledger's `[#12]`). */
-export function foreshadowRefOf(id: string): string {
-  return `#${memoryNumberOf(id)}`
+/**
+ * The four roles whose cards feed the brief. Each is a category the genre
+ * seeds, found on the board by its role (a renamed label keeps its role).
+ */
+export type EntryRole = 'character' | 'world' | 'principle' | 'foreshadow'
+
+/** A foreshadow card's status field (the genre's select options, in lifecycle order). */
+export type ForeshadowState = '未埋' | '已埋' | '推进中' | '已揭晓' | '已放弃'
+
+export const FORESHADOW_STATES: readonly ForeshadowState[] = ['未埋', '已埋', '推进中', '已揭晓', '已放弃']
+
+export type Confidence = 'high' | 'medium' | 'low'
+
+const CONFIDENCES: readonly Confidence[] = ['high', 'medium', 'low']
+
+/** A character's where-and-now (当前态), refreshed by each 对账. */
+export interface CurrentState {
+  readonly where?: string
+  readonly state?: string
+  readonly concern?: string
 }
 
 /**
- * A foreshadow memory id from any spelling the model may send (`m12`, `#12`,
- * `12`), or undefined when nothing numeric is there. Only the numeric part is
- * read — the store then checks the id against the work's actual ledger.
+ * The engine's notes on one card: the audit trail of how it got there and
+ * the derived state that is not the user's to type. None of it is a card
+ * field — the card holds only what the user would write themselves.
  */
-export function foreshadowIdOf(raw: unknown): string | undefined {
-  if (typeof raw !== 'string' && typeof raw !== 'number') return undefined
-  const match = /^#?m?(\d+)$/.exec(String(raw).trim())
-  return match === null ? undefined : `m${match[1]}`
+export interface CardNote {
+  readonly confidence?: Confidence
+  readonly extractedBy?: 'llm' | 'user'
+  /** ≤60 characters quoted verbatim from the chapter (the import gate grepped for it). */
+  readonly evidenceInText?: string
+  /** The extract import's high-confidence automatic write — 自动·可撤销. */
+  readonly autoImported?: boolean
+  /** The chapter whose 对账 brought the card in. */
+  readonly firstChapter?: number
+  /** Characters only: 当前态 as of the last 对账. */
+  readonly currentState?: CurrentState
+  /** Foreshadows only: narrative tension 1–5 (the ledger's 势). */
+  readonly tension?: number
 }
 
-/** Tolerant read of the foreshadow specifics block. */
-function normalizeSpecifics(raw: unknown): ForeshadowSpecifics | undefined {
+/**
+ * `annotations.json`, the engine's sidecar to the board, keyed by card id:
+ * the per-work display numbers (`refs`) and the notes. A card the sidecar
+ * does not know yet simply has no number until the next write allocates one.
+ */
+export interface Annotations {
+  readonly version: 1
+  readonly refs: Record<string, number>
+  readonly notes: Record<string, CardNote>
+}
+
+/** The two ref numbering spaces: characters (`c<n>`) and every other entry (`w<n>` / `#<n>`). */
+export type RefGroup = 'character' | 'entry'
+
+/** Which numbering space a role's cards draw from. */
+export function refGroupOf(role: EntryRole): RefGroup {
+  return role === 'character' ? 'character' : 'entry'
+}
+
+/** A card's display ref: world rules and principles `w12`, foreshadows `#12`, characters `c3`. */
+export function refOf(role: EntryRole, n: number): string {
+  if (role === 'character') return `c${n}`
+  return role === 'foreshadow' ? `#${n}` : `w${n}`
+}
+
+/**
+ * A ref from any spelling the model may send (`w12`, `#12`, `12`, `c3`), or
+ * undefined. Only the shape is read here — whether a card holds that number
+ * is the board's question.
+ */
+export function parseRef(raw: unknown): { readonly group: RefGroup; readonly n: number } | undefined {
+  if (typeof raw !== 'string' && typeof raw !== 'number') return undefined
+  const match = /^([wc#]?)(\d+)$/i.exec(String(raw).trim())
+  if (match === null) return undefined
+  return { group: match[1]!.toLowerCase() === 'c' ? 'character' : 'entry', n: Number(match[2]) }
+}
+
+/** Tolerant read of one card note. */
+function normalizeNote(raw: unknown): CardNote | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const record = raw as Record<string, unknown>
-  const out: { question?: string; status?: ForeshadowStatus; tension?: number; plantedAt?: number; answer?: string } = {}
-  const question = cleanText(record['question'], 200)
-  if (question !== undefined) out.question = question
-  const status = pick(record['status'], FORESHADOW_STATUSES)
-  if (status !== undefined) out.status = status
+  const out: { -readonly [K in keyof CardNote]?: CardNote[K] } = {}
+  const confidence = pick(record['confidence'], CONFIDENCES)
+  if (confidence !== undefined) out.confidence = confidence
+  if (record['extractedBy'] === 'llm' || record['extractedBy'] === 'user') out.extractedBy = record['extractedBy']
+  const evidenceInText = cleanText(record['evidenceInText'], 60)
+  if (evidenceInText !== undefined) out.evidenceInText = evidenceInText
+  if (record['autoImported'] === true) out.autoImported = true
+  const firstChapter = cleanNumber(record['firstChapter'])
+  if (firstChapter !== undefined) out.firstChapter = firstChapter
   const tension = cleanNumber(record['tension'])
   if (tension !== undefined) out.tension = Math.min(5, Math.max(1, Math.round(tension)))
-  const plantedAt = cleanNumber(record['plantedAt'] ?? record['planted_at'])
-  if (plantedAt !== undefined) out.plantedAt = plantedAt
-  const answer = cleanText(record['answer'], 500)
-  if (answer !== undefined) out.answer = answer
+  if (typeof record['currentState'] === 'object' && record['currentState'] !== null) {
+    const state = record['currentState'] as Record<string, unknown>
+    const where = cleanText(state['where'], 200)
+    const now = cleanText(state['state'], 200)
+    const concern = cleanText(state['concern'], 200)
+    out.currentState = {
+      ...(where === undefined ? {} : { where }),
+      ...(now === undefined ? {} : { state: now }),
+      ...(concern === undefined ? {} : { concern }),
+    }
+  }
   return Object.keys(out).length === 0 ? undefined : out
 }
 
-/** Tolerant read of one memory record; undefined when id/content/layer cannot be trusted. */
-export function normalizeMemory(raw: unknown): MemoryRecord | undefined {
+/** Tolerant read of the sidecar; undefined when the file is not one. */
+export function normalizeAnnotations(raw: unknown): Annotations | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const record = raw as Record<string, unknown>
-  const id = cleanText(record['id'], 40)
-  const content = cleanText(record['content'])
-  const layer = pick(record['layer'], MEMORY_LAYERS)
-  if (id === undefined || content === undefined || layer === undefined) return undefined
-  const now = new Date().toISOString()
-  const specifics = normalizeSpecifics(record['specifics'])
-  const intentStatus = pick(record['intentStatus'], INTENT_STATUSES)
-  const kind = pick(record['kind'], MEMORY_KINDS)
-  const evidenceInText = cleanText(record['evidenceInText'] ?? record['evidence_in_text'], 60)
-  const firstChapter = cleanNumber(record['firstChapter'] ?? record['first_chapter'])
-  const lastActiveChapter = cleanNumber(record['lastActiveChapter'] ?? record['last_active_chapter'])
-  const resolvedBy = cleanText(record['links'] !== null && typeof record['links'] === 'object'
-    ? (record['links'] as Record<string, unknown>)['resolvedBy'] : undefined, 40)
-  return {
-    id,
-    owner: cleanText(record['owner'], 40) ?? 'creator',
-    type: pick(record['type'], MEMORY_TYPES) ?? 'semantic',
-    layer,
-    content,
-    status: record['status'] === 'archived' ? 'archived' : 'active',
-    reviewed: record['reviewed'] === true,
-    confidence: pick(record['confidence'], CONFIDENCES) ?? 'medium',
-    extractedBy: record['extractedBy'] === 'user' ? 'user' : 'llm',
-    createdAt: cleanText(record['createdAt'], 40) ?? now,
-    updatedAt: cleanText(record['updatedAt'], 40) ?? now,
-    ...(specifics === undefined ? {} : { specifics }),
-    ...(intentStatus === undefined ? {} : { intentStatus }),
-    ...(kind === undefined ? {} : { kind }),
-    ...(evidenceInText === undefined ? {} : { evidenceInText }),
-    ...(record['autoImported'] === true ? { autoImported: true } : {}),
-    ...(resolvedBy === undefined ? {} : { links: { resolvedBy } }),
-    ...(firstChapter === undefined ? {} : { firstChapter }),
-    ...(lastActiveChapter === undefined ? {} : { lastActiveChapter }),
+  const refsRaw = record['refs']
+  const notesRaw = record['notes']
+  if (typeof refsRaw !== 'object' || refsRaw === null || typeof notesRaw !== 'object' || notesRaw === null) return undefined
+  const refs: Record<string, number> = {}
+  for (const [cardId, n] of Object.entries(refsRaw as Record<string, unknown>)) {
+    const clean = cleanNumber(n)
+    if (clean !== undefined && Number.isInteger(clean) && clean > 0) refs[cardId] = clean
   }
-}
-
-/* ------------------------------------------------------------- characters */
-
-/** The character card's five blocks (proposal §4.3) — every field exists to keep the model from writing the person wrong. */
-export interface CharacterRecord {
-  readonly id: string
-  readonly name: string
-  /** 一句身份 — the roster line. */
-  readonly identity: string
-  /** 档案 (准静态): 外貌 / 口癖与说话方式. */
-  readonly profile: { readonly appearance?: string; readonly voice?: string }
-  /** 内核 (极慢变): 想要 / 缺失 / 伤口. */
-  readonly core: { readonly want?: string; readonly lack?: string; readonly wound?: string }
-  /** 知道的事 / 不知道的事 / 秘密 — the POV boundary. */
-  readonly knowledge: {
-    readonly knows: readonly string[]
-    readonly unaware: readonly string[]
-    readonly secrets: readonly string[]
+  const notes: Record<string, CardNote> = {}
+  for (const [cardId, note] of Object.entries(notesRaw as Record<string, unknown>)) {
+    const clean = normalizeNote(note)
+    if (clean !== undefined) notes[cardId] = clean
   }
-  /** 关系: one current description per target plus a change journal (▲第5章升温). */
-  readonly relationships: readonly {
-    readonly target: string
-    readonly description: string
-    readonly changes: readonly { readonly chapter: number; readonly note: string }[]
-  }[]
-  /** 当前态: 在哪 / 状态 / 牵挂 — derived from the latest chapter, user-editable. */
-  readonly currentState: { readonly where?: string; readonly state?: string; readonly concern?: string }
-  /** Reserved for the M3+ generated portrait (proposal §0 non-goal note). */
-  readonly image?: string
-  readonly status: 'active' | 'archived'
-  readonly createdAt: string
-  readonly updatedAt: string
+  return { version: 1, refs, notes }
 }
 
-/** `characters.json` as one document. */
-export interface CharacterTable {
-  readonly version: 1
-  readonly characters: CharacterRecord[]
-}
+/* ---------------------------------------------------------- experiences */
 
 /** One line of `experiences.jsonl`: what this character did and how their state moved in one chapter. */
 export interface ExperienceEntry {
-  /** `e<n>`, allocated at write time — the retract gesture's handle (absent on pre-M3 lines). */
+  /** `e<n>`, allocated at write time — the retract gesture's handle. */
   readonly id?: string
+  /** The character's card id. */
   readonly characterId: string
   readonly chapter: number
   readonly entry: string
   /** The extract import's high-confidence automatic write — 自动·可撤销. */
   readonly autoImported?: boolean
   readonly createdAt: string
-}
-
-/** A string list from untrusted input (knowledge blocks). */
-function cleanStringList(raw: unknown, max = 20): string[] {
-  if (!Array.isArray(raw)) return []
-  return raw.map(item => cleanText(item, 200)).filter((item): item is string => item !== undefined).slice(0, max)
-}
-
-/** Tolerant read of one character record; undefined when id/name cannot be trusted. */
-export function normalizeCharacter(raw: unknown): CharacterRecord | undefined {
-  if (typeof raw !== 'object' || raw === null) return undefined
-  const record = raw as Record<string, unknown>
-  const id = cleanText(record['id'], 40)
-  const name = cleanText(record['name'], 80)
-  if (id === undefined || name === undefined) return undefined
-  const now = new Date().toISOString()
-  const obj = (key: string): Record<string, unknown> =>
-    typeof record[key] === 'object' && record[key] !== null ? record[key] as Record<string, unknown> : {}
-  const profile = obj('profile')
-  const core = obj('core')
-  const knowledge = obj('knowledge')
-  const currentState = obj('currentState')
-  const appearance = cleanText(profile['appearance'], 500)
-  const voice = cleanText(profile['voice'], 500)
-  const want = cleanText(core['want'], 300)
-  const lack = cleanText(core['lack'], 300)
-  const wound = cleanText(core['wound'], 300)
-  const where = cleanText(currentState['where'], 200)
-  const state = cleanText(currentState['state'], 200)
-  const concern = cleanText(currentState['concern'], 200)
-  const image = cleanText(record['image'], 300)
-  const relationships = (Array.isArray(record['relationships']) ? record['relationships'] : [])
-    .map((rel): CharacterRecord['relationships'][number] | undefined => {
-      if (typeof rel !== 'object' || rel === null) return undefined
-      const row = rel as Record<string, unknown>
-      const target = cleanText(row['target'], 80)
-      const description = cleanText(row['description'], 500)
-      if (target === undefined || description === undefined) return undefined
-      const changes = (Array.isArray(row['changes']) ? row['changes'] : [])
-        .map((change): { chapter: number; note: string } | undefined => {
-          if (typeof change !== 'object' || change === null) return undefined
-          const line = change as Record<string, unknown>
-          const chapter = cleanNumber(line['chapter'])
-          const note = cleanText(line['note'], 300)
-          return chapter === undefined || note === undefined ? undefined : { chapter, note }
-        })
-        .filter((change): change is { chapter: number; note: string } => change !== undefined)
-      return { target, description, changes }
-    })
-    .filter((rel): rel is CharacterRecord['relationships'][number] => rel !== undefined)
-  return {
-    id,
-    name,
-    identity: cleanText(record['identity'], 200) ?? '',
-    profile: { ...(appearance === undefined ? {} : { appearance }), ...(voice === undefined ? {} : { voice }) },
-    core: { ...(want === undefined ? {} : { want }), ...(lack === undefined ? {} : { lack }), ...(wound === undefined ? {} : { wound }) },
-    knowledge: {
-      knows: cleanStringList(knowledge['knows']),
-      unaware: cleanStringList(knowledge['unaware']),
-      secrets: cleanStringList(knowledge['secrets']),
-    },
-    relationships,
-    currentState: {
-      ...(where === undefined ? {} : { where }),
-      ...(state === undefined ? {} : { state }),
-      ...(concern === undefined ? {} : { concern }),
-    },
-    ...(image === undefined ? {} : { image }),
-    status: record['status'] === 'archived' ? 'archived' : 'active',
-    createdAt: cleanText(record['createdAt'], 40) ?? now,
-    updatedAt: cleanText(record['updatedAt'], 40) ?? now,
-  }
 }
 
 /* -------------------------------------------------------------- chapters */
@@ -349,7 +231,7 @@ export type EffectiveChapterPhase = 'planning' | 'writing' | 'extracted' | 'revi
 /** One planned foreshadow operation (推进/暗示/新埋/揭晓), referencing the ledger by id, or a question for 新埋. */
 export interface ForeshadowOp {
   readonly op: '推进' | '暗示' | '新埋' | '揭晓'
-  /** The ledger memory id, in any spelling {@link foreshadowIdOf} accepts. */
+  /** The foreshadow card id (or its ref — `#12`, `12`; writeChapter stores the card id when it resolves). */
   readonly id?: string
   /** 新埋 only: the question being planted. */
   readonly question?: string
@@ -482,34 +364,115 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
   }
 }
 
+/* ---------------------------------------------------------------- views */
+
+/** Split a multiline card field into its non-empty lines (一行一件). */
+export function linesOf(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(item => String(item).trim()).filter(line => line.length > 0)
+  if (typeof value !== 'string') return []
+  return value.split(/\r?\n/).map(line => line.replace(/^[-*·•]\s*/, '').trim()).filter(line => line.length > 0)
+}
+
+/** A world-rule or principle card, as the brief reads it. */
+export interface RuleView {
+  readonly cardId: string
+  /** `w<n>`, or the card id before a number is allocated. */
+  readonly ref: string
+  readonly role: 'world' | 'principle'
+  readonly text: string
+  readonly status: NovelCardStatus
+  readonly autoImported: boolean
+}
+
+/** A foreshadow card plus what its mentions derive. */
+export interface ForeshadowView {
+  readonly cardId: string
+  /** `#<n>`, or the card id before a number is allocated. */
+  readonly ref: string
+  readonly question: string
+  readonly state: ForeshadowState
+  readonly plantedAt?: number
+  readonly answer?: string
+  readonly tension?: number
+  /** The newest chapter that touched it (max mention chapter). */
+  readonly lastActiveChapter?: number
+  /** current − (lastActive ?? plantedAt); undefined when neither is known. */
+  readonly slept?: number
+  readonly cardStatus: NovelCardStatus
+}
+
+/** A character card, its multiline fields split into lines, plus the sidecar's 当前态. */
+export interface CharacterView {
+  readonly cardId: string
+  /** `c<n>`, or the card id before a number is allocated. */
+  readonly ref: string
+  readonly name: string
+  readonly identity?: string
+  readonly want?: string
+  readonly lack?: string
+  readonly wound?: string
+  readonly appearance?: string
+  readonly voice?: string
+  readonly knows: readonly string[]
+  readonly unaware: readonly string[]
+  readonly secrets: readonly string[]
+  readonly relations: readonly string[]
+  readonly currentState?: CurrentState
+  readonly cardStatus: NovelCardStatus
+}
+
+/** The mention kind a foreshadow op names (the journal's vocabulary). */
+export const OP_TO_MENTION: Readonly<Record<ForeshadowOp['op'], MentionEntry['kind']>> = {
+  推进: 'advanced',
+  暗示: 'hinted',
+  新埋: 'planted',
+  揭晓: 'resolved',
+}
+
+/** The foreshadow state a reconciled mention moves the card to. */
+export const MENTION_TO_STATE: Readonly<Record<MentionEntry['kind'], ForeshadowState>> = {
+  planted: '已埋',
+  advanced: '推进中',
+  hinted: '推进中',
+  resolved: '已揭晓',
+}
+
+/** A foreshadow state from a card field (the cold default is 已埋: a card on the board is a planted question). */
+export function foreshadowStateOf(raw: unknown): ForeshadowState {
+  return pick(raw, FORESHADOW_STATES) ?? '已埋'
+}
+
 /* --------------------------------------------------------------- pending */
 
-/** What a pending item proposes (proposal §5 gates 3–5). */
-export type PendingKind = 'memory' | 'mention' | 'new-character' | 'new-foreshadow' | 'experience' | 'plan-missed'
+/**
+ * What a pending item proposes. Proposed entries (a new rule, foreshadow or
+ * character) are not pending items — they are ghost cards on the board, kept
+ * or archived there; the queue holds only the journal lines that wait for a
+ * person.
+ */
+export type PendingKind = 'mention' | 'experience' | 'plan-missed'
 
-const PENDING_KINDS: readonly PendingKind[] = ['memory', 'mention', 'new-character', 'new-foreshadow', 'experience', 'plan-missed']
+const PENDING_KINDS: readonly PendingKind[] = ['mention', 'experience', 'plan-missed']
 
 /**
  * A pending item's proposed record, flattened to JSON-safe scalars (the wire
  * carries it, so no nested unknowns). Which keys matter follows `kind`.
  */
 export interface PendingPayload {
-  readonly content?: string
-  readonly type?: string
-  readonly owner?: string
-  readonly confidence?: string
+  /** mention: the foreshadow card id. */
   readonly foreshadowId?: string
+  /** mention: planted / advanced / hinted / resolved. */
   readonly kind?: string
   readonly note?: string
+  /** mention (resolved): the answer the text gave. */
   readonly answer?: string
-  readonly question?: string
-  readonly tension?: number
-  readonly name?: string
-  readonly identity?: string
+  /** experience: the character card id. */
   readonly characterId?: string
   readonly entry?: string
+  /** plan-missed: the planned op, and the foreshadow card id or 新埋 question. */
   readonly op?: string
   readonly id?: string
+  readonly question?: string
 }
 
 /** One row of `pending.json` (the review queue's snapshot — a derived cache that can be rebuilt). */
@@ -518,10 +481,10 @@ export interface PendingItem {
   readonly kind: PendingKind
   readonly confidence: 'medium' | 'low'
   readonly chapter?: number
-  /** One line on why this waits for a person (新角色必审 / 置信度 medium / 计划落空…). */
+  /** One line on why this waits for a person (置信度 medium / 计划落空…). */
   readonly reason: string
   readonly evidenceInText?: string
-  /** The proposed record, shaped per kind (memory input, mention, character draft, experience, plan op). */
+  /** The proposed record, shaped per kind (mention, experience, plan op). */
   readonly payload: PendingPayload
   readonly status: 'pending' | 'accepted' | 'discarded'
   readonly createdAt: string
@@ -539,12 +502,10 @@ function normalizePendingPayload(raw: unknown): PendingPayload {
   if (typeof raw !== 'object' || raw === null) return {}
   const record = raw as Record<string, unknown>
   const out: { -readonly [K in keyof PendingPayload]?: PendingPayload[K] } = {}
-  for (const key of ['content', 'type', 'owner', 'confidence', 'foreshadowId', 'kind', 'note', 'answer', 'question', 'name', 'identity', 'characterId', 'entry', 'op', 'id'] as const) {
+  for (const key of ['foreshadowId', 'kind', 'note', 'answer', 'question', 'characterId', 'entry', 'op', 'id'] as const) {
     const value = cleanText(record[key], 500)
     if (value !== undefined) out[key] = value
   }
-  const tension = cleanNumber(record['tension'])
-  if (tension !== undefined) out.tension = tension
   return out
 }
 
@@ -577,44 +538,12 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type StoryError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace'
-
-/** One mutation's receipt: the fresh document on success, the code on failure. */
-export interface StoryOutcome {
-  readonly ok: boolean
-  readonly error?: StoryError
-}
+export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace'
 
 /* ---------------------------------------------- wire-boundary contracts */
 
 /** The review verb's actions (proposal §3: 采纳/丢弃/归档/撤销 — UI 与 agent 同一动词). */
 export type ReviewAction = 'accept' | 'discard' | 'archive' | 'retract'
-
-/** A new memory as the write verb takes it. */
-export interface WriteMemoryRequest {
-  readonly workId: string
-  readonly content: string
-  readonly type?: MemoryRecord['type']
-  readonly layer?: MemoryRecord['layer']
-  readonly kind?: MemoryRecord['kind']
-  readonly owner?: string
-  readonly confidence?: Confidence
-  readonly evidenceInText?: string
-  readonly specifics?: MemoryRecord['specifics']
-  readonly chapter?: number
-}
-
-/** A character create (no id) or patch (id present); provided blocks replace. */
-export interface WriteCharacterRequest {
-  readonly workId: string
-  readonly id?: string
-  readonly name: string
-  readonly identity?: string
-  readonly profile?: CharacterRecord['profile']
-  readonly core?: CharacterRecord['core']
-  readonly knowledge?: CharacterRecord['knowledge']
-  readonly currentState?: CharacterRecord['currentState']
-}
 
 /** A chapter create (no n) or plan/title update (n present). */
 export interface WriteChapterRequest {
@@ -633,10 +562,9 @@ export interface WriteChapterRequest {
   readonly content?: string
 }
 
-/** The subagent's memory row (strict JSON, tolerant reads). */
+/** The subagent's world-rule row (strict JSON, tolerant reads): 世界 by default, 原则 for a writing principle. */
 export interface ExtractMemoryInput {
-  readonly type?: string
-  readonly owner?: string
+  readonly kind?: string
   readonly content?: string
   readonly confidence?: string
   readonly evidence_in_text?: string
@@ -683,19 +611,7 @@ export interface ExtractCurrentStateInput {
   readonly confidence?: string
 }
 
-/** A field-level memory edit (设定集/世界规则区的修订): patch the named fields, leave the rest. */
-export interface PatchMemoryRequest {
-  readonly workId: string
-  readonly id: string
-  readonly content?: string
-  readonly kind?: MemoryKind
-  readonly specifics?: ForeshadowSpecifics
-}
-
-/** The foreshadow three exits (世界记忆卡的 登记揭晓/弃置/转设定). */
-export type ForeshadowExitAction = 'resolve' | 'abandon' | 'promote'
-
-/** The subagent's strict JSON, as `story_extract` import receives it (tolerant reads throughout). */
+/** The subagent's strict JSON, as `novel_extract` import receives it (tolerant reads throughout). */
 export interface ExtractPayload {
   readonly memories?: readonly ExtractMemoryInput[]
   readonly foreshadow_mentions?: readonly ExtractMentionInput[]
@@ -710,28 +626,30 @@ export interface ExtractPayload {
 /** One dropped import item and why (the anti-fabrication log). */
 export interface ImportDrop {
   readonly kind: string
-  readonly reason: 'evidence-not-found' | 'id-not-in-ledger' | 'character-not-in-roster'
+  readonly reason: 'evidence-not-found' | 'id-not-in-ledger' | 'character-not-in-roster' | 'card-refused'
   readonly ref: string
 }
 
 /** The import's reconciliation report (the model's 汇报格式 rides on these numbers). */
 export interface ImportReport {
   readonly ok: boolean
-  readonly error?: StoryError
+  readonly error?: NovelError
   readonly verified: number
   readonly missed: number
   readonly autoImported: number
   readonly pending: number
   readonly dropped: readonly ImportDrop[]
   readonly pendingItems: readonly { readonly id: string; readonly kind: PendingKind; readonly reason: string }[]
+  /** The ghost cards this import proposed (new rules, foreshadows, characters). */
+  readonly proposedCards: readonly { readonly cardId: string; readonly role: EntryRole; readonly text: string }[]
 }
 
-/** The ledger answer (伏笔沉睡榜 + 健康度). */
+/** The ledger answer (伏笔沉睡榜 + 健康度) — kept foreshadow cards only. */
 export interface LedgerResult {
   readonly ok: boolean
-  readonly error?: StoryError
-  readonly active: readonly MemoryRecord[]
-  readonly resolved: readonly MemoryRecord[]
+  readonly error?: NovelError
+  readonly active: readonly ForeshadowView[]
+  readonly resolved: readonly ForeshadowView[]
   readonly counts: { readonly active: number; readonly overdue: number; readonly resolved: number; readonly abandoned: number }
   /** The newest chapter number — the sleeping baseline. */
   readonly currentChapter: number

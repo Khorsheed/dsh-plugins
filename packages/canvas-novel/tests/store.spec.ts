@@ -1,23 +1,24 @@
 /**
  * The store's core verbs on the《梦境监护者》seed and on a fresh work:
  * a work is a 长篇小说 canvas (served by the fake canvas), numbering rules
- * (n max+1, file from n, ids per table), the session binding, the review gate, the ghost-card review flow, the ledger, the
- * JSONL journals, and the re-rooted fence (the canvas store's pattern).
+ * (n max+1, file from n, refs per numbering space), the session binding,
+ * the review gate, the ghost-card review flow on the canvas cards, the
+ * ledger, the JSONL journals, and the re-rooted fence (the canvas store's
+ * pattern).
  */
 import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
-import { resolveStoryStateRoot, StoryBibleService } from '../src/store.ts'
+import { NovelService, resolveNovelStateRoot } from '../src/store.ts'
 import { chapterFileName, chapterNumberOfFile, effectiveChapterPhase } from '../src/types.ts'
 import { FakeCanvas, provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
-import { DREAM, seedDreamKeeper } from './seed-dream.ts'
+import { CARD, DREAM, seedDreamKeeper } from './seed-dream.ts'
 
 const SESSION = { id: 's-1' } as unknown as Session
-const OTHER = { id: 's-2' } as unknown as Session
 
 /** A store over a confining FakeFs (workspace-write) plus the fence ledger. */
-function confiningStore(stateRoot = '/dsh/state/story'): { store: StoryBibleService; fs: FakeFs; canvas: FakeCanvas } {
+function confiningStore(stateRoot = '/dsh/state/novel'): { store: NovelService; fs: FakeFs; canvas: FakeCanvas } {
   const fs = new FakeFs()
   fs.sandboxMode = 'workspace-write'
   const ctx = new Context()
@@ -26,7 +27,7 @@ function confiningStore(stateRoot = '/dsh/state/story'): { store: StoryBibleServ
   ctx.provide('sandboxPolicy', {
     resolve: ({ session }: { session: Session }) => ({ mode: 'workspace-write', workspaceRoot: '/some/session/cwd', sessionId: String(session.id) }),
   } as never)
-  return { store: new StoryBibleService(ctx, { stateRoot }), fs, canvas }
+  return { store: new NovelService(ctx, { stateRoot }), fs, canvas }
 }
 
 /** A fresh 长篇小说 canvas with the workspace attached; its id is the work id. */
@@ -35,15 +36,15 @@ function freshWork(canvas: FakeCanvas, title: string, id = 'canvas_fresh0001'): 
   return id
 }
 
-describe('the story store', () => {
-  it('resolves the state root the datasets/canvas way (explicit → $DSH_HOME/state/story → cwd)', () => {
-    expect(resolveStoryStateRoot('/x')).toBe('/x')
+describe('the novel store', () => {
+  it('resolves the state root the datasets/canvas way (explicit → $DSH_HOME/state/novel → cwd)', () => {
+    expect(resolveNovelStateRoot('/x')).toBe('/x')
     const home = process.env.DSH_HOME
     process.env.DSH_HOME = '/dsh-home'
-    expect(resolveStoryStateRoot(undefined)).toBe('/dsh-home/state/story')
+    expect(resolveNovelStateRoot(undefined)).toBe('/dsh-home/state/novel')
     if (home === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = home
-    expect(resolveStoryStateRoot('')).toContain('.dsh-story')
+    expect(resolveNovelStateRoot('')).toContain('.dsh-novel')
   })
 
   it('a work is a novel canvas; a session writes into the canvas it is bound to', async () => {
@@ -67,10 +68,10 @@ describe('the story store', () => {
   it('reads no work at all without the canvas (degrade, never explode)', async () => {
     const ctx = new Context()
     ctx.provide('fs', new FakeFs() as never)
-    const store = new StoryBibleService(ctx, { stateRoot: '/dsh/state/story' })
+    const store = new NovelService(ctx, { stateRoot: '/dsh/state/novel' })
     expect(await store.readWorkMeta(DREAM.workId)).toBeUndefined()
     expect(await store.boundWork('s-1')).toBeUndefined()
-    expect((await store.writeMemory({ workId: DREAM.workId, content: '无处落库。' }, SESSION, 'agent')).error).toBe('missing')
+    expect((await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { rule: '无处落卡。' } }, SESSION)).error).toBe('missing')
   })
 
   it('allocates chapter numbers max+1, names files from n, keeps seq as the sort key', async () => {
@@ -97,7 +98,7 @@ describe('the story store', () => {
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     provideCanvas(ctx)
-    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
     const chapters = await store.listChapters({ workId: DREAM.workId })
     expect(chapters.find(row => row.chapter.n === 5)?.phase).toBe('extracted')
     expect(chapters.find(row => row.chapter.n === 6)?.phase).toBe('planning')
@@ -119,26 +120,32 @@ describe('the story store', () => {
     expect(effectiveChapterPhase({ ...again.chapter!, phase: 'reviewed' }, false)).toBe('fileMissing')
   })
 
-  it('runs the ghost-card review flow: draft → accept enters the brief, discard archives', async () => {
+  it('runs the ghost-card review flow: a proposal stays out of the brief until ✓, ✗ archives', async () => {
     const fs = new FakeFs()
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
-    provideCanvas(ctx)
-    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
-    const written = await store.writeMemory({ workId: DREAM.workId, content: '钟楼是两层梦的接缝。', kind: '世界' }, SESSION, 'agent')
-    expect(written.memory).toMatchObject({ id: 'm19', layer: 'intent', intentStatus: 'draft', reviewed: false, extractedBy: 'llm' })
-    // A draft stays out of the brief's canon set…
+    const canvas = provideCanvas(ctx)
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
+    const written = await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { rule: '钟楼是两层梦的接缝。' } }, SESSION)
+    // The entry space is shared by rules and foreshadows: #18 is the max, so the new rule draws w19.
+    expect(written).toMatchObject({ ok: true, ref: 'w19' })
+    expect(canvas.card(DREAM.workId, written.cardId!)).toMatchObject({ status: 'proposed', createdBy: 'agent' })
+    // A ghost stays out of the brief's canon set…
     const before = await store.gatherBrief({ workId: DREAM.workId })
-    expect(before.data?.canonRules.some(memory => memory.content.includes('接缝'))).toBe(false)
-    const accepted = await store.decideMemory({ workId: DREAM.workId, id: 'm19', action: 'accept' }, SESSION)
-    expect(accepted.memory).toMatchObject({ intentStatus: 'active', reviewed: true })
-    const discarded = await store.decideMemory({ workId: DREAM.workId, id: 'm6', action: 'discard' }, SESSION)
-    expect(discarded.memory).toMatchObject({ status: 'archived', intentStatus: 'retired' })
-    // Ids allocate max+1 over the table, sparse numbering included.
-    const next = await store.writeMemory({ workId: DREAM.workId, content: '又一条。' }, SESSION, 'user')
-    expect(next.memory?.id).toBe('m20')
-    expect(next.memory).toMatchObject({ reviewed: true, extractedBy: 'user', confidence: 'high' })
+    expect(before.data?.canonRules.some(view => view.text.includes('接缝'))).toBe(false)
+    // …until ✓ keeps it.
+    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w19', action: 'accept' }, SESSION)).ok).toBe(true)
+    const after = await store.gatherBrief({ workId: DREAM.workId })
+    expect(after.data?.canonRules.some(view => view.text.includes('接缝'))).toBe(true)
+    // ✗ archives the seeded ghost; the card stays on the board, hidden.
+    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w6', action: 'discard' }, SESSION)).ok).toBe(true)
+    expect(canvas.card(DREAM.workId, CARD.dreamLayers)?.status).toBe('archived')
+    // Accept/discard need a ghost; a kept card refuses them.
+    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w1', action: 'accept' }, SESSION)).error).toBe('invalid-name')
+    // A proposal needs its role's main field; the next one draws max+1.
+    expect((await store.writeCard({ workId: DREAM.workId, role: 'world', fields: {} }, SESSION)).error).toBe('invalid-name')
+    expect((await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { rule: '又一条。' } }, SESSION)).ref).toBe('w20')
   })
 
   it('reads the ledger off the seed (沉睡优先, health counts)', async () => {
@@ -147,33 +154,34 @@ describe('the story store', () => {
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     provideCanvas(ctx)
-    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
     const ledger = await store.ledger({ workId: DREAM.workId })
     expect(ledger.counts).toEqual({ active: 3, overdue: 3, resolved: 1, abandoned: 0 })
     expect(ledger.currentChapter).toBe(6)
-    expect(ledger.active.map(memory => memory.id)).toEqual(['m18', 'm15', 'm12'])
+    expect(ledger.active.map(view => view.cardId)).toEqual([CARD.formerKeeper, CARD.leafGlow, CARD.doorGap])
   })
 
   it('appends to the JSONL journals without rewriting history (bad lines drop out of the view only)', async () => {
     const { store, fs, canvas } = confiningStore()
     const workId = freshWork(canvas, '流水')
-    await store.writeCharacter({ workId, name: '甲' }, SESSION)
+    const character = await store.writeCard({ workId, role: 'character', fields: { name: '甲' } }, SESSION)
+    expect(character.ref).toBe('c1')
+    await store.reviewCard({ workId, id: 'c1', action: 'accept' }, SESSION)
     // A hand-corrupted line stays on disk but drops out of the view.
-    fs.seed(`/dsh/state/story/${workId}/experiences.jsonl`, '{"characterId":"c1","chapter":1,"entry":"好行","createdAt":"t"}\nnot-json\n')
+    fs.seed(`/dsh/state/novel/${workId}/experiences.jsonl`, '{"characterId":"c1","chapter":1,"entry":"好行","createdAt":"t"}\nnot-json\n')
     const before = await store.listExperiences({ workId })
     expect(before).toHaveLength(1)
     // …and an import's append keeps both the good line and the corrupt one.
-    fs.seed(`/dsh/state/story/${workId}/chapters.json`, `${JSON.stringify({ version: 1, chapters: [
+    fs.seed(`/dsh/state/novel/${workId}/chapters.json`, `${JSON.stringify({ version: 1, chapters: [
       { n: 1, seq: 1, title: '一', file: '第1章.md', phase: 'planning', sessionIds: [], createdAt: 't', updatedAt: 't' },
     ] }, null, 2)}\n`)
-    fs.seed(`/dsh/state/story/${workId}/memories.json`, `${JSON.stringify({ version: 1, memories: [] }, null, 2)}\n`)
-    fs.seed(`/dsh/state/story/${workId}/pending.json`, `${JSON.stringify({ version: 1, items: [] }, null, 2)}\n`)
+    fs.seed(`/dsh/state/novel/${workId}/pending.json`, `${JSON.stringify({ version: 1, items: [] }, null, 2)}\n`)
     fs.seed(`${'/home/user/workspace'}/流水/第1章.md`, '正文里有甲出场。\n')
     const report = await store.extractImport({ workId, n: 1, payload: {
       experiences: [{ character_id: 'c1', entry: '甲出场了', confidence: 'high', evidence_in_text: '甲出场' }],
     } }, SESSION)
     expect(report.ok).toBe(true)
-    const raw = fs.read(`/dsh/state/story/${workId}/experiences.jsonl`)
+    const raw = fs.read(`/dsh/state/novel/${workId}/experiences.jsonl`)
     expect(raw).toContain('not-json')
     expect(raw.trim().split('\n')).toHaveLength(3)
     const after = await store.listExperiences({ workId })
@@ -183,11 +191,11 @@ describe('the story store', () => {
   it('refuses to write what it cannot read (corrupt files never get clobbered)', async () => {
     const { store, fs, canvas } = confiningStore()
     const workId = freshWork(canvas, '坏档')
-    fs.seed(`/dsh/state/story/${workId}/memories.json`, '{broken json')
-    const outcome = await store.writeMemory({ workId, content: '不该落库。' }, SESSION, 'agent')
+    fs.seed(`/dsh/state/novel/${workId}/chapters.json`, '{broken json')
+    const outcome = await store.writeChapter({ workId, title: '不该落库' }, SESSION)
     expect(outcome.ok).toBe(false)
     expect(outcome.error).toBe('io')
-    expect(fs.read(`/dsh/state/story/${workId}/memories.json`)).toBe('{broken json')
+    expect(fs.read(`/dsh/state/novel/${workId}/chapters.json`)).toBe('{broken json')
   })
 
   it('a read-only deployment denies every state write (the fence keeps the mode)', async () => {
@@ -197,8 +205,8 @@ describe('the story store', () => {
     ctx.provide('fs', fs as never)
     provideCanvas(ctx)
     ctx.provide('sandboxPolicy', { resolve: () => ({ mode: 'read-only', workspaceRoot: '/x' }) } as never)
-    const store = new StoryBibleService(ctx, { stateRoot: '/dsh/state/story' })
-    const written = await store.writeMemory({ workId: DREAM.workId, content: '写不进去。' }, SESSION, 'user')
+    const store = new NovelService(ctx, { stateRoot: '/dsh/state/novel' })
+    const written = await store.writeChapter({ workId: DREAM.workId, title: '写不进去' }, SESSION)
     expect(written.ok).toBe(false)
     expect(written.error).toBe('denied')
   })
@@ -212,7 +220,7 @@ describe('the story store', () => {
     expect(fs.read('/home/user/workspace/落盘/第1章.md')).toBe('开头三段。\n')
     expect(written.chapter).toMatchObject({ n: 1, file: '第1章.md' })
     // The write carried the session's mode with the boundary re-rooted at the WORK's workspace.
-    expect(fs.policies.every(policy => policy?.workspaceRoot === '/home/user/workspace' || policy?.workspaceRoot === '/dsh/state/story')).toBe(true)
+    expect(fs.policies.every(policy => policy?.workspaceRoot === '/home/user/workspace' || policy?.workspaceRoot === '/dsh/state/novel')).toBe(true)
     // The chapter reads back as 写作中 (planning + body).
     const listed = await store.listChapters({ workId })
     expect(listed[0]?.phase).toBe('writing')
@@ -226,7 +234,7 @@ describe('the story store', () => {
     ctxDenied.provide('sandboxPolicy', {
       resolve: ({ session }: { session: Session }) => ({ mode: 'read-only', workspaceRoot: '/outside', sessionId: String(session.id) }),
     } as never)
-    const deniedStore = new StoryBibleService(ctxDenied, { stateRoot: '/dsh/state/story' })
+    const deniedStore = new NovelService(ctxDenied, { stateRoot: '/dsh/state/novel' })
     const refused = await deniedStore.writeChapter({ workId: 'canvas_denied0001', title: '第一章', content: '写不进去。' }, SESSION)
     expect(refused.ok).toBe(false)
     expect(refused.error).toBe('denied')
@@ -248,25 +256,28 @@ describe('the story store', () => {
     expect(chapterNumberOfFile('第六十章.md')).toBeUndefined()
   })
 
-  it('patchMemory revises through derives_from: the old row archives, the new one heads the chain', async () => {
+  it('writeCard with a ref merges fields into the card in place; archive retires it from the brief', async () => {
     const fs = new FakeFs()
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
-    provideCanvas(ctx)
-    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
-    const revised = await store.patchMemory({ workId: DREAM.workId, id: 'm2', content: '蓝色叶子是梦主意识碎片的载体，见光即醒。' }, SESSION)
-    expect(revised.ok).toBe(true)
-    expect(revised.memory).toMatchObject({ id: 'm19', reviewed: true, extractedBy: 'user', links: { derivesFrom: ['m2'] } })
-    const memories = await store.listMemories({ workId: DREAM.workId, includeArchived: true })
-    expect(memories.find(memory => memory.id === 'm2')?.status).toBe('archived')
-    expect(memories.find(memory => memory.id === 'm19')?.content).toBe('蓝色叶子是梦主意识碎片的载体，见光即醒。')
-    // The brief's canon set reads the new head, not the archived row.
+    const canvas = provideCanvas(ctx)
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
+    const revised = await store.writeCard({ workId: DREAM.workId, role: 'world', id: 'w2', fields: { rule: '蓝色叶子是梦主意识碎片的载体，见光即醒。', bogus: 'x' } }, SESSION)
+    expect(revised).toMatchObject({ ok: true, cardId: CARD.leafCarrier, ref: 'w2', ignored: ['bogus'] })
+    expect(canvas.card(DREAM.workId, CARD.leafCarrier)?.fields?.rule).toBe('蓝色叶子是梦主意识碎片的载体，见光即醒。')
     const brief = await store.gatherBrief({ workId: DREAM.workId })
-    expect(brief.data?.canonRules.some(memory => memory.id === 'm19')).toBe(true)
-    expect(brief.data?.canonRules.some(memory => memory.id === 'm2')).toBe(false)
-    // An archived row refuses further edits.
-    expect((await store.patchMemory({ workId: DREAM.workId, id: 'm2', content: 'x' }, SESSION)).ok).toBe(false)
+    expect(brief.data?.canonRules.find(view => view.cardId === CARD.leafCarrier)?.text).toContain('见光即醒')
+    // A ref of another role, or an empty patch, refuses.
+    expect((await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: 'w2', fields: { question: 'x' } }, SESSION)).ok).toBe(false)
+    expect((await store.writeCard({ workId: DREAM.workId, role: 'world', id: 'w2', fields: { bogus: 'x' } }, SESSION)).error).toBe('invalid-name')
+    // Archive retires the kept card; a second archive refuses.
+    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w2', action: 'archive' }, SESSION)).ok).toBe(true)
+    const after = await store.gatherBrief({ workId: DREAM.workId })
+    expect(after.data?.canonRules.some(view => view.cardId === CARD.leafCarrier)).toBe(false)
+    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w2', action: 'archive' }, SESSION)).ok).toBe(false)
+    // Retract is for automatic imports only.
+    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w1', action: 'retract' }, SESSION)).ok).toBe(false)
   })
 
   it('confirmChapterPlan stamps the gate and is idempotent; a planless chapter refuses', async () => {
@@ -275,7 +286,7 @@ describe('the story store', () => {
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     provideCanvas(ctx)
-    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
     expect((await store.confirmChapterPlan({ workId: DREAM.workId, n: 1 }, SESSION)).ok).toBe(false) // no plan
     const confirmed = await store.confirmChapterPlan({ workId: DREAM.workId, n: 6 }, SESSION)
     expect(confirmed.ok).toBe(true)
@@ -286,31 +297,26 @@ describe('the story store', () => {
     expect((await store.confirmChapterPlan({ workId: DREAM.workId, n: 42 }, SESSION)).error).toBe('missing')
   })
 
-  it('foreshadowExit runs the three exits: resolve with answer, abandon, promote into a rule', async () => {
+  it('a foreshadow exits through its status field: 已揭晓 with an answer, 已放弃', async () => {
     const fs = new FakeFs()
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     provideCanvas(ctx)
-    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
-    // resolve needs an answer.
-    expect((await store.foreshadowExit({ workId: DREAM.workId, id: 'm18', action: 'resolve' }, SESSION)).ok).toBe(false)
-    const resolved = await store.foreshadowExit({ workId: DREAM.workId, id: 'm18', action: 'resolve', answer: '是艾文。' }, SESSION)
-    expect(resolved.memory?.specifics).toMatchObject({ status: 'resolved', answer: '是艾文。' })
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
+    const resolved = await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#18', fields: { status: '已揭晓', answer: '是艾文。' } }, SESSION)
+    expect(resolved.ok).toBe(true)
     // …and the plan brief now prints the reveal (防规划矛盾).
     const brief = await store.gatherBrief({ workId: DREAM.workId })
-    expect(brief.data?.resolvedForeshadows.some(memory => memory.id === 'm18')).toBe(true)
-    expect(brief.data?.activeForeshadows.some(memory => memory.id === 'm18')).toBe(false)
-    // A settled card refuses further exits.
-    expect((await store.foreshadowExit({ workId: DREAM.workId, id: 'm18', action: 'abandon' }, SESSION)).ok).toBe(false)
-    const abandoned = await store.foreshadowExit({ workId: DREAM.workId, id: 'm15', action: 'abandon' }, SESSION)
-    expect(abandoned.memory?.specifics?.status).toBe('abandoned')
-    const promoted = await store.foreshadowExit({ workId: DREAM.workId, id: 'm12', action: 'promote', answer: '门后是梦主的童年场景。' }, SESSION)
-    expect(promoted.ok).toBe(true)
-    expect(promoted.promoted).toMatchObject({ type: 'semantic', layer: 'canon', kind: '世界', content: '门后是梦主的童年场景。', reviewed: true })
-    expect(promoted.memory?.links?.resolvedBy).toBe(promoted.promoted?.id)
+    expect(brief.data?.resolvedForeshadows.find(view => view.cardId === CARD.formerKeeper)?.answer).toBe('是艾文。')
+    expect(brief.data?.activeForeshadows.some(view => view.cardId === CARD.formerKeeper)).toBe(false)
+    // A value outside the select's options is ignored, not written.
+    const bogus = await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#15', fields: { status: '搁置' } }, SESSION)
+    expect(bogus.ok).toBe(false)
+    expect(bogus.ignored).toEqual(['status'])
+    await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#15', fields: { status: '已放弃' } }, SESSION)
     const ledger = await store.ledger({ workId: DREAM.workId })
-    expect(ledger.counts).toEqual({ active: 0, overdue: 0, resolved: 3, abandoned: 1 })
+    expect(ledger.counts).toEqual({ active: 1, overdue: 1, resolved: 2, abandoned: 1 })
   })
 
   it('lists the mention journal for the dot strip, and retracts an automatic experience by id', async () => {
@@ -319,15 +325,15 @@ describe('the story store', () => {
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     provideCanvas(ctx)
-    const store = new StoryBibleService(ctx, { stateRoot: DREAM.stateRoot })
-    const before = await store.listMentions({ workId: DREAM.workId, foreshadowId: 'm12' })
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
+    const before = await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.doorGap })
     expect(before.map(entry => entry.kind)).toEqual(['planted', 'advanced'])
     // Import lands an automatic experience WITH an id and the 自动 mark…
     await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
       experiences: [{ character_id: 'c1', entry: '推开了门缝', confidence: 'high', evidence_in_text: '指尖碰到门缝的边缘' }],
       recap: 'r',
     } }, SESSION)
-    const landed = (await store.listExperiences({ workId: DREAM.workId, characterId: 'c1' })).find(entry => entry.chapter === 5 && entry.entry === '推开了门缝')
+    const landed = (await store.listExperiences({ workId: DREAM.workId, characterId: CARD.zhao })).find(entry => entry.chapter === 5 && entry.entry === '推开了门缝')
     expect(landed).toMatchObject({ id: 'e1', autoImported: true })
     // …and the retract gesture takes it back, every other line byte-identical.
     const retracted = await store.retractExperience({ workId: DREAM.workId, id: 'e1' }, SESSION)

@@ -3,9 +3,9 @@
  * made for preset-scoped mounting (the canvas ./agent precedent, documented
  * in this package's cordis.patch.yml). The preset grant decides which
  * sessions MAY write novels; the session's canvas binding decides which
- * actually do: the three story_* tools are registered on an agent's own
+ * actually do: the three novel_* tools are registered on an agent's own
  * scope only while its session is bound to a 长篇小说 canvas, and are absent
- * — not denied, absent — everywhere else. The `story` skill and the pointer
+ * — not denied, absent — everywhere else. The `novel` skill and the pointer
  * FUNCTION section register once for the mounting scope.
  *
  * The grant is re-evaluated on `agent/created` (scope-filtered: only the
@@ -24,15 +24,15 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import type { StoryBibleService } from './store.ts'
-import { STORY_SKILL_CONTENT, STORY_SKILL_DESCRIPTION, STORY_SKILL_NAME } from './skill.ts'
-import { storyMainSessionToolDefinitions } from './tools.ts'
+import type { NovelService } from './store.ts'
+import { NOVEL_SKILL_CONTENT, NOVEL_SKILL_DESCRIPTION, NOVEL_SKILL_NAME } from './skill.ts'
+import { novelToolDefinitions } from './tools.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'canvas-novel-agent'
 
 /**
- * No hard injects: `storyBible` belongs to this package's core row and is
+ * No hard injects: `canvasNovel` belongs to this package's core row and is
  * PROBED at apply time (a preset or profile that mounts this entry without
  * the core still loads — the tools simply stay absent), and the registries
  * join through deferred injection so mount order can never strand the row.
@@ -77,7 +77,7 @@ type Listen = (name: string, listener: (...args: never[]) => unknown) => () => v
  * (9000) and before structured output (9900) — a guidance line, not a tool
  * contract.
  */
-export const STORY_POINTER_ORDER = 9500
+export const NOVEL_POINTER_ORDER = 9500
 
 /**
  * The per-session grant: which agents hold the novel tools, and the bound
@@ -91,7 +91,7 @@ export class NovelToolGrant {
    * @param store - the engine; its `boundWork` is the whole criterion.
    * @param definitions - the tool definitions, built once and shared by every agent.
    */
-  constructor(private readonly store: StoryBibleService, private readonly definitions: readonly ToolDefinition[]) {}
+  constructor(private readonly store: NovelService, private readonly definitions: readonly ToolDefinition[]) {}
 
   /** The bound canvas title of a granted session (the pointer's only input). */
   titleOf(sessionId: string): string | undefined {
@@ -119,7 +119,7 @@ export class NovelToolGrant {
     const entry = this.agents.get(sessionId)
     if (entry === undefined) return
     const generation = ++entry.generation
-    let work: Awaited<ReturnType<StoryBibleService['boundWork']>>
+    let work: Awaited<ReturnType<NovelService['boundWork']>>
     try {
       work = await this.store.boundWork(sessionId)
     } catch {
@@ -160,19 +160,19 @@ export class NovelToolGrant {
 
 /**
  * The pointer's text, evaluated per assembly. One line in a bound session, ''
- * elsewhere — the full brief never auto-injects, and the `story` skill
+ * elsewhere — the full brief never auto-injects, and the `novel` skill
  * carries the workflow.
  * @param grant - the per-session grant whose cached titles are the whole input.
  * @returns the section text for this assembly.
  */
-export function storyPointerText(grant: Pick<NovelToolGrant, 'titleOf'>): (context: { agent?: { sessionId?: string } }) => string {
+export function novelPointerText(grant: Pick<NovelToolGrant, 'titleOf'>): (context: { agent?: { sessionId?: string } }) => string {
   return (context) => {
     try {
       const sessionId = context.agent?.sessionId
       if (sessionId === undefined || sessionId === '') return ''
       const title = grant.titleOf(sessionId)
       if (title === undefined) return ''
-      return `本会话绑定长篇小说画布《${title}》：涉及写作/续写/设定/章节时，先 story_read(brief)；story skill 载有完整工作流。`
+      return `本会话绑定长篇小说画布《${title}》：涉及写作/续写/设定/章节时，先 novel_read(brief)；novel skill 载有完整工作流。`
     } catch {
       // Degrade, never explode: a prompt assembly must not fail on a pointer.
       return ''
@@ -192,19 +192,19 @@ function ownsAgent(ctx: Context, agent: NovelAgent): boolean {
 
 /**
  * Composition entry body: the per-session tool grant, the pointer section
- * and the `story` skill, or nothing when the core service is absent.
+ * and the `novel` skill, or nothing when the core service is absent.
  * @param ctx - the mounting scope's context (profile root or a preset's plane).
  */
 export function apply(ctx: Context): void {
-  const store = ctx.get('storyBible') as StoryBibleService | undefined
+  const store = ctx.get('canvasNovel') as NovelService | undefined
   if (store === undefined) {
     // Degrade, don't explode: the core row is not mounted here, so there is
     // nothing to delegate to. The composition still loads.
-    ctx.logger.warn('canvas-novel-agent: the storyBible service is absent — the story tools are not registered')
+    ctx.logger.warn('canvas-novel-agent: the canvasNovel service is absent — the novel tools are not registered')
     return
   }
-  const grant = new NovelToolGrant(store, storyMainSessionToolDefinitions(store))
-  ctx.effect(() => () => { grant.dispose() }, 'canvas-novel-agent: per-session story tools')
+  const grant = new NovelToolGrant(store, novelToolDefinitions(store))
+  ctx.effect(() => () => { grant.dispose() }, 'canvas-novel-agent: per-session novel tools')
   const listen = ctx.on.bind(ctx) as unknown as Listen
   listen('agent/created', async ({ agent }: { agent: NovelAgent }) => { await grant.track(agent) })
   listen('agent/disposed', ({ agent }: { agent: NovelAgent }) => { grant.forget(agent) })
@@ -220,20 +220,20 @@ export function apply(ctx: Context): void {
   ctx.inject(['systemPrompt'], (promptCtx) => {
     const sections = promptCtx.get('systemPrompt') as PromptSections | undefined
     sections?.section({
-      name: 'story:pointer',
-      order: STORY_POINTER_ORDER,
-      text: storyPointerText(grant),
+      name: 'novel:pointer',
+      order: NOVEL_POINTER_ORDER,
+      text: novelPointerText(grant),
     })
   })
   ctx.inject(['skills'], (skillCtx) => {
     const skills = skillCtx.get('skills') as SkillRegistrySlice | undefined
     if (skills === undefined) return
     skillCtx.effect(() => skills.register({
-      name: STORY_SKILL_NAME,
-      description: STORY_SKILL_DESCRIPTION,
-      content: STORY_SKILL_CONTENT,
+      name: NOVEL_SKILL_NAME,
+      description: NOVEL_SKILL_DESCRIPTION,
+      content: NOVEL_SKILL_CONTENT,
       source: 'runtime',
       provider: '@khorsheed/dsh-canvas-novel',
-    }), `canvas-novel-agent: ${STORY_SKILL_NAME} skill`)
+    }), `canvas-novel-agent: ${NOVEL_SKILL_NAME} skill`)
   })
 }

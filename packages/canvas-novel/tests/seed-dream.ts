@@ -1,13 +1,16 @@
 /**
  * The《梦境监护者》seed: one work with canon rules, a principle, a ghost
- * card, an adopted outline draft, the three-chapter foreshadow ledger (plus
- * one resolved with its answer), two characters with their experience
- * journal, five extracted chapters with recaps and manuscripts, and the
- * sixth chapter in planning with its plan — the CP1 brief fixture (proposal
- * §9's acceptance data: 赵启明/艾文/门缝伏笔/蓝色叶子). Dates are fixed so
- * the brief snapshots are deterministic.
+ * card, the three-chapter foreshadow ledger (plus one resolved with its
+ * answer), two characters with their experience journal, five extracted
+ * chapters with recaps and manuscripts, and the sixth chapter in planning
+ * with its plan — the CP1 brief fixture (proposal §9's acceptance data:
+ * 赵启明/艾文/门缝伏笔/蓝色叶子). The settings are canvas cards
+ * (`dreamCards`, served by tests/fake-canvas.ts); the engine's sidecar and
+ * journals are files (`seedDreamKeeper`). Dates are fixed so the brief
+ * snapshots are deterministic.
  */
 import { join } from 'node:path'
+import type { NovelCardView } from '../src/genre.ts'
 import type { FakeFs } from './fake-fs.ts'
 
 /** The seeded work's coordinates (the work is the canvas `workId`; tests/fake-canvas.ts serves its board). */
@@ -15,9 +18,57 @@ export const DREAM = {
   workId: 'canvas_dream0001',
   title: '梦境监护者',
   workspace: '/home/user/workspace',
-  stateRoot: '/dsh/state/story',
+  stateRoot: '/dsh/state/novel',
   createdAt: '2026-10-01T09:00:00.000Z',
 } as const
+
+/** The seeded card ids (real canvas ids are `c_<…>`, never a `c<n>` ref). */
+export const CARD = {
+  trueName: 'c_trueName',
+  leafCarrier: 'c_leafCarrier',
+  openEnding: 'c_openEnding',
+  dreamLayers: 'c_dreamLayers',
+  towerShadow: 'c_towerShadow',
+  doorGap: 'c_doorGap',
+  leafGlow: 'c_leafGlow',
+  formerKeeper: 'c_formerKeeper',
+  zhao: 'c_zhao',
+  aiwen: 'c_aiwen',
+} as const
+
+/** The seeded cards, in board order. */
+export function dreamCards(): NovelCardView[] {
+  const card = (id: string, role: string, status: NovelCardView['status'], fields: NovelCardView['fields'], createdBy: 'user' | 'agent' = 'user'): NovelCardView => ({
+    id, kind: `cat_${role}`, text: '', status, fields, comments: [], createdBy,
+  })
+  return [
+    card(CARD.trueName, 'world', 'kept', { rule: '监护者不能在梦里说出自己的真名——真名是锚，说出即被梦主锁定。' }),
+    card(CARD.leafCarrier, 'world', 'kept', { rule: '蓝色叶子是梦主意识碎片的载体；叶子发光，说明梦主开始苏醒。' }),
+    card(CARD.openEnding, 'principle', 'kept', { principle: '每章结尾留一个未解的画面，不在章内合拢。' }),
+    card(CARD.dreamLayers, 'world', 'proposed', { rule: '梦境有层数，越深越接近梦主的伤口。' }, 'agent'),
+    card(CARD.towerShadow, 'foreshadow', 'kept', { question: '钟楼为什么没有影子', status: '已揭晓', plantedAt: 1, answer: '钟楼立在两层梦之间，影子落在了下一层。' }),
+    card(CARD.doorGap, 'foreshadow', 'kept', { question: '门缝里的东西', status: '推进中', plantedAt: 1 }),
+    card(CARD.leafGlow, 'foreshadow', 'kept', { question: '蓝色叶子为什么发光', status: '推进中', plantedAt: 2 }),
+    card(CARD.formerKeeper, 'foreshadow', 'kept', { question: '失踪的前任监护者是谁', status: '已埋', plantedAt: 1 }),
+    card(CARD.zhao, 'character', 'kept', {
+      name: '赵启明', identity: '梦境监护者新人',
+      want: '找到失踪的前任监护者', lack: '他不记得自己的童年梦', wound: '妹妹走失于一场白日梦，他至今自责',
+      appearance: '二十七八，总带着一本牛皮封面的《监护守则》', voice: '说话简短，引用守则条文时会先报编号',
+      knows: '监护守则的全部条文\n二层梦的基本规则',
+      unaware: '门缝里有什么\n蓝色叶子的来历\n艾文的真实身份',
+      secrets: '他在梦里见过走失的妹妹',
+      relations: '艾文：从戒备到勉强信任的引路关系（第4章二层梦脱险后升温）',
+    }),
+    card(CARD.aiwen, 'character', 'kept', {
+      name: '艾文', identity: '活了三百年的梦引者',
+      want: '引导梦主苏醒', lack: '他无法离开梦境',
+      appearance: '看不出年纪，袖口永远别着一片蓝色叶子', voice: '自称「在下」，从不说谎但也从不把话说完',
+      knows: '蓝色叶子的来历\n门后空间的结构',
+      unaware: '赵启明妹妹的下落',
+      secrets: '他就是失踪的前任监护者',
+    }),
+  ]
+}
 
 /** Chapter 5's manuscript — the extract tests' evidence source. */
 export const CHAPTER_5_BODY = `赵启明在档案室待到后半夜。
@@ -37,126 +88,51 @@ export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 
   const dir = join(DREAM.stateRoot, DREAM.workId)
   const stamp = (day: number): string => `2026-10-0${day}T20:00:00.000Z`
 
-  const memories = [
-    {
-      id: 'm1', owner: 'creator', type: 'semantic', layer: 'canon', kind: '世界',
-      content: '监护者不能在梦里说出自己的真名——真名是锚，说出即被梦主锁定。',
-      status: 'active', reviewed: true, confidence: 'high', extractedBy: 'user',
-      firstChapter: 1, lastActiveChapter: 1, createdAt: DREAM.createdAt, updatedAt: DREAM.createdAt,
+  const annotations = {
+    version: 1,
+    refs: {
+      [CARD.trueName]: 1, [CARD.leafCarrier]: 2, [CARD.openEnding]: 4, [CARD.dreamLayers]: 6,
+      [CARD.towerShadow]: 9, [CARD.doorGap]: 12, [CARD.leafGlow]: 15, [CARD.formerKeeper]: 18,
+      [CARD.zhao]: 1, [CARD.aiwen]: 2,
     },
-    {
-      id: 'm2', owner: 'creator', type: 'semantic', layer: 'canon', kind: '世界',
-      content: '蓝色叶子是梦主意识碎片的载体；叶子发光，说明梦主开始苏醒。',
-      status: 'active', reviewed: true, confidence: 'high', extractedBy: 'user',
-      firstChapter: 2, lastActiveChapter: 2, createdAt: DREAM.createdAt, updatedAt: DREAM.createdAt,
+    notes: {
+      [CARD.dreamLayers]: { confidence: 'medium', extractedBy: 'llm', firstChapter: 3 },
+      [CARD.towerShadow]: { tension: 2 },
+      [CARD.doorGap]: { tension: 4 },
+      [CARD.leafGlow]: { tension: 3 },
+      [CARD.formerKeeper]: { tension: 5 },
+      [CARD.zhao]: { currentState: { where: '档案室门外走廊', state: '刚经历二层梦脱险，心跳未平', concern: '妹妹的下落' } },
+      [CARD.aiwen]: { currentState: { where: '档案室', state: '从容，似乎早有安排', concern: '梦主苏醒的节奏' } },
     },
-    {
-      id: 'm4', owner: 'creator', type: 'procedural', layer: 'canon', kind: '原则',
-      content: '每章结尾留一个未解的画面，不在章内合拢。',
-      status: 'active', reviewed: true, confidence: 'high', extractedBy: 'user',
-      firstChapter: 1, lastActiveChapter: 1, createdAt: DREAM.createdAt, updatedAt: DREAM.createdAt,
-    },
-    {
-      id: 'm6', owner: 'creator', type: 'semantic', layer: 'intent', kind: '世界',
-      content: '梦境有层数，越深越接近梦主的伤口。',
-      status: 'active', reviewed: false, confidence: 'medium', extractedBy: 'llm',
-      intentStatus: 'draft', createdAt: stamp(3), updatedAt: stamp(3),
-    },
-    {
-      id: 'm7', owner: 'creator', type: 'semantic', layer: 'intent', kind: '章节',
-      content: '第6–8章：门后空间三层递进，每层是梦主的一个童年场景。',
-      status: 'active', reviewed: true, confidence: 'medium', extractedBy: 'llm',
-      intentStatus: 'active', createdAt: stamp(3), updatedAt: stamp(4),
-    },
-    {
-      id: 'm9', owner: 'creator', type: 'prospective', layer: 'canon',
-      content: '钟楼为什么没有影子',
-      specifics: { question: '钟楼为什么没有影子', status: 'resolved', tension: 2, plantedAt: 1, answer: '钟楼立在两层梦之间，影子落在了下一层。' },
-      status: 'active', reviewed: true, confidence: 'high', extractedBy: 'llm',
-      firstChapter: 1, lastActiveChapter: 4, createdAt: DREAM.createdAt, updatedAt: stamp(3),
-    },
-    {
-      id: 'm12', owner: 'creator', type: 'prospective', layer: 'canon',
-      content: '门缝里的东西',
-      specifics: { question: '门缝里的东西', status: 'advanced', tension: 4, plantedAt: 1 },
-      status: 'active', reviewed: true, confidence: 'high', extractedBy: 'llm',
-      firstChapter: 1, lastActiveChapter: 3, createdAt: DREAM.createdAt, updatedAt: stamp(3),
-    },
-    {
-      id: 'm15', owner: 'creator', type: 'prospective', layer: 'canon',
-      content: '蓝色叶子为什么发光',
-      specifics: { question: '蓝色叶子为什么发光', status: 'hinted', tension: 3, plantedAt: 2 },
-      status: 'active', reviewed: true, confidence: 'high', extractedBy: 'llm',
-      firstChapter: 2, lastActiveChapter: 2, createdAt: DREAM.createdAt, updatedAt: stamp(3),
-    },
-    {
-      id: 'm18', owner: 'creator', type: 'prospective', layer: 'canon',
-      content: '失踪的前任监护者是谁',
-      specifics: { question: '失踪的前任监护者是谁', status: 'planted', tension: 5, plantedAt: 1 },
-      status: 'active', reviewed: true, confidence: 'high', extractedBy: 'user',
-      firstChapter: 1, lastActiveChapter: 1, createdAt: DREAM.createdAt, updatedAt: stamp(2),
-    },
-  ]
-  fs.seed(join(dir, 'memories.json'), `${JSON.stringify({ version: 1, memories }, null, 2)}\n`)
-
-  const characters = [
-    {
-      id: 'c1', name: '赵启明', identity: '梦境监护者新人',
-      profile: { appearance: '二十七八，总带着一本牛皮封面的《监护守则》', voice: '说话简短，引用守则条文时会先报编号' },
-      core: { want: '找到失踪的前任监护者', lack: '他不记得自己的童年梦', wound: '妹妹走失于一场白日梦，他至今自责' },
-      knowledge: {
-        knows: ['监护守则的全部条文', '二层梦的基本规则'],
-        unaware: ['门缝里有什么', '蓝色叶子的来历', '艾文的真实身份'],
-        secrets: ['他在梦里见过走失的妹妹'],
-      },
-      relationships: [
-        { target: '艾文', description: '从戒备到勉强信任的引路关系', changes: [{ chapter: 4, note: '二层梦脱险后升温' }] },
-      ],
-      currentState: { where: '档案室门外走廊', state: '刚经历二层梦脱险，心跳未平', concern: '妹妹的下落' },
-      status: 'active', createdAt: DREAM.createdAt, updatedAt: stamp(4),
-    },
-    {
-      id: 'c2', name: '艾文', identity: '活了三百年的梦引者',
-      profile: { appearance: '看不出年纪，袖口永远别着一片蓝色叶子', voice: '自称「在下」，从不说谎但也从不把话说完' },
-      core: { want: '引导梦主苏醒', lack: '他无法离开梦境' },
-      knowledge: {
-        knows: ['蓝色叶子的来历', '门后空间的结构'],
-        unaware: ['赵启明妹妹的下落'],
-        secrets: ['他就是失踪的前任监护者'],
-      },
-      relationships: [],
-      currentState: { where: '档案室', state: '从容，似乎早有安排', concern: '梦主苏醒的节奏' },
-      status: 'active', createdAt: DREAM.createdAt, updatedAt: stamp(4),
-    },
-  ]
-  fs.seed(join(dir, 'characters.json'), `${JSON.stringify({ version: 1, characters }, null, 2)}\n`)
+  }
+  fs.seed(join(dir, 'annotations.json'), `${JSON.stringify(annotations, null, 2)}\n`)
 
   const experiences = [
-    { characterId: 'c2', chapter: 2, entry: '递给赵启明一片蓝色叶子，只说是「护身符」', createdAt: stamp(2) },
-    { characterId: 'c1', chapter: 3, entry: '在档案室发现前任监护者留下的半页守则', createdAt: stamp(2) },
-    { characterId: 'c1', chapter: 4, entry: '首次独自进入二层梦，迷失后被艾文救下', createdAt: stamp(3) },
-    { characterId: 'c2', chapter: 4, entry: '在二层梦边缘接住赵启明，袖口的蓝叶亮了一下', createdAt: stamp(3) },
-    { characterId: 'c1', chapter: 5, entry: '按半页守则的指引找到档案室的门缝，决定一探究竟', createdAt: stamp(4) },
-    { characterId: 'c2', chapter: 5, entry: '默认了门缝的存在，提醒赵启明「门后不回答问题」', createdAt: stamp(4) },
+    { characterId: CARD.aiwen, chapter: 2, entry: '递给赵启明一片蓝色叶子，只说是「护身符」', createdAt: stamp(2) },
+    { characterId: CARD.zhao, chapter: 3, entry: '在档案室发现前任监护者留下的半页守则', createdAt: stamp(2) },
+    { characterId: CARD.zhao, chapter: 4, entry: '首次独自进入二层梦，迷失后被艾文救下', createdAt: stamp(3) },
+    { characterId: CARD.aiwen, chapter: 4, entry: '在二层梦边缘接住赵启明，袖口的蓝叶亮了一下', createdAt: stamp(3) },
+    { characterId: CARD.zhao, chapter: 5, entry: '按半页守则的指引找到档案室的门缝，决定一探究竟', createdAt: stamp(4) },
+    { characterId: CARD.aiwen, chapter: 5, entry: '默认了门缝的存在，提醒赵启明「门后不回答问题」', createdAt: stamp(4) },
   ]
   fs.seed(join(dir, 'experiences.jsonl'), experiences.map(entry => JSON.stringify(entry)).join('\n') + '\n')
 
   const mentions = [
-    { foreshadowId: 'm12', chapter: 1, kind: 'planted', planned: false, reconciled: true, createdAt: stamp(1) },
-    { foreshadowId: 'm15', chapter: 2, kind: 'hinted', planned: true, reconciled: true, createdAt: stamp(2) },
-    { foreshadowId: 'm12', chapter: 3, kind: 'advanced', planned: true, reconciled: true, createdAt: stamp(3) },
+    { foreshadowId: CARD.doorGap, chapter: 1, kind: 'planted', planned: false, reconciled: true, createdAt: stamp(1) },
+    { foreshadowId: CARD.leafGlow, chapter: 2, kind: 'hinted', planned: true, reconciled: true, createdAt: stamp(2) },
+    { foreshadowId: CARD.doorGap, chapter: 3, kind: 'advanced', planned: true, reconciled: true, createdAt: stamp(3) },
   ]
   fs.seed(join(dir, 'mentions.jsonl'), mentions.map(entry => JSON.stringify(entry)).join('\n') + '\n')
 
   const plan5 = {
     pov: '赵启明', goal: '按半页守则找到门缝，决定是否推开',
-    foreshadowOps: [{ op: '推进', id: '#12' }, { op: '暗示', id: '#15' }],
-    characters: ['c1', 'c2'], hook: '门缝里飘出一片蓝色叶子',
+    foreshadowOps: [{ op: '推进', id: CARD.doorGap }, { op: '暗示', id: CARD.leafGlow }],
+    characters: [CARD.zhao, CARD.aiwen], hook: '门缝里飘出一片蓝色叶子',
   }
   const plan6 = {
     pov: '赵启明', goal: '跟随艾文穿过门缝，确认门后空间的第一层',
-    foreshadowOps: [{ op: '推进', id: '#12' }, { op: '暗示', id: '#15' }],
-    characters: ['c1', 'c2'], hook: '门后传来妹妹的声音',
+    foreshadowOps: [{ op: '推进', id: CARD.doorGap }, { op: '暗示', id: CARD.leafGlow }],
+    characters: [CARD.zhao, CARD.aiwen], hook: '门后传来妹妹的声音',
   }
   const chapters = [
     { n: 1, seq: 1, title: '入职', file: '第1章.md', phase: 'extracted', recap: '赵启明入职梦境监护所，领到《监护守则》。值夜第一晚，他听见墙内传来敲击，发现档案室的钟楼没有影子。', wordCount: 2800, sessionIds: ['s-seed'], createdAt: stamp(1), updatedAt: stamp(1) },

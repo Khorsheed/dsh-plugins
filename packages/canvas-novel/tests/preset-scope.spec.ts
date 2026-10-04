@@ -1,8 +1,8 @@
 /**
  * The preset-grant composition test, over REAL registries: the shipped
  * default (core row only, agent row disabled) leaves the profile root
- * with NO story trace — no story_* tool, no story:pointer section, no
- * story skill — while mounting the `./agent` entry inside a scope (the
+ * with NO novel trace — no novel_* tool, no novel:pointer section, no
+ * novel skill — while mounting the `./agent` entry inside a scope (the
  * writing preset's agent plane, simulated with dsh-scope's `createScope`,
  * the same mechanism the preset realm uses) puts the pointer and the skill
  * into THAT scope, and the tools onto the scope of each agent composed under
@@ -37,7 +37,7 @@ function fakeSkills() {
   }
 }
 
-/** Boot the real composition: prompt + tools registries, the skills stub, the story core (root row only). */
+/** Boot the real composition: prompt + tools registries, the skills stub, the novel core (root row only). */
 async function bootRoot(): Promise<{ root: Context; skills: ReturnType<typeof fakeSkills>; fs: FakeFs; canvas: FakeCanvas }> {
   const root = new Context()
   await root.plugin(SystemPrompt)
@@ -47,23 +47,23 @@ async function bootRoot(): Promise<{ root: Context; skills: ReturnType<typeof fa
   const fs = new FakeFs()
   root.provide('fs', fs as never)
   const canvas = provideCanvas(root)
-  coreApply(root, { stateRoot: '/dsh/state/story' })
+  coreApply(root, { stateRoot: '/dsh/state/novel' })
   disposers.push(async () => { await root.fiber.dispose() })
   return { root, skills, fs, canvas }
 }
 
-/** The story-* tool names of one assembly. */
-function storyToolsOf(assembly: { tools: readonly { name: string }[] }): string[] {
-  return assembly.tools.map(tool => tool.name).filter(name => name.startsWith('story_'))
+/** The novel_* tool names of one assembly. */
+function novelToolsOf(assembly: { tools: readonly { name: string }[] }): string[] {
+  return assembly.tools.map(tool => tool.name).filter(name => name.startsWith('novel_'))
 }
 
 describe('the preset-granted agent surface (composition level)', () => {
-  it('the shipped default leaves the profile root with NO story trace', async () => {
+  it('the shipped default leaves the profile root with NO novel trace', async () => {
     const { root, skills } = await bootRoot()
     await new Promise(resolve => { setTimeout(resolve, 0) })
     const assembly = await root.systemPrompt.assemble({})
-    expect(storyToolsOf(assembly)).toEqual([])
-    expect(assembly.sections.some(section => section.name === 'story:pointer')).toBe(false)
+    expect(novelToolsOf(assembly)).toEqual([])
+    expect(assembly.sections.some(section => section.name === 'novel:pointer')).toBe(false)
     expect(skills.registered).toEqual([])
   })
 
@@ -90,25 +90,25 @@ describe('the preset-granted agent surface (composition level)', () => {
     }
 
     const granted = await root.systemPrompt.assemble({ scope: inKey, agent: { sessionId: 's-in' } as never })
-    expect(storyToolsOf(granted).sort()).toEqual(['story_extract', 'story_read', 'story_write'])
-    expect(granted.sections.find(section => section.name === 'story:pointer')?.text).toContain('《梦境监护者》')
-    expect(skills.registered.map(skill => skill.name)).toEqual(['story'])
+    expect(novelToolsOf(granted).sort()).toEqual(['novel_extract', 'novel_read', 'novel_write'])
+    expect(granted.sections.find(section => section.name === 'novel:pointer')?.text).toContain('《梦境监护者》')
+    expect(skills.registered.map(skill => skill.name)).toEqual(['novel'])
 
     // The scope itself holds the pointer and the skill, but no tools: an unbound
-    // session there renders '' and sees no story tool.
+    // session there renders '' and sees no novel tool.
     const unbound = await root.systemPrompt.assemble({ scope: key, agent: { sessionId: 's-none' } as never })
-    expect(storyToolsOf(unbound)).toEqual([])
-    expect(unbound.sections.find(section => section.name === 'story:pointer')?.text).toBe('')
+    expect(novelToolsOf(unbound)).toEqual([])
+    expect(unbound.sections.find(section => section.name === 'novel:pointer')?.text).toBe('')
 
     // An agent outside the scope never hears of the entry, bound or not.
     const foreign = await root.systemPrompt.assemble({ scope: outKey })
-    expect(storyToolsOf(foreign)).toEqual([])
-    expect(foreign.sections.some(section => section.name === 'story:pointer')).toBe(false)
+    expect(novelToolsOf(foreign)).toEqual([])
+    expect(foreign.sections.some(section => section.name === 'novel:pointer')).toBe(false)
 
     // Unbinding the inside session takes the tools away again.
     canvas.bind('s-in', null)
     root.emit('canvas/binding-changed' as never, 's-in' as never, null as never)
     await new Promise(resolve => { setTimeout(resolve, 0) })
-    expect(storyToolsOf(await root.systemPrompt.assemble({ scope: inKey }))).toEqual([])
+    expect(novelToolsOf(await root.systemPrompt.assemble({ scope: inKey }))).toEqual([])
   })
 })

@@ -1,58 +1,111 @@
-# story-bible（长篇小说写作模式 · 记忆核心）
+# canvas-novel（画布的「长篇小说」创作体裁）
 
-让 dsh 成为连载长篇小说的写作工作台：一部作品跨数十个会话、上百章，模型要「记得住设定、知道上次写到哪、不欠下死伏笔、不把人物写串」。这个包是作品级记忆系统——全文注入做不到的四件事，靠它做到（方案：repo 内 `proposals/active/2026-10-04-story-bible.md`，该目录刻意 gitignored）。
+让 dsh 成为连载长篇小说的写作工作台。一部作品跨几十个会话、上百章，模型要做到四件事：记得住设定，知道上次写到哪，不欠下死伏笔，不把人物写串。全文注入做不到这些，这个包做到了。
 
-**当前版本（M1+M3）**：记忆核心 + 注入面 + 右栏两个页型 tab（灵感碎片五视图 / 章节阅读）+ 工具调用定制行。对账的 subagent 委派闭环（M2）与沉睡榜台账会 / 考古图层（M4）在后。
+**一部作品就是一张体裁为「长篇小说」的画布**。画布上的卡片是设定的唯一正本，按四个分类组织：人物、世界、原则、伏笔。这个包向画布注册体裁，并提供作品记忆引擎：编号、对账、台账和 brief。它没有自己的浏览器端，界面全部长在画布里。
+
+它取代了已退役的 `@khorsheed/dsh-story-bible`。旧的 `$DSH_HOME/state/story/` 数据**不迁移**。
 
 ## 它提供什么
 
-- **作品注册表 + per-work 记忆 store**（`ctx.storyBible`）：`$DSH_HOME/state/story/` 下 `index.json` 与每部作品一目录（`work.json` / `memories.json` / `characters.json` / `experiences.jsonl` / `mentions.jsonl` / `chapters.json` / `pending.json`）。正文唯一正本是工作区里的 `<工作区>/<作品标题>/第{n}章.md`，state 目录只存派生物。
-- **Remote 服务 `story`**：UI 数据面动词（listWorks / createWork / readWork / listMemories / listCharacters / listExperiences / listChapters / readChapter / ledger / listPending / listMentions / focusWork / getFocus / reviewChapter / confirmChapterPlan / writeMemory / writeCharacter / decideMemory / decidePending / patchMemory / foreshadowExit / retractExperience / extractImport）。
-- **右栏一个「写作」tab（F1-4）**：内部切换 灵感碎片（五视图 + 钉底待审队列）/ 章节阅读（plan 卡 ✓确认 / 数字格换章 / 阶段灯 / 正文经共享内容面板渲染 / 规划中章显示大纲草案）；作品条共享（下拉切换 = focusWork、计数、新建入口——默认本会话工作区、可更换、跨区有警示）；会话头常驻闸门 chip（plan 待确认 / 待确认计数，按 preset 判据显隐、fail-open）。对话时间线不做定制工具行——宿主通用折叠行接管，可操作入口全收敛到 sidebar + 会话头 chip；skill 有降噪规则（落卡/登记结果不逐条复述）。模式可见性按跨会话规则：tab 无运行时开关，安装层控制。M3 的两个旧 kind（story-fragments/story-reader）已退役：已打开的旧 tab 命中宿主 tab.unavailable 回退，关掉重开即可。
-- **三个模型工具**（`./agent` 组合入口注册，origin 打标）：`story_read`（brief 三变体 / memories / character / chapters / ledger / pending / chapter）、`story_write`（work / memory 幽灵卡 / character / chapter 自动编号 / review 采纳·丢弃·归档·撤销）、`story_extract`（prepare 素材包 / import 五条校验闸落库）。
-- **focus 轻指引函数段**（`story:pointer`，order 9500）：per-session focus 映射驱动——有 focus 渲染一行指引，无 focus 渲染空串；闲聊零成本。
-- **`story` skill**：操作手册一份常驻、按需加载，不含任何作品内容。
+- **体裁注册**（经 `ctx.canvasBoard` 延迟注入，没有画布就没有体裁）：
+  - 新建或切换到「长篇小说」的画布会预置四个分类。
+  - 每个分类都带卡片字段定义，例如人物有名字、身份、想要、缺失、旧伤，伏笔有悬念、状态、埋于第几章、答案。
+- **引擎服务 `ctx.canvasNovel`**：引擎自己的状态放在 `$DSH_HOME/state/novel/<画布 id>/`，共五个文件：
+
+  | 文件 | 内容 |
+  |---|---|
+  | `annotations.json` | 卡片的显示编号和引擎注记：张力、当前态、置信度、自动入库标记 |
+  | `experiences.jsonl` | 人物经历流水，按人物卡 id 记 |
+  | `mentions.jsonl` | 伏笔提及流水，按伏笔卡 id 记 |
+  | `chapters.json` | 章节索引与 plan |
+  | `pending.json` | 待审队列 |
+
+  正文的唯一正本是画布挂载工作区里的 `<工作区>/<画布标题>/第{n}章.md`。
+- **三个模型工具**由 `./agent` 组合入口注册，并打 origin 标：
+  - `novel_read`：brief 三个变体、cards、card、chapters、ledger、pending、chapter；
+  - `novel_write`：card 落幽灵卡或按编号改卡，chapter 自动编号，review 采纳、丢弃、归档、撤销；
+  - `novel_extract`：prepare 产出素材包，import 过五道校验闸后落库。
+- **轻指引函数段 `novel:pointer`**（order 9500）：会话绑定了长篇小说画布时渲染一行指引，否则渲染空串，闲聊零成本。
+- **`novel` skill**：一份按需加载的操作手册，不含任何作品内容。
 
 ## 关键设计
 
-- **focus 作用域**：`{sessionId → workId}` 进程内映射（story 服务自带）。所有工具与注入以此为键；无 focus 的会话零注入，工具返回引导性提示而非报错。
-- **审过收章，永远最后**：写完 → 对账（五闸过滤：evidence 防编造 / 伏笔白名单 / new_* 必待审 / 置信度分流 / 计划落空人答）→ 待审处理 → 用户「✓审过」收章。正文不满意就先改，别对账。
-- **落库校验永远在插件代码里**：import 五闸——evidence grep 防编造、伏笔 id 白名单、new_* 必待审、high 自动+可撤销 / medium/low 进 pending、计划落空单独进待审。判卷委派给宿主原生 subagent 是主 agent 的事，插件不委派。
-- **brief 有 token 预算**：write ~2k / plan ~2.5k / extract 随正文；任何变体都不注入全部前章或全部伏笔。
+- **会话绑定决定作用域**：会话头的画布 chip 把会话绑到一张画布。
+  - 绑到长篇小说画布的会话才拿得到三个工具；工具在会话自己的 scope 上按需授予、按需撤回。
+  - 解绑或画布改掉体裁时，工具即时撤回。
+  - 没绑定的会话里，工具不存在，而不是被拒绝。
+- **卡片是唯一正本**：
+  - 模型新建的设定一律是**幽灵卡**（画布的 proposed 状态），用户 ✓ 采纳之前不进 brief；✗ 丢弃即归档。
+  - 卡片从不删除，归档后留在画布上隐藏。
+  - 改卡就地合并字段，不另起一张。
+- **编号**：
+  - 人物用 `c<n>`。
+  - 世界和原则用 `w<n>`，伏笔用 `#<n>`。这三类共用一个号段，所以 `w19` 和 `#19` 不会并存。
+  - 新卡取同号段的最大值加一。工具、plan 和对账都可以用编号、卡 id 或人物名字指代卡片。
+- **审过收章，永远最后**：
+  - 一章的流程是：写完 → 对账 → 处理待审 → 用户「✓ 审过」收章。
+  - 正文不满意就先改，不要对账。
+  - 对账的五道闸都在插件代码里：
+    1. evidence 原文检索，防止编造；
+    2. 伏笔白名单；
+    3. 新设定、新伏笔、新人物一律落幽灵卡；
+    4. 高置信度自动入库且可撤销，中低置信度进待审；
+    5. 计划落空单独进待审。
+  - 把判卷委派给宿主原生 subagent 是主 agent 的事，插件本身不委派。
+- **brief 有 token 预算**：write 约 2k，plan 约 2.5k，extract 随正文长短。任何变体都不注入全部前章或全部伏笔。
 
 ## 安装
 
 ```sh
-dsh plugin add @khorsheed/dsh-story-bible
+dsh plugin add @khorsheed/dsh-canvas-novel
 ```
 
-patch 挂两行：`story-bible`（核心：store + Remote，**全局可用**——任何会话都能看和改作品数据）与 `story-bible-agent`（三工具 + 轻指引 + skill，**出厂即在 profile 根禁用**）。agent 能力属于写作场景，不属于每个会话——根挂载会把三个小说工具塞进每场对话的工具单。
+这个包需要画布（`@khorsheed/dsh-canvas`）同在。没有画布时没有作品，每个引擎动词都回答 `missing`，不会抛错。
 
-**启用 agent 能力的唯一正确姿势——preset 授予**：
+patch 挂两行：
+
+| 行 | 内容 | 出厂状态 |
+|---|---|---|
+| `canvas-novel` | 核心：体裁加引擎 | 全局可用 |
+| `canvas-novel-agent` | 三工具、轻指引和 skill | 在 profile 根**禁用** |
+
+agent 能力属于写作场景，不属于每个会话。
+
+**启用 agent 能力的唯一正确姿势是 preset 授予**：
 
 ```sh
 dsh plugin add @khorsheed/dsh-bundle-writing
 ```
 
-它的 `preset-writing` 声明在写作 preset 作用域内挂载同一入口（`@khorsheed/dsh-story-bible/agent`）：切到「写作」preset 的会话才有三工具、轻指引与 story skill，普通会话完全没有 story 痕迹。用自建 preset 也一样：在该 preset 的 `agent.cordis.yml` 加一行 `name: "@khorsheed/dsh-story-bible/agent"`（`@khorsheed/dsh-presets` 的 preset-dsh-writing 授予 `@khorsheed/dsh-canvas/agent` 的同款写法）。
+它的 `preset-writing` 在写作 preset 的作用域内挂载 `@khorsheed/dsh-canvas-novel/agent`。用自建 preset 也一样：在该 preset 的 `agent.cordis.yml` 里加一行 `name: "@khorsheed/dsh-canvas-novel/agent"`。
 
-手工打开根行（删掉 `disabled: true`）会恢复全会话生效——**只能在没有任何 preset 授予时这么做**：两处同时生效会重名注册、启动失败（canvas 的 cordis.patch.yml 写着同一条规则）。
+手工打开根行（删掉 `disabled: true`）会让所有会话都生效。**只能在没有任何 preset 授予时这么做**：两处同时生效会重名注册，导致启动失败。
 
 ## 快速开始
 
-1. 右栏「灵感碎片」或「章节阅读」tab 顶部的作品条：＋ 新建作品（起名 + 选挂载工作区）或下拉选中一部——选中即本会话 focus。
-2. 聊设定 → 幽灵卡落灵感墙；✓ 采纳后按 kind 路由归档（归档 → 下台进设定集）。
-3. 规划 → plan 卡钉在「章节阅读」顶部，✓ 确认计划后开写；正文由 `story_write(chapter, content=…)` 经会话围栏落盘（落不进挂载工作区就拒绝登记，绝不出现空槽章）。
-4. 写完对账（`story_extract(prepare)` → 委派 subagent → `story_extract(import)`），待审项进钉底队列 ✓/✗ 处理；然后「✓ 审过本章」收章——审过是人工闸门，永远最后（阶段灯：规划中 → 写作中 → 已抽取 → 已审过）。
-5. 多作品切换 = 作品条下拉（focus 随之切换，工具与轻指引跟随）。工具调用也可全程驱动同一流程（story_write(work) focus/新建）。
+1. 新建一张画布，体裁选「长篇小说」，再挂一个工作区。在会话头的画布 chip 里把会话绑到它。
+2. 聊设定。模型把设定落成幽灵卡，你在画布上 ✓ 采纳或 ✗ 丢弃。
+3. 规划。`novel_write(what=chapter, plan=…)` 登记 plan，确认后开写。
+   - 正文经会话围栏落进画布工作区。
+   - 落不进去就拒绝登记，绝不出现空槽章。
+4. 写完对账：先 `novel_extract(prepare)`，委派给 subagent，再 `novel_extract(import)`。
+   - 处理待审项，然后「✓ 审过」收章。
+   - 阶段灯依次是：规划中 → 写作中 → 已抽取 → 已审过。
+
+**界面现状**：卡面、卡页、看板条子和会话头绑定 chip 由画布的体裁接缝承载。章节阅读页、伏笔台账页和待审条还没有界面，这一段先走工具。
 
 ## Compatibility
 
 | 宿主线 | 结论 |
 |---|---|
-| npm release 0.2.0-rc.2 | ✅ 开发基线（verifiedHost）：全量 build+test 在此线完成 |
-| deepseek-harness master | 跟随验证；函数型 prompt 段、Typert Remote、ctx.fs 版本守卫、右栏页型 tab 均为长期 seam |
+| npm release 0.2.0-rc.2 | ✅ 开发基线（verifiedHost），全量 build 和 test 都在这条线上完成 |
+| deepseek-harness master | 跟随验证。函数型 prompt 段、ctx.fs 版本守卫和 per-scope 工具注册都是长期 seam |
 
-机器可读标注见 package.json `dsh.compat`（minHost `0.2.0-rc.2`）：state 写入经 ctx.fs 围栏重定界到插件自身 state 目录（只读部署仍然拒绝）；focus 映射进程内，重启即「未 focus」，轻指引、工具与作品条如实降级；headless profile 无浏览器消费者，agent 行（工具/轻指引/skill）照常可用。
+机器可读标注见 package.json 的 `dsh.compat`（minHost `0.2.0-rc.2`）：
+
+- state 写入经 ctx.fs 围栏，重定界到插件自身的 state 目录；只读部署仍然拒绝。
+- 章节正文按会话的沙箱模式写进画布工作区。
+- headless profile 没有浏览器，agent 行照常可用。
 
 English: [README.en.md](README.en.md)
