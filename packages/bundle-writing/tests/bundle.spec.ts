@@ -1,7 +1,7 @@
 /**
  * The bundle's declarative shape (the presets.spec.ts idiom): ONE
  * preset-declarations row named `@deepseek-ai/dsh-agent-preset` with the
- * loader id `preset-writing`; the grant names story-bible's `./agent` entry;
+ * loader id `preset-writing`; the grant names canvas-novel's `./agent` entry;
  * every community name rides in dsh.references; the persona stays light
  * (the workflow is the story skill's).
  */
@@ -33,9 +33,9 @@ describe('cordis.patch.yml', () => {
     expect(unquoted).toEqual([])
   })
 
-  it('grants the story-bible agent surface through the package subpath entry', () => {
-    expect(patch).toContain('          - id: story-bible-agent\n')
-    expect(patch).toContain("            name: '@khorsheed/dsh-story-bible/agent'\n")
+  it('grants the canvas-novel agent surface through the package subpath entry', () => {
+    expect(patch).toContain('          - id: canvas-novel-agent\n')
+    expect(patch).toContain("            name: '@khorsheed/dsh-canvas-novel/agent'\n")
     // The double-mount rule is documented (the shipped root row stays disabled).
     expect(patch).toContain('绝不能同时生效')
   })
@@ -71,7 +71,7 @@ describe('cordis.patch.yml', () => {
     )
     expect(named.size).toBeGreaterThan(0)
     for (const name of named) expect(manifest.dsh.references).toContain(name)
-    expect(manifest.dsh.references).toEqual(['@khorsheed/dsh-story-bible'])
+    expect(manifest.dsh.references).toEqual(['@khorsheed/dsh-canvas-novel'])
   })
 
   it('declares the preset-declarations kind and no runtime of its own', () => {
@@ -81,8 +81,8 @@ describe('cordis.patch.yml', () => {
     }
     expect(manifest.dsh.bundle.kind).toBe('preset-declarations')
     expect(manifest.dsh.client).toBeUndefined()
-    // No npm edge onto story-bible: the entry resolves from the installing
+    // No npm edge onto canvas-novel: the entry resolves from the installing
     // profile's closure — installing this bundle alone must stay inert.
-    expect(Object.keys(manifest.dependencies ?? {})).not.toContain('@khorsheed/dsh-story-bible')
+    expect(Object.keys(manifest.dependencies ?? {})).not.toContain('@khorsheed/dsh-canvas-novel')
   })
 })

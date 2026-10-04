@@ -197,13 +197,6 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // bundled by tsdown — a compile-time edge with zero runtime coupling (the
   // renderer package need not be installed for canvas to work).
   'canvas': ['@khorsheed/dsh-inline-html-render'],
-  // story-bible → ui-content-preview: the chapter reader renders the
-  // manuscript through the same shared content pane (proposal preview-kernel),
-  // the local-files / worktrees / file-preview precedent — a compile-time
-  // SOURCE-plane import (`.../src/client/*`) that tsdown inlines into the
-  // story-bible client bundle, so the kernel needs no runtime install and the
-  // plugin stays independently installable and uninstallable.
-  'story-bible': ['@khorsheed/dsh-client-ui-content-preview'],
   // local-files / worktrees → ui-content-preview: the two file surfaces render
   // through ONE shared content pane (proposal preview-kernel). Same shape as
   // the canvas edge above — a compile-time SOURCE-plane import

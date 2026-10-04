@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-bundle-writing",
-  "description": "写作 preset（声明式）：挂载 story-bible 的 agent 面（story_read/write/extract 三工具 + story:pointer 函数段 + story skill）于 preset 作用域——装上 story-bible 得界面与数据面，加上本包得写作模式的模型能力",
+  "description": "写作 preset（声明式）：挂载 canvas-novel 的 agent 面（story_read/write/extract 三工具 + story:pointer 函数段 + story skill）于 preset 作用域——装上 canvas-novel 得界面与数据面，加上本包得写作模式的模型能力",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
@@ -63,11 +63,11 @@
       "kind": "preset-declarations"
     },
     "references": [
-      "@khorsheed/dsh-story-bible"
+      "@khorsheed/dsh-canvas-novel"
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",
-      "notes": "Declarative preset bundle: the only row is an `@deepseek-ai/dsh-agent-preset` declaration (a loader row type that exists only on host 0.1.7-rc.1 and later — on 0.1.5 the bundle cannot mount at all). The `story-bible-agent` composition entry the preset names (`@khorsheed/dsh-story-bible/agent`) resolves from the installing profile's dependency closure — a DATA reference (dsh.references), never an npm edge, so installing this bundle alone leaves the preset row's grant inert (the story tools stay absent and the tab/pointer simply show no story surface) until @khorsheed/dsh-story-bible is installed alongside; its core row stays global either way. The host tool rows the preset mounts (tool-fs / skill-filesystem / tool-skill / tool-ask-user / the compaction group) are official packages present on every shipped line since 0.1.7-rc.1.",
+      "notes": "Declarative preset bundle: the only row is an `@deepseek-ai/dsh-agent-preset` declaration (a loader row type that exists only on host 0.1.7-rc.1 and later — on 0.1.5 the bundle cannot mount at all). The `canvas-novel-agent` composition entry the preset names (`@khorsheed/dsh-canvas-novel/agent`) resolves from the installing profile's dependency closure — a DATA reference (dsh.references), never an npm edge, so installing this bundle alone leaves the preset row's grant inert (the story tools and the pointer stay absent) until @khorsheed/dsh-canvas-novel is installed alongside; its core row stays global either way. The host tool rows the preset mounts (tool-fs / skill-filesystem / tool-skill / tool-ask-user / the compaction group) are official packages present on every shipped line since 0.1.7-rc.1.",
       "verifiedHost": "0.2.0-rc.2"
     }
   }
