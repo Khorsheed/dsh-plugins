@@ -22,6 +22,7 @@ import type {
   BoardAddCommentRequest, BoardArchiveRequest,
   BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardAttachImageOutcome, BoardAttachImageRequest,
+  BoardBindRequest, BoardBindResult, BoardSelectGenreRequest, CanvasGenreSummary,
   BoardCreateRequest, BoardDecideTypeRequest, BoardFocusRequest, BoardFocusResult, BoardSetTypeBriefRequest,
   BoardImageBytesOutcome, BoardImageBytesRequest,
   BoardListResult, BoardMutationResult, BoardPatchCardRequest,
@@ -259,6 +260,46 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('focusCanvas')
   focusCanvas(agent: Agent, request: BoardFocusRequest): Promise<BoardFocusResult> {
     return this.board.focusCanvas(request, agent.session)
+  }
+
+  /* ---------------------------------------------------------------- genres (创作体裁) */
+
+  /** Every registered genre (an empty list when no genre plugin is installed). */
+  @Remote('listGenres')
+  listGenres(): CanvasGenreSummary[] {
+    return this.board.listGenres()
+  }
+
+  /**
+   * Select a genre for one canvas, or clear it with `null`.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id and genre id.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('selectGenre')
+  selectGenre(agent: Agent, request: BoardSelectGenreRequest): Promise<BoardMutationResult> {
+    return this.board.selectGenre(request, agent.session)
+  }
+
+  /**
+   * The canvas the calling session is bound to, or null.
+   * @param agent - the calling session's agent.
+   * @returns the canvas id, or null.
+   */
+  @Remote('boundCanvas')
+  async boundCanvas(agent: Agent): Promise<string | null> {
+    return (await this.board.boundCanvasId(String(agent.session.id))) ?? null
+  }
+
+  /**
+   * Bind the calling session to a canvas with a genre (`null` unbinds).
+   * @param agent - the calling session's agent; its session is the one bound.
+   * @param request - the canvas id, or null.
+   * @returns the canvas now bound, or the failure code.
+   */
+  @Remote('bindCanvas')
+  bindCanvas(agent: Agent, request: BoardBindRequest): Promise<BoardBindResult> {
+    return this.board.bindSession(request, agent.session)
   }
 
   /* ---------------------------------------------------------------- manuscripts */

@@ -101,18 +101,26 @@ export class CanvasTabVisibility {
   }
 
   show(sessionId: SessionId | undefined): boolean {
+    return this.grantsAny(sessionId, [CANVAS_AGENT_ROW_MODULE])
+  }
+
+  /**
+   * Whether the session reaches any of `modules` by either grant path — the
+   * tab's criterion over the canvas row, and the binding chip's over the
+   * installed genres' rows. Every unreadable path fails open, as above.
+   */
+  grantsAny(sessionId: SessionId | undefined, modules: readonly string[]): boolean {
     if (this.composition === null) return true
     // Path 1: a root-mounted agent row grants the tools to every session —
     // a deployment-level constant, checked before any per-session question.
-    const rootRow = this.composition.entries?.find(row => row.moduleName === CANVAS_AGENT_ROW_MODULE)
-    if (rootRow?.enabled === true) return true
+    if (this.composition.entries?.some(row => modules.includes(row.moduleName) && row.enabled === true) === true) return true
     if (sessionId === undefined) return true
     const preset = presetOf(this.ctx.sessions.list.getSnapshot().byId[sessionId])
     if (preset === undefined) return true
     const group = this.composition.agentPresets?.find(candidate => candidate.id === preset)
     if (group === undefined || group.broken !== undefined) return true
     // Path 2: the preset-mounted row grants this session.
-    return group.rows.some(row => row.moduleName === CANVAS_AGENT_ROW_MODULE && row.enabled !== false)
+    return group.rows.some(row => modules.includes(row.moduleName) && row.enabled !== false)
   }
 
   /** Subscribe to criterion-input changes (session switches, the inventory answer). */

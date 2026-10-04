@@ -300,6 +300,11 @@ function makeHarness(options: {
     closeTab: (id: string) => { store.close(id) },
     openCanvas: (canvasId: string) => { store.openCanvas(canvasId) },
     focusCanvas: vi.fn(async (): Promise<Result<BoardFocusResult>> => ok({ ok: true })),
+    // No genre installed: the 创作体裁 entry and every genre seat stay away.
+    listGenres: vi.fn(async () => ok([])),
+    selectGenre: vi.fn(),
+    openPage: vi.fn(),
+    renderSlot: vi.fn(() => null),
     talkAvailable: vi.fn((): boolean => options.chatAvailable ?? true),
     quoteToConversation: vi.fn((): boolean => true),
     refreshBoards: vi.fn(),

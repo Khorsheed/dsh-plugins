@@ -274,6 +274,11 @@ function makeBench(boards: CanvasBoard[] = [board()]): Bench {
       return ok({ ok: true, board: value, version: '1' })
     }),
     focusCanvas: vi.fn(async (): Promise<Result<BoardFocusResult>> => ok({ ok: true })),
+    // No genre installed: the 创作体裁 entry and every genre seat stay away.
+    listGenres: vi.fn(async () => ok([])),
+    selectGenre: vi.fn(),
+    openPage: vi.fn(),
+    renderSlot: vi.fn(() => null),
   }
   const face = {
     t,

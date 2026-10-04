@@ -13,7 +13,7 @@
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { GlobalStandardProps, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { GlobalStandardProps, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: pulls the generated Remote API (ctx.remote merge + namespace).
 import type {} from '@khorsheed/dsh-canvas/remote'
@@ -35,7 +35,8 @@ import type {
   BoardListResult, BoardMutationResult,
   BoardPatchCardRequest, BoardPutCardRequest,
   BoardDecideTypeRequest, BoardReadOutcome, BoardReadRequest, BoardSetCategoriesRequest, BoardSetLayoutRequest,
-  BoardSetTypeBriefRequest,
+  BoardSelectGenreRequest, BoardSetTypeBriefRequest,
+  CanvasGenreSummary,
   CardCategoryId,
   CanvasStroke,
   ManuscriptDeleteRequest, ManuscriptExportRequest, ManuscriptExportResult,
@@ -45,6 +46,7 @@ import type {
 import type {} from './locales.ts'
 import type { CanvasImageRevSource, CanvasImageSrcs } from './images.ts'
 import type { CanvasSelectionSource } from './space/selection.ts'
+import type { CanvasChildSlot } from './slots.ts'
 
 /** The canvas Remote namespace, as mounted by this plugin. */
 export type CanvasRemote = TypertRemoteNamespaceMap['canvas']
@@ -133,11 +135,25 @@ export interface CanvasTypeInjected {
 }
 
 /**
+ * The genre face (创作体裁, 2026-10-04): which genres are installed, the
+ * canvas ⋯ menu's pick, and the genre pages a genre's own surfaces open.
+ */
+export interface CanvasGenreInjected {
+  /** The installed genres (empty when none is, which hides the menu entry). */
+  listGenres: () => Promise<RemoteResult<CanvasGenreSummary[]>>
+  /** Select a genre for one canvas, or clear it with `null`. */
+  selectGenre: (sessionId: SessionId, request: BoardSelectGenreRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Open a genre page inside its canvas's strip row. */
+  openPage: (canvasId: string, page: string, heading: string, param?: string) => void
+}
+
+/**
  * Business face injected into the canvas tab (M3's single seat). The tab is
  * session scope: its mutations name the tab's own session, which resolves
  * the fence mode the host stamps onto the write.
  */
-export interface CanvasTabInjected extends CanvasTalkInjected, CanvasImageInjected, CanvasManuscriptInjected, CanvasTypeInjected {
+export interface CanvasTabInjected
+  extends CanvasTalkInjected, CanvasImageInjected, CanvasManuscriptInjected, CanvasTypeInjected, CanvasGenreInjected {
   /** List every canvas the deployment holds (archived included). */
   listCanvases: () => Promise<RemoteResult<BoardListResult>>
   /** Create one canvas (a topic, optionally with workspaces attached). */
@@ -229,6 +245,7 @@ export interface CanvasTabInjected extends CanvasTalkInjected, CanvasImageInject
 /** Full props of the canvas tab body. */
 export type CanvasTabProps =
   PropsRuntime<'sidebar.right.pane.tab'>
+  & PropsRenderSlots<CanvasChildSlot>
   & GlobalStandardProps
   & InjectFace<CanvasTabInjected>
   & PropsLocale<'canvas'>

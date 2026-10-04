@@ -216,6 +216,11 @@ function makeHarness(options: {
     closeTab: (id: string) => { store.close(id) },
     openCanvas: (canvasId: string) => { store.openCanvas(canvasId) },
     focusCanvas: vi.fn(async (): Promise<Result<BoardFocusResult>> => ok({ ok: true })),
+    // No genre installed: the 创作体裁 entry and every genre seat stay away.
+    listGenres: vi.fn(async () => ok([])),
+    selectGenre: vi.fn(),
+    openPage: vi.fn(),
+    renderSlot: vi.fn(() => null),
     talkAvailable: vi.fn((): boolean => options.chatAvailable ?? true),
     quoteToConversation: vi.fn((): boolean => true),
     refreshBoards: vi.fn(),
@@ -819,5 +824,78 @@ describe('CanvasTab — true delete (round 5)', () => {
     await waitFor(() => {
       expect(mocks.deleteCanvas).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID })
     })
+  })
+})
+
+describe('CanvasTab — genre seats (创作体裁)', () => {
+  /** A renderSlot that names what it was asked for, or falls back like the host's keyed miss. */
+  function namingSlot() {
+    return vi.fn((key: string, _owner: unknown, options?: { entryKey?: string; fallback?: unknown }) =>
+      key === 'canvas.page' && options?.entryKey !== 'novel:ledger'
+        ? options?.fallback ?? null
+        : <div>{`seat ${key} ${options?.entryKey ?? ''}`}</div>)
+  }
+
+  const NOVEL_SUMMARY = {
+    id: 'novel', label: '长篇小说', version: 'novel@1', description: '', roles: [], agentRow: '@khorsheed/dsh-canvas-novel/agent',
+  }
+
+  it('dispatches no seat on a canvas without a genre, and the ⋯ menu stays the one it was', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    const renderSlot = namingSlot()
+    render(<CanvasTab {...props} renderSlot={renderSlot as unknown as CanvasTabProps['renderSlot']} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: '画布操作' }))
+    await screen.findByRole('menuitem', { name: '删除画布…' })
+    expect(screen.queryByRole('menuitem', { name: '创作体裁' })).toBeNull()
+    expect(renderSlot).not.toHaveBeenCalled()
+  })
+
+  it('offers 创作体裁 once a genre is installed, and picking one selects it', async () => {
+    const { props, mocks } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    const selectGenre = vi.fn(async () => ({ ok: true, value: { ok: true, board: board(), version: '2' } }))
+    render(<CanvasTab {...props} listGenres={vi.fn(async () => ({ ok: true, value: [NOVEL_SUMMARY] })) as never} selectGenre={selectGenre as never} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: '画布操作' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '创作体裁' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '长篇小说' }))
+    await waitFor(() => {
+      expect(selectGenre).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, genreId: 'novel' })
+    })
+    expect(mocks.readBoard).toHaveBeenCalled()
+  })
+
+  it('hands a role card its face and the board its strip on a canvas with a genre', async () => {
+    const categories = [...defaultCategories(), { id: 'cat_char', label: '人物', enabled: true, role: 'character' } as BoardCategory]
+    const novel = board(CANVAS_ID, [card('c_1'), card('c_2', { kind: 'cat_char', text: '林澈' })], {
+      categories, genre: { id: 'novel', version: 'novel@1', selectedAt: NOW },
+    })
+    const { props } = makeHarness({ boards: [novel] })
+    render(<CanvasTab {...props} renderSlot={namingSlot() as unknown as CanvasTabProps['renderSlot']} />)
+    await screen.findByText('卡片 c_1')
+    expect(screen.getByText('seat canvas.card.face novel:character')).toBeTruthy()
+    expect(screen.getByText('seat canvas.board.strip')).toBeTruthy()
+    // The role card wears the genre face (its plain summary is gone); 卡片 c_1, no role, kept its own.
+    expect(screen.queryByText('林澈')).toBeNull()
+  })
+
+  it('routes a page row to the genre page, and stands in a notice when nothing serves it', async () => {
+    const novel = board(CANVAS_ID, [card('c_1')], { genre: { id: 'novel', version: 'novel@1', selectedAt: NOW } })
+    const { props, store } = makeHarness({ boards: [novel] })
+    render(<CanvasTab {...props} renderSlot={namingSlot() as unknown as CanvasTabProps['renderSlot']} />)
+    await screen.findByText('卡片 c_1')
+    act(() => { store.openPageTab(CANVAS_ID, 'novel:ledger', '伏笔账本') })
+    await screen.findByText('seat canvas.page novel:ledger')
+    act(() => { store.openPageTab(CANVAS_ID, 'thesis:outline', '大纲') })
+    await screen.findByText(zh['genre.pageMissing'])
+  })
+})
+
+describe('CanvasSelectionStore — the genre page row', () => {
+  it('brings a page place back after a reload, parameter and all', () => {
+    sessionStorage.clear()
+    new CanvasSelectionStore().openPageTab(CANVAS_ID, 'novel:chapter', '第三章', 'ms_3')
+    const restored = new CanvasSelectionStore().source.getSnapshot()
+    expect(restored.tabs[0]?.at).toEqual({ kind: 'page', page: 'novel:chapter', param: 'ms_3', heading: '第三章' })
   })
 })
