@@ -334,7 +334,7 @@ export function DatasetsView(props: DatasetsViewProps) {
     if (entry === undefined) return
     organize(entry.id, buildUpdateRequest({ name: entry.id, checkout: entry.authoringCheckout ?? null, ref: entry.trackedRef }, t))
   }
-  // T96 · 「核对并登记」 on the propose tool row: the card leaves the proposal
+  // T96 · 「核对并登记」 in the organizing Turn's tail: the card leaves the proposal
   // id for this session's tab; take it now (the tab was just switched to, or
   // was already open) and whenever another lands, and open that review
   // directly — no list, no banner in between.

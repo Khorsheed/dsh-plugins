@@ -43,6 +43,7 @@
     "src/client/ReviewPage.tsx",
     "src/client/ReviewCard.tsx",
     "src/client/review-card.ts",
+    "src/client/review-turn.ts",
     "src/client/organize.ts",
     "src/client/parts.tsx",
     "src/client/vocab.ts",

@@ -1,13 +1,14 @@
 /**
- * T96 · the card that replaces the generic `datasets_propose_registration`
- * tool row: the proposal the call filed, in the review's words, and one
- * action — 核对并登记 — that opens that proposal's review in this session's
- * 题集 tab (skipping the list and its banner).
+ * T96 · the 「核对并登记」 entry: one card per proposal a Turn filed, rendered
+ * in that Turn's tail (beneath the closing prose, outside the folded tool
+ * group — review-turn.ts says why). The card names the proposal and carries
+ * one action that opens that proposal's review in this session's 题集 tab
+ * (skipping the list and its banner).
  *
- * A dry run gets the same card without the button (nothing was filed: the
- * check's verdict is the whole story); an error or a result this card does
- * not know says so in one quiet line. The card never registers anything — the
- * review page is where a person confirms (decision A).
+ * The card model also reads dry runs, failures and unknown results (each says
+ * so in one quiet line, no button) so the card stays honest for any block it
+ * is handed; the tail hands it filed results only. The card never registers
+ * anything — the review page is where a person confirms (decision A).
  * @module @khorsheed/dsh-datasets/client
  */
 import { useEffect, useRef, useState } from 'react'
@@ -15,6 +16,7 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DatasetsViewProps } from './contract.ts'
 import { Chip } from './parts.tsx'
 import { proposeCardOf, switchToTab, type ProposeToolBlock } from './review-card.ts'
+import { proposedInTurn, type ProposedTurnOwner } from './review-turn.ts'
 import css from './ReviewCard.module.css'
 
 /** What the card reaches outside its own block, bound to the card's session. */
@@ -25,7 +27,7 @@ export interface ReviewCardFace {
   openReview: (proposalId: string) => void
 }
 
-/** The props the keyed tool slot composes for this card. */
+/** One card's props: the block, the session-bound face, the copy. */
 export interface ReviewCardProps extends ReviewCardFace {
   block: ProposeToolBlock
   t: DatasetsViewProps['t']
@@ -107,6 +109,33 @@ export function ReviewCard(props: ReviewCardProps) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/** The props ui-chat's `conversation.chat.turnTail` list composes for this entry. */
+export interface ReviewTurnTailProps extends ReviewCardFace, ProposedTurnOwner {
+  t: DatasetsViewProps['t']
+}
+
+/**
+ * The Turn-tail entry: one card per proposal the Turn filed, nothing otherwise.
+ * @param props - the closing Turn's owner props, the session-bound face, the copy.
+ */
+export function ReviewTurnTail(props: ReviewTurnTailProps) {
+  const filed = proposedInTurn(props)
+  if (filed.length === 0) return null
+  return (
+    <div className={css.tail}>
+      {filed.map((block, index) => (
+        <ReviewCard
+          key={block.seq ?? index}
+          block={block}
+          loadPending={props.loadPending}
+          openReview={props.openReview}
+          t={props.t}
+        />
+      ))}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 /**
- * T96 · the card on the `datasets_propose_registration` tool row, as data:
+ * T96 · the 「核对并登记」 card for one `datasets_propose_registration` call, as data:
  * what one call says about the proposal it filed (or the check it ran), the
  * channel the card's one action goes through, and the tab switch it tries.
  *
@@ -12,14 +12,15 @@
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /**
- * The owner props of the host's keyed `tool.call.toolview` slot this card
- * reads, structurally (the slot is declared by `@deepseek-ai/dsh-client-ui-tool`,
- * which this package does not depend on). Running forms carry `name` and,
- * once the arguments are complete, `argsRaw`; the settled form carries the
- * call, the result content and the error flag.
+ * One call as the card reads it, in the host's ToolResultNode shape
+ * (structurally): the settled form carries the call, the result content and
+ * the error flag; a running form carries `name` and `argsRaw`. The Turn-tail
+ * entry builds settled forms from the session's events (review-turn.ts).
  */
 export interface ProposeToolBlock {
   kind?: string
+  /** The settling event's sequence (Turn-tail blocks; bounds them to their Turn). */
+  seq?: number
   phase?: string
   name?: string
   argsRaw?: string

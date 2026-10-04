@@ -162,7 +162,7 @@ export interface DatasetsViewInjected {
   /** The «用于的实验» projection, or null when no eval plugin is mounted. */
   datasetExperiments: (sessionId: SessionId) => Promise<DatasetExperimentRow[] | null>
   /**
-   * T96 · requests the 「核对并登记」 card on the propose tool row leaves for
+   * T96 · requests the 「核对并登记」 card in the organizing Turn's tail leaves for
    * this tab: take (and clear) one for this session, be told when one lands.
    * Optional: a double without it simply never opens a review on its own.
    */

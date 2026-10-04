@@ -1,6 +1,12 @@
-/* T96 · the card on the datasets_propose_registration tool row: a bordered
-   block in the turn with the same tokens as the eval experiment card, so the
-   two hand-off cards an organizing/lab session shows look alike. */
+/* T96 · the 「核对并登记」 card in the organizing Turn's tail: a bordered
+   block with the same tokens as the eval experiment card, so the two
+   hand-off cards an organizing/lab session shows look alike. */
+
+.tail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 .card {
   display: flex;

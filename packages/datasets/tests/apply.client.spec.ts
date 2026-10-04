@@ -320,21 +320,40 @@ describe('datasets client apply', () => {
     expect(slots.entries('conversation.view')).toHaveLength(0)
   })
 
-  // T96 · the 「核对并登记」 card on the datasets_propose_registration tool row.
-  // The slot is ui-tool's; without its declaration the inject never fires and
-  // the call keeps the host's generic row (the banner path still works).
-  it('registers the propose card once the host declares tool.call.toolview', async () => {
-    const { ctx, slots, remote } = await bench()
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    expect(slots.entries('tool.call.toolview' as never)).toHaveLength(0)
+  // T96 · the 「核对并登记」 entry in the organizing Turn's tail. The slot is
+  // ui-chat's; without its declaration (or without uiConversation) nothing
+  // registers and the proposal still waits behind the tab's banner.
+  const declareTurnTail = (slots: SlotRegistry) => {
     slots.register({
       name: 'conversation.view',
       id: 'chat',
-      children: { 'tool.call.toolview': { kind: 'keyed', scope: 'session' } },
+      children: { 'conversation.chat.turnTail': { kind: 'list', scope: 'session' } },
     } as never, () => null)
-    const entries = slots.entries('tool.call.toolview' as never)
+  }
+
+  it('registers nothing in the Turn tail without uiConversation', async () => {
+    const { ctx, slots } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    declareTurnTail(slots)
+    expect(slots.entries('conversation.chat.turnTail' as never)).toHaveLength(0)
+  })
+
+  it('registers the Turn definition and the tail entry once the host declares conversation.chat.turnTail', async () => {
+    const { ctx, slots, remote } = await bench()
+    const disposeDefinition = vi.fn()
+    const events = { register: vi.fn(() => disposeDefinition) }
+    ctx.provide('uiConversation', { events } as never)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(events.register).not.toHaveBeenCalled()
+    declareTurnTail(slots)
+    expect(events.register).toHaveBeenCalledTimes(1)
+    expect(events.register.mock.calls[0]![0]).toMatchObject({ kind: 'datasets-proposed' })
+    const entries = slots.entries('conversation.chat.turnTail' as never)
     expect(entries).toHaveLength(1)
-    expect(entries[0]!.options).toMatchObject({ key: 'datasets_propose_registration' })
+    expect(entries[0]!.options).toMatchObject({ id: '@khorsheed/dsh-datasets/review' })
+    // The tool row stays with the host's generic tool view.
+    expect(slots.entries('tool.call.toolview' as never)).toHaveLength(0)
 
     const face = (entries[0]!.inject as unknown as (sessionId: string) => {
       loadPending: (id: string) => Promise<boolean | null>
@@ -353,5 +372,9 @@ describe('datasets client apply', () => {
     expect(view.reviewFocus!.take('s2' as never)).toBeNull()
     expect(view.reviewFocus!.take('s1' as never)).toBe('p1')
     expect(view.reviewFocus!.take('s1' as never)).toBeNull()
+
+    await fiber.dispose()
+    expect(disposeDefinition).toHaveBeenCalledTimes(1)
+    expect(slots.entries('conversation.chat.turnTail' as never)).toHaveLength(0)
   })
 })
