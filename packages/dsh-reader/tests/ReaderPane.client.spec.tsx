@@ -2224,6 +2224,28 @@ describe('the detail view owns up to figures it cannot fetch', () => {
     })
   })
 
+  it('auto-renders on open when the plain fetch meets a cookie handshake (link.springer.com)', async () => {
+    const ui = bench({
+      capture: true,
+      sources: [rssSource('epj')],
+      payloads: {
+        epj: '<rss version="2.0"><channel><title>epj</title><item><title>期刊文章</title>'
+          + '<link>https://link.springer.com/article/10.1140/x</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: false,
+      fresh: false,
+      fromFeed: false,
+      error: 'cross-origin redirect to https://idp.springer.com is not followed automatically; retry against that URL directly',
+    }))
+    const cards = await screen.findAllByRole('button', { name: /期刊文章/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    await waitFor(() => { expect(ui.mocks.captureRender).toHaveBeenCalledWith({ url: 'https://link.springer.com/article/10.1140/x' }) })
+  })
+
   it('a bot wall shows the render in progress, then says why a failed render failed', async () => {
     const ui = bench({
       capture: true,

@@ -617,6 +617,35 @@ export const MAX_TOTAL_BODY_CHARS = 12 * 1024 * 1024
 export const INLINE_BODY_MAX_CHARS = 256 * 1024
 
 /**
+ * Hosts that bounce every first visit through a cookie handshake, not a login.
+ *
+ * Springer Nature answers a cookie-less request with a 303 to
+ * `idp.<brand>/authorize?response_type=cookie`, which mints a one-time code and
+ * sends the browser back to the article (measured 2026-10-04 on
+ * link.springer.com and www.nature.com). The host fetch does not follow the
+ * cross-origin hop and keeps no cookies, so the plain fetch can never finish
+ * it; a headless browser does (the rendered fetch read the full EPJ Data
+ * Science article). The `idp` name alone would read as a login wall.
+ */
+export const COOKIE_HANDSHAKE_HOSTS: ReadonlySet<string> = new Set(['idp.springer.com', 'idp.nature.com'])
+
+/**
+ * Whether a fetch failure is a cross-origin hop into a known cookie handshake.
+ *
+ * @param message - the seam's recorded failure message.
+ * @returns true when the failure is the handshake, which a browser completes.
+ */
+export function isCookieHandshake(message: string): boolean {
+  const origin = /cross-origin redirect to (\S+)/i.exec(message)?.[1]
+  if (origin === undefined) return false
+  try {
+    return COOKIE_HANDSHAKE_HOSTS.has(new URL(origin).hostname.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+/**
  * The article a challenge page stands in front of, when its URL names it.
  *
  * A bot wall usually redirects to its own page and carries the original in a

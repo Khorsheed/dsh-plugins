@@ -40,6 +40,7 @@ import {
   type ReaderSourceKind,
   type ReaderStorageStats,
   type ReaderTag,
+  isCookieHandshake,
 } from '../types.ts'
 import { extractArticle } from './extract-article.ts'
 import { parseFeed, type ReaderEntry } from './parse-rss.ts'
@@ -310,7 +311,7 @@ function whenLabel(t: ReaderPaneProps['t'], iso: string | undefined): string {
  * @returns the reader-facing sentence.
  */
 function describeFetchFailure(reason: string, t: ReaderPaneProps['t']): string {
-  if (/^HTTP (401|403)/.test(reason) || /bot challenge/i.test(reason)) return t('sources.blocked')
+  if (/^HTTP (401|403)/.test(reason) || /bot challenge/i.test(reason) || isCookieHandshake(reason)) return t('sources.blocked')
   if (/^HTTP \d{3}/.test(reason)) return t('sources.httpError')
   if (/fetch failed|timed out|timeout|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|network|socket/i.test(reason)) {
     return t('sources.unreachable')
@@ -320,7 +321,8 @@ function describeFetchFailure(reason: string, t: ReaderPaneProps['t']): string {
 
 /**
  * Whether a fetch failure is one a real browser gets past: a bot challenge,
- * or a 401/403 that refuses non-browser requests. These are the reasons the
+ * a 401/403 that refuses non-browser requests, or a cookie handshake
+ * (Springer Nature's idp bounce). These are the reasons the
  * rendered fetch (the capture package's headless Chrome) exists to answer; a
  * login wall is not among them — a cookie-less browser meets it too.
  *
@@ -328,7 +330,7 @@ function describeFetchFailure(reason: string, t: ReaderPaneProps['t']): string {
  * @returns true when escalating to the rendered fetch is worth a try.
  */
 export function browserSolvable(reason: string): boolean {
-  return /bot challenge|^HTTP 40[13]\b/i.test(reason)
+  return /bot challenge|^HTTP 40[13]\b/i.test(reason) || isCookieHandshake(reason)
 }
 
 /** How many entries the automatic backfill fetches at once. */
