@@ -55,6 +55,7 @@ import { CanvasSelectionStore } from './space/selection.ts'
 import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
 import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
+import { CANVAS_CHILD_SLOTS } from './slots.ts'
 
 export { CanvasDetailView } from './detail/CanvasDetailView.tsx'
 export { CANVAS_KIND, CANVAS_TAB_ID } from './definition.ts'
@@ -68,6 +69,10 @@ export type {
   CanvasTabInjected, CanvasTabProps, CanvasTalkInjected,
 } from './contract.ts'
 export * from './paste-table.ts'
+export { CANVAS_CHILD_SLOTS, genreKey } from './slots.ts'
+export type {
+  CanvasCardOwnerProps, CanvasChildSlot, CanvasGenreOwnerProps, CanvasNavigate, CanvasPageOwnerProps,
+} from './slots.ts'
 
 /**
  * The on-screen session across host lines: 0.1.6-alpha.2 dropped
@@ -238,6 +243,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     decideType: async (sessionId, request) => touchOnSuccess(await requireRemote().decideType(sessionId, request)),
     openTypePage: (canvasId, kind, heading) => { selection.openTypeTab(canvasId, kind, heading) },
     openCategoriesPage: (canvasId, heading) => { selection.openCategoriesTab(canvasId, heading) },
+    // Genres (创作体裁): the pick seeds role categories, so it moves the board.
+    listGenres: () => requireRemote().listGenres(),
+    selectGenre: async (sessionId, request) => touchOnSuccess(await requireRemote().selectGenre(sessionId, request)),
+    openPage: (canvasId, page, heading, param) => { selection.openPageTab(canvasId, page, heading, param) },
     // The category catalog (stage ⑤): one write for rename / add / retire, so a
     // retired row and the cards under it can never disagree between two calls.
     setCategories: async (sessionId, request) => touchOnSuccess(await requireRemote().setCategories(sessionId, request)),
@@ -323,6 +332,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     name: 'sidebar.right.pane.tab',
     key: CANVAS_TAB_ID,
     locale: NS,
+    // The genre seats (slots.ts): a genre plugin fills them, the tab renders them.
+    children: CANVAS_CHILD_SLOTS,
     inject: tabFace,
   }, CanvasTab)), 'canvas: tab body')
 

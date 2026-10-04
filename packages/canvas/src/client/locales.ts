@@ -15,6 +15,11 @@ export const zh = {
   'action.archiveCanvas': '归档画布',
   'action.deleteCanvas': '删除画布…',
   'action.deleteForever': '永久删除…',
+  'genre.menu': '创作体裁',
+  'genre.none': '不用体裁',
+  'genre.selected': '已切换为「{label}」',
+  'genre.cleared': '已不用体裁，卡片与分类都留着',
+  'genre.pageMissing': '这一页属于没有安装的体裁',
 
   'state.loading': '加载中…',
 
@@ -412,6 +417,11 @@ export const en: Record<keyof typeof zh, string> = {
   'action.archiveCanvas': 'Archive canvas',
   'action.deleteCanvas': 'Delete canvas…',
   'action.deleteForever': 'Delete forever…',
+  'genre.menu': 'Genre',
+  'genre.none': 'No genre',
+  'genre.selected': 'Switched to “{label}”',
+  'genre.cleared': 'Genre removed; cards and categories stay',
+  'genre.pageMissing': 'This page belongs to a genre that is not installed',
 
   'state.loading': 'Loading…',
 

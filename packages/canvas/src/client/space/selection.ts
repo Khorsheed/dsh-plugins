@@ -36,7 +36,7 @@ import type { CardCategoryId } from '../../types.ts'
 /**
  * Where one canvas row stands inside its canvas: the board, one card of it,
  * its unsaved new card, one of its manuscripts, one category's type page, or
- * its category list. One draft per canvas, so the ＋新卡 menu
+ * its category list, or a genre's page. One draft per canvas, so the ＋新卡 menu
  * re-categorizes the draft that is open instead of seating a second blank.
  */
 export type CanvasPlace =
@@ -46,6 +46,8 @@ export type CanvasPlace =
   | { readonly kind: 'manuscript'; readonly manuscriptId: string; readonly heading: string }
   | { readonly kind: 'type'; readonly catKind: CardCategoryId; readonly heading: string }
   | { readonly kind: 'categories'; readonly heading: string }
+  /** A genre's page (`page` is its `genreKey`), rendered by the `canvas.page` seat. */
+  | { readonly kind: 'page'; readonly page: string; readonly param?: string; readonly heading: string }
 
 /** One row of the canvas surface's tab strip: one canvas, and where in it. */
 export interface CanvasTabRow {
@@ -159,6 +161,11 @@ export class CanvasSelectionStore {
     this.ensure(canvasId, { kind: 'categories', heading })
   }
 
+  /** Open a genre page inside its canvas's row. */
+  openPageTab(canvasId: string, page: string, heading: string, param?: string): void {
+    this.ensure(canvasId, param === undefined ? { kind: 'page', page, heading } : { kind: 'page', page, param, heading })
+  }
+
   /** Show a row that is already open. A row that is gone changes nothing. */
   activate(id: string): void {
     const current = this.source.getSnapshot()
@@ -257,6 +264,7 @@ function samePlace(a: CanvasPlace, b: CanvasPlace): boolean {
   if (a.kind === 'card' && b.kind === 'card') return a.cardId === b.cardId && a.heading === b.heading
   if (a.kind === 'manuscript' && b.kind === 'manuscript') return a.manuscriptId === b.manuscriptId && a.heading === b.heading
   if (a.kind === 'type' && b.kind === 'type') return a.catKind === b.catKind && a.heading === b.heading
+  if (a.kind === 'page' && b.kind === 'page') return a.page === b.page && a.param === b.param && a.heading === b.heading
   return a.kind === b.kind
 }
 
@@ -329,6 +337,10 @@ function storedRowOf(value: unknown): CanvasTabRow | null {
     return { id, canvasId, at: { kind: 'type', catKind: at.catKind, heading: at.heading } }
   }
   if (at.kind === 'categories' && typeof at.heading === 'string') return { id, canvasId, at: { kind: 'categories', heading: at.heading } }
+  if (at.kind === 'page' && typeof at.page === 'string' && typeof at.heading === 'string') {
+    const page = { kind: 'page', page: at.page, heading: at.heading } as const
+    return { id, canvasId, at: typeof at.param === 'string' ? { ...page, param: at.param } : page }
+  }
   // A draft's words never rode the stash, so a reload stands on the board.
   if (at.kind === 'draft') return { id, canvasId, at: AT_BOARD }
   return null

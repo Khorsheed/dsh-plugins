@@ -40,6 +40,7 @@ import { CardTextarea } from './CardTextarea.tsx'
 import { DraftTile, type NewCardSlot } from './DraftTile.tsx'
 import { useDismiss } from '../use-dismiss.ts'
 import { MoreMenu } from '../more-menu.tsx'
+import { cardFaceOf, useGenreSeats } from '../genre-seats.tsx'
 import css from './board.module.css'
 
 /** The mutations the board can ask for (the page wires them to the Remote). */
@@ -228,8 +229,10 @@ function CardSummary({ t, card, definition, nameOf }: {
 }
 
 /** One board card: kept, ghost (proposed), or archived-in-the-well. */
-function CardItem({ t, card, definition, nameOf, kindLabel, kindColor, readonly, selected, archivedWell, talkAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
+function CardItem({ t, board, card, definition, nameOf, kindLabel, kindColor, readonly, selected, archivedWell, talkAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
   readonly t: TranslateNS<'canvas'>
+  /** The card's canvas (a genre may draw the face of its role categories). */
+  readonly board: CanvasBoard
   readonly card: BoardCard
   readonly definition?: TypeDefinition | undefined
   readonly nameOf: CardNameOf
@@ -248,6 +251,7 @@ function CardItem({ t, card, definition, nameOf, kindLabel, kindColor, readonly,
   readonly actions: BoardActions
 }): ReactNode {
   const [threadOpen, setThreadOpen] = useState(false)
+  const seats = useGenreSeats()
   const KindIcon = kindIconOf(card.kind)
   const proposed = card.status === 'proposed'
   // The pinned footer's word count: the html placeholder already carries its
@@ -288,7 +292,7 @@ function CardItem({ t, card, definition, nameOf, kindLabel, kindColor, readonly,
         {card.createdBy === 'agent' && !proposed ? ` · ${t('card.fromAgent')}` : ''}
       </span>
 
-      <CardSummary t={t} card={card} definition={definition} nameOf={nameOf} />
+      {cardFaceOf(seats, board, card, <CardSummary t={t} card={card} definition={definition} nameOf={nameOf} />)}
 
       {card.source !== undefined && (
         <div className={css.cardSrc}>
@@ -579,6 +583,7 @@ export function BoardView({
               <CardItem
                 key={card.id}
                 t={t}
+                board={board}
                 card={card}
                 definition={definitionOf(card.kind)}
                 nameOf={nameOf}
@@ -617,6 +622,7 @@ export function BoardView({
                   <CardItem
                     key={card.id}
                     t={t}
+                    board={board}
                     card={card}
                     definition={definitionOf(card.kind)}
                     nameOf={nameOf}

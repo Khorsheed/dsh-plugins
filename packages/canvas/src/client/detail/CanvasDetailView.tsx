@@ -63,6 +63,7 @@ import { useImageLightbox } from './image-lightbox.tsx'
 import { BlockEditor, type CardDrawings } from './BlockEditor.tsx'
 import { typedTitleOf } from '../../card-types.ts'
 import { FieldForm, FieldList, type RefCandidate } from '../type/fields.tsx'
+import { cardSectionsOf, useGenreSeats } from '../genre-seats.tsx'
 import css from './CanvasDetailView.module.css'
 
 /** What each paste arm reports about itself (the toast's whole copy). */
@@ -207,6 +208,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   // Only the rev is read from the shared store: which card this page shows came
   // in as a prop the moment the detail became its own tab (stage ⑧).
   const boardRev = useSelection(current => current.rev)
+  const seats = useGenreSeats()
   const useSessions = props.useSessions ?? useNoSessions
   const workspaceRoot = useSessions(sessions =>
     sessionId === undefined ? undefined : sessions.byId[sessionId]?.cwd)
@@ -935,6 +937,9 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           )}
         </div>
       )}
+
+      {/* A genre's sections of this card (none on a canvas without a genre). */}
+      {cardSectionsOf(seats, open.board, card)}
 
       <div className={css.thread}>
         <span className={css.threadTitle}>

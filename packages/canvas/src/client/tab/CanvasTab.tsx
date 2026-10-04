@@ -32,14 +32,16 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react'
 import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconArchiveOutlineMedium, IconFolderOpenOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import {
+  IconArchiveOutlineMedium, IconCheckOutlineMedium, IconFolderOpenOutlineMedium, IconTrashOutlineMedium,
+} from '../icons.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasTabProps } from '../contract.ts'
 import {
   summarizeBoard,
   type BoardCardStatus,
   type BoardLink, type BoardMutationResult, type CanvasBoard, type CanvasError, type CanvasStroke,
-  type CanvasSummary, type CardCategoryId,
+  type CanvasGenreSummary, type CanvasSummary, type CardCategoryId,
 } from '../../types.ts'
 import { withoutDrawLines } from '../../blocks.ts'
 import { cardNameOf } from '../../card-format.ts'
@@ -50,6 +52,9 @@ import type { NewCardSlot } from '../space/DraftTile.tsx'
 import { LinkView, type LayoutPatch } from '../space/LinkView.tsx'
 import { cardTabId, draftTabId } from '../space/selection.ts'
 import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
+import { DetailCrumbs } from '../detail/DetailCrumbs.tsx'
+import detailCss from '../detail/CanvasDetailView.module.css'
+import { boardStripsOf, genrePageOf, GenreSeatsContext, type GenreSeats } from '../genre-seats.tsx'
 import { ManuscriptList, ManuscriptView } from '../manuscript/ManuscriptView.tsx'
 import { TypeView } from '../type/TypeView.tsx'
 import { CategoriesView } from '../type/CategoriesView.tsx'
@@ -118,7 +123,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     archiveCanvas, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
     openCardDetail, openCardDraft, openManuscript, openTypePage, openCategoriesPage, backToBoard, activateTab, closeTab, focusCanvas,
     talkAvailable, quoteToConversation, refreshBoards, suggestWideMode, images, useImageRev,
-    useSelection,
+    useSelection, renderSlot, listGenres, selectGenre, openPage,
   } = props
   const sessionId = props.sessionId
   const useWorkspaces = props.useWorkspaces ?? useNoWorkspaces
@@ -716,6 +721,51 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     openCardDetail(openId, cardId, card === undefined ? cardId : cardNameOf(card))
   }, [openId, openCardDetail])
 
+  /* ----------------------------------------------------------------- genres */
+
+  /**
+   * The installed genres, read once: a genre registers when its plugin boots,
+   * which a reload picks up. Empty (none installed, or the host half too old to
+   * answer) hides the menu entry, so a deployment without a genre sees the ⋯
+   * menu it always had.
+   */
+  const [genres, setGenres] = useState<readonly CanvasGenreSummary[]>([])
+  useEffect(() => {
+    let live = true
+    void listGenres().then(result => {
+      if (live && result.ok) setGenres(result.value)
+    }, () => {})
+    return () => { live = false }
+  }, [listGenres])
+
+  const pickGenre = useCallback(async (board: CanvasBoard, genreId: string | null) => {
+    if (sessionId === undefined || (board.genre?.id ?? null) === genreId) return
+    const result = await selectGenre(sessionId, { canvasId: board.id, genreId })
+    if (!result.ok) {
+      showToast(messageOf(result.error))
+      return
+    }
+    if (!result.value.ok) {
+      showToast(canvasErrorText(t, result.value.error))
+      return
+    }
+    const label = genres.find(genre => genre.id === genreId)?.label
+    showToast(label === undefined ? t('genre.cleared') : t('genre.selected', { label }))
+  }, [sessionId, selectGenre, showToast, t, genres])
+
+  /** What the genre seats below are handed (genre-seats.tsx). */
+  const seats = useMemo((): GenreSeats => ({
+    renderSlot,
+    rev: selectionRev,
+    navigateFor: canvasId => ({
+      openCard: (cardId, heading) => { openCardDetail(canvasId, cardId, heading) },
+      openManuscript: (manuscriptId, heading) => { openManuscript(canvasId, manuscriptId, heading) },
+      openPage: (page, heading, param) => { openPage(canvasId, page, heading, param) },
+      backToBoard: () => { backToBoard(canvasId) },
+      refresh: refreshBoards,
+    }),
+  }), [renderSlot, selectionRev, openCardDetail, openManuscript, openPage, backToBoard, refreshBoards])
+
   const openTitle = activeRow === undefined
     ? ''
     : (canvases?.find(canvas => canvas.id === activeRow.canvasId)?.title ?? '—')
@@ -729,6 +779,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     : summarizeBoard(openBoard.board).cardCount
 
   return (
+    <GenreSeatsContext.Provider value={seats}>
     <div className={css.root} ref={rootRef} onScrollCapture={onScrollCapture} data-mobile-gesture-owner>
       <TabStrip
         t={t}
@@ -816,6 +867,33 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             onWrite={actions.setCategories}
             onDesign={actions.openType}
           />
+        ) : (
+          <div className={css.notice}>{loadError ?? t('state.loading')}</div>
+        )
+      ) : activeRow.at.kind === 'page' ? (
+        // A genre's page (创作体裁): the canvas draws the crumb and the title,
+        // the genre's `canvas.page` entry draws the rest. A page whose genre is
+        // gone (cleared, or its plugin uninstalled) says so instead of a blank.
+        openBoard !== null && openBoard.board.id === activeRow.canvasId ? (
+          <div className={detailCss.root} key={`${activeRow.canvasId}#page:${activeRow.at.page}:${activeRow.at.param ?? ''}`}>
+            <div className={detailCss.header}>
+              <DetailCrumbs
+                t={t}
+                crumbs={{
+                  canvasTitle: openTitle,
+                  heading: activeRow.at.heading,
+                  siblings: [],
+                  onBack: () => { leaveRow(activeRow.id, 'back') },
+                  onStep: openCard,
+                }}
+                here={activeRow.at.heading}
+                cardId={null}
+              />
+              <div className={detailCss.title}>{activeRow.at.heading}</div>
+            </div>
+            {genrePageOf(seats, openBoard.board, activeRow.at.page, activeRow.at.param,
+              <div className={css.notice}>{t('genre.pageMissing')}</div>)}
+          </div>
         ) : (
           <div className={css.notice}>{loadError ?? t('state.loading')}</div>
         )
@@ -917,13 +995,24 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 label={t('canvas.more')}
                 className={css.moreButton}
                 items={[
+                  // 创作体裁 only where a genre is installed: without one the
+                  // menu is the one it always was.
+                  ...(genres.length === 0 ? [] : [{
+                    id: 'genre',
+                    label: t('genre.menu'),
+                    submenu: [{ id: 'genre:', label: t('genre.none') }, ...genres.map(genre => ({ id: `genre:${genre.id}`, label: genre.label }))]
+                      .map(item => item.id === `genre:${openBoard.board.genre?.id ?? ''}`
+                        ? { ...item, icon: <IconCheckOutlineMedium size={13} /> }
+                        : item),
+                  }, { type: 'separator' as const, id: 'genre-sep' }]),
                   { id: 'archive', label: t('action.archiveCanvas'), icon: <IconArchiveOutlineMedium size={13} /> },
                   { id: 'delete', label: t('action.deleteCanvas'), icon: <IconTrashOutlineMedium size={13} />, danger: true },
                 ]}
                 onSelect={id => {
                   const row = summarizeBoard(openBoard.board)
-                  if (id === 'archive') void setCanvasArchived(row, true)
-                  else setDeleteAsk({ kind: 'canvas', canvasId: row.id, title: row.title })
+                  if (id.startsWith('genre:')) void pickGenre(openBoard.board, id === 'genre:' ? null : id.slice('genre:'.length))
+                  else if (id === 'archive') void setCanvasArchived(row, true)
+                  else if (id === 'delete') setDeleteAsk({ kind: 'canvas', canvasId: row.id, title: row.title })
                 }}
               />
             )}
@@ -949,6 +1038,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
               )}
             </div>
           )}
+
+          {openBoard !== null && loadError === null && boardStripsOf(seats, openBoard.board)}
 
           {openBoard !== null && loadError === null ? (
             view === 'manuscripts' ? (
@@ -1080,6 +1171,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         }
       />
     </div>
+    </GenreSeatsContext.Provider>
   )
 }
 
