@@ -26,7 +26,17 @@ Turns dsh into a workbench for serialized long-form fiction: one work spans doze
 dsh plugin add @khorsheed/dsh-story-bible
 ```
 
-The patch mounts two rows: `story-bible` (core: store + Remote) and `story-bible-agent` (the tools, pointer and skill — the canvas `./agent` pattern). To scope the tools to one preset: disable the `story-bible-agent` row in the profile's `cordis.patch.yml` and add a row named `"@khorsheed/dsh-story-bible/agent"` to that preset's own `agent.cordis.yml` — never live at both levels at once (the tools would register twice).
+The patch mounts two rows: `story-bible` (core: store + Remote — **global**: every session can see and edit the works) and `story-bible-agent` (the tools, pointer and skill — **shipped DISABLED at the profile root**). The agent surface belongs to the writing scene, not to every conversation — a root mount would put three novel-writing tools in every session's tool list.
+
+**The one correct way to enable it — a preset grant:**
+
+```sh
+dsh plugin add @khorsheed/dsh-bundle-writing
+```
+
+Its `preset-writing` declaration mounts the same entry (`@khorsheed/dsh-story-bible/agent`) inside the writing preset's scope: sessions switched to the 写作 preset get the three tools, the pointer and the story skill, and every other session sees no story trace. Your own preset works the same way — name `"@khorsheed/dsh-story-bible/agent"` in its `agent.cordis.yml` (exactly how `@khorsheed/dsh-presets`' preset-dsh-writing grants `@khorsheed/dsh-canvas/agent`).
+
+Enabling the root row by hand (removing `disabled: true`) restores the every-session behavior — do that ONLY when no preset grants the entry: live at both levels the tools register twice and the boot fails (the canvas cordis.patch.yml documents the same rule).
 
 ## Quick start
 

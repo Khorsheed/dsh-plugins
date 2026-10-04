@@ -26,7 +26,17 @@
 dsh plugin add @khorsheed/dsh-story-bible
 ```
 
-patch 挂两行：`story-bible`（核心：store + Remote）与 `story-bible-agent`（三工具 + 轻指引 + skill，canvas 同款 `./agent` 组合入口）。把工具限定进某个 preset：在 profile 的 `cordis.patch.yml` 禁用 `story-bible-agent` 行，并在该 preset 的 `agent.cordis.yml` 加一行 `name: "@khorsheed/dsh-story-bible/agent"`——两处绝不能同时生效（工具会重名注册）。
+patch 挂两行：`story-bible`（核心：store + Remote，**全局可用**——任何会话都能看和改作品数据）与 `story-bible-agent`（三工具 + 轻指引 + skill，**出厂即在 profile 根禁用**）。agent 能力属于写作场景，不属于每个会话——根挂载会把三个小说工具塞进每场对话的工具单。
+
+**启用 agent 能力的唯一正确姿势——preset 授予**：
+
+```sh
+dsh plugin add @khorsheed/dsh-bundle-writing
+```
+
+它的 `preset-writing` 声明在写作 preset 作用域内挂载同一入口（`@khorsheed/dsh-story-bible/agent`）：切到「写作」preset 的会话才有三工具、轻指引与 story skill，普通会话完全没有 story 痕迹。用自建 preset 也一样：在该 preset 的 `agent.cordis.yml` 加一行 `name: "@khorsheed/dsh-story-bible/agent"`（`@khorsheed/dsh-presets` 的 preset-dsh-writing 授予 `@khorsheed/dsh-canvas/agent` 的同款写法）。
+
+手工打开根行（删掉 `disabled: true`）会恢复全会话生效——**只能在没有任何 preset 授予时这么做**：两处同时生效会重名注册、启动失败（canvas 的 cordis.patch.yml 写着同一条规则）。
 
 ## 快速开始
 

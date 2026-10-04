@@ -2,27 +2,42 @@
 # profile, so `dsh plugin --profile <name> add @khorsheed/dsh-story-bible`
 # reconciles it into the bundles layer. The first row is a bare mount — the
 # host half provides the `storyBible` service (work registry + per-work
-# memory/character/foreshadow/chapter store under $DSH_HOME/state/story) and
-# mounts its Remote face (namespace `story`). M1 ships NO browser half, so the
-# package.json declares no `dsh.client` block; the right-sidebar tabs land
-# with M3 against this same Remote face.
+# memory/character/foreshadow/chapter store under $DSH_HOME/state/story),
+# mounts its Remote face (namespace `story`), and the browser half (the two
+# right-Sidebar tabs) is discovered through the package.json `dsh.client`
+# block. Both stay global: every session can SEE and EDIT the works.
 #
 # NOTE: a composition must mount this row id exactly once. Official images
 # mount no story-bible row, so plugin-adding this package is the install path
 # there; a composition that already mounts the id by other means must NOT
 # also add it — a duplicate loader entry id fails boot.
 #
-# The second row mounts the `./agent` composition entry: the three story_*
-# tools (story_read / story_write / story_extract), the focus pointer
-# function section and the `story` skill, live for EVERY session — the
-# community default (the canvas ./agent precedent). To scope the tools to one
-# preset instead (writing mode only): disable this row in the profile's
-# cordis.patch.yml with `- id: story-bible-agent, disabled: true` and add a
-# row named `@khorsheed/dsh-story-bible/agent` to that preset's own
-# agent.cordis.yml. THE TWO MUST NEVER BE LIVE AT ONCE — the tools would
-# register twice under the same names.
+# The second row ships DISABLED at the profile root BY DESIGN: the agent
+# surface (story_read / story_write / story_extract, the story:pointer
+# prompt section, the `story` skill) belongs to the writing scene, not to
+# every session — a profile-root mount would put three novel-writing tools
+# in every conversation's tool list (the tool-list pollution the preset
+# boundary exists to prevent). The ONLY supported grants:
+#
+#   - @khorsheed/dsh-bundle-writing (recommended): its `preset-writing`
+#     declaration mounts this very entry (`@khorsheed/dsh-story-bible/agent`)
+#     inside the writing preset's scope, so the tools, the pointer and the
+#     skill exist exactly for the sessions running that preset — and
+#     nowhere else. Installing bundle-writing alone is not enough (the
+#     preset row only declares composition); this package provides the
+#     service and the entry, bundle-writing provides the grant.
+#   - Another preset of your own: name `@khorsheed/dsh-story-bible/agent`
+#     in that preset's own agent.cordis.yml, exactly the way
+#     @khorsheed/dsh-presets' preset-dsh-writing grants
+#     `@khorsheed/dsh-canvas/agent`.
+#
+# Enabling this root row by hand (removing `disabled: true`) restores the
+# every-session behavior — do that ONLY when no preset grants the entry:
+# the two live at once register the same tool names twice and fail the
+# boot (the canvas cordis.patch.yml documents the same rule).
 - insert:
     - id: story-bible
       name: "@khorsheed/dsh-story-bible"
     - id: story-bible-agent
       name: "@khorsheed/dsh-story-bible/agent"
+      disabled: true
