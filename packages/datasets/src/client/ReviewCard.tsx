@@ -98,7 +98,7 @@ export function ReviewCard(props: ReviewCardProps) {
         <>
           <div className={css.note}>
             {pending === false ? t('card.handledNote') : t('card.filedNote')}
-            {card.warnings > 0 && ` · ${t('card.warnings', { count: card.warnings })}`}
+            {card.warnings > 0 && ` ${t('card.warnings', { count: card.warnings })}`}
           </div>
           <div className={css.actions}>
             <Button size="sm" variant={pending === false ? 'outline' : 'primary'} onClick={open}>
