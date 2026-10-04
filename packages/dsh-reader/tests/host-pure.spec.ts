@@ -102,6 +102,23 @@ describe('state document', () => {
     expect(serializeStateDoc(doc).endsWith('\n')).toBe(true)
   })
 
+  it('walks a link saved as a challenge landing back to the article it guards', () => {
+    const landing = 'https://mp.weixin.qq.com/mp/wappoc_appmsgcaptcha?poc_token=T&target_url=https%3A%2F%2Fmp.weixin.qq.com%2Fs%2FU5zH'
+    const doc = normalizeStateDoc({
+      version: 1,
+      sources: [
+        { id: 'w', url: landing, kind: 'link', label: 'mp.weixin.qq.com/wappoc_appmsgcaptcha', addedAt: '2026-09-24T00:00:00.000Z' },
+        { id: 'named', url: landing, kind: 'link', label: '我起的名字', addedAt: '2026-09-24T00:00:00.000Z' },
+        { id: 'feed', url: landing, kind: 'rss', addedAt: '2026-09-24T00:00:00.000Z' },
+      ],
+    })
+    expect(doc.sources[0]).toMatchObject({ url: 'https://mp.weixin.qq.com/s/U5zH', label: 'mp.weixin.qq.com/U5zH' })
+    // A label the reader chose survives; only the URL-derived default follows the URL.
+    expect(doc.sources[1]).toMatchObject({ url: 'https://mp.weixin.qq.com/s/U5zH', label: '我起的名字' })
+    // Feeds are not saved links: left alone.
+    expect(doc.sources[2]?.url).toBe(landing)
+  })
+
   it('drops sources that are not identifiable, keeps the rest', () => {
     const doc = normalizeStateDoc({
       version: 1,

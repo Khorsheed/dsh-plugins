@@ -1439,6 +1439,30 @@
   .toolSpinning svg { animation: none; }
 }
 
+/* The rendered fetch's progress line: a headless render takes 15–30 s, so the
+   wait is shown as work in progress (a turning ring, the secondary ink), not
+   as one more grey sentence in a notice the reader has learned to skim. */
+.renderingLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.renderingRing {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: reader-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .renderingRing { animation: none; }
+}
+
 @keyframes reader-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

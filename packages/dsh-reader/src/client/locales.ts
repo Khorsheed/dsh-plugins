@@ -45,7 +45,7 @@ export type ReaderKey =
   | 'state.emptyWall' | 'state.incompleteReason' | 'state.matches' | 'detail.scriptFigures'
   | 'fetch.none' | 'fetch.fetching' | 'fetch.raw' | 'fetch.ready' | 'fetch.failed'
   | 'fetch.noneTitle' | 'fetch.readyTitle' | 'fetch.failedTitle'
-  | 'fetch.failedOpenTitle' | 'fetch.failedFinalTitle' | 'detail.renderFetch' | 'detail.rendering'
+  | 'fetch.failedOpenTitle' | 'fetch.failedFinalTitle' | 'detail.renderFetch' | 'detail.rendering' | 'detail.renderingWall' | 'detail.renderFailed'
   | 'sources.title' | 'sources.count' | 'sources.empty' | 'sources.help'
   | 'sources.enabled' | 'sources.disabled' | 'sources.time' | 'sources.timeHelp'
   | 'sources.failed' | 'sources.items' | 'sources.never' | 'sources.cardHint'
@@ -248,6 +248,8 @@ export const en = {
   'fetch.failedOpenTitle': 'Fetch failed: {reason} — click for details',
   'fetch.failedFinalTitle': 'Fetch failed: {reason}',
   'detail.renderFetch': 'Fetch rendered',
+  'detail.renderingWall': 'This site turned away the plain fetch — rendering it in a headless browser instead (about 15–30 s)…',
+  'detail.renderFailed': 'The rendered fetch did not get the article either ({reason}).',
   'detail.rendering': 'Rendering this page in the browser — script-drawn figures appear when it lands (the first render is slower)…',
 
   'quote.copied': 'Copied',
@@ -443,6 +445,8 @@ export const zh = {
   'fetch.failedOpenTitle': '抓取失败：{reason} —— 点一下看详情',
   'fetch.failedFinalTitle': '抓取失败：{reason}',
   'detail.renderFetch': '渲染抓取',
+  'detail.renderingWall': '这个站点拦截了普通抓取，正在改用无头浏览器渲染（约 15–30 秒）…',
+  'detail.renderFailed': '渲染抓取也没拿到正文（{reason}）。',
   'detail.rendering': '正在用浏览器渲染这一页——脚本绘制的插图会在渲染后出现（首次较慢）…',
 
   'quote.copied': '已复制',

@@ -852,6 +852,47 @@ function isResponsiveAlternate(element: Element): boolean {
     sibling !== element && sibling.localName.toLowerCase() === 'svg' && !namesAlternate(sibling))
 }
 
+/**
+ * Bring a body stored by an older extractor up to the current SVG rules.
+ *
+ * Bodies are extracted once and cached, so the two SVG fixes above
+ * (`resolveSvgVars`, `isResponsiveAlternate`) would otherwise reach only
+ * articles fetched after they shipped — a cached claude.dev post kept drawing
+ * its figure as bare dots until its TTL ran out. This replays both on
+ * already-whitelisted markup at display time. A body with no `<svg>`, or one
+ * the current extractor wrote, comes back as the same string.
+ *
+ * @param html - a stored (already whitelisted) article body.
+ * @returns the body with no SVG custom-property reference and no narrow duplicate.
+ */
+export function repairStoredSvg(html: string): string {
+  if (!/<svg[\s>]/i.test(html) || typeof DOMParser === 'undefined') return html
+  let doc: Document
+  try {
+    doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html')
+  } catch {
+    return html
+  }
+  let changed = false
+  for (const svg of Array.from(doc.body.querySelectorAll('svg'))) {
+    // Nested drawings ride their top-level figure's pass.
+    if ((svg.parentElement?.closest('svg') ?? null) !== null) continue
+    if (isResponsiveAlternate(svg)) {
+      svg.remove()
+      changed = true
+      continue
+    }
+    for (const element of [svg, ...Array.from(svg.querySelectorAll('*'))]) {
+      for (const attribute of Array.from(element.attributes)) {
+        if (!/var\(/i.test(attribute.value)) continue
+        element.setAttribute(attribute.name, resolveSvgVars(attribute.value))
+        changed = true
+      }
+    }
+  }
+  return changed ? doc.body.innerHTML : html
+}
+
 /** One SVG subtree → whitelisted markup (or empty). */
 function normalizeSvg(element: Element): string {
   const name = element.localName.toLowerCase()

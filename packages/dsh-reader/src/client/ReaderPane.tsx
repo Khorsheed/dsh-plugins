@@ -310,7 +310,7 @@ function whenLabel(t: ReaderPaneProps['t'], iso: string | undefined): string {
  * @returns the reader-facing sentence.
  */
 function describeFetchFailure(reason: string, t: ReaderPaneProps['t']): string {
-  if (/^HTTP (401|403)/.test(reason)) return t('sources.blocked')
+  if (/^HTTP (401|403)/.test(reason) || /bot challenge/i.test(reason)) return t('sources.blocked')
   if (/^HTTP \d{3}/.test(reason)) return t('sources.httpError')
   if (/fetch failed|timed out|timeout|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|network|socket/i.test(reason)) {
     return t('sources.unreachable')
@@ -715,8 +715,19 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
    * (cached or fresh), so reopening an entry shows the same note.
    */
   const [scriptFigures, setScriptFigures] = useState(0)
-  /** True while a capture-rendered refetch of the open entry is in flight. */
-  const [captureBusy, setCaptureBusy] = useState(false)
+  /**
+   * The entry whose capture-rendered refetch is in flight. Per entry, not a
+   * pane-wide flag: opening another article mid-render must not show it the
+   * first one's progress line (or disable its 「重新抓取」).
+   */
+  const [captureBusyId, setCaptureBusyId] = useState<string | null>(null)
+  const captureBusy = captureBusyId !== null && captureBusyId === openEntryId
+  /**
+   * Why the last rendered fetch of an entry came back without a body. The
+   * recorded refusal (「拒绝自动抓取」) stays the line's lead, so without this
+   * a failed render would be indistinguishable from one never attempted.
+   */
+  const [captureFailure, setCaptureFailure] = useState<{ entryId: string; message: string } | null>(null)
   /** Entries whose stored body came from a rendered fetch (the「重新抓取」route reads it). */
   const renderedBodiesRef = useRef(new Set<string>())
   /** Auto-render fires once per entry per pane session; failures leave the manual retry. */
@@ -1953,17 +1964,20 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const captureBody = useCallback(async (entryId: string, link: string) => {
     const capture = props.captureRemote()
     if (capture === undefined) return
-    setCaptureBusy(true)
+    setCaptureBusyId(entryId)
+    setCaptureFailure(null)
     try {
       const rendered = await capture.render({ url: link })
       if (!rendered.ok) {
-        if (openRequestRef.current === entryId) actions.setArticle(articleHtml ?? '', false, rendered.error.message)
+        // The reason the plain fetch failed stays the line's lead; the render's
+        // own failure is said after it (captureFailure).
+        setCaptureFailure({ entryId, message: rendered.error.message })
         return
       }
       const finalUrl = rendered.value.finalUrl ?? link
       const extracted = extractArticle(rendered.value.html, finalUrl)
       if (!extracted.ok) {
-        if (openRequestRef.current === entryId) actions.setArticle(articleHtml ?? '', false, extracted.error)
+        setCaptureFailure({ entryId, message: extracted.error })
         return
       }
       const stored = await props.storeEntryBody({
@@ -1971,6 +1985,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         url: finalUrl,
         html: extracted.html,
         bodyHash: translationHash(extracted.html),
+        // The article's own title/excerpt: a link saved behind a wall has only
+        // its URL-derived label until the render reads the page.
+        ...(extracted.title === undefined ? {} : { title: extracted.title }),
+        ...(extracted.excerpt === undefined ? {} : { excerpt: extracted.excerpt }),
         ...(rendered.value.truncated === true ? { truncated: true } : {}),
         // A capture render ALWAYS carries its count, zero included: the entry's
         // own load-time count (84 script figures, say) is what the remount
@@ -1983,6 +2001,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         rendered: true,
       })
       renderedBodiesRef.current.add(entryId)
+      actions.noteExtractedMeta(entryId, {
+        ...(extracted.title === undefined ? {} : { title: extracted.title }),
+        ...(extracted.excerpt === undefined ? {} : { excerpt: extracted.excerpt }),
+      })
       if (openRequestRef.current !== entryId) return
       if (stored.ok && stored.value.html !== undefined) {
         actions.setArticle(stored.value.html, stored.value.truncated === true, null)
@@ -1991,9 +2013,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
         void syncFetchState(entryId)
       }
     } finally {
-      setCaptureBusy(false)
+      setCaptureBusyId(current => (current === entryId ? null : current))
     }
-  }, [actions, props, articleHtml, syncFetchState])
+  }, [actions, props, syncFetchState])
 
   /**
    * One gesture, the whole pipeline: an explicit per-entry ask (add a link,
@@ -3338,6 +3360,12 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     const source = presentation.get(openEntry.sourceId)
     /** The host's own row for this entry's source: the failure code lives here. */
     const sourceSummary = sources.find(item => item.id === openEntry.sourceId)
+    /**
+     * The plain fetch met a wall a headless browser gets past, and the
+     * rendered fetch is mounted: the error line is that render's slot.
+     */
+    const wallRenderable = captureRemote !== undefined && openEntry.link !== undefined && articleError !== null
+      && (browserSolvable(articleError) || sourceSummary?.failure?.code === 'blocked' || captureFailure?.entryId === openEntry.id)
     const when = relativeWhen(openEntry.publishedAt, new Date())
     const date = absoluteDate(openEntry.publishedAt)
     const alsoFrom = allEntries
@@ -3557,7 +3585,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   control that cannot work (no capture Remote) never renders. */}
               {captureRemote !== undefined && openEntry.link !== undefined && (
                 captureBusy
-                  ? <span>{t('detail.rendering')}</span>
+                  ? <span className={css.renderingLine}><span className={css.renderingRing} aria-hidden="true" />{t('detail.rendering')}</span>
                   : (
                     <button
                       type="button"
@@ -3568,6 +3596,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                     </button>
                   )
               )}{' '}
+              {!captureBusy && captureFailure?.entryId === openEntry.id && (
+                <span>{t('detail.renderFailed', { reason: captureFailure.message })}{' '}</span>
+              )}
               {openEntry.link !== undefined && (
                 <button
                   type="button"
@@ -3579,51 +3610,60 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               )}
             </p>
           )}
-          {articleError !== null && (
-            <p className={css.incomplete}>
-              {/* Say what ACTUALLY happened. The seam's reasons are distinguishable
-                  and the reader needs the distinction: a bot challenge is final,
-                  a dead network is not, and an unreadable extraction is a third
-                  thing again. The old copy claimed "exceeds the fetch cap" for
-                  all three, which was measured wrong on the acceptance instance
-                  (the recorded reason there was `web fetch failed: TypeError:
-                  fetch failed`). When the host classified the failure, its CODE
-                  picks the sentence — the raw message stays for diagnosis only. */}
-              {previewReason(t, sourceSummary?.failure?.code, articleError)}
-              {/* A bot wall is what the rendered fetch answers: the same slot
-                  as the script-figure notice — progress while it runs (the
-                  open gesture already escalated), the manual retry after. */}
-              {captureRemote !== undefined && openEntry.link !== undefined
-                && (browserSolvable(articleError) || sourceSummary?.failure?.code === 'blocked') && (
-                <>
-                  {' '}
-                  {captureBusy
-                    ? <span>{t('detail.rendering')}</span>
-                    : (
-                      <button
-                        type="button"
-                        className={css.incompleteLink}
-                        onClick={() => { void captureBody(openEntry.id, openEntry.link as string) }}
-                      >
-                        {t('detail.renderFetch')}
-                      </button>
-                    )}
-                </>
-              )}
-              {openEntry.link !== undefined && (
-                <>
-                  {' '}
-                  <button
-                    type="button"
-                    className={css.incompleteLink}
-                    onClick={() => { openElsewhere(openEntry.link as string) }}
-                  >
-                    {t('detail.readOriginal')}
-                  </button>
-                </>
-              )}
-            </p>
-          )}
+          {articleError !== null && (wallRenderable && captureBusy
+            ? (
+              // The open gesture already escalated: while the headless render
+              // runs, the line says THAT (and how long it takes) instead of
+              // leading with a refusal the reader cannot tell is being handled.
+              <p className={css.incomplete}>
+                <span className={css.renderingLine}>
+                  <span className={css.renderingRing} aria-hidden="true" />
+                  {t('detail.renderingWall')}
+                </span>
+              </p>
+            )
+            : (
+              <p className={css.incomplete}>
+                {/* Say what ACTUALLY happened. The seam's reasons are distinguishable
+                    and the reader needs the distinction: a bot challenge is final,
+                    a dead network is not, and an unreadable extraction is a third
+                    thing again. The old copy claimed "exceeds the fetch cap" for
+                    all three, which was measured wrong on the acceptance instance
+                    (the recorded reason there was `web fetch failed: TypeError:
+                    fetch failed`). When the host classified the failure, its CODE
+                    picks the sentence — the raw message stays for diagnosis only. */}
+                {previewReason(t, sourceSummary?.failure?.code, articleError)}
+                {captureFailure?.entryId === openEntry.id && (
+                  <>{' '}{t('detail.renderFailed', { reason: captureFailure.message })}</>
+                )}
+                {/* A bot wall is what the rendered fetch answers: the manual
+                    retry after a failed (or never-started) render. */}
+                {wallRenderable && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className={css.incompleteLink}
+                      onClick={() => { void captureBody(openEntry.id, openEntry.link as string) }}
+                    >
+                      {t('detail.renderFetch')}
+                    </button>
+                  </>
+                )}
+                {openEntry.link !== undefined && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className={css.incompleteLink}
+                      onClick={() => { openElsewhere(openEntry.link as string) }}
+                    >
+                      {t('detail.readOriginal')}
+                    </button>
+                  </>
+                )}
+              </p>
+            ))}
           {/* The feed published only a summary: the paragraph below IS that
               summary, and the full text is being fetched (the line above says
               so while it runs). Once the article arrives this notice goes
@@ -3662,7 +3702,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               62,044 characters entry by entry). Nothing was truncated there, so
               the cap note would be a lie — this says what actually happened. */}
           {/* One line, at the end, only when the body is known to be partial. */}
-          {(articleTruncated || openEntry.truncated === true) && (
+          {/* Over a body only: with nothing on screen there is nothing to be partial. */}
+          {articleHtml !== null && articleHtml.length > 0 && (articleTruncated || openEntry.truncated === true) && (
             <p className={css.incomplete}>
               {t('detail.incomplete')} —{' '}
               <button

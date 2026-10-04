@@ -317,7 +317,11 @@ export class ReaderService {
       if (problem !== undefined) {
         return await this.saveLinkOnly(
           {
-            url: fetched.url,
+            // The address the reader gave, not where the refusal landed: a
+            // challenge redirect (mp.weixin.qq.com → /wappoc_appmsgcaptcha)
+            // would otherwise become the card's title and the URL every later
+            // fetch — the rendered one included — asks for.
+            url,
             ...(request.label === undefined ? {} : { label: request.label }),
             ...(resolvedFrom === undefined ? {} : { resolvedFrom }),
           },
@@ -498,7 +502,8 @@ export class ReaderService {
           patches.set(source.id, {
             // Keep the last-known-good payload: a site that starts refusing us
             // must not erase the article the reader already had.
-            ...withoutFailure({ ...source, url: fetched.url, ...(source.raw === undefined ? {} : { raw: source.raw }) }),
+            // …and keep its address: the refusal's landing page is not it.
+            ...withoutFailure(source),
             fetchedAt,
             status: 'error',
             error: failure.message,

@@ -32,7 +32,9 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  challengeTarget,
   DEFAULT_CACHE_POLICY,
+  defaultSourceLabel,
   type ReaderCachePolicy,
   MAX_BODY_CHARS_PER_SOURCE,
   MAX_TOTAL_BODY_CHARS,
@@ -399,9 +401,18 @@ function normalizeSource(value: unknown): ReaderSource | undefined {
   if (typeof value !== 'object' || value === null) return undefined
   const record = value as Record<string, unknown>
   const id = typeof record.id === 'string' ? record.id : undefined
-  const url = typeof record.url === 'string' ? record.url : undefined
-  if (id === undefined || url === undefined) return undefined
+  const storedUrl = typeof record.url === 'string' ? record.url : undefined
+  if (id === undefined || storedUrl === undefined) return undefined
   const kind = record.kind === 'link' ? 'link' : 'rss'
+  // A saved link that recorded a challenge page's landing URL instead of the
+  // article (see challengeTarget) is walked back, and so is the label that was
+  // only that URL's default.
+  const target = kind === 'link' ? challengeTarget(storedUrl) : undefined
+  const url = target ?? storedUrl
+  const storedLabel = typeof record.label === 'string' && record.label.length > 0 ? record.label : undefined
+  const label = target !== undefined && (storedLabel === undefined || storedLabel === defaultSourceLabel(storedUrl))
+    ? defaultSourceLabel(target)
+    : storedLabel ?? url
   const status = record.status === 'ok' || record.status === 'fetching' || record.status === 'error'
     ? record.status
     : undefined
@@ -410,7 +421,7 @@ function normalizeSource(value: unknown): ReaderSource | undefined {
     id,
     kind,
     url,
-    label: typeof record.label === 'string' && record.label.length > 0 ? record.label : url,
+    label,
     enabled: record.enabled !== false,
     addedAt: typeof record.addedAt === 'string' ? record.addedAt : new Date(0).toISOString(),
     ...(typeof record.fetchedAt === 'string' ? { fetchedAt: record.fetchedAt } : {}),

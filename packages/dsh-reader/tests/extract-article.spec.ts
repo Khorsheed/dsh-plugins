@@ -24,6 +24,7 @@ import {
   extractArticle,
   normalizeInline,
   normalizeRichText,
+  repairStoredSvg,
   resolveSvgVars,
 } from '../src/client/extract-article.ts'
 
@@ -645,6 +646,24 @@ describe('inline SVG figures survive (capture-rendered pages)', () => {
     // A lone narrow-named svg has no sibling to stand for it: it stays.
     const lone = normalizeRichText('<p>x</p><svg class="chart-mobile" viewBox="0 0 1 1"><circle r="1"/></svg>')
     expect(lone).toContain('<svg viewBox="0 0 1 1">')
+  })
+
+  it('brings a body cached by an older extractor up to the SVG rules at display time', () => {
+    // The stored shape claude.dev's post was cached in before the fix: page
+    // variables left in style attributes, both drawings of the figure kept.
+    const stored = '<figure><div><svg id="eval-four-elements" viewBox="0 0 10 10">'
+      + '<line x1="0" x2="10" y1="5" y2="5" style="stroke:var(--viz-muted)"></line>'
+      + '<text style="fill:var(--ink);stroke:var(--bg)">Frontier model</text></svg>'
+      + '<svg id="eval-four-elements-mobile" viewBox="0 0 5 10"><text>narrow copy</text></svg></div></figure>'
+    const repaired = repairStoredSvg(stored)
+    expect(repaired).not.toContain('var(')
+    expect(repaired).not.toContain('narrow copy')
+    expect(repaired).toContain('style="stroke:currentColor"')
+    expect(repaired).toContain('style="fill:currentColor;stroke:none"')
+    // Idempotent, and a body with nothing to repair is the same string.
+    expect(repairStoredSvg(repaired)).toBe(repaired)
+    const plain = '<p>no figures <em>here</em></p>'
+    expect(repairStoredSvg(plain)).toBe(plain)
   })
 
   it('applies the same subset through the feed-body path and keeps summaries clean', () => {

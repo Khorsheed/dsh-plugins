@@ -2224,6 +2224,38 @@ describe('the detail view owns up to figures it cannot fetch', () => {
     })
   })
 
+  it('a bot wall shows the render in progress, then says why a failed render failed', async () => {
+    const ui = bench({
+      capture: true,
+      sources: [rssSource('tc')],
+      payloads: {
+        tc: '<rss version="2.0"><channel><title>tc</title><item><title>公众号文章</title>'
+          + '<link>https://mp.weixin.qq.com/s/abc</link></item></channel></rss>',
+      },
+    })
+    await ui.settle()
+    ui.mocks.fetchEntryBody.mockImplementation(async (entryId: string) => ({
+      entryId,
+      cached: false,
+      fresh: false,
+      fromFeed: false,
+      error: 'the site answered a bot challenge instead of the page (https://mp.weixin.qq.com/s/abc)',
+    }))
+    let finish: (value: unknown) => void = () => {}
+    ui.mocks.captureRender.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const cards = await screen.findAllByRole('button', { name: /公众号文章/ })
+    fireEvent.click(cards[cards.length - 1] as HTMLElement)
+    // While the headless render runs, the line says so — not the refusal.
+    await screen.findByText(zh['detail.renderingWall'])
+    expect(screen.queryByText(new RegExp(zh['sources.blocked'].slice(0, 8)))).toBeNull()
+    finish({ ok: false, error: { message: 'capture/navigation-failed' } })
+    // After a failed render: the refusal, the render's own reason, and the retry.
+    await screen.findByText(new RegExp(zh['sources.blocked'].slice(0, 8)))
+    expect(screen.getByText(/capture\/navigation-failed/)).toBeTruthy()
+    expect(screen.getByText(zh['detail.renderFetch'])).toBeTruthy()
+    expect(screen.queryByText(zh['detail.renderingWall'])).toBeNull()
+  })
+
   it('a bot wall without a rendered fetch mounted stays a plain refusal', async () => {
     const ui = bench({
       sources: [rssSource('tc')],
