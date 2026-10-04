@@ -25,6 +25,7 @@ Status: implemented
 - `pnpm run test:scripts` 在同一台此前必红的机器上连续多次全绿；build-scripts 用例从 >5s 降到毫秒级。
 - 门禁的 script-tests 阶段不再在负载下误拦无关合并，消除了"绕着红门禁合并"的压力。
 - 放弃的东西：无行为变化——检查器在同一检出集合上执行同一契约，没有 spec 获得新的跳过路径。
+- deploy fixture 已不再用 `spawnSync`：2026-10-04 起改为异步起编排器。原因是整个文件的同步运行会让 vitest worker 阻塞超过 60s 的 `onTaskUpdate` RPC 超时（见 [worker RPC 让出 note](2026-10-04-vitest-worker-rpc-yield.zh.md)）。
 - 门禁内存压力（整仓 scope 时 pnpm `-r` 并发 × 各包 vitest worker）是另一个独立问题，归门禁调优，不归这两个 spec。
 
 ## Testing

@@ -8,18 +8,19 @@ export default defineConfig({
   test: {
     include: ['scripts/*.spec.ts'],
     // These are integration specs, not unit tests: deploy-3080.spec.ts
-    // spawnSyncs the real orchestrator with an inner 15s process timeout, and
+    // spawns the real orchestrator (its own budget is set in that file), and
     // the tree-scanning checkers walk the installed .pnpm store. The 5s
     // default made both flap red on any loaded machine while passing
-    // standalone; 30s covers the inner spawn timeout with headroom.
+    // standalone.
     testTimeout: 30_000,
-    // Known flake signature under heavy multi-agent load (2026-09-28):
     // `[vitest-worker]: Timeout calling "onTaskUpdate"` with every assertion
-    // green. deploy-3080.spec.ts blocks its worker's event loop with
-    // spawnSync; birpc's RPC timeout is a hardcoded 60s with no vitest config
-    // knob, so a process starved past that (swap pressure, several builds at
-    // once) fails the run after the assertions already passed. A red run with
-    // that message means "rerun on a quieter machine", not a regression.
+    // green is not machine load starving vitest: it is a worker whose event
+    // loop stayed blocked by synchronous test bodies past birpc's hardcoded
+    // 60s, so the reply was never read (2026-10-04: reproduced with
+    // deploy-3080.spec.ts alone, 98s of spawnSync). The setup file yields once
+    // per test; a single test body must still not block 60s on its own — use
+    // async subprocesses, as deploy-3080.spec.ts does. See build/vitest-yield.ts.
+    setupFiles: ['./build/vitest-yield.ts'],
     maxWorkers: 4,
   },
 })

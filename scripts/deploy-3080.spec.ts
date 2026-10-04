@@ -1,14 +1,21 @@
 /** Run the real orchestrator with fake executables and an isolated home: no production processes. */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 
 const repo = resolve(import.meta.dirname, '..'), roots: string[] = []
+
+// One orchestrator run takes 2–8s; the budget only has to catch a hang. 15s
+// killed healthy runs on a loaded machine (status null mid-flow), and now that
+// runs are async a long test no longer stalls the worker's RPC, so the budget
+// can be honest. Tests run the orchestrator up to twice.
+const RUN_BUDGET_MS = 60_000
+vi.setConfig({ testTimeout: 2 * RUN_BUDGET_MS + 30_000 })
 afterEach(() => { for (const p of roots.splice(0)) rmSync(p, { recursive: true, force: true }) })
 
 // Stub only the external command boundary. The production orchestrator and scanner run unchanged.
@@ -32,6 +39,28 @@ if(cmd==='pnpm'&&args[0]==='install') { const p=JSON.parse(fs.readFileSync(file)
 if(cmd==='node'&&(args[1]==='schedule-exit'||args[1]==='reconfigure'))fs.appendFileSync(path.join(home,'state/watchdog.log'),'canary PASS\\n');
 if(cmd==='curl'){const marker=path.join(home,'curl-once');const first=process.env.FAILURE==='http-once'&&!fs.existsSync(marker);fs.writeFileSync(marker,'1');process.stdout.write(first?'500':'401');}
 `
+/**
+ * Run the orchestrator as an async child. A spawnSync here froze the vitest
+ * worker's event loop for the whole file (26 tests, 100s+ under load) and
+ * tripped the worker's 60s `onTaskUpdate` RPC timeout with every assertion
+ * green — see build/vitest-yield.ts.
+ */
+function runOrchestrator(cwd: string, args: string[], env: Record<string, string>): Promise<{ status: number | null; output: string; calls: string[][] }> {
+  const tsx = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href
+  return new Promise((done, fail) => {
+    const child = spawn(process.execPath, ['--import', tsx, join(repo, 'scripts/deploy-3080.mts'), ...args], { cwd, env: { ...process.env, ...env }, timeout: RUN_BUDGET_MS })
+    let output = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => { output += chunk })
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { output += chunk })
+    child.on('error', fail)
+    child.on('close', status => {
+      const log = join(cwd, 'calls')
+      const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(x => JSON.parse(x) as string[]) : []
+      done({ status, output, calls })
+    })
+  })
+}
+
 function writeStubs(bin: string) {
   for (const command of ['node', 'pnpm', 'npx', 'git', 'sleep', 'curl']) { const p = join(bin, command); writeFileSync(p, STUB); chmodSync(p, 0o755) }
 }
@@ -48,24 +77,20 @@ function fixture({ dependency = true, bundle = true, selfMounting = true, failur
   writeFileSync(join(profile, 'pnpm-workspace.yaml'), "overrides:\nminimumReleaseAgeExclude:\n  - '@khorsheed/*'\n")
   writeStubs(bin)
   return { root, home, harness, old, profile, run(noRestart = true, extra: string[] = []) {
-    const result = spawnSync(process.execPath, ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href, join(repo, 'scripts/deploy-3080.mts'), '--package', 'packages/demo', ...(noRestart ? ['--no-restart'] : []), ...extra], {
-      cwd: root, env: { ...process.env, DSH_HOME: home, DSH_HARNESS: harness, PATH: bin, CALL_LOG: join(root, 'calls'), FAILURE: failure }, encoding: 'utf8', timeout: 15000,
-    })
-    const calls = existsSync(join(root, 'calls')) ? readFileSync(join(root, 'calls'), 'utf8').trim().split('\n').map(x => JSON.parse(x) as string[]) : []
-    return { ...result, calls, output: result.stdout + result.stderr }
+    return runOrchestrator(root, ['--package', 'packages/demo', ...(noRestart ? ['--no-restart'] : []), ...extra], { DSH_HOME: home, DSH_HARNESS: harness, PATH: bin, CALL_LOG: join(root, 'calls'), FAILURE: failure })
   } }
 }
 
 describe('deploy 3080 flow', () => {
-  it('reports refresh-only truthfully and never requests a restart', () => {
-    const f = fixture(), r = f.run()
+  it('reports refresh-only truthfully and never requests a restart', async () => {
+    const f = fixture(), r = await f.run()
     expect(r.status, r.output).toBe(0)
     expect(r.output).toContain('未重启'); expect(r.output).not.toContain('canary PASS'); expect(r.output).not.toContain('已上线')
     expect(r.calls.some(c => c[1]?.endsWith('cli.js') && c[2] === 'preflight')).toBe(true)
     expect(r.calls.some(c => c.includes('schedule-exit') || c.includes('plugin'))).toBe(false)
   })
-  it.each([{ dependency: false, bundle: false }, { dependency: true, bundle: false }])('uses official add for missing registration: %j', options => {
-    const f = fixture(options), r = f.run()
+  it.each([{ dependency: false, bundle: false }, { dependency: true, bundle: false }])('uses official add for missing registration: %j', async options => {
+    const f = fixture(options), r = await f.run()
     expect(r.status, r.output).toBe(0)
     const add = r.calls.findIndex(c => c.includes('plugin'))
     expect(add).toBeGreaterThan(r.calls.findIndex(c => c.includes('--out')))
@@ -74,41 +99,41 @@ describe('deploy 3080 flow', () => {
     expect(r.calls[add + 1]).toEqual(['pnpm', 'install'])
     expect(JSON.parse(readFileSync(join(f.profile, 'package.json'), 'utf8')).dsh.profile.bundles).toContain('@khorsheed/dsh-demo')
   })
-  it.each(['add', 'registration', 'patch', 'installed-link'])('refuses %s failures before proof/restart, retains old artifact and releases lock', failure => {
-    const f = fixture({ bundle: false, failure }), r = f.run()
+  it.each(['add', 'registration', 'patch', 'installed-link'])('refuses %s failures before proof/restart, retains old artifact and releases lock', async failure => {
+    const f = fixture({ bundle: false, failure }), r = await f.run()
     expect(r.status).not.toBe(0); expect(r.output).not.toContain('deploy-3080 OK')
     expect(r.calls.some(c => c.includes('record') || c.includes('schedule-exit'))).toBe(false)
     expect(existsSync(f.old)).toBe(true); expect(existsSync(join(f.home, 'state/deploy-3080.pid'))).toBe(false)
   })
-  it('finds an existing broken link before any command or profile write', () => {
+  it('finds an existing broken link before any command or profile write', async () => {
     const f = fixture(); symlinkSync('absent', join(f.home, 'lost'))
-    const before = readFileSync(join(f.profile, 'package.json'), 'utf8'), r = f.run()
+    const before = readFileSync(join(f.profile, 'package.json'), 'utf8'), r = await f.run()
     expect(r.status).not.toBe(0); expect(r.calls).toEqual([])
     expect(readFileSync(join(f.profile, 'package.json'), 'utf8')).toBe(before)
   })
-  it('does not auto-mount a new internal companion without a bundle', () => {
-    const r = fixture({ dependency: false, bundle: false, selfMounting: false }).run()
+  it('does not auto-mount a new internal companion without a bundle', async () => {
+    const r = await fixture({ dependency: false, bundle: false, selfMounting: false }).run()
     expect(r.status).not.toBe(0); expect(r.calls).toEqual([])
   })
-  it('retains the update path for an existing dependency-only package', () => {
-    const r = fixture({ bundle: false, selfMounting: false }).run()
+  it('retains the update path for an existing dependency-only package', async () => {
+    const r = await fixture({ bundle: false, selfMounting: false }).run()
     expect(r.status, r.output).toBe(0); expect(r.calls.some(c => c.includes('plugin'))).toBe(false)
   })
-  it('reports canary success only on the restart path, and not when the guard refuses', () => {
-    const ok = fixture({ failure: 'http-once' }).run(false);expect(ok.calls.filter(c=>c[0]==='curl')).toHaveLength(2); expect(ok.status, ok.output).toBe(0); expect(ok.output).toContain('已上线'); expect(ok.output).toContain('canary PASS')
-    const f = fixture({ failure: 'gate' }), bad = f.run(false)
+  it('reports canary success only on the restart path, and not when the guard refuses', async () => {
+    const ok = await fixture({ failure: 'http-once' }).run(false);expect(ok.calls.filter(c=>c[0]==='curl')).toHaveLength(2); expect(ok.status, ok.output).toBe(0); expect(ok.output).toContain('已上线'); expect(ok.output).toContain('canary PASS')
+    const f = fixture({ failure: 'gate' }), bad = await f.run(false)
     expect(bad.status).not.toBe(0); expect(bad.output).not.toContain('已上线'); expect(existsSync(f.old)).toBe(true)
     expect(existsSync(join(f.home, 'state/deploy-3080.pid'))).toBe(false)
-  }, 15000)
-  it('leaves another live deploy lock untouched', () => {
-    const f = fixture(), lock = join(f.home, 'state/deploy-3080.pid'); writeFileSync(lock, String(process.pid))
-    const r = f.run(); expect(r.status).not.toBe(0); expect(r.calls).toEqual([]); expect(readFileSync(lock, 'utf8')).toBe(String(process.pid))
   })
-  it('omits --initiator by default (the guard routes to the caller session) and passes an explicit session id through', () => {
+  it('leaves another live deploy lock untouched', async () => {
+    const f = fixture(), lock = join(f.home, 'state/deploy-3080.pid'); writeFileSync(lock, String(process.pid))
+    const r = await f.run(); expect(r.status).not.toBe(0); expect(r.calls).toEqual([]); expect(readFileSync(lock, 'utf8')).toBe(String(process.pid))
+  })
+  it('omits --initiator by default (the guard routes to the caller session) and passes an explicit session id through', async () => {
     // The old default ($USER) routed every restart report to a session that
     // never exists — the report stayed pending until the next restart
     // overwrote it (silently lost). The flag must only appear on demand.
-    const dflt = fixture().run(false)
+    const dflt = await fixture().run(false)
     expect(dflt.status, dflt.output).toBe(0)
     const scheduleExit = dflt.calls.find(c => c[1]?.endsWith('cli.js') && c[2] === 'schedule-exit')
     expect(scheduleExit, dflt.calls.map(c => c.join(' ')).join('\n')).toBeDefined()
@@ -116,11 +141,11 @@ describe('deploy 3080 flow', () => {
     // The preflight window is deliberately wider than the guard's 120s idle-machine
     // default — under multi-agent load a clean dry-run legitimately exceeds it.
     expect(scheduleExit!.slice(scheduleExit!.indexOf('--preflight-timeout-ms'))).toEqual(['--preflight-timeout-ms', '300000'])
-    const named = fixture().run(false, ['--initiator', 'session-abc'])
+    const named = await fixture().run(false, ['--initiator', 'session-abc'])
     expect(named.status, named.output).toBe(0)
     const namedExit = named.calls.find(c => c[1]?.endsWith('cli.js') && c[2] === 'schedule-exit')!
     expect(namedExit.slice(namedExit.indexOf('--initiator'))).toEqual(['--initiator', 'session-abc'])
-  }, 30000)
+  })
 
   // The watchdog pins its preflight runner by path+sha256; a deploy that
   // rebuilds ankh-guard's runner makes schedule-exit refuse, so the flow must
@@ -145,7 +170,7 @@ describe('deploy 3080 flow', () => {
     } }))
     return runner
   }
-  it('rotates mobile authority via guarded reconfigure and updates the candidate probe', () => {
+  it('rotates mobile authority via guarded reconfigure and updates the candidate probe', async () => {
     const f = fixture()
     writeLaunchSpec(f, '// runner', createHash('sha256').update('// runner').digest('hex'))
     const path = join(f.home, 'state/launch-spec.json'), spec = JSON.parse(readFileSync(path, 'utf8'))
@@ -154,7 +179,7 @@ describe('deploy 3080 flow', () => {
     writeFileSync(path, JSON.stringify(spec))
     mkdirSync(join(f.root, 'packages/mobile'))
     writeFileSync(join(f.root, 'packages/mobile/package.json'), JSON.stringify({ name: '@khorsheed/dsh-mobile', version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml' } } }))
-    const r = f.run(false, ['--package', 'packages/mobile', '--mobile-origin', 'https://new-link.trycloudflare.com'])
+    const r = await f.run(false, ['--package', 'packages/mobile', '--mobile-origin', 'https://new-link.trycloudflare.com'])
     expect(r.status, r.output).toBe(0)
     const cutover = r.calls.find(c => c[2] === 'reconfigure')!
     expect(cutover).toBeDefined()
@@ -163,36 +188,36 @@ describe('deploy 3080 flow', () => {
     expect(cutover).toContain('restore-previous')
     expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(false)
   })
-  it('keeps schedule-exit when the bound runner is unchanged', () => {
+  it('keeps schedule-exit when the bound runner is unchanged', async () => {
     const f = fixture()
     writeLaunchSpec(f, '// runner', createHash('sha256').update('// runner').digest('hex'))
-    const r = f.run(false)
+    const r = await f.run(false)
     expect(r.status, r.output).toBe(0)
     expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(true)
     expect(r.calls.some(c => c[2] === 'reconfigure')).toBe(false)
   })
-  it('keeps schedule-exit when runner and install anchor are both current', () => {
+  it('keeps schedule-exit when runner and install anchor are both current', async () => {
     const f = fixture()
     const anchorSha = createHash('sha256').update('{"version":"0.1.7-rc.2"}').digest('hex')
     writeLaunchSpec(f, '// runner', createHash('sha256').update('// runner').digest('hex'), { content: '{"version":"0.1.7-rc.2"}', recordedSha: anchorSha })
-    const r = f.run(false)
+    const r = await f.run(false)
     expect(r.status, r.output).toBe(0)
     expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(true)
     expect(r.calls.some(c => c[2] === 'reconfigure')).toBe(false)
   })
-  it('rebinds through reconfigure when only the install anchor drifted (host-version cutover)', () => {
+  it('rebinds through reconfigure when only the install anchor drifted (host-version cutover)', async () => {
     const f = fixture()
     writeLaunchSpec(f, '// runner', createHash('sha256').update('// runner').digest('hex'), { content: '{"version":"0.1.7-rc.2"}', recordedSha: 'deadbeef'.repeat(8) })
-    const r = f.run(false)
+    const r = await f.run(false)
     expect(r.status, r.output).toBe(0)
     expect(r.output).toContain('install anchor')
     expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(false)
     expect(r.calls.some(c => c[2] === 'reconfigure')).toBe(true)
   })
-  it('rebinds through reconfigure with the live spec fields when the runner drifted, re-recording the credential first', () => {
+  it('rebinds through reconfigure with the live spec fields when the runner drifted, re-recording the credential first', async () => {
     const f = fixture()
     const runner = writeLaunchSpec(f, '// new runner build', 'deadbeef'.repeat(8))
-    const r = f.run(false)
+    const r = await f.run(false)
     expect(r.status, r.output).toBe(0)
     expect(r.output).toContain('rebinding the launch spec through reconfigure')
     expect(r.calls.some(c => c[2] === 'schedule-exit')).toBe(false)
@@ -206,13 +231,13 @@ describe('deploy 3080 flow', () => {
     expect(reconfigure).toContain('--preflight-runner'); expect(reconfigure).toContain(runner)
     expect(reconfigure!.slice(reconfigure!.indexOf('--start'))[1]).toBe('node harness/bin.js web')
   })
-  it('refuses the drift rebind loudly when the live spec lacks a field reconfigure needs', () => {
+  it('refuses the drift rebind loudly when the live spec lacks a field reconfigure needs', async () => {
     const f = fixture()
     writeLaunchSpec(f, '// new runner build', 'deadbeef'.repeat(8))
     const spec = JSON.parse(readFileSync(join(f.home, 'state/launch-spec.json'), 'utf8'))
     delete spec.active.preflight.candidateProbeCommand
     writeFileSync(join(f.home, 'state/launch-spec.json'), JSON.stringify(spec))
-    const r = f.run(false)
+    const r = await f.run(false)
     expect(r.status).not.toBe(0)
     expect(r.output).toContain('candidateProbeCommand')
     expect(r.calls.some(c => c[2] === 'reconfigure' || c[2] === 'schedule-exit')).toBe(false)
@@ -243,17 +268,13 @@ function familyFixture({ memberRegistered = true, bundleRegistered = true, membe
   writeStubs(bin)
   return { root, home, profile, member, bundleName, memberOld, bundleOld, run() {
     // Bundle first, member second — proves the flow is safe in any --package order.
-    const result = spawnSync(process.execPath, ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href, join(repo, 'scripts/deploy-3080.mts'), '--package', 'packages/bundle', ...(coDeploy ? ['--package', 'packages/demo'] : []), '--no-restart'], {
-      cwd: root, env: { ...process.env, DSH_HOME: home, DSH_HARNESS: harness, PATH: bin, CALL_LOG: join(root, 'calls') }, encoding: 'utf8', timeout: 15000,
-    })
-    const calls = existsSync(join(root, 'calls')) ? readFileSync(join(root, 'calls'), 'utf8').trim().split('\n').map(x => JSON.parse(x) as string[]) : []
-    return { ...result, calls, output: result.stdout + result.stderr }
+    return runOrchestrator(root, ['--package', 'packages/bundle', ...(coDeploy ? ['--package', 'packages/demo'] : []), '--no-restart'], { DSH_HOME: home, DSH_HARNESS: harness, PATH: bin, CALL_LOG: join(root, 'calls') })
   } }
 }
 
 describe('deploy 3080 family bundle member retreat', () => {
-  it('retreats the member out of dependencies and the bundles roster while keeping its overrides pin', () => {
-    const f = familyFixture(), r = f.run()
+  it('retreats the member out of dependencies and the bundles roster while keeping its overrides pin', async () => {
+    const f = familyFixture(), r = await f.run()
     expect(r.status, r.output).toBe(0)
     const manifest = JSON.parse(readFileSync(join(f.profile, 'package.json'), 'utf8'))
     expect(Object.keys(manifest.dependencies)).toEqual(['@khorsheed/dsh-bundle'])
@@ -266,11 +287,11 @@ describe('deploy 3080 family bundle member retreat', () => {
     expect(existsSync(join(f.profile, 'node_modules/@khorsheed/dsh-demo'))).toBe(false)
     expect(existsSync(join(f.profile, 'node_modules/@khorsheed/dsh-bundle/node_modules/@khorsheed/dsh-demo/package.json'))).toBe(true)
   })
-  it('is idempotent: a repeated deploy logs the skip and keeps the retreated shape', () => {
+  it('is idempotent: a repeated deploy logs the skip and keeps the retreated shape', async () => {
     const f = familyFixture()
-    expect(f.run().status).toBe(0)
+    expect((await f.run()).status).toBe(0)
     rmSync(join(f.root, 'calls'), { force: true }) // per-run call log
-    const r = f.run()
+    const r = await f.run()
     expect(r.status, r.output).toBe(0)
     expect(r.output).toContain('nothing to retreat')
     const manifest = JSON.parse(readFileSync(join(f.profile, 'package.json'), 'utf8'))
@@ -278,8 +299,8 @@ describe('deploy 3080 family bundle member retreat', () => {
     expect(manifest.dsh.profile.bundles).toEqual(['@khorsheed/dsh-bundle'])
     expect(readFileSync(join(f.profile, 'pnpm-workspace.yaml'), 'utf8')).toContain(`'${f.member}': 'file:${f.memberOld}'`)
   })
-  it('co-named member packs first and retreats under its bundle, its pin refreshed to the fresh tarball', () => {
-    const f = familyFixture({ coDeploy: true }), r = f.run()
+  it('co-named member packs first and retreats under its bundle, its pin refreshed to the fresh tarball', async () => {
+    const f = familyFixture({ coDeploy: true }), r = await f.run()
     expect(r.status, r.output).toBe(0)
     // The member never goes through official add — it rides the bundle's tree.
     expect(r.calls.some(c => c.includes('plugin'))).toBe(false)
@@ -291,8 +312,8 @@ describe('deploy 3080 family bundle member retreat', () => {
     expect(existsSync(pin)).toBe(true)
     expect(existsSync(f.memberOld)).toBe(false) // the co-named member's stale tarball is pruned after success
   })
-  it('first-installs the bundle through official plugin add while retreating the standalone member', () => {
-    const f = familyFixture({ bundleRegistered: false }), r = f.run()
+  it('first-installs the bundle through official plugin add while retreating the standalone member', async () => {
+    const f = familyFixture({ bundleRegistered: false }), r = await f.run()
     expect(r.status, r.output).toBe(0)
     const add = r.calls.findIndex(c => c.includes('plugin'))
     expect(add).toBeGreaterThan(-1)
@@ -305,22 +326,22 @@ describe('deploy 3080 family bundle member retreat', () => {
     expect(manifest.dsh.profile.bundles).toEqual(['@khorsheed/dsh-bundle'])
     expect(readFileSync(join(f.profile, 'pnpm-workspace.yaml'), 'utf8')).toContain(`'${f.member}': 'file:${f.memberOld}'`)
   })
-  it('skips and logs a member the profile never carried', () => {
-    const f = familyFixture({ memberRegistered: false }), r = f.run()
+  it('skips and logs a member the profile never carried', async () => {
+    const f = familyFixture({ memberRegistered: false }), r = await f.run()
     expect(r.status, r.output).toBe(0)
     expect(r.output).toContain('@khorsheed/dsh-demo is not in the profile manifest — nothing to retreat')
     expect(Object.keys(JSON.parse(readFileSync(join(f.profile, 'package.json'), 'utf8')).dependencies)).toEqual(['@khorsheed/dsh-bundle'])
   })
-  it('restores a missing member pin from the newest stashed tarball, inside the overrides block', () => {
-    const f = familyFixture({ memberRegistered: false, memberPin: false }), r = f.run()
+  it('restores a missing member pin from the newest stashed tarball, inside the overrides block', async () => {
+    const f = familyFixture({ memberRegistered: false, memberPin: false }), r = await f.run()
     expect(r.status, r.output).toBe(0)
     expect(r.output).toContain('restored missing overrides pin for family member @khorsheed/dsh-demo')
     const ws = readFileSync(join(f.profile, 'pnpm-workspace.yaml'), 'utf8')
     const block = ws.slice(ws.indexOf('overrides:'), ws.indexOf('minimumReleaseAgeExclude:'))
     expect(block).toContain(`  '${f.member}': 'file:${f.memberOld}'`)
   })
-  it('refuses before the profile install when a member has neither a pin nor a stashed tarball', () => {
-    const f = familyFixture({ memberRegistered: false, memberPin: false, memberStash: false }), r = f.run()
+  it('refuses before the profile install when a member has neither a pin nor a stashed tarball', async () => {
+    const f = familyFixture({ memberRegistered: false, memberPin: false, memberStash: false }), r = await f.run()
     expect(r.status).not.toBe(0)
     expect(r.output).toContain('family member @khorsheed/dsh-demo has no overrides pin')
     expect(r.calls.some(c => c.includes('install'))).toBe(false)
