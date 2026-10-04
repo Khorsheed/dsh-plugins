@@ -161,6 +161,15 @@ export interface DatasetsViewInjected {
   itemRuns: (sessionId: SessionId, dataset: string, item: string) => Promise<ItemRunsView | null>
   /** The «用于的实验» projection, or null when no eval plugin is mounted. */
   datasetExperiments: (sessionId: SessionId) => Promise<DatasetExperimentRow[] | null>
+  /**
+   * T96 · requests the 「核对并登记」 card on the propose tool row leaves for
+   * this tab: take (and clear) one for this session, be told when one lands.
+   * Optional: a double without it simply never opens a review on its own.
+   */
+  reviewFocus?: {
+    take: (sessionId: SessionId) => string | null
+    subscribe: (listener: () => void) => () => void
+  }
   /** Whether the browser itself is connected over loopback (native gestures gate). */
   isLoopback: boolean
   hooks: {

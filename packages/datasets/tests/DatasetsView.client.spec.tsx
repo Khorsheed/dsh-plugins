@@ -17,7 +17,7 @@
  * it shows — blocked while the host reports a problem.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -28,6 +28,7 @@ import type { DatasetsViewProps, ItemRunsView } from '../src/client/contract.ts'
 import { DatasetsView } from '../src/client/DatasetsView.tsx'
 import { setUsage } from '../src/client/RegistryList.tsx'
 import { createDatasetsViewStore } from '../src/client/store.ts'
+import { createReviewFocus } from '../src/client/review-card.ts'
 
 /** Selector hook over the store engine instance (the test-sanctioned engine path). */
 function hookOf(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => unknown }) {
@@ -313,7 +314,7 @@ function makeHarness(rows: RegistryRow[] = [rowOf()]): Harness {
   }
 }
 
-function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
+function renderView(h: Harness, opts: { canPick?: boolean; extra?: Record<string, unknown> } = {}) {
   const canPick = opts.canPick ?? true
   const props = {
     sessionId: 's1' as SessionId,
@@ -358,6 +359,7 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
+    ...opts.extra,
   } as unknown as DatasetsViewProps
   return render(<DatasetsView {...props} />)
 }
@@ -1022,6 +1024,27 @@ describe('添加题集 picks directories (T95)', () => {
 })
 
 describe('等你确认登记 (T90)', () => {
+  it('a 「核对并登记」 request from the tool card opens that review directly, no list or banner (T96)', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    const focus = createReviewFocus()
+    // Requested before the tab mounted (the card clicked, then the tab switched).
+    focus.request('s1' as SessionId, 'p1')
+    renderView(h, { extra: { reviewFocus: { take: focus.take, subscribe: focus.subscribe } } })
+    expect(await screen.findByText('review.titleNew {"name":"gsm8k"}')).toBeTruthy()
+    expect(h.proposalReview).toHaveBeenCalledWith('s1', 'p1')
+    expect(screen.queryByText('banner.review')).toBeNull()
+    // Taken once: back goes to the list, the request does not reopen it.
+    fireEvent.click(screen.getByRole('button', { name: 'review.back' }))
+    expect(await screen.findByText('banner.proposal {"name":"gsm8k"}')).toBeTruthy()
+    // A request while the tab is already open lands too; another session's does not.
+    focus.request('s2' as SessionId, 'p1')
+    await Promise.resolve()
+    expect(screen.queryByText('review.titleNew {"name":"gsm8k"}')).toBeNull()
+    act(() => { focus.request('s1' as SessionId, 'p1') })
+    expect(await screen.findByText('review.titleNew {"name":"gsm8k"}')).toBeTruthy()
+  })
+
   it('「返回题集列表」 leaves the review for the list and its banner (T96)', async () => {
     const h = makeHarness()
     h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })

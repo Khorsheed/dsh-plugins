@@ -480,8 +480,9 @@ export function datasetToolDefinitions(
           kind: proposal.kind,
           commit: proposal.commit,
           warnings,
-          next: 'Tell the person the proposal is waiting on the Datasets tab (banner 「等你确认登记」) and stop. '
-            + 'Do not register anything yourself.',
+          next: 'The person opens the review from the button under this call (it also waits on the Datasets tab as '
+            + '「等你确认登记」). In one or two sentences say what to look at first, close with 「点下面的按钮核对并登记」 '
+            + '(the same words in the person\'s language), and stop. Do not register anything yourself.',
         } as unknown as JsonValue
       } catch (error) {
         throw toToolError(error)

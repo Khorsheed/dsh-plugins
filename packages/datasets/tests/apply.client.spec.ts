@@ -40,6 +40,7 @@ function remoteStub() {
     reviewItem: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
     confirmProposal: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
     confirmPending: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    proposals: vi.fn(async (): Promise<{ ok: true; value: Array<{ id: string }> } | { ok: false; error: { code: string; message: string } }> => ({ ok: true as const, value: [] })),
   }
 }
 
@@ -317,5 +318,40 @@ describe('datasets client apply', () => {
     await fiber.dispose()
 
     expect(slots.entries('conversation.view')).toHaveLength(0)
+  })
+
+  // T96 · the 「核对并登记」 card on the datasets_propose_registration tool row.
+  // The slot is ui-tool's; without its declaration the inject never fires and
+  // the call keeps the host's generic row (the banner path still works).
+  it('registers the propose card once the host declares tool.call.toolview', async () => {
+    const { ctx, slots, remote } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    expect(slots.entries('tool.call.toolview' as never)).toHaveLength(0)
+    slots.register({
+      name: 'conversation.view',
+      id: 'chat',
+      children: { 'tool.call.toolview': { kind: 'keyed', scope: 'session' } },
+    } as never, () => null)
+    const entries = slots.entries('tool.call.toolview' as never)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.options).toMatchObject({ key: 'datasets_propose_registration' })
+
+    const face = (entries[0]!.inject as unknown as (sessionId: string) => {
+      loadPending: (id: string) => Promise<boolean | null>
+      openReview: (id: string) => void
+    })('s1')
+    remote.proposals.mockResolvedValueOnce({ ok: true, value: [{ id: 'p1' }] })
+    await expect(face.loadPending('p1')).resolves.toBe(true)
+    expect(remote.proposals).toHaveBeenLastCalledWith('s1')
+    await expect(face.loadPending('p2')).resolves.toBe(false)
+    remote.proposals.mockResolvedValueOnce({ ok: false, error: { code: 'X', message: 'x' } })
+    await expect(face.loadPending('p1')).resolves.toBeNull()
+
+    // The card's request reaches the datasets view of the SAME session.
+    const view = (slots.entries('conversation.view').find(entry => entry.options.id === 'datasets')!.inject as unknown as (sessionId: string) => DatasetsViewInjected)('s1')
+    face.openReview('p1')
+    expect(view.reviewFocus!.take('s2' as never)).toBeNull()
+    expect(view.reviewFocus!.take('s1' as never)).toBe('p1')
+    expect(view.reviewFocus!.take('s1' as never)).toBeNull()
   })
 })

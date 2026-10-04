@@ -34,6 +34,8 @@ import { en, NS, zh } from './locales.ts'
 import { draftWithRetries, type OrganizeOutcome } from './organize.ts'
 import { DatasetsPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { createDatasetsViewStore } from './store.ts'
+import { ReviewCard, type ReviewCardFace } from './ReviewCard.tsx'
+import { createReviewFocus } from './review-card.ts'
 import type {
   DatasetExperimentRow, DatasetsRemote, DatasetsViewInjected, HostDescriptionSource, HostFacts, ItemRunsView,
 } from './contract.ts'
@@ -330,6 +332,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   })
 
   const organizing = organizingDoors(ctx)
+  // T96 · the 「核对并登记」 card's requests, carried to each session's 题集 tab.
+  const reviewFocus = createReviewFocus()
 
   // The M3'④ self-hide criterion for the 题集 tab: the official preset
   // composition data, fail-open on every unreadable path. Hidden means NO
@@ -365,6 +369,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         proposals: (sid: SessionId) => remote.proposals(sid),
         proposalReview: (sid: SessionId, id: string) => remote.proposalReview(sid, { id }),
         proposalHead: (sid: SessionId, id: string) => remote.proposalHead(sid, { id }),
+        reviewFocus: { take: reviewFocus.take, subscribe: reviewFocus.subscribe },
         reviewItem: (sid: SessionId, id: string, set: string, item: string) => remote.reviewItem(sid, { id, set, item }),
         reviewFiles: (sid: SessionId, id: string) => remote.reviewFiles(sid, { id }),
         confirmProposal: (sid: SessionId, id: string, registryId: string, sets: Record<string, { layers: string[] }>) =>
@@ -425,6 +430,31 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => chrome.subscribe(() => {
     datasetsToggle.sync()
   }), 'datasets: datasets tab visibility')
+
+  // T96 · the 「核对并登记」 card on the datasets_propose_registration tool
+  // row. The slot is declared by @deepseek-ai/dsh-client-ui-tool, which this
+  // package does not depend on — its SlotMap entry is not in this type graph,
+  // so the one registration goes through a structural view of the registry
+  // (the eval_plan_draft card's pattern). Without that package the slot is
+  // never declared, the inject never fires, and the call keeps the host's
+  // generic row; the proposal still waits behind the tab's banner. Not gated
+  // on the preset: a session holding this call was granted the tool.
+  const slots = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (options: Record<string, unknown>, component: unknown) => () => void
+  }
+  slots.inject('tool.call.toolview', () => slots.register({
+    name: 'tool.call.toolview',
+    key: 'datasets_propose_registration',
+    locale: NS,
+    inject: (sessionId: SessionId): ReviewCardFace => ({
+      loadPending: async (proposalId: string) => {
+        const result = await remote.proposals(sessionId)
+        return result.ok ? result.value.some(proposal => proposal.id === proposalId) : null
+      },
+      openReview: (proposalId: string) => { reviewFocus.request(sessionId, proposalId) },
+    }),
+  }, ReviewCard))
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

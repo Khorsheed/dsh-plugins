@@ -41,6 +41,8 @@
     "src/client/DatasetDetail.tsx",
     "src/client/AddDatasetDialog.tsx",
     "src/client/ReviewPage.tsx",
+    "src/client/ReviewCard.tsx",
+    "src/client/review-card.ts",
     "src/client/organize.ts",
     "src/client/parts.tsx",
     "src/client/vocab.ts",

@@ -102,7 +102,7 @@ export function DatasetsView(props: DatasetsViewProps) {
     overview, itemBrief, validateDataset,
     organizingSetup, proposals: fetchProposals, proposalReview, proposalHead, reviewItem, reviewFiles,
     confirmProposal, returnProposal, pendingReview, confirmPending, startOrganizing, draftInSession,
-    itemRuns, datasetExperiments,
+    itemRuns, datasetExperiments, reviewFocus,
     isLoopback, pickDirectory,
   } = props
   const { useHostDescription } = props
@@ -334,6 +334,21 @@ export function DatasetsView(props: DatasetsViewProps) {
     if (entry === undefined) return
     organize(entry.id, buildUpdateRequest({ name: entry.id, checkout: entry.authoringCheckout ?? null, ref: entry.trackedRef }, t))
   }
+  // T96 · 「核对并登记」 on the propose tool row: the card leaves the proposal
+  // id for this session's tab; take it now (the tab was just switched to, or
+  // was already open) and whenever another lands, and open that review
+  // directly — no list, no banner in between.
+  useEffect(() => {
+    if (reviewFocus === undefined) return
+    const take = (): void => {
+      const id = reviewFocus.take(sessionId)
+      if (id === null) return
+      setDone(null)
+      actions.openReview({ kind: 'proposal', id })
+    }
+    take()
+    return reviewFocus.subscribe(take)
+  }, [reviewFocus, sessionId, actions])
   /** After a confirm: back to the list, re-read, say what was registered. */
   const confirmed = (entry: RegistryEntry): void => {
     actions.openReview(null)
