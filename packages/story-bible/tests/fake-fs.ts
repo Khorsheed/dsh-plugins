@@ -51,9 +51,10 @@ export class FakeFs {
     return child === parent || child.startsWith(`${parent}/`)
   }
 
-  async stat(target: string): Promise<{ version: string; type: 'file'; size: number } | undefined> {
+  async stat(target: string): Promise<{ version: string; type: 'file' | 'directory'; size: number } | undefined> {
     const entry = this.entries.get(target)
-    if (entry === undefined || entry.kind !== 'file') return undefined
+    if (entry === undefined) return undefined
+    if (entry.kind === 'dir') return { version: '0', type: 'directory', size: 0 }
     return { version: String(entry.version), type: 'file', size: entry.content.length }
   }
 

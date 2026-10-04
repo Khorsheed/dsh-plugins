@@ -1,19 +1,21 @@
-/* toolview 行（story_write / story_extract 的紧凑操作卡）。 */
+/* toolview 行（story_write / story_extract 的紧凑操作卡）。
+ * 排版铁律（F1-3）：字体、字号、行高全部继承宿主消息正文——行内任何
+ * 元素都不得自带 font/size/line-height，只保留布局与强调色。 */
 .row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
-  font: var(--dsw-font-xxs-12);
-  line-height: 1.6;
+  font: inherit;
+  line-height: inherit;
 }
 .kind {
   flex: 0 0 auto;
-  font-size: 10px;
   color: var(--dsw-alias-brand-primary);
   border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent);
   border-radius: 7px;
   padding: 0 7px;
+  font-size: 0.85em;
 }
 .summary {
   min-width: 0;
@@ -24,11 +26,9 @@
 }
 .note {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 10px;
 }
 .warn {
   color: var(--dsw-alias-state-warn-primary);
-  font-size: 10px;
 }
 .open {
   flex: 0 0 auto;
@@ -38,7 +38,7 @@
   cursor: pointer;
   background: transparent;
   color: var(--dsw-alias-brand-primary);
-  font-size: 10px;
+  font-size: 0.85em;
 }
 .open:hover {
   background: var(--dsw-alias-interactive-bg-hover);

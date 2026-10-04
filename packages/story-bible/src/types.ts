@@ -359,12 +359,13 @@ export function normalizeCharacter(raw: unknown): CharacterRecord | undefined {
 /**
  * The stored half of a chapter's phase (proposal §2: 阶段从事实派生). 写作中
  * is NOT stored — it derives from the manuscript file existing with content;
- * the store only records 规划中 → 已审过 (the user's gate) → 已抽取.
+ * the store only records 规划中 → 已抽取（对账完成）→ 已审过（用户的人工闸门，
+ * 永远最后：收章）.
  */
 export type ChapterPhase = 'planning' | 'reviewed' | 'extracted'
 
-/** The phase the UI shows, given whether the manuscript has content. */
-export type EffectiveChapterPhase = 'planning' | 'writing' | 'reviewed' | 'extracted'
+/** The phase the UI shows, given whether the manuscript has content. `fileMissing`: a chapter past planning whose manuscript file is gone (存量坏数据的温和迁移面). */
+export type EffectiveChapterPhase = 'planning' | 'writing' | 'extracted' | 'reviewed' | 'fileMissing'
 
 /** One planned foreshadow operation (推进/暗示/新埋/揭晓), referencing the ledger by id, or a question for 新埋. */
 export interface ForeshadowOp {
@@ -421,8 +422,11 @@ export function chapterNumberOfFile(file: string): number | undefined {
   return match === null ? undefined : Number(match[1])
 }
 
-/** The stored phase plus the manuscript fact → the phase the UI shows. */
+/** The stored phase plus the manuscript fact → the phase the UI shows (规划中→写作中→已抽取→已审过; 审过是人工闸门，永远最后). */
 export function effectiveChapterPhase(chapter: ChapterRecord, hasBody: boolean): EffectiveChapterPhase {
+  // A chapter past planning whose manuscript is gone reads 文件丢失, not its
+  // stored phase (the gentle migration for pre-F1-2 rows).
+  if (chapter.phase !== 'planning' && !hasBody) return 'fileMissing'
   if (chapter.phase === 'planning' && hasBody) return 'writing'
   return chapter.phase
 }
@@ -593,8 +597,8 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 
 /* --------------------------------------------------------------- outcomes */
 
-/** The store's failure codes (the canvas vocabulary, plus the review gate's). */
-export type StoryError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'already-exists'
+/** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
+export type StoryError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'already-exists'
 
 /** One mutation's receipt: the fresh document on success, the code on failure. */
 export interface StoryOutcome {
@@ -641,6 +645,13 @@ export interface WriteChapterRequest {
   readonly plan?: unknown
   /** Insert position (defaults to n — 插章 gives an explicit seq, proposal §2). */
   readonly seq?: number
+  /**
+   * The manuscript body: given, the store writes it to `<workspace>/<title>/第{n}章.md`
+   * through the calling session's fence (boundary re-rooted at the work's mounted
+   * workspace) BEFORE registering — a write that fails refuses the registration,
+   * so a chapter never registers onto an empty slot (the F1-2 rule).
+   */
+  readonly content?: string
 }
 
 /** The subagent's memory row (strict JSON, tolerant reads). */

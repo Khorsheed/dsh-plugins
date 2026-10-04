@@ -1,19 +1,15 @@
 /**
- * story-bible, browser half (M3): TWO right-Sidebar tab types — `story-
- * fragments` (灵感碎片: the five views plus the pinned pending queue) and
- * `story-reader` (章节阅读: the plan card, the phase lamp, the manuscript)
- * — over the M1 `story` Remote face, plus the two keyed tool rows
- * (`story_write`'s plan card, `story_extract`'s reconciliation card).
+ * story-bible, browser half: ONE right-Sidebar tab type (`story`, 写作) over
+ * the `story` Remote face — the work strip once, the internal 灵感碎片/章节
+ * 阅读 switcher, both panes — plus the two keyed tool rows and the two
+ * session-header gate chips (plan unconfirmed / pending count).
  *
- * It mounts the Remote through the official `ctx.remote.$mount` channel and
- * registers the tab types on the registry and the tab bodies on the keyed
- * `sidebar.right.pane.tab` seat. Mode visibility follows the cross-session
- * rule (docs/plugin-visibility.md): the works store is deployment-level
- * content, so there is NO runtime switch — the install layer decides. Every
- * seat is probed, never assumed: registrations ride `ctx.slots.inject`, the
- * editor door degrades to hidden when no open-in-app probe resolves, and
- * with no `remote.story` mounted the tabs still register and report the
- * missing half instead of throwing through boot.
+ * F1-4: the M3 two-kind shape (story-fragments / story-reader) retired into
+ * the internal switcher — one plugin, one host tab; layouts holding the
+ * retired kinds render the host's designed `tab.unavailable` fallback (close
+ * and reopen). Mode visibility: the tab follows the cross-session rule (the
+ * install layer decides, no runtime switch); the CHIPS are session-bound
+ * chrome and follow the preset criterion (preset-visibility.ts, fail-open).
  *
  * @module @khorsheed/dsh-story-bible/client
  */
@@ -26,47 +22,49 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@khorsheed/dsh-story-bible/remote'
 // Type-only: pulls the ctx.sidebarRight/ctx.sidebarRightTabs service merges.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+// Type-only: pulls ui-conversation's SlotMap merge (the header utilities seat)
+// and ui-session's SessionStandardProps merge (the chips' sessionId).
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { OpenInAppProbe, pickIde } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import storyRemote from '@khorsheed/dsh-story-bible/remote'
 import type { StoryRemote, StoryTabInjected } from './contract.ts'
-import {
-  STORY_FRAGMENTS_KIND, STORY_READER_KIND, STORY_READER_TAB_ID, STORY_TAB_ID,
-  storyFragmentsDefinition, storyReaderDefinition,
-} from './definition.ts'
+import { STORY_KIND, STORY_TAB_ID, storyDefinition } from './definition.ts'
 import { en, zh } from './locales.ts'
 import { StoryUiStore } from './store.ts'
-import { FragmentsTab } from './FragmentsTab.tsx'
-import { ReaderTab } from './ReaderTab.tsx'
+import { StoryChipVisibility } from './preset-visibility.ts'
+import { StoryTab } from './StoryTab.tsx'
 import { StoryWriteRow } from './toolview/StoryWriteRow.tsx'
 import { StoryExtractRow } from './toolview/StoryExtractRow.tsx'
+import { StoryPendingChip, StoryPlanChip } from './chips.tsx'
 
-export { STORY_FRAGMENTS_KIND, STORY_READER_KIND } from './definition.ts'
+export { STORY_KIND } from './definition.ts'
 export { StoryUiStore } from './store.ts'
-export { FragmentsTab } from './FragmentsTab.tsx'
-export { ReaderTab } from './ReaderTab.tsx'
+export { StoryTab } from './StoryTab.tsx'
 export { StoryWriteRow } from './toolview/StoryWriteRow.tsx'
 export { StoryExtractRow } from './toolview/StoryExtractRow.tsx'
+export { StoryPlanChip, StoryPendingChip } from './chips.tsx'
 export type { StoryRemote, StoryTabInjected, StoryTabProps } from './contract.ts'
 
 /** The locale namespace the dictionaries register under. */
 export const NS = 'story'
 
 /**
- * Required services: slots, the remote channel, the locale, and the
- * right-Sidebar faces (the tab-type registry and the navigation service the
- * tool rows' doors go through). `remote.story` is deliberately NOT an inject:
- * this plugin both mounts the namespace and consumes it, and the Cordis
- * property proxy only resolves services declared in `inject` or provided by
- * an ancestor fiber — declaring it would deadlock the loader (the canvas
- * precedent).
+ * Required services: slots, the remote channel, the locale, the
+ * right-Sidebar faces, the conversation face (the chips' seat), and the
+ * session list (the chips' criterion reads the current session).
+ * `remote.story` is deliberately NOT an inject: this plugin both mounts the
+ * namespace and consumes it, and the Cordis property proxy only resolves
+ * services declared in `inject` or provided by an ancestor fiber — declaring
+ * it would deadlock the loader (the canvas precedent).
  */
 export const inject = ['slots', 'remote', 'locale', 'sidebarRight', 'sidebarRightTabs', 'sessions']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, then the
- * two tab types, their bodies, and the two tool rows.
+ * tab type, its body, the two tool rows, and the two header chips.
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -81,7 +79,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'story-bible: dictionaries')
   const t = ctx.locale.bind(NS)
 
-  // The shared layout/freshness store: one instance, published into both tabs' faces.
+  // The shared layout/freshness store: one instance, published into every seat.
   const store = new StoryUiStore()
 
   // The open-in-app probe (the editor door): one per page, read lazily; a
@@ -103,6 +101,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return result
   }
 
+  /** Open the story tab (both doors and both chips share it). */
+  const openStoryTab = (): void => {
+    try {
+      ctx.sidebarRight.openTab(STORY_KIND)
+    } catch (error) {
+      ctx.logger.warn('story-bible: openTab(story) failed', error)
+    }
+  }
+
   const tabFace = (): StoryTabInjected => ({
     listWorks: () => requireRemote().listWorks(),
     readWork: request => requireRemote().readWork(request),
@@ -115,6 +122,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ledger: request => requireRemote().ledger(request),
     listMentions: request => requireRemote().listMentions(request),
     listPending: request => requireRemote().listPending(request),
+    statWorkspace: request => requireRemote().statWorkspace(request),
     // The mutating calls hand the TAB's session to the host (the tab is
     // session scope; the fence resolves that session's mode).
     createWork: async (sessionId, request) => touchOnSuccess(await requireRemote().createWork(sessionId, request)),
@@ -146,31 +154,34 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         ctx.logger.warn('story-bible: openResource failed (no mounted session?)', error)
       }
     },
+    // The plan row's 「去确认」: the reader pane at that chapter (F1-4: the
+    // internal switch, then the one tab).
     openReaderAt: (n: number) => {
       store.openReaderAt(n)
-      try {
-        ctx.sidebarRight.openTab(STORY_READER_KIND)
-      } catch (error) {
-        ctx.logger.warn('story-bible: openTab(story-reader) failed', error)
-      }
+      store.setTabView('reader')
+      openStoryTab()
     },
+    // The extract row's 「去处理」: the fragments pane with the queue pulsing.
     openPending: () => {
+      store.setTabView('fragments')
       store.pulsePending()
-      try {
-        ctx.sidebarRight.openTab(STORY_FRAGMENTS_KIND)
-      } catch (error) {
-        ctx.logger.warn('story-bible: openTab(story-fragments) failed', error)
-      }
+      openStoryTab()
     },
     openCharacter: (characterId: string) => {
       store.setCmCharacter(characterId)
       store.setFragmentsView('characters')
-      try {
-        ctx.sidebarRight.openTab(STORY_FRAGMENTS_KIND)
-      } catch (error) {
-        ctx.logger.warn('story-bible: openTab(story-fragments) failed', error)
-      }
+      store.setTabView('fragments')
+      openStoryTab()
     },
+    setTabView: view => { store.setTabView(view) },
+    // The host's directory picker (the datasets precedent: legacy
+    // ctx.workspaces first, ui-workspace next; neither → the fallback input).
+    pickDirectory: (() => {
+      const legacy = (ctx.get('workspaces') as { pickDirectory?: () => Promise<string | null> } | undefined)?.pickDirectory
+      if (legacy !== undefined) return (): Promise<string | null> => legacy.call(ctx.get('workspaces'))
+      const uiWorkspace = ctx.get('uiWorkspace') as { pickDirectory?: () => Promise<string | null> } | undefined
+      return uiWorkspace?.pickDirectory !== undefined ? (): Promise<string | null> => uiWorkspace.pickDirectory!() : null
+    })(),
     setFragmentsView: view => { store.setFragmentsView(view) },
     setCmCharacter: id => { store.setCmCharacter(id) },
     setCmCursor: n => { store.setCmCursor(n) },
@@ -178,28 +189,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     hooks: { story: store.source },
   })
 
-  // Stage one: the two page types (guide entries, no address claims). The
-  // cross-session rule: no runtime visibility switch — they register exactly
-  // once, and the install layer decides whether the surface exists at all.
-  ctx.effect(() => ctx.sidebarRightTabs.register(storyFragmentsDefinition(t)), 'story-bible: fragments tab type')
-  ctx.effect(() => ctx.sidebarRightTabs.register(storyReaderDefinition(t)), 'story-bible: reader tab type')
+  // The ONE page type (guide entry, no address claims). The cross-session
+  // rule: no runtime visibility switch — it registers exactly once, and the
+  // install layer decides whether the surface exists at all.
+  ctx.effect(() => ctx.sidebarRightTabs.register(storyDefinition(t)), 'story-bible: story tab type')
 
-  // Stage two: the two tab bodies, each under its own type's key in the
-  // keyed seat. Both take the same injected face — the work strip atop each
-  // reads and switches the same registry/focus.
+  // The tab body under the type's key in the keyed seat.
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: STORY_TAB_ID,
     locale: NS,
     inject: tabFace,
-  }, FragmentsTab)), 'story-bible: fragments tab body')
-
-  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
-    name: 'sidebar.right.pane.tab',
-    key: STORY_READER_TAB_ID,
-    locale: NS,
-    inject: tabFace,
-  }, ReaderTab)), 'story-bible: reader tab body')
+  }, StoryTab)), 'story-bible: story tab body')
 
   // The two tool rows in the conversation. The slot is declared by
   // @deepseek-ai/dsh-client-ui-tool, which this package does not depend on —
@@ -227,6 +228,55 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => rowFace,
   }, StoryExtractRow)), 'story-bible: story_extract tool row')
+
+  // The two gate chips on the official session-header utilities seat (F1-5):
+  // a list slot, so a chip with nothing to show renders nothing. The seat is
+  // declared by ui-conversation; the same structural probe applies.
+  const visibility = new StoryChipVisibility(ctx, ctx.get('remote.pluginInventory') as {
+    list: () => Promise<import('@deepseek-ai/dsh-typert-protocol').RemoteResult<import('./preset-visibility.ts').StoryPluginInventorySnapshot>>
+  } | undefined)
+  const conversationSlots = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (options: Record<string, unknown>, component: unknown) => () => void
+  }
+  ctx.effect(() => conversationSlots.inject('conversation.session.header.utilities', () => conversationSlots.register({
+    name: 'conversation.session.header.utilities',
+    id: 'story-plan-gate',
+    order: 100,
+    locale: NS,
+    inject: (sessionId: SessionId) => ({
+      read: async (): Promise<{ n: number; title: string } | null> => {
+        const focused = await requireRemote().getFocus(sessionId)
+        if (!focused.ok || focused.value === null) return null
+        const rows = await requireRemote().listChapters({ workId: focused.value.workId })
+        if (!rows.ok) return null
+        const row = rows.value.find(candidate =>
+          candidate.phase === 'planning' && candidate.chapter.plan !== undefined && candidate.chapter.planConfirmedAt === undefined)
+        return row === undefined ? null : { n: row.chapter.n, title: row.chapter.title }
+      },
+      jump: (n: number) => { tabFace().openReaderAt(n) },
+      show: () => visibility.show(sessionId),
+      hooks: { story: store.source },
+    }),
+  }, StoryPlanChip)), 'story-bible: plan gate chip')
+  ctx.effect(() => conversationSlots.inject('conversation.session.header.utilities', () => conversationSlots.register({
+    name: 'conversation.session.header.utilities',
+    id: 'story-pending-gate',
+    order: 101,
+    locale: NS,
+    inject: (sessionId: SessionId) => ({
+      read: async (): Promise<{ count: number } | null> => {
+        const focused = await requireRemote().getFocus(sessionId)
+        if (!focused.ok || focused.value === null) return null
+        const info = await requireRemote().readWork({ workId: focused.value.workId })
+        if (!info.ok || info.value.ok !== true || info.value.info === undefined) return null
+        return { count: info.value.info.counts.pending }
+      },
+      jump: () => { tabFace().openPending() },
+      show: () => visibility.show(sessionId),
+      hooks: { story: store.source },
+    }),
+  }, StoryPendingChip)), 'story-bible: pending gate chip')
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

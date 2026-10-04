@@ -28,6 +28,12 @@ export interface WorkStripProps {
   readonly counts: { chapters: number; pending: number } | null
   /** The deployment's registered workspaces (the create form's picker). */
   readonly workspaces: readonly { workspaceId: string; path: string; title: string }[]
+  /** The session's own cwd — the create form's DEFAULT workspace (F1-1). */
+  readonly sessionCwd: string | undefined
+  /** The host's directory picker (probed; null = the fallback text input shows). */
+  readonly pickDirectory: (() => Promise<string | null>) | null
+  /** Path existence validation for the fallback text input (the statWorkspace Remote). */
+  readonly statWorkspace: (path: string) => Promise<{ exists?: boolean; directory?: boolean } | null>
   /** Switch the focus (the Remote verb; the parent toasts failures). */
   onSwitch: (workId: string) => Promise<boolean>
   /** Create one work (title + workspace path); the parent toasts and focuses. */
@@ -35,17 +41,17 @@ export interface WorkStripProps {
 }
 
 /** The work strip. */
-export function WorkStrip({ t, sessionId, works, focus, counts, workspaces, onSwitch, onCreate }: WorkStripProps): ReactNode {
+export function WorkStrip({ t, sessionId, works, focus, counts, workspaces, sessionCwd, pickDirectory, statWorkspace, onSwitch, onCreate }: WorkStripProps): ReactNode {
   const [creating, setCreating] = useState(false)
   const [title, setTitle] = useState('')
   const [workspace, setWorkspace] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  /** The create form's default workspace: the first registered one. */
+  /** The create form's default workspace: the SESSION's own cwd (F1-1), then the first registered one. */
   useEffect(() => {
-    if (creating && workspace === '' && workspaces.length > 0) setWorkspace(workspaces[0]!.path)
-  }, [creating, workspaces, workspace])
+    if (creating && workspace === '') setWorkspace(sessionCwd ?? workspaces[0]?.path ?? '')
+  }, [creating, workspaces, workspace, sessionCwd])
 
   const submit = useCallback(async (event: FormEvent) => {
     event.preventDefault()
@@ -60,6 +66,11 @@ export function WorkStrip({ t, sessionId, works, focus, counts, workspaces, onSw
     }
     setBusy(true)
     try {
+      const probe = await statWorkspace(workspace)
+      if (probe !== null && (probe.exists !== true || probe.directory !== true)) {
+        setError(t('works.badWorkspace'))
+        return
+      }
       if (await onCreate(trimmed, workspace)) {
         setCreating(false)
         setTitle('')
@@ -68,7 +79,7 @@ export function WorkStrip({ t, sessionId, works, focus, counts, workspaces, onSw
     } finally {
       setBusy(false)
     }
-  }, [title, workspace, onCreate, t])
+  }, [title, workspace, onCreate, statWorkspace, t])
 
   const countsText = useMemo(() => counts === null
     ? null
@@ -120,18 +131,40 @@ export function WorkStrip({ t, sessionId, works, focus, counts, workspaces, onSw
             }}
           />
           <span className={css.formLabel}>{t('works.newWorkspace')}</span>
-          {workspaces.length === 0 ? (
-            <span className={css.formNote}>{t('works.noWorkspace')}</span>
-          ) : (
-            <select
-              aria-label={t('works.newWorkspace')}
-              value={workspace}
-              onChange={event => { setWorkspace(event.target.value) }}
-            >
-              {workspaces.map(row => (
-                <option key={row.workspaceId} value={row.path}>{row.title}（{row.path}）</option>
-              ))}
-            </select>
+          <div className={css.workspaceRow}>
+            {workspaces.length > 0 && workspaces.some(row => row.path === workspace) ? (
+              <select
+                aria-label={t('works.newWorkspace')}
+                value={workspace}
+                onChange={event => { setWorkspace(event.target.value) }}
+              >
+                {workspaces.map(row => (
+                  <option key={row.workspaceId} value={row.path}>{row.title}（{row.path}）</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                aria-label={t('works.newWorkspace')}
+                value={workspace}
+                placeholder="/abs/path"
+                onChange={event => { setWorkspace(event.target.value) }}
+              />
+            )}
+            {pickDirectory !== null && (
+              <button
+                type="button"
+                className={css.ghostButton}
+                onClick={() => {
+                  void pickDirectory().then(chosen => { if (chosen !== null) setWorkspace(chosen) })
+                }}
+              >
+                {t('works.browse')}
+              </button>
+            )}
+          </div>
+          {sessionCwd !== undefined && workspace !== '' && workspace !== sessionCwd && (
+            <span className={css.formWarn}>{t('works.crossWorkspace')}</span>
           )}
           {error !== null && <span className={css.formNote}>{error}</span>}
           <div className={css.formActions}>

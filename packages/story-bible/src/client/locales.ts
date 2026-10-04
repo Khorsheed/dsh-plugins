@@ -2,6 +2,7 @@
 
 /** Simplified Chinese dictionary. */
 export const zh = {
+  'tab.story': '写作',
   'tab.fragments': '灵感碎片',
   'tab.reader': '章节阅读',
   'view.wall': '灵感墙',
@@ -9,6 +10,7 @@ export const zh = {
   'view.characters': '角色记忆',
   'view.world': '世界记忆',
   'view.info': '信息',
+  'guide.story': '长篇小说写作工作台——灵感碎片（五视图 + 待审队列）与章节阅读（plan 卡、阶段灯、正文）',
   'guide.fragments': '作品的灵感与记忆——灵感墙 / 设定集 / 角色记忆 / 世界记忆 / 信息',
   'guide.reader': '章节正文阅读器——plan 卡、阶段灯、按序换章',
 
@@ -22,7 +24,8 @@ export const zh = {
   'error.invalidName': '内容不合格（空、或名字不能用作文件名）',
   'error.stale': '数据在别处被改过了，已为你刷新，请再试',
   'error.denied': '这个位置不可写',
-  'error.notReviewed': '这章还没有被你「审过」',
+  'error.notReviewed': '这章还不能对账（对账只对写作中的章开放）',
+  'error.notExtracted': '先对账，再收章——审过永远最后',
   'error.io': '读写失败',
 
   'action.copy': '复制',
@@ -85,6 +88,9 @@ export const zh = {
   'works.focused': '当前 focus',
   'works.needTitle': '给它起个名字',
   'works.needWorkspace': '选一个挂载工作区',
+  'works.browse': '更换…',
+  'works.crossWorkspace': '提示：正文读写依赖会话沙箱——选的工作区不在本会话工作区内时，写入可能被围栏。',
+  'works.badWorkspace': '这个路径不存在或不是目录',
   'works.created': '已建立并 focus《{title}》',
 
   /* ------------------------------------------------------------- 灵感墙 */
@@ -239,6 +245,9 @@ export const zh = {
   'reader.phase.writing': '写作中',
   'reader.phase.extracted': '已抽取',
   'reader.phase.reviewed': '已审过',
+  'reader.phase.fileMissing': '文件丢失',
+  'reader.approveNeedExtract': '先对账，再收章（审过永远最后）',
+  'reader.missingHint': '登记在、文件不在：重新把正文文件放回挂载工作区对应位置（正文唯一正本是工作区 md）。',
   'reader.approve': '✓ 审过本章',
   'reader.approved': '✓ 已审过',
   'reader.approveTitle': '人工闸门：审过之后才允许对账',
@@ -269,6 +278,11 @@ export const zh = {
   'toolview.running': '正在执行…',
   'toolview.failed': '没有成功',
   'toolview.plain': '{text}',
+
+  'chip.plan': '第{n}章 plan 待确认',
+  'chip.planHint': '打开写作 tab 的章节阅读并确认计划',
+  'chip.pending': '待确认 {count}',
+  'chip.pendingHint': '打开写作 tab 处理待确认队列',
 }
 
 /** The dictionary namespace this view binds. */
@@ -286,6 +300,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** English dictionary (same key set). */
 export const en: Record<keyof typeof zh, string> = {
+  'tab.story': 'Writing',
   'tab.fragments': 'Fragments',
   'tab.reader': 'Chapter reader',
   'view.wall': 'Wall',
@@ -293,6 +308,7 @@ export const en: Record<keyof typeof zh, string> = {
   'view.characters': 'Characters',
   'view.world': 'World memory',
   'view.info': 'Info',
+  'guide.story': 'The long-form writing workbench — fragments (five views + the review queue) and the chapter reader (plan card, phase lamp, the manuscript)',
   'guide.fragments': 'A work’s ideas and memory — wall / sets / characters / world / info',
   'guide.reader': 'The chapter reader — plan card, phase lamp, ordered navigation',
 
@@ -306,7 +322,8 @@ export const en: Record<keyof typeof zh, string> = {
   'error.invalidName': 'The content is not valid (empty, or a name that cannot be a file name)',
   'error.stale': 'The data changed elsewhere — refreshed; please retry',
   'error.denied': 'That location is not writable',
-  'error.notReviewed': 'This chapter has not been approved by you',
+  'error.notReviewed': 'This chapter cannot be reconciled yet (reconciliation is open while writing)',
+  'error.notExtracted': 'Reconcile first, close after — approval is always last',
   'error.io': 'Read/write failed',
 
   'action.copy': 'Copy',
@@ -368,6 +385,9 @@ export const en: Record<keyof typeof zh, string> = {
   'works.focused': 'focused',
   'works.needTitle': 'Give it a title',
   'works.needWorkspace': 'Pick a mounted workspace',
+  'works.browse': 'Browse…',
+  'works.crossWorkspace': 'Note: manuscript I/O depends on the session sandbox — a workspace outside this session’s own may be fenced.',
+  'works.badWorkspace': 'That path does not exist or is not a directory',
   'works.created': 'Created and focused “{title}”',
 
   'wall.note': 'Ideas land on the wall first: ✓ accept / ✗ drop. Accepted cards file themselves — world→sets, character→character card, chapter→outline draft, foreshadow seed→world ledger.',
@@ -515,6 +535,9 @@ export const en: Record<keyof typeof zh, string> = {
   'reader.phase.writing': 'writing',
   'reader.phase.extracted': 'extracted',
   'reader.phase.reviewed': 'reviewed',
+  'reader.phase.fileMissing': 'file missing',
+  'reader.approveNeedExtract': 'Reconcile first — approval is always last',
+  'reader.missingHint': 'Registered but no file: put the manuscript back at its place in the mounted workspace (the workspace md is the single source of truth).',
   'reader.approve': '✓ Approve chapter',
   'reader.approved': '✓ Approved',
   'reader.approveTitle': 'The human gate: reconciliation is allowed only after approval',
@@ -544,4 +567,9 @@ export const en: Record<keyof typeof zh, string> = {
   'toolview.running': 'Running…',
   'toolview.failed': 'did not succeed',
   'toolview.plain': '{text}',
+
+  'chip.plan': 'Chapter {n} plan awaits confirmation',
+  'chip.planHint': 'Open the story tab’s reader and confirm the plan',
+  'chip.pending': '{count} to review',
+  'chip.pendingHint': 'Open the story tab’s review queue',
 }

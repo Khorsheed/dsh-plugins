@@ -84,7 +84,7 @@ export function dreamFixture(): WorkFixture {
   }
   const chapters: ChapterRow[] = [
     { chapter: { n: 1, seq: 1, title: '入职', file: '第1章.md', phase: 'extracted', recap: '赵启明入职梦境监护所。', wordCount: 2800, sessionIds: ['s1'], createdAt: NOW, updatedAt: NOW }, phase: 'extracted' },
-    { chapter: { n: 5, seq: 5, title: '门缝', file: '第5章.md', phase: 'reviewed', plan, recap: '赵启明按半页守则找到门缝。', wordCount: 3200, sessionIds: ['s1'], createdAt: NOW, updatedAt: NOW }, phase: 'reviewed' },
+    { chapter: { n: 5, seq: 5, title: '门缝', file: '第5章.md', phase: 'extracted', plan, recap: '赵启明按半页守则找到门缝。', wordCount: 3200, sessionIds: ['s1'], createdAt: NOW, updatedAt: NOW }, phase: 'extracted' },
     { chapter: { n: 6, seq: 6, title: '门后', file: '第6章.md', phase: 'planning', plan, sessionIds: ['s1'], createdAt: NOW, updatedAt: NOW }, phase: 'planning' },
   ]
   const ledger: LedgerResult = {
@@ -208,11 +208,11 @@ export function makeStoryBench(options: { focusId?: string | null; sessionId?: S
     }),
     reviewChapter: vi.fn(async (_sid: SessionId, request: { workId: string; n: number }) => {
       const row = forWork(request.workId).chapters.find(candidate => candidate.chapter.n === request.n)
-      if (row !== undefined) {
-        (row.chapter as { phase: string }).phase = 'reviewed'
-        ;(row as { phase: string }).phase = 'reviewed'
-      }
-      return ok({ ok: true as const, chapter: row?.chapter })
+      if (row === undefined) return ok({ ok: false as const, error: 'missing' as const })
+      if (row.chapter.phase !== 'extracted') return ok({ ok: false as const, error: 'not-extracted' as const })
+      ;(row.chapter as { phase: string }).phase = 'reviewed'
+      ;(row as { phase: string }).phase = 'reviewed'
+      return ok({ ok: true as const, chapter: row.chapter })
     }),
     confirmChapterPlan: vi.fn(async (_sid: SessionId, request: { workId: string; n: number }) => {
       const row = forWork(request.workId).chapters.find(candidate => candidate.chapter.n === request.n)
@@ -275,6 +275,9 @@ export function makeStoryBench(options: { focusId?: string | null; sessionId?: S
     openReaderAt: (n: number) => { store.openReaderAt(n) },
     openPending: () => { store.pulsePending() },
     openCharacter: (characterId: string) => { store.setCmCharacter(characterId); store.setFragmentsView('characters') },
+    setTabView: (view: 'fragments' | 'reader') => { store.setTabView(view) },
+    pickDirectory: null as (() => Promise<string | null>) | null,
+    statWorkspace: vi.fn(async () => ({ exists: true, directory: true })),
     setFragmentsView: (view: Parameters<typeof store.setFragmentsView>[0]) => { store.setFragmentsView(view) },
     setCmCharacter: (id: string | null) => { store.setCmCharacter(id) },
     setCmCursor: (n: number | null) => { store.setCmCursor(n) },
