@@ -13,7 +13,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from './locales.ts'
-import type { StoryUiSource } from './store.ts'
+import type { StoryUiState } from './store.ts'
 import css from './storytab.module.css'
 
 /** What a chip reads each beat: the gate's state (null = nothing to show). */
@@ -22,13 +22,17 @@ export interface GateRead<T> {
   read: () => Promise<T | null>
 }
 
+/** The slot runtime's materialization of the face's `hooks: { story }` source. */
+export type UseStory = <S>(selector: (state: StoryUiState) => S) => S
+
 /** The plan chip's injected face. */
 export interface PlanChipInjected extends GateRead<{ n: number; title: string }> {
   /** Jump: open the story tab at the reader pane on that chapter. */
   jump: (n: number) => void
   /** The preset criterion for this session (fail-open inside). */
   show: () => boolean
-  hooks: { story: StoryUiSource }
+  /** The face declares `hooks: { story }`; the runtime binds it into this prop. */
+  useStory: UseStory
 }
 
 /** The pending chip's injected face. */
@@ -36,7 +40,8 @@ export interface PendingChipInjected extends GateRead<{ count: number }> {
   /** Jump: open the story tab at the fragments pane with the queue pulsing. */
   jump: () => void
   show: () => boolean
-  hooks: { story: StoryUiSource }
+  /** The face declares `hooks: { story }`; the runtime binds it into this prop. */
+  useStory: UseStory
 }
 
 /** How often a chip re-reads its gate (agent writes are unannounced). */
@@ -55,19 +60,23 @@ export interface PendingChipProps extends PendingChipInjected {
 }
 
 /** The shared beat: re-read on mount, on the store's rev, and on the slow poll. */
-function useGate<T>(props: { read: () => Promise<T | null>; hooks: { story: StoryUiSource } }): T | null {
+function useGate<T>(props: { read: () => Promise<T | null>; useStory: UseStory }): T | null {
+  // The face's `hooks: { story }` arrives as the `useStory` prop (the slot
+  // runtime's materialization): a hook, subscribed through React — never a
+  // `props.hooks` member access (that object does not exist at runtime).
+  const rev = props.useStory(current => current.rev)
   const [gate, setGate] = useState<T | null>(null)
-  const [rev, setRev] = useState(0)
-  // The shared store is a snapshot feed, not a React hook here (chips are not
-  // tab components): subscribe directly.
-  useEffect(() => {
-    const unsubscribe = props.hooks.story.subscribe(() => { setRev(value => value + 1) })
-    return unsubscribe
-  }, [props.hooks.story])
   useEffect(() => {
     let cancelled = false
     const beat = (): void => {
-      void props.read().then(value => { if (!cancelled) setGate(value) }).catch(() => { /* fail-open: keep the last state */ })
+      try {
+        // A rejected read keeps the last state (fail-open on data); a
+        // SYNCHRONOUS throw (a face whose read is not a function, a Remote
+        // namespace not mounted) is the same non-crash: the chip stays hidden.
+        void Promise.resolve().then(() => props.read()).then(value => { if (!cancelled) setGate(value) }).catch(() => { /* keep the last state */ })
+      } catch {
+        /* never crash the header */
+      }
     }
     beat()
     const timer = setInterval(() => { if (document.visibilityState === 'visible') beat() }, CHIP_POLL_MS)
