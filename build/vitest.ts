@@ -153,7 +153,9 @@ export function dshTestConfig(): ReturnType<typeof defineConfig> {
     // flakily, and invisibly to CI whose runner is fast enough to stay under.
     // A larger budget costs a passing test nothing; it only changes how long a
     // genuinely hung test takes to report.
-    test: { testTimeout: 30_000, maxWorkers: defaultTestWorkers() },
+    // The yield setup keeps a run of synchronous test bodies from blocking the
+    // worker past vitest's 60s `onTaskUpdate` RPC timeout (vitest-yield.ts).
+    test: { testTimeout: 30_000, maxWorkers: defaultTestWorkers(), setupFiles: [fileURLToPath(new URL('./vitest-yield.ts', import.meta.url))] },
     resolve: { dedupe: ['react', 'react-dom'], alias },
     plugins: [
       sourcePathsPlugin(harness, paths, /^@deepseek-ai\//),

@@ -25,6 +25,7 @@ Both had a concrete defect rather than inherent slowness. The deploy spec's fixt
 - `pnpm run test:scripts` went from red-under-load to green across repeated runs in the same environment that previously failed; the build-scripts case dropped from >5s to milliseconds.
 - Gate's script-tests stage no longer blocks unrelated merges on a loaded machine, removing the pressure to merge around a red gate.
 - Given up: nothing behavioral — the checker enforces the same contract on the same found set, and no spec gains new skip paths.
+- The deploy fixture no longer uses `spawnSync`: since 2026-10-04 it spawns the orchestrator asynchronously, because a whole file of synchronous runs blocked the vitest worker past its 60s `onTaskUpdate` RPC timeout ([worker RPC yield note](2026-10-04-vitest-worker-rpc-yield.md)).
 - Gate memory pressure (pnpm `-r` concurrency × per-package vitest workers on whole-repo scopes) is a separate, unfixed concern owned by the gate's tuning, not by these specs.
 
 ## Testing
