@@ -1011,7 +1011,7 @@ describe('添加题集 picks directories (T95)', () => {
     expect(text).not.toContain('.dsh/datasets/gsm8k')
   })
 
-  it('新仓库位置 is a field: label, a read-only path cut in the middle, 更改… in the 选择目录… column (T96)', async () => {
+  it('新仓库位置 is a field: label, a read-only path cut in the middle, 更改… in the 选择目录… column, 恢复默认 in the help line (T96)', async () => {
     const h = makeHarness()
     renderView(h)
     await openAdd()
@@ -1022,7 +1022,7 @@ describe('添加题集 picks directories (T95)', () => {
     expect(tail).toBe('datasets/gsm8k')
     expect(`${head}${tail}`).toBe(box.title)
     expect(box.textContent).toBe('/home/user/.dsh/datasets/gsm8k')
-    // 选择目录… and 更改… sit in the same action column; 恢复默认 only after a change.
+    // 选择目录… and 更改… sit right of their boxes in the same action column; 恢复默认 only after a change.
     const browse = screen.getByRole('button', { name: 'add.browse' })
     const change = screen.getByRole('button', { name: 'add.repoChange' })
     expect(browse.parentElement!.className).toBe(change.parentElement!.className)
@@ -1031,8 +1031,10 @@ describe('添加题集 picks directories (T95)', () => {
     h.pickDirectory.mockResolvedValueOnce('/home/user/benchmarks')
     fireEvent.click(change)
     const reset = await screen.findByRole('button', { name: 'add.repoReset' })
-    expect(reset.parentElement!.className).toBe(browse.parentElement!.className)
-    expect(screen.getByText('add.repoHelpPicked')).toBeTruthy()
+    // A secondary link in the help line, not a third outline button in its own row.
+    expect(reset.parentElement!.textContent).toContain('add.repoHelpPicked')
+    expect(reset.parentElement!.id).toBe(box.getAttribute('aria-describedby'))
+    expect(reset.parentElement!.className).not.toBe(browse.parentElement!.className)
   })
 
   it('a reset location sends the default path', async () => {

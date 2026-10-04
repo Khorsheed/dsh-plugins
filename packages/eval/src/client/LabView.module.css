@@ -2157,6 +2157,13 @@ tr:last-child > .reportTd {
    being wider is not scrolled — it is CLIPPED, which cost this slice a round
    of acceptance (half of every condition label and the second budget field
    were off the right edge). Everything below shrinks or wraps instead. */
+/* A form dialog: wider than the Modal's 380px default, matching the datasets
+   「添加题集」 dialog. The doubled selector overrides the Modal card geometry;
+   100% keeps phones full-width. */
+.newDialog.newDialog {
+  width: min(560px, 100%);
+}
+
 .newForm {
   display: flex;
   flex-direction: column;

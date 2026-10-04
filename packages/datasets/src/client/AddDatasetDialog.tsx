@@ -86,6 +86,7 @@ export function AddDatasetDialog(props: {
       title={t('add.title')}
       description={t('add.description')}
       closeLabel={t('add.close')}
+      className={css.addDialog as string}
       footer={(
         <>
           <Button variant="outline" size="sm" onClick={onClose}>{t('add.cancel')}</Button>
@@ -161,16 +162,12 @@ export function AddDatasetDialog(props: {
               </div>
             )}
           </div>
-          <div className={css.pickRow}>
-            <div id={`${ids}-repo-help`} className={css.help}>
-              {repoParent === null ? t('add.repoHelp') : t('add.repoHelpPicked')}
-            </div>
+          <div id={`${ids}-repo-help`} className={css.help}>
+            {repoParent === null ? t('add.repoHelp') : t('add.repoHelpPicked')}
             {repoParent !== null && (
-              <div className={css.pickActions}>
-                <Button variant="outline" type="button" size="sm" onClick={() => { setRepoParent(null) }}>
-                  {t('add.repoReset')}
-                </Button>
-              </div>
+              <button type="button" className={css.inlineLink} onClick={() => { setRepoParent(null) }}>
+                {t('add.repoReset')}
+              </button>
             )}
           </div>
         </div>

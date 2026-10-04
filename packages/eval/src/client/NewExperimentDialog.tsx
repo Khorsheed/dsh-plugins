@@ -194,6 +194,7 @@ export function NewExperimentDialog(props: {
       title={t('new.title')}
       description={t('new.description')}
       closeLabel={t('export.close')}
+      className={css.newDialog as string}
       footer={(
         <>
           <Button variant="outline" size="sm" onClick={onClose}>{t('new.cancel')}</Button>

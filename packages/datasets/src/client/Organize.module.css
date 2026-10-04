@@ -745,3 +745,34 @@
   color: var(--dsw-alias-label-primary);
   text-overflow: ellipsis;
 }
+
+/* The add dialog is a form: wider than the Modal's 380px default, like the
+   host's form dialogs (FeedbackDialog 488, OnboardingModal 600). The doubled
+   selector overrides the Modal card geometry; 100% keeps phones full-width. */
+.addDialog.addDialog {
+  width: min(560px, 100%);
+}
+
+/* A secondary action inside a help line: reads as text, still clearly a button. */
+.inlineLink {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--dsw-alias-border-l4, currentColor);
+  text-underline-offset: 2px;
+}
+
+.inlineLink:hover {
+  text-decoration-color: currentColor;
+}
+
+.inlineLink:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-focus, var(--dsw-alias-border-l2));
+  outline-offset: 1px;
+  border-radius: 2px;
+}
