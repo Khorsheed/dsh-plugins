@@ -13,9 +13,11 @@ import { DREAM, makeStoryBench } from './bench.tsx'
 
 afterEach(() => { cleanup() })
 
-/** Open the reader pane. */
+/** Open the reader pane (the click lands only once the shell has loaded: the work select enables then). */
 async function openReader(): Promise<void> {
-  await screen.findByRole('combobox', { name: '切换作品（即本会话 focus）' })
+  await waitFor(() => {
+    expect((screen.getByRole('combobox', { name: '切换作品（即本会话 focus）' }) as HTMLSelectElement).disabled).toBe(false)
+  })
   fireEvent.click(screen.getByRole('tab', { name: '章节阅读' }))
 }
 
