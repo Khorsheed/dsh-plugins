@@ -278,9 +278,13 @@ export interface ReviewFiles {
  */
 export interface ReviewHead {
   proposal: Proposal
+  /** Same rule as the review: an update when the proposal names a live registration. */
+  mode: 'new' | 'update'
   itemCount: number
   sets: string[]
   version: { number: number; date: string; commit: string }
+  /** Update mode: the version agents read today (the 「版本 N → M」 card). */
+  registered?: ProposalReview['facts']['registered']
   validate?: ProposalReview['facts']['validate']
 }
 
@@ -1039,6 +1043,12 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       const proposal = get(id)
       const { commonDir, commit } = proposal
       const cached = cachedFacts(commit)
+      const entry = proposal.registeredAs !== undefined ? deps.registry.get(proposal.registeredAs) : undefined
+      let registered: ReviewHead['registered']
+      if (entry !== undefined) {
+        const current = await deps.registry.latest(entry)
+        registered = { number: current.version ?? await commitCount(commonDir, current.commit), date: current.date, commit: current.commit }
+      }
       // One ls-tree of datasets/ answers both counts; the classes are not needed here.
       const files = await listFiles(commonDir, commit, DATASETS_DIR)
       const sets = new Set<string>()
@@ -1053,6 +1063,7 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       }
       return {
         proposal,
+        mode: entry !== undefined ? 'update' : 'new',
         itemCount: items.size,
         sets: [...sets].sort(),
         version: {
@@ -1060,6 +1071,7 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
           date: cached?.date ?? await commitDate(commonDir, commit),
           commit,
         },
+        ...(registered !== undefined ? { registered } : {}),
         ...(cached !== undefined ? { validate: cached.validate } : {}),
       }
     },

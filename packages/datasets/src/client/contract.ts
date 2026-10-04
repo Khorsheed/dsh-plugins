@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   DatasetOverview, ImportBindingsResult, ItemBrief, ListDatasetsResult, ListItemsResult, OrganizingSetup,
   Proposal, ProposalReview, ReadPassthroughRequest, ReadQuery, ReadResult, RegisterInput, RegisterPreview,
-  RegistryEntry, RegistryRow, ReviewFiles, ReviewItem, UpdateInput, ValidateResult,
+  RegistryEntry, RegistryRow, ReviewFiles, ReviewHead, ReviewItem, UpdateInput, ValidateResult,
 } from '../types.ts'
 import type { OrganizeOutcome } from './organize.ts'
 import type { createDatasetsViewStore } from './store.ts'
@@ -125,6 +125,8 @@ export interface DatasetsViewInjected {
   proposals: (sessionId: SessionId) => Promise<RemoteResult<Proposal[]>>
   /** One proposal's review. */
   proposalReview: (sessionId: SessionId, id: string) => Promise<RemoteResult<ProposalReview>>
+  /** T96 · the review's first screen (head + four fact cards); optional so older doubles still type. */
+  proposalHead?: (sessionId: SessionId, id: string) => Promise<RemoteResult<ReviewHead>>
   /** 「逐条对照」: one item beside its source record. */
   reviewItem: (sessionId: SessionId, id: string, set: string, item: string) => Promise<RemoteResult<ReviewItem>>
   /** 「完整清单」. */

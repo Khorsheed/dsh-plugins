@@ -1022,6 +1022,17 @@ describe('添加题集 picks directories (T95)', () => {
 })
 
 describe('等你确认登记 (T90)', () => {
+  it('「返回题集列表」 leaves the review for the list and its banner (T96)', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    renderView(h)
+    fireEvent.click(await screen.findByText('banner.review'))
+    await screen.findByText('review.titleNew {"name":"gsm8k"}')
+    fireEvent.click(screen.getByRole('button', { name: 'review.back' }))
+    expect(await screen.findByText('banner.proposal {"name":"gsm8k"}')).toBeTruthy()
+    expect(screen.queryByText('review.titleNew {"name":"gsm8k"}')).toBeNull()
+  })
+
   it('a pending proposal shows a banner; the review confirms exactly the layer choice it shows', async () => {
     const h = makeHarness()
     h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL, { ...PROPOSAL, id: 'p0', status: 'returned' }] })

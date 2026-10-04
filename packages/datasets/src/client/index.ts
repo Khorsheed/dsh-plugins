@@ -364,6 +364,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         organizingSetup: (sid: SessionId) => remote.organizingSetup(sid),
         proposals: (sid: SessionId) => remote.proposals(sid),
         proposalReview: (sid: SessionId, id: string) => remote.proposalReview(sid, { id }),
+        proposalHead: (sid: SessionId, id: string) => remote.proposalHead(sid, { id }),
         reviewItem: (sid: SessionId, id: string, set: string, item: string) => remote.reviewItem(sid, { id, set, item }),
         reviewFiles: (sid: SessionId, id: string) => remote.reviewFiles(sid, { id }),
         confirmProposal: (sid: SessionId, id: string, registryId: string, sets: Record<string, { layers: string[] }>) =>

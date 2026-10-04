@@ -238,6 +238,7 @@ describe('the commit cache (T96: a filed proposal reopens without recomputing)',
     const { proposal } = await store.propose(fullInput())
     const head = await store.head(proposal.id)
     expect(head.proposal.id).toBe(proposal.id)
+    expect(head.mode).toBe('new')
     expect(head.itemCount).toBe(3)
     expect(head.sets).toEqual(['alpha', 'beta'])
     expect(head.version).toMatchObject({ number: 1, commit: repo.commit })
