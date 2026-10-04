@@ -100,37 +100,6 @@
   text-decoration: underline;
 }
 
-/* T95 · a field with the host's directory chooser beside it; the button
-   drops under the field when the dialog is narrow. */
-.fieldWithAction {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 6px 8px;
-}
-
-.fieldWithAction > .textarea {
-  flex: 1 1 220px;
-  width: auto;
-  min-width: 0;
-}
-
-/* Where the new repository goes, with 更改… / 恢复默认 after it. */
-.repoLine {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 12px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.repoPath {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 /* ── the banner ─────────────────────────────────────────────────────────── */
 
 .banners {
@@ -616,4 +585,194 @@
     max-width: 100%;
     text-align: left;
   }
+}
+
+/* ── T96 · the review's loading state ──────────────────────────────────────
+   The page paints in the same grid it will hold: the head and the four fact
+   cards first (from proposalHead), quiet bars where the comparison, the
+   layer list and the name field will land. Bars use the host's skeleton
+   fill; the pulse stops for reduced motion. */
+
+.skel {
+  display: block;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-skeleton, var(--dsw-alias-bg-layer-3));
+  animation: dsh-datasets-skel-pulse 1.4s ease-in-out infinite;
+}
+
+.skel[data-size='title'] {
+  width: 220px;
+  max-width: 60%;
+  height: 16px;
+  margin-block: 3px;
+}
+
+.skel[data-size='number'] {
+  width: 56px;
+  height: 18px;
+  margin-block: 3px;
+}
+
+.skel[data-size='chip'] {
+  width: 72px;
+  height: 18px;
+  border-radius: 9px;
+}
+
+.skel[data-size='line'] {
+  width: 70%;
+  margin-block: 3px;
+}
+
+.skel[data-size='short'] {
+  width: 40%;
+  margin-block: 3px;
+}
+
+.skel[data-size='field'] {
+  width: 100%;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.skelRows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes dsh-datasets-skel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel {
+    animation: none;
+  }
+}
+
+/* T96 · the 添加题集 dialog: the host form-dialog rhythm (12px labels,
+   12px between fields) and one action column shared by 「选择目录…」,
+   「更改…」 and 「恢复默认」, so the three line up at the same width. */
+.addForm {
+  gap: 12px;
+}
+
+.addForm .formLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.addForm .required {
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+.addForm .gitNote .help {
+  margin-top: 2px;
+}
+
+.pickRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pickRow > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pickActions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 88px;
+}
+
+.pickActions > button {
+  width: 100%;
+}
+
+.pathBox {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: text;
+  user-select: all;
+}
+
+.pathBox:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-focus, var(--dsw-alias-border-l2));
+  outline-offset: 1px;
+}
+
+.pathHead {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pathTail {
+  flex: 0 0 auto;
+  max-width: 75%;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+}
+
+/* The add dialog is a form: wider than the Modal's 380px default, like the
+   host's form dialogs (FeedbackDialog 488, OnboardingModal 600). The doubled
+   selector overrides the Modal card geometry; 100% keeps phones full-width. */
+.addDialog.addDialog {
+  width: min(560px, 100%);
+}
+
+/* A secondary action inside a help line: reads as text, still clearly a button. */
+.inlineLink {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--dsw-alias-border-l4, currentColor);
+  text-underline-offset: 2px;
+}
+
+.inlineLink:hover {
+  text-decoration-color: currentColor;
+}
+
+.inlineLink:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-focus, var(--dsw-alias-border-l2));
+  outline-offset: 1px;
+  border-radius: 2px;
 }

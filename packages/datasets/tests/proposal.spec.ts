@@ -9,7 +9,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mappingMatches, type ProposalInput } from '../src/proposal.ts'
+import { mappingMatches, openProposals, type ProposalInput } from '../src/proposal.ts'
 import { createDatasetsService, type DatasetsService } from '../src/service.ts'
 import { loadAuthoringSkill } from '../src/tool.ts'
 import { datasetToolDefinitions } from '../src/tool-definition.ts'
@@ -196,6 +196,76 @@ describe('propose → review → confirm', () => {
     writeFiles(repo.dir, { 'notes.txt': 'outside datasets\n' })
     commitAll(repo.dir, 'move on')
     await expect(service.proposals.confirm(proposal.id, 'fixture', {})).rejects.toThrowError(/moved on/)
+  })
+})
+
+describe('the commit cache (T96: a filed proposal reopens without recomputing)', () => {
+  /** A store over the service's registry whose validator counts its calls. */
+  function countingStore(root: string): { store: ReturnType<typeof openProposals>; calls: () => number } {
+    let calls = 0
+    const store = openProposals(root, {
+      registry: service.registry,
+      validate: async (dir, commit) => {
+        calls += 1
+        return await service.validate({ repo: dir, ref: commit, operator: true })
+      },
+    })
+    return { store, calls: () => calls }
+  }
+
+  it('proposing computes validate once; reopening the same commit reads the cache', async () => {
+    const root = join(state, 'proposals-cache')
+    const { store, calls } = countingStore(root)
+    const { proposal } = await store.propose(fullInput())
+    expect(calls()).toBe(1)
+    const first = await store.review(proposal.id)
+    const second = await store.review(proposal.id)
+    await store.reviewFiles(proposal.id)
+    expect(calls()).toBe(1)
+    expect(second.facts).toEqual(first.facts)
+    expect(first.facts.validate.ok).toBe(true)
+
+    // A restart (fresh store over the same root) still hits the persisted facts.
+    const reopened = countingStore(root)
+    const again = await reopened.store.review(proposal.id)
+    expect(reopened.calls()).toBe(0)
+    expect(again.facts.version).toEqual(first.facts.version)
+  })
+
+  it('the head answers the four summary cards without the comparison', async () => {
+    const root = join(state, 'proposals-head')
+    const { store, calls } = countingStore(root)
+    const { proposal } = await store.propose(fullInput())
+    const head = await store.head(proposal.id)
+    expect(head.proposal.id).toBe(proposal.id)
+    expect(head.mode).toBe('new')
+    expect(head.itemCount).toBe(3)
+    expect(head.sets).toEqual(['alpha', 'beta'])
+    expect(head.version).toMatchObject({ number: 1, commit: repo.commit })
+    expect(head.validate).toMatchObject({ ok: true })
+    expect(calls()).toBe(1)
+
+    // A commit whose facts were never cached answers without validate rather than computing it.
+    rmSync(join(root, 'cache'), { recursive: true, force: true })
+    const cold = countingStore(root)
+    const coldHead = await cold.store.head(proposal.id)
+    expect(coldHead.validate).toBeUndefined()
+    expect(coldHead.version).toEqual(head.version)
+    expect(cold.calls()).toBe(0)
+  })
+
+  it('a validator that cannot run is reported, not cached', async () => {
+    let calls = 0
+    const store = openProposals(join(state, 'proposals-failing'), {
+      registry: service.registry,
+      validate: async () => {
+        calls += 1
+        throw new Error('validator offline')
+      },
+    })
+    await expect(store.propose(fullInput())).rejects.toThrowError(/validator offline/)
+    await expect(store.propose(fullInput())).rejects.toThrowError(/validator offline/)
+    expect(calls).toBe(2)
   })
 })
 

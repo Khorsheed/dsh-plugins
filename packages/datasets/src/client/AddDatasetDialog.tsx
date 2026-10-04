@@ -17,12 +17,19 @@
  * 「更改…」 picks the PARENT of the new repository (`<parent>/<name>`, the
  * `repoPathFor` rule), and 「恢复默认」 goes back to the datasets home. A
  * cancelled pick, or a chooser that fails, changes nothing.
+ *
+ * T96 · 新仓库位置 is a field of its own: a label, a read-only one-line path
+ * (the middle gives way to `…`, the dataset's own folder always shows; the
+ * full path is the tooltip and what a copy takes), 「更改…」 beside it in the
+ * same action column as 「选择目录…」 — same size, same right edge — and,
+ * once changed, 「恢复默认」 under it, an outline button of the same width. The dialog keeps the
+ * host Modal's default width, the width 新建实验 uses.
  */
 
 import { useId, useState } from 'react'
 import { Button, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DatasetsViewProps } from './contract.ts'
-import { checkDatasetName, cleanPickedPath, repoParentOf, repoPathFor, type AddDatasetFields } from './organize.ts'
+import { checkDatasetName, cleanPickedPath, repoParentOf, repoPathFor, splitPathTail, type AddDatasetFields } from './organize.ts'
 import css from './Organize.module.css'
 
 /**
@@ -56,6 +63,7 @@ export function AddDatasetDialog(props: {
   const ready = source.trim() !== '' && nameOk
   const parent = repoParentOf(datasetsHome, repoParent)
   const repo = repoPathFor(parent, nameOk ? trimmed : t('add.repoNameSlot'))
+  const [repoHead, repoTail] = splitPathTail(repo)
 
   /** One pick; a cancel (null) or a failing chooser leaves the field as it was. */
   const pick = (apply: (path: string) => void): void => {
@@ -78,6 +86,7 @@ export function AddDatasetDialog(props: {
       title={t('add.title')}
       description={t('add.description')}
       closeLabel={t('add.close')}
+      className={css.addDialog as string}
       footer={(
         <>
           <Button variant="outline" size="sm" onClick={onClose}>{t('add.cancel')}</Button>
@@ -85,12 +94,12 @@ export function AddDatasetDialog(props: {
         </>
       )}
     >
-      <div className={css.form}>
+      <div className={`${css.form} ${css.addForm}`}>
         <div className={css.formRow}>
           <label className={css.formLabel} htmlFor={`${ids}-source`}>
             {t('add.source')}<span className={css.required}>{t('add.required')}</span>
           </label>
-          <div className={css.fieldWithAction}>
+          <div className={css.pickRow}>
             <textarea
               id={`${ids}-source`}
               className={css.textarea}
@@ -101,9 +110,11 @@ export function AddDatasetDialog(props: {
               aria-label={t('add.source')}
             />
             {canPick && (
-              <Button variant="outline" type="button" size="sm" onClick={() => { pick(setSource) }}>
-                {t('add.browse')}
-              </Button>
+              <div className={css.pickActions}>
+                <Button variant="outline" type="button" size="sm" onClick={() => { pick(setSource) }}>
+                  {t('add.browse')}
+                </Button>
+              </div>
             )}
           </div>
           <div className={css.help}>{t('add.sourceHelp')}</div>
@@ -125,21 +136,40 @@ export function AddDatasetDialog(props: {
           <div id={`${ids}-name-help`} className={nameMessage === null ? css.help : css.error} role={nameMessage === null ? undefined : 'alert'}>
             {nameMessage ?? t('add.nameHelp')}
           </div>
-          {(repo !== '' || canPick) && (
-            <div className={css.repoLine}>
-              {repo !== '' && <span className={css.repoPath}>{t('add.repoAt', { path: repo })}</span>}
-              {canPick && (
-                <button type="button" className={css.link} onClick={() => { pick(setRepoParent) }}>
-                  {t('add.repoChange')}
-                </button>
-              )}
-              {repoParent !== null && (
-                <button type="button" className={css.link} onClick={() => { setRepoParent(null) }}>
-                  {t('add.repoReset')}
-                </button>
-              )}
+        </div>
+
+        <div className={css.formRow}>
+          <span className={css.formLabel} id={`${ids}-repo`}>{t('add.repo')}</span>
+          <div className={css.pickRow}>
+            <div
+              className={css.pathBox}
+              data-repo-path=""
+              role="textbox"
+              aria-readonly="true"
+              aria-labelledby={`${ids}-repo`}
+              aria-describedby={`${ids}-repo-help`}
+              tabIndex={0}
+              title={repo}
+            >
+              <span className={css.pathHead}>{repoHead}</span>
+              <span className={css.pathTail}>{repoTail}</span>
             </div>
-          )}
+            {canPick && (
+              <div className={css.pickActions}>
+                <Button variant="outline" type="button" size="sm" onClick={() => { pick(setRepoParent) }}>
+                  {t('add.repoChange')}
+                </Button>
+              </div>
+            )}
+          </div>
+          <div id={`${ids}-repo-help`} className={css.help}>
+            {repoParent === null ? t('add.repoHelp') : t('add.repoHelpPicked')}
+            {repoParent !== null && (
+              <button type="button" className={css.inlineLink} onClick={() => { setRepoParent(null) }}>
+                {t('add.repoReset')}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className={css.formRow}>

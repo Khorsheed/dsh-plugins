@@ -100,9 +100,9 @@ export function DatasetsView(props: DatasetsViewProps) {
     fetchRegistry, previewRepo, register, updateRegistration, unregister, importBindings,
     listDatasets, readFile, readPassthroughFile,
     overview, itemBrief, validateDataset,
-    organizingSetup, proposals: fetchProposals, proposalReview, reviewItem, reviewFiles,
+    organizingSetup, proposals: fetchProposals, proposalReview, proposalHead, reviewItem, reviewFiles,
     confirmProposal, returnProposal, pendingReview, confirmPending, startOrganizing, draftInSession,
-    itemRuns, datasetExperiments,
+    itemRuns, datasetExperiments, reviewFocus,
     isLoopback, pickDirectory,
   } = props
   const { useHostDescription } = props
@@ -334,6 +334,21 @@ export function DatasetsView(props: DatasetsViewProps) {
     if (entry === undefined) return
     organize(entry.id, buildUpdateRequest({ name: entry.id, checkout: entry.authoringCheckout ?? null, ref: entry.trackedRef }, t))
   }
+  // T96 · 「核对并登记」 in the organizing Turn's tail: the card leaves the proposal
+  // id for this session's tab; take it now (the tab was just switched to, or
+  // was already open) and whenever another lands, and open that review
+  // directly — no list, no banner in between.
+  useEffect(() => {
+    if (reviewFocus === undefined) return
+    const take = (): void => {
+      const id = reviewFocus.take(sessionId)
+      if (id === null) return
+      setDone(null)
+      actions.openReview({ kind: 'proposal', id })
+    }
+    take()
+    return reviewFocus.subscribe(take)
+  }, [reviewFocus, sessionId, actions])
   /** After a confirm: back to the list, re-read, say what was registered. */
   const confirmed = (entry: RegistryEntry): void => {
     actions.openReview(null)
@@ -417,6 +432,7 @@ export function DatasetsView(props: DatasetsViewProps) {
             <ReviewPage
               loadKey={`proposal:${target.id}:${refreshRev}`}
               load={() => proposalReview(sessionId, target.id)}
+              loadHead={proposalHead === undefined ? null : () => proposalHead(sessionId, target.id)}
               reviewItem={(set, item) => reviewItem(sessionId, target.id, set, item)}
               reviewFiles={() => reviewFiles(sessionId, target.id)}
               confirm={(registryId, sets) => confirmProposal(sessionId, target.id, registryId, sets)}

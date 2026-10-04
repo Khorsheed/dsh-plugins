@@ -147,8 +147,9 @@ for a new repository).
   each warning in `notes` or fix it.
 - File the proposal: `datasets_propose_registration` without `dryRun`, with `layers` (one entry per declared
   layer: `visible` and a one-line `reason` a person can judge), two or three `samples`, and `notes`.
-- Tell the person, in one or two sentences, that the proposal is waiting on the Datasets tab (「等你确认登记」)
-  and what to look at first. Then stop.
+- Tell the person, in one or two sentences, what to look at first, and close with 「点下面的按钮核对并登记」
+  (the same words in the person's language): the card under your call opens the review in this session's
+  Datasets tab (it also waits there as 「等你确认登记」). Then stop.
 - If the person sends it back, their note arrives in this session: fix, commit, dry-run, propose again.
 
 ### Updating a registered dataset

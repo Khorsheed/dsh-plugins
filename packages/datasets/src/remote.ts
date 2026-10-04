@@ -15,7 +15,7 @@ import type {
   ImportBindingsResult, RegisterInput, RegisterPreview, RegistryEntry, RegistryRow, RepoSelector, UpdateInput,
 } from './registry.ts'
 import type { DatasetOverview, ItemBrief } from './brief.ts'
-import type { Proposal, ProposalReview, ReviewFiles, ReviewItem } from './proposal.ts'
+import type { Proposal, ProposalReview, ReviewFiles, ReviewHead, ReviewItem } from './proposal.ts'
 import type { SkeletonResult } from './scaffold.ts'
 import {
   type DatasetScope, type DatasetsService, type OrganizingSetup,
@@ -353,6 +353,20 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   async proposalReview(agent: Agent, request: { id: string }): Promise<ProposalReview> {
     void agent
     return await this.datasets.proposals.review(request.id)
+  }
+
+  /**
+   * The review page's first screen (T96): the proposal and the four summary
+   * cards, answered from the stored proposal and the commit cache without
+   * the comparison, so the page head paints before the full review lands.
+   * @param agent - owning live agent (lookup convention).
+   * @param request - the proposal id.
+   * @returns the head; `validate` is absent while the commit was never checked.
+   */
+  @Remote('proposalHead')
+  async proposalHead(agent: Agent, request: { id: string }): Promise<ReviewHead> {
+    void agent
+    return await this.datasets.proposals.head(request.id)
   }
 
   /**

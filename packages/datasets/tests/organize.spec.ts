@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAddRequest, buildReturnRequest, buildUpdateRequest, checkDatasetName, cleanPickedPath, DRAFT_RETRIES_MS, draftWithRetries,
-  repoParentOf, repoPathFor,
+  repoParentOf, repoPathFor, splitPathTail,
 } from '../src/client/organize.ts'
 import { pickRandom } from '../src/client/ReviewPage.tsx'
 
@@ -104,5 +104,17 @@ describe('pickRandom', () => {
     expect(picked.every(entry => list.includes(entry))).toBe(true)
     expect(pickRandom([1], 3)).toEqual([1])
     expect(list).toEqual([1, 2, 3, 4, 5])
+  })
+})
+
+describe('splitPathTail (T96)', () => {
+  it('keeps the last two segments whole and joins back to the path', () => {
+    expect(splitPathTail('/home/user/.dsh/datasets/gsm8k')).toEqual(['/home/user/.dsh/', 'datasets/gsm8k'])
+    expect(splitPathTail('C:\\Users\\x\\datasets\\gsm8k')).toEqual(['C:\\Users\\x\\', 'datasets\\gsm8k'])
+  })
+  it('a short path is all tail', () => {
+    expect(splitPathTail('/gsm8k')).toEqual(['', '/gsm8k'])
+    expect(splitPathTail('/a/b')).toEqual(['', '/a/b'])
+    expect(splitPathTail('')).toEqual(['', ''])
   })
 })

@@ -17,7 +17,7 @@
  * it shows — blocked while the host reports a problem.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -28,6 +28,7 @@ import type { DatasetsViewProps, ItemRunsView } from '../src/client/contract.ts'
 import { DatasetsView } from '../src/client/DatasetsView.tsx'
 import { setUsage } from '../src/client/RegistryList.tsx'
 import { createDatasetsViewStore } from '../src/client/store.ts'
+import { createReviewFocus } from '../src/client/review-card.ts'
 
 /** Selector hook over the store engine instance (the test-sanctioned engine path). */
 function hookOf(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => unknown }) {
@@ -313,7 +314,7 @@ function makeHarness(rows: RegistryRow[] = [rowOf()]): Harness {
   }
 }
 
-function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
+function renderView(h: Harness, opts: { canPick?: boolean; extra?: Record<string, unknown> } = {}) {
   const canPick = opts.canPick ?? true
   const props = {
     sessionId: 's1' as SessionId,
@@ -358,6 +359,7 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
+    ...opts.extra,
   } as unknown as DatasetsViewProps
   return render(<DatasetsView {...props} />)
 }
@@ -895,7 +897,7 @@ describe('添加题集 (T90)', () => {
     expect(screen.getByText('add.nameBad')).toBeTruthy()
     expect(go.disabled).toBe(true)
     fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: 'gsm8k' } })
-    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'add.repo' }).title).toBe('/home/user/.dsh/datasets/gsm8k')
     fireEvent.change(screen.getByLabelText('add.purpose', { selector: 'textarea' }), { target: { value: 'math reasoning' } })
     fireEvent.click(go)
     await waitFor(() => { expect(h.startOrganizing).toHaveBeenCalledTimes(1) })
@@ -941,6 +943,8 @@ describe('添加题集 picks directories (T95)', () => {
     if (name !== '') fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: name } })
   }
   const sourceBox = (): HTMLTextAreaElement => screen.getByLabelText('add.source', { selector: 'textarea' })
+  /** The 新仓库位置 field: a read-only box whose title is the full path (T96). */
+  const repoBox = (): HTMLElement => screen.getByRole('textbox', { name: 'add.repo' })
 
   it('选择目录… writes the pick into 数据在哪, which stays editable', async () => {
     const h = makeHarness()
@@ -969,7 +973,7 @@ describe('添加题集 picks directories (T95)', () => {
     await waitFor(() => { expect(h.pickDirectory).toHaveBeenCalledTimes(2) })
     await Promise.resolve()
     expect(sourceBox().value).toBe('~/Downloads/gsm8k')
-    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    expect(repoBox().title).toBe('/home/user/.dsh/datasets/gsm8k')
     expect(screen.queryByText('add.repoReset')).toBeNull()
   })
 
@@ -979,22 +983,22 @@ describe('添加题集 picks directories (T95)', () => {
     await openAdd()
     expect(screen.queryByText('add.browse')).toBeNull()
     expect(screen.queryByText('add.repoChange')).toBeNull()
-    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    expect(repoBox().title).toBe('/home/user/.dsh/datasets/gsm8k')
   })
 
-  it('更改… picks the parent; the request carries <parent>/<name>; 恢复默认位置 goes back', async () => {
+  it('更改… picks the parent; the request carries <parent>/<name>; 恢复默认 goes back', async () => {
     const h = makeHarness()
     renderView(h)
     await openAdd('')
     // Before a name: the location reads with a name slot.
-    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/add\.repoNameSlot/)).toBeTruthy()
+    expect(repoBox().title).toBe('/home/user/.dsh/datasets/add.repoNameSlot')
     fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: 'gsm8k' } })
     h.pickDirectory.mockResolvedValueOnce('/home/user/benchmarks/')
     fireEvent.click(screen.getByText('add.repoChange'))
-    expect(await screen.findByText(/add\.repoAt .*\/home\/user\/benchmarks\/gsm8k/)).toBeTruthy()
+    await waitFor(() => { expect(repoBox().title).toBe('/home/user/benchmarks/gsm8k') })
     // Back to the default, and to the picked one again.
     fireEvent.click(screen.getByText('add.repoReset'))
-    expect(screen.getByText(/add\.repoAt .*\/home\/user\/\.dsh\/datasets\/gsm8k/)).toBeTruthy()
+    expect(repoBox().title).toBe('/home/user/.dsh/datasets/gsm8k')
     expect(screen.queryByText('add.repoReset')).toBeNull()
     h.pickDirectory.mockResolvedValueOnce('/home/user/benchmarks')
     fireEvent.click(screen.getByText('add.repoChange'))
@@ -1005,6 +1009,32 @@ describe('添加题集 picks directories (T95)', () => {
     const text = h.startOrganizing.mock.calls[0]![2] as string
     expect(text).toContain('organize.lineRepo {"value":"/home/user/benchmarks/gsm8k"}')
     expect(text).not.toContain('.dsh/datasets/gsm8k')
+  })
+
+  it('新仓库位置 is a field: label, a read-only path cut in the middle, 更改… in the 选择目录… column, 恢复默认 in the help line (T96)', async () => {
+    const h = makeHarness()
+    renderView(h)
+    await openAdd()
+    const box = repoBox()
+    expect(box.getAttribute('aria-readonly')).toBe('true')
+    // The middle gives way, the dataset's own folder always shows; together they are the full path.
+    const [head, tail] = [...box.children].map(part => part.textContent)
+    expect(tail).toBe('datasets/gsm8k')
+    expect(`${head}${tail}`).toBe(box.title)
+    expect(box.textContent).toBe('/home/user/.dsh/datasets/gsm8k')
+    // 选择目录… and 更改… sit right of their boxes in the same action column; 恢复默认 only after a change.
+    const browse = screen.getByRole('button', { name: 'add.browse' })
+    const change = screen.getByRole('button', { name: 'add.repoChange' })
+    expect(browse.parentElement!.className).toBe(change.parentElement!.className)
+    expect(screen.queryByRole('button', { name: 'add.repoReset' })).toBeNull()
+    expect(screen.getByText('add.repoHelp')).toBeTruthy()
+    h.pickDirectory.mockResolvedValueOnce('/home/user/benchmarks')
+    fireEvent.click(change)
+    const reset = await screen.findByRole('button', { name: 'add.repoReset' })
+    // A secondary link in the help line, not a third outline button in its own row.
+    expect(reset.parentElement!.textContent).toContain('add.repoHelpPicked')
+    expect(reset.parentElement!.id).toBe(box.getAttribute('aria-describedby'))
+    expect(reset.parentElement!.className).not.toBe(browse.parentElement!.className)
   })
 
   it('a reset location sends the default path', async () => {
@@ -1022,6 +1052,38 @@ describe('添加题集 picks directories (T95)', () => {
 })
 
 describe('等你确认登记 (T90)', () => {
+  it('a 「核对并登记」 request from the tool card opens that review directly, no list or banner (T96)', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    const focus = createReviewFocus()
+    // Requested before the tab mounted (the card clicked, then the tab switched).
+    focus.request('s1' as SessionId, 'p1')
+    renderView(h, { extra: { reviewFocus: { take: focus.take, subscribe: focus.subscribe } } })
+    expect(await screen.findByText('review.titleNew {"name":"gsm8k"}')).toBeTruthy()
+    expect(h.proposalReview).toHaveBeenCalledWith('s1', 'p1')
+    expect(screen.queryByText('banner.review')).toBeNull()
+    // Taken once: back goes to the list, the request does not reopen it.
+    fireEvent.click(screen.getByRole('button', { name: 'review.back' }))
+    expect(await screen.findByText('banner.proposal {"name":"gsm8k"}')).toBeTruthy()
+    // A request while the tab is already open lands too; another session's does not.
+    focus.request('s2' as SessionId, 'p1')
+    await Promise.resolve()
+    expect(screen.queryByText('review.titleNew {"name":"gsm8k"}')).toBeNull()
+    act(() => { focus.request('s1' as SessionId, 'p1') })
+    expect(await screen.findByText('review.titleNew {"name":"gsm8k"}')).toBeTruthy()
+  })
+
+  it('「返回题集列表」 leaves the review for the list and its banner (T96)', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    renderView(h)
+    fireEvent.click(await screen.findByText('banner.review'))
+    await screen.findByText('review.titleNew {"name":"gsm8k"}')
+    fireEvent.click(screen.getByRole('button', { name: 'review.back' }))
+    expect(await screen.findByText('banner.proposal {"name":"gsm8k"}')).toBeTruthy()
+    expect(screen.queryByText('review.titleNew {"name":"gsm8k"}')).toBeNull()
+  })
+
   it('a pending proposal shows a banner; the review confirms exactly the layer choice it shows', async () => {
     const h = makeHarness()
     h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL, { ...PROPOSAL, id: 'p0', status: 'returned' }] })

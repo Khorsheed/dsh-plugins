@@ -34,6 +34,9 @@ import { en, NS, zh } from './locales.ts'
 import { draftWithRetries, type OrganizeOutcome } from './organize.ts'
 import { DatasetsPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { createDatasetsViewStore } from './store.ts'
+import { ReviewTurnTail, type ReviewCardFace } from './ReviewCard.tsx'
+import { proposedTurnDefinition } from './review-turn.ts'
+import { createReviewFocus } from './review-card.ts'
 import type {
   DatasetExperimentRow, DatasetsRemote, DatasetsViewInjected, HostDescriptionSource, HostFacts, ItemRunsView,
 } from './contract.ts'
@@ -330,6 +333,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   })
 
   const organizing = organizingDoors(ctx)
+  // T96 · the 「核对并登记」 card's requests, carried to each session's 题集 tab.
+  const reviewFocus = createReviewFocus()
 
   // The M3'④ self-hide criterion for the 题集 tab: the official preset
   // composition data, fail-open on every unreadable path. Hidden means NO
@@ -364,6 +369,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         organizingSetup: (sid: SessionId) => remote.organizingSetup(sid),
         proposals: (sid: SessionId) => remote.proposals(sid),
         proposalReview: (sid: SessionId, id: string) => remote.proposalReview(sid, { id }),
+        proposalHead: (sid: SessionId, id: string) => remote.proposalHead(sid, { id }),
+        reviewFocus: { take: reviewFocus.take, subscribe: reviewFocus.subscribe },
         reviewItem: (sid: SessionId, id: string, set: string, item: string) => remote.reviewItem(sid, { id, set, item }),
         reviewFiles: (sid: SessionId, id: string) => remote.reviewFiles(sid, { id }),
         confirmProposal: (sid: SessionId, id: string, registryId: string, sets: Record<string, { layers: string[] }>) =>
@@ -424,6 +431,48 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => chrome.subscribe(() => {
     datasetsToggle.sync()
   }), 'datasets: datasets tab visibility')
+
+  // T96 · the 「核对并登记」 entry, in the organizing Turn's tail. A finished
+  // Turn folds its tool calls into one collapsed group, so a card on the
+  // propose call's own row is hidden exactly when the summary points at it;
+  // the host's turn-level artifacts (ui-schedule's created-task card) take
+  // the same route: a Conversation Definition publishes the Turn's filed
+  // proposals as Turn data and a `conversation.chat.turnTail` entry renders
+  // them. Both live inside the inject on that slot: ui-chat declares it and
+  // composes ui-conversation, so `uiConversation` is read only once it can
+  // exist — this package keeps both as optional peers and never imports them
+  // at runtime. Without them nothing registers and the proposal still waits
+  // behind the tab's banner. Not gated on the preset: a Turn that filed a
+  // proposal was granted the tool.
+  const slots = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (options: Record<string, unknown>, component: unknown) => () => void
+  }
+  slots.inject('conversation.chat.turnTail', () => {
+    const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
+      events?: { register?: (definition: unknown) => () => void }
+    } | undefined
+    const register = conversation?.events?.register
+    if (register === undefined) return () => undefined
+    const disposeDefinition = register.call(conversation?.events, proposedTurnDefinition)
+    const disposeEntry = slots.register({
+      name: 'conversation.chat.turnTail',
+      id: '@khorsheed/dsh-datasets/review',
+      order: 30,
+      locale: NS,
+      inject: (sessionId: SessionId): ReviewCardFace => ({
+        loadPending: async (proposalId: string) => {
+          const result = await remote.proposals(sessionId)
+          return result.ok ? result.value.some(proposal => proposal.id === proposalId) : null
+        },
+        openReview: (proposalId: string) => { reviewFocus.request(sessionId, proposalId) },
+      }),
+    }, ReviewTurnTail)
+    return () => {
+      disposeEntry()
+      disposeDefinition()
+    }
+  })
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

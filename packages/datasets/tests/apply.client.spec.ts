@@ -40,6 +40,7 @@ function remoteStub() {
     reviewItem: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
     confirmProposal: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
     confirmPending: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
+    proposals: vi.fn(async (): Promise<{ ok: true; value: Array<{ id: string }> } | { ok: false; error: { code: string; message: string } }> => ({ ok: true as const, value: [] })),
   }
 }
 
@@ -317,5 +318,63 @@ describe('datasets client apply', () => {
     await fiber.dispose()
 
     expect(slots.entries('conversation.view')).toHaveLength(0)
+  })
+
+  // T96 · the 「核对并登记」 entry in the organizing Turn's tail. The slot is
+  // ui-chat's; without its declaration (or without uiConversation) nothing
+  // registers and the proposal still waits behind the tab's banner.
+  const declareTurnTail = (slots: SlotRegistry) => {
+    slots.register({
+      name: 'conversation.view',
+      id: 'chat',
+      children: { 'conversation.chat.turnTail': { kind: 'list', scope: 'session' } },
+    } as never, () => null)
+  }
+
+  it('registers nothing in the Turn tail without uiConversation', async () => {
+    const { ctx, slots } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    declareTurnTail(slots)
+    expect(slots.entries('conversation.chat.turnTail' as never)).toHaveLength(0)
+  })
+
+  it('registers the Turn definition and the tail entry once the host declares conversation.chat.turnTail', async () => {
+    const { ctx, slots, remote } = await bench()
+    const disposeDefinition = vi.fn()
+    const events = { register: vi.fn(() => disposeDefinition) }
+    ctx.provide('uiConversation', { events } as never)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(events.register).not.toHaveBeenCalled()
+    declareTurnTail(slots)
+    expect(events.register).toHaveBeenCalledTimes(1)
+    expect(events.register.mock.calls[0]![0]).toMatchObject({ kind: 'datasets-proposed' })
+    const entries = slots.entries('conversation.chat.turnTail' as never)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.options).toMatchObject({ id: '@khorsheed/dsh-datasets/review' })
+    // The tool row stays with the host's generic tool view.
+    expect(slots.entries('tool.call.toolview' as never)).toHaveLength(0)
+
+    const face = (entries[0]!.inject as unknown as (sessionId: string) => {
+      loadPending: (id: string) => Promise<boolean | null>
+      openReview: (id: string) => void
+    })('s1')
+    remote.proposals.mockResolvedValueOnce({ ok: true, value: [{ id: 'p1' }] })
+    await expect(face.loadPending('p1')).resolves.toBe(true)
+    expect(remote.proposals).toHaveBeenLastCalledWith('s1')
+    await expect(face.loadPending('p2')).resolves.toBe(false)
+    remote.proposals.mockResolvedValueOnce({ ok: false, error: { code: 'X', message: 'x' } })
+    await expect(face.loadPending('p1')).resolves.toBeNull()
+
+    // The card's request reaches the datasets view of the SAME session.
+    const view = (slots.entries('conversation.view').find(entry => entry.options.id === 'datasets')!.inject as unknown as (sessionId: string) => DatasetsViewInjected)('s1')
+    face.openReview('p1')
+    expect(view.reviewFocus!.take('s2' as never)).toBeNull()
+    expect(view.reviewFocus!.take('s1' as never)).toBe('p1')
+    expect(view.reviewFocus!.take('s1' as never)).toBeNull()
+
+    await fiber.dispose()
+    expect(disposeDefinition).toHaveBeenCalledTimes(1)
+    expect(slots.entries('conversation.chat.turnTail' as never)).toHaveLength(0)
   })
 })

@@ -23,11 +23,13 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button, Input, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
-  ProposalProblem, ProposalReview, RegistryEntry, ReviewChange, ReviewFiles, ReviewItem, ReviewOutput, ReviewSource,
+  Proposal, ProposalProblem, ProposalReview, RegistryEntry, ReviewChange, ReviewFiles, ReviewHead, ReviewItem, ReviewOutput,
+  ReviewSource,
 } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
 import { checkDatasetName } from './organize.ts'
+import { IconChevronLeftOutlineMedium } from './icons.tsx'
 import { Chip, shortCommit } from './parts.tsx'
 import css from './Organize.module.css'
 
@@ -38,6 +40,12 @@ export interface ReviewPageProps {
   /** Reload key: a change re-reads the review. */
   loadKey: string
   load: () => Promise<RemoteResult<ProposalReview | undefined | null>>
+  /**
+   * T96 · the first screen (page head + the four fact cards) without the
+   * comparison; absent for a held version, which has no stored proposal.
+   * It races the full review and is ignored once the review has landed.
+   */
+  loadHead?: (() => Promise<RemoteResult<ReviewHead>>) | null
   /** Null when the drill-ins have no proposal to read (a held version). */
   reviewItem: ((set: string, item: string) => Promise<RemoteResult<ReviewItem>>) | null
   reviewFiles: (() => Promise<RemoteResult<ReviewFiles>>) | null
@@ -260,13 +268,176 @@ function Findings(props: { problems: readonly ProposalProblem[]; warnings: reado
 }
 
 /**
+ * 「返回题集列表」: the host's back affordance (a quiet ghost button led by
+ * the chevron the host's own back buttons carry), the same on every state of
+ * the page.
+ */
+function BackButton(props: { onBack: () => void; t: T }) {
+  return (
+    <Button size="sm" variant="ghost" icon={<IconChevronLeftOutlineMedium size={16} />} onClick={props.onBack} data-review-back="">
+      {props.t('review.back')}
+    </Button>
+  )
+}
+
+/** A skeleton bar (decorative: the page's status line names the wait). */
+function Skel(props: { size: 'title' | 'number' | 'chip' | 'line' | 'short' | 'field' }) {
+  return <span className={css.skel} data-size={props.size} aria-hidden="true" />
+}
+
+/** What the four fact cards read: the full review's facts, or proposalHead's subset. */
+interface FactsView {
+  proposal: Proposal
+  update: boolean
+  itemCount: number
+  sets: readonly string[]
+  /** Absent while the commit was never checked: the card holds a placeholder. */
+  validate?: ProposalReview['facts']['validate'] | undefined
+  version: { number: number; date: string; commit: string }
+  registered?: { number: number } | undefined
+}
+
+/** The four fact cards (来源 / 题数 / 校验 / 版本). */
+function FactCards(props: { view: FactsView; t: T }) {
+  const { view, t } = props
+  const { proposal, validate } = view
+  const versionText = view.update && view.registered !== undefined
+    ? t('review.versionStep', { from: view.registered.number, to: view.version.number, date: day(view.version.date) })
+    : t('review.versionOne', { number: view.version.number, date: day(view.version.date) })
+  const validateText = validate === undefined
+    ? ''
+    : !validate.ok
+      ? t('review.validateFail', { count: validate.errors.length })
+      : validate.warnings > 0 ? t('review.validateWarn', { count: validate.warnings }) : t('review.validateOk')
+  return (
+    <dl className={css.facts}>
+      <div className={css.fact}>
+        <dt>{t('review.factSource')}</dt>
+        <dd>
+          <span>{proposal.source.label}</span>
+          <span className={css.muted}> · {t(`review.sourceKind.${proposal.source.kind}`)}</span>
+          {proposal.source.path !== undefined && <div className={css.factSub} title={proposal.source.path}>{proposal.source.path}</div>}
+          {proposal.source.license !== undefined && <div className={css.factSub}>{proposal.source.license}</div>}
+        </dd>
+      </div>
+      <div className={css.fact}>
+        <dt>{t('review.factItems')}</dt>
+        <dd>
+          <span className={css.factNumber}>{view.itemCount.toLocaleString()}</span>
+          <div className={css.factSub}>{t('review.sets', { count: view.sets.length, names: view.sets.join('、') })}</div>
+        </dd>
+      </div>
+      <div className={css.fact}>
+        <dt>{t('review.factValidate')}</dt>
+        <dd data-fact="validate">
+          {validate === undefined
+            ? <Skel size="chip" />
+            : <Chip tone={validate.ok ? (validate.warnings > 0 ? 'warn' : 'ok') : 'danger'}>{validateText}</Chip>}
+        </dd>
+      </div>
+      <div className={css.fact}>
+        <dt>{t('review.factVersion')}</dt>
+        <dd title={view.version.commit}>{versionText}</dd>
+      </div>
+    </dl>
+  )
+}
+
+/** Four fact cards in outline: the labels are known, the values are not yet. */
+function FactSkeleton(props: { t: T }) {
+  const { t } = props
+  const cards: Array<[string, 'line' | 'number' | 'chip']> = [
+    [t('review.factSource'), 'line'], [t('review.factItems'), 'number'], [t('review.factValidate'), 'chip'], [t('review.factVersion'), 'line'],
+  ]
+  return (
+    <dl className={css.facts}>
+      {cards.map(([label, size]) => (
+        <div key={label} className={css.fact}>
+          <dt>{label}</dt>
+          <dd><Skel size={size} /></dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/**
+ * The loading page: the same column as the loaded one — head, four fact cards
+ * (filled from proposalHead when it answered first), then bars where the
+ * comparison, the layer list and the name field will land.
+ */
+function ReviewSkeleton(props: { head: ReviewHead | null; onBack: () => void; t: T }) {
+  const { head, onBack, t } = props
+  const update = head?.mode === 'update'
+  return (
+    <div className={css.page} data-review-state="loading" aria-busy="true">
+      <div className={css.column}>
+        <div className={css.pageHead}>
+          <BackButton onBack={onBack} t={t} />
+          {head === null
+            ? <Skel size="title" />
+            : (
+              <h2 className={css.pageTitle}>
+                {update ? t('review.titleUpdate', { name: head.proposal.registryId }) : t('review.titleNew', { name: head.proposal.registryId })}
+              </h2>
+            )}
+          <span className={css.srOnly} role="status">{t('review.loading')}</span>
+        </div>
+        {head === null
+          ? <FactSkeleton t={t} />
+          : (
+            <FactCards
+              view={{
+                proposal: head.proposal, update, itemCount: head.itemCount, sets: head.sets,
+                validate: head.validate, version: head.version, registered: head.registered,
+              }}
+              t={t}
+            />
+          )}
+        <section className={css.section} data-skeleton="compare">
+          <div className={css.sectionHead}>
+            <h3 className={css.sectionTitle}>{update ? t('review.compareUpdate') : t('review.compareNew')}</h3>
+            <span className={css.chips}><Skel size="chip" /><Skel size="chip" /><Skel size="chip" /></span>
+          </div>
+          <div className={css.twoCol}>
+            {[update ? t('review.changes') : t('review.sources'), t('review.outputs')].map(label => (
+              <div key={label} className={css.colBox}>
+                <div className={css.colHead}>{label}</div>
+                <div className={css.skelRows}>
+                  <Skel size="line" /><Skel size="short" /><Skel size="line" /><Skel size="short" /><Skel size="line" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className={css.section} data-skeleton="layers">
+          <div className={css.sectionHead}>
+            <h3 className={css.sectionTitle}>{t('review.layersTitle')}</h3>
+          </div>
+          <div className={css.skelRows}>
+            <Skel size="line" /><Skel size="short" /><Skel size="line" />
+          </div>
+        </section>
+        <section className={css.section} data-skeleton="name">
+          <div className={css.formRow}>
+            <span className={css.formLabel}>{t('review.factName')}</span>
+            <Skel size="field" />
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+/**
  * The review page.
  * @param props - see {@link ReviewPageProps}.
  */
 export function ReviewPage(props: ReviewPageProps) {
-  const { loadKey, load, reviewItem, reviewFiles, confirm, sendBack, onBack, onDone, t } = props
+  const { loadKey, load, loadHead, reviewItem, reviewFiles, confirm, sendBack, onBack, onDone, t } = props
   const ids = useId()
   const [review, setReview] = useState<ProposalReview | null>(null)
+  const [head, setHead] = useState<ReviewHead | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [gone, setGone] = useState(false)
   const [name, setName] = useState('')
@@ -283,12 +454,19 @@ export function ReviewPage(props: ReviewPageProps) {
   // The loader is a fresh closure every render; `loadKey` alone says when to re-read.
   const loadRef = useRef(load)
   loadRef.current = load
+  const headRef = useRef(loadHead)
+  headRef.current = loadHead
 
   useEffect(() => {
     let cancelled = false
     setReview(null)
+    setHead(null)
     setLoadError(null)
     setGone(false)
+    // The head is a head start only: a failure leaves the skeleton to the full read.
+    void headRef.current?.().then((result) => {
+      if (!cancelled && result.ok) setHead(result.value)
+    }, () => {})
     void loadRef.current().then((result) => {
       if (cancelled) return
       if (!result.ok) {
@@ -310,28 +488,25 @@ export function ReviewPage(props: ReviewPageProps) {
 
   if (loadError !== null) {
     return (
-      <div className={css.page}>
-        <div className={css.pageHead}><Button size="sm" variant="ghost" onClick={onBack}>{t('review.back')}</Button></div>
-        <ErrorState what={t('review.error')} message={loadError} t={t} />
+      <div className={css.page} data-review-state="error">
+        <div className={css.column}>
+          <div className={css.pageHead}><BackButton onBack={onBack} t={t} /></div>
+          <ErrorState what={t('review.error')} message={loadError} t={t} />
+        </div>
       </div>
     )
   }
   if (gone) {
     // The held version was confirmed elsewhere (or the branch moved back): nothing waits.
     return (
-      <div className={css.page}>
-        <div className={css.pageHead}><Button size="sm" variant="ghost" onClick={onBack}>{t('review.back')}</Button></div>
+      <div className={css.page} data-review-state="gone">
+        <div className={css.column}>
+          <div className={css.pageHead}><BackButton onBack={onBack} t={t} /></div>
+        </div>
       </div>
     )
   }
-  if (review === null) {
-    return (
-      <div className={css.page}>
-        <div className={css.pageHead}><Button size="sm" variant="ghost" onClick={onBack}>{t('review.back')}</Button></div>
-        <div className={css.muted}>{t('review.loading')}</div>
-      </div>
-    )
-  }
+  if (review === null) return <ReviewSkeleton head={head} onBack={onBack} t={t} />
 
   const { proposal, facts, compare, problems, warnings, items } = review
   const update = compare.mode === 'update'
@@ -381,49 +556,23 @@ export function ReviewPage(props: ReviewPageProps) {
     })
   }
 
-  const versionText = update && facts.registered !== undefined
-    ? t('review.versionStep', { from: facts.registered.number, to: facts.version.number, date: day(facts.version.date) })
-    : t('review.versionOne', { number: facts.version.number, date: day(facts.version.date) })
-  const validateText = !facts.validate.ok
-    ? t('review.validateFail', { count: facts.validate.errors.length })
-    : facts.validate.warnings > 0 ? t('review.validateWarn', { count: facts.validate.warnings }) : t('review.validateOk')
-
   return (
-    <div className={css.page}>
+    <div className={css.page} data-review-state="loaded">
       <div className={css.column}>
         <div className={css.pageHead}>
-          <Button size="sm" variant="ghost" onClick={onBack}>{t('review.back')}</Button>
+          <BackButton onBack={onBack} t={t} />
           <h2 className={css.pageTitle}>
             {update ? t('review.titleUpdate', { name: proposal.registryId }) : t('review.titleNew', { name: proposal.registryId })}
           </h2>
         </div>
 
-        <dl className={css.facts}>
-          <div className={css.fact}>
-            <dt>{t('review.factSource')}</dt>
-            <dd>
-              <span>{proposal.source.label}</span>
-              <span className={css.muted}> · {t(`review.sourceKind.${proposal.source.kind}`)}</span>
-              {proposal.source.path !== undefined && <div className={css.factSub} title={proposal.source.path}>{proposal.source.path}</div>}
-              {proposal.source.license !== undefined && <div className={css.factSub}>{proposal.source.license}</div>}
-            </dd>
-          </div>
-          <div className={css.fact}>
-            <dt>{t('review.factItems')}</dt>
-            <dd>
-              <span className={css.factNumber}>{facts.itemCount.toLocaleString()}</span>
-              <div className={css.factSub}>{t('review.sets', { count: facts.sets.length, names: facts.sets.map(set => set.set).join('、') })}</div>
-            </dd>
-          </div>
-          <div className={css.fact}>
-            <dt>{t('review.factValidate')}</dt>
-            <dd><Chip tone={facts.validate.ok ? (facts.validate.warnings > 0 ? 'warn' : 'ok') : 'danger'}>{validateText}</Chip></dd>
-          </div>
-          <div className={css.fact}>
-            <dt>{t('review.factVersion')}</dt>
-            <dd title={facts.version.commit}>{versionText}</dd>
-          </div>
-        </dl>
+        <FactCards
+          view={{
+            proposal, update, itemCount: facts.itemCount, sets: facts.sets.map(set => set.set),
+            validate: facts.validate, version: facts.version, registered: facts.registered,
+          }}
+          t={t}
+        />
 
         {proposal.notes !== undefined && proposal.notes !== '' && (
           <div className={css.notes}>

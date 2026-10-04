@@ -67,6 +67,24 @@ export function cleanPickedPath(path: string): string {
 }
 
 /**
+ * A path cut for a middle ellipsis (T96): the head may shrink to `…`, the
+ * tail — the last `keep` segments, where the dataset's own name sits — always
+ * shows. Joined back, the two halves are the path unchanged.
+ * @param path - the full path.
+ * @param keep - how many trailing segments stay whole.
+ * @returns `[head, tail]`; the head is '' when the path is that short.
+ */
+export function splitPathTail(path: string, keep = 2): [string, string] {
+  const marks: number[] = []
+  for (let i = 0; i < path.length; i += 1) {
+    if ((path[i] === '/' || path[i] === '\\') && i < path.length - 1) marks.push(i)
+  }
+  if (marks.length < keep) return ['', path]
+  const cut = marks[marks.length - keep]! + 1
+  return cut <= 1 ? ['', path] : [path.slice(0, cut), path.slice(cut)]
+}
+
+/**
  * Where the new repository's parent is: the person's pick when there is one,
  * the datasets home otherwise.
  * @param home - the datasets home ('' when unknown).

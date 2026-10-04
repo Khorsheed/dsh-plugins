@@ -202,7 +202,9 @@ export type DatasetsKey =
   | 'add.optional'
   | 'add.git'
   | 'add.gitNeeded'
-  | 'add.repoAt'
+  | 'add.repo'
+  | 'add.repoHelp'
+  | 'add.repoHelpPicked'
   | 'add.repoNameSlot'
   | 'add.repoChange'
   | 'add.repoReset'
@@ -237,6 +239,23 @@ export type DatasetsKey =
   | 'banner.proposalUpdate'
   | 'banner.pending'
   | 'banner.review'
+  | 'card.kindNew'
+  | 'card.kindUpdate'
+  | 'card.check'
+  | 'card.checkOk'
+  | 'card.checkProblems'
+  | 'card.checkNote'
+  | 'card.running'
+  | 'card.failed'
+  | 'card.unreadable'
+  | 'card.filedNote'
+  | 'card.handled'
+  | 'card.handledNote'
+  | 'card.warnings'
+  | 'card.open'
+  | 'card.view'
+  | 'card.opened'
+  | 'card.openedManual'
   | 'banner.reviewUpdate'
   | 'review.back'
   | 'review.titleNew'
@@ -560,12 +579,14 @@ export const zh: Record<DatasetsKey, string> = {
   'add.purposePlaceholder': '例如：比较两个模型的数学推理',
   'add.required': '必填',
   'add.optional': '可选',
-  'add.git': '题集用 git 保存：每个版本都留着，任何版本都能找回，每次实验都能在它用的那个版本上原样重跑。你不需要会 git。',
-  'add.gitNeeded': '需要 git：机器上没有时，Agent 会先说明并征得你同意再安装。',
-  'add.repoAt': '新仓库放在 {path}',
+  'add.git': '题集用 git 保存：每个版本都留着，实验总能在它用过的版本上原样重跑。你不需要会 git。',
+  'add.gitNeeded': '机器上没有 git 时，Agent 会先征得你同意再安装。',
+  'add.repo': '新仓库位置',
+  'add.repoHelp': 'Agent 在这里新建题集仓库，默认放在题集目录下。',
+  'add.repoHelpPicked': '放在你选的目录下。',
   'add.repoNameSlot': '<题集名称>',
   'add.repoChange': '更改…',
-  'add.repoReset': '恢复默认位置',
+  'add.repoReset': '恢复默认',
   'add.browse': '选择目录…',
   'add.organize': '让 Agent 整理',
   'add.cancel': '取消',
@@ -597,6 +618,23 @@ export const zh: Record<DatasetsKey, string> = {
   'banner.proposalUpdate': 'Agent 改好了「{name}」，等你确认新版本',
   'banner.pending': '「{name}」有新版本，改到了选手能看到的内容，等你确认',
   'banner.review': '核对并登记',
+  'card.kindNew': '登记申请',
+  'card.kindUpdate': '更新申请',
+  'card.check': '登记自查',
+  'card.checkOk': '自查通过',
+  'card.checkProblems': '{count} 个问题',
+  'card.checkNote': '只是自查，没有提交申请。',
+  'card.running': '正在提交登记申请…',
+  'card.failed': '这次提交没有成功，Agent 会说明原因。',
+  'card.unreadable': '读不出这次调用的结果。',
+  'card.filedNote': '等你核对：对照原目录看拆分结果，选好哪些层给选手看，再确认登记。',
+  'card.handled': '已处理',
+  'card.handledNote': '这份申请已经登记、退回或被更新的申请替代。',
+  'card.warnings': '申请有 {count} 条提醒。',
+  'card.open': '核对并登记',
+  'card.view': '查看评审',
+  'card.opened': '已在「题集」页签打开评审',
+  'card.openedManual': '已在「题集」页签打开评审，切过去即可',
   'banner.reviewUpdate': '核对新版本',
   'review.back': '返回题集列表',
   'review.titleNew': '核对并登记「{name}」',
@@ -915,12 +953,14 @@ export const en: Record<DatasetsKey, string> = {
   'add.purposePlaceholder': 'e.g. compare two models on math reasoning',
   'add.required': 'required',
   'add.optional': 'optional',
-  'add.git': 'Datasets are kept in git: every version is kept and can be restored, and every experiment reruns exactly on the version it used. You do not need to know git.',
-  'add.gitNeeded': 'Needs git: if this machine has none, the Agent explains and asks before installing it.',
-  'add.repoAt': 'The new repository goes to {path}',
+  'add.git': 'Datasets are kept in git: every version stays, and an experiment always reruns exactly on the version it used. You do not need to know git.',
+  'add.gitNeeded': 'If this machine has no git, the Agent asks before installing it.',
+  'add.repo': 'New repository',
+  'add.repoHelp': 'The Agent creates the dataset repository here; by default under the datasets folder.',
+  'add.repoHelpPicked': 'Under the folder you chose.',
   'add.repoNameSlot': '<dataset name>',
   'add.repoChange': 'Change…',
-  'add.repoReset': 'Use the default location',
+  'add.repoReset': 'Use default',
   'add.browse': 'Choose a folder…',
   'add.organize': 'Let the Agent organize it',
   'add.cancel': 'Cancel',
@@ -952,6 +992,23 @@ export const en: Record<DatasetsKey, string> = {
   'banner.proposalUpdate': 'The Agent has changed 「{name}」; the new version is waiting for you to confirm',
   'banner.pending': '「{name}」 has a new version that changes what agents can see; it is waiting for you to confirm',
   'banner.review': 'Check and register',
+  'card.kindNew': 'Registration proposal',
+  'card.kindUpdate': 'Update proposal',
+  'card.check': 'Registration check',
+  'card.checkOk': 'Check passed',
+  'card.checkProblems': '{count} problem(s)',
+  'card.checkNote': 'A check only — nothing was filed.',
+  'card.running': 'Filing the proposal…',
+  'card.failed': 'This filing did not go through; the agent will say why.',
+  'card.unreadable': 'This call’s result could not be read.',
+  'card.filedNote': 'Waiting for you: compare it with the original directory, choose which layers agents see, then register.',
+  'card.handled': 'Handled',
+  'card.handledNote': 'This proposal was registered, returned, or replaced by a newer one.',
+  'card.warnings': 'The proposal has {count} warning(s).',
+  'card.open': 'Check and register',
+  'card.view': 'View the review',
+  'card.opened': 'The review is open on the Datasets tab',
+  'card.openedManual': 'The review is open on the Datasets tab — switch to it',
   'banner.reviewUpdate': 'Check the new version',
   'review.back': 'Back to datasets',
   'review.titleNew': 'Check and register 「{name}」',
