@@ -1,0 +1,28 @@
+# story-bible bundle patch: inserts the plugin rows into the composing
+# profile, so `dsh plugin --profile <name> add @khorsheed/dsh-story-bible`
+# reconciles it into the bundles layer. The first row is a bare mount — the
+# host half provides the `storyBible` service (work registry + per-work
+# memory/character/foreshadow/chapter store under $DSH_HOME/state/story) and
+# mounts its Remote face (namespace `story`). M1 ships NO browser half, so the
+# package.json declares no `dsh.client` block; the right-sidebar tabs land
+# with M3 against this same Remote face.
+#
+# NOTE: a composition must mount this row id exactly once. Official images
+# mount no story-bible row, so plugin-adding this package is the install path
+# there; a composition that already mounts the id by other means must NOT
+# also add it — a duplicate loader entry id fails boot.
+#
+# The second row mounts the `./agent` composition entry: the three story_*
+# tools (story_read / story_write / story_extract), the focus pointer
+# function section and the `story` skill, live for EVERY session — the
+# community default (the canvas ./agent precedent). To scope the tools to one
+# preset instead (writing mode only): disable this row in the profile's
+# cordis.patch.yml with `- id: story-bible-agent, disabled: true` and add a
+# row named `@khorsheed/dsh-story-bible/agent` to that preset's own
+# agent.cordis.yml. THE TWO MUST NEVER BE LIVE AT ONCE — the tools would
+# register twice under the same names.
+- insert:
+    - id: story-bible
+      name: "@khorsheed/dsh-story-bible"
+    - id: story-bible-agent
+      name: "@khorsheed/dsh-story-bible/agent"
