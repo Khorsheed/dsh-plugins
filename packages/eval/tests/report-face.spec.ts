@@ -14,7 +14,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EvalRemoteService } from '../src/remote.ts'
 import type { EvalReport } from '../src/report/report.ts'
@@ -25,11 +24,6 @@ import { cleanupTmp, tmpTree, writeJson, attemptDirsOf } from './helpers.ts'
 afterEach(cleanupTmp)
 
 const RUN = 'run-20260914-aa'
-
-/** A live agent as far as these verbs care: a session id. */
-function agentOf(): Agent {
-  return { session: { id: 's1', header: {} } } as unknown as Agent
-}
 
 /**
  * The smallest thing `analyzeBundle` accepts: a run.json with eval's meta and
@@ -99,7 +93,7 @@ describe('the report verb finds the run\'s bundle', () => {
     const repo = tmpTree()
     const { fiber, remote } = await bench({ snapshot: { repo, commit: 'c0ffee', datasetId: 'ds' } })
 
-    const view = await remote.report(agentOf(), { runId: RUN })
+    const view = await remote.report({ runId: RUN })
 
     expect(view.bundleDir).toBeNull()
     // The state a person can act on: not an error, not an empty page.
@@ -118,7 +112,7 @@ describe('the report verb finds the run\'s bundle', () => {
     writeBundle(exports, RUN)
     const { fiber, remote } = await bench({ planPath: plan, snapshot: { repo, commit: 'c0ffee', datasetId: 'ds' } })
 
-    const view = await remote.report(agentOf(), { runId: RUN })
+    const view = await remote.report({ runId: RUN })
 
     expect(view.bundleDir).toBe(join(exports, `${RUN}-bundle`))
     expect(view.runId).toBe(RUN)
@@ -140,7 +134,7 @@ describe('the report verb finds the run\'s bundle', () => {
     writeBundle(typed, RUN)
     const { fiber, remote } = await bench({ planPath: plan, snapshot: { repo, commit: 'c0ffee', datasetId: 'ds' } })
 
-    const view = await remote.report(agentOf(), { runId: RUN, outDir: typed })
+    const view = await remote.report({ runId: RUN, outDir: typed })
 
     // The dialog takes a free-text path; a bundle written there would read as
     // 未导出 if the plan's own directory came first.
@@ -151,7 +145,7 @@ describe('the report verb finds the run\'s bundle', () => {
   it('a run whose meta names neither a plan nor a repository says so instead of guessing a path', async () => {
     const { fiber, remote } = await bench({})
 
-    const view = await remote.report(agentOf(), { runId: RUN })
+    const view = await remote.report({ runId: RUN })
 
     expect(view.searched).toEqual([])
     expect(view.refusal).toContain('no export directory to look in')
@@ -160,7 +154,7 @@ describe('the report verb finds the run\'s bundle', () => {
 
   it('an unknown run is a refusal, not an empty report', async () => {
     const { fiber, remote } = await bench({})
-    await expect(remote.report(agentOf(), { runId: 'run-nobody' })).rejects.toThrow(/cannot read run run-nobody/)
+    await expect(remote.report({ runId: 'run-nobody' })).rejects.toThrow(/cannot read run run-nobody/)
     await fiber.dispose()
   })
 })
@@ -415,7 +409,7 @@ describe('the units verb (T57)', () => {
       ]),
     })
 
-    const view = await remote.runUnits(agentOf(), { runId: RUN })
+    const view = await remote.runUnits({ runId: RUN })
 
     expect(view.available).toBe(true)
     expect(view.units).toEqual([
@@ -427,7 +421,7 @@ describe('the units verb (T57)', () => {
 
   it('answers UNKNOWN rather than zero when the composition mounts no lab', async () => {
     const { fiber, remote } = await bench({})
-    const view = await remote.runUnits(agentOf(), { runId: RUN })
+    const view = await remote.runUnits({ runId: RUN })
     // The distinction the page depends on: a confident 0 from a composition
     // that never looked is how a held container stays invisible.
     expect(view.available).toBe(false)
@@ -440,7 +434,7 @@ describe('the units verb (T57)', () => {
     const { fiber, remote } = await bench({}, {
       lab: { status: () => Promise.reject(new Error('docker daemon is not running')), release: async () => {} },
     })
-    const view = await remote.runUnits(agentOf(), { runId: RUN })
+    const view = await remote.runUnits({ runId: RUN })
     expect(view.available).toBe(false)
     expect(view.refusal).toContain('docker daemon is not running')
     await fiber.dispose()
@@ -477,7 +471,7 @@ describe('the finalize verb', () => {
       }
     })
 
-    const view = await remote.finalize(agentOf(), { runId: RUN })
+    const view = await remote.finalize({ runId: RUN, session: 's1' })
 
     expect(view).toMatchObject({ runId: RUN, released: 1, refused: 1, skipped: 1, skippedByState: { pending: 1 } })
     // The gate's own words, not a count: a refusal a reader cannot read is a

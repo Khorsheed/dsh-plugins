@@ -262,6 +262,10 @@ export type EvalKey =
   | 'organize.settled.pick'
   | 'new.organize'
   | 'new.handedOff'
+  | 'panel.sessionTitle'
+  | 'panel.agentSessionTitle'
+  | 'panel.runSessionTitle'
+  | 'panel.noSession'
   | 'organize.intro'
   | 'organize.settledHeading'
   | 'organize.settled.name'
@@ -1013,6 +1017,7 @@ export type EvalKey =
   | 'sendBack.suggest'
   | 'sendBack.target'
   | 'sendBack.target.here'
+  | 'sendBack.target.new'
   | 'sendBack.target.origin'
   | 'sendBack.never'
   | 'sendBack.cancel'
@@ -1335,6 +1340,10 @@ export const en: Record<EvalKey, string> = {
   'new.includePlaceholders': 'Include {count} placeholder item(s)',
   'new.organize': 'Let the agent organize',
   'new.handedOff': 'Put in the chat box — press send to start.',
+  'panel.sessionTitle': 'New experiment',
+  'panel.agentSessionTitle': 'Experiments · for the agent',
+  'panel.runSessionTitle': 'Run {name}',
+  'panel.noSession': 'Could not open a new session: {message}',
   'organize.intro': 'Help me set up a new comparison experiment.',
   'organize.settledHeading': 'Already decided:',
   'organize.settled.name': 'Name: {name}',
@@ -2206,6 +2215,7 @@ export const en: Record<EvalKey, string> = {
   'sendBack.suggest': 'Suggestions',
   'sendBack.target': 'Put it in',
   'sendBack.target.here': 'This session’s chat box',
+  'sendBack.target.new': 'A new session’s chat box',
   'sendBack.target.origin': 'The session that drafted it (switch there)',
   'sendBack.never': 'Nothing is sent — you send it yourself.',
   'sendBack.cancel': 'Cancel',
@@ -2521,6 +2531,10 @@ export const zh: Record<EvalKey, string> = {
   'new.includePlaceholders': '包含 {count} 道占位题',
   'new.organize': '让 Agent 组织',
   'new.handedOff': '已放进对话框，按发送开始',
+  'panel.sessionTitle': '新建实验',
+  'panel.agentSessionTitle': '实验室 · 交给 Agent',
+  'panel.runSessionTitle': '运行 {name}',
+  'panel.noSession': '没能新开会话：{message}',
   'organize.intro': '帮我组织一个新的对比实验。',
   'organize.settledHeading': '我已经定好的：',
   'organize.settled.name': '实验名称：{name}',
@@ -3389,6 +3403,7 @@ export const zh: Record<EvalKey, string> = {
   'sendBack.suggest': '建议',
   'sendBack.target': '放到',
   'sendBack.target.here': '这个会话的输入框',
+  'sendBack.target.new': '新会话的输入框',
   'sendBack.target.origin': '起草它的会话（切过去）',
   'sendBack.never': '不会自动发送，改好由你来发。',
   'sendBack.cancel': '取消',

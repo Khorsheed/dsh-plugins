@@ -37,6 +37,7 @@ import { createDatasetsViewStore } from './store.ts'
 import { ReviewTurnTail, type ReviewCardFace } from './ReviewCard.tsx'
 import { proposedTurnDefinition } from './review-turn.ts'
 import { createReviewFocus } from './review-card.ts'
+import { DatasetsPanel, DatasetsPanelIcon, PANEL_ID, PANEL_SESSION } from './global-panel.tsx'
 import type {
   DatasetExperimentRow, DatasetsRemote, DatasetsViewInjected, HostDescriptionSource, HostFacts, ItemRunsView,
 } from './contract.ts'
@@ -153,13 +154,15 @@ function hostDescriptionSourceOf(
  * The two eval verbs the 题集 tab reads, structurally — never imported.
  * A plugin may not import a sibling package (the independence check), and the
  * tab must work on an instance that carries no orchestrator at all, so the
- * namespace is duck-typed and probed at CALL time.
+ * namespace is duck-typed and probed at CALL time. Both are session-less
+ * since T97 (eval's own global panel needs them without a session too): the
+ * call carries the request alone, and the gateway checks that arity.
  */
 interface EvalProjectionRemote {
-  runsForItem?: (sessionId: SessionId, request: { datasetId: string; itemId: string }) => Promise<
+  runsForItem?: (request: { datasetId: string; itemId: string }) => Promise<
     { ok: true; value: { runs: ItemRunsView['runs']; notes: string[] } } | { ok: false }
   >
-  runs?: (sessionId: SessionId, request: Record<string, never>) => Promise<
+  runs?: (request: { session?: string }) => Promise<
     {
       ok: true
       value: {
@@ -189,6 +192,36 @@ interface EvalProjectionRemote {
  */
 function evalRemoteOf(ctx: Context): EvalProjectionRemote | undefined {
   return ctx.get('remote.dshEval') as EvalProjectionRemote | undefined
+}
+
+/**
+ * The workspace a session-less 「新会话」 lands in — ui-workspace's own
+ * `recentWorkspace` rule mirrored (it is not exported): the workspace whose
+ * newest session moved last, an empty one by its creation time, ties by the
+ * host's order.
+ * @param items - the workspace list's rows.
+ * @param byId - the session list's rows.
+ * @returns the workspace id, or undefined when there is none.
+ */
+export function recentWorkspaceOf(
+  items: ReadonlyArray<{ workspaceId: string; sessionIds: readonly string[]; createdAt?: string }>,
+  byId: Readonly<Record<string, { updatedAt?: number } | undefined>>,
+): string | undefined {
+  let selected: string | undefined
+  let selectedTime = Number.NEGATIVE_INFINITY
+  for (const item of items) {
+    let latest = Number.NEGATIVE_INFINITY
+    for (const sessionId of item.sessionIds) {
+      const updated = byId[sessionId]?.updatedAt
+      if (typeof updated === 'number') latest = Math.max(latest, updated)
+    }
+    if (latest === Number.NEGATIVE_INFINITY) latest = item.createdAt === undefined ? Number.NEGATIVE_INFINITY : Date.parse(item.createdAt)
+    if (selected === undefined || latest > selectedTime) {
+      selected = item.workspaceId
+      selectedTime = latest
+    }
+  }
+  return selected
 }
 
 /** The host doors the 「题集整理」 hand-off walks through, each probed (0.2.0 shapes; an absence degrades). */
@@ -255,9 +288,13 @@ function organizingDoors(ctx: Context): {
   const workspaceOf = (sid: SessionId): string | undefined => {
     try {
       const list = (ctx.workspaces as unknown as {
-        list?: { getSnapshot(): { items: Array<{ workspaceId: string; sessionIds: readonly string[] }> } }
+        list?: { getSnapshot(): { items: Array<{ workspaceId: string; sessionIds: readonly string[]; createdAt?: string }> } }
       }).list
-      return list?.getSnapshot().items.find(item => item.sessionIds.includes(sid))?.workspaceId
+      const items = list?.getSnapshot().items ?? []
+      const own = sid === '' ? undefined : items.find(item => item.sessionIds.includes(sid))?.workspaceId
+      // The global panel has no session (T97): the new session lands where the
+      // host's own 「新会话」 would put it — the most recently active workspace.
+      return own ?? recentWorkspaceOf(items, ctx.sessions.list.getSnapshot().byId as Record<string, { updatedAt?: number }>)
     } catch {
       return undefined
     }
@@ -336,6 +373,82 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // T96 · the 「核对并登记」 card's requests, carried to each session's 题集 tab.
   const reviewFocus = createReviewFocus()
 
+  // One face for the session tab and the global panel (T97): the datasets
+  // Remote takes no session, so every read and write is the same call from
+  // either; the session id the view passes along only reaches the doors that
+  // open or draft into a session.
+  const face: DatasetsViewInjected = {
+    fetchRegistry: (_sid: SessionId) => remote.registry(),
+    previewRepo: (_sid: SessionId, path: string, trackedRef?: string) =>
+      remote.previewRepo(trackedRef === undefined ? { path } : { path, trackedRef }),
+    register: (_sid: SessionId, input: RegisterInput) => remote.register(input),
+    updateRegistration: (_sid: SessionId, input: UpdateInput) => remote.updateRegistration(input),
+    unregister: (_sid: SessionId, id: string) => remote.unregister({ id }),
+    importBindings: (_sid: SessionId) => remote.importBindings(),
+    listDatasets: (_sid: SessionId, repo: string, dataset?: string) =>
+      remote.list(dataset === undefined ? { repo } : { repo, dataset }),
+    readFile: (_sid: SessionId, repo: string, query: ReadQuery) => remote.read({ ...query, repo }),
+    readPassthroughFile: (_sid: SessionId, repo: string, query: ReadPassthroughRequest) =>
+      remote.readPassthrough({ ...query, repo }),
+    overview: (_sid: SessionId, repo: string) => remote.overview({ repo }),
+    itemBrief: (_sid: SessionId, repo: string, dataset: string, item: string) =>
+      remote.itemBrief({ repo, dataset, item }),
+    validateDataset: (_sid: SessionId, repo: string, dataset: string) => remote.validate({ repo, dataset }),
+    organizingSetup: (_sid: SessionId) => remote.organizingSetup(),
+    proposals: (_sid: SessionId) => remote.proposals(),
+    proposalReview: (_sid: SessionId, id: string) => remote.proposalReview({ id }),
+    proposalHead: (_sid: SessionId, id: string) => remote.proposalHead({ id }),
+    reviewFocus: { take: reviewFocus.take, subscribe: reviewFocus.subscribe },
+    reviewItem: (_sid: SessionId, id: string, set: string, item: string) => remote.reviewItem({ id, set, item }),
+    reviewFiles: (_sid: SessionId, id: string) => remote.reviewFiles({ id }),
+    confirmProposal: (_sid: SessionId, id: string, registryId: string, sets: Record<string, { layers: string[] }>) =>
+      remote.confirmProposal({ id, registryId, sets }),
+    returnProposal: (_sid: SessionId, id: string, note: string) => remote.returnProposal({ id, note }),
+    pendingReview: (_sid: SessionId, repo: string) => remote.pendingReview({ repo }),
+    confirmPending: (_sid: SessionId, repo: string, commit: string, sets: Record<string, { layers: string[] }>) =>
+      remote.confirmPending({ repo, commit, sets }),
+    startOrganizing: (sid: SessionId, title: string, text: string, preset: string) =>
+      organizing.start(sid, title, text, preset),
+    draftInSession: (target: string, text: string) => organizing.draftIn(target as SessionId, text),
+    itemRuns: async (_sid: SessionId, dataset: string, item: string): Promise<ItemRunsView | null> => {
+      const projection = evalRemoteOf(ctx)
+      if (projection?.runsForItem === undefined) return null
+      const answer = await projection.runsForItem({ datasetId: dataset, itemId: item })
+      // An eval that is present but cannot answer is NOT the same as an
+      // absent one: the area stays, carrying eval's own reason.
+      return answer.ok ? { runs: answer.value.runs, notes: answer.value.notes } : { runs: [], notes: [] }
+    },
+    datasetExperiments: async (_sid: SessionId): Promise<DatasetExperimentRow[] | null> => {
+      const projection = evalRemoteOf(ctx)
+      if (projection?.runs === undefined) return null
+      const answer = await projection.runs({})
+      if (!answer.ok) return null
+      return answer.value.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        datasetId: row.snapshot.datasetId,
+        // Optional on the mirror: an older eval that lacks them degrades to
+        // «match by set, count unpinned» rather than to a crash.
+        experimentId: row.experimentId ?? null,
+        registry: row.snapshot.registry ?? null,
+        commit: row.snapshot.commit ?? null,
+      }))
+    },
+    isLoopback: connection.isLoopback,
+    hooks: { hostDescription },
+    // rc hosts hang the native picker on the workspaces service; 0.1.2
+    // moved it to uiWorkspace (ui-workspace) — probe both, resolve null
+    // (the picker-cancel value) when neither exists.
+    pickDirectory: () => {
+      const legacy = (ctx.workspaces as unknown as { pickDirectory?: () => Promise<string | null> }).pickDirectory
+      if (legacy !== undefined) return legacy.call(ctx.workspaces)
+      const getService = ctx.get.bind(ctx) as (name: string) => unknown
+      const uiWorkspace = getService('uiWorkspace') as { pickDirectory(): Promise<string | null> } | undefined
+      return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
+    },
+  }
+
   // The M3'④ self-hide criterion for the 题集 tab: the official preset
   // composition data, fail-open on every unreadable path. Hidden means NO
   // registration (the tab strip's buttons enumerate registrations), so the
@@ -349,77 +462,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       locale: NS,
       label: () => t('open'),
       store: createDatasetsViewStore,
-      inject: (_sessionId: SessionId): DatasetsViewInjected => ({
-        fetchRegistry: (sid: SessionId) => remote.registry(sid),
-        previewRepo: (sid: SessionId, path: string, trackedRef?: string) =>
-          remote.previewRepo(sid, trackedRef === undefined ? { path } : { path, trackedRef }),
-        register: (sid: SessionId, input: RegisterInput) => remote.register(sid, input),
-        updateRegistration: (sid: SessionId, input: UpdateInput) => remote.updateRegistration(sid, input),
-        unregister: (sid: SessionId, id: string) => remote.unregister(sid, { id }),
-        importBindings: (sid: SessionId) => remote.importBindings(sid),
-        listDatasets: (sid: SessionId, repo: string, dataset?: string) =>
-          remote.list(sid, dataset === undefined ? { repo } : { repo, dataset }),
-        readFile: (sid: SessionId, repo: string, query: ReadQuery) => remote.read(sid, { ...query, repo }),
-        readPassthroughFile: (sid: SessionId, repo: string, query: ReadPassthroughRequest) =>
-          remote.readPassthrough(sid, { ...query, repo }),
-        overview: (sid: SessionId, repo: string) => remote.overview(sid, { repo }),
-        itemBrief: (sid: SessionId, repo: string, dataset: string, item: string) =>
-          remote.itemBrief(sid, { repo, dataset, item }),
-        validateDataset: (sid: SessionId, repo: string, dataset: string) => remote.validate(sid, { repo, dataset }),
-        organizingSetup: (sid: SessionId) => remote.organizingSetup(sid),
-        proposals: (sid: SessionId) => remote.proposals(sid),
-        proposalReview: (sid: SessionId, id: string) => remote.proposalReview(sid, { id }),
-        proposalHead: (sid: SessionId, id: string) => remote.proposalHead(sid, { id }),
-        reviewFocus: { take: reviewFocus.take, subscribe: reviewFocus.subscribe },
-        reviewItem: (sid: SessionId, id: string, set: string, item: string) => remote.reviewItem(sid, { id, set, item }),
-        reviewFiles: (sid: SessionId, id: string) => remote.reviewFiles(sid, { id }),
-        confirmProposal: (sid: SessionId, id: string, registryId: string, sets: Record<string, { layers: string[] }>) =>
-          remote.confirmProposal(sid, { id, registryId, sets }),
-        returnProposal: (sid: SessionId, id: string, note: string) => remote.returnProposal(sid, { id, note }),
-        pendingReview: (sid: SessionId, repo: string) => remote.pendingReview(sid, { repo }),
-        confirmPending: (sid: SessionId, repo: string, commit: string, sets: Record<string, { layers: string[] }>) =>
-          remote.confirmPending(sid, { repo, commit, sets }),
-        startOrganizing: (sid: SessionId, title: string, text: string, preset: string) =>
-          organizing.start(sid, title, text, preset),
-        draftInSession: (target: string, text: string) => organizing.draftIn(target as SessionId, text),
-        itemRuns: async (sid: SessionId, dataset: string, item: string): Promise<ItemRunsView | null> => {
-          const face = evalRemoteOf(ctx)?.runsForItem
-          if (face === undefined) return null
-          const answer = await face(sid, { datasetId: dataset, itemId: item })
-          // An eval that is present but cannot answer is NOT the same as an
-          // absent one: the area stays, carrying eval's own reason.
-          return answer.ok ? { runs: answer.value.runs, notes: answer.value.notes } : { runs: [], notes: [] }
-        },
-        datasetExperiments: async (sid: SessionId): Promise<DatasetExperimentRow[] | null> => {
-          const face = evalRemoteOf(ctx)?.runs
-          if (face === undefined) return null
-          const answer = await face(sid, {})
-          if (!answer.ok) return null
-          return answer.value.rows.map(row => ({
-            id: row.id,
-            name: row.name,
-            status: row.status,
-            datasetId: row.snapshot.datasetId,
-            // Optional on the mirror: an older eval that lacks them degrades to
-            // «match by set, count unpinned» rather than to a crash.
-            experimentId: row.experimentId ?? null,
-            registry: row.snapshot.registry ?? null,
-            commit: row.snapshot.commit ?? null,
-          }))
-        },
-        isLoopback: connection.isLoopback,
-        hooks: { hostDescription },
-        // rc hosts hang the native picker on the workspaces service; 0.1.2
-        // moved it to uiWorkspace (ui-workspace) — probe both, resolve null
-        // (the picker-cancel value) when neither exists.
-        pickDirectory: () => {
-          const legacy = (ctx.workspaces as unknown as { pickDirectory?: () => Promise<string | null> }).pickDirectory
-          if (legacy !== undefined) return legacy.call(ctx.workspaces)
-          const getService = ctx.get.bind(ctx) as (name: string) => unknown
-          const uiWorkspace = getService('uiWorkspace') as { pickDirectory(): Promise<string | null> } | undefined
-          return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
-        },
-      }),
+      inject: (_sessionId: SessionId): DatasetsViewInjected => face,
     }, DatasetsView),
     () => chrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
   )
@@ -431,6 +474,55 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => chrome.subscribe(() => {
     datasetsToggle.sync()
   }), 'datasets: datasets tab visibility')
+
+  // T97 · the global 「题集」 panel: a left-sidebar entry and the central panel
+  // it selects, the host 0.2.0 global-panel pair. Both slots are declared by
+  // packages this one does not depend on (ui-layout's `main`, ui-sidebar's
+  // `sidebar.panellist`), so the two registrations go through the structural
+  // registry view below; a host without them never fires either inject — no
+  // entry, no error. NOT gated on a session's preset (docs/plugin-visibility.md):
+  // the registry is the deployment's, not a session's, so the install layer
+  // decides whether a profile shows it.
+  const slots = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (options: Record<string, unknown>, component: unknown) => () => void
+  }
+  slots.inject('main', () => slots.register({
+    name: 'main',
+    key: PANEL_ID,
+    locale: NS,
+    store: createDatasetsViewStore,
+    inject: (): DatasetsViewInjected => face,
+  }, DatasetsPanel))
+  slots.inject('sidebar.panellist', () => slots.register({
+    name: 'sidebar.panellist',
+    id: PANEL_ID,
+    order: 30,
+    locale: NS,
+    label: () => t('panel'),
+  }, DatasetsPanelIcon))
+
+  // The card's one action (T96, rerouted by T97): select the global 「题集」
+  // panel and leave the request there, so the review opens with no tab strip
+  // in the way. `ctx.layout` is probed per click (ui-layout is an optional
+  // peer) and `selectPanel` throws on a key nobody registered; either way the
+  // request falls back to this session's 题集 tab, and the card says to open it.
+  const openReviewFrom = (sessionId: SessionId, proposalId: string): boolean => {
+    const layout = (ctx.get.bind(ctx) as (name: string) => unknown)('layout') as {
+      selectPanel?: (panelId: string | null) => void
+    } | undefined
+    if (layout?.selectPanel !== undefined) {
+      reviewFocus.request(PANEL_SESSION, proposalId)
+      try {
+        layout.selectPanel(PANEL_ID)
+        return true
+      } catch {
+        reviewFocus.take(PANEL_SESSION)
+      }
+    }
+    reviewFocus.request(sessionId, proposalId)
+    return false
+  }
 
   // T96 · the 「核对并登记」 entry, in the organizing Turn's tail. A finished
   // Turn folds its tool calls into one collapsed group, so a card on the
@@ -444,10 +536,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // at runtime. Without them nothing registers and the proposal still waits
   // behind the tab's banner. Not gated on the preset: a Turn that filed a
   // proposal was granted the tool.
-  const slots = ctx.slots as unknown as {
-    inject: (key: string, callback: () => () => void) => () => void
-    register: (options: Record<string, unknown>, component: unknown) => () => void
-  }
   slots.inject('conversation.chat.turnTail', () => {
     const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
       events?: { register?: (definition: unknown) => () => void }
@@ -462,10 +550,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       locale: NS,
       inject: (sessionId: SessionId): ReviewCardFace => ({
         loadPending: async (proposalId: string) => {
-          const result = await remote.proposals(sessionId)
+          const result = await remote.proposals()
           return result.ok ? result.value.some(proposal => proposal.id === proposalId) : null
         },
-        openReview: (proposalId: string) => { reviewFocus.request(sessionId, proposalId) },
+        openReview: (proposalId: string) => openReviewFrom(sessionId, proposalId),
       }),
     }, ReviewTurnTail)
     return () => {

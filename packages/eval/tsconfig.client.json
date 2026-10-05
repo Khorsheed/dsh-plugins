@@ -45,6 +45,8 @@
     "src/client/preset-visibility.ts",
     "src/client/store.ts",
     "src/client/vocab.ts",
+    "src/client/new-session.ts",
+    "src/client/global-panel.tsx",
     "src/cell-states.ts",
     "src/contract/item-selection.ts",
     "src/css-modules.d.ts",

@@ -688,6 +688,20 @@ The new pure helpers (`compactCount`, `durationParts`, `agreementBand`) are
 pinned in `tests/vocab.spec.ts`, along with «every phrase they name exists in
 both dictionaries».
 
+## The global 「实验室」 panel (T97)
+
+Host 0.2.0's left sidebar has a column of global entries. This package adds 「实验室」 there. The sidebar icon goes through `sidebar.panellist` and the central panel goes through `main`; both use the id `eval-lab`, and the entry sits after 「题集」. The panel shows the Experiments tab's own view with no session behind it. The session tab is unchanged.
+
+- **Reads need no session**: since T97 the eval Remote takes a session only for `approve`.
+  - In the panel the list always shows 全部, since there is no 本会话 to choose.
+  - Person-written marks (retry, closure, archive, export, the human final) were recorded as `tab:<session>`; from the panel they are recorded as `panel:lab`.
+- **An action that needs a session opens a new evaluation-mode session**:
+  - «新建实验 · 让 Agent 组织» and «让 agent 处理» open the new session, switch to it, and write the request into its chat box without sending it.
+  - «批准并开始» makes the new session the run's parent, so its workspace becomes the run's cwd. The session is opened in the background and the panel stays in place.
+  - The new session lands in the most recently active workspace. Preset choice: the default preset is kept when it already names the `@khorsheed/dsh-eval/tool` row; otherwise the first preset that names it is selected.
+  - When no session can be opened, the first two actions fall back to the clipboard and the approval reports an error on the page instead of throwing.
+- **No per-session self-hide**: experiments belong to the deployment, not to a session (docs/plugin-visibility.md), so the install layer decides which profile shows the entry. A host without the two slots shows nothing and raises no error.
+
 ## Hash rules
 
 - **Condition hash**: sha256 hex (lowercase) of the canonical JSON (keys fully sorted, no whitespace); `notes` excluded.
@@ -708,6 +722,7 @@ Degraded / absent items (kept in sync with `dsh.compat` in package.json):
 - `human-final` is not written by this package: it arrives only from the judge bench or `dsh-mission annotate --ns human-final` (I5).
 - Against a dsh-mission predating T89: `run` needs mission's `attemptDataDir` verb (the run-data layout is decided by mission alone) and refuses naming the upgrade when it is missing — it never assembles the path a second way; the read side (answers, cell detail, judge bench) keeps working with the answer hash recorded as unknown, and single-cell artifact reads refuse. Export needs `exportPlanGated` / `exportRunGated` and refuses pointing at the dsh-mission CLI without them. Closure, archive and export marks fall back to the first cell when `annotateRun` is missing, exactly as before T89. `dsh-eval finalize` against an older CLI without `list --json` prints an upgrade hint.
 - A composition without `ctx.lab` runs the host path as before; only a plan with a `unit` segment is refused for lab's absence, and the refusal names it.
+- The global 「实验室」 panel (T97) uses host 0.2.0's `main` and `sidebar.panellist` slots, registers them through `slots.inject`, and does not self-hide by preset. A host without those slots shows nothing and raises no error. Every host door a new session uses is probed at call time: `sessions.create`, the `sessions.using` rename, `remote.agentPresets`, the `workspaces` list, `uiWorkspace.openSession`, and the chat box's `setDraft`. Without `create` no session is opened: the first two actions fall back to the clipboard and the approval reports 「没能新开会话」. A missing door of any other kind falls back to the host's default: the default preset, an untitled session, or the workspace the host picks. Since T97 every Remote method except `approve` takes no session parameter, so new and old halves cannot be paired. Both halves ship in the same package, so a normal install never produces that pairing.
 - Experiments and the condition library (T73) live under `$DSH_HOME/state/eval/`: an instance without `DSH_HOME` has no state root, so the experiment verbs refuse naming it and the list degrades to runs only (all legacy) — never a boot failure. Drafting and validation read the datasets registry face (`registration` / `registryShowFile` / the materialized view); without datasets they refuse naming it, while the legacy plan-path validate and the CLI dry-run work as before. eval no longer reads any datasets binding, and old binding files (`$DSH_HOME/state/datasets/bindings/<session>.json`) are never deleted automatically.
 
 ## Status

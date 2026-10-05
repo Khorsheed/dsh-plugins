@@ -83,7 +83,12 @@ export interface LabViewInjected {
    * can draft into, with the items and stage schemas each one holds.
    */
   fetchDraftOptions: (sessionId: SessionId, request: EvalDraftOptionsRequest) => Promise<RemoteResult<EvalDraftOptionsView>>
-  /** Approve a plan and start it (the one write that reaches `runStart`). */
+  /**
+   * Approve a plan and start it (the one write that reaches `runStart`). The
+   * approving session is the run's parent; from the global panel (`''`, T97)
+   * the face opens a new evaluation-mode session for that, without leaving
+   * the panel.
+   */
   approvePlan: (sessionId: SessionId, request: EvalApproveRequest) => Promise<RemoteResult<EvalApproveResult>>
   /**
    * A started run's job log from the top, verbatim. Session-less on purpose:
@@ -218,6 +223,15 @@ export interface LabViewInjected {
    * on every line, so an unreachable composer is simply left alone.
    */
   focusComposer?: (sessionId: SessionId) => void
+  /**
+   * The global 实验室 panel's hand-off (T97): it has no chat box of its own,
+   * so 「让 Agent 组织」 and 「让 agent 处理」 open a NEW evaluation-mode session
+   * titled `title`, navigate to it and write `text` into its chat box — never
+   * sent. Used only when the view has no session (`sessionId === ''`);
+   * resolves false when nothing landed, and the view falls back to the
+   * clipboard. Optional: a face without it leaves the panel on the clipboard.
+   */
+  startSession?: (title: string, text: string) => Promise<boolean>
   /**
    * The 打开实验 requests from the eval_plan_draft tool-row card (T76). The
    * view takes its session's pending request on mount and on every new one:

@@ -52,6 +52,8 @@ async function bench(options: {
   legacyCurrent?: boolean
   /** A whole session list, for the parent-chain cases; overrides `preset`. */
   rows?: Record<string, unknown>
+  /** Declare the host 0.2.0 global-panel slots (ui-layout's `main`, ui-sidebar's `sidebar.panellist`). */
+  globalPanels?: boolean
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -90,7 +92,15 @@ async function bench(options: {
   // The view ring as ui-conversation declares it in production.
   slots.register({
     name: 'root',
-    children: { 'conversation.view': { kind: 'list', scope: 'session' } },
+    children: {
+      'conversation.view': { kind: 'list', scope: 'session' },
+      ...(options.globalPanels === true
+        ? {
+            'main': { kind: 'keyed', scope: 'root' },
+            'sidebar.panellist': { kind: 'list', scope: 'root' },
+          }
+        : {}),
+    },
   } as never, () => null)
   return { ctx, slots, remote, remoteService }
 }
@@ -125,7 +135,7 @@ describe('eval client apply', () => {
     })('s1')
     remote.runs.mockResolvedValueOnce({ ok: true, value: { repo: null, datasets: [], notes: [], rows: [{ experimentId: 'x-20260924-0a0b', status: 'running' }] } } as never)
     await expect(face.loadStatus('x-20260924-0a0b')).resolves.toBe('running')
-    expect(remote.runs).toHaveBeenLastCalledWith('s1', {})
+    expect(remote.runs).toHaveBeenLastCalledWith({ session: 's1' })
     await expect(face.loadStatus('missing')).resolves.toBeNull()
 
     // 打开实验 reaches the lab view's face through the shared channel.
@@ -221,58 +231,59 @@ describe('eval client apply', () => {
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })
 
-  it('the injected face binds every session-scoped verb to the Remote namespace with the session id', async () => {
+  it('the injected face binds every verb to the session-less Remote; approve alone takes the session (T97)', async () => {
     const { ctx, slots, remote } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     const entry = slots.entries('conversation.view')[0]!
     const face = (entry.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
 
     await face.fetchExperiments('s1' as SessionId, {})
-    expect(remote.runs).toHaveBeenCalledWith('s1', {})
+    expect(remote.runs).toHaveBeenCalledWith({ session: 's1' })
 
     await face.fetchExperiment('s1' as SessionId, { runId: 'run-1' })
-    expect(remote.run).toHaveBeenCalledWith('s1', { runId: 'run-1' })
+    expect(remote.run).toHaveBeenCalledWith({ runId: 'run-1' })
 
     await face.fetchPlanReview('s1' as SessionId, { planPath: '/repo/plans/p.json' })
-    expect(remote.plan).toHaveBeenCalledWith('s1', { planPath: '/repo/plans/p.json' })
+    expect(remote.plan).toHaveBeenCalledWith({ planPath: '/repo/plans/p.json' })
 
     await face.fetchConditions('s1' as SessionId, {})
-    expect(remote.conditions).toHaveBeenCalledWith('s1', {})
+    expect(remote.conditions).toHaveBeenCalledWith({})
 
     await face.fetchConditionDiff('s1' as SessionId, { a: 'x', b: 'y' })
-    expect(remote.conditionDiff).toHaveBeenCalledWith('s1', { a: 'x', b: 'y' })
+    expect(remote.conditionDiff).toHaveBeenCalledWith({ a: 'x', b: 'y' })
 
     await face.approvePlan('s1' as SessionId, { planPath: '/repo/plans/p.json' })
     expect(remote.approve).toHaveBeenCalledWith('s1', { planPath: '/repo/plans/p.json' })
 
     await face.fetchMatrix('s1' as SessionId, { runId: 'run-1' })
-    expect(remote.matrix).toHaveBeenCalledWith('s1', { runId: 'run-1' })
+    expect(remote.matrix).toHaveBeenCalledWith({ runId: 'run-1' })
 
     await face.fetchCells('s1' as SessionId, { runId: 'run-1', bucket: 'active' })
-    expect(remote.cells).toHaveBeenCalledWith('s1', { runId: 'run-1', bucket: 'active' })
+    expect(remote.cells).toHaveBeenCalledWith({ runId: 'run-1', bucket: 'active' })
 
     await face.fetchCell('s1' as SessionId, { runId: 'run-1', missionId: 'c1' })
-    expect(remote.cell).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'c1' })
+    expect(remote.cell).toHaveBeenCalledWith({ runId: 'run-1', missionId: 'c1' })
 
     await face.retryCell('s1' as SessionId, { runId: 'run-1', missionId: 'c1', reason: 'the unit died', category: 'infrastructure' })
-    expect(remote.retry).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'c1', reason: 'the unit died', category: 'infrastructure' })
+    expect(remote.retry).toHaveBeenCalledWith({ runId: 'run-1', missionId: 'c1', reason: 'the unit died', category: 'infrastructure', session: 's1' })
 
     await face.releaseCheck('s1' as SessionId, { runId: 'run-1', missionId: 'c1' })
-    expect(remote.releaseCheck).toHaveBeenCalledWith('s1', { runId: 'run-1', missionId: 'c1' })
+    expect(remote.releaseCheck).toHaveBeenCalledWith({ runId: 'run-1', missionId: 'c1' })
 
     await face.planExport('s1' as SessionId, { runId: 'run-1', outDir: '/out' })
-    expect(remote.exportPlan).toHaveBeenCalledWith('s1', { runId: 'run-1', outDir: '/out' })
+    expect(remote.exportPlan).toHaveBeenCalledWith({ runId: 'run-1', outDir: '/out' })
 
     await face.exportRun('s1' as SessionId, { runId: 'run-1', outDir: '/out', confirmed: [] })
-    expect(remote.exportRun).toHaveBeenCalledWith('s1', { runId: 'run-1', outDir: '/out', confirmed: [] })
+    expect(remote.exportRun).toHaveBeenCalledWith({ runId: 'run-1', outDir: '/out', confirmed: [], session: 's1' })
   })
 
   // Every lab verb is checked for its FULL positional list above, not just for
   // its payload: the gateway's client proxy enforces exact arity, so a call
-  // that leaves a parameter off throws before it reaches the wire. T35b's
-  // eight all take exactly (sessionId, request) and have no optional tail —
-  // `runOutput` is the only verb that does, and the test below pins its 0.
-  it('every session-scoped verb takes exactly the session and one request object', async () => {
+  // that leaves a parameter off throws before it reaches the wire. Since T97
+  // the reads take exactly one request object (no session) and have no
+  // optional tail — `runOutput` is the only verb that does, and the test
+  // below pins its 0.
+  it('every session-less verb takes exactly one request object', async () => {
     const { ctx, slots, remote } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     const entry = slots.entries('conversation.view')[0]!
@@ -281,7 +292,7 @@ describe('eval client apply', () => {
     await face.fetchMatrix('s1' as SessionId, { runId: 'run-1' })
     await face.fetchCell('s1' as SessionId, { runId: 'run-1', missionId: 'c1' })
     for (const spy of [remote.matrix, remote.cell]) {
-      expect(spy.mock.calls.every(call => call.length === 2)).toBe(true)
+      expect(spy.mock.calls.every(call => call.length === 1)).toBe(true)
     }
   })
 
@@ -378,6 +389,128 @@ describe('eval client apply', () => {
         expect(entries).toHaveLength(1)
         expect(entries[0]!.options).toMatchObject({ key: '@khorsheed/dsh-eval:inspect' })
       }
+    })
+  })
+
+  // T97: the global 「实验室」 panel — a left-sidebar entry and the central
+  // panel it selects, with no session behind it.
+  describe('the global panel (T97)', () => {
+    const panelFace = (slots: SlotRegistry) =>
+      (slots.entries('main' as never)[0]!.inject as unknown as () => LabViewInjected)()
+
+    /** The host doors a new session goes through, stubbed. */
+    function doors(ctx: Context, options: { create?: () => Promise<string>; presets?: Array<{ id: string; isDefault?: boolean }> } = {}) {
+      const setDraft = vi.fn()
+      const rename = vi.fn(async () => {})
+      const sessions = ctx.get('sessions') as unknown as Record<string, unknown>
+      sessions.create = vi.fn(options.create ?? (async () => 'new1'))
+      sessions.using = vi.fn(async (_sid: unknown, _o: unknown, body: (ref: unknown) => Promise<unknown>) => body({ binding: { session: { rename } } }))
+      sessions.scope = vi.fn(() => ({ get: () => ({ input: { for: () => ({ state: { getSnapshot: () => ({ draft: '' }) }, setDraft }) } }) }))
+      const openSession = vi.fn()
+      ctx.provide('uiWorkspace', { openSession } as never)
+      ctx.provide('workspaces', { list: { getSnapshot: () => ({ items: [
+        { workspaceId: 'wA', sessionIds: ['a1'] },
+        { workspaceId: 'wB', sessionIds: ['s1'] },
+      ] }) } } as never)
+      const select = vi.fn(async () => ({ ok: true }))
+      if (options.presets !== undefined) {
+        ctx.provide('remote.agentPresets', { list: async () => ({ ok: true, value: { presets: options.presets } }), select } as never)
+      }
+      return { sessions, setDraft, rename, openSession, select }
+    }
+
+    it('registers the sidebar entry and the main panel under one id when the host declares both slots', async () => {
+      const { ctx, slots } = await bench({ globalPanels: true })
+      const fiber = ctx.plugin({ inject: [...inject], apply })
+      await fiber.await()
+      const icons = slots.entries('sidebar.panellist' as never)
+      expect(icons).toHaveLength(1)
+      expect(icons[0]!.options).toMatchObject({ id: 'eval-lab', order: 40 })
+      expect((icons[0]!.options as unknown as { label: () => string }).label()).toBeTypeOf('string')
+      const panels = slots.entries('main' as never)
+      expect(panels).toHaveLength(1)
+      expect(panels[0]!.options).toMatchObject({ key: 'eval-lab' })
+      await fiber.dispose()
+      expect(slots.entries('sidebar.panellist' as never)).toHaveLength(0)
+      expect(slots.entries('main' as never)).toHaveLength(0)
+    })
+
+    it('registers neither without the slots (an older host): no entry, no error', async () => {
+      const { ctx, slots } = await bench()
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      expect(slots.entries('conversation.view')).toHaveLength(1)
+      expect(slots.entries('sidebar.panellist' as never)).toHaveLength(0)
+      expect(slots.entries('main' as never)).toHaveLength(0)
+    })
+
+    it('stays registered in a session whose preset grants no eval tools (install layer decides)', async () => {
+      const { ctx, slots } = await bench({ globalPanels: true, preset: 'standard', composition: PRESETS })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      await settled()
+      expect(slots.entries('conversation.view')).toHaveLength(0)
+      expect(slots.entries('sidebar.panellist' as never)).toHaveLength(1)
+      expect(slots.entries('main' as never)).toHaveLength(1)
+    })
+
+    it('reads the whole deployment, and tags its writes as the panel\'s', async () => {
+      const { ctx, slots, remote } = await bench({ globalPanels: true })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      const face = panelFace(slots)
+      await face.fetchExperiments('' as SessionId, {})
+      expect(remote.runs).toHaveBeenCalledWith({})
+      await face.retryCell('' as SessionId, { runId: 'run-1', missionId: 'c1', reason: 'r', category: 'infrastructure' })
+      expect(remote.retry).toHaveBeenCalledWith({ runId: 'run-1', missionId: 'c1', reason: 'r', category: 'infrastructure' })
+    })
+
+    it('「新建实验 · 让 Agent 组织」 opens a new evaluation-mode session and drafts the request, unsent', async () => {
+      const { ctx, slots } = await bench({ globalPanels: true, composition: PRESETS, rows: { s1: { updatedAt: 20 }, a1: { updatedAt: 10 } } })
+      const d = doors(ctx, { presets: [{ id: 'standard', isDefault: true }, { id: 'eval' }] })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      await settled()
+      const landed = await panelFace(slots).startSession!('新建实验', 'please organize')
+      expect(landed).toBe(true)
+      expect(d.sessions.create).toHaveBeenCalledWith({ workspaceId: 'wB' })
+      // The default preset grants no eval tools, so the eval one is selected.
+      expect(d.select).toHaveBeenCalledWith('new1', 'eval')
+      expect(d.rename).toHaveBeenCalledWith('新建实验')
+      expect(d.openSession).toHaveBeenCalledWith('new1')
+      expect(d.setDraft).toHaveBeenCalledWith('please organize')
+    })
+
+    it('keeps a default preset that already grants the eval row', async () => {
+      const { ctx, slots } = await bench({ globalPanels: true, composition: PRESETS })
+      const d = doors(ctx, { presets: [{ id: 'eval', isDefault: true }, { id: 'standard' }] })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      await settled()
+      await panelFace(slots).startSession!('新建实验', 'x')
+      expect(d.select).not.toHaveBeenCalled()
+    })
+
+    it('answers false when no session can be made, so the view falls back to the clipboard', async () => {
+      const { ctx, slots } = await bench({ globalPanels: true })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      // The bench's sessions service has no `create`.
+      expect(await panelFace(slots).startSession!('新建实验', 'x')).toBe(false)
+    })
+
+    it('批准并开始 from the panel approves under a NEW session, without navigating to it', async () => {
+      const { ctx, slots, remote } = await bench({ globalPanels: true })
+      const d = doors(ctx)
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      await panelFace(slots).approvePlan('' as SessionId, { experimentId: 'x-1' })
+      expect(d.sessions.create).toHaveBeenCalledTimes(1)
+      expect(remote.approve).toHaveBeenCalledWith('new1', { experimentId: 'x-1' })
+      expect(d.openSession).not.toHaveBeenCalled()
+    })
+
+    it('批准并开始 from the panel answers an error, not a throw, when no session can be made', async () => {
+      const { ctx, slots, remote } = await bench({ globalPanels: true })
+      doors(ctx, { create: async () => { throw new Error('no workspace') } })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      const result = await panelFace(slots).approvePlan('' as SessionId, { experimentId: 'x-1' })
+      expect(result.ok).toBe(false)
+      expect(!result.ok && result.error.message).toMatch(/no workspace/)
+      expect(remote.approve).not.toHaveBeenCalled()
     })
   })
 })

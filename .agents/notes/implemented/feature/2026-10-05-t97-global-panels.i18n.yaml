@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-05-t97-global-panels.md
+.agents/notes/implemented/feature/2026-10-05-t97-global-panels.md: 705dadf9b46a85e254d24f259451f9167306a212
+.agents/notes/implemented/feature/2026-10-05-t97-global-panels.zh.md: 87717db3ccca4116184f8011f317d964be427d87

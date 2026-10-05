@@ -1445,7 +1445,7 @@ export class EvalService {
    * @param runId - the run.
    * @param ticket - the blind handle the queue issued for the cell.
    * @param verdicts - one entry per criterion being answered.
-   * @param sessionId - the calling session; recorded as `tab:<sessionId>`.
+   * @param sessionId - the calling session, recorded as `tab:<sessionId>`; null from the global panel (`panel:lab`).
    * @throws {@link EvalReadRefused} when mission is absent, the ticket names
    *   no cell, or a verdict fails `dataseek.verdict/1`.
    */
@@ -1455,7 +1455,7 @@ export class EvalService {
     runId: string,
     ticket: string,
     verdicts: readonly EvalJudgeVerdictInput[],
-    sessionId: string,
+    sessionId: string | null,
   ): Promise<EvalHumanFinalResult> {
     const mission = this.requireMissionRead('write a human-final verdict')
     const annotate = this.missionAnnotate()

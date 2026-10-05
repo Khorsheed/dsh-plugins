@@ -35,6 +35,7 @@ import type {} from '@khorsheed/dsh-eval/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import evalRemote from '@khorsheed/dsh-eval/remote'
+import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   EvalApproveRequest, EvalArchiveRunRequest, EvalCellArtifactRequest, EvalCloseRunRequest, EvalCellRequest, EvalCellRetryRequest, EvalCellsRequest, EvalConditionDiffRequest,
   EvalConditionEndpointRequest, EvalConditionProvisionRequest,
@@ -50,12 +51,37 @@ import { createLabFocus } from './draft-card.ts'
 import { inspectReadsOf } from './InspectPane.tsx'
 import { INSPECT_KIND, INSPECT_TAB_ID, type InspectTarget } from './inspect-target.ts'
 import { LabView } from './LabView.tsx'
+import { LabPanel, LabPanelIcon, PANEL_ID, PANEL_SESSION } from './global-panel.tsx'
+import { createEvalSessionDoors } from './new-session.ts'
 import { en, NS, zh } from './locales.ts'
 import { EvalPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { createLabViewStore } from './store.ts'
 import { createInspectTitles, SidebarInspect, SidebarInspectTitle } from './SidebarInspect.tsx'
 
 export { LabView }
+
+/**
+ * A failure answered in the browser, shaped like the Remote's own error
+ * branch. The client bundle may not import typert's `RemoteError` class (the
+ * bundle-purity gate), and the error is discriminated by `code`, never by
+ * instanceof — so the structural copy is the same value to every reader.
+ * @param message - what the view shows.
+ * @returns the failure.
+ */
+function localFailure(message: string): RemoteFailure {
+  return Object.assign(new Error(message), { code: 'gateway/internal', details: {}, isDSHRemoteError: true }) as unknown as RemoteFailure
+}
+
+/**
+ * A tag-writing request with the clicking tab's session attached; the global
+ * panel attaches none, and the service records `panel:lab` (T97).
+ * @param sid - the view's session, or the panel's empty sentinel.
+ * @param request - the verb's request.
+ * @returns the request, tagged.
+ */
+function withCaller<R extends object>(sid: SessionId, request: R): R & { session?: string } {
+  return sid === PANEL_SESSION ? request : { ...request, session: sid }
+}
 
 /**
  * The on-screen session across host lines: 0.1.6-alpha.2 dropped
@@ -128,6 +154,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // The 打开实验 channel between the tool-row card and the lab tab (T76): the
   // host offers no tab switch, so the card asks and the lab view takes.
   const focus = createLabFocus()
+  const chrome = new EvalPresetVisibility(ctx)
 
   // 查看 (T86): opened in the host's right sidebar while this package's tab
   // type is registered there, otherwise answered false so the lab draws its
@@ -137,53 +164,62 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // One face for the lab tab and the sidebar pane: the same reads, the same
   // opener. The object is built once; the slot hands the same one to every session.
   const injected: LabViewInjected = {
-    fetchExperiments: (sid: SessionId, request: EvalExperimentsRequest) => remote.runs(sid, request),
-    fetchExperiment: (sid: SessionId, request: EvalExperimentRequest) => remote.run(sid, request),
-    fetchPlanReview: (sid: SessionId, request: EvalPlanRequest) => remote.plan(sid, request),
-    fetchConditions: (sid: SessionId, request: EvalConditionsRequest) => remote.conditions(sid, request),
-    fetchConditionDiff: (sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(sid, request),
-    provisionCondition: (sid: SessionId, request: EvalConditionProvisionRequest) => remote.provisionCondition(sid, request),
-    setConditionEndpoint: (sid: SessionId, request: EvalConditionEndpointRequest) => remote.setConditionEndpoint(sid, request),
-    setPlanNumbers: (sid: SessionId, request: EvalPlanNumbersRequest) => remote.setPlanNumbers(sid, request),
+    fetchExperiments: (sid: SessionId, request: EvalExperimentsRequest) => remote.runs(sid === PANEL_SESSION ? request : { ...request, session: sid }),
+    fetchExperiment: (_sid: SessionId, request: EvalExperimentRequest) => remote.run(request),
+    fetchPlanReview: (_sid: SessionId, request: EvalPlanRequest) => remote.plan(request),
+    fetchConditions: (_sid: SessionId, request: EvalConditionsRequest) => remote.conditions(request),
+    fetchConditionDiff: (_sid: SessionId, request: EvalConditionDiffRequest) => remote.conditionDiff(request),
+    provisionCondition: (_sid: SessionId, request: EvalConditionProvisionRequest) => remote.provisionCondition(request),
+    setConditionEndpoint: (_sid: SessionId, request: EvalConditionEndpointRequest) => remote.setConditionEndpoint(request),
+    setPlanNumbers: (_sid: SessionId, request: EvalPlanNumbersRequest) => remote.setPlanNumbers(request),
     // ui-spec step 2. The same service verb `eval_plan_draft` reaches —
     // a draft a person fills in and a draft an agent makes in one
     // sentence are the same file in the same list.
-    fetchDraftOptions: (sid: SessionId, request: EvalDraftOptionsRequest) => remote.draftOptions(sid, request),
-    approvePlan: (sid: SessionId, request: EvalApproveRequest) => remote.approve(sid, request),
+    fetchDraftOptions: (_sid: SessionId, request: EvalDraftOptionsRequest) => remote.draftOptions(request),
+    // The one verb that still takes a session: the approving session is the
+    // run's parent and its workspace the run's cwd. The global panel has
+    // none, so it opens a new evaluation-mode session (without leaving the
+    // panel) and approves under that (T97).
+    approvePlan: async (sid: SessionId, request: EvalApproveRequest) => {
+      if (sid !== PANEL_SESSION) return remote.approve(sid, request)
+      const made = await doors.create(t('panel.runSessionTitle', { name: request.experimentId }))
+      if (!made.ok) return { ok: false as const, error: localFailure(t('panel.noSession', { message: made.message })) }
+      return remote.approve(made.sessionId, request)
+    },
     // The cursor is passed EXPLICITLY even though the verb defaults it:
     // the gateway's client proxy enforces exact positional arity, so a
     // call that leaves an optional parameter off throws
     // "expected 2 argument(s), got 1" before it reaches the wire.
     fetchRunOutput: (jobId: string) => remote.runOutput(jobId, 0),
-    fetchMatrix: (sid: SessionId, request: EvalMatrixRequest) => remote.matrix(sid, request),
-    fetchCells: (sid: SessionId, request: EvalCellsRequest) => remote.cells(sid, request),
-    fetchCell: (sid: SessionId, request: EvalCellRequest) => remote.cell(sid, request),
+    fetchMatrix: (_sid: SessionId, request: EvalMatrixRequest) => remote.matrix(request),
+    fetchCells: (_sid: SessionId, request: EvalCellsRequest) => remote.cells(request),
+    fetchCell: (_sid: SessionId, request: EvalCellRequest) => remote.cell(request),
     // The attachment a reader clicks: the bytes were always reachable
     // (the judge bench reads the same directory), only the door was missing.
-    fetchCellArtifact: (sid: SessionId, request: EvalCellArtifactRequest) => remote.cellArtifact(sid, request),
+    fetchCellArtifact: (_sid: SessionId, request: EvalCellArtifactRequest) => remote.cellArtifact(request),
     // The analysis drafts an agent wrote into the experiment (T73).
-    fetchExperimentArtifact: (sid: SessionId, request: EvalExperimentArtifactRequest) => remote.experimentArtifact(sid, request),
+    fetchExperimentArtifact: (_sid: SessionId, request: EvalExperimentArtifactRequest) => remote.experimentArtifact(request),
     // T84: the design page's item drawer and the judge's prompt.
-    fetchItemMaterials: (sid: SessionId, request: EvalItemMaterialsRequest) => remote.itemMaterials(sid, request),
-    fetchDatasetFile: (sid: SessionId, request: EvalDatasetFileRequest) => remote.datasetFile(sid, request),
-    fetchJudgePromptPreview: (sid: SessionId, request: EvalJudgePromptPreviewRequest) => remote.judgePromptPreview(sid, request),
-    fetchJudgePrompt: (sid: SessionId, request: EvalJudgePromptRequest) => remote.judgePrompt(sid, request),
-    retryCell: (sid: SessionId, request: EvalCellRetryRequest) => remote.retry(sid, request),
-    releaseCheck: (sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(sid, request),
-    planExport: (sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(sid, request),
-    exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(sid, request),
+    fetchItemMaterials: (_sid: SessionId, request: EvalItemMaterialsRequest) => remote.itemMaterials(request),
+    fetchDatasetFile: (_sid: SessionId, request: EvalDatasetFileRequest) => remote.datasetFile(request),
+    fetchJudgePromptPreview: (_sid: SessionId, request: EvalJudgePromptPreviewRequest) => remote.judgePromptPreview(request),
+    fetchJudgePrompt: (_sid: SessionId, request: EvalJudgePromptRequest) => remote.judgePrompt(request),
+    retryCell: (sid: SessionId, request: EvalCellRetryRequest) => remote.retry(withCaller(sid, request)),
+    releaseCheck: (_sid: SessionId, request: EvalCellRequest) => remote.releaseCheck(request),
+    planExport: (_sid: SessionId, request: EvalExportPlanRequest) => remote.exportPlan(request),
+    exportRun: (sid: SessionId, request: EvalExportRunRequest) => remote.exportRun(withCaller(sid, request)),
     // The repeat of a recorded export — the answer to "the final verdicts
     // are not in the bundle" being a command line nobody mentioned.
-    reexportRun: (sid: SessionId, request: EvalReexportRequest) => remote.reexport(sid, request),
-    fetchReport: (sid: SessionId, request: EvalReportRequest) => remote.report(sid, request),
-    finalizeRun: (sid: SessionId, request: EvalFinalizeRequest) => remote.finalize(sid, request),
-    fetchRunUnits: (sid: SessionId, request: EvalRunUnitsRequest) => remote.runUnits(sid, request),
-    fetchJudgeQueue: (sid: SessionId, request: EvalJudgeQueueRequest) => remote.judgeQueue(sid, request),
-    fetchCellAnswers: (sid: SessionId, request: EvalCellAnswersRequest) => remote.cellAnswers(sid, request),
+    reexportRun: (sid: SessionId, request: EvalReexportRequest) => remote.reexport(withCaller(sid, request)),
+    fetchReport: (_sid: SessionId, request: EvalReportRequest) => remote.report(request),
+    finalizeRun: (sid: SessionId, request: EvalFinalizeRequest) => remote.finalize(withCaller(sid, request)),
+    fetchRunUnits: (_sid: SessionId, request: EvalRunUnitsRequest) => remote.runUnits(request),
+    fetchJudgeQueue: (_sid: SessionId, request: EvalJudgeQueueRequest) => remote.judgeQueue(request),
+    fetchCellAnswers: (_sid: SessionId, request: EvalCellAnswersRequest) => remote.cellAnswers(request),
     // The one write with no model-facing twin anywhere in this family
     // (ui-spec R1): the final verdict is a person's, and the toolset has
     // no path to the verb on the other side of this line.
-    submitHumanFinal: (sid: SessionId, request: EvalHumanFinalRequest) => remote.humanFinal(sid, request),
+    submitHumanFinal: (sid: SessionId, request: EvalHumanFinalRequest) => remote.humanFinal(withCaller(sid, request)),
     // The host's own session controller: the drawer OPENS the player's (or
     // a judge's) child session so a person can read the transcript; the
     // member composer and dock there are local-agent's, not this tab's.
@@ -249,8 +285,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     // T72's four exits and the archive flag: run-level annotations a
     // person writes, through eval's own verbs.
-    closeRun: (sid: SessionId, request: EvalCloseRunRequest) => remote.closeRun(sid, request),
-    archiveRun: (sid: SessionId, request: EvalArchiveRunRequest) => remote.archiveRun(sid, request),
+    closeRun: (sid: SessionId, request: EvalCloseRunRequest) => remote.closeRun(withCaller(sid, request)),
+    archiveRun: (sid: SessionId, request: EvalArchiveRunRequest) => remote.archiveRun(withCaller(sid, request)),
     // 「让 agent 处理」: the quote plugin's backfill path — the session's
     // conversation input, draft merged, NEVER sent. Every absence answers
     // false so the button can fall back to the clipboard.
@@ -287,9 +323,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }
     },
     openInspect: (_sid: SessionId, target: InspectTarget) => inspectHost.open?.(target) ?? false,
+    // The global panel's two hand-offs (T97): a new evaluation-mode session
+    // with the text in its chat box, never sent.
+    startSession: (title: string, text: string) => doors.startWith(title, text),
   }
+  const doors = createEvalSessionDoors(ctx, {
+    grants: presetId => chrome.grants(presetId),
+    insertDraft: (sid, text) => injected.insertDraft(sid, text),
+    focusComposer: sid => { injected.focusComposer?.(sid) },
+  })
 
-  const chrome = new EvalPresetVisibility(ctx)
   const labToggle = new RegistrationToggle(
     () => ctx.slots.register({
       name: 'conversation.view',
@@ -319,13 +362,35 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (key: string, callback: () => () => void) => () => void
     register: (options: Record<string, unknown>, component: unknown) => () => void
   }
+  // The global 「实验室」 panel (T97): a left-sidebar entry and the central
+  // panel it selects, the host 0.2.0 global-panel pair. Both slots are
+  // declared by packages this one does not depend on (ui-layout's `main`,
+  // ui-sidebar's `sidebar.panellist`); a host without them never fires either
+  // inject — no entry, no error. NOT gated on a session's preset
+  // (docs/plugin-visibility.md): the experiments are the deployment's, so the
+  // install layer decides whether a profile shows the entry.
+  slots.inject('main', () => slots.register({
+    name: 'main',
+    key: PANEL_ID,
+    locale: NS,
+    store: createLabViewStore,
+    inject: (): LabViewInjected => injected,
+  }, LabPanel))
+  slots.inject('sidebar.panellist', () => slots.register({
+    name: 'sidebar.panellist',
+    id: PANEL_ID,
+    order: 40,
+    locale: NS,
+    label: () => t('open'),
+  }, LabPanelIcon))
+
   slots.inject('tool.call.toolview', () => slots.register({
     name: 'tool.call.toolview',
     key: 'eval_plan_draft',
     locale: NS,
     inject: (sessionId: SessionId): DraftCardFace => ({
       loadStatus: async (experimentId: string) => {
-        const result = await remote.runs(sessionId, {})
+        const result = await remote.runs({ session: sessionId })
         if (!result.ok) return null
         return result.value.rows.find(row => row.experimentId === experimentId)?.status ?? null
       },

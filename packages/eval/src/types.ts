@@ -165,15 +165,26 @@ export interface EvalArchiveWrite {
   archive: EvalArchiveMark | null
 }
 
+/**
+ * The caller of a lab write that records who clicked (T97). The lab TAB names
+ * its session, recorded as `tab:<session>`; the global 实验室 panel has no
+ * session, omits it, and is recorded as `panel:lab`. Neither is a `tool:`
+ * origin — that prefix stays the model's, which no lab write can be.
+ */
+export interface EvalCaller {
+  /** The clicking tab's session; absent from the session-less global panel. */
+  session?: string
+}
+
 /** `closeRun`'s request: which exit, and the reason (required for `flagged` / `void`). */
-export interface EvalCloseRunRequest {
+export interface EvalCloseRunRequest extends EvalCaller {
   runId: string
   exit: EvalClosureExit
   reason?: string | null
 }
 
 /** `archiveRun`'s request. */
-export interface EvalArchiveRunRequest {
+export interface EvalArchiveRunRequest extends EvalCaller {
   runId: string
   archived: boolean
 }
@@ -318,8 +329,14 @@ export interface EvalExperimentsResult {
   session: string | null
 }
 
-/** The lab list takes no arguments: it lists every experiment of the deployment. */
-export type EvalExperimentsRequest = Record<string, never>
+/**
+ * The lab list lists every experiment of the deployment. `session` (T97) is the
+ * tab's own session, echoed back so rows can say which ones it drafted; the
+ * global panel omits it.
+ */
+export interface EvalExperimentsRequest {
+  session?: string
+}
 
 /** Which experiment the detail verb answers about. */
 export interface EvalExperimentRequest {
@@ -869,6 +886,12 @@ export interface EvalDraftUnitRequest {
  * same request because they reach the same service verb.
  */
 export interface EvalDraftRequest {
+  /**
+   * The drafting session, recorded as the experiment's origin — the lab tab's
+   * own (T97: the Remote no longer reads it from the caller). The tool path
+   * passes its session separately and leaves this out.
+   */
+  originSession?: string
   /** The experiment name — the plan's `name` and the experiment id's slug. */
   name: string
   /** `<registration id>/<set>` — the registered dataset set to draft against. */
@@ -1305,7 +1328,7 @@ export interface EvalCellRequest {
 }
 
 /** `retry` — a fresh attempt, and the auditable reason it demands. */
-export interface EvalCellRetryRequest extends EvalCellRequest {
+export interface EvalCellRetryRequest extends EvalCellRequest, EvalCaller {
   reason: string
   /** mission's own vocabulary: infrastructure / operator / outcome. */
   category: string
@@ -1333,7 +1356,7 @@ export interface EvalExportPlanRequest {
 }
 
 /** The export dialog's confirm step. */
-export interface EvalExportRunRequest extends EvalExportPlanRequest {
+export interface EvalExportRunRequest extends EvalExportPlanRequest, EvalCaller {
   /** The guarded layers the human ticked — re-checked against a FRESH plan by mission. */
   confirmed: string[]
 }
@@ -1374,7 +1397,7 @@ export interface EvalExportResultView {
 }
 
 /** Which run to export again, after the final verdicts (I5·T39 · G17). */
-export interface EvalReexportRequest {
+export interface EvalReexportRequest extends EvalCaller {
   runId: string
 }
 
@@ -1763,7 +1786,7 @@ export interface EvalExperimentArtifactView {
 }
 
 /** Which run to walk through the release gate. */
-export interface EvalFinalizeRequest {
+export interface EvalFinalizeRequest extends EvalCaller {
   runId: string
 }
 
@@ -2072,7 +2095,7 @@ export interface EvalJudgeVerdictInput {
 }
 
 /** Submit one cell's human-final verdicts. */
-export interface EvalHumanFinalRequest {
+export interface EvalHumanFinalRequest extends EvalCaller {
   runId: string
   /** The blind handle the queue issued; never a mission id. */
   ticket: string

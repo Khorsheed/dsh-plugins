@@ -1,7 +1,7 @@
 /**
  * T96 · the 「核对并登记」 card for one `datasets_propose_registration` call, as data:
- * what one call says about the proposal it filed (or the check it ran), the
- * channel the card's one action goes through, and the tab switch it tries.
+ * what one call says about the proposal it filed (or the check it ran) and
+ * the channel the card's one action goes through.
  *
  * The card reads the call's OWN block — the arguments the agent sent and the
  * result the tool answered — so a card for a call made days ago still names
@@ -85,13 +85,15 @@ export function proposeCardOf(block: ProposeToolBlock | null | undefined): Propo
 }
 
 /**
- * The card's action, carried to the 题集 tab of the same session.
+ * The card's action, carried to a datasets view.
  *
- * The host gives a plugin no call that switches the conversation's tab (the
- * `dsh.conversation` store's `openView` reaches the frame and the tab header
- * only). So the card leaves a request here, and the datasets view — mounted
- * now, or the next time it mounts — TAKES it and opens that proposal's
- * review directly, skipping the list and its banner.
+ * The card leaves a request here keyed by the view it is for — the global
+ * 「题集」 panel's session-less key once the card has selected that panel
+ * (T97), or the card's own session when the host has no such panel — and the
+ * datasets view, mounted now or the next time it mounts, TAKES it and opens
+ * that proposal's review directly, skipping the list and its banner. (T96
+ * clicked the conversation's tab strip to get there, a DOM anchor; the global
+ * panel retired it.)
  */
 export interface ReviewFocus {
   request: (sessionId: SessionId, proposalId: string) => void
@@ -119,36 +121,5 @@ export function createReviewFocus(): ReviewFocus {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
-  }
-}
-
-/**
- * Click the conversation's tab labelled `label`, from an element inside that
- * conversation — a DOM anchor (AGENTS.md: last resort, with a fallback): the
- * nearest ancestor that holds the host's `[data-conversation-tabs]` strip,
- * then the `role="tab"` button whose text is the label. The caller checks
- * the tab's `aria-selected` a moment later and says so in words when the
- * switch did not happen, so a host that renames the anchor costs a click,
- * never a crash.
- * @param from - an element rendered inside the conversation (the card).
- * @param label - the tab's visible label (the 题集 tab's own `t('open')`).
- * @returns the tab clicked (or already selected), or null when there is none.
- */
-export function switchToTab(from: Element | null, label: string): HTMLElement | null {
-  try {
-    let node: Element | null = from
-    while (node !== null) {
-      const strip = node.querySelector('[data-conversation-tabs]')
-      if (strip !== null) {
-        const tab = [...strip.querySelectorAll('[role="tab"]')].find(button => button.textContent?.trim() === label)
-        if (!(tab instanceof HTMLElement)) return null
-        if (tab.getAttribute('aria-selected') !== 'true') tab.click()
-        return tab
-      }
-      node = node.parentElement
-    }
-    return null
-  } catch {
-    return null
   }
 }

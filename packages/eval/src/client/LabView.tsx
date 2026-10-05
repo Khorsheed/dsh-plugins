@@ -79,7 +79,7 @@ export function LabView(props: LabViewProps) {
     fetchDraftOptions,
     fetchMatrix, fetchCells, fetchCell, fetchCellArtifact, retryCell, releaseCheck, planExport, exportRun, reexportRun, openSession,
     fetchReport, finalizeRun, fetchRunUnits, fetchJudgeQueue, fetchCellAnswers, submitHumanFinal, fetchExperimentArtifact,
-    closeRun, archiveRun, insertDraft, focusComposer, focus,
+    closeRun, archiveRun, insertDraft, focusComposer, focus, startSession,
     fetchItemMaterials, fetchDatasetFile, fetchJudgePromptPreview, fetchJudgePrompt, openInspect: openInHost,
   } = props
   const list = useStore(s => s.list)
@@ -163,7 +163,11 @@ export function LabView(props: LabViewProps) {
   const [keepUnits, setKeepUnits] = useState(false)
   // 本会话发起 / 全部 (T72 §1). A per-viewer convenience, so browser storage
   // is the right home — read once, and every access is guarded (journey.ts).
-  const [scope, setScopeState] = useState<ListScope>(() => readListScope())
+  const [savedScope, setScopeState] = useState<ListScope>(() => readListScope())
+  // The global panel (T97) has no session, so it has no 本会话: always 全部,
+  // with neither the switch nor the 另有 N 个 note.
+  const panel = sessionId === ''
+  const scope: ListScope = panel ? 'all' : savedScope
   const setScope = (next: ListScope): void => {
     setScopeState(next)
     writeListScope(next)
@@ -571,6 +575,15 @@ export function LabView(props: LabViewProps) {
    * @param text - the sentence.
    */
   function handToAgent(text: string): void {
+    if (panel && startSession !== undefined) {
+      // The global panel (T97): a new evaluation-mode session takes it.
+      void startSession(t('panel.agentSessionTitle'), text).then(async (landed) => {
+        if (landed) return
+        const ok = await writeClipboard(text)
+        actions.setNotice(t(ok ? 'agent.copied' : 'agent.copyFailed', { text }))
+      })
+      return
+    }
     if (insertDraft(sessionId, text)) {
       actions.setNotice(t('agent.inserted'))
       return
@@ -589,6 +602,17 @@ export function LabView(props: LabViewProps) {
    */
   function organize(request: string): void {
     setNewOpen(false)
+    if (panel && startSession !== undefined) {
+      // 新建实验 from the global panel (T97): a NEW evaluation-mode session,
+      // the request drafted in its chat box and the caret there — the panel
+      // gives way to it, so its own notice is only for the fallback.
+      void startSession(t('panel.sessionTitle'), request).then(async (landed) => {
+        if (landed) return
+        const ok = await writeClipboard(request)
+        setListNotice(t(ok ? 'agent.copied' : 'agent.copyFailed', { text: request }))
+      })
+      return
+    }
     if (insertDraft(sessionId, request)) {
       focusComposer?.(sessionId)
       setListNotice(t('new.handedOff'))
@@ -607,6 +631,17 @@ export function LabView(props: LabViewProps) {
    * @param target - the composer the reviewer picked.
    */
   function submitSendBack(text: string, target: 'here' | 'origin'): void {
+    if (panel && target === 'here' && startSession !== undefined) {
+      // The global panel (T97) has no 这个会话: 「新会话的输入框」 opens one.
+      void startSession(t('panel.agentSessionTitle'), text).then(async (landed) => {
+        if (landed) return
+        const ok = await writeClipboard(text)
+        actions.setNotice(ok ? t('sendBack.copied') : t('agent.copyFailed', { text }))
+      })
+      setSendBackOpen(false)
+      actions.sendBack({ planSha: review?.planSha ?? null, ok: review?.ok ?? false })
+      return
+    }
     const origin = openRow?.originSession ?? null
     const chainTarget = target === 'origin' && origin !== null
       ? { kind: 'origin' as const, sessionId, origin }
@@ -1093,7 +1128,7 @@ export function LabView(props: LabViewProps) {
           ? (
             <>
               <span className={css.title} data-level="list">{t('list.title')}</span>
-              {rows.length > 0 && (
+              {rows.length > 0 && !panel && (
                 <Seg2
                   label={t('list.scope')}
                   value={scope}

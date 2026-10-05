@@ -26,7 +26,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { cellTicket, judgeQueueView, resolveTicket, writeHumanFinal } from '../src/judge/judge-bench.ts'
 import { humanCriteria, llmDraftCriteria, rubricCriteria } from '../src/judge/judge.ts'
 import { EvalRemoteService } from '../src/remote.ts'
@@ -172,10 +171,6 @@ function writeArchive(dataDir: string, missionId: string): void {
   mkdirSync(workspace, { recursive: true })
   writeFileSync(join(workspace, 'stage1.md'), '# 方案\n\n我是 Codex，用 gpt-5.6-sol 跑的。\n')
   writeFileSync(join(workspace, 'stage2.md'), '# 报告\n\n本轮由 dsh 编排，模型 deepseek-v4。\n')
-}
-
-function agentOf(id = 's1'): Agent {
-  return { session: { id, header: {} } } as unknown as Agent
 }
 
 describe('the rubric parser is one parser', () => {
@@ -479,16 +474,24 @@ describe('the Remote verbs', () => {
     const remote = Object.create(EvalRemoteService.prototype) as EvalRemoteService
     Object.defineProperty(remote, 'service', { get: () => service })
 
-    const view = await remote.judgeQueue(agentOf(), { runId: RUN })
+    const view = await remote.judgeQueue({ runId: RUN })
     expect(view.cells).toHaveLength(2)
     expect(view.judgeCount).toBe(2)
 
     const ticket = view.cells[0]?.ticket as string
-    const written = await remote.humanFinal(agentOf('s-remote'), {
-      runId: RUN, ticket, verdicts: [{ criterion: 'H1', pass: true, evidence: '真的读得懂' }],
+    const written = await remote.humanFinal({
+      runId: RUN, ticket, verdicts: [{ criterion: 'H1', pass: true, evidence: '真的读得懂' }], session: 's-remote',
     })
     expect(written.by).toBe('tab:s-remote')
     expect(written.missionId).toBe(CELL_A)
+
+    // The global 实验室 panel has no session behind it (T97): the verdict is
+    // still a person's, tagged as the panel's.
+    const other = view.cells[1]?.ticket as string
+    const fromPanel = await remote.humanFinal({
+      runId: RUN, ticket: other, verdicts: [{ criterion: 'H1', pass: false, evidence: '看不懂' }],
+    })
+    expect(fromPanel.by).toBe('panel:lab')
   })
 
   it('refuses both verbs, by name, when no mission service is mounted', async () => {
