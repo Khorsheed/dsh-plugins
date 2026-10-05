@@ -15,7 +15,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
 
   | File | Contents |
   |---|---|
-  | `annotations.json` | The cards' display refs and engine notes: tension, current state, confidence, the auto-import mark |
+  | `annotations.json` | The cards' display refs and engine notes: tension, current state, confidence |
   | `experiences.jsonl` | The character experience journal, keyed by character card id |
   | `mentions.jsonl` | The foreshadow mention journal, keyed by foreshadow card id |
   | `chapters.json` | The chapter index and plans |
@@ -25,7 +25,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
 - **Model tools**, registered by the `./agent` composition entry and origin-tagged:
   - `novel_bind`: lists the long-novel works and binds the calling session to one by title; it sits on the grant scope, so unbound sessions have it too;
   - `novel_read`: the brief in three variants, cards, card, chapters, ledger, pending, chapter;
-  - `novel_write`: card proposes a ghost card or edits a card by ref, chapter numbers automatically, review accepts, discards, archives or retracts;
+  - `novel_write`: card lands a new card or edits a card by ref, chapter numbers automatically, review handles pending items (accept, discard), archives cards and retracts experiences;
   - `novel_extract`: prepare builds the material pack, import files the result through five validation gates.
 - **The `novel:pointer` function section** (order 9500): renders one line when the session is bound to a long-novel canvas, and an empty string otherwise, so small talk costs nothing.
 - **The `novel` skill**: an on-demand operating manual that carries no work content.
@@ -38,7 +38,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   - Unbinding, or changing the canvas's genre, revokes them at once.
   - In an unbound session those three tools are absent, not denied.
 - **The cards are the single source of truth**:
-  - Every setting the model creates is a **ghost card** (the canvas's proposed status). It stays out of the brief until the user accepts it with ✓; ✗ discards it into the archive.
+  - Every setting the model creates **lands live**: it enters the brief and the ledger at once and can be named by ref. New cards carry a 「新」 (New) mark on the canvas that clears when opened or archived; a board strip reads "AGENT added N cards" with a one-click "Mark all seen". Fix a wrong card in place, or archive it with ✗.
   - Cards are never deleted; an archived card stays on the canvas, hidden.
   - An edit merges fields into the card in place instead of starting a new one; a character or world name holds only one card, and a new card reusing it is refused.
 - **Refs**:
@@ -51,8 +51,8 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   - All five reconciliation gates live in plugin code:
     1. an evidence search of the manuscript, against fabrication;
     2. the foreshadow whitelist;
-    3. new settings, foreshadows and characters always land as ghost cards;
-    4. high confidence imports automatically and can be retracted, while medium and low confidence go to the pending queue;
+    3. new settings, foreshadows and characters land live, marked 「新」;
+    4. high confidence imports directly (experiences can be retracted), while medium and low confidence go to the pending queue;
     5. missed plans go to the pending queue on their own.
   - Delegating the grading to the host's native subagent is the main agent's job; the plugin itself never delegates.
 - **Briefs have token budgets**: about 2k for write, about 2.5k for plan, and extract scales with the manuscript. No variant injects every previous chapter or every foreshadow.
@@ -87,7 +87,7 @@ Enabling the root row by hand (removing `disabled: true`) makes it apply to ever
 ## Quick start
 
 1. Create a canvas with the 长篇小说 genre and mount a workspace on it. Talk about the work in a writing session and the model binds it with `novel_bind`; you can also bind by hand with the canvas chip in the session header.
-2. Talk through the settings. The model files them as ghost cards, and you accept them with ✓ or discard them with ✗ on the canvas.
+2. Talk through the settings. The model files them as live cards marked 「新」 on the canvas; glance over them, fix or archive (✗) the wrong ones, then "Mark all seen".
 3. Plan. `novel_write(what=chapter, plan=…)` registers the plan; once confirmed, start writing.
    - The manuscript lands in the canvas workspace through the session's fence.
    - If it cannot land, the registration is refused, so an empty-slot chapter never appears.

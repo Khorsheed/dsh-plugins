@@ -49,7 +49,7 @@ export interface NovelGenreDefinition {
 /** A card field value (the canvas `FieldValue` shape). */
 export type NovelFieldValue = string | number | string[]
 
-/** The card statuses: proposed is the ghost, kept is on the board, archived is hidden. */
+/** The card statuses: proposed awaits the user's ✓ (canvas-native proposals only), kept is on the board, archived is hidden. */
 export type NovelCardStatus = 'proposed' | 'kept' | 'archived'
 
 /** Where a card came from (the canvas `BoardCardSource` shape). */
@@ -106,13 +106,6 @@ export interface CanvasBoardSlice {
     { readonly ok: true; readonly canvasId: string | null } | { readonly ok: false; readonly error: string }
   >
   registerGenre(definition: NovelGenreDefinition): () => void
-  putCard(request: {
-    readonly canvasId: string
-    readonly kind: string
-    readonly text: string
-    readonly source?: NovelCardSource
-    readonly fields?: Readonly<Record<string, NovelFieldValue>>
-  }, session: FenceSession): Promise<NovelBoardMutation>
   proposeCard(request: {
     readonly canvasId: string
     readonly kind: string
@@ -120,6 +113,8 @@ export interface CanvasBoardSlice {
     readonly source?: NovelCardSource
     readonly comment?: string
     readonly fields?: Readonly<Record<string, NovelFieldValue>>
+    /** Kept at once and marked 「新」 on the board, instead of a proposal awaiting ✓. */
+    readonly live?: boolean
   }, session: FenceSession): Promise<NovelBoardMutation>
   patchCard(request: {
     readonly canvasId: string

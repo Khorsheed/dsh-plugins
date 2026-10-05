@@ -16,7 +16,7 @@ The user handed a few written chapters to the model on the temp instance and hit
   - When `writeCard` creates a character or world card and a non-archived card with the same name exists (ghosts included), it answers `duplicate` with that card's ref; the tool text tells the model to edit that card.
   - The import does the same: a world setting with a taken name is dropped as `duplicate`, and so is a repeat within one payload. A character already on the canvas is not new, and its experiences still reach it by name.
 - **New characters in the same payload keep their experiences**: the import lands cards first, then files `experiences` / `current_states`, resolving new characters' card ids by name.
-- **The report carries refs**: each `proposedCards` item has a `ref`, so the model fills a card in by ref.
+- **The report carries refs**: each `newCards` item (named `proposedCards` at the time) has a `ref`, so the model fills a card in by ref.
 - **World cards are now name + kind + setting**:
   - `name` is required and serves as the card title; `kind` is a select (地点 / 势力 / 道具 / 规则 / 历史 / 其他); `rule` holds the detail. The genre moves to `novel@2`.
   - The extract schema gains `name` / `world_kind`; without a name, the first clause of the content is used (16 characters at most).

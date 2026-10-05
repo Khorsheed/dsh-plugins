@@ -1,7 +1,7 @@
 /**
  * The three novel tools against the seeded store: the binding resolution
  * (guidance without a bound novel canvas, never a throw), the no-workspace
- * refusal, the ghost-card write, the review verb, and the extract two-phase with the
+ * refusal, the live card write, the review verb, and the extract two-phase with the
  * review gate held.
  */
 import { Context } from '@deepseek-ai/cordis'
@@ -87,14 +87,15 @@ describe('the novel tools', () => {
     expect(await call(write, { what: 'chapter', chapter: 1, title: '第一章', content: '没地方放。' })).toContain('还没有挂工作区')
   })
 
-  it('novel_write(card) lands a ghost card that stays out of the brief until accepted', async () => {
+  it('novel_write(card) lands a live card, in the ledger at once; ✗ is archive, the only card review', async () => {
     const { canvas, write, read } = await bench({ bound: true })
     const answer = await call(write, { what: 'card', role: '伏笔', fields: { question: '梦主可能是赵启明的妹妹？', bogus: 1 } })
-    expect(answer).toContain('已落幽灵卡 [#19]（伏笔·待用户采纳）')
+    expect(answer).toContain('已落卡 [#19]（伏笔·已进 brief，画布上标「新」）')
     expect(answer).toContain('忽略了不认识的字段：bogus')
-    const brief = await call(read, { what: 'brief', for: 'write' })
-    expect(brief).not.toContain('梦主可能是')
-    expect(await call(write, { what: 'review', target: 'card', id: '#19', action: 'accept' })).toContain('已采纳')
+    expect(await call(read, { what: 'ledger' })).toContain('[#19] 梦主可能是')
+    expect(await call(write, { what: 'review', target: 'card', id: '#19', action: 'accept' })).toContain('只能 archive')
+    expect(await call(write, { what: 'review', target: 'card', id: '#19', action: 'archive' })).toContain('已归档：#19')
+    expect(await call(read, { what: 'ledger' })).not.toContain('梦主可能是')
     // An edit by ref merges into the card in place.
     expect(await call(write, { what: 'card', role: '人物', id: 'c1', fields: { voice: '说话更短了' } })).toContain('已更新 [c1]')
     expect(canvas.card(DREAM.workId, CARD.zhao)?.fields?.voice).toBe('说话更短了')

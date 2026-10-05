@@ -1030,6 +1030,12 @@ export interface BoardCard {
   x?: number
   y?: number
   readonly createdBy: 'user' | 'agent'
+  /**
+   * An agent card that landed live (a genre's agent writes skip the ghost
+   * stage) and that the user has not looked at yet — the board's 「新」 mark.
+   * Opening the card, archiving it or 「全部标为已看」 clears it.
+   */
+  unseen?: true
   readonly createdAt: string
   updatedAt: string
 }
@@ -1161,6 +1167,7 @@ function normalizeCard(raw: unknown, now: string): BoardCard | undefined {
   if (Object.keys(drawings).length > 0) card.drawings = drawings
   const fields = normalizeFieldValues(record['fields'])
   if (Object.keys(fields).length > 0) card.fields = fields
+  if (record['unseen'] === true && status !== 'archived') card.unseen = true
   const x = layoutNumber(record['x'])
   const y = layoutNumber(record['y'])
   if (x !== undefined && y !== undefined) {
@@ -1713,6 +1720,18 @@ export interface BoardProposeCardRequest {
   readonly comment?: string
   /** Field values, already checked against the definition by the tool. */
   readonly fields?: Readonly<Record<string, FieldValue>>
+  /**
+   * Land the card live instead of as a ghost: kept at once and marked
+   * `unseen` for the user (a genre whose agent cards need no ✓, the novel).
+   */
+  readonly live?: boolean
+}
+
+/** Clear the 「新」 mark: the given cards, or every card on the canvas. */
+export interface BoardMarkSeenRequest {
+  readonly canvasId: string
+  /** Absent: every unseen card. */
+  readonly cardIds?: readonly string[]
 }
 
 /* ------------------------------------------------------------- card types (P1a) */

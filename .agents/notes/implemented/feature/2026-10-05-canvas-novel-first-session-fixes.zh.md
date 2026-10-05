@@ -16,7 +16,7 @@ Status: implemented
   - `writeCard` 新建人物卡或世界卡时，如果有未归档的同名卡（幽灵卡也算），就回 `duplicate` 并带上那张卡的编号；工具文案让模型改那张卡。
   - import 同理：同名的世界设定丢弃，记 `duplicate`；同一份结果里重复的也一样。已在画布上的人物不算新人物，它的经历照样按名字挂上去。
 - **同一份结果里的新人物照样收经历**：import 先落卡，再处理 `experiences` / `current_states`；新人物的卡 id 按名字找到。
-- **报告带编号**：`proposedCards` 每项带 `ref`，模型按编号补内容。
+- **报告带编号**：`newCards`（当时叫 `proposedCards`）每项带 `ref`，模型按编号补内容。
 - **世界卡改成「名称 + 类型 + 设定」**：
   - `name` 必填，用作卡片标题；`kind` 是选项（地点 / 势力 / 道具 / 规则 / 历史 / 其他）；`rule` 是具体内容。体裁升到 `novel@2`。
   - 抽取 schema 加了 `name` / `world_kind`；没给名字时取正文的第一个分句（最多 16 字）。

@@ -50,7 +50,7 @@ describe('the three brief variants on the《梦境监护者》seed (CP1)', () =>
     expect(text).toContain('## 上一章末段（原文）')
     expect(text).toContain('微微发烫，像一句还没来得及说出口的回答。')
     expect(text).not.toContain(CHAPTER_5_BODY.slice(0, 60))
-    // The ghost card (未采纳) never leaks into the brief.
+    // A canvas-native proposed card (未采纳) never leaks into the brief.
     expect(text).not.toContain('梦境有层数')
   })
 

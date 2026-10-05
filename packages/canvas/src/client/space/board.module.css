@@ -671,6 +671,16 @@
   align-self: flex-start;
 }
 
+.unseenFlag {
+  align-self: flex-start;
+  padding: 0 6px;
+  border-radius: 999px;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
+  letter-spacing: 0.2px;
+}
+
 .ghostActions {
   display: flex;
   gap: 6px;

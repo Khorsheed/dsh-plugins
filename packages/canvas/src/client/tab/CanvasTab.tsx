@@ -119,7 +119,7 @@ interface DiscardAsk {
 /** The canvas tab: the strip plus the row it is showing. */
 export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
-    t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
+    t, listCanvases, createCanvas, readBoard, putCard, patchCard, markSeen, addComment,
     archiveCanvas, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
     openCardDetail, openCardDraft, openManuscript, openTypePage, openCategoriesPage, backToBoard, activateTab, closeTab, focusCanvas,
     talkAvailable, quoteToConversation, refreshBoards, suggestWideMode, images, useImageRev,
@@ -714,12 +714,28 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     }
   }, [onBoard, openId, loadedId, view])
 
-  /** Open one card of the open canvas, named the same way the prompt names it. */
+  /**
+   * Clear the 「新」 mark: one card the user opened (quietly), or every card
+   * (「全部标为已看」, with a toast). A lost write leaves the mark, nothing else.
+   */
+  const seeCards = useCallback((canvasId: string, cardIds?: readonly string[]) => {
+    if (sessionId === undefined) return
+    void (async () => {
+      const value = await run(() => markSeen(sessionId, { canvasId, ...(cardIds === undefined ? {} : { cardIds }) }))
+      if (value === null || !value.ok) return
+      if (value.board.id === openIdRef.current) setOpenBoard({ board: value.board, version: value.version })
+      if (cardIds === undefined) showToast(t('toast.allSeen'))
+    })()
+  }, [sessionId, run, markSeen, showToast, t])
+
+  /** Open one card of the open canvas, named the same way the prompt names it; opening it is seeing it. */
   const openCard = useCallback((cardId: string) => {
     if (openId === null) return
     const card = boardRef.current?.board.cards.find(candidate => candidate.id === cardId)
     openCardDetail(openId, cardId, card === undefined ? cardId : cardNameOf(card))
-  }, [openId, openCardDetail])
+    const writable = !readonly && boardRef.current?.board.archivedAt == null
+    if (card?.unseen === true && writable) seeCards(openId, [cardId])
+  }, [openId, openCardDetail, readonly, seeCards])
 
   /* ----------------------------------------------------------------- genres */
 
@@ -777,6 +793,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const openCount = activeRow === undefined || openBoard === null
     ? null
     : summarizeBoard(openBoard.board).cardCount
+  const unseenCount = openBoard === null
+    ? 0
+    : openBoard.board.cards.filter(card => card.unseen === true && card.status !== 'archived').length
 
   return (
     <GenreSeatsContext.Provider value={seats}>
@@ -1043,6 +1062,19 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           )}
 
           {openBoard !== null && loadError === null && boardStripsOf(seats, openBoard.board)}
+
+          {openBoard !== null && loadError === null && unseenCount > 0 && (
+            <div className={css.unseenStrip} role="status">
+              <span className={css.unseenDot} />
+              <span>{t('space.unseenStrip', { count: String(unseenCount) })}</span>
+              <span className={css.spacer} />
+              {!boardReadonly && (
+                <Button size="sm" variant="ghost" onClick={() => { seeCards(openBoard.board.id) }}>
+                  {t('action.markAllSeen')}
+                </Button>
+              )}
+            </div>
+          )}
 
           {openBoard !== null && loadError === null ? (
             view === 'manuscripts' ? (

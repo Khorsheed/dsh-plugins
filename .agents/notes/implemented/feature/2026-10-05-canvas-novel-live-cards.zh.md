@@ -1,0 +1,33 @@
+# Agent Note: canvas-novel 的 agent 卡默认生效，标「新」
+
+Status: implemented
+
+## 问题
+
+模型新建的卡一律是幽灵卡（画布 `proposed`），用户 ✓ 采纳之前不进 brief、不进台账。在临时实例上整理一次之后，看板上堆了一片用户没看过的幽灵卡；plan 也只能用描述来指伏笔，因为九张伏笔幽灵卡没有台账编号可引用。卡一多，逐张采纳很累，但用户仍然需要看出这一轮新增了哪些。
+
+## 决定
+
+- **agent 卡默认生效（画布）**：`proposeCard` 接受 `live: true`，卡片直接落成 `kept` 并带 `unseen: true`。生效的卡立刻进 brief、进台账，可以按编号引用。
+- **「新」标记是画布的通用行为**，只由 `live` 开关触发，所以没有体裁的画布（或从不传 `live` 的写入方）行为和原来完全一样。
+  - `unseen` 存在时卡面显示「新」字小标。
+  - 打开卡片即消（仅可写看板）；归档也消（`patchCard` 去掉 `unseen`，`normalizeCard` 不在归档卡上保留它）。
+  - 看板条子写「AGENT 新增 N 张卡片」，带一键「全部标为已看」，背后是新的 `markSeen({ canvasId, cardIds? })` remote（不给 id 即全部；没有可消的回 `missing`）。
+- **canvas-novel 去掉幽灵卡概念**：
+  - `writeCard` 和 import 写的每张卡都传 `live: true`；对账第三道闸改为「新设定、新伏笔、新人物直接落卡」，报告的 `proposedCards` 改名 `newCards`。
+  - 卡级 `autoImported` 注记和 `RuleView.autoImported` 删除（不再有「自动」与「已采纳」之分）；记忆把置信度和 evidence 写在卡的批注里。
+  - `reviewCard` 改为 `archiveCard`：对卡片，`novel_write(review)` 只接受 `archive`；accept/discard 留给待审队列，retract 留给自动入库的经历。
+  - 删掉 slice 上的 `putCard`；画布原生的 `proposed` 卡（人自己提的提议）照常认，照常不进 brief。
+- **待审队列不变**：中低置信度的提及和经历、计划落空仍然等人处理。
+
+## 考虑过的方案
+
+- **保留幽灵卡，加「全部采纳」。** 用户动手之前伏笔仍然没有编号，正是 plan 暴露出的问题。
+- **「新」标记只做在体裁里。** 任何 agent 写的画布都用得上，不用时零成本，所以放在画布里，由 `live` 开关控制。
+- **悬停或打开看板就消「新」。** 太容易没看就消掉；打开卡片或点按钮才算看过。
+
+## 后果
+
+- 模型写的每张卡立刻能按编号（`#19`、`w3`、`c2`）引用，plan 和对账都一样。
+- 写错的 agent 卡在用户改掉或归档之前会进 brief；「新」标记和看板条子负责让它看得见。
+- 已有的幽灵卡不自动迁移；临时实例上的那批手工转成了 `kept` + `unseen`。

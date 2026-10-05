@@ -55,7 +55,7 @@ import {
   type CanvasGenreDefinition, type CanvasGenreSummary,
   type BoardImageBytesOutcome, type BoardImageBytesRequest,
   type BoardListResult, type BoardMutationResult,
-  type BoardPatchCardRequest, type BoardProposeCardRequest, type BoardPutCardRequest,
+  type BoardMarkSeenRequest, type BoardPatchCardRequest, type BoardProposeCardRequest, type BoardPutCardRequest,
   type BoardReadOutcome, type BoardReadRequest, type BoardSetCategoriesRequest,
   type BoardSetLayoutRequest,
   type BoardManuscript, type CanvasBoard, type CanvasError, type CanvasImageError, type CanvasSummary,
@@ -509,11 +509,31 @@ export class CanvasBoardService {
           if (request.status === 'archived') board.stats.proposed.rejected += 1
         }
         card.status = request.status
+        if (request.status === 'archived') delete card.unseen
       }
       if (request.question !== undefined && card.kind === 'question' && card.question !== undefined) {
         card.question.state = request.question.state
       }
       card.updatedAt = now
+      return board
+    })
+  }
+
+  /**
+   * Clear the 「新」 mark the user has looked at: the given cards, or every
+   * unseen card on the canvas. A mark is a reading receipt, not an edit, so
+   * `updatedAt` stays; a write with nothing to clear is refused as `missing`
+   * rather than rewriting the file for nothing.
+   * @param request - canvas id and, optionally, the card ids.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async markSeen(request: BoardMarkSeenRequest, session: Session): Promise<BoardMutationResult> {
+    const only = request.cardIds === undefined ? undefined : new Set(request.cardIds)
+    return this.mutate(request.canvasId, session, board => {
+      const seen = board.cards.filter(card => card.unseen === true && (only === undefined || only.has(card.id)))
+      if (seen.length === 0) return 'missing'
+      for (const card of seen) delete card.unseen
       return board
     })
   }
@@ -681,7 +701,8 @@ export class CanvasBoardService {
 
   /**
    * The agent's card entrance (`canvas_write` op=card): proposed and awaiting
-   * the user's ✓/✗, createdBy agent. A question card starts OPEN even when
+   * the user's ✓/✗, createdBy agent — or, with `live`, kept at once and
+   * marked unseen (the board's 「新」) for a genre that skips the ghost. A question card starts OPEN even when
    * the proposal carries a rationale comment — exploring means work the user
    * has seen, not the proposal's arrival (the §4 rule applies to comments on
    * cards already on the board).
@@ -703,9 +724,10 @@ export class CanvasBoardService {
         id: makeBoardId('c', Date.now(), randomSuffix()),
         kind: request.kind,
         text,
-        status: 'proposed',
+        status: request.live === true ? 'kept' : 'proposed',
         comments: [],
         createdBy: 'agent',
+        ...(request.live === true ? { unseen: true as const } : {}),
         createdAt: now,
         updatedAt: now,
         ...(request.kind === 'question' ? { question: { state: 'open' as const } } : {}),

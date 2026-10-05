@@ -104,8 +104,6 @@ export interface CardNote {
   readonly extractedBy?: 'llm' | 'user'
   /** ≤60 characters quoted verbatim from the chapter (the import gate grepped for it). */
   readonly evidenceInText?: string
-  /** The extract import's high-confidence automatic write — 自动·可撤销. */
-  readonly autoImported?: boolean
   /** The chapter whose 对账 brought the card in. */
   readonly firstChapter?: number
   /** Characters only: 当前态 as of the last 对账. */
@@ -161,7 +159,6 @@ function normalizeNote(raw: unknown): CardNote | undefined {
   if (record['extractedBy'] === 'llm' || record['extractedBy'] === 'user') out.extractedBy = record['extractedBy']
   const evidenceInText = cleanText(record['evidenceInText'], 60)
   if (evidenceInText !== undefined) out.evidenceInText = evidenceInText
-  if (record['autoImported'] === true) out.autoImported = true
   const firstChapter = cleanNumber(record['firstChapter'])
   if (firstChapter !== undefined) out.firstChapter = firstChapter
   const tension = cleanNumber(record['tension'])
@@ -384,7 +381,6 @@ export interface RuleView {
   /** What the brief prints: `名称（类型）：设定` for a named world card, the body alone otherwise. */
   readonly text: string
   readonly status: NovelCardStatus
-  readonly autoImported: boolean
 }
 
 /** A foreshadow card plus what its mentions derive. */
@@ -449,8 +445,8 @@ export function foreshadowStateOf(raw: unknown): ForeshadowState {
 
 /**
  * What a pending item proposes. Proposed entries (a new rule, foreshadow or
- * character) are not pending items — they are ghost cards on the board, kept
- * or archived there; the queue holds only the journal lines that wait for a
+ * character) are not pending items — they land as live cards on the board,
+ * edited or archived there; the queue holds only the journal lines that wait for a
  * person.
  */
 export type PendingKind = 'mention' | 'experience' | 'plan-missed'
@@ -545,8 +541,8 @@ export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' 
 
 /* ---------------------------------------------- wire-boundary contracts */
 
-/** The review verb's actions (proposal §3: 采纳/丢弃/归档/撤销 — UI 与 agent 同一动词). */
-export type ReviewAction = 'accept' | 'discard' | 'archive' | 'retract'
+/** The review verb's actions: a pending item is accepted or discarded, a card is archived. */
+export type ReviewAction = 'accept' | 'discard' | 'archive'
 
 /** A chapter create (no n) or plan/title update (n present). */
 export interface WriteChapterRequest {
@@ -643,12 +639,11 @@ export interface ImportReport {
   readonly error?: NovelError
   readonly verified: number
   readonly missed: number
-  readonly autoImported: number
   readonly pending: number
   readonly dropped: readonly ImportDrop[]
   readonly pendingItems: readonly { readonly id: string; readonly kind: PendingKind; readonly reason: string }[]
-  /** The ghost cards this import proposed (new rules, foreshadows, characters). */
-  readonly proposedCards: readonly { readonly cardId: string; readonly role: EntryRole; readonly text: string; readonly ref?: string }[]
+  /** The live cards this import landed (new rules, foreshadows, characters), marked 「新」 on the board. */
+  readonly newCards: readonly { readonly cardId: string; readonly role: EntryRole; readonly text: string; readonly ref?: string }[]
 }
 
 /** The ledger answer (伏笔沉睡榜 + 健康度) — kept foreshadow cards only. */

@@ -475,6 +475,48 @@ describe('CanvasBoardService.patchCard', () => {
   })
 })
 
+describe('CanvasBoardService.proposeCard live + markSeen', () => {
+  it('lands a live agent card kept and 新; opening one, archiving one and 全部标为已看 each clear the mark', async () => {
+    const { board } = harness()
+    const created = await createBoard(board)
+    const ids: string[] = []
+    for (const text of ['一', '二', '三', '四']) {
+      const live = await board.proposeCard({ canvasId: created.id, kind: 'fragment', text, live: true }, SESSION)
+      if (!live.ok) throw new Error('expected the card to land')
+      ids.push(live.board.cards[live.board.cards.length - 1]!.id)
+    }
+    const ghost = await board.proposeCard({ canvasId: created.id, kind: 'fragment', text: '幽灵' }, SESSION)
+    if (!ghost.ok) throw new Error('expected the ghost to land')
+    const byId = (b: CanvasBoard, id: string) => b.cards.find(card => card.id === id)!
+    expect(byId(ghost.board, ids[0]!)).toMatchObject({ status: 'kept', createdBy: 'agent', unseen: true })
+    expect(ghost.board.cards[ghost.board.cards.length - 1]!.unseen).toBeUndefined()
+
+    const one = await board.markSeen({ canvasId: created.id, cardIds: [ids[0]!] }, SESSION)
+    if (!one.ok) throw new Error('expected markSeen to land')
+    expect(byId(one.board, ids[0]!).unseen).toBeUndefined()
+    expect(byId(one.board, ids[1]!).unseen).toBe(true)
+
+    const archived = await board.patchCard({ canvasId: created.id, cardId: ids[1]!, status: 'archived' }, SESSION)
+    if (!archived.ok) throw new Error('expected archive to land')
+    expect(byId(archived.board, ids[1]!).unseen).toBeUndefined()
+
+    const all = await board.markSeen({ canvasId: created.id }, SESSION)
+    if (!all.ok) throw new Error('expected markSeen to land')
+    expect(all.board.cards.filter(card => card.unseen === true)).toEqual([])
+    // Nothing left to clear: a no-op answers missing rather than rewriting the file.
+    expect(await board.markSeen({ canvasId: created.id }, SESSION)).toEqual({ ok: false, error: 'missing' })
+  })
+
+  it('reads the mark tolerantly: kept on a live card, dropped on an archived one or a non-true value', () => {
+    const card = (id: string, status: string, unseen: unknown) => ({ id, kind: 'fragment', text: id, status, createdBy: 'agent', unseen })
+    const read = normalizeBoard({
+      id: 'b', title: 't',
+      cards: [card('a', 'kept', true), card('b', 'archived', true), card('c', 'kept', 'yes')],
+    }, 'b', '2026-10-05T00:00:00.000Z')
+    expect(read?.cards.map(c => c.unseen)).toEqual([true, undefined, undefined])
+  })
+})
+
 describe('CanvasBoardService.addComment', () => {
   it('appends a user comment without touching the question state', async () => {
     const { board } = harness()

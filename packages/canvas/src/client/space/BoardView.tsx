@@ -279,6 +279,9 @@ function CardItem({ t, board, card, definition, nameOf, kindLabel, kindColor, re
           {selected && <IconCheckOutlineMedium size={11} />}
         </button>
       )}
+      {card.unseen === true && !proposed && (
+        <span className={css.unseenFlag}>{t('card.unseen')}</span>
+      )}
       {proposed && (
         <span className={css.ghostFlag}>
           <IconSparkleMedium size={12} />

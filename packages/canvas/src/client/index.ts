@@ -213,6 +213,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     createCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().createCanvas(sessionId, request)),
     putCard: async (sessionId, request) => touchOnSuccess(await requireRemote().putCard(sessionId, request)),
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
+    markSeen: async (sessionId, request) => touchOnSuccess(await requireRemote().markSeen(sessionId, request)),
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
     archiveCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().archiveCanvas(sessionId, request)),
     // A delete reaches the strip too: a row naming a canvas that no longer
