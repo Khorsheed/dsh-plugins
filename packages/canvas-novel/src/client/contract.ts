@@ -11,8 +11,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
-  NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
-  NovelGestureResult, NovelLedgerResult, NovelPendingResult, NovelWorkRequest,
+  NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
+  NovelGestureResult, NovelLedgerResult, NovelPendingResult, NovelStarRequest, NovelStateRequest, NovelWorkRequest,
 } from '../types.ts'
 import type {} from './locales.ts'
 
@@ -40,6 +40,12 @@ export interface NovelPageOwnerProps extends NovelOwnerProps {
   readonly param?: string | undefined
 }
 
+/** A card page's owner share (structural): the card and the category it is filed under. */
+export interface NovelCardOwnerProps extends NovelOwnerProps {
+  readonly card: { readonly id: string }
+  readonly category: { readonly id: string; readonly role?: string | undefined }
+}
+
 /** The `novel` Remote namespace as the surfaces call it. */
 export interface NovelRemote {
   pending: (request: NovelWorkRequest) => Promise<RemoteResult<NovelPendingResult>>
@@ -49,6 +55,9 @@ export interface NovelRemote {
   decidePending: (sessionId: SessionId, request: NovelDecideRequest) => Promise<RemoteResult<NovelGestureResult>>
   reviewChapter: (sessionId: SessionId, request: NovelChapterRequest) => Promise<RemoteResult<NovelGestureResult>>
   confirmPlan: (sessionId: SessionId, request: NovelChapterRequest) => Promise<RemoteResult<NovelGestureResult>>
+  card: (request: NovelCardRequest) => Promise<RemoteResult<NovelCardResult>>
+  starForeshadow: (sessionId: SessionId, request: NovelStarRequest) => Promise<RemoteResult<NovelGestureResult>>
+  setCurrentState: (sessionId: SessionId, request: NovelStateRequest) => Promise<RemoteResult<NovelGestureResult>>
 }
 
 /** What every surface is injected with. */

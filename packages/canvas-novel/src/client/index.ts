@@ -10,7 +10,9 @@
  * - `canvas.page` `novel:ledger`: the foreshadow ledger with each
  *   foreshadow's chapter track;
  * - `canvas.page` `novel:chapter`: the same reader, opened at one chapter
- *   (from the strip, or a chat card).
+ *   (from the strip, or a chat card);
+ * - `canvas.card.section`: on a foreshadow's page the user's ★, on a
+ *   character's page 此刻 (editable).
  *
  * Outside the canvas, the `novel_write` tool row in the conversation: a
  * planned chapter shows as a card whose door opens that chapter page (through
@@ -34,6 +36,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@khorsheed/dsh-canvas-novel/remote'
 import novelRemote from '@khorsheed/dsh-canvas-novel/remote'
 import { NOVEL_GENRE_ID } from '../types.ts'
+import { CardSection } from './CardSection.tsx'
 import { ChapterBook } from './ChapterBook.tsx'
 import { ChapterPage } from './ChapterReader.tsx'
 import { CHAPTER_PAGE, LEDGER_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
@@ -42,13 +45,14 @@ import { en, NS, zh } from './locales.ts'
 import { PendingStrip } from './PendingStrip.tsx'
 import { WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
 
+export { CardSection } from './CardSection.tsx'
 export { ChapterBook } from './ChapterBook.tsx'
 export { ChapterPage, ChapterReader } from './ChapterReader.tsx'
 export { LedgerPage } from './LedgerPage.tsx'
 export { PendingList, PendingStrip } from './PendingStrip.tsx'
 export { WriteToolRow } from './WriteToolRow.tsx'
 export { CHAPTER_PAGE, LEDGER_PAGE } from './contract.ts'
-export type { NovelFace, NovelNavigate, NovelOwnerProps, NovelPageOwnerProps, NovelRemote } from './contract.ts'
+export type { NovelCardOwnerProps, NovelFace, NovelNavigate, NovelOwnerProps, NovelPageOwnerProps, NovelRemote } from './contract.ts'
 export type { WriteToolFace } from './WriteToolRow.tsx'
 
 /**
@@ -92,6 +96,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => face,
   }, ChapterBook)), 'canvas-novel: book')
+  ctx.effect(() => seats.inject('canvas.card.section', () => seats.register({
+    name: 'canvas.card.section',
+    id: NOVEL_GENRE_ID,
+    locale: NS,
+    inject: () => face,
+  }, CardSection)), 'canvas-novel: card section')
   for (const [key, page] of [[LEDGER_PAGE, LedgerPage], [CHAPTER_PAGE, ChapterPage]] as const) {
     ctx.effect(() => seats.inject('canvas.page', () => seats.register({
       name: 'canvas.page',

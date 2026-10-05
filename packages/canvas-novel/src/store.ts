@@ -981,6 +981,55 @@ export class NovelService {
   }
 
   /**
+   * The user's ★ on a foreshadow card (主线重点). The star is the user's,
+   * never the engine's: it lives in the sidecar, so the card fields stay
+   * what the user typed.
+   * @param request - work id, the foreshadow's card id, and the new star.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns ok, or the failure code.
+   */
+  async starForeshadow(
+    request: { readonly workId: string; readonly cardId: string; readonly starred: boolean },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    const entries = await this.readEntries(request.workId)
+    if (entries === undefined) return { ok: false, error: 'missing' }
+    if (entries.roleOf.get(request.cardId) !== 'foreshadow') return { ok: false, error: 'invalid-name' }
+    const outcome = await this.ensureRefs(request.workId, session, entries.board, new Map([[request.cardId, { starred: request.starred }]]))
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error ?? 'io' }
+  }
+
+  /**
+   * The user's own edit of a character's 此刻 (当前态). The next 对账
+   * overwrites it with what the chapter shows, as it does any 当前态.
+   * @param request - work id, the character's card id, and the whole new state (empty parts clear).
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns ok, or the failure code.
+   */
+  async setCurrentState(
+    request: { readonly workId: string; readonly cardId: string; readonly state: CurrentState },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    const entries = await this.readEntries(request.workId)
+    if (entries === undefined) return { ok: false, error: 'missing' }
+    if (entries.roleOf.get(request.cardId) !== 'character') return { ok: false, error: 'invalid-name' }
+    const clean = (text: string | undefined): string | undefined => {
+      const trimmed = text?.trim().slice(0, 200)
+      return trimmed === undefined || trimmed === '' ? undefined : trimmed
+    }
+    const where = clean(request.state.where)
+    const now = clean(request.state.state)
+    const concern = clean(request.state.concern)
+    const currentState: CurrentState = {
+      ...(where === undefined ? {} : { where }),
+      ...(now === undefined ? {} : { state: now }),
+      ...(concern === undefined ? {} : { concern }),
+    }
+    const outcome = await this.ensureRefs(request.workId, session, entries.board, new Map([[request.cardId, { currentState }]]))
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error ?? 'io' }
+  }
+
+  /**
    * The user's ✓确认计划 gate (规划环的确认闸门): stamps `planConfirmedAt`
    * on a chapter that HAS a plan. Idempotent — a confirmed plan re-answers
    * ok; a chapter with no plan refuses (there is nothing to confirm).

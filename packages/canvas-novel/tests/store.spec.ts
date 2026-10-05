@@ -153,6 +153,30 @@ describe('the novel store', () => {
     expect(named.data?.canonRules.find(view => view.ref === 'w19')?.text).toBe('钟楼（地点）：钟楼是两层梦的接缝。')
   })
 
+  it('the user\'s ★ and 此刻 edit land in the sidecar; the wrong kind of card is refused', async () => {
+    const fs = new FakeFs()
+    seedDreamKeeper(fs)
+    const ctx = new Context()
+    ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
+    const starredOf = async (cardId: string): Promise<boolean | undefined> =>
+      (await store.readEntries(DREAM.workId))?.foreshadows.find(view => view.cardId === cardId)?.starred
+    expect(await store.starForeshadow({ workId: DREAM.workId, cardId: CARD.doorGap, starred: true }, SESSION)).toEqual({ ok: true })
+    expect(await starredOf(CARD.doorGap)).toBe(true)
+    // Starred sorts first in the ledger, ahead of a longer sleeper.
+    const ledger = await store.ledger({ workId: DREAM.workId })
+    expect(ledger.active.slice(0, 2).map(view => view.cardId).sort()).toEqual([CARD.doorGap, CARD.formerKeeper].sort())
+    expect(await store.starForeshadow({ workId: DREAM.workId, cardId: CARD.doorGap, starred: false }, SESSION)).toEqual({ ok: true })
+    expect(await starredOf(CARD.doorGap)).toBe(false)
+    expect((await store.starForeshadow({ workId: DREAM.workId, cardId: CARD.zhao, starred: true }, SESSION)).error).toBe('invalid-name')
+
+    expect(await store.setCurrentState({ workId: DREAM.workId, cardId: CARD.zhao, state: { where: ' 门后第一层 ', state: '', concern: '妹妹' } }, SESSION)).toEqual({ ok: true })
+    const zhao = (await store.readEntries(DREAM.workId))?.characters.find(view => view.cardId === CARD.zhao)
+    expect(zhao?.currentState).toEqual({ where: '门后第一层', concern: '妹妹' })
+    expect((await store.setCurrentState({ workId: DREAM.workId, cardId: CARD.doorGap, state: {} }, SESSION)).error).toBe('invalid-name')
+  })
+
   it('reads the ledger off the seed (沉睡优先, health counts)', async () => {
     const fs = new FakeFs()
     seedDreamKeeper(fs)

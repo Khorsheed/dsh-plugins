@@ -837,3 +837,30 @@ export interface NovelGestureResult {
   readonly ok: boolean
   readonly error?: NovelError
 }
+
+/** One card of a work (the card page's sections). */
+export interface NovelCardRequest extends NovelWorkRequest {
+  readonly cardId: string
+}
+
+/** What the card page's sections show beyond the card's own fields. */
+export interface NovelCardResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly role?: EntryRole
+  /** Foreshadows: the user's star, and how many of the work's foreshadows carry one. */
+  readonly starred?: boolean
+  readonly starredCount?: number
+  /** Characters: 此刻 as of the last 对账 or the user's own edit. */
+  readonly currentState?: CurrentState
+}
+
+/** The person's ★ on a foreshadow. */
+export interface NovelStarRequest extends NovelCardRequest {
+  readonly starred: boolean
+}
+
+/** The person's edit of a character's 此刻 (the whole state; empty parts clear). */
+export interface NovelStateRequest extends NovelCardRequest {
+  readonly state: CurrentState
+}

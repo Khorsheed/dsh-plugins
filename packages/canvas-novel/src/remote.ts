@@ -16,8 +16,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { NovelService, WorkEntries } from './store.ts'
 import type {
-  LedgerMark, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
-  NovelGestureResult, NovelLedgerResult, NovelPendingResult, NovelWorkRequest, PendingItem, PendingView,
+  LedgerMark, NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult,
+  NovelDecideRequest, NovelGestureResult, NovelLedgerResult, NovelPendingResult, NovelStarRequest, NovelStateRequest,
+  NovelWorkRequest, PendingItem, PendingView,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -141,6 +142,40 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
   @Remote('confirmPlan')
   async confirmPlan(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
     const result = await this.core.confirmChapterPlan({ workId: request.canvasId, n: request.n }, agent.session)
+    return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  }
+
+  /** One card's engine side: its role, the star (foreshadows), 此刻 (characters). */
+  @Remote('card')
+  async card(request: NovelCardRequest): Promise<NovelCardResult> {
+    const entries = await this.core.readEntries(request.canvasId)
+    if (entries === undefined) return { ok: false, error: 'missing' }
+    const role = entries.roleOf.get(request.cardId)
+    if (role === undefined) return { ok: false, error: 'missing' }
+    const foreshadow = entries.foreshadows.find(view => view.cardId === request.cardId)
+    const character = entries.characters.find(view => view.cardId === request.cardId)
+    return {
+      ok: true,
+      role,
+      ...(foreshadow === undefined ? {} : {
+        starred: foreshadow.starred,
+        starredCount: entries.foreshadows.filter(view => view.starred).length,
+      }),
+      ...(character?.currentState === undefined ? {} : { currentState: character.currentState }),
+    }
+  }
+
+  /** The person's ★ on a foreshadow. */
+  @Remote('starForeshadow')
+  async starForeshadow(agent: Agent, request: NovelStarRequest): Promise<NovelGestureResult> {
+    const result = await this.core.starForeshadow({ workId: request.canvasId, cardId: request.cardId, starred: request.starred }, agent.session)
+    return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  }
+
+  /** The person's edit of a character's 此刻. */
+  @Remote('setCurrentState')
+  async setCurrentState(agent: Agent, request: NovelStateRequest): Promise<NovelGestureResult> {
+    const result = await this.core.setCurrentState({ workId: request.canvasId, cardId: request.cardId, state: request.state }, agent.session)
     return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
   }
 }
