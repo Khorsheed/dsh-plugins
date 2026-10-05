@@ -54,6 +54,12 @@ describe('cordis.patch.yml', () => {
 
   it('the persona names the assets rule and the novel skill, and stays single-voice English', () => {
     expect(patch).toContain('You are a collaborative editor for long-form fiction.')
+    // Wrap-proof pins: the YAML block scalar re-wraps freely, so match on whitespace-flattened text.
+    const flat = patch.replace(/\s+/g, ' ')
+    // The dual role: editor when the thinking needs structure, partner when it needs company.
+    expect(flat).toContain('an editor when the thinking needs structure, a partner when it needs company')
+    // …and the ideation stance carries the editor's main-line sort (keep / serve / cut-or-shelve).
+    expect(flat).toContain('one-sentence main line')
     expect(patch).toContain('novel_* tools return')
     expect(patch).toContain('The novel skill carries the')
     // Light by contract: the persona does not copy the skill's workflow sections.

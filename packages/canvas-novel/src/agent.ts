@@ -169,10 +169,12 @@ export class NovelToolGrant {
 }
 
 /**
- * The pointer's text, evaluated per assembly. One line in a bound session;
- * in an unbound session of this scope, one line saying how to bind (the
- * model binds by the conversation's subject, 2026-10-05); '' elsewhere — the
- * full brief never auto-injects, and the `novel` skill carries the workflow.
+ * The pointer's text, evaluated per assembly. One line in a bound session
+ * (ideation chats route to the skill's stage-and-role model, drafting starts
+ * from novel_read(brief)); in an unbound session of this scope, one line
+ * saying how to bind (the model binds by the conversation's subject,
+ * 2026-10-05); '' elsewhere — the full brief never auto-injects, and the
+ * `novel` skill carries the workflow.
  * @param grant - the per-session grant whose cached state is the whole input.
  * @returns the section text for this assembly.
  */
@@ -184,10 +186,10 @@ export function novelPointerText(grant: Pick<NovelToolGrant, 'titleOf' | 'tracks
       const title = grant.titleOf(sessionId)
       if (title === undefined) {
         return grant.tracks(sessionId)
-          ? `本会话还没绑定长篇小说作品：对话涉及某部作品（写作/设定/章节）时，先 ${NOVEL_BIND_TOOL} 绑定——不带参数列出作品，拿不准是哪部就问用户。`
+          ? `本会话还没绑定长篇小说作品：对话涉及某部作品（立意/写作/设定/章节）时，先 ${NOVEL_BIND_TOOL} 绑定——不带参数列出作品，拿不准是哪部就问用户。`
           : ''
       }
-      return `本会话绑定长篇小说画布《${title}》：涉及写作/续写/设定/章节时，先 novel_read(brief)；novel skill 载有完整工作流。`
+      return `本会话绑定长篇小说画布《${title}》：涉及立意/写作/续写/设定/章节时按 novel skill 的工作流走（构思期做主线梳理，动笔前先 novel_read(brief)）。`
     } catch {
       // Degrade, never explode: a prompt assembly must not fail on a pointer.
       return ''

@@ -8,7 +8,7 @@ This package is a **declarative preset bundle** (`dsh.bundle.kind: preset-declar
 
 The writing preset is a named scope. Sessions switched to it compose with:
 
-- **persona**: a collaborative editor for long-form fiction (probe ideas, put the ledger and the cast on the table when planning, hold canon and character consistency when writing, report reconcile hits and misses honestly; the work's assets are what the novel_* tools return, never conversation memory).
+- **persona**: a collaborative editor for long-form fiction whose role follows the writer's moment — an editor at ideation (a one-sentence main line plus the keep / serve / cut-or-shelve sort), a partner executing the shared plan while drafting, a companion offering the smallest next step when the writer is blocked; the work's assets are what the novel_* tools return, never conversation memory.
 - **canvas-novel's agent surface**: mounts `@khorsheed/dsh-canvas-novel/agent` inside the scope — the same entry canvas-novel's shipped patch keeps DISABLED at the profile root. The two must never be live at once (the tools would register twice and fail the boot).
 - **The writing tool list**: tool-fs (manuscript read/write/edit), skill-filesystem + tool-skill (how the novel skill loads), tool-ask-user (the confirmation gates), and the compaction group (long sessions fold context). No shell, no search, no delegation, no jobs — the writing flow needs none of them.
 

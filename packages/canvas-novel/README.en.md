@@ -28,7 +28,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   - `novel_write`: card lands a new card or edits a card by ref, chapter numbers automatically, review handles pending items (accept, discard), archives cards and retracts experiences;
   - `novel_extract`: prepare builds the material pack, import files the result through five validation gates.
 - **The `novel:pointer` function section** (order 9500): renders one line when the session is bound to a long-novel canvas, and an empty string otherwise, so small talk costs nothing.
-- **The `novel` skill**: an on-demand operating manual that carries no work content.
+- **The `novel` skill**: an on-demand operating manual (including the stage-and-role model: an editor sorting the main line at ideation, a partner executing the plan while drafting, a companion with the smallest next step when blocked) that carries no work content.
 
 ## Key design
 

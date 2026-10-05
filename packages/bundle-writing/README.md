@@ -8,7 +8,7 @@
 
 写作 preset 是一个具名作用域。切到它的会话组合出：
 
-- **persona**：长篇小说协作编辑（追问灵感、摆伏笔与人物上台面、守设定一致性、如实报对账命中与落空；作品资产以 novel_* 工具取到的为准）。
+- **persona**：长篇小说协作编辑，角色跟着创作节点走——构思期做编辑式梳理（一句话主线 + 保留/服务/砍掉三栏取舍），写作期做忠实执行共同 plan 的伙伴，卡文时当同伴给最小下一步；作品资产以 novel_* 工具取到的为准。
 - **canvas-novel 的 agent 面**：在作用域内挂载 `@khorsheed/dsh-canvas-novel/agent`（canvas-novel 出厂 patch 把同一行停在 profile 根禁用——两者绝不能同时生效，否则同名工具双注册炸 boot）。
 - **写作场景工具单**：tool-fs（正文读写）、skill-filesystem + tool-skill（novel skill 经此加载）、tool-ask-user（确认闸门）、compaction 组（长会话折叠）。没有 shell/搜索/委派/jobs——写作流程用不到。
 
