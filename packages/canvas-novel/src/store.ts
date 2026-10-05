@@ -38,7 +38,7 @@ import {
   type NovelFieldValue,
 } from './genre.ts'
 import {
-  chapterFileName, cleanNumber, cleanText, effectiveChapterPhase, foreshadowStateOf, linesOf, MENTION_TO_STATE,
+  chapterFileName, cleanNumber, cleanText, effectiveChapterPhase, foreshadowStateOf, isOverdue, linesOf, MENTION_TO_STATE,
   normalizeAnnotations, normalizeChapter, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
   OP_TO_MENTION, parseRef, refGroupOf, refOf,
   type Annotations, type CardNote, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
@@ -727,70 +727,6 @@ export class NovelService {
     return entries.filter(entry => request.characterId === undefined || entry.characterId === request.characterId)
   }
 
-  /**
-   * Take one automatic experience back (自动·可撤销, invariant 3): the line
-   * leaves the journal. The journal is append-only for the SYSTEM; the user's
-   * retract gesture is the one sanctioned exception, and it rides the same
-   * guarded rewrite the appends use, keeping every other line byte-identical.
-   * A line without an id cannot be retracted by handle — the user edits the
-   * journal by hand for those.
-   * @param request - work id and the entry id (`e<n>`).
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the receipt, or the failure code.
-   */
-  async retractExperience(
-    request: { readonly workId: string; readonly id: string },
-    session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
-    const workId = normalizeWorkId(request.workId)
-    if (workId === undefined || !/^e\d+$/.test(request.id)) return { ok: false, error: 'invalid-name' }
-    const target = await this.fileTarget(workId, WORK_FILES.experiences)
-    const policy = this.policyOf(session)
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      let text: string
-      let version: string
-      try {
-        const info = await this.fs.stat(target)
-        if (info === undefined) return { ok: false, error: 'missing' }
-        text = await this.fs.readText(target)
-        version = info.version
-      } catch (error) {
-        return { ok: false, error: novelErrorOf(error) }
-      }
-      const lines = text.split('\n')
-      const kept: string[] = []
-      let found = false
-      for (const line of lines) {
-        if (line.trim() === '') continue
-        try {
-          const row = JSON.parse(line) as Record<string, unknown>
-          if (row['id'] === request.id) {
-            found = true
-            continue
-          }
-        } catch {
-          // A corrupt line is not the retract target; it is kept verbatim.
-        }
-        kept.push(line)
-      }
-      if (!found) return { ok: false, error: 'missing' }
-      try {
-        await this.fs.writeText(
-          target, kept.length === 0 ? '' : `${kept.join('\n')}\n`,
-          { kind: 'replaceIfVersion', version: FsVersion(version) },
-          undefined, policy,
-        )
-        return { ok: true }
-      } catch (error) {
-        const code = novelErrorOf(error)
-        if (code === 'stale' && attempt === 0) continue
-        return { ok: false, error: code }
-      }
-    }
-    /* v8 ignore next -- the loop's second iteration always returns */
-    return { ok: false, error: 'stale' }
-  }
-
   /** The mention journal (a foreshadow card's chapter track), optionally one card's, oldest first. */
   async listMentions(request: { readonly workId: string; readonly foreshadowId?: string }): Promise<MentionEntry[]> {
     const id = normalizeWorkId(request.workId)
@@ -1068,8 +1004,8 @@ export class NovelService {
   /**
    * The 伏笔沉睡榜 + 健康度 over the kept foreshadow cards: live ones sorted
    * longest-slept first (the maintenance meeting's agenda), resolved ones with
-   * answers, and the health counts (活跃/超期⚠/已揭/弃置). 超期 = 3+ chapters
-   * untouched.
+   * answers, and the health counts (活跃/超期⚠/已揭/弃置). 超期 = slept
+   * past the threshold ({@link isOverdue}: starred 4, otherwise 6).
    * @param request - the work id.
    * @returns the ledger rows and counts, or the failure code.
    */
@@ -1085,7 +1021,7 @@ export class NovelService {
       resolved,
       counts: {
         active: active.length,
-        overdue: active.filter(view => (view.slept ?? 0) >= 3).length,
+        overdue: active.filter(isOverdue).length,
         resolved: resolved.length,
         abandoned: kept.filter(view => view.state === '已放弃').length,
       },
@@ -1195,11 +1131,11 @@ export class NovelService {
    *   3. new rules, foreshadows and characters land as live cards, marked
    *      new (✦) on the board — the user edits or archives (✗)
    *      what is wrong;
-   *   4. high-confidence journal lines land automatically (an experience line
-   *      marked 自动·可撤销); medium/low ones go to the pending queue;
+   *   4. high-confidence journal lines land automatically; medium/low ones
+   *      go to the pending queue;
    *   5. plan operations verify against the recorded mentions; a planned op
    *      with no touch lands in pending as 计划落空 (「忘了还是改主意」是人答
-   *      的题), and every journal mention carries planned/reconciled flags.
+   *      的题), and every journal mention carries its planned flag.
    *      Plan beats the subagent found (evidence-gated like everything else)
    *      land on the chapter's delivery; a missed beat is a reminder only.
    * @param request - work id, chapter number, the subagent's strict JSON.
@@ -1227,7 +1163,7 @@ export class NovelService {
     const { payload } = request
     const dropped: ImportDrop[] = []
     const report = { verified: 0, missed: 0, beats: { delivered: 0, missed: 0 }, pending: 0 }
-    const toPending: { kind: PendingKind; confidence: 'medium' | 'low'; chapter?: number; reason: string; evidenceInText?: string; payload: PendingPayload }[] = []
+    const toPending: { kind: PendingKind; confidence?: 'medium' | 'low'; chapter?: number; reason: string; evidenceInText?: string; payload: PendingPayload }[] = []
     const pend = (item: (typeof toPending)[number]): void => { toPending.push(item); report.pending += 1 }
     const confidenceOf = (raw: unknown): Confidence => raw === 'high' ? 'high' : raw === 'low' ? 'low' : 'medium'
     const foreshadowOf = new Map(entries.foreshadows.map(view => [view.cardId, view]))
@@ -1263,7 +1199,7 @@ export class NovelService {
       return existing === undefined ? undefined : `已有 ${existing.ref}`
     }
 
-    // World rules and principles: evidence first (gate 1), then a live card carrying its confidence.
+    // World rules and principles: evidence first (gate 1), then a live card quoting its line.
     for (const raw of payload.memories ?? []) {
       const content = cleanText(raw.content)
       if (content === undefined) continue
@@ -1285,11 +1221,9 @@ export class NovelService {
         const kind = cleanText(raw.world_kind, 10)
         if (kind !== undefined && WORLD_KINDS.includes(kind)) fields['kind'] = kind
       }
-      const confidence = confidenceOf(raw.confidence)
-      const note: CardNote = { extractedBy: 'llm', confidence, evidenceInText: evidence!, firstChapter: chapter.n }
       cardWrites.push({
-        role, fields, note,
-        comment: `置信度 ${confidence} · 第${chapter.n}章：「${evidence}」`, ref: String(fields['name'] ?? content.slice(0, 30)),
+        role, fields, note: { evidenceInText: evidence! },
+        comment: `第${chapter.n}章：「${evidence}」`, ref: String(fields['name'] ?? content.slice(0, 30)),
       })
     }
 
@@ -1321,13 +1255,12 @@ export class NovelService {
         journalLines.push({
           foreshadowId, chapter: chapter.n, kind: mentionKind,
           planned: plannedIds.has(foreshadowId),
-          reconciled: true,
           ...(note === undefined ? {} : { note }),
           createdAt: now,
         } satisfies Record<string, unknown>)
       } else {
         pend({
-          kind: 'mention', confidence, chapter: chapter.n, reason: `疑似提及（置信度 ${confidence}）`,
+          kind: 'mention', confidence, chapter: chapter.n, reason: '疑似提及',
           payload: { foreshadowId, kind: mentionKind, ...(note === undefined ? {} : { note }), ...(answer === undefined ? {} : { answer }) },
           ...(evidence === undefined ? {} : { evidenceInText: evidence }),
         })
@@ -1344,11 +1277,10 @@ export class NovelService {
         dropped.push({ kind: 'new-foreshadow', reason: 'evidence-not-found', ref: question.slice(0, 30) })
         continue
       }
-      const tension = cleanNumber(raw.tension)
       newForeshadows += 1
       cardWrites.push({
         role: 'foreshadow', fields: { question, status: '已埋', plantedAt: chapter.n },
-        note: { extractedBy: 'llm', evidenceInText: evidence!, firstChapter: chapter.n, ...(tension === undefined ? {} : { tension }) },
+        note: { evidenceInText: evidence! },
         comment: `第${chapter.n}章新埋：「${evidence}」`, ref: question.slice(0, 30),
       })
     }
@@ -1366,7 +1298,7 @@ export class NovelService {
       const identity = cleanText(raw.identity, 200)
       cardWrites.push({
         role: 'character', fields: { name, ...(identity === undefined ? {} : { identity }) },
-        note: { extractedBy: 'llm', evidenceInText: evidence!, firstChapter: chapter.n },
+        note: { evidenceInText: evidence! },
         comment: `第${chapter.n}章登场：「${evidence}」`, ref: name,
       })
     }
@@ -1390,7 +1322,7 @@ export class NovelService {
           ? ` [${foreshadowOf.get(opId)?.ref ?? opId}]`
           : op.id !== undefined ? ` [${op.id}]` : op.question === undefined ? '' : ` [${op.question}]`
         pend({
-          kind: 'plan-missed', confidence: 'medium', chapter: chapter.n,
+          kind: 'plan-missed', chapter: chapter.n,
           reason: `计划落空：${op.op}${label} —— 忘了还是改主意？`,
           payload: { op: op.op, ...(op.id === undefined ? {} : { id: opId ?? op.id }), ...(op.question === undefined ? {} : { question: op.question }) },
         })
@@ -1435,9 +1367,7 @@ export class NovelService {
     }
     // Experiences + current states: roster-checked, evidence-gated, high lands / medium-low pends.
     // They run after the card writes so a character this import landed is already on the roster.
-    // Automatic experience lines carry an id (the retract gesture's handle) and the 自动·可撤销 mark.
     const experienceLines: Record<string, unknown>[] = []
-    let experienceNext = nextExperienceNumber(await this.listExperiences({ workId: id }))
     const stateUpdates = new Map<string, CurrentState>()
     for (const raw of payload.experiences ?? []) {
       const entry = cleanText(raw.entry, 500)
@@ -1454,11 +1384,10 @@ export class NovelService {
       }
       const confidence = confidenceOf(raw.confidence)
       if (confidence === 'high') {
-        experienceLines.push({ id: `e${experienceNext}`, characterId, chapter: chapter.n, entry, autoImported: true, createdAt: now })
-        experienceNext += 1
+        experienceLines.push({ characterId, chapter: chapter.n, entry, createdAt: now })
       } else {
         pend({
-          kind: 'experience', confidence, chapter: chapter.n, reason: `置信度 ${confidence}`,
+          kind: 'experience', confidence, chapter: chapter.n, reason: '拿不准的经历',
           payload: { characterId, entry },
           ...(evidence === undefined ? {} : { evidenceInText: evidence }),
         })
@@ -1508,9 +1437,7 @@ export class NovelService {
         mutable.phase = 'extracted'
         if (chapter.plan !== undefined) mutable.delivery = { beats: beatsDelivered, ops: opsDelivered }
         if (recap !== undefined) mutable.recap = recap
-        mutable.wordCount = typeof payload.word_count === 'number' && Number.isFinite(payload.word_count)
-          ? Math.max(0, Math.round(payload.word_count))
-          : body.replace(/\s+/g, '').length
+        mutable.wordCount = body.replace(/\s+/g, '').length
         mutable.updatedAt = timestamp
         return table
       },
@@ -1535,7 +1462,7 @@ export class NovelService {
             table.items.push({
               id: idText,
               kind: item.kind,
-              confidence: item.confidence,
+              ...(item.confidence === undefined ? {} : { confidence: item.confidence }),
               ...(item.chapter === undefined ? {} : { chapter: item.chapter }),
               reason: item.reason,
               ...(item.evidenceInText === undefined ? {} : { evidenceInText: item.evidenceInText }),
@@ -1612,37 +1539,37 @@ export class NovelService {
   /** Materialize one accepted pending item; undefined on success, the failure code otherwise. */
   private async materializePending(workId: string, item: PendingItem, session: Session): Promise<NovelError | undefined> {
     const now = new Date().toISOString()
+    // Every journal line belongs to the chapter its finding came from; an item without one cannot land.
+    const chapter = item.chapter
     if (item.kind === 'mention') {
       const canvas = this.canvas
       const foreshadowId = item.payload.foreshadowId
       const kind = item.payload.kind
-      if (foreshadowId === undefined || (kind !== 'planted' && kind !== 'advanced' && kind !== 'hinted' && kind !== 'resolved')) return 'invalid-name'
+      if (chapter === undefined || foreshadowId === undefined || (kind !== 'planted' && kind !== 'advanced' && kind !== 'hinted' && kind !== 'resolved')) return 'invalid-name'
       const board = await this.readNovelBoard(workId)
       const card = board?.cards.find(candidate => candidate.id === foreshadowId)
       if (canvas === undefined || card === undefined) return 'missing'
       const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.mentions), session, [{
         foreshadowId,
-        chapter: item.chapter ?? 0,
+        chapter,
         kind,
         planned: false,
-        reconciled: true,
         ...(item.payload.note === undefined ? {} : { note: item.payload.note }),
         createdAt: now,
       }])
       if (!appended.ok) return appended.error
       const fields: Record<string, NovelFieldValue> = { ...card.fields, status: MENTION_TO_STATE[kind] }
-      if (kind === 'planted' && item.chapter !== undefined && cleanNumber(card.fields?.['plantedAt']) === undefined) fields['plantedAt'] = item.chapter
+      if (kind === 'planted' && cleanNumber(card.fields?.['plantedAt']) === undefined) fields['plantedAt'] = chapter
       if (kind === 'resolved' && item.payload.answer !== undefined) fields['answer'] = item.payload.answer
       const mutation = await canvas.patchCard({ canvasId: workId, cardId: foreshadowId, fields }, session)
       return mutation.ok ? undefined : canvasErrorOf(mutation.error)
     }
     if (item.kind === 'experience') {
       const { characterId, entry } = item.payload
-      if (characterId === undefined || entry === undefined) return 'invalid-name'
+      if (chapter === undefined || characterId === undefined || entry === undefined) return 'invalid-name'
       const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.experiences), session, [{
-        id: `e${nextExperienceNumber(await this.listExperiences({ workId }))}`,
         characterId,
-        chapter: item.chapter ?? 0,
+        chapter,
         entry,
         createdAt: now,
       }])
@@ -1685,12 +1612,22 @@ function sortBySleep(views: readonly ForeshadowView[]): ForeshadowView[] {
   return [...views].sort((a, b) => (b.slept ?? 0) - (a.slept ?? 0))
 }
 
-/** The next free `e<n>` over an experience journal. */
-function nextExperienceNumber(entries: readonly ExperienceEntry[]): number {
-  return entries.reduce((max, row) => {
-    const match = /^e(\d+)$/.exec(row.id ?? '')
-    return match === null ? max : Math.max(max, Number(match[1]))
-  }, 0) + 1
+/**
+ * How many reconciled chapters come after one chapter in reading order (seq,
+ * not n — an inserted chapter sits where it reads). Only reconciled chapters
+ * count: mentions are recorded by the 对账, so a chapter still being planned
+ * or written cannot have touched anything yet and must not age the ledger.
+ * A base chapter the table does not hold (a hand-typed 埋于) places by its
+ * number.
+ * @param chapters - the chapter index.
+ * @returns the counter for one base chapter number.
+ */
+export function sleepCounter(chapters: readonly ChapterRecord[]): (base: number) => number {
+  const reconciled = chapters.filter(chapter => chapter.phase === 'extracted' || chapter.phase === 'reviewed')
+  return base => {
+    const at = chapters.find(chapter => chapter.n === base)?.seq ?? base
+    return reconciled.filter(chapter => chapter.seq > at).length
+  }
 }
 
 /**
@@ -1710,6 +1647,7 @@ export function entriesOf(
 ): WorkEntries {
   const roleOf = rolesOn(board)
   const currentChapter = chapters.reduce((max, chapter) => Math.max(max, chapter.n), 0)
+  const slept = sleepCounter(chapters)
   const lastActive = new Map<string, number>()
   for (const mention of mentions) lastActive.set(mention.foreshadowId, Math.max(lastActive.get(mention.foreshadowId) ?? 0, mention.chapter))
   const rules: RuleView[] = []
@@ -1732,6 +1670,7 @@ export function entriesOf(
       const active = lastActive.get(card.id)
       const answer = fieldText(card, 'answer', 500)
       const base = active ?? plantedAt
+      const starred = note?.starred === true
       foreshadows.push({
         cardId: card.id,
         ref,
@@ -1740,9 +1679,9 @@ export function entriesOf(
         cardStatus: card.status,
         ...(plantedAt === undefined ? {} : { plantedAt }),
         ...(answer === undefined ? {} : { answer }),
-        ...(note?.tension === undefined ? {} : { tension: note.tension }),
+        starred,
         ...(active === undefined ? {} : { lastActiveChapter: active }),
-        ...(base === undefined ? {} : { slept: Math.max(0, currentChapter - base) }),
+        ...(base === undefined ? {} : { slept: slept(base) }),
       })
     } else {
       const optional = (key: 'identity' | 'want' | 'lack' | 'wound' | 'appearance' | 'voice') => {
@@ -1794,13 +1733,10 @@ function normalizeExperience(raw: unknown): ExperienceEntry | undefined {
   const chapter = typeof record['chapter'] === 'number' && Number.isFinite(record['chapter']) ? record['chapter'] : undefined
   const entry = cleanText(record['entry'], 500)
   if (characterId === undefined || chapter === undefined || entry === undefined) return undefined
-  const id = cleanText(record['id'], 40)
   return {
     characterId,
     chapter,
     entry,
-    ...(id === undefined ? {} : { id }),
-    ...(record['autoImported'] === true ? { autoImported: true } : {}),
     createdAt: cleanText(record['createdAt'], 40) ?? '',
   }
 }
@@ -1820,7 +1756,6 @@ function normalizeMention(raw: unknown): MentionEntry | undefined {
     chapter,
     kind,
     planned: record['planned'] === true,
-    reconciled: record['reconciled'] === true,
     ...(note === undefined ? {} : { note }),
     createdAt: cleanText(record['createdAt'], 40) ?? '',
   }

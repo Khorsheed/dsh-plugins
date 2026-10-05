@@ -20,7 +20,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { renderPlanBrief, renderWriteBrief } from './brief.ts'
 import type { NovelService, WorkEntries } from './store.ts'
-import type { ChapterPlan, EntryRole, ExtractPayload, ForeshadowView, PendingItem, ReviewAction } from './types.ts'
+import { isOverdue, type ChapterPlan, type EntryRole, type ExtractPayload, type ForeshadowView, type PendingItem, type ReviewAction } from './types.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
 function tagOrigin<T extends object>(definition: T): T {
@@ -61,8 +61,8 @@ function foreshadowFacts(view: ForeshadowView): string {
     view.state,
     view.plantedAt === undefined ? '' : `埋于第${view.plantedAt}章`,
     view.lastActiveChapter === undefined ? '' : `最后活跃第${view.lastActiveChapter}章`,
-    slept === undefined ? '' : `已 ${slept} 章未动${slept >= 3 ? ' ⚠' : ''}`,
-    view.tension === undefined ? '' : `势${view.tension}`,
+    slept === undefined ? '' : `已 ${slept} 章未动${isOverdue(view) ? ' ⚠' : ''}`,
+    view.starred ? '星标' : '',
   ].filter(part => part !== '').join(' · ')
 }
 
@@ -88,7 +88,7 @@ function cardLines(entries: WorkEntries, role: EntryRole | undefined): string[] 
 
 /** One pending item as the model reads it (one line, evidence attached). */
 function pendingLine(item: PendingItem): string {
-  return `- [${item.id}] ${item.kind}（${item.confidence}）${item.reason}${item.evidenceInText === undefined ? '' : `\n  原文：「${item.evidenceInText}」`}`
+  return `- [${item.id}] ${item.kind}${item.confidence === undefined ? '' : `（${item.confidence}）`}${item.reason}${item.evidenceInText === undefined ? '' : `\n  原文：「${item.evidenceInText}」`}`
 }
 
 /** The chapter phase's display name. */
@@ -446,9 +446,7 @@ export function novelBindDefinition(store: NovelService, granted: (agent: Agent)
 /** One card in full, as `novel_read(what=card)` answers it. */
 async function cardDetail(store: NovelService, workId: string, entries: WorkEntries, cardId: string, role: EntryRole): Promise<string> {
   const note = entries.annotations.notes[cardId]
-  const audit = note?.extractedBy === 'llm'
-    ? `来源：第${note.firstChapter ?? '?'}章对账（${note.confidence ?? '?'}）${note.evidenceInText === undefined ? '' : `「${note.evidenceInText}」`}`
-    : undefined
+  const audit = note?.evidenceInText === undefined ? undefined : `原文依据：「${note.evidenceInText}」`
   const join = (items: readonly string[]): string => items.length === 0 ? '—' : items.join('、')
   if (role === 'character') {
     const view = entries.characters.find(candidate => candidate.cardId === cardId)!
@@ -463,7 +461,7 @@ async function cardDetail(store: NovelService, workId: string, entries: WorkEntr
       `秘密：${join(view.secrets)}`,
       ...(view.relations.length === 0 ? [] : [`关系：${view.relations.join('；')}`]),
       ...(current === undefined ? [] : [`当前态：${current.where ?? '—'} / ${current.state ?? '—'} / 牵挂 ${current.concern ?? '—'}`]),
-      ...(experiences.length === 0 ? [] : ['经历：', ...experiences.slice(-8).map(entry => `- 第${entry.chapter}章 ${entry.entry}${entry.id === undefined ? '' : ` [${entry.id}]`}`)]),
+      ...(experiences.length === 0 ? [] : ['经历：', ...experiences.slice(-8).map(entry => `- 第${entry.chapter}章 ${entry.entry}`)]),
       ...(audit === undefined ? [] : [audit]),
     ].join('\n')
   }

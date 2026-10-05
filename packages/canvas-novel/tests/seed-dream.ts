@@ -96,11 +96,8 @@ export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 
       [CARD.zhao]: 1, [CARD.aiwen]: 2,
     },
     notes: {
-      [CARD.dreamLayers]: { confidence: 'medium', extractedBy: 'llm', firstChapter: 3 },
-      [CARD.towerShadow]: { tension: 2 },
-      [CARD.doorGap]: { tension: 4 },
-      [CARD.leafGlow]: { tension: 3 },
-      [CARD.formerKeeper]: { tension: 5 },
+      [CARD.dreamLayers]: { evidenceInText: '二层梦里的时间比外面慢' },
+      [CARD.formerKeeper]: { starred: true },
       [CARD.zhao]: { currentState: { where: '档案室门外走廊', state: '刚经历二层梦脱险，心跳未平', concern: '妹妹的下落' } },
       [CARD.aiwen]: { currentState: { where: '档案室', state: '从容，似乎早有安排', concern: '梦主苏醒的节奏' } },
     },
@@ -118,9 +115,9 @@ export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 
   fs.seed(join(dir, 'experiences.jsonl'), experiences.map(entry => JSON.stringify(entry)).join('\n') + '\n')
 
   const mentions = [
-    { foreshadowId: CARD.doorGap, chapter: 1, kind: 'planted', planned: false, reconciled: true, createdAt: stamp(1) },
-    { foreshadowId: CARD.leafGlow, chapter: 2, kind: 'hinted', planned: true, reconciled: true, createdAt: stamp(2) },
-    { foreshadowId: CARD.doorGap, chapter: 3, kind: 'advanced', planned: true, reconciled: true, createdAt: stamp(3) },
+    { foreshadowId: CARD.doorGap, chapter: 1, kind: 'planted', planned: false, createdAt: stamp(1) },
+    { foreshadowId: CARD.leafGlow, chapter: 2, kind: 'hinted', planned: true, createdAt: stamp(2) },
+    { foreshadowId: CARD.doorGap, chapter: 3, kind: 'advanced', planned: true, createdAt: stamp(3) },
   ]
   fs.seed(join(dir, 'mentions.jsonl'), mentions.map(entry => JSON.stringify(entry)).join('\n') + '\n')
 

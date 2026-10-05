@@ -17,7 +17,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel
  */
-import type { ChapterRecord, CharacterView, ExperienceEntry, ForeshadowOp, ForeshadowView, RuleView } from './types.ts'
+import { isOverdue, type ChapterRecord, type CharacterView, type ExperienceEntry, type ForeshadowOp, type ForeshadowView, type RuleView } from './types.ts'
 
 /** Everything one brief renders (assembled by the store's `gatherBrief`; kept cards only). */
 export interface BriefData {
@@ -75,27 +75,25 @@ const WRITE_TIGHT: RenderLimits = { foreshadowTopK: 5, recapMax: 4, expPerChar: 
 const PLAN_LIMITS: RenderLimits = { foreshadowTopK: 20, recapMax: 5, expPerChar: 0 }
 const PLAN_TIGHT: RenderLimits = { foreshadowTopK: 10, recapMax: 3, expPerChar: 0 }
 
-/** The write-variant ledger line: `- [#12] 门缝里的东西（埋于第1章 · 最后活跃第3章 · 势4）`. */
+/** The write-variant ledger line: `- [#12] 门缝里的东西（埋于第1章 · 最后活跃第3章）`. */
 function foreshadowLineWrite(view: ForeshadowView): string {
   const last = view.lastActiveChapter ?? view.plantedAt
   const parts = [
     view.plantedAt === undefined ? '' : `埋于第${view.plantedAt}章`,
     last === undefined ? '' : `最后活跃第${last}章`,
-    view.tension === undefined ? '' : `势${view.tension}`,
   ].filter(part => part !== '')
   return `- [${view.ref}] ${view.question}${parts.length === 0 ? '' : `（${parts.join(' · ')}）`}`
 }
 
-/** The plan-variant ledger line: `- [#12] 门缝里的东西（埋于第1章 · 已 3 章未动 ⚠ / 势 4）`. */
+/** The plan-variant ledger line: `- [#12] ★ 门缝里的东西（埋于第1章 · 已 4 章未动 ⚠）` — ★ is the user's star. */
 function foreshadowLinePlan(view: ForeshadowView): string {
   const slept = view.slept
-  const sleeping = slept === undefined ? '' : slept <= 0 ? '本章刚动过' : `已 ${slept} 章未动${slept >= 3 ? ' ⚠' : ''}`
+  const sleeping = slept === undefined ? '' : slept <= 0 ? '最近一章刚动过' : `已 ${slept} 章未动${isOverdue(view) ? ' ⚠' : ''}`
   const parts = [
     view.plantedAt === undefined ? '' : `埋于第${view.plantedAt}章`,
     sleeping,
-    view.tension === undefined ? '' : `势 ${view.tension}`,
   ].filter(part => part !== '')
-  return `- [${view.ref}] ${view.question}${parts.length === 0 ? '' : `（${parts.join(' · ')}）`}`
+  return `- [${view.ref}] ${view.starred ? '★ ' : ''}${view.question}${parts.length === 0 ? '' : `（${parts.join(' · ')}）`}`
 }
 
 /** One planned op as the plan line reads it: `推进 [#12 门缝里的东西]：多了一道划痕` / `新埋 [蓝色叶子指向谁]`. */
@@ -272,14 +270,13 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
 /** The extract pack's output schema (the subagent's strict JSON contract; the import gate reads these keys). */
 export const EXTRACT_OUTPUT_SCHEMA = `{
   "beats_delivered": [{ "beat": 走向的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
-  "memories": [{ "kind": "世界|原则", "name": "仅世界：这条设定叫什么（地点、势力、道具或规则的名字）", "world_kind": "仅世界：地点|势力|道具|规则|历史|其他", "content": "具体的设定或写作原则，能复述", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
+  "memories": [{ "kind": "世界|原则", "name": "仅世界：这条设定叫什么（地点、势力、道具或规则的名字）", "world_kind": "仅世界：地点|势力|道具|规则|历史|其他", "content": "具体的设定或写作原则，能复述", "evidence_in_text": "≤50字原文" }],
   "foreshadow_mentions": [{ "foreshadow_id": "#12", "kind": "planted|advanced|hinted|resolved", "answer": "仅 resolved 给", "note": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
-  "new_foreshadows": [{ "question": "…", "tension": 1到5, "evidence_in_text": "≤50字原文" }],
+  "new_foreshadows": [{ "question": "…", "evidence_in_text": "≤50字原文" }],
   "new_characters": [{ "name": "…", "identity": "一句身份", "evidence_in_text": "≤50字原文" }],
   "experiences": [{ "character_id": "c1", "entry": "本章做了什么、状态怎么变，1-2句", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "current_states": [{ "character_id": "c1", "where": "…", "state": "…", "concern": "…", "confidence": "high|medium|low" }],
-  "recap": "本章 2-3 句摘要",
-  "word_count": 本章字数
+  "recap": "本章 2-3 句摘要"
 }`
 
 /**
@@ -303,7 +300,8 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '2. 伏笔/角色只按 id 引用榜单与名册中的对象；不认识的对象放 new_*，不硬靠；',
     '   本章新登场的角色写进 new_characters，他们的经历和现状照样写，character_id 填名字；',
     '   世界设定给 name（设定的名字）和具体内容，同一个设定只写一条；',
-    '3. 拿不准一律 confidence=medium/low；',
+    '3. confidence 只用在伏笔提及、角色经历与现状上：拿不准的给 medium/low；',
+    '   伏笔提及的 kind：hinted（暗示）= 读者能察觉、但剧情没动；advanced（推进）= 出现了新信息或新行动；',
     '4. 本章计划的走向逐条核对：正文写到了的那一拍写进 beats_delivered（带 evidence），没写到的不报；',
     '   伏笔只按实际写到的报 foreshadow_mentions，计划列了却没写到的不要编；',
     '5. 角色经历每人 1-2 句：本章做了什么、状态怎么变；current_state 给',

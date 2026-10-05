@@ -38,8 +38,8 @@ describe('the three brief variants on the《梦境监护者》seed (CP1)', () =>
     expect(text).toContain('梗概：赵启明跟着艾文穿过门缝')
     expect(text).toContain('  - 推进 [#12 门缝里的东西]：门后第一层')
     expect(text).toContain('章末钩子：门后传来妹妹的声音')
-    // The ledger carries ids and the 势; the iron rule: topK, never the whole history.
-    expect(text).toContain('[#12] 门缝里的东西（埋于第1章 · 最后活跃第3章 · 势4）')
+    // The ledger carries ids; the iron rule: topK, never the whole history.
+    expect(text).toContain('[#12] 门缝里的东西（埋于第1章 · 最后活跃第3章）')
     expect(text).not.toContain('已揭')
     // The in-scene blocks bind to the plan's characters, with the POV boundary fields.
     expect(text).toContain('### 赵启明（梦境监护者新人）')
@@ -61,7 +61,7 @@ describe('the three brief variants on the《梦境监护者》seed (CP1)', () =>
     expect(estimateTokens(text)).toBeLessThanOrEqual(BRIEF_BUDGETS.plan)
     expect(text).toContain('第6章规划参考')
     // Sleeping rows show 已 n 章未动 with the ⚠ at 3+; resolved rows carry their answers.
-    expect(text).toContain('[#18] 失踪的前任监护者是谁（埋于第1章 · 已 5 章未动 ⚠ · 势 5）')
+    expect(text).toContain('[#18] ★ 失踪的前任监护者是谁（埋于第1章 · 已 4 章未动 ⚠）')
     expect(text).toContain('[已揭 #9] 钟楼为什么没有影子 → 钟楼立在两层梦之间，影子落在了下一层。')
     // The roster is one line each.
     expect(text).toContain('- 赵启明：梦境监护者新人')
@@ -82,7 +82,7 @@ describe('the three brief variants on the《梦境监护者》seed (CP1)', () =>
     // The instructions, the ledger/roster with ids, and the output schema.
     expect(text).toContain('你是长篇小说的记忆对账员。输入是第5章正文')
     expect(text).toContain('【活跃伏笔榜】')
-    expect(text).toContain('[#12] 门缝里的东西（埋于第1章 · 最后活跃第3章 · 势4）')
+    expect(text).toContain('[#12] 门缝里的东西（埋于第1章 · 最后活跃第3章）')
     expect(text).toContain('【角色花名册】')
     expect(text).toContain('- [c1] 赵启明（梦境监护者新人）')
     expect(text).toContain('- [c2] 艾文（活了三百年的梦引者）')

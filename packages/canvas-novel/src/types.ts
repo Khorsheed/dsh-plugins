@@ -85,7 +85,21 @@ export const FORESHADOW_STATES: readonly ForeshadowState[] = ['未埋', '已埋'
 
 export type Confidence = 'high' | 'medium' | 'low'
 
-const CONFIDENCES: readonly Confidence[] = ['high', 'medium', 'low']
+/**
+ * How many reconciled chapters a live foreshadow may go untouched before the
+ * ledger flags it (超期): a starred one is the user's main line and is
+ * flagged sooner. The one place the threshold lives — the store, the briefs,
+ * the tool answers and the story log all read it through {@link isOverdue}.
+ */
+export const SLEEP_THRESHOLD = { starred: 4, normal: 6 } as const
+
+/** Starred foreshadows past this count get a soft hint (星标太多就不算重点了). */
+export const STAR_SOFT_LIMIT = 5
+
+/** Whether a foreshadow has slept past its threshold. */
+export function isOverdue(view: { readonly starred?: boolean; readonly slept?: number }): boolean {
+  return (view.slept ?? 0) >= (view.starred === true ? SLEEP_THRESHOLD.starred : SLEEP_THRESHOLD.normal)
+}
 
 /** A character's where-and-now (当前态), refreshed by each 对账. */
 export interface CurrentState {
@@ -100,16 +114,12 @@ export interface CurrentState {
  * field — the card holds only what the user would write themselves.
  */
 export interface CardNote {
-  readonly confidence?: Confidence
-  readonly extractedBy?: 'llm' | 'user'
   /** ≤60 characters quoted verbatim from the chapter (the import gate grepped for it). */
   readonly evidenceInText?: string
-  /** The chapter whose 对账 brought the card in. */
-  readonly firstChapter?: number
-  /** Characters only: 当前态 as of the last 对账. */
+  /** Characters only: 当前态 as of the last 对账 (or the user's own edit). */
   readonly currentState?: CurrentState
-  /** Foreshadows only: narrative tension 1–5 (the ledger's 势). */
-  readonly tension?: number
+  /** Foreshadows only: the user's star (主线重点 — planned first, never trimmed, flagged sooner). */
+  readonly starred?: boolean
 }
 
 /**
@@ -154,15 +164,9 @@ function normalizeNote(raw: unknown): CardNote | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const record = raw as Record<string, unknown>
   const out: { -readonly [K in keyof CardNote]?: CardNote[K] } = {}
-  const confidence = pick(record['confidence'], CONFIDENCES)
-  if (confidence !== undefined) out.confidence = confidence
-  if (record['extractedBy'] === 'llm' || record['extractedBy'] === 'user') out.extractedBy = record['extractedBy']
   const evidenceInText = cleanText(record['evidenceInText'], 60)
   if (evidenceInText !== undefined) out.evidenceInText = evidenceInText
-  const firstChapter = cleanNumber(record['firstChapter'])
-  if (firstChapter !== undefined) out.firstChapter = firstChapter
-  const tension = cleanNumber(record['tension'])
-  if (tension !== undefined) out.tension = Math.min(5, Math.max(1, Math.round(tension)))
+  if (record['starred'] === true) out.starred = true
   if (typeof record['currentState'] === 'object' && record['currentState'] !== null) {
     const state = record['currentState'] as Record<string, unknown>
     const where = cleanText(state['where'], 200)
@@ -201,14 +205,10 @@ export function normalizeAnnotations(raw: unknown): Annotations | undefined {
 
 /** One line of `experiences.jsonl`: what this character did and how their state moved in one chapter. */
 export interface ExperienceEntry {
-  /** `e<n>`, allocated at write time — the retract gesture's handle. */
-  readonly id?: string
   /** The character's card id. */
   readonly characterId: string
   readonly chapter: number
   readonly entry: string
-  /** The extract import's high-confidence automatic write — 自动·可撤销. */
-  readonly autoImported?: boolean
   readonly createdAt: string
 }
 
@@ -328,15 +328,13 @@ export function effectiveChapterPhase(chapter: ChapterRecord, hasBody: boolean):
   return chapter.phase
 }
 
-/** One line of `mentions.jsonl`: a foreshadow touch in one chapter, with the plan-reconciliation flags. */
+/** One line of `mentions.jsonl`: a foreshadow touch the text carried in one chapter. */
 export interface MentionEntry {
   readonly foreshadowId: string
   readonly chapter: number
   readonly kind: 'planted' | 'advanced' | 'hinted' | 'resolved'
   /** The chapter plan listed this operation. */
   readonly planned: boolean
-  /** The extract import saw it in the text. */
-  readonly reconciled: boolean
   readonly note?: string
   readonly createdAt: string
 }
@@ -468,10 +466,14 @@ export interface ForeshadowView {
   readonly state: ForeshadowState
   readonly plantedAt?: number
   readonly answer?: string
-  readonly tension?: number
+  /** The user's star (the sidecar note). */
+  readonly starred: boolean
   /** The newest chapter that touched it (max mention chapter). */
   readonly lastActiveChapter?: number
-  /** current − (lastActive ?? plantedAt); undefined when neither is known. */
+  /**
+   * Reconciled chapters since its last touch (lastActive ?? plantedAt),
+   * counted by seq position; undefined when neither is known.
+   */
   readonly slept?: number
   readonly cardStatus: NovelCardStatus
 }
@@ -554,9 +556,10 @@ export interface PendingPayload {
 export interface PendingItem {
   readonly id: string
   readonly kind: PendingKind
-  readonly confidence: 'medium' | 'low'
+  /** A doubtful finding's confidence (mention/experience); absent on the kinds that are questions, not guesses. */
+  readonly confidence?: 'medium' | 'low'
   readonly chapter?: number
-  /** One line on why this waits for a person (置信度 medium / 计划落空…). */
+  /** One line on why this waits for a person (疑似提及 / 计划落空…). */
   readonly reason: string
   readonly evidenceInText?: string
   /** The proposed record, shaped per kind (mention, experience, plan op). */
@@ -596,10 +599,11 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
   const chapter = cleanNumber(record['chapter'])
   const evidenceInText = cleanText(record['evidenceInText'], 60)
   const resolvedAt = cleanText(record['resolvedAt'], 40)
+  const confidence = pick(record['confidence'], ['medium', 'low'] as const)
   return {
     id,
     kind,
-    confidence: record['confidence'] === 'low' ? 'low' : 'medium',
+    ...(confidence === undefined ? {} : { confidence }),
     ...(chapter === undefined ? {} : { chapter }),
     reason,
     ...(evidenceInText === undefined ? {} : { evidenceInText }),
@@ -645,7 +649,6 @@ export interface ExtractMemoryInput {
   /** 世界 only: 地点|势力|道具|规则|历史|其他. */
   readonly world_kind?: string
   readonly content?: string
-  readonly confidence?: string
   readonly evidence_in_text?: string
 }
 
@@ -662,7 +665,6 @@ export interface ExtractMentionInput {
 /** The subagent's new-foreshadow row. */
 export interface ExtractNewForeshadowInput {
   readonly question?: string
-  readonly tension?: number
   readonly evidence_in_text?: string
 }
 
@@ -707,7 +709,6 @@ export interface ExtractPayload {
   readonly experiences?: readonly ExtractExperienceInput[]
   readonly current_states?: readonly ExtractCurrentStateInput[]
   readonly recap?: string
-  readonly word_count?: number
 }
 
 /** One dropped import item and why (the anti-fabrication log). */
@@ -788,8 +789,6 @@ export interface LedgerMark {
   readonly kind: MentionEntry['kind']
   /** Listed by the chapter plan. */
   readonly planned: boolean
-  /** Seen in the text by the extract import. */
-  readonly reconciled: boolean
 }
 
 /** The ledger page's read: the ledger plus every foreshadow's track, keyed by card id. */

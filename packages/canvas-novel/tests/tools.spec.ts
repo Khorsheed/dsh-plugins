@@ -126,7 +126,7 @@ describe('the novel tools', () => {
     const chapters = await call(read, { what: 'chapters' })
     expect(chapters).toContain('第6章 门后（规划中）')
     const ledger = await call(read, { what: 'ledger' })
-    expect(ledger).toContain('伏笔健康度：活跃 3 / 超期⚠ 3 / 已揭 1 / 弃置 0')
+    expect(ledger).toContain('伏笔健康度：活跃 3 / 超期⚠ 1 / 已揭 1 / 弃置 0')
     const body = await call(read, { what: 'chapter', chapter: 5 })
     expect(body).toContain('门缝里飘出一片蓝色的叶子')
     const character = await call(read, { what: 'card', id: '赵启明' })

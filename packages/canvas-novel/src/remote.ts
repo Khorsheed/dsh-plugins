@@ -83,7 +83,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     if (ledger.ok) {
       for (const entry of await this.core.listMentions({ workId: request.canvasId })) {
         (marks[entry.foreshadowId] ??= []).push({
-          chapter: entry.chapter, kind: entry.kind, planned: entry.planned, reconciled: entry.reconciled,
+          chapter: entry.chapter, kind: entry.kind, planned: entry.planned,
         })
       }
     }

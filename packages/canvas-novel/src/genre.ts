@@ -150,8 +150,8 @@ export const WORLD_KINDS: readonly string[] = ['地点', '势力', '道具', '�
  * The cold-start version. The cards are the single source of truth for what
  * gets injected into writing. A foreshadow card stores only first-hand facts —
  * question, status, planted chapter, answer; dormancy is computed from the
- * mention journal, and tension, a character's where-and-now and the audit
- * trail live in the engine's sidecar — never on the card.
+ * mention journal, and the user's star, a character's where-and-now and the
+ * card evidence live in the engine's sidecar — never on the card.
  */
 export const NOVEL_GENRE: NovelGenreDefinition = {
   id: NOVEL_GENRE_ID,

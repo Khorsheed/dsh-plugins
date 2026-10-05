@@ -1,7 +1,7 @@
 /**
  * The 伏笔台账 page: the health line, then every open foreshadow longest-asleep
  * first — its ref and question, how long it has slept (overdue in the warning
- * colour), its tension, and its chapter track (one cell per chapter, marked
+ * colour), its star, and its chapter track (one cell per chapter, marked
  * where the text planted/advanced/hinted/resolved it) — then the resolved
  * ones with their answers. A row opens its card.
  *
@@ -9,13 +9,10 @@
  */
 import type { ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { NOVEL_GENRE_ID, type ForeshadowView, type LedgerMark } from '../types.ts'
+import { isOverdue, NOVEL_GENRE_ID, type ForeshadowView, type LedgerMark } from '../types.ts'
 import type { NovelNavigate, NovelPageOwnerProps, NovelSurfaceProps } from './contract.ts'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
-
-/** Chapters a sleep may reach before the ledger calls it overdue (the engine's rule). */
-const OVERDUE = 3
 
 /** The `novel:ledger` page entry. */
 export function LedgerPage(props: NovelSurfaceProps<NovelPageOwnerProps>): ReactNode {
@@ -73,12 +70,7 @@ function LedgerRow({ view, marks, chapters, navigate, t }: {
         <span className={css.ref}>{view.ref}</span>
         <span className={css.question}>{view.question}</span>
         {!resolved && view.slept !== undefined && view.slept > 0 && (
-          <span className={view.slept >= OVERDUE ? css.badgeWarn : css.badge}>{t('ledger.slept', { n: view.slept })}</span>
-        )}
-        {view.tension !== undefined && (
-          <span className={css.tension} title={t('ledger.tension', { n: view.tension })}>
-            {'●'.repeat(clampTension(view.tension))}<span className={css.tensionOff}>{'○'.repeat(5 - clampTension(view.tension))}</span>
-          </span>
+          <span className={isOverdue(view) ? css.badgeWarn : css.badge}>{t('ledger.slept', { n: view.slept })}</span>
         )}
       </div>
       <div className={css.ledgerMeta}>
@@ -97,9 +89,7 @@ function Track({ marks, chapters, t }: { readonly marks: readonly LedgerMark[]; 
   if (last <= 0 || marks.length === 0) return <div className={css.trackEmpty}>{t('ledger.noMarks')}</div>
   const byChapter = new Map<number, LedgerMark>()
   for (const mark of marks) {
-    // A reconciled mark outranks a merely planned one for the same chapter.
-    const seen = byChapter.get(mark.chapter)
-    if (seen === undefined || (!seen.reconciled && mark.reconciled) || seen.reconciled === mark.reconciled) byChapter.set(mark.chapter, mark)
+    byChapter.set(mark.chapter, mark)
   }
   return (
     <div className={css.track}>
@@ -110,7 +100,6 @@ function Track({ marks, chapters, t }: { readonly marks: readonly LedgerMark[]; 
             key={n}
             className={css.trackCell}
             data-kind={mark?.kind}
-            data-missed={mark !== undefined && !mark.reconciled ? 'true' : undefined}
             title={mark === undefined ? String(n) : t('ledger.markTitle', { n, kind: t(`pending.mention.${mark.kind}`) })}
           >
             {mark === undefined ? '' : t(`ledger.mark.${mark.kind}`)}
@@ -119,8 +108,4 @@ function Track({ marks, chapters, t }: { readonly marks: readonly LedgerMark[]; 
       })}
     </div>
   )
-}
-
-function clampTension(value: number): number {
-  return Math.max(0, Math.min(5, Math.round(value)))
 }

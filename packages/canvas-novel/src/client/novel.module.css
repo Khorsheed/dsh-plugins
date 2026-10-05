@@ -313,17 +313,6 @@
   color: var(--dsw-alias-state-warn-label);
 }
 
-.tension {
-  flex: none;
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: var(--dsw-alias-brand-primary);
-}
-
-.tensionOff {
-  color: var(--dsw-alias-border-l2);
-}
-
 .ledgerMeta {
   display: flex;
   flex-wrap: wrap;
@@ -358,12 +347,6 @@
   color: var(--dsw-alias-state-warn-label);
 }
 .trackCell[data-kind="resolved"] { background: var(--dsw-alias-label-secondary); }
-
-.trackCell[data-missed="true"] {
-  background: none;
-  border: 1px dashed var(--dsw-alias-label-tertiary);
-  color: var(--dsw-alias-label-tertiary);
-}
 
 .trackEmpty,
 .legend {

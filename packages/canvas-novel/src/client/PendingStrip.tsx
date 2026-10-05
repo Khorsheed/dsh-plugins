@@ -130,7 +130,9 @@ export function PendingList({ canvasId, items, navigate, sessionId, remote, t }:
         <li key={item.id} className={css.pendingItem}>
           <div className={css.pendingHead}>
             <span className={css.kindTag} data-kind={item.kind}>{t(`pending.kind.${item.kind}`)}</span>
-            <span className={css.confidence} data-confidence={item.confidence}>{t(`pending.confidence.${item.confidence}`)}</span>
+            {item.confidence !== undefined && (
+              <span className={css.confidence} data-confidence={item.confidence}>{t(`pending.confidence.${item.confidence}`)}</span>
+            )}
             {item.chapter !== undefined && <span className={css.muted}>{t('pending.chapter', { n: item.chapter })}</span>}
             {item.subject !== undefined && (
               <button

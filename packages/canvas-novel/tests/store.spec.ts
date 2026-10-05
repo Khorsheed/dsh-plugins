@@ -9,8 +9,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
-import { manuscriptParagraphs, NovelService, resolveNovelStateRoot } from '../src/store.ts'
-import { chapterFileName, chapterNumberOfFile, effectiveChapterPhase } from '../src/types.ts'
+import { manuscriptParagraphs, NovelService, resolveNovelStateRoot, sleepCounter } from '../src/store.ts'
+import { chapterFileName, chapterNumberOfFile, effectiveChapterPhase, isOverdue, type ChapterRecord } from '../src/types.ts'
 import { FakeCanvas, provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { CARD, DREAM, seedDreamKeeper } from './seed-dream.ts'
@@ -161,9 +161,26 @@ describe('the novel store', () => {
     provideCanvas(ctx)
     const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
     const ledger = await store.ledger({ workId: DREAM.workId })
-    expect(ledger.counts).toEqual({ active: 3, overdue: 3, resolved: 1, abandoned: 0 })
+    // Five reconciled chapters: the starred #18 (planted ch1) slept 4 — past its 4-chapter
+    // threshold; #15 (last ch2) slept 3 and #12 (last ch3) slept 2 stay under the normal 6.
+    expect(ledger.counts).toEqual({ active: 3, overdue: 1, resolved: 1, abandoned: 0 })
     expect(ledger.currentChapter).toBe(6)
-    expect(ledger.active.map(view => view.cardId)).toEqual([CARD.formerKeeper, CARD.leafGlow, CARD.doorGap])
+    expect(ledger.active.map(view => [view.cardId, view.slept, view.starred])).toEqual([
+      [CARD.formerKeeper, 4, true], [CARD.leafGlow, 3, false], [CARD.doorGap, 2, false],
+    ])
+  })
+
+  it('counts sleep by reading order over reconciled chapters only', () => {
+    const row = (n: number, seq: number, phase: ChapterRecord['phase']): ChapterRecord =>
+      ({ n, seq, title: '', file: '', phase, sessionIds: [], createdAt: '', updatedAt: '' })
+    // Chapter 4 was inserted between 1 and 2 (seq 1.5); chapter 5 is still being planned.
+    const slept = sleepCounter([row(1, 1, 'extracted'), row(2, 2, 'reviewed'), row(3, 3, 'extracted'), row(4, 1.5, 'extracted'), row(5, 4, 'planning')])
+    expect(slept(1)).toBe(3)
+    expect(slept(4)).toBe(2)
+    expect(slept(3)).toBe(0)
+    expect(isOverdue({ slept: 4, starred: true })).toBe(true)
+    expect(isOverdue({ slept: 5 })).toBe(false)
+    expect(isOverdue({ slept: 6 })).toBe(true)
   })
 
   it('appends to the JSONL journals without rewriting history (bad lines drop out of the view only)', async () => {
@@ -326,10 +343,10 @@ describe('the novel store', () => {
     expect(bogus.ignored).toEqual(['status'])
     await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#15', fields: { status: '已放弃' } }, SESSION)
     const ledger = await store.ledger({ workId: DREAM.workId })
-    expect(ledger.counts).toEqual({ active: 1, overdue: 1, resolved: 2, abandoned: 1 })
+    expect(ledger.counts).toEqual({ active: 1, overdue: 0, resolved: 2, abandoned: 1 })
   })
 
-  it('lists the mention journal for the dot strip, and retracts an automatic experience by id', async () => {
+  it('lists the mention journal for the dot strip, and lands a sure experience plainly', async () => {
     const fs = new FakeFs()
     seedDreamKeeper(fs, { ch5Phase: 'planning' })
     const ctx = new Context()
@@ -338,19 +355,12 @@ describe('the novel store', () => {
     const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
     const before = await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.doorGap })
     expect(before.map(entry => entry.kind)).toEqual(['planted', 'advanced'])
-    // Import lands an automatic experience WITH an id and the 自动 mark…
+    // Import lands a high-confidence experience as a plain journal line.
     await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
       experiences: [{ character_id: 'c1', entry: '推开了门缝', confidence: 'high', evidence_in_text: '指尖碰到门缝的边缘' }],
       recap: 'r',
     } }, SESSION)
     const landed = (await store.listExperiences({ workId: DREAM.workId, characterId: CARD.zhao })).find(entry => entry.chapter === 5 && entry.entry === '推开了门缝')
-    expect(landed).toMatchObject({ id: 'e1', autoImported: true })
-    // …and the retract gesture takes it back, every other line byte-identical.
-    const retracted = await store.retractExperience({ workId: DREAM.workId, id: 'e1' }, SESSION)
-    expect(retracted.ok).toBe(true)
-    expect((await store.listExperiences({ workId: DREAM.workId })).some(entry => entry.id === 'e1')).toBe(false)
-    const raw = fs.read(`${DREAM.stateRoot}/${DREAM.workId}/experiences.jsonl`)
-    expect(raw.trim().split('\n')).toHaveLength(6)
-    expect((await store.retractExperience({ workId: DREAM.workId, id: 'e1' }, SESSION)).error).toBe('missing')
+    expect(landed).toEqual({ characterId: CARD.zhao, chapter: 5, entry: '推开了门缝', createdAt: expect.any(String) })
   })
 })
