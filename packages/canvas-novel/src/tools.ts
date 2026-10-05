@@ -391,9 +391,12 @@ export const NOVEL_BIND_TOOL = 'novel_bind'
  * unbound session holds, so the model can bind by the conversation's
  * subject instead of asking the user to find the chip.
  * @param store - the novel service the tool delegates to.
+ * @param granted - settles the calling agent's grant after a bind, so the
+ *   tools are registered before the reply says they are (the binding event's
+ *   own re-check is not awaited by anyone).
  * @returns the tagged definition, registered once for the mounting scope.
  */
-export function novelBindDefinition(store: NovelService): ToolDefinition {
+export function novelBindDefinition(store: NovelService, granted: (agent: Agent) => Promise<void>): ToolDefinition {
   const listing = (works: readonly { title: string }[]): string =>
     works.length === 0
       ? '还没有体裁为「长篇小说」的画布：请用户在画布里新建一张，⋯ → 创作体裁选「长篇小说」。'
@@ -411,19 +414,20 @@ export function novelBindDefinition(store: NovelService): ToolDefinition {
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
     execute: async (args: { work?: string }, exec: { agent?: Agent }): Promise<string> => {
-      const session = exec.agent?.session
-      const current = session === undefined ? undefined : await store.boundWork(String(session.id))
+      const agent = exec.agent
+      const current = agent === undefined ? undefined : await store.boundWork(String(agent.session.id))
       if (args.work === undefined || args.work.trim() === '') {
         const works = await store.listWorks()
         return [listing(works), current === undefined ? '本会话未绑定。' : `本会话已绑定《${current.title}》。`].join('\n')
       }
-      if (session === undefined) return '失败：这次调用没有会话，无法绑定。'
-      const bound = await store.bindWork(args.work, session)
+      if (agent === undefined) return '失败：这次调用没有会话，无法绑定。'
+      const bound = await store.bindWork(args.work, agent.session)
       if (!bound.ok) {
         if (bound.error === 'ambiguous') return `「${args.work}」对应多部作品，请问用户是哪一部：${bound.works.map(work => `《${work.title}》`).join('、')}`
         if (bound.error === 'missing') return `没有叫「${args.work}」的长篇小说作品。${listing(bound.works)}`
         return `失败：${bound.error}`
       }
+      await granted(agent)
       return `已绑定《${bound.work.title}》：novel_read / novel_write / novel_extract 从下一步起可用，先加载 novel skill。用户可在会话头的画布 chip 里改绑或解绑。`
     },
   })

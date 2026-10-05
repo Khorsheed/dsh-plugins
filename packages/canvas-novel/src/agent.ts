@@ -11,6 +11,9 @@
  *
  * The grant is re-evaluated on `agent/created` (scope-filtered: only the
  * agents composed under this entry's scope arrive), on
+ * `agent-preset/selected` (a blank session switched presets: the host
+ * recomposes the live agent into another preset's plane WITHOUT a second
+ * `agent/created`, so the grant adopts — or drops — it by ownership), on
  * `canvas/binding-changed` for that session, and on `canvas/genre-changed`
  * for every tracked agent (a canvas whose genre was cleared unbinds its
  * sessions, but a re-check is cheap and the order of those two events is the
@@ -68,6 +71,7 @@ interface ToolsSlice {
 /** The slice of `ctx.agents` the grant seeds from. */
 interface AgentsSlice {
   list(): Iterable<NovelAgent>
+  get(id: string): NovelAgent | undefined
 }
 
 /** The lifecycle and canvas events the grant listens to (cordis `on`, typed loosely). */
@@ -219,6 +223,15 @@ export function apply(ctx: Context): void {
   const listen = ctx.on.bind(ctx) as unknown as Listen
   listen('agent/created', async ({ agent }: { agent: NovelAgent }) => { await grant.track(agent) })
   listen('agent/disposed', ({ agent }: { agent: NovelAgent }) => { grant.forget(agent) })
+  // A preset switch moves a live agent between planes and announces only this
+  // (unscoped) event: adopt the agent if it now composes under this scope,
+  // drop it if it left (its own scope must not keep this plane's tools).
+  listen('agent-preset/selected', (sessionId: string) => {
+    const agent = (ctx.get('agents') as AgentsSlice | undefined)?.get(sessionId)
+    if (agent === undefined) return
+    if (ownsAgent(ctx, agent)) void grant.track(agent)
+    else grant.forget(agent)
+  })
   listen('canvas/binding-changed', (sessionId: string) => { void grant.evaluate(sessionId) })
   listen('canvas/genre-changed', () => { void grant.evaluateAll() })
   // The agents already live when this entry mounts (a reload, a late grant).
@@ -233,7 +246,7 @@ export function apply(ctx: Context): void {
   ctx.inject(['tools'], (toolsCtx) => {
     const tools = toolsCtx.get('tools') as ToolsSlice | undefined
     if (tools === undefined) return
-    const definition = novelBindDefinition(store)
+    const definition = novelBindDefinition(store, async (agent) => { await grant.track(agent) })
     toolsCtx.effect(() => tools.register(definition), `canvas-novel-agent: ${NOVEL_BIND_TOOL} tool`)
   })
   ctx.inject(['systemPrompt'], (promptCtx) => {

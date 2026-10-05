@@ -42,7 +42,8 @@ async function call(tool: { execute: (args: never, exec: never) => Promise<unkno
 describe('novel_bind', () => {
   it('lists the works, binds by title (exact, then unique part), and refuses what it cannot resolve', async () => {
     const { store, canvas, read } = await bench()
-    const bind = novelBindDefinition(store)
+    const granted: string[] = []
+    const bind = novelBindDefinition(store, async (agent) => { granted.push(String(agent.session.id)) })
     canvas.addBoard({ id: 'canvas_plain0001', title: '杂记', genre: null })
     canvas.addBoard({ id: 'canvas_novel0002', title: '梦境监护者外传' })
     const listed = await call(bind, {})
@@ -55,6 +56,8 @@ describe('novel_bind', () => {
     // The exact title wins over the longer one containing it.
     expect(await call(bind, { work: '《梦境监护者》' })).toContain('已绑定《梦境监护者》')
     expect(canvas.bindings.get('s-tools')).toBe(DREAM.workId)
+    // The grant settles before the reply promises the tools; refusals never reach it.
+    expect(granted).toEqual(['s-tools'])
     expect(await call(read, { what: 'brief' })).not.toContain('还没有绑定')
     expect(await call(bind, {})).toContain('本会话已绑定《梦境监护者》')
     expect(await call(bind, { work: '外传' })).toContain('已绑定《梦境监护者外传》')
