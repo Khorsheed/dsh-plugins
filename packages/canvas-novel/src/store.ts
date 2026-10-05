@@ -33,7 +33,7 @@ import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { renderExtractBrief, type BriefData } from './brief.ts'
 import {
-  canvasBoardOf, NOVEL_GENRE, NOVEL_ROLES,
+  canvasBoardOf, NOVEL_GENRE, NOVEL_ROLES, WORLD_KINDS,
   type CanvasBoardSlice, type NovelBoardMutation, type NovelBoardView, type NovelCardSource, type NovelCardView,
   type NovelFieldValue,
 } from './genre.ts'
@@ -136,6 +136,62 @@ function fieldText(card: NovelCardView, key: string, max = 2000): string | undef
 /** A card's main text: its role's main field, else the card's free text. */
 function mainTextOf(card: NovelCardView, role: EntryRole): string {
   return fieldText(card, MAIN_FIELD[role]) ?? cleanText(card.text) ?? ''
+}
+
+/**
+ * Whether a new card of this role has every field its card type requires
+ * (a character its name; a world card its name and its setting; …).
+ * @param role - the role.
+ * @param fields - the cleaned fields.
+ */
+export function hasRequiredFields(role: EntryRole, fields: Readonly<Record<string, NovelFieldValue>>): boolean {
+  const defs = NOVEL_GENRE.categories.find(category => category.role === role)?.definition?.fields ?? []
+  return defs.every(def => def.required !== true || fields[def.key] !== undefined)
+}
+
+/**
+ * The live card a new character or world card would duplicate: one of the
+ * same role and the same name that is not archived (a ghost counts — it is
+ * still waiting for the user). Names are what the model and the user tell
+ * these cards apart by; two 艾文 cards are always a mistake.
+ * @param entries - the work's entries.
+ * @param role - the role of the card about to be written.
+ * @param name - its name.
+ * @returns the existing card's id and ref, or undefined.
+ */
+export function namesake(entries: WorkEntries, role: EntryRole, name: string | undefined): { readonly cardId: string; readonly ref: string } | undefined {
+  if (name === undefined) return undefined
+  const views = role === 'character' ? entries.characters.map(view => ({ ...view, status: view.cardStatus }))
+    : role === 'world' ? entries.rules.filter(view => view.role === 'world').map(view => ({ ...view, name: view.name ?? '' }))
+      : []
+  const found = views.find(view => view.status !== 'archived' && view.name === name)
+  return found === undefined ? undefined : { cardId: found.cardId, ref: found.ref }
+}
+
+/**
+ * A setting's title when the subagent gave none: its first clause, short —
+ * so a world card never reaches the board without a name.
+ * @param content - the setting.
+ */
+export function settingNameOf(content: string): string {
+  const clause = content.split(/[，。；：、,.;:！？!?\n]/)[0]!.trim()
+  return (clause === '' ? content : clause).slice(0, 16)
+}
+
+/**
+ * Lay a manuscript out as paragraphs. Chinese prose breaks a paragraph with
+ * one newline, but markdown joins single-newline lines into one paragraph —
+ * a chapter sent that way renders as a single wall of text. A body with no
+ * blank line at all therefore gets one between every line; a body that
+ * already has blank lines is the author's own layout and is kept as is.
+ * @param content - the manuscript as sent.
+ * @returns the manuscript to write.
+ */
+export function manuscriptParagraphs(content: string): string {
+  const body = content.replace(/\r\n?/g, '\n').replace(/^\n+/, '').trimEnd()
+  if (/\n[ \t\u3000]*\n/.test(body)) return content
+  const paragraphs = body.split('\n').map(line => line.trimEnd())
+  return paragraphs.length <= 1 ? content : `${paragraphs.join('\n\n')}\n`
 }
 
 /**
@@ -595,7 +651,8 @@ export class NovelService {
   /**
    * The agent's card write. Without an id it proposes a new card in the
    * role's category — a ghost the user keeps (✓) or archives (✗), never
-   * injected before then; with an id it merges the given fields into that
+   * injected before then; a character or world card whose name a live card
+   * already has is refused as `duplicate`, naming that card; with an id it merges the given fields into that
    * card (absent fields keep). Fields are checked against the genre's card
    * type; unknown keys are ignored and reported back.
    * @param request - work id, role, optional card handle, fields, optional comment.
@@ -621,7 +678,9 @@ export class NovelService {
       mutation = await canvas.patchCard({ canvasId: entries.board.id, cardId, fields: { ...card.fields, ...fields } }, session)
     } else {
       const category = categoryOf(entries.board, request.role)
-      if (category === undefined || fields[MAIN_FIELD[request.role]] === undefined) return { ok: false, error: 'invalid-name', ignored }
+      if (category === undefined || !hasRequiredFields(request.role, fields)) return { ok: false, error: 'invalid-name', ignored }
+      const existing = namesake(entries, request.role, typeof fields['name'] === 'string' ? fields['name'] : undefined)
+      if (existing !== undefined) return { ok: false, error: 'duplicate', cardId: existing.cardId, ref: existing.ref, ignored }
       const comment = cleanText(request.comment, 500)
       mutation = await canvas.proposeCard({
         canvasId: entries.board.id, kind: category, text: '', fields,
@@ -862,7 +921,9 @@ export class NovelService {
         }
       }
     }
-    const content = typeof request.content === 'string' && request.content.length > 0 ? request.content.slice(0, 2_000_000) : undefined
+    const content = typeof request.content === 'string' && request.content.trim().length > 0
+      ? manuscriptParagraphs(request.content.slice(0, 2_000_000))
+      : undefined
 
     // The body lands before the registration (F1-2): a write that the fence
     // refuses means NO chapter row — the 空槽登记 bug class is closed by
@@ -1175,12 +1236,17 @@ export class NovelService {
     const whitelist = new Set(entries.foreshadows
       .filter(view => view.cardStatus === 'kept' && (isLiveForeshadow(view) || view.state === '未埋'))
       .map(view => view.cardId))
-    const roster = new Set(entries.characters.filter(view => view.cardStatus === 'kept').map(view => view.cardId))
+    // Experiences may name any live character — a ghost too, including one
+    // this very import proposes (its id joins below, once the card exists).
+    const roster = new Set(entries.characters.filter(view => view.cardStatus !== 'archived').map(view => view.cardId))
+    const newCharacterIds = new Map<string, string>()
     const asForeshadow = (token: unknown): string | undefined => {
       const handle = this.resolveCard(entries, token, 'foreshadow')
       return handle?.role === 'foreshadow' ? handle.cardId : undefined
     }
     const asCharacter = (token: unknown): string | undefined => {
+      const named = newCharacterIds.get(cleanText(token, 80) ?? '')
+      if (named !== undefined) return named
       const handle = this.resolveCard(entries, token, 'character')
       return handle?.role === 'character' ? handle.cardId : undefined
     }
@@ -1189,6 +1255,15 @@ export class NovelService {
 
     // The card writes this import will make (gate 3/4), collected first and landed below.
     const cardWrites: { role: EntryRole; fields: Record<string, NovelFieldValue>; auto: boolean; note: CardNote; comment?: string; ref: string }[] = []
+    // A name a live card or an earlier row of this payload already holds is a duplicate, never a second card.
+    const seenNames = new Set<string>()
+    const duplicateOf = (role: EntryRole, name: string): string | undefined => {
+      const key = `${role}:${name}`
+      if (seenNames.has(key)) return '本次已提过'
+      seenNames.add(key)
+      const existing = namesake(entries, role, name)
+      return existing === undefined ? undefined : `已有 ${existing.ref}`
+    }
 
     // World rules and principles: evidence first (gate 1); high → a kept card, medium/low → a ghost.
     for (const raw of payload.memories ?? []) {
@@ -1200,14 +1275,27 @@ export class NovelService {
         continue
       }
       const role: EntryRole = cleanText(raw.kind, 10) === '原则' ? 'principle' : 'world'
+      const fields: Record<string, NovelFieldValue> = { [MAIN_FIELD[role]]: content }
+      if (role === 'world') {
+        const name = cleanText(raw.name, 80) ?? settingNameOf(content)
+        const duplicate = duplicateOf(role, name)
+        if (duplicate !== undefined) {
+          dropped.push({ kind: 'memory', reason: 'duplicate', ref: `${name}（${duplicate}）` })
+          continue
+        }
+        fields['name'] = name
+        const kind = cleanText(raw.world_kind, 10)
+        if (kind !== undefined && WORLD_KINDS.includes(kind)) fields['kind'] = kind
+      }
       const confidence = confidenceOf(raw.confidence)
       const note: CardNote = { extractedBy: 'llm', confidence, evidenceInText: evidence!, firstChapter: chapter.n }
+      const label = String(fields['name'] ?? content.slice(0, 30))
       if (confidence === 'high') {
-        cardWrites.push({ role, fields: { [MAIN_FIELD[role]]: content }, auto: true, note: { ...note, autoImported: true }, ref: content.slice(0, 30) })
+        cardWrites.push({ role, fields, auto: true, note: { ...note, autoImported: true }, ref: label })
       } else {
         cardWrites.push({
-          role, fields: { [MAIN_FIELD[role]]: content }, auto: false, note,
-          comment: `置信度 ${confidence} · 第${chapter.n}章：「${evidence}」`, ref: content.slice(0, 30),
+          role, fields, auto: false, note,
+          comment: `置信度 ${confidence} · 第${chapter.n}章：「${evidence}」`, ref: label,
         })
       }
     }
@@ -1274,6 +1362,9 @@ export class NovelService {
     for (const raw of payload.new_characters ?? []) {
       const name = cleanText(raw.name, 80)
       if (name === undefined) continue
+      // A character the board already has (a ghost from an earlier chapter, say) is not new: the
+      // experiences below still reach it by name, and no second card is made.
+      if (duplicateOf('character', name) !== undefined) continue
       const evidence = cleanText(raw.evidence_in_text, 60)
       if (!evidenceInBody(body, evidence)) {
         dropped.push({ kind: 'new-character', reason: 'evidence-not-found', ref: name })
@@ -1284,49 +1375,6 @@ export class NovelService {
         role: 'character', fields: { name, ...(identity === undefined ? {} : { identity }) }, auto: false,
         note: { extractedBy: 'llm', evidenceInText: evidence!, firstChapter: chapter.n },
         comment: `第${chapter.n}章登场：「${evidence}」`, ref: name,
-      })
-    }
-
-    // Experiences + current states: roster-checked, evidence-gated, high lands / medium-low pends.
-    // Automatic experience lines carry an id (the retract gesture's handle) and the 自动·可撤销 mark.
-    const experienceLines: Record<string, unknown>[] = []
-    let experienceNext = nextExperienceNumber(await this.listExperiences({ workId: id }))
-    const stateUpdates = new Map<string, CurrentState>()
-    for (const raw of payload.experiences ?? []) {
-      const entry = cleanText(raw.entry, 500)
-      if (raw.character_id === undefined || entry === undefined) continue
-      const characterId = asCharacter(raw.character_id)
-      if (characterId === undefined || !roster.has(characterId)) {
-        dropped.push({ kind: 'experience', reason: 'character-not-in-roster', ref: String(raw.character_id) })
-        continue
-      }
-      const evidence = cleanText(raw.evidence_in_text, 60)
-      if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'experience', reason: 'evidence-not-found', ref: String(raw.character_id) })
-        continue
-      }
-      const confidence = confidenceOf(raw.confidence)
-      if (confidence === 'high') {
-        experienceLines.push({ id: `e${experienceNext}`, characterId, chapter: chapter.n, entry, autoImported: true, createdAt: now })
-        experienceNext += 1
-      } else {
-        pend({
-          kind: 'experience', confidence, chapter: chapter.n, reason: `置信度 ${confidence}`,
-          payload: { characterId, entry },
-          ...(evidence === undefined ? {} : { evidenceInText: evidence }),
-        })
-      }
-    }
-    for (const raw of payload.current_states ?? []) {
-      const characterId = asCharacter(raw.character_id)
-      if (characterId === undefined || !roster.has(characterId) || raw.confidence !== 'high') continue
-      const where = cleanText(raw.where, 200)
-      const state = cleanText(raw.state, 200)
-      const concern = cleanText(raw.concern, 200)
-      stateUpdates.set(characterId, {
-        ...(where === undefined ? {} : { where }),
-        ...(state === undefined ? {} : { state }),
-        ...(concern === undefined ? {} : { concern }),
       })
     }
 
@@ -1370,9 +1418,57 @@ export class NovelService {
       board = mutation.board
       const cardId = board.cards[board.cards.length - 1]!.id
       notes.set(cardId, write.note)
+      if (write.role === 'character') {
+        newCharacterIds.set(write.ref, cardId)
+        roster.add(cardId)
+      }
       if (write.auto) report.autoImported += 1
-      else proposedCards.push({ cardId, role: write.role, text: String(write.fields[MAIN_FIELD[write.role]]) })
+      else proposedCards.push({ cardId, role: write.role, text: String(write.fields['name'] ?? write.fields[MAIN_FIELD[write.role]]) })
     }
+    // Experiences + current states: roster-checked, evidence-gated, high lands / medium-low pends.
+    // They run after the card writes so a character this import proposed is already on the roster.
+    // Automatic experience lines carry an id (the retract gesture's handle) and the 自动·可撤销 mark.
+    const experienceLines: Record<string, unknown>[] = []
+    let experienceNext = nextExperienceNumber(await this.listExperiences({ workId: id }))
+    const stateUpdates = new Map<string, CurrentState>()
+    for (const raw of payload.experiences ?? []) {
+      const entry = cleanText(raw.entry, 500)
+      if (raw.character_id === undefined || entry === undefined) continue
+      const characterId = asCharacter(raw.character_id)
+      if (characterId === undefined || !roster.has(characterId)) {
+        dropped.push({ kind: 'experience', reason: 'character-not-in-roster', ref: String(raw.character_id) })
+        continue
+      }
+      const evidence = cleanText(raw.evidence_in_text, 60)
+      if (!evidenceInBody(body, evidence)) {
+        dropped.push({ kind: 'experience', reason: 'evidence-not-found', ref: String(raw.character_id) })
+        continue
+      }
+      const confidence = confidenceOf(raw.confidence)
+      if (confidence === 'high') {
+        experienceLines.push({ id: `e${experienceNext}`, characterId, chapter: chapter.n, entry, autoImported: true, createdAt: now })
+        experienceNext += 1
+      } else {
+        pend({
+          kind: 'experience', confidence, chapter: chapter.n, reason: `置信度 ${confidence}`,
+          payload: { characterId, entry },
+          ...(evidence === undefined ? {} : { evidenceInText: evidence }),
+        })
+      }
+    }
+    for (const raw of payload.current_states ?? []) {
+      const characterId = asCharacter(raw.character_id)
+      if (characterId === undefined || !roster.has(characterId) || raw.confidence !== 'high') continue
+      const where = cleanText(raw.where, 200)
+      const state = cleanText(raw.state, 200)
+      const concern = cleanText(raw.concern, 200)
+      stateUpdates.set(characterId, {
+        ...(where === undefined ? {} : { where }),
+        ...(state === undefined ? {} : { state }),
+        ...(concern === undefined ? {} : { concern }),
+      })
+    }
+
     for (const [foreshadowId, mark] of touch) {
       const card = board.cards.find(candidate => candidate.id === foreshadowId)
       if (card === undefined) continue
@@ -1386,6 +1482,8 @@ export class NovelService {
     for (const [characterId, currentState] of stateUpdates) notes.set(characterId, { currentState })
     const annotated = await this.ensureRefs(id, session, board, notes)
     if (!annotated.ok) return { ok: false, error: annotated.error ?? 'io', ...empty, dropped }
+    const refs = annotated.annotations?.refs ?? {}
+    const proposed = proposedCards.map(card => refs[card.cardId] === undefined ? card : { ...card, ref: refOf(card.role, refs[card.cardId]!) })
     const appendedMentions = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.mentions), session, journalLines)
     if (!appendedMentions.ok) return { ok: false, error: appendedMentions.error ?? 'io', ...empty, dropped }
     const appendedExperiences = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.experiences), session, experienceLines)
@@ -1443,7 +1541,7 @@ export class NovelService {
       )
       if (!written.ok) return { ok: false, error: written.error, ...empty, dropped }
     }
-    return { ok: true, ...report, dropped, pendingItems, proposedCards }
+    return { ok: true, ...report, dropped, pendingItems, proposedCards: proposed }
   }
 
   /* -------------------------------------------------------------- pending */
@@ -1615,7 +1713,11 @@ export function entriesOf(
     const ref = n === undefined ? card.id : refOf(role, n)
     const note = annotations.notes[card.id]
     if (role === 'world' || role === 'principle') {
-      rules.push({ cardId: card.id, ref, role, text: mainTextOf(card, role), status: card.status, autoImported: note?.autoImported === true })
+      const body = mainTextOf(card, role)
+      const name = role === 'world' ? fieldText(card, 'name', 80) : undefined
+      const kind = role === 'world' ? fieldText(card, 'kind', 10) : undefined
+      const text = name === undefined ? body : `${name}${kind === undefined ? '' : `（${kind}）`}：${body}`
+      rules.push({ cardId: card.id, ref, role, ...(name === undefined ? {} : { name }), text, status: card.status, autoImported: note?.autoImported === true })
     } else if (role === 'foreshadow') {
       const plantedAt = cleanNumber(card.fields?.['plantedAt'])
       const active = lastActive.get(card.id)

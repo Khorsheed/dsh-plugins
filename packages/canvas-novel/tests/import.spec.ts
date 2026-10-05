@@ -186,6 +186,37 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     expect(after.some(item => item.id === mention.id)).toBe(false)
   })
 
+  it('names world rules, refuses names the canvas already holds, and files a new character\'s experience on its own ghost card', async () => {
+    const { store, canvas } = seededStore()
+    const evidence = '门后传来一个女人的声音，哼着不成调的摇篮曲'
+    const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
+      memories: [
+        { kind: '世界', name: '门后的歌', world_kind: '地点', content: '门后有人在哼摇篮曲。', confidence: 'medium', evidence_in_text: evidence },
+        { kind: '世界', name: '门后的歌', content: '同一件事换个说法。', confidence: 'medium', evidence_in_text: evidence },
+        { kind: '世界', content: '摇篮曲不成调，像在模仿谁。', confidence: 'medium', evidence_in_text: evidence },
+      ],
+      new_characters: [
+        { name: '哼歌的女人', identity: '门后空间里的声音', evidence_in_text: evidence },
+        { name: '艾文', identity: '重复登场', evidence_in_text: evidence },
+      ],
+      experiences: [{ character_id: '哼歌的女人', entry: '在门后哼歌', confidence: 'high', evidence_in_text: evidence }],
+    } }, SESSION)
+    // A named rule keeps its name and kind; an unnamed one takes its first clause.
+    const [named] = cardsWith(canvas, '门后有人在哼摇篮曲。')
+    expect(named?.fields).toMatchObject({ name: '门后的歌', kind: '地点' })
+    expect(cardsWith(canvas, '摇篮曲不成调，像在模仿谁。')[0]?.fields?.['name']).toBe('摇篮曲不成调')
+    // The second 门后的歌 never becomes a card; 艾文 is simply not new (her experiences would still reach c2).
+    expect(cardsWith(canvas, '同一件事换个说法。')).toEqual([])
+    expect(canvas.boards.get(DREAM.workId)!.cards.filter(card => card.fields?.['name'] === '艾文')).toHaveLength(1)
+    expect(report.dropped.filter(drop => drop.reason === 'duplicate').map(drop => drop.ref)).toEqual(['门后的歌（本次已提过）'])
+    // The new character's experience lands on its ghost card instead of dropping out of the roster.
+    const [singer] = cardsWith(canvas, '哼歌的女人')
+    expect((await store.listExperiences({ workId: DREAM.workId, characterId: singer!.id })).map(entry => entry.entry)).toEqual(['在门后哼歌'])
+    expect(report.dropped.some(drop => drop.reason === 'character-not-in-roster')).toBe(false)
+    // Every proposed card carries its ref, so the model edits it instead of starting another.
+    expect(report.proposedCards.map(card => card.ref)).toEqual(['w19', 'w20', 'c3'])
+  })
+
   it('accepting a ghost card from the import puts it into the brief material', async () => {
     const { store, canvas } = seededStore()
     await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)

@@ -102,7 +102,10 @@ const PHASE_NAMES: Readonly<Record<string, string>> = {
 
 
 /** The refusal of one card write, in the model's words. */
-function cardErrorMessage(error: string | undefined, role: EntryRole): string {
+function cardErrorMessage(error: string | undefined, role: EntryRole, ref?: string): string {
+  if (error === 'duplicate') {
+    return `失败：画布上已经有同名的${ROLE_NAMES[role]}卡 [${ref}]（可能还是幽灵卡）。要补内容就用 novel_write(what=card, id=${ref}, fields=…) 改那张，不要另起一张。`
+  }
   if (error === 'missing') return `失败：找不到这张${ROLE_NAMES[role]}卡（novel_read(what=cards) 看 ref）。`
   if (error === 'invalid-name') return `失败：字段不全或不合法——新建${ROLE_NAMES[role]}卡至少要给主字段；改卡至少要给一个认识的字段。`
   return `失败：${error ?? 'io'}`
@@ -238,7 +241,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       fields: {
         type: 'object', additionalProperties: true,
         description: 'card: 人物 {name, identity, want, lack, wound, appearance, voice, knows, unaware, secrets, relations}; '
-          + '世界 {rule}; 原则 {principle}; 伏笔 {question, status, plantedAt, answer}. Lists: one item per line.',
+          + '世界 {name, kind, rule} (name: the setting\'s title — a place, a faction, an item, a rule; kind: 地点|势力|道具|规则|历史|其他; rule: the setting itself); 原则 {principle}; 伏笔 {question, status, plantedAt, answer}. Lists: one item per line.',
       },
       comment: { type: 'string', description: 'card (new): why you propose it — shown on the ghost card.' },
       id: { type: 'string', description: 'card: the ref to patch. review: card ref or pending id.' },
@@ -265,7 +268,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           ...(args.id === undefined ? {} : { id: args.id }),
           ...(args.comment === undefined ? {} : { comment: args.comment }),
         }, resolved.session)
-        if (!outcome.ok) return cardErrorMessage(outcome.error, role)
+        if (!outcome.ok) return cardErrorMessage(outcome.error, role, outcome.ref)
         const ignored = outcome.ignored === undefined || outcome.ignored.length === 0 ? '' : `（忽略了不认识的字段：${outcome.ignored.join('、')}）`
         return args.id === undefined
           ? `已落幽灵卡 [${outcome.ref}]（${ROLE_NAMES[role]}·待用户采纳）${ignored}。`
@@ -360,7 +363,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed} / 自动入库 ×${report.autoImported} / 待你确认 ×${waiting}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
       ]
       if (report.proposedCards.length > 0) {
-        lines.push('画布上的新幽灵卡（用户采纳后进 brief）：', ...report.proposedCards.map(card => `- ${ROLE_NAMES[card.role]}「${card.text}」`))
+        lines.push('画布上的新幽灵卡（用户采纳后进 brief；要补内容按编号改这张，不要另起）：', ...report.proposedCards.map(card => `- [${card.ref ?? card.cardId}] ${ROLE_NAMES[card.role]}「${card.text}」`))
       }
       if (report.pendingItems.length > 0) {
         lines.push('待确认清单：', ...report.pendingItems.map(item => `- [${item.id}] ${item.reason}`))
@@ -369,7 +372,8 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         lines.push('丢弃（防编造闸）：', ...report.dropped.map(drop => {
           const why = drop.reason === 'evidence-not-found' ? '原文引用在正文里 grep 不到'
             : drop.reason === 'id-not-in-ledger' ? '伏笔 id 不在活跃榜单'
-              : drop.reason === 'card-refused' ? '画布拒绝了这张卡' : '角色不在花名册'
+              : drop.reason === 'card-refused' ? '画布拒绝了这张卡'
+                : drop.reason === 'duplicate' ? '画布上已有同名卡' : '角色不在花名册'
           return `- ${drop.kind}「${drop.ref}」：${why}`
         }))
       }

@@ -10,7 +10,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
 
 - **Genre registration** (joined through deferred injection on `ctx.canvasBoard`; no canvas, no genre):
   - A canvas created as, or switched to, 长篇小说 is seeded with the four categories.
-  - Each category carries its card field definitions. For example, a character has name, identity, want, lack and wound; a foreshadow has question, status, planted-at and answer.
+  - Each category carries its card field definitions. For example, a character has name, identity, want, lack and wound; a world card has name, kind and setting; a foreshadow has question, status, planted-at and answer.
 - **Engine service `ctx.canvasNovel`**: the engine's own state lives in `$DSH_HOME/state/novel/<canvas id>/`, in five files:
 
   | File | Contents |
@@ -40,7 +40,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
 - **The cards are the single source of truth**:
   - Every setting the model creates is a **ghost card** (the canvas's proposed status). It stays out of the brief until the user accepts it with ✓; ✗ discards it into the archive.
   - Cards are never deleted; an archived card stays on the canvas, hidden.
-  - An edit merges fields into the card in place instead of starting a new one.
+  - An edit merges fields into the card in place instead of starting a new one; a character or world name holds only one card, and a new card reusing it is refused.
 - **Refs**:
   - Characters use `c<n>`.
   - World and principle cards use `w<n>`, and foreshadows use `#<n>`. These three share one number space, so `w19` and `#19` never coexist.

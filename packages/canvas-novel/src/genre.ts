@@ -146,6 +146,9 @@ export const NOVEL_ROLES = {
 /** The agent row that grants the novel tools. */
 export const NOVEL_AGENT_ROW = '@khorsheed/dsh-canvas-novel/agent'
 
+/** The kinds a world card can be (类型), the game-codex way: a place, a faction, an item, a rule, history. */
+export const WORLD_KINDS: readonly string[] = ['地点', '势力', '道具', '规则', '历史', '其他']
+
 /**
  * The cold-start version. The cards are the single source of truth for what
  * gets injected into writing. A foreshadow card stores only first-hand facts —
@@ -156,7 +159,7 @@ export const NOVEL_AGENT_ROW = '@khorsheed/dsh-canvas-novel/agent'
 export const NOVEL_GENRE: NovelGenreDefinition = {
   id: NOVEL_GENRE_ID,
   label: '长篇小说',
-  version: 'novel@1',
+  version: 'novel@2',
   description: '人物、世界、原则与伏笔做成卡片；章节正文是工作区里的 md 文件，写完一章对一次账。',
   agentRow: NOVEL_AGENT_ROW,
   categories: [
@@ -186,12 +189,14 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
       role: NOVEL_ROLES.world,
       label: '世界',
       definition: {
-        version: 1,
+        version: 2,
         layout: 'entry',
         fields: [
-          { key: 'rule', label: '设定', type: 'text', hint: '一条能复述的设定（地点、规则、历史）', required: true, face: true },
+          { key: 'name', label: '名称', type: 'line', hint: '这条设定叫什么：一个地点、一件道具、一条规则的名字', required: true, face: true },
+          { key: 'kind', label: '类型', type: 'select', options: WORLD_KINDS, hint: '它是哪一类设定', face: true },
+          { key: 'rule', label: '设定', type: 'text', hint: '具体的设定，能复述、能照着写', required: true, face: true },
         ],
-        example: { rule: '雨季里镇上的钟会慢半小时，没人知道为什么' },
+        example: { name: '镇上的钟', kind: '规则', rule: '雨季里镇上的钟会慢半小时，没人知道为什么' },
       },
     },
     {

@@ -257,7 +257,7 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
 
 /** The extract pack's output schema (the subagent's strict JSON contract; the import gate reads these keys). */
 export const EXTRACT_OUTPUT_SCHEMA = `{
-  "memories": [{ "kind": "世界|原则", "content": "一条能复述的设定或写作原则", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
+  "memories": [{ "kind": "世界|原则", "name": "仅世界：这条设定叫什么（地点、势力、道具或规则的名字）", "world_kind": "仅世界：地点|势力|道具|规则|历史|其他", "content": "具体的设定或写作原则，能复述", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "foreshadow_mentions": [{ "foreshadow_id": "#12", "kind": "planted|advanced|hinted|resolved", "answer": "仅 resolved 给", "note": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "new_foreshadows": [{ "question": "…", "tension": 1到5, "evidence_in_text": "≤50字原文" }],
   "new_characters": [{ "name": "…", "identity": "一句身份", "evidence_in_text": "≤50字原文" }],
@@ -286,6 +286,8 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '输出严格 JSON（schema 在最后）。规则：',
     '1. 每条产出必须带 evidence：≤50 字原文引用，逐字摘自本章正文；',
     '2. 伏笔/角色只按 id 引用榜单与名册中的对象；不认识的对象放 new_*，不硬靠；',
+    '   本章新登场的角色写进 new_characters，他们的经历和现状照样写，character_id 填名字；',
+    '   世界设定给 name（设定的名字）和具体内容，同一个设定只写一条；',
     '3. 拿不准一律 confidence=medium/low；',
     '4. plan 列了但正文没动的操作，报 plan_missed，不掩饰；',
     '5. 角色经历每人 1-2 句：本章做了什么、状态怎么变；current_state 给',

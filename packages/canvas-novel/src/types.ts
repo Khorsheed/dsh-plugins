@@ -379,6 +379,9 @@ export interface RuleView {
   /** `w<n>`, or the card id before a number is allocated. */
   readonly ref: string
   readonly role: 'world' | 'principle'
+  /** A world card's title (名称), when it has one. */
+  readonly name?: string
+  /** What the brief prints: `名称（类型）：设定` for a named world card, the body alone otherwise. */
   readonly text: string
   readonly status: NovelCardStatus
   readonly autoImported: boolean
@@ -538,7 +541,7 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace'
+export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate'
 
 /* ---------------------------------------------- wire-boundary contracts */
 
@@ -565,6 +568,10 @@ export interface WriteChapterRequest {
 /** The subagent's world-rule row (strict JSON, tolerant reads): 世界 by default, 原则 for a writing principle. */
 export interface ExtractMemoryInput {
   readonly kind?: string
+  /** 世界 only: the setting's title — a place, an item, a rule's name. */
+  readonly name?: string
+  /** 世界 only: 地点|势力|道具|规则|历史|其他. */
+  readonly world_kind?: string
   readonly content?: string
   readonly confidence?: string
   readonly evidence_in_text?: string
@@ -626,7 +633,7 @@ export interface ExtractPayload {
 /** One dropped import item and why (the anti-fabrication log). */
 export interface ImportDrop {
   readonly kind: string
-  readonly reason: 'evidence-not-found' | 'id-not-in-ledger' | 'character-not-in-roster' | 'card-refused'
+  readonly reason: 'evidence-not-found' | 'id-not-in-ledger' | 'character-not-in-roster' | 'card-refused' | 'duplicate'
   readonly ref: string
 }
 
@@ -641,7 +648,7 @@ export interface ImportReport {
   readonly dropped: readonly ImportDrop[]
   readonly pendingItems: readonly { readonly id: string; readonly kind: PendingKind; readonly reason: string }[]
   /** The ghost cards this import proposed (new rules, foreshadows, characters). */
-  readonly proposedCards: readonly { readonly cardId: string; readonly role: EntryRole; readonly text: string }[]
+  readonly proposedCards: readonly { readonly cardId: string; readonly role: EntryRole; readonly text: string; readonly ref?: string }[]
 }
 
 /** The ledger answer (伏笔沉睡榜 + 健康度) — kept foreshadow cards only. */

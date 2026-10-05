@@ -314,6 +314,7 @@ export class CanvasBoardService {
       if (current === 'missing') return { ok: false, error: 'missing' }
       if (current === 'corrupt') return { ok: false, error: 'io' }
       const now = new Date().toISOString()
+      this.catchUpGenre(current.board)
       const next = change(current.board, now)
       if (typeof next === 'string') return { ok: false, error: next }
       next.stats.kindCounts = computeKindCounts(next.cards)
@@ -942,6 +943,36 @@ export class CanvasBoardService {
     return () => {
       if (this.genres.get(definition.id) === definition) this.genres.delete(definition.id)
     }
+  }
+
+  /**
+   * Catch a genre canvas up with a newer version of its genre, on the board's
+   * next write: each role category's card type gains the fields the genre's
+   * seed added since (by key, at the seed's position), and nothing the user
+   * changed is touched — their labels, hints, extra fields and values stay.
+   * The genre record then carries the new version. A canvas whose genre is
+   * not registered (the plugin is gone) is left exactly as it is.
+   * @param board - the board read for this write; changed in place.
+   */
+  private catchUpGenre(board: CanvasBoard): void {
+    const genre = board.genre === undefined ? undefined : this.genres.get(board.genre.id)
+    if (board.genre === undefined || genre === undefined || board.genre.version === genre.version) return
+    for (const seed of genre.categories) {
+      const category = board.categories.find(candidate => candidate.role === seed.role)
+      const fresh = seed.definition === undefined ? undefined : normalizeDefinition(seed.definition)
+      const stored = category?.definition
+      if (category === undefined || fresh === undefined || stored === undefined) continue
+      const kept = new Map(stored.fields.map(field => [field.key, field]))
+      if (fresh.fields.every(field => kept.has(field.key))) continue
+      const seeded = new Set(fresh.fields.map(field => field.key))
+      category.definition = {
+        ...stored,
+        version: stored.version + 1,
+        fields: [...fresh.fields.map(field => kept.get(field.key) ?? field), ...stored.fields.filter(field => !seeded.has(field.key))],
+        example: fresh.example,
+      }
+    }
+    board.genre = { ...board.genre, version: genre.version }
   }
 
   /** One registered genre, by id. */

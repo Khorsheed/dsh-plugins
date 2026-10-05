@@ -112,6 +112,44 @@ describe('canvas genres', () => {
     expect((await board.listCanvases()).items[0]?.genre).toBe('novel')
   })
 
+  it('catches a canvas up with a newer genre on its next write, keeping what the user changed', async () => {
+    const { fs, board } = bench()
+    board.registerGenre(NOVEL)
+    const id = await plainCanvas(board)
+    const seeded = await board.selectGenre({ canvasId: id, genreId: 'novel' }, SESSION)
+    if (!seeded.ok) throw new Error(seeded.error)
+    // The user relabels the seeded field (as an adopted type change would); the genre then adds a title field before it.
+    const file = `${STATE}/${id}/canvas.json`
+    const raw = JSON.parse(await fs.readText(file)) as { categories: { role?: string; definition?: { fields: { label: string }[] } }[] }
+    raw.categories.find(row => row.role === 'foreshadow')!.definition!.fields[0]!.label = '谜面'
+    fs.seed(file, JSON.stringify(raw))
+    const stored = categoryOfRole(normalizeBoard(raw, id, '')!, 'foreshadow')!.definition!
+    board.registerGenre({
+      ...NOVEL,
+      version: 'novel@2',
+      categories: NOVEL.categories.map(seed => seed.definition === undefined ? seed : {
+        ...seed,
+        definition: {
+          ...seed.definition,
+          version: 2,
+          fields: [{ key: 'name', label: '名称', type: 'line', hint: '', required: true }, ...seed.definition.fields],
+          example: { name: '父亲', question: '父亲为什么不回家' },
+        },
+      }),
+    })
+    const character = categoryOfRole(seeded.board, 'character')!.id
+    const put = await board.putCard({ canvasId: id, kind: character, text: '甲' }, SESSION)
+    if (!put.ok) throw new Error(put.error)
+    expect(put.board.genre?.version).toBe('novel@2')
+    const upgraded = categoryOfRole(put.board, 'foreshadow')!.definition!
+    expect(upgraded.fields.map(field => [field.key, field.label])).toEqual([['name', '名称'], ['question', '谜面']])
+    expect(upgraded.version).toBe(stored.version + 1)
+    // Caught up: the next write leaves the type alone.
+    const again = await board.putCard({ canvasId: id, kind: character, text: '乙' }, SESSION)
+    if (!again.ok) throw new Error(again.error)
+    expect(categoryOfRole(again.board, 'foreshadow')!.definition).toEqual(upgraded)
+  })
+
   it('refuses an unregistered genre, and clearing keeps the categories', async () => {
     const { board } = bench()
     board.registerGenre(NOVEL)
