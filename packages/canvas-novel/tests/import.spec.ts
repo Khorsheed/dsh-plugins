@@ -1,7 +1,7 @@
 /**
  * The extract import's five gates (proposal §5), each pinned on the
  * 《梦境监护者》seed with chapter 5 in the writing state: evidence grep, the
- * ledger whitelist, new_* land live (marked 「新」), confidence splitting (high
+ * ledger whitelist, new_* land live (marked new), confidence splitting (high
  * lands directly, medium/low becomes a pending item), and plan verification with 计划落空 routed to a person.
  */
 import { Context } from '@deepseek-ai/cordis'

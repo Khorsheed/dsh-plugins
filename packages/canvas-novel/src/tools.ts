@@ -209,7 +209,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       }
       if (args.what === 'pending') {
         const items = await store.listPending({ workId })
-        if (items.length === 0) return '待审队列为空（新卡片直接落在画布上、标「新」，不在这里）。'
+        if (items.length === 0) return '待审队列为空（新卡片直接落在画布上、带红点，不在这里）。'
         return [`待审队列（${items.length} 条，✓采纳/✗丢弃走 novel_write(what=review, target=pending, id, action=accept|discard)）：`, ...items.map(pendingLine)].join('\n')
       }
       if (args.what === 'chapter') {
@@ -268,7 +268,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         if (!outcome.ok) return cardErrorMessage(outcome.error, role, outcome.ref)
         const ignored = outcome.ignored === undefined || outcome.ignored.length === 0 ? '' : `（忽略了不认识的字段：${outcome.ignored.join('、')}）`
         return args.id === undefined
-          ? `已落卡 [${outcome.ref}]（${ROLE_NAMES[role]}·已进 brief，画布上标「新」）${ignored}。`
+          ? `已落卡 [${outcome.ref}]（${ROLE_NAMES[role]}·已进 brief，画布上带红点）${ignored}。`
           : `已更新 [${outcome.ref}]${ignored}。`
       }
       if (args.what === 'chapter') {
@@ -360,7 +360,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed} / 新卡 ×${report.newCards.length} / 待你确认 ×${report.pending}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
       ]
       if (report.newCards.length > 0) {
-        lines.push('画布上的新卡（已进 brief，画布上标「新」；不对的让用户改或归档，要补内容按编号改这张，不要另起）：', ...report.newCards.map(card => `- [${card.ref ?? card.cardId}] ${ROLE_NAMES[card.role]}「${card.text}」`))
+        lines.push('画布上的新卡（已进 brief，画布上带红点；不对的让用户改或归档，要补内容按编号改这张，不要另起）：', ...report.newCards.map(card => `- [${card.ref ?? card.cardId}] ${ROLE_NAMES[card.role]}「${card.text}」`))
       }
       if (report.pendingItems.length > 0) {
         lines.push('待确认清单：', ...report.pendingItems.map(item => `- [${item.id}] ${item.reason}`))

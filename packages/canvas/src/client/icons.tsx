@@ -30,6 +30,14 @@ export const IconCheckOutlineMedium = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** Two ticks: mark everything as read/seen. */
+export const IconCheckDoubleOutlineMedium = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>
+    <path d="M1.25 8.75L4.25 11.75L10.75 4.25" stroke="currentColor" />
+    <path d="M7.75 11.25L8.25 11.75L14.75 4.25" stroke="currentColor" />
+  </svg>
+)
+
 export const IconChevronDownOutlineMedium = ({ size = 14, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>
     <path d="M4 6L7.29289 9.29289C7.68342 9.68342 8.31658 9.68342 8.70711 9.29289L12 6" stroke="currentColor" />

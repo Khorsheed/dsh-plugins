@@ -90,7 +90,7 @@ describe('the novel tools', () => {
   it('novel_write(card) lands a live card, in the ledger at once; ✗ is archive, the only card review', async () => {
     const { canvas, write, read } = await bench({ bound: true })
     const answer = await call(write, { what: 'card', role: '伏笔', fields: { question: '梦主可能是赵启明的妹妹？', bogus: 1 } })
-    expect(answer).toContain('已落卡 [#19]（伏笔·已进 brief，画布上标「新」）')
+    expect(answer).toContain('已落卡 [#19]（伏笔·已进 brief，画布上带红点）')
     expect(answer).toContain('忽略了不认识的字段：bogus')
     expect(await call(read, { what: 'ledger' })).toContain('[#19] 梦主可能是')
     expect(await call(write, { what: 'review', target: 'card', id: '#19', action: 'accept' })).toContain('只能 archive')

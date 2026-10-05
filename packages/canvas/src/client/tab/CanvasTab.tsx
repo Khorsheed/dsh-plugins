@@ -793,9 +793,19 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const openCount = activeRow === undefined || openBoard === null
     ? null
     : summarizeBoard(openBoard.board).cardCount
-  const unseenCount = openBoard === null
-    ? 0
-    : openBoard.board.cards.filter(card => card.unseen === true && card.status !== 'archived').length
+  // AGENT's new cards held at the front this visit: every card unseen when the
+  // canvas opened, plus any that land while it stays open. Seeing one keeps it
+  // in place, so neither the board nor the detail's ‹n/m› shifts under the
+  // reader; the next visit (another canvas and back, a reload) lets it settle.
+  const frontRef = useRef<{ canvasId: string; ids: ReadonlySet<string> } | null>(null)
+  const front = useMemo(() => {
+    if (openBoard === null) return undefined
+    const was = frontRef.current?.canvasId === openBoard.board.id ? frontRef.current.ids : new Set<string>()
+    const unseen = openBoard.board.cards.filter(card => card.unseen === true && !was.has(card.id))
+    const ids = unseen.length === 0 ? was : new Set([...was, ...unseen.map(card => card.id)])
+    frontRef.current = { canvasId: openBoard.board.id, ids }
+    return ids
+  }, [openBoard])
 
   return (
     <GenreSeatsContext.Provider value={seats}>
@@ -935,7 +945,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             heading: activeRow.at.heading,
             siblings: openBoard === null || openBoard.board.id !== activeRow.canvasId
               ? []
-              : shownCardsOf(openBoard.board, filter).map(card => card.id),
+              : shownCardsOf(openBoard.board, filter, front).map(card => card.id),
             onBack: () => { leaveRow(activeRow.id, 'back') },
             onStep: openCard,
           }}
@@ -1063,19 +1073,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
           {openBoard !== null && loadError === null && boardStripsOf(seats, openBoard.board)}
 
-          {openBoard !== null && loadError === null && unseenCount > 0 && (
-            <div className={css.unseenStrip} role="status">
-              <span className={css.unseenDot} />
-              <span>{t('space.unseenStrip', { count: String(unseenCount) })}</span>
-              <span className={css.spacer} />
-              {!boardReadonly && (
-                <Button size="sm" variant="ghost" onClick={() => { seeCards(openBoard.board.id) }}>
-                  {t('action.markAllSeen')}
-                </Button>
-              )}
-            </div>
-          )}
-
           {openBoard !== null && loadError === null ? (
             view === 'manuscripts' ? (
               <ManuscriptList
@@ -1143,6 +1140,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 showArchived={showArchivedCards}
                 onToggleArchived={toggleShowArchived}
                 newCard={boardReadonly ? undefined : newCardSlot}
+                front={front}
+                onMarkAllSeen={boardReadonly ? undefined : () => { seeCards(openBoard.board.id) }}
               />
             )
           ) : (

@@ -642,7 +642,7 @@ export interface ImportReport {
   readonly pending: number
   readonly dropped: readonly ImportDrop[]
   readonly pendingItems: readonly { readonly id: string; readonly kind: PendingKind; readonly reason: string }[]
-  /** The live cards this import landed (new rules, foreshadows, characters), marked 「新」 on the board. */
+  /** The live cards this import landed (new rules, foreshadows, characters), marked new (a red dot) on the board. */
   readonly newCards: readonly { readonly cardId: string; readonly role: EntryRole; readonly text: string; readonly ref?: string }[]
 }
 

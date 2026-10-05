@@ -113,7 +113,7 @@ export interface CanvasBoardSlice {
     readonly source?: NovelCardSource
     readonly comment?: string
     readonly fields?: Readonly<Record<string, NovelFieldValue>>
-    /** Kept at once and marked 「新」 on the board, instead of a proposal awaiting ✓. */
+    /** Kept at once and marked new (a red dot) on the board, instead of a proposal awaiting ✓. */
     readonly live?: boolean
   }, session: FenceSession): Promise<NovelBoardMutation>
   patchCard(request: {

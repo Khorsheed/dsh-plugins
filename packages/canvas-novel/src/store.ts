@@ -650,8 +650,9 @@ export class NovelService {
   /**
    * The agent's card write. Without an id it lands a new card in the
    * role's category live — kept at once, in the brief and the ledger, marked
-   * 「新」 on the board until the user looks; a character or world card whose name a live card
-   * already has is refused as `duplicate`, naming that card; with an id it merges the given fields into that
+   * new (a red dot) on the board until the user looks; a character or world
+   * card whose name a live card already has is refused as `duplicate`, naming
+   * that card; with an id it merges the given fields into that
    * card (absent fields keep). Fields are checked against the genre's card
    * type; unknown keys are ignored and reported back.
    * @param request - work id, role, optional card handle, fields, optional comment.
@@ -1187,7 +1188,8 @@ export class NovelService {
    *   2. foreshadow refs must resolve to a kept, unsettled foreshadow card,
    *      else dropped;
    *   3. new rules, foreshadows and characters land as live cards, marked
-   *      「新」 on the board — the user edits or archives (✗) what is wrong;
+   *      new (a red dot) on the board — the user edits or archives (✗)
+   *      what is wrong;
    *   4. high-confidence journal lines land automatically (an experience line
    *      marked 自动·可撤销); medium/low ones go to the pending queue;
    *   5. plan operations verify against the recorded mentions; a planned op

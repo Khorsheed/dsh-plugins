@@ -38,7 +38,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   - Unbinding, or changing the canvas's genre, revokes them at once.
   - In an unbound session those three tools are absent, not denied.
 - **The cards are the single source of truth**:
-  - Every setting the model creates **lands live**: it enters the brief and the ledger at once and can be named by ref. New cards carry a 「新」 (New) mark on the canvas that clears when opened or archived; a board strip reads "AGENT added N cards" with a one-click "Mark all seen". Fix a wrong card in place, or archive it with ✗.
+  - Every setting the model creates **lands live**: it enters the brief and the ledger at once and can be named by ref. New cards carry a red dot and sit first on the canvas until opened or archived; each category chip shows a red +N of its new cards, and the ✓✓ next to the chips marks them all seen. Fix a wrong card in place, or archive it with ✗.
   - Cards are never deleted; an archived card stays on the canvas, hidden.
   - An edit merges fields into the card in place instead of starting a new one; a character or world name holds only one card, and a new card reusing it is refused.
 - **Refs**:
@@ -51,7 +51,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   - All five reconciliation gates live in plugin code:
     1. an evidence search of the manuscript, against fabrication;
     2. the foreshadow whitelist;
-    3. new settings, foreshadows and characters land live, marked 「新」;
+    3. new settings, foreshadows and characters land live, marked new;
     4. high confidence imports directly (experiences can be retracted), while medium and low confidence go to the pending queue;
     5. missed plans go to the pending queue on their own.
   - Delegating the grading to the host's native subagent is the main agent's job; the plugin itself never delegates.
@@ -87,7 +87,7 @@ Enabling the root row by hand (removing `disabled: true`) makes it apply to ever
 ## Quick start
 
 1. Create a canvas with the 长篇小说 genre and mount a workspace on it. Talk about the work in a writing session and the model binds it with `novel_bind`; you can also bind by hand with the canvas chip in the session header.
-2. Talk through the settings. The model files them as live cards marked 「新」 on the canvas; glance over them, fix or archive (✗) the wrong ones, then "Mark all seen".
+2. Talk through the settings. The model files them as live cards with a red dot on the canvas; glance over them, fix or archive (✗) the wrong ones, then click ✓✓ to mark them all seen.
 3. Plan. `novel_write(what=chapter, plan=…)` registers the plan; once confirmed, start writing.
    - The manuscript lands in the canvas workspace through the session's fence.
    - If it cannot land, the registration is refused, so an empty-slot chapter never appears.
