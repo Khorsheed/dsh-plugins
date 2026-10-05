@@ -14,7 +14,7 @@
  * so a deployment decides where the novel tools exist (profile-wide by the
  * shipped patch, or one preset by its own `agent.cordis.yml` — never both).
  * The browser half (`./client`) mounts no surface of its own either: the
- * pending strip, the ledger page and the chapter page render inside the
+ * pending strip, the story-log page and the chapter page render inside the
  * canvas through the canvas tab's child slots, reading the `novel` Remote
  * mounted here.
  *

@@ -46,7 +46,8 @@ import {
   type CurrentState, type EffectiveChapterPhase, type HistoryChange, type HistoryEntry, type HistorySource, type EntryRole, type ExperienceEntry, type ExtractPayload,
   type ForeshadowView, type ImportDrop, type ImportReport, type LedgerResult, type MentionEntry, type NovelError,
   type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type RefGroup, type RelationEntry, type RelationEvent,
-  type RelationType, type RelationView, type RuleView, type WorkMeta, type WriteChapterRequest,
+  type RelationType, type RelationView, type RuleView, type StoryAppearance, type StoryCard, type StoryCharacter, type StoryForeshadow,
+  type StoryLogResult, type StoryRelation, type WorkMeta, type WriteChapterRequest,
 } from './types.ts'
 
 /** The state directory name under `$DSH_HOME/state`. */
@@ -1284,6 +1285,85 @@ export class NovelService {
       },
       relations: entries.relations.filter(view => view.cardStatus === 'kept').sort((a, b) => Number(b.ready) - Number(a.ready)),
       currentChapter: entries.currentChapter,
+    }
+  }
+
+  /**
+   * The 故事日志: every kept foreshadow, relation, character and world card
+   * laid out over the chapters, for the timeline page. A chapter's marks come
+   * from the journals once the 对账 has run; before that (planning / writing)
+   * only its plan speaks, and those marks come back `planned`. A canvas edit
+   * not yet synced into the history shows as 你改的 at the current chapter —
+   * the page is a read, so it never writes the sync itself.
+   * @param request - the work id.
+   * @returns the chapters and the four bands, or the failure code.
+   */
+  async storyLog(request: { readonly workId: string }): Promise<StoryLogResult> {
+    const empty: StoryLogResult = { ok: false, error: 'missing', chapters: [], foreshadows: [], relations: [], characters: [], world: [] }
+    const entries = await this.readEntries(request.workId)
+    if (entries === undefined) return empty
+    const workId = entries.board.id
+    const [rows, mentions, journal, history, experiences] = await Promise.all([
+      this.listChapters({ workId }), this.listMentions({ workId }), this.listRelationJournal({ workId }),
+      this.listHistory({ workId }), this.listExperiences({ workId }),
+    ])
+    const unsettled = rows.filter(row => row.phase === 'planning' || row.phase === 'writing')
+    const cards = new Map(entries.board.cards.map(card => [card.id, card]))
+    const historyOf = (cardId: string, role: EntryRole, plot: Record<string, string>): HistoryEntry[] => {
+      const own = history.filter(entry => entry.cardId === cardId)
+      const before = entries.annotations.notes[cardId]?.plot
+      if (entries.annotations.historySince === undefined || before === undefined) return own
+      const changes = plotDiff(role, before, plot)
+      if (changes.length === 0) return own
+      return [...own, { cardId, chapter: entries.currentChapter, source: 'user', kind: 'change', changes, createdAt: '' }]
+    }
+
+    const foreshadows = entries.foreshadows.filter(view => view.cardStatus === 'kept').map((view): StoryForeshadow => {
+      const marks: StoryForeshadow['marks'][number][] = mentions
+        .filter(entry => entry.foreshadowId === view.cardId)
+        .map(entry => ({ chapter: entry.chapter, kind: entry.kind, planned: false, ...(entry.note === undefined ? {} : { note: entry.note }) }))
+      for (const row of unsettled) {
+        for (const op of row.chapter.plan?.foreshadowOps ?? []) {
+          const handle = this.resolveCard(entries, op.id, 'foreshadow')
+          if (handle?.cardId !== view.cardId) continue
+          marks.push({ chapter: row.chapter.n, kind: OP_TO_MENTION[op.op], planned: true, ...(op.note === undefined ? {} : { note: op.note }) })
+        }
+      }
+      return { ...view, marks: marks.sort((a, b) => a.chapter - b.chapter) }
+    })
+
+    const nameOf = (cardId: string): string => entries.characters.find(view => view.cardId === cardId)?.name ?? cardId
+    const relations = entries.relations.filter(view => view.cardStatus === 'kept').map((view): StoryRelation => ({
+      ...view, names: view.pair.map(nameOf), journal: journal.filter(entry => entry.relationId === view.cardId),
+    }))
+
+    const characters = entries.characters.filter(view => view.cardStatus === 'kept').map((view): StoryCharacter => {
+      const plot = plotOf('character', cards.get(view.cardId)?.fields, view.currentState)
+      const named = (who: string | undefined): boolean => who !== undefined && (who === view.cardId || who === view.name || who === view.ref)
+      const appearances: StoryAppearance[] = []
+      for (const row of rows) {
+        const plan = row.chapter.plan
+        const cast = plan?.cast.find(member => named(member.who))
+        const pov = named(plan?.pov)
+        const lived = experiences.filter(entry => entry.characterId === view.cardId && entry.chapter === row.chapter.n).map(entry => entry.entry)
+        if (cast === undefined && !pov && lived.length === 0) continue
+        appearances.push({
+          chapter: row.chapter.n, pov, planned: unsettled.includes(row), experiences: lived,
+          ...(cast?.role === undefined ? {} : { role: cast.role }),
+        })
+      }
+      return { cardId: view.cardId, ref: view.ref, name: view.name, plot, history: historyOf(view.cardId, 'character', plot), appearances }
+    })
+
+    const world = entries.rules.filter(view => view.role === 'world' && view.status === 'kept').map((view): StoryCard => {
+      const plot = plotOf('world', cards.get(view.cardId)?.fields)
+      return { cardId: view.cardId, ref: view.ref, name: view.name ?? view.ref, plot, history: historyOf(view.cardId, 'world', plot) }
+    })
+
+    return {
+      ok: true,
+      chapters: rows.map(row => ({ n: row.chapter.n, title: row.chapter.title, phase: row.phase })),
+      foreshadows, relations, characters, world,
     }
   }
 

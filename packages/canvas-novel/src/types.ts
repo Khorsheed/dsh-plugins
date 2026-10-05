@@ -1311,17 +1311,64 @@ export interface NovelPendingResult {
   readonly items: readonly PendingView[]
 }
 
-/** One touch on a foreshadow's chapter track. */
-export interface LedgerMark {
-  readonly chapter: number
-  readonly kind: MentionEntry['kind']
-  /** Listed by the chapter plan. */
-  readonly planned: boolean
+/** One chapter column of the story log. */
+export interface StoryChapter {
+  readonly n: number
+  readonly title: string
+  readonly phase: EffectiveChapterPhase
 }
 
-/** The ledger page's read: the ledger plus every foreshadow's track, keyed by card id. */
-export interface NovelLedgerResult extends LedgerResult {
-  readonly marks: Readonly<Record<string, readonly LedgerMark[]>>
+/** A foreshadow row of the story log: the view plus its chapter track (the mention journal, oldest first). */
+export interface StoryForeshadow extends ForeshadowView {
+  readonly marks: readonly Pick<MentionEntry, 'chapter' | 'kind' | 'planned' | 'note'>[]
+}
+
+/** A relation row of the story log: the view, the two names, and its journal (oldest first). */
+export interface StoryRelation extends RelationView {
+  /** The two characters' names, as the roster knows them (the card id when it does not). */
+  readonly names: readonly string[]
+  readonly journal: readonly RelationEntry[]
+}
+
+/** One chapter a character is in: the chapter plan's cast and POV, or the experience journal. */
+export interface StoryAppearance {
+  readonly chapter: number
+  readonly pov: boolean
+  /** Only the plan has them there (the chapter is not reconciled yet). */
+  readonly planned: boolean
+  /** The plan's line for them (`劝阻`). */
+  readonly role?: string
+  /** What the reconciled text left them with (the experience journal). */
+  readonly experiences: readonly string[]
+}
+
+/**
+ * A character or world row of the story log: the card's plot fields as they
+ * stand ({@link plotOf}), and its change history — the person's canvas edits
+ * the engine has not synced yet included, as 你改的 at the current chapter.
+ */
+export interface StoryCard {
+  readonly cardId: string
+  readonly ref: string
+  readonly name: string
+  readonly plot: Readonly<Record<string, string>>
+  readonly history: readonly HistoryEntry[]
+}
+
+/** A character row: the card plus the chapters they are in. */
+export interface StoryCharacter extends StoryCard {
+  readonly appearances: readonly StoryAppearance[]
+}
+
+/** The story-log page's read: the chapter columns and the four bands, kept cards only. */
+export interface StoryLogResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly chapters: readonly StoryChapter[]
+  readonly foreshadows: readonly StoryForeshadow[]
+  readonly relations: readonly StoryRelation[]
+  readonly characters: readonly StoryCharacter[]
+  readonly world: readonly StoryCard[]
 }
 
 /** The chapter index as the pages read it: the rows plus each chapter's unresolved pending count. */

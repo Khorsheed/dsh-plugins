@@ -3,12 +3,12 @@
  * canvas, on the seats it declares for genres —
  *
  * - `canvas.board.strip`: the chapter to pick up at, the pending queue
- *   (medium/low-confidence findings, missed plans), the ledger link and the
+ *   (medium/low-confidence findings, missed plans), the story-log link and the
  *   way into the book;
  * - `canvas.board.manuscripts`: the 成稿 face as the book — contents, then a
  *   chapter-by-chapter reader;
- * - `canvas.page` `novel:ledger`: the foreshadow ledger with each
- *   foreshadow's chapter track;
+ * - `canvas.page` `novel:story-log`: the story log — foreshadows, relations,
+ *   characters and world settings as rows over the chapter columns;
  * - `canvas.page` `novel:chapter`: the same reader, opened at one chapter
  *   (from the strip, or a chat card);
  * - `canvas.card.section`: on a foreshadow's page the user's ★, on a
@@ -39,19 +39,19 @@ import { NOVEL_GENRE_ID } from '../types.ts'
 import { CardSection } from './CardSection.tsx'
 import { ChapterBook } from './ChapterBook.tsx'
 import { ChapterPage } from './ChapterReader.tsx'
-import { CHAPTER_PAGE, LEDGER_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
-import { LedgerPage } from './LedgerPage.tsx'
+import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
 import { PendingStrip } from './PendingStrip.tsx'
+import { StoryLogPage } from './StoryLogPage.tsx'
 import { WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
 
 export { CardSection } from './CardSection.tsx'
 export { ChapterBook } from './ChapterBook.tsx'
 export { ChapterPage, ChapterReader } from './ChapterReader.tsx'
-export { LedgerPage } from './LedgerPage.tsx'
 export { PendingList, PendingStrip } from './PendingStrip.tsx'
+export { StoryLogPage } from './StoryLogPage.tsx'
 export { WriteToolRow } from './WriteToolRow.tsx'
-export { CHAPTER_PAGE, LEDGER_PAGE } from './contract.ts'
+export { CHAPTER_PAGE, STORY_LOG_PAGE } from './contract.ts'
 export type { NovelCardOwnerProps, NovelFace, NovelNavigate, NovelOwnerProps, NovelPageOwnerProps, NovelRemote } from './contract.ts'
 export type { WriteToolFace } from './WriteToolRow.tsx'
 
@@ -102,7 +102,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => face,
   }, CardSection)), 'canvas-novel: card section')
-  for (const [key, page] of [[LEDGER_PAGE, LedgerPage], [CHAPTER_PAGE, ChapterPage]] as const) {
+  for (const [key, page] of [[STORY_LOG_PAGE, StoryLogPage], [CHAPTER_PAGE, ChapterPage]] as const) {
     ctx.effect(() => seats.inject('canvas.page', () => seats.register({
       name: 'canvas.page',
       key,

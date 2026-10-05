@@ -12,7 +12,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
-  NovelGestureResult, NovelLedgerResult, NovelPendingResult, NovelStarRequest, NovelStateRequest, NovelWorkRequest,
+  LedgerResult, NovelGestureResult, NovelPendingResult, NovelStarRequest, NovelStateRequest, NovelWorkRequest, StoryLogResult,
 } from '../types.ts'
 import type {} from './locales.ts'
 
@@ -49,7 +49,8 @@ export interface NovelCardOwnerProps extends NovelOwnerProps {
 /** The `novel` Remote namespace as the surfaces call it. */
 export interface NovelRemote {
   pending: (request: NovelWorkRequest) => Promise<RemoteResult<NovelPendingResult>>
-  ledger: (request: NovelWorkRequest) => Promise<RemoteResult<NovelLedgerResult>>
+  ledger: (request: NovelWorkRequest) => Promise<RemoteResult<LedgerResult>>
+  storyLog: (request: NovelWorkRequest) => Promise<RemoteResult<StoryLogResult>>
   chapters: (request: NovelWorkRequest) => Promise<RemoteResult<NovelChaptersResult>>
   chapter: (request: NovelChapterRequest) => Promise<RemoteResult<NovelChapterResult>>
   decidePending: (sessionId: SessionId, request: NovelDecideRequest) => Promise<RemoteResult<NovelGestureResult>>
@@ -71,7 +72,7 @@ export type NovelSurfaceProps<O extends NovelOwnerProps = NovelOwnerProps> = O &
   readonly t: TranslateNS<'novel'>
 }
 
-/** The ledger page's key under the canvas's `genreKey`. */
-export const LEDGER_PAGE = 'novel:ledger'
+/** The story-log page's key under the canvas's `genreKey`. */
+export const STORY_LOG_PAGE = 'novel:story-log'
 /** The chapter page's key (param: the chapter number). */
 export const CHAPTER_PAGE = 'novel:chapter'
