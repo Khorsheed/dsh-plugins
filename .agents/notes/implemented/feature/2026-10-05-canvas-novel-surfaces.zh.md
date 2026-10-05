@@ -2,6 +2,8 @@
 
 Status: implemented
 
+部分被[成稿即书与结构化计划](2026-10-05-canvas-novel-book-and-plan.zh.md)取代：条子上每章一个 chip 改成一条细线，章节阅读器同时服务成稿面。
+
 ## 问题
 
 引擎、工具和对账闸门都有了，但待审、台账和「✓ 审过」只能走工具。用户要审一章，得让模型列待审、逐条转述、再替他调 `review`。「审过永远最后、由人收章」这条规则在界面上看不见，它要求的人工动作也没有入口。
@@ -10,7 +12,7 @@ Status: implemented
 
 - **canvas-novel 长出浏览器端，但只挂在画布的体裁接缝上**：
   - `canvas.board.strip` 的列表条目（id 为体裁 id）；
-  - `canvas.page` 的两个 keyed 页面：`novel:ledger` 和 `novel:chapter`（param 是章号）。
+  - `canvas.page` 的两个 keyed 页面：`novel:ledger` 和 `novel:chapter`（param 是章号；入口 `ChapterPage` 在 `src/client/ChapterReader.tsx`）。
   - 注册都用 `slots.inject(key, () => slots.register(...))`。没有画布就没有 slot，整个客户端什么都不渲染；非长篇小说的画布上条子返回 null。
 - **host 侧新增 `novel` Remote**（`NovelRemoteService`）：
   - 读：pending / ledger / chapters / chapter；

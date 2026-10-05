@@ -650,7 +650,7 @@ export class NovelService {
   /**
    * The agent's card write. Without an id it lands a new card in the
    * role's category live — kept at once, in the brief and the ledger, marked
-   * new (a red dot) on the board until the user looks; a character or world
+   * new (✦) on the board until the user looks; a character or world
    * card whose name a live card already has is refused as `duplicate`, naming
    * that card; with an id it merges the given fields into that
    * card (absent fields keep). Fields are checked against the genre's card
@@ -908,7 +908,8 @@ export class NovelService {
         plan = {
           ...rawPlan,
           foreshadowOps: rawPlan.foreshadowOps.map(op => op.id === undefined ? op : { ...op, id: toCard(op.id, 'foreshadow') }),
-          characters: rawPlan.characters.map(token => toCard(token, 'character')),
+          cast: rawPlan.cast.map(member => ({ ...member, who: toCard(member.who, 'character') })),
+          ...(rawPlan.pov === undefined ? {} : { pov: toCard(rawPlan.pov, 'character') }),
         }
       }
     }
@@ -958,7 +959,11 @@ export class NovelService {
           if (row === undefined) return 'missing'
           const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
           mutable.title = title
-          if (plan !== undefined) mutable.plan = plan
+          if (plan !== undefined) {
+            mutable.plan = plan
+            // The delivery indexes the old plan's rows; a new plan has none yet.
+            delete mutable.delivery
+          }
           mutable.updatedAt = now
           const sessionId = String(session.id)
           if (!row.sessionIds.includes(sessionId)) (mutable.sessionIds as string[]).push(sessionId)
@@ -1116,7 +1121,7 @@ export class NovelService {
     const rules = entries.rules.filter(view => view.status === 'kept')
     const foreshadows = entries.foreshadows.filter(view => view.cardStatus === 'kept')
     const roster = entries.characters.filter(view => view.cardStatus === 'kept')
-    const inSceneIds = new Set(target.plan?.characters ?? [])
+    const inSceneIds = new Set([...(target.plan?.cast ?? []).map(member => member.who), ...(target.plan?.pov === undefined ? [] : [target.plan.pov])])
     const inScene = roster.filter(view => inSceneIds.has(view.cardId) || inSceneIds.has(view.name) || inSceneIds.has(view.ref))
     const previous = chapters.filter(candidate => candidate.seq < target.seq)
     const previousChapter = previous[previous.length - 1]
@@ -1188,13 +1193,15 @@ export class NovelService {
    *   2. foreshadow refs must resolve to a kept, unsettled foreshadow card,
    *      else dropped;
    *   3. new rules, foreshadows and characters land as live cards, marked
-   *      new (a red dot) on the board — the user edits or archives (✗)
+   *      new (✦) on the board — the user edits or archives (✗)
    *      what is wrong;
    *   4. high-confidence journal lines land automatically (an experience line
    *      marked 自动·可撤销); medium/low ones go to the pending queue;
    *   5. plan operations verify against the recorded mentions; a planned op
    *      with no touch lands in pending as 计划落空 (「忘了还是改主意」是人答
    *      的题), and every journal mention carries planned/reconciled flags.
+   *      Plan beats the subagent found (evidence-gated like everything else)
+   *      land on the chapter's delivery; a missed beat is a reminder only.
    * @param request - work id, chapter number, the subagent's strict JSON.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the reconciliation report, or the failure code.
@@ -1204,7 +1211,7 @@ export class NovelService {
     session: Session,
   ): Promise<ImportReport> {
     const empty = {
-      verified: 0, missed: 0, pending: 0,
+      verified: 0, missed: 0, beats: { delivered: 0, missed: 0 }, pending: 0,
       dropped: [] as ImportDrop[], pendingItems: [] as { id: string; kind: PendingKind; reason: string }[],
       newCards: [] as { cardId: string; role: EntryRole; text: string }[],
     }
@@ -1219,7 +1226,7 @@ export class NovelService {
     if (chapter.phase !== 'planning' || body.trim() === '') return { ok: false, error: 'not-reviewed', ...empty }
     const { payload } = request
     const dropped: ImportDrop[] = []
-    const report = { verified: 0, missed: 0, pending: 0 }
+    const report = { verified: 0, missed: 0, beats: { delivered: 0, missed: 0 }, pending: 0 }
     const toPending: { kind: PendingKind; confidence: 'medium' | 'low'; chapter?: number; reason: string; evidenceInText?: string; payload: PendingPayload }[] = []
     const pend = (item: (typeof toPending)[number]): void => { toPending.push(item); report.pending += 1 }
     const confidenceOf = (raw: unknown): Confidence => raw === 'high' ? 'high' : raw === 'low' ? 'low' : 'medium'
@@ -1365,12 +1372,16 @@ export class NovelService {
     }
 
     // Gate 5: plan verification against what the chapter actually touched.
+    // A missed op is a question for the person (pending); a missed beat only
+    // shows on the chapter's delivery line.
+    const opsDelivered: boolean[] = []
     for (const op of chapter.plan?.foreshadowOps ?? []) {
       const wanted = OP_TO_MENTION[op.op]
       const opId = op.id === undefined ? undefined : asForeshadow(op.id)
       const touched = opId === undefined ? [] : recordedMentions.filter(mention => mention.id === opId)
       const exact = touched.some(mention => mention.kind === wanted)
       const anyTouch = touched.length > 0 || (op.op === '新埋' && newForeshadows > 0)
+      opsDelivered.push(exact || anyTouch)
       if (exact || anyTouch) {
         report.verified += 1
       } else {
@@ -1385,6 +1396,20 @@ export class NovelService {
         })
       }
     }
+    const beatsSeen = new Set<number>()
+    for (const raw of payload.beats_delivered ?? []) {
+      const beat = cleanNumber(raw.beat)
+      if (beat === undefined || !Number.isInteger(beat) || beat < 1 || beat > (chapter.plan?.beats.length ?? 0)) continue
+      const evidence = cleanText(raw.evidence_in_text, 60)
+      if (!evidenceInBody(body, evidence)) {
+        dropped.push({ kind: 'beat', reason: 'evidence-not-found', ref: String(beat) })
+        continue
+      }
+      beatsSeen.add(beat)
+    }
+    const beatsDelivered = (chapter.plan?.beats ?? []).map((_beat, index) => beatsSeen.has(index + 1))
+    report.beats.delivered = beatsDelivered.filter(Boolean).length
+    report.beats.missed = beatsDelivered.length - report.beats.delivered
 
     // The writes. Cards first (through the canvas), then the sidecar, the journals, the chapter, the queue.
     const notes = new Map<string, CardNote>()
@@ -1481,6 +1506,7 @@ export class NovelService {
         if (row === undefined) return 'missing'
         const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
         mutable.phase = 'extracted'
+        if (chapter.plan !== undefined) mutable.delivery = { beats: beatsDelivered, ops: opsDelivered }
         if (recap !== undefined) mutable.recap = recap
         mutable.wordCount = typeof payload.word_count === 'number' && Number.isFinite(payload.word_count)
           ? Math.max(0, Math.round(payload.word_count))

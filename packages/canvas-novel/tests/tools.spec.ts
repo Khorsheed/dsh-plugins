@@ -90,7 +90,7 @@ describe('the novel tools', () => {
   it('novel_write(card) lands a live card, in the ledger at once; ✗ is archive, the only card review', async () => {
     const { canvas, write, read } = await bench({ bound: true })
     const answer = await call(write, { what: 'card', role: '伏笔', fields: { question: '梦主可能是赵启明的妹妹？', bogus: 1 } })
-    expect(answer).toContain('已落卡 [#19]（伏笔·已进 brief，画布上带红点）')
+    expect(answer).toContain('已落卡 [#19]（伏笔·已进 brief，画布上带 ✦ 新卡标记）')
     expect(answer).toContain('忽略了不认识的字段：bogus')
     expect(await call(read, { what: 'ledger' })).toContain('[#19] 梦主可能是')
     expect(await call(write, { what: 'review', target: 'card', id: '#19', action: 'accept' })).toContain('只能 archive')
@@ -105,10 +105,16 @@ describe('the novel tools', () => {
 
   it('novel_write(chapter) numbers max+1 and stores the plan; re-planning keeps the number', async () => {
     const { write } = await bench({ bound: true })
-    const created = await call(write, { what: 'chapter', title: '回响', plan: { goal: '穿过第一层', foreshadowOps: [{ op: '推进', id: '#12' }], characters: ['c1'] } })
-    expect(created).toContain('已登记第 7 章《回响》plan')
-    const replanned = await call(write, { what: 'chapter', chapter: 7, title: '回响·改', plan: { goal: '退回门缝' } })
+    const created = await call(write, {
+      what: 'chapter', title: '回响',
+      plan: { summary: '穿过第一层', beats: [{ text: '推门' }, { text: '回头', mark: '转折' }], foreshadowOps: [{ op: '推进', id: '#12', note: '门后第一层' }], cast: [{ who: 'c1' }] },
+    })
+    // The answer names the canvas: the conversation card opens the chapter page from it.
+    expect(created).toContain(`已登记第 7 章《回响》（画布 ${DREAM.workId}）plan：走向 2 拍 / 伏笔 1 条 / 出场 1 人。`)
+    const replanned = await call(write, { what: 'chapter', chapter: 7, title: '回响·改', plan: { summary: '退回门缝' } })
     expect(replanned).toContain('第 7 章')
+    expect(await call(write, { what: 'chapter', chapter: 7, title: '回响', plan: { goal: '旧形状' } })).toContain('至少要有 summary')
+    expect(await call(write, { what: 'chapter', title: '尾声' })).toContain(`已建第 8 章《尾声》（画布 ${DREAM.workId} · 规划中 · 第8章.md）。`)
     const missing = await call(write, { what: 'chapter', chapter: 42, title: '不存在' })
     expect(missing).toContain('没有第 42 章')
   })

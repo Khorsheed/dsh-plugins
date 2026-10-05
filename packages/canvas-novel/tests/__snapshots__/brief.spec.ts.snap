@@ -8,7 +8,8 @@ exports[`the three brief variants on the《梦境监护者》seed (CP1) > render
    本章新登场的角色写进 new_characters，他们的经历和现状照样写，character_id 填名字；
    世界设定给 name（设定的名字）和具体内容，同一个设定只写一条；
 3. 拿不准一律 confidence=medium/low；
-4. plan 列了但正文没动的操作，报 plan_missed，不掩饰；
+4. 本章计划的走向逐条核对：正文写到了的那一拍写进 beats_delivered（带 evidence），没写到的不报；
+   伏笔只按实际写到的报 foreshadow_mentions，计划列了却没写到的不要编；
 5. 角色经历每人 1-2 句：本章做了什么、状态怎么变；current_state 给
    where/state/concern 三字段。
 
@@ -26,9 +27,19 @@ exports[`the three brief variants on the《梦境监护者》seed (CP1) > render
 门缝里飘出一片蓝色的叶子，落在赵启明掌心，微微发烫，像一句还没来得及说出口的回答。
 
 【本章计划】
-POV：赵启明　目标：按半页守则找到门缝，决定是否推开
-伏笔操作：推进 [#12 门缝里的东西] / 暗示 [#15 蓝色叶子为什么发光]
-出场角色：赵启明、艾文
+梗概：赵启明按半页守则在档案室找到门缝，犹豫要不要推开；艾文劝他先等，叶子却先亮了。
+走向：
+  1. 深夜｜赵启明照守则数钟声，在档案室墙角找到门缝
+  2. 艾文劝他先别推，说门后不回答问题（转折）
+  3. 门缝里飘出一片蓝色叶子，他决定推门（落点）
+冲突：赵启明想知道门后是什么，艾文想拖住他
+看点：守则的第一次应验
+伏笔：
+  - 推进 [#12 门缝里的东西]：门缝第一次被找到
+  - 暗示 [#15 蓝色叶子为什么发光]：叶子在门边发亮
+出场：
+  - 赵启明（POV）：找门、决定推门
+  - 艾文：劝阻
 章末钩子：门缝里飘出一片蓝色叶子
 
 【活跃伏笔榜】
@@ -42,6 +53,7 @@ POV：赵启明　目标：按半页守则找到门缝，决定是否推开
 
 【输出 schema】
 {
+  "beats_delivered": [{ "beat": 走向的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
   "memories": [{ "kind": "世界|原则", "name": "仅世界：这条设定叫什么（地点、势力、道具或规则的名字）", "world_kind": "仅世界：地点|势力|道具|规则|历史|其他", "content": "具体的设定或写作原则，能复述", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "foreshadow_mentions": [{ "foreshadow_id": "#12", "kind": "planted|advanced|hinted|resolved", "answer": "仅 resolved 给", "note": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "new_foreshadows": [{ "question": "…", "tension": 1到5, "evidence_in_text": "≤50字原文" }],
@@ -89,9 +101,16 @@ exports[`the three brief variants on the《梦境监护者》seed (CP1) > render
 - 每章结尾留一个未解的画面，不在章内合拢。
 
 ## 本章计划
-POV：赵启明　目标：跟随艾文穿过门缝，确认门后空间的第一层
-伏笔操作：推进 [#12 门缝里的东西] / 暗示 [#15 蓝色叶子为什么发光]
-出场角色：赵启明、艾文
+梗概：赵启明跟着艾文穿过门缝，看清门后空间的第一层。
+走向：
+  1. 两人穿过门缝，门后是倒置的档案室
+  2. 门后传来妹妹的声音（落点）
+伏笔：
+  - 推进 [#12 门缝里的东西]：门后第一层
+  - 暗示 [#15 蓝色叶子为什么发光]
+出场：
+  - 赵启明（POV）
+  - 艾文：带路
 章末钩子：门后传来妹妹的声音
 
 ## 伏笔台账（活跃）

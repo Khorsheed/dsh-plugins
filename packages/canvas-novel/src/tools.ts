@@ -209,7 +209,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       }
       if (args.what === 'pending') {
         const items = await store.listPending({ workId })
-        if (items.length === 0) return '待审队列为空（新卡片直接落在画布上、带红点，不在这里）。'
+        if (items.length === 0) return '待审队列为空（新卡片直接落在画布上、带 ✦ 新卡标记，不在这里）。'
         return [`待审队列（${items.length} 条，✓采纳/✗丢弃走 novel_write(what=review, target=pending, id, action=accept|discard)）：`, ...items.map(pendingLine)].join('\n')
       }
       if (args.what === 'chapter') {
@@ -245,7 +245,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       title: { type: 'string', description: 'chapter: the title.' },
       content: { type: 'string', description: 'chapter: the manuscript body — written to the mounted workspace before registering.' },
       chapter: { type: 'number', description: 'chapter: n to re-plan (omit to create).' },
-      plan: { type: 'object', additionalProperties: true, description: 'chapter: {pov, goal, foreshadowOps[{op, id|question}], characters[], hook}.' },
+      plan: {
+        type: 'object', additionalProperties: true,
+        description: 'chapter: {summary (梗概, 2-3 sentences), beats[{at (time label), text, mark?: 转折|落点}], conflict, highlight (看点), '
+          + 'foreshadowOps[{op: 推进|暗示|新埋|揭晓, id (ref) | question (新埋), note (what it advances or plants)}], cast[{who (ref or name), role}], pov, hook}.',
+      },
       target: { type: 'string', enum: ['card', 'pending'], description: 'review: a card on the board, or the pending queue.' },
       action: { type: 'string', enum: ['accept', 'discard', 'archive'], description: 'review: accept|discard a pending item; archive a card.' },
     },
@@ -268,7 +272,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         if (!outcome.ok) return cardErrorMessage(outcome.error, role, outcome.ref)
         const ignored = outcome.ignored === undefined || outcome.ignored.length === 0 ? '' : `（忽略了不认识的字段：${outcome.ignored.join('、')}）`
         return args.id === undefined
-          ? `已落卡 [${outcome.ref}]（${ROLE_NAMES[role]}·已进 brief，画布上带红点）${ignored}。`
+          ? `已落卡 [${outcome.ref}]（${ROLE_NAMES[role]}·已进 brief，画布上带 ✦ 新卡标记）${ignored}。`
           : `已更新 [${outcome.ref}]${ignored}。`
       }
       if (args.what === 'chapter') {
@@ -284,6 +288,9 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           if (outcome.error === 'missing' && args.chapter !== undefined) {
             return `失败：没有第 ${args.chapter} 章。novel_read(what=chapters) 看索引；新建不要传 chapter。`
           }
+          if (outcome.error === 'invalid-name' && args.plan !== undefined) {
+            return '失败：plan 读不出来——至少要有 summary（梗概，两三句）；走向写 beats，伏笔写 foreshadowOps，出场写 cast。'
+          }
           if (outcome.error === 'denied') {
             return '失败：正文写不进画布挂载的工作区（会话沙箱围栏拒绝）。请用户给画布挂一个本会话可写的工作区，或把正文贴给我用 novel_write(what=chapter, content=…) 重写。'
           }
@@ -295,8 +302,9 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         const chapter = outcome.chapter!
         const plan = chapter.plan as ChapterPlan | undefined
         return plan === undefined
-          ? `已建第 ${chapter.n} 章《${chapter.title}》（规划中 · ${chapter.file}）。`
-          : `已登记第 ${chapter.n} 章《${chapter.title}》plan：POV ${plan.pov ?? '未定'} / 目标 ${plan.goal} / 伏笔操作 ${plan.foreshadowOps.length} 条 / 钩子 ${plan.hook ?? '无'}。用户确认后开写。`
+          ? `已建第 ${chapter.n} 章《${chapter.title}》（画布 ${workId} · 规划中 · ${chapter.file}）。`
+          : `已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}）plan：走向 ${plan.beats.length} 拍 / 伏笔 ${plan.foreshadowOps.length} 条 / 出场 ${plan.cast.length} 人。`
+            + '完整计划已在会话卡片和章节页上，回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。用户确认后开写。'
       }
       if (args.what === 'review') {
         if (args.target === undefined || args.id === undefined || args.action === undefined) {
@@ -357,10 +365,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         return report.error === 'missing' ? `失败：没有第 ${args.chapter} 章。` : `失败：${report.error ?? 'io'}`
       }
       const lines = [
-        `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed} / 新卡 ×${report.newCards.length} / 待你确认 ×${report.pending}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
+        `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed}${report.beats.missed === 0 ? '' : ` / 走向没写到 ×${report.beats.missed}（只提醒，不进待审）`} / 新卡 ×${report.newCards.length} / 待你确认 ×${report.pending}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
       ]
       if (report.newCards.length > 0) {
-        lines.push('画布上的新卡（已进 brief，画布上带红点；不对的让用户改或归档，要补内容按编号改这张，不要另起）：', ...report.newCards.map(card => `- [${card.ref ?? card.cardId}] ${ROLE_NAMES[card.role]}「${card.text}」`))
+        lines.push('画布上的新卡（已进 brief，画布上带 ✦ 新卡标记；不对的让用户改或归档，要补内容按编号改这张，不要另起）：', ...report.newCards.map(card => `- [${card.ref ?? card.cardId}] ${ROLE_NAMES[card.role]}「${card.text}」`))
       }
       if (report.pendingItems.length > 0) {
         lines.push('待确认清单：', ...report.pendingItems.map(item => `- [${item.id}] ${item.reason}`))

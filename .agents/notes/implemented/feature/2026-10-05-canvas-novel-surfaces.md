@@ -2,6 +2,8 @@
 
 Status: implemented
 
+Superseded in part by [the book and the structured plan](2026-10-05-canvas-novel-book-and-plan.md): the per-chapter strip chips became one slim line, and the chapter reader now also serves the 成稿 face.
+
 ## Problem
 
 The engine, the tools and the reconciliation gates existed, but pending review, the ledger and 「✓ 审过」 were reachable only through the tools. To review a chapter the user had to ask the model to list the pending items, relay them one by one, and call `review` on their behalf. The rule "review always comes last and a person closes the chapter" was invisible in the UI, and the human gesture it requires had no entry point.
@@ -10,7 +12,7 @@ The engine, the tools and the reconciliation gates existed, but pending review, 
 
 - **canvas-novel grows a browser half, mounted only on the canvas's genre seams**:
   - a list entry on `canvas.board.strip` (id: the genre id);
-  - two keyed pages on `canvas.page`: `novel:ledger` and `novel:chapter` (param: the chapter number).
+  - two keyed pages on `canvas.page`: `novel:ledger` and `novel:chapter` (param: the chapter number; its entry `ChapterPage` lives in `src/client/ChapterReader.tsx`).
   - Every registration goes through `slots.inject(key, () => slots.register(...))`. Without the canvas there is no slot and the client renders nothing; on a canvas of another genre the strip returns null.
 - **A new `novel` Remote on the host side** (`NovelRemoteService`):
   - reads: pending / ledger / chapters / chapter;

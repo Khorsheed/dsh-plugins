@@ -1,6 +1,7 @@
 /* The 长篇小说 genre's surfaces inside the canvas: the board strip, the
-   ledger page, the chapter page. They sit in the canvas's own frame, so every
-   colour and size is a `--dsw-*` token — light and dark are the theme's. */
+   book (contents and reader), the ledger page. They sit in the canvas's own
+   frame, so every colour and size is a `--dsw-*` token — light and dark are
+   the theme's. */
 
 /* ── Board strip ─────────────────────────────────────────────────────── */
 
@@ -24,23 +25,9 @@
   min-width: 0;
 }
 
-.stripLabel {
-  flex: none;
-  font: var(--dsw-font-xxs-strong-12);
-  color: var(--dsw-alias-label-primary);
-}
-
-.chips {
-  display: flex;
-  gap: 4px;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.chapterChip,
+.stripCurrent,
 .stripLink,
+.stripToc,
 .pendingToggle,
 .subject {
   display: inline-flex;
@@ -57,20 +44,29 @@
   white-space: nowrap;
 }
 
-.chapterChip {
-  border-color: var(--dsw-alias-border-l1);
+/* The chapter to pick up at leads the line; the way into the book closes it. */
+.stripCurrent {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: var(--dsw-font-xxs-strong-12);
+  color: var(--dsw-alias-label-primary);
+}
+
+.stripToc {
+  margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
 
-.chapterChip:hover,
+.stripCurrent:hover,
 .stripLink:hover,
+.stripToc:hover,
 .subject:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
 .pendingToggle {
-  margin-left: auto;
   background: var(--dsw-alias-state-warn-tertiary);
   color: var(--dsw-alias-state-warn-label);
 }
@@ -375,33 +371,355 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* ── Chapter ────────────────────────────────────────────────────────── */
+/* ── Book: the 成稿 face ─────────────────────────────────────────────── */
 
-/* One reading column, centred in however wide a pane: the stepper, the plan,
-   the text and the closing bar share its edges. */
-.chapterPage {
-  width: 100%;
-  max-width: 660px;
-  margin: 0 auto;
-  gap: 18px;
+/* The contents page scrolls itself, like the canvas's own manuscript list. */
+.book {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px 48px;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-primary);
 }
 
-.chapterHead {
+.bookHead {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bookTitle {
+  margin: 0;
+  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  font-size: 19px;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.bookStat {
   font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }
+
+.bookEmpty {
+  padding: 24px 0;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The whole work at a glance: one tick per chapter, coloured by phase; red
+   where something waits for the person. */
+.spine {
+  display: grid;
+  gap: 2px;
+  height: 14px;
+}
+
+.tick {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: pointer;
+}
+
+.tick[data-phase="reviewed"] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent); }
+.tick[data-phase="extracted"] { background: var(--dsw-alias-brand-primary); }
+.tick[data-phase="writing"],
+.tick[data-phase="fileMissing"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent); }
+.tick[data-phase="planning"] { background: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); }
+.tick[data-todo="true"] { background: var(--dsw-alias-state-error-primary); box-shadow: none; }
+.tick:hover { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 1px; }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.legend span::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.legend [data-kind="reviewed"]::before { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent); }
+.legend [data-kind="extracted"]::before { background: var(--dsw-alias-brand-primary); }
+.legend [data-kind="todo"]::before { background: var(--dsw-alias-state-error-primary); }
+.legend [data-kind="writing"]::before { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent); }
+.legend [data-kind="planning"]::before { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); }
+
+.resume {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.resume:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.resumeText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.resumeText small {
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.resumeTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  font-size: 15px;
+}
+
+.resumeGo {
+  margin-left: auto;
+  color: var(--dsw-alias-brand-primary);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filters button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 13px;
+  background: none;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.filters button[aria-pressed="true"] {
+  border-color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.group {
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 2px;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.groupChev {
+  width: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 150ms;
+}
+
+.group[data-open="true"] .groupChev { transform: rotate(90deg); }
+
+.groupTitle { font: var(--dsw-font-xs-strong-13); }
+
+.groupSum {
+  margin-left: auto;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 6px;
+}
+
+/* 第N章 | title | phase | words: the same four columns on every row. */
+.row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto 64px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 6px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.rowNo,
+.rowWords {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rowWords { text-align: right; }
+
+.rowTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  font-size: 14px;
+}
+
+.phaseTag {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.phaseTag[data-phase="reviewed"] {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.phaseTag[data-phase="extracted"] {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.phaseTag[data-phase="fileMissing"],
+.phaseTag[data-todo="true"] {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* ── Reader ─────────────────────────────────────────────────────────── */
+
+/* Inside the book the reader scrolls itself; on a canvas page the page does. */
+.reader {
+  display: flex;
+  flex-direction: column;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-primary);
+}
+
+.reader[data-host="book"] {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.readerTop {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent);
+  backdrop-filter: blur(6px);
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.reader[data-host="page"] .readerTop {
+  padding-inline: 0;
+}
+
+.readerLink {
+  padding: 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.readerLink:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.readerWork {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readerWhere {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One reading column at a reading measure, centred however wide the pane. */
+.chap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 34em;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 28px 24px 8px;
+}
+
+.kicker {
+  text-align: center;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+  letter-spacing: 0.12em;
+}
+
+.chapTitle,
+.nextTitle {
+  margin: 0;
+  text-align: center;
+  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  font-size: 22px;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.nextTitle { font-size: 19px; }
 
 /* 规划 — 写作 — 抽取 — 审过: dots joined by short rules. */
 .stepper {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
   gap: 6px 0;
   margin: 0;
@@ -461,42 +779,222 @@
   box-shadow: inset 0 0 0 3px var(--dsw-alias-bg-base), inset 0 0 0 8px var(--dsw-alias-state-error-primary);
 }
 
+/* ── Plan ───────────────────────────────────────────────────────────── */
+
 .plan {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
+}
+
+/* While the chapter is being planned the plan leads: open, ringed. */
+.plan[data-lead="true"] {
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent);
 }
 
 .planHead {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.planHead .button {
-  margin-left: auto;
+.planLabel {
+  flex: none;
+  font: var(--dsw-font-xs-strong-13);
 }
 
-.planGoal {
-  line-height: 1.7;
-}
-
-.planMeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 14px;
+.planSum {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.miss { color: var(--dsw-alias-state-error-primary); }
+
+.planChev {
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 150ms;
+}
+
+.plan[data-open="true"] .planChev { transform: rotate(90deg); }
+
+.planBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 14px 14px;
 }
 
 .planEmpty {
+  text-align: center;
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
 }
+
+.gist {
+  margin: 0;
+  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px 10px;
+  margin: 0;
+}
+
+.kv dt {
+  padding-top: 1px;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.kv dd {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.beats,
+.ops {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ops { gap: 8px; }
+
+.beats li,
+.ops li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.beatAt {
+  flex: none;
+  width: 46px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.beatAt b {
+  margin-right: 4px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.tx {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.beats .tx { display: block; }
+
+.beatMark,
+.opTag {
+  padding: 0 6px;
+  border-radius: 4px;
+  font: var(--dsw-font-xxxs-11);
+  white-space: nowrap;
+}
+
+.beatMark { margin-left: 6px; }
+
+.beatMark[data-mark="turn"] {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.beatMark[data-mark="land"] {
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 14%, transparent);
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.opTag {
+  flex: none;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.opRef { color: var(--dsw-alias-label-primary); }
+
+.what {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.castName {
+  flex: none;
+  min-width: 52px;
+}
+
+.pov {
+  margin-left: 4px;
+  font-style: normal;
+  font-size: 10px;
+  color: var(--dsw-alias-brand-primary);
+}
+
+.res {
+  flex: none;
+  margin-left: auto;
+  font: var(--dsw-font-xxs-12);
+  white-space: nowrap;
+}
+
+.res[data-hit="true"] { color: var(--dsw-alias-state-business-primary); }
+.res[data-hit="false"] { color: var(--dsw-alias-state-error-primary); }
+
+.planActs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  font: var(--dsw-font-xxs-12);
+}
+
+.confirm {
+  flex: none;
+  height: 30px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-brand-primary);
+  font: var(--dsw-font-xs-strong-13);
+  color: var(--dsw-alias-label-primary-inverted);
+  cursor: pointer;
+}
+
+.confirm:disabled { opacity: 0.6; cursor: default; }
+
+.done { color: var(--dsw-alias-state-business-primary); }
+
+/* ── Text ───────────────────────────────────────────────────────────── */
 
 /* The text is read, not scanned: a serif column at a reading measure. */
 .prose {
@@ -521,46 +1019,37 @@
   letter-spacing: 0.1em;
 }
 
-/* The manuscript's path closes the text: small, centred under a short rule. */
-.footer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  font: var(--dsw-font-xxxs-11);
+.noBody {
+  padding: 18px 0;
+  text-align: center;
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
 }
 
-.footer::before {
-  content: '';
-  width: 32px;
-  height: 1px;
-  background: var(--dsw-alias-border-l2);
+/* 「— 本章完 —」, then the closing gesture or what it waits for. */
+.end {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0 6px;
+  font: var(--dsw-font-xxs-12);
+  text-align: center;
+}
+
+.orn {
+  color: var(--dsw-alias-label-tertiary);
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
 }
 
 .path {
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
   word-break: break-all;
 }
 
-/* The closing gesture stays in reach however long the chapter: the gate on
-   the left, the one button on the right, over a fade from the text. The
-   canvas page body pads its bottom by 64px; sticking at -64px puts the bar on
-   the pane's real bottom edge instead of floating above a strip of text. */
-.reviewBar {
-  position: sticky;
-  bottom: -64px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  padding: 20px 0 16px;
-  background: linear-gradient(to bottom, transparent, var(--dsw-alias-bg-base) 16px);
-  font: var(--dsw-font-xxs-12);
-}
-
 .reviewButton {
-  margin-left: auto;
   padding: 6px 16px;
   border: none;
   border-radius: 8px;
@@ -584,10 +1073,99 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
   padding: 5px 12px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
   font: var(--dsw-font-xs-strong-13);
   color: var(--dsw-alias-state-business-primary);
+}
+
+/* The next chapter's first lines, fading out: a reason to turn the page. */
+.next {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 34em;
+  box-sizing: border-box;
+  margin: 18px auto 0;
+  padding: 22px 24px 24px;
+  border-top: 1px dashed var(--dsw-alias-border-l2);
+}
+
+.fade {
+  max-height: 96px;
+  overflow: hidden;
+  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  font-size: 15.5px;
+  line-height: 2;
+  text-indent: 2em;
+  color: var(--dsw-alias-label-secondary);
+  -webkit-mask-image: linear-gradient(to bottom, #000 30%, transparent);
+  mask-image: linear-gradient(to bottom, #000 30%, transparent);
+}
+
+.nextEmpty {
+  padding: 8px 0 4px;
+  text-align: center;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.nextGo {
+  align-self: center;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+}
+
+.nextGo:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+/* The pager stays in reach however long the chapter. The canvas page body pads
+   its bottom by 64px; sticking at -64px there puts the bar on the pane's real
+   bottom edge instead of floating above a strip of text. */
+.pager {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-base);
+}
+
+.reader[data-host="page"] .pager {
+  bottom: -64px;
+  padding-inline: 0;
+}
+
+.pager button {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.pager button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+
+.pager button:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pager .pagerMid {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
 }
