@@ -2,7 +2,7 @@
 
 Status: implemented
 
-Superseded in part by [the book and the structured plan](2026-10-05-canvas-novel-book-and-plan.md): the per-chapter strip chips became one slim line, and the chapter reader now also serves the 成稿 face.
+Superseded in part by [the book and the structured plan](2026-10-05-canvas-novel-book-and-plan.md): the per-chapter strip chips became one slim line, and the chapter reader now also serves the 成稿 face. The foreshadow ledger page is replaced by [the story log](2026-10-06-canvas-novel-story-log.md).
 
 ## Problem
 

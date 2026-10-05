@@ -2,7 +2,7 @@
 
 Status: implemented
 
-部分被[成稿即书与结构化计划](2026-10-05-canvas-novel-book-and-plan.zh.md)取代：条子上每章一个 chip 改成一条细线，章节阅读器同时服务成稿面。
+部分被[成稿即书与结构化计划](2026-10-05-canvas-novel-book-and-plan.zh.md)取代：条子上每章一个 chip 改成一条细线，章节阅读器同时服务成稿面。伏笔台账页被[故事日志](2026-10-06-canvas-novel-story-log.zh.md)取代。
 
 ## 问题
 
