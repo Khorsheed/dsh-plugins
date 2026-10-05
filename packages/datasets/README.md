@@ -186,9 +186,18 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 - **skill**：`skills/dataset-authoring/SKILL.md` 随包分发（`files` 收 `skills/**/*.md`），由工具行的 `organize` 档经宿主 `skills` 注册表注册——只装 datasets、在自己的预设里给工具行写 `tools: organize` 就能用，不需要往 `$DSH_HOME/skills` 拷文件。内容从 `docs/dataset-authoring-protocol.md` 派生，二者冲突以协议为准。协议正文随包发：构建把 `docs/` 那一对拷成 skill 目录里的 `protocol.en.md` / `protocol.zh.md`（拷贝件不入库），skill 里写的是占位路径，加载时解析成安装后的绝对路径，Agent 用 `read` 直接读，不需要去找（T94）。skill 规定校验规则只从工具拿（`datasets_propose_registration` 的 `dryRun`、`datasets_validate`、包内 CLI 的 `validate --repo`），只读来源、目标、协议三处，不搜盘、不读插件源码或 lib、不读别的实例目录。
 - **申请**：`datasets_propose_registration` 只写申请（状态根下的提案库），附 `mapping`（原目录每个文件的去向、题集每个文件的来源）、各层可见性建议、样题。插件把 mapping 对照仓库的 git 对象与原目录逐项核对，跑协议的 validate；任何对不上都成为「问题」，有问题就不能确认。`dryRun: true` 跑同一套检查但不落提案。
 - **「等你确认登记」**：tab 顶部的提示条打开审阅页——来源、题数、校验、版本；「原目录 → 题集」左右对照（顶部汇总各类计数，删除数始终显示；不分层、选手可见的文件醒目标出）；逐条对照一题 / 随机抽看 3 题 / 完整清单；登记名；各层可见性开关（带 Agent 建议，至少留一层）；「高级」里是路径、分支、提交号。「退回给 Agent」把人的意见写进原整理会话的对话框；「确认登记」是申请变成登记的唯一路径。
-- **「核对并登记」**（T96）：整理会话里那一轮 Agent 申请成功（非 `dryRun`）后，轮尾（收尾那段话下面、折叠的工具组外面）出现一张卡片，点一下直接在同一会话的「题集」tab 打开这份申请的审阅页，不经过列表和提示条。卡片走宿主的 `conversation.chat.turnTail` 列表槽与 `uiConversation` 会话定义（同 ui-schedule 的「已创建任务」卡）；切 tab 宿主没有公开调用，靠点 tab 条按钮（DOM 锚点），没切过去时卡片用一句话说去哪儿点。缺这些宿主面时不出卡片，申请照常在提示条后面等。审阅页的校验结果在申请时算好并按提交号缓存，打开时先出页头和四张概况卡，其余部分用同形骨架占位。
+- **「核对并登记」**（T96）：整理会话里那一轮 Agent 申请成功（非 `dryRun`）后，轮尾（收尾那段话下面、折叠的工具组外面）出现一张卡片，点一下直接在左侧栏的全局「题集」面板打开这份申请的审阅页，不经过列表和提示条（T97 起；宿主的 `ctx.layout.selectPanel` 选中面板）。宿主没有这个面板时退回同一会话的「题集」tab：请求留给 tab，卡片用一句话说去哪儿点。卡片走宿主的 `conversation.chat.turnTail` 列表槽与 `uiConversation` 会话定义（同 ui-schedule 的「已创建任务」卡）。T96 点 tab 条按钮的 DOM 锚点已退役。缺这些宿主面时不出卡片，申请照常在提示条后面等。审阅页的校验结果在申请时算好并按提交号缓存，打开时先出页头和四张概况卡，其余部分用同形骨架占位。
 - **改已有题集**：详情页与列表上的「交给 Agent 修改」开整理会话；Agent 在登记的检出里提交后再申请，审阅页换成「已登记版本 → 新版本」，多出「修改」，删除逐个列出。确认过的登记带 `confirmedCommit`：跟踪分支前进时，**选手看不到的变化**（隐藏层、`datasets/` 之外的文件）自动跟上；**选手看得到的变化**停在 `pending`，列表上出现「新版本待确认」，确认之前 agent 读到的仍是已确认的版本。
 - **去掉的「新建题集 / 题目骨架 / 导入题目」**：tab 不再提供这三个写动作。理由：首次使用和编辑只留一条路；骨架写进工作区、提交前在跟踪分支上看不见；它们绕过 mapping 核对和人的确认；改题已有更新闸。Remote 的 `scaffoldDataset` / `scaffoldItem` / `importItem` 留给 CLI 与兼容，agent 的起草仍是 `datasets_put_item`。
+
+## 全局「题集」面板（T97）
+
+宿主 0.2.0 的左侧栏有一列全局入口（插件管理、定时任务用的是同一套）。本包往里放一个「题集」：侧栏图标走 `sidebar.panellist`，点开后的中间面板走 `main`，两者 id 都是 `datasets`。面板里就是会话 tab 的同一个视图，列表、详情、审阅页、返回都一样。
+
+- **不依赖会话**：T97 起 datasets 的 Remote 一律不带会话参数，面板没有会话也能读全部数据。
+- **「添加题集」**：和 tab 里一样，新开一个「题集整理」会话，把请求写进它的输入框，不发送。新会话落在最近活跃的工作区，也就是宿主「新会话」选的那个。
+- **不按会话自隐**：面板展示的是部署级的题库，跟某个会话的 preset 无关（docs/plugin-visibility.md）。哪个 profile 显示它，由安装层决定：profile 装了本包就有这个入口。
+- **两个槽都是可选的**：注册走 `slots.inject`。宿主没声明这两个槽时，入口和面板都不出现，也不报错。会话 tab 照旧。
 
 ## Compatibility
 
@@ -196,7 +205,8 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 - source 线（deepseek-harness master）：✅（verifiedHost: 0.2.0-rc.2，题集 tab 在 web-eval 临时实例上真机冒烟）。
 - 金丝雀校验与可判性校验都在本插件内部完成（只读 git 对象），不依赖任何新的宿主能力；`tools` 分组随模型工具面搬到本包的工具行 `@khorsheed/dsh-datasets/tool`（`read` / `authoring` / `all` / `none`），本行不再有这个配置键。
 - 登记申请、对照核对与更新闸（T90）同样是插件内部的（提案库是状态根下的 JSON，核对只读 git 对象与原目录）。「让 Agent 整理」用宿主 0.2.0 的门：`sessions.create` / `rename`、`remote.agentPresets` 的 list / select、`uiWorkspace.openSession`、会话输入框的 `setDraft`；每一扇门都在调用时探测，缺哪扇就依次降级为剪贴板、再降级为页面上显示请求原文，不会报错。
-- 「核对并登记」轮尾卡片（T96）用宿主 0.2.0 的 `conversation.chat.turnTail` 列表槽与 `uiConversation.events` 会话定义，两者都在该槽声明后才读取；缺了就不出卡片，申请照常在提示条后面等。切到题集 tab 没有公开调用，靠点 tab 条按钮（DOM 锚点），失效时卡片用一句话说去哪儿点。审阅页的校验事实按提交号缓存在状态根的提案库下（插件内部）。
+- 「核对并登记」轮尾卡片（T96）用宿主 0.2.0 的 `conversation.chat.turnTail` 列表槽与 `uiConversation.events` 会话定义，两者都在该槽声明后才读取；缺了就不出卡片，申请照常在提示条后面等。卡片的打开动作（T97）用 `ctx.layout.selectPanel('datasets')` 选中全局「题集」面板；没有 layout 服务、或面板没注册（选中时抛错），就退回本会话的题集 tab，并用一句话说去哪儿点。T96 的 tab 条 DOM 锚点已退役。
+- 全局「题集」面板（T97）用宿主 0.2.0 的 `main` 与 `sidebar.panellist` 两个槽，经 `slots.inject` 注册；宿主没有这两个槽时不出现，不报错。T97 起 Remote 的方法都不带会话参数，所以新版客户端不能和 T97 之前的服务端混用（反过来也一样）。两半来自同一个包，正常安装不会出现这种情况。审阅页的校验事实按提交号缓存在状态根的提案库下（插件内部）。
 - 题库登记与只读物化（T73）同样是插件内部的：登记是状态根下一个 JSON 文件，物化只用 `git archive` + `tar`，不需要新的宿主能力；原生目录选择器沿用已有的宿主探测，探不到就只留路径输入。
 - ⚠️ 降级：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由工具行提供）。题集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets/tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是每个受判据管的 tab 都出现在选手的子会话里。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-datasets-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
 
