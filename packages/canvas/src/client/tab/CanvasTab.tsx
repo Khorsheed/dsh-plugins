@@ -54,7 +54,7 @@ import { cardTabId, draftTabId } from '../space/selection.ts'
 import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { DetailCrumbs } from '../detail/DetailCrumbs.tsx'
 import detailCss from '../detail/CanvasDetailView.module.css'
-import { boardStripsOf, genrePageOf, GenreSeatsContext, type GenreSeats } from '../genre-seats.tsx'
+import { boardManuscriptsOf, boardStripsOf, genrePageOf, GenreSeatsContext, manuscriptsOwned, type GenreSeats } from '../genre-seats.tsx'
 import { ManuscriptList, ManuscriptView } from '../manuscript/ManuscriptView.tsx'
 import { TypeView } from '../type/TypeView.tsx'
 import { CategoriesView } from '../type/CategoriesView.tsx'
@@ -778,10 +778,15 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       openManuscript: (manuscriptId, heading) => { openManuscript(canvasId, manuscriptId, heading) },
       openPage: (page, heading, param) => { openPage(canvasId, page, heading, param) },
       backToBoard: () => { backToBoard(canvasId) },
+      openManuscripts: () => {
+        setViews(all => ({ ...all, [canvasId]: { ...(all[canvasId] ?? FRESH_VIEW), face: 'manuscripts' } }))
+        backToBoard(canvasId)
+      },
       refresh: refreshBoards,
     }),
     sessionId,
-  }), [renderSlot, selectionRev, openCardDetail, openManuscript, openPage, backToBoard, refreshBoards, sessionId])
+    ownsManuscripts: genreId => genres.some(genre => genre.id === genreId && genre.ownsManuscripts === true),
+  }), [renderSlot, selectionRev, openCardDetail, openManuscript, openPage, backToBoard, refreshBoards, sessionId, genres])
 
   const openTitle = activeRow === undefined
     ? ''
@@ -1009,7 +1014,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                   onClick={() => { setView('manuscripts') }}
                 >
                   {t('view.manuscripts')}
-                  {openBoard.board.manuscripts.length > 0 && (
+                  {!manuscriptsOwned(seats, openBoard.board) && openBoard.board.manuscripts.length > 0 && (
                     <span className={css.viewCount}>{openBoard.board.manuscripts.length}</span>
                   )}
                 </button>
@@ -1076,11 +1081,13 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
           {openBoard !== null && loadError === null ? (
             view === 'manuscripts' ? (
-              <ManuscriptList
-                t={t}
-                board={openBoard.board}
-                onOpen={manuscript => { openManuscript(openBoard.board.id, manuscript.id, manuscript.title) }}
-              />
+              boardManuscriptsOf(seats, openBoard.board, (
+                <ManuscriptList
+                  t={t}
+                  board={openBoard.board}
+                  onOpen={manuscript => { openManuscript(openBoard.board.id, manuscript.id, manuscript.title) }}
+                />
+              ))
             ) : view === 'link' ? (
               <LinkView
                 t={t}
@@ -1111,7 +1118,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 onZoom={setZoom}
                 talkAvailable={canTalk}
                 onTalk={cardIds => { talk(cardIds) }}
-                onWrite={cardIds => { talk(cardIds, t('talk.writeText')) }}
+                onWrite={manuscriptsOwned(seats, openBoard.board) ? undefined : cardIds => { talk(cardIds, t('talk.writeText')) }}
                 onLayout={layout}
                 onToast={showToast}
               />
@@ -1135,7 +1142,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 onOpenDetail={openCard}
                 talkAvailable={canTalk}
                 onTalk={() => { talk(selection_) }}
-                onWrite={() => { talk(selection_, t('talk.writeText')) }}
+                onWrite={manuscriptsOwned(seats, openBoard.board) ? undefined : () => { talk(selection_, t('talk.writeText')) }}
                 onFollowUp={followUp}
                 actions={actions}
                 showArchived={showArchivedCards}

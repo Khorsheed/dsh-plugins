@@ -23,6 +23,8 @@ export interface CanvasNavigate {
   openPage: (page: string, heading: string, param?: string) => void
   /** Back to this canvas's board. */
   backToBoard: () => void
+  /** Back to this canvas's board, on its 成稿 face. */
+  openManuscripts: () => void
   /** Tell every canvas seat the board changed (after a genre's own mutation landed). */
   refresh: () => void
 }
@@ -67,6 +69,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'canvas.page': { kind: 'keyed'; scope: 'session'; owner: CanvasPageOwnerProps }
     /** A strip pinned under the board's toolbar (pending review, say). */
     'canvas.board.strip': { kind: 'list'; scope: 'session'; owner: CanvasGenreOwnerProps }
+    /**
+     * The 成稿 face, keyed by genre id: a genre that `ownsManuscripts` shows
+     * its own text here (the novel's chapters) instead of the manuscript list.
+     */
+    'canvas.board.manuscripts': { kind: 'keyed'; scope: 'session'; owner: CanvasGenreOwnerProps }
   }
 }
 
@@ -76,6 +83,7 @@ export const CANVAS_CHILD_SLOTS = {
   'canvas.card.section': { kind: 'list', scope: 'session' },
   'canvas.page': { kind: 'keyed', scope: 'session' },
   'canvas.board.strip': { kind: 'list', scope: 'session' },
+  'canvas.board.manuscripts': { kind: 'keyed', scope: 'session' },
 } as const
 
 /** The child slot keys. */

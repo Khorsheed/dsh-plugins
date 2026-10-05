@@ -880,6 +880,32 @@ describe('CanvasTab — genre seats (创作体裁)', () => {
     expect(screen.queryByText('林澈')).toBeNull()
   })
 
+  it('hands the 成稿 face to a genre that owns it, and keeps the plain list for one that does not', async () => {
+    const novel = board(CANVAS_ID, [card('c_1')], { genre: { id: 'novel', version: 'novel@1', selectedAt: NOW } })
+    const owning = makeHarness({ boards: [novel] })
+    render(<CanvasTab
+      {...owning.props}
+      renderSlot={namingSlot() as unknown as CanvasTabProps['renderSlot']}
+      listGenres={vi.fn(async () => ({ ok: true, value: [{ ...NOVEL_SUMMARY, ownsManuscripts: true }] })) as never}
+    />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: zh['view.manuscripts'] }))
+    await screen.findByText('seat canvas.board.manuscripts novel')
+    expect(screen.queryByText(zh['ms.empty'])).toBeNull()
+    cleanup()
+
+    const plain = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')], { genre: { id: 'novel', version: 'novel@1', selectedAt: NOW } })] })
+    render(<CanvasTab
+      {...plain.props}
+      renderSlot={namingSlot() as unknown as CanvasTabProps['renderSlot']}
+      listGenres={vi.fn(async () => ({ ok: true, value: [NOVEL_SUMMARY] })) as never}
+    />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: zh['view.manuscripts'] }))
+    await screen.findByText(zh['ms.empty'])
+    expect(screen.queryByText('seat canvas.board.manuscripts novel')).toBeNull()
+  })
+
   it('routes a page row to the genre page, and stands in a notice when nothing serves it', async () => {
     const novel = board(CANVAS_ID, [card('c_1')], { genre: { id: 'novel', version: 'novel@1', selectedAt: NOW } })
     const { props, store } = makeHarness({ boards: [novel] })

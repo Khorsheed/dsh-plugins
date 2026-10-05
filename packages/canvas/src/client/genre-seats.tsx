@@ -26,6 +26,8 @@ export interface GenreSeats {
   readonly navigateFor: (canvasId: string) => CanvasNavigate
   /** The tab's session (undefined: a read-only tab). */
   readonly sessionId: SessionId | undefined
+  /** Whether a genre's own surfaces are the 成稿 (`CanvasGenreDefinition.ownsManuscripts`). */
+  readonly ownsManuscripts: (genreId: string) => boolean
 }
 
 export const GenreSeatsContext = createContext<GenreSeats | null>(null)
@@ -75,6 +77,20 @@ export function cardSectionsOf(seats: GenreSeats | null, board: CanvasBoard, car
 export function boardStripsOf(seats: GenreSeats | null, board: CanvasBoard): ReactNode {
   if (seats === null || board.genre === undefined) return null
   return seats.renderSlot('canvas.board.strip', ownerOf(seats, board))
+}
+
+/**
+ * Whether this canvas's genre owns its 成稿. False without a genre or outside
+ * a canvas tab, so a plain canvas keeps every manuscript gesture.
+ */
+export function manuscriptsOwned(seats: GenreSeats | null, board: CanvasBoard): boolean {
+  return seats !== null && board.genre !== undefined && seats.ownsManuscripts(board.genre.id)
+}
+
+/** The 成稿 face: the owning genre's entry, else `list` (the canvas's own manuscript list). */
+export function boardManuscriptsOf(seats: GenreSeats | null, board: CanvasBoard, list: ReactNode): ReactNode {
+  if (!manuscriptsOwned(seats, board)) return list
+  return seats!.renderSlot('canvas.board.manuscripts', ownerOf(seats!, board), { entryKey: board.genre!.id, fallback: list })
 }
 
 /** A genre page; `missing` stands in when no entry serves the key (the genre was unloaded, say). */

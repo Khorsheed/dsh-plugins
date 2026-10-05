@@ -95,3 +95,40 @@ export const IconImageOutline16 = ({ size = 16, className }: LocalIconProps) => 
     <path d="M2.5 11.5 L6.4 8.4 L9 10.4 L11 8.8 L13.6 11" />
   </svg>
 )
+
+/**
+ * Sparkle (新卡): a four-point star, filled. It marks AGENT's new card the way
+ * a game marks a new item — amber, so red stays reserved for what needs an
+ * answer (2026-10-05 review, variant A).
+ * @param props - size and className.
+ * @returns the icon element.
+ */
+export const IconSparkFill16 = ({ size = 16, className }: LocalIconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M8 0c.5 4.4 2.6 6.6 8 8-5.4 1.4-7.5 3.6-8 8-.5-4.4-2.6-6.6-8-8 5.4-1.4 7.5-3.6 8-8z" />
+  </svg>
+)
+
+/**
+ * Sliders (管理分类): two rails, each with its knob. The chip row's tools are
+ * icons now, so the manage entry stops reading as one more filter chip.
+ * @param props - size and className.
+ * @returns the icon element.
+ */
+export const IconSlidersOutline16 = ({ size = 16, className }: LocalIconProps) => (
+  <svg
+    width={size}
+    height={size}
+    className={className}
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.4}
+    strokeLinecap="round"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path d="M2.5 4.8 H8.6 M12.6 4.8 H13.5 M2.5 11.2 H4.2 M8.2 11.2 H13.5" />
+    <circle cx="10.6" cy="4.8" r="1.6" />
+    <circle cx="6.2" cy="11.2" r="1.6" />
+  </svg>
+)

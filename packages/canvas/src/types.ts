@@ -467,6 +467,13 @@ export interface CanvasGenreDefinition {
    * no such row cannot use the genre, so the binding chip stays away there.
    */
   readonly agentRow?: string
+  /**
+   * The genre's own surfaces are the canvas's 成稿 (the novel's chapters, say):
+   * the 成稿 face renders the genre's `canvas.board.manuscripts` entry, and the
+   * canvas's own manuscript gestures (「让 Agent 写成稿」, 「转为成稿」) step
+   * aside on its canvases, so a work never has two places its text lives.
+   */
+  readonly ownsManuscripts?: boolean
 }
 
 /** One registered genre as the browser lists it. */
@@ -478,6 +485,7 @@ export interface CanvasGenreSummary {
   readonly description: string
   readonly roles: readonly { readonly role: string; readonly label: string }[]
   readonly agentRow?: string
+  readonly ownsManuscripts?: boolean
 }
 
 /** The genre one canvas selected (absent on a canvas without one — the default). */

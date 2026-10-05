@@ -39,6 +39,7 @@ import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
 import { DraftTile, type NewCardSlot } from './DraftTile.tsx'
 import { useDismiss } from '../use-dismiss.ts'
+import { IconSlidersOutline16, IconSparkFill16 } from '../icons-local.tsx'
 import { MoreMenu } from '../more-menu.tsx'
 import { cardFaceOf, useGenreSeats } from '../genre-seats.tsx'
 import css from './board.module.css'
@@ -88,8 +89,8 @@ export interface BoardViewProps {
   readonly talkAvailable: boolean
   /** Quote the current selection into the session's input. */
   readonly onTalk: () => void
-  /** Quote the current selection plus the writing instruction (开始写作). */
-  readonly onWrite: () => void
+  /** Quote the current selection plus the writing instruction (开始写作); absent where a genre owns the 成稿. */
+  readonly onWrite?: (() => void) | undefined
   /** Follow up on one comment (card id + the comment's text): quoted into the input too. */
   readonly onFollowUp: (cardId: string, commentText: string) => void
   readonly actions: BoardActions
@@ -288,7 +289,9 @@ function CardItem({ t, board, card, definition, nameOf, kindLabel, kindColor, re
         </button>
       )}
       {card.unseen === true && !proposed && (
-        <span className={css.unseenDot} role="img" title={t('card.unseen')} aria-label={t('card.unseen')} />
+        <span className={css.unseenMark} role="img" title={t('card.unseen')} aria-label={t('card.unseen')}>
+          <IconSparkFill16 size={14} />
+        </span>
       )}
       {proposed && (
         <span className={css.ghostFlag}>
@@ -436,13 +439,10 @@ export function shownCardsOf(
   return [...shown.filter(card => front.has(card.id)), ...shown.filter(card => !front.has(card.id))]
 }
 
-/** A chip's count of AGENT's new cards: red, so it reads as "new" at a glance. */
-function UnseenBadge({ t, count }: { readonly t: TranslateNS<'canvas'>; readonly count: number }): ReactNode {
-  return (
-    <span className={css.unseenBadge} title={t('board.unseenCount', { count: String(count) })}>
-      +{count}
-    </span>
-  )
+/** A chip's new-card pip: an amber dot in its corner, the count in its title. */
+function UnseenPip({ t, count }: { readonly t: TranslateNS<'canvas'>; readonly count: number }): ReactNode {
+  const label = t('board.unseenCount', { count: String(count) })
+  return <span className={css.unseenPip} role="img" title={label} aria-label={label} />
 }
 
 /** The board view. */
@@ -492,58 +492,70 @@ export function BoardView({
   return (
     <section className={css.main}>
       <div className={css.boardScroll} data-canvas-scroll="board">
-        <div className={css.chips}>
-          <button
-            type="button"
-            className={css.chip}
-            data-active={filter === 'all' || undefined}
-            onClick={() => { onFilter('all') }}
-          >
-            {t('board.filter.all')} <span className={css.chipCount}>{visible.length}</span>
-            {unseenTotal > 0 && <UnseenBadge t={t} count={unseenTotal} />}
-          </button>
-          {chips.map(category => {
-            const KindIcon = kindIconOf(category.id)
-            return (
-              <button
-                key={category.id}
-                type="button"
-                className={css.chip}
-                data-active={filter === category.id || undefined}
-                data-empty={(counts.get(category.id) ?? 0) === 0 || undefined}
-                onClick={() => { onFilter(category.id) }}
-              >
-                <span className={css.catDot} style={{ background: categoryColorOf(board.categories, category.id) }} />
-                {KindIcon !== undefined && <KindIcon size={12} />}
-                {labels.get(category.id) ?? category.id}{' '}
-                <span className={css.chipCount}>{counts.get(category.id) ?? 0}</span>
-                {(unseen.get(category.id) ?? 0) > 0 && <UnseenBadge t={t} count={unseen.get(category.id) ?? 0} />}
-                {(category.proposal !== undefined || category.draft === true) && (
-                  <span className={css.chipPending} title={t('type.pending')} />
-                )}
-              </button>
-            )
-          })}
-          {unseenTotal > 0 && onMarkAllSeen !== undefined && (
+        <div className={css.chipRow}>
+          <div className={css.chips}>
             <button
               type="button"
-              className={css.markSeen}
-              title={t('action.markAllSeen')}
-              aria-label={t('action.markAllSeen')}
-              onClick={onMarkAllSeen}
+              className={css.chip}
+              data-active={filter === 'all' || undefined}
+              onClick={() => { onFilter('all') }}
             >
-              <IconCheckDoubleOutlineMedium size={14} />
+              {t('board.filter.all')} <span className={css.chipCount}>{visible.length}</span>
+              {unseenTotal > 0 && <UnseenPip t={t} count={unseenTotal} />}
             </button>
-          )}
-          {!readonly && (
-            <button
-              type="button"
-              className={`${css.chip} ${css.chipMgr}`}
-              title={t('cat.mgrTitle')}
-              onClick={() => { actions.openCategories() }}
-            >
-              {t('board.manageCats')}
-            </button>
+            {chips.map(category => {
+              const KindIcon = kindIconOf(category.id)
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  className={css.chip}
+                  data-active={filter === category.id || undefined}
+                  data-empty={(counts.get(category.id) ?? 0) === 0 || undefined}
+                  onClick={() => { onFilter(category.id) }}
+                >
+                  <span className={css.catDot} style={{ background: categoryColorOf(board.categories, category.id) }} />
+                  {KindIcon !== undefined && <KindIcon size={12} />}
+                  {labels.get(category.id) ?? category.id}{' '}
+                  <span className={css.chipCount}>{counts.get(category.id) ?? 0}</span>
+                  {(unseen.get(category.id) ?? 0) > 0 && <UnseenPip t={t} count={unseen.get(category.id) ?? 0} />}
+                  {(category.proposal !== undefined || category.draft === true) && (
+                    <span className={css.chipPending} title={t('type.pending')} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          {/* The row's tools, outside the sideways scroll so they never slide
+              away: ✓✓ lights only while there is something new to mark, and
+              管理分类 is an icon beside it rather than one more chip. */}
+          {(onMarkAllSeen !== undefined || !readonly) && (
+            <div className={css.chipTools}>
+              {onMarkAllSeen !== undefined && (
+                <button
+                  type="button"
+                  className={css.toolIcon}
+                  data-lit={unseenTotal > 0 || undefined}
+                  disabled={unseenTotal === 0}
+                  title={unseenTotal > 0 ? t('action.markAllSeenCount', { count: String(unseenTotal) }) : t('action.nothingUnseen')}
+                  aria-label={t('action.markAllSeen')}
+                  onClick={onMarkAllSeen}
+                >
+                  <IconCheckDoubleOutlineMedium size={16} />
+                </button>
+              )}
+              {!readonly && (
+                <button
+                  type="button"
+                  className={css.toolIcon}
+                  title={t('board.manageCats')}
+                  aria-label={t('board.manageCats')}
+                  onClick={() => { actions.openCategories() }}
+                >
+                  <IconSlidersOutline16 size={16} />
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -557,7 +569,7 @@ export function BoardView({
                 {t('talk.action')}
               </button>
             )}
-            {talkAvailable && !refile && (
+            {talkAvailable && !refile && onWrite !== undefined && (
               <button type="button" className={css.lens} onClick={onWrite}>
                 {t('talk.write')}
               </button>
