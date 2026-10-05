@@ -485,6 +485,11 @@ export interface BoardGenre {
   readonly id: string
   readonly version: string
   readonly selectedAt: string
+  /**
+   * The built-in categories the genre stepped aside when it was selected
+   * (empty ones only); clearing the genre turns exactly these back on.
+   */
+  readonly hid?: readonly BoardCardKind[]
 }
 
 /** Read the untrusted `genre` field; anything unusable reads as no genre. */
@@ -494,7 +499,11 @@ export function normalizeBoardGenre(raw: unknown): BoardGenre | undefined {
   if (!isGenreId(record['id'])) return undefined
   if (typeof record['version'] !== 'string' || record['version'].length === 0) return undefined
   if (typeof record['selectedAt'] !== 'string') return undefined
-  return { id: record['id'], version: record['version'].slice(0, 80), selectedAt: record['selectedAt'] }
+  const hid = Array.isArray(record['hid']) ? BOARD_CARD_KINDS.filter(kind => (record['hid'] as unknown[]).includes(kind)) : []
+  return {
+    id: record['id'], version: record['version'].slice(0, 80), selectedAt: record['selectedAt'],
+    ...(hid.length === 0 ? {} : { hid }),
+  }
 }
 
 /** The category one canvas fills a role with, if it has one. */

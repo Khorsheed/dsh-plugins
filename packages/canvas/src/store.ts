@@ -38,7 +38,7 @@ import { rasterizeDrawing } from './raster.ts'
 import { canvasErrorOf } from './service.ts'
 import {
   CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, defaultCategories, documentHeadingOf,
-  emptyStats, isBoardCardStatus, isCardCategoryId, isGenreId, isManuscriptId, isManuscriptStatus, isQuestionState, makeBoardId,
+  emptyStats, isBoardCardKind, isBoardCardStatus, isCardCategoryId, isGenreId, isManuscriptId, isManuscriptStatus, isQuestionState, makeBoardId,
   manuscriptFileName, MANUSCRIPT_DIR_NAME, MAX_BOARD_MANUSCRIPTS, MAX_MANUSCRIPT_TEXT_LENGTH,
   MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId, normalizeManuscriptSources,
   hasDrawings, normalizeCategories, normalizeDrawings, normalizeLanes, normalizeLinks, normalizePositions,
@@ -46,7 +46,7 @@ import {
   sanitizeCanvasTitle, summarizeBoard,
   type BoardAddCommentRequest, type BoardArchiveRequest,
   type BoardAttachImageOutcome, type BoardAttachImageRequest,
-  type BoardCard, type BoardCategory, type BoardCreateRequest, type BoardDecideTypeRequest,
+  type BoardCard, type BoardCardKind, type BoardCategory, type BoardCreateRequest, type BoardDecideTypeRequest,
   type BoardProposeTypeRequest, type BoardProposeTypeResult, type BoardSetTypeBriefRequest,
   type CanvasImageRef, type CanvasStroke,
   type BoardDeleteCanvasRequest, type BoardDeleteCanvasResult, type BoardDeleteCardRequest,
@@ -965,8 +965,12 @@ export class CanvasBoardService {
   /**
    * Select a genre for one canvas, or clear it. Selecting seeds every role
    * category the canvas does not have yet (matched by role, so a renamed
-   * category is still found); clearing keeps the categories and their cards
-   * and only unloads the genre — and unbinds the sessions bound to it.
+   * category is still found), and switches off the built-in categories that
+   * hold no card — a genre brings its own categories, and an empty 灵感/问题
+   * chip beside them is only noise (2026-10-05). A built-in that holds cards
+   * stays on. Clearing keeps the genre's categories and their cards, turns
+   * the built-ins it switched off back on, unloads the genre — and unbinds
+   * the sessions bound to it.
    * @param request - canvas id and the genre id, or null.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh board and token, or the failure code.
@@ -976,8 +980,19 @@ export class CanvasBoardService {
     if (request.genreId !== null && genre === undefined) return { ok: false, error: 'missing' }
     const result = await this.mutate(request.canvasId, session, (board, now) => {
       if (genre === undefined) {
+        for (const category of board.categories) {
+          if (board.genre?.hid?.includes(category.id as BoardCardKind) === true) category.enabled = true
+        }
         delete board.genre
         return board
+      }
+      // Only the first selection steps the built-ins aside; switching genres
+      // keeps the record, so a later clear still restores them.
+      const hid = board.genre !== undefined ? board.genre.hid ?? [] : board.categories
+        .filter(category => isBoardCardKind(category.id) && category.enabled && !board.cards.some(card => card.kind === category.id))
+        .map(category => category.id as BoardCardKind)
+      for (const category of board.categories) {
+        if (hid.includes(category.id as BoardCardKind)) category.enabled = false
       }
       let last = board.categories.reduce((max, category) => Math.max(max, category.order), 0)
       for (const seed of genre.categories) {
@@ -994,7 +1009,7 @@ export class CanvasBoardService {
           role: seed.role,
         })
       }
-      board.genre = { id: genre.id, version: genre.version, selectedAt: now }
+      board.genre = { id: genre.id, version: genre.version, selectedAt: now, ...(hid.length === 0 ? {} : { hid }) }
       return board
     })
     if (!result.ok) return result

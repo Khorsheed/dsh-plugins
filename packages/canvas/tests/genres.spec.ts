@@ -124,6 +124,31 @@ describe('canvas genres', () => {
     expect(categoryOfRole(cleared.board, 'character')).toBeDefined()
   })
 
+  it('steps the empty built-ins aside while a genre is on, and restores exactly those on clear', async () => {
+    const { board } = bench()
+    board.registerGenre(NOVEL)
+    const id = await plainCanvas(board)
+    const enabledBuiltins = (row: { categories: readonly { id: string; enabled: boolean }[] }) =>
+      row.categories.filter(category => category.enabled && ['fragment', 'question', 'grounding', 'reference', 'document'].includes(category.id)).map(category => category.id)
+    const before = await board.readBoard({ canvasId: id })
+    if (!before.ok) throw new Error(before.error)
+    // One built-in holds a card: it stays on.
+    const kept = await board.putCard({ canvasId: id, kind: 'fragment', text: '一个梦里的灯塔' }, SESSION)
+    if (!kept.ok) throw new Error(kept.error)
+    const novel = await board.selectGenre({ canvasId: id, genreId: 'novel' }, SESSION)
+    if (!novel.ok) throw new Error(novel.error)
+    expect(enabledBuiltins(novel.board)).toEqual(['fragment'])
+    expect(categoryOfRole(novel.board, 'character')?.enabled).toBe(true)
+    expect(novel.board.genre?.hid).toEqual(['question', 'grounding', 'reference', 'document'])
+    // Re-selecting keeps the record rather than re-deriving it from the now-hidden rows.
+    const again = await board.selectGenre({ canvasId: id, genreId: 'novel' }, SESSION)
+    if (!again.ok) throw new Error(again.error)
+    expect(again.board.genre?.hid).toEqual(['question', 'grounding', 'reference', 'document'])
+    const cleared = await board.selectGenre({ canvasId: id, genreId: null }, SESSION)
+    if (!cleared.ok) throw new Error(cleared.error)
+    expect(enabledBuiltins(cleared.board)).toEqual(enabledBuiltins(before.board))
+  })
+
   it('reads a hand-broken genre field as no genre', () => {
     const now = '2026-10-04T00:00:00.000Z'
     const base = { id: 'canvas_x', title: 't' }
