@@ -20,6 +20,11 @@ export const NOVEL_SKILL_DESCRIPTION =
 /** The skill body. */
 export const NOVEL_SKILL_CONTENT = `# novel 技能（长篇小说写作工作流）
 
+## 先确认已接入
+看不到 novel_read / novel_write / novel_extract，就是当前会话还没绑到「长篇小说」画布
+（工具只授予绑定的会话）。这时只做一件事：请用户点会话标题旁的「绑定作品」，选中那张画布，
+绑好后工具即刻出现。不要拿文件或对话记录凑一个替代方案——设定的正本只能是画布卡片。
+
 ## 三条铁律
 1. 正文只写工作区里 chapters 登记过的文件（续写=append 到该文件末尾）；
    最稳的写法是 novel_write(chapter, content=…)：由插件经会话围栏落盘，
@@ -65,6 +70,12 @@ export const NOVEL_SKILL_CONTENT = `# novel 技能（长篇小说写作工作流
   → novel_extract(import)。
 - 汇报格式：计划命中 ✓×n / 计划落空 ×n / 自动入库 ×n / 待你确认 ×n，
   附待确认清单与新幽灵卡的一句话摘要。
+
+## 导入已写好的章节
+- 用户已有成稿时，按章节顺序逐章：登记 → 对账。章号自动取最大+1，所以先登记的就是第 1 章。
+- 稿子已在工作区 \`<画布标题>/第{n}章.md\`：novel_write(chapter, title=…) 只登记，不带 content。
+- 稿子贴在对话里：novel_write(chapter, title=…, content=原文)，原文一字不改地转交。
+- 每章只对账一次：用户确认正文是定稿再对账；整理出的人物/世界/伏笔落成幽灵卡，等用户在画布上采纳。
 
 ## 维护
 - 每 3–5 章主动 novel_read(ledger)：沉睡伏笔摆给用户，给建议（下章推/弃置/转设定）。

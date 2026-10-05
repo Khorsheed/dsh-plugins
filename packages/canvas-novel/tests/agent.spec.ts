@@ -113,6 +113,8 @@ describe('the ./agent composition entry', () => {
     expect(skills[0]).toMatchObject({ name: 'novel', source: 'runtime', provider: '@khorsheed/dsh-canvas-novel' })
     // The skill carries the workflow, not any work content.
     expect(skills[0]!.content).toContain('三条铁律')
+    // Unbound sessions are steered to the binding chip, not to an improvised fallback.
+    expect(skills[0]!.content).toContain('绑定作品')
     expect(skills[0]!.content).not.toContain('梦境监护者')
     expect(skills[0]!.content).not.toContain('赵启明')
   })
