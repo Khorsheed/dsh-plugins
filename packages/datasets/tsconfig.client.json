@@ -47,6 +47,7 @@
     "src/client/organize.ts",
     "src/client/parts.tsx",
     "src/client/vocab.ts",
-    "src/client/icons.tsx"
+    "src/client/icons.tsx",
+    "src/client/global-panel.tsx"
   ]
 }

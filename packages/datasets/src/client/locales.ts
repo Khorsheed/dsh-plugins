@@ -6,6 +6,7 @@ export const NS = 'datasets'
 /** The 题集 tab dictionary key set (the source of truth for both locales). */
 export type DatasetsKey =
   | 'open'
+  | 'panel'
   | 'registry.title'
   | 'registry.register'
   | 'registry.import'
@@ -398,6 +399,7 @@ export const zh: Record<DatasetsKey, string> = {
   'error.details': '详情',
   'error.detailsPath': '路径',
   'open': '题集',
+  'panel': '题集',
   'slot.prompt': '题干',
   'slot.standards': '验收标准',
   'slot.oracle': '参考答案',
@@ -633,8 +635,8 @@ export const zh: Record<DatasetsKey, string> = {
   'card.warnings': '申请有 {count} 条提醒。',
   'card.open': '核对并登记',
   'card.view': '查看评审',
-  'card.opened': '已在「题集」页签打开评审',
-  'card.openedManual': '已在「题集」页签打开评审，切过去即可',
+  'card.opened': '已在左侧「题集」打开评审',
+  'card.openedManual': '评审已备好，打开本会话的「题集」页签即可',
   'banner.reviewUpdate': '核对新版本',
   'review.back': '返回题集列表',
   'review.titleNew': '核对并登记「{name}」',
@@ -772,6 +774,7 @@ export const en: Record<DatasetsKey, string> = {
   'error.details': 'Details',
   'error.detailsPath': 'Path',
   'open': 'Datasets',
+  'panel': 'Datasets',
   'slot.prompt': 'Task statement',
   'slot.standards': 'Acceptance standards',
   'slot.oracle': 'Reference answer',
@@ -1007,8 +1010,8 @@ export const en: Record<DatasetsKey, string> = {
   'card.warnings': 'The proposal has {count} warning(s).',
   'card.open': 'Check and register',
   'card.view': 'View the review',
-  'card.opened': 'The review is open on the Datasets tab',
-  'card.openedManual': 'The review is open on the Datasets tab — switch to it',
+  'card.opened': 'The review is open in the Datasets panel',
+  'card.openedManual': 'The review is ready — open this session’s Datasets tab',
   'banner.reviewUpdate': 'Check the new version',
   'review.back': 'Back to datasets',
   'review.titleNew': 'Check and register 「{name}」',

@@ -3,14 +3,14 @@
  * T96 · the 「核对并登记」 entry in the organizing Turn's tail: the Turn
  * definition that collects filed proposals from the session's events, what
  * the card reads from each call's block, the one button it offers (only on a
- * filed proposal), and the tab switch it tries — with the words it falls back
- * to when the host's tab strip is not there to click.
+ * filed proposal), and where that action lands — the global 「题集」 panel
+ * (T97), or words pointing at the session's tab when the host has no panel.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ReviewCard, ReviewTurnTail, type ReviewCardProps } from '../src/client/ReviewCard.tsx'
 import { proposedInTurn, proposedTurnDefinition } from '../src/client/review-turn.ts'
-import { createReviewFocus, proposeCardOf, switchToTab, type ProposeToolBlock } from '../src/client/review-card.ts'
+import { createReviewFocus, proposeCardOf, type ProposeToolBlock } from '../src/client/review-card.ts'
 
 const ARGS = JSON.stringify({ path: '/home/user/.dsh/datasets/gsm8k', registryId: 'gsm8k' })
 
@@ -32,7 +32,7 @@ function renderCard(block: ProposeToolBlock, overrides: Partial<ReviewCardProps>
   const props: ReviewCardProps = {
     block,
     loadPending: vi.fn(async () => true),
-    openReview: vi.fn(),
+    openReview: vi.fn(() => true),
     t,
     ...overrides,
   }
@@ -61,46 +61,27 @@ describe('proposeCardOf', () => {
 })
 
 describe('the card', () => {
-  it('a filed proposal shows 「核对并登记」; the click leaves the request and selects the 题集 tab', async () => {
+  it('a filed proposal shows 「核对并登记」; the click hands the request to the global panel', async () => {
     const focus = createReviewFocus()
-    const openReview = vi.fn((id: string) => { focus.request('s1' as never, id) })
-    // The host's conversation frame: the tab strip and, beside it, the chat with the card.
-    const frame = document.createElement('div')
-    frame.innerHTML = '<div data-conversation-tabs=""><button role="tab" aria-selected="true">chat</button><button role="tab" aria-selected="false">open</button></div><div id="chat"></div>'
-    document.body.appendChild(frame)
-    const datasetsTab = frame.querySelectorAll('[role="tab"]')[1] as HTMLElement
-    datasetsTab.addEventListener('click', () => { datasetsTab.setAttribute('aria-selected', 'true') })
-    render(<ReviewCard block={FILED} loadPending={async () => true} openReview={openReview} t={t} />, { container: frame.querySelector('#chat') as HTMLElement })
-
+    const openReview = vi.fn((id: string) => {
+      focus.request('' as never, id)
+      return true
+    })
+    renderCard(FILED, { openReview })
     const button = await screen.findByRole('button', { name: 'card.open' })
     expect(screen.getByText(/card\.filedNote/).textContent).toContain('card.warnings {"count":1}')
     fireEvent.click(button)
     expect(openReview).toHaveBeenCalledWith('p1')
-    expect(focus.take('s1' as never)).toBe('p1')
-    expect(datasetsTab.getAttribute('aria-selected')).toBe('true')
+    expect(focus.take('' as never)).toBe('p1')
     expect(screen.getByRole('status').textContent).toBe('card.opened')
-    frame.remove()
   })
 
-  it('no tab strip to click: the request still lands and the card says where to go', () => {
-    const openReview = vi.fn()
+  it('no global panel to select: the request is left for the tab and the card says where to go', () => {
+    const openReview = vi.fn(() => false)
     renderCard(FILED, { openReview })
     fireEvent.click(screen.getByRole('button', { name: 'card.open' }))
     expect(openReview).toHaveBeenCalledWith('p1')
     expect(screen.getByRole('status').textContent).toBe('card.openedManual')
-  })
-
-  it('a click that does not select the tab falls back to the words', async () => {
-    vi.useFakeTimers()
-    const frame = document.createElement('div')
-    frame.innerHTML = '<div data-conversation-tabs=""><button role="tab" aria-selected="false">open</button></div><div id="chat"></div>'
-    document.body.appendChild(frame)
-    render(<ReviewCard block={FILED} loadPending={async () => true} openReview={vi.fn()} t={t} />, { container: frame.querySelector('#chat') as HTMLElement })
-    fireEvent.click(screen.getByRole('button', { name: 'card.open' }))
-    expect(screen.getByRole('status').textContent).toBe('card.opened')
-    act(() => { vi.advanceTimersByTime(200) })
-    expect(screen.getByRole('status').textContent).toBe('card.openedManual')
-    frame.remove()
   })
 
   it('a proposal already handled offers 「查看」, not the primary action', async () => {
@@ -129,17 +110,6 @@ describe('the card', () => {
     renderCard(FILED, { loadPending })
     await waitFor(() => { expect(loadPending).toHaveBeenCalledWith('p1') })
     expect(screen.getByRole('button', { name: 'card.open' })).toBeTruthy()
-  })
-})
-
-describe('switchToTab', () => {
-  it('returns null (never throws) without a strip or a matching tab', () => {
-    const lone = document.createElement('div')
-    expect(switchToTab(lone, 'open')).toBeNull()
-    expect(switchToTab(null, 'open')).toBeNull()
-    const frame = document.createElement('div')
-    frame.innerHTML = '<div data-conversation-tabs=""><button role="tab">chat</button></div><span></span>'
-    expect(switchToTab(frame.querySelector('span'), 'open')).toBeNull()
   })
 })
 
@@ -200,7 +170,7 @@ describe('the Turn definition', () => {
 
   it('the tail renders one card per filed proposal, nothing otherwise, never throws on bad data', async () => {
     const state = run([start, call('c1'), result('c1', { ok: true, filed: 'p1', warnings: [] }, 3)])
-    const face = { loadPending: vi.fn(async () => true), openReview: vi.fn(), t }
+    const face = { loadPending: vi.fn(async () => true), openReview: vi.fn(() => true), t }
     const { container, rerender } = render(<ReviewTurnTail {...owner(state)} {...face} />)
     expect(container.querySelectorAll('[data-tool="datasets_propose_registration"]')).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'card.open' })).toBeTruthy()

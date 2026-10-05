@@ -1,14 +1,14 @@
 /**
  * The datasets Remote service: the web session tab's data face. A thin
  * adapter over the same `ctx.datasets` service core the model tools, the CLI,
- * and the slash command use — no logic is copied here. Every method takes the
- * calling `agent` as its first parameter (the gateway's lookup convention);
- * browsing verbs name a registry id in their request. The cordis service key
+ * and the slash command use — no logic is copied here. No method takes a
+ * session (T97): the registry and its proposals belong to the deployment, so
+ * the same verbs serve a session's 题集 tab and the session-less global 题集
+ * panel alike; browsing verbs name a registry id in their request. The cordis service key
  * is `datasetsRemote` (`datasets` is the core service); the WIRE namespace is
  * `datasets`, so the browser calls `remote.datasets.*`.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { DatasetsError } from './dataset.ts'
 import type {
@@ -96,12 +96,10 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
 
   /**
    * Every registration with its latest commit and sets — the tab's grouped list.
-   * @param agent - owning live agent (lookup convention; the registry is per deployment).
    * @returns one row per registration.
    */
   @Remote('registry')
-  async registry(agent: Agent): Promise<RegistryRow[]> {
-    void agent
+  async registry(): Promise<RegistryRow[]> {
     return await this.datasets.registry.rows()
   }
 
@@ -109,49 +107,41 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * The register form's live verdict on a candidate path: its identity, the
    * id it would get, the local branches, and the sets at the chosen branch.
    * A missing path and a non-repository fail loud with different codes.
-   * @param agent - owning live agent (lookup convention).
    * @param request - the candidate path and an optional branch to preview.
    * @returns the verdict.
    */
   @Remote('previewRepo')
-  async previewRepo(agent: Agent, request: PreviewRepoRequest): Promise<RegisterPreview> {
-    void agent
+  async previewRepo(request: PreviewRepoRequest): Promise<RegisterPreview> {
     return await this.datasets.registry.preview(request.path, request.trackedRef)
   }
 
   /**
    * Register a repository (a human gesture from the tab).
-   * @param agent - owning live agent (lookup convention).
    * @param input - path, id, tracked branch, per-set layers, authoring checkout.
    * @returns the new registration.
    */
   @Remote('register')
-  async register(agent: Agent, input: RegisterInput): Promise<RegistryEntry> {
-    void agent
+  async register(input: RegisterInput): Promise<RegistryEntry> {
     return await this.datasets.registry.register(input)
   }
 
   /**
    * Edit a registration's layers, tracked branch, or authoring checkout.
-   * @param agent - owning live agent (lookup convention).
    * @param input - the id plus the fields to change.
    * @returns the edited registration.
    */
   @Remote('updateRegistration')
-  async updateRegistration(agent: Agent, input: UpdateInput): Promise<RegistryEntry> {
-    void agent
+  async updateRegistration(input: UpdateInput): Promise<RegistryEntry> {
     return await this.datasets.registry.update(input)
   }
 
   /**
    * Remove a registration (the repository itself is untouched).
-   * @param agent - owning live agent (lookup convention).
    * @param request - the registration id.
    * @returns whether one was removed.
    */
   @Remote('unregister')
-  unregister(agent: Agent, request: { id: string }): boolean {
-    void agent
+  unregister(request: { id: string }): boolean {
     return this.datasets.registry.remove(request.id)
   }
 
@@ -159,12 +149,10 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * 「从旧绑定登记」: fold the legacy per-session bindings into registrations,
    * one per repository; bindings whose path is gone come back as dangling.
    * The binding files themselves are never touched.
-   * @param agent - owning live agent (lookup convention).
    * @returns what was imported and what was skipped.
    */
   @Remote('importBindings')
-  async importBindings(agent: Agent): Promise<ImportBindingsResult> {
-    void agent
+  async importBindings(): Promise<ImportBindingsResult> {
     return await this.datasets.registry.importBindings(this.datasets.bindingsRoot)
   }
 
@@ -173,13 +161,11 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * into the passthrough zone (manifest/docs/item.json). Deliberately NOT a
    * model tool: agent access to dataset content stays layer-gated through the
    * datasets_* tools.
-   * @param agent - owning live agent; `request.repo` names the registration.
    * @param request - dataset id, dataset-relative path, optional commit pin.
    * @returns the file content and the commit it was read from.
    */
   @Remote('readPassthrough')
-  async readPassthrough(agent: Agent, request: ReadPassthroughRequest & RepoSelector): Promise<ReadResult> {
-    void agent
+  async readPassthrough(request: ReadPassthroughRequest & RepoSelector): Promise<ReadResult> {
     return await this.datasets.readPassthrough(await this.scope(request), request.dataset, request.path, request.commit)
   }
 
@@ -189,26 +175,22 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * request object: the gateway's client proxy enforces exact positional
    * arity, so optional fields belong inside an object, never in the
    * positional tail.
-   * @param agent - owning live agent; `request.repo` names the registration.
    * @param request - optional dataset selector and commit pin.
    * @returns dataset summaries or one dataset's item records.
    */
   @Remote('list')
-  async list(agent: Agent, request: ListRequest & RepoSelector): Promise<ListDatasetsResult | ListItemsResult> {
-    void agent
+  async list(request: ListRequest & RepoSelector): Promise<ListDatasetsResult | ListItemsResult> {
     return await this.datasets.list(await this.scope(request), request.dataset, request.commit)
   }
 
   /**
    * Show one item (or every item) of a dataset: summary, descriptor
    * passthrough, and the whitelist-filtered layer-file listing.
-   * @param agent - owning live agent; `request.repo` names the registration.
    * @param request - the dataset id, an optional item selector, and a commit pin.
    * @returns the dataset detail at the resolved commit.
    */
   @Remote('show')
-  async show(agent: Agent, request: ShowRequest & RepoSelector): Promise<ShowResult> {
-    void agent
+  async show(request: ShowRequest & RepoSelector): Promise<ShowResult> {
     return await this.datasets.show(await this.scope(request), request.dataset, request.item, request.commit)
   }
 
@@ -218,12 +200,10 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * `validate` outcome. One call rather than three per dataset: the
    * projection is the host's job (ui-spec §八), and a list page that fired an
    * RPC storm would answer in a different order every time.
-   * @param agent - owning live agent; `request.repo` names the registration.
    * @returns the list page's rows.
    */
   @Remote('overview')
-  async overview(agent: Agent, request: RepoSelector): Promise<DatasetOverview> {
-    void agent
+  async overview(request: RepoSelector): Promise<DatasetOverview> {
     return await this.datasets.overview(await this.scope(request))
   }
 
@@ -231,13 +211,11 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * One item's «选手将看到» and «可判性» (ui-spec §四). The judging reads
    * behind it name their one layer explicitly — the page shows the answer
    * key's SHAPE (how many leaves, of which kind) and never its bytes.
-   * @param agent - owning live agent; `request.repo` names the registration.
    * @param request - the dataset, the item, and an optional commit pin.
    * @returns the item's brief.
    */
   @Remote('itemBrief')
-  async itemBrief(agent: Agent, request: ItemBriefRequest & RepoSelector): Promise<ItemBrief> {
-    void agent
+  async itemBrief(request: ItemBriefRequest & RepoSelector): Promise<ItemBrief> {
     return await this.datasets.itemBrief(await this.scope(request), request.dataset, request.item, request.commit)
   }
 
@@ -245,13 +223,11 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * Validate one dataset, or every dataset of the bound repository — the
    * list page's cell and the item page's button. Author-facing, so it sees
    * everything (the same operator semantics the rest of this face carries).
-   * @param agent - owning live agent; `request.repo` names the registration.
    * @param request - an optional dataset selector.
    * @returns the per-dataset errors and warnings.
    */
   @Remote('validate')
-  async validate(agent: Agent, request: ValidateRequest & RepoSelector): Promise<ValidateResult> {
-    void agent
+  async validate(request: ValidateRequest & RepoSelector): Promise<ValidateResult> {
     return await this.datasets.validate(await this.scope(request), request.dataset)
   }
 
@@ -260,13 +236,11 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * descriptor with its three layers declared, one stage prompt, one stage
    * schema, the item container. The commit stays the human's; this plugin
    * never makes one.
-   * @param agent - owning live agent; `request.repo` names the registration.
    * @param input - the new dataset's id and optional display name.
    * @returns what was written.
    */
   @Remote('scaffoldDataset')
-  async scaffoldDataset(agent: Agent, input: ScaffoldDatasetInput & RepoSelector): Promise<SkeletonResult> {
-    void agent
+  async scaffoldDataset(input: ScaffoldDatasetInput & RepoSelector): Promise<SkeletonResult> {
     const { repo, ...rest } = input
     return await this.datasets.scaffoldDataset(this.writeScope({ repo }), rest)
   }
@@ -275,13 +249,11 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * «题目骨架»: write one item's placeholder files, homed by this dataset's
    * own layers and `register`. Existing files are left alone — a skeleton
    * never overwrites what an author already wrote.
-   * @param agent - owning live agent; `request.repo` names the registration.
    * @param input - the dataset and the new item id.
    * @returns what was written, what was left alone, and what could not be planned.
    */
   @Remote('scaffoldItem')
-  async scaffoldItem(agent: Agent, input: ScaffoldItemInput & RepoSelector): Promise<SkeletonResult> {
-    void agent
+  async scaffoldItem(input: ScaffoldItemInput & RepoSelector): Promise<SkeletonResult> {
     const { repo, ...rest } = input
     return await this.datasets.scaffoldItem(this.writeScope({ repo }), rest)
   }
@@ -290,13 +262,11 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * «导入题目»: copy an existing item directory in verbatim. The dataset's
    * layers and `register` decide what each file becomes — the import re-homes
    * nothing, so `validate` reports honestly what landed outside every layer.
-   * @param agent - owning live agent; `request.repo` names the registration.
    * @param input - the dataset, the new item id, and the source directory.
    * @returns what was written and one note per skipped entry class.
    */
   @Remote('importItem')
-  async importItem(agent: Agent, input: ImportItemInput & RepoSelector): Promise<SkeletonResult> {
-    void agent
+  async importItem(input: ImportItemInput & RepoSelector): Promise<SkeletonResult> {
     const { repo, ...rest } = input
     return await this.datasets.importItem(this.writeScope({ repo }), rest)
   }
@@ -305,13 +275,11 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * Read one file of one item layer, straight from the git object at the
    * pinned commit — no copy materializes outside the repository. The layer
    * must survive the session binding's whitelist.
-   * @param agent - owning live agent; `request.repo` names the registration.
    * @param query - dataset/item/layer/layer-relative path, plus an optional pin.
    * @returns the file content and the commit it was read from.
    */
   @Remote('read')
-  async read(agent: Agent, query: ReadQuery & RepoSelector): Promise<ReadResult> {
-    void agent
+  async read(query: ReadQuery & RepoSelector): Promise<ReadResult> {
     const { repo, ...rest } = query
     return await this.datasets.read(await this.scope({ repo }), rest)
   }
@@ -321,37 +289,31 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   /**
    * What 「让 Agent 整理」 needs: the 「题集整理」 preset and where new
    * repositories go by default (decision C).
-   * @param agent - owning live agent (lookup convention).
    * @returns the organizing setup.
    */
   @Remote('organizingSetup')
-  organizingSetup(agent: Agent): OrganizingSetup {
-    void agent
+  organizingSetup(): OrganizingSetup {
     return this.datasets.organizing
   }
 
   /**
    * Every proposal still waiting for a person (pending, or returned and not
    * yet re-filed), newest first — the tab's 「等你确认登记」 banner.
-   * @param agent - owning live agent (lookup convention).
    * @returns the open proposals.
    */
   @Remote('proposals')
-  proposals(agent: Agent): Proposal[] {
-    void agent
+  proposals(): Proposal[] {
     return this.datasets.proposals.list().filter(proposal => proposal.status === 'pending')
   }
 
   /**
    * One proposal's review: facts, the 「原目录 → 题集」 comparison, and the
    * mapping check (blocking problems refuse confirmation).
-   * @param agent - owning live agent (lookup convention).
    * @param request - the proposal id.
    * @returns the review.
    */
   @Remote('proposalReview')
-  async proposalReview(agent: Agent, request: { id: string }): Promise<ProposalReview> {
-    void agent
+  async proposalReview(request: { id: string }): Promise<ProposalReview> {
     return await this.datasets.proposals.review(request.id)
   }
 
@@ -359,66 +321,55 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * The review page's first screen (T96): the proposal and the four summary
    * cards, answered from the stored proposal and the commit cache without
    * the comparison, so the page head paints before the full review lands.
-   * @param agent - owning live agent (lookup convention).
    * @param request - the proposal id.
    * @returns the head; `validate` is absent while the commit was never checked.
    */
   @Remote('proposalHead')
-  async proposalHead(agent: Agent, request: { id: string }): Promise<ReviewHead> {
-    void agent
+  async proposalHead(request: { id: string }): Promise<ReviewHead> {
     return await this.datasets.proposals.head(request.id)
   }
 
   /**
    * 「逐条对照一题」: one item's files with their origin, beside its source record.
-   * @param agent - owning live agent (lookup convention).
    * @param request - the proposal, the set, the item.
    * @returns the item comparison.
    */
   @Remote('reviewItem')
-  async reviewItem(agent: Agent, request: { id: string; set: string; item: string }): Promise<ReviewItem> {
-    void agent
+  async reviewItem(request: { id: string; set: string; item: string }): Promise<ReviewItem> {
     return await this.datasets.proposals.reviewItem(request.id, request.set, request.item)
   }
 
   /**
    * 「完整清单」: every repository file with its origin, and every source row.
-   * @param agent - owning live agent (lookup convention).
    * @param request - the proposal id.
    * @returns the full list.
    */
   @Remote('reviewFiles')
-  async reviewFiles(agent: Agent, request: { id: string }): Promise<ReviewFiles> {
-    void agent
+  async reviewFiles(request: { id: string }): Promise<ReviewFiles> {
     return await this.datasets.proposals.reviewFiles(request.id)
   }
 
   /**
    * 「确认登记」: the person registers (or updates) from a proposal — the
    * only path from a proposal into the registry (decision A).
-   * @param agent - owning live agent (lookup convention).
    * @param request - the proposal, the registration name, the per-set layers.
    * @returns the registration.
    */
   @Remote('confirmProposal')
   async confirmProposal(
-    agent: Agent,
     request: { id: string; registryId: string; sets: Record<string, { layers: string[] }> },
   ): Promise<RegistryEntry> {
-    void agent
     return await this.datasets.proposals.confirm(request.id, request.registryId, request.sets)
   }
 
   /**
    * 「退回给 Agent」: mark the proposal returned; the tab then opens the
    * organizing session and drafts the note into its composer.
-   * @param agent - owning live agent (lookup convention).
    * @param request - the proposal and the person's note.
    * @returns the returned proposal (its `sessionId` says where to go).
    */
   @Remote('returnProposal')
-  returnProposal(agent: Agent, request: { id: string; note: string }): Proposal {
-    void agent
+  returnProposal(request: { id: string; note: string }): Proposal {
     return this.datasets.proposals.giveBack(request.id, request.note)
   }
 
@@ -426,28 +377,23 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
    * A registration's version held by the update gate (something agents see
    * changed since the confirmed one), reviewed without a proposal. Undefined
    * when nothing is waiting.
-   * @param agent - owning live agent (lookup convention).
    * @param request - the registration id.
    * @returns the update review, or undefined.
    */
   @Remote('pendingReview')
-  async pendingReview(agent: Agent, request: RepoSelector): Promise<ProposalReview | undefined> {
-    void agent
+  async pendingReview(request: RepoSelector): Promise<ProposalReview | undefined> {
     return await this.datasets.proposals.reviewPending(this.entry(request))
   }
 
   /**
    * Confirm a registration's held version.
-   * @param agent - owning live agent (lookup convention).
    * @param request - the registration, the version being confirmed, the per-set layers.
    * @returns the updated registration.
    */
   @Remote('confirmPending')
   async confirmPending(
-    agent: Agent,
     request: RepoSelector & { commit: string; sets: Record<string, { layers: string[] }> },
   ): Promise<RegistryEntry> {
-    void agent
     return await this.datasets.proposals.confirmPending(this.entry(request), request.commit, request.sets)
   }
 }

@@ -28,8 +28,8 @@ function remoteStub() {
   return {
     registry: vi.fn(async () => ({ ok: true as const, value: [] })),
     previewRepo: vi.fn(async () => ({ ok: false as const, error: { code: 'unused', message: 'unused' } })),
-    register: vi.fn(async (_sid: string, input: unknown) => ({ ok: true as const, value: input })),
-    updateRegistration: vi.fn(async (_sid: string, input: unknown) => ({ ok: true as const, value: input })),
+    register: vi.fn(async (input: unknown) => ({ ok: true as const, value: input })),
+    updateRegistration: vi.fn(async (input: unknown) => ({ ok: true as const, value: input })),
     unregister: vi.fn(async () => ({ ok: true as const, value: true })),
     importBindings: vi.fn(async () => ({ ok: true as const, value: { imported: [], dangling: [] } })),
     list: vi.fn(async () => ({ ok: true as const, value: { kind: 'datasets' as const, datasets: [] } })),
@@ -58,6 +58,8 @@ async function bench(options: {
   rows?: Record<string, unknown>
   /** The 0.1.2+ `session.canOpenWorkspacePath` probe; omitted = no `remote.session` namespace. */
   canOpenWorkspacePath?: () => Promise<{ ok: boolean; value?: unknown }>
+  /** Declare the host 0.2.0 global-panel pair (`main` + `sidebar.panellist`). */
+  globalPanels?: boolean
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -117,6 +119,12 @@ async function bench(options: {
     children: {
       'conversation.view': { kind: 'list', scope: 'session' },
       'conversation.input.left': { kind: 'list', scope: 'session' },
+      ...(options.globalPanels === true
+        ? {
+            'main': { kind: 'keyed', scope: 'root' },
+            'sidebar.panellist': { kind: 'list', scope: 'root' },
+          }
+        : {}),
     },
   } as never, () => null)
   return { ctx, slots, remote, remoteService, workspaces }
@@ -212,45 +220,45 @@ describe('datasets client apply', () => {
     const face = (entry.inject as unknown as (sessionId: string) => DatasetsViewInjected)('s1')
 
     await face.fetchRegistry('s1')
-    expect(remote.registry).toHaveBeenCalledWith('s1')
+    expect(remote.registry).toHaveBeenCalledWith()
 
     await face.previewRepo('s1', '/repo')
-    expect(remote.previewRepo).toHaveBeenCalledWith('s1', { path: '/repo' })
+    expect(remote.previewRepo).toHaveBeenCalledWith({ path: '/repo' })
     await face.previewRepo('s1', '/repo', 'i1-walk')
-    expect(remote.previewRepo).toHaveBeenCalledWith('s1', { path: '/repo', trackedRef: 'i1-walk' })
+    expect(remote.previewRepo).toHaveBeenCalledWith({ path: '/repo', trackedRef: 'i1-walk' })
 
     const input = { path: '/repo', sets: { alpha: { layers: ['visible'] } }, authoringCheckout: null }
     await face.register('s1', input)
-    expect(remote.register).toHaveBeenCalledWith('s1', input)
+    expect(remote.register).toHaveBeenCalledWith(input)
     const update = { id: 'lib', trackedRef: 'main' }
     await face.updateRegistration('s1', update)
-    expect(remote.updateRegistration).toHaveBeenCalledWith('s1', update)
+    expect(remote.updateRegistration).toHaveBeenCalledWith(update)
     await face.unregister('s1', 'lib')
-    expect(remote.unregister).toHaveBeenCalledWith('s1', { id: 'lib' })
+    expect(remote.unregister).toHaveBeenCalledWith({ id: 'lib' })
     await face.importBindings('s1')
-    expect(remote.importBindings).toHaveBeenCalledWith('s1')
+    expect(remote.importBindings).toHaveBeenCalledWith()
 
     // Every read after the registry names ONE registration by its id.
     await face.listDatasets('s1', 'lib')
-    expect(remote.list).toHaveBeenCalledWith('s1', { repo: 'lib' })
+    expect(remote.list).toHaveBeenCalledWith({ repo: 'lib' })
     await face.listDatasets('s1', 'lib', 'alpha')
-    expect(remote.list).toHaveBeenCalledWith('s1', { repo: 'lib', dataset: 'alpha' })
+    expect(remote.list).toHaveBeenCalledWith({ repo: 'lib', dataset: 'alpha' })
     await face.overview('s1', 'lib')
-    expect(remote.overview).toHaveBeenCalledWith('s1', { repo: 'lib' })
+    expect(remote.overview).toHaveBeenCalledWith({ repo: 'lib' })
     // T90: the review verbs name a proposal (or a registration's held version).
     await face.proposalReview('s1', 'p1')
-    expect(remote.proposalReview).toHaveBeenCalledWith('s1', { id: 'p1' })
+    expect(remote.proposalReview).toHaveBeenCalledWith({ id: 'p1' })
     await face.reviewItem('s1', 'p1', 'alpha', 'i9')
-    expect(remote.reviewItem).toHaveBeenCalledWith('s1', { id: 'p1', set: 'alpha', item: 'i9' })
+    expect(remote.reviewItem).toHaveBeenCalledWith({ id: 'p1', set: 'alpha', item: 'i9' })
     const sets = { alpha: { layers: ['visible'] } }
     await face.confirmProposal('s1', 'p1', 'lib', sets)
-    expect(remote.confirmProposal).toHaveBeenCalledWith('s1', { id: 'p1', registryId: 'lib', sets })
+    expect(remote.confirmProposal).toHaveBeenCalledWith({ id: 'p1', registryId: 'lib', sets })
     await face.confirmPending('s1', 'lib', 'abc', sets)
-    expect(remote.confirmPending).toHaveBeenCalledWith('s1', { repo: 'lib', commit: 'abc', sets })
+    expect(remote.confirmPending).toHaveBeenCalledWith({ repo: 'lib', commit: 'abc', sets })
 
     const query = { dataset: 'alpha', item: 'i1', layer: 'visible', path: 'task.md' }
     await face.readFile('s1', 'lib', query)
-    expect(remote.read).toHaveBeenCalledWith('s1', { ...query, repo: 'lib' })
+    expect(remote.read).toHaveBeenCalledWith({ ...query, repo: 'lib' })
   })
 
   it('the face routes the native directory pick through the workspaces service', async () => {
@@ -361,7 +369,7 @@ describe('datasets client apply', () => {
     })('s1')
     remote.proposals.mockResolvedValueOnce({ ok: true, value: [{ id: 'p1' }] })
     await expect(face.loadPending('p1')).resolves.toBe(true)
-    expect(remote.proposals).toHaveBeenLastCalledWith('s1')
+    expect(remote.proposals).toHaveBeenLastCalledWith()
     await expect(face.loadPending('p2')).resolves.toBe(false)
     remote.proposals.mockResolvedValueOnce({ ok: false, error: { code: 'X', message: 'x' } })
     await expect(face.loadPending('p1')).resolves.toBeNull()
@@ -376,5 +384,125 @@ describe('datasets client apply', () => {
     await fiber.dispose()
     expect(disposeDefinition).toHaveBeenCalledTimes(1)
     expect(slots.entries('conversation.chat.turnTail' as never)).toHaveLength(0)
+  })
+
+  // T97 · the global 「题集」 panel.
+  describe('the global panel (T97)', () => {
+    it('registers the sidebar entry and the main panel under one id when the host declares both slots', async () => {
+      const { ctx, slots } = await bench({ globalPanels: true })
+      const fiber = ctx.plugin({ inject: [...inject], apply })
+      await fiber.await()
+      const icons = slots.entries('sidebar.panellist' as never)
+      expect(icons).toHaveLength(1)
+      expect(icons[0]!.options).toMatchObject({ id: 'datasets', order: 30 })
+      expect((icons[0]!.options as unknown as { label: () => string }).label()).toBeTypeOf('string')
+      const panels = slots.entries('main' as never)
+      expect(panels).toHaveLength(1)
+      expect(panels[0]!.options).toMatchObject({ key: 'datasets' })
+      await fiber.dispose()
+      expect(slots.entries('sidebar.panellist' as never)).toHaveLength(0)
+      expect(slots.entries('main' as never)).toHaveLength(0)
+    })
+
+    it('registers neither without the slots (an older host): no entry, no error', async () => {
+      const { ctx, slots } = await bench()
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      expect(slots.entries('conversation.view')).toHaveLength(1)
+      expect(() => slots.entries('sidebar.panellist' as never)).not.toThrow()
+      expect(slots.entries('sidebar.panellist' as never)).toHaveLength(0)
+      expect(slots.entries('main' as never)).toHaveLength(0)
+    })
+
+    it('stays registered in a session whose preset grants no dataset tools (install layer decides)', async () => {
+      const { ctx, slots } = await bench({ globalPanels: true, preset: 'standard', composition: DEV })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      await settled()
+      expect(slots.entries('conversation.view')).toHaveLength(0)
+      expect(slots.entries('sidebar.panellist' as never)).toHaveLength(1)
+      expect(slots.entries('main' as never)).toHaveLength(1)
+    })
+
+    it('hands the panel the same session-less face as the tab', async () => {
+      const { ctx, slots, remote } = await bench({ globalPanels: true })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      const panelFace = (slots.entries('main' as never)[0]!.inject as unknown as () => DatasetsViewInjected)()
+      const tabFace = (slots.entries('conversation.view')[0]!.inject as unknown as (sid: string) => DatasetsViewInjected)('s1')
+      expect(panelFace).toBe(tabFace)
+      await panelFace.fetchRegistry('' as SessionId)
+      expect(remote.registry).toHaveBeenCalledWith()
+      await panelFace.listDatasets('' as SessionId, 'lib')
+      expect(remote.list).toHaveBeenCalledWith({ repo: 'lib' })
+    })
+
+    it('「添加题集」 from the panel opens a new session in the most recent workspace and drafts the request', async () => {
+      const { ctx, slots } = await bench({ globalPanels: true, rows: { a1: { updatedAt: 10 }, b1: { updatedAt: 20 } } })
+      const created = 'new1' as SessionId
+      const setDraft = vi.fn()
+      const rename = vi.fn(async () => {})
+      const sessions = ctx.get('sessions') as unknown as Record<string, unknown>
+      sessions.create = vi.fn(async () => created)
+      sessions.using = vi.fn(async (_sid: unknown, _o: unknown, body: (ref: unknown) => Promise<unknown>) => body({ binding: { session: { rename } } }))
+      sessions.scope = vi.fn(() => ({ get: () => ({ input: { for: () => ({ state: { getSnapshot: () => ({ draft: '' }) }, setDraft }) } }) }))
+      const openSession = vi.fn()
+      ctx.provide('uiWorkspace', { openSession } as never)
+      ;(ctx.get('workspaces') as unknown as Record<string, unknown>).list = {
+        getSnapshot: () => ({ items: [
+          { workspaceId: 'wA', sessionIds: ['a1'] },
+          { workspaceId: 'wB', sessionIds: ['b1'] },
+        ] }),
+      }
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      const face = (slots.entries('main' as never)[0]!.inject as unknown as () => DatasetsViewInjected)()
+      const outcome = await face.startOrganizing('' as SessionId, '题集整理', 'please add', '')
+      expect(sessions.create).toHaveBeenCalledWith({ workspaceId: 'wB' })
+      expect(rename).toHaveBeenCalledWith('题集整理')
+      expect(openSession).toHaveBeenCalledWith(created)
+      expect(setDraft).toHaveBeenCalledWith('please add')
+      expect(outcome).toMatchObject({ kind: 'drafted', sessionId: created })
+    })
+  })
+
+  describe('the T96 card routes to the global panel (T97)', () => {
+    const declareTurnTail = (slots: SlotRegistry) => {
+      slots.register({
+        name: 'conversation.view',
+        id: 'chat',
+        children: { 'conversation.chat.turnTail': { kind: 'list', scope: 'session' } },
+      } as never, () => null)
+    }
+    const cardFace = async (layout?: { selectPanel: (id: string | null) => void }) => {
+      const { ctx, slots } = await bench({ globalPanels: true })
+      ctx.provide('uiConversation', { events: { register: vi.fn(() => () => {}) } } as never)
+      if (layout !== undefined) ctx.provide('layout', layout as never)
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      declareTurnTail(slots)
+      const face = (slots.entries('conversation.chat.turnTail' as never)[0]!.inject as unknown as (sid: string) => {
+        openReview: (id: string) => boolean
+      })('s1')
+      const view = (slots.entries('main' as never)[0]!.inject as unknown as () => DatasetsViewInjected)()
+      return { face, view }
+    }
+
+    it('selects the 题集 panel and leaves the request under the panel key', async () => {
+      const selectPanel = vi.fn()
+      const { face, view } = await cardFace({ selectPanel })
+      expect(face.openReview('p1')).toBe(true)
+      expect(selectPanel).toHaveBeenCalledWith('datasets')
+      expect(view.reviewFocus!.take('s1' as never)).toBeNull()
+      expect(view.reviewFocus!.take('' as never)).toBe('p1')
+    })
+
+    it('falls back to the session tab when selectPanel throws (panel not registered)', async () => {
+      const { face, view } = await cardFace({ selectPanel: () => { throw new Error('no panel') } })
+      expect(face.openReview('p1')).toBe(false)
+      expect(view.reviewFocus!.take('' as never)).toBeNull()
+      expect(view.reviewFocus!.take('s1' as never)).toBe('p1')
+    })
+
+    it('falls back to the session tab without a layout service', async () => {
+      const { face, view } = await cardFace()
+      expect(face.openReview('p1')).toBe(false)
+      expect(view.reviewFocus!.take('s1' as never)).toBe('p1')
+    })
   })
 })

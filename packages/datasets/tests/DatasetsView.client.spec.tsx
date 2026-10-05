@@ -26,6 +26,7 @@ import type {
 } from '../src/types.ts'
 import type { DatasetsViewProps, ItemRunsView } from '../src/client/contract.ts'
 import { DatasetsView } from '../src/client/DatasetsView.tsx'
+import { DatasetsPanel, type DatasetsPanelProps } from '../src/client/global-panel.tsx'
 import { setUsage } from '../src/client/RegistryList.tsx'
 import { createDatasetsViewStore } from '../src/client/store.ts'
 import { createReviewFocus } from '../src/client/review-card.ts'
@@ -315,7 +316,6 @@ function makeHarness(rows: RegistryRow[] = [rowOf()]): Harness {
 }
 
 function renderView(h: Harness, opts: { canPick?: boolean; extra?: Record<string, unknown> } = {}) {
-  const canPick = opts.canPick ?? true
   const props = {
     sessionId: 's1' as SessionId,
     useSession: undefined,
@@ -326,6 +326,15 @@ function renderView(h: Harness, opts: { canPick?: boolean; extra?: Record<string
       byId: { s1: { cwd: '/work' } },
     })) as never,
     useWorkspaces: undefined,
+    ...faceProps(h, opts.canPick ?? true),
+    ...opts.extra,
+  } as unknown as DatasetsViewProps
+  return render(<DatasetsView {...props} />)
+}
+
+/** The store, face and copy shares — what both the tab and the global panel (T97) receive. */
+function faceProps(h: Harness, canPick: boolean): Record<string, unknown> {
+  return {
     useStore: hookOf(h.instance),
     actions: h.actions,
     fetchRegistry: h.fetchRegistry,
@@ -359,9 +368,7 @@ function renderView(h: Harness, opts: { canPick?: boolean; extra?: Record<string
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
-    ...opts.extra,
-  } as unknown as DatasetsViewProps
-  return render(<DatasetsView {...props} />)
+  }
 }
 
 /** The register form now sits under 「添加题集」's 「高级」. */
@@ -1217,5 +1224,47 @@ describe('等你确认登记 (T90)', () => {
     await waitFor(() => {
       expect(h.confirmPending).toHaveBeenCalledWith('s1', 'dataseek-eval', pendingCommit, { gsm8k: { layers: ['prompt'] } })
     })
+  })
+})
+
+// T97 · the global 「题集」 panel: the same view with no session behind it.
+describe('the global panel (T97)', () => {
+  function renderPanel(h: Harness, extra: Record<string, unknown> = {}) {
+    const props = { ...faceProps(h, true), ...extra } as unknown as DatasetsPanelProps
+    return render(<DatasetsPanel {...props} />)
+  }
+
+  it('renders the registry with no session: every read carries the empty session id', async () => {
+    const h = makeHarness()
+    h.listDatasets.mockResolvedValue({ ok: true, value: SUMMARIES })
+    renderPanel(h)
+    expect(await screen.findByText('bench')).toBeTruthy()
+    expect(h.fetchRegistry).toHaveBeenCalledWith('')
+    await waitFor(() => { expect(h.listDatasets).toHaveBeenCalledWith('', 'dataseek-eval') })
+    expect(h.proposals).toHaveBeenCalledWith('')
+  })
+
+  it('「添加题集」 still hands the request to a NEW 题集整理 session (the face picks its workspace)', async () => {
+    const h = makeHarness()
+    renderPanel(h)
+    fireEvent.click(await screen.findByText('registry.add'))
+    fireEvent.change(screen.getByLabelText('add.source', { selector: 'textarea' }), { target: { value: '~/Downloads/gsm8k' } })
+    fireEvent.change(screen.getByLabelText('add.name', { selector: 'input' }), { target: { value: 'gsm8k' } })
+    fireEvent.change(screen.getByLabelText('add.purpose', { selector: 'textarea' }), { target: { value: 'math' } })
+    fireEvent.click(screen.getByText('add.organize'))
+    await waitFor(() => { expect(h.startOrganizing).toHaveBeenCalledTimes(1) })
+    expect(h.startOrganizing.mock.calls[0]![0]).toBe('')
+    expect(await screen.findByText('organize.drafted')).toBeTruthy()
+    expect(h.register).not.toHaveBeenCalled()
+  })
+
+  it('opens the review a card left under the panel key', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    const focus = createReviewFocus()
+    focus.request('' as SessionId, 'p1')
+    renderPanel(h, { reviewFocus: { take: focus.take, subscribe: focus.subscribe } })
+    expect(await screen.findByText('review.titleNew {"name":"gsm8k"}')).toBeTruthy()
+    expect(h.proposalReview).toHaveBeenCalledWith('', 'p1')
   })
 })
