@@ -84,6 +84,27 @@ export interface PlayerView {
   layers: string[]
 }
 
+/**
+ * Why a judgeability number is missing, as a code the browser translates
+ * (T98). The host does not know the viewer's language, so it ships the code,
+ * the parameters the sentence needs, and an English `text` — the sentence the
+ * CLI, a log, or a browser that does not know the code shows verbatim.
+ *
+ * - `no-rubric` — the grading layer exists, this item ships no rubric in it;
+ * - `no-grading-layer` — the dataset declares no grading layer at all;
+ * - `rubric-invalid` — the rubric was read and `checkRubric` objects (`detail`
+ *   is the rule's own English message — the validate vocabulary is not
+ *   translated, so only the frame around it is);
+ * - `rubric-unreadable` — the rubric could not be read (`detail` is the error).
+ */
+export interface JudgeNote {
+  code: 'no-rubric' | 'no-grading-layer' | 'rubric-invalid' | 'rubric-unreadable'
+  /** The sentence's slots: `layer`, or `path` + `detail`. */
+  params: Record<string, string>
+  /** The English sentence, for every reader that does not translate. */
+  text: string
+}
+
 /** «可判性»: can this item be judged at all, in numbers. */
 export interface Judgeability {
   /** The rubric's display path in the grading layer, or null when it ships none. */
@@ -98,8 +119,8 @@ export interface Judgeability {
   sharedProbes: string[]
   /** Per-stage structured schemas in the passthrough zone (`schemas/<stage>.json`). */
   stageSchemas: string[]
-  /** Why a number is missing, one sentence each; empty when everything read. */
-  notes: string[]
+  /** Why a number is missing, one coded sentence each; empty when everything read. */
+  notes: JudgeNote[]
 }
 
 /** One item's tab-facing brief: what the player gets, and whether it can be judged. */
@@ -267,15 +288,23 @@ export async function judgeability(
   item: ItemRecord,
   readLayerFile: (layer: string, path: string) => Promise<string>,
 ): Promise<Judgeability> {
-  const notes: string[] = []
+  const notes: JudgeNote[] = []
   const grading = item.layers[GRADING_LAYER] ?? []
   const rubricPath = pickRubricPath(grading) ?? null
   let leaves = 0
   const kinds: Record<string, number> = {}
   if (rubricPath === null) {
     notes.push(descriptor.layers.some(layer => layer.name === GRADING_LAYER)
-      ? `this item ships no rubric in its ${GRADING_LAYER} layer, so no LLM judge or human verdict has anything to score`
-      : `this dataset declares no ${GRADING_LAYER} layer, so judging conventions (protocol §6.8) do not apply to it`)
+      ? {
+          code: 'no-rubric',
+          params: { layer: GRADING_LAYER },
+          text: `this item ships no rubric in its ${GRADING_LAYER} layer, so no LLM judge or human verdict has anything to score`,
+        }
+      : {
+          code: 'no-grading-layer',
+          params: { layer: GRADING_LAYER },
+          text: `this dataset declares no ${GRADING_LAYER} layer, so judging conventions (protocol §6.8) do not apply to it`,
+        })
   } else {
     try {
       // ONE read of the rubric: `checkRubric` for the honest complaints the
@@ -286,9 +315,12 @@ export async function judgeability(
       const histogram = leafKinds(text)
       leaves = histogram.leaves
       Object.assign(kinds, histogram.kinds)
-      for (const error of check.errors) notes.push(error.message)
+      for (const error of check.errors) {
+        notes.push({ code: 'rubric-invalid', params: { path: rubricPath, detail: error.message }, text: error.message })
+      }
     } catch (error) {
-      notes.push(`${rubricPath}: ${error instanceof Error ? error.message : String(error)}`)
+      const detail = error instanceof Error ? error.message : String(error)
+      notes.push({ code: 'rubric-unreadable', params: { path: rubricPath, detail }, text: `${rubricPath}: ${detail}` })
     }
   }
   const probes = probePaths(item.layers[VERIFY_LAYER] ?? [])

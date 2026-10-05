@@ -766,11 +766,99 @@ describe('the detail page', () => {
     expect(crumb.textContent).toContain('"commit":"a4f9c2e"')
     // The crumb sits in the scrolling content column, above the two cards.
     expect(crumb.compareDocumentPosition(judge!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // The rubric carries its leaf count; no probe anywhere is said, in the card.
+    // The rubric carries its leaf count; a missing probe is said, in the card —
+    // and since verify/ still holds check material, it says THAT gap (T98).
     expect(judge?.textContent).toContain('detail.judgeLeaves {"leaves":2}')
-    expect(judge?.textContent).toContain('detail.noProbes')
+    expect(judge?.textContent).toContain('detail.probesNotWired')
+    expect(judge?.textContent).not.toContain('detail.noProbes')
     // The experiments that used it, once each.
     expect(await screen.findByText('detail.usedBy {"names":"pilot-a · pilot-b"}')).toBeTruthy()
+  })
+
+  it('check material without a probe is not “no check scripts” — the two gaps are worded apart (T98)', async () => {
+    // HumanEval as organized: verify/test.py is check material, but nothing
+    // under probes/ — the experiment has nothing to execute.
+    const h = makeHarness()
+    h.listDatasets.mockResolvedValue({
+      ok: true,
+      value: {
+        ...ITEMS,
+        datasetLayers: {},
+        items: [{
+          id: 'R1',
+          layers: { prompt: ['prompt.py'], verify: ['test.py'], grading: ['canonical_solution.py'] },
+        }],
+      },
+    })
+    h.itemBrief.mockResolvedValue({
+      ok: true,
+      value: { ...BRIEF, judgeability: { ...BRIEF.judgeability, probes: [], rubricPath: null, leaves: 0, kinds: {} } },
+    })
+    await openItem(h)
+    const judge = (await screen.findByText('detail.judgeOnly')).closest('section')
+    expect(judge?.textContent).toContain('verify/test.py')
+    const warn = screen.getByText('detail.probesNotWired')
+    // The hover says what a probe is and what the gap means.
+    expect(warn.getAttribute('title')).toBe('detail.probesNotWiredHint')
+    expect(judge?.textContent).not.toContain('detail.noProbes')
+  })
+
+  it('no check material at all keeps the plain “no check scripts” (T98)', async () => {
+    const h = makeHarness()
+    h.listDatasets.mockResolvedValue({
+      ok: true,
+      value: { ...ITEMS, datasetLayers: {}, items: [{ id: 'R1', layers: { visible: ['task.md'], grading: ['answers/rubric.yml'] } }] },
+    })
+    h.itemBrief.mockResolvedValue({ ok: true, value: { ...BRIEF, judgeability: { ...BRIEF.judgeability, probes: [] } } })
+    await openItem(h)
+    const judge = (await screen.findByText('detail.judgeOnly')).closest('section')
+    expect(judge?.textContent).toContain('detail.noProbes')
+    expect(judge?.textContent).not.toContain('detail.probesNotWired')
+  })
+
+  it('the judgeability notes render in the viewer’s language from the host’s code (T98)', async () => {
+    const h = makeHarness()
+    h.itemBrief.mockResolvedValue({
+      ok: true,
+      value: {
+        ...BRIEF,
+        judgeability: {
+          ...BRIEF.judgeability,
+          notes: [
+            { code: 'no-rubric', params: { layer: 'grading' }, text: 'this item ships no rubric in its grading layer, …' },
+            // A code this build does not know falls back to the host's English.
+            { code: 'from-a-newer-host' as never, params: {}, text: 'an English sentence' },
+          ],
+        },
+      },
+    })
+    await openItem(h)
+    expect(await screen.findByText('judgeNote.no-rubric {"layer":"grading"}')).toBeTruthy()
+    expect(screen.queryByText(/ships no rubric/)).toBeNull()
+    expect(screen.getByText('an English sentence')).toBeTruthy()
+  })
+
+  it('HumanEval’s prompt layer reads as 题干 in the tree and survives the 题干 filter (T98)', async () => {
+    const h = makeHarness()
+    h.listDatasets.mockResolvedValue({
+      ok: true,
+      value: {
+        ...ITEMS,
+        dataset: { ...ITEMS.dataset, layers: ['prompt', 'verify', 'grading'] },
+        datasetLayers: {},
+        items: [{ id: 'R1', layers: { prompt: ['prompt.py'], verify: ['test.py'], grading: ['canonical_solution.py'] } }],
+      },
+    })
+    await openItem(h)
+    expect(await screen.findByText('prompt.py')).toBeTruthy()
+    const marks = screen.getAllByText(/slot\.\w+ · role\.\w+/).map(node => node.textContent)
+    expect(marks).toContain('slot.prompt · role.player')
+    expect(marks).toContain('slot.oracle · role.judge')
+    expect(marks).toContain('slot.checks · role.probe')
+    const tree = (): HTMLElement => screen.getByRole('navigation')
+    fireEvent.click(screen.getByText('slot.prompt'))
+    await waitFor(() => { expect(tree().textContent).not.toContain('canonical_solution.py') })
+    expect(tree().textContent).toContain('prompt.py')
   })
 
   it('one file per row; 用过 and 作答记录 show the newest five and fold the rest (T83 · phase 4 ruling)', async () => {

@@ -7,7 +7,7 @@
 
 export type { DatasetBinding } from './binding.ts'
 export type {
-  DatasetOverview, DatasetOverviewRow, ItemBrief, Judgeability, PlayerFile, PlayerView,
+  DatasetOverview, DatasetOverviewRow, ItemBrief, JudgeNote, Judgeability, PlayerFile, PlayerView,
 } from './brief.ts'
 export type { DatasetSummary, DescriptorWarning, ItemRecord, JsonObject } from './dataset.ts'
 export type {

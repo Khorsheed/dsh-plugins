@@ -113,6 +113,12 @@ export type DatasetsKey =
   | 'detail.judgeSchemas'
   | 'detail.judgeLeaves'
   | 'detail.noProbes'
+  | 'detail.probesNotWired'
+  | 'detail.probesNotWiredHint'
+  | 'judgeNote.no-rubric'
+  | 'judgeNote.no-grading-layer'
+  | 'judgeNote.rubric-invalid'
+  | 'judgeNote.rubric-unreadable'
   | 'detail.readAt'
   | 'detail.readAtCommit'
   | 'detail.usedBy'
@@ -440,6 +446,12 @@ export const zh: Record<DatasetsKey, string> = {
   'detail.judgeSchemas': '阶段 schema {count} 个',
   'detail.judgeLeaves': '{leaves} 条判据',
   'detail.noProbes': '没有检查脚本',
+  'detail.probesNotWired': '有检查材料，但没接成可执行的探针：跑实验时不会自动判分',
+  'detail.probesNotWiredHint': '探针是 verify 层 probes/ 下的 .mjs 或 .sh，实验在单元里执行它来判分。上面列出的检查材料（例如 test.py）只是原料，要接成探针才会自动判分；在那之前只能靠评估标准交给判官或人工。',
+  'judgeNote.no-rubric': '这道题的 {layer} 层里没有评估标准（rubric），LLM 判官和人工评审都无从打分',
+  'judgeNote.no-grading-layer': '这个题集没有声明 {layer} 层，判分约定（协议 §6.8）对它不适用',
+  'judgeNote.rubric-invalid': '评估标准没通过检查：{detail}',
+  'judgeNote.rubric-unreadable': '读不到评估标准 {path}：{detail}',
   'detail.readAt': '看的是 {ref} @ {commit}',
   'detail.readAtCommit': '看的是 @ {commit}',
   'detail.usedBy': '用过这道题的实验：{names}',
@@ -815,6 +827,12 @@ export const en: Record<DatasetsKey, string> = {
   'detail.judgeSchemas': '{count} stage schemas',
   'detail.judgeLeaves': '{leaves} criteria',
   'detail.noProbes': 'no check scripts',
+  'detail.probesNotWired': 'Check material is here, but no executable probe is wired up: runs will not be scored automatically',
+  'detail.probesNotWiredHint': 'A probe is a .mjs or .sh file under probes/ in the verify layer; the experiment executes it inside the unit to score. The check material listed above (test.py, say) is raw material until it is wired up as a probe; until then only the rubric — a judge or a human — can score this item.',
+  'judgeNote.no-rubric': 'This item ships no rubric in its {layer} layer, so no LLM judge or human verdict has anything to score',
+  'judgeNote.no-grading-layer': 'This dataset declares no {layer} layer, so judging conventions (protocol §6.8) do not apply to it',
+  'judgeNote.rubric-invalid': 'The rubric does not pass its check: {detail}',
+  'judgeNote.rubric-unreadable': 'Could not read the rubric {path}: {detail}',
   'detail.readAt': 'read at {ref} @ {commit}',
   'detail.readAtCommit': 'read at @ {commit}',
   'detail.usedBy': 'Experiments that used this item: {names}',
