@@ -30,6 +30,7 @@ export function PlanBlock({ chapter, phase, names, canConfirm, busy, onConfirm, 
   const lead = phase === 'planning'
   const [open, setOpen] = useState(lead)
   const plan = chapter.plan
+  if (chapter.byUser === true && plan === undefined) return <div className={css.planEmpty}>{t('chapter.byUserNoPlan')}</div>
   if (plan === undefined) return <div className={css.planEmpty}>{t('chapter.noPlan')}</div>
   const confirmed = chapter.planConfirmedAt !== undefined
   const delivery = chapter.delivery
@@ -95,6 +96,21 @@ export function PlanBlock({ chapter, phase, names, canConfirm, busy, onConfirm, 
                           {member.who === plan.pov && <em className={css.pov}>{t('plan.pov')}</em>}
                         </span>
                         {member.role !== undefined && <span className={css.what}>{member.role}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </>
+            )}
+            {plan.infoGaps !== undefined && (
+              <>
+                <dt>{t('plan.infoGaps')}</dt>
+                <dd>
+                  <ul className={css.ops}>
+                    {plan.infoGaps.map((gap, index) => (
+                      <li key={index}>
+                        <span className={css.castName}>{named(gap.who)}</span>
+                        <span className={css.what}>{t('plan.learns', { fact: gap.fact })}</span>
                       </li>
                     ))}
                   </ul>

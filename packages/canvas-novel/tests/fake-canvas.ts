@@ -15,7 +15,7 @@ import { DREAM, dreamCards } from './seed-dream.ts'
 /** The category id the fake gives a role. */
 export const categoryIdOf = (role: string): string => `cat_${role}`
 
-const NOVEL_ROLE_LIST = ['character', 'world', 'principle', 'foreshadow'] as const
+const NOVEL_ROLE_LIST = ['character', 'world', 'principle', 'foreshadow', 'relation'] as const
 
 export class FakeCanvas implements CanvasBoardSlice {
   readonly boards = new Map<string, NovelBoardView>()

@@ -1,9 +1,9 @@
 /**
  * The canvas-novel Remote: the browser face of the engine, read by the genre's
- * surfaces inside the canvas (the board strip, the ledger page, the chapter
+ * surfaces inside the canvas (the board strip, the story log, the chapter
  * page). Every verb delegates to {@link NovelService}; the reads add only what
- * a surface needs to name things (a pending item's subject, a foreshadow's
- * chapter track, a chapter's pending count), never a second rule.
+ * a surface needs to name things (a pending item's subject, a chapter's
+ * pending count), never a second rule.
  *
  * The writes are the person's own gestures (accept/discard a pending item,
  * ✓ 审过 a chapter) and run under the calling session's fence, exactly like
@@ -16,8 +16,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { NovelService, WorkEntries } from './store.ts'
 import type {
-  LedgerMark, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
-  NovelGestureResult, NovelLedgerResult, NovelPendingResult, NovelWorkRequest, PendingItem, PendingView,
+  LedgerResult, NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult,
+  NovelDecideRequest, NovelGestureResult, NovelPendingResult, NovelStarRequest, NovelStateRequest,
+  NovelWorkRequest, PendingItem, PendingView, StoryLogResult,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -75,19 +76,16 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     return this.core.decidePending({ workId: request.canvasId, id: request.id, action: request.action }, agent.session)
   }
 
-  /** The foreshadow ledger plus every foreshadow's chapter track. */
+  /** The foreshadow ledger's counts and rows (the board strip reads its health). */
   @Remote('ledger')
-  async ledger(request: NovelWorkRequest): Promise<NovelLedgerResult> {
-    const ledger = await this.core.ledger({ workId: request.canvasId })
-    const marks: Record<string, LedgerMark[]> = {}
-    if (ledger.ok) {
-      for (const entry of await this.core.listMentions({ workId: request.canvasId })) {
-        (marks[entry.foreshadowId] ??= []).push({
-          chapter: entry.chapter, kind: entry.kind, planned: entry.planned, reconciled: entry.reconciled,
-        })
-      }
-    }
-    return { ...ledger, marks }
+  ledger(request: NovelWorkRequest): Promise<LedgerResult> {
+    return this.core.ledger({ workId: request.canvasId })
+  }
+
+  /** The 故事日志: the four bands over the chapters. */
+  @Remote('storyLog')
+  storyLog(request: NovelWorkRequest): Promise<StoryLogResult> {
+    return this.core.storyLog({ workId: request.canvasId })
   }
 
   /** The chapter index with each chapter's unresolved pending count. */
@@ -141,6 +139,43 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
   @Remote('confirmPlan')
   async confirmPlan(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
     const result = await this.core.confirmChapterPlan({ workId: request.canvasId, n: request.n }, agent.session)
+    return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  }
+
+  /** One card's engine side: its role, the star (foreshadows), 此刻 and 关系 (characters), the bar (relations). */
+  @Remote('card')
+  async card(request: NovelCardRequest): Promise<NovelCardResult> {
+    const entries = await this.core.readEntries(request.canvasId)
+    if (entries === undefined) return { ok: false, error: 'missing' }
+    const role = entries.roleOf.get(request.cardId)
+    if (role === undefined) return { ok: false, error: 'missing' }
+    const foreshadow = entries.foreshadows.find(view => view.cardId === request.cardId)
+    const character = entries.characters.find(view => view.cardId === request.cardId)
+    const relation = entries.relations.find(view => view.cardId === request.cardId)
+    return {
+      ok: true,
+      role,
+      ...(foreshadow === undefined ? {} : {
+        starred: foreshadow.starred,
+        starredCount: entries.foreshadows.filter(view => view.starred).length,
+      }),
+      ...(character?.currentState === undefined ? {} : { currentState: character.currentState }),
+      ...(character === undefined || character.relations.length === 0 ? {} : { relations: character.relations }),
+      ...(relation === undefined ? {} : { relation }),
+    }
+  }
+
+  /** The person's ★ on a foreshadow. */
+  @Remote('starForeshadow')
+  async starForeshadow(agent: Agent, request: NovelStarRequest): Promise<NovelGestureResult> {
+    const result = await this.core.starForeshadow({ workId: request.canvasId, cardId: request.cardId, starred: request.starred }, agent.session)
+    return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  }
+
+  /** The person's edit of a character's 此刻. */
+  @Remote('setCurrentState')
+  async setCurrentState(agent: Agent, request: NovelStateRequest): Promise<NovelGestureResult> {
+    const result = await this.core.setCurrentState({ workId: request.canvasId, cardId: request.cardId, state: request.state }, agent.session)
     return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
   }
 }

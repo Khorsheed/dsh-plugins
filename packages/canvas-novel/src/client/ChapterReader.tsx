@@ -91,7 +91,10 @@ export function ChapterReader(props: NovelSurfaceProps & {
     body = (
       <>
         <div className={css.chap}>
-          <div className={css.kicker}>{t('reader.kicker', { n })}</div>
+          <div className={css.kicker}>
+            {t('reader.kicker', { n })}
+            {chapter.byUser === true && <span className={css.byUserTag} title={t('chapter.byUserTitle')}>{t('chapter.byUser')}</span>}
+          </div>
           <h2 className={css.chapTitle}>{bareTitle(n, chapter.title) || t('strip.chapter', { n })}</h2>
           <Lamp phase={phase} t={t} />
           <PlanBlock

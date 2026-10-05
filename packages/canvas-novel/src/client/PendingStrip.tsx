@@ -1,9 +1,9 @@
 /**
  * The board strip of a 长篇小说 canvas, one quiet line: the chapter to pick up
  * at (a click opens its chapter page), the pending count — only while there is
- * something to review, unfolding the queue in place — the ledger's health with
- * its door, and the way into the book (目录 · 共 N 章, the 成稿 face). A canvas
- * of another genre renders nothing.
+ * something to review, unfolding the queue in place — the foreshadow health with
+ * the story log's door, and the way into the book (目录 · 共 N 章, the 成稿
+ * face). A canvas of another genre renders nothing.
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
@@ -11,7 +11,7 @@ import { useState, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { NOVEL_GENRE_ID, type ChapterRow, type PendingView } from '../types.ts'
-import { CHAPTER_PAGE, LEDGER_PAGE, type NovelNavigate, type NovelRemote, type NovelSurfaceProps } from './contract.ts'
+import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelNavigate, type NovelRemote, type NovelSurfaceProps } from './contract.ts'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
 
@@ -65,9 +65,9 @@ function Strip({ canvasId, rev, navigate, sessionId, remote, t }: NovelSurfacePr
         <button
           type="button"
           className={css.stripLink}
-          onClick={() => { navigate.openPage(LEDGER_PAGE, t('ledger.heading')) }}
+          onClick={() => { navigate.openPage(STORY_LOG_PAGE, t('log.heading')) }}
         >
-          {t('strip.ledger')}
+          {t('strip.storyLog')}
           {counts !== undefined && <span className={css.muted}>{t('strip.ledgerCount', { active: counts.active })}</span>}
           {counts !== undefined && counts.overdue > 0 && <span className={css.warn}>{t('strip.ledgerOverdue', { count: counts.overdue })}</span>}
         </button>
@@ -130,7 +130,9 @@ export function PendingList({ canvasId, items, navigate, sessionId, remote, t }:
         <li key={item.id} className={css.pendingItem}>
           <div className={css.pendingHead}>
             <span className={css.kindTag} data-kind={item.kind}>{t(`pending.kind.${item.kind}`)}</span>
-            <span className={css.confidence} data-confidence={item.confidence}>{t(`pending.confidence.${item.confidence}`)}</span>
+            {item.confidence !== undefined && (
+              <span className={css.confidence} data-confidence={item.confidence}>{t(`pending.confidence.${item.confidence}`)}</span>
+            )}
             {item.chapter !== undefined && <span className={css.muted}>{t('pending.chapter', { n: item.chapter })}</span>}
             {item.subject !== undefined && (
               <button

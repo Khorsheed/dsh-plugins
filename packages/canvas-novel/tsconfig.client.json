@@ -19,10 +19,11 @@
     "src/client/locales.ts",
     "src/client/use-novel.ts",
     "src/client/PendingStrip.tsx",
-    "src/client/LedgerPage.tsx",
+    "src/client/StoryLogPage.tsx",
     "src/client/PlanBlock.tsx",
     "src/client/ChapterReader.tsx",
     "src/client/ChapterBook.tsx",
+    "src/client/CardSection.tsx",
     "src/client/write-row.ts",
     "src/client/WriteToolRow.tsx",
     "src/client/index.ts"

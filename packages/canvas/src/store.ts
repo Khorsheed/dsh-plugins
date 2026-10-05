@@ -83,6 +83,25 @@ function randomSuffix(): string {
   return randomBytes(8).readBigUInt64BE().toString(36).slice(0, 10).padStart(10, '0')
 }
 
+/** Seed a category for every role of the genre the board does not hold yet, after the last one. */
+function seedMissingRoles(board: CanvasBoard, genre: CanvasGenreDefinition): void {
+  let last = board.categories.reduce((max, category) => Math.max(max, category.order), 0)
+  for (const seed of genre.categories) {
+    if (board.categories.some(category => category.role === seed.role)) continue
+    last += 10
+    const definition = seed.definition === undefined ? undefined : normalizeDefinition(seed.definition)
+    board.categories.push({
+      id: makeBoardId('cat', Date.now(), randomSuffix()),
+      label: sanitizeCategoryLabel(seed.label) ?? seed.role,
+      order: last,
+      enabled: true,
+      ...(seed.brief === undefined ? {} : { brief: seed.brief }),
+      ...(definition === undefined ? {} : { definition }),
+      role: seed.role,
+    })
+  }
+}
+
 /** A category row's type half, as stored (the catalog verb carries it over untouched). */
 function typePartOf(category: BoardCategory): Partial<BoardCategory> {
   return {
@@ -969,9 +988,10 @@ export class CanvasBoardService {
 
   /**
    * Catch a genre canvas up with a newer version of its genre, on the board's
-   * next write: each role category's card type gains the fields the genre's
-   * seed added since (by key, at the seed's position), and nothing the user
-   * changed is touched — their labels, hints, extra fields and values stay.
+   * next write: a role the genre added since gets its category, each role
+   * category's card type gains the fields the genre's seed added since (by
+   * key, at the seed's position), and nothing the user changed is touched —
+   * their labels, hints, extra fields and values stay.
    * The genre record then carries the new version. A canvas whose genre is
    * not registered (the plugin is gone) is left exactly as it is.
    * @param board - the board read for this write; changed in place.
@@ -979,6 +999,7 @@ export class CanvasBoardService {
   private catchUpGenre(board: CanvasBoard): void {
     const genre = board.genre === undefined ? undefined : this.genres.get(board.genre.id)
     if (board.genre === undefined || genre === undefined || board.genre.version === genre.version) return
+    seedMissingRoles(board, genre)
     for (const seed of genre.categories) {
       const category = board.categories.find(candidate => candidate.role === seed.role)
       const fresh = seed.definition === undefined ? undefined : normalizeDefinition(seed.definition)
@@ -1048,21 +1069,7 @@ export class CanvasBoardService {
       for (const category of board.categories) {
         if (hid.includes(category.id as BoardCardKind)) category.enabled = false
       }
-      let last = board.categories.reduce((max, category) => Math.max(max, category.order), 0)
-      for (const seed of genre.categories) {
-        if (board.categories.some(category => category.role === seed.role)) continue
-        last += 10
-        const definition = seed.definition === undefined ? undefined : normalizeDefinition(seed.definition)
-        board.categories.push({
-          id: makeBoardId('cat', Date.now(), randomSuffix()),
-          label: sanitizeCategoryLabel(seed.label) ?? seed.role,
-          order: last,
-          enabled: true,
-          ...(seed.brief === undefined ? {} : { brief: seed.brief }),
-          ...(definition === undefined ? {} : { definition }),
-          role: seed.role,
-        })
-      }
+      seedMissingRoles(board, genre)
       board.genre = { id: genre.id, version: genre.version, selectedAt: now, ...(hid.length === 0 ? {} : { hid }) }
       return board
     })

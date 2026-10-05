@@ -5,20 +5,24 @@
  * refresh the board, the chapter page offers ✓ 审过 only once the chapter is
  * extracted and its pending items are handled, the plan block leads while
  * planning and folds once there is text, the book's contents filter and read
- * in place, the novel_write card opens its chapter from its own answer, and a
- * chapter heading never repeats the number its title already carries.
+ * in place, the novel_write card opens its chapter from its own answer, a
+ * relation card shows its ladder and a character its derived 关系, and a
+ * chapter heading never repeats the number its title already carries, and
+ * the story log draws its rows and opens a row's 现状 / 变化过程 beside them.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { CardSection } from '../src/client/CardSection.tsx'
 import { ChapterBook } from '../src/client/ChapterBook.tsx'
 import { ChapterPage } from '../src/client/ChapterReader.tsx'
-import { CHAPTER_PAGE, LEDGER_PAGE, type NovelRemote, type NovelSurfaceProps } from '../src/client/contract.ts'
+import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelRemote, type NovelSurfaceProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
 import { chapterHeading, PendingStrip } from '../src/client/PendingStrip.tsx'
+import { StoryLogPage } from '../src/client/StoryLogPage.tsx'
 import { WriteToolRow } from '../src/client/WriteToolRow.tsx'
 import { writeRowModel } from '../src/client/write-row.ts'
-import { NOVEL_GENRE_ID, type ChapterPlan, type ChapterRecord, type EffectiveChapterPhase, type PendingView } from '../src/types.ts'
+import { NOVEL_GENRE_ID, type ChapterPlan, type ChapterRecord, type EffectiveChapterPhase, type PendingView, type StoryLogResult } from '../src/types.ts'
 
 afterEach(cleanup)
 
@@ -57,7 +61,7 @@ function fakeRemote(fixture: { items: PendingView[]; phase?: EffectiveChapterPha
   const remote = {
     pending: vi.fn(() => ok({ ok: true, items: fixture.items })),
     chapters: vi.fn(() => ok({ ok: true, chapters: rows().map(({ chapter: record, phase }) => ({ chapter: record, phase })), pending: pendingOf() })),
-    ledger: vi.fn(() => ok({ ok: true, counts: { active: 9, overdue: 0 }, marks: {} } as never)),
+    ledger: vi.fn(() => ok({ ok: true, counts: { active: 9, overdue: 0 } } as never)),
     chapter: vi.fn(({ n }: { n: number }) => {
       const row = rows().find(entry => entry.chapter.n === n)
       return ok(row === undefined
@@ -111,14 +115,14 @@ describe('PendingStrip', () => {
     expect(remote.pending).not.toHaveBeenCalled()
   })
 
-  it('shows the chapter to pick up at, the ledger door and the way into the book', async () => {
+  it('shows the chapter to pick up at, the story-log door and the way into the book', async () => {
     const remote = fakeRemote({ items: [], phase: 'extracted' })
     const p = props(remote)
     render(<PendingStrip {...p} />)
     fireEvent.click(await screen.findByRole('button', { name: /门与假门/ }))
     expect(p.navigate.openPage).toHaveBeenCalledWith(CHAPTER_PAGE, '第1章 · 门与假门', '1')
-    fireEvent.click(screen.getByRole('button', { name: /伏笔台账/ }))
-    expect(p.navigate.openPage).toHaveBeenCalledWith(LEDGER_PAGE, zh['ledger.heading'])
+    fireEvent.click(screen.getByRole('button', { name: /故事日志/ }))
+    expect(p.navigate.openPage).toHaveBeenCalledWith(STORY_LOG_PAGE, zh['log.heading'])
     expect(screen.getByText('9 活跃')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '目录 · 共 1 章 ›' }))
     expect(p.navigate.openManuscripts).toHaveBeenCalled()
@@ -263,6 +267,36 @@ describe('PlanBlock', () => {
   })
 })
 
+describe('CardSection', () => {
+  function renderCard(role: string, value: object) {
+    const remote = { ...fakeRemote({ items: [] }), card: vi.fn(() => ok({ ok: true, role, ...value })) } as unknown as NovelRemote
+    render(<CardSection {...props(remote)} card={{ id: 'c_r' }} category={{ id: 'cat_relation', role }} />)
+  }
+
+  it('a relation shows its type\'s four stages with the current one bold, and 可升 off a full bar', async () => {
+    renderCard('relation', {
+      relation: { cardId: 'c_r', ref: 'r1', name: '赵启明 × 艾文', pair: [], type: '同盟', stage: '合作', level: 2, progress: 3, ready: true, cardStatus: 'kept' },
+    })
+    await screen.findByText(zh['card.ready'])
+    const current = screen.getByText('合作').closest('tr')!
+    expect(current.dataset['current']).toBe('true')
+    expect(screen.getByText('结盟').closest('tr')!.dataset['current']).toBeUndefined()
+  })
+
+  it('a relation in a rift says so instead of the bar', async () => {
+    renderCard('relation', {
+      relation: { cardId: 'c_r', ref: 'r1', name: '赵启明 × 艾文', pair: [], type: '同盟', stage: '裂痕', rift: '裂痕', progress: 2, ready: false, cardStatus: 'kept' },
+    })
+    await screen.findByText(zh['card.rift'].replace('{rift}', '裂痕'))
+    expect(screen.queryByText(zh['card.bar'].replace('{points}', '2').replace('{full}', '3'))).toBeNull()
+  })
+
+  it('a character lists the 关系 read off the relation cards', async () => {
+    renderCard('character', { currentState: {}, relations: ['艾文 · 同盟 · 合作 — 勉强信任'] })
+    await screen.findByText('艾文 · 同盟 · 合作 — 勉强信任')
+  })
+})
+
 describe('ChapterBook', () => {
   it('renders nothing on a canvas of another genre', () => {
     const { container } = render(<ChapterBook {...props(fakeRemote({ items: [] }), null)} />)
@@ -327,5 +361,93 @@ describe('novel_write tool row', () => {
     expect(screen.getByText('已落卡 [#19]。')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['card.inspect'] }))
     expect(screen.getByText(/忽略了不认识的字段/)).toBeTruthy()
+  })
+})
+
+const STORY_LOG: StoryLogResult = {
+  ok: true,
+  chapters: [1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ n, title: `第${n}章`, phase: n === 8 ? 'planning' as const : 'extracted' as const })),
+  foreshadows: [
+    {
+      cardId: 'f12', ref: '#12', question: '门缝里的东西', state: '推进中', plantedAt: 1, starred: false, slept: 6, cardStatus: 'kept',
+      marks: [{ chapter: 1, kind: 'planted', planned: false }, { chapter: 8, kind: 'advanced', planned: true, note: '门后第一层' }],
+    },
+    {
+      cardId: 'f9', ref: '#9', question: '钟楼为什么没有影子', state: '已揭晓', plantedAt: 1, answer: '它立在两层梦之间', starred: false, cardStatus: 'kept',
+      marks: [{ chapter: 1, kind: 'planted', planned: false }, { chapter: 4, kind: 'resolved', planned: false }],
+    },
+  ],
+  relations: [{
+    cardId: 'r1', ref: '#1', name: '赵启明 × 艾文', pair: ['c1', 'c2'], names: ['赵启明', '艾文'], type: '同盟', stage: '合作', level: 2,
+    views: [], progress: 3, ready: true, cardStatus: 'kept',
+    journal: [
+      { relationId: 'r1', chapter: 2, kind: 'stage', event: 'start', stage: '接触', level: 1, createdAt: NOW },
+      { relationId: 'r1', chapter: 3, kind: 'stage', event: 'up', stage: '合作', level: 2, evidence: '两人一起找到半页守则', createdAt: NOW },
+      { relationId: 'r1', chapter: 5, kind: 'points', delta: 2, evidence: '在二层梦边缘接住赵启明', createdAt: NOW },
+    ],
+  }],
+  characters: [{
+    cardId: 'c1', ref: '#1', name: '赵启明', plot: { identity: '见习监护员', voice: '短句；紧张时重复别人的话' },
+    history: [{ cardId: 'c1', chapter: 7, source: 'user', kind: 'change', changes: [{ field: 'voice', op: '→', value: '短句；紧张时重复别人的话', from: '短句' }], createdAt: '' }],
+    appearances: [{ chapter: 3, pov: true, planned: false, experiences: ['发现半页守则'] }],
+  }],
+  world: [],
+}
+
+function storyLogRemote() {
+  return { storyLog: vi.fn(() => ok(STORY_LOG)), starForeshadow: vi.fn(() => ok({ ok: true })) } as unknown as NovelRemote & {
+    storyLog: ReturnType<typeof vi.fn>
+    starForeshadow: ReturnType<typeof vi.fn>
+  }
+}
+
+describe('StoryLogPage', () => {
+  const page = (remote: NovelRemote, genre: string | null = NOVEL_GENRE_ID, sessionId: SessionId | null = SESSION) =>
+    ({ ...props(remote, genre, sessionId), page: STORY_LOG_PAGE })
+
+  it('renders nothing on a canvas of another genre, and never reads', () => {
+    const remote = storyLogRemote()
+    const { container } = render(<StoryLogPage {...page(remote, null)} />)
+    expect(container.innerHTML).toBe('')
+    expect(remote.storyLog).not.toHaveBeenCalled()
+  })
+
+  it('lists the open foreshadows by default, the sleeper in red, and opens the first one beside the table', async () => {
+    render(<StoryLogPage {...page(storyLogRemote())} />)
+    expect(await screen.findByRole('heading', { name: '门缝里的东西' })).toBeTruthy()
+    expect(screen.queryByText('钟楼为什么没有影子')).toBeNull()
+    expect(screen.getAllByText('6 章未动').length).toBeGreaterThan(0)
+    expect(screen.getByText('已经 6 章没有动它（当前第 7 章）')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '全部' }))
+    expect(screen.getByText('第 4 章揭晓')).toBeTruthy()
+  })
+
+  it('stars a foreshadow through the Remote and refreshes; read-only without a session', async () => {
+    const remote = storyLogRemote()
+    const p = page(remote)
+    render(<StoryLogPage {...p} />)
+    const [star] = await screen.findAllByRole('button', { name: '☆' })
+    fireEvent.click(star!)
+    await waitFor(() => { expect(p.navigate.refresh).toHaveBeenCalled() })
+    expect(remote.starForeshadow).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, cardId: 'f12', starred: true })
+    cleanup()
+    render(<StoryLogPage {...page(storyLogRemote(), NOVEL_GENRE_ID, null)} />)
+    for (const button of await screen.findAllByRole('button', { name: '☆' })) expect((button as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('a relation mark opens its 变化过程; a character shows 现状 with where each value came from', async () => {
+    const p = page(storyLogRemote())
+    render(<StoryLogPage {...p} />)
+    fireEvent.click(await screen.findByRole('button', { name: /第 3 章 · 升到合作/ }))
+    expect(screen.getByRole('heading', { name: '赵启明 — 艾文' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /变化过程/ }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('原文「两人一起找到半页守则」')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('赵启明'))
+    fireEvent.click(screen.getByRole('tab', { name: '现状' }))
+    expect(screen.getByText('你改的 · 第 7 章前后')).toBeTruthy()
+    expect(screen.getByText('艾文 · 同盟 · 合作')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '在卡板打开人物卡 →' }))
+    expect(p.navigate.openCard).toHaveBeenCalledWith('c1', '赵启明')
   })
 })

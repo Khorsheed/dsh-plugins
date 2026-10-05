@@ -9,8 +9,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
-import { manuscriptParagraphs, NovelService, resolveNovelStateRoot } from '../src/store.ts'
-import { chapterFileName, chapterNumberOfFile, effectiveChapterPhase } from '../src/types.ts'
+import { manuscriptParagraphs, NovelService, resolveNovelStateRoot, sleepCounter } from '../src/store.ts'
+import { chapterFileName, chapterNumberOfFile, deriveForeshadowState, effectiveChapterPhase, isOverdue, type ChapterRecord } from '../src/types.ts'
 import { FakeCanvas, provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { CARD, DREAM, seedDreamKeeper } from './seed-dream.ts'
@@ -37,6 +37,15 @@ function freshWork(canvas: FakeCanvas, title: string, id = 'canvas_fresh0001'): 
 }
 
 describe('the novel store', () => {
+  it('derives a foreshadow\'s state from its mentions; 已放弃 and an unplanted 未埋 are the hand-set ones', () => {
+    expect(deriveForeshadowState('未埋', undefined, [])).toBe('未埋')
+    expect(deriveForeshadowState('未埋', 3, [])).toBe('已埋')
+    expect(deriveForeshadowState('已揭晓', 1, [])).toBe('已埋')
+    expect(deriveForeshadowState('已埋', 1, ['hinted'])).toBe('推进中')
+    expect(deriveForeshadowState('已埋', 1, ['resolved', 'advanced'])).toBe('已揭晓')
+    expect(deriveForeshadowState('已放弃', 1, ['resolved'])).toBe('已放弃')
+  })
+
   it('resolves the state root the datasets/canvas way (explicit → $DSH_HOME/state/novel → cwd)', () => {
     expect(resolveNovelStateRoot('/x')).toBe('/x')
     const home = process.env.DSH_HOME
@@ -153,6 +162,30 @@ describe('the novel store', () => {
     expect(named.data?.canonRules.find(view => view.ref === 'w19')?.text).toBe('钟楼（地点）：钟楼是两层梦的接缝。')
   })
 
+  it('the user\'s ★ and 此刻 edit land in the sidecar; the wrong kind of card is refused', async () => {
+    const fs = new FakeFs()
+    seedDreamKeeper(fs)
+    const ctx = new Context()
+    ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
+    const starredOf = async (cardId: string): Promise<boolean | undefined> =>
+      (await store.readEntries(DREAM.workId))?.foreshadows.find(view => view.cardId === cardId)?.starred
+    expect(await store.starForeshadow({ workId: DREAM.workId, cardId: CARD.doorGap, starred: true }, SESSION)).toEqual({ ok: true })
+    expect(await starredOf(CARD.doorGap)).toBe(true)
+    // Starred sorts first in the ledger, ahead of a longer sleeper.
+    const ledger = await store.ledger({ workId: DREAM.workId })
+    expect(ledger.active.slice(0, 2).map(view => view.cardId).sort()).toEqual([CARD.doorGap, CARD.formerKeeper].sort())
+    expect(await store.starForeshadow({ workId: DREAM.workId, cardId: CARD.doorGap, starred: false }, SESSION)).toEqual({ ok: true })
+    expect(await starredOf(CARD.doorGap)).toBe(false)
+    expect((await store.starForeshadow({ workId: DREAM.workId, cardId: CARD.zhao, starred: true }, SESSION)).error).toBe('invalid-name')
+
+    expect(await store.setCurrentState({ workId: DREAM.workId, cardId: CARD.zhao, state: { where: ' 门后第一层 ', state: '', concern: '妹妹' } }, SESSION)).toEqual({ ok: true })
+    const zhao = (await store.readEntries(DREAM.workId))?.characters.find(view => view.cardId === CARD.zhao)
+    expect(zhao?.currentState).toEqual({ where: '门后第一层', concern: '妹妹' })
+    expect((await store.setCurrentState({ workId: DREAM.workId, cardId: CARD.doorGap, state: {} }, SESSION)).error).toBe('invalid-name')
+  })
+
   it('reads the ledger off the seed (沉睡优先, health counts)', async () => {
     const fs = new FakeFs()
     seedDreamKeeper(fs)
@@ -161,9 +194,26 @@ describe('the novel store', () => {
     provideCanvas(ctx)
     const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
     const ledger = await store.ledger({ workId: DREAM.workId })
-    expect(ledger.counts).toEqual({ active: 3, overdue: 3, resolved: 1, abandoned: 0 })
+    // Five reconciled chapters: the starred #18 (planted ch1) slept 4 — past its 4-chapter
+    // threshold; #15 (last ch2) slept 3 and #12 (last ch3) slept 2 stay under the normal 6.
+    expect(ledger.counts).toEqual({ active: 3, overdue: 1, resolved: 1, abandoned: 0 })
     expect(ledger.currentChapter).toBe(6)
-    expect(ledger.active.map(view => view.cardId)).toEqual([CARD.formerKeeper, CARD.leafGlow, CARD.doorGap])
+    expect(ledger.active.map(view => [view.cardId, view.slept, view.starred])).toEqual([
+      [CARD.formerKeeper, 4, true], [CARD.leafGlow, 3, false], [CARD.doorGap, 2, false],
+    ])
+  })
+
+  it('counts sleep by reading order over reconciled chapters only', () => {
+    const row = (n: number, seq: number, phase: ChapterRecord['phase']): ChapterRecord =>
+      ({ n, seq, title: '', file: '', phase, sessionIds: [], createdAt: '', updatedAt: '' })
+    // Chapter 4 was inserted between 1 and 2 (seq 1.5); chapter 5 is still being planned.
+    const slept = sleepCounter([row(1, 1, 'extracted'), row(2, 2, 'reviewed'), row(3, 3, 'extracted'), row(4, 1.5, 'extracted'), row(5, 4, 'planning')])
+    expect(slept(1)).toBe(3)
+    expect(slept(4)).toBe(2)
+    expect(slept(3)).toBe(0)
+    expect(isOverdue({ slept: 4, starred: true })).toBe(true)
+    expect(isOverdue({ slept: 5 })).toBe(false)
+    expect(isOverdue({ slept: 6 })).toBe(true)
   })
 
   it('appends to the JSONL journals without rewriting history (bad lines drop out of the view only)', async () => {
@@ -219,7 +269,7 @@ describe('the novel store', () => {
     const { store, fs, canvas } = confiningStore()
     const workId = freshWork(canvas, '落盘')
     // content given: the body lands at <workspace>/<title>/第1章.md and the chapter registers.
-    const written = await store.writeChapter({ workId, title: '第一章', content: '开头三段。\n' }, SESSION)
+    const written = await store.writeChapter({ workId, title: '第一章', byUser: true, content: '开头三段。\n' }, SESSION)
     expect(written.ok).toBe(true)
     expect(fs.read('/home/user/workspace/落盘/第1章.md')).toBe('开头三段。\n')
     expect(written.chapter).toMatchObject({ n: 1, file: '第1章.md' })
@@ -239,7 +289,7 @@ describe('the novel store', () => {
       resolve: ({ session }: { session: Session }) => ({ mode: 'read-only', workspaceRoot: '/outside', sessionId: String(session.id) }),
     } as never)
     const deniedStore = new NovelService(ctxDenied, { stateRoot: '/dsh/state/novel' })
-    const refused = await deniedStore.writeChapter({ workId: 'canvas_denied0001', title: '第一章', content: '写不进去。' }, SESSION)
+    const refused = await deniedStore.writeChapter({ workId: 'canvas_denied0001', title: '第一章', byUser: true, content: '写不进去。' }, SESSION)
     expect(refused.ok).toBe(false)
     expect(refused.error).toBe('denied')
     expect((await deniedStore.listChapters({ workId: 'canvas_denied0001' })).length).toBe(0)
@@ -252,6 +302,31 @@ describe('the novel store', () => {
     expect(planned.ok).toBe(true)
     const refused = await store.writeChapter({ workId: 'canvas_bare00001', n: 1, title: '第一章', content: '没地方放。' }, SESSION)
     expect(refused).toEqual({ ok: false, error: 'no-workspace' })
+  })
+
+  it('计划门禁: a body lands only in a confirmed plan; a re-plan needs a fresh confirmation; 用户原稿 skips the gate', async () => {
+    const { store, fs, canvas } = confiningStore()
+    const workId = freshWork(canvas, '门禁')
+    const plan = { summary: '赵启明第一次入梦。', beats: [], foreshadowOps: [], cast: [] }
+    // No row yet: a body without a confirmed plan is refused, and nothing is registered.
+    expect(await store.writeChapter({ workId, title: '第一章', content: '抢跑。' }, SESSION)).toEqual({ ok: false, error: 'plan-unconfirmed' })
+    expect(await store.listChapters({ workId })).toHaveLength(0)
+    expect((await store.writeChapter({ workId, title: '第一章', plan }, SESSION)).ok).toBe(true)
+    expect(await store.writeChapter({ workId, n: 1, title: '第一章', content: '还没确认。' }, SESSION)).toEqual({ ok: false, error: 'plan-unconfirmed' })
+    expect((await store.confirmChapterPlan({ workId, n: 1 }, SESSION)).ok).toBe(true)
+    // A changed plan in the same call un-confirms it: refused, the confirmation is gone.
+    const replan = { ...plan, summary: '赵启明第二次入梦。' }
+    expect(await store.writeChapter({ workId, n: 1, title: '第一章', plan: replan, content: '改了计划。' }, SESSION)).toEqual({ ok: false, error: 'plan-unconfirmed' })
+    expect((await store.writeChapter({ workId, n: 1, title: '第一章', plan: replan }, SESSION)).ok).toBe(true)
+    expect((await store.listChapters({ workId }))[0]?.chapter.planConfirmedAt).toBeUndefined()
+    expect((await store.confirmChapterPlan({ workId, n: 1 }, SESSION)).ok).toBe(true)
+    expect((await store.writeChapter({ workId, n: 1, title: '第一章', content: '确认后才写。' }, SESSION)).ok).toBe(true)
+    expect(fs.read('/home/user/workspace/门禁/第1章.md')).toBe('确认后才写。')
+    // 用户原稿: no plan, flagged, and later bodies need no confirmation either.
+    const own = await store.writeChapter({ workId, title: '第二章', byUser: true, content: '我自己写的。' }, SESSION)
+    expect(own.ok).toBe(true)
+    expect(own.chapter).toMatchObject({ n: 2, byUser: true })
+    expect((await store.writeChapter({ workId, n: 2, title: '第二章', content: '我又改了一稿。' }, SESSION)).ok).toBe(true)
   })
 
   it('paragraphs a manuscript written one line per paragraph, and leaves a spaced one alone', () => {
@@ -307,29 +382,31 @@ describe('the novel store', () => {
     expect((await store.confirmChapterPlan({ workId: DREAM.workId, n: 42 }, SESSION)).error).toBe('missing')
   })
 
-  it('a foreshadow exits through its status field: 已揭晓 with an answer, 已放弃', async () => {
+  it('a foreshadow\'s status follows its mentions; only 已放弃 is set by hand', async () => {
     const fs = new FakeFs()
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     provideCanvas(ctx)
     const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
+    // The seed's #9 is 已揭晓 through its chapter-4 resolved mention.
+    const before = await store.gatherBrief({ workId: DREAM.workId })
+    expect(before.data?.resolvedForeshadows.map(view => view.cardId)).toEqual([CARD.towerShadow])
+    // 已揭晓 by hand is refused: a reveal is what a chapter does, not a field.
     const resolved = await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#18', fields: { status: '已揭晓', answer: '是艾文。' } }, SESSION)
-    expect(resolved.ok).toBe(true)
-    // …and the plan brief now prints the reveal (防规划矛盾).
+    expect(resolved.ignored).toEqual(['status'])
     const brief = await store.gatherBrief({ workId: DREAM.workId })
-    expect(brief.data?.resolvedForeshadows.find(view => view.cardId === CARD.formerKeeper)?.answer).toBe('是艾文。')
-    expect(brief.data?.activeForeshadows.some(view => view.cardId === CARD.formerKeeper)).toBe(false)
+    expect(brief.data?.activeForeshadows.some(view => view.cardId === CARD.formerKeeper)).toBe(true)
     // A value outside the select's options is ignored, not written.
     const bogus = await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#15', fields: { status: '搁置' } }, SESSION)
     expect(bogus.ok).toBe(false)
     expect(bogus.ignored).toEqual(['status'])
     await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#15', fields: { status: '已放弃' } }, SESSION)
     const ledger = await store.ledger({ workId: DREAM.workId })
-    expect(ledger.counts).toEqual({ active: 1, overdue: 1, resolved: 2, abandoned: 1 })
+    expect(ledger.counts).toEqual({ active: 2, overdue: 1, resolved: 1, abandoned: 1 })
   })
 
-  it('lists the mention journal for the dot strip, and retracts an automatic experience by id', async () => {
+  it('lists the mention journal for the dot strip, and lands a sure experience plainly', async () => {
     const fs = new FakeFs()
     seedDreamKeeper(fs, { ch5Phase: 'planning' })
     const ctx = new Context()
@@ -338,19 +415,12 @@ describe('the novel store', () => {
     const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
     const before = await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.doorGap })
     expect(before.map(entry => entry.kind)).toEqual(['planted', 'advanced'])
-    // Import lands an automatic experience WITH an id and the 自动 mark…
+    // Import lands a high-confidence experience as a plain journal line.
     await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
       experiences: [{ character_id: 'c1', entry: '推开了门缝', confidence: 'high', evidence_in_text: '指尖碰到门缝的边缘' }],
       recap: 'r',
     } }, SESSION)
     const landed = (await store.listExperiences({ workId: DREAM.workId, characterId: CARD.zhao })).find(entry => entry.chapter === 5 && entry.entry === '推开了门缝')
-    expect(landed).toMatchObject({ id: 'e1', autoImported: true })
-    // …and the retract gesture takes it back, every other line byte-identical.
-    const retracted = await store.retractExperience({ workId: DREAM.workId, id: 'e1' }, SESSION)
-    expect(retracted.ok).toBe(true)
-    expect((await store.listExperiences({ workId: DREAM.workId })).some(entry => entry.id === 'e1')).toBe(false)
-    const raw = fs.read(`${DREAM.stateRoot}/${DREAM.workId}/experiences.jsonl`)
-    expect(raw.trim().split('\n')).toHaveLength(6)
-    expect((await store.retractExperience({ workId: DREAM.workId, id: 'e1' }, SESSION)).error).toBe('missing')
+    expect(landed).toEqual({ characterId: CARD.zhao, chapter: 5, entry: '推开了门缝', createdAt: expect.any(String) })
   })
 })

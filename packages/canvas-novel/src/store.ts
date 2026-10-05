@@ -11,14 +11,14 @@
  * (`putCard` / `proposeCard` / `patchCard`) and never copied. The engine's
  * own state lives under `$DSH_HOME/state/novel/<canvasId>/`: the sidecar
  * (`annotations.json` — per-work refs and the audit notes, keyed by card id),
- * the chapter index, the pending queue and the two journals.
+ * the chapter index, the pending queue and the three journals.
  *
  * That state root is deployment-level state, NOT a session workspace, and the
  * fence reflects that — the canvas store's exact pattern: the CALLING session
  * resolves the MODE (a read-only deployment stays read-only) and lends its id
  * to the write, while the writable boundary re-roots at the plugin's own
  * state dir. Every document write goes through the mounted `ctx.fs` under a
- * version guard (read → apply → replaceIfVersion, one stale retry); the two
+ * version guard (read → apply → replaceIfVersion, one stale retry); the
  * JSONL journals append by guarded read-concat-write, so a lost race retries
  * instead of clobbering (ctx.fs has no append verb; bare node:fs is never
  * used for state).
@@ -38,14 +38,16 @@ import {
   type NovelFieldValue,
 } from './genre.ts'
 import {
-  chapterFileName, cleanNumber, cleanText, effectiveChapterPhase, foreshadowStateOf, linesOf, MENTION_TO_STATE,
-  normalizeAnnotations, normalizeChapter, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
-  OP_TO_MENTION, parseRef, refGroupOf, refOf,
+  chapterFileName, cleanNumber, cleanText, deriveForeshadowState, effectiveChapterPhase, isOverdue, laterForeshadowState, linesOf, MENTION_TO_STATE,
+  normalizeAnnotations, normalizeChapter, normalizeHistoryEntry, PLOT_FIELDS, plotDiff, plotOf, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
+  nextMilestoneOf, normalizeRelationEntry, OP_TO_MENTION, parseRef, PTS_PER_LEVEL, MAX_RELATION_DELTA, readRelationStage,
+  refGroupOf, refOf, relationEventOf, relationMove, typeChangeOf, relationProgress, relationTypeOf, stageNameOf,
   type Annotations, type CardNote, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
-  type CurrentState, type EffectiveChapterPhase, type EntryRole, type ExperienceEntry, type ExtractPayload,
+  type CurrentState, type EffectiveChapterPhase, type HistoryChange, type HistoryEntry, type HistorySource, type EntryRole, type ExperienceEntry, type ExtractPayload,
   type ForeshadowView, type ImportDrop, type ImportReport, type LedgerResult, type MentionEntry, type NovelError,
-  type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type RuleView,
-  type WorkMeta, type WriteChapterRequest,
+  type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type RefGroup, type RelationEntry, type RelationEvent,
+  type RelationType, type RelationView, type RuleView, type StoryAppearance, type StoryCard, type StoryCharacter, type StoryForeshadow,
+  type StoryLogResult, type StoryRelation, type WorkMeta, type WriteChapterRequest,
 } from './types.ts'
 
 /** The state directory name under `$DSH_HOME/state`. */
@@ -56,6 +58,8 @@ export const WORK_FILES = {
   annotations: 'annotations.json',
   experiences: 'experiences.jsonl',
   mentions: 'mentions.jsonl',
+  relations: 'relations.jsonl',
+  history: 'history.jsonl',
   chapters: 'chapters.json',
   pending: 'pending.json',
 } as const
@@ -116,6 +120,7 @@ export const MAIN_FIELD: Readonly<Record<EntryRole, string>> = {
   world: 'rule',
   principle: 'principle',
   foreshadow: 'question',
+  relation: 'name',
 }
 
 const ENTRY_ROLES = Object.values(NOVEL_ROLES) as EntryRole[]
@@ -193,10 +198,14 @@ export function manuscriptParagraphs(content: string): string {
   return paragraphs.length <= 1 ? content : `${paragraphs.join('\n\n')}\n`
 }
 
+/** The foreshadow states a write may set: the rest come from the mention journal. */
+const HAND_SET_FORESHADOW_STATES: ReadonlySet<string> = new Set(['未埋', '已埋', '已放弃'])
+
 /**
  * Check agent-sent fields against the genre's seeded card type for a role:
  * known keys only, select values from their options, numbers as numbers,
- * lists joined one item per line (一行一件).
+ * lists joined one item per line (一行一件). A foreshadow's status takes only
+ * the hand-set states — 推进中 and 已揭晓 follow from what the chapters do.
  * @returns the accepted fields and the keys that were ignored.
  */
 export function cleanFields(role: EntryRole, raw: unknown): { readonly fields: Record<string, NovelFieldValue>; readonly ignored: string[] } {
@@ -216,8 +225,17 @@ export function cleanFields(role: EntryRole, raw: unknown): { readonly fields: R
       else fields[key] = n
       continue
     }
+    if (def.type === 'ref') {
+      // Card handles (ids, refs or names), resolved by the caller against the work's cards.
+      const tokens = (Array.isArray(value) ? value : [value])
+        .map(token => cleanText(typeof token === 'number' ? String(token) : token, 80))
+        .filter((token): token is string => token !== undefined)
+      if (tokens.length === 0) ignored.push(key)
+      else fields[key] = tokens
+      continue
+    }
     const text = Array.isArray(value) ? cleanText(value.map(String).join('\n')) : cleanText(typeof value === 'number' ? String(value) : value)
-    if (text === undefined || (def.options !== undefined && !def.options.includes(text))) {
+    if (text === undefined || (def.options !== undefined && !def.options.includes(text)) || (role === 'foreshadow' && key === 'status' && !HAND_SET_FORESHADOW_STATES.has(text))) {
       ignored.push(key)
       continue
     }
@@ -238,8 +256,21 @@ export interface WorkEntries {
   readonly rules: readonly RuleView[]
   readonly foreshadows: readonly ForeshadowView[]
   readonly characters: readonly CharacterView[]
+  readonly relations: readonly RelationView[]
   /** The newest chapter number — the sleeping baseline. */
   readonly currentChapter: number
+}
+
+/**
+ * One card a gesture wrote, for the change history: on whose behalf, which
+ * plot fields (all, when absent), at which chapter (the current one, when
+ * absent), on what words.
+ */
+export interface CardWrite {
+  readonly source: HistorySource
+  readonly fields?: readonly string[]
+  readonly chapter?: number
+  readonly evidence?: string
 }
 
 /** A resolved card: its id and role. */
@@ -548,29 +579,41 @@ export class NovelService {
    * One work's cards in the four role categories, as views: the main text off
    * its field, the ref off the sidecar (the card id until one is allocated),
    * a foreshadow's activity off the mention journal, a character's 当前态 off
-   * the sidecar note.
+   * the sidecar note, a relation's progress off the relation journal.
    * @param workId - the canvas id.
    * @returns the entries, or undefined when the canvas is no novel work.
    */
   async readEntries(workId: string): Promise<WorkEntries | undefined> {
     const board = await this.readNovelBoard(workId)
     if (board === undefined) return undefined
-    const [annotations, mentions, chapters] = await Promise.all([
+    const [annotations, mentions, chapters, relationJournal] = await Promise.all([
       this.readAnnotations(board.id), this.listMentions({ workId: board.id }), this.readChapters(board.id),
+      this.listRelationJournal({ workId: board.id }),
     ])
-    return entriesOf(board, annotations, mentions, chapters)
+    return entriesOf(board, annotations, mentions, chapters, relationJournal)
   }
 
   /**
-   * Give every role card on the board a display ref, and merge engine notes
-   * in, in one guarded sidecar write. A card keeps the number it has unless
-   * another card in its numbering space holds it already (first in board
-   * order wins); a card without one draws max+1. Nothing is written when
-   * nothing changes, so reads may call this freely.
+   * Give every role card on the board a display ref, merge engine notes in,
+   * and log what moved on the plot fields — one guarded sidecar write. A card
+   * keeps the number it has unless another card in its numbering space holds
+   * it already (first in board order wins); a card without one draws max+1.
+   *
+   * The change history rides the same pass: each character, world and
+   * relation card's plot fields ({@link plotOf}) diff against the snapshot
+   * the sidecar kept; the moves in fields a `writes` entry names go to that
+   * write's source and chapter, every other move is the person's own canvas
+   * edit (你改的, at the current chapter). Character and world moves land in
+   * `history.jsonl`; a relation's own record is its journal, so the person's
+   * edit of its type or stage appends a `type` / `set` line there (the bar
+   * restarts) and our writes journal themselves. The first pass on a work
+   * only takes the snapshot. Nothing is written when nothing changes, so
+   * reads may call this freely.
    * @param workId - the canvas id.
    * @param session - the session that owns the gesture; supplies the fence.
    * @param board - the board as just returned by a card mutation, or undefined to read it.
    * @param notes - per-card note fields to merge (later fields win).
+   * @param writes - the cards this gesture wrote, and on whose behalf.
    * @returns the fresh sidecar, or the failure code.
    */
   async ensureRefs(
@@ -578,14 +621,19 @@ export class NovelService {
     session: Session,
     board?: NovelBoardView,
     notes: ReadonlyMap<string, CardNote> = new Map(),
+    writes: ReadonlyMap<string, CardWrite> = new Map(),
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly annotations?: Annotations }> {
     const current = board ?? await this.readNovelBoard(workId)
     if (current === undefined) return { ok: false, error: 'missing' }
     const roleOf = rolesOn(current)
+    const currentChapter = (await this.readChapters(current.id)).reduce((max, chapter) => Math.max(max, chapter.n), 0)
+    let historyLines: HistoryEntry[] = []
+    let relationLines: Record<string, unknown>[] = []
     const apply = (data: Annotations): Annotations | undefined => {
-      const used: Record<'character' | 'entry', Set<number>> = { character: new Set(), entry: new Set() }
+      const now = new Date().toISOString()
+      const used: Record<RefGroup, Set<number>> = { character: new Set(), relation: new Set(), entry: new Set() }
       const refs: Record<string, number> = { ...data.refs }
-      const waiting: { cardId: string; group: 'character' | 'entry' }[] = []
+      const waiting: { cardId: string; group: RefGroup }[] = []
       let changed = false
       for (const card of current.cards) {
         const role = roleOf.get(card.id)
@@ -606,7 +654,35 @@ export class NovelService {
         merged[cardId] = { ...merged[cardId], ...note }
         changed = true
       }
-      return changed ? { version: 1, refs, notes: merged } : undefined
+      historyLines = []
+      relationLines = []
+      for (const card of current.cards) {
+        const role = roleOf.get(card.id)
+        if (role === undefined || PLOT_FIELDS[role] === undefined) continue
+        const after = plotOf(role, card.fields, merged[card.id]?.currentState)
+        const before = merged[card.id]?.plot
+        if (before !== undefined && JSON.stringify(before) === JSON.stringify(after)) continue
+        merged[card.id] = { ...merged[card.id], plot: after }
+        changed = true
+        if (data.historySince === undefined) continue
+        const write = writes.get(card.id)
+        if (role === 'relation') {
+          if (write !== undefined) continue
+          relationLines.push(...relationEditLines(card.id, before, after, currentChapter))
+          continue
+        }
+        const line = (source: HistorySource, changes: HistoryChange[], at: CardWrite | undefined): HistoryEntry => ({
+          cardId: card.id, chapter: at?.chapter ?? currentChapter, source, kind: before === undefined ? 'create' : 'change', changes,
+          ...(at?.evidence === undefined ? {} : { evidence: at.evidence }), createdAt: now,
+        })
+        const changes = plotDiff(role, before ?? {}, after)
+        const ours = changes.filter(change => write !== undefined && (write.fields === undefined || write.fields.includes(change.field)))
+        const theirs = changes.filter(change => !ours.includes(change))
+        if (ours.length > 0) historyLines.push(line(write!.source, ours, write))
+        if (theirs.length > 0) historyLines.push(line('user', theirs, undefined))
+      }
+      if (data.historySince === undefined) changed = true
+      return changed ? { version: 1, refs, notes: merged, historySince: data.historySince ?? now } : undefined
     }
     const snapshot = await this.readAnnotations(current.id)
     if (apply(snapshot) === undefined) return { ok: true, annotations: snapshot }
@@ -615,12 +691,16 @@ export class NovelService {
       normalizeAnnotations, emptyAnnotations,
       data => apply(data) ?? data,
     )
-    return outcome.ok ? { ok: true, annotations: outcome.data } : { ok: false, error: outcome.error }
+    if (!outcome.ok) return { ok: false, error: outcome.error }
+    const logged = await this.appendJsonl(await this.fileTarget(current.id, WORK_FILES.history), session, historyLines as unknown as Record<string, unknown>[])
+    if (!logged.ok) return { ok: false, error: logged.error ?? 'io' }
+    const journaled = await this.appendJsonl(await this.fileTarget(current.id, WORK_FILES.relations), session, relationLines)
+    return journaled.ok ? { ok: true, annotations: outcome.data } : { ok: false, error: journaled.error ?? 'io' }
   }
 
   /**
    * Find one card from any handle the model or a plan may send: an exact
-   * card id, a ref (`c3`, `#12`, `w12`), a bare number (its numbering space
+   * card id, a ref (`c3`, `r2`, `#12`, `w12`), a bare number (its numbering space
    * picked by the role hint), or — characters — an exact name.
    * @param entries - the work's entries.
    * @param token - the handle.
@@ -654,7 +734,8 @@ export class NovelService {
    * card whose name a live card already has is refused as `duplicate`, naming
    * that card; with an id it merges the given fields into that
    * card (absent fields keep). Fields are checked against the genre's card
-   * type; unknown keys are ignored and reported back.
+   * type; unknown keys are ignored and reported back. A relation card goes
+   * through {@link NovelService.writeRelation}.
    * @param request - work id, role, optional card handle, fields, optional comment.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the card's id and ref, or the failure code.
@@ -667,6 +748,7 @@ export class NovelService {
     const entries = await this.readEntries(request.workId)
     if (canvas === undefined || entries === undefined) return { ok: false, error: 'missing' }
     const { fields, ignored } = cleanFields(request.role, request.fields)
+    if (request.role === 'relation') return this.writeRelation(entries, request, fields, ignored, session)
     let mutation: NovelBoardMutation
     let cardId: string
     if (request.id !== undefined) {
@@ -690,9 +772,101 @@ export class NovelService {
       cardId = mutation.board.cards[mutation.board.cards.length - 1]!.id
     }
     if (!mutation.ok) return { ok: false, error: canvasErrorOf(mutation.error) }
-    const refs = await this.ensureRefs(entries.board.id, session, mutation.board)
+    const write: CardWrite = request.id === undefined ? { source: 'model' } : { source: 'model', fields: Object.keys(fields) }
+    const refs = await this.ensureRefs(entries.board.id, session, mutation.board, new Map(), new Map([[cardId, write]]))
     const n = refs.annotations?.refs[cardId]
     return { ok: true, cardId, ref: n === undefined ? cardId : refOf(request.role, n), ignored }
+  }
+
+  /**
+   * writeCard for a relation card. 双方 resolves to two distinct characters
+   * (without it, the name `甲 × 乙` is read against the roster), the name
+   * follows the pair when none is given, the stage reads against the type —
+   * a level's name or number, 裂痕 or 决裂; a new card starts at the first
+   * level, a new type keeps the level unless the pair moves into or out of
+   * 对手 (then the first level) — and one pair holds one card. The relation
+   * journal records the start, and any stage or type the write moves (the
+   * pair's progress restarts).
+   */
+  private async writeRelation(
+    entries: WorkEntries,
+    request: { readonly id?: string; readonly comment?: string },
+    fields: Record<string, NovelFieldValue>,
+    ignored: string[],
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string; readonly ref?: string; readonly ignored?: readonly string[] }> {
+    const canvas = this.canvas!
+    const handle = request.id === undefined ? undefined : this.resolveCard(entries, request.id, 'relation')
+    if (request.id !== undefined && handle?.role !== 'relation') return { ok: false, error: 'missing' }
+    const before = handle === undefined ? undefined : entries.relations.find(view => view.cardId === handle.cardId)
+    const card = handle === undefined ? undefined : entries.board.cards.find(candidate => candidate.id === handle.cardId)
+    if (before !== undefined && Object.keys(fields).length === 0) return { ok: false, error: 'invalid-name', ignored }
+    const living = entries.characters.filter(view => view.cardStatus !== 'archived')
+    const givenName = typeof fields['name'] === 'string' ? fields['name'] : undefined
+    let pair: readonly string[]
+    if (Array.isArray(fields['pair'])) {
+      const ids = fields['pair'].map(token => this.resolveCard(entries, token, 'character'))
+      pair = ids.every(id => id?.role === 'character') ? [...new Set(ids.map(id => id!.cardId))] : []
+    } else {
+      pair = before !== undefined && before.pair.length === 2 ? before.pair : pairFromName(living, givenName ?? before?.name)
+    }
+    const type = relationTypeOf(fields['type']) ?? before?.type
+    if (pair.length !== 2 || type === undefined) return { ok: false, error: 'invalid-name', ignored }
+    const twin = entries.relations.find(view => view.cardId !== before?.cardId && view.cardStatus !== 'archived' && samePair(view.pair, pair))
+    if (twin !== undefined) return { ok: false, error: 'duplicate', cardId: twin.cardId, ref: twin.ref, ignored }
+
+    // The stage: what the write names, else the level the card stood at (restarted when the type change calls for it).
+    let level = before?.level
+    let rift = before?.rift
+    if (before !== undefined && type !== before.type && typeChangeOf(before.type, type, before.rift) !== 'keep') level = 1
+    if (fields['stage'] !== undefined) {
+      const read = readRelationStage(type, fields['stage'])
+      if (read.level === undefined && read.rift === undefined) ignored.push('stage')
+      else {
+        level = read.level ?? level
+        rift = read.rift
+      }
+    }
+    const stage = rift ?? stageNameOf(type, level ?? 1)
+    const names = pair.map(id => entries.characters.find(view => view.cardId === id)?.name ?? id)
+    const next: Record<string, NovelFieldValue> = {
+      ...card?.fields, ...fields,
+      name: givenName ?? before?.name ?? `${names[0]} × ${names[1]}`,
+      pair: [...pair], type, stage,
+    }
+    const event: RelationEvent | undefined = before === undefined ? 'start'
+      : type !== before.type ? 'type'
+        : stage === before.stage ? undefined
+          : rift === '裂痕' ? 'crack' : rift === '决裂' ? 'break' : before.rift !== undefined ? 'fix' : 'set'
+
+    let mutation: NovelBoardMutation
+    let cardId: string
+    if (card !== undefined) {
+      cardId = card.id
+      mutation = await canvas.patchCard({ canvasId: entries.board.id, cardId, fields: next }, session)
+    } else {
+      const category = categoryOf(entries.board, 'relation')
+      if (category === undefined) return { ok: false, error: 'invalid-name', ignored }
+      const comment = cleanText(request.comment, 500)
+      mutation = await canvas.proposeCard({
+        canvasId: entries.board.id, kind: category, text: '', fields: next, live: true,
+        ...(comment === undefined ? {} : { comment }),
+      }, session)
+      if (!mutation.ok) return { ok: false, error: canvasErrorOf(mutation.error) }
+      cardId = mutation.board.cards[mutation.board.cards.length - 1]!.id
+    }
+    if (!mutation.ok) return { ok: false, error: canvasErrorOf(mutation.error) }
+    if (event !== undefined) {
+      const appended = await this.appendJsonl(await this.fileTarget(entries.board.id, WORK_FILES.relations), session, [stageLine({
+        relationId: cardId, chapter: entries.currentChapter, event, stage,
+        ...(rift === undefined ? { level: level ?? 1 } : {}),
+        ...(event === 'type' ? { fromType: before!.type, toType: type } : {}),
+      })])
+      if (!appended.ok) return { ok: false, error: appended.error ?? 'io' }
+    }
+    const refs = await this.ensureRefs(entries.board.id, session, mutation.board, new Map(), new Map([[cardId, { source: 'model' }]]))
+    const n = refs.annotations?.refs[cardId]
+    return { ok: true, cardId, ref: n === undefined ? cardId : refOf('relation', n), ignored }
   }
 
   /**
@@ -727,76 +901,28 @@ export class NovelService {
     return entries.filter(entry => request.characterId === undefined || entry.characterId === request.characterId)
   }
 
-  /**
-   * Take one automatic experience back (自动·可撤销, invariant 3): the line
-   * leaves the journal. The journal is append-only for the SYSTEM; the user's
-   * retract gesture is the one sanctioned exception, and it rides the same
-   * guarded rewrite the appends use, keeping every other line byte-identical.
-   * A line without an id cannot be retracted by handle — the user edits the
-   * journal by hand for those.
-   * @param request - work id and the entry id (`e<n>`).
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the receipt, or the failure code.
-   */
-  async retractExperience(
-    request: { readonly workId: string; readonly id: string },
-    session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
-    const workId = normalizeWorkId(request.workId)
-    if (workId === undefined || !/^e\d+$/.test(request.id)) return { ok: false, error: 'invalid-name' }
-    const target = await this.fileTarget(workId, WORK_FILES.experiences)
-    const policy = this.policyOf(session)
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      let text: string
-      let version: string
-      try {
-        const info = await this.fs.stat(target)
-        if (info === undefined) return { ok: false, error: 'missing' }
-        text = await this.fs.readText(target)
-        version = info.version
-      } catch (error) {
-        return { ok: false, error: novelErrorOf(error) }
-      }
-      const lines = text.split('\n')
-      const kept: string[] = []
-      let found = false
-      for (const line of lines) {
-        if (line.trim() === '') continue
-        try {
-          const row = JSON.parse(line) as Record<string, unknown>
-          if (row['id'] === request.id) {
-            found = true
-            continue
-          }
-        } catch {
-          // A corrupt line is not the retract target; it is kept verbatim.
-        }
-        kept.push(line)
-      }
-      if (!found) return { ok: false, error: 'missing' }
-      try {
-        await this.fs.writeText(
-          target, kept.length === 0 ? '' : `${kept.join('\n')}\n`,
-          { kind: 'replaceIfVersion', version: FsVersion(version) },
-          undefined, policy,
-        )
-        return { ok: true }
-      } catch (error) {
-        const code = novelErrorOf(error)
-        if (code === 'stale' && attempt === 0) continue
-        return { ok: false, error: code }
-      }
-    }
-    /* v8 ignore next -- the loop's second iteration always returns */
-    return { ok: false, error: 'stale' }
-  }
-
   /** The mention journal (a foreshadow card's chapter track), optionally one card's, oldest first. */
   async listMentions(request: { readonly workId: string; readonly foreshadowId?: string }): Promise<MentionEntry[]> {
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.mentions), raw => normalizeMention(raw))
     return entries.filter(entry => request.foreshadowId === undefined || entry.foreshadowId === request.foreshadowId)
+  }
+
+  /** The relation journal (a relation card's points and stage events), optionally one card's, oldest first. */
+  async listRelationJournal(request: { readonly workId: string; readonly relationId?: string }): Promise<RelationEntry[]> {
+    const id = normalizeWorkId(request.workId)
+    if (id === undefined) return []
+    const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.relations), raw => normalizeRelationEntry(raw))
+    return entries.filter(entry => request.relationId === undefined || entry.relationId === request.relationId)
+  }
+
+  /** The card change history (plot fields of characters and world cards), optionally one card's, oldest first. */
+  async listHistory(request: { readonly workId: string; readonly cardId?: string }): Promise<HistoryEntry[]> {
+    const id = normalizeWorkId(request.workId)
+    if (id === undefined) return []
+    const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.history), raw => normalizeHistoryEntry(raw))
+    return entries.filter(entry => request.cardId === undefined || entry.cardId === request.cardId)
   }
 
   /* ------------------------------------------------------------- chapters */
@@ -916,13 +1042,26 @@ export class NovelService {
     const content = typeof request.content === 'string' && request.content.trim().length > 0
       ? manuscriptParagraphs(request.content.slice(0, 2_000_000))
       : undefined
+    const byUser = request.byUser === true
+
+    // 计划门禁: the model writes a body only into a chapter whose plan the user
+    // confirmed; the user's own text (用户原稿) needs no plan. Checked before
+    // the body lands, so a refused write leaves the workspace untouched.
+    const workspace = meta.workspace
+    if (content !== undefined && workspace === undefined) return { ok: false, error: 'no-workspace' }
+    if (content !== undefined && !byUser) {
+      const row = request.n === undefined ? undefined : (await this.readChapters(workId)).find(candidate => candidate.n === request.n)
+      if (request.n !== undefined && row === undefined) return { ok: false, error: 'missing' }
+      const replanned = plan !== undefined && row?.plan !== undefined && JSON.stringify(plan) !== JSON.stringify(row.plan)
+      if (row === undefined || (row.byUser !== true && (row.planConfirmedAt === undefined || replanned))) {
+        return { ok: false, error: 'plan-unconfirmed' }
+      }
+    }
 
     // The body lands before the registration (F1-2): a write that the fence
     // refuses means NO chapter row — the 空槽登记 bug class is closed by
     // construction.
-    if (content !== undefined) {
-      const workspace = meta.workspace
-      if (workspace === undefined) return { ok: false, error: 'no-workspace' }
+    if (content !== undefined && workspace !== undefined) {
       const chapters = await this.readChapters(workId)
       const n = request.n ?? chapters.reduce((max, row) => Math.max(max, row.n), 0) + 1
       const target = await this.fs.resolve(join(workspace, meta.title, chapterFileName(n)))
@@ -959,11 +1098,14 @@ export class NovelService {
           if (row === undefined) return 'missing'
           const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
           mutable.title = title
-          if (plan !== undefined) {
+          if (plan !== undefined && JSON.stringify(plan) !== JSON.stringify(row.plan)) {
             mutable.plan = plan
-            // The delivery indexes the old plan's rows; a new plan has none yet.
+            // The delivery indexes the old plan's rows; a new plan has none
+            // yet — and the user has not confirmed it.
             delete mutable.delivery
+            delete mutable.planConfirmedAt
           }
+          if (byUser) mutable.byUser = true
           mutable.updatedAt = now
           const sessionId = String(session.id)
           if (!row.sessionIds.includes(sessionId)) (mutable.sessionIds as string[]).push(sessionId)
@@ -981,6 +1123,7 @@ export class NovelService {
           createdAt: now,
           updatedAt: now,
           ...(plan === undefined ? {} : { plan }),
+          ...(byUser ? { byUser: true as const } : {}),
         }
         table.chapters.push(created)
         chapter = created
@@ -1028,6 +1171,55 @@ export class NovelService {
   }
 
   /**
+   * The user's ★ on a foreshadow card (主线重点). The star is the user's,
+   * never the engine's: it lives in the sidecar, so the card fields stay
+   * what the user typed.
+   * @param request - work id, the foreshadow's card id, and the new star.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns ok, or the failure code.
+   */
+  async starForeshadow(
+    request: { readonly workId: string; readonly cardId: string; readonly starred: boolean },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    const entries = await this.readEntries(request.workId)
+    if (entries === undefined) return { ok: false, error: 'missing' }
+    if (entries.roleOf.get(request.cardId) !== 'foreshadow') return { ok: false, error: 'invalid-name' }
+    const outcome = await this.ensureRefs(request.workId, session, entries.board, new Map([[request.cardId, { starred: request.starred }]]))
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error ?? 'io' }
+  }
+
+  /**
+   * The user's own edit of a character's 此刻 (当前态). The next 对账
+   * overwrites it with what the chapter shows, as it does any 当前态.
+   * @param request - work id, the character's card id, and the whole new state (empty parts clear).
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns ok, or the failure code.
+   */
+  async setCurrentState(
+    request: { readonly workId: string; readonly cardId: string; readonly state: CurrentState },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    const entries = await this.readEntries(request.workId)
+    if (entries === undefined) return { ok: false, error: 'missing' }
+    if (entries.roleOf.get(request.cardId) !== 'character') return { ok: false, error: 'invalid-name' }
+    const clean = (text: string | undefined): string | undefined => {
+      const trimmed = text?.trim().slice(0, 200)
+      return trimmed === undefined || trimmed === '' ? undefined : trimmed
+    }
+    const where = clean(request.state.where)
+    const now = clean(request.state.state)
+    const concern = clean(request.state.concern)
+    const currentState: CurrentState = {
+      ...(where === undefined ? {} : { where }),
+      ...(now === undefined ? {} : { state: now }),
+      ...(concern === undefined ? {} : { concern }),
+    }
+    const outcome = await this.ensureRefs(request.workId, session, entries.board, new Map([[request.cardId, { currentState }]]))
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error ?? 'io' }
+  }
+
+  /**
    * The user's ✓确认计划 gate (规划环的确认闸门): stamps `planConfirmedAt`
    * on a chapter that HAS a plan. Idempotent — a confirmed plan re-answers
    * ok; a chapter with no plan refuses (there is nothing to confirm).
@@ -1068,14 +1260,16 @@ export class NovelService {
   /**
    * The 伏笔沉睡榜 + 健康度 over the kept foreshadow cards: live ones sorted
    * longest-slept first (the maintenance meeting's agenda), resolved ones with
-   * answers, and the health counts (活跃/超期⚠/已揭/弃置). 超期 = 3+ chapters
-   * untouched.
+   * answers, and the health counts (活跃/超期⚠/已揭/弃置). 超期 = slept
+   * past the threshold ({@link isOverdue}: starred 4, otherwise 6). The kept
+   * relations ride along, 可升 first, so a maintenance pass sees the pairs
+   * waiting for their key scene.
    * @param request - the work id.
    * @returns the ledger rows and counts, or the failure code.
    */
   async ledger(request: { readonly workId: string }): Promise<LedgerResult> {
     const entries = await this.readEntries(request.workId)
-    if (entries === undefined) return { ok: false, error: 'missing', active: [], resolved: [], counts: { active: 0, overdue: 0, resolved: 0, abandoned: 0 }, currentChapter: 0 }
+    if (entries === undefined) return { ok: false, error: 'missing', active: [], resolved: [], counts: { active: 0, overdue: 0, resolved: 0, abandoned: 0 }, relations: [], currentChapter: 0 }
     const kept = entries.foreshadows.filter(view => view.cardStatus === 'kept')
     const active = sortBySleep(kept.filter(isLiveForeshadow))
     const resolved = kept.filter(view => view.state === '已揭晓')
@@ -1085,11 +1279,91 @@ export class NovelService {
       resolved,
       counts: {
         active: active.length,
-        overdue: active.filter(view => (view.slept ?? 0) >= 3).length,
+        overdue: active.filter(isOverdue).length,
         resolved: resolved.length,
         abandoned: kept.filter(view => view.state === '已放弃').length,
       },
+      relations: entries.relations.filter(view => view.cardStatus === 'kept').sort((a, b) => Number(b.ready) - Number(a.ready)),
       currentChapter: entries.currentChapter,
+    }
+  }
+
+  /**
+   * The 故事日志: every kept foreshadow, relation, character and world card
+   * laid out over the chapters, for the timeline page. A chapter's marks come
+   * from the journals once the 对账 has run; before that (planning / writing)
+   * only its plan speaks, and those marks come back `planned`. A canvas edit
+   * not yet synced into the history shows as 你改的 at the current chapter —
+   * the page is a read, so it never writes the sync itself.
+   * @param request - the work id.
+   * @returns the chapters and the four bands, or the failure code.
+   */
+  async storyLog(request: { readonly workId: string }): Promise<StoryLogResult> {
+    const empty: StoryLogResult = { ok: false, error: 'missing', chapters: [], foreshadows: [], relations: [], characters: [], world: [] }
+    const entries = await this.readEntries(request.workId)
+    if (entries === undefined) return empty
+    const workId = entries.board.id
+    const [rows, mentions, journal, history, experiences] = await Promise.all([
+      this.listChapters({ workId }), this.listMentions({ workId }), this.listRelationJournal({ workId }),
+      this.listHistory({ workId }), this.listExperiences({ workId }),
+    ])
+    const unsettled = rows.filter(row => row.phase === 'planning' || row.phase === 'writing')
+    const cards = new Map(entries.board.cards.map(card => [card.id, card]))
+    const historyOf = (cardId: string, role: EntryRole, plot: Record<string, string>): HistoryEntry[] => {
+      const own = history.filter(entry => entry.cardId === cardId)
+      const before = entries.annotations.notes[cardId]?.plot
+      if (entries.annotations.historySince === undefined || before === undefined) return own
+      const changes = plotDiff(role, before, plot)
+      if (changes.length === 0) return own
+      return [...own, { cardId, chapter: entries.currentChapter, source: 'user', kind: 'change', changes, createdAt: '' }]
+    }
+
+    const foreshadows = entries.foreshadows.filter(view => view.cardStatus === 'kept').map((view): StoryForeshadow => {
+      const marks: StoryForeshadow['marks'][number][] = mentions
+        .filter(entry => entry.foreshadowId === view.cardId)
+        .map(entry => ({ chapter: entry.chapter, kind: entry.kind, planned: false, ...(entry.note === undefined ? {} : { note: entry.note }) }))
+      for (const row of unsettled) {
+        for (const op of row.chapter.plan?.foreshadowOps ?? []) {
+          const handle = this.resolveCard(entries, op.id, 'foreshadow')
+          if (handle?.cardId !== view.cardId) continue
+          marks.push({ chapter: row.chapter.n, kind: OP_TO_MENTION[op.op], planned: true, ...(op.note === undefined ? {} : { note: op.note }) })
+        }
+      }
+      return { ...view, marks: marks.sort((a, b) => a.chapter - b.chapter) }
+    })
+
+    const nameOf = (cardId: string): string => entries.characters.find(view => view.cardId === cardId)?.name ?? cardId
+    const relations = entries.relations.filter(view => view.cardStatus === 'kept').map((view): StoryRelation => ({
+      ...view, names: view.pair.map(nameOf), journal: journal.filter(entry => entry.relationId === view.cardId),
+    }))
+
+    const characters = entries.characters.filter(view => view.cardStatus === 'kept').map((view): StoryCharacter => {
+      const plot = plotOf('character', cards.get(view.cardId)?.fields, view.currentState)
+      const named = (who: string | undefined): boolean => who !== undefined && (who === view.cardId || who === view.name || who === view.ref)
+      const appearances: StoryAppearance[] = []
+      for (const row of rows) {
+        const plan = row.chapter.plan
+        const cast = plan?.cast.find(member => named(member.who))
+        const pov = named(plan?.pov)
+        const lived = experiences.filter(entry => entry.characterId === view.cardId && entry.chapter === row.chapter.n).map(entry => entry.entry)
+        if (cast === undefined && !pov && lived.length === 0) continue
+        appearances.push({
+          chapter: row.chapter.n, pov, planned: unsettled.includes(row), experiences: lived,
+          ...(cast?.role === undefined ? {} : { role: cast.role }),
+        })
+      }
+      return { cardId: view.cardId, ref: view.ref, name: view.name, plot, history: historyOf(view.cardId, 'character', plot), appearances }
+    })
+
+    const world = entries.rules.filter(view => view.role === 'world' && view.status === 'kept').map((view): StoryCard => {
+      const plot = plotOf('world', cards.get(view.cardId)?.fields)
+      return { cardId: view.cardId, ref: view.ref, name: view.name ?? view.ref, plot, history: historyOf(view.cardId, 'world', plot) }
+    })
+
+    return {
+      ok: true,
+      chapters: rows.map(row => ({ n: row.chapter.n, title: row.chapter.title, phase: row.phase })),
+      foreshadows, relations, characters, world,
     }
   }
 
@@ -1121,6 +1395,7 @@ export class NovelService {
     const rules = entries.rules.filter(view => view.status === 'kept')
     const foreshadows = entries.foreshadows.filter(view => view.cardStatus === 'kept')
     const roster = entries.characters.filter(view => view.cardStatus === 'kept')
+    const relations = entries.relations.filter(view => view.cardStatus === 'kept')
     const inSceneIds = new Set([...(target.plan?.cast ?? []).map(member => member.who), ...(target.plan?.pov === undefined ? [] : [target.plan.pov])])
     const inScene = roster.filter(view => inSceneIds.has(view.cardId) || inSceneIds.has(view.name) || inSceneIds.has(view.ref))
     const previous = chapters.filter(candidate => candidate.seq < target.seq)
@@ -1143,6 +1418,10 @@ export class NovelService {
           recent: experiences.filter(entry => entry.characterId === character.cardId).slice(-3),
         })),
         roster,
+        relations,
+        inSceneRelations: inSceneIds.size === 0
+          ? relations
+          : relations.filter(view => view.pair.length === 2 && view.pair.every(id => inScene.some(character => character.cardId === id))),
         previousRecaps: previous.filter(candidate => candidate.recap !== undefined),
         ...(previousTail === undefined ? {} : { previousTail }),
       },
@@ -1195,11 +1474,11 @@ export class NovelService {
    *   3. new rules, foreshadows and characters land as live cards, marked
    *      new (✦) on the board — the user edits or archives (✗)
    *      what is wrong;
-   *   4. high-confidence journal lines land automatically (an experience line
-   *      marked 自动·可撤销); medium/low ones go to the pending queue;
+   *   4. high-confidence journal lines land automatically; medium/low ones
+   *      go to the pending queue;
    *   5. plan operations verify against the recorded mentions; a planned op
    *      with no touch lands in pending as 计划落空 (「忘了还是改主意」是人答
-   *      的题), and every journal mention carries planned/reconciled flags.
+   *      的题), and every journal mention carries its planned flag.
    *      Plan beats the subagent found (evidence-gated like everything else)
    *      land on the chapter's delivery; a missed beat is a reminder only.
    * @param request - work id, chapter number, the subagent's strict JSON.
@@ -1227,7 +1506,7 @@ export class NovelService {
     const { payload } = request
     const dropped: ImportDrop[] = []
     const report = { verified: 0, missed: 0, beats: { delivered: 0, missed: 0 }, pending: 0 }
-    const toPending: { kind: PendingKind; confidence: 'medium' | 'low'; chapter?: number; reason: string; evidenceInText?: string; payload: PendingPayload }[] = []
+    const toPending: { kind: PendingKind; confidence?: 'medium' | 'low'; chapter?: number; reason: string; evidenceInText?: string; payload: PendingPayload }[] = []
     const pend = (item: (typeof toPending)[number]): void => { toPending.push(item); report.pending += 1 }
     const confidenceOf = (raw: unknown): Confidence => raw === 'high' ? 'high' : raw === 'low' ? 'low' : 'medium'
     const foreshadowOf = new Map(entries.foreshadows.map(view => [view.cardId, view]))
@@ -1263,7 +1542,7 @@ export class NovelService {
       return existing === undefined ? undefined : `已有 ${existing.ref}`
     }
 
-    // World rules and principles: evidence first (gate 1), then a live card carrying its confidence.
+    // World rules and principles: evidence first (gate 1), then a live card quoting its line.
     for (const raw of payload.memories ?? []) {
       const content = cleanText(raw.content)
       if (content === undefined) continue
@@ -1285,11 +1564,9 @@ export class NovelService {
         const kind = cleanText(raw.world_kind, 10)
         if (kind !== undefined && WORLD_KINDS.includes(kind)) fields['kind'] = kind
       }
-      const confidence = confidenceOf(raw.confidence)
-      const note: CardNote = { extractedBy: 'llm', confidence, evidenceInText: evidence!, firstChapter: chapter.n }
       cardWrites.push({
-        role, fields, note,
-        comment: `置信度 ${confidence} · 第${chapter.n}章：「${evidence}」`, ref: String(fields['name'] ?? content.slice(0, 30)),
+        role, fields, note: { evidenceInText: evidence! },
+        comment: `第${chapter.n}章：「${evidence}」`, ref: String(fields['name'] ?? content.slice(0, 30)),
       })
     }
 
@@ -1297,7 +1574,9 @@ export class NovelService {
     const recordedMentions: { id: string; kind: MentionEntry['kind'] }[] = []
     const journalLines: Record<string, unknown>[] = []
     const touch = new Map<string, { readonly kind: MentionEntry['kind']; readonly answer?: string }>()
-    const plannedIds = new Set((chapter.plan?.foreshadowOps ?? []).map(op => asForeshadow(op.id)).filter(Boolean))
+    // 用户原稿 was never planned: nothing to verify, no plan flags on its mentions.
+    const plan = chapter.byUser === true ? undefined : chapter.plan
+    const plannedIds = new Set((plan?.foreshadowOps ?? []).map(op => asForeshadow(op.id)).filter(Boolean))
     for (const raw of payload.foreshadow_mentions ?? []) {
       const kind = cleanText(raw.kind, 20)
       const mentionKind = kind === 'planted' || kind === 'advanced' || kind === 'hinted' || kind === 'resolved' ? kind : undefined
@@ -1321,13 +1600,12 @@ export class NovelService {
         journalLines.push({
           foreshadowId, chapter: chapter.n, kind: mentionKind,
           planned: plannedIds.has(foreshadowId),
-          reconciled: true,
           ...(note === undefined ? {} : { note }),
           createdAt: now,
         } satisfies Record<string, unknown>)
       } else {
         pend({
-          kind: 'mention', confidence, chapter: chapter.n, reason: `疑似提及（置信度 ${confidence}）`,
+          kind: 'mention', confidence, chapter: chapter.n, reason: '疑似提及',
           payload: { foreshadowId, kind: mentionKind, ...(note === undefined ? {} : { note }), ...(answer === undefined ? {} : { answer }) },
           ...(evidence === undefined ? {} : { evidenceInText: evidence }),
         })
@@ -1344,11 +1622,10 @@ export class NovelService {
         dropped.push({ kind: 'new-foreshadow', reason: 'evidence-not-found', ref: question.slice(0, 30) })
         continue
       }
-      const tension = cleanNumber(raw.tension)
       newForeshadows += 1
       cardWrites.push({
         role: 'foreshadow', fields: { question, status: '已埋', plantedAt: chapter.n },
-        note: { extractedBy: 'llm', evidenceInText: evidence!, firstChapter: chapter.n, ...(tension === undefined ? {} : { tension }) },
+        note: { evidenceInText: evidence! },
         comment: `第${chapter.n}章新埋：「${evidence}」`, ref: question.slice(0, 30),
       })
     }
@@ -1366,7 +1643,7 @@ export class NovelService {
       const identity = cleanText(raw.identity, 200)
       cardWrites.push({
         role: 'character', fields: { name, ...(identity === undefined ? {} : { identity }) },
-        note: { extractedBy: 'llm', evidenceInText: evidence!, firstChapter: chapter.n },
+        note: { evidenceInText: evidence! },
         comment: `第${chapter.n}章登场：「${evidence}」`, ref: name,
       })
     }
@@ -1375,7 +1652,7 @@ export class NovelService {
     // A missed op is a question for the person (pending); a missed beat only
     // shows on the chapter's delivery line.
     const opsDelivered: boolean[] = []
-    for (const op of chapter.plan?.foreshadowOps ?? []) {
+    for (const op of plan?.foreshadowOps ?? []) {
       const wanted = OP_TO_MENTION[op.op]
       const opId = op.id === undefined ? undefined : asForeshadow(op.id)
       const touched = opId === undefined ? [] : recordedMentions.filter(mention => mention.id === opId)
@@ -1390,7 +1667,7 @@ export class NovelService {
           ? ` [${foreshadowOf.get(opId)?.ref ?? opId}]`
           : op.id !== undefined ? ` [${op.id}]` : op.question === undefined ? '' : ` [${op.question}]`
         pend({
-          kind: 'plan-missed', confidence: 'medium', chapter: chapter.n,
+          kind: 'plan-missed', chapter: chapter.n,
           reason: `计划落空：${op.op}${label} —— 忘了还是改主意？`,
           payload: { op: op.op, ...(op.id === undefined ? {} : { id: opId ?? op.id }), ...(op.question === undefined ? {} : { question: op.question }) },
         })
@@ -1399,7 +1676,7 @@ export class NovelService {
     const beatsSeen = new Set<number>()
     for (const raw of payload.beats_delivered ?? []) {
       const beat = cleanNumber(raw.beat)
-      if (beat === undefined || !Number.isInteger(beat) || beat < 1 || beat > (chapter.plan?.beats.length ?? 0)) continue
+      if (beat === undefined || !Number.isInteger(beat) || beat < 1 || beat > (plan?.beats.length ?? 0)) continue
       const evidence = cleanText(raw.evidence_in_text, 60)
       if (!evidenceInBody(body, evidence)) {
         dropped.push({ kind: 'beat', reason: 'evidence-not-found', ref: String(beat) })
@@ -1407,12 +1684,13 @@ export class NovelService {
       }
       beatsSeen.add(beat)
     }
-    const beatsDelivered = (chapter.plan?.beats ?? []).map((_beat, index) => beatsSeen.has(index + 1))
+    const beatsDelivered = (plan?.beats ?? []).map((_beat, index) => beatsSeen.has(index + 1))
     report.beats.delivered = beatsDelivered.filter(Boolean).length
     report.beats.missed = beatsDelivered.length - report.beats.delivered
 
     // The writes. Cards first (through the canvas), then the sidecar, the journals, the chapter, the queue.
     const notes = new Map<string, CardNote>()
+    const written = new Map<string, CardWrite>()
     const newCards: { cardId: string; role: EntryRole; text: string }[] = []
     let board = entries.board
     for (const write of cardWrites) {
@@ -1427,6 +1705,7 @@ export class NovelService {
       board = mutation.board
       const cardId = board.cards[board.cards.length - 1]!.id
       notes.set(cardId, write.note)
+      written.set(cardId, { source: 'model', chapter: chapter.n, ...(write.note.evidenceInText === undefined ? {} : { evidence: write.note.evidenceInText }) })
       if (write.role === 'character') {
         newCharacterIds.set(write.ref, cardId)
         roster.add(cardId)
@@ -1435,9 +1714,7 @@ export class NovelService {
     }
     // Experiences + current states: roster-checked, evidence-gated, high lands / medium-low pends.
     // They run after the card writes so a character this import landed is already on the roster.
-    // Automatic experience lines carry an id (the retract gesture's handle) and the 自动·可撤销 mark.
     const experienceLines: Record<string, unknown>[] = []
-    let experienceNext = nextExperienceNumber(await this.listExperiences({ workId: id }))
     const stateUpdates = new Map<string, CurrentState>()
     for (const raw of payload.experiences ?? []) {
       const entry = cleanText(raw.entry, 500)
@@ -1454,11 +1731,10 @@ export class NovelService {
       }
       const confidence = confidenceOf(raw.confidence)
       if (confidence === 'high') {
-        experienceLines.push({ id: `e${experienceNext}`, characterId, chapter: chapter.n, entry, autoImported: true, createdAt: now })
-        experienceNext += 1
+        experienceLines.push({ characterId, chapter: chapter.n, entry, createdAt: now })
       } else {
         pend({
-          kind: 'experience', confidence, chapter: chapter.n, reason: `置信度 ${confidence}`,
+          kind: 'experience', confidence, chapter: chapter.n, reason: '拿不准的经历',
           payload: { characterId, entry },
           ...(evidence === undefined ? {} : { evidenceInText: evidence }),
         })
@@ -1477,18 +1753,176 @@ export class NovelService {
       })
     }
 
+    // 信息差: a planned gap the text closed (evidence-gated) waits for the person — adopting it rewrites 知道/不知道.
+    const gapsSeen = new Set<number>()
+    for (const raw of payload.info_gaps_closed ?? []) {
+      const index = cleanNumber(raw.gap)
+      const gap = index === undefined || !Number.isInteger(index) ? undefined : plan?.infoGaps?.[index - 1]
+      if (gap === undefined || gapsSeen.has(index!)) continue
+      const evidence = cleanText(raw.evidence_in_text, 60)
+      if (!evidenceInBody(body, evidence)) {
+        dropped.push({ kind: 'info-gap', reason: 'evidence-not-found', ref: String(index) })
+        continue
+      }
+      const characterId = asCharacter(gap.who)
+      if (characterId === undefined || !roster.has(characterId)) {
+        dropped.push({ kind: 'info-gap', reason: 'character-not-in-roster', ref: gap.who })
+        continue
+      }
+      gapsSeen.add(index!)
+      pend({
+        kind: 'info-gap', chapter: chapter.n, reason: `信息差：得知「${gap.fact}」`,
+        payload: { characterId, fact: gap.fact },
+        evidenceInText: evidence!,
+      })
+    }
+
+    // Relations. Points land in the journal at once (evidence-gated, one row per pair);
+    // a milestone, a rift, a repair or a new type waits for the person.
+    const relationLines: Record<string, unknown>[] = []
+    const relationOf = new Map(entries.relations.filter(view => view.cardStatus === 'kept').map(view => [view.cardId, view]))
+    const asRelation = (token: unknown): RelationView | undefined => {
+      const handle = this.resolveCard(entries, token, 'relation')
+      return handle?.role === 'relation' ? relationOf.get(handle.cardId) : undefined
+    }
+    const scored = new Set<string>()
+    for (const raw of payload.relation_points ?? []) {
+      const view = asRelation(raw.relation_id)
+      if (view === undefined) {
+        dropped.push({ kind: 'relation', reason: 'id-not-in-ledger', ref: String(raw.relation_id) })
+        continue
+      }
+      const delta = Math.max(-MAX_RELATION_DELTA, Math.min(MAX_RELATION_DELTA, Math.round(Number(raw.delta))))
+      if (!Number.isFinite(delta) || delta === 0 || scored.has(view.cardId)) continue
+      const evidence = cleanText(raw.evidence_in_text, 60)
+      if (!evidenceInBody(body, evidence)) {
+        dropped.push({ kind: 'relation', reason: 'evidence-not-found', ref: view.ref })
+        continue
+      }
+      scored.add(view.cardId)
+      relationLines.push({ relationId: view.cardId, chapter: chapter.n, kind: 'points', delta, evidence: evidence!, createdAt: now })
+    }
+    const relationPended = new Set<string>()
+    const pendRelation = (view: RelationView, event: RelationEvent, reason: string, evidence: string, toType?: RelationType): void => {
+      const key = `${view.cardId}:${event}`
+      if (relationPended.has(key)) return
+      relationPended.add(key)
+      const move = relationMove(view, event, toType, [])
+      pend({
+        kind: 'relation', chapter: chapter.n, reason, evidenceInText: evidence,
+        payload: { relationId: view.cardId, event, ...(move === undefined ? {} : { stage: move.stage }), ...(toType === undefined ? {} : { toType }) },
+      })
+    }
+    for (const raw of payload.relation_milestones ?? []) {
+      const view = asRelation(raw.relation_id)
+      if (view === undefined) {
+        dropped.push({ kind: 'relation', reason: 'id-not-in-ledger', ref: String(raw.relation_id) })
+        continue
+      }
+      // Only a pair the brief offered as 可升 can level up: the bar is the code's, not the model's.
+      const next = view.ready ? nextMilestoneOf(view) : undefined
+      if (next === undefined) {
+        dropped.push({ kind: 'relation', reason: 'stage-mismatch', ref: view.ref })
+        continue
+      }
+      const evidence = cleanText(raw.evidence_in_text, 60)
+      if (!evidenceInBody(body, evidence)) {
+        dropped.push({ kind: 'relation', reason: 'evidence-not-found', ref: view.ref })
+        continue
+      }
+      pendRelation(view, 'up', `关系升级：${view.name} ${view.stage} → ${next.stage}`, evidence!)
+    }
+    // Rifts first, so a type change in the same chapter (同盟 → 裂痕 → 对手) sees the rift it needs.
+    const CHANGE_EVENT: Readonly<Record<string, RelationEvent>> = { 裂痕: 'crack', 决裂: 'break', 修复: 'fix', 转类型: 'type' }
+    const changes = (payload.relation_changes ?? [])
+      .map(raw => ({ raw, event: CHANGE_EVENT[cleanText(raw.change, 10) ?? ''] }))
+      .sort((a, b) => Number(a.event === 'type') - Number(b.event === 'type'))
+    const riftAfter = new Map<string, '裂痕' | '决裂'>()
+    for (const { raw, event } of changes) {
+      const view = asRelation(raw.relation_id)
+      if (view === undefined || event === undefined) {
+        dropped.push({ kind: 'relation', reason: 'id-not-in-ledger', ref: String(raw.relation_id) })
+        continue
+      }
+      const toType = relationTypeOf(cleanText(raw.to_type, 10))
+      const rift = riftAfter.get(view.cardId) ?? view.rift
+      if (relationMove({ type: view.type, ...(view.level === undefined ? {} : { level: view.level }), ...(rift === undefined ? {} : { rift }) }, event, toType, []) === undefined) {
+        dropped.push({ kind: 'relation', reason: 'stage-mismatch', ref: view.ref })
+        continue
+      }
+      const evidence = cleanText(raw.evidence_in_text, 60)
+      if (!evidenceInBody(body, evidence)) {
+        dropped.push({ kind: 'relation', reason: 'evidence-not-found', ref: view.ref })
+        continue
+      }
+      if (event === 'crack' || event === 'break') riftAfter.set(view.cardId, event === 'crack' ? '裂痕' : '决裂')
+      const reason = event === 'crack' ? `关系裂痕：${view.name}`
+        : event === 'break' ? `关系决裂：${view.name}`
+          : event === 'fix' ? `关系修复：${view.name}`
+            : `关系转为「${toType}」：${view.name}`
+      pendRelation(view, event, reason, evidence!, event === 'type' ? toType : undefined)
+    }
+    // New pairs land as live cards at the first level, like new characters (gate 3).
+    const pairsSeen: string[][] = entries.relations.filter(view => view.cardStatus !== 'archived').map(view => [...view.pair])
+    for (const raw of payload.new_relations ?? []) {
+      const a = asCharacter(raw.a)
+      const b = asCharacter(raw.b)
+      const type = relationTypeOf(cleanText(raw.type, 10))
+      const label = `${cleanText(raw.a, 40) ?? '?'} × ${cleanText(raw.b, 40) ?? '?'}`
+      if (a === undefined || b === undefined || a === b || !roster.has(a) || !roster.has(b)) {
+        dropped.push({ kind: 'new-relation', reason: 'character-not-in-roster', ref: label })
+        continue
+      }
+      if (type === undefined) continue
+      if (pairsSeen.some(pair => samePair(pair, [a, b]))) {
+        dropped.push({ kind: 'new-relation', reason: 'duplicate', ref: label })
+        continue
+      }
+      const evidence = cleanText(raw.evidence_in_text, 60)
+      if (!evidenceInBody(body, evidence)) {
+        dropped.push({ kind: 'new-relation', reason: 'evidence-not-found', ref: label })
+        continue
+      }
+      pairsSeen.push([a, b])
+      const nameOf = (cardId: string): string => entries.characters.find(view => view.cardId === cardId)?.name
+        ?? [...newCharacterIds].find(([, id]) => id === cardId)?.[0] ?? cardId
+      const name = `${nameOf(a)} × ${nameOf(b)}`
+      const stage = stageNameOf(type, 1)
+      const nowLine = cleanText(raw.now, 200)
+      const category = categoryOf(board, 'relation')
+      const mutation = category === undefined ? undefined : await canvas.proposeCard({
+        canvasId: id, kind: category, text: '', source, comment: `第${chapter.n}章：「${evidence}」`, live: true,
+        fields: { name, pair: [a, b], type, stage, ...(nowLine === undefined ? {} : { now: nowLine }) },
+      }, session)
+      if (mutation === undefined || !mutation.ok) {
+        dropped.push({ kind: 'relation', reason: 'card-refused', ref: name })
+        continue
+      }
+      board = mutation.board
+      const cardId = board.cards[board.cards.length - 1]!.id
+      notes.set(cardId, { evidenceInText: evidence! })
+      written.set(cardId, { source: 'model', chapter: chapter.n })
+      newCards.push({ cardId, role: 'relation', text: name })
+      relationLines.push(stageLine({ relationId: cardId, chapter: chapter.n, event: 'start', stage, level: 1, evidence: evidence! }))
+    }
+
     for (const [foreshadowId, mark] of touch) {
       const card = board.cards.find(candidate => candidate.id === foreshadowId)
       if (card === undefined) continue
-      const fields: Record<string, NovelFieldValue> = { ...card.fields, status: MENTION_TO_STATE[mark.kind] }
+      // The card's 状态 mirrors the derived state, so the board face reads what the ledger reads.
+      const status = laterForeshadowState(foreshadowOf.get(foreshadowId)?.state ?? '已埋', MENTION_TO_STATE[mark.kind])
+      const fields: Record<string, NovelFieldValue> = { ...card.fields, status }
       if (mark.kind === 'planted' && cleanNumber(card.fields?.['plantedAt']) === undefined) fields['plantedAt'] = chapter.n
       if (mark.kind === 'resolved' && mark.answer !== undefined) fields['answer'] = mark.answer
       const mutation = await canvas.patchCard({ canvasId: id, cardId: foreshadowId, fields }, session)
       if (!mutation.ok) return { ok: false, error: canvasErrorOf(mutation.error), ...empty, dropped }
       board = mutation.board
     }
-    for (const [characterId, currentState] of stateUpdates) notes.set(characterId, { currentState })
-    const annotated = await this.ensureRefs(id, session, board, notes)
+    for (const [characterId, currentState] of stateUpdates) {
+      notes.set(characterId, { currentState })
+      if (!written.has(characterId)) written.set(characterId, { source: 'model', fields: ['now'], chapter: chapter.n })
+    }
+    const annotated = await this.ensureRefs(id, session, board, notes, written)
     if (!annotated.ok) return { ok: false, error: annotated.error ?? 'io', ...empty, dropped }
     const refs = annotated.annotations?.refs ?? {}
     const landed = newCards.map(card => refs[card.cardId] === undefined ? card : { ...card, ref: refOf(card.role, refs[card.cardId]!) })
@@ -1496,6 +1930,8 @@ export class NovelService {
     if (!appendedMentions.ok) return { ok: false, error: appendedMentions.error ?? 'io', ...empty, dropped }
     const appendedExperiences = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.experiences), session, experienceLines)
     if (!appendedExperiences.ok) return { ok: false, error: appendedExperiences.error ?? 'io', ...empty, dropped }
+    const appendedRelations = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.relations), session, relationLines)
+    if (!appendedRelations.ok) return { ok: false, error: appendedRelations.error ?? 'io', ...empty, dropped }
     const recap = cleanText(payload.recap, 500)
     const chapterWritten = await this.mutateJson(
       await this.fileTarget(id, WORK_FILES.chapters), session,
@@ -1506,11 +1942,9 @@ export class NovelService {
         if (row === undefined) return 'missing'
         const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
         mutable.phase = 'extracted'
-        if (chapter.plan !== undefined) mutable.delivery = { beats: beatsDelivered, ops: opsDelivered }
+        if (plan !== undefined) mutable.delivery = { beats: beatsDelivered, ops: opsDelivered }
         if (recap !== undefined) mutable.recap = recap
-        mutable.wordCount = typeof payload.word_count === 'number' && Number.isFinite(payload.word_count)
-          ? Math.max(0, Math.round(payload.word_count))
-          : body.replace(/\s+/g, '').length
+        mutable.wordCount = body.replace(/\s+/g, '').length
         mutable.updatedAt = timestamp
         return table
       },
@@ -1535,7 +1969,7 @@ export class NovelService {
             table.items.push({
               id: idText,
               kind: item.kind,
-              confidence: item.confidence,
+              ...(item.confidence === undefined ? {} : { confidence: item.confidence }),
               ...(item.chapter === undefined ? {} : { chapter: item.chapter }),
               reason: item.reason,
               ...(item.evidenceInText === undefined ? {} : { evidenceInText: item.evidenceInText }),
@@ -1612,40 +2046,78 @@ export class NovelService {
   /** Materialize one accepted pending item; undefined on success, the failure code otherwise. */
   private async materializePending(workId: string, item: PendingItem, session: Session): Promise<NovelError | undefined> {
     const now = new Date().toISOString()
+    // Every journal line belongs to the chapter its finding came from; an item without one cannot land.
+    const chapter = item.chapter
     if (item.kind === 'mention') {
       const canvas = this.canvas
       const foreshadowId = item.payload.foreshadowId
       const kind = item.payload.kind
-      if (foreshadowId === undefined || (kind !== 'planted' && kind !== 'advanced' && kind !== 'hinted' && kind !== 'resolved')) return 'invalid-name'
-      const board = await this.readNovelBoard(workId)
-      const card = board?.cards.find(candidate => candidate.id === foreshadowId)
+      if (chapter === undefined || foreshadowId === undefined || (kind !== 'planted' && kind !== 'advanced' && kind !== 'hinted' && kind !== 'resolved')) return 'invalid-name'
+      const entries = await this.readEntries(workId)
+      const card = entries?.board.cards.find(candidate => candidate.id === foreshadowId)
+      const view = entries?.foreshadows.find(candidate => candidate.cardId === foreshadowId)
       if (canvas === undefined || card === undefined) return 'missing'
       const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.mentions), session, [{
         foreshadowId,
-        chapter: item.chapter ?? 0,
+        chapter,
         kind,
         planned: false,
-        reconciled: true,
         ...(item.payload.note === undefined ? {} : { note: item.payload.note }),
         createdAt: now,
       }])
       if (!appended.ok) return appended.error
-      const fields: Record<string, NovelFieldValue> = { ...card.fields, status: MENTION_TO_STATE[kind] }
-      if (kind === 'planted' && item.chapter !== undefined && cleanNumber(card.fields?.['plantedAt']) === undefined) fields['plantedAt'] = item.chapter
+      const fields: Record<string, NovelFieldValue> = { ...card.fields, status: laterForeshadowState(view?.state ?? '已埋', MENTION_TO_STATE[kind]) }
+      if (kind === 'planted' && cleanNumber(card.fields?.['plantedAt']) === undefined) fields['plantedAt'] = chapter
       if (kind === 'resolved' && item.payload.answer !== undefined) fields['answer'] = item.payload.answer
       const mutation = await canvas.patchCard({ canvasId: workId, cardId: foreshadowId, fields }, session)
       return mutation.ok ? undefined : canvasErrorOf(mutation.error)
     }
     if (item.kind === 'experience') {
       const { characterId, entry } = item.payload
-      if (characterId === undefined || entry === undefined) return 'invalid-name'
+      if (chapter === undefined || characterId === undefined || entry === undefined) return 'invalid-name'
       const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.experiences), session, [{
-        id: `e${nextExperienceNumber(await this.listExperiences({ workId }))}`,
         characterId,
-        chapter: item.chapter ?? 0,
+        chapter,
         entry,
         createdAt: now,
       }])
+      return appended.ok ? undefined : appended.error
+    }
+    if (item.kind === 'info-gap') {
+      const canvas = this.canvas
+      const { characterId, fact } = item.payload
+      if (chapter === undefined || characterId === undefined || fact === undefined) return 'invalid-name'
+      const card = (await this.readEntries(workId))?.board.cards.find(candidate => candidate.id === characterId)
+      if (canvas === undefined || card === undefined) return 'missing'
+      const mutation = await canvas.patchCard({ canvasId: workId, cardId: characterId, fields: learnFact(card.fields ?? {}, fact, chapter) }, session)
+      if (!mutation.ok) return canvasErrorOf(mutation.error)
+      const adopted: CardWrite = { source: 'accept', fields: ['knows', 'unaware'], chapter, ...(item.evidenceInText === undefined ? {} : { evidence: item.evidenceInText }) }
+      const logged = await this.ensureRefs(workId, session, mutation.board, new Map(), new Map([[characterId, adopted]]))
+      return logged.ok ? undefined : logged.error ?? 'io'
+    }
+    if (item.kind === 'relation') {
+      const canvas = this.canvas
+      const { relationId } = item.payload
+      const event = relationEventOf(item.payload.event)
+      if (chapter === undefined || relationId === undefined || event === undefined) return 'invalid-name'
+      const entries = await this.readEntries(workId)
+      const view = entries?.relations.find(candidate => candidate.cardId === relationId)
+      const card = entries?.board.cards.find(candidate => candidate.id === relationId)
+      if (canvas === undefined || view === undefined || card === undefined) return 'missing'
+      // The move is re-derived from the card as it stands now: the person may have changed it since.
+      const toType = relationTypeOf(item.payload.toType)
+      const move = relationMove(view, event, toType, await this.listRelationJournal({ workId, relationId }))
+      if (move === undefined) return 'invalid-name'
+      const mutation = await canvas.patchCard({ canvasId: workId, cardId: relationId, fields: { ...card.fields, type: move.type, stage: move.stage } }, session)
+      if (!mutation.ok) return canvasErrorOf(mutation.error)
+      const logged = await this.ensureRefs(workId, session, mutation.board, new Map(), new Map([[relationId, { source: 'accept', chapter }]]))
+      if (!logged.ok) return logged.error ?? 'io'
+      const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.relations), session, [stageLine({
+        relationId, chapter, event, stage: move.stage,
+        ...(move.level === undefined ? {} : { level: move.level }),
+        ...(event === 'type' ? { fromType: view.type, toType: move.type } : {}),
+        ...(item.evidenceInText === undefined ? {} : { evidence: item.evidenceInText }),
+      })])
       return appended.ok ? undefined : appended.error
     }
     // plan-missed: the person's answer is the resolution — nothing materializes.
@@ -1653,11 +2125,71 @@ export class NovelService {
   }
 }
 
+/**
+ * A character card's fields once they learn a fact in chapter n: the fact
+ * joins 知道 as `fact（第n章得知）`, and the 不知道 lines it answers (the
+ * same line, or one either contains) leave.
+ */
+export function learnFact(fields: Readonly<Record<string, NovelFieldValue>>, fact: string, chapter: number): Record<string, NovelFieldValue> {
+  const lines = (key: string): string[] => linesOf(fields[key])
+  const answered = (line: string): boolean => line === fact || line.includes(fact) || fact.includes(line)
+  const knows = [...lines('knows').filter(line => !line.startsWith(fact)), `${fact}（第${chapter}章得知）`]
+  const unaware = lines('unaware').filter(line => !answered(line))
+  const out: Record<string, NovelFieldValue> = { ...fields, knows: knows.join('\n') }
+  if (unaware.length > 0) out['unaware'] = unaware.join('\n')
+  else delete out['unaware']
+  return out
+}
+
 /** The last ~200 characters of a manuscript (the write brief's 上一章末段). */
 export function tailOf(body: string, max = 200): string | undefined {
   const trimmed = body.trim()
   if (trimmed === '') return undefined
   return trimmed.length <= max ? trimmed : `……${trimmed.slice(-max)}`
+}
+
+/** One relation-journal stage line, stamped now. */
+/**
+ * The relation journal lines for the person's own edit of a relation card
+ * (the snapshot against the card now): a new card starts, a new type is a
+ * `type` move, any other stage a `set` — each restarts the bar.
+ */
+function relationEditLines(relationId: string, before: Readonly<Record<string, string>> | undefined, after: Readonly<Record<string, string>>, chapter: number): Record<string, unknown>[] {
+  const type = relationTypeOf(after['type'])
+  if (type === undefined || after['stage'] === undefined) return []
+  const read = readRelationStage(type, after['stage'])
+  if (read.level === undefined && read.rift === undefined) return []
+  const stage = read.rift ?? stageNameOf(type, read.level!)
+  const level = read.level === undefined ? {} : { level: read.level }
+  if (before === undefined) return [stageLine({ relationId, chapter, event: 'start', stage, ...level })]
+  const fromType = relationTypeOf(before['type'])
+  if (fromType !== undefined && fromType !== type) return [stageLine({ relationId, chapter, event: 'type', stage, ...level, fromType, toType: type })]
+  return before['stage'] === after['stage'] ? [] : [stageLine({ relationId, chapter, event: 'set', stage, ...level })]
+}
+
+function stageLine(line: {
+  readonly relationId: string; readonly chapter: number; readonly event: RelationEvent; readonly stage: string
+  readonly level?: number; readonly fromType?: RelationType; readonly toType?: RelationType; readonly evidence?: string
+}): Record<string, unknown> {
+  return { ...line, kind: 'stage', createdAt: new Date().toISOString() }
+}
+
+/** Whether two pairs name the same two characters, in either order. */
+function samePair(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === 2 && b.length === 2 && a.includes(b[0]!) && a.includes(b[1]!)
+}
+
+/**
+ * The pair a relation's name spells (`老周 × 小满`, `老周&小满`, `老周、小满`):
+ * the two character ids whose names the halves are, or fewer when a half
+ * names no character.
+ */
+export function pairFromName(characters: readonly Pick<CharacterView, 'cardId' | 'name'>[], name: string | undefined): string[] {
+  if (name === undefined) return []
+  const ids = name.split(/\s*[×xX＆&/／、]\s*/)
+    .map(half => characters.find(view => view.name === half.trim())?.cardId)
+    .filter((id): id is string => id !== undefined)
+  return [...new Set(ids)]
 }
 
 /** The category id holding a role's cards on this board, or undefined. */
@@ -1682,15 +2214,25 @@ function rolesOn(board: NovelBoardView): Map<string, EntryRole> {
 
 /** Live foreshadows, longest-slept first (an unknown sleep sorts as just touched). */
 function sortBySleep(views: readonly ForeshadowView[]): ForeshadowView[] {
-  return [...views].sort((a, b) => (b.slept ?? 0) - (a.slept ?? 0))
+  return [...views].sort((a, b) => Number(b.starred) - Number(a.starred) || (b.slept ?? 0) - (a.slept ?? 0))
 }
 
-/** The next free `e<n>` over an experience journal. */
-function nextExperienceNumber(entries: readonly ExperienceEntry[]): number {
-  return entries.reduce((max, row) => {
-    const match = /^e(\d+)$/.exec(row.id ?? '')
-    return match === null ? max : Math.max(max, Number(match[1]))
-  }, 0) + 1
+/**
+ * How many reconciled chapters come after one chapter in reading order (seq,
+ * not n — an inserted chapter sits where it reads). Only reconciled chapters
+ * count: mentions are recorded by the 对账, so a chapter still being planned
+ * or written cannot have touched anything yet and must not age the ledger.
+ * A base chapter the table does not hold (a hand-typed 埋于) places by its
+ * number.
+ * @param chapters - the chapter index.
+ * @returns the counter for one base chapter number.
+ */
+export function sleepCounter(chapters: readonly ChapterRecord[]): (base: number) => number {
+  const reconciled = chapters.filter(chapter => chapter.phase === 'extracted' || chapter.phase === 'reviewed')
+  return base => {
+    const at = chapters.find(chapter => chapter.n === base)?.seq ?? base
+    return reconciled.filter(chapter => chapter.seq > at).length
+  }
 }
 
 /**
@@ -1700,6 +2242,7 @@ function nextExperienceNumber(entries: readonly ExperienceEntry[]): number {
  * @param annotations - the sidecar.
  * @param mentions - the mention journal.
  * @param chapters - the chapter index.
+ * @param relationJournal - the relation journal.
  * @returns the work's entries.
  */
 export function entriesOf(
@@ -1707,21 +2250,32 @@ export function entriesOf(
   annotations: Annotations,
   mentions: readonly MentionEntry[],
   chapters: readonly ChapterRecord[],
+  relationJournal: readonly RelationEntry[] = [],
 ): WorkEntries {
   const roleOf = rolesOn(board)
   const currentChapter = chapters.reduce((max, chapter) => Math.max(max, chapter.n), 0)
+  const slept = sleepCounter(chapters)
   const lastActive = new Map<string, number>()
-  for (const mention of mentions) lastActive.set(mention.foreshadowId, Math.max(lastActive.get(mention.foreshadowId) ?? 0, mention.chapter))
+  const kindsOf = new Map<string, MentionEntry['kind'][]>()
+  for (const mention of mentions) {
+    lastActive.set(mention.foreshadowId, Math.max(lastActive.get(mention.foreshadowId) ?? 0, mention.chapter))
+    const kinds = kindsOf.get(mention.foreshadowId)
+    if (kinds === undefined) kindsOf.set(mention.foreshadowId, [mention.kind])
+    else kinds.push(mention.kind)
+  }
   const rules: RuleView[] = []
   const foreshadows: ForeshadowView[] = []
   const characters: CharacterView[] = []
+  const relationCards: { card: NovelCardView; ref: string }[] = []
   for (const card of board.cards) {
     const role = roleOf.get(card.id)
     if (role === undefined) continue
     const n = annotations.refs[card.id]
     const ref = n === undefined ? card.id : refOf(role, n)
     const note = annotations.notes[card.id]
-    if (role === 'world' || role === 'principle') {
+    if (role === 'relation') {
+      relationCards.push({ card, ref })
+    } else if (role === 'world' || role === 'principle') {
       const body = mainTextOf(card, role)
       const name = role === 'world' ? fieldText(card, 'name', 80) : undefined
       const kind = role === 'world' ? fieldText(card, 'kind', 10) : undefined
@@ -1732,17 +2286,18 @@ export function entriesOf(
       const active = lastActive.get(card.id)
       const answer = fieldText(card, 'answer', 500)
       const base = active ?? plantedAt
+      const starred = note?.starred === true
       foreshadows.push({
         cardId: card.id,
         ref,
         question: mainTextOf(card, role),
-        state: foreshadowStateOf(card.fields?.['status']),
+        state: deriveForeshadowState(card.fields?.['status'], plantedAt, kindsOf.get(card.id) ?? []),
         cardStatus: card.status,
         ...(plantedAt === undefined ? {} : { plantedAt }),
         ...(answer === undefined ? {} : { answer }),
-        ...(note?.tension === undefined ? {} : { tension: note.tension }),
+        starred,
         ...(active === undefined ? {} : { lastActiveChapter: active }),
-        ...(base === undefined ? {} : { slept: Math.max(0, currentChapter - base) }),
+        ...(base === undefined ? {} : { slept: slept(base) }),
       })
     } else {
       const optional = (key: 'identity' | 'want' | 'lack' | 'wound' | 'appearance' | 'voice') => {
@@ -1762,13 +2317,45 @@ export function entriesOf(
         knows: linesOf(card.fields?.['knows']),
         unaware: linesOf(card.fields?.['unaware']),
         secrets: linesOf(card.fields?.['secrets']),
-        relations: linesOf(card.fields?.['relations']),
+        relations: [],
         ...(note?.currentState === undefined ? {} : { currentState: note.currentState }),
         cardStatus: card.status,
       })
     }
   }
-  return { board, annotations, roleOf, rules, foreshadows, characters, currentChapter }
+  // Relations read last: their pair names characters, and a character's 关系 is read off them.
+  const living = characters.filter(view => view.cardStatus !== 'archived')
+  const relations = relationCards.map(({ card, ref }): RelationView => {
+    const type = relationTypeOf(card.fields?.['type']) ?? '其他'
+    const name = mainTextOf(card, 'relation')
+    const refs = Array.isArray(card.fields?.['pair']) ? card.fields['pair'].filter(id => roleOf.get(id) === 'character') : []
+    const pair = refs.length > 0 ? [...new Set(refs)] : pairFromName(living, name)
+    const written = fieldText(card, 'stage', 20)
+    const read = written === undefined ? { level: 1 } : readRelationStage(type, written)
+    const progress = relationProgress(relationJournal.filter(entry => entry.relationId === card.id))
+    const now = fieldText(card, 'now', 200)
+    return {
+      cardId: card.id, ref, name, pair, type,
+      stage: written ?? stageNameOf(type, 1),
+      ...(read.level === undefined ? {} : { level: read.level }),
+      ...(read.rift === undefined ? {} : { rift: read.rift }),
+      ...(now === undefined ? {} : { now }),
+      views: linesOf(card.fields?.['views']),
+      progress,
+      ready: read.level !== undefined && read.level < 4 && read.rift === undefined && progress >= PTS_PER_LEVEL,
+      cardStatus: card.status,
+    }
+  })
+  const withRelations = characters.map(view => {
+    const lines = relations
+      .filter(relation => relation.cardStatus !== 'archived' && relation.pair.length === 2 && relation.pair.includes(view.cardId))
+      .map(relation => {
+        const other = characters.find(candidate => candidate.cardId === relation.pair.find(id => id !== view.cardId))?.name ?? '?'
+        return `${other} · ${relation.type} · ${relation.stage}${relation.now === undefined ? '' : ` — ${relation.now}`}`
+      })
+    return lines.length === 0 ? view : { ...view, relations: lines }
+  })
+  return { board, annotations, roleOf, rules, foreshadows, characters: withRelations, relations, currentChapter }
 }
 
 /** Tolerant readers for the JSON documents (the store's read gate). */
@@ -1794,13 +2381,10 @@ function normalizeExperience(raw: unknown): ExperienceEntry | undefined {
   const chapter = typeof record['chapter'] === 'number' && Number.isFinite(record['chapter']) ? record['chapter'] : undefined
   const entry = cleanText(record['entry'], 500)
   if (characterId === undefined || chapter === undefined || entry === undefined) return undefined
-  const id = cleanText(record['id'], 40)
   return {
     characterId,
     chapter,
     entry,
-    ...(id === undefined ? {} : { id }),
-    ...(record['autoImported'] === true ? { autoImported: true } : {}),
     createdAt: cleanText(record['createdAt'], 40) ?? '',
   }
 }
@@ -1820,7 +2404,6 @@ function normalizeMention(raw: unknown): MentionEntry | undefined {
     chapter,
     kind,
     planned: record['planned'] === true,
-    reconciled: record['reconciled'] === true,
     ...(note === undefined ? {} : { note }),
     createdAt: cleanText(record['createdAt'], 40) ?? '',
   }

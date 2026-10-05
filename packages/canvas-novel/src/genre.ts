@@ -10,7 +10,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel
  */
-import { NOVEL_GENRE_ID } from './types.ts'
+import { NOVEL_GENRE_ID, RELATION_TYPES } from './types.ts'
 
 /** One field of a seeded category's card type (the canvas `FieldDef` shape). */
 interface GenreField {
@@ -138,6 +138,7 @@ export const NOVEL_ROLES = {
   world: 'world',
   principle: 'principle',
   foreshadow: 'foreshadow',
+  relation: 'relation',
 } as const
 
 /** The agent row that grants the novel tools. */
@@ -150,13 +151,15 @@ export const WORLD_KINDS: readonly string[] = ['地点', '势力', '道具', '�
  * The cold-start version. The cards are the single source of truth for what
  * gets injected into writing. A foreshadow card stores only first-hand facts —
  * question, status, planted chapter, answer; dormancy is computed from the
- * mention journal, and tension, a character's where-and-now and the audit
- * trail live in the engine's sidecar — never on the card.
+ * mention journal, and the user's star, a character's where-and-now and the
+ * card evidence live in the engine's sidecar — never on the card. A pair of
+ * characters is one relation card (novel@3); a character's 关系 is read off
+ * those cards, so the character card no longer carries a typed field for it.
  */
 export const NOVEL_GENRE: NovelGenreDefinition = {
   id: NOVEL_GENRE_ID,
   label: '长篇小说',
-  version: 'novel@2',
+  version: 'novel@3',
   description: '人物、世界、原则与伏笔做成卡片；章节正文是工作区里的 md 文件，写完一章对一次账。',
   agentRow: NOVEL_AGENT_ROW,
   ownsManuscripts: true,
@@ -165,7 +168,7 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
       role: NOVEL_ROLES.character,
       label: '人物',
       definition: {
-        version: 1,
+        version: 2,
         layout: 'profile',
         fields: [
           { key: 'name', label: '名字', type: 'line', hint: '书里怎么称呼他', required: true, face: true },
@@ -178,7 +181,6 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
           { key: 'knows', label: '知道的事', type: 'text', hint: '他已经知道、写他时可以用的事，一行一件' },
           { key: 'unaware', label: '不知道的事', type: 'text', hint: '读者知道而他还不知道的事，一行一件' },
           { key: 'secrets', label: '秘密', type: 'text', hint: '他瞒着别人的事，一行一件' },
-          { key: 'relations', label: '关系', type: 'text', hint: '他和其他人物的关系，一行一个人' },
         ],
         example: { name: '老周', identity: '镇上唯一的钟表匠，四十岁', want: '把父亲留下的怀表修好', wound: '十二岁那年父亲没回家' },
       },
@@ -217,11 +219,28 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
         layout: 'entry',
         fields: [
           { key: 'question', label: '悬念', type: 'line', hint: '读者心里的那个问题', required: true, face: true },
-          { key: 'status', label: '状态', type: 'select', options: ['未埋', '已埋', '推进中', '已揭晓', '已放弃'], hint: '这条伏笔走到哪一步了', face: true },
+          { key: 'status', label: '状态', type: 'select', options: ['未埋', '已埋', '推进中', '已揭晓', '已放弃'], hint: '整理章节时按正文自动更新；不再用这条伏笔时手动选「已放弃」', face: true },
           { key: 'plantedAt', label: '埋于第几章', type: 'number', hint: '第一次出现的章号' },
           { key: 'answer', label: '答案', type: 'text', hint: '揭晓时写下谜底' },
         ],
         example: { question: '父亲为什么不回家', status: '已埋', plantedAt: 1 },
+      },
+    },
+    {
+      role: NOVEL_ROLES.relation,
+      label: '关系',
+      definition: {
+        version: 1,
+        layout: 'entry',
+        fields: [
+          { key: 'name', label: '名称', type: 'line', hint: '两人的名字，如「老周 × 小满」', required: true, face: true },
+          { key: 'pair', label: '双方', type: 'ref', hint: '这段关系的两个人物' },
+          { key: 'type', label: '类型', type: 'select', options: RELATION_TYPES, hint: '两人是什么关系', required: true, face: true },
+          { key: 'stage', label: '阶段', type: 'line', hint: '这一类型的四个阶段之一（如爱情：相遇 / 心动 / 动情 / 相守），或「裂痕」「决裂」；升级由整理章节提出、你采纳', face: true },
+          { key: 'now', label: '现状', type: 'line', hint: '一句话：两人眼下处在什么状态', face: true },
+          { key: 'views', label: '各自怎么看', type: 'text', hint: '可选，一行一方：谁怎么看对方' },
+        ],
+        example: { name: '老周 × 小满', type: '师徒', stage: '受教', now: '小满偷偷在学修表，老周装作没看见' },
       },
     },
   ],
