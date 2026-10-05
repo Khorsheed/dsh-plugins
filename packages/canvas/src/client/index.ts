@@ -55,7 +55,7 @@ import { CanvasSelectionStore } from './space/selection.ts'
 import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
 import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
-import { CANVAS_CHILD_SLOTS } from './slots.ts'
+import { CANVAS_CHILD_SLOTS, type CanvasNavService } from './slots.ts'
 import { CanvasBindChip, type CanvasBindInjected } from './bind/BindChip.tsx'
 import { GenreBindingGate } from './bind/gate.ts'
 
@@ -73,7 +73,7 @@ export type {
 export * from './paste-table.ts'
 export { CANVAS_CHILD_SLOTS, genreKey } from './slots.ts'
 export type {
-  CanvasCardOwnerProps, CanvasChildSlot, CanvasGenreOwnerProps, CanvasNavigate, CanvasPageOwnerProps,
+  CanvasCardOwnerProps, CanvasChildSlot, CanvasGenreOwnerProps, CanvasNavigate, CanvasNavService, CanvasPageOwnerProps,
 } from './slots.ts'
 
 /**
@@ -369,6 +369,20 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       selection.openTypeTab(canvasId, kind, heading)
     },
   }
+  // A genre's conversation card (the novel plan card, say) opens one of its
+  // pages the same way: the tab first, then the row on the page. The cordis
+  // fiber owns the provide's lifetime (the quote `ctx.quoteActions` precedent).
+  const canvasNav: CanvasNavService = {
+    openPage: (canvasId, page, heading, param) => {
+      try {
+        ctx.sidebarRight.openTab(CANVAS_KIND)
+      } catch (error) {
+        ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
+      }
+      selection.openPageTab(canvasId, page, heading, param)
+    },
+  }
+  ctx.provide('canvasNav', canvasNav)
   ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
     name: 'tool.call.toolview',
     key: 'canvas_propose_type',

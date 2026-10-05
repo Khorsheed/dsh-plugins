@@ -43,6 +43,24 @@ export interface CanvasGenreOwnerProps {
   readonly sessionId?: SessionId | undefined
 }
 
+/**
+ * The canvas's navigation from outside the canvas tab (`ctx.canvasNav`): a
+ * genre's conversation card opens one of its pages without knowing how the
+ * tab is opened or where its rows live. A consumer probes it with
+ * `ctx.get('canvasNav')` and degrades without it.
+ */
+export interface CanvasNavService {
+  /** Open the canvas tab and put `canvasId`'s row on a genre page. */
+  openPage: (canvasId: string, page: string, heading: string, param?: string) => void
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The canvas's outside navigation, provided by @khorsheed/dsh-canvas's browser half. */
+    canvasNav: CanvasNavService
+  }
+}
+
 /** One card, as a face or a card-page section sees it. */
 export interface CanvasCardOwnerProps extends CanvasGenreOwnerProps {
   readonly card: BoardCard
