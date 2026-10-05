@@ -238,7 +238,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       fields: {
         type: 'object', additionalProperties: true,
         description: 'card: 人物 {name, identity, want, lack, wound, appearance, voice, knows, unaware, secrets, relations}; '
-          + '世界 {name, kind, rule} (name: the setting\'s title — a place, a faction, an item, a rule; kind: 地点|势力|道具|规则|历史|其他; rule: the setting itself); 原则 {principle}; 伏笔 {question, status, plantedAt, answer}. Lists: one item per line.',
+          + '世界 {name, kind, rule} (name: the setting\'s title — a place, a faction, an item, a rule; kind: 地点|势力|道具|规则|历史|其他; rule: the setting itself); 原则 {principle}; 伏笔 {question, status, plantedAt, answer} (status: only 已放弃 by hand — 推进中/已揭晓 follow from 整理章节). Lists: one item per line.',
       },
       comment: { type: 'string', description: 'card (new): why you add it — shown as a comment on the card.' },
       id: { type: 'string', description: 'card: the ref to patch. review: card ref or pending id.' },

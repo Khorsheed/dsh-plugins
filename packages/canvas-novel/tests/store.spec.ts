@@ -10,7 +10,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { manuscriptParagraphs, NovelService, resolveNovelStateRoot, sleepCounter } from '../src/store.ts'
-import { chapterFileName, chapterNumberOfFile, effectiveChapterPhase, isOverdue, type ChapterRecord } from '../src/types.ts'
+import { chapterFileName, chapterNumberOfFile, deriveForeshadowState, effectiveChapterPhase, isOverdue, type ChapterRecord } from '../src/types.ts'
 import { FakeCanvas, provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { CARD, DREAM, seedDreamKeeper } from './seed-dream.ts'
@@ -37,6 +37,15 @@ function freshWork(canvas: FakeCanvas, title: string, id = 'canvas_fresh0001'): 
 }
 
 describe('the novel store', () => {
+  it('derives a foreshadow\'s state from its mentions; 已放弃 and an unplanted 未埋 are the hand-set ones', () => {
+    expect(deriveForeshadowState('未埋', undefined, [])).toBe('未埋')
+    expect(deriveForeshadowState('未埋', 3, [])).toBe('已埋')
+    expect(deriveForeshadowState('已揭晓', 1, [])).toBe('已埋')
+    expect(deriveForeshadowState('已埋', 1, ['hinted'])).toBe('推进中')
+    expect(deriveForeshadowState('已埋', 1, ['resolved', 'advanced'])).toBe('已揭晓')
+    expect(deriveForeshadowState('已放弃', 1, ['resolved'])).toBe('已放弃')
+  })
+
   it('resolves the state root the datasets/canvas way (explicit → $DSH_HOME/state/novel → cwd)', () => {
     expect(resolveNovelStateRoot('/x')).toBe('/x')
     const home = process.env.DSH_HOME
@@ -373,26 +382,28 @@ describe('the novel store', () => {
     expect((await store.confirmChapterPlan({ workId: DREAM.workId, n: 42 }, SESSION)).error).toBe('missing')
   })
 
-  it('a foreshadow exits through its status field: 已揭晓 with an answer, 已放弃', async () => {
+  it('a foreshadow\'s status follows its mentions; only 已放弃 is set by hand', async () => {
     const fs = new FakeFs()
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     provideCanvas(ctx)
     const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
+    // The seed's #9 is 已揭晓 through its chapter-4 resolved mention.
+    const before = await store.gatherBrief({ workId: DREAM.workId })
+    expect(before.data?.resolvedForeshadows.map(view => view.cardId)).toEqual([CARD.towerShadow])
+    // 已揭晓 by hand is refused: a reveal is what a chapter does, not a field.
     const resolved = await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#18', fields: { status: '已揭晓', answer: '是艾文。' } }, SESSION)
-    expect(resolved.ok).toBe(true)
-    // …and the plan brief now prints the reveal (防规划矛盾).
+    expect(resolved.ignored).toEqual(['status'])
     const brief = await store.gatherBrief({ workId: DREAM.workId })
-    expect(brief.data?.resolvedForeshadows.find(view => view.cardId === CARD.formerKeeper)?.answer).toBe('是艾文。')
-    expect(brief.data?.activeForeshadows.some(view => view.cardId === CARD.formerKeeper)).toBe(false)
+    expect(brief.data?.activeForeshadows.some(view => view.cardId === CARD.formerKeeper)).toBe(true)
     // A value outside the select's options is ignored, not written.
     const bogus = await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#15', fields: { status: '搁置' } }, SESSION)
     expect(bogus.ok).toBe(false)
     expect(bogus.ignored).toEqual(['status'])
     await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#15', fields: { status: '已放弃' } }, SESSION)
     const ledger = await store.ledger({ workId: DREAM.workId })
-    expect(ledger.counts).toEqual({ active: 1, overdue: 0, resolved: 2, abandoned: 1 })
+    expect(ledger.counts).toEqual({ active: 2, overdue: 1, resolved: 1, abandoned: 1 })
   })
 
   it('lists the mention journal for the dot strip, and lands a sure experience plainly', async () => {

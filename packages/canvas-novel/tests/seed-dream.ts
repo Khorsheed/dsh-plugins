@@ -118,6 +118,7 @@ export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 
     { foreshadowId: CARD.doorGap, chapter: 1, kind: 'planted', planned: false, createdAt: stamp(1) },
     { foreshadowId: CARD.leafGlow, chapter: 2, kind: 'hinted', planned: true, createdAt: stamp(2) },
     { foreshadowId: CARD.doorGap, chapter: 3, kind: 'advanced', planned: true, createdAt: stamp(3) },
+    { foreshadowId: CARD.towerShadow, chapter: 4, kind: 'resolved', planned: true, createdAt: stamp(3) },
   ]
   fs.seed(join(dir, 'mentions.jsonl'), mentions.map(entry => JSON.stringify(entry)).join('\n') + '\n')
 

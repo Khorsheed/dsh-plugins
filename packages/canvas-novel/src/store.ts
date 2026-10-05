@@ -38,7 +38,7 @@ import {
   type NovelFieldValue,
 } from './genre.ts'
 import {
-  chapterFileName, cleanNumber, cleanText, effectiveChapterPhase, foreshadowStateOf, isOverdue, linesOf, MENTION_TO_STATE,
+  chapterFileName, cleanNumber, cleanText, deriveForeshadowState, effectiveChapterPhase, isOverdue, laterForeshadowState, linesOf, MENTION_TO_STATE,
   normalizeAnnotations, normalizeChapter, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
   OP_TO_MENTION, parseRef, refGroupOf, refOf,
   type Annotations, type CardNote, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
@@ -193,10 +193,14 @@ export function manuscriptParagraphs(content: string): string {
   return paragraphs.length <= 1 ? content : `${paragraphs.join('\n\n')}\n`
 }
 
+/** The foreshadow states a write may set: the rest come from the mention journal. */
+const HAND_SET_FORESHADOW_STATES: ReadonlySet<string> = new Set(['未埋', '已埋', '已放弃'])
+
 /**
  * Check agent-sent fields against the genre's seeded card type for a role:
  * known keys only, select values from their options, numbers as numbers,
- * lists joined one item per line (一行一件).
+ * lists joined one item per line (一行一件). A foreshadow's status takes only
+ * the hand-set states — 推进中 and 已揭晓 follow from what the chapters do.
  * @returns the accepted fields and the keys that were ignored.
  */
 export function cleanFields(role: EntryRole, raw: unknown): { readonly fields: Record<string, NovelFieldValue>; readonly ignored: string[] } {
@@ -217,7 +221,7 @@ export function cleanFields(role: EntryRole, raw: unknown): { readonly fields: R
       continue
     }
     const text = Array.isArray(value) ? cleanText(value.map(String).join('\n')) : cleanText(typeof value === 'number' ? String(value) : value)
-    if (text === undefined || (def.options !== undefined && !def.options.includes(text))) {
+    if (text === undefined || (def.options !== undefined && !def.options.includes(text)) || (role === 'foreshadow' && key === 'status' && !HAND_SET_FORESHADOW_STATES.has(text))) {
       ignored.push(key)
       continue
     }
@@ -1477,7 +1481,9 @@ export class NovelService {
     for (const [foreshadowId, mark] of touch) {
       const card = board.cards.find(candidate => candidate.id === foreshadowId)
       if (card === undefined) continue
-      const fields: Record<string, NovelFieldValue> = { ...card.fields, status: MENTION_TO_STATE[mark.kind] }
+      // The card's 状态 mirrors the derived state, so the board face reads what the ledger reads.
+      const status = laterForeshadowState(foreshadowOf.get(foreshadowId)?.state ?? '已埋', MENTION_TO_STATE[mark.kind])
+      const fields: Record<string, NovelFieldValue> = { ...card.fields, status }
       if (mark.kind === 'planted' && cleanNumber(card.fields?.['plantedAt']) === undefined) fields['plantedAt'] = chapter.n
       if (mark.kind === 'resolved' && mark.answer !== undefined) fields['answer'] = mark.answer
       const mutation = await canvas.patchCard({ canvasId: id, cardId: foreshadowId, fields }, session)
@@ -1614,8 +1620,9 @@ export class NovelService {
       const foreshadowId = item.payload.foreshadowId
       const kind = item.payload.kind
       if (chapter === undefined || foreshadowId === undefined || (kind !== 'planted' && kind !== 'advanced' && kind !== 'hinted' && kind !== 'resolved')) return 'invalid-name'
-      const board = await this.readNovelBoard(workId)
-      const card = board?.cards.find(candidate => candidate.id === foreshadowId)
+      const entries = await this.readEntries(workId)
+      const card = entries?.board.cards.find(candidate => candidate.id === foreshadowId)
+      const view = entries?.foreshadows.find(candidate => candidate.cardId === foreshadowId)
       if (canvas === undefined || card === undefined) return 'missing'
       const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.mentions), session, [{
         foreshadowId,
@@ -1626,7 +1633,7 @@ export class NovelService {
         createdAt: now,
       }])
       if (!appended.ok) return appended.error
-      const fields: Record<string, NovelFieldValue> = { ...card.fields, status: MENTION_TO_STATE[kind] }
+      const fields: Record<string, NovelFieldValue> = { ...card.fields, status: laterForeshadowState(view?.state ?? '已埋', MENTION_TO_STATE[kind]) }
       if (kind === 'planted' && cleanNumber(card.fields?.['plantedAt']) === undefined) fields['plantedAt'] = chapter
       if (kind === 'resolved' && item.payload.answer !== undefined) fields['answer'] = item.payload.answer
       const mutation = await canvas.patchCard({ canvasId: workId, cardId: foreshadowId, fields }, session)
@@ -1717,7 +1724,13 @@ export function entriesOf(
   const currentChapter = chapters.reduce((max, chapter) => Math.max(max, chapter.n), 0)
   const slept = sleepCounter(chapters)
   const lastActive = new Map<string, number>()
-  for (const mention of mentions) lastActive.set(mention.foreshadowId, Math.max(lastActive.get(mention.foreshadowId) ?? 0, mention.chapter))
+  const kindsOf = new Map<string, MentionEntry['kind'][]>()
+  for (const mention of mentions) {
+    lastActive.set(mention.foreshadowId, Math.max(lastActive.get(mention.foreshadowId) ?? 0, mention.chapter))
+    const kinds = kindsOf.get(mention.foreshadowId)
+    if (kinds === undefined) kindsOf.set(mention.foreshadowId, [mention.kind])
+    else kinds.push(mention.kind)
+  }
   const rules: RuleView[] = []
   const foreshadows: ForeshadowView[] = []
   const characters: CharacterView[] = []
@@ -1743,7 +1756,7 @@ export function entriesOf(
         cardId: card.id,
         ref,
         question: mainTextOf(card, role),
-        state: foreshadowStateOf(card.fields?.['status']),
+        state: deriveForeshadowState(card.fields?.['status'], plantedAt, kindsOf.get(card.id) ?? []),
         cardStatus: card.status,
         ...(plantedAt === undefined ? {} : { plantedAt }),
         ...(answer === undefined ? {} : { answer }),

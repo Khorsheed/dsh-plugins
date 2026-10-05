@@ -217,7 +217,7 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
         layout: 'entry',
         fields: [
           { key: 'question', label: '悬念', type: 'line', hint: '读者心里的那个问题', required: true, face: true },
-          { key: 'status', label: '状态', type: 'select', options: ['未埋', '已埋', '推进中', '已揭晓', '已放弃'], hint: '这条伏笔走到哪一步了', face: true },
+          { key: 'status', label: '状态', type: 'select', options: ['未埋', '已埋', '推进中', '已揭晓', '已放弃'], hint: '整理章节时按正文自动更新；不再用这条伏笔时手动选「已放弃」', face: true },
           { key: 'plantedAt', label: '埋于第几章', type: 'number', hint: '第一次出现的章号' },
           { key: 'answer', label: '答案', type: 'text', hint: '揭晓时写下谜底' },
         ],
