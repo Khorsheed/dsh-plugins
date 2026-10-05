@@ -155,7 +155,7 @@ describe('ChapterPage', () => {
 
   it('a reviewed chapter shows the closed state instead of the button', async () => {
     renderPage(fakeRemote({ items: [], phase: 'reviewed' }))
-    expect(await screen.findByText(zh['chapter.reviewed'])).toBeTruthy()
+    expect(await screen.findByText(`✓ ${zh['chapter.reviewed']}`)).toBeTruthy()
     expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
   })
 

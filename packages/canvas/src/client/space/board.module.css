@@ -647,6 +647,10 @@
     opacity: 1;
   }
 
+  .card .unseenDot {
+    right: 34px;
+  }
+
   .cardActions {
     display: flex;
   }
@@ -671,18 +675,28 @@
   align-self: flex-start;
 }
 
-/* AGENT's new card: a red dot on the card's top-left corner (the select box
-   owns the top-right one); it goes when the card is opened or archived. */
+/* AGENT's new card: an unread mark inside the top-right corner, aligned with
+   the kind line (a small dot in a soft halo, the way a mail list marks unread
+   mail). The select box owns that corner on hover, so the mark steps aside
+   there; it goes for good when the card is opened or archived. */
 .unseenDot {
   position: absolute;
-  top: -4px;
-  left: -4px;
-  z-index: 2;
-  width: 9px;
-  height: 9px;
+  top: 15px;
+  right: 14px;
+  z-index: 1;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--dsw-alias-state-error-primary);
-  box-shadow: 0 0 0 2px var(--dsw-alias-bg-base);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-error-primary) 16%, transparent);
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.card:hover .unseenDot,
+.card:focus-within .unseenDot,
+.card[data-selected="true"] .unseenDot {
+  opacity: 0;
 }
 
 /* A chip's "+N new": red text on a faint red pill, after the plain count. */

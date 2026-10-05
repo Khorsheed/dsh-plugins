@@ -55,8 +55,11 @@ export function ChapterPage(props: NovelSurfaceProps<NovelPageOwnerProps>): Reac
   }
 
   return (
-    <div className={css.page}>
-      <Lamp phase={phase} t={t} />
+    <div className={`${css.page} ${css.chapterPage}`}>
+      <header className={css.chapterHead}>
+        <Lamp phase={phase} t={t} />
+        {chapter.wordCount !== undefined && <span className={css.muted}>{t('chapter.words', { count: chapter.wordCount })}</span>}
+      </header>
       <PlanBlock
         plan={chapter.plan}
         names={view.names}
@@ -73,20 +76,17 @@ export function ChapterPage(props: NovelSurfaceProps<NovelPageOwnerProps>): Reac
         </section>
       )}
       <Prose view={view} phase={phase} t={t} />
-      <div className={css.footer}>
-        {view.file !== undefined && <span className={css.path}>{view.file}</span>}
-        {chapter.wordCount !== undefined && <span>{t('chapter.words', { count: chapter.wordCount })}</span>}
-      </div>
+      {view.file !== undefined && <div className={css.footer}><span className={css.path}>{view.file}</span></div>}
       <div className={css.reviewBar}>
         {failure !== null && <span className={css.warn}>{failure}</span>}
         {phase === 'reviewed' ? (
-          <span className={css.done}>{t('chapter.reviewed')}</span>
+          <span className={css.reviewedMark}>✓ {t('chapter.reviewed')}</span>
         ) : (
           <>
             <span className={css.muted}>{gateText(phase, items.length, sessionId !== undefined, t)}</span>
             <button
               type="button"
-              className={css.buttonPrimary}
+              className={css.reviewButton}
               disabled={busy || sessionId === undefined || phase !== 'extracted' || items.length > 0}
               onClick={() => { void gesture('reviewChapter') }}
             >
@@ -109,18 +109,18 @@ function gateText(phase: EffectiveChapterPhase, pending: number, writable: boole
   return ''
 }
 
+/** The phase as a compact stepper: ✓ for passed steps, a ring on the current one. */
 function Lamp({ phase, t }: { readonly phase: EffectiveChapterPhase; readonly t: TranslateNS<'novel'> }): ReactNode {
   const step = LAMP_STEP[phase]
   return (
-    <div className={css.lampBar} aria-label={t(`phase.${phase}`)}>
+    <ol className={css.stepper} aria-label={t(`phase.${phase}`)}>
       {LAMP.map((key, index) => (
-        <div key={key} className={css.lampStep} data-state={index < step ? 'done' : index === step ? 'current' : 'todo'} data-warn={phase === 'fileMissing' && index === step ? 'true' : undefined}>
-          <span className={css.lampSegment} />
-          <span>{t(key)}</span>
-        </div>
+        <li key={key} className={css.step} data-state={index < step ? 'done' : index === step ? 'current' : 'todo'} data-warn={phase === 'fileMissing' && index === step ? 'true' : undefined}>
+          <span className={css.stepDot}>{index < step ? '✓' : ''}</span>
+          {t(key)}
+        </li>
       ))}
-      <span className={css.lampPhase} data-phase={phase}>{t(`phase.${phase}`)}</span>
-    </div>
+    </ol>
   )
 }
 
