@@ -133,4 +133,19 @@ describe('CanvasBindChip', () => {
     await waitFor(() => { expect(mocks.bindCanvas).toHaveBeenCalledWith(null) })
     await screen.findByText(zh['bind.unbound'])
   })
+
+  it('picks up a binding the model made, on its next re-read', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let bound: string | null = null
+      const mocks = face({ boundCanvas: vi.fn(async () => ({ ok: true as const, value: bound })) })
+      render(<CanvasBindChip t={t} {...mocks} />)
+      await screen.findByText(zh['bind.unbound'])
+      bound = 'canvas_rain'
+      await vi.advanceTimersByTimeAsync(4000)
+      await screen.findByText('作品 · 雨夜')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
