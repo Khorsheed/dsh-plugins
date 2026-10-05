@@ -30,6 +30,7 @@ export function PlanBlock({ chapter, phase, names, canConfirm, busy, onConfirm, 
   const lead = phase === 'planning'
   const [open, setOpen] = useState(lead)
   const plan = chapter.plan
+  if (chapter.byUser === true && plan === undefined) return <div className={css.planEmpty}>{t('chapter.byUserNoPlan')}</div>
   if (plan === undefined) return <div className={css.planEmpty}>{t('chapter.noPlan')}</div>
   const confirmed = chapter.planConfirmedAt !== undefined
   const delivery = chapter.delivery

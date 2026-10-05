@@ -292,6 +292,11 @@ export interface ChapterRecord {
   readonly plan?: ChapterPlan
   /** The user's ✓确认计划 timestamp (the plan gate's durable fact; absent = unconfirmed). */
   readonly planConfirmedAt?: string
+  /**
+   * 用户原稿: the user wrote this chapter themselves (imported or pasted). It
+   * needs no plan to carry a body, and the 对账 skips plan verification.
+   */
+  readonly byUser?: true
   /** How much of the plan the manuscript carried, written by the extract import. */
   readonly delivery?: PlanDelivery
   /** 2-3 sentence summary, written by the extract import. */
@@ -426,6 +431,7 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
     phase: record['phase'] === 'reviewed' || record['phase'] === 'extracted' ? record['phase'] : 'planning',
     ...(plan === undefined ? {} : { plan }),
     ...(planConfirmedAt === undefined ? {} : { planConfirmedAt }),
+    ...(record['byUser'] === true ? { byUser: true as const } : {}),
     ...(delivery === undefined ? {} : { delivery }),
     ...(recap === undefined ? {} : { recap }),
     ...(wordCount === undefined ? {} : { wordCount }),
@@ -617,7 +623,7 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate'
+export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed'
 
 /* ---------------------------------------------- wire-boundary contracts */
 
@@ -639,6 +645,12 @@ export interface WriteChapterRequest {
    * so a chapter never registers onto an empty slot (the F1-2 rule).
    */
   readonly content?: string
+  /**
+   * 用户原稿: the body (or the file already in the workspace) is the user's own
+   * text. Without it a body lands only on a chapter whose plan the user
+   * confirmed (计划门禁, `plan-unconfirmed`).
+   */
+  readonly byUser?: boolean
 }
 
 /** The subagent's world-rule row (strict JSON, tolerant reads): 世界 by default, 原则 for a writing principle. */

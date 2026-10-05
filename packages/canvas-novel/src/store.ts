@@ -852,13 +852,26 @@ export class NovelService {
     const content = typeof request.content === 'string' && request.content.trim().length > 0
       ? manuscriptParagraphs(request.content.slice(0, 2_000_000))
       : undefined
+    const byUser = request.byUser === true
+
+    // 计划门禁: the model writes a body only into a chapter whose plan the user
+    // confirmed; the user's own text (用户原稿) needs no plan. Checked before
+    // the body lands, so a refused write leaves the workspace untouched.
+    const workspace = meta.workspace
+    if (content !== undefined && workspace === undefined) return { ok: false, error: 'no-workspace' }
+    if (content !== undefined && !byUser) {
+      const row = request.n === undefined ? undefined : (await this.readChapters(workId)).find(candidate => candidate.n === request.n)
+      if (request.n !== undefined && row === undefined) return { ok: false, error: 'missing' }
+      const replanned = plan !== undefined && row?.plan !== undefined && JSON.stringify(plan) !== JSON.stringify(row.plan)
+      if (row === undefined || (row.byUser !== true && (row.planConfirmedAt === undefined || replanned))) {
+        return { ok: false, error: 'plan-unconfirmed' }
+      }
+    }
 
     // The body lands before the registration (F1-2): a write that the fence
     // refuses means NO chapter row — the 空槽登记 bug class is closed by
     // construction.
-    if (content !== undefined) {
-      const workspace = meta.workspace
-      if (workspace === undefined) return { ok: false, error: 'no-workspace' }
+    if (content !== undefined && workspace !== undefined) {
       const chapters = await this.readChapters(workId)
       const n = request.n ?? chapters.reduce((max, row) => Math.max(max, row.n), 0) + 1
       const target = await this.fs.resolve(join(workspace, meta.title, chapterFileName(n)))
@@ -895,11 +908,14 @@ export class NovelService {
           if (row === undefined) return 'missing'
           const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
           mutable.title = title
-          if (plan !== undefined) {
+          if (plan !== undefined && JSON.stringify(plan) !== JSON.stringify(row.plan)) {
             mutable.plan = plan
-            // The delivery indexes the old plan's rows; a new plan has none yet.
+            // The delivery indexes the old plan's rows; a new plan has none
+            // yet — and the user has not confirmed it.
             delete mutable.delivery
+            delete mutable.planConfirmedAt
           }
+          if (byUser) mutable.byUser = true
           mutable.updatedAt = now
           const sessionId = String(session.id)
           if (!row.sessionIds.includes(sessionId)) (mutable.sessionIds as string[]).push(sessionId)
@@ -917,6 +933,7 @@ export class NovelService {
           createdAt: now,
           updatedAt: now,
           ...(plan === undefined ? {} : { plan }),
+          ...(byUser ? { byUser: true as const } : {}),
         }
         table.chapters.push(created)
         chapter = created
@@ -1231,7 +1248,9 @@ export class NovelService {
     const recordedMentions: { id: string; kind: MentionEntry['kind'] }[] = []
     const journalLines: Record<string, unknown>[] = []
     const touch = new Map<string, { readonly kind: MentionEntry['kind']; readonly answer?: string }>()
-    const plannedIds = new Set((chapter.plan?.foreshadowOps ?? []).map(op => asForeshadow(op.id)).filter(Boolean))
+    // 用户原稿 was never planned: nothing to verify, no plan flags on its mentions.
+    const plan = chapter.byUser === true ? undefined : chapter.plan
+    const plannedIds = new Set((plan?.foreshadowOps ?? []).map(op => asForeshadow(op.id)).filter(Boolean))
     for (const raw of payload.foreshadow_mentions ?? []) {
       const kind = cleanText(raw.kind, 20)
       const mentionKind = kind === 'planted' || kind === 'advanced' || kind === 'hinted' || kind === 'resolved' ? kind : undefined
@@ -1307,7 +1326,7 @@ export class NovelService {
     // A missed op is a question for the person (pending); a missed beat only
     // shows on the chapter's delivery line.
     const opsDelivered: boolean[] = []
-    for (const op of chapter.plan?.foreshadowOps ?? []) {
+    for (const op of plan?.foreshadowOps ?? []) {
       const wanted = OP_TO_MENTION[op.op]
       const opId = op.id === undefined ? undefined : asForeshadow(op.id)
       const touched = opId === undefined ? [] : recordedMentions.filter(mention => mention.id === opId)
@@ -1331,7 +1350,7 @@ export class NovelService {
     const beatsSeen = new Set<number>()
     for (const raw of payload.beats_delivered ?? []) {
       const beat = cleanNumber(raw.beat)
-      if (beat === undefined || !Number.isInteger(beat) || beat < 1 || beat > (chapter.plan?.beats.length ?? 0)) continue
+      if (beat === undefined || !Number.isInteger(beat) || beat < 1 || beat > (plan?.beats.length ?? 0)) continue
       const evidence = cleanText(raw.evidence_in_text, 60)
       if (!evidenceInBody(body, evidence)) {
         dropped.push({ kind: 'beat', reason: 'evidence-not-found', ref: String(beat) })
@@ -1339,7 +1358,7 @@ export class NovelService {
       }
       beatsSeen.add(beat)
     }
-    const beatsDelivered = (chapter.plan?.beats ?? []).map((_beat, index) => beatsSeen.has(index + 1))
+    const beatsDelivered = (plan?.beats ?? []).map((_beat, index) => beatsSeen.has(index + 1))
     report.beats.delivered = beatsDelivered.filter(Boolean).length
     report.beats.missed = beatsDelivered.length - report.beats.delivered
 
@@ -1435,7 +1454,7 @@ export class NovelService {
         if (row === undefined) return 'missing'
         const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
         mutable.phase = 'extracted'
-        if (chapter.plan !== undefined) mutable.delivery = { beats: beatsDelivered, ops: opsDelivered }
+        if (plan !== undefined) mutable.delivery = { beats: beatsDelivered, ops: opsDelivered }
         if (recap !== undefined) mutable.recap = recap
         mutable.wordCount = body.replace(/\s+/g, '').length
         mutable.updatedAt = timestamp

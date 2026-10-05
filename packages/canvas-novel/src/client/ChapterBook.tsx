@@ -153,7 +153,10 @@ function ChapterLine({ row, pending, onRead, t }: {
   return (
     <button type="button" className={css.row} onClick={() => { onRead(chapter.n) }}>
       <span className={css.rowNo}>{t('strip.chapter', { n: chapter.n })}</span>
-      <span className={css.rowTitle}>{bareTitle(chapter.n, chapter.title)}</span>
+      <span className={css.rowTitle}>
+        {bareTitle(chapter.n, chapter.title)}
+        {chapter.byUser === true && <span className={css.byUserTag} title={t('chapter.byUserTitle')}>{t('chapter.byUser')}</span>}
+      </span>
       <span className={css.phaseTag} data-phase={phase} data-todo={pending > 0 || undefined}>
         {pending > 0 ? t('strip.pending', { count: pending }) : t(`phase.${phase}`)}
       </span>

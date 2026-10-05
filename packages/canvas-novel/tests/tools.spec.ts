@@ -87,6 +87,12 @@ describe('the novel tools', () => {
     expect(await call(write, { what: 'chapter', chapter: 1, title: '第一章', content: '没地方放。' })).toContain('还没有挂工作区')
   })
 
+  it('refuses a body before the plan is confirmed, and registers 用户原稿 with byUser', async () => {
+    const { write } = await bench({ bound: true })
+    expect(await call(write, { what: 'chapter', title: '新的一章', content: '抢跑。' })).toContain('正文只能写进已确认计划的章节')
+    expect(await call(write, { what: 'chapter', title: '新的一章', byUser: true, content: '我自己写的。' })).toContain('已建第')
+  })
+
   it('novel_write(card) lands a live card, in the ledger at once; ✗ is archive, the only card review', async () => {
     const { canvas, write, read } = await bench({ bound: true })
     const answer = await call(write, { what: 'card', role: '伏笔', fields: { question: '梦主可能是赵启明的妹妹？', bogus: 1 } })

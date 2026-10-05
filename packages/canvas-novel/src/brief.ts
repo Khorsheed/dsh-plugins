@@ -107,6 +107,7 @@ function foreshadowOpText(op: ForeshadowOp, foreshadows: readonly ForeshadowView
 
 /** The 本章计划 block (write variant, and the extract pack's 【本章计划】, whose beat numbers the import reads back). */
 function planLines(target: ChapterRecord, foreshadows: readonly ForeshadowView[], roster: readonly CharacterView[]): string[] {
+  if (target.byUser === true) return ['（用户原稿：没有计划，不核对走向。）']
   const plan = target.plan
   if (plan === undefined) return ['（本章还没有计划——先 novel_write(chapter) 写 plan，用户确认前不开写。）']
   const nameOf = (token: string): string => roster.find(view => view.cardId === token)?.name ?? token

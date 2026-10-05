@@ -822,6 +822,16 @@
   padding: 0 14px 14px;
 }
 
+.byUserTag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-secondary);
+  vertical-align: 1px;
+}
+
 .planEmpty {
   text-align: center;
   font: var(--dsw-font-xxs-12);

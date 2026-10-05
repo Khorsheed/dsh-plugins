@@ -244,7 +244,12 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       id: { type: 'string', description: 'card: the ref to patch. review: card ref or pending id.' },
       title: { type: 'string', description: 'chapter: the title.' },
       content: { type: 'string', description: 'chapter: the manuscript body — written to the mounted workspace before registering.' },
-      chapter: { type: 'number', description: 'chapter: n to re-plan (omit to create).' },
+      chapter: { type: 'number', description: 'chapter: n to re-plan or to write the body of (omit to create).' },
+      byUser: {
+        type: 'boolean',
+        description: 'chapter: true when the text is the user\'s own manuscript (用户原稿 — imported or pasted): it needs no plan, '
+          + 'and the reconciliation skips the plan check. Without it, content is refused until the user confirmed the chapter\'s plan.',
+      },
       plan: {
         type: 'object', additionalProperties: true,
         description: 'chapter: {summary (梗概, 2-3 sentences), beats[{at (time label), text, mark?: 转折|落点}], conflict, highlight (看点), '
@@ -283,6 +288,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           ...(args.chapter === undefined ? {} : { n: args.chapter }),
           ...(args.plan === undefined ? {} : { plan: args.plan }),
           ...(args.content === undefined ? {} : { content: args.content }),
+          ...(args.byUser === true ? { byUser: true } : {}),
         }, resolved.session)
         if (!outcome.ok) {
           if (outcome.error === 'missing' && args.chapter !== undefined) {
@@ -293,6 +299,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           }
           if (outcome.error === 'denied') {
             return '失败：正文写不进画布挂载的工作区（会话沙箱围栏拒绝）。请用户给画布挂一个本会话可写的工作区，或把正文贴给我用 novel_write(what=chapter, content=…) 重写。'
+          }
+          if (outcome.error === 'plan-unconfirmed') {
+            return args.chapter === undefined
+              ? '失败：正文只能写进已确认计划的章节。先 novel_write(what=chapter, title, plan) 登记计划、等用户确认，再带 chapter=N 写正文；用户自己写好的稿子加 byUser=true 登记。'
+              : `失败：第 ${args.chapter} 章的计划还没经用户确认（或刚改过计划），不写正文。请用户点会话卡片或章节页上的「确认计划」。`
           }
           if (outcome.error === 'no-workspace') {
             return '失败：这张画布还没有挂工作区，章节正文无处可写。请用户先在画布里挂一个工作区（正文写到 <工作区>/<画布标题>/第N章.md）。'
@@ -493,6 +504,7 @@ interface WriteArgs {
   title?: string
   content?: string
   chapter?: number
+  byUser?: boolean
   plan?: Record<string, unknown>
   target?: 'card' | 'pending'
   action?: ReviewAction

@@ -236,7 +236,7 @@ describe('the novel store', () => {
     const { store, fs, canvas } = confiningStore()
     const workId = freshWork(canvas, '落盘')
     // content given: the body lands at <workspace>/<title>/第1章.md and the chapter registers.
-    const written = await store.writeChapter({ workId, title: '第一章', content: '开头三段。\n' }, SESSION)
+    const written = await store.writeChapter({ workId, title: '第一章', byUser: true, content: '开头三段。\n' }, SESSION)
     expect(written.ok).toBe(true)
     expect(fs.read('/home/user/workspace/落盘/第1章.md')).toBe('开头三段。\n')
     expect(written.chapter).toMatchObject({ n: 1, file: '第1章.md' })
@@ -256,7 +256,7 @@ describe('the novel store', () => {
       resolve: ({ session }: { session: Session }) => ({ mode: 'read-only', workspaceRoot: '/outside', sessionId: String(session.id) }),
     } as never)
     const deniedStore = new NovelService(ctxDenied, { stateRoot: '/dsh/state/novel' })
-    const refused = await deniedStore.writeChapter({ workId: 'canvas_denied0001', title: '第一章', content: '写不进去。' }, SESSION)
+    const refused = await deniedStore.writeChapter({ workId: 'canvas_denied0001', title: '第一章', byUser: true, content: '写不进去。' }, SESSION)
     expect(refused.ok).toBe(false)
     expect(refused.error).toBe('denied')
     expect((await deniedStore.listChapters({ workId: 'canvas_denied0001' })).length).toBe(0)
@@ -269,6 +269,31 @@ describe('the novel store', () => {
     expect(planned.ok).toBe(true)
     const refused = await store.writeChapter({ workId: 'canvas_bare00001', n: 1, title: '第一章', content: '没地方放。' }, SESSION)
     expect(refused).toEqual({ ok: false, error: 'no-workspace' })
+  })
+
+  it('计划门禁: a body lands only in a confirmed plan; a re-plan needs a fresh confirmation; 用户原稿 skips the gate', async () => {
+    const { store, fs, canvas } = confiningStore()
+    const workId = freshWork(canvas, '门禁')
+    const plan = { summary: '赵启明第一次入梦。', beats: [], foreshadowOps: [], cast: [] }
+    // No row yet: a body without a confirmed plan is refused, and nothing is registered.
+    expect(await store.writeChapter({ workId, title: '第一章', content: '抢跑。' }, SESSION)).toEqual({ ok: false, error: 'plan-unconfirmed' })
+    expect(await store.listChapters({ workId })).toHaveLength(0)
+    expect((await store.writeChapter({ workId, title: '第一章', plan }, SESSION)).ok).toBe(true)
+    expect(await store.writeChapter({ workId, n: 1, title: '第一章', content: '还没确认。' }, SESSION)).toEqual({ ok: false, error: 'plan-unconfirmed' })
+    expect((await store.confirmChapterPlan({ workId, n: 1 }, SESSION)).ok).toBe(true)
+    // A changed plan in the same call un-confirms it: refused, the confirmation is gone.
+    const replan = { ...plan, summary: '赵启明第二次入梦。' }
+    expect(await store.writeChapter({ workId, n: 1, title: '第一章', plan: replan, content: '改了计划。' }, SESSION)).toEqual({ ok: false, error: 'plan-unconfirmed' })
+    expect((await store.writeChapter({ workId, n: 1, title: '第一章', plan: replan }, SESSION)).ok).toBe(true)
+    expect((await store.listChapters({ workId }))[0]?.chapter.planConfirmedAt).toBeUndefined()
+    expect((await store.confirmChapterPlan({ workId, n: 1 }, SESSION)).ok).toBe(true)
+    expect((await store.writeChapter({ workId, n: 1, title: '第一章', content: '确认后才写。' }, SESSION)).ok).toBe(true)
+    expect(fs.read('/home/user/workspace/门禁/第1章.md')).toBe('确认后才写。')
+    // 用户原稿: no plan, flagged, and later bodies need no confirmation either.
+    const own = await store.writeChapter({ workId, title: '第二章', byUser: true, content: '我自己写的。' }, SESSION)
+    expect(own.ok).toBe(true)
+    expect(own.chapter).toMatchObject({ n: 2, byUser: true })
+    expect((await store.writeChapter({ workId, n: 2, title: '第二章', content: '我又改了一稿。' }, SESSION)).ok).toBe(true)
   })
 
   it('paragraphs a manuscript written one line per paragraph, and leaves a spaced one alone', () => {
