@@ -725,6 +725,19 @@ export const PTS_PER_LEVEL = 3
 /** The most points one chapter may move a pair, either way. */
 export const MAX_RELATION_DELTA = 2
 
+/**
+ * What each per-chapter score means — the anchors 整理 scores against, so a
+ * chapter's points read the same in chapter 3 and chapter 30. 0 (no real
+ * exchange between the two) is never written. The full scoring standard lives
+ * in docs/relation-criteria.md.
+ */
+export const RELATION_POINT_SCALE: readonly { readonly delta: number; readonly meaning: string }[] = [
+  { delta: 2, meaning: '一次关键的交换：托付、救命、坦白、替对方扛事' },
+  { delta: 1, meaning: '有正面来往：帮了一把、聊得来、站在对方一边' },
+  { delta: -1, meaning: '有摩擦：争执、隐瞒被察觉、失望' },
+  { delta: -2, meaning: '一次严重伤害：背叛、羞辱、出手伤人（还没到裂痕）' },
+]
+
 /** A relation type from untrusted input, or undefined. */
 export function relationTypeOf(raw: unknown): RelationType | undefined {
   return RELATION_TYPES.find(type => type === raw)

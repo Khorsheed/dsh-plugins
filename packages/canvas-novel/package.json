@@ -51,7 +51,8 @@
     "lib/typert.host.js",
     "lib/typert.remote-client.d.ts",
     "lib/typert.remote-client.js",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "docs/*.md"
   ],
   "license": "MIT",
   "dependencies": {

@@ -45,6 +45,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   - Characters use `c<n>`.
   - World and principle cards use `w<n>`, and foreshadows use `#<n>`. These three share one number space, so `w19` and `#19` never coexist.
   - A new card takes the max of its space plus one. Tools, plans and reconciliation can name a card by ref, card id, or (for characters) name.
+- **Relations move by points**: one relation card per pair, each type (romance, family, friendship, mentor, rivals, allies, other) with four levels. Each chapter the model only scores a present pair −2…+2 from the text; code banks the points, and 3 points mark the pair 可升 (ready). It moves up only when the next level's event really happens in the text, and that goes to review. Rifts, breaks, repairs and type changes bypass points, and likewise need evidence and go to review. The score bands and each type's level-up conditions are in the [relation evaluation criteria](docs/relation-criteria.en.md).
 - **Review closes a chapter, always last**:
   - A chapter goes: written → reconciled → pending items handled → the user's 「✓ 审过」 closes it.
   - If the manuscript is not right yet, fix it first; do not reconcile it.
