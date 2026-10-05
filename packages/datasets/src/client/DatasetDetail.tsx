@@ -22,14 +22,15 @@
 import { useState } from 'react'
 import { Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconFolderCloseMedium, IconFolderOpenMedium } from './icons.tsx'
-import { classifyFile, DATASET_SLOTS, type DatasetSlot } from '../slots.ts'
-import type { DatasetOverviewRow, ItemBrief, ItemRecord, JsonObject } from '../types.ts'
+import { classifyFile, DATASET_SLOTS, VERIFY_LAYER, type DatasetSlot } from '../slots.ts'
+import type { DatasetOverviewRow, ItemBrief, ItemRecord, JsonObject, JudgeNote } from '../types.ts'
 import type { DatasetsViewProps, ItemRunsView } from './contract.ts'
 import { ErrorState } from './ErrorState.tsx'
 import {
   bucketTone, bytes, Chevron, Chip, EmptyState, FileIcon, shortCommit, SlotMark, slotKey, stageTone, stamp, Word,
 } from './parts.tsx'
 import { bucketPhrase, stagePhrase } from './vocab.ts'
+import type { DatasetsKey } from './locales.ts'
 import { DatasetPreview } from './preview.tsx'
 import type { DatasetSelection } from './store.ts'
 import css from './DatasetsView.module.css'
@@ -266,6 +267,24 @@ function judgeOnlyFiles(
   return files
 }
 
+/** The locale key of each judgeability note code the host ships (T98). */
+const JUDGE_NOTE_KEYS: Record<JudgeNote['code'], DatasetsKey> = {
+  'no-rubric': 'judgeNote.no-rubric',
+  'no-grading-layer': 'judgeNote.no-grading-layer',
+  'rubric-invalid': 'judgeNote.rubric-invalid',
+  'rubric-unreadable': 'judgeNote.rubric-unreadable',
+}
+
+/**
+ * One judgeability note in the viewer's language: the host ships a code plus
+ * parameters, the browser owns the sentence. A code this build does not know
+ * (a newer host) falls back to the host's English text rather than a key.
+ */
+function judgeNoteText(note: JudgeNote, t: DatasetsViewProps['t']): string {
+  const key = Object.prototype.hasOwnProperty.call(JUDGE_NOTE_KEYS, note.code) ? JUDGE_NOTE_KEYS[note.code] : undefined
+  return key === undefined ? note.text : t(key, note.params)
+}
+
 /**
  * «只有判官和探针看得到»: the item's judge-only files in one flowing line (the
  * rubric carrying its leaf count, the dataset-level ones folded into one entry
@@ -307,7 +326,13 @@ function JudgeOnlyView(props: { brief: ItemBrief; files: readonly JudgeOnlyFile[
               ))}
             </ul>
           )}
-        {probes.length + sharedProbes.length === 0 && <div className={css.flowWarn}>{t('detail.noProbes')}</div>}
+        {probes.length + sharedProbes.length === 0 && (
+          files.some(file => file.layer === VERIFY_LAYER)
+            // Material without a probe is a different gap from no material:
+            // the item CAN be checked, nothing will run the check (T98).
+            ? <div className={css.flowWarn} title={t('detail.probesNotWiredHint')}>{t('detail.probesNotWired')}</div>
+            : <div className={css.flowWarn}>{t('detail.noProbes')}</div>
+        )}
         <div className={css.boxFoot}>
           <span className={css.panelTag}>{t('detail.judge')}</span>
           {t('detail.judgeRubric', { leaves })}
@@ -318,7 +343,7 @@ function JudgeOnlyView(props: { brief: ItemBrief; files: readonly JudgeOnlyFile[
           {' · '}
           {t('detail.judgeSchemas', { count: stageSchemas.length })}
         </div>
-        {notes.map(note => <div key={note} className={css.panelWarn}>{note}</div>)}
+        {notes.map(note => <div key={`${note.code}:${note.text}`} className={css.panelWarn}>{judgeNoteText(note, t)}</div>)}
       </div>
     </section>
   )

@@ -276,7 +276,9 @@ describe('DatasetsRemoteService', () => {
     const brief = await remote.itemBrief({ repo: 'lib', dataset: 'alpha', item: 'i1' })
     expect(brief.judgeability.rubricPath).toBeNull()
     expect(brief.judgeability.leaves).toBe(0)
-    expect(brief.judgeability.notes.join('\n')).toContain('declares no grading layer')
+    expect(brief.judgeability.notes.map(note => note.text).join('\n')).toContain('declares no grading layer')
+    // The browser translates the code; the English text is the fallback (T98).
+    expect(brief.judgeability.notes[0]).toMatchObject({ code: 'no-grading-layer', params: { layer: 'grading' } })
     await fiber.dispose()
   })
 

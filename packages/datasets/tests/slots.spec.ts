@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  classifyFile, DATASET_SLOTS, exposureOfRole, roleOfLayer, slotLayerMap, slotOfPath, slotOfRole,
+  classifyFile, DATASET_SLOTS, exposureOfRole, roleOfLayer, slotLayerMap, slotOfPath, slotOfRole, slotOfRolePath,
   type DatasetSlot,
 } from '../src/slots.ts'
 
@@ -162,6 +162,60 @@ describe('classifyFile: the two layouts agree', () => {
     expect(slotOfRole('withheld')).toBe('other')
     expect(slotOfRole('passthrough')).toBe('other')
     expect(classifyFile('visible', 'docs/background.md', SENSITIVE).slot).toBe('other')
+  })
+})
+
+/**
+ * The three public-benchmark shapes the organizing Agent produces (T98). The
+ * fixtures are the minimal (layer, display path) pairs — never the benchmark
+ * data — in the convention layout, where the display path does NOT carry the
+ * layer name: that is exactly why `prompt/prompt.py` used to fall through to
+ * 其他文件 (no path rule could see the `prompt` layer).
+ */
+describe('classifyFile: public-benchmark layouts (T98)', () => {
+  it('HumanEval — prompt/prompt.py is the 题干, the canonical solution the 参考答案, test.py a 检查脚本', () => {
+    // dataset.json: prompt (modelFacing), verify, grading.
+    expect(classifyFile('prompt', 'prompt.py', SENSITIVE)).toEqual({ role: 'player', slot: 'prompt', exposure: 'visible' })
+    expect(classifyFile('grading', 'canonical_solution.py', SENSITIVE)).toEqual({ role: 'judge', slot: 'oracle', exposure: 'withheld' })
+    expect(classifyFile('verify', 'test.py', SENSITIVE)).toEqual({ role: 'probe', slot: 'checks', exposure: 'withheld' })
+  })
+
+  it('MMLU — a task/ layer makes its question the 题干 whatever the file is called; answer.txt is the 参考答案', () => {
+    expect(classifyFile('task', 'question.md', SENSITIVE).slot).toBe('prompt')
+    expect(classifyFile('task', 'choices.json', SENSITIVE).slot).toBe('prompt')
+    expect(classifyFile('grading', 'answer.txt', SENSITIVE).slot).toBe('oracle')
+  })
+
+  it('SWE-bench Lite — problem_statement is the 题干, the repository snapshot is NOT', () => {
+    // A visible layer that hands the player a code base: its files are the
+    // workspace, not the question. This is why a visible file no rule names
+    // stays 其他文件 instead of defaulting to 题干.
+    expect(classifyFile('visible', 'problem_statement.md', SENSITIVE).slot).toBe('prompt')
+    expect(classifyFile('repo', 'astropy/modeling/separable.py', SENSITIVE).slot).toBe('other')
+    expect(classifyFile('repo', 'setup.py', SENSITIVE).slot).toBe('other')
+    expect(classifyFile('grading', 'patch.diff', SENSITIVE).slot).toBe('oracle')
+    expect(classifyFile('verify', 'test_patch.diff', SENSITIVE).slot).toBe('checks')
+  })
+
+  it('the register layout reaches the same answer through a prompt/ or task/ directory', () => {
+    expect(classifyFile('visible', 'prompt/prompt.py', SENSITIVE).slot).toBe('prompt')
+    expect(classifyFile('visible', 'task/question.md', SENSITIVE).slot).toBe('prompt')
+  })
+
+  it('the role-bound rules never fire in the other role', () => {
+    // A judge's own prompt is not the player's 题干 …
+    expect(classifyFile('grading', 'prompt_for_judge.md', SENSITIVE).slot).toBe('rubric')
+    // … a prompt-named LAYER that the player never sees is not one either …
+    expect(classifyFile('prompt', 'notes.md', new Set(['prompt'])).slot).toBe('other')
+    // … and a solution file the player is handed is a starter, not the answer key.
+    expect(classifyFile('visible', 'solution.py', SENSITIVE).slot).toBe('other')
+    expect(slotOfRolePath('probe', 'verify', 'answer.txt')).toBeUndefined()
+  })
+
+  it('path rules still win over the role-bound ones', () => {
+    // An oracle/ segment inside a prompt layer is still the answer key.
+    expect(classifyFile('prompt', 'oracle/prompt.py', SENSITIVE).slot).toBe('oracle')
+    expect(classifyFile('task', 'standards.yml', SENSITIVE).slot).toBe('standards')
   })
 })
 

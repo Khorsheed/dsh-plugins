@@ -15,6 +15,19 @@
  * format for a label. A dataset that wants its own slot names is deferred
  * work, not a contract change.
  *
+ * Two more rule sets ride on the ROLE, not on the path alone (T98): a
+ * player-visible file is the 题干 when its layer (or a register directory) is
+ * named `prompt` / `prompts` / `task`, or its basename starts with `prompt` or
+ * `problem_statement` — the shapes HumanEval, MMLU and SWE-bench Lite come out
+ * of organizing in; and a judge-only file named like a reference solution
+ * (`canonical_solution*`, `solution*`, `answer*`, `gold*`, `patch*`) is the
+ * 参考答案. Neither fires in the other role: a `prompt_for_judge.md` in the
+ * grading layer is not a 题干, and a `solution.py` the player is handed is a
+ * starter file, not the answer key. A player-visible file no rule names stays
+ * 其他文件 rather than defaulting to 题干 — a visible layer also carries
+ * workspace snapshots (SWE-bench's repository), fixtures and data files, and
+ * calling those 题干 would bury the real prompt under them.
+ *
  * Both layouts the protocol allows produce the same answer here: the
  * convention form (`items/<id>/<layer>/rubric.yml`, display path `rubric.yml`)
  * and the register form (`items/<id>/answers/rubric.yml`, display path
@@ -37,6 +50,12 @@ export const PROMPTS_DIR = 'prompts'
 export const PROBES_DIR = 'probes'
 /** The register layout's usual home for the probe material (`checks/`, `checks/probes/`). */
 export const CHECKS_DIR = 'checks'
+/**
+ * Layer (or register directory) names that mean «what the player is asked»
+ * when the layer reaches the player — HumanEval organizes into `prompt/`,
+ * MMLU-style sets into `task/` (T98).
+ */
+export const PROMPT_LAYERS: ReadonlySet<string> = new Set(['prompt', 'prompts', 'task'])
 
 /**
  * Who one file's bytes reach. Computed from the declaring layer, never from
@@ -147,6 +166,35 @@ export function slotOfPath(displayPath: string): DatasetSlot | undefined {
 }
 
 /**
+ * The role-bound rules (T98): a slot the path names only in combination with
+ * who sees the file — undefined when none fires.
+ *
+ * - player-visible: the layer, or any register directory, is one of
+ *   {@link PROMPT_LAYERS}; or the basename starts with `prompt` or
+ *   `problem_statement` (SWE-bench's field name) → 题干;
+ * - judge-only: the basename starts with `canonical_solution`, `solution`,
+ *   `answer`, `gold` or `patch` (HumanEval's / MMLU's / SWE-bench's answer
+ *   key) → 参考答案.
+ *
+ * @param role - the file's role.
+ * @param layer - the declaring layer, or null.
+ * @param displayPath - the file's display path.
+ * @returns the slot, or undefined.
+ */
+export function slotOfRolePath(role: DatasetRole, layer: string | null, displayPath: string): DatasetSlot | undefined {
+  const segments = segmentsOf(displayPath)
+  const base = segments[segments.length - 1] ?? ''
+  const directories = segments.slice(0, -1)
+  if (role === 'player') {
+    if (layer !== null && PROMPT_LAYERS.has(layer)) return 'prompt'
+    if (directories.some(directory => PROMPT_LAYERS.has(directory))) return 'prompt'
+    if (/^prompt/i.test(base) || /^problem_statement/i.test(base)) return 'prompt'
+  }
+  if (role === 'judge' && /^(?:canonical_solution|solution|answer|gold|patch)/i.test(base)) return 'oracle'
+  return undefined
+}
+
+/**
  * The slot a role defaults to when the path names nothing. This is what makes
  * the two layouts agree: `verify/checklist.yml` (convention, display path
  * `checklist.yml`) and `checks/checklist.yml` (register, display path
@@ -162,8 +210,8 @@ export function slotOfRole(role: DatasetRole): DatasetSlot {
 }
 
 /**
- * Classify one file: role from the layer, slot from the path with the role as
- * the fallback.
+ * Classify one file: role from the layer; slot from the path, then from the
+ * role-bound rules ({@link slotOfRolePath}), then the role's own default.
  * @param layer - the declaring layer, or null for the passthrough zone.
  * @param displayPath - the file's display path (see {@link slotOfPath}).
  * @param sensitiveLayers - the descriptor's `modelFacing: false` layer names.
@@ -175,7 +223,8 @@ export function classifyFile(
   sensitiveLayers: ReadonlySet<string>,
 ): FileClassification {
   const role = roleOfLayer(layer, sensitiveLayers)
-  return { role, slot: slotOfPath(displayPath) ?? slotOfRole(role), exposure: exposureOfRole(role) }
+  const slot = slotOfPath(displayPath) ?? slotOfRolePath(role, layer, displayPath) ?? slotOfRole(role)
+  return { role, slot, exposure: exposureOfRole(role) }
 }
 
 /**
