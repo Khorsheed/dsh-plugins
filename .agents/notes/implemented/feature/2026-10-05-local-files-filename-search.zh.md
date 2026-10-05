@@ -10,7 +10,7 @@ local-files 浏览器（右侧栏 `files` 页签）的文件树按目录层级�
 
 ### 搜索是新的 Remote 方法背后的一次 host 端遍历
 
-`LocalFilesService.searchLocalDirectory(path, query, includeHidden)`（service.ts）对整棵树跑一次迭代式 DFS，用大小写不敏感的子串匹配条目 basename，返回相对根路径的命中项（`docs/guide/intro.md`）。它作为 `localFiles/search` 挂在现有 Remote 面上（remote.ts），经注入的 `searchFiles` 接进视图（contract.ts、client/index.ts）——与 `listDirectory`/`readFile` 同一套绝对路径、无调用方查找的纪律。
+`LocalFilesService.searchLocalDirectory(path, query, includeHidden)`（service.ts）对整棵树跑一次迭代式 DFS，用大小写不敏感的子串匹配每个条目的相对根路径——不只是 basename，这样文件夹名命中会连它的内容一起列出（搜 `web-eval` 就是为了点到 `web-eval/` 里面的文件）——命中项以相对根路径返回（`docs/guide/intro.md`）。它作为 `localFiles/search` 挂在现有 Remote 面上（remote.ts），经注入的 `searchFiles` 接进视图（contract.ts、client/index.ts）——与 `listDirectory`/`readFile` 同一套绝对路径、无调用方查找的纪律。
 
 遍历刻意做成"对恶劣树安全"而不是"忽略列表聪明"：由 `SEARCH_MAX_RESULTS`（200）、`SEARCH_MAX_VISITED`（50,000）、`SEARCH_MAX_DEPTH`（16）限界，触顶即置 `truncated`；永不进入 `node_modules` 和 `.git`（依赖与 VCS 内部比一切其他内容都大，且绝不会放着用户文档）；永不跟随符号链接（`readdir` 配 `withFileTypes` 报告的是链接本身，环在构造上不可能）；不可读目录降级为零命中而非报错。隐藏（点号前缀）条目跟随调用方的 `includeHidden`，视图把它绑定到树的眼睛开关上，因此命中项永远不会是树不会渲染的行。
 
@@ -29,6 +29,8 @@ WorkspaceView 持有查询词、200ms 防抖，以及一个序号守卫——落
 **输入框下的扁平结果列表。** 渲染更简单，但让界面出现两套心智模型（两种看文件的方式），并且选中/展开行为要复制一份；过滤 trie 方案原样复用树的行、选中与懒展开，也逐字符合"自动展开所在文件夹"的要求。
 
 **尊重 gitignore / 可配置跳过列表。** gitignore 解析器是一个依赖加一套语义（只适用于 git 根目录），而这个浏览器刻意是 git 无关的；硬编码的 `node_modules`/`.git` 跳过加遍历上限，不用引入任何一方就覆盖了病态情形。
+
+**只匹配 basename（第一版）。** 上线过一天：文件夹名命中时只显示文件夹行本身，不显示它的内容——为了点进 `web-eval/` 里的文件而搜 `web-eval`，结果只有那个文件夹，没有可以点进去的东西（首日用户反馈）。路径匹配严格包含 basename 匹配（basename 是路径的后缀），这次放宽没有损失。
 
 **只过滤已加载节点。** 漏掉的正是动机场景——那个还没人展开到的文件——而且结果集会随交互历史漂移。
 

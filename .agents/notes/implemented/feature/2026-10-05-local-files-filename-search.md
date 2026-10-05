@@ -10,7 +10,7 @@ The local-files browser (the right-sidebar `files` tab) loads its tree one direc
 
 ### The search is one host-side walk behind a new Remote method
 
-`LocalFilesService.searchLocalDirectory(path, query, includeHidden)` (service.ts) runs a single iterative DFS over the tree, matching a case-insensitive substring against entry basenames, and answers root-relative hit paths (`docs/guide/intro.md`). It is exposed as `localFiles/search` on the existing Remote face (remote.ts), wired into the view through the injected `searchFiles` face (contract.ts, client/index.ts) — the same absolute-path, no-lookup discipline as `listDirectory`/`readFile`.
+`LocalFilesService.searchLocalDirectory(path, query, includeHidden)` (service.ts) runs a single iterative DFS over the tree, matching a case-insensitive substring against each entry's root-relative PATH — not just its basename, so a folder-name hit lists that folder's contents (searching `web-eval` is how you reach the files inside `web-eval/`) — and answers the hits as root-relative paths (`docs/guide/intro.md`). It is exposed as `localFiles/search` on the existing Remote face (remote.ts), wired into the view through the injected `searchFiles` face (contract.ts, client/index.ts) — the same absolute-path, no-lookup discipline as `listDirectory`/`readFile`.
 
 The walk is deliberately hostile-tree-safe rather than ignore-list-smart: bounded by `SEARCH_MAX_RESULTS` (200), `SEARCH_MAX_VISITED` (50,000) and `SEARCH_MAX_DEPTH` (16) with a `truncated` flag on any cap hit; it never descends into `node_modules` or `.git` (dependency and VCS internals dwarf everything else and never hold a user document); it never follows symlinks (`readdir` with `withFileTypes` reports the link itself, so cycles are impossible by construction); unreadable directories degrade to zero hits. Hidden (dot-prefixed) entries follow the caller's `includeHidden`, which the view binds to the tree's eye toggle, so a hit never names a row the tree would not render.
 
@@ -29,6 +29,8 @@ WorkspaceView owns the query, a 200ms debounce, and a sequence guard that drops 
 **A flat results list under the input.** Simpler rendering, but it forks the surface's mental model (two ways to see files) and duplicates selection/expansion behavior; the filtered-trie answer reuses the tree's rows, selection and lazy expansion unchanged, and matches the requested "auto-expand the containing folders" verbatim.
 
 **Honor gitignore / a configurable skip list.** A gitignore parser is a dependency and a semantics (git-bound roots only) this git-agnostic browser deliberately lacks; the hard `node_modules`/`.git` skip plus walk caps cover the pathological cases without either.
+
+**Match basenames only (the first cut).** Shipped for a day: a folder-name hit then showed only the folder row, not its contents — searching `web-eval` to reach a file inside `web-eval/` surfaced exactly the folder and nothing to click into (first-day user feedback). Path matching strictly subsumes basename matching (the basename is a suffix of the path), so the widening loses nothing.
 
 **Filter only already-loaded nodes.** Misses the motivating case — the file nobody expanded to yet — and makes the result set depend on interaction history.
 

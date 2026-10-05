@@ -121,9 +121,15 @@ describe('LocalFilesService filename search', () => {
     expect(result.truncated).toBe(false)
   })
 
-  it('hits directory names too, and flags them as dirs', async () => {
+  it('matches the root-relative path: a folder-name hit lists its contents', async () => {
+    // The web-eval scenario: searching a folder's name must surface the files
+    // INSIDE it, not just the folder row itself.
     const result = await service.searchLocalDirectory(dir, 'guide')
-    expect(result.entries).toEqual([{ path: 'docs/guide', isDir: true }])
+    const byPath = new Map(result.entries.map(entry => [entry.path, entry.isDir]))
+    expect(byPath.get('docs/guide')).toBe(true)
+    expect(byPath.get('docs/guide/NOTES.txt')).toBe(false)
+    // A sibling outside the matched folder stays out.
+    expect(byPath.has('docs/other.txt')).toBe(false)
   })
 
   it('excludes hidden entries by default and includes them on request', async () => {

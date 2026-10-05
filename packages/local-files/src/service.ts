@@ -118,7 +118,9 @@ export interface ReadLocalFileRequest {
 export interface SearchLocalDirectoryRequest {
   /** Absolute local directory path the search roots at. */
   path: string
-  /** Case-insensitive substring matched against entry NAMES (files and dirs). */
+  /** Case-insensitive substring matched against each entry's root-relative
+   * PATH, not just its basename — naming a folder surfaces its contents
+   * (searching "web-eval" is how you reach the files inside web-eval/). */
   query: string
   /** Include dot-prefixed (hidden) entries; default false, mirroring the tree's
    * show-hidden toggle so a hit never names a row the tree would not render. */
@@ -258,16 +260,17 @@ export class LocalFilesService {
 
   /**
    * Search entry names below a root — the tree's filename search. Matching is a
-   * case-insensitive substring on the basename of files AND directories; a hit
-   * deep in the tree reports its root-relative path so the client can expand
-   * the ancestor chain around it. The walk is bounded by
+   * case-insensitive substring on the root-relative PATH (so a folder whose
+   * name matches lists its contents as hits too), and every hit reports that
+   * relative path so the client can expand the ancestor chain around it. The
+   * walk is bounded by
    * {@link SEARCH_MAX_RESULTS} / {@link SEARCH_MAX_VISITED} /
    * {@link SEARCH_MAX_DEPTH} (any cap hit sets `truncated`), never descends
    * into {@link SEARCH_SKIP_DIRS}, and never follows symlinks — `withFileTypes`
    * reports the link itself, not its target, so cycles are impossible by
    * construction. Unreadable directories degrade to zero hits, not a failure.
    * @param path - absolute local directory path the search roots at.
-   * @param query - case-insensitive name substring.
+   * @param query - case-insensitive path substring.
    * @param includeHidden - include dot-prefixed entries (the tree's toggle).
    * @returns the hits plus the truncation flag.
    */
@@ -296,7 +299,10 @@ export class LocalFilesService {
         const isDir = dirent.isDirectory()
         if (isDir && SEARCH_SKIP_DIRS.has(name)) continue
         const rel = current.rel === '' ? name : `${current.rel}/${name}`
-        if (name.toLowerCase().includes(needle)) {
+        // The query matches the root-relative PATH, not just the basename:
+        // a folder-name hit must surface that folder's contents (typing
+        // "web-eval" is how you reach the files inside web-eval/).
+        if (rel.toLowerCase().includes(needle)) {
           entries.push({ path: rel, isDir })
           if (entries.length >= SEARCH_MAX_RESULTS) { truncated = true; break }
         }
