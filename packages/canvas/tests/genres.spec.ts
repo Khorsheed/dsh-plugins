@@ -150,6 +150,29 @@ describe('canvas genres', () => {
     expect(categoryOfRole(again.board, 'foreshadow')!.definition).toEqual(upgraded)
   })
 
+  it('seeds the category of a role a newer genre version added, once', async () => {
+    const { board } = bench()
+    board.registerGenre(NOVEL)
+    const id = await plainCanvas(board)
+    const seeded = await board.selectGenre({ canvasId: id, genreId: 'novel' }, SESSION)
+    if (!seeded.ok) throw new Error(seeded.error)
+    expect(categoryOfRole(seeded.board, 'relation')).toBeUndefined()
+    board.registerGenre({
+      ...NOVEL,
+      version: 'novel@2',
+      categories: [...NOVEL.categories, { role: 'relation', label: '关系' }],
+    })
+    const character = categoryOfRole(seeded.board, 'character')!.id
+    const put = await board.putCard({ canvasId: id, kind: character, text: '甲' }, SESSION)
+    if (!put.ok) throw new Error(put.error)
+    const relation = categoryOfRole(put.board, 'relation')
+    expect(relation?.label).toBe('关系')
+    expect(relation!.order).toBeGreaterThan(Math.max(...seeded.board.categories.map(category => category.order)))
+    const again = await board.putCard({ canvasId: id, kind: character, text: '乙' }, SESSION)
+    if (!again.ok) throw new Error(again.error)
+    expect(again.board.categories.filter(category => category.role === 'relation')).toHaveLength(1)
+  })
+
   it('refuses an unregistered genre, and clearing keeps the categories', async () => {
     const { board } = bench()
     board.registerGenre(NOVEL)
