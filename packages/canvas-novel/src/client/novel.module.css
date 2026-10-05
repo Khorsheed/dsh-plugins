@@ -377,48 +377,97 @@
 
 /* ── Chapter ────────────────────────────────────────────────────────── */
 
-.lampBar {
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
+/* One reading column, centred in however wide a pane: the stepper, the plan,
+   the text and the closing bar share its edges. */
+.chapterPage {
+  width: 100%;
+  max-width: 660px;
+  margin: 0 auto;
+  gap: 18px;
 }
 
-.lampStep {
+.chapterHead {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1 1 0;
-  font: var(--dsw-font-xxxs-11);
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  font: var(--dsw-font-xxs-12);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 规划 — 写作 — 抽取 — 审过: dots joined by short rules. */
+.stepper {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
 }
 
-.lampSegment {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--dsw-alias-border-l1);
+.step + .step::before {
+  content: '';
+  width: 22px;
+  height: 1px;
+  margin: 0 8px;
+  background: var(--dsw-alias-border-l2);
 }
 
-.lampStep[data-state="done"] .lampSegment { background: var(--dsw-alias-state-business-primary); }
-.lampStep[data-state="current"] { color: var(--dsw-alias-label-primary); }
-.lampStep[data-state="current"] .lampSegment { background: var(--dsw-alias-brand-primary); }
-.lampStep[data-warn="true"] .lampSegment { background: var(--dsw-alias-state-error-primary); }
+.stepDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid var(--dsw-alias-border-l2);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
 
-.lampPhase {
-  flex: none;
-  margin-left: 8px;
+.step[data-state="done"] { color: var(--dsw-alias-label-secondary); }
+.step[data-state="done"] + .step::before { background: var(--dsw-alias-state-business-primary); }
+.step[data-state="done"] .stepDot {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+.step[data-state="current"] {
   font: var(--dsw-font-xxs-strong-12);
-  color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary);
 }
-
-.lampPhase[data-phase="reviewed"] { color: var(--dsw-alias-state-business-primary); }
-.lampPhase[data-phase="fileMissing"] { color: var(--dsw-alias-state-error-primary); }
+.step[data-state="current"] .stepDot {
+  border: 2px solid var(--dsw-alias-brand-primary);
+  box-shadow: inset 0 0 0 3px var(--dsw-alias-bg-base), inset 0 0 0 8px var(--dsw-alias-brand-primary);
+}
+.step[data-warn="true"] { color: var(--dsw-alias-state-error-primary); }
+.step[data-warn="true"] .stepDot {
+  border-color: var(--dsw-alias-state-error-primary);
+  box-shadow: inset 0 0 0 3px var(--dsw-alias-bg-base), inset 0 0 0 8px var(--dsw-alias-state-error-primary);
+}
 
 .plan {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
 }
 
@@ -433,7 +482,7 @@
 }
 
 .planGoal {
-  line-height: 1.6;
+  line-height: 1.7;
 }
 
 .planMeta {
@@ -445,54 +494,100 @@
 }
 
 .planEmpty {
+  font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-tertiary);
 }
 
 /* The text is read, not scanned: a serif column at a reading measure. */
 .prose {
-  max-width: 36em;
+  padding-top: 4px;
   font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
-  font-size: 15px;
-  line-height: 1.95;
+  font-size: 16px;
+  line-height: 2;
+  letter-spacing: 0.02em;
+  color: var(--dsw-alias-label-primary);
 }
 
 .prose p {
-  margin: 0 0 0.6em;
+  margin: 0 0 1em;
   text-indent: 2em;
 }
 
 .proseHeading {
-  margin: 0.4em 0 0.6em;
-  font-size: 16px;
+  margin: 0.6em 0 1em;
+  font-size: 17px;
   font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.1em;
 }
 
+/* The manuscript's path closes the text: small, centred under a short rule. */
 .footer {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  padding-top: 8px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
-  font: var(--dsw-font-xxs-12);
-  font-variant-numeric: tabular-nums;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font: var(--dsw-font-xxxs-11);
   color: var(--dsw-alias-label-tertiary);
+}
+
+.footer::before {
+  content: '';
+  width: 32px;
+  height: 1px;
+  background: var(--dsw-alias-border-l2);
 }
 
 .path {
   word-break: break-all;
 }
 
-/* The closing gesture stays in reach however long the chapter. */
+/* The closing gesture stays in reach however long the chapter: the gate on
+   the left, the one button on the right, over a fade from the text. The
+   canvas page body pads its bottom by 64px; sticking at -64px puts the bar on
+   the pane's real bottom edge instead of floating above a strip of text. */
 .reviewBar {
   position: sticky;
   bottom: -64px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 0;
-  border-top: 1px solid var(--dsw-alias-border-l1);
-  background: var(--dsw-alias-bg-base);
+  gap: 8px 12px;
+  padding: 20px 0 16px;
+  background: linear-gradient(to bottom, transparent, var(--dsw-alias-bg-base) 16px);
   font: var(--dsw-font-xxs-12);
+}
+
+.reviewButton {
+  margin-left: auto;
+  padding: 6px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-brand-primary);
+  font: var(--dsw-font-xs-strong-13);
+  color: var(--dsw-alias-label-primary-inverted);
+  cursor: pointer;
+}
+
+.reviewButton:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.reviewButton:disabled {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.reviewedMark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
+  font: var(--dsw-font-xs-strong-13);
+  color: var(--dsw-alias-state-business-primary);
 }
