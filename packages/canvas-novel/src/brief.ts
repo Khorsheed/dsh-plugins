@@ -82,7 +82,7 @@ function foreshadowLineWrite(view: ForeshadowView): string {
     view.plantedAt === undefined ? '' : `埋于第${view.plantedAt}章`,
     last === undefined ? '' : `最后活跃第${last}章`,
   ].filter(part => part !== '')
-  return `- [${view.ref}] ${view.question}${parts.length === 0 ? '' : `（${parts.join(' · ')}）`}`
+  return `- [${view.ref}] ${view.starred ? '★ ' : ''}${view.question}${parts.length === 0 ? '' : `（${parts.join(' · ')}）`}`
 }
 
 /** The plan-variant ledger line: `- [#12] ★ 门缝里的东西（埋于第1章 · 已 4 章未动 ⚠）` — ★ is the user's star. */
@@ -145,6 +145,8 @@ function characterBlock(entry: { readonly character: CharacterView; readonly rec
   const lines = [`### ${character.name}${identityOf(character)}`]
   const current = character.currentState ?? {}
   lines.push(`此刻：${current.where ?? '未定'} / ${current.state ?? '未定'} / 牵挂：${current.concern ?? '无'}`)
+  if (character.appearance !== undefined) lines.push(`外貌：${character.appearance}`)
+  if (character.voice !== undefined) lines.push(`说话方式：${character.voice}`)
   if (recent.length > 0 && expPerChar > 0) {
     lines.push(`近来：${recent.slice(-expPerChar).map(row => `第${row.chapter}章 ${row.entry}`).join('；')}`)
   }
@@ -152,6 +154,26 @@ function characterBlock(entry: { readonly character: CharacterView; readonly rec
   lines.push(`知道 ${join(character.knows)}；不知道 ${join(character.unaware)}；秘密 ${join(character.secrets)}`)
   lines.push('（非 POV 角色只写可观察的外在言行。）')
   return lines
+}
+
+/**
+ * The ledger lines one render pass keeps: every starred foreshadow (the
+ * user's ★ is never trimmed by the budget), then the longest-sleeping rest up
+ * to the cap. The input is already starred-first (store `sortBySleep`).
+ */
+function keptForeshadows(views: readonly ForeshadowView[], cap: number): readonly ForeshadowView[] {
+  const starred = views.filter(view => view.starred)
+  return [...starred, ...views.filter(view => !view.starred).slice(0, Math.max(0, cap - starred.length))]
+}
+
+/** The plan roster line: identity, then the drives a plan arcs on (想要 / 缺失 / 旧伤). */
+function rosterLine(character: CharacterView): string {
+  const drives = [
+    character.want === undefined ? '' : `想要 ${character.want}`,
+    character.lack === undefined ? '' : `缺 ${character.lack}`,
+    character.wound === undefined ? '' : `旧伤 ${character.wound}`,
+  ].filter(part => part !== '')
+  return `- ${character.name}：${character.identity ?? '—'}${drives.length === 0 ? '' : `（${drives.join(' · ')}）`}`
 }
 
 /** The 从略 footnote the budget guard appends when caps bit. */
@@ -179,7 +201,7 @@ export function renderWriteBrief(data: BriefData): string {
 
 /** One render pass under the given limits; undefined when still over budget (the caller tightens). */
 function renderWriteWithin(data: BriefData, limits: RenderLimits, budget: number, lastResort = false): string | undefined {
-  const foreshadows = data.activeForeshadows.slice(0, limits.foreshadowTopK)
+  const foreshadows = keptForeshadows(data.activeForeshadows, limits.foreshadowTopK)
   const recaps = data.previousRecaps.slice(-limits.recapMax)
   const lines = [
     `# 《${data.workTitle}》写作约束 · 第${data.target.n}章 ${data.target.title}`,
@@ -232,7 +254,7 @@ export function renderPlanBrief(data: BriefData): string {
 
 /** One plan render pass under the given limits; undefined when still over budget. */
 function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number, lastResort = false): string | undefined {
-  const foreshadows = data.activeForeshadows.slice(0, limits.foreshadowTopK)
+  const foreshadows = keptForeshadows(data.activeForeshadows, limits.foreshadowTopK)
   const recaps = data.previousRecaps.slice(-limits.recapMax)
   const lines = [
     `# 《${data.workTitle}》第${data.target.n}章规划参考`,
@@ -256,8 +278,8 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
     '## 最近章节摘要',
     ...(recaps.length === 0 ? ['（还没有已摘要的章节。）'] : recaps.map(chapter => `- 第${chapter.n}章 ${chapter.recap ?? ''}`)),
     '',
-    '## 可用角色（一句身份）',
-    ...(data.roster.length === 0 ? ['（还没有角色卡。）'] : data.roster.map(character => `- ${character.name}：${character.identity ?? '—'}`)),
+    '## 可用角色（身份与动机）',
+    ...(data.roster.length === 0 ? ['（还没有角色卡。）'] : data.roster.map(rosterLine)),
   )
   lines.push(...omissionNote(
     data.activeForeshadows.length - foreshadows.length,

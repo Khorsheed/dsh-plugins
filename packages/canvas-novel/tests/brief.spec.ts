@@ -91,4 +91,17 @@ describe('the three brief variants on the《梦境监护者》seed (CP1)', () =>
     // Resolved foreshadows stay out of the active board (the subagent must not re-touch them).
     expect(text).not.toContain('[#9]')
   })
+
+  it('keeps every starred foreshadow when the budget trims the ledger', async () => {
+    const data = await seededBrief()
+    const base = data.activeForeshadows[0]!
+    // 30 plain lines first, the starred one last: the cap still keeps it.
+    const plain = Array.from({ length: 30 }, (_, i) => ({ ...base, cardId: `plain${i}`, ref: `#${100 + i}`, question: `普通悬念${i}`, starred: false }))
+    const starred = { ...base, cardId: 'starLast', ref: '#99', question: '星标的那条', starred: true }
+    const crowded = { ...data, activeForeshadows: [...plain, starred] }
+    for (const text of [renderPlanBrief(crowded), renderWriteBrief(crowded)]) {
+      expect(text).toContain('[#99] ★ 星标的那条')
+      expect(text).toContain('预算从略')
+    }
+  })
 })

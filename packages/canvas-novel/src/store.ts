@@ -1628,7 +1628,7 @@ function rolesOn(board: NovelBoardView): Map<string, EntryRole> {
 
 /** Live foreshadows, longest-slept first (an unknown sleep sorts as just touched). */
 function sortBySleep(views: readonly ForeshadowView[]): ForeshadowView[] {
-  return [...views].sort((a, b) => (b.slept ?? 0) - (a.slept ?? 0))
+  return [...views].sort((a, b) => Number(b.starred) - Number(a.starred) || (b.slept ?? 0) - (a.slept ?? 0))
 }
 
 /**
