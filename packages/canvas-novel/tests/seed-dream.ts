@@ -1,7 +1,8 @@
 /**
  * The《梦境监护者》seed: one work with canon rules, a principle, a
  * canvas-native proposed card (never in the brief), the three-chapter foreshadow ledger (plus one resolved with its
- * answer), two characters with their experience journal, five extracted
+ * answer), two characters with their experience journal, the relation card
+ * between them with its points and stage journal (ready to level up), five extracted
  * chapters with recaps and manuscripts, and the sixth chapter in planning
  * with its plan — the CP1 brief fixture (proposal §9's acceptance data:
  * 赵启明/艾文/门缝伏笔/蓝色叶子). The settings are canvas cards
@@ -34,6 +35,7 @@ export const CARD = {
   formerKeeper: 'c_formerKeeper',
   zhao: 'c_zhao',
   aiwen: 'c_aiwen',
+  zhaoAiwen: 'c_zhaoAiwen',
 } as const
 
 /** The seeded cards, in board order. */
@@ -57,7 +59,6 @@ export function dreamCards(): NovelCardView[] {
       knows: '监护守则的全部条文\n二层梦的基本规则',
       unaware: '门缝里有什么\n蓝色叶子的来历\n艾文的真实身份',
       secrets: '他在梦里见过走失的妹妹',
-      relations: '艾文：从戒备到勉强信任的引路关系（第4章二层梦脱险后升温）',
     }),
     card(CARD.aiwen, 'character', 'kept', {
       name: '艾文', identity: '活了三百年的梦引者',
@@ -66,6 +67,11 @@ export function dreamCards(): NovelCardView[] {
       knows: '蓝色叶子的来历\n门后空间的结构',
       unaware: '赵启明妹妹的下落',
       secrets: '他就是失踪的前任监护者',
+    }),
+    card(CARD.zhaoAiwen, 'relation', 'kept', {
+      name: '赵启明 × 艾文', pair: [CARD.zhao, CARD.aiwen], type: '同盟', stage: '合作',
+      now: '从戒备到勉强信任，二层梦脱险后升温',
+      views: '赵启明：他知道的比说出来的多\n艾文：守则读得太死，但肯往前走',
     }),
   ]
 }
@@ -93,7 +99,7 @@ export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 
     refs: {
       [CARD.trueName]: 1, [CARD.leafCarrier]: 2, [CARD.openEnding]: 4, [CARD.dreamLayers]: 6,
       [CARD.towerShadow]: 9, [CARD.doorGap]: 12, [CARD.leafGlow]: 15, [CARD.formerKeeper]: 18,
-      [CARD.zhao]: 1, [CARD.aiwen]: 2,
+      [CARD.zhao]: 1, [CARD.aiwen]: 2, [CARD.zhaoAiwen]: 1,
     },
     notes: {
       [CARD.dreamLayers]: { evidenceInText: '二层梦里的时间比外面慢' },
@@ -120,6 +126,16 @@ export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 
     { foreshadowId: CARD.doorGap, chapter: 3, kind: 'advanced', planned: true, createdAt: stamp(3) },
     { foreshadowId: CARD.towerShadow, chapter: 4, kind: 'resolved', planned: true, createdAt: stamp(3) },
   ]
+  const relations = [
+    { relationId: CARD.zhaoAiwen, chapter: 2, kind: 'stage', event: 'start', stage: '接触', level: 1, createdAt: stamp(2) },
+    { relationId: CARD.zhaoAiwen, chapter: 2, kind: 'points', delta: 1, evidence: '递给赵启明一片蓝色叶子', createdAt: stamp(2) },
+    { relationId: CARD.zhaoAiwen, chapter: 3, kind: 'points', delta: 2, evidence: '艾文替他挡下档案室的守夜人', createdAt: stamp(2) },
+    { relationId: CARD.zhaoAiwen, chapter: 3, kind: 'stage', event: 'up', stage: '合作', level: 2, evidence: '两人一起找到半页守则', createdAt: stamp(2) },
+    { relationId: CARD.zhaoAiwen, chapter: 4, kind: 'points', delta: 2, evidence: '在二层梦边缘接住赵启明', createdAt: stamp(3) },
+    { relationId: CARD.zhaoAiwen, chapter: 5, kind: 'points', delta: 1, evidence: '他第一次没有拦赵启明', createdAt: stamp(4) },
+  ]
+  fs.seed(join(dir, 'relations.jsonl'), relations.map(entry => JSON.stringify(entry)).join('\n') + '\n')
+
   fs.seed(join(dir, 'mentions.jsonl'), mentions.map(entry => JSON.stringify(entry)).join('\n') + '\n')
 
   const plan5 = {

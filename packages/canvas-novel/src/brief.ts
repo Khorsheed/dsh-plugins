@@ -17,7 +17,10 @@
  *
  * @module @khorsheed/dsh-canvas-novel
  */
-import { isOverdue, type ChapterRecord, type CharacterView, type ExperienceEntry, type ForeshadowOp, type ForeshadowView, type RuleView } from './types.ts'
+import {
+  isOverdue, nextMilestoneOf, relationStanding,
+  type ChapterRecord, type CharacterView, type ExperienceEntry, type ForeshadowOp, type ForeshadowView, type RelationView, type RuleView,
+} from './types.ts'
 
 /** Everything one brief renders (assembled by the store's `gatherBrief`; kept cards only). */
 export interface BriefData {
@@ -42,6 +45,10 @@ export interface BriefData {
   readonly inScene: readonly { readonly character: CharacterView; readonly recent: readonly ExperienceEntry[] }[]
   /** Every kept character (the plan roster and the extract roster). */
   readonly roster: readonly CharacterView[]
+  /** Every kept relation card (the plan's 关系 block and the extract's 关系榜). */
+  readonly relations: readonly RelationView[]
+  /** The kept relations whose two sides are both in scene (every relation when the chapter has no cast). */
+  readonly inSceneRelations: readonly RelationView[]
   /** Earlier chapters carrying a recap, seq-ordered. */
   readonly previousRecaps: readonly ChapterRecord[]
   /** The previous chapter's last ~200 characters (write variant only). */
@@ -179,6 +186,38 @@ function rosterLine(character: CharacterView): string {
   return `- ${character.name}：${character.identity ?? '—'}${drives.length === 0 ? '' : `（${drives.join(' · ')}）`}`
 }
 
+/** How many relation lines the plan brief lists (可升 pairs first). */
+const PLAN_RELATION_CAP = 15
+
+/** The write brief's 在场关系 line: `- [r2] 老周 × 小满 · 师徒 · 受教：小满偷偷在学修表`, each side's view below. */
+function relationLineWrite(view: RelationView): string[] {
+  return [
+    `- [${view.ref}] ${view.name} · ${view.type} · ${view.stage}${view.now === undefined ? '' : `：${view.now}`}`,
+    ...view.views.map(line => `  ${line}`),
+  ]
+}
+
+/** The plan / extract line: `- [r2] 老周 × 小满 · 师徒 · 受教（可升 → 传承：交出真正的底牌…）`, or the bar (`2/3`) / the rift. */
+function relationLinePlan(view: RelationView): string {
+  const next = view.ready ? nextMilestoneOf(view) : undefined
+  return `- [${view.ref}] ${view.name} · ${view.type} · ${view.stage}（${relationStanding(view)}${next === undefined ? '' : `：${next.milestone}`}）`
+}
+
+/** The plan brief's 关系 block: 可升 pairs first, then the rest, capped; the pacing rule always closes it. */
+function relationBlockPlan(relations: readonly RelationView[]): string[] {
+  if (relations.length === 0) return []
+  const ordered = [...relations.filter(view => view.ready), ...relations.filter(view => !view.ready)]
+  const shown = ordered.slice(0, PLAN_RELATION_CAP)
+  return [
+    '',
+    '## 关系（阶段与进度）',
+    ...shown.map(relationLinePlan),
+    ...(ordered.length > shown.length ? [`（另有 ${ordered.length - shown.length} 对关系未列入，novel_read(cards, role=关系) 可取。）`] : []),
+    ...(relations.some(view => view.ready) ? ['标「可升」的关系攒够了分：可以考虑在这一章或接下来几章安排一场关键戏，让括号里那件事在正文里发生。'] : []),
+    '一章最多让一对关系升一级，别让关系一下子跳级。',
+  ]
+}
+
 /** The 从略 footnote the budget guard appends when caps bit. */
 function omissionNote(omittedForeshadows: number, omittedRecaps: number): string[] {
   const parts = [
@@ -225,6 +264,7 @@ function renderWriteWithin(data: BriefData, limits: RenderLimits, budget: number
     ...(data.inScene.length === 0
       ? ['（本章未登记出场角色——plan.cast 的 who 填角色 ref 或名字。）']
       : data.inScene.flatMap(entry => [...characterBlock(entry, limits.expPerChar), '']).slice(0, -1)),
+    ...(data.inSceneRelations.length === 0 ? [] : ['', '## 在场关系', ...data.inSceneRelations.flatMap(relationLineWrite)]),
     '',
     '## 此前脉络（摘要）',
     ...(recaps.length === 0 ? ['（这是第一章。）'] : recaps.map(chapter => `- 第${chapter.n}章 ${chapter.recap ?? ''}`)),
@@ -283,6 +323,7 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
     '',
     '## 可用角色（身份与动机）',
     ...(data.roster.length === 0 ? ['（还没有角色卡。）'] : data.roster.map(rosterLine)),
+    ...relationBlockPlan(data.relations),
   )
   lines.push(...omissionNote(
     data.activeForeshadows.length - foreshadows.length,
@@ -303,6 +344,10 @@ export const EXTRACT_OUTPUT_SCHEMA = `{
   "new_characters": [{ "name": "…", "identity": "一句身份", "evidence_in_text": "≤50字原文" }],
   "experiences": [{ "character_id": "c1", "entry": "本章做了什么、状态怎么变，1-2句", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "current_states": [{ "character_id": "c1", "where": "…", "state": "…", "concern": "…", "confidence": "high|medium|low" }],
+  "relation_points": [{ "relation_id": "r2", "delta": -2到2的整数, "evidence_in_text": "≤50字原文" }],
+  "relation_milestones": [{ "relation_id": "r2", "evidence_in_text": "≤50字原文" }],
+  "relation_changes": [{ "relation_id": "r2", "change": "裂痕|决裂|修复|转类型", "to_type": "仅转类型给：爱情|亲情|友情|师徒|对手|同盟|其他", "evidence_in_text": "≤50字原文" }],
+  "new_relations": [{ "a": "c1 或名字", "b": "c2 或名字", "type": "爱情|亲情|友情|师徒|对手|同盟|其他", "now": "一句现状", "evidence_in_text": "≤50字原文" }],
   "recap": "本章 2-3 句摘要"
 }`
 
@@ -321,7 +366,7 @@ export const EXTRACT_OUTPUT_SCHEMA = `{
  */
 export function renderExtractBrief(data: BriefData, body: string): string {
   return [
-    `你是长篇小说的记忆对账员。输入是第${data.target.n}章正文、本章计划、活跃伏笔榜、角色花名册。`,
+    `你是长篇小说的记忆对账员。输入是第${data.target.n}章正文、本章计划、活跃伏笔榜、角色花名册、关系榜。`,
     '输出严格 JSON（schema 在最后）。规则：',
     '1. 每条产出必须带 evidence：≤50 字原文引用，逐字摘自本章正文；',
     '2. 伏笔/角色只按 id 引用榜单与名册中的对象；不认识的对象放 new_*，不硬靠；',
@@ -333,7 +378,12 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '   信息差同样逐条核对：那个角色在正文里确实得知了那件事，才写进 info_gaps_closed；',
     '   伏笔只按实际写到的报 foreshadow_mentions，计划列了却没写到的不要编；',
     '5. 角色经历每人 1-2 句：本章做了什么、状态怎么变；current_state 给',
-    '   where/state/concern 三字段。',
+    '   where/state/concern 三字段；',
+    '6. 关系只打分、不定级：关系榜上两人都在本章出场的每一对，按两人之间的互动给 relation_points——',
+    '   +2 明显拉近，+1 略近，-1 略远，-2 明显伤害；没有实质互动的不打；',
+    '   标「可升」的一对，括号里那件事在正文里确实发生了，才写进 relation_milestones；',
+    '   关系出现裂痕、决裂、修复，或变成另一种关系（转类型，给 to_type），写进 relation_changes；',
+    '   两个角色之间出现了值得追踪、榜上还没有的关系，写进 new_relations。',
     '',
     '【本章正文】',
     body.trim() === '' ? '（正文为空——没有什么可对账的。）' : body,
@@ -348,6 +398,9 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '',
     '【角色花名册】',
     ...(data.roster.length === 0 ? ['（还没有角色卡。）'] : data.roster.map(character => `- [${character.ref}] ${character.name}${identityOf(character)}`)),
+    '',
+    '【关系榜】',
+    ...(data.relations.length === 0 ? ['（还没有关系卡。）'] : data.relations.map(relationLinePlan)),
     '',
     '【输出 schema】',
     EXTRACT_OUTPUT_SCHEMA,

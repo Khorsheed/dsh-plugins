@@ -145,7 +145,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
   }
 
-  /** One card's engine side: its role, the star (foreshadows), 此刻 (characters). */
+  /** One card's engine side: its role, the star (foreshadows), 此刻 and 关系 (characters), the bar (relations). */
   @Remote('card')
   async card(request: NovelCardRequest): Promise<NovelCardResult> {
     const entries = await this.core.readEntries(request.canvasId)
@@ -154,6 +154,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     if (role === undefined) return { ok: false, error: 'missing' }
     const foreshadow = entries.foreshadows.find(view => view.cardId === request.cardId)
     const character = entries.characters.find(view => view.cardId === request.cardId)
+    const relation = entries.relations.find(view => view.cardId === request.cardId)
     return {
       ok: true,
       role,
@@ -162,6 +163,8 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
         starredCount: entries.foreshadows.filter(view => view.starred).length,
       }),
       ...(character?.currentState === undefined ? {} : { currentState: character.currentState }),
+      ...(character === undefined || character.relations.length === 0 ? {} : { relations: character.relations }),
+      ...(relation === undefined ? {} : { relation }),
     }
   }
 

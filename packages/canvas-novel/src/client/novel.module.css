@@ -1192,6 +1192,41 @@
 
 .kvRow { display: contents; }
 
+.relationList {
+  margin: 0;
+  padding-left: 18px;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-primary);
+}
+
+.ladderReady {
+  font: var(--dsw-font-xxs-strong-12);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.ladder {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.ladder th,
+.ladder td {
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: top;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.ladder th { width: 5em; font-weight: 400; white-space: nowrap; }
+
+.ladder tr[data-current='true'] th,
+.ladder tr[data-current='true'] td {
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
 .starToggle {
   align-self: flex-start;
   padding: 4px 12px;

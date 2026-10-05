@@ -5,12 +5,14 @@
  * refresh the board, the chapter page offers ✓ 审过 only once the chapter is
  * extracted and its pending items are handled, the plan block leads while
  * planning and folds once there is text, the book's contents filter and read
- * in place, the novel_write card opens its chapter from its own answer, and a
+ * in place, the novel_write card opens its chapter from its own answer, a
+ * relation card shows its ladder and a character its derived 关系, and a
  * chapter heading never repeats the number its title already carries.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { CardSection } from '../src/client/CardSection.tsx'
 import { ChapterBook } from '../src/client/ChapterBook.tsx'
 import { ChapterPage } from '../src/client/ChapterReader.tsx'
 import { CHAPTER_PAGE, LEDGER_PAGE, type NovelRemote, type NovelSurfaceProps } from '../src/client/contract.ts'
@@ -260,6 +262,36 @@ describe('PlanBlock', () => {
     expect(screen.getByText(zh['plan.beatMiss'])).toBeTruthy()
     expect(screen.getByText(zh['plan.opMiss'])).toBeTruthy()
     expect(screen.getByText(zh['plan.hit'])).toBeTruthy()
+  })
+})
+
+describe('CardSection', () => {
+  function renderCard(role: string, value: object) {
+    const remote = { ...fakeRemote({ items: [] }), card: vi.fn(() => ok({ ok: true, role, ...value })) } as unknown as NovelRemote
+    render(<CardSection {...props(remote)} card={{ id: 'c_r' }} category={{ id: 'cat_relation', role }} />)
+  }
+
+  it('a relation shows its type\'s four stages with the current one bold, and 可升 off a full bar', async () => {
+    renderCard('relation', {
+      relation: { cardId: 'c_r', ref: 'r1', name: '赵启明 × 艾文', pair: [], type: '同盟', stage: '合作', level: 2, progress: 3, ready: true, cardStatus: 'kept' },
+    })
+    await screen.findByText(zh['card.ready'])
+    const current = screen.getByText('合作').closest('tr')!
+    expect(current.dataset['current']).toBe('true')
+    expect(screen.getByText('结盟').closest('tr')!.dataset['current']).toBeUndefined()
+  })
+
+  it('a relation in a rift says so instead of the bar', async () => {
+    renderCard('relation', {
+      relation: { cardId: 'c_r', ref: 'r1', name: '赵启明 × 艾文', pair: [], type: '同盟', stage: '裂痕', rift: '裂痕', progress: 2, ready: false, cardStatus: 'kept' },
+    })
+    await screen.findByText(zh['card.rift'].replace('{rift}', '裂痕'))
+    expect(screen.queryByText(zh['card.bar'].replace('{points}', '2').replace('{full}', '3'))).toBeNull()
+  })
+
+  it('a character lists the 关系 read off the relation cards', async () => {
+    renderCard('character', { currentState: {}, relations: ['艾文 · 同盟 · 合作 — 勉强信任'] })
+    await screen.findByText('艾文 · 同盟 · 合作 — 勉强信任')
   })
 })
 

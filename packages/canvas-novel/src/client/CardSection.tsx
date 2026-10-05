@@ -5,14 +5,19 @@
  * - a foreshadow: the user's ★ (主线重点), with a soft hint once more than
  *   {@link STAR_SOFT_LIMIT} carry one;
  * - a character: 此刻 (where / state / concern), refreshed by each 对账 and
- *   editable here.
+ *   editable here, and the 关系 read off the relation cards naming them;
+ * - a relation: its type's four stages with the current one bold, and the
+ *   bar toward the next (n/{@link PTS_PER_LEVEL}, 可以升了, or the rift).
  *
  * Other cards, and cards on a canvas of another genre, get nothing.
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
 import { useState, type ReactNode } from 'react'
-import { NOVEL_GENRE_ID, STAR_SOFT_LIMIT, type CurrentState, type NovelCardResult } from '../types.ts'
+import {
+  NOVEL_GENRE_ID, PTS_PER_LEVEL, RELATION_LADDERS, STAR_SOFT_LIMIT,
+  type CurrentState, type NovelCardResult, type RelationView,
+} from '../types.ts'
 import type { NovelCardOwnerProps, NovelRemote, NovelSurfaceProps } from './contract.ts'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
@@ -24,7 +29,7 @@ const STATE_PARTS = ['where', 'state', 'concern'] as const
 export function CardSection(props: NovelSurfaceProps<NovelCardOwnerProps>): ReactNode {
   const { board, category } = props
   if (board.genre?.id !== NOVEL_GENRE_ID) return null
-  if (category.role !== 'foreshadow' && category.role !== 'character') return null
+  if (category.role !== 'foreshadow' && category.role !== 'character' && category.role !== 'relation') return null
   return <CardSectionBody {...props} />
 }
 
@@ -72,6 +77,8 @@ function CardSectionBody(props: NovelSurfaceProps<NovelCardOwnerProps>): ReactNo
           t={t}
         />
       )}
+      {view.role === 'character' && view.relations !== undefined && <RelationsRow lines={view.relations} t={t} />}
+      {view.relation !== undefined && <LadderRow relation={view.relation} t={t} />}
       {failure !== null && <div className={css.warn}>{failure}</div>}
     </section>
   )
@@ -99,6 +106,44 @@ function StarRow({ view, busy, readOnly, onToggle, t }: {
       </button>
       <span className={css.muted}>{t('card.starHelp')}</span>
       {starred && count > STAR_SOFT_LIMIT && <div className={css.warn}>{t('card.starCrowded', { count, limit: STAR_SOFT_LIMIT })}</div>}
+    </div>
+  )
+}
+
+function RelationsRow({ lines, t }: { readonly lines: readonly string[]; readonly t: NovelSurfaceProps['t'] }): ReactNode {
+  return (
+    <div className={css.cardSectionRow}>
+      <div className={css.cardSectionHead}><span className={css.planLabel}>{t('card.relations')}</span></div>
+      <ul className={css.relationList}>{lines.map(line => <li key={line}>{line}</li>)}</ul>
+      <span className={css.muted}>{t('card.relationsHelp')}</span>
+    </div>
+  )
+}
+
+function LadderRow({ relation, t }: { readonly relation: RelationView; readonly t: NovelSurfaceProps['t'] }): ReactNode {
+  const level = relation.level ?? 0
+  const status = relation.rift !== undefined ? t('card.rift', { rift: relation.rift })
+    : level >= 4 ? t('card.top')
+      : relation.ready ? t('card.ready') : t('card.bar', { points: relation.progress, full: PTS_PER_LEVEL })
+  return (
+    <div className={css.cardSectionRow}>
+      <div className={css.cardSectionHead}>
+        <span className={css.planLabel}>{t('card.ladder')}</span>
+        <span className={relation.ready ? css.ladderReady : css.muted}>{status}</span>
+      </div>
+      <table className={css.ladder}>
+        <tbody>
+          {RELATION_LADDERS[relation.type].map((step, index) => {
+            return (
+              <tr key={step.stage} data-current={index + 1 === level ? 'true' : undefined}>
+                <th scope="row">{step.stage}</th>
+                <td>{step.milestone}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <span className={css.muted}>{t('card.ladderHelp', { full: PTS_PER_LEVEL })}</span>
     </div>
   )
 }

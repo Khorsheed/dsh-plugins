@@ -73,10 +73,10 @@ function cleanStringList(raw: unknown, max = 20): string[] {
 /* ---------------------------------------------------------- card entries */
 
 /**
- * The four roles whose cards feed the brief. Each is a category the genre
- * seeds, found on the board by its role (a renamed label keeps its role).
+ * The roles whose cards feed the brief. Each is a category the genre seeds,
+ * found on the board by its role (a renamed label keeps its role).
  */
-export type EntryRole = 'character' | 'world' | 'principle' | 'foreshadow'
+export type EntryRole = 'character' | 'world' | 'principle' | 'foreshadow' | 'relation'
 
 /** A foreshadow card's status field (the genre's select options, in lifecycle order). */
 export type ForeshadowState = '未埋' | '已埋' | '推进中' | '已揭晓' | '已放弃'
@@ -133,30 +133,32 @@ export interface Annotations {
   readonly notes: Record<string, CardNote>
 }
 
-/** The two ref numbering spaces: characters (`c<n>`) and every other entry (`w<n>` / `#<n>`). */
-export type RefGroup = 'character' | 'entry'
+/** The ref numbering spaces: characters (`c<n>`), relations (`r<n>`) and every other entry (`w<n>` / `#<n>`). */
+export type RefGroup = 'character' | 'relation' | 'entry'
 
 /** Which numbering space a role's cards draw from. */
 export function refGroupOf(role: EntryRole): RefGroup {
-  return role === 'character' ? 'character' : 'entry'
+  return role === 'character' || role === 'relation' ? role : 'entry'
 }
 
-/** A card's display ref: world rules and principles `w12`, foreshadows `#12`, characters `c3`. */
+/** A card's display ref: world rules and principles `w12`, foreshadows `#12`, characters `c3`, relations `r2`. */
 export function refOf(role: EntryRole, n: number): string {
   if (role === 'character') return `c${n}`
+  if (role === 'relation') return `r${n}`
   return role === 'foreshadow' ? `#${n}` : `w${n}`
 }
 
 /**
- * A ref from any spelling the model may send (`w12`, `#12`, `12`, `c3`), or
+ * A ref from any spelling the model may send (`w12`, `#12`, `12`, `c3`, `r2`), or
  * undefined. Only the shape is read here — whether a card holds that number
  * is the board's question.
  */
 export function parseRef(raw: unknown): { readonly group: RefGroup; readonly n: number } | undefined {
   if (typeof raw !== 'string' && typeof raw !== 'number') return undefined
-  const match = /^([wc#]?)(\d+)$/i.exec(String(raw).trim())
+  const match = /^([wcr#]?)(\d+)$/i.exec(String(raw).trim())
   if (match === null) return undefined
-  return { group: match[1]!.toLowerCase() === 'c' ? 'character' : 'entry', n: Number(match[2]) }
+  const prefix = match[1]!.toLowerCase()
+  return { group: prefix === 'c' ? 'character' : prefix === 'r' ? 'relation' : 'entry', n: Number(match[2]) }
 }
 
 /** Tolerant read of one card note. */
@@ -515,9 +517,300 @@ export interface CharacterView {
   readonly knows: readonly string[]
   readonly unaware: readonly string[]
   readonly secrets: readonly string[]
+  /** Derived from the relation cards naming this character, one line per pair (`艾文 · 友情 · 投缘 — 现状`). */
   readonly relations: readonly string[]
   readonly currentState?: CurrentState
   readonly cardStatus: NovelCardStatus
+}
+
+/* ------------------------------------------------------------- relations */
+
+/** A relation card's kind (类型): what the two are to each other. */
+export type RelationType = '爱情' | '亲情' | '友情' | '师徒' | '对手' | '同盟' | '其他'
+
+export const RELATION_TYPES: readonly RelationType[] = ['爱情', '亲情', '友情', '师徒', '对手', '同盟', '其他']
+
+/** The two states a relation can fall into from any level: a rift, and a break. */
+export type RelationRift = '裂痕' | '决裂'
+
+export const RELATION_RIFTS: readonly RelationRift[] = ['裂痕', '决裂']
+
+/**
+ * Each type's four levels (阶段), lowest first, and the milestone that earns
+ * each — what has to happen on the page for the pair to stand at that level.
+ * The milestone of the next level is what 整理 asks about once a pair has
+ * banked {@link PTS_PER_LEVEL} points.
+ */
+export const RELATION_LADDERS: Readonly<Record<RelationType, readonly { readonly stage: string; readonly milestone: string }[]>> = {
+  爱情: [
+    { stage: '相遇', milestone: '正面打过交道，对彼此留下了印象' },
+    { stage: '心动', milestone: '一方开始在意对方，会为对方分神或找借口靠近' },
+    { stage: '动情', milestone: '互相露出真心或软肋，对方接住了' },
+    { stage: '相守', milestone: '把感情说出口，或许下要在一起的承诺' },
+  ],
+  亲情: [
+    { stage: '相认', milestone: '知道了彼此是亲人，或被当作家人' },
+    { stage: '接纳', milestone: '开始把对方当自己人，愿意照顾或被照顾' },
+    { stage: '交底', milestone: '说出不对外人说的旧事或秘密' },
+    { stage: '认定', milestone: '明确认定「你是我的家人」，或为对方承担代价' },
+  ],
+  友情: [
+    { stage: '结识', milestone: '认识了，有过一次像样的来往' },
+    { stage: '投缘', milestone: '主动找对方，聊得来，有一起做的事' },
+    { stage: '知己', milestone: '把心事告诉对方，被理解' },
+    { stage: '结义', milestone: '许下同进退的约定，或为对方冒险' },
+  ],
+  师徒: [
+    { stage: '拜见', milestone: '见了面，一方亮出了另一方想学的本事' },
+    { stage: '受教', milestone: '开始教与学，有一次具体的传授' },
+    { stage: '传承', milestone: '交出真正的底牌或心法，对方懂了它的分量' },
+    { stage: '出师', milestone: '徒弟独立做成一件事，师傅认可或放手' },
+  ],
+  对手: [
+    { stage: '交锋', milestone: '正面交手或冲突一次，知道了对方是谁' },
+    { stage: '较劲', milestone: '把对方当成要赢的人，会针对对方做准备' },
+    { stage: '惺惺相惜', milestone: '看见对方的长处或苦衷，生出敬意' },
+    { stage: '宿命对决', milestone: '双方都认定只能由彼此了结，走向决战' },
+  ],
+  同盟: [
+    { stage: '接触', milestone: '为同一个目标碰面，谈了条件' },
+    { stage: '合作', milestone: '一起做成一件事，各取所需' },
+    { stage: '托底', milestone: '在对方遇险时出手，超出交易的范围' },
+    { stage: '结盟', milestone: '明确结盟或立约，把后背交给对方' },
+  ],
+  其他: [
+    { stage: '相识', milestone: '有过一次正面来往，知道对方和自己有关' },
+    { stage: '亲近', milestone: '开始主动靠近或依赖对方，对方也回应了' },
+    { stage: '交心', milestone: '让对方看到自己不轻易示人的一面，对方没有辜负' },
+    { stage: '确立', milestone: '两人明确了彼此在对方生活里的位置，并为此付出代价或许下承诺' },
+  ],
+}
+
+/** How many banked points make a pair ready for its next level (可升). */
+export const PTS_PER_LEVEL = 3
+
+/** The most points one chapter may move a pair, either way. */
+export const MAX_RELATION_DELTA = 2
+
+/** A relation type from untrusted input, or undefined. */
+export function relationTypeOf(raw: unknown): RelationType | undefined {
+  return RELATION_TYPES.find(type => type === raw)
+}
+
+/**
+ * A relation card's stage read against its type: a level 1–4 when the text
+ * names one of the type's stages (or is the bare number), a rift when it is
+ * 裂痕/决裂, nothing when it is neither.
+ */
+export function readRelationStage(type: RelationType, raw: unknown): { readonly level?: number; readonly rift?: RelationRift } {
+  const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : ''
+  const rift = RELATION_RIFTS.find(candidate => candidate === text)
+  if (rift !== undefined) return { rift }
+  const index = RELATION_LADDERS[type].findIndex(step => step.stage === text)
+  if (index >= 0) return { level: index + 1 }
+  const n = Number(text)
+  return Number.isInteger(n) && n >= 1 && n <= 4 ? { level: n } : {}
+}
+
+/** A level's stage name under a type (clamped to 1–4). */
+export function stageNameOf(type: RelationType, level: number): string {
+  const ladder = RELATION_LADDERS[type]
+  return ladder[Math.min(ladder.length, Math.max(1, Math.round(level))) - 1]!.stage
+}
+
+/**
+ * What a relation-journal stage event does: start (the card is made), up (a
+ * level-up was adopted), crack / break (裂痕 / 决裂), fix (a rift healed),
+ * type (the pair became another kind of pair), set (the stage was changed on
+ * the card directly — by the person, or by the agent at the person's word).
+ * Every one of them restarts the pair's progress at zero.
+ */
+export type RelationEvent = 'start' | 'up' | 'crack' | 'break' | 'fix' | 'type' | 'set'
+
+const RELATION_EVENTS: readonly RelationEvent[] = ['start', 'up', 'crack', 'break', 'fix', 'type', 'set']
+
+/** A relation event from untrusted input, or undefined. */
+export function relationEventOf(raw: unknown): RelationEvent | undefined {
+  return RELATION_EVENTS.find(event => event === raw)
+}
+
+/** One line of `relations.jsonl`: a chapter's points for one pair, or a stage event. */
+export type RelationEntry =
+  | {
+    readonly relationId: string
+    readonly chapter: number
+    readonly kind: 'points'
+    /** −{@link MAX_RELATION_DELTA}…+{@link MAX_RELATION_DELTA}, never 0. */
+    readonly delta: number
+    readonly evidence?: string
+    readonly createdAt: string
+  }
+  | {
+    readonly relationId: string
+    readonly chapter: number
+    readonly kind: 'stage'
+    readonly event: RelationEvent
+    /** The stage name the card moved to (a level's name, or 裂痕/决裂). */
+    readonly stage: string
+    /** The level the stage names (absent in a rift) — what a repair returns to. */
+    readonly level?: number
+    /** type events: the type before and after. */
+    readonly fromType?: RelationType
+    readonly toType?: RelationType
+    readonly evidence?: string
+    readonly createdAt: string
+  }
+
+/**
+ * A pair's banked progress: the points since its last stage event, added in
+ * journal order and held inside 0…{@link PTS_PER_LEVEL} at every step (a
+ * full bar does not bank a surplus; a bad chapter cannot dig below empty).
+ */
+export function relationProgress(entries: readonly RelationEntry[]): number {
+  let points = 0
+  for (const entry of entries) {
+    if (entry.kind === 'stage') points = 0
+    else points = Math.min(PTS_PER_LEVEL, Math.max(0, points + entry.delta))
+  }
+  return points
+}
+
+/** A relation card, read: the pair, the type and stage, and the journal's progress. */
+export interface RelationView {
+  readonly cardId: string
+  /** `r<n>`, or the card id before a number is allocated. */
+  readonly ref: string
+  /** The card's title (`赵启明 × 艾文`). */
+  readonly name: string
+  /** The two characters' card ids, as the card's 双方 holds them (may be fewer when the user left one out). */
+  readonly pair: readonly string[]
+  readonly type: RelationType
+  /** The stage as written on the card. */
+  readonly stage: string
+  /** 1–4 when the stage names a level. */
+  readonly level?: number
+  /** Set when the pair stands in 裂痕 or 决裂. */
+  readonly rift?: RelationRift
+  /** 现状: one line on where the two stand now. */
+  readonly now?: string
+  /** 各自怎么看 (optional), one line per side. */
+  readonly views: readonly string[]
+  /** Points banked toward the next level (0…{@link PTS_PER_LEVEL}). */
+  readonly progress: number
+  /** Ready for the next level (可升): a full bar, a level below the top, no rift. */
+  readonly ready: boolean
+  readonly cardStatus: NovelCardStatus
+}
+
+/** The milestone that would carry a relation to its next level, or undefined at the top or in a rift. */
+export function nextMilestoneOf(view: Pick<RelationView, 'type' | 'level' | 'rift'>): { readonly level: number; readonly stage: string; readonly milestone: string } | undefined {
+  if (view.rift !== undefined || view.level === undefined || view.level >= 4) return undefined
+  const step = RELATION_LADDERS[view.type][view.level]!
+  return { level: view.level + 1, ...step }
+}
+
+/**
+ * Where a pair stands on its bar, in one short run: 可升 → the next stage,
+ * the banked points (`2/3`), 已到顶 at the top level, or the rift it is in.
+ */
+export function relationStanding(view: Pick<RelationView, 'type' | 'level' | 'rift' | 'progress' | 'ready'>): string {
+  if (view.rift !== undefined) return view.rift
+  const next = nextMilestoneOf(view)
+  if (next === undefined) return '已到顶'
+  return view.ready ? `可升 → ${next.stage}` : `${view.progress}/${PTS_PER_LEVEL}`
+}
+
+/**
+ * Whether a type change keeps the pair's level. A pair moving into or out
+ * of 对手 starts over at the first level — enemies are not friends at the
+ * same depth — and may only move into it from a rift (同盟 → 裂痕/决裂 → 对手);
+ * every other change (友情 → 爱情) keeps the level under the new name.
+ */
+export function typeChangeOf(from: RelationType, to: RelationType, rift: RelationRift | undefined): 'keep' | 'restart' | 'needs-rift' {
+  if (to === '对手' && from !== '对手' && rift === undefined) return 'needs-rift'
+  return to === '对手' || from === '对手' ? 'restart' : 'keep'
+}
+
+/** The level a pair stood at before its rift: the newest stage event that names one (1 when none does). */
+function levelBeforeRift(view: Pick<RelationView, 'level'>, journal: readonly RelationEntry[]): number {
+  if (view.level !== undefined) return view.level
+  for (let i = journal.length - 1; i >= 0; i -= 1) {
+    const entry = journal[i]!
+    if (entry.kind === 'stage' && entry.level !== undefined) return entry.level
+  }
+  return 1
+}
+
+/**
+ * Where one stage event takes a pair, or undefined when it does not apply
+ * (a level-up at the top or in a rift, a repair with nothing to repair, a
+ * move into 对手 that skipped the rift). A repair returns the pair to the
+ * level it stood at before the rift; a type change keeps or restarts the
+ * level per {@link typeChangeOf}.
+ * @param view - the relation as it stands.
+ * @param event - the event.
+ * @param toType - type events: the new type.
+ * @param journal - the pair's journal, oldest first.
+ */
+export function relationMove(
+  view: Pick<RelationView, 'type' | 'level' | 'rift'>,
+  event: RelationEvent,
+  toType: RelationType | undefined,
+  journal: readonly RelationEntry[],
+): { readonly type: RelationType; readonly stage: string; readonly level?: number } | undefined {
+  switch (event) {
+    case 'up': {
+      const next = nextMilestoneOf(view)
+      return next === undefined ? undefined : { type: view.type, stage: next.stage, level: next.level }
+    }
+    case 'crack':
+      return view.rift === undefined ? { type: view.type, stage: '裂痕' } : undefined
+    case 'break':
+      return view.rift === '决裂' ? undefined : { type: view.type, stage: '决裂' }
+    case 'fix': {
+      if (view.rift === undefined) return undefined
+      const level = levelBeforeRift(view, journal)
+      return { type: view.type, stage: stageNameOf(view.type, level), level }
+    }
+    case 'type': {
+      if (toType === undefined || toType === view.type) return undefined
+      const change = typeChangeOf(view.type, toType, view.rift)
+      if (change === 'needs-rift') return undefined
+      const level = change === 'restart' ? 1 : levelBeforeRift(view, journal)
+      return { type: toType, stage: stageNameOf(toType, level), level }
+    }
+    default:
+      return undefined
+  }
+}
+
+/** Tolerant read of one relation journal line. */
+export function normalizeRelationEntry(raw: unknown): RelationEntry | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const record = raw as Record<string, unknown>
+  const relationId = cleanText(record['relationId'], 40)
+  const chapter = typeof record['chapter'] === 'number' && Number.isFinite(record['chapter']) ? record['chapter'] : undefined
+  if (relationId === undefined || chapter === undefined) return undefined
+  const evidence = cleanText(record['evidence'], 60)
+  const createdAt = cleanText(record['createdAt'], 40) ?? ''
+  const shared = { relationId, chapter, ...(evidence === undefined ? {} : { evidence }), createdAt }
+  if (record['kind'] === 'points') {
+    const delta = record['delta']
+    if (typeof delta !== 'number' || !Number.isInteger(delta) || delta === 0 || Math.abs(delta) > MAX_RELATION_DELTA) return undefined
+    return { ...shared, kind: 'points', delta }
+  }
+  const event = relationEventOf(record['event'])
+  const stage = cleanText(record['stage'], 20)
+  if (record['kind'] !== 'stage' || stage === undefined || event === undefined) return undefined
+  const level = record['level']
+  const fromType = relationTypeOf(record['fromType'])
+  const toType = relationTypeOf(record['toType'])
+  return {
+    ...shared, kind: 'stage', event, stage,
+    ...(typeof level === 'number' && Number.isInteger(level) && level >= 1 && level <= 4 ? { level } : {}),
+    ...(fromType === undefined ? {} : { fromType }),
+    ...(toType === undefined ? {} : { toType }),
+  }
 }
 
 /** The mention kind a foreshadow op names (the journal's vocabulary). */
@@ -569,11 +862,12 @@ export function laterForeshadowState(a: ForeshadowState, b: ForeshadowState): Fo
  * What a pending item proposes. Proposed entries (a new rule, foreshadow or
  * character) are not pending items — they land as live cards on the board,
  * edited or archived there; the queue holds only the journal lines that wait for a
- * person.
+ * person. A relation's level-up, rift, repair or new type is one too: the
+ * text earned it, but the person decides the pair moved.
  */
-export type PendingKind = 'mention' | 'experience' | 'plan-missed' | 'info-gap'
+export type PendingKind = 'mention' | 'experience' | 'plan-missed' | 'info-gap' | 'relation'
 
-const PENDING_KINDS: readonly PendingKind[] = ['mention', 'experience', 'plan-missed', 'info-gap']
+const PENDING_KINDS: readonly PendingKind[] = ['mention', 'experience', 'plan-missed', 'info-gap', 'relation']
 
 /**
  * A pending item's proposed record, flattened to JSON-safe scalars (the wire
@@ -596,6 +890,11 @@ export interface PendingPayload {
   readonly op?: string
   readonly id?: string
   readonly question?: string
+  /** relation: the relation card id, the stage event, the stage it would move to, and the new type (type events). */
+  readonly relationId?: string
+  readonly event?: string
+  readonly stage?: string
+  readonly toType?: string
 }
 
 /** One row of `pending.json` (the review queue's snapshot — a derived cache that can be rebuilt). */
@@ -626,7 +925,7 @@ function normalizePendingPayload(raw: unknown): PendingPayload {
   if (typeof raw !== 'object' || raw === null) return {}
   const record = raw as Record<string, unknown>
   const out: { -readonly [K in keyof PendingPayload]?: PendingPayload[K] } = {}
-  for (const key of ['foreshadowId', 'kind', 'note', 'answer', 'question', 'characterId', 'fact', 'entry', 'op', 'id'] as const) {
+  for (const key of ['foreshadowId', 'kind', 'note', 'answer', 'question', 'characterId', 'fact', 'entry', 'op', 'id', 'relationId', 'event', 'stage', 'toType'] as const) {
     const value = cleanText(record[key], 500)
     if (value !== undefined) out[key] = value
   }
@@ -758,6 +1057,36 @@ export interface ExtractInfoGapInput {
   readonly evidence_in_text?: string
 }
 
+/** One relation's points for this chapter (−2…+2, evidence-gated). */
+export interface ExtractRelationPointsInput {
+  readonly relation_id?: string | number
+  readonly delta?: number | string
+  readonly evidence_in_text?: string
+}
+
+/** A ready (可升) relation whose next milestone happened in this chapter. */
+export interface ExtractRelationMilestoneInput {
+  readonly relation_id?: string | number
+  readonly evidence_in_text?: string
+}
+
+/** A rift, a break, a repair or a new type, as the text shows it. */
+export interface ExtractRelationChangeInput {
+  readonly relation_id?: string | number
+  readonly change?: string
+  readonly to_type?: string
+  readonly evidence_in_text?: string
+}
+
+/** A pair of carded characters whose relation is new and worth a card. */
+export interface ExtractNewRelationInput {
+  readonly a?: string
+  readonly b?: string
+  readonly type?: string
+  readonly now?: string
+  readonly evidence_in_text?: string
+}
+
 /** The subagent's strict JSON, as `novel_extract` import receives it (tolerant reads throughout). */
 export interface ExtractPayload {
   readonly beats_delivered?: readonly ExtractBeatInput[]
@@ -768,13 +1097,17 @@ export interface ExtractPayload {
   readonly new_characters?: readonly ExtractNewCharacterInput[]
   readonly experiences?: readonly ExtractExperienceInput[]
   readonly current_states?: readonly ExtractCurrentStateInput[]
+  readonly relation_points?: readonly ExtractRelationPointsInput[]
+  readonly relation_milestones?: readonly ExtractRelationMilestoneInput[]
+  readonly relation_changes?: readonly ExtractRelationChangeInput[]
+  readonly new_relations?: readonly ExtractNewRelationInput[]
   readonly recap?: string
 }
 
 /** One dropped import item and why (the anti-fabrication log). */
 export interface ImportDrop {
   readonly kind: string
-  readonly reason: 'evidence-not-found' | 'id-not-in-ledger' | 'character-not-in-roster' | 'card-refused' | 'duplicate'
+  readonly reason: 'evidence-not-found' | 'id-not-in-ledger' | 'character-not-in-roster' | 'card-refused' | 'duplicate' | 'stage-mismatch'
   readonly ref: string
 }
 
@@ -793,13 +1126,15 @@ export interface ImportReport {
   readonly newCards: readonly { readonly cardId: string; readonly role: EntryRole; readonly text: string; readonly ref?: string }[]
 }
 
-/** The ledger answer (伏笔沉睡榜 + 健康度) — kept foreshadow cards only. */
+/** The ledger answer (伏笔沉睡榜 + 健康度, and where each kept relation stands). */
 export interface LedgerResult {
   readonly ok: boolean
   readonly error?: NovelError
   readonly active: readonly ForeshadowView[]
   readonly resolved: readonly ForeshadowView[]
   readonly counts: { readonly active: number; readonly overdue: number; readonly resolved: number; readonly abandoned: number }
+  /** The kept relation cards, 可升 ones first. */
+  readonly relations: readonly RelationView[]
   /** The newest chapter number — the sleeping baseline. */
   readonly currentChapter: number
 }
@@ -901,6 +1236,10 @@ export interface NovelCardResult {
   readonly starredCount?: number
   /** Characters: 此刻 as of the last 对账 or the user's own edit. */
   readonly currentState?: CurrentState
+  /** Characters: the 关系 lines read off the relation cards naming them. */
+  readonly relations?: readonly string[]
+  /** Relations: the card as the engine reads it (stage, level, bar). */
+  readonly relation?: RelationView
 }
 
 /** The person's ★ on a foreshadow. */
