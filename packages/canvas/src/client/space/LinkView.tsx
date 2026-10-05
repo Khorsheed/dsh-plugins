@@ -34,6 +34,7 @@ import { IconCloseOutlineMedium, IconEditOutlineMedium, IconPlusOutlineMedium } 
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { firstDrawingOf, withoutDrawLines } from '../../blocks.ts'
 import { detectCardFormat, htmlTitleOf } from '../../card-format.ts'
+import { typedTitleOf } from '../../card-types.ts'
 import { makeBoardId, type BoardCard, type BoardLane, type BoardLink, type CanvasBoard } from '../../types.ts'
 import { DrawFigure } from '../detail/DrawFigure.tsx'
 import {
@@ -128,8 +129,14 @@ function newLaneId(): string {
   return makeBoardId('lane', Date.now(), random)
 }
 
-/** One node's preview: the most a placed card can show in a couple of lines. */
-function previewOf(card: BoardCard): string {
+/**
+ * One node's preview: the most a placed card can show in a couple of lines. A
+ * typed card is named by its title field (its text is often empty), as on the 卡板.
+ */
+function previewOf(card: BoardCard, board: CanvasBoard): string {
+  const definition = board.categories.find(category => category.id === card.kind)?.definition
+  const typed = typedTitleOf(definition, card.fields)
+  if (typed !== '') return typed
   if (detectCardFormat(card.text) === 'html') return htmlTitleOf(card.text) ?? ''
   const first = withoutDrawLines(card.text).split('\n').find(line => line.trim().length > 0) ?? ''
   return first.replace(/^#+\s*/, '').trim()
@@ -561,7 +568,7 @@ export function LinkView({
         {compact && visibleLinks.length > 0 && <select aria-label={t('link.chooseWire')} value={wireSel ? `${wireSel.from}:${wireSel.to}` : ''}
           onChange={event => setWireSel(visibleLinks.find(link => `${link.from}:${link.to}` === event.target.value) ?? null)}>
           <option value="">{t('link.chooseWire')}</option>
-          {visibleLinks.map(link => <option key={`${link.from}:${link.to}`} value={`${link.from}:${link.to}`}>{previewOf(cardById.get(link.from)!)} → {previewOf(cardById.get(link.to)!)}</option>)}
+          {visibleLinks.map(link => <option key={`${link.from}:${link.to}`} value={`${link.from}:${link.to}`}>{previewOf(cardById.get(link.from)!, board)} → {previewOf(cardById.get(link.to)!, board)}</option>)}
         </select>}
       </div>
       {compact && touchMode === 'connect' && <div className={css.touchHint} role="status">{t(source ? 'link.connectTarget' : 'link.connectStart')}</div>}
@@ -676,7 +683,7 @@ export function LinkView({
             if (card === undefined) return null
             const ink = firstDrawingOf(card.text, card.drawings)
             const lane = laneAt(lanes, node)
-            const text = previewOf(card)
+            const text = previewOf(card, board)
             return (
               <div
                 key={node.id}

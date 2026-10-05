@@ -1262,3 +1262,23 @@ describe('LinkView — compact touch operations', () => {
     expect(bench.mocks.setLayout).not.toHaveBeenCalled()
   })
 })
+
+describe('LinkView typed cards', () => {
+  it('names a typed card by its title field, as the 卡板 does, instead of 「（空卡）」', async () => {
+    const categories = defaultCategories().map(category => ({
+      ...category,
+      definition: {
+        version: 1,
+        fields: [{ key: 'name', label: '名字', type: 'line' as const, required: true, hint: '' }],
+        layout: 'profile' as const,
+        example: {},
+      },
+    }))
+    const bench = makeHarness({
+      boards: [board(CANVAS_ID, [card('c_1', { text: '', fields: { name: '艾文' } })], { categories })],
+    })
+    const container = await face(bench, 1)
+    expect(nodeOf(container, 'c_1').textContent).toContain('艾文')
+    expect(nodeOf(container, 'c_1').textContent).not.toContain('（空卡）')
+  })
+})
