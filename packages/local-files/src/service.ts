@@ -114,6 +114,45 @@ export interface ReadLocalFileRequest {
   offset?: number
 }
 
+/** Filename search request (absolute root path, git-agnostic). */
+export interface SearchLocalDirectoryRequest {
+  /** Absolute local directory path the search roots at. */
+  path: string
+  /** Case-insensitive substring matched against entry NAMES (files and dirs). */
+  query: string
+  /** Include dot-prefixed (hidden) entries; default false, mirroring the tree's
+   * show-hidden toggle so a hit never names a row the tree would not render. */
+  includeHidden?: boolean
+}
+
+/** One filename-search hit, addressed relative to the searched root. */
+export interface SearchLocalEntry {
+  /** Root-relative path ('a/b.md') — the tree's node paths one-for-one. */
+  path: string
+  /** Whether the hit is a directory. */
+  isDir: boolean
+}
+
+/** Filename-search outcome. */
+export interface SearchLocalDirectoryResult {
+  /** The requested path, canonicalized (symlink-resolved). */
+  path: string
+  /** Matching entries, in walk order (the tree re-sorts per level anyway). */
+  entries: readonly SearchLocalEntry[]
+  /** True when a walk cap cut the search short (the hits are a subset). */
+  truncated: boolean
+}
+
+/** Filename-search walk caps: they bound work on hostile trees (a home
+ * directory carries no ignore list). Hitting any cap sets `truncated`. */
+export const SEARCH_MAX_RESULTS = 200
+export const SEARCH_MAX_VISITED = 50_000
+export const SEARCH_MAX_DEPTH = 16
+
+/** Directory names a filename search never descends into: dependency and VCS
+ * internals dwarf everything else combined and never hold a user document. */
+const SEARCH_SKIP_DIRS: ReadonlySet<string> = new Set(['node_modules', '.git'])
+
 /** Local file read outcome classification (mirrors file-preview's vocabulary). */
 export type LocalFilesReadKind = 'text' | 'image' | 'binary' | 'missing' | 'too-large' | 'error'
 
@@ -215,6 +254,58 @@ export class LocalFilesService {
     }))
     entries.sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name, 'en'))
     return { path: canonical, parent: dirname(canonical), entries }
+  }
+
+  /**
+   * Search entry names below a root — the tree's filename search. Matching is a
+   * case-insensitive substring on the basename of files AND directories; a hit
+   * deep in the tree reports its root-relative path so the client can expand
+   * the ancestor chain around it. The walk is bounded by
+   * {@link SEARCH_MAX_RESULTS} / {@link SEARCH_MAX_VISITED} /
+   * {@link SEARCH_MAX_DEPTH} (any cap hit sets `truncated`), never descends
+   * into {@link SEARCH_SKIP_DIRS}, and never follows symlinks — `withFileTypes`
+   * reports the link itself, not its target, so cycles are impossible by
+   * construction. Unreadable directories degrade to zero hits, not a failure.
+   * @param path - absolute local directory path the search roots at.
+   * @param query - case-insensitive name substring.
+   * @param includeHidden - include dot-prefixed entries (the tree's toggle).
+   * @returns the hits plus the truncation flag.
+   */
+  async searchLocalDirectory(path: string, query: string, includeHidden: boolean = false): Promise<SearchLocalDirectoryResult> {
+    const safe = assertSafeLocalPath(path)
+    const canonical = await realpath(safe).catch(() => safe)
+    const needle = query.trim().toLowerCase()
+    const entries: SearchLocalEntry[] = []
+    if (needle === '') return { path: canonical, entries, truncated: false }
+    const info = await stat(canonical).catch(() => null)
+    if (info === null || !info.isDirectory()) {
+      throw new Error(`local-files: not a directory: ${path}`)
+    }
+    let visited = 0
+    let truncated = false
+    const stack: { dir: string; rel: string; depth: number }[] = [{ dir: canonical, rel: '', depth: 0 }]
+    while (stack.length > 0 && !truncated) {
+      const current = stack.pop() as { dir: string; rel: string; depth: number }
+      const dirents = await readdir(current.dir, { withFileTypes: true }).catch(() => null)
+      if (dirents === null) continue
+      for (const dirent of dirents) {
+        visited += 1
+        if (visited > SEARCH_MAX_VISITED) { truncated = true; break }
+        const name = dirent.name
+        if (!includeHidden && name.startsWith('.')) continue
+        const isDir = dirent.isDirectory()
+        if (isDir && SEARCH_SKIP_DIRS.has(name)) continue
+        const rel = current.rel === '' ? name : `${current.rel}/${name}`
+        if (name.toLowerCase().includes(needle)) {
+          entries.push({ path: rel, isDir })
+          if (entries.length >= SEARCH_MAX_RESULTS) { truncated = true; break }
+        }
+        if (isDir && current.depth < SEARCH_MAX_DEPTH) {
+          stack.push({ dir: join(current.dir, name), rel, depth: current.depth + 1 })
+        }
+      }
+    }
+    return { path: canonical, entries, truncated }
   }
 
   /**

@@ -39,6 +39,7 @@ function makeProps(sessions: SessionsSnapshot) {
     t: (key: string) => key,
     listDirectory,
     readFile: vi.fn(),
+    searchFiles: vi.fn(),
     pickWorkspace: vi.fn(() => Promise.resolve(null)),
     useOpenInApps: ((sel: (s: readonly string[] | null) => unknown) => sel([])) as never,
     openFolder: vi.fn(),
@@ -201,4 +202,62 @@ it('shows loading while a selected file is pending instead of asking for a selec
   expect(screen.queryByText('detail.noSelection')).toBeNull()
   await act(async () => finish({ ok: true, value: { kind: 'text', path: `${WORKSPACE}/slow.md`, content: 'Loaded file' } }))
   expect(screen.getByText('Loaded file')).toBeTruthy()
+})
+
+describe('WorkspaceView filename search', () => {
+  const HITS = {
+    ok: true,
+    value: {
+      path: WORKSPACE,
+      truncated: false,
+      entries: [
+        { path: 'docs/guide', isDir: true },
+        { path: 'docs/guide/intro.md', isDir: false },
+      ],
+    },
+  }
+
+  it('filters the tree to name hits with ancestors force-expanded, then restores', async () => {
+    const { props } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+    props.listDirectory = vi.fn().mockResolvedValue({ ok: true, value: { entries: [{ name: 'docs', isDir: true }, { name: 'top.md', isDir: false }] } })
+    const searchFiles = vi.fn().mockResolvedValue(HITS)
+    props.searchFiles = searchFiles as never
+    render(<WorkspaceView {...props} />)
+    await act(async () => {})
+    // Normal mode renders only the first level.
+    expect(screen.getByRole('button', { name: 'docs' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'top.md' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'intro.md' })).toBeNull()
+
+    fireEvent.click(screen.getByTitle('tree.search'))
+    fireEvent.change(screen.getByPlaceholderText('tree.searchPlaceholder'), { target: { value: 'intro' } })
+    // The search is debounced (200ms) before the Remote round-trip.
+    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 300) }) })
+    expect(searchFiles).toHaveBeenCalledWith({ path: WORKSPACE, query: 'intro', includeHidden: false })
+    // The hit's ancestor chain renders expanded with no clicking; a
+    // non-matching root row is filtered out.
+    expect(screen.getByRole('button', { name: 'intro.md' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'guide' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'docs' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'top.md' })).toBeNull()
+
+    // Clearing the query restores the plain tree.
+    fireEvent.change(screen.getByPlaceholderText('tree.searchPlaceholder'), { target: { value: '' } })
+    await act(async () => {})
+    expect(screen.getByRole('button', { name: 'top.md' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'intro.md' })).toBeNull()
+  })
+
+  it('shows the no-match state when nothing matches', async () => {
+    const { props } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+    props.listDirectory = vi.fn().mockResolvedValue({ ok: true, value: { entries: [{ name: 'top.md', isDir: false }] } })
+    props.searchFiles = vi.fn().mockResolvedValue({ ok: true, value: { path: WORKSPACE, truncated: false, entries: [] } }) as never
+    render(<WorkspaceView {...props} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByTitle('tree.search'))
+    fireEvent.change(screen.getByPlaceholderText('tree.searchPlaceholder'), { target: { value: 'zzz' } })
+    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 300) }) })
+    expect(screen.getByText('tree.searchNoMatch')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'top.md' })).toBeNull()
+  })
 })

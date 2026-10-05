@@ -68,6 +68,49 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* The search toggle's engaged state (the eye toggles by glyph; the magnifier
+ * has no second glyph, so the primary tone carries "open"). */
+.treeActionActive,
+.treeActionActive:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Filename-search row: pinned between the tree header and the rows, on the
+   same 12px chrome inset as the header. */
+.searchRow {
+  display: flex;
+  align-items: center;
+  padding: 0 12px 6px;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.searchInput:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.searchInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The "walk hit a cap" footnote under a truncated hit list. */
+.searchHint {
+  padding: 6px 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
 .collapseButton {
   display: inline-flex;
   align-items: center;

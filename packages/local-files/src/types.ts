@@ -14,4 +14,5 @@
 export type {
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFileEntry,
   LocalFilesService, LocalFilesRead, LocalFilesReadKind, ReadLocalFileRequest,
+  SearchLocalDirectoryRequest, SearchLocalDirectoryResult, SearchLocalEntry,
 } from './service.ts'

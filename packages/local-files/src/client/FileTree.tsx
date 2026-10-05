@@ -10,7 +10,7 @@
  * trie.
  */
 import { useMemo, useState, type ReactNode } from 'react'
-import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium, IconPanelLeftOutlineMedium } from './icons.tsx'
+import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium, IconPanelLeftOutlineMedium, IconSearchOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './FileTree.module.css'
 
@@ -148,6 +148,19 @@ export interface FileTreeProps {
   /** When true, the header's expand/collapse-all is an icon button (the
    * local-files browser header, which keeps the title short). */
   iconActions?: boolean
+  /** Search chrome: when onToggleSearch is given the header shows a search
+   * toggle and, while open, an input row below the header. The parent owns the
+   * query, runs the search, and hands the hits back through `groups` — in
+   * search mode (row open + non-empty query) every hit-path ancestor renders
+   * force-expanded, so a hit nested in folders is always visible. */
+  searchOpen?: boolean
+  onToggleSearch?: () => void
+  searchQuery?: string
+  onSearchQuery?: (query: string) => void
+  /** True while the parent's search round-trip is in flight. */
+  searching?: boolean
+  /** True when the host cut the walk at a cap (the hits are a subset). */
+  searchTruncated?: boolean
   /** Locale-bound translator. */
   t: TranslateNS<'localFiles'>
 }
@@ -205,12 +218,16 @@ export function relativeTime(seconds: number, now = Date.now()): string {
 }
 
 /** The file tree. */
-export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', showHidden = false, onToggleHidden, iconActions = false, t }: FileTreeProps): ReactNode {
+export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', showHidden = false, onToggleHidden, iconActions = false, searchOpen = false, onToggleSearch, searchQuery = '', onSearchQuery, searching = false, searchTruncated = false, t }: FileTreeProps): ReactNode {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   // Lazy sub-directory children, keyed by the directory's resolved path.
   const [lazy, setLazy] = useState<Record<string, readonly FileTreeItem[]>>({})
   // Directories whose children were requested but are still loading.
   const [lazyLoading, setLazyLoading] = useState<ReadonlySet<string>>(() => new Set())
+  // Search mode: the parent filtered the groups down to name hits. Hit-path
+  // ancestors render force-expanded and show ONLY their hit chain, so a hit
+  // nested in folders is always visible.
+  const searchActive = searchOpen && searchQuery.trim() !== ''
 
   const roots = useMemo(
     () => groups
@@ -227,6 +244,9 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
   const isDirNode = (node: FileNode): boolean => node.dir || node.children.length > 0
 
   const childrenOf = (node: FileNode): FileNode[] => {
+    // Search mode: a hit-path ancestor renders ONLY its hit chain — the lazy
+    // cache holds the full listing, which would defeat the filter.
+    if (searchActive && node.children.length > 0) return node.children
     // Lazy mode: a directory's sub-items come from the fetched cache once
     // loaded, superseding the (empty) static trie children. Each fetched item
     // is a single-segment sibling; build its node with name = the segment and
@@ -312,13 +332,18 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
 
   const renderNode = (node: FileNode, groupKey: string): ReactNode => {
     const isDir = isDirNode(node)
-    const isOpen = expanded.has(node.path)
+    // Search mode: an ancestor on a hit chain stays open (collapsing it would
+    // hide the hit it exists to reveal); a matched dir WITHOUT hit children
+    // keeps the plain toggle + lazy-load behaviour.
+    const forcedOpen = searchActive && isDir && node.children.length > 0
+    const isOpen = forcedOpen || expanded.has(node.path)
     const dirPath = node.dirPath
     if (isDir) {
       const kids = childrenOf(node)
       return (
         <div key={`${groupKey}/${node.path}`}>
           <button type="button" className={css.row} onClick={() => {
+            if (forcedOpen) return
             if (!isOpen && loadChildren !== undefined) lazyChildren(node)
             toggle(node.path)
           }}>
@@ -370,6 +395,17 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
       <div className={css.treeHeader}>
         <span className={css.treeTitle}>{treeTitle ?? t('tree.changedFilesTitle')}</span>
         <span className={css.treeActions}>
+          {onToggleSearch !== undefined && (
+            <button
+              type="button"
+              className={`${css.treeAction} ${searchOpen ? css.treeActionActive : ''}`}
+              title={searchOpen ? t('tree.closeSearch') : t('tree.search')}
+              aria-pressed={searchOpen}
+              onClick={onToggleSearch}
+            >
+              <IconSearchOutlineMedium />
+            </button>
+          )}
           {iconActions ? (
             <>
               {onToggleHidden !== undefined && (
@@ -382,14 +418,18 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
                   <EyeGlyph open={showHidden} />
                 </button>
               )}
-              <button
-                type="button"
-                className={css.treeAction}
-                title={expanded.size === 0 ? t('tree.expandAll') : t('tree.collapseAll')}
-                onClick={expanded.size === 0 ? expandAll : collapseAll}
-              >
-                <ExpandGlyph open={expanded.size > 0} />
-              </button>
+              {/* Expand/collapse-all is a whole-tree gesture: meaningless
+                  against a filtered hit list, so search mode hides it. */}
+              {!searchActive && (
+                <button
+                  type="button"
+                  className={css.treeAction}
+                  title={expanded.size === 0 ? t('tree.expandAll') : t('tree.collapseAll')}
+                  onClick={expanded.size === 0 ? expandAll : collapseAll}
+                >
+                  <ExpandGlyph open={expanded.size > 0} />
+                </button>
+              )}
             </>
           ) : (
             <button
@@ -412,6 +452,28 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
           )}
         </span>
       </div>
+      {searchOpen && (
+        <div className={css.searchRow}>
+          <input
+            type="search"
+            className={css.searchInput}
+            placeholder={t('tree.searchPlaceholder')}
+            aria-label={t('tree.searchPlaceholder')}
+            value={searchQuery}
+            autoFocus
+            onChange={event => { onSearchQuery?.(event.target.value) }}
+            onKeyDown={event => {
+              if (event.key !== 'Escape') return
+              if (searchQuery === '') onToggleSearch?.()
+              else onSearchQuery?.('')
+            }}
+          />
+        </div>
+      )}
+      {searchActive && searching && <div className={css.lazyLoading} />}
+      {searchActive && !searching && roots.length === 0 && (
+        <div className={css.empty}>{t('tree.searchNoMatch')}</div>
+      )}
       {roots.map(group => (
         <div key={group.key}>
           {group.title !== '' && (
@@ -423,6 +485,9 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
           {group.nodes.map(node => renderNode(node, group.key))}
         </div>
       ))}
+      {searchActive && searchTruncated && (
+        <div className={css.searchHint}>{t('tree.searchTruncated')}</div>
+      )}
     </div>
   )
 }

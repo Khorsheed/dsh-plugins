@@ -92,3 +92,61 @@ describe('LocalFilesService', () => {
     expect([...decoded.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   })
 })
+
+describe('LocalFilesService filename search', () => {
+  const service = new LocalFilesService()
+  let dir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'dsh-local-files-search-'))
+    writeFileSync(join(dir, 'notes.md'), 'root hit\n', 'utf8')
+    mkdirSync(join(dir, 'docs', 'guide'), { recursive: true })
+    writeFileSync(join(dir, 'docs', 'guide', 'NOTES.txt'), 'nested hit\n', 'utf8')
+    writeFileSync(join(dir, 'docs', 'other.txt'), 'no\n', 'utf8')
+    writeFileSync(join(dir, '.hidden-notes'), 'hidden\n', 'utf8')
+    mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true })
+    writeFileSync(join(dir, 'node_modules', 'pkg', 'notes.js'), 'dep\n', 'utf8')
+    mkdirSync(join(dir, '.git'))
+    writeFileSync(join(dir, '.git', 'notes-ref'), 'vcs\n', 'utf8')
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('matches files and directories by case-insensitive substring, root-relative', async () => {
+    const result = await service.searchLocalDirectory(dir, 'notes')
+    const paths = result.entries.map(entry => entry.path).sort()
+    expect(paths).toEqual(['docs/guide/NOTES.txt', 'notes.md'])
+    expect(result.truncated).toBe(false)
+  })
+
+  it('hits directory names too, and flags them as dirs', async () => {
+    const result = await service.searchLocalDirectory(dir, 'guide')
+    expect(result.entries).toEqual([{ path: 'docs/guide', isDir: true }])
+  })
+
+  it('excludes hidden entries by default and includes them on request', async () => {
+    const hidden = await service.searchLocalDirectory(dir, 'hidden-notes')
+    expect(hidden.entries).toEqual([])
+    const shown = await service.searchLocalDirectory(dir, 'hidden-notes', true)
+    expect(shown.entries).toEqual([{ path: '.hidden-notes', isDir: false }])
+  })
+
+  it('never descends into node_modules or .git, even with hidden entries on', async () => {
+    const result = await service.searchLocalDirectory(dir, 'notes', true)
+    const paths = result.entries.map(entry => entry.path)
+    expect(paths.some(path => path.includes('node_modules') || path.includes('.git'))).toBe(false)
+  })
+
+  it('answers an empty query with no hits and no walk', async () => {
+    const result = await service.searchLocalDirectory(dir, '  ')
+    expect(result.entries).toEqual([])
+    expect(result.truncated).toBe(false)
+  })
+
+  it('rejects traversal and missing roots', async () => {
+    await expect(service.searchLocalDirectory('../escape', 'x')).rejects.toThrow()
+    await expect(service.searchLocalDirectory(join(dir, 'missing'), 'x')).rejects.toThrow()
+  })
+})

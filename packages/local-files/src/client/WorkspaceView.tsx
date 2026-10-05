@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 
 import { IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, type IconProps } from './icons.tsx'
-import type { ListLocalDirectoryResult } from '../types.ts'
+import type { ListLocalDirectoryResult, SearchLocalDirectoryResult } from '../types.ts'
 import {
   AdaptiveSplit, ContentPane, basenameOf, dirnameOf, pickFileManager, pickIde,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
@@ -67,7 +67,7 @@ function IconFolderReturnMedium({ size = 16, className }: IconProps) {
 /** The workspace view tab. */
 export function WorkspaceView({
   sessionId, useStore, useSessions, actions, t,
-  listDirectory, readFile, pickWorkspace, useOpenInApps, openFolder, openIDE,
+  listDirectory, readFile, searchFiles, pickWorkspace, useOpenInApps, openFolder, openIDE,
 }: WorkspaceViewProps): ReactNode {
   const root = useStore(s => s.root)
   const currentSession = useStore(s => s.sessionId)
@@ -92,6 +92,37 @@ export function WorkspaceView({
   const [treeWidth, setTreeWidth] = useState(300)
   const [detailOpen, setDetailOpen] = useState(false)
   useEffect(() => { setDetailOpen(false) }, [sessionId, root])
+
+  // Filename search: the view owns the query and the last answer; the tree
+  // renders the chrome. A root/session switch drops any in-flight search.
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResult, setSearchResult] = useState<SearchLocalDirectoryResult | null>(null)
+  const searchSeq = useRef(0)
+  const searchActive = searchOpen && searchQuery.trim() !== ''
+  useEffect(() => {
+    setSearchOpen(false)
+    setSearchQuery('')
+    setSearchResult(null)
+  }, [sessionId, root])
+
+  // Debounced name search over the current root. The seq guard drops answers
+  // that land after the query moved on; rev/hideHidden re-run an open search
+  // (refresh, or the hidden toggle changing what may match).
+  useEffect(() => {
+    if (!searchActive || root === null || root === '') {
+      setSearchResult(null)
+      return
+    }
+    const seq = ++searchSeq.current
+    const timer = window.setTimeout(() => {
+      void searchFiles({ path: root, query: searchQuery.trim(), includeHidden: !hideHidden }).then(result => {
+        if (searchSeq.current !== seq) return
+        setSearchResult(result.ok ? result.value : null)
+      })
+    }, 200)
+    return () => { window.clearTimeout(timer) }
+  }, [searchActive, searchQuery, root, hideHidden, rev, searchFiles])
 
   // Bind the view to the session: a remembered root (the operator's manual
   // choice) always wins; otherwise the session's workspace root is the
@@ -178,12 +209,23 @@ export function WorkspaceView({
         : currentParts.slice(0, index + 1).join('/'),
     }))
 
-  const groups: FileTreeGroup[] = [{
-    key: 'local',
-    title: '',
-    count: listing?.entries.length ?? 0,
-    items: toItems(listing, !hideHidden),
-  }]
+  const groups: FileTreeGroup[] = searchActive
+    ? [{
+      key: 'search',
+      title: '',
+      count: searchResult?.entries.length ?? 0,
+      // Hits arrive root-relative and pre-joined with '/' — the trie rebuilds
+      // the ancestor chain, which search mode then renders force-expanded.
+      items: (searchResult?.entries ?? []).map(entry => entry.isDir
+        ? { path: entry.path, isDir: true }
+        : { path: entry.path, status: '' }),
+    }]
+    : [{
+      key: 'local',
+      title: '',
+      count: listing?.entries.length ?? 0,
+      items: toItems(listing, !hideHidden),
+    }]
 
   // The tree highlights by its own relative path; the store keeps the selected
   // path absolute (needed to read the file). Strip the current root prefix so
@@ -255,6 +297,16 @@ export function WorkspaceView({
               showHidden={!hideHidden}
               onToggleHidden={() => { setHideHidden(value => !value) }}
               iconActions
+              searchOpen={searchOpen}
+              onToggleSearch={() => {
+                setSearchOpen(value => !value)
+                setSearchQuery('')
+                setSearchResult(null)
+              }}
+              searchQuery={searchQuery}
+              onSearchQuery={setSearchQuery}
+              searching={searchActive && searchResult === null}
+              searchTruncated={searchActive && searchResult?.truncated === true}
               t={t}
             />
           )}

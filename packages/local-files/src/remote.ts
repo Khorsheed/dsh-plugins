@@ -12,6 +12,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFilesRead,
   ReadLocalFileRequest, LocalFilesService,
+  SearchLocalDirectoryRequest, SearchLocalDirectoryResult,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -53,5 +54,12 @@ export class LocalFilesRemoteService extends TypertRemoteService<LocalFilesRemot
   @Remote('readFile')
   readFile(request: ReadLocalFileRequest): Promise<LocalFilesRead> {
     return this.localFiles.readFile(request.path, request.offset)
+  }
+
+  /** Search entry names below a root — the tree's filename search. Same
+   * absolute-path, no-lookup discipline as listDirectory. */
+  @Remote('search')
+  search(request: SearchLocalDirectoryRequest): Promise<SearchLocalDirectoryResult> {
+    return this.localFiles.searchLocalDirectory(request.path, request.query, request.includeHidden)
   }
 }
