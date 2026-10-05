@@ -149,6 +149,20 @@ export class EvalPresetVisibility implements EvalChromeVisibility {
     return group.rows.some(row => row.moduleName === EVAL_TOOL_ROW_MODULE)
   }
 
+  /**
+   * Whether one preset's composition names the eval tool row — the global
+   * panel's pick of an evaluation-mode preset for a new session (T97).
+   * @param presetId - the preset.
+   * @returns true / false; undefined when the composition is unreadable or
+   *   does not list that preset (or lists it broken).
+   */
+  grants(presetId: string): boolean | undefined {
+    if (this.composition === null) return undefined
+    const group = this.composition.agentPresets?.find(candidate => candidate.id === presetId)
+    if (group === undefined || group.broken !== undefined) return undefined
+    return group.rows.some(row => row.moduleName === EVAL_TOOL_ROW_MODULE)
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }

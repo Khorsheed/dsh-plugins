@@ -17,7 +17,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hashConditionDocument } from '../src/contract/hash.ts'
-import { EvalRemoteService } from '../src/remote.ts'
+import { callerTag, EvalRemoteService } from '../src/remote.ts'
 import { EvalService } from '../src/service.ts'
 import { createExperiment } from '../src/design/experiment-store.ts'
 import { cleanupTmp, fakeRegistry, tmpTree, useDshHome, writeJson } from './helpers.ts'
@@ -131,7 +131,7 @@ describe('the plan-review verb', () => {
     const { fiber, remote } = await bench()
     const { experimentId } = await fixture()
 
-    const review = await remote.plan(agentOf(), { experimentId })
+    const review = await remote.plan({ experimentId })
 
     expect(review.ok).toBe(true)
     expect(review.errors).toBe(0)
@@ -151,7 +151,7 @@ describe('the plan-review verb', () => {
     const { fiber, remote } = await bench()
     const { experimentId } = await fixture({ planConditions: ['dsh-exec', 'broken'], broken: true })
 
-    const review = await remote.plan(agentOf(), { experimentId })
+    const review = await remote.plan({ experimentId })
 
     expect(review.ok).toBe(false)
     expect(review.errors).toBeGreaterThan(0)
@@ -164,7 +164,7 @@ describe('the plan-review verb', () => {
     const { fiber, remote } = await bench()
     const { experimentId } = await fixture({ planConditions: ['dsh-exec', 'nobody'] })
 
-    const review = await remote.plan(agentOf(), { experimentId })
+    const review = await remote.plan({ experimentId })
 
     // Deliberately pinned: the review page must never be stricter than
     // `dsh-eval validate`, because then a plan the CLI approves would be
@@ -279,7 +279,7 @@ describe('newExperiment — the 新建实验 form\'s write (ui-spec step 2)', ()
     const { fiber, remote } = await bench()
     const { stateRoot } = await fixture()
 
-    const result = await remote.newExperiment(agentOf(), { ...FORM })
+    const result = await remote.newExperiment({ ...FORM })
 
     expect(result.planPath).toBe(join(stateRoot, 'experiments', result.experimentId, 'plan.json'))
     expect(result.review.ok).toBe(true)
@@ -295,7 +295,7 @@ describe('newExperiment — the 新建实验 form\'s write (ui-spec step 2)', ()
     const { stateRoot } = await fixture()
     const runStart = vi.spyOn(service, 'runStart')
 
-    await remote.newExperiment(agentOf('/workspace'), { ...FORM })
+    await remote.newExperiment({ ...FORM })
 
     // 启动不在这张表单上 (ui-spec §五). The starting verb is `approve`, one page
     // further on, and this one has no path to it.
@@ -308,10 +308,14 @@ describe('newExperiment — the 新建实验 form\'s write (ui-spec step 2)', ()
     const { stateRoot } = await fixture()
     const draft = vi.spyOn(service, 'draftExperiment')
 
-    await remote.newExperiment(agentOf(), { ...FORM })
+    await remote.newExperiment({ ...FORM, originSession: 's1' })
+    // The global panel's form has no session behind it (T97): no origin.
+    await remote.newExperiment({ ...FORM, originSession: '' })
 
-    expect(draft).toHaveBeenCalledTimes(1)
+    expect(draft).toHaveBeenCalledTimes(2)
     expect(draft.mock.calls[0]?.[1]).toEqual({ session: { id: 's1' } })
+    expect(draft.mock.calls[0]?.[0]).not.toHaveProperty('originSession')
+    expect(draft.mock.calls[1]?.[1]).toEqual({})
     await fiber.dispose()
   })
 
@@ -319,7 +323,7 @@ describe('newExperiment — the 新建实验 form\'s write (ui-spec step 2)', ()
     const { fiber, remote } = await bench()
     const { stateRoot } = await fixture()
 
-    const result = await remote.newExperiment(agentOf(), {
+    const result = await remote.newExperiment({
       ...FORM,
       newConditions: [{ id: 'dsh-exec-pro', from: 'dsh-exec', model: 'deepseek-v4-pro' }],
     })
@@ -335,7 +339,7 @@ describe('draftOptions — what the form\'s pickers may offer', () => {
     const { fiber, remote } = await bench()
     await fixture()
 
-    const view = await remote.draftOptions(agentOf(), {})
+    const view = await remote.draftOptions({})
 
     expect(view.datasets).toEqual([{
       id: 'reg/ds', commit: COMMIT, items: ['p0-001'],
@@ -351,7 +355,7 @@ describe('the conditions verbs', () => {
     const { fiber, remote } = await bench()
     await fixture()
 
-    const view = await remote.conditions(agentOf(), {})
+    const view = await remote.conditions({})
 
     expect(view.rows.map(row => row.id)).toEqual(['codex-exec', 'dsh-exec'])
     expect(view.rows.find(row => row.id === 'codex-exec')).toMatchObject({
@@ -370,7 +374,7 @@ describe('the conditions verbs', () => {
     const { fiber, remote } = await bench()
     await fixture()
 
-    const diff = await remote.conditionDiff(agentOf(), { a: 'dsh-exec', b: 'codex-exec' })
+    const diff = await remote.conditionDiff({ a: 'dsh-exec', b: 'codex-exec' })
 
     expect(diff.identical).toBe(false)
     const paths = diff.differences.map(difference => difference.path)
@@ -397,7 +401,7 @@ describe('the conditions verbs', () => {
     writeJson(library, 'a.json', { ...CONDITION, notes: 'first' })
     writeJson(library, 'b.json', { ...CONDITION, notes: 'second' })
 
-    const diff = await remote.conditionDiff(agentOf(), { a: 'a', b: 'b' })
+    const diff = await remote.conditionDiff({ a: 'a', b: 'b' })
 
     expect(diff.identical).toBe(true)
     expect(diff.notesOnly).toBe(true)
@@ -412,7 +416,7 @@ describe('experimentArtifact — one experiment\'s files, read in place (T73)', 
     const { stateRoot, experimentId } = await fixture()
     writeFileSync(join(stateRoot, 'experiments', experimentId, 'analysis', 'draft.md'), '# findings\n')
 
-    const view = await remote.experimentArtifact(agentOf(), { experimentId, path: 'analysis/draft.md' })
+    const view = await remote.experimentArtifact({ experimentId, path: 'analysis/draft.md' })
 
     expect(view).toMatchObject({ experimentId, path: 'analysis/draft.md', kind: 'text', truncated: false, text: '# findings\n', note: null })
     await fiber.dispose()
@@ -426,14 +430,14 @@ describe('experimentArtifact — one experiment\'s files, read in place (T73)', 
     writeFileSync(outside, 'not yours')
     symlinkSync(outside, join(dir, 'analysis', 'link.md'))
 
-    await expect(remote.experimentArtifact(agentOf(), { experimentId, path: '../../conditions/dsh-exec.json' }))
+    await expect(remote.experimentArtifact({ experimentId, path: '../../conditions/dsh-exec.json' }))
       .rejects.toThrow(/越出了这个实验的目录/)
-    await expect(remote.experimentArtifact(agentOf(), { experimentId, path: outside }))
+    await expect(remote.experimentArtifact({ experimentId, path: outside }))
       .rejects.toThrow(/相对路径/)
-    await expect(remote.experimentArtifact(agentOf(), { experimentId, path: 'analysis/link.md' }))
+    await expect(remote.experimentArtifact({ experimentId, path: 'analysis/link.md' }))
       .rejects.toThrow(/越出了这个实验的目录/)
     // Another experiment's id cannot be smuggled in as a path either.
-    await expect(remote.experimentArtifact(agentOf(), { experimentId: '../x', path: 'plan.json' }))
+    await expect(remote.experimentArtifact({ experimentId: '../x', path: 'plan.json' }))
       .rejects.toThrow(/not an experiment id/)
     await fiber.dispose()
   })
@@ -443,7 +447,7 @@ describe('experimentArtifact — one experiment\'s files, read in place (T73)', 
     const { stateRoot, experimentId } = await fixture()
     writeFileSync(join(stateRoot, 'experiments', experimentId, 'analysis', 'big.md'), 'x'.repeat(256 * 1024 + 10))
 
-    const view = await remote.experimentArtifact(agentOf(), { experimentId, path: 'analysis/big.md' })
+    const view = await remote.experimentArtifact({ experimentId, path: 'analysis/big.md' })
 
     expect(view.truncated).toBe(true)
     expect(view.bytes).toBe(256 * 1024 + 10)
@@ -457,10 +461,29 @@ describe('experimentArtifact — one experiment\'s files, read in place (T73)', 
     const { stateRoot, experimentId } = await fixture()
     writeFileSync(join(stateRoot, 'experiments', experimentId, 'analysis', 'chart.png'), Buffer.from([0x89, 0x50]))
 
-    const view = await remote.experimentArtifact(agentOf(), { experimentId, path: 'analysis/chart.png' })
+    const view = await remote.experimentArtifact({ experimentId, path: 'analysis/chart.png' })
 
     expect(view).toMatchObject({ kind: 'binary', text: null })
     expect(view.note).toContain('png')
+    await fiber.dispose()
+  })
+})
+
+describe('the session-less Remote (T97)', () => {
+  it('tags a write with the clicking tab, or with the global panel when there is none', () => {
+    expect(callerTag({ session: 's1' })).toBe('tab:s1')
+    expect(callerTag({})).toBe('panel:lab')
+    expect(callerTag({ session: '' })).toBe('panel:lab')
+  })
+
+  it('runs echoes the tab\'s session, and the panel\'s list is the whole deployment', async () => {
+    const { fiber, service, remote } = await bench()
+    const experiments = vi.spyOn(service, 'experiments').mockResolvedValue({ rows: [], notes: [] } as never)
+
+    await remote.runs({ session: 's1' })
+    await remote.runs({})
+
+    expect(experiments.mock.calls).toEqual([[{ session: { id: 's1' } }], [{}]])
     await fiber.dispose()
   })
 })

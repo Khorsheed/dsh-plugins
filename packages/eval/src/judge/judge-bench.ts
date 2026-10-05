@@ -443,8 +443,12 @@ export interface HumanFinalInput {
   /** The blind handle the queue issued for the cell being graded. */
   ticket: string
   verdicts: readonly EvalJudgeVerdictInput[]
-  /** The calling session, recorded as the annotation's `by`. */
-  sessionId: string
+  /**
+   * The calling session, recorded as the annotation's `by` (`tab:<id>`);
+   * null from the session-less global 实验室 panel (T97), recorded as
+   * `panel:lab`.
+   */
+  sessionId: string | null
 }
 
 /**
@@ -506,11 +510,11 @@ export async function writeHumanFinal(input: HumanFinalInput): Promise<EvalHuman
     docs.push(doc)
   }
 
-  // `tab:<sessionId>`, exactly as `retry` and `finalize` record their clicks.
+  // `tab:<sessionId>` (or `panel:lab`), exactly as `retry` and `finalize` record their clicks.
   // NOT a `tool:` origin — that prefix is what the report flags red on this
   // namespace, and it would be the honest thing to write only if a model had
   // written the verdict, which nothing here can arrange.
-  const by = `tab:${sessionId}`
+  const by = sessionId === null ? 'panel:lab' : `tab:${sessionId}`
   const result = await annotate.annotate(missionId, 'human-final', { verdicts: docs }, { runId, by })
   return {
     runId,

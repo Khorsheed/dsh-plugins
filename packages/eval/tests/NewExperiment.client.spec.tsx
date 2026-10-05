@@ -90,7 +90,7 @@ function makeHarness(opts: { composer?: boolean; options?: EvalDraftOptionsView 
 
 type Harness = ReturnType<typeof makeHarness>
 
-function renderView(h: Harness) {
+function renderView(h: Harness, extra: Record<string, unknown> = {}) {
   return render(<LabView {...({
     sessionId: 's1' as SessionId,
     useStore: hookOf(h.instance),
@@ -101,6 +101,7 @@ function renderView(h: Harness) {
     insertDraft: h.insertDraft,
     focusComposer: h.focusComposer,
     t,
+    ...extra,
   } as unknown as LabViewProps)} />)
 }
 
@@ -321,3 +322,38 @@ describe('新建实验 dialog (T87)', () => {
     expect(await screen.findByText('new.title')).toBeTruthy()
   })
 })
+
+// T97: the same dialog in the global 实验室 panel, which has no session (and
+// so no chat box) behind it. 「让 Agent 组织」 opens a NEW evaluation-mode
+// session instead and drafts the request there — never sent.
+describe('新建实验 from the global panel (T97)', () => {
+  afterEach(() => { cleanup() })
+
+  async function openInPanel(h: Harness, startSession: ReturnType<typeof vi.fn>): Promise<void> {
+    renderView(h, { sessionId: '' as SessionId, startSession })
+    fireEvent.click(await screen.findByRole('button', { name: 'list.new' }))
+    await screen.findByRole('option', { name: 'reg/ds' })
+    fireEvent.change(screen.getByLabelText('new.name'), { target: { value: 'sidebar-vs-inline' } })
+  }
+
+  it('opens a new session with the request drafted, and never touches a chat box here', async () => {
+    const h = makeHarness()
+    const startSession = vi.fn(async () => true)
+    await openInPanel(h, startSession)
+    fireEvent.click(organizeButton())
+    await waitFor(() => { expect(startSession).toHaveBeenCalledTimes(1) })
+    const [title, text] = startSession.mock.calls[0] as unknown as [string, string]
+    expect(title).toBe('panel.sessionTitle')
+    expect(text).toContain('organize.settled.name {"name":"sidebar-vs-inline"}')
+    expect(h.insertDraft).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the clipboard when no session could be opened, and says so', async () => {
+    const h = makeHarness()
+    const startSession = vi.fn(async () => false)
+    await openInPanel(h, startSession)
+    fireEvent.click(organizeButton())
+    expect(await screen.findByText(/^agent\.(copied|copyFailed)/)).toBeTruthy()
+  })
+})
+

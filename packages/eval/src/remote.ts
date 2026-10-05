@@ -14,10 +14,16 @@
  * None of those four takes an agent parameter: a CI caller has no agent, and
  * requiring one would put the door back where it was.
  *
- * The LAB TAB's verbs all take one: they are the browser's, reached through a
- * session. Since T73 no verb reads a per-session binding any more —
- * experiments and the condition library belong to the deployment, datasets
- * are pinned registrations — so the agent is only the caller's identity.
+ * The LAB's verbs take none either, with one exception (T97). Since T73 no
+ * verb reads a per-session binding — experiments and the condition library
+ * belong to the deployment, datasets are pinned registrations — so the same
+ * verbs serve a session's lab tab and the session-less global 实验室 panel.
+ * Where a session still MEANS something it travels as data: the writes that
+ * record who clicked carry an optional `session` (`tab:<session>`, or
+ * `panel:lab` without one — {@link callerTag}), `runs` echoes it, and
+ * `newExperiment` records it as the draft's origin. Only `approve` still
+ * takes the live agent: the approving session is the run's parent and its
+ * workspace the run's cwd, so the panel opens a session first.
  * `runs` / `run` (I5·T35a) read the list and one experiment's overview;
  * `plan` / `conditions` / `conditionDiff` (I5·T36) read the plan review and
  * the condition registry; `matrix` / `cells` / `cell` (I5·T35b) read the
@@ -71,6 +77,7 @@ import type {
   EvalApproveResult,
   EvalArchiveRunRequest,
   EvalArchiveWrite,
+  EvalCaller,
   EvalCellAnswersRequest,
   EvalCellArtifactRequest,
   EvalCellArtifactView,
@@ -144,6 +151,17 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     dshEvalRemote: EvalRemoteService
   }
+}
+
+/**
+ * The `by` tag a lab write records for its caller (T97): `tab:<session>` from
+ * a session's lab tab, `panel:lab` from the session-less global 实验室 panel.
+ * Neither is a `tool:` origin — that prefix stays the model's.
+ * @param caller - the request's caller field.
+ * @returns the tag.
+ */
+export function callerTag(caller: EvalCaller): string {
+  return caller.session === undefined || caller.session === '' ? 'panel:lab' : `tab:${caller.session}`
 }
 
 /** Thrown across the wire when a job id names no run this instance started. */
@@ -240,66 +258,58 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * The lab tab's LIST: every experiment this deployment holds and every run
    * eval started, paired. The request object is kept (empty) because the
    * gateway's client proxy enforces exact positional arity.
-   * @param agent - owning live agent; its session is echoed back.
    * @param request - no selectors since T73.
    * @returns the rows, plus a sentence per degraded source.
    */
   @Remote('runs')
-  runs(agent: Agent, request: EvalExperimentsRequest): Promise<EvalExperimentsResult> {
-    void request
-    return this.service.experiments({ session: { id: String(agent.session.id) } })
+  runs(request: EvalExperimentsRequest): Promise<EvalExperimentsResult> {
+    return this.service.experiments(
+      request.session === undefined || request.session === '' ? {} : { session: { id: request.session } },
+    )
   }
 
   /**
    * One started experiment's overview: the row, the run.meta digest, the
    * readiness records verbatim, the histograms, and the job.
-   * @param agent - owning live agent.
    * @param request - the run to open.
    * @returns the detail payload.
    * @throws when the composition mounts no mission service.
    */
   @Remote('run')
-  run(agent: Agent, request: EvalExperimentRequest): EvalExperimentDetail {
-    void agent
+  run(request: EvalExperimentRequest): EvalExperimentDetail {
     return this.service.experiment(request.runId)
   }
 
   /**
    * The PLAN-REVIEW page: the plan's own fields plus `validatePlan`'s verdict
    * as a flat `ok / warn / error` list (ui-spec §五, step 3).
-   * @param agent - owning live agent.
    * @param request - the experiment (or, legacy, a plan path) to review.
    * @returns the digest, the check list, and every condition the plan names.
    */
   @Remote('plan')
-  plan(agent: Agent, request: EvalPlanRequest): Promise<EvalPlanReview> {
-    void agent
+  plan(request: EvalPlanRequest): Promise<EvalPlanReview> {
     return this.service.planReview(request)
   }
 
   /**
    * The CONDITIONS page: every condition in the deployment's library, with
    * its lock and its readiness (ui-spec §五, step 4).
-   * @param agent - owning live agent.
    * @param request - no selectors since T73 (kept for positional arity).
    * @returns the table rows.
    */
   @Remote('conditions')
-  conditions(agent: Agent, request: EvalConditionsRequest): Promise<EvalConditionsView> {
-    void agent
+  conditions(request: EvalConditionsRequest): Promise<EvalConditionsView> {
     void request
     return this.service.conditionsPage()
   }
 
   /**
    * Two conditions, field by field — ONLY what differs.
-   * @param agent - owning live agent.
    * @param request - the two references (a condition id, or a path).
    * @returns the differing paths and each side's value as canonical JSON text.
    */
   @Remote('conditionDiff')
-  conditionDiff(agent: Agent, request: EvalConditionDiffRequest): Promise<EvalConditionDiffView> {
-    void agent
+  conditionDiff(request: EvalConditionDiffRequest): Promise<EvalConditionDiffView> {
     return this.service.conditionDiffPage({ a: request.a, b: request.b })
   }
 
@@ -312,13 +322,11 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * the declaration's `home.sha` from what it measured and writes the lock
    * against the corrected document, which is what the person used to do by
    * copying a digest between a terminal and an editor (I5·T39 · G7).
-   * @param agent - the clicking session.
    * @param request - the condition, and whether to keep the declaration.
    * @returns what provision did, and the row as it now reads.
    */
   @Remote('provisionCondition')
-  provisionCondition(agent: Agent, request: EvalConditionProvisionRequest): Promise<EvalConditionProvisionView> {
-    void agent
+  provisionCondition(request: EvalConditionProvisionRequest): Promise<EvalConditionProvisionView> {
     return this.service.provisionCondition(request)
   }
 
@@ -330,13 +338,11 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * way to fill it in was a text editor (I5·T39 · G6). It is a factor edit:
    * the condition re-hashes, any lock beside it goes stale, and the answer
    * says so rather than re-provisioning on the person's behalf.
-   * @param agent - the clicking session.
    * @param request - the condition and the value.
    * @returns what changed, and the row as it now reads.
    */
   @Remote('setConditionEndpoint')
-  setConditionEndpoint(agent: Agent, request: EvalConditionEndpointRequest): Promise<EvalConditionEndpointView> {
-    void agent
+  setConditionEndpoint(request: EvalConditionEndpointRequest): Promise<EvalConditionEndpointView> {
     return this.service.setConditionEndpoint(request)
   }
 
@@ -344,13 +350,11 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * Change an unstarted experiment's numbers in place (T74). No model tool
    * reaches this: structural edits are the agent's, through a new draft, and
    * the numbers are a person's, on the design page.
-   * @param agent - the clicking session.
    * @param request - the experiment and the values to set.
    * @returns what changed, and the plan review re-read from disk.
    */
   @Remote('setPlanNumbers')
-  setPlanNumbers(agent: Agent, request: EvalPlanNumbersRequest): Promise<EvalPlanNumbersResult> {
-    void agent
+  setPlanNumbers(request: EvalPlanNumbersRequest): Promise<EvalPlanNumbersResult> {
     return this.service.setPlanNumbers(request)
   }
 
@@ -366,24 +370,25 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * validates what it wrote; a plan validate rejects still lands, as a 草稿.
    * The starting verb is `approve`, one page further on, and this one has no
    * path to it.
-   * @param agent - the drafting session, recorded as the experiment's origin.
    * @param request - ui-spec §五's form fields, flat.
    * @returns where the files landed, and validate's verdict on them.
    */
   @Remote('newExperiment')
-  newExperiment(agent: Agent, request: EvalDraftRequest): Promise<EvalDraftResult> {
-    return this.service.draftExperiment(request, { session: { id: String(agent.session.id) } })
+  newExperiment(request: EvalDraftRequest): Promise<EvalDraftResult> {
+    const { originSession, ...draft } = request
+    return this.service.draftExperiment(
+      draft,
+      originSession === undefined || originSession === '' ? {} : { session: { id: originSession } },
+    )
   }
 
   /**
    * The 新建实验 form's pickers: every registered dataset set, and the items
    * and stage schemas each one holds at its latest commit.
-   * @param agent - owning live agent.
    * @param request - no selectors since T73 (kept for positional arity).
    */
   @Remote('draftOptions')
-  draftOptions(agent: Agent, request: EvalDraftOptionsRequest): Promise<EvalDraftOptionsView> {
-    void agent
+  draftOptions(request: EvalDraftOptionsRequest): Promise<EvalDraftOptionsView> {
     void request
     return this.service.draftOptions()
   }
@@ -392,7 +397,6 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * IMPORT plans from `<registration id>@<ref>` as experiments — the same
    * verb as `dsh-eval import --from`. `git show` only, bytes verbatim; a
    * same-id condition conflict refuses and writes nothing.
-   * @param agent - owning live agent.
    * @param request - the source, and optionally the one plan.
    */
   @Remote('importExperiments')
@@ -404,58 +408,48 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * Read one file of one experiment in place — the report page's 分析初稿
    * block. The same rules as `cellArtifact`: that experiment's directory only,
    * text only, cut past the size limit and said so.
-   * @param agent - owning live agent.
    * @param request - the experiment and the experiment-relative path.
    */
   @Remote('experimentArtifact')
-  experimentArtifact(agent: Agent, request: EvalExperimentArtifactRequest): Promise<EvalExperimentArtifactView> {
-    void agent
+  experimentArtifact(request: EvalExperimentArtifactRequest): Promise<EvalExperimentArtifactView> {
     return this.service.experimentArtifact(request)
   }
 
   /**
    * 题目抽屉 (T84): one item's files in five tabs and its rubric rows, at the
    * commit the experiment pins.
-   * @param agent - owning live agent.
    * @param request - the experiment and the item.
    */
   @Remote('itemMaterials')
-  itemMaterials(agent: Agent, request: EvalItemMaterialsRequest): Promise<EvalItemMaterialsView> {
-    void agent
+  itemMaterials(request: EvalItemMaterialsRequest): Promise<EvalItemMaterialsView> {
     return this.service.itemMaterials(request)
   }
 
   /**
    * One file of the pinned dataset, text only and capped (T84).
-   * @param agent - owning live agent.
    * @param request - the experiment, the item (null: set level), the layer and the path.
    */
   @Remote('datasetFile')
-  datasetFile(agent: Agent, request: EvalDatasetFileRequest): Promise<EvalDatasetFileView> {
-    void agent
+  datasetFile(request: EvalDatasetFileRequest): Promise<EvalDatasetFileView> {
     return this.service.datasetFile(request)
   }
 
   /**
    * The judge's prompt for one item before the run, material as placeholders (T84).
-   * @param agent - owning live agent.
    * @param request - the experiment, the item and optionally the judge condition.
    */
   @Remote('judgePromptPreview')
-  judgePromptPreview(agent: Agent, request: EvalJudgePromptPreviewRequest): Promise<EvalJudgePromptPreviewView> {
-    void agent
+  judgePromptPreview(request: EvalJudgePromptPreviewRequest): Promise<EvalJudgePromptPreviewView> {
     return this.service.judgePromptPreview(request)
   }
 
   /**
    * The prompt.md one cell's judging actually wrote (T84), confined to the
    * run's judge directory.
-   * @param agent - owning live agent.
    * @param request - the run, the cell, the attempt and optionally the judge/sample.
    */
   @Remote('judgePrompt')
-  judgePrompt(agent: Agent, request: EvalJudgePromptRequest): Promise<EvalJudgePromptView> {
-    void agent
+  judgePrompt(request: EvalJudgePromptRequest): Promise<EvalJudgePromptView> {
     return this.service.judgePrompt(request)
   }
 
@@ -482,13 +476,11 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   /**
    * The MATRIX page: rows are tasks, one factor on the columns, the rest
    * banded or pinned.
-   * @param agent - owning live agent (the tab's session).
    * @param request - the run and the reader's arrangement.
    * @returns the rows, columns, groups and the run-level footer.
    */
   @Remote('matrix')
-  matrix(agent: Agent, request: EvalMatrixRequest): Promise<EvalMatrixView> {
-    void agent
+  matrix(request: EvalMatrixRequest): Promise<EvalMatrixView> {
     return this.service.matrix(request.runId, {
       ...(request.column === undefined ? {} : { column: request.column }),
       ...(request.groupBy === undefined ? {} : { groupBy: request.groupBy }),
@@ -500,13 +492,11 @@ export class EvalRemoteService extends TypertRemoteService<never> {
   /**
    * The CELLS page: one run's cells with the same exact-match filters the
    * `eval_cells` tool takes, so the tab and the model read one projection.
-   * @param agent - owning live agent.
    * @param request - the run and the filters.
    * @returns the cell rows plus the run's shape.
    */
   @Remote('cells')
-  cells(agent: Agent, request: EvalCellsRequest): EvalCellsResult {
-    void agent
+  cells(request: EvalCellsRequest): EvalCellsResult {
     return this.service.cellRows(request.runId, {
       ...(request.bucket === undefined ? {} : { bucket: request.bucket }),
       ...(request.task === undefined ? {} : { task: request.task }),
@@ -518,12 +508,10 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * ONE cell in full — the drawer: attempts, checkpoints, artifacts, the
    * annotation namespaces, the verify output verbatim, the delegation's child
    * session, and whether its resources may be destroyed.
-   * @param agent - owning live agent.
    * @param request - the run and the cell.
    */
   @Remote('cell')
-  cell(agent: Agent, request: EvalCellRequest): Promise<EvalCellDetail> {
-    void agent
+  cell(request: EvalCellRequest): Promise<EvalCellDetail> {
     return this.service.cell(request.runId, request.missionId)
   }
 
@@ -546,12 +534,10 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * already names the condition in its header, so the material crosses
    * un-de-identified. The blind read is `judgeQueue`'s, over the same files,
    * through the run's own scrub table.
-   * @param agent - owning live agent.
    * @param request - the run, the cell, the attempt and the path.
    */
   @Remote('cellArtifact')
-  cellArtifact(agent: Agent, request: EvalCellArtifactRequest): Promise<EvalCellArtifactView> {
-    void agent
+  cellArtifact(request: EvalCellArtifactRequest): Promise<EvalCellArtifactView> {
     return this.service.cellArtifact(request)
   }
 
@@ -559,27 +545,24 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * Re-run one cell (a human gesture from the drawer). The reason is required
    * and recorded against the fresh attempt; the caller is tagged by session,
    * so the ledger says which tab asked.
-   * @param agent - owning live agent; recorded as `tab:<sessionId>`.
    * @param request - the cell, the reason, and mission's retry category.
    * @returns the new attempt number.
    */
   @Remote('retry')
-  retry(agent: Agent, request: EvalCellRetryRequest): Promise<EvalCellRetryResult> {
+  retry(request: EvalCellRetryRequest): Promise<EvalCellRetryResult> {
     return this.service.retryCell(request.runId, request.missionId, {
       reason: request.reason,
       category: request.category,
-      by: `tab:${String(agent.session.id)}`,
+      by: callerTag(request),
     })
   }
 
   /**
    * The release check: may this cell's resources be destroyed?
-   * @param agent - owning live agent.
    * @param request - the cell.
    */
   @Remote('releaseCheck')
-  releaseCheck(agent: Agent, request: EvalCellRequest): EvalCellReleaseResult {
-    void agent
+  releaseCheck(request: EvalCellRequest): EvalCellReleaseResult {
     return this.service.releaseCheck(request.runId, request.missionId)
   }
 
@@ -587,23 +570,22 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * The export dialog's first step: which layers would be written, and which
    * of them are guarded. Forwarded to mission's own Remote — the guarded set
    * and the gate are its, and eval relays without widening.
-   * @param agent - owning live agent, passed through unchanged.
    * @param request - run, output directory, layers, snapshot reference.
    */
   @Remote('exportPlan')
-  exportPlan(agent: Agent, request: EvalExportPlanRequest): Promise<EvalExportPlanView> {
-    return this.service.exportPlan(agent, request)
+  exportPlan(request: EvalExportPlanRequest): Promise<EvalExportPlanView> {
+    return this.service.exportPlan(undefined, request)
   }
 
   /**
    * The export dialog's confirm step. mission re-checks the confirmations
    * against a FRESH plan and refuses on any unconfirmed guarded layer.
-   * @param agent - owning live agent, passed through unchanged.
    * @param request - the export plus the confirmed guarded layers.
    */
   @Remote('exportRun')
-  exportRun(agent: Agent, request: EvalExportRunRequest): Promise<EvalExportResultView> {
-    return this.service.exportRun(agent, request, `tab:${String(agent.session.id)}`)
+  exportRun(request: EvalExportRunRequest): Promise<EvalExportResultView> {
+    const { session: _session, ...exportRequest } = request
+    return this.service.exportRun(undefined, exportRequest, callerTag(request))
   }
 
   /**
@@ -618,13 +600,12 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * what a person already confirmed once, and mission re-checks that against a
    * FRESH plan, so a layer that became guarded meanwhile refuses the call and
    * sends the reader to the dialog.
-   * @param agent - owning live agent; recorded as `tab:<sessionId>` on the note.
    * @param request - the run to export again.
    * @returns the new bundle, its report, and the timestamps.
    */
   @Remote('reexport')
-  reexport(agent: Agent, request: EvalReexportRequest): Promise<EvalExportResultView> {
-    return this.service.reexportRun(agent, request, `tab:${String(agent.session.id)}`)
+  reexport(request: EvalReexportRequest): Promise<EvalExportResultView> {
+    return this.service.reexportRun(undefined, { runId: request.runId }, callerTag(request))
   }
 
   /**
@@ -638,13 +619,11 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * exported answers with `bundleDir: null` and the directories that were
    * looked in, which is what lets the page offer the export button instead of
    * a blank section.
-   * @param agent - owning live agent (the tab's session).
    * @param request - the run, and the export directory to try first.
    * @returns the page payload.
    */
   @Remote('report')
-  report(agent: Agent, request: EvalReportRequest): Promise<EvalRunReportView> {
-    void agent
+  report(request: EvalReportRequest): Promise<EvalRunReportView> {
     return this.service.runReport(request.runId, request.outDir === undefined ? {} : { outDir: request.outDir })
   }
 
@@ -658,26 +637,23 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * It is also the page's 回收 action. The two are one verb on purpose: what
    * reclaiming a container IS, is the cell passing its gate, so a second verb
    * that skipped the ledger would be the force this whole seam refuses.
-   * @param agent - owning live agent; recorded as `tab:<sessionId>`.
    * @param request - the run to finalize.
    * @returns the counts, every cell's outcome, what became of the containers,
    *   and the walk's log verbatim.
    */
   @Remote('finalize')
-  finalize(agent: Agent, request: EvalFinalizeRequest): Promise<EvalFinalizeView> {
-    return this.service.finalizeView(request.runId, `tab:${String(agent.session.id)}`)
+  finalize(request: EvalFinalizeRequest): Promise<EvalFinalizeView> {
+    return this.service.finalizeView(request.runId, callerTag(request))
   }
 
   /**
    * The units lab is holding for this run RIGHT NOW — the report page's 未回收
    * count. A read: it lists containers, it never touches one.
-   * @param agent - owning live agent (the tab's session).
    * @param request - the run to ask about.
    * @returns the held units with their cells' states, or why the list is unknown.
    */
   @Remote('runUnits')
-  runUnits(agent: Agent, request: EvalRunUnitsRequest): Promise<EvalRunUnitsView> {
-    void agent
+  runUnits(request: EvalRunUnitsRequest): Promise<EvalRunUnitsView> {
     return this.service.runUnits(request.runId)
   }
 
@@ -685,12 +661,10 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * One 题's answers, every group and rep — the answer view's named read
    * (I5·T75). Names the groups, like the record detail it opens from; the
    * blind read stays {@link judgeQueue}'s.
-   * @param agent - owning live agent (the tab's session).
    * @param request - the run and the 题.
    */
   @Remote('cellAnswers')
-  cellAnswers(agent: Agent, request: EvalCellAnswersRequest): Promise<EvalAnswerSheet> {
-    void agent
+  cellAnswers(request: EvalCellAnswersRequest): Promise<EvalAnswerSheet> {
     return this.service.cellAnswers(request)
   }
 
@@ -703,12 +677,10 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * Nothing naming a condition, a harness or a model crosses this seam. That
    * is what makes the review blind, and it is enforced by what the payload
    * CONTAINS rather than by what the page chooses to render.
-   * @param agent - owning live agent (the tab's session).
    * @param request - the run whose cells are being graded.
    */
   @Remote('judgeQueue')
-  judgeQueue(agent: Agent, request: EvalJudgeQueueRequest): Promise<EvalJudgeQueueView> {
-    void agent
+  judgeQueue(request: EvalJudgeQueueRequest): Promise<EvalJudgeQueueView> {
     return this.service.judgeQueue(request.runId)
   }
 
@@ -719,45 +691,43 @@ export class EvalRemoteService extends TypertRemoteService<never> {
    * Append-only (mission's `annotate` never rewrites) and attributed to the
    * clicking session, so the report's `tool:`-written red flag can never fire
    * on a verdict that came from here.
-   * @param agent - the grading session; recorded as `tab:<sessionId>`.
    * @param request - the run, the cell's ticket, and the verdicts.
    */
   @Remote('humanFinal')
-  humanFinal(agent: Agent, request: EvalHumanFinalRequest): Promise<EvalHumanFinalResult> {
-    return this.service.humanFinal(request.runId, request.ticket, request.verdicts, String(agent.session.id))
+  humanFinal(request: EvalHumanFinalRequest): Promise<EvalHumanFinalResult> {
+    return this.service.humanFinal(
+      request.runId, request.ticket, request.verdicts,
+      request.session === undefined || request.session === '' ? null : request.session,
+    )
   }
 
   /**
    * Take one of the four closure exits at the bottom of the judge bench
    * (T72). A HUMAN gesture from the tab — the eval tools have no path here.
-   * @param agent - the closing session; recorded as `tab:<sessionId>`.
    * @param request - the run, the exit, and its reason.
    */
   @Remote('closeRun')
-  closeRun(agent: Agent, request: EvalCloseRunRequest): Promise<EvalClosureWrite> {
-    return this.service.closeRun(request.runId, { exit: request.exit, reason: request.reason ?? null }, `tab:${String(agent.session.id)}`)
+  closeRun(request: EvalCloseRunRequest): Promise<EvalClosureWrite> {
+    return this.service.closeRun(request.runId, { exit: request.exit, reason: request.reason ?? null }, callerTag(request))
   }
 
   /**
    * Archive or un-archive an experiment. Changes the list's grouping only.
-   * @param agent - the session; recorded as `tab:<sessionId>`.
    * @param request - the run and the flag.
    */
   @Remote('archiveRun')
-  archiveRun(agent: Agent, request: EvalArchiveRunRequest): Promise<EvalArchiveWrite> {
-    return this.service.archiveRun(request.runId, request.archived, `tab:${String(agent.session.id)}`)
+  archiveRun(request: EvalArchiveRunRequest): Promise<EvalArchiveWrite> {
+    return this.service.archiveRun(request.runId, request.archived, callerTag(request))
   }
 
   /**
    * Every evaluation run that answered one dataset item — the 作答记录 the
    * item page shows (T47 consumes it; an empty answer carries its reason so
    * that page can hide the section honestly).
-   * @param agent - owning live agent.
    * @param request - the dataset set and the item.
    */
   @Remote('runsForItem')
-  runsForItem(agent: Agent, request: EvalItemRunsRequest): EvalItemRunsResult {
-    void agent
+  runsForItem(request: EvalItemRunsRequest): EvalItemRunsResult {
     return this.service.itemRuns(request.datasetId, request.itemId)
   }
 }

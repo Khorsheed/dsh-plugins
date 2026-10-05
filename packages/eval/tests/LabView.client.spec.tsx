@@ -639,3 +639,24 @@ describe('the grouped list (T72 §1)', () => {
     expect(screen.getByRole('button', { name: 'list.others {"count":1}' })).toBeTruthy()
   })
 })
+
+// T97: the view in the global 实验室 panel — no session behind it.
+describe('LabView in the global panel (T97)', () => {
+  it('renders the whole deployment\'s list with no session, and offers no 本会话 scope', async () => {
+    const h = makeHarness()
+    renderView(h, { sessionId: '' as SessionId })
+    expect(await screen.findByText('harness-comparison')).toBeTruthy()
+    expect(screen.getByText('effort-sweep')).toBeTruthy()
+    expect(h.fetchExperiments).toHaveBeenCalledWith('', {})
+    expect(screen.queryByRole('radio', { name: 'list.scopeAll' })).toBeNull()
+  })
+
+  it('shows every session\'s rows even when this viewer last picked 本会话', async () => {
+    localStorage.setItem('dsh-eval.listScope', 'session')
+    const h = makeHarness({ list: { ...LIST, rows: LIST.rows.map(row => ({ ...row, originSession: 'someone-else' })) } })
+    renderView(h, { sessionId: '' as SessionId })
+    expect(await screen.findByText('harness-comparison')).toBeTruthy()
+    expect(screen.getByText('effort-sweep')).toBeTruthy()
+  })
+})
+

@@ -565,6 +565,20 @@ agent 在会话里起草了一个实验之后，这件事在会话里只剩一�
 
 新的纯函数（`compactCount` / `durationParts` / `agreementBand`）在 `tests/vocab.spec.ts` 里钉住，连同「它们要的每条文案两份词典都有」。
 
+## 全局「实验室」面板（T97）
+
+宿主 0.2.0 的左侧栏有一列全局入口。本包往里放一个「实验室」：侧栏图标走 `sidebar.panellist`，中间面板走 `main`，两者 id 都是 `eval-lab`，在侧栏里排在「题集」之后。面板里就是实验室 tab 的同一个视图，没有会话撑着。会话 tab 照旧。
+
+- **只读不需要会话**：T97 起 eval 的 Remote 只剩 `approve` 一个方法带会话，其余都不带。
+  - 列表在面板里固定显示「全部」，因为面板没有「本会话」可选。
+  - 人写下的标记（重跑、收口、归档、导出、最终评判）原来的记录人是 `tab:<会话>`，在面板里写成 `panel:lab`。
+- **需要会话的动作，新开一个评测模式会话**：
+  - 「新建实验 · 让 Agent 组织」和「让 agent 处理」：开一个新会话并切过去，把请求写进输入框，不发送。
+  - 「批准并开始」：新会话是这次 run 的父会话，它的工作区就是 run 的 cwd。会话在后台开好，面板不跳走。
+  - 新会话落在最近活跃的工作区。preset 的选法：默认 preset 本身就引用 `@khorsheed/dsh-eval/tool` 行时保留它，否则选第一个引用这一行的 preset。
+  - 开不了会话时，前两个动作退到剪贴板，批准则在页面上报错，不会抛异常。
+- **不按会话自隐**：实验是部署级的，跟会话无关（docs/plugin-visibility.md），由安装层决定哪个 profile 显示它。宿主没有这两个槽时不出现，不报错。
+
 ## 哈希规则
 
 - **条件哈希**：规范化 JSON（键全排序、无空白）的 sha256 小写十六进制；`notes` 除外。
@@ -585,6 +599,7 @@ agent 在会话里起草了一个实验之后，这件事在会话里只剩一�
 - `human-final` 不由本包写：它只从判官台或 `dsh-mission annotate --ns human-final` 进来（I5）。
 - 对 T89 之前的 dsh-mission：`run` 需要 mission 的 `attemptDataDir` 动词（运行数据目录的布局只由 mission 决定），缺它就拒绝开跑并点名升级——不会自己再拼一遍路径；读侧（作答、格子详情、判官台）照常，只是答卷哈希记为未知、取单格产物会拒绝。导出需要 `exportPlanGated` / `exportRunGated`，缺则拒绝并指向 dsh-mission CLI。收口、归档与导出记录在缺 `annotateRun` 时退回写第一格，与 T89 之前完全一样。`dsh-eval finalize` 碰上不认 `list --json` 的旧 CLI 会给出升级提示。
 - 没有 `ctx.lab` 的组合照常跑宿主路径；只有带 `unit` 段的 plan 会因为缺 lab 而被拒绝，并在拒绝语里点名。
+- 全局「实验室」面板（T97）用宿主 0.2.0 的 `main` 与 `sidebar.panellist` 两个槽，经 `slots.inject` 注册，不按 preset 自隐；宿主没有这两个槽时不出现，不报错。新开会话用到的宿主门都在调用时探测：`sessions.create`、`sessions.using` 改名、`remote.agentPresets`、`workspaces` 列表、`uiWorkspace.openSession`、输入框的 `setDraft`。缺 `create` 时不开会话，前两个动作退到剪贴板，批准报一句「没能新开会话」。其余门缺了就用宿主默认值：默认 preset、不改名的会话、宿主自己选的工作区。T97 起 Remote 的方法除 `approve` 外都不带会话参数，所以新旧两半不能混用。两半来自同一个包，正常安装不会出现这种情况。
 - 实验与条件库（T73）住在 `$DSH_HOME/state/eval/`：没设 `DSH_HOME` 的实例没有状态根，实验相关的动词拒绝并点名，列表退化成只列 run（全标旧运行），不炸启动。起草与 validate 要 datasets 的登记面（`registration` / `registryShowFile` / 物化视图）；没挂 datasets 时它们拒绝并点名，旧 plan 路径的 validate 与 CLI dry-run 照常。eval 不再读 datasets 绑定，旧绑定文件（`$DSH_HOME/state/datasets/bindings/<session>.json`）不自动删除。
 
 ## 状态

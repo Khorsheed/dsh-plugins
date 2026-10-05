@@ -187,7 +187,7 @@ export function SendBackPanel(props: {
           <span className={css.sendBackKey}>{t('sendBack.target')}</span>
           <label>
             <input type="radio" name="eval-send-back-target" checked={target === 'here'} onChange={() => { setTarget('here') }} />
-            {t('sendBack.target.here')}
+            {t(sessionId === '' ? 'sendBack.target.new' : 'sendBack.target.here')}
           </label>
           <label>
             <input type="radio" name="eval-send-back-target" checked={target === 'origin'} onChange={() => { setTarget('origin') }} />
